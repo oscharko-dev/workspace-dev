@@ -34,6 +34,7 @@ const conflicts: MultiSourceConflict[] = [
     kind: "title",
     participatingSourceIds: ["figma-primary", "jira-primary"],
     normalizedValues: ["Login", "Sign in"],
+    effectiveState: "resolved",
     resolution: "deferred_to_reviewer",
     detail: "Titles diverged across sources.",
   },
@@ -92,6 +93,19 @@ describe("ConflictResolutionPanel", () => {
     expect(screen.getByText("conflict-p")).toBeInTheDocument();
   });
 
+  it("renders the server-projected effective state", () => {
+    render(
+      <ConflictResolutionPanel
+        conflicts={conflicts}
+        sourceRefs={sourceRefs}
+        decisions={undefined}
+        onResolve={vi.fn()}
+      />,
+    );
+    expect(screen.getByText("resolved")).toBeInTheDocument();
+    expect(screen.getByText("unresolved")).toBeInTheDocument();
+  });
+
   it("submits reviewer approval with the selected source id", async () => {
     const onResolve = vi.fn().mockResolvedValue(undefined);
     render(
@@ -112,6 +126,53 @@ describe("ConflictResolutionPanel", () => {
         conflictId: "conflict-title",
         action: "approve",
         selectedSourceId: "jira-primary",
+      });
+    });
+  });
+
+  it("submits reviewer approval with the selected normalized value", async () => {
+    const onResolve = vi.fn().mockResolvedValue(undefined);
+    render(
+      <ConflictResolutionPanel
+        conflicts={conflicts}
+        sourceRefs={sourceRefs}
+        decisions={decisions}
+        onResolve={onResolve}
+      />,
+    );
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: "Choose Login for conflict-title",
+      }),
+    );
+    await waitFor(() => {
+      expect(onResolve).toHaveBeenCalledWith({
+        conflictId: "conflict-title",
+        action: "approve",
+        selectedNormalizedValue: "Login",
+      });
+    });
+  });
+
+  it("submits a reject action for the selected conflict", async () => {
+    const onResolve = vi.fn().mockResolvedValue(undefined);
+    render(
+      <ConflictResolutionPanel
+        conflicts={conflicts}
+        sourceRefs={sourceRefs}
+        decisions={decisions}
+        onResolve={onResolve}
+      />,
+    );
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: "Reject conflict-title",
+      }),
+    );
+    await waitFor(() => {
+      expect(onResolve).toHaveBeenCalledWith({
+        conflictId: "conflict-title",
+        action: "reject",
       });
     });
   });

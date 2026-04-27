@@ -82,6 +82,7 @@ function BackIcon(): JSX.Element {
 interface RuntimeStatus {
   testIntelligenceEnabled?: boolean;
   testIntelligenceMultiSourceEnabled?: boolean;
+  testIntelligenceJiraGatewayConfigured?: boolean;
 }
 
 function isRuntimeStatus(value: unknown): value is RuntimeStatus {
@@ -93,6 +94,7 @@ interface TestIntelligenceInnerProps {
   bearerToken: string;
   reviewerHandle: string;
   multiSourceEnabled: boolean;
+  jiraGatewayConfigured: boolean;
   onBearerTokenChange: (value: string) => void;
   onReviewerHandleChange: (value: string) => void;
 }
@@ -121,6 +123,7 @@ function TestIntelligenceInner({
   bearerToken,
   reviewerHandle,
   multiSourceEnabled,
+  jiraGatewayConfigured,
   onBearerTokenChange,
   onReviewerHandleChange,
 }: TestIntelligenceInnerProps): JSX.Element {
@@ -139,10 +142,6 @@ function TestIntelligenceInner({
     () => multiSourceStorageKey(reviewerHandle),
     [reviewerHandle],
   );
-
-  useEffect(() => {
-    setSelectedTab(parseStoredTab(safeReadStorage(selectedTabStorageKey)));
-  }, [selectedTabStorageKey]);
 
   useEffect(() => {
     safeWriteStorage(selectedTabStorageKey, selectedTab);
@@ -315,11 +314,31 @@ function TestIntelligenceInner({
         <div className="grid gap-4 lg:grid-cols-[minmax(0,420px)_minmax(0,1fr)]">
           <div className="flex flex-col gap-4">
             <MultiSourceIngestionPanel
+              key={jobId}
               jobId={jobId}
               bearerToken={bearerToken}
+              sources={job.bundle?.sourceRefs ?? []}
+              sourceEnvelope={job.bundle?.sourceEnvelope}
+              jiraGatewayConfigured={jiraGatewayConfigured}
               onIngested={job.refresh}
             />
-            <SourceListPanel sources={job.bundle?.sourceRefs ?? []} />
+            <SourceListPanel
+              sources={job.bundle?.sourceRefs ?? []}
+              canRemove={bearerToken.length > 0}
+              onRemove={async (sourceId) => {
+                const { deleteInspectorSource } = await import(
+                  "./inspector/test-intelligence/api"
+                );
+                const result = await deleteInspectorSource({
+                  jobId,
+                  sourceId,
+                  bearerToken,
+                });
+                if (result.ok) {
+                  await job.refresh();
+                }
+              }}
+            />
           </div>
           <ConflictResolutionPanel
             conflicts={job.bundle?.multiSourceReconciliation?.conflicts ?? []}
@@ -847,6 +866,8 @@ export function InspectorTestIntelligencePage(): JSX.Element {
   const featureEnabled = runtimeStatus.data?.testIntelligenceEnabled !== false;
   const multiSourceEnabled =
     runtimeStatus.data?.testIntelligenceMultiSourceEnabled === true;
+  const jiraGatewayConfigured =
+    runtimeStatus.data?.testIntelligenceJiraGatewayConfigured === true;
 
   const handleSelectJob = useCallback(
     (selectedJobId: string): void => {
@@ -921,6 +942,7 @@ export function InspectorTestIntelligencePage(): JSX.Element {
             bearerToken={bearerToken}
             reviewerHandle={reviewerHandle}
             multiSourceEnabled={multiSourceEnabled}
+            jiraGatewayConfigured={jiraGatewayConfigured}
             onBearerTokenChange={handleBearerTokenChange}
             onReviewerHandleChange={handleReviewerHandleChange}
           />

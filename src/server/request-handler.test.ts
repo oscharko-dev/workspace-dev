@@ -18,6 +18,10 @@ import test from "node:test";
 import { fileURLToPath } from "node:url";
 import { buildApp, type WorkspaceServerApp } from "./app-inject.js";
 import { createWorkspaceRequestHandler } from "./request-handler.js";
+import {
+  createJiraGatewayClient,
+  type JiraGatewayClient,
+} from "../test-intelligence/jira-gateway-client.js";
 import { DEFAULT_FIGMA_PASTE_MAX_SELECTION_COUNT } from "../clipboard-envelope.js";
 import { DEFAULT_FIGMA_PASTE_MAX_ROOT_COUNT } from "../figma-payload-validation.js";
 import { LocalSyncError } from "../job-engine/local-sync.js";
@@ -31,11 +35,19 @@ import {
   CUSTOM_CONTEXT_ARTIFACT_FILENAME,
   CUSTOM_CONTEXT_MARKDOWN_SOURCE_ID,
   CUSTOM_CONTEXT_STRUCTURED_SOURCE_ID,
+  MULTI_SOURCE_RECONCILIATION_REPORT_SCHEMA_VERSION,
+  REVIEW_EVENTS_ARTIFACT_FILENAME,
+  REVIEW_GATE_SCHEMA_VERSION,
+  REVIEW_STATE_ARTIFACT_FILENAME,
+  TEST_CASE_POLICY_REPORT_ARTIFACT_FILENAME,
+  TEST_CASE_POLICY_REPORT_SCHEMA_VERSION,
   TEST_INTELLIGENCE_ENV,
   TEST_INTELLIGENCE_MULTISOURCE_ENV,
+  type JiraGatewayConfig,
   type BusinessTestIntentIr,
   type TestIntelligenceReviewPrincipal,
 } from "../contracts/index.js";
+import { buildMultiSourceTestIntentEnvelope } from "../test-intelligence/multi-source-envelope.js";
 
 const pasteFixtureRoot = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
@@ -200,6 +212,7 @@ async function createRequestHandlerApp({
   testIntelligenceMultiSourceEnabled,
   testIntelligenceReviewBearerToken,
   testIntelligenceReviewPrincipals,
+  testIntelligenceJiraGatewayClient,
   testIntelligenceArtifactRoot,
   workspaceRoot,
   outputRoot,
@@ -214,6 +227,7 @@ async function createRequestHandlerApp({
   testIntelligenceMultiSourceEnabled?: boolean;
   testIntelligenceReviewBearerToken?: string;
   testIntelligenceReviewPrincipals?: readonly TestIntelligenceReviewPrincipal[];
+  testIntelligenceJiraGatewayClient?: JiraGatewayClient;
   testIntelligenceArtifactRoot?: string;
   workspaceRoot?: string;
   outputRoot?: string;
@@ -254,6 +268,9 @@ async function createRequestHandlerApp({
       ...(testIntelligenceReviewPrincipals === undefined
         ? {}
         : { testIntelligenceReviewPrincipals }),
+      ...(testIntelligenceJiraGatewayClient === undefined
+        ? {}
+        : { testIntelligenceJiraGatewayClient }),
       ...(testIntelligenceArtifactRoot === undefined
         ? {}
         : { testIntelligenceArtifactRoot }),
@@ -6926,9 +6943,18 @@ const tiAuthHeader = (
   authorization: `Bearer ${token}`,
 });
 
+const TEST_JIRA_GATEWAY_CONFIG: JiraGatewayConfig = {
+  baseUrl: "https://example.atlassian.net",
+  auth: { kind: "bearer", token: "test-token" },
+  userAgent: "workspace-dev-test/1.0",
+  allowedHostPatterns: ["example.atlassian.net"],
+  maxRetries: 0,
+};
+
 const writeTiPrimaryIntent = async (
   artifactRoot: string,
   jobId: string,
+  sourceEnvelope?: BusinessTestIntentIr["sourceEnvelope"],
 ): Promise<void> => {
   const destinationDir = path.join(artifactRoot, jobId);
   await mkdir(destinationDir, { recursive: true });
@@ -6946,6 +6972,7 @@ const writeTiPrimaryIntent = async (
     openQuestions: [],
     piiIndicators: [],
     redactions: [],
+    ...(sourceEnvelope !== undefined ? { sourceEnvelope } : {}),
   };
   await writeFile(
     path.join(destinationDir, "business-intent-ir.json"),
@@ -7444,6 +7471,433 @@ test("test-intelligence: GET /workspace keeps multi-source disabled unless every
         const body = response.json<Record<string, unknown>>();
         assert.equal(body.testIntelligenceEnabled, true);
         assert.equal(body.testIntelligenceMultiSourceEnabled, false);
+      } finally {
+        await close();
+        await rm(tempRoot, { recursive: true, force: true });
+      }
+    });
+  });
+});
+
+test("test-intelligence: POST jira-fetch source uses configured Jira gateway", async () => {
+  await withTestIntelligenceEnv("1", async () => {
+    await withTestIntelligenceMultiSourceEnv("1", async () => {
+      const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ti-jira-fetch-"));
+      const artifactRoot = path.join(tempRoot, "ti");
+      let searchBody: Record<string, unknown> | undefined;
+      const gateway = createJiraGatewayClient(TEST_JIRA_GATEWAY_CONFIG, {
+        fetchImpl: async (url, init): Promise<Response> => {
+          if (String(url).endsWith("serverInfo")) {
+            return new Response(
+              JSON.stringify({ version: "10.0.0", deploymentType: "Cloud" }),
+              { status: 200 },
+            );
+          }
+          searchBody = JSON.parse(String(init?.body)) as Record<string, unknown>;
+          return new Response(
+            JSON.stringify({
+              issues: [
+                {
+                  key: "PAY-1437",
+                  fields: {
+                    issuetype: { name: "Story" },
+                    summary: "Generate tests from multi-source input",
+                    description: "Acceptance criteria are available.",
+                    status: { name: "Open" },
+                  },
+                },
+                {
+                  key: "PAY-1438",
+                  fields: {
+                    issuetype: { name: "Story" },
+                    summary: "Review generated tests from REST input",
+                    description: "Second issue is available.",
+                    status: { name: "Open" },
+                  },
+                },
+              ],
+            }),
+            { status: 200 },
+          );
+        },
+      });
+      const { app, close } = await createRequestHandlerApp({
+        testIntelligenceEnabled: true,
+        testIntelligenceMultiSourceEnabled: true,
+        testIntelligenceReviewBearerToken: TI_REVIEW_TOKEN,
+        testIntelligenceJiraGatewayClient: gateway,
+        testIntelligenceArtifactRoot: artifactRoot,
+      });
+      try {
+        const response = await app.inject({
+          method: "POST",
+          url: "/workspace/test-intelligence/jobs/job-rest/sources/jira-fetch",
+          headers: {
+            ...tiAuthHeader(),
+            "content-type": "application/json",
+          },
+          payload: { issueKeys: ["PAY-1437", "PAY-1438"] },
+        });
+        assert.equal(response.statusCode, 200);
+        const body = response.json<{
+          ok: boolean;
+          sourceId: string;
+          issueCount: number;
+          sources: Array<{ kind: string; sourceId: string }>;
+        }>();
+        assert.equal(body.ok, true);
+        assert.equal(body.issueCount, 2);
+        assert.equal(searchBody?.["jql"], 'issueKey IN ("PAY-1437","PAY-1438")');
+        assert.equal(
+          body.sources.some(
+            (source) =>
+              source.kind === "jira_rest" && source.sourceId === body.sourceId,
+          ),
+          true,
+        );
+        const issueListRaw = await readFile(
+          path.join(
+            artifactRoot,
+            "job-rest",
+            "sources",
+            body.sourceId,
+            "jira-issue-ir-list.json",
+          ),
+          "utf8",
+        );
+        assert.equal(issueListRaw.includes("PAY-1437"), true);
+        assert.equal(issueListRaw.includes("PAY-1438"), true);
+        const bundleResponse = await app.inject({
+          method: "GET",
+          url: "/workspace/test-intelligence/jobs/job-rest",
+        });
+        assert.equal(bundleResponse.statusCode, 200);
+        const bundle = bundleResponse.json<{
+          sourceRefs?: Array<{ kind: string; sourceId: string }>;
+        }>();
+        assert.equal(
+          bundle.sourceRefs?.some(
+            (source) =>
+              source.kind === "jira_rest" && source.sourceId === body.sourceId,
+          ),
+          true,
+        );
+      } finally {
+        await close();
+        await rm(tempRoot, { recursive: true, force: true });
+      }
+    });
+  });
+});
+
+test("test-intelligence: POST jira-fetch source preserves unavailable fallback without a gateway", async () => {
+  await withTestIntelligenceEnv("1", async () => {
+    await withTestIntelligenceMultiSourceEnv("1", async () => {
+      const tempRoot = await mkdtemp(
+        path.join(os.tmpdir(), "ti-jira-fetch-unconfigured-"),
+      );
+      const artifactRoot = path.join(tempRoot, "ti");
+      const { app, close } = await createRequestHandlerApp({
+        testIntelligenceEnabled: true,
+        testIntelligenceMultiSourceEnabled: true,
+        testIntelligenceReviewBearerToken: TI_REVIEW_TOKEN,
+        testIntelligenceArtifactRoot: artifactRoot,
+      });
+      try {
+        const response = await app.inject({
+          method: "POST",
+          url: "/workspace/test-intelligence/jobs/job-rest/sources/jira-fetch",
+          headers: {
+            ...tiAuthHeader(),
+            "content-type": "application/json",
+          },
+          payload: { issueKeys: ["PAY-1437"] },
+        });
+        assert.equal(response.statusCode, 503);
+        assert.equal(
+          response.json<Record<string, unknown>>().error,
+          "JIRA_FETCH_UNAVAILABLE",
+        );
+      } finally {
+        await close();
+        await rm(tempRoot, { recursive: true, force: true });
+      }
+    });
+  });
+});
+
+test("test-intelligence: POST jira-fetch source surfaces gateway refusals", async () => {
+  await withTestIntelligenceEnv("1", async () => {
+    await withTestIntelligenceMultiSourceEnv("1", async () => {
+      const tempRoot = await mkdtemp(
+        path.join(os.tmpdir(), "ti-jira-fetch-refused-"),
+      );
+      const artifactRoot = path.join(tempRoot, "ti");
+      const gateway = createJiraGatewayClient(TEST_JIRA_GATEWAY_CONFIG, {
+        fetchImpl: async (url): Promise<Response> => {
+          if (String(url).endsWith("serverInfo")) {
+            return new Response(
+              JSON.stringify({ version: "10.0.0", deploymentType: "Cloud" }),
+              { status: 200 },
+            );
+          }
+          return new Response("{}", { status: 403 });
+        },
+      });
+      const { app, close } = await createRequestHandlerApp({
+        testIntelligenceEnabled: true,
+        testIntelligenceMultiSourceEnabled: true,
+        testIntelligenceReviewBearerToken: TI_REVIEW_TOKEN,
+        testIntelligenceJiraGatewayClient: gateway,
+        testIntelligenceArtifactRoot: artifactRoot,
+      });
+      try {
+        const response = await app.inject({
+          method: "POST",
+          url: "/workspace/test-intelligence/jobs/job-rest/sources/jira-fetch",
+          headers: {
+            ...tiAuthHeader(),
+            "content-type": "application/json",
+          },
+          payload: { issueKeys: ["PAY-1437"] },
+        });
+        assert.equal(response.statusCode, 502);
+        const body = response.json<{
+          error: string;
+          diagnostic?: { code?: string };
+        }>();
+        assert.equal(body.error, "JIRA_FETCH_FAILED");
+        assert.equal(body.diagnostic?.code, "jira_forbidden");
+      } finally {
+        await close();
+        await rm(tempRoot, { recursive: true, force: true });
+      }
+    });
+  });
+});
+
+test("test-intelligence: POST jira-fetch source rejects non-JSON writes before auth", async () => {
+  await withTestIntelligenceEnv("1", async () => {
+    await withTestIntelligenceMultiSourceEnv("1", async () => {
+      const tempRoot = await mkdtemp(
+        path.join(os.tmpdir(), "ti-jira-fetch-write-gov-"),
+      );
+      const artifactRoot = path.join(tempRoot, "ti");
+      const { app, close } = await createRequestHandlerApp({
+        testIntelligenceEnabled: true,
+        testIntelligenceMultiSourceEnabled: true,
+        testIntelligenceReviewBearerToken: TI_REVIEW_TOKEN,
+        testIntelligenceArtifactRoot: artifactRoot,
+      });
+      try {
+        const response = await app.inject({
+          method: "POST",
+          url: "/workspace/test-intelligence/jobs/job-rest/sources/jira-fetch",
+          headers: {
+            "content-type": "text/plain",
+          },
+          payload: "issueKeys=PAY-1437",
+        });
+        assert.equal(response.statusCode, 415);
+        assert.equal(
+          response.json<Record<string, unknown>>().error,
+          "UNSUPPORTED_MEDIA_TYPE",
+        );
+      } finally {
+        await close();
+        await rm(tempRoot, { recursive: true, force: true });
+      }
+    });
+  });
+});
+
+test("test-intelligence: POST jira-fetch source returns www-authenticate on auth failure", async () => {
+  await withTestIntelligenceEnv("1", async () => {
+    await withTestIntelligenceMultiSourceEnv("1", async () => {
+      const tempRoot = await mkdtemp(
+        path.join(os.tmpdir(), "ti-jira-fetch-auth-"),
+      );
+      const artifactRoot = path.join(tempRoot, "ti");
+      const { app, close } = await createRequestHandlerApp({
+        testIntelligenceEnabled: true,
+        testIntelligenceMultiSourceEnabled: true,
+        testIntelligenceReviewBearerToken: TI_REVIEW_TOKEN,
+        testIntelligenceArtifactRoot: artifactRoot,
+      });
+      try {
+        const response = await app.inject({
+          method: "POST",
+          url: "/workspace/test-intelligence/jobs/job-rest/sources/jira-fetch",
+          headers: {
+            ...tiAuthHeader("wrong-token"),
+            "content-type": "application/json",
+          },
+          payload: { issueKeys: ["PAY-1437"] },
+        });
+        assert.equal(response.statusCode, 401);
+        assert.equal(
+          response.json<Record<string, unknown>>().error,
+          "UNAUTHORIZED",
+        );
+        assert.match(
+          String(response.headers["www-authenticate"] ?? ""),
+          /Bearer realm="workspace-dev"/u,
+        );
+      } finally {
+        await close();
+        await rm(tempRoot, { recursive: true, force: true });
+      }
+    });
+  });
+});
+
+test("test-intelligence: DELETE source removes a scoped source directory", async () => {
+  await withTestIntelligenceEnv("1", async () => {
+    await withTestIntelligenceMultiSourceEnv("1", async () => {
+      const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ti-source-remove-"));
+      const artifactRoot = path.join(tempRoot, "ti");
+      const sourceDir = path.join(
+        artifactRoot,
+        "job-remove",
+        "sources",
+        "custom-context-markdown",
+      );
+      await mkdir(sourceDir, { recursive: true });
+      await writeFile(path.join(sourceDir, "custom-context.json"), "{}", "utf8");
+      const { app, close } = await createRequestHandlerApp({
+        testIntelligenceEnabled: true,
+        testIntelligenceMultiSourceEnabled: true,
+        testIntelligenceReviewBearerToken: TI_REVIEW_TOKEN,
+        testIntelligenceArtifactRoot: artifactRoot,
+      });
+      try {
+        const response = await app.inject({
+          method: "DELETE",
+          url: "/workspace/test-intelligence/jobs/job-remove/sources/custom-context-markdown",
+          headers: {
+            ...tiAuthHeader(),
+            "content-type": "application/json",
+          },
+        });
+        assert.equal(response.statusCode, 200);
+        assert.equal(response.json<{ ok: boolean }>().ok, true);
+        await assert.rejects(readFile(path.join(sourceDir, "custom-context.json")));
+      } finally {
+        await close();
+        await rm(tempRoot, { recursive: true, force: true });
+      }
+    });
+  });
+});
+
+test("test-intelligence: DELETE source rejects non-JSON writes before auth", async () => {
+  await withTestIntelligenceEnv("1", async () => {
+    await withTestIntelligenceMultiSourceEnv("1", async () => {
+      const tempRoot = await mkdtemp(
+        path.join(os.tmpdir(), "ti-source-remove-write-gov-"),
+      );
+      const artifactRoot = path.join(tempRoot, "ti");
+      const { app, close } = await createRequestHandlerApp({
+        testIntelligenceEnabled: true,
+        testIntelligenceMultiSourceEnabled: true,
+        testIntelligenceReviewBearerToken: TI_REVIEW_TOKEN,
+        testIntelligenceArtifactRoot: artifactRoot,
+      });
+      try {
+        const response = await app.inject({
+          method: "DELETE",
+          url: "/workspace/test-intelligence/jobs/job-remove/sources/custom-context-markdown",
+          headers: {
+            "content-type": "text/plain",
+          },
+          payload: "ignored",
+        });
+        assert.equal(response.statusCode, 415);
+        assert.equal(
+          response.json<Record<string, unknown>>().error,
+          "UNSUPPORTED_MEDIA_TYPE",
+        );
+      } finally {
+        await close();
+        await rm(tempRoot, { recursive: true, force: true });
+      }
+    });
+  });
+});
+
+test("test-intelligence: DELETE source tombstones envelope-backed sources so they disappear from refreshed bundles", async () => {
+  await withTestIntelligenceEnv("1", async () => {
+    await withTestIntelligenceMultiSourceEnv("1", async () => {
+      const tempRoot = await mkdtemp(
+        path.join(os.tmpdir(), "ti-source-remove-envelope-"),
+      );
+      const artifactRoot = path.join(tempRoot, "ti");
+      const sourceEnvelope = buildMultiSourceTestIntentEnvelope({
+        conflictResolutionPolicy: "keep_both",
+        sources: [
+          {
+            sourceId: "figma-primary-1",
+            kind: "figma_local_json",
+            contentHash: "a".repeat(64),
+            capturedAt: TI_ASSEMBLED_AT,
+          },
+          {
+            sourceId: "jira-paste-1",
+            kind: "jira_paste",
+            contentHash: "b".repeat(64),
+            capturedAt: TI_ASSEMBLED_AT,
+          },
+        ],
+      });
+      await writeTiPrimaryIntent(artifactRoot, "job-remove", sourceEnvelope);
+      const { app, close } = await createRequestHandlerApp({
+        testIntelligenceEnabled: true,
+        testIntelligenceMultiSourceEnabled: true,
+        testIntelligenceReviewBearerToken: TI_REVIEW_TOKEN,
+        testIntelligenceArtifactRoot: artifactRoot,
+      });
+      try {
+        const response = await app.inject({
+          method: "DELETE",
+          url: "/workspace/test-intelligence/jobs/job-remove/sources/jira-paste-1",
+          headers: {
+            ...tiAuthHeader(),
+            "content-type": "application/json",
+          },
+        });
+        assert.equal(response.statusCode, 200);
+        assert.equal(response.json<{ ok: boolean }>().ok, true);
+
+        const bundleResponse = await app.inject({
+          method: "GET",
+          url: "/workspace/test-intelligence/jobs/job-remove",
+        });
+        assert.equal(bundleResponse.statusCode, 200);
+        const bundle = bundleResponse.json<{
+          sourceEnvelope?: { sources: Array<{ sourceId: string }> };
+          sourceRefs?: Array<{ sourceId: string }>;
+        }>();
+        assert.deepEqual(
+          bundle.sourceEnvelope?.sources.map((source) => source.sourceId),
+          ["figma-primary-1"],
+        );
+        assert.equal(
+          bundle.sourceRefs?.some(
+            (source) => source.sourceId === "jira-paste-1",
+          ),
+          false,
+        );
+        const tombstone = JSON.parse(
+          await readFile(
+            path.join(artifactRoot, "job-remove", "removed-sources.json"),
+            "utf8",
+          ),
+        ) as {
+          jobId: string;
+          removedSources: Array<{ sourceId: string; removedBy?: string }>;
+        };
+        assert.equal(tombstone.jobId, "job-remove");
+        assert.equal(tombstone.removedSources[0]?.sourceId, "jira-paste-1");
       } finally {
         await close();
         await rm(tempRoot, { recursive: true, force: true });
@@ -8051,6 +8505,89 @@ test("test-intelligence: POST conflict resolution appends a decision snapshot", 
         }),
         "utf8",
       );
+      await writeFile(
+        path.join(jobDir, TEST_CASE_POLICY_REPORT_ARTIFACT_FILENAME),
+        JSON.stringify({
+          schemaVersion: TEST_CASE_POLICY_REPORT_SCHEMA_VERSION,
+          contractVersion: "1.2.0",
+          generatedAt: "2026-04-27T10:00:00.000Z",
+          jobId: "job-conflict",
+          policyProfileId: "eu-banking-default",
+          policyProfileVersion: "1.0.0",
+          totalTestCases: 1,
+          approvedCount: 0,
+          blockedCount: 0,
+          needsReviewCount: 1,
+          blocked: false,
+          decisions: [
+            {
+              testCaseId: "tc-1",
+              decision: "needs_review",
+              violations: [
+                {
+                  rule: "policy:multi-source-conflict-present",
+                  outcome: "multi_source_conflict_present",
+                  severity: "warning",
+                  reason:
+                    "multi-source conflict(s) conflict-1 affect this case",
+                },
+              ],
+            },
+          ],
+          jobLevelViolations: [],
+        }),
+        "utf8",
+      );
+      await writeFile(
+        path.join(jobDir, REVIEW_STATE_ARTIFACT_FILENAME),
+        JSON.stringify({
+          schemaVersion: REVIEW_GATE_SCHEMA_VERSION,
+          contractVersion: "1.2.0",
+          jobId: "job-conflict",
+          generatedAt: "2026-04-27T10:00:00.000Z",
+          perTestCase: [
+            {
+              testCaseId: "tc-1",
+              state: "needs_review",
+              policyDecision: "needs_review",
+              lastEventId: "evt-1",
+              lastEventAt: "2026-04-27T10:00:00.000Z",
+              fourEyesEnforced: true,
+              fourEyesReasons: ["multi_source_conflict_present"],
+              approvers: [],
+            },
+          ],
+          approvedCount: 0,
+          needsReviewCount: 1,
+          rejectedCount: 0,
+        }),
+        "utf8",
+      );
+      await writeFile(
+        path.join(jobDir, REVIEW_EVENTS_ARTIFACT_FILENAME),
+        JSON.stringify({
+          schemaVersion: REVIEW_GATE_SCHEMA_VERSION,
+          contractVersion: "1.2.0",
+          jobId: "job-conflict",
+          events: [
+            {
+              schemaVersion: REVIEW_GATE_SCHEMA_VERSION,
+              contractVersion: "1.2.0",
+              id: "evt-1",
+              jobId: "job-conflict",
+              testCaseId: "tc-1",
+              kind: "generated",
+              at: "2026-04-27T10:00:00.000Z",
+              sequence: 1,
+              fromState: "generated",
+              toState: "needs_review",
+              metadata: { policyDecision: "needs_review" },
+            },
+          ],
+          nextSequence: 2,
+        }),
+        "utf8",
+      );
       const { app, close } = await createRequestHandlerApp({
         testIntelligenceEnabled: true,
         testIntelligenceMultiSourceEnabled: true,
@@ -8076,6 +8613,95 @@ test("test-intelligence: POST conflict resolution appends a decision snapshot", 
         assert.equal(body.snapshot.conflictId, "conflict-1");
         assert.equal(body.snapshot.state, "approved");
         assert.equal(body.snapshot.selectedSourceId, "jira-paste-1");
+        const stateResponse = await app.inject({
+          method: "GET",
+          url: "/workspace/test-intelligence/review/job-conflict/state",
+        });
+        assert.equal(stateResponse.statusCode, 200);
+        const stateBody = stateResponse.json<{
+          snapshot: {
+            approvedCount: number;
+            needsReviewCount: number;
+            perTestCase: Array<{
+              policyDecision: string;
+              fourEyesEnforced: boolean;
+              fourEyesReasons?: string[];
+            }>;
+          };
+        }>();
+        assert.equal(stateBody.snapshot.approvedCount, 0);
+        assert.equal(stateBody.snapshot.needsReviewCount, 1);
+        assert.equal(
+          stateBody.snapshot.perTestCase[0]?.policyDecision,
+          "approved",
+        );
+        assert.equal(
+          stateBody.snapshot.perTestCase[0]?.fourEyesEnforced,
+          false,
+        );
+        assert.equal(
+          stateBody.snapshot.perTestCase[0]?.fourEyesReasons?.includes(
+            "multi_source_conflict_present",
+          ) ?? false,
+          false,
+        );
+      } finally {
+        await close();
+        await rm(tempRoot, { recursive: true, force: true });
+      }
+    });
+  });
+});
+
+test("test-intelligence: POST conflict resolution fails closed without bearer governance", async () => {
+  await withTestIntelligenceEnv("1", async () => {
+    await withTestIntelligenceMultiSourceEnv("1", async () => {
+      const tempRoot = await mkdtemp(
+        path.join(os.tmpdir(), "ti-conflict-resolve-auth-"),
+      );
+      const artifactRoot = path.join(tempRoot, "ti");
+      const jobDir = path.join(artifactRoot, "job-conflict");
+      await mkdir(jobDir, { recursive: true });
+      await writeFile(
+        path.join(jobDir, "multi-source-conflicts.json"),
+        JSON.stringify({
+          version: MULTI_SOURCE_RECONCILIATION_REPORT_SCHEMA_VERSION,
+          envelopeHash: "b".repeat(64),
+          conflicts: [
+            {
+              conflictId: "conflict-1",
+              kind: "field_label_mismatch",
+              participatingSourceIds: ["figma-primary", "jira-primary"],
+              normalizedValues: ["Login", "Sign in"],
+              resolution: "deferred_to_reviewer",
+            },
+          ],
+          unmatchedSources: [],
+          contributingSourcesPerCase: [],
+          policyApplied: "reviewer_decides",
+          transcript: [],
+        }),
+        "utf8",
+      );
+      const { app, close } = await createRequestHandlerApp({
+        testIntelligenceEnabled: true,
+        testIntelligenceMultiSourceEnabled: true,
+        testIntelligenceArtifactRoot: artifactRoot,
+      });
+      try {
+        const response = await app.inject({
+          method: "POST",
+          url: "/workspace/test-intelligence/jobs/job-conflict/conflicts/conflict-1/resolve",
+          payload: {
+            action: "approve",
+            selectedSourceId: "jira-primary",
+          },
+        });
+        assert.equal(response.statusCode, 503);
+        assert.equal(
+          response.json<Record<string, unknown>>().error,
+          "AUTHENTICATION_UNAVAILABLE",
+        );
       } finally {
         await close();
         await rm(tempRoot, { recursive: true, force: true });

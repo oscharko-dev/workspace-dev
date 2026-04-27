@@ -14,6 +14,8 @@ import {
   REVIEW_EVENTS_ARTIFACT_FILENAME,
   REVIEW_GATE_SCHEMA_VERSION,
   REVIEW_STATE_ARTIFACT_FILENAME,
+  MULTI_SOURCE_RECONCILIATION_REPORT_SCHEMA_VERSION,
+  MULTI_SOURCE_CONFLICT_REPORT_ARTIFACT_FILENAME,
   TEST_CASE_COVERAGE_REPORT_ARTIFACT_FILENAME,
   TEST_CASE_COVERAGE_REPORT_SCHEMA_VERSION,
   TEST_CASE_POLICY_REPORT_ARTIFACT_FILENAME,
@@ -227,6 +229,46 @@ const sampleReviewEventsEnvelope = (jobId: string): unknown => ({
   nextSequence: 2,
 });
 
+const sampleMultiSourceReconciliationReport = (jobId: string): unknown => ({
+  version: MULTI_SOURCE_RECONCILIATION_REPORT_SCHEMA_VERSION,
+  envelopeHash: "c".repeat(64),
+  conflicts: [
+    {
+      conflictId: "conflict-1",
+      kind: "field_label_mismatch",
+      participatingSourceIds: ["figma-primary", "jira-primary"],
+      normalizedValues: ["Login", "Sign in"],
+      resolution: "deferred_to_reviewer",
+      affectedScreenIds: ["screen-login"],
+      detail: `Source mix conflict for ${jobId}.`,
+    },
+  ],
+  unmatchedSources: [],
+  contributingSourcesPerCase: [],
+  policyApplied: "reviewer_decides",
+  transcript: [],
+});
+
+const sampleConflictDecisionEnvelope = (jobId: string): unknown => ({
+  version: "1.0.0",
+  jobId,
+  nextSequence: 2,
+  events: [
+    {
+      schemaVersion: REVIEW_GATE_SCHEMA_VERSION,
+      contractVersion: TEST_INTELLIGENCE_CONTRACT_VERSION,
+      id: "evt-conflict-1",
+      sequence: 1,
+      jobId,
+      conflictId: "conflict-1",
+      action: "approve",
+      at: ASSEMBLED_AT,
+      actor: "alice",
+      selectedSourceId: "jira-primary",
+    },
+  ],
+});
+
 let workDir: string;
 
 beforeEach(async () => {
@@ -352,6 +394,66 @@ describe("readInspectorTestIntelligenceBundle", () => {
     assert.equal(bundle.reviewSnapshot?.needsReviewCount, 1);
     assert.equal(bundle.reviewEvents?.length, 1);
     assert.equal(bundle.reviewEvents?.[0]?.kind, "generated");
+  });
+
+  test("projects effective multi-source conflict state from the append-only log", async () => {
+    const jobId = "source-mix-job";
+    const dir = join(workDir, jobId);
+    await mkdir(dir, { recursive: true });
+    await Promise.all([
+      writeJson(
+        join(dir, MULTI_SOURCE_CONFLICT_REPORT_ARTIFACT_FILENAME),
+        sampleMultiSourceReconciliationReport(jobId),
+      ),
+      writeJson(
+        join(dir, "multi-source-conflict-decisions.json"),
+        sampleConflictDecisionEnvelope(jobId),
+      ),
+      writeJson(join(dir, TEST_CASE_POLICY_REPORT_ARTIFACT_FILENAME), {
+        schemaVersion: TEST_CASE_POLICY_REPORT_SCHEMA_VERSION,
+        contractVersion: TEST_INTELLIGENCE_CONTRACT_VERSION,
+        generatedAt: ASSEMBLED_AT,
+        jobId,
+        policyProfileId: "eu-banking-default",
+        policyProfileVersion: "1.0.0",
+        totalTestCases: 1,
+        approvedCount: 0,
+        blockedCount: 0,
+        needsReviewCount: 1,
+        blocked: false,
+        decisions: [
+          {
+            testCaseId: "tc-1",
+            decision: "needs_review",
+            violations: [
+              {
+                rule: "policy:multi-source-conflict-present",
+                outcome: "multi_source_conflict_present",
+                severity: "warning",
+                reason: "multi-source conflict(s) conflict-1 affect this case",
+              },
+            ],
+          },
+        ],
+        jobLevelViolations: [],
+      }),
+    ]);
+
+    const result = await readInspectorTestIntelligenceBundle({
+      rootDir: workDir,
+      jobId,
+      assembledAt: ASSEMBLED_AT,
+    });
+    assert.equal(result.ok, true);
+    if (!result.ok) return;
+    const conflict = result.bundle.multiSourceReconciliation?.conflicts[0];
+    assert.equal(conflict?.conflictId, "conflict-1");
+    assert.equal(conflict?.effectiveState, "resolved");
+    assert.equal(conflict?.resolvedBy, "alice");
+    assert.equal(conflict?.resolvedAt, ASSEMBLED_AT);
+    assert.equal(result.bundle.conflictDecisions?.["conflict-1"]?.state, "approved");
+    assert.equal(result.bundle.policyReport?.decisions[0]?.decision, "approved");
+    assert.deepEqual(result.bundle.policyReport?.decisions[0]?.violations, []);
   });
 
   test("surfaces parse errors instead of throwing on malformed JSON", async () => {

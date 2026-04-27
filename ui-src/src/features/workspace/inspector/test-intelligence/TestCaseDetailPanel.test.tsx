@@ -86,6 +86,25 @@ describe("TestCaseDetailPanel — content rendering", () => {
     render(
       <TestCaseDetailPanel
         {...baseProps}
+        sourceRefs={[
+          {
+            sourceId: "jira-primary",
+            kind: "jira_paste",
+            capturedAt: "2026-04-27T11:00:00.000Z",
+            contentHash: "a".repeat(64),
+            role: "primary",
+            label: "Jira paste PAY-1437",
+            authorHandle: "alice",
+          },
+        ]}
+        provenance={{
+          testCaseId: "tc-1",
+          allSourceIds: ["jira-primary"],
+          fieldSourceIds: ["jira-primary"],
+          actionSourceIds: ["jira-primary"],
+          validationSourceIds: ["jira-primary"],
+          navigationSourceIds: ["jira-primary"],
+        }}
         visualRecords={
           buildVisualSidecarReport({
             records: [
@@ -117,6 +136,49 @@ describe("TestCaseDetailPanel — content rendering", () => {
     expect(
       screen.getByTestId("ti-detail-visual-record-screen-login"),
     ).toHaveTextContent("phi-4-multimodal-poc");
+    expect(screen.getByTestId("ti-detail-provenance")).toHaveTextContent(
+      "Test-case provenance",
+    );
+    expect(
+      screen.getByRole("button", { name: /Test-case provenance/i }),
+    ).toHaveTextContent(/1 source/i);
+    expect(screen.getByTestId("ti-detail-provenance-panel")).toHaveAttribute(
+      "aria-hidden",
+      "true",
+    );
+    fireEvent.focus(
+      screen.getByRole("button", { name: /Test-case provenance/i }),
+    );
+    expect(screen.getByTestId("ti-detail-provenance-panel")).toHaveAttribute(
+      "aria-hidden",
+      "false",
+    );
+    expect(screen.getByTestId("ti-detail-provenance-panel")).toHaveTextContent(
+      "jira-primary",
+    );
+    expect(screen.getByTestId("ti-detail-provenance-panel")).toHaveTextContent(
+      "jira_paste",
+    );
+    expect(screen.getByTestId("ti-detail-provenance-panel")).toHaveTextContent(
+      "2026-04-27T11:00:00Z",
+    );
+    expect(screen.getByTestId("ti-detail-provenance-panel")).toHaveTextContent(
+      "aaaaaaaaaaaa",
+    );
+    expect(
+      screen.getByRole("button", { name: /Field provenance/i }),
+    ).toHaveTextContent(/1 source/i);
+    expect(
+      screen.getByTestId("ti-detail-field-provenance-panel"),
+    ).toHaveAttribute("aria-hidden", "true");
+    fireEvent.mouseEnter(screen.getByTestId("ti-detail-field-provenance"));
+    expect(
+      screen.getByTestId("ti-detail-field-provenance-panel"),
+    ).toHaveAttribute("aria-hidden", "false");
+    fireEvent.mouseLeave(screen.getByTestId("ti-detail-field-provenance"));
+    expect(
+      screen.getByTestId("ti-detail-field-provenance-panel"),
+    ).toHaveAttribute("aria-hidden", "true");
     expect(
       screen.getByTestId("ti-detail-qc-visual-provenance"),
     ).toHaveTextContent("abcdef123456");

@@ -75,6 +75,32 @@ describe("SourceListPanel", () => {
     });
   });
 
+  it("renders a governance-gated remove action", async () => {
+    const onRemove = vi.fn().mockResolvedValue(undefined);
+    render(
+      <SourceListPanel sources={sources} canRemove={true} onRemove={onRemove} />,
+    );
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: "Remove source Custom text",
+      }),
+    );
+    await waitFor(() => {
+      expect(onRemove).toHaveBeenCalledWith("custom-note");
+    });
+  });
+
+  it("disables source removal without bearer governance", () => {
+    render(
+      <SourceListPanel sources={sources} canRemove={false} onRemove={vi.fn()} />,
+    );
+    expect(
+      screen.getByRole("button", {
+        name: "Remove source Jira paste PAY-1437",
+      }),
+    ).toBeDisabled();
+  });
+
   it("has no blocking a11y violations", async () => {
     const { container } = render(<SourceListPanel sources={sources} />);
     await expectNoBlockingAccessibilityViolations(container);
