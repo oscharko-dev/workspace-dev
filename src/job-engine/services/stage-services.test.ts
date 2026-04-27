@@ -7397,6 +7397,178 @@ test("ValidateProjectService runs standalone visual quality in figma_api mode", 
   assert.equal(executionContext.job.visualQuality?.referenceSource, "figma_api");
 });
 
+test("ValidateProjectService standalone visual quality reuses IR-derived Figma screenshot references", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-visual-quality-screenshot-reference-"));
+  const referenceBuffer = createSolidPngBuffer({
+    width: 8,
+    height: 6,
+    rgba: [255, 255, 255, 255]
+  });
+  const actualBuffer = createSolidPngBuffer({
+    width: 8,
+    height: 6,
+    rgba: [250, 250, 250, 255]
+  });
+  const diffBuffer = createSolidPngBuffer({
+    width: 8,
+    height: 6,
+    rgba: [255, 0, 0, 255]
+  });
+  const fetchCalls: string[] = [];
+  const mockFetch: typeof fetch = async (input) => {
+    fetchCalls.push(input instanceof Request ? input.url : String(input));
+    throw new Error("live Figma fetch should not be called");
+  };
+
+  const { executionContext, stageContextFor } = await createExecutionContext({
+    rootDir: root,
+    input: {
+      figmaAccessToken: "test-token"
+    },
+    runtimeOverrides: {
+      enableUiValidation: true,
+      enableVisualQualityValidation: true,
+      visualQualityReferenceMode: "figma_api",
+      visualQualityViewportWidth: 8,
+      fetchImpl: mockFetch
+    },
+    requestOverrides: {
+      figmaFileKey: "test-file",
+      enableVisualQualityValidation: true,
+      visualQualityReferenceMode: "figma_api",
+      visualQualityViewportWidth: 8
+    }
+  });
+  await executionContext.artifactStore.setPath({
+    key: STAGE_ARTIFACT_KEYS.generatedProject,
+    stage: "template.prepare",
+    absolutePath: executionContext.paths.generatedProjectDir
+  });
+  await executionContext.artifactStore.setValue({
+    key: STAGE_ARTIFACT_KEYS.generationDiffContext,
+    stage: "codegen.generate",
+    value: {
+      boardKey: "test-board-visual-quality-screenshot-reference"
+    } satisfies GenerationDiffContext
+  });
+  await writeFile(
+    executionContext.paths.figmaJsonFile,
+    JSON.stringify({
+      name: "Stage Service Board",
+      document: {
+        id: "0:0",
+        type: "DOCUMENT",
+        children: [
+          {
+            id: "0:1",
+            type: "CANVAS",
+            children: [
+              {
+                id: "1:2",
+                type: "FRAME",
+                name: "Screen 1",
+                absoluteBoundingBox: {
+                  x: 0,
+                  y: 0,
+                  width: 4,
+                  height: 3
+                }
+              },
+              {
+                id: "9:9",
+                type: "FRAME",
+                name: "Screen 2",
+                absoluteBoundingBox: {
+                  x: 0,
+                  y: 0,
+                  width: 20,
+                  height: 3
+                }
+              }
+            ]
+          }
+        ]
+      }
+    }),
+    "utf8"
+  );
+  await executionContext.artifactStore.setPath({
+    key: STAGE_ARTIFACT_KEYS.figmaCleaned,
+    stage: "figma.source",
+    absolutePath: executionContext.paths.figmaJsonFile
+  });
+  await executionContext.artifactStore.setValue({
+    key: STAGE_ARTIFACT_KEYS.figmaHybridEnrichment,
+    stage: "figma.source",
+    value: {
+      sourceMode: "mcp",
+      nodeHints: [],
+      metadataHints: [],
+      screenshots: [
+        {
+          nodeId: "1:2",
+          url: "https://api.figma.com/v1/images/test-file?ids=1%3A2",
+          purpose: "quality-gate"
+        }
+      ],
+      assets: [],
+      diagnostics: [],
+      toolNames: ["figma_mcp"]
+    }
+  });
+  const referenceImagePath = path.join(executionContext.paths.jobDir, "visual-references", "reference.png");
+  await mkdir(path.dirname(referenceImagePath), { recursive: true });
+  await writeFile(referenceImagePath, referenceBuffer);
+  await executionContext.artifactStore.setValue({
+    key: STAGE_ARTIFACT_KEYS.figmaScreenshotReferences,
+    stage: "ir.derive",
+    value: {
+      "1:2": path.relative(executionContext.paths.jobDir, referenceImagePath)
+    }
+  });
+  const distDir = path.join(executionContext.paths.generatedProjectDir, "dist");
+  await mkdir(distDir, { recursive: true });
+  await writeFile(path.join(distDir, "index.html"), "<!doctype html><html><body>figma visual quality</body></html>\n", "utf8");
+
+  const service = createValidateProjectService({
+    runProjectValidationFn: async () => createSuccessfulValidationResult({ includeUiValidation: true }),
+    captureFromProjectFn: async () => {
+      return {
+        screenshotBuffer: actualBuffer,
+        width: 8,
+        height: 6,
+        viewport: {
+          width: 8,
+          height: 6,
+          deviceScaleFactor: 1
+        }
+      };
+    },
+    comparePngBuffersFn: ({ referenceBuffer: comparedReferenceBuffer }) => {
+      assert.deepEqual(comparedReferenceBuffer, referenceBuffer);
+      return {
+        diffImageBuffer: diffBuffer,
+        similarityScore: 95,
+        diffPixelCount: 1,
+        totalPixels: 48,
+        regions: [],
+        width: 8,
+        height: 6
+      };
+    }
+  });
+
+  await service.execute(undefined, stageContextFor("validate.project"));
+
+  const visualQuality = await executionContext.artifactStore.getValue<{
+    status?: string;
+    referenceSource?: string;
+  }>(STAGE_ARTIFACT_KEYS.visualQualityResult);
+  assert.deepEqual(fetchCalls, []);
+  assert.equal(visualQuality?.status, "completed");
+  assert.equal(visualQuality?.referenceSource, "figma_api");
+});
+
 test("ValidateProjectService records standalone visual quality failures without failing validate.project", async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-visual-quality-failure-"));
   const fixtureRoot = path.join(root, "fixtures", "customer-board");

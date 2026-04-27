@@ -889,7 +889,8 @@ export const IrDeriveService: StageService<IrDeriveStageInput | undefined> = {
             fileKey: figmaFileKey,
             accessToken: figmaAccessToken,
             desiredWidth: 1280,
-            maxRetries: 3,
+            fetchImpl: context.fetchWithCancellation,
+            maxRetries: context.runtime.figmaMaxRetries,
             onLog: (message) => {
               context.log({
                 level: "info",
@@ -913,20 +914,33 @@ export const IrDeriveService: StageService<IrDeriveStageInput | undefined> = {
             });
           },
         });
+        const referenceImagePathEntries = Array.from(
+          referenceImagePaths.entries(),
+        ).map(([nodeId, filePath]) => ({
+          nodeId,
+          filePath,
+          relativePath: path.relative(context.paths.jobDir, filePath),
+        }));
+        const referenceImagePathMap = Object.fromEntries(
+          referenceImagePathEntries.map(({ nodeId, relativePath }) => [
+            nodeId,
+            relativePath,
+          ]),
+        );
 
         const report = {
           totalCount: screenshotResult.totalCount,
           fetchedCount: screenshotResult.fetchedCount,
           failedCount: screenshotResult.failedCount,
           failedNodeIds: screenshotResult.failedNodeIds,
-          referenceImagePaths: Array.from(referenceImagePaths.entries()).map(
-            ([nodeId, filePath]) => ({
-              nodeId,
-              filePath,
-            }),
-          ),
+          referenceImagePaths: referenceImagePathEntries,
         };
 
+        await context.artifactStore.setValue({
+          key: STAGE_ARTIFACT_KEYS.figmaScreenshotReferences,
+          stage: "ir.derive",
+          value: referenceImagePathMap,
+        });
         await context.artifactStore.setValue({
           key: STAGE_ARTIFACT_KEYS.figmaScreenshotPipelineReport,
           stage: "ir.derive",

@@ -26,6 +26,7 @@ import {
 import type { StageService } from "../pipeline/stage-service.js";
 import { STAGE_ARTIFACT_KEYS } from "../pipeline/artifact-keys.js";
 import { createPipelineError } from "../errors.js";
+import type { FigmaMcpEnrichment } from "../../parity/types.js";
 import {
   validateCustomerProfileComponentApiComponentMatchReport,
   validateCustomerProfileComponentMatchReport,
@@ -62,9 +63,11 @@ import {
   normalizeVisualBrowserNames,
 } from "../visual-browser-matrix.js";
 import {
+  extractTopLevelFrameCandidates,
   fetchFigmaVisualReference,
   findVisualQualityFixtureManifest,
   loadFrozenVisualReference,
+  parsePngDimensions,
   resolveVisualQualityFrozenReferencePaths,
   selectVisualQualityReferenceNode,
 } from "../visual-quality-reference.js";
@@ -3374,15 +3377,114 @@ export const createValidateProjectService = ({
                   const cleanedFigma = JSON.parse(
                     await readFile(figmaJsonPath, "utf8"),
                   ) as unknown;
-                  const selectedNode = selectVisualQualityReferenceNode({
-                    file: cleanedFigma,
-                    ...(context.runtime.figmaScreenNamePattern
-                      ? {
-                          preferredNamePattern:
-                            context.runtime.figmaScreenNamePattern,
-                        }
-                      : {}),
-                  });
+                  const hybridMcpEnrichment =
+                    await context.artifactStore.getValue<FigmaMcpEnrichment>(
+                      STAGE_ARTIFACT_KEYS.figmaHybridEnrichment,
+                    );
+                  const topLevelFrameCandidates =
+                    extractTopLevelFrameCandidates({
+                      file: cleanedFigma,
+                    });
+                  const qualityGateNodeIds =
+                    hybridMcpEnrichment?.screenshots
+                      ?.filter(
+                        (screenshot) =>
+                          screenshot.purpose === "quality-gate" &&
+                          screenshot.nodeId.trim().length > 0,
+                      )
+                      .map((screenshot) => screenshot.nodeId) ?? [];
+                  const selectedQualityGateNode =
+                    qualityGateNodeIds
+                      .map((nodeId) =>
+                        topLevelFrameCandidates.find(
+                          (candidate) => candidate.nodeId === nodeId,
+                        ),
+                      )
+                      .find(
+                        (
+                          candidate,
+                        ): candidate is NonNullable<typeof candidate> =>
+                          candidate !== undefined,
+                      ) ?? null;
+                  const selectedNode =
+                    selectedQualityGateNode ??
+                    selectVisualQualityReferenceNode({
+                      file: cleanedFigma,
+                      ...(context.runtime.figmaScreenNamePattern
+                        ? {
+                            preferredNamePattern:
+                              context.runtime.figmaScreenNamePattern,
+                          }
+                        : {}),
+                    });
+                  if (selectedQualityGateNode) {
+                    context.log({
+                      level: "info",
+                      message:
+                        `Visual quality reference: selected MCP quality-gate ` +
+                        `node ${selectedNode.nodeId}.`,
+                    });
+                  }
+                  const pipelineReferencePaths =
+                    await context.artifactStore.getValue<
+                      Record<string, string>
+                    >(STAGE_ARTIFACT_KEYS.figmaScreenshotReferences);
+                  const pipelineReferencePath =
+                    pipelineReferencePaths?.[selectedNode.nodeId];
+                  if (pipelineReferencePath) {
+                    const resolvedPipelineReferencePath = path.resolve(
+                      context.paths.jobDir,
+                      pipelineReferencePath,
+                    );
+                    if (
+                      !isWithinRoot({
+                        candidatePath: resolvedPipelineReferencePath,
+                        rootPath: context.paths.jobDir,
+                      })
+                    ) {
+                      throw new Error(
+                        `Figma screenshot reference for node '${selectedNode.nodeId}' resolves outside the job directory.`,
+                      );
+                    }
+                    const pipelineReferenceBuffer = await readFile(
+                      resolvedPipelineReferencePath,
+                    );
+                    const dimensions = parsePngDimensions(
+                      pipelineReferenceBuffer,
+                    );
+                    if (
+                      dimensions.width !== standaloneVisualQualityViewportWidth
+                    ) {
+                      context.log({
+                        level: "info",
+                        message:
+                          `Visual quality reference: ignored IR-derived Figma screenshot ` +
+                          `for node ${selectedNode.nodeId} because width ` +
+                          `${String(dimensions.width)} does not match requested ` +
+                          `viewport width ${String(standaloneVisualQualityViewportWidth)}.`,
+                      });
+                    } else {
+                      context.log({
+                        level: "info",
+                        message:
+                          `Visual quality reference: using IR-derived Figma screenshot ` +
+                          `for node ${selectedNode.nodeId}.`,
+                      });
+                      return {
+                        buffer: pipelineReferenceBuffer,
+                        metadata: {
+                          capturedAt: new Date().toISOString(),
+                          source: {
+                            fileKey: figmaFileKey,
+                            nodeId: selectedNode.nodeId,
+                            nodeName: selectedNode.nodeName,
+                            lastModified: "unknown",
+                          },
+                          viewport: dimensions,
+                        },
+                      };
+                    }
+                  }
                   const liveReference = await fetchFigmaVisualReference({
                     fileKey: figmaFileKey,
                     nodeId: selectedNode.nodeId,
