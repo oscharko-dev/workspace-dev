@@ -323,6 +323,81 @@ export interface BundleParseError {
   message: string;
 }
 
+export type TestIntentSourceKind =
+  | "figma_local_json"
+  | "figma_plugin"
+  | "figma_rest"
+  | "jira_rest"
+  | "jira_paste"
+  | "custom_text"
+  | "custom_structured";
+
+export interface InspectorSourceRecord {
+  sourceId: string;
+  kind: TestIntentSourceKind;
+  capturedAt: string;
+  contentHash: string;
+  role: "primary" | "supporting";
+  label: string;
+  authorHandle?: string;
+  inputFormat?: "plain_text" | "markdown" | "structured_json";
+  canonicalIssueKey?: string;
+}
+
+export interface MultiSourceEnvelope {
+  aggregateContentHash: string;
+  conflictResolutionPolicy: "priority" | "reviewer_decides" | "keep_both";
+  priorityOrder?: TestIntentSourceKind[];
+}
+
+export interface MultiSourceConflict {
+  conflictId: string;
+  kind: string;
+  participatingSourceIds: string[];
+  normalizedValues: string[];
+  resolution:
+    | "auto_priority"
+    | "deferred_to_reviewer"
+    | "kept_both"
+    | "unresolved";
+  affectedElementIds?: string[];
+  affectedScreenIds?: string[];
+  detail?: string;
+  resolvedBy?: string;
+  resolvedAt?: string;
+}
+
+export interface MultiSourceReconciliationReport {
+  envelopeHash: string;
+  conflicts: MultiSourceConflict[];
+  unmatchedSources: string[];
+  contributingSourcesPerCase: Array<{
+    testCaseId: string;
+    sourceIds: string[];
+  }>;
+  policyApplied: "priority" | "reviewer_decides" | "keep_both";
+}
+
+export interface InspectorConflictDecisionSnapshot {
+  conflictId: string;
+  state: "approved" | "rejected";
+  lastEventId: string;
+  lastEventAt: string;
+  actor: string;
+  selectedSourceId?: string;
+  selectedNormalizedValue?: string;
+  note?: string;
+}
+
+export interface InspectorTestCaseProvenance {
+  testCaseId: string;
+  allSourceIds: string[];
+  fieldSourceIds: string[];
+  actionSourceIds: string[];
+  validationSourceIds: string[];
+  navigationSourceIds: string[];
+}
+
 export interface TestIntelligenceBundle {
   jobId: string;
   assembledAt: string;
@@ -335,6 +410,11 @@ export interface TestIntelligenceBundle {
   exportReport?: ExportReport;
   reviewSnapshot?: ReviewGateSnapshot;
   reviewEvents?: ReviewEvent[];
+  sourceEnvelope?: MultiSourceEnvelope;
+  sourceRefs?: InspectorSourceRecord[];
+  multiSourceReconciliation?: MultiSourceReconciliationReport;
+  conflictDecisions?: Record<string, InspectorConflictDecisionSnapshot>;
+  testCaseProvenance?: Record<string, InspectorTestCaseProvenance>;
   parseErrors: BundleParseError[];
 }
 
@@ -350,4 +430,22 @@ export interface ReviewActionInput {
   actor?: string;
   note?: string;
   metadata?: Record<string, string | number | boolean | null>;
+}
+
+export interface FetchSourcesResponse {
+  jobId: string;
+  sources: InspectorSourceRecord[];
+}
+
+export interface ResolveConflictInput {
+  jobId: string;
+  conflictId: string;
+  action: "approve" | "reject";
+  selectedSourceId?: string;
+  selectedNormalizedValue?: string;
+  note?: string;
+}
+
+export interface ResolveConflictResponse {
+  snapshot: InspectorConflictDecisionSnapshot;
 }

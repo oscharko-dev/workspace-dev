@@ -60,6 +60,15 @@ import {
   type TestCaseValidationReport,
   type VisualSidecarValidationReport,
 } from "../contracts/index.js";
+import {
+  buildInspectorTestCaseProvenance,
+  listInspectorSourceRecords,
+  readInspectorConflictDecisions,
+  readInspectorSourceEnvelope,
+  type InspectorConflictDecisionSnapshot,
+  type InspectorSourceRecord,
+  type InspectorTestCaseProvenance,
+} from "./inspector-multisource.js";
 
 /** Stable identifier of a single artifact slot in the bundle. */
 export type InspectorBundleArtifactKind =
@@ -71,7 +80,8 @@ export type InspectorBundleArtifactKind =
   | "qcMappingPreview"
   | "exportReport"
   | "reviewSnapshot"
-  | "reviewEvents";
+  | "reviewEvents"
+  | "multiSourceReconciliation";
 
 /** Single parse error attached to an artifact slot. */
 export interface InspectorBundleParseError {
@@ -102,6 +112,11 @@ export interface InspectorTestIntelligenceBundle {
   exportReport?: ExportReportArtifact;
   reviewSnapshot?: ReviewGateSnapshot;
   reviewEvents?: ReviewEvent[];
+  sourceEnvelope?: import("../contracts/index.js").MultiSourceTestIntentEnvelope;
+  sourceRefs?: InspectorSourceRecord[];
+  multiSourceReconciliation?: import("../contracts/index.js").MultiSourceReconciliationReport;
+  conflictDecisions?: Record<string, InspectorConflictDecisionSnapshot>;
+  testCaseProvenance?: Record<string, InspectorTestCaseProvenance>;
   /** Per-artifact parse errors. Empty when every present file parsed cleanly. */
   parseErrors: InspectorBundleParseError[];
 }
@@ -416,6 +431,7 @@ export const readInspectorTestIntelligenceBundle = async (
     exportReport,
     reviewSnapshot,
     reviewEventsEnvelope,
+    multiSourceReconciliation,
   ] = await Promise.all([
     readJsonArtifact(
       join(jobDir, GENERATED_TESTCASES_ARTIFACT_FILENAME),
@@ -471,6 +487,13 @@ export const readInspectorTestIntelligenceBundle = async (
       "reviewEvents",
       isReviewEventsEnvelope,
     ),
+    readJsonArtifact(
+      join(jobDir, "multi-source-conflicts.json"),
+      "multi-source-conflicts.json",
+      "multiSourceReconciliation",
+      (value): value is import("../contracts/index.js").MultiSourceReconciliationReport =>
+        isRecord(value) && Array.isArray(value["conflicts"]),
+    ),
   ]);
 
   const parseErrors: InspectorBundleParseError[] = [];
@@ -488,6 +511,22 @@ export const readInspectorTestIntelligenceBundle = async (
   collect(exportReport);
   collect(reviewSnapshot);
   collect(reviewEventsEnvelope);
+  collect(multiSourceReconciliation);
+
+  const [sourceEnvelope, sourceRefs, conflictDecisions, testCaseProvenance] =
+    await Promise.all([
+      readInspectorSourceEnvelope(jobDir),
+      listInspectorSourceRecords(jobDir),
+      readInspectorConflictDecisions({ runDir: jobDir, jobId: input.jobId }),
+      buildInspectorTestCaseProvenance(
+        testCases.parsed !== undefined
+          ? {
+              runDir: jobDir,
+              generatedTestCases: testCases.parsed,
+            }
+          : { runDir: jobDir },
+      ),
+    ]);
 
   const bundle: InspectorTestIntelligenceBundle = {
     jobId: input.jobId,
@@ -503,6 +542,17 @@ export const readInspectorTestIntelligenceBundle = async (
     ...(reviewSnapshot.parsed ? { reviewSnapshot: reviewSnapshot.parsed } : {}),
     ...(reviewEventsEnvelope.parsed
       ? { reviewEvents: reviewEventsEnvelope.parsed.events }
+      : {}),
+    ...(sourceEnvelope !== undefined ? { sourceEnvelope } : {}),
+    ...(sourceRefs.length > 0 ? { sourceRefs } : {}),
+    ...(multiSourceReconciliation.parsed
+      ? { multiSourceReconciliation: multiSourceReconciliation.parsed }
+      : {}),
+    ...(Object.keys(conflictDecisions.byConflictId).length > 0
+      ? { conflictDecisions: conflictDecisions.byConflictId }
+      : {}),
+    ...(Object.keys(testCaseProvenance).length > 0
+      ? { testCaseProvenance }
       : {}),
   };
 
@@ -572,6 +622,7 @@ export const listInspectorTestIntelligenceJobs = async (
         exportReport: present.has(EXPORT_REPORT_ARTIFACT_FILENAME),
         reviewSnapshot: present.has(REVIEW_STATE_ARTIFACT_FILENAME),
         reviewEvents: present.has(REVIEW_EVENTS_ARTIFACT_FILENAME),
+        multiSourceReconciliation: present.has("multi-source-conflicts.json"),
       },
     });
   }

@@ -8,7 +8,7 @@
 // states explicitly per Issue #1367 acceptance criteria.
 // ---------------------------------------------------------------------------
 
-import { useCallback, useMemo, useState, type JSX } from "react";
+import { useCallback, useEffect, useMemo, useState, type JSX } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { fetchJson } from "../../lib/http";
@@ -23,6 +23,9 @@ import {
   type TestCaseListEntry,
 } from "./inspector/test-intelligence/TestCaseListPanel";
 import { VisualSidecarPanel } from "./inspector/test-intelligence/VisualSidecarPanel";
+import { ConflictResolutionPanel } from "./inspector/test-intelligence/conflict-resolution-panel";
+import { MultiSourceIngestionPanel } from "./inspector/test-intelligence/multi-source-ingestion-panel";
+import { SourceListPanel } from "./inspector/test-intelligence/source-list-panel";
 import { fetchTestIntelligenceJobs } from "./inspector/test-intelligence/api";
 import {
   safeReadStorage,
@@ -42,6 +45,21 @@ import type {
 
 const REVIEWER_HANDLE_STORAGE_KEY = "workspace-dev:ti-reviewer-handle:v1";
 const REVIEWER_BEARER_STORAGE_KEY = "workspace-dev:ti-reviewer-bearer:v1";
+const MULTI_SOURCE_STORAGE_KEY_PREFIX = "workspace-dev:ti-multisource-";
+type TestIntelligenceTab = "overview" | "multi-source";
+
+const normalizeReviewerStorageSegment = (value: string): string => {
+  const trimmed = value.trim().toLowerCase();
+  if (trimmed.length === 0) return "anonymous";
+  const normalized = trimmed.replace(/[^a-z0-9._-]+/g, "-");
+  return normalized.length > 0 ? normalized.slice(0, 64) : "anonymous";
+};
+
+const multiSourceStorageKey = (reviewerHandle: string): string =>
+  `${MULTI_SOURCE_STORAGE_KEY_PREFIX}${normalizeReviewerStorageSegment(reviewerHandle)}:v1`;
+
+const parseStoredTab = (value: string): TestIntelligenceTab =>
+  value === "multi-source" ? "multi-source" : "overview";
 
 function BackIcon(): JSX.Element {
   return (
@@ -63,6 +81,7 @@ function BackIcon(): JSX.Element {
 
 interface RuntimeStatus {
   testIntelligenceEnabled?: boolean;
+  testIntelligenceMultiSourceEnabled?: boolean;
 }
 
 function isRuntimeStatus(value: unknown): value is RuntimeStatus {
@@ -73,6 +92,7 @@ interface TestIntelligenceInnerProps {
   jobId: string;
   bearerToken: string;
   reviewerHandle: string;
+  multiSourceEnabled: boolean;
   onBearerTokenChange: (value: string) => void;
   onReviewerHandleChange: (value: string) => void;
 }
@@ -100,6 +120,7 @@ function TestIntelligenceInner({
   jobId,
   bearerToken,
   reviewerHandle,
+  multiSourceEnabled,
   onBearerTokenChange,
   onReviewerHandleChange,
 }: TestIntelligenceInnerProps): JSX.Element {
@@ -111,6 +132,21 @@ function TestIntelligenceInner({
   const [selectedTestCaseId, setSelectedTestCaseId] = useState<string | null>(
     null,
   );
+  const [selectedTab, setSelectedTab] = useState<TestIntelligenceTab>(() =>
+    parseStoredTab(safeReadStorage(multiSourceStorageKey(reviewerHandle))),
+  );
+  const selectedTabStorageKey = useMemo(
+    () => multiSourceStorageKey(reviewerHandle),
+    [reviewerHandle],
+  );
+
+  useEffect(() => {
+    setSelectedTab(parseStoredTab(safeReadStorage(selectedTabStorageKey)));
+  }, [selectedTabStorageKey]);
+
+  useEffect(() => {
+    safeWriteStorage(selectedTabStorageKey, selectedTab);
+  }, [selectedTab, selectedTabStorageKey]);
 
   const reviewSnapshotByCase = useMemo<
     Record<string, ReviewSnapshotEntry>
@@ -218,6 +254,37 @@ function TestIntelligenceInner({
         }}
       />
 
+      <div className="flex items-center gap-2">
+        <button
+          type="button"
+          onClick={() => {
+            setSelectedTab("overview");
+          }}
+          className={`cursor-pointer rounded border px-2 py-1 text-[11px] ${
+            selectedTab === "overview"
+              ? "border-[#4eba87]/40 bg-emerald-950/20 text-[#4eba87]"
+              : "border-white/10 bg-[#171717] text-white/60"
+          }`}
+        >
+          Overview
+        </button>
+        {multiSourceEnabled ? (
+          <button
+            type="button"
+            onClick={() => {
+              setSelectedTab("multi-source");
+            }}
+            className={`cursor-pointer rounded border px-2 py-1 text-[11px] ${
+              selectedTab === "multi-source"
+                ? "border-[#4eba87]/40 bg-emerald-950/20 text-[#4eba87]"
+                : "border-white/10 bg-[#171717] text-white/60"
+            }`}
+          >
+            Multi-Source
+          </button>
+        ) : null}
+      </div>
+
       {bundleErrorIs404 ? (
         <section
           data-testid="ti-page-empty-job"
@@ -244,6 +311,42 @@ function TestIntelligenceInner({
         >
           {job.bundleError}
         </section>
+      ) : selectedTab === "multi-source" ? (
+        <div className="grid gap-4 lg:grid-cols-[minmax(0,420px)_minmax(0,1fr)]">
+          <div className="flex flex-col gap-4">
+            <MultiSourceIngestionPanel
+              jobId={jobId}
+              bearerToken={bearerToken}
+              onIngested={job.refresh}
+            />
+            <SourceListPanel sources={job.bundle?.sourceRefs ?? []} />
+          </div>
+          <ConflictResolutionPanel
+            conflicts={job.bundle?.multiSourceReconciliation?.conflicts ?? []}
+            sourceRefs={job.bundle?.sourceRefs ?? []}
+            decisions={job.bundle?.conflictDecisions}
+            onResolve={async (input) => {
+              const { postConflictResolution } = await import(
+                "./inspector/test-intelligence/api"
+              );
+              const result = await postConflictResolution({
+                jobId,
+                conflictId: input.conflictId,
+                action: input.action,
+                ...(input.selectedSourceId !== undefined
+                  ? { selectedSourceId: input.selectedSourceId }
+                  : {}),
+                ...(input.selectedNormalizedValue !== undefined
+                  ? { selectedNormalizedValue: input.selectedNormalizedValue }
+                  : {}),
+                bearerToken,
+              });
+              if (result.ok) {
+                await job.refresh();
+              }
+            }}
+          />
+        </div>
       ) : (
         <>
           {job.bundle && job.bundle.parseErrors.length > 0 ? (
@@ -325,6 +428,15 @@ function TestIntelligenceInner({
                   visualRecords={selectedVisualRecords}
                   {...(selectedQcMappingEntry
                     ? { qcMappingEntry: selectedQcMappingEntry }
+                    : {})}
+                  {...(job.bundle?.sourceRefs
+                    ? { sourceRefs: job.bundle.sourceRefs }
+                    : {})}
+                  {...(job.bundle?.testCaseProvenance?.[selectedEntry.testCase.id]
+                    ? {
+                        provenance:
+                          job.bundle.testCaseProvenance[selectedEntry.testCase.id],
+                      }
                     : {})}
                   onAction={handleAction}
                   fourEyesEnforced={selectedSnapshot?.fourEyesEnforced ?? false}
@@ -733,6 +845,8 @@ export function InspectorTestIntelligencePage(): JSX.Element {
   });
 
   const featureEnabled = runtimeStatus.data?.testIntelligenceEnabled !== false;
+  const multiSourceEnabled =
+    runtimeStatus.data?.testIntelligenceMultiSourceEnabled === true;
 
   const handleSelectJob = useCallback(
     (selectedJobId: string): void => {
@@ -806,6 +920,7 @@ export function InspectorTestIntelligencePage(): JSX.Element {
             jobId={jobId}
             bearerToken={bearerToken}
             reviewerHandle={reviewerHandle}
+            multiSourceEnabled={multiSourceEnabled}
             onBearerTokenChange={handleBearerTokenChange}
             onReviewerHandleChange={handleReviewerHandleChange}
           />
