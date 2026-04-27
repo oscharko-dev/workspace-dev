@@ -85,6 +85,9 @@ const escalate = (
   return decisionRank[candidate] > decisionRank[current] ? candidate : current;
 };
 
+const sortedUnique = <T extends string>(values: readonly T[]): T[] =>
+  Array.from(new Set(values)).sort();
+
 const VALIDATION_ISSUE_TO_OUTCOME: Partial<
   Record<TestCaseValidationIssueCode, TestCasePolicyOutcome>
 > = {
@@ -184,6 +187,7 @@ const evaluateCase = (
   const caseCarriesReviewRisk = profile.rules.reviewOnlyRiskCategories.includes(
     testCase.riskCategory,
   );
+  const caseConflictIds = collectMultiSourceConflictIds(intent, testCase);
 
   // Risk-tag downgrade detection (Issue #1412): cross-reference the case's
   // declared `riskCategory` against the classification derivable from the
@@ -210,6 +214,16 @@ const evaluateCase = (
       outcome: "risk_tag_downgrade_detected",
       severity: "warning",
       reason: `case-level riskCategory "${testCase.riskCategory}" is below intent-derived classification "${screenIntentRisk}" for screen(s) ${formatScreenList(screenIds)}; treating as needs_review`,
+    });
+    decision = escalate(decision, "needs_review");
+  }
+
+  if (caseConflictIds.length > 0) {
+    violations.push({
+      rule: "policy:multi-source-conflict-present",
+      outcome: "multi_source_conflict_present",
+      severity: "warning",
+      reason: `multi-source conflict(s) ${caseConflictIds.join(", ")} affect this case`,
     });
     decision = escalate(decision, "needs_review");
   }
@@ -402,6 +416,37 @@ const findCustomContextReviewRisk = (
   return undefined;
 };
 
+const collectMultiSourceConflictIds = (
+  intent: BusinessTestIntentIr,
+  testCase: GeneratedTestCase,
+): string[] => {
+  const conflicts = intent.multiSourceConflicts ?? [];
+  if (conflicts.length === 0) return [];
+  const screenIds = collectCaseScreenIds(testCase);
+  const coveredIds = new Set<string>([
+    ...testCase.qualitySignals.coveredFieldIds,
+    ...testCase.qualitySignals.coveredActionIds,
+    ...testCase.qualitySignals.coveredValidationIds,
+    ...testCase.qualitySignals.coveredNavigationIds,
+  ]);
+  return conflicts
+    .filter((conflict) => {
+      if (
+        conflict.affectedElementIds?.some((elementId) => coveredIds.has(elementId))
+      ) {
+        return true;
+      }
+      if (
+        conflict.affectedScreenIds?.some((screenId) => screenIds.has(screenId))
+      ) {
+        return true;
+      }
+      return conflict.affectedElementIds === undefined && conflict.affectedScreenIds === undefined;
+    })
+    .map((conflict) => conflict.conflictId)
+    .sort();
+};
+
 const evaluateJobLevel = (
   list: GeneratedTestCaseList,
   intent: BusinessTestIntentIr,
@@ -494,6 +539,18 @@ const evaluateJobLevel = (
       outcome: "duplicate_test_case",
       severity: "warning",
       reason: `test cases "${pair.leftTestCaseId}" and "${pair.rightTestCaseId}" share similarity ${pair.similarity}; review for de-duplication`,
+    });
+  }
+
+  const globalConflictIds = sortedUnique(
+    (intent.multiSourceConflicts ?? []).map((conflict) => conflict.conflictId),
+  );
+  if (globalConflictIds.length > 0) {
+    violations.push({
+      rule: "policy:multi-source-conflict-present",
+      outcome: "multi_source_conflict_present",
+      severity: "warning",
+      reason: `multi-source conflict artifact present: ${globalConflictIds.join(", ")}`,
     });
   }
 

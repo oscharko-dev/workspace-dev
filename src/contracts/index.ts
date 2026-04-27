@@ -441,6 +441,7 @@ export const ALLOWED_TEST_CASE_POLICY_OUTCOMES = [
   "semantic_suspicious_content",
   "risk_tag_downgrade_detected",
   "custom_context_risk_escalation",
+  "multi_source_conflict_present",
 ] as const;
 export type TestCasePolicyOutcome =
   (typeof ALLOWED_TEST_CASE_POLICY_OUTCOMES)[number];
@@ -2677,6 +2678,12 @@ export interface BusinessTestIntentIr {
    * parent test-intelligence startup option allows multi-source ingestion.
    */
   sourceEnvelope?: MultiSourceTestIntentEnvelope;
+  /**
+   * Additive conflict/report payload emitted by the deterministic multi-source
+   * reconciliation engine (Issue #1436). Omitted for legacy single-source
+   * jobs so existing artifacts remain byte-stable.
+   */
+  multiSourceConflicts?: MultiSourceConflict[];
 }
 
 /**
@@ -2968,6 +2975,79 @@ export interface MultiSourceTestIntentEnvelope {
   priorityOrder?: TestIntentSourceKind[];
   /** Optional source-mix plan hook owned by Issue #1441. */
   sourceMixPlan?: MultiSourceTestIntentSourceMixPlanRef;
+}
+
+/** Schema version for `multi-source-conflicts.json` (Issue #1436). */
+export const MULTI_SOURCE_RECONCILIATION_REPORT_SCHEMA_VERSION =
+  "1.0.0" as const;
+
+/** Canonical filename for the deterministic multi-source conflict artifact. */
+export const MULTI_SOURCE_CONFLICT_REPORT_ARTIFACT_FILENAME =
+  "multi-source-conflicts.json" as const;
+
+/** Kinds of cross-source disagreement recognized by Issue #1436. */
+export type MultiSourceConflictKind =
+  | "field_label_mismatch"
+  | "validation_rule_mismatch"
+  | "risk_category_mismatch"
+  | "test_data_example_mismatch"
+  | "duplicate_acceptance_criterion"
+  | "paste_collision";
+
+/** One deterministic conflict row emitted by the reconciliation engine. */
+export interface MultiSourceConflict {
+  /** SHA-256 of `{ kind, sourceRefs, normalizedValues }`. */
+  conflictId: string;
+  kind: MultiSourceConflictKind;
+  participatingSourceIds: string[];
+  /** Sorted, redacted, canonical values that disagreed. */
+  normalizedValues: string[];
+  resolution:
+    | "auto_priority"
+    | "deferred_to_reviewer"
+    | "kept_both"
+    | "unresolved";
+  /** Stable IR ids affected by this conflict, when known. */
+  affectedElementIds?: string[];
+  /** Stable screen ids affected by this conflict, when known. */
+  affectedScreenIds?: string[];
+  /** Optional sanitized detail suitable for reviewer inspection. */
+  detail?: string;
+  resolvedBy?: string;
+  resolvedAt?: string;
+}
+
+/** Stable transcript row describing one merge decision taken by the engine. */
+export interface MultiSourceReconciliationTranscriptEntry {
+  decisionId: string;
+  sourceIds: string[];
+  action:
+    | "accepted"
+    | "merged"
+    | "conflict_recorded"
+    | "alternative_emitted"
+    | "source_unmatched";
+  rationale: string;
+  affectedElementIds: string[];
+}
+
+/** Aggregate deterministic conflict artifact emitted for a reconciled run. */
+export interface MultiSourceReconciliationReport {
+  version: typeof MULTI_SOURCE_RECONCILIATION_REPORT_SCHEMA_VERSION;
+  envelopeHash: string;
+  conflicts: MultiSourceConflict[];
+  /** Sources that were present but contributed no accepted or conflict rows. */
+  unmatchedSources: string[];
+  /**
+   * Stable conceptual-case mapping used by downstream reviewers. Each id is a
+   * deterministic synthetic case key produced by the reconciliation engine.
+   */
+  contributingSourcesPerCase: Array<{
+    testCaseId: string;
+    sourceIds: string[];
+  }>;
+  policyApplied: ConflictResolutionPolicy;
+  transcript: MultiSourceReconciliationTranscriptEntry[];
 }
 
 /**
@@ -4049,6 +4129,7 @@ export const ALLOWED_FOUR_EYES_ENFORCEMENT_REASONS = [
   "visual_possible_pii",
   "visual_prompt_injection",
   "visual_metadata_conflict",
+  "multi_source_conflict_present",
 ] as const;
 export type FourEyesEnforcementReason =
   (typeof ALLOWED_FOUR_EYES_ENFORCEMENT_REASONS)[number];
@@ -4391,7 +4472,8 @@ export type Wave1PocEvidenceArtifactCategory =
   | "self_verify_rubric"
   | "intent_delta"
   | "dedupe_report"
-  | "traceability_matrix";
+  | "traceability_matrix"
+  | "multi_source_reconciliation";
 
 /** Single artifact attested by the Wave 1 POC evidence manifest. */
 export interface Wave1PocEvidenceArtifact {
