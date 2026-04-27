@@ -7978,6 +7978,112 @@ test("test-intelligence: POST custom-context source rejects custom-only jobs wit
   });
 });
 
+test("test-intelligence: GET sources lists attached primary and supporting sources", async () => {
+  await withTestIntelligenceEnv("1", async () => {
+    await withTestIntelligenceMultiSourceEnv("1", async () => {
+      const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ti-source-list-"));
+      const artifactRoot = path.join(tempRoot, "ti");
+      await writeTiPrimaryIntent(artifactRoot, "job-sources");
+      const { app, close } = await createRequestHandlerApp({
+        testIntelligenceEnabled: true,
+        testIntelligenceMultiSourceEnabled: true,
+        testIntelligenceArtifactRoot: artifactRoot,
+        testIntelligenceReviewBearerToken: TI_REVIEW_TOKEN,
+      });
+      try {
+        await app.inject({
+          method: "POST",
+          url: "/workspace/test-intelligence/sources/job-sources/custom-context",
+          headers: tiAuthHeader(),
+          payload: { markdown: "# Supporting note" },
+        });
+        const response = await app.inject({
+          method: "GET",
+          url: "/workspace/test-intelligence/jobs/job-sources/sources",
+        });
+        assert.equal(response.statusCode, 200);
+        const body = response.json<{
+          jobId: string;
+          sources: Array<{ sourceId: string; role: string; kind: string }>;
+        }>();
+        assert.equal(body.jobId, "job-sources");
+        assert.equal(
+          body.sources.some((source) => source.role === "primary"),
+          true,
+        );
+        assert.equal(
+          body.sources.some((source) => source.kind === "custom_text"),
+          true,
+        );
+      } finally {
+        await close();
+        await rm(tempRoot, { recursive: true, force: true });
+      }
+    });
+  });
+});
+
+test("test-intelligence: POST conflict resolution appends a decision snapshot", async () => {
+  await withTestIntelligenceEnv("1", async () => {
+    await withTestIntelligenceMultiSourceEnv("1", async () => {
+      const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ti-conflict-resolve-"));
+      const artifactRoot = path.join(tempRoot, "ti");
+      const jobDir = path.join(artifactRoot, "job-conflict");
+      await mkdir(jobDir, { recursive: true });
+      await writeFile(
+        path.join(jobDir, "multi-source-conflicts.json"),
+        JSON.stringify({
+          version: "1.0.0",
+          envelopeHash: "a".repeat(64),
+          conflicts: [
+            {
+              conflictId: "conflict-1",
+              kind: "field_label_mismatch",
+              participatingSourceIds: ["jira-paste-1", "business-intent-primary"],
+              normalizedValues: ["IBAN", "Account number"],
+              resolution: "deferred_to_reviewer",
+            },
+          ],
+          unmatchedSources: [],
+          contributingSourcesPerCase: [],
+          policyApplied: "reviewer_decides",
+          transcript: [],
+        }),
+        "utf8",
+      );
+      const { app, close } = await createRequestHandlerApp({
+        testIntelligenceEnabled: true,
+        testIntelligenceMultiSourceEnabled: true,
+        testIntelligenceArtifactRoot: artifactRoot,
+        testIntelligenceReviewBearerToken: TI_REVIEW_TOKEN,
+      });
+      try {
+        const response = await app.inject({
+          method: "POST",
+          url: "/workspace/test-intelligence/jobs/job-conflict/conflicts/conflict-1/resolve",
+          headers: tiAuthHeader(),
+          payload: {
+            action: "approve",
+            selectedSourceId: "jira-paste-1",
+          },
+        });
+        assert.equal(response.statusCode, 200);
+        const body = response.json<{
+          ok: boolean;
+          snapshot: { conflictId: string; state: string; selectedSourceId?: string };
+        }>();
+        assert.equal(body.ok, true);
+        assert.equal(body.snapshot.conflictId, "conflict-1");
+        assert.equal(body.snapshot.state, "approved");
+        assert.equal(body.snapshot.selectedSourceId, "jira-paste-1");
+      } finally {
+        await close();
+        await rm(tempRoot, { recursive: true, force: true });
+      }
+    });
+  });
+});
+
 // Direct-handler helpers for tests that need to bypass `app.inject` (HTTP+
 // fetch round-trip). These let us drive the dispatcher with a hand-crafted
 // IncomingMessage stream so we can exercise edge cases that race poorly

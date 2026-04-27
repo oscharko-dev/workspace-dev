@@ -14,14 +14,19 @@
 
 import { fetchJson } from "../../../../lib/http";
 import {
+  isFetchSourcesResponse,
   isReviewActionEnvelope,
   isReviewStateEnvelope,
+  isResolveConflictResponse,
   isTestIntelligenceBundle,
   isTestIntelligenceJobSummaryArray,
   type ReviewActionEnvelope,
   type ReviewStateEnvelope,
 } from "./payload-guards";
 import type {
+  FetchSourcesResponse,
+  ResolveConflictInput,
+  ResolveConflictResponse,
   ReviewActionInput,
   TestIntelligenceBundle,
   TestIntelligenceJobSummary,
@@ -103,6 +108,25 @@ export async function fetchTestIntelligenceBundle(
   return { ok: true, value: response.payload };
 }
 
+export async function fetchTestIntelligenceSources(
+  jobId: string,
+): Promise<FetchOutcome<FetchSourcesResponse>> {
+  const response = await fetchJson<FetchSourcesResponse>({
+    url: `${ROOT}/jobs/${encodeURIComponent(jobId)}/sources`,
+  });
+  if (!response.ok) {
+    return errorOutcomeFromPayload(
+      response.status,
+      response.payload,
+      "Failed to load multi-source references.",
+    );
+  }
+  if (!isFetchSourcesResponse(response.payload)) {
+    return invalidResponse(response.status, "the multi-source list");
+  }
+  return { ok: true, value: response.payload };
+}
+
 export type ReviewStateFetchOk = ReviewStateEnvelope;
 
 export async function fetchReviewState(
@@ -169,4 +193,103 @@ export async function postReviewAction(
     return invalidResponse(response.status, "the review action");
   }
   return { ok: true, value: response.payload };
+}
+
+export async function postConflictResolution(
+  input: ResolveConflictInput & { bearerToken: string },
+): Promise<FetchOutcome<ResolveConflictResponse>> {
+  const response = await fetchJson<ResolveConflictResponse>({
+    url: `${ROOT}/jobs/${encodeURIComponent(input.jobId)}/conflicts/${encodeURIComponent(input.conflictId)}/resolve`,
+    init: {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        authorization: `Bearer ${input.bearerToken}`,
+      },
+      body: JSON.stringify({
+        action: input.action,
+        ...(input.selectedSourceId !== undefined
+          ? { selectedSourceId: input.selectedSourceId }
+          : {}),
+        ...(input.selectedNormalizedValue !== undefined
+          ? { selectedNormalizedValue: input.selectedNormalizedValue }
+          : {}),
+        ...(input.note !== undefined ? { note: input.note } : {}),
+      }),
+    },
+  });
+  if (!response.ok) {
+    return errorOutcomeFromPayload(
+      response.status,
+      response.payload,
+      "Conflict resolution was rejected by the server.",
+    );
+  }
+  if (!isResolveConflictResponse(response.payload)) {
+    return invalidResponse(response.status, "the conflict resolution response");
+  }
+  return { ok: true, value: response.payload };
+}
+
+export async function postJiraPasteSource(input: {
+  jobId: string;
+  bearerToken: string;
+  format: "auto" | "adf_json" | "plain_text" | "markdown";
+  body: string;
+}): Promise<FetchOutcome<{ ok: true }>> {
+  const response = await fetchJson<{ ok: true }>({
+    url: `${ROOT}/sources/${encodeURIComponent(input.jobId)}/jira-paste`,
+    init: {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        authorization: `Bearer ${input.bearerToken}`,
+      },
+      body: JSON.stringify({ format: input.format, body: input.body }),
+    },
+  });
+  if (!response.ok) {
+    return errorOutcomeFromPayload(
+      response.status,
+      response.payload,
+      "Jira paste source ingestion failed.",
+    );
+  }
+  if (!isRecord(response.payload) || response.payload["ok"] !== true) {
+    return invalidResponse(response.status, "the Jira paste response");
+  }
+  return { ok: true, value: { ok: true } };
+}
+
+export async function postCustomContextSource(input: {
+  jobId: string;
+  bearerToken: string;
+  markdown?: string;
+  attributes?: Array<{ key: string; value: string }>;
+}): Promise<FetchOutcome<{ ok: true }>> {
+  const response = await fetchJson<{ ok: true }>({
+    url: `${ROOT}/sources/${encodeURIComponent(input.jobId)}/custom-context`,
+    init: {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        authorization: `Bearer ${input.bearerToken}`,
+      },
+      body: JSON.stringify({
+        ...(input.markdown !== undefined ? { markdown: input.markdown } : {}),
+        ...(input.attributes !== undefined ? { attributes: input.attributes } : {}),
+      }),
+    },
+  });
+  if (!response.ok) {
+    return errorOutcomeFromPayload(
+      response.status,
+      response.payload,
+      "Custom context source ingestion failed.",
+    );
+  }
+  if (!isRecord(response.payload) || response.payload["ok"] !== true) {
+    return invalidResponse(response.status, "the custom context response");
+  }
+  return { ok: true, value: { ok: true } };
 }

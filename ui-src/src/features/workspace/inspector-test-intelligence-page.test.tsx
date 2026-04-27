@@ -467,3 +467,71 @@ describe("InspectorTestIntelligencePage — bearer token persists to sessionStor
     });
   });
 });
+
+describe("InspectorTestIntelligencePage — multi-source tab state", () => {
+  it("shows the multi-source tab only when the nested runtime gate is enabled", async () => {
+    configureFetchJson({
+      workspaceStatus: {
+        status: 200,
+        payload: {
+          testIntelligenceEnabled: true,
+          testIntelligenceMultiSourceEnabled: true,
+        },
+      },
+    });
+    renderPage("/workspace/ui/inspector/test-intelligence?jobId=job-1");
+    await waitFor(() => {
+      expect(
+        screen.getByRole("button", { name: "Multi-Source" }),
+      ).toBeInTheDocument();
+    });
+  });
+
+  it("persists the selected multi-source tab in localStorage using the reviewer key", async () => {
+    configureFetchJson({
+      workspaceStatus: {
+        status: 200,
+        payload: {
+          testIntelligenceEnabled: true,
+          testIntelligenceMultiSourceEnabled: true,
+        },
+      },
+      bundle: {
+        status: 200,
+        payload: buildBundle({
+          sourceRefs: [
+            {
+              sourceId: "jira-primary",
+              kind: "jira_paste",
+              capturedAt: "2026-04-27T11:00:00.000Z",
+              contentHash: "a".repeat(64),
+              role: "primary",
+              label: "Jira paste PAY-1437",
+            },
+          ],
+          multiSourceReconciliation: {
+            envelopeHash: "hash-1",
+            conflicts: [],
+            unmatchedSources: [],
+            contributingSourcesPerCase: [],
+            policyApplied: "reviewer_decides",
+          },
+        }),
+      },
+    });
+    renderPage("/workspace/ui/inspector/test-intelligence?jobId=job-1");
+    await waitFor(() => {
+      expect(screen.getByTestId("ti-test-case-list")).toBeInTheDocument();
+    });
+    fireEvent.change(screen.getByTestId("ti-reviewer-handle-input"), {
+      target: { value: "Alice Example" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Multi-Source" }));
+    await waitFor(() => {
+      expect(screen.getByTestId("ti-multisource-source-list")).toBeInTheDocument();
+    });
+    expect(
+      window.localStorage.getItem("workspace-dev:ti-multisource-alice-example:v1"),
+    ).toBe("multi-source");
+  });
+});

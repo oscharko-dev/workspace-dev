@@ -57,6 +57,43 @@ describe("parseInspectorTestIntelligenceRoute", () => {
     }
   });
 
+  test("parses /jobs/<jobId>/sources as list_sources", () => {
+    const result = parseInspectorTestIntelligenceRoute(
+      "/workspace/test-intelligence/jobs/job-abc-123/sources",
+    );
+    assert.equal(result.ok, true);
+    if (result.ok && result.route.kind === "list_sources") {
+      assert.equal(result.route.jobId, "job-abc-123");
+    } else {
+      assert.fail("expected list_sources route");
+    }
+  });
+
+  test("parses /jobs/<jobId>/sources/jira-fetch as jira_fetch_source", () => {
+    const result = parseInspectorTestIntelligenceRoute(
+      "/workspace/test-intelligence/jobs/job-abc-123/sources/jira-fetch",
+    );
+    assert.equal(result.ok, true);
+    if (result.ok && result.route.kind === "jira_fetch_source") {
+      assert.equal(result.route.jobId, "job-abc-123");
+    } else {
+      assert.fail("expected jira_fetch_source route");
+    }
+  });
+
+  test("parses /jobs/<jobId>/conflicts/<conflictId>/resolve as resolve_conflict", () => {
+    const result = parseInspectorTestIntelligenceRoute(
+      "/workspace/test-intelligence/jobs/job-abc-123/conflicts/conflict-1/resolve",
+    );
+    assert.equal(result.ok, true);
+    if (result.ok && result.route.kind === "resolve_conflict") {
+      assert.equal(result.route.jobId, "job-abc-123");
+      assert.equal(result.route.conflictId, "conflict-1");
+    } else {
+      assert.fail("expected resolve_conflict route");
+    }
+  });
+
   test("rejects path traversal in jobId", () => {
     const result = parseInspectorTestIntelligenceRoute(
       "/workspace/test-intelligence/jobs/..",
@@ -185,6 +222,13 @@ describe("isInspectorTestIntelligenceWriteAction", () => {
       }),
       false,
     );
+    assert.equal(
+      isInspectorTestIntelligenceWriteAction({
+        kind: "list_sources",
+        jobId: "job-1",
+      }),
+      false,
+    );
   });
 
   test("returns false for review_state", () => {
@@ -222,6 +266,24 @@ describe("isInspectorTestIntelligenceWriteAction", () => {
       isInspectorTestIntelligenceWriteAction({
         kind: "jira_paste_source",
         jobId: "job-1",
+      }),
+      true,
+    );
+  });
+
+  test("returns true for jira_fetch_source and resolve_conflict", () => {
+    assert.equal(
+      isInspectorTestIntelligenceWriteAction({
+        kind: "jira_fetch_source",
+        jobId: "job-1",
+      }),
+      true,
+    );
+    assert.equal(
+      isInspectorTestIntelligenceWriteAction({
+        kind: "resolve_conflict",
+        jobId: "job-1",
+        conflictId: "conflict-1",
       }),
       true,
     );

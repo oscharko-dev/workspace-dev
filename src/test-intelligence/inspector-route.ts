@@ -5,6 +5,10 @@
  *
  *   GET  /workspace/test-intelligence/jobs                                  → list jobs
  *   GET  /workspace/test-intelligence/jobs/<jobId>                          → bundle (read)
+ *   GET  /workspace/test-intelligence/jobs/<jobId>/sources                  → source refs
+ *   POST /workspace/test-intelligence/jobs/<jobId>/sources/jira-fetch       → Jira REST ingest
+ *   POST /workspace/test-intelligence/jobs/<jobId>/conflicts/<conflictId>/resolve
+ *                                                                        → reviewer conflict action
  *   GET  /workspace/test-intelligence/review/<jobId>/state                  → review snapshot + events
  *   POST /workspace/test-intelligence/review/<jobId>/<action>               → job-level write
  *   POST /workspace/test-intelligence/review/<jobId>/<action>/<testCaseId>  → per-case write
@@ -26,6 +30,9 @@ const ROOT = "/workspace/test-intelligence";
 export type InspectorTestIntelligenceRoute =
   | { kind: "list_jobs" }
   | { kind: "read_bundle"; jobId: string }
+  | { kind: "list_sources"; jobId: string }
+  | { kind: "jira_fetch_source"; jobId: string }
+  | { kind: "resolve_conflict"; jobId: string; conflictId: string }
   | { kind: "review_state"; jobId: string }
   | { kind: "jira_paste_source"; jobId: string }
   | { kind: "custom_context_source"; jobId: string }
@@ -84,12 +91,6 @@ export const parseInspectorTestIntelligenceRoute = (
     if (segments.length === 1) {
       return { ok: true, route: { kind: "list_jobs" } };
     }
-    if (segments.length !== 2) {
-      return {
-        ok: false,
-        error: { kind: "parse_error", reason: "segment_count_invalid" },
-      };
-    }
     const jobId = segments[1];
     if (jobId === undefined || jobId.length === 0) {
       return {
@@ -101,6 +102,39 @@ export const parseInspectorTestIntelligenceRoute = (
       return {
         ok: false,
         error: { kind: "parse_error", reason: "unsafe_job_id" },
+      };
+    }
+    if (segments.length === 3 && segments[2] === "sources") {
+      return { ok: true, route: { kind: "list_sources", jobId } };
+    }
+    if (
+      segments.length === 4 &&
+      segments[2] === "sources" &&
+      segments[3] === "jira-fetch"
+    ) {
+      return { ok: true, route: { kind: "jira_fetch_source", jobId } };
+    }
+    if (
+      segments.length === 5 &&
+      segments[2] === "conflicts" &&
+      segments[4] === "resolve"
+    ) {
+      const conflictId = segments[3];
+      if (conflictId === undefined || !isSafeId(conflictId)) {
+        return {
+          ok: false,
+          error: { kind: "parse_error", reason: "unsafe_test_case_id" },
+        };
+      }
+      return {
+        ok: true,
+        route: { kind: "resolve_conflict", jobId, conflictId },
+      };
+    }
+    if (segments.length !== 2) {
+      return {
+        ok: false,
+        error: { kind: "parse_error", reason: "segment_count_invalid" },
       };
     }
     return { ok: true, route: { kind: "read_bundle", jobId } };
@@ -210,6 +244,8 @@ export const parseInspectorTestIntelligenceRoute = (
 export const isInspectorTestIntelligenceWriteAction = (
   route: InspectorTestIntelligenceRoute,
 ): boolean => {
+  if (route.kind === "jira_fetch_source") return true;
+  if (route.kind === "resolve_conflict") return true;
   if (route.kind === "jira_paste_source") return true;
   if (route.kind === "custom_context_source") return true;
   if (route.kind !== "review_action") return false;

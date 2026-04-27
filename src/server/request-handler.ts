@@ -117,6 +117,10 @@ import {
   listInspectorTestIntelligenceJobs,
   readInspectorTestIntelligenceBundle,
 } from "../test-intelligence/inspector-bundle.js";
+import {
+  listInspectorSourceRecords,
+  resolveInspectorConflict,
+} from "../test-intelligence/inspector-multisource.js";
 import { parseEvidenceVerifyRoute } from "../test-intelligence/evidence-verify-route.js";
 import { verifyJobEvidence } from "../test-intelligence/evidence-verify.js";
 import {
@@ -536,6 +540,7 @@ const ALLOWED_JIRA_PASTE_REQUEST_FIELDS = new Set([
 const CUSTOM_CONTEXT_REQUEST_ENVELOPE_OVERHEAD_BYTES = 4096;
 const MAX_CUSTOM_CONTEXT_REQUEST_BODY_BYTES =
   32 * 1024 + CUSTOM_CONTEXT_REQUEST_ENVELOPE_OVERHEAD_BYTES;
+const MAX_CONFLICT_RESOLUTION_REQUEST_BODY_BYTES = 16 * 1024;
 const LEGACY_TEST_INTELLIGENCE_REVIEW_PRINCIPAL_ID = "legacy-review-bearer";
 
 interface PersistedTokenDecisions {
@@ -1212,6 +1217,263 @@ export function createWorkspaceRequestHandler({
         }
         const route = parsed.route;
 
+        if (route.kind === "jira_fetch_source") {
+          response.setHeader("allow", "POST");
+          if (method !== "POST") {
+            sendJson({
+              response,
+              statusCode: 405,
+              payload: {
+                error: "METHOD_NOT_ALLOWED",
+                message: `Use POST for Jira REST source ingestion on '${pathname}'.`,
+              },
+            });
+            return;
+          }
+          const multiSourceEnabled =
+            resolveTestIntelligenceMultiSourceEnvEnabled() &&
+            runtime.testIntelligenceMultiSourceEnabled === true;
+          if (!multiSourceEnabled) {
+            sendRequestFailure({
+              statusCode: 503,
+              payload: {
+                error: ErrorCode.FEATURE_DISABLED,
+                message:
+                  "Jira REST source ingestion requires the multi-source test-intelligence gate.",
+              },
+              jobId: route.jobId,
+              fallbackMessage: "Jira REST source ingestion disabled.",
+            });
+            return;
+          }
+          sendRequestFailure({
+            statusCode: 503,
+            payload: {
+              error: "JIRA_FETCH_UNAVAILABLE",
+              message:
+                "Jira REST source ingestion is not configured for this workspace. Use Jira paste as the air-gapped path.",
+            },
+            jobId: route.jobId,
+            fallbackMessage: "Jira REST source ingestion unavailable.",
+          });
+          return;
+        }
+
+        if (route.kind === "resolve_conflict") {
+          response.setHeader("allow", "POST");
+          if (method !== "POST") {
+            sendJson({
+              response,
+              statusCode: 405,
+              payload: {
+                error: "METHOD_NOT_ALLOWED",
+                message: `Use POST for conflict resolution on '${pathname}'.`,
+              },
+            });
+            return;
+          }
+          const multiSourceEnabled =
+            resolveTestIntelligenceMultiSourceEnvEnabled() &&
+            runtime.testIntelligenceMultiSourceEnabled === true;
+          if (!multiSourceEnabled) {
+            sendRequestFailure({
+              statusCode: 503,
+              payload: {
+                error: ErrorCode.FEATURE_DISABLED,
+                message:
+                  "Conflict resolution requires the multi-source test-intelligence gate.",
+              },
+              jobId: route.jobId,
+              fallbackMessage: "Conflict resolution disabled.",
+            });
+            return;
+          }
+          const writeRequestValidation = validateWriteRequest({
+            request,
+            host,
+            port: getResolvedPort(),
+          });
+          if (!writeRequestValidation.ok) {
+            sendAuditedError({
+              statusCode: writeRequestValidation.statusCode,
+              payload: writeRequestValidation.payload,
+              event:
+                writeRequestValidation.payload.error ===
+                "UNSUPPORTED_MEDIA_TYPE"
+                  ? "security.request.unsupported_media_type"
+                  : "security.request.rejected_origin",
+              level: "warn",
+              jobId: route.jobId,
+              fallbackMessage: "Conflict resolution write request rejected.",
+            });
+            return;
+          }
+          const auth = validateTestIntelligenceSourceAuth({
+            request,
+            ...(runtime.testIntelligenceReviewBearerToken !== undefined
+              ? { bearerToken: runtime.testIntelligenceReviewBearerToken }
+              : {}),
+            ...(runtime.testIntelligenceReviewPrincipals !== undefined
+              ? { reviewPrincipals: runtime.testIntelligenceReviewPrincipals }
+              : {}),
+            routeLabel: "Conflict resolution",
+          });
+          if (!auth.ok) {
+            if (auth.wwwAuthenticate) {
+              response.setHeader("www-authenticate", auth.wwwAuthenticate);
+            }
+            sendAuditedError({
+              statusCode: auth.statusCode,
+              payload: auth.payload,
+              event:
+                auth.payload.error === "UNAUTHORIZED"
+                  ? "security.request.unauthorized"
+                  : "workspace.request.failed",
+              level: auth.statusCode === 401 ? "warn" : "error",
+              jobId: route.jobId,
+              fallbackMessage: "Conflict resolution rejected.",
+            });
+            return;
+          }
+          const bodyResult = await readJsonBody(request, {
+            maxBytes: MAX_CONFLICT_RESOLUTION_REQUEST_BODY_BYTES,
+          });
+          if (!bodyResult.ok) {
+            sendRequestFailure({
+              statusCode: bodyResult.reason === "OVERSIZE" ? 413 : 400,
+              payload: {
+                error:
+                  bodyResult.reason === "OVERSIZE"
+                    ? "REQUEST_TOO_LARGE"
+                    : "INVALID_BODY",
+                message: bodyResult.error,
+              },
+              jobId: route.jobId,
+              fallbackMessage: "Invalid conflict resolution request body.",
+            });
+            return;
+          }
+          if (
+            !bodyResult.value ||
+            typeof bodyResult.value !== "object" ||
+            Array.isArray(bodyResult.value)
+          ) {
+            sendValidationError({
+              payload: {
+                error: "INVALID_BODY",
+                message:
+                  "Conflict resolution request body must be a JSON object.",
+              },
+              jobId: route.jobId,
+              fallbackMessage: "Conflict resolution request validation failed.",
+            });
+            return;
+          }
+          const body = bodyResult.value as {
+            action?: unknown;
+            selectedSourceId?: unknown;
+            selectedNormalizedValue?: unknown;
+            note?: unknown;
+          };
+          if (body.action !== "approve" && body.action !== "reject") {
+            sendValidationError({
+              payload: {
+                error: "INVALID_BODY",
+                message:
+                  "Conflict resolution requires action: approve|reject.",
+              },
+              jobId: route.jobId,
+              fallbackMessage: "Conflict resolution request validation failed.",
+            });
+            return;
+          }
+          if (
+            body.selectedSourceId !== undefined &&
+            typeof body.selectedSourceId !== "string"
+          ) {
+            sendValidationError({
+              payload: {
+                error: "INVALID_BODY",
+                message:
+                  "selectedSourceId must be a string when provided.",
+              },
+              jobId: route.jobId,
+              fallbackMessage: "Conflict resolution request validation failed.",
+            });
+            return;
+          }
+          if (
+            body.selectedNormalizedValue !== undefined &&
+            typeof body.selectedNormalizedValue !== "string"
+          ) {
+            sendValidationError({
+              payload: {
+                error: "INVALID_BODY",
+                message:
+                  "selectedNormalizedValue must be a string when provided.",
+              },
+              jobId: route.jobId,
+              fallbackMessage: "Conflict resolution request validation failed.",
+            });
+            return;
+          }
+          if (body.note !== undefined && typeof body.note !== "string") {
+            sendValidationError({
+              payload: {
+                error: "INVALID_BODY",
+                message: "note must be a string when provided.",
+              },
+              jobId: route.jobId,
+              fallbackMessage: "Conflict resolution request validation failed.",
+            });
+            return;
+          }
+
+          const resolution = await resolveInspectorConflict({
+            runDir: path.join(testIntelligenceArtifactRoot, route.jobId),
+            jobId: route.jobId,
+            conflictId: route.conflictId,
+            actor: auth.authorHandle,
+            at: new Date().toISOString(),
+            action: body.action,
+            ...(typeof body.selectedSourceId === "string"
+              ? { selectedSourceId: body.selectedSourceId }
+              : {}),
+            ...(typeof body.selectedNormalizedValue === "string"
+              ? { selectedNormalizedValue: body.selectedNormalizedValue }
+              : {}),
+            ...(typeof body.note === "string" && body.note.trim().length > 0
+              ? { note: body.note.trim() }
+              : {}),
+          });
+          if (!resolution.ok) {
+            sendValidationError({
+              statusCode:
+                resolution.code === "conflict_not_found" ? 404 : 409,
+              payload: {
+                error: resolution.code,
+                message:
+                  resolution.code === "conflict_not_found"
+                    ? `No multi-source conflict '${route.conflictId}' exists for job '${route.jobId}'.`
+                    : "Conflict resolution request was invalid for the targeted conflict.",
+              },
+              jobId: route.jobId,
+              fallbackMessage: "Conflict resolution failed.",
+            });
+            return;
+          }
+          sendJson({
+            response,
+            statusCode: 200,
+            payload: {
+              ok: true,
+              event: resolution.event,
+              snapshot: resolution.snapshot,
+            },
+          });
+          return;
+        }
+
         if (route.kind === "jira_paste_source") {
           response.setHeader("allow", "POST");
           if (method !== "POST") {
@@ -1663,6 +1925,33 @@ export function createWorkspaceRequestHandler({
               response,
               statusCode: 200,
               payload: { jobs: summaries },
+            });
+            return;
+          }
+          if (route.kind === "list_sources") {
+            const multiSourceEnabled =
+              resolveTestIntelligenceMultiSourceEnvEnabled() &&
+              runtime.testIntelligenceMultiSourceEnabled === true;
+            if (!multiSourceEnabled) {
+              sendRequestFailure({
+                statusCode: 503,
+                payload: {
+                  error: ErrorCode.FEATURE_DISABLED,
+                  message:
+                    "Source listing requires the multi-source test-intelligence gate.",
+                },
+                jobId: route.jobId,
+                fallbackMessage: "Source listing disabled.",
+              });
+              return;
+            }
+            const sources = await listInspectorSourceRecords(
+              path.join(testIntelligenceArtifactRoot, route.jobId),
+            );
+            sendJson({
+              response,
+              statusCode: 200,
+              payload: { jobId: route.jobId, sources },
             });
             return;
           }

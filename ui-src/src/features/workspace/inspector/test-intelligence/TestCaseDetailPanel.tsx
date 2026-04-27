@@ -18,8 +18,11 @@ import {
   formatVisualSidecarOutcomeBadge,
   resolveEffectiveReviewState,
 } from "./formatters";
+import { ProvenanceOverlay } from "./provenance-overlay";
 import type {
   GeneratedTestCase,
+  InspectorSourceRecord,
+  InspectorTestCaseProvenance,
   PolicyDecision,
   PolicyViolation,
   QcMappingPreviewEntry,
@@ -62,6 +65,8 @@ export interface TestCaseDetailPanelProps {
   visualRecords: readonly VisualSidecarRecord[];
   /** QC/export mapping row for this case, when the export preview exists. */
   qcMappingEntry?: QcMappingPreviewEntry;
+  sourceRefs?: readonly InspectorSourceRecord[];
+  provenance?: InspectorTestCaseProvenance;
   onAction: (input: { action: ReviewActionKind; note?: string }) => void;
   /**
    * Whether the resolved server-side four-eyes policy requires two
@@ -94,6 +99,8 @@ export function TestCaseDetailPanel({
   reviewerHandle,
   visualRecords,
   qcMappingEntry,
+  sourceRefs = [],
+  provenance,
   onAction,
   fourEyesEnforced,
   approvers,
@@ -203,6 +210,14 @@ export function TestCaseDetailPanel({
         <p className="m-0 break-words text-[12px] leading-relaxed text-white/65">
           {testCase.objective}
         </p>
+        {provenance ? (
+          <ProvenanceOverlay
+            label="Test-case provenance"
+            sourceIds={provenance.allSourceIds}
+            sourceRefs={sourceRefs}
+            testId="ti-detail-provenance"
+          />
+        ) : null}
         {fourEyesEnforced ? (
           <div
             data-testid="ti-detail-four-eyes-notice"
@@ -255,6 +270,35 @@ export function TestCaseDetailPanel({
           items={testCase.testData}
         />
       </div>
+
+      {provenance ? (
+        <div className="grid gap-3 lg:grid-cols-2">
+          <ProvenanceOverlay
+            label="Field provenance"
+            sourceIds={provenance.fieldSourceIds}
+            sourceRefs={sourceRefs}
+            testId="ti-detail-field-provenance"
+          />
+          <ProvenanceOverlay
+            label="Step/action provenance"
+            sourceIds={provenance.actionSourceIds}
+            sourceRefs={sourceRefs}
+            testId="ti-detail-action-provenance"
+          />
+          <ProvenanceOverlay
+            label="Validation provenance"
+            sourceIds={provenance.validationSourceIds}
+            sourceRefs={sourceRefs}
+            testId="ti-detail-validation-provenance"
+          />
+          <ProvenanceOverlay
+            label="Navigation provenance"
+            sourceIds={provenance.navigationSourceIds}
+            sourceRefs={sourceRefs}
+            testId="ti-detail-navigation-provenance"
+          />
+        </div>
+      ) : null}
 
       <section
         aria-label="Test steps"

@@ -16,10 +16,12 @@
 import type {
   CoverageReport,
   ExportReport,
+  FetchSourcesResponse,
   GeneratedTestCase,
   GeneratedTestCaseList,
   PolicyReport,
   QcMappingPreviewArtifact,
+  ResolveConflictResponse,
   ReviewEvent,
   ReviewGateSnapshot,
   ReviewSnapshotEntry,
@@ -73,6 +75,15 @@ const FOUR_EYES_REASONS = new Set([
 ]);
 
 const POLICY_DECISIONS = new Set(["approved", "needs_review", "blocked"]);
+const SOURCE_KINDS = new Set([
+  "figma_local_json",
+  "figma_plugin",
+  "figma_rest",
+  "jira_rest",
+  "jira_paste",
+  "custom_text",
+  "custom_structured",
+]);
 const VISUAL_SIDECAR_OUTCOMES = new Set([
   "ok",
   "schema_invalid",
@@ -206,6 +217,46 @@ export const isReviewEvent = (value: unknown): value is ReviewEvent => {
 
 const isReviewEventArray = (value: unknown): value is ReviewEvent[] =>
   Array.isArray(value) && value.every(isReviewEvent);
+
+const isInspectorSourceRecord = (value: unknown): boolean =>
+  isRecord(value) &&
+  typeof value["sourceId"] === "string" &&
+  typeof value["kind"] === "string" &&
+  SOURCE_KINDS.has(value["kind"]) &&
+  typeof value["capturedAt"] === "string" &&
+  typeof value["contentHash"] === "string" &&
+  (value["role"] === "primary" || value["role"] === "supporting") &&
+  typeof value["label"] === "string" &&
+  (value["authorHandle"] === undefined ||
+    typeof value["authorHandle"] === "string");
+
+const isConflictDecisionSnapshot = (value: unknown): boolean =>
+  isRecord(value) &&
+  typeof value["conflictId"] === "string" &&
+  (value["state"] === "approved" || value["state"] === "rejected") &&
+  typeof value["lastEventId"] === "string" &&
+  typeof value["lastEventAt"] === "string" &&
+  typeof value["actor"] === "string";
+
+const isConflictDecisionSnapshotRecord = (value: unknown): boolean =>
+  isRecord(value) &&
+  Object.values(value).every((entry) => isConflictDecisionSnapshot(entry));
+
+const isMultiSourceConflict = (value: unknown): boolean =>
+  isRecord(value) &&
+  typeof value["conflictId"] === "string" &&
+  typeof value["kind"] === "string" &&
+  isStringArray(value["participatingSourceIds"]) &&
+  isStringArray(value["normalizedValues"]) &&
+  typeof value["resolution"] === "string";
+
+const isMultiSourceReconciliationReport = (value: unknown): boolean =>
+  isRecord(value) &&
+  typeof value["envelopeHash"] === "string" &&
+  Array.isArray(value["conflicts"]) &&
+  value["conflicts"].every((entry) => isMultiSourceConflict(entry)) &&
+  isStringArray(value["unmatchedSources"]) &&
+  Array.isArray(value["contributingSourcesPerCase"]);
 
 const isGeneratedTestCase = (value: unknown): value is GeneratedTestCase => {
   if (!isRecord(value)) return false;
@@ -450,6 +501,21 @@ export const isTestIntelligenceBundle = (
       key: "reviewEvents",
       guard: isReviewEventArray as (v: unknown) => v is unknown,
     },
+    {
+      key: "sourceRefs",
+      guard: ((v: unknown): v is unknown =>
+        Array.isArray(v) && v.every((entry) => isInspectorSourceRecord(entry))) as (
+        v: unknown,
+      ) => v is unknown,
+    },
+    {
+      key: "multiSourceReconciliation",
+      guard: isMultiSourceReconciliationReport as (v: unknown) => v is unknown,
+    },
+    {
+      key: "conflictDecisions",
+      guard: isConflictDecisionSnapshotRecord as (v: unknown) => v is unknown,
+    },
   ];
 
   for (const slot of slots) {
@@ -509,3 +575,18 @@ export const isReviewActionEnvelope = (
     isReviewEvent(value["event"])
   );
 };
+
+export const isFetchSourcesResponse = (
+  value: unknown,
+): value is FetchSourcesResponse =>
+  isRecord(value) &&
+  typeof value["jobId"] === "string" &&
+  Array.isArray(value["sources"]) &&
+  value["sources"].every((entry) => isInspectorSourceRecord(entry));
+
+export const isResolveConflictResponse = (
+  value: unknown,
+): value is ResolveConflictResponse =>
+  isRecord(value) &&
+  value["ok"] === true &&
+  isConflictDecisionSnapshot(value["snapshot"]);
