@@ -272,12 +272,33 @@ export function InspectOverlay({
         <>
           <div
             data-testid="inspect-highlight"
-            className="removed-style-1"
+            style={{
+              position: "absolute",
+              left: effectiveOverlayRect.left,
+              top: effectiveOverlayRect.top,
+              width: effectiveOverlayRect.width,
+              height: effectiveOverlayRect.height,
+              border: "2px solid rgba(59, 130, 246, 0.8)",
+              background: "rgba(59, 130, 246, 0.15)",
+              transition: "all 80ms ease",
+              pointerEvents: "none"
+            }}
           />
           {effectiveOverlayRect.irNodeName ? (
             <div
               data-testid="inspect-tooltip"
-              className="removed-style-2"
+              style={{
+                position: "absolute",
+                left: effectiveOverlayRect.left,
+                top: Math.max(0, effectiveOverlayRect.top - 22),
+                background: "#1e293b",
+                color: "#f8fafc",
+                font: "11px/1.3 system-ui, sans-serif",
+                padding: "2px 6px",
+                borderRadius: 3,
+                whiteSpace: "nowrap",
+                pointerEvents: "none"
+              }}
             >
               {effectiveOverlayRect.irNodeName}
             </div>

@@ -297,12 +297,15 @@ export function DiffViewer({
       {/* Toolbar */}
       <div
         className="flex shrink-0 items-center gap-2 border-b px-3 py-1.5"
-        className="removed-style-1"
+        style={{
+          backgroundColor: isDark ? "#161b22" : undefined,
+          borderColor: isDark ? "#30363d" : undefined
+        }}
       >
         <span
           className="min-w-0 flex-1 truncate text-xs font-mono"
           data-testid="diff-viewer-filepath"
-          className="removed-style-2"
+          style={{ color: isDark ? "#8b949e" : "#57606a" }}
         >
           {filePath}
           <span className="ml-2 text-[10px] opacity-60">
@@ -312,7 +315,11 @@ export function DiffViewer({
             <span
               data-testid="diff-viewer-node-scoped-badge"
               className="ml-2 rounded-full border px-1.5 py-0 text-[9px] font-bold tracking-wide"
-              className="removed-style-3"
+              style={{
+                borderColor: isDark ? "#388bfd" : "#0969da",
+                backgroundColor: isDark ? "rgba(56, 139, 253, 0.15)" : "rgba(9, 105, 218, 0.08)",
+                color: isDark ? "#58a6ff" : "#0969da"
+              }}
             >
               NODE
             </span>
@@ -333,7 +340,12 @@ export function DiffViewer({
             aria-label="Find in diff"
             data-testid="diff-viewer-find-input"
             className="h-6 w-36 rounded border bg-transparent px-2 text-[10px] font-mono"
-            className="removed-style-4"
+            style={{
+              borderColor: searchFocused
+                ? (isDark ? "#1f6feb" : "#0969da")
+                : (isDark ? "#30363d" : "#d0d7de"),
+              color: isDark ? "#c9d1d9" : "#24292f"
+            }}
           />
           <button
             type="button"
@@ -342,7 +354,11 @@ export function DiffViewer({
             onClick={() => { handleNavigateMatches(-1); }}
             disabled={searchMatches.length === 0}
             className="h-6 shrink-0 cursor-pointer rounded border px-2 py-0 text-[10px] font-semibold transition disabled:cursor-default disabled:opacity-50"
-            className="removed-style-5"
+            style={{
+              borderColor: isDark ? "#30363d" : "#d0d7de",
+              backgroundColor: isDark ? "#21262d" : "#ffffff",
+              color: isDark ? "#c9d1d9" : "#24292f"
+            }}
           >
             Prev
           </button>
@@ -353,7 +369,11 @@ export function DiffViewer({
             onClick={() => { handleNavigateMatches(1); }}
             disabled={searchMatches.length === 0}
             className="h-6 shrink-0 cursor-pointer rounded border px-2 py-0 text-[10px] font-semibold transition disabled:cursor-default disabled:opacity-50"
-            className="removed-style-6"
+            style={{
+              borderColor: isDark ? "#30363d" : "#d0d7de",
+              backgroundColor: isDark ? "#21262d" : "#ffffff",
+              color: isDark ? "#c9d1d9" : "#24292f"
+            }}
           >
             Next
           </button>
@@ -361,7 +381,7 @@ export function DiffViewer({
             aria-live="polite"
             data-testid="diff-viewer-find-count"
             className="w-16 text-right text-[10px] font-semibold"
-            className="removed-style-7"
+            style={{ color: isDark ? "#8b949e" : "#57606a" }}
           >
             {findCountText}
           </span>
@@ -373,7 +393,11 @@ export function DiffViewer({
           aria-pressed={wordWrap}
           onClick={() => { setWordWrap((w) => !w); }}
           className="shrink-0 cursor-pointer rounded border px-2 py-0.5 text-[10px] font-semibold transition"
-          className="removed-style-8"
+          style={{
+            borderColor: isDark ? "#30363d" : "#d0d7de",
+            backgroundColor: wordWrap ? (isDark ? "#1f6feb33" : "#ddf4ff") : (isDark ? "#21262d" : "#ffffff"),
+            color: isDark ? "#c9d1d9" : "#24292f"
+          }}
         >
           {wordWrap ? "Wrap: On" : "Wrap: Off"}
         </button>
@@ -383,7 +407,11 @@ export function DiffViewer({
           data-testid="diff-viewer-copy-button"
           onClick={() => { void handleCopy(); }}
           className="shrink-0 cursor-pointer rounded border px-2 py-0.5 text-[10px] font-semibold transition"
-          className="removed-style-9"
+          style={{
+            borderColor: isDark ? "#30363d" : "#d0d7de",
+            backgroundColor: isDark ? "#21262d" : "#ffffff",
+            color: isDark ? "#c9d1d9" : "#24292f"
+          }}
         >
           {copied ? "Copied!" : "Copy"}
         </button>
@@ -394,7 +422,11 @@ export function DiffViewer({
         <div
           data-testid="inspector-node-diff-fallback"
           className="shrink-0 border-b px-3 py-1.5 text-[11px]"
-          className="removed-style-10"
+          style={{
+            backgroundColor: isDark ? "rgba(187, 128, 9, 0.15)" : "#fffbeb",
+            borderColor: isDark ? "#bb8009" : "#fbbf24",
+            color: isDark ? "#e3b341" : "#92400e"
+          }}
         >
           {nodeDiffFallbackReason}
         </div>
@@ -404,7 +436,13 @@ export function DiffViewer({
       <div
         className="shrink-0 border-b px-3 py-1 text-[11px] font-semibold"
         data-testid="diff-viewer-summary"
-        className="removed-style-11"
+        style={{
+          backgroundColor: isDark ? "#0d1117" : "#f6f8fa",
+          borderColor: isDark ? "#30363d" : "#d0d7de",
+          color: diffResult.isIdentical
+            ? (isDark ? "#7ee787" : "#1a7f37")
+            : (isDark ? "#c9d1d9" : "#24292f")
+        }}
       >
         {summaryText}
       </div>
@@ -413,7 +451,7 @@ export function DiffViewer({
       <div
         className="min-h-0 flex-1 overflow-auto p-0"
         data-testid="diff-content"
-        className="removed-style-12"
+        style={{ backgroundColor: isDark ? "#0d1117" : "#ffffff" }}
       >
         <div className="min-w-0">
           {diffResult.lines.map((diffLine: DiffLine, i: number) => {
@@ -439,13 +477,19 @@ export function DiffViewer({
                 data-testid={`diff-line-${diffLine.kind}`}
                 data-in-focus={inFocus ? "true" : undefined}
                 className="flex text-xs leading-relaxed"
-                className="removed-style-13"
+                style={{
+                  backgroundColor: lineBg,
+                  borderLeft: colors.border ? `3px solid ${colors.border}` : undefined
+                }}
               >
                 {/* Old line number gutter */}
                 <span
                   data-testid="diff-old-line-number"
                   className="inline-block w-10 shrink-0 pr-1 text-right select-none font-mono"
-                  className="removed-style-14"
+                  style={{
+                    color: isDark ? "#484f58" : "#8c959f",
+                    backgroundColor: colors.gutter
+                  }}
                 >
                   {diffLine.oldLineNumber ?? ""}
                 </span>
@@ -454,7 +498,10 @@ export function DiffViewer({
                 <span
                   data-testid="diff-new-line-number"
                   className="inline-block w-10 shrink-0 pr-2 text-right select-none font-mono"
-                  className="removed-style-15"
+                  style={{
+                    color: isDark ? "#484f58" : "#8c959f",
+                    backgroundColor: colors.gutter
+                  }}
                 >
                   {diffLine.newLineNumber ?? ""}
                 </span>
@@ -462,7 +509,13 @@ export function DiffViewer({
                 {/* Diff prefix (+/-/space) */}
                 <span
                   className="inline-block w-4 shrink-0 select-none text-center font-mono"
-                  className="removed-style-16"
+                  style={{
+                    color: diffLine.kind === "added"
+                      ? (isDark ? "#7ee787" : "#1a7f37")
+                      : diffLine.kind === "removed"
+                        ? (isDark ? "#f85149" : "#cf222e")
+                        : (isDark ? "#484f58" : "#8c959f")
+                  }}
                 >
                   {prefix}
                 </span>
@@ -470,7 +523,7 @@ export function DiffViewer({
                 {/* Line content */}
                 <pre
                   className={`m-0 min-w-0 flex-1 font-mono ${wordWrap ? "whitespace-pre-wrap break-all" : "whitespace-pre"}`}
-                  className="removed-style-17"
+                  style={{ color: isDark ? "#c9d1d9" : "#24292f" }}
                 >
                   {diffLine.content}
                 </pre>

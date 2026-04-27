@@ -791,7 +791,7 @@ export function ComponentTree({
           </p>
         ) : (
           <div data-testid="component-tree-virtual-window">
-            <div className="removed-style-1" />
+            <div style={{ height: topSpacerHeight }} />
             {virtualRows.map((row) => (
               <TreeRow
                 key={row.node.id}
@@ -809,7 +809,7 @@ export function ComponentTree({
                 diffStatus={diffStatusByNodeId?.get(row.node.id)}
               />
             ))}
-            <div className="removed-style-2" />
+            <div style={{ height: bottomSpacerHeight }} />
             <span data-testid="component-tree-total-count" className="sr-only">
               {String(totalRowCount)}
             </span>

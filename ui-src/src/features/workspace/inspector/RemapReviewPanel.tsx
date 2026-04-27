@@ -109,30 +109,54 @@ export function RemapReviewPanel({
   return (
     <div
       className="remap-review-panel"
-      className="removed-style-1"
+      style={{
+        padding: "12px 16px",
+        borderRadius: 8,
+        border: "1px solid var(--color-info-border, #93c5fd)",
+        background: "var(--color-info-bg, #eff6ff)",
+        marginBottom: 12,
+        fontSize: 13,
+        lineHeight: 1.5
+      }}
     >
       <p
-        className="removed-style-2"
+        style={{
+          margin: "0 0 8px",
+          fontWeight: 600,
+          color: "var(--color-info-text, #1e40af)"
+        }}
       >
         Remap suggestions
       </p>
-      <p className="removed-style-3">
+      <p style={{ margin: "0 0 12px", color: "var(--color-text-secondary, #555)" }}>
         {result.message}
       </p>
 
       {result.suggestions.length > 0 && (
-        <div className="removed-style-4">
+        <div style={{ marginBottom: 12 }}>
           <div
-            className="removed-style-5"
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              marginBottom: 8
+            }}
           >
-            <span className="removed-style-6">
+            <span style={{ fontSize: 12, fontWeight: 500, color: "var(--color-text-secondary, #555)" }}>
               {`${String(acceptedCount)} of ${String(totalSuggestions)} accepted`}
             </span>
             <button
               type="button"
               disabled={disabled}
               onClick={acceptAll}
-              className="removed-style-7"
+              style={{
+                padding: "2px 8px",
+                borderRadius: 4,
+                border: "1px solid var(--color-border, #ccc)",
+                background: "var(--color-bg-secondary, #f5f5f5)",
+                cursor: disabled ? "not-allowed" : "pointer",
+                fontSize: 11
+              }}
             >
               Accept all
             </button>
@@ -144,41 +168,64 @@ export function RemapReviewPanel({
             return (
               <div
                 key={suggestion.sourceNodeId}
-                className="removed-style-8"
+                style={{
+                  display: "flex",
+                  alignItems: "flex-start",
+                  gap: 8,
+                  padding: "6px 8px",
+                  borderRadius: 6,
+                  border: `1px solid ${accepted ? "var(--color-primary-border, #93c5fd)" : "var(--color-border, #e5e7eb)"}`,
+                  background: accepted
+                    ? "var(--color-primary-bg-subtle, #f0f9ff)"
+                    : "var(--color-bg, #fff)",
+                  marginBottom: 4
+                }}
               >
                 <input
                   type="checkbox"
                   checked={accepted}
                   disabled={disabled}
                   onChange={() => { toggleDecision(suggestion.sourceNodeId); }}
-                  className="removed-style-9"
+                  style={{ marginTop: 3 }}
                   aria-label={`Accept remap for ${suggestion.sourceNodeName}`}
                 />
-                <div className="removed-style-10">
-                  <div className="removed-style-11">
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
                     <span
-                      className="removed-style-12"
+                      style={{ fontWeight: 500, fontSize: 12 }}
                       title={`Source: ${suggestion.sourceNodeId}`}
                     >
                       {suggestion.sourceNodeName}
                     </span>
-                    <span className="removed-style-13">
+                    <span style={{ color: "var(--color-text-tertiary, #999)", fontSize: 11 }}>
                       {"\u2192"}
                     </span>
                     <span
-                      className="removed-style-14"
+                      style={{ fontWeight: 500, fontSize: 12 }}
                       title={`Target: ${suggestion.targetNodeId}`}
                     >
                       {suggestion.targetNodeName}
                     </span>
                     <span
-                      className="removed-style-15"
+                      style={{
+                        display: "inline-block",
+                        padding: "0 6px",
+                        borderRadius: 4,
+                        fontSize: 10,
+                        fontWeight: 600,
+                        background: style.bg,
+                        color: style.text
+                      }}
                     >
                       {style.label}
                     </span>
                   </div>
                   <p
-                    className="removed-style-16"
+                    style={{
+                      margin: "2px 0 0",
+                      fontSize: 11,
+                      color: "var(--color-text-tertiary, #888)"
+                    }}
                   >
                     {suggestion.reason}
                   </p>
@@ -190,23 +237,39 @@ export function RemapReviewPanel({
       )}
 
       {result.rejections.length > 0 && (
-        <div className="removed-style-17">
+        <div style={{ marginBottom: 12 }}>
           <p
-            className="removed-style-18"
+            style={{
+              margin: "0 0 6px",
+              fontSize: 12,
+              fontWeight: 500,
+              color: "var(--color-text-secondary, #555)"
+            }}
           >
             {`Unsupported mappings (${String(result.rejections.length)})`}
           </p>
           {result.rejections.map((rejection) => (
             <div
               key={rejection.sourceNodeId}
-              className="removed-style-19"
+              style={{
+                padding: "4px 8px",
+                borderRadius: 6,
+                border: "1px solid var(--color-warning-border, #fbbf24)",
+                background: "var(--color-warning-bg-subtle, #fffbeb)",
+                marginBottom: 4,
+                fontSize: 12
+              }}
             >
-              <span className="removed-style-20">{rejection.sourceNodeName}</span>
-              <span className="removed-style-21">
+              <span style={{ fontWeight: 500 }}>{rejection.sourceNodeName}</span>
+              <span style={{ color: "var(--color-text-tertiary, #888)" }}>
                 {` (${rejection.sourceNodeType})`}
               </span>
               <p
-                className="removed-style-22"
+                style={{
+                  margin: "2px 0 0",
+                  fontSize: 11,
+                  color: "var(--color-text-tertiary, #888)"
+                }}
               >
                 {rejection.reason}
               </p>
@@ -215,12 +278,21 @@ export function RemapReviewPanel({
         </div>
       )}
 
-      <div className="removed-style-23">
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
         <button
           type="button"
           disabled={disabled || acceptedCount === 0}
           onClick={handleApply}
-          className="removed-style-24"
+          style={{
+            padding: "6px 12px",
+            borderRadius: 6,
+            border: "1px solid var(--color-primary-border, #2563eb)",
+            background: "var(--color-primary-bg, #eff6ff)",
+            color: "var(--color-primary-text, #1d4ed8)",
+            cursor: disabled || acceptedCount === 0 ? "not-allowed" : "pointer",
+            fontSize: 12,
+            fontWeight: 500
+          }}
           title="Apply accepted remaps and carry forward draft"
         >
           {`Apply ${String(acceptedCount)} remap(s)`}
@@ -229,7 +301,14 @@ export function RemapReviewPanel({
           type="button"
           disabled={disabled}
           onClick={onCancel}
-          className="removed-style-25"
+          style={{
+            padding: "6px 12px",
+            borderRadius: 6,
+            border: "1px solid var(--color-border, #ccc)",
+            background: "var(--color-bg-secondary, #f5f5f5)",
+            cursor: disabled ? "not-allowed" : "pointer",
+            fontSize: 12
+          }}
           title="Cancel remap and return to stale draft options"
         >
           Cancel

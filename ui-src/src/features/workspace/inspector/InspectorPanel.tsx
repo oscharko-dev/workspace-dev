@@ -5396,7 +5396,7 @@ export function InspectorPanel({
         <div
           data-testid="inspector-edit-studio-panel"
           className="shrink-0 overflow-y-auto border-b border-[#2a2a3d] bg-[#1a1a2a] px-4 py-2 text-xs text-indigo-200"
-          className="removed-style-1"
+          style={{ maxHeight: "30vh" }}
         >
           <div className="mx-auto max-w-5xl">
             <p className="m-0 font-semibold text-indigo-300">Edit Studio</p>
@@ -6356,7 +6356,7 @@ export function InspectorPanel({
             aria-valuenow={treeSeparatorNow}
             data-testid="inspector-splitter-tree-preview"
             className="group hidden shrink-0 cursor-col-resize select-none focus:outline-none xl:flex xl:w-3 xl:items-stretch xl:justify-center"
-            className="removed-style-2"
+            style={{ touchAction: "none" }}
             onPointerDown={handleSplitterPointerDown("tree-preview")}
             onPointerMove={handleSplitterPointerMove}
             onPointerUp={handleSplitterPointerUp}
@@ -6415,7 +6415,7 @@ export function InspectorPanel({
           aria-valuenow={previewSeparatorNow}
           data-testid="inspector-splitter-preview-code"
           className="group hidden shrink-0 cursor-col-resize select-none focus:outline-none xl:flex xl:w-3 xl:items-stretch xl:justify-center"
-          className="removed-style-3"
+          style={{ touchAction: "none" }}
           onPointerDown={handleSplitterPointerDown("preview-code")}
           onPointerMove={handleSplitterPointerMove}
           onPointerUp={handleSplitterPointerUp}

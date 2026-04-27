@@ -119,13 +119,20 @@ export function ScreenshotPreview({
     >
       <div
         className="absolute inset-0 flex items-center justify-center"
-        className="removed-style-1"
+        style={{ pointerEvents: "none" }}
       >
         <img
           src={screenshotUrl}
           alt="Figma design preview"
           draggable={false}
-          className="removed-style-2"
+          style={{
+            transform: `translate(${translate.x}px, ${translate.y + (externalOffsetY ?? 0)}px) scale(${scale})`,
+            transformOrigin: "center center",
+            maxWidth: "100%",
+            maxHeight: "100%",
+            objectFit: "contain",
+            userSelect: "none",
+          }}
         />
       </div>
 
