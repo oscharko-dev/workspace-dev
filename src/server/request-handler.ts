@@ -4,6 +4,7 @@ import {
   lstat,
   mkdir,
   readFile,
+  rename,
   rm,
   unlink,
   writeFile,
@@ -125,6 +126,11 @@ import {
   resolveInspectorConflict,
 } from "../test-intelligence/inspector-multisource.js";
 import type { JiraGatewayClient } from "../test-intelligence/jira-gateway-client.js";
+import {
+  createUnconfiguredJiraWriteClient,
+  runJiraSubtaskWrite,
+  type JiraWriteClient,
+} from "../test-intelligence/jira-write-adapter.js";
 import { parseEvidenceVerifyRoute } from "../test-intelligence/evidence-verify-route.js";
 import { verifyJobEvidence } from "../test-intelligence/evidence-verify.js";
 import {
@@ -470,7 +476,8 @@ type WorkspaceAuditEvent =
   | "workspace.jira_rest_source.ingested"
   | "workspace.jira_paste_source.ingested"
   | "workspace.custom_context_source.ingested"
-  | "workspace.test_intelligence_source.removed";
+  | "workspace.test_intelligence_source.removed"
+  | "workspace.jira_write.run_completed";
 
 const REQUEST_ID_HEADER = "x-request-id";
 const DEFAULT_REQUEST_FAILURE_MESSAGE = "Unexpected request failure.";
@@ -766,7 +773,8 @@ function parseJiraFetchSourceRequest(
   if (hasJql && issueKeys.length > 0) {
     return {
       ok: false,
-      message: "Jira REST request must provide either jql or issueKeys, not both.",
+      message:
+        "Jira REST request must provide either jql or issueKeys, not both.",
     };
   }
   if (!hasJql && issueKeys.length === 0) {
@@ -777,9 +785,7 @@ function parseJiraFetchSourceRequest(
   }
   const replayMode =
     body.replayMode === undefined ? undefined : body.replayMode === true;
-  const withCommonFields = (
-    request: JiraFetchRequest,
-  ): JiraFetchRequest => ({
+  const withCommonFields = (request: JiraFetchRequest): JiraFetchRequest => ({
     ...request,
     expand: ["renderedFields", "names", "schema"],
     ...(replayMode !== undefined ? { replayMode } : {}),
@@ -974,6 +980,24 @@ interface CreateWorkspaceRequestHandlerInput {
      * supported air-gapped ingestion path.
      */
     testIntelligenceJiraGatewayClient?: JiraGatewayClient;
+    /**
+     * Optional Jira write client injected by the operator for the write
+     * pipeline (#1482). When omitted, `createUnconfiguredJiraWriteClient`
+     * is used (fail-closed: all calls return `provider_not_implemented`).
+     */
+    testIntelligenceJiraWriteClient?: JiraWriteClient;
+    /**
+     * Bearer token accepted by the Jira sub-task write pipeline (#1482).
+     * When omitted or blank, write attempts fail closed with `bearer_token_missing`.
+     */
+    testIntelligenceJiraWriteBearerToken?: string;
+    /**
+     * Admin/startup gate for the Jira sub-task write pipeline (#1482).
+     * When `false` (or omitted), every write attempt fails closed with
+     * `admin_gate_disabled`. Maps to the `allowJiraWrite` option in the
+     * public `WorkspaceStartOptions.testIntelligence` shape.
+     */
+    testIntelligenceAllowJiraWrite?: boolean;
     /**
      * Principal-bound review credentials. When configured, the matching
      * bearer token determines the persisted review actor.
@@ -1778,8 +1802,7 @@ export function createWorkspaceRequestHandler({
             sendValidationError({
               payload: {
                 error: "INVALID_BODY",
-                message:
-                  "Conflict resolution requires action: approve|reject.",
+                message: "Conflict resolution requires action: approve|reject.",
               },
               jobId: route.jobId,
               fallbackMessage: "Conflict resolution request validation failed.",
@@ -1793,8 +1816,7 @@ export function createWorkspaceRequestHandler({
             sendValidationError({
               payload: {
                 error: "INVALID_BODY",
-                message:
-                  "selectedSourceId must be a string when provided.",
+                message: "selectedSourceId must be a string when provided.",
               },
               jobId: route.jobId,
               fallbackMessage: "Conflict resolution request validation failed.",
@@ -1847,8 +1869,7 @@ export function createWorkspaceRequestHandler({
           });
           if (!resolution.ok) {
             sendValidationError({
-              statusCode:
-                resolution.code === "conflict_not_found" ? 404 : 409,
+              statusCode: resolution.code === "conflict_not_found" ? 404 : 409,
               payload: {
                 error: resolution.code,
                 message:
@@ -2322,6 +2343,382 @@ export function createWorkspaceRequestHandler({
                 rawMarkdownPersisted: false,
                 unsanitizedInputPersisted: false,
               },
+            },
+          });
+          return;
+        }
+
+        if (route.kind === "jira_write_config") {
+          if (method !== "GET" && method !== "PUT" && method !== "POST") {
+            response.setHeader("allow", "GET, PUT, POST");
+            sendJson({
+              response,
+              statusCode: 405,
+              payload: {
+                error: "METHOD_NOT_ALLOWED",
+                message: `Use GET to read or PUT/POST to update Jira write config on '${pathname}'.`,
+              },
+            });
+            return;
+          }
+
+          const configPath = path.join(
+            testIntelligenceArtifactRoot,
+            ".jira-write-config.json",
+          );
+
+          if (method === "GET") {
+            const config: {
+              outputPathMarkdown?: string;
+              useDefaultOutputPath?: boolean;
+            } = {};
+            try {
+              const raw = await readFile(configPath, "utf8");
+              const parsed: unknown = JSON.parse(raw);
+              if (
+                typeof parsed === "object" &&
+                parsed !== null &&
+                !Array.isArray(parsed)
+              ) {
+                const record = parsed as Record<string, unknown>;
+                if (typeof record.outputPathMarkdown === "string") {
+                  config.outputPathMarkdown = record.outputPathMarkdown;
+                }
+                if (typeof record.useDefaultOutputPath === "boolean") {
+                  config.useDefaultOutputPath = record.useDefaultOutputPath;
+                }
+              }
+            } catch {
+              // file absent or unreadable — return defaults
+            }
+            sendJson({
+              response,
+              statusCode: 200,
+              payload: { ok: true, config },
+            });
+            return;
+          }
+
+          // method === "PUT" || method === "POST" — write config
+          const writeRequestValidation = validateWriteRequest({
+            request,
+            host,
+            port: getResolvedPort(),
+          });
+          if (!writeRequestValidation.ok) {
+            sendAuditedError({
+              statusCode: writeRequestValidation.statusCode,
+              payload: writeRequestValidation.payload,
+              event:
+                writeRequestValidation.payload.error ===
+                "UNSUPPORTED_MEDIA_TYPE"
+                  ? "security.request.unsupported_media_type"
+                  : "security.request.rejected_origin",
+              level: "warn",
+              fallbackMessage: "Jira write config request rejected.",
+            });
+            return;
+          }
+
+          const bodyResult = await readJsonBody(request, { maxBytes: 4096 });
+          if (!bodyResult.ok) {
+            sendRequestFailure({
+              statusCode: bodyResult.reason === "OVERSIZE" ? 413 : 400,
+              payload: {
+                error:
+                  bodyResult.reason === "OVERSIZE"
+                    ? "REQUEST_TOO_LARGE"
+                    : "INVALID_BODY",
+                message: bodyResult.error,
+              },
+              fallbackMessage: "Invalid Jira write config body.",
+            });
+            return;
+          }
+
+          const update: {
+            outputPathMarkdown?: string;
+            useDefaultOutputPath?: boolean;
+          } = {};
+          const body = bodyResult.value;
+          if (
+            typeof body === "object" &&
+            body !== null &&
+            !Array.isArray(body)
+          ) {
+            const record = body as Record<string, unknown>;
+            if (typeof record.outputPathMarkdown === "string") {
+              const trimmed = record.outputPathMarkdown.trim();
+              if (trimmed.includes("..") || trimmed.includes(" ")) {
+                sendValidationError({
+                  payload: {
+                    error: "INVALID_PATH",
+                    message:
+                      "outputPathMarkdown must not contain '..' or null bytes.",
+                  },
+                  fallbackMessage: "Invalid Jira write config path.",
+                });
+                return;
+              }
+              update.outputPathMarkdown = trimmed;
+            }
+            if (typeof record.useDefaultOutputPath === "boolean") {
+              update.useDefaultOutputPath = record.useDefaultOutputPath;
+            }
+          }
+
+          try {
+            await mkdir(path.dirname(configPath), { recursive: true });
+            const tmp = `${configPath}.${String(process.pid)}.${randomUUID()}.tmp`;
+            await writeFile(tmp, JSON.stringify(update, null, 2), "utf8");
+            await rename(tmp, configPath);
+          } catch (err) {
+            const message = sanitizeErrorMessage({
+              error: err,
+              fallback: "Jira write config persistence failed.",
+            });
+            sendRequestFailure({
+              statusCode: 500,
+              payload: {
+                error: "CONFIG_WRITE_FAILED",
+                message,
+              },
+              fallbackMessage: "Jira write config persistence failed.",
+            });
+            return;
+          }
+
+          sendJson({
+            response,
+            statusCode: 200,
+            payload: { ok: true, config: update },
+          });
+          return;
+        }
+
+        if (route.kind === "jira_write_start") {
+          response.setHeader("allow", "POST");
+          if (method !== "POST") {
+            sendJson({
+              response,
+              statusCode: 405,
+              payload: {
+                error: "METHOD_NOT_ALLOWED",
+                message: `Use POST to start Jira sub-task writes on '${pathname}'.`,
+              },
+            });
+            return;
+          }
+
+          const writeRequestValidation = validateWriteRequest({
+            request,
+            host,
+            port: getResolvedPort(),
+          });
+          if (!writeRequestValidation.ok) {
+            sendAuditedError({
+              statusCode: writeRequestValidation.statusCode,
+              payload: writeRequestValidation.payload,
+              event:
+                writeRequestValidation.payload.error ===
+                "UNSUPPORTED_MEDIA_TYPE"
+                  ? "security.request.unsupported_media_type"
+                  : "security.request.rejected_origin",
+              level: "warn",
+              jobId: route.jobId,
+              fallbackMessage: "Jira write request rejected.",
+            });
+            return;
+          }
+
+          const auth = validateTestIntelligenceSourceAuth({
+            request,
+            ...(runtime.testIntelligenceReviewBearerToken !== undefined
+              ? { bearerToken: runtime.testIntelligenceReviewBearerToken }
+              : {}),
+            ...(runtime.testIntelligenceReviewPrincipals !== undefined
+              ? { reviewPrincipals: runtime.testIntelligenceReviewPrincipals }
+              : {}),
+            routeLabel: "Jira sub-task write",
+          });
+          if (!auth.ok) {
+            if (auth.wwwAuthenticate) {
+              response.setHeader("www-authenticate", auth.wwwAuthenticate);
+            }
+            sendAuditedError({
+              statusCode: auth.statusCode,
+              payload: auth.payload,
+              event:
+                auth.payload.error === "UNAUTHORIZED"
+                  ? "security.request.unauthorized"
+                  : "workspace.request.failed",
+              level: auth.statusCode === 401 ? "warn" : "error",
+              jobId: route.jobId,
+              fallbackMessage: "Jira sub-task write rejected.",
+            });
+            return;
+          }
+
+          const rateLimitResult =
+            await testIntelligenceWriteRateLimiter.consume(
+              resolveRateLimitClientKey(request),
+              route.jobId,
+            );
+          if (!rateLimitResult.allowed) {
+            sendRateLimitExceeded({
+              retryAfterSeconds: rateLimitResult.retryAfterSeconds,
+              message: `Too many Jira write requests from this client. Retry after ${rateLimitResult.retryAfterSeconds} seconds.`,
+            });
+            return;
+          }
+
+          const bodyResult = await readJsonBody(request, {
+            maxBytes: MAX_SUBMIT_BODY_BYTES,
+          });
+          if (!bodyResult.ok) {
+            sendRequestFailure({
+              statusCode: bodyResult.reason === "OVERSIZE" ? 413 : 400,
+              payload: {
+                error:
+                  bodyResult.reason === "OVERSIZE"
+                    ? "REQUEST_TOO_LARGE"
+                    : "INVALID_BODY",
+                message: bodyResult.error,
+              },
+              jobId: route.jobId,
+              fallbackMessage: "Invalid Jira write request body.",
+            });
+            return;
+          }
+
+          const body = bodyResult.value;
+          const isObjectBody =
+            typeof body === "object" && body !== null && !Array.isArray(body);
+          const record = isObjectBody
+            ? (body as Record<string, unknown>)
+            : undefined;
+          const parentIssueKey =
+            record !== undefined && typeof record.parentIssueKey === "string"
+              ? record.parentIssueKey.trim()
+              : "";
+          const dryRun =
+            record !== undefined && typeof record.dryRun === "boolean"
+              ? record.dryRun
+              : false;
+          const outputPathMarkdown =
+            record !== undefined &&
+            typeof record.outputPathMarkdown === "string"
+              ? record.outputPathMarkdown.trim()
+              : undefined;
+          const useDefaultOutputPath =
+            record !== undefined &&
+            typeof record.useDefaultOutputPath === "boolean"
+              ? record.useDefaultOutputPath
+              : undefined;
+
+          const bundleResult = await readInspectorTestIntelligenceBundle({
+            rootDir: testIntelligenceArtifactRoot,
+            jobId: route.jobId,
+            assembledAt: new Date().toISOString(),
+          });
+          if (!bundleResult.ok) {
+            sendRequestFailure({
+              statusCode: 404,
+              payload: {
+                error: "JOB_NOT_FOUND",
+                message: `No test-intelligence artifacts for job '${route.jobId}'.`,
+              },
+              jobId: route.jobId,
+              fallbackMessage: "Job artifacts not found.",
+            });
+            return;
+          }
+
+          const bundle = bundleResult.bundle;
+          if (
+            !bundle.generatedTestCases ||
+            !bundle.policyReport ||
+            !bundle.validationReport ||
+            !bundle.reviewSnapshot
+          ) {
+            sendRequestFailure({
+              statusCode: 422,
+              payload: {
+                error: "ARTIFACTS_INCOMPLETE",
+                message:
+                  "Required job artifacts missing (generated test cases, policy report, validation report, review snapshot). Run validation and review pipeline first.",
+              },
+              jobId: route.jobId,
+              fallbackMessage: "Job artifacts incomplete.",
+            });
+            return;
+          }
+
+          const adminEnabled = runtime.testIntelligenceAllowJiraWrite === true;
+          const writeClient =
+            runtime.testIntelligenceJiraWriteClient ??
+            createUnconfiguredJiraWriteClient();
+          const runDir = path.join(testIntelligenceArtifactRoot, route.jobId);
+
+          const result = await runJiraSubtaskWrite(
+            {
+              jobId: route.jobId,
+              parentIssueKey,
+              mode: "jira_subtasks",
+              dryRun,
+              ...(outputPathMarkdown !== undefined
+                ? { outputPathMarkdown }
+                : {}),
+              ...(useDefaultOutputPath !== undefined
+                ? { useDefaultOutputPath }
+                : {}),
+              approvedTestCases: bundle.generatedTestCases,
+              policyReport: bundle.policyReport,
+              validationReport: bundle.validationReport,
+              ...(bundle.visualSidecarReport !== undefined
+                ? { visualSidecarValidation: bundle.visualSidecarReport }
+                : {}),
+              reviewGateSnapshot: bundle.reviewSnapshot,
+              runDir,
+              ...(runtime.testIntelligenceJiraWriteBearerToken !== undefined
+                ? {
+                    bearerToken: runtime.testIntelligenceJiraWriteBearerToken,
+                  }
+                : {}),
+              featureEnabled: resolveTestIntelligenceEnabled(),
+              adminEnabled,
+              clock: { now: () => new Date().toISOString() },
+              ...(auth.authorHandle.length > 0
+                ? { actor: auth.authorHandle }
+                : {}),
+            },
+            writeClient,
+          );
+
+          logAuditEvent({
+            event: "workspace.jira_write.run_completed",
+            statusCode: result.refused ? 422 : 200,
+            jobId: route.jobId,
+            message: result.refused
+              ? `Jira write refused for job '${route.jobId}': ${result.refusalCodes.join(",")}.`
+              : `Jira write completed for job '${route.jobId}': created=${String(result.createdCount)} skipped=${String(result.skippedDuplicateCount)} failed=${String(result.failedCount)} dryRun=${String(result.dryRunCount)}.`,
+            level: result.refused ? "warn" : "info",
+          });
+
+          sendJson({
+            response,
+            statusCode: result.refused ? 422 : 200,
+            payload: {
+              ok: !result.refused,
+              jobId: route.jobId,
+              refused: result.refused,
+              refusalCodes: result.refusalCodes,
+              dryRun: result.dryRun,
+              totalCases: result.totalCases,
+              createdCount: result.createdCount,
+              skippedDuplicateCount: result.skippedDuplicateCount,
+              failedCount: result.failedCount,
+              dryRunCount: result.dryRunCount,
             },
           });
           return;

@@ -293,7 +293,10 @@ export async function postWorkspaceSubmit(input: {
       "Workspace submit failed.",
     );
   }
-  if (!isRecord(response.payload) || !isNonEmptyString(response.payload["jobId"])) {
+  if (
+    !isRecord(response.payload) ||
+    !isNonEmptyString(response.payload["jobId"])
+  ) {
     return invalidResponse(response.status, "the workspace submit response");
   }
   return { ok: true, value: { jobId: response.payload["jobId"] } };
@@ -361,7 +364,9 @@ export async function postCustomContextSource(input: {
       },
       body: JSON.stringify({
         ...(input.markdown !== undefined ? { markdown: input.markdown } : {}),
-        ...(input.attributes !== undefined ? { attributes: input.attributes } : {}),
+        ...(input.attributes !== undefined
+          ? { attributes: input.attributes }
+          : {}),
       }),
     },
   });
@@ -400,6 +405,150 @@ export async function postCustomContextSource(input: {
       redactionCount,
     },
   };
+}
+
+export interface JiraWriteStartInput {
+  jobId: string;
+  parentIssueKey: string;
+  dryRun: boolean;
+  outputPathMarkdown?: string;
+  useDefaultOutputPath?: boolean;
+}
+
+export interface JiraWriteStartResult {
+  ok: boolean;
+  refused: boolean;
+  refusalCodes?: string[];
+  totalCases: number;
+  createdCount: number;
+  skippedDuplicateCount: number;
+  failedCount: number;
+  dryRun: boolean;
+  dryRunCount?: number;
+}
+
+export interface JiraWriteConfig {
+  outputPathMarkdown?: string;
+  useDefaultOutputPath?: boolean;
+}
+
+const isJiraWriteStartResult = (
+  value: unknown,
+): value is JiraWriteStartResult =>
+  isRecord(value) &&
+  typeof value["ok"] === "boolean" &&
+  typeof value["refused"] === "boolean" &&
+  typeof value["totalCases"] === "number" &&
+  typeof value["createdCount"] === "number" &&
+  typeof value["skippedDuplicateCount"] === "number" &&
+  typeof value["failedCount"] === "number" &&
+  typeof value["dryRun"] === "boolean";
+
+export async function startJiraWrite(
+  input: JiraWriteStartInput,
+  bearerToken: string,
+): Promise<FetchOutcome<JiraWriteStartResult>> {
+  const requestBody: Record<string, unknown> = {
+    parentIssueKey: input.parentIssueKey,
+    dryRun: input.dryRun,
+  };
+  if (input.outputPathMarkdown !== undefined) {
+    requestBody["outputPathMarkdown"] = input.outputPathMarkdown;
+  }
+  if (input.useDefaultOutputPath !== undefined) {
+    requestBody["useDefaultOutputPath"] = input.useDefaultOutputPath;
+  }
+  const response = await fetchJson<JiraWriteStartResult>({
+    url: `${ROOT}/write/${encodeURIComponent(input.jobId)}/jira-subtasks`,
+    init: {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        authorization: `Bearer ${bearerToken}`,
+      },
+      body: JSON.stringify(requestBody),
+    },
+  });
+  if (!response.ok) {
+    if (isJiraWriteStartResult(response.payload)) {
+      return { ok: true, value: response.payload };
+    }
+    return errorOutcomeFromPayload(
+      response.status,
+      response.payload,
+      "Jira sub-task write request was rejected.",
+    );
+  }
+  if (!isJiraWriteStartResult(response.payload)) {
+    return invalidResponse(response.status, "the Jira write response");
+  }
+  return { ok: true, value: response.payload };
+}
+
+export async function getJiraWriteConfig(): Promise<
+  FetchOutcome<JiraWriteConfig>
+> {
+  const response = await fetchJson<{ ok: true; config: JiraWriteConfig }>({
+    url: `${ROOT}/write/config`,
+  });
+  if (!response.ok) {
+    return errorOutcomeFromPayload(
+      response.status,
+      response.payload,
+      "Failed to load Jira write config.",
+    );
+  }
+  if (
+    !isRecord(response.payload) ||
+    response.payload["ok"] !== true ||
+    !isRecord(response.payload["config"])
+  ) {
+    return invalidResponse(response.status, "the Jira write config");
+  }
+  const raw = response.payload["config"] as Record<string, unknown>;
+  const config: JiraWriteConfig = {};
+  if (typeof raw["outputPathMarkdown"] === "string") {
+    config.outputPathMarkdown = raw["outputPathMarkdown"];
+  }
+  if (typeof raw["useDefaultOutputPath"] === "boolean") {
+    config.useDefaultOutputPath = raw["useDefaultOutputPath"];
+  }
+  return { ok: true, value: config };
+}
+
+export async function saveJiraWriteConfig(
+  config: JiraWriteConfig,
+  bearerToken: string,
+): Promise<FetchOutcome<{ ok: true }>> {
+  const body: Record<string, unknown> = {};
+  if (config.outputPathMarkdown !== undefined) {
+    body["outputPathMarkdown"] = config.outputPathMarkdown;
+  }
+  if (config.useDefaultOutputPath !== undefined) {
+    body["useDefaultOutputPath"] = config.useDefaultOutputPath;
+  }
+  const response = await fetchJson<{ ok: true }>({
+    url: `${ROOT}/write/config`,
+    init: {
+      method: "PUT",
+      headers: {
+        "content-type": "application/json",
+        authorization: `Bearer ${bearerToken}`,
+      },
+      body: JSON.stringify(body),
+    },
+  });
+  if (!response.ok) {
+    return errorOutcomeFromPayload(
+      response.status,
+      response.payload,
+      "Failed to save Jira write config.",
+    );
+  }
+  if (!isRecord(response.payload) || response.payload["ok"] !== true) {
+    return invalidResponse(response.status, "the Jira write config save");
+  }
+  return { ok: true, value: { ok: true } };
 }
 
 export async function deleteInspectorSource(input: {
