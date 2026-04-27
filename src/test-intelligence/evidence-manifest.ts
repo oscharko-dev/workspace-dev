@@ -46,6 +46,7 @@ import {
   type Wave1PocEvidenceManifest,
   type Wave1PocEvidenceVerificationResult,
   type Wave1PocFixtureId,
+  type MultiSourceSourceProvenanceRecord,
 } from "../contracts/index.js";
 import { canonicalJson } from "./content-hash.js";
 
@@ -229,6 +230,12 @@ export interface BuildWave1PocEvidenceManifestInput {
   artifacts: ReadonlyArray<BuildEvidenceArtifactRecord>;
   /** Direct visual-sidecar summary when the opt-in sidecar path ran. */
   visualSidecar?: Wave1PocEvidenceManifest["visualSidecar"];
+  /** Additive Wave 4 multi-source evidence metadata. */
+  multiSource?: {
+    sourceProvenanceRecords: readonly MultiSourceSourceProvenanceRecord[];
+    rawJiraResponsePersisted?: false;
+    rawPasteBytesPersisted?: false;
+  };
   /**
    * Hard invariant flag — must be `false` (the contract requires it).
    * Defaulted to `false` so most callers can omit it.
@@ -328,6 +335,13 @@ export const buildWave1PocEvidenceManifest = (
   const artifacts = Array.from(seen.values()).sort((a, b) =>
     a.filename < b.filename ? -1 : a.filename > b.filename ? 1 : 0,
   );
+  const sourceProvenanceRecords =
+    input.multiSource !== undefined
+      ? validateAndCloneSourceProvenanceRecords({
+          records: input.multiSource.sourceProvenanceRecords,
+          artifacts,
+        })
+      : undefined;
 
   const manifest: Wave1PocEvidenceManifest = {
     schemaVersion: WAVE1_POC_EVIDENCE_MANIFEST_SCHEMA_VERSION,
@@ -353,10 +367,68 @@ export const buildWave1PocEvidenceManifest = (
       ? { visualSidecar: input.visualSidecar }
       : {}),
     artifacts,
+    ...(sourceProvenanceRecords !== undefined
+      ? {
+          sourceProvenanceRecords,
+          multiSourceEnabled: true,
+          rawJiraResponsePersisted: false,
+          rawPasteBytesPersisted: false,
+        }
+      : {}),
     rawScreenshotsIncluded: false,
     imagePayloadSentToTestGeneration: false,
   };
   return withWave1PocEvidenceManifestIntegrity(manifest);
+};
+
+const SOURCE_ID_RE = /^[A-Za-z0-9._-]{1,64}$/;
+
+const validateAndCloneSourceProvenanceRecords = (input: {
+  records: readonly MultiSourceSourceProvenanceRecord[];
+  artifacts: readonly Wave1PocEvidenceArtifact[];
+}): MultiSourceSourceProvenanceRecord[] => {
+  return input.records.map((record, index) => {
+    if (!SOURCE_ID_RE.test(record.sourceId)) {
+      throw new RangeError(
+        `buildWave1PocEvidenceManifest: sourceProvenanceRecords[${index}].sourceId is invalid`,
+      );
+    }
+    if (!HEX64.test(record.contentHash)) {
+      throw new RangeError(
+        `buildWave1PocEvidenceManifest: sourceProvenanceRecords[${index}].contentHash must be a sha256 hex string`,
+      );
+    }
+    if (!Number.isSafeInteger(record.bytes) || record.bytes < 0) {
+      throw new RangeError(
+        `buildWave1PocEvidenceManifest: sourceProvenanceRecords[${index}].bytes must be a non-negative safe integer`,
+      );
+    }
+    const matchingArtifact = input.artifacts.find(
+      (artifact) =>
+        artifact.category === "source_ir" &&
+        artifact.filename.startsWith(`sources/${record.sourceId}/`) &&
+        artifact.sha256 === record.contentHash &&
+        artifact.bytes === record.bytes,
+    );
+    if (matchingArtifact === undefined) {
+      throw new RangeError(
+        `buildWave1PocEvidenceManifest: sourceProvenanceRecords[${index}] is not backed by a matching source_ir artifact`,
+      );
+    }
+    const cloned: MultiSourceSourceProvenanceRecord = {
+      sourceId: record.sourceId,
+      kind: record.kind,
+      contentHash: record.contentHash,
+      bytes: record.bytes,
+    };
+    if (record.authorHandle !== undefined) {
+      cloned.authorHandle = record.authorHandle;
+    }
+    if (record.capturedAt !== undefined) {
+      cloned.capturedAt = record.capturedAt;
+    }
+    return cloned;
+  });
 };
 
 export interface WriteWave1PocEvidenceManifestInput {

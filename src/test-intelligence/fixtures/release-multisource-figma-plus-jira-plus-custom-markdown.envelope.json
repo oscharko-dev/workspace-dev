@@ -22,9 +22,9 @@
       "authorHandle": "qa-reviewer",
       "inputFormat": "markdown",
       "redactedMarkdownHash": "9335cf6782249335cf6782249335cf6782249335cf6782249335cf6782249335",
-      "plainTextDerivativeHash": "a4467822499a4467822499a4467822499a4467822499a4467822499a4467822"
+      "plainTextDerivativeHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
     }
   ],
-  "aggregateContentHash": "b5577822499ab5577822499ab5577822499ab5577822499ab5577822499ab557",
+  "aggregateContentHash": "722d150700a13815c65a8c01b46db70638ef9e43c9aafdb0604fc660893a5ceb",
   "conflictResolutionPolicy": "reviewer_decides"
 }

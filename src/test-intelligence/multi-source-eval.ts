@@ -43,6 +43,8 @@ export interface Wave4EvalSourceMixResult {
   markdownSourceCount?: number;
   /** Number of those markdown sources with provenance records. */
   markdownSourcesWithProvenance?: number;
+  /** Expected envelope source count. Defaults to the harness result value. */
+  expectedSourceCount?: number;
 }
 
 export interface EvaluateWave4ProductionReadinessInput {
@@ -187,10 +189,7 @@ const collectMixFailureReasons = (
 };
 
 const countEnvelopeSources = (item: Wave4EvalSourceMixResult): number => {
-  // Best-effort: pre-flight quota failures may zero summaries; in those cases
-  // we count from runResult. The eval gate is also driven by the test
-  // harness, which knows how many sources to expect.
-  return item.runResult.sourceProvenanceSummaries.length;
+  return item.expectedSourceCount ?? item.runResult.expectedSourceCount;
 };
 
 const computeAttributionCoverage = (item: Wave4EvalSourceMixResult): number => {

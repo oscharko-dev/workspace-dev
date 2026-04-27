@@ -25,6 +25,7 @@ import type { Wave4ProductionReadinessRunResult } from "./multi-source-productio
 interface RunResultOverrides {
   ok?: boolean;
   quotasPassed?: boolean;
+  expectedSourceCount?: number;
   sourceProvenanceSummaries?: Wave4ProductionReadinessRunResult["sourceProvenanceSummaries"];
   fixtureId?: string;
 }
@@ -34,6 +35,10 @@ const makeRunResult = (
 ): Wave4ProductionReadinessRunResult => ({
   ok: overrides.ok ?? true,
   quotasPassed: overrides.quotasPassed ?? true,
+  expectedSourceCount:
+    overrides.expectedSourceCount ??
+    overrides.sourceProvenanceSummaries?.length ??
+    1,
   sourceProvenanceSummaries: overrides.sourceProvenanceSummaries ?? [
     {
       sourceId: "src-1",
@@ -106,6 +111,28 @@ test("evaluateWave4ProductionReadiness: quotasPassed=false produces passed=false
   assert.equal(report.passed, false);
   assert.ok(
     report.failureReasons.some((reason) => reason.endsWith(":quota_breach")),
+  );
+});
+
+test("evaluateWave4ProductionReadiness: missing source provenance fails against expected source count", () => {
+  const report = evaluateWave4ProductionReadiness({
+    sourceMixResults: [
+      {
+        mixId: "figma_plus_jira_plus_custom",
+        fixtureId: "release-multisource-onboarding",
+        runResult: makeRunResult({
+          expectedSourceCount: 3,
+          sourceProvenanceSummaries: [],
+        }),
+      },
+    ],
+  });
+  assert.equal(report.passed, false);
+  assert.equal(report.sourceMixCoverage[0]?.sourceProvenanceCoverage, 0);
+  assert.ok(
+    report.failureReasons.some((reason) =>
+      reason.endsWith(":source_provenance_below_threshold"),
+    ),
   );
 });
 

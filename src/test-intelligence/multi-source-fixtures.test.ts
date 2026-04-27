@@ -10,6 +10,14 @@ import {
   loadWave4ProductionReadinessFixture,
   WAVE4_PRODUCTION_READINESS_FIXTURE_IDS,
 } from "./multi-source-fixtures.js";
+import { validateMultiSourceTestIntentEnvelope } from "./multi-source-envelope.js";
+
+const EXPECTED_NEGATIVE_FIXTURE_REFUSALS = {
+  "release-multisource-all-sources-with-conflict":
+    "duplicate_jira_paste_collision",
+  "release-multisource-custom-markdown-adversarial":
+    "primary_source_required",
+} as const;
 
 test("multi-source-fixtures: ships every Wave 4.I production-readiness fixture id", () => {
   assert.equal(WAVE4_PRODUCTION_READINESS_FIXTURE_IDS.length, 12);
@@ -84,6 +92,29 @@ for (const fixtureId of WAVE4_PRODUCTION_READINESS_FIXTURE_IDS) {
       );
     }
     assert.match(envelope.aggregateContentHash, /^[0-9a-f]{64}$/);
+  });
+}
+
+for (const fixtureId of WAVE4_PRODUCTION_READINESS_FIXTURE_IDS) {
+  const expectedRefusal =
+    EXPECTED_NEGATIVE_FIXTURE_REFUSALS[
+      fixtureId as keyof typeof EXPECTED_NEGATIVE_FIXTURE_REFUSALS
+    ];
+
+  test(`multi-source-fixtures: ${fixtureId} has expected validator outcome`, async () => {
+    const fixture = await loadWave4ProductionReadinessFixture(fixtureId);
+    const validation = validateMultiSourceTestIntentEnvelope(fixture.envelope);
+    if (expectedRefusal === undefined) {
+      assert.equal(validation.ok, true);
+      return;
+    }
+    assert.equal(validation.ok, false);
+    if (!validation.ok) {
+      assert.equal(
+        validation.issues.some((issue) => issue.code === expectedRefusal),
+        true,
+      );
+    }
   });
 }
 

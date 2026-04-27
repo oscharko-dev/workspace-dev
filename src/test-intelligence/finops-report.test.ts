@@ -19,6 +19,7 @@ import { join } from "node:path";
 import test from "node:test";
 
 import {
+  ALLOWED_FINOPS_ROLES,
   FINOPS_ARTIFACT_DIRECTORY,
   FINOPS_BUDGET_REPORT_ARTIFACT_FILENAME,
   FINOPS_BUDGET_REPORT_SCHEMA_VERSION,
@@ -100,7 +101,7 @@ const tightBudget: FinOpsBudgetEnvelope = {
 test("recorder: empty snapshot lists every role with zero counters", () => {
   const recorder = createFinOpsUsageRecorder();
   const snapshot = recorder.snapshot();
-  assert.equal(snapshot.length, 3);
+  assert.equal(snapshot.length, ALLOWED_FINOPS_ROLES.length);
   for (const usage of snapshot) {
     assert.equal(usage.attempts, 0);
     assert.equal(usage.successes, 0);

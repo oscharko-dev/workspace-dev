@@ -43,6 +43,14 @@ opted into the multi-source gate keep emitting it as-is.
 
 > **inferredBusinessObjects**: [`InferredBusinessObject`](#inferredbusinessobject)[]
 
+##### multiSourceConflicts?
+
+> `optional` **multiSourceConflicts?**: [`MultiSourceConflict`](#multisourceconflict)[]
+
+Additive conflict/report payload emitted by the deterministic multi-source
+reconciliation engine (Issue #1436). Omitted for legacy single-source
+jobs so existing artifacts remain byte-stable.
+
 ##### openQuestions
 
 > **openQuestions**: `string`[]
@@ -140,7 +148,7 @@ Persisted, fully-redacted artifact form of a compiled prompt.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.2.0"`
+> **contractVersion**: `"1.3.0"`
 
 ##### hashes
 
@@ -1048,7 +1056,7 @@ Aggregate dry-run report artifact.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.2.0"`
+> **contractVersion**: `"1.3.0"`
 
 ##### credentialsIncluded
 
@@ -1397,7 +1405,7 @@ Sorted by filename for deterministic emission.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.2.0"`
+> **contractVersion**: `"1.3.0"`
 
 ##### exportedTestCaseCount
 
@@ -1486,13 +1494,13 @@ Numeric observed value (encoded as number for comparators).
 
 ##### role?
 
-> `optional` **role?**: `"test_generation"` \| `"visual_primary"` \| `"visual_fallback"`
+> `optional` **role?**: `"test_generation"` \| `"visual_primary"` \| `"visual_fallback"` \| `"jira_api_requests"` \| `"jira_paste_ingest"` \| `"custom_context_ingest"`
 
 Affected role, or `undefined` for job-level rules.
 
 ##### rule
 
-> **rule**: `"max_input_tokens"` \| `"max_output_tokens"` \| `"max_wall_clock_ms"` \| `"max_retries"` \| `"max_attempts"` \| `"max_image_bytes"` \| `"max_total_input_tokens"` \| `"max_total_output_tokens"` \| `"max_total_wall_clock_ms"` \| `"max_replay_cache_miss_rate"` \| `"max_fallback_attempts"` \| `"max_live_smoke_calls"` \| `"max_estimated_cost"`
+> **rule**: `"max_input_tokens"` \| `"max_output_tokens"` \| `"max_wall_clock_ms"` \| `"max_retries"` \| `"max_attempts"` \| `"max_image_bytes"` \| `"max_total_input_tokens"` \| `"max_total_output_tokens"` \| `"max_total_wall_clock_ms"` \| `"max_replay_cache_miss_rate"` \| `"max_fallback_attempts"` \| `"max_live_smoke_calls"` \| `"max_estimated_cost"` \| `"jira_api_quota_exceeded"` \| `"jira_paste_quota_exceeded"` \| `"custom_context_quota_exceeded"`
 
 ##### threshold
 
@@ -1549,6 +1557,18 @@ Maximum permitted replay-cache miss rate over the job (`misses / total`).
 
 Per-role budget records. Missing roles are unconstrained.
 
+###### custom\_context\_ingest?
+
+> `optional` **custom\_context\_ingest?**: [`FinOpsRoleBudget`](#finopsrolebudget)
+
+###### jira\_api\_requests?
+
+> `optional` **jira\_api\_requests?**: [`FinOpsRoleBudget`](#finopsrolebudget)
+
+###### jira\_paste\_ingest?
+
+> `optional` **jira\_paste\_ingest?**: [`FinOpsRoleBudget`](#finopsrolebudget)
+
 ###### test\_generation?
 
 > `optional` **test\_generation?**: [`FinOpsRoleBudget`](#finopsrolebudget)
@@ -1560,6 +1580,32 @@ Per-role budget records. Missing roles are unconstrained.
 ###### visual\_primary?
 
 > `optional` **visual\_primary?**: [`FinOpsRoleBudget`](#finopsrolebudget)
+
+##### sourceQuotas?
+
+> `optional` **sourceQuotas?**: `object`
+
+Per-source quota caps for non-LLM ingestion roles. Checked before any
+ingestion begins; breach emits the source-specific breach reason and
+fails fast without writing any artifact.
+
+###### maxCustomContextBytesPerJob?
+
+> `optional` **maxCustomContextBytesPerJob?**: `number`
+
+Maximum custom-context input bytes per job. Default: `MAX_CUSTOM_CONTEXT_BYTES_PER_JOB`.
+
+###### maxJiraApiRequestsPerJob?
+
+> `optional` **maxJiraApiRequestsPerJob?**: `number`
+
+Maximum Jira REST API calls per job. Default: `MAX_JIRA_API_REQUESTS_PER_JOB`.
+
+###### maxJiraPasteBytesPerJob?
+
+> `optional` **maxJiraPasteBytesPerJob?**: `number`
+
+Maximum raw paste bytes per job. Default: `MAX_JIRA_PASTE_BYTES_PER_JOB`.
 
 ***
 
@@ -1591,7 +1637,7 @@ Verbatim copy of the budget envelope applied to this job.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.2.0"`
+> **contractVersion**: `"1.3.0"`
 
 ##### currencyLabel?
 
@@ -1755,6 +1801,18 @@ Operator-supplied label describing the unit (e.g. "USD").
 
 > **rates**: `object`
 
+###### custom\_context\_ingest?
+
+> `optional` **custom\_context\_ingest?**: [`FinOpsCostRate`](#finopscostrate)
+
+###### jira\_api\_requests?
+
+> `optional` **jira\_api\_requests?**: [`FinOpsCostRate`](#finopscostrate)
+
+###### jira\_paste\_ingest?
+
+> `optional` **jira\_paste\_ingest?**: [`FinOpsCostRate`](#finopscostrate)
+
 ###### test\_generation?
 
 > `optional` **test\_generation?**: [`FinOpsCostRate`](#finopscostrate)
@@ -1797,6 +1855,13 @@ Enforced against `visual_fallback` only; ignored for other roles.
 > `optional` **maxImageBytesPerRequest?**: `number`
 
 Cap on the decoded image bytes per request (visual roles only).
+
+##### maxIngestBytesPerJob?
+
+> `optional` **maxIngestBytesPerJob?**: `number`
+
+Aggregate byte-ingest cap per job for non-LLM source-ingestion roles
+(`jira_paste_ingest`, `custom_context_ingest`). Ignored for LLM roles.
 
 ##### maxInputTokensPerRequest?
 
@@ -1912,6 +1977,13 @@ Number of attempts that selected a fallback deployment.
 
 Sum of decoded image-input bytes per request (visual roles only; 0 elsewhere).
 
+##### ingestBytes
+
+> **ingestBytes**: `number`
+
+Total bytes ingested by non-LLM ingest roles (`jira_paste_ingest`,
+`custom_context_ingest`). Always `0` for LLM and visual roles.
+
 ##### inputTokens
 
 > **inputTokens**: `number`
@@ -1944,7 +2016,7 @@ Sum of output tokens reported by the gateway across all successful attempts.
 
 ##### role
 
-> **role**: `"test_generation"` \| `"visual_primary"` \| `"visual_fallback"`
+> **role**: `"test_generation"` \| `"visual_primary"` \| `"visual_fallback"` \| `"jira_api_requests"` \| `"jira_paste_ingest"` \| `"custom_context_ingest"`
 
 ##### successes
 
@@ -1995,7 +2067,7 @@ Single generated test case.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.2.0"`
+> **contractVersion**: `"1.3.0"`
 
 ##### expectedResults
 
@@ -2097,7 +2169,7 @@ Whether the artifact came from a replay-cache hit.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.2.0"`
+> **contractVersion**: `"1.3.0"`
 
 ##### generatedAt
 
@@ -2388,7 +2460,7 @@ Hard-invariant intent-delta report artifact (Issue #1373).
 
 ##### contractVersion
 
-> **contractVersion**: `"1.2.0"`
+> **contractVersion**: `"1.3.0"`
 
 ##### currentIntentHash
 
@@ -3943,6 +4015,64 @@ Image payload accepted by visual sidecars. Rejected for `test_generation`.
 
 ***
 
+### MultiSourceConflict
+
+One deterministic conflict row emitted by the reconciliation engine.
+
+#### Properties
+
+##### affectedElementIds?
+
+> `optional` **affectedElementIds?**: `string`[]
+
+Stable IR ids affected by this conflict, when known.
+
+##### affectedScreenIds?
+
+> `optional` **affectedScreenIds?**: `string`[]
+
+Stable screen ids affected by this conflict, when known.
+
+##### conflictId
+
+> **conflictId**: `string`
+
+SHA-256 of `{ kind, sourceRefs, normalizedValues }`.
+
+##### detail?
+
+> `optional` **detail?**: `string`
+
+Optional sanitized detail suitable for reviewer inspection.
+
+##### kind
+
+> **kind**: [`MultiSourceConflictKind`](#multisourceconflictkind-1)
+
+##### normalizedValues
+
+> **normalizedValues**: `string`[]
+
+Sorted, redacted, canonical values that disagreed.
+
+##### participatingSourceIds
+
+> **participatingSourceIds**: `string`[]
+
+##### resolution
+
+> **resolution**: `"auto_priority"` \| `"deferred_to_reviewer"` \| `"kept_both"` \| `"unresolved"`
+
+##### resolvedAt?
+
+> `optional` **resolvedAt?**: `string`
+
+##### resolvedBy?
+
+> `optional` **resolvedBy?**: `string`
+
+***
+
 ### MultiSourceEnvelopeIssue
 
 A single validation issue surfaced by the multi-source envelope
@@ -4022,6 +4152,120 @@ Single refusal entry on a [MultiSourceModeGateDecision](#multisourcemodegatedeci
 ##### detail
 
 > **detail**: `string`
+
+***
+
+### MultiSourceReconciliationReport
+
+Aggregate deterministic conflict artifact emitted for a reconciled run.
+
+#### Properties
+
+##### conflicts
+
+> **conflicts**: [`MultiSourceConflict`](#multisourceconflict)[]
+
+##### contributingSourcesPerCase
+
+> **contributingSourcesPerCase**: `object`[]
+
+Stable conceptual-case mapping used by downstream reviewers. Each id is a
+deterministic synthetic case key produced by the reconciliation engine.
+
+###### sourceIds
+
+> **sourceIds**: `string`[]
+
+###### testCaseId
+
+> **testCaseId**: `string`
+
+##### envelopeHash
+
+> **envelopeHash**: `string`
+
+##### policyApplied
+
+> **policyApplied**: `"priority"` \| `"reviewer_decides"` \| `"keep_both"`
+
+##### transcript
+
+> **transcript**: [`MultiSourceReconciliationTranscriptEntry`](#multisourcereconciliationtranscriptentry)[]
+
+##### unmatchedSources
+
+> **unmatchedSources**: `string`[]
+
+Sources that were present but contributed no accepted or conflict rows.
+
+##### version
+
+> **version**: `"1.0.0"`
+
+***
+
+### MultiSourceReconciliationTranscriptEntry
+
+Stable transcript row describing one merge decision taken by the engine.
+
+#### Properties
+
+##### action
+
+> **action**: `"accepted"` \| `"merged"` \| `"conflict_recorded"` \| `"alternative_emitted"` \| `"source_unmatched"`
+
+##### affectedElementIds
+
+> **affectedElementIds**: `string`[]
+
+##### decisionId
+
+> **decisionId**: `string`
+
+##### rationale
+
+> **rationale**: `string`
+
+##### sourceIds
+
+> **sourceIds**: `string`[]
+
+***
+
+### MultiSourceSourceProvenanceRecord
+
+Per-source provenance record in the evidence manifest.
+One entry per source-IR artifact emitted under `<runDir>/sources/<sourceId>/`.
+
+#### Properties
+
+##### authorHandle?
+
+> `optional` **authorHandle?**: `string`
+
+Author handle (reviewer-supplied for paste/custom sources).
+
+##### bytes
+
+> **bytes**: `number`
+
+##### capturedAt?
+
+> `optional` **capturedAt?**: `string`
+
+ISO-8601 capture timestamp.
+
+##### contentHash
+
+> **contentHash**: `string`
+
+##### kind
+
+> **kind**: `"figma_plugin"` \| `"figma_local_json"` \| `"figma_rest"` \| `"jira_rest"` \| `"jira_paste"` \| `"custom_text"` \| `"custom_structured"`
+
+##### sourceId
+
+> **sourceId**: `string`
 
 ***
 
@@ -4191,7 +4435,7 @@ Aggregate `qc-created-entities.json` artifact (Issue #1372).
 
 ##### contractVersion
 
-> **contractVersion**: `"1.2.0"`
+> **contractVersion**: `"1.3.0"`
 
 ##### entities
 
@@ -4281,7 +4525,7 @@ Aggregate QC mapping preview artifact.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.2.0"`
+> **contractVersion**: `"1.3.0"`
 
 ##### entries
 
@@ -4752,7 +4996,7 @@ ISO-8601 UTC timestamp at the moment of persistence.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.2.0"`
+> **contractVersion**: `"1.3.0"`
 
 ##### fromState?
 
@@ -4820,7 +5064,7 @@ Number of cases currently in `approved` (or `exported`/`transferred`) state.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.2.0"`
+> **contractVersion**: `"1.3.0"`
 
 ##### fourEyesPolicy?
 
@@ -4895,7 +5139,7 @@ When `true`, the export pipeline refuses cases not in `approved`,
 
 ##### fourEyesReasons?
 
-> `optional` **fourEyesReasons?**: (`"risk_category"` \| `"visual_low_confidence"` \| `"visual_fallback_used"` \| `"visual_possible_pii"` \| `"visual_prompt_injection"` \| `"visual_metadata_conflict"`)[]
+> `optional` **fourEyesReasons?**: (`"multi_source_conflict_present"` \| `"risk_category"` \| `"visual_low_confidence"` \| `"visual_fallback_used"` \| `"visual_possible_pii"` \| `"visual_prompt_injection"` \| `"visual_metadata_conflict"`)[]
 
 Reasons four-eyes is enforced (#1376). Empty when
 `fourEyesEnforced=false`. Sorted deterministic. Optional for
@@ -5194,7 +5438,7 @@ Sorted by `testCaseId` for byte stability. Empty when `refusal` is set.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.2.0"`
+> **contractVersion**: `"1.3.0"`
 
 ##### gatewayRelease
 
@@ -5361,7 +5605,7 @@ Avg assumptions per case.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.2.0"`
+> **contractVersion**: `"1.3.0"`
 
 ##### duplicatePairs
 
@@ -5455,7 +5699,7 @@ Aggregate dedupe report artifact (Issue #1373).
 
 ##### contractVersion
 
-> **contractVersion**: `"1.2.0"`
+> **contractVersion**: `"1.3.0"`
 
 ##### embeddingProvider
 
@@ -5565,7 +5809,7 @@ Aggregate test-case delta report (always paired with `IntentDeltaReport`).
 
 ##### contractVersion
 
-> **contractVersion**: `"1.2.0"`
+> **contractVersion**: `"1.3.0"`
 
 ##### generatedAt
 
@@ -5821,7 +6065,7 @@ Whether ANY case was blocked (downstream export gate).
 
 ##### contractVersion
 
-> **contractVersion**: `"1.2.0"`
+> **contractVersion**: `"1.3.0"`
 
 ##### decisions
 
@@ -5871,7 +6115,7 @@ Single policy-rule violation surfaced for a generated test case.
 
 ##### outcome
 
-> **outcome**: `"schema_invalid"` \| `"missing_trace"` \| `"missing_expected_results"` \| `"semantic_suspicious_content"` \| `"pii_in_test_data"` \| `"missing_negative_or_validation_for_required_field"` \| `"missing_accessibility_case"` \| `"missing_boundary_case"` \| `"duplicate_test_case"` \| `"regulated_risk_review_required"` \| `"ambiguity_review_required"` \| `"qc_mapping_not_exportable"` \| `"low_confidence_review_required"` \| `"open_questions_review_required"` \| `"visual_sidecar_failure"` \| `"visual_sidecar_fallback_used"` \| `"visual_sidecar_low_confidence"` \| `"visual_sidecar_possible_pii"` \| `"visual_sidecar_prompt_injection_text"` \| `"risk_tag_downgrade_detected"` \| `"custom_context_risk_escalation"`
+> **outcome**: `"schema_invalid"` \| `"missing_trace"` \| `"missing_expected_results"` \| `"semantic_suspicious_content"` \| `"pii_in_test_data"` \| `"missing_negative_or_validation_for_required_field"` \| `"missing_accessibility_case"` \| `"missing_boundary_case"` \| `"duplicate_test_case"` \| `"regulated_risk_review_required"` \| `"ambiguity_review_required"` \| `"qc_mapping_not_exportable"` \| `"low_confidence_review_required"` \| `"open_questions_review_required"` \| `"visual_sidecar_failure"` \| `"visual_sidecar_fallback_used"` \| `"visual_sidecar_low_confidence"` \| `"visual_sidecar_possible_pii"` \| `"visual_sidecar_prompt_injection_text"` \| `"risk_tag_downgrade_detected"` \| `"custom_context_risk_escalation"` \| `"multi_source_conflict_present"`
 
 ##### path?
 
@@ -5960,7 +6204,7 @@ Whether the report blocks downstream review/export (any error => true).
 
 ##### contractVersion
 
-> **contractVersion**: `"1.2.0"`
+> **contractVersion**: `"1.3.0"`
 
 ##### errorCount
 
@@ -6139,7 +6383,7 @@ Aggregate traceability-matrix artifact (Issue #1373).
 
 ##### contractVersion
 
-> **contractVersion**: `"1.2.0"`
+> **contractVersion**: `"1.3.0"`
 
 ##### exportProfile?
 
@@ -6279,7 +6523,7 @@ Per-case policy decision (mirrors `TestCasePolicyDecisionRecord.decision`).
 
 ##### policyOutcomes
 
-> **policyOutcomes**: (`"schema_invalid"` \| `"missing_trace"` \| `"missing_expected_results"` \| `"semantic_suspicious_content"` \| `"pii_in_test_data"` \| `"missing_negative_or_validation_for_required_field"` \| `"missing_accessibility_case"` \| `"missing_boundary_case"` \| `"duplicate_test_case"` \| `"regulated_risk_review_required"` \| `"ambiguity_review_required"` \| `"qc_mapping_not_exportable"` \| `"low_confidence_review_required"` \| `"open_questions_review_required"` \| `"visual_sidecar_failure"` \| `"visual_sidecar_fallback_used"` \| `"visual_sidecar_low_confidence"` \| `"visual_sidecar_possible_pii"` \| `"visual_sidecar_prompt_injection_text"` \| `"risk_tag_downgrade_detected"` \| `"custom_context_risk_escalation"`)[]
+> **policyOutcomes**: (`"schema_invalid"` \| `"missing_trace"` \| `"missing_expected_results"` \| `"semantic_suspicious_content"` \| `"pii_in_test_data"` \| `"missing_negative_or_validation_for_required_field"` \| `"missing_accessibility_case"` \| `"missing_boundary_case"` \| `"duplicate_test_case"` \| `"regulated_risk_review_required"` \| `"ambiguity_review_required"` \| `"qc_mapping_not_exportable"` \| `"low_confidence_review_required"` \| `"open_questions_review_required"` \| `"visual_sidecar_failure"` \| `"visual_sidecar_fallback_used"` \| `"visual_sidecar_low_confidence"` \| `"visual_sidecar_possible_pii"` \| `"visual_sidecar_prompt_injection_text"` \| `"risk_tag_downgrade_detected"` \| `"custom_context_risk_escalation"` \| `"multi_source_conflict_present"`)[]
 
 Per-case sorted, deduplicated policy outcome codes that fired.
 
@@ -6409,7 +6653,7 @@ Per-case policy decision at the time this step row was built.
 
 ##### policyOutcomes
 
-> **policyOutcomes**: (`"schema_invalid"` \| `"missing_trace"` \| `"missing_expected_results"` \| `"semantic_suspicious_content"` \| `"pii_in_test_data"` \| `"missing_negative_or_validation_for_required_field"` \| `"missing_accessibility_case"` \| `"missing_boundary_case"` \| `"duplicate_test_case"` \| `"regulated_risk_review_required"` \| `"ambiguity_review_required"` \| `"qc_mapping_not_exportable"` \| `"low_confidence_review_required"` \| `"open_questions_review_required"` \| `"visual_sidecar_failure"` \| `"visual_sidecar_fallback_used"` \| `"visual_sidecar_low_confidence"` \| `"visual_sidecar_possible_pii"` \| `"visual_sidecar_prompt_injection_text"` \| `"risk_tag_downgrade_detected"` \| `"custom_context_risk_escalation"`)[]
+> **policyOutcomes**: (`"schema_invalid"` \| `"missing_trace"` \| `"missing_expected_results"` \| `"semantic_suspicious_content"` \| `"pii_in_test_data"` \| `"missing_negative_or_validation_for_required_field"` \| `"missing_accessibility_case"` \| `"missing_boundary_case"` \| `"duplicate_test_case"` \| `"regulated_risk_review_required"` \| `"ambiguity_review_required"` \| `"qc_mapping_not_exportable"` \| `"low_confidence_review_required"` \| `"open_questions_review_required"` \| `"visual_sidecar_failure"` \| `"visual_sidecar_fallback_used"` \| `"visual_sidecar_low_confidence"` \| `"visual_sidecar_possible_pii"` \| `"visual_sidecar_prompt_injection_text"` \| `"risk_tag_downgrade_detected"` \| `"custom_context_risk_escalation"` \| `"multi_source_conflict_present"`)[]
 
 Per-case sorted, deduplicated policy outcomes at the time this step row was built.
 
@@ -6502,7 +6746,7 @@ Hash-only upstream artifact references; never raw prompts, screenshots, or crede
 
 ##### fourEyesReasons
 
-> **fourEyesReasons**: (`"risk_category"` \| `"visual_low_confidence"` \| `"visual_fallback_used"` \| `"visual_possible_pii"` \| `"visual_prompt_injection"` \| `"visual_metadata_conflict"`)[]
+> **fourEyesReasons**: (`"multi_source_conflict_present"` \| `"risk_category"` \| `"visual_low_confidence"` \| `"visual_fallback_used"` \| `"visual_possible_pii"` \| `"visual_prompt_injection"` \| `"visual_metadata_conflict"`)[]
 
 Reasons four-eyes review applied to one or more cases (sorted, deduped).
 
@@ -6633,7 +6877,7 @@ Audit metadata for the run.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.2.0"`
+> **contractVersion**: `"1.3.0"`
 
 ##### createdCount
 
@@ -6966,7 +7210,7 @@ screenshot bytes.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.2.0"`
+> **contractVersion**: `"1.3.0"`
 
 ##### generatedAt
 
@@ -7106,7 +7350,7 @@ Whether any record carries a non-`ok`/non-`fallback_used` outcome that blocks ge
 
 ##### contractVersion
 
-> **contractVersion**: `"1.2.0"`
+> **contractVersion**: `"1.3.0"`
 
 ##### generatedAt
 
@@ -7376,7 +7620,7 @@ Active signing mode; mirrored from the run input for auditability.
 
 ##### testIntelligenceContractVersion
 
-> **testIntelligenceContractVersion**: `"1.2.0"`
+> **testIntelligenceContractVersion**: `"1.3.0"`
 
 ##### visualSidecar?
 
@@ -7805,7 +8049,7 @@ and timestamps are caller-provided.
 
 ##### testIntelligenceContractVersion
 
-> **testIntelligenceContractVersion**: `"1.2.0"`
+> **testIntelligenceContractVersion**: `"1.3.0"`
 
 ##### thresholds
 
@@ -8027,6 +8271,12 @@ Identities of the deployments behind the run.
 
 > `optional` **visualPrimary?**: `"llama-4-maverick-vision"` \| `"phi-4-multimodal-poc"` \| `"mock"` \| `"none"`
 
+##### multiSourceEnabled?
+
+> `optional` **multiSourceEnabled?**: `boolean`
+
+`true` when the Wave 4 multi-source pipeline produced this manifest.
+
 ##### policyProfileId
 
 > **policyProfileId**: `string`
@@ -8049,6 +8299,18 @@ Replay-cache identity hashes for the run (mirrors compiled prompt).
 
 Versions used to compile the prompt and validate the output.
 
+##### rawJiraResponsePersisted?
+
+> `optional` **rawJiraResponsePersisted?**: `false`
+
+Hard invariant on multi-source manifests: raw Jira responses not persisted.
+
+##### rawPasteBytesPersisted?
+
+> `optional` **rawPasteBytesPersisted?**: `false`
+
+Hard invariant on multi-source manifests: raw paste bytes not persisted.
+
 ##### rawScreenshotsIncluded
 
 > **rawScreenshotsIncluded**: `false`
@@ -8067,9 +8329,19 @@ Hard invariant: no raw screenshot bytes leak into export artifacts.
 
 > **schemaVersion**: `"1.0.0"`
 
+##### sourceProvenanceRecords?
+
+> `optional` **sourceProvenanceRecords?**: [`MultiSourceSourceProvenanceRecord`](#multisourcesourceprovenancerecord)[]
+
+Per-source provenance records added when the multi-source pipeline ran.
+Present only when `multiSourceEnabled` is `true`. Each entry records the
+SHA-256 + bytes of the per-source IR artifact under
+`<runDir>/sources/<sourceId>/`. Never includes raw Jira API responses,
+raw paste bytes, or PII.
+
 ##### testIntelligenceContractVersion
 
-> **testIntelligenceContractVersion**: `"1.2.0"`
+> **testIntelligenceContractVersion**: `"1.3.0"`
 
 Test-intelligence subsurface contract version.
 
@@ -8306,6 +8578,155 @@ SHA-256 of the persisted canonical JSON (hex, lowercase).
 > **visualFallbackUsed**: `boolean`
 
 Whether the visual sidecar fallback path was taken in the run.
+
+***
+
+### Wave4ProductionReadinessEvalReport
+
+Evaluation report produced by the Wave 4 production-readiness gate.
+Written to `<runDir>/wave4-production-readiness-eval-report.json`.
+
+#### Properties
+
+##### failureReasons
+
+> **failureReasons**: `string`[]
+
+##### generatedAt
+
+> **generatedAt**: `string`
+
+##### markdownCustomContextCoverage
+
+> **markdownCustomContextCoverage**: `object`
+
+###### coverageRatio
+
+> **coverageRatio**: `number`
+
+###### sourcesWithProvenance
+
+> **sourcesWithProvenance**: `number`
+
+###### totalMarkdownSources
+
+> **totalMarkdownSources**: `number`
+
+##### overallSourceProvenanceCoverage
+
+> **overallSourceProvenanceCoverage**: `number`
+
+##### overallTestCaseAttributionCoverage
+
+> **overallTestCaseAttributionCoverage**: `number`
+
+##### passed
+
+> **passed**: `boolean`
+
+##### rawJiraResponsePersisted
+
+> **rawJiraResponsePersisted**: `false`
+
+##### rawPasteBytesPersisted
+
+> **rawPasteBytesPersisted**: `false`
+
+##### rawScreenshotsIncluded
+
+> **rawScreenshotsIncluded**: `false`
+
+##### secretsIncluded
+
+> **secretsIncluded**: `false`
+
+##### sourceMixCoverage
+
+> **sourceMixCoverage**: [`Wave4SourceMixCoverageEntry`](#wave4sourcemixcoverageentry)[]
+
+##### thresholds
+
+> **thresholds**: [`Wave4ProductionReadinessEvalThresholds`](#wave4productionreadinessevalthresholds)
+
+##### version
+
+> **version**: `"1.0.0"`
+
+***
+
+### Wave4ProductionReadinessEvalThresholds
+
+Pass/fail thresholds for the Wave 4 production-readiness eval gate.
+
+#### Properties
+
+##### maxAirgapFetchCalls
+
+> **maxAirgapFetchCalls**: `number`
+
+Maximum allowed outbound fetch calls in the air-gap fixture. Default 0.
+
+##### minConflictDetectionRecall
+
+> **minConflictDetectionRecall**: `number`
+
+Minimum conflict-detection recall on the payment-with-conflict fixture (0–1). Default 0.95.
+
+##### minSourceProvenance
+
+> **minSourceProvenance**: `number`
+
+Required provenance-field coverage across all sources (0–1). Default 1.0.
+
+##### minTestCaseSourceAttribution
+
+> **minTestCaseSourceAttribution**: `number`
+
+Required source-attribution coverage on every test case (0–1). Default 1.0.
+
+***
+
+### Wave4SourceMixCoverageEntry
+
+Per-source-mix coverage entry emitted by the eval gate.
+
+#### Properties
+
+##### airgapFetchCalls?
+
+> `optional` **airgapFetchCalls?**: `number`
+
+##### conflictDetectionRecall?
+
+> `optional` **conflictDetectionRecall?**: `number`
+
+##### failureReasons
+
+> **failureReasons**: `string`[]
+
+##### fixtureId
+
+> **fixtureId**: `string`
+
+##### mixId
+
+> **mixId**: [`Wave4SourceMixId`](#wave4sourcemixid)
+
+##### pass
+
+> **pass**: `boolean`
+
+##### sourceProvenanceCoverage
+
+> **sourceProvenanceCoverage**: `number`
+
+Provenance coverage ratio (0–1).
+
+##### testCaseAttributionCoverage
+
+> **testCaseAttributionCoverage**: `number`
+
+Source-attribution coverage ratio across test cases (0–1).
 
 ***
 
@@ -11276,6 +11697,14 @@ when both `WorkspaceStartOptions.testIntelligence.enabled` and
 `FIGMAPIPE_WORKSPACE_TEST_INTELLIGENCE=1` are satisfied. The Inspector
 UI uses this flag to gate the "Test Intelligence" navigation entry.
 
+##### testIntelligenceJiraGatewayConfigured?
+
+> `optional` **testIntelligenceJiraGatewayConfigured?**: `boolean`
+
+Whether the Inspector can reach a configured Jira REST gateway for
+Jira API source ingestion. False means Jira paste remains the available
+air-gapped Jira source path.
+
 ##### testIntelligenceMultiSourceEnabled?
 
 > `optional` **testIntelligenceMultiSourceEnabled?**: `boolean`
@@ -12269,6 +12698,14 @@ Reasoning-effort hint forwarded only when `reasoningEffortSupport` is true.
 
 ***
 
+### MultiSourceConflictKind
+
+> **MultiSourceConflictKind** = `"field_label_mismatch"` \| `"validation_rule_mismatch"` \| `"risk_category_mismatch"` \| `"test_data_example_mismatch"` \| `"duplicate_acceptance_criterion"` \| `"paste_collision"`
+
+Kinds of cross-source disagreement recognized by Issue #1436.
+
+***
+
 ### MultiSourceEnvelopeRefusalCode
 
 > **MultiSourceEnvelopeRefusalCode** = *typeof* [`ALLOWED_MULTI_SOURCE_ENVELOPE_REFUSAL_CODES`](#allowed_multi_source_envelope_refusal_codes)\[`number`\]
@@ -12587,7 +13024,7 @@ supplied integration with Fulcio + Rekor).
 
 ### Wave1PocEvidenceArtifactCategory
 
-> **Wave1PocEvidenceArtifactCategory** = `"intent"` \| `"validation"` \| `"review"` \| `"export"` \| `"manifest"` \| `"visual_sidecar"` \| `"finops"` \| `"attestation"` \| `"signature"` \| `"lbom"` \| `"self_verify_rubric"` \| `"intent_delta"` \| `"dedupe_report"` \| `"traceability_matrix"`
+> **Wave1PocEvidenceArtifactCategory** = `"intent"` \| `"validation"` \| `"review"` \| `"export"` \| `"manifest"` \| `"visual_sidecar"` \| `"finops"` \| `"attestation"` \| `"signature"` \| `"lbom"` \| `"self_verify_rubric"` \| `"intent_delta"` \| `"dedupe_report"` \| `"traceability_matrix"` \| `"multi_source_reconciliation"` \| `"source_ir"` \| `"source_provenance"` \| `"multi_source_conflicts"` \| `"production_readiness_eval"`
 
 Categorisation of an artifact attested by the evidence manifest.
 
@@ -12598,6 +13035,14 @@ Categorisation of an artifact attested by the evidence manifest.
 > **Wave1PocFixtureId** = *typeof* [`WAVE1_POC_FIXTURE_IDS`](#wave1_poc_fixture_ids)\[`number`\]
 
 Identifier of a Wave 1 POC fixture.
+
+***
+
+### Wave4SourceMixId
+
+> **Wave4SourceMixId** = `"figma_only"` \| `"jira_rest_only"` \| `"jira_paste_only"` \| `"figma_plus_jira_rest"` \| `"figma_plus_jira_paste"` \| `"jira_rest_plus_custom"` \| `"figma_plus_jira_plus_custom"` \| `"all_sources_with_conflict"` \| `"custom_markdown_only"` \| `"figma_plus_jira_plus_custom_markdown"` \| `"custom_markdown_adversarial"`
+
+Source-mix identifier. Each distinct combination of source kinds is one mix.
 
 ***
 
@@ -13013,7 +13458,7 @@ runtime agree.
 
 ### ALLOWED\_FINOPS\_BUDGET\_BREACH\_REASONS
 
-> `const` **ALLOWED\_FINOPS\_BUDGET\_BREACH\_REASONS**: readonly \[`"max_input_tokens"`, `"max_output_tokens"`, `"max_wall_clock_ms"`, `"max_retries"`, `"max_attempts"`, `"max_image_bytes"`, `"max_total_input_tokens"`, `"max_total_output_tokens"`, `"max_total_wall_clock_ms"`, `"max_replay_cache_miss_rate"`, `"max_fallback_attempts"`, `"max_live_smoke_calls"`, `"max_estimated_cost"`\]
+> `const` **ALLOWED\_FINOPS\_BUDGET\_BREACH\_REASONS**: readonly \[`"max_input_tokens"`, `"max_output_tokens"`, `"max_wall_clock_ms"`, `"max_retries"`, `"max_attempts"`, `"max_image_bytes"`, `"max_total_input_tokens"`, `"max_total_output_tokens"`, `"max_total_wall_clock_ms"`, `"max_replay_cache_miss_rate"`, `"max_fallback_attempts"`, `"max_live_smoke_calls"`, `"max_estimated_cost"`, `"jira_api_quota_exceeded"`, `"jira_paste_quota_exceeded"`, `"custom_context_quota_exceeded"`\]
 
 Allowed budget breach reasons. Discriminated for policy-readable diagnostics.
 
@@ -13029,7 +13474,7 @@ Allowed terminal outcomes for a FinOps-tracked job.
 
 ### ALLOWED\_FINOPS\_ROLES
 
-> `const` **ALLOWED\_FINOPS\_ROLES**: readonly \[`"test_generation"`, `"visual_primary"`, `"visual_fallback"`\]
+> `const` **ALLOWED\_FINOPS\_ROLES**: readonly \[`"test_generation"`, `"visual_primary"`, `"visual_fallback"`, `"jira_api_requests"`, `"jira_paste_ingest"`, `"custom_context_ingest"`\]
 
 Per-role discriminant used inside the FinOps surface. Mirrors the gateway
 roles but is exported as its own list so policy gates can iterate roles
@@ -13039,7 +13484,7 @@ without depending on the gateway surface.
 
 ### ALLOWED\_FOUR\_EYES\_ENFORCEMENT\_REASONS
 
-> `const` **ALLOWED\_FOUR\_EYES\_ENFORCEMENT\_REASONS**: readonly \[`"risk_category"`, `"visual_low_confidence"`, `"visual_fallback_used"`, `"visual_possible_pii"`, `"visual_prompt_injection"`, `"visual_metadata_conflict"`\]
+> `const` **ALLOWED\_FOUR\_EYES\_ENFORCEMENT\_REASONS**: readonly \[`"risk_category"`, `"visual_low_confidence"`, `"visual_fallback_used"`, `"visual_possible_pii"`, `"visual_prompt_injection"`, `"visual_metadata_conflict"`, `"multi_source_conflict_present"`\]
 
 Reasons four-eyes review is enforced for a single test case (#1376).
 
@@ -13379,7 +13824,7 @@ Allowed policy-gate decisions (Issue #1364).
 
 ### ALLOWED\_TEST\_CASE\_POLICY\_OUTCOMES
 
-> `const` **ALLOWED\_TEST\_CASE\_POLICY\_OUTCOMES**: readonly \[`"missing_trace"`, `"missing_expected_results"`, `"pii_in_test_data"`, `"missing_negative_or_validation_for_required_field"`, `"missing_accessibility_case"`, `"missing_boundary_case"`, `"schema_invalid"`, `"duplicate_test_case"`, `"regulated_risk_review_required"`, `"ambiguity_review_required"`, `"qc_mapping_not_exportable"`, `"low_confidence_review_required"`, `"open_questions_review_required"`, `"visual_sidecar_failure"`, `"visual_sidecar_fallback_used"`, `"visual_sidecar_low_confidence"`, `"visual_sidecar_possible_pii"`, `"visual_sidecar_prompt_injection_text"`, `"semantic_suspicious_content"`, `"risk_tag_downgrade_detected"`, `"custom_context_risk_escalation"`\]
+> `const` **ALLOWED\_TEST\_CASE\_POLICY\_OUTCOMES**: readonly \[`"missing_trace"`, `"missing_expected_results"`, `"pii_in_test_data"`, `"missing_negative_or_validation_for_required_field"`, `"missing_accessibility_case"`, `"missing_boundary_case"`, `"schema_invalid"`, `"duplicate_test_case"`, `"regulated_risk_review_required"`, `"ambiguity_review_required"`, `"qc_mapping_not_exportable"`, `"low_confidence_review_required"`, `"open_questions_review_required"`, `"visual_sidecar_failure"`, `"visual_sidecar_fallback_used"`, `"visual_sidecar_low_confidence"`, `"visual_sidecar_possible_pii"`, `"visual_sidecar_prompt_injection_text"`, `"semantic_suspicious_content"`, `"risk_tag_downgrade_detected"`, `"custom_context_risk_escalation"`, `"multi_source_conflict_present"`\]
 
 Allowed policy outcome codes attached to a single decision row.
 Visual-sidecar codes (`visual_*`) come from the multimodal sidecar
@@ -13556,7 +14001,7 @@ Schema version for `BusinessTestIntentIr` artifacts.
 
 ### CONTRACT\_VERSION
 
-> `const` **CONTRACT\_VERSION**: `"4.13.0"`
+> `const` **CONTRACT\_VERSION**: `"4.14.0"`
 
 Current contract version constant.
 Must be bumped according to CONTRACT_CHANGELOG.md rules.
@@ -13805,7 +14250,7 @@ Schema version for the persisted intent-delta artifact (Issue #1373).
 > `const` **JIRA\_ISSUE\_IR\_ARTIFACT\_DIRECTORY**: `"sources"`
 
 Run-dir-relative subdirectory under which per-source Jira IR artifacts
-are persisted, namespaced by [TestIntentSourceRef.sourceId](#sourceid-2).
+are persisted, namespaced by [TestIntentSourceRef.sourceId](#sourceid-3).
 
 Layout: `<runDir>/sources/<sourceId>/jira-issue-ir.json`.
 
@@ -13883,6 +14328,16 @@ Version stamp for persisted role-separated LLM gateway evidence artifacts.
 
 ***
 
+### MAX\_CUSTOM\_CONTEXT\_BYTES\_PER\_JOB
+
+> `const` **MAX\_CUSTOM\_CONTEXT\_BYTES\_PER\_JOB**: `262144`
+
+Maximum custom-context input bytes allowed per production-readiness job.
+Enforced before custom-context ingest begins; breach emits
+`custom_context_quota_exceeded`.
+
+***
+
 ### MAX\_JIRA\_ADF\_INPUT\_BYTES
 
 > `const` **MAX\_JIRA\_ADF\_INPUT\_BYTES**: `1048576`
@@ -13891,6 +14346,15 @@ Hard pre-parse byte cap on the serialized ADF JSON document. Inputs
 exceeding this are rejected with `jira_adf_payload_too_large` before
 any tree traversal — the parser MUST NOT allocate proportional to the
 payload above this bound.
+
+***
+
+### MAX\_JIRA\_API\_REQUESTS\_PER\_JOB
+
+> `const` **MAX\_JIRA\_API\_REQUESTS\_PER\_JOB**: `20`
+
+Maximum Jira REST API calls allowed per production-readiness job.
+Enforced before any outbound fetch; breach emits `jira_api_quota_exceeded`.
 
 ***
 
@@ -13957,6 +14421,15 @@ Hard cap on the number of Jira linked-issue refs persisted in a single IR.
 
 ***
 
+### MAX\_JIRA\_PASTE\_BYTES\_PER\_JOB
+
+> `const` **MAX\_JIRA\_PASTE\_BYTES\_PER\_JOB**: `524288`
+
+Maximum raw paste bytes allowed per production-readiness job.
+Enforced before Jira paste ingest begins; breach emits `jira_paste_quota_exceeded`.
+
+***
+
 ### MAX\_VISUAL\_SIDECAR\_INPUT\_BYTES
 
 > `const` **MAX\_VISUAL\_SIDECAR\_INPUT\_BYTES**: `number`
@@ -13965,6 +14438,22 @@ Maximum decoded byte size of a single visual sidecar capture. The bound
 is enforced AFTER base64 decoding (i.e. on the actual image bytes the
 gateway would forward). Five MiB matches the conservative ceiling Azure
 OpenAI imposes on multimodal payloads.
+
+***
+
+### MULTI\_SOURCE\_CONFLICT\_REPORT\_ARTIFACT\_FILENAME
+
+> `const` **MULTI\_SOURCE\_CONFLICT\_REPORT\_ARTIFACT\_FILENAME**: `"multi-source-conflicts.json"`
+
+Canonical filename for the deterministic multi-source conflict artifact.
+
+***
+
+### MULTI\_SOURCE\_RECONCILIATION\_REPORT\_SCHEMA\_VERSION
+
+> `const` **MULTI\_SOURCE\_RECONCILIATION\_REPORT\_SCHEMA\_VERSION**: `"1.0.0"`
+
+Schema version for `multi-source-conflicts.json` (Issue #1436).
 
 ***
 
@@ -14203,7 +14692,7 @@ Bumped when `TestCaseValidationReport` changes shape.
 
 ### TEST\_INTELLIGENCE\_CONTRACT\_VERSION
 
-> `const` **TEST\_INTELLIGENCE\_CONTRACT\_VERSION**: `"1.2.0"`
+> `const` **TEST\_INTELLIGENCE\_CONTRACT\_VERSION**: `"1.3.0"`
 
 Contract version for the opt-in test-intelligence surface.
 
@@ -14442,3 +14931,19 @@ end-to-end against an air-gapped mock LLM.
 > `const` **WAVE1\_POC\_SIGNATURES\_DIRECTORY**: `"evidence/signatures"`
 
 Subdirectory under a run dir where Sigstore signature bundles are persisted.
+
+***
+
+### WAVE4\_PRODUCTION\_READINESS\_EVAL\_REPORT\_ARTIFACT\_FILENAME
+
+> `const` **WAVE4\_PRODUCTION\_READINESS\_EVAL\_REPORT\_ARTIFACT\_FILENAME**: `"wave4-production-readiness-eval-report.json"`
+
+On-disk filename for `Wave4ProductionReadinessEvalReport`.
+
+***
+
+### WAVE4\_PRODUCTION\_READINESS\_EVAL\_REPORT\_SCHEMA\_VERSION
+
+> `const` **WAVE4\_PRODUCTION\_READINESS\_EVAL\_REPORT\_SCHEMA\_VERSION**: `"1.0.0"`
+
+Schema version for `Wave4ProductionReadinessEvalReport`.
