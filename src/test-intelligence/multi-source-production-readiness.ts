@@ -25,7 +25,7 @@ import { mkdir, rename, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
 import {
-  BUSINESS_TEST_INTENT_IR_SCHEMA_VERSION,
+  type BUSINESS_TEST_INTENT_IR_SCHEMA_VERSION,
   CUSTOM_CONTEXT_SCHEMA_VERSION,
   JIRA_ISSUE_IR_ARTIFACT_DIRECTORY,
   type CustomContextNoteEntry,
@@ -448,7 +448,7 @@ const buildJiraIrFromRestResponse = (
   }
   const issues = (input.response as Record<string, unknown>)["issues"];
   if (!Array.isArray(issues) || issues.length === 0) return undefined;
-  const first = issues[0];
+  const first: unknown = issues[0];
   if (typeof first !== "object" || first === null) return undefined;
   const issue = first as Record<string, unknown>;
   const key = typeof issue["key"] === "string" ? issue["key"] : undefined;
