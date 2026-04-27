@@ -14,20 +14,23 @@ import {
   detectFormGroups,
   normalizeIconImports,
   isDeepIconImport,
-  extractSharedSxConstantsFromScreenContent
+  extractSharedSxConstantsFromScreenContent,
 } from "./generator-core.js";
 import {
   __resetTypescriptModuleResolverForTests,
   __setTypescriptModuleResolverForTests,
   GENERATED_SOURCE_VALIDATION_MISSING_TYPESCRIPT_CODE,
   GENERATED_SOURCE_VALIDATION_MISSING_TYPESCRIPT_MESSAGE,
-  validateGeneratedSourceFile
+  validateGeneratedSourceFile,
 } from "./generated-source-validation.js";
 import { figmaToDesignIr } from "./ir.js";
 import { buildTypographyScaleFromAliases } from "./typography-tokens.js";
 import { parseCustomerProfileConfig } from "../customer-profile.js";
 import { buildStorybookPublicArtifacts } from "../storybook/public-extracts.js";
-import { resolveStorybookTheme, type ResolvedStorybookTheme } from "../storybook/theme-resolver.js";
+import {
+  resolveStorybookTheme,
+  type ResolvedStorybookTheme,
+} from "../storybook/theme-resolver.js";
 
 const toRgba = (hex: string): { r: number; g: number; b: number } => {
   const normalized = hex.replace("#", "");
@@ -38,17 +41,19 @@ const toRgba = (hex: string): { r: number; g: number; b: number } => {
   return {
     r: Number.parseInt(payload.slice(0, 2), 16),
     g: Number.parseInt(payload.slice(2, 4), 16),
-    b: Number.parseInt(payload.slice(4, 6), 16)
+    b: Number.parseInt(payload.slice(4, 6), 16),
   };
 };
 
-const toFigmaColor = (hex: string): { r: number; g: number; b: number; a: number } => {
+const toFigmaColor = (
+  hex: string,
+): { r: number; g: number; b: number; a: number } => {
   const { r, g, b } = toRgba(hex);
   return {
     r: r / 255,
     g: g / 255,
     b: b / 255,
-    a: 1
+    a: 1,
   };
 };
 
@@ -56,7 +61,9 @@ const toLuminance = (hex: string): number => {
   const { r, g, b } = toRgba(hex);
   const toLinear = (channel: number): number => {
     const normalized = channel / 255;
-    return normalized <= 0.03928 ? normalized / 12.92 : ((normalized + 0.055) / 1.055) ** 2.4;
+    return normalized <= 0.03928
+      ? normalized / 12.92
+      : ((normalized + 0.055) / 1.055) ** 2.4;
   };
   return 0.2126 * toLinear(r) + 0.7152 * toLinear(g) + 0.0722 * toLinear(b);
 };
@@ -72,44 +79,61 @@ const contrastRatio = (foreground: string, background: string): number => {
 const extractThemeHex = ({
   themeContent,
   scheme,
-  token
+  token,
 }: {
   themeContent: string;
   scheme: "light" | "dark";
-  token: "primary" | "secondary" | "success" | "warning" | "error" | "info" | "background" | "divider";
+  token:
+    | "primary"
+    | "secondary"
+    | "success"
+    | "warning"
+    | "error"
+    | "info"
+    | "background"
+    | "divider";
 }): string => {
   const pattern =
     token === "background"
-      ? new RegExp(`${scheme}: \\{[\\s\\S]*?background: \\{ default: "(#[0-9a-f]+)"`, "i")
+      ? new RegExp(
+          `${scheme}: \\{[\\s\\S]*?background: \\{ default: "(#[0-9a-f]+)"`,
+          "i",
+        )
       : token === "divider"
         ? new RegExp(`${scheme}: \\{[\\s\\S]*?divider: "(#[0-9a-f]+)"`, "i")
-        : new RegExp(`${scheme}: \\{[\\s\\S]*?${token}: \\{ main: "(#[0-9a-f]+)"`, "i");
+        : new RegExp(
+            `${scheme}: \\{[\\s\\S]*?${token}: \\{ main: "(#[0-9a-f]+)"`,
+            "i",
+          );
   const match = themeContent.match(pattern);
   assert.ok(match?.[1], `Expected ${scheme}.${token} hex in generated theme.`);
   return match[1];
 };
 
-const countOccurrences = (source: string, token: string): number => source.split(token).length - 1;
+const countOccurrences = (source: string, token: string): number =>
+  source.split(token).length - 1;
 
 const assertValidTsx = ({
   content,
-  filePath
+  filePath,
 }: {
   content: string;
   filePath: string;
 }): void => {
   validateGeneratedSourceFile({
     filePath,
-    content
+    content,
   });
 };
 
-const GENERATE_ARTIFACTS_RUNTIME_ADAPTERS_SYMBOL = Symbol.for("workspace-dev.parity.generateArtifacts.runtimeAdapters");
+const GENERATE_ARTIFACTS_RUNTIME_ADAPTERS_SYMBOL = Symbol.for(
+  "workspace-dev.parity.generateArtifacts.runtimeAdapters",
+);
 
 const writeGeneratedFileFromRuntimeAdapter = async ({
   rootDir,
   relativePath,
-  content
+  content,
 }: {
   rootDir: string;
   relativePath: string;
@@ -135,9 +159,9 @@ const createCustomerProfileForGeneratorTests = () => {
           aliases: {
             figma: ["Components"],
             storybook: ["components"],
-            code: ["@customer/components"]
-          }
-        }
+            code: ["@customer/components"],
+          },
+        },
       ],
       brandMappings: [
         {
@@ -146,9 +170,9 @@ const createCustomerProfileForGeneratorTests = () => {
           brandTheme: "sparkasse",
           storybookThemes: {
             light: "sparkasse-light",
-            dark: "sparkasse-dark"
-          }
-        }
+            dark: "sparkasse-dark",
+          },
+        },
       ],
       imports: {
         components: {
@@ -158,33 +182,35 @@ const createCustomerProfileForGeneratorTests = () => {
             export: "PrimaryButton",
             importAlias: "CustomerButton",
             propMappings: {
-              variant: "appearance"
-            }
-          }
-        }
+              variant: "appearance",
+            },
+          },
+        },
       },
       fallbacks: {
         mui: {
           defaultPolicy: "deny",
           components: {
-            Card: "allow"
-          }
-        }
+            Card: "allow",
+          },
+        },
       },
       template: {
         dependencies: {
-          "@customer/components": "^1.2.3"
-        }
+          "@customer/components": "^1.2.3",
+        },
       },
       strictness: {
         match: "warn",
         token: "off",
-        import: "error"
-      }
-    }
+        import: "error",
+      },
+    },
   });
   if (!customerProfile) {
-    throw new Error("Failed to create customer profile generator test fixture.");
+    throw new Error(
+      "Failed to create customer profile generator test fixture.",
+    );
   }
   return customerProfile;
 };
@@ -200,9 +226,9 @@ const createCustomerProfileWithIconImportsForGeneratorTests = () => {
           aliases: {
             figma: ["Components"],
             storybook: ["components"],
-            code: ["@customer/components"]
-          }
-        }
+            code: ["@customer/components"],
+          },
+        },
       ],
       brandMappings: [
         {
@@ -211,9 +237,9 @@ const createCustomerProfileWithIconImportsForGeneratorTests = () => {
           brandTheme: "sparkasse",
           storybookThemes: {
             light: "sparkasse-light",
-            dark: "sparkasse-dark"
-          }
-        }
+            dark: "sparkasse-dark",
+          },
+        },
       ],
       imports: {
         components: {
@@ -223,41 +249,43 @@ const createCustomerProfileWithIconImportsForGeneratorTests = () => {
             export: "PrimaryButton",
             importAlias: "CustomerButton",
             propMappings: {
-              variant: "appearance"
-            }
-          }
+              variant: "appearance",
+            },
+          },
         },
         icons: {
           mail: {
             package: "@customer/icons",
             export: "MailIcon",
-            importAlias: "CustomerMailIcon"
-          }
-        }
+            importAlias: "CustomerMailIcon",
+          },
+        },
       },
       fallbacks: {
         mui: {
           defaultPolicy: "deny",
           components: {
-            Card: "allow"
-          }
-        }
+            Card: "allow",
+          },
+        },
       },
       template: {
         dependencies: {
           "@customer/components": "^1.2.3",
-          "@customer/icons": "^4.5.6"
-        }
+          "@customer/icons": "^4.5.6",
+        },
       },
       strictness: {
         match: "warn",
         token: "off",
-        import: "error"
-      }
-    }
+        import: "error",
+      },
+    },
   });
   if (!customerProfile) {
-    throw new Error("Failed to create customer profile icon generator test fixture.");
+    throw new Error(
+      "Failed to create customer profile icon generator test fixture.",
+    );
   }
   return customerProfile;
 };
@@ -273,8 +301,8 @@ const createIssue693CustomerProfileForGeneratorTests = () => {
           aliases: {
             figma: ["Components"],
             storybook: ["components"],
-            code: ["@customer/components"]
-          }
+            code: ["@customer/components"],
+          },
         },
         {
           id: "Forms",
@@ -282,8 +310,8 @@ const createIssue693CustomerProfileForGeneratorTests = () => {
           aliases: {
             figma: ["Forms"],
             storybook: ["forms"],
-            code: ["@customer/forms"]
-          }
+            code: ["@customer/forms"],
+          },
         },
         {
           id: "Typography",
@@ -291,9 +319,9 @@ const createIssue693CustomerProfileForGeneratorTests = () => {
           aliases: {
             figma: ["Typography"],
             storybook: ["typography"],
-            code: ["@customer/typography"]
-          }
-        }
+            code: ["@customer/typography"],
+          },
+        },
       ],
       brandMappings: [
         {
@@ -302,38 +330,38 @@ const createIssue693CustomerProfileForGeneratorTests = () => {
           brandTheme: "sparkasse",
           storybookThemes: {
             light: "sparkasse-light",
-            dark: "sparkasse-dark"
-          }
-        }
+            dark: "sparkasse-dark",
+          },
+        },
       ],
       imports: {
         components: {
           DatePicker: {
             family: "Forms",
             package: "@customer/forms",
-            export: "CustomerDatePicker"
+            export: "CustomerDatePicker",
           },
           InputIBAN: {
             family: "Forms",
             package: "@customer/forms",
-            export: "CustomerIbanInput"
+            export: "CustomerIbanInput",
           },
           Typography: {
             family: "Typography",
             package: "@customer/typography",
-            export: "CustomerTypography"
-          }
-        }
+            export: "CustomerTypography",
+          },
+        },
       },
       fallbacks: {
         mui: {
-          defaultPolicy: "deny"
-        }
+          defaultPolicy: "deny",
+        },
       },
       template: {
         dependencies: {
           "@customer/forms": "^1.0.0",
-          "@customer/typography": "^1.0.0"
+          "@customer/typography": "^1.0.0",
         },
         providers: {
           datePicker: {
@@ -341,29 +369,31 @@ const createIssue693CustomerProfileForGeneratorTests = () => {
             export: "CustomerDatePickerProvider",
             adapter: {
               package: "@customer/date-provider",
-              export: "CustomerDateAdapter"
+              export: "CustomerDateAdapter",
             },
             props: {
-              adapterLocale: "de"
-            }
-          }
-        }
+              adapterLocale: "de",
+            },
+          },
+        },
       },
       strictness: {
         match: "warn",
         token: "off",
-        import: "error"
-      }
-    }
+        import: "error",
+      },
+    },
   });
   if (!customerProfile) {
-    throw new Error("Failed to create Issue #693 customer profile generator test fixture.");
+    throw new Error(
+      "Failed to create Issue #693 customer profile generator test fixture.",
+    );
   }
   return customerProfile;
 };
 
 const createResolvedStorybookTheme = ({
-  includeDark = true
+  includeDark = true,
 }: {
   includeDark?: boolean;
 } = {}): ResolvedStorybookTheme => {
@@ -376,16 +406,16 @@ const createResolvedStorybookTheme = ({
       palette: {
         primary: {
           main: "#aa0000",
-          contrastText: "#ffffff"
+          contrastText: "#ffffff",
         },
         text: {
-          primary: "#1f1f1f"
+          primary: "#1f1f1f",
         },
         background: {
           default: "#f8f8f8",
-          paper: "#ffffff"
+          paper: "#ffffff",
         },
-        divider: "#dddddd"
+        divider: "#dddddd",
       },
       spacingBase: 10,
       borderRadius: 14,
@@ -395,31 +425,31 @@ const createResolvedStorybookTheme = ({
           fontFamily: "Storybook Sans",
           fontSizePx: 16,
           fontWeight: 400,
-          lineHeight: 1.5
+          lineHeight: 1.5,
         },
         variants: {
           h1: {
             fontFamily: "Storybook Sans",
             fontSizePx: 30,
             fontWeight: 700,
-            lineHeight: 1.2
+            lineHeight: 1.2,
           },
           body1: {
             fontFamily: "Storybook Sans",
             fontSizePx: 16,
             fontWeight: 400,
-            lineHeight: 1.5
-          }
-        }
+            lineHeight: 1.5,
+          },
+        },
       },
       components: {
         MuiButton: {
           rootStyleOverrides: {
             textTransform: "capitalize",
-            padding: "12px"
-          }
-        }
-      }
+            padding: "12px",
+          },
+        },
+      },
     },
     ...(includeDark
       ? {
@@ -428,15 +458,15 @@ const createResolvedStorybookTheme = ({
             palette: {
               primary: {
                 main: "#ff6666",
-                contrastText: "#111111"
+                contrastText: "#111111",
               },
               text: {
-                primary: "#f4f4f4"
+                primary: "#f4f4f4",
               },
               background: {
                 default: "#121212",
-                paper: "#1f1f1f"
-              }
+                paper: "#1f1f1f",
+              },
             },
             spacingBase: 10,
             borderRadius: 14,
@@ -446,12 +476,12 @@ const createResolvedStorybookTheme = ({
                 fontFamily: "Storybook Sans",
                 fontSizePx: 16,
                 fontWeight: 400,
-                lineHeight: 1.5
+                lineHeight: 1.5,
               },
-              variants: {}
+              variants: {},
             },
-            components: {}
-          }
+            components: {},
+          },
         }
       : {}),
     tokensDocument: {
@@ -463,16 +493,16 @@ const createResolvedStorybookTheme = ({
         palette: {
           primary: {
             main: "#aa0000",
-            contrastText: "#ffffff"
+            contrastText: "#ffffff",
           },
           text: {
-            primary: "#1f1f1f"
+            primary: "#1f1f1f",
           },
           background: {
             default: "#f8f8f8",
-            paper: "#ffffff"
+            paper: "#ffffff",
           },
-          divider: "#dddddd"
+          divider: "#dddddd",
         },
         spacingBase: 10,
         borderRadius: 14,
@@ -482,31 +512,31 @@ const createResolvedStorybookTheme = ({
             fontFamily: "Storybook Sans",
             fontSizePx: 16,
             fontWeight: 400,
-            lineHeight: 1.5
+            lineHeight: 1.5,
           },
           variants: {
             h1: {
               fontFamily: "Storybook Sans",
               fontSizePx: 30,
               fontWeight: 700,
-              lineHeight: 1.2
+              lineHeight: 1.2,
             },
             body1: {
               fontFamily: "Storybook Sans",
               fontSizePx: 16,
               fontWeight: 400,
-              lineHeight: 1.5
-            }
-          }
+              lineHeight: 1.5,
+            },
+          },
         },
         components: {
           MuiButton: {
             rootStyleOverrides: {
               textTransform: "capitalize",
-              padding: "12px"
-            }
-          }
-        }
+              padding: "12px",
+            },
+          },
+        },
       },
       ...(includeDark
         ? {
@@ -515,15 +545,15 @@ const createResolvedStorybookTheme = ({
               palette: {
                 primary: {
                   main: "#ff6666",
-                  contrastText: "#111111"
+                  contrastText: "#111111",
                 },
                 text: {
-                  primary: "#f4f4f4"
+                  primary: "#f4f4f4",
                 },
                 background: {
                   default: "#121212",
-                  paper: "#1f1f1f"
-                }
+                  paper: "#1f1f1f",
+                },
               },
               spacingBase: 10,
               borderRadius: 14,
@@ -533,15 +563,15 @@ const createResolvedStorybookTheme = ({
                   fontFamily: "Storybook Sans",
                   fontSizePx: 16,
                   fontWeight: 400,
-                  lineHeight: 1.5
+                  lineHeight: 1.5,
                 },
-                variants: {}
+                variants: {},
               },
-              components: {}
-            }
+              components: {},
+            },
           }
-        : {})
-    }
+        : {}),
+    },
   };
 };
 
@@ -556,36 +586,40 @@ const createIssue690CustomerProfileForGeneratorTests = () => {
           aliases: ["storybook-default"],
           brandTheme: "derived",
           storybookThemes: {
-            light: "default"
-          }
-        }
+            light: "default",
+          },
+        },
       ],
       imports: {
-        components: {}
+        components: {},
       },
       fallbacks: {
         mui: {
-          defaultPolicy: "allow"
-        }
+          defaultPolicy: "allow",
+        },
       },
       template: {
-        dependencies: {}
+        dependencies: {},
       },
       strictness: {
         match: "warn",
         token: "warn",
-        import: "warn"
-      }
-    }
+        import: "warn",
+      },
+    },
   });
   if (!customerProfile) {
-    throw new Error("Failed to create Issue #690 customer profile generator test fixture.");
+    throw new Error(
+      "Failed to create Issue #690 customer profile generator test fixture.",
+    );
   }
   return customerProfile;
 };
 
 const createIssue690BackfilledStorybookBuild = async (): Promise<string> => {
-  const buildDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-issue-690-storybook-build-"));
+  const buildDir = await mkdtemp(
+    path.join(os.tmpdir(), "workspace-dev-issue-690-storybook-build-"),
+  );
   const assetsDir = path.join(buildDir, "assets");
   await mkdir(assetsDir, { recursive: true });
 
@@ -600,9 +634,9 @@ const createIssue690BackfilledStorybookBuild = async (): Promise<string> => {
         storiesImports: [],
         type: "story",
         tags: ["dev", "test"],
-        componentPath: "./src/theme/Regression.tsx"
-      }
-    }
+        componentPath: "./src/theme/Regression.tsx",
+      },
+    },
   };
 
   const iframeHtml = `
@@ -658,10 +692,18 @@ const createIssue690BackfilledStorybookBuild = async (): Promise<string> => {
     }
   `;
 
-  await writeFile(path.join(buildDir, "index.json"), `${JSON.stringify(indexJson, null, 2)}\n`, "utf8");
+  await writeFile(
+    path.join(buildDir, "index.json"),
+    `${JSON.stringify(indexJson, null, 2)}\n`,
+    "utf8",
+  );
   await writeFile(path.join(buildDir, "iframe.html"), iframeHtml, "utf8");
   await writeFile(path.join(assetsDir, "iframe-test.js"), iframeBundle, "utf8");
-  await writeFile(path.join(assetsDir, "Regression.stories-test.js"), storyBundle, "utf8");
+  await writeFile(
+    path.join(assetsDir, "Regression.stories-test.js"),
+    storyBundle,
+    "utf8",
+  );
   await writeFile(path.join(assetsDir, "shared-theme.js"), themeBundle, "utf8");
   await writeFile(path.join(assetsDir, "iframe-test.css"), cssText, "utf8");
 
@@ -670,7 +712,7 @@ const createIssue690BackfilledStorybookBuild = async (): Promise<string> => {
 
 const collectDeterministicSnapshot = async ({
   projectDir,
-  screenName
+  screenName,
 }: {
   projectDir: string;
   screenName: string;
@@ -683,36 +725,60 @@ const collectDeterministicSnapshot = async ({
 }> => {
   return {
     appContent: await readFile(path.join(projectDir, "src", "App.tsx"), "utf8"),
-    screenContent: await readFile(path.join(projectDir, toDeterministicScreenPath(screenName)), "utf8"),
-    themeContent: await readFile(path.join(projectDir, "src", "theme", "theme.ts"), "utf8"),
-    tokensContent: await readFile(path.join(projectDir, "src", "theme", "tokens.json"), "utf8"),
-    metricsContent: await readFile(path.join(projectDir, "generation-metrics.json"), "utf8")
+    screenContent: await readFile(
+      path.join(projectDir, toDeterministicScreenPath(screenName)),
+      "utf8",
+    ),
+    themeContent: await readFile(
+      path.join(projectDir, "src", "theme", "theme.ts"),
+      "utf8",
+    ),
+    tokensContent: await readFile(
+      path.join(projectDir, "src", "theme", "tokens.json"),
+      "utf8",
+    ),
+    metricsContent: await readFile(
+      path.join(projectDir, "generation-metrics.json"),
+      "utf8",
+    ),
   };
 };
 
 const readGeneratedStringArrayLiteral = ({
   source,
-  variableName
+  variableName,
 }: {
   source: string;
   variableName: string;
 }): string[] => {
   const escapedName = variableName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const match = source.match(new RegExp(`const ${escapedName}: string\\[] = (\\[[\\s\\S]*?\\]);`));
-  assert.ok(match?.[1], `Expected array literal declaration for '${variableName}'.`);
+  const match = source.match(
+    new RegExp(`const ${escapedName}: string\\[] = (\\[[\\s\\S]*?\\]);`),
+  );
+  assert.ok(
+    match?.[1],
+    `Expected array literal declaration for '${variableName}'.`,
+  );
   return JSON.parse(match?.[1] ?? "[]") as string[];
 };
 
 const readGeneratedStringArrayMapLiteral = ({
   source,
-  variableName
+  variableName,
 }: {
   source: string;
   variableName: string;
 }): Record<string, string[]> => {
   const escapedName = variableName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const match = source.match(new RegExp(`const ${escapedName}: Record<string, string\\[]> = (\\{[\\s\\S]*?\\});`));
-  assert.ok(match?.[1], `Expected map literal declaration for '${variableName}'.`);
+  const match = source.match(
+    new RegExp(
+      `const ${escapedName}: Record<string, string\\[]> = (\\{[\\s\\S]*?\\});`,
+    ),
+  );
+  assert.ok(
+    match?.[1],
+    `Expected map literal declaration for '${variableName}'.`,
+  );
   return JSON.parse(match?.[1] ?? "{}") as Record<string, string[]>;
 };
 
@@ -735,8 +801,8 @@ const createIr = () => ({
         selected: "#ee000014",
         disabled: "#22222242",
         disabledBackground: "#2222221f",
-        focus: "#ee00001f"
-      }
+        focus: "#ee00001f",
+      },
     },
     borderRadius: 12,
     spacingBase: 8,
@@ -746,8 +812,8 @@ const createIr = () => ({
     typography: buildTypographyScaleFromAliases({
       fontFamily: "Sparkasse Sans",
       headingSize: 28,
-      bodySize: 16
-    })
+      bodySize: 16,
+    }),
   },
   screens: [
     {
@@ -762,25 +828,25 @@ const createIr = () => ({
           name: "Titel",
           nodeType: "TEXT",
           type: "text" as const,
-          text: "Willkommen"
+          text: "Willkommen",
         },
         {
           id: "n2",
           name: "Konto Input",
           nodeType: "FRAME",
           type: "input" as const,
-          text: "Kontonummer"
+          text: "Kontonummer",
         },
         {
           id: "n3",
           name: "Weiter Button",
           nodeType: "FRAME",
           type: "button" as const,
-          text: "Weiter"
-        }
-      ]
-    }
-  ]
+          text: "Weiter",
+        },
+      ],
+    },
+  ],
 });
 
 const createMixedFallbackStageIr = () => {
@@ -798,7 +864,7 @@ const createMixedFallbackStageIr = () => {
           name: "Header Title",
           nodeType: "TEXT",
           type: "text" as const,
-          text: "Dashboard"
+          text: "Dashboard",
         },
         {
           id: "mixed-stage-nav",
@@ -808,8 +874,8 @@ const createMixedFallbackStageIr = () => {
           text: "Open Details",
           prototypeNavigation: {
             targetScreenId: "mixed-stage-target-screen",
-            mode: "replace" as const
-          }
+            mode: "replace" as const,
+          },
         },
         {
           id: "mixed-stage-search-icon",
@@ -818,14 +884,14 @@ const createMixedFallbackStageIr = () => {
           type: "container" as const,
           width: 24,
           height: 24,
-          children: []
+          children: [],
         },
         {
           id: "mixed-stage-input",
           name: "Kontonummer Input",
           nodeType: "FRAME",
           type: "input" as const,
-          text: "Kontonummer"
+          text: "Kontonummer",
         },
         {
           id: "mixed-offer-card-a",
@@ -842,23 +908,23 @@ const createMixedFallbackStageIr = () => {
               nodeType: "RECTANGLE",
               type: "image" as const,
               width: 320,
-              height: 96
+              height: 96,
             },
             {
               id: "mixed-offer-title-a",
               name: "Offer Title",
               nodeType: "TEXT",
               type: "text" as const,
-              text: "Starter Paket"
+              text: "Starter Paket",
             },
             {
               id: "mixed-offer-price-a",
               name: "Offer Price",
               nodeType: "TEXT",
               type: "text" as const,
-              text: "9,99 €"
-            }
-          ]
+              text: "9,99 €",
+            },
+          ],
         },
         {
           id: "mixed-offer-card-b",
@@ -875,23 +941,23 @@ const createMixedFallbackStageIr = () => {
               nodeType: "RECTANGLE",
               type: "image" as const,
               width: 320,
-              height: 96
+              height: 96,
             },
             {
               id: "mixed-offer-title-b",
               name: "Offer Title",
               nodeType: "TEXT",
               type: "text" as const,
-              text: "Family Paket"
+              text: "Family Paket",
             },
             {
               id: "mixed-offer-price-b",
               name: "Offer Price",
               nodeType: "TEXT",
               type: "text" as const,
-              text: "19,99 €"
-            }
-          ]
+              text: "19,99 €",
+            },
+          ],
         },
         {
           id: "mixed-offer-card-c",
@@ -908,25 +974,25 @@ const createMixedFallbackStageIr = () => {
               nodeType: "RECTANGLE",
               type: "image" as const,
               width: 320,
-              height: 96
+              height: 96,
             },
             {
               id: "mixed-offer-title-c",
               name: "Offer Title",
               nodeType: "TEXT",
               type: "text" as const,
-              text: "Premium Paket"
+              text: "Premium Paket",
             },
             {
               id: "mixed-offer-price-c",
               name: "Offer Price",
               nodeType: "TEXT",
               type: "text" as const,
-              text: "29,99 €"
-            }
-          ]
-        }
-      ]
+              text: "29,99 €",
+            },
+          ],
+        },
+      ],
     },
     {
       id: "mixed-stage-target-screen",
@@ -940,10 +1006,10 @@ const createMixedFallbackStageIr = () => {
           name: "Target Title",
           nodeType: "TEXT",
           type: "text" as const,
-          text: "Destination"
-        }
-      ]
-    }
+          text: "Destination",
+        },
+      ],
+    },
   ];
   return ir;
 };
@@ -951,7 +1017,7 @@ const createMixedFallbackStageIr = () => {
 const mixedFallbackStageImageAssetMap = {
   "mixed-offer-image-a": "/images/mixed-offer-a.png",
   "mixed-offer-image-b": "/images/mixed-offer-b.png",
-  "mixed-offer-image-c": "/images/mixed-offer-c.png"
+  "mixed-offer-image-c": "/images/mixed-offer-c.png",
 };
 
 const createRegressionScreen = () => ({
@@ -973,7 +1039,7 @@ const createRegressionScreen = () => ({
       fillColor: "#222222",
       fontFamily: "Roboto",
       fontWeight: 700,
-      fontSize: 21
+      fontSize: 21,
     },
     {
       id: "reg-input",
@@ -997,7 +1063,7 @@ const createRegressionScreen = () => ({
           y: 50,
           fillColor: "#6e6e6e",
           fontFamily: "Roboto",
-          fontSize: 12
+          fontSize: 12,
         },
         {
           id: "reg-input-value-wrapper",
@@ -1020,9 +1086,9 @@ const createRegressionScreen = () => ({
               fillColor: "#222222",
               fontFamily: "Roboto",
               fontSize: 15,
-              fontWeight: 500
-            }
-          ]
+              fontWeight: 500,
+            },
+          ],
         },
         {
           id: "reg-input-currency",
@@ -1034,9 +1100,9 @@ const createRegressionScreen = () => ({
           y: 72,
           fillColor: "#6e6e6e",
           fontFamily: "Roboto",
-          fontSize: 15
-        }
-      ]
+          fontSize: 15,
+        },
+      ],
     },
     {
       id: "reg-select",
@@ -1060,7 +1126,7 @@ const createRegressionScreen = () => ({
           y: 130,
           fillColor: "#6e6e6e",
           fontFamily: "Roboto",
-          fontSize: 12
+          fontSize: 12,
         },
         {
           id: "reg-select-value-root",
@@ -1083,9 +1149,9 @@ const createRegressionScreen = () => ({
               fillColor: "#222222",
               fontFamily: "Roboto",
               fontSize: 15,
-              fontWeight: 500
-            }
-          ]
+              fontWeight: 500,
+            },
+          ],
         },
         {
           id: "reg-select-icon",
@@ -1095,9 +1161,9 @@ const createRegressionScreen = () => ({
           x: 530,
           y: 150,
           width: 20,
-          height: 20
-        }
-      ]
+          height: 20,
+        },
+      ],
     },
     {
       id: "reg-button",
@@ -1122,7 +1188,7 @@ const createRegressionScreen = () => ({
           fillColor: "#ffffff",
           fontFamily: "Roboto",
           fontSize: 16,
-          fontWeight: 700
+          fontWeight: 700,
         },
         {
           id: "reg-button-end-icon",
@@ -1132,18 +1198,18 @@ const createRegressionScreen = () => ({
           x: 160,
           y: 220,
           width: 20,
-          height: 20
-        }
-      ]
-    }
-  ]
+          height: 20,
+        },
+      ],
+    },
+  ],
 });
 
 const createStepperIconNode = ({
   id,
   x,
   y,
-  fillColor
+  fillColor,
 }: {
   id: string;
   x: number;
@@ -1161,15 +1227,15 @@ const createStepperIconNode = ({
   fillColor,
   vectorPaths: [
     "M0 0L24 0L24 24L0 24L0 0Z",
-    "M12 2C6.47715 2 2 6.47715 2 12C2 17.5228 6.47715 22 12 22C17.5228 22 22 17.5228 22 12C22 6.47715 17.5228 2 12 2Z"
-  ]
+    "M12 2C6.47715 2 2 6.47715 2 12C2 17.5228 6.47715 22 12 22C17.5228 22 22 17.5228 22 12C22 6.47715 17.5228 2 12 2Z",
+  ],
 });
 
 const createStepperConnectorNode = ({
   id,
   x,
   y,
-  fillColor
+  fillColor,
 }: {
   id: string;
   x: number;
@@ -1184,13 +1250,13 @@ const createStepperConnectorNode = ({
   y,
   width: 20,
   height: 2,
-  fillColor
+  fillColor,
 });
 
 const createSliderSectionNode = ({
   id,
   x,
-  y
+  y,
 }: {
   id: string;
   x: number;
@@ -1218,7 +1284,7 @@ const createSliderSectionNode = ({
       fillColor: "#222222",
       fontFamily: "Roboto",
       fontSize: 14,
-      fontWeight: 500
+      fontWeight: 500,
     },
     {
       id: `${id}-value`,
@@ -1231,7 +1297,7 @@ const createSliderSectionNode = ({
       fillColor: "#222222",
       fontFamily: "Roboto",
       fontSize: 15,
-      fontWeight: 500
+      fontWeight: 500,
     },
     {
       id: `${id}-slider`,
@@ -1251,7 +1317,7 @@ const createSliderSectionNode = ({
           x,
           y: y + 42,
           width: 240,
-          height: 4
+          height: 4,
         },
         {
           id: `${id}-track`,
@@ -1261,7 +1327,7 @@ const createSliderSectionNode = ({
           x,
           y: y + 42,
           width: 96,
-          height: 4
+          height: 4,
         },
         {
           id: `${id}-thumb`,
@@ -1271,9 +1337,9 @@ const createSliderSectionNode = ({
           x: x + 96,
           y: y + 34,
           width: 16,
-          height: 16
-        }
-      ]
+          height: 16,
+        },
+      ],
     },
     {
       id: `${id}-min`,
@@ -1285,7 +1351,7 @@ const createSliderSectionNode = ({
       y: y + 72,
       fillColor: "#6e6e6e",
       fontFamily: "Roboto",
-      fontSize: 12
+      fontSize: 12,
     },
     {
       id: `${id}-max`,
@@ -1297,9 +1363,9 @@ const createSliderSectionNode = ({
       y: y + 72,
       fillColor: "#6e6e6e",
       fontFamily: "Roboto",
-      fontSize: 12
-    }
-  ]
+      fontSize: 12,
+    },
+  ],
 });
 
 const createMuiBoardRegressionScreen = () => ({
@@ -1321,7 +1387,7 @@ const createMuiBoardRegressionScreen = () => ({
       fillColor: "#222222",
       fontFamily: "Roboto",
       fontWeight: 700,
-      fontSize: 21
+      fontSize: 21,
     },
     {
       id: "mui-board-stepper",
@@ -1335,12 +1401,37 @@ const createMuiBoardRegressionScreen = () => ({
       layoutMode: "HORIZONTAL" as const,
       gap: 8,
       children: [
-        createStepperIconNode({ id: "mui-board-step-1", x: 0, y: 32, fillColor: "#4da36c" }),
-        createStepperConnectorNode({ id: "mui-board-connector-1", x: 32, y: 43, fillColor: "#1f1f1f" }),
-        createStepperIconNode({ id: "mui-board-step-2", x: 56, y: 32, fillColor: "#d7d7d7" }),
-        createStepperConnectorNode({ id: "mui-board-connector-2", x: 88, y: 43, fillColor: "#d7d7d7" }),
-        createStepperIconNode({ id: "mui-board-step-3", x: 112, y: 32, fillColor: "#d7d7d7" })
-      ]
+        createStepperIconNode({
+          id: "mui-board-step-1",
+          x: 0,
+          y: 32,
+          fillColor: "#4da36c",
+        }),
+        createStepperConnectorNode({
+          id: "mui-board-connector-1",
+          x: 32,
+          y: 43,
+          fillColor: "#1f1f1f",
+        }),
+        createStepperIconNode({
+          id: "mui-board-step-2",
+          x: 56,
+          y: 32,
+          fillColor: "#d7d7d7",
+        }),
+        createStepperConnectorNode({
+          id: "mui-board-connector-2",
+          x: 88,
+          y: 43,
+          fillColor: "#d7d7d7",
+        }),
+        createStepperIconNode({
+          id: "mui-board-step-3",
+          x: 112,
+          y: 32,
+          fillColor: "#d7d7d7",
+        }),
+      ],
     },
     {
       id: "mui-board-form-table",
@@ -1365,7 +1456,10 @@ const createMuiBoardRegressionScreen = () => ({
           height: 92,
           layoutMode: "HORIZONTAL" as const,
           gap: 20,
-          children: [createRegressionScreen().children[1], createRegressionScreen().children[2]]
+          children: [
+            createRegressionScreen().children[1],
+            createRegressionScreen().children[2],
+          ],
         },
         {
           id: "mui-board-row-2",
@@ -1379,7 +1473,11 @@ const createMuiBoardRegressionScreen = () => ({
           layoutMode: "HORIZONTAL" as const,
           gap: 20,
           children: [
-            createSliderSectionNode({ id: "mui-board-slider-section", x: 0, y: 188 }),
+            createSliderSectionNode({
+              id: "mui-board-slider-section",
+              x: 0,
+              y: 188,
+            }),
             {
               id: "mui-board-image",
               name: "Image (Bauen oder kaufen)",
@@ -1391,14 +1489,14 @@ const createMuiBoardRegressionScreen = () => ({
               height: 160,
               asset: {
                 source: "/images/bauen-oder-kaufen.png",
-                kind: "image" as const
-              }
-            }
-          ]
-        }
-      ]
-    }
-  ]
+                kind: "image" as const,
+              },
+            },
+          ],
+        },
+      ],
+    },
+  ],
 });
 
 const createDetachedMuiFieldRegressionScreen = () => ({
@@ -1419,7 +1517,7 @@ const createDetachedMuiFieldRegressionScreen = () => ({
       y: 8,
       fillColor: "#6e6e6e",
       fontFamily: "Roboto",
-      fontSize: 12
+      fontSize: 12,
     },
     {
       id: "detached-label-1",
@@ -1431,7 +1529,7 @@ const createDetachedMuiFieldRegressionScreen = () => ({
       y: 32,
       fillColor: "#6e6e6e",
       fontFamily: "Roboto",
-      fontSize: 12
+      fontSize: 12,
     },
     {
       id: "detached-input-1",
@@ -1465,9 +1563,9 @@ const createDetachedMuiFieldRegressionScreen = () => ({
               fillColor: "#222222",
               fontFamily: "Roboto",
               fontSize: 15,
-              fontWeight: 500
-            }
-          ]
+              fontWeight: 500,
+            },
+          ],
         },
         {
           id: "detached-input-1-suffix",
@@ -1479,9 +1577,9 @@ const createDetachedMuiFieldRegressionScreen = () => ({
           y: 56,
           fillColor: "#6e6e6e",
           fontFamily: "Roboto",
-          fontSize: 15
-        }
-      ]
+          fontSize: 15,
+        },
+      ],
     },
     {
       id: "detached-label-2",
@@ -1493,7 +1591,7 @@ const createDetachedMuiFieldRegressionScreen = () => ({
       y: 112,
       fillColor: "#6e6e6e",
       fontFamily: "Roboto",
-      fontSize: 12
+      fontSize: 12,
     },
     {
       id: "detached-input-2",
@@ -1527,9 +1625,9 @@ const createDetachedMuiFieldRegressionScreen = () => ({
               fillColor: "#222222",
               fontFamily: "Roboto",
               fontSize: 15,
-              fontWeight: 500
-            }
-          ]
+              fontWeight: 500,
+            },
+          ],
         },
         {
           id: "detached-input-2-icon",
@@ -1552,11 +1650,13 @@ const createDetachedMuiFieldRegressionScreen = () => ({
               width: 11.996528625488281,
               height: 7.407856464385986,
               fillColor: "#6e6e6e",
-              vectorPaths: ["M1.40959 0L5.99826 4.57868L10.5869 0L11.9965 1.40959L5.99826 7.40786L0 1.40959L1.40959 0Z"]
-            }
-          ]
-        }
-      ]
+              vectorPaths: [
+                "M1.40959 0L5.99826 4.57868L10.5869 0L11.9965 1.40959L5.99826 7.40786L0 1.40959L1.40959 0Z",
+              ],
+            },
+          ],
+        },
+      ],
     },
     {
       id: "detached-image",
@@ -1569,24 +1669,28 @@ const createDetachedMuiFieldRegressionScreen = () => ({
       height: 210,
       asset: {
         source: "/images/bauen-oder-kaufen.png",
-        kind: "image" as const
-      }
-    }
-  ]
+        kind: "image" as const,
+      },
+    },
+  ],
 });
 
 const extractMuiIconImportLines = (content: string): string[] => {
   return content
     .split("\n")
     .map((line) => line.trim())
-    .filter((line) => /^import\s+\w+\s+from\s+"@mui\/icons-material/.test(line));
+    .filter((line) =>
+      /^import\s+\w+\s+from\s+"@mui\/icons-material/.test(line),
+    );
 };
 
 const hasMuiIconBarrelImport = (content: string): boolean => {
   return /from\s+"@mui\/icons-material";/.test(content);
 };
 
-const extractContainerMaxWidth = (content: string): "sm" | "md" | "lg" | "xl" | undefined => {
+const extractContainerMaxWidth = (
+  content: string,
+): "sm" | "md" | "lg" | "xl" | undefined => {
   const match = content.match(/<Container\b[^>]*\bmaxWidth="(sm|md|lg|xl)"/);
   if (!match) {
     return undefined;
@@ -1600,56 +1704,69 @@ const extractContainerMaxWidth = (content: string): "sm" | "md" | "lg" | "xl" | 
 
 const findRenderedButtonLine = ({
   content,
-  label
+  label,
 }: {
   content: string;
   label: string;
 }): string => {
   const line = content
     .split("\n")
-    .find((entry) => entry.includes("<Button ") && entry.includes(`{"${label}"}`));
+    .find(
+      (entry) => entry.includes("<Button ") && entry.includes(`{"${label}"}`),
+    );
   assert.ok(line, `Expected rendered Button line for label '${label}'`);
   return line ?? "";
 };
 
 const findRenderedTextFieldBlock = ({
   content,
-  label
+  label,
 }: {
   content: string;
   label: string;
 }): string => {
   const textFieldBlocks = content.match(/<TextField[\s\S]*?\/>/g) ?? [];
-  const block = textFieldBlocks.find((entry) => entry.includes(`label={"${label}"}`));
+  const block = textFieldBlocks.find((entry) =>
+    entry.includes(`label={"${label}"}`),
+  );
   assert.ok(block, `Expected rendered TextField block for label '${label}'`);
   return block ?? "";
 };
 
 const findRenderedFormControlBlock = ({
   content,
-  label
+  label,
 }: {
   content: string;
   label: string;
 }): string => {
-  const formControlBlocks = content.match(/<FormControl[\s\S]*?<\/FormControl>/g) ?? [];
-  const block = formControlBlocks.find((entry) => entry.includes(`label={"${label}"}`));
+  const formControlBlocks =
+    content.match(/<FormControl[\s\S]*?<\/FormControl>/g) ?? [];
+  const block = formControlBlocks.find((entry) =>
+    entry.includes(`label={"${label}"}`),
+  );
   assert.ok(block, `Expected rendered FormControl block for label '${label}'`);
   return block ?? "";
 };
 
 const findThemeComponentBlock = ({
   themeContent,
-  componentName
+  componentName,
 }: {
   themeContent: string;
   componentName: string;
 }): string => {
   const marker = `    ${componentName}: {`;
   const startIndex = themeContent.indexOf(marker);
-  assert.ok(startIndex >= 0, `Expected theme component block for '${componentName}'.`);
+  assert.ok(
+    startIndex >= 0,
+    `Expected theme component block for '${componentName}'.`,
+  );
   const openingBraceIndex = themeContent.indexOf("{", startIndex);
-  assert.ok(openingBraceIndex >= 0, `Expected opening brace for '${componentName}'.`);
+  assert.ok(
+    openingBraceIndex >= 0,
+    `Expected opening brace for '${componentName}'.`,
+  );
   let depth = 0;
   for (let index = openingBraceIndex; index < themeContent.length; index += 1) {
     const char = themeContent[index];
@@ -1667,21 +1784,23 @@ const findThemeComponentBlock = ({
 
 const findRenderedTypographyLine = ({
   content,
-  text
+  text,
 }: {
   content: string;
   text: string;
 }): string => {
   const line = content
     .split("\n")
-    .find((entry) => entry.includes("<Typography") && entry.includes(`{"${text}"}`));
+    .find(
+      (entry) => entry.includes("<Typography") && entry.includes(`{"${text}"}`),
+    );
   assert.ok(line, `Expected rendered Typography line for text '${text}'`);
   return line ?? "";
 };
 
 const assertMarkersInOrder = ({
   content,
-  markers
+  markers,
 }: {
   content: string;
   markers: string[];
@@ -1689,8 +1808,14 @@ const assertMarkersInOrder = ({
   let previousIndex = -1;
   for (const marker of markers) {
     const index = content.indexOf(marker);
-    assert.ok(index >= 0, `Expected marker '${marker}' to be present in output.`);
-    assert.ok(index > previousIndex, `Expected marker '${marker}' to appear after previous markers.`);
+    assert.ok(
+      index >= 0,
+      `Expected marker '${marker}' to be present in output.`,
+    );
+    assert.ok(
+      index > previousIndex,
+      `Expected marker '${marker}' to appear after previous markers.`,
+    );
     previousIndex = index;
   }
 };
@@ -1701,7 +1826,7 @@ const createSemanticInputNode = ({
   label,
   placeholder,
   width = 320,
-  height = 72
+  height = 72,
 }: {
   id: string;
   name: string;
@@ -1718,7 +1843,7 @@ const createSemanticInputNode = ({
       nodeType: "TEXT",
       type: "text" as const,
       text: label,
-      y: 0
+      y: 0,
     });
   }
   if (placeholder) {
@@ -1729,7 +1854,7 @@ const createSemanticInputNode = ({
       type: "text" as const,
       text: placeholder,
       textRole: "placeholder" as const,
-      y: label ? 24 : 0
+      y: label ? 24 : 0,
     });
   }
 
@@ -1743,14 +1868,14 @@ const createSemanticInputNode = ({
     padding: { top: 0, right: 0, bottom: 0, left: 0 },
     width,
     height,
-    children
+    children,
   };
 };
 
 const createSemanticSelectInputNode = ({
   id,
   label,
-  value
+  value,
 }: {
   id: string;
   label: string;
@@ -1770,7 +1895,7 @@ const createSemanticSelectInputNode = ({
         nodeType: "TEXT",
         type: "text" as const,
         text: label,
-        y: 0
+        y: 0,
       },
       {
         id: `${id}-value`,
@@ -1778,9 +1903,9 @@ const createSemanticSelectInputNode = ({
         nodeType: "TEXT",
         type: "text" as const,
         text: value,
-        y: 24
-      }
-    ]
+        y: 24,
+      },
+    ],
   };
 };
 
@@ -1790,11 +1915,19 @@ test("deterministic file helpers create expected paths and content", () => {
   const themeContent = createDeterministicThemeFile(ir).content;
   const appContent = createDeterministicAppFile(ir.screens).content;
 
-  assert.equal(toDeterministicScreenPath("Kredit Übersicht"), "src/screens/Kredit_bersicht.tsx");
+  assert.equal(
+    toDeterministicScreenPath("Kredit Übersicht"),
+    "src/screens/Kredit_bersicht.tsx",
+  );
   assert.equal(createDeterministicThemeFile(ir).path, "src/theme/theme.ts");
-  assert.equal(createDeterministicScreenFile(screen).path.startsWith("src/screens/"), true);
+  assert.equal(
+    createDeterministicScreenFile(screen).path.startsWith("src/screens/"),
+    true,
+  );
   assert.equal(createDeterministicAppFile(ir.screens).path, "src/App.tsx");
-  assert.ok(themeContent.includes('import { extendTheme } from "@mui/material/styles"'));
+  assert.ok(
+    themeContent.includes('import { extendTheme } from "@mui/material/styles"'),
+  );
   assert.ok(themeContent.includes("extendTheme({"));
   assert.equal(themeContent.includes("cssVariables"), false);
   assert.ok(themeContent.includes("colorSchemes: {"));
@@ -1807,22 +1940,42 @@ test("deterministic file helpers create expected paths and content", () => {
   assert.ok(themeContent.includes('info: { main: "#0288d1" }'));
   assert.ok(themeContent.includes('divider: "#2222221f"'));
   assert.ok(themeContent.includes('focus: "#ee00001f"'));
-  assert.ok(themeContent.includes('background: { default: "#121212", paper: "#1e1e1e" }'));
+  assert.ok(
+    themeContent.includes(
+      'background: { default: "#121212", paper: "#1e1e1e" }',
+    ),
+  );
   assert.ok(themeContent.includes('divider: "#f5f7fb1f"'));
-  assert.ok(themeContent.includes('subtitle1: { fontSize:'));
-  assert.ok(themeContent.includes('button: { fontSize:'));
-  assert.ok(themeContent.includes('overline: { fontSize:'));
+  assert.ok(themeContent.includes("subtitle1: { fontSize:"));
+  assert.ok(themeContent.includes("button: { fontSize:"));
+  assert.ok(themeContent.includes("overline: { fontSize:"));
   assert.ok(themeContent.includes('letterSpacing: "0.08em"'));
   assert.ok(themeContent.includes('textTransform: "none"'));
   assert.equal(themeContent.includes("breakpoints: {"), false);
-  assert.ok(appContent.includes('import { styled, useColorScheme } from "@mui/material/styles";'));
-  assert.ok(appContent.includes('import ErrorBoundary from "./components/ErrorBoundary";'));
-  assert.ok(appContent.includes('import ScreenSkeleton from "./components/ScreenSkeleton";'));
-  assert.ok(appContent.includes("const routeLoadingFallback = <ScreenSkeleton />;"));
+  assert.ok(
+    appContent.includes(
+      'import { styled, useColorScheme } from "@mui/material/styles";',
+    ),
+  );
+  assert.ok(
+    appContent.includes(
+      'import ErrorBoundary from "./components/ErrorBoundary";',
+    ),
+  );
+  assert.ok(
+    appContent.includes(
+      'import ScreenSkeleton from "./components/ScreenSkeleton";',
+    ),
+  );
+  assert.ok(
+    appContent.includes("const routeLoadingFallback = <ScreenSkeleton />;"),
+  );
   assert.ok(appContent.includes('data-testid="theme-mode-toggle"'));
   assert.ok(appContent.includes("element={<ErrorBoundary><"));
-  assert.ok(appContent.includes('window.matchMedia("(prefers-color-scheme: dark)")'));
-  assert.ok(appContent.includes('setMode(nextMode)'));
+  assert.ok(
+    appContent.includes('window.matchMedia("(prefers-color-scheme: dark)")'),
+  );
+  assert.ok(appContent.includes("setMode(nextMode)"));
 });
 
 test("createDeterministicThemeFile derives deterministic component overrides from IR samples", () => {
@@ -1846,7 +1999,15 @@ test("createDeterministicThemeFile derives deterministic component overrides fro
           height: 160,
           cornerRadius: 18,
           elevation: 7,
-          children: [{ id: "theme-card-a-text", name: "Card A Text", nodeType: "TEXT", type: "text" as const, text: "A" }]
+          children: [
+            {
+              id: "theme-card-a-text",
+              name: "Card A Text",
+              nodeType: "TEXT",
+              type: "text" as const,
+              text: "A",
+            },
+          ],
         },
         {
           id: "theme-card-b",
@@ -1859,7 +2020,15 @@ test("createDeterministicThemeFile derives deterministic component overrides fro
           height: 160,
           cornerRadius: 18,
           elevation: 7,
-          children: [{ id: "theme-card-b-text", name: "Card B Text", nodeType: "TEXT", type: "text" as const, text: "B" }]
+          children: [
+            {
+              id: "theme-card-b-text",
+              name: "Card B Text",
+              nodeType: "TEXT",
+              type: "text" as const,
+              text: "B",
+            },
+          ],
         },
         {
           id: "theme-input",
@@ -1871,7 +2040,15 @@ test("createDeterministicThemeFile derives deterministic component overrides fro
           width: 280,
           height: 56,
           cornerRadius: 10,
-          children: [{ id: "theme-input-label", name: "Label", nodeType: "TEXT", type: "text" as const, text: "IBAN" }]
+          children: [
+            {
+              id: "theme-input-label",
+              name: "Label",
+              nodeType: "TEXT",
+              type: "text" as const,
+              text: "IBAN",
+            },
+          ],
         },
         {
           id: "theme-chip",
@@ -1883,7 +2060,15 @@ test("createDeterministicThemeFile derives deterministic component overrides fro
           width: 120,
           height: 24,
           cornerRadius: 14,
-          children: [{ id: "theme-chip-text", name: "Chip Label", nodeType: "TEXT", type: "text" as const, text: "Neu" }]
+          children: [
+            {
+              id: "theme-chip-text",
+              name: "Chip Label",
+              nodeType: "TEXT",
+              type: "text" as const,
+              text: "Neu",
+            },
+          ],
         },
         {
           id: "theme-paper",
@@ -1895,7 +2080,15 @@ test("createDeterministicThemeFile derives deterministic component overrides fro
           width: 280,
           height: 120,
           elevation: 3,
-          children: [{ id: "theme-paper-text", name: "Paper Text", nodeType: "TEXT", type: "text" as const, text: "Info" }]
+          children: [
+            {
+              id: "theme-paper-text",
+              name: "Paper Text",
+              nodeType: "TEXT",
+              type: "text" as const,
+              text: "Info",
+            },
+          ],
         },
         {
           id: "theme-appbar",
@@ -1907,7 +2100,15 @@ test("createDeterministicThemeFile derives deterministic component overrides fro
           width: 320,
           height: 64,
           fillColor: "#123456",
-          children: [{ id: "theme-appbar-text", name: "AppBar Text", nodeType: "TEXT", type: "text" as const, text: "Übersicht" }]
+          children: [
+            {
+              id: "theme-appbar-text",
+              name: "AppBar Text",
+              nodeType: "TEXT",
+              type: "text" as const,
+              text: "Übersicht",
+            },
+          ],
         },
         {
           id: "theme-divider",
@@ -1918,7 +2119,7 @@ test("createDeterministicThemeFile derives deterministic component overrides fro
           y: 704,
           width: 280,
           height: 1,
-          fillColor: "#d4d4d4"
+          fillColor: "#d4d4d4",
         },
         {
           id: "theme-avatar",
@@ -1930,27 +2131,47 @@ test("createDeterministicThemeFile derives deterministic component overrides fro
           width: 42,
           height: 42,
           cornerRadius: 21,
-          children: [{ id: "theme-avatar-text", name: "Avatar Text", nodeType: "TEXT", type: "text" as const, text: "AB" }]
-        }
-      ]
-    }
+          children: [
+            {
+              id: "theme-avatar-text",
+              name: "Avatar Text",
+              nodeType: "TEXT",
+              type: "text" as const,
+              text: "AB",
+            },
+          ],
+        },
+      ],
+    },
   ];
 
   const themeContent = createDeterministicThemeFile(ir).content;
-  const orderedComponents = ["MuiButton", "MuiCard", "MuiTextField", "MuiChip", "MuiPaper", "MuiAppBar", "MuiDivider", "MuiAvatar"];
+  const orderedComponents = [
+    "MuiButton",
+    "MuiCard",
+    "MuiTextField",
+    "MuiChip",
+    "MuiPaper",
+    "MuiAppBar",
+    "MuiDivider",
+    "MuiAvatar",
+  ];
   let previousIndex = -1;
   for (const componentName of orderedComponents) {
     const currentIndex = themeContent.indexOf(`${componentName}: {`);
-    assert.ok(currentIndex > previousIndex, `Expected '${componentName}' in deterministic component order.`);
+    assert.ok(
+      currentIndex > previousIndex,
+      `Expected '${componentName}' in deterministic component order.`,
+    );
     previousIndex = currentIndex;
   }
   const cardBlock = findThemeComponentBlock({
     themeContent,
-    componentName: "MuiCard"
+    componentName: "MuiCard",
   });
   const chipBlock = findThemeComponentBlock({
     themeContent,
-    componentName: "MuiChip"
+    componentName: "MuiChip",
   });
   assert.ok(themeContent.includes("defaultProps: { elevation: 7 }"));
   assert.ok(cardBlock.includes('borderRadius: "18px"'));
@@ -1971,7 +2192,7 @@ test("createDeterministicThemeFile derives C1 sx overrides at 70% threshold and 
   const createButtonNode = ({
     id,
     y,
-    fillColor
+    fillColor,
   }: {
     id: string;
     y: number;
@@ -1986,7 +2207,15 @@ test("createDeterministicThemeFile derives C1 sx overrides at 70% threshold and 
     width: 220,
     height: 48,
     fillColor,
-    children: [{ id: `${id}-label`, name: "Label", nodeType: "TEXT", type: "text" as const, text: "Weiter" }]
+    children: [
+      {
+        id: `${id}-label`,
+        name: "Label",
+        nodeType: "TEXT",
+        type: "text" as const,
+        text: "Weiter",
+      },
+    ],
   });
 
   const ir = createIr();
@@ -2001,15 +2230,15 @@ test("createDeterministicThemeFile derives C1 sx overrides at 70% threshold and 
         createButtonNode({ id: "c1-button-a", y: 0, fillColor: "#1357AA" }),
         createButtonNode({ id: "c1-button-b", y: 64, fillColor: "#1357AA" }),
         createButtonNode({ id: "c1-button-c", y: 128, fillColor: "#1357AA" }),
-        createButtonNode({ id: "c1-button-d", y: 192, fillColor: "#226699" })
-      ]
-    }
+        createButtonNode({ id: "c1-button-d", y: 192, fillColor: "#226699" }),
+      ],
+    },
   ];
 
   const themeContent = createDeterministicThemeFile(ir).content;
   const buttonBlock = findThemeComponentBlock({
     themeContent,
-    componentName: "MuiButton"
+    componentName: "MuiButton",
   });
 
   assert.ok(buttonBlock.includes('textTransform: "none"'));
@@ -2040,7 +2269,15 @@ test("createDeterministicThemeFile does not derive C1 overrides below minimum sa
           width: 220,
           height: 48,
           fillColor: "#0f4c81",
-          children: [{ id: "c1-min-button-a-text", name: "Label", nodeType: "TEXT", type: "text" as const, text: "Speichern" }]
+          children: [
+            {
+              id: "c1-min-button-a-text",
+              name: "Label",
+              nodeType: "TEXT",
+              type: "text" as const,
+              text: "Speichern",
+            },
+          ],
         },
         {
           id: "c1-min-button-b",
@@ -2052,16 +2289,24 @@ test("createDeterministicThemeFile does not derive C1 overrides below minimum sa
           width: 220,
           height: 48,
           fillColor: "#0f4c81",
-          children: [{ id: "c1-min-button-b-text", name: "Label", nodeType: "TEXT", type: "text" as const, text: "Speichern" }]
-        }
-      ]
-    }
+          children: [
+            {
+              id: "c1-min-button-b-text",
+              name: "Label",
+              nodeType: "TEXT",
+              type: "text" as const,
+              text: "Speichern",
+            },
+          ],
+        },
+      ],
+    },
   ];
 
   const themeContent = createDeterministicThemeFile(ir).content;
   const buttonBlock = findThemeComponentBlock({
     themeContent,
-    componentName: "MuiButton"
+    componentName: "MuiButton",
   });
   assert.equal(buttonBlock.includes("backgroundColor"), false);
 });
@@ -2088,13 +2333,13 @@ test("createDeterministicThemeFile keeps deterministic ordering for C1-only comp
         y: y + 10,
         width: 20,
         height: 20,
-        icon: "menu"
-      }
-    ]
+        icon: "menu",
+      },
+    ],
   });
   const makeSemanticSelectInputNode = ({
     id,
-    y
+    y,
   }: {
     id: string;
     y: number;
@@ -2116,7 +2361,7 @@ test("createDeterministicThemeFile keeps deterministic ordering for C1-only comp
         nodeType: "TEXT",
         type: "text" as const,
         text: "Kontotyp",
-        y: y + 6
+        y: y + 6,
       },
       {
         id: `${id}-value`,
@@ -2124,9 +2369,9 @@ test("createDeterministicThemeFile keeps deterministic ordering for C1-only comp
         nodeType: "TEXT",
         type: "text" as const,
         text: "Privat",
-        y: y + 24
-      }
-    ]
+        y: y + 24,
+      },
+    ],
   });
 
   const ir = createIr();
@@ -2143,9 +2388,9 @@ test("createDeterministicThemeFile keeps deterministic ordering for C1-only comp
         makeSemanticSelectInputNode({ id: "c1-select-c", y: 168 }),
         makeIconOnlyButton({ id: "c1-icon-a", y: 260 }),
         makeIconOnlyButton({ id: "c1-icon-b", y: 320 }),
-        makeIconOnlyButton({ id: "c1-icon-c", y: 380 })
-      ]
-    }
+        makeIconOnlyButton({ id: "c1-icon-c", y: 380 }),
+      ],
+    },
   ];
 
   const themeContent = createDeterministicThemeFile(ir).content;
@@ -2167,7 +2412,15 @@ test("createDeterministicThemeFile does not allow C1 to override A3 component de
     height: 160,
     cornerRadius: 12,
     elevation: 3,
-    children: [{ id: `${id}-text`, name: "Text", nodeType: "TEXT", type: "text" as const, text: "Info" }]
+    children: [
+      {
+        id: `${id}-text`,
+        name: "Text",
+        nodeType: "TEXT",
+        type: "text" as const,
+        text: "Info",
+      },
+    ],
   });
 
   const ir = createIr();
@@ -2178,14 +2431,18 @@ test("createDeterministicThemeFile does not allow C1 to override A3 component de
       layoutMode: "NONE" as const,
       gap: 0,
       padding: { top: 0, right: 0, bottom: 0, left: 0 },
-      children: [createCardNode({ id: "c1-card-a", y: 0 }), createCardNode({ id: "c1-card-b", y: 176 }), createCardNode({ id: "c1-card-c", y: 352 })]
-    }
+      children: [
+        createCardNode({ id: "c1-card-a", y: 0 }),
+        createCardNode({ id: "c1-card-b", y: 176 }),
+        createCardNode({ id: "c1-card-c", y: 352 }),
+      ],
+    },
   ];
 
   const themeContent = createDeterministicThemeFile(ir).content;
   const cardBlock = findThemeComponentBlock({
     themeContent,
-    componentName: "MuiCard"
+    componentName: "MuiCard",
   });
   assert.ok(cardBlock.includes('borderRadius: "12px"'));
   assert.equal(/borderRadius:\s*1(?!\d)/.test(cardBlock), false);
@@ -2210,7 +2467,15 @@ test("createDeterministicThemeFile keeps fallback-safe deterministic output when
           height: 140,
           cornerRadius: Number.NaN,
           elevation: Number.POSITIVE_INFINITY,
-          children: [{ id: "theme-invalid-card-text", name: "Text", nodeType: "TEXT", type: "text" as const, text: "Invalid" }]
+          children: [
+            {
+              id: "theme-invalid-card-text",
+              name: "Text",
+              nodeType: "TEXT",
+              type: "text" as const,
+              text: "Invalid",
+            },
+          ],
         },
         {
           id: "theme-invalid-paper",
@@ -2220,7 +2485,15 @@ test("createDeterministicThemeFile keeps fallback-safe deterministic output when
           width: 280,
           height: 120,
           elevation: Number.NaN,
-          children: [{ id: "theme-invalid-paper-text", name: "Text", nodeType: "TEXT", type: "text" as const, text: "Invalid" }]
+          children: [
+            {
+              id: "theme-invalid-paper-text",
+              name: "Text",
+              nodeType: "TEXT",
+              type: "text" as const,
+              text: "Invalid",
+            },
+          ],
         },
         {
           id: "theme-invalid-avatar",
@@ -2230,10 +2503,18 @@ test("createDeterministicThemeFile keeps fallback-safe deterministic output when
           width: Number.POSITIVE_INFINITY,
           height: Number.NaN,
           cornerRadius: Number.NaN,
-          children: [{ id: "theme-invalid-avatar-text", name: "Avatar Text", nodeType: "TEXT", type: "text" as const, text: "AV" }]
-        }
-      ]
-    }
+          children: [
+            {
+              id: "theme-invalid-avatar-text",
+              name: "Avatar Text",
+              nodeType: "TEXT",
+              type: "text" as const,
+              text: "AV",
+            },
+          ],
+        },
+      ],
+    },
   ];
 
   const firstTheme = createDeterministicThemeFile(ir).content;
@@ -2260,40 +2541,47 @@ test("deterministic theme dark palette remains byte-stable and accessible on dar
   const darkBackground = extractThemeHex({
     themeContent: firstTheme,
     scheme: "dark",
-    token: "background"
+    token: "background",
   });
   const darkPrimary = extractThemeHex({
     themeContent: firstTheme,
     scheme: "dark",
-    token: "primary"
+    token: "primary",
   });
   const darkSecondary = extractThemeHex({
     themeContent: firstTheme,
     scheme: "dark",
-    token: "secondary"
+    token: "secondary",
   });
   const darkSuccess = extractThemeHex({
     themeContent: firstTheme,
     scheme: "dark",
-    token: "success"
+    token: "success",
   });
   const darkWarning = extractThemeHex({
     themeContent: firstTheme,
     scheme: "dark",
-    token: "warning"
+    token: "warning",
   });
   const darkError = extractThemeHex({
     themeContent: firstTheme,
     scheme: "dark",
-    token: "error"
+    token: "error",
   });
   const darkInfo = extractThemeHex({
     themeContent: firstTheme,
     scheme: "dark",
-    token: "info"
+    token: "info",
   });
 
-  for (const color of [darkPrimary, darkSecondary, darkSuccess, darkWarning, darkError, darkInfo]) {
+  for (const color of [
+    darkPrimary,
+    darkSecondary,
+    darkSuccess,
+    darkWarning,
+    darkError,
+    darkInfo,
+  ]) {
     assert.ok(contrastRatio(color, darkBackground) >= 4.5);
   }
 });
@@ -2311,26 +2599,36 @@ test("deterministic screen rendering uses a single root Container without unnece
         name: "Title",
         nodeType: "TEXT",
         type: "text" as const,
-        text: "Hello Container"
-      }
-    ]
+        text: "Hello Container",
+      },
+    ],
   };
 
   const content = createDeterministicScreenFile(screen).content;
   const materialImportLine = content
     .split("\n")
-    .find((line) => line.startsWith("import { ") && line.endsWith(' } from "@mui/material";'));
+    .find(
+      (line) =>
+        line.startsWith("import { ") &&
+        line.endsWith(' } from "@mui/material";'),
+    );
   assert.ok(materialImportLine);
   assert.ok(materialImportLine?.includes("Container"));
   assert.ok(materialImportLine?.includes("Typography"));
   assert.equal(materialImportLine?.includes("Box"), false);
   assert.equal((content.match(/<Container /g) ?? []).length, 1);
   assert.equal(content.includes('<Box sx={{ minHeight: "100vh"'), false);
-  assert.ok(content.includes('sx={{ position: "relative", width: "100%", minHeight: "max(100vh, 320px)"'));
+  assert.ok(
+    content.includes(
+      'sx={{ position: "relative", width: "100%", minHeight: "max(100vh, 320px)"',
+    ),
+  );
 });
 
 test("generateArtifacts simplify wrapper promotes deep GROUP multi-child containers and logs stats", async () => {
-  const projectDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-generator-simplify-group-deep-"));
+  const projectDir = await mkdtemp(
+    path.join(os.tmpdir(), "workspace-dev-generator-simplify-group-deep-"),
+  );
   const logs: string[] = [];
   const ir = createIr();
   ir.screens = [
@@ -2380,7 +2678,7 @@ test("generateArtifacts simplify wrapper promotes deep GROUP multi-child contain
                       type: "text" as const,
                       text: "Erster Eintrag",
                       x: 24,
-                      y: 24
+                      y: 24,
                     },
                     {
                       id: "group-depth-text-b",
@@ -2389,16 +2687,16 @@ test("generateArtifacts simplify wrapper promotes deep GROUP multi-child contain
                       type: "text" as const,
                       text: "Zweiter Eintrag",
                       x: 24,
-                      y: 56
-                    }
-                  ]
-                }
-              ]
-            }
-          ]
-        }
-      ]
-    }
+                      y: 56,
+                    },
+                  ],
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    },
   ];
 
   const result = await generateArtifacts({
@@ -2406,14 +2704,24 @@ test("generateArtifacts simplify wrapper promotes deep GROUP multi-child contain
     ir,
     llmCodegenMode: "deterministic",
     llmModelName: "deterministic",
-    onLog: (message) => logs.push(message)
+    onLog: (message) => logs.push(message),
   });
 
-  assert.equal(result.generationMetrics.simplification?.aggregate.promotedGroupMultiChild, 1);
-  assert.equal(result.generationMetrics.simplification?.screens[0]?.promotedGroupMultiChild, 1);
+  assert.equal(
+    result.generationMetrics.simplification?.aggregate.promotedGroupMultiChild,
+    1,
+  );
+  assert.equal(
+    result.generationMetrics.simplification?.screens[0]
+      ?.promotedGroupMultiChild,
+    1,
+  );
   assert.ok(logs.some((entry) => entry.includes("Simplify stats:")));
 
-  const metricsContent = await readFile(path.join(projectDir, "generation-metrics.json"), "utf8");
+  const metricsContent = await readFile(
+    path.join(projectDir, "generation-metrics.json"),
+    "utf8",
+  );
   const metrics = JSON.parse(metricsContent) as {
     simplification?: {
       aggregate?: { promotedGroupMultiChild?: number };
@@ -2421,11 +2729,16 @@ test("generateArtifacts simplify wrapper promotes deep GROUP multi-child contain
     };
   };
   assert.equal(metrics.simplification?.aggregate?.promotedGroupMultiChild, 1);
-  assert.equal(metrics.simplification?.screens?.[0]?.promotedGroupMultiChild, 1);
+  assert.equal(
+    metrics.simplification?.screens?.[0]?.promotedGroupMultiChild,
+    1,
+  );
 });
 
 test("generateArtifacts simplify wrapper does not promote shallow GROUP multi-child containers", async () => {
-  const projectDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-generator-simplify-group-shallow-"));
+  const projectDir = await mkdtemp(
+    path.join(os.tmpdir(), "workspace-dev-generator-simplify-group-shallow-"),
+  );
   const ir = createIr();
   ir.screens = [
     {
@@ -2450,19 +2763,19 @@ test("generateArtifacts simplify wrapper does not promote shallow GROUP multi-ch
               name: "Shallow A",
               nodeType: "TEXT",
               type: "text" as const,
-              text: "A"
+              text: "A",
             },
             {
               id: "group-shallow-b",
               name: "Shallow B",
               nodeType: "TEXT",
               type: "text" as const,
-              text: "B"
-            }
-          ]
-        }
-      ]
-    }
+              text: "B",
+            },
+          ],
+        },
+      ],
+    },
   ];
 
   const result = await generateArtifacts({
@@ -2472,15 +2785,24 @@ test("generateArtifacts simplify wrapper does not promote shallow GROUP multi-ch
     llmModelName: "deterministic",
     onLog: () => {
       // no-op
-    }
+    },
   });
 
-  assert.equal(result.generationMetrics.simplification?.aggregate.promotedGroupMultiChild, 0);
-  assert.equal(result.generationMetrics.simplification?.screens[0]?.promotedGroupMultiChild, 0);
+  assert.equal(
+    result.generationMetrics.simplification?.aggregate.promotedGroupMultiChild,
+    0,
+  );
+  assert.equal(
+    result.generationMetrics.simplification?.screens[0]
+      ?.promotedGroupMultiChild,
+    0,
+  );
 });
 
 test("generateArtifacts simplify wrapper does not promote non-GROUP multi-child flex wrappers", async () => {
-  const projectDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-generator-simplify-frame-multi-"));
+  const projectDir = await mkdtemp(
+    path.join(os.tmpdir(), "workspace-dev-generator-simplify-frame-multi-"),
+  );
   const ir = createIr();
   ir.screens = [
     {
@@ -2506,19 +2828,19 @@ test("generateArtifacts simplify wrapper does not promote non-GROUP multi-child 
               name: "Frame Multi A",
               nodeType: "TEXT",
               type: "text" as const,
-              text: "Element A"
+              text: "Element A",
             },
             {
               id: "frame-multi-b",
               name: "Frame Multi B",
               nodeType: "TEXT",
               type: "text" as const,
-              text: "Element B"
-            }
-          ]
-        }
-      ]
-    }
+              text: "Element B",
+            },
+          ],
+        },
+      ],
+    },
   ];
 
   const result = await generateArtifacts({
@@ -2528,11 +2850,17 @@ test("generateArtifacts simplify wrapper does not promote non-GROUP multi-child 
     llmModelName: "deterministic",
     onLog: () => {
       // no-op
-    }
+    },
   });
 
-  assert.equal(result.generationMetrics.simplification?.aggregate.promotedGroupMultiChild, 0);
-  assert.equal(result.generationMetrics.simplification?.aggregate.promotedSingleChild, 0);
+  assert.equal(
+    result.generationMetrics.simplification?.aggregate.promotedGroupMultiChild,
+    0,
+  );
+  assert.equal(
+    result.generationMetrics.simplification?.aggregate.promotedSingleChild,
+    0,
+  );
 });
 
 test("deterministic screen rendering simplify wrapper merges parent margin and padding into promoted single child", () => {
@@ -2572,13 +2900,13 @@ test("deterministic screen rendering simplify wrapper merges parent margin and p
                 name: "Spacing Text",
                 nodeType: "TEXT",
                 type: "text" as const,
-                text: "Spacing merged"
-              }
-            ]
-          }
-        ]
-      }
-    ]
+                text: "Spacing merged",
+              },
+            ],
+          },
+        ],
+      },
+    ],
   };
 
   const content = createDeterministicScreenFile(screen).content;
@@ -2589,7 +2917,9 @@ test("deterministic screen rendering simplify wrapper merges parent margin and p
 });
 
 test("generateArtifacts simplify wrapper guardrails keep navigation and icon wrappers from promotion", async () => {
-  const projectDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-generator-simplify-guardrails-"));
+  const projectDir = await mkdtemp(
+    path.join(os.tmpdir(), "workspace-dev-generator-simplify-guardrails-"),
+  );
   const ir = createIr();
   ir.screens = [
     {
@@ -2606,7 +2936,7 @@ test("generateArtifacts simplify wrapper guardrails keep navigation and icon wra
           type: "container" as const,
           prototypeNavigation: {
             targetScreenId: "screen-1",
-            mode: "push" as const
+            mode: "push" as const,
           },
           children: [
             {
@@ -2614,9 +2944,9 @@ test("generateArtifacts simplify wrapper guardrails keep navigation and icon wra
               name: "Navigation Text",
               nodeType: "TEXT",
               type: "text" as const,
-              text: "Open destination"
-            }
-          ]
+              text: "Open destination",
+            },
+          ],
         },
         {
           id: "guardrail-icon-wrapper",
@@ -2629,12 +2959,12 @@ test("generateArtifacts simplify wrapper guardrails keep navigation and icon wra
               name: "Icon Label",
               nodeType: "TEXT",
               type: "text" as const,
-              text: "Icon wrapper text"
-            }
-          ]
-        }
-      ]
-    }
+              text: "Icon wrapper text",
+            },
+          ],
+        },
+      ],
+    },
   ];
 
   const result = await generateArtifacts({
@@ -2644,11 +2974,17 @@ test("generateArtifacts simplify wrapper guardrails keep navigation and icon wra
     llmModelName: "deterministic",
     onLog: () => {
       // no-op
-    }
+    },
   });
 
-  assert.equal(result.generationMetrics.simplification?.aggregate.promotedSingleChild, 0);
-  assert.equal((result.generationMetrics.simplification?.aggregate.guardedSkips ?? 0) >= 2, true);
+  assert.equal(
+    result.generationMetrics.simplification?.aggregate.promotedSingleChild,
+    0,
+  );
+  assert.equal(
+    (result.generationMetrics.simplification?.aggregate.guardedSkips ?? 0) >= 2,
+    true,
+  );
 });
 
 test("deterministic screen rendering omits redundant boxSizing and visible overflow defaults", () => {
@@ -2679,14 +3015,16 @@ test("deterministic screen rendering omits redundant boxSizing and visible overf
             y: 16,
             width: 160,
             height: 20,
-            text: "Kontostand"
-          }
-        ]
-      }
-    ]
+            text: "Kontostand",
+          },
+        ],
+      },
+    ],
   };
 
-  const content = createDeterministicScreenFile(screen, { formHandlingMode: "legacy_use_state" }).content;
+  const content = createDeterministicScreenFile(screen, {
+    formHandlingMode: "legacy_use_state",
+  }).content;
   assert.equal(content.includes('boxSizing: "border-box"'), false);
   assert.equal(content.includes('overflow: "visible"'), false);
   assert.match(content, /<Container\b[^>]*\bmaxWidth=/);
@@ -2718,7 +3056,7 @@ test("sortChildren visual hierarchy keeps row grouping for layout NONE with x in
             type: "text" as const,
             text: "Bottom Left Item",
             x: 20,
-            y: 120
+            y: 120,
           },
           {
             id: "row-top-right",
@@ -2727,7 +3065,7 @@ test("sortChildren visual hierarchy keeps row grouping for layout NONE with x in
             type: "text" as const,
             text: "Top Right Item",
             x: 250,
-            y: 10
+            y: 10,
           },
           {
             id: "row-bottom-right",
@@ -2736,7 +3074,7 @@ test("sortChildren visual hierarchy keeps row grouping for layout NONE with x in
             type: "text" as const,
             text: "Bottom Right Item",
             x: 260,
-            y: 120
+            y: 120,
           },
           {
             id: "row-top-left",
@@ -2745,17 +3083,24 @@ test("sortChildren visual hierarchy keeps row grouping for layout NONE with x in
             type: "text" as const,
             text: "Top Left Item",
             x: 10,
-            y: 10
-          }
-        ]
-      }
-    ]
+            y: 10,
+          },
+        ],
+      },
+    ],
   };
 
-  const content = createDeterministicScreenFile(screen, { formHandlingMode: "legacy_use_state" }).content;
+  const content = createDeterministicScreenFile(screen, {
+    formHandlingMode: "legacy_use_state",
+  }).content;
   assertMarkersInOrder({
     content,
-    markers: ['{"Top Left Item"}', '{"Top Right Item"}', '{"Bottom Left Item"}', '{"Bottom Right Item"}']
+    markers: [
+      '{"Top Left Item"}',
+      '{"Top Right Item"}',
+      '{"Bottom Left Item"}',
+      '{"Bottom Right Item"}',
+    ],
   });
 });
 
@@ -2787,7 +3132,7 @@ test("sortChildren visual hierarchy preserves overlap order via source index", (
             x: 120,
             y: 24,
             width: 160,
-            height: 28
+            height: 28,
           },
           {
             id: "overlap-second",
@@ -2798,17 +3143,19 @@ test("sortChildren visual hierarchy preserves overlap order via source index", (
             x: 80,
             y: 24,
             width: 160,
-            height: 28
-          }
-        ]
-      }
-    ]
+            height: 28,
+          },
+        ],
+      },
+    ],
   };
 
-  const content = createDeterministicScreenFile(screen, { formHandlingMode: "legacy_use_state" }).content;
+  const content = createDeterministicScreenFile(screen, {
+    formHandlingMode: "legacy_use_state",
+  }).content;
   assertMarkersInOrder({
     content,
-    markers: ['{"Overlap First Layer"}', '{"Overlap Second Layer"}']
+    markers: ['{"Overlap First Layer"}', '{"Overlap Second Layer"}'],
   });
 });
 
@@ -2838,7 +3185,7 @@ test("sortChildren visual hierarchy orders row semantics as header navigation co
             type: "text" as const,
             text: "Semantic Content",
             x: 20,
-            y: 20
+            y: 20,
           },
           {
             id: "semantic-divider",
@@ -2849,7 +3196,7 @@ test("sortChildren visual hierarchy orders row semantics as header navigation co
             y: 20,
             width: 200,
             height: 1,
-            fillColor: "#e5e7eb"
+            fillColor: "#e5e7eb",
           },
           {
             id: "semantic-navigation",
@@ -2858,7 +3205,7 @@ test("sortChildren visual hierarchy orders row semantics as header navigation co
             type: "text" as const,
             text: "Semantic Navigation",
             x: 220,
-            y: 20
+            y: 20,
           },
           {
             id: "semantic-header",
@@ -2869,17 +3216,24 @@ test("sortChildren visual hierarchy orders row semantics as header navigation co
             x: 320,
             y: 20,
             fontSize: 30,
-            fontWeight: 700
-          }
-        ]
-      }
-    ]
+            fontWeight: 700,
+          },
+        ],
+      },
+    ],
   };
 
-  const content = createDeterministicScreenFile(screen, { formHandlingMode: "legacy_use_state" }).content;
+  const content = createDeterministicScreenFile(screen, {
+    formHandlingMode: "legacy_use_state",
+  }).content;
   assertMarkersInOrder({
     content,
-    markers: ['{"Semantic Header"}', '{"Semantic Navigation"}', '{"Semantic Content"}', '<Divider data-ir-id="semantic-divider"']
+    markers: [
+      '{"Semantic Header"}',
+      '{"Semantic Navigation"}',
+      '{"Semantic Content"}',
+      '<Divider data-ir-id="semantic-divider"',
+    ],
   });
 });
 
@@ -2909,7 +3263,7 @@ test("sortChildren visual hierarchy supports rtl locale x ordering for NONE rows
             type: "text" as const,
             text: "RTL Left",
             x: 20,
-            y: 24
+            y: 24,
           },
           {
             id: "rtl-right",
@@ -2918,17 +3272,19 @@ test("sortChildren visual hierarchy supports rtl locale x ordering for NONE rows
             type: "text" as const,
             text: "RTL Right",
             x: 220,
-            y: 24
-          }
-        ]
-      }
-    ]
+            y: 24,
+          },
+        ],
+      },
+    ],
   };
 
-  const content = createDeterministicScreenFile(screen, { generationLocale: "ar-EG" }).content;
+  const content = createDeterministicScreenFile(screen, {
+    generationLocale: "ar-EG",
+  }).content;
   assertMarkersInOrder({
     content,
-    markers: ['{"RTL Right"}', '{"RTL Left"}']
+    markers: ['{"RTL Right"}', '{"RTL Left"}'],
   });
 });
 
@@ -2958,7 +3314,7 @@ test("sortChildren regression keeps HORIZONTAL and VERTICAL ordering unchanged",
             type: "text" as const,
             text: "Horizontal Right",
             x: 240,
-            y: 10
+            y: 10,
           },
           {
             id: "horizontal-left",
@@ -2967,7 +3323,7 @@ test("sortChildren regression keeps HORIZONTAL and VERTICAL ordering unchanged",
             type: "text" as const,
             text: "Horizontal Left",
             x: 20,
-            y: 10
+            y: 10,
           },
           {
             id: "horizontal-middle",
@@ -2976,9 +3332,9 @@ test("sortChildren regression keeps HORIZONTAL and VERTICAL ordering unchanged",
             type: "text" as const,
             text: "Horizontal Middle",
             x: 140,
-            y: 10
-          }
-        ]
+            y: 10,
+          },
+        ],
       },
       {
         id: "vertical-container",
@@ -2998,7 +3354,7 @@ test("sortChildren regression keeps HORIZONTAL and VERTICAL ordering unchanged",
             type: "text" as const,
             text: "Vertical Bottom",
             x: 0,
-            y: 90
+            y: 90,
           },
           {
             id: "vertical-top",
@@ -3007,7 +3363,7 @@ test("sortChildren regression keeps HORIZONTAL and VERTICAL ordering unchanged",
             type: "text" as const,
             text: "Vertical Top",
             x: 0,
-            y: 10
+            y: 10,
           },
           {
             id: "vertical-middle",
@@ -3016,21 +3372,27 @@ test("sortChildren regression keeps HORIZONTAL and VERTICAL ordering unchanged",
             type: "text" as const,
             text: "Vertical Middle",
             x: 0,
-            y: 50
-          }
-        ]
-      }
-    ]
+            y: 50,
+          },
+        ],
+      },
+    ],
   };
 
-  const content = createDeterministicScreenFile(screen, { formHandlingMode: "legacy_use_state" }).content;
+  const content = createDeterministicScreenFile(screen, {
+    formHandlingMode: "legacy_use_state",
+  }).content;
   assertMarkersInOrder({
     content,
-    markers: ['{"Horizontal Left"}', '{"Horizontal Middle"}', '{"Horizontal Right"}']
+    markers: [
+      '{"Horizontal Left"}',
+      '{"Horizontal Middle"}',
+      '{"Horizontal Right"}',
+    ],
   });
   assertMarkersInOrder({
     content,
-    markers: ['{"Vertical Top"}', '{"Vertical Middle"}', '{"Vertical Bottom"}']
+    markers: ['{"Vertical Top"}', '{"Vertical Middle"}', '{"Vertical Bottom"}'],
   });
 });
 
@@ -3052,9 +3414,9 @@ test("deterministic screen rendering maps container maxWidth boundaries from con
         width,
         height: 80,
         fillColor: "#ffffff",
-        children: []
-      }
-    ]
+        children: [],
+      },
+    ],
   });
 
   const cases: Array<{ width: number; expected: "sm" | "md" | "lg" | "xl" }> = [
@@ -3065,21 +3427,25 @@ test("deterministic screen rendering maps container maxWidth boundaries from con
     { width: 1200, expected: "lg" },
     { width: 1201, expected: "xl" },
     { width: 1536, expected: "xl" },
-    { width: 1537, expected: "xl" }
+    { width: 1537, expected: "xl" },
   ];
 
   for (const testCase of cases) {
-    const content = createDeterministicScreenFile(buildScreen(testCase.width)).content;
+    const content = createDeterministicScreenFile(
+      buildScreen(testCase.width),
+    ).content;
     assert.equal(
       extractContainerMaxWidth(content),
       testCase.expected,
-      `Expected width ${testCase.width} to map to maxWidth=${testCase.expected}`
+      `Expected width ${testCase.width} to map to maxWidth=${testCase.expected}`,
     );
   }
 });
 
 test("generateArtifacts writes deterministic output and mapping diagnostics", async () => {
-  const projectDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-generator-"));
+  const projectDir = await mkdtemp(
+    path.join(os.tmpdir(), "workspace-dev-generator-"),
+  );
   const logs: string[] = [];
 
   const result = await generateArtifacts({
@@ -3098,7 +3464,7 @@ test("generateArtifacts writes deterministic output and mapping diagnostics", as
         importPath: "@acme/ui",
         priority: 1,
         source: "local_override",
-        enabled: true
+        enabled: true,
       },
       {
         boardKey: "board-a",
@@ -3107,7 +3473,7 @@ test("generateArtifacts writes deterministic output and mapping diagnostics", as
         importPath: "@acme/ui",
         priority: 2,
         source: "code_connect_import",
-        enabled: true
+        enabled: true,
       },
       {
         boardKey: "board-a",
@@ -3116,7 +3482,7 @@ test("generateArtifacts writes deterministic output and mapping diagnostics", as
         importPath: "@acme/ui",
         priority: 3,
         source: "code_connect_import",
-        enabled: false
+        enabled: false,
       },
       {
         boardKey: "board-a",
@@ -3125,9 +3491,9 @@ test("generateArtifacts writes deterministic output and mapping diagnostics", as
         importPath: "@acme/ui",
         priority: 4,
         source: "code_connect_import",
-        enabled: true
-      }
-    ]
+        enabled: true,
+      },
+    ],
   });
 
   assert.equal(result.themeApplied, false);
@@ -3136,8 +3502,14 @@ test("generateArtifacts writes deterministic output and mapping diagnostics", as
   assert.deepEqual(result.screenRejected, []);
   assert.deepEqual(result.llmWarnings, []);
   assert.equal(result.generatedPaths.includes("src/App.tsx"), true);
-  assert.equal(result.generatedPaths.includes("src/components/ErrorBoundary.tsx"), true);
-  assert.equal(result.generatedPaths.includes("src/components/ScreenSkeleton.tsx"), true);
+  assert.equal(
+    result.generatedPaths.includes("src/components/ErrorBoundary.tsx"),
+    true,
+  );
+  assert.equal(
+    result.generatedPaths.includes("src/components/ScreenSkeleton.tsx"),
+    true,
+  );
   assert.equal(result.generatedPaths.includes("generation-metrics.json"), true);
   assert.equal(result.generationMetrics.fetchedNodes, 0);
   assert.equal(result.mappingCoverage?.usedMappings, 1);
@@ -3149,33 +3521,65 @@ test("generateArtifacts writes deterministic output and mapping diagnostics", as
   assert.equal(result.mappingDiagnostics.broadPatternCount, 0);
   assert.ok(logs.some((entry) => entry.includes("deterministic")));
 
-  const appContent = await readFile(path.join(projectDir, "src", "App.tsx"), "utf8");
+  const appContent = await readFile(
+    path.join(projectDir, "src", "App.tsx"),
+    "utf8",
+  );
   assert.ok(appContent.includes("BrowserRouter"));
   assert.equal(appContent.includes("HashRouter"), false);
   assert.ok(appContent.includes("Suspense"));
-  assert.ok(appContent.includes('import ErrorBoundary from "./components/ErrorBoundary";'));
-  assert.ok(appContent.includes('import ScreenSkeleton from "./components/ScreenSkeleton";'));
-  assert.ok(appContent.includes("const routeLoadingFallback = <ScreenSkeleton />;"));
+  assert.ok(
+    appContent.includes(
+      'import ErrorBoundary from "./components/ErrorBoundary";',
+    ),
+  );
+  assert.ok(
+    appContent.includes(
+      'import ScreenSkeleton from "./components/ScreenSkeleton";',
+    ),
+  );
+  assert.ok(
+    appContent.includes("const routeLoadingFallback = <ScreenSkeleton />;"),
+  );
   assert.ok(appContent.includes("element={<ErrorBoundary><"));
 
-  const errorBoundaryContent = await readFile(path.join(projectDir, "src", "components", "ErrorBoundary.tsx"), "utf8");
-  assert.ok(errorBoundaryContent.includes("class ErrorBoundary extends Component"));
+  const errorBoundaryContent = await readFile(
+    path.join(projectDir, "src", "components", "ErrorBoundary.tsx"),
+    "utf8",
+  );
+  assert.ok(
+    errorBoundaryContent.includes("class ErrorBoundary extends Component"),
+  );
   assert.ok(errorBoundaryContent.includes("static getDerivedStateFromError"));
   assert.ok(errorBoundaryContent.includes("handleRetry"));
   assert.ok(errorBoundaryContent.includes("Try again"));
   assert.equal(errorBoundaryContent.includes("console.error"), false);
 
-  const screenSkeletonContent = await readFile(path.join(projectDir, "src", "components", "ScreenSkeleton.tsx"), "utf8");
+  const screenSkeletonContent = await readFile(
+    path.join(projectDir, "src", "components", "ScreenSkeleton.tsx"),
+    "utf8",
+  );
   assert.ok(screenSkeletonContent.includes("function ScreenSkeleton"));
   assert.ok(screenSkeletonContent.includes("LinearProgress"));
   assert.ok(screenSkeletonContent.includes("Skeleton"));
 
-  const generatedScreenContent = await readFile(path.join(projectDir, toDeterministicScreenPath("Übersicht")), "utf8");
-  assert.ok(generatedScreenContent.includes('import MappedInput from "@acme/ui";'));
+  const generatedScreenContent = await readFile(
+    path.join(projectDir, toDeterministicScreenPath("Übersicht")),
+    "utf8",
+  );
+  assert.ok(
+    generatedScreenContent.includes('import MappedInput from "@acme/ui";'),
+  );
   assert.ok(generatedScreenContent.includes("<MappedInput"));
 
-  const metricsContent = await readFile(path.join(projectDir, "generation-metrics.json"), "utf8");
-  const metrics = JSON.parse(metricsContent) as { skippedHidden?: number; truncatedScreens?: unknown[] };
+  const metricsContent = await readFile(
+    path.join(projectDir, "generation-metrics.json"),
+    "utf8",
+  );
+  const metrics = JSON.parse(metricsContent) as {
+    skippedHidden?: number;
+    truncatedScreens?: unknown[];
+  };
   assert.equal(typeof metrics.skippedHidden, "number");
   assert.equal(Array.isArray(metrics.truncatedScreens), true);
 });
@@ -3196,7 +3600,7 @@ test("generateArtifacts caps representative screen test targets and keeps test o
             name: `Headline ${index + 1}`,
             nodeType: "TEXT" as const,
             type: "text" as const,
-            text: `Headline ${String(index + 1).padStart(2, "0")}`
+            text: `Headline ${String(index + 1).padStart(2, "0")}`,
           })),
           ...Array.from({ length: 7 }, (_, index) => ({
             id: `target-rich-button-${index + 1}`,
@@ -3213,16 +3617,16 @@ test("generateArtifacts caps representative screen test targets and keeps test o
                 nodeType: "TEXT" as const,
                 type: "text" as const,
                 text: `Action ${index + 1}`,
-                fillColor: "#ffffff"
-              }
-            ]
+                fillColor: "#ffffff",
+              },
+            ],
           })),
           ...Array.from({ length: 7 }, (_, index) =>
             createSemanticInputNode({
               id: `target-rich-input-${index + 1}`,
               name: `Input Field ${index + 1}`,
-              label: `Input ${index + 1}`
-            })
+              label: `Input ${index + 1}`,
+            }),
           ),
           ...Array.from({ length: 7 }, (_, index) => ({
             id: `target-rich-select-${index + 1}`,
@@ -3240,18 +3644,22 @@ test("generateArtifacts caps representative screen test targets and keeps test o
                 name: "Label",
                 nodeType: "TEXT" as const,
                 type: "text" as const,
-                text: `Select ${index + 1}`
-              }
-            ]
-          }))
-        ]
-      }
+                text: `Select ${index + 1}`,
+              },
+            ],
+          })),
+        ],
+      },
     ];
     return ir;
   };
 
-  const firstRunDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-generator-screen-tests-caps-a-"));
-  const secondRunDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-generator-screen-tests-caps-b-"));
+  const firstRunDir = await mkdtemp(
+    path.join(os.tmpdir(), "workspace-dev-generator-screen-tests-caps-a-"),
+  );
+  const secondRunDir = await mkdtemp(
+    path.join(os.tmpdir(), "workspace-dev-generator-screen-tests-caps-b-"),
+  );
   const firstResult = await generateArtifacts({
     projectDir: firstRunDir,
     ir: createTargetRichIr(),
@@ -3259,7 +3667,7 @@ test("generateArtifacts caps representative screen test targets and keeps test o
     llmModelName: "deterministic",
     onLog: () => {
       // no-op
-    }
+    },
   });
   const secondResult = await generateArtifacts({
     projectDir: secondRunDir,
@@ -3268,54 +3676,94 @@ test("generateArtifacts caps representative screen test targets and keeps test o
     llmModelName: "deterministic",
     onLog: () => {
       // no-op
-    }
+    },
   });
 
   const firstTestPath = firstResult.generatedPaths.find(
-    (entry) => entry.startsWith("src/screens/__tests__/") && entry.endsWith(".test.tsx")
+    (entry) =>
+      entry.startsWith("src/screens/__tests__/") && entry.endsWith(".test.tsx"),
   );
   const secondTestPath = secondResult.generatedPaths.find(
-    (entry) => entry.startsWith("src/screens/__tests__/") && entry.endsWith(".test.tsx")
+    (entry) =>
+      entry.startsWith("src/screens/__tests__/") && entry.endsWith(".test.tsx"),
   );
   assert.ok(firstTestPath, "Expected test file path for first run.");
   assert.ok(secondTestPath, "Expected test file path for second run.");
 
-  const firstContent = await readFile(path.join(firstRunDir, firstTestPath ?? ""), "utf8");
-  const secondContent = await readFile(path.join(secondRunDir, secondTestPath ?? ""), "utf8");
+  const firstContent = await readFile(
+    path.join(firstRunDir, firstTestPath ?? ""),
+    "utf8",
+  );
+  const secondContent = await readFile(
+    path.join(secondRunDir, secondTestPath ?? ""),
+    "utf8",
+  );
   assert.equal(firstContent, secondContent);
-  assert.ok(firstContent.includes('import { render, screen } from "@testing-library/react";'));
-  assert.ok(firstContent.includes('import userEvent from "@testing-library/user-event";'));
+  assert.ok(
+    firstContent.includes(
+      'import { render, screen } from "@testing-library/react";',
+    ),
+  );
+  assert.ok(
+    firstContent.includes(
+      'import userEvent from "@testing-library/user-event";',
+    ),
+  );
   assert.ok(firstContent.includes('import { axe } from "jest-axe";'));
-  assert.ok(firstContent.includes("<ThemeProvider theme={appTheme} defaultMode=\"system\" noSsr>"));
+  assert.ok(
+    firstContent.includes(
+      '<ThemeProvider theme={appTheme} defaultMode="system" noSsr>',
+    ),
+  );
   assert.ok(firstContent.includes("<MemoryRouter>"));
   assert.ok(firstContent.includes('it("renders without crashing"'));
   assert.ok(firstContent.includes('it("renders representative text content"'));
-  assert.ok(firstContent.includes('it("keeps representative controls interactive"'));
-  assert.ok(firstContent.includes('it("has no detectable accessibility violations"'));
-  assert.ok(firstContent.includes("const normalizeTextForAssertion = (value: string): string => {"));
-  assert.ok(firstContent.includes("const expectTextToBePresent = ({ container, expectedText }"));
-  assert.ok(firstContent.includes('const axeConfig = {'));
+  assert.ok(
+    firstContent.includes('it("keeps representative controls interactive"'),
+  );
+  assert.ok(
+    firstContent.includes('it("has no detectable accessibility violations"'),
+  );
+  assert.ok(
+    firstContent.includes(
+      "const normalizeTextForAssertion = (value: string): string => {",
+    ),
+  );
+  assert.ok(
+    firstContent.includes(
+      "const expectTextToBePresent = ({ container, expectedText }",
+    ),
+  );
+  assert.ok(firstContent.includes("const axeConfig = {"));
   assert.ok(firstContent.includes('"heading-order": { enabled: false }'));
-  assert.ok(firstContent.includes('"landmark-banner-is-top-level": { enabled: false }'));
-  assert.ok(firstContent.includes("expectTextToBePresent({ container, expectedText });"));
-  assert.ok(firstContent.includes("const results = await axe(container, axeConfig);"));
+  assert.ok(
+    firstContent.includes('"landmark-banner-is-top-level": { enabled: false }'),
+  );
+  assert.ok(
+    firstContent.includes(
+      "expectTextToBePresent({ container, expectedText });",
+    ),
+  );
+  assert.ok(
+    firstContent.includes("const results = await axe(container, axeConfig);"),
+  );
   assert.ok(firstContent.includes("expect(results).toHaveNoViolations();"));
 
   const expectedTexts = readGeneratedStringArrayLiteral({
     source: firstContent,
-    variableName: "expectedTexts"
+    variableName: "expectedTexts",
   });
   const expectedButtonLabels = readGeneratedStringArrayLiteral({
     source: firstContent,
-    variableName: "expectedButtonLabels"
+    variableName: "expectedButtonLabels",
   });
   const expectedInputLabels = readGeneratedStringArrayLiteral({
     source: firstContent,
-    variableName: "expectedTextInputLabels"
+    variableName: "expectedTextInputLabels",
   });
   const expectedSelectLabels = readGeneratedStringArrayLiteral({
     source: firstContent,
-    variableName: "expectedSelectLabels"
+    variableName: "expectedSelectLabels",
   });
 
   assert.deepEqual(expectedTexts, [
@@ -3326,22 +3774,38 @@ test("generateArtifacts caps representative screen test targets and keeps test o
     "Headline 05",
     "Headline 06",
     "Headline 07",
-    "Headline 08"
+    "Headline 08",
   ]);
-  assert.deepEqual(expectedButtonLabels, ["Action 1", "Action 2", "Action 3", "Action 4", "Action 5", "Action 6"]);
+  assert.deepEqual(expectedButtonLabels, [
+    "Action 1",
+    "Action 2",
+    "Action 3",
+    "Action 4",
+    "Action 5",
+    "Action 6",
+  ]);
   assert.deepEqual(expectedInputLabels, [
     "Input Field 1",
     "Input Field 2",
     "Input Field 3",
     "Input Field 4",
     "Input Field 5",
-    "Input Field 6"
+    "Input Field 6",
   ]);
-  assert.deepEqual(expectedSelectLabels, ["Select 1", "Select 2", "Select 3", "Select 4", "Select 5", "Select 6"]);
+  assert.deepEqual(expectedSelectLabels, [
+    "Select 1",
+    "Select 2",
+    "Select 3",
+    "Select 4",
+    "Select 5",
+    "Select 6",
+  ]);
 });
 
 test("generateArtifacts extracts repeated screen-local card patterns into reusable component files", async () => {
-  const projectDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-generator-pattern-extract-"));
+  const projectDir = await mkdtemp(
+    path.join(os.tmpdir(), "workspace-dev-generator-pattern-extract-"),
+  );
   const ir = createIr();
   ir.screens = [
     {
@@ -3366,23 +3830,23 @@ test("generateArtifacts extracts repeated screen-local card patterns into reusab
               nodeType: "RECTANGLE",
               type: "image" as const,
               width: 320,
-              height: 96
+              height: 96,
             },
             {
               id: "offer-title-a",
               name: "Offer Title",
               nodeType: "TEXT",
               type: "text" as const,
-              text: "Starter Paket"
+              text: "Starter Paket",
             },
             {
               id: "offer-price-a",
               name: "Offer Price",
               nodeType: "TEXT",
               type: "text" as const,
-              text: "9,99 €"
-            }
-          ]
+              text: "9,99 €",
+            },
+          ],
         },
         {
           id: "offer-card-b",
@@ -3399,23 +3863,23 @@ test("generateArtifacts extracts repeated screen-local card patterns into reusab
               nodeType: "RECTANGLE",
               type: "image" as const,
               width: 320,
-              height: 96
+              height: 96,
             },
             {
               id: "offer-title-b",
               name: "Offer Title",
               nodeType: "TEXT",
               type: "text" as const,
-              text: "Family Paket"
+              text: "Family Paket",
             },
             {
               id: "offer-price-b",
               name: "Offer Price",
               nodeType: "TEXT",
               type: "text" as const,
-              text: "19,99 €"
-            }
-          ]
+              text: "19,99 €",
+            },
+          ],
         },
         {
           id: "offer-card-c",
@@ -3432,26 +3896,26 @@ test("generateArtifacts extracts repeated screen-local card patterns into reusab
               nodeType: "RECTANGLE",
               type: "image" as const,
               width: 320,
-              height: 96
+              height: 96,
             },
             {
               id: "offer-title-c",
               name: "Offer Title",
               nodeType: "TEXT",
               type: "text" as const,
-              text: "Premium Paket"
+              text: "Premium Paket",
             },
             {
               id: "offer-price-c",
               name: "Offer Price",
               nodeType: "TEXT",
               type: "text" as const,
-              text: "29,99 €"
-            }
-          ]
-        }
-      ]
-    }
+              text: "29,99 €",
+            },
+          ],
+        },
+      ],
+    },
   ];
 
   const result = await generateArtifacts({
@@ -3460,40 +3924,90 @@ test("generateArtifacts extracts repeated screen-local card patterns into reusab
     imageAssetMap: {
       "offer-image-a": "/images/offer-a.png",
       "offer-image-b": "/images/offer-b.png",
-      "offer-image-c": "/images/offer-c.png"
+      "offer-image-c": "/images/offer-c.png",
     },
     llmCodegenMode: "deterministic",
     llmModelName: "deterministic",
     onLog: () => {
       // no-op
-    }
+    },
   });
 
-  assert.equal(result.generatedPaths.includes("src/components/OffersPattern1.tsx"), true);
-  assert.equal(result.generatedPaths.includes("src/context/OffersPatternContext.tsx"), true);
+  assert.equal(
+    result.generatedPaths.includes("src/components/OffersPattern1.tsx"),
+    true,
+  );
+  assert.equal(
+    result.generatedPaths.includes("src/context/OffersPatternContext.tsx"),
+    true,
+  );
 
-  const screenContent = await readFile(path.join(projectDir, toDeterministicScreenPath("Offers")), "utf8");
-  assert.ok(screenContent.includes('import { OffersPattern1 } from "../components/OffersPattern1";'));
-  assert.ok(screenContent.includes('import { OffersPatternContextProvider, type OffersPatternContextState } from "../context/OffersPatternContext";'));
-  assert.ok(screenContent.includes("const patternContextInitialState: OffersPatternContextState = {"));
-  assert.ok(screenContent.includes("<OffersPatternContextProvider initialState={patternContextInitialState}>"));
+  const screenContent = await readFile(
+    path.join(projectDir, toDeterministicScreenPath("Offers")),
+    "utf8",
+  );
+  assert.ok(
+    screenContent.includes(
+      'import { OffersPattern1 } from "../components/OffersPattern1";',
+    ),
+  );
+  assert.ok(
+    screenContent.includes(
+      'import { OffersPatternContextProvider, type OffersPatternContextState } from "../context/OffersPatternContext";',
+    ),
+  );
+  assert.ok(
+    screenContent.includes(
+      "const patternContextInitialState: OffersPatternContextState = {",
+    ),
+  );
+  assert.ok(
+    screenContent.includes(
+      "<OffersPatternContextProvider initialState={patternContextInitialState}>",
+    ),
+  );
   assert.equal(countOccurrences(screenContent, "<OffersPattern1"), 3);
   assert.equal(screenContent.includes("<Card"), false);
   assert.ok(screenContent.includes('instanceId={"offer-card-a"}'));
   assert.ok(screenContent.includes('"Starter Paket"'));
-  assert.equal(screenContent.includes('offerTitleText={"Starter Paket"}'), false);
-  assert.equal(screenContent.includes('offerImageSrc={"/images/offer-a.png"}'), false);
+  assert.equal(
+    screenContent.includes('offerTitleText={"Starter Paket"}'),
+    false,
+  );
+  assert.equal(
+    screenContent.includes('offerImageSrc={"/images/offer-a.png"}'),
+    false,
+  );
 
-  const componentContent = await readFile(path.join(projectDir, "src", "components", "OffersPattern1.tsx"), "utf8");
+  const componentContent = await readFile(
+    path.join(projectDir, "src", "components", "OffersPattern1.tsx"),
+    "utf8",
+  );
   assert.ok(componentContent.includes("interface OffersPattern1Props"));
   assert.ok(componentContent.includes("instanceId: string;"));
   assert.ok(componentContent.includes("sx?: SxProps<Theme>;"));
-  assert.ok(componentContent.includes('import { styled, type SxProps, type Theme } from "@mui/material/styles";'));
-  assert.ok(componentContent.includes('import { useOffersPatternContext } from "../context/OffersPatternContext";'));
-  assert.ok(componentContent.includes("const patternContext = useOffersPatternContext();"));
+  assert.ok(
+    componentContent.includes(
+      'import { styled, type SxProps, type Theme } from "@mui/material/styles";',
+    ),
+  );
+  assert.ok(
+    componentContent.includes(
+      'import { useOffersPatternContext } from "../context/OffersPatternContext";',
+    ),
+  );
+  assert.ok(
+    componentContent.includes(
+      "const patternContext = useOffersPatternContext();",
+    ),
+  );
   assert.equal(componentContent.includes("offerTitleText: string;"), false);
   assert.equal(componentContent.includes("offerImageSrc: string;"), false);
-  assert.ok(componentContent.includes("const OffersPattern1Root = styled(Card)(({ theme }) => theme.unstable_sx({"));
+  assert.ok(
+    componentContent.includes(
+      "const OffersPattern1Root = styled(Card)(({ theme }) => theme.unstable_sx({",
+    ),
+  );
   assert.ok(componentContent.includes("theme.unstable_sx({"));
   assert.match(componentContent, /<OffersPattern1Root\b[^>]*\bsx=\{sx\}[^>]*>/);
   assert.equal(componentContent.includes("sx={[{"), false);
@@ -3501,19 +4015,34 @@ test("generateArtifacts extracts repeated screen-local card patterns into reusab
   assert.ok(componentContent.includes("return (\n    <>"));
   assertValidTsx({
     content: componentContent,
-    filePath: path.join(projectDir, "src", "components", "OffersPattern1.tsx")
+    filePath: path.join(projectDir, "src", "components", "OffersPattern1.tsx"),
   });
 
-  const patternContextContent = await readFile(path.join(projectDir, "src", "context", "OffersPatternContext.tsx"), "utf8");
-  assert.ok(patternContextContent.includes("export interface OffersPattern1State"));
+  const patternContextContent = await readFile(
+    path.join(projectDir, "src", "context", "OffersPatternContext.tsx"),
+    "utf8",
+  );
+  assert.ok(
+    patternContextContent.includes("export interface OffersPattern1State"),
+  );
   assert.ok(patternContextContent.includes("offerTitleText: string;"));
   assert.ok(patternContextContent.includes("offerImageSrc: string;"));
-  assert.ok(patternContextContent.includes("OffersPattern1: Partial<Record<string, OffersPattern1State>>;"));
-  assert.ok(patternContextContent.includes("export function OffersPatternContextProvider"));
+  assert.ok(
+    patternContextContent.includes(
+      "OffersPattern1: Partial<Record<string, OffersPattern1State>>;",
+    ),
+  );
+  assert.ok(
+    patternContextContent.includes(
+      "export function OffersPatternContextProvider",
+    ),
+  );
 });
 
 test("generateArtifacts keeps pattern and form provider wrapping order stable when both are present", async () => {
-  const projectDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-generator-fallback-provider-order-"));
+  const projectDir = await mkdtemp(
+    path.join(os.tmpdir(), "workspace-dev-generator-fallback-provider-order-"),
+  );
   const ir = createMixedFallbackStageIr();
 
   await generateArtifacts({
@@ -3524,25 +4053,38 @@ test("generateArtifacts keeps pattern and form provider wrapping order stable wh
     llmModelName: "deterministic",
     onLog: () => {
       // no-op
-    }
+    },
   });
 
-  const screenContent = await readFile(path.join(projectDir, toDeterministicScreenPath("Mixed Fallback Stage")), "utf8");
+  const screenContent = await readFile(
+    path.join(projectDir, toDeterministicScreenPath("Mixed Fallback Stage")),
+    "utf8",
+  );
   const patternProviderMatch = screenContent.match(
-    /import \{ ([A-Za-z0-9_]+PatternContextProvider), type [^}]+ \} from "\.\.\/context\/[^"]+";/
+    /import \{ ([A-Za-z0-9_]+PatternContextProvider), type [^}]+ \} from "\.\.\/context\/[^"]+";/,
   );
   const formProviderMatch = screenContent.match(
-    /import \{ ([A-Za-z0-9_]+FormContextProvider), [^}]+ \} from "\.\.\/context\/[^"]+";/
+    /import \{ ([A-Za-z0-9_]+FormContextProvider), [^}]+ \} from "\.\.\/context\/[^"]+";/,
   );
-  const screenContentComponentMatch = screenContent.match(/function ([A-Za-z0-9_]+ScreenContent)\(\)/);
-  assert.ok(patternProviderMatch?.[1], "Expected pattern context provider import.");
+  const screenContentComponentMatch = screenContent.match(
+    /function ([A-Za-z0-9_]+ScreenContent)\(\)/,
+  );
+  assert.ok(
+    patternProviderMatch?.[1],
+    "Expected pattern context provider import.",
+  );
   assert.ok(formProviderMatch?.[1], "Expected form context provider import.");
-  assert.ok(screenContentComponentMatch?.[1], "Expected screen content function.");
+  assert.ok(
+    screenContentComponentMatch?.[1],
+    "Expected screen content function.",
+  );
 
   const patternProvider = patternProviderMatch?.[1] ?? "";
   const formProvider = formProviderMatch?.[1] ?? "";
   const screenContentComponent = screenContentComponentMatch?.[1] ?? "";
-  const patternStart = screenContent.indexOf(`<${patternProvider} initialState={patternContextInitialState}>`);
+  const patternStart = screenContent.indexOf(
+    `<${patternProvider} initialState={patternContextInitialState}>`,
+  );
   const formStart = screenContent.indexOf(`<${formProvider}>`);
   const contentStart = screenContent.indexOf(`<${screenContentComponent} />`);
   const formEnd = screenContent.indexOf(`</${formProvider}>`);
@@ -3557,13 +4099,31 @@ test("generateArtifacts keeps pattern and form provider wrapping order stable wh
   assert.ok(formStart < contentStart);
   assert.ok(contentStart < formEnd);
   assert.ok(formEnd < patternEnd);
-  assert.ok(screenContent.includes("import { Link as RouterLink } from \"react-router-dom\";"));
-  assert.ok(screenContent.includes('import SearchIcon from "@mui/icons-material/Search";'));
+  assert.ok(
+    screenContent.includes(
+      'import { Link as RouterLink } from "react-router-dom";',
+    ),
+  );
+  assert.ok(
+    screenContent.includes(
+      'import SearchIcon from "@mui/icons-material/Search";',
+    ),
+  );
 });
 
 test("generateArtifacts keeps mixed fallback files byte-stable across repeated generation runs", async () => {
-  const firstProjectDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-generator-fallback-byte-stable-first-"));
-  const secondProjectDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-generator-fallback-byte-stable-second-"));
+  const firstProjectDir = await mkdtemp(
+    path.join(
+      os.tmpdir(),
+      "workspace-dev-generator-fallback-byte-stable-first-",
+    ),
+  );
+  const secondProjectDir = await mkdtemp(
+    path.join(
+      os.tmpdir(),
+      "workspace-dev-generator-fallback-byte-stable-second-",
+    ),
+  );
   const ir = createMixedFallbackStageIr();
 
   const generateAndCollect = async (projectDir: string) => {
@@ -3575,22 +4135,32 @@ test("generateArtifacts keeps mixed fallback files byte-stable across repeated g
       llmModelName: "deterministic",
       onLog: () => {
         // no-op
-      }
+      },
     });
-    const screenContent = await readFile(path.join(projectDir, toDeterministicScreenPath("Mixed Fallback Stage")), "utf8");
-    const componentImportMatches = Array.from(screenContent.matchAll(/from "\.\.\/components\/([^"]+)";/g));
-    const contextImportMatches = Array.from(screenContent.matchAll(/from "\.\.\/context\/([^"]+)";/g));
+    const screenContent = await readFile(
+      path.join(projectDir, toDeterministicScreenPath("Mixed Fallback Stage")),
+      "utf8",
+    );
+    const componentImportMatches = Array.from(
+      screenContent.matchAll(/from "\.\.\/components\/([^"]+)";/g),
+    );
+    const contextImportMatches = Array.from(
+      screenContent.matchAll(/from "\.\.\/context\/([^"]+)";/g),
+    );
 
     const componentContents = (
       await Promise.all(
         componentImportMatches.map(async (match) => {
           const moduleName = match[1] ?? "";
-          const content = await readFile(path.join(projectDir, "src", "components", `${moduleName}.tsx`), "utf8");
+          const content = await readFile(
+            path.join(projectDir, "src", "components", `${moduleName}.tsx`),
+            "utf8",
+          );
           return {
             moduleName,
-            content
+            content,
           };
-        })
+        }),
       )
     ).sort((left, right) => left.moduleName.localeCompare(right.moduleName));
 
@@ -3598,19 +4168,22 @@ test("generateArtifacts keeps mixed fallback files byte-stable across repeated g
       await Promise.all(
         contextImportMatches.map(async (match) => {
           const moduleName = match[1] ?? "";
-          const content = await readFile(path.join(projectDir, "src", "context", `${moduleName}.tsx`), "utf8");
+          const content = await readFile(
+            path.join(projectDir, "src", "context", `${moduleName}.tsx`),
+            "utf8",
+          );
           return {
             moduleName,
-            content
+            content,
           };
-        })
+        }),
       )
     ).sort((left, right) => left.moduleName.localeCompare(right.moduleName));
 
     return {
       screenContent,
       componentContents,
-      contextContents
+      contextContents,
     };
   };
 
@@ -3622,8 +4195,12 @@ test("generateArtifacts keeps mixed fallback files byte-stable across repeated g
 });
 
 test("generateArtifactsStreaming emits theme content first and keeps output byte-equivalent to the batch wrapper", async () => {
-  const streamingProjectDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-generator-streaming-theme-"));
-  const batchProjectDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-generator-batch-theme-"));
+  const streamingProjectDir = await mkdtemp(
+    path.join(os.tmpdir(), "workspace-dev-generator-streaming-theme-"),
+  );
+  const batchProjectDir = await mkdtemp(
+    path.join(os.tmpdir(), "workspace-dev-generator-batch-theme-"),
+  );
   const ir = createIr();
   const generator = generateArtifactsStreaming({
     projectDir: streamingProjectDir,
@@ -3632,7 +4209,7 @@ test("generateArtifactsStreaming emits theme content first and keeps output byte
     llmModelName: "deterministic",
     onLog: () => {
       // no-op
-    }
+    },
   });
 
   const eventTypes: string[] = [];
@@ -3655,21 +4232,36 @@ test("generateArtifactsStreaming emits theme content first and keeps output byte
   assert.equal(eventTypes[0], "theme");
   assert.ok(themeEvent, "streaming generation must emit a theme event");
   assert.deepEqual(
-    themeEvent.files.map((file) => file.path).sort((left, right) => left.localeCompare(right)),
+    themeEvent.files
+      .map((file) => file.path)
+      .sort((left, right) => left.localeCompare(right)),
     [
       "src/components/ErrorBoundary.tsx",
       "src/components/ScreenSkeleton.tsx",
       "src/theme/theme.ts",
-      "src/theme/tokens.json"
-    ]
+      "src/theme/tokens.json",
+    ],
   );
 
   for (const file of themeEvent.files) {
-    assert.ok(file.content.length > 0, `theme file '${file.path}' must have non-empty content`);
-    const diskContent = await readFile(path.join(streamingProjectDir, file.path), "utf8");
-    assert.equal(file.content, diskContent, `theme file '${file.path}' must match disk content`);
+    assert.ok(
+      file.content.length > 0,
+      `theme file '${file.path}' must have non-empty content`,
+    );
+    const diskContent = await readFile(
+      path.join(streamingProjectDir, file.path),
+      "utf8",
+    );
+    assert.equal(
+      file.content,
+      diskContent,
+      `theme file '${file.path}' must match disk content`,
+    );
     if (file.path.endsWith(".json")) {
-      assert.doesNotThrow(() => JSON.parse(file.content), `theme file '${file.path}' must contain valid JSON`);
+      assert.doesNotThrow(
+        () => JSON.parse(file.content),
+        `theme file '${file.path}' must contain valid JSON`,
+      );
     }
   }
 
@@ -3680,27 +4272,33 @@ test("generateArtifactsStreaming emits theme content first and keeps output byte
     llmModelName: "deterministic",
     onLog: () => {
       // no-op
-    }
+    },
   });
 
   assert.deepEqual(
-    [...streamingResult.generatedPaths].sort((left, right) => left.localeCompare(right)),
-    [...batchResult.generatedPaths].sort((left, right) => left.localeCompare(right))
+    [...streamingResult.generatedPaths].sort((left, right) =>
+      left.localeCompare(right),
+    ),
+    [...batchResult.generatedPaths].sort((left, right) =>
+      left.localeCompare(right),
+    ),
   );
   assert.deepEqual(
     await collectDeterministicSnapshot({
       projectDir: streamingProjectDir,
-      screenName: "Übersicht"
+      screenName: "Übersicht",
     }),
     await collectDeterministicSnapshot({
       projectDir: batchProjectDir,
-      screenName: "Übersicht"
-    })
+      screenName: "Übersicht",
+    }),
   );
 });
 
 test("generateArtifactsStreaming keeps content-bearing event payloads non-empty while progress stays metadata-only", async () => {
-  const projectDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-generator-streaming-payloads-"));
+  const projectDir = await mkdtemp(
+    path.join(os.tmpdir(), "workspace-dev-generator-streaming-payloads-"),
+  );
   const generator = generateArtifactsStreaming({
     projectDir,
     ir: createIr(),
@@ -3708,7 +4306,7 @@ test("generateArtifactsStreaming keeps content-bearing event payloads non-empty 
     llmModelName: "deterministic",
     onLog: () => {
       // no-op
-    }
+    },
   });
 
   const seenEventTypes = new Set<string>();
@@ -3718,12 +4316,21 @@ test("generateArtifactsStreaming keeps content-bearing event payloads non-empty 
     seenEventTypes.add(event.type);
 
     if (event.type === "theme" || event.type === "screen") {
-      assert.ok(event.files.length > 0, `${event.type} events must include at least one file`);
+      assert.ok(
+        event.files.length > 0,
+        `${event.type} events must include at least one file`,
+      );
       for (const file of event.files) {
-        assert.ok(file.content.length > 0, `${event.type} file '${file.path}' must have non-empty content`);
+        assert.ok(
+          file.content.length > 0,
+          `${event.type} file '${file.path}' must have non-empty content`,
+        );
       }
     } else if (event.type === "app" || event.type === "metrics") {
-      assert.ok(event.file.content.length > 0, `${event.type} file '${event.file.path}' must have non-empty content`);
+      assert.ok(
+        event.file.content.length > 0,
+        `${event.type} file '${event.file.path}' must have non-empty content`,
+      );
     } else {
       assert.equal(event.type, "progress");
       assert.equal("file" in event, false);
@@ -3735,12 +4342,23 @@ test("generateArtifactsStreaming keeps content-bearing event payloads non-empty 
     iterResult = await generator.next();
   }
 
-  assert.deepEqual([...seenEventTypes].sort(), ["app", "metrics", "progress", "screen", "theme"]);
+  assert.deepEqual([...seenEventTypes].sort(), [
+    "app",
+    "metrics",
+    "progress",
+    "screen",
+    "theme",
+  ]);
 });
 
 test("generateArtifacts uses injected runtime adapters for filesystem, design-system and icon seams", async () => {
-  const projectDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-generator-runtime-adapters-seams-"));
-  const designSystemFilePath = path.join(projectDir, "runtime-design-system.json");
+  const projectDir = await mkdtemp(
+    path.join(os.tmpdir(), "workspace-dev-generator-runtime-adapters-seams-"),
+  );
+  const designSystemFilePath = path.join(
+    projectDir,
+    "runtime-design-system.json",
+  );
   const iconMapFilePath = path.join(projectDir, "runtime-icon-map.json");
   const writtenTextPaths: string[] = [];
   const writtenGeneratedPaths: string[] = [];
@@ -3752,31 +4370,40 @@ test("generateArtifacts uses injected runtime adapters for filesystem, design-sy
     writeGeneratedFile: 0,
     loadDesignSystemConfig: 0,
     applyDesignSystemMappings: 0,
-    loadIconResolver: 0
+    loadIconResolver: 0,
   };
   const injectedRuntimeAdapters = {
     mkdirRecursive: async (directory: string): Promise<void> => {
       runtimeCallCounts.mkdirRecursive += 1;
       await mkdir(directory, { recursive: true });
     },
-    writeTextFile: async ({ filePath, content }: { filePath: string; content: string }): Promise<void> => {
+    writeTextFile: async ({
+      filePath,
+      content,
+    }: {
+      filePath: string;
+      content: string;
+    }): Promise<void> => {
       runtimeCallCounts.writeTextFile += 1;
       writtenTextPaths.push(path.relative(projectDir, filePath));
       await mkdir(path.dirname(filePath), { recursive: true });
       await writeFile(filePath, content, "utf8");
     },
-    writeGeneratedFile: async (rootDir: string, file: { path: string; content: string }): Promise<void> => {
+    writeGeneratedFile: async (
+      rootDir: string,
+      file: { path: string; content: string },
+    ): Promise<void> => {
       runtimeCallCounts.writeGeneratedFile += 1;
       writtenGeneratedPaths.push(file.path);
       await writeGeneratedFileFromRuntimeAdapter({
         rootDir,
         relativePath: file.path,
-        content: file.content
+        content: file.content,
       });
     },
     loadDesignSystemConfig: async ({
       designSystemFilePath: runtimeDesignSystemFilePath,
-      onLog
+      onLog,
     }: {
       designSystemFilePath: string;
       onLog: (message: string) => void;
@@ -3786,11 +4413,11 @@ test("generateArtifacts uses injected runtime adapters for filesystem, design-sy
       void onLog;
       return {
         library: "@runtime/ui",
-        mappings: {}
+        mappings: {},
       };
     },
     applyDesignSystemMappings: ({
-      content
+      content,
     }: {
       filePath: string;
       content: string;
@@ -3801,7 +4428,7 @@ test("generateArtifacts uses injected runtime adapters for filesystem, design-sy
     },
     loadIconResolver: async ({
       iconMapFilePath: runtimeIconMapFilePath,
-      onLog
+      onLog,
     }: {
       iconMapFilePath: string;
       onLog: (message: string) => void;
@@ -3814,9 +4441,9 @@ test("generateArtifacts uses injected runtime adapters for filesystem, design-sy
         byIconName: new Map(),
         exactAliasMap: new Map(),
         tokenIndex: new Map(),
-        synonymMap: new Map()
+        synonymMap: new Map(),
       };
-    }
+    },
   };
   const ir = createIr();
   ir.screens = [
@@ -3832,7 +4459,7 @@ test("generateArtifacts uses injected runtime adapters for filesystem, design-sy
           name: "Primary CTA",
           nodeType: "FRAME",
           type: "button" as const,
-          text: "Weiter"
+          text: "Weiter",
         },
         {
           id: "runtime-adapter-icon",
@@ -3841,10 +4468,10 @@ test("generateArtifacts uses injected runtime adapters for filesystem, design-sy
           type: "container" as const,
           width: 24,
           height: 24,
-          children: []
-        }
-      ]
-    }
+          children: [],
+        },
+      ],
+    },
   ];
 
   const result = await generateArtifacts({
@@ -3857,7 +4484,7 @@ test("generateArtifacts uses injected runtime adapters for filesystem, design-sy
     onLog: () => {
       // no-op
     },
-    [GENERATE_ARTIFACTS_RUNTIME_ADAPTERS_SYMBOL]: injectedRuntimeAdapters
+    [GENERATE_ARTIFACTS_RUNTIME_ADAPTERS_SYMBOL]: injectedRuntimeAdapters,
   } as Parameters<typeof generateArtifacts>[0]);
 
   assert.equal(runtimeCallCounts.loadDesignSystemConfig, 1);
@@ -3869,16 +4496,31 @@ test("generateArtifacts uses injected runtime adapters for filesystem, design-sy
   assert.equal(observedDesignSystemFilePath, designSystemFilePath);
   assert.equal(observedIconMapFilePath, iconMapFilePath);
   assert.ok(writtenGeneratedPaths.includes("src/App.tsx"));
-  assert.ok(writtenTextPaths.includes(path.join("src", "theme", "tokens.json")));
+  assert.ok(
+    writtenTextPaths.includes(path.join("src", "theme", "tokens.json")),
+  );
   assert.ok(writtenTextPaths.includes("generation-metrics.json"));
-  assert.ok(writtenGeneratedPaths.includes(toDeterministicScreenPath("Runtime Adapter Screen")));
-  assert.ok(result.generatedPaths.includes(toDeterministicScreenPath("Runtime Adapter Screen")));
+  assert.ok(
+    writtenGeneratedPaths.includes(
+      toDeterministicScreenPath("Runtime Adapter Screen"),
+    ),
+  );
+  assert.ok(
+    result.generatedPaths.includes(
+      toDeterministicScreenPath("Runtime Adapter Screen"),
+    ),
+  );
 });
 
 test("generateArtifacts keeps deterministic output stable with injected runtime adapters", async () => {
   const screenName = "Übersicht";
   const runDefault = async () => {
-    const projectDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-generator-runtime-adapters-default-"));
+    const projectDir = await mkdtemp(
+      path.join(
+        os.tmpdir(),
+        "workspace-dev-generator-runtime-adapters-default-",
+      ),
+    );
     const result = await generateArtifacts({
       projectDir,
       ir: createIr(),
@@ -3886,14 +4528,16 @@ test("generateArtifacts keeps deterministic output stable with injected runtime 
       llmModelName: "deterministic",
       onLog: () => {
         // no-op
-      }
+      },
     });
     return {
-      generatedPaths: [...result.generatedPaths].sort((left, right) => left.localeCompare(right)),
+      generatedPaths: [...result.generatedPaths].sort((left, right) =>
+        left.localeCompare(right),
+      ),
       snapshot: await collectDeterministicSnapshot({
         projectDir,
-        screenName
-      })
+        screenName,
+      }),
     };
   };
   const createInjectedRuntimeAdapters = () => {
@@ -3902,28 +4546,37 @@ test("generateArtifacts keeps deterministic output stable with injected runtime 
       writeTextFile: 0,
       writeGeneratedFile: 0,
       loadDesignSystemConfig: 0,
-      loadIconResolver: 0
+      loadIconResolver: 0,
     };
     const runtimeAdapters = {
       mkdirRecursive: async (directory: string): Promise<void> => {
         runtimeCallCounts.mkdirRecursive += 1;
         await mkdir(directory, { recursive: true });
       },
-      writeTextFile: async ({ filePath, content }: { filePath: string; content: string }): Promise<void> => {
+      writeTextFile: async ({
+        filePath,
+        content,
+      }: {
+        filePath: string;
+        content: string;
+      }): Promise<void> => {
         runtimeCallCounts.writeTextFile += 1;
         await mkdir(path.dirname(filePath), { recursive: true });
         await writeFile(filePath, content, "utf8");
       },
-      writeGeneratedFile: async (rootDir: string, file: { path: string; content: string }): Promise<void> => {
+      writeGeneratedFile: async (
+        rootDir: string,
+        file: { path: string; content: string },
+      ): Promise<void> => {
         runtimeCallCounts.writeGeneratedFile += 1;
         await writeGeneratedFileFromRuntimeAdapter({
           rootDir,
           relativePath: file.path,
-          content: file.content
+          content: file.content,
         });
       },
       loadDesignSystemConfig: async ({
-        onLog
+        onLog,
       }: {
         designSystemFilePath: string;
         onLog: (message: string) => void;
@@ -3933,14 +4586,14 @@ test("generateArtifacts keeps deterministic output stable with injected runtime 
         return undefined;
       },
       applyDesignSystemMappings: ({
-        content
+        content,
       }: {
         filePath: string;
         content: string;
         config: unknown;
       }): string => content,
       loadIconResolver: async ({
-        onLog
+        onLog,
       }: {
         iconMapFilePath: string;
         onLog: (message: string) => void;
@@ -3952,18 +4605,24 @@ test("generateArtifacts keeps deterministic output stable with injected runtime 
           byIconName: new Map(),
           exactAliasMap: new Map(),
           tokenIndex: new Map(),
-          synonymMap: new Map()
+          synonymMap: new Map(),
         };
-      }
+      },
     };
     return {
       runtimeAdapters,
-      runtimeCallCounts
+      runtimeCallCounts,
     };
   };
   const runInjected = async (suffix: string) => {
-    const projectDir = await mkdtemp(path.join(os.tmpdir(), `workspace-dev-generator-runtime-adapters-injected-${suffix}-`));
-    const { runtimeAdapters, runtimeCallCounts } = createInjectedRuntimeAdapters();
+    const projectDir = await mkdtemp(
+      path.join(
+        os.tmpdir(),
+        `workspace-dev-generator-runtime-adapters-injected-${suffix}-`,
+      ),
+    );
+    const { runtimeAdapters, runtimeCallCounts } =
+      createInjectedRuntimeAdapters();
     const result = await generateArtifacts({
       projectDir,
       ir: createIr(),
@@ -3972,15 +4631,17 @@ test("generateArtifacts keeps deterministic output stable with injected runtime 
       onLog: () => {
         // no-op
       },
-      [GENERATE_ARTIFACTS_RUNTIME_ADAPTERS_SYMBOL]: runtimeAdapters
+      [GENERATE_ARTIFACTS_RUNTIME_ADAPTERS_SYMBOL]: runtimeAdapters,
     } as Parameters<typeof generateArtifacts>[0]);
     return {
-      generatedPaths: [...result.generatedPaths].sort((left, right) => left.localeCompare(right)),
+      generatedPaths: [...result.generatedPaths].sort((left, right) =>
+        left.localeCompare(right),
+      ),
       snapshot: await collectDeterministicSnapshot({
         projectDir,
-        screenName
+        screenName,
       }),
-      runtimeCallCounts
+      runtimeCallCounts,
     };
   };
 
@@ -3993,7 +4654,10 @@ test("generateArtifacts keeps deterministic output stable with injected runtime 
   assert.deepEqual(injectedFirstRun.snapshot, injectedSecondRun.snapshot);
   assert.deepEqual(injectedFirstRun.generatedPaths, defaultRun.generatedPaths);
   assert.deepEqual(injectedSecondRun.generatedPaths, defaultRun.generatedPaths);
-  assert.deepEqual(injectedFirstRun.generatedPaths, injectedSecondRun.generatedPaths);
+  assert.deepEqual(
+    injectedFirstRun.generatedPaths,
+    injectedSecondRun.generatedPaths,
+  );
   assert.equal(injectedFirstRun.runtimeCallCounts.loadDesignSystemConfig, 1);
   assert.equal(injectedFirstRun.runtimeCallCounts.loadIconResolver, 1);
   assert.ok(injectedFirstRun.runtimeCallCounts.writeTextFile >= 2);
@@ -4005,7 +4669,9 @@ test("generateArtifacts keeps deterministic output stable with injected runtime 
 });
 
 test("generateArtifacts applies design-system mappings to screen and extracted pattern component files", async () => {
-  const projectDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-generator-design-system-"));
+  const projectDir = await mkdtemp(
+    path.join(os.tmpdir(), "workspace-dev-generator-design-system-"),
+  );
   const designSystemFilePath = path.join(projectDir, "design-system.json");
   await writeFile(
     designSystemFilePath,
@@ -4016,18 +4682,18 @@ test("generateArtifacts applies design-system mappings to screen and extracted p
           Button: {
             component: "PrimaryButton",
             propMappings: {
-              variant: "appearance"
-            }
+              variant: "appearance",
+            },
           },
           Card: {
-            component: "ContentCard"
-          }
-        }
+            component: "ContentCard",
+          },
+        },
       },
       null,
-      2
+      2,
     )}\n`,
-    "utf8"
+    "utf8",
   );
 
   const ir = createIr();
@@ -4044,7 +4710,7 @@ test("generateArtifacts applies design-system mappings to screen and extracted p
           name: "Primary CTA",
           nodeType: "FRAME",
           type: "button" as const,
-          text: "Jetzt starten"
+          text: "Jetzt starten",
         },
         {
           id: "design-card-a",
@@ -4061,23 +4727,23 @@ test("generateArtifacts applies design-system mappings to screen and extracted p
               nodeType: "RECTANGLE",
               type: "image" as const,
               width: 320,
-              height: 96
+              height: 96,
             },
             {
               id: "design-title-a",
               name: "Offer Title",
               nodeType: "TEXT",
               type: "text" as const,
-              text: "Starter Paket"
+              text: "Starter Paket",
             },
             {
               id: "design-price-a",
               name: "Offer Price",
               nodeType: "TEXT",
               type: "text" as const,
-              text: "9,99 €"
-            }
-          ]
+              text: "9,99 €",
+            },
+          ],
         },
         {
           id: "design-card-b",
@@ -4094,23 +4760,23 @@ test("generateArtifacts applies design-system mappings to screen and extracted p
               nodeType: "RECTANGLE",
               type: "image" as const,
               width: 320,
-              height: 96
+              height: 96,
             },
             {
               id: "design-title-b",
               name: "Offer Title",
               nodeType: "TEXT",
               type: "text" as const,
-              text: "Family Paket"
+              text: "Family Paket",
             },
             {
               id: "design-price-b",
               name: "Offer Price",
               nodeType: "TEXT",
               type: "text" as const,
-              text: "19,99 €"
-            }
-          ]
+              text: "19,99 €",
+            },
+          ],
         },
         {
           id: "design-card-c",
@@ -4127,26 +4793,26 @@ test("generateArtifacts applies design-system mappings to screen and extracted p
               nodeType: "RECTANGLE",
               type: "image" as const,
               width: 320,
-              height: 96
+              height: 96,
             },
             {
               id: "design-title-c",
               name: "Offer Title",
               nodeType: "TEXT",
               type: "text" as const,
-              text: "Premium Paket"
+              text: "Premium Paket",
             },
             {
               id: "design-price-c",
               name: "Offer Price",
               nodeType: "TEXT",
               type: "text" as const,
-              text: "29,99 €"
-            }
-          ]
-        }
-      ]
-    }
+              text: "29,99 €",
+            },
+          ],
+        },
+      ],
+    },
   ];
 
   const result = await generateArtifacts({
@@ -4156,40 +4822,61 @@ test("generateArtifacts applies design-system mappings to screen and extracted p
     imageAssetMap: {
       "design-image-a": "/images/design-a.png",
       "design-image-b": "/images/design-b.png",
-      "design-image-c": "/images/design-c.png"
+      "design-image-c": "/images/design-c.png",
     },
     llmCodegenMode: "deterministic",
     llmModelName: "deterministic",
     onLog: () => {
       // no-op
-    }
+    },
   });
 
-  assert.equal(result.generatedPaths.includes("src/components/DesignSystemPattern1.tsx"), true);
-  const screenContent = await readFile(path.join(projectDir, toDeterministicScreenPath("Design System")), "utf8");
-  assert.ok(screenContent.includes('import { PrimaryButton } from "@acme/ui";'));
+  assert.equal(
+    result.generatedPaths.includes("src/components/DesignSystemPattern1.tsx"),
+    true,
+  );
+  const screenContent = await readFile(
+    path.join(projectDir, toDeterministicScreenPath("Design System")),
+    "utf8",
+  );
+  assert.ok(
+    screenContent.includes('import { PrimaryButton } from "@acme/ui";'),
+  );
   assert.ok(screenContent.includes("<PrimaryButton"));
   assert.ok(screenContent.includes("appearance="));
-  assert.equal(screenContent.includes('import { Button } from "@mui/material";'), false);
+  assert.equal(
+    screenContent.includes('import { Button } from "@mui/material";'),
+    false,
+  );
   validateGeneratedSourceFile({
     filePath: path.join(projectDir, toDeterministicScreenPath("Design System")),
-    content: screenContent
+    content: screenContent,
   });
 
-  const patternContent = await readFile(path.join(projectDir, "src", "components", "DesignSystemPattern1.tsx"), "utf8");
+  const patternContent = await readFile(
+    path.join(projectDir, "src", "components", "DesignSystemPattern1.tsx"),
+    "utf8",
+  );
   assert.ok(patternContent.includes('import { ContentCard } from "@acme/ui";'));
   assert.ok(patternContent.includes("<ContentCard"));
   assert.equal(/<Card(?=[\s>])/.test(patternContent), false);
   assert.equal(patternContent.includes("theme.unstable_sx("), false);
   assert.ok(patternContent.includes("sx={[{"));
   validateGeneratedSourceFile({
-    filePath: path.join(projectDir, "src", "components", "DesignSystemPattern1.tsx"),
-    content: patternContent
+    filePath: path.join(
+      projectDir,
+      "src",
+      "components",
+      "DesignSystemPattern1.tsx",
+    ),
+    content: patternContent,
   });
 });
 
 test("generateArtifacts emits a shared AppShell component and wraps only shell-group screen content", async () => {
-  const projectDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-generator-app-shell-"));
+  const projectDir = await mkdtemp(
+    path.join(os.tmpdir(), "workspace-dev-generator-app-shell-"),
+  );
   const ir = createIr();
   ir.screens = [
     {
@@ -4200,7 +4887,7 @@ test("generateArtifacts emits a shared AppShell component and wraps only shell-g
       padding: { top: 16, right: 16, bottom: 16, left: 16 },
       appShell: {
         id: "app-shell-group",
-        contentNodeIds: ["content-1"]
+        contentNodeIds: ["content-1"],
       },
       children: [
         {
@@ -4208,23 +4895,23 @@ test("generateArtifacts emits a shared AppShell component and wraps only shell-g
           name: "Markenbühne",
           nodeType: "TEXT",
           type: "text" as const,
-          text: "Gemeinsame Bühne"
+          text: "Gemeinsame Bühne",
         },
         {
           id: "shell-header-1",
           name: "Header + Titel",
           nodeType: "TEXT",
           type: "text" as const,
-          text: "Gemeinsamer Header"
+          text: "Gemeinsamer Header",
         },
         {
           id: "content-1",
           name: "SeitenContent",
           nodeType: "TEXT",
           type: "text" as const,
-          text: "Nur Inhalt Offen"
-        }
-      ]
+          text: "Nur Inhalt Offen",
+        },
+      ],
     },
     {
       id: "shell-screen-2",
@@ -4234,7 +4921,7 @@ test("generateArtifacts emits a shared AppShell component and wraps only shell-g
       padding: { top: 16, right: 16, bottom: 16, left: 16 },
       appShell: {
         id: "app-shell-group",
-        contentNodeIds: ["content-2"]
+        contentNodeIds: ["content-2"],
       },
       children: [
         {
@@ -4242,23 +4929,23 @@ test("generateArtifacts emits a shared AppShell component and wraps only shell-g
           name: "Markenbühne",
           nodeType: "TEXT",
           type: "text" as const,
-          text: "Gemeinsame Bühne"
+          text: "Gemeinsame Bühne",
         },
         {
           id: "shell-header-2",
           name: "Header + Titel",
           nodeType: "TEXT",
           type: "text" as const,
-          text: "Gemeinsamer Header"
+          text: "Gemeinsamer Header",
         },
         {
           id: "content-2",
           name: "SeitenContent",
           nodeType: "TEXT",
           type: "text" as const,
-          text: "Nur Inhalt Fertig"
-        }
-      ]
+          text: "Nur Inhalt Fertig",
+        },
+      ],
     },
     {
       id: "standalone-screen",
@@ -4272,10 +4959,10 @@ test("generateArtifacts emits a shared AppShell component and wraps only shell-g
           name: "Standalone Content",
           nodeType: "TEXT",
           type: "text" as const,
-          text: "Standalone Inhalt"
-        }
-      ]
-    }
+          text: "Standalone Inhalt",
+        },
+      ],
+    },
   ];
   ir.appShells = [
     {
@@ -4284,8 +4971,8 @@ test("generateArtifacts emits a shared AppShell component and wraps only shell-g
       screenIds: ["shell-screen-1", "shell-screen-2"],
       shellNodeIds: ["shell-brand-1", "shell-header-1"],
       slotIndex: 2,
-      signalIds: ["signal-1", "signal-2"]
-    }
+      signalIds: ["signal-1", "signal-2"],
+    },
   ];
 
   const result = await generateArtifacts({
@@ -4295,38 +4982,68 @@ test("generateArtifacts emits a shared AppShell component and wraps only shell-g
     llmModelName: "deterministic",
     onLog: () => {
       // no-op
-    }
+    },
   });
 
-  assert.equal(result.generatedPaths.includes("src/components/AppShell1.tsx"), true);
+  assert.equal(
+    result.generatedPaths.includes("src/components/AppShell1.tsx"),
+    true,
+  );
 
-  const appShellContent = await readFile(path.join(projectDir, "src", "components", "AppShell1.tsx"), "utf8");
+  const appShellContent = await readFile(
+    path.join(projectDir, "src", "components", "AppShell1.tsx"),
+    "utf8",
+  );
   assert.ok(appShellContent.includes("Gemeinsame Bühne"));
   assert.ok(appShellContent.includes("Gemeinsamer Header"));
   assert.ok(appShellContent.includes("{props.children}"));
   assert.equal(appShellContent.includes("Nur Inhalt Offen"), false);
   assert.equal(appShellContent.includes("Nur Inhalt Fertig"), false);
 
-  const firstScreenContent = await readFile(path.join(projectDir, toDeterministicScreenPath("Status Offen")), "utf8");
-  assert.ok(firstScreenContent.includes('import AppShell1 from "../components/AppShell1";'));
+  const firstScreenContent = await readFile(
+    path.join(projectDir, toDeterministicScreenPath("Status Offen")),
+    "utf8",
+  );
+  assert.ok(
+    firstScreenContent.includes(
+      'import AppShell1 from "../components/AppShell1";',
+    ),
+  );
   assert.ok(firstScreenContent.includes("<AppShell1>"));
   assert.ok(firstScreenContent.includes("Nur Inhalt Offen"));
   assert.equal(firstScreenContent.includes("Gemeinsame Bühne"), false);
   assert.equal(firstScreenContent.includes("Gemeinsamer Header"), false);
 
-  const secondScreenContent = await readFile(path.join(projectDir, toDeterministicScreenPath("Status Fertig")), "utf8");
-  assert.ok(secondScreenContent.includes('import AppShell1 from "../components/AppShell1";'));
+  const secondScreenContent = await readFile(
+    path.join(projectDir, toDeterministicScreenPath("Status Fertig")),
+    "utf8",
+  );
+  assert.ok(
+    secondScreenContent.includes(
+      'import AppShell1 from "../components/AppShell1";',
+    ),
+  );
   assert.ok(secondScreenContent.includes("Nur Inhalt Fertig"));
   assert.equal(secondScreenContent.includes("Gemeinsame Bühne"), false);
   assert.equal(secondScreenContent.includes("Gemeinsamer Header"), false);
 
-  const standaloneContent = await readFile(path.join(projectDir, toDeterministicScreenPath("Standalone")), "utf8");
-  assert.equal(standaloneContent.includes('import AppShell1 from "../components/AppShell1";'), false);
+  const standaloneContent = await readFile(
+    path.join(projectDir, toDeterministicScreenPath("Standalone")),
+    "utf8",
+  );
+  assert.equal(
+    standaloneContent.includes(
+      'import AppShell1 from "../components/AppShell1";',
+    ),
+    false,
+  );
   assert.ok(standaloneContent.includes("Standalone Inhalt"));
 });
 
 test("generateArtifacts emits one canonical stateful family screen and alias routes for former variants", async () => {
-  const projectDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-generator-stateful-family-"));
+  const projectDir = await mkdtemp(
+    path.join(os.tmpdir(), "workspace-dev-generator-stateful-family-"),
+  );
   const ir = createIr();
   ir.screens = [
     {
@@ -4337,7 +5054,7 @@ test("generateArtifacts emits one canonical stateful family screen and alias rou
       padding: { top: 16, right: 16, bottom: 16, left: 16 },
       appShell: {
         id: "family-shell",
-        contentNodeIds: ["family-brutto-body"]
+        contentNodeIds: ["family-brutto-body"],
       },
       children: [
         {
@@ -4351,16 +5068,16 @@ test("generateArtifacts emits one canonical stateful family screen and alias rou
               name: "Title",
               nodeType: "TEXT",
               type: "text" as const,
-              text: "Pricing"
+              text: "Pricing",
             },
             {
               id: "family-brutto-mode",
               name: "Mode",
               nodeType: "TEXT",
               type: "text" as const,
-              text: "Brutto"
-            }
-          ]
+              text: "Brutto",
+            },
+          ],
         },
         {
           id: "family-brutto-body",
@@ -4373,11 +5090,11 @@ test("generateArtifacts emits one canonical stateful family screen and alias rou
               name: "Copy",
               nodeType: "TEXT",
               type: "text" as const,
-              text: "Shared body"
-            }
-          ]
-        }
-      ]
+              text: "Shared body",
+            },
+          ],
+        },
+      ],
     },
     {
       id: "family-canonical",
@@ -4387,7 +5104,7 @@ test("generateArtifacts emits one canonical stateful family screen and alias rou
       padding: { top: 16, right: 16, bottom: 16, left: 16 },
       appShell: {
         id: "family-shell",
-        contentNodeIds: ["family-canonical-body"]
+        contentNodeIds: ["family-canonical-body"],
       },
       children: [
         {
@@ -4401,16 +5118,16 @@ test("generateArtifacts emits one canonical stateful family screen and alias rou
               name: "Title",
               nodeType: "TEXT",
               type: "text" as const,
-              text: "Pricing"
+              text: "Pricing",
             },
             {
               id: "family-canonical-mode",
               name: "Mode",
               nodeType: "TEXT",
               type: "text" as const,
-              text: "Netto"
-            }
-          ]
+              text: "Netto",
+            },
+          ],
         },
         {
           id: "family-canonical-body",
@@ -4423,11 +5140,11 @@ test("generateArtifacts emits one canonical stateful family screen and alias rou
               name: "Copy",
               nodeType: "TEXT",
               type: "text" as const,
-              text: "Shared body"
-            }
-          ]
-        }
-      ]
+              text: "Shared body",
+            },
+          ],
+        },
+      ],
     },
     {
       id: "family-expanded",
@@ -4437,7 +5154,7 @@ test("generateArtifacts emits one canonical stateful family screen and alias rou
       padding: { top: 16, right: 16, bottom: 16, left: 16 },
       appShell: {
         id: "family-shell",
-        contentNodeIds: ["family-expanded-body"]
+        contentNodeIds: ["family-expanded-body"],
       },
       children: [
         {
@@ -4451,16 +5168,16 @@ test("generateArtifacts emits one canonical stateful family screen and alias rou
               name: "Title",
               nodeType: "TEXT",
               type: "text" as const,
-              text: "Pricing"
+              text: "Pricing",
             },
             {
               id: "family-expanded-mode",
               name: "Mode",
               nodeType: "TEXT",
               type: "text" as const,
-              text: "Netto"
-            }
-          ]
+              text: "Netto",
+            },
+          ],
         },
         {
           id: "family-expanded-body",
@@ -4473,12 +5190,12 @@ test("generateArtifacts emits one canonical stateful family screen and alias rou
               name: "Copy",
               nodeType: "TEXT",
               type: "text" as const,
-              text: "Expanded body"
-            }
-          ]
-        }
-      ]
-    }
+              text: "Expanded body",
+            },
+          ],
+        },
+      ],
+    },
   ];
   ir.appShells = [
     {
@@ -4487,8 +5204,8 @@ test("generateArtifacts emits one canonical stateful family screen and alias rou
       screenIds: ["family-brutto", "family-canonical", "family-expanded"],
       shellNodeIds: ["family-canonical-header"],
       slotIndex: 1,
-      signalIds: ["family-shell-signal"]
-    }
+      signalIds: ["family-shell-signal"],
+    },
   ];
   ir.screenVariantFamilies = [
     {
@@ -4502,30 +5219,30 @@ test("generateArtifacts emits one canonical stateful family screen and alias rou
           contentScreenId: "family-canonical",
           initialState: {
             pricingMode: "brutto",
-            expansionState: "collapsed"
+            expansionState: "collapsed",
           },
           shellTextOverrides: {
-            "family-canonical-mode": "Brutto"
-          }
+            "family-canonical-mode": "Brutto",
+          },
         },
         {
           screenId: "family-canonical",
           contentScreenId: "family-canonical",
           initialState: {
             pricingMode: "netto",
-            expansionState: "collapsed"
-          }
+            expansionState: "collapsed",
+          },
         },
         {
           screenId: "family-expanded",
           contentScreenId: "family-expanded",
           initialState: {
             pricingMode: "netto",
-            expansionState: "expanded"
-          }
-        }
-      ]
-    }
+            expansionState: "expanded",
+          },
+        },
+      ],
+    },
   ];
 
   const result = await generateArtifacts({
@@ -4535,35 +5252,82 @@ test("generateArtifacts emits one canonical stateful family screen and alias rou
     llmModelName: "deterministic",
     onLog: () => {
       // no-op
-    }
+    },
   });
 
-  assert.equal(result.generatedPaths.includes("src/components/AppShell1.tsx"), true);
-  assert.equal(result.generatedPaths.includes(toDeterministicScreenPath("Pricing Netto")), true);
-  assert.equal(result.generatedPaths.includes(toDeterministicScreenPath("Pricing Brutto")), false);
-  assert.equal(result.generatedPaths.includes(toDeterministicScreenPath("Pricing Expanded")), false);
+  assert.equal(
+    result.generatedPaths.includes("src/components/AppShell1.tsx"),
+    true,
+  );
+  assert.equal(
+    result.generatedPaths.includes(toDeterministicScreenPath("Pricing Netto")),
+    true,
+  );
+  assert.equal(
+    result.generatedPaths.includes(toDeterministicScreenPath("Pricing Brutto")),
+    false,
+  );
+  assert.equal(
+    result.generatedPaths.includes(
+      toDeterministicScreenPath("Pricing Expanded"),
+    ),
+    false,
+  );
 
-  const appShellContent = await readFile(path.join(projectDir, "src", "components", "AppShell1.tsx"), "utf8");
+  const appShellContent = await readFile(
+    path.join(projectDir, "src", "components", "AppShell1.tsx"),
+    "utf8",
+  );
   assert.match(appShellContent, /textOverrides\?: Record<string, string>/);
-  assert.match(appShellContent, /textOverrides\?\.\["family-canonical-mode"\] \?\? "Netto"/);
+  assert.match(
+    appShellContent,
+    /textOverrides\?\.\["family-canonical-mode"\] \?\? "Netto"/,
+  );
 
-  const canonicalScreenContent = await readFile(path.join(projectDir, toDeterministicScreenPath("Pricing Netto")), "utf8");
+  const canonicalScreenContent = await readFile(
+    path.join(projectDir, toDeterministicScreenPath("Pricing Netto")),
+    "utf8",
+  );
   assert.match(canonicalScreenContent, /initialVariantId\?: string/);
   assert.match(canonicalScreenContent, /variantScenarioConfig/);
   assert.match(canonicalScreenContent, /renderVariantContent/);
-  assert.ok(canonicalScreenContent.includes("<AppShell1 textOverrides={resolvedScenario.shellTextOverrides}>"));
+  assert.ok(
+    canonicalScreenContent.includes(
+      "<AppShell1 textOverrides={resolvedScenario.shellTextOverrides}>",
+    ),
+  );
 
-  const appContent = await readFile(path.join(projectDir, "src", "App.tsx"), "utf8");
+  const appContent = await readFile(
+    path.join(projectDir, "src", "App.tsx"),
+    "utf8",
+  );
   assert.ok(appContent.includes('path="/pricing_netto"'));
   assert.ok(appContent.includes('path="/pricing_brutto"'));
-  assert.ok(appContent.includes('<PricingNettoScreen initialVariantId="family-brutto" />'));
+  assert.ok(
+    appContent.includes(
+      '<PricingNettoScreen initialVariantId="family-brutto" />',
+    ),
+  );
   assert.ok(appContent.includes('path="/pricing_expanded"'));
-  assert.ok(appContent.includes('<PricingNettoScreen initialVariantId="family-expanded" />'));
-  assert.ok(appContent.includes('<Route path="/" element={<Navigate to="/pricing_netto" replace />} />'));
+  assert.ok(
+    appContent.includes(
+      '<PricingNettoScreen initialVariantId="family-expanded" />',
+    ),
+  );
+  assert.ok(
+    appContent.includes(
+      '<Route path="/" element={<Navigate to="/pricing_netto" replace />} />',
+    ),
+  );
 });
 
 test("generateArtifacts omits unused override props for stateful variant families without scenario overrides", async () => {
-  const projectDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-generator-stateful-family-no-overrides-"));
+  const projectDir = await mkdtemp(
+    path.join(
+      os.tmpdir(),
+      "workspace-dev-generator-stateful-family-no-overrides-",
+    ),
+  );
   const ir = createIr();
   ir.screens = [
     {
@@ -4574,7 +5338,7 @@ test("generateArtifacts omits unused override props for stateful variant familie
       padding: { top: 16, right: 16, bottom: 16, left: 16 },
       appShell: {
         id: "family-shell",
-        contentNodeIds: ["family-canonical-content"]
+        contentNodeIds: ["family-canonical-content"],
       },
       children: [
         {
@@ -4582,16 +5346,16 @@ test("generateArtifacts omits unused override props for stateful variant familie
           name: "Header",
           nodeType: "FRAME",
           type: "container" as const,
-          children: []
+          children: [],
         },
         {
           id: "family-canonical-content",
           name: "Body",
           nodeType: "TEXT",
           type: "text" as const,
-          text: "Netto content"
-        }
-      ]
+          text: "Netto content",
+        },
+      ],
     },
     {
       id: "family-brutto",
@@ -4601,7 +5365,7 @@ test("generateArtifacts omits unused override props for stateful variant familie
       padding: { top: 16, right: 16, bottom: 16, left: 16 },
       appShell: {
         id: "family-shell",
-        contentNodeIds: ["family-brutto-content"]
+        contentNodeIds: ["family-brutto-content"],
       },
       children: [
         {
@@ -4609,17 +5373,17 @@ test("generateArtifacts omits unused override props for stateful variant familie
           name: "Header",
           nodeType: "FRAME",
           type: "container" as const,
-          children: []
+          children: [],
         },
         {
           id: "family-brutto-content",
           name: "Body",
           nodeType: "TEXT",
           type: "text" as const,
-          text: "Brutto content"
-        }
-      ]
-    }
+          text: "Brutto content",
+        },
+      ],
+    },
   ];
   ir.appShells = [
     {
@@ -4628,8 +5392,8 @@ test("generateArtifacts omits unused override props for stateful variant familie
       screenIds: ["family-canonical", "family-brutto"],
       shellNodeIds: ["family-canonical-header"],
       slotIndex: 1,
-      signalIds: ["family-shell-signal"]
-    }
+      signalIds: ["family-shell-signal"],
+    },
   ];
   ir.screenVariantFamilies = [
     {
@@ -4642,18 +5406,18 @@ test("generateArtifacts omits unused override props for stateful variant familie
           screenId: "family-canonical",
           contentScreenId: "family-canonical",
           initialState: {
-            pricingMode: "netto"
-          }
+            pricingMode: "netto",
+          },
         },
         {
           screenId: "family-brutto",
           contentScreenId: "family-brutto",
           initialState: {
-            pricingMode: "brutto"
-          }
-        }
-      ]
-    }
+            pricingMode: "brutto",
+          },
+        },
+      ],
+    },
   ];
 
   await generateArtifacts({
@@ -4663,26 +5427,61 @@ test("generateArtifacts omits unused override props for stateful variant familie
     llmModelName: "deterministic",
     onLog: () => {
       // no-op
-    }
+    },
   });
 
-  const appShellContent = await readFile(path.join(projectDir, "src", "components", "AppShell1.tsx"), "utf8");
-  assert.equal(appShellContent.includes("textOverrides?: Record<string, string>;"), false);
+  const appShellContent = await readFile(
+    path.join(projectDir, "src", "components", "AppShell1.tsx"),
+    "utf8",
+  );
+  assert.equal(
+    appShellContent.includes("textOverrides?: Record<string, string>;"),
+    false,
+  );
   assert.equal(appShellContent.includes("props.textOverrides"), false);
 
-  const canonicalScreenContent = await readFile(path.join(projectDir, toDeterministicScreenPath("Pricing Netto")), "utf8");
-  assert.ok(canonicalScreenContent.includes('const defaultVariantId: PricingNettoVariantId = "family-canonical";'));
-  assert.equal(canonicalScreenContent.includes("textOverrides={resolvedScenario.shellTextOverrides}"), false);
-  assert.equal(canonicalScreenContent.includes("initialVisualErrorsOverride={scenario.initialVisualErrorsOverride}"), false);
-  assert.equal(canonicalScreenContent.includes("validationMessagesOverride={scenario.validationMessagesOverride}"), false);
+  const canonicalScreenContent = await readFile(
+    path.join(projectDir, toDeterministicScreenPath("Pricing Netto")),
+    "utf8",
+  );
+  assert.ok(
+    canonicalScreenContent.includes(
+      'const defaultVariantId: PricingNettoVariantId = "family-canonical";',
+    ),
+  );
   assert.equal(
-    canonicalScreenContent.includes("variantScenarioConfig[resolvedVariantId as keyof typeof variantScenarioConfig] ??"),
-    false
+    canonicalScreenContent.includes(
+      "textOverrides={resolvedScenario.shellTextOverrides}",
+    ),
+    false,
+  );
+  assert.equal(
+    canonicalScreenContent.includes(
+      "initialVisualErrorsOverride={scenario.initialVisualErrorsOverride}",
+    ),
+    false,
+  );
+  assert.equal(
+    canonicalScreenContent.includes(
+      "validationMessagesOverride={scenario.validationMessagesOverride}",
+    ),
+    false,
+  );
+  assert.equal(
+    canonicalScreenContent.includes(
+      "variantScenarioConfig[resolvedVariantId as keyof typeof variantScenarioConfig] ??",
+    ),
+    false,
   );
 });
 
 test("generateArtifacts serializes stateful variant initialState with canonical key ordering", async () => {
-  const projectDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-generator-stateful-family-initial-state-order-"));
+  const projectDir = await mkdtemp(
+    path.join(
+      os.tmpdir(),
+      "workspace-dev-generator-stateful-family-initial-state-order-",
+    ),
+  );
   const ir = createIr();
   ir.screens = [
     {
@@ -4697,9 +5496,9 @@ test("generateArtifacts serializes stateful variant initialState with canonical 
           name: "Body",
           nodeType: "TEXT",
           type: "text" as const,
-          text: "Canonical content"
-        }
-      ]
+          text: "Canonical content",
+        },
+      ],
     },
     {
       id: "family-variant",
@@ -4713,10 +5512,10 @@ test("generateArtifacts serializes stateful variant initialState with canonical 
           name: "Body",
           nodeType: "TEXT",
           type: "text" as const,
-          text: "Variant content"
-        }
-      ]
-    }
+          text: "Variant content",
+        },
+      ],
+    },
   ];
   ir.screenVariantFamilies = [
     {
@@ -4730,8 +5529,8 @@ test("generateArtifacts serializes stateful variant initialState with canonical 
           contentScreenId: "family-canonical",
           initialState: {
             expansionState: "collapsed",
-            pricingMode: "netto"
-          }
+            pricingMode: "netto",
+          },
         },
         {
           screenId: "family-variant",
@@ -4739,22 +5538,22 @@ test("generateArtifacts serializes stateful variant initialState with canonical 
           initialState: {
             accordionStateByKey: {
               "accordion-b": false,
-              "accordion-a": true
+              "accordion-a": true,
             },
             validationState: "error",
             expansionState: "expanded",
-            pricingMode: "brutto"
+            pricingMode: "brutto",
           },
           screenLevelErrorEvidence: [
             {
               message: "Please correct the highlighted fields.",
               severity: "error",
-              sourceNodeId: "family-variant-content"
-            }
-          ]
-        }
-      ]
-    }
+              sourceNodeId: "family-variant-content",
+            },
+          ],
+        },
+      ],
+    },
   ];
 
   await generateArtifacts({
@@ -4764,18 +5563,26 @@ test("generateArtifacts serializes stateful variant initialState with canonical 
     llmModelName: "deterministic",
     onLog: () => {
       // no-op
-    }
+    },
   });
 
-  const canonicalScreenContent = await readFile(path.join(projectDir, toDeterministicScreenPath("Pricing Canonical")), "utf8");
+  const canonicalScreenContent = await readFile(
+    path.join(projectDir, toDeterministicScreenPath("Pricing Canonical")),
+    "utf8",
+  );
   assert.match(
     canonicalScreenContent,
-    /"initialState": \{\n\s+"pricingMode": "brutto",\n\s+"expansionState": "expanded",\n\s+"validationState": "error",\n\s+"accordionStateByKey": \{\n\s+"accordion-a": true,\n\s+"accordion-b": false/m
+    /"initialState": \{\n\s+"pricingMode": "brutto",\n\s+"expansionState": "expanded",\n\s+"validationState": "error",\n\s+"accordionStateByKey": \{\n\s+"accordion-a": true,\n\s+"accordion-b": false/m,
   );
 });
 
 test("generateArtifacts keeps RHF/Zod generation and scenario-specific validation overlays for stateful error variants", async () => {
-  const projectDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-generator-stateful-validation-family-"));
+  const projectDir = await mkdtemp(
+    path.join(
+      os.tmpdir(),
+      "workspace-dev-generator-stateful-validation-family-",
+    ),
+  );
   const ir = createIr();
   ir.screens = [
     {
@@ -4790,7 +5597,7 @@ test("generateArtifacts keeps RHF/Zod generation and scenario-specific validatio
           name: "Title",
           nodeType: "TEXT",
           type: "text" as const,
-          text: "Loan Validation"
+          text: "Loan Validation",
         },
         {
           id: "email-field",
@@ -4806,7 +5613,7 @@ test("generateArtifacts keeps RHF/Zod generation and scenario-specific validatio
               nodeType: "TEXT",
               type: "text" as const,
               text: "Email",
-              y: 0
+              y: 0,
             },
             {
               id: "email-value",
@@ -4814,18 +5621,18 @@ test("generateArtifacts keeps RHF/Zod generation and scenario-specific validatio
               nodeType: "TEXT",
               type: "text" as const,
               text: "name@example.com",
-              y: 28
-            }
-          ]
+              y: 28,
+            },
+          ],
         },
         {
           id: "loan-validation-submit",
           name: "Submit",
           nodeType: "FRAME",
           type: "button" as const,
-          text: "Continue"
-        }
-      ]
+          text: "Continue",
+        },
+      ],
     },
     {
       id: "loan-validation-error",
@@ -4839,7 +5646,7 @@ test("generateArtifacts keeps RHF/Zod generation and scenario-specific validatio
           name: "Title",
           nodeType: "TEXT",
           type: "text" as const,
-          text: "Loan Validation"
+          text: "Loan Validation",
         },
         {
           id: "email-field-error",
@@ -4855,7 +5662,7 @@ test("generateArtifacts keeps RHF/Zod generation and scenario-specific validatio
               nodeType: "TEXT",
               type: "text" as const,
               text: "Email",
-              y: 0
+              y: 0,
             },
             {
               id: "email-value-error",
@@ -4863,19 +5670,19 @@ test("generateArtifacts keeps RHF/Zod generation and scenario-specific validatio
               nodeType: "TEXT",
               type: "text" as const,
               text: "name@example.com",
-              y: 28
-            }
-          ]
+              y: 28,
+            },
+          ],
         },
         {
           id: "loan-validation-submit-error",
           name: "Submit",
           nodeType: "FRAME",
           type: "button" as const,
-          text: "Continue"
-        }
-      ]
-    }
+          text: "Continue",
+        },
+      ],
+    },
   ];
   ir.screenVariantFamilies = [
     {
@@ -4888,32 +5695,32 @@ test("generateArtifacts keeps RHF/Zod generation and scenario-specific validatio
           screenId: "loan-validation-default",
           contentScreenId: "loan-validation-default",
           initialState: {
-            validationState: "default"
-          }
+            validationState: "default",
+          },
         },
         {
           screenId: "loan-validation-error",
           contentScreenId: "loan-validation-default",
           initialState: {
-            validationState: "error"
+            validationState: "error",
           },
           fieldErrorEvidenceByFieldKey: {
             email_field_email_field: {
               message: "Please enter a valid email address.",
               visualError: true,
-              sourceNodeId: "email-field-error"
-            }
+              sourceNodeId: "email-field-error",
+            },
           },
           screenLevelErrorEvidence: [
             {
               message: "Please review the highlighted fields.",
               severity: "error",
-              sourceNodeId: "error-summary"
-            }
-          ]
-        }
-      ]
-    }
+              sourceNodeId: "error-summary",
+            },
+          ],
+        },
+      ],
+    },
   ];
 
   const result = await generateArtifacts({
@@ -4921,34 +5728,96 @@ test("generateArtifacts keeps RHF/Zod generation and scenario-specific validatio
     ir,
     llmCodegenMode: "deterministic",
     llmModelName: "deterministic",
-    onLog: () => {}
+    onLog: () => {},
   });
 
-  assert.equal(result.generatedPaths.includes(toDeterministicScreenPath("Loan Validation")), true);
-  assert.equal(result.generatedPaths.includes(toDeterministicScreenPath("Loan Validation Error")), false);
+  assert.equal(
+    result.generatedPaths.includes(
+      toDeterministicScreenPath("Loan Validation"),
+    ),
+    true,
+  );
+  assert.equal(
+    result.generatedPaths.includes(
+      toDeterministicScreenPath("Loan Validation Error"),
+    ),
+    false,
+  );
 
-  const screenContent = await readFile(path.join(projectDir, toDeterministicScreenPath("Loan Validation")), "utf8");
-  assert.ok(screenContent.includes("initialVisualErrorsOverride={scenario.initialVisualErrorsOverride}"));
-  assert.ok(screenContent.includes("validationMessagesOverride={scenario.validationMessagesOverride}"));
-  assert.ok(screenContent.includes("screenLevelErrorEvidence={scenario.screenLevelErrorEvidence}"));
-  assert.ok(screenContent.includes("screenLevelErrorEvidence?.map((screenLevelError) => ("));
+  const screenContent = await readFile(
+    path.join(projectDir, toDeterministicScreenPath("Loan Validation")),
+    "utf8",
+  );
+  assert.ok(
+    screenContent.includes(
+      "initialVisualErrorsOverride={scenario.initialVisualErrorsOverride}",
+    ),
+  );
+  assert.ok(
+    screenContent.includes(
+      "validationMessagesOverride={scenario.validationMessagesOverride}",
+    ),
+  );
+  assert.ok(
+    screenContent.includes(
+      "screenLevelErrorEvidence={scenario.screenLevelErrorEvidence}",
+    ),
+  );
+  assert.ok(
+    screenContent.includes(
+      "screenLevelErrorEvidence?.map((screenLevelError) => (",
+    ),
+  );
   assert.ok(screenContent.includes("Please enter a valid email address."));
   assert.ok(screenContent.includes("Please review the highlighted fields."));
 
   const contextPath = result.generatedPaths.find((generatedPath) =>
-    generatedPath.includes("LoanValidationVariant1LoanValidationDefaultContentFormContext.tsx")
+    generatedPath.includes(
+      "LoanValidationVariant1LoanValidationDefaultContentFormContext.tsx",
+    ),
   );
-  assert.ok(contextPath, `Expected a generated RHF/Zod context file, found: ${JSON.stringify(result.generatedPaths, null, 2)}`);
-  const contextContent = await readFile(path.join(projectDir, contextPath ?? ""), "utf8");
-  assert.ok(contextContent.includes("initialVisualErrorsOverride?: Record<string, string>;"));
-  assert.ok(contextContent.includes("validationMessagesOverride?: Record<string, string>;"));
-  assert.ok(contextContent.includes("const resolvedInitialVisualErrors: Record<string, string> = { ...initialVisualErrors, ...(initialVisualErrorsOverride ?? {}) };"));
-  assert.ok(contextContent.includes("const resolvedValidationMessages: Record<string, string> = { ...defaultValidationMessages, ...(validationMessagesOverride ?? {}) };"));
-  assert.ok(contextContent.includes("if (overrideMessage && defaultMessage && fieldError === defaultMessage) {"));
+  assert.ok(
+    contextPath,
+    `Expected a generated RHF/Zod context file, found: ${JSON.stringify(result.generatedPaths, null, 2)}`,
+  );
+  const contextContent = await readFile(
+    path.join(projectDir, contextPath ?? ""),
+    "utf8",
+  );
+  assert.ok(
+    contextContent.includes(
+      "initialVisualErrorsOverride?: Record<string, string>;",
+    ),
+  );
+  assert.ok(
+    contextContent.includes(
+      "validationMessagesOverride?: Record<string, string>;",
+    ),
+  );
+  assert.ok(
+    contextContent.includes(
+      "const resolvedInitialVisualErrors: Record<string, string> = { ...initialVisualErrors, ...(initialVisualErrorsOverride ?? {}) };",
+    ),
+  );
+  assert.ok(
+    contextContent.includes(
+      "const resolvedValidationMessages: Record<string, string> = { ...defaultValidationMessages, ...(validationMessagesOverride ?? {}) };",
+    ),
+  );
+  assert.ok(
+    contextContent.includes(
+      "if (overrideMessage && defaultMessage && fieldError === defaultMessage) {",
+    ),
+  );
 });
 
 test("generateArtifacts applies customer profile imports before design-system mappings for AppShell files", async () => {
-  const projectDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-generator-app-shell-customer-profile-"));
+  const projectDir = await mkdtemp(
+    path.join(
+      os.tmpdir(),
+      "workspace-dev-generator-app-shell-customer-profile-",
+    ),
+  );
   const designSystemFilePath = path.join(projectDir, "design-system.json");
   await writeFile(
     designSystemFilePath,
@@ -4957,14 +5826,14 @@ test("generateArtifacts applies customer profile imports before design-system ma
         library: "@acme/ui",
         mappings: {
           Button: {
-            component: "FallbackButton"
-          }
-        }
+            component: "FallbackButton",
+          },
+        },
       },
       null,
-      2
+      2,
     )}\n`,
-    "utf8"
+    "utf8",
   );
 
   const ir = createIr();
@@ -4977,7 +5846,7 @@ test("generateArtifacts applies customer profile imports before design-system ma
       padding: { top: 16, right: 16, bottom: 16, left: 16 },
       appShell: {
         id: "app-shell-group",
-        contentNodeIds: ["content-1"]
+        contentNodeIds: ["content-1"],
       },
       children: [
         {
@@ -4985,16 +5854,16 @@ test("generateArtifacts applies customer profile imports before design-system ma
           name: "Primary CTA",
           nodeType: "FRAME",
           type: "button" as const,
-          text: "Weiter"
+          text: "Weiter",
         },
         {
           id: "content-1",
           name: "SeitenContent",
           nodeType: "TEXT",
           type: "text" as const,
-          text: "Status Offen"
-        }
-      ]
+          text: "Status Offen",
+        },
+      ],
     },
     {
       id: "shell-screen-2",
@@ -5004,7 +5873,7 @@ test("generateArtifacts applies customer profile imports before design-system ma
       padding: { top: 16, right: 16, bottom: 16, left: 16 },
       appShell: {
         id: "app-shell-group",
-        contentNodeIds: ["content-2"]
+        contentNodeIds: ["content-2"],
       },
       children: [
         {
@@ -5012,17 +5881,17 @@ test("generateArtifacts applies customer profile imports before design-system ma
           name: "Primary CTA",
           nodeType: "FRAME",
           type: "button" as const,
-          text: "Weiter"
+          text: "Weiter",
         },
         {
           id: "content-2",
           name: "SeitenContent",
           nodeType: "TEXT",
           type: "text" as const,
-          text: "Status Fertig"
-        }
-      ]
-    }
+          text: "Status Fertig",
+        },
+      ],
+    },
   ];
   ir.appShells = [
     {
@@ -5031,8 +5900,8 @@ test("generateArtifacts applies customer profile imports before design-system ma
       screenIds: ["shell-screen-1", "shell-screen-2"],
       shellNodeIds: ["shell-button-1"],
       slotIndex: 1,
-      signalIds: ["signal-1"]
-    }
+      signalIds: ["signal-1"],
+    },
   ];
 
   await generateArtifacts({
@@ -5044,18 +5913,30 @@ test("generateArtifacts applies customer profile imports before design-system ma
     llmModelName: "deterministic",
     onLog: () => {
       // no-op
-    }
+    },
   });
 
-  const appShellContent = await readFile(path.join(projectDir, "src", "components", "AppShell1.tsx"), "utf8");
-  assert.ok(appShellContent.includes('import { PrimaryButton as CustomerButton } from "@customer/components";'));
+  const appShellContent = await readFile(
+    path.join(projectDir, "src", "components", "AppShell1.tsx"),
+    "utf8",
+  );
+  assert.ok(
+    appShellContent.includes(
+      'import { PrimaryButton as CustomerButton } from "@customer/components";',
+    ),
+  );
   assert.ok(appShellContent.includes("<CustomerButton"));
   assert.ok(appShellContent.includes("appearance="));
   assert.equal(appShellContent.includes("FallbackButton"), false);
 });
 
 test("generateArtifacts preserves scenario-specific validation message overrides when error variants conflict", async () => {
-  const projectDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-generator-stateful-validation-conflict-"));
+  const projectDir = await mkdtemp(
+    path.join(
+      os.tmpdir(),
+      "workspace-dev-generator-stateful-validation-conflict-",
+    ),
+  );
   const ir = createIr();
   ir.screens = [
     {
@@ -5079,7 +5960,7 @@ test("generateArtifacts preserves scenario-specific validation message overrides
               nodeType: "TEXT",
               type: "text" as const,
               text: "Email",
-              y: 0
+              y: 0,
             },
             {
               id: "email-value",
@@ -5087,18 +5968,18 @@ test("generateArtifacts preserves scenario-specific validation message overrides
               nodeType: "TEXT",
               type: "text" as const,
               text: "name@example.com",
-              y: 28
-            }
-          ]
+              y: 28,
+            },
+          ],
         },
         {
           id: "loan-validation-submit",
           name: "Submit",
           nodeType: "FRAME",
           type: "button" as const,
-          text: "Continue"
-        }
-      ]
+          text: "Continue",
+        },
+      ],
     },
     {
       id: "loan-validation-error-a",
@@ -5121,7 +6002,7 @@ test("generateArtifacts preserves scenario-specific validation message overrides
               nodeType: "TEXT",
               type: "text" as const,
               text: "Email",
-              y: 0
+              y: 0,
             },
             {
               id: "email-value-error-a",
@@ -5129,18 +6010,18 @@ test("generateArtifacts preserves scenario-specific validation message overrides
               nodeType: "TEXT",
               type: "text" as const,
               text: "name@example.com",
-              y: 28
-            }
-          ]
+              y: 28,
+            },
+          ],
         },
         {
           id: "loan-validation-submit-error-a",
           name: "Submit",
           nodeType: "FRAME",
           type: "button" as const,
-          text: "Continue"
-        }
-      ]
+          text: "Continue",
+        },
+      ],
     },
     {
       id: "loan-validation-error-b",
@@ -5163,7 +6044,7 @@ test("generateArtifacts preserves scenario-specific validation message overrides
               nodeType: "TEXT",
               type: "text" as const,
               text: "Email",
-              y: 0
+              y: 0,
             },
             {
               id: "email-value-error-b",
@@ -5171,62 +6052,66 @@ test("generateArtifacts preserves scenario-specific validation message overrides
               nodeType: "TEXT",
               type: "text" as const,
               text: "name@example.com",
-              y: 28
-            }
-          ]
+              y: 28,
+            },
+          ],
         },
         {
           id: "loan-validation-submit-error-b",
           name: "Submit",
           nodeType: "FRAME",
           type: "button" as const,
-          text: "Continue"
-        }
-      ]
-    }
+          text: "Continue",
+        },
+      ],
+    },
   ];
   ir.screenVariantFamilies = [
     {
       familyId: "loan-validation-family",
       canonicalScreenId: "loan-validation-default",
-      memberScreenIds: ["loan-validation-default", "loan-validation-error-a", "loan-validation-error-b"],
+      memberScreenIds: [
+        "loan-validation-default",
+        "loan-validation-error-a",
+        "loan-validation-error-b",
+      ],
       axes: ["validation-state"],
       scenarios: [
         {
           screenId: "loan-validation-default",
           contentScreenId: "loan-validation-default",
           initialState: {
-            validationState: "default"
-          }
+            validationState: "default",
+          },
         },
         {
           screenId: "loan-validation-error-a",
           contentScreenId: "loan-validation-default",
           initialState: {
-            validationState: "error"
+            validationState: "error",
           },
           fieldErrorEvidenceByFieldKey: {
             email_field_email_field: {
               message: "Message A",
-              visualError: true
-            }
-          }
+              visualError: true,
+            },
+          },
         },
         {
           screenId: "loan-validation-error-b",
           contentScreenId: "loan-validation-default",
           initialState: {
-            validationState: "error"
+            validationState: "error",
           },
           fieldErrorEvidenceByFieldKey: {
             email_field_email_field: {
               message: "Message B",
-              visualError: true
-            }
-          }
-        }
-      ]
-    }
+              visualError: true,
+            },
+          },
+        },
+      ],
+    },
   ];
 
   const result = await generateArtifacts({
@@ -5234,27 +6119,52 @@ test("generateArtifacts preserves scenario-specific validation message overrides
     ir,
     llmCodegenMode: "deterministic",
     llmModelName: "deterministic",
-    onLog: () => {}
+    onLog: () => {},
   });
 
-  const screenContent = await readFile(path.join(projectDir, toDeterministicScreenPath("Loan Validation")), "utf8");
-  assert.ok(screenContent.includes("validationMessagesOverride={scenario.validationMessagesOverride}"));
+  const screenContent = await readFile(
+    path.join(projectDir, toDeterministicScreenPath("Loan Validation")),
+    "utf8",
+  );
+  assert.ok(
+    screenContent.includes(
+      "validationMessagesOverride={scenario.validationMessagesOverride}",
+    ),
+  );
   assert.ok(screenContent.includes("Message A"));
   assert.ok(screenContent.includes("Message B"));
 
   const contextPath = result.generatedPaths.find((generatedPath) =>
-    generatedPath.includes("LoanValidationVariant1LoanValidationDefaultContentFormContext.tsx")
+    generatedPath.includes(
+      "LoanValidationVariant1LoanValidationDefaultContentFormContext.tsx",
+    ),
   );
-  assert.ok(contextPath, `Expected a generated RHF/Zod context file, found: ${JSON.stringify(result.generatedPaths, null, 2)}`);
-  const contextContent = await readFile(path.join(projectDir, contextPath ?? ""), "utf8");
-  assert.ok(contextContent.includes("validationMessagesOverride?: Record<string, string>;"));
-  assert.ok(contextContent.includes("const resolvedValidationMessages: Record<string, string> = { ...defaultValidationMessages, ...(validationMessagesOverride ?? {}) };"));
+  assert.ok(
+    contextPath,
+    `Expected a generated RHF/Zod context file, found: ${JSON.stringify(result.generatedPaths, null, 2)}`,
+  );
+  const contextContent = await readFile(
+    path.join(projectDir, contextPath ?? ""),
+    "utf8",
+  );
+  assert.ok(
+    contextContent.includes(
+      "validationMessagesOverride?: Record<string, string>;",
+    ),
+  );
+  assert.ok(
+    contextContent.includes(
+      "const resolvedValidationMessages: Record<string, string> = { ...defaultValidationMessages, ...(validationMessagesOverride ?? {}) };",
+    ),
+  );
   assert.equal(contextContent.includes("Message A"), false);
   assert.equal(contextContent.includes("Message B"), false);
 });
 
 test("generateArtifacts fails fast on malformed screen appShell cross references", async () => {
-  const projectDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-generator-app-shell-invalid-ir-"));
+  const projectDir = await mkdtemp(
+    path.join(os.tmpdir(), "workspace-dev-generator-app-shell-invalid-ir-"),
+  );
   const ir = createIr();
   ir.screens = [
     {
@@ -5265,7 +6175,7 @@ test("generateArtifacts fails fast on malformed screen appShell cross references
       padding: { top: 16, right: 16, bottom: 16, left: 16 },
       appShell: {
         id: "missing-shell",
-        contentNodeIds: ["content-1"]
+        contentNodeIds: ["content-1"],
       },
       children: [
         {
@@ -5273,10 +6183,10 @@ test("generateArtifacts fails fast on malformed screen appShell cross references
           name: "Content",
           nodeType: "TEXT",
           type: "text" as const,
-          text: "Body"
-        }
-      ]
-    }
+          text: "Body",
+        },
+      ],
+    },
   ];
 
   await assert.rejects(
@@ -5288,19 +6198,24 @@ test("generateArtifacts fails fast on malformed screen appShell cross references
         llmModelName: "deterministic",
         onLog: () => {
           // no-op
-        }
+        },
       }),
     (error: unknown) => {
       assert.ok(error instanceof Error);
       assert.match(error.message, /IR validation failed/);
       assert.match(error.message, /does not reference a declared appShell/);
       return true;
-    }
+    },
   );
 });
 
 test("generateArtifacts fails fast when screen appShell contentNodeIds are not the trailing content segment", async () => {
-  const projectDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-generator-app-shell-invalid-content-segment-"));
+  const projectDir = await mkdtemp(
+    path.join(
+      os.tmpdir(),
+      "workspace-dev-generator-app-shell-invalid-content-segment-",
+    ),
+  );
   const ir = createIr();
   ir.screens = [
     {
@@ -5311,7 +6226,7 @@ test("generateArtifacts fails fast when screen appShell contentNodeIds are not t
       padding: { top: 16, right: 16, bottom: 16, left: 16 },
       appShell: {
         id: "shell-1",
-        contentNodeIds: ["shell-node", "content-node"]
+        contentNodeIds: ["shell-node", "content-node"],
       },
       children: [
         {
@@ -5319,17 +6234,17 @@ test("generateArtifacts fails fast when screen appShell contentNodeIds are not t
           name: "Header",
           nodeType: "TEXT",
           type: "text" as const,
-          text: "Shared Header"
+          text: "Shared Header",
         },
         {
           id: "content-node",
           name: "Content",
           nodeType: "TEXT",
           type: "text" as const,
-          text: "Body"
-        }
-      ]
-    }
+          text: "Body",
+        },
+      ],
+    },
   ];
   ir.appShells = [
     {
@@ -5338,8 +6253,8 @@ test("generateArtifacts fails fast when screen appShell contentNodeIds are not t
       screenIds: ["screen-1"],
       shellNodeIds: ["shell-node"],
       slotIndex: 1,
-      signalIds: ["signal-1"]
-    }
+      signalIds: ["signal-1"],
+    },
   ];
 
   await assert.rejects(
@@ -5351,19 +6266,24 @@ test("generateArtifacts fails fast when screen appShell contentNodeIds are not t
         llmModelName: "deterministic",
         onLog: () => {
           // no-op
-        }
+        },
       }),
     (error: unknown) => {
       assert.ok(error instanceof Error);
       assert.match(error.message, /IR validation failed/);
-      assert.match(error.message, /contentNodeIds must equal all top-level children after slotIndex 1/);
+      assert.match(
+        error.message,
+        /contentNodeIds must equal all top-level children after slotIndex 1/,
+      );
       return true;
-    }
+    },
   );
 });
 
 test("generateArtifacts keeps MUI fallback when design-system config file is missing", async () => {
-  const projectDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-generator-design-system-missing-"));
+  const projectDir = await mkdtemp(
+    path.join(os.tmpdir(), "workspace-dev-generator-design-system-missing-"),
+  );
   const ir = createIr();
   ir.screens = [
     {
@@ -5378,10 +6298,10 @@ test("generateArtifacts keeps MUI fallback when design-system config file is mis
           name: "Primary CTA",
           nodeType: "FRAME",
           type: "button" as const,
-          text: "Weiter"
-        }
-      ]
-    }
+          text: "Weiter",
+        },
+      ],
+    },
   ];
 
   await generateArtifacts({
@@ -5391,20 +6311,36 @@ test("generateArtifacts keeps MUI fallback when design-system config file is mis
     llmModelName: "deterministic",
     onLog: () => {
       // no-op
-    }
+    },
   });
 
-  const screenContent = await readFile(path.join(projectDir, toDeterministicScreenPath("Missing Design System")), "utf8");
+  const screenContent = await readFile(
+    path.join(projectDir, toDeterministicScreenPath("Missing Design System")),
+    "utf8",
+  );
   assert.ok(screenContent.includes("<Button"));
-  assert.ok(screenContent.includes('import { Button, Container } from "@mui/material";'));
+  assert.ok(
+    screenContent.includes(
+      'import { Button, Container } from "@mui/material";',
+    ),
+  );
   assert.equal(screenContent.includes("PrimaryButton"), false);
 });
 
 test("generateArtifacts logs warning and keeps MUI fallback when design-system config is invalid", async () => {
-  const projectDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-generator-design-system-invalid-"));
-  const designSystemFilePath = path.join(projectDir, "design-system.invalid.json");
+  const projectDir = await mkdtemp(
+    path.join(os.tmpdir(), "workspace-dev-generator-design-system-invalid-"),
+  );
+  const designSystemFilePath = path.join(
+    projectDir,
+    "design-system.invalid.json",
+  );
   const logs: string[] = [];
-  await writeFile(designSystemFilePath, `${JSON.stringify({ library: "", mappings: [] }, null, 2)}\n`, "utf8");
+  await writeFile(
+    designSystemFilePath,
+    `${JSON.stringify({ library: "", mappings: [] }, null, 2)}\n`,
+    "utf8",
+  );
 
   const ir = createIr();
   ir.screens = [
@@ -5420,10 +6356,10 @@ test("generateArtifacts logs warning and keeps MUI fallback when design-system c
           name: "Primary CTA",
           nodeType: "FRAME",
           type: "button" as const,
-          text: "Weiter"
-        }
-      ]
-    }
+          text: "Weiter",
+        },
+      ],
+    },
   ];
 
   await generateArtifacts({
@@ -5432,17 +6368,27 @@ test("generateArtifacts logs warning and keeps MUI fallback when design-system c
     designSystemFilePath,
     llmCodegenMode: "deterministic",
     llmModelName: "deterministic",
-    onLog: (message) => logs.push(message)
+    onLog: (message) => logs.push(message),
   });
 
-  assert.ok(logs.some((entry) => entry.includes("Design system config") && entry.includes("invalid")));
-  const screenContent = await readFile(path.join(projectDir, toDeterministicScreenPath("Invalid Design System")), "utf8");
+  assert.ok(
+    logs.some(
+      (entry) =>
+        entry.includes("Design system config") && entry.includes("invalid"),
+    ),
+  );
+  const screenContent = await readFile(
+    path.join(projectDir, toDeterministicScreenPath("Invalid Design System")),
+    "utf8",
+  );
   assert.ok(screenContent.includes("<Button"));
   assert.equal(screenContent.includes("PrimaryButton"), false);
 });
 
 test("generateArtifacts keeps node-level componentMappings precedence over design-system mapping", async () => {
-  const projectDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-generator-design-system-priority-"));
+  const projectDir = await mkdtemp(
+    path.join(os.tmpdir(), "workspace-dev-generator-design-system-priority-"),
+  );
   const designSystemFilePath = path.join(projectDir, "design-system.json");
   await writeFile(
     designSystemFilePath,
@@ -5453,15 +6399,15 @@ test("generateArtifacts keeps node-level componentMappings precedence over desig
           Button: {
             component: "PrimaryButton",
             propMappings: {
-              variant: "appearance"
-            }
-          }
-        }
+              variant: "appearance",
+            },
+          },
+        },
       },
       null,
-      2
+      2,
     )}\n`,
-    "utf8"
+    "utf8",
   );
 
   const ir = createIr();
@@ -5478,10 +6424,10 @@ test("generateArtifacts keeps node-level componentMappings precedence over desig
           name: "Primary CTA",
           nodeType: "FRAME",
           type: "button" as const,
-          text: "Weiter"
-        }
-      ]
-    }
+          text: "Weiter",
+        },
+      ],
+    },
   ];
 
   await generateArtifacts({
@@ -5496,17 +6442,20 @@ test("generateArtifacts keeps node-level componentMappings precedence over desig
         importPath: "@custom/ui",
         priority: 0,
         source: "local_override",
-        enabled: true
-      }
+        enabled: true,
+      },
     ],
     llmCodegenMode: "deterministic",
     llmModelName: "deterministic",
     onLog: () => {
       // no-op
-    }
+    },
   });
 
-  const screenContent = await readFile(path.join(projectDir, toDeterministicScreenPath("Priority Design System")), "utf8");
+  const screenContent = await readFile(
+    path.join(projectDir, toDeterministicScreenPath("Priority Design System")),
+    "utf8",
+  );
   assert.ok(screenContent.includes('from "@custom/ui";'));
   assert.ok(screenContent.includes("CustomActionButton"));
   assert.ok(screenContent.includes("<CustomActionButton"));
@@ -5514,7 +6463,9 @@ test("generateArtifacts keeps node-level componentMappings precedence over desig
 });
 
 test("generateArtifacts applies customer profile imports before design-system mappings", async () => {
-  const projectDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-generator-customer-profile-"));
+  const projectDir = await mkdtemp(
+    path.join(os.tmpdir(), "workspace-dev-generator-customer-profile-"),
+  );
   const designSystemFilePath = path.join(projectDir, "design-system.json");
   await writeFile(
     designSystemFilePath,
@@ -5523,14 +6474,14 @@ test("generateArtifacts applies customer profile imports before design-system ma
         library: "@acme/ui",
         mappings: {
           Button: {
-            component: "FallbackButton"
-          }
-        }
+            component: "FallbackButton",
+          },
+        },
       },
       null,
-      2
+      2,
     )}\n`,
-    "utf8"
+    "utf8",
   );
 
   const ir = createIr();
@@ -5547,10 +6498,10 @@ test("generateArtifacts applies customer profile imports before design-system ma
           name: "Primary CTA",
           nodeType: "FRAME",
           type: "button" as const,
-          text: "Weiter"
-        }
-      ]
-    }
+          text: "Weiter",
+        },
+      ],
+    },
   ];
 
   await generateArtifacts({
@@ -5562,18 +6513,27 @@ test("generateArtifacts applies customer profile imports before design-system ma
     llmModelName: "deterministic",
     onLog: () => {
       // no-op
-    }
+    },
   });
 
-  const screenContent = await readFile(path.join(projectDir, toDeterministicScreenPath("Customer Profile")), "utf8");
-  assert.ok(screenContent.includes('import { PrimaryButton as CustomerButton } from "@customer/components";'));
+  const screenContent = await readFile(
+    path.join(projectDir, toDeterministicScreenPath("Customer Profile")),
+    "utf8",
+  );
+  assert.ok(
+    screenContent.includes(
+      'import { PrimaryButton as CustomerButton } from "@customer/components";',
+    ),
+  );
   assert.ok(screenContent.includes("<CustomerButton"));
   assert.ok(screenContent.includes("appearance="));
   assert.equal(screenContent.includes("FallbackButton"), false);
 });
 
 test("generateArtifacts omits sx from storybook-first customer profile mappings when the resolved API disallows it", async () => {
-  const projectDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-generator-storybook-first-sx-"));
+  const projectDir = await mkdtemp(
+    path.join(os.tmpdir(), "workspace-dev-generator-storybook-first-sx-"),
+  );
   const ir = createIr();
   ir.screens = [
     {
@@ -5588,10 +6548,10 @@ test("generateArtifacts omits sx from storybook-first customer profile mappings 
           name: "Primary CTA",
           nodeType: "FRAME",
           type: "button" as const,
-          text: "Weiter"
-        }
-      ]
-    }
+          text: "Weiter",
+        },
+      ],
+    },
   ];
 
   await generateArtifacts({
@@ -5606,28 +6566,37 @@ test("generateArtifacts omits sx from storybook-first customer profile mappings 
           export: "PrimaryButton",
           component: "CustomerButton",
           propMappings: {
-            variant: "appearance"
+            variant: "appearance",
           },
-          omittedProps: ["sx"]
-        }
-      }
+          omittedProps: ["sx"],
+        },
+      },
     },
     llmCodegenMode: "deterministic",
     llmModelName: "deterministic",
     onLog: () => {
       // no-op
-    }
+    },
   });
 
-  const screenContent = await readFile(path.join(projectDir, toDeterministicScreenPath("Storybook First SX")), "utf8");
-  assert.ok(screenContent.includes('import { PrimaryButton as CustomerButton } from "@customer/components";'));
+  const screenContent = await readFile(
+    path.join(projectDir, toDeterministicScreenPath("Storybook First SX")),
+    "utf8",
+  );
+  assert.ok(
+    screenContent.includes(
+      'import { PrimaryButton as CustomerButton } from "@customer/components";',
+    ),
+  );
   assert.ok(screenContent.includes("<CustomerButton"));
   assert.ok(screenContent.includes("appearance="));
   assert.equal(/<CustomerButton[\s\S]*?\ssx=\{\{/.test(screenContent), false);
 });
 
 test("generateArtifacts emits customer profile icon imports when storybook-first lookup has no key match", async () => {
-  const projectDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-generator-profile-icon-import-"));
+  const projectDir = await mkdtemp(
+    path.join(os.tmpdir(), "workspace-dev-generator-profile-icon-import-"),
+  );
   const ir = createIr();
   ir.screens = [
     {
@@ -5646,10 +6615,10 @@ test("generateArtifacts emits customer profile icon imports when storybook-first
           y: 0,
           width: 24,
           height: 24,
-          children: []
-        }
-      ]
-    }
+          children: [],
+        },
+      ],
+    },
   ];
 
   await generateArtifacts({
@@ -5666,27 +6635,42 @@ test("generateArtifacts emits customer profile icon imports when storybook-first
           import: {
             package: "@customer/icons",
             exportName: "OtherIcon",
-            localName: "CustomerOtherIcon"
-          }
-        }
-      ]
+            localName: "CustomerOtherIcon",
+          },
+        },
+      ],
     ]),
     llmCodegenMode: "deterministic",
     llmModelName: "deterministic",
     onLog: () => {
       // no-op
-    }
+    },
   });
 
-  const generatedScreenPath = path.join(projectDir, toDeterministicScreenPath("Profile Icon"));
+  const generatedScreenPath = path.join(
+    projectDir,
+    toDeterministicScreenPath("Profile Icon"),
+  );
   const generatedScreenContent = await readFile(generatedScreenPath, "utf8");
-  assert.ok(generatedScreenContent.includes('import { MailIcon as CustomerMailIcon } from "@customer/icons";'));
+  assert.ok(
+    generatedScreenContent.includes(
+      'import { MailIcon as CustomerMailIcon } from "@customer/icons";',
+    ),
+  );
   assert.ok(generatedScreenContent.includes("<CustomerMailIcon"));
-  assert.equal(generatedScreenContent.includes("@mui/icons-material/Mail"), false);
+  assert.equal(
+    generatedScreenContent.includes("@mui/icons-material/Mail"),
+    false,
+  );
 });
 
 test("generateArtifacts prefers an explicit customerProfileDesignSystemConfig over the full customer profile mapping", async () => {
-  const projectDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-generator-match-report-design-system-"));
+  const projectDir = await mkdtemp(
+    path.join(
+      os.tmpdir(),
+      "workspace-dev-generator-match-report-design-system-",
+    ),
+  );
   const ir = createIr();
   ir.screens = [
     {
@@ -5701,10 +6685,10 @@ test("generateArtifacts prefers an explicit customerProfileDesignSystemConfig ov
           name: "Primary CTA",
           nodeType: "FRAME",
           type: "button" as const,
-          text: "Weiter"
-        }
-      ]
-    }
+          text: "Weiter",
+        },
+      ],
+    },
   ];
 
   await generateArtifacts({
@@ -5713,16 +6697,19 @@ test("generateArtifacts prefers an explicit customerProfileDesignSystemConfig ov
     customerProfile: createCustomerProfileForGeneratorTests(),
     customerProfileDesignSystemConfig: {
       library: "__customer_profile__",
-      mappings: {}
+      mappings: {},
     },
     llmCodegenMode: "deterministic",
     llmModelName: "deterministic",
     onLog: () => {
       // no-op
-    }
+    },
   });
 
-  const screenContent = await readFile(path.join(projectDir, toDeterministicScreenPath("Match Report Mapping")), "utf8");
+  const screenContent = await readFile(
+    path.join(projectDir, toDeterministicScreenPath("Match Report Mapping")),
+    "utf8",
+  );
   assert.equal(screenContent.includes('from "@customer/components";'), false);
   assert.equal(screenContent.includes("CustomerButton"), false);
   assert.ok(screenContent.includes('from "@mui/material";'));
@@ -5730,7 +6717,9 @@ test("generateArtifacts prefers an explicit customerProfileDesignSystemConfig ov
 });
 
 test("generateArtifacts keeps Storybook-first runs on MUI fallback when no compatible customer-profile mappings remain", async () => {
-  const projectDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-generator-storybook-first-empty-"));
+  const projectDir = await mkdtemp(
+    path.join(os.tmpdir(), "workspace-dev-generator-storybook-first-empty-"),
+  );
   const ir = createIr();
   ir.screens = [
     {
@@ -5745,10 +6734,10 @@ test("generateArtifacts keeps Storybook-first runs on MUI fallback when no compa
           name: "Primary CTA",
           nodeType: "FRAME",
           type: "button" as const,
-          text: "Weiter"
-        }
-      ]
-    }
+          text: "Weiter",
+        },
+      ],
+    },
   ];
 
   await generateArtifacts({
@@ -5760,12 +6749,12 @@ test("generateArtifacts keeps Storybook-first runs on MUI fallback when no compa
     llmModelName: "deterministic",
     onLog: () => {
       // no-op
-    }
+    },
   });
 
   const screenContent = await readFile(
     path.join(projectDir, toDeterministicScreenPath("Storybook First Empty")),
-    "utf8"
+    "utf8",
   );
   assert.equal(screenContent.includes('from "@customer/components";'), false);
   assert.equal(screenContent.includes("CustomerButton"), false);
@@ -5774,7 +6763,12 @@ test("generateArtifacts keeps Storybook-first runs on MUI fallback when no compa
 });
 
 test("generateArtifacts keeps node-level componentMappings precedence over customer profile imports", async () => {
-  const projectDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-generator-customer-profile-priority-"));
+  const projectDir = await mkdtemp(
+    path.join(
+      os.tmpdir(),
+      "workspace-dev-generator-customer-profile-priority-",
+    ),
+  );
   const ir = createIr();
   ir.screens = [
     {
@@ -5789,10 +6783,10 @@ test("generateArtifacts keeps node-level componentMappings precedence over custo
           name: "Primary CTA",
           nodeType: "FRAME",
           type: "button" as const,
-          text: "Weiter"
-        }
-      ]
-    }
+          text: "Weiter",
+        },
+      ],
+    },
   ];
 
   await generateArtifacts({
@@ -5807,24 +6801,32 @@ test("generateArtifacts keeps node-level componentMappings precedence over custo
         importPath: "@manual/ui",
         priority: 0,
         source: "local_override",
-        enabled: true
-      }
+        enabled: true,
+      },
     ],
     llmCodegenMode: "deterministic",
     llmModelName: "deterministic",
     onLog: () => {
       // no-op
-    }
+    },
   });
 
-  const screenContent = await readFile(path.join(projectDir, toDeterministicScreenPath("Customer Priority")), "utf8");
+  const screenContent = await readFile(
+    path.join(projectDir, toDeterministicScreenPath("Customer Priority")),
+    "utf8",
+  );
   assert.ok(screenContent.includes('from "@manual/ui";'));
   assert.ok(screenContent.includes("ManualActionButton"));
   assert.equal(screenContent.includes("CustomerButton"), false);
 });
 
 test("generateArtifacts logs customer profile diagnostics when denied MUI fallbacks remain", async () => {
-  const projectDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-generator-customer-profile-diagnostics-"));
+  const projectDir = await mkdtemp(
+    path.join(
+      os.tmpdir(),
+      "workspace-dev-generator-customer-profile-diagnostics-",
+    ),
+  );
   const logs: string[] = [];
   const ir = createIr();
   ir.screens = [
@@ -5840,10 +6842,10 @@ test("generateArtifacts logs customer profile diagnostics when denied MUI fallba
           name: "Primary CTA",
           nodeType: "FRAME",
           type: "button" as const,
-          text: "Weiter"
-        }
-      ]
-    }
+          text: "Weiter",
+        },
+      ],
+    },
   ];
 
   const customerProfile = parseCustomerProfileConfig({
@@ -5856,9 +6858,9 @@ test("generateArtifacts logs customer profile diagnostics when denied MUI fallba
           aliases: {
             figma: ["Components"],
             storybook: ["components"],
-            code: ["@customer/components"]
-          }
-        }
+            code: ["@customer/components"],
+          },
+        },
       ],
       brandMappings: [
         {
@@ -5867,27 +6869,27 @@ test("generateArtifacts logs customer profile diagnostics when denied MUI fallba
           brandTheme: "sparkasse",
           storybookThemes: {
             light: "sparkasse-light",
-            dark: "sparkasse-dark"
-          }
-        }
+            dark: "sparkasse-dark",
+          },
+        },
       ],
       imports: {
-        components: {}
+        components: {},
       },
       fallbacks: {
         mui: {
-          defaultPolicy: "deny"
-        }
+          defaultPolicy: "deny",
+        },
       },
       template: {
-        dependencies: {}
+        dependencies: {},
       },
       strictness: {
         match: "warn",
         token: "off",
-        import: "error"
-      }
-    }
+        import: "error",
+      },
+    },
   });
   if (!customerProfile) {
     assert.fail("Expected diagnostics customer profile fixture to parse.");
@@ -5899,12 +6901,16 @@ test("generateArtifacts logs customer profile diagnostics when denied MUI fallba
     customerProfile,
     llmCodegenMode: "deterministic",
     llmModelName: "deterministic",
-    onLog: (message) => logs.push(message)
+    onLog: (message) => logs.push(message),
   });
 
   assert.equal(
-    logs.some((entry) => entry.includes("Customer profile import policy warning") && entry.includes("MUI fallback import 'Button'")),
-    true
+    logs.some(
+      (entry) =>
+        entry.includes("Customer profile import policy warning") &&
+        entry.includes("MUI fallback import 'Button'"),
+    ),
+    true,
   );
 });
 
@@ -5943,7 +6949,7 @@ test("generateArtifacts keeps componentMappings precedence over pattern dispatch
                 text: "Dashboard",
                 x: 16,
                 y: 24,
-                fillColor: "#ffffff"
+                fillColor: "#ffffff",
               },
               {
                 id: "mapped-header-action",
@@ -5954,12 +6960,12 @@ test("generateArtifacts keeps componentMappings precedence over pattern dispatch
                 y: 20,
                 width: 32,
                 height: 32,
-                children: []
-              }
-            ]
-          }
-        ]
-      }
+                children: [],
+              },
+            ],
+          },
+        ],
+      },
     ];
     return ir;
   };
@@ -5972,12 +6978,17 @@ test("generateArtifacts keeps componentMappings precedence over pattern dispatch
       importPath: "@custom/ui",
       priority: 0,
       source: "local_override" as const,
-      enabled: true
-    }
+      enabled: true,
+    },
   ];
 
   const generateScreenContent = async (suffix: string): Promise<string> => {
-    const projectDir = await mkdtemp(path.join(os.tmpdir(), `workspace-dev-generator-dispatch-precedence-${suffix}-`));
+    const projectDir = await mkdtemp(
+      path.join(
+        os.tmpdir(),
+        `workspace-dev-generator-dispatch-precedence-${suffix}-`,
+      ),
+    );
     await generateArtifacts({
       projectDir,
       ir: createDispatchPrecedenceIr(),
@@ -5986,9 +6997,12 @@ test("generateArtifacts keeps componentMappings precedence over pattern dispatch
       llmModelName: "deterministic",
       onLog: () => {
         // no-op
-      }
+      },
     });
-    return await readFile(path.join(projectDir, toDeterministicScreenPath("Dispatch Precedence")), "utf8");
+    return await readFile(
+      path.join(projectDir, toDeterministicScreenPath("Dispatch Precedence")),
+      "utf8",
+    );
   };
 
   const first = await generateScreenContent("a");
@@ -6002,7 +7016,9 @@ test("generateArtifacts keeps componentMappings precedence over pattern dispatch
 });
 
 test("generateArtifacts folds pre-resolved broad pattern warnings into mapping diagnostics", async () => {
-  const projectDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-generator-pattern-warning-"));
+  const projectDir = await mkdtemp(
+    path.join(os.tmpdir(), "workspace-dev-generator-pattern-warning-"),
+  );
 
   const result = await generateArtifacts({
     projectDir,
@@ -6010,18 +7026,24 @@ test("generateArtifacts folds pre-resolved broad pattern warnings into mapping d
     initialMappingWarnings: [
       {
         code: "W_COMPONENT_MAPPING_BROAD_PATTERN",
-        message: "Pattern component mapping rule storybookTier='Components' matched multiple Figma families; deterministic fallback used"
-      }
+        message:
+          "Pattern component mapping rule storybookTier='Components' matched multiple Figma families; deterministic fallback used",
+      },
     ],
     llmCodegenMode: "deterministic",
     llmModelName: "deterministic",
     onLog: () => {
       // no-op
-    }
+    },
   });
 
   assert.equal(result.mappingDiagnostics.broadPatternCount, 1);
-  assert.equal(result.mappingWarnings.some((warning) => warning.code === "W_COMPONENT_MAPPING_BROAD_PATTERN"), true);
+  assert.equal(
+    result.mappingWarnings.some(
+      (warning) => warning.code === "W_COMPONENT_MAPPING_BROAD_PATTERN",
+    ),
+    true,
+  );
   assert.ok(Array.isArray(result.iconWarnings));
 });
 
@@ -6045,7 +7067,7 @@ test("generateArtifacts renders mapped VECTOR nodes and keeps unmapped VECTOR fa
             y: 0,
             width: 24,
             height: 24,
-            vectorPaths: ["M2 2 L22 22"]
+            vectorPaths: ["M2 2 L22 22"],
           },
           {
             id: "unmapped-vector-node",
@@ -6056,22 +7078,24 @@ test("generateArtifacts renders mapped VECTOR nodes and keeps unmapped VECTOR fa
             y: 0,
             width: 24,
             height: 24,
-            vectorPaths: ["M22 2 L2 22"]
+            vectorPaths: ["M22 2 L2 22"],
           },
           {
             id: "mapped-vector-label",
             name: "Label",
             nodeType: "TEXT",
             type: "text" as const,
-            text: "Vector diagnostics"
-          }
-        ]
-      }
+            text: "Vector diagnostics",
+          },
+        ],
+      },
     ];
     return ir;
   };
 
-  const mappedProjectDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-generator-vector-mapped-"));
+  const mappedProjectDir = await mkdtemp(
+    path.join(os.tmpdir(), "workspace-dev-generator-vector-mapped-"),
+  );
   await generateArtifacts({
     projectDir: mappedProjectDir,
     ir: createVectorIr(),
@@ -6083,24 +7107,34 @@ test("generateArtifacts renders mapped VECTOR nodes and keeps unmapped VECTOR fa
         importPath: "@custom/icons",
         priority: 0,
         source: "local_override",
-        enabled: true
-      }
+        enabled: true,
+      },
     ],
     llmCodegenMode: "deterministic",
     llmModelName: "deterministic",
     onLog: () => {
       // no-op
-    }
+    },
   });
 
-  const mappedContent = await readFile(path.join(mappedProjectDir, toDeterministicScreenPath("Mapped Vector Screen")), "utf8");
+  const mappedContent = await readFile(
+    path.join(
+      mappedProjectDir,
+      toDeterministicScreenPath("Mapped Vector Screen"),
+    ),
+    "utf8",
+  );
   assert.ok(mappedContent.includes('from "@custom/icons";'));
   assert.ok(mappedContent.includes("<CustomVectorIcon"));
-  assert.ok(mappedContent.includes('data-figma-node-id={"mapped-vector-node"}'));
+  assert.ok(
+    mappedContent.includes('data-figma-node-id={"mapped-vector-node"}'),
+  );
   assert.ok(mappedContent.includes("<SvgIcon"));
   assert.ok(mappedContent.includes('data-ir-id="unmapped-vector-node"'));
 
-  const fallbackProjectDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-generator-vector-fallback-"));
+  const fallbackProjectDir = await mkdtemp(
+    path.join(os.tmpdir(), "workspace-dev-generator-vector-fallback-"),
+  );
   await generateArtifacts({
     projectDir: fallbackProjectDir,
     ir: createVectorIr(),
@@ -6108,9 +7142,15 @@ test("generateArtifacts renders mapped VECTOR nodes and keeps unmapped VECTOR fa
     llmModelName: "deterministic",
     onLog: () => {
       // no-op
-    }
+    },
   });
-  const fallbackContent = await readFile(path.join(fallbackProjectDir, toDeterministicScreenPath("Mapped Vector Screen")), "utf8");
+  const fallbackContent = await readFile(
+    path.join(
+      fallbackProjectDir,
+      toDeterministicScreenPath("Mapped Vector Screen"),
+    ),
+    "utf8",
+  );
   assert.equal(fallbackContent.includes("CustomVectorIcon"), false);
   assert.ok(fallbackContent.includes("<SvgIcon"));
   assert.ok(fallbackContent.includes('data-ir-id="mapped-vector-node"'));
@@ -6118,7 +7158,9 @@ test("generateArtifacts renders mapped VECTOR nodes and keeps unmapped VECTOR fa
 });
 
 test("generateArtifacts keeps inline rendering when repeated pattern count is below extraction threshold", async () => {
-  const projectDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-generator-pattern-threshold-"));
+  const projectDir = await mkdtemp(
+    path.join(os.tmpdir(), "workspace-dev-generator-pattern-threshold-"),
+  );
   const ir = createIr();
   ir.screens = [
     {
@@ -6143,16 +7185,16 @@ test("generateArtifacts keeps inline rendering when repeated pattern count is be
               nodeType: "RECTANGLE",
               type: "image" as const,
               width: 320,
-              height: 96
+              height: 96,
             },
             {
               id: "offer-pair-title-a",
               name: "Offer Title",
               nodeType: "TEXT",
               type: "text" as const,
-              text: "Starter Paket"
-            }
-          ]
+              text: "Starter Paket",
+            },
+          ],
         },
         {
           id: "offer-pair-card-b",
@@ -6169,19 +7211,19 @@ test("generateArtifacts keeps inline rendering when repeated pattern count is be
               nodeType: "RECTANGLE",
               type: "image" as const,
               width: 320,
-              height: 96
+              height: 96,
             },
             {
               id: "offer-pair-title-b",
               name: "Offer Title",
               nodeType: "TEXT",
               type: "text" as const,
-              text: "Family Paket"
-            }
-          ]
-        }
-      ]
-    }
+              text: "Family Paket",
+            },
+          ],
+        },
+      ],
+    },
   ];
 
   const result = await generateArtifacts({
@@ -6191,17 +7233,27 @@ test("generateArtifacts keeps inline rendering when repeated pattern count is be
     llmModelName: "deterministic",
     onLog: () => {
       // no-op
-    }
+    },
   });
 
-  assert.equal(result.generatedPaths.some((entry) => /src\/components\/.*Pattern\d+\.tsx/.test(entry)), false);
-  const screenContent = await readFile(path.join(projectDir, toDeterministicScreenPath("Offer Pair")), "utf8");
+  assert.equal(
+    result.generatedPaths.some((entry) =>
+      /src\/components\/.*Pattern\d+\.tsx/.test(entry),
+    ),
+    false,
+  );
+  const screenContent = await readFile(
+    path.join(projectDir, toDeterministicScreenPath("Offer Pair")),
+    "utf8",
+  );
   assert.equal(screenContent.includes("Pattern"), false);
   assert.ok(screenContent.includes("<Card"));
 });
 
 test("generateArtifacts skips pattern context when extracted clusters have no dynamic bindings", async () => {
-  const projectDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-generator-pattern-no-context-"));
+  const projectDir = await mkdtemp(
+    path.join(os.tmpdir(), "workspace-dev-generator-pattern-no-context-"),
+  );
   const ir = createIr();
   ir.screens = [
     {
@@ -6219,9 +7271,21 @@ test("generateArtifacts skips pattern context when extracted clusters have no dy
           width: 280,
           height: 120,
           children: [
-            { id: "static-card-a-title", name: "Title", nodeType: "TEXT", type: "text" as const, text: "Reusable Card" },
-            { id: "static-card-a-price", name: "Price", nodeType: "TEXT", type: "text" as const, text: "9,99 €" }
-          ]
+            {
+              id: "static-card-a-title",
+              name: "Title",
+              nodeType: "TEXT",
+              type: "text" as const,
+              text: "Reusable Card",
+            },
+            {
+              id: "static-card-a-price",
+              name: "Price",
+              nodeType: "TEXT",
+              type: "text" as const,
+              text: "9,99 €",
+            },
+          ],
         },
         {
           id: "static-card-b",
@@ -6231,9 +7295,21 @@ test("generateArtifacts skips pattern context when extracted clusters have no dy
           width: 280,
           height: 120,
           children: [
-            { id: "static-card-b-title", name: "Title", nodeType: "TEXT", type: "text" as const, text: "Reusable Card" },
-            { id: "static-card-b-price", name: "Price", nodeType: "TEXT", type: "text" as const, text: "9,99 €" }
-          ]
+            {
+              id: "static-card-b-title",
+              name: "Title",
+              nodeType: "TEXT",
+              type: "text" as const,
+              text: "Reusable Card",
+            },
+            {
+              id: "static-card-b-price",
+              name: "Price",
+              nodeType: "TEXT",
+              type: "text" as const,
+              text: "9,99 €",
+            },
+          ],
         },
         {
           id: "static-card-c",
@@ -6243,12 +7319,24 @@ test("generateArtifacts skips pattern context when extracted clusters have no dy
           width: 280,
           height: 120,
           children: [
-            { id: "static-card-c-title", name: "Title", nodeType: "TEXT", type: "text" as const, text: "Reusable Card" },
-            { id: "static-card-c-price", name: "Price", nodeType: "TEXT", type: "text" as const, text: "9,99 €" }
-          ]
-        }
-      ]
-    }
+            {
+              id: "static-card-c-title",
+              name: "Title",
+              nodeType: "TEXT",
+              type: "text" as const,
+              text: "Reusable Card",
+            },
+            {
+              id: "static-card-c-price",
+              name: "Price",
+              nodeType: "TEXT",
+              type: "text" as const,
+              text: "9,99 €",
+            },
+          ],
+        },
+      ],
+    },
   ];
 
   const result = await generateArtifacts({
@@ -6258,24 +7346,40 @@ test("generateArtifacts skips pattern context when extracted clusters have no dy
     llmModelName: "deterministic",
     onLog: () => {
       // no-op
-    }
+    },
   });
 
-  assert.equal(result.generatedPaths.includes("src/components/StaticOffersPattern1.tsx"), true);
-  assert.equal(result.generatedPaths.some((entry) => /src\/context\/.*PatternContext\.tsx$/.test(entry)), false);
+  assert.equal(
+    result.generatedPaths.includes("src/components/StaticOffersPattern1.tsx"),
+    true,
+  );
+  assert.equal(
+    result.generatedPaths.some((entry) =>
+      /src\/context\/.*PatternContext\.tsx$/.test(entry),
+    ),
+    false,
+  );
 
-  const screenContent = await readFile(path.join(projectDir, toDeterministicScreenPath("Static Offers")), "utf8");
+  const screenContent = await readFile(
+    path.join(projectDir, toDeterministicScreenPath("Static Offers")),
+    "utf8",
+  );
   assert.ok(screenContent.includes("<StaticOffersPattern1"));
   assert.equal(screenContent.includes("instanceId={"), false);
   assert.equal(screenContent.includes("PatternContextProvider"), false);
 
-  const componentContent = await readFile(path.join(projectDir, "src", "components", "StaticOffersPattern1.tsx"), "utf8");
+  const componentContent = await readFile(
+    path.join(projectDir, "src", "components", "StaticOffersPattern1.tsx"),
+    "utf8",
+  );
   assert.equal(componentContent.includes("instanceId: string;"), false);
   assert.equal(componentContent.includes("PatternContext"), false);
 });
 
 test("generateArtifacts keeps merged sx fallback for extracted patterns with fewer than four root sx properties", async () => {
-  const projectDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-generator-pattern-low-root-sx-"));
+  const projectDir = await mkdtemp(
+    path.join(os.tmpdir(), "workspace-dev-generator-pattern-low-root-sx-"),
+  );
   const ir = createIr();
   ir.screens = [
     {
@@ -6291,9 +7395,21 @@ test("generateArtifacts keeps merged sx fallback for extracted patterns with few
           nodeType: "FRAME",
           type: "card" as const,
           children: [
-            { id: "low-root-card-a-title", name: "Title", nodeType: "TEXT", type: "text" as const, text: "A" },
-            { id: "low-root-card-a-subtitle", name: "Subtitle", nodeType: "TEXT", type: "text" as const, text: "Alpha" }
-          ]
+            {
+              id: "low-root-card-a-title",
+              name: "Title",
+              nodeType: "TEXT",
+              type: "text" as const,
+              text: "A",
+            },
+            {
+              id: "low-root-card-a-subtitle",
+              name: "Subtitle",
+              nodeType: "TEXT",
+              type: "text" as const,
+              text: "Alpha",
+            },
+          ],
         },
         {
           id: "low-root-card-b",
@@ -6301,9 +7417,21 @@ test("generateArtifacts keeps merged sx fallback for extracted patterns with few
           nodeType: "FRAME",
           type: "card" as const,
           children: [
-            { id: "low-root-card-b-title", name: "Title", nodeType: "TEXT", type: "text" as const, text: "B" },
-            { id: "low-root-card-b-subtitle", name: "Subtitle", nodeType: "TEXT", type: "text" as const, text: "Bravo" }
-          ]
+            {
+              id: "low-root-card-b-title",
+              name: "Title",
+              nodeType: "TEXT",
+              type: "text" as const,
+              text: "B",
+            },
+            {
+              id: "low-root-card-b-subtitle",
+              name: "Subtitle",
+              nodeType: "TEXT",
+              type: "text" as const,
+              text: "Bravo",
+            },
+          ],
         },
         {
           id: "low-root-card-c",
@@ -6311,12 +7439,24 @@ test("generateArtifacts keeps merged sx fallback for extracted patterns with few
           nodeType: "FRAME",
           type: "card" as const,
           children: [
-            { id: "low-root-card-c-title", name: "Title", nodeType: "TEXT", type: "text" as const, text: "C" },
-            { id: "low-root-card-c-subtitle", name: "Subtitle", nodeType: "TEXT", type: "text" as const, text: "Charlie" }
-          ]
-        }
-      ]
-    }
+            {
+              id: "low-root-card-c-title",
+              name: "Title",
+              nodeType: "TEXT",
+              type: "text" as const,
+              text: "C",
+            },
+            {
+              id: "low-root-card-c-subtitle",
+              name: "Subtitle",
+              nodeType: "TEXT",
+              type: "text" as const,
+              text: "Charlie",
+            },
+          ],
+        },
+      ],
+    },
   ];
 
   const result = await generateArtifacts({
@@ -6326,24 +7466,34 @@ test("generateArtifacts keeps merged sx fallback for extracted patterns with few
     llmModelName: "deterministic",
     onLog: () => {
       // no-op
-    }
+    },
   });
 
-  const patternComponentPath = result.generatedPaths.find((entry) => /src\/components\/LowRoot.*Pattern1\.tsx$/.test(entry));
-  assert.ok(patternComponentPath, "Expected extracted pattern component for low-root-sx scenario.");
-  const patternContent = await readFile(path.join(projectDir, patternComponentPath ?? ""), "utf8");
+  const patternComponentPath = result.generatedPaths.find((entry) =>
+    /src\/components\/LowRoot.*Pattern1\.tsx$/.test(entry),
+  );
+  assert.ok(
+    patternComponentPath,
+    "Expected extracted pattern component for low-root-sx scenario.",
+  );
+  const patternContent = await readFile(
+    path.join(projectDir, patternComponentPath ?? ""),
+    "utf8",
+  );
   assert.equal(patternContent.includes("theme.unstable_sx("), false);
   assert.equal(patternContent.includes("Root = styled("), false);
   assert.ok(patternContent.includes("sx={[{"));
   assert.ok(patternContent.includes("return (\n    <>"));
   assertValidTsx({
     content: patternContent,
-    filePath: path.join(projectDir, patternComponentPath ?? "")
+    filePath: path.join(projectDir, patternComponentPath ?? ""),
   });
 });
 
 test("generateArtifacts skips extraction when structure similarity threshold is not met", async () => {
-  const projectDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-generator-pattern-similarity-"));
+  const projectDir = await mkdtemp(
+    path.join(os.tmpdir(), "workspace-dev-generator-pattern-similarity-"),
+  );
   const ir = createIr();
   ir.screens = [
     {
@@ -6366,7 +7516,7 @@ test("generateArtifacts skips extraction when structure similarity threshold is 
               name: "Title",
               nodeType: "TEXT",
               type: "text" as const,
-              text: "A"
+              text: "A",
             },
             {
               id: "sim-image-a",
@@ -6374,9 +7524,9 @@ test("generateArtifacts skips extraction when structure similarity threshold is 
               nodeType: "RECTANGLE",
               type: "image" as const,
               width: 120,
-              height: 80
-            }
-          ]
+              height: 80,
+            },
+          ],
         },
         {
           id: "sim-card-b",
@@ -6391,7 +7541,7 @@ test("generateArtifacts skips extraction when structure similarity threshold is 
               name: "Title",
               nodeType: "TEXT",
               type: "text" as const,
-              text: "B"
+              text: "B",
             },
             {
               id: "sim-image-b",
@@ -6399,9 +7549,9 @@ test("generateArtifacts skips extraction when structure similarity threshold is 
               nodeType: "RECTANGLE",
               type: "image" as const,
               width: 120,
-              height: 80
-            }
-          ]
+              height: 80,
+            },
+          ],
         },
         {
           id: "sim-card-c",
@@ -6416,14 +7566,14 @@ test("generateArtifacts skips extraction when structure similarity threshold is 
               name: "Title",
               nodeType: "TEXT",
               type: "text" as const,
-              text: "C"
+              text: "C",
             },
             {
               id: "sim-subtitle-c",
               name: "Subtitle",
               nodeType: "TEXT",
               type: "text" as const,
-              text: "Extra"
+              text: "Extra",
             },
             {
               id: "sim-image-c",
@@ -6431,12 +7581,12 @@ test("generateArtifacts skips extraction when structure similarity threshold is 
               nodeType: "RECTANGLE",
               type: "image" as const,
               width: 120,
-              height: 80
-            }
-          ]
-        }
-      ]
-    }
+              height: 80,
+            },
+          ],
+        },
+      ],
+    },
   ];
 
   const result = await generateArtifacts({
@@ -6446,16 +7596,26 @@ test("generateArtifacts skips extraction when structure similarity threshold is 
     llmModelName: "deterministic",
     onLog: () => {
       // no-op
-    }
+    },
   });
 
-  assert.equal(result.generatedPaths.some((entry) => /src\/components\/.*Pattern\d+\.tsx/.test(entry)), false);
-  const screenContent = await readFile(path.join(projectDir, toDeterministicScreenPath("Similarity Screen")), "utf8");
+  assert.equal(
+    result.generatedPaths.some((entry) =>
+      /src\/components\/.*Pattern\d+\.tsx/.test(entry),
+    ),
+    false,
+  );
+  const screenContent = await readFile(
+    path.join(projectDir, toDeterministicScreenPath("Similarity Screen")),
+    "utf8",
+  );
   assert.equal(screenContent.includes("Pattern"), false);
 });
 
 test("generateArtifacts emits per-screen form context and rewires screen form state through hook usage", async () => {
-  const projectDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-generator-form-context-"));
+  const projectDir = await mkdtemp(
+    path.join(os.tmpdir(), "workspace-dev-generator-form-context-"),
+  );
   const ir = createIr();
   ir.screens = [
     {
@@ -6465,7 +7625,12 @@ test("generateArtifacts emits per-screen form context and rewires screen form st
       gap: 8,
       padding: { top: 0, right: 0, bottom: 0, left: 0 },
       children: [
-        createSemanticInputNode({ id: "loan-email", name: "Email Input", label: "Email *", placeholder: "name@example.com" }),
+        createSemanticInputNode({
+          id: "loan-email",
+          name: "Email Input",
+          label: "Email *",
+          placeholder: "name@example.com",
+        }),
         {
           id: "loan-submit-button",
           name: "Primary Submit",
@@ -6481,12 +7646,12 @@ test("generateArtifacts emits per-screen form context and rewires screen form st
               nodeType: "TEXT",
               type: "text" as const,
               text: "Continue",
-              fillColor: "#ffffff"
-            }
-          ]
-        }
-      ]
-    }
+              fillColor: "#ffffff",
+            },
+          ],
+        },
+      ],
+    },
   ];
 
   const result = await generateArtifacts({
@@ -6496,49 +7661,118 @@ test("generateArtifacts emits per-screen form context and rewires screen form st
     llmModelName: "deterministic",
     onLog: () => {
       // no-op
-    }
+    },
   });
 
-  assert.equal(result.generatedPaths.includes("src/context/LoanFormFormContext.tsx"), true);
+  assert.equal(
+    result.generatedPaths.includes("src/context/LoanFormFormContext.tsx"),
+    true,
+  );
 
-  const screenContent = await readFile(path.join(projectDir, toDeterministicScreenPath("Loan Form")), "utf8");
-  assert.ok(screenContent.includes('import { LoanFormFormContextProvider, useLoanFormFormContext } from "../context/LoanFormFormContext";'));
+  const screenContent = await readFile(
+    path.join(projectDir, toDeterministicScreenPath("Loan Form")),
+    "utf8",
+  );
+  assert.ok(
+    screenContent.includes(
+      'import { LoanFormFormContextProvider, useLoanFormFormContext } from "../context/LoanFormFormContext";',
+    ),
+  );
   assert.ok(screenContent.includes("function LoanFormScreenContent() {"));
   assert.ok(
     screenContent.includes(
-      "const { control, handleSubmit, onSubmit, resolveFieldErrorMessage, isSubmitting, isSubmitted } = useLoanFormFormContext();"
-    )
+      "const { control, handleSubmit, onSubmit, resolveFieldErrorMessage, isSubmitting, isSubmitted } = useLoanFormFormContext();",
+    ),
   );
   assert.ok(screenContent.includes("<LoanFormFormContextProvider>"));
-  assert.ok(screenContent.includes('component="form" onSubmit={((event) => { void handleSubmit(onSubmit)(event); })} noValidate'));
+  assert.ok(
+    screenContent.includes(
+      'component="form" onSubmit={((event) => { void handleSubmit(onSubmit)(event); })} noValidate',
+    ),
+  );
   assert.ok(screenContent.includes("<Controller"));
-  assert.equal(screenContent.includes("const [formValues, setFormValues] = useState<Record<string, string>>("), false);
-  assert.equal(screenContent.includes("const [fieldErrors, setFieldErrors] = useState<Record<string, string>>(initialVisualErrors);"), false);
-  assert.equal(screenContent.includes("const [touchedFields, setTouchedFields] = useState<Record<string, boolean>>({});"), false);
+  assert.equal(
+    screenContent.includes(
+      "const [formValues, setFormValues] = useState<Record<string, string>>(",
+    ),
+    false,
+  );
+  assert.equal(
+    screenContent.includes(
+      "const [fieldErrors, setFieldErrors] = useState<Record<string, string>>(initialVisualErrors);",
+    ),
+    false,
+  );
+  assert.equal(
+    screenContent.includes(
+      "const [touchedFields, setTouchedFields] = useState<Record<string, boolean>>({});",
+    ),
+    false,
+  );
 
-  const formContextContent = await readFile(path.join(projectDir, "src", "context", "LoanFormFormContext.tsx"), "utf8");
+  const formContextContent = await readFile(
+    path.join(projectDir, "src", "context", "LoanFormFormContext.tsx"),
+    "utf8",
+  );
   assert.ok(formContextContent.includes("createContext"));
-  assert.ok(formContextContent.includes('import { useForm, type UseFormReturn } from "react-hook-form";'));
-  assert.ok(formContextContent.includes('import { zodResolver } from "@hookform/resolvers/zod";'));
-  assert.ok(formContextContent.includes('import { z } from "zod";'));
-  assert.ok(formContextContent.includes("export type LoanFormFormInput = z.input<typeof formSchema>;"));
-  assert.ok(formContextContent.includes("export type LoanFormFormOutput = z.output<typeof formSchema>;"));
-  assert.ok(formContextContent.includes("initialVisualErrorsOverride?: Record<string, string>;"));
-  assert.ok(formContextContent.includes("const resolvedInitialVisualErrors: Record<string, string> = { ...initialVisualErrors, ...(initialVisualErrorsOverride ?? {}) };"));
   assert.ok(
     formContextContent.includes(
-      "const { control, handleSubmit, formState: { isSubmitting, isSubmitted }, reset, setError } = useForm<LoanFormFormInput>({"
-    )
+      'import { useForm, type UseFormReturn } from "react-hook-form";',
+    ),
+  );
+  assert.ok(
+    formContextContent.includes(
+      'import { zodResolver } from "@hookform/resolvers/zod";',
+    ),
+  );
+  assert.ok(formContextContent.includes('import { z } from "zod";'));
+  assert.ok(
+    formContextContent.includes(
+      "export type LoanFormFormInput = z.input<typeof formSchema>;",
+    ),
+  );
+  assert.ok(
+    formContextContent.includes(
+      "export type LoanFormFormOutput = z.output<typeof formSchema>;",
+    ),
+  );
+  assert.ok(
+    formContextContent.includes(
+      "initialVisualErrorsOverride?: Record<string, string>;",
+    ),
+  );
+  assert.ok(
+    formContextContent.includes(
+      "const resolvedInitialVisualErrors: Record<string, string> = { ...initialVisualErrors, ...(initialVisualErrorsOverride ?? {}) };",
+    ),
+  );
+  assert.ok(
+    formContextContent.includes(
+      "const { control, handleSubmit, formState: { isSubmitting, isSubmitted }, reset, setError } = useForm<LoanFormFormInput>({",
+    ),
   );
   assert.ok(formContextContent.includes("isSubmitted: boolean;"));
   assert.ok(formContextContent.includes("if (!isTouched && !isSubmitted) {"));
-  assert.ok(formContextContent.includes("const onSubmit = async (values: LoanFormFormOutput): Promise<void> => {"));
-  assert.equal(formContextContent.includes("as unknown as UseFormReturn"), false);
-  assert.ok(formContextContent.includes("export const useLoanFormFormContext = (): LoanFormFormContextValue => {"));
+  assert.ok(
+    formContextContent.includes(
+      "const onSubmit = async (values: LoanFormFormOutput): Promise<void> => {",
+    ),
+  );
+  assert.equal(
+    formContextContent.includes("as unknown as UseFormReturn"),
+    false,
+  );
+  assert.ok(
+    formContextContent.includes(
+      "export const useLoanFormFormContext = (): LoanFormFormContextValue => {",
+    ),
+  );
 });
 
 test("generateArtifacts keeps legacy form scaffolding when formHandlingMode=legacy_use_state is requested", async () => {
-  const projectDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-generator-form-legacy-"));
+  const projectDir = await mkdtemp(
+    path.join(os.tmpdir(), "workspace-dev-generator-form-legacy-"),
+  );
   const ir = createIr();
   ir.screens = [
     {
@@ -6547,8 +7781,15 @@ test("generateArtifacts keeps legacy form scaffolding when formHandlingMode=lega
       layoutMode: "VERTICAL" as const,
       gap: 8,
       padding: { top: 0, right: 0, bottom: 0, left: 0 },
-      children: [createSemanticInputNode({ id: "legacy-email", name: "Email Input", label: "Email *", placeholder: "name@example.com" })]
-    }
+      children: [
+        createSemanticInputNode({
+          id: "legacy-email",
+          name: "Email Input",
+          label: "Email *",
+          placeholder: "name@example.com",
+        }),
+      ],
+    },
   ];
 
   await generateArtifacts({
@@ -6559,23 +7800,46 @@ test("generateArtifacts keeps legacy form scaffolding when formHandlingMode=lega
     llmModelName: "deterministic",
     onLog: () => {
       // no-op
-    }
+    },
   });
 
-  const screenContent = await readFile(path.join(projectDir, toDeterministicScreenPath("Legacy Form")), "utf8");
+  const screenContent = await readFile(
+    path.join(projectDir, toDeterministicScreenPath("Legacy Form")),
+    "utf8",
+  );
   assert.ok(screenContent.includes("<LegacyFormFormContextProvider>"));
   assert.ok(screenContent.includes("useLegacyFormFormContext"));
-  assert.ok(screenContent.includes('component="form" onSubmit={handleSubmit} noValidate'));
+  assert.ok(
+    screenContent.includes(
+      'component="form" onSubmit={handleSubmit} noValidate',
+    ),
+  );
   assert.equal(screenContent.includes("<Controller"), false);
 
-  const formContextContent = await readFile(path.join(projectDir, "src", "context", "LegacyFormFormContext.tsx"), "utf8");
-  assert.ok(formContextContent.includes("const [formValues, setFormValues] = useState<Record<string, string>>("));
-  assert.ok(formContextContent.includes("const validateFieldValue = (fieldKey: string, value: string): string => {"));
-  assert.equal(formContextContent.includes("useForm<Record<string, string>>"), false);
+  const formContextContent = await readFile(
+    path.join(projectDir, "src", "context", "LegacyFormFormContext.tsx"),
+    "utf8",
+  );
+  assert.ok(
+    formContextContent.includes(
+      "const [formValues, setFormValues] = useState<Record<string, string>>(",
+    ),
+  );
+  assert.ok(
+    formContextContent.includes(
+      "const validateFieldValue = (fieldKey: string, value: string): string => {",
+    ),
+  );
+  assert.equal(
+    formContextContent.includes("useForm<Record<string, string>>"),
+    false,
+  );
 });
 
 test("generateArtifacts injects exported image asset paths into image and CardMedia rendering", async () => {
-  const projectDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-generator-images-"));
+  const projectDir = await mkdtemp(
+    path.join(os.tmpdir(), "workspace-dev-generator-images-"),
+  );
   const imageScreen = {
     id: "image-screen",
     name: "Image Screen",
@@ -6589,7 +7853,7 @@ test("generateArtifacts injects exported image asset paths into image and CardMe
         nodeType: "RECTANGLE",
         type: "image" as const,
         width: 320,
-        height: 180
+        height: 180,
       },
       {
         id: "summary-card",
@@ -6606,16 +7870,16 @@ test("generateArtifacts injects exported image asset paths into image and CardMe
             nodeType: "RECTANGLE",
             type: "image" as const,
             width: 320,
-            height: 140
+            height: 140,
           },
           {
             id: "card-title",
             name: "Title",
             nodeType: "TEXT",
             type: "text" as const,
-            text: "Card headline"
-          }
-        ]
+            text: "Card headline",
+          },
+        ],
       },
       {
         id: "table-with-image",
@@ -6637,16 +7901,16 @@ test("generateArtifacts injects exported image asset paths into image and CardMe
                 name: "Product",
                 nodeType: "TEXT",
                 type: "text" as const,
-                text: "Product"
+                text: "Product",
               },
               {
                 id: "table-header-col-2",
                 name: "Details",
                 nodeType: "TEXT",
                 type: "text" as const,
-                text: "Details"
-              }
-            ]
+                text: "Details",
+              },
+            ],
           },
           {
             id: "table-body-row",
@@ -6661,60 +7925,65 @@ test("generateArtifacts injects exported image asset paths into image and CardMe
                 nodeType: "RECTANGLE",
                 type: "image" as const,
                 width: 120,
-                height: 80
+                height: 80,
               },
               {
                 id: "table-text-cell",
                 name: "Details Text",
                 nodeType: "TEXT",
                 type: "text" as const,
-                text: "Shown with image"
-              }
-            ]
-          }
-        ]
-      }
-    ]
+                text: "Shown with image",
+              },
+            ],
+          },
+        ],
+      },
+    ],
   };
 
   await generateArtifacts({
     projectDir,
     ir: {
       ...createIr(),
-      screens: [imageScreen]
+      screens: [imageScreen],
     },
     imageAssetMap: {
       "hero-image": "/images/hero.png",
       "card-media-image": "/images/card-media.png",
-      "table-image-cell": "/images/table-image.png"
+      "table-image-cell": "/images/table-image.png",
     },
     llmCodegenMode: "deterministic",
     llmModelName: "deterministic",
     onLog: () => {
       // no-op
-    }
+    },
   });
 
-  const generatedScreenContent = await readFile(path.join(projectDir, toDeterministicScreenPath("Image Screen")), "utf8");
-  assert.ok(
-    generatedScreenContent.includes(
-      'component="img" src={".\\u002Fimages\\u002Fhero.png"} alt={"Hero Image"} decoding="async" fetchPriority="high" width={320} height={180}'
-    )
+  const generatedScreenContent = await readFile(
+    path.join(projectDir, toDeterministicScreenPath("Image Screen")),
+    "utf8",
   );
   assert.ok(
     generatedScreenContent.includes(
-      '<CardMedia component="img" image={".\\u002Fimages\\u002Fcard-media.png"} alt={"Card Media"} decoding="async" fetchPriority="high" width={320} height={140}'
-    )
+      'component="img" src={".\\u002Fimages\\u002Fhero.png"} alt={"Hero Image"} decoding="async" fetchPriority="high" width={320} height={180}',
+    ),
   );
   assert.ok(
     generatedScreenContent.includes(
-      'component="img" src={".\\u002Fimages\\u002Ftable-image.png"} alt={"Table Image"} decoding="async" fetchPriority="high" width={120} height={80}'
-    )
+      '<CardMedia component="img" image={".\\u002Fimages\\u002Fcard-media.png"} alt={"Card Media"} decoding="async" fetchPriority="high" width={320} height={140}',
+    ),
+  );
+  assert.ok(
+    generatedScreenContent.includes(
+      'component="img" src={".\\u002Fimages\\u002Ftable-image.png"} alt={"Table Image"} decoding="async" fetchPriority="high" width={120} height={80}',
+    ),
   );
 });
 
 test("generateArtifacts applies lazy loading for below-fold images and fetchpriority for hero images", async () => {
-  const projectDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-generator-lazy-"));
+  const projectDir = await mkdtemp(
+    path.join(os.tmpdir(), "workspace-dev-generator-lazy-"),
+  );
   const lazyScreen = {
     id: "lazy-screen",
     name: "Lazy Screen",
@@ -6729,7 +7998,7 @@ test("generateArtifacts applies lazy loading for below-fold images and fetchprio
         type: "image" as const,
         y: 50,
         width: 800,
-        height: 400
+        height: 400,
       },
       {
         id: "below-fold-img",
@@ -6738,49 +8007,62 @@ test("generateArtifacts applies lazy loading for below-fold images and fetchprio
         type: "image" as const,
         y: 900,
         width: 640,
-        height: 480
-      }
-    ]
+        height: 480,
+      },
+    ],
   };
 
   await generateArtifacts({
     projectDir,
     ir: {
       ...createIr(),
-      screens: [lazyScreen]
+      screens: [lazyScreen],
     },
     imageAssetMap: {
       "hero-img": "/images/hero-banner.png",
-      "below-fold-img": "/images/gallery.png"
+      "below-fold-img": "/images/gallery.png",
     },
     llmCodegenMode: "deterministic",
     llmModelName: "deterministic",
     onLog: () => {
       // no-op
-    }
+    },
   });
 
-  const content = await readFile(path.join(projectDir, toDeterministicScreenPath("Lazy Screen")), "utf8");
+  const content = await readFile(
+    path.join(projectDir, toDeterministicScreenPath("Lazy Screen")),
+    "utf8",
+  );
 
   // Hero image (y=50): should have fetchPriority="high", decoding="async", no loading="lazy"
   assert.ok(
     content.includes(
-      'src={".\\u002Fimages\\u002Fhero-banner.png"} alt={"Hero Banner"} decoding="async" fetchPriority="high" width={800} height={400}'
-    )
+      'src={".\\u002Fimages\\u002Fhero-banner.png"} alt={"Hero Banner"} decoding="async" fetchPriority="high" width={800} height={400}',
+    ),
   );
-  assert.ok(!content.includes('.\\u002Fimages\\u002Fhero-banner.png"} alt={"Hero Banner"} loading="lazy"'));
+  assert.ok(
+    !content.includes(
+      '.\\u002Fimages\\u002Fhero-banner.png"} alt={"Hero Banner"} loading="lazy"',
+    ),
+  );
 
   // Below-fold image (y=900): should have loading="lazy", decoding="async", no fetchpriority
   assert.ok(
     content.includes(
-      'src={".\\u002Fimages\\u002Fgallery.png"} alt={"Gallery Photo"} loading="lazy" decoding="async" width={640} height={480}'
-    )
+      'src={".\\u002Fimages\\u002Fgallery.png"} alt={"Gallery Photo"} loading="lazy" decoding="async" width={640} height={480}',
+    ),
   );
-  assert.ok(!content.includes('.\\u002Fimages\\u002Fgallery.png"} alt={"Gallery Photo"} decoding="async" fetchpriority'));
+  assert.ok(
+    !content.includes(
+      '.\\u002Fimages\\u002Fgallery.png"} alt={"Gallery Photo"} decoding="async" fetchpriority',
+    ),
+  );
 });
 
 test("generateArtifacts rejects non-deterministic mode in workspace-dev", async () => {
-  const projectDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-generator-mode-"));
+  const projectDir = await mkdtemp(
+    path.join(os.tmpdir(), "workspace-dev-generator-mode-"),
+  );
 
   await assert.rejects(
     () =>
@@ -6791,14 +8073,16 @@ test("generateArtifacts rejects non-deterministic mode in workspace-dev", async 
         llmModelName: "qwen",
         onLog: () => {
           // no-op
-        }
+        },
       }),
-    /Only deterministic code generation is supported/
+    /Only deterministic code generation is supported/,
   );
 });
 
 test("generateArtifacts wires prototype interactions from IR to deterministic route links across screens", async () => {
-  const projectDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-generator-prototype-navigation-"));
+  const projectDir = await mkdtemp(
+    path.join(os.tmpdir(), "workspace-dev-generator-prototype-navigation-"),
+  );
   const ir = figmaToDesignIr({
     name: "Prototype Navigation Integration",
     document: {
@@ -6823,8 +8107,14 @@ test("generateArtifacts wires prototype interactions from IR to deterministic ro
                   interactions: [
                     {
                       trigger: { type: "ON_CLICK" },
-                      actions: [{ type: "NODE", destinationId: "screen-settings", navigation: "NAVIGATE" }]
-                    }
+                      actions: [
+                        {
+                          type: "NODE",
+                          destinationId: "screen-settings",
+                          navigation: "NAVIGATE",
+                        },
+                      ],
+                    },
                   ],
                   children: [
                     {
@@ -6832,18 +8122,23 @@ test("generateArtifacts wires prototype interactions from IR to deterministic ro
                       type: "TEXT",
                       name: "Label",
                       characters: "Settings",
-                      absoluteBoundingBox: { x: 32, y: 30, width: 100, height: 24 }
-                    }
-                  ]
+                      absoluteBoundingBox: {
+                        x: 32,
+                        y: 30,
+                        width: 100,
+                        height: 24,
+                      },
+                    },
+                  ],
                 },
                 {
                   id: "home-subtitle",
                   type: "TEXT",
                   name: "Subtitle",
                   characters: "Overview",
-                  absoluteBoundingBox: { x: 16, y: 88, width: 100, height: 24 }
-                }
-              ]
+                  absoluteBoundingBox: { x: 16, y: 88, width: 100, height: 24 },
+                },
+              ],
             },
             {
               id: "screen-settings",
@@ -6856,14 +8151,19 @@ test("generateArtifacts wires prototype interactions from IR to deterministic ro
                   type: "TEXT",
                   name: "Settings title",
                   characters: "Settings",
-                  absoluteBoundingBox: { x: 496, y: 24, width: 120, height: 24 }
-                }
-              ]
-            }
-          ]
-        }
-      ]
-    }
+                  absoluteBoundingBox: {
+                    x: 496,
+                    y: 24,
+                    width: 120,
+                    height: 24,
+                  },
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    },
   });
 
   const logs: string[] = [];
@@ -6872,37 +8172,49 @@ test("generateArtifacts wires prototype interactions from IR to deterministic ro
     ir,
     llmCodegenMode: "deterministic",
     llmModelName: "deterministic",
-    onLog: (message) => logs.push(message)
+    onLog: (message) => logs.push(message),
   });
 
   const generatedScreenDir = path.join(projectDir, "src", "screens");
-  const generatedScreenFiles = (await readdir(generatedScreenDir, { withFileTypes: true }))
+  const generatedScreenFiles = (
+    await readdir(generatedScreenDir, { withFileTypes: true })
+  )
     .filter((entry) => entry.isFile() && entry.name.endsWith(".tsx"))
     .map((entry) => entry.name);
   const generatedScreenContents = await Promise.all(
-    generatedScreenFiles.map(async (fileName) => readFile(path.join(generatedScreenDir, fileName), "utf8"))
+    generatedScreenFiles.map(async (fileName) =>
+      readFile(path.join(generatedScreenDir, fileName), "utf8"),
+    ),
   );
   assert.ok(
     generatedScreenContents.some(
       (content) =>
-        content.includes('import { Link as RouterLink } from "react-router-dom";') ||
-        content.includes('import { useNavigate } from "react-router-dom";')
-    )
+        content.includes(
+          'import { Link as RouterLink } from "react-router-dom";',
+        ) ||
+        content.includes('import { useNavigate } from "react-router-dom";'),
+    ),
   );
   assert.ok(
     generatedScreenContents.some(
       (content) =>
         content.includes('component={RouterLink} to={"\\u002Fsettings"}') ||
         content.includes('navigate("\\u002Fsettings")') ||
-        content.includes('navigate("\\u002Fsettings", { replace: true })')
-    )
+        content.includes('navigate("\\u002Fsettings", { replace: true })'),
+    ),
   );
 
-  const appContent = await readFile(path.join(projectDir, "src", "App.tsx"), "utf8");
+  const appContent = await readFile(
+    path.join(projectDir, "src", "App.tsx"),
+    "utf8",
+  );
   assert.ok(appContent.includes('path="/home"'));
   assert.ok(appContent.includes('path="/settings"'));
 
-  const metricsContent = await readFile(path.join(projectDir, "generation-metrics.json"), "utf8");
+  const metricsContent = await readFile(
+    path.join(projectDir, "generation-metrics.json"),
+    "utf8",
+  );
   const metrics = JSON.parse(metricsContent) as {
     prototypeNavigationDetected?: number;
     prototypeNavigationResolved?: number;
@@ -6913,13 +8225,26 @@ test("generateArtifacts wires prototype interactions from IR to deterministic ro
   assert.equal(metrics.prototypeNavigationResolved, 1);
   assert.equal(metrics.prototypeNavigationUnresolved, 0);
   assert.equal((metrics.prototypeNavigationRendered ?? 0) >= 1, true);
-  assert.equal((result.generationMetrics.prototypeNavigationRendered ?? 0) >= 1, true);
-  assert.ok(logs.some((entry) => entry.includes("Prototype navigation: detected=1, resolved=1, unresolved=0")));
+  assert.equal(
+    (result.generationMetrics.prototypeNavigationRendered ?? 0) >= 1,
+    true,
+  );
+  assert.ok(
+    logs.some((entry) =>
+      entry.includes(
+        "Prototype navigation: detected=1, resolved=1, unresolved=0",
+      ),
+    ),
+  );
 });
 
-test("generateArtifacts auto-bootstraps icon fallback map file when missing", async () => {
-  const projectDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-generator-icon-bootstrap-"));
-  const outputRoot = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-icon-map-root-"));
+test("generateArtifacts falls back to built-in catalog when icon map file is missing", async () => {
+  const projectDir = await mkdtemp(
+    path.join(os.tmpdir(), "workspace-dev-generator-icon-bootstrap-"),
+  );
+  const outputRoot = await mkdtemp(
+    path.join(os.tmpdir(), "workspace-dev-icon-map-root-"),
+  );
   const iconMapFilePath = path.join(outputRoot, "icon-fallback-map.json");
   const logs: string[] = [];
 
@@ -6944,32 +8269,37 @@ test("generateArtifacts auto-bootstraps icon fallback map file when missing", as
               y: 0,
               width: 24,
               height: 24,
-              children: []
-            }
-          ]
-        }
-      ]
+              children: [],
+            },
+          ],
+        },
+      ],
     },
     iconMapFilePath,
     llmCodegenMode: "deterministic",
     llmModelName: "deterministic",
-    onLog: (message) => logs.push(message)
+    onLog: (message) => logs.push(message),
   });
 
-  const mapFileContent = await readFile(iconMapFilePath, "utf8");
-  const parsedMap = JSON.parse(mapFileContent) as { version?: number; entries?: unknown[] };
-  assert.equal(parsedMap.version, 1);
-  assert.equal(Array.isArray(parsedMap.entries), true);
-  assert.ok((parsedMap.entries ?? []).length >= 200);
-  assert.ok(logs.some((entry) => entry.includes("Bootstrapped icon fallback map")));
+  assert.ok(logs.some((entry) => entry.includes("not found")));
+  await assert.rejects(readFile(iconMapFilePath, "utf8"), { code: "ENOENT" });
 
-  const generatedScreenPath = path.join(projectDir, toDeterministicScreenPath("Icon Bootstrap Screen"));
+  const generatedScreenPath = path.join(
+    projectDir,
+    toDeterministicScreenPath("Icon Bootstrap Screen"),
+  );
   const generatedScreenContent = await readFile(generatedScreenPath, "utf8");
-  assert.ok(generatedScreenContent.includes('import DownloadIcon from "@mui/icons-material/Download";'));
+  assert.ok(
+    generatedScreenContent.includes(
+      'import DownloadIcon from "@mui/icons-material/Download";',
+    ),
+  );
 });
 
 test("generateArtifacts uses custom icon fallback map file when valid", async () => {
-  const projectDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-generator-icon-custom-"));
+  const projectDir = await mkdtemp(
+    path.join(os.tmpdir(), "workspace-dev-generator-icon-custom-"),
+  );
   const iconMapFilePath = path.join(projectDir, "icon-map.custom.json");
   await writeFile(
     iconMapFilePath,
@@ -6978,13 +8308,13 @@ test("generateArtifacts uses custom icon fallback map file when valid", async ()
         version: 1,
         entries: [{ iconName: "Delete", aliases: ["trash"] }],
         synonyms: {
-          "remove item": "Delete"
-        }
+          "remove item": "Delete",
+        },
       },
       null,
-      2
+      2,
     )}\n`,
-    "utf8"
+    "utf8",
   );
 
   await generateArtifacts({
@@ -7008,31 +8338,44 @@ test("generateArtifacts uses custom icon fallback map file when valid", async ()
               y: 0,
               width: 24,
               height: 24,
-              children: []
-            }
-          ]
-        }
-      ]
+              children: [],
+            },
+          ],
+        },
+      ],
     },
     iconMapFilePath,
     llmCodegenMode: "deterministic",
     llmModelName: "deterministic",
     onLog: () => {
       // no-op
-    }
+    },
   });
 
-  const generatedScreenPath = path.join(projectDir, toDeterministicScreenPath("Icon Custom Screen"));
+  const generatedScreenPath = path.join(
+    projectDir,
+    toDeterministicScreenPath("Icon Custom Screen"),
+  );
   const generatedScreenContent = await readFile(generatedScreenPath, "utf8");
-  assert.ok(generatedScreenContent.includes('import DeleteIcon from "@mui/icons-material/Delete";'));
+  assert.ok(
+    generatedScreenContent.includes(
+      'import DeleteIcon from "@mui/icons-material/Delete";',
+    ),
+  );
   assert.equal(generatedScreenContent.includes("InfoOutlinedIcon"), false);
 });
 
 test("generateArtifacts falls back to built-in icon catalog when icon map file is invalid", async () => {
-  const projectDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-generator-icon-invalid-"));
+  const projectDir = await mkdtemp(
+    path.join(os.tmpdir(), "workspace-dev-generator-icon-invalid-"),
+  );
   const iconMapFilePath = path.join(projectDir, "icon-map.invalid.json");
   const logs: string[] = [];
-  await writeFile(iconMapFilePath, `{\"version\":1,\"entries\":\"invalid\"}\n`, "utf8");
+  await writeFile(
+    iconMapFilePath,
+    `{\"version\":1,\"entries\":\"invalid\"}\n`,
+    "utf8",
+  );
 
   await generateArtifacts({
     projectDir,
@@ -7055,28 +8398,41 @@ test("generateArtifacts falls back to built-in icon catalog when icon map file i
               y: 0,
               width: 24,
               height: 24,
-              children: []
-            }
-          ]
-        }
-      ]
+              children: [],
+            },
+          ],
+        },
+      ],
     },
     iconMapFilePath,
     llmCodegenMode: "deterministic",
     llmModelName: "deterministic",
-    onLog: (message) => logs.push(message)
+    onLog: (message) => logs.push(message),
   });
 
   assert.ok(
-    logs.some((entry) => entry.toLowerCase().includes("icon fallback map") && entry.toLowerCase().includes("invalid"))
+    logs.some(
+      (entry) =>
+        entry.toLowerCase().includes("icon fallback map") &&
+        entry.toLowerCase().includes("invalid"),
+    ),
   );
-  const generatedScreenPath = path.join(projectDir, toDeterministicScreenPath("Icon Invalid Screen"));
+  const generatedScreenPath = path.join(
+    projectDir,
+    toDeterministicScreenPath("Icon Invalid Screen"),
+  );
   const generatedScreenContent = await readFile(generatedScreenPath, "utf8");
-  assert.ok(generatedScreenContent.includes('import PersonIcon from "@mui/icons-material/Person";'));
+  assert.ok(
+    generatedScreenContent.includes(
+      'import PersonIcon from "@mui/icons-material/Person";',
+    ),
+  );
 });
 
 test("generateArtifacts logs and writes accessibility contrast warnings", async () => {
-  const projectDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-generator-a11y-"));
+  const projectDir = await mkdtemp(
+    path.join(os.tmpdir(), "workspace-dev-generator-a11y-"),
+  );
   const logs: string[] = [];
   const ir = createIr();
   ir.screens = [
@@ -7096,10 +8452,10 @@ test("generateArtifacts logs and writes accessibility contrast warnings", async 
           text: "Low contrast copy",
           fillColor: "#8a8a8a",
           fontSize: 16,
-          fontWeight: 400
-        }
-      ]
-    }
+          fontWeight: 400,
+        },
+      ],
+    },
   ];
 
   await generateArtifacts({
@@ -7107,19 +8463,26 @@ test("generateArtifacts logs and writes accessibility contrast warnings", async 
     ir,
     llmCodegenMode: "deterministic",
     llmModelName: "qwen",
-    onLog: (message) => logs.push(message)
+    onLog: (message) => logs.push(message),
   });
 
   assert.ok(logs.some((entry) => entry.includes("[a11y] Low contrast")));
-  const metricsContent = await readFile(path.join(projectDir, "generation-metrics.json"), "utf8");
-  const metrics = JSON.parse(metricsContent) as { accessibilityWarnings?: Array<{ code?: string }> };
+  const metricsContent = await readFile(
+    path.join(projectDir, "generation-metrics.json"),
+    "utf8",
+  );
+  const metrics = JSON.parse(metricsContent) as {
+    accessibilityWarnings?: Array<{ code?: string }>;
+  };
   assert.equal(Array.isArray(metrics.accessibilityWarnings), true);
   assert.ok((metrics.accessibilityWarnings ?? []).length > 0);
   assert.equal(metrics.accessibilityWarnings?.[0]?.code, "W_A11Y_LOW_CONTRAST");
 });
 
 test("generateArtifacts surfaces skipped generated source validation in production metrics when the TypeScript runtime is unavailable", async () => {
-  const projectDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-generator-validation-skip-"));
+  const projectDir = await mkdtemp(
+    path.join(os.tmpdir(), "workspace-dev-generator-validation-skip-"),
+  );
 
   __setTypescriptModuleResolverForTests(() => null);
   try {
@@ -7128,24 +8491,31 @@ test("generateArtifacts surfaces skipped generated source validation in producti
       ir: createIr(),
       llmCodegenMode: "deterministic",
       llmModelName: "deterministic",
-      onLog: () => {}
+      onLog: () => {},
     });
 
-    assert.equal(result.generationMetrics.generatedSourceValidation?.status, "skipped");
+    assert.equal(
+      result.generationMetrics.generatedSourceValidation?.status,
+      "skipped",
+    );
     assert.equal(
       result.generationMetrics.generatedSourceValidation?.code,
-      GENERATED_SOURCE_VALIDATION_MISSING_TYPESCRIPT_CODE
+      GENERATED_SOURCE_VALIDATION_MISSING_TYPESCRIPT_CODE,
     );
     assert.equal(
       result.generationMetrics.generatedSourceValidation?.message,
-      GENERATED_SOURCE_VALIDATION_MISSING_TYPESCRIPT_MESSAGE
+      GENERATED_SOURCE_VALIDATION_MISSING_TYPESCRIPT_MESSAGE,
     );
     assert.equal(
-      (result.generationMetrics.generatedSourceValidation?.skippedCount ?? 0) > 0,
-      true
+      (result.generationMetrics.generatedSourceValidation?.skippedCount ?? 0) >
+        0,
+      true,
     );
 
-    const metricsContent = await readFile(path.join(projectDir, "generation-metrics.json"), "utf8");
+    const metricsContent = await readFile(
+      path.join(projectDir, "generation-metrics.json"),
+      "utf8",
+    );
     const metrics = JSON.parse(metricsContent) as {
       generatedSourceValidation?: {
         status?: string;
@@ -7156,7 +8526,7 @@ test("generateArtifacts surfaces skipped generated source validation in producti
     };
     assert.deepEqual(
       metrics.generatedSourceValidation,
-      result.generationMetrics.generatedSourceValidation
+      result.generationMetrics.generatedSourceValidation,
     );
   } finally {
     __resetTypescriptModuleResolverForTests();
@@ -7170,24 +8540,39 @@ test("createDeterministicAppFile uses lazy route-level loading for non-initial s
     {
       ...ir.screens[0],
       id: "screen-2",
-      name: "Settings"
-    }
+      name: "Settings",
+    },
   ]);
 
   assert.ok(appFile.content.includes("Suspense"));
   assert.ok(appFile.content.includes("BrowserRouter"));
-  assert.ok(appFile.content.includes('import ScreenSkeleton from "./components/ScreenSkeleton";'));
-  assert.ok(appFile.content.includes("const routeLoadingFallback = <ScreenSkeleton />;"));
+  assert.ok(
+    appFile.content.includes(
+      'import ScreenSkeleton from "./components/ScreenSkeleton";',
+    ),
+  );
+  assert.ok(
+    appFile.content.includes(
+      "const routeLoadingFallback = <ScreenSkeleton />;",
+    ),
+  );
   assert.ok(appFile.content.includes("const LazySettingsScreen = lazy"));
-  assert.ok(appFile.content.includes('element={<ErrorBoundary><LazySettingsScreen /></ErrorBoundary>}'));
-  assert.equal((appFile.content.match(/element={<ErrorBoundary></g) ?? []).length, 2);
+  assert.ok(
+    appFile.content.includes(
+      "element={<ErrorBoundary><LazySettingsScreen /></ErrorBoundary>}",
+    ),
+  );
+  assert.equal(
+    (appFile.content.match(/element={<ErrorBoundary></g) ?? []).length,
+    2,
+  );
 });
 
 test("createDeterministicAppFile keeps the skip link declarative", () => {
   const ir = createIr();
   const appFile = createDeterministicAppFile([ir.screens[0]]);
 
-  assert.ok(appFile.content.includes('Skip to main content'));
+  assert.ok(appFile.content.includes("Skip to main content"));
   assert.ok(appFile.content.includes('styled("a")'));
   assert.equal(appFile.content.includes("style={{"), false);
   assert.equal(appFile.content.includes("onFocus={"), false);
@@ -7199,17 +8584,29 @@ test("createDeterministicAppFile emits BrowserRouter basename resolver by defaul
   const appFile = createDeterministicAppFile([ir.screens[0]]);
 
   assert.ok(appFile.content.includes("resolveBrowserBasename"));
-  assert.ok(appFile.content.includes('window.location.pathname.match(/^\\/workspace\\/repros\\/[^/]+/)'));
-  assert.ok(appFile.content.includes("<BrowserRouter basename={browserBasename}>"));
+  assert.ok(
+    appFile.content.includes(
+      "window.location.pathname.match(/^\\/workspace\\/repros\\/[^/]+/)",
+    ),
+  );
+  assert.ok(
+    appFile.content.includes("<BrowserRouter basename={browserBasename}>"),
+  );
   assert.equal(appFile.content.includes("HashRouter"), false);
 });
 
 test("createDeterministicAppFile supports hash router mode override", () => {
   const ir = createIr();
-  const appFile = createDeterministicAppFile([ir.screens[0]], { routerMode: "hash" });
+  const appFile = createDeterministicAppFile([ir.screens[0]], {
+    routerMode: "hash",
+  });
 
   assert.ok(appFile.content.includes("<HashRouter>"));
-  assert.ok(appFile.content.includes('import { HashRouter, Navigate, Route, Routes } from "react-router-dom";'));
+  assert.ok(
+    appFile.content.includes(
+      'import { HashRouter, Navigate, Route, Routes } from "react-router-dom";',
+    ),
+  );
   assert.equal(appFile.content.includes("BrowserRouter"), false);
   assert.equal(appFile.content.includes("resolveBrowserBasename"), false);
 });
@@ -7219,7 +8616,10 @@ test("createDeterministicAppFile omits lazy import when only one screen exists",
   const appFile = createDeterministicAppFile([ir.screens[0]]);
 
   assert.ok(appFile.content.includes('import { Suspense } from "react";'));
-  assert.equal(appFile.content.includes('import { Suspense, lazy } from "react";'), false);
+  assert.equal(
+    appFile.content.includes('import { Suspense, lazy } from "react";'),
+    false,
+  );
   assert.equal(appFile.content.includes("const Lazy"), false);
   assert.equal(appFile.content.includes("= lazy(async"), false);
 });
@@ -7229,14 +8629,18 @@ test("createDeterministicAppFile disambiguates duplicate screen names", () => {
   const duplicateScreens = [
     { ...ir.screens[0], id: "screen-a", name: "Overview" },
     { ...ir.screens[0], id: "screen-b", name: "Overview" },
-    { ...ir.screens[0], id: "screen-c", name: "Overview" }
+    { ...ir.screens[0], id: "screen-c", name: "Overview" },
   ];
 
   const appFile = createDeterministicAppFile(duplicateScreens);
   assert.ok(appFile.content.includes('path="/overview"'));
   assert.ok(appFile.content.includes('path="/overview-'));
-  assert.ok(appFile.content.includes('import OverviewScreen from "./screens/Overview";'));
-  assert.ok(appFile.content.includes('const LazyOverview'));
+  assert.ok(
+    appFile.content.includes(
+      'import OverviewScreen from "./screens/Overview";',
+    ),
+  );
+  assert.ok(appFile.content.includes("const LazyOverview"));
 });
 
 test("deterministic screen rendering keeps semantic labels and avoids Mui internal text leakage", () => {
@@ -7245,9 +8649,11 @@ test("deterministic screen rendering keeps semantic labels and avoids Mui intern
   const content = screenFile.content;
 
   assert.ok(content.includes('label={"Monatliche Sparrate (optional)"}'));
-  assert.ok(content.includes('label={"Zu welchem Monat soll die Besparung starten?"}'));
+  assert.ok(
+    content.includes('label={"Zu welchem Monat soll die Besparung starten?"}'),
+  );
   assert.ok(content.includes('>{"Weiter"}</Button>'));
-  assert.ok(content.includes('endIcon={<ChevronRightIcon'));
+  assert.ok(content.includes("endIcon={<ChevronRightIcon"));
   assert.ok(content.includes("TextField"));
   assert.ok(content.includes("MenuItem"));
   assert.ok(content.includes("InputAdornment"));
@@ -7269,9 +8675,13 @@ test("deterministic screen rendering preserves simple MUI board controls, steppe
 
   assert.ok(content.includes("Bauen oder kaufen"));
   assert.ok(content.includes("<Slider"));
-  assert.ok(content.includes('src={".\\u002Fimages\\u002Fbauen-oder-kaufen.png"}'));
+  assert.ok(
+    content.includes('src={".\\u002Fimages\\u002Fbauen-oder-kaufen.png"}'),
+  );
   assert.ok(content.includes('label={"Monatliche Sparrate (optional)"}'));
-  assert.ok(content.includes('label={"Zu welchem Monat soll die Besparung starten?"}'));
+  assert.ok(
+    content.includes('label={"Zu welchem Monat soll die Besparung starten?"}'),
+  );
   assert.equal(content.includes('data-ir-id="1:32"'), false);
   assert.equal(content.includes('data-ir-id="1:44"'), false);
   assert.equal(content.includes("<Table"), false);
@@ -7280,7 +8690,7 @@ test("deterministic screen rendering preserves simple MUI board controls, steppe
   assert.equal(content.includes('{"MuiSliderThumb"}'), false);
   assert.equal(content.includes('{"MuiInputBaseRoot"}'), false);
   assert.equal(content.includes('{"MuiInputRoot"}'), false);
-  assert.equal(content.includes('M0 0L24 0L24 24L0 24L0 0Z'), false);
+  assert.equal(content.includes("M0 0L24 0L24 24L0 24L0 0Z"), false);
 });
 
 test("deterministic screen rendering resolves detached MUI field labels, relative image assets, and decimal bounding-box paths", () => {
@@ -7288,15 +8698,26 @@ test("deterministic screen rendering resolves detached MUI field labels, relativ
   const screenFile = createDeterministicScreenFile(screen);
   const content = screenFile.content;
 
-  assert.ok(content.includes("Bitte erfassen Sie die gewünschte monatliche Sparrate und den Zeitraum."));
+  assert.ok(
+    content.includes(
+      "Bitte erfassen Sie die gewünschte monatliche Sparrate und den Zeitraum.",
+    ),
+  );
   assert.ok(content.includes('label={"Monatliche Sparrate (optional)"}'));
-  assert.ok(content.includes('label={"Zu welchem Monat soll die Besparung starten?"}'));
-  assert.ok(content.includes('src={".\\u002Fimages\\u002Fbauen-oder-kaufen.png"}'));
+  assert.ok(
+    content.includes('label={"Zu welchem Monat soll die Besparung starten?"}'),
+  );
+  assert.ok(
+    content.includes('src={".\\u002Fimages\\u002Fbauen-oder-kaufen.png"}'),
+  );
   assert.equal(content.includes('data-ir-id="detached-label-1"'), false);
   assert.equal(content.includes('data-ir-id="detached-label-2"'), false);
   assert.equal(content.includes('{"MuiInputBaseRoot"}'), false);
   assert.equal(content.includes('{"MuiInputRoot"}'), false);
-  assert.equal(content.includes("M0 0L23.9931 0L23.9931 23.9931L0 23.9931L0 0Z"), false);
+  assert.equal(
+    content.includes("M0 0L23.9931 0L23.9931 23.9931L0 23.9931L0 0Z"),
+    false,
+  );
 });
 
 test("deriveSelectOptions keeps exact defaults for alphanumeric month-like values", () => {
@@ -7315,7 +8736,10 @@ test("deriveSelectOptions always includes the exact default value for numeric-li
   const options = deriveSelectOptions("10%", "de-DE");
   assert.equal(options[0], "10%");
   assert.ok(options.includes("10%"));
-  assert.equal(options.some((candidate) => candidate !== "10%"), true);
+  assert.equal(
+    options.some((candidate) => candidate !== "10%"),
+    true,
+  );
 });
 
 test("deterministic screen rendering keeps select default values inside generated option maps", () => {
@@ -7329,20 +8753,23 @@ test("deterministic screen rendering keeps select default values inside generate
       createSemanticSelectInputNode({
         id: "start-month-select",
         label: "Zu welchem Monat soll die Besparung starten?",
-        value: "April 2026"
+        value: "April 2026",
       }),
       createSemanticSelectInputNode({
         id: "start-day-select",
-        label: "Zu welchem Tag des Monats sollen die Sparraten abgebucht werden?",
-        value: "1. des Monats"
-      })
-    ]
+        label:
+          "Zu welchem Tag des Monats sollen die Sparraten abgebucht werden?",
+        value: "1. des Monats",
+      }),
+    ],
   };
 
-  const content = createDeterministicScreenFile(screen, { generationLocale: "de-DE" }).content;
+  const content = createDeterministicScreenFile(screen, {
+    generationLocale: "de-DE",
+  }).content;
   const selectOptionsMap = readGeneratedStringArrayMapLiteral({
     source: content,
-    variableName: "selectOptions"
+    variableName: "selectOptions",
   });
   const flattenedOptions = Object.values(selectOptionsMap).flat();
   assert.ok(flattenedOptions.includes("April 2026"));
@@ -7358,14 +8785,22 @@ test("deterministic screen rendering derives semantic select options with locale
     layoutMode: "VERTICAL" as const,
     gap: 8,
     padding: { top: 0, right: 0, bottom: 0, left: 0 },
-    children: [createSemanticSelectInputNode({ id: "rate-input", label: "Rate", value: "10,00 %" })]
+    children: [
+      createSemanticSelectInputNode({
+        id: "rate-input",
+        label: "Rate",
+        value: "10,00 %",
+      }),
+    ],
   };
 
   const defaultLocaleContent = createDeterministicScreenFile(screen).content;
   assert.ok(defaultLocaleContent.includes('"9,75 %"'));
   assert.equal(defaultLocaleContent.includes('"9.75 %"'), false);
 
-  const enUsContent = createDeterministicScreenFile(screen, { generationLocale: "en-US" }).content;
+  const enUsContent = createDeterministicScreenFile(screen, {
+    generationLocale: "en-US",
+  }).content;
   assert.ok(enUsContent.includes('"9.75 %"'));
   assert.equal(enUsContent.includes('"9,75 %"'), false);
 });
@@ -7386,22 +8821,26 @@ test("deterministic screen rendering derives select fallback options with locale
         text: "10,00 %",
         width: 260,
         height: 56,
-        children: []
-      }
-    ]
+        children: [],
+      },
+    ],
   };
 
   const defaultLocaleContent = createDeterministicScreenFile(screen).content;
   assert.ok(defaultLocaleContent.includes('"9,75 %"'));
   assert.equal(defaultLocaleContent.includes('"9.75 %"'), false);
 
-  const enUsContent = createDeterministicScreenFile(screen, { generationLocale: "en-US" }).content;
+  const enUsContent = createDeterministicScreenFile(screen, {
+    generationLocale: "en-US",
+  }).content;
   assert.ok(enUsContent.includes('"9.75 %"'));
   assert.equal(enUsContent.includes('"9,75 %"'), false);
 });
 
 test("generateArtifacts falls back to de-DE and logs warning for invalid generationLocale", async () => {
-  const projectDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-generator-locale-fallback-"));
+  const projectDir = await mkdtemp(
+    path.join(os.tmpdir(), "workspace-dev-generator-locale-fallback-"),
+  );
   const logs: string[] = [];
   const ir = {
     ...createIr(),
@@ -7421,11 +8860,11 @@ test("generateArtifacts falls back to de-DE and logs warning for invalid generat
             text: "10,00 %",
             width: 260,
             height: 56,
-            children: []
-          }
-        ]
-      }
-    ]
+            children: [],
+          },
+        ],
+      },
+    ],
   };
 
   await generateArtifacts({
@@ -7434,20 +8873,33 @@ test("generateArtifacts falls back to de-DE and logs warning for invalid generat
     generationLocale: "invalid_locale",
     llmCodegenMode: "deterministic",
     llmModelName: "qwen",
-    onLog: (message) => logs.push(message)
+    onLog: (message) => logs.push(message),
   });
 
-  const generatedScreenPath = path.join(projectDir, toDeterministicScreenPath("Locale Fallback"));
+  const generatedScreenPath = path.join(
+    projectDir,
+    toDeterministicScreenPath("Locale Fallback"),
+  );
   const generatedScreenContent = await readFile(generatedScreenPath, "utf8");
-  const generatedFormContextPath = path.join(projectDir, "src", "context", "LocaleFallbackFormContext.tsx");
-  const generatedFormContextContent = await readFile(generatedFormContextPath, "utf8");
+  const generatedFormContextPath = path.join(
+    projectDir,
+    "src",
+    "context",
+    "LocaleFallbackFormContext.tsx",
+  );
+  const generatedFormContextContent = await readFile(
+    generatedFormContextPath,
+    "utf8",
+  );
   assert.ok(generatedScreenContent.includes("useLocaleFallbackFormContext"));
   assert.ok(generatedFormContextContent.includes('"9,75 %"'));
   assert.equal(
     logs.some((entry) =>
-      entry.includes("Invalid generationLocale 'invalid_locale' configured for deterministic generation")
+      entry.includes(
+        "Invalid generationLocale 'invalid_locale' configured for deterministic generation",
+      ),
     ),
-    true
+    true,
   );
 });
 
@@ -7476,7 +8928,7 @@ test("deterministic screen rendering maps textRole placeholder to TextField plac
             nodeType: "TEXT",
             type: "text" as const,
             text: "Loan amount",
-            y: 0
+            y: 0,
           },
           {
             id: "input-placeholder",
@@ -7485,14 +8937,16 @@ test("deterministic screen rendering maps textRole placeholder to TextField plac
             type: "text" as const,
             text: "Type here",
             textRole: "placeholder" as const,
-            y: 24
-          }
-        ]
-      }
-    ]
+            y: 24,
+          },
+        ],
+      },
+    ],
   };
 
-  const content = createDeterministicScreenFile(screen, { formHandlingMode: "legacy_use_state" }).content;
+  const content = createDeterministicScreenFile(screen, {
+    formHandlingMode: "legacy_use_state",
+  }).content;
   assert.ok(content.includes('label={"Loan amount"}'));
   assert.ok(content.includes('placeholder={"Type here"}'));
   assert.equal(/":\s*"Type here"/.test(content), false);
@@ -7506,17 +8960,47 @@ test("deterministic screen rendering infers TextField type and conservative auto
     gap: 8,
     padding: { top: 0, right: 0, bottom: 0, left: 0 },
     children: [
-      createSemanticInputNode({ id: "input-email", name: "Email Field", label: "Email" }),
-      createSemanticInputNode({ id: "input-password", name: "Password Field", label: "Passwort" }),
-      createSemanticInputNode({ id: "input-phone", name: "Phone Field", label: "Telefon" }),
-      createSemanticInputNode({ id: "input-number", name: "Number Field", label: "Betrag" }),
-      createSemanticInputNode({ id: "input-date", name: "Date Field", label: "Datum" }),
-      createSemanticInputNode({ id: "input-url", name: "URL Field", label: "Website" }),
-      createSemanticInputNode({ id: "input-search", name: "Search Field", label: "Suche" })
-    ]
+      createSemanticInputNode({
+        id: "input-email",
+        name: "Email Field",
+        label: "Email",
+      }),
+      createSemanticInputNode({
+        id: "input-password",
+        name: "Password Field",
+        label: "Passwort",
+      }),
+      createSemanticInputNode({
+        id: "input-phone",
+        name: "Phone Field",
+        label: "Telefon",
+      }),
+      createSemanticInputNode({
+        id: "input-number",
+        name: "Number Field",
+        label: "Betrag",
+      }),
+      createSemanticInputNode({
+        id: "input-date",
+        name: "Date Field",
+        label: "Datum",
+      }),
+      createSemanticInputNode({
+        id: "input-url",
+        name: "URL Field",
+        label: "Website",
+      }),
+      createSemanticInputNode({
+        id: "input-search",
+        name: "Search Field",
+        label: "Suche",
+      }),
+    ],
   };
 
-  const content = createDeterministicScreenFile(screen, { formHandlingMode: "legacy_use_state" }).content;
+  const content = createDeterministicScreenFile(screen, {
+    formHandlingMode: "legacy_use_state",
+  }).content;
   const cases: Array<{ label: string; type: string; autoComplete?: string }> = [
     { label: "Email", type: "email", autoComplete: "email" },
     { label: "Passwort", type: "password", autoComplete: "current-password" },
@@ -7524,11 +9008,14 @@ test("deterministic screen rendering infers TextField type and conservative auto
     { label: "Betrag", type: "number" },
     { label: "Datum", type: "date" },
     { label: "Website", type: "url", autoComplete: "url" },
-    { label: "Suche", type: "search" }
+    { label: "Suche", type: "search" },
   ];
 
   for (const testCase of cases) {
-    const block = findRenderedTextFieldBlock({ content, label: testCase.label });
+    const block = findRenderedTextFieldBlock({
+      content,
+      label: testCase.label,
+    });
     assert.ok(block.includes(`type={"${testCase.type}"}`));
     if (testCase.autoComplete) {
       assert.ok(block.includes(`autoComplete={"${testCase.autoComplete}"}`));
@@ -7536,7 +9023,11 @@ test("deterministic screen rendering infers TextField type and conservative auto
       assert.equal(block.includes("autoComplete={"), false);
     }
     assert.ok(block.includes("value={formValues["));
-    assert.ok(block.includes("onChange={(event: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => updateFieldValue("));
+    assert.ok(
+      block.includes(
+        "onChange={(event: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => updateFieldValue(",
+      ),
+    );
   }
 });
 
@@ -7548,27 +9039,43 @@ test("deterministic screen rendering infers TextField type from node name and pl
     gap: 8,
     padding: { top: 0, right: 0, bottom: 0, left: 0 },
     children: [
-      createSemanticInputNode({ id: "name-email", name: "input-email", label: "Kontakt" }),
-      createSemanticInputNode({ id: "name-password", name: "password-field", label: "Zugang" }),
+      createSemanticInputNode({
+        id: "name-email",
+        name: "input-email",
+        label: "Kontakt",
+      }),
+      createSemanticInputNode({
+        id: "name-password",
+        name: "password-field",
+        label: "Zugang",
+      }),
       createSemanticInputNode({
         id: "placeholder-url",
         name: "generic-input",
         label: "Wert",
-        placeholder: "Website Link eingeben"
-      })
-    ]
+        placeholder: "Website Link eingeben",
+      }),
+    ],
   };
 
-  const content = createDeterministicScreenFile(screen, { formHandlingMode: "legacy_use_state" }).content;
+  const content = createDeterministicScreenFile(screen, {
+    formHandlingMode: "legacy_use_state",
+  }).content;
   const emailBlock = findRenderedTextFieldBlock({ content, label: "Kontakt" });
   assert.ok(emailBlock.includes('type={"email"}'));
   assert.ok(emailBlock.includes('autoComplete={"email"}'));
 
-  const passwordBlock = findRenderedTextFieldBlock({ content, label: "Zugang" });
+  const passwordBlock = findRenderedTextFieldBlock({
+    content,
+    label: "Zugang",
+  });
   assert.ok(passwordBlock.includes('type={"password"}'));
   assert.ok(passwordBlock.includes('autoComplete={"current-password"}'));
 
-  const placeholderBlock = findRenderedTextFieldBlock({ content, label: "Wert" });
+  const placeholderBlock = findRenderedTextFieldBlock({
+    content,
+    label: "Wert",
+  });
   assert.ok(placeholderBlock.includes('placeholder={"Website Link eingeben"}'));
   assert.ok(placeholderBlock.includes('type={"url"}'));
   assert.ok(placeholderBlock.includes('autoComplete={"url"}'));
@@ -7581,11 +9088,22 @@ test("deterministic screen rendering prioritizes password type when multiple sem
     layoutMode: "VERTICAL" as const,
     gap: 8,
     padding: { top: 0, right: 0, bottom: 0, left: 0 },
-    children: [createSemanticInputNode({ id: "priority-field", name: "priority-field", label: "Email Passwort" })]
+    children: [
+      createSemanticInputNode({
+        id: "priority-field",
+        name: "priority-field",
+        label: "Email Passwort",
+      }),
+    ],
   };
 
-  const content = createDeterministicScreenFile(screen, { formHandlingMode: "legacy_use_state" }).content;
-  const block = findRenderedTextFieldBlock({ content, label: "Email Passwort" });
+  const content = createDeterministicScreenFile(screen, {
+    formHandlingMode: "legacy_use_state",
+  }).content;
+  const block = findRenderedTextFieldBlock({
+    content,
+    label: "Email Passwort",
+  });
   assert.ok(block.includes('type={"password"}'));
   assert.ok(block.includes('autoComplete={"current-password"}'));
 });
@@ -7597,19 +9115,39 @@ test("deterministic screen rendering infers required fields from star labels and
     layoutMode: "VERTICAL" as const,
     gap: 8,
     padding: { top: 0, right: 0, bottom: 0, left: 0 },
-    children: [createSemanticInputNode({ id: "required-email", name: "Email Input", label: "Email *" })]
+    children: [
+      createSemanticInputNode({
+        id: "required-email",
+        name: "Email Input",
+        label: "Email *",
+      }),
+    ],
   };
 
-  const content = createDeterministicScreenFile(screen, { formHandlingMode: "legacy_use_state" }).content;
+  const content = createDeterministicScreenFile(screen, {
+    formHandlingMode: "legacy_use_state",
+  }).content;
   const block = findRenderedTextFieldBlock({ content, label: "Email" });
   assert.equal(block.includes('label={"Email *"}'), false);
   assert.ok(block.includes('label={"Email"}'));
   assert.ok(block.includes("required"));
-  assert.ok(block.includes('aria-describedby={"email_input_required_email-helper-text"}'));
+  assert.ok(
+    block.includes(
+      'aria-describedby={"email_input_required_email-helper-text"}',
+    ),
+  );
   assert.ok(block.includes('"aria-required": "true"'));
   assert.ok(block.includes("slotProps={{"));
-  assert.ok(block.includes('htmlInput: { "aria-invalid": (Boolean((touchedFields["email_input_required_email"] ? fieldErrors["email_input_required_email"] : initialVisualErrors["email_input_required_email"]) ?? "")), "aria-describedby": "email_input_required_email-helper-text", "aria-required": "true" }'));
-  assert.ok(block.includes('formHelperText: { id: "email_input_required_email-helper-text" }'));
+  assert.ok(
+    block.includes(
+      'htmlInput: { "aria-invalid": (Boolean((touchedFields["email_input_required_email"] ? fieldErrors["email_input_required_email"] : initialVisualErrors["email_input_required_email"]) ?? "")), "aria-describedby": "email_input_required_email-helper-text", "aria-required": "true" }',
+    ),
+  );
+  assert.ok(
+    block.includes(
+      'formHelperText: { id: "email_input_required_email-helper-text" }',
+    ),
+  );
   assert.equal(block.includes("InputProps={{"), false);
   assert.equal(block.includes("InputLabelProps={{"), false);
   assert.equal(block.includes("FormHelperTextProps={{"), false);
@@ -7622,7 +9160,7 @@ test("deterministic screen rendering maps TextField suffix adornment via slotPro
   const amountInput = createSemanticInputNode({
     id: "amount-input",
     name: "Amount Input",
-    label: "Betrag"
+    label: "Betrag",
   });
   amountInput.children.push({
     id: "amount-input-suffix",
@@ -7631,7 +9169,7 @@ test("deterministic screen rendering maps TextField suffix adornment via slotPro
     type: "text" as const,
     text: "€",
     x: 260,
-    y: 28
+    y: 28,
   });
 
   const screen = {
@@ -7640,16 +9178,30 @@ test("deterministic screen rendering maps TextField suffix adornment via slotPro
     layoutMode: "VERTICAL" as const,
     gap: 8,
     padding: { top: 0, right: 0, bottom: 0, left: 0 },
-    children: [amountInput]
+    children: [amountInput],
   };
 
-  const content = createDeterministicScreenFile(screen, { formHandlingMode: "legacy_use_state" }).content;
+  const content = createDeterministicScreenFile(screen, {
+    formHandlingMode: "legacy_use_state",
+  }).content;
   const block = findRenderedTextFieldBlock({ content, label: "Betrag" });
   assert.ok(content.includes("InputAdornment"));
   assert.ok(block.includes("slotProps={{"));
-  assert.ok(block.includes('input: { endAdornment: <InputAdornment position="end">{"€"}</InputAdornment> }'));
-  assert.ok(block.includes('htmlInput: { "aria-invalid": (Boolean((touchedFields["amount_input_amount_input"] ? fieldErrors["amount_input_amount_input"] : initialVisualErrors["amount_input_amount_input"]) ?? "")), "aria-describedby": "amount_input_amount_input-helper-text" }'));
-  assert.ok(block.includes('formHelperText: { id: "amount_input_amount_input-helper-text" }'));
+  assert.ok(
+    block.includes(
+      'input: { endAdornment: <InputAdornment position="end">{"€"}</InputAdornment> }',
+    ),
+  );
+  assert.ok(
+    block.includes(
+      'htmlInput: { "aria-invalid": (Boolean((touchedFields["amount_input_amount_input"] ? fieldErrors["amount_input_amount_input"] : initialVisualErrors["amount_input_amount_input"]) ?? "")), "aria-describedby": "amount_input_amount_input-helper-text" }',
+    ),
+  );
+  assert.ok(
+    block.includes(
+      'formHelperText: { id: "amount_input_amount_input-helper-text" }',
+    ),
+  );
   assert.equal(block.includes("InputProps={{"), false);
   assert.equal(block.includes("InputLabelProps={{"), false);
   assert.equal(block.includes("FormHelperTextProps={{"), false);
@@ -7665,7 +9217,12 @@ test("deterministic screen rendering emits form validation state scaffolding for
     height: 200,
     padding: { top: 0, right: 0, bottom: 0, left: 0 },
     children: [
-      createSemanticInputNode({ id: "email-field", name: "Email Input", label: "Email *", placeholder: "name@example.com" }),
+      createSemanticInputNode({
+        id: "email-field",
+        name: "Email Input",
+        label: "Email *",
+        placeholder: "name@example.com",
+      }),
       {
         id: "primary-submit",
         name: "Primary Submit",
@@ -7683,27 +9240,69 @@ test("deterministic screen rendering emits form validation state scaffolding for
             nodeType: "TEXT",
             type: "text" as const,
             text: "Continue",
-            fillColor: "#ffffff"
-          }
-        ]
-      }
-    ]
+            fillColor: "#ffffff",
+          },
+        ],
+      },
+    ],
   };
 
-  const content = createDeterministicScreenFile(screen, { formHandlingMode: "legacy_use_state" }).content;
-  assert.ok(content.includes('component="form" onSubmit={handleSubmit} noValidate'));
-  assert.ok(content.includes("const initialVisualErrors: Record<string, string> = "));
-  assert.ok(content.includes("const resolvedInitialVisualErrors: Record<string, string> = initialVisualErrors;"));
-  assert.ok(content.includes("const requiredFields: Record<string, boolean> = "));
-  assert.ok(content.includes("const fieldValidationTypes: Record<string, string> = "));
-  assert.ok(content.includes("const fieldValidationMessages: Record<string, string> = "));
-  assert.ok(content.includes("const [fieldErrors, setFieldErrors] = useState<Record<string, string>>(resolvedInitialVisualErrors);"));
-  assert.ok(content.includes("const [touchedFields, setTouchedFields] = useState<Record<string, boolean>>({});"));
-  assert.ok(content.includes("const validateFieldValue = (fieldKey: string, value: string): string => {"));
-  assert.ok(content.includes("const validateForm = (values: Record<string, string>): Record<string, string> => {"));
-  assert.ok(content.includes("const handleFieldBlur = (fieldKey: string): void => {"));
-  assert.ok(content.includes("const handleSubmit = (event: FormEvent<HTMLFormElement>): void => {"));
-  assert.ok(content.includes('import type { FormEvent, ChangeEvent } from "react";'));
+  const content = createDeterministicScreenFile(screen, {
+    formHandlingMode: "legacy_use_state",
+  }).content;
+  assert.ok(
+    content.includes('component="form" onSubmit={handleSubmit} noValidate'),
+  );
+  assert.ok(
+    content.includes("const initialVisualErrors: Record<string, string> = "),
+  );
+  assert.ok(
+    content.includes(
+      "const resolvedInitialVisualErrors: Record<string, string> = initialVisualErrors;",
+    ),
+  );
+  assert.ok(
+    content.includes("const requiredFields: Record<string, boolean> = "),
+  );
+  assert.ok(
+    content.includes("const fieldValidationTypes: Record<string, string> = "),
+  );
+  assert.ok(
+    content.includes(
+      "const fieldValidationMessages: Record<string, string> = ",
+    ),
+  );
+  assert.ok(
+    content.includes(
+      "const [fieldErrors, setFieldErrors] = useState<Record<string, string>>(resolvedInitialVisualErrors);",
+    ),
+  );
+  assert.ok(
+    content.includes(
+      "const [touchedFields, setTouchedFields] = useState<Record<string, boolean>>({});",
+    ),
+  );
+  assert.ok(
+    content.includes(
+      "const validateFieldValue = (fieldKey: string, value: string): string => {",
+    ),
+  );
+  assert.ok(
+    content.includes(
+      "const validateForm = (values: Record<string, string>): Record<string, string> => {",
+    ),
+  );
+  assert.ok(
+    content.includes("const handleFieldBlur = (fieldKey: string): void => {"),
+  );
+  assert.ok(
+    content.includes(
+      "const handleSubmit = (event: FormEvent<HTMLFormElement>): void => {",
+    ),
+  );
+  assert.ok(
+    content.includes('import type { FormEvent, ChangeEvent } from "react";'),
+  );
   assert.equal(content.includes("const primarySubmitButtonKey"), false);
 });
 
@@ -7716,29 +9315,68 @@ test("deterministic screen rendering uses react-hook-form scaffolding by default
     width: 360,
     height: 200,
     padding: { top: 0, right: 0, bottom: 0, left: 0 },
-    children: [createSemanticInputNode({ id: "rhf-email", name: "Email Input", label: "Email *", placeholder: "name@example.com" })]
+    children: [
+      createSemanticInputNode({
+        id: "rhf-email",
+        name: "Email Input",
+        label: "Email *",
+        placeholder: "name@example.com",
+      }),
+    ],
   };
 
   const content = createDeterministicScreenFile(screen).content;
-  assert.ok(content.includes('component="form" onSubmit={((event) => { void handleSubmit(onSubmit)(event); })} noValidate'));
-  assert.ok(content.includes('import { Controller, useForm } from "react-hook-form";'));
-  assert.ok(content.includes('import { zodResolver } from "@hookform/resolvers/zod";'));
+  assert.ok(
+    content.includes(
+      'component="form" onSubmit={((event) => { void handleSubmit(onSubmit)(event); })} noValidate',
+    ),
+  );
+  assert.ok(
+    content.includes('import { Controller, useForm } from "react-hook-form";'),
+  );
+  assert.ok(
+    content.includes('import { zodResolver } from "@hookform/resolvers/zod";'),
+  );
   assert.ok(content.includes('import { z } from "zod";'));
   assert.ok(content.includes("const fieldSchemaSpecs = "));
   assert.ok(content.includes("type FieldSchemaSpec = {"));
-  assert.ok(content.includes("const createFieldSchema = <TSpec extends FieldSchemaSpec>({"));
   assert.ok(
-    content.includes('type FieldSchemaOutput<TSpec extends FieldSchemaSpec> = TSpec["validationType"] extends "number" ? number | undefined : string;')
+    content.includes(
+      "const createFieldSchema = <TSpec extends FieldSchemaSpec>({",
+    ),
   );
-  assert.ok(/createFieldSchema\(\{ spec: fieldSchemaSpecs\["[^"]+"\] \}\)/.test(content));
+  assert.ok(
+    content.includes(
+      'type FieldSchemaOutput<TSpec extends FieldSchemaSpec> = TSpec["validationType"] extends "number" ? number | undefined : string;',
+    ),
+  );
+  assert.ok(
+    /createFieldSchema\(\{ spec: fieldSchemaSpecs\["[^"]+"\] \}\)/.test(
+      content,
+    ),
+  );
   assert.ok(content.includes("type FormInput = z.input<typeof formSchema>;"));
   assert.ok(content.includes("type FormOutput = z.output<typeof formSchema>;"));
-  assert.ok(content.includes("const { control, handleSubmit, formState: { isSubmitting, isSubmitted }, reset, setError } = useForm<FormInput>({"));
+  assert.ok(
+    content.includes(
+      "const { control, handleSubmit, formState: { isSubmitting, isSubmitted }, reset, setError } = useForm<FormInput>({",
+    ),
+  );
   assert.ok(content.includes("if (!isTouched && !isSubmitted) {"));
   assert.ok(content.includes("<Controller"));
   assert.equal(content.includes("fieldValidationTypes[fieldKey]"), false);
-  assert.equal(content.includes("const [formValues, setFormValues] = useState<Record<string, string>>("), false);
-  assert.equal(content.includes("const validateFieldValue = (fieldKey: string, value: string): string => {"), false);
+  assert.equal(
+    content.includes(
+      "const [formValues, setFormValues] = useState<Record<string, string>>(",
+    ),
+    false,
+  );
+  assert.equal(
+    content.includes(
+      "const validateFieldValue = (fieldKey: string, value: string): string => {",
+    ),
+    false,
+  );
 });
 
 test("deterministic screen rendering enforces select option membership in RHF schemas", () => {
@@ -7762,32 +9400,38 @@ test("deterministic screen rendering enforces select option membership in RHF sc
             name: "Label",
             nodeType: "TEXT",
             type: "text" as const,
-            text: "Status"
+            text: "Status",
           },
           {
             id: "rhf-status-select-option-1",
             name: "Option 1",
             nodeType: "TEXT",
             type: "text" as const,
-            text: "Aktiv"
+            text: "Aktiv",
           },
           {
             id: "rhf-status-select-option-2",
             name: "Option 2",
             nodeType: "TEXT",
             type: "text" as const,
-            text: "Inaktiv"
-          }
-        ]
-      }
-    ]
+            text: "Inaktiv",
+          },
+        ],
+      },
+    ],
   };
 
   const content = createDeterministicScreenFile(screen).content;
-  assert.ok(content.includes("const selectOptions: Record<string, string[]> = "));
+  assert.ok(
+    content.includes("const selectOptions: Record<string, string[]> = "),
+  );
   assert.ok(content.includes("const selectFieldOptions = spec.selectOptions;"));
   assert.ok(content.includes("!selectFieldOptions.includes(rawValue)"));
-  assert.ok(content.includes("const selectValidationMessage = spec.selectValidationMessage;"));
+  assert.ok(
+    content.includes(
+      "const selectValidationMessage = spec.selectValidationMessage;",
+    ),
+  );
 });
 
 test("deterministic screen rendering seeds visual error examples from red outlines", () => {
@@ -7816,17 +9460,31 @@ test("deterministic screen rendering seeds visual error examples from red outlin
             nodeType: "TEXT",
             type: "text" as const,
             text: "Email",
-            y: 0
-          }
-        ]
-      }
-    ]
+            y: 0,
+          },
+        ],
+      },
+    ],
   };
 
-  const content = createDeterministicScreenFile(screen, { formHandlingMode: "legacy_use_state" }).content;
-  assert.ok(content.includes('"email_input_visual_error_field": "Please enter a valid email address."'));
-  assert.ok(content.includes("const resolvedInitialVisualErrors: Record<string, string> = initialVisualErrors;"));
-  assert.ok(content.includes("const [fieldErrors, setFieldErrors] = useState<Record<string, string>>(resolvedInitialVisualErrors);"));
+  const content = createDeterministicScreenFile(screen, {
+    formHandlingMode: "legacy_use_state",
+  }).content;
+  assert.ok(
+    content.includes(
+      '"email_input_visual_error_field": "Please enter a valid email address."',
+    ),
+  );
+  assert.ok(
+    content.includes(
+      "const resolvedInitialVisualErrors: Record<string, string> = initialVisualErrors;",
+    ),
+  );
+  assert.ok(
+    content.includes(
+      "const [fieldErrors, setFieldErrors] = useState<Record<string, string>>(resolvedInitialVisualErrors);",
+    ),
+  );
   const block = findRenderedTextFieldBlock({ content, label: "Email" });
   assert.ok(block.includes("error={"));
   assert.ok(block.includes("helperText={"));
@@ -7854,40 +9512,58 @@ test("deterministic screen rendering applies validation bindings for select cont
             name: "Label",
             nodeType: "TEXT",
             type: "text" as const,
-            text: "Status *"
+            text: "Status *",
           },
           {
             id: "status-select-option-1",
             name: "Option 1",
             nodeType: "TEXT",
             type: "text" as const,
-            text: "Aktiv"
+            text: "Aktiv",
           },
           {
             id: "status-select-option-2",
             name: "Option 2",
             nodeType: "TEXT",
             type: "text" as const,
-            text: "Inaktiv"
-          }
-        ]
-      }
-    ]
+            text: "Inaktiv",
+          },
+        ],
+      },
+    ],
   };
 
-  const content = createDeterministicScreenFile(screen, { formHandlingMode: "legacy_use_state" }).content;
+  const content = createDeterministicScreenFile(screen, {
+    formHandlingMode: "legacy_use_state",
+  }).content;
   const block = findRenderedFormControlBlock({ content, label: "Status" });
   assert.equal(block.includes('label={"Status *"}'), false);
   assert.ok(block.includes('label={"Status"}'));
   assert.ok(block.includes("required"));
-  assert.ok(block.includes('aria-describedby={"status_select_status_select-helper-text"}'));
+  assert.ok(
+    block.includes(
+      'aria-describedby={"status_select_status_select-helper-text"}',
+    ),
+  );
   assert.ok(block.includes('aria-required="true"'));
   assert.ok(block.includes("error={"));
   assert.ok(block.includes("onBlur={() => handleFieldBlur("));
-  assert.ok(block.includes("onChange={(event: SelectChangeEvent<string>) => updateFieldValue("));
-  assert.ok(block.includes('<FormHelperText id={"status_select_status_select-helper-text"}>{'));
+  assert.ok(
+    block.includes(
+      "onChange={(event: SelectChangeEvent<string>) => updateFieldValue(",
+    ),
+  );
+  assert.ok(
+    block.includes(
+      '<FormHelperText id={"status_select_status_select-helper-text"}>{',
+    ),
+  );
   assert.ok(content.includes('import type { FormEvent } from "react";'));
-  assert.ok(content.includes('import type { SelectChangeEvent } from "@mui/material/Select";'));
+  assert.ok(
+    content.includes(
+      'import type { SelectChangeEvent } from "@mui/material/Select";',
+    ),
+  );
 });
 
 test("deterministic screen rendering assigns a single primary submit button and explicit button types", () => {
@@ -7900,7 +9576,11 @@ test("deterministic screen rendering assigns a single primary submit button and 
     height: 360,
     padding: { top: 0, right: 0, bottom: 0, left: 0 },
     children: [
-      createSemanticInputNode({ id: "submit-email", name: "Email Input", label: "Email" }),
+      createSemanticInputNode({
+        id: "submit-email",
+        name: "Email Input",
+        label: "Email",
+      }),
       {
         id: "btn-secondary",
         name: "Secondary Action",
@@ -7918,9 +9598,9 @@ test("deterministic screen rendering assigns a single primary submit button and 
             nodeType: "TEXT",
             type: "text" as const,
             text: "Secondary",
-            fillColor: "#292929"
-          }
-        ]
+            fillColor: "#292929",
+          },
+        ],
       },
       {
         id: "btn-primary",
@@ -7939,9 +9619,9 @@ test("deterministic screen rendering assigns a single primary submit button and 
             nodeType: "TEXT",
             type: "text" as const,
             text: "Primary",
-            fillColor: "#ffffff"
-          }
-        ]
+            fillColor: "#ffffff",
+          },
+        ],
       },
       {
         id: "btn-disabled",
@@ -7961,11 +9641,11 @@ test("deterministic screen rendering assigns a single primary submit button and 
             nodeType: "TEXT",
             type: "text" as const,
             text: "Disabled",
-            fillColor: "#ffffff"
-          }
-        ]
-      }
-    ]
+            fillColor: "#ffffff",
+          },
+        ],
+      },
+    ],
   };
 
   const content = createDeterministicScreenFile(screen).content;
@@ -8009,9 +9689,9 @@ test("deterministic screen rendering keeps plain buttons on screens without form
             nodeType: "TEXT",
             type: "text" as const,
             text: "Secondary",
-            fillColor: "#292929"
-          }
-        ]
+            fillColor: "#292929",
+          },
+        ],
       },
       {
         id: "btn-plain-primary",
@@ -8030,16 +9710,16 @@ test("deterministic screen rendering keeps plain buttons on screens without form
             nodeType: "TEXT",
             type: "text" as const,
             text: "Primary",
-            fillColor: "#ffffff"
-          }
-        ]
-      }
-    ]
+            fillColor: "#ffffff",
+          },
+        ],
+      },
+    ],
   };
 
   const content = createDeterministicScreenFile(screen).content;
   assert.equal(content.includes("const primarySubmitButtonKey"), false);
-  assert.equal(content.includes('type={primarySubmitButtonKey === '), false);
+  assert.equal(content.includes("type={primarySubmitButtonKey === "), false);
 
   const secondaryLine = findRenderedButtonLine({ content, label: "Secondary" });
   assert.ok(secondaryLine.includes('type="button"'));
@@ -8063,7 +9743,7 @@ test("deterministic screen rendering infers heading hierarchy components from ty
         type: "text" as const,
         text: "Main Heading",
         fontSize: 40,
-        fontWeight: 700
+        fontWeight: 700,
       },
       {
         id: "heading-section",
@@ -8072,7 +9752,7 @@ test("deterministic screen rendering infers heading hierarchy components from ty
         type: "text" as const,
         text: "Section Heading",
         fontSize: 30,
-        fontWeight: 650
+        fontWeight: 650,
       },
       {
         id: "heading-sub",
@@ -8081,7 +9761,7 @@ test("deterministic screen rendering infers heading hierarchy components from ty
         type: "text" as const,
         text: "Sub Heading",
         fontSize: 24,
-        fontWeight: 600
+        fontWeight: 600,
       },
       {
         id: "heading-detail",
@@ -8090,7 +9770,7 @@ test("deterministic screen rendering infers heading hierarchy components from ty
         type: "text" as const,
         text: "Detail Heading",
         fontSize: 22,
-        fontWeight: 600
+        fontWeight: 600,
       },
       {
         id: "heading-minor",
@@ -8099,7 +9779,7 @@ test("deterministic screen rendering infers heading hierarchy components from ty
         type: "text" as const,
         text: "Minor Heading",
         fontSize: 20,
-        fontWeight: 600
+        fontWeight: 600,
       },
       {
         id: "heading-note",
@@ -8108,7 +9788,7 @@ test("deterministic screen rendering infers heading hierarchy components from ty
         type: "text" as const,
         text: "Note Heading",
         fontSize: 18,
-        fontWeight: 650
+        fontWeight: 650,
       },
       {
         id: "body-copy",
@@ -8117,16 +9797,22 @@ test("deterministic screen rendering infers heading hierarchy components from ty
         type: "text" as const,
         text: "Body text",
         fontSize: 14,
-        fontWeight: 400
-      }
-    ]
+        fontWeight: 400,
+      },
+    ],
   };
 
   const content = createDeterministicScreenFile(screen).content;
   const h1Line = findRenderedTypographyLine({ content, text: "Main Heading" });
-  const h2Line = findRenderedTypographyLine({ content, text: "Section Heading" });
+  const h2Line = findRenderedTypographyLine({
+    content,
+    text: "Section Heading",
+  });
   const h3Line = findRenderedTypographyLine({ content, text: "Sub Heading" });
-  const h4Line = findRenderedTypographyLine({ content, text: "Detail Heading" });
+  const h4Line = findRenderedTypographyLine({
+    content,
+    text: "Detail Heading",
+  });
   const h5Line = findRenderedTypographyLine({ content, text: "Minor Heading" });
   const h6Line = findRenderedTypographyLine({ content, text: "Note Heading" });
   const bodyLine = findRenderedTypographyLine({ content, text: "Body text" });
@@ -8165,7 +9851,14 @@ test("deterministic screen rendering honors explicit board component semantics f
                   cornerRadius: 64,
                   fills: [{ type: "SOLID", color: toFigmaColor("#ee0000") }],
                   absoluteBoundingBox: { x: 0, y: 0, width: 240, height: 48 },
-                  children: [{ id: "board-button-text", type: "TEXT", name: "Label", characters: "Vorhaben hinzufügen" }]
+                  children: [
+                    {
+                      id: "board-button-text",
+                      type: "TEXT",
+                      name: "Label",
+                      characters: "Vorhaben hinzufügen",
+                    },
+                  ],
                 },
                 {
                   id: "board-card",
@@ -8174,7 +9867,14 @@ test("deterministic screen rendering honors explicit board component semantics f
                   cornerRadius: 12,
                   fills: [{ type: "SOLID", color: toFigmaColor("#ffffff") }],
                   absoluteBoundingBox: { x: 0, y: 64, width: 320, height: 160 },
-                  children: [{ id: "board-card-text", type: "TEXT", name: "Title", characters: "Card Content" }]
+                  children: [
+                    {
+                      id: "board-card-text",
+                      type: "TEXT",
+                      name: "Title",
+                      characters: "Card Content",
+                    },
+                  ],
                 },
                 {
                   id: "board-divider",
@@ -8182,7 +9882,7 @@ test("deterministic screen rendering honors explicit board component semantics f
                   name: "<Divider>",
                   fills: [{ type: "SOLID", color: toFigmaColor("#d9d9d9") }],
                   absoluteBoundingBox: { x: 0, y: 240, width: 320, height: 1 },
-                  children: []
+                  children: [],
                 },
                 {
                   id: "board-alert",
@@ -8190,7 +9890,14 @@ test("deterministic screen rendering honors explicit board component semantics f
                   name: "<Alert>",
                   fills: [{ type: "SOLID", color: toFigmaColor("#e6f4ff") }],
                   absoluteBoundingBox: { x: 0, y: 264, width: 320, height: 56 },
-                  children: [{ id: "board-alert-text", type: "TEXT", name: "Message", characters: "Bitte beachten" }]
+                  children: [
+                    {
+                      id: "board-alert-text",
+                      type: "TEXT",
+                      name: "Message",
+                      characters: "Bitte beachten",
+                    },
+                  ],
                 },
                 {
                   id: "board-stack",
@@ -8198,14 +9905,21 @@ test("deterministic screen rendering honors explicit board component semantics f
                   name: "<Stack2>(Nested)",
                   layoutMode: "VERTICAL",
                   absoluteBoundingBox: { x: 0, y: 336, width: 320, height: 96 },
-                  children: [{ id: "board-stack-text", type: "TEXT", name: "<Dynamic Typography>", characters: "Stack Body" }]
-                }
-              ]
-            }
-          ]
-        }
-      ]
-    }
+                  children: [
+                    {
+                      id: "board-stack-text",
+                      type: "TEXT",
+                      name: "<Dynamic Typography>",
+                      characters: "Stack Body",
+                    },
+                  ],
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    },
   });
 
   const screen = ir.screens[0];
@@ -8214,7 +9928,7 @@ test("deterministic screen rendering honors explicit board component semantics f
 
   assertValidTsx({
     content,
-    filePath: toDeterministicScreenPath(screen?.name ?? "Board Semantics")
+    filePath: toDeterministicScreenPath(screen?.name ?? "Board Semantics"),
   });
   assert.ok(content.includes("<Button "));
   assert.ok(content.includes('{"Vorhaben hinzufügen"}'));
@@ -8257,21 +9971,21 @@ test("deterministic screen rendering preserves composite button surfaces and vec
             width: 24,
             height: 24,
             fillColor: "#ee0000",
-            vectorPaths: ["M0 0H24V24H0Z"]
+            vectorPaths: ["M0 0H24V24H0Z"],
           },
           {
             id: "action-card-title",
             name: "Title",
             nodeType: "TEXT",
             type: "text" as const,
-            text: "Druckcenter"
+            text: "Druckcenter",
           },
           {
             id: "action-card-meta",
             name: "Meta",
             nodeType: "TEXT",
             type: "text" as const,
-            text: "Dokumente verwalten"
+            text: "Dokumente verwalten",
           },
           {
             id: "action-card-chip",
@@ -8284,11 +9998,11 @@ test("deterministic screen rendering preserves composite button surfaces and vec
                 name: "Chip Text",
                 nodeType: "TEXT",
                 type: "text" as const,
-                text: "Bearbeitung gesperrt"
-              }
-            ]
-          }
-        ]
+                text: "Bearbeitung gesperrt",
+              },
+            ],
+          },
+        ],
       },
       {
         id: "brand-mark",
@@ -8298,20 +10012,20 @@ test("deterministic screen rendering preserves composite button surfaces and vec
         width: 24,
         height: 24,
         fillColor: "#ee0000",
-        vectorPaths: ["M0 0H24V24H0Z"]
-      }
-    ]
+        vectorPaths: ["M0 0H24V24H0Z"],
+      },
+    ],
   };
 
   const content = createDeterministicScreenFile(screen).content;
   assertValidTsx({
     content,
-    filePath: toDeterministicScreenPath(screen.name)
+    filePath: toDeterministicScreenPath(screen.name),
   });
   assert.ok(content.includes("<Card "));
   assert.ok(content.includes('{"Druckcenter"}'));
   assert.ok(content.includes('label={"Bearbeitung gesperrt"}'));
-  assert.equal(content.includes('<Button variant='), false);
+  assert.equal(content.includes("<Button variant="), false);
   assert.ok(content.includes("<SvgIcon"));
   assert.ok(content.includes('viewBox={"0 0 24 24"}'));
 });
@@ -8355,7 +10069,7 @@ test("deterministic screen rendering keeps Sparkasse-style branded headers struc
                 width: 24,
                 height: 24,
                 fillColor: "#ffffff",
-                vectorPaths: ["M0 0H24V24H0Z"]
+                vectorPaths: ["M0 0H24V24H0Z"],
               },
               {
                 id: "brand-title",
@@ -8363,9 +10077,9 @@ test("deterministic screen rendering keeps Sparkasse-style branded headers struc
                 nodeType: "TEXT",
                 type: "text" as const,
                 text: "Sparkasse Musterstadt",
-                fillColor: "#ffffff"
-              }
-            ]
+                fillColor: "#ffffff",
+              },
+            ],
           },
           {
             id: "nav-start",
@@ -8383,9 +10097,9 @@ test("deterministic screen rendering keeps Sparkasse-style branded headers struc
                 nodeType: "TEXT",
                 type: "text" as const,
                 text: "Startseite",
-                fillColor: "#ffffff"
-              }
-            ]
+                fillColor: "#ffffff",
+              },
+            ],
           },
           {
             id: "nav-search",
@@ -8403,9 +10117,9 @@ test("deterministic screen rendering keeps Sparkasse-style branded headers struc
                 nodeType: "TEXT",
                 type: "text" as const,
                 text: "Personensuche",
-                fillColor: "#ffffff"
-              }
-            ]
+                fillColor: "#ffffff",
+              },
+            ],
           },
           {
             id: "nav-messenger",
@@ -8423,9 +10137,9 @@ test("deterministic screen rendering keeps Sparkasse-style branded headers struc
                 nodeType: "TEXT",
                 type: "text" as const,
                 text: "Messenger",
-                fillColor: "#ffffff"
-              }
-            ]
+                fillColor: "#ffffff",
+              },
+            ],
           },
           {
             id: "nav-profile",
@@ -8443,11 +10157,11 @@ test("deterministic screen rendering keeps Sparkasse-style branded headers struc
                 nodeType: "TEXT",
                 type: "text" as const,
                 text: "PB",
-                fillColor: "#ffffff"
-              }
-            ]
-          }
-        ]
+                fillColor: "#ffffff",
+              },
+            ],
+          },
+        ],
       },
       {
         id: "context-header",
@@ -8476,7 +10190,7 @@ test("deterministic screen rendering keeps Sparkasse-style branded headers struc
                 nodeType: "TEXT",
                 type: "text" as const,
                 text: "Gewerbliche Finanzierung",
-                fillColor: "#222222"
+                fillColor: "#222222",
               },
               {
                 id: "context-subtitle",
@@ -8484,9 +10198,9 @@ test("deterministic screen rendering keeps Sparkasse-style branded headers struc
                 nodeType: "TEXT",
                 type: "text" as const,
                 text: "Ben Sommer",
-                fillColor: "#565656"
-              }
-            ]
+                fillColor: "#565656",
+              },
+            ],
           },
           {
             id: "context-action-save",
@@ -8506,9 +10220,9 @@ test("deterministic screen rendering keeps Sparkasse-style branded headers struc
                 nodeType: "TEXT",
                 type: "text" as const,
                 text: "Merken",
-                fillColor: "#565656"
-              }
-            ]
+                fillColor: "#565656",
+              },
+            ],
           },
           {
             id: "context-action-help",
@@ -8528,19 +10242,19 @@ test("deterministic screen rendering keeps Sparkasse-style branded headers struc
                 nodeType: "TEXT",
                 type: "text" as const,
                 text: "Hilfe",
-                fillColor: "#565656"
-              }
-            ]
-          }
-        ]
-      }
-    ]
+                fillColor: "#565656",
+              },
+            ],
+          },
+        ],
+      },
+    ],
   };
 
   const content = createDeterministicScreenFile(screen).content;
   assertValidTsx({
     content,
-    filePath: toDeterministicScreenPath(screen.name)
+    filePath: toDeterministicScreenPath(screen.name),
   });
   assert.ok(content.includes("<AppBar "));
   assert.ok(content.includes('{"Sparkasse Musterstadt"}'));
@@ -8553,11 +10267,13 @@ test("deterministic screen rendering keeps Sparkasse-style branded headers struc
   assert.ok(content.includes('{"Merken"}'));
   assert.ok(content.includes('{"Hilfe"}'));
   assert.equal(content.includes("<Tabs "), false);
-  assert.equal(content.includes("<IconButton edge=\"end\""), false);
+  assert.equal(content.includes('<IconButton edge="end"'), false);
 });
 
 test("generateArtifacts uses upstream code connect mappings from IR during generation", async () => {
-  const projectDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-generator-code-connect-"));
+  const projectDir = await mkdtemp(
+    path.join(os.tmpdir(), "workspace-dev-generator-code-connect-"),
+  );
   const ir = createIr();
   ir.screens[0]!.children = [
     {
@@ -8573,10 +10289,10 @@ test("generateArtifacts uses upstream code connect mappings from IR during gener
         componentName: "AcmeButton",
         source: "src/components/AcmeButton.tsx",
         propContract: {
-          children: "{{text}}"
-        }
-      }
-    }
+          children: "{{text}}",
+        },
+      },
+    },
   ];
 
   await generateArtifacts({
@@ -8584,18 +10300,29 @@ test("generateArtifacts uses upstream code connect mappings from IR during gener
     ir,
     llmCodegenMode: "deterministic",
     llmModelName: "deterministic",
-    onLog: () => {}
+    onLog: () => {},
   });
 
-  const screenContent = await readFile(path.join(projectDir, toDeterministicScreenPath("Übersicht")), "utf8");
-  assert.ok(screenContent.includes('import AcmeButton from "../components/AcmeButton";'));
+  const screenContent = await readFile(
+    path.join(projectDir, toDeterministicScreenPath("Übersicht")),
+    "utf8",
+  );
+  assert.ok(
+    screenContent.includes(
+      'import AcmeButton from "../components/AcmeButton";',
+    ),
+  );
   assert.ok(screenContent.includes("<AcmeButton "));
-  assert.ok(screenContent.includes('data-figma-node-id={"code-connect-button"}'));
+  assert.ok(
+    screenContent.includes('data-figma-node-id={"code-connect-button"}'),
+  );
   assert.ok(screenContent.includes('>{"Weiter"}</AcmeButton>'));
 });
 
 test("generateArtifacts renders metadata-driven semantic containers with HTML5 components", async () => {
-  const projectDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-generator-semantic-container-"));
+  const projectDir = await mkdtemp(
+    path.join(os.tmpdir(), "workspace-dev-generator-semantic-container-"),
+  );
   const ir = createIr();
   ir.screens[0]!.children = [
     {
@@ -8612,10 +10339,10 @@ test("generateArtifacts renders metadata-driven semantic containers with HTML5 c
           name: "Heading",
           nodeType: "TEXT",
           type: "text",
-          text: "Dashboard"
-        }
-      ]
-    }
+          text: "Dashboard",
+        },
+      ],
+    },
   ];
 
   await generateArtifacts({
@@ -8623,10 +10350,13 @@ test("generateArtifacts renders metadata-driven semantic containers with HTML5 c
     ir,
     llmCodegenMode: "deterministic",
     llmModelName: "deterministic",
-    onLog: () => {}
+    onLog: () => {},
   });
 
-  const screenContent = await readFile(path.join(projectDir, toDeterministicScreenPath("Übersicht")), "utf8");
+  const screenContent = await readFile(
+    path.join(projectDir, toDeterministicScreenPath("Übersicht")),
+    "utf8",
+  );
   assert.ok(screenContent.includes("<Box "));
   assert.ok(screenContent.includes('component="header"'));
   assert.ok(screenContent.includes('role="banner"'));
@@ -8634,7 +10364,9 @@ test("generateArtifacts renders metadata-driven semantic containers with HTML5 c
 });
 
 test("generateArtifacts prefers MCP asset references for images and icon wrappers", async () => {
-  const projectDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-generator-mcp-assets-"));
+  const projectDir = await mkdtemp(
+    path.join(os.tmpdir(), "workspace-dev-generator-mcp-assets-"),
+  );
   const ir = createIr();
   ir.screens[0]!.children = [
     {
@@ -8647,8 +10379,8 @@ test("generateArtifacts prefers MCP asset references for images and icon wrapper
       asset: {
         source: "/mcp/assets/hero.png",
         kind: "image",
-        alt: "Hero image"
-      }
+        alt: "Hero image",
+      },
     },
     {
       id: "mcp-icon",
@@ -8660,10 +10392,10 @@ test("generateArtifacts prefers MCP asset references for images and icon wrapper
       asset: {
         source: "/mcp/assets/settings.svg",
         kind: "icon",
-        label: "Settings icon"
+        label: "Settings icon",
       },
-      children: []
-    }
+      children: [],
+    },
   ];
 
   await generateArtifacts({
@@ -8671,18 +10403,29 @@ test("generateArtifacts prefers MCP asset references for images and icon wrapper
     ir,
     llmCodegenMode: "deterministic",
     llmModelName: "deterministic",
-    onLog: () => {}
+    onLog: () => {},
   });
 
-  const screenContent = await readFile(path.join(projectDir, toDeterministicScreenPath("Übersicht")), "utf8");
-  assert.ok(screenContent.includes('src={"\\u002Fmcp\\u002Fassets\\u002Fhero.png"}'));
+  const screenContent = await readFile(
+    path.join(projectDir, toDeterministicScreenPath("Übersicht")),
+    "utf8",
+  );
+  assert.ok(
+    screenContent.includes('src={"\\u002Fmcp\\u002Fassets\\u002Fhero.png"}'),
+  );
   assert.equal(screenContent.includes("data:image/svg+xml;utf8"), false);
-  assert.ok(screenContent.includes('src={"\\u002Fmcp\\u002Fassets\\u002Fsettings.svg"}'));
+  assert.ok(
+    screenContent.includes(
+      'src={"\\u002Fmcp\\u002Fassets\\u002Fsettings.svg"}',
+    ),
+  );
   assert.ok(screenContent.includes('component="img"'));
 });
 
 test("generateArtifacts uses the resolved Storybook theme payload instead of IR-derived theme output", async () => {
-  const projectDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-generator-storybook-theme-"));
+  const projectDir = await mkdtemp(
+    path.join(os.tmpdir(), "workspace-dev-generator-storybook-theme-"),
+  );
   const ir = createIr();
 
   await generateArtifacts({
@@ -8691,22 +10434,36 @@ test("generateArtifacts uses the resolved Storybook theme payload instead of IR-
     resolvedStorybookTheme: createResolvedStorybookTheme(),
     llmCodegenMode: "deterministic",
     llmModelName: "deterministic",
-    onLog: () => {}
+    onLog: () => {},
   });
 
-  const themeContent = await readFile(path.join(projectDir, "src", "theme", "theme.ts"), "utf8");
-  const tokensContent = JSON.parse(await readFile(path.join(projectDir, "src", "theme", "tokens.json"), "utf8")) as {
+  const themeContent = await readFile(
+    path.join(projectDir, "src", "theme", "theme.ts"),
+    "utf8",
+  );
+  const tokensContent = JSON.parse(
+    await readFile(
+      path.join(projectDir, "src", "theme", "tokens.json"),
+      "utf8",
+    ),
+  ) as {
     customerBrandId: string;
     light: {
       spacingBase: number;
     };
   };
-  const appContent = await readFile(path.join(projectDir, "src", "App.tsx"), "utf8");
+  const appContent = await readFile(
+    path.join(projectDir, "src", "App.tsx"),
+    "utf8",
+  );
 
   assert.ok(themeContent.includes('main: "#aa0000"'));
   assert.ok(themeContent.includes('main: "#ff6666"'));
   assert.ok(themeContent.includes('fontFamily: "Storybook Sans"'));
-  assert.match(themeContent, /typography:\s*\{\s*fontFamily: "Storybook Sans",\s*fontSize: 16,/);
+  assert.match(
+    themeContent,
+    /typography:\s*\{\s*fontFamily: "Storybook Sans",\s*fontSize: 16,/,
+  );
   assert.ok(themeContent.includes('textTransform: "capitalize"'));
   assert.equal(themeContent.includes("breakpoints: {"), false);
   assert.equal(tokensContent.customerBrandId, "sparkasse-retail");
@@ -8717,14 +10474,16 @@ test("generateArtifacts uses the resolved Storybook theme payload instead of IR-
 
 test("generateArtifacts keeps Storybook-first theme output pinned to public artifacts instead of legacy fallback tokens", async () => {
   const buildDir = await createIssue690BackfilledStorybookBuild();
-  const projectDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-generator-storybook-provenance-"));
+  const projectDir = await mkdtemp(
+    path.join(os.tmpdir(), "workspace-dev-generator-storybook-provenance-"),
+  );
   const artifacts = await buildStorybookPublicArtifacts({ buildDir });
   const customerProfile = createIssue690CustomerProfileForGeneratorTests();
   const resolvedStorybookTheme = resolveStorybookTheme({
     customerBrandId: "storybook-default",
     customerProfile,
     tokensArtifact: artifacts.tokensArtifact,
-    themesArtifact: artifacts.themesArtifact
+    themesArtifact: artifacts.themesArtifact,
   });
   const tokensTheme = artifacts.tokensArtifact.theme as Record<string, unknown>;
   const defaultTheme = tokensTheme.default as Record<string, unknown>;
@@ -8741,13 +10500,25 @@ test("generateArtifacts keeps Storybook-first theme output pinned to public arti
   ir.tokens.typography = buildTypographyScaleFromAliases({
     fontFamily: "Legacy Local Brand",
     headingSize: 22,
-    bodySize: 11
+    bodySize: 11,
   });
 
-  assert.equal((spacingGroup.base as Record<string, unknown>).$type, "dimension");
-  assert.deepEqual((spacingGroup.base as Record<string, unknown>).$value, { value: 12, unit: "px" });
-  assert.deepEqual((cssSpacingGroup["fi-space-base"] as Record<string, unknown>).$value, { value: 12, unit: "px" });
-  assert.equal((themeFontFamilies["theme-bundle-sans"] as Record<string, unknown>).$type, "fontFamily");
+  assert.equal(
+    (spacingGroup.base as Record<string, unknown>).$type,
+    "dimension",
+  );
+  assert.deepEqual((spacingGroup.base as Record<string, unknown>).$value, {
+    value: 12,
+    unit: "px",
+  });
+  assert.deepEqual(
+    (cssSpacingGroup["fi-space-base"] as Record<string, unknown>).$value,
+    { value: 12, unit: "px" },
+  );
+  assert.equal(
+    (themeFontFamilies["theme-bundle-sans"] as Record<string, unknown>).$type,
+    "fontFamily",
+  );
 
   await generateArtifacts({
     projectDir,
@@ -8755,11 +10526,19 @@ test("generateArtifacts keeps Storybook-first theme output pinned to public arti
     resolvedStorybookTheme,
     llmCodegenMode: "deterministic",
     llmModelName: "deterministic",
-    onLog: () => {}
+    onLog: () => {},
   });
 
-  const themeContent = await readFile(path.join(projectDir, "src", "theme", "theme.ts"), "utf8");
-  const tokensContent = JSON.parse(await readFile(path.join(projectDir, "src", "theme", "tokens.json"), "utf8")) as {
+  const themeContent = await readFile(
+    path.join(projectDir, "src", "theme", "theme.ts"),
+    "utf8",
+  );
+  const tokensContent = JSON.parse(
+    await readFile(
+      path.join(projectDir, "src", "theme", "tokens.json"),
+      "utf8",
+    ),
+  ) as {
     customerBrandId: string;
     light: {
       spacingBase: number;
@@ -8778,31 +10557,46 @@ test("generateArtifacts keeps Storybook-first theme output pinned to public arti
   assert.ok(themeContent.includes('main: "#1357be"'));
   assert.ok(themeContent.includes("spacing: 12"));
   assert.ok(themeContent.includes("borderRadius: 20"));
-  assert.ok(themeContent.includes('fontFamily: "Theme Bundle Sans, sans-serif"'));
+  assert.ok(
+    themeContent.includes('fontFamily: "Theme Bundle Sans, sans-serif"'),
+  );
   assert.equal(themeContent.includes("#00ff00"), false);
   assert.equal(themeContent.includes("Legacy Local Brand"), false);
   assert.equal(tokensContent.customerBrandId, "storybook-default");
   assert.equal(tokensContent.light.spacingBase, 12);
   assert.equal(tokensContent.light.borderRadius, 20);
   assert.equal(tokensContent.light.palette.primary.main, "#1357be");
-  assert.equal(tokensContent.light.typography.fontFamily, "Theme Bundle Sans, sans-serif");
+  assert.equal(
+    tokensContent.light.typography.fontFamily,
+    "Theme Bundle Sans, sans-serif",
+  );
 });
 
 test("generateArtifacts omits the theme mode toggle when the resolved Storybook theme has no dark scheme", async () => {
-  const projectDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-generator-storybook-light-only-"));
+  const projectDir = await mkdtemp(
+    path.join(os.tmpdir(), "workspace-dev-generator-storybook-light-only-"),
+  );
   const ir = createIr();
 
   await generateArtifacts({
     projectDir,
     ir,
-    resolvedStorybookTheme: createResolvedStorybookTheme({ includeDark: false }),
+    resolvedStorybookTheme: createResolvedStorybookTheme({
+      includeDark: false,
+    }),
     llmCodegenMode: "deterministic",
     llmModelName: "deterministic",
-    onLog: () => {}
+    onLog: () => {},
   });
 
-  const themeContent = await readFile(path.join(projectDir, "src", "theme", "theme.ts"), "utf8");
-  const appContent = await readFile(path.join(projectDir, "src", "App.tsx"), "utf8");
+  const themeContent = await readFile(
+    path.join(projectDir, "src", "theme", "theme.ts"),
+    "utf8",
+  );
+  const appContent = await readFile(
+    path.join(projectDir, "src", "App.tsx"),
+    "utf8",
+  );
 
   assert.equal(themeContent.includes("dark: {"), false);
   assert.equal(appContent.includes('data-testid="theme-mode-toggle"'), false);
@@ -8810,7 +10604,9 @@ test("generateArtifacts omits the theme mode toggle when the resolved Storybook 
 });
 
 test("generateArtifacts applies Issue #693 customer form specializations in the storybook-first path", async () => {
-  const projectDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-generator-issue-693-"));
+  const projectDir = await mkdtemp(
+    path.join(os.tmpdir(), "workspace-dev-generator-issue-693-"),
+  );
   const ir = createIr();
   ir.screens[0]!.children = [
     {
@@ -8823,7 +10619,7 @@ test("generateArtifacts applies Issue #693 customer form specializations in the 
       fontFamily: "Storybook Sans",
       fontSize: 32,
       fontWeight: 700,
-      lineHeight: 40
+      lineHeight: 40,
     },
     {
       id: "iban-field",
@@ -8840,7 +10636,7 @@ test("generateArtifacts applies Issue #693 customer form specializations in the 
           nodeType: "TEXT",
           type: "text",
           text: "IBAN",
-          y: 0
+          y: 0,
         },
         {
           id: "iban-value",
@@ -8848,9 +10644,9 @@ test("generateArtifacts applies Issue #693 customer form specializations in the 
           nodeType: "TEXT",
           type: "text",
           text: "DE89 3704 0044 0532 0130 00",
-          y: 28
-        }
-      ]
+          y: 28,
+        },
+      ],
     },
     {
       id: "date-field",
@@ -8868,7 +10664,7 @@ test("generateArtifacts applies Issue #693 customer form specializations in the 
           nodeType: "TEXT",
           type: "text",
           text: "Execution date",
-          y: 88
+          y: 88,
         },
         {
           id: "date-value",
@@ -8876,10 +10672,10 @@ test("generateArtifacts applies Issue #693 customer form specializations in the 
           nodeType: "TEXT",
           type: "text",
           text: "2026-04-02",
-          y: 116
-        }
-      ]
-    }
+          y: 116,
+        },
+      ],
+    },
   ];
   const resolvedStorybookTheme = createResolvedStorybookTheme();
   resolvedStorybookTheme.light.typography.variants = {
@@ -8888,15 +10684,15 @@ test("generateArtifacts applies Issue #693 customer form specializations in the 
       fontSizePx: 32,
       fontWeight: 700,
       lineHeight: 40,
-      letterSpacing: "0em"
+      letterSpacing: "0em",
     },
     bodyMd: {
       fontFamily: "Storybook Sans",
       fontSizePx: 16,
       fontWeight: 400,
       lineHeight: 24,
-      letterSpacing: "0em"
-    }
+      letterSpacing: "0em",
+    },
   };
 
   await generateArtifacts({
@@ -8909,46 +10705,69 @@ test("generateArtifacts applies Issue #693 customer form specializations in the 
         DatePicker: {
           import: "@customer/forms",
           export: "CustomerDatePicker",
-          component: "CustomerDatePicker"
+          component: "CustomerDatePicker",
         },
         InputIBAN: {
           import: "@customer/forms",
           export: "CustomerIbanInput",
-          component: "CustomerIbanInput"
+          component: "CustomerIbanInput",
         },
         Typography: {
           import: "@customer/typography",
           export: "CustomerTypography",
-          component: "CustomerTypography"
-        }
-      }
+          component: "CustomerTypography",
+        },
+      },
     },
     resolvedStorybookTheme,
     formHandlingMode: "react_hook_form",
     llmCodegenMode: "deterministic",
     llmModelName: "deterministic",
-    onLog: () => {}
+    onLog: () => {},
   });
 
-  const screenContent = await readFile(path.join(projectDir, toDeterministicScreenPath("Übersicht")), "utf8");
+  const screenContent = await readFile(
+    path.join(projectDir, toDeterministicScreenPath("Übersicht")),
+    "utf8",
+  );
 
-  assert.match(screenContent, /import \{ CustomerDatePicker \} from "@customer\/forms";/);
-  assert.match(screenContent, /import \{ CustomerIbanInput \} from "@customer\/forms";/);
-  assert.match(screenContent, /import \{ CustomerTypography \} from "@customer\/typography";/);
-  assert.match(screenContent, /import \{ CustomerDatePickerProvider \} from "@customer\/date-provider";/);
-  assert.match(screenContent, /import \{ CustomerDateAdapter \} from "@customer\/date-provider";/);
-  assert.match(screenContent, /<CustomerTypography[\s\S]*variant=\{"displayLg"\}/);
+  assert.match(
+    screenContent,
+    /import \{ CustomerDatePicker \} from "@customer\/forms";/,
+  );
+  assert.match(
+    screenContent,
+    /import \{ CustomerIbanInput \} from "@customer\/forms";/,
+  );
+  assert.match(
+    screenContent,
+    /import \{ CustomerTypography \} from "@customer\/typography";/,
+  );
+  assert.match(
+    screenContent,
+    /import \{ CustomerDatePickerProvider \} from "@customer\/date-provider";/,
+  );
+  assert.match(
+    screenContent,
+    /import \{ CustomerDateAdapter \} from "@customer\/date-provider";/,
+  );
+  assert.match(
+    screenContent,
+    /<CustomerTypography[\s\S]*variant=\{"displayLg"\}/,
+  );
   assert.match(screenContent, /<CustomerIbanInput/);
   assert.match(screenContent, /<CustomerDatePicker/);
   assert.match(
     screenContent,
-    /<[A-Za-z0-9_]+FormContextProvider>[\s\S]*<CustomerDatePickerProvider adapterLocale=\{"de"\} dateAdapter=\{CustomerDateAdapter\}>[\s\S]*<[A-Za-z0-9_]+ScreenContent \/>[\s\S]*<\/CustomerDatePickerProvider>[\s\S]*<\/[A-Za-z0-9_]+FormContextProvider>/
+    /<[A-Za-z0-9_]+FormContextProvider>[\s\S]*<CustomerDatePickerProvider adapterLocale=\{"de"\} dateAdapter=\{CustomerDateAdapter\}>[\s\S]*<[A-Za-z0-9_]+ScreenContent \/>[\s\S]*<\/CustomerDatePickerProvider>[\s\S]*<\/[A-Za-z0-9_]+FormContextProvider>/,
   );
   assert.equal(screenContent.includes("<TextField"), false);
 });
 
 test("generateArtifacts applies Issue #693 customer form specializations outside storybook-first mode", async () => {
-  const projectDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-generator-issue-693-non-storybook-"));
+  const projectDir = await mkdtemp(
+    path.join(os.tmpdir(), "workspace-dev-generator-issue-693-non-storybook-"),
+  );
   const ir = createIr();
   ir.screens[0]!.children = [
     {
@@ -8961,7 +10780,7 @@ test("generateArtifacts applies Issue #693 customer form specializations outside
       fontFamily: "Storybook Sans",
       fontSize: 32,
       fontWeight: 700,
-      lineHeight: 40
+      lineHeight: 40,
     },
     {
       id: "iban-field",
@@ -8978,7 +10797,7 @@ test("generateArtifacts applies Issue #693 customer form specializations outside
           nodeType: "TEXT",
           type: "text",
           text: "IBAN",
-          y: 0
+          y: 0,
         },
         {
           id: "iban-value",
@@ -8986,9 +10805,9 @@ test("generateArtifacts applies Issue #693 customer form specializations outside
           nodeType: "TEXT",
           type: "text",
           text: "DE89 3704 0044 0532 0130 00",
-          y: 28
-        }
-      ]
+          y: 28,
+        },
+      ],
     },
     {
       id: "date-field",
@@ -9006,7 +10825,7 @@ test("generateArtifacts applies Issue #693 customer form specializations outside
           nodeType: "TEXT",
           type: "text",
           text: "Execution date",
-          y: 88
+          y: 88,
         },
         {
           id: "date-value",
@@ -9014,10 +10833,10 @@ test("generateArtifacts applies Issue #693 customer form specializations outside
           nodeType: "TEXT",
           type: "text",
           text: "2026-04-02",
-          y: 116
-        }
-      ]
-    }
+          y: 116,
+        },
+      ],
+    },
   ];
 
   await generateArtifacts({
@@ -9027,21 +10846,39 @@ test("generateArtifacts applies Issue #693 customer form specializations outside
     formHandlingMode: "react_hook_form",
     llmCodegenMode: "deterministic",
     llmModelName: "deterministic",
-    onLog: () => {}
+    onLog: () => {},
   });
 
-  const screenContent = await readFile(path.join(projectDir, toDeterministicScreenPath("Übersicht")), "utf8");
+  const screenContent = await readFile(
+    path.join(projectDir, toDeterministicScreenPath("Übersicht")),
+    "utf8",
+  );
 
-  assert.match(screenContent, /import \{ CustomerDatePicker \} from "@customer\/forms";/);
-  assert.match(screenContent, /import \{ CustomerIbanInput \} from "@customer\/forms";/);
-  assert.match(screenContent, /import \{ CustomerTypography \} from "@customer\/typography";/);
-  assert.match(screenContent, /import \{ CustomerDatePickerProvider \} from "@customer\/date-provider";/);
-  assert.match(screenContent, /import \{ CustomerDateAdapter \} from "@customer\/date-provider";/);
+  assert.match(
+    screenContent,
+    /import \{ CustomerDatePicker \} from "@customer\/forms";/,
+  );
+  assert.match(
+    screenContent,
+    /import \{ CustomerIbanInput \} from "@customer\/forms";/,
+  );
+  assert.match(
+    screenContent,
+    /import \{ CustomerTypography \} from "@customer\/typography";/,
+  );
+  assert.match(
+    screenContent,
+    /import \{ CustomerDatePickerProvider \} from "@customer\/date-provider";/,
+  );
+  assert.match(
+    screenContent,
+    /import \{ CustomerDateAdapter \} from "@customer\/date-provider";/,
+  );
   assert.match(screenContent, /<CustomerTypography[\s\S]*variant=\{"h5"\}/);
   assert.match(screenContent, /<CustomerIbanInput/);
   assert.match(screenContent, /<CustomerDatePicker/);
   assert.match(
     screenContent,
-    /<[A-Za-z0-9_]+FormContextProvider>[\s\S]*<CustomerDatePickerProvider adapterLocale=\{"de"\} dateAdapter=\{CustomerDateAdapter\}>[\s\S]*<[A-Za-z0-9_]+ScreenContent \/>[\s\S]*<\/CustomerDatePickerProvider>[\s\S]*<\/[A-Za-z0-9_]+FormContextProvider>/
+    /<[A-Za-z0-9_]+FormContextProvider>[\s\S]*<CustomerDatePickerProvider adapterLocale=\{"de"\} dateAdapter=\{CustomerDateAdapter\}>[\s\S]*<[A-Za-z0-9_]+ScreenContent \/>[\s\S]*<\/CustomerDatePickerProvider>[\s\S]*<\/[A-Za-z0-9_]+FormContextProvider>/,
   );
 });

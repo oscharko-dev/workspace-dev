@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { existsSync, mkdtempSync, writeFileSync } from "node:fs";
+import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -19,10 +19,14 @@ import {
   toBoundedLevenshteinDistance,
   toNearestClusterIndex,
   toSequentialDeltas,
-  pickBestIconNode
+  pickBestIconNode,
 } from "./generator-render.js";
 import { renderFallbackIconExpression } from "./templates/icon-template.js";
-import type { IconFallbackResolver, RenderContext, VirtualParent } from "./generator-render.js";
+import type {
+  IconFallbackResolver,
+  RenderContext,
+  VirtualParent,
+} from "./generator-render.js";
 import type { ScreenElementIR } from "./types.js";
 
 const emptyIconResolver: IconFallbackResolver = {
@@ -30,7 +34,7 @@ const emptyIconResolver: IconFallbackResolver = {
   byIconName: new Map(),
   exactAliasMap: new Map(),
   tokenIndex: new Map(),
-  synonymMap: new Map()
+  synonymMap: new Map(),
 };
 
 const createRenderContext = (): RenderContext => ({
@@ -72,7 +76,7 @@ const createRenderContext = (): RenderContext => ({
   emittedAccessibilityWarningKeys: new Set(),
   pageBackgroundColorNormalized: undefined,
   requiresChangeEventTypeImport: false,
-  extractionInvocationByNodeId: new Map()
+  extractionInvocationByNodeId: new Map(),
 });
 
 const rootParent: VirtualParent = {
@@ -80,7 +84,7 @@ const rootParent: VirtualParent = {
   y: 0,
   width: 1440,
   height: 900,
-  layoutMode: "VERTICAL"
+  layoutMode: "VERTICAL",
 };
 
 const makeNode = ({
@@ -94,18 +98,21 @@ const makeNode = ({
   type: ScreenElementIR["type"];
   name?: string;
   nodeType?: string;
-} & Omit<Partial<ScreenElementIR>, "id" | "type" | "name" | "nodeType">): ScreenElementIR => ({
+} & Omit<
+  Partial<ScreenElementIR>,
+  "id" | "type" | "name" | "nodeType"
+>): ScreenElementIR => ({
   id,
   type,
   name,
   nodeType,
-  ...overrides
+  ...overrides,
 });
 
 const createResolverEntry = ({
   iconName,
   aliases,
-  priority
+  priority,
 }: {
   iconName: string;
   aliases: string[];
@@ -115,9 +122,9 @@ const createResolverEntry = ({
   aliases,
   importSpec: {
     localName: `${iconName}Icon`,
-    modulePath: `@mui/icons-material/${iconName}`
+    modulePath: `@mui/icons-material/${iconName}`,
   },
-  priority
+  priority,
 });
 
 test("renderMappedElement resolves {{text}} from element.text on non-text nodes", () => {
@@ -132,9 +139,9 @@ test("renderMappedElement resolves {{text}} from element.text on non-text nodes"
       componentName: "AcmeButton",
       source: "src/components/AcmeButton.tsx",
       propContract: {
-        children: "{{text}}"
-      }
-    }
+        children: "{{text}}",
+      },
+    },
   };
 
   const rendered = renderMappedElement(element, 2, rootParent, context);
@@ -153,8 +160,8 @@ test("renderMappedElement uses element.text as implicit children when mapped con
     text: "Aktion",
     codeConnect: {
       componentName: "AcmeChip",
-      source: "src/components/AcmeChip.tsx"
-    }
+      source: "src/components/AcmeChip.tsx",
+    },
   };
 
   const rendered = renderMappedElement(element, 1, rootParent, context);
@@ -176,15 +183,19 @@ test("renderMappedElement escapes unsafe characters in mapped object contracts",
       source: "src/components/AcmeButton.tsx",
       propContract: {
         children: "{{text}}",
-        options: { script: "</script><script>" }
-      }
-    }
+        options: { script: "</script><script>" },
+      },
+    },
   };
 
   const rendered = renderMappedElement(element, 1, rootParent, context);
 
   assert.ok(rendered);
-  assert.ok(rendered.includes("options={{\"script\":\"\\u003C\\u002Fscript\\u003E\\u003Cscript\\u003E\"}}"));
+  assert.ok(
+    rendered.includes(
+      'options={{"script":"\\u003C\\u002Fscript\\u003E\\u003Cscript\\u003E"}}',
+    ),
+  );
 });
 
 test("simplifyElements preserves semantic metadata containers instead of promoting their only child", () => {
@@ -204,16 +215,16 @@ test("simplifyElements preserves semantic metadata containers instead of promoti
           name: "Heading",
           nodeType: "TEXT",
           type: "text",
-          text: "Dashboard"
-        }
-      ]
-    }
+          text: "Dashboard",
+        },
+      ],
+    },
   ];
 
   const simplified = simplifyElements({
     elements,
     depth: 0,
-    stats
+    stats,
   });
 
   assert.equal(simplified.length, 1);
@@ -233,7 +244,7 @@ test("renderMappedElement handles disabled and invalid manual mappings before no
     importPath: "src/components/AcmeButton.tsx",
     priority: 0,
     source: "local_override",
-    enabled: false
+    enabled: false,
   });
   context.mappingByNodeId.set("manual-invalid", {
     boardKey: "board-1",
@@ -243,7 +254,7 @@ test("renderMappedElement handles disabled and invalid manual mappings before no
     propContract: "children" as unknown as Record<string, unknown>,
     priority: 1,
     source: "local_override",
-    enabled: true
+    enabled: true,
   });
 
   assert.equal(
@@ -252,15 +263,18 @@ test("renderMappedElement handles disabled and invalid manual mappings before no
         id: "manual-disabled",
         type: "button",
         name: "Disabled mapped button",
-        text: "Do not render"
+        text: "Do not render",
       }),
       1,
       rootParent,
-      context
+      context,
     ),
-    undefined
+    undefined,
   );
-  assert.equal(context.mappingWarnings[0]?.code, "W_COMPONENT_MAPPING_DISABLED");
+  assert.equal(
+    context.mappingWarnings[0]?.code,
+    "W_COMPONENT_MAPPING_DISABLED",
+  );
 
   assert.equal(
     renderMappedElement(
@@ -268,15 +282,18 @@ test("renderMappedElement handles disabled and invalid manual mappings before no
         id: "manual-invalid",
         type: "button",
         name: "Invalid mapped button",
-        text: "Broken"
+        text: "Broken",
       }),
       1,
       rootParent,
-      context
+      context,
     ),
-    undefined
+    undefined,
   );
-  assert.equal(context.mappingWarnings[1]?.code, "W_COMPONENT_MAPPING_CONTRACT_MISMATCH");
+  assert.equal(
+    context.mappingWarnings[1]?.code,
+    "W_COMPONENT_MAPPING_CONTRACT_MISMATCH",
+  );
 
   const firstRendered = renderMappedElement(
     {
@@ -287,12 +304,13 @@ test("renderMappedElement handles disabled and invalid manual mappings before no
       text: "Continue",
       codeConnect: {
         componentName: "AcmeButton",
-        source: "/Users/oscharko/Projects/workspace-dev/src/components/AcmeButton.tsx"
-      }
+        source:
+          "/Users/oscharko/Projects/workspace-dev/src/components/AcmeButton.tsx",
+      },
     },
     1,
     rootParent,
-    context
+    context,
   );
   const secondRendered = renderMappedElement(
     {
@@ -303,12 +321,13 @@ test("renderMappedElement handles disabled and invalid manual mappings before no
       text: "Cancel",
       codeConnect: {
         componentName: "RenamedButton",
-        source: "/Users/oscharko/Projects/workspace-dev/src/components/AcmeButton.tsx"
-      }
+        source:
+          "/Users/oscharko/Projects/workspace-dev/src/components/AcmeButton.tsx",
+      },
     },
     1,
     rootParent,
-    context
+    context,
   );
 
   assert.match(firstRendered ?? "", /<AcmeButton2 /);
@@ -317,8 +336,8 @@ test("renderMappedElement handles disabled and invalid manual mappings before no
     {
       localName: "AcmeButton2",
       modulePath: "../components/AcmeButton",
-      importMode: "default"
-    }
+      importMode: "default",
+    },
   ]);
 });
 
@@ -334,7 +353,7 @@ test("pickBestIconNode prefers vector-backed icon candidates and smaller areas o
           name: "muiSvgIconRoot",
           width: 32,
           height: 32,
-          vectorPaths: ["M0 0H24V24H0Z"]
+          vectorPaths: ["M0 0H24V24H0Z"],
         }),
         makeNode({
           id: "best-candidate",
@@ -342,17 +361,17 @@ test("pickBestIconNode prefers vector-backed icon candidates and smaller areas o
           name: "ic_arrow_right",
           width: 16,
           height: 16,
-          vectorPaths: ["M0 0L10 10"]
+          vectorPaths: ["M0 0L10 10"],
         }),
         makeNode({
           id: "wrapper",
           type: "container",
           name: "iconcomponent",
           width: 24,
-          height: 24
-        })
-      ]
-    })
+          height: 24,
+        }),
+      ],
+    }),
   );
 
   assert.equal(best?.id, "best-candidate");
@@ -360,24 +379,38 @@ test("pickBestIconNode prefers vector-backed icon candidates and smaller areas o
 
 test("isIconLikeNode recognizes word-boundary icon names and prefix variants without degrading generic containers", () => {
   assert.equal(
-    isIconLikeNode(makeNode({ id: "search-icon", type: "container", name: "search_icon" })),
-    true
+    isIconLikeNode(
+      makeNode({ id: "search-icon", type: "container", name: "search_icon" }),
+    ),
+    true,
   );
   assert.equal(
-    isIconLikeNode(makeNode({ id: "close-icon", type: "container", name: "close icon" })),
-    true
+    isIconLikeNode(
+      makeNode({ id: "close-icon", type: "container", name: "close icon" }),
+    ),
+    true,
   );
   assert.equal(
-    isIconLikeNode(makeNode({ id: "brand-check", type: "container", name: "brand/check" })),
-    true
+    isIconLikeNode(
+      makeNode({ id: "brand-check", type: "container", name: "brand/check" }),
+    ),
+    true,
   );
   assert.equal(
-    isIconLikeNode(makeNode({ id: "semantic-success", type: "container", name: "semantic-success" })),
-    true
+    isIconLikeNode(
+      makeNode({
+        id: "semantic-success",
+        type: "container",
+        name: "semantic-success",
+      }),
+    ),
+    true,
   );
   assert.equal(
-    isIconLikeNode(makeNode({ id: "generic-box", type: "container", name: "my-box" })),
-    false
+    isIconLikeNode(
+      makeNode({ id: "generic-box", type: "container", name: "my-box" }),
+    ),
+    false,
   );
 });
 
@@ -389,9 +422,13 @@ test("pickBestIconNode scores word-boundary icon names above unrelated candidate
       name: "Frame 1",
       children: [
         makeNode({ id: "search-icon", type: "container", name: "search_icon" }),
-        makeNode({ id: "unrelated-box", type: "container", name: "unrelated_box" })
-      ]
-    })
+        makeNode({
+          id: "unrelated-box",
+          type: "container",
+          name: "unrelated_box",
+        }),
+      ],
+    }),
   );
   assert.equal(wordBoundaryWinner?.id, "search-icon");
 
@@ -402,52 +439,74 @@ test("pickBestIconNode scores word-boundary icon names above unrelated candidate
       name: "Frame 2",
       children: [
         makeNode({ id: "ic-home", type: "container", name: "ic_home" }),
-        makeNode({ id: "search-icon", type: "container", name: "search_icon" })
-      ]
-    })
+        makeNode({ id: "search-icon", type: "container", name: "search_icon" }),
+      ],
+    }),
   );
   assert.equal(prefixWinner?.id, "ic-home");
 });
 
-test("loadIconFallbackResolver bootstraps missing maps and falls back on invalid or malformed files", async () => {
-  const tempDirectory = mkdtempSync(path.join(tmpdir(), "workspace-dev-icon-map-"));
+test("loadIconFallbackResolver falls back to built-in catalog for missing, invalid, or malformed files", async () => {
+  const tempDirectory = mkdtempSync(
+    path.join(tmpdir(), "workspace-dev-icon-map-"),
+  );
 
-  const missingPath = path.join(tempDirectory, "nested", "icon-fallback-map.json");
-  const bootstrapLogs: string[] = [];
-  const bootstrappedResolver = await loadIconFallbackResolver({
+  const missingPath = path.join(
+    tempDirectory,
+    "nested",
+    "icon-fallback-map.json",
+  );
+  const missingLogs: string[] = [];
+  const missingResolver = await loadIconFallbackResolver({
     iconMapFilePath: missingPath,
-    onLog: (message) => bootstrapLogs.push(message)
+    onLog: (message) => missingLogs.push(message),
   });
 
-  assert.equal(existsSync(missingPath), true);
-  assert.equal(bootstrappedResolver.entries.length > 0, true);
-  assert.equal(bootstrapLogs.some((message) => message.includes("Bootstrapped icon fallback map")), true);
+  assert.equal(missingResolver.entries.length > 0, true);
+  assert.equal(
+    missingLogs.some((message) => message.includes("not found")),
+    true,
+  );
 
   const invalidPath = path.join(tempDirectory, "invalid.json");
-  writeFileSync(invalidPath, JSON.stringify({ version: 1, entries: [] }), "utf8");
+  writeFileSync(
+    invalidPath,
+    JSON.stringify({ version: 1, entries: [] }),
+    "utf8",
+  );
   const invalidLogs: string[] = [];
   const invalidResolver = await loadIconFallbackResolver({
     iconMapFilePath: invalidPath,
-    onLog: (message) => invalidLogs.push(message)
+    onLog: (message) => invalidLogs.push(message),
   });
 
   assert.equal(invalidResolver.entries.length > 0, true);
-  assert.equal(invalidLogs.some((message) => message.includes("is invalid")), true);
+  assert.equal(
+    invalidLogs.some((message) => message.includes("is invalid")),
+    true,
+  );
 
   const malformedPath = path.join(tempDirectory, "malformed.json");
   writeFileSync(malformedPath, "{ malformed", "utf8");
   const malformedLogs: string[] = [];
   const malformedResolver = await loadIconFallbackResolver({
     iconMapFilePath: malformedPath,
-    onLog: (message) => malformedLogs.push(message)
+    onLog: (message) => malformedLogs.push(message),
   });
 
   assert.equal(malformedResolver.entries.length > 0, true);
-  assert.equal(malformedLogs.some((message) => message.includes("Failed to load icon fallback map")), true);
+  assert.equal(
+    malformedLogs.some((message) =>
+      message.includes("Failed to load icon fallback map"),
+    ),
+    true,
+  );
 });
 
 test("loadIconFallbackResolver compiles custom aliases and synonyms", async () => {
-  const tempDirectory = mkdtempSync(path.join(tmpdir(), "workspace-dev-custom-icon-map-"));
+  const tempDirectory = mkdtempSync(
+    path.join(tmpdir(), "workspace-dev-custom-icon-map-"),
+  );
   const customMapPath = path.join(tempDirectory, "icon-fallback-map.json");
   writeFileSync(
     customMapPath,
@@ -455,34 +514,46 @@ test("loadIconFallbackResolver compiles custom aliases and synonyms", async () =
       {
         version: 1,
         entries: [
-          { iconName: "PersonSearch", aliases: ["people lookup", "advisor search"] },
-          { iconName: "Mail", aliases: ["mail"] }
+          {
+            iconName: "PersonSearch",
+            aliases: ["people lookup", "advisor search"],
+          },
+          { iconName: "Mail", aliases: ["mail"] },
         ],
         synonyms: {
           consultant: "PersonSearch",
           inbox: "Mail",
-          invalid: 42
-        }
+          invalid: 42,
+        },
       },
       null,
-      2
+      2,
     ),
-    "utf8"
+    "utf8",
   );
 
   const resolver = await loadIconFallbackResolver({
     iconMapFilePath: customMapPath,
-    onLog: () => undefined
+    onLog: () => undefined,
   });
 
-  assert.equal(resolver.exactAliasMap.get("people lookup")?.iconName, "PersonSearch");
+  assert.equal(
+    resolver.exactAliasMap.get("people lookup")?.iconName,
+    "PersonSearch",
+  );
   assert.equal(resolver.synonymMap.get("consultant")?.iconName, "PersonSearch");
   assert.equal(resolver.synonymMap.get("inbox")?.iconName, "Mail");
 });
 
 test("parseIconFallbackMapFile and compileIconFallbackResolver sanitize entries, aliases, and collisions", () => {
-  assert.equal(parseIconFallbackMapFile({ input: { version: 2, entries: [] } }), undefined);
-  assert.equal(parseIconFallbackMapFile({ input: { version: 1, entries: [] } }), undefined);
+  assert.equal(
+    parseIconFallbackMapFile({ input: { version: 2, entries: [] } }),
+    undefined,
+  );
+  assert.equal(
+    parseIconFallbackMapFile({ input: { version: 1, entries: [] } }),
+    undefined,
+  );
 
   const parsed = parseIconFallbackMapFile({
     input: {
@@ -492,14 +563,14 @@ test("parseIconFallbackMapFile and compileIconFallbackResolver sanitize entries,
         { iconName: "Mail", aliases: [" message ", "", 42] },
         { iconName: "ChatBubble", aliases: ["message", " chat bubble "] },
         { iconName: "bad icon", aliases: ["broken"] },
-        { iconName: "HomeOutlined" }
+        { iconName: "HomeOutlined" },
       ],
       synonyms: {
         " inbox ": "Mail",
         chat: "ChatBubble",
-        broken: 42
-      }
-    }
+        broken: 42,
+      },
+    },
   });
 
   assert.deepEqual(parsed, {
@@ -507,21 +578,21 @@ test("parseIconFallbackMapFile and compileIconFallbackResolver sanitize entries,
     entries: [
       { iconName: "Mail" },
       { iconName: "ChatBubble", aliases: ["message", "chat bubble"] },
-      { iconName: "HomeOutlined" }
+      { iconName: "HomeOutlined" },
     ],
     synonyms: {
       inbox: "Mail",
-      chat: "ChatBubble"
-    }
+      chat: "ChatBubble",
+    },
   });
 
   const resolver = compileIconFallbackResolver({
-    map: parsed!
+    map: parsed!,
   });
   assert.equal(resolver.exactAliasMap.get("message")?.iconName, "ChatBubble");
   assert.deepEqual(
     resolver.tokenIndex.get("chat")?.map((entry) => entry.iconName),
-    ["ChatBubble"]
+    ["ChatBubble"],
   );
   assert.equal(resolver.synonymMap.get("chat")?.iconName, "ChatBubble");
   assert.equal(resolver.exactAliasMap.get("home")?.iconName, "HomeOutlined");
@@ -533,66 +604,108 @@ test("toBoundedLevenshteinDistance and resolveIconImportSpecFromCatalog handle e
       version: 1,
       entries: [
         { iconName: "Mail", aliases: ["mail", "message center"] },
-        { iconName: "Search", aliases: ["search"] }
+        { iconName: "Search", aliases: ["search"] },
       ],
       synonyms: {
-        inbox: "Mail"
-      }
-    }
+        inbox: "Mail",
+      },
+    },
   });
 
-  assert.equal(toBoundedLevenshteinDistance({ left: "search", right: "search", maxDistance: 1 }), 0);
-  assert.equal(toBoundedLevenshteinDistance({ left: "search", right: "serch", maxDistance: 2 }), 1);
-  assert.equal(toBoundedLevenshteinDistance({ left: "search", right: "completely-different", maxDistance: 2 }), undefined);
+  assert.equal(
+    toBoundedLevenshteinDistance({
+      left: "search",
+      right: "search",
+      maxDistance: 1,
+    }),
+    0,
+  );
+  assert.equal(
+    toBoundedLevenshteinDistance({
+      left: "search",
+      right: "serch",
+      maxDistance: 2,
+    }),
+    1,
+  );
+  assert.equal(
+    toBoundedLevenshteinDistance({
+      left: "search",
+      right: "completely-different",
+      maxDistance: 2,
+    }),
+    undefined,
+  );
 
-  assert.deepEqual(resolveIconImportSpecFromCatalog({ rawInput: "mail", resolver }), {
-    localName: "MailIcon",
-    modulePath: "@mui/icons-material/Mail"
-  });
-  assert.deepEqual(resolveIconImportSpecFromCatalog({ rawInput: "open mail drawer", resolver }), {
-    localName: "MailIcon",
-    modulePath: "@mui/icons-material/Mail"
-  });
-  assert.deepEqual(resolveIconImportSpecFromCatalog({ rawInput: "Inbox notifications", resolver }), {
-    localName: "MailIcon",
-    modulePath: "@mui/icons-material/Mail"
-  });
-  assert.deepEqual(resolveIconImportSpecFromCatalog({ rawInput: "serch", resolver }), {
-    localName: "SearchIcon",
-    modulePath: "@mui/icons-material/Search"
-  });
-  assert.deepEqual(resolveIconImportSpecFromCatalog({ rawInput: "", resolver }), {
-    localName: "InfoOutlinedIcon",
-    modulePath: "@mui/icons-material/InfoOutlined"
-  });
+  assert.deepEqual(
+    resolveIconImportSpecFromCatalog({ rawInput: "mail", resolver }),
+    {
+      localName: "MailIcon",
+      modulePath: "@mui/icons-material/Mail",
+    },
+  );
+  assert.deepEqual(
+    resolveIconImportSpecFromCatalog({
+      rawInput: "open mail drawer",
+      resolver,
+    }),
+    {
+      localName: "MailIcon",
+      modulePath: "@mui/icons-material/Mail",
+    },
+  );
+  assert.deepEqual(
+    resolveIconImportSpecFromCatalog({
+      rawInput: "Inbox notifications",
+      resolver,
+    }),
+    {
+      localName: "MailIcon",
+      modulePath: "@mui/icons-material/Mail",
+    },
+  );
+  assert.deepEqual(
+    resolveIconImportSpecFromCatalog({ rawInput: "serch", resolver }),
+    {
+      localName: "SearchIcon",
+      modulePath: "@mui/icons-material/Search",
+    },
+  );
+  assert.deepEqual(
+    resolveIconImportSpecFromCatalog({ rawInput: "", resolver }),
+    {
+      localName: "InfoOutlinedIcon",
+      modulePath: "@mui/icons-material/InfoOutlined",
+    },
+  );
 });
 
 test("resolveFallbackIconComponent honors deterministic parent hints and resolver-based fallback matching", () => {
   const mailEntry = createResolverEntry({
     iconName: "Mail",
     aliases: ["mail"],
-    priority: 0
+    priority: 0,
   });
   const searchEntry = createResolverEntry({
     iconName: "Search",
     aliases: ["search"],
-    priority: 1
+    priority: 1,
   });
   const resolver: IconFallbackResolver = {
     entries: [mailEntry, searchEntry],
     byIconName: new Map([
       ["Mail", mailEntry],
-      ["Search", searchEntry]
+      ["Search", searchEntry],
     ]),
     exactAliasMap: new Map([
       ["mail", mailEntry],
-      ["search", searchEntry]
+      ["search", searchEntry],
     ]),
     tokenIndex: new Map([
       ["mail", [mailEntry]],
-      ["search", [searchEntry]]
+      ["search", [searchEntry]],
     ]),
-    synonymMap: new Map([["message", mailEntry]])
+    synonymMap: new Map([["message", mailEntry]]),
   };
 
   const chevronContext = createRenderContext();
@@ -601,12 +714,12 @@ test("resolveFallbackIconComponent honors deterministic parent hints and resolve
       element: makeNode({
         id: "end-icon",
         type: "container",
-        name: "Vector Host"
+        name: "Vector Host",
       }),
       parent: { name: "ButtonEndIcon" },
-      context: chevronContext
+      context: chevronContext,
     }),
-    "ChevronRightIcon"
+    "ChevronRightIcon",
   );
 
   const expandContext = createRenderContext();
@@ -615,12 +728,12 @@ test("resolveFallbackIconComponent honors deterministic parent hints and resolve
       element: makeNode({
         id: "select-indicator",
         type: "container",
-        name: "ArrowDropDownIcon"
+        name: "ArrowDropDownIcon",
       }),
       parent: { name: "MuiSelectSelect" },
-      context: expandContext
+      context: expandContext,
     }),
-    "ExpandMoreIcon"
+    "ExpandMoreIcon",
   );
 
   const accordionContext = createRenderContext();
@@ -629,12 +742,12 @@ test("resolveFallbackIconComponent honors deterministic parent hints and resolve
       element: makeNode({
         id: "accordion-indicator",
         type: "container",
-        name: "Whatever"
+        name: "Whatever",
       }),
       parent: { name: "AccordionSummaryContent" },
-      context: accordionContext
+      context: accordionContext,
     }),
-    "TuneIcon"
+    "TuneIcon",
   );
 
   const exactContext = createRenderContext();
@@ -644,12 +757,12 @@ test("resolveFallbackIconComponent honors deterministic parent hints and resolve
       element: makeNode({
         id: "exact-match",
         type: "container",
-        name: "Mail"
+        name: "Mail",
       }),
       parent: { name: "IconHost" },
-      context: exactContext
+      context: exactContext,
     }),
-    "MailIcon"
+    "MailIcon",
   );
 
   const synonymContext = createRenderContext();
@@ -659,12 +772,12 @@ test("resolveFallbackIconComponent honors deterministic parent hints and resolve
       element: makeNode({
         id: "synonym-match",
         type: "container",
-        name: "Message Center"
+        name: "Message Center",
       }),
       parent: { name: "IconHost" },
-      context: synonymContext
+      context: synonymContext,
     }),
-    "MailIcon"
+    "MailIcon",
   );
 
   const fuzzyContext = createRenderContext();
@@ -674,12 +787,12 @@ test("resolveFallbackIconComponent honors deterministic parent hints and resolve
       element: makeNode({
         id: "fuzzy-match",
         type: "container",
-        name: "Serch"
+        name: "Serch",
       }),
       parent: { name: "IconHost" },
-      context: fuzzyContext
+      context: fuzzyContext,
     }),
-    "SearchIcon"
+    "SearchIcon",
   );
 
   const defaultContext = createRenderContext();
@@ -689,12 +802,12 @@ test("resolveFallbackIconComponent honors deterministic parent hints and resolve
       element: makeNode({
         id: "default-match",
         type: "container",
-        name: "Completely Unknown Symbol"
+        name: "Completely Unknown Symbol",
       }),
       parent: { name: "IconHost" },
-      context: defaultContext
+      context: defaultContext,
     }),
-    "InfoOutlinedIcon"
+    "InfoOutlinedIcon",
   );
 });
 
@@ -710,10 +823,10 @@ test("renderFallbackIconExpression uses exact Storybook-first customer icon impo
         import: {
           package: "@customer/icons",
           exportName: "MailIcon",
-          localName: "CustomerMailIcon"
-        }
-      }
-    ]
+          localName: "CustomerMailIcon",
+        },
+      },
+    ],
   ]);
 
   const rendered = renderFallbackIconExpression({
@@ -721,10 +834,10 @@ test("renderFallbackIconExpression uses exact Storybook-first customer icon impo
       id: "mail-icon",
       type: "container",
       name: "Icon",
-      semanticName: "Mail"
+      semanticName: "Mail",
     }),
     parent: rootParent,
-    context
+    context,
   });
 
   assert.equal(rendered.includes("<CustomerMailIcon"), true);
@@ -733,8 +846,8 @@ test("renderFallbackIconExpression uses exact Storybook-first customer icon impo
       localName: "CustomerMailIcon",
       modulePath: "@customer/icons",
       importMode: "named",
-      importedName: "MailIcon"
-    }
+      importedName: "MailIcon",
+    },
   ]);
 });
 
@@ -751,10 +864,10 @@ test("renderFallbackIconExpression uses generic Storybook-first icon wrapper wit
           package: "@customer/icons",
           exportName: "Icon",
           localName: "CustomerIcon",
-          iconPropName: "name"
-        }
-      }
-    ]
+          iconPropName: "name",
+        },
+      },
+    ],
   ]);
 
   const rendered = renderFallbackIconExpression({
@@ -762,10 +875,10 @@ test("renderFallbackIconExpression uses generic Storybook-first icon wrapper wit
       id: "search-icon",
       type: "container",
       name: "Icon",
-      semanticName: "Search"
+      semanticName: "Search",
     }),
     parent: rootParent,
-    context
+    context,
   });
 
   assert.equal(rendered.includes("<CustomerIcon"), true);
@@ -780,32 +893,35 @@ test("renderFallbackIconExpression emits a warning and falls back to heuristic M
       {
         iconKey: "mail",
         status: "wrapper_fallback_denied",
-        reason: "profile_icon_wrapper_denied"
-      }
-    ]
+        reason: "profile_icon_wrapper_denied",
+      },
+    ],
   ]);
   context.iconWarnings = [];
   context.emittedIconWarningKeys = new Set();
   context.iconResolver = compileIconFallbackResolver({
     map: {
       version: 1,
-      entries: [{ iconName: "Mail", aliases: ["mail"] }]
-    }
+      entries: [{ iconName: "Mail", aliases: ["mail"] }],
+    },
   });
 
   const rendered = renderFallbackIconExpression({
     element: makeNode({
       id: "mail-icon",
       type: "container",
-      name: "Mail"
+      name: "Mail",
     }),
     parent: rootParent,
-    context
+    context,
   });
 
   assert.equal(rendered.includes("<MailIcon"), true);
   assert.equal(context.iconWarnings?.length, 1);
-  assert.equal(context.iconWarnings?.[0]?.code, "W_STORYBOOK_ICON_HEURISTIC_FALLBACK");
+  assert.equal(
+    context.iconWarnings?.[0]?.code,
+    "W_STORYBOOK_ICON_HEURISTIC_FALLBACK",
+  );
 });
 
 test("renderFallbackIconExpression uses direct customer-profile icon imports when storybookFirstIconLookup has no match", () => {
@@ -820,10 +936,10 @@ test("renderFallbackIconExpression uses direct customer-profile icon imports whe
         import: {
           package: "@customer/icons",
           exportName: "OtherIcon",
-          localName: "CustomerOtherIcon"
-        }
-      }
-    ]
+          localName: "CustomerOtherIcon",
+        },
+      },
+    ],
   ]);
   context.profileIconImportsByKey = new Map([
     [
@@ -832,9 +948,9 @@ test("renderFallbackIconExpression uses direct customer-profile icon imports whe
         iconKey: "mail",
         package: "@customer/icons",
         exportName: "MailIcon",
-        localName: "CustomerMailIcon"
-      }
-    ]
+        localName: "CustomerMailIcon",
+      },
+    ],
   ]);
 
   const rendered = renderFallbackIconExpression({
@@ -842,10 +958,10 @@ test("renderFallbackIconExpression uses direct customer-profile icon imports whe
       id: "mail-icon",
       type: "container",
       name: "Icon",
-      semanticName: "Mail"
+      semanticName: "Mail",
     }),
     parent: rootParent,
-    context
+    context,
   });
 
   assert.equal(rendered.includes("<CustomerMailIcon"), true);
@@ -854,8 +970,8 @@ test("renderFallbackIconExpression uses direct customer-profile icon imports whe
       localName: "CustomerMailIcon",
       modulePath: "@customer/icons",
       importMode: "named",
-      importedName: "MailIcon"
-    }
+      importedName: "MailIcon",
+    },
   ]);
 });
 
@@ -868,9 +984,9 @@ test("renderFallbackIconExpression uses profile icon imports even without storyb
         iconKey: "search",
         package: "@customer/icons",
         exportName: "SearchIcon",
-        localName: "CustomerSearchIcon"
-      }
-    ]
+        localName: "CustomerSearchIcon",
+      },
+    ],
   ]);
 
   const rendered = renderFallbackIconExpression({
@@ -878,10 +994,10 @@ test("renderFallbackIconExpression uses profile icon imports even without storyb
       id: "search-icon",
       type: "container",
       name: "Icon",
-      semanticName: "Search"
+      semanticName: "Search",
     }),
     parent: rootParent,
-    context
+    context,
   });
 
   assert.equal(rendered.includes("<CustomerSearchIcon"), true);
@@ -894,12 +1010,40 @@ test("grid helpers detect matrix, equal-row, css-grid, and edge-case clustering 
       type: "container",
       layoutMode: "NONE",
       children: [
-        makeNode({ id: "m1", type: "container", x: 0, y: 0, width: 100, height: 50 }),
-        makeNode({ id: "m2", type: "container", x: 120, y: 0, width: 100, height: 50 }),
-        makeNode({ id: "m3", type: "container", x: 0, y: 80, width: 100, height: 50 }),
-        makeNode({ id: "m4", type: "container", x: 120, y: 80, width: 100, height: 50 })
-      ]
-    })
+        makeNode({
+          id: "m1",
+          type: "container",
+          x: 0,
+          y: 0,
+          width: 100,
+          height: 50,
+        }),
+        makeNode({
+          id: "m2",
+          type: "container",
+          x: 120,
+          y: 0,
+          width: 100,
+          height: 50,
+        }),
+        makeNode({
+          id: "m3",
+          type: "container",
+          x: 0,
+          y: 80,
+          width: 100,
+          height: 50,
+        }),
+        makeNode({
+          id: "m4",
+          type: "container",
+          x: 120,
+          y: 80,
+          width: 100,
+          height: 50,
+        }),
+      ],
+    }),
   );
   assert.equal(matrixLayout?.mode, "matrix");
   assert.equal(matrixLayout?.columnCount, 2);
@@ -910,11 +1054,32 @@ test("grid helpers detect matrix, equal-row, css-grid, and edge-case clustering 
       type: "container",
       layoutMode: "NONE",
       children: [
-        makeNode({ id: "e1", type: "container", x: 0, y: 0, width: 100, height: 40 }),
-        makeNode({ id: "e2", type: "container", x: 120, y: 0, width: 96, height: 40 }),
-        makeNode({ id: "e3", type: "container", x: 240, y: 0, width: 104, height: 40 })
-      ]
-    })
+        makeNode({
+          id: "e1",
+          type: "container",
+          x: 0,
+          y: 0,
+          width: 100,
+          height: 40,
+        }),
+        makeNode({
+          id: "e2",
+          type: "container",
+          x: 120,
+          y: 0,
+          width: 96,
+          height: 40,
+        }),
+        makeNode({
+          id: "e3",
+          type: "container",
+          x: 240,
+          y: 0,
+          width: 104,
+          height: 40,
+        }),
+      ],
+    }),
   );
   assert.equal(equalRowLayout?.mode, "equal-row");
   assert.equal(equalRowLayout?.columnCount, 3);
@@ -925,10 +1090,19 @@ test("grid helpers detect matrix, equal-row, css-grid, and edge-case clustering 
         id: "invalid-grid",
         type: "container",
         layoutMode: "HORIZONTAL",
-        children: [makeNode({ id: "only", type: "container", x: 0, y: 0, width: 100, height: 40 })]
-      })
+        children: [
+          makeNode({
+            id: "only",
+            type: "container",
+            x: 0,
+            y: 0,
+            width: 100,
+            height: 40,
+          }),
+        ],
+      }),
     ),
-    null
+    null,
   );
 
   const cssGridLayout = detectCssGridLayout(
@@ -946,22 +1120,49 @@ test("grid helpers detect matrix, equal-row, css-grid, and edge-case clustering 
           width: 100,
           height: 40,
           cssGridHints: {
-            gridArea: "header"
-          }
+            gridArea: "header",
+          },
         }),
-        makeNode({ id: "content-left", type: "container", x: 0, y: 60, width: 100, height: 120 }),
-        makeNode({ id: "content-right", type: "container", x: 120, y: 60, width: 100, height: 120 }),
-        makeNode({ id: "footer", type: "container", x: 120, y: 0, width: 100, height: 40 })
-      ]
-    })
+        makeNode({
+          id: "content-left",
+          type: "container",
+          x: 0,
+          y: 60,
+          width: 100,
+          height: 120,
+        }),
+        makeNode({
+          id: "content-right",
+          type: "container",
+          x: 120,
+          y: 60,
+          width: 100,
+          height: 120,
+        }),
+        makeNode({
+          id: "footer",
+          type: "container",
+          x: 120,
+          y: 0,
+          width: 100,
+          height: 40,
+        }),
+      ],
+    }),
   );
   assert.equal(cssGridLayout?.mode, "css-grid");
   assert.equal(cssGridLayout?.columnCount, 2);
 
   assert.deepEqual(clusterAxisValues({ values: [], tolerance: 18 }), []);
-  assert.deepEqual(clusterAxisValues({ values: [0, 6, 100, 108], tolerance: 18 }).length, 2);
+  assert.deepEqual(
+    clusterAxisValues({ values: [0, 6, 100, 108], tolerance: 18 }).length,
+    2,
+  );
   assert.equal(toNearestClusterIndex({ value: 40, clusters: [0] }), 0);
-  assert.equal(toNearestClusterIndex({ value: 160, clusters: [0, 100, 200] }), 2);
+  assert.equal(
+    toNearestClusterIndex({ value: 160, clusters: [0, 100, 200] }),
+    2,
+  );
   assert.deepEqual(toSequentialDeltas([5]), []);
   assert.deepEqual(toSequentialDeltas([5, 15, 30]), [10, 15]);
 });
