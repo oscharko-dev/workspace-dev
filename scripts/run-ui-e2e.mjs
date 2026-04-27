@@ -33,7 +33,8 @@ const testResult = spawnSync("pnpm", playwrightArgs, {
     mode === "live"
       ? {
           ...process.env,
-          WORKSPACE_DEV_E2E_INCLUDE_LIVE: "1"
+          WORKSPACE_DEV_E2E_INCLUDE_LIVE: "1",
+          INSPECTOR_LIVE_E2E: "1"
         }
       : process.env
 });
