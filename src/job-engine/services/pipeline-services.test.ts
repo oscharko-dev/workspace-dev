@@ -195,6 +195,50 @@ test("submission pipeline plan declares diff ownership across codegen, validate,
   });
 });
 
+test("submission figma.source contract requires figma.raw only for local_json mode", async () => {
+  const plan = buildSubmissionPipelinePlan();
+  const figmaEntry = plan.find((entry) => entry.service.stageName === "figma.source");
+  const localContext = await createPlanContext({
+    input: {
+      enableGitPr: false,
+      figmaSourceMode: "local_json",
+      figmaJsonPath: "/tmp/local.json"
+    },
+    resolvedFigmaSourceMode: "local_json"
+  });
+  const restContext = await createPlanContext({
+    input: {
+      enableGitPr: false,
+      figmaSourceMode: "rest",
+      figmaFileKey: "abc123",
+      figmaAccessToken: "token"
+    },
+    resolvedFigmaSourceMode: "rest"
+  });
+
+  assert.deepEqual(await figmaEntry?.resolveArtifacts?.(localContext), {
+    reads: [],
+    optionalReads: [],
+    writes: [
+      STAGE_ARTIFACT_KEYS.figmaCleaned,
+      STAGE_ARTIFACT_KEYS.figmaFetchDiagnostics,
+      STAGE_ARTIFACT_KEYS.figmaCleanedReport,
+      STAGE_ARTIFACT_KEYS.figmaRaw
+    ],
+    optionalWrites: []
+  });
+  assert.deepEqual(await figmaEntry?.resolveArtifacts?.(restContext), {
+    reads: [],
+    optionalReads: [],
+    writes: [
+      STAGE_ARTIFACT_KEYS.figmaCleaned,
+      STAGE_ARTIFACT_KEYS.figmaFetchDiagnostics,
+      STAGE_ARTIFACT_KEYS.figmaCleanedReport
+    ],
+    optionalWrites: []
+  });
+});
+
 test("regeneration pipeline plan keeps order and encodes seeded artifact contracts", async () => {
   const plan = buildRegenerationPipelinePlan();
   const context = await createPlanContext({

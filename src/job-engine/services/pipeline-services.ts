@@ -87,6 +87,23 @@ const buildCodegenInput = ({
   };
 };
 
+const resolveFigmaSourceArtifacts = ({
+  context,
+}: {
+  context: PipelineExecutionContext;
+}): StageArtifactContract => {
+  return {
+    writes: [
+      STAGE_ARTIFACT_KEYS.figmaCleaned,
+      STAGE_ARTIFACT_KEYS.figmaFetchDiagnostics,
+      STAGE_ARTIFACT_KEYS.figmaCleanedReport,
+      ...(context.resolvedFigmaSourceMode === "local_json"
+        ? [STAGE_ARTIFACT_KEYS.figmaRaw]
+        : []),
+    ],
+  };
+};
+
 const resolveCodegenArtifactContract = (context: PipelineExecutionContext): StageArtifactContract => {
   const reads: NonNullable<StageArtifactContract["reads"]> = [];
   const isStorybookFirst = Boolean(context.requestedStorybookStaticDir ?? context.resolvedStorybookStaticDir);
@@ -147,9 +164,9 @@ export const buildSubmissionPipelinePlan = (): PipelineStagePlanEntry[] => {
     {
       service: FigmaSourceService,
       resolveInput: buildFigmaSourceInput,
+      resolveArtifacts: resolveFigmaSourceArtifacts,
       artifacts: {
         writes: [
-          STAGE_ARTIFACT_KEYS.figmaRaw,
           STAGE_ARTIFACT_KEYS.figmaCleaned,
           STAGE_ARTIFACT_KEYS.figmaCleanedReport,
           STAGE_ARTIFACT_KEYS.figmaFetchDiagnostics
