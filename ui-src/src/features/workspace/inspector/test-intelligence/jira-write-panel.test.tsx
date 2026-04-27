@@ -11,6 +11,7 @@ import {
   JiraWritePanel,
   JIRA_WRITE_CONFIG_STORAGE_KEY,
 } from "./jira-write-panel";
+import { validateOutputPathFormat } from "./output-path-validation";
 import * as api from "./api";
 
 const successResult = {
@@ -198,5 +199,67 @@ describe("JiraWritePanel", () => {
     expect(screen.getByTestId("ti-jira-write-status")).toHaveTextContent(
       /no_approved_test_cases/,
     );
+  });
+
+  it("path with traversal segment shows error and blocks run", () => {
+    render(<JiraWritePanel jobId="job-1" bearerToken="token" />);
+    fireEvent.click(screen.getByTestId("ti-jira-write-enabled"));
+    fireEvent.change(screen.getByTestId("ti-jira-write-parent-key"), {
+      target: { value: "PROJ-123" },
+    });
+    fireEvent.click(screen.getByTestId("ti-jira-write-use-default-path"));
+    fireEvent.change(screen.getByTestId("ti-jira-write-output-path"), {
+      target: { value: "/safe/../etc/passwd" },
+    });
+    expect(
+      screen.getByTestId("ti-jira-write-output-path-error"),
+    ).toHaveTextContent(/path traversal/i);
+    expect(screen.getByTestId("ti-jira-write-run")).toBeDisabled();
+  });
+
+  it("path with null byte shows error and blocks run", () => {
+    render(<JiraWritePanel jobId="job-1" bearerToken="token" />);
+    fireEvent.click(screen.getByTestId("ti-jira-write-enabled"));
+    fireEvent.change(screen.getByTestId("ti-jira-write-parent-key"), {
+      target: { value: "PROJ-456" },
+    });
+    fireEvent.click(screen.getByTestId("ti-jira-write-use-default-path"));
+    fireEvent.change(screen.getByTestId("ti-jira-write-output-path"), {
+      target: { value: "/tmp/jira\0write" },
+    });
+    expect(
+      screen.getByTestId("ti-jira-write-output-path-error"),
+    ).toHaveTextContent(/null bytes/i);
+    expect(screen.getByTestId("ti-jira-write-run")).toBeDisabled();
+  });
+});
+
+describe("validateOutputPathFormat", () => {
+  it("accepts a clean absolute path", () => {
+    expect(validateOutputPathFormat("/tmp/jira-write-out")).toEqual({
+      ok: true,
+    });
+  });
+
+  it("rejects path with double-dot traversal", () => {
+    const result = validateOutputPathFormat("/tmp/../etc/passwd");
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.message).toMatch(/path traversal/i);
+    }
+  });
+
+  it("rejects path with embedded null byte", () => {
+    const result = validateOutputPathFormat("/tmp/jira\0out");
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.message).toMatch(/null bytes/i);
+    }
+  });
+
+  it("accepts a path whose directory segment contains 'dots' but no traversal", () => {
+    expect(validateOutputPathFormat("/tmp/jira.write.out")).toEqual({
+      ok: true,
+    });
   });
 });
