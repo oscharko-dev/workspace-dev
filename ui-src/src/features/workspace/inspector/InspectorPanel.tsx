@@ -200,7 +200,6 @@ import {
   createDraftSnapshotStore,
   type DraftSnapshotStore,
 } from "./inspector-draft-snapshot";
-import "./inspector.css";
 
 // ---------------------------------------------------------------------------
 // Payload types
@@ -1263,9 +1262,7 @@ export function InspectorPanel({
         return false;
       }
 
-      return isRegenerationJob && response.payload.files.length === 0
-        ? 1_000
-        : false;
+      return isRegenerationJob && response.payload.files.length === 0 ? 1_000 : false;
     },
     staleTime: Infinity,
   });
@@ -5398,7 +5395,8 @@ export function InspectorPanel({
       {editModeActive && selectedNodeId ? (
         <div
           data-testid="inspector-edit-studio-panel"
-          className="inspector-edit-studio-panel shrink-0 overflow-y-auto border-b border-[#2a2a3d] bg-[#1a1a2a] px-4 py-2 text-xs text-indigo-200"
+          className="shrink-0 overflow-y-auto border-b border-[#2a2a3d] bg-[#1a1a2a] px-4 py-2 text-xs text-indigo-200"
+          className="removed-style-1"
         >
           <div className="mx-auto max-w-5xl">
             <p className="m-0 font-semibold text-indigo-300">Edit Studio</p>
@@ -6258,14 +6256,8 @@ export function InspectorPanel({
         {hasTreePane ? (
           <div
             data-testid="inspector-pane-tree"
-            className="inspector-pane inspector-pane-tree min-h-[120px] shrink-0 border-r border-[#000000]"
-            style={
-              treePaneStyle
-                ? ({
-                    "--pane-flex-grow": treePaneStyle.flexGrow,
-                  } as React.CSSProperties)
-                : undefined
-            }
+            className="min-h-[120px] shrink-0 border-r border-[#000000]"
+            style={treePaneStyle}
           >
             {treeRecoveryError ? (
               <div
@@ -6363,7 +6355,8 @@ export function InspectorPanel({
             aria-valuemax={100}
             aria-valuenow={treeSeparatorNow}
             data-testid="inspector-splitter-tree-preview"
-            className="inspector-pane-splitter group hidden shrink-0 cursor-col-resize select-none focus:outline-none xl:flex xl:w-3 xl:items-stretch xl:justify-center"
+            className="group hidden shrink-0 cursor-col-resize select-none focus:outline-none xl:flex xl:w-3 xl:items-stretch xl:justify-center"
+            className="removed-style-2"
             onPointerDown={handleSplitterPointerDown("tree-preview")}
             onPointerMove={handleSplitterPointerMove}
             onPointerUp={handleSplitterPointerUp}
@@ -6381,14 +6374,8 @@ export function InspectorPanel({
         {/* Center: Preview pane */}
         <div
           data-testid="inspector-pane-preview"
-          className="inspector-pane inspector-pane-preview relative min-h-[200px] border-r border-[#000000] lg:min-h-0"
-          style={
-            previewPaneStyle
-              ? ({
-                  "--pane-flex-grow": previewPaneStyle.flexGrow,
-                } as React.CSSProperties)
-              : undefined
-          }
+          className="relative min-h-[200px] flex-1 border-r border-[#000000] lg:min-h-0"
+          style={previewPaneStyle}
         >
           {previewRecoveryMessage ? (
             <div
@@ -6427,7 +6414,8 @@ export function InspectorPanel({
           aria-valuemax={100}
           aria-valuenow={previewSeparatorNow}
           data-testid="inspector-splitter-preview-code"
-          className="inspector-pane-splitter group hidden shrink-0 cursor-col-resize select-none focus:outline-none xl:flex xl:w-3 xl:items-stretch xl:justify-center"
+          className="group hidden shrink-0 cursor-col-resize select-none focus:outline-none xl:flex xl:w-3 xl:items-stretch xl:justify-center"
+          className="removed-style-3"
           onPointerDown={handleSplitterPointerDown("preview-code")}
           onPointerMove={handleSplitterPointerMove}
           onPointerUp={handleSplitterPointerUp}
@@ -6444,14 +6432,8 @@ export function InspectorPanel({
         {/* Right: Code pane */}
         <div
           data-testid="inspector-pane-code"
-          className="inspector-pane inspector-pane-code min-h-[200px] lg:min-h-0"
-          style={
-            codePaneStyle
-              ? ({
-                  "--pane-flex-grow": codePaneStyle.flexGrow,
-                } as React.CSSProperties)
-              : undefined
-          }
+          className="min-h-[200px] flex-1 lg:min-h-0"
+          style={codePaneStyle}
         >
           {(activePipeline.stage === "ready" ||
             activePipeline.stage === "partial") &&

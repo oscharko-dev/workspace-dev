@@ -1,8 +1,5 @@
 import type { JSX } from "react";
-import type {
-  StaleDraftCheckResult,
-  StaleDraftDecision,
-} from "./inspector-override-draft";
+import type { StaleDraftCheckResult, StaleDraftDecision } from "./inspector-override-draft";
 
 interface StaleDraftWarningProps {
   checkResult: StaleDraftCheckResult;
@@ -15,28 +12,38 @@ export function StaleDraftWarning({
   checkResult,
   onDecision,
   disabled = false,
-  remapPending = false,
+  remapPending = false
 }: StaleDraftWarningProps): JSX.Element {
   const hasUnmapped = checkResult.unmappedNodeIds.length > 0;
   const remapAvailable = hasUnmapped && !checkResult.carryForwardAvailable;
 
   return (
-    <div role="alert" className="stale-draft-warning">
-      <p className="stale-draft-warning-title">Stale draft detected</p>
-      <p className="stale-draft-warning-message">{checkResult.message}</p>
+    <div
+      role="alert"
+      className="stale-draft-warning"
+      className="removed-style-1"
+    >
+      <p
+        className="removed-style-2"
+      >
+        Stale draft detected
+      </p>
+      <p className="removed-style-3">
+        {checkResult.message}
+      </p>
       {hasUnmapped && (
-        <p className="stale-draft-warning-detail">
+        <p
+          className="removed-style-4"
+        >
           {`${String(checkResult.unmappedNodeIds.length)} node(s) could not be mapped to the latest output.`}
         </p>
       )}
-      <div className="stale-draft-warning-actions">
+      <div className="removed-style-5">
         <button
           type="button"
           disabled={disabled}
-          onClick={() => {
-            onDecision("continue");
-          }}
-          className="stale-draft-btn"
+          onClick={() => { onDecision("continue"); }}
+          className="removed-style-6"
           title="Keep editing against the original source job"
         >
           Continue with original
@@ -44,10 +51,8 @@ export function StaleDraftWarning({
         <button
           type="button"
           disabled={disabled}
-          onClick={() => {
-            onDecision("discard");
-          }}
-          className="stale-draft-btn"
+          onClick={() => { onDecision("discard"); }}
+          className="removed-style-7"
           title="Discard the draft and start fresh from the latest job"
         >
           Discard draft
@@ -56,10 +61,8 @@ export function StaleDraftWarning({
           <button
             type="button"
             disabled={disabled}
-            onClick={() => {
-              onDecision("carry-forward");
-            }}
-            className="stale-draft-btn stale-draft-btn--primary"
+            onClick={() => { onDecision("carry-forward"); }}
+            className="removed-style-8"
             title="Apply your edits to the latest job output"
           >
             Carry forward to latest
@@ -69,10 +72,8 @@ export function StaleDraftWarning({
           <button
             type="button"
             disabled={disabled || remapPending}
-            onClick={() => {
-              onDecision("remap");
-            }}
-            className="stale-draft-btn stale-draft-btn--info"
+            onClick={() => { onDecision("remap"); }}
+            className="removed-style-9"
             title="Get guided suggestions for remapping changed nodes"
           >
             {remapPending ? "Loading suggestions\u2026" : "Suggest remaps"}

@@ -117,17 +117,15 @@ export function ScreenshotPreview({
       onPointerUp={handlePointerUp}
       onPointerCancel={handlePointerUp}
     >
-      <div className="screenshot-preview-container absolute inset-0 flex items-center justify-center">
+      <div
+        className="absolute inset-0 flex items-center justify-center"
+        className="removed-style-1"
+      >
         <img
           src={screenshotUrl}
           alt="Figma design preview"
           draggable={false}
-          className="screenshot-preview-image"
-          style={
-            {
-              "--transform-translate-scale": `translate(${translate.x}px, ${translate.y + (externalOffsetY ?? 0)}px) scale(${scale})`,
-            } as React.CSSProperties
-          }
+          className="removed-style-2"
         />
       </div>
 
