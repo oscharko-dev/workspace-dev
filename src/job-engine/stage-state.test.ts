@@ -11,6 +11,14 @@ import {
 } from "./stage-state.js";
 import type { JobRecord } from "./types.js";
 
+const PIPELINE_METADATA = {
+  pipelineId: "rocket",
+  pipelineDisplayName: "Rocket",
+  templateBundleId: "react-mui-app",
+  buildProfile: "rocket",
+  deterministic: true,
+} as const;
+
 const createJob = (jobId: string): JobRecord => ({
   jobId,
   status: "queued",
@@ -427,8 +435,11 @@ test("toPublicJob deep copies nested stage-state projections", () => {
 
   const publicJob = toPublicJob(job);
   assert.equal(publicJob.pipelineId, "rocket");
+  assert.deepEqual(publicJob.pipelineMetadata, PIPELINE_METADATA);
   assert.equal(publicJob.request.pipelineId, "rocket");
+  assert.deepEqual(publicJob.request.pipelineMetadata, PIPELINE_METADATA);
   assert.equal(publicJob.inspector?.pipelineId, "rocket");
+  assert.deepEqual(publicJob.inspector?.pipelineMetadata, PIPELINE_METADATA);
   publicJob.stages[0]!.message = "changed";
   publicJob.logs[0]!.message = "changed";
   publicJob.pasteDeltaSummary!.mode = "delta";
@@ -439,8 +450,11 @@ test("toPublicJob deep copies nested stage-state projections", () => {
     "changed";
   publicJob.inspector!.retryTargets![0]!.targetId = "changed";
   publicJob.inspector!.stages[0]!.retryTargets![0]!.targetId = "changed";
+  publicJob.inspector!.pipelineMetadata.templateBundleId = "changed";
   publicJob.error!.retryTargets![0]!.targetId = "changed";
 
+  assert.equal(job.request.pipelineMetadata, undefined);
+  assert.equal(job.inspector?.pipelineMetadata, undefined);
   assert.equal(job.stages[0]?.message, undefined);
   assert.equal(job.logs[0]?.message, "log line");
   assert.equal(job.pasteDeltaSummary?.mode, "full");

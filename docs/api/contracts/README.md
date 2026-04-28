@@ -9798,7 +9798,15 @@ Present only when `figmaSourceMode === "figma_paste" | "figma_plugin"` and diff 
 
 ###### Inherited from
 
-[`WorkspaceSubmitAccepted`](#workspacesubmitaccepted).[`pipelineId`](#pipelineid-8)
+[`WorkspaceSubmitAccepted`](#workspacesubmitaccepted).[`pipelineId`](#pipelineid-9)
+
+##### pipelineMetadata
+
+> **pipelineMetadata**: [`WorkspaceJobPipelineMetadata`](#workspacejobpipelinemetadata)
+
+###### Inherited from
+
+[`WorkspaceSubmitAccepted`](#workspacesubmitaccepted).[`pipelineMetadata`](#pipelinemetadata-8)
 
 ##### sessionId
 
@@ -10282,6 +10290,10 @@ Successful MCP read-tool calls consumed by this job.
 
 > **pipelineId**: [`WorkspacePipelineId`](#workspacepipelineid)
 
+##### pipelineMetadata
+
+> **pipelineMetadata**: [`WorkspaceJobPipelineMetadata`](#workspacejobpipelinemetadata)
+
 ##### retryableStages?
 
 > `optional` **retryableStages?**: [`WorkspaceJobRetryStage`](#workspacejobretrystage)[]
@@ -10358,6 +10370,10 @@ Lineage metadata linking a regeneration job to its source.
 
 > **overrideCount**: `number`
 
+##### pipelineMetadata?
+
+> `optional` **pipelineMetadata?**: [`WorkspaceJobPipelineMetadata`](#workspacejobpipelinemetadata)
+
 ##### retryStage?
 
 > `optional` **retryStage?**: [`WorkspaceJobRetryStage`](#workspacejobretrystage)
@@ -10393,6 +10409,34 @@ Structured job log line.
 ##### stage?
 
 > `optional` **stage?**: [`WorkspaceJobStageName`](#workspacejobstagename-1)
+
+***
+
+### WorkspaceJobPipelineMetadata
+
+Pipeline identity stamped onto job lifecycle records and public projections.
+
+#### Properties
+
+##### buildProfile
+
+> **buildProfile**: `string`
+
+##### deterministic
+
+> **deterministic**: `true`
+
+##### pipelineDisplayName
+
+> **pipelineDisplayName**: `string`
+
+##### pipelineId
+
+> **pipelineId**: [`WorkspacePipelineId`](#workspacepipelineid)
+
+##### templateBundleId
+
+> **templateBundleId**: `string`
 
 ***
 
@@ -10505,6 +10549,10 @@ Public subset of request metadata stored for a job (secrets excluded).
 ##### pipelineId?
 
 > `optional` **pipelineId?**: [`WorkspacePipelineId`](#workspacepipelineid)
+
+##### pipelineMetadata?
+
+> `optional` **pipelineMetadata?**: [`WorkspaceJobPipelineMetadata`](#workspacejobpipelinemetadata)
 
 ##### projectName?
 
@@ -10621,6 +10669,10 @@ Compact result payload for terminal-state inspection.
 ##### pipelineId
 
 > **pipelineId**: [`WorkspacePipelineId`](#workspacepipelineid)
+
+##### pipelineMetadata
+
+> **pipelineMetadata**: [`WorkspaceJobPipelineMetadata`](#workspacejobpipelinemetadata)
 
 ##### preview
 
@@ -10785,6 +10837,10 @@ Full job status payload for polling endpoint.
 ##### pipelineId
 
 > **pipelineId**: [`WorkspacePipelineId`](#workspacepipelineid)
+
+##### pipelineMetadata
+
+> **pipelineMetadata**: [`WorkspaceJobPipelineMetadata`](#workspacejobpipelinemetadata)
 
 ##### preview
 
@@ -11234,6 +11290,10 @@ Submit response for accepted regeneration jobs.
 
 > **pipelineId**: [`WorkspacePipelineId`](#workspacepipelineid)
 
+##### pipelineMetadata
+
+> **pipelineMetadata**: [`WorkspaceJobPipelineMetadata`](#workspacejobpipelinemetadata)
+
 ##### sourceJobId
 
 > **sourceJobId**: `string`
@@ -11495,6 +11555,10 @@ Submit response for accepted retry jobs.
 ##### pipelineId
 
 > **pipelineId**: [`WorkspacePipelineId`](#workspacepipelineid)
+
+##### pipelineMetadata
+
+> **pipelineMetadata**: [`WorkspaceJobPipelineMetadata`](#workspacejobpipelinemetadata)
 
 ##### retryStage
 
@@ -12302,6 +12366,10 @@ Present only when `figmaSourceMode === "figma_paste" | "figma_plugin"` and diff 
 ##### pipelineId
 
 > **pipelineId**: [`WorkspacePipelineId`](#workspacepipelineid)
+
+##### pipelineMetadata
+
+> **pipelineMetadata**: [`WorkspaceJobPipelineMetadata`](#workspacejobpipelinemetadata)
 
 ##### status
 
@@ -14713,7 +14781,7 @@ Schema version for `BusinessTestIntentIr` artifacts.
 
 ### CONTRACT\_VERSION
 
-> `const` **CONTRACT\_VERSION**: `"4.19.0"`
+> `const` **CONTRACT\_VERSION**: `"4.20.0"`
 
 Current contract version constant.
 Must be bumped according to CONTRACT_CHANGELOG.md rules.

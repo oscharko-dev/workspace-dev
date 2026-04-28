@@ -31,6 +31,34 @@ All changes to the public contract surface of `workspace-dev` are documented her
 
 ---
 
+## [4.20.0] - 2026-04-28
+
+### Added (Issue #1538)
+
+Pipeline runtime metadata now follows the selected pipeline through execution
+contexts, persisted job records, terminal snapshots, public projections,
+regeneration lineage, and retry lineage. This is additive for wire consumers and
+keeps the canonical stage order unchanged.
+
+**New types:**
+
+- `WorkspaceJobPipelineMetadata` — selected pipeline id, display name, template
+  bundle id, active build profile, and deterministic execution guarantee.
+
+**Extended types (additive fields only):**
+
+- `WorkspaceSubmitAccepted.pipelineMetadata`
+- `WorkspaceJobRequestMetadata.pipelineMetadata`
+- `WorkspaceJobStatus.pipelineMetadata`
+- `WorkspaceJobResult.pipelineMetadata`
+- `WorkspaceJobInspector.pipelineMetadata`
+- `WorkspaceRegenerationAccepted.pipelineMetadata`
+- `WorkspaceRetryAccepted.pipelineMetadata`
+- `WorkspaceJobLineage.pipelineMetadata`
+
+Legacy terminal snapshots that predate this field continue to rehydrate with the
+existing `rocket` compatibility pipeline metadata.
+
 ## [4.19.0] - 2026-04-28
 
 ### Added (Issue #1537)

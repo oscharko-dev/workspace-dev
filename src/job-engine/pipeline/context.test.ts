@@ -4,6 +4,14 @@ import { createStageRuntimeContext, type PipelineExecutionContext } from "./cont
 import type { JobRecord } from "../types.js";
 import type { PipelineDiagnosticInput } from "../errors.js";
 
+const PIPELINE_METADATA = {
+  pipelineId: "rocket",
+  pipelineDisplayName: "Rocket",
+  templateBundleId: "react-mui-app",
+  buildProfile: "rocket",
+  deterministic: true,
+} as const;
+
 const createJob = (jobId: string): JobRecord => ({
   jobId,
   status: "queued",
@@ -57,6 +65,7 @@ const createExecutionContext = (
       projectName: "demo",
     },
     sourceJob,
+    pipelineMetadata: PIPELINE_METADATA,
     runtime: {
       logLimit: 50,
       logger: {
@@ -136,6 +145,7 @@ test("createStageRuntimeContext propagates execution fields and omits unset opti
   assert.equal(context.mode, "submission");
   assert.equal(context.jobId, executionContext.job.jobId);
   assert.equal(context.job, executionContext.job);
+  assert.deepEqual(context.pipelineMetadata, PIPELINE_METADATA);
   assert.equal(context.runtime, executionContext.runtime);
   assert.equal(context.paths, executionContext.paths);
   assert.equal(context.resolvedPaths, executionContext.resolvedPaths);

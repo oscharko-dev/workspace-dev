@@ -107,6 +107,11 @@ import {
   selectPipelineDefinition,
 } from "./job-engine/pipeline/pipeline-selection.js";
 import {
+  clonePipelineMetadata,
+  resolveJobPipelineMetadata,
+  toPipelineRuntimeMetadata,
+} from "./job-engine/pipeline/pipeline-runtime-metadata.js";
+import {
   computePasteCompatibilityFingerprint,
   createPasteFingerprintStore,
   type PasteFingerprintManifest,
@@ -808,10 +813,12 @@ export const createJobEngine = ({
     jobId,
     request,
     lineage,
+    pipelineMetadata,
   }: {
     jobId: string;
     request: WorkspaceJobStatus["request"];
     lineage?: JobRecord["lineage"];
+    pipelineMetadata?: JobRecord["pipelineMetadata"];
   }): JobRecord => {
     return {
       jobId,
@@ -828,6 +835,9 @@ export const createJobEngine = ({
         enabled: runtime.previewEnabled,
       },
       queue: toQueueSnapshot({ jobId }),
+      ...(pipelineMetadata
+        ? { pipelineMetadata: clonePipelineMetadata(pipelineMetadata) }
+        : {}),
       ...(lineage ? { lineage } : {}),
     };
   };
@@ -2467,6 +2477,7 @@ export const createJobEngine = ({
         job,
         input,
         ...(deltaSourceJob ? { sourceJob: deltaSourceJob } : {}),
+        pipelineMetadata: resolveJobPipelineMetadata(job),
         runtime,
         resolvedPaths,
         resolvedWorkspaceRoot,
@@ -2726,6 +2737,7 @@ export const createJobEngine = ({
       }),
       scope: inferPipelineScope(input),
     });
+    const pipelineMetadata = toPipelineRuntimeMetadata(selectedPipeline);
     const resolvedInput: SubmissionJobInput = {
       ...input,
       pipelineId: selectedPipeline.id,
@@ -2798,6 +2810,7 @@ export const createJobEngine = ({
       });
     const request: WorkspaceJobStatus["request"] = {
       pipelineId: selectedPipeline.id,
+      pipelineMetadata: clonePipelineMetadata(pipelineMetadata),
       enableGitPr: resolvedInput.enableGitPr === true,
       figmaSourceMode: acceptedModes.figmaSourceMode,
       llmCodegenMode: acceptedModes.llmCodegenMode,
@@ -2910,6 +2923,7 @@ export const createJobEngine = ({
         enabled: runtime.previewEnabled,
       },
       queue: toQueueSnapshot({ jobId }),
+      pipelineMetadata: clonePipelineMetadata(pipelineMetadata),
     };
 
     jobs.set(jobId, job);
@@ -2939,6 +2953,7 @@ export const createJobEngine = ({
       jobId,
       status: "queued" as const,
       pipelineId: selectedPipeline.id,
+      pipelineMetadata: clonePipelineMetadata(pipelineMetadata),
       acceptedModes,
       ...(resolvedInput.importIntent !== undefined
         ? { importIntent: resolvedInput.importIntent }
@@ -3092,6 +3107,7 @@ export const createJobEngine = ({
         job,
         regenerationInput: regenInput,
         sourceJob: sourceRecord,
+        pipelineMetadata: resolveJobPipelineMetadata(job),
         runtime,
         resolvedPaths,
         resolvedWorkspaceRoot,
@@ -3470,6 +3486,7 @@ export const createJobEngine = ({
         input: sourceInput,
         retryInput,
         sourceJob: sourceRecord,
+        pipelineMetadata: resolveJobPipelineMetadata(job),
         runtime,
         resolvedPaths,
         resolvedWorkspaceRoot,
@@ -3734,6 +3751,7 @@ export const createJobEngine = ({
 
     const jobId = randomUUID();
     const sourcePipelineId = resolveJobPipelineId(sourceJob);
+    const sourcePipelineMetadata = resolveJobPipelineMetadata(sourceJob);
     const customerBrandId = normalizeOptionalInputString(input.customerBrandId);
     const componentMappings = input.componentMappings
       ? normalizeComponentMappingRules({
@@ -3747,6 +3765,7 @@ export const createJobEngine = ({
       request: {
         ...sourceJob.request,
         pipelineId: sourcePipelineId,
+        pipelineMetadata: clonePipelineMetadata(sourcePipelineMetadata),
         enableGitPr: false,
         ...(customerBrandId ? { customerBrandId } : {}),
         ...(componentMappings ? { componentMappings } : {}),
@@ -3761,9 +3780,11 @@ export const createJobEngine = ({
         enabled: runtime.previewEnabled,
       },
       queue: toQueueSnapshot({ jobId }),
+      pipelineMetadata: clonePipelineMetadata(sourcePipelineMetadata),
       lineage: {
         sourceJobId: input.sourceJobId,
         kind: "regeneration",
+        pipelineMetadata: clonePipelineMetadata(sourcePipelineMetadata),
         overrideCount: input.overrides.length,
         ...(input.draftId ? { draftId: input.draftId } : {}),
         ...(input.baseFingerprint
@@ -3799,6 +3820,7 @@ export const createJobEngine = ({
       sourceJobId: input.sourceJobId,
       status: "queued" as const,
       pipelineId: sourcePipelineId,
+      pipelineMetadata: clonePipelineMetadata(sourcePipelineMetadata),
       acceptedModes: toAcceptedModes({
         figmaSourceMode: sourceJob.request.figmaSourceMode,
       }),
@@ -3847,6 +3869,7 @@ export const createJobEngine = ({
 
     const jobId = randomUUID();
     const sourcePipelineId = resolveJobPipelineId(sourceJob);
+    const sourcePipelineMetadata = resolveJobPipelineMetadata(sourceJob);
     const retryTargets =
       input.retryTargets?.map((entry) => entry.trim()).filter(Boolean) ?? [];
     const job = createQueuedJobRecord({
@@ -3854,10 +3877,13 @@ export const createJobEngine = ({
       request: {
         ...sourceJob.request,
         pipelineId: sourcePipelineId,
+        pipelineMetadata: clonePipelineMetadata(sourcePipelineMetadata),
       },
+      pipelineMetadata: sourcePipelineMetadata,
       lineage: {
         sourceJobId: input.sourceJobId,
         kind: "retry",
+        pipelineMetadata: clonePipelineMetadata(sourcePipelineMetadata),
         overrideCount: 0,
         retryStage: input.retryStage,
         ...(retryTargets.length > 0 ? { retryTargets } : {}),
@@ -3905,6 +3931,7 @@ export const createJobEngine = ({
       retryStage: input.retryStage,
       status: "queued" as const,
       pipelineId: sourcePipelineId,
+      pipelineMetadata: clonePipelineMetadata(sourcePipelineMetadata),
       acceptedModes: toAcceptedModes({
         figmaSourceMode: sourceJob.request.figmaSourceMode,
       }),
@@ -4212,9 +4239,11 @@ export const createJobEngine = ({
     }
 
     const pipelineId = resolveJobPipelineId(job);
+    const pipelineMetadata = resolveJobPipelineMetadata(job);
     const result: WorkspaceJobResult = {
       jobId: job.jobId,
       pipelineId,
+      pipelineMetadata,
       status: job.status,
       ...(job.outcome ? { outcome: job.outcome } : {}),
       summary: toJobSummary(job),
@@ -4225,7 +4254,16 @@ export const createJobEngine = ({
       result.pasteDeltaSummary = { ...job.pasteDeltaSummary };
     }
     if (job.lineage) {
-      result.lineage = { ...job.lineage };
+      result.lineage = {
+        ...job.lineage,
+        ...(job.lineage.pipelineMetadata
+          ? {
+              pipelineMetadata: clonePipelineMetadata(
+                job.lineage.pipelineMetadata,
+              ),
+            }
+          : {}),
+      };
     }
     if (job.cancellation) {
       result.cancellation = { ...job.cancellation };
@@ -4253,6 +4291,7 @@ export const createJobEngine = ({
       result.inspector = {
         ...job.inspector,
         pipelineId,
+        pipelineMetadata: clonePipelineMetadata(pipelineMetadata),
         ...(job.inspector.retryableStages
           ? { retryableStages: [...job.inspector.retryableStages] }
           : {}),

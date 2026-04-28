@@ -4,6 +4,7 @@ import type {
   WorkspaceFormHandlingMode,
   WorkspaceJobDiagnostic,
   WorkspaceJobLog,
+  WorkspaceJobPipelineMetadata,
   WorkspaceJobRetryStage,
   WorkspaceJobStageName,
   WorkspaceRegenerationInput,
@@ -46,6 +47,7 @@ export interface PipelineExecutionContext {
   regenerationInput?: WorkspaceRegenerationInput;
   retryInput?: WorkspaceRetryInput;
   sourceJob?: JobRecord;
+  pipelineMetadata: WorkspaceJobPipelineMetadata;
   runtime: JobEngineRuntime;
   resolvedPaths: JobEnginePaths;
   resolvedWorkspaceRoot: string;
@@ -79,6 +81,7 @@ export interface StageRuntimeContext {
   readonly job: JobRecord;
   readonly input?: SubmissionJobInput;
   readonly sourceJob?: JobRecord;
+  readonly pipelineMetadata: WorkspaceJobPipelineMetadata;
   readonly retryInput?: WorkspaceRetryInput;
   readonly retryStage?: WorkspaceJobRetryStage;
   readonly runtime: Readonly<JobEngineRuntime>;
@@ -127,6 +130,7 @@ export const createStageRuntimeContext = ({
     job: executionContext.job,
     ...(executionContext.input ? { input: executionContext.input } : {}),
     ...(executionContext.sourceJob ? { sourceJob: executionContext.sourceJob } : {}),
+    pipelineMetadata: executionContext.pipelineMetadata,
     ...(executionContext.retryInput ? { retryInput: executionContext.retryInput } : {}),
     ...(executionContext.retryInput?.retryStage
       ? { retryStage: executionContext.retryInput.retryStage }

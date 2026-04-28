@@ -5,8 +5,8 @@ test-intelligence contracts, HTTP routes, and operator configuration options
 introduced in Issues #1431–#1439.
 
 **Contract version:** `TEST_INTELLIGENCE_CONTRACT_VERSION = "1.5.0"`<br>
-**Package contract version:** `CONTRACT_VERSION = "4.19.0"`<br>
-**Authoritative surface:** `CONTRACT_CHANGELOG.md` §4.11.0–4.19.0
+**Package contract version:** `CONTRACT_VERSION = "4.20.0"`<br>
+**Authoritative surface:** `CONTRACT_CHANGELOG.md` §4.11.0–4.20.0
 
 For the operator setup guide see `docs/test-intelligence.md`. For migration
 from single-source jobs see `docs/migration/wave-4-additive.md`.
@@ -669,7 +669,7 @@ is explicitly published.
 
 ## 12. See also
 
-- `CONTRACT_CHANGELOG.md` §4.11.0–4.19.0 — authoritative contract surface
+- `CONTRACT_CHANGELOG.md` §4.11.0–4.20.0 — authoritative contract surface
 - `docs/test-intelligence.md` §14 — Wave 4 multi-source gate (operator guide)
 - `docs/migration/wave-4-additive.md` — migration from single-source
 - `docs/runbooks/jira-source-setup.md` — Jira setup guide
