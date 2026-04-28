@@ -39,6 +39,11 @@ import type { JobEngine } from "../job-engine.js";
 import type { SubmissionJobInput } from "../job-engine/types.js";
 import { STAGE_ARTIFACT_KEYS } from "../job-engine/pipeline/artifact-keys.js";
 import { StageArtifactStore } from "../job-engine/pipeline/artifact-store.js";
+import {
+  getDefaultPipelineRegistry,
+  selectPipelineDefinition,
+} from "../job-engine/pipeline/pipeline-selection.js";
+import { isPipelineRequestError } from "../job-engine/pipeline/pipeline-errors.js";
 import { LocalSyncError } from "../job-engine/local-sync.js";
 import {
   getContentType,
@@ -1350,6 +1355,11 @@ export function createWorkspaceRequestHandler({
           resolveTestIntelligenceMultiSourceEnvEnabled() &&
           runtime.testIntelligenceMultiSourceEnabled === true;
         const status: WorkspaceStatus = {
+          availablePipelines: getDefaultPipelineRegistry().listDescriptors(),
+          defaultPipelineId: selectPipelineDefinition({
+            sourceMode: defaults.figmaSourceMode,
+            scope: "board",
+          }).id,
           running: true,
           url: `http://${host}:${resolvedPort}`,
           host,
@@ -6366,6 +6376,20 @@ export function createWorkspaceRequestHandler({
           accepted = jobEngine.submitJob(submitInput);
         } catch (error) {
           await cleanupPendingPasteTempFile();
+          if (isPipelineRequestError(error)) {
+            sendValidationError({
+              payload: {
+                error: error.code,
+                message: sanitizeErrorMessage({
+                  error,
+                  fallback: "Invalid pipeline request.",
+                }),
+                ...(error.pipelineId ? { pipelineId: error.pipelineId } : {}),
+              },
+              fallbackMessage: "Submit request validation failed.",
+            });
+            return;
+          }
           if (
             error instanceof Error &&
             "code" in error &&

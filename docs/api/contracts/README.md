@@ -9792,6 +9792,14 @@ Present only when `figmaSourceMode === "figma_paste" | "figma_plugin"` and diff 
 
 [`WorkspaceSubmitAccepted`](#workspacesubmitaccepted).[`pasteDeltaSummary`](#pastedeltasummary-3)
 
+##### pipelineId
+
+> **pipelineId**: [`WorkspacePipelineId`](#workspacepipelineid)
+
+###### Inherited from
+
+[`WorkspaceSubmitAccepted`](#workspacesubmitaccepted).[`pipelineId`](#pipelineid-3)
+
 ##### sessionId
 
 > **sessionId**: `string`
@@ -10178,6 +10186,10 @@ gates are not satisfied, the server returns `503 Feature Disabled`.
 
 > `optional` **originalIntent?**: [`WorkspaceImportIntent`](#workspaceimportintent)
 
+##### pipelineId?
+
+> `optional` **pipelineId?**: [`WorkspacePipelineId`](#workspacepipelineid)
+
 ##### projectName?
 
 > `optional` **projectName?**: `string`
@@ -10485,6 +10497,10 @@ Public subset of request metadata stored for a job (secrets excluded).
 ##### originalIntent?
 
 > `optional` **originalIntent?**: [`WorkspaceImportIntent`](#workspaceimportintent)
+
+##### pipelineId?
+
+> `optional` **pipelineId?**: [`WorkspacePipelineId`](#workspacepipelineid)
 
 ##### projectName?
 
@@ -11093,6 +11109,34 @@ Diff ratio used to choose mode when `auto`. 0 = identical, 1 = all new.
 > **totalNodes**: `number`
 
 Total nodes observed in the current paste.
+
+***
+
+### WorkspacePipelineDescriptor
+
+Public descriptor for a pipeline included in the current package profile.
+
+#### Properties
+
+##### description
+
+> **description**: `string`
+
+##### displayName
+
+> **displayName**: `string`
+
+##### id
+
+> **id**: [`WorkspacePipelineId`](#workspacepipelineid)
+
+##### supportedScopes
+
+> **supportedScopes**: [`WorkspacePipelineScope`](#workspacepipelinescope)[]
+
+##### supportedSourceModes
+
+> **supportedSourceModes**: (`"rest"` \| `"hybrid"` \| `"local_json"` \| `"figma_paste"` \| `"figma_plugin"`)[]
 
 ***
 
@@ -12069,6 +12113,14 @@ Status of a running workspace-dev instance.
 
 #### Properties
 
+##### availablePipelines?
+
+> `optional` **availablePipelines?**: [`WorkspacePipelineDescriptor`](#workspacepipelinedescriptor)[]
+
+##### defaultPipelineId?
+
+> `optional` **defaultPipelineId?**: [`WorkspacePipelineId`](#workspacepipelineid)
+
 ##### figmaSourceMode
 
 > **figmaSourceMode**: `"rest"` \| `"hybrid"` \| `"local_json"` \| `"figma_paste"` \| `"figma_plugin"`
@@ -12170,6 +12222,10 @@ Submit response for accepted jobs.
 
 Per-paste delta summary computed at submit time for Figma paste imports.
 Present only when `figmaSourceMode === "figma_paste" | "figma_plugin"` and diff succeeded.
+
+##### pipelineId
+
+> **pipelineId**: [`WorkspacePipelineId`](#workspacepipelineid)
 
 ##### status
 
@@ -13761,6 +13817,30 @@ Structural classification of a per-paste delta diff.
 
 ***
 
+### WorkspacePipelineId
+
+> **WorkspacePipelineId** = `"default"` \| `"rocket"` \| `string` & `object`
+
+Stable pipeline identifiers understood by workspace-dev.
+
+***
+
+### WorkspacePipelineRequestErrorCode
+
+> **WorkspacePipelineRequestErrorCode** = *typeof* [`ALLOWED_PIPELINE_REQUEST_ERROR_CODES`](#allowed_pipeline_request_error_codes)\[`number`\]
+
+Request-time pipeline selection error code.
+
+***
+
+### WorkspacePipelineScope
+
+> **WorkspacePipelineScope** = `"board"` \| `"node"` \| `"selection"`
+
+Input scope resolved before pipeline selection.
+
+***
+
 ### WorkspaceRemapConfidence
 
 > **WorkspaceRemapConfidence** = `"high"` \| `"medium"` \| `"low"`
@@ -14175,6 +14255,14 @@ structured diagnostic.
 
 ***
 
+### ALLOWED\_PIPELINE\_REQUEST\_ERROR\_CODES
+
+> `const` **ALLOWED\_PIPELINE\_REQUEST\_ERROR\_CODES**: readonly \[`"INVALID_PIPELINE"`, `"PIPELINE_UNAVAILABLE"`, `"PIPELINE_SOURCE_MODE_UNSUPPORTED"`, `"PIPELINE_SCOPE_UNSUPPORTED"`\]
+
+Structured request-time pipeline selection failures.
+
+***
+
 ### ALLOWED\_QC\_ADAPTER\_MODES
 
 > `const` **ALLOWED\_QC\_ADAPTER\_MODES**: readonly \[`"export_only"`, `"dry_run"`, `"api_transfer"`\]
@@ -14541,7 +14629,7 @@ Schema version for `BusinessTestIntentIr` artifacts.
 
 ### CONTRACT\_VERSION
 
-> `const` **CONTRACT\_VERSION**: `"4.16.0"`
+> `const` **CONTRACT\_VERSION**: `"4.17.0"`
 
 Current contract version constant.
 Must be bumped according to CONTRACT_CHANGELOG.md rules.

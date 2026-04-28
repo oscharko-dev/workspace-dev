@@ -31,6 +31,41 @@ All changes to the public contract surface of `workspace-dev` are documented her
 
 ---
 
+## [4.17.0] - 2026-04-28
+
+### Added (Issue #1534)
+
+Pipeline registry foundation for deterministic pipeline selection. Purely
+additive for existing callers; submissions without `pipelineId` continue to use
+the single available compatibility pipeline in the current build profile.
+
+**New constants:**
+
+- `ALLOWED_PIPELINE_REQUEST_ERROR_CODES` — four structured submit-time pipeline
+  request error codes.
+
+**New types:**
+
+- `WorkspacePipelineId` — pipeline identifier string.
+- `WorkspacePipelineScope` — resolved input scope: `board`, `node`, or
+  `selection`.
+- `WorkspacePipelineRequestErrorCode` — union of structured pipeline request
+  error codes.
+- `WorkspacePipelineDescriptor` — runtime descriptor for pipelines included in
+  the current package profile.
+
+**Extended types (additive fields only):**
+
+- `WorkspaceJobInput.pipelineId` — optional explicit pipeline selector.
+- `WorkspaceStatus.availablePipelines` and `WorkspaceStatus.defaultPipelineId`
+  — runtime pipeline availability metadata.
+- `WorkspaceSubmitAccepted.pipelineId` — selected pipeline echoed on accepted
+  submissions.
+- `WorkspaceJobRequestMetadata.pipelineId` — selected pipeline persisted on job
+  request metadata.
+
+---
+
 ## [4.16.0] - 2026-04-27
 
 ### Added (Issue #1482, Wave 5)

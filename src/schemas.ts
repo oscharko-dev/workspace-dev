@@ -30,6 +30,8 @@ import type {
   WorkspaceLlmCodegenMode,
   WorkspaceLocalSyncApplyRequest,
   WorkspaceLocalSyncRequest,
+  WorkspacePipelineDescriptor,
+  WorkspacePipelineId,
   WorkspaceRegenerationOverrideEntry,
   WorkspaceStatus,
   WorkspaceTestIntelligenceMode,
@@ -960,6 +962,7 @@ function parseSubmitRequest(
 
   const allowedKeys = new Set([
     "figmaFileKey",
+    "pipelineId",
     "figmaNodeId",
     "figmaAccessToken",
     "figmaJsonPath",
@@ -1000,6 +1003,12 @@ function parseSubmitRequest(
     required: false,
     issues,
   });
+  const pipelineId = parseStringField({
+    input,
+    key: "pipelineId",
+    required: false,
+    issues,
+  }) as WorkspacePipelineId | undefined;
   const figmaNodeId = parseStringField({
     input,
     key: "figmaNodeId",
@@ -1509,6 +1518,9 @@ function parseSubmitRequest(
   if (resolvedFigmaSourceMode !== undefined) {
     data.figmaSourceMode = resolvedFigmaSourceMode;
   }
+  if (pipelineId !== undefined) {
+    data.pipelineId = pipelineId.trim();
+  }
   if (figmaFileKey !== undefined) {
     data.figmaFileKey = figmaFileKey;
   }
@@ -1609,6 +1621,8 @@ function parseWorkspaceStatus(
   const uptimeMs = input.uptimeMs;
   const outputRoot = input.outputRoot;
   const previewEnabled = input.previewEnabled;
+  const availablePipelines = input.availablePipelines;
+  const defaultPipelineId = input.defaultPipelineId;
   const testIntelligenceEnabled = input.testIntelligenceEnabled;
   const testIntelligenceMultiSourceEnabled =
     input.testIntelligenceMultiSourceEnabled;
@@ -1651,6 +1665,110 @@ function parseWorkspaceStatus(
   if (typeof previewEnabled !== "boolean") {
     pushIssue(issues, ["previewEnabled"], "previewEnabled must be a boolean");
   }
+  const parsedPipelines: WorkspacePipelineDescriptor[] | undefined = (() => {
+    if (availablePipelines === undefined) {
+      return undefined;
+    }
+    if (!Array.isArray(availablePipelines)) {
+      pushIssue(
+        issues,
+        ["availablePipelines"],
+        "availablePipelines must be an array",
+      );
+      return undefined;
+    }
+    return availablePipelines.flatMap((entry, index) => {
+      if (!isRecord(entry)) {
+        pushIssue(
+          issues,
+          ["availablePipelines", index],
+          "availablePipelines entries must be objects",
+        );
+        return [];
+      }
+      const id = entry.id;
+      const displayName = entry.displayName;
+      const description = entry.description;
+      const supportedSourceModes = entry.supportedSourceModes;
+      const supportedScopes = entry.supportedScopes;
+      if (typeof id !== "string" || id.trim().length === 0) {
+        pushIssue(
+          issues,
+          ["availablePipelines", index, "id"],
+          "pipeline id must be a non-empty string",
+        );
+      }
+      if (typeof displayName !== "string" || displayName.trim().length === 0) {
+        pushIssue(
+          issues,
+          ["availablePipelines", index, "displayName"],
+          "pipeline displayName must be a non-empty string",
+        );
+      }
+      if (typeof description !== "string" || description.trim().length === 0) {
+        pushIssue(
+          issues,
+          ["availablePipelines", index, "description"],
+          "pipeline description must be a non-empty string",
+        );
+      }
+      if (
+        !Array.isArray(supportedSourceModes) ||
+        !supportedSourceModes.every((mode) =>
+          ALLOWED_FIGMA_SOURCE_MODES.includes(mode as WorkspaceFigmaSourceMode),
+        )
+      ) {
+        pushIssue(
+          issues,
+          ["availablePipelines", index, "supportedSourceModes"],
+          `supportedSourceModes must contain only: ${ALLOWED_FIGMA_SOURCE_MODES.join(", ")}`,
+        );
+      }
+      if (
+        !Array.isArray(supportedScopes) ||
+        !supportedScopes.every(
+          (scope) =>
+            scope === "board" || scope === "node" || scope === "selection",
+        )
+      ) {
+        pushIssue(
+          issues,
+          ["availablePipelines", index, "supportedScopes"],
+          "supportedScopes must contain only: board, node, selection",
+        );
+      }
+      if (
+        typeof id !== "string" ||
+        typeof displayName !== "string" ||
+        typeof description !== "string" ||
+        !Array.isArray(supportedSourceModes) ||
+        !Array.isArray(supportedScopes)
+      ) {
+        return [];
+      }
+      return [
+        {
+          id: id.trim(),
+          displayName: displayName.trim(),
+          description: description.trim(),
+          supportedSourceModes:
+            supportedSourceModes as WorkspaceFigmaSourceMode[],
+          supportedScopes: supportedScopes as WorkspacePipelineDescriptor["supportedScopes"],
+        },
+      ];
+    });
+  })();
+  if (
+    defaultPipelineId !== undefined &&
+    (typeof defaultPipelineId !== "string" ||
+      defaultPipelineId.trim().length === 0)
+  ) {
+    pushIssue(
+      issues,
+      ["defaultPipelineId"],
+      "defaultPipelineId must be a non-empty string",
+    );
+  }
   if (
     testIntelligenceEnabled !== undefined &&
     typeof testIntelligenceEnabled !== "boolean"
@@ -1689,6 +1807,12 @@ function parseWorkspaceStatus(
   };
   if (testIntelligenceEnabled !== undefined) {
     data.testIntelligenceEnabled = testIntelligenceEnabled as boolean;
+  }
+  if (parsedPipelines !== undefined) {
+    data.availablePipelines = parsedPipelines;
+  }
+  if (typeof defaultPipelineId === "string") {
+    data.defaultPipelineId = defaultPipelineId.trim();
   }
   if (testIntelligenceMultiSourceEnabled !== undefined) {
     data.testIntelligenceMultiSourceEnabled =
