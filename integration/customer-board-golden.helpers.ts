@@ -27,6 +27,12 @@ import {
   StageArtifactStore
 } from "../src/job-engine/pipeline/artifact-store.js";
 import {
+  ROCKET_PIPELINE_DEFINITION
+} from "../src/job-engine/pipeline/pipeline-selection.js";
+import {
+  toPipelineRuntimeMetadata
+} from "../src/job-engine/pipeline/pipeline-runtime-metadata.js";
+import {
   createStageRuntimeContext,
   type PipelineExecutionContext,
   type StageRuntimeContext
@@ -34,7 +40,7 @@ import {
 import { resolveRuntimeSettings } from "../src/job-engine/runtime.js";
 import { createInitialStages, nowIso } from "../src/job-engine/stage-state.js";
 import { createCodegenGenerateService } from "../src/job-engine/services/codegen-generate-service.js";
-import { TemplatePrepareService } from "../src/job-engine/services/template-prepare-service.js";
+import { RocketTemplatePrepareService } from "../src/job-engine/services/rocket-template-prepare-service.js";
 import { createValidateProjectService } from "../src/job-engine/services/validate-project-service.js";
 import type {
   JobRecord,
@@ -83,6 +89,7 @@ const REQUESTED_STORYBOOK_STATIC_DIR = "storybook-static/storybook-static";
 const CUSTOMER_BOARD_BRAND_ID = "customer-board";
 const CUSTOMER_BOARD_VISUAL_QUALITY_VIEWPORT_WIDTH = 1280;
 const WORKSPACE_ROOT = process.cwd();
+const ROCKET_PIPELINE_METADATA = toPipelineRuntimeMetadata(ROCKET_PIPELINE_DEFINITION);
 const TEMPLATE_NODE_MODULES_DIR = path.join(
   WORKSPACE_ROOT,
   "template",
@@ -1267,6 +1274,8 @@ const createJobRecord = ({
     status: "queued",
     submittedAt: nowIso(),
     request: {
+      pipelineId: ROCKET_PIPELINE_DEFINITION.id,
+      pipelineMetadata: ROCKET_PIPELINE_METADATA,
       enableVisualQualityValidation: true,
       visualQualityReferenceMode: "frozen_fixture",
       visualQualityViewportWidth: CUSTOMER_BOARD_VISUAL_QUALITY_VIEWPORT_WIDTH,
@@ -1280,6 +1289,7 @@ const createJobRecord = ({
       generationLocale: "en-US",
       formHandlingMode: "react_hook_form"
     },
+    pipelineMetadata: ROCKET_PIPELINE_METADATA,
     stages: createInitialStages(),
     logs: [],
     artifacts: {
@@ -1594,7 +1604,7 @@ export const executeCustomerBoardFixture = async ({
   });
 
   try {
-    await TemplatePrepareService.execute(undefined, stageContextFor("template.prepare"));
+    await RocketTemplatePrepareService.execute(undefined, stageContextFor("template.prepare"));
     await createCodegenGenerateService().execute(
       {
         boardKeySeed: "customer-board-golden"

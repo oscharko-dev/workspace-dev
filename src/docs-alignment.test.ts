@@ -439,6 +439,12 @@ test("docs: versioning policy stays aligned across README and changelogs", async
   assert.match(migrationGuide, /CONTRACT_CHANGELOG\.md/);
   assert.match(migrationGuide, /workspace-dev": "~?1\.0\.0"/);
   assert.match(migrationGuide, /WorkspaceJobInput\.requestSourceMode/);
+  assert.match(migrationGuide, /Existing Customer Pipeline Requests/);
+  assert.match(migrationGuide, /pipelineId": "rocket"/);
+  assert.match(migrationGuide, /customerProfilePath/);
+  assert.match(migrationGuide, /rocket` `template\.prepare` delegate/);
+  assert.match(migrationGuide, /availablePipelines/);
+  assert.match(migrationGuide, /defaultPipelineId/);
   assert.match(migrationGuide, /pnpm exec tsc --noEmit/);
   assert.match(migrationGuide, /Rollback/i);
 

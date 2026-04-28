@@ -6,6 +6,7 @@ import test from "node:test";
 import { fileURLToPath } from "node:url";
 import type { WorkspaceRegenerationOverrideEntry } from "../contracts/index.js";
 import { cleanFigmaForCodegen } from "../job-engine/figma-clean.js";
+import { ROCKET_PIPELINE_DEFINITION } from "../job-engine/pipeline/pipeline-selection.js";
 import { applyIrOverrides } from "../job-engine/ir-overrides.js";
 import { buildFigmaAnalysis } from "./figma-analysis.js";
 import { generateArtifacts } from "./generator-core.js";
@@ -29,6 +30,7 @@ interface GoldenFixtureSpec {
 
 interface GoldenFixtureManifest {
   version: number;
+  pipelineId: "rocket";
   fixtures: GoldenFixtureSpec[];
 }
 
@@ -64,6 +66,7 @@ const isCiRuntime = (): boolean => {
 const loadManifest = async (): Promise<GoldenFixtureManifest> => {
   const payload = JSON.parse(await readFile(MANIFEST_FILE, "utf8")) as Partial<GoldenFixtureManifest>;
   assert.equal(payload.version, 1, "Unsupported golden fixture manifest version.");
+  assert.equal(payload.pipelineId, ROCKET_PIPELINE_DEFINITION.id, "Golden fixtures must be owned by the rocket pipeline.");
   assert.equal(Array.isArray(payload.fixtures), true, "Manifest must contain fixtures[].");
   return payload as GoldenFixtureManifest;
 };
@@ -156,9 +159,12 @@ test("golden fixtures: figma json to generated app artifacts", async (t) => {
   }
 
   const manifest = await loadManifest();
+  assert.equal(manifest.pipelineId, "rocket");
+  assert.equal(ROCKET_PIPELINE_DEFINITION.template.bundleId, "react-mui-app");
+  assert.equal(ROCKET_PIPELINE_DEFINITION.template.stack.styling, "mui");
 
   for (const fixture of manifest.fixtures) {
-    await t.test(`fixture ${fixture.id}`, async () => {
+    await t.test(`rocket fixture ${fixture.id}`, async () => {
       const figmaJsonPath = path.join(GOLDEN_ROOT, fixture.figmaJson);
       const figmaPayload = JSON.parse(await readFile(figmaJsonPath, "utf8"));
 

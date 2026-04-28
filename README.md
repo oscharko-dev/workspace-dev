@@ -33,6 +33,12 @@ Use the [contract migration guide](docs/migration-guide.md) when upgrading acros
 semver policy, downstream package pinning, and a breaking-change migration
 checklist.
 
+Existing customer integrations that depend on the current React + MUI generator,
+customer profiles, or storybook-first component mappings should submit jobs with
+`pipelineId: "rocket"` explicitly. The current rocket-only build still defaults
+to `rocket`, but explicit selection keeps upgrades stable when a future build
+ships both `default` and `rocket` pipelines.
+
 ## Repository branch flow
 
 - `dev` is the active development branch for feature work and contributor pull requests.
@@ -376,6 +382,10 @@ Optional storybook-first input:
 Optional customer profile input:
 
 - `customerProfilePath` (optional local filesystem path; relative paths resolve from the workspace root)
+
+Customer profile input belongs to the `rocket` compatibility pipeline. Existing
+clients should include `pipelineId: "rocket"` alongside `customerProfilePath`
+when submitting jobs.
 
 Optional inspector policy input:
 
