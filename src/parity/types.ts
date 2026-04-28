@@ -73,6 +73,7 @@ export type {
   DesignScreenFingerprint,
   DesignIrDarkPaletteHints,
   DesignIrThemeAnalysis,
+  DesignTokenArtifactMetadata,
   DesignTokenActionPalette,
   DesignTokenPalette,
   DesignTokenTypographyScale,

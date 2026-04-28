@@ -55,6 +55,25 @@ const OPACITY_COLLECTION_PATTERNS: readonly RegExp[] = [
   /\balpha\b/i,
 ];
 
+const BORDER_COLLECTION_PATTERNS: readonly RegExp[] = [
+  /\bborder\b/i,
+  /\bstroke\b/i,
+  /\boutline\b/i,
+  /\bdivider\b/i,
+];
+
+const SHADOW_COLLECTION_PATTERNS: readonly RegExp[] = [
+  /\bshadow\b/i,
+  /\belevation\b/i,
+  /\beffect\b/i,
+];
+
+const Z_INDEX_COLLECTION_PATTERNS: readonly RegExp[] = [
+  /\bz[-_\s]?index\b/i,
+  /\blayer\b/i,
+  /\bstack(?:ing)?\b/i,
+];
+
 const VARIABLE_NAME_PATTERNS = {
   color: [/^colou?r[/\-_]/i, /^fill[/\-_]/i, /^bg[/\-_]/i],
   spacing: [/^spacing[/\-_]/i, /^space[/\-_]/i, /^gap[/\-_]/i],
@@ -62,6 +81,9 @@ const VARIABLE_NAME_PATTERNS = {
   typography: [/^font[/\-_]/i, /^text[/\-_]/i, /^type[/\-_]/i],
   size: [/^size[/\-_]/i, /^width[/\-_]/i, /^height[/\-_]/i],
   opacity: [/^opacity[/\-_]/i, /^alpha[/\-_]/i],
+  border: [/^border[/\-_]/i, /^stroke[/\-_]/i, /^outline[/\-_]/i],
+  shadow: [/^shadow[/\-_]/i, /^elevation[/\-_]/i],
+  zIndex: [/^z[-_\s]?index[/\-_]/i, /^layer[/\-_]/i],
 } as const;
 
 // ---------------------------------------------------------------------------
@@ -120,6 +142,9 @@ type VariableCategory =
   | "typography"
   | "size"
   | "opacity"
+  | "border"
+  | "shadow"
+  | "zIndex"
   | "unknown";
 
 const matchesAny = (value: string, patterns: readonly RegExp[]): boolean =>
@@ -136,6 +161,12 @@ export const classifyVariable = (
   const nameAndCollection = [name, collectionName ?? ""].join(" ");
 
   if (kind === "color") {
+    if (
+      matchesAny(nameAndCollection, BORDER_COLLECTION_PATTERNS) ||
+      matchesAny(name, VARIABLE_NAME_PATTERNS.border)
+    ) {
+      return "border";
+    }
     return "color";
   }
 
@@ -161,6 +192,24 @@ export const classifyVariable = (
       return "typography";
     }
     if (
+      matchesAny(nameAndCollection, BORDER_COLLECTION_PATTERNS) ||
+      matchesAny(name, VARIABLE_NAME_PATTERNS.border)
+    ) {
+      return "border";
+    }
+    if (
+      matchesAny(nameAndCollection, SHADOW_COLLECTION_PATTERNS) ||
+      matchesAny(name, VARIABLE_NAME_PATTERNS.shadow)
+    ) {
+      return "shadow";
+    }
+    if (
+      matchesAny(nameAndCollection, Z_INDEX_COLLECTION_PATTERNS) ||
+      matchesAny(name, VARIABLE_NAME_PATTERNS.zIndex)
+    ) {
+      return "zIndex";
+    }
+    if (
       matchesAny(nameAndCollection, SIZE_COLLECTION_PATTERNS) ||
       matchesAny(name, VARIABLE_NAME_PATTERNS.size)
     ) {
@@ -180,6 +229,18 @@ export const classifyVariable = (
       matchesAny(name, VARIABLE_NAME_PATTERNS.typography)
     ) {
       return "typography";
+    }
+    if (
+      matchesAny(nameAndCollection, BORDER_COLLECTION_PATTERNS) ||
+      matchesAny(name, VARIABLE_NAME_PATTERNS.border)
+    ) {
+      return "border";
+    }
+    if (
+      matchesAny(nameAndCollection, SHADOW_COLLECTION_PATTERNS) ||
+      matchesAny(name, VARIABLE_NAME_PATTERNS.shadow)
+    ) {
+      return "shadow";
     }
   }
 
@@ -548,6 +609,9 @@ const canEmitTailwindToken = (
     category === "spacing" ||
     category === "radius" ||
     category === "opacity" ||
+    category === "border" ||
+    category === "shadow" ||
+    category === "zIndex" ||
     (category === "typography" && variable.kind === "number")
   );
 };
@@ -599,6 +663,7 @@ const formatCssValue = (
     category === "spacing" ||
     category === "radius" ||
     category === "size" ||
+    (category === "border" && variable.kind === "number") ||
     (category === "typography" && variable.kind === "number")
   ) {
     return `${String(variable.value)}px`;
@@ -626,8 +691,12 @@ export const generateTailwindExtension = (
   const colors: Record<string, string> = {};
   const spacing: Record<string, string> = {};
   const borderRadius: Record<string, string> = {};
+  const borderColor: Record<string, string> = {};
+  const borderWidth: Record<string, string> = {};
   const fontSize: Record<string, string> = {};
   const opacity: Record<string, string> = {};
+  const boxShadow: Record<string, string> = {};
+  const zIndex: Record<string, string> = {};
 
   for (const variable of selectCanonicalVariablesForOutput(variables, {
     canEmit: canEmitTailwindToken,
@@ -656,6 +725,19 @@ export const generateTailwindExtension = (
       case "opacity":
         opacity[key] = String(variable.value);
         break;
+      case "border":
+        if (variable.kind === "number") {
+          borderWidth[key] = `${String(variable.value)}px`;
+        } else {
+          borderColor[key] = String(variable.value);
+        }
+        break;
+      case "shadow":
+        boxShadow[key] = String(variable.value);
+        break;
+      case "zIndex":
+        zIndex[key] = String(variable.value);
+        break;
       // size variables don't map to a standard Tailwind key cleanly
     }
   }
@@ -676,6 +758,18 @@ export const generateTailwindExtension = (
   }
   if (Object.keys(opacity).length > 0) {
     extension.opacity = opacity;
+  }
+  if (Object.keys(borderColor).length > 0) {
+    extension.borderColor = borderColor;
+  }
+  if (Object.keys(borderWidth).length > 0) {
+    extension.borderWidth = borderWidth;
+  }
+  if (Object.keys(boxShadow).length > 0) {
+    extension.boxShadow = boxShadow;
+  }
+  if (Object.keys(zIndex).length > 0) {
+    extension.zIndex = zIndex;
   }
 
   return Object.keys(extension).length > 0 ? extension : undefined;

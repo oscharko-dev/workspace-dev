@@ -721,6 +721,8 @@ const collectDeterministicSnapshot = async ({
   screenContent: string;
   themeContent: string;
   tokensContent: string;
+  tokenCssContent: string;
+  tokenReportContent: string;
   metricsContent: string;
 }> => {
   return {
@@ -735,6 +737,14 @@ const collectDeterministicSnapshot = async ({
     ),
     tokensContent: await readFile(
       path.join(projectDir, "src", "theme", "tokens.json"),
+      "utf8",
+    ),
+    tokenCssContent: await readFile(
+      path.join(projectDir, "src", "theme", "tokens.css"),
+      "utf8",
+    ),
+    tokenReportContent: await readFile(
+      path.join(projectDir, "src", "theme", "token-report.json"),
       "utf8",
     ),
     metricsContent: await readFile(
@@ -4240,6 +4250,8 @@ test("generateArtifactsStreaming emits theme content first and keeps output byte
       "src/components/ErrorBoundary.tsx",
       "src/components/ScreenSkeleton.tsx",
       "src/theme/theme.ts",
+      "src/theme/token-report.json",
+      "src/theme/tokens.css",
       "src/theme/tokens.json",
     ],
   );
@@ -4294,6 +4306,104 @@ test("generateArtifactsStreaming emits theme content first and keeps output byte
       screenName: "Übersicht",
     }),
   );
+});
+
+test("generateArtifacts emits default design token CSS and report artifacts", async () => {
+  const projectDir = await mkdtemp(
+    path.join(os.tmpdir(), "workspace-dev-generator-token-artifacts-"),
+  );
+  const ir = createIr();
+  ir.themeAnalysis = {
+    darkModeDetected: true,
+    signals: {
+      luminance: true,
+      naming: false,
+      lightDarkPair: true,
+    },
+    darkPaletteHints: {
+      background: {
+        default: "#101828",
+        paper: "#182230",
+      },
+      text: {
+        primary: "#f8fafc",
+      },
+      divider: "#f8fafc1f",
+    },
+  };
+  ir.screens[0]!.children.push({
+    id: "dialog-1",
+    name: "Confirm Dialog",
+    nodeType: "FRAME",
+    type: "container",
+    opacity: 0.75,
+    elevation: 4,
+    children: [],
+  });
+
+  const result = await generateArtifacts({
+    projectDir,
+    ir,
+    llmCodegenMode: "deterministic",
+    llmModelName: "deterministic",
+    onLog: () => {
+      // no-op
+    },
+  });
+
+  assert.ok(result.generatedPaths.includes("src/theme/tokens.css"));
+  assert.ok(result.generatedPaths.includes("src/theme/token-report.json"));
+
+  const cssContent = await readFile(
+    path.join(projectDir, "src", "theme", "tokens.css"),
+    "utf8",
+  );
+  const report = JSON.parse(
+    await readFile(
+      path.join(projectDir, "src", "theme", "token-report.json"),
+      "utf8",
+    ),
+  ) as {
+    schemaVersion: string;
+    pipelineId: string;
+    tokenCoverage: number;
+    categories: {
+      colors: { mapped: number };
+      shadows: { mapped: number };
+      opacity: { mapped: number };
+      zIndex: { mapped: number };
+    };
+    artifacts: {
+      cssCustomProperties: string;
+      designTokens: string;
+      tokenReport: string;
+    };
+    darkMode: {
+      detected: boolean;
+      selector?: string;
+    };
+  };
+
+  assert.ok(cssContent.includes("  --color-primary: #ee0000;"));
+  assert.ok(cssContent.includes("  --typography-h1-font-size: 28px;"));
+  assert.ok(cssContent.includes("  --spacing-md: 16px;"));
+  assert.ok(cssContent.includes("  --radius-md: 12px;"));
+  assert.ok(cssContent.includes("  --shadow-elevation-4:"));
+  assert.ok(cssContent.includes("  --opacity-75: 0.75;"));
+  assert.ok(cssContent.includes("  --z-index-modal: 1300;"));
+  assert.ok(cssContent.includes("[data-theme=\"dark\"] {"));
+  assert.equal(report.schemaVersion, "1.0.0");
+  assert.equal(report.pipelineId, "default");
+  assert.equal(report.artifacts.cssCustomProperties, "src/theme/tokens.css");
+  assert.equal(report.artifacts.designTokens, "src/theme/tokens.json");
+  assert.equal(report.artifacts.tokenReport, "src/theme/token-report.json");
+  assert.equal(report.darkMode.detected, true);
+  assert.equal(report.darkMode.selector, "[data-theme=\"dark\"]");
+  assert.equal(report.categories.colors.mapped, 15);
+  assert.equal(report.categories.shadows.mapped, 1);
+  assert.equal(report.categories.opacity.mapped, 1);
+  assert.equal(report.categories.zIndex.mapped, 1);
+  assert.equal(report.tokenCoverage > 0.9, true);
 });
 
 test("generateArtifactsStreaming keeps content-bearing event payloads non-empty while progress stays metadata-only", async () => {

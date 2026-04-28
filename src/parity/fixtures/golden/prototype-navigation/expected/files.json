@@ -31,6 +31,8 @@
     "src/test/jest-axe.d.ts",
     "src/test/setup.ts",
     "src/theme/theme.ts",
+    "src/theme/token-report.json",
+    "src/theme/tokens.css",
     "src/theme/tokens.json",
     "src/vite-env.d.ts",
     "tsconfig.json",

@@ -55,6 +55,10 @@ import {
   makeScreenSkeletonFile,
   makeAppFile
 } from "./generator-templates.js";
+import {
+  createDesignTokenCssFile,
+  createDesignTokenReportFile
+} from "./design-token-compiler.js";
 
 // ── Re-exports from sub-modules (backward compatibility) ──────────────────
 
@@ -978,6 +982,12 @@ const runGenerateArtifactsBasePhase = async ({
     content: tokensContent
   });
   generatedPaths.add("src/theme/tokens.json");
+  const designTokenCss = createDesignTokenCssFile(ir);
+  await runtimeAdapters.writeGeneratedFile(projectDir, designTokenCss);
+  generatedPaths.add(designTokenCss.path);
+  const designTokenReport = createDesignTokenReportFile(ir);
+  await runtimeAdapters.writeGeneratedFile(projectDir, designTokenReport);
+  generatedPaths.add(designTokenReport.path);
   const deterministicTheme = resolvedStorybookTheme
     ? storybookThemeFile({
         resolvedTheme: resolvedStorybookTheme,
@@ -994,6 +1004,8 @@ const runGenerateArtifactsBasePhase = async ({
   generatedPaths.add(deterministicScreenSkeleton.path);
   const themeFiles: StreamingArtifactFile[] = [
     { path: "src/theme/tokens.json", content: tokensContent },
+    { path: designTokenCss.path, content: designTokenCss.content },
+    { path: designTokenReport.path, content: designTokenReport.content },
     { path: deterministicTheme.path, content: deterministicTheme.content },
     { path: deterministicErrorBoundary.path, content: deterministicErrorBoundary.content },
     { path: deterministicScreenSkeleton.path, content: deterministicScreenSkeleton.content }

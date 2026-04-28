@@ -136,6 +136,44 @@ test("classifyVariable — FLOAT with size name returns size", () => {
   assert.equal(classifyVariable(v), "size");
 });
 
+test("classifyVariable — border variables are classified before generic size variables", () => {
+  assert.equal(
+    classifyVariable({
+      name: "border/width/default",
+      kind: "number",
+      value: 1,
+    }),
+    "border",
+  );
+  assert.equal(
+    classifyVariable({
+      name: "border/color/default",
+      kind: "color",
+      value: "#d0d5dd",
+    }),
+    "border",
+  );
+});
+
+test("classifyVariable — shadow and z-index variables are recognized", () => {
+  assert.equal(
+    classifyVariable({
+      name: "shadow/card",
+      kind: "string",
+      value: "0 2px 8px rgb(15 23 42 / 0.12)",
+    }),
+    "shadow",
+  );
+  assert.equal(
+    classifyVariable({
+      name: "z-index/modal",
+      kind: "number",
+      value: 1300,
+    }),
+    "zIndex",
+  );
+});
+
 test("classifyVariable — FLOAT with opacity name returns opacity", () => {
   const v: FigmaMcpVariableDefinition = {
     name: "opacity/disabled",
@@ -471,6 +509,26 @@ test("generateCssCustomProperties — numeric typography values use px units", (
   assert.ok(css.includes("--font-size-lg: 18px;"));
 });
 
+test("generateCssCustomProperties — emits border, shadow, and z-index variables", () => {
+  const vars: FigmaMcpVariableDefinition[] = [
+    { name: "border/width/default", kind: "number", value: 1 },
+    { name: "border/color/default", kind: "color", value: "#d0d5dd" },
+    {
+      name: "shadow/card",
+      kind: "string",
+      value: "0 2px 8px rgb(15 23 42 / 0.12)",
+    },
+    { name: "z-index/modal", kind: "number", value: 1300 },
+  ];
+  const css = generateCssCustomProperties(vars);
+  assert.ok(css.includes("--border-width-default: 1px;"));
+  assert.ok(css.includes("--border-color-default: #d0d5dd;"));
+  assert.ok(
+    css.includes("--shadow-card: 0 2px 8px rgb(15 23 42 / 0.12);"),
+  );
+  assert.ok(css.includes("--z-index-modal: 1300;"));
+});
+
 test("generateCssCustomProperties — emits only the preferred mode per normalized token name", () => {
   const vars: FigmaMcpVariableDefinition[] = [
     {
@@ -570,6 +628,27 @@ test("generateTailwindExtension — typography FLOAT values as fontSize", () => 
   const ext = generateTailwindExtension(vars);
   assert.ok(ext);
   assert.deepEqual(ext.fontSize, { "font-size-lg": "18px" });
+});
+
+test("generateTailwindExtension — maps border, shadow, and z-index variables", () => {
+  const vars: FigmaMcpVariableDefinition[] = [
+    { name: "border/width/default", kind: "number", value: 1 },
+    { name: "border/color/default", kind: "color", value: "#d0d5dd" },
+    {
+      name: "shadow/card",
+      kind: "string",
+      value: "0 2px 8px rgb(15 23 42 / 0.12)",
+    },
+    { name: "z-index/modal", kind: "number", value: 1300 },
+  ];
+  const ext = generateTailwindExtension(vars);
+  assert.ok(ext);
+  assert.deepEqual(ext.borderWidth, { "border-width-default": "1px" });
+  assert.deepEqual(ext.borderColor, { "border-color-default": "#d0d5dd" });
+  assert.deepEqual(ext.boxShadow, {
+    "shadow-card": "0 2px 8px rgb(15 23 42 / 0.12)",
+  });
+  assert.deepEqual(ext.zIndex, { "z-index-modal": "1300" });
 });
 
 test("generateTailwindExtension — keeps only the preferred mode per normalized token name", () => {
