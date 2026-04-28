@@ -36,10 +36,23 @@ const PACKAGE_MANIFESTS = [
     label: "template/react-mui-app",
     packageJsonPath: path.resolve(packageRoot, "template/react-mui-app/package.json"),
     allowRuntimeDependencies: true
+  },
+  {
+    label: "template/react-tailwind-app",
+    packageJsonPath: path.resolve(packageRoot, "template/react-tailwind-app/package.json"),
+    allowRuntimeDependencies: true
   }
 ];
-const templateNodeModulesPath = path.resolve(packageRoot, "template/react-mui-app/node_modules");
-const templatePnpmStorePath = path.join(templateNodeModulesPath, ".pnpm");
+const TEMPLATE_DEPENDENCY_TREES = [
+  {
+    label: "template/react-mui-app",
+    nodeModulesPath: path.resolve(packageRoot, "template/react-mui-app/node_modules")
+  },
+  {
+    label: "template/react-tailwind-app",
+    nodeModulesPath: path.resolve(packageRoot, "template/react-tailwind-app/node_modules")
+  }
+];
 
 const formatAllowedLicenses = () => {
   return APPROVED_LICENSES.join(", ");
@@ -212,18 +225,19 @@ const assertManifestPolicy = async (manifest) => {
   );
 };
 
-const assertTemplateDependencyTreePolicy = async () => {
-  const nodeModulesStats = await statPath(templateNodeModulesPath);
+const assertTemplateDependencyTreePolicy = async ({ label, nodeModulesPath }) => {
+  const nodeModulesStats = await statPath(nodeModulesPath);
   if (!nodeModulesStats) {
     throw new Error(
-      `template/react-mui-app node_modules is missing at '${templateNodeModulesPath}'. Run 'pnpm --dir template/react-mui-app install' before 'pnpm run verify:licenses'.`
+      `${label} node_modules is missing at '${nodeModulesPath}'. Run 'pnpm --dir ${label} install' before 'pnpm run verify:licenses'.`
     );
   }
 
+  const templatePnpmStorePath = path.join(nodeModulesPath, ".pnpm");
   const pnpmStoreStats = await statPath(templatePnpmStorePath);
   const packages = pnpmStoreStats
     ? await collectInstalledPackagesFromPnpmStore(templatePnpmStorePath)
-    : await collectInstalledPackages(templateNodeModulesPath);
+    : await collectInstalledPackages(nodeModulesPath);
   const disallowedPackages = packages
     .filter((packageEntry) => !ALLOWED_LICENSES.has(packageEntry.license))
     .sort((first, second) => {
@@ -236,13 +250,13 @@ const assertTemplateDependencyTreePolicy = async () => {
       .map((packageEntry) => `- ${packageEntry.name}@${packageEntry.version}: ${packageEntry.license}`)
       .join("\n");
     throw new Error(
-      `template/react-mui-app dependency tree contains ${disallowedPackages.length} package(s) with disallowed licenses:\n${details}\nAllowed licenses: ${formatAllowedLicenses()}`
+      `${label} dependency tree contains ${disallowedPackages.length} package(s) with disallowed licenses:\n${details}\nAllowed licenses: ${formatAllowedLicenses()}`
     );
   }
 
   const uniqueLicenses = [...new Set(packages.map((packageEntry) => packageEntry.license))].sort();
   console.log(
-    `License allowlist gate passed for template/react-mui-app installed dependency tree: ${packages.length} packages; licenses: ${uniqueLicenses.join(", ")}`
+    `License allowlist gate passed for ${label} installed dependency tree: ${packages.length} packages; licenses: ${uniqueLicenses.join(", ")}`
   );
 };
 
@@ -251,7 +265,9 @@ const main = async () => {
     await assertManifestPolicy(manifest);
   }
 
-  await assertTemplateDependencyTreePolicy();
+  for (const templateDependencyTree of TEMPLATE_DEPENDENCY_TREES) {
+    await assertTemplateDependencyTreePolicy(templateDependencyTree);
+  }
 };
 
 main().catch((error) => {

@@ -127,6 +127,8 @@ REQUIRED_FILES=(
   "docs/runbooks/multi-source-air-gap.md"
   "template/react-mui-app/package.json"
   "template/react-mui-app/pnpm-lock.yaml"
+  "template/react-tailwind-app/package.json"
+  "template/react-tailwind-app/pnpm-lock.yaml"
 )
 
 MISSING=()

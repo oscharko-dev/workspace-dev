@@ -3,7 +3,7 @@
 /**
  * Supply-chain guard: require a non-zero `minimum-release-age` in every .npmrc.
  *
- * Scans the root `.npmrc` and `template/react-mui-app/.npmrc` to confirm that
+ * Scans the root `.npmrc` and bundled template `.npmrc` files to confirm that
  * `minimum-release-age` is present and set to a positive integer (minutes).
  * A zero or absent value means freshly-published packages can land in
  * node_modules immediately, eliminating the cooldown window that blocks
@@ -31,6 +31,7 @@ const resolvePackageRoot = (env = process.env) => {
 const NPMRC_TARGETS = [
   ".npmrc",
   path.join("template", "react-mui-app", ".npmrc"),
+  path.join("template", "react-tailwind-app", ".npmrc"),
 ];
 
 // Matches `minimum-release-age=<value>` lines, ignoring inline comments.

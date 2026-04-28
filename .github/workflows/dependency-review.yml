@@ -12,6 +12,8 @@ on:
       - pnpm-lock.yaml
       - template/react-mui-app/package.json
       - template/react-mui-app/pnpm-lock.yaml
+      - template/react-tailwind-app/package.json
+      - template/react-tailwind-app/pnpm-lock.yaml
       - .github/workflows/dependency-review.yml
 
 permissions:

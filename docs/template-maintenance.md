@@ -1,18 +1,20 @@
 # Template Maintenance
 
-The bundled React template in `template/react-mui-app/` is part of the
-published package contract. Dependency updates must be deliberate, reviewable,
-and validated against generated-app behavior before they reach `dev`.
+The bundled React templates in `template/react-mui-app/` and
+`template/react-tailwind-app/` are part of the published package contract.
+Dependency updates must be deliberate, reviewable, and validated against
+generated-app behavior before they reach `dev`.
 
 ## Dependency Update Cadence
 
 - Evaluate patch and minor updates monthly for all runtime and development
-  dependencies in `template/react-mui-app/package.json`.
+  dependencies in `template/react-mui-app/package.json` and
+  `template/react-tailwind-app/package.json`.
 - Evaluate major updates quarterly, or sooner when a security advisory or
   platform end-of-life notice makes the update urgent.
 - Do not mix routine template dependency updates with template architecture
   changes. Use a dedicated PR for dependency-only maintenance.
-- Keep `template/react-mui-app/pnpm-lock.yaml` in the same PR as any template
+- Keep the matching template `pnpm-lock.yaml` in the same PR as any template
   dependency manifest change.
 
 Security fixes may bypass the monthly or quarterly cadence when the advisory
@@ -29,6 +31,11 @@ pnpm run template:install
 pnpm run template:test
 pnpm --dir template/react-mui-app run typecheck
 pnpm --dir template/react-mui-app run build
+pnpm run template:tailwind:install
+pnpm run template:tailwind:lint
+pnpm run template:tailwind:typecheck
+pnpm run template:tailwind:test
+pnpm run template:tailwind:build
 pnpm run verify:lockfile-hosts
 pnpm run verify:docs-template-stack
 ```
@@ -79,9 +86,9 @@ work, browser support review, and contract-version handling.
 ## Renovate and Dependabot Policy
 
 Dependabot is enabled separately for the repository root and
-`/template/react-mui-app` in `.github/dependabot.yml`. Keep template dependency
-PRs separate from root dependency PRs so generated-app risk can be reviewed on
-its own.
+`/template/react-mui-app` and `/template/react-tailwind-app` in
+`.github/dependabot.yml`. Keep template dependency PRs separate from root
+dependency PRs so generated-app risk can be reviewed on its own.
 
 Renovate is not required while Dependabot covers the template package directory.
 Re-evaluate Renovate only if maintainers need dependency grouping, custom
