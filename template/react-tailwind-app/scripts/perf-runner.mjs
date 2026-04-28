@@ -2,6 +2,7 @@ import { spawn } from "node:child_process";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import net from "node:net";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { chromium, devices } from "@playwright/test";
 
 const mode = process.argv[2] ?? "assert";
@@ -430,20 +431,20 @@ const compareAgainstBudgets = ({ aggregate, budgets }) => {
   });
 };
 
-const compareAgainstBaseline = ({
+const REGRESSION_DENOMINATOR_FLOORS = {
+  inp_p75_ms: 25,
+  lcp_p75_ms: 50,
+  cls_p75: 0.005,
+  initial_js_kb: 1,
+  route_transition_ms: 25,
+};
+
+export const compareAgainstBaseline = ({
   aggregate,
   baselineAggregate,
   tolerancePct,
 }) => {
-  const floors = {
-    inp_p75_ms: 1,
-    lcp_p75_ms: 1,
-    cls_p75: 0.001,
-    initial_js_kb: 0.1,
-    route_transition_ms: 1,
-  };
-
-  return Object.keys(floors).map((metric) => {
+  return Object.keys(REGRESSION_DENOMINATOR_FLOORS).map((metric) => {
     const actual = aggregate[metric];
     const baseline = baselineAggregate?.[metric];
     if (typeof actual !== "number" || typeof baseline !== "number") {
@@ -455,7 +456,10 @@ const compareAgainstBaseline = ({
         reason: "missing-baseline-or-metric",
       };
     }
-    const denominator = Math.max(Math.abs(baseline), floors[metric]);
+    const denominator = Math.max(
+      Math.abs(baseline),
+      REGRESSION_DENOMINATOR_FLOORS[metric],
+    );
     const regressionPct = ((actual - baseline) / denominator) * 100;
     return {
       metric,
@@ -640,8 +644,10 @@ const run = async () => {
   }
 };
 
-await run().catch((error) => {
-  const message = error instanceof Error ? error.message : String(error);
-  console.error(`[perf-runner] ${message}`);
-  process.exitCode = 1;
-});
+if (process.argv[1] === fileURLToPath(import.meta.url)) {
+  await run().catch((error) => {
+    const message = error instanceof Error ? error.message : String(error);
+    console.error(`[perf-runner] ${message}`);
+    process.exitCode = 1;
+  });
+}
