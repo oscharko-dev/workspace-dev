@@ -799,7 +799,6 @@ test("deterministic screen rendering renders styled flex containers as Stack wit
 
   assert.ok(content.includes('<Stack '));
   assert.ok(content.includes('direction="row"'));
-  assert.equal(content.includes('display: "flex"'), false);
-  assert.equal(content.includes('flexDirection: "row"'), false);
+  assert.ok(content.includes('display: "flex"'));
+  assert.ok(content.includes('flexDirection: "row"'));
 });
-

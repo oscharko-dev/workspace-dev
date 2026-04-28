@@ -6263,6 +6263,10 @@ export function InspectorPanel({
             style={
               treePaneStyle
                 ? ({
+                    flexBasis: treePaneStyle.flexBasis,
+                    flexGrow: treePaneStyle.flexGrow,
+                    flexShrink: treePaneStyle.flexShrink,
+                    minWidth: treePaneStyle.minWidth,
                     "--pane-flex-grow": treePaneStyle.flexGrow,
                   } as InspectorCSSProperties)
                 : undefined
@@ -6386,8 +6390,11 @@ export function InspectorPanel({
           style={
             previewPaneStyle
               ? ({
+                  flexBasis: previewPaneStyle.flexBasis,
+                  flexGrow: previewPaneStyle.flexGrow,
+                  flexShrink: previewPaneStyle.flexShrink,
+                  minWidth: previewPaneStyle.minWidth,
                   "--pane-flex-grow": previewPaneStyle.flexGrow,
-                  flex: 1,
                 } as InspectorCSSProperties)
               : ({ flex: 1 } as InspectorCSSProperties)
           }
@@ -6450,8 +6457,11 @@ export function InspectorPanel({
           style={
             codePaneStyle
               ? ({
+                  flexBasis: codePaneStyle.flexBasis,
+                  flexGrow: codePaneStyle.flexGrow,
+                  flexShrink: codePaneStyle.flexShrink,
+                  minWidth: codePaneStyle.minWidth,
                   "--pane-flex-grow": codePaneStyle.flexGrow,
-                  flex: 1,
                 } as InspectorCSSProperties)
               : ({ flex: 1 } as InspectorCSSProperties)
           }

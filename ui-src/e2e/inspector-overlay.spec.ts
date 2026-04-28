@@ -144,7 +144,7 @@ test.describe("inspector preview overlay", () => {
     await expect
       .poll(async () => {
         return await previewIframe.evaluate((node) => {
-          return (node as HTMLIFrameElement).style.opacity;
+          return (node as HTMLIFrameElement).style.getPropertyValue("--preview-opacity");
         });
       })
       .toBe("1");
@@ -154,7 +154,7 @@ test.describe("inspector preview overlay", () => {
     await expect
       .poll(async () => {
         return await previewIframe.evaluate((node) => {
-          return (node as HTMLIFrameElement).style.opacity;
+          return (node as HTMLIFrameElement).style.getPropertyValue("--preview-opacity");
         });
       })
       .toBe("0");
@@ -164,7 +164,7 @@ test.describe("inspector preview overlay", () => {
     await expect
       .poll(async () => {
         return await previewIframe.evaluate((node) => {
-          return (node as HTMLIFrameElement).style.opacity;
+          return (node as HTMLIFrameElement).style.getPropertyValue("--preview-opacity");
         });
       })
       .toBe("0.5");

@@ -46,12 +46,14 @@ const UNSUPPORTED_ENVELOPE_FIXTURE_PATH = path.resolve(
 const PROTOTYPE_NAVIGATION_PASTE_PAYLOAD = readFileSync(FIXTURE_PATH, "utf8");
 const UNSUPPORTED_ENVELOPE_PASTE_PAYLOAD = readFileSync(UNSUPPORTED_ENVELOPE_FIXTURE_PATH, "utf8");
 const TERMINAL_STATUS_PATTERN = /^(COMPLETED|FAILED|CANCELED)$/;
-const TERMINAL_STATUS_CAPTURE_PATTERN = /Submit:\s*([A-Z_]+)(?=\s|$)/i;
+const TERMINAL_STATUS_CAPTURE_PATTERN = /Submit:\s*(COMPLETED|FAILED|CANCELED)/i;
 const JOB_COMPLETED_PATTERN = /completed successfully/i;
 const JOB_FAILED_PATTERN = /\bfailed\b/i;
 const JOB_CANCELED_PATTERN = /\bcanceled\b/i;
+const submittedJobIds = new WeakMap<Page, string>();
 
 export interface LiveJobPayload {
+  jobId?: string;
   status?: string;
   error?: {
     code?: string;
@@ -73,6 +75,76 @@ export function parseLiveJobPayload(raw: string | null | undefined): LiveJobPayl
   } catch {
     return null;
   }
+}
+
+function isJsonRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function extractSubmitJobId(value: unknown): string | null {
+  if (!isJsonRecord(value)) {
+    return null;
+  }
+  if (typeof value.jobId === "string" && value.jobId.trim().length > 0) {
+    return value.jobId;
+  }
+  if (isJsonRecord(value.payload) && typeof value.payload.jobId === "string" && value.payload.jobId.trim().length > 0) {
+    return value.payload.jobId;
+  }
+  return null;
+}
+
+function extractJobIdFromPreviewUrl(value: string | null | undefined): string | null {
+  if (!value) {
+    return null;
+  }
+
+  const match = value.match(/\/workspace\/repros\/([^/]+)\//);
+  return match?.[1] ? decodeURIComponent(match[1]) : null;
+}
+
+async function resolveCurrentSubmittedJobId(page: Page): Promise<string | null> {
+  const jobPayloadLocator = page.getByTestId("job-payload");
+  if ((await jobPayloadLocator.count()) > 0) {
+    const payload = parseLiveJobPayload(await jobPayloadLocator.textContent({ timeout: 100 }).catch(() => null));
+    if (typeof payload?.jobId === "string" && payload.jobId.trim().length > 0) {
+      return payload.jobId;
+    }
+  }
+
+  const previewHref = await page
+    .getByRole("link", { name: /open runtime preview|preview/i })
+    .first()
+    .getAttribute("href", { timeout: 100 })
+    .catch(() => null);
+  return extractJobIdFromPreviewUrl(previewHref);
+}
+
+async function fetchSubmittedJobStatus(page: Page): Promise<string | null> {
+  const currentJobId = await resolveCurrentSubmittedJobId(page);
+  if (currentJobId) {
+    submittedJobIds.set(page, currentJobId);
+  }
+
+  const jobId = currentJobId ?? submittedJobIds.get(page);
+  if (!jobId) {
+    return null;
+  }
+
+  const statusResponse = await page.request
+    .get(`${runtimeBaseUrl}/workspace/jobs/${encodeURIComponent(jobId)}`)
+    .catch(() => null);
+  if (!statusResponse?.ok()) {
+    return null;
+  }
+
+  const payload = (await statusResponse.json().catch(() => null)) as unknown;
+  if (!isJsonRecord(payload) || typeof payload.status !== "string") {
+    return null;
+  }
+
+  const status = payload.status.toUpperCase();
+  return TERMINAL_STATUS_PATTERN.test(status) ? status : null;
 }
 
 const SUBMIT_ENDPOINT_SUFFIX = "/workspace/submit";
@@ -321,6 +393,12 @@ export async function triggerDeterministicGeneration(page: Page): Promise<void> 
       submitResponse.ok(),
       `Expected submit response to be successful, but got HTTP ${submitResponse.status()}`
     ).toBeTruthy();
+
+    const submitPayload = (await submitResponse.json().catch(() => null)) as unknown;
+    const jobId = extractSubmitJobId(submitPayload);
+    if (jobId) {
+      submittedJobIds.set(page, jobId);
+    }
   });
 }
 
@@ -338,6 +416,11 @@ export async function waitForSubmitTerminalStatus(
   let intervalIndex = 0;
 
   while (Date.now() - startedAt <= timeoutMs) {
+    const apiStatus = await fetchSubmittedJobStatus(page);
+    if (apiStatus) {
+      return apiStatus;
+    }
+
     const runtimeCardText = (await runtimeCard.textContent())?.replace(/\s+/g, " ").trim() ?? "";
     const match = runtimeCardText.match(TERMINAL_STATUS_CAPTURE_PATTERN);
     const status = match?.[1]?.toUpperCase() ?? "";
@@ -366,10 +449,11 @@ export async function waitForSubmitTerminalStatus(
     // that surface an error object (e.g. E_FIGMA_LOW_FIDELITY_SOURCE) or a
     // terminal status without updating the UI text are detected immediately
     // instead of looping until the Playwright timeout is reached.
-    const jobPayloadText = await page
-      .getByTestId("job-payload")
-      .textContent({ timeout: 0 })
-      .catch(() => null);
+    const jobPayloadLocator = page.getByTestId("job-payload");
+    const jobPayloadText =
+      (await jobPayloadLocator.count()) > 0
+        ? await jobPayloadLocator.textContent({ timeout: 100 }).catch(() => null)
+        : null;
     const jobPayload = parseLiveJobPayload(jobPayloadText);
     const payloadStatus = jobPayload?.status?.toLowerCase();
     if (payloadStatus === "completed") {
@@ -413,7 +497,7 @@ export async function openInspector(page: Page): Promise<void> {
   }
 
   const openInspectorButton = page.getByRole("button", { name: "Open Inspector" });
-  await expect(openInspectorButton).toBeVisible();
+  await expect(openInspectorButton).toBeVisible({ timeout: 30_000 });
   await openInspectorButton.click();
   await expect(page).toHaveURL(/\/workspace\/ui\/inspector/);
   await expect(page.getByTestId("inspector-panel")).toBeVisible();

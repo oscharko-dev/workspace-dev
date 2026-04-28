@@ -11,7 +11,7 @@ import {
 } from "./harness.js";
 
 export const securityContractScenarioNames = [
-  "Reject protected write routes from non-loopback bind without same-origin metadata",
+  "Reject protected write routes without same-origin browser metadata",
   "Reject path traversal attempts on job artifact file-listing and file routes",
 ] as const;
 
@@ -53,24 +53,23 @@ const protectedWriteRoutes = [
 ] as const;
 
 void test(
-  "bdd contract: Reject protected write routes from non-loopback bind without same-origin metadata",
+  "bdd contract: Reject protected write routes without same-origin browser metadata",
   async () => {
     const { root, outputRoot } = await createTempWorkspaceLayout();
     const server = await createBddWorkspaceServer({
-      host: "workspace-dev.internal",
       outputRoot,
       fetchImpl: createFakeFigmaFetch(),
     });
 
     try {
-      const nonLoopbackBoundOrigin = `http://127.0.0.1:${server.port}`;
+      const crossSiteOrigin = "http://workspace-dev.internal";
 
       for (const route of protectedWriteRoutes) {
         const crossSiteResponse = await server.app.inject({
           method: "POST",
           url: route.url,
           headers: {
-            origin: nonLoopbackBoundOrigin,
+            origin: crossSiteOrigin,
             "sec-fetch-site": "cross-site",
             "content-type": "application/json",
           },

@@ -3,6 +3,7 @@
     "component-manifest.json",
     "generation-metrics.json",
     "index.html",
+    "package-lock.json",
     "package.json",
     "perf-baseline.json",
     "perf-budget.json",

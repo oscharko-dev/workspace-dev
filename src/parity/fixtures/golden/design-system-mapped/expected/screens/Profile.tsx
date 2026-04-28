@@ -42,7 +42,7 @@ function ProfileScreenContent() {
       <Divider data-ir-id="divider-1" data-ir-name="MuiDividerRoot" aria-hidden="true" sx={{ width: "752px", height: "1px" }} />
       {/* @ir:end divider-1 */}
       {/* @ir:start chip-section Skills stack */}
-      <Stack data-ir-id="chip-section" data-ir-name="Skills" direction="row" spacing={1} sx={{ width: "94%", maxWidth: "752px", minHeight: "40px", display: "flex", flexDirection: "row", alignItems: "center", gap: 1 }}>
+      <Stack data-ir-id="chip-section" data-ir-name="Skills" direction="row" spacing={1} sx={{ width: "94%", maxWidth: "752px", minHeight: "40px", display: "flex", flexDirection: "row", alignItems: "center" }}>
         {/* @ir:start chip-1 MuiChipRoot chip */}
         <Chip data-ir-id="chip-1" data-ir-name="MuiChipRoot" label={"React"} sx={{ position: "relative", width: "10.6%", maxWidth: "80px", minHeight: "32px" }} />
         {/* @ir:end chip-1 */}

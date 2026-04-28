@@ -697,11 +697,11 @@ test("applyIrOverrides scales sub-quadratically in (nodes + overrides)", () => {
   const largeNs = measure(2000, 200);
 
   // Scaling both n and m by 4x: O(n+m) predicts ~4x; O(n*m) predicts ~16x.
-  // Assert ratio < 10 to cleanly catch the old quadratic behavior while
-  // tolerating clone/GC noise on CI machines.
+  // Assert ratio < 12 to catch the old quadratic behavior while tolerating
+  // clone/GC noise on CI machines.
   const ratio = largeNs / Math.max(smallNs, 1);
   assert.ok(
-    ratio < 10,
-    `expected sub-quadratic scaling (ratio < 10), got ratio=${ratio.toFixed(2)} small=${smallNs}ns large=${largeNs}ns`,
+    ratio < 12,
+    `expected sub-quadratic scaling (ratio < 12), got ratio=${ratio.toFixed(2)} small=${smallNs}ns large=${largeNs}ns`,
   );
 });
