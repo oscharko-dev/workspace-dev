@@ -4,6 +4,7 @@ import {
   ALLOWED_FIGMA_SOURCE_MODES,
   type WorkspaceJobRetryStage,
 } from "../../contracts/index.js";
+import { RocketTemplatePrepareService } from "../services/rocket-template-prepare-service.js";
 import { STAGE_ORDER } from "../stage-state.js";
 import type { PipelineDefinition } from "./pipeline-definition.js";
 import { PipelineRequestError } from "./pipeline-errors.js";
@@ -318,6 +319,24 @@ test("registered pipelines preserve canonical stage order for every execution pl
         pipeline.buildRetryPlan({ mode: "retry", retryStage }),
       );
     }
+  }
+});
+
+test("rocket pipeline uses the rocket template prepare delegate for every plan", () => {
+  const plans = [
+    ROCKET_PIPELINE_DEFINITION.buildSubmissionPlan({ mode: "submission" }),
+    ROCKET_PIPELINE_DEFINITION.buildRegenerationPlan({ mode: "regeneration" }),
+    ROCKET_PIPELINE_DEFINITION.buildRetryPlan({
+      mode: "retry",
+      retryStage: "codegen.generate",
+    }),
+  ];
+
+  for (const plan of plans) {
+    const templatePrepareEntry = plan.find(
+      (entry) => entry.service.stageName === "template.prepare",
+    );
+    assert.equal(templatePrepareEntry?.service, RocketTemplatePrepareService);
   }
 });
 

@@ -10,6 +10,7 @@ import {
   buildRetryPipelinePlan,
   buildSubmissionPipelinePlan,
 } from "../services/pipeline-services.js";
+import { RocketTemplatePrepareService } from "../services/rocket-template-prepare-service.js";
 import type { SubmissionJobInput } from "../types.js";
 import { CURRENT_BUILD_PROFILE_PIPELINE_IDS } from "./pipeline-build-profile.js";
 import type { PipelineDefinition } from "./pipeline-definition.js";
@@ -37,9 +38,19 @@ export const ROCKET_PIPELINE_DEFINITION: PipelineDefinition = {
   },
   supportedSourceModes: [...ALLOWED_FIGMA_SOURCE_MODES],
   supportedScopes: ["board", "node", "selection"],
-  buildSubmissionPlan: () => buildSubmissionPipelinePlan(),
-  buildRegenerationPlan: () => buildRegenerationPipelinePlan(),
-  buildRetryPlan: ({ retryStage }) => buildRetryPipelinePlan({ retryStage }),
+  buildSubmissionPlan: () =>
+    buildSubmissionPipelinePlan({
+      templatePrepareService: RocketTemplatePrepareService,
+    }),
+  buildRegenerationPlan: () =>
+    buildRegenerationPipelinePlan({
+      templatePrepareService: RocketTemplatePrepareService,
+    }),
+  buildRetryPlan: ({ retryStage }) =>
+    buildRetryPipelinePlan({
+      retryStage,
+      templatePrepareService: RocketTemplatePrepareService,
+    }),
 };
 
 let defaultRegistry: PipelineRegistry | undefined;
