@@ -11,6 +11,15 @@ Contract-level surface changes remain tracked in `CONTRACT_CHANGELOG.md`.
 
 ### Added
 
+- OSS default React + TypeScript + Tailwind template story completion (#1525):
+    - `template/react-tailwind-app/` now ships as a private Vite React TS
+      template with Tailwind CSS v4 through `@tailwindcss/vite`, strict
+      DOM/JSX TypeScript settings, `.tsx` entrypoints, Vitest, Testing Library,
+      ESLint, Playwright UI validation, and performance baseline/assertion
+      scripts.
+    - Root template gates install, lint, typecheck, test, build, validate UI,
+      run Playwright validation, assert performance budgets, and enforce the
+      default-template dependency denylist for the OSS template path.
 - Default Tailwind template dependency denylist gate:
     - `pnpm run template:tailwind:dependency-denylist` now blocks direct
       MUI, Emotion, customer/Rocket, telemetry SDK, and unreviewed static

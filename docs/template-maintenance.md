@@ -61,6 +61,28 @@ pnpm run perf:web:tailwind:assert
 Reviewers should confirm that generated fixture diffs, performance deltas, and
 lockfile changes are expected for the dependency being updated.
 
+For `template/react-tailwind-app/` story-completion evidence, the minimum
+demonstration path is:
+
+```bash
+pnpm run template:tailwind:install
+pnpm run template:tailwind:dependency-denylist
+pnpm run template:tailwind:lint
+pnpm run template:tailwind:typecheck
+pnpm run template:tailwind:test
+pnpm run template:tailwind:build
+pnpm run template:tailwind:validate:ui
+pnpm run template:tailwind:validate:playwright
+pnpm run perf:web:tailwind:assert
+pnpm exec tsx --test src/react-tailwind-template.test.ts
+node --test scripts/check-default-template-denylist.test.mjs
+pnpm exec tsx --test src/package-distribution.test.ts
+```
+
+This path proves the OSS template can be installed, compiled, tested, packed,
+validated in a browser, performance-checked, and kept free of hidden MUI,
+Emotion, Rocket/customer, telemetry, or proprietary-asset dependencies.
+
 ## Default Template Dependency Boundary
 
 `template/react-tailwind-app/` is the OSS default template. It must stay free of
