@@ -40,6 +40,7 @@ function readPasteFixture<T>(relativePath: string): T {
 
 test("schema: valid submit body parses correctly", () => {
   const result = SubmitRequestSchema.safeParse({
+    pipelineId: "rocket",
     figmaFileKey: "abc123",
     figmaAccessToken: "figd_xxx",
     storybookStaticDir: " ./storybook-static/customer ",
@@ -53,6 +54,7 @@ test("schema: valid submit body parses correctly", () => {
   });
   assert.equal(result.success, true);
   if (result.success) {
+    assert.equal(result.data.pipelineId, "rocket");
     assert.equal(result.data.figmaFileKey, "abc123");
     assert.equal(result.data.storybookStaticDir, "./storybook-static/customer");
     assert.equal(result.data.customerProfilePath, "./profiles/acme.json");

@@ -26,6 +26,7 @@ import type { JiraWriteClient } from "../test-intelligence/jira-write-adapter.js
 import { DEFAULT_FIGMA_PASTE_MAX_SELECTION_COUNT } from "../clipboard-envelope.js";
 import { DEFAULT_FIGMA_PASTE_MAX_ROOT_COUNT } from "../figma-payload-validation.js";
 import { LocalSyncError } from "../job-engine/local-sync.js";
+import { PipelineRequestError } from "../job-engine/pipeline/pipeline-errors.js";
 import type { JobEngine } from "../job-engine.js";
 import type {
   WorkspaceRuntimeLogInput,
@@ -4675,6 +4676,29 @@ test("request handler blocks browser cross-site write requests and requires JSON
   assert.equal(submitJob.mock.callCount(), 1);
 });
 
+test("GET /workspace exposes active pipeline registry metadata", async () => {
+  const { app, close } = await createRequestHandlerApp();
+
+  try {
+    const response = await app.inject({
+      method: "GET",
+      url: "/workspace",
+    });
+
+    assert.equal(response.statusCode, 200);
+    const body = response.json<Record<string, unknown>>();
+    assert.equal(body.defaultPipelineId, "rocket");
+    assert.deepEqual(
+      (body.availablePipelines as Array<Record<string, unknown>>).map(
+        (pipeline) => pipeline.id,
+      ),
+      ["rocket"],
+    );
+  } finally {
+    await close();
+  }
+});
+
 test("request handler preserves 404 semantics for unknown POST routes", async () => {
   const { app, close } = await createRequestHandlerApp();
 
@@ -5042,6 +5066,45 @@ test("request handler stale-check, remap-suggest, submit, and cancel routes cove
             },
           ]);
           assert.equal(submitJob.mock.callCount(), 0);
+        } finally {
+          await scoped.close();
+        }
+      },
+    );
+
+    await t.test(
+      "submit maps pipeline request errors to stable validation responses",
+      async () => {
+        const submitJob = test.mock.fn(() => {
+          throw new PipelineRequestError({
+            code: "PIPELINE_UNAVAILABLE",
+            pipelineId: "default",
+            message: "Pipeline 'default' is not available in this build profile.",
+          });
+        });
+        const scoped = await createRequestHandlerApp({
+          jobEngine: createStubJobEngine({ submitJob }),
+        });
+
+        try {
+          const response = await scoped.app.inject({
+            method: "POST",
+            url: "/workspace/submit",
+            headers: { "content-type": "application/json" },
+            payload: {
+              pipelineId: "default",
+              figmaFileKey: "file-key",
+              figmaAccessToken: "token",
+              figmaSourceMode: "rest",
+            },
+          });
+
+          assert.equal(response.statusCode, 400);
+          const body = response.json<Record<string, unknown>>();
+          assert.equal(body.error, "PIPELINE_UNAVAILABLE");
+          assert.equal(body.pipelineId, "default");
+          assert.match(String(body.message), /not available/i);
+          assert.equal(submitJob.mock.callCount(), 1);
         } finally {
           await scoped.close();
         }

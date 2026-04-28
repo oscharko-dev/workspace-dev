@@ -101,10 +101,10 @@ import {
 import type { PipelineExecutionContext } from "./job-engine/pipeline/context.js";
 import { syncPublicJobProjection } from "./job-engine/pipeline/public-job-projection.js";
 import {
-  buildRetryPipelinePlan,
-  buildRegenerationPipelinePlan,
-  buildSubmissionPipelinePlan,
-} from "./job-engine/services/pipeline-services.js";
+  inferPipelineSourceMode,
+  inferPipelineScope,
+  selectPipelineDefinition,
+} from "./job-engine/pipeline/pipeline-selection.js";
 import {
   computePasteCompatibilityFingerprint,
   createPasteFingerprintStore,
@@ -2521,9 +2521,17 @@ export const createJobEngine = ({
           }),
         isAbortLikeError,
       });
+      const selectedPipeline = selectPipelineDefinition({
+        requestedPipelineId: job.request.pipelineId,
+        sourceMode: inferPipelineSourceMode({
+          figmaSourceMode: resolvedFigmaSourceMode,
+          requestSourceMode: input.requestSourceMode,
+        }),
+        scope: inferPipelineScope(input),
+      });
       await orchestrator.execute({
         context,
-        plan: buildSubmissionPipelinePlan(),
+        plan: selectedPipeline.buildSubmissionPlan({ mode: "submission" }),
       });
 
       const terminalJob = buildCompletedTerminalJob({
@@ -2709,84 +2717,102 @@ export const createJobEngine = ({
       input.figmaSourceMode === undefined
         ? toAcceptedModes()
         : toAcceptedModes({ figmaSourceMode: input.figmaSourceMode });
+    const selectedPipeline = selectPipelineDefinition({
+      requestedPipelineId: input.pipelineId,
+      sourceMode: inferPipelineSourceMode({
+        figmaSourceMode: acceptedModes.figmaSourceMode,
+        requestSourceMode: input.requestSourceMode,
+      }),
+      scope: inferPipelineScope(input),
+    });
+    const resolvedInput: SubmissionJobInput = {
+      ...input,
+      pipelineId: selectedPipeline.id,
+    };
     const generationLocaleResolution = resolveJobGenerationLocale({
-      submitGenerationLocale: input.generationLocale,
+      submitGenerationLocale: resolvedInput.generationLocale,
       runtimeGenerationLocale: runtime.generationLocale,
     });
     const customerProfilePath = normalizeOptionalInputString(
-      input.customerProfilePath,
+      resolvedInput.customerProfilePath,
     );
-    const customerBrandId = normalizeOptionalInputString(input.customerBrandId);
+    const customerBrandId = normalizeOptionalInputString(
+      resolvedInput.customerBrandId,
+    );
     const storybookStaticDir = normalizeOptionalInputString(
-      input.storybookStaticDir,
+      resolvedInput.storybookStaticDir,
     );
-    const componentMappings = input.componentMappings
+    const componentMappings = resolvedInput.componentMappings
       ? normalizeComponentMappingRules({
-          rules: input.componentMappings,
+          rules: resolvedInput.componentMappings,
         })
       : undefined;
     const resolvedFormHandlingMode = resolveFormHandlingMode({
-      submitFormHandlingMode: input.formHandlingMode,
+      submitFormHandlingMode: resolvedInput.formHandlingMode,
     });
-    const visualQualityCompatibilityEnabled = input.visualAudit !== undefined;
+    const visualQualityCompatibilityEnabled =
+      resolvedInput.visualAudit !== undefined;
     const resolvedEnableVisualQualityValidation =
-      typeof input.enableVisualQualityValidation === "boolean"
-        ? input.enableVisualQualityValidation
+      typeof resolvedInput.enableVisualQualityValidation === "boolean"
+        ? resolvedInput.enableVisualQualityValidation
         : visualQualityCompatibilityEnabled ||
           runtime.enableVisualQualityValidation;
     const resolvedVisualQualityReferenceMode =
-      input.visualQualityReferenceMode ??
+      resolvedInput.visualQualityReferenceMode ??
       (visualQualityCompatibilityEnabled
         ? "frozen_fixture"
         : runtime.visualQualityReferenceMode);
     const resolvedVisualQualityViewportWidth =
-      typeof input.visualQualityViewportWidth === "number" &&
-      Number.isFinite(input.visualQualityViewportWidth)
-        ? Math.trunc(input.visualQualityViewportWidth)
-        : typeof input.visualAudit?.capture?.viewport?.width === "number" &&
-            Number.isFinite(input.visualAudit.capture.viewport.width)
-          ? Math.trunc(input.visualAudit.capture.viewport.width)
+      typeof resolvedInput.visualQualityViewportWidth === "number" &&
+      Number.isFinite(resolvedInput.visualQualityViewportWidth)
+        ? Math.trunc(resolvedInput.visualQualityViewportWidth)
+        : typeof resolvedInput.visualAudit?.capture?.viewport?.width ===
+              "number" &&
+            Number.isFinite(resolvedInput.visualAudit.capture.viewport.width)
+          ? Math.trunc(resolvedInput.visualAudit.capture.viewport.width)
           : runtime.visualQualityViewportWidth;
     const resolvedVisualQualityViewportHeight =
-      typeof input.visualQualityViewportHeight === "number" &&
-      Number.isFinite(input.visualQualityViewportHeight)
-        ? Math.trunc(input.visualQualityViewportHeight)
-        : typeof input.visualAudit?.capture?.viewport?.height === "number" &&
-            Number.isFinite(input.visualAudit.capture.viewport.height)
-          ? Math.trunc(input.visualAudit.capture.viewport.height)
+      typeof resolvedInput.visualQualityViewportHeight === "number" &&
+      Number.isFinite(resolvedInput.visualQualityViewportHeight)
+        ? Math.trunc(resolvedInput.visualQualityViewportHeight)
+        : typeof resolvedInput.visualAudit?.capture?.viewport?.height ===
+              "number" &&
+            Number.isFinite(resolvedInput.visualAudit.capture.viewport.height)
+          ? Math.trunc(resolvedInput.visualAudit.capture.viewport.height)
           : runtime.visualQualityViewportHeight;
     const resolvedVisualQualityDeviceScaleFactor =
-      typeof input.visualQualityDeviceScaleFactor === "number" &&
-      Number.isFinite(input.visualQualityDeviceScaleFactor)
-        ? input.visualQualityDeviceScaleFactor
+      typeof resolvedInput.visualQualityDeviceScaleFactor === "number" &&
+      Number.isFinite(resolvedInput.visualQualityDeviceScaleFactor)
+        ? resolvedInput.visualQualityDeviceScaleFactor
         : runtime.visualQualityDeviceScaleFactor;
     const resolvedVisualQualityBrowsers =
-      Array.isArray(input.visualQualityBrowsers) &&
-      input.visualQualityBrowsers.length > 0
-        ? input.visualQualityBrowsers
+      Array.isArray(resolvedInput.visualQualityBrowsers) &&
+      resolvedInput.visualQualityBrowsers.length > 0
+        ? resolvedInput.visualQualityBrowsers
         : runtime.visualQualityBrowsers;
     const resolvedCompositeQualityWeights =
       resolveRequestCompositeQualityWeights({
-        input: input.compositeQualityWeights,
+        input: resolvedInput.compositeQualityWeights,
         fallback: runtime.compositeQualityWeights,
       });
     const request: WorkspaceJobStatus["request"] = {
-      enableGitPr: input.enableGitPr === true,
+      pipelineId: selectedPipeline.id,
+      enableGitPr: resolvedInput.enableGitPr === true,
       figmaSourceMode: acceptedModes.figmaSourceMode,
       llmCodegenMode: acceptedModes.llmCodegenMode,
-      brandTheme: input.brandTheme ?? runtime.brandTheme,
+      brandTheme: resolvedInput.brandTheme ?? runtime.brandTheme,
       generationLocale: generationLocaleResolution.locale,
       formHandlingMode: resolvedFormHandlingMode,
       enableVisualQualityValidation: resolvedEnableVisualQualityValidation,
       compositeQualityWeights: resolvedCompositeQualityWeights,
-      ...(input.importMode !== undefined
-        ? { importMode: input.importMode }
+      ...(resolvedInput.importMode !== undefined
+        ? { importMode: resolvedInput.importMode }
         : {}),
-      ...(input.selectedNodeIds !== undefined
-        ? { selectedNodeIds: [...input.selectedNodeIds] }
+      ...(resolvedInput.selectedNodeIds !== undefined
+        ? { selectedNodeIds: [...resolvedInput.selectedNodeIds] }
         : {}),
-      ...(input.requestSourceMode !== undefined
-        ? { requestSourceMode: input.requestSourceMode }
+      ...(resolvedInput.requestSourceMode !== undefined
+        ? { requestSourceMode: resolvedInput.requestSourceMode }
         : {}),
       ...(resolvedEnableVisualQualityValidation
         ? {
@@ -2799,14 +2825,14 @@ export const createJobEngine = ({
           }
         : {}),
     };
-    if (input.figmaFileKey) {
-      request.figmaFileKey = input.figmaFileKey;
+    if (resolvedInput.figmaFileKey) {
+      request.figmaFileKey = resolvedInput.figmaFileKey;
     }
-    if (input.figmaNodeId) {
-      request.figmaNodeId = input.figmaNodeId;
+    if (resolvedInput.figmaNodeId) {
+      request.figmaNodeId = resolvedInput.figmaNodeId;
     }
-    if (input.figmaJsonPath) {
-      request.figmaJsonPath = input.figmaJsonPath;
+    if (resolvedInput.figmaJsonPath) {
+      request.figmaJsonPath = resolvedInput.figmaJsonPath;
     }
     if (customerProfilePath) {
       request.customerProfilePath = customerProfilePath;
@@ -2820,45 +2846,47 @@ export const createJobEngine = ({
     if (storybookStaticDir) {
       request.storybookStaticDir = storybookStaticDir;
     }
-    if (input.repoUrl) {
-      request.repoUrl = input.repoUrl;
+    if (resolvedInput.repoUrl) {
+      request.repoUrl = resolvedInput.repoUrl;
     }
-    if (input.projectName) {
-      request.projectName = input.projectName;
+    if (resolvedInput.projectName) {
+      request.projectName = resolvedInput.projectName;
     }
-    if (input.targetPath) {
-      request.targetPath = input.targetPath;
+    if (resolvedInput.targetPath) {
+      request.targetPath = resolvedInput.targetPath;
     }
-    if (input.importIntent !== undefined) {
-      request.importIntent = input.importIntent;
+    if (resolvedInput.importIntent !== undefined) {
+      request.importIntent = resolvedInput.importIntent;
     }
-    if (input.originalIntent !== undefined) {
-      request.originalIntent = input.originalIntent;
+    if (resolvedInput.originalIntent !== undefined) {
+      request.originalIntent = resolvedInput.originalIntent;
     }
-    if (input.intentCorrected !== undefined) {
-      request.intentCorrected = input.intentCorrected;
+    if (resolvedInput.intentCorrected !== undefined) {
+      request.intentCorrected = resolvedInput.intentCorrected;
     }
-    if (input.visualAudit) {
+    if (resolvedInput.visualAudit) {
       request.visualAudit = {
-        ...input.visualAudit,
-        ...(input.visualAudit.capture
+        ...resolvedInput.visualAudit,
+        ...(resolvedInput.visualAudit.capture
           ? {
               capture: {
-                ...input.visualAudit.capture,
-                ...(input.visualAudit.capture.viewport
+                ...resolvedInput.visualAudit.capture,
+                ...(resolvedInput.visualAudit.capture.viewport
                   ? {
-                      viewport: { ...input.visualAudit.capture.viewport },
+                      viewport: {
+                        ...resolvedInput.visualAudit.capture.viewport,
+                      },
                     }
                   : {}),
               },
             }
           : {}),
-        ...(input.visualAudit.diff
-          ? { diff: { ...input.visualAudit.diff } }
+        ...(resolvedInput.visualAudit.diff
+          ? { diff: { ...resolvedInput.visualAudit.diff } }
           : {}),
-        ...(input.visualAudit.regions
+        ...(resolvedInput.visualAudit.regions
           ? {
-              regions: input.visualAudit.regions.map((region) => ({
+              regions: resolvedInput.visualAudit.regions.map((region) => ({
                 ...region,
               })),
             }
@@ -2893,10 +2921,10 @@ export const createJobEngine = ({
     });
 
     if (runningJobIds.size < runtime.maxConcurrentJobs) {
-      executeJob({ job, input });
+      executeJob({ job, input: resolvedInput });
     } else {
       queuedJobIds.push(jobId);
-      queuedJobInputs.set(jobId, { ...input });
+      queuedJobInputs.set(jobId, { ...resolvedInput });
       pushRuntimeLog({
         job,
         logger: runtime.logger,
@@ -2909,9 +2937,10 @@ export const createJobEngine = ({
     return {
       jobId,
       status: "queued" as const,
+      pipelineId: selectedPipeline.id,
       acceptedModes,
-      ...(input.importIntent !== undefined
-        ? { importIntent: input.importIntent }
+      ...(resolvedInput.importIntent !== undefined
+        ? { importIntent: resolvedInput.importIntent }
         : {}),
     };
   };
@@ -3121,9 +3150,17 @@ export const createJobEngine = ({
           }),
         isAbortLikeError,
       });
+      const selectedPipeline = selectPipelineDefinition({
+        requestedPipelineId: job.request.pipelineId,
+        sourceMode: inferPipelineSourceMode({
+          figmaSourceMode: resolvedFigmaSourceMode,
+          requestSourceMode: job.request.requestSourceMode,
+        }),
+        scope: inferPipelineScope(job.request),
+      });
       await orchestrator.execute({
         context,
-        plan: buildRegenerationPipelinePlan(),
+        plan: selectedPipeline.buildRegenerationPlan({ mode: "regeneration" }),
       });
 
       const terminalJob = buildCompletedTerminalJob({
@@ -3485,9 +3522,20 @@ export const createJobEngine = ({
           }),
         isAbortLikeError,
       });
+      const selectedPipeline = selectPipelineDefinition({
+        requestedPipelineId: job.request.pipelineId,
+        sourceMode: inferPipelineSourceMode({
+          figmaSourceMode: resolvedFigmaSourceMode,
+          requestSourceMode: job.request.requestSourceMode,
+        }),
+        scope: inferPipelineScope(job.request),
+      });
       await orchestrator.execute({
         context,
-        plan: buildRetryPipelinePlan({ retryStage: retryInput.retryStage }),
+        plan: selectedPipeline.buildRetryPlan({
+          mode: "retry",
+          retryStage: retryInput.retryStage,
+        }),
       });
 
       const terminalJob = buildCompletedTerminalJob({

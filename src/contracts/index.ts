@@ -4,7 +4,7 @@
  * These types define the public API surface for workspace-dev consumers.
  * They must not import from internal services.
  *
- * Contract version: 3.28.0
+ * Contract version: 4.17.0
  * See CONTRACT_CHANGELOG.md for contract change history and VERSIONING.md for
  * package-versus-contract versioning policy.
  */
@@ -1147,6 +1147,33 @@ export type WorkspaceJobOutcome = "success" | "partial" | "failed";
 /** Backend fallback mode surfaced to the inspector. */
 export type WorkspaceJobFallbackMode = "none" | "rest" | "hybrid_rest";
 
+/** Stable pipeline identifiers understood by workspace-dev. */
+export type WorkspacePipelineId = "default" | "rocket" | (string & {});
+
+/** Input scope resolved before pipeline selection. */
+export type WorkspacePipelineScope = "board" | "node" | "selection";
+
+/** Structured request-time pipeline selection failures. */
+export const ALLOWED_PIPELINE_REQUEST_ERROR_CODES = [
+  "INVALID_PIPELINE",
+  "PIPELINE_UNAVAILABLE",
+  "PIPELINE_SOURCE_MODE_UNSUPPORTED",
+  "PIPELINE_SCOPE_UNSUPPORTED",
+] as const;
+
+/** Request-time pipeline selection error code. */
+export type WorkspacePipelineRequestErrorCode =
+  (typeof ALLOWED_PIPELINE_REQUEST_ERROR_CODES)[number];
+
+/** Public descriptor for a pipeline included in the current package profile. */
+export interface WorkspacePipelineDescriptor {
+  id: WorkspacePipelineId;
+  displayName: string;
+  description: string;
+  supportedSourceModes: WorkspaceFigmaSourceMode[];
+  supportedScopes: WorkspacePipelineScope[];
+}
+
 /** Configuration for starting a workspace-dev server instance. */
 export interface WorkspaceStartOptions {
   /** Host to bind to. Default: "127.0.0.1" */
@@ -1408,6 +1435,8 @@ export interface WorkspaceStatus {
   uptimeMs: number;
   outputRoot: string;
   previewEnabled: boolean;
+  availablePipelines?: WorkspacePipelineDescriptor[];
+  defaultPipelineId?: WorkspacePipelineId;
   /**
    * Whether the test-intelligence Inspector surface is reachable. True only
    * when both `WorkspaceStartOptions.testIntelligence.enabled` and
@@ -1433,6 +1462,7 @@ export interface WorkspaceStatus {
 
 /** Submission payload accepted by workspace-dev. */
 export interface WorkspaceJobInput {
+  pipelineId?: WorkspacePipelineId;
   figmaFileKey?: string;
   figmaNodeId?: string;
   figmaAccessToken?: string;
@@ -1487,6 +1517,7 @@ export interface WorkspaceJobInput {
 
 /** Public subset of request metadata stored for a job (secrets excluded). */
 export interface WorkspaceJobRequestMetadata {
+  pipelineId?: WorkspacePipelineId;
   figmaFileKey?: string;
   figmaNodeId?: string;
   figmaJsonPath?: string;
@@ -1594,6 +1625,7 @@ export interface WorkspaceImportSessionDeleteResult {
 export interface WorkspaceSubmitAccepted {
   jobId: string;
   status: "queued";
+  pipelineId: WorkspacePipelineId;
   acceptedModes: {
     figmaSourceMode: WorkspaceFigmaSourceMode;
     llmCodegenMode: WorkspaceLlmCodegenMode;
@@ -7380,4 +7412,4 @@ export type SourceMixPlannerResult =
  * Must be bumped according to CONTRACT_CHANGELOG.md rules.
  * Package version alignment is documented in VERSIONING.md.
  */
-export const CONTRACT_VERSION = "4.16.0" as const;
+export const CONTRACT_VERSION = "4.17.0" as const;
