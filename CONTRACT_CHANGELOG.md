@@ -31,6 +31,26 @@ All changes to the public contract surface of `workspace-dev` are documented her
 
 ---
 
+## [4.21.0] - 2026-04-28
+
+### Changed (Issue #1539)
+
+Contract-version evidence now reflects the completed pipeline selection and
+runtime-metadata public contract slice from Issues #1537 and #1538. This bump
+updates the canonical `CONTRACT_VERSION`, compatibility matrix, committed API
+reference, and contract-version process checks without changing the canonical
+stage order or introducing additional runtime behavior.
+
+**Evidence updated:**
+
+- `CONTRACT_VERSION` — bumped from `4.20.0` to `4.21.0`.
+- `COMPATIBILITY.md` — current contract matrix updated to `4.21.0`.
+- `docs/api` — regenerated committed API reference for the updated runtime
+  constant.
+- `src/contract-version.test.ts` and `src/docs-alignment.test.ts` — existing
+  gates continue to require a changelog heading for the current runtime
+  contract and a compatibility-matrix entry matching `CONTRACT_VERSION`.
+
 ## [4.20.0] - 2026-04-28
 
 ### Added (Issue #1538)
