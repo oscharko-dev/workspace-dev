@@ -43,6 +43,7 @@ import { FigmaSourceService } from "./figma-source-service.js";
 import { createGitPrService } from "./git-pr-service.js";
 import { IrDeriveService } from "./ir-derive-service.js";
 import { ReproExportService } from "./repro-export-service.js";
+import { RocketTemplatePrepareService } from "./rocket-template-prepare-service.js";
 import { TemplatePrepareService } from "./template-prepare-service.js";
 import { createValidateProjectService } from "./validate-project-service.js";
 import { createPipelineError } from "../errors.js";
@@ -2907,7 +2908,37 @@ test("TemplatePrepareService copies template and stores generated.project artifa
   );
 });
 
-test("TemplatePrepareService applies customer profile template dependencies and aliases when configured", async () => {
+test("TemplatePrepareService leaves customer profile template mutation to pipeline delegates", async () => {
+  const { executionContext, stageContextFor } = await createExecutionContext({
+    runtimeOverrides: {
+      customerProfile: createCustomerProfileForStageServices()
+    }
+  });
+  await mkdir(executionContext.paths.templateRoot, { recursive: true });
+  await writeFile(
+    path.join(executionContext.paths.templateRoot, "package.json"),
+    `${JSON.stringify(
+      {
+        name: "generated-app",
+        private: true,
+        dependencies: {},
+        devDependencies: {}
+      },
+      null,
+      2
+    )}\n`,
+    "utf8"
+  );
+
+  await TemplatePrepareService.execute(undefined, stageContextFor("template.prepare"));
+
+  const packageJson = JSON.parse(
+    await readFile(path.join(executionContext.paths.generatedProjectDir, "package.json"), "utf8")
+  ) as { dependencies?: Record<string, string> };
+  assert.equal(packageJson.dependencies?.["@customer/components"], undefined);
+});
+
+test("RocketTemplatePrepareService applies customer profile template dependencies and aliases when configured", async () => {
   const { executionContext, stageContextFor } = await createExecutionContext({
     runtimeOverrides: {
       customerProfile: createCustomerProfileForStageServices()
@@ -2958,7 +2989,7 @@ export default defineConfig({
     "utf8"
   );
 
-  await TemplatePrepareService.execute(undefined, stageContextFor("template.prepare"));
+  await RocketTemplatePrepareService.execute(undefined, stageContextFor("template.prepare"));
 
   const packageJson = JSON.parse(
     await readFile(path.join(executionContext.paths.generatedProjectDir, "package.json"), "utf8")

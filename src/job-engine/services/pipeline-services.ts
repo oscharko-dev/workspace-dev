@@ -6,7 +6,7 @@ import type {
 import type { PipelineStagePlanEntry } from "../pipeline/orchestrator.js";
 import { STAGE_ARTIFACT_KEYS } from "../pipeline/artifact-keys.js";
 import type { PipelineExecutionContext } from "../pipeline/context.js";
-import type { StageArtifactContract } from "../pipeline/stage-service.js";
+import type { StageArtifactContract, StageService } from "../pipeline/stage-service.js";
 import type { SubmissionJobInput } from "../types.js";
 import { CodegenGenerateService } from "./codegen-generate-service.js";
 import type { CodegenGenerateStageInput } from "./codegen-generate-service.js";
@@ -19,6 +19,10 @@ import type { IrDeriveStageInput } from "./ir-derive-service.js";
 import { ReproExportService } from "./repro-export-service.js";
 import { TemplatePrepareService } from "./template-prepare-service.js";
 import { ValidateProjectService } from "./validate-project-service.js";
+
+export interface PipelinePlanServiceOverrides {
+  templatePrepareService?: StageService<void> | undefined;
+}
 
 const requireSubmissionInput = (
   context: PipelineExecutionContext,
@@ -183,7 +187,9 @@ const isStageBeforeRetryStage = ({
   return (STAGE_RANK.get(stageName) ?? 0) < (STAGE_RANK.get(retryStage) ?? 0);
 };
 
-export const buildSubmissionPipelinePlan = (): PipelineStagePlanEntry[] => {
+export const buildSubmissionPipelinePlan = ({
+  templatePrepareService = TemplatePrepareService,
+}: PipelinePlanServiceOverrides = {}): PipelineStagePlanEntry[] => {
   return [
     {
       service: FigmaSourceService,
@@ -231,7 +237,7 @@ export const buildSubmissionPipelinePlan = (): PipelineStagePlanEntry[] => {
       },
     },
     {
-      service: TemplatePrepareService,
+      service: templatePrepareService,
       artifacts: {
         optionalReads: [STAGE_ARTIFACT_KEYS.pasteDeltaExecution],
         writes: [STAGE_ARTIFACT_KEYS.generatedProject],
@@ -338,7 +344,9 @@ export const buildSubmissionPipelinePlan = (): PipelineStagePlanEntry[] => {
   ];
 };
 
-export const buildRegenerationPipelinePlan = (): PipelineStagePlanEntry[] => {
+export const buildRegenerationPipelinePlan = ({
+  templatePrepareService = TemplatePrepareService,
+}: PipelinePlanServiceOverrides = {}): PipelineStagePlanEntry[] => {
   return [
     {
       service: FigmaSourceService,
@@ -369,7 +377,7 @@ export const buildRegenerationPipelinePlan = (): PipelineStagePlanEntry[] => {
       },
     },
     {
-      service: TemplatePrepareService,
+      service: templatePrepareService,
       artifacts: {
         writes: [STAGE_ARTIFACT_KEYS.generatedProject],
       },
@@ -463,10 +471,11 @@ export const buildRegenerationPipelinePlan = (): PipelineStagePlanEntry[] => {
 
 export const buildRetryPipelinePlan = ({
   retryStage,
+  templatePrepareService,
 }: {
   retryStage: WorkspaceJobRetryStage;
-}): PipelineStagePlanEntry[] => {
-  const plan = buildSubmissionPipelinePlan();
+} & PipelinePlanServiceOverrides): PipelineStagePlanEntry[] => {
+  const plan = buildSubmissionPipelinePlan({ templatePrepareService });
   return plan.map((entry) => {
     const stageName = entry.service.stageName;
     if (
