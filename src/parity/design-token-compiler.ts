@@ -3,6 +3,7 @@ import type {
   DesignTokenSource,
   ScreenElementIR,
 } from "./types.js";
+import type { WorkspacePipelineId } from "../contracts/index.js";
 import { DESIGN_TYPOGRAPHY_VARIANTS } from "./typography-tokens.js";
 
 export const DESIGN_TOKEN_CSS_PATH = "src/theme/tokens.css";
@@ -42,7 +43,7 @@ export interface TokenReportFallback {
 
 export interface DesignTokenReport {
   schemaVersion: typeof TOKEN_REPORT_SCHEMA_VERSION;
-  pipelineId: typeof DEFAULT_PIPELINE_ID;
+  pipelineId: WorkspacePipelineId;
   artifacts: {
     cssCustomProperties: typeof DESIGN_TOKEN_CSS_PATH;
     designTokens: typeof DESIGN_TOKENS_JSON_PATH;
@@ -68,6 +69,10 @@ export interface DesignTokenReport {
 export interface CompiledDesignTokenArtifacts {
   cssCustomProperties: string;
   tokenReport: DesignTokenReport;
+}
+
+export interface CompileDesignTokenArtifactOptions {
+  pipelineId?: WorkspacePipelineId;
 }
 
 type CssTokenDeclaration = {
@@ -703,7 +708,10 @@ const countCoverage = (categories: Record<TokenCategory, TokenCategoryReport>): 
   return total > 0 ? round(mapped / total, 4) : 1;
 };
 
-export const compileDesignTokenArtifacts = (ir: DesignIR): CompiledDesignTokenArtifacts => {
+export const compileDesignTokenArtifacts = (
+  ir: DesignIR,
+  options: CompileDesignTokenArtifactOptions = {},
+): CompiledDesignTokenArtifacts => {
   const elements = collectAllElements(ir);
   const compiledCss = buildCssCustomProperties({ ir, elements });
   const fallbacks = buildFallbacks({ ir, elements, figmaBacked: compiledCss.figmaBacked });
@@ -716,7 +724,7 @@ export const compileDesignTokenArtifacts = (ir: DesignIR): CompiledDesignTokenAr
   const modeAlternatives = canonicalizeModeAlternatives(ir.tokenArtifacts?.modeAlternatives);
   const tokenReport: DesignTokenReport = {
     schemaVersion: TOKEN_REPORT_SCHEMA_VERSION,
-    pipelineId: DEFAULT_PIPELINE_ID,
+    pipelineId: options.pipelineId ?? DEFAULT_PIPELINE_ID,
     artifacts: {
       cssCustomProperties: DESIGN_TOKEN_CSS_PATH,
       designTokens: DESIGN_TOKENS_JSON_PATH,
@@ -747,16 +755,22 @@ export const compileDesignTokenArtifacts = (ir: DesignIR): CompiledDesignTokenAr
   };
 };
 
-export const createDesignTokenReportFile = (ir: DesignIR): { path: string; content: string } => {
-  const { tokenReport } = compileDesignTokenArtifacts(ir);
+export const createDesignTokenReportFile = (
+  ir: DesignIR,
+  options: CompileDesignTokenArtifactOptions = {},
+): { path: string; content: string } => {
+  const { tokenReport } = compileDesignTokenArtifacts(ir, options);
   return {
     path: DESIGN_TOKEN_REPORT_PATH,
     content: `${JSON.stringify(tokenReport, null, 2)}\n`,
   };
 };
 
-export const createDesignTokenCssFile = (ir: DesignIR): { path: string; content: string } => {
-  const { cssCustomProperties } = compileDesignTokenArtifacts(ir);
+export const createDesignTokenCssFile = (
+  ir: DesignIR,
+  options: CompileDesignTokenArtifactOptions = {},
+): { path: string; content: string } => {
+  const { cssCustomProperties } = compileDesignTokenArtifacts(ir, options);
   return {
     path: DESIGN_TOKEN_CSS_PATH,
     content: cssCustomProperties,

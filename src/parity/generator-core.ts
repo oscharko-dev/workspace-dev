@@ -34,7 +34,7 @@ import {
 } from "../customer-profile.js";
 import type { ComponentMatchReportIconResolutionRecord } from "../storybook/types.js";
 import type { ResolvedStorybookTheme } from "../storybook/theme-resolver.js";
-import type { WorkspaceFormHandlingMode, WorkspaceRouterMode } from "../contracts/index.js";
+import type { WorkspaceFormHandlingMode, WorkspacePipelineId, WorkspaceRouterMode } from "../contracts/index.js";
 import type { IconRenderWarning } from "./generator-render.js";
 import { resolveEmittedScreenTargets } from "./emitted-screen-targets.js";
 import { deriveThemeComponentDefaultsFromIr } from "./generator-design-system.js";
@@ -284,6 +284,7 @@ interface GenerateArtifactsInput {
   context?: GeneratorContext;
   generationLocale?: string;
   routerMode?: WorkspaceRouterMode;
+  pipelineId?: WorkspacePipelineId;
   formHandlingMode?: WorkspaceFormHandlingMode;
   llmModelName: string;
   llmCodegenMode: LlmCodegenMode;
@@ -949,6 +950,7 @@ const runGenerateArtifactsBasePhase = async ({
   resolvedGenerationLocale,
   runtimeAdapters,
   generatedPaths,
+  pipelineId,
   onLog
 }: {
   projectDir: string;
@@ -958,6 +960,7 @@ const runGenerateArtifactsBasePhase = async ({
   resolvedGenerationLocale: ReturnType<typeof resolveGenerationLocale>;
   runtimeAdapters: GenerateArtifactsRuntimeAdapters;
   generatedPaths: Set<string>;
+  pipelineId?: WorkspacePipelineId;
   onLog: (message: string) => void;
 }): Promise<GenerateArtifactsBasePhase> => {
   await runtimeAdapters.mkdirRecursive(path.join(projectDir, "src", "screens"));
@@ -982,10 +985,11 @@ const runGenerateArtifactsBasePhase = async ({
     content: tokensContent
   });
   generatedPaths.add("src/theme/tokens.json");
-  const designTokenCss = createDesignTokenCssFile(ir);
+  const tokenOptions = pipelineId ? { pipelineId } : {};
+  const designTokenCss = createDesignTokenCssFile(ir, tokenOptions);
   await runtimeAdapters.writeGeneratedFile(projectDir, designTokenCss);
   generatedPaths.add(designTokenCss.path);
-  const designTokenReport = createDesignTokenReportFile(ir);
+  const designTokenReport = createDesignTokenReportFile(ir, tokenOptions);
   await runtimeAdapters.writeGeneratedFile(projectDir, designTokenReport);
   generatedPaths.add(designTokenReport.path);
   const deterministicTheme = resolvedStorybookTheme
@@ -1138,6 +1142,7 @@ export async function* generateArtifactsStreaming(
     imageAssetMap = {},
     generationLocale,
     routerMode,
+    pipelineId,
     formHandlingMode,
     llmModelName,
     llmCodegenMode,
@@ -1184,6 +1189,7 @@ export async function* generateArtifactsStreaming(
     resolvedGenerationLocale,
     runtimeAdapters,
     generatedPaths,
+    ...(pipelineId ? { pipelineId } : {}),
     onLog
   });
 

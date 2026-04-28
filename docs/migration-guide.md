@@ -124,11 +124,9 @@ aliases should select the compatibility pipeline explicitly:
 }
 ```
 
-The current package build profile contains only `rocket`, so jobs without a
-`pipelineId` still resolve to `rocket`. Treat that as compatibility behavior, not
-a migration target. When a later build includes both `default` and `rocket`, an
-omitted `pipelineId` resolves to `default`; customer-profile jobs should keep
-`pipelineId: "rocket"` to preserve existing generation semantics.
+The current package build profile includes both `default` and `rocket`, so jobs
+without a `pipelineId` resolve to `default`. Customer-profile jobs should keep
+`pipelineId: "rocket"` to preserve existing React + MUI generation semantics.
 
 Customer-profile template dependencies and import aliases are applied by the
 `rocket` `template.prepare` delegate. Downstream smoke tests for existing

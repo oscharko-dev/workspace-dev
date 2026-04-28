@@ -12,7 +12,7 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import type { WorkspaceImportSession } from "../contracts/index.js";
-import { createJobEngine, resolveRuntimeSettings } from "../job-engine.js";
+import { createJobEngine as createJobEngineBase, resolveRuntimeSettings } from "../job-engine.js";
 import { createDefaultFigmaMcpEnrichmentLoader } from "./figma-hybrid-enrichment.js";
 import { createImportSessionStore } from "./import-session-store.js";
 import { loadRehydratedJobs } from "./job-snapshot.js";
@@ -25,9 +25,29 @@ const PIPELINE_METADATA = {
   pipelineId: "rocket",
   pipelineDisplayName: "Rocket",
   templateBundleId: "react-mui-app",
-  buildProfile: "rocket",
+  buildProfile: "default-rocket",
   deterministic: true,
 } as const;
+
+const DEFAULT_PIPELINE_METADATA = {
+  pipelineId: "default",
+  pipelineDisplayName: "Default",
+  templateBundleId: "react-tailwind-app",
+  buildProfile: "default-rocket",
+  deterministic: true,
+} as const;
+
+const createJobEngine: typeof createJobEngineBase = (input) => {
+  const engine = createJobEngineBase(input);
+  return {
+    ...engine,
+    submitJob: (jobInput) =>
+      engine.submitJob({
+        pipelineId: "rocket",
+        ...jobInput,
+      }),
+  };
+};
 
 const waitForTerminalStatus = async ({
   getStatus,
@@ -490,6 +510,59 @@ test("createJobEngine accepts jobs and exposes queued status", () => {
   assert.deepEqual(queuedStatus?.request.pipelineMetadata, PIPELINE_METADATA);
   assert.equal(engine.getJob("unknown"), undefined);
   assert.equal(engine.getJobResult("unknown"), undefined);
+});
+
+test("createJobEngine defaults omitted pipelineId to the default Tailwind pipeline", async () => {
+  const tempRoot = await mkdtemp(
+    path.join(os.tmpdir(), "workspace-dev-engine-default-pipeline-"),
+  );
+  const localJsonPath = path.join(tempRoot, "figma.json");
+  await writeFile(localJsonPath, JSON.stringify(createLocalFigmaPayload()), "utf8");
+  const engine = createJobEngineBase({
+    resolveBaseUrl: () => "http://127.0.0.1:1983",
+    paths: {
+      outputRoot: tempRoot,
+      jobsRoot: path.join(tempRoot, "jobs"),
+      reprosRoot: path.join(tempRoot, "repros"),
+      workspaceRoot: tempRoot,
+    },
+    runtime: resolveRuntimeSettings({
+      enablePreview: false,
+      skipInstall: true,
+      figmaMaxRetries: 1,
+      figmaRequestTimeoutMs: 1000,
+    }),
+  });
+
+  const accepted = engine.submitJob({
+    figmaSourceMode: "local_json",
+    figmaJsonPath: localJsonPath,
+  });
+  assert.equal(accepted.pipelineId, "default");
+  assert.deepEqual(accepted.pipelineMetadata, DEFAULT_PIPELINE_METADATA);
+
+  const status = await waitForTerminalStatus({
+    getStatus: engine.getJob,
+    jobId: accepted.jobId,
+    timeoutMs: HEAVY_JOB_TIMEOUT_MS,
+  });
+  assert.equal(status.pipelineId, "default");
+  assert.deepEqual(status.pipelineMetadata, DEFAULT_PIPELINE_METADATA);
+  assert.equal(status.status, "partial");
+  assert.equal(
+    await readFile(
+      path.join(status.artifacts.generatedProjectDir!, "src", "theme", "token-report.json"),
+      "utf8",
+    ).then((content) => JSON.parse(content).pipelineId),
+    "default",
+  );
+  assert.equal(
+    await readFile(
+      path.join(status.artifacts.generatedProjectDir!, "src", "generated", "layout-report.json"),
+      "utf8",
+    ).then((content) => JSON.parse(content).pipelineId),
+    "default",
+  );
 });
 
 test("createJobEngine reimportImportSession replays stored selected nodes for partial sessions only", async () => {

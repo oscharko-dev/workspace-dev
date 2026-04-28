@@ -160,10 +160,22 @@ const MODULE_DIR =
   typeof __dirname === "string"
     ? __dirname
     : path.dirname(fileURLToPath(import.meta.url));
-const TEMPLATE_ROOT = path.resolve(MODULE_DIR, "../template/react-mui-app");
-const TEMPLATE_COPY_FILTER = createTemplateCopyFilter({
-  templateRoot: TEMPLATE_ROOT,
-});
+const PACKAGE_ROOT = path.resolve(MODULE_DIR, "..");
+
+const resolveTemplatePaths = ({
+  templatePath,
+}: {
+  templatePath: string;
+}): {
+  templateRoot: string;
+  templateCopyFilter: (sourcePath: string) => boolean;
+} => {
+  const templateRoot = path.resolve(PACKAGE_ROOT, templatePath);
+  return {
+    templateRoot,
+    templateCopyFilter: createTemplateCopyFilter({ templateRoot }),
+  };
+};
 
 const WORKSPACE_JOB_STAGES: WorkspaceJobStageName[] = [
   "figma.source",
@@ -2472,6 +2484,17 @@ export const createJobEngine = ({
         ...(resolvedCustomerBrandId ? { resolvedCustomerBrandId } : {}),
         ...(storybookActivation ? { storybookActivation } : {}),
       });
+      const selectedPipeline = selectPipelineDefinition({
+        requestedPipelineId: job.request.pipelineId,
+        sourceMode: inferPipelineSourceMode({
+          figmaSourceMode: resolvedFigmaSourceMode,
+          requestSourceMode: input.requestSourceMode,
+        }),
+        scope: inferPipelineScope(input),
+      });
+      const templatePaths = resolveTemplatePaths({
+        templatePath: selectedPipeline.template.path,
+      });
       const context: PipelineExecutionContext = {
         mode: "submission",
         job,
@@ -2496,8 +2519,8 @@ export const createJobEngine = ({
           iconMapFilePath,
           designSystemFilePath,
           irCacheDir,
-          templateRoot: TEMPLATE_ROOT,
-          templateCopyFilter: TEMPLATE_COPY_FILTER,
+          templateRoot: templatePaths.templateRoot,
+          templateCopyFilter: templatePaths.templateCopyFilter,
         },
         artifactStore,
         diskTracker,
@@ -2532,14 +2555,6 @@ export const createJobEngine = ({
             limits: runtime.pipelineDiagnosticLimits,
           }),
         isAbortLikeError,
-      });
-      const selectedPipeline = selectPipelineDefinition({
-        requestedPipelineId: job.request.pipelineId,
-        sourceMode: inferPipelineSourceMode({
-          figmaSourceMode: resolvedFigmaSourceMode,
-          requestSourceMode: input.requestSourceMode,
-        }),
-        scope: inferPipelineScope(input),
       });
       await orchestrator.execute({
         context,
@@ -3102,6 +3117,17 @@ export const createJobEngine = ({
           sourceJob: sourceRecord,
         },
       );
+      const selectedPipeline = selectPipelineDefinition({
+        requestedPipelineId: job.request.pipelineId,
+        sourceMode: inferPipelineSourceMode({
+          figmaSourceMode: resolvedFigmaSourceMode,
+          requestSourceMode: job.request.requestSourceMode,
+        }),
+        scope: inferPipelineScope(job.request),
+      });
+      const templatePaths = resolveTemplatePaths({
+        templatePath: selectedPipeline.template.path,
+      });
       const context: PipelineExecutionContext = {
         mode: "regeneration",
         job,
@@ -3126,8 +3152,8 @@ export const createJobEngine = ({
           iconMapFilePath,
           designSystemFilePath,
           irCacheDir,
-          templateRoot: TEMPLATE_ROOT,
-          templateCopyFilter: TEMPLATE_COPY_FILTER,
+          templateRoot: templatePaths.templateRoot,
+          templateCopyFilter: templatePaths.templateCopyFilter,
         },
         artifactStore,
         diskTracker: new JobDiskTracker({
@@ -3166,14 +3192,6 @@ export const createJobEngine = ({
             limits: runtime.pipelineDiagnosticLimits,
           }),
         isAbortLikeError,
-      });
-      const selectedPipeline = selectPipelineDefinition({
-        requestedPipelineId: job.request.pipelineId,
-        sourceMode: inferPipelineSourceMode({
-          figmaSourceMode: resolvedFigmaSourceMode,
-          requestSourceMode: job.request.requestSourceMode,
-        }),
-        scope: inferPipelineScope(job.request),
       });
       await orchestrator.execute({
         context,
@@ -3479,6 +3497,17 @@ export const createJobEngine = ({
       const requestedStorybookStaticDir = normalizeOptionalInputString(
         sourceRecord.request.storybookStaticDir,
       );
+      const selectedPipeline = selectPipelineDefinition({
+        requestedPipelineId: job.request.pipelineId,
+        sourceMode: inferPipelineSourceMode({
+          figmaSourceMode: resolvedFigmaSourceMode,
+          requestSourceMode: job.request.requestSourceMode,
+        }),
+        scope: inferPipelineScope(job.request),
+      });
+      const templatePaths = resolveTemplatePaths({
+        templatePath: selectedPipeline.template.path,
+      });
 
       const context: PipelineExecutionContext = {
         mode: "retry",
@@ -3505,8 +3534,8 @@ export const createJobEngine = ({
           iconMapFilePath,
           designSystemFilePath,
           irCacheDir,
-          templateRoot: TEMPLATE_ROOT,
-          templateCopyFilter: TEMPLATE_COPY_FILTER,
+          templateRoot: templatePaths.templateRoot,
+          templateCopyFilter: templatePaths.templateCopyFilter,
         },
         artifactStore,
         diskTracker: new JobDiskTracker({
@@ -3539,14 +3568,6 @@ export const createJobEngine = ({
             limits: runtime.pipelineDiagnosticLimits,
           }),
         isAbortLikeError,
-      });
-      const selectedPipeline = selectPipelineDefinition({
-        requestedPipelineId: job.request.pipelineId,
-        sourceMode: inferPipelineSourceMode({
-          figmaSourceMode: resolvedFigmaSourceMode,
-          requestSourceMode: job.request.requestSourceMode,
-        }),
-        scope: inferPipelineScope(job.request),
       });
       await orchestrator.execute({
         context,

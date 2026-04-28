@@ -5,6 +5,7 @@ import {
   type WorkspaceJobRetryStage,
 } from "../../contracts/index.js";
 import { CodegenGenerateService } from "../services/codegen-generate-service.js";
+import { DefaultCodegenGenerateService } from "../services/default-codegen-generate-service.js";
 import { FigmaSourceService } from "../services/figma-source-service.js";
 import { GitPrService } from "../services/git-pr-service.js";
 import { IrDeriveService } from "../services/ir-derive-service.js";
@@ -16,6 +17,7 @@ import type { PipelineDefinition } from "./pipeline-definition.js";
 import { PipelineRequestError } from "./pipeline-errors.js";
 import { PipelineRegistry } from "./pipeline-registry.js";
 import {
+  DEFAULT_PIPELINE_DEFINITION,
   ROCKET_PIPELINE_DEFINITION,
   createDefaultPipelineRegistry,
   inferPipelineScope,
@@ -33,6 +35,26 @@ const RETRY_STAGES: readonly WorkspaceJobRetryStage[] = [
 const SUPPORTED_SCOPES = ["board", "node", "selection"] as const;
 
 const EXPECTED_PIPELINE_MANIFESTS = {
+  default: {
+    id: "default",
+    displayName: "Default",
+    description:
+      "OSS React, TypeScript, and Tailwind pipeline for deterministic generated apps.",
+    visibility: "oss",
+    deterministic: true,
+    template: {
+      bundleId: "react-tailwind-app",
+      path: "template/react-tailwind-app",
+      stack: {
+        framework: "react",
+        language: "typescript",
+        styling: "tailwind",
+        bundler: "vite",
+      },
+    },
+    supportedSourceModes: ALLOWED_FIGMA_SOURCE_MODES,
+    supportedScopes: SUPPORTED_SCOPES,
+  },
   rocket: {
     id: "rocket",
     displayName: "Rocket",
@@ -115,11 +137,11 @@ const createDefinition = ({
   supportedScopes: scopes,
 });
 
-test("default registry exposes only the current build-profile pipeline", () => {
+test("default registry exposes the current default and rocket build-profile pipelines", () => {
   const registry = createDefaultPipelineRegistry();
   assert.deepEqual(
     registry.listDescriptors().map((pipeline) => pipeline.id),
-    ["rocket"],
+    ["default", "rocket"],
   );
   assert.equal(
     selectPipelineDefinition({
@@ -127,7 +149,7 @@ test("default registry exposes only the current build-profile pipeline", () => {
       sourceMode: "local_json",
       scope: "board",
     }).id,
-    "rocket",
+    "default",
   );
 });
 
@@ -181,7 +203,10 @@ test("pipeline selection is deterministic for default-only, rocket-only, and com
 });
 
 test("pipeline selection distinguishes unknown and unavailable pipeline IDs", () => {
-  const registry = createDefaultPipelineRegistry();
+  const registry = new PipelineRegistry({
+    definitions: [ROCKET_PIPELINE_DEFINITION],
+    knownPipelineIds: ["default", "rocket"],
+  });
 
   assert.throws(
     () =>
@@ -362,6 +387,24 @@ test("rocket pipeline uses the rocket template prepare delegate for every plan",
       (entry) => entry.service.stageName === "template.prepare",
     );
     assert.equal(templatePrepareEntry?.service, RocketTemplatePrepareService);
+  }
+});
+
+test("default pipeline uses the Tailwind codegen delegate for every plan", () => {
+  const plans = [
+    DEFAULT_PIPELINE_DEFINITION.buildSubmissionPlan({ mode: "submission" }),
+    DEFAULT_PIPELINE_DEFINITION.buildRegenerationPlan({ mode: "regeneration" }),
+    DEFAULT_PIPELINE_DEFINITION.buildRetryPlan({
+      mode: "retry",
+      retryStage: "codegen.generate",
+    }),
+  ];
+
+  for (const plan of plans) {
+    const codegenEntry = plan.find(
+      (entry) => entry.service.stageName === "codegen.generate",
+    );
+    assert.equal(codegenEntry?.service, DefaultCodegenGenerateService);
   }
 });
 
