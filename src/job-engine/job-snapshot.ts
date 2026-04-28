@@ -173,10 +173,8 @@ const toRehydratedJobRecord = ({
     },
     preview: { ...snapshot.preview },
     queue: { ...snapshot.queue },
+    pipelineMetadata: { ...snapshot.pipelineMetadata },
   };
-  if (snapshot.pipelineMetadata) {
-    job.pipelineMetadata = { ...snapshot.pipelineMetadata };
-  }
   if (snapshot.currentStage) {
     job.currentStage = snapshot.currentStage;
   }
