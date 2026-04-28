@@ -11,12 +11,12 @@ import {
   buildSubmissionPipelinePlan,
 } from "../services/pipeline-services.js";
 import type { SubmissionJobInput } from "../types.js";
+import { CURRENT_BUILD_PROFILE_PIPELINE_IDS } from "./pipeline-build-profile.js";
 import type { PipelineDefinition } from "./pipeline-definition.js";
 import { PipelineRequestError } from "./pipeline-errors.js";
 import { PipelineRegistry } from "./pipeline-registry.js";
 
 export const KNOWN_WORKSPACE_PIPELINE_IDS = ["default", "rocket"] as const;
-const CURRENT_BUILD_PROFILE_PIPELINE_IDS = ["rocket"] as const;
 
 export const ROCKET_PIPELINE_DEFINITION: PipelineDefinition = {
   id: "rocket",
@@ -47,9 +47,7 @@ let defaultRegistry: PipelineRegistry | undefined;
 export const createDefaultPipelineRegistry = (): PipelineRegistry =>
   new PipelineRegistry({
     definitions: [ROCKET_PIPELINE_DEFINITION].filter((definition) =>
-      CURRENT_BUILD_PROFILE_PIPELINE_IDS.includes(
-        definition.id as (typeof CURRENT_BUILD_PROFILE_PIPELINE_IDS)[number],
-      ),
+      CURRENT_BUILD_PROFILE_PIPELINE_IDS.includes(definition.id),
     ),
     knownPipelineIds: [...KNOWN_WORKSPACE_PIPELINE_IDS],
   });

@@ -105,7 +105,13 @@ test("default registry exposes only the current build-profile pipeline", () => {
   );
 });
 
-test("pipeline selection prefers default when multiple pipelines are available", () => {
+test("pipeline selection is deterministic for default-only, rocket-only, and combined bundles", () => {
+  const defaultOnlyRegistry = new PipelineRegistry({
+    definitions: [createDefinition({ id: "default" })],
+  });
+  const rocketOnlyRegistry = new PipelineRegistry({
+    definitions: [createDefinition({ id: "rocket" })],
+  });
   const registry = new PipelineRegistry({
     definitions: [
       createDefinition({ id: "rocket" }),
@@ -115,11 +121,36 @@ test("pipeline selection prefers default when multiple pipelines are available",
 
   assert.equal(
     selectPipelineDefinition({
+      registry: defaultOnlyRegistry,
+      sourceMode: "local_json",
+      scope: "board",
+    }).id,
+    "default",
+  );
+  assert.equal(
+    selectPipelineDefinition({
+      registry: rocketOnlyRegistry,
+      sourceMode: "local_json",
+      scope: "board",
+    }).id,
+    "rocket",
+  );
+  assert.equal(
+    selectPipelineDefinition({
       registry,
       sourceMode: "local_json",
       scope: "board",
     }).id,
     "default",
+  );
+  assert.equal(
+    selectPipelineDefinition({
+      registry,
+      requestedPipelineId: "rocket",
+      sourceMode: "local_json",
+      scope: "board",
+    }).id,
+    "rocket",
   );
 });
 
