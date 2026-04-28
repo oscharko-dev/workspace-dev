@@ -240,12 +240,22 @@ const detectRepeatedGrid = (element: ScreenElementIR): GridDetection | undefined
 };
 
 const sortByVisualOrder = (children: readonly ScreenElementIR[], layoutMode: "VERTICAL" | "HORIZONTAL" | "NONE"): ScreenElementIR[] =>
-  [...children].sort((left, right) => {
-    if (layoutMode === "HORIZONTAL") {
-      return (left.x ?? 0) - (right.x ?? 0) || (left.y ?? 0) - (right.y ?? 0) || left.id.localeCompare(right.id);
-    }
-    return (left.y ?? 0) - (right.y ?? 0) || (left.x ?? 0) - (right.x ?? 0) || left.id.localeCompare(right.id);
-  });
+  children
+    .map((child, index) => ({ child, index }))
+    .sort((leftEntry, rightEntry) => {
+      const left = leftEntry.child;
+      const right = rightEntry.child;
+      const leftHasGeometry = typeof left.x === "number" || typeof left.y === "number";
+      const rightHasGeometry = typeof right.x === "number" || typeof right.y === "number";
+      if (!leftHasGeometry && !rightHasGeometry) {
+        return leftEntry.index - rightEntry.index;
+      }
+      if (layoutMode === "HORIZONTAL") {
+        return (left.x ?? 0) - (right.x ?? 0) || (left.y ?? 0) - (right.y ?? 0) || left.id.localeCompare(right.id);
+      }
+      return (left.y ?? 0) - (right.y ?? 0) || (left.x ?? 0) - (right.x ?? 0) || left.id.localeCompare(right.id);
+    })
+    .map((entry) => entry.child);
 
 const hasAbsoluteGeometry = (element: ScreenElementIR): boolean =>
   typeof element.x === "number" &&
