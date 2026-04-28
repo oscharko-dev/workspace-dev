@@ -1,9 +1,17 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  appShellFile,
   assembleFallbackDependencies,
   buildFallbackRenderState,
   fallbackScreenFile,
+  hasDistinctSurfaceFill,
+  hasInterChildDividerPattern,
+  hasResponsiveTopLevelLayoutOverrides,
+  hasVisibleBorderSignal,
+  isSimpleFlexContainerForStack,
+  isElevatedSurfaceContainerForPaper,
+  isPillShapedOutlinedButton,
   prepareFallbackScreenModel,
   renderAppBar,
   renderAvatar,
@@ -26,7 +34,9 @@ import {
   renderTable,
   renderText,
   renderTooltipElement,
-  tryRenderIconOnlyStepperContainer
+  toSimpleStackContainerSx,
+  tryRenderIconOnlyStepperContainer,
+  wrappedFallbackScreenFile
 } from "./templates/screen-template.js";
 import { toStateKey, type IconFallbackResolver, type RenderContext, type VirtualParent } from "./generator-render.js";
 import type { DetectedDialogOverlayPattern } from "./templates/screen-template.js";
@@ -1665,6 +1675,138 @@ test("renderSimpleFlexContainerAsStack does not set alignItems or justifyContent
 
   assert.equal(rendered.includes("alignItems="), false);
   assert.equal(rendered.includes("justifyContent="), false);
+  assert.match(rendered, /display: "flex"/);
+  assert.match(rendered, /flexDirection: "row"/);
+  assert.equal(rendered.includes("gap:"), false);
+});
+
+test("toSimpleStackContainerSx drops base and responsive gap entries", () => {
+  const context = createRenderContext();
+  context.responsiveTopLevelLayoutOverrides = {
+    stack: {
+      sm: {
+        layoutMode: "HORIZONTAL",
+        gap: 32,
+        widthRatio: 0.5
+      }
+    }
+  };
+  const element = makeNode({
+    id: "stack",
+    type: "container",
+    layoutMode: "VERTICAL",
+    gap: 16,
+    width: 240,
+    height: 160,
+    children: [makeText({ id: "stack-title", text: "Overview" })]
+  });
+
+  assert.equal(isSimpleFlexContainerForStack({ element, context }), true);
+  assert.equal(hasResponsiveTopLevelLayoutOverrides({ element, context }), true);
+  assert.equal(
+    isSimpleFlexContainerForStack({
+      element: makeNode({ id: "empty-stack", type: "container", layoutMode: "VERTICAL", children: [] }),
+      context
+    }),
+    false
+  );
+
+  const sx = toSimpleStackContainerSx({ element, parent: rootParent, context });
+
+  assert.equal(sx.includes("gap:"), false);
+  assert.match(sx, /width:/);
+  assert.match(sx, /flexDirection: \{ sm: "row", md: "column" \}/);
+});
+
+test("surface and divider helpers classify only concrete visual signals", () => {
+  const context = createRenderContext();
+  context.pageBackgroundColorNormalized = "#ffffff";
+
+  assert.equal(hasVisibleBorderSignal(makeNode({ id: "no-stroke", type: "container" })), false);
+  assert.equal(hasVisibleBorderSignal(makeNode({ id: "implicit-stroke", type: "container", strokeColor: "#111111" })), true);
+  assert.equal(
+    hasVisibleBorderSignal(makeNode({ id: "zero-stroke", type: "container", strokeColor: "#111111", strokeWidth: 0 })),
+    false
+  );
+  assert.equal(
+    hasVisibleBorderSignal(makeNode({ id: "positive-stroke", type: "container", strokeColor: "#111111", strokeWidth: 1 })),
+    true
+  );
+
+  assert.equal(
+    hasDistinctSurfaceFill({
+      element: makeNode({ id: "same-fill", type: "container", fillColor: "#fff" }),
+      context
+    }),
+    false
+  );
+  assert.equal(
+    hasDistinctSurfaceFill({
+      element: makeNode({ id: "different-fill", type: "container", fillColor: "#f2f4f8" }),
+      context
+    }),
+    true
+  );
+
+  assert.equal(hasInterChildDividerPattern([]), false);
+  assert.equal(
+    hasInterChildDividerPattern([
+      makeNode({ id: "a", type: "container" }),
+      makeNode({ id: "divider", type: "divider" }),
+      makeNode({ id: "b", type: "container" })
+    ]),
+    true
+  );
+
+  assert.equal(
+    isElevatedSurfaceContainerForPaper({
+      element: makeText({ id: "text", text: "Not a card" }),
+      context
+    }),
+    false
+  );
+  assert.equal(
+    isElevatedSurfaceContainerForPaper({
+      element: makeNode({
+        id: "elevated-card",
+        type: "container",
+        cornerRadius: 12,
+        fillColor: "#f2f4f8",
+        elevation: 2,
+        children: [makeText({ id: "card-title", text: "Balance" })]
+      }),
+      context
+    }),
+    true
+  );
+  assert.equal(
+    isElevatedSurfaceContainerForPaper({
+      element: makeNode({
+        id: "outlined-card",
+        type: "container",
+        cornerRadius: 12,
+        strokeColor: "#111111",
+        strokeWidth: 1,
+        children: [makeText({ id: "outlined-title", text: "Activity" })]
+      }),
+      context
+    }),
+    true
+  );
+
+  assert.equal(
+    isPillShapedOutlinedButton(
+      makeNode({
+        id: "pill",
+        type: "container",
+        cornerRadius: 40,
+        strokeColor: "#0050aa",
+        children: [makeText({ id: "pill-label", text: "Continue" })]
+      })
+    ),
+    true
+  );
+  assert.equal(isPillShapedOutlinedButton(makeNode({ id: "not-pill", type: "container", cornerRadius: 8 })), false);
 });
 
 test("renderDialog falls back to container rendering when no title or content exists", () => {
@@ -1786,6 +1928,45 @@ test("tryRenderIconOnlyStepperContainer renders icon-only steppers with connecto
   assert.match(rendered, /<Stack /);
   assert.match(rendered, /aria-hidden="true"/);
   assert.match(rendered, /<Box aria-hidden="true"/);
+});
+
+test("tryRenderIconOnlyStepperContainer falls back connector dimensions when metadata is sparse", () => {
+  const context = createRenderContext();
+  const match = tryRenderIconOnlyStepperContainer({
+    element: makeNode({
+      id: "icon-stepper-sparse",
+      type: "container",
+      layoutMode: "HORIZONTAL",
+      children: [
+        makeNode({
+          id: "sparse-stepper-icon-1",
+          type: "container",
+          nodeType: "VECTOR",
+          vectorPaths: ["M0 0L10 10"]
+        }),
+        makeNode({
+          id: "sparse-stepper-connector",
+          type: "divider",
+          name: ""
+        }),
+        makeNode({
+          id: "sparse-stepper-icon-2",
+          type: "container",
+          nodeType: "VECTOR",
+          vectorPaths: ["M1 1L9 9"]
+        })
+      ]
+    }),
+    depth: 1,
+    parent: rootParent,
+    context
+  });
+  const rendered = match?.rendered ?? null;
+
+  assert.ok(rendered);
+  assert.match(rendered, /<Box aria-hidden="true"/);
+  assert.match(rendered, /width: "24px"/);
+  assert.match(rendered, /height: "2px"/);
 });
 
 test("renderStepper renders labeled steppers when item labels are present", () => {
@@ -1946,14 +2127,14 @@ test("renderStack falls back for empty stacks and renders populated ones", () =>
   assert.match(fallback, /<Box/);
   assert.ok(populated);
   assert.match(populated, /<Stack direction="row" spacing=\{1\}/);
-  assert.match(populated, /alignItems="flex-end"/);
-  assert.match(populated, /justifyContent="center"/);
+  assert.equal(populated.includes("alignItems="), false);
+  assert.equal(populated.includes("justifyContent="), false);
   const populatedSxMatch = /sx=\{\{([^}]*)\}\}/.exec(populated);
   const populatedSx = populatedSxMatch?.[1] ?? "";
-  assert.equal(populatedSx.includes("display:"), false);
-  assert.equal(populatedSx.includes("flexDirection:"), false);
-  assert.equal(populatedSx.includes("alignItems:"), false);
-  assert.equal(populatedSx.includes("justifyContent:"), false);
+  assert.match(populatedSx, /display: "flex"/);
+  assert.match(populatedSx, /flexDirection: "row"/);
+  assert.match(populatedSx, /alignItems: "flex-end"/);
+  assert.match(populatedSx, /justifyContent: "center"/);
   assert.equal(populatedSx.includes("gap:"), false);
 });
 
@@ -2255,4 +2436,131 @@ test("fallbackScreenFile keeps DatePicker on the MUI DatePicker fallback path wh
   assert.match(generated.file.content, /<LocalizationProvider dateAdapter=\{AdapterDateFns\}>/);
   assert.match(generated.file.content, /<DatePicker/);
   assert.equal(generated.file.content.includes("<TextField"), false);
+});
+
+test("appShellFile emits shell text overrides without Stack gap duplication", () => {
+  const screen: ScreenIR = {
+    id: "screen-app-shell",
+    name: "Dashboard Shell",
+    layoutMode: "VERTICAL",
+    gap: 16,
+    width: 390,
+    height: 844,
+    children: [
+      makeNode({
+        id: "shell-stack",
+        type: "container",
+        layoutMode: "HORIZONTAL",
+        gap: 12,
+        width: 320,
+        height: 48,
+        children: [makeText({ id: "shell-title", text: "Dashboard" })]
+      })
+    ]
+  };
+
+  const generated = appShellFile({
+    screen,
+    mappingByNodeId: new Map(),
+    componentNameOverride: "DashboardShell",
+    filePathOverride: "src/screens/DashboardShell.tsx",
+    textOverrideExpressionByNodeId: new Map([["shell-title", 'props.textOverrides?.["shell-title"] ?? "Dashboard"']])
+  });
+
+  assert.match(generated.file.content, /export interface DashboardShellProps/);
+  assert.match(generated.file.content, /textOverrides\?: Record<string, string>/);
+  assert.match(generated.file.content, /props\.textOverrides\?\.\["shell-title"\] \?\? "Dashboard"/);
+  assert.equal(generated.file.content.includes("gap:"), false);
+});
+
+test("appShellFile preserves mapped DatePicker provider imports in shell mode", () => {
+  const screen: ScreenIR = {
+    id: "screen-app-shell-date-picker",
+    name: "Shell Date Picker",
+    layoutMode: "VERTICAL",
+    width: 390,
+    height: 844,
+    children: [
+      makeNode({
+        id: "shell-date-picker",
+        type: "input",
+        semanticType: "DatePicker",
+        width: 320,
+        height: 56,
+        children: [
+          makeText({ id: "shell-date-label", text: "Booking date", y: 0 }),
+          makeText({ id: "shell-date-value", text: "2026-04-02", y: 28 })
+        ]
+      })
+    ]
+  };
+
+  const generated = appShellFile({
+    screen,
+    mappingByNodeId: new Map(),
+    componentNameOverride: "DateShell",
+    filePathOverride: "src/screens/DateShell.tsx",
+    specializedComponentMappings: {
+      DatePicker: makeSpecializedMapping({
+        componentKey: "DatePicker",
+        modulePath: "@customer/forms",
+        importedName: "CustomerDatePicker"
+      })
+    },
+    datePickerProvider: {
+      modulePath: "@customer/date-provider",
+      importedName: "CustomerDatePickerProvider",
+      localName: "CustomerDatePickerProvider",
+      props: {
+        adapterLocale: "de"
+      },
+      adapter: {
+        modulePath: "@customer/date-provider",
+        importedName: "CustomerDateAdapter",
+        localName: "CustomerDateAdapter",
+        propName: "dateAdapter"
+      }
+    }
+  });
+
+  assert.match(generated.file.content, /import \{ CustomerDatePicker \} from "@customer\/forms"/);
+  assert.match(generated.file.content, /import \{ CustomerDatePickerProvider \} from "@customer\/date-provider"/);
+  assert.match(generated.file.content, /import \{ CustomerDateAdapter \} from "@customer\/date-provider"/);
+  assert.match(generated.file.content, /<CustomerDatePickerProvider adapterLocale=\{"de"\} dateAdapter=\{CustomerDateAdapter\}>/);
+  assert.match(generated.file.content, /<CustomerDatePicker/);
+});
+
+test("wrappedFallbackScreenFile keeps MUI DatePicker fallback provider inside the app shell", () => {
+  const screen: ScreenIR = {
+    id: "screen-wrapped-date-picker",
+    name: "Wrapped Date Picker",
+    layoutMode: "VERTICAL",
+    width: 390,
+    height: 844,
+    children: [
+      makeNode({
+        id: "wrapped-date-picker",
+        type: "input",
+        semanticType: "DatePicker",
+        width: 320,
+        height: 56,
+        children: [
+          makeText({ id: "wrapped-date-label", text: "Booking date", y: 0 }),
+          makeText({ id: "wrapped-date-value", text: "2026-04-02", y: 28 })
+        ]
+      })
+    ]
+  };
+
+  const generated = wrappedFallbackScreenFile({
+    screen,
+    mappingByNodeId: new Map(),
+    appShellComponentName: "DashboardShell",
+    appShellImportPath: "../DashboardShell"
+  });
+
+  assert.match(generated.file.content, /import DashboardShell from "\.\.\/DashboardShell"/);
+  assert.match(generated.file.content, /<DashboardShell>[\s\S]*<WrappedDatePickerScreenContent \/>[\s\S]*<\/DashboardShell>/);
+  assert.match(generated.file.content, /<LocalizationProvider dateAdapter=\{AdapterDateFns\}>/);
+  assert.match(generated.file.content, /<DatePicker/);
 });

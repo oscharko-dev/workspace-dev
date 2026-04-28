@@ -1,8 +1,8 @@
 Feature: Workspace security contract
   workspace-dev must keep its public write-route and source-serving security behavior stable.
 
-  Scenario: Reject protected write routes from non-loopback bind without same-origin metadata
-    Given the runtime binds to a non-loopback host
+  Scenario: Reject protected write routes without same-origin browser metadata
+    Given the runtime is serving local write routes
     When a browser sends protected write requests with cross-site or missing same-origin metadata
     Then the runtime rejects the request with FORBIDDEN_REQUEST_ORIGIN
 

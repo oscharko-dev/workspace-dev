@@ -61,7 +61,7 @@ export default function SettingsScreen() {
         <Typography data-ir-id="dialog-body" data-ir-name="Dialog Body" variant="body1" sx={{ position: "absolute", left: "24px", top: "68px", color: "text.primary", textAlign: "left", whiteSpace: "pre-wrap" }}>{"Are you sure you want to save these changes? This action cannot be undone."}</Typography>
         {/* @ir:end dialog-body */}
         {/* @ir:start dialog-actions Actions stack */}
-        <Stack data-ir-id="dialog-actions" data-ir-name="Actions" direction="row" spacing={1.2} sx={{ position: "absolute", left: "24px", top: "220px", width: "350px", minHeight: "48px", display: "flex", flexDirection: "row", alignItems: "center", gap: 1.2 }}>
+        <Stack data-ir-id="dialog-actions" data-ir-name="Actions" direction="row" spacing={1.2} sx={{ position: "absolute", left: "24px", top: "220px", width: "350px", minHeight: "48px", display: "flex", flexDirection: "row", alignItems: "center" }}>
           {/* @ir:start cancel-label Label text */}
           <Typography data-ir-id="cancel-label" data-ir-name="Label" variant="body1" sx={{ fontWeight: 500, color: "text.primary", textAlign: "center", whiteSpace: "pre-wrap" }}>{"Cancel"}</Typography>
           {/* @ir:end cancel-label */}

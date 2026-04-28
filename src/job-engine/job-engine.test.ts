@@ -15,6 +15,7 @@ import type { WorkspaceImportSession } from "../contracts/index.js";
 import { createJobEngine, resolveRuntimeSettings } from "../job-engine.js";
 import { createDefaultFigmaMcpEnrichmentLoader } from "./figma-hybrid-enrichment.js";
 import { createImportSessionStore } from "./import-session-store.js";
+import { loadRehydratedJobs } from "./job-snapshot.js";
 import { STAGE_ARTIFACT_KEYS } from "./pipeline/artifact-keys.js";
 import { StageArtifactStore } from "./pipeline/artifact-store.js";
 import { createWorkspaceLogger } from "../logging.js";
@@ -4399,6 +4400,285 @@ const seedTerminalJobSnapshot = async ({
   );
   return jobDir;
 };
+
+test("createJobEngine rehydrates legacy terminal snapshots with rocket pipeline metadata", async () => {
+  const tempRoot = await mkdtemp(
+    path.join(os.tmpdir(), "workspace-dev-engine-legacy-pipeline-metadata-"),
+  );
+  const jobsRoot = path.join(tempRoot, "jobs");
+  await seedTerminalJobSnapshot({
+    jobsRoot,
+    jobId: "missing-pipeline-job",
+    finishedAt: "2026-04-18T09:00:00.000Z",
+    outputRoot: tempRoot,
+  });
+  const malformedJobDir = await seedTerminalJobSnapshot({
+    jobsRoot,
+    jobId: "malformed-pipeline-job",
+    finishedAt: "2026-04-18T09:01:00.000Z",
+    outputRoot: tempRoot,
+  });
+  const malformedSnapshotPath = path.join(
+    malformedJobDir,
+    "stage-timings.json",
+  );
+  const malformedSnapshot = JSON.parse(
+    await readFile(malformedSnapshotPath, "utf8"),
+  ) as Record<string, unknown> & { request: Record<string, unknown> };
+  malformedSnapshot.pipelineMetadata = {
+    pipelineId: "",
+    pipelineDisplayName: "Broken",
+    templateBundleId: "react-mui-app",
+    buildProfile: "rocket",
+    deterministic: true,
+  };
+  malformedSnapshot.request.pipelineMetadata = {
+    pipelineId: "rocket",
+    pipelineDisplayName: "",
+    templateBundleId: "react-mui-app",
+    buildProfile: "rocket",
+    deterministic: true,
+  };
+  malformedSnapshot.request.pipelineId = "";
+  await writeFile(
+    malformedSnapshotPath,
+    `${JSON.stringify(malformedSnapshot, null, 2)}\n`,
+    "utf8",
+  );
+
+  const engine = createJobEngine({
+    resolveBaseUrl: () => "http://127.0.0.1:1983",
+    paths: {
+      outputRoot: tempRoot,
+      jobsRoot,
+      reprosRoot: path.join(tempRoot, "repros"),
+    },
+    runtime: resolveRuntimeSettings({
+      enablePreview: false,
+      figmaMaxRetries: 1,
+      figmaRequestTimeoutMs: 1_000,
+      jobRetentionMaxCount: 10,
+      jobRetentionMaxAgeMs: 0,
+      localSyncConfirmationSweepIntervalMs: 0,
+    }),
+  });
+
+  for (const jobId of ["missing-pipeline-job", "malformed-pipeline-job"]) {
+    const rehydrated = engine.getJob(jobId);
+    assert.equal(rehydrated?.pipelineId, "rocket");
+    assert.deepEqual(rehydrated?.pipelineMetadata, PIPELINE_METADATA);
+    assert.equal(rehydrated?.request.pipelineId, "rocket");
+    assert.deepEqual(rehydrated?.request.pipelineMetadata, PIPELINE_METADATA);
+
+    const result = engine.getJobResult(jobId);
+    assert.equal(result?.pipelineId, "rocket");
+    assert.deepEqual(result?.pipelineMetadata, PIPELINE_METADATA);
+  }
+});
+
+test("loadRehydratedJobs ignores invalid snapshots and clones optional terminal metadata", async () => {
+  const tempRoot = await mkdtemp(
+    path.join(os.tmpdir(), "workspace-dev-snapshot-rehydrate-"),
+  );
+  assert.deepEqual(
+    loadRehydratedJobs({
+      jobsRoot: path.join(tempRoot, "missing-jobs"),
+      resolveBaseUrl: () => "http://127.0.0.1:1983",
+    }),
+    [],
+  );
+
+  const jobsRoot = path.join(tempRoot, "jobs");
+  await mkdir(jobsRoot, { recursive: true });
+  await writeFile(path.join(jobsRoot, "not-a-job.txt"), "ignored", "utf8");
+
+  const writeSnapshot = async (
+    jobId: string,
+    payload: unknown,
+  ): Promise<void> => {
+    const jobDir = path.join(jobsRoot, jobId);
+    await mkdir(jobDir, { recursive: true });
+    await writeFile(
+      path.join(jobDir, "stage-timings.json"),
+      typeof payload === "string"
+        ? payload
+        : `${JSON.stringify(payload, null, 2)}\n`,
+      "utf8",
+    );
+  };
+  const baseSnapshot = ({
+    jobId,
+    submittedAt,
+    finishedAt,
+  }: {
+    jobId: string;
+    submittedAt: string;
+    finishedAt?: string;
+  }) => ({
+    snapshotVersion: 1,
+    generatedAt: finishedAt ?? submittedAt,
+    jobId,
+    pipelineId: "rocket",
+    pipelineMetadata: PIPELINE_METADATA,
+    status: "completed",
+    submittedAt,
+    ...(finishedAt ? { finishedAt } : {}),
+    request: {
+      figmaSourceMode: "local_json",
+      llmCodegenMode: "deterministic",
+      pipelineId: "rocket",
+      pipelineMetadata: PIPELINE_METADATA,
+    },
+    stages: [{ name: "figma.source", status: "completed" }],
+    logs: [{ level: "info", message: "done", timestamp: submittedAt }],
+    artifacts: {
+      outputRoot: tempRoot,
+      jobDir: path.join(jobsRoot, jobId),
+    },
+    preview: { enabled: false },
+    queue: {
+      runningCount: 0,
+      queuedCount: 0,
+      maxConcurrentJobs: 1,
+      maxQueuedJobs: 20,
+    },
+  });
+
+  await writeSnapshot("bad-json", "{");
+  await writeSnapshot("bad-root", JSON.stringify("not an object"));
+  await writeSnapshot("bad-version", {
+    ...baseSnapshot({
+      jobId: "bad-version",
+      submittedAt: "2026-04-18T09:00:00.000Z",
+    }),
+    snapshotVersion: 2,
+  });
+  await writeSnapshot("bad-identity", {
+    ...baseSnapshot({
+      jobId: "bad-identity",
+      submittedAt: "2026-04-18T09:01:00.000Z",
+    }),
+    status: "running",
+  });
+  await writeSnapshot("bad-collections", {
+    ...baseSnapshot({
+      jobId: "bad-collections",
+      submittedAt: "2026-04-18T09:02:00.000Z",
+    }),
+    stages: "not an array",
+  });
+  await writeSnapshot("bad-public-bags", {
+    ...baseSnapshot({
+      jobId: "bad-public-bags",
+      submittedAt: "2026-04-18T09:03:00.000Z",
+    }),
+    artifacts: null,
+  });
+
+  await writeSnapshot("valid-with-invalid-lineage", {
+    ...baseSnapshot({
+      jobId: "valid-with-invalid-lineage",
+      submittedAt: "2026-04-18T10:00:00.000Z",
+    }),
+    lineage: {
+      kind: "regeneration",
+      sourceJobId: "source-job",
+      pipelineMetadata: { ...PIPELINE_METADATA, pipelineDisplayName: "" },
+    },
+  });
+  await writeSnapshot("valid-with-optional-fields", {
+    ...baseSnapshot({
+      jobId: "valid-with-optional-fields",
+      submittedAt: "2026-04-18T08:00:00.000Z",
+      finishedAt: "2026-04-18T11:00:00.000Z",
+    }),
+    currentStage: "validate.project",
+    outcome: "success",
+    artifacts: {
+      outputRoot: tempRoot,
+      jobDir: path.join(jobsRoot, "valid-with-optional-fields"),
+      reproDir: path.join(tempRoot, "repros", "valid-with-optional-fields"),
+    },
+    preview: { enabled: true },
+    lineage: {
+      kind: "regeneration",
+      sourceJobId: "source-job",
+      pipelineMetadata: PIPELINE_METADATA,
+    },
+    cancellation: {
+      requested: true,
+      requestedAt: "2026-04-18T10:59:00.000Z",
+      reason: "done",
+    },
+    generationDiff: { summary: "changed", added: 1, modified: 0, removed: 0 },
+    visualAudit: {
+      status: "completed",
+      generatedAt: "2026-04-18T10:58:00.000Z",
+      regions: [{ id: "region-1", score: 0.9 }],
+    },
+    visualQuality: { status: "completed", score: 0.9 },
+    gitPr: { status: "skipped", message: "disabled" },
+    inspector: {
+      status: "ready",
+      retryableStages: ["codegen.generate"],
+      retryTargets: [{ stageName: "codegen.generate", reason: "manual" }],
+      stages: [
+        {
+          name: "codegen.generate",
+          status: "retryable",
+          retryTargets: [{ stageName: "codegen.generate", reason: "manual" }],
+        },
+      ],
+    },
+    error: {
+      code: "E_TEST",
+      message: "recoverable",
+      retryTargets: [{ stageName: "codegen.generate", reason: "manual" }],
+    },
+    pasteDeltaSummary: {
+      mode: "delta",
+      strategy: "subtree_updated",
+      totalNodes: 2,
+      nodesReused: 1,
+      nodesReprocessed: 1,
+      structuralChangeRatio: 0.5,
+    },
+  });
+
+  const jobs = loadRehydratedJobs({
+    jobsRoot,
+    resolveBaseUrl: () => "http://127.0.0.1:1983",
+  });
+
+  assert.deepEqual(
+    jobs.map((job) => job.jobId),
+    ["valid-with-invalid-lineage", "valid-with-optional-fields"],
+  );
+  assert.deepEqual(jobs[0]?.lineage, {
+    kind: "regeneration",
+    sourceJobId: "source-job",
+  });
+  assert.deepEqual(jobs[1]?.pipelineMetadata, PIPELINE_METADATA);
+  assert.deepEqual(jobs[1]?.request.pipelineMetadata, PIPELINE_METADATA);
+  assert.equal(
+    jobs[1]?.preview.url,
+    "http://127.0.0.1:1983/workspace/repros/valid-with-optional-fields/",
+  );
+  assert.deepEqual(jobs[1]?.lineage?.pipelineMetadata, PIPELINE_METADATA);
+  assert.deepEqual(jobs[1]?.inspector?.retryableStages, ["codegen.generate"]);
+  assert.deepEqual(jobs[1]?.inspector?.stages[0]?.retryTargets, [
+    { stageName: "codegen.generate", reason: "manual" },
+  ]);
+  assert.deepEqual(jobs[1]?.error?.retryTargets, [
+    { stageName: "codegen.generate", reason: "manual" },
+  ]);
+
+  jobs[1]?.inspector?.retryableStages?.push("validate.project");
+  assert.deepEqual(jobs[1]?.inspector?.retryableStages, [
+    "codegen.generate",
+    "validate.project",
+  ]);
+});
 
 test("createJobEngine evicts oldest terminal jobs when retention count is exceeded", async () => {
   const tempRoot = await mkdtemp(

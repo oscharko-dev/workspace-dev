@@ -756,7 +756,7 @@ const createSemanticSelectInputNode = ({
   };
 };
 
-test("deterministic screen rendering maps simple horizontal containers to Stack with alignment props", () => {
+test("deterministic screen rendering maps simple horizontal containers to Stack with alignment styles", () => {
   const screen = {
     id: "stack-horizontal-screen",
     name: "Stack Horizontal",
@@ -802,8 +802,7 @@ test("deterministic screen rendering maps simple horizontal containers to Stack 
   assert.ok(content.includes('<Stack '));
   assert.ok(content.includes('direction="row"'));
   assert.ok(content.includes('spacing={1.5}'));
-  assert.ok(content.includes('alignItems="center"'));
-  assert.ok(content.includes('justifyContent="space-between"'));
-  assert.equal(content.includes('display: "flex"'), false);
+  assert.ok(content.includes('alignItems: "center"'));
+  assert.ok(content.includes('justifyContent: "space-between"'));
+  assert.ok(content.includes('display: "flex"'));
 });
-

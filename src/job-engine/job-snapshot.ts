@@ -3,6 +3,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type {
   WorkspaceJobDiagnostic,
+  WorkspaceJobPipelineMetadata,
   WorkspaceJobRuntimeStatus,
   WorkspaceJobStatus,
 } from "../contracts/index.js";
@@ -32,6 +33,9 @@ const isRecord = (value: unknown): value is Record<string, unknown> => {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 };
 
+const isNonEmptyString = (value: unknown): value is string =>
+  typeof value === "string" && value.trim().length > 0;
+
 const isTerminalStatus = (
   value: unknown,
 ): value is WorkspaceJobRuntimeStatus => {
@@ -39,6 +43,30 @@ const isTerminalStatus = (
     typeof value === "string" &&
     TERMINAL_STATUSES.has(value as WorkspaceJobRuntimeStatus)
   );
+};
+
+const isWorkspaceJobPipelineMetadata = (
+  value: unknown,
+): value is WorkspaceJobPipelineMetadata => {
+  if (!isRecord(value)) {
+    return false;
+  }
+  return (
+    isNonEmptyString(value.pipelineId) &&
+    isNonEmptyString(value.pipelineDisplayName) &&
+    isNonEmptyString(value.templateBundleId) &&
+    isNonEmptyString(value.buildProfile) &&
+    value.deterministic === true
+  );
+};
+
+const cloneSnapshotPipelineMetadata = (
+  value: unknown,
+): WorkspaceJobPipelineMetadata | undefined => {
+  if (!isWorkspaceJobPipelineMetadata(value)) {
+    return undefined;
+  }
+  return { ...value };
 };
 
 const isPersistedTerminalJobSnapshot = (
@@ -159,11 +187,27 @@ const toRehydratedJobRecord = ({
   stageTimingsFile: string;
   resolveBaseUrl: () => string;
 }): JobRecord => {
+  const pipelineMetadata = cloneSnapshotPipelineMetadata(
+    snapshot.pipelineMetadata,
+  );
+  const request = { ...snapshot.request };
+  if (!isNonEmptyString(request.pipelineId)) {
+    delete request.pipelineId;
+  }
+  const requestPipelineMetadata = cloneSnapshotPipelineMetadata(
+    snapshot.request.pipelineMetadata,
+  );
+  if (requestPipelineMetadata) {
+    request.pipelineMetadata = requestPipelineMetadata;
+  } else {
+    delete request.pipelineMetadata;
+  }
+
   const job: JobRecord = {
     jobId: snapshot.jobId,
     status: snapshot.status,
     submittedAt: snapshot.submittedAt,
-    request: { ...snapshot.request },
+    request,
     stages: snapshot.stages.map((stage) => ({ ...stage })),
     logs: snapshot.logs.map((entry) => ({ ...entry })),
     artifacts: {
@@ -173,7 +217,7 @@ const toRehydratedJobRecord = ({
     },
     preview: { ...snapshot.preview },
     queue: { ...snapshot.queue },
-    pipelineMetadata: { ...snapshot.pipelineMetadata },
+    ...(pipelineMetadata ? { pipelineMetadata } : {}),
   };
   if (snapshot.currentStage) {
     job.currentStage = snapshot.currentStage;
@@ -188,7 +232,18 @@ const toRehydratedJobRecord = ({
     job.finishedAt = snapshot.finishedAt;
   }
   if (snapshot.lineage) {
-    job.lineage = { ...snapshot.lineage };
+    const lineagePipelineMetadata = cloneSnapshotPipelineMetadata(
+      snapshot.lineage.pipelineMetadata,
+    );
+    job.lineage = {
+      ...snapshot.lineage,
+      ...(lineagePipelineMetadata
+        ? { pipelineMetadata: lineagePipelineMetadata }
+        : {}),
+    };
+    if (!lineagePipelineMetadata) {
+      delete job.lineage.pipelineMetadata;
+    }
   }
   if (snapshot.cancellation) {
     job.cancellation = { ...snapshot.cancellation };

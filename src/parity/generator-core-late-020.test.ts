@@ -800,7 +800,6 @@ test("deterministic screen rendering maps simple vertical containers to Stack", 
   assert.ok(content.includes('<Stack '));
   assert.ok(content.includes('direction="column"'));
   assert.ok(content.includes('spacing={2}'));
-  assert.equal(content.includes('display: "flex"'), false);
-  assert.equal(content.includes('flexDirection: "column"'), false);
+  assert.ok(content.includes('display: "flex"'));
+  assert.ok(content.includes('flexDirection: "column"'));
 });
-

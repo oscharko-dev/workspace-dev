@@ -823,8 +823,8 @@ test("deterministic screen rendering preserves auto-layout alignment and icon fa
 
   const content = createDeterministicScreenFile(screen).content;
 
-  assert.ok(content.includes('justifyContent="space-between"'));
-  assert.ok(content.includes('alignItems="center"'));
+  assert.ok(content.includes('justifyContent: "space-between"'));
+  assert.ok(content.includes('alignItems: "center"'));
   assert.ok(content.includes("IconButton"));
   assert.ok(content.includes('import BookmarkBorderIcon from "@mui/icons-material/BookmarkBorder";'));
   assert.ok(content.includes("<IconButton "));

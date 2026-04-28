@@ -35,11 +35,13 @@ const createPackageJson = ({
 };
 
 const runGenerator = async ({
+  extraArgs,
   installTree,
   manifest,
   spawnEnv,
   symlinks
 }: {
+  extraArgs?: string[];
   installTree?: Record<string, string>;
   manifest: string;
   spawnEnv?: NodeJS.ProcessEnv;
@@ -72,7 +74,7 @@ const runGenerator = async ({
     }
 
     const result = await new Promise<{ code: number; stdout: string; stderr: string }>((resolve, reject) => {
-      const child = spawn(process.execPath, [scriptPath, outputPath, "--package-root", projectRoot], {
+      const child = spawn(process.execPath, [scriptPath, outputPath, "--package-root", projectRoot, ...(extraArgs ?? [])], {
         cwd: packageRoot,
         env: spawnEnv ?? process.env,
         stdio: ["ignore", "pipe", "pipe"]
@@ -187,4 +189,29 @@ test("CycloneDX generator fails when npm reports dependency resolution errors", 
   assert.notEqual(result.code, 0, "Expected generation to fail when dependencies are unresolved");
   assert.equal(result.document, null);
   assert.match(result.stderr, /Command failed with exit code/);
+});
+
+test("CycloneDX generator can explicitly ignore npm dependency resolution errors", async () => {
+  const result = await runGenerator({
+    extraArgs: ["--ignore-npm-errors"],
+    manifest: createPackageJson({
+      name: "broken-template-project",
+      dependencies: {
+        "broken-parent": "1.0.0"
+      }
+    }),
+    installTree: {
+      "node_modules/broken-parent/package.json": createPackageJson({
+        name: "broken-parent",
+        version: "1.0.0",
+        dependencies: {
+          "missing-child": "1.0.0"
+        }
+      })
+    }
+  });
+
+  assert.equal(result.code, 0, `Expected success, got stderr:\n${result.stderr}`);
+  assert.ok(result.document, "Expected CycloneDX document to be created");
+  assert.equal(result.document?.bomFormat, "CycloneDX");
 });

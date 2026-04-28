@@ -19,10 +19,15 @@ const parseArgs = () => {
   const args = process.argv.slice(2);
   let outputPath = "artifacts/sbom/workspace-dev.cdx.json";
   let packageRoot = repoRoot;
+  let ignoreNpmErrors = false;
 
   for (let index = 0; index < args.length; index += 1) {
     const current = args[index];
     if (!current) {
+      continue;
+    }
+    if (current === "--ignore-npm-errors") {
+      ignoreNpmErrors = true;
       continue;
     }
     if (current === "--package-root") {
@@ -42,6 +47,7 @@ const parseArgs = () => {
   }
 
   return {
+    ignoreNpmErrors,
     outputPath,
     packageRoot
   };
@@ -69,12 +75,13 @@ const run = (command, args, cwd) =>
   });
 
 const main = async () => {
-  const { outputPath, packageRoot } = parseArgs();
+  const { ignoreNpmErrors, outputPath, packageRoot } = parseArgs();
   const absoluteOutputPath = path.resolve(repoRoot, outputPath);
   await mkdir(path.dirname(absoluteOutputPath), { recursive: true });
 
   await run(process.execPath, [
     cyclonedxCliPath,
+    ...(ignoreNpmErrors ? ["--ignore-npm-errors"] : []),
     "--omit",
     "dev",
     "--spec-version",

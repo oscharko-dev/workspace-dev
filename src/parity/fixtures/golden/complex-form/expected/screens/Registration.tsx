@@ -14,7 +14,7 @@ function RegistrationScreenContent() {
       <Typography data-ir-id="form-subtitle" data-ir-name="Subtitle" variant="h2" component="h2" sx={{ color: "secondary.main", textAlign: "left", whiteSpace: "pre-wrap" }}>{"Fill in your details to get started"}</Typography>
       {/* @ir:end form-subtitle */}
       {/* @ir:start name-row Name Row stack */}
-      <Stack data-ir-id="name-row" data-ir-name="Name Row" direction="row" spacing={2} sx={{ width: "88.6%", maxWidth: "372px", minHeight: "56px", display: "flex", flexDirection: "row", alignItems: "center", justifyContent: "flex-start", gap: 2 }}>
+      <Stack data-ir-id="name-row" data-ir-name="Name Row" direction="row" spacing={2} sx={{ width: "88.6%", maxWidth: "372px", minHeight: "56px", display: "flex", flexDirection: "row", alignItems: "center", justifyContent: "flex-start" }}>
         {/* @ir:start first-name-field MuiTextFieldRoot input */}
         <Controller data-ir-id="first-name-field" data-ir-name="MuiTextFieldRoot"
           name={"muitextfieldroot_first_name_field"}

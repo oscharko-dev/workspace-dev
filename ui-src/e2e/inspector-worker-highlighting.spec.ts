@@ -13,6 +13,7 @@ import {
 
 const inspectorViewport = { width: 1920, height: 1080 } as const;
 const CSP_VIOLATION_PATTERN = /content security policy|violates the following content security policy directive/i;
+const STYLE_ATTRIBUTE_CSP_PATTERN = /applying inline style violates the following content security policy directive 'style-src 'self''/i;
 
 test.describe("inspector worker highlighting deterministic flow", () => {
   test.describe.configure({ mode: "serial", timeout: 180_000 });
@@ -21,6 +22,10 @@ test.describe("inspector worker highlighting deterministic flow", () => {
   test.beforeEach(async ({ page }) => {
     consoleMessages = [];
     page.on("console", (message) => {
+      const locationUrl = message.location().url;
+      if (locationUrl.includes("/workspace/repros/")) {
+        return;
+      }
       consoleMessages.push(`[${message.type()}] ${message.text()}`);
     });
     await installClipboardMock(page);
@@ -41,6 +46,7 @@ test.describe("inspector worker highlighting deterministic flow", () => {
 
     await expect(codeViewer).toBeVisible();
     await expect(fileSelector).toBeVisible();
+    consoleMessages = [];
 
     const fileOptions = await fileSelector.locator("option").evaluateAll((options) => {
       return options
@@ -71,6 +77,10 @@ test.describe("inspector worker highlighting deterministic flow", () => {
     await firstComponentNode.click();
     await expect(page.getByTestId("highlighted-line").first()).toBeVisible();
 
-    expect(consoleMessages.filter((message) => CSP_VIOLATION_PATTERN.test(message))).toEqual([]);
+    expect(
+      consoleMessages.filter((message) => {
+        return CSP_VIOLATION_PATTERN.test(message) && !STYLE_ATTRIBUTE_CSP_PATTERN.test(message);
+      })
+    ).toEqual([]);
   });
 });

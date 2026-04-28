@@ -169,8 +169,6 @@ import {
   resolveFormHandlingMode,
   withOmittedSxKeys,
   toThemeColorLiteral,
-  mapPrimaryAxisAlignToJustifyContent,
-  mapCounterAxisAlignToAlignItems,
   sxString,
   normalizeElevationForSx,
   matchesRoundedInteger,
@@ -2352,14 +2350,6 @@ export const isElevatedSurfaceContainerForPaper = ({
   return elevatedSurfaceMatch || outlinedSurfaceMatch;
 };
 
-const STACK_HANDLED_SX_KEYS: ReadonlySet<string> = new Set([
-  "display",
-  "flexDirection",
-  "alignItems",
-  "justifyContent",
-  "gap"
-]);
-
 export const isSimpleFlexContainerForStack = ({
   element
 }: {
@@ -2401,8 +2391,8 @@ export const toSimpleStackContainerSx = ({
     baseValuesByKey: toSxValueMapFromEntries(baseEntries)
   });
   return sxString([
-    ...baseEntries.filter(([key]) => !STACK_HANDLED_SX_KEYS.has(key)),
-    ...responsiveEntries
+    ...baseEntries.filter(([key]) => key !== "gap"),
+    ...responsiveEntries.filter(([key]) => key !== "gap")
   ]);
 };
 
@@ -2441,14 +2431,6 @@ export const renderSimpleFlexContainerAsStack = ({
     typeof element.gap === "number" && element.gap > 0
       ? toSpacingUnitValue({ value: element.gap, spacingBase: context.spacingBase }) ?? 0
       : 0;
-  const alignItems =
-    element.counterAxisAlignItems !== undefined
-      ? mapCounterAxisAlignToAlignItems(element.counterAxisAlignItems, layoutMode)
-      : undefined;
-  const justifyContent =
-    element.primaryAxisAlignItems !== undefined
-      ? mapPrimaryAxisAlignToJustifyContent(element.primaryAxisAlignItems)
-      : undefined;
   const sx = toSimpleStackContainerSx({
     element,
     parent,
@@ -2466,8 +2448,6 @@ export const renderSimpleFlexContainerAsStack = ({
     `direction=${literal(direction)}`,
     `spacing={${spacing}}`,
     useDividerProp ? `divider={<Divider flexItem />}` : undefined,
-    alignItems ? `alignItems=${literal(alignItems)}` : undefined,
-    justifyContent ? `justifyContent=${literal(justifyContent)}` : undefined,
     roleProp,
     ariaHiddenProp,
     sx ? `sx={{ ${sx} }}` : undefined
@@ -4025,8 +4005,6 @@ export const renderStack = (element: ScreenElementIR, depth: number, parent: Vir
     typeof element.gap === "number" && element.gap > 0
       ? toSpacingUnitValue({ value: element.gap, spacingBase: context.spacingBase }) ?? 0
       : 0;
-  const alignItems = mapCounterAxisAlignToAlignItems(element.counterAxisAlignItems, layoutMode);
-  const justifyContent = mapPrimaryAxisAlignToJustifyContent(element.primaryAxisAlignItems);
   const sx = toSimpleStackContainerSx({
     element,
     parent,
@@ -4039,6 +4017,10 @@ export const renderStack = (element: ScreenElementIR, depth: number, parent: Vir
   const ariaHiddenProp = isDecorative ? ' aria-hidden="true"' : "";
   const componentProp = semanticContainerProps.componentProp;
   const ariaLabelProp = semanticContainerProps.ariaLabelProp;
+  const normalizeInlineProp = (value: string): string | undefined => {
+    const trimmed = value.trim();
+    return trimmed.length > 0 ? trimmed : undefined;
+  };
   const renderedChildren = renderChildrenIntoParent({
     element,
     depth: depth + 1,
@@ -4048,11 +4030,9 @@ export const renderStack = (element: ScreenElementIR, depth: number, parent: Vir
     const emptyStackProps = [
       `direction=${literal(direction)}`,
       `spacing={${spacing}}`,
-      alignItems ? `alignItems=${literal(alignItems)}` : undefined,
-      justifyContent ? `justifyContent=${literal(justifyContent)}` : undefined,
-      roleProp,
-      ariaLabelProp,
-      ariaHiddenProp,
+      normalizeInlineProp(roleProp),
+      normalizeInlineProp(ariaLabelProp),
+      normalizeInlineProp(ariaHiddenProp),
       sx ? `sx={{ ${sx} }}` : undefined
     ]
       .filter((entry): entry is string => Boolean(entry))
@@ -4062,11 +4042,9 @@ export const renderStack = (element: ScreenElementIR, depth: number, parent: Vir
   const stackProps = [
     `direction=${literal(direction)}`,
     `spacing={${spacing}}`,
-    alignItems ? `alignItems=${literal(alignItems)}` : undefined,
-    justifyContent ? `justifyContent=${literal(justifyContent)}` : undefined,
-    roleProp,
-    ariaLabelProp,
-    ariaHiddenProp,
+    normalizeInlineProp(roleProp),
+    normalizeInlineProp(ariaLabelProp),
+    normalizeInlineProp(ariaHiddenProp),
     sx ? `sx={{ ${sx} }}` : undefined
   ]
     .filter((entry): entry is string => Boolean(entry))
