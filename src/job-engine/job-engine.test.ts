@@ -470,8 +470,12 @@ test("createJobEngine accepts jobs and exposes queued status", () => {
     figmaAccessToken: "token",
   });
   assert.equal(accepted.status, "queued");
+  assert.equal(accepted.pipelineId, "rocket");
   assert.equal(accepted.acceptedModes.figmaSourceMode, "rest");
   assert.equal(accepted.acceptedModes.llmCodegenMode, "deterministic");
+  const queuedStatus = engine.getJob(accepted.jobId);
+  assert.equal(queuedStatus?.pipelineId, "rocket");
+  assert.equal(queuedStatus?.request.pipelineId, "rocket");
   assert.equal(engine.getJob("unknown"), undefined);
   assert.equal(engine.getJobResult("unknown"), undefined);
 });
@@ -2325,6 +2329,7 @@ test("createJobEngine rehydrates completed regeneration jobs and keeps local syn
     draftId: "draft-1",
     baseFingerprint: "fnv1a64:rehydrate",
   });
+  assert.equal(regenAccepted.pipelineId, "rocket");
   const regenStatus = await waitForTerminalStatus({
     getStatus: engine.getJob,
     jobId: regenAccepted.jobId,
@@ -2708,6 +2713,7 @@ test("createJobEngine accepts submitRetry from a rehydrated failed job", async (
     sourceJobId: failedAccepted.jobId,
     retryStage,
   });
+  assert.equal(retryAccepted.pipelineId, "rocket");
   assert.equal(retryAccepted.sourceJobId, failedAccepted.jobId);
   assert.equal(retryAccepted.retryStage, retryStage);
   assert.equal(retryAccepted.status, "queued");
@@ -2723,6 +2729,7 @@ test("createJobEngine accepts submitRetry from a rehydrated failed job", async (
     failedAccepted.jobId,
     "retry job must carry lineage back to the rehydrated failed source",
   );
+  assert.equal(retryStatus.pipelineId, "rocket");
 });
 
 test("createJobEngine answers checkStaleDraft against a rehydrated completed job", async () => {
@@ -3344,6 +3351,7 @@ test("createJobEngine supports local_json mode without Figma REST calls", async 
     figmaJsonPath: localJsonPath,
   });
   assert.equal(accepted.acceptedModes.figmaSourceMode, "local_json");
+  assert.equal(accepted.pipelineId, "rocket");
 
   const status = await waitForTerminalStatus({
     getStatus: engine.getJob,
@@ -3355,9 +3363,14 @@ test("createJobEngine supports local_json mode without Figma REST calls", async 
     "completed",
   );
   assert.equal(fetchCalls, 0);
+  assert.equal(status.pipelineId, "rocket");
+  assert.equal(status.request.pipelineId, "rocket");
   assert.equal(status.request.figmaSourceMode, "local_json");
   assert.equal(status.request.figmaJsonPath, localJsonPath);
   assert.equal(status.request.formHandlingMode, "react_hook_form");
+  const result = engine.getJobResult(accepted.jobId);
+  assert.equal(result?.pipelineId, "rocket");
+  assert.equal(result?.inspector?.pipelineId, "rocket");
 });
 
 test("createJobEngine fails local_json mode with path-aware figma payload validation errors", async () => {
@@ -4389,7 +4402,7 @@ test("createJobEngine evicts oldest terminal jobs when retention count is exceed
   });
 
   assert.equal(engine.getJob("job-old"), undefined);
-  assert.ok(engine.getJob("job-mid"));
+  assert.equal(engine.getJob("job-mid")?.pipelineId, "rocket");
   assert.ok(engine.getJob("job-new"));
 
   await new Promise((resolve) => setTimeout(resolve, 50));

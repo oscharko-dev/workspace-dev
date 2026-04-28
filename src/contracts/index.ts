@@ -4,7 +4,7 @@
  * These types define the public API surface for workspace-dev consumers.
  * They must not import from internal services.
  *
- * Contract version: 4.18.0
+ * Contract version: 4.19.0
  * See CONTRACT_CHANGELOG.md for contract change history and VERSIONING.md for
  * package-versus-contract versioning policy.
  */
@@ -1725,6 +1725,7 @@ export interface WorkspaceJobInspectorStage {
 
 /** Inspector-facing backend result contract for recovery-aware paste flows. */
 export interface WorkspaceJobInspector {
+  pipelineId: WorkspacePipelineId;
   outcome?: WorkspaceJobOutcome;
   fallbackMode?: WorkspaceJobFallbackMode;
   /** Successful MCP read-tool calls consumed by this job. */
@@ -2080,6 +2081,7 @@ export interface WorkspaceJobCancellation {
 /** Full job status payload for polling endpoint. */
 export interface WorkspaceJobStatus {
   jobId: string;
+  pipelineId: WorkspacePipelineId;
   status: WorkspaceJobRuntimeStatus;
   outcome?: WorkspaceJobOutcome;
   currentStage?: WorkspaceJobStageName;
@@ -2111,6 +2113,7 @@ export interface WorkspaceJobStatus {
 /** Compact result payload for terminal-state inspection. */
 export interface WorkspaceJobResult {
   jobId: string;
+  pipelineId: WorkspacePipelineId;
   status: WorkspaceJobRuntimeStatus;
   outcome?: WorkspaceJobOutcome;
   summary: string;
@@ -2172,6 +2175,7 @@ export interface WorkspaceRegenerationAccepted {
   jobId: string;
   sourceJobId: string;
   status: "queued";
+  pipelineId: WorkspacePipelineId;
   acceptedModes: {
     figmaSourceMode: WorkspaceFigmaSourceMode;
     llmCodegenMode: WorkspaceLlmCodegenMode;
@@ -2191,6 +2195,7 @@ export interface WorkspaceRetryAccepted {
   sourceJobId: string;
   retryStage: WorkspaceJobRetryStage;
   status: "queued";
+  pipelineId: WorkspacePipelineId;
   acceptedModes: {
     figmaSourceMode: WorkspaceFigmaSourceMode;
     llmCodegenMode: WorkspaceLlmCodegenMode;
@@ -7433,4 +7438,4 @@ export type SourceMixPlannerResult =
  * Must be bumped according to CONTRACT_CHANGELOG.md rules.
  * Package version alignment is documented in VERSIONING.md.
  */
-export const CONTRACT_VERSION = "4.18.0" as const;
+export const CONTRACT_VERSION = "4.19.0" as const;

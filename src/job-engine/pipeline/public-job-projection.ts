@@ -18,6 +18,7 @@ import {
   isPasteDeltaExecutionState,
   type PasteDeltaExecutionState,
 } from "../paste-delta-execution.js";
+import { resolveJobPipelineId } from "../stage-state.js";
 
 interface CodegenSummaryLike {
   generatedPaths?: string[];
@@ -436,6 +437,7 @@ export const syncPublicJobProjection = async ({
   ];
   const jobError = job.error;
   const inspector: WorkspaceJobInspector = {
+    pipelineId: resolveJobPipelineId(job),
     ...(inspectorOutcome ? { outcome: inspectorOutcome } : {}),
     ...(fallbackMode ? { fallbackMode } : {}),
     ...(mcpCallsConsumed > 0 ? { mcpCallsConsumed } : {}),

@@ -26,6 +26,7 @@ const INLINE_FIGMA_SOURCE_MODES = new Set<WorkspaceFigmaSourceMode>([
 
 export const workspaceSubmitSchema = z
   .object({
+    pipelineId: optionalString,
     figmaFileKey: optionalString,
     figmaAccessToken: optionalString,
     figmaJsonPath: optionalString,
@@ -111,6 +112,7 @@ export const workspaceSubmitSchema = z
 export type WorkspaceSubmitFormData = z.input<typeof workspaceSubmitSchema>;
 
 export interface WorkspaceSubmitPayload {
+  pipelineId?: string | undefined;
   figmaFileKey?: string | undefined;
   figmaAccessToken?: string | undefined;
   figmaJsonPath?: string | undefined;
@@ -159,9 +161,11 @@ export function toWorkspaceSubmitPayload({
   formData: WorkspaceSubmitFormData;
 }): WorkspaceSubmitPayload {
   const mode = formData.figmaSourceMode ?? "rest";
+  const pipelineId = toOptionalString({ value: formData.pipelineId });
 
   if (INLINE_FIGMA_SOURCE_MODES.has(mode)) {
     return {
+      pipelineId,
       figmaSourceMode: mode,
       figmaJsonPayload: formData.figmaJsonPayload?.trim(),
       enableGitPr: false,
@@ -179,6 +183,7 @@ export function toWorkspaceSubmitPayload({
 
   if (mode === "local_json") {
     return {
+      pipelineId,
       figmaSourceMode: "local_json",
       figmaJsonPath: toOptionalString({ value: formData.figmaJsonPath }),
       storybookStaticDir: toOptionalString({
@@ -197,6 +202,7 @@ export function toWorkspaceSubmitPayload({
   }
 
   return {
+    pipelineId,
     figmaFileKey: toOptionalString({ value: formData.figmaFileKey }),
     figmaAccessToken: toOptionalString({ value: formData.figmaAccessToken }),
     figmaSourceMode: mode,

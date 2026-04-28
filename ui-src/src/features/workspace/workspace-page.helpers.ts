@@ -20,6 +20,8 @@ export interface RuntimeStatusPayload {
   uptimeMs: number;
   outputRoot: string;
   previewEnabled: boolean;
+  availablePipelines?: Array<{ id: string; displayName: string }>;
+  defaultPipelineId?: string;
 }
 
 export interface JobStagePayload {
@@ -47,6 +49,7 @@ export interface JobInspectorStagePayload {
 }
 
 export interface JobInspectorPayload {
+  pipelineId?: string;
   outcome?: string;
   fallbackMode?: string;
   mcpCallsConsumed?: number;
@@ -101,6 +104,7 @@ export interface JobLineagePayload {
 
 export interface JobPayload {
   jobId: string;
+  pipelineId?: string;
   status: string;
   stages?: JobStagePayload[];
   outcome?: string;

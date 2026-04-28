@@ -66,6 +66,7 @@ import {
   createInitialStages,
   nowIso,
   pushRuntimeLog,
+  resolveJobPipelineId,
   toAcceptedModes,
   toFileSystemSafe,
   toJobSummary,
@@ -3732,6 +3733,7 @@ export const createJobEngine = ({
     }
 
     const jobId = randomUUID();
+    const sourcePipelineId = resolveJobPipelineId(sourceJob);
     const customerBrandId = normalizeOptionalInputString(input.customerBrandId);
     const componentMappings = input.componentMappings
       ? normalizeComponentMappingRules({
@@ -3744,6 +3746,7 @@ export const createJobEngine = ({
       submittedAt: nowIso(),
       request: {
         ...sourceJob.request,
+        pipelineId: sourcePipelineId,
         enableGitPr: false,
         ...(customerBrandId ? { customerBrandId } : {}),
         ...(componentMappings ? { componentMappings } : {}),
@@ -3795,6 +3798,7 @@ export const createJobEngine = ({
       jobId,
       sourceJobId: input.sourceJobId,
       status: "queued" as const,
+      pipelineId: sourcePipelineId,
       acceptedModes: toAcceptedModes({
         figmaSourceMode: sourceJob.request.figmaSourceMode,
       }),
@@ -3842,12 +3846,14 @@ export const createJobEngine = ({
     }
 
     const jobId = randomUUID();
+    const sourcePipelineId = resolveJobPipelineId(sourceJob);
     const retryTargets =
       input.retryTargets?.map((entry) => entry.trim()).filter(Boolean) ?? [];
     const job = createQueuedJobRecord({
       jobId,
       request: {
         ...sourceJob.request,
+        pipelineId: sourcePipelineId,
       },
       lineage: {
         sourceJobId: input.sourceJobId,
@@ -3898,6 +3904,7 @@ export const createJobEngine = ({
       sourceJobId: input.sourceJobId,
       retryStage: input.retryStage,
       status: "queued" as const,
+      pipelineId: sourcePipelineId,
       acceptedModes: toAcceptedModes({
         figmaSourceMode: sourceJob.request.figmaSourceMode,
       }),
@@ -4204,8 +4211,10 @@ export const createJobEngine = ({
       return undefined;
     }
 
+    const pipelineId = resolveJobPipelineId(job);
     const result: WorkspaceJobResult = {
       jobId: job.jobId,
+      pipelineId,
       status: job.status,
       ...(job.outcome ? { outcome: job.outcome } : {}),
       summary: toJobSummary(job),
@@ -4243,6 +4252,7 @@ export const createJobEngine = ({
     if (job.inspector) {
       result.inspector = {
         ...job.inspector,
+        pipelineId,
         ...(job.inspector.retryableStages
           ? { retryableStages: [...job.inspector.retryableStages] }
           : {}),

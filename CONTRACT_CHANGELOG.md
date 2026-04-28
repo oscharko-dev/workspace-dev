@@ -31,6 +31,36 @@ All changes to the public contract surface of `workspace-dev` are documented her
 
 ---
 
+## [4.19.0] - 2026-04-28
+
+### Added (Issue #1537)
+
+Pipeline identity projection across public job lifecycle contracts. Additive for
+wire consumers; accepted submissions already returned the selected pipeline, and
+this release extends the same audit field to polling, result, Inspector,
+regeneration, and retry payloads.
+
+**Extended types (additive fields only):**
+
+- `WorkspaceJobStatus.pipelineId` — selected pipeline surfaced at the top level
+  of job polling payloads.
+- `WorkspaceJobResult.pipelineId` — selected pipeline surfaced on compact
+  terminal result payloads.
+- `WorkspaceJobInspector.pipelineId` — selected pipeline surfaced on
+  Inspector-facing recovery metadata.
+- `WorkspaceRegenerationAccepted.pipelineId` — inherited source-job pipeline
+  echoed on regeneration acceptance.
+- `WorkspaceRetryAccepted.pipelineId` — inherited source-job pipeline echoed on
+  retry acceptance.
+
+**Validation behavior:**
+
+- Submit-time pipeline selection errors now include a structured
+  `issues: [{ path: "pipelineId", message }]` array while preserving their
+  existing top-level pipeline error codes.
+
+---
+
 ## [4.18.0] - 2026-04-28
 
 ### Added (Issue #1535)

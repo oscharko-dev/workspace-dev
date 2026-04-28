@@ -23,6 +23,7 @@ describe("workspaceSubmitSchema", () => {
 
   it("creates deterministic submit payload", () => {
     const parsed = workspaceSubmitSchema.parse({
+      pipelineId: " rocket ",
       figmaFileKey: " file-key ",
       figmaAccessToken: " figd_token ",
       storybookStaticDir: " storybook-static/customer ",
@@ -37,6 +38,7 @@ describe("workspaceSubmitSchema", () => {
     const payload = toWorkspaceSubmitPayload({ formData: parsed });
 
     expect(payload).toEqual({
+      pipelineId: "rocket",
       figmaFileKey: "file-key",
       figmaAccessToken: "figd_token",
       storybookStaticDir: "storybook-static/customer",
