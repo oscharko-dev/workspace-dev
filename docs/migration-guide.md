@@ -108,6 +108,42 @@ For generated artifacts or persisted import-session data, record both the
 installed package version and `CONTRACT_VERSION` in your own release evidence so
 you can reproduce which package delivered which contract.
 
+## Existing Customer Pipeline Requests
+
+Existing clients that rely on the current React + MUI generator, customer
+profiles, storybook-first component mappings, or customer-specific import
+aliases should select the compatibility pipeline explicitly:
+
+```json
+{
+  "pipelineId": "rocket",
+  "figmaSourceMode": "local_json",
+  "llmCodegenMode": "deterministic",
+  "figmaJsonPath": "fixtures/customer-board/figma.json",
+  "customerProfilePath": "profiles/customer-profile.json"
+}
+```
+
+The current package build profile contains only `rocket`, so jobs without a
+`pipelineId` still resolve to `rocket`. Treat that as compatibility behavior, not
+a migration target. When a later build includes both `default` and `rocket`, an
+omitted `pipelineId` resolves to `default`; customer-profile jobs should keep
+`pipelineId: "rocket"` to preserve existing generation semantics.
+
+Customer-profile template dependencies and import aliases are applied by the
+`rocket` `template.prepare` delegate. Downstream smoke tests for existing
+customer integrations should submit at least one fixture with both
+`pipelineId: "rocket"` and `customerProfilePath`, then assert that generated
+`package.json`, `tsconfig.json`, and `vite.config.ts` contain the expected
+customer dependency and alias entries.
+
+During rollout, read `GET /workspace` and confirm `availablePipelines` includes
+`rocket`. If both `default` and `rocket` are listed, also confirm
+`defaultPipelineId` before deciding whether an omitted `pipelineId` is safe for a
+given client. Roll back a customer integration by pinning the previous certified
+`workspace-dev` package version; for packages that predate `WorkspaceJobInput`
+pipeline selection, remove `pipelineId` from the submit payload while pinned.
+
 ## Breaking-Change Migration Checklist
 
 Copy this checklist into the pull request that upgrades `workspace-dev` across a

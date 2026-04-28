@@ -272,6 +272,16 @@ test("customer-board golden offline fixture reproduces committed derived artifac
     }>;
   };
 
+  assert.equal(first.executionContext.job.request.pipelineId, "rocket");
+  assert.equal(first.executionContext.job.pipelineMetadata?.pipelineId, "rocket");
+  assert.equal(first.executionContext.job.request.pipelineMetadata?.pipelineId, "rocket");
+  assert.equal(
+    first.executionContext.job.logs.some((entry) =>
+      entry.message.includes("Applied customer profile template dependencies and import aliases.")
+    ),
+    true,
+    "Customer-board golden fixture must exercise the rocket template.prepare customer-profile mutation."
+  );
   assert.ok(validationSummary.storybook, "validation-summary.storybook must be present");
   assert.ok(validationSummary.mapping, "validation-summary.mapping must be present");
   assert.ok(validationSummary.style, "validation-summary.style must be present");
