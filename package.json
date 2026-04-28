@@ -182,7 +182,7 @@
   },
   "devDependencies": {
     "@arethetypeswrong/cli": "^0.18.2",
-    "@axe-core/playwright": "4.11.1",
+    "@axe-core/playwright": "4.11.2",
     "@changesets/cli": "^2.31.0",
     "@cyclonedx/cyclonedx-npm": "^4.2.1",
     "@eslint/js": "^9.39.1",
