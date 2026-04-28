@@ -251,6 +251,32 @@ export interface ElementSpacingIR {
   left: number;
 }
 
+export type ElementHorizontalConstraintIR =
+  | "LEFT"
+  | "RIGHT"
+  | "LEFT_RIGHT"
+  | "CENTER"
+  | "SCALE";
+
+export type ElementVerticalConstraintIR =
+  | "TOP"
+  | "BOTTOM"
+  | "TOP_BOTTOM"
+  | "CENTER"
+  | "SCALE";
+
+export interface ElementLayoutConstraintsIR {
+  horizontal?: ElementHorizontalConstraintIR;
+  vertical?: ElementVerticalConstraintIR;
+}
+
+export type ElementLayoutAlignIR =
+  | "INHERIT"
+  | "STRETCH"
+  | "MIN"
+  | "CENTER"
+  | "MAX";
+
 export interface ElementPrototypeNavigationIR {
   targetScreenId: string;
   mode: "push" | "replace" | "overlay";
@@ -312,6 +338,9 @@ export interface BaseElementIR {
   layoutMode?: "VERTICAL" | "HORIZONTAL" | "NONE";
   primaryAxisAlignItems?: PrimaryAxisAlignItems;
   counterAxisAlignItems?: CounterAxisAlignItems;
+  constraints?: ElementLayoutConstraintsIR;
+  layoutAlign?: ElementLayoutAlignIR;
+  layoutGrow?: number;
   gap?: number;
   padding?: ElementSpacingIR;
   margin?: ElementSpacingIR;

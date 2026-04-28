@@ -78,6 +78,12 @@ export interface FigmaNode {
   layoutMode?: "HORIZONTAL" | "VERTICAL" | "NONE";
   primaryAxisAlignItems?: PrimaryAxisAlignItems;
   counterAxisAlignItems?: CounterAxisAlignItems;
+  constraints?: {
+    horizontal?: "LEFT" | "RIGHT" | "LEFT_RIGHT" | "CENTER" | "SCALE";
+    vertical?: "TOP" | "BOTTOM" | "TOP_BOTTOM" | "CENTER" | "SCALE";
+  };
+  layoutAlign?: "INHERIT" | "STRETCH" | "MIN" | "CENTER" | "MAX";
+  layoutGrow?: number;
   itemSpacing?: number;
   paddingTop?: number;
   paddingRight?: number;

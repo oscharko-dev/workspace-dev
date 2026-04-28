@@ -90,8 +90,12 @@ export type {
   PrimaryAxisAlignItems,
   ElementAssetReferenceIR,
   ElementCodeConnectMappingIR,
+  ElementHorizontalConstraintIR,
+  ElementLayoutAlignIR,
+  ElementLayoutConstraintsIR,
   ElementPrototypeNavigationIR,
   ElementSpacingIR,
+  ElementVerticalConstraintIR,
   NonTextElementIR,
   NonTextElementType,
   ResponsiveBreakpoint,
@@ -204,3 +208,21 @@ export type {
   ReviewEvidenceSummary,
   UiGateResult,
 } from "./types-job.js";
+
+export {
+  solveDefaultScreenLayout,
+} from "./default-layout-solver.js";
+export type {
+  DefaultLayoutKind,
+  DefaultLayoutNode,
+  DefaultLayoutWarning,
+  DefaultLayoutWarningCode,
+} from "./default-layout-solver.js";
+export {
+  createDefaultLayoutReportFile,
+  createDefaultTailwindScreenFile,
+  DEFAULT_LAYOUT_REPORT_PATH,
+} from "./default-tailwind-emitter.js";
+export type {
+  DefaultTailwindScreenFile,
+} from "./default-tailwind-emitter.js";
