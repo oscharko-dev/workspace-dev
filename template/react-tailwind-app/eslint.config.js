@@ -23,4 +23,12 @@ export default defineConfig([
       },
     },
   },
+  {
+    files: ["*.config.ts"],
+    languageOptions: {
+      globals: {
+        ...globals.node,
+      },
+    },
+  },
 ]);

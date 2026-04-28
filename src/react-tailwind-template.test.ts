@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
+import { readFile, stat } from "node:fs/promises";
 import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
@@ -13,6 +13,15 @@ const templateRoot = path.resolve(packageRoot, "template/react-tailwind-app");
 
 const readTemplateFile = async (relativePath: string): Promise<string> => {
   return await readFile(path.join(templateRoot, relativePath), "utf8");
+};
+
+const templateFileExists = async (relativePath: string): Promise<boolean> => {
+  try {
+    const fileStat = await stat(path.join(templateRoot, relativePath));
+    return fileStat.isFile();
+  } catch {
+    return false;
+  }
 };
 
 test("react-tailwind template manifest exposes the expected OSS stack", async () => {
@@ -43,6 +52,22 @@ test("react-tailwind template manifest exposes the expected OSS stack", async ()
   assert.equal(packageJson.scripts?.typecheck, "tsc -b --noEmit");
   assert.equal(packageJson.scripts?.build, "tsc -b && vite build");
   assert.equal(packageJson.scripts?.test, "vitest run");
+  assert.equal(
+    packageJson.scripts?.["validate:ui"],
+    "node ./scripts/validate-ui-report.mjs",
+  );
+  assert.equal(
+    packageJson.scripts?.["validate:playwright"],
+    "playwright test --project=chromium",
+  );
+  assert.equal(
+    packageJson.scripts?.["perf:baseline"],
+    "node ./scripts/perf-runner.mjs baseline",
+  );
+  assert.equal(
+    packageJson.scripts?.["perf:assert"],
+    "node ./scripts/perf-runner.mjs assert",
+  );
 
   assert.equal(packageJson.dependencies?.react?.startsWith("^19."), true);
   assert.equal(packageJson.dependencies?.["react-dom"]?.startsWith("^19."), true);
@@ -60,6 +85,8 @@ test("react-tailwind template manifest exposes the expected OSS stack", async ()
   assert.equal(packageJson.devDependencies?.vitest !== undefined, true);
   assert.equal(packageJson.devDependencies?.["@testing-library/react"] !== undefined, true);
   assert.equal(packageJson.devDependencies?.["@testing-library/jest-dom"] !== undefined, true);
+  assert.equal(packageJson.devDependencies?.["@playwright/test"]?.startsWith("^1."), true);
+  assert.equal(packageJson.devDependencies?.lighthouse?.startsWith("^13."), true);
   assert.equal(packageJson.devDependencies?.["@types/react"]?.startsWith("^19."), true);
   assert.equal(packageJson.devDependencies?.["@types/react-dom"]?.startsWith("^19."), true);
 
@@ -99,6 +126,7 @@ test("react-tailwind template wires Vite, Tailwind, strict TypeScript, and TSX e
   assert.match(viteConfig, /tailwindcss\(\)/);
   assert.match(viteConfig, /from "vitest\/config"/);
   assert.match(viteConfig, /environment: "jsdom"/);
+  assert.match(viteConfig, /exclude: \["\*\*\/dist\/\*\*", "\*\*\/e2e\/\*\*", "\*\*\/node_modules\/\*\*"\]/);
   assert.match(styles, /@import "tailwindcss";/);
   assert.match(main, /createRoot/);
   assert.match(main, /import App from "\.\/App\.tsx"/);
@@ -117,4 +145,39 @@ test("react-tailwind template wires Vite, Tailwind, strict TypeScript, and TSX e
   assert.equal(tsconfig.compilerOptions?.types?.includes("react"), true);
   assert.equal(tsconfig.compilerOptions?.types?.includes("react-dom"), true);
   assert.equal(tsconfig.compilerOptions?.types?.includes("vitest/globals"), true);
+});
+
+test("react-tailwind template ships release-grade validation and performance gates", async () => {
+  const packageJson = JSON.parse(await readTemplateFile("package.json")) as {
+    scripts?: Record<string, string>;
+  };
+  const budget = JSON.parse(await readTemplateFile("perf-budget.json")) as {
+    routes?: string[];
+    profiles?: string[];
+    budgets?: Record<string, number>;
+  };
+  const baseline = JSON.parse(await readTemplateFile("perf-baseline.json")) as {
+    aggregate?: Record<string, number>;
+    routes?: string[];
+    profiles?: string[];
+  };
+
+  assert.equal(await templateFileExists("scripts/validate-ui-report.mjs"), true);
+  assert.equal(await templateFileExists("scripts/validate-ui-report-lib.mjs"), true);
+  assert.equal(await templateFileExists("scripts/perf-runner.mjs"), true);
+  assert.equal(await templateFileExists("playwright.config.ts"), true);
+  assert.equal(await templateFileExists("e2e/template.spec.ts"), true);
+  assert.equal(packageJson.scripts?.["validate:ui"] !== undefined, true);
+  assert.equal(packageJson.scripts?.["validate:playwright"] !== undefined, true);
+  assert.equal(packageJson.scripts?.["perf:baseline"] !== undefined, true);
+  assert.equal(packageJson.scripts?.["perf:assert"] !== undefined, true);
+
+  assert.deepEqual(budget.routes, ["/"]);
+  assert.deepEqual(budget.profiles, ["mobile", "desktop"]);
+  assert.equal(budget.budgets?.lcp_p75_ms, 2500);
+  assert.equal(budget.budgets?.cls_p75, 0.1);
+  assert.deepEqual(baseline.routes, budget.routes);
+  assert.deepEqual(baseline.profiles, budget.profiles);
+  assert.equal(typeof baseline.aggregate?.lcp_p75_ms, "number");
+  assert.equal(typeof baseline.aggregate?.initial_js_kb, "number");
 });

@@ -1,0 +1,12 @@
+{
+  "budgets": {
+    "inp_p75_ms": 200,
+    "lcp_p75_ms": 2500,
+    "cls_p75": 0.1,
+    "initial_js_kb": 180,
+    "route_transition_ms": 300
+  },
+  "regressionTolerancePct": 10,
+  "routes": ["/"],
+  "profiles": ["mobile", "desktop"]
+}

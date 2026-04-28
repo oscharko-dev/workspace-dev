@@ -141,6 +141,34 @@ test("package distribution includes template lockfile but excludes template node
       tarballListing,
       /package\/template\/react-tailwind-app\/pnpm-lock\.yaml/,
     );
+    assert.match(
+      tarballListing,
+      /package\/template\/react-tailwind-app\/perf-budget\.json/,
+    );
+    assert.match(
+      tarballListing,
+      /package\/template\/react-tailwind-app\/perf-baseline\.json/,
+    );
+    assert.match(
+      tarballListing,
+      /package\/template\/react-tailwind-app\/scripts\/perf-runner\.mjs/,
+    );
+    assert.match(
+      tarballListing,
+      /package\/template\/react-tailwind-app\/scripts\/validate-ui-report\.mjs/,
+    );
+    assert.match(
+      tarballListing,
+      /package\/template\/react-tailwind-app\/scripts\/validate-ui-report-lib\.mjs/,
+    );
+    assert.match(
+      tarballListing,
+      /package\/template\/react-tailwind-app\/playwright\.config\.ts/,
+    );
+    assert.match(
+      tarballListing,
+      /package\/template\/react-tailwind-app\/e2e\/template\.spec\.ts/,
+    );
     assert.doesNotMatch(
       tarballListing,
       /package\/template\/react-mui-app\/node_modules\//,
@@ -152,6 +180,18 @@ test("package distribution includes template lockfile but excludes template node
     assert.doesNotMatch(
       tarballListing,
       /package\/template\/react-tailwind-app\/dist\//,
+    );
+    assert.doesNotMatch(
+      tarballListing,
+      /package\/template\/react-tailwind-app\/artifacts\//,
+    );
+    assert.doesNotMatch(
+      tarballListing,
+      /package\/template\/react-tailwind-app\/scripts\/validate-ui-report\.test\.mjs/,
+    );
+    assert.doesNotMatch(
+      tarballListing,
+      /package\/template\/react-tailwind-app\/ui-gate-/,
     );
 
     await run({

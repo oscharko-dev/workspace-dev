@@ -129,6 +129,13 @@ REQUIRED_FILES=(
   "template/react-mui-app/pnpm-lock.yaml"
   "template/react-tailwind-app/package.json"
   "template/react-tailwind-app/pnpm-lock.yaml"
+  "template/react-tailwind-app/perf-budget.json"
+  "template/react-tailwind-app/perf-baseline.json"
+  "template/react-tailwind-app/scripts/perf-runner.mjs"
+  "template/react-tailwind-app/scripts/validate-ui-report.mjs"
+  "template/react-tailwind-app/scripts/validate-ui-report-lib.mjs"
+  "template/react-tailwind-app/playwright.config.ts"
+  "template/react-tailwind-app/e2e/template.spec.ts"
 )
 
 MISSING=()
@@ -227,7 +234,10 @@ FORBIDDEN_ROOT_PATHS=(
 
 FORBIDDEN_FILE_GLOBS=(
   "*.test.ts"
+  "*.test.tsx"
   "*.test.js"
+  "*.test.mjs"
+  "ui-gate-*.json"
   ".env.*"
 )
 
