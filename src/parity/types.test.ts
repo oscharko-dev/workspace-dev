@@ -30,6 +30,7 @@ const EXPECTED_TYPES_EXPORTS = [
   "DesignNodeFingerprint",
   "DesignScreenFingerprint",
   "DesignTokenActionPalette",
+  "DesignTokenArtifactMetadata",
   "DesignTokenPalette",
   "DesignTokenTypographyScale",
   "DesignTokenTypographyVariant",

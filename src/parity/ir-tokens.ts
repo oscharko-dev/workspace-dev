@@ -1063,8 +1063,25 @@ export const applyMcpEnrichmentToIr = (ir: DesignIR, enrichment: FigmaMcpEnrichm
           mcpCoverage: buildMcpCoverageMetric({ enrichment }),
           ...(nextNodeDiagnostics.length > 0 ? { nodeDiagnostics: nextNodeDiagnostics } : {})
         };
+  const tokenArtifacts = {
+    ...(enrichment.cssCustomProperties ? { cssCustomProperties: enrichment.cssCustomProperties } : {}),
+    ...(enrichment.tailwindExtension ? { tailwindExtension: enrichment.tailwindExtension } : {}),
+    ...(enrichment.libraryKeys && enrichment.libraryKeys.length > 0
+      ? { libraryKeys: [...enrichment.libraryKeys].sort((left, right) => left.localeCompare(right)) }
+      : {}),
+    ...(enrichment.modeAlternatives && Object.keys(enrichment.modeAlternatives).length > 0
+      ? { modeAlternatives: enrichment.modeAlternatives }
+      : {}),
+    ...(enrichment.conflicts && enrichment.conflicts.length > 0
+      ? { conflicts: enrichment.conflicts.map((entry) => ({ ...entry })) }
+      : {}),
+    ...(enrichment.unmappedVariables && enrichment.unmappedVariables.length > 0
+      ? { unmappedVariables: [...enrichment.unmappedVariables].sort((left, right) => left.localeCompare(right)) }
+      : {})
+  };
   return {
     ...ir,
+    ...(Object.keys(tokenArtifacts).length > 0 ? { tokenArtifacts } : {}),
     ...(nextMetrics ? { metrics: nextMetrics } : {}),
     screens: ir.screens.map((screen) => ({
       ...screen,

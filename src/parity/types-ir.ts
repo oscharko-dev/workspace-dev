@@ -72,6 +72,15 @@ export interface DesignTokens {
   tokenSource?: DesignTokenSourceMetric;
 }
 
+export interface DesignTokenArtifactMetadata {
+  cssCustomProperties?: string;
+  tailwindExtension?: Record<string, Record<string, string>>;
+  libraryKeys?: string[];
+  modeAlternatives?: Record<string, Record<string, string | number | boolean>>;
+  conflicts?: Array<Record<string, unknown>>;
+  unmappedVariables?: string[];
+}
+
 export interface DesignIrDarkPaletteHints {
   primary?: string;
   secondary?: string;
@@ -564,6 +573,7 @@ export interface DesignIR {
   sourceName: string;
   screens: ScreenIR[];
   tokens: DesignTokens;
+  tokenArtifacts?: DesignTokenArtifactMetadata;
   metrics?: GenerationMetrics;
   themeAnalysis?: DesignIrThemeAnalysis;
   appShells?: AppShellIR[];
@@ -650,6 +660,7 @@ export interface ValidatedDesignIR {
   readonly sourceName: string;
   readonly screens: readonly ScreenIR[];
   readonly tokens: DesignTokens;
+  readonly tokenArtifacts?: DesignTokenArtifactMetadata;
   readonly metrics: GenerationMetrics;
   readonly themeAnalysis?: DesignIrThemeAnalysis;
   readonly appShells?: readonly AppShellIR[];
@@ -1337,6 +1348,7 @@ export const validateDesignIR = (raw: DesignIR): IRValidationResult => {
       sourceName: raw.sourceName,
       screens: raw.screens,
       tokens: raw.tokens,
+      ...(raw.tokenArtifacts ? { tokenArtifacts: raw.tokenArtifacts } : {}),
       metrics,
       ...(raw.themeAnalysis ? { themeAnalysis: raw.themeAnalysis } : {}),
       ...(raw.appShells ? { appShells: raw.appShells } : {}),

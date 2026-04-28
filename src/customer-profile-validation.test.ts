@@ -827,6 +827,8 @@ export const App = () => (
 );
 `
     });
+    await mkdir(path.join(generatedProjectDir, "src", "theme"), { recursive: true });
+    await writeFile(path.join(generatedProjectDir, "src", "theme", "tokens.css"), ":root { --color-primary: #fff; }\n", "utf8");
     await mkdir(path.join(generatedProjectDir, "src", "styles"), { recursive: true });
     await writeFile(path.join(generatedProjectDir, "src", "styles", "generated.css"), ".root { color: red; }\n", "utf8");
 
@@ -866,7 +868,18 @@ export const App = () => (
     assert.equal(summary.issues.some((issue) => issue.category === "hard_coded_color_literal"), true);
     assert.equal(summary.issues.some((issue) => issue.category === "raw_spacing_literal"), true);
     assert.equal(summary.issues.some((issue) => issue.category === "raw_typography_declaration"), true);
-    assert.equal(summary.issues.some((issue) => issue.category === "forbidden_generated_stylesheet"), true);
+    assert.equal(
+      summary.issues.some(
+        (issue) => issue.category === "forbidden_generated_stylesheet" && issue.filePath === "src/styles/generated.css",
+      ),
+      true,
+    );
+    assert.equal(
+      summary.issues.some(
+        (issue) => issue.category === "forbidden_generated_stylesheet" && issue.filePath === "src/theme/tokens.css",
+      ),
+      false,
+    );
   } finally {
     await rm(generatedProjectDir, { recursive: true, force: true });
   }

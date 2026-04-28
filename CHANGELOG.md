@@ -11,6 +11,13 @@ Contract-level surface changes remain tracked in `CONTRACT_CHANGELOG.md`.
 
 ### Added
 
+- Default design-token compiler output (#1546):
+    - Generated apps now include deterministic `src/theme/tokens.css` CSS
+      custom properties and `src/theme/token-report.json` coverage evidence
+      beside the existing `src/theme/tokens.json` artifact.
+    - The token bridge now classifies and emits border, shadow, and z-index
+      token variables in addition to color, typography, spacing, radius, size,
+      and opacity variables.
 - OSS default React + TypeScript + Tailwind template story completion (#1525):
     - `template/react-tailwind-app/` now ships as a private Vite React TS
       template with Tailwind CSS v4 through `@tailwindcss/vite`, strict

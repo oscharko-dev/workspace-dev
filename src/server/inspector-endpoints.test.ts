@@ -507,7 +507,7 @@ const assertCompletedFixtureArtifacts = async ({
   );
   assert.equal(
     filePaths.some(
-      (entry) => entry.endsWith(".css") || entry.endsWith(".scss"),
+      (entry) => (entry.endsWith(".css") || entry.endsWith(".scss")) && entry !== "src/theme/tokens.css",
     ),
     false,
   );

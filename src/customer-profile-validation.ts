@@ -227,6 +227,7 @@ const COMPONENT_API_REASON_CODES = [
 ] as const satisfies readonly CustomerProfileComponentApiValidationReason[];
 const SOURCE_FILE_EXTENSIONS = new Set<string>([".ts", ".tsx", ".js", ".jsx"]);
 const GENERATED_STYLESHEET_EXTENSIONS = new Set<string>([".css", ".scss"]);
+const ALLOWED_GENERATED_STYLESHEET_PATHS = new Set<string>(["src/theme/tokens.css"]);
 const SCAN_EXCLUDED_DIRECTORIES = new Set<string>(["node_modules", "dist", ".git", ".figmapipe"]);
 const AUTHORIZED_STORYBOOK_STYLE_OUTPUTS = new Set<string>(["src/theme/theme.ts", "src/theme/tokens.json"]);
 const REFERENCE_ONLY_STYLE_EVIDENCE_TYPES = new Set<StorybookEvidenceType>([
@@ -2272,6 +2273,9 @@ export const validateGeneratedProjectStorybookStyles = async ({
       generatedProjectDir,
       filePath: stylesheetPath
     });
+    if (ALLOWED_GENERATED_STYLESHEET_PATHS.has(relativeFilePath)) {
+      continue;
+    }
     pushStyleIssue({
       issues,
       seenIssueKeys,
