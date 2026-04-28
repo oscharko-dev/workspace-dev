@@ -8,7 +8,8 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const packageRoot = path.resolve(__dirname, "..");
 export const TRACKED_LOCKFILE_PATHS = [
   path.resolve(packageRoot, "pnpm-lock.yaml"),
-  path.resolve(packageRoot, "template/react-mui-app/pnpm-lock.yaml")
+  path.resolve(packageRoot, "template/react-mui-app/pnpm-lock.yaml"),
+  path.resolve(packageRoot, "template/react-tailwind-app/pnpm-lock.yaml")
 ];
 
 const DEFAULT_ALLOWED_HOSTS = ["registry.npmjs.org"];

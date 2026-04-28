@@ -14,7 +14,7 @@
  *     it appears in the allowlist — guards against new transitive deps
  *     silently gaining install-script execution rights.
  *
- * Runs against both the root workspace and template/react-mui-app.
+ * Runs against the root workspace and bundled application templates.
  */
 
 import { readFile } from "node:fs/promises";
@@ -35,9 +35,14 @@ const resolvePackageRoot = (env = process.env) => {
 const TARGETS = [
   { label: "root", pkgRel: "package.json", lockRel: "pnpm-lock.yaml" },
   {
-    label: "template",
+    label: "template/react-mui-app",
     pkgRel: "template/react-mui-app/package.json",
     lockRel: "template/react-mui-app/pnpm-lock.yaml",
+  },
+  {
+    label: "template/react-tailwind-app",
+    pkgRel: "template/react-tailwind-app/package.json",
+    lockRel: "template/react-tailwind-app/pnpm-lock.yaml",
   },
 ];
 

@@ -43,22 +43,27 @@ const runCheck = async ({
   includeTemplateNodeModules?: boolean;
 }): Promise<{ code: number; stdout: string; stderr: string }> => {
   const tempRoot = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-license-allowlist-"));
-  const templateRoot = path.join(tempRoot, "template/react-mui-app");
+  const templateRoots = [
+    path.join(tempRoot, "template/react-mui-app"),
+    path.join(tempRoot, "template/react-tailwind-app"),
+  ];
 
   try {
-    await mkdir(templateRoot, { recursive: true });
     await writeFile(path.join(tempRoot, "package.json"), createPackageJson({ name: "workspace-dev" }), "utf8");
-    await writeFile(path.join(templateRoot, "package.json"), createPackageJson({ name: "figma-generated-app" }), "utf8");
+    for (const templateRoot of templateRoots) {
+      await mkdir(templateRoot, { recursive: true });
+      await writeFile(path.join(templateRoot, "package.json"), createPackageJson({ name: "figma-generated-app" }), "utf8");
 
-    if (includeTemplateNodeModules) {
-      const nodeModulesRoot = path.join(templateRoot, "node_modules");
-      await mkdir(nodeModulesRoot, { recursive: true });
+      if (includeTemplateNodeModules) {
+        const nodeModulesRoot = path.join(templateRoot, "node_modules");
+        await mkdir(nodeModulesRoot, { recursive: true });
 
-      const entries = Object.entries(templatePackages).sort(([first], [second]) => first.localeCompare(second));
-      for (const [relativePath, content] of entries) {
-        const filePath = path.join(nodeModulesRoot, relativePath);
-        await mkdir(path.dirname(filePath), { recursive: true });
-        await writeFile(filePath, content, "utf8");
+        const entries = Object.entries(templatePackages).sort(([first], [second]) => first.localeCompare(second));
+        for (const [relativePath, content] of entries) {
+          const filePath = path.join(nodeModulesRoot, relativePath);
+          await mkdir(path.dirname(filePath), { recursive: true });
+          await writeFile(filePath, content, "utf8");
+        }
       }
     }
 

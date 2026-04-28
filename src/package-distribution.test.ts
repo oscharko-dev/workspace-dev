@@ -133,9 +133,25 @@ test("package distribution includes template lockfile but excludes template node
       tarballListing,
       /package\/template\/react-mui-app\/pnpm-lock\.yaml/,
     );
+    assert.match(
+      tarballListing,
+      /package\/template\/react-tailwind-app\/package\.json/,
+    );
+    assert.match(
+      tarballListing,
+      /package\/template\/react-tailwind-app\/pnpm-lock\.yaml/,
+    );
     assert.doesNotMatch(
       tarballListing,
       /package\/template\/react-mui-app\/node_modules\//,
+    );
+    assert.doesNotMatch(
+      tarballListing,
+      /package\/template\/react-tailwind-app\/node_modules\//,
+    );
+    assert.doesNotMatch(
+      tarballListing,
+      /package\/template\/react-tailwind-app\/dist\//,
     );
 
     await run({

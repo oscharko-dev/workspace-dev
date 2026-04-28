@@ -83,7 +83,11 @@ const runHelperCheck = async ({
   templateHosts = ["registry.npmjs.org"],
   rootContent,
   templateContent,
-  lockfilePaths = ["/virtual/pnpm-lock.yaml", "/virtual/template/react-mui-app/pnpm-lock.yaml"],
+  lockfilePaths = [
+    "/virtual/pnpm-lock.yaml",
+    "/virtual/template/react-mui-app/pnpm-lock.yaml",
+    "/virtual/template/react-tailwind-app/pnpm-lock.yaml",
+  ],
   readTextFile
 }: {
   args?: string[];
@@ -99,7 +103,8 @@ const runHelperCheck = async ({
   const stderrLines: string[] = [];
   const lockfileContents = new Map<string, string>([
     [lockfilePaths[0]!, rootContent ?? createLockfile(rootHosts)],
-    [lockfilePaths[1]!, templateContent ?? createLockfile(templateHosts)]
+    [lockfilePaths[1]!, templateContent ?? createLockfile(templateHosts)],
+    [lockfilePaths[2]!, createLockfile(["registry.npmjs.org"])],
   ]);
 
   const code = await runLockfileHostAllowlist({

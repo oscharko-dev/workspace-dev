@@ -113,6 +113,8 @@ const ROOT_PKG_PATH = "package.json";
 const ROOT_LOCK_PATH = "pnpm-lock.yaml";
 const TMPL_PKG_PATH = "template/react-mui-app/package.json";
 const TMPL_LOCK_PATH = "template/react-mui-app/pnpm-lock.yaml";
+const TAILWIND_TMPL_PKG_PATH = "template/react-tailwind-app/package.json";
+const TAILWIND_TMPL_LOCK_PATH = "template/react-tailwind-app/pnpm-lock.yaml";
 const FAKE_ROOT = "/fake";
 const full = (rel) => `${FAKE_ROOT}/${rel}`;
 
@@ -126,6 +128,10 @@ const makeFiles = (overrides = {}) => {
       pnpm: { onlyBuiltDependencies: [] },
     }),
     [full(TMPL_LOCK_PATH)]: "",
+    [full(TAILWIND_TMPL_PKG_PATH)]: JSON.stringify({
+      pnpm: { onlyBuiltDependencies: [] },
+    }),
+    [full(TAILWIND_TMPL_LOCK_PATH)]: "",
   };
   const normalizedOverrides = {};
   for (const [k, v] of Object.entries(overrides)) {
@@ -289,7 +295,10 @@ test("runCheck: accumulates violations from both targets", async () => {
   assert.strictEqual(code, 1);
   const msgs = errs.join("\n");
   assert.ok(msgs.includes("[root]"), "should report root violation");
-  assert.ok(msgs.includes("[template]"), "should report template violation");
+  assert.ok(
+    msgs.includes("[template/react-mui-app]"),
+    "should report MUI template violation",
+  );
 });
 
 test("runCheck: still passes other target when first target has read error", async () => {
@@ -302,7 +311,7 @@ test("runCheck: still passes other target when first target has read error", asy
   assert.ok(msgs.includes("[root]"), "root violation reported");
   // template should still be checked and pass (no error message for template)
   assert.ok(
-    !msgs.includes("[template]") || !msgs.includes("Could not read"),
+    !msgs.includes("[template/react-mui-app]") || !msgs.includes("Could not read"),
     "template passes independently",
   );
 });
