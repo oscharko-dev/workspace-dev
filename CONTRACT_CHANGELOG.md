@@ -31,6 +31,32 @@ All changes to the public contract surface of `workspace-dev` are documented her
 
 ---
 
+## [4.18.0] - 2026-04-28
+
+### Added (Issue #1535)
+
+Pipeline descriptor manifest metadata for conformance and runtime inspection.
+The runtime now includes additive pipeline descriptor fields that identify the
+registered pipeline visibility, deterministic execution guarantee, and template
+bundle stack.
+
+**New types:**
+
+- `WorkspacePipelineVisibility` — pipeline visibility class: `oss`,
+  `customer`, or `internal`.
+- `WorkspacePipelineStackDescriptor` — public framework, language, styling, and
+  bundler identity for a pipeline template.
+- `WorkspacePipelineTemplateMetadata` — public template bundle id, path, and
+  stack identity for a pipeline.
+
+**Extended types (additive fields only):**
+
+- `WorkspacePipelineDescriptor.visibility`
+- `WorkspacePipelineDescriptor.deterministic`
+- `WorkspacePipelineDescriptor.template`
+
+---
+
 ## [4.17.0] - 2026-04-28
 
 ### Added (Issue #1534)

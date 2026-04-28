@@ -4,7 +4,7 @@
  * These types define the public API surface for workspace-dev consumers.
  * They must not import from internal services.
  *
- * Contract version: 4.17.0
+ * Contract version: 4.18.0
  * See CONTRACT_CHANGELOG.md for contract change history and VERSIONING.md for
  * package-versus-contract versioning policy.
  */
@@ -1153,6 +1153,24 @@ export type WorkspacePipelineId = "default" | "rocket" | (string & {});
 /** Input scope resolved before pipeline selection. */
 export type WorkspacePipelineScope = "board" | "node" | "selection";
 
+/** Visibility class for a pipeline included in the current package profile. */
+export type WorkspacePipelineVisibility = "oss" | "customer" | "internal";
+
+/** Public stack identity for a pipeline template bundle. */
+export interface WorkspacePipelineStackDescriptor {
+  framework: string;
+  language: string;
+  styling: string;
+  bundler: string;
+}
+
+/** Public template identity for a pipeline included in the current package profile. */
+export interface WorkspacePipelineTemplateMetadata {
+  bundleId: string;
+  path: string;
+  stack: WorkspacePipelineStackDescriptor;
+}
+
 /** Structured request-time pipeline selection failures. */
 export const ALLOWED_PIPELINE_REQUEST_ERROR_CODES = [
   "INVALID_PIPELINE",
@@ -1170,6 +1188,9 @@ export interface WorkspacePipelineDescriptor {
   id: WorkspacePipelineId;
   displayName: string;
   description: string;
+  visibility?: WorkspacePipelineVisibility;
+  deterministic?: true;
+  template?: WorkspacePipelineTemplateMetadata;
   supportedSourceModes: WorkspaceFigmaSourceMode[];
   supportedScopes: WorkspacePipelineScope[];
 }
@@ -7412,4 +7433,4 @@ export type SourceMixPlannerResult =
  * Must be bumped according to CONTRACT_CHANGELOG.md rules.
  * Package version alignment is documented in VERSIONING.md.
  */
-export const CONTRACT_VERSION = "4.17.0" as const;
+export const CONTRACT_VERSION = "4.18.0" as const;

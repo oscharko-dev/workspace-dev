@@ -1689,8 +1689,14 @@ function parseWorkspaceStatus(
       const id = entry.id;
       const displayName = entry.displayName;
       const description = entry.description;
+      const visibility = entry.visibility;
+      const deterministic = entry.deterministic;
+      const template = entry.template;
       const supportedSourceModes = entry.supportedSourceModes;
       const supportedScopes = entry.supportedScopes;
+      let parsedTemplate:
+        | NonNullable<WorkspacePipelineDescriptor["template"]>
+        | undefined;
       if (typeof id !== "string" || id.trim().length === 0) {
         pushIssue(
           issues,
@@ -1711,6 +1717,105 @@ function parseWorkspaceStatus(
           ["availablePipelines", index, "description"],
           "pipeline description must be a non-empty string",
         );
+      }
+      if (
+        visibility !== undefined &&
+        visibility !== "oss" &&
+        visibility !== "customer" &&
+        visibility !== "internal"
+      ) {
+        pushIssue(
+          issues,
+          ["availablePipelines", index, "visibility"],
+          "pipeline visibility must be one of: oss, customer, internal",
+        );
+      }
+      if (deterministic !== undefined && deterministic !== true) {
+        pushIssue(
+          issues,
+          ["availablePipelines", index, "deterministic"],
+          "pipeline deterministic must be true when provided",
+        );
+      }
+      if (template !== undefined) {
+        if (!isRecord(template)) {
+          pushIssue(
+            issues,
+            ["availablePipelines", index, "template"],
+            "pipeline template must be an object",
+          );
+        } else {
+          const bundleId = template.bundleId;
+          const templatePath = template.path;
+          const stack = template.stack;
+          if (typeof bundleId !== "string" || bundleId.trim().length === 0) {
+            pushIssue(
+              issues,
+              ["availablePipelines", index, "template", "bundleId"],
+              "pipeline template bundleId must be a non-empty string",
+            );
+          }
+          if (
+            typeof templatePath !== "string" ||
+            templatePath.trim().length === 0
+          ) {
+            pushIssue(
+              issues,
+              ["availablePipelines", index, "template", "path"],
+              "pipeline template path must be a non-empty string",
+            );
+          }
+          if (!isRecord(stack)) {
+            pushIssue(
+              issues,
+              ["availablePipelines", index, "template", "stack"],
+              "pipeline template stack must be an object",
+            );
+          } else {
+            for (const key of [
+              "framework",
+              "language",
+              "styling",
+              "bundler",
+            ] as const) {
+              if (
+                typeof stack[key] !== "string" ||
+                stack[key].trim().length === 0
+              ) {
+                pushIssue(
+                  issues,
+                  ["availablePipelines", index, "template", "stack", key],
+                  `pipeline template stack ${key} must be a non-empty string`,
+                );
+              }
+            }
+            if (
+              typeof bundleId === "string" &&
+              bundleId.trim().length > 0 &&
+              typeof templatePath === "string" &&
+              templatePath.trim().length > 0 &&
+              typeof stack.framework === "string" &&
+              stack.framework.trim().length > 0 &&
+              typeof stack.language === "string" &&
+              stack.language.trim().length > 0 &&
+              typeof stack.styling === "string" &&
+              stack.styling.trim().length > 0 &&
+              typeof stack.bundler === "string" &&
+              stack.bundler.trim().length > 0
+            ) {
+              parsedTemplate = {
+                bundleId: bundleId.trim(),
+                path: templatePath.trim(),
+                stack: {
+                  framework: stack.framework.trim(),
+                  language: stack.language.trim(),
+                  styling: stack.styling.trim(),
+                  bundler: stack.bundler.trim(),
+                },
+              };
+            }
+          }
+        }
       }
       if (
         !Array.isArray(supportedSourceModes) ||
@@ -1751,9 +1856,17 @@ function parseWorkspaceStatus(
           id: id.trim(),
           displayName: displayName.trim(),
           description: description.trim(),
+          ...(visibility === "oss" ||
+          visibility === "customer" ||
+          visibility === "internal"
+            ? { visibility }
+            : {}),
+          ...(deterministic === true ? { deterministic } : {}),
+          ...(parsedTemplate ? { template: parsedTemplate } : {}),
           supportedSourceModes:
             supportedSourceModes as WorkspaceFigmaSourceMode[],
-          supportedScopes: supportedScopes as WorkspacePipelineDescriptor["supportedScopes"],
+          supportedScopes:
+            supportedScopes as WorkspacePipelineDescriptor["supportedScopes"],
         },
       ];
     });

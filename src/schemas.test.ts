@@ -931,6 +931,35 @@ test("schema: valid workspace status parses", () => {
     previewEnabled: true,
     testIntelligenceEnabled: true,
     testIntelligenceMultiSourceEnabled: false,
+    availablePipelines: [
+      {
+        id: "rocket",
+        displayName: "Rocket",
+        description:
+          "Compatibility pipeline for the existing WorkspaceDev generator.",
+        visibility: "customer",
+        deterministic: true,
+        template: {
+          bundleId: "react-mui-app",
+          path: "template/react-mui-app",
+          stack: {
+            framework: "react",
+            language: "typescript",
+            styling: "mui",
+            bundler: "vite",
+          },
+        },
+        supportedSourceModes: [
+          "rest",
+          "hybrid",
+          "local_json",
+          "figma_paste",
+          "figma_plugin",
+        ],
+        supportedScopes: ["board", "node", "selection"],
+      },
+    ],
+    defaultPipelineId: "rocket",
   });
   assert.equal(result.success, true);
   if (result.success) {
@@ -946,6 +975,35 @@ test("schema: valid workspace status parses", () => {
       previewEnabled: true,
       testIntelligenceEnabled: true,
       testIntelligenceMultiSourceEnabled: false,
+      availablePipelines: [
+        {
+          id: "rocket",
+          displayName: "Rocket",
+          description:
+            "Compatibility pipeline for the existing WorkspaceDev generator.",
+          visibility: "customer",
+          deterministic: true,
+          template: {
+            bundleId: "react-mui-app",
+            path: "template/react-mui-app",
+            stack: {
+              framework: "react",
+              language: "typescript",
+              styling: "mui",
+              bundler: "vite",
+            },
+          },
+          supportedSourceModes: [
+            "rest",
+            "hybrid",
+            "local_json",
+            "figma_paste",
+            "figma_plugin",
+          ],
+          supportedScopes: ["board", "node", "selection"],
+        },
+      ],
+      defaultPipelineId: "rocket",
     });
   }
 });
