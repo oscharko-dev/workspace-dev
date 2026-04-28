@@ -231,7 +231,10 @@ export const buildElementBase = ({
     ...(prototypeNavigation ? { prototypeNavigation } : {}),
     ...(variantMapping ? { variantMapping } : {}),
     ...(node.primaryAxisAlignItems ? { primaryAxisAlignItems: node.primaryAxisAlignItems } : {}),
-    ...(node.counterAxisAlignItems ? { counterAxisAlignItems: node.counterAxisAlignItems } : {})
+    ...(node.counterAxisAlignItems ? { counterAxisAlignItems: node.counterAxisAlignItems } : {}),
+    ...(node.constraints ? { constraints: { ...node.constraints } } : {}),
+    ...(node.layoutAlign ? { layoutAlign: node.layoutAlign } : {}),
+    ...(typeof node.layoutGrow === "number" && Number.isFinite(node.layoutGrow) ? { layoutGrow: node.layoutGrow } : {})
   };
   const element: ScreenElementIR =
     elementType === "text"
