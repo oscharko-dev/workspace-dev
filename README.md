@@ -663,6 +663,7 @@ Local JSON submit mode:
 curl -sS -X POST http://127.0.0.1:1983/workspace/submit \
   -H 'content-type: application/json' \
   -d '{
+    "pipelineId":"rocket",
     "figmaSourceMode":"local_json",
     "figmaJsonPath":"./fixtures/figma-export.json",
     "customerProfilePath":"./profiles/customer-profile.json",
