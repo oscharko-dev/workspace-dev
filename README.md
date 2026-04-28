@@ -628,8 +628,8 @@ Bundled templates include baseline + assertion pipelines:
 - `pnpm --dir template/react-tailwind-app run perf:baseline`
 - `pnpm --dir template/react-tailwind-app run perf:assert`
 
-Approved release baselines live beside each template in `perf-baseline.json`.
-Runtime reports and Lighthouse artifacts are written to `template/<template-name>/artifacts/performance`.
+Approved release baselines live beside each template, including `template/react-mui-app/perf-baseline.json` and `template/react-tailwind-app/perf-baseline.json`.
+Runtime performance reports are written to `template/<template-name>/artifacts/performance`.
 Budget policy is configured in each template's `perf-budget.json`.
 The dev quality gate keeps these assertions warn-only for iteration speed; release and publish workflows treat them as blocking.
 Detailed operating notes: `docs/react-web-performance.md`.

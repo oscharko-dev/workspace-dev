@@ -12,10 +12,13 @@ The bundled React templates ship with release-grade web performance gates. Each 
 - Assertion runner: `template/<template-name>/scripts/perf-runner.mjs`
 
 The committed baseline is the canonical release reference. CI keeps `FIGMAPIPE_PERF_ALLOW_BASELINE_BOOTSTRAP=false`, so missing baselines fail instead of being silently recreated during release or dev gate runs.
+The Tailwind template uses Playwright browser-timing collection so the default
+template does not ship Lighthouse's transitive telemetry SDK packages.
 
 ## Gate Policy
 
-- `pnpm --dir template/react-mui-app run perf:assert` is the authoritative assertion command.
+- `pnpm --dir template/react-mui-app run perf:baseline` refreshes the approved MUI template baseline.
+- `pnpm --dir template/react-mui-app run perf:assert` is the authoritative MUI template assertion command.
 - `pnpm --dir template/react-tailwind-app run perf:assert` is the authoritative Tailwind template assertion command.
 - `.github/workflows/dev-quality-gate.yml` keeps the matrixed `performance-web` job non-blocking so teams can iterate without the dev gate failing on every approved baseline refresh.
 - `.github/workflows/release-gate.yml` and `.github/workflows/changesets-release.yml` treat the same assertions as blocking.

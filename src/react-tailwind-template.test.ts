@@ -70,25 +70,53 @@ test("react-tailwind template manifest exposes the expected OSS stack", async ()
   );
 
   assert.equal(packageJson.dependencies?.react?.startsWith("^19."), true);
-  assert.equal(packageJson.dependencies?.["react-dom"]?.startsWith("^19."), true);
-  assert.equal(packageJson.devDependencies?.typescript?.startsWith("~6."), true);
+  assert.equal(
+    packageJson.dependencies?.["react-dom"]?.startsWith("^19."),
+    true,
+  );
+  assert.equal(
+    packageJson.devDependencies?.typescript?.startsWith("~6."),
+    true,
+  );
   assert.equal(packageJson.devDependencies?.vite?.startsWith("^8."), true);
   assert.equal(
     packageJson.devDependencies?.["@vitejs/plugin-react"]?.startsWith("^6."),
     true,
   );
-  assert.equal(packageJson.devDependencies?.tailwindcss?.startsWith("^4."), true);
+  assert.equal(
+    packageJson.devDependencies?.tailwindcss?.startsWith("^4."),
+    true,
+  );
   assert.equal(
     packageJson.devDependencies?.["@tailwindcss/vite"]?.startsWith("^4."),
     true,
   );
   assert.equal(packageJson.devDependencies?.vitest !== undefined, true);
-  assert.equal(packageJson.devDependencies?.["@testing-library/react"] !== undefined, true);
-  assert.equal(packageJson.devDependencies?.["@testing-library/jest-dom"] !== undefined, true);
-  assert.equal(packageJson.devDependencies?.["@playwright/test"]?.startsWith("^1."), true);
-  assert.equal(packageJson.devDependencies?.lighthouse?.startsWith("^13."), true);
-  assert.equal(packageJson.devDependencies?.["@types/react"]?.startsWith("^19."), true);
-  assert.equal(packageJson.devDependencies?.["@types/react-dom"]?.startsWith("^19."), true);
+  assert.equal(
+    packageJson.devDependencies?.["@testing-library/dom"] !== undefined,
+    true,
+  );
+  assert.equal(
+    packageJson.devDependencies?.["@testing-library/react"] !== undefined,
+    true,
+  );
+  assert.equal(
+    packageJson.devDependencies?.["@testing-library/jest-dom"] !== undefined,
+    true,
+  );
+  assert.equal(
+    packageJson.devDependencies?.["@playwright/test"]?.startsWith("^1."),
+    true,
+  );
+  assert.equal(packageJson.devDependencies?.lighthouse, undefined);
+  assert.equal(
+    packageJson.devDependencies?.["@types/react"]?.startsWith("^19."),
+    true,
+  );
+  assert.equal(
+    packageJson.devDependencies?.["@types/react-dom"]?.startsWith("^19."),
+    true,
+  );
 
   for (const packageName of Object.keys(allDependencies)) {
     assert.equal(
@@ -126,7 +154,10 @@ test("react-tailwind template wires Vite, Tailwind, strict TypeScript, and TSX e
   assert.match(viteConfig, /tailwindcss\(\)/);
   assert.match(viteConfig, /from "vitest\/config"/);
   assert.match(viteConfig, /environment: "jsdom"/);
-  assert.match(viteConfig, /exclude: \["\*\*\/dist\/\*\*", "\*\*\/e2e\/\*\*", "\*\*\/node_modules\/\*\*"\]/);
+  assert.match(
+    viteConfig,
+    /exclude: \["\*\*\/dist\/\*\*", "\*\*\/e2e\/\*\*", "\*\*\/node_modules\/\*\*"\]/,
+  );
   assert.match(styles, /@import "tailwindcss";/);
   assert.match(main, /createRoot/);
   assert.match(main, /import App from "\.\/App\.tsx"/);
@@ -144,7 +175,10 @@ test("react-tailwind template wires Vite, Tailwind, strict TypeScript, and TSX e
   assert.equal(tsconfig.compilerOptions?.types?.includes("vite/client"), true);
   assert.equal(tsconfig.compilerOptions?.types?.includes("react"), true);
   assert.equal(tsconfig.compilerOptions?.types?.includes("react-dom"), true);
-  assert.equal(tsconfig.compilerOptions?.types?.includes("vitest/globals"), true);
+  assert.equal(
+    tsconfig.compilerOptions?.types?.includes("vitest/globals"),
+    true,
+  );
 });
 
 test("react-tailwind template ships release-grade validation and performance gates", async () => {
@@ -162,13 +196,22 @@ test("react-tailwind template ships release-grade validation and performance gat
     profiles?: string[];
   };
 
-  assert.equal(await templateFileExists("scripts/validate-ui-report.mjs"), true);
-  assert.equal(await templateFileExists("scripts/validate-ui-report-lib.mjs"), true);
+  assert.equal(
+    await templateFileExists("scripts/validate-ui-report.mjs"),
+    true,
+  );
+  assert.equal(
+    await templateFileExists("scripts/validate-ui-report-lib.mjs"),
+    true,
+  );
   assert.equal(await templateFileExists("scripts/perf-runner.mjs"), true);
   assert.equal(await templateFileExists("playwright.config.ts"), true);
   assert.equal(await templateFileExists("e2e/template.spec.ts"), true);
   assert.equal(packageJson.scripts?.["validate:ui"] !== undefined, true);
-  assert.equal(packageJson.scripts?.["validate:playwright"] !== undefined, true);
+  assert.equal(
+    packageJson.scripts?.["validate:playwright"] !== undefined,
+    true,
+  );
   assert.equal(packageJson.scripts?.["perf:baseline"] !== undefined, true);
   assert.equal(packageJson.scripts?.["perf:assert"] !== undefined, true);
 

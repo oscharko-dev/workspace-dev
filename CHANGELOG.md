@@ -11,6 +11,14 @@ Contract-level surface changes remain tracked in `CONTRACT_CHANGELOG.md`.
 
 ### Added
 
+- Default Tailwind template dependency denylist gate:
+    - `pnpm run template:tailwind:dependency-denylist` now blocks direct
+      MUI, Emotion, customer/Rocket, telemetry SDK, and unreviewed static
+      asset additions to `template/react-tailwind-app/`.
+    - Release quality gates run the denylist after the Tailwind template
+      frozen-lockfile install, and template maintenance docs describe the
+      review workflow for future template dependency or asset changes. (#1545)
+
 - Wave 4 multi-source test-intent ingestion — Jira REST, paste-only Jira,
   and reviewer Markdown/structured-attribute custom context (#1431–#1439):
     - Three new primary-and-supporting source paths: `jira_rest` (Jira Cloud

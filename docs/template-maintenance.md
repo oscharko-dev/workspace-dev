@@ -32,6 +32,7 @@ pnpm run template:test
 pnpm --dir template/react-mui-app run typecheck
 pnpm --dir template/react-mui-app run build
 pnpm run template:tailwind:install
+pnpm run template:tailwind:dependency-denylist
 pnpm run template:tailwind:lint
 pnpm run template:tailwind:typecheck
 pnpm run template:tailwind:test
@@ -59,6 +60,29 @@ pnpm run perf:web:tailwind:assert
 
 Reviewers should confirm that generated fixture diffs, performance deltas, and
 lockfile changes are expected for the dependency being updated.
+
+## Default Template Dependency Boundary
+
+`template/react-tailwind-app/` is the OSS default template. It must stay free of
+MUI, Emotion, Rocket or customer-specific libraries, proprietary static assets,
+and telemetry SDK dependencies.
+
+The release gate `pnpm run template:tailwind:dependency-denylist` enforces that
+boundary by checking:
+
+- direct dependency declarations in `template/react-tailwind-app/package.json`;
+- direct root-importer and package graph entries in
+  `template/react-tailwind-app/pnpm-lock.yaml`;
+- non-test source imports in the shipped template files;
+- bundled static asset file types such as images, icons, fonts, and media.
+
+Do not bypass this check by moving a denied library into `devDependencies`,
+`pnpm.overrides`, a template script, or a lockfile-only entry. If a dependency
+pulls a denied transitive package, replace that dependency rather than
+allowlisting the telemetry or customer-specific SDK. If the default template
+ever needs an OSS static asset, document its source, license, hash, and reason
+in the PR before adding an explicit narrow exception to
+`scripts/check-default-template-denylist.mjs`.
 
 ## Communication
 
