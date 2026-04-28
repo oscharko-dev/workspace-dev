@@ -4,7 +4,13 @@ import {
   ALLOWED_FIGMA_SOURCE_MODES,
   type WorkspaceJobRetryStage,
 } from "../../contracts/index.js";
+import { CodegenGenerateService } from "../services/codegen-generate-service.js";
+import { FigmaSourceService } from "../services/figma-source-service.js";
+import { GitPrService } from "../services/git-pr-service.js";
+import { IrDeriveService } from "../services/ir-derive-service.js";
+import { ReproExportService } from "../services/repro-export-service.js";
 import { RocketTemplatePrepareService } from "../services/rocket-template-prepare-service.js";
+import { ValidateProjectService } from "../services/validate-project-service.js";
 import { STAGE_ORDER } from "../stage-state.js";
 import type { PipelineDefinition } from "./pipeline-definition.js";
 import { PipelineRequestError } from "./pipeline-errors.js";
@@ -70,6 +76,25 @@ const assertCanonicalPlan = (
     toStageNames(plan),
     STAGE_ORDER,
     `${pipeline.id} ${label} plan must preserve canonical stage order`,
+  );
+};
+
+const assertRocketCompatibilityDelegates = (
+  label: string,
+  plan: ReturnType<PipelineDefinition["buildSubmissionPlan"]>,
+): void => {
+  assert.deepEqual(
+    plan.map((entry) => entry.service),
+    [
+      FigmaSourceService,
+      IrDeriveService,
+      RocketTemplatePrepareService,
+      CodegenGenerateService,
+      ValidateProjectService,
+      ReproExportService,
+      GitPrService,
+    ],
+    `rocket ${label} plan must keep existing compatibility stage delegates`,
   );
 };
 
@@ -337,6 +362,26 @@ test("rocket pipeline uses the rocket template prepare delegate for every plan",
       (entry) => entry.service.stageName === "template.prepare",
     );
     assert.equal(templatePrepareEntry?.service, RocketTemplatePrepareService);
+  }
+});
+
+test("rocket compatibility pipeline reuses existing service delegates for every plan", () => {
+  assertRocketCompatibilityDelegates(
+    "submission",
+    ROCKET_PIPELINE_DEFINITION.buildSubmissionPlan({ mode: "submission" }),
+  );
+  assertRocketCompatibilityDelegates(
+    "regeneration",
+    ROCKET_PIPELINE_DEFINITION.buildRegenerationPlan({ mode: "regeneration" }),
+  );
+  for (const retryStage of RETRY_STAGES) {
+    assertRocketCompatibilityDelegates(
+      `retry from ${retryStage}`,
+      ROCKET_PIPELINE_DEFINITION.buildRetryPlan({
+        mode: "retry",
+        retryStage,
+      }),
+    );
   }
 });
 
