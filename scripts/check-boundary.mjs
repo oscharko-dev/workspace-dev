@@ -43,6 +43,11 @@ const GENERATOR_CORE_BACKEDGE_REQUIRE_PATTERN = /require\s*\(\s*["'](?:\.\.?\/)+
 const STAGE_SERVICE_PATH_PATTERN = /^src\/job-engine\/services\/(.+)-service\.ts$/;
 const STAGE_SERVICE_IMPORT_PATTERN = /from\s+["']\.\/([a-z0-9-]+-service)\.js["']/i;
 const STAGE_SERVICE_REQUIRE_PATTERN = /require\s*\(\s*["']\.\/([a-z0-9-]+-service)\.js["']\s*\)/i;
+const CUSTOMER_PROFILE_TEMPLATE_IMPORT_PATTERN = /from\s+["'](?:\.\.?\/)+customer-profile-template\.js["']/;
+const CUSTOMER_PROFILE_TEMPLATE_REQUIRE_PATTERN = /require\s*\(\s*["'](?:\.\.?\/)+customer-profile-template\.js["']\s*\)/;
+const CUSTOMER_PROFILE_TEMPLATE_IMPORT_ALLOWLIST = new Set([
+  "src/job-engine/services/rocket-template-prepare-service.ts"
+]);
 
 // ── Package.json forbidden runtime dependencies ─────────────────────────────
 const FORBIDDEN_DEPENDENCIES = ["pg", "ioredis", "bullmq", "figmapipe-api", "@figmapipe/api", "sqlite3", "better-sqlite3", "fastify", "zod"];
@@ -80,6 +85,7 @@ const main = async () => {
       relativePathPosix.startsWith("src/parity/templates/");
     const stageServiceMatch = relativePathPosix.match(STAGE_SERVICE_PATH_PATTERN);
     const currentStageServiceName = stageServiceMatch ? `${stageServiceMatch[1]}-service` : undefined;
+    const isTestFile = relativePathPosix.endsWith(".test.ts") || relativePathPosix.endsWith(".test.tsx");
     for (let lineIndex = 0; lineIndex < lines.length; lineIndex++) {
       const line = lines[lineIndex];
       for (const pattern of FORBIDDEN_PATTERNS) {
@@ -125,6 +131,20 @@ const main = async () => {
             type: "import"
           });
         }
+      }
+      if (
+        !isTestFile &&
+        !CUSTOMER_PROFILE_TEMPLATE_IMPORT_ALLOWLIST.has(relativePathPosix) &&
+        (CUSTOMER_PROFILE_TEMPLATE_IMPORT_PATTERN.test(line) || CUSTOMER_PROFILE_TEMPLATE_REQUIRE_PATTERN.test(line))
+      ) {
+        violations.push({
+          file: relativePath,
+          line: lineIndex + 1,
+          content:
+            "Rocket boundary violation: customer-profile-template.js may only be imported by " +
+            "rocket-template-prepare-service.ts in production code.",
+          type: "import"
+        });
       }
     }
   }
