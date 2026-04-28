@@ -4,7 +4,7 @@
  * These types define the public API surface for workspace-dev consumers.
  * They must not import from internal services.
  *
- * Contract version: 4.19.0
+ * Contract version: 4.20.0
  * See CONTRACT_CHANGELOG.md for contract change history and VERSIONING.md for
  * package-versus-contract versioning policy.
  */
@@ -1195,6 +1195,15 @@ export interface WorkspacePipelineDescriptor {
   supportedScopes: WorkspacePipelineScope[];
 }
 
+/** Pipeline identity stamped onto job lifecycle records and public projections. */
+export interface WorkspaceJobPipelineMetadata {
+  pipelineId: WorkspacePipelineId;
+  pipelineDisplayName: string;
+  templateBundleId: string;
+  buildProfile: string;
+  deterministic: true;
+}
+
 /** Configuration for starting a workspace-dev server instance. */
 export interface WorkspaceStartOptions {
   /** Host to bind to. Default: "127.0.0.1" */
@@ -1539,6 +1548,7 @@ export interface WorkspaceJobInput {
 /** Public subset of request metadata stored for a job (secrets excluded). */
 export interface WorkspaceJobRequestMetadata {
   pipelineId?: WorkspacePipelineId;
+  pipelineMetadata?: WorkspaceJobPipelineMetadata;
   figmaFileKey?: string;
   figmaNodeId?: string;
   figmaJsonPath?: string;
@@ -1647,6 +1657,7 @@ export interface WorkspaceSubmitAccepted {
   jobId: string;
   status: "queued";
   pipelineId: WorkspacePipelineId;
+  pipelineMetadata: WorkspaceJobPipelineMetadata;
   acceptedModes: {
     figmaSourceMode: WorkspaceFigmaSourceMode;
     llmCodegenMode: WorkspaceLlmCodegenMode;
@@ -1726,6 +1737,7 @@ export interface WorkspaceJobInspectorStage {
 /** Inspector-facing backend result contract for recovery-aware paste flows. */
 export interface WorkspaceJobInspector {
   pipelineId: WorkspacePipelineId;
+  pipelineMetadata: WorkspaceJobPipelineMetadata;
   outcome?: WorkspaceJobOutcome;
   fallbackMode?: WorkspaceJobFallbackMode;
   /** Successful MCP read-tool calls consumed by this job. */
@@ -2082,6 +2094,7 @@ export interface WorkspaceJobCancellation {
 export interface WorkspaceJobStatus {
   jobId: string;
   pipelineId: WorkspacePipelineId;
+  pipelineMetadata: WorkspaceJobPipelineMetadata;
   status: WorkspaceJobRuntimeStatus;
   outcome?: WorkspaceJobOutcome;
   currentStage?: WorkspaceJobStageName;
@@ -2114,6 +2127,7 @@ export interface WorkspaceJobStatus {
 export interface WorkspaceJobResult {
   jobId: string;
   pipelineId: WorkspacePipelineId;
+  pipelineMetadata: WorkspaceJobPipelineMetadata;
   status: WorkspaceJobRuntimeStatus;
   outcome?: WorkspaceJobOutcome;
   summary: string;
@@ -2176,6 +2190,7 @@ export interface WorkspaceRegenerationAccepted {
   sourceJobId: string;
   status: "queued";
   pipelineId: WorkspacePipelineId;
+  pipelineMetadata: WorkspaceJobPipelineMetadata;
   acceptedModes: {
     figmaSourceMode: WorkspaceFigmaSourceMode;
     llmCodegenMode: WorkspaceLlmCodegenMode;
@@ -2196,6 +2211,7 @@ export interface WorkspaceRetryAccepted {
   retryStage: WorkspaceJobRetryStage;
   status: "queued";
   pipelineId: WorkspacePipelineId;
+  pipelineMetadata: WorkspaceJobPipelineMetadata;
   acceptedModes: {
     figmaSourceMode: WorkspaceFigmaSourceMode;
     llmCodegenMode: WorkspaceLlmCodegenMode;
@@ -2206,6 +2222,7 @@ export interface WorkspaceRetryAccepted {
 export interface WorkspaceJobLineage {
   sourceJobId: string;
   kind?: "regeneration" | "retry" | "delta";
+  pipelineMetadata?: WorkspaceJobPipelineMetadata;
   draftId?: string;
   baseFingerprint?: string;
   overrideCount: number;
@@ -7438,4 +7455,4 @@ export type SourceMixPlannerResult =
  * Must be bumped according to CONTRACT_CHANGELOG.md rules.
  * Package version alignment is documented in VERSIONING.md.
  */
-export const CONTRACT_VERSION = "4.19.0" as const;
+export const CONTRACT_VERSION = "4.20.0" as const;

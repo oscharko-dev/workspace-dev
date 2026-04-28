@@ -20,6 +20,14 @@ import { StageArtifactStore } from "./pipeline/artifact-store.js";
 import { createWorkspaceLogger } from "../logging.js";
 import { ensureTemplateValidationSeedNodeModules } from "./test-validation-seed.js";
 
+const PIPELINE_METADATA = {
+  pipelineId: "rocket",
+  pipelineDisplayName: "Rocket",
+  templateBundleId: "react-mui-app",
+  buildProfile: "rocket",
+  deterministic: true,
+} as const;
+
 const waitForTerminalStatus = async ({
   getStatus,
   jobId,
@@ -471,11 +479,14 @@ test("createJobEngine accepts jobs and exposes queued status", () => {
   });
   assert.equal(accepted.status, "queued");
   assert.equal(accepted.pipelineId, "rocket");
+  assert.deepEqual(accepted.pipelineMetadata, PIPELINE_METADATA);
   assert.equal(accepted.acceptedModes.figmaSourceMode, "rest");
   assert.equal(accepted.acceptedModes.llmCodegenMode, "deterministic");
   const queuedStatus = engine.getJob(accepted.jobId);
   assert.equal(queuedStatus?.pipelineId, "rocket");
+  assert.deepEqual(queuedStatus?.pipelineMetadata, PIPELINE_METADATA);
   assert.equal(queuedStatus?.request.pipelineId, "rocket");
+  assert.deepEqual(queuedStatus?.request.pipelineMetadata, PIPELINE_METADATA);
   assert.equal(engine.getJob("unknown"), undefined);
   assert.equal(engine.getJobResult("unknown"), undefined);
 });
@@ -2330,12 +2341,14 @@ test("createJobEngine rehydrates completed regeneration jobs and keeps local syn
     baseFingerprint: "fnv1a64:rehydrate",
   });
   assert.equal(regenAccepted.pipelineId, "rocket");
+  assert.deepEqual(regenAccepted.pipelineMetadata, PIPELINE_METADATA);
   const regenStatus = await waitForTerminalStatus({
     getStatus: engine.getJob,
     jobId: regenAccepted.jobId,
     timeoutMs: HEAVY_JOB_TIMEOUT_MS,
   });
   assert.equal(regenStatus.status, "completed");
+  assert.deepEqual(regenStatus.lineage?.pipelineMetadata, PIPELINE_METADATA);
 
   const rehydratedEngine = createFastJobEngine({ tempRoot });
   let rehydrated = rehydratedEngine.getJob(regenAccepted.jobId);
@@ -2348,6 +2361,7 @@ test("createJobEngine rehydrates completed regeneration jobs and keeps local syn
     rehydrated = rehydratedEngine.getJob(regenAccepted.jobId);
   }
   assert.equal(rehydrated?.status, "completed");
+  assert.deepEqual(rehydrated?.pipelineMetadata, PIPELINE_METADATA);
   assert.deepEqual(rehydrated?.request, regenStatus.request);
   assert.deepEqual(rehydrated?.lineage, regenStatus.lineage);
   assert.deepEqual(rehydrated?.generationDiff, regenStatus.generationDiff);
@@ -2714,6 +2728,7 @@ test("createJobEngine accepts submitRetry from a rehydrated failed job", async (
     retryStage,
   });
   assert.equal(retryAccepted.pipelineId, "rocket");
+  assert.deepEqual(retryAccepted.pipelineMetadata, PIPELINE_METADATA);
   assert.equal(retryAccepted.sourceJobId, failedAccepted.jobId);
   assert.equal(retryAccepted.retryStage, retryStage);
   assert.equal(retryAccepted.status, "queued");
@@ -2730,6 +2745,7 @@ test("createJobEngine accepts submitRetry from a rehydrated failed job", async (
     "retry job must carry lineage back to the rehydrated failed source",
   );
   assert.equal(retryStatus.pipelineId, "rocket");
+  assert.deepEqual(retryStatus.lineage?.pipelineMetadata, PIPELINE_METADATA);
 });
 
 test("createJobEngine answers checkStaleDraft against a rehydrated completed job", async () => {
@@ -3352,6 +3368,7 @@ test("createJobEngine supports local_json mode without Figma REST calls", async 
   });
   assert.equal(accepted.acceptedModes.figmaSourceMode, "local_json");
   assert.equal(accepted.pipelineId, "rocket");
+  assert.deepEqual(accepted.pipelineMetadata, PIPELINE_METADATA);
 
   const status = await waitForTerminalStatus({
     getStatus: engine.getJob,
@@ -3364,13 +3381,36 @@ test("createJobEngine supports local_json mode without Figma REST calls", async 
   );
   assert.equal(fetchCalls, 0);
   assert.equal(status.pipelineId, "rocket");
+  assert.deepEqual(status.pipelineMetadata, PIPELINE_METADATA);
   assert.equal(status.request.pipelineId, "rocket");
+  assert.deepEqual(status.request.pipelineMetadata, PIPELINE_METADATA);
   assert.equal(status.request.figmaSourceMode, "local_json");
   assert.equal(status.request.figmaJsonPath, localJsonPath);
   assert.equal(status.request.formHandlingMode, "react_hook_form");
   const result = engine.getJobResult(accepted.jobId);
   assert.equal(result?.pipelineId, "rocket");
+  assert.deepEqual(result?.pipelineMetadata, PIPELINE_METADATA);
   assert.equal(result?.inspector?.pipelineId, "rocket");
+  assert.deepEqual(result?.inspector?.pipelineMetadata, PIPELINE_METADATA);
+  const terminalSnapshot = JSON.parse(
+    await readFile(
+      path.join(status.artifacts.jobDir, "stage-timings.json"),
+      "utf8",
+    ),
+  ) as {
+    pipelineMetadata?: unknown;
+    request?: { pipelineMetadata?: unknown };
+    inspector?: { pipelineMetadata?: unknown };
+  };
+  assert.deepEqual(terminalSnapshot.pipelineMetadata, PIPELINE_METADATA);
+  assert.deepEqual(
+    terminalSnapshot.request?.pipelineMetadata,
+    PIPELINE_METADATA,
+  );
+  assert.deepEqual(
+    terminalSnapshot.inspector?.pipelineMetadata,
+    PIPELINE_METADATA,
+  );
 });
 
 test("createJobEngine fails local_json mode with path-aware figma payload validation errors", async () => {

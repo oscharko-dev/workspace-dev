@@ -25,6 +25,7 @@ import type {
   WorkspaceJobLineage,
   WorkspaceJobLog,
   WorkspaceJobOutcome,
+  WorkspaceJobPipelineMetadata,
   WorkspaceJobQueueState,
   WorkspaceJobRetryTarget,
   WorkspaceJobResult,
@@ -109,6 +110,7 @@ export interface JobRecord {
     url?: string;
   };
   queue: WorkspaceJobQueueState;
+  pipelineMetadata?: WorkspaceJobPipelineMetadata;
   pasteDeltaSummary?: WorkspacePasteDeltaSummary;
   abortController?: AbortController;
   lineage?: WorkspaceJobLineage;

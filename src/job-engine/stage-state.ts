@@ -11,6 +11,10 @@ import type {
   WorkspacePipelineId,
 } from "../contracts/index.js";
 import { redactLogMessage, type WorkspaceRuntimeLogger } from "../logging.js";
+import {
+  clonePipelineMetadata,
+  resolveJobPipelineMetadata,
+} from "./pipeline/pipeline-runtime-metadata.js";
 import type { JobRecord } from "./types.js";
 
 export const STAGE_ORDER: WorkspaceJobStageName[] = [
@@ -218,12 +222,18 @@ export const cloneJobConfidence = (
 
 export const toPublicJob = (job: JobRecord): WorkspaceJobStatus => {
   const pipelineId = resolveJobPipelineId(job);
+  const pipelineMetadata = resolveJobPipelineMetadata(job);
   const status: WorkspaceJobStatus = {
     jobId: job.jobId,
     pipelineId,
+    pipelineMetadata,
     status: job.status,
     submittedAt: job.submittedAt,
-    request: { ...job.request, pipelineId },
+    request: {
+      ...job.request,
+      pipelineId,
+      pipelineMetadata: clonePipelineMetadata(pipelineMetadata),
+    },
     stages: job.stages.map((stage) => ({ ...stage })),
     logs: job.logs.map((entry) => ({ ...entry })),
     artifacts: { ...job.artifacts },
@@ -246,7 +256,16 @@ export const toPublicJob = (job: JobRecord): WorkspaceJobStatus => {
     status.finishedAt = job.finishedAt;
   }
   if (job.lineage) {
-    status.lineage = { ...job.lineage };
+    status.lineage = {
+      ...job.lineage,
+      ...(job.lineage.pipelineMetadata
+        ? {
+            pipelineMetadata: clonePipelineMetadata(
+              job.lineage.pipelineMetadata,
+            ),
+          }
+        : {}),
+    };
   }
   if (job.cancellation) {
     status.cancellation = { ...job.cancellation };
@@ -280,6 +299,7 @@ export const toPublicJob = (job: JobRecord): WorkspaceJobStatus => {
     status.inspector = {
       ...job.inspector,
       pipelineId,
+      pipelineMetadata: clonePipelineMetadata(pipelineMetadata),
       ...(job.inspector.retryableStages
         ? { retryableStages: [...job.inspector.retryableStages] }
         : {}),

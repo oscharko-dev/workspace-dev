@@ -10,6 +10,14 @@ import { StageArtifactStore } from "./artifact-store.js";
 import { STAGE_ARTIFACT_KEYS } from "./artifact-keys.js";
 import { syncPublicJobProjection } from "./public-job-projection.js";
 
+const PIPELINE_METADATA = {
+  pipelineId: "rocket",
+  pipelineDisplayName: "Rocket",
+  templateBundleId: "react-mui-app",
+  buildProfile: "rocket",
+  deterministic: true,
+} as const;
+
 const createJob = async (): Promise<{
   job: JobRecord;
   artifactStore: StageArtifactStore;
@@ -670,6 +678,7 @@ test("syncPublicJobProjection maps stage artifacts back into public job fields a
     changedFiles: 3,
   });
   assert.equal(job.inspector?.pipelineId, "rocket");
+  assert.deepEqual(job.inspector?.pipelineMetadata, PIPELINE_METADATA);
   assert.equal(job.inspector?.mcpCallsConsumed, 3);
 });
 
