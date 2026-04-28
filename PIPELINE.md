@@ -42,6 +42,51 @@ flowchart TB
 - Required stage `reads` are enforced before execution. Optional reads declare conditionally consumed artifacts such as the storybook-first surface without breaking non-storybook runs.
 - Public job fields such as `artifacts.*`, `generationDiff`, and `gitPr` are projected from the stage store by the pipeline kernel rather than being mutated directly inside stage services. That projection includes the curated storybook-first artifact paths when they are available.
 
+## Maintainer authoring contract
+
+Pipeline authors extend `workspace-dev` by choosing implementations behind the shared stages, not by changing the public stage graph.
+The registry selects a pipeline definition and that definition returns submission, regeneration, and retry plans, but every returned plan must preserve the canonical seven-stage order:
+
+1. `figma.source`
+2. `ir.derive`
+3. `template.prepare`
+4. `codegen.generate`
+5. `validate.project`
+6. `repro.export`
+7. `git.pr`
+
+The canonical stage names are part of the public job contract. They appear in job status, logs, diagnostics, retry targets, inspector metadata, and artifact-backed public projection.
+`PipelineOrchestrator` validates each plan before execution and rejects missing stages, duplicate stages, out-of-order stages, invalid stage names, and extra stages after the canonical end with `E_PIPELINE_PLAN_INVALID`.
+This means `PipelineDefinition.buildSubmissionPlan`, `buildRegenerationPlan`, and `buildRetryPlan` are delegate-selection hooks, not arbitrary DAG builders.
+
+Allowed pipeline-specific variation is intentionally narrow:
+
+- Descriptor metadata: pipeline ID, display name, visibility, deterministic template metadata, supported source modes, and supported scopes.
+- Stage implementations or delegates behind the existing stage names, such as a pipeline-specific template bundle inside `template.prepare`, generator inside `codegen.generate`, validation policy inside `validate.project`, or optional Git/PR runner inside `git.pr`.
+- Plan-level skip rules that keep the stage in the canonical position, such as regeneration reusing an earlier source artifact while `figma.source` is marked skipped.
+- Stage artifact contracts: required `reads`, optional reads, required `writes`, skip writes, optional writes, and dynamic artifact contracts when a stage conditionally consumes or emits artifacts.
+- Stage input resolvers that adapt the selected pipeline, request mode, source scope, retry target, or persisted artifacts into the input expected by a stage service.
+
+Shared stages remain shared even when their internals differ by pipeline.
+Submission runs the full ordered sequence.
+Regeneration keeps the same sequence and skips `figma.source` and `git.pr` by plan rule.
+Retry keeps the same sequence and skips earlier retryable boundaries by reusing persisted artifacts.
+The only retryable public boundaries today are `figma.source`, `ir.derive`, `template.prepare`, and `codegen.generate`.
+
+Custom delegates are allowed when they preserve the owning stage name and the stage artifact contract.
+Current delegate seams include:
+
+- `createCodegenGenerateService` for generation, image export, streaming, component manifest, and Storybook-related generation dependencies under `codegen.generate`.
+- `createValidateProjectService` and `runProjectValidationWithDeps` for project validation, validation feedback, diff persistence, visual capture, and comparison work under `validate.project`.
+- `createGitPrService` for replacing the persisted Git/PR flow runner while keeping the public `git.pr` stage.
+
+Delegate implementations must keep deterministic behavior, honor cancellation and error mapping, persist declared required artifacts, and use optional artifacts for pipeline-specific evidence that not every pipeline emits.
+When a delegate creates output that should appear in the public job status or result, add an explicit artifact key and public projection rule; do not bypass the projection layer by mutating compatibility fields directly from a stage service.
+
+Arbitrary new stage names, inserted stages, conditional DAG nodes, parallel branches, fan-out/fan-in execution, and new public retry boundaries are out of scope for the current pipeline-authoring contract.
+Those changes would require a core redesign across `WorkspaceJobStageName`, retry contracts, job status shape, orchestrator ordering, cancellation, artifact dependency validation, UI/inspector assumptions, migration policy, and compatibility tests.
+Until that redesign exists, new pipeline behavior must be expressed as delegates, artifact contracts, and skip rules inside the canonical stage order.
+
 ## Backend coverage gate
 
 - `pnpm run test:coverage` is the authoritative backend coverage gate. It runs `c8 --all` across `src/**/*.ts`, then enforces the fixed threshold policy from [`scripts/check-coverage-thresholds.mjs`](scripts/check-coverage-thresholds.mjs).

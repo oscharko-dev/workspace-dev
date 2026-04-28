@@ -30,6 +30,7 @@ import {
   getAllowedLlmCodegenModes,
   getWorkspaceDefaults,
 } from "./mode-lock.js";
+import { STAGE_ORDER } from "./job-engine/stage-state.js";
 import { PASTE_ERROR_CATALOG } from "../ui-src/src/features/workspace/inspector/paste-error-catalog.ts";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -273,6 +274,50 @@ test("docs: validation and app template source contain expected pipeline pattern
   assert.match(validationSource, /args: \["run", "perf:assert"\]/);
   assert.match(appTemplateSource, /BrowserRouter/);
   assert.match(appTemplateSource, /HashRouter/);
+});
+
+test("docs: pipeline authoring guide stays aligned with canonical stage contract", async () => {
+  const pipelineDoc = await readRepoFile("PIPELINE.md");
+  const authoringSection = extractMarkdownTopLevelSection(
+    pipelineDoc,
+    "Maintainer authoring contract",
+  );
+
+  assert.ok(authoringSection);
+  for (const [index, stageName] of STAGE_ORDER.entries()) {
+    assert.match(
+      authoringSection,
+      new RegExp(`${index + 1}\\. \`${escapeRegExp(stageName)}\``),
+    );
+  }
+  assert.match(
+    authoringSection,
+    /Pipeline authors extend `workspace-dev` by choosing implementations behind the shared stages, not by changing the public stage graph\./,
+  );
+  assert.match(
+    authoringSection,
+    /delegate-selection hooks, not arbitrary DAG builders/,
+  );
+  assert.match(
+    authoringSection,
+    /Regeneration keeps the same sequence and skips `figma\.source` and `git\.pr` by plan rule\./,
+  );
+  assert.match(
+    authoringSection,
+    /The only retryable public boundaries today are `figma\.source`, `ir\.derive`, `template\.prepare`, and `codegen\.generate`\./,
+  );
+  assert.match(authoringSection, /createCodegenGenerateService/);
+  assert.match(authoringSection, /createValidateProjectService/);
+  assert.match(authoringSection, /runProjectValidationWithDeps/);
+  assert.match(authoringSection, /createGitPrService/);
+  assert.match(
+    authoringSection,
+    /Arbitrary new stage names, inserted stages, conditional DAG nodes, parallel branches, fan-out\/fan-in execution, and new public retry boundaries are out of scope/,
+  );
+  assert.match(
+    authoringSection,
+    /new pipeline behavior must be expressed as delegates, artifact contracts, and skip rules inside the canonical stage order/,
+  );
 });
 
 test("docs: troubleshooting guide is linked from README and included in the published package", async () => {
