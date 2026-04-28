@@ -669,6 +669,7 @@ test("syncPublicJobProjection maps stage artifacts back into public job fields a
     scopePath: "src",
     changedFiles: 3,
   });
+  assert.equal(job.inspector?.pipelineId, "rocket");
   assert.equal(job.inspector?.mcpCallsConsumed, 3);
 });
 

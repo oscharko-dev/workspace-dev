@@ -9798,7 +9798,7 @@ Present only when `figmaSourceMode === "figma_paste" | "figma_plugin"` and diff 
 
 ###### Inherited from
 
-[`WorkspaceSubmitAccepted`](#workspacesubmitaccepted).[`pipelineId`](#pipelineid-3)
+[`WorkspaceSubmitAccepted`](#workspacesubmitaccepted).[`pipelineId`](#pipelineid-8)
 
 ##### sessionId
 
@@ -10278,6 +10278,10 @@ Successful MCP read-tool calls consumed by this job.
 
 > `optional` **outcome?**: [`WorkspaceJobOutcome`](#workspacejoboutcome)
 
+##### pipelineId
+
+> **pipelineId**: [`WorkspacePipelineId`](#workspacepipelineid)
+
 ##### retryableStages?
 
 > `optional` **retryableStages?**: [`WorkspaceJobRetryStage`](#workspacejobretrystage)[]
@@ -10614,6 +10618,10 @@ Compact result payload for terminal-state inspection.
 
 > `optional` **pasteDeltaSummary?**: [`WorkspacePasteDeltaSummary`](#workspacepastedeltasummary)
 
+##### pipelineId
+
+> **pipelineId**: [`WorkspacePipelineId`](#workspacepipelineid)
+
 ##### preview
 
 > **preview**: `object`
@@ -10773,6 +10781,10 @@ Full job status payload for polling endpoint.
 ##### pasteDeltaSummary?
 
 > `optional` **pasteDeltaSummary?**: [`WorkspacePasteDeltaSummary`](#workspacepastedeltasummary)
+
+##### pipelineId
+
+> **pipelineId**: [`WorkspacePipelineId`](#workspacepipelineid)
 
 ##### preview
 
@@ -11218,6 +11230,10 @@ Submit response for accepted regeneration jobs.
 
 > **jobId**: `string`
 
+##### pipelineId
+
+> **pipelineId**: [`WorkspacePipelineId`](#workspacepipelineid)
+
 ##### sourceJobId
 
 > **sourceJobId**: `string`
@@ -11475,6 +11491,10 @@ Submit response for accepted retry jobs.
 ##### jobId
 
 > **jobId**: `string`
+
+##### pipelineId
+
+> **pipelineId**: [`WorkspacePipelineId`](#workspacepipelineid)
 
 ##### retryStage
 
@@ -14693,7 +14713,7 @@ Schema version for `BusinessTestIntentIr` artifacts.
 
 ### CONTRACT\_VERSION
 
-> `const` **CONTRACT\_VERSION**: `"4.18.0"`
+> `const` **CONTRACT\_VERSION**: `"4.19.0"`
 
 Current contract version constant.
 Must be bumped according to CONTRACT_CHANGELOG.md rules.

@@ -389,6 +389,7 @@ test("toPublicJob deep copies nested stage-state projections", () => {
     lowConfidenceSummary: ["review copy"],
   };
   job.inspector = {
+    pipelineId: "rocket",
     stages: [
       {
         stage: "ir.derive",
@@ -425,6 +426,9 @@ test("toPublicJob deep copies nested stage-state projections", () => {
   };
 
   const publicJob = toPublicJob(job);
+  assert.equal(publicJob.pipelineId, "rocket");
+  assert.equal(publicJob.request.pipelineId, "rocket");
+  assert.equal(publicJob.inspector?.pipelineId, "rocket");
   publicJob.stages[0]!.message = "changed";
   publicJob.logs[0]!.message = "changed";
   publicJob.pasteDeltaSummary!.mode = "delta";

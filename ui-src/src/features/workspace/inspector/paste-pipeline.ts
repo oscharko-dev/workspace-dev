@@ -794,6 +794,7 @@ interface RetryStageAcceptedPayload {
   jobId?: string;
   sourceJobId?: string;
   status?: string;
+  pipelineId?: string;
   pasteDeltaSummary?: unknown;
 }
 

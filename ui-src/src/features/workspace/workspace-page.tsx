@@ -49,6 +49,7 @@ const JOB_POLL_INTERVAL_MS = 1_500;
 
 interface SubmitAcceptedPayload {
   jobId?: string;
+  pipelineId?: string;
   error?: string;
 }
 

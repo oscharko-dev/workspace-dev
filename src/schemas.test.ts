@@ -68,6 +68,24 @@ test("schema: valid submit body parses correctly", () => {
   }
 });
 
+test("schema: invalid pipelineId reports a field-level issue", () => {
+  const result = SubmitRequestSchema.safeParse({
+    pipelineId: " ",
+    figmaFileKey: "abc123",
+    figmaAccessToken: "figd_xxx",
+  });
+
+  assert.equal(result.success, false);
+  if (!result.success) {
+    assert.deepEqual(result.error.issues, [
+      {
+        path: ["pipelineId"],
+        message: "pipelineId must not be empty",
+      },
+    ]);
+  }
+});
+
 test("schema: valid submit body accepts exact and pattern componentMappings", () => {
   const result = SubmitRequestSchema.safeParse({
     figmaFileKey: "abc123",

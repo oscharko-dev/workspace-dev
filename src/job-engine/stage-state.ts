@@ -8,6 +8,7 @@ import type {
   WorkspaceJobStageStatus,
   WorkspaceJobStatus,
   WorkspaceLlmCodegenMode,
+  WorkspacePipelineId,
 } from "../contracts/index.js";
 import { redactLogMessage, type WorkspaceRuntimeLogger } from "../logging.js";
 import type { JobRecord } from "./types.js";
@@ -32,6 +33,13 @@ export const toFileSystemSafe = (value: string): string => {
 };
 
 export const nowIso = (): string => new Date().toISOString();
+
+const LEGACY_COMPATIBILITY_PIPELINE_ID = "rocket" satisfies WorkspacePipelineId;
+
+export const resolveJobPipelineId = (
+  job: Pick<JobRecord, "request">,
+): WorkspacePipelineId =>
+  job.request.pipelineId ?? LEGACY_COMPATIBILITY_PIPELINE_ID;
 
 export const createInitialStages = (): WorkspaceJobStage[] => {
   return STAGE_ORDER.map((name) => ({
@@ -209,11 +217,13 @@ export const cloneJobConfidence = (
 });
 
 export const toPublicJob = (job: JobRecord): WorkspaceJobStatus => {
+  const pipelineId = resolveJobPipelineId(job);
   const status: WorkspaceJobStatus = {
     jobId: job.jobId,
+    pipelineId,
     status: job.status,
     submittedAt: job.submittedAt,
-    request: { ...job.request },
+    request: { ...job.request, pipelineId },
     stages: job.stages.map((stage) => ({ ...stage })),
     logs: job.logs.map((entry) => ({ ...entry })),
     artifacts: { ...job.artifacts },
@@ -269,6 +279,7 @@ export const toPublicJob = (job: JobRecord): WorkspaceJobStatus => {
   if (job.inspector) {
     status.inspector = {
       ...job.inspector,
+      pipelineId,
       ...(job.inspector.retryableStages
         ? { retryableStages: [...job.inspector.retryableStages] }
         : {}),

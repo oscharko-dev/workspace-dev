@@ -6385,6 +6385,15 @@ export function createWorkspaceRequestHandler({
                   fallback: "Invalid pipeline request.",
                 }),
                 ...(error.pipelineId ? { pipelineId: error.pipelineId } : {}),
+                issues: [
+                  {
+                    path: "pipelineId",
+                    message: sanitizeErrorMessage({
+                      error,
+                      fallback: "Invalid pipeline request.",
+                    }),
+                  },
+                ],
               },
               fallbackMessage: "Submit request validation failed.",
             });

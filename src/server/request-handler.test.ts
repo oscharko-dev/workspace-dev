@@ -5127,6 +5127,13 @@ test("request handler stale-check, remap-suggest, submit, and cancel routes cove
           assert.equal(body.error, "PIPELINE_UNAVAILABLE");
           assert.equal(body.pipelineId, "default");
           assert.match(String(body.message), /not available/i);
+          assert.deepEqual(body.issues, [
+            {
+              path: "pipelineId",
+              message:
+                "Pipeline 'default' is not available in this build profile.",
+            },
+          ]);
           assert.equal(submitJob.mock.callCount(), 1);
         } finally {
           await scoped.close();

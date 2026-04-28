@@ -366,6 +366,7 @@ interface RegenerationAcceptedPayload {
   jobId: string;
   sourceJobId: string;
   status: "queued";
+  pipelineId?: string;
 }
 
 function isCreatePrPayload(value: unknown): value is CreatePrPayload {
