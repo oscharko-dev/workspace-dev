@@ -21,17 +21,17 @@ It provides deterministic HTTP behavior for:
 
 - local in-process job engine (no Redis, no Postgres, no external worker)
 - pipeline kernel (`src/job-engine/pipeline/`) with:
-  - `PipelineOrchestrator` for stage ordering, skip logic, cancellation, status/log updates, and pipeline error mapping
-  - `StageArtifactStore` for filesystem-backed stage artifact references under each job directory
-  - public job projection that syncs artifact-backed outputs back into compatibility fields such as `artifacts.*`, `generationDiff`, and `gitPr`
+    - `PipelineOrchestrator` for stage ordering, skip logic, cancellation, status/log updates, and pipeline error mapping
+    - `StageArtifactStore` for filesystem-backed stage artifact references under each job directory
+    - public job projection that syncs artifact-backed outputs back into compatibility fields such as `artifacts.*`, `generationDiff`, and `gitPr`
 - seven internal stage services (`src/job-engine/services/`):
-  - `figma.source` (Figma fetch/local JSON, cleaning, optional authoritative subtree merge)
-  - `ir.derive` (IR derivation, IR cache, diagnostics, regeneration from seeded source-IR artifacts)
-  - `template.prepare` (template reset/copy)
-  - `codegen.generate` (deterministic generation stream, optional image export, manifest, diff context)
-  - `validate.project` (validation gate, feedback loop, canonical final diff persistence)
-  - `repro.export` (generated `dist` export)
-  - `git.pr` (optional git/pr automation)
+    - `figma.source` (Figma fetch/local JSON, cleaning, optional authoritative subtree merge)
+    - `ir.derive` (IR derivation, IR cache, diagnostics, regeneration from seeded source-IR artifacts)
+    - `template.prepare` (template reset/copy)
+    - `codegen.generate` (deterministic generation stream, optional image export, manifest, diff context)
+    - `validate.project` (validation gate, feedback loop, canonical final diff persistence)
+    - `repro.export` (generated `dist` export)
+    - `git.pr` (optional git/pr automation)
 - integrated preview file serving from generated artifacts
 
 Execution plans:
@@ -95,10 +95,11 @@ Default output root is `.workspace-dev` in the current project.
 
 ### Template packaging invariants
 
-- The published npm package intentionally includes each bundled template `pnpm-lock.yaml` alongside its `package.json`.
+- The published npm package intentionally includes each bundled template lockfile, including `template/react-mui-app/pnpm-lock.yaml` and `template/react-tailwind-app/pnpm-lock.yaml`, alongside each template `package.json`.
 - The rationale is deterministic template installs for the shipped generated-app baselines and air-gap-friendly reproducibility when consumers install the published package offline.
 - Root package inclusion is controlled by `package.json` `files`; that allowlist intentionally keeps the `template/` subtree while excluding template `node_modules` directories and template test files.
-- Maintainers update bundled template lockfiles only in this repository when template dependencies or template scripts change, then keep the relevant `template:*:install` commands and release quality gates green.
+- Maintainers update bundled template lockfiles only in this repository when template dependencies or template scripts change, then keep the relevant `template:*:install` / `--frozen-lockfile` commands and release quality gates green.
+- The OSS default `template/react-tailwind-app` boundary is enforced by `pnpm run template:tailwind:dependency-denylist`, which blocks direct MUI, Emotion, Rocket/customer, telemetry SDK, and unreviewed static asset additions before release.
 - Consumers should treat the bundled template lockfile as package-owned metadata shipped inside the tarball, not as a file to hand-edit under `node_modules`.
 - `pnpm run verify:airgap` validates that the packed tarball installs offline with the bundled template assets, while `pnpm run verify:reproducible-build` separately validates repeatable `dist/` build artifacts and the packed tarball across consecutive clean iterations.
 

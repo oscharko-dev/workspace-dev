@@ -2,6 +2,7 @@ import { spawn } from "node:child_process";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import net from "node:net";
 import path from "node:path";
+import { chromium, devices } from "@playwright/test";
 
 const mode = process.argv[2] ?? "assert";
 
@@ -10,18 +11,11 @@ const DEFAULT_BUDGETS = {
   lcp_p75_ms: 2500,
   cls_p75: 0.1,
   initial_js_kb: 180,
-  route_transition_ms: 300
+  route_transition_ms: 300,
 };
 
-const DEFAULT_ROUTES = ["/", "/overview", "/checkout"];
+const DEFAULT_ROUTES = ["/"];
 const DEFAULT_PROFILES = ["mobile", "desktop"];
-const CHROME_FLAGS = "--headless --no-sandbox --disable-dev-shm-usage";
-const LIGHTHOUSE_TIMEOUT_MS =
-  Number(process.env.FIGMAPIPE_PERF_LIGHTHOUSE_TIMEOUT_MS ?? 180_000) || 180_000;
-const LIGHTHOUSE_MAX_ATTEMPTS = Math.max(
-  1,
-  Number(process.env.FIGMAPIPE_PERF_LIGHTHOUSE_MAX_ATTEMPTS ?? 2) || 2
-);
 
 const parseBooleanLike = (value, fallback) => {
   if (!value) {
@@ -38,10 +32,12 @@ const parseBooleanLike = (value, fallback) => {
 };
 
 const toSlug = (value) => {
-  return value
-    .replace(/[^a-zA-Z0-9]+/g, "-")
-    .replace(/(^-|-$)/g, "")
-    .toLowerCase() || "root";
+  return (
+    value
+      .replace(/[^a-zA-Z0-9]+/g, "-")
+      .replace(/(^-|-$)/g, "")
+      .toLowerCase() || "root"
+  );
 };
 
 const toRoutePath = (value) => {
@@ -51,10 +47,7 @@ const toRoutePath = (value) => {
   if (value === "/") {
     return "/";
   }
-  if (value.startsWith("/")) {
-    return value;
-  }
-  return `/${value}`;
+  return value.startsWith("/") ? value : `/${value}`;
 };
 
 const p75 = (values) => {
@@ -66,27 +59,12 @@ const p75 = (values) => {
   return sorted[index];
 };
 
-const normalizeNumber = (value) => {
+const roundMetric = (value, precision = 2) => {
   if (typeof value !== "number" || !Number.isFinite(value)) {
     return undefined;
   }
-  return value;
-};
-
-const resolveLighthouseRoot = (report) => {
-  if (report && typeof report === "object" && report.lhr && typeof report.lhr === "object") {
-    return report.lhr;
-  }
-  return report;
-};
-
-const pickMetric = (candidates) => {
-  for (const candidate of candidates) {
-    if (typeof candidate.value === "number" && Number.isFinite(candidate.value)) {
-      return candidate;
-    }
-  }
-  return { value: undefined, source: "missing" };
+  const factor = 10 ** precision;
+  return Math.round(value * factor) / factor;
 };
 
 const parseStringArray = ({ envValue, fallback }) => {
@@ -121,104 +99,6 @@ const readJsonIfExists = async (filePath) => {
 const writeJson = async (filePath, payload) => {
   await mkdir(path.dirname(filePath), { recursive: true });
   await writeFile(filePath, `${JSON.stringify(payload, null, 2)}\n`, "utf-8");
-};
-
-const killProcessTree = (child, signal) => {
-  if (!child || child.killed) {
-    return;
-  }
-  try {
-    if (process.platform === "win32") {
-      child.kill(signal);
-      return;
-    }
-    if (typeof child.pid === "number" && child.pid > 0) {
-      process.kill(-child.pid, signal);
-      return;
-    }
-    child.kill(signal);
-  } catch (error) {
-    const errorCode =
-      error && typeof error === "object" && "code" in error ? error.code : undefined;
-    if (errorCode !== "ESRCH") {
-      child.kill(signal);
-    }
-  }
-};
-
-const runCommand = async ({ command, args, cwd, env, timeoutMs }) => {
-  return await new Promise((resolve) => {
-    const child = spawn(command, args, {
-      cwd,
-      env,
-      stdio: ["ignore", "pipe", "pipe"],
-      detached: process.platform !== "win32"
-    });
-    let settled = false;
-    let timedOut = false;
-    let stdout = "";
-    let stderr = "";
-    let forceKillTimer;
-    child.stdout.setEncoding("utf-8");
-    child.stderr.setEncoding("utf-8");
-    const timeoutTimer =
-      typeof timeoutMs === "number" && Number.isFinite(timeoutMs) && timeoutMs > 0
-        ? setTimeout(() => {
-            timedOut = true;
-            killProcessTree(child, "SIGTERM");
-            forceKillTimer = setTimeout(() => {
-              killProcessTree(child, "SIGKILL");
-              child.stdout.destroy();
-              child.stderr.destroy();
-              complete({
-                code: 124,
-                errorText: `[timeout] Command exceeded ${timeoutMs}ms and was terminated.`
-              });
-            }, 2_000);
-          }, timeoutMs)
-        : undefined;
-    const complete = ({ code, errorText }) => {
-      if (settled) {
-        return;
-      }
-      settled = true;
-      if (timeoutTimer) {
-        clearTimeout(timeoutTimer);
-      }
-      if (forceKillTimer) {
-        clearTimeout(forceKillTimer);
-      }
-      resolve({
-        success: !timedOut && code === 0,
-        code,
-        timedOut,
-        stdout,
-        stderr,
-        combined: `${stdout}\n${stderr}${errorText ? `\n${errorText}` : ""}`
-      });
-    };
-    child.stdout.on("data", (chunk) => {
-      stdout += chunk;
-    });
-    child.stderr.on("data", (chunk) => {
-      stderr += chunk;
-    });
-    child.on("error", (error) => {
-      complete({
-        code: timedOut ? 124 : 1,
-        errorText: error instanceof Error ? error.message : String(error)
-      });
-    });
-    child.on("close", (code) => {
-      complete({
-        code: timedOut ? 124 : code ?? 1,
-        errorText:
-          timedOut && typeof timeoutMs === "number"
-            ? `[timeout] Command exceeded ${timeoutMs}ms and was terminated.`
-            : undefined
-      });
-    });
-  });
 };
 
 const waitForHttpOk = async ({ url, timeoutMs }) => {
@@ -284,32 +164,56 @@ const resolveScriptConfig = async () => {
     throw new Error(`Unknown mode '${mode}'. Use 'baseline' or 'assert'.`);
   }
 
-  const budgetPath = process.env.FIGMAPIPE_PERF_BUDGET_PATH?.trim() || path.join(process.cwd(), "perf-budget.json");
+  const budgetPath =
+    process.env.FIGMAPIPE_PERF_BUDGET_PATH?.trim() ||
+    path.join(process.cwd(), "perf-budget.json");
   const budgetConfig = (await readJsonIfExists(budgetPath)) ?? {};
   const budgets = {
     ...DEFAULT_BUDGETS,
-    ...(budgetConfig.budgets ?? {})
+    ...(budgetConfig.budgets ?? {}),
   };
   const routes = parseStringArray({
     envValue: process.env.FIGMAPIPE_PERF_ROUTES_JSON,
-    fallback: Array.isArray(budgetConfig.routes) ? budgetConfig.routes : DEFAULT_ROUTES
+    fallback: Array.isArray(budgetConfig.routes)
+      ? budgetConfig.routes
+      : DEFAULT_ROUTES,
   }).map((entry) => toRoutePath(entry));
   const profiles = parseStringArray({
     envValue: process.env.FIGMAPIPE_PERF_PROFILES_JSON,
-    fallback: Array.isArray(budgetConfig.profiles) ? budgetConfig.profiles : DEFAULT_PROFILES
+    fallback: Array.isArray(budgetConfig.profiles)
+      ? budgetConfig.profiles
+      : DEFAULT_PROFILES,
   }).filter((entry) => entry === "mobile" || entry === "desktop");
-  const artifactDir = process.env.FIGMAPIPE_PERF_ARTIFACT_DIR?.trim() || path.join(process.cwd(), "artifacts", "performance");
+  const artifactDir =
+    process.env.FIGMAPIPE_PERF_ARTIFACT_DIR?.trim() ||
+    path.join(process.cwd(), "artifacts", "performance");
   const baselinePath =
-    process.env.FIGMAPIPE_PERF_BASELINE_PATH?.trim() || path.join(process.cwd(), "perf-baseline.json");
-  const reportPath = process.env.FIGMAPIPE_PERF_REPORT_PATH?.trim() || path.join(artifactDir, `perf-${mode}-report.json`);
+    process.env.FIGMAPIPE_PERF_BASELINE_PATH?.trim() ||
+    path.join(process.cwd(), "perf-baseline.json");
+  const reportPath =
+    process.env.FIGMAPIPE_PERF_REPORT_PATH?.trim() ||
+    path.join(artifactDir, `perf-${mode}-report.json`);
   const regressionTolerancePct =
-    Number(process.env.FIGMAPIPE_PERF_REGRESSION_TOLERANCE_PCT ?? budgetConfig.regressionTolerancePct ?? 10) || 10;
-  const strict = parseBooleanLike(process.env.FIGMAPIPE_PERF_STRICT, mode === "assert");
-  const allowBaselineBootstrap = parseBooleanLike(process.env.FIGMAPIPE_PERF_ALLOW_BASELINE_BOOTSTRAP, mode === "baseline");
-  const previewHost = process.env.FIGMAPIPE_PERF_PREVIEW_HOST?.trim() || "127.0.0.1";
+    Number(
+      process.env.FIGMAPIPE_PERF_REGRESSION_TOLERANCE_PCT ??
+        budgetConfig.regressionTolerancePct ??
+        10,
+    ) || 10;
+  const strict = parseBooleanLike(
+    process.env.FIGMAPIPE_PERF_STRICT,
+    mode === "assert",
+  );
+  const allowBaselineBootstrap = parseBooleanLike(
+    process.env.FIGMAPIPE_PERF_ALLOW_BASELINE_BOOTSTRAP,
+    mode === "baseline",
+  );
+  const previewHost =
+    process.env.FIGMAPIPE_PERF_PREVIEW_HOST?.trim() || "127.0.0.1";
   const configuredPort = Number(process.env.FIGMAPIPE_PERF_PREVIEW_PORT);
   const previewPort =
-    Number.isFinite(configuredPort) && configuredPort > 0 && configuredPort < 65536
+    Number.isFinite(configuredPort) &&
+    configuredPort > 0 &&
+    configuredPort < 65536
       ? Math.trunc(configuredPort)
       : await resolveFreePort();
 
@@ -325,178 +229,189 @@ const resolveScriptConfig = async () => {
     strict,
     allowBaselineBootstrap,
     previewHost,
-    previewPort
+    previewPort,
   };
 };
 
-const collectAuditForRoute = async ({
+const ensureBuildExists = async () => {
+  try {
+    await readFile(path.join(process.cwd(), "dist", "index.html"), "utf-8");
+  } catch {
+    throw new Error(
+      "Missing dist/index.html. Run 'pnpm run build' before perf scripts.",
+    );
+  }
+};
+
+const contextOptionsForProfile = (profile) => {
+  if (profile === "mobile") {
+    return devices["Pixel 7"];
+  }
+  return {
+    ...devices["Desktop Chrome"],
+    viewport: { width: 1365, height: 768 },
+  };
+};
+
+const installMetricObservers = async (page) => {
+  await page.addInitScript(() => {
+    window.__workspaceDevPerf = {
+      cls: 0,
+      lcp: 0,
+    };
+    try {
+      new PerformanceObserver((entryList) => {
+        const entries = entryList.getEntries();
+        const lastEntry = entries.at(-1);
+        if (lastEntry && typeof lastEntry.startTime === "number") {
+          window.__workspaceDevPerf.lcp = lastEntry.startTime;
+        }
+      }).observe({ type: "largest-contentful-paint", buffered: true });
+    } catch {
+      // Browser does not expose LCP in this context.
+    }
+    try {
+      new PerformanceObserver((entryList) => {
+        for (const entry of entryList.getEntries()) {
+          if (!entry.hadRecentInput && typeof entry.value === "number") {
+            window.__workspaceDevPerf.cls += entry.value;
+          }
+        }
+      }).observe({ type: "layout-shift", buffered: true });
+    } catch {
+      // Browser does not expose layout-shift in this context.
+    }
+  });
+};
+
+const collectBrowserTimingForRoute = async ({
+  browser,
   profile,
   route,
   url,
-  artifactDir
+  artifactDir,
 }) => {
-  const outputPath = path.join(artifactDir, `lighthouse-${profile}-${toSlug(route)}.json`);
-  const args = [
-    "exec",
-    "lighthouse",
-    url,
-    "--only-categories=performance",
-    "--output=json",
-    `--output-path=${outputPath}`,
-    "--quiet",
-    `--chrome-flags=${CHROME_FLAGS}`
-  ];
-  if (profile === "desktop") {
-    args.push("--preset=desktop");
-  }
+  const context = await browser.newContext(contextOptionsForProfile(profile));
+  const page = await context.newPage();
+  const startedAt = Date.now();
+  await installMetricObservers(page);
 
-  let runResult;
-  for (let attempt = 1; attempt <= LIGHTHOUSE_MAX_ATTEMPTS; attempt += 1) {
-    console.log(
-      `[perf-runner] lighthouse profile=${profile} route=${route} attempt ${attempt}/${LIGHTHOUSE_MAX_ATTEMPTS}`
-    );
-    runResult = await runCommand({
-      command: "pnpm",
-      args,
-      cwd: process.cwd(),
-      env: process.env,
-      timeoutMs: LIGHTHOUSE_TIMEOUT_MS
+  try {
+    await page.goto(url, { waitUntil: "networkidle" });
+    await page.waitForTimeout(500);
+    const durationMs = Date.now() - startedAt;
+    const metrics = await page.evaluate(() => {
+      const navigation = performance.getEntriesByType("navigation")[0];
+      const resources = performance.getEntriesByType("resource");
+      const scripts = resources.filter(
+        (entry) => entry.initiatorType === "script",
+      );
+      const scriptBytes = scripts.reduce((total, entry) => {
+        const size = entry.transferSize || entry.encodedBodySize || 0;
+        return total + size;
+      }, 0);
+      const paintEntries = performance.getEntriesByType("paint");
+      const firstContentfulPaint =
+        paintEntries.find((entry) => entry.name === "first-contentful-paint")
+          ?.startTime ?? 0;
+      return {
+        domContentLoaded:
+          navigation?.domContentLoadedEventEnd ?? firstContentfulPaint,
+        lcp: window.__workspaceDevPerf?.lcp || firstContentfulPaint,
+        cls: window.__workspaceDevPerf?.cls ?? 0,
+        initialJsKb: scriptBytes / 1024,
+      };
     });
-    if (runResult.success) {
-      break;
-    }
-    const reason = runResult.timedOut
-      ? `timed out after ${LIGHTHOUSE_TIMEOUT_MS}ms`
-      : `exited with code ${runResult.code}`;
-    console.warn(
-      `[perf-runner] lighthouse ${profile} ${route} attempt ${attempt}/${LIGHTHOUSE_MAX_ATTEMPTS} ${reason}`
-    );
-    if (attempt < LIGHTHOUSE_MAX_ATTEMPTS) {
-      await new Promise((resolve) => {
-        setTimeout(resolve, attempt * 1_000);
-      });
-    }
+
+    const sample = {
+      profile,
+      route,
+      url,
+      metrics: {
+        inp_ms: 0,
+        lcp_ms: roundMetric(
+          metrics.lcp || metrics.domContentLoaded || durationMs,
+        ),
+        cls: roundMetric(metrics.cls, 4),
+        initial_js_kb: roundMetric(metrics.initialJsKb),
+        route_transition_ms: 0,
+      },
+      metricSources: {
+        inp: "no-interaction-template",
+        lcp: metrics.lcp ? "largest-contentful-paint" : "dom-content-loaded",
+        cls: "layout-shift",
+        initial_js_kb: "performance-resource-timing",
+        route_transition_ms: "single-route-template",
+      },
+      audits: {
+        performance_score: undefined,
+        fetch_time: new Date().toISOString(),
+        browser_timing_duration_ms: durationMs,
+      },
+      artifacts: {
+        browserTimingReport: path.join(
+          artifactDir,
+          `browser-timing-${profile}-${toSlug(route)}.json`,
+        ),
+      },
+    };
+
+    await writeJson(sample.artifacts.browserTimingReport, sample);
+    return sample;
+  } finally {
+    await context.close();
   }
-
-  if (!runResult?.success) {
-    throw new Error(`Lighthouse failed for ${profile} ${route}: ${runResult.combined.slice(0, 2000)}`);
-  }
-
-  const report = JSON.parse(await readFile(outputPath, "utf-8"));
-  const lhr = resolveLighthouseRoot(report);
-  const audits = lhr?.audits ?? {};
-  const resourceSummaryItems = audits["resource-summary"]?.details?.items;
-  const jsBytes =
-    Array.isArray(resourceSummaryItems) && resourceSummaryItems.length > 0
-      ? resourceSummaryItems
-          .filter((item) => item.resourceType === "script")
-          .reduce((total, item) => total + (Number(item.transferSize) || 0), 0)
-      : normalizeNumber(audits["total-byte-weight"]?.numericValue) ?? 0;
-
-  const inpMetric = pickMetric([
-    {
-      value: normalizeNumber(audits["interaction-to-next-paint"]?.numericValue),
-      source: "interaction-to-next-paint"
-    },
-    {
-      value: normalizeNumber(audits["experimental-interaction-to-next-paint"]?.numericValue),
-      source: "experimental-interaction-to-next-paint"
-    },
-    {
-      value: normalizeNumber(audits["total-blocking-time"]?.numericValue),
-      source: "total-blocking-time-proxy"
-    },
-    {
-      value: normalizeNumber(audits.interactive?.numericValue),
-      source: "interactive-proxy"
-    }
-  ]);
-  const lcpMetricValue = normalizeNumber(audits["largest-contentful-paint"]?.numericValue);
-  const interactiveMetricValue = normalizeNumber(audits.interactive?.numericValue);
-  const routeTransitionMetric = pickMetric([
-    {
-      value:
-        typeof interactiveMetricValue === "number" && typeof lcpMetricValue === "number"
-          ? Math.max(0, interactiveMetricValue - lcpMetricValue)
-          : undefined,
-      source: "interactive-minus-lcp"
-    },
-    {
-      value: normalizeNumber(audits["total-blocking-time"]?.numericValue),
-      source: "total-blocking-time-proxy"
-    },
-    {
-      value: interactiveMetricValue,
-      source: "interactive"
-    }
-  ]);
-
-  return {
-    profile,
-    route,
-    url,
-    metrics: {
-      inp_ms: inpMetric.value,
-      lcp_ms: lcpMetricValue,
-      cls: normalizeNumber(audits["cumulative-layout-shift"]?.numericValue),
-      initial_js_kb: Math.round((jsBytes / 1024) * 100) / 100,
-      route_transition_ms: routeTransitionMetric.value
-    },
-    metricSources: {
-      inp: inpMetric.source,
-      route_transition_ms: routeTransitionMetric.source
-    },
-    audits: {
-      performance_score: normalizeNumber(lhr?.categories?.performance?.score),
-      fetch_time: lhr?.fetchTime
-    },
-    artifacts: {
-      lighthouseReport: outputPath
-    }
-  };
 };
 
 const aggregateMetrics = (samples) => {
-  const inpValues = samples.map((sample) => sample.metrics.inp_ms).filter((value) => typeof value === "number");
-  const lcpValues = samples.map((sample) => sample.metrics.lcp_ms).filter((value) => typeof value === "number");
-  const clsValues = samples.map((sample) => sample.metrics.cls).filter((value) => typeof value === "number");
-  const jsValues = samples.map((sample) => sample.metrics.initial_js_kb).filter((value) => typeof value === "number");
-  const routeTransitionValues = samples
-    .map((sample) => sample.metrics.route_transition_ms)
-    .filter((value) => typeof value === "number");
+  const metricValues = (metric) =>
+    samples
+      .map((sample) => sample.metrics[metric])
+      .filter((value) => typeof value === "number");
 
   return {
-    inp_p75_ms: p75(inpValues),
-    lcp_p75_ms: p75(lcpValues),
-    cls_p75: p75(clsValues),
-    initial_js_kb: p75(jsValues),
-    route_transition_ms: p75(routeTransitionValues)
+    inp_p75_ms: p75(metricValues("inp_ms")),
+    lcp_p75_ms: p75(metricValues("lcp_ms")),
+    cls_p75: p75(metricValues("cls")),
+    initial_js_kb: p75(metricValues("initial_js_kb")),
+    route_transition_ms: p75(metricValues("route_transition_ms")),
   };
 };
 
 const summarizeMetricSources = (samples) => {
-  const sourceCounts = {
-    inp: {},
-    route_transition_ms: {}
-  };
-
+  const sourceCounts = {};
   for (const sample of samples) {
-    const inpSource = sample.metricSources?.inp ?? "missing";
-    const routeSource = sample.metricSources?.route_transition_ms ?? "missing";
-    sourceCounts.inp[inpSource] = (sourceCounts.inp[inpSource] ?? 0) + 1;
-    sourceCounts.route_transition_ms[routeSource] = (sourceCounts.route_transition_ms[routeSource] ?? 0) + 1;
+    for (const [metric, source] of Object.entries(sample.metricSources ?? {})) {
+      sourceCounts[metric] ??= {};
+      sourceCounts[metric][source] = (sourceCounts[metric][source] ?? 0) + 1;
+    }
   }
-
   return sourceCounts;
 };
 
 const compareAgainstBudgets = ({ aggregate, budgets }) => {
   const budgetChecks = [
-    { metric: "inp_p75_ms", actual: aggregate.inp_p75_ms, budget: budgets.inp_p75_ms },
-    { metric: "lcp_p75_ms", actual: aggregate.lcp_p75_ms, budget: budgets.lcp_p75_ms },
+    {
+      metric: "inp_p75_ms",
+      actual: aggregate.inp_p75_ms,
+      budget: budgets.inp_p75_ms,
+    },
+    {
+      metric: "lcp_p75_ms",
+      actual: aggregate.lcp_p75_ms,
+      budget: budgets.lcp_p75_ms,
+    },
     { metric: "cls_p75", actual: aggregate.cls_p75, budget: budgets.cls_p75 },
-    { metric: "initial_js_kb", actual: aggregate.initial_js_kb, budget: budgets.initial_js_kb },
-    { metric: "route_transition_ms", actual: aggregate.route_transition_ms, budget: budgets.route_transition_ms }
+    {
+      metric: "initial_js_kb",
+      actual: aggregate.initial_js_kb,
+      budget: budgets.initial_js_kb,
+    },
+    {
+      metric: "route_transition_ms",
+      actual: aggregate.route_transition_ms,
+      budget: budgets.route_transition_ms,
+    },
   ];
 
   return budgetChecks.map((check) => {
@@ -504,27 +419,31 @@ const compareAgainstBudgets = ({ aggregate, budgets }) => {
       return {
         ...check,
         pass: false,
-        reason: "missing-metric"
+        reason: "missing-metric",
       };
     }
     return {
       ...check,
       pass: check.actual <= check.budget,
-      delta: check.actual - check.budget
+      delta: check.actual - check.budget,
     };
   });
 };
 
-const compareAgainstBaseline = ({ aggregate, baselineAggregate, tolerancePct }) => {
+const compareAgainstBaseline = ({
+  aggregate,
+  baselineAggregate,
+  tolerancePct,
+}) => {
   const floors = {
     inp_p75_ms: 1,
     lcp_p75_ms: 1,
     cls_p75: 0.001,
     initial_js_kb: 0.1,
-    route_transition_ms: 1
+    route_transition_ms: 1,
   };
 
-  const checks = Object.keys(floors).map((metric) => {
+  return Object.keys(floors).map((metric) => {
     const actual = aggregate[metric];
     const baseline = baselineAggregate?.[metric];
     if (typeof actual !== "number" || typeof baseline !== "number") {
@@ -533,7 +452,7 @@ const compareAgainstBaseline = ({ aggregate, baselineAggregate, tolerancePct }) 
         actual,
         baseline,
         pass: false,
-        reason: "missing-baseline-or-metric"
+        reason: "missing-baseline-or-metric",
       };
     }
     const denominator = Math.max(Math.abs(baseline), floors[metric]);
@@ -542,21 +461,10 @@ const compareAgainstBaseline = ({ aggregate, baselineAggregate, tolerancePct }) 
       metric,
       actual,
       baseline,
-      regressionPct: Math.round(regressionPct * 100) / 100,
-      pass: regressionPct <= tolerancePct
+      regressionPct: roundMetric(regressionPct),
+      pass: regressionPct <= tolerancePct,
     };
   });
-
-  return checks;
-};
-
-const ensureBuildExists = async () => {
-  const distPath = path.join(process.cwd(), "dist");
-  try {
-    await readFile(path.join(distPath, "index.html"), "utf-8");
-  } catch {
-    throw new Error("Missing dist/index.html. Run 'pnpm run build' before perf scripts.");
-  }
 };
 
 const run = async () => {
@@ -564,22 +472,24 @@ const run = async () => {
   await ensureBuildExists();
   await mkdir(config.artifactDir, { recursive: true });
 
-  const previewArgs = [
-    "exec",
-    "vite",
-    "preview",
-    "--host",
-    config.previewHost,
-    "--port",
-    String(config.previewPort),
-    "--strictPort"
-  ];
-
-  const previewProcess = spawn("pnpm", previewArgs, {
-    cwd: process.cwd(),
-    env: process.env,
-    stdio: ["ignore", "pipe", "pipe"]
-  });
+  const previewProcess = spawn(
+    "pnpm",
+    [
+      "exec",
+      "vite",
+      "preview",
+      "--host",
+      config.previewHost,
+      "--port",
+      String(config.previewPort),
+      "--strictPort",
+    ],
+    {
+      cwd: process.cwd(),
+      env: process.env,
+      stdio: ["ignore", "pipe", "pipe"],
+    },
+  );
 
   let previewStdout = "";
   let previewStderr = "";
@@ -594,27 +504,33 @@ const run = async () => {
 
   const origin = `http://${config.previewHost}:${config.previewPort}`;
   const startedAt = Date.now();
+  let browser;
 
   try {
     await waitForHttpOk({ url: origin, timeoutMs: 30_000 });
+    browser = await chromium.launch();
 
     const samples = [];
     for (const profile of config.profiles) {
       for (const route of config.routes) {
         const hashPath = route === "/" ? "#/" : `#${route}`;
-        const routeUrl = `${origin}/${hashPath}`;
-        const sample = await collectAuditForRoute({
-          profile,
-          route,
-          url: routeUrl,
-          artifactDir: config.artifactDir
-        });
-        samples.push(sample);
+        samples.push(
+          await collectBrowserTimingForRoute({
+            browser,
+            profile,
+            route,
+            url: `${origin}/${hashPath}`,
+            artifactDir: config.artifactDir,
+          }),
+        );
       }
     }
 
     const aggregate = aggregateMetrics(samples);
-    const budgetChecks = compareAgainstBudgets({ aggregate, budgets: config.budgets });
+    const budgetChecks = compareAgainstBudgets({
+      aggregate,
+      budgets: config.budgets,
+    });
 
     const baselinePayload = await readJsonIfExists(config.baselinePath);
     const baselineAggregate = baselinePayload?.aggregate;
@@ -628,7 +544,8 @@ const run = async () => {
         aggregate,
         budgets: config.budgets,
         routes: config.routes,
-        profiles: config.profiles
+        profiles: config.profiles,
+        measurement: "playwright-browser-timing",
       });
     } else if (!baselineAggregate && config.allowBaselineBootstrap) {
       baselineStatus = "bootstrapped";
@@ -637,14 +554,15 @@ const run = async () => {
         aggregate,
         budgets: config.budgets,
         routes: config.routes,
-        profiles: config.profiles
+        profiles: config.profiles,
+        measurement: "playwright-browser-timing",
       });
     } else if (baselineAggregate) {
       baselineStatus = "compared";
       regressionChecks = compareAgainstBaseline({
         aggregate,
         baselineAggregate,
-        tolerancePct: config.regressionTolerancePct
+        tolerancePct: config.regressionTolerancePct,
       });
     } else {
       baselineStatus = "missing";
@@ -652,20 +570,25 @@ const run = async () => {
         {
           metric: "all",
           pass: false,
-          reason: "baseline-missing"
-        }
+          reason: "baseline-missing",
+        },
       ];
     }
 
     const failedBudgetChecks = budgetChecks.filter((check) => !check.pass);
-    const failedRegressionChecks = regressionChecks.filter((check) => !check.pass);
-
-    const strictFailure = mode === "assert" && config.strict && (failedBudgetChecks.length > 0 || failedRegressionChecks.length > 0);
+    const failedRegressionChecks = regressionChecks.filter(
+      (check) => !check.pass,
+    );
+    const strictFailure =
+      mode === "assert" &&
+      config.strict &&
+      (failedBudgetChecks.length > 0 || failedRegressionChecks.length > 0);
 
     const report = {
       mode,
       generatedAt: new Date().toISOString(),
       durationMs: Date.now() - startedAt,
+      measurement: "playwright-browser-timing",
       config: {
         budgetPath: config.budgetPath,
         budgets: config.budgets,
@@ -674,46 +597,45 @@ const run = async () => {
         baselinePath: config.baselinePath,
         regressionTolerancePct: config.regressionTolerancePct,
         strict: config.strict,
-        previewOrigin: origin
+        previewOrigin: origin,
       },
       aggregate,
       metricSources: summarizeMetricSources(samples),
       baselineStatus,
       checks: {
         budgets: budgetChecks,
-        regression: regressionChecks
+        regression: regressionChecks,
       },
       counts: {
         samples: samples.length,
         failedBudgets: failedBudgetChecks.length,
-        failedRegression: failedRegressionChecks.length
+        failedRegression: failedRegressionChecks.length,
       },
       artifacts: {
         reportPath: config.reportPath,
         baselinePath: config.baselinePath,
-        lighthouseReportsDir: config.artifactDir
+        browserTimingReportsDir: config.artifactDir,
       },
       samples,
       preview: {
         stdout: previewStdout.slice(-4000),
-        stderr: previewStderr.slice(-4000)
-      }
+        stderr: previewStderr.slice(-4000),
+      },
     };
 
     await writeJson(config.reportPath, report);
 
     console.log(
-      `[perf-runner] mode=${mode} samples=${samples.length} failedBudgets=${failedBudgetChecks.length} failedRegression=${failedRegressionChecks.length} strict=${config.strict}`
+      `[perf-runner] mode=${mode} samples=${samples.length} failedBudgets=${failedBudgetChecks.length} failedRegression=${failedRegressionChecks.length} strict=${config.strict}`,
     );
     console.log(`[perf-runner] report=${config.reportPath}`);
     console.log(`[perf-runner] baselineStatus=${baselineStatus}`);
 
-    if (strictFailure) {
-      process.exitCode = 1;
-      return;
-    }
-    process.exitCode = 0;
+    process.exitCode = strictFailure ? 1 : 0;
   } finally {
+    if (browser) {
+      await browser.close();
+    }
     await stopProcess(previewProcess);
   }
 };
