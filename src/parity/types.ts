@@ -220,9 +220,14 @@ export type {
 } from "./default-layout-solver.js";
 export {
   createDefaultLayoutReportFile,
+  createDefaultSemanticComponentReportFile,
   createDefaultTailwindScreenFile,
   DEFAULT_LAYOUT_REPORT_PATH,
+  DEFAULT_SEMANTIC_COMPONENT_REPORT_PATH,
 } from "./default-tailwind-emitter.js";
 export type {
+  DefaultSemanticComponentDiagnostic,
+  DefaultSemanticComponentDiagnosticCode,
+  DefaultSemanticComponentSummary,
   DefaultTailwindScreenFile,
 } from "./default-tailwind-emitter.js";
