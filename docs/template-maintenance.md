@@ -36,6 +36,8 @@ pnpm run template:tailwind:lint
 pnpm run template:tailwind:typecheck
 pnpm run template:tailwind:test
 pnpm run template:tailwind:build
+pnpm run template:tailwind:validate:ui
+pnpm run template:tailwind:validate:playwright
 pnpm run verify:lockfile-hosts
 pnpm run verify:docs-template-stack
 ```
@@ -52,6 +54,7 @@ also run the generated-app validation path:
 ```bash
 pnpm benchmark:visual
 pnpm --dir template/react-mui-app run perf:assert
+pnpm run perf:web:tailwind:assert
 ```
 
 Reviewers should confirm that generated fixture diffs, performance deltas, and

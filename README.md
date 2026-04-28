@@ -266,7 +266,8 @@ the authoritative publish boundary.
 The published package ships the compiled runtime from `dist/`, the docs listed
 in `package.json.files`, and the `template/` scaffold used to materialize the
 generated app baseline. Repository-only verification fixtures, test suites, and
-template `node_modules` do not ship.
+template `node_modules` do not ship. Template-local browser validation files may
+ship when a template exposes an explicit validation script that depends on them.
 
 ## Frontend stack
 
@@ -620,15 +621,17 @@ For local preview (`/workspace/repros/:jobId/*`), generated BrowserRouter apps a
 
 ## Web performance workflow
 
-Bundled template (`template/react-mui-app`) includes a baseline + assertion pipeline:
+Bundled templates include baseline + assertion pipelines:
 
 - `pnpm --dir template/react-mui-app run perf:baseline`
 - `pnpm --dir template/react-mui-app run perf:assert`
+- `pnpm --dir template/react-tailwind-app run perf:baseline`
+- `pnpm --dir template/react-tailwind-app run perf:assert`
 
-Approved release baselines live in `template/react-mui-app/perf-baseline.json`.
-Runtime reports and Lighthouse artifacts are written to `template/react-mui-app/artifacts/performance`.
-Budget policy is configured in `template/react-mui-app/perf-budget.json`.
-The dev quality gate keeps this assertion warn-only for iteration speed; release and publish workflows treat it as blocking.
+Approved release baselines live beside each template in `perf-baseline.json`.
+Runtime reports and Lighthouse artifacts are written to `template/<template-name>/artifacts/performance`.
+Budget policy is configured in each template's `perf-budget.json`.
+The dev quality gate keeps these assertions warn-only for iteration speed; release and publish workflows treat them as blocking.
 Detailed operating notes: `docs/react-web-performance.md`.
 
 ## React Compiler (template opt-in)

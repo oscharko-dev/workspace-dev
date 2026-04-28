@@ -57,6 +57,9 @@ jobs:
       - name: Install template dependencies
         run: pnpm --dir template/react-mui-app install --frozen-lockfile --ignore-scripts
 
+      - name: Install Tailwind template dependencies
+        run: pnpm --dir template/react-tailwind-app install --frozen-lockfile --ignore-scripts
+
       - name: Enforce dependency vulnerability gate
         run: pnpm audit --audit-level high
 
@@ -111,6 +114,21 @@ jobs:
       - name: Template Vitest tests
         run: pnpm run template:test
 
+      - name: Tailwind template lint
+        run: pnpm run template:tailwind:lint
+
+      - name: Tailwind template typecheck
+        run: pnpm run template:tailwind:typecheck
+
+      - name: Tailwind template Vitest tests
+        run: pnpm run template:tailwind:test
+
+      - name: Tailwind template build
+        run: pnpm run template:tailwind:build
+
+      - name: Tailwind template UI validation
+        run: pnpm run template:tailwind:validate:ui
+
       - name: UI coverage gate
         run: pnpm run ui:test:coverage
 
@@ -141,6 +159,9 @@ jobs:
       - name: UI E2E tests (matrix)
         if: matrix.node-version == 22
         run: pnpm run ui:test:e2e:matrix
+
+      - name: Tailwind template Playwright validation
+        run: pnpm run template:tailwind:validate:playwright
 
       - name: Run tests with flaky retry
         run: pnpm run test:flaky-retry
@@ -234,6 +255,16 @@ jobs:
   performance-web:
     timeout-minutes: 180
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        template:
+          - bundle: react-mui-app
+            packageDir: template/react-mui-app
+            lockfile: template/react-mui-app/pnpm-lock.yaml
+          - bundle: react-tailwind-app
+            packageDir: template/react-tailwind-app
+            lockfile: template/react-tailwind-app/pnpm-lock.yaml
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
         with:
@@ -247,37 +278,35 @@ jobs:
         with:
           node-version: 22
           cache: pnpm
-          cache-dependency-path: template/react-mui-app/pnpm-lock.yaml
+          cache-dependency-path: ${{ matrix.template.lockfile }}
 
       - name: Install template dependencies
-        run: pnpm --dir template/react-mui-app install --frozen-lockfile --ignore-scripts
+        run: pnpm --dir "${{ matrix.template.packageDir }}" install --frozen-lockfile --ignore-scripts
 
       - name: Typecheck template app
-        run: pnpm --dir template/react-mui-app run typecheck
+        run: pnpm --dir "${{ matrix.template.packageDir }}" run typecheck
 
       - name: Build template app
-        run: pnpm --dir template/react-mui-app run build
+        run: pnpm --dir "${{ matrix.template.packageDir }}" run build
 
       - name: Assert web performance budgets and regression
         env:
-          FIGMAPIPE_PERF_ARTIFACT_DIR: template/react-mui-app/artifacts/performance
-          FIGMAPIPE_PERF_BASELINE_PATH: template/react-mui-app/perf-baseline.json
-          FIGMAPIPE_PERF_ROUTES_JSON: '["/","/overview","/checkout"]'
-          FIGMAPIPE_PERF_PROFILES_JSON: '["mobile","desktop"]'
+          FIGMAPIPE_PERF_ARTIFACT_DIR: ${{ matrix.template.packageDir }}/artifacts/performance
+          FIGMAPIPE_PERF_BASELINE_PATH: ${{ matrix.template.packageDir }}/perf-baseline.json
           FIGMAPIPE_PERF_STRICT: "true"
           FIGMAPIPE_PERF_ALLOW_BASELINE_BOOTSTRAP: "false"
-        run: pnpm --dir template/react-mui-app run perf:assert
+        run: pnpm --dir "${{ matrix.template.packageDir }}" run perf:assert
 
       - name: Summarize web performance report
         if: always()
-        run: node scripts/print-perf-report-summary.mjs template/react-mui-app/artifacts/performance/perf-assert-report.json
+        run: node scripts/print-perf-report-summary.mjs "${{ matrix.template.packageDir }}/artifacts/performance/perf-assert-report.json"
 
       - name: Upload web performance artifacts
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7
         if: always()
         with:
-          name: workspace-dev-performance-web
-          path: template/react-mui-app/artifacts/performance
+          name: workspace-dev-performance-web-${{ matrix.template.bundle }}
+          path: ${{ matrix.template.packageDir }}/artifacts/performance
           if-no-files-found: ignore
 
   mutation-testing:
