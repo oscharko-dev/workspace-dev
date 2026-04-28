@@ -11122,6 +11122,10 @@ Public descriptor for a pipeline included in the current package profile.
 
 > **description**: `string`
 
+##### deterministic?
+
+> `optional` **deterministic?**: `true`
+
 ##### displayName
 
 > **displayName**: `string`
@@ -11137,6 +11141,58 @@ Public descriptor for a pipeline included in the current package profile.
 ##### supportedSourceModes
 
 > **supportedSourceModes**: (`"rest"` \| `"hybrid"` \| `"local_json"` \| `"figma_paste"` \| `"figma_plugin"`)[]
+
+##### template?
+
+> `optional` **template?**: [`WorkspacePipelineTemplateMetadata`](#workspacepipelinetemplatemetadata)
+
+##### visibility?
+
+> `optional` **visibility?**: [`WorkspacePipelineVisibility`](#workspacepipelinevisibility)
+
+***
+
+### WorkspacePipelineStackDescriptor
+
+Public stack identity for a pipeline template bundle.
+
+#### Properties
+
+##### bundler
+
+> **bundler**: `string`
+
+##### framework
+
+> **framework**: `string`
+
+##### language
+
+> **language**: `string`
+
+##### styling
+
+> **styling**: `string`
+
+***
+
+### WorkspacePipelineTemplateMetadata
+
+Public template identity for a pipeline included in the current package profile.
+
+#### Properties
+
+##### bundleId
+
+> **bundleId**: `string`
+
+##### path
+
+> **path**: `string`
+
+##### stack
+
+> **stack**: [`WorkspacePipelineStackDescriptor`](#workspacepipelinestackdescriptor)
 
 ***
 
@@ -13841,6 +13897,14 @@ Input scope resolved before pipeline selection.
 
 ***
 
+### WorkspacePipelineVisibility
+
+> **WorkspacePipelineVisibility** = `"oss"` \| `"customer"` \| `"internal"`
+
+Visibility class for a pipeline included in the current package profile.
+
+***
+
 ### WorkspaceRemapConfidence
 
 > **WorkspaceRemapConfidence** = `"high"` \| `"medium"` \| `"low"`
@@ -14629,7 +14693,7 @@ Schema version for `BusinessTestIntentIr` artifacts.
 
 ### CONTRACT\_VERSION
 
-> `const` **CONTRACT\_VERSION**: `"4.17.0"`
+> `const` **CONTRACT\_VERSION**: `"4.18.0"`
 
 Current contract version constant.
 Must be bumped according to CONTRACT_CHANGELOG.md rules.

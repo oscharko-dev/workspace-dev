@@ -4688,12 +4688,34 @@ test("GET /workspace exposes active pipeline registry metadata", async () => {
     assert.equal(response.statusCode, 200);
     const body = response.json<Record<string, unknown>>();
     assert.equal(body.defaultPipelineId, "rocket");
-    assert.deepEqual(
-      (body.availablePipelines as Array<Record<string, unknown>>).map(
-        (pipeline) => pipeline.id,
-      ),
-      ["rocket"],
-    );
+    assert.deepEqual(body.availablePipelines, [
+      {
+        id: "rocket",
+        displayName: "Rocket",
+        description:
+          "Compatibility pipeline for the existing WorkspaceDev generator.",
+        visibility: "customer",
+        deterministic: true,
+        template: {
+          bundleId: "react-mui-app",
+          path: "template/react-mui-app",
+          stack: {
+            framework: "react",
+            language: "typescript",
+            styling: "mui",
+            bundler: "vite",
+          },
+        },
+        supportedSourceModes: [
+          "rest",
+          "hybrid",
+          "local_json",
+          "figma_paste",
+          "figma_plugin",
+        ],
+        supportedScopes: ["board", "node", "selection"],
+      },
+    ]);
   } finally {
     await close();
   }
@@ -5079,7 +5101,8 @@ test("request handler stale-check, remap-suggest, submit, and cancel routes cove
           throw new PipelineRequestError({
             code: "PIPELINE_UNAVAILABLE",
             pipelineId: "default",
-            message: "Pipeline 'default' is not available in this build profile.",
+            message:
+              "Pipeline 'default' is not available in this build profile.",
           });
         });
         const scoped = await createRequestHandlerApp({

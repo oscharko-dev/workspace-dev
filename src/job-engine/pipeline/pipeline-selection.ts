@@ -21,7 +21,20 @@ const CURRENT_BUILD_PROFILE_PIPELINE_IDS = ["rocket"] as const;
 export const ROCKET_PIPELINE_DEFINITION: PipelineDefinition = {
   id: "rocket",
   displayName: "Rocket",
-  description: "Compatibility pipeline for the existing WorkspaceDev generator.",
+  description:
+    "Compatibility pipeline for the existing WorkspaceDev generator.",
+  visibility: "customer",
+  deterministic: true,
+  template: {
+    bundleId: "react-mui-app",
+    path: "template/react-mui-app",
+    stack: {
+      framework: "react",
+      language: "typescript",
+      styling: "mui",
+      bundler: "vite",
+    },
+  },
   supportedSourceModes: [...ALLOWED_FIGMA_SOURCE_MODES],
   supportedScopes: ["board", "node", "selection"],
   buildSubmissionPlan: () => buildSubmissionPipelinePlan(),
@@ -52,7 +65,10 @@ export const inferPipelineScope = (
   if (input.selectedNodeIds !== undefined && input.selectedNodeIds.length > 0) {
     return "selection";
   }
-  if (typeof input.figmaNodeId === "string" && input.figmaNodeId.trim().length > 0) {
+  if (
+    typeof input.figmaNodeId === "string" &&
+    input.figmaNodeId.trim().length > 0
+  ) {
     return "node";
   }
   return "board";
@@ -92,7 +108,10 @@ export const selectPipelineDefinition = ({
   const normalizedRequestedPipelineId = requestedPipelineId?.trim();
 
   let selected: PipelineDefinition | undefined;
-  if (normalizedRequestedPipelineId !== undefined && normalizedRequestedPipelineId.length > 0) {
+  if (
+    normalizedRequestedPipelineId !== undefined &&
+    normalizedRequestedPipelineId.length > 0
+  ) {
     selected = registry.get(normalizedRequestedPipelineId);
     if (!selected) {
       throw new PipelineRequestError({
