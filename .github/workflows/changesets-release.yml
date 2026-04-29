@@ -297,14 +297,20 @@ jobs:
       - name: Generate CycloneDX SBOM
         run: node scripts/generate-cyclonedx.mjs "${RELEASE_EVIDENCE_DIR}/sbom/workspace-dev.cdx.json"
 
-      - name: Generate template CycloneDX SBOM
-        run: node scripts/generate-cyclonedx.mjs "${RELEASE_EVIDENCE_DIR}/sbom/figma-generated-app.cdx.json" --package-root template/react-mui-app
+      - name: Generate React MUI template CycloneDX SBOM
+        run: node scripts/generate-cyclonedx.mjs "${RELEASE_EVIDENCE_DIR}/sbom/figma-generated-app-react-mui.cdx.json" --package-root template/react-mui-app
+
+      - name: Generate React Tailwind template CycloneDX SBOM
+        run: node scripts/generate-cyclonedx.mjs "${RELEASE_EVIDENCE_DIR}/sbom/figma-generated-app-react-tailwind.cdx.json" --package-root template/react-tailwind-app
 
       - name: Generate SPDX SBOM
         run: node scripts/generate-spdx.mjs "${RELEASE_EVIDENCE_DIR}/sbom/workspace-dev.spdx.json"
 
-      - name: Generate template SPDX SBOM
-        run: node scripts/generate-spdx.mjs "${RELEASE_EVIDENCE_DIR}/sbom/figma-generated-app.spdx.json" --package-root template/react-mui-app
+      - name: Generate React MUI template SPDX SBOM
+        run: node scripts/generate-spdx.mjs "${RELEASE_EVIDENCE_DIR}/sbom/figma-generated-app-react-mui.spdx.json" --package-root template/react-mui-app
+
+      - name: Generate React Tailwind template SPDX SBOM
+        run: node scripts/generate-spdx.mjs "${RELEASE_EVIDENCE_DIR}/sbom/figma-generated-app-react-tailwind.spdx.json" --package-root template/react-tailwind-app
 
       - name: Verify SBOM parity
         run: node scripts/check-sbom-parity.mjs --directory "${RELEASE_EVIDENCE_DIR}/sbom"
@@ -392,10 +398,12 @@ jobs:
           fi
 
           CYCLO_ASSET="${RELEASE_EVIDENCE_DIR}/sbom/workspace-dev.cdx.json"
-          TEMPLATE_CYCLO_ASSET="${RELEASE_EVIDENCE_DIR}/sbom/figma-generated-app.cdx.json"
+          MUI_TEMPLATE_CYCLO_ASSET="${RELEASE_EVIDENCE_DIR}/sbom/figma-generated-app-react-mui.cdx.json"
+          TAILWIND_TEMPLATE_CYCLO_ASSET="${RELEASE_EVIDENCE_DIR}/sbom/figma-generated-app-react-tailwind.cdx.json"
           SPDX_ASSET="${RELEASE_EVIDENCE_DIR}/sbom/workspace-dev.spdx.json"
-          TEMPLATE_SPDX_ASSET="${RELEASE_EVIDENCE_DIR}/sbom/figma-generated-app.spdx.json"
-          for ASSET_PATH in "${CYCLO_ASSET}" "${TEMPLATE_CYCLO_ASSET}" "${SPDX_ASSET}" "${TEMPLATE_SPDX_ASSET}"; do
+          MUI_TEMPLATE_SPDX_ASSET="${RELEASE_EVIDENCE_DIR}/sbom/figma-generated-app-react-mui.spdx.json"
+          TAILWIND_TEMPLATE_SPDX_ASSET="${RELEASE_EVIDENCE_DIR}/sbom/figma-generated-app-react-tailwind.spdx.json"
+          for ASSET_PATH in "${CYCLO_ASSET}" "${MUI_TEMPLATE_CYCLO_ASSET}" "${TAILWIND_TEMPLATE_CYCLO_ASSET}" "${SPDX_ASSET}" "${MUI_TEMPLATE_SPDX_ASSET}" "${TAILWIND_TEMPLATE_SPDX_ASSET}"; do
             if [[ ! -f "${ASSET_PATH}" ]]; then
               echo "Required release evidence asset is missing: ${ASSET_PATH}"
               exit 1
@@ -406,17 +414,21 @@ jobs:
             echo "GitHub release ${RELEASE_TAG} already exists. Uploading/refreshing evidence assets."
             gh release upload "${RELEASE_TAG}" \
               "${CYCLO_ASSET}#workspace-dev-${PACKAGE_VERSION}.cdx.json" \
-              "${TEMPLATE_CYCLO_ASSET}#figma-generated-app-${PACKAGE_VERSION}.cdx.json" \
+              "${MUI_TEMPLATE_CYCLO_ASSET}#figma-generated-app-react-mui-${PACKAGE_VERSION}.cdx.json" \
+              "${TAILWIND_TEMPLATE_CYCLO_ASSET}#figma-generated-app-react-tailwind-${PACKAGE_VERSION}.cdx.json" \
               "${SPDX_ASSET}#workspace-dev-${PACKAGE_VERSION}.spdx.json" \
-              "${TEMPLATE_SPDX_ASSET}#figma-generated-app-${PACKAGE_VERSION}.spdx.json" \
+              "${MUI_TEMPLATE_SPDX_ASSET}#figma-generated-app-react-mui-${PACKAGE_VERSION}.spdx.json" \
+              "${TAILWIND_TEMPLATE_SPDX_ASSET}#figma-generated-app-react-tailwind-${PACKAGE_VERSION}.spdx.json" \
               --clobber
           else
             echo "Creating GitHub release ${RELEASE_TAG} with generated release notes."
             gh release create "${RELEASE_TAG}" \
               "${CYCLO_ASSET}#workspace-dev-${PACKAGE_VERSION}.cdx.json" \
-              "${TEMPLATE_CYCLO_ASSET}#figma-generated-app-${PACKAGE_VERSION}.cdx.json" \
+              "${MUI_TEMPLATE_CYCLO_ASSET}#figma-generated-app-react-mui-${PACKAGE_VERSION}.cdx.json" \
+              "${TAILWIND_TEMPLATE_CYCLO_ASSET}#figma-generated-app-react-tailwind-${PACKAGE_VERSION}.cdx.json" \
               "${SPDX_ASSET}#workspace-dev-${PACKAGE_VERSION}.spdx.json" \
-              "${TEMPLATE_SPDX_ASSET}#figma-generated-app-${PACKAGE_VERSION}.spdx.json" \
+              "${MUI_TEMPLATE_SPDX_ASSET}#figma-generated-app-react-mui-${PACKAGE_VERSION}.spdx.json" \
+              "${TAILWIND_TEMPLATE_SPDX_ASSET}#figma-generated-app-react-tailwind-${PACKAGE_VERSION}.spdx.json" \
               --target "${GITHUB_SHA}" \
               --title "workspace-dev ${RELEASE_TAG}" \
               --generate-notes

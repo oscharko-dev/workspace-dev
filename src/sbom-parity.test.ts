@@ -136,19 +136,26 @@ test("SBOM parity check passes when CycloneDX and SPDX describe the same package
   const result = await runParityCheck({
     "workspace-dev.cdx.json": createCycloneDxDocument("workspace-dev", "1.0.0", []),
     "workspace-dev.spdx.json": createSpdxDocument("workspace-dev", "1.0.0", []),
-    "figma-generated-app.cdx.json": createCycloneDxDocument("figma-generated-app", "1.0.0", [
+    "figma-generated-app-react-mui.cdx.json": createCycloneDxDocument("figma-generated-app", "1.0.0", [
       ["@scope/allowed-parent", "1.2.0"],
       ["allowed-child", "2.0.0"]
     ]),
-    "figma-generated-app.spdx.json": createSpdxDocument("figma-generated-app", "1.0.0", [
+    "figma-generated-app-react-mui.spdx.json": createSpdxDocument("figma-generated-app", "1.0.0", [
       ["@scope/allowed-parent", "1.2.0"],
       ["allowed-child", "2.0.0"]
+    ]),
+    "figma-generated-app-react-tailwind.cdx.json": createCycloneDxDocument("figma-generated-app", "1.0.0", [
+      ["tailwind-child", "3.0.0"]
+    ]),
+    "figma-generated-app-react-tailwind.spdx.json": createSpdxDocument("figma-generated-app", "1.0.0", [
+      ["tailwind-child", "3.0.0"]
     ])
   });
 
   assert.equal(result.code, 0, `Expected success, got stderr:\n${result.stderr}`);
   assert.match(result.stdout, /\[sbom-parity\] workspace-dev matched 1 packages\./);
-  assert.match(result.stdout, /\[sbom-parity\] figma-generated-app matched 3 packages\./);
+  assert.match(result.stdout, /\[sbom-parity\] figma-generated-app-react-mui matched 3 packages\./);
+  assert.match(result.stdout, /\[sbom-parity\] figma-generated-app-react-tailwind matched 2 packages\./);
   assert.equal(result.stderr, "");
 });
 
@@ -156,17 +163,23 @@ test("SBOM parity check fails when SPDX misses a transitive dependency", async (
   const result = await runParityCheck({
     "workspace-dev.cdx.json": createCycloneDxDocument("workspace-dev", "1.0.0", []),
     "workspace-dev.spdx.json": createSpdxDocument("workspace-dev", "1.0.0", []),
-    "figma-generated-app.cdx.json": createCycloneDxDocument("figma-generated-app", "1.0.0", [
+    "figma-generated-app-react-mui.cdx.json": createCycloneDxDocument("figma-generated-app", "1.0.0", [
       ["@scope/allowed-parent", "1.2.0"],
       ["allowed-child", "2.0.0"]
     ]),
-    "figma-generated-app.spdx.json": createSpdxDocument("figma-generated-app", "1.0.0", [
+    "figma-generated-app-react-mui.spdx.json": createSpdxDocument("figma-generated-app", "1.0.0", [
       ["@scope/allowed-parent", "1.2.0"]
+    ]),
+    "figma-generated-app-react-tailwind.cdx.json": createCycloneDxDocument("figma-generated-app", "1.0.0", [
+      ["tailwind-child", "3.0.0"]
+    ]),
+    "figma-generated-app-react-tailwind.spdx.json": createSpdxDocument("figma-generated-app", "1.0.0", [
+      ["tailwind-child", "3.0.0"]
     ])
   });
 
   assert.equal(result.code, 1, `Expected mismatch failure, got stdout:\n${result.stdout}`);
   assert.match(result.stderr, /\[sbom-parity\] Failed:/);
-  assert.match(result.stderr, /figma-generated-app mismatch/);
+  assert.match(result.stderr, /figma-generated-app-react-mui mismatch/);
   assert.match(result.stderr, /missing from SPDX: pkg:npm\/allowed-child@2.0.0/);
 });

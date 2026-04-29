@@ -14,9 +14,14 @@ const EXPECTED_DOCUMENTS = [
     spdxFileName: "workspace-dev.spdx.json"
   },
   {
-    label: "figma-generated-app",
-    cyclonedxFileName: "figma-generated-app.cdx.json",
-    spdxFileName: "figma-generated-app.spdx.json"
+    label: "figma-generated-app-react-mui",
+    cyclonedxFileName: "figma-generated-app-react-mui.cdx.json",
+    spdxFileName: "figma-generated-app-react-mui.spdx.json"
+  },
+  {
+    label: "figma-generated-app-react-tailwind",
+    cyclonedxFileName: "figma-generated-app-react-tailwind.cdx.json",
+    spdxFileName: "figma-generated-app-react-tailwind.spdx.json"
   }
 ];
 

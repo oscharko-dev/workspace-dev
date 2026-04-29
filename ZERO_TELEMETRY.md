@@ -13,12 +13,19 @@
 - CI release evidence uploads performed by GitHub Actions (SBOM artifacts under `artifacts/sbom/`).
 - Manual incident reporting initiated by operators outside package runtime.
 
+Generated-job quality passports are local evidence artifacts, not telemetry.
+They are written under the job output tree, may be copied into local repro
+exports, and are not uploaded by package runtime code.
+
 ## Verification Procedure
 
 1. Run static telemetry guard on every release:
     - `pnpm run lint:no-telemetry`
 2. Validate publish artifact contents with `scripts/validate-pack.sh`.
 3. Verify workflows only upload release evidence artifacts and do not post runtime usage data.
+4. When auditing generated output, treat `quality-passport.json` as
+   deterministic local evidence paired with SBOM and license gates, not as a
+   network reporting channel.
 
 ## Test-intelligence subsurface boundary
 

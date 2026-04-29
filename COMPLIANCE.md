@@ -58,9 +58,20 @@ Each release candidate must provide:
     - `build`
     - `lint:publint`
     - `lint:types-publish`
+- Generated-project evidence:
+    - Deterministic `quality-passport.json` emitted for generated jobs,
+      including validation evidence when `validate.project` runs and failure
+      evidence when an earlier pipeline stage stops execution. The passport
+      covers pipeline identity, template bundle, build profile, scope,
+      generated-file hashes, validation status, token and semantic coverage,
+      and warnings.
+    - Inspector summary projection of the same quality passport for local
+      audit and support workflows.
 - Supply-chain evidence:
     - CycloneDX SBOM (`artifacts/sbom/workspace-dev.cdx.json`)
     - SPDX SBOM (`artifacts/sbom/workspace-dev.spdx.json`)
+    - React MUI template SBOM (`artifacts/sbom/figma-generated-app-react-mui.cdx.json` and `.spdx.json`)
+    - React Tailwind template SBOM (`artifacts/sbom/figma-generated-app-react-tailwind.cdx.json` and `.spdx.json`)
     - Signature verification (`npm audit signatures`)
     - Provenance-enabled publish path
 - Operational evidence:
@@ -69,9 +80,17 @@ Each release candidate must provide:
     - Offline installation verification
     - License allowlist verification
 
+The quality passport is generated-job evidence and is intentionally paired
+with, not embedded into, supply-chain artifacts. Release gates continue to
+produce SBOM, license, zero-telemetry, package, and reproducible-build evidence
+as separate canonical artifacts so each report remains deterministic,
+secret-free, and independently reviewable.
+
 ## License Allowlist Policy
 
-`pnpm run verify:licenses` enforces the manifest license for `workspace-dev` and `template/react-mui-app`, then scans the installed `template/react-mui-app` dependency tree transitively from `node_modules`.
+`pnpm run verify:licenses` enforces the manifest license for `workspace-dev`,
+`template/react-mui-app`, and `template/react-tailwind-app`, then scans both
+installed template dependency trees transitively from `node_modules`.
 
 Approved license expressions for the shipped template graph:
 
