@@ -27,7 +27,11 @@ import { DEFAULT_FIGMA_PASTE_MAX_SELECTION_COUNT } from "../clipboard-envelope.j
 import { DEFAULT_FIGMA_PASTE_MAX_ROOT_COUNT } from "../figma-payload-validation.js";
 import { LocalSyncError } from "../job-engine/local-sync.js";
 import { PipelineRequestError } from "../job-engine/pipeline/pipeline-errors.js";
-import type { JobEngine } from "../job-engine.js";
+import {
+  createJobEngine,
+  resolveRuntimeSettings,
+  type JobEngine,
+} from "../job-engine.js";
 import type {
   WorkspaceRuntimeLogInput,
   WorkspaceRuntimeLogger,
@@ -2891,6 +2895,78 @@ test("request handler maps regeneration pipeline request errors to stable valida
     );
   } finally {
     await close();
+  }
+});
+
+test("request handler exposes omitted-pipeline Rocket fallback warnings in job logs", async () => {
+  const tempRoot = await mkdtemp(
+    path.join(os.tmpdir(), "workspace-dev-request-handler-rocket-warning-"),
+  );
+  const engine = createJobEngine({
+    resolveBaseUrl: () => "http://127.0.0.1:1983",
+    paths: {
+      outputRoot: tempRoot,
+      jobsRoot: path.join(tempRoot, "jobs"),
+      reprosRoot: path.join(tempRoot, "repros"),
+      workspaceRoot: tempRoot,
+    },
+    runtime: resolveRuntimeSettings({
+      enablePreview: false,
+      figmaMaxRetries: 1,
+      figmaRequestTimeoutMs: 1000,
+    }),
+  });
+  const { app, close } = await createRequestHandlerApp({
+    jobEngine: engine,
+    outputRoot: tempRoot,
+    workspaceRoot: tempRoot,
+  });
+
+  try {
+    const submitResponse = await app.inject({
+      method: "POST",
+      url: "/workspace/submit",
+      headers: { "content-type": "application/json" },
+      payload: {
+        figmaSourceMode: "local_json",
+        figmaJsonPath: "missing-figma.json",
+        customerBrandId: "sparkasse",
+      },
+    });
+
+    assert.equal(submitResponse.statusCode, 202);
+    const accepted = submitResponse.json<{
+      jobId: string;
+      pipelineId?: string;
+    }>();
+    assert.equal(accepted.pipelineId, "rocket");
+
+    const jobResponse = await app.inject({
+      method: "GET",
+      url: `/workspace/jobs/${accepted.jobId}`,
+    });
+    assert.equal(jobResponse.statusCode, 200);
+    const job = jobResponse.json<{
+      pipelineId?: string;
+      request?: { pipelineId?: string };
+      logs?: { level?: string; message?: string }[];
+    }>();
+    assert.equal(job.pipelineId, "rocket");
+    assert.equal(job.request?.pipelineId, "rocket");
+    assert.equal(
+      job.logs?.some(
+        (entry) =>
+          entry.level === "warn" &&
+          entry.message.includes("legacy Rocket compatibility pipeline") &&
+          entry.message.includes("customerBrandId") &&
+          entry.message.includes("deprecated"),
+      ),
+      true,
+    );
+  } finally {
+    await engine.shutdown({ reason: "test cleanup", timeoutMs: 1_000 });
+    await close();
+    await rm(tempRoot, { recursive: true, force: true });
   }
 });
 
