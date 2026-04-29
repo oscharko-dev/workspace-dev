@@ -445,6 +445,21 @@ test("docs: versioning policy stays aligned across README and changelogs", async
   assert.match(migrationGuide, /Rocket-specific inputs/);
   assert.match(migrationGuide, /direct MUI\/Emotion mapping profiles/);
   assert.match(migrationGuide, /rocket` `template\.prepare` delegate/);
+  assert.match(
+    migrationGuide,
+    /Migrate Omitted Pipeline Requests To `pipelineId: "rocket"`/,
+  );
+  assert.match(migrationGuide, /emits a deprecation warning/);
+  assert.match(
+    readmeDoc,
+    /Legacy\s+omitted-`pipelineId` requests with Rocket-specific inputs follow the deprecated\s+compatibility fallback documented in the migration guide/,
+  );
+  assert.match(migrationGuide, /future package-major release/);
+  assert.match(migrationGuide, /Release Note Wording For The Compatibility Window/);
+  assert.match(
+    migrationGuide,
+    /omitted-`pipelineId` Rocket auto-selection path as a temporary\s+compatibility bridge/,
+  );
   assert.match(migrationGuide, /availablePipelines/);
   assert.match(migrationGuide, /defaultPipelineId/);
   assert.match(migrationGuide, /pnpm exec tsc --noEmit/);

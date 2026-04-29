@@ -112,6 +112,14 @@ Contract-level surface changes remain tracked in `CONTRACT_CHANGELOG.md`.
 
 ### Changed
 
+- Rocket compatibility fallback documentation (#1554):
+    - Added migration-guide examples that move customer-profile submissions
+      from omitted `pipelineId` to explicit `pipelineId: "rocket"`.
+    - Added downstream release-note wording for the `default,rocket`
+      compatibility window and its deprecation warning.
+    - Documented that removing omitted-`pipelineId` Rocket auto-selection is a
+      future package-major release only and must ship with changelog,
+      migration-guide, contract-evidence, and regression-test updates.
 - Inspector bootstrap now submits confirmed plugin-envelope imports as `figma_plugin`, and plugin-ingress telemetry logs expose `payload_size`, `node_count`, and `runtime_ms` aliases. (#987)
 - Public docs and compatibility tables now advertise `figma_plugin` anywhere the backend already supports it. (#987)
 - Deterministic app generation now uses route-level lazy loading for non-initial screens (`React.lazy` + `Suspense`).
