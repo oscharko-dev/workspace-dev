@@ -133,7 +133,9 @@ test("docs: mode lock docs stay aligned with runtime constraints", async () => {
   const compatibilityDoc = await readRepoFile("COMPATIBILITY.md");
   const contributingDoc = await readRepoFile("CONTRIBUTING.md");
   const localRuntimeDoc = await readRepoFile("docs/local-runtime.md");
-  const buildProfileScript = await readRepoFile("scripts/build-profile.mjs");
+  const packProfileContract = await readRepoFile(
+    "scripts/pack-profile-contract.mjs",
+  );
   const readmeDoc = await readRepoFile("README.md");
   const securityDoc = await readRepoFile("SECURITY.md");
   const threatModelDoc = await readRepoFile("THREAT_MODEL.md");
@@ -220,8 +222,8 @@ test("docs: mode lock docs stay aligned with runtime constraints", async () => {
     schemasSource,
     /Collect failures in `ValidationIssue\[\]` with stable paths and messages/,
   );
-  assert.match(buildProfileScript, /"THREAT_MODEL\.md"/);
-  assert.match(buildProfileScript, /"GOVERNANCE\.md"/);
+  assert.match(packProfileContract, /"THREAT_MODEL\.md"/);
+  assert.match(packProfileContract, /"GOVERNANCE\.md"/);
   assert.match(readmeDoc, /## Repository branch flow/i);
   assert.match(readmeDoc, /`dev` is the active development branch/i);
   assert.match(readmeDoc, /`dev-gate` is the protected quality gate branch/i);
@@ -318,7 +320,9 @@ test("docs: pipeline authoring guide stays aligned with canonical stage contract
 });
 
 test("docs: troubleshooting guide is linked from README and included in the published package", async () => {
-  const buildProfileScript = await readRepoFile("scripts/build-profile.mjs");
+  const packProfileContract = await readRepoFile(
+    "scripts/pack-profile-contract.mjs",
+  );
   const readmeDoc = await readRepoFile("README.md");
   const troubleshootingDoc = await readRepoFile("TROUBLESHOOTING.md");
   const nodeSection = extractMarkdownTopLevelSection(
@@ -346,7 +350,7 @@ test("docs: troubleshooting guide is linked from README and included in the publ
     "Template Dependency Issues",
   );
 
-  assert.match(buildProfileScript, /"TROUBLESHOOTING\.md"/);
+  assert.match(packProfileContract, /"TROUBLESHOOTING\.md"/);
   assert.match(readmeDoc, /\[TROUBLESHOOTING\.md\]\(TROUBLESHOOTING\.md\)/);
   assert.match(troubleshootingDoc, /^# TROUBLESHOOTING$/m);
   for (const section of [
@@ -406,7 +410,9 @@ test("docs: versioning policy stays aligned across README and changelogs", async
   const packageManifest = JSON.parse(await readRepoFile("package.json")) as {
     exports: Record<string, unknown>;
   };
-  const buildProfileScript = await readRepoFile("scripts/build-profile.mjs");
+  const packProfileContract = await readRepoFile(
+    "scripts/pack-profile-contract.mjs",
+  );
   const actualIsolationExports = EXPECTED_ISOLATION_RUNTIME_EXPORTS.filter(
     (exportName) => Object.prototype.hasOwnProperty.call(publicApi, exportName),
   ).sort();
@@ -428,7 +434,7 @@ test("docs: versioning policy stays aligned across README and changelogs", async
     readmeDoc,
     /\[contract migration guide\]\(docs\/migration-guide\.md\)/i,
   );
-  assert.match(buildProfileScript, /"docs\/migration-guide\.md"/);
+  assert.match(packProfileContract, /"docs\/migration-guide\.md"/);
   assert.match(migrationGuide, /CONTRACT_VERSION/);
   assert.match(migrationGuide, /workspace-dev\/contracts/);
   assert.match(migrationGuide, /CONTRACT_CHANGELOG\.md/);
@@ -978,7 +984,9 @@ test("docs: Wave 4 multi-source API reference documents key exported contracts",
   const packageManifest = JSON.parse(await readRepoFile("package.json")) as {
     exports?: Record<string, unknown>;
   };
-  const buildProfileScript = await readRepoFile("scripts/build-profile.mjs");
+  const packProfileContract = await readRepoFile(
+    "scripts/pack-profile-contract.mjs",
+  );
   const testIntelligenceDoc = await readRepoFile("docs/test-intelligence.md");
   const readmeDoc = await readRepoFile("README.md");
   const complianceDoc = await readRepoFile("COMPLIANCE.md");
@@ -1372,7 +1380,7 @@ test("docs: Wave 4 multi-source API reference documents key exported contracts",
   ];
   for (const docPath of publishedDocs) {
     assert.ok(
-      buildProfileScript.includes(`"${docPath}"`),
+      packProfileContract.includes(`"${docPath}"`),
       `${docPath} must be included in the profile pack allowlist`,
     );
   }

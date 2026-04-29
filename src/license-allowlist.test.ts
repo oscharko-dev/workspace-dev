@@ -36,9 +36,11 @@ const createPackageJson = ({
 };
 
 const runCheck = async ({
+  args = [],
   templatePackages,
   includeTemplateNodeModules = true
 }: {
+  args?: string[];
   templatePackages: Record<string, string>;
   includeTemplateNodeModules?: boolean;
 }): Promise<{ code: number; stdout: string; stderr: string }> => {
@@ -68,7 +70,7 @@ const runCheck = async ({
     }
 
     return await new Promise((resolve, reject) => {
-      const child = spawn(process.execPath, [scriptPath], {
+      const child = spawn(process.execPath, [scriptPath, ...args], {
         cwd: packageRoot,
         env: {
           ...process.env,
@@ -159,6 +161,19 @@ test("license allowlist check fails when the template install tree is missing", 
   });
 
   assert.equal(result.code, 1, `Expected missing-install failure, got stdout:\n${result.stdout}`);
-  assert.match(result.stderr, /template\/react-mui-app node_modules is missing/);
-  assert.match(result.stderr, /pnpm --dir template\/react-mui-app install/);
+  assert.match(result.stderr, /template\/react-tailwind-app node_modules is missing/);
+  assert.match(result.stderr, /pnpm --dir template\/react-tailwind-app install/);
+});
+
+test("license allowlist check scopes selected templates by build profile", async () => {
+  const result = await runCheck({
+    args: ["--profile", "default"],
+    templatePackages: {},
+    includeTemplateNodeModules: false
+  });
+
+  assert.equal(result.code, 1, `Expected missing-install failure, got stdout:\n${result.stdout}`);
+  assert.match(result.stdout, /\[license-allowlist\] Checking profile 'default'\./);
+  assert.doesNotMatch(result.stderr, /template\/react-mui-app node_modules is missing/);
+  assert.match(result.stderr, /template\/react-tailwind-app node_modules is missing/);
 });

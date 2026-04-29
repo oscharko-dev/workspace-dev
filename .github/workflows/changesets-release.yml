@@ -107,6 +107,7 @@ jobs:
           pnpm run lint:no-telemetry
           pnpm run lint:secrets:all
           pnpm run build
+          pnpm run lint:secrets:profiles
           pnpm run lint:publint
           pnpm run lint:types-publish
           pnpm run lint:size
@@ -303,10 +304,10 @@ jobs:
         run: node scripts/generate-cyclonedx.mjs "${RELEASE_EVIDENCE_DIR}/sbom/workspace-dev.cdx.json"
 
       - name: Generate React MUI template CycloneDX SBOM
-        run: node scripts/generate-cyclonedx.mjs "${RELEASE_EVIDENCE_DIR}/sbom/figma-generated-app-react-mui.cdx.json" --package-root template/react-mui-app
+        run: node scripts/generate-cyclonedx.mjs "${RELEASE_EVIDENCE_DIR}/sbom/figma-generated-app-react-mui.cdx.json" --package-root template/react-mui-app --ignore-npm-errors
 
       - name: Generate React Tailwind template CycloneDX SBOM
-        run: node scripts/generate-cyclonedx.mjs "${RELEASE_EVIDENCE_DIR}/sbom/figma-generated-app-react-tailwind.cdx.json" --package-root template/react-tailwind-app
+        run: node scripts/generate-cyclonedx.mjs "${RELEASE_EVIDENCE_DIR}/sbom/figma-generated-app-react-tailwind.cdx.json" --package-root template/react-tailwind-app --ignore-npm-errors
 
       - name: Generate SPDX SBOM
         run: node scripts/generate-spdx.mjs "${RELEASE_EVIDENCE_DIR}/sbom/workspace-dev.spdx.json"
@@ -316,6 +317,9 @@ jobs:
 
       - name: Generate React Tailwind template SPDX SBOM
         run: node scripts/generate-spdx.mjs "${RELEASE_EVIDENCE_DIR}/sbom/figma-generated-app-react-tailwind.spdx.json" --package-root template/react-tailwind-app
+
+      - name: Generate profile SBOMs
+        run: node scripts/generate-profile-sboms.mjs --output-directory "${RELEASE_EVIDENCE_DIR}/sbom/profiles"
 
       - name: Verify SBOM parity
         run: node scripts/check-sbom-parity.mjs --directory "${RELEASE_EVIDENCE_DIR}/sbom"

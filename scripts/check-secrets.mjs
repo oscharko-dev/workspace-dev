@@ -27,6 +27,7 @@ import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { profileDefinitions, resolveBuildProfiles } from "./pack-profile-contract.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DEFAULT_PACKAGE_ROOT = path.resolve(__dirname, "..");
@@ -403,6 +404,60 @@ const scanTrackedContent = ({ cwd, files, readTextFile }) => {
   return findings;
 };
 
+const isFileInProfileBoundary = (file, profile) => {
+  const normalized = file.split(path.sep).join("/");
+  if (!normalized.startsWith("template/")) {
+    return true;
+  }
+  return profile.templates.some((templateId) =>
+    normalized.startsWith(`template/${templateId}/`),
+  );
+};
+
+const filterFilesByProfile = (files, profile) =>
+  files.filter((file) => isFileInProfileBoundary(file, profile));
+
+const parseCliArgs = (argv) => {
+  const options = {
+    all: false,
+    profiles: [],
+  };
+
+  for (let index = 0; index < argv.length; index += 1) {
+    const current = argv[index];
+    if (current === "--all") {
+      options.all = true;
+      continue;
+    }
+    if (current === "--profile" || current === "-p") {
+      const next = argv[index + 1];
+      if (!next) {
+        throw new Error(`Missing value for ${current}.`);
+      }
+      options.profiles.push(next);
+      index += 1;
+      continue;
+    }
+    if (current.startsWith("--profile=")) {
+      options.profiles.push(current.slice("--profile=".length));
+      continue;
+    }
+    if (!current.startsWith("-")) {
+      options.profiles.push(current);
+      continue;
+    }
+    throw new Error(`Unknown argument: ${current}`);
+  }
+
+  return {
+    all: options.all,
+    profileIds:
+      options.profiles.length > 0
+        ? resolveBuildProfiles(options.profiles)
+        : undefined,
+  };
+};
+
 // ── main guard ──────────────────────────────────────────────────────────────
 
 export const runGuard = ({
@@ -411,6 +466,7 @@ export const runGuard = ({
   execFile = execFileSync,
   readTextFile = readFileSync,
   all = false,
+  profileIds,
   stdout = console.log,
   stderr = console.error,
 } = {}) => {
@@ -430,61 +486,79 @@ export const runGuard = ({
       return 1;
     }
 
-    const pathViolations = [];
-    const contentCandidates = [];
-    for (const file of trackedFiles) {
-      const classification = classifyPath(file);
-      if (classification) {
-        pathViolations.push({ file, reason: classification.reason });
-        continue;
+    const scanProfileIds = profileIds?.length ? profileIds : [undefined];
+    let scannedTrackedCount = 0;
+    let scannedContentCount = 0;
+
+    for (const profileId of scanProfileIds) {
+      const profile = profileId ? profileDefinitions[profileId] : undefined;
+      const profileTrackedFiles = profile
+        ? filterFilesByProfile(trackedFiles, profile)
+        : trackedFiles;
+      const pathViolations = [];
+      const contentCandidates = [];
+      for (const file of profileTrackedFiles) {
+        const classification = classifyPath(file);
+        if (classification) {
+          pathViolations.push({ file, reason: classification.reason });
+          continue;
+        }
+        const basename = file.includes("/")
+          ? file.slice(file.lastIndexOf("/") + 1)
+          : file;
+        if (ENV_FILENAME_ALLOW.has(basename)) {
+          continue;
+        }
+        contentCandidates.push(file);
       }
-      const basename = file.includes("/")
-        ? file.slice(file.lastIndexOf("/") + 1)
-        : file;
-      if (ENV_FILENAME_ALLOW.has(basename)) {
-        continue;
+
+      let contentFindings = [];
+      try {
+        contentFindings = scanTrackedContent({
+          cwd,
+          files: contentCandidates,
+          readTextFile,
+        });
+      } catch (error) {
+        stderr(
+          `[check-secrets] Unable to read tracked file content: ${formatError(error)}`,
+        );
+        return 1;
       }
-      contentCandidates.push(file);
+
+      if (pathViolations.length > 0) {
+        stderr("[check-secrets] Blocked tracked path(s):");
+        for (const v of pathViolations) {
+          stderr(` - ${v.file}  [${v.reason}]`);
+        }
+      }
+      if (contentFindings.length > 0) {
+        stderr("[check-secrets] Secret pattern matches in tracked files:");
+        for (const f of contentFindings) {
+          stderr(` - ${f.file}:${f.line}  [${f.patternId}] ${f.description}`);
+          stderr(`     ${f.excerpt}`);
+        }
+        stderr(
+          "[check-secrets] If this is a documented example, append a per-line pragma (e.g. `// pragma: allowlist secret`). Otherwise rotate the exposed credential and remove it from the repository.",
+        );
+      }
+      if (pathViolations.length > 0 || contentFindings.length > 0) {
+        return 1;
+      }
+
+      scannedTrackedCount += profileTrackedFiles.length;
+      scannedContentCount += contentCandidates.length;
+      if (profile) {
+        stdout(
+          `[check-secrets] Passed for profile '${profile.id}'. Scanned ${profileTrackedFiles.length} tracked file(s), ${contentCandidates.length} content file(s).`,
+        );
+      }
     }
 
-    let contentFindings = [];
-    try {
-      contentFindings = scanTrackedContent({
-        cwd,
-        files: contentCandidates,
-        readTextFile,
-      });
-    } catch (error) {
-      stderr(
-        `[check-secrets] Unable to read tracked file content: ${formatError(error)}`,
-      );
-      return 1;
-    }
-
-    if (pathViolations.length === 0 && contentFindings.length === 0) {
-      stdout(
-        `[check-secrets] Passed. Scanned ${trackedFiles.length} tracked file(s), ${contentCandidates.length} content file(s).`,
-      );
-      return 0;
-    }
-
-    if (pathViolations.length > 0) {
-      stderr("[check-secrets] Blocked tracked path(s):");
-      for (const v of pathViolations) {
-        stderr(` - ${v.file}  [${v.reason}]`);
-      }
-    }
-    if (contentFindings.length > 0) {
-      stderr("[check-secrets] Secret pattern matches in tracked files:");
-      for (const f of contentFindings) {
-        stderr(` - ${f.file}:${f.line}  [${f.patternId}] ${f.description}`);
-        stderr(`     ${f.excerpt}`);
-      }
-      stderr(
-        "[check-secrets] If this is a documented example, append a per-line pragma (e.g. `// pragma: allowlist secret`). Otherwise rotate the exposed credential and remove it from the repository.",
-      );
-    }
-    return 1;
+    stdout(
+      `[check-secrets] Passed. Scanned ${scannedTrackedCount} tracked file(s), ${scannedContentCount} content file(s).`,
+    );
+    return 0;
   }
 
   let stagedFiles;
@@ -595,6 +669,12 @@ const isCliEntry = () => {
 };
 
 if (isCliEntry()) {
-  const exitCode = runGuard({ all: process.argv.includes("--all") });
-  process.exit(exitCode);
+  try {
+    const options = parseCliArgs(process.argv.slice(2));
+    const exitCode = runGuard(options);
+    process.exit(exitCode);
+  } catch (error) {
+    console.error("[check-secrets] Failed:", formatError(error));
+    process.exit(1);
+  }
 }

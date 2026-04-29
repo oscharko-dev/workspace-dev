@@ -165,6 +165,9 @@ jobs:
       - name: Build package
         run: pnpm run build
 
+      - name: Enforce profile tarball secret policy
+        run: pnpm run lint:secrets:profiles
+
       - name: Enforce package size budget
         run: pnpm run lint:size
 

@@ -7,6 +7,7 @@ import { test } from "node:test";
 import {
   assertReproducibleIterations,
   buildArtifactReport,
+  buildProfileArtifactReport,
   findSingleTarballPath
 } from "./verify-reproducible-build.mjs";
 
@@ -61,6 +62,46 @@ test("buildArtifactReport records dist and tarball reproducibility evidence", ()
       first: { file: "workspace-dev-1.0.0.tgz", sha256: "tar123" },
       second: { file: "workspace-dev-1.0.0.tgz", sha256: "tar123" }
     }
+  });
+});
+
+test("buildProfileArtifactReport records per-profile reproducibility evidence", () => {
+  const report = buildProfileArtifactReport({
+    generatedAt: "2026-04-17T00:00:00.000Z",
+    profiles: [
+      {
+        profile: "default",
+        envValue: "default",
+        dist: {
+          reproducible: true,
+          files: [{ file: "dist/index.js", sha256: "abc123" }]
+        },
+        tarball: {
+          reproducible: true,
+          first: { file: "workspace-dev-1.0.0-default.tgz", sha256: "tar123" },
+          second: { file: "workspace-dev-1.0.0-default.tgz", sha256: "tar123" }
+        }
+      }
+    ]
+  });
+
+  assert.deepStrictEqual(report, {
+    generatedAt: "2026-04-17T00:00:00.000Z",
+    profiles: [
+      {
+        profile: "default",
+        envValue: "default",
+        dist: {
+          reproducible: true,
+          files: [{ file: "dist/index.js", sha256: "abc123" }]
+        },
+        tarball: {
+          reproducible: true,
+          first: { file: "workspace-dev-1.0.0-default.tgz", sha256: "tar123" },
+          second: { file: "workspace-dev-1.0.0-default.tgz", sha256: "tar123" }
+        }
+      }
+    ]
   });
 });
 

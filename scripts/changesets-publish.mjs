@@ -5,6 +5,8 @@ import { mkdtemp, readdir, readFile, rm, stat } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { scanProfileTarball } from "./check-profile-tarball-secrets.mjs";
+import { profileDefinitions } from "./pack-profile-contract.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const packageRoot = path.resolve(__dirname, "..");
@@ -153,6 +155,10 @@ const main = async () => {
       packDir,
     ]);
     const tarballPath = await findProfileTarball(packDir);
+    await scanProfileTarball({
+      tarballPath,
+      profile: profileDefinitions["default-rocket"],
+    });
     await run(
       "npm",
       [

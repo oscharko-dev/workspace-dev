@@ -97,11 +97,11 @@ Default output root is `.workspace-dev` in the current project.
 
 - The published npm package intentionally includes each bundled template lockfile, including `template/react-mui-app/pnpm-lock.yaml` and `template/react-tailwind-app/pnpm-lock.yaml`, alongside each template `package.json`.
 - The rationale is deterministic template installs for the shipped generated-app baselines and air-gap-friendly reproducibility when consumers install the published package offline.
-- Root package inclusion is controlled by the profile allowlists in `scripts/build-profile.mjs`; those allowlists intentionally include only selected `dist/`, docs, and template files for the requested profile while excluding template `node_modules` directories, template build output, generated artifacts, and template test files.
+- Root package inclusion is controlled by the profile allowlists in `scripts/pack-profile-contract.mjs`, which `scripts/build-profile.mjs` consumes; those allowlists intentionally include only selected `dist/`, docs, and template files for the requested profile while excluding template `node_modules` directories, template build output, generated artifacts, and template test files.
 - Maintainers update bundled template lockfiles only in this repository when template dependencies or template scripts change, then keep the relevant `template:*:install` / `--frozen-lockfile` commands and release quality gates green.
 - The OSS default `template/react-tailwind-app` boundary is enforced by `pnpm run template:tailwind:dependency-denylist`, which blocks direct MUI, Emotion, Rocket/customer, telemetry SDK, and unreviewed static asset additions before release.
 - Consumers should treat the bundled template lockfile as package-owned metadata shipped inside the tarball, not as a file to hand-edit under `node_modules`.
-- `pnpm run verify:airgap` validates that the packed tarball installs offline with the bundled template assets, while `pnpm run verify:reproducible-build` separately validates repeatable `dist/` build artifacts and the packed tarball across consecutive clean iterations.
+- `pnpm run verify:airgap` validates that each profile tarball installs offline with its bundled template assets, while `pnpm run verify:reproducible-build` separately validates repeatable `dist/` build artifacts and profile tarballs across consecutive clean iterations.
 
 ## Import session governance (#994)
 
