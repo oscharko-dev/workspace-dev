@@ -28,6 +28,14 @@ function makeError(
   };
 }
 
+const PIPELINE_METADATA = {
+  pipelineId: "pipe-accepted",
+  pipelineDisplayName: "Accepted Pipeline",
+  templateBundleId: "template-accepted",
+  buildProfile: "default,rocket",
+  deterministic: true,
+} as const;
+
 describe("createInitialPipelineState", () => {
   it("starts idle with no retained artifacts or errors", () => {
     const state = createInitialPipelineState();
@@ -84,14 +92,27 @@ describe("pastePipelineReducer", () => {
   it("tracks accepted jobs and runtime status", () => {
     let state = dispatch(createInitialPipelineState(), { type: "start" });
     state = dispatch(state, { type: "parsing_done" });
-    state = dispatch(state, { type: "job_created", jobId: "job-42" });
+    state = dispatch(state, {
+      type: "job_created",
+      jobId: "job-42",
+      pipelineId: "pipe-accepted",
+      pipelineMetadata: PIPELINE_METADATA,
+    });
     state = dispatch(state, {
       type: "job_status_updated",
       status: "running",
+      pipelineId: "pipe-polled",
+      pipelineMetadata: {
+        ...PIPELINE_METADATA,
+        pipelineId: "pipe-polled",
+        pipelineDisplayName: "Polled Pipeline",
+      },
     });
 
     expect(state.jobId).toBe("job-42");
     expect(state.jobStatus).toBe("running");
+    expect(state.pipelineId).toBe("pipe-polled");
+    expect(state.pipelineMetadata?.pipelineDisplayName).toBe("Polled Pipeline");
   });
 
   it("carries pasteDeltaSummary from a job_created action onto state", () => {
@@ -644,6 +665,20 @@ describe("startPastePipeline submit body", () => {
     throw new Error("submit call not observed");
   }
 
+  async function waitForState(
+    controller: ReturnType<typeof startPastePipeline>,
+    predicate: (state: PastePipelineState) => boolean,
+  ): Promise<PastePipelineState> {
+    for (let attempt = 0; attempt < 50; attempt += 1) {
+      const state = controller.getState();
+      if (predicate(state)) {
+        return state;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+    throw new Error("pipeline state was not observed");
+  }
+
   it("posts a submit body without selectedNodeIds and without importMode when no options are provided", async () => {
     startPastePipeline(validPayload);
 
@@ -682,6 +717,21 @@ describe("startPastePipeline submit body", () => {
     expect(body.importMode).toBe("delta");
   });
 
+  it("posts pipelineId, selectedNodeIds, and importMode together for scoped pipeline runs", async () => {
+    startPastePipeline(validPayload, {
+      pipelineId: "pipe-1",
+      selectedNodeIds: ["a", "b"],
+      importMode: "delta",
+    });
+
+    const init = await waitForSubmitCall();
+    const body = JSON.parse(init.body as string) as Record<string, unknown>;
+
+    expect(body.pipelineId).toBe("pipe-1");
+    expect(body.selectedNodeIds).toEqual(["a", "b"]);
+    expect(body.importMode).toBe("delta");
+  });
+
   it("omits selectedNodeIds from the submit body when an empty array is provided", async () => {
     startPastePipeline(validPayload, {
       selectedNodeIds: [],
@@ -691,5 +741,125 @@ describe("startPastePipeline submit body", () => {
     const body = JSON.parse(init.body as string) as Record<string, unknown>;
 
     expect(body.selectedNodeIds).toBeUndefined();
+  });
+
+  it("stores server-projected pipeline metadata from retry accepted responses", async () => {
+    fetchSpy.mockImplementation(async (input) => {
+      const url =
+        typeof input === "string"
+          ? input
+          : input instanceof URL
+            ? input.href
+            : input.url;
+      if (url === "/workspace/submit") {
+        return new Response(JSON.stringify({ jobId: "job-initial" }), {
+          status: 202,
+          headers: { "content-type": "application/json" },
+        });
+      }
+      if (url === "/workspace/jobs/job-initial") {
+        return new Response(
+          JSON.stringify({
+            jobId: "job-initial",
+            status: "failed",
+            stages: [{ name: "ir.derive", status: "failed" }],
+            error: {
+              stage: "transforming",
+              code: "IR_FAILED",
+              message: "Retryable transform failure",
+              retryable: true,
+              retryTargets: [{ id: "src/App.tsx", label: "src/App.tsx" }],
+            },
+          }),
+          {
+            status: 200,
+            headers: { "content-type": "application/json" },
+          },
+        );
+      }
+      if (url === "/workspace/jobs/job-initial/retry-stage") {
+        return new Response(
+          JSON.stringify({
+            jobId: "job-retry",
+            pipelineId: "pipe-retry",
+            pipelineMetadata: {
+              ...PIPELINE_METADATA,
+              pipelineId: "pipe-retry",
+              pipelineDisplayName: "Retry Pipeline",
+            },
+          }),
+          {
+            status: 202,
+            headers: { "content-type": "application/json" },
+          },
+        );
+      }
+      if (url === "/workspace/jobs/job-retry") {
+        return new Response(
+          JSON.stringify({
+            jobId: "job-retry",
+            status: "running",
+            stages: [{ name: "ir.derive", status: "running" }],
+          }),
+          {
+            status: 200,
+            headers: { "content-type": "application/json" },
+          },
+        );
+      }
+      if (url === "/workspace/jobs/job-retry/cancel") {
+        return new Response(
+          JSON.stringify({
+            jobId: "job-retry",
+            status: "canceled",
+          }),
+          {
+            status: 200,
+            headers: { "content-type": "application/json" },
+          },
+        );
+      }
+      return new Response("{}", {
+        status: 500,
+        headers: { "content-type": "application/json" },
+      });
+    });
+
+    const controller = startPastePipeline(validPayload);
+    const failedState = await waitForState(
+      controller,
+      (state) =>
+        state.stage === "error" &&
+        state.jobId === "job-initial" &&
+        state.retryRequest !== undefined,
+    );
+    expect(failedState.jobId).toBe("job-initial");
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(controller.getState().jobId).toBe("job-initial");
+
+    controller.retry();
+    expect(controller.getState().jobId).toBe("job-initial");
+    const state = await waitForState(
+      controller,
+      (nextState) =>
+        nextState.jobId === "job-retry" && nextState.pipelineId === "pipe-retry",
+    );
+
+    const retryCall = fetchSpy.mock.calls.find((call: FetchArgs) => {
+      const input = call[0];
+      const url =
+        typeof input === "string"
+          ? input
+          : input instanceof URL
+            ? input.href
+            : input.url;
+      return url === "/workspace/jobs/job-initial/retry-stage";
+    });
+    expect(retryCall).toBeDefined();
+    expect(JSON.parse(retryCall?.[1]?.body as string)).toMatchObject({
+      stage: "transforming",
+    });
+    expect(state.pipelineMetadata?.pipelineDisplayName).toBe("Retry Pipeline");
+    controller.cancel();
   });
 });

@@ -1580,10 +1580,14 @@ export const createJobEngine = ({
     });
     const selectedNodes = [...(job.request.selectedNodeIds ?? [])];
     const firstScreenName = extractFirstScreenName(designIr);
+    const pipelineId = resolveJobPipelineId(job);
+    const pipelineMetadata = resolveJobPipelineMetadata(job);
 
     const session: WorkspaceImportSession = {
       id: matchedSession?.id ?? randomUUID(),
       jobId: job.jobId,
+      pipelineId,
+      pipelineMetadata: clonePipelineMetadata(pipelineMetadata),
       sourceMode: requestSourceMode,
       fileKey,
       nodeId,
@@ -2052,7 +2056,12 @@ export const createJobEngine = ({
     const customerProfileSnapshot = await artifactStore.getValue<unknown>(
       STAGE_ARTIFACT_KEYS.customerProfileResolved,
     );
+    const pipelineMetadata = request.pipelineMetadata;
     return computePasteCompatibilityFingerprint({
+      ...(request.pipelineId ? { pipelineId: request.pipelineId } : {}),
+      ...(pipelineMetadata?.templateBundleId
+        ? { templateBundleId: pipelineMetadata.templateBundleId }
+        : {}),
       figmaSourceMode: request.figmaSourceMode,
       brandTheme: request.brandTheme,
       ...(customerBrandId ? { customerBrandId } : {}),
@@ -4852,10 +4861,16 @@ export const createJobEngine = ({
       throw error;
     }
 
+    const sourceJob = jobs.get(session.jobId);
+    const replayPipelineId =
+      session.pipelineId ??
+      (sourceJob !== undefined ? resolveJobPipelineId(sourceJob) : undefined);
+
     const accepted = submitJob({
       figmaSourceMode: "hybrid",
       requestSourceMode: "figma_url",
       figmaFileKey: session.fileKey,
+      ...(replayPipelineId !== undefined ? { pipelineId: replayPipelineId } : {}),
       ...(session.nodeId.length > 0 ? { figmaNodeId: session.nodeId } : {}),
       ...(session.scope === "partial"
         ? { selectedNodeIds: [...session.selectedNodes] }

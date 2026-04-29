@@ -58,6 +58,14 @@ export interface PipelineReportError {
 export interface PipelineReportInput {
   stage: string;
   outcome?: string | undefined;
+  pipelineId?: string | undefined;
+  pipelineMetadata?: {
+    pipelineId: string;
+    pipelineDisplayName: string;
+    templateBundleId: string;
+    buildProfile: string;
+    deterministic: true;
+  } | undefined;
   jobId?: string | undefined;
   jobStatus?: string | undefined;
   fallbackMode?: string | undefined;
@@ -143,6 +151,8 @@ export function buildSanitizedPipelineReport({
     exportedAt: new Date().toISOString(),
     outcome: pipeline.outcome ?? pipeline.stage,
     stage: pipeline.stage,
+    pipelineId: pipeline.pipelineId ?? null,
+    pipelineMetadata: pipeline.pipelineMetadata ?? null,
     jobId: pipeline.jobId ?? null,
     jobStatus: pipeline.jobStatus ?? null,
     fallbackMode: pipeline.fallbackMode ?? null,

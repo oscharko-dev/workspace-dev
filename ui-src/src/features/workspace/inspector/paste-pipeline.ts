@@ -6,6 +6,7 @@ import {
   type JobInspectorPayload,
   type JobPayload,
   type JobStagePayload,
+  type WorkspaceJobPipelineMetadataPayload,
 } from "../workspace-page.helpers";
 import { FIGMA_PASTE_MAX_BYTES } from "../submit-schema";
 import { getPasteErrorMessage } from "./paste-error-catalog";
@@ -37,6 +38,7 @@ export type PipelineFallbackMode =
   | "hybrid"
   | "local_json"
   | (string & {});
+export type PipelineMetadata = WorkspaceJobPipelineMetadataPayload;
 
 /**
  * Mirror of contract `WorkspacePasteDeltaSummary` (contracts 3.12.0).
@@ -214,6 +216,8 @@ export interface PartialImportStats {
 export interface PastePipelineState {
   stage: PipelineStage;
   outcome?: PipelineOutcome | undefined;
+  pipelineId?: string | undefined;
+  pipelineMetadata?: PipelineMetadata | undefined;
   progress: number;
   stageProgress: Record<PipelineStage, StageStatus>;
   jobId?: string;
@@ -277,6 +281,8 @@ export type PipelineAction =
   | {
       type: "job_created";
       jobId: string;
+      pipelineId?: string;
+      pipelineMetadata?: PipelineMetadata;
       pasteDeltaSummary?: PipelinePasteDeltaSummary;
       selectedNodeIds?: readonly string[];
     }
@@ -284,6 +290,8 @@ export type PipelineAction =
       type: "job_status_updated";
       status: JobRuntimeStatus;
       previewUrl?: string;
+      pipelineId?: string;
+      pipelineMetadata?: PipelineMetadata;
     }
   | { type: "stage_start"; stage: PipelineStage; message: string }
   | { type: "stage_message"; stage: PipelineStage; message: string }
@@ -582,6 +590,12 @@ export function pastePipelineReducer(
         ...state,
         jobId: action.jobId,
         jobStatus: "queued",
+        ...(action.pipelineId !== undefined
+          ? { pipelineId: action.pipelineId }
+          : {}),
+        ...(action.pipelineMetadata !== undefined
+          ? { pipelineMetadata: action.pipelineMetadata }
+          : {}),
         ...(action.pasteDeltaSummary !== undefined
           ? { pasteDeltaSummary: action.pasteDeltaSummary }
           : {}),
@@ -599,6 +613,12 @@ export function pastePipelineReducer(
         jobStatus: action.status,
         ...(action.previewUrl !== undefined
           ? { previewUrl: action.previewUrl }
+          : {}),
+        ...(action.pipelineId !== undefined
+          ? { pipelineId: action.pipelineId }
+          : {}),
+        ...(action.pipelineMetadata !== undefined
+          ? { pipelineMetadata: action.pipelineMetadata }
           : {}),
       };
     }
@@ -798,7 +818,15 @@ interface RetryStageAcceptedPayload {
   sourceJobId?: string;
   status?: string;
   pipelineId?: string;
+  pipelineMetadata?: unknown;
   pasteDeltaSummary?: unknown;
+}
+
+interface AcceptedJobReference {
+  jobId: string;
+  pipelineId?: string;
+  pipelineMetadata?: PipelineMetadata;
+  pasteDeltaSummary?: PipelinePasteDeltaSummary;
 }
 
 function isPasteDeltaMode(
@@ -837,6 +865,59 @@ export function isPasteDeltaSummary(
     typeof input.pasteIdentityKey === "string" &&
     typeof input.priorManifestMissing === "boolean"
   );
+}
+
+function isPipelineMetadata(input: unknown): input is PipelineMetadata {
+  return (
+    isRecord(input) &&
+    typeof input.pipelineId === "string" &&
+    input.pipelineId.length > 0 &&
+    typeof input.pipelineDisplayName === "string" &&
+    input.pipelineDisplayName.length > 0 &&
+    typeof input.templateBundleId === "string" &&
+    input.templateBundleId.length > 0 &&
+    typeof input.buildProfile === "string" &&
+    input.buildProfile.length > 0 &&
+    input.deterministic === true
+  );
+}
+
+function extractPipelineProjection(
+  payload: unknown,
+): Pick<AcceptedJobReference, "pipelineId" | "pipelineMetadata"> {
+  if (!isRecord(payload)) {
+    return {};
+  }
+
+  const topLevelPipelineId =
+    typeof payload.pipelineId === "string" && payload.pipelineId.length > 0
+      ? payload.pipelineId
+      : undefined;
+  const topLevelPipelineMetadata = isPipelineMetadata(payload.pipelineMetadata)
+    ? payload.pipelineMetadata
+    : undefined;
+
+  const inspector = isRecord(payload.inspector) ? payload.inspector : undefined;
+  const inspectorPipelineId =
+    typeof inspector?.pipelineId === "string" && inspector.pipelineId.length > 0
+      ? inspector.pipelineId
+      : undefined;
+  const inspectorPipelineMetadata = isPipelineMetadata(
+    inspector?.pipelineMetadata,
+  )
+    ? inspector.pipelineMetadata
+    : undefined;
+  const pipelineId = topLevelPipelineId ?? inspectorPipelineId;
+  const pipelineMetadata = topLevelPipelineMetadata ?? inspectorPipelineMetadata;
+
+  return {
+    ...(pipelineId !== undefined ? { pipelineId } : {}),
+    ...(pipelineMetadata !== undefined
+      ? {
+          pipelineMetadata,
+        }
+      : {}),
+  };
 }
 
 function buildSubmitBody(request: PipelineRequest): SubmitBody {
@@ -1094,6 +1175,8 @@ async function postSubmit({
   signal: AbortSignal;
 }): Promise<{
   jobId: string;
+  pipelineId?: string;
+  pipelineMetadata?: PipelineMetadata;
   pasteDeltaSummary?: PipelinePasteDeltaSummary;
 }> {
   const response = await fetchJson<RetryStageAcceptedPayload>({
@@ -1114,8 +1197,10 @@ async function postSubmit({
       )
         ? response.payload.pasteDeltaSummary
         : undefined;
+      const pipelineProjection = extractPipelineProjection(response.payload);
       return {
         jobId,
+        ...pipelineProjection,
         ...(pasteDeltaSummary !== undefined ? { pasteDeltaSummary } : {}),
       };
     }
@@ -1163,7 +1248,7 @@ async function postRetryStage({
   jobId: string;
   request: PipelineRetryRequest;
   signal: AbortSignal;
-}): Promise<string> {
+}): Promise<AcceptedJobReference> {
   const body: RetryStageBody = {
     stage: request.stage,
     ...(request.targetIds !== undefined && request.targetIds.length > 0
@@ -1183,7 +1268,10 @@ async function postRetryStage({
   if (response.status === 202 && isRecord(response.payload)) {
     const nextJobId = response.payload.jobId;
     if (typeof nextJobId === "string" && nextJobId.length > 0) {
-      return nextJobId;
+      return {
+        jobId: nextJobId,
+        ...extractPipelineProjection(response.payload),
+      };
     }
   }
 
@@ -1567,6 +1655,7 @@ function applyJobPayload({
   const previewUrl =
     typeof payload.preview?.url === "string" ? payload.preview.url : undefined;
   const status = payload.status;
+  const pipelineProjection = extractPipelineProjection(payload);
   if (
     status === "queued" ||
     status === "running" ||
@@ -1579,6 +1668,7 @@ function applyJobPayload({
       type: "job_status_updated",
       status,
       ...(previewUrl !== undefined ? { previewUrl } : {}),
+      ...pipelineProjection,
     });
   }
 
@@ -2203,7 +2293,7 @@ async function executePipelineRun({
   }
 
   let jobId: string;
-  let pasteDeltaSummary: PipelinePasteDeltaSummary | undefined;
+  let acceptedJob: AcceptedJobReference;
   try {
     if (retryRequest !== undefined && sourceJobId !== undefined) {
       apply({
@@ -2213,15 +2303,16 @@ async function executePipelineRun({
           ? { targetIds: retryRequest.targetIds }
           : {}),
       });
-      jobId = await postRetryStage({
+      acceptedJob = await postRetryStage({
         jobId: sourceJobId,
         request: retryRequest,
         signal,
       });
+      jobId = acceptedJob.jobId;
     } else {
       const submitted = await postSubmit({ request, signal });
+      acceptedJob = submitted;
       jobId = submitted.jobId;
-      pasteDeltaSummary = submitted.pasteDeltaSummary;
     }
   } catch (error) {
     if (isAbortError(error)) {
@@ -2263,7 +2354,15 @@ async function executePipelineRun({
   apply({
     type: "job_created",
     jobId,
-    ...(pasteDeltaSummary !== undefined ? { pasteDeltaSummary } : {}),
+    ...(acceptedJob.pipelineId !== undefined
+      ? { pipelineId: acceptedJob.pipelineId }
+      : {}),
+    ...(acceptedJob.pipelineMetadata !== undefined
+      ? { pipelineMetadata: acceptedJob.pipelineMetadata }
+      : {}),
+    ...(acceptedJob.pasteDeltaSummary !== undefined
+      ? { pasteDeltaSummary: acceptedJob.pasteDeltaSummary }
+      : {}),
     ...(request.selectedNodeIds !== undefined &&
     request.selectedNodeIds.length > 0
       ? { selectedNodeIds: request.selectedNodeIds }

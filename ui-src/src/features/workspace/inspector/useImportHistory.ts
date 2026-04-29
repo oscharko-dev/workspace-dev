@@ -8,6 +8,7 @@ import {
   type PasteImportHistory,
   type PasteImportSession,
 } from "./paste-import-history";
+import type { WorkspaceJobPipelineMetadataPayload } from "../workspace-page.helpers";
 
 const IMPORT_HISTORY_QUERY_KEY = ["workspace-import-history"] as const;
 
@@ -25,12 +26,16 @@ interface ReimportImportSessionResponse {
   sessionId?: string;
   jobId?: string;
   sourceJobId?: string;
+  pipelineId?: string;
+  pipelineMetadata?: WorkspaceJobPipelineMetadataPayload;
 }
 
 export interface ReimportImportSessionResult {
   sessionId: string;
   jobId: string;
   sourceJobId: string | null;
+  pipelineId?: string;
+  pipelineMetadata?: WorkspaceJobPipelineMetadataPayload;
 }
 
 export interface UseImportHistoryResult {
@@ -57,6 +62,23 @@ const toHistory = (payload: unknown): PasteImportHistory => {
   }
   return createEmptyImportHistory();
 };
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null && !Array.isArray(value);
+
+const isPipelineMetadata = (
+  value: unknown,
+): value is WorkspaceJobPipelineMetadataPayload =>
+  isRecord(value) &&
+  typeof value.pipelineId === "string" &&
+  value.pipelineId.length > 0 &&
+  typeof value.pipelineDisplayName === "string" &&
+  value.pipelineDisplayName.length > 0 &&
+  typeof value.templateBundleId === "string" &&
+  value.templateBundleId.length > 0 &&
+  typeof value.buildProfile === "string" &&
+  value.buildProfile.length > 0 &&
+  value.deterministic === true;
 
 export function useImportHistory(): UseImportHistoryResult {
   const queryClient = useQueryClient();
@@ -179,6 +201,13 @@ export function useImportHistory(): UseImportHistoryResult {
           payload.sourceJobId.length > 0
             ? payload.sourceJobId
             : null,
+        ...(typeof payload.pipelineId === "string" &&
+        payload.pipelineId.length > 0
+          ? { pipelineId: payload.pipelineId }
+          : {}),
+        ...(isPipelineMetadata(payload.pipelineMetadata)
+          ? { pipelineMetadata: payload.pipelineMetadata }
+          : {}),
       };
     },
     [reimportMutation],

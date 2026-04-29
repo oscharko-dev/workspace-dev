@@ -175,6 +175,14 @@ describe("useImportHistory", () => {
             sessionId: "session-1",
             jobId: "job-reimport",
             sourceJobId: "job-previous",
+            pipelineId: "rocket",
+            pipelineMetadata: {
+              pipelineId: "rocket",
+              pipelineDisplayName: "Rocket",
+              templateBundleId: "react-mui-app",
+              buildProfile: "default,rocket",
+              deterministic: true,
+            },
           }),
           {
             status: 202,
@@ -201,6 +209,14 @@ describe("useImportHistory", () => {
       sessionId: "session-1",
       jobId: "job-reimport",
       sourceJobId: "job-previous",
+      pipelineId: "rocket",
+      pipelineMetadata: {
+        pipelineId: "rocket",
+        pipelineDisplayName: "Rocket",
+        templateBundleId: "react-mui-app",
+        buildProfile: "default,rocket",
+        deterministic: true,
+      },
     });
 
     expect(fetchMock).toHaveBeenNthCalledWith(

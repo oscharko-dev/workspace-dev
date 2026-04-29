@@ -5,6 +5,7 @@ import type {
   PipelinePasteDeltaSummary,
   PartialImportStats,
   PipelineError,
+  PipelineMetadata,
   PipelineStage,
   StageStatus,
 } from "./paste-pipeline";
@@ -17,6 +18,7 @@ export interface PipelineStatusBarProps {
   stageProgress: Record<PipelineStage, StageStatus>;
   partialStats?: PartialImportStats;
   canRetry: boolean;
+  pipelineMetadata?: PipelineMetadata;
   fallbackMode?: PipelineFallbackMode;
   pasteDeltaSummary?: PipelinePasteDeltaSummary;
   onRetry?: (stage?: PipelineStage, targetIds?: string[]) => void;
@@ -126,6 +128,7 @@ export function PipelineStatusBar({
   stageProgress,
   partialStats,
   canRetry,
+  pipelineMetadata,
   fallbackMode,
   pasteDeltaSummary,
   onRetry,
@@ -158,6 +161,15 @@ export function PipelineStatusBar({
             ⚠
           </span>
           <span className="text-amber-400">{summaryText}</span>
+          {pipelineMetadata !== undefined ? (
+            <span
+              data-testid="pipeline-status-bar-pipeline"
+              className="rounded border border-white/10 bg-white/5 px-1.5 py-0.5 text-[10px] font-semibold text-white/55"
+              title={`${pipelineMetadata.templateBundleId} · ${pipelineMetadata.buildProfile}`}
+            >
+              {pipelineMetadata.pipelineDisplayName}
+            </span>
+          ) : null}
           {fallbackMode === "rest" ? (
             <span
               data-testid="pipeline-status-bar-fallback-mode"

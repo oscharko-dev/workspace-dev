@@ -277,7 +277,7 @@ describe("useInspectorBootstrap", () => {
     });
   });
 
-  it("keeps the selected pipeline id through retry and replay paths", async () => {
+  it("switches replay paths from selected to server-accepted pipeline id", async () => {
     const submitBodies: Record<string, unknown>[] = [];
     let submitCount = 0;
 
@@ -295,7 +295,17 @@ describe("useInspectorBootstrap", () => {
 
         return createJsonResponse({
           status: 202,
-          payload: { jobId: `job-${submitCount}` },
+          payload: {
+            jobId: `job-${submitCount}`,
+            pipelineId: "pipe-alt",
+            pipelineMetadata: {
+              pipelineId: "pipe-alt",
+              pipelineDisplayName: "Pipeline Alt",
+              templateBundleId: "template-alt",
+              buildProfile: "default,rocket",
+              deterministic: true,
+            },
+          },
         }) as never;
       }
 
@@ -304,6 +314,14 @@ describe("useInspectorBootstrap", () => {
         return createJsonResponse({
           payload: {
             jobId: jobMatch[1],
+            pipelineId: "pipe-alt",
+            pipelineMetadata: {
+              pipelineId: "pipe-alt",
+              pipelineDisplayName: "Pipeline Alt",
+              templateBundleId: "template-alt",
+              buildProfile: "default,rocket",
+              deterministic: true,
+            },
             status: "completed",
             preview: { url: `http://127.0.0.1:1983/${jobMatch[1]}` },
           },
@@ -365,6 +383,10 @@ describe("useInspectorBootstrap", () => {
     });
 
     expect(submitBodies[1]?.pipelineId).toBe("pipe-default");
+    expect(result.current.pipelineState.pipelineId).toBe("pipe-alt");
+    expect(
+      result.current.pipelineState.pipelineMetadata?.pipelineDisplayName,
+    ).toBe("Pipeline Alt");
 
     act(() => {
       result.current.resubmitFresh();
@@ -374,11 +396,12 @@ describe("useInspectorBootstrap", () => {
       expect(submitBodies).toHaveLength(3);
     });
 
-    expect(submitBodies[2]?.pipelineId).toBe("pipe-default");
+    expect(submitBodies[2]?.pipelineId).toBe("pipe-alt");
 
     act(() => {
       result.current.regenerateScoped({
         selectedNodeIds: ["node-1"],
+        importMode: "delta",
       });
     });
 
@@ -386,8 +409,9 @@ describe("useInspectorBootstrap", () => {
       expect(submitBodies).toHaveLength(4);
     });
 
-    expect(submitBodies[3]?.pipelineId).toBe("pipe-default");
+    expect(submitBodies[3]?.pipelineId).toBe("pipe-alt");
     expect(submitBodies[3]?.selectedNodeIds).toEqual(["node-1"]);
+    expect(submitBodies[3]?.importMode).toBe("delta");
   });
 
   it("routes plugin-shaped JSON node batches through figma_paste (regression for #1105)", async () => {

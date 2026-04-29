@@ -5,6 +5,7 @@ import {
   createInitialPipelineState,
   type PartialImportStats,
   type PipelineError,
+  type PipelineMetadata,
   type PipelinePasteDeltaSummary,
   type PipelineStage,
   type StageStatus,
@@ -58,6 +59,7 @@ interface RenderOverrides {
   onRetry?: () => void;
   onCopyReport?: () => void;
   fallbackMode?: "rest";
+  pipelineMetadata?: PipelineMetadata;
   pasteDeltaSummary?: PipelinePasteDeltaSummary;
 }
 
@@ -71,6 +73,7 @@ function renderBar(overrides: RenderOverrides = {}) {
     onRetry,
     onCopyReport,
     fallbackMode,
+    pipelineMetadata,
     pasteDeltaSummary,
   } = overrides;
 
@@ -82,6 +85,7 @@ function renderBar(overrides: RenderOverrides = {}) {
       {...(partialStats !== undefined ? { partialStats } : {})}
       canRetry={canRetry}
       {...(fallbackMode !== undefined ? { fallbackMode } : {})}
+      {...(pipelineMetadata !== undefined ? { pipelineMetadata } : {})}
       {...(pasteDeltaSummary !== undefined ? { pasteDeltaSummary } : {})}
       {...(onRetry !== undefined ? { onRetry } : {})}
       {...(onCopyReport !== undefined ? { onCopyReport } : {})}
@@ -228,6 +232,25 @@ describe("PipelineStatusBar — fallback mode", () => {
     expect(
       screen.getByTestId("pipeline-status-bar-fallback-mode"),
     ).toHaveTextContent("Figma REST fallback active");
+  });
+});
+
+describe("PipelineStatusBar — pipeline metadata", () => {
+  it("shows the server-projected pipeline display name and build details", () => {
+    renderBar({
+      stage: "partial",
+      pipelineMetadata: {
+        pipelineId: "pipe-rocket",
+        pipelineDisplayName: "Rocket Pipeline",
+        templateBundleId: "react-tailwind-app",
+        buildProfile: "rocket",
+        deterministic: true,
+      },
+    });
+
+    const badge = screen.getByTestId("pipeline-status-bar-pipeline");
+    expect(badge).toHaveTextContent("Rocket Pipeline");
+    expect(badge).toHaveAttribute("title", "react-tailwind-app · rocket");
   });
 });
 

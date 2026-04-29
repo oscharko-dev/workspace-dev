@@ -6,6 +6,14 @@ import { mkdtemp, rm } from "node:fs/promises";
 import type { WorkspaceImportSession } from "../contracts/index.js";
 import { createImportSessionStore } from "./import-session-store.js";
 
+const PIPELINE_METADATA = {
+  pipelineId: "rocket",
+  pipelineDisplayName: "Rocket",
+  templateBundleId: "react-mui-app",
+  buildProfile: "rocket",
+  deterministic: true,
+} as const;
+
 const makeSession = (
   overrides: Partial<WorkspaceImportSession> = {},
 ): WorkspaceImportSession => ({
@@ -170,6 +178,8 @@ test("import-session-store keeps legacy sessions without governance fields and r
     const reviewed = makeSession({
       id: "session-reviewed",
       importedAt: "2026-04-15T11:00:00.000Z",
+      pipelineId: "rocket",
+      pipelineMetadata: PIPELINE_METADATA,
       qualityScore: 87,
       status: "reviewing",
       reviewRequired: true,
@@ -178,6 +188,8 @@ test("import-session-store keeps legacy sessions without governance fields and r
 
     const after = await store.list();
     const found = after.find((entry) => entry.id === "session-reviewed");
+    assert.equal(found?.pipelineId, "rocket");
+    assert.deepEqual(found?.pipelineMetadata, PIPELINE_METADATA);
     assert.equal(found?.qualityScore, 87);
     assert.equal(found?.status, "reviewing");
     assert.equal(found?.reviewRequired, true);

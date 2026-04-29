@@ -32,6 +32,13 @@ function makePipelineState(
 
 const COMPLETED_AT = "2026-04-15T10:00:00.000Z";
 const SESSION_ID = "paste-import-1";
+const PIPELINE_METADATA = {
+  pipelineId: "rocket",
+  pipelineDisplayName: "Rocket",
+  templateBundleId: "react-mui-app",
+  buildProfile: "default,rocket",
+  deterministic: true,
+} as const;
 
 describe("buildPasteImportSession — null cases", () => {
   it("returns null when jobId is undefined", () => {
@@ -318,6 +325,21 @@ describe("buildPasteImportSession — carried fields", () => {
       completedAt: COMPLETED_AT,
     });
     expect(session?.pasteIdentityKey).toBe("paste-ident-abc");
+  });
+
+  it("carries server-projected pipeline identity from pipeline state", () => {
+    const pipelineState = makePipelineState({
+      pipelineId: "rocket",
+      pipelineMetadata: PIPELINE_METADATA,
+    });
+    const session = buildPasteImportSession({
+      pipelineState,
+      urlContext: null,
+      sessionId: SESSION_ID,
+      completedAt: COMPLETED_AT,
+    });
+    expect(session?.pipelineId).toBe("rocket");
+    expect(session?.pipelineMetadata).toEqual(PIPELINE_METADATA);
   });
 
   it("sets pasteIdentityKey to null when absent", () => {

@@ -4,6 +4,7 @@ import path from "node:path";
 import {
   CONTRACT_VERSION,
   type WorkspaceImportSession,
+  type WorkspaceJobPipelineMetadata,
   type WorkspaceImportSessionStatus,
 } from "../contracts/index.js";
 
@@ -56,6 +57,25 @@ const isStringArray = (value: unknown): value is string[] => {
   );
 };
 
+const isPipelineMetadata = (
+  value: unknown,
+): value is WorkspaceJobPipelineMetadata => {
+  if (!isRecord(value)) {
+    return false;
+  }
+  return (
+    typeof value.pipelineId === "string" &&
+    value.pipelineId.length > 0 &&
+    typeof value.pipelineDisplayName === "string" &&
+    value.pipelineDisplayName.length > 0 &&
+    typeof value.templateBundleId === "string" &&
+    value.templateBundleId.length > 0 &&
+    typeof value.buildProfile === "string" &&
+    value.buildProfile.length > 0 &&
+    value.deterministic === true
+  );
+};
+
 const isImportSession = (value: unknown): value is WorkspaceImportSession => {
   if (!isRecord(value)) {
     return false;
@@ -78,6 +98,18 @@ const isImportSession = (value: unknown): value is WorkspaceImportSession => {
     return false;
   }
   if (value.version !== undefined && typeof value.version !== "string") {
+    return false;
+  }
+  if (
+    value.pipelineId !== undefined &&
+    (typeof value.pipelineId !== "string" || value.pipelineId.length === 0)
+  ) {
+    return false;
+  }
+  if (
+    value.pipelineMetadata !== undefined &&
+    !isPipelineMetadata(value.pipelineMetadata)
+  ) {
     return false;
   }
   if (

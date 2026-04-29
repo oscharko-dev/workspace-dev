@@ -613,6 +613,8 @@ test("createJobEngine reimportImportSession replays stored selected nodes for pa
       jobId: "job-partial",
       fileKey: "FILE-PARTIAL",
       nodeId: "2:3",
+      pipelineId: "rocket",
+      pipelineMetadata: PIPELINE_METADATA,
       selectedNodes: ["2:3", "2:4"],
       scope: "partial",
     }),
@@ -653,6 +655,9 @@ test("createJobEngine reimportImportSession replays stored selected nodes for pa
       engine.getJob(partialAccepted.jobId)?.request.selectedNodeIds,
       ["2:3", "2:4"],
     );
+    assert.equal(partialAccepted.pipelineId, "rocket");
+    assert.deepEqual(partialAccepted.pipelineMetadata, PIPELINE_METADATA);
+    assert.equal(engine.getJob(partialAccepted.jobId)?.request.pipelineId, "rocket");
     engine.cancelJob({
       jobId: partialAccepted.jobId,
       reason: "test cleanup",

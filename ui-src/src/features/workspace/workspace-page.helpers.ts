@@ -24,6 +24,14 @@ export interface RuntimeStatusPayload {
   defaultPipelineId?: string | undefined;
 }
 
+export interface WorkspaceJobPipelineMetadataPayload {
+  pipelineId: string;
+  pipelineDisplayName: string;
+  templateBundleId: string;
+  buildProfile: string;
+  deterministic: true;
+}
+
 export interface JobStagePayload {
   name: string;
   status: string;
@@ -50,6 +58,7 @@ export interface JobInspectorStagePayload {
 
 export interface JobInspectorPayload {
   pipelineId?: string;
+  pipelineMetadata?: WorkspaceJobPipelineMetadataPayload;
   outcome?: string;
   fallbackMode?: string;
   mcpCallsConsumed?: number;
@@ -105,6 +114,7 @@ export interface JobLineagePayload {
 export interface JobPayload {
   jobId: string;
   pipelineId?: string;
+  pipelineMetadata?: WorkspaceJobPipelineMetadataPayload;
   status: string;
   stages?: JobStagePayload[];
   outcome?: string;
