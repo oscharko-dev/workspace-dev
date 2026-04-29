@@ -255,7 +255,12 @@ jobs:
         with:
           node-version: 22
           cache: pnpm
-          npm-version: 11.3.0
+
+      - name: Install npm version for trusted publishing
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm install --global npm@11.3.0 --ignore-scripts
 
       - name: Verify npm version for trusted publishing
         shell: bash
@@ -365,7 +370,7 @@ jobs:
             else
               echo "No changesets found and current version already exists on npm. Applying automatic patch version bump based on latest published version."
               LATEST_PUBLISHED_VERSION="$(npm view "${PACKAGE_NAME}" version --registry=https://registry.npmjs.org/)"
-              NEXT_PATCH_VERSION="$(node -e 'const raw=String(process.argv[1] ?? "").trim(); const match=raw.match(/^([0-9]+)\.([0-9]+)\.([0-9]+)(?:[-+].*)?$/); if (!match) { console.error(`Unsupported published version format: ${raw}`); process.exit(1); } const major=Number(match[1]); const minor=Number(match[2]); const patch=Number(match[3]); console.log(`${major}.${minor}.${patch + 1}`);' "${LATEST_PUBLISHED_VERSION}")"
+              NEXT_PATCH_VERSION="$(node -e 'const raw=String(process.argv[1] ?? "").trim(); const match=raw.match(/^([0-9]+)\.([0-9]+)\.([0-9]+)(?:[-+].*)?$/); if (!match) { console.error("Unsupported published version format: " + raw); process.exit(1); } const major=Number(match[1]); const minor=Number(match[2]); const patch=Number(match[3]); console.log(major + "." + minor + "." + (patch + 1));' "${LATEST_PUBLISHED_VERSION}")"
               echo "Latest published version: ${LATEST_PUBLISHED_VERSION}; next patch: ${NEXT_PATCH_VERSION}"
               npm version "${NEXT_PATCH_VERSION}" --no-git-tag-version
             fi
@@ -444,7 +449,7 @@ jobs:
         with:
           name: workspace-dev-release-evidence-${{ github.run_id }}
           path: |
-            ${{ env.RELEASE_EVIDENCE_DIR }}/sbom
+            ${{ runner.temp }}/release-evidence/sbom
           if-no-files-found: ignore
 
       - name: Release summary
@@ -462,13 +467,15 @@ jobs:
             CURRENT_NPM_TAG="latest"
           fi
 
-          echo "## workspace-dev Release Summary" >> "$GITHUB_STEP_SUMMARY"
-          echo "" >> "$GITHUB_STEP_SUMMARY"
-          echo "| Item | Value |" >> "$GITHUB_STEP_SUMMARY"
-          echo "|------|-------|" >> "$GITHUB_STEP_SUMMARY"
-          echo "| Version (current package.json) | \`${CURRENT_VERSION}\` |" >> "$GITHUB_STEP_SUMMARY"
-          echo "| npm tag lane | \`${CURRENT_NPM_TAG}\` |" >> "$GITHUB_STEP_SUMMARY"
-          echo "| Publish auth mode | \`${PUBLISH_AUTH_MODE}\` |" >> "$GITHUB_STEP_SUMMARY"
-          echo "| Provenance path | \`pnpm run release:changesets:publish\` |" >> "$GITHUB_STEP_SUMMARY"
-          echo "| GitHub release tag | \`${GITHUB_RELEASE_TAG}\` |" >> "$GITHUB_STEP_SUMMARY"
-          echo "| GitHub release URL | ${GITHUB_RELEASE_URL} |" >> "$GITHUB_STEP_SUMMARY"
+          {
+            echo "## workspace-dev Release Summary"
+            echo ""
+            echo "| Item | Value |"
+            echo "|------|-------|"
+            echo "| Version (current package.json) | \`${CURRENT_VERSION}\` |"
+            echo "| npm tag lane | \`${CURRENT_NPM_TAG}\` |"
+            echo "| Publish auth mode | \`${PUBLISH_AUTH_MODE}\` |"
+            echo "| Provenance path | \`pnpm run release:changesets:publish\` |"
+            echo "| GitHub release tag | \`${GITHUB_RELEASE_TAG}\` |"
+            echo "| GitHub release URL | ${GITHUB_RELEASE_URL} |"
+          } >> "$GITHUB_STEP_SUMMARY"

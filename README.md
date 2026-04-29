@@ -14,8 +14,8 @@ Autonomous local Workspace runtime for deterministic Figma-to-code generation vi
 
 ## Package and release channels
 
-- npm distribution (authoritative): https://www.npmjs.com/package/workspace-dev
-- GitHub release notes and release evidence assets (SBOM): https://github.com/oscharko-dev/workspace-dev/releases
+- npm distribution (authoritative): [workspace-dev on npm](https://www.npmjs.com/package/workspace-dev)
+- GitHub release notes and release evidence assets (SBOM): [workspace-dev releases](https://github.com/oscharko-dev/workspace-dev/releases)
 - GitHub Packages is intentionally not used for `workspace-dev` distribution.
 
 ## Versioning strategy
@@ -345,18 +345,18 @@ Not available:
 ## Required submit input
 
 - `figmaSourceMode=rest`:
-    - `figmaFileKey`
-    - `figmaAccessToken`
+  - `figmaFileKey`
+  - `figmaAccessToken`
 - `figmaSourceMode=hybrid`:
-    - `figmaFileKey`
-    - `figmaAccessToken`
-    - Workspace Dev will attempt authoritative screen-subtree recovery when the direct REST geometry payload is detected as low-fidelity.
+  - `figmaFileKey`
+  - `figmaAccessToken`
+  - Workspace Dev will attempt authoritative screen-subtree recovery when the direct REST geometry payload is detected as low-fidelity.
 - `figmaSourceMode=figma_paste`:
-    - `figmaJsonPayload`
+  - `figmaJsonPayload`
 - `figmaSourceMode=figma_plugin`:
-    - `figmaJsonPayload`
+  - `figmaJsonPayload`
 - `figmaSourceMode=local_json`:
-    - `figmaJsonPath` (local filesystem path to exported Figma JSON)
+  - `figmaJsonPath` (local filesystem path to exported Figma JSON)
 
 `figma_paste` and `figma_plugin` default to a `6 MiB` payload cap and use a larger
 `8 MiB` submit transport limit only on `POST /workspace/submit`. The
@@ -488,11 +488,11 @@ Response shape:
 `POST /workspace/jobs/:id/sync` supports two request modes:
 
 - Dry-run:
-    - `{"mode":"dry_run","targetPath"?:string}`
-    - Returns per-file plan, summary, destination metadata, and a short-lived `confirmationToken`.
+  - `{"mode":"dry_run","targetPath"?:string}`
+  - Returns per-file plan, summary, destination metadata, and a short-lived `confirmationToken`.
 - Apply:
-    - `{"mode":"apply","confirmationToken":string,"confirmOverwrite":true}`
-    - Requires explicit confirmation and a valid dry-run token; performs writes and returns applied summary.
+  - `{"mode":"apply","confirmationToken":string,"confirmOverwrite":true}`
+  - Requires explicit confirmation and a valid dry-run token; performs writes and returns applied summary.
 
 Sync writes to `<workspaceRoot>/<targetPath>/<boardKey>/...` and is rejected for non-regeneration jobs or non-completed jobs.
 

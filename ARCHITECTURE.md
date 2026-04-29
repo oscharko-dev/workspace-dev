@@ -21,17 +21,17 @@ It provides deterministic HTTP behavior for:
 
 - local in-process job engine (no Redis, no Postgres, no external worker)
 - pipeline kernel (`src/job-engine/pipeline/`) with:
-    - `PipelineOrchestrator` for stage ordering, skip logic, cancellation, status/log updates, and pipeline error mapping
-    - `StageArtifactStore` for filesystem-backed stage artifact references under each job directory
-    - public job projection that syncs artifact-backed outputs back into compatibility fields such as `artifacts.*`, `generationDiff`, and `gitPr`
+  - `PipelineOrchestrator` for stage ordering, skip logic, cancellation, status/log updates, and pipeline error mapping
+  - `StageArtifactStore` for filesystem-backed stage artifact references under each job directory
+  - public job projection that syncs artifact-backed outputs back into compatibility fields such as `artifacts.*`, `generationDiff`, and `gitPr`
 - seven internal stage services (`src/job-engine/services/`):
-    - `figma.source` (Figma fetch/local JSON, cleaning, optional authoritative subtree merge)
-    - `ir.derive` (IR derivation, IR cache, diagnostics, regeneration from seeded source-IR artifacts)
-    - `template.prepare` (template reset/copy)
-    - `codegen.generate` (deterministic generation stream, optional image export, manifest, diff context)
-    - `validate.project` (validation gate, feedback loop, canonical final diff persistence)
-    - `repro.export` (generated `dist` export)
-    - `git.pr` (optional git/pr automation)
+  - `figma.source` (Figma fetch/local JSON, cleaning, optional authoritative subtree merge)
+  - `ir.derive` (IR derivation, IR cache, diagnostics, regeneration from seeded source-IR artifacts)
+  - `template.prepare` (template reset/copy)
+  - `codegen.generate` (deterministic generation stream, optional image export, manifest, diff context)
+  - `validate.project` (validation gate, feedback loop, canonical final diff persistence)
+  - `repro.export` (generated `dist` export)
+  - `git.pr` (optional git/pr automation)
 - integrated preview file serving from generated artifacts
 
 Execution plans:
