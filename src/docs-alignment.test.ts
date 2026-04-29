@@ -277,6 +277,14 @@ test("docs: validation and app template source contain expected pipeline pattern
 
 test("docs: pipeline authoring guide stays aligned with canonical stage contract", async () => {
   const pipelineDoc = await readRepoFile("PIPELINE.md");
+  const readmeDoc = await readRepoFile("README.md");
+  const migrationGuideDoc = await readRepoFile("docs/migration-guide.md");
+  const authoringGuideDoc = await readRepoFile(
+    "docs/default-pipeline/pipeline-authoring-and-migration.md",
+  );
+  const packProfileContract = await readRepoFile(
+    "scripts/pack-profile-contract.mjs",
+  );
   const authoringSection = extractMarkdownTopLevelSection(
     pipelineDoc,
     "Maintainer authoring contract",
@@ -317,6 +325,47 @@ test("docs: pipeline authoring guide stays aligned with canonical stage contract
     authoringSection,
     /new pipeline behavior must be expressed as delegates, artifact contracts, and skip rules inside the canonical stage order/,
   );
+  assert.match(
+    authoringSection,
+    /docs\/default-pipeline\/pipeline-authoring-and-migration\.md/,
+  );
+  assert.match(
+    readmeDoc,
+    /docs\/default-pipeline\/pipeline-authoring-and-migration\.md/,
+  );
+  assert.match(
+    migrationGuideDoc,
+    /default-pipeline\/pipeline-authoring-and-migration\.md/,
+  );
+  assert.match(
+    packProfileContract,
+    /"docs\/default-pipeline\/pipeline-authoring-and-migration\.md"/,
+  );
+  for (const [index, stageName] of STAGE_ORDER.entries()) {
+    assert.match(
+      authoringGuideDoc,
+      new RegExp(`${index + 1}\\. \`${escapeRegExp(stageName)}\``),
+    );
+  }
+  for (const requiredTerm of [
+    "Future pipelines are authored as registered `PipelineDefinition` entries",
+    "new public DAGs",
+    "`PipelineOrchestrator` validates plans before execution",
+    "`default`",
+    "`rocket`",
+    "`WORKSPACE_DEV_PIPELINES`",
+    "`default-rocket`",
+    "`template/react-tailwind-app`",
+    "`template/react-mui-app`",
+    "`pipelineId: \"rocket\"`",
+    "`PIPELINE_INPUT_UNSUPPORTED`",
+    "`LEGACY_ROCKET_AUTO_SELECTED`",
+    "The fallback may be removed only in a future package-major release.",
+    "Do not use `CONTRACT_VERSION` as a dependency pin",
+    "pnpm run verify:pack",
+  ]) {
+    assert.match(authoringGuideDoc, new RegExp(escapeRegExp(requiredTerm)));
+  }
 });
 
 test("docs: default pipeline demo guide stays aligned with runtime evidence", async () => {

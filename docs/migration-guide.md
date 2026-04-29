@@ -110,6 +110,10 @@ you can reproduce which package delivered which contract.
 
 ## Existing Customer Pipeline Requests
 
+For the complete pipeline authoring, packaging, Rocket migration, and
+compatibility fallback policy, see
+[`docs/default-pipeline/pipeline-authoring-and-migration.md`](default-pipeline/pipeline-authoring-and-migration.md).
+
 Existing clients that rely on the current React + MUI generator, customer
 profiles, storybook-first component mappings, or customer-specific import
 aliases should select the compatibility pipeline explicitly:
