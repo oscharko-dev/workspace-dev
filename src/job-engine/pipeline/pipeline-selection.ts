@@ -20,6 +20,37 @@ import { PipelineRegistry } from "./pipeline-registry.js";
 
 export const KNOWN_WORKSPACE_PIPELINE_IDS = ["default", "rocket"] as const;
 
+export type LegacyRocketAutoSelectionSignal =
+  | "customerProfilePath"
+  | "customerBrandId"
+  | "componentMappings"
+  | "customerProfileMappings"
+  | "customerProfileImportAliases"
+  | "directMuiEmotionMappings";
+
+export interface PipelineSelectionWarning {
+  code: "LEGACY_ROCKET_AUTO_SELECTED";
+  message: string;
+  signals: LegacyRocketAutoSelectionSignal[];
+}
+
+export interface PipelineSelectionResult {
+  definition: PipelineDefinition;
+  warnings: PipelineSelectionWarning[];
+}
+
+const LEGACY_ROCKET_SIGNAL_LABELS: Record<
+  LegacyRocketAutoSelectionSignal,
+  string
+> = {
+  customerProfilePath: "customerProfilePath",
+  customerBrandId: "customerBrandId",
+  componentMappings: "componentMappings",
+  customerProfileMappings: "customer-profile component mappings",
+  customerProfileImportAliases: "customer-profile import aliases",
+  directMuiEmotionMappings: "direct MUI/Emotion mappings",
+};
+
 export const DEFAULT_PIPELINE_DEFINITION: PipelineDefinition = {
   id: "default",
   displayName: "Default",
@@ -92,7 +123,10 @@ let defaultRegistry: PipelineRegistry | undefined;
 
 export const createDefaultPipelineRegistry = (): PipelineRegistry =>
   new PipelineRegistry({
-    definitions: [DEFAULT_PIPELINE_DEFINITION, ROCKET_PIPELINE_DEFINITION].filter((definition) =>
+    definitions: [
+      DEFAULT_PIPELINE_DEFINITION,
+      ROCKET_PIPELINE_DEFINITION,
+    ].filter((definition) =>
       CURRENT_BUILD_PROFILE_PIPELINE_IDS.includes(definition.id),
     ),
     knownPipelineIds: [...KNOWN_WORKSPACE_PIPELINE_IDS],
@@ -137,19 +171,45 @@ export const inferPipelineSourceMode = ({
   return figmaSourceMode;
 };
 
-export const selectPipelineDefinition = ({
+const normalizeLegacyRocketSignals = (
+  signals: readonly LegacyRocketAutoSelectionSignal[] | undefined,
+): LegacyRocketAutoSelectionSignal[] => {
+  if (signals === undefined || signals.length === 0) {
+    return [];
+  }
+  return [...new Set(signals)];
+};
+
+const createLegacyRocketAutoSelectionWarning = (
+  signals: LegacyRocketAutoSelectionSignal[],
+): PipelineSelectionWarning => {
+  const labels = signals.map((signal) => LEGACY_ROCKET_SIGNAL_LABELS[signal]);
+  return {
+    code: "LEGACY_ROCKET_AUTO_SELECTED",
+    signals,
+    message:
+      "Omitted pipelineId selected the legacy Rocket compatibility pipeline " +
+      `because Rocket-specific inputs were provided: ${labels.join(", ")}. ` +
+      "Set pipelineId='rocket' explicitly; this compatibility fallback is deprecated.",
+  };
+};
+
+export const selectPipeline = ({
   registry = getDefaultPipelineRegistry(),
+  legacyRocketAutoSelectionSignals,
   requestedPipelineId,
   sourceMode,
   scope,
 }: {
   registry?: PipelineRegistry;
+  legacyRocketAutoSelectionSignals?: readonly LegacyRocketAutoSelectionSignal[];
   requestedPipelineId?: WorkspacePipelineId | undefined;
   sourceMode: WorkspaceFigmaSourceMode;
   scope: WorkspacePipelineScope;
-}): PipelineDefinition => {
+}): PipelineSelectionResult => {
   const available = registry.list();
   const normalizedRequestedPipelineId = requestedPipelineId?.trim();
+  const warnings: PipelineSelectionWarning[] = [];
 
   let selected: PipelineDefinition | undefined;
   if (
@@ -171,8 +231,25 @@ export const selectPipelineDefinition = ({
   } else if (available.length === 1) {
     selected = available[0];
   } else {
-    selected =
+    const defaultPipeline =
       available.find((definition) => definition.id === "default") ?? undefined;
+    const rocketPipeline =
+      available.find((definition) => definition.id === "rocket") ?? undefined;
+    const legacyRocketSignals = normalizeLegacyRocketSignals(
+      legacyRocketAutoSelectionSignals,
+    );
+    if (
+      defaultPipeline !== undefined &&
+      rocketPipeline !== undefined &&
+      legacyRocketSignals.length > 0
+    ) {
+      selected = rocketPipeline;
+      warnings.push(
+        createLegacyRocketAutoSelectionWarning(legacyRocketSignals),
+      );
+    } else {
+      selected = defaultPipeline;
+    }
     if (!selected) {
       throw new PipelineRequestError({
         code: "PIPELINE_UNAVAILABLE",
@@ -203,5 +280,9 @@ export const selectPipelineDefinition = ({
     });
   }
 
-  return selected;
+  return { definition: selected, warnings };
 };
+
+export const selectPipelineDefinition = (
+  input: Parameters<typeof selectPipeline>[0],
+): PipelineDefinition => selectPipeline(input).definition;

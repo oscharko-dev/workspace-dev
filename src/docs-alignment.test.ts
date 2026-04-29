@@ -442,6 +442,8 @@ test("docs: versioning policy stays aligned across README and changelogs", async
   assert.match(migrationGuide, /Existing Customer Pipeline Requests/);
   assert.match(migrationGuide, /pipelineId": "rocket"/);
   assert.match(migrationGuide, /customerProfilePath/);
+  assert.match(migrationGuide, /Rocket-specific inputs/);
+  assert.match(migrationGuide, /direct MUI\/Emotion mapping profiles/);
   assert.match(migrationGuide, /rocket` `template\.prepare` delegate/);
   assert.match(migrationGuide, /availablePipelines/);
   assert.match(migrationGuide, /defaultPipelineId/);
