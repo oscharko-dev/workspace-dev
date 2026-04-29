@@ -12,6 +12,14 @@ import type {
   WorkspaceVisualQualityReferenceMode,
   WorkspaceVisualQualityReport,
 } from "../../contracts/index.js";
+import type {
+  WorkspacePipelineQualityValidationStatus,
+  WorkspacePipelineQualityWarning,
+} from "../../contracts/index.js";
+import {
+  DEFAULT_SEMANTIC_COMPONENT_REPORT_PATH,
+} from "../../parity/default-tailwind-emitter.js";
+import { DESIGN_TOKEN_REPORT_PATH } from "../../parity/design-token-compiler.js";
 import {
   prepareGenerationDiff,
   saveCurrentSnapshot,
@@ -76,6 +84,13 @@ import {
   type ConfidenceScoringInput,
 } from "../confidence-scoring.js";
 import type { ComponentManifest } from "../../parity/component-manifest.js";
+import {
+  buildPipelineQualityPassport,
+  type PipelineQualityCoverageInput,
+  type PipelineQualityGeneratedFileInput,
+  writePipelineQualityPassport,
+} from "../pipeline/quality-passport.js";
+import type { CodegenGenerateSummary } from "./codegen-generate-types.js";
 
 interface ValidateProjectServiceDeps {
   runProjectValidationFn: typeof runProjectValidation;
@@ -1364,7 +1379,360 @@ const toArtifactStatusSummary = (
       }
     : {
         status: "not_available",
-      };
+    };
+};
+
+const PASSPORT_STAGE_ORDER = [
+  "figma.source",
+  "ir.derive",
+  "template.prepare",
+  "codegen.generate",
+  "validate.project",
+] as const;
+
+const toPassportCoverageStatus = (
+  status: ValidationSummaryArtifact["status"],
+): WorkspacePipelineQualityValidationStatus => {
+  if (status === "failed") {
+    return "failed";
+  }
+  return status === "warn" ? "warning" : "passed";
+};
+
+const toPipelineScope = ({
+  request,
+}: {
+  request: Parameters<StageService<void>["execute"]>[1]["job"]["request"];
+}) => {
+  if (request.selectedNodeIds && request.selectedNodeIds.length > 0) {
+    return "selection" as const;
+  }
+  if (request.figmaNodeId && request.figmaNodeId.trim().length > 0) {
+    return "node" as const;
+  }
+  return "board" as const;
+};
+
+const isSafeGeneratedProjectPath = ({
+  generatedProjectDir,
+  relativePath,
+}: {
+  generatedProjectDir: string;
+  relativePath: string;
+}): boolean => {
+  const root = path.resolve(generatedProjectDir);
+  const candidate = path.resolve(generatedProjectDir, relativePath);
+  return candidate !== root && candidate.startsWith(`${root}${path.sep}`);
+};
+
+const collectQualityPassportGeneratedFiles = async ({
+  generatedPaths,
+  generatedProjectDir,
+}: {
+  generatedPaths: readonly string[];
+  generatedProjectDir: string;
+}): Promise<PipelineQualityGeneratedFileInput[]> => {
+  const files: PipelineQualityGeneratedFileInput[] = [];
+  for (const relativePath of [...new Set(generatedPaths)].sort((left, right) =>
+    left.localeCompare(right),
+  )) {
+    if (
+      relativePath === "quality-passport.json" ||
+      !isSafeGeneratedProjectPath({ generatedProjectDir, relativePath })
+    ) {
+      continue;
+    }
+    const absolutePath = path.join(generatedProjectDir, relativePath);
+    try {
+      files.push({
+        path: relativePath,
+        content: await readFile(absolutePath),
+      });
+    } catch {
+      files.push({ path: relativePath });
+    }
+  }
+  return files;
+};
+
+const numberOrUndefined = (value: unknown): number | undefined =>
+  typeof value === "number" && Number.isFinite(value) ? value : undefined;
+
+const readJsonArtifact = async ({
+  absolutePath,
+}: {
+  absolutePath: string;
+}): Promise<unknown> => {
+  try {
+    return JSON.parse(await readFile(absolutePath, "utf8")) as unknown;
+  } catch {
+    return undefined;
+  }
+};
+
+const resolveTokenCoverage = async ({
+  generatedProjectDir,
+  fallbackStatus,
+}: {
+  generatedProjectDir: string;
+  fallbackStatus: WorkspacePipelineQualityValidationStatus;
+}): Promise<PipelineQualityCoverageInput> => {
+  const parsed = await readJsonArtifact({
+    absolutePath: path.join(generatedProjectDir, DESIGN_TOKEN_REPORT_PATH),
+  });
+  if (!isRecord(parsed)) {
+    return { covered: 0, total: 0, status: "not_run" };
+  }
+  if (isRecord(parsed.categories)) {
+    let covered = 0;
+    let total = 0;
+    for (const category of Object.values(parsed.categories)) {
+      if (!isRecord(category)) {
+        continue;
+      }
+      const categoryMapped = numberOrUndefined(category.mapped);
+      const categoryTotal = numberOrUndefined(category.total);
+      if (categoryTotal === undefined || categoryTotal <= 0) {
+        continue;
+      }
+      total += Math.trunc(categoryTotal);
+      covered += Math.min(
+        Math.max(0, Math.trunc(categoryMapped ?? 0)),
+        Math.trunc(categoryTotal),
+      );
+    }
+    if (total > 0) {
+      return { covered, total, status: fallbackStatus };
+    }
+  }
+  const ratio = numberOrUndefined(parsed.tokenCoverage);
+  if (ratio !== undefined) {
+    return {
+      covered: Math.round(Math.max(0, Math.min(1, ratio)) * 10_000),
+      total: 10_000,
+      status: fallbackStatus,
+    };
+  }
+  return { covered: 0, total: 0, status: "not_run" };
+};
+
+const resolveSemanticCoverage = async ({
+  codegenSummary,
+  generatedProjectDir,
+  fallbackStatus,
+}: {
+  codegenSummary: CodegenGenerateSummary | undefined;
+  generatedProjectDir: string;
+  fallbackStatus: WorkspacePipelineQualityValidationStatus;
+}): Promise<PipelineQualityCoverageInput> => {
+  const mappingCoverage = codegenSummary?.mappingCoverage;
+  if (mappingCoverage) {
+    const total = Math.max(0, Math.trunc(mappingCoverage.totalCandidateNodes));
+    const fallbackNodes = Math.max(0, Math.trunc(mappingCoverage.fallbackNodes));
+    return {
+      covered: Math.max(0, total - fallbackNodes),
+      total,
+      status: fallbackStatus,
+    };
+  }
+  const parsed = await readJsonArtifact({
+    absolutePath: path.join(
+      generatedProjectDir,
+      DEFAULT_SEMANTIC_COMPONENT_REPORT_PATH,
+    ),
+  });
+  if (!isRecord(parsed)) {
+    return { covered: 0, total: 0, status: "not_run" };
+  }
+  const components = Array.isArray(parsed.components)
+    ? parsed.components.length
+    : 0;
+  const diagnostics = Array.isArray(parsed.diagnostics)
+    ? parsed.diagnostics.length
+    : 0;
+  return {
+    covered: components,
+    total: components + diagnostics,
+    status: diagnostics > 0 ? "warning" : fallbackStatus,
+  };
+};
+
+const collectQualityPassportWarnings = async ({
+  codegenSummary,
+  context,
+  summary,
+  generatedProjectDir,
+}: {
+  codegenSummary: CodegenGenerateSummary | undefined;
+  context: Parameters<StageService<void>["execute"]>[1];
+  summary: ValidationSummaryArtifact;
+  generatedProjectDir: string;
+}): Promise<WorkspacePipelineQualityWarning[]> => {
+  const warnings: WorkspacePipelineQualityWarning[] = [];
+  const pushWarning = ({
+    code,
+    message,
+    severity = "warning",
+    source,
+  }: Partial<WorkspacePipelineQualityWarning> & {
+    code: string;
+    message: string;
+  }): void => {
+    warnings.push({
+      code,
+      severity,
+      message,
+      ...(source ? { source } : {}),
+    });
+  };
+
+  if (summary.status !== "ok") {
+    pushWarning({
+      code: "VALIDATION_SUMMARY_NOT_OK",
+      severity: summary.status === "failed" ? "error" : "warning",
+      message: `Validation summary completed with status '${summary.status}'.`,
+      source: "validation-summary.json",
+    });
+  }
+  for (const warning of codegenSummary?.llmWarnings ?? []) {
+    pushWarning({
+      code: warning.code,
+      message: warning.message,
+      source: "codegen.generate",
+    });
+  }
+  for (const warning of codegenSummary?.mappingWarnings ?? []) {
+    pushWarning({
+      code: warning.code,
+      message: warning.message,
+      source: "component.mapping",
+    });
+  }
+  for (const warning of codegenSummary?.iconWarnings ?? []) {
+    pushWarning({
+      code: warning.code ?? "ICON_FALLBACK",
+      message: warning.message,
+      source: "icon.render",
+    });
+  }
+  for (const diagnostic of context.getCollectedDiagnostics() ?? []) {
+    pushWarning({
+      code: diagnostic.code,
+      severity: diagnostic.severity === "error" ? "error" : diagnostic.severity,
+      message: diagnostic.message,
+      source: diagnostic.stage,
+    });
+  }
+  const semanticReport = await readJsonArtifact({
+    absolutePath: path.join(
+      generatedProjectDir,
+      DEFAULT_SEMANTIC_COMPONENT_REPORT_PATH,
+    ),
+  });
+  if (isRecord(semanticReport) && Array.isArray(semanticReport.diagnostics)) {
+    for (const diagnostic of semanticReport.diagnostics) {
+      if (!isRecord(diagnostic)) {
+        continue;
+      }
+      const code =
+        typeof diagnostic.code === "string" && diagnostic.code.trim().length > 0
+          ? diagnostic.code
+          : "DEFAULT_SEMANTIC_DIAGNOSTIC";
+      const message =
+        typeof diagnostic.message === "string" &&
+        diagnostic.message.trim().length > 0
+          ? diagnostic.message
+          : "Default semantic synthesis emitted a diagnostic.";
+      pushWarning({
+        code,
+        message,
+        source: DEFAULT_SEMANTIC_COMPONENT_REPORT_PATH,
+      });
+    }
+  }
+  return warnings;
+};
+
+const persistQualityPassportArtifact = async ({
+  context,
+  summary,
+}: {
+  context: Parameters<StageService<void>["execute"]>[1];
+  summary: ValidationSummaryArtifact;
+}): Promise<string> => {
+  const codegenSummary = await context.artifactStore.getValue<CodegenGenerateSummary>(
+    STAGE_ARTIFACT_KEYS.codegenSummary,
+  );
+  const fallbackStatus = toPassportCoverageStatus(summary.status);
+  const generatedPaths = codegenSummary?.generatedPaths ?? [];
+  const generatedFiles = await collectQualityPassportGeneratedFiles({
+    generatedPaths,
+    generatedProjectDir: context.paths.generatedProjectDir,
+  });
+  const passport = buildPipelineQualityPassport({
+    pipelineMetadata: context.pipelineMetadata,
+    sourceMode: context.resolvedFigmaSourceMode,
+    scope: toPipelineScope({ request: context.job.request }),
+    selectedNodeCount: context.job.request.selectedNodeIds?.length ?? 0,
+    generatedFiles,
+    validationStages: context.job.stages
+      .filter((stage) =>
+        PASSPORT_STAGE_ORDER.includes(
+          stage.name as (typeof PASSPORT_STAGE_ORDER)[number],
+        ),
+      )
+      .map((stage) => ({
+        name: stage.name,
+        status:
+          stage.name === "validate.project"
+            ? summary.status === "failed"
+              ? "failed"
+              : "completed"
+            : stage.status,
+      })),
+    validationStatus: fallbackStatus,
+    tokenCoverage: await resolveTokenCoverage({
+      generatedProjectDir: context.paths.generatedProjectDir,
+      fallbackStatus,
+    }),
+    semanticCoverage: await resolveSemanticCoverage({
+      codegenSummary,
+      generatedProjectDir: context.paths.generatedProjectDir,
+      fallbackStatus,
+    }),
+    warnings: await collectQualityPassportWarnings({
+      codegenSummary,
+      context,
+      summary,
+      generatedProjectDir: context.paths.generatedProjectDir,
+    }),
+    metadata: {
+      jobId: context.jobId,
+      validatedAt: summary.validatedAt,
+      pipelineDisplayName: context.pipelineMetadata.pipelineDisplayName,
+      validationSummaryStatus: summary.status,
+      storybookStatus: summary.storybook.status,
+      visualQualityStatus: summary.visualQuality.status,
+      compositeQualityStatus: summary.compositeQuality.status,
+      confidenceStatus: summary.confidence.status,
+    },
+  });
+  const passportPath = await writePipelineQualityPassport({
+    passport,
+    destinationDir: context.paths.generatedProjectDir,
+  });
+  await context.artifactStore.setValue({
+    key: STAGE_ARTIFACT_KEYS.qualityPassport,
+    stage: "validate.project",
+    value: passport,
+  });
+  await context.artifactStore.setPath({
+    key: STAGE_ARTIFACT_KEYS.qualityPassportFile,
+    stage: "validate.project",
+    absolutePath: passportPath,
+  });
+  context.job.artifacts.qualityPassportFile = passportPath;
+  return passportPath;
 };
 
 const toFigmaLibraryResolutionStatusSummary = async ({
@@ -1428,6 +1796,10 @@ const persistValidationSummaryArtifacts = async ({
     key: STAGE_ARTIFACT_KEYS.validationSummaryFile,
     stage: "validate.project",
     absolutePath: validationSummaryFilePath,
+  });
+  await persistQualityPassportArtifact({
+    context,
+    summary,
   });
   return validationSummaryFilePath;
 };

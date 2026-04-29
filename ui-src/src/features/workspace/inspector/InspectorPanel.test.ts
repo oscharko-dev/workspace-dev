@@ -870,6 +870,64 @@ describe("InspectorPanel data states", () => {
     installMutationMock();
   });
 
+  it("shows quality passport evidence in the inspectability summary", () => {
+    installQueryMock();
+
+    renderInspectorPanel({
+      openDialog: "inspectability",
+      pipeline: buildPipelineState({
+        stage: "ready",
+        jobStatus: "completed",
+        errors: [],
+        qualityPassport: {
+          artifactFile:
+            "/Users/test/.workspace-dev/jobs/job-1/generated-app/quality-passport.json",
+          schemaVersion: "1.0.0",
+          pipelineId: "default",
+          templateBundleId: "react-tailwind-app",
+          buildProfile: "default",
+          sourceMode: "figma_plugin",
+          scope: "selection",
+          selectedNodeCount: 2,
+          validationStatus: "passed",
+          generatedFileCount: 7,
+          warningCount: 1,
+          tokenCoverage: {
+            status: "passed",
+            covered: 9,
+            total: 10,
+            ratio: 0.9,
+          },
+          semanticCoverage: {
+            status: "warning",
+            covered: 3,
+            total: 4,
+            ratio: 0.75,
+          },
+        },
+      }),
+    });
+
+    expect(
+      screen.getByTestId("inspector-summary-quality-passport"),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByTestId("inspector-summary-quality-passport-status"),
+    ).toHaveTextContent("Validation: passed");
+    expect(
+      screen.getByTestId("inspector-summary-quality-passport-files"),
+    ).toHaveTextContent("Generated files: 7");
+    expect(
+      screen.getByTestId("inspector-summary-quality-passport-token"),
+    ).toHaveTextContent("Token coverage: 90%");
+    expect(
+      screen.getByTestId("inspector-summary-quality-passport-semantic"),
+    ).toHaveTextContent("Semantic coverage: 75%");
+    expect(
+      screen.getByTestId("inspector-summary-quality-passport-file"),
+    ).toHaveTextContent("Evidence: quality-passport.json");
+  });
+
   it("shows design-ir error state and retries only the design-ir endpoint", () => {
     const designIrRefetch = vi.fn();
     installQueryMock({

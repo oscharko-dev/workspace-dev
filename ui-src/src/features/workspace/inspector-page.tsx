@@ -9,6 +9,7 @@ import { useInspectorBootstrap } from "./inspector/useInspectorBootstrap";
 import { useStreamingTreeNodes } from "./inspector/component-tree-utils";
 import { useImportHistory } from "./inspector/useImportHistory";
 import {
+  getJobQualityPassportPayload,
   isJobPayload,
   type JobPayload,
   type RuntimeStatusPayload,
@@ -252,6 +253,7 @@ function toHydratedPipelineState(payload: JobPayload): PastePipelineState {
   const pipelineId = payload.pipelineId ?? payload.inspector?.pipelineId;
   const pipelineMetadata =
     payload.pipelineMetadata ?? payload.inspector?.pipelineMetadata;
+  const qualityPassport = getJobQualityPassportPayload(payload);
   const previewUrl = payload.preview?.url;
   const outcome =
     payload.status === "completed"
@@ -283,6 +285,7 @@ function toHydratedPipelineState(payload: JobPayload): PastePipelineState {
     ...(outcome !== undefined ? { outcome } : {}),
     ...(pipelineId !== undefined ? { pipelineId } : {}),
     ...(pipelineMetadata !== undefined ? { pipelineMetadata } : {}),
+    ...(qualityPassport !== undefined ? { qualityPassport } : {}),
     ...(previewUrl !== undefined ? { previewUrl } : {}),
     ...(fallbackMode !== undefined ? { fallbackMode } : {}),
     ...(isPartial

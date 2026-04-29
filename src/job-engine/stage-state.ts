@@ -9,6 +9,7 @@ import type {
   WorkspaceJobStatus,
   WorkspaceLlmCodegenMode,
   WorkspacePipelineId,
+  WorkspacePipelineQualityPassportSummary,
 } from "../contracts/index.js";
 import { redactLogMessage, type WorkspaceRuntimeLogger } from "../logging.js";
 import {
@@ -220,6 +221,14 @@ export const cloneJobConfidence = (
     : {}),
 });
 
+export const cloneQualityPassportSummary = (
+  qualityPassport: WorkspacePipelineQualityPassportSummary,
+): WorkspacePipelineQualityPassportSummary => ({
+  ...qualityPassport,
+  tokenCoverage: { ...qualityPassport.tokenCoverage },
+  semanticCoverage: { ...qualityPassport.semanticCoverage },
+});
+
 export const toPublicJob = (job: JobRecord): WorkspaceJobStatus => {
   const pipelineId = resolveJobPipelineId(job);
   const pipelineMetadata = resolveJobPipelineMetadata(job);
@@ -308,6 +317,13 @@ export const toPublicJob = (job: JobRecord): WorkspaceJobStatus => {
             retryTargets: job.inspector.retryTargets.map((target) => ({
               ...target,
             })),
+          }
+        : {}),
+      ...(job.inspector.qualityPassport
+        ? {
+            qualityPassport: cloneQualityPassportSummary(
+              job.inspector.qualityPassport,
+            ),
           }
         : {}),
       stages: job.inspector.stages.map((stage) => ({

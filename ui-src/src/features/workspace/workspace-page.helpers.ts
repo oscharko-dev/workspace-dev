@@ -32,6 +32,29 @@ export interface WorkspaceJobPipelineMetadataPayload {
   deterministic: true;
 }
 
+export interface JobQualityCoveragePayload {
+  status: "not_run" | "passed" | "warning" | "failed";
+  covered: number;
+  total: number;
+  ratio: number;
+}
+
+export interface JobQualityPassportPayload {
+  artifactFile?: string;
+  schemaVersion: string;
+  pipelineId: string;
+  templateBundleId: string;
+  buildProfile: string;
+  sourceMode: WorkspaceFigmaSourceMode;
+  scope: string;
+  selectedNodeCount: number;
+  validationStatus: "not_run" | "passed" | "warning" | "failed";
+  generatedFileCount: number;
+  warningCount: number;
+  tokenCoverage: JobQualityCoveragePayload;
+  semanticCoverage: JobQualityCoveragePayload;
+}
+
 export interface JobStagePayload {
   name: string;
   status: string;
@@ -59,6 +82,7 @@ export interface JobInspectorStagePayload {
 export interface JobInspectorPayload {
   pipelineId?: string;
   pipelineMetadata?: WorkspaceJobPipelineMetadataPayload;
+  qualityPassport?: JobQualityPassportPayload;
   outcome?: string;
   fallbackMode?: string;
   mcpCallsConsumed?: number;
@@ -131,6 +155,60 @@ export interface JobPayload {
 
 export function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function isQualityCoveragePayload(
+  value: unknown,
+): value is JobQualityCoveragePayload {
+  return (
+    isRecord(value) &&
+    (value.status === "not_run" ||
+      value.status === "passed" ||
+      value.status === "warning" ||
+      value.status === "failed") &&
+    typeof value.covered === "number" &&
+    Number.isFinite(value.covered) &&
+    typeof value.total === "number" &&
+    Number.isFinite(value.total) &&
+    typeof value.ratio === "number" &&
+    Number.isFinite(value.ratio)
+  );
+}
+
+export function isJobQualityPassportPayload(
+  value: unknown,
+): value is JobQualityPassportPayload {
+  return (
+    isRecord(value) &&
+    typeof value.schemaVersion === "string" &&
+    typeof value.pipelineId === "string" &&
+    typeof value.templateBundleId === "string" &&
+    typeof value.buildProfile === "string" &&
+    typeof value.sourceMode === "string" &&
+    typeof value.scope === "string" &&
+    typeof value.selectedNodeCount === "number" &&
+    Number.isFinite(value.selectedNodeCount) &&
+    (value.validationStatus === "not_run" ||
+      value.validationStatus === "passed" ||
+      value.validationStatus === "warning" ||
+      value.validationStatus === "failed") &&
+    typeof value.generatedFileCount === "number" &&
+    Number.isFinite(value.generatedFileCount) &&
+    typeof value.warningCount === "number" &&
+    Number.isFinite(value.warningCount) &&
+    isQualityCoveragePayload(value.tokenCoverage) &&
+    isQualityCoveragePayload(value.semanticCoverage) &&
+    (value.artifactFile === undefined || typeof value.artifactFile === "string")
+  );
+}
+
+export function getJobQualityPassportPayload(
+  payload: JobPayload,
+): JobQualityPassportPayload | undefined {
+  const inspector = isRecord(payload.inspector) ? payload.inspector : undefined;
+  return isJobQualityPassportPayload(inspector?.qualityPassport)
+    ? inspector.qualityPassport
+    : undefined;
 }
 
 export function isJobPayload(value: unknown): value is JobPayload {

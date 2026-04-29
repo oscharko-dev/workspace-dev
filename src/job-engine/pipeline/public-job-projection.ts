@@ -6,6 +6,8 @@ import type {
   WorkspaceJobFallbackMode,
   WorkspaceJobInspector,
   WorkspaceJobOutcome,
+  WorkspacePipelineQualityPassport,
+  WorkspacePipelineQualityPassportSummary,
   WorkspaceJobRetryStage,
   WorkspaceJobRetryTarget,
   WorkspaceVisualAuditResult,
@@ -31,6 +33,28 @@ interface HybridEnrichmentLike {
   diagnostics?: Array<{ code?: string }>;
   toolNames?: string[];
 }
+
+const projectQualityPassportSummary = ({
+  artifactFile,
+  passport,
+}: {
+  artifactFile: string | undefined;
+  passport: WorkspacePipelineQualityPassport;
+}): WorkspacePipelineQualityPassportSummary => ({
+  ...(artifactFile ? { artifactFile } : {}),
+  schemaVersion: passport.schemaVersion,
+  pipelineId: passport.pipelineId,
+  templateBundleId: passport.templateBundleId,
+  buildProfile: passport.buildProfile,
+  sourceMode: passport.scope.sourceMode,
+  scope: passport.scope.scope,
+  selectedNodeCount: passport.scope.selectedNodeCount,
+  validationStatus: passport.validation.status,
+  generatedFileCount: passport.generatedFiles.length,
+  warningCount: passport.warnings.length,
+  tokenCoverage: { ...passport.coverage.token },
+  semanticCoverage: { ...passport.coverage.semantic },
+});
 
 const NON_MCP_TOOL_NAMES = new Set(["figma-rest-authoritative-subtrees"]);
 
@@ -355,6 +379,14 @@ export const syncPublicJobProjection = async ({
       delete job.artifacts.validationSummaryFile;
     },
   });
+  const qualityPassportFile = await artifactStore.getPath(
+    STAGE_ARTIFACT_KEYS.qualityPassportFile,
+  );
+  if (qualityPassportFile) {
+    job.artifacts.qualityPassportFile = qualityPassportFile;
+  } else {
+    delete job.artifacts.qualityPassportFile;
+  }
 
   const reproDir = await artifactStore.getPath(STAGE_ARTIFACT_KEYS.reproPath);
   if (reproDir) {
@@ -424,6 +456,10 @@ export const syncPublicJobProjection = async ({
   const hybridEnrichment = await artifactStore.getValue<HybridEnrichmentLike>(
     STAGE_ARTIFACT_KEYS.figmaHybridEnrichment,
   );
+  const qualityPassport =
+    await artifactStore.getValue<WorkspacePipelineQualityPassport>(
+      STAGE_ARTIFACT_KEYS.qualityPassport,
+    );
   const inspectorOutcome = inferOutcome({ job });
   const fallbackMode = inferFallbackMode({ job, hybridEnrichment });
   const mcpCallsConsumed = inferMcpCallsConsumed({ job, hybridEnrichment });
@@ -442,6 +478,14 @@ export const syncPublicJobProjection = async ({
     pipelineMetadata: resolveJobPipelineMetadata(job),
     ...(inspectorOutcome ? { outcome: inspectorOutcome } : {}),
     ...(fallbackMode ? { fallbackMode } : {}),
+    ...(qualityPassport
+      ? {
+          qualityPassport: projectQualityPassportSummary({
+            artifactFile: qualityPassportFile,
+            passport: qualityPassport,
+          }),
+        }
+      : {}),
     ...(mcpCallsConsumed > 0 ? { mcpCallsConsumed } : {}),
     ...(retryTargets.length > 0
       ? {

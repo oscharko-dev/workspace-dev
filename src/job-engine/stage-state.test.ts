@@ -288,6 +288,7 @@ test("toPublicJob deep copies nested stage-state projections", () => {
   job.status = "completed";
   job.currentStage = "validate.project";
   job.outcome = "success";
+  job.pipelineMetadata = PIPELINE_METADATA;
   job.startedAt = "2026-04-20T00:00:00.000Z";
   job.finishedAt = "2026-04-20T00:05:00.000Z";
   job.request.projectName = "workspace";
@@ -419,6 +420,31 @@ test("toPublicJob deep copies nested stage-state projections", () => {
         targetId: "retry-2",
       },
     ],
+    qualityPassport: {
+      artifactFile: "/tmp/job/quality-passport.json",
+      schemaVersion: "1.0.0",
+      pipelineId: "rocket",
+      templateBundleId: "react-mui-app",
+      buildProfile: "rocket",
+      sourceMode: "local_json",
+      scope: "board",
+      selectedNodeCount: 0,
+      validationStatus: "warning",
+      generatedFileCount: 2,
+      warningCount: 1,
+      tokenCoverage: {
+        status: "warning",
+        covered: 1,
+        total: 2,
+        ratio: 0.5,
+      },
+      semanticCoverage: {
+        status: "passed",
+        covered: 2,
+        total: 2,
+        ratio: 1,
+      },
+    },
   };
   job.error = {
     code: "E_TEST",
@@ -451,6 +477,8 @@ test("toPublicJob deep copies nested stage-state projections", () => {
   publicJob.inspector!.retryTargets![0]!.targetId = "changed";
   publicJob.inspector!.stages[0]!.retryTargets![0]!.targetId = "changed";
   publicJob.inspector!.pipelineMetadata.templateBundleId = "changed";
+  publicJob.inspector!.qualityPassport!.tokenCoverage.status = "failed";
+  publicJob.inspector!.qualityPassport!.semanticCoverage.covered = 0;
   publicJob.error!.retryTargets![0]!.targetId = "changed";
 
   assert.equal(job.request.pipelineMetadata, undefined);
@@ -470,5 +498,7 @@ test("toPublicJob deep copies nested stage-state projections", () => {
   );
   assert.equal(job.inspector?.retryTargets?.[0]?.targetId, "retry-2");
   assert.equal(job.inspector?.stages[0]?.retryTargets?.[0]?.targetId, "retry-1");
+  assert.equal(job.inspector?.qualityPassport?.tokenCoverage.status, "warning");
+  assert.equal(job.inspector?.qualityPassport?.semanticCoverage.covered, 2);
   assert.equal(job.error?.retryTargets?.[0]?.targetId, "retry-3");
 });

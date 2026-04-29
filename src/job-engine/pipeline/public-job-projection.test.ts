@@ -3,6 +3,9 @@ import { mkdtemp, mkdir } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
+import {
+  PIPELINE_QUALITY_PASSPORT_SCHEMA_VERSION,
+} from "../../contracts/index.js";
 import { resolveRuntimeSettings } from "../runtime.js";
 import { createInitialStages, nowIso } from "../stage-state.js";
 import type { JobRecord } from "../types.js";
@@ -14,7 +17,7 @@ const PIPELINE_METADATA = {
   pipelineId: "rocket",
   pipelineDisplayName: "Rocket",
   templateBundleId: "react-mui-app",
-  buildProfile: "rocket",
+  buildProfile: "default-rocket",
   deterministic: true,
 } as const;
 
@@ -104,6 +107,7 @@ const createJob = async (): Promise<{
           "stale-composite-quality-report.json",
         ),
         confidenceReportFile: path.join(jobDir, "stale-confidence-report.json"),
+        qualityPassportFile: path.join(jobDir, "stale-quality-passport.json"),
       },
       preview: { enabled: false },
       queue: {
@@ -277,6 +281,7 @@ test("syncPublicJobProjection maps stage artifacts back into public job fields a
     "report.json",
   );
   const confidenceReportFile = path.join(jobDir, "confidence-report.json");
+  const qualityPassportFile = path.join(jobDir, "quality-passport.json");
 
   await artifactStore.setPath({
     key: STAGE_ARTIFACT_KEYS.figmaCleaned,
@@ -382,6 +387,66 @@ test("syncPublicJobProjection maps stage artifacts back into public job fields a
     key: STAGE_ARTIFACT_KEYS.confidenceReport,
     stage: "validate.project",
     absolutePath: confidenceReportFile,
+  });
+  await artifactStore.setPath({
+    key: STAGE_ARTIFACT_KEYS.qualityPassportFile,
+    stage: "validate.project",
+    absolutePath: qualityPassportFile,
+  });
+  await artifactStore.setValue({
+    key: STAGE_ARTIFACT_KEYS.qualityPassport,
+    stage: "validate.project",
+    value: {
+      schemaVersion: PIPELINE_QUALITY_PASSPORT_SCHEMA_VERSION,
+      pipelineId: "rocket",
+      templateBundleId: "react-mui-app",
+      buildProfile: "rocket",
+      scope: {
+        sourceMode: "hybrid",
+        scope: "board",
+        selectedNodeCount: 0,
+      },
+      generatedFiles: [
+        {
+          path: "src/App.tsx",
+          sizeBytes: 20,
+          sha256:
+            "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+        },
+      ],
+      validation: {
+        status: "passed",
+        stages: [
+          { name: "figma.source", status: "completed" },
+          { name: "ir.derive", status: "completed" },
+          { name: "template.prepare", status: "completed" },
+          { name: "codegen.generate", status: "completed" },
+          { name: "validate.project", status: "completed" },
+        ],
+      },
+      coverage: {
+        token: {
+          status: "passed",
+          covered: 4,
+          total: 5,
+          ratio: 0.8,
+        },
+        semantic: {
+          status: "warning",
+          covered: 3,
+          total: 4,
+          ratio: 0.75,
+        },
+      },
+      warnings: [
+        {
+          code: "SEMANTIC_FALLBACK",
+          severity: "warning",
+          message: "One semantic fallback was used.",
+        },
+      ],
+      metadata: {},
+    },
   });
   await artifactStore.setValue({
     key: STAGE_ARTIFACT_KEYS.generationDiff,
@@ -611,6 +676,7 @@ test("syncPublicJobProjection maps stage artifacts back into public job fields a
     compositeQualityReportFile,
   );
   assert.equal(job.artifacts.confidenceReportFile, confidenceReportFile);
+  assert.equal(job.artifacts.qualityPassportFile, qualityPassportFile);
   assert.deepEqual(job.generationDiff, { summary: "fresh diff" });
   assert.deepEqual(job.visualAudit, {
     status: "warn",
@@ -679,6 +745,31 @@ test("syncPublicJobProjection maps stage artifacts back into public job fields a
   });
   assert.equal(job.inspector?.pipelineId, "rocket");
   assert.deepEqual(job.inspector?.pipelineMetadata, PIPELINE_METADATA);
+  assert.deepEqual(job.inspector?.qualityPassport, {
+    artifactFile: qualityPassportFile,
+    schemaVersion: PIPELINE_QUALITY_PASSPORT_SCHEMA_VERSION,
+    pipelineId: "rocket",
+    templateBundleId: "react-mui-app",
+    buildProfile: "rocket",
+    sourceMode: "hybrid",
+    scope: "board",
+    selectedNodeCount: 0,
+    validationStatus: "passed",
+    generatedFileCount: 1,
+    warningCount: 1,
+    tokenCoverage: {
+      status: "passed",
+      covered: 4,
+      total: 5,
+      ratio: 0.8,
+    },
+    semanticCoverage: {
+      status: "warning",
+      covered: 3,
+      total: 4,
+      ratio: 0.75,
+    },
+  });
   assert.equal(job.inspector?.mcpCallsConsumed, 3);
 });
 
@@ -698,6 +789,8 @@ test("syncPublicJobProjection clears stale confidence when no artifact is stored
 
   assert.equal(job.confidence, undefined);
   assert.equal(job.artifacts.confidenceReportFile, undefined);
+  assert.equal(job.artifacts.qualityPassportFile, undefined);
+  assert.equal(job.inspector?.qualityPassport, undefined);
 });
 
 test("syncPublicJobProjection projects completed confidence from artifact store", async () => {

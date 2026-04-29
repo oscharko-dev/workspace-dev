@@ -771,6 +771,14 @@ function getStatusBadgeClasses(status: InspectorSourceStatus): string {
   return "border border-rose-400/25 bg-rose-500/10 text-rose-300";
 }
 
+function formatQualityCoverageRatio(ratio: number): string {
+  return `${String(Math.round(Math.max(0, Math.min(1, ratio)) * 100))}%`;
+}
+
+function formatEvidenceFileLabel(value: string): string {
+  return value.split(/[\\/]/).filter(Boolean).at(-1) ?? value;
+}
+
 function loadBoundariesEnabledPreference(): boolean {
   if (typeof window === "undefined") {
     return false;
@@ -7188,7 +7196,52 @@ export function InspectorPanel({
               ? "Node-level diagnostics available. Select a node to see details."
               : inspectabilitySummary.aggregateOnlyNote}
           </p>
-          <div className="mt-2 grid gap-2 lg:grid-cols-2">
+          <div className="mt-2 grid gap-2 lg:grid-cols-2 xl:grid-cols-3">
+            {activePipeline.qualityPassport !== undefined ? (
+              <div
+                data-testid="inspector-summary-quality-passport"
+                className="rounded border border-slate-200 bg-white px-2 py-1.5 text-xs text-slate-800"
+              >
+                <p className="m-0 font-semibold text-slate-900">
+                  Quality passport
+                </p>
+                <div className="mt-1 grid gap-1">
+                  <span data-testid="inspector-summary-quality-passport-status">
+                    Validation:{" "}
+                    {activePipeline.qualityPassport.validationStatus}
+                  </span>
+                  <span data-testid="inspector-summary-quality-passport-files">
+                    Generated files:{" "}
+                    {String(activePipeline.qualityPassport.generatedFileCount)}
+                  </span>
+                  <span data-testid="inspector-summary-quality-passport-token">
+                    Token coverage:{" "}
+                    {formatQualityCoverageRatio(
+                      activePipeline.qualityPassport.tokenCoverage.ratio,
+                    )}
+                  </span>
+                  <span data-testid="inspector-summary-quality-passport-semantic">
+                    Semantic coverage:{" "}
+                    {formatQualityCoverageRatio(
+                      activePipeline.qualityPassport.semanticCoverage.ratio,
+                    )}
+                  </span>
+                  <span data-testid="inspector-summary-quality-passport-warnings">
+                    Warnings:{" "}
+                    {String(activePipeline.qualityPassport.warningCount)}
+                  </span>
+                  {activePipeline.qualityPassport.artifactFile !== undefined ? (
+                    <span data-testid="inspector-summary-quality-passport-file">
+                      Evidence:{" "}
+                      {formatEvidenceFileLabel(
+                        activePipeline.qualityPassport.artifactFile,
+                      )}
+                    </span>
+                  ) : null}
+                </div>
+              </div>
+            ) : null}
+
             <div
               data-testid="inspector-summary-manifest-coverage"
               className="rounded border border-slate-200 bg-white px-2 py-1.5 text-xs text-slate-800"

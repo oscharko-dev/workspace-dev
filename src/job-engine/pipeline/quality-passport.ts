@@ -80,6 +80,7 @@ export interface BuildPipelineQualityPassportInput {
   selectedNodeCount?: number;
   generatedFiles: readonly PipelineQualityGeneratedFileInput[];
   validationStages: readonly PipelineQualityStageInput[];
+  validationStatus?: WorkspacePipelineQualityValidationStatus;
   tokenCoverage: PipelineQualityCoverageInput;
   semanticCoverage: PipelineQualityCoverageInput;
   warnings?: readonly Partial<WorkspacePipelineQualityWarning>[];
@@ -358,6 +359,7 @@ export const buildPipelineQualityPassport = ({
   selectedNodeCount = 0,
   generatedFiles,
   validationStages,
+  validationStatus,
   tokenCoverage,
   semanticCoverage,
   warnings,
@@ -376,7 +378,7 @@ export const buildPipelineQualityPassport = ({
     },
     generatedFiles: normalizeGeneratedFiles(generatedFiles),
     validation: {
-      status: normalizeStageStatus(stages),
+      status: validationStatus ?? normalizeStageStatus(stages),
       stages,
     },
     coverage: {
