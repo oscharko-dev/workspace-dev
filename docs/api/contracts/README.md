@@ -9631,6 +9631,14 @@ PR execution status attached to completed jobs when Git PR integration is enable
 
 > **pasteIdentityKey**: `string` \| `null`
 
+##### pipelineId?
+
+> `optional` **pipelineId?**: [`WorkspacePipelineId`](#workspacepipelineid)
+
+##### pipelineMetadata?
+
+> `optional` **pipelineMetadata?**: [`WorkspaceJobPipelineMetadata`](#workspacejobpipelinemetadata)
+
 ##### qualityScore?
 
 > `optional` **qualityScore?**: `number`
@@ -9798,7 +9806,7 @@ Present only when `figmaSourceMode === "figma_paste" | "figma_plugin"` and diff 
 
 ###### Inherited from
 
-[`WorkspaceSubmitAccepted`](#workspacesubmitaccepted).[`pipelineId`](#pipelineid-9)
+[`WorkspaceSubmitAccepted`](#workspacesubmitaccepted).[`pipelineId`](#pipelineid-10)
 
 ##### pipelineMetadata
 
@@ -9806,7 +9814,7 @@ Present only when `figmaSourceMode === "figma_paste" | "figma_plugin"` and diff 
 
 ###### Inherited from
 
-[`WorkspaceSubmitAccepted`](#workspacesubmitaccepted).[`pipelineMetadata`](#pipelinemetadata-8)
+[`WorkspaceSubmitAccepted`](#workspacesubmitaccepted).[`pipelineMetadata`](#pipelinemetadata-9)
 
 ##### sessionId
 

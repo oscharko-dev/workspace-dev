@@ -104,7 +104,9 @@ import { syncPublicJobProjection } from "./job-engine/pipeline/public-job-projec
 import {
   inferPipelineSourceMode,
   inferPipelineScope,
+  selectPipeline,
   selectPipelineDefinition,
+  type LegacyRocketAutoSelectionSignal,
 } from "./job-engine/pipeline/pipeline-selection.js";
 import {
   clonePipelineMetadata,
@@ -236,6 +238,103 @@ const normalizeOptionalInputString = (
   }
   const trimmed = value.trim();
   return trimmed.length > 0 ? trimmed : undefined;
+};
+
+const MUI_EMOTION_PACKAGE_PREFIXES = ["@mui/", "@emotion/"] as const;
+
+const isMuiEmotionPackageReference = (value: string | undefined): boolean => {
+  const normalized = normalizeOptionalInputString(value);
+  return (
+    normalized !== undefined &&
+    MUI_EMOTION_PACKAGE_PREFIXES.some((prefix) => normalized.startsWith(prefix))
+  );
+};
+
+const profileHasDirectMuiEmotionMappings = (
+  profile: ResolvedCustomerProfile,
+): boolean => {
+  if (
+    Object.values(profile.imports.components).some((entry) =>
+      isMuiEmotionPackageReference(entry.package),
+    ) ||
+    Object.values(profile.imports.icons).some((entry) =>
+      isMuiEmotionPackageReference(entry.package),
+    )
+  ) {
+    return true;
+  }
+  if (
+    Object.entries(profile.template.importAliases).some(
+      ([alias, target]) =>
+        isMuiEmotionPackageReference(alias) ||
+        isMuiEmotionPackageReference(target),
+    )
+  ) {
+    return true;
+  }
+  if (
+    Object.keys(profile.template.dependencies).some(
+      isMuiEmotionPackageReference,
+    ) ||
+    Object.keys(profile.template.devDependencies).some(
+      isMuiEmotionPackageReference,
+    )
+  ) {
+    return true;
+  }
+  return (
+    profile.fallbacks.mui.defaultPolicy === "allow" ||
+    Object.keys(profile.fallbacks.mui.components).length > 0
+  );
+};
+
+const collectLegacyRocketAutoSelectionSignals = ({
+  componentMappings,
+  customerBrandId,
+  customerProfilePath,
+  runtimeCustomerProfile,
+}: {
+  componentMappings?:
+    | readonly { enabled: boolean; importPath: string }[]
+    | undefined;
+  customerBrandId?: string | undefined;
+  customerProfilePath?: string | undefined;
+  runtimeCustomerProfile?: ResolvedCustomerProfile | undefined;
+}): LegacyRocketAutoSelectionSignal[] => {
+  const signals: LegacyRocketAutoSelectionSignal[] = [];
+  if (customerProfilePath) {
+    signals.push("customerProfilePath");
+  }
+  if (customerBrandId) {
+    signals.push("customerBrandId");
+  }
+  const enabledComponentMappings =
+    componentMappings?.filter((mapping) => mapping.enabled) ?? [];
+  if (enabledComponentMappings.length > 0) {
+    signals.push("componentMappings");
+  }
+  if (
+    enabledComponentMappings.some((mapping) =>
+      isMuiEmotionPackageReference(mapping.importPath),
+    )
+  ) {
+    signals.push("directMuiEmotionMappings");
+  }
+  if (runtimeCustomerProfile !== undefined) {
+    if (
+      Object.keys(runtimeCustomerProfile.imports.components).length > 0 ||
+      Object.keys(runtimeCustomerProfile.imports.icons).length > 0
+    ) {
+      signals.push("customerProfileMappings");
+    }
+    if (Object.keys(runtimeCustomerProfile.template.importAliases).length > 0) {
+      signals.push("customerProfileImportAliases");
+    }
+    if (profileHasDirectMuiEmotionMappings(runtimeCustomerProfile)) {
+      signals.push("directMuiEmotionMappings");
+    }
+  }
+  return [...new Set(signals)];
 };
 
 const RETRYABLE_STAGE_SET = new Set<WorkspaceJobRetryStage>([
@@ -2753,7 +2852,26 @@ export const createJobEngine = ({
       input.figmaSourceMode === undefined
         ? toAcceptedModes()
         : toAcceptedModes({ figmaSourceMode: input.figmaSourceMode });
-    const selectedPipeline = selectPipelineDefinition({
+    const customerProfilePath = normalizeOptionalInputString(
+      input.customerProfilePath,
+    );
+    const customerBrandId = normalizeOptionalInputString(input.customerBrandId);
+    const componentMappings = input.componentMappings
+      ? normalizeComponentMappingRules({
+          rules: input.componentMappings,
+        })
+      : undefined;
+    const pipelineSelection = selectPipeline({
+      legacyRocketAutoSelectionSignals: collectLegacyRocketAutoSelectionSignals(
+        {
+          ...(componentMappings !== undefined ? { componentMappings } : {}),
+          ...(customerBrandId !== undefined ? { customerBrandId } : {}),
+          ...(customerProfilePath !== undefined ? { customerProfilePath } : {}),
+          ...(runtime.customerProfile !== undefined
+            ? { runtimeCustomerProfile: runtime.customerProfile }
+            : {}),
+        },
+      ),
       requestedPipelineId: input.pipelineId,
       sourceMode: inferPipelineSourceMode({
         figmaSourceMode: acceptedModes.figmaSourceMode,
@@ -2761,6 +2879,10 @@ export const createJobEngine = ({
       }),
       scope: inferPipelineScope(input),
     });
+    const selectedPipeline = pipelineSelection.definition;
+    const pipelineSelectionWarnings = pipelineSelection.warnings.map(
+      (warning) => warning.message,
+    );
     const pipelineMetadata = toPipelineRuntimeMetadata(selectedPipeline);
     const resolvedInput: SubmissionJobInput = {
       ...input,
@@ -2770,20 +2892,9 @@ export const createJobEngine = ({
       submitGenerationLocale: resolvedInput.generationLocale,
       runtimeGenerationLocale: runtime.generationLocale,
     });
-    const customerProfilePath = normalizeOptionalInputString(
-      resolvedInput.customerProfilePath,
-    );
-    const customerBrandId = normalizeOptionalInputString(
-      resolvedInput.customerBrandId,
-    );
     const storybookStaticDir = normalizeOptionalInputString(
       resolvedInput.storybookStaticDir,
     );
-    const componentMappings = resolvedInput.componentMappings
-      ? normalizeComponentMappingRules({
-          rules: resolvedInput.componentMappings,
-        })
-      : undefined;
     const resolvedFormHandlingMode = resolveFormHandlingMode({
       submitFormHandlingMode: resolvedInput.formHandlingMode,
     });
@@ -2958,6 +3069,14 @@ export const createJobEngine = ({
       level: "info",
       message: "Job accepted by workspace-dev runtime.",
     });
+    for (const warning of pipelineSelectionWarnings) {
+      pushRuntimeLog({
+        job,
+        logger: runtime.logger,
+        level: "warn",
+        message: warning,
+      });
+    }
 
     if (runningJobIds.size < runtime.maxConcurrentJobs) {
       executeJob({ job, input: resolvedInput });
@@ -4870,7 +4989,9 @@ export const createJobEngine = ({
       figmaSourceMode: "hybrid",
       requestSourceMode: "figma_url",
       figmaFileKey: session.fileKey,
-      ...(replayPipelineId !== undefined ? { pipelineId: replayPipelineId } : {}),
+      ...(replayPipelineId !== undefined
+        ? { pipelineId: replayPipelineId }
+        : {}),
       ...(session.nodeId.length > 0 ? { figmaNodeId: session.nodeId } : {}),
       ...(session.scope === "partial"
         ? { selectedNodeIds: [...session.selectedNodes] }

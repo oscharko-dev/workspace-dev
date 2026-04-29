@@ -124,9 +124,15 @@ aliases should select the compatibility pipeline explicitly:
 }
 ```
 
-The current package build profile includes both `default` and `rocket`, so jobs
-without a `pipelineId` resolve to `default`. Customer-profile jobs should keep
-`pipelineId: "rocket"` to preserve existing React + MUI generation semantics.
+The current package build profile includes both `default` and `rocket`. Plain
+jobs without a `pipelineId` resolve to `default`. For backward compatibility,
+omitted-`pipelineId` jobs that still send Rocket-specific inputs now resolve to
+`rocket` and add a warning to the job logs. Rocket-specific inputs include
+`customerProfilePath`, `customerBrandId`, customer-profile component mappings,
+customer-profile import aliases, and direct MUI/Emotion mapping profiles.
+Customer-profile jobs should still keep `pipelineId: "rocket"` to preserve
+existing React + MUI generation semantics and avoid relying on the deprecated
+compatibility fallback.
 
 Customer-profile template dependencies and import aliases are applied by the
 `rocket` `template.prepare` delegate. Downstream smoke tests for existing

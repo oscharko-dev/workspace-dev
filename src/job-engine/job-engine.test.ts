@@ -12,7 +12,10 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import type { WorkspaceImportSession } from "../contracts/index.js";
-import { createJobEngine as createJobEngineBase, resolveRuntimeSettings } from "../job-engine.js";
+import {
+  createJobEngine as createJobEngineBase,
+  resolveRuntimeSettings,
+} from "../job-engine.js";
 import { createDefaultFigmaMcpEnrichmentLoader } from "./figma-hybrid-enrichment.js";
 import { createImportSessionStore } from "./import-session-store.js";
 import { loadRehydratedJobs } from "./job-snapshot.js";
@@ -558,14 +561,24 @@ test("createJobEngine defaults omitted pipelineId to the default Tailwind pipeli
   assert.equal(status.status, "partial");
   assert.equal(
     await readFile(
-      path.join(status.artifacts.generatedProjectDir!, "src", "theme", "token-report.json"),
+      path.join(
+        status.artifacts.generatedProjectDir!,
+        "src",
+        "theme",
+        "token-report.json",
+      ),
       "utf8",
     ).then((content) => JSON.parse(content).pipelineId),
     "default",
   );
   assert.equal(
     await readFile(
-      path.join(status.artifacts.generatedProjectDir!, "src", "generated", "layout-report.json"),
+      path.join(
+        status.artifacts.generatedProjectDir!,
+        "src",
+        "generated",
+        "layout-report.json",
+      ),
       "utf8",
     ).then((content) => JSON.parse(content).pipelineId),
     "default",
@@ -584,18 +597,80 @@ test("createJobEngine defaults omitted pipelineId to the default Tailwind pipeli
   );
   assert.equal(
     await readFile(
-      path.join(status.artifacts.generatedProjectDir!, "generation-metrics.json"),
+      path.join(
+        status.artifacts.generatedProjectDir!,
+        "generation-metrics.json",
+      ),
       "utf8",
     )
       .then((content) => JSON.parse(content))
-      .then((metrics) =>
-        Array.isArray(metrics.nodeDiagnostics) &&
-        metrics.nodeDiagnostics.some(
-          (entry: { category?: unknown; nodeId?: unknown }) =>
-            entry.category === "unsupported-board-component" &&
-            entry.nodeId === "unsupported-instance",
-        ),
+      .then(
+        (metrics) =>
+          Array.isArray(metrics.nodeDiagnostics) &&
+          metrics.nodeDiagnostics.some(
+            (entry: { category?: unknown; nodeId?: unknown }) =>
+              entry.category === "unsupported-board-component" &&
+              entry.nodeId === "unsupported-instance",
+          ),
       ),
+    true,
+  );
+});
+
+test("createJobEngine auto-selects rocket and warns when omitted pipelineId has legacy Rocket inputs", async () => {
+  const tempRoot = await mkdtemp(
+    path.join(os.tmpdir(), "workspace-dev-engine-rocket-auto-select-"),
+  );
+  const engine = createJobEngineBase({
+    resolveBaseUrl: () => "http://127.0.0.1:1983",
+    paths: {
+      outputRoot: tempRoot,
+      jobsRoot: path.join(tempRoot, "jobs"),
+      reprosRoot: path.join(tempRoot, "repros"),
+      workspaceRoot: tempRoot,
+    },
+    runtime: resolveRuntimeSettings({
+      enablePreview: false,
+      figmaMaxRetries: 1,
+      figmaRequestTimeoutMs: 1000,
+    }),
+  });
+
+  const accepted = engine.submitJob({
+    figmaFileKey: "abc",
+    figmaAccessToken: "token",
+    customerProfilePath: " profiles/customer-profile.json ",
+    customerBrandId: " sparkasse ",
+    componentMappings: [
+      {
+        boardKey: "board",
+        nodeId: "1:2",
+        componentName: "Button",
+        importPath: "@mui/material",
+        priority: 0,
+        source: "local_override",
+        enabled: true,
+      },
+    ],
+  });
+
+  assert.equal(accepted.pipelineId, "rocket");
+  assert.deepEqual(accepted.pipelineMetadata, PIPELINE_METADATA);
+  const queuedStatus = engine.getJob(accepted.jobId);
+  assert.equal(queuedStatus?.pipelineId, "rocket");
+  assert.deepEqual(queuedStatus?.pipelineMetadata, PIPELINE_METADATA);
+  assert.equal(queuedStatus?.request.pipelineId, "rocket");
+  assert.equal(
+    queuedStatus?.logs.some(
+      (entry) =>
+        entry.level === "warn" &&
+        entry.message.includes("legacy Rocket compatibility pipeline") &&
+        entry.message.includes("customerProfilePath") &&
+        entry.message.includes("customerBrandId") &&
+        entry.message.includes("componentMappings") &&
+        entry.message.includes("direct MUI/Emotion mappings") &&
+        !entry.message.includes("profiles/customer-profile.json"),
+    ),
     true,
   );
 });
@@ -657,7 +732,10 @@ test("createJobEngine reimportImportSession replays stored selected nodes for pa
     );
     assert.equal(partialAccepted.pipelineId, "rocket");
     assert.deepEqual(partialAccepted.pipelineMetadata, PIPELINE_METADATA);
-    assert.equal(engine.getJob(partialAccepted.jobId)?.request.pipelineId, "rocket");
+    assert.equal(
+      engine.getJob(partialAccepted.jobId)?.request.pipelineId,
+      "rocket",
+    );
     engine.cancelJob({
       jobId: partialAccepted.jobId,
       reason: "test cleanup",

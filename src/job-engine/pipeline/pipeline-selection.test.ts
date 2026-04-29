@@ -22,6 +22,7 @@ import {
   createDefaultPipelineRegistry,
   inferPipelineScope,
   inferPipelineSourceMode,
+  selectPipeline,
   selectPipelineDefinition,
 } from "./pipeline-selection.js";
 
@@ -200,6 +201,69 @@ test("pipeline selection is deterministic for default-only, rocket-only, and com
     }).id,
     "rocket",
   );
+});
+
+test("pipeline selection auto-selects rocket with warnings for omitted legacy Rocket inputs in combined bundles", () => {
+  const registry = new PipelineRegistry({
+    definitions: [
+      createDefinition({ id: "rocket" }),
+      createDefinition({ id: "default" }),
+    ],
+  });
+
+  const selected = selectPipeline({
+    registry,
+    legacyRocketAutoSelectionSignals: [
+      "customerProfilePath",
+      "customerProfilePath",
+      "directMuiEmotionMappings",
+    ],
+    sourceMode: "local_json",
+    scope: "board",
+  });
+
+  assert.equal(selected.definition.id, "rocket");
+  assert.equal(selected.warnings.length, 1);
+  assert.equal(selected.warnings[0]?.code, "LEGACY_ROCKET_AUTO_SELECTED");
+  assert.deepEqual(selected.warnings[0]?.signals, [
+    "customerProfilePath",
+    "directMuiEmotionMappings",
+  ]);
+  assert.match(
+    selected.warnings[0]?.message ?? "",
+    /customerProfilePath.*direct MUI\/Emotion mappings/,
+  );
+});
+
+test("pipeline selection keeps explicit and single-profile selections authoritative with legacy Rocket inputs", () => {
+  const defaultAndRocketRegistry = new PipelineRegistry({
+    definitions: [
+      createDefinition({ id: "default" }),
+      createDefinition({ id: "rocket" }),
+    ],
+  });
+  const rocketOnlyRegistry = new PipelineRegistry({
+    definitions: [createDefinition({ id: "rocket" })],
+  });
+
+  const explicitDefault = selectPipeline({
+    registry: defaultAndRocketRegistry,
+    requestedPipelineId: "default",
+    legacyRocketAutoSelectionSignals: ["customerBrandId"],
+    sourceMode: "local_json",
+    scope: "board",
+  });
+  assert.equal(explicitDefault.definition.id, "default");
+  assert.deepEqual(explicitDefault.warnings, []);
+
+  const rocketOnly = selectPipeline({
+    registry: rocketOnlyRegistry,
+    legacyRocketAutoSelectionSignals: ["customerBrandId"],
+    sourceMode: "local_json",
+    scope: "board",
+  });
+  assert.equal(rocketOnly.definition.id, "rocket");
+  assert.deepEqual(rocketOnly.warnings, []);
 });
 
 test("pipeline selection distinguishes unknown and unavailable pipeline IDs", () => {
