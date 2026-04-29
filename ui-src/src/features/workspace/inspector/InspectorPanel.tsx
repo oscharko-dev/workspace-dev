@@ -6293,7 +6293,7 @@ export function InspectorPanel({
         {hasTreePane ? (
           <div
             data-testid="inspector-pane-tree"
-            className="inspector-pane inspector-pane-tree min-h-[120px] shrink-0 border-r border-[#000000]"
+            className="inspector-pane inspector-pane-tree min-h-30 shrink-0 border-r border-[#000000]"
             style={
               treePaneStyle
                 ? ({
@@ -6420,7 +6420,7 @@ export function InspectorPanel({
         {/* Center: Preview pane */}
         <div
           data-testid="inspector-pane-preview"
-          className="inspector-pane inspector-pane-preview relative min-h-[200px] border-r border-[#000000] lg:min-h-0"
+          className="inspector-pane inspector-pane-preview relative min-h-50 border-r border-[#000000] lg:min-h-0"
           style={
             previewPaneStyle
               ? ({
@@ -6487,7 +6487,7 @@ export function InspectorPanel({
         {/* Right: Code pane */}
         <div
           data-testid="inspector-pane-code"
-          className="inspector-pane inspector-pane-code min-h-[200px] lg:min-h-0"
+          className="inspector-pane inspector-pane-code min-h-50 lg:min-h-0"
           style={
             codePaneStyle
               ? ({
@@ -6650,7 +6650,7 @@ export function InspectorPanel({
                   className="flex items-center gap-1 text-[10px] text-slate-400"
                 >
                   <span
-                    className={`inline-flex h-3.5 min-w-[1rem] items-center justify-center rounded px-0.5 text-[8px] font-bold leading-none ${badge.color}`}
+                    className={`inline-flex h-3.5 min-w-4 items-center justify-center rounded px-0.5 text-[8px] font-bold leading-none ${badge.color}`}
                   >
                     {badge.abbr}
                   </span>
@@ -6878,7 +6878,7 @@ export function InspectorPanel({
             </p>
           ) : null}
           <div className="mt-2 flex flex-col gap-2 sm:flex-row sm:items-end">
-            <label className="flex min-w-[220px] flex-1 flex-col gap-1">
+            <label className="flex min-w-55 flex-1 flex-col gap-1">
               <span className="font-semibold text-emerald-900">
                 Target path override (optional)
               </span>
@@ -7090,7 +7090,7 @@ export function InspectorPanel({
             </p>
           ) : null}
           <div className="mt-2 flex flex-col gap-2">
-            <label className="flex min-w-[220px] flex-1 flex-col gap-1">
+            <label className="flex min-w-55 flex-1 flex-col gap-1">
               <span className="font-semibold text-indigo-900">
                 Repository URL
               </span>
@@ -7105,7 +7105,7 @@ export function InspectorPanel({
                 className="rounded border border-indigo-300 bg-white px-2 py-1 text-xs text-slate-900"
               />
             </label>
-            <label className="flex min-w-[220px] flex-1 flex-col gap-1">
+            <label className="flex min-w-55 flex-1 flex-col gap-1">
               <span className="font-semibold text-indigo-900">
                 Access Token
               </span>
@@ -7120,7 +7120,7 @@ export function InspectorPanel({
                 className="rounded border border-indigo-300 bg-white px-2 py-1 text-xs text-slate-900"
               />
             </label>
-            <label className="flex min-w-[220px] flex-1 flex-col gap-1">
+            <label className="flex min-w-55 flex-1 flex-col gap-1">
               <span className="font-semibold text-indigo-900">
                 Target path (optional)
               </span>
