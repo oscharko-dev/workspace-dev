@@ -83,6 +83,7 @@ test("matchesDeniedPackage classifies guarded dependency families", () => {
   assert.equal(matchesDeniedPackage("@emotion/react"), "emotion");
   assert.equal(matchesDeniedPackage("@customer/components"), "customer");
   assert.equal(matchesDeniedPackage("@rocket/ui"), "rocket");
+  assert.equal(matchesDeniedPackage("@figmapipe/rocket-ui"), "rocket");
   assert.equal(matchesDeniedPackage("@sentry/react"), "telemetry");
   assert.equal(matchesDeniedPackage("@opentelemetry/api"), "telemetry");
   assert.equal(matchesDeniedPackage("react"), null);
@@ -246,7 +247,7 @@ test("analyzeDefaultTemplateDenylist rejects denied imports but ignores test fix
   const root = await createTemplate({
     files: {
       "src/App.tsx":
-        'import { CustomerButton } from "@customer/components";\nimport { profile } from "customer-profile";\nexport const App = () => <CustomerButton profile={profile} />;\n',
+        'import { CustomerButton } from "@customer/components";\nimport { profile } from "customer-profile";\nimport { RocketCard } from "@figmapipe/rocket-ui";\nexport const App = () => <CustomerButton profile={profile} card={RocketCard} />;\n',
       "scripts/fixture.test.mjs":
         'const fixture = "import { Button } from \\"@mui/material\\"";\n',
     },
@@ -257,7 +258,7 @@ test("analyzeDefaultTemplateDenylist rejects denied imports but ignores test fix
     report.violations.filter((violation) => violation.kind === "source").map(
       (violation) => violation.category,
     ),
-    ["customer"],
+    ["customer", "rocket"],
   );
   assert.equal(
     report.violations.some(

@@ -101,7 +101,7 @@ const SOURCE_DENYLIST_PATTERNS = [
   {
     category: "rocket",
     pattern:
-      /(?:from\s+|import\s*\(|import\s+|require\s*\()\s*["']@rocket(?:\/|["'])/,
+      /(?:from\s+|import\s*\(|import\s+|require\s*\()\s*["'](?:@rocket(?:\/|["'])|@figmapipe\/rocket(?:[-/]|["']))/,
   },
   {
     category: "telemetry",
