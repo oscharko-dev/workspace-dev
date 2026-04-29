@@ -7,11 +7,11 @@
  */
 import { readdir, readFile } from "node:fs/promises";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const SRC_DIR = path.resolve(__dirname, "../src");
-const PKG_JSON = path.resolve(__dirname, "../package.json");
+const DEFAULT_SRC_DIR = path.resolve(__dirname, "../src");
+const DEFAULT_PKG_JSON = path.resolve(__dirname, "../package.json");
 
 // ── Source-level forbidden import patterns ──────────────────────────────────
 const FORBIDDEN_PATTERNS = [
@@ -49,6 +49,50 @@ const CUSTOMER_PROFILE_TEMPLATE_IMPORT_ALLOWLIST = new Set([
   "src/job-engine/services/rocket-template-prepare-service.ts"
 ]);
 
+const DEFAULT_PIPELINE_MODULE_PATTERNS = [
+  /^src\/parity\/default-[^/]+\.ts$/,
+  /^src\/job-engine\/services\/default-[^/]+-service\.ts$/,
+  /^src\/job-engine\/services\/template-prepare-service\.ts$/
+];
+
+const DEFAULT_PIPELINE_IMPORT_RULES = [
+  {
+    category: "customer-profile",
+    pattern: /(?:from\s+|import\s*\(|import\s+|require\s*\()\s*["'][^"']*customer-profile(?:-template)?\.js["']/
+  },
+  {
+    category: "rocket",
+    pattern: /(?:from\s+|import\s*\(|import\s+|require\s*\()\s*["'][^"']*rocket[^"']*["']/
+  },
+  {
+    category: "mui",
+    pattern: /(?:from\s+|import\s*\(|import\s+|require\s*\()\s*["']@mui(?:\/|["'])/
+  },
+  {
+    category: "emotion",
+    pattern: /(?:from\s+|import\s*\(|import\s+|require\s*\()\s*["']@emotion(?:\/|["'])/
+  },
+  {
+    category: "customer-alias",
+    pattern: /(?:from\s+|import\s*\(|import\s+|require\s*\()\s*["'](?:@customer(?:\/|["'])|@figmapipe\/customer(?:[-/]|["'])|customer[-/])/
+  },
+  {
+    category: "proprietary-asset",
+    pattern: /(?:from\s+|import\s*\(|import\s+|require\s*\()\s*["'][^"']*(?:\/assets\/|\/proprietary\/|\.avif["']|\.gif["']|\.ico["']|\.jpe?g["']|\.png["']|\.svg["']|\.webp["'])/
+  },
+  {
+    category: "telemetry",
+    pattern: /(?:from\s+|import\s*\(|import\s+|require\s*\()\s*["'](?:posthog-js|@sentry\/|mixpanel|mixpanel-browser|amplitude|@amplitude\/|analytics-node|@segment\/|@datadog\/browser-|dd-trace|newrelic|@newrelic\/|applicationinsights|@opentelemetry\/)/
+  }
+];
+
+const ROCKET_PIPELINE_MODULE_PATTERNS = [
+  /^src\/job-engine\/services\/rocket-[^/]+-service\.ts$/
+];
+
+const ROCKET_DEFAULT_TEMPLATE_INTERNAL_IMPORT_PATTERN =
+  /(?:from\s+|import\s*\(|import\s+|require\s*\()\s*["'][^"']*(?:react-tailwind-app(?:\/[^"']*)?|default-tailwind-emitter\.js|default-layout-solver\.js|default-codegen-generate-service\.js|template-prepare-service\.js)["']/;
+
 // ── Package.json forbidden runtime dependencies ─────────────────────────────
 const FORBIDDEN_DEPENDENCIES = ["pg", "ioredis", "bullmq", "figmapipe-api", "@figmapipe/api", "sqlite3", "better-sqlite3", "fastify", "zod"];
 
@@ -66,16 +110,30 @@ const collectTsFiles = async (dir) => {
   return files;
 };
 
-const main = async () => {
+const isDefaultPipelineModule = (relativePathPosix) =>
+  DEFAULT_PIPELINE_MODULE_PATTERNS.some((pattern) =>
+    pattern.test(relativePathPosix)
+  );
+
+const isRocketPipelineModule = (relativePathPosix) =>
+  ROCKET_PIPELINE_MODULE_PATTERNS.some((pattern) =>
+    pattern.test(relativePathPosix)
+  );
+
+export const analyzeWorkspaceBoundaries = async ({
+  srcDir = DEFAULT_SRC_DIR,
+  packageJsonPath = DEFAULT_PKG_JSON,
+  cwd = process.cwd()
+} = {}) => {
   const violations = [];
 
   // ── Check source files ────────────────────────────────────────────────────
-  const files = await collectTsFiles(SRC_DIR);
+  const files = await collectTsFiles(srcDir);
 
   for (const filePath of files) {
     const content = await readFile(filePath, "utf-8");
     const lines = content.split("\n");
-    const relativePath = path.relative(process.cwd(), filePath);
+    const relativePath = path.relative(cwd, filePath);
     const relativePathPosix = relativePath.split(path.sep).join("/");
     const isGeneratorModule =
       relativePathPosix.startsWith(IR_BOUNDARY_SCOPE_PREFIX) &&
@@ -86,6 +144,8 @@ const main = async () => {
     const stageServiceMatch = relativePathPosix.match(STAGE_SERVICE_PATH_PATTERN);
     const currentStageServiceName = stageServiceMatch ? `${stageServiceMatch[1]}-service` : undefined;
     const isTestFile = relativePathPosix.endsWith(".test.ts") || relativePathPosix.endsWith(".test.tsx");
+    const isDefaultModule = isDefaultPipelineModule(relativePathPosix);
+    const isRocketModule = isRocketPipelineModule(relativePathPosix);
     for (let lineIndex = 0; lineIndex < lines.length; lineIndex++) {
       const line = lines[lineIndex];
       for (const pattern of FORBIDDEN_PATTERNS) {
@@ -146,11 +206,39 @@ const main = async () => {
           type: "import"
         });
       }
+      if (!isTestFile && isDefaultModule) {
+        for (const rule of DEFAULT_PIPELINE_IMPORT_RULES) {
+          if (rule.pattern.test(line)) {
+            violations.push({
+              file: relativePath,
+              line: lineIndex + 1,
+              content:
+                `Default pipeline boundary violation: default modules must not import ${rule.category} dependencies. ` +
+                `[${line.trim()}]`,
+              type: "import"
+            });
+          }
+        }
+      }
+      if (
+        !isTestFile &&
+        isRocketModule &&
+        ROCKET_DEFAULT_TEMPLATE_INTERNAL_IMPORT_PATTERN.test(line)
+      ) {
+        violations.push({
+          file: relativePath,
+          line: lineIndex + 1,
+          content:
+            "Rocket boundary violation: rocket modules must not import default template internals. " +
+            `[${line.trim()}]`,
+          type: "import"
+        });
+      }
     }
   }
 
   // ── Check package.json dependencies ───────────────────────────────────────
-  const pkgContent = await readFile(PKG_JSON, "utf-8");
+  const pkgContent = await readFile(packageJsonPath, "utf-8");
   const pkg = JSON.parse(pkgContent);
   const runtimeDeps = { ...(pkg.dependencies ?? {}) };
   const allDeps = {
@@ -179,6 +267,12 @@ const main = async () => {
     }
   }
 
+  return { files, violations };
+};
+
+const main = async () => {
+  const { files, violations } = await analyzeWorkspaceBoundaries();
+
   // ── Report ────────────────────────────────────────────────────────────────
   if (violations.length === 0) {
     console.log("✅ Boundary check passed: no forbidden imports or dependencies found.");
@@ -199,7 +293,12 @@ const main = async () => {
   process.exit(1);
 };
 
-main().catch((error) => {
-  console.error("Boundary check failed:", error);
-  process.exit(1);
-});
+if (
+  process.argv[1] !== undefined &&
+  import.meta.url === pathToFileURL(process.argv[1]).href
+) {
+  main().catch((error) => {
+    console.error("Boundary check failed:", error);
+    process.exit(1);
+  });
+}

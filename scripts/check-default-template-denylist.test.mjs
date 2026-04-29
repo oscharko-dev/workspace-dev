@@ -246,16 +246,18 @@ test("analyzeDefaultTemplateDenylist rejects denied imports but ignores test fix
   const root = await createTemplate({
     files: {
       "src/App.tsx":
-        'import { CustomerButton } from "@customer/components";\nexport const App = () => <CustomerButton />;\n',
+        'import { CustomerButton } from "@customer/components";\nimport { profile } from "customer-profile";\nexport const App = () => <CustomerButton profile={profile} />;\n',
       "scripts/fixture.test.mjs":
         'const fixture = "import { Button } from \\"@mui/material\\"";\n',
     },
   });
 
   const report = await analyzeDefaultTemplateDenylist({ templateRoot: root });
-  assert.equal(
-    report.violations.some((violation) => violation.kind === "source"),
-    true,
+  assert.deepEqual(
+    report.violations.filter((violation) => violation.kind === "source").map(
+      (violation) => violation.category,
+    ),
+    ["customer"],
   );
   assert.equal(
     report.violations.some(
