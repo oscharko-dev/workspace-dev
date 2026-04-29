@@ -88,6 +88,9 @@ export interface BuildPipelineQualityPassportInput {
 
 const roundRatio = (value: number): number => Math.round(value * 1_000_000) / 1_000_000;
 
+const toNonNegativeInteger = (value: number): number =>
+  Number.isFinite(value) ? Math.max(0, Math.trunc(value)) : 0;
+
 const byteLength = (content: string | Uint8Array): number =>
   typeof content === "string" ? Buffer.byteLength(content, "utf8") : content.byteLength;
 
@@ -166,8 +169,8 @@ const normalizeGeneratedFiles = (
 const normalizeCoverage = (
   input: PipelineQualityCoverageInput,
 ): WorkspacePipelineQualityCoverageMetric => {
-  const covered = Math.max(0, Math.trunc(input.covered));
-  const total = Math.max(0, Math.trunc(input.total));
+  const covered = toNonNegativeInteger(input.covered);
+  const total = toNonNegativeInteger(input.total);
   const boundedCovered = Math.min(covered, total);
   const ratio = total === 0 ? 0 : roundRatio(boundedCovered / total);
   const status =
@@ -352,7 +355,7 @@ export const buildPipelineQualityPassport = ({
     scope: {
       sourceMode,
       scope,
-      selectedNodeCount: Math.max(0, Math.trunc(selectedNodeCount)),
+      selectedNodeCount: toNonNegativeInteger(selectedNodeCount),
     },
     generatedFiles: normalizeGeneratedFiles(generatedFiles),
     validation: {

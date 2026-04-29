@@ -235,3 +235,36 @@ test("buildPipelineQualityPassport rejects duplicate generated file paths", () =
     /appears more than once/,
   );
 });
+
+test("buildPipelineQualityPassport never serializes non-finite numeric evidence as null", () => {
+  const passport = buildPipelineQualityPassport({
+    pipelineMetadata: PIPELINE_METADATA,
+    sourceMode: "local_json",
+    scope: "board",
+    selectedNodeCount: Number.NaN,
+    generatedFiles: [],
+    validationStages: [],
+    tokenCoverage: { covered: Number.NaN, total: 10 },
+    semanticCoverage: { covered: 1, total: Number.POSITIVE_INFINITY },
+  });
+
+  assert.equal(passport.scope.selectedNodeCount, 0);
+  assert.deepEqual(passport.coverage.token, {
+    status: "failed",
+    covered: 0,
+    total: 10,
+    ratio: 0,
+  });
+  assert.deepEqual(passport.coverage.semantic, {
+    status: "not_run",
+    covered: 0,
+    total: 0,
+    ratio: 0,
+  });
+
+  const serialized = serializePipelineQualityPassport(passport);
+  assert.doesNotMatch(serialized, /"selectedNodeCount":null/);
+  assert.doesNotMatch(serialized, /"covered":null/);
+  assert.doesNotMatch(serialized, /"total":null/);
+  assert.doesNotMatch(serialized, /"ratio":null/);
+});
