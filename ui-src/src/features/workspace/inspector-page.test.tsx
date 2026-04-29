@@ -38,6 +38,20 @@ vi.mock("./inspector/InspectorPanel", () => ({
       jobId?: string;
       pipelineId?: string;
       pipelineMetadata?: { pipelineDisplayName: string };
+      stage?: string;
+      outcome?: string;
+      jobStatus?: string;
+      canRetry?: boolean;
+      canCancel?: boolean;
+      fallbackMode?: string;
+      errors?: Array<{ code?: string; stage?: string; retryable?: boolean }>;
+      partialStats?: {
+        resolvedStages: number;
+        totalStages: number;
+        errorCount: number;
+      };
+      qualityPassport?: { validationStatus?: string };
+      previewUrl?: string;
     };
   }): JSX.Element => (
     <div>
@@ -56,6 +70,21 @@ vi.mock("./inspector/InspectorPanel", () => ({
           pipeline?.jobId ?? "",
           pipeline?.pipelineId ?? "",
           pipeline?.pipelineMetadata?.pipelineDisplayName ?? "",
+        ].join("|")}
+      </div>
+      <div data-testid="inspector-panel-pipeline-details">
+        {[
+          pipeline?.stage ?? "",
+          pipeline?.outcome ?? "",
+          pipeline?.jobStatus ?? "",
+          String(pipeline?.canRetry ?? ""),
+          String(pipeline?.canCancel ?? ""),
+          pipeline?.fallbackMode ?? "",
+          String(pipeline?.errors?.length ?? ""),
+          String(pipeline?.partialStats?.resolvedStages ?? ""),
+          String(pipeline?.partialStats?.errorCount ?? ""),
+          pipeline?.qualityPassport?.validationStatus ?? "",
+          pipeline?.previewUrl ?? "",
         ].join("|")}
       </div>
       <button type="button" onClick={() => onRegenerationAccepted("job-2")}>
@@ -138,6 +167,10 @@ function renderPage(initialEntry: string): void {
                 <LocationProbe />
               </>
             }
+          />
+          <Route
+            path="/workspace/ui/inspector/test-intelligence"
+            element={<LocationProbe />}
           />
           <Route path="/workspace/ui" element={<LocationProbe />} />
         </Routes>
@@ -228,6 +261,116 @@ describe("InspectorPage — deep-link path", () => {
         "job-1|rocket|Rocket Pipeline",
       );
     });
+  });
+
+  it("hydrates partial pipeline errors, inspector stages, and runtime test intelligence navigation", async () => {
+    fetchJsonMock.mockImplementation(async ({ url }) => {
+      if (url === "/workspace") {
+        return createJsonResponse({
+          payload: {
+            ...runtimeStatusPayload,
+            testIntelligenceEnabled: true,
+          },
+        }) as never;
+      }
+      if (url === "/workspace/jobs/job-partial") {
+        return createJsonResponse({
+          payload: {
+            jobId: "job-partial",
+            status: "partial",
+            stages: [
+              { name: "figma.source", status: "completed" },
+              {
+                name: "codegen.generate",
+                status: "running",
+                message: "Generating",
+              },
+              {
+                name: "validate.project",
+                status: "failed",
+                code: "E_VALIDATE",
+                message: "Validation failed",
+                retryable: true,
+                retryAfterMs: 250,
+                fallbackMode: "rest",
+              },
+            ],
+            inspector: {
+              pipelineId: "default",
+              pipelineMetadata: {
+                pipelineId: "default",
+                pipelineDisplayName: "Default Pipeline",
+                templateBundleId: "react-tailwind-app",
+                buildProfile: "default",
+                deterministic: true,
+              },
+              qualityPassport: {
+                schemaVersion: "1.0.0",
+                pipelineId: "default",
+                templateBundleId: "react-tailwind-app",
+                buildProfile: "default",
+                sourceMode: "rest",
+                scope: "all",
+                selectedNodeCount: 0,
+                validationStatus: "warning",
+                generatedFileCount: 4,
+                warningCount: 1,
+                tokenCoverage: {
+                  status: "passed",
+                  covered: 1,
+                  total: 1,
+                  ratio: 1,
+                },
+                semanticCoverage: {
+                  status: "warning",
+                  covered: 1,
+                  total: 2,
+                  ratio: 0.5,
+                },
+              },
+              stages: [
+                {
+                  stage: "git.pr",
+                  status: "failed",
+                  code: "E_PR",
+                  message: "PR failed",
+                },
+                { stage: "unknown.stage", status: "running" },
+              ],
+            },
+            preview: { url: "http://127.0.0.1:1983/preview" },
+            error: {
+              code: "E_FINAL",
+              message: "Final failure",
+              stage: "unknown.stage",
+              fallbackMode: "rest",
+            },
+          },
+        }) as never;
+      }
+
+      throw new Error(`Unexpected url: ${url}`);
+    });
+
+    renderPage(
+      "/workspace/ui/inspector?jobId=job-partial&previewUrl=http%3A%2F%2F127.0.0.1%3A1983%2Fpreview",
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId("inspector-panel-pipeline")).toHaveTextContent(
+        "job-partial|default|Default Pipeline",
+      );
+    });
+    expect(
+      screen.getByTestId("inspector-panel-pipeline-details"),
+    ).toHaveTextContent(
+      "partial|partial|partial|true|false|rest|3|1|1|warning|http://127.0.0.1:1983/preview",
+    );
+
+    fireEvent.click(screen.getByTestId("inspector-open-test-intelligence"));
+    expect(screen.getByTestId("location-probe")).toHaveTextContent(
+      "/workspace/ui/inspector/test-intelligence?jobId=job-partial",
+    );
   });
 });
 
@@ -596,7 +739,9 @@ describe("InspectorPage — bootstrap path", () => {
       expect(screen.getByRole("alert")).toBeInTheDocument();
     });
 
-    const retryTextarea = screen.getByLabelText(/figma clipboard paste target/i);
+    const retryTextarea = screen.getByLabelText(
+      /figma clipboard paste target/i,
+    );
     fireEvent.paste(retryTextarea, {
       clipboardData: {
         getData: (type: string) =>

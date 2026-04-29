@@ -401,6 +401,57 @@ test("property: deep trees render without dropping selected descendants", () => 
   );
 });
 
+test("property: empty frames with missing styles and extreme spacing render safely", () => {
+  fc.assert(
+    fc.property(
+      nameArb,
+      finiteOrHostileNumberArb,
+      finiteOrHostileNumberArb,
+      finiteOrHostileNumberArb,
+      optionalColorArb,
+      (screenName, gap, paddingValue, cornerRadius, fillColor) => {
+        const generated = createDefaultTailwindScreenFile(
+          screen({
+            id: "empty-frame-screen",
+            name: screenName,
+            children: [
+              {
+                id: "empty-frame",
+                name: "Empty Frame",
+                nodeType: "FRAME",
+                type: "container",
+                layoutMode: "VERTICAL",
+                gap,
+                padding: {
+                  top: paddingValue,
+                  right: paddingValue,
+                  bottom: paddingValue,
+                  left: paddingValue,
+                },
+                cornerRadius,
+                ...(fillColor !== undefined ? { fillColor } : {}),
+                children: [],
+              },
+              {
+                id: "unstyled-frame",
+                name: "Unstyled Frame",
+                nodeType: "FRAME",
+                type: "container",
+                children: [],
+              },
+            ],
+          }),
+        );
+
+        assert.match(generated.file.content, /data-ir-id="empty-frame"/);
+        assert.match(generated.file.content, /data-ir-id="unstyled-frame"/);
+        assertGeneratedSourceIsSane(generated.file.content);
+      },
+    ),
+    { numRuns: 64 },
+  );
+});
+
 test("default reports tolerate responsive metadata at breakpoint and override edges", () => {
   const responsiveScreen = screen({
     id: "responsive-screen",
