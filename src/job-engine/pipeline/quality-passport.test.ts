@@ -157,19 +157,39 @@ test("serializePipelineQualityPassport emits canonical snapshot bytes", () => {
 test("projectQualityPassportMetadata redacts secret-shaped fields and values", () => {
   assert.deepEqual(
     projectQualityPassportMetadata({
+      authorHandle: "safe-author",
+      authorship: "design-review",
       fileKey: "DUArQ8VuM3aPMjXFLaQSSH",
       authorization: "Bearer ghp_not_real",
+      repoToken: "github_pat_not_real",
       nested: [{ accessToken: "figd_not_real" }, { label: "public" }],
       count: Number.POSITIVE_INFINITY,
       omitted: undefined,
     }),
     {
       authorization: "[REDACTED]",
+      authorHandle: "safe-author",
+      authorship: "design-review",
       count: null,
       fileKey: "DUArQ8VuM3aPMjXFLaQSSH",
       nested: [{ accessToken: "[REDACTED]" }, { label: "public" }],
+      repoToken: "[REDACTED]",
     },
   );
+});
+
+test("projectQualityPassportMetadata projects circular references safely", () => {
+  const metadata: Record<string, unknown> = { name: "root" };
+  const child: unknown[] = ["leaf"];
+  metadata.self = metadata;
+  child.push(child);
+  metadata.child = child;
+
+  assert.deepEqual(projectQualityPassportMetadata(metadata), {
+    child: ["leaf", "[Circular]"],
+    name: "root",
+    self: "[Circular]",
+  });
 });
 
 test("writePipelineQualityPassport writes canonical quality-passport.json", async () => {
@@ -197,6 +217,37 @@ test("writePipelineQualityPassport writes canonical quality-passport.json", asyn
   );
   assert.equal(
     await readFile(path, "utf8"),
+    serializePipelineQualityPassport(passport),
+  );
+});
+
+test("writePipelineQualityPassport supports concurrent writes to one destination", async () => {
+  const destinationDir = await mkdtemp(
+    join(tmpdir(), "workspace-quality-passport-concurrent-"),
+  );
+  const passport = buildPipelineQualityPassport({
+    pipelineMetadata: PIPELINE_METADATA,
+    sourceMode: "local_json",
+    scope: "node",
+    generatedFiles: [],
+    validationStages: [],
+    tokenCoverage: { covered: 0, total: 0 },
+    semanticCoverage: { covered: 0, total: 0 },
+  });
+
+  const [firstPath, secondPath] = await Promise.all([
+    writePipelineQualityPassport({ passport, destinationDir }),
+    writePipelineQualityPassport({ passport, destinationDir }),
+  ]);
+
+  const destination = join(
+    destinationDir,
+    PIPELINE_QUALITY_PASSPORT_ARTIFACT_FILENAME,
+  );
+  assert.equal(firstPath, destination);
+  assert.equal(secondPath, destination);
+  assert.equal(
+    await readFile(destination, "utf8"),
     serializePipelineQualityPassport(passport),
   );
 });
@@ -267,4 +318,46 @@ test("buildPipelineQualityPassport never serializes non-finite numeric evidence 
   assert.doesNotMatch(serialized, /"covered":null/);
   assert.doesNotMatch(serialized, /"total":null/);
   assert.doesNotMatch(serialized, /"ratio":null/);
+});
+
+test("buildPipelineQualityPassport clamps unsafe numeric evidence", () => {
+  const passport = buildPipelineQualityPassport({
+    pipelineMetadata: PIPELINE_METADATA,
+    sourceMode: "local_json",
+    scope: "board",
+    selectedNodeCount: Number.MAX_VALUE,
+    generatedFiles: [
+      {
+        path: "src/App.tsx",
+        sizeBytes: Number.MAX_SAFE_INTEGER + 1,
+        sha256: "a".repeat(64),
+      },
+    ],
+    validationStages: [],
+    tokenCoverage: {
+      covered: Number.MAX_VALUE,
+      total: Number.MAX_VALUE,
+    },
+    semanticCoverage: {
+      covered: 1,
+      total: Number.MAX_SAFE_INTEGER + 10,
+    },
+  });
+
+  assert.equal(passport.scope.selectedNodeCount, Number.MAX_SAFE_INTEGER);
+  assert.deepEqual(passport.generatedFiles, [
+    { path: "src/App.tsx", sha256: "a".repeat(64) },
+  ]);
+  assert.deepEqual(passport.coverage.token, {
+    status: "passed",
+    covered: Number.MAX_SAFE_INTEGER,
+    total: Number.MAX_SAFE_INTEGER,
+    ratio: 1,
+  });
+  assert.deepEqual(passport.coverage.semantic, {
+    status: "warning",
+    covered: 1,
+    total: Number.MAX_SAFE_INTEGER,
+    ratio: 0,
+  });
 });

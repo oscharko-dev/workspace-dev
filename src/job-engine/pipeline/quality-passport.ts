@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { mkdir, rename, writeFile } from "node:fs/promises";
 import { isAbsolute, join, posix, win32 } from "node:path";
 
@@ -50,7 +50,7 @@ const WARNING_SEVERITY_ORDER: Record<
 };
 
 const SECRET_KEY_PATTERN =
-  /(?:api[_-]?key|access[_-]?token|auth(?:orization)?|bearer|credential|figmaAccessToken|llmApiKey|oauth|password|secret|token)/i;
+  /^(?:api[_-]?key|apiKey|access[_-]?token|accessToken|auth[_-]?token|authToken|authorization|bearer[_-]?token|bearerToken|credential|credentials|figma[_-]?access[_-]?token|figmaAccessToken|llm[_-]?api[_-]?key|llmApiKey|oauth[_-]?token|oauthToken|password|repo[_-]?token|repoToken|secret|token)$/i;
 const SECRET_VALUE_PATTERN = /^(?:bearer\s+)?(?:figd_|ghp_|github_pat_|sk-|xox[baprs]-)[^\s]+/i;
 const SECRET_TEXT_PATTERN =
   /\b(?:bearer\s+)?(?:figd_|ghp_|github_pat_|sk-|xox[baprs]-)[A-Za-z0-9_./+=:-]+/gi;
@@ -89,7 +89,9 @@ export interface BuildPipelineQualityPassportInput {
 const roundRatio = (value: number): number => Math.round(value * 1_000_000) / 1_000_000;
 
 const toNonNegativeInteger = (value: number): number =>
-  Number.isFinite(value) ? Math.max(0, Math.trunc(value)) : 0;
+  Number.isFinite(value)
+    ? Math.min(Math.max(0, Math.trunc(value)), Number.MAX_SAFE_INTEGER)
+    : 0;
 
 const byteLength = (content: string | Uint8Array): number =>
   typeof content === "string" ? Buffer.byteLength(content, "utf8") : content.byteLength;
@@ -137,7 +139,7 @@ const normalizeGeneratedFile = (
   const sizeBytes = input.sizeBytes;
   if (
     typeof sizeBytes === "number" &&
-    Number.isInteger(sizeBytes) &&
+    Number.isSafeInteger(sizeBytes) &&
     sizeBytes >= 0
   ) {
     normalized.sizeBytes = sizeBytes;
@@ -267,6 +269,7 @@ const isSecretString = (value: string): boolean =>
 const toMetadataJsonValue = (
   value: unknown,
   keyPath: readonly string[],
+  seen: WeakSet<object> = new WeakSet(),
 ): JsonValue | undefined => {
   const key = keyPath.at(-1) ?? "";
   if (SECRET_KEY_PATTERN.test(key)) {
@@ -288,20 +291,34 @@ const toMetadataJsonValue = (
     return String(value);
   }
   if (Array.isArray(value)) {
-    return value.map((entry, index) => toMetadataJsonValue(entry, [...keyPath, String(index)]) ?? null);
+    if (seen.has(value)) {
+      return "[Circular]";
+    }
+    seen.add(value);
+    const projected = value.map(
+      (entry, index) =>
+        toMetadataJsonValue(entry, [...keyPath, String(index)], seen) ?? null,
+    );
+    seen.delete(value);
+    return projected;
   }
   if (typeof value === "object") {
+    if (seen.has(value)) {
+      return "[Circular]";
+    }
+    seen.add(value);
     const record = value as Record<string, unknown>;
     const projected: { [key: string]: JsonValue } = {};
     for (const childKey of Object.keys(record).sort()) {
       const projectedValue = toMetadataJsonValue(record[childKey], [
         ...keyPath,
         childKey,
-      ]);
+      ], seen);
       if (projectedValue !== undefined) {
         projected[childKey] = projectedValue;
       }
     }
+    seen.delete(value);
     return projected;
   }
   return undefined;
@@ -383,7 +400,7 @@ export const writePipelineQualityPassport = async ({
     destinationDir,
     PIPELINE_QUALITY_PASSPORT_ARTIFACT_FILENAME,
   );
-  const temporary = `${destination}.tmp`;
+  const temporary = `${destination}.${process.pid}.${randomUUID()}.tmp`;
   await writeFile(temporary, serializePipelineQualityPassport(passport), "utf8");
   await rename(temporary, destination);
   return destination;
