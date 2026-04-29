@@ -779,6 +779,19 @@ function formatEvidenceFileLabel(value: string): string {
   return value.split(/[\\/]/).filter(Boolean).at(-1) ?? value;
 }
 
+function formatQualityPassportScope({
+  sourceMode,
+  scope,
+  selectedNodeCount,
+}: {
+  sourceMode: string;
+  scope: string;
+  selectedNodeCount: number;
+}): string {
+  const nodeLabel = selectedNodeCount === 1 ? "node" : "nodes";
+  return `${sourceMode} / ${scope} (${String(selectedNodeCount)} ${nodeLabel})`;
+}
+
 function loadBoundariesEnabledPreference(): boolean {
   if (typeof window === "undefined") {
     return false;
@@ -7206,6 +7219,20 @@ export function InspectorPanel({
                   Quality passport
                 </p>
                 <div className="mt-1 grid gap-1">
+                  <span data-testid="inspector-summary-quality-passport-pipeline">
+                    Pipeline: {activePipeline.qualityPassport.pipelineId} /{" "}
+                    {activePipeline.qualityPassport.templateBundleId} /{" "}
+                    {activePipeline.qualityPassport.buildProfile}
+                  </span>
+                  <span data-testid="inspector-summary-quality-passport-scope">
+                    Scope:{" "}
+                    {formatQualityPassportScope({
+                      sourceMode: activePipeline.qualityPassport.sourceMode,
+                      scope: activePipeline.qualityPassport.scope,
+                      selectedNodeCount:
+                        activePipeline.qualityPassport.selectedNodeCount,
+                    })}
+                  </span>
                   <span data-testid="inspector-summary-quality-passport-status">
                     Validation:{" "}
                     {activePipeline.qualityPassport.validationStatus}

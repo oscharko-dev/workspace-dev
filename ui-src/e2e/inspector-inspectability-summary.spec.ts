@@ -43,6 +43,24 @@ test.describe("inspector inspectability summary deterministic flow", () => {
     await bootInspector({ page });
 
     await expect(page.getByTestId("inspector-inspectability-summary")).toBeVisible();
+    await expect(page.getByTestId("inspector-summary-quality-passport")).toContainText("Quality passport");
+    await expect(page.getByTestId("inspector-summary-quality-passport-pipeline")).toContainText(/^Pipeline:\s+.+/);
+    await expect(page.getByTestId("inspector-summary-quality-passport-scope")).toContainText(/^Scope:\s+.+/);
+    await expect(page.getByTestId("inspector-summary-quality-passport-status")).toContainText(
+      /^Validation:\s+(not_run|passed|warning|failed)$/
+    );
+    await expect(page.getByTestId("inspector-summary-quality-passport-files")).toContainText(
+      /^Generated files:\s+\d+$/
+    );
+    await expect(page.getByTestId("inspector-summary-quality-passport-token")).toContainText(
+      /^Token coverage:\s+\d+%$/
+    );
+    await expect(page.getByTestId("inspector-summary-quality-passport-semantic")).toContainText(
+      /^Semantic coverage:\s+\d+%$/
+    );
+    await expect(page.getByTestId("inspector-summary-quality-passport-warnings")).toContainText(
+      /^Warnings:\s+\d+$/
+    );
     await expect(page.getByTestId("inspector-summary-manifest-coverage")).toContainText("Manifest coverage");
     await expect(page.getByTestId("inspector-summary-design-ir-omissions")).toContainText(
       "Design IR cleanup/omission counters"
