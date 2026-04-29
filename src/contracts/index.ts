@@ -4,7 +4,7 @@
  * These types define the public API surface for workspace-dev consumers.
  * They must not import from internal services.
  *
- * Contract version: 4.21.0
+ * Contract version: 4.22.0
  * See CONTRACT_CHANGELOG.md for contract change history and VERSIONING.md for
  * package-versus-contract versioning policy.
  */
@@ -1175,6 +1175,7 @@ export interface WorkspacePipelineTemplateMetadata {
 export const ALLOWED_PIPELINE_REQUEST_ERROR_CODES = [
   "INVALID_PIPELINE",
   "PIPELINE_UNAVAILABLE",
+  "PIPELINE_INPUT_UNSUPPORTED",
   "PIPELINE_SOURCE_MODE_UNSUPPORTED",
   "PIPELINE_SCOPE_UNSUPPORTED",
 ] as const;
@@ -2179,6 +2180,11 @@ export interface WorkspaceRegenerationOverrideEntry {
  */
 export interface WorkspaceRegenerationInput {
   sourceJobId: string;
+  /**
+   * Optional pipeline assertion. When provided, it must match the completed
+   * source job pipeline; regeneration cannot migrate between pipelines.
+   */
+  pipelineId?: WorkspacePipelineId;
   overrides: WorkspaceRegenerationOverrideEntry[];
   draftId?: string;
   baseFingerprint?: string;
@@ -7457,4 +7463,4 @@ export type SourceMixPlannerResult =
  * Must be bumped according to CONTRACT_CHANGELOG.md rules.
  * Package version alignment is documented in VERSIONING.md.
  */
-export const CONTRACT_VERSION = "4.21.0" as const;
+export const CONTRACT_VERSION = "4.22.0" as const;

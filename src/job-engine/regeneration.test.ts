@@ -652,6 +652,134 @@ test("submitRegeneration creates a queued job with lineage metadata from a compl
   assert.equal(sourceAfter?.lineage, undefined, "Source job should not have lineage");
 });
 
+test("submitRegeneration rejects cross-pipeline pipelineId overrides", async () => {
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "workspace-regen-cross-pipeline-"));
+  const figmaPath = path.join(tempRoot, "figma-input.json");
+  await writeFile(figmaPath, JSON.stringify(createLocalFigmaPayload()), "utf8");
+
+  const engine = createJobEngine({
+    resolveBaseUrl: () => "http://127.0.0.1:1983",
+    paths: {
+      outputRoot: tempRoot,
+      jobsRoot: path.join(tempRoot, "jobs"),
+      reprosRoot: path.join(tempRoot, "repros")
+    },
+    runtime: resolveRuntimeSettings({
+      enablePreview: false,
+      installPreferOffline: true,
+      enableUiValidation: false,
+      enableUnitTestValidation: false
+    })
+  });
+
+  const sourceAccepted = engine.submitJob({
+    pipelineId: "default",
+    figmaJsonPath: figmaPath,
+    figmaSourceMode: "local_json"
+  });
+  const sourceStatus = await waitForTerminalStatus({
+    getStatus: (id) => engine.getJob(id),
+    jobId: sourceAccepted.jobId
+  });
+  assert.equal(sourceStatus.status, "completed", `Source job should complete, got: ${sourceStatus.status} — ${sourceStatus.error?.message ?? "no error"}`);
+
+  assert.throws(
+    () =>
+      engine.submitRegeneration({
+        sourceJobId: sourceAccepted.jobId,
+        pipelineId: "rocket",
+        overrides: []
+      }),
+    (error: unknown) => {
+      assert.equal(error instanceof Error, true);
+      assert.equal(
+        (error as Error & { code?: string }).code,
+        "PIPELINE_INPUT_UNSUPPORTED"
+      );
+      assert.equal(
+        (error as Error & { pipelineId?: string }).pipelineId,
+        "rocket"
+      );
+      return true;
+    }
+  );
+
+  assert.throws(
+    () =>
+      engine.submitRegeneration({
+        sourceJobId: sourceAccepted.jobId,
+        pipelineId: "missing-pipeline",
+        overrides: []
+      }),
+    (error: unknown) => {
+      assert.equal(error instanceof Error, true);
+      assert.equal(
+        (error as Error & { code?: string }).code,
+        "INVALID_PIPELINE"
+      );
+      assert.equal(
+        (error as Error & { pipelineId?: string }).pipelineId,
+        "missing-pipeline"
+      );
+      return true;
+    }
+  );
+});
+
+test("submitRegeneration rejects Rocket-specific inputs on default-pipeline sources", async () => {
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "workspace-regen-default-rocket-inputs-"));
+  const figmaPath = path.join(tempRoot, "figma-input.json");
+  await writeFile(figmaPath, JSON.stringify(createLocalFigmaPayload()), "utf8");
+
+  const engine = createJobEngine({
+    resolveBaseUrl: () => "http://127.0.0.1:1983",
+    paths: {
+      outputRoot: tempRoot,
+      jobsRoot: path.join(tempRoot, "jobs"),
+      reprosRoot: path.join(tempRoot, "repros")
+    },
+    runtime: resolveRuntimeSettings({
+      enablePreview: false,
+      installPreferOffline: true,
+      enableUiValidation: false,
+      enableUnitTestValidation: false
+    })
+  });
+
+  const sourceAccepted = engine.submitJob({
+    pipelineId: "default",
+    figmaJsonPath: figmaPath,
+    figmaSourceMode: "local_json"
+  });
+  const sourceStatus = await waitForTerminalStatus({
+    getStatus: (id) => engine.getJob(id),
+    jobId: sourceAccepted.jobId
+  });
+  assert.equal(sourceStatus.status, "completed", `Source job should complete, got: ${sourceStatus.status} — ${sourceStatus.error?.message ?? "no error"}`);
+
+  assert.throws(
+    () =>
+      engine.submitRegeneration({
+        sourceJobId: sourceAccepted.jobId,
+        pipelineId: "default",
+        overrides: [],
+        customerBrandId: "sparkasse"
+      }),
+    (error: unknown) => {
+      assert.equal(error instanceof Error, true);
+      assert.equal(
+        (error as Error & { code?: string }).code,
+        "PIPELINE_INPUT_UNSUPPORTED"
+      );
+      assert.equal(
+        (error as Error & { pipelineId?: string }).pipelineId,
+        "default"
+      );
+      return true;
+    }
+  );
+});
+
 test("submitRegeneration result endpoint includes lineage", async () => {
   const tempRoot = await mkdtemp(path.join(os.tmpdir(), "workspace-regen-result-"));
   const figmaPayload = createLocalFigmaPayload();

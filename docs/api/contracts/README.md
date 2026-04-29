@@ -9806,7 +9806,7 @@ Present only when `figmaSourceMode === "figma_paste" | "figma_plugin"` and diff 
 
 ###### Inherited from
 
-[`WorkspaceSubmitAccepted`](#workspacesubmitaccepted).[`pipelineId`](#pipelineid-10)
+[`WorkspaceSubmitAccepted`](#workspacesubmitaccepted).[`pipelineId`](#pipelineid-11)
 
 ##### pipelineMetadata
 
@@ -11343,6 +11343,13 @@ different profile, submit a new job.
 ##### overrides
 
 > **overrides**: [`WorkspaceRegenerationOverrideEntry`](#workspaceregenerationoverrideentry)[]
+
+##### pipelineId?
+
+> `optional` **pipelineId?**: [`WorkspacePipelineId`](#workspacepipelineid)
+
+Optional pipeline assertion. When provided, it must match the completed
+source job pipeline; regeneration cannot migrate between pipelines.
 
 ##### sourceJobId
 
@@ -14417,7 +14424,7 @@ structured diagnostic.
 
 ### ALLOWED\_PIPELINE\_REQUEST\_ERROR\_CODES
 
-> `const` **ALLOWED\_PIPELINE\_REQUEST\_ERROR\_CODES**: readonly \[`"INVALID_PIPELINE"`, `"PIPELINE_UNAVAILABLE"`, `"PIPELINE_SOURCE_MODE_UNSUPPORTED"`, `"PIPELINE_SCOPE_UNSUPPORTED"`\]
+> `const` **ALLOWED\_PIPELINE\_REQUEST\_ERROR\_CODES**: readonly \[`"INVALID_PIPELINE"`, `"PIPELINE_UNAVAILABLE"`, `"PIPELINE_INPUT_UNSUPPORTED"`, `"PIPELINE_SOURCE_MODE_UNSUPPORTED"`, `"PIPELINE_SCOPE_UNSUPPORTED"`\]
 
 Structured request-time pipeline selection failures.
 
@@ -14789,7 +14796,7 @@ Schema version for `BusinessTestIntentIr` artifacts.
 
 ### CONTRACT\_VERSION
 
-> `const` **CONTRACT\_VERSION**: `"4.21.0"`
+> `const` **CONTRACT\_VERSION**: `"4.22.0"`
 
 Current contract version constant.
 Must be bumped according to CONTRACT_CHANGELOG.md rules.

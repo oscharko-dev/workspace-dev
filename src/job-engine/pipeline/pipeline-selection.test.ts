@@ -235,26 +235,61 @@ test("pipeline selection auto-selects rocket with warnings for omitted legacy Ro
   );
 });
 
-test("pipeline selection keeps explicit and single-profile selections authoritative with legacy Rocket inputs", () => {
+test("pipeline selection rejects default-only and explicit default selections with legacy Rocket inputs", () => {
   const defaultAndRocketRegistry = new PipelineRegistry({
     definitions: [
       createDefinition({ id: "default" }),
       createDefinition({ id: "rocket" }),
     ],
   });
+  const defaultOnlyRegistry = new PipelineRegistry({
+    definitions: [createDefinition({ id: "default" })],
+  });
   const rocketOnlyRegistry = new PipelineRegistry({
     definitions: [createDefinition({ id: "rocket" })],
   });
 
-  const explicitDefault = selectPipeline({
-    registry: defaultAndRocketRegistry,
-    requestedPipelineId: "default",
-    legacyRocketAutoSelectionSignals: ["customerBrandId"],
-    sourceMode: "local_json",
-    scope: "board",
-  });
-  assert.equal(explicitDefault.definition.id, "default");
-  assert.deepEqual(explicitDefault.warnings, []);
+  assert.throws(
+    () =>
+      selectPipeline({
+        registry: defaultAndRocketRegistry,
+        requestedPipelineId: "default",
+        legacyRocketAutoSelectionSignals: ["customerBrandId"],
+        sourceMode: "local_json",
+        scope: "board",
+      }),
+    (error: unknown) => {
+      assert.equal(error instanceof PipelineRequestError, true);
+      assert.equal(
+        (error as PipelineRequestError).code,
+        "PIPELINE_INPUT_UNSUPPORTED",
+      );
+      assert.equal((error as PipelineRequestError).pipelineId, "default");
+      return true;
+    },
+  );
+
+  assert.throws(
+    () =>
+      selectPipeline({
+        registry: defaultOnlyRegistry,
+        legacyRocketAutoSelectionSignals: ["customerProfilePath"],
+        sourceMode: "local_json",
+        scope: "board",
+      }),
+    (error: unknown) => {
+      assert.equal(error instanceof PipelineRequestError, true);
+      assert.equal(
+        (error as PipelineRequestError).code,
+        "PIPELINE_INPUT_UNSUPPORTED",
+      );
+      assert.match(
+        (error as PipelineRequestError).message,
+        /customerProfilePath/,
+      );
+      return true;
+    },
+  );
 
   const rocketOnly = selectPipeline({
     registry: rocketOnlyRegistry,

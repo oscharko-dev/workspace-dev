@@ -1254,6 +1254,7 @@ test("schema: error envelope returns exact data and field issues", () => {
 
 test("schema: valid regeneration request accepts layout overrides", () => {
   const result = RegenerationRequestSchema.safeParse({
+    pipelineId: " default ",
     overrides: [
       { nodeId: "node-1", field: "width", value: 420 },
       { nodeId: "node-1", field: "layoutMode", value: "horizontal" },
@@ -1279,6 +1280,7 @@ test("schema: valid regeneration request accepts layout overrides", () => {
         value: "SPACE_BETWEEN",
       },
     ]);
+    assert.equal(result.data.pipelineId, "default");
     assert.equal(result.data.draftId, "draft-1");
     assert.equal(result.data.baseFingerprint, "fp-1");
     assert.equal(result.data.customerBrandId, "sparkasse-retail");
@@ -1429,11 +1431,16 @@ test("schema: regeneration request rejects malformed overrides and optional stri
     draftId: "   ",
     baseFingerprint: "",
     customerBrandId: false,
+    pipelineId: "   ",
   });
 
   assert.equal(result.success, false);
   if (!result.success) {
     assert.deepEqual(result.error.issues, [
+      {
+        path: ["pipelineId"],
+        message: "pipelineId must be a non-empty string when provided.",
+      },
       {
         path: ["overrides", 0],
         message: "Each override entry must be an object.",

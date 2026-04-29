@@ -5280,6 +5280,9 @@ export function createWorkspaceRequestHandler({
           try {
             accepted = jobEngine.submitRegeneration({
               sourceJobId: jobId,
+              ...(parsed.data.pipelineId
+                ? { pipelineId: parsed.data.pipelineId }
+                : {}),
               overrides: parsed.data.overrides,
               ...(parsed.data.draftId ? { draftId: parsed.data.draftId } : {}),
               ...(parsed.data.baseFingerprint
@@ -5341,6 +5344,32 @@ export function createWorkspaceRequestHandler({
                   },
                   jobId,
                   fallbackMessage: `Regeneration request failed for source job '${jobId}'.`,
+                });
+                return;
+              }
+              if (isPipelineRequestError(error)) {
+                sendValidationError({
+                  payload: {
+                    error: error.code,
+                    message: sanitizeErrorMessage({
+                      error,
+                      fallback: "Invalid pipeline request.",
+                    }),
+                    ...(error.pipelineId
+                      ? { pipelineId: error.pipelineId }
+                      : {}),
+                    issues: [
+                      {
+                        path: "pipelineId",
+                        message: sanitizeErrorMessage({
+                          error,
+                          fallback: "Invalid pipeline request.",
+                        }),
+                      },
+                    ],
+                  },
+                  jobId,
+                  fallbackMessage: "Regeneration request validation failed.",
                 });
                 return;
               }

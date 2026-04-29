@@ -31,6 +31,29 @@ All changes to the public contract surface of `workspace-dev` are documented her
 
 ---
 
+## [4.22.0] - 2026-04-29
+
+### Changed (Issue #1553)
+
+Pipeline compatibility guards now fail closed when Rocket-specific inputs are
+submitted to the OSS `default` pipeline or when regeneration attempts to change
+pipeline identity. The combined `default,rocket` profile still preserves the
+legacy omitted-`pipelineId` Rocket auto-selection path, but explicit
+`pipelineId: "default"` plus customer profile, brand, or component mapping
+inputs is rejected with a structured pipeline request error.
+
+**Validation behavior:**
+
+- `WorkspacePipelineRequestErrorCode` adds `PIPELINE_INPUT_UNSUPPORTED`.
+- Submit and regeneration pipeline compatibility failures return structured
+  `400` responses with top-level `error`, `message`, `pipelineId`, and
+  `issues: [{ path: "pipelineId", message }]` fields.
+- `WorkspaceRegenerationInput.pipelineId` is accepted only as a compatibility
+  assertion. It must match the completed source job pipeline; cross-pipeline
+  regeneration is rejected until an explicit migration path exists.
+
+---
+
 ## [4.21.0] - 2026-04-28
 
 ### Changed (Issue #1539)

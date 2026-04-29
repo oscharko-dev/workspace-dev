@@ -675,6 +675,48 @@ test("createJobEngine auto-selects rocket and warns when omitted pipelineId has 
   );
 });
 
+test("createJobEngine rejects explicit default jobs with legacy Rocket inputs", async () => {
+  const tempRoot = await mkdtemp(
+    path.join(os.tmpdir(), "workspace-dev-engine-default-rocket-inputs-"),
+  );
+  const engine = createJobEngineBase({
+    resolveBaseUrl: () => "http://127.0.0.1:1983",
+    paths: {
+      outputRoot: tempRoot,
+      jobsRoot: path.join(tempRoot, "jobs"),
+      reprosRoot: path.join(tempRoot, "repros"),
+      workspaceRoot: tempRoot,
+    },
+    runtime: resolveRuntimeSettings({
+      enablePreview: false,
+      figmaMaxRetries: 1,
+      figmaRequestTimeoutMs: 1000,
+    }),
+  });
+
+  assert.throws(
+    () =>
+      engine.submitJob({
+        pipelineId: "default",
+        figmaFileKey: "abc",
+        figmaAccessToken: "token",
+        customerBrandId: "sparkasse",
+      }),
+    (error: unknown) => {
+      assert.equal(error instanceof Error, true);
+      assert.equal(
+        (error as Error & { code?: string }).code,
+        "PIPELINE_INPUT_UNSUPPORTED",
+      );
+      assert.equal(
+        (error as Error & { pipelineId?: string }).pipelineId,
+        "default",
+      );
+      return true;
+    },
+  );
+});
+
 test("createJobEngine reimportImportSession replays stored selected nodes for partial sessions only", async () => {
   const tempRoot = await mkdtemp(
     path.join(os.tmpdir(), "workspace-dev-engine-reimport-scope-"),

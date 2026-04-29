@@ -386,7 +386,10 @@ Optional customer profile input:
 
 Customer profile input belongs to the `rocket` compatibility pipeline. Existing
 clients should include `pipelineId: "rocket"` alongside `customerProfilePath`
-when submitting jobs.
+when submitting jobs. The OSS `default` pipeline fails closed for
+Rocket-specific inputs such as customer profiles, customer brand IDs, and
+component mappings; the runtime returns `PIPELINE_INPUT_UNSUPPORTED` instead of
+silently generating with the wrong pipeline.
 
 Optional inspector policy input:
 
@@ -434,7 +437,7 @@ With `enableGitPr=false`, generation is local-only.
 - `GET /workspace/jobs/:id` - job polling (stages/logs/artifacts)
 - `GET /workspace/jobs/:id/result` - compact result payload
 - `POST /workspace/jobs/:id/cancel` - request cancellation for queued/running jobs
-- `POST /workspace/jobs/:id/regenerate` - create a regeneration job from a completed source job
+- `POST /workspace/jobs/:id/regenerate` - create a regeneration job from a completed source job. Regeneration inherits the source job pipeline; providing a different `pipelineId` is rejected with `PIPELINE_INPUT_UNSUPPORTED`.
 - `POST /workspace/jobs/:id/sync` - local sync flow for completed regeneration jobs (`mode: dry_run` then `mode: apply`)
 - `GET /workspace/jobs/:id/files` - paginated listing of generated source files (see below)
 - `GET /workspace/repros/:id/` - generated local preview

@@ -194,6 +194,17 @@ const createLegacyRocketAutoSelectionWarning = (
   };
 };
 
+const createDefaultPipelineUnsupportedInputMessage = (
+  signals: LegacyRocketAutoSelectionSignal[],
+): string => {
+  const labels = signals.map((signal) => LEGACY_ROCKET_SIGNAL_LABELS[signal]);
+  return (
+    "Pipeline 'default' does not support Rocket-specific inputs: " +
+    `${labels.join(", ")}. ` +
+    "Use pipelineId='rocket' or remove the Rocket-specific inputs."
+  );
+};
+
 export const selectPipeline = ({
   registry = getDefaultPipelineRegistry(),
   legacyRocketAutoSelectionSignals,
@@ -209,6 +220,9 @@ export const selectPipeline = ({
 }): PipelineSelectionResult => {
   const available = registry.list();
   const normalizedRequestedPipelineId = requestedPipelineId?.trim();
+  const legacyRocketSignals = normalizeLegacyRocketSignals(
+    legacyRocketAutoSelectionSignals,
+  );
   const warnings: PipelineSelectionWarning[] = [];
 
   let selected: PipelineDefinition | undefined;
@@ -235,9 +249,6 @@ export const selectPipeline = ({
       available.find((definition) => definition.id === "default") ?? undefined;
     const rocketPipeline =
       available.find((definition) => definition.id === "rocket") ?? undefined;
-    const legacyRocketSignals = normalizeLegacyRocketSignals(
-      legacyRocketAutoSelectionSignals,
-    );
     if (
       defaultPipeline !== undefined &&
       rocketPipeline !== undefined &&
@@ -262,6 +273,15 @@ export const selectPipeline = ({
     throw new PipelineRequestError({
       code: "PIPELINE_UNAVAILABLE",
       message: "No pipeline is available for this build profile.",
+    });
+  }
+  if (selected.id === "default" && legacyRocketSignals.length > 0) {
+    throw new PipelineRequestError({
+      code: "PIPELINE_INPUT_UNSUPPORTED",
+      pipelineId: selected.id,
+      message: createDefaultPipelineUnsupportedInputMessage(
+        legacyRocketSignals,
+      ),
     });
   }
 

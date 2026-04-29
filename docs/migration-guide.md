@@ -134,6 +134,13 @@ Customer-profile jobs should still keep `pipelineId: "rocket"` to preserve
 existing React + MUI generation semantics and avoid relying on the deprecated
 compatibility fallback.
 
+Requests that explicitly select `pipelineId: "default"` fail closed when they
+include Rocket-specific inputs. The server returns `PIPELINE_INPUT_UNSUPPORTED`
+with a structured `issues` entry instead of silently switching pipelines.
+Regeneration also inherits the completed source job pipeline; a regeneration
+request may include the same `pipelineId` as an assertion, but a different
+pipeline ID is rejected with `PIPELINE_INPUT_UNSUPPORTED`.
+
 Customer-profile template dependencies and import aliases are applied by the
 `rocket` `template.prepare` delegate. Downstream smoke tests for existing
 customer integrations should submit at least one fixture with both

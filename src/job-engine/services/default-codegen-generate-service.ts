@@ -26,7 +26,7 @@ import { createPipelineError } from "../errors.js";
 import type {
   CodegenGenerateStageInput,
   CodegenGenerateSummary,
-} from "./codegen-generate-service.js";
+} from "./codegen-generate-types.js";
 import type { GenerationDiffContext } from "../generation-diff.js";
 
 const GENERATED_APP_TEST_PATH = "src/App.test.tsx";
