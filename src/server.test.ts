@@ -14,7 +14,6 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
-import { toDeterministicScreenPath } from "./parity/generator-artifacts.js";
 import {
   DEFAULT_FIGMA_PASTE_MAX_BYTES,
   MAX_SUBMIT_BODY_BYTES,
@@ -1180,10 +1179,7 @@ test("workspace server recovers low-fidelity hybrid screens with the built-in au
 
     const generatedProjectDir = String(terminal.artifacts.generatedProjectDir);
     const screenContent = await readFile(
-      path.join(
-        generatedProjectDir,
-        toDeterministicScreenPath("Sparkasse Recovery"),
-      ),
+      path.join(generatedProjectDir, "src", "pages", "sparkasse-recovery.tsx"),
       "utf8",
     );
 
@@ -1640,7 +1636,7 @@ test("workspace server resolves submit brandTheme and generationLocale overrides
   }
 });
 
-test("workspace server applies hash router runtime mode to generated App shell", async () => {
+test("workspace server applies hash router runtime mode to rocket generated App shell", async () => {
   const outputRoot = await createTempOutputRoot();
   const port = allocateTestPort();
   const server = await createWorkspaceServer({
@@ -1657,6 +1653,7 @@ test("workspace server applies hash router runtime mode to generated App shell",
       url: "/workspace/submit",
       headers: { "content-type": "application/json" },
       payload: {
+        pipelineId: "rocket",
         figmaFileKey: "test-key",
         figmaAccessToken: "figd_xxx",
         figmaSourceMode: "rest",
