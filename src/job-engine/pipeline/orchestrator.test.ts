@@ -1,9 +1,13 @@
 import assert from "node:assert/strict";
-import { mkdtemp, mkdir, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { JobDiskTracker } from "../disk-tracker.js";
+import {
+  PIPELINE_QUALITY_PASSPORT_ARTIFACT_FILENAME,
+  PIPELINE_QUALITY_PASSPORT_SCHEMA_VERSION,
+} from "../../contracts/index.js";
 import { createPipelineError } from "../errors.js";
 import { resolveRuntimeSettings } from "../runtime.js";
 import { createInitialStages, nowIso, STAGE_ORDER } from "../stage-state.js";
@@ -65,6 +69,13 @@ const createContext = async ({
   return {
     mode: "submission",
     job,
+    pipelineMetadata: {
+      pipelineId: "default",
+      pipelineDisplayName: "Default",
+      templateBundleId: "react-tailwind-app",
+      buildProfile: "default",
+      deterministic: true,
+    },
     runtime,
     resolvedPaths: {
       outputRoot: root,
@@ -146,6 +157,43 @@ const createCanonicalPlan = (
       ...(override?.onSkipped ? { onSkipped: override.onSkipped } : {})
     };
   });
+};
+
+type TestQualityPassport = {
+  schemaVersion: string;
+  pipelineId: string;
+  templateBundleId: string;
+  buildProfile: string;
+  validation: {
+    status: string;
+    stages: Array<{ name: string; status: string }>;
+  };
+  coverage: {
+    token: { status: string };
+    semantic: { status: string };
+  };
+  warnings: Array<{
+    code: string;
+    severity: string;
+    message: string;
+    source?: string;
+  }>;
+  metadata: Record<string, unknown>;
+};
+
+const readQualityPassport = async (
+  context: PipelineExecutionContext
+): Promise<TestQualityPassport> => {
+  const passportPath = path.join(
+    context.paths.generatedProjectDir,
+    PIPELINE_QUALITY_PASSPORT_ARTIFACT_FILENAME,
+  );
+  assert.equal(
+    await context.artifactStore.getPath(STAGE_ARTIFACT_KEYS.qualityPassportFile),
+    passportPath,
+  );
+  assert.equal(context.job.artifacts.qualityPassportFile, passportPath);
+  return JSON.parse(await readFile(passportPath, "utf8")) as TestQualityPassport;
 };
 
 test("PipelineOrchestrator runs stages in order and honors plan-level skip rules", async () => {
@@ -276,7 +324,7 @@ test("PipelineOrchestrator normalizes syncPublicJobProjection failures through t
     },
   );
 
-  assert.equal(projectionCalls, 1);
+  assert.equal(projectionCalls, 2);
   assert.equal(
     context.job.stages.find((stage) => stage.name === "figma.source")?.status,
     "failed",
@@ -801,6 +849,122 @@ test("PipelineOrchestrator marks stage failed on service errors", async () => {
   assert.equal(context.job.stages.find((stage) => stage.name === "figma.source")?.status, "failed");
 });
 
+test("PipelineOrchestrator emits failure quality passport before validate.project", async () => {
+  const context = await createContext();
+  const orchestrator = createOrchestrator();
+
+  await assert.rejects(
+    async () => {
+      await orchestrator.execute({
+        context,
+        plan: createCanonicalPlan({
+          "template.prepare": {
+            execute: async () => {
+              throw new Error("template exploded");
+            }
+          }
+        })
+      });
+    },
+    /template exploded/
+  );
+
+  const passport = await readQualityPassport(context);
+  assert.equal(passport.schemaVersion, PIPELINE_QUALITY_PASSPORT_SCHEMA_VERSION);
+  assert.equal(passport.pipelineId, "default");
+  assert.equal(passport.templateBundleId, "react-tailwind-app");
+  assert.equal(passport.buildProfile, "default");
+  assert.equal(passport.validation.status, "failed");
+  assert.deepEqual(
+    passport.validation.stages
+      .filter((stage) => stage.status !== "queued")
+      .map((stage) => [stage.name, stage.status]),
+    [
+      ["figma.source", "completed"],
+      ["ir.derive", "completed"],
+      ["template.prepare", "failed"],
+    ],
+  );
+  assert.equal(passport.coverage.token.status, "not_run");
+  assert.equal(passport.coverage.semantic.status, "not_run");
+  assert.deepEqual(passport.warnings[0], {
+    code: "E_PIPELINE_UNKNOWN",
+    severity: "error",
+    message: "template exploded",
+    source: "template.prepare",
+  });
+  assert.equal(passport.metadata.failureStage, "template.prepare");
+  assert.equal(passport.metadata.failureCode, "E_PIPELINE_UNKNOWN");
+});
+
+test("PipelineOrchestrator emits failure quality passport when plan validation fails", async () => {
+  const context = await createContext();
+  const orchestrator = createOrchestrator();
+
+  await assert.rejects(
+    async () => {
+      await orchestrator.execute({
+        context,
+        plan: createCanonicalPlan().slice(1)
+      });
+    },
+    /out of canonical order/
+  );
+
+  const passport = await readQualityPassport(context);
+  assert.equal(passport.validation.status, "failed");
+  assert.deepEqual(passport.warnings[0], {
+    code: "E_PIPELINE_PLAN_INVALID",
+    severity: "error",
+    message: "Pipeline plan is out of canonical order at position 1; expected 'figma.source' but received 'ir.derive'.",
+    source: "figma.source",
+  });
+  assert.equal(passport.metadata.failureStage, "figma.source");
+  assert.equal(passport.metadata.failureCode, "E_PIPELINE_PLAN_INVALID");
+});
+
+test("PipelineOrchestrator emits failure quality passport when shouldSkip throws", async () => {
+  const context = await createContext();
+  const orchestrator = createOrchestrator();
+
+  await assert.rejects(
+    async () => {
+      await orchestrator.execute({
+        context,
+        plan: createCanonicalPlan({
+          "template.prepare": {
+            shouldSkip: () => {
+              throw new Error("skip predicate exploded");
+            }
+          }
+        })
+      });
+    },
+    /skip predicate exploded/
+  );
+
+  const passport = await readQualityPassport(context);
+  assert.equal(passport.validation.status, "failed");
+  assert.deepEqual(
+    passport.validation.stages
+      .filter((stage) => stage.status !== "queued")
+      .map((stage) => [stage.name, stage.status]),
+    [
+      ["figma.source", "completed"],
+      ["ir.derive", "completed"],
+      ["template.prepare", "failed"],
+    ],
+  );
+  assert.deepEqual(passport.warnings[0], {
+    code: "E_PIPELINE_UNKNOWN",
+    severity: "error",
+    message: "skip predicate exploded",
+    source: "template.prepare",
+  });
+  assert.equal(passport.metadata.failureStage, "template.prepare");
+  assert.equal(passport.metadata.failureCode, "E_PIPELINE_UNKNOWN");
+});
+
 test("PipelineOrchestrator raises cancellation when stage is canceled before execution", async () => {
   const context = await createContext();
   context.job.cancellation = {
@@ -825,6 +989,17 @@ test("PipelineOrchestrator raises cancellation when stage is canceled before exe
     },
     (error: unknown) => error instanceof PipelineCancellationError && error.stage === "figma.source"
   );
+
+  const passport = await readQualityPassport(context);
+  assert.equal(passport.validation.status, "failed");
+  assert.deepEqual(passport.warnings[0], {
+    code: "E_JOB_CANCELED",
+    severity: "error",
+    message: "cancel requested",
+    source: "figma.source",
+  });
+  assert.equal(passport.metadata.failureStage, "figma.source");
+  assert.equal(passport.metadata.failureCode, "E_JOB_CANCELED");
 });
 
 test("PipelineOrchestrator falls back to the default cancellation reason when none is provided", async () => {

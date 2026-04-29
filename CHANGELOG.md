@@ -11,6 +11,14 @@ Contract-level surface changes remain tracked in `CONTRACT_CHANGELOG.md`.
 
 ### Added
 
+- Pipeline quality passport story completion (#1529):
+    - Jobs now persist deterministic `quality-passport.json` evidence even
+      when a pipeline fails before `validate.project`; successful validation
+      passports remain unchanged, while early-failure passports record the
+      failed stage, failure code, available stage state, generated-file
+      evidence, and warning summary.
+    - Release evidence now generates and verifies separate SBOM pairs for the
+      shipped React MUI and React Tailwind generated-app templates.
 - Default design-token compiler output (#1546):
     - Generated apps now include deterministic `src/theme/tokens.css` CSS
       custom properties and `src/theme/token-report.json` coverage evidence

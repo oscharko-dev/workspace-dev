@@ -2730,6 +2730,7 @@ export const createJobEngine = ({
           job,
           reason: error.message,
         });
+        await syncPublicJobProjection({ job, artifactStore });
         pushRuntimeLog({
           job,
           logger: runtime.logger,
@@ -3367,6 +3368,7 @@ export const createJobEngine = ({
           job,
           reason: error.message,
         });
+        await syncPublicJobProjection({ job, artifactStore });
         pushRuntimeLog({
           job,
           logger: runtime.logger,
@@ -3746,6 +3748,7 @@ export const createJobEngine = ({
           job,
           reason: error.message,
         });
+        await syncPublicJobProjection({ job, artifactStore });
         try {
           await persistTerminalSnapshot({
             job,

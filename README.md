@@ -437,7 +437,7 @@ With `enableGitPr=false`, generation is local-only.
 - `GET /workspace/:figmaFileKey` - deep-link to workspace UI for a Figma file key
 - `POST /workspace/submit` - start autonomous generation (`202 Accepted`)
 - `GET /workspace/jobs/:id` - job polling (stages/logs/artifacts)
-- `GET /workspace/jobs/:id/result` - compact result payload, including the Inspector quality-passport summary when validation evidence exists
+- `GET /workspace/jobs/:id/result` - compact result payload, including the Inspector quality-passport summary when passport evidence exists
 - `POST /workspace/jobs/:id/cancel` - request cancellation for queued/running jobs
 - `POST /workspace/jobs/:id/regenerate` - create a regeneration job from a completed source job. Regeneration inherits the source job pipeline; providing a different `pipelineId` is rejected with `PIPELINE_INPUT_UNSUPPORTED`.
 - `POST /workspace/jobs/:id/sync` - local sync flow for completed regeneration jobs (`mode: dry_run` then `mode: apply`)
@@ -503,7 +503,7 @@ By default, generated files are written under:
 - `.workspace-dev/jobs/<jobId>/generated-app/quality-passport.json`
 - `.workspace-dev/jobs/<jobId>/figma.json`
 - `.workspace-dev/jobs/<jobId>/design-ir.json`
-- `.workspace-dev/repros/<jobId>/` (includes `quality-passport.json` when validation produced passport evidence)
+- `.workspace-dev/repros/<jobId>/` (includes `quality-passport.json` when the job produced passport evidence)
 - `.workspace-dev/jobs/<jobId>/repo/` (only when `enableGitPr=true`)
 - `.workspace-dev/jobs/<jobId>/generated-app/public/images/*` (when image export is enabled and image candidates exist)
 - `.workspace-dev/icon-fallback-map.json` (auto-bootstrapped fallback icon mapping catalog)

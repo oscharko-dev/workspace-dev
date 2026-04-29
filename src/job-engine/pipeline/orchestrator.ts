@@ -3,6 +3,7 @@ import type { WorkspacePipelineError } from "../types.js";
 import { STAGE_ORDER, pushRuntimeLog, updateStage } from "../stage-state.js";
 import type { StageArtifactKey } from "./artifact-keys.js";
 import { createStageRuntimeContext, type PipelineExecutionContext } from "./context.js";
+import { persistFailureQualityPassport } from "./failure-quality-passport.js";
 import type { StageArtifactContract, StageService } from "./stage-service.js";
 
 export class PipelineCancellationError extends Error {
@@ -25,6 +26,18 @@ const STAGE_ORDER_SET = new Set<WorkspaceJobStageName>(STAGE_ORDER);
 
 const isWorkspaceJobStageName = (value: string): value is WorkspaceJobStageName => {
   return STAGE_ORDER_SET.has(value as WorkspaceJobStageName);
+};
+
+const getPipelineErrorStage = (error: unknown): WorkspaceJobStageName | undefined => {
+  if (
+    error instanceof Error &&
+    "stage" in error &&
+    typeof error.stage === "string" &&
+    isWorkspaceJobStageName(error.stage)
+  ) {
+    return error.stage;
+  }
+  return undefined;
 };
 
 const createPipelinePlanValidationError = ({
@@ -222,7 +235,33 @@ export class PipelineOrchestrator {
     }
   }
 
-  private handleStageError({
+  private async persistFailurePassportBestEffort({
+    context,
+    error,
+    stage,
+  }: {
+    context: PipelineExecutionContext;
+    error: WorkspacePipelineError;
+    stage: WorkspaceJobStageName;
+  }): Promise<void> {
+    try {
+      await persistFailureQualityPassport({ context, error });
+      await context.syncPublicJobProjection();
+    } catch (passportError) {
+      const message =
+        passportError instanceof Error ? passportError.message : String(passportError);
+      pushRuntimeLog({
+        job: context.job,
+        logger: context.runtime.logger,
+        level: "warn",
+        stage,
+        message: `Could not persist failure quality passport: ${message}`,
+        logLimit: context.runtime.logLimit
+      });
+    }
+  }
+
+  private async handleStageError({
     context,
     error,
     stage
@@ -230,7 +269,7 @@ export class PipelineOrchestrator {
     context: PipelineExecutionContext;
     error: unknown;
     stage: WorkspaceJobStageName;
-  }): never {
+  }): Promise<never> {
     if (isPipelineCancellationError(error)) {
       updateStage({
         job: context.job,
@@ -245,6 +284,11 @@ export class PipelineOrchestrator {
         stage,
         message: `${error.code}: ${error.message}`,
         logLimit: context.runtime.logLimit
+      });
+      await this.persistFailurePassportBestEffort({
+        context,
+        error,
+        stage
       });
       throw error;
     }
@@ -271,6 +315,11 @@ export class PipelineOrchestrator {
         message: `${cancellationError.code}: ${cancellationError.message}`,
         logLimit: context.runtime.logLimit
       });
+      await this.persistFailurePassportBestEffort({
+        context,
+        error: cancellationError,
+        stage
+      });
       throw cancellationError;
     }
 
@@ -292,6 +341,11 @@ export class PipelineOrchestrator {
       message: `${typedError.code}: ${typedError.message}`,
       logLimit: context.runtime.logLimit
     });
+    await this.persistFailurePassportBestEffort({
+      context,
+      error: typedError,
+      stage
+    });
     throw typedError;
   }
 
@@ -308,19 +362,19 @@ export class PipelineOrchestrator {
     artifactContract: ResolvedStageArtifactContract;
     input: TInput;
   }): Promise<void> {
-    this.ensureStageNotCanceled({ context, stage });
     context.job.currentStage = stage;
-    updateStage({ job: context.job, stage, status: "running" });
-    pushRuntimeLog({
-      job: context.job,
-      logger: context.runtime.logger,
-      level: "info",
-      stage,
-      message: `Starting stage '${stage}'.`,
-      logLimit: context.runtime.logLimit
-    });
 
     try {
+      this.ensureStageNotCanceled({ context, stage });
+      updateStage({ job: context.job, stage, status: "running" });
+      pushRuntimeLog({
+        job: context.job,
+        logger: context.runtime.logger,
+        level: "info",
+        stage,
+        message: `Starting stage '${stage}'.`,
+        logLimit: context.runtime.logLimit
+      });
       await context.diskTracker.syncAndEnsureWithinLimit({ stage });
       const stageContext = createStageRuntimeContext({
         executionContext: context,
@@ -346,7 +400,7 @@ export class PipelineOrchestrator {
         logLimit: context.runtime.logLimit
       });
     } catch (error) {
-      this.handleStageError({
+      await this.handleStageError({
         context,
         error,
         stage
@@ -368,9 +422,9 @@ export class PipelineOrchestrator {
     stage: WorkspaceJobStageName;
   }): Promise<void> {
     context.job.currentStage = stage;
-    this.ensureStageNotCanceled({ context, stage });
 
     try {
+      this.ensureStageNotCanceled({ context, stage });
       await entry.onSkipped?.(context, reason);
       await this.ensureRequiredArtifactsPersisted({
         context,
@@ -390,7 +444,7 @@ export class PipelineOrchestrator {
         logLimit: context.runtime.logLimit
       });
     } catch (error) {
-      this.handleStageError({
+      await this.handleStageError({
         context,
         error,
         stage
@@ -405,11 +459,30 @@ export class PipelineOrchestrator {
     context: PipelineExecutionContext;
     plan: PipelineStagePlanEntry<unknown>[];
   }): Promise<void> {
-    this.validatePlan({ plan });
+    try {
+      this.validatePlan({ plan });
+    } catch (error) {
+      const fallbackStage: WorkspaceJobStageName = STAGE_ORDER[0] ?? "figma.source";
+      return await this.handleStageError({
+        context,
+        error,
+        stage: getPipelineErrorStage(error) ?? fallbackStage
+      });
+    }
 
     for (const entry of plan) {
       const service = entry.service;
-      const skipReason = entry.shouldSkip?.(context);
+      let skipReason: string | undefined;
+      try {
+        this.ensureStageNotCanceled({ context, stage: service.stageName });
+        skipReason = entry.shouldSkip?.(context);
+      } catch (error) {
+        return await this.handleStageError({
+          context,
+          error,
+          stage: service.stageName
+        });
+      }
       if (skipReason) {
         await this.skipStage({
           context,
@@ -427,7 +500,7 @@ export class PipelineOrchestrator {
           entry
         });
       } catch (error) {
-        this.handleStageError({
+        return await this.handleStageError({
           context,
           error,
           stage: service.stageName
@@ -436,13 +509,23 @@ export class PipelineOrchestrator {
       for (const key of artifactContract.reads) {
         const reference = await context.artifactStore.getReference(key);
         if (!reference) {
-          throw this.deps.toPipelineError({
+          return await this.handleStageError({
+            context,
             error: new Error(`Stage '${service.stageName}' requires missing artifact '${key}'.`),
-            fallbackStage: service.stageName
+            stage: service.stageName
           });
         }
       }
-      const input = entry.resolveInput ? await entry.resolveInput(context) : undefined;
+      let input: unknown;
+      try {
+        input = entry.resolveInput ? await entry.resolveInput(context) : undefined;
+      } catch (error) {
+        return await this.handleStageError({
+          context,
+          error,
+          stage: service.stageName
+        });
+      }
       await this.runStage({
         context,
         stage: service.stageName,

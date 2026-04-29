@@ -2395,6 +2395,31 @@ test("createJobEngine cancels running jobs and records cancellation reason", asy
     engine.getJobResult(accepted.jobId)?.cancellation?.reason,
     "Manual stop requested.",
   );
+  const result = engine.getJobResult(accepted.jobId);
+  assert.ok(result?.inspector?.qualityPassport);
+  assert.deepEqual(
+    result.inspector.stages.map((stage) => [stage.stage, stage.status]),
+    status.stages.map((stage) => [stage.name, stage.status]),
+  );
+  const terminalSnapshot = JSON.parse(
+    await readFile(
+      path.join(status.artifacts.jobDir, "stage-timings.json"),
+      "utf8",
+    ),
+  ) as {
+    inspector?: {
+      qualityPassport?: unknown;
+      stages?: Array<{ stage: string; status: string }>;
+    };
+  };
+  assert.ok(terminalSnapshot.inspector?.qualityPassport);
+  assert.deepEqual(
+    terminalSnapshot.inspector?.stages?.map((stage) => [
+      stage.stage,
+      stage.status,
+    ]),
+    status.stages.map((stage) => [stage.name, stage.status]),
+  );
 });
 
 test("createJobEngine shutdown cancels queued work and waits for running jobs to stop", async () => {
