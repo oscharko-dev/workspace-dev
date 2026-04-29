@@ -9,7 +9,7 @@ import type { PipelineExecutionContext } from "../pipeline/context.js";
 import type { StageArtifactContract, StageService } from "../pipeline/stage-service.js";
 import type { SubmissionJobInput } from "../types.js";
 import { CodegenGenerateService } from "./codegen-generate-service.js";
-import type { CodegenGenerateStageInput } from "./codegen-generate-service.js";
+import type { CodegenGenerateStageInput } from "./codegen-generate-types.js";
 import { FigmaSourceService } from "./figma-source-service.js";
 import type { FigmaSourceStageInput } from "./figma-source-service.js";
 import { GitPrService } from "./git-pr-service.js";

@@ -33,6 +33,7 @@ export class PipelineRequestError extends Error {
 export const PIPELINE_REQUEST_ERROR_CODES: ReadonlySet<string> = new Set([
   "INVALID_PIPELINE",
   "PIPELINE_UNAVAILABLE",
+  "PIPELINE_INPUT_UNSUPPORTED",
   "PIPELINE_SOURCE_MODE_UNSUPPORTED",
   "PIPELINE_SCOPE_UNSUPPORTED",
 ]);

@@ -102,12 +102,14 @@ import {
 import type { PipelineExecutionContext } from "./job-engine/pipeline/context.js";
 import { syncPublicJobProjection } from "./job-engine/pipeline/public-job-projection.js";
 import {
+  getDefaultPipelineRegistry,
   inferPipelineSourceMode,
   inferPipelineScope,
   selectPipeline,
   selectPipelineDefinition,
   type LegacyRocketAutoSelectionSignal,
 } from "./job-engine/pipeline/pipeline-selection.js";
+import { PipelineRequestError } from "./job-engine/pipeline/pipeline-errors.js";
 import {
   clonePipelineMetadata,
   resolveJobPipelineMetadata,
@@ -3889,6 +3891,68 @@ export const createJobEngine = ({
       throw err;
     }
 
+    const sourcePipelineId = resolveJobPipelineId(sourceJob);
+    const sourcePipelineMetadata = resolveJobPipelineMetadata(sourceJob);
+    const requestedPipelineId = input.pipelineId?.trim();
+    const registry = getDefaultPipelineRegistry();
+    if (
+      requestedPipelineId !== undefined &&
+      requestedPipelineId.length > 0 &&
+      !registry.has(requestedPipelineId)
+    ) {
+      throw new PipelineRequestError({
+        code: registry.isKnown(requestedPipelineId)
+          ? "PIPELINE_UNAVAILABLE"
+          : "INVALID_PIPELINE",
+        pipelineId: requestedPipelineId,
+        message: registry.isKnown(requestedPipelineId)
+          ? `Pipeline '${requestedPipelineId}' is not available in this build profile.`
+          : `Unknown pipeline '${requestedPipelineId}'.`,
+      });
+    }
+    if (
+      requestedPipelineId !== undefined &&
+      requestedPipelineId.length > 0 &&
+      requestedPipelineId !== sourcePipelineId
+    ) {
+      throw new PipelineRequestError({
+        code: "PIPELINE_INPUT_UNSUPPORTED",
+        pipelineId: requestedPipelineId,
+        message:
+          `Regeneration must use the source job pipeline '${sourcePipelineId}'. ` +
+          `Cross-pipeline regeneration to '${requestedPipelineId}' is not supported.`,
+      });
+    }
+    const customerBrandId = normalizeOptionalInputString(input.customerBrandId);
+    const componentMappings = input.componentMappings
+      ? normalizeComponentMappingRules({
+          rules: input.componentMappings,
+        })
+      : undefined;
+    const effectiveRegenerationComponentMappings =
+      componentMappings ?? sourceJob.request.componentMappings;
+    const effectiveRegenerationCustomerBrandId =
+      customerBrandId ?? sourceJob.request.customerBrandId;
+    const regenerationRocketSignals = collectLegacyRocketAutoSelectionSignals({
+      ...(effectiveRegenerationComponentMappings !== undefined
+        ? { componentMappings: effectiveRegenerationComponentMappings }
+        : {}),
+      ...(effectiveRegenerationCustomerBrandId !== undefined
+        ? { customerBrandId: effectiveRegenerationCustomerBrandId }
+        : {}),
+      ...(sourceJob.request.customerProfilePath !== undefined
+        ? { customerProfilePath: sourceJob.request.customerProfilePath }
+        : {}),
+    });
+    if (sourcePipelineId === "default" && regenerationRocketSignals.length > 0) {
+      throw new PipelineRequestError({
+        code: "PIPELINE_INPUT_UNSUPPORTED",
+        pipelineId: sourcePipelineId,
+        message:
+          "Regeneration for pipeline 'default' does not support Rocket-specific inputs. " +
+          "Submit a new rocket job instead of migrating pipelines during regeneration.",
+      });
+    }
     if (
       runningJobIds.size >= runtime.maxConcurrentJobs &&
       queuedJobIds.length >= runtime.maxQueuedJobs
@@ -3899,14 +3963,6 @@ export const createJobEngine = ({
     }
 
     const jobId = randomUUID();
-    const sourcePipelineId = resolveJobPipelineId(sourceJob);
-    const sourcePipelineMetadata = resolveJobPipelineMetadata(sourceJob);
-    const customerBrandId = normalizeOptionalInputString(input.customerBrandId);
-    const componentMappings = input.componentMappings
-      ? normalizeComponentMappingRules({
-          rules: input.componentMappings,
-        })
-      : undefined;
     const job: JobRecord = {
       jobId,
       status: "queued",

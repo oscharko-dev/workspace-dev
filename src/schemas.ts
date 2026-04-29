@@ -1984,6 +1984,7 @@ export const ErrorResponseSchema: RuntimeSchema<{
 };
 
 interface RegenerationRequestData {
+  pipelineId?: WorkspacePipelineId;
   overrides: WorkspaceRegenerationOverrideEntry[];
   draftId?: string;
   baseFingerprint?: string;
@@ -2002,6 +2003,7 @@ function parseRegenerationRequest(
   }
 
   const allowedKeys = new Set([
+    "pipelineId",
     "overrides",
     "draftId",
     "baseFingerprint",
@@ -2011,6 +2013,22 @@ function parseRegenerationRequest(
   for (const key of Object.keys(input)) {
     if (!allowedKeys.has(key)) {
       pushIssue(issues, [key], `Unexpected property '${key}'.`);
+    }
+  }
+
+  let pipelineId: WorkspacePipelineId | undefined;
+  if (input.pipelineId !== undefined) {
+    if (
+      typeof input.pipelineId !== "string" ||
+      input.pipelineId.trim().length === 0
+    ) {
+      pushIssue(
+        issues,
+        ["pipelineId"],
+        "pipelineId must be a non-empty string when provided.",
+      );
+    } else {
+      pipelineId = input.pipelineId.trim() as WorkspacePipelineId;
     }
   }
 
@@ -2121,6 +2139,9 @@ function parseRegenerationRequest(
   }
 
   const data: RegenerationRequestData = { overrides };
+  if (pipelineId !== undefined) {
+    data.pipelineId = pipelineId;
+  }
   if (draftId !== undefined) {
     data.draftId = draftId;
   }

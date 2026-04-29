@@ -2848,6 +2848,52 @@ test("request handler forwards normalized componentMappings on submit and regene
   }
 });
 
+test("request handler maps regeneration pipeline request errors to stable validation responses", async () => {
+  const submitRegeneration = test.mock.fn(() => {
+    throw new PipelineRequestError({
+      code: "PIPELINE_INPUT_UNSUPPORTED",
+      pipelineId: "rocket",
+      message:
+        "Regeneration must use the source job pipeline 'default'. Cross-pipeline regeneration to 'rocket' is not supported.",
+    });
+  });
+  const { app, close } = await createRequestHandlerApp({
+    jobEngine: createStubJobEngine({ submitRegeneration }),
+  });
+
+  try {
+    const response = await app.inject({
+      method: "POST",
+      url: "/workspace/jobs/source-job/regenerate",
+      headers: { "content-type": "application/json" },
+      payload: {
+        pipelineId: "rocket",
+        overrides: [],
+      },
+    });
+
+    assert.equal(response.statusCode, 400);
+    const body = response.json<Record<string, unknown>>();
+    assert.equal(body.error, "PIPELINE_INPUT_UNSUPPORTED");
+    assert.equal(body.pipelineId, "rocket");
+    assert.match(String(body.message), /Cross-pipeline regeneration/i);
+    assert.deepEqual(body.issues, [
+      {
+        path: "pipelineId",
+        message:
+          "Regeneration must use the source job pipeline 'default'. Cross-pipeline regeneration to 'rocket' is not supported.",
+      },
+    ]);
+    assert.equal(submitRegeneration.mock.callCount(), 1);
+    assert.equal(
+      submitRegeneration.mock.calls[0]?.arguments[0]?.pipelineId,
+      "rocket",
+    );
+  } finally {
+    await close();
+  }
+});
+
 test("request handler forwards selectedNodeIds on scoped submit requests", async () => {
   const submitJob = test.mock.fn(() => {
     return {
@@ -5158,6 +5204,53 @@ test("request handler stale-check, remap-suggest, submit, and cancel routes cove
               path: "pipelineId",
               message:
                 "Pipeline 'default' is not available in this build profile.",
+            },
+          ]);
+          assert.equal(submitJob.mock.callCount(), 1);
+        } finally {
+          await scoped.close();
+        }
+      },
+    );
+
+    await t.test(
+      "submit maps unsupported pipeline input errors to stable validation responses",
+      async () => {
+        const submitJob = test.mock.fn(() => {
+          throw new PipelineRequestError({
+            code: "PIPELINE_INPUT_UNSUPPORTED",
+            pipelineId: "default",
+            message:
+              "Pipeline 'default' does not support Rocket-specific inputs.",
+          });
+        });
+        const scoped = await createRequestHandlerApp({
+          jobEngine: createStubJobEngine({ submitJob }),
+        });
+
+        try {
+          const response = await scoped.app.inject({
+            method: "POST",
+            url: "/workspace/submit",
+            headers: { "content-type": "application/json" },
+            payload: {
+              pipelineId: "default",
+              figmaFileKey: "file-key",
+              figmaAccessToken: "token",
+              customerBrandId: "sparkasse",
+            },
+          });
+
+          assert.equal(response.statusCode, 400);
+          const body = response.json<Record<string, unknown>>();
+          assert.equal(body.error, "PIPELINE_INPUT_UNSUPPORTED");
+          assert.equal(body.pipelineId, "default");
+          assert.match(String(body.message), /Rocket-specific inputs/i);
+          assert.deepEqual(body.issues, [
+            {
+              path: "pipelineId",
+              message:
+                "Pipeline 'default' does not support Rocket-specific inputs.",
             },
           ]);
           assert.equal(submitJob.mock.callCount(), 1);
