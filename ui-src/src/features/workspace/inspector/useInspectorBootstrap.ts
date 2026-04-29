@@ -20,6 +20,10 @@ import {
   recordCorrection,
 } from "./intent-classification-metrics";
 import { recordMcpCall } from "./figma-mcp-call-counter";
+import {
+  getSelectedPipelineId,
+  type RuntimeStatusPayload,
+} from "../workspace-page.helpers";
 
 function toUnsupportedIntentReason({
   confirmedIntent,
@@ -40,6 +44,8 @@ export type ProgrammaticSubmitSourceMode = "figma_paste" | "figma_plugin";
 
 export interface UseInspectorBootstrapOptions {
   pollIntervalMs?: number;
+  availablePipelines?: RuntimeStatusPayload["availablePipelines"];
+  defaultPipelineId?: string | undefined;
 }
 
 interface FailedState {
@@ -86,6 +92,8 @@ export interface UseInspectorBootstrapResult {
   resubmitFresh(): void;
   /** Url-context for the most recent submit, or null when not from a URL. */
   lastUrlContext: { fileKey: string; nodeId: string | null } | null;
+  selectedPipelineId: string | undefined;
+  setSelectedPipelineId(pipelineId: string): void;
   reset(): void;
   reportInputError(code: string): void;
   jobId: string | null;
@@ -203,13 +211,12 @@ interface LastSubmitRef {
   payload: string;
   sourceMode: "figma_paste" | "figma_plugin" | "figma_url";
   urlContext: { fileKey: string; nodeId: string | null } | null;
+  pipelineId?: string;
 }
 
 export function useInspectorBootstrap(
   options?: UseInspectorBootstrapOptions,
 ): UseInspectorBootstrapResult {
-  void options;
-
   const pipeline = usePastePipeline();
   const [detectedPaste, setDetectedPaste] = useState<DetectedPaste | null>(
     null,
@@ -220,6 +227,21 @@ export function useInspectorBootstrap(
     fileKey: string;
     nodeId: string | null;
   } | null>(null);
+  const [requestedPipelineId, setRequestedPipelineId] = useState<
+    string | undefined
+  >(undefined);
+  const selectedPipelineId = getSelectedPipelineId({
+    availablePipelines: options?.availablePipelines,
+    defaultPipelineId: options?.defaultPipelineId,
+    currentPipelineId: requestedPipelineId,
+  });
+
+  const setSelectedPipelineId = useCallback((pipelineId: string): void => {
+    const normalizedPipelineId = pipelineId.trim();
+    setRequestedPipelineId(
+      normalizedPipelineId.length > 0 ? normalizedPipelineId : undefined,
+    );
+  }, []);
 
   const recordSubmit = useCallback((entry: LastSubmitRef): void => {
     lastSubmitRef.current = entry;
@@ -236,6 +258,9 @@ export function useInspectorBootstrap(
       setLocalFailure(null);
       pipeline.start(last.payload, {
         sourceMode: last.sourceMode,
+        ...(last.pipelineId !== undefined
+          ? { pipelineId: last.pipelineId }
+          : {}),
         selectedNodeIds: regenerateOptions.selectedNodeIds,
         ...(regenerateOptions.importMode !== undefined
           ? { importMode: regenerateOptions.importMode }
@@ -254,6 +279,7 @@ export function useInspectorBootstrap(
     setLocalFailure(null);
     pipeline.start(last.payload, {
       sourceMode: last.sourceMode,
+      ...(last.pipelineId !== undefined ? { pipelineId: last.pipelineId } : {}),
       importMode: "full",
     });
   }, [pipeline]);
@@ -334,8 +360,16 @@ export function useInspectorBootstrap(
         payload: figmaJsonPayload,
         sourceMode,
         urlContext: null,
+        ...(selectedPipelineId !== undefined
+          ? { pipelineId: selectedPipelineId }
+          : {}),
       });
-      pipeline.start(figmaJsonPayload, { sourceMode });
+      pipeline.start(figmaJsonPayload, {
+        sourceMode,
+        ...(selectedPipelineId !== undefined
+          ? { pipelineId: selectedPipelineId }
+          : {}),
+      });
     },
 
     submitUrl(fileKey: string, nodeId: string | null): void {
@@ -346,9 +380,15 @@ export function useInspectorBootstrap(
         payload,
         sourceMode: "figma_url",
         urlContext: { fileKey, nodeId },
+        ...(selectedPipelineId !== undefined
+          ? { pipelineId: selectedPipelineId }
+          : {}),
       });
       pipeline.start(payload, {
         sourceMode: "figma_url",
+        ...(selectedPipelineId !== undefined
+          ? { pipelineId: selectedPipelineId }
+          : {}),
       });
     },
 
@@ -456,8 +496,16 @@ export function useInspectorBootstrap(
         payload: detectedPaste.rawText,
         sourceMode,
         urlContext: null,
+        ...(selectedPipelineId !== undefined
+          ? { pipelineId: selectedPipelineId }
+          : {}),
       });
-      pipeline.start(detectedPaste.rawText, { sourceMode });
+      pipeline.start(detectedPaste.rawText, {
+        sourceMode,
+        ...(selectedPipelineId !== undefined
+          ? { pipelineId: selectedPipelineId }
+          : {}),
+      });
     },
 
     dismissIntent(): void {
@@ -500,6 +548,8 @@ export function useInspectorBootstrap(
     regenerateScoped,
     resubmitFresh,
     lastUrlContext,
+    selectedPipelineId,
+    setSelectedPipelineId,
 
     jobId,
     previewUrl,

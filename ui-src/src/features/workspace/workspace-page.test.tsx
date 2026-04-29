@@ -189,6 +189,110 @@ describe("WorkspacePage", () => {
     await expectNoBlockingAccessibilityViolations(form);
   });
 
+  it("renders the pipeline selector for multi-pipeline runtimes and submits the selected pipeline", async () => {
+    fetchJsonMock.mockImplementation(async ({ url, init }) => {
+      if (url === "/healthz") {
+        return createJsonResponse({ payload: { status: "ok" } }) as never;
+      }
+
+      if (url === "/workspace") {
+        return createJsonResponse({
+          payload: {
+            ...runtimeStatusPayload,
+            defaultPipelineId: "default",
+            availablePipelines: [
+              { id: "default", displayName: "Default" },
+              { id: "rocket", displayName: "Rocket" },
+            ],
+          },
+        }) as never;
+      }
+
+      if (url === "/workspace/submit") {
+        submittedPayloads.push(parseJsonBody({ init }));
+        return createJsonResponse({
+          status: 202,
+          payload: { jobId: "job-123" },
+        }) as never;
+      }
+
+      if (url === "/workspace/jobs/job-123") {
+        return createJsonResponse({
+          payload: {
+            jobId: "job-123",
+            status: "queued",
+          },
+        }) as never;
+      }
+
+      throw new Error(`Unexpected fetchJson url: ${url}`);
+    });
+
+    renderWorkspacePage();
+
+    const selector = await screen.findByLabelText("Pipeline");
+    expect(selector).toHaveValue("default");
+
+    fireEvent.change(selector, {
+      target: { value: "rocket" },
+    });
+    fireEvent.change(screen.getByLabelText("Figma File Key"), {
+      target: { value: "demo-file-key" },
+    });
+    fireEvent.change(screen.getByLabelText("Figma Access Token"), {
+      target: { value: "demo-access-token" },
+    });
+
+    const form = document.getElementById("workspace-submit-form");
+    if (!(form instanceof HTMLFormElement)) {
+      throw new Error("Expected workspace submit form to be rendered.");
+    }
+
+    fireEvent.submit(form);
+
+    await waitFor(() => {
+      expect(submittedPayloads).toHaveLength(1);
+    });
+
+    expect(submittedPayloads[0]).toMatchObject({
+      pipelineId: "rocket",
+      figmaFileKey: "demo-file-key",
+      figmaAccessToken: "demo-access-token",
+      figmaSourceMode: "rest",
+      llmCodegenMode: "deterministic",
+    });
+  });
+
+  it("does not render the pipeline selector for single-pipeline runtimes", async () => {
+    fetchJsonMock.mockImplementation(async ({ url }) => {
+      if (url === "/healthz") {
+        return createJsonResponse({ payload: { status: "ok" } }) as never;
+      }
+
+      if (url === "/workspace") {
+        return createJsonResponse({
+          payload: {
+            ...runtimeStatusPayload,
+            defaultPipelineId: "default",
+            availablePipelines: [{ id: "default", displayName: "Default" }],
+          },
+        }) as never;
+      }
+
+      throw new Error(`Unexpected fetchJson url: ${url}`);
+    });
+
+    renderWorkspacePage();
+
+    await waitFor(() => {
+      expect(fetchJsonMock).toHaveBeenCalledWith(
+        expect.objectContaining({ url: "/workspace" }),
+      );
+    });
+
+    expect(screen.queryByLabelText("Pipeline")).not.toBeInTheDocument();
+  });
+
   it("restores REST-only fields when switching from local_json to hybrid", async () => {
     renderWorkspacePage();
 

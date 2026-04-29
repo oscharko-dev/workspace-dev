@@ -14,11 +14,17 @@ function renderBootstrap({
   onPaste = vi.fn(),
   onRetry = vi.fn(),
   onFigmaUrl = vi.fn(),
+  availablePipelines,
+  selectedPipelineId,
+  onPipelineIdChange = vi.fn(),
 }: {
   state: InspectorBootstrapState;
   onPaste?: (text: string) => void;
   onRetry?: () => void;
   onFigmaUrl?: (fileKey: string, nodeId: string | null) => void;
+  availablePipelines?: Array<{ id: string; displayName: string }>;
+  selectedPipelineId?: string;
+  onPipelineIdChange?: (pipelineId: string) => void;
 }): void {
   render(
     <MemoryRouter>
@@ -27,6 +33,9 @@ function renderBootstrap({
         onPaste={onPaste}
         onRetry={onRetry}
         onFigmaUrl={onFigmaUrl}
+        availablePipelines={availablePipelines}
+        selectedPipelineId={selectedPipelineId}
+        onPipelineIdChange={onPipelineIdChange}
       />
     </MemoryRouter>,
   );
@@ -48,6 +57,37 @@ describe("InspectorBootstrap — layout", () => {
     renderBootstrap({ state: { kind: "idle" } });
 
     expect(screen.getByText("Inspector")).toBeInTheDocument();
+  });
+
+  it("renders a pipeline selector only when more than one pipeline is available", () => {
+    renderBootstrap({
+      state: { kind: "idle" },
+      availablePipelines: [{ id: "pipe-a", displayName: "Pipeline A" }],
+      selectedPipelineId: "pipe-a",
+    });
+
+    expect(
+      screen.queryByLabelText("Pipeline"),
+    ).not.toBeInTheDocument();
+
+    cleanup();
+
+    const onPipelineIdChange = vi.fn();
+    renderBootstrap({
+      state: { kind: "idle" },
+      availablePipelines: [
+        { id: "pipe-a", displayName: "Pipeline A" },
+        { id: "pipe-b", displayName: "Pipeline B" },
+      ],
+      selectedPipelineId: "pipe-a",
+      onPipelineIdChange,
+    });
+
+    const selector = screen.getByLabelText("Pipeline");
+    expect(selector).toBeInTheDocument();
+
+    fireEvent.change(selector, { target: { value: "pipe-b" } });
+    expect(onPipelineIdChange).toHaveBeenCalledWith("pipe-b");
   });
 });
 

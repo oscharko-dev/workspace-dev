@@ -660,6 +660,15 @@ describe("startPastePipeline submit body", () => {
     expect(body.importMode).toBeUndefined();
   });
 
+  it("posts a submit body containing pipelineId when it is provided", async () => {
+    startPastePipeline(validPayload, { pipelineId: "pipe-1" });
+
+    const init = await waitForSubmitCall();
+    const body = JSON.parse(init.body as string) as Record<string, unknown>;
+
+    expect(body.pipelineId).toBe("pipe-1");
+  });
+
   it("posts a submit body containing selectedNodeIds and importMode when both are provided", async () => {
     startPastePipeline(validPayload, {
       selectedNodeIds: ["a", "b"],

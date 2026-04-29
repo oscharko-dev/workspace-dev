@@ -20,8 +20,8 @@ export interface RuntimeStatusPayload {
   uptimeMs: number;
   outputRoot: string;
   previewEnabled: boolean;
-  availablePipelines?: Array<{ id: string; displayName: string }>;
-  defaultPipelineId?: string;
+  availablePipelines?: Array<{ id: string; displayName: string }> | undefined;
+  defaultPipelineId?: string | undefined;
 }
 
 export interface JobStagePayload {
@@ -361,4 +361,57 @@ export function getModeChipClasses({
       ? "border border-[#4eba87] bg-emerald-500/5 text-[#4eba87]"
       : "text-[#333]"
   }`;
+}
+
+export function hasMultipleAvailablePipelines(
+  availablePipelines?: RuntimeStatusPayload["availablePipelines"],
+): boolean {
+  return (availablePipelines?.length ?? 0) > 1;
+}
+
+export function getSelectedPipelineId({
+  availablePipelines,
+  defaultPipelineId,
+  currentPipelineId,
+}: {
+  availablePipelines?: RuntimeStatusPayload["availablePipelines"];
+  defaultPipelineId?: string | undefined;
+  currentPipelineId?: string | undefined;
+}): string | undefined {
+  const normalizedCurrentPipelineId = currentPipelineId?.trim();
+  const normalizedDefaultPipelineId = defaultPipelineId?.trim();
+
+  if (availablePipelines === undefined) {
+    return normalizedCurrentPipelineId || undefined;
+  }
+
+  if (availablePipelines.length === 0) {
+    return undefined;
+  }
+
+  const availablePipelineIds = new Set(
+    availablePipelines
+      .map((pipeline) => pipeline.id.trim())
+      .filter((pipelineId) => pipelineId.length > 0),
+  );
+
+  if (availablePipelineIds.size === 0) {
+    return undefined;
+  }
+
+  if (
+    normalizedCurrentPipelineId !== undefined &&
+    availablePipelineIds.has(normalizedCurrentPipelineId)
+  ) {
+    return normalizedCurrentPipelineId;
+  }
+
+  if (
+    normalizedDefaultPipelineId !== undefined &&
+    availablePipelineIds.has(normalizedDefaultPipelineId)
+  ) {
+    return normalizedDefaultPipelineId;
+  }
+
+  return availablePipelineIds.values().next().value;
 }

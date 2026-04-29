@@ -16,7 +16,9 @@ import {
   getModeChipClasses,
   getRouteFigmaKey,
   getSubmitBadge,
+  getSelectedPipelineId,
   getWorkspaceBadge,
+  hasMultipleAvailablePipelines,
   isJobPayload,
   isRecord,
   toPrettyJson,
@@ -164,10 +166,12 @@ export function WorkspacePage(): JSX.Element {
     register,
     handleSubmit,
     watch,
+    setValue,
     formState: { errors },
   } = useForm<WorkspaceSubmitFormData>({
     resolver: zodResolver(workspaceSubmitSchema),
     defaultValues: {
+      pipelineId: "",
       figmaFileKey: initialFigmaKey,
       figmaAccessToken: "",
       figmaJsonPath: "",
@@ -184,6 +188,7 @@ export function WorkspacePage(): JSX.Element {
 
   const isGitPrEnabled = watch("enableGitPr");
   const selectedFigmaSourceMode = watch("figmaSourceMode");
+  const selectedPipelineId = watch("pipelineId");
 
   const runtimeQuery = useQuery({
     queryKey: ["runtime-status"],
@@ -432,6 +437,35 @@ export function WorkspacePage(): JSX.Element {
   const runtimeData = runtimeQuery.data?.workspace.ok
     ? (runtimeQuery.data.workspace.payload as RuntimeStatusPayload | undefined)
     : undefined;
+  const hasPipelineSelector = hasMultipleAvailablePipelines(
+    runtimeData?.availablePipelines,
+  );
+
+  useEffect(() => {
+    const nextPipelineId = getSelectedPipelineId({
+      availablePipelines: runtimeData?.availablePipelines,
+      defaultPipelineId: runtimeData?.defaultPipelineId,
+      currentPipelineId: selectedPipelineId,
+    });
+
+    const normalizedCurrentPipelineId = selectedPipelineId?.trim() ?? "";
+    const normalizedNextPipelineId = nextPipelineId ?? "";
+
+    if (normalizedNextPipelineId === normalizedCurrentPipelineId) {
+      return;
+    }
+
+    setValue("pipelineId", normalizedNextPipelineId, {
+      shouldDirty: false,
+      shouldTouch: false,
+      shouldValidate: false,
+    });
+  }, [
+    runtimeData?.availablePipelines,
+    runtimeData?.defaultPipelineId,
+    selectedPipelineId,
+    setValue,
+  ]);
 
   const submitForm = handleSubmit((formData) => {
     submitMutation.mutate(formData);
@@ -604,7 +638,37 @@ export function WorkspacePage(): JSX.Element {
                 }}
                 className="mt-4"
               >
+                <input type="hidden" {...register("pipelineId")} />
                 <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+                  {hasPipelineSelector ? (
+                    <div className="flex flex-col gap-2">
+                      <label
+                        htmlFor="pipeline-id"
+                        className="text-xs font-medium uppercase tracking-wider text-[#666]"
+                      >
+                        Pipeline
+                      </label>
+                      <select
+                        id="pipeline-id"
+                        value={selectedPipelineId ?? ""}
+                        onChange={(event) => {
+                          setValue("pipelineId", event.target.value, {
+                            shouldDirty: true,
+                            shouldTouch: true,
+                            shouldValidate: true,
+                          });
+                        }}
+                        className="rounded-md border border-black/10 bg-[#f9f9f9] px-3 py-2 text-sm text-[#333] outline-none focus:border-[#4eba87]"
+                      >
+                        {runtimeData?.availablePipelines?.map((pipeline) => (
+                          <option key={pipeline.id} value={pipeline.id}>
+                            {pipeline.displayName}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  ) : null}
+
                   <div className="flex flex-col gap-2">
                     <label
                       htmlFor="figma-source-mode"
