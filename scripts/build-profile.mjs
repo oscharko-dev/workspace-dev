@@ -14,6 +14,15 @@ import {
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import {
+  distAllowlist,
+  docsFileAllowlist,
+  profileDefinitions,
+  resolveBuildProfiles,
+  rootFileAllowlist,
+  templateFileAllowlists,
+} from "./pack-profile-contract.mjs";
+import { validatePackProfileTarballs } from "./validate-pack-profile.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const packageRoot = path.resolve(__dirname, "..");
@@ -22,194 +31,6 @@ const defaultPackDestination = path.join(
   "artifacts",
   "build-profiles",
 );
-
-const profileDefinitions = {
-  default: {
-    id: "default",
-    envValue: "default",
-    pipelineIds: ["default"],
-    templates: ["react-tailwind-app"],
-  },
-  rocket: {
-    id: "rocket",
-    envValue: "rocket",
-    pipelineIds: ["rocket"],
-    templates: ["react-mui-app"],
-  },
-  "default-rocket": {
-    id: "default-rocket",
-    envValue: "default,rocket",
-    pipelineIds: ["default", "rocket"],
-    templates: ["react-tailwind-app", "react-mui-app"],
-  },
-};
-
-const profileAliases = new Map([
-  ["all", "default-rocket"],
-  ["default,rocket", "default-rocket"],
-]);
-
-const rootFileAllowlist = [
-  "README.md",
-  "TROUBLESHOOTING.md",
-  "VERSIONING.md",
-  "LICENSE",
-  "CHANGELOG.md",
-  "CONTRIBUTING.md",
-  "GOVERNANCE.md",
-  "SECURITY.md",
-  "THREAT_MODEL.md",
-  "CODE_OF_CONDUCT.md",
-  "COMPLIANCE.md",
-  "ARCHITECTURE.md",
-  "COMPATIBILITY.md",
-  "SLA.md",
-  "ESCROW.md",
-  "ZERO_TELEMETRY.md",
-  "SUPPORT.md",
-  "CONTRACT_CHANGELOG.md",
-  "PIPELINE.md",
-];
-
-const docsFileAllowlist = [
-  "docs/migration-guide.md",
-  "docs/template-maintenance.md",
-  "docs/test-intelligence.md",
-  "docs/api/test-intelligence-multi-source.md",
-  "docs/architecture/multi-source-flow.mmd",
-  "docs/dora/multi-source.md",
-  "docs/dpia/custom-context-source.md",
-  "docs/dpia/jira-source.md",
-  "docs/eu-ai-act/human-oversight.md",
-  "docs/migration/wave-4-additive.md",
-  "docs/runbooks/jira-source-setup.md",
-  "docs/runbooks/multi-source-air-gap.md",
-];
-
-const distAllowlist = ["dist"];
-
-const templateFileAllowlists = {
-  "react-tailwind-app": [
-    "template/react-tailwind-app/.npmignore",
-    "template/react-tailwind-app/.npmrc",
-    "template/react-tailwind-app/e2e/template.spec.ts",
-    "template/react-tailwind-app/eslint.config.js",
-    "template/react-tailwind-app/index.html",
-    "template/react-tailwind-app/package.json",
-    "template/react-tailwind-app/perf-baseline.json",
-    "template/react-tailwind-app/perf-budget.json",
-    "template/react-tailwind-app/playwright.config.ts",
-    "template/react-tailwind-app/pnpm-lock.yaml",
-    "template/react-tailwind-app/pnpm-workspace.yaml",
-    "template/react-tailwind-app/scripts/perf-runner.mjs",
-    "template/react-tailwind-app/scripts/validate-ui-report-lib.mjs",
-    "template/react-tailwind-app/scripts/validate-ui-report.mjs",
-    "template/react-tailwind-app/src/App.tsx",
-    "template/react-tailwind-app/src/main.tsx",
-    "template/react-tailwind-app/src/styles.css",
-    "template/react-tailwind-app/src/test/setup.ts",
-    "template/react-tailwind-app/src/vite-env.d.ts",
-    "template/react-tailwind-app/tsconfig.app.json",
-    "template/react-tailwind-app/tsconfig.json",
-    "template/react-tailwind-app/tsconfig.node.json",
-    "template/react-tailwind-app/vite.config.ts",
-  ],
-  "react-mui-app": [
-    "template/react-mui-app/.npmrc",
-    "template/react-mui-app/eslint.config.js",
-    "template/react-mui-app/index.html",
-    "template/react-mui-app/package-lock.json",
-    "template/react-mui-app/package.json",
-    "template/react-mui-app/perf-baseline.json",
-    "template/react-mui-app/perf-budget.json",
-    "template/react-mui-app/pnpm-lock.yaml",
-    "template/react-mui-app/pnpm-workspace.yaml",
-    "template/react-mui-app/scripts/perf-runner.mjs",
-    "template/react-mui-app/scripts/validate-ui-report-lib.mjs",
-    "template/react-mui-app/scripts/validate-ui-report.mjs",
-    "template/react-mui-app/src/App.tsx",
-    "template/react-mui-app/src/components/ErrorBoundary.tsx",
-    "template/react-mui-app/src/components/RouteSkeleton.tsx",
-    "template/react-mui-app/src/main.tsx",
-    "template/react-mui-app/src/performance/report-web-vitals.ts",
-    "template/react-mui-app/src/performance/resource-hints.ts",
-    "template/react-mui-app/src/performance/runtime-errors.ts",
-    "template/react-mui-app/src/routes/CheckoutRoute.tsx",
-    "template/react-mui-app/src/routes/HomeRoute.tsx",
-    "template/react-mui-app/src/routes/OverviewRoute.tsx",
-    "template/react-mui-app/src/routes/lazy-routes.ts",
-    "template/react-mui-app/src/test/jest-axe.d.ts",
-    "template/react-mui-app/src/test/setup.ts",
-    "template/react-mui-app/src/theme/theme.ts",
-    "template/react-mui-app/src/vite-env.d.ts",
-    "template/react-mui-app/tsconfig.json",
-    "template/react-mui-app/vite.config.ts",
-  ],
-};
-
-const commonRequiredFiles = [
-  "package.json",
-  "README.md",
-  "PIPELINE.md",
-  "LICENSE",
-  "GOVERNANCE.md",
-  "SECURITY.md",
-  "THREAT_MODEL.md",
-  "COMPLIANCE.md",
-  "ARCHITECTURE.md",
-  "COMPATIBILITY.md",
-  "dist/cli.js",
-  "dist/index.js",
-  "dist/index.cjs",
-  "dist/index.d.ts",
-  "dist/index.d.cts",
-  "dist/contracts/index.js",
-  "dist/contracts/index.cjs",
-  "dist/contracts/index.d.ts",
-  "dist/contracts/index.d.cts",
-  "dist/ui/index.html",
-  ...docsFileAllowlist,
-];
-
-const templateRequiredFiles = {
-  "react-tailwind-app": [
-    "template/react-tailwind-app/package.json",
-    "template/react-tailwind-app/pnpm-lock.yaml",
-    "template/react-tailwind-app/perf-budget.json",
-    "template/react-tailwind-app/perf-baseline.json",
-    "template/react-tailwind-app/scripts/perf-runner.mjs",
-    "template/react-tailwind-app/scripts/validate-ui-report.mjs",
-    "template/react-tailwind-app/scripts/validate-ui-report-lib.mjs",
-    "template/react-tailwind-app/playwright.config.ts",
-    "template/react-tailwind-app/e2e/template.spec.ts",
-  ],
-  "react-mui-app": [
-    "template/react-mui-app/package.json",
-    "template/react-mui-app/pnpm-lock.yaml",
-    "template/react-mui-app/src/App.tsx",
-    "template/react-mui-app/src/components/ErrorBoundary.tsx",
-    "template/react-mui-app/src/components/RouteSkeleton.tsx",
-    "template/react-mui-app/vite.config.ts",
-  ],
-};
-
-const forbiddenPackagePathPatterns = [
-  /^package\/src(?:\/|$)/,
-  /^package\/ui-src(?:\/|$)/,
-  /^package\/node_modules(?:\/|$)/,
-  /^package\/scripts(?:\/|$)/,
-  /^package\/tsconfig\.json$/,
-  /^package\/\.npmignore$/,
-  /^package\/\.env(?:\.|$)/,
-  /\/node_modules\//,
-  /\/\.figmapipe(?:\/|$)/,
-  /\/artifacts\//,
-  /^package\/template\/[^/]+\/dist(?:\/|$)/,
-  /\/playwright-report\//,
-  /\/test-results\//,
-  /\/ui-gate-[^/]*\.json$/,
-  /\.test\.[cm]?[jt]sx?$/,
-];
 
 const parseArgs = (argv) => {
   const options = {
@@ -286,21 +107,6 @@ const parseArgs = (argv) => {
 
   return options;
 };
-
-const normalizeProfileId = (rawProfile) => {
-  const normalized = rawProfile.trim();
-  const aliased = profileAliases.get(normalized) ?? normalized;
-  if (!Object.prototype.hasOwnProperty.call(profileDefinitions, aliased)) {
-    throw new Error(
-      `Unsupported build profile '${rawProfile}'. Expected one of: ${Object.keys(profileDefinitions).join(", ")}.`,
-    );
-  }
-  return aliased;
-};
-
-const resolveProfiles = (rawProfiles) => [
-  ...new Set(rawProfiles.map((profile) => normalizeProfileId(profile))),
-];
 
 const run = (
   command,
@@ -467,200 +273,6 @@ const packStagedPackage = async ({ packDestination, profile, stagingRoot }) => {
   }
 };
 
-const listTarball = async (tarballPath) =>
-  (await run("tar", ["-tzf", tarballPath], { stdio: "pipe" }))
-    .split(/\r?\n/u)
-    .filter(Boolean)
-    .sort((first, second) => first.localeCompare(second));
-
-const extractTarball = async (tarballPath) => {
-  const extractRoot = await mkdtemp(
-    path.join(os.tmpdir(), "workspace-dev-pack-extract-"),
-  );
-  await run("tar", ["-xzf", tarballPath, "-C", extractRoot], {
-    stdio: "ignore",
-  });
-  return extractRoot;
-};
-
-const assertNoForbiddenPaths = ({ files, profile }) => {
-  const violations = files.filter((file) =>
-    forbiddenPackagePathPatterns.some((pattern) => pattern.test(file)),
-  );
-  if (!profile.templates.includes("react-tailwind-app")) {
-    violations.push(
-      ...files.filter((file) =>
-        file.startsWith("package/template/react-tailwind-app/"),
-      ),
-    );
-  }
-  if (!profile.templates.includes("react-mui-app")) {
-    violations.push(
-      ...files.filter((file) =>
-        file.startsWith("package/template/react-mui-app/"),
-      ),
-    );
-  }
-  if (violations.length > 0) {
-    throw new Error(
-      `Profile '${profile.id}' pack contains forbidden path(s):\n${[
-        ...new Set(violations),
-      ]
-        .slice(0, 20)
-        .join("\n")}`,
-    );
-  }
-};
-
-const assertRequiredFiles = ({ files, profile }) => {
-  const fileSet = new Set(files.map((file) => file.replace(/^package\//u, "")));
-  const requiredFiles = [
-    ...commonRequiredFiles,
-    ...profile.templates.flatMap(
-      (templateId) => templateRequiredFiles[templateId],
-    ),
-  ];
-  const missing = requiredFiles.filter(
-    (relativePath) => !fileSet.has(relativePath),
-  );
-  if (missing.length > 0) {
-    throw new Error(
-      `Profile '${profile.id}' pack is missing required file(s):\n${missing.join("\n")}`,
-    );
-  }
-
-  if (
-    !files.some((file) => /^package\/dist\/ui\/assets\/.+\.js$/u.test(file))
-  ) {
-    throw new Error(
-      `Profile '${profile.id}' pack is missing dist/ui JavaScript assets.`,
-    );
-  }
-  if (
-    !files.some((file) => /^package\/dist\/ui\/assets\/.+\.css$/u.test(file))
-  ) {
-    throw new Error(
-      `Profile '${profile.id}' pack is missing dist/ui CSS assets.`,
-    );
-  }
-};
-
-const assertDefaultTemplateHasNoRocketRuntime = async (extractRoot) => {
-  const templatePackageJsonPath = path.join(
-    extractRoot,
-    "package",
-    "template",
-    "react-tailwind-app",
-    "package.json",
-  );
-  try {
-    const packageJson = JSON.parse(
-      await readFile(templatePackageJsonPath, "utf8"),
-    );
-    const dependencySections = [
-      packageJson.dependencies,
-      packageJson.devDependencies,
-      packageJson.optionalDependencies,
-      packageJson.peerDependencies,
-    ];
-    const dependencyNames = dependencySections.flatMap((section) =>
-      section && typeof section === "object" ? Object.keys(section) : [],
-    );
-    const denied = dependencyNames.filter((dependencyName) =>
-      /^(?:@mui\/|@emotion\/|@customer\/|@rocket\/|rocket-|customer-)/u.test(
-        dependencyName,
-      ),
-    );
-    if (denied.length > 0) {
-      throw new Error(
-        `Default template includes denied Rocket runtime dependencies: ${denied.join(", ")}`,
-      );
-    }
-  } catch (error) {
-    if (
-      error &&
-      typeof error === "object" &&
-      "code" in error &&
-      error.code === "ENOENT"
-    ) {
-      return;
-    }
-    throw error;
-  }
-};
-
-const runPackedRuntimeSmokes = async (packageRootPath) => {
-  await run("node", [path.join(packageRootPath, "dist", "cli.js"), "--help"], {
-    cwd: packageRootPath,
-    stdio: "ignore",
-  });
-
-  await run(
-    "node",
-    [
-      "--input-type=module",
-      "-e",
-      `
-import { pathToFileURL } from "node:url";
-const mod = await import(pathToFileURL(process.argv[1]).href);
-if (typeof mod.createWorkspaceServer !== "function") {
-  throw new Error("ESM import failed");
-}
-`,
-      path.join(packageRootPath, "dist", "index.js"),
-    ],
-    { cwd: packageRootPath, stdio: "ignore" },
-  );
-
-  await run(
-    "node",
-    [
-      "--input-type=module",
-      "-e",
-      `
-import { pathToFileURL } from "node:url";
-const mod = await import(pathToFileURL(process.argv[1]).href);
-if (typeof mod.CONTRACT_VERSION !== "string" || !Array.isArray(mod.ALLOWED_FIGMA_SOURCE_MODES)) {
-  throw new Error("contracts ESM import failed");
-}
-`,
-      path.join(packageRootPath, "dist", "contracts", "index.js"),
-    ],
-    { cwd: packageRootPath, stdio: "ignore" },
-  );
-
-  await run(
-    "node",
-    [
-      "-e",
-      `
-const mod = require(process.argv[1]);
-if (typeof mod.CONTRACT_VERSION !== "string" || !Array.isArray(mod.ALLOWED_FIGMA_SOURCE_MODES)) {
-  throw new Error("contracts CJS require failed");
-}
-`,
-      path.join(packageRootPath, "dist", "contracts", "index.cjs"),
-    ],
-    { cwd: packageRootPath, stdio: "ignore" },
-  );
-};
-
-const verifyTarball = async ({ profile, tarballPath }) => {
-  const files = await listTarball(tarballPath);
-  assertRequiredFiles({ files, profile });
-  assertNoForbiddenPaths({ files, profile });
-
-  const extractRoot = await extractTarball(tarballPath);
-  try {
-    await runPackedRuntimeSmokes(path.join(extractRoot, "package"));
-    if (profile.templates.includes("react-tailwind-app")) {
-      await assertDefaultTemplateHasNoRocketRuntime(extractRoot);
-    }
-  } finally {
-    await rm(extractRoot, { recursive: true, force: true });
-  }
-};
-
 const buildProfile = async (profile) => {
   console.log(
     `[build-profile] Building profile '${profile.id}' (${profile.envValue}).`,
@@ -696,7 +308,7 @@ const buildPlan = (profiles) =>
 
 const main = async () => {
   const options = parseArgs(process.argv.slice(2));
-  const profileIds = resolveProfiles(options.profiles);
+  const profileIds = resolveBuildProfiles(options.profiles);
 
   if (options.dryRun) {
     console.log(JSON.stringify(buildPlan(profileIds), null, 2));
@@ -721,7 +333,10 @@ const main = async () => {
         stagingRoot,
       });
       if (options.verify) {
-        await verifyTarball({ profile, tarballPath });
+        await validatePackProfileTarballs({
+          profileId: profile.id,
+          tarballPaths: [tarballPath],
+        });
       }
       results.push({ profile: profile.id, tarballPath });
       if (!options.json && !options.printTarball) {
