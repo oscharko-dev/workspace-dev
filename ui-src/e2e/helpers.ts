@@ -33,7 +33,7 @@ const INSPECTOR_URL = (() => {
   return base.toString();
 })();
 const FIXTURE_PATH = path.resolve(
-  fileURLToPath(new URL("../../src/parity/fixtures/golden/prototype-navigation/figma.json", import.meta.url))
+  fileURLToPath(new URL("../../src/parity/fixtures/golden/rocket/prototype-navigation/figma.json", import.meta.url))
 );
 const UNSUPPORTED_ENVELOPE_FIXTURE_PATH = path.resolve(
   fileURLToPath(

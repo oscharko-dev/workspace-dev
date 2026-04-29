@@ -1,0 +1,215 @@
+{
+  "artifactVersion": 1,
+  "sourceName": "Dark Mode Golden",
+  "summary": {
+    "pageCount": 1,
+    "sectionCount": 0,
+    "topLevelFrameCount": 2,
+    "totalNodeCount": 14,
+    "totalInstanceCount": 0,
+    "localComponentCount": 0,
+    "localStyleCount": 0,
+    "externalComponentCount": 0
+  },
+  "tokenSignals": {
+    "boundVariableIds": [],
+    "variableModeIds": [],
+    "styleReferences": {
+      "allStyleIds": [],
+      "byType": {
+        "fill": [],
+        "stroke": [],
+        "effect": [],
+        "text": [],
+        "generic": []
+      },
+      "localStyleIds": [],
+      "linkedStyleIds": []
+    }
+  },
+  "layoutGraph": {
+    "pages": [
+      {
+        "id": "0:1",
+        "name": "Page 1",
+        "sectionIds": [],
+        "frameIds": [
+          "screen-dashboard-dark",
+          "screen-dashboard-light"
+        ]
+      }
+    ],
+    "sections": [],
+    "frames": [
+      {
+        "id": "screen-dashboard-dark",
+        "name": "Dashboard Dark",
+        "pageId": "0:1",
+        "nodeType": "FRAME",
+        "layoutMode": "VERTICAL",
+        "width": 390,
+        "height": 844,
+        "directChildCount": 3,
+        "subtreeNodeCount": 6,
+        "instanceCount": 0
+      },
+      {
+        "id": "screen-dashboard-light",
+        "name": "Dashboard Light",
+        "pageId": "0:1",
+        "nodeType": "FRAME",
+        "layoutMode": "VERTICAL",
+        "width": 390,
+        "height": 844,
+        "directChildCount": 3,
+        "subtreeNodeCount": 6,
+        "instanceCount": 0
+      }
+    ],
+    "edges": [
+      {
+        "parentId": "0:1",
+        "parentType": "page",
+        "childId": "screen-dashboard-dark",
+        "childType": "frame"
+      },
+      {
+        "parentId": "0:1",
+        "parentType": "page",
+        "childId": "screen-dashboard-light",
+        "childType": "frame"
+      }
+    ]
+  },
+  "componentFamilies": [],
+  "externalComponents": [],
+  "frameVariantGroups": [
+    {
+      "groupId": "dashboard-dark-2",
+      "frameIds": [
+        "screen-dashboard-dark",
+        "screen-dashboard-light"
+      ],
+      "frameNames": [
+        "Dashboard Dark",
+        "Dashboard Light"
+      ],
+      "canonicalFrameId": "screen-dashboard-dark",
+      "confidence": 0.567,
+      "similarityReasons": [
+        "matching-width",
+        "shared-name-tokens",
+        "shared-text-signals",
+        "shared-top-level-structure"
+      ],
+      "fallbackReasons": [
+        "Frame grouping is heuristic and based on structural similarity across top-level frames."
+      ],
+      "variantAxes": [
+        {
+          "axis": "name-variants",
+          "values": [
+            "dark",
+            "light"
+          ],
+          "source": "name"
+        }
+      ]
+    }
+  ],
+  "appShellSignals": [
+    {
+      "signalId": "dashboard-dark-2-shell-3",
+      "groupId": "dashboard-dark-2",
+      "role": "frame",
+      "fingerprint": "summary card|FRAME|VERTICAL|7|3",
+      "frameIds": [
+        "screen-dashboard-dark",
+        "screen-dashboard-light"
+      ],
+      "nodeIds": [
+        "dark-summary-card",
+        "light-summary-card"
+      ],
+      "confidence": 1,
+      "reasons": [
+        "Fingerprint repeated in 2 of 2 grouped frames.",
+        "Shell detection is based on repeated top-level structure and positional heuristics."
+      ]
+    },
+    {
+      "signalId": "dashboard-dark-2-shell-2",
+      "groupId": "dashboard-dark-2",
+      "role": "header",
+      "fingerprint": "body|TEXT|NONE|7|1",
+      "frameIds": [
+        "screen-dashboard-dark",
+        "screen-dashboard-light"
+      ],
+      "nodeIds": [
+        "dark-body",
+        "light-body"
+      ],
+      "confidence": 1,
+      "reasons": [
+        "Fingerprint repeated in 2 of 2 grouped frames.",
+        "Shell detection is based on repeated top-level structure and positional heuristics."
+      ]
+    },
+    {
+      "signalId": "dashboard-dark-2-shell-1",
+      "groupId": "dashboard-dark-2",
+      "role": "header",
+      "fingerprint": "heading|TEXT|NONE|6|1",
+      "frameIds": [
+        "screen-dashboard-dark",
+        "screen-dashboard-light"
+      ],
+      "nodeIds": [
+        "dark-title",
+        "light-title"
+      ],
+      "confidence": 1,
+      "reasons": [
+        "Fingerprint repeated in 2 of 2 grouped frames.",
+        "Shell detection is based on repeated top-level structure and positional heuristics."
+      ]
+    }
+  ],
+  "componentDensity": {
+    "boardDominantFamilies": [],
+    "byFrame": [
+      {
+        "frameId": "screen-dashboard-dark",
+        "frameName": "Dashboard Dark",
+        "subtreeNodeCount": 6,
+        "instanceCount": 0,
+        "density": 0,
+        "dominantFamilies": []
+      },
+      {
+        "frameId": "screen-dashboard-light",
+        "frameName": "Dashboard Light",
+        "subtreeNodeCount": 6,
+        "instanceCount": 0,
+        "density": 0,
+        "dominantFamilies": []
+      }
+    ],
+    "hotspots": []
+  },
+  "diagnostics": [
+    {
+      "code": "HEURISTIC_FRAME_VARIANT_GROUP",
+      "severity": "warning",
+      "message": "Frame variant grouping for 'Dashboard Dark' is heuristic (confidence 0.567).",
+      "reasons": [
+        "Frame grouping is heuristic and based on structural similarity across top-level frames."
+      ],
+      "nodeIds": [
+        "screen-dashboard-dark",
+        "screen-dashboard-light"
+      ]
+    }
+  ]
+}

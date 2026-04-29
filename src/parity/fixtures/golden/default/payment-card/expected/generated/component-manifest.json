@@ -1,0 +1,10 @@
+{
+  "screens": [
+    {
+      "screenId": "screen-products",
+      "screenName": "ProductList",
+      "file": "src/pages/productlist.tsx",
+      "components": []
+    }
+  ]
+}

@@ -1,0 +1,447 @@
+{
+  "sourceName": "Dark Mode Golden",
+  "screens": [
+    {
+      "id": "screen-dashboard-light",
+      "name": "Dashboard Light",
+      "layoutMode": "VERTICAL",
+      "gap": 20,
+      "padding": {
+        "top": 24,
+        "right": 24,
+        "bottom": 24,
+        "left": 24
+      },
+      "children": [
+        {
+          "id": "light-title",
+          "name": "Heading",
+          "nodeType": "TEXT",
+          "layoutMode": "NONE",
+          "gap": 0,
+          "padding": {
+            "top": 0,
+            "right": 0,
+            "bottom": 0,
+            "left": 0
+          },
+          "type": "text",
+          "text": "Operations Dashboard",
+          "x": 24,
+          "y": 24,
+          "width": 280,
+          "height": 36,
+          "fillColor": "#1c1f24",
+          "fontSize": 28,
+          "fontWeight": 700,
+          "fontFamily": "Inter",
+          "lineHeight": 36,
+          "textAlign": "LEFT"
+        },
+        {
+          "id": "light-body",
+          "name": "Body",
+          "nodeType": "TEXT",
+          "layoutMode": "NONE",
+          "gap": 0,
+          "padding": {
+            "top": 0,
+            "right": 0,
+            "bottom": 0,
+            "left": 0
+          },
+          "type": "text",
+          "text": "Track shipment delays, alerts, and approvals in one place.",
+          "x": 24,
+          "y": 80,
+          "width": 320,
+          "height": 48,
+          "fillColor": "#545c66",
+          "fontSize": 16,
+          "fontWeight": 400,
+          "fontFamily": "Inter",
+          "lineHeight": 24,
+          "textAlign": "LEFT"
+        },
+        {
+          "id": "light-summary-card",
+          "name": "Summary Card",
+          "nodeType": "FRAME",
+          "layoutMode": "VERTICAL",
+          "gap": 8,
+          "padding": {
+            "top": 16,
+            "right": 16,
+            "bottom": 16,
+            "left": 16
+          },
+          "type": "card",
+          "x": 24,
+          "y": 152,
+          "width": 342,
+          "height": 144,
+          "fillColor": "#ffffff",
+          "cornerRadius": 16,
+          "children": [
+            {
+              "id": "light-card-title",
+              "name": "Label",
+              "nodeType": "TEXT",
+              "layoutMode": "NONE",
+              "gap": 0,
+              "padding": {
+                "top": 0,
+                "right": 0,
+                "bottom": 0,
+                "left": 0
+              },
+              "type": "text",
+              "text": "Open incidents",
+              "x": 40,
+              "y": 168,
+              "width": 96,
+              "height": 20,
+              "fillColor": "#666b75",
+              "fontSize": 14,
+              "fontWeight": 500,
+              "fontFamily": "Inter",
+              "lineHeight": 20,
+              "textAlign": "LEFT"
+            },
+            {
+              "id": "light-card-value",
+              "name": "Value",
+              "nodeType": "TEXT",
+              "layoutMode": "NONE",
+              "gap": 0,
+              "padding": {
+                "top": 0,
+                "right": 0,
+                "bottom": 0,
+                "left": 0
+              },
+              "type": "text",
+              "text": "14 urgent reviews",
+              "x": 40,
+              "y": 196,
+              "width": 220,
+              "height": 32,
+              "fillColor": "#1c1f24",
+              "fontSize": 24,
+              "fontWeight": 700,
+              "fontFamily": "Inter",
+              "lineHeight": 32,
+              "textAlign": "LEFT"
+            }
+          ]
+        }
+      ],
+      "width": 390,
+      "height": 844,
+      "fillColor": "#fafafc"
+    },
+    {
+      "id": "screen-dashboard-dark",
+      "name": "Dashboard Dark",
+      "layoutMode": "VERTICAL",
+      "gap": 20,
+      "padding": {
+        "top": 24,
+        "right": 24,
+        "bottom": 24,
+        "left": 24
+      },
+      "children": [
+        {
+          "id": "dark-title",
+          "name": "Heading",
+          "nodeType": "TEXT",
+          "layoutMode": "NONE",
+          "gap": 0,
+          "padding": {
+            "top": 0,
+            "right": 0,
+            "bottom": 0,
+            "left": 0
+          },
+          "type": "text",
+          "text": "Operations Dashboard",
+          "x": 444,
+          "y": 24,
+          "width": 280,
+          "height": 36,
+          "fillColor": "#f5f7fa",
+          "fontSize": 28,
+          "fontWeight": 700,
+          "fontFamily": "Inter",
+          "lineHeight": 36,
+          "textAlign": "LEFT"
+        },
+        {
+          "id": "dark-body",
+          "name": "Body",
+          "nodeType": "TEXT",
+          "layoutMode": "NONE",
+          "gap": 0,
+          "padding": {
+            "top": 0,
+            "right": 0,
+            "bottom": 0,
+            "left": 0
+          },
+          "type": "text",
+          "text": "Track shipment delays, alerts, and approvals in one place.",
+          "x": 444,
+          "y": 80,
+          "width": 320,
+          "height": 48,
+          "fillColor": "#b3bac7",
+          "fontSize": 16,
+          "fontWeight": 400,
+          "fontFamily": "Inter",
+          "lineHeight": 24,
+          "textAlign": "LEFT"
+        },
+        {
+          "id": "dark-summary-card",
+          "name": "Summary Card",
+          "nodeType": "FRAME",
+          "layoutMode": "VERTICAL",
+          "gap": 8,
+          "padding": {
+            "top": 16,
+            "right": 16,
+            "bottom": 16,
+            "left": 16
+          },
+          "type": "card",
+          "x": 444,
+          "y": 152,
+          "width": 342,
+          "height": 144,
+          "fillColor": "#1f242e",
+          "cornerRadius": 16,
+          "children": [
+            {
+              "id": "dark-card-title",
+              "name": "Label",
+              "nodeType": "TEXT",
+              "layoutMode": "NONE",
+              "gap": 0,
+              "padding": {
+                "top": 0,
+                "right": 0,
+                "bottom": 0,
+                "left": 0
+              },
+              "type": "text",
+              "text": "Open incidents",
+              "x": 460,
+              "y": 168,
+              "width": 96,
+              "height": 20,
+              "fillColor": "#a6adba",
+              "fontSize": 14,
+              "fontWeight": 500,
+              "fontFamily": "Inter",
+              "lineHeight": 20,
+              "textAlign": "LEFT"
+            },
+            {
+              "id": "dark-card-value",
+              "name": "Value",
+              "nodeType": "TEXT",
+              "layoutMode": "NONE",
+              "gap": 0,
+              "padding": {
+                "top": 0,
+                "right": 0,
+                "bottom": 0,
+                "left": 0
+              },
+              "type": "text",
+              "text": "14 urgent reviews",
+              "x": 460,
+              "y": 196,
+              "width": 220,
+              "height": 32,
+              "fillColor": "#f5f7fa",
+              "fontSize": 24,
+              "fontWeight": 700,
+              "fontFamily": "Inter",
+              "lineHeight": 32,
+              "textAlign": "LEFT"
+            }
+          ]
+        }
+      ],
+      "width": 390,
+      "height": 844,
+      "fillColor": "#12141c"
+    }
+  ],
+  "tokens": {
+    "palette": {
+      "primary": "#191c23",
+      "secondary": "#afb6c3",
+      "background": "#f8f9fb",
+      "text": "#191c23",
+      "success": "#16A34A",
+      "warning": "#D97706",
+      "error": "#DC2626",
+      "info": "#afb6c3",
+      "divider": "#191c231f",
+      "action": {
+        "active": "#191c238a",
+        "hover": "#191c230a",
+        "selected": "#191c2314",
+        "disabled": "#191c2342",
+        "disabledBackground": "#191c231f",
+        "focus": "#191c231f"
+      }
+    },
+    "borderRadius": 16,
+    "spacingBase": 14,
+    "fontFamily": "Inter, Roboto, Arial, sans-serif",
+    "headingSize": 28,
+    "bodySize": 16,
+    "typography": {
+      "h1": {
+        "fontSizePx": 28,
+        "fontWeight": 700,
+        "lineHeightPx": 36,
+        "fontFamily": "Inter"
+      },
+      "h2": {
+        "fontSizePx": 24,
+        "fontWeight": 700,
+        "lineHeightPx": 32,
+        "fontFamily": "Inter"
+      },
+      "h3": {
+        "fontSizePx": 24,
+        "fontWeight": 700,
+        "lineHeightPx": 32,
+        "fontFamily": "Inter"
+      },
+      "h4": {
+        "fontSizePx": 24,
+        "fontWeight": 700,
+        "lineHeightPx": 32,
+        "fontFamily": "Inter"
+      },
+      "h5": {
+        "fontSizePx": 24,
+        "fontWeight": 700,
+        "lineHeightPx": 32,
+        "fontFamily": "Inter"
+      },
+      "h6": {
+        "fontSizePx": 24,
+        "fontWeight": 700,
+        "lineHeightPx": 32,
+        "fontFamily": "Inter"
+      },
+      "subtitle1": {
+        "fontSizePx": 24,
+        "fontWeight": 700,
+        "lineHeightPx": 36,
+        "fontFamily": "Inter"
+      },
+      "subtitle2": {
+        "fontSizePx": 24,
+        "fontWeight": 700,
+        "lineHeightPx": 32,
+        "fontFamily": "Inter"
+      },
+      "body1": {
+        "fontSizePx": 16,
+        "fontWeight": 400,
+        "lineHeightPx": 24,
+        "fontFamily": "Inter"
+      },
+      "body2": {
+        "fontSizePx": 14,
+        "fontWeight": 500,
+        "lineHeightPx": 20,
+        "fontFamily": "Inter"
+      },
+      "button": {
+        "fontSizePx": 14,
+        "fontWeight": 700,
+        "lineHeightPx": 36,
+        "fontFamily": "Inter",
+        "textTransform": "none"
+      },
+      "caption": {
+        "fontSizePx": 14,
+        "fontWeight": 500,
+        "lineHeightPx": 20,
+        "fontFamily": "Inter"
+      },
+      "overline": {
+        "fontSizePx": 14,
+        "fontWeight": 500,
+        "lineHeightPx": 20,
+        "fontFamily": "Inter",
+        "letterSpacingEm": 0.08
+      }
+    },
+    "tokenSource": {
+      "palette": "clustering",
+      "typography": "clustering",
+      "spacing": "clustering",
+      "borderRadius": "clustering",
+      "fontFamily": "clustering"
+    }
+  },
+  "metrics": {
+    "fetchedNodes": 0,
+    "skippedHidden": 0,
+    "skippedPlaceholders": 0,
+    "prototypeNavigationDetected": 0,
+    "prototypeNavigationResolved": 0,
+    "prototypeNavigationUnresolved": 0,
+    "screenElementCounts": [
+      {
+        "screenId": "screen-dashboard-light",
+        "screenName": "Dashboard Light",
+        "elements": 5
+      },
+      {
+        "screenId": "screen-dashboard-dark",
+        "screenName": "Dashboard Dark",
+        "elements": 5
+      }
+    ],
+    "truncatedScreens": [],
+    "depthTruncatedScreens": [],
+    "classificationFallbacks": [],
+    "degradedGeometryNodes": [],
+    "nodeDiagnostics": []
+  },
+  "themeAnalysis": {
+    "darkModeDetected": true,
+    "signals": {
+      "luminance": true,
+      "naming": true,
+      "lightDarkPair": true
+    },
+    "darkPaletteHints": {
+      "primary": "#f8f9fb",
+      "secondary": "#afb6c3",
+      "success": "#16A34A",
+      "warning": "#D97706",
+      "error": "#DC2626",
+      "info": "#afb6c3",
+      "background": {
+        "default": "#12141c",
+        "paper": "#191c23"
+      },
+      "text": {
+        "primary": "#ffffff"
+      },
+      "divider": "#ffffff1f"
+    }
+  }
+}

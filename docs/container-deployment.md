@@ -51,7 +51,7 @@ Start the container:
 docker volume create workspace-dev-data
 docker run --rm -p 127.0.0.1:1983:1983 \
   -v workspace-dev-data:/workspace/.workspace-dev \
-  -v "$PWD/src/parity/fixtures/golden/simple-auth/figma.json:/workspace/fixtures/simple-auth.json:ro" \
+  -v "$PWD/src/parity/fixtures/golden/rocket/simple-auth/figma.json:/workspace/fixtures/simple-auth.json:ro" \
   workspace-dev:local \
   start --host 0.0.0.0 --port 1983 --output-root /workspace/.workspace-dev --export-images false
 ```

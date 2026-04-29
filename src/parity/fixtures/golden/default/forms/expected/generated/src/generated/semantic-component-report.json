@@ -1,0 +1,100 @@
+{
+  "schemaVersion": "1.0.0",
+  "pipelineId": "default",
+  "screens": [
+    {
+      "screenId": "screen-form",
+      "screenName": "Registration",
+      "components": [],
+      "diagnostics": [
+        {
+          "code": "W_SEMANTIC_COMPONENT_STRUCTURAL_FALLBACK",
+          "nodeId": "checkbox-row",
+          "nodeName": "Checkbox Row",
+          "message": "Default semantic synthesis rendered 'Checkbox Row' with structural HTML because 'checkbox' does not have a dedicated default Tailwind primitive yet."
+        },
+        {
+          "code": "W_SEMANTIC_COMPONENT_STRUCTURAL_FALLBACK",
+          "nodeId": "checkbox-icon",
+          "nodeName": "MuiCheckboxRoot",
+          "message": "Default semantic synthesis rendered 'MuiCheckboxRoot' with structural HTML because 'checkbox' does not have a dedicated default Tailwind primitive yet."
+        },
+        {
+          "code": "W_SEMANTIC_COMPONENT_NOT_REUSABLE",
+          "nodeId": "first-name-field",
+          "nodeName": "MuiTextFieldRoot",
+          "message": "Default semantic synthesis kept 'MuiTextFieldRoot' inline because no matching reusable semantic structure was found."
+        },
+        {
+          "code": "W_SEMANTIC_COMPONENT_NOT_REUSABLE",
+          "nodeId": "last-name-field",
+          "nodeName": "MuiTextFieldRoot",
+          "message": "Default semantic synthesis kept 'MuiTextFieldRoot' inline because no matching reusable semantic structure was found."
+        },
+        {
+          "code": "W_SEMANTIC_COMPONENT_NOT_REUSABLE",
+          "nodeId": "email-field",
+          "nodeName": "MuiTextFieldRoot",
+          "message": "Default semantic synthesis kept 'MuiTextFieldRoot' inline because no matching reusable semantic structure was found."
+        },
+        {
+          "code": "W_SEMANTIC_COMPONENT_NOT_REUSABLE",
+          "nodeId": "submit-button",
+          "nodeName": "Primary Button",
+          "message": "Default semantic synthesis kept 'Primary Button' inline because no matching reusable semantic structure was found."
+        }
+      ]
+    }
+  ],
+  "components": [],
+  "diagnostics": [
+    {
+      "screenId": "screen-form",
+      "screenName": "Registration",
+      "code": "W_SEMANTIC_COMPONENT_STRUCTURAL_FALLBACK",
+      "nodeId": "checkbox-row",
+      "nodeName": "Checkbox Row",
+      "message": "Default semantic synthesis rendered 'Checkbox Row' with structural HTML because 'checkbox' does not have a dedicated default Tailwind primitive yet."
+    },
+    {
+      "screenId": "screen-form",
+      "screenName": "Registration",
+      "code": "W_SEMANTIC_COMPONENT_STRUCTURAL_FALLBACK",
+      "nodeId": "checkbox-icon",
+      "nodeName": "MuiCheckboxRoot",
+      "message": "Default semantic synthesis rendered 'MuiCheckboxRoot' with structural HTML because 'checkbox' does not have a dedicated default Tailwind primitive yet."
+    },
+    {
+      "screenId": "screen-form",
+      "screenName": "Registration",
+      "code": "W_SEMANTIC_COMPONENT_NOT_REUSABLE",
+      "nodeId": "first-name-field",
+      "nodeName": "MuiTextFieldRoot",
+      "message": "Default semantic synthesis kept 'MuiTextFieldRoot' inline because no matching reusable semantic structure was found."
+    },
+    {
+      "screenId": "screen-form",
+      "screenName": "Registration",
+      "code": "W_SEMANTIC_COMPONENT_NOT_REUSABLE",
+      "nodeId": "last-name-field",
+      "nodeName": "MuiTextFieldRoot",
+      "message": "Default semantic synthesis kept 'MuiTextFieldRoot' inline because no matching reusable semantic structure was found."
+    },
+    {
+      "screenId": "screen-form",
+      "screenName": "Registration",
+      "code": "W_SEMANTIC_COMPONENT_NOT_REUSABLE",
+      "nodeId": "email-field",
+      "nodeName": "MuiTextFieldRoot",
+      "message": "Default semantic synthesis kept 'MuiTextFieldRoot' inline because no matching reusable semantic structure was found."
+    },
+    {
+      "screenId": "screen-form",
+      "screenName": "Registration",
+      "code": "W_SEMANTIC_COMPONENT_NOT_REUSABLE",
+      "nodeId": "submit-button",
+      "nodeName": "Primary Button",
+      "message": "Default semantic synthesis kept 'Primary Button' inline because no matching reusable semantic structure was found."
+    }
+  ]
+}

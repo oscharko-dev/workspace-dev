@@ -1,0 +1,570 @@
+{
+  "sourceName": "Dashboard Grid Board",
+  "screens": [
+    {
+      "id": "screen-dashboard",
+      "name": "Dashboard",
+      "layoutMode": "VERTICAL",
+      "gap": 24,
+      "padding": {
+        "top": 24,
+        "right": 24,
+        "bottom": 24,
+        "left": 24
+      },
+      "children": [
+        {
+          "id": "dash-title",
+          "name": "Title",
+          "nodeType": "TEXT",
+          "layoutMode": "NONE",
+          "gap": 0,
+          "padding": {
+            "top": 0,
+            "right": 0,
+            "bottom": 0,
+            "left": 0
+          },
+          "type": "text",
+          "text": "Dashboard Overview",
+          "x": 24,
+          "y": 24,
+          "width": 300,
+          "height": 36,
+          "fillColor": "#1c1f24",
+          "fontSize": 28,
+          "fontWeight": 700,
+          "fontFamily": "Inter",
+          "lineHeight": 36,
+          "textAlign": "LEFT"
+        },
+        {
+          "id": "cards-grid",
+          "name": "Cards Grid",
+          "nodeType": "FRAME",
+          "layoutMode": "NONE",
+          "gap": 0,
+          "padding": {
+            "top": 0,
+            "right": 0,
+            "bottom": 0,
+            "left": 0
+          },
+          "type": "table",
+          "x": 24,
+          "y": 84,
+          "width": 1152,
+          "height": 600,
+          "children": [
+            {
+              "id": "card-revenue",
+              "name": "Revenue Card",
+              "nodeType": "FRAME",
+              "layoutMode": "NONE",
+              "gap": 0,
+              "padding": {
+                "top": 0,
+                "right": 0,
+                "bottom": 0,
+                "left": 0
+              },
+              "type": "card",
+              "x": 24,
+              "y": 84,
+              "width": 360,
+              "height": 200,
+              "fillColor": "#ffffff",
+              "cornerRadius": 12,
+              "children": [
+                {
+                  "id": "rev-label",
+                  "name": "Card Title",
+                  "nodeType": "TEXT",
+                  "layoutMode": "NONE",
+                  "gap": 0,
+                  "padding": {
+                    "top": 0,
+                    "right": 0,
+                    "bottom": 0,
+                    "left": 0
+                  },
+                  "type": "text",
+                  "text": "Revenue",
+                  "x": 40,
+                  "y": 100,
+                  "width": 80,
+                  "height": 20,
+                  "fillColor": "#666b75",
+                  "fontSize": 14,
+                  "fontWeight": 500,
+                  "fontFamily": "Inter",
+                  "lineHeight": 20,
+                  "textAlign": "LEFT"
+                },
+                {
+                  "id": "rev-value",
+                  "name": "Value",
+                  "nodeType": "TEXT",
+                  "layoutMode": "NONE",
+                  "gap": 0,
+                  "padding": {
+                    "top": 0,
+                    "right": 0,
+                    "bottom": 0,
+                    "left": 0
+                  },
+                  "type": "text",
+                  "text": "$45,231",
+                  "x": 40,
+                  "y": 128,
+                  "width": 200,
+                  "height": 40,
+                  "fillColor": "#1c1f24",
+                  "fontSize": 32,
+                  "fontWeight": 700,
+                  "fontFamily": "Inter",
+                  "lineHeight": 40,
+                  "textAlign": "LEFT"
+                }
+              ]
+            },
+            {
+              "id": "card-users",
+              "name": "Users Card",
+              "nodeType": "FRAME",
+              "layoutMode": "NONE",
+              "gap": 0,
+              "padding": {
+                "top": 0,
+                "right": 0,
+                "bottom": 0,
+                "left": 0
+              },
+              "type": "card",
+              "x": 400,
+              "y": 84,
+              "width": 360,
+              "height": 200,
+              "fillColor": "#ffffff",
+              "cornerRadius": 12,
+              "children": [
+                {
+                  "id": "users-label",
+                  "name": "Card Title",
+                  "nodeType": "TEXT",
+                  "layoutMode": "NONE",
+                  "gap": 0,
+                  "padding": {
+                    "top": 0,
+                    "right": 0,
+                    "bottom": 0,
+                    "left": 0
+                  },
+                  "type": "text",
+                  "text": "Active Users",
+                  "x": 416,
+                  "y": 100,
+                  "width": 100,
+                  "height": 20,
+                  "fillColor": "#666b75",
+                  "fontSize": 14,
+                  "fontWeight": 500,
+                  "fontFamily": "Inter",
+                  "lineHeight": 20,
+                  "textAlign": "LEFT"
+                },
+                {
+                  "id": "users-value",
+                  "name": "Value",
+                  "nodeType": "TEXT",
+                  "layoutMode": "NONE",
+                  "gap": 0,
+                  "padding": {
+                    "top": 0,
+                    "right": 0,
+                    "bottom": 0,
+                    "left": 0
+                  },
+                  "type": "text",
+                  "text": "2,350",
+                  "x": 416,
+                  "y": 128,
+                  "width": 150,
+                  "height": 40,
+                  "fillColor": "#1c1f24",
+                  "fontSize": 32,
+                  "fontWeight": 700,
+                  "fontFamily": "Inter",
+                  "lineHeight": 40,
+                  "textAlign": "LEFT"
+                }
+              ]
+            },
+            {
+              "id": "card-orders",
+              "name": "Orders Card",
+              "nodeType": "FRAME",
+              "layoutMode": "NONE",
+              "gap": 0,
+              "padding": {
+                "top": 0,
+                "right": 0,
+                "bottom": 0,
+                "left": 0
+              },
+              "type": "card",
+              "x": 776,
+              "y": 84,
+              "width": 400,
+              "height": 200,
+              "fillColor": "#ffffff",
+              "cornerRadius": 12,
+              "children": [
+                {
+                  "id": "orders-label",
+                  "name": "Card Title",
+                  "nodeType": "TEXT",
+                  "layoutMode": "NONE",
+                  "gap": 0,
+                  "padding": {
+                    "top": 0,
+                    "right": 0,
+                    "bottom": 0,
+                    "left": 0
+                  },
+                  "type": "text",
+                  "text": "Pending Orders",
+                  "x": 792,
+                  "y": 100,
+                  "width": 120,
+                  "height": 20,
+                  "fillColor": "#666b75",
+                  "fontSize": 14,
+                  "fontWeight": 500,
+                  "fontFamily": "Inter",
+                  "lineHeight": 20,
+                  "textAlign": "LEFT"
+                },
+                {
+                  "id": "orders-value",
+                  "name": "Value",
+                  "nodeType": "TEXT",
+                  "layoutMode": "NONE",
+                  "gap": 0,
+                  "padding": {
+                    "top": 0,
+                    "right": 0,
+                    "bottom": 0,
+                    "left": 0
+                  },
+                  "type": "text",
+                  "text": "127",
+                  "x": 792,
+                  "y": 128,
+                  "width": 100,
+                  "height": 40,
+                  "fillColor": "#1c1f24",
+                  "fontSize": 32,
+                  "fontWeight": 700,
+                  "fontFamily": "Inter",
+                  "lineHeight": 40,
+                  "textAlign": "LEFT"
+                }
+              ]
+            },
+            {
+              "id": "card-chart",
+              "name": "Chart Card",
+              "nodeType": "FRAME",
+              "layoutMode": "NONE",
+              "gap": 0,
+              "padding": {
+                "top": 0,
+                "right": 0,
+                "bottom": 0,
+                "left": 0
+              },
+              "type": "card",
+              "x": 24,
+              "y": 300,
+              "width": 736,
+              "height": 280,
+              "fillColor": "#ffffff",
+              "cornerRadius": 12,
+              "children": [
+                {
+                  "id": "chart-title",
+                  "name": "Card Title",
+                  "nodeType": "TEXT",
+                  "layoutMode": "NONE",
+                  "gap": 0,
+                  "padding": {
+                    "top": 0,
+                    "right": 0,
+                    "bottom": 0,
+                    "left": 0
+                  },
+                  "type": "text",
+                  "text": "Sales Overview",
+                  "x": 40,
+                  "y": 316,
+                  "width": 200,
+                  "height": 28,
+                  "fillColor": "#1c1f24",
+                  "fontSize": 18,
+                  "fontWeight": 600,
+                  "fontFamily": "Inter",
+                  "lineHeight": 28,
+                  "textAlign": "LEFT"
+                },
+                {
+                  "id": "chart-subtitle",
+                  "name": "Subtitle",
+                  "nodeType": "TEXT",
+                  "layoutMode": "NONE",
+                  "gap": 0,
+                  "padding": {
+                    "top": 0,
+                    "right": 0,
+                    "bottom": 0,
+                    "left": 0
+                  },
+                  "type": "text",
+                  "text": "Monthly revenue trends",
+                  "x": 40,
+                  "y": 348,
+                  "width": 250,
+                  "height": 20,
+                  "fillColor": "#666b75",
+                  "fontSize": 14,
+                  "fontWeight": 400,
+                  "fontFamily": "Inter",
+                  "lineHeight": 20,
+                  "textAlign": "LEFT"
+                }
+              ]
+            },
+            {
+              "id": "card-activity",
+              "name": "Activity Card",
+              "nodeType": "FRAME",
+              "layoutMode": "NONE",
+              "gap": 0,
+              "padding": {
+                "top": 0,
+                "right": 0,
+                "bottom": 0,
+                "left": 0
+              },
+              "type": "card",
+              "x": 776,
+              "y": 300,
+              "width": 400,
+              "height": 280,
+              "fillColor": "#ffffff",
+              "cornerRadius": 12,
+              "children": [
+                {
+                  "id": "activity-title",
+                  "name": "Card Title",
+                  "nodeType": "TEXT",
+                  "layoutMode": "NONE",
+                  "gap": 0,
+                  "padding": {
+                    "top": 0,
+                    "right": 0,
+                    "bottom": 0,
+                    "left": 0
+                  },
+                  "type": "text",
+                  "text": "Recent Activity",
+                  "x": 792,
+                  "y": 316,
+                  "width": 200,
+                  "height": 28,
+                  "fillColor": "#1c1f24",
+                  "fontSize": 18,
+                  "fontWeight": 600,
+                  "fontFamily": "Inter",
+                  "lineHeight": 28,
+                  "textAlign": "LEFT"
+                },
+                {
+                  "id": "activity-subtitle",
+                  "name": "Subtitle",
+                  "nodeType": "TEXT",
+                  "layoutMode": "NONE",
+                  "gap": 0,
+                  "padding": {
+                    "top": 0,
+                    "right": 0,
+                    "bottom": 0,
+                    "left": 0
+                  },
+                  "type": "text",
+                  "text": "Last 7 days",
+                  "x": 792,
+                  "y": 348,
+                  "width": 150,
+                  "height": 20,
+                  "fillColor": "#666b75",
+                  "fontSize": 14,
+                  "fontWeight": 400,
+                  "fontFamily": "Inter",
+                  "lineHeight": 20,
+                  "textAlign": "LEFT"
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "width": 1200,
+      "height": 900,
+      "fillColor": "#f5f7fa"
+    }
+  ],
+  "tokens": {
+    "palette": {
+      "primary": "#1c1f24",
+      "secondary": "#666b75",
+      "background": "#fbfcfd",
+      "text": "#1c1f24",
+      "success": "#16A34A",
+      "warning": "#D97706",
+      "error": "#DC2626",
+      "info": "#0288D1",
+      "divider": "#1c1f241f",
+      "action": {
+        "active": "#1c1f248a",
+        "hover": "#1c1f240a",
+        "selected": "#1c1f2414",
+        "disabled": "#1c1f2442",
+        "disabledBackground": "#1c1f241f",
+        "focus": "#1c1f241f"
+      }
+    },
+    "borderRadius": 12,
+    "spacingBase": 24,
+    "fontFamily": "Inter, Roboto, Arial, sans-serif",
+    "headingSize": 32,
+    "bodySize": 14,
+    "typography": {
+      "h1": {
+        "fontSizePx": 32,
+        "fontWeight": 700,
+        "lineHeightPx": 40,
+        "fontFamily": "Inter"
+      },
+      "h2": {
+        "fontSizePx": 28,
+        "fontWeight": 700,
+        "lineHeightPx": 36,
+        "fontFamily": "Inter"
+      },
+      "h3": {
+        "fontSizePx": 18,
+        "fontWeight": 600,
+        "lineHeightPx": 28,
+        "fontFamily": "Inter"
+      },
+      "h4": {
+        "fontSizePx": 14,
+        "fontWeight": 500,
+        "lineHeightPx": 20,
+        "fontFamily": "Inter"
+      },
+      "h5": {
+        "fontSizePx": 14,
+        "fontWeight": 500,
+        "lineHeightPx": 20,
+        "fontFamily": "Inter"
+      },
+      "h6": {
+        "fontSizePx": 14,
+        "fontWeight": 500,
+        "lineHeightPx": 20,
+        "fontFamily": "Inter"
+      },
+      "subtitle1": {
+        "fontSizePx": 14,
+        "fontWeight": 700,
+        "lineHeightPx": 40,
+        "fontFamily": "Inter"
+      },
+      "subtitle2": {
+        "fontSizePx": 14,
+        "fontWeight": 700,
+        "lineHeightPx": 40,
+        "fontFamily": "Inter"
+      },
+      "body1": {
+        "fontSizePx": 14,
+        "fontWeight": 700,
+        "lineHeightPx": 40,
+        "fontFamily": "Inter"
+      },
+      "body2": {
+        "fontSizePx": 14,
+        "fontWeight": 700,
+        "lineHeightPx": 36,
+        "fontFamily": "Inter"
+      },
+      "button": {
+        "fontSizePx": 14,
+        "fontWeight": 700,
+        "lineHeightPx": 40,
+        "fontFamily": "Inter",
+        "textTransform": "none"
+      },
+      "caption": {
+        "fontSizePx": 14,
+        "fontWeight": 500,
+        "lineHeightPx": 20,
+        "fontFamily": "Inter"
+      },
+      "overline": {
+        "fontSizePx": 14,
+        "fontWeight": 500,
+        "lineHeightPx": 20,
+        "fontFamily": "Inter",
+        "letterSpacingEm": 0.08
+      }
+    },
+    "tokenSource": {
+      "palette": "clustering",
+      "typography": "clustering",
+      "spacing": "clustering",
+      "borderRadius": "clustering",
+      "fontFamily": "clustering"
+    }
+  },
+  "metrics": {
+    "fetchedNodes": 0,
+    "skippedHidden": 0,
+    "skippedPlaceholders": 0,
+    "prototypeNavigationDetected": 0,
+    "prototypeNavigationResolved": 0,
+    "prototypeNavigationUnresolved": 0,
+    "screenElementCounts": [
+      {
+        "screenId": "screen-dashboard",
+        "screenName": "Dashboard",
+        "elements": 17
+      }
+    ],
+    "truncatedScreens": [],
+    "depthTruncatedScreens": [],
+    "classificationFallbacks": [],
+    "degradedGeometryNodes": [],
+    "nodeDiagnostics": []
+  },
+  "themeAnalysis": {
+    "darkModeDetected": false,
+    "signals": {
+      "luminance": false,
+      "naming": false,
+      "lightDarkPair": false
+    }
+  }
+}

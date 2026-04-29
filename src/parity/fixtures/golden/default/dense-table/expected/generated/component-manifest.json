@@ -1,0 +1,10 @@
+{
+  "screens": [
+    {
+      "screenId": "screen-table",
+      "screenName": "UserList",
+      "file": "src/pages/userlist.tsx",
+      "components": []
+    }
+  ]
+}

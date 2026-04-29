@@ -1,0 +1,100 @@
+{
+  "schemaVersion": "1.0.0",
+  "pipelineId": "default",
+  "screens": [
+    {
+      "screenId": "screen-dashboard",
+      "screenName": "Dashboard",
+      "components": [],
+      "diagnostics": [
+        {
+          "code": "W_SEMANTIC_COMPONENT_NOT_REUSABLE",
+          "nodeId": "cards-grid",
+          "nodeName": "Cards Grid",
+          "message": "Default semantic synthesis kept 'Cards Grid' inline because no matching reusable semantic structure was found."
+        },
+        {
+          "code": "W_SEMANTIC_COMPONENT_NOT_REUSABLE",
+          "nodeId": "card-revenue",
+          "nodeName": "Revenue Card",
+          "message": "Default semantic synthesis kept 'Revenue Card' inline because no matching reusable semantic structure was found."
+        },
+        {
+          "code": "W_SEMANTIC_COMPONENT_NOT_REUSABLE",
+          "nodeId": "card-chart",
+          "nodeName": "Chart Card",
+          "message": "Default semantic synthesis kept 'Chart Card' inline because no matching reusable semantic structure was found."
+        },
+        {
+          "code": "W_SEMANTIC_COMPONENT_NOT_REUSABLE",
+          "nodeId": "card-users",
+          "nodeName": "Users Card",
+          "message": "Default semantic synthesis kept 'Users Card' inline because no matching reusable semantic structure was found."
+        },
+        {
+          "code": "W_SEMANTIC_COMPONENT_NOT_REUSABLE",
+          "nodeId": "card-orders",
+          "nodeName": "Orders Card",
+          "message": "Default semantic synthesis kept 'Orders Card' inline because no matching reusable semantic structure was found."
+        },
+        {
+          "code": "W_SEMANTIC_COMPONENT_NOT_REUSABLE",
+          "nodeId": "card-activity",
+          "nodeName": "Activity Card",
+          "message": "Default semantic synthesis kept 'Activity Card' inline because no matching reusable semantic structure was found."
+        }
+      ]
+    }
+  ],
+  "components": [],
+  "diagnostics": [
+    {
+      "screenId": "screen-dashboard",
+      "screenName": "Dashboard",
+      "code": "W_SEMANTIC_COMPONENT_NOT_REUSABLE",
+      "nodeId": "cards-grid",
+      "nodeName": "Cards Grid",
+      "message": "Default semantic synthesis kept 'Cards Grid' inline because no matching reusable semantic structure was found."
+    },
+    {
+      "screenId": "screen-dashboard",
+      "screenName": "Dashboard",
+      "code": "W_SEMANTIC_COMPONENT_NOT_REUSABLE",
+      "nodeId": "card-revenue",
+      "nodeName": "Revenue Card",
+      "message": "Default semantic synthesis kept 'Revenue Card' inline because no matching reusable semantic structure was found."
+    },
+    {
+      "screenId": "screen-dashboard",
+      "screenName": "Dashboard",
+      "code": "W_SEMANTIC_COMPONENT_NOT_REUSABLE",
+      "nodeId": "card-chart",
+      "nodeName": "Chart Card",
+      "message": "Default semantic synthesis kept 'Chart Card' inline because no matching reusable semantic structure was found."
+    },
+    {
+      "screenId": "screen-dashboard",
+      "screenName": "Dashboard",
+      "code": "W_SEMANTIC_COMPONENT_NOT_REUSABLE",
+      "nodeId": "card-users",
+      "nodeName": "Users Card",
+      "message": "Default semantic synthesis kept 'Users Card' inline because no matching reusable semantic structure was found."
+    },
+    {
+      "screenId": "screen-dashboard",
+      "screenName": "Dashboard",
+      "code": "W_SEMANTIC_COMPONENT_NOT_REUSABLE",
+      "nodeId": "card-orders",
+      "nodeName": "Orders Card",
+      "message": "Default semantic synthesis kept 'Orders Card' inline because no matching reusable semantic structure was found."
+    },
+    {
+      "screenId": "screen-dashboard",
+      "screenName": "Dashboard",
+      "code": "W_SEMANTIC_COMPONENT_NOT_REUSABLE",
+      "nodeId": "card-activity",
+      "nodeName": "Activity Card",
+      "message": "Default semantic synthesis kept 'Activity Card' inline because no matching reusable semantic structure was found."
+    }
+  ]
+}

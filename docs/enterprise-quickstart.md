@@ -19,7 +19,7 @@ Use this guide when `workspace-dev` must run inside a controlled environment wit
   - an internal npm-compatible registry entry for `workspace-dev@<version>`
 - For the smoke test in this document, run commands from the repository root so these checked-in paths exist:
   - `dist/cli.cjs`
-  - `src/parity/fixtures/golden/simple-auth/figma.json`
+  - `src/parity/fixtures/golden/rocket/simple-auth/figma.json`
 
 ## 1. Air-gap Install From A Local Tarball
 
@@ -100,7 +100,7 @@ Terminal 2, still from the repository root:
 ```bash
 SUBMIT_RESPONSE="$(curl -sS -X POST http://127.0.0.1:21983/workspace/submit \
   -H 'content-type: application/json' \
-  -d '{"figmaSourceMode":"local_json","llmCodegenMode":"deterministic","figmaJsonPath":"src/parity/fixtures/golden/simple-auth/figma.json"}')"
+  -d '{"figmaSourceMode":"local_json","llmCodegenMode":"deterministic","figmaJsonPath":"src/parity/fixtures/golden/rocket/simple-auth/figma.json"}')"
 
 printf '%s\n' "$SUBMIT_RESPONSE"
 

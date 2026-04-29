@@ -1,0 +1,180 @@
+{
+  "status": "ok",
+  "validatedAt": "<stable-timestamp>",
+  "generatedApp": {
+    "status": "ok",
+    "attempts": 1,
+    "install": {
+      "status": "skipped",
+      "strategy": "reused_seeded_node_modules"
+    },
+    "lint": {
+      "status": "passed",
+      "command": "pnpm",
+      "args": [
+        "lint"
+      ],
+      "attempt": 1,
+      "timedOut": false,
+      "outputCaptureKey": "validate.project.attempt-1.lint"
+    },
+    "typecheck": {
+      "status": "passed",
+      "command": "pnpm",
+      "args": [
+        "typecheck"
+      ],
+      "attempt": 1,
+      "timedOut": false,
+      "outputCaptureKey": "validate.project.attempt-1.typecheck"
+    },
+    "build": {
+      "status": "passed",
+      "command": "pnpm",
+      "args": [
+        "build"
+      ],
+      "attempt": 1,
+      "timedOut": false,
+      "outputCaptureKey": "validate.project.attempt-1.build"
+    }
+  },
+  "uiA11y": {
+    "status": "not_requested"
+  },
+  "visualAudit": {
+    "status": "not_requested"
+  },
+  "visualQuality": {
+    "status": "not_requested"
+  },
+  "compositeQuality": {
+    "status": "not_requested",
+    "generatedAt": "<stable-timestamp>",
+    "weights": {
+      "visual": 0.6,
+      "performance": 0.4
+    }
+  },
+  "confidence": {
+    "status": "completed",
+    "generatedAt": "<stable-timestamp>",
+    "level": "medium",
+    "score": 70,
+    "contributors": [
+      {
+        "signal": "component_match_rate",
+        "impact": "neutral",
+        "weight": 0.25,
+        "value": 0.5,
+        "detail": "no component data"
+      },
+      {
+        "signal": "visual_quality",
+        "impact": "neutral",
+        "weight": 0.25,
+        "value": 0.5,
+        "detail": "no visual data"
+      },
+      {
+        "signal": "storybook_evidence",
+        "impact": "neutral",
+        "weight": 0.1,
+        "value": 0.5,
+        "detail": "no storybook data"
+      },
+      {
+        "signal": "diagnostic_severity",
+        "impact": "positive",
+        "weight": 0.15,
+        "value": 1,
+        "detail": "0 errors, 0 warnings"
+      },
+      {
+        "signal": "generation_integrity",
+        "impact": "positive",
+        "weight": 0.15,
+        "value": 1,
+        "detail": "0 truncated, 0 degraded"
+      },
+      {
+        "signal": "validation_passed",
+        "impact": "positive",
+        "weight": 0.1,
+        "value": 1,
+        "detail": "validation passed"
+      }
+    ],
+    "screens": [
+      {
+        "screenId": "screen-dashboard",
+        "screenName": "Dashboard",
+        "level": "medium",
+        "score": 70,
+        "contributors": [],
+        "components": []
+      }
+    ]
+  },
+  "storybook": {
+    "status": "not_requested"
+  },
+  "mapping": {
+    "status": "not_available",
+    "figmaLibraryResolution": {
+      "status": "not_available"
+    },
+    "componentMatchReport": {
+      "status": "not_available"
+    },
+    "customerProfileMatch": {
+      "status": "not_available"
+    },
+    "componentApi": {
+      "status": "not_available"
+    }
+  },
+  "style": {
+    "status": "not_available",
+    "issueCount": 0,
+    "issues": [],
+    "diagnostics": {
+      "evidence": {
+        "authoritativeStylingEvidenceCount": 0,
+        "referenceOnlyStylingEvidenceCount": 0,
+        "referenceOnlyEvidenceTypes": []
+      },
+      "tokens": {
+        "diagnosticCount": 0,
+        "errorCount": 0,
+        "diagnostics": []
+      },
+      "themes": {
+        "diagnosticCount": 0,
+        "errorCount": 0,
+        "diagnostics": []
+      },
+      "componentMatchReport": {
+        "resolvedCustomerComponentCount": 0,
+        "validatedComponentNames": []
+      }
+    },
+    "storybook": {
+      "evidence": {
+        "status": "not_available"
+      },
+      "tokens": {
+        "status": "not_available"
+      },
+      "themes": {
+        "status": "not_available"
+      },
+      "componentMatchReport": {
+        "status": "not_available"
+      }
+    }
+  },
+  "import": {
+    "status": "not_available"
+  }
+}
