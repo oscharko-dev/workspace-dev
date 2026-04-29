@@ -1,9 +1,9 @@
 {
-  "sourceName": "Pattern Extraction Board",
+  "sourceName": "Payment Authorization Card Board",
   "screens": [
     {
       "id": "screen-products",
-      "name": "ProductList",
+      "name": "PaymentAuthorizations",
       "layoutMode": "VERTICAL",
       "gap": 12,
       "padding": {
@@ -26,7 +26,7 @@
             "left": 0
           },
           "type": "text",
-          "text": "Products",
+          "text": "Payment Approvals",
           "x": 16,
           "y": 16,
           "width": 200,
@@ -40,7 +40,7 @@
         },
         {
           "id": "product-card-1",
-          "name": "Product Card",
+          "name": "Authorization Card",
           "nodeType": "FRAME",
           "layoutMode": "HORIZONTAL",
           "gap": 12,
@@ -105,7 +105,7 @@
               "children": [
                 {
                   "id": "pc1-name",
-                  "name": "Product Name",
+                  "name": "Payment Title",
                   "nodeType": "TEXT",
                   "layoutMode": "NONE",
                   "gap": 0,
@@ -116,7 +116,7 @@
                     "left": 0
                   },
                   "type": "text",
-                  "text": "Wireless Headphones",
+                  "text": "SEPA Payroll Batch",
                   "x": 116,
                   "y": 72,
                   "width": 240,
@@ -130,7 +130,7 @@
                 },
                 {
                   "id": "pc1-desc",
-                  "name": "Description",
+                  "name": "Approval Context",
                   "nodeType": "TEXT",
                   "layoutMode": "NONE",
                   "gap": 0,
@@ -140,8 +140,16 @@
                     "bottom": 0,
                     "left": 0
                   },
+                  "variantMapping": {
+                    "properties": {
+                      "variant": "text"
+                    },
+                    "muiProps": {
+                      "variant": "text"
+                    }
+                  },
                   "type": "text",
-                  "text": "Premium sound quality",
+                  "text": "Treasury desk approval",
                   "x": 116,
                   "y": 100,
                   "width": 240,
@@ -155,7 +163,7 @@
                 },
                 {
                   "id": "pc1-price",
-                  "name": "Price",
+                  "name": "Amount",
                   "nodeType": "TEXT",
                   "layoutMode": "NONE",
                   "gap": 0,
@@ -166,7 +174,7 @@
                     "left": 0
                   },
                   "type": "text",
-                  "text": "$99.00",
+                  "text": "EUR 84,200",
                   "x": 116,
                   "y": 124,
                   "width": 80,
@@ -184,7 +192,7 @@
         },
         {
           "id": "product-card-2",
-          "name": "Product Card",
+          "name": "Authorization Card",
           "nodeType": "FRAME",
           "layoutMode": "HORIZONTAL",
           "gap": 12,
@@ -249,7 +257,7 @@
               "children": [
                 {
                   "id": "pc2-name",
-                  "name": "Product Name",
+                  "name": "Payment Title",
                   "nodeType": "TEXT",
                   "layoutMode": "NONE",
                   "gap": 0,
@@ -260,7 +268,7 @@
                     "left": 0
                   },
                   "type": "text",
-                  "text": "Bluetooth Speaker",
+                  "text": "Vendor Invoice Run",
                   "x": 116,
                   "y": 184,
                   "width": 240,
@@ -274,7 +282,7 @@
                 },
                 {
                   "id": "pc2-desc",
-                  "name": "Description",
+                  "name": "Approval Context",
                   "nodeType": "TEXT",
                   "layoutMode": "NONE",
                   "gap": 0,
@@ -284,8 +292,16 @@
                     "bottom": 0,
                     "left": 0
                   },
+                  "variantMapping": {
+                    "properties": {
+                      "variant": "text"
+                    },
+                    "muiProps": {
+                      "variant": "text"
+                    }
+                  },
                   "type": "text",
-                  "text": "Portable and waterproof",
+                  "text": "Dual-control review",
                   "x": 116,
                   "y": 212,
                   "width": 240,
@@ -299,7 +315,7 @@
                 },
                 {
                   "id": "pc2-price",
-                  "name": "Price",
+                  "name": "Amount",
                   "nodeType": "TEXT",
                   "layoutMode": "NONE",
                   "gap": 0,
@@ -310,7 +326,7 @@
                     "left": 0
                   },
                   "type": "text",
-                  "text": "$49.00",
+                  "text": "EUR 12,480",
                   "x": 116,
                   "y": 236,
                   "width": 80,
@@ -328,7 +344,7 @@
         },
         {
           "id": "product-card-3",
-          "name": "Product Card",
+          "name": "Authorization Card",
           "nodeType": "FRAME",
           "layoutMode": "HORIZONTAL",
           "gap": 12,
@@ -393,7 +409,7 @@
               "children": [
                 {
                   "id": "pc3-name",
-                  "name": "Product Name",
+                  "name": "Payment Title",
                   "nodeType": "TEXT",
                   "layoutMode": "NONE",
                   "gap": 0,
@@ -404,7 +420,7 @@
                     "left": 0
                   },
                   "type": "text",
-                  "text": "Smart Watch",
+                  "text": "FX Settlement",
                   "x": 116,
                   "y": 296,
                   "width": 240,
@@ -418,7 +434,7 @@
                 },
                 {
                   "id": "pc3-desc",
-                  "name": "Description",
+                  "name": "Approval Context",
                   "nodeType": "TEXT",
                   "layoutMode": "NONE",
                   "gap": 0,
@@ -428,8 +444,16 @@
                     "bottom": 0,
                     "left": 0
                   },
+                  "variantMapping": {
+                    "properties": {
+                      "variant": "text"
+                    },
+                    "muiProps": {
+                      "variant": "text"
+                    }
+                  },
                   "type": "text",
-                  "text": "Track your fitness goals",
+                  "text": "Cutoff before 16:00 CET",
                   "x": 116,
                   "y": 324,
                   "width": 240,
@@ -443,7 +467,7 @@
                 },
                 {
                   "id": "pc3-price",
-                  "name": "Price",
+                  "name": "Amount",
                   "nodeType": "TEXT",
                   "layoutMode": "NONE",
                   "gap": 0,
@@ -454,7 +478,7 @@
                     "left": 0
                   },
                   "type": "text",
-                  "text": "$199.00",
+                  "text": "USD 52,100",
                   "x": 116,
                   "y": 348,
                   "width": 80,
@@ -472,7 +496,7 @@
         },
         {
           "id": "product-card-4",
-          "name": "Product Card",
+          "name": "Authorization Card",
           "nodeType": "FRAME",
           "layoutMode": "HORIZONTAL",
           "gap": 12,
@@ -537,7 +561,7 @@
               "children": [
                 {
                   "id": "pc4-name",
-                  "name": "Product Name",
+                  "name": "Payment Title",
                   "nodeType": "TEXT",
                   "layoutMode": "NONE",
                   "gap": 0,
@@ -548,7 +572,7 @@
                     "left": 0
                   },
                   "type": "text",
-                  "text": "Laptop Stand",
+                  "text": "Card Limit Change",
                   "x": 116,
                   "y": 408,
                   "width": 240,
@@ -562,7 +586,7 @@
                 },
                 {
                   "id": "pc4-desc",
-                  "name": "Description",
+                  "name": "Approval Context",
                   "nodeType": "TEXT",
                   "layoutMode": "NONE",
                   "gap": 0,
@@ -572,8 +596,16 @@
                     "bottom": 0,
                     "left": 0
                   },
+                  "variantMapping": {
+                    "properties": {
+                      "variant": "text"
+                    },
+                    "muiProps": {
+                      "variant": "text"
+                    }
+                  },
                   "type": "text",
-                  "text": "Ergonomic aluminum design",
+                  "text": "Private banking review",
                   "x": 116,
                   "y": 436,
                   "width": 240,
@@ -587,7 +619,7 @@
                 },
                 {
                   "id": "pc4-price",
-                  "name": "Price",
+                  "name": "Amount",
                   "nodeType": "TEXT",
                   "layoutMode": "NONE",
                   "gap": 0,
@@ -598,7 +630,7 @@
                     "left": 0
                   },
                   "type": "text",
-                  "text": "$39.00",
+                  "text": "EUR 7,500",
                   "x": 116,
                   "y": 460,
                   "width": 80,
@@ -616,7 +648,7 @@
         },
         {
           "id": "product-card-5",
-          "name": "Product Card",
+          "name": "Authorization Card",
           "nodeType": "FRAME",
           "layoutMode": "HORIZONTAL",
           "gap": 12,
@@ -681,7 +713,7 @@
               "children": [
                 {
                   "id": "pc5-name",
-                  "name": "Product Name",
+                  "name": "Payment Title",
                   "nodeType": "TEXT",
                   "layoutMode": "NONE",
                   "gap": 0,
@@ -692,7 +724,7 @@
                     "left": 0
                   },
                   "type": "text",
-                  "text": "USB-C Hub",
+                  "text": "Instant Payment Hold",
                   "x": 116,
                   "y": 520,
                   "width": 240,
@@ -706,7 +738,7 @@
                 },
                 {
                   "id": "pc5-desc",
-                  "name": "Description",
+                  "name": "Approval Context",
                   "nodeType": "TEXT",
                   "layoutMode": "NONE",
                   "gap": 0,
@@ -716,8 +748,16 @@
                     "bottom": 0,
                     "left": 0
                   },
+                  "variantMapping": {
+                    "properties": {
+                      "variant": "text"
+                    },
+                    "muiProps": {
+                      "variant": "text"
+                    }
+                  },
                   "type": "text",
-                  "text": "7-in-1 multiport adapter",
+                  "text": "Fraud operations queue",
                   "x": 116,
                   "y": 548,
                   "width": 240,
@@ -731,7 +771,7 @@
                 },
                 {
                   "id": "pc5-price",
-                  "name": "Price",
+                  "name": "Amount",
                   "nodeType": "TEXT",
                   "layoutMode": "NONE",
                   "gap": 0,
@@ -742,7 +782,7 @@
                     "left": 0
                   },
                   "type": "text",
-                  "text": "$29.00",
+                  "text": "EUR 2,940",
                   "x": 116,
                   "y": 572,
                   "width": 80,
@@ -760,7 +800,7 @@
         },
         {
           "id": "product-card-6",
-          "name": "Product Card",
+          "name": "Authorization Card",
           "nodeType": "FRAME",
           "layoutMode": "HORIZONTAL",
           "gap": 12,
@@ -825,7 +865,7 @@
               "children": [
                 {
                   "id": "pc6-name",
-                  "name": "Product Name",
+                  "name": "Payment Title",
                   "nodeType": "TEXT",
                   "layoutMode": "NONE",
                   "gap": 0,
@@ -836,7 +876,7 @@
                     "left": 0
                   },
                   "type": "text",
-                  "text": "Mechanical Keyboard",
+                  "text": "Liquidity Sweep",
                   "x": 116,
                   "y": 632,
                   "width": 240,
@@ -850,7 +890,7 @@
                 },
                 {
                   "id": "pc6-desc",
-                  "name": "Description",
+                  "name": "Approval Context",
                   "nodeType": "TEXT",
                   "layoutMode": "NONE",
                   "gap": 0,
@@ -860,8 +900,16 @@
                     "bottom": 0,
                     "left": 0
                   },
+                  "variantMapping": {
+                    "properties": {
+                      "variant": "text"
+                    },
+                    "muiProps": {
+                      "variant": "text"
+                    }
+                  },
                   "type": "text",
-                  "text": "Cherry MX switches",
+                  "text": "Corporate treasury rule",
                   "x": 116,
                   "y": 660,
                   "width": 240,
@@ -875,7 +923,7 @@
                 },
                 {
                   "id": "pc6-price",
-                  "name": "Price",
+                  "name": "Amount",
                   "nodeType": "TEXT",
                   "layoutMode": "NONE",
                   "gap": 0,
@@ -886,7 +934,7 @@
                     "left": 0
                   },
                   "type": "text",
-                  "text": "$129.00",
+                  "text": "EUR 125,000",
                   "x": 116,
                   "y": 684,
                   "width": 80,
@@ -913,18 +961,18 @@
       "primary": "#1c1f24",
       "secondary": "#1778f2",
       "background": "#fbfcfd",
-      "text": "#1c1f24",
+      "text": "#666b75",
       "success": "#16A34A",
       "warning": "#D97706",
       "error": "#DC2626",
       "info": "#1778f2",
-      "divider": "#1c1f241f",
+      "divider": "#666b751f",
       "action": {
-        "active": "#1c1f248a",
+        "active": "#666b758a",
         "hover": "#1c1f240a",
         "selected": "#1c1f2414",
-        "disabled": "#1c1f2442",
-        "disabledBackground": "#1c1f241f",
+        "disabled": "#666b7542",
+        "disabledBackground": "#666b751f",
         "focus": "#1c1f241f"
       }
     },
@@ -932,7 +980,7 @@
     "spacingBase": 12,
     "fontFamily": "Inter, Roboto, Arial, sans-serif",
     "headingSize": 24,
-    "bodySize": 16,
+    "bodySize": 14,
     "typography": {
       "h1": {
         "fontSizePx": 24,
@@ -942,31 +990,31 @@
       },
       "h2": {
         "fontSizePx": 16,
-        "fontWeight": 700,
+        "fontWeight": 600,
         "lineHeightPx": 24,
         "fontFamily": "Inter"
       },
       "h3": {
         "fontSizePx": 16,
-        "fontWeight": 700,
+        "fontWeight": 600,
         "lineHeightPx": 24,
         "fontFamily": "Inter"
       },
       "h4": {
         "fontSizePx": 16,
-        "fontWeight": 700,
+        "fontWeight": 600,
         "lineHeightPx": 24,
         "fontFamily": "Inter"
       },
       "h5": {
         "fontSizePx": 16,
-        "fontWeight": 700,
+        "fontWeight": 600,
         "lineHeightPx": 24,
         "fontFamily": "Inter"
       },
       "h6": {
         "fontSizePx": 16,
-        "fontWeight": 700,
+        "fontWeight": 600,
         "lineHeightPx": 24,
         "fontFamily": "Inter"
       },
@@ -978,14 +1026,14 @@
       },
       "subtitle2": {
         "fontSizePx": 16,
-        "fontWeight": 700,
-        "lineHeightPx": 32,
+        "fontWeight": 600,
+        "lineHeightPx": 24,
         "fontFamily": "Inter"
       },
       "body1": {
-        "fontSizePx": 16,
-        "fontWeight": 700,
-        "lineHeightPx": 24,
+        "fontSizePx": 14,
+        "fontWeight": 400,
+        "lineHeightPx": 20,
         "fontFamily": "Inter"
       },
       "body2": {
@@ -996,7 +1044,7 @@
       },
       "button": {
         "fontSizePx": 14,
-        "fontWeight": 700,
+        "fontWeight": 600,
         "lineHeightPx": 24,
         "fontFamily": "Inter",
         "textTransform": "none"
@@ -1033,7 +1081,7 @@
     "screenElementCounts": [
       {
         "screenId": "screen-products",
-        "screenName": "ProductList",
+        "screenName": "PaymentAuthorizations",
         "elements": 37
       }
     ],

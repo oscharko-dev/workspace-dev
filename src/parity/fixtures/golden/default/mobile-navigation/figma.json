@@ -1,5 +1,5 @@
 {
-  "name": "Large Board",
+  "name": "Mobile Banking Navigation Board",
   "document": {
     "id": "0:0",
     "type": "DOCUMENT",
@@ -19,8 +19,8 @@
             "absoluteBoundingBox": { "x": 0, "y": 0, "width": 390, "height": 844 },
             "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 0.15, "g": 0.36, "b": 0.96, "a": 1 } }],
             "children": [
-              { "id": "splash-title", "type": "TEXT", "name": "Title", "characters": "AppName", "style": { "fontSize": 40, "fontWeight": 800, "fontFamily": "Inter", "lineHeightPx": 48, "textAlignHorizontal": "CENTER" }, "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 1, "g": 1, "b": 1, "a": 1 } }], "absoluteBoundingBox": { "x": 24, "y": 380, "width": 342, "height": 48 } },
-              { "id": "splash-tagline", "type": "TEXT", "name": "Tagline", "characters": "Your digital companion", "style": { "fontSize": 16, "fontWeight": 400, "fontFamily": "Inter", "lineHeightPx": 24, "textAlignHorizontal": "CENTER" }, "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 0.85, "g": 0.9, "b": 1, "a": 1 } }], "absoluteBoundingBox": { "x": 24, "y": 444, "width": 342, "height": 24 } }
+              { "id": "splash-title", "type": "TEXT", "name": "Title", "characters": "FinOps", "style": { "fontSize": 40, "fontWeight": 800, "fontFamily": "Inter", "lineHeightPx": 48, "textAlignHorizontal": "CENTER" }, "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 1, "g": 1, "b": 1, "a": 1 } }], "absoluteBoundingBox": { "x": 24, "y": 380, "width": 342, "height": 48 } },
+              { "id": "splash-tagline", "type": "TEXT", "name": "Tagline", "characters": "Payments, cards, and alerts", "style": { "fontSize": 16, "fontWeight": 400, "fontFamily": "Inter", "lineHeightPx": 24, "textAlignHorizontal": "CENTER" }, "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 0.85, "g": 0.9, "b": 1, "a": 1 } }], "absoluteBoundingBox": { "x": 24, "y": 444, "width": 342, "height": 24 } }
             ]
           },
           {
@@ -34,7 +34,7 @@
             "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 1, "g": 1, "b": 1, "a": 1 } }],
             "children": [
               { "id": "onb-title", "type": "TEXT", "name": "Title", "characters": "Welcome", "style": { "fontSize": 28, "fontWeight": 700, "fontFamily": "Inter", "lineHeightPx": 36, "textAlignHorizontal": "LEFT" }, "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 0.11, "g": 0.12, "b": 0.14, "a": 1 } }], "absoluteBoundingBox": { "x": 454, "y": 48, "width": 342, "height": 36 } },
-              { "id": "onb-body", "type": "TEXT", "name": "Body", "characters": "Let us set up your account in a few easy steps.", "style": { "fontSize": 16, "fontWeight": 400, "fontFamily": "Inter", "lineHeightPx": 24, "textAlignHorizontal": "LEFT" }, "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 0.4, "g": 0.42, "b": 0.46, "a": 1 } }], "absoluteBoundingBox": { "x": 454, "y": 108, "width": 342, "height": 48 } }
+              { "id": "onb-body", "type": "TEXT", "name": "Body", "characters": "Set up secure approvals in a few steps.", "style": { "fontSize": 16, "fontWeight": 400, "fontFamily": "Inter", "lineHeightPx": 24, "textAlignHorizontal": "LEFT" }, "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 0.4, "g": 0.42, "b": 0.46, "a": 1 } }], "absoluteBoundingBox": { "x": 454, "y": 108, "width": 342, "height": 48 } }
             ]
           },
           {
@@ -48,8 +48,8 @@
             "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 1, "g": 1, "b": 1, "a": 1 } }],
             "children": [
               { "id": "login-title", "type": "TEXT", "name": "Title", "characters": "Sign In", "style": { "fontSize": 28, "fontWeight": 700, "fontFamily": "Inter", "lineHeightPx": 36, "textAlignHorizontal": "LEFT" }, "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 0.11, "g": 0.12, "b": 0.14, "a": 1 } }], "absoluteBoundingBox": { "x": 884, "y": 48, "width": 342, "height": 36 } },
-              { "id": "login-email", "type": "FRAME", "name": "MuiFormControlRoot", "layoutMode": "HORIZONTAL", "itemSpacing": 8, "primaryAxisAlignItems": "SPACE_BETWEEN", "counterAxisAlignItems": "CENTER", "absoluteBoundingBox": { "x": 884, "y": 100, "width": 342, "height": 56 }, "children": [{ "id": "login-email-label", "type": "TEXT", "name": "Label", "characters": "Email", "style": { "fontSize": 14, "fontWeight": 500, "fontFamily": "Inter", "lineHeightPx": 20, "textAlignHorizontal": "LEFT" }, "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 0.4, "g": 0.42, "b": 0.46, "a": 1 } }], "absoluteBoundingBox": { "x": 896, "y": 116, "width": 60, "height": 20 } }] },
-              { "id": "login-password", "type": "FRAME", "name": "MuiFormControlRoot", "layoutMode": "HORIZONTAL", "itemSpacing": 8, "primaryAxisAlignItems": "SPACE_BETWEEN", "counterAxisAlignItems": "CENTER", "absoluteBoundingBox": { "x": 884, "y": 172, "width": 342, "height": 56 }, "children": [{ "id": "login-pw-label", "type": "TEXT", "name": "Label", "characters": "Password", "style": { "fontSize": 14, "fontWeight": 500, "fontFamily": "Inter", "lineHeightPx": 20, "textAlignHorizontal": "LEFT" }, "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 0.4, "g": 0.42, "b": 0.46, "a": 1 } }], "absoluteBoundingBox": { "x": 896, "y": 188, "width": 80, "height": 20 } }] }
+              { "id": "login-email", "type": "FRAME", "name": "Text Field", "layoutMode": "HORIZONTAL", "itemSpacing": 8, "primaryAxisAlignItems": "SPACE_BETWEEN", "counterAxisAlignItems": "CENTER", "absoluteBoundingBox": { "x": 884, "y": 100, "width": 342, "height": 56 }, "children": [{ "id": "login-email-label", "type": "TEXT", "name": "Label", "characters": "Email", "style": { "fontSize": 14, "fontWeight": 500, "fontFamily": "Inter", "lineHeightPx": 20, "textAlignHorizontal": "LEFT" }, "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 0.4, "g": 0.42, "b": 0.46, "a": 1 } }], "absoluteBoundingBox": { "x": 896, "y": 116, "width": 60, "height": 20 } }] },
+              { "id": "login-password", "type": "FRAME", "name": "Text Field", "layoutMode": "HORIZONTAL", "itemSpacing": 8, "primaryAxisAlignItems": "SPACE_BETWEEN", "counterAxisAlignItems": "CENTER", "absoluteBoundingBox": { "x": 884, "y": 172, "width": 342, "height": 56 }, "children": [{ "id": "login-pw-label", "type": "TEXT", "name": "Label", "characters": "Password", "style": { "fontSize": 14, "fontWeight": 500, "fontFamily": "Inter", "lineHeightPx": 20, "textAlignHorizontal": "LEFT" }, "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 0.4, "g": 0.42, "b": 0.46, "a": 1 } }], "absoluteBoundingBox": { "x": 896, "y": 188, "width": 80, "height": 20 } }] }
             ]
           },
           {
@@ -63,7 +63,7 @@
             "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 1, "g": 1, "b": 1, "a": 1 } }],
             "children": [
               { "id": "reg-title", "type": "TEXT", "name": "Title", "characters": "Create Account", "style": { "fontSize": 28, "fontWeight": 700, "fontFamily": "Inter", "lineHeightPx": 36, "textAlignHorizontal": "LEFT" }, "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 0.11, "g": 0.12, "b": 0.14, "a": 1 } }], "absoluteBoundingBox": { "x": 1314, "y": 48, "width": 342, "height": 36 } },
-              { "id": "reg-name", "type": "FRAME", "name": "MuiFormControlRoot", "layoutMode": "HORIZONTAL", "itemSpacing": 8, "primaryAxisAlignItems": "SPACE_BETWEEN", "counterAxisAlignItems": "CENTER", "absoluteBoundingBox": { "x": 1314, "y": 100, "width": 342, "height": 56 }, "children": [{ "id": "reg-name-label", "type": "TEXT", "name": "Label", "characters": "Full Name", "style": { "fontSize": 14, "fontWeight": 500, "fontFamily": "Inter", "lineHeightPx": 20, "textAlignHorizontal": "LEFT" }, "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 0.4, "g": 0.42, "b": 0.46, "a": 1 } }], "absoluteBoundingBox": { "x": 1326, "y": 116, "width": 80, "height": 20 } }] }
+              { "id": "reg-name", "type": "FRAME", "name": "Text Field", "layoutMode": "HORIZONTAL", "itemSpacing": 8, "primaryAxisAlignItems": "SPACE_BETWEEN", "counterAxisAlignItems": "CENTER", "absoluteBoundingBox": { "x": 1314, "y": 100, "width": 342, "height": 56 }, "children": [{ "id": "reg-name-label", "type": "TEXT", "name": "Label", "characters": "Full Name", "style": { "fontSize": 14, "fontWeight": 500, "fontFamily": "Inter", "lineHeightPx": 20, "textAlignHorizontal": "LEFT" }, "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 0.4, "g": 0.42, "b": 0.46, "a": 1 } }], "absoluteBoundingBox": { "x": 1326, "y": 116, "width": 80, "height": 20 } }] }
             ]
           },
           {
@@ -77,7 +77,7 @@
             "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 0.97, "g": 0.98, "b": 0.99, "a": 1 } }],
             "children": [
               { "id": "home-greeting", "type": "TEXT", "name": "Greeting", "characters": "Good Morning", "style": { "fontSize": 24, "fontWeight": 700, "fontFamily": "Inter", "lineHeightPx": 32, "textAlignHorizontal": "LEFT" }, "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 0.11, "g": 0.12, "b": 0.14, "a": 1 } }], "absoluteBoundingBox": { "x": 1736, "y": 16, "width": 358, "height": 32 } },
-              { "id": "home-subtitle", "type": "TEXT", "name": "Subtitle", "characters": "Here is your daily summary", "style": { "fontSize": 14, "fontWeight": 400, "fontFamily": "Inter", "lineHeightPx": 20, "textAlignHorizontal": "LEFT" }, "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 0.4, "g": 0.42, "b": 0.46, "a": 1 } }], "absoluteBoundingBox": { "x": 1736, "y": 52, "width": 358, "height": 20 } }
+              { "id": "home-subtitle", "type": "TEXT", "name": "Subtitle", "characters": "Here is your treasury summary", "style": { "fontSize": 14, "fontWeight": 400, "fontFamily": "Inter", "lineHeightPx": 20, "textAlignHorizontal": "LEFT" }, "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 0.4, "g": 0.42, "b": 0.46, "a": 1 } }], "absoluteBoundingBox": { "x": 1736, "y": 52, "width": 358, "height": 20 } }
             ]
           },
           {
@@ -90,7 +90,7 @@
             "absoluteBoundingBox": { "x": 2150, "y": 0, "width": 390, "height": 844 },
             "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 0.97, "g": 0.98, "b": 0.99, "a": 1 } }],
             "children": [
-              { "id": "feed-title", "type": "TEXT", "name": "Title", "characters": "Activity Feed", "style": { "fontSize": 24, "fontWeight": 700, "fontFamily": "Inter", "lineHeightPx": 32, "textAlignHorizontal": "LEFT" }, "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 0.11, "g": 0.12, "b": 0.14, "a": 1 } }], "absoluteBoundingBox": { "x": 2166, "y": 16, "width": 358, "height": 32 } }
+              { "id": "feed-title", "type": "TEXT", "name": "Title", "characters": "Approval Feed", "style": { "fontSize": 24, "fontWeight": 700, "fontFamily": "Inter", "lineHeightPx": 32, "textAlignHorizontal": "LEFT" }, "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 0.11, "g": 0.12, "b": 0.14, "a": 1 } }], "absoluteBoundingBox": { "x": 2166, "y": 16, "width": 358, "height": 32 } }
             ]
           },
           {
@@ -104,7 +104,7 @@
             "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 1, "g": 1, "b": 1, "a": 1 } }],
             "children": [
               { "id": "search-title", "type": "TEXT", "name": "Title", "characters": "Search", "style": { "fontSize": 24, "fontWeight": 700, "fontFamily": "Inter", "lineHeightPx": 32, "textAlignHorizontal": "LEFT" }, "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 0.11, "g": 0.12, "b": 0.14, "a": 1 } }], "absoluteBoundingBox": { "x": 2596, "y": 16, "width": 358, "height": 32 } },
-              { "id": "search-field", "type": "FRAME", "name": "MuiFormControlRoot", "layoutMode": "HORIZONTAL", "itemSpacing": 8, "primaryAxisAlignItems": "SPACE_BETWEEN", "counterAxisAlignItems": "CENTER", "absoluteBoundingBox": { "x": 2596, "y": 64, "width": 358, "height": 48 }, "children": [{ "id": "search-label", "type": "TEXT", "name": "Label", "characters": "Search", "style": { "fontSize": 14, "fontWeight": 500, "fontFamily": "Inter", "lineHeightPx": 20, "textAlignHorizontal": "LEFT" }, "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 0.4, "g": 0.42, "b": 0.46, "a": 1 } }], "absoluteBoundingBox": { "x": 2608, "y": 78, "width": 60, "height": 20 } }] }
+              { "id": "search-field", "type": "FRAME", "name": "Text Field", "layoutMode": "HORIZONTAL", "itemSpacing": 8, "primaryAxisAlignItems": "SPACE_BETWEEN", "counterAxisAlignItems": "CENTER", "absoluteBoundingBox": { "x": 2596, "y": 64, "width": 358, "height": 48 }, "children": [{ "id": "search-label", "type": "TEXT", "name": "Label", "characters": "Search", "style": { "fontSize": 14, "fontWeight": 500, "fontFamily": "Inter", "lineHeightPx": 20, "textAlignHorizontal": "LEFT" }, "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 0.4, "g": 0.42, "b": 0.46, "a": 1 } }], "absoluteBoundingBox": { "x": 2608, "y": 78, "width": 60, "height": 20 } }] }
             ]
           },
           {
@@ -147,7 +147,7 @@
             "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 1, "g": 1, "b": 1, "a": 1 } }],
             "children": [
               { "id": "notif-title", "type": "TEXT", "name": "Title", "characters": "Notifications", "style": { "fontSize": 24, "fontWeight": 700, "fontFamily": "Inter", "lineHeightPx": 32, "textAlignHorizontal": "LEFT" }, "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 0.11, "g": 0.12, "b": 0.14, "a": 1 } }], "absoluteBoundingBox": { "x": 3886, "y": 16, "width": 358, "height": 32 } },
-              { "id": "notif-empty", "type": "TEXT", "name": "Empty State", "characters": "No new notifications", "style": { "fontSize": 14, "fontWeight": 400, "fontFamily": "Inter", "lineHeightPx": 20, "textAlignHorizontal": "CENTER" }, "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 0.6, "g": 0.62, "b": 0.66, "a": 1 } }], "absoluteBoundingBox": { "x": 3886, "y": 300, "width": 358, "height": 20 } }
+              { "id": "notif-empty", "type": "TEXT", "name": "Empty State", "characters": "No new risk alerts", "style": { "fontSize": 14, "fontWeight": 400, "fontFamily": "Inter", "lineHeightPx": 20, "textAlignHorizontal": "CENTER" }, "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 0.6, "g": 0.62, "b": 0.66, "a": 1 } }], "absoluteBoundingBox": { "x": 3886, "y": 300, "width": 358, "height": 20 } }
             ]
           },
           {
@@ -162,7 +162,7 @@
             "children": [
               { "id": "about-title", "type": "TEXT", "name": "Title", "characters": "About", "style": { "fontSize": 24, "fontWeight": 700, "fontFamily": "Inter", "lineHeightPx": 32, "textAlignHorizontal": "LEFT" }, "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 0.11, "g": 0.12, "b": 0.14, "a": 1 } }], "absoluteBoundingBox": { "x": 4324, "y": 24, "width": 342, "height": 32 } },
               { "id": "about-version", "type": "TEXT", "name": "Version", "characters": "Version 2.1.0", "style": { "fontSize": 14, "fontWeight": 400, "fontFamily": "Inter", "lineHeightPx": 20, "textAlignHorizontal": "LEFT" }, "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 0.4, "g": 0.42, "b": 0.46, "a": 1 } }], "absoluteBoundingBox": { "x": 4324, "y": 72, "width": 342, "height": 20 } },
-              { "id": "about-body", "type": "TEXT", "name": "Body", "characters": "Built with care by the engineering team.", "style": { "fontSize": 16, "fontWeight": 400, "fontFamily": "Inter", "lineHeightPx": 24, "textAlignHorizontal": "LEFT" }, "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 0.11, "g": 0.12, "b": 0.14, "a": 1 } }], "absoluteBoundingBox": { "x": 4324, "y": 108, "width": 342, "height": 24 } }
+              { "id": "about-body", "type": "TEXT", "name": "Body", "characters": "OSS-neutral mobile banking demo.", "style": { "fontSize": 16, "fontWeight": 400, "fontFamily": "Inter", "lineHeightPx": 24, "textAlignHorizontal": "LEFT" }, "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 0.11, "g": 0.12, "b": 0.14, "a": 1 } }], "absoluteBoundingBox": { "x": 4324, "y": 108, "width": 342, "height": 24 } }
             ]
           }
         ]

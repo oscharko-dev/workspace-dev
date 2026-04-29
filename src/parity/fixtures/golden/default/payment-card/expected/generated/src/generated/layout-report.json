@@ -5,9 +5,9 @@
   "semanticComponents": [
     {
       "screenId": "screen-products",
-      "screenName": "ProductList",
-      "componentName": "ProductCard",
-      "filePath": "src/components/ProductCard.tsx",
+      "screenName": "PaymentAuthorizations",
+      "componentName": "AuthorizationCard",
+      "filePath": "src/components/AuthorizationCard.tsx",
       "kind": "card",
       "instanceNodeIds": [
         "product-card-1",
@@ -18,16 +18,16 @@
         "product-card-6"
       ],
       "propNames": [
-        "productName",
-        "description",
-        "price"
+        "paymentTitle",
+        "approvalContext",
+        "amount"
       ]
     }
   ],
   "semanticDiagnostics": [
     {
       "screenId": "screen-products",
-      "screenName": "ProductList",
+      "screenName": "PaymentAuthorizations",
       "code": "W_SEMANTIC_COMPONENT_NOT_REUSABLE",
       "nodeId": "pc1-info",
       "nodeName": "Info",
@@ -35,7 +35,7 @@
     },
     {
       "screenId": "screen-products",
-      "screenName": "ProductList",
+      "screenName": "PaymentAuthorizations",
       "code": "W_SEMANTIC_COMPONENT_NOT_REUSABLE",
       "nodeId": "pc2-info",
       "nodeName": "Info",
@@ -43,7 +43,7 @@
     },
     {
       "screenId": "screen-products",
-      "screenName": "ProductList",
+      "screenName": "PaymentAuthorizations",
       "code": "W_SEMANTIC_COMPONENT_NOT_REUSABLE",
       "nodeId": "pc3-info",
       "nodeName": "Info",
@@ -51,7 +51,7 @@
     },
     {
       "screenId": "screen-products",
-      "screenName": "ProductList",
+      "screenName": "PaymentAuthorizations",
       "code": "W_SEMANTIC_COMPONENT_NOT_REUSABLE",
       "nodeId": "pc4-info",
       "nodeName": "Info",
@@ -59,7 +59,7 @@
     },
     {
       "screenId": "screen-products",
-      "screenName": "ProductList",
+      "screenName": "PaymentAuthorizations",
       "code": "W_SEMANTIC_COMPONENT_NOT_REUSABLE",
       "nodeId": "pc5-info",
       "nodeName": "Info",
@@ -67,7 +67,7 @@
     },
     {
       "screenId": "screen-products",
-      "screenName": "ProductList",
+      "screenName": "PaymentAuthorizations",
       "code": "W_SEMANTIC_COMPONENT_NOT_REUSABLE",
       "nodeId": "pc6-info",
       "nodeName": "Info",
@@ -77,13 +77,13 @@
   "screens": [
     {
       "screenId": "screen-products",
-      "screenName": "ProductList",
+      "screenName": "PaymentAuthorizations",
       "rootLayoutKind": "flex",
       "warnings": [],
       "semanticComponents": [
         {
-          "componentName": "ProductCard",
-          "filePath": "src/components/ProductCard.tsx",
+          "componentName": "AuthorizationCard",
+          "filePath": "src/components/AuthorizationCard.tsx",
           "kind": "card",
           "instanceNodeIds": [
             "product-card-1",
@@ -94,9 +94,9 @@
             "product-card-6"
           ],
           "propNames": [
-            "productName",
-            "description",
-            "price"
+            "paymentTitle",
+            "approvalContext",
+            "amount"
           ]
         }
       ],

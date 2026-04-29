@@ -1,5 +1,5 @@
 {
-  "name": "Dark Mode Golden",
+  "name": "Token Heavy Risk Operations Board",
   "document": {
     "id": "0:0",
     "type": "DOCUMENT",
@@ -32,7 +32,7 @@
                 "id": "light-title",
                 "type": "TEXT",
                 "name": "Heading",
-                "characters": "Operations Dashboard",
+                "characters": "Risk Operations",
                 "style": {
                   "fontSize": 28,
                   "fontWeight": 700,
@@ -53,7 +53,7 @@
                 "id": "light-body",
                 "type": "TEXT",
                 "name": "Body",
-                "characters": "Track shipment delays, alerts, and approvals in one place.",
+                "characters": "Track exposure alerts, payment holds, and approvals.",
                 "style": {
                   "fontSize": 16,
                   "fontWeight": 400,
@@ -94,7 +94,7 @@
                     "id": "light-card-title",
                     "type": "TEXT",
                     "name": "Label",
-                    "characters": "Open incidents",
+                    "characters": "Open risk alerts",
                     "style": {
                       "fontSize": 14,
                       "fontWeight": 500,
@@ -159,7 +159,7 @@
                 "id": "dark-title",
                 "type": "TEXT",
                 "name": "Heading",
-                "characters": "Operations Dashboard",
+                "characters": "Risk Operations",
                 "style": {
                   "fontSize": 28,
                   "fontWeight": 700,
@@ -180,7 +180,7 @@
                 "id": "dark-body",
                 "type": "TEXT",
                 "name": "Body",
-                "characters": "Track shipment delays, alerts, and approvals in one place.",
+                "characters": "Track exposure alerts, payment holds, and approvals.",
                 "style": {
                   "fontSize": 16,
                   "fontWeight": 400,
@@ -221,7 +221,7 @@
                     "id": "dark-card-title",
                     "type": "TEXT",
                     "name": "Label",
-                    "characters": "Open incidents",
+                    "characters": "Open risk alerts",
                     "style": {
                       "fontSize": 14,
                       "fontWeight": 500,

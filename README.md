@@ -330,6 +330,8 @@ Golden end-to-end fixtures validate deterministic output from `figma.json -> des
 
 - `pnpm run test:golden` compares generated artifacts against committed expected files.
 - `pnpm run test:golden:update` updates expected golden files intentionally via `FIGMAPIPE_GOLDEN_APPROVE=true`.
+- The default pipeline OSS-neutral financial demo pack is documented in
+  `docs/default-pipeline/default-demo-fixtures.md`.
 
 ## Scope and mode lock
 

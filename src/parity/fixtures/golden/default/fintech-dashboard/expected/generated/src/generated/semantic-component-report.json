@@ -16,32 +16,32 @@
         {
           "code": "W_SEMANTIC_COMPONENT_NOT_REUSABLE",
           "nodeId": "card-revenue",
-          "nodeName": "Revenue Card",
-          "message": "Default semantic synthesis kept 'Revenue Card' inline because no matching reusable semantic structure was found."
+          "nodeName": "Liquidity Card",
+          "message": "Default semantic synthesis kept 'Liquidity Card' inline because no matching reusable semantic structure was found."
         },
         {
           "code": "W_SEMANTIC_COMPONENT_NOT_REUSABLE",
           "nodeId": "card-chart",
-          "nodeName": "Chart Card",
-          "message": "Default semantic synthesis kept 'Chart Card' inline because no matching reusable semantic structure was found."
+          "nodeName": "Payment Flow Card",
+          "message": "Default semantic synthesis kept 'Payment Flow Card' inline because no matching reusable semantic structure was found."
         },
         {
           "code": "W_SEMANTIC_COMPONENT_NOT_REUSABLE",
           "nodeId": "card-users",
-          "nodeName": "Users Card",
-          "message": "Default semantic synthesis kept 'Users Card' inline because no matching reusable semantic structure was found."
+          "nodeName": "Accounts Card",
+          "message": "Default semantic synthesis kept 'Accounts Card' inline because no matching reusable semantic structure was found."
         },
         {
           "code": "W_SEMANTIC_COMPONENT_NOT_REUSABLE",
           "nodeId": "card-orders",
-          "nodeName": "Orders Card",
-          "message": "Default semantic synthesis kept 'Orders Card' inline because no matching reusable semantic structure was found."
+          "nodeName": "Approvals Card",
+          "message": "Default semantic synthesis kept 'Approvals Card' inline because no matching reusable semantic structure was found."
         },
         {
           "code": "W_SEMANTIC_COMPONENT_NOT_REUSABLE",
           "nodeId": "card-activity",
-          "nodeName": "Activity Card",
-          "message": "Default semantic synthesis kept 'Activity Card' inline because no matching reusable semantic structure was found."
+          "nodeName": "Risk Queue Card",
+          "message": "Default semantic synthesis kept 'Risk Queue Card' inline because no matching reusable semantic structure was found."
         }
       ]
     }
@@ -61,40 +61,40 @@
       "screenName": "Dashboard",
       "code": "W_SEMANTIC_COMPONENT_NOT_REUSABLE",
       "nodeId": "card-revenue",
-      "nodeName": "Revenue Card",
-      "message": "Default semantic synthesis kept 'Revenue Card' inline because no matching reusable semantic structure was found."
+      "nodeName": "Liquidity Card",
+      "message": "Default semantic synthesis kept 'Liquidity Card' inline because no matching reusable semantic structure was found."
     },
     {
       "screenId": "screen-dashboard",
       "screenName": "Dashboard",
       "code": "W_SEMANTIC_COMPONENT_NOT_REUSABLE",
       "nodeId": "card-chart",
-      "nodeName": "Chart Card",
-      "message": "Default semantic synthesis kept 'Chart Card' inline because no matching reusable semantic structure was found."
+      "nodeName": "Payment Flow Card",
+      "message": "Default semantic synthesis kept 'Payment Flow Card' inline because no matching reusable semantic structure was found."
     },
     {
       "screenId": "screen-dashboard",
       "screenName": "Dashboard",
       "code": "W_SEMANTIC_COMPONENT_NOT_REUSABLE",
       "nodeId": "card-users",
-      "nodeName": "Users Card",
-      "message": "Default semantic synthesis kept 'Users Card' inline because no matching reusable semantic structure was found."
+      "nodeName": "Accounts Card",
+      "message": "Default semantic synthesis kept 'Accounts Card' inline because no matching reusable semantic structure was found."
     },
     {
       "screenId": "screen-dashboard",
       "screenName": "Dashboard",
       "code": "W_SEMANTIC_COMPONENT_NOT_REUSABLE",
       "nodeId": "card-orders",
-      "nodeName": "Orders Card",
-      "message": "Default semantic synthesis kept 'Orders Card' inline because no matching reusable semantic structure was found."
+      "nodeName": "Approvals Card",
+      "message": "Default semantic synthesis kept 'Approvals Card' inline because no matching reusable semantic structure was found."
     },
     {
       "screenId": "screen-dashboard",
       "screenName": "Dashboard",
       "code": "W_SEMANTIC_COMPONENT_NOT_REUSABLE",
       "nodeId": "card-activity",
-      "nodeName": "Activity Card",
-      "message": "Default semantic synthesis kept 'Activity Card' inline because no matching reusable semantic structure was found."
+      "nodeName": "Risk Queue Card",
+      "message": "Default semantic synthesis kept 'Risk Queue Card' inline because no matching reusable semantic structure was found."
     }
   ]
 }

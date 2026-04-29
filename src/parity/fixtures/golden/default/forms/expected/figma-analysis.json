@@ -1,6 +1,6 @@
 {
   "artifactVersion": 1,
-  "sourceName": "Complex Form Board",
+  "sourceName": "Account Opening Form Board",
   "summary": {
     "pageCount": 1,
     "sectionCount": 0,
@@ -42,7 +42,7 @@
     "frames": [
       {
         "id": "screen-form",
-        "name": "Registration",
+        "name": "AccountOpening",
         "pageId": "0:1",
         "nodeType": "FRAME",
         "layoutMode": "VERTICAL",
@@ -71,7 +71,7 @@
     "byFrame": [
       {
         "frameId": "screen-form",
-        "frameName": "Registration",
+        "frameName": "AccountOpening",
         "subtreeNodeCount": 18,
         "instanceCount": 0,
         "density": 0,

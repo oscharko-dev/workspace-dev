@@ -1,5 +1,5 @@
 {
-  "name": "Data Table Board",
+  "name": "Transaction Table Board",
   "document": {
     "id": "0:0",
     "type": "DOCUMENT",
@@ -12,7 +12,7 @@
           {
             "id": "screen-table",
             "type": "FRAME",
-            "name": "UserList",
+            "name": "TransactionTable",
             "layoutMode": "VERTICAL",
             "itemSpacing": 0,
             "paddingTop": 16,
@@ -32,7 +32,7 @@
                 "id": "table-title",
                 "type": "TEXT",
                 "name": "Title",
-                "characters": "Users",
+                "characters": "Transactions",
                 "style": {
                   "fontSize": 24,
                   "fontWeight": 700,
@@ -69,8 +69,8 @@
                   {
                     "id": "header-name",
                     "type": "TEXT",
-                    "name": "Header Name",
-                    "characters": "Name",
+                    "name": "Header Payment ID",
+                    "characters": "Payment ID",
                     "style": { "fontSize": 14, "fontWeight": 600, "fontFamily": "Inter", "lineHeightPx": 20, "textAlignHorizontal": "LEFT" },
                     "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 0.4, "g": 0.42, "b": 0.46, "a": 1 } }],
                     "absoluteBoundingBox": { "x": 32, "y": 78, "width": 180, "height": 20 }
@@ -78,8 +78,8 @@
                   {
                     "id": "header-email",
                     "type": "TEXT",
-                    "name": "Header Email",
-                    "characters": "Email",
+                    "name": "Header Counterparty",
+                    "characters": "Counterparty",
                     "style": { "fontSize": 14, "fontWeight": 600, "fontFamily": "Inter", "lineHeightPx": 20, "textAlignHorizontal": "LEFT" },
                     "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 0.4, "g": 0.42, "b": 0.46, "a": 1 } }],
                     "absoluteBoundingBox": { "x": 228, "y": 78, "width": 200, "height": 20 }
@@ -87,8 +87,8 @@
                   {
                     "id": "header-role",
                     "type": "TEXT",
-                    "name": "Header Role",
-                    "characters": "Role",
+                    "name": "Header Amount",
+                    "characters": "Amount",
                     "style": { "fontSize": 14, "fontWeight": 600, "fontFamily": "Inter", "lineHeightPx": 20, "textAlignHorizontal": "LEFT" },
                     "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 0.4, "g": 0.42, "b": 0.46, "a": 1 } }],
                     "absoluteBoundingBox": { "x": 444, "y": 78, "width": 140, "height": 20 }
@@ -117,8 +117,8 @@
                   {
                     "id": "row1-name",
                     "type": "TEXT",
-                    "name": "Cell Name",
-                    "characters": "Alice Johnson",
+                    "name": "Cell Payment ID",
+                    "characters": "PAY-1042",
                     "style": { "fontSize": 14, "fontWeight": 400, "fontFamily": "Inter", "lineHeightPx": 20, "textAlignHorizontal": "LEFT" },
                     "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 0.11, "g": 0.12, "b": 0.14, "a": 1 } }],
                     "absoluteBoundingBox": { "x": 32, "y": 128, "width": 180, "height": 20 }
@@ -126,8 +126,8 @@
                   {
                     "id": "row1-email",
                     "type": "TEXT",
-                    "name": "Cell Email",
-                    "characters": "alice@example.com",
+                    "name": "Cell Counterparty",
+                    "characters": "Demo Supplier A",
                     "style": { "fontSize": 14, "fontWeight": 400, "fontFamily": "Inter", "lineHeightPx": 20, "textAlignHorizontal": "LEFT" },
                     "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 0.11, "g": 0.12, "b": 0.14, "a": 1 } }],
                     "absoluteBoundingBox": { "x": 228, "y": 128, "width": 200, "height": 20 }
@@ -135,8 +135,8 @@
                   {
                     "id": "row1-role",
                     "type": "TEXT",
-                    "name": "Cell Role",
-                    "characters": "Admin",
+                    "name": "Cell Amount",
+                    "characters": "EUR 12,450",
                     "style": { "fontSize": 14, "fontWeight": 400, "fontFamily": "Inter", "lineHeightPx": 20, "textAlignHorizontal": "LEFT" },
                     "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 0.11, "g": 0.12, "b": 0.14, "a": 1 } }],
                     "absoluteBoundingBox": { "x": 444, "y": 128, "width": 140, "height": 20 }
@@ -144,7 +144,7 @@
                   {
                     "id": "row1-status",
                     "type": "FRAME",
-                    "name": "MuiChipRoot",
+                    "name": "Status Chip",
                     "absoluteBoundingBox": { "x": 600, "y": 124, "width": 70, "height": 28 },
                     "cornerRadius": 14,
                     "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 0.87, "g": 0.96, "b": 0.87, "a": 1 } }],
@@ -153,7 +153,7 @@
                         "id": "row1-status-text",
                         "type": "TEXT",
                         "name": "Label",
-                        "characters": "Active",
+                        "characters": "Cleared",
                         "style": { "fontSize": 12, "fontWeight": 500, "fontFamily": "Inter", "lineHeightPx": 16, "textAlignHorizontal": "CENTER" },
                         "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 0.15, "g": 0.5, "b": 0.15, "a": 1 } }],
                         "absoluteBoundingBox": { "x": 610, "y": 130, "width": 50, "height": 16 }
@@ -175,8 +175,8 @@
                   {
                     "id": "row2-name",
                     "type": "TEXT",
-                    "name": "Cell Name",
-                    "characters": "Bob Smith",
+                    "name": "Cell Payment ID",
+                    "characters": "PAY-1043",
                     "style": { "fontSize": 14, "fontWeight": 400, "fontFamily": "Inter", "lineHeightPx": 20, "textAlignHorizontal": "LEFT" },
                     "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 0.11, "g": 0.12, "b": 0.14, "a": 1 } }],
                     "absoluteBoundingBox": { "x": 32, "y": 180, "width": 180, "height": 20 }
@@ -184,8 +184,8 @@
                   {
                     "id": "row2-email",
                     "type": "TEXT",
-                    "name": "Cell Email",
-                    "characters": "bob@example.com",
+                    "name": "Cell Counterparty",
+                    "characters": "Demo Vendor B",
                     "style": { "fontSize": 14, "fontWeight": 400, "fontFamily": "Inter", "lineHeightPx": 20, "textAlignHorizontal": "LEFT" },
                     "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 0.11, "g": 0.12, "b": 0.14, "a": 1 } }],
                     "absoluteBoundingBox": { "x": 228, "y": 180, "width": 200, "height": 20 }
@@ -193,8 +193,8 @@
                   {
                     "id": "row2-role",
                     "type": "TEXT",
-                    "name": "Cell Role",
-                    "characters": "Editor",
+                    "name": "Cell Amount",
+                    "characters": "EUR 8,910",
                     "style": { "fontSize": 14, "fontWeight": 400, "fontFamily": "Inter", "lineHeightPx": 20, "textAlignHorizontal": "LEFT" },
                     "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 0.11, "g": 0.12, "b": 0.14, "a": 1 } }],
                     "absoluteBoundingBox": { "x": 444, "y": 180, "width": 140, "height": 20 }
@@ -202,7 +202,7 @@
                   {
                     "id": "row2-status",
                     "type": "FRAME",
-                    "name": "MuiChipRoot",
+                    "name": "Status Chip",
                     "absoluteBoundingBox": { "x": 600, "y": 176, "width": 80, "height": 28 },
                     "cornerRadius": 14,
                     "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 1, "g": 0.93, "b": 0.82, "a": 1 } }],
@@ -211,7 +211,7 @@
                         "id": "row2-status-text",
                         "type": "TEXT",
                         "name": "Label",
-                        "characters": "Pending",
+                        "characters": "Review",
                         "style": { "fontSize": 12, "fontWeight": 500, "fontFamily": "Inter", "lineHeightPx": 16, "textAlignHorizontal": "CENTER" },
                         "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 0.8, "g": 0.5, "b": 0, "a": 1 } }],
                         "absoluteBoundingBox": { "x": 608, "y": 182, "width": 56, "height": 16 }

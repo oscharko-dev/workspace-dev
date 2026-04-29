@@ -66,6 +66,33 @@ interface GoldenFixtureManifest {
   fixtures: GoldenFixtureSpec[];
 }
 
+type DefaultDemoSurface = "board" | "component" | "view";
+
+interface DefaultDemoFixtureMetadata {
+  surface: DefaultDemoSurface;
+  scenario: string;
+  coverage: string[];
+  ossNeutral: boolean;
+  syntheticData: boolean;
+}
+
+interface DefaultGoldenFixtureSpec extends GoldenFixtureSpec {
+  demo?: DefaultDemoFixtureMetadata;
+}
+
+interface DefaultGoldenFixtureManifest extends GoldenFixtureManifest {
+  pipelineId: "default";
+  fixtures: DefaultGoldenFixtureSpec[];
+  demoPack?: {
+    id: string;
+    title: string;
+    domain: string;
+    dataPolicy: string;
+    customerData: boolean;
+    proprietaryAssets: boolean;
+  };
+}
+
 interface GeneratedFixtureArtifacts {
   jobDir?: string;
   projectDir: string;
@@ -78,7 +105,10 @@ interface PreparedFixtureInput {
   ir: DesignIR;
 }
 
-const MODULE_DIR = typeof __dirname === "string" ? __dirname : path.dirname(fileURLToPath(import.meta.url));
+const MODULE_DIR =
+  typeof __dirname === "string"
+    ? __dirname
+    : path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(MODULE_DIR, "../..");
 const GOLDEN_ROOT = path.resolve(MODULE_DIR, "fixtures", "golden");
 const DEFAULT_GOLDEN_ROOT = path.join(GOLDEN_ROOT, "default");
@@ -127,7 +157,13 @@ const normalizeJson = (value: string): string => {
   return `${JSON.stringify(normalizeDynamicJsonFields(JSON.parse(value)), null, 2)}\n`;
 };
 
-const normalizeArtifactContent = ({ kind, value }: { kind: GoldenArtifactSpec["kind"]; value: string }): string => {
+const normalizeArtifactContent = ({
+  kind,
+  value,
+}: {
+  kind: GoldenArtifactSpec["kind"];
+  value: string;
+}): string => {
   return kind === "json" ? normalizeJson(value) : normalizeText(value);
 };
 
@@ -144,6 +180,39 @@ const isCiRuntime = (): boolean => {
   return raw !== "0" && raw !== "false";
 };
 
+const REQUIRED_DEFAULT_DEMO_COVERAGE = [
+  "board",
+  "component",
+  "dense-table",
+  "forms",
+  "login-mfa",
+  "mobile-navigation",
+  "payment-authorization",
+  "responsive",
+  "risk-alert-modal",
+  "token-heavy",
+  "view",
+] as const;
+
+const FORBIDDEN_DEFAULT_DEMO_TEXT = [
+  /alice johnson/i,
+  /bob smith/i,
+  /jane smith/i,
+  /john@example\.com/i,
+  /alice@example\.com/i,
+  /bob@example\.com/i,
+  /wireless headphones/i,
+  /bluetooth speaker/i,
+  /smart watch/i,
+  /lbbw/i,
+  /mui/i,
+  /emotion/i,
+  /rocket/i,
+  /customer[-_\s]*board/i,
+  /customer[-_\s]*profile/i,
+  /customer-specific/i,
+] as const;
+
 const loadManifest = async ({
   expectedPipelineId,
   root,
@@ -154,13 +223,21 @@ const loadManifest = async ({
   const payload = JSON.parse(
     await readFile(path.join(root, "manifest.json"), "utf8"),
   ) as Partial<GoldenFixtureManifest>;
-  assert.equal(payload.version, 1, "Unsupported golden fixture manifest version.");
+  assert.equal(
+    payload.version,
+    1,
+    "Unsupported golden fixture manifest version.",
+  );
   assert.equal(
     payload.pipelineId,
     expectedPipelineId,
     `Golden fixtures in '${root}' must be owned by the ${expectedPipelineId} pipeline.`,
   );
-  assert.equal(Array.isArray(payload.fixtures), true, "Manifest must contain fixtures[].");
+  assert.equal(
+    Array.isArray(payload.fixtures),
+    true,
+    "Manifest must contain fixtures[].",
+  );
   return payload as GoldenFixtureManifest;
 };
 
@@ -177,8 +254,120 @@ const loadIrOverrides = async ({
 
   const overridesPath = path.join(root, fixture.irOverridesFile);
   const payload = JSON.parse(await readFile(overridesPath, "utf8")) as unknown;
-  assert.equal(Array.isArray(payload), true, `Fixture '${fixture.id}' overrides must be an array.`);
+  assert.equal(
+    Array.isArray(payload),
+    true,
+    `Fixture '${fixture.id}' overrides must be an array.`,
+  );
   return payload as WorkspaceRegenerationOverrideEntry[];
+};
+
+const assertDefaultDemoFixturePack = async ({
+  manifest,
+  root,
+}: {
+  manifest: DefaultGoldenFixtureManifest;
+  root: string;
+}): Promise<void> => {
+  assert.deepEqual(manifest.demoPack, {
+    id: "oss-neutral-financial-default-demo",
+    title: "OSS-neutral financial default pipeline demo fixture pack",
+    domain: "financial-services",
+    dataPolicy: "synthetic-only",
+    customerData: false,
+    proprietaryAssets: false,
+  });
+
+  const covered = new Set<string>();
+  const surfaces = new Set<DefaultDemoSurface>();
+  let hasValidatedEvidenceFixture = false;
+  let hasComponentGeneratingFixture = false;
+
+  for (const fixture of manifest.fixtures) {
+    assert.ok(
+      fixture.demo,
+      `Default fixture '${fixture.id}' must declare demo metadata.`,
+    );
+    assert.equal(
+      fixture.demo.ossNeutral,
+      true,
+      `Default fixture '${fixture.id}' must be OSS-neutral.`,
+    );
+    assert.equal(
+      fixture.demo.syntheticData,
+      true,
+      `Default fixture '${fixture.id}' must use synthetic data.`,
+    );
+    assert.notEqual(
+      fixture.demo.scenario.trim(),
+      "",
+      `Default fixture '${fixture.id}' must describe its financial scenario.`,
+    );
+    surfaces.add(fixture.demo.surface);
+    for (const coverage of fixture.demo.coverage) {
+      covered.add(coverage);
+    }
+    if (fixture.validation === true) {
+      hasValidatedEvidenceFixture = true;
+    }
+    if (fixture.demo.surface === "component") {
+      const generatedFilesPath = path.join(
+        root,
+        fixture.id,
+        "expected",
+        "generated-files.json",
+      );
+      const generatedFiles = JSON.parse(
+        await readFile(generatedFilesPath, "utf8"),
+      ) as unknown;
+      assert.equal(
+        Array.isArray(generatedFiles),
+        true,
+        `Default component fixture '${fixture.id}' must snapshot generated files.`,
+      );
+      hasComponentGeneratingFixture = generatedFiles.some(
+        (entry) =>
+          typeof entry === "string" &&
+          entry.startsWith("src/components/") &&
+          entry.endsWith(".tsx"),
+      );
+    }
+
+    const figmaJson = await readFile(
+      path.join(root, fixture.figmaJson),
+      "utf8",
+    );
+    for (const forbidden of FORBIDDEN_DEFAULT_DEMO_TEXT) {
+      assert.equal(
+        forbidden.test(figmaJson),
+        false,
+        `Default demo fixture '${fixture.id}' contains forbidden non-demo text matching ${forbidden}.`,
+      );
+    }
+  }
+
+  assert.deepEqual(
+    [...surfaces].sort(),
+    ["board", "component", "view"] satisfies DefaultDemoSurface[],
+    "Default demo fixtures must cover board, component, and view generation surfaces.",
+  );
+  for (const required of REQUIRED_DEFAULT_DEMO_COVERAGE) {
+    assert.equal(
+      covered.has(required),
+      true,
+      `Default demo fixture pack must cover '${required}'.`,
+    );
+  }
+  assert.equal(
+    hasValidatedEvidenceFixture,
+    true,
+    "Default demo fixture pack must include at least one validation and quality-passport evidence fixture.",
+  );
+  assert.equal(
+    hasComponentGeneratingFixture,
+    true,
+    "Default demo fixture pack must include a component fixture that snapshots generated component files.",
+  );
 };
 
 const listFiles = async ({ root }: { root: string }): Promise<string[]> => {
@@ -223,7 +412,7 @@ const assertActualFileExists = async ({
   } catch {
     const available = await listFiles({ root: projectDir });
     assert.fail(
-      `Missing generated artifact for fixture '${fixtureId}': '${artifact.actual}'. Available files: ${available.join(", ") || "(none)"}`
+      `Missing generated artifact for fixture '${fixtureId}': '${artifact.actual}'. Available files: ${available.join(", ") || "(none)"}`,
     );
   }
 };
@@ -267,10 +456,11 @@ const prepareFixtureInput = async ({
 };
 
 const createUnsupportedNodeReport = (ir: DesignIR): unknown => {
-  const diagnostics = (ir.metrics?.nodeDiagnostics ?? []).filter((entry) =>
-    entry.category === "unsupported-board-component" ||
-    entry.category === "classification-fallback" ||
-    entry.category === "screen-candidate-rejection"
+  const diagnostics = (ir.metrics?.nodeDiagnostics ?? []).filter(
+    (entry) =>
+      entry.category === "unsupported-board-component" ||
+      entry.category === "classification-fallback" ||
+      entry.category === "screen-candidate-rejection",
   );
   return {
     schemaVersion: "1.0.0",
@@ -326,7 +516,10 @@ const createGoldenJobRecord = ({
       figmaJsonFile: path.join(jobDir, "figma.json"),
       designIrFile: path.join(jobDir, "design-ir.json"),
       stageTimingsFile: path.join(jobDir, "stage-timings.json"),
-      qualityPassportFile: path.join(generatedProjectDir, "quality-passport.json"),
+      qualityPassportFile: path.join(
+        generatedProjectDir,
+        "quality-passport.json",
+      ),
     },
     preview: { enabled: false },
     queue: {
@@ -381,7 +574,10 @@ const createDefaultExecutionContext = async ({
     limits: runtime.pipelineDiagnosticLimits,
   });
   await diskTracker.sync();
-  const templateRoot = path.join(REPO_ROOT, DEFAULT_PIPELINE_DEFINITION.template.path);
+  const templateRoot = path.join(
+    REPO_ROOT,
+    DEFAULT_PIPELINE_DEFINITION.template.path,
+  );
 
   return {
     mode: "submission",
@@ -435,7 +631,9 @@ const generateRocketFixtureArtifacts = async ({
   fixture,
   ir,
 }: PreparedFixtureInput): Promise<GeneratedFixtureArtifacts> => {
-  const projectDir = await mkdtemp(path.join(os.tmpdir(), `workspace-dev-golden-rocket-${fixture.id}-`));
+  const projectDir = await mkdtemp(
+    path.join(os.tmpdir(), `workspace-dev-golden-rocket-${fixture.id}-`),
+  );
   await generateArtifacts({
     projectDir,
     ir,
@@ -445,8 +643,16 @@ const generateRocketFixtureArtifacts = async ({
       // no-op
     },
   });
-  await writeFile(path.join(projectDir, "design-ir.json"), `${JSON.stringify(ir, null, 2)}\n`, "utf8");
-  await writeFile(path.join(projectDir, "figma-analysis.json"), `${JSON.stringify(figmaAnalysis, null, 2)}\n`, "utf8");
+  await writeFile(
+    path.join(projectDir, "design-ir.json"),
+    `${JSON.stringify(ir, null, 2)}\n`,
+    "utf8",
+  );
+  await writeFile(
+    path.join(projectDir, "figma-analysis.json"),
+    `${JSON.stringify(figmaAnalysis, null, 2)}\n`,
+    "utf8",
+  );
   return { projectDir };
 };
 
@@ -455,7 +661,9 @@ const generateDefaultFixtureArtifacts = async ({
   fixture,
   ir,
 }: PreparedFixtureInput): Promise<GeneratedFixtureArtifacts> => {
-  const rootDir = await mkdtemp(path.join(os.tmpdir(), `workspace-dev-golden-default-${fixture.id}-`));
+  const rootDir = await mkdtemp(
+    path.join(os.tmpdir(), `workspace-dev-golden-default-${fixture.id}-`),
+  );
   const jobDir = path.join(rootDir, "jobs", fixture.id);
   const projectDir = path.join(jobDir, "generated-app");
   await mkdir(jobDir, { recursive: true });
@@ -463,7 +671,10 @@ const generateDefaultFixtureArtifacts = async ({
     sourceDir: path.join(REPO_ROOT, DEFAULT_PIPELINE_DEFINITION.template.path),
     targetDir: projectDir,
     filter: createTemplateCopyFilter({
-      templateRoot: path.join(REPO_ROOT, DEFAULT_PIPELINE_DEFINITION.template.path),
+      templateRoot: path.join(
+        REPO_ROOT,
+        DEFAULT_PIPELINE_DEFINITION.template.path,
+      ),
     }),
   });
 
@@ -472,10 +683,26 @@ const generateDefaultFixtureArtifacts = async ({
     generatedProjectDir: projectDir,
     jobDir,
   });
-  await writeFile(context.paths.designIrFile, `${JSON.stringify(ir, null, 2)}\n`, "utf8");
-  await writeFile(context.paths.figmaAnalysisFile, `${JSON.stringify(figmaAnalysis, null, 2)}\n`, "utf8");
-  await writeFile(path.join(projectDir, "design-ir.json"), `${JSON.stringify(ir, null, 2)}\n`, "utf8");
-  await writeFile(path.join(projectDir, "figma-analysis.json"), `${JSON.stringify(figmaAnalysis, null, 2)}\n`, "utf8");
+  await writeFile(
+    context.paths.designIrFile,
+    `${JSON.stringify(ir, null, 2)}\n`,
+    "utf8",
+  );
+  await writeFile(
+    context.paths.figmaAnalysisFile,
+    `${JSON.stringify(figmaAnalysis, null, 2)}\n`,
+    "utf8",
+  );
+  await writeFile(
+    path.join(projectDir, "design-ir.json"),
+    `${JSON.stringify(ir, null, 2)}\n`,
+    "utf8",
+  );
+  await writeFile(
+    path.join(projectDir, "figma-analysis.json"),
+    `${JSON.stringify(figmaAnalysis, null, 2)}\n`,
+    "utf8",
+  );
   await context.artifactStore.setPath({
     key: STAGE_ARTIFACT_KEYS.designIr,
     stage: "ir.derive",
@@ -497,9 +724,17 @@ const generateDefaultFixtureArtifacts = async ({
     }),
   );
 
-  const codegenSummary = await context.artifactStore.getValue<{ generatedPaths: string[] }>(STAGE_ARTIFACT_KEYS.codegenSummary);
-  const generatedPaths = [...(codegenSummary?.generatedPaths ?? [])].sort((left, right) => left.localeCompare(right));
-  await writeFile(path.join(projectDir, "generated-files.json"), `${JSON.stringify(generatedPaths, null, 2)}\n`, "utf8");
+  const codegenSummary = await context.artifactStore.getValue<{
+    generatedPaths: string[];
+  }>(STAGE_ARTIFACT_KEYS.codegenSummary);
+  const generatedPaths = [...(codegenSummary?.generatedPaths ?? [])].sort(
+    (left, right) => left.localeCompare(right),
+  );
+  await writeFile(
+    path.join(projectDir, "generated-files.json"),
+    `${JSON.stringify(generatedPaths, null, 2)}\n`,
+    "utf8",
+  );
 
   if (fixture.unsupportedNodeReport === true) {
     await writeFile(
@@ -518,7 +753,10 @@ const generateDefaultFixtureArtifacts = async ({
         stage: "validate.project",
       }),
     );
-    await cp(path.join(jobDir, "validation-summary.json"), path.join(projectDir, "validation-summary.json"));
+    await cp(
+      path.join(jobDir, "validation-summary.json"),
+      path.join(projectDir, "validation-summary.json"),
+    );
   }
 
   return { jobDir, projectDir, generatedPaths };
@@ -604,8 +842,12 @@ const resolveActualPath = ({
   artifact: GoldenArtifactSpec;
   generated: GeneratedFixtureArtifacts;
 }): string => {
-  const root = artifact.actualRoot === "job" ? generated.jobDir : generated.projectDir;
-  assert.ok(root, `Artifact '${artifact.name}' requested missing actual root '${artifact.actualRoot}'.`);
+  const root =
+    artifact.actualRoot === "job" ? generated.jobDir : generated.projectDir;
+  assert.ok(
+    root,
+    `Artifact '${artifact.name}' requested missing actual root '${artifact.actualRoot}'.`,
+  );
   return path.join(root, artifact.actual);
 };
 
@@ -652,13 +894,25 @@ const assertGeneratedArtifactsMatchSnapshots = async ({
     assert.equal(
       normalizedActual,
       normalizedSecondActual,
-      `Deterministic rerun mismatch for fixture '${fixtureId}', artifact '${artifact.name}' (${artifact.actual}).`
+      `Deterministic rerun mismatch for fixture '${fixtureId}', artifact '${artifact.name}' (${artifact.actual}).`,
     );
 
     if (artifact.actual === "src/App.tsx") {
-      assert.equal(normalizedActual.includes("style={{"), false, `Golden App.tsx for fixture '${fixtureId}' still uses inline style.`);
-      assert.equal(normalizedActual.includes("onFocus={"), false, `Golden App.tsx for fixture '${fixtureId}' still uses DOM style mutation handlers.`);
-      assert.equal(normalizedActual.includes("onBlur={"), false, `Golden App.tsx for fixture '${fixtureId}' still uses DOM style mutation handlers.`);
+      assert.equal(
+        normalizedActual.includes("style={{"),
+        false,
+        `Golden App.tsx for fixture '${fixtureId}' still uses inline style.`,
+      );
+      assert.equal(
+        normalizedActual.includes("onFocus={"),
+        false,
+        `Golden App.tsx for fixture '${fixtureId}' still uses DOM style mutation handlers.`,
+      );
+      assert.equal(
+        normalizedActual.includes("onBlur={"),
+        false,
+        `Golden App.tsx for fixture '${fixtureId}' still uses DOM style mutation handlers.`,
+      );
     }
 
     const expectedPath = path.join(expectedRoot, artifact.expected);
@@ -675,7 +929,7 @@ const assertGeneratedArtifactsMatchSnapshots = async ({
     } catch {
       assert.fail(
         `Missing expected golden file '${artifact.expected}' for fixture '${fixtureId}'. ` +
-          "Run 'pnpm run test:golden:update' to approve snapshots."
+          "Run 'pnpm run test:golden:update' to approve snapshots.",
       );
     }
 
@@ -688,7 +942,7 @@ const assertGeneratedArtifactsMatchSnapshots = async ({
       normalizedActual,
       normalizedExpected,
       `Golden diff for fixture '${fixtureId}', artifact '${artifact.name}' (${artifact.actual}). ` +
-        "If intentional, run 'pnpm run test:golden:update'."
+        "If intentional, run 'pnpm run test:golden:update'.",
     );
   }
 };
@@ -700,15 +954,31 @@ const runRocketSuite = async (t: test.TestContext): Promise<void> => {
   });
   assert.equal(manifest.pipelineId, ROCKET_PIPELINE_DEFINITION.id);
   assert.deepEqual(
-    ROCKET_PIPELINE_DEFINITION.buildSubmissionPlan({ mode: "submission" }).map((entry) => entry.service.stageName),
-    ["figma.source", "ir.derive", "template.prepare", "codegen.generate", "validate.project", "repro.export", "git.pr"] satisfies WorkspaceJobStageName[],
+    ROCKET_PIPELINE_DEFINITION.buildSubmissionPlan({ mode: "submission" }).map(
+      (entry) => entry.service.stageName,
+    ),
+    [
+      "figma.source",
+      "ir.derive",
+      "template.prepare",
+      "codegen.generate",
+      "validate.project",
+      "repro.export",
+      "git.pr",
+    ] satisfies WorkspaceJobStageName[],
   );
-  assert.equal(ROCKET_PIPELINE_DEFINITION.template.bundleId, ROCKET_PIPELINE_METADATA.templateBundleId);
+  assert.equal(
+    ROCKET_PIPELINE_DEFINITION.template.bundleId,
+    ROCKET_PIPELINE_METADATA.templateBundleId,
+  );
   assert.equal(ROCKET_PIPELINE_DEFINITION.template.stack.styling, "mui");
 
   for (const fixture of manifest.fixtures) {
     await t.test(`rocket fixture ${fixture.id}`, async () => {
-      const input = await prepareFixtureInput({ fixture, root: ROCKET_GOLDEN_ROOT });
+      const input = await prepareFixtureInput({
+        fixture,
+        root: ROCKET_GOLDEN_ROOT,
+      });
       const first = await generateRocketFixtureArtifacts(input);
       const second = await generateRocketFixtureArtifacts(input);
       await assertGeneratedArtifactsMatchSnapshots({
@@ -723,21 +993,38 @@ const runRocketSuite = async (t: test.TestContext): Promise<void> => {
 };
 
 const runDefaultSuite = async (t: test.TestContext): Promise<void> => {
-  const manifest = await loadManifest({
+  const manifest = (await loadManifest({
     expectedPipelineId: "default",
     root: DEFAULT_GOLDEN_ROOT,
-  });
+  })) as DefaultGoldenFixtureManifest;
+  await assertDefaultDemoFixturePack({ manifest, root: DEFAULT_GOLDEN_ROOT });
   assert.equal(manifest.pipelineId, DEFAULT_PIPELINE_DEFINITION.id);
   assert.deepEqual(
-    DEFAULT_PIPELINE_DEFINITION.buildSubmissionPlan({ mode: "submission" }).map((entry) => entry.service.stageName),
-    ["figma.source", "ir.derive", "template.prepare", "codegen.generate", "validate.project", "repro.export", "git.pr"] satisfies WorkspaceJobStageName[],
+    DEFAULT_PIPELINE_DEFINITION.buildSubmissionPlan({ mode: "submission" }).map(
+      (entry) => entry.service.stageName,
+    ),
+    [
+      "figma.source",
+      "ir.derive",
+      "template.prepare",
+      "codegen.generate",
+      "validate.project",
+      "repro.export",
+      "git.pr",
+    ] satisfies WorkspaceJobStageName[],
   );
-  assert.equal(DEFAULT_PIPELINE_DEFINITION.template.bundleId, DEFAULT_PIPELINE_METADATA.templateBundleId);
+  assert.equal(
+    DEFAULT_PIPELINE_DEFINITION.template.bundleId,
+    DEFAULT_PIPELINE_METADATA.templateBundleId,
+  );
   assert.equal(DEFAULT_PIPELINE_DEFINITION.template.stack.styling, "tailwind");
 
   for (const fixture of manifest.fixtures) {
     await t.test(`default fixture ${fixture.id}`, async () => {
-      const input = await prepareFixtureInput({ fixture, root: DEFAULT_GOLDEN_ROOT });
+      const input = await prepareFixtureInput({
+        fixture,
+        root: DEFAULT_GOLDEN_ROOT,
+      });
       const first = await generateDefaultFixtureArtifacts(input);
       const second = await generateDefaultFixtureArtifacts(input);
       assert.deepEqual(first.generatedPaths, second.generatedPaths);

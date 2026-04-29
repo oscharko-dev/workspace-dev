@@ -1,5 +1,5 @@
 {
-  "sourceName": "Responsive Layout Board",
+  "sourceName": "Responsive Banking Portal Board",
   "screens": [
     {
       "id": "screen-home-desktop",
@@ -70,7 +70,7 @@
                     "left": 0
                   },
                   "type": "text",
-                  "text": "Build Better Products",
+                  "text": "Treasury Portal",
                   "x": 48,
                   "y": 32,
                   "width": 650,
@@ -95,7 +95,7 @@
                     "left": 0
                   },
                   "type": "text",
-                  "text": "Our platform helps teams collaborate and deliver exceptional results.",
+                  "text": "A responsive OSS demo for payment operations teams.",
                   "x": 48,
                   "y": 104,
                   "width": 500,
@@ -140,7 +140,7 @@
                         "left": 0
                       },
                       "type": "text",
-                      "text": "Get Started",
+                      "text": "Review Demo",
                       "x": 96,
                       "y": 188,
                       "width": 84,
@@ -229,7 +229,7 @@
                     "left": 0
                   },
                   "type": "text",
-                  "text": "Fast Deployment",
+                  "text": "Fast Onboarding",
                   "x": 64,
                   "y": 472,
                   "width": 400,
@@ -254,7 +254,7 @@
                     "left": 0
                   },
                   "type": "text",
-                  "text": "Deploy your apps in seconds with our streamlined pipeline.",
+                  "text": "Start local demos from deterministic fixture JSON.",
                   "x": 64,
                   "y": 508,
                   "width": 400,
@@ -301,7 +301,7 @@
                     "left": 0
                   },
                   "type": "text",
-                  "text": "Team Collaboration",
+                  "text": "Approval Collaboration",
                   "x": 520,
                   "y": 472,
                   "width": 400,
@@ -326,7 +326,7 @@
                     "left": 0
                   },
                   "type": "text",
-                  "text": "Work together in real-time with powerful collaboration tools.",
+                  "text": "Coordinate payment reviews across synthetic teams.",
                   "x": 520,
                   "y": 508,
                   "width": 400,
@@ -373,7 +373,7 @@
                     "left": 0
                   },
                   "type": "text",
-                  "text": "Analytics Dashboard",
+                  "text": "Liquidity Analytics",
                   "x": 976,
                   "y": 472,
                   "width": 400,
@@ -398,7 +398,7 @@
                     "left": 0
                   },
                   "type": "text",
-                  "text": "Gain insights with comprehensive analytics and reporting.",
+                  "text": "Review cash-position signals without customer data.",
                   "x": 976,
                   "y": 508,
                   "width": 400,

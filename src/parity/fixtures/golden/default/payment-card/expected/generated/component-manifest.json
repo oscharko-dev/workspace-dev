@@ -2,8 +2,8 @@
   "screens": [
     {
       "screenId": "screen-products",
-      "screenName": "ProductList",
-      "file": "src/pages/productlist.tsx",
+      "screenName": "PaymentAuthorizations",
+      "file": "src/pages/paymentauthorizations.tsx",
       "components": []
     }
   ]

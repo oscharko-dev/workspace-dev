@@ -1,6 +1,6 @@
 {
   "artifactVersion": 1,
-  "sourceName": "Data Table Board",
+  "sourceName": "Transaction Table Board",
   "summary": {
     "pageCount": 1,
     "sectionCount": 0,
@@ -42,7 +42,7 @@
     "frames": [
       {
         "id": "screen-table",
-        "name": "UserList",
+        "name": "TransactionTable",
         "pageId": "0:1",
         "nodeType": "FRAME",
         "layoutMode": "VERTICAL",
@@ -71,7 +71,7 @@
     "byFrame": [
       {
         "frameId": "screen-table",
-        "frameName": "UserList",
+        "frameName": "TransactionTable",
         "subtreeNodeCount": 19,
         "instanceCount": 0,
         "density": 0,

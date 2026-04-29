@@ -1,9 +1,9 @@
 {
-  "sourceName": "Data Table Board",
+  "sourceName": "Transaction Table Board",
   "screens": [
     {
       "id": "screen-table",
-      "name": "UserList",
+      "name": "TransactionTable",
       "layoutMode": "VERTICAL",
       "gap": 0,
       "padding": {
@@ -26,7 +26,7 @@
             "left": 0
           },
           "type": "text",
-          "text": "Users",
+          "text": "Transactions",
           "x": 16,
           "y": 16,
           "width": 100,
@@ -61,7 +61,7 @@
           "children": [
             {
               "id": "header-name",
-              "name": "Header Name",
+              "name": "Header Payment ID",
               "nodeType": "TEXT",
               "layoutMode": "NONE",
               "gap": 0,
@@ -72,7 +72,7 @@
                 "left": 0
               },
               "type": "text",
-              "text": "Name",
+              "text": "Payment ID",
               "x": 32,
               "y": 78,
               "width": 180,
@@ -86,7 +86,7 @@
             },
             {
               "id": "header-email",
-              "name": "Header Email",
+              "name": "Header Counterparty",
               "nodeType": "TEXT",
               "layoutMode": "NONE",
               "gap": 0,
@@ -97,7 +97,7 @@
                 "left": 0
               },
               "type": "text",
-              "text": "Email",
+              "text": "Counterparty",
               "x": 228,
               "y": 78,
               "width": 200,
@@ -111,7 +111,7 @@
             },
             {
               "id": "header-role",
-              "name": "Header Role",
+              "name": "Header Amount",
               "nodeType": "TEXT",
               "layoutMode": "NONE",
               "gap": 0,
@@ -122,7 +122,7 @@
                 "left": 0
               },
               "type": "text",
-              "text": "Role",
+              "text": "Amount",
               "x": 444,
               "y": 78,
               "width": 140,
@@ -183,7 +183,7 @@
           "children": [
             {
               "id": "row1-name",
-              "name": "Cell Name",
+              "name": "Cell Payment ID",
               "nodeType": "TEXT",
               "layoutMode": "NONE",
               "gap": 0,
@@ -194,7 +194,7 @@
                 "left": 0
               },
               "type": "text",
-              "text": "Alice Johnson",
+              "text": "PAY-1042",
               "x": 32,
               "y": 128,
               "width": 180,
@@ -208,7 +208,7 @@
             },
             {
               "id": "row1-email",
-              "name": "Cell Email",
+              "name": "Cell Counterparty",
               "nodeType": "TEXT",
               "layoutMode": "NONE",
               "gap": 0,
@@ -219,7 +219,7 @@
                 "left": 0
               },
               "type": "text",
-              "text": "alice@example.com",
+              "text": "Demo Supplier A",
               "x": 228,
               "y": 128,
               "width": 200,
@@ -233,7 +233,7 @@
             },
             {
               "id": "row1-role",
-              "name": "Cell Role",
+              "name": "Cell Amount",
               "nodeType": "TEXT",
               "layoutMode": "NONE",
               "gap": 0,
@@ -244,7 +244,7 @@
                 "left": 0
               },
               "type": "text",
-              "text": "Admin",
+              "text": "EUR 12,450",
               "x": 444,
               "y": 128,
               "width": 140,
@@ -258,7 +258,7 @@
             },
             {
               "id": "row1-status",
-              "name": "MuiChipRoot",
+              "name": "Status Chip",
               "nodeType": "FRAME",
               "layoutMode": "NONE",
               "gap": 0,
@@ -289,7 +289,7 @@
                     "left": 0
                   },
                   "type": "text",
-                  "text": "Active",
+                  "text": "Cleared",
                   "x": 610,
                   "y": 130,
                   "width": 50,
@@ -327,7 +327,7 @@
           "children": [
             {
               "id": "row2-name",
-              "name": "Cell Name",
+              "name": "Cell Payment ID",
               "nodeType": "TEXT",
               "layoutMode": "NONE",
               "gap": 0,
@@ -338,7 +338,7 @@
                 "left": 0
               },
               "type": "text",
-              "text": "Bob Smith",
+              "text": "PAY-1043",
               "x": 32,
               "y": 180,
               "width": 180,
@@ -352,7 +352,7 @@
             },
             {
               "id": "row2-email",
-              "name": "Cell Email",
+              "name": "Cell Counterparty",
               "nodeType": "TEXT",
               "layoutMode": "NONE",
               "gap": 0,
@@ -363,7 +363,7 @@
                 "left": 0
               },
               "type": "text",
-              "text": "bob@example.com",
+              "text": "Demo Vendor B",
               "x": 228,
               "y": 180,
               "width": 200,
@@ -377,7 +377,7 @@
             },
             {
               "id": "row2-role",
-              "name": "Cell Role",
+              "name": "Cell Amount",
               "nodeType": "TEXT",
               "layoutMode": "NONE",
               "gap": 0,
@@ -388,7 +388,7 @@
                 "left": 0
               },
               "type": "text",
-              "text": "Editor",
+              "text": "EUR 8,910",
               "x": 444,
               "y": 180,
               "width": 140,
@@ -402,7 +402,7 @@
             },
             {
               "id": "row2-status",
-              "name": "MuiChipRoot",
+              "name": "Status Chip",
               "nodeType": "FRAME",
               "layoutMode": "NONE",
               "gap": 0,
@@ -433,7 +433,7 @@
                     "left": 0
                   },
                   "type": "text",
-                  "text": "Pending",
+                  "text": "Review",
                   "x": 608,
                   "y": 182,
                   "width": 56,
@@ -459,7 +459,7 @@
     "palette": {
       "primary": "#1c1f24",
       "secondary": "#ffedd1",
-      "background": "#fbfbfc",
+      "background": "#fdfdfd",
       "text": "#1c1f24",
       "success": "#def5de",
       "warning": "#ffedd1",
@@ -543,8 +543,8 @@
       },
       "button": {
         "fontSizePx": 12,
-        "fontWeight": 400,
-        "lineHeightPx": 20,
+        "fontWeight": 500,
+        "lineHeightPx": 16,
         "fontFamily": "Inter",
         "textTransform": "none"
       },
@@ -580,7 +580,7 @@
     "screenElementCounts": [
       {
         "screenId": "screen-table",
-        "screenName": "UserList",
+        "screenName": "TransactionTable",
         "elements": 18
       }
     ],

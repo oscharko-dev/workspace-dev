@@ -1,5 +1,5 @@
 {
-  "sourceName": "Dark Mode Golden",
+  "sourceName": "Token Heavy Risk Operations Board",
   "screens": [
     {
       "id": "screen-dashboard-light",
@@ -26,7 +26,7 @@
             "left": 0
           },
           "type": "text",
-          "text": "Operations Dashboard",
+          "text": "Risk Operations",
           "x": 24,
           "y": 24,
           "width": 280,
@@ -51,7 +51,7 @@
             "left": 0
           },
           "type": "text",
-          "text": "Track shipment delays, alerts, and approvals in one place.",
+          "text": "Track exposure alerts, payment holds, and approvals.",
           "x": 24,
           "y": 80,
           "width": 320,
@@ -96,7 +96,7 @@
                 "left": 0
               },
               "type": "text",
-              "text": "Open incidents",
+              "text": "Open risk alerts",
               "x": 40,
               "y": 168,
               "width": 96,
@@ -165,7 +165,7 @@
             "left": 0
           },
           "type": "text",
-          "text": "Operations Dashboard",
+          "text": "Risk Operations",
           "x": 444,
           "y": 24,
           "width": 280,
@@ -190,7 +190,7 @@
             "left": 0
           },
           "type": "text",
-          "text": "Track shipment delays, alerts, and approvals in one place.",
+          "text": "Track exposure alerts, payment holds, and approvals.",
           "x": 444,
           "y": 80,
           "width": 320,
@@ -235,7 +235,7 @@
                 "left": 0
               },
               "type": "text",
-              "text": "Open incidents",
+              "text": "Open risk alerts",
               "x": 460,
               "y": 168,
               "width": 96,

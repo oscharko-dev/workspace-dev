@@ -2,8 +2,8 @@
   "screens": [
     {
       "screenId": "screen-form",
-      "screenName": "Registration",
-      "file": "src/pages/registration.tsx",
+      "screenName": "AccountOpening",
+      "file": "src/pages/accountopening.tsx",
       "components": []
     }
   ]

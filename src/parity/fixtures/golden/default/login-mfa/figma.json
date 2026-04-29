@@ -1,5 +1,5 @@
 {
-  "name": "Simple Auth Board",
+  "name": "Login MFA View Board",
   "document": {
     "id": "0:0",
     "type": "DOCUMENT",
@@ -32,7 +32,7 @@
                 "id": "login-title",
                 "type": "TEXT",
                 "name": "Title",
-                "characters": "Welcome Back",
+                "characters": "Secure Continue",
                 "style": {
                   "fontSize": 32,
                   "fontWeight": 700,
@@ -52,7 +52,7 @@
               {
                 "id": "email-field",
                 "type": "FRAME",
-                "name": "MuiFormControlRoot",
+                "name": "Text Field",
                 "layoutMode": "HORIZONTAL",
                 "itemSpacing": 8,
                 "primaryAxisAlignItems": "SPACE_BETWEEN",
@@ -63,7 +63,7 @@
                     "id": "email-label",
                     "type": "TEXT",
                     "name": "Label",
-                    "characters": "Email",
+                    "characters": "Work Email",
                     "style": {
                       "fontSize": 14,
                       "fontWeight": 500,
@@ -99,7 +99,7 @@
                     "id": "submit-button-label",
                     "type": "TEXT",
                     "name": "Label",
-                    "characters": "Sign In",
+                    "characters": "Continue",
                     "style": {
                       "fontSize": 16,
                       "fontWeight": 600,

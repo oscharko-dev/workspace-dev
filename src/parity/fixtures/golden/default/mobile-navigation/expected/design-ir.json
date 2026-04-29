@@ -1,5 +1,5 @@
 {
-  "sourceName": "Large Board",
+  "sourceName": "Mobile Banking Navigation Board",
   "screens": [
     {
       "id": "screen-splash",
@@ -26,7 +26,7 @@
             "left": 0
           },
           "type": "text",
-          "text": "AppName",
+          "text": "FinOps",
           "x": 24,
           "y": 380,
           "width": 342,
@@ -51,7 +51,7 @@
             "left": 0
           },
           "type": "text",
-          "text": "Your digital companion",
+          "text": "Payments, cards, and alerts",
           "x": 24,
           "y": 444,
           "width": 342,
@@ -118,7 +118,7 @@
             "left": 0
           },
           "type": "text",
-          "text": "Let us set up your account in a few easy steps.",
+          "text": "Set up secure approvals in a few steps.",
           "x": 454,
           "y": 108,
           "width": 342,
@@ -174,7 +174,7 @@
         },
         {
           "id": "login-email",
-          "name": "MuiFormControlRoot",
+          "name": "Text Field",
           "nodeType": "FRAME",
           "layoutMode": "HORIZONTAL",
           "gap": 8,
@@ -183,6 +183,14 @@
             "right": 0,
             "bottom": 0,
             "left": 0
+          },
+          "variantMapping": {
+            "properties": {
+              "variant": "text"
+            },
+            "muiProps": {
+              "variant": "text"
+            }
           },
           "primaryAxisAlignItems": "SPACE_BETWEEN",
           "counterAxisAlignItems": "CENTER",
@@ -221,7 +229,7 @@
         },
         {
           "id": "login-password",
-          "name": "MuiFormControlRoot",
+          "name": "Text Field",
           "nodeType": "FRAME",
           "layoutMode": "HORIZONTAL",
           "gap": 8,
@@ -230,6 +238,14 @@
             "right": 0,
             "bottom": 0,
             "left": 0
+          },
+          "variantMapping": {
+            "properties": {
+              "variant": "text"
+            },
+            "muiProps": {
+              "variant": "text"
+            }
           },
           "primaryAxisAlignItems": "SPACE_BETWEEN",
           "counterAxisAlignItems": "CENTER",
@@ -310,7 +326,7 @@
         },
         {
           "id": "reg-name",
-          "name": "MuiFormControlRoot",
+          "name": "Text Field",
           "nodeType": "FRAME",
           "layoutMode": "HORIZONTAL",
           "gap": 8,
@@ -319,6 +335,14 @@
             "right": 0,
             "bottom": 0,
             "left": 0
+          },
+          "variantMapping": {
+            "properties": {
+              "variant": "text"
+            },
+            "muiProps": {
+              "variant": "text"
+            }
           },
           "primaryAxisAlignItems": "SPACE_BETWEEN",
           "counterAxisAlignItems": "CENTER",
@@ -410,7 +434,7 @@
             "left": 0
           },
           "type": "text",
-          "text": "Here is your daily summary",
+          "text": "Here is your treasury summary",
           "x": 1736,
           "y": 52,
           "width": 358,
@@ -452,7 +476,7 @@
             "left": 0
           },
           "type": "text",
-          "text": "Activity Feed",
+          "text": "Approval Feed",
           "x": 2166,
           "y": 16,
           "width": 358,
@@ -508,7 +532,7 @@
         },
         {
           "id": "search-field",
-          "name": "MuiFormControlRoot",
+          "name": "Text Field",
           "nodeType": "FRAME",
           "layoutMode": "HORIZONTAL",
           "gap": 8,
@@ -517,6 +541,14 @@
             "right": 0,
             "bottom": 0,
             "left": 0
+          },
+          "variantMapping": {
+            "properties": {
+              "variant": "text"
+            },
+            "muiProps": {
+              "variant": "text"
+            }
           },
           "primaryAxisAlignItems": "SPACE_BETWEEN",
           "counterAxisAlignItems": "CENTER",
@@ -761,7 +793,7 @@
             "left": 0
           },
           "type": "text",
-          "text": "No new notifications",
+          "text": "No new risk alerts",
           "x": 3886,
           "y": 300,
           "width": 358,
@@ -853,7 +885,7 @@
             "left": 0
           },
           "type": "text",
-          "text": "Built with care by the engineering team.",
+          "text": "OSS-neutral mobile banking demo.",
           "x": 4324,
           "y": 108,
           "width": 342,
