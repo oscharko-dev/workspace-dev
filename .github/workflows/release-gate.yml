@@ -199,6 +199,9 @@ jobs:
       - name: Enforce repository secret policy
         run: pnpm run lint:secrets:all
 
+      - name: Enforce profile tarball secret policy
+        run: pnpm run lint:secrets:profiles
+
       - name: Enforce license allowlist
         run: pnpm run verify:licenses
 

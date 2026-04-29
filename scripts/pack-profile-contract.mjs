@@ -208,3 +208,18 @@ export const normalizeBuildProfileId = (rawProfile) => {
 export const resolveBuildProfiles = (rawProfiles) => [
   ...new Set(rawProfiles.map((profile) => normalizeBuildProfileId(profile))),
 ];
+
+export const defaultBuildProfileIds = Object.keys(profileDefinitions);
+
+export const createProfilePackageManifest = (baseManifest, profile) => {
+  const manifest = structuredClone(baseManifest);
+  delete manifest.devDependencies;
+  delete manifest.files;
+  delete manifest.scripts;
+  manifest.workspaceDev = {
+    ...(manifest.workspaceDev ?? {}),
+    buildProfile: profile.id,
+    pipelineIds: profile.pipelineIds,
+  };
+  return manifest;
+};

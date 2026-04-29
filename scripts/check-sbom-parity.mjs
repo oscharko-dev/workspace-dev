@@ -22,6 +22,21 @@ const EXPECTED_DOCUMENTS = [
     label: "figma-generated-app-react-tailwind",
     cyclonedxFileName: "figma-generated-app-react-tailwind.cdx.json",
     spdxFileName: "figma-generated-app-react-tailwind.spdx.json"
+  },
+  {
+    label: "workspace-dev default profile",
+    cyclonedxFileName: "profiles/workspace-dev-default.cdx.json",
+    spdxFileName: "profiles/workspace-dev-default.spdx.json"
+  },
+  {
+    label: "workspace-dev rocket profile",
+    cyclonedxFileName: "profiles/workspace-dev-rocket.cdx.json",
+    spdxFileName: "profiles/workspace-dev-rocket.spdx.json"
+  },
+  {
+    label: "workspace-dev default-rocket profile",
+    cyclonedxFileName: "profiles/workspace-dev-default-rocket.cdx.json",
+    spdxFileName: "profiles/workspace-dev-default-rocket.spdx.json"
   }
 ];
 

@@ -6,11 +6,44 @@ import path from "node:path";
 import { spawn } from "node:child_process";
 import { createServer } from "node:net";
 import { fileURLToPath } from "node:url";
+import {
+  defaultBuildProfileIds,
+  profileDefinitions,
+  resolveBuildProfiles,
+} from "./pack-profile-contract.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const packageRoot = path.resolve(__dirname, "..");
 const workspaceDevLauncher = "pnpm";
 const workspaceDevLauncherArgs = ["exec", "workspace-dev"];
+
+const parseArgs = (argv) => {
+  const profiles = [];
+
+  for (let index = 0; index < argv.length; index += 1) {
+    const current = argv[index];
+    if (current === "--profile" || current === "-p") {
+      const next = argv[index + 1];
+      if (!next) {
+        throw new Error(`Missing value for ${current}.`);
+      }
+      profiles.push(next);
+      index += 1;
+      continue;
+    }
+    if (current.startsWith("--profile=")) {
+      profiles.push(current.slice("--profile=".length));
+      continue;
+    }
+    if (!current.startsWith("-")) {
+      profiles.push(current);
+      continue;
+    }
+    throw new Error(`Unknown argument: ${current}`);
+  }
+
+  return profiles.length > 0 ? resolveBuildProfiles(profiles) : defaultBuildProfileIds;
+};
 
 const resolveCommandEnv = () => {
   const commandEnv = {
@@ -279,9 +312,9 @@ const stopChildProcess = async (child, timeoutMs = 5_000) => {
   });
 };
 
-const main = async () => {
+const verifyProfileAirgap = async (profile) => {
   const tmpRoot = await mkdtemp(
-    path.join(os.tmpdir(), "workspace-dev-airgap-"),
+    path.join(os.tmpdir(), `workspace-dev-${profile.id}-airgap-`),
   );
   const packDir = path.join(tmpRoot, "pack");
   const installDir = path.join(tmpRoot, "install");
@@ -296,7 +329,7 @@ const main = async () => {
         "scripts/build-profile.mjs",
         "--skip-build",
         "--profile",
-        "default-rocket",
+        profile.id,
         "--pack-destination",
         packDir,
       ],
@@ -390,7 +423,7 @@ const main = async () => {
     startChild = undefined;
 
     console.log(
-      "[airgap] Offline install, bin, module, and start smoke checks passed.",
+      `[airgap] Offline install, bin, module, and start smoke checks passed for profile '${profile.id}'.`,
     );
   } finally {
     if (startChild) {
@@ -404,7 +437,17 @@ const main = async () => {
   }
 };
 
+const main = async () => {
+  const profileIds = parseArgs(process.argv.slice(2));
+  for (const profileId of profileIds) {
+    const profile = profileDefinitions[profileId];
+    await verifyProfileAirgap(profile);
+  }
+};
+
 main().catch((error) => {
   console.error("[airgap] Offline install verification failed:", error);
   process.exit(1);
 });
+
+export { parseArgs as parseAirgapArgs };

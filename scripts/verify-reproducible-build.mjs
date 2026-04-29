@@ -13,18 +13,23 @@ import os from "node:os";
 import path from "node:path";
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
+import {
+  defaultBuildProfileIds,
+  profileDefinitions,
+  resolveBuildProfiles,
+} from "./pack-profile-contract.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const packageRoot = path.resolve(__dirname, "..");
 const distDir = path.resolve(packageRoot, "dist");
 const artifactDir = path.resolve(packageRoot, "artifacts/reproducibility");
-const artifactPath = path.resolve(artifactDir, "dist-hashes.json");
+const artifactPath = path.resolve(artifactDir, "profile-hashes.json");
 
-export const run = (command, args) =>
+export const run = (command, args, { env = process.env } = {}) =>
   new Promise((resolve, reject) => {
     const child = spawn(command, args, {
       cwd: packageRoot,
-      env: process.env,
+      env,
       stdio: "inherit",
     });
 
@@ -109,6 +114,11 @@ export const buildArtifactReport = ({ generatedAt, distHashes, tarballs }) => ({
   },
 });
 
+export const buildProfileArtifactReport = ({ generatedAt, profiles }) => ({
+  generatedAt,
+  profiles,
+});
+
 export const assertReproducibleIterations = (
   firstIteration,
   secondIteration,
@@ -128,9 +138,42 @@ export const assertReproducibleIterations = (
   }
 };
 
-const runIteration = async () => {
+const parseArgs = (argv) => {
+  const profiles = [];
+
+  for (let index = 0; index < argv.length; index += 1) {
+    const current = argv[index];
+    if (current === "--profile" || current === "-p") {
+      const next = argv[index + 1];
+      if (!next) {
+        throw new Error(`Missing value for ${current}.`);
+      }
+      profiles.push(next);
+      index += 1;
+      continue;
+    }
+    if (current.startsWith("--profile=")) {
+      profiles.push(current.slice("--profile=".length));
+      continue;
+    }
+    if (!current.startsWith("-")) {
+      profiles.push(current);
+      continue;
+    }
+    throw new Error(`Unknown argument: ${current}`);
+  }
+
+  return profiles.length > 0 ? resolveBuildProfiles(profiles) : defaultBuildProfileIds;
+};
+
+const runIteration = async (profile) => {
   await rm(distDir, { recursive: true, force: true });
-  await run("pnpm", ["run", "build"]);
+  await run("pnpm", ["run", "build"], {
+    env: {
+      ...process.env,
+      WORKSPACE_DEV_PIPELINES: profile.envValue,
+    },
+  });
 
   const distHashes = await computeDistHashes();
   const packDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-pack-"));
@@ -140,7 +183,7 @@ const runIteration = async () => {
       "scripts/build-profile.mjs",
       "--skip-build",
       "--profile",
-      "default-rocket",
+      profile.id,
       "--pack-destination",
       packDir,
     ]);
@@ -159,22 +202,40 @@ const runIteration = async () => {
 };
 
 export const main = async () => {
-  const firstIteration = await runIteration();
-  const secondIteration = await runIteration();
+  const profileIds = parseArgs(process.argv.slice(2));
+  const profileReports = [];
 
-  assertReproducibleIterations(firstIteration, secondIteration);
+  for (const profileId of profileIds) {
+    const profile = profileDefinitions[profileId];
+    console.log(
+      `[reproducible-build] Verifying profile '${profile.id}' (${profile.envValue}).`,
+    );
+    const firstIteration = await runIteration(profile);
+    const secondIteration = await runIteration(profile);
+
+    assertReproducibleIterations(firstIteration, secondIteration);
+    profileReports.push({
+      profile: profile.id,
+      envValue: profile.envValue,
+      dist: {
+        reproducible: true,
+        files: firstIteration.distHashes,
+      },
+      tarball: {
+        reproducible: true,
+        first: firstIteration.tarball,
+        second: secondIteration.tarball,
+      },
+    });
+  }
 
   await mkdir(artifactDir, { recursive: true });
   await writeFile(
     artifactPath,
     `${JSON.stringify(
-      buildArtifactReport({
+      buildProfileArtifactReport({
         generatedAt: new Date().toISOString(),
-        distHashes: firstIteration.distHashes,
-        tarballs: {
-          first: firstIteration.tarball,
-          second: secondIteration.tarball,
-        },
+        profiles: profileReports,
       }),
       null,
       2,
@@ -183,7 +244,7 @@ export const main = async () => {
   );
 
   console.log(
-    `[reproducible-build] Verified dist and tarball reproducibility. Report: ${artifactPath}`,
+    `[reproducible-build] Verified dist and tarball reproducibility for ${profileReports.length} profile(s). Report: ${artifactPath}`,
   );
 };
 
@@ -196,3 +257,5 @@ if (
     process.exit(1);
   });
 }
+
+export { parseArgs as parseReproducibleBuildArgs };

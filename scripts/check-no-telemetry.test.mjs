@@ -5,6 +5,7 @@ import {
   hasTestSuffix,
   hasIncludedExtension,
   isSafeDestination,
+  parseNoTelemetryArgs,
 } from "./check-no-telemetry.mjs";
 
 // ── hasTestSuffix tests ──────────────────────────────────────────────────────
@@ -42,6 +43,17 @@ test("hasIncludedExtension: rejects excluded extensions", () => {
   assert.strictEqual(hasIncludedExtension("bar.css"), false);
   assert.strictEqual(hasIncludedExtension("baz.html"), false);
   assert.strictEqual(hasIncludedExtension("qux"), false);
+});
+
+test("parseNoTelemetryArgs: defaults to all build profiles and normalizes aliases", () => {
+  assert.deepStrictEqual(parseNoTelemetryArgs([]), [
+    "default",
+    "rocket",
+    "default-rocket",
+  ]);
+  assert.deepStrictEqual(parseNoTelemetryArgs(["--profile", "default,rocket"]), [
+    "default-rocket",
+  ]);
 });
 
 // ── isSafeDestination tests (AC-2.1, AC-2.2, AC-2.3, AC-2.4) ────────────────
