@@ -1,0 +1,150 @@
+{
+  "buildProfile": "default-rocket",
+  "coverage": {
+    "semantic": {
+      "covered": 0,
+      "ratio": 0,
+      "status": "warning",
+      "total": 6
+    },
+    "token": {
+      "covered": 54,
+      "ratio": 0.947368,
+      "status": "passed",
+      "total": 57
+    }
+  },
+  "generatedFiles": [
+    {
+      "path": "component-manifest.json",
+      "sha256": "e0aa07191804e4211a0521688c3ae92e4ee6e05579caf49f6c99c5de28d69172",
+      "sizeBytes": 170
+    },
+    {
+      "path": "generation-metrics.json",
+      "sha256": "82adf2072b7a8ef2aadde62560721c7754f02ee64bb8cbd080be35060a603703",
+      "sizeBytes": 502
+    },
+    {
+      "path": "src/App.test.tsx",
+      "sha256": "425300a7e1417b44f2627fc1cb41b9c36b49f6f639364f7d3d2eb2a1de20f8d0",
+      "sizeBytes": 237
+    },
+    {
+      "path": "src/App.tsx",
+      "sha256": "68661dcc200006268f905a8120783ac01459fd37e0b2f3f2e6414cfc6394d8da",
+      "sizeBytes": 273
+    },
+    {
+      "path": "src/generated/layout-report.json",
+      "sha256": "a3718e8ca80f675f7482cfa73b5224f438de7e28f9ff87c1b38f558114d011e6",
+      "sizeBytes": 9292
+    },
+    {
+      "path": "src/generated/semantic-component-report.json",
+      "sha256": "09fed437d1cceb115623a5839c168fe9630653e67597676b00186ae97104ae07",
+      "sizeBytes": 3936
+    },
+    {
+      "path": "src/pages/dashboard.tsx",
+      "sha256": "a6e698bb1c66698ab6ee0f7990b6c1331e94cd87a11722597037030b73d1fb70",
+      "sizeBytes": 3554
+    },
+    {
+      "path": "src/theme/token-report.json",
+      "sha256": "95ab2f8054ff193861a284b7c67b3f7efeb60c206ced65cecf1c83a4daa66de2",
+      "sizeBytes": 2627
+    },
+    {
+      "path": "src/theme/tokens.css",
+      "sha256": "9bf85c22ec0fdac243ae849118926adfca10f7f18edc7965e647de98d53428d4",
+      "sizeBytes": 2568
+    },
+    {
+      "path": "src/theme/tokens.json",
+      "sha256": "92837e7ac2e3735c1baccb7b92d9c71a397222f811381ca6d68ebbcd15e7eb07",
+      "sizeBytes": 2483
+    }
+  ],
+  "metadata": {
+    "compositeQualityStatus": "not_requested",
+    "confidenceStatus": "completed",
+    "jobId": "golden-default-fintech-dashboard",
+    "pipelineDisplayName": "Default",
+    "storybookStatus": "not_requested",
+    "validatedAt": "<stable-timestamp>",
+    "validationSummaryStatus": "ok",
+    "visualQualityStatus": "not_requested"
+  },
+  "pipelineId": "default",
+  "schemaVersion": "1.0.0",
+  "scope": {
+    "scope": "board",
+    "selectedNodeCount": 0,
+    "sourceMode": "local_json"
+  },
+  "templateBundleId": "react-tailwind-app",
+  "validation": {
+    "stages": [
+      {
+        "name": "figma.source",
+        "status": "completed"
+      },
+      {
+        "name": "ir.derive",
+        "status": "completed"
+      },
+      {
+        "name": "template.prepare",
+        "status": "completed"
+      },
+      {
+        "name": "codegen.generate",
+        "status": "completed"
+      },
+      {
+        "name": "validate.project",
+        "status": "completed"
+      }
+    ],
+    "status": "passed"
+  },
+  "warnings": [
+    {
+      "code": "W_SEMANTIC_COMPONENT_NOT_REUSABLE",
+      "message": "Default semantic synthesis kept 'Activity Card' inline because no matching reusable semantic structure was found.",
+      "severity": "warning",
+      "source": "src/generated/semantic-component-report.json"
+    },
+    {
+      "code": "W_SEMANTIC_COMPONENT_NOT_REUSABLE",
+      "message": "Default semantic synthesis kept 'Cards Grid' inline because no matching reusable semantic structure was found.",
+      "severity": "warning",
+      "source": "src/generated/semantic-component-report.json"
+    },
+    {
+      "code": "W_SEMANTIC_COMPONENT_NOT_REUSABLE",
+      "message": "Default semantic synthesis kept 'Chart Card' inline because no matching reusable semantic structure was found.",
+      "severity": "warning",
+      "source": "src/generated/semantic-component-report.json"
+    },
+    {
+      "code": "W_SEMANTIC_COMPONENT_NOT_REUSABLE",
+      "message": "Default semantic synthesis kept 'Orders Card' inline because no matching reusable semantic structure was found.",
+      "severity": "warning",
+      "source": "src/generated/semantic-component-report.json"
+    },
+    {
+      "code": "W_SEMANTIC_COMPONENT_NOT_REUSABLE",
+      "message": "Default semantic synthesis kept 'Revenue Card' inline because no matching reusable semantic structure was found.",
+      "severity": "warning",
+      "source": "src/generated/semantic-component-report.json"
+    },
+    {
+      "code": "W_SEMANTIC_COMPONENT_NOT_REUSABLE",
+      "message": "Default semantic synthesis kept 'Users Card' inline because no matching reusable semantic structure was found.",
+      "severity": "warning",
+      "source": "src/generated/semantic-component-report.json"
+    }
+  ]
+}

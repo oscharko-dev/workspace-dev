@@ -2089,7 +2089,7 @@ test("IrDeriveService persists screenVariantFamilies together with appShells for
   });
   const localPayloadPath = path.join(executionContext.paths.jobDir, "variant-shell-fixture.json");
   const fixturePayload = await readFile(
-    path.resolve(process.cwd(), "src/parity/fixtures/golden/variant-shell-signals/figma.json"),
+    path.resolve(process.cwd(), "src/parity/fixtures/golden/rocket/variant-shell-signals/figma.json"),
     "utf8"
   );
   await writeFile(localPayloadPath, fixturePayload, "utf8");

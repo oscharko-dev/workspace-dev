@@ -1,0 +1,16 @@
+{
+  "screens": [
+    {
+      "screenId": "screen-dashboard-light",
+      "screenName": "Dashboard Light",
+      "file": "src/pages/dashboard-light.tsx",
+      "components": []
+    },
+    {
+      "screenId": "screen-dashboard-dark",
+      "screenName": "Dashboard Dark",
+      "file": "src/pages/dashboard-dark.tsx",
+      "components": []
+    }
+  ]
+}

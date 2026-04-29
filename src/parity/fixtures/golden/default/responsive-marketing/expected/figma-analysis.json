@@ -1,0 +1,111 @@
+{
+  "artifactVersion": 1,
+  "sourceName": "Responsive Layout Board",
+  "summary": {
+    "pageCount": 1,
+    "sectionCount": 0,
+    "topLevelFrameCount": 2,
+    "totalNodeCount": 37,
+    "totalInstanceCount": 0,
+    "localComponentCount": 0,
+    "localStyleCount": 0,
+    "externalComponentCount": 0
+  },
+  "tokenSignals": {
+    "boundVariableIds": [],
+    "variableModeIds": [],
+    "styleReferences": {
+      "allStyleIds": [],
+      "byType": {
+        "fill": [],
+        "stroke": [],
+        "effect": [],
+        "text": [],
+        "generic": []
+      },
+      "localStyleIds": [],
+      "linkedStyleIds": []
+    }
+  },
+  "layoutGraph": {
+    "pages": [
+      {
+        "id": "0:1",
+        "name": "Page 1",
+        "sectionIds": [],
+        "frameIds": [
+          "screen-home-desktop",
+          "screen-home-mobile"
+        ]
+      }
+    ],
+    "sections": [],
+    "frames": [
+      {
+        "id": "screen-home-desktop",
+        "name": "Home Desktop",
+        "pageId": "0:1",
+        "nodeType": "FRAME",
+        "layoutMode": "VERTICAL",
+        "width": 1440,
+        "height": 900,
+        "directChildCount": 2,
+        "subtreeNodeCount": 18,
+        "instanceCount": 0
+      },
+      {
+        "id": "screen-home-mobile",
+        "name": "Home Mobile",
+        "pageId": "0:1",
+        "nodeType": "FRAME",
+        "layoutMode": "VERTICAL",
+        "width": 390,
+        "height": 1200,
+        "directChildCount": 2,
+        "subtreeNodeCount": 17,
+        "instanceCount": 0
+      }
+    ],
+    "edges": [
+      {
+        "parentId": "0:1",
+        "parentType": "page",
+        "childId": "screen-home-desktop",
+        "childType": "frame"
+      },
+      {
+        "parentId": "0:1",
+        "parentType": "page",
+        "childId": "screen-home-mobile",
+        "childType": "frame"
+      }
+    ]
+  },
+  "componentFamilies": [],
+  "externalComponents": [],
+  "frameVariantGroups": [],
+  "appShellSignals": [],
+  "componentDensity": {
+    "boardDominantFamilies": [],
+    "byFrame": [
+      {
+        "frameId": "screen-home-desktop",
+        "frameName": "Home Desktop",
+        "subtreeNodeCount": 18,
+        "instanceCount": 0,
+        "density": 0,
+        "dominantFamilies": []
+      },
+      {
+        "frameId": "screen-home-mobile",
+        "frameName": "Home Mobile",
+        "subtreeNodeCount": 17,
+        "instanceCount": 0,
+        "density": 0,
+        "dominantFamilies": []
+      }
+    ],
+    "hotspots": []
+  },
+  "diagnostics": []
+}

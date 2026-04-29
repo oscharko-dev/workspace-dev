@@ -1,0 +1,56 @@
+{
+  "schemaVersion": "1.0.0",
+  "pipelineId": "default",
+  "warnings": [],
+  "semanticComponents": [],
+  "semanticDiagnostics": [
+    {
+      "screenId": "screen-dashboard-light",
+      "screenName": "Dashboard Light",
+      "code": "W_SEMANTIC_COMPONENT_NOT_REUSABLE",
+      "nodeId": "light-summary-card",
+      "nodeName": "Summary Card",
+      "message": "Default semantic synthesis kept 'Summary Card' inline because no matching reusable semantic structure was found."
+    },
+    {
+      "screenId": "screen-dashboard-dark",
+      "screenName": "Dashboard Dark",
+      "code": "W_SEMANTIC_COMPONENT_NOT_REUSABLE",
+      "nodeId": "dark-summary-card",
+      "nodeName": "Summary Card",
+      "message": "Default semantic synthesis kept 'Summary Card' inline because no matching reusable semantic structure was found."
+    }
+  ],
+  "screens": [
+    {
+      "screenId": "screen-dashboard-light",
+      "screenName": "Dashboard Light",
+      "rootLayoutKind": "flex",
+      "warnings": [],
+      "semanticComponents": [],
+      "semanticDiagnostics": [
+        {
+          "code": "W_SEMANTIC_COMPONENT_NOT_REUSABLE",
+          "nodeId": "light-summary-card",
+          "nodeName": "Summary Card",
+          "message": "Default semantic synthesis kept 'Summary Card' inline because no matching reusable semantic structure was found."
+        }
+      ]
+    },
+    {
+      "screenId": "screen-dashboard-dark",
+      "screenName": "Dashboard Dark",
+      "rootLayoutKind": "flex",
+      "warnings": [],
+      "semanticComponents": [],
+      "semanticDiagnostics": [
+        {
+          "code": "W_SEMANTIC_COMPONENT_NOT_REUSABLE",
+          "nodeId": "dark-summary-card",
+          "nodeName": "Summary Card",
+          "message": "Default semantic synthesis kept 'Summary Card' inline because no matching reusable semantic structure was found."
+        }
+      ]
+    }
+  ]
+}

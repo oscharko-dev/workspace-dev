@@ -23,7 +23,7 @@ const SUBMIT_ENDPOINT_SUFFIX = "/workspace/submit";
 const JOB_ROUTE_PATTERN = "**/workspace/jobs/*";
 const JOB_REGENERATE_ROUTE_PATTERN = "**/workspace/jobs/*/regenerate";
 const DETERMINISTIC_FIXTURE_PATH = path.resolve(
-  fileURLToPath(new URL("../../src/parity/fixtures/golden/prototype-navigation/figma.json", import.meta.url))
+  fileURLToPath(new URL("../../src/parity/fixtures/golden/rocket/prototype-navigation/figma.json", import.meta.url))
 );
 const EDITABLE_ELEMENT_TYPES = new Set([
   "text",

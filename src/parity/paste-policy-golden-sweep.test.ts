@@ -5,7 +5,7 @@ import test from "node:test";
 import { fileURLToPath } from "node:url";
 
 const currentFile = fileURLToPath(import.meta.url);
-const goldenRoot = path.resolve(path.dirname(currentFile), "fixtures/golden");
+const goldenRoot = path.resolve(path.dirname(currentFile), "fixtures/golden", "rocket");
 
 const TAILWIND_CLASSNAME_PATTERN =
   /className=(?:"[^"]*\b[a-zA-Z]+-[a-zA-Z0-9-]+\b[^"]*"|`[^`]*\b[a-zA-Z]+-[a-zA-Z0-9-]+\b[^`]*`|\{[^}]*\b[a-zA-Z]+-[a-zA-Z0-9-]+\b[^}]*\})/;

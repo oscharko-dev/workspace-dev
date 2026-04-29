@@ -40,7 +40,7 @@ jobs:
             --name workspace-dev-smoke \
             -p 127.0.0.1:21983:1983 \
             -v "${PWD}/.workspace-dev-docker-smoke:/workspace/.workspace-dev" \
-            -v "${PWD}/src/parity/fixtures/golden/simple-auth/figma.json:/workspace/fixtures/simple-auth.json:ro" \
+            -v "${PWD}/src/parity/fixtures/golden/rocket/simple-auth/figma.json:/workspace/fixtures/simple-auth.json:ro" \
             workspace-dev:test \
             start \
             --host 0.0.0.0 \

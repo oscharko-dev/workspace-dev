@@ -1,0 +1,101 @@
+{
+  "schemaVersion": "1.0.0",
+  "pipelineId": "default",
+  "warnings": [
+    {
+      "code": "W_ABSOLUTE_LAYOUT_FALLBACK",
+      "nodeId": "row1-status-text",
+      "nodeName": "Label",
+      "message": "Absolute layout fallback used for 'Label' because no deterministic flex or grid structure could be inferred."
+    },
+    {
+      "code": "W_ABSOLUTE_LAYOUT_FALLBACK",
+      "nodeId": "row2-status-text",
+      "nodeName": "Label",
+      "message": "Absolute layout fallback used for 'Label' because no deterministic flex or grid structure could be inferred."
+    }
+  ],
+  "semanticComponents": [],
+  "semanticDiagnostics": [
+    {
+      "screenId": "screen-table",
+      "screenName": "UserList",
+      "code": "W_SEMANTIC_COMPONENT_NOT_REUSABLE",
+      "nodeId": "table-row-1",
+      "nodeName": "Table Row",
+      "message": "Default semantic synthesis kept 'Table Row' inline because no matching reusable semantic structure was found."
+    },
+    {
+      "screenId": "screen-table",
+      "screenName": "UserList",
+      "code": "W_SEMANTIC_COMPONENT_NOT_REUSABLE",
+      "nodeId": "row1-status",
+      "nodeName": "MuiChipRoot",
+      "message": "Default semantic synthesis kept 'MuiChipRoot' inline because no matching reusable semantic structure was found."
+    },
+    {
+      "screenId": "screen-table",
+      "screenName": "UserList",
+      "code": "W_SEMANTIC_COMPONENT_NOT_REUSABLE",
+      "nodeId": "table-row-2",
+      "nodeName": "Table Row",
+      "message": "Default semantic synthesis kept 'Table Row' inline because no matching reusable semantic structure was found."
+    },
+    {
+      "screenId": "screen-table",
+      "screenName": "UserList",
+      "code": "W_SEMANTIC_COMPONENT_NOT_REUSABLE",
+      "nodeId": "row2-status",
+      "nodeName": "MuiChipRoot",
+      "message": "Default semantic synthesis kept 'MuiChipRoot' inline because no matching reusable semantic structure was found."
+    }
+  ],
+  "screens": [
+    {
+      "screenId": "screen-table",
+      "screenName": "UserList",
+      "rootLayoutKind": "flex",
+      "warnings": [
+        {
+          "code": "W_ABSOLUTE_LAYOUT_FALLBACK",
+          "nodeId": "row1-status-text",
+          "nodeName": "Label",
+          "message": "Absolute layout fallback used for 'Label' because no deterministic flex or grid structure could be inferred."
+        },
+        {
+          "code": "W_ABSOLUTE_LAYOUT_FALLBACK",
+          "nodeId": "row2-status-text",
+          "nodeName": "Label",
+          "message": "Absolute layout fallback used for 'Label' because no deterministic flex or grid structure could be inferred."
+        }
+      ],
+      "semanticComponents": [],
+      "semanticDiagnostics": [
+        {
+          "code": "W_SEMANTIC_COMPONENT_NOT_REUSABLE",
+          "nodeId": "table-row-1",
+          "nodeName": "Table Row",
+          "message": "Default semantic synthesis kept 'Table Row' inline because no matching reusable semantic structure was found."
+        },
+        {
+          "code": "W_SEMANTIC_COMPONENT_NOT_REUSABLE",
+          "nodeId": "row1-status",
+          "nodeName": "MuiChipRoot",
+          "message": "Default semantic synthesis kept 'MuiChipRoot' inline because no matching reusable semantic structure was found."
+        },
+        {
+          "code": "W_SEMANTIC_COMPONENT_NOT_REUSABLE",
+          "nodeId": "table-row-2",
+          "nodeName": "Table Row",
+          "message": "Default semantic synthesis kept 'Table Row' inline because no matching reusable semantic structure was found."
+        },
+        {
+          "code": "W_SEMANTIC_COMPONENT_NOT_REUSABLE",
+          "nodeId": "row2-status",
+          "nodeName": "MuiChipRoot",
+          "message": "Default semantic synthesis kept 'MuiChipRoot' inline because no matching reusable semantic structure was found."
+        }
+      ]
+    }
+  ]
+}

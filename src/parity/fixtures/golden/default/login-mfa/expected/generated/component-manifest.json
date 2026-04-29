@@ -1,0 +1,10 @@
+{
+  "screens": [
+    {
+      "screenId": "screen-login",
+      "screenName": "Login",
+      "file": "src/pages/login.tsx",
+      "components": []
+    }
+  ]
+}

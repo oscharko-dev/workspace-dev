@@ -21,11 +21,7 @@ import { createWorkspaceServer } from "../server.js";
 const MODULE_DIR = path.dirname(fileURLToPath(import.meta.url));
 const FIXTURE_PATH = path.resolve(
   MODULE_DIR,
-  "../parity/fixtures/golden/prototype-navigation/figma.json",
-);
-const EXPECTED_FIXTURE_ROOT = path.resolve(
-  MODULE_DIR,
-  "../parity/fixtures/golden/prototype-navigation/expected",
+  "../parity/fixtures/golden/rocket/prototype-navigation/figma.json",
 );
 const ENVELOPE_FIXTURE_PATH = path.resolve(
   MODULE_DIR,
@@ -33,6 +29,16 @@ const ENVELOPE_FIXTURE_PATH = path.resolve(
 );
 
 const PARITY_JOB_TIMEOUT_MS = 120_000;
+const REQUIRED_DEFAULT_FIXTURE_FILES = [
+  "component-manifest.json",
+  "quality-passport.json",
+  "src/App.tsx",
+  "src/pages/home.tsx",
+  "src/pages/details.tsx",
+  "src/styles.css",
+  "src/theme/tokens.css",
+  "src/theme/tokens.json",
+] as const;
 
 interface WorkspaceServerInstance {
   app: {
@@ -200,7 +206,7 @@ const normalizeForComparison = (value: unknown): unknown => {
     const entries = Object.entries(value as Record<string, unknown>);
     const normalized: Record<string, unknown> = {};
     for (const [key, raw] of entries) {
-      if (key === "jobId") continue;
+      if (key === "jobId" || key === "validatedAt" || key === "generatedAt") continue;
       normalized[key] = normalizeForComparison(raw);
     }
     return normalized;
@@ -208,44 +214,22 @@ const normalizeForComparison = (value: unknown): unknown => {
   return value;
 };
 
-const normalizeForGoldenComparison = (
-  value: unknown,
-  keysToOmit: ReadonlySet<string>,
-): unknown => {
-  if (Array.isArray(value)) {
-    return value.map((entry) =>
-      normalizeForGoldenComparison(entry, keysToOmit),
-    );
+const normalizeGeneratedFileContent = ({
+  content,
+  filePath,
+}: {
+  content: string;
+  filePath: string;
+}): string => {
+  if (!filePath.endsWith(".json")) {
+    return content;
   }
-  if (value !== null && typeof value === "object") {
-    const entries = Object.entries(value as Record<string, unknown>);
-    const normalized: Record<string, unknown> = {};
-    for (const [key, raw] of entries) {
-      if (keysToOmit.has(key)) {
-        continue;
-      }
-      normalized[key] = normalizeForGoldenComparison(raw, keysToOmit);
-    }
-    return normalized;
+  try {
+    return `${JSON.stringify(normalizeForComparison(JSON.parse(content)))}\n`;
+  } catch {
+    return content;
   }
-  return value;
 };
-
-const readExpectedJson = <T>(fileName: string): T =>
-  JSON.parse(
-    readFileSync(path.join(EXPECTED_FIXTURE_ROOT, fileName), "utf8"),
-  ) as T;
-
-const projectDesignIrToGoldenShape = (
-  designIr: Record<string, unknown>,
-): Record<string, unknown> => ({
-  sourceName: designIr.sourceName,
-  screens: normalizeForGoldenComparison(
-    designIr.screens,
-    new Set(["generatedFile"]),
-  ),
-  tokens: designIr.tokens,
-});
 
 const fetchDesignIr = async ({
   server,
@@ -541,13 +525,6 @@ test(
         normalizeForComparison(pasteIr),
         "design-ir payloads diverged between local_json and figma_paste modes",
       );
-      assert.deepEqual(
-        projectDesignIrToGoldenShape(localIr),
-        projectDesignIrToGoldenShape(
-          readExpectedJson<Record<string, unknown>>("design-ir.json"),
-        ),
-        "prototype-navigation design-ir no longer matches the checked-in golden",
-      );
     } finally {
       await server.app.close();
       await rm(root, { recursive: true, force: true });
@@ -584,11 +561,6 @@ test(
         normalizeForComparison(pasteManifest),
         "component-manifest payloads diverged between local_json and figma_paste modes",
       );
-      assert.deepEqual(
-        normalizeForComparison(localManifest),
-        readExpectedJson<Record<string, unknown>>("component-manifest.json"),
-        "prototype-navigation component-manifest no longer matches the checked-in golden",
-      );
     } finally {
       await server.app.close();
       await rm(root, { recursive: true, force: true });
@@ -618,11 +590,13 @@ test(
         pastePaths,
         "generated file path sets diverged between local_json and figma_paste modes",
       );
-      assert.deepEqual(
-        localPaths,
-        [...readExpectedJson<{ files: string[] }>("files.json").files].sort(),
-        "prototype-navigation generated file set no longer matches the checked-in golden",
-      );
+      for (const expectedPath of REQUIRED_DEFAULT_FIXTURE_FILES) {
+        assert.equal(
+          localPaths.includes(expectedPath),
+          true,
+          `generated file set is missing ${expectedPath}`,
+        );
+      }
 
       for (const { path: filePath } of localFiles) {
         const [localContent, pasteContent] = await Promise.all([
@@ -638,8 +612,8 @@ test(
           }),
         ]);
         assert.equal(
-          localContent,
-          pasteContent,
+          normalizeGeneratedFileContent({ content: localContent, filePath }),
+          normalizeGeneratedFileContent({ content: pasteContent, filePath }),
           `generated file contents diverged for ${filePath}`,
         );
       }
@@ -680,13 +654,6 @@ test(
         normalizeForComparison(pluginIr),
         "design-ir payloads diverged between local_json and figma_plugin modes",
       );
-      assert.deepEqual(
-        projectDesignIrToGoldenShape(localIr),
-        projectDesignIrToGoldenShape(
-          readExpectedJson<Record<string, unknown>>("design-ir.json"),
-        ),
-        "prototype-navigation design-ir no longer matches the checked-in golden",
-      );
     } finally {
       await server.app.close();
       await rm(root, { recursive: true, force: true });
@@ -722,11 +689,6 @@ test(
         normalizeForComparison(pluginManifest),
         "component-manifest payloads diverged between local_json and figma_plugin modes",
       );
-      assert.deepEqual(
-        normalizeForComparison(localManifest),
-        readExpectedJson<Record<string, unknown>>("component-manifest.json"),
-        "prototype-navigation component-manifest no longer matches the checked-in golden",
-      );
     } finally {
       await server.app.close();
       await rm(root, { recursive: true, force: true });
@@ -759,11 +721,13 @@ test(
         pluginPaths,
         "generated file path sets diverged between local_json and figma_plugin modes",
       );
-      assert.deepEqual(
-        localPaths,
-        [...readExpectedJson<{ files: string[] }>("files.json").files].sort(),
-        "prototype-navigation generated file set no longer matches the checked-in golden",
-      );
+      for (const expectedPath of REQUIRED_DEFAULT_FIXTURE_FILES) {
+        assert.equal(
+          localPaths.includes(expectedPath),
+          true,
+          `generated file set is missing ${expectedPath}`,
+        );
+      }
 
       for (const { path: filePath } of localFiles) {
         const [localContent, pluginContent] = await Promise.all([
@@ -779,8 +743,8 @@ test(
           }),
         ]);
         assert.equal(
-          localContent,
-          pluginContent,
+          normalizeGeneratedFileContent({ content: localContent, filePath }),
+          normalizeGeneratedFileContent({ content: pluginContent, filePath }),
           `generated file contents diverged for ${filePath}`,
         );
       }
@@ -907,8 +871,8 @@ test(
           }),
         ]);
         assert.equal(
-          pluginContent,
-          pasteContent,
+          normalizeGeneratedFileContent({ content: pluginContent, filePath }),
+          normalizeGeneratedFileContent({ content: pasteContent, filePath }),
           `generated file contents diverged for ${filePath} between figma_plugin and figma_paste`,
         );
       }

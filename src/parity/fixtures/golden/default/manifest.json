@@ -1,0 +1,61 @@
+{
+  "pipelineId": "default",
+  "version": 1,
+  "fixtures": [
+    {
+      "id": "fintech-dashboard",
+      "figmaJson": "fintech-dashboard/figma.json",
+      "snapshotGeneratedFiles": true,
+      "validation": true,
+      "unsupportedNodeReport": true
+    },
+    {
+      "id": "login-mfa",
+      "figmaJson": "login-mfa/figma.json",
+      "snapshotGeneratedFiles": true,
+      "unsupportedNodeReport": true
+    },
+    {
+      "id": "payment-card",
+      "figmaJson": "payment-card/figma.json",
+      "snapshotGeneratedFiles": true,
+      "unsupportedNodeReport": true
+    },
+    {
+      "id": "forms",
+      "figmaJson": "forms/figma.json",
+      "snapshotGeneratedFiles": true,
+      "unsupportedNodeReport": true
+    },
+    {
+      "id": "responsive-marketing",
+      "figmaJson": "responsive-marketing/figma.json",
+      "snapshotGeneratedFiles": true,
+      "unsupportedNodeReport": true
+    },
+    {
+      "id": "dense-table",
+      "figmaJson": "dense-table/figma.json",
+      "snapshotGeneratedFiles": true,
+      "unsupportedNodeReport": true
+    },
+    {
+      "id": "mobile-navigation",
+      "figmaJson": "mobile-navigation/figma.json",
+      "snapshotGeneratedFiles": true,
+      "unsupportedNodeReport": true
+    },
+    {
+      "id": "design-token-heavy-board",
+      "figmaJson": "design-token-heavy-board/figma.json",
+      "snapshotGeneratedFiles": true,
+      "unsupportedNodeReport": true
+    },
+    {
+      "id": "unsupported-nodes",
+      "figmaJson": "unsupported-nodes/figma.json",
+      "snapshotGeneratedFiles": true,
+      "unsupportedNodeReport": true
+    }
+  ]
+}

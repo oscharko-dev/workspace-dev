@@ -1,0 +1,124 @@
+{
+  "schemaVersion": "1.0.0",
+  "pipelineId": "default",
+  "artifacts": {
+    "cssCustomProperties": "src/theme/tokens.css",
+    "designTokens": "src/theme/tokens.json",
+    "tokenReport": "src/theme/token-report.json"
+  },
+  "tokenCoverage": 0.9474,
+  "categories": {
+    "colors": {
+      "mapped": 15,
+      "total": 15,
+      "source": "clustering",
+      "fallbacks": 1
+    },
+    "typography": {
+      "mapped": 13,
+      "total": 13,
+      "source": "clustering",
+      "fallbacks": 1
+    },
+    "fontWeights": {
+      "mapped": 13,
+      "total": 13,
+      "source": "clustering",
+      "fallbacks": 0
+    },
+    "spacing": {
+      "mapped": 6,
+      "total": 6,
+      "source": "clustering",
+      "fallbacks": 1
+    },
+    "radius": {
+      "mapped": 4,
+      "total": 4,
+      "source": "clustering",
+      "fallbacks": 1
+    },
+    "borders": {
+      "mapped": 3,
+      "total": 3,
+      "source": "derived",
+      "fallbacks": 0
+    },
+    "shadows": {
+      "mapped": 0,
+      "total": 1,
+      "source": "derived",
+      "fallbacks": 1
+    },
+    "opacity": {
+      "mapped": 0,
+      "total": 1,
+      "source": "derived",
+      "fallbacks": 1
+    },
+    "zIndex": {
+      "mapped": 0,
+      "total": 1,
+      "source": "derived",
+      "fallbacks": 1
+    },
+    "darkMode": {
+      "mapped": 0,
+      "total": 0,
+      "source": "derived",
+      "fallbacks": 0
+    }
+  },
+  "cssCustomProperties": {
+    "path": "src/theme/tokens.css",
+    "count": 79
+  },
+  "darkMode": {
+    "detected": false
+  },
+  "conflicts": [],
+  "fallbacks": [
+    {
+      "kind": "colors",
+      "reason": "missing_authoritative_figma_token",
+      "fallback": "semantic color clustering"
+    },
+    {
+      "kind": "fontFamily",
+      "reason": "missing_authoritative_figma_token",
+      "fallback": "Inter, Roboto, Arial, sans-serif"
+    },
+    {
+      "kind": "opacity",
+      "reason": "missing_explicit_opacity_token",
+      "fallback": "material action opacity defaults"
+    },
+    {
+      "kind": "radius",
+      "reason": "missing_authoritative_figma_token",
+      "fallback": "8px"
+    },
+    {
+      "kind": "shadows",
+      "reason": "missing_figma_effect_style",
+      "fallback": "none"
+    },
+    {
+      "kind": "spacing",
+      "reason": "missing_authoritative_figma_token",
+      "fallback": "12px"
+    },
+    {
+      "kind": "typography",
+      "reason": "missing_authoritative_figma_token",
+      "fallback": "sampled text scale"
+    },
+    {
+      "kind": "zIndex",
+      "reason": "missing_layering_hint",
+      "fallback": "material layering defaults"
+    }
+  ],
+  "unmappedVariables": [],
+  "libraryKeys": []
+}
