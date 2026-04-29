@@ -134,6 +134,81 @@ Customer-profile jobs should still keep `pipelineId: "rocket"` to preserve
 existing React + MUI generation semantics and avoid relying on the deprecated
 compatibility fallback.
 
+### Migrate Omitted Pipeline Requests To `pipelineId: "rocket"`
+
+Treat the omitted-`pipelineId` Rocket auto-selection path as a temporary
+compatibility bridge for existing customers, not as a stable integration
+contract. New customer-profile submissions must set `pipelineId: "rocket"` when
+they send any Rocket-specific input.
+
+Before:
+
+```json
+{
+  "figmaSourceMode": "local_json",
+  "llmCodegenMode": "deterministic",
+  "figmaJsonPath": "fixtures/customer-board/figma.json",
+  "customerProfilePath": "profiles/customer-profile.json"
+}
+```
+
+After:
+
+```json
+{
+  "pipelineId": "rocket",
+  "figmaSourceMode": "local_json",
+  "llmCodegenMode": "deterministic",
+  "figmaJsonPath": "fixtures/customer-board/figma.json",
+  "customerProfilePath": "profiles/customer-profile.json"
+}
+```
+
+For shared submit helpers, make the pipeline decision before constructing the
+`WorkspaceJobInput` object. If the helper receives `customerProfilePath`,
+`customerBrandId`, customer component mappings, customer import aliases, or
+direct MUI/Emotion mapping profiles, populate `pipelineId: "rocket"` in the same
+branch that adds those Rocket-specific fields. If none of those inputs are
+present, omit `pipelineId` only when the client intentionally wants the runtime
+default pipeline.
+
+### Release Note Wording For The Compatibility Window
+
+Use this wording in downstream release notes while migrating existing customers:
+
+```md
+WorkspaceDev now ships the OSS `default` pipeline and the customer
+compatibility `rocket` pipeline. Jobs that use customer profiles,
+customer-brand inputs, customer component mappings, customer import aliases, or
+direct MUI/Emotion mappings must set `pipelineId: "rocket"`. The combined
+`default,rocket` build still auto-selects `rocket` for omitted-`pipelineId`
+legacy requests that contain those Rocket-specific inputs, but that fallback is
+deprecated and emits a deprecation warning. A future package-major release may
+remove the fallback; migrate submit payloads to explicit `pipelineId: "rocket"`
+before upgrading across that major release.
+```
+
+### Fallback Removal Policy
+
+The compatibility fallback may be removed only in a future package-major release.
+Removal must not happen in a patch or minor release because omitted-`pipelineId`
+customer-profile submissions currently change behavior from accepted-with-warning
+to rejected or default-pipeline selection once the bridge is removed.
+
+The release that removes the fallback must include all of the following evidence
+in the same change set:
+
+1. `CHANGELOG.md` and the Changeset release note call out the package-major
+   breaking change and repeat the explicit `pipelineId: "rocket"` migration.
+2. `docs/migration-guide.md` removes this compatibility-window guidance and
+   documents the new failure mode for omitted-`pipelineId` Rocket-specific
+   inputs.
+3. Contract evidence is updated if the public error code, response shape, or
+   accepted request semantics change.
+4. Regression tests prove explicit `pipelineId: "rocket"` customer-profile
+   submissions still work and omitted-`pipelineId` Rocket-specific submissions
+   follow the documented post-removal behavior.
+
 Requests that explicitly select `pipelineId: "default"` fail closed when they
 include Rocket-specific inputs. The server returns `PIPELINE_INPUT_UNSUPPORTED`
 with a structured `issues` entry instead of silently switching pipelines.
