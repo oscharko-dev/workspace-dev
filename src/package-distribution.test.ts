@@ -67,7 +67,7 @@ const run = async ({
   });
 };
 
-test("package distribution includes template lockfile but excludes template node_modules", async () => {
+test("profile pack distribution includes template lockfile but excludes template node_modules", async () => {
   const packDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-pack-"));
   const extractDir = await mkdtemp(
     path.join(os.tmpdir(), "workspace-dev-pack-extract-"),
@@ -75,8 +75,15 @@ test("package distribution includes template lockfile but excludes template node
 
   try {
     await run({
-      command: "pnpm",
-      args: ["pack", "--pack-destination", packDir],
+      command: "node",
+      args: [
+        "scripts/build-profile.mjs",
+        "--skip-build",
+        "--profile",
+        "default-rocket",
+        "--pack-destination",
+        packDir,
+      ],
       cwd: packageRoot,
     });
 
@@ -132,6 +139,22 @@ test("package distribution includes template lockfile but excludes template node
     assert.match(
       tarballListing,
       /package\/template\/react-mui-app\/pnpm-lock\.yaml/,
+    );
+    assert.match(
+      tarballListing,
+      /package\/template\/react-mui-app\/src\/components\/ErrorBoundary\.tsx/,
+    );
+    assert.match(
+      tarballListing,
+      /package\/template\/react-mui-app\/src\/routes\/lazy-routes\.ts/,
+    );
+    assert.match(
+      tarballListing,
+      /package\/template\/react-mui-app\/src\/performance\/report-web-vitals\.ts/,
+    );
+    assert.match(
+      tarballListing,
+      /package\/template\/react-mui-app\/src\/theme\/theme\.ts/,
     );
     assert.match(
       tarballListing,
@@ -225,6 +248,13 @@ test("package distribution includes template lockfile but excludes template node
           optional: boolean;
         };
       };
+      devDependencies?: Record<string, string>;
+      files?: string[];
+      scripts?: Record<string, string>;
+      workspaceDev: {
+        buildProfile: string;
+        pipelineIds: string[];
+      };
     };
 
     assert.equal(packagedManifest.repository.type, "git");
@@ -236,6 +266,14 @@ test("package distribution includes template lockfile but excludes template node
       packagedManifest.peerDependenciesMeta.typescript.optional,
       true,
     );
+    assert.equal(packagedManifest.devDependencies, undefined);
+    assert.equal(packagedManifest.files, undefined);
+    assert.equal(packagedManifest.scripts, undefined);
+    assert.equal(packagedManifest.workspaceDev.buildProfile, "default-rocket");
+    assert.deepEqual(packagedManifest.workspaceDev.pipelineIds, [
+      "default",
+      "rocket",
+    ]);
   } finally {
     await rm(packDir, { recursive: true, force: true });
     await rm(extractDir, { recursive: true, force: true });
