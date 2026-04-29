@@ -9806,7 +9806,7 @@ Present only when `figmaSourceMode === "figma_paste" | "figma_plugin"` and diff 
 
 ###### Inherited from
 
-[`WorkspaceSubmitAccepted`](#workspacesubmitaccepted).[`pipelineId`](#pipelineid-11)
+[`WorkspaceSubmitAccepted`](#workspacesubmitaccepted).[`pipelineId`](#pipelineid-12)
 
 ##### pipelineMetadata
 
@@ -9830,7 +9830,7 @@ Present only when `figmaSourceMode === "figma_paste" | "figma_plugin"` and diff 
 
 ###### Inherited from
 
-[`WorkspaceSubmitAccepted`](#workspacesubmitaccepted).[`status`](#status-14)
+[`WorkspaceSubmitAccepted`](#workspacesubmitaccepted).[`status`](#status-16)
 
 ***
 
@@ -10408,7 +10408,7 @@ Structured job log line.
 
 ##### level
 
-> **level**: `"error"` \| `"debug"` \| `"info"` \| `"warn"`
+> **level**: `"error"` \| `"info"` \| `"debug"` \| `"warn"`
 
 ##### message
 
@@ -11225,6 +11225,174 @@ Public descriptor for a pipeline included in the current package profile.
 ##### visibility?
 
 > `optional` **visibility?**: [`WorkspacePipelineVisibility`](#workspacepipelinevisibility)
+
+***
+
+### WorkspacePipelineQualityCoverageMetric
+
+Ratio-based metric used for token and semantic coverage evidence.
+
+#### Properties
+
+##### covered
+
+> **covered**: `number`
+
+##### ratio
+
+> **ratio**: `number`
+
+##### status
+
+> **status**: [`WorkspacePipelineQualityValidationStatus`](#workspacepipelinequalityvalidationstatus)
+
+##### total
+
+> **total**: `number`
+
+***
+
+### WorkspacePipelineQualityGeneratedFile
+
+Generated-file evidence row for a pipeline quality passport.
+
+#### Properties
+
+##### path
+
+> **path**: `string`
+
+##### sha256?
+
+> `optional` **sha256?**: `string`
+
+##### sizeBytes?
+
+> `optional` **sizeBytes?**: `number`
+
+***
+
+### WorkspacePipelineQualityPassport
+
+Deterministic, secret-free enterprise evidence emitted as `quality-passport.json`.
+
+#### Properties
+
+##### buildProfile
+
+> **buildProfile**: `string`
+
+##### coverage
+
+> **coverage**: `object`
+
+###### semantic
+
+> **semantic**: [`WorkspacePipelineQualityCoverageMetric`](#workspacepipelinequalitycoveragemetric)
+
+###### token
+
+> **token**: [`WorkspacePipelineQualityCoverageMetric`](#workspacepipelinequalitycoveragemetric)
+
+##### generatedFiles
+
+> **generatedFiles**: [`WorkspacePipelineQualityGeneratedFile`](#workspacepipelinequalitygeneratedfile)[]
+
+##### metadata
+
+> **metadata**: `Record`\<`string`, `unknown`\>
+
+##### pipelineId
+
+> **pipelineId**: [`WorkspacePipelineId`](#workspacepipelineid)
+
+##### schemaVersion
+
+> **schemaVersion**: `"1.0.0"`
+
+##### scope
+
+> **scope**: [`WorkspacePipelineQualityScope`](#workspacepipelinequalityscope)
+
+##### templateBundleId
+
+> **templateBundleId**: `string`
+
+##### validation
+
+> **validation**: [`WorkspacePipelineQualityValidationSummary`](#workspacepipelinequalityvalidationsummary)
+
+##### warnings
+
+> **warnings**: [`WorkspacePipelineQualityWarning`](#workspacepipelinequalitywarning)[]
+
+***
+
+### WorkspacePipelineQualityScope
+
+Scope projection for a generated pipeline quality passport.
+
+#### Properties
+
+##### scope
+
+> **scope**: [`WorkspacePipelineScope`](#workspacepipelinescope)
+
+##### selectedNodeCount
+
+> **selectedNodeCount**: `number`
+
+##### sourceMode
+
+> **sourceMode**: `"rest"` \| `"hybrid"` \| `"local_json"` \| `"figma_paste"` \| `"figma_plugin"`
+
+***
+
+### WorkspacePipelineQualityValidationSummary
+
+Stable validation summary for quality-passport evidence.
+
+#### Properties
+
+##### stages
+
+> **stages**: `object`[]
+
+###### name
+
+> **name**: [`WorkspaceJobStageName`](#workspacejobstagename-1)
+
+###### status
+
+> **status**: [`WorkspaceJobStageStatus`](#workspacejobstagestatus-1)
+
+##### status
+
+> **status**: [`WorkspacePipelineQualityValidationStatus`](#workspacepipelinequalityvalidationstatus)
+
+***
+
+### WorkspacePipelineQualityWarning
+
+Structured warning row used by deterministic quality-passport evidence.
+
+#### Properties
+
+##### code
+
+> **code**: `string`
+
+##### message
+
+> **message**: `string`
+
+##### severity
+
+> **severity**: [`WorkspacePipelineQualityWarningSeverity`](#workspacepipelinequalitywarningseverity-1)
+
+##### source?
+
+> `optional` **source?**: `string`
 
 ***
 
@@ -13984,6 +14152,22 @@ Stable pipeline identifiers understood by workspace-dev.
 
 ***
 
+### WorkspacePipelineQualityValidationStatus
+
+> **WorkspacePipelineQualityValidationStatus** = `"not_run"` \| `"passed"` \| `"warning"` \| `"failed"`
+
+Validation status vocabulary used by persisted quality-passport evidence.
+
+***
+
+### WorkspacePipelineQualityWarningSeverity
+
+> **WorkspacePipelineQualityWarningSeverity** = `"info"` \| `"warning"` \| `"error"`
+
+Severity levels used by deterministic quality-passport warnings.
+
+***
+
 ### WorkspacePipelineRequestErrorCode
 
 > **WorkspacePipelineRequestErrorCode** = *typeof* [`ALLOWED_PIPELINE_REQUEST_ERROR_CODES`](#allowed_pipeline_request_error_codes)\[`number`\]
@@ -14796,7 +14980,7 @@ Schema version for `BusinessTestIntentIr` artifacts.
 
 ### CONTRACT\_VERSION
 
-> `const` **CONTRACT\_VERSION**: `"4.22.0"`
+> `const` **CONTRACT\_VERSION**: `"4.23.0"`
 
 Current contract version constant.
 Must be bumped according to CONTRACT_CHANGELOG.md rules.
@@ -15315,6 +15499,22 @@ Built-in OpenText ALM reference export profile id (Wave 1).
 > `const` **OPENTEXT\_ALM\_REFERENCE\_PROFILE\_VERSION**: `"1.0.0"`
 
 Version stamp for the built-in OpenText ALM reference export profile.
+
+***
+
+### PIPELINE\_QUALITY\_PASSPORT\_ARTIFACT\_FILENAME
+
+> `const` **PIPELINE\_QUALITY\_PASSPORT\_ARTIFACT\_FILENAME**: `"quality-passport.json"`
+
+Canonical filename for the persisted pipeline quality passport artifact.
+
+***
+
+### PIPELINE\_QUALITY\_PASSPORT\_SCHEMA\_VERSION
+
+> `const` **PIPELINE\_QUALITY\_PASSPORT\_SCHEMA\_VERSION**: `"1.0.0"`
+
+Schema version for the deterministic pipeline quality passport artifact.
 
 ***
 
