@@ -17,7 +17,7 @@ const resolveCommandEnv = () => {
     ...process.env,
     npm_config_registry: "http://127.0.0.1:9",
     npm_config_audit: "false",
-    npm_config_fund: "false"
+    npm_config_fund: "false",
   };
 
   // npm publish --dry-run propagates this flag into lifecycle scripts.
@@ -33,7 +33,7 @@ const run = ({ command, args, cwd }) =>
     const child = spawn(command, args, {
       cwd,
       env: resolveCommandEnv(),
-      stdio: "inherit"
+      stdio: "inherit",
     });
 
     child.once("error", reject);
@@ -44,8 +44,8 @@ const run = ({ command, args, cwd }) =>
       }
       reject(
         new Error(
-          `Command failed with exit code ${code ?? 1}: ${command} ${args.join(" ")} (cwd=${cwd})`
-        )
+          `Command failed with exit code ${code ?? 1}: ${command} ${args.join(" ")} (cwd=${cwd})`,
+        ),
       );
     });
   });
@@ -54,14 +54,14 @@ const runWorkspaceDev = async ({ args, cwd }) =>
   await run({
     command: workspaceDevLauncher,
     args: [...workspaceDevLauncherArgs, ...args],
-    cwd
+    cwd,
   });
 
 const spawnWorkspaceDev = ({ args, cwd, stdio }) =>
   spawn(workspaceDevLauncher, [...workspaceDevLauncherArgs, ...args], {
     cwd,
     env: resolveCommandEnv(),
-    stdio
+    stdio,
   });
 
 const delay = async (milliseconds) =>
@@ -99,24 +99,26 @@ const formatChildOutput = (output) => {
 const createChildExitError = (code, signal, output = "") =>
   Object.assign(
     new Error(
-      `workspace-dev exited before readiness (code=${code ?? "unknown"}${signal ? `, signal=${signal}` : ""}).${formatChildOutput(output)}`
+      `workspace-dev exited before readiness (code=${code ?? "unknown"}${signal ? `, signal=${signal}` : ""}).${formatChildOutput(output)}`,
     ),
     {
-      name: "ChildProcessExitedError"
-    }
+      name: "ChildProcessExitedError",
+    },
   );
 
 const createChildSpawnError = (error, output = "") =>
   Object.assign(error instanceof Error ? error : new Error(String(error)), {
     name: "ChildProcessSpawnError",
-    message: `${error instanceof Error ? error.message : String(error)}${formatChildOutput(output)}`
+    message: `${error instanceof Error ? error.message : String(error)}${formatChildOutput(output)}`,
   });
 
 const createBoundedOutputBuffer = (maxBytes = 32 * 1024) => {
   let buffered = "";
 
   const append = (chunk) => {
-    const text = Buffer.isBuffer(chunk) ? chunk.toString("utf8") : String(chunk);
+    const text = Buffer.isBuffer(chunk)
+      ? chunk.toString("utf8")
+      : String(chunk);
     buffered += text;
     if (buffered.length > maxBytes) {
       buffered = buffered.slice(buffered.length - maxBytes);
@@ -130,9 +132,17 @@ const createBoundedOutputBuffer = (maxBytes = 32 * 1024) => {
 
 const isChildProcessFailureError = (error) =>
   error instanceof Error &&
-  (error.name === "ChildProcessExitedError" || error.name === "ChildProcessSpawnError");
+  (error.name === "ChildProcessExitedError" ||
+    error.name === "ChildProcessSpawnError");
 
-const waitForHttpOk = async ({ baseUrl, expectedOutputRoot, child, output, paths, timeoutMs = 30_000 }) => {
+const waitForHttpOk = async ({
+  baseUrl,
+  expectedOutputRoot,
+  child,
+  output,
+  paths,
+  timeoutMs = 30_000,
+}) => {
   const deadline = Date.now() + timeoutMs;
   let lastError;
   let rejectChildFailure = () => {};
@@ -155,29 +165,33 @@ const waitForHttpOk = async ({ baseUrl, expectedOutputRoot, child, output, paths
           (async () => {
             for (const pathname of paths) {
               const response = await fetch(new URL(pathname, baseUrl), {
-                signal: AbortSignal.timeout(2_000)
+                signal: AbortSignal.timeout(2_000),
               });
 
               if (response.status !== 200) {
-                throw new Error(`Expected 200 from ${pathname}, received ${response.status}.`);
+                throw new Error(
+                  `Expected 200 from ${pathname}, received ${response.status}.`,
+                );
               }
 
               if (pathname === "/workspace") {
                 const status = await response.json();
                 if (typeof status !== "object" || status === null) {
-                  throw new Error("Expected /workspace to return a JSON object.");
+                  throw new Error(
+                    "Expected /workspace to return a JSON object.",
+                  );
                 }
 
                 const outputRoot = status.outputRoot;
                 if (outputRoot !== expectedOutputRoot) {
                   throw new Error(
-                    `Expected /workspace outputRoot to equal ${expectedOutputRoot}, received ${String(outputRoot)}.`
+                    `Expected /workspace outputRoot to equal ${expectedOutputRoot}, received ${String(outputRoot)}.`,
                   );
                 }
               }
             }
           })(),
-          childFailure
+          childFailure,
         ]);
 
         return;
@@ -193,8 +207,10 @@ const waitForHttpOk = async ({ baseUrl, expectedOutputRoot, child, output, paths
 
     throw new Error(
       `Timed out waiting for ${paths.join(", ")} to return HTTP 200 at ${baseUrl}.` +
-        (lastError instanceof Error ? ` Last error: ${lastError.message}` : "") +
-        formatChildOutput(output.snapshot())
+        (lastError instanceof Error
+          ? ` Last error: ${lastError.message}`
+          : "") +
+        formatChildOutput(output.snapshot()),
     );
   } finally {
     child.off("error", onChildError);
@@ -264,7 +280,9 @@ const stopChildProcess = async (child, timeoutMs = 5_000) => {
 };
 
 const main = async () => {
-  const tmpRoot = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-airgap-"));
+  const tmpRoot = await mkdtemp(
+    path.join(os.tmpdir(), "workspace-dev-airgap-"),
+  );
   const packDir = path.join(tmpRoot, "pack");
   const installDir = path.join(tmpRoot, "install");
   const host = "127.0.0.1";
@@ -273,9 +291,16 @@ const main = async () => {
 
   try {
     await run({
-      command: "pnpm",
-      args: ["pack", "--pack-destination", packDir],
-      cwd: packageRoot
+      command: "node",
+      args: [
+        "scripts/build-profile.mjs",
+        "--skip-build",
+        "--profile",
+        "default-rocket",
+        "--pack-destination",
+        packDir,
+      ],
+      cwd: packageRoot,
     });
 
     const files = await readdir(packDir);
@@ -292,23 +317,23 @@ const main = async () => {
         {
           name: "workspace-dev-airgap-smoke",
           private: true,
-          version: "1.0.0"
+          version: "1.0.0",
         },
         null,
-        2
+        2,
       )}\n`,
-      "utf8"
+      "utf8",
     );
 
     await run({
       command: "npm",
       args: ["install", "--offline", "--ignore-scripts", tarballPath],
-      cwd: installDir
+      cwd: installDir,
     });
 
     await runWorkspaceDev({
       args: ["--help"],
-      cwd: installDir
+      cwd: installDir,
     });
 
     await run({
@@ -316,18 +341,18 @@ const main = async () => {
       args: [
         "--input-type=module",
         "-e",
-        "const mod = await import('workspace-dev'); if (typeof mod.createWorkspaceServer !== 'function') throw new Error('ESM import failed');"
+        "const mod = await import('workspace-dev'); if (typeof mod.createWorkspaceServer !== 'function') throw new Error('ESM import failed');",
       ],
-      cwd: installDir
+      cwd: installDir,
     });
 
     await run({
       command: "node",
       args: [
         "-e",
-        "const mod = require('workspace-dev'); if (typeof mod.createWorkspaceServer !== 'function') throw new Error('CJS require failed');"
+        "const mod = require('workspace-dev'); if (typeof mod.createWorkspaceServer !== 'function') throw new Error('CJS require failed');",
       ],
-      cwd: installDir
+      cwd: installDir,
     });
 
     const port = await getAvailableLoopbackPort(host);
@@ -344,10 +369,10 @@ const main = async () => {
         "--output-root",
         outputRoot,
         "--preview",
-        "true"
+        "true",
       ],
       cwd: installDir,
-      stdio: ["ignore", "pipe", "pipe"]
+      stdio: ["ignore", "pipe", "pipe"],
     });
 
     startChild.stdout?.on("data", startOutput.append);
@@ -358,13 +383,15 @@ const main = async () => {
       child: startChild,
       output: startOutput,
       expectedOutputRoot: outputRoot,
-      paths: ["/healthz", "/workspace", "/workspace/ui/inspector"]
+      paths: ["/healthz", "/workspace", "/workspace/ui/inspector"],
     });
 
     await stopChildProcess(startChild);
     startChild = undefined;
 
-    console.log("[airgap] Offline install, bin, module, and start smoke checks passed.");
+    console.log(
+      "[airgap] Offline install, bin, module, and start smoke checks passed.",
+    );
   } finally {
     if (startChild) {
       try {

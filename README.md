@@ -263,13 +263,14 @@ release-ready.
 - `docs/` - deeper implementation and operations references
 - `plugin/` - Figma plugin source for clipboard export flows
 
-If you only need the consumable product surface, `package.json.files` defines
-the authoritative publish boundary.
-The published package ships the compiled runtime from `dist/`, the docs listed
-in `package.json.files`, and the `template/` scaffold used to materialize the
-generated app baseline. Repository-only verification fixtures, test suites, and
-template `node_modules` do not ship. Template-local browser validation files may
-ship when a template exposes an explicit validation script that depends on them.
+If you only need the consumable product surface, `scripts/build-profile.mjs`
+defines the authoritative profile-aware publish boundary. The profile packer
+ships the compiled runtime from `dist/`, an explicit docs allowlist, and the
+template scaffold for the selected build profile (`default`, `rocket`, or
+`default,rocket`). Repository-only verification fixtures, test suites, template
+`node_modules`, and template build output do not ship. Template-local browser
+validation files may ship when a template exposes an explicit validation script
+that depends on them.
 
 ## Frontend stack
 
@@ -480,7 +481,7 @@ Response shape:
 - Treat non-loopback or reverse-proxied browser-facing deployments as an explicit exposure expansion. Use HTTPS in front of the runtime, scope network access narrowly, and enable `FIGMAPIPE_WORKSPACE_ENABLE_HSTS=true` only when the browser-facing origin is HTTPS-only behind a trusted TLS terminator.
 - `local_json` is the preferred air-gap and firewall-friendly source mode for programmatic or operational smoke tests. It consumes a local `figmaJsonPath`, avoids outbound Figma REST and MCP fetches, and pairs cleanly with loopback-only runtime deployment.
 - For browser-based clipboard and inspector flows on remote hosts, use HTTPS rather than plain HTTP. Browsers treat `http://127.0.0.1` as a secure context, but remote hosts and reverse proxies do not get that exception.
-- Use `package.json.files` as the publish contract when auditing what ships to npm. The repository contains broader test, fixture, and generator-development surfaces than the installed consumer package.
+- Use `node scripts/build-profile.mjs --dry-run` as the publish contract when auditing what ships to npm. The repository contains broader test, fixture, and generator-development surfaces than the installed consumer package.
 
 ### Local sync flow
 

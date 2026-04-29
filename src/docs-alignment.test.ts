@@ -133,7 +133,7 @@ test("docs: mode lock docs stay aligned with runtime constraints", async () => {
   const compatibilityDoc = await readRepoFile("COMPATIBILITY.md");
   const contributingDoc = await readRepoFile("CONTRIBUTING.md");
   const localRuntimeDoc = await readRepoFile("docs/local-runtime.md");
-  const packageManifest = await readRepoFile("package.json");
+  const buildProfileScript = await readRepoFile("scripts/build-profile.mjs");
   const readmeDoc = await readRepoFile("README.md");
   const securityDoc = await readRepoFile("SECURITY.md");
   const threatModelDoc = await readRepoFile("THREAT_MODEL.md");
@@ -158,10 +158,7 @@ test("docs: mode lock docs stay aligned with runtime constraints", async () => {
   assert.match(architectureDoc, new RegExp(escapeRegExp(figmaModeLock)));
   assert.match(architectureDoc, new RegExp(escapeRegExp(codegenModeLock)));
   assert.match(architectureDoc, /template\/react-mui-app\/pnpm-lock\.yaml/);
-  assert.match(
-    architectureDoc,
-    /package\.json[` ]+`files`|`package\.json` `files`|package\.json `files`/,
-  );
+  assert.match(architectureDoc, /scripts\/build-profile\.mjs/);
   assert.match(architectureDoc, /template:install|--frozen-lockfile/);
   assert.match(architectureDoc, /verify:airgap/);
   assert.match(architectureDoc, /verify:reproducible-build/);
@@ -223,8 +220,8 @@ test("docs: mode lock docs stay aligned with runtime constraints", async () => {
     schemasSource,
     /Collect failures in `ValidationIssue\[\]` with stable paths and messages/,
   );
-  assert.match(packageManifest, /"THREAT_MODEL\.md"/);
-  assert.match(packageManifest, /"GOVERNANCE\.md"/);
+  assert.match(buildProfileScript, /"THREAT_MODEL\.md"/);
+  assert.match(buildProfileScript, /"GOVERNANCE\.md"/);
   assert.match(readmeDoc, /## Repository branch flow/i);
   assert.match(readmeDoc, /`dev` is the active development branch/i);
   assert.match(readmeDoc, /`dev-gate` is the protected quality gate branch/i);
@@ -321,9 +318,7 @@ test("docs: pipeline authoring guide stays aligned with canonical stage contract
 });
 
 test("docs: troubleshooting guide is linked from README and included in the published package", async () => {
-  const packageManifest = JSON.parse(await readRepoFile("package.json")) as {
-    files?: string[];
-  };
+  const buildProfileScript = await readRepoFile("scripts/build-profile.mjs");
   const readmeDoc = await readRepoFile("README.md");
   const troubleshootingDoc = await readRepoFile("TROUBLESHOOTING.md");
   const nodeSection = extractMarkdownTopLevelSection(
@@ -351,7 +346,7 @@ test("docs: troubleshooting guide is linked from README and included in the publ
     "Template Dependency Issues",
   );
 
-  assert.ok(packageManifest.files?.includes("TROUBLESHOOTING.md"));
+  assert.match(buildProfileScript, /"TROUBLESHOOTING\.md"/);
   assert.match(readmeDoc, /\[TROUBLESHOOTING\.md\]\(TROUBLESHOOTING\.md\)/);
   assert.match(troubleshootingDoc, /^# TROUBLESHOOTING$/m);
   for (const section of [
@@ -410,8 +405,8 @@ test("docs: versioning policy stays aligned across README and changelogs", async
   );
   const packageManifest = JSON.parse(await readRepoFile("package.json")) as {
     exports: Record<string, unknown>;
-    files?: string[];
   };
+  const buildProfileScript = await readRepoFile("scripts/build-profile.mjs");
   const actualIsolationExports = EXPECTED_ISOLATION_RUNTIME_EXPORTS.filter(
     (exportName) => Object.prototype.hasOwnProperty.call(publicApi, exportName),
   ).sort();
@@ -433,7 +428,7 @@ test("docs: versioning policy stays aligned across README and changelogs", async
     readmeDoc,
     /\[contract migration guide\]\(docs\/migration-guide\.md\)/i,
   );
-  assert.ok(packageManifest.files?.includes("docs/migration-guide.md"));
+  assert.match(buildProfileScript, /"docs\/migration-guide\.md"/);
   assert.match(migrationGuide, /CONTRACT_VERSION/);
   assert.match(migrationGuide, /workspace-dev\/contracts/);
   assert.match(migrationGuide, /CONTRACT_CHANGELOG\.md/);
@@ -455,7 +450,10 @@ test("docs: versioning policy stays aligned across README and changelogs", async
     /Legacy\s+omitted-`pipelineId` requests with Rocket-specific inputs follow the deprecated\s+compatibility fallback documented in the migration guide/,
   );
   assert.match(migrationGuide, /future package-major release/);
-  assert.match(migrationGuide, /Release Note Wording For The Compatibility Window/);
+  assert.match(
+    migrationGuide,
+    /Release Note Wording For The Compatibility Window/,
+  );
   assert.match(
     migrationGuide,
     /omitted-`pipelineId` Rocket auto-selection path as a temporary\s+compatibility bridge/,
@@ -558,7 +556,7 @@ test("docs: versioning policy stays aligned across README and changelogs", async
   );
   assert.match(
     readmeDoc,
-    /repository-only verification fixtures, test suites, and\s+template `node_modules` do not ship/i,
+    /repository-only verification fixtures, test suites, template\s+`node_modules`, and template build output do not ship/i,
   );
 
   assert.match(
@@ -979,8 +977,8 @@ test("docs: Wave 4 multi-source API reference documents key exported contracts",
   );
   const packageManifest = JSON.parse(await readRepoFile("package.json")) as {
     exports?: Record<string, unknown>;
-    files?: string[];
   };
+  const buildProfileScript = await readRepoFile("scripts/build-profile.mjs");
   const testIntelligenceDoc = await readRepoFile("docs/test-intelligence.md");
   const readmeDoc = await readRepoFile("README.md");
   const complianceDoc = await readRepoFile("COMPLIANCE.md");
@@ -1374,10 +1372,16 @@ test("docs: Wave 4 multi-source API reference documents key exported contracts",
   ];
   for (const docPath of publishedDocs) {
     assert.ok(
-      packageManifest.files?.includes(docPath),
-      `${docPath} must be included in the published package`,
+      buildProfileScript.includes(`"${docPath}"`),
+      `${docPath} must be included in the profile pack allowlist`,
     );
   }
+
+  assert.equal(
+    packageManifest.files,
+    undefined,
+    "profile pack allowlists, not package.json.files, define the publish boundary",
+  );
 
   assert.equal(
     packageManifest.scripts?.["docs:check"],
