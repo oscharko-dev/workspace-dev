@@ -56,8 +56,7 @@ Each release candidate must provide:
     - `test`, `test:flaky-retry`, `test:bdd`, `test:property-based`
     - `lint:boundaries`
     - `build`
-    - `lint:publint`
-    - `lint:types-publish`
+    - `verify:profile-gates` for `default`, `rocket`, and `default-rocket`
 - Generated-project evidence:
     - Deterministic `quality-passport.json` emitted for generated jobs,
       including validation evidence when `validate.project` runs and failure
@@ -68,17 +67,16 @@ Each release candidate must provide:
     - Inspector summary projection of the same quality passport for local
       audit and support workflows.
 - Supply-chain evidence:
-    - CycloneDX SBOM (`artifacts/sbom/workspace-dev.cdx.json`)
-    - SPDX SBOM (`artifacts/sbom/workspace-dev.spdx.json`)
-    - React MUI template SBOM (`artifacts/sbom/figma-generated-app-react-mui.cdx.json` and `.spdx.json`)
-    - React Tailwind template SBOM (`artifacts/sbom/figma-generated-app-react-tailwind.cdx.json` and `.spdx.json`)
+    - Profile-scoped CycloneDX and SPDX SBOMs under
+      `artifacts/sbom/<profile>/` for each selected release profile
     - Signature verification (`npm audit signatures`)
     - Provenance-enabled publish path
 - Operational evidence:
     - Package threat model and security boundary references (`THREAT_MODEL.md`, `SECURITY.md`, `ARCHITECTURE.md`)
-    - Reproducible build verification report
-    - Offline installation verification
-    - License allowlist verification
+    - Reproducible build verification reports under
+      `artifacts/reproducibility/<profile>/`
+    - Offline installation verification for each profile tarball
+    - License allowlist verification for each profile's selected templates
 
 The quality passport is generated-job evidence and is intentionally paired
 with, not embedded into, supply-chain artifacts. Release gates continue to
@@ -90,7 +88,10 @@ secret-free, and independently reviewable.
 
 `pnpm run verify:licenses` enforces the manifest license for `workspace-dev`,
 `template/react-mui-app`, and `template/react-tailwind-app`, then scans both
-installed template dependency trees transitively from `node_modules`.
+installed template dependency trees transitively from `node_modules`. The
+profile release gate calls the same policy with `--profile` so `default` checks
+the Tailwind template tree, `rocket` checks the MUI template tree, and
+`default-rocket` checks both.
 
 Approved license expressions for the shipped template graph:
 

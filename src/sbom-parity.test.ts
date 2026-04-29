@@ -84,7 +84,10 @@ const writeJson = async (targetPath: string, value: unknown) => {
   await writeFile(targetPath, `${JSON.stringify(value, null, 2)}\n`, "utf8");
 };
 
-const runParityCheck = async (documents: Record<string, unknown>): Promise<{ code: number; stdout: string; stderr: string }> => {
+const runParityCheck = async (
+  documents: Record<string, unknown>,
+  args: string[] = [],
+): Promise<{ code: number; stdout: string; stderr: string }> => {
   const tempRoot = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-sbom-parity-"));
 
   try {
@@ -95,7 +98,7 @@ const runParityCheck = async (documents: Record<string, unknown>): Promise<{ cod
     }
 
     return await new Promise((resolve, reject) => {
-      const child = spawn(process.execPath, [scriptPath, "--directory", tempRoot], {
+      const child = spawn(process.execPath, [scriptPath, "--directory", tempRoot, ...args], {
         cwd: packageRoot,
         env: process.env,
         stdio: ["ignore", "pipe", "pipe"]
@@ -157,6 +160,27 @@ test("SBOM parity check passes when CycloneDX and SPDX describe the same package
   assert.match(result.stdout, /\[sbom-parity\] figma-generated-app-react-mui matched 3 packages\./);
   assert.match(result.stdout, /\[sbom-parity\] figma-generated-app-react-tailwind matched 2 packages\./);
   assert.equal(result.stderr, "");
+});
+
+test("SBOM parity check derives expected documents from the selected profile", async () => {
+  const result = await runParityCheck(
+    {
+      "workspace-dev.cdx.json": createCycloneDxDocument("workspace-dev", "1.0.0", []),
+      "workspace-dev.spdx.json": createSpdxDocument("workspace-dev", "1.0.0", []),
+      "figma-generated-app-react-tailwind.cdx.json": createCycloneDxDocument("figma-generated-app", "1.0.0", [
+        ["tailwind-child", "3.0.0"]
+      ]),
+      "figma-generated-app-react-tailwind.spdx.json": createSpdxDocument("figma-generated-app", "1.0.0", [
+        ["tailwind-child", "3.0.0"]
+      ])
+    },
+    ["--profile", "default"],
+  );
+
+  assert.equal(result.code, 0, `Expected success, got stderr:\n${result.stderr}`);
+  assert.match(result.stdout, /\[sbom-parity\] workspace-dev matched 1 packages\./);
+  assert.match(result.stdout, /\[sbom-parity\] figma-generated-app-react-tailwind matched 2 packages\./);
+  assert.doesNotMatch(result.stdout, /react-mui/);
 });
 
 test("SBOM parity check fails when SPDX misses a transitive dependency", async () => {

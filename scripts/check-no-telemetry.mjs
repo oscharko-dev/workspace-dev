@@ -12,16 +12,20 @@
 import { readdir, readFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import {
+  parseProfileGateArgs,
+  profilesFromIds,
+  templateMetadata,
+} from "./profile-gate-utils.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const packageRoot = path.resolve(__dirname, "..");
 
 // ── Directories to scan (AC-1.1) ────────────────────────────────────────────
-const SCAN_ROOTS = [
+const BASE_SCAN_ROOTS = [
   path.resolve(packageRoot, "src"),
   path.resolve(packageRoot, "ui-src/src"),
   path.resolve(packageRoot, "plugin"),
-  path.resolve(packageRoot, "template"),
   path.resolve(packageRoot, "scripts"),
 ];
 
@@ -242,9 +246,28 @@ const findViolationsInLine = (line) => {
   return findings;
 };
 
+const parseArgs = () => {
+  const { profileIds } = parseProfileGateArgs(process.argv.slice(2));
+  return { profileIds };
+};
+
+const resolveScanRoots = (profileIds) => {
+  const templateRoots = new Set();
+  for (const profile of profilesFromIds(profileIds)) {
+    for (const templateId of profile.templates) {
+      templateRoots.add(
+        path.resolve(packageRoot, templateMetadata[templateId].packageRoot),
+      );
+    }
+  }
+  return [...BASE_SCAN_ROOTS, ...templateRoots];
+};
+
 const main = async () => {
+  const { profileIds } = parseArgs();
+  const scanRoots = resolveScanRoots(profileIds);
   const fileLists = await Promise.all(
-    SCAN_ROOTS.map((root) => collectFiles(root)),
+    scanRoots.map((root) => collectFiles(root)),
   );
   const files = fileLists.flat();
   const violations = [];
@@ -283,7 +306,7 @@ const main = async () => {
   }
 
   console.log(
-    `Zero-telemetry guard passed. Scanned ${files.length} files across ${SCAN_ROOTS.length} roots.`,
+    `Zero-telemetry guard passed. Scanned ${files.length} files across ${scanRoots.length} roots for profile(s): ${profileIds.join(", ")}.`,
   );
 };
 
@@ -293,9 +316,20 @@ export {
   hasTestSuffix,
   hasIncludedExtension,
   isSafeDestination,
+  resolveScanRoots,
 };
 
-main().catch((error) => {
-  console.error("Zero-telemetry guard failed:", error);
-  process.exit(1);
-});
+const isCliEntry = () => {
+  const entryPath = process.argv[1];
+  return (
+    typeof entryPath === "string" &&
+    path.resolve(entryPath) === fileURLToPath(import.meta.url)
+  );
+};
+
+if (isCliEntry()) {
+  main().catch((error) => {
+    console.error("Zero-telemetry guard failed:", error);
+    process.exit(1);
+  });
+}

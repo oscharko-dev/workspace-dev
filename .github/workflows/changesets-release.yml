@@ -107,19 +107,9 @@ jobs:
           pnpm run lint:no-telemetry
           pnpm run lint:secrets:all
           pnpm run build
-          pnpm run lint:publint
-          pnpm run lint:types-publish
           pnpm run lint:size
-          pnpm run verify:licenses
-          pnpm run verify:pack
-          pnpm run verify:reproducible-build
           pnpm run verify:fips
-          pnpm run sbom:cyclonedx
-          pnpm run sbom:cyclonedx:template
-          pnpm run sbom:spdx
-          pnpm run sbom:spdx:template
-          pnpm run verify:sbom:parity
-          pnpm run verify:airgap
+          pnpm run verify:profile-gates
 
       - name: Upload runtime load smoke artifacts
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7
@@ -299,26 +289,11 @@ jobs:
           mkdir -p "${EVIDENCE_DIR}/sbom"
           echo "RELEASE_EVIDENCE_DIR=${EVIDENCE_DIR}" >> "$GITHUB_ENV"
 
-      - name: Generate CycloneDX SBOM
-        run: node scripts/generate-cyclonedx.mjs "${RELEASE_EVIDENCE_DIR}/sbom/workspace-dev.cdx.json"
-
-      - name: Generate React MUI template CycloneDX SBOM
-        run: node scripts/generate-cyclonedx.mjs "${RELEASE_EVIDENCE_DIR}/sbom/figma-generated-app-react-mui.cdx.json" --package-root template/react-mui-app
-
-      - name: Generate React Tailwind template CycloneDX SBOM
-        run: node scripts/generate-cyclonedx.mjs "${RELEASE_EVIDENCE_DIR}/sbom/figma-generated-app-react-tailwind.cdx.json" --package-root template/react-tailwind-app
-
-      - name: Generate SPDX SBOM
-        run: node scripts/generate-spdx.mjs "${RELEASE_EVIDENCE_DIR}/sbom/workspace-dev.spdx.json"
-
-      - name: Generate React MUI template SPDX SBOM
-        run: node scripts/generate-spdx.mjs "${RELEASE_EVIDENCE_DIR}/sbom/figma-generated-app-react-mui.spdx.json" --package-root template/react-mui-app
-
-      - name: Generate React Tailwind template SPDX SBOM
-        run: node scripts/generate-spdx.mjs "${RELEASE_EVIDENCE_DIR}/sbom/figma-generated-app-react-tailwind.spdx.json" --package-root template/react-tailwind-app
-
-      - name: Verify SBOM parity
-        run: node scripts/check-sbom-parity.mjs --directory "${RELEASE_EVIDENCE_DIR}/sbom"
+      - name: Run profile release gates
+        shell: bash
+        run: |
+          pnpm run verify:profile-gates -- --skip-airgap --skip-reproducible
+          cp -R artifacts/sbom/. "${RELEASE_EVIDENCE_DIR}/sbom/"
 
       - name: Configure npm publish auth mode
         id: npm_auth_mode
@@ -402,38 +377,25 @@ jobs:
             exit 1
           fi
 
-          CYCLO_ASSET="${RELEASE_EVIDENCE_DIR}/sbom/workspace-dev.cdx.json"
-          MUI_TEMPLATE_CYCLO_ASSET="${RELEASE_EVIDENCE_DIR}/sbom/figma-generated-app-react-mui.cdx.json"
-          TAILWIND_TEMPLATE_CYCLO_ASSET="${RELEASE_EVIDENCE_DIR}/sbom/figma-generated-app-react-tailwind.cdx.json"
-          SPDX_ASSET="${RELEASE_EVIDENCE_DIR}/sbom/workspace-dev.spdx.json"
-          MUI_TEMPLATE_SPDX_ASSET="${RELEASE_EVIDENCE_DIR}/sbom/figma-generated-app-react-mui.spdx.json"
-          TAILWIND_TEMPLATE_SPDX_ASSET="${RELEASE_EVIDENCE_DIR}/sbom/figma-generated-app-react-tailwind.spdx.json"
-          for ASSET_PATH in "${CYCLO_ASSET}" "${MUI_TEMPLATE_CYCLO_ASSET}" "${TAILWIND_TEMPLATE_CYCLO_ASSET}" "${SPDX_ASSET}" "${MUI_TEMPLATE_SPDX_ASSET}" "${TAILWIND_TEMPLATE_SPDX_ASSET}"; do
-            if [[ ! -f "${ASSET_PATH}" ]]; then
-              echo "Required release evidence asset is missing: ${ASSET_PATH}"
-              exit 1
-            fi
+          mapfile -t SBOM_ASSETS < <(find "${RELEASE_EVIDENCE_DIR}/sbom" -type f \( -name "*.cdx.json" -o -name "*.spdx.json" \) | sort)
+          if [[ "${#SBOM_ASSETS[@]}" -eq 0 ]]; then
+            echo "No profile SBOM release evidence assets were generated."
+            exit 1
+          fi
+
+          UPLOAD_ASSETS=()
+          for ASSET_PATH in "${SBOM_ASSETS[@]}"; do
+            PROFILE_ID="$(basename "$(dirname "${ASSET_PATH}")")"
+            UPLOAD_ASSETS+=("${ASSET_PATH}#${PROFILE_ID}-${PACKAGE_VERSION}-$(basename "${ASSET_PATH}")")
           done
 
           if gh release view "${RELEASE_TAG}" >/dev/null 2>&1; then
             echo "GitHub release ${RELEASE_TAG} already exists. Uploading/refreshing evidence assets."
-            gh release upload "${RELEASE_TAG}" \
-              "${CYCLO_ASSET}#workspace-dev-${PACKAGE_VERSION}.cdx.json" \
-              "${MUI_TEMPLATE_CYCLO_ASSET}#figma-generated-app-react-mui-${PACKAGE_VERSION}.cdx.json" \
-              "${TAILWIND_TEMPLATE_CYCLO_ASSET}#figma-generated-app-react-tailwind-${PACKAGE_VERSION}.cdx.json" \
-              "${SPDX_ASSET}#workspace-dev-${PACKAGE_VERSION}.spdx.json" \
-              "${MUI_TEMPLATE_SPDX_ASSET}#figma-generated-app-react-mui-${PACKAGE_VERSION}.spdx.json" \
-              "${TAILWIND_TEMPLATE_SPDX_ASSET}#figma-generated-app-react-tailwind-${PACKAGE_VERSION}.spdx.json" \
-              --clobber
+            gh release upload "${RELEASE_TAG}" "${UPLOAD_ASSETS[@]}" --clobber
           else
             echo "Creating GitHub release ${RELEASE_TAG} with generated release notes."
             gh release create "${RELEASE_TAG}" \
-              "${CYCLO_ASSET}#workspace-dev-${PACKAGE_VERSION}.cdx.json" \
-              "${MUI_TEMPLATE_CYCLO_ASSET}#figma-generated-app-react-mui-${PACKAGE_VERSION}.cdx.json" \
-              "${TAILWIND_TEMPLATE_CYCLO_ASSET}#figma-generated-app-react-tailwind-${PACKAGE_VERSION}.cdx.json" \
-              "${SPDX_ASSET}#workspace-dev-${PACKAGE_VERSION}.spdx.json" \
-              "${MUI_TEMPLATE_SPDX_ASSET}#figma-generated-app-react-mui-${PACKAGE_VERSION}.spdx.json" \
-              "${TAILWIND_TEMPLATE_SPDX_ASSET}#figma-generated-app-react-tailwind-${PACKAGE_VERSION}.spdx.json" \
+              "${UPLOAD_ASSETS[@]}" \
               --target "${GITHUB_SHA}" \
               --title "workspace-dev ${RELEASE_TAG}" \
               --generate-notes

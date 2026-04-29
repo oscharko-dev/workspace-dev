@@ -3,11 +3,16 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import {
+  parseProfileGateArgs,
+  profilesFromIds,
+  sbomDocumentsForProfile,
+} from "./profile-gate-utils.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, "..");
 
-const EXPECTED_DOCUMENTS = [
+const DEFAULT_EXPECTED_DOCUMENTS = [
   {
     label: "workspace-dev",
     cyclonedxFileName: "workspace-dev.cdx.json",
@@ -28,6 +33,7 @@ const EXPECTED_DOCUMENTS = [
 const parseArgs = () => {
   const args = process.argv.slice(2);
   let directory = "artifacts/sbom";
+  const profileArgs = [];
 
   for (let index = 0; index < args.length; index += 1) {
     const current = args[index];
@@ -47,11 +53,35 @@ const parseArgs = () => {
       directory = current.slice("--directory=".length);
       continue;
     }
+    if (current === "--profile" || current === "-p") {
+      const next = args[index + 1];
+      if (!next) {
+        throw new Error(`Missing value for ${current}.`);
+      }
+      profileArgs.push(current, next);
+      index += 1;
+      continue;
+    }
+    if (current.startsWith("--profile=")) {
+      profileArgs.push(current);
+      continue;
+    }
     directory = current;
   }
 
+  const { profileIds } =
+    profileArgs.length > 0
+      ? parseProfileGateArgs(profileArgs)
+      : { profileIds: [] };
+
   return {
-    directory: path.resolve(repoRoot, directory)
+    directory: path.resolve(repoRoot, directory),
+    expectedDocuments:
+      profileIds.length > 0
+        ? profilesFromIds(profileIds).flatMap((profile) =>
+            sbomDocumentsForProfile(profile),
+          )
+        : DEFAULT_EXPECTED_DOCUMENTS
   };
 };
 
@@ -164,8 +194,8 @@ const verifyDocumentPair = async ({ directory, label, cyclonedxFileName, spdxFil
 };
 
 const main = async () => {
-  const { directory } = parseArgs();
-  for (const documentDefinition of EXPECTED_DOCUMENTS) {
+  const { directory, expectedDocuments } = parseArgs();
+  for (const documentDefinition of expectedDocuments) {
     await verifyDocumentPair({
       directory,
       ...documentDefinition

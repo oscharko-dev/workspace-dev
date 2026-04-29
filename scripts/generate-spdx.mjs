@@ -71,7 +71,7 @@ const toSpdxId = (name, version) => {
   return `SPDXRef-Package-${`${name}-${version}`.replace(/[^a-zA-Z0-9.-]/g, "-")}`;
 };
 
-const run = (command, args, cwd) =>
+const run = (command, args, cwd, { quiet = false } = {}) =>
   new Promise((resolve, reject) => {
     const env = { ...process.env };
     delete env.npm_execpath;
@@ -79,8 +79,16 @@ const run = (command, args, cwd) =>
     const child = spawn(command, args, {
       cwd,
       env,
-      stdio: "inherit"
+      stdio: quiet ? ["ignore", "pipe", "pipe"] : "inherit"
     });
+    let stderr = "";
+    if (quiet) {
+      child.stdout.resume();
+      child.stderr.setEncoding("utf8");
+      child.stderr.on("data", (chunk) => {
+        stderr += chunk;
+      });
+    }
 
     child.once("error", reject);
     child.once("close", (code) => {
@@ -88,7 +96,11 @@ const run = (command, args, cwd) =>
         resolve(undefined);
         return;
       }
-      reject(new Error(`Command failed with exit code ${code ?? 1}: ${command} ${args.join(" ")}`));
+      reject(
+        new Error(
+          `Command failed with exit code ${code ?? 1}: ${command} ${args.join(" ")}${stderr ? `\n${stderr}` : ""}`
+        )
+      );
     });
   });
 
@@ -144,7 +156,8 @@ const collectCycloneDxPackages = async (packageRoot, packageJson) => {
         "--output-file",
         tempCycloneDxPath
       ],
-      packageRoot
+      packageRoot,
+      { quiet: true }
     );
 
     const cycloneDxDocument = JSON.parse(await readFile(tempCycloneDxPath, "utf8"));

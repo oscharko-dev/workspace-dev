@@ -5,6 +5,7 @@ import {
   hasTestSuffix,
   hasIncludedExtension,
   isSafeDestination,
+  resolveScanRoots,
 } from "./check-no-telemetry.mjs";
 
 // ── hasTestSuffix tests ──────────────────────────────────────────────────────
@@ -42,6 +43,20 @@ test("hasIncludedExtension: rejects excluded extensions", () => {
   assert.strictEqual(hasIncludedExtension("bar.css"), false);
   assert.strictEqual(hasIncludedExtension("baz.html"), false);
   assert.strictEqual(hasIncludedExtension("qux"), false);
+});
+
+test("resolveScanRoots: selects template roots for the requested profile", () => {
+  const defaultRoots = resolveScanRoots(["default"]).map((root) =>
+    root.split("/").slice(-2).join("/"),
+  );
+  const rocketRoots = resolveScanRoots(["rocket"]).map((root) =>
+    root.split("/").slice(-2).join("/"),
+  );
+
+  assert.ok(defaultRoots.includes("template/react-tailwind-app"));
+  assert.ok(!defaultRoots.includes("template/react-mui-app"));
+  assert.ok(rocketRoots.includes("template/react-mui-app"));
+  assert.ok(!rocketRoots.includes("template/react-tailwind-app"));
 });
 
 // ── isSafeDestination tests (AC-2.1, AC-2.2, AC-2.3, AC-2.4) ────────────────

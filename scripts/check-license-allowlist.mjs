@@ -3,6 +3,11 @@
 import { lstat, readFile, readdir, realpath } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import {
+  parseProfileGateArgs,
+  profilesFromIds,
+  templateMetadata,
+} from "./profile-gate-utils.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const packageRoot = process.env.WORKSPACE_DEV_PACKAGE_ROOT
@@ -26,33 +31,30 @@ const APPROVED_LICENSES = [
 ];
 
 const ALLOWED_LICENSES = new Set(APPROVED_LICENSES);
-const PACKAGE_MANIFESTS = [
+const createPackageManifests = (profile) => [
   {
     label: "workspace-dev",
     packageJsonPath: path.resolve(packageRoot, "package.json"),
     allowRuntimeDependencies: false
   },
-  {
-    label: "template/react-mui-app",
-    packageJsonPath: path.resolve(packageRoot, "template/react-mui-app/package.json"),
-    allowRuntimeDependencies: true
-  },
-  {
-    label: "template/react-tailwind-app",
-    packageJsonPath: path.resolve(packageRoot, "template/react-tailwind-app/package.json"),
-    allowRuntimeDependencies: true
-  }
+  ...profile.templates.map((templateId) => {
+    const template = templateMetadata[templateId];
+    return {
+      label: template.packageRoot,
+      packageJsonPath: path.resolve(packageRoot, template.packageRoot, "package.json"),
+      allowRuntimeDependencies: true
+    };
+  })
 ];
-const TEMPLATE_DEPENDENCY_TREES = [
-  {
-    label: "template/react-mui-app",
-    nodeModulesPath: path.resolve(packageRoot, "template/react-mui-app/node_modules")
-  },
-  {
-    label: "template/react-tailwind-app",
-    nodeModulesPath: path.resolve(packageRoot, "template/react-tailwind-app/node_modules")
-  }
-];
+
+const createTemplateDependencyTrees = (profile) =>
+  profile.templates.map((templateId) => {
+    const template = templateMetadata[templateId];
+    return {
+      label: template.packageRoot,
+      nodeModulesPath: path.resolve(packageRoot, template.packageRoot, "node_modules")
+    };
+  });
 
 const formatAllowedLicenses = () => {
   return APPROVED_LICENSES.join(", ");
@@ -261,12 +263,22 @@ const assertTemplateDependencyTreePolicy = async ({ label, nodeModulesPath }) =>
 };
 
 const main = async () => {
-  for (const manifest of PACKAGE_MANIFESTS) {
-    await assertManifestPolicy(manifest);
-  }
+  const args = process.argv.slice(2);
+  const { profileIds } = parseProfileGateArgs(args);
+  const profiles =
+    args.length === 0
+      ? [{ id: "all", templates: ["react-mui-app", "react-tailwind-app"] }]
+      : profilesFromIds(profileIds);
 
-  for (const templateDependencyTree of TEMPLATE_DEPENDENCY_TREES) {
-    await assertTemplateDependencyTreePolicy(templateDependencyTree);
+  for (const profile of profiles) {
+    console.log(`[license-allowlist] Checking profile '${profile.id}'.`);
+    for (const manifest of createPackageManifests(profile)) {
+      await assertManifestPolicy(manifest);
+    }
+
+    for (const templateDependencyTree of createTemplateDependencyTrees(profile)) {
+      await assertTemplateDependencyTreePolicy(templateDependencyTree);
+    }
   }
 };
 

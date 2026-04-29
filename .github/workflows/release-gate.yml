@@ -181,12 +181,6 @@ jobs:
       - name: Build package
         run: pnpm run build
 
-      - name: Validate package metadata with publint
-        run: pnpm run lint:publint
-
-      - name: Validate published type resolution
-        run: pnpm run lint:types-publish
-
       - name: Enforce package size budget
         run: pnpm run lint:size
 
@@ -199,32 +193,8 @@ jobs:
       - name: Enforce repository secret policy
         run: pnpm run lint:secrets:all
 
-      - name: Enforce license allowlist
-        run: pnpm run verify:licenses
-
-      - name: Verify package tarball contents
-        run: pnpm run verify:pack
-
-      - name: Verify reproducible build
-        run: pnpm run verify:reproducible-build
-
-      - name: Verify offline install + dual module smoke
-        run: pnpm run verify:airgap
-
-      - name: Generate CycloneDX SBOM
-        run: pnpm run sbom:cyclonedx
-
-      - name: Generate template CycloneDX SBOM
-        run: pnpm run sbom:cyclonedx:template
-
-      - name: Generate SPDX SBOM
-        run: pnpm run sbom:spdx
-
-      - name: Generate template SPDX SBOM
-        run: pnpm run sbom:spdx:template
-
-      - name: Verify SBOM parity
-        run: pnpm run verify:sbom:parity
+      - name: Run profile release gates
+        run: pnpm run verify:profile-gates
 
       - name: Upload flaky retry artifacts
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7
@@ -239,7 +209,10 @@ jobs:
         if: always()
         with:
           name: workspace-dev-sbom-node-${{ matrix.node-version }}
-          path: artifacts/sbom
+          path: |
+            artifacts/sbom
+            artifacts/build-profiles
+            artifacts/reproducibility
           if-no-files-found: ignore
 
       - name: Upload Playwright diagnostics
