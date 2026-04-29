@@ -5,7 +5,7 @@
   --color-warning: #ffedd1;
   --color-error: #DC2626;
   --color-info: #0288D1;
-  --color-background: #fbfbfc;
+  --color-background: #fdfdfd;
   --color-text: #1c1f24;
   --color-divider: #1c1f241f;
   --color-action-active: #1c1f248a;
@@ -46,8 +46,8 @@
   --typography-body2-line-height: 16px;
   --font-weight-body2: 500;
   --typography-button-font-size: 12px;
-  --typography-button-line-height: 20px;
-  --font-weight-button: 400;
+  --typography-button-line-height: 16px;
+  --font-weight-button: 500;
   --typography-button-text-transform: none;
   --typography-caption-font-size: 12px;
   --typography-caption-line-height: 16px;

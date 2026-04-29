@@ -22,14 +22,14 @@
         {
           "code": "W_SEMANTIC_COMPONENT_NOT_REUSABLE",
           "nodeId": "login-email",
-          "nodeName": "MuiFormControlRoot",
-          "message": "Default semantic synthesis kept 'MuiFormControlRoot' inline because no matching reusable semantic structure was found."
+          "nodeName": "Text Field",
+          "message": "Default semantic synthesis kept 'Text Field' inline because no matching reusable semantic structure was found."
         },
         {
           "code": "W_SEMANTIC_COMPONENT_NOT_REUSABLE",
           "nodeId": "login-password",
-          "nodeName": "MuiFormControlRoot",
-          "message": "Default semantic synthesis kept 'MuiFormControlRoot' inline because no matching reusable semantic structure was found."
+          "nodeName": "Text Field",
+          "message": "Default semantic synthesis kept 'Text Field' inline because no matching reusable semantic structure was found."
         }
       ]
     },
@@ -41,8 +41,8 @@
         {
           "code": "W_SEMANTIC_COMPONENT_NOT_REUSABLE",
           "nodeId": "reg-name",
-          "nodeName": "MuiFormControlRoot",
-          "message": "Default semantic synthesis kept 'MuiFormControlRoot' inline because no matching reusable semantic structure was found."
+          "nodeName": "Text Field",
+          "message": "Default semantic synthesis kept 'Text Field' inline because no matching reusable semantic structure was found."
         }
       ]
     },
@@ -66,8 +66,8 @@
         {
           "code": "W_SEMANTIC_COMPONENT_NOT_REUSABLE",
           "nodeId": "search-field",
-          "nodeName": "MuiFormControlRoot",
-          "message": "Default semantic synthesis kept 'MuiFormControlRoot' inline because no matching reusable semantic structure was found."
+          "nodeName": "Text Field",
+          "message": "Default semantic synthesis kept 'Text Field' inline because no matching reusable semantic structure was found."
         }
       ]
     },
@@ -110,32 +110,32 @@
       "screenName": "Login",
       "code": "W_SEMANTIC_COMPONENT_NOT_REUSABLE",
       "nodeId": "login-email",
-      "nodeName": "MuiFormControlRoot",
-      "message": "Default semantic synthesis kept 'MuiFormControlRoot' inline because no matching reusable semantic structure was found."
+      "nodeName": "Text Field",
+      "message": "Default semantic synthesis kept 'Text Field' inline because no matching reusable semantic structure was found."
     },
     {
       "screenId": "screen-login",
       "screenName": "Login",
       "code": "W_SEMANTIC_COMPONENT_NOT_REUSABLE",
       "nodeId": "login-password",
-      "nodeName": "MuiFormControlRoot",
-      "message": "Default semantic synthesis kept 'MuiFormControlRoot' inline because no matching reusable semantic structure was found."
+      "nodeName": "Text Field",
+      "message": "Default semantic synthesis kept 'Text Field' inline because no matching reusable semantic structure was found."
     },
     {
       "screenId": "screen-register",
       "screenName": "Register",
       "code": "W_SEMANTIC_COMPONENT_NOT_REUSABLE",
       "nodeId": "reg-name",
-      "nodeName": "MuiFormControlRoot",
-      "message": "Default semantic synthesis kept 'MuiFormControlRoot' inline because no matching reusable semantic structure was found."
+      "nodeName": "Text Field",
+      "message": "Default semantic synthesis kept 'Text Field' inline because no matching reusable semantic structure was found."
     },
     {
       "screenId": "screen-search",
       "screenName": "Search",
       "code": "W_SEMANTIC_COMPONENT_NOT_REUSABLE",
       "nodeId": "search-field",
-      "nodeName": "MuiFormControlRoot",
-      "message": "Default semantic synthesis kept 'MuiFormControlRoot' inline because no matching reusable semantic structure was found."
+      "nodeName": "Text Field",
+      "message": "Default semantic synthesis kept 'Text Field' inline because no matching reusable semantic structure was found."
     },
     {
       "screenId": "screen-profile",

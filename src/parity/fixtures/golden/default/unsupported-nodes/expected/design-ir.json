@@ -1,5 +1,5 @@
 {
-  "sourceName": "Design System Mapped Board",
+  "sourceName": "Unsupported Pattern Coverage Board",
   "screens": [
     {
       "id": "screen-profile",
@@ -26,7 +26,7 @@
             "left": 0
           },
           "type": "text",
-          "text": "User Profile",
+          "text": "Access Review",
           "x": 24,
           "y": 24,
           "width": 200,
@@ -58,7 +58,7 @@
           "children": [
             {
               "id": "avatar",
-              "name": "MuiAvatarRoot",
+              "name": "Avatar",
               "nodeType": "ELLIPSE",
               "layoutMode": "NONE",
               "gap": 0,
@@ -114,7 +114,7 @@
                     "left": 0
                   },
                   "type": "text",
-                  "text": "Jane Smith",
+                  "text": "Demo Reviewer",
                   "x": 104,
                   "y": 72,
                   "width": 200,
@@ -139,7 +139,7 @@
                     "left": 0
                   },
                   "type": "text",
-                  "text": "Senior Engineer",
+                  "text": "Risk Operations",
                   "x": 104,
                   "y": 104,
                   "width": 200,
@@ -188,7 +188,7 @@
                 "left": 0
               },
               "type": "text",
-              "text": "Projects",
+              "text": "Queues",
               "x": 40,
               "y": 184,
               "width": 80,
@@ -260,7 +260,7 @@
                 "left": 0
               },
               "type": "text",
-              "text": "Contributions",
+              "text": "Checks",
               "x": 296,
               "y": 184,
               "width": 120,
@@ -332,7 +332,7 @@
                 "left": 0
               },
               "type": "text",
-              "text": "Reviews",
+              "text": "Approvals",
               "x": 552,
               "y": 184,
               "width": 80,
@@ -373,7 +373,7 @@
         },
         {
           "id": "divider-1",
-          "name": "MuiDividerRoot",
+          "name": "Divider",
           "nodeType": "LINE",
           "layoutMode": "NONE",
           "gap": 0,
@@ -411,7 +411,7 @@
           "children": [
             {
               "id": "chip-1",
-              "name": "MuiChipRoot",
+              "name": "Status Chip",
               "nodeType": "FRAME",
               "layoutMode": "NONE",
               "gap": 0,
@@ -442,7 +442,7 @@
                     "left": 0
                   },
                   "type": "text",
-                  "text": "React",
+                  "text": "Payments",
                   "x": 40,
                   "y": 328,
                   "width": 48,
@@ -458,7 +458,7 @@
             },
             {
               "id": "chip-2",
-              "name": "MuiChipRoot",
+              "name": "Status Chip",
               "nodeType": "FRAME",
               "layoutMode": "NONE",
               "gap": 0,
@@ -489,7 +489,7 @@
                     "left": 0
                   },
                   "type": "text",
-                  "text": "TypeScript",
+                  "text": "Limits",
                   "x": 128,
                   "y": 328,
                   "width": 68,
@@ -505,7 +505,7 @@
             },
             {
               "id": "chip-3",
-              "name": "MuiChipRoot",
+              "name": "Status Chip",
               "nodeType": "FRAME",
               "layoutMode": "NONE",
               "gap": 0,
@@ -536,7 +536,7 @@
                     "left": 0
                   },
                   "type": "text",
-                  "text": "Node.js",
+                  "text": "Cards",
                   "x": 236,
                   "y": 328,
                   "width": 48,
@@ -552,7 +552,7 @@
             },
             {
               "id": "chip-4",
-              "name": "MuiChipRoot",
+              "name": "Status Chip",
               "nodeType": "FRAME",
               "layoutMode": "NONE",
               "gap": 0,
@@ -583,7 +583,7 @@
                     "left": 0
                   },
                   "type": "text",
-                  "text": "PostgreSQL",
+                  "text": "Audit",
                   "x": 324,
                   "y": 328,
                   "width": 68,
@@ -601,7 +601,7 @@
         },
         {
           "id": "badge-item",
-          "name": "MuiBadgeRoot",
+          "name": "Notification Badge",
           "nodeType": "FRAME",
           "layoutMode": "NONE",
           "gap": 0,
@@ -778,8 +778,8 @@
       },
       "button": {
         "fontSizePx": 13,
-        "fontWeight": 700,
-        "lineHeightPx": 44,
+        "fontWeight": 500,
+        "lineHeightPx": 18,
         "fontFamily": "Roboto",
         "textTransform": "none"
       },

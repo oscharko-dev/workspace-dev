@@ -1,6 +1,6 @@
 {
   "artifactVersion": 1,
-  "sourceName": "Pattern Extraction Board",
+  "sourceName": "Payment Authorization Card Board",
   "summary": {
     "pageCount": 1,
     "sectionCount": 0,
@@ -42,7 +42,7 @@
     "frames": [
       {
         "id": "screen-products",
-        "name": "ProductList",
+        "name": "PaymentAuthorizations",
         "pageId": "0:1",
         "nodeType": "FRAME",
         "layoutMode": "VERTICAL",
@@ -71,7 +71,7 @@
     "byFrame": [
       {
         "frameId": "screen-products",
-        "frameName": "ProductList",
+        "frameName": "PaymentAuthorizations",
         "subtreeNodeCount": 38,
         "instanceCount": 0,
         "density": 0,

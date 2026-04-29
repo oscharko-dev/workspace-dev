@@ -5,7 +5,7 @@
   "screenElementCounts": [
     {
       "screenId": "screen-table",
-      "screenName": "UserList",
+      "screenName": "TransactionTable",
       "elements": 18
     }
   ],

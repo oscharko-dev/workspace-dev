@@ -7,55 +7,139 @@
       "figmaJson": "fintech-dashboard/figma.json",
       "snapshotGeneratedFiles": true,
       "validation": true,
-      "unsupportedNodeReport": true
+      "unsupportedNodeReport": true,
+      "demo": {
+        "surface": "board",
+        "scenario": "Global banking dashboard",
+        "coverage": ["board", "financial-dashboard"],
+        "ossNeutral": true,
+        "syntheticData": true
+      }
     },
     {
       "id": "login-mfa",
       "figmaJson": "login-mfa/figma.json",
       "snapshotGeneratedFiles": true,
-      "unsupportedNodeReport": true
+      "unsupportedNodeReport": true,
+      "demo": {
+        "surface": "view",
+        "scenario": "Login and MFA entry view",
+        "coverage": ["view", "login-mfa"],
+        "ossNeutral": true,
+        "syntheticData": true
+      }
     },
     {
       "id": "payment-card",
       "figmaJson": "payment-card/figma.json",
       "snapshotGeneratedFiles": true,
-      "unsupportedNodeReport": true
+      "unsupportedNodeReport": true,
+      "demo": {
+        "surface": "component",
+        "scenario": "Payment authorization cards",
+        "coverage": ["component", "payment-authorization"],
+        "ossNeutral": true,
+        "syntheticData": true
+      }
     },
     {
       "id": "forms",
       "figmaJson": "forms/figma.json",
       "snapshotGeneratedFiles": true,
-      "unsupportedNodeReport": true
+      "unsupportedNodeReport": true,
+      "demo": {
+        "surface": "view",
+        "scenario": "Financial onboarding form",
+        "coverage": ["forms", "view"],
+        "ossNeutral": true,
+        "syntheticData": true
+      }
     },
     {
       "id": "responsive-marketing",
       "figmaJson": "responsive-marketing/figma.json",
       "snapshotGeneratedFiles": true,
-      "unsupportedNodeReport": true
+      "unsupportedNodeReport": true,
+      "demo": {
+        "surface": "view",
+        "scenario": "Responsive banking portal page",
+        "coverage": ["responsive", "view"],
+        "ossNeutral": true,
+        "syntheticData": true
+      }
     },
     {
       "id": "dense-table",
       "figmaJson": "dense-table/figma.json",
       "snapshotGeneratedFiles": true,
-      "unsupportedNodeReport": true
+      "unsupportedNodeReport": true,
+      "demo": {
+        "surface": "view",
+        "scenario": "Transaction table view",
+        "coverage": ["dense-table", "view"],
+        "ossNeutral": true,
+        "syntheticData": true
+      }
     },
     {
       "id": "mobile-navigation",
       "figmaJson": "mobile-navigation/figma.json",
       "snapshotGeneratedFiles": true,
-      "unsupportedNodeReport": true
+      "unsupportedNodeReport": true,
+      "demo": {
+        "surface": "board",
+        "scenario": "Mobile banking navigation board",
+        "coverage": ["mobile-navigation", "board"],
+        "ossNeutral": true,
+        "syntheticData": true
+      }
     },
     {
       "id": "design-token-heavy-board",
       "figmaJson": "design-token-heavy-board/figma.json",
       "snapshotGeneratedFiles": true,
-      "unsupportedNodeReport": true
+      "unsupportedNodeReport": true,
+      "demo": {
+        "surface": "board",
+        "scenario": "Token-heavy risk operations board",
+        "coverage": ["token-heavy", "board"],
+        "ossNeutral": true,
+        "syntheticData": true
+      }
+    },
+    {
+      "id": "risk-alert-modal",
+      "figmaJson": "risk-alert-modal/figma.json",
+      "snapshotGeneratedFiles": true,
+      "unsupportedNodeReport": true,
+      "demo": {
+        "surface": "view",
+        "scenario": "Risk alert modal",
+        "coverage": ["risk-alert-modal", "view"],
+        "ossNeutral": true,
+        "syntheticData": true
+      }
     },
     {
       "id": "unsupported-nodes",
       "figmaJson": "unsupported-nodes/figma.json",
       "snapshotGeneratedFiles": true,
-      "unsupportedNodeReport": true
+      "unsupportedNodeReport": true,
+      "demo": {
+        "surface": "view",
+        "scenario": "Unsupported pattern coverage",
+        "coverage": ["unsupported-node-report", "view"],
+        "ossNeutral": true,
+        "syntheticData": true
+      }
     }
-  ]
+  ],
+  "demoPack": {
+    "id": "oss-neutral-financial-default-demo",
+    "title": "OSS-neutral financial default pipeline demo fixture pack",
+    "domain": "financial-services",
+    "dataPolicy": "synthetic-only",
+    "customerData": false,
+    "proprietaryAssets": false
+  }
 }

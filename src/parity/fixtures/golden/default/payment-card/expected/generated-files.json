@@ -3,10 +3,10 @@
   "generation-metrics.json",
   "src/App.test.tsx",
   "src/App.tsx",
-  "src/components/ProductCard.tsx",
+  "src/components/AuthorizationCard.tsx",
   "src/generated/layout-report.json",
   "src/generated/semantic-component-report.json",
-  "src/pages/productlist.tsx",
+  "src/pages/paymentauthorizations.tsx",
   "src/theme/token-report.json",
   "src/theme/tokens.css",
   "src/theme/tokens.json"

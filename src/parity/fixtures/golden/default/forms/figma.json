@@ -1,5 +1,5 @@
 {
-  "name": "Complex Form Board",
+  "name": "Account Opening Form Board",
   "document": {
     "id": "0:0",
     "type": "DOCUMENT",
@@ -12,7 +12,7 @@
           {
             "id": "screen-form",
             "type": "FRAME",
-            "name": "Registration",
+            "name": "AccountOpening",
             "layoutMode": "VERTICAL",
             "itemSpacing": 16,
             "paddingTop": 24,
@@ -32,7 +32,7 @@
                 "id": "form-title",
                 "type": "TEXT",
                 "name": "Heading",
-                "characters": "Create Account",
+                "characters": "Open Treasury Account",
                 "style": {
                   "fontSize": 28,
                   "fontWeight": 700,
@@ -53,7 +53,7 @@
                 "id": "form-subtitle",
                 "type": "TEXT",
                 "name": "Subtitle",
-                "characters": "Fill in your details to get started",
+                "characters": "Synthetic onboarding form for demo review",
                 "style": {
                   "fontSize": 14,
                   "fontWeight": 400,
@@ -83,7 +83,7 @@
                   {
                     "id": "first-name-field",
                     "type": "FRAME",
-                    "name": "MuiTextFieldRoot",
+                    "name": "Text Field",
                     "layoutMode": "VERTICAL",
                     "itemSpacing": 4,
                     "absoluteBoundingBox": { "x": 24, "y": 100, "width": 180, "height": 56 },
@@ -95,7 +95,7 @@
                         "id": "first-name-label",
                         "type": "TEXT",
                         "name": "Label",
-                        "characters": "First Name",
+                        "characters": "Legal Entity",
                         "style": { "fontSize": 12, "fontWeight": 400, "fontFamily": "Inter", "lineHeightPx": 16, "textAlignHorizontal": "LEFT" },
                         "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 0.4, "g": 0.42, "b": 0.46, "a": 1 } }],
                         "absoluteBoundingBox": { "x": 36, "y": 104, "width": 70, "height": 16 }
@@ -104,7 +104,7 @@
                         "id": "first-name-value",
                         "type": "TEXT",
                         "name": "Value",
-                        "characters": "John",
+                        "characters": "Demo Entity A",
                         "style": { "fontSize": 16, "fontWeight": 400, "fontFamily": "Inter", "lineHeightPx": 24, "textAlignHorizontal": "LEFT" },
                         "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 0.11, "g": 0.12, "b": 0.14, "a": 1 } }],
                         "absoluteBoundingBox": { "x": 36, "y": 124, "width": 156, "height": 24 }
@@ -114,7 +114,7 @@
                   {
                     "id": "last-name-field",
                     "type": "FRAME",
-                    "name": "MuiTextFieldRoot",
+                    "name": "Text Field",
                     "layoutMode": "VERTICAL",
                     "itemSpacing": 4,
                     "absoluteBoundingBox": { "x": 216, "y": 100, "width": 180, "height": 56 },
@@ -126,7 +126,7 @@
                         "id": "last-name-label",
                         "type": "TEXT",
                         "name": "Label",
-                        "characters": "Last Name",
+                        "characters": "Region",
                         "style": { "fontSize": 12, "fontWeight": 400, "fontFamily": "Inter", "lineHeightPx": 16, "textAlignHorizontal": "LEFT" },
                         "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 0.4, "g": 0.42, "b": 0.46, "a": 1 } }],
                         "absoluteBoundingBox": { "x": 228, "y": 104, "width": 65, "height": 16 }
@@ -135,7 +135,7 @@
                         "id": "last-name-value",
                         "type": "TEXT",
                         "name": "Value",
-                        "characters": "Doe",
+                        "characters": "EU North",
                         "style": { "fontSize": 16, "fontWeight": 400, "fontFamily": "Inter", "lineHeightPx": 24, "textAlignHorizontal": "LEFT" },
                         "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 0.11, "g": 0.12, "b": 0.14, "a": 1 } }],
                         "absoluteBoundingBox": { "x": 228, "y": 124, "width": 156, "height": 24 }
@@ -147,7 +147,7 @@
               {
                 "id": "email-field",
                 "type": "FRAME",
-                "name": "MuiTextFieldRoot",
+                "name": "Text Field",
                 "layoutMode": "VERTICAL",
                 "itemSpacing": 4,
                 "absoluteBoundingBox": { "x": 24, "y": 172, "width": 372, "height": 56 },
@@ -159,7 +159,7 @@
                     "id": "email-label",
                     "type": "TEXT",
                     "name": "Label",
-                    "characters": "Email Address",
+                    "characters": "Contact Email",
                     "style": { "fontSize": 12, "fontWeight": 400, "fontFamily": "Inter", "lineHeightPx": 16, "textAlignHorizontal": "LEFT" },
                     "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 0.4, "g": 0.42, "b": 0.46, "a": 1 } }],
                     "absoluteBoundingBox": { "x": 36, "y": 176, "width": 90, "height": 16 }
@@ -168,7 +168,7 @@
                     "id": "email-value",
                     "type": "TEXT",
                     "name": "Value",
-                    "characters": "john@example.com",
+                    "characters": "contact@example.invalid",
                     "style": { "fontSize": 16, "fontWeight": 400, "fontFamily": "Inter", "lineHeightPx": 24, "textAlignHorizontal": "LEFT" },
                     "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 0.11, "g": 0.12, "b": 0.14, "a": 1 } }],
                     "absoluteBoundingBox": { "x": 36, "y": 196, "width": 348, "height": 24 }
@@ -188,7 +188,7 @@
                   {
                     "id": "checkbox-icon",
                     "type": "FRAME",
-                    "name": "MuiCheckboxRoot",
+                    "name": "Checkbox",
                     "absoluteBoundingBox": { "x": 24, "y": 244, "width": 24, "height": 24 },
                     "cornerRadius": 4,
                     "strokes": [{ "type": "SOLID", "visible": true, "color": { "r": 0.93, "g": 0, "b": 0.12, "a": 1 } }],
@@ -199,7 +199,7 @@
                     "id": "checkbox-label",
                     "type": "TEXT",
                     "name": "Label",
-                    "characters": "I agree to the Terms and Conditions",
+                    "characters": "I confirm the demo data is synthetic",
                     "style": { "fontSize": 14, "fontWeight": 400, "fontFamily": "Inter", "lineHeightPx": 20, "textAlignHorizontal": "LEFT" },
                     "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 0.11, "g": 0.12, "b": 0.14, "a": 1 } }],
                     "absoluteBoundingBox": { "x": 56, "y": 246, "width": 280, "height": 20 }
@@ -227,7 +227,7 @@
                     "id": "submit-label",
                     "type": "TEXT",
                     "name": "Label",
-                    "characters": "Create Account",
+                    "characters": "Open Treasury Account",
                     "style": { "fontSize": 16, "fontWeight": 600, "fontFamily": "Inter", "lineHeightPx": 22, "textAlignHorizontal": "CENTER" },
                     "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 1, "g": 1, "b": 1, "a": 1 } }],
                     "absoluteBoundingBox": { "x": 136, "y": 297, "width": 148, "height": 22 }

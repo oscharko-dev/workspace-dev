@@ -27,8 +27,8 @@
     },
     {
       "path": "src/App.test.tsx",
-      "sha256": "425300a7e1417b44f2627fc1cb41b9c36b49f6f639364f7d3d2eb2a1de20f8d0",
-      "sizeBytes": 237
+      "sha256": "2a622b772be8762a74e96ce9e83dd4e50827a561e7b6fd6403ca8599cb36660d",
+      "sizeBytes": 247
     },
     {
       "path": "src/App.tsx",
@@ -37,18 +37,18 @@
     },
     {
       "path": "src/generated/layout-report.json",
-      "sha256": "a3718e8ca80f675f7482cfa73b5224f438de7e28f9ff87c1b38f558114d011e6",
-      "sizeBytes": 9292
+      "sha256": "425b1952b7cb0c0347b75ba284c28c439da14357f51d8f2a9db679720412e1ea",
+      "sizeBytes": 9360
     },
     {
       "path": "src/generated/semantic-component-report.json",
-      "sha256": "09fed437d1cceb115623a5839c168fe9630653e67597676b00186ae97104ae07",
-      "sizeBytes": 3936
+      "sha256": "519babdadc86f1fc5d1c134f61d679635c6b67eecc943bbc26c41bcdeedbf985",
+      "sizeBytes": 4004
     },
     {
       "path": "src/pages/dashboard.tsx",
-      "sha256": "a6e698bb1c66698ab6ee0f7990b6c1331e94cd87a11722597037030b73d1fb70",
-      "sizeBytes": 3554
+      "sha256": "76a0726baf7a80eb8b6bf6e8c29d5996b0fe5a1681874fa7a776b94ce3602a6c",
+      "sizeBytes": 3587
     },
     {
       "path": "src/theme/token-report.json",
@@ -112,7 +112,13 @@
   "warnings": [
     {
       "code": "W_SEMANTIC_COMPONENT_NOT_REUSABLE",
-      "message": "Default semantic synthesis kept 'Activity Card' inline because no matching reusable semantic structure was found.",
+      "message": "Default semantic synthesis kept 'Accounts Card' inline because no matching reusable semantic structure was found.",
+      "severity": "warning",
+      "source": "src/generated/semantic-component-report.json"
+    },
+    {
+      "code": "W_SEMANTIC_COMPONENT_NOT_REUSABLE",
+      "message": "Default semantic synthesis kept 'Approvals Card' inline because no matching reusable semantic structure was found.",
       "severity": "warning",
       "source": "src/generated/semantic-component-report.json"
     },
@@ -124,25 +130,19 @@
     },
     {
       "code": "W_SEMANTIC_COMPONENT_NOT_REUSABLE",
-      "message": "Default semantic synthesis kept 'Chart Card' inline because no matching reusable semantic structure was found.",
+      "message": "Default semantic synthesis kept 'Liquidity Card' inline because no matching reusable semantic structure was found.",
       "severity": "warning",
       "source": "src/generated/semantic-component-report.json"
     },
     {
       "code": "W_SEMANTIC_COMPONENT_NOT_REUSABLE",
-      "message": "Default semantic synthesis kept 'Orders Card' inline because no matching reusable semantic structure was found.",
+      "message": "Default semantic synthesis kept 'Payment Flow Card' inline because no matching reusable semantic structure was found.",
       "severity": "warning",
       "source": "src/generated/semantic-component-report.json"
     },
     {
       "code": "W_SEMANTIC_COMPONENT_NOT_REUSABLE",
-      "message": "Default semantic synthesis kept 'Revenue Card' inline because no matching reusable semantic structure was found.",
-      "severity": "warning",
-      "source": "src/generated/semantic-component-report.json"
-    },
-    {
-      "code": "W_SEMANTIC_COMPONENT_NOT_REUSABLE",
-      "message": "Default semantic synthesis kept 'Users Card' inline because no matching reusable semantic structure was found.",
+      "message": "Default semantic synthesis kept 'Risk Queue Card' inline because no matching reusable semantic structure was found.",
       "severity": "warning",
       "source": "src/generated/semantic-component-report.json"
     }

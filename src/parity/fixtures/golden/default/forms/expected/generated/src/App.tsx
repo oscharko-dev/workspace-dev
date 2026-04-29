@@ -1,10 +1,10 @@
-import Registration1 from "./pages/registration";
+import AccountOpening1 from "./pages/accountopening";
 import "./theme/tokens.css";
 
 export default function App() {
   return (
     <div data-testid="generated-app" className="min-h-screen bg-[var(--color-background)] text-[var(--color-text)]">
-      <Registration1 />
+      <AccountOpening1 />
     </div>
   );
 }

@@ -1,5 +1,5 @@
 {
-  "sourceName": "Simple Auth Board",
+  "sourceName": "Login MFA View Board",
   "screens": [
     {
       "id": "screen-login",
@@ -26,7 +26,7 @@
             "left": 0
           },
           "type": "text",
-          "text": "Welcome Back",
+          "text": "Secure Continue",
           "x": 16,
           "y": 16,
           "width": 220,
@@ -40,7 +40,7 @@
         },
         {
           "id": "email-field",
-          "name": "MuiFormControlRoot",
+          "name": "Text Field",
           "nodeType": "FRAME",
           "layoutMode": "HORIZONTAL",
           "gap": 8,
@@ -49,6 +49,14 @@
             "right": 0,
             "bottom": 0,
             "left": 0
+          },
+          "variantMapping": {
+            "properties": {
+              "variant": "text"
+            },
+            "muiProps": {
+              "variant": "text"
+            }
           },
           "primaryAxisAlignItems": "SPACE_BETWEEN",
           "counterAxisAlignItems": "CENTER",
@@ -71,7 +79,7 @@
                 "left": 0
               },
               "type": "text",
-              "text": "Email",
+              "text": "Work Email",
               "x": 24,
               "y": 96,
               "width": 60,
@@ -117,7 +125,7 @@
                 "left": 0
               },
               "type": "text",
-              "text": "Sign In",
+              "text": "Continue",
               "x": 84,
               "y": 169,
               "width": 90,

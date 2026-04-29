@@ -4,7 +4,7 @@
   "screens": [
     {
       "screenId": "screen-table",
-      "screenName": "UserList",
+      "screenName": "TransactionTable",
       "components": [],
       "diagnostics": [
         {
@@ -16,8 +16,8 @@
         {
           "code": "W_SEMANTIC_COMPONENT_NOT_REUSABLE",
           "nodeId": "row1-status",
-          "nodeName": "MuiChipRoot",
-          "message": "Default semantic synthesis kept 'MuiChipRoot' inline because no matching reusable semantic structure was found."
+          "nodeName": "Status Chip",
+          "message": "Default semantic synthesis kept 'Status Chip' inline because no matching reusable semantic structure was found."
         },
         {
           "code": "W_SEMANTIC_COMPONENT_NOT_REUSABLE",
@@ -28,8 +28,8 @@
         {
           "code": "W_SEMANTIC_COMPONENT_NOT_REUSABLE",
           "nodeId": "row2-status",
-          "nodeName": "MuiChipRoot",
-          "message": "Default semantic synthesis kept 'MuiChipRoot' inline because no matching reusable semantic structure was found."
+          "nodeName": "Status Chip",
+          "message": "Default semantic synthesis kept 'Status Chip' inline because no matching reusable semantic structure was found."
         }
       ]
     }
@@ -38,7 +38,7 @@
   "diagnostics": [
     {
       "screenId": "screen-table",
-      "screenName": "UserList",
+      "screenName": "TransactionTable",
       "code": "W_SEMANTIC_COMPONENT_NOT_REUSABLE",
       "nodeId": "table-row-1",
       "nodeName": "Table Row",
@@ -46,15 +46,15 @@
     },
     {
       "screenId": "screen-table",
-      "screenName": "UserList",
+      "screenName": "TransactionTable",
       "code": "W_SEMANTIC_COMPONENT_NOT_REUSABLE",
       "nodeId": "row1-status",
-      "nodeName": "MuiChipRoot",
-      "message": "Default semantic synthesis kept 'MuiChipRoot' inline because no matching reusable semantic structure was found."
+      "nodeName": "Status Chip",
+      "message": "Default semantic synthesis kept 'Status Chip' inline because no matching reusable semantic structure was found."
     },
     {
       "screenId": "screen-table",
-      "screenName": "UserList",
+      "screenName": "TransactionTable",
       "code": "W_SEMANTIC_COMPONENT_NOT_REUSABLE",
       "nodeId": "table-row-2",
       "nodeName": "Table Row",
@@ -62,11 +62,11 @@
     },
     {
       "screenId": "screen-table",
-      "screenName": "UserList",
+      "screenName": "TransactionTable",
       "code": "W_SEMANTIC_COMPONENT_NOT_REUSABLE",
       "nodeId": "row2-status",
-      "nodeName": "MuiChipRoot",
-      "message": "Default semantic synthesis kept 'MuiChipRoot' inline because no matching reusable semantic structure was found."
+      "nodeName": "Status Chip",
+      "message": "Default semantic synthesis kept 'Status Chip' inline because no matching reusable semantic structure was found."
     }
   ]
 }

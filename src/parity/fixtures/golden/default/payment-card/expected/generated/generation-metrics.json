@@ -5,7 +5,7 @@
   "screenElementCounts": [
     {
       "screenId": "screen-products",
-      "screenName": "ProductList",
+      "screenName": "PaymentAuthorizations",
       "elements": 37
     }
   ],

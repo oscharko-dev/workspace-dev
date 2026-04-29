@@ -1,5 +1,5 @@
 {
-  "name": "Dashboard Grid Board",
+  "name": "Global Banking Dashboard Board",
   "document": {
     "id": "0:0",
     "type": "DOCUMENT",
@@ -32,7 +32,7 @@
                 "id": "dash-title",
                 "type": "TEXT",
                 "name": "Title",
-                "characters": "Dashboard Overview",
+                "characters": "Global Banking Overview",
                 "style": {
                   "fontSize": 28,
                   "fontWeight": 700,
@@ -59,7 +59,7 @@
                   {
                     "id": "card-revenue",
                     "type": "FRAME",
-                    "name": "Revenue Card",
+                    "name": "Liquidity Card",
                     "cornerRadius": 12,
                     "absoluteBoundingBox": { "x": 24, "y": 84, "width": 360, "height": 200 },
                     "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 1, "g": 1, "b": 1, "a": 1 } }],
@@ -68,7 +68,7 @@
                         "id": "rev-label",
                         "type": "TEXT",
                         "name": "Card Title",
-                        "characters": "Revenue",
+                        "characters": "Liquidity",
                         "style": { "fontSize": 14, "fontWeight": 500, "fontFamily": "Inter", "lineHeightPx": 20, "textAlignHorizontal": "LEFT" },
                         "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 0.4, "g": 0.42, "b": 0.46, "a": 1 } }],
                         "absoluteBoundingBox": { "x": 40, "y": 100, "width": 80, "height": 20 }
@@ -77,7 +77,7 @@
                         "id": "rev-value",
                         "type": "TEXT",
                         "name": "Value",
-                        "characters": "$45,231",
+                        "characters": "EUR 45.2M",
                         "style": { "fontSize": 32, "fontWeight": 700, "fontFamily": "Inter", "lineHeightPx": 40, "textAlignHorizontal": "LEFT" },
                         "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 0.11, "g": 0.12, "b": 0.14, "a": 1 } }],
                         "absoluteBoundingBox": { "x": 40, "y": 128, "width": 200, "height": 40 }
@@ -87,7 +87,7 @@
                   {
                     "id": "card-users",
                     "type": "FRAME",
-                    "name": "Users Card",
+                    "name": "Accounts Card",
                     "cornerRadius": 12,
                     "absoluteBoundingBox": { "x": 400, "y": 84, "width": 360, "height": 200 },
                     "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 1, "g": 1, "b": 1, "a": 1 } }],
@@ -96,7 +96,7 @@
                         "id": "users-label",
                         "type": "TEXT",
                         "name": "Card Title",
-                        "characters": "Active Users",
+                        "characters": "Active Accounts",
                         "style": { "fontSize": 14, "fontWeight": 500, "fontFamily": "Inter", "lineHeightPx": 20, "textAlignHorizontal": "LEFT" },
                         "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 0.4, "g": 0.42, "b": 0.46, "a": 1 } }],
                         "absoluteBoundingBox": { "x": 416, "y": 100, "width": 100, "height": 20 }
@@ -105,7 +105,7 @@
                         "id": "users-value",
                         "type": "TEXT",
                         "name": "Value",
-                        "characters": "2,350",
+                        "characters": "8,420",
                         "style": { "fontSize": 32, "fontWeight": 700, "fontFamily": "Inter", "lineHeightPx": 40, "textAlignHorizontal": "LEFT" },
                         "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 0.11, "g": 0.12, "b": 0.14, "a": 1 } }],
                         "absoluteBoundingBox": { "x": 416, "y": 128, "width": 150, "height": 40 }
@@ -115,7 +115,7 @@
                   {
                     "id": "card-orders",
                     "type": "FRAME",
-                    "name": "Orders Card",
+                    "name": "Approvals Card",
                     "cornerRadius": 12,
                     "absoluteBoundingBox": { "x": 776, "y": 84, "width": 400, "height": 200 },
                     "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 1, "g": 1, "b": 1, "a": 1 } }],
@@ -124,7 +124,7 @@
                         "id": "orders-label",
                         "type": "TEXT",
                         "name": "Card Title",
-                        "characters": "Pending Orders",
+                        "characters": "Pending Approvals",
                         "style": { "fontSize": 14, "fontWeight": 500, "fontFamily": "Inter", "lineHeightPx": 20, "textAlignHorizontal": "LEFT" },
                         "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 0.4, "g": 0.42, "b": 0.46, "a": 1 } }],
                         "absoluteBoundingBox": { "x": 792, "y": 100, "width": 120, "height": 20 }
@@ -133,7 +133,7 @@
                         "id": "orders-value",
                         "type": "TEXT",
                         "name": "Value",
-                        "characters": "127",
+                        "characters": "42",
                         "style": { "fontSize": 32, "fontWeight": 700, "fontFamily": "Inter", "lineHeightPx": 40, "textAlignHorizontal": "LEFT" },
                         "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 0.11, "g": 0.12, "b": 0.14, "a": 1 } }],
                         "absoluteBoundingBox": { "x": 792, "y": 128, "width": 100, "height": 40 }
@@ -143,7 +143,7 @@
                   {
                     "id": "card-chart",
                     "type": "FRAME",
-                    "name": "Chart Card",
+                    "name": "Payment Flow Card",
                     "cornerRadius": 12,
                     "absoluteBoundingBox": { "x": 24, "y": 300, "width": 736, "height": 280 },
                     "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 1, "g": 1, "b": 1, "a": 1 } }],
@@ -152,7 +152,7 @@
                         "id": "chart-title",
                         "type": "TEXT",
                         "name": "Card Title",
-                        "characters": "Sales Overview",
+                        "characters": "Payment Flow",
                         "style": { "fontSize": 18, "fontWeight": 600, "fontFamily": "Inter", "lineHeightPx": 28, "textAlignHorizontal": "LEFT" },
                         "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 0.11, "g": 0.12, "b": 0.14, "a": 1 } }],
                         "absoluteBoundingBox": { "x": 40, "y": 316, "width": 200, "height": 28 }
@@ -161,7 +161,7 @@
                         "id": "chart-subtitle",
                         "type": "TEXT",
                         "name": "Subtitle",
-                        "characters": "Monthly revenue trends",
+                        "characters": "Regional clearing volume",
                         "style": { "fontSize": 14, "fontWeight": 400, "fontFamily": "Inter", "lineHeightPx": 20, "textAlignHorizontal": "LEFT" },
                         "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 0.4, "g": 0.42, "b": 0.46, "a": 1 } }],
                         "absoluteBoundingBox": { "x": 40, "y": 348, "width": 250, "height": 20 }
@@ -171,7 +171,7 @@
                   {
                     "id": "card-activity",
                     "type": "FRAME",
-                    "name": "Activity Card",
+                    "name": "Risk Queue Card",
                     "cornerRadius": 12,
                     "absoluteBoundingBox": { "x": 776, "y": 300, "width": 400, "height": 280 },
                     "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 1, "g": 1, "b": 1, "a": 1 } }],
@@ -180,7 +180,7 @@
                         "id": "activity-title",
                         "type": "TEXT",
                         "name": "Card Title",
-                        "characters": "Recent Activity",
+                        "characters": "Risk Queue",
                         "style": { "fontSize": 18, "fontWeight": 600, "fontFamily": "Inter", "lineHeightPx": 28, "textAlignHorizontal": "LEFT" },
                         "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 0.11, "g": 0.12, "b": 0.14, "a": 1 } }],
                         "absoluteBoundingBox": { "x": 792, "y": 316, "width": 200, "height": 28 }
@@ -189,7 +189,7 @@
                         "id": "activity-subtitle",
                         "type": "TEXT",
                         "name": "Subtitle",
-                        "characters": "Last 7 days",
+                        "characters": "Next review window",
                         "style": { "fontSize": 14, "fontWeight": 400, "fontFamily": "Inter", "lineHeightPx": 20, "textAlignHorizontal": "LEFT" },
                         "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 0.4, "g": 0.42, "b": 0.46, "a": 1 } }],
                         "absoluteBoundingBox": { "x": 792, "y": 348, "width": 150, "height": 20 }
