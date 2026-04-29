@@ -5,7 +5,7 @@ import type { ScreenArtifactIdentity } from "../../parity/generator-artifacts.js
 import {
   createDefaultLayoutReportFile,
   createDefaultSemanticComponentReportFile,
-  createDefaultTailwindScreenFile,
+  createDefaultTailwindScreenFiles,
 } from "../../parity/default-tailwind-emitter.js";
 import {
   createDesignTokenCssFile,
@@ -148,6 +148,15 @@ const createGenerationMetrics = (ir: DesignIR): Record<string, unknown> => ({
   prototypeNavigationResolved: ir.metrics?.prototypeNavigationResolved ?? 0,
   prototypeNavigationUnresolved: ir.metrics?.prototypeNavigationUnresolved ?? 0,
   prototypeNavigationRendered: 0,
+  ...(ir.metrics?.nodeDiagnostics
+    ? { nodeDiagnostics: [...ir.metrics.nodeDiagnostics] }
+    : {}),
+  ...(ir.metrics?.mcpCoverage
+    ? { mcpCoverage: { ...ir.metrics.mcpCoverage } }
+    : {}),
+  ...(ir.metrics?.generatedSourceValidation
+    ? { generatedSourceValidation: { ...ir.metrics.generatedSourceValidation } }
+    : {}),
 });
 
 export const DefaultCodegenGenerateService: StageService<CodegenGenerateStageInput> = {
@@ -222,8 +231,9 @@ export const DefaultCodegenGenerateService: StageService<CodegenGenerateStageInp
 
     const pageImports: Array<{ importName: string; importPath: string }> = [];
     const identitiesByScreenId = new Map<string, ScreenArtifactIdentity>();
-    for (const [index, screen] of ir.screens.entries()) {
-      const screenFile = createDefaultTailwindScreenFile(screen);
+    const screenFiles = createDefaultTailwindScreenFiles(ir.screens);
+    for (const [index, screenFile] of screenFiles.entries()) {
+      const screen = ir.screens[index]!;
       generatedFiles.push(screenFile.file, ...screenFile.componentFiles);
       const importName = toSafeImportName(screen.name, index);
       const importPath = screenFile.file.path.replace(/^src\//u, "");

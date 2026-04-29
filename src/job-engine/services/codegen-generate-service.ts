@@ -900,7 +900,7 @@ export const createCodegenGenerateService = ({
         ...(initialMappingWarnings.length > 0 ? { initialMappingWarnings } : {}),
         generationLocale: context.resolvedGenerationLocale,
         routerMode: context.runtime.routerMode,
-        pipelineId: context.pipelineMetadata.pipelineId,
+        pipelineId: context.pipelineMetadata?.pipelineId ?? "rocket",
         formHandlingMode: context.resolvedFormHandlingMode,
         llmModelName: "deterministic",
         llmCodegenMode: "deterministic",

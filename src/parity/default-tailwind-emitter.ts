@@ -40,6 +40,11 @@ export interface DefaultTailwindScreenFile {
   semanticDiagnostics: DefaultSemanticComponentDiagnostic[];
 }
 
+export interface DefaultTailwindScreenFileOptions {
+  pageFileName?: string | undefined;
+  componentDirectory?: string | undefined;
+}
+
 const sanitizeComponentName = (name: string): string => {
   const words = name
     .normalize("NFKD")
@@ -80,6 +85,44 @@ const sanitizeFileName = (name: string): string => {
     .replace(/^-|-$/g, "")
     .toLowerCase();
   return normalized || "generated-screen";
+};
+
+const allocateUniqueName = ({
+  baseName,
+  usedNames,
+}: {
+  baseName: string;
+  usedNames: Set<string>;
+}): string => {
+  let candidate = baseName;
+  let suffix = 2;
+  while (usedNames.has(candidate)) {
+    candidate = `${baseName}-${String(suffix)}`;
+    suffix += 1;
+  }
+  usedNames.add(candidate);
+  return candidate;
+};
+
+const relativeImportPath = ({
+  fromFile,
+  toFile,
+}: {
+  fromFile: string;
+  toFile: string;
+}): string => {
+  const fromParts = fromFile.split("/").slice(0, -1);
+  const toParts = toFile.replace(/\.tsx$/u, "").split("/");
+  while (
+    fromParts.length > 0 &&
+    toParts.length > 0 &&
+    fromParts[0] === toParts[0]
+  ) {
+    fromParts.shift();
+    toParts.shift();
+  }
+  const prefix = fromParts.length > 0 ? "../".repeat(fromParts.length) : "./";
+  return `${prefix}${toParts.join("/")}`;
 };
 
 const escapeText = (value: string): string => JSON.stringify(value);
@@ -523,9 +566,11 @@ const hasDescendant = (layout: DefaultLayoutNode, descendantId: string): boolean
 const buildSemanticSynthesisPlan = ({
   layout,
   elementsById,
+  componentDirectory = "src/components",
 }: {
   layout: DefaultLayoutNode;
   elementsById: ReadonlyMap<string, ScreenElementIR>;
+  componentDirectory?: string | undefined;
 }): SemanticSynthesisPlan => {
   const diagnostics = collectStructuralFallbackDiagnostics({ layout, elementsById });
   const groups = new Map<string, Array<{ layout: DefaultLayoutNode; depth: number; signature: string; kind: string }>>();
@@ -619,7 +664,7 @@ const buildSemanticSynthesisPlan = ({
     });
     const plan: SemanticComponentPlan = {
       componentName,
-      filePath: `src/components/${componentName}.tsx`,
+      filePath: `${componentDirectory}/${componentName}.tsx`,
       kind: first.kind,
       signature: first.signature,
       instanceIds: available.map((candidate) => candidate.layout.id).sort((left, right) => left.localeCompare(right)),
@@ -844,11 +889,19 @@ const findLayoutById = (layout: DefaultLayoutNode, id: string): DefaultLayoutNod
   return undefined;
 };
 
-export const createDefaultTailwindScreenFile = (screen: ScreenIR): DefaultTailwindScreenFile => {
+export const createDefaultTailwindScreenFile = (
+  screen: ScreenIR,
+  options: DefaultTailwindScreenFileOptions = {},
+): DefaultTailwindScreenFile => {
   const layout = solveDefaultScreenLayout(screen);
   const elementsById = collectElementsById(screen);
   const componentName = sanitizeComponentName(screen.name);
-  const semanticPlan = buildSemanticSynthesisPlan({ layout, elementsById });
+  const filePath = `src/pages/${options.pageFileName ?? sanitizeFileName(screen.name)}.tsx`;
+  const semanticPlan = buildSemanticSynthesisPlan({
+    layout,
+    elementsById,
+    ...(options.componentDirectory ? { componentDirectory: options.componentDirectory } : {}),
+  });
   const componentFiles = semanticPlan.components.map((component) =>
     createSemanticComponentFile({
       component,
@@ -857,7 +910,13 @@ export const createDefaultTailwindScreenFile = (screen: ScreenIR): DefaultTailwi
     }),
   );
   const imports = semanticPlan.components
-    .map((component) => `import ${component.componentName} from "../components/${component.componentName}";`)
+    .map(
+      (component) =>
+        `import ${component.componentName} from "${relativeImportPath({
+          fromFile: filePath,
+          toFile: component.filePath,
+        })}";`,
+    )
     .join("\n");
   const rendered = renderNode({
     layout,
@@ -879,7 +938,7 @@ export const createDefaultTailwindScreenFile = (screen: ScreenIR): DefaultTailwi
     })),
     semanticDiagnostics: semanticPlan.diagnostics,
     file: {
-      path: `src/pages/${sanitizeFileName(screen.name)}.tsx`,
+      path: filePath,
       content: `${imports ? `${imports}\n\n` : ""}export default function ${componentName}() {
   return (
 ${rendered}
@@ -890,9 +949,29 @@ ${rendered}
   };
 };
 
+export const createDefaultTailwindScreenFiles = (
+  screens: readonly ScreenIR[],
+): DefaultTailwindScreenFile[] => {
+  const usedPageFileNames = new Set<string>();
+  const usePerScreenComponentDirectories = screens.length > 1;
+  return screens.map((screen) => {
+    const pageFileName = allocateUniqueName({
+      baseName: sanitizeFileName(screen.name),
+      usedNames: usedPageFileNames,
+    });
+    return createDefaultTailwindScreenFile(screen, {
+      pageFileName,
+      ...(usePerScreenComponentDirectories
+        ? { componentDirectory: `src/components/${pageFileName}` }
+        : {}),
+    });
+  });
+};
+
 export const createDefaultSemanticComponentReportFile = (screens: readonly ScreenIR[]): GeneratedFile => {
-  const screenReports = screens.map((screen) => {
-    const result = createDefaultTailwindScreenFile(screen);
+  const results = createDefaultTailwindScreenFiles(screens);
+  const screenReports = screens.map((screen, index) => {
+    const result = results[index]!;
     return {
       screenId: screen.id,
       screenName: screen.name,
@@ -929,16 +1008,16 @@ export const createDefaultSemanticComponentReportFile = (screens: readonly Scree
 };
 
 export const createDefaultLayoutReportFile = (screens: readonly ScreenIR[]): GeneratedFile => {
-  const screenReports = screens.map((screen) => {
-    const layout = solveDefaultScreenLayout(screen);
-    const semanticResult = createDefaultTailwindScreenFile(screen);
+  const results = createDefaultTailwindScreenFiles(screens);
+  const screenReports = screens.map((screen, index) => {
+    const result = results[index]!;
     return {
       screenId: screen.id,
       screenName: screen.name,
-      rootLayoutKind: layout.kind,
-      warnings: layout.warnings,
-      semanticComponents: semanticResult.semanticComponents,
-      semanticDiagnostics: semanticResult.semanticDiagnostics,
+      rootLayoutKind: result.layout.kind,
+      warnings: result.warnings,
+      semanticComponents: result.semanticComponents,
+      semanticDiagnostics: result.semanticDiagnostics,
     };
   });
   return {

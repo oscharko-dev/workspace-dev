@@ -517,7 +517,14 @@ test("createJobEngine defaults omitted pipelineId to the default Tailwind pipeli
     path.join(os.tmpdir(), "workspace-dev-engine-default-pipeline-"),
   );
   const localJsonPath = path.join(tempRoot, "figma.json");
-  await writeFile(localJsonPath, JSON.stringify(createLocalFigmaPayload()), "utf8");
+  const payload = createLocalFigmaPayload();
+  payload.document.children[0]!.children[0]!.children.push({
+    id: "unsupported-instance",
+    type: "INSTANCE",
+    name: "<UnsupportedWidget>",
+    absoluteBoundingBox: { x: 12, y: 40, width: 20, height: 20 },
+  });
+  await writeFile(localJsonPath, JSON.stringify(payload), "utf8");
   const engine = createJobEngineBase({
     resolveBaseUrl: () => "http://127.0.0.1:1983",
     paths: {
@@ -562,6 +569,34 @@ test("createJobEngine defaults omitted pipelineId to the default Tailwind pipeli
       "utf8",
     ).then((content) => JSON.parse(content).pipelineId),
     "default",
+  );
+  assert.equal(
+    await readFile(
+      path.join(
+        status.artifacts.generatedProjectDir!,
+        "src",
+        "generated",
+        "semantic-component-report.json",
+      ),
+      "utf8",
+    ).then((content) => JSON.parse(content).pipelineId),
+    "default",
+  );
+  assert.equal(
+    await readFile(
+      path.join(status.artifacts.generatedProjectDir!, "generation-metrics.json"),
+      "utf8",
+    )
+      .then((content) => JSON.parse(content))
+      .then((metrics) =>
+        Array.isArray(metrics.nodeDiagnostics) &&
+        metrics.nodeDiagnostics.some(
+          (entry: { category?: unknown; nodeId?: unknown }) =>
+            entry.category === "unsupported-board-component" &&
+            entry.nodeId === "unsupported-instance",
+        ),
+      ),
+    true,
   );
 });
 

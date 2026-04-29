@@ -5,6 +5,7 @@ import {
   createDefaultLayoutReportFile,
   createDefaultSemanticComponentReportFile,
   createDefaultTailwindScreenFile,
+  createDefaultTailwindScreenFiles,
   solveDefaultScreenLayout,
 } from "./types.js";
 
@@ -411,6 +412,65 @@ test("default semantic synthesis extracts reusable typed React components with d
   assert.match(component.content, /<p data-ir-id=\{props\.descriptionIrId\} data-ir-name=\{props\.descriptionIrName\}[^>]*>\{props\.description\}<\/p>/);
   assert.doesNotMatch(component.content, /data-ir-id="basic-plan-/);
   assert.doesNotMatch(component.content, /@mui|sx=\{\{|<Box|<Typography/);
+});
+
+test("default Tailwind multi-screen emitter avoids duplicate page and component paths", () => {
+  const createPricingScreen = (id: string): ScreenIR => ({
+    id,
+    name: "Pricing",
+    layoutMode: "VERTICAL",
+    gap: 24,
+    width: 960,
+    height: 720,
+    children: [
+      {
+        id: `${id}-plans`,
+        name: "Plan List",
+        nodeType: "FRAME",
+        type: "list",
+        layoutMode: "HORIZONTAL",
+        gap: 24,
+        width: 864,
+        height: 260,
+        children: [
+          createProductCard({
+            id: `${id}-basic-plan`,
+            title: "Basic",
+            description: "For small teams",
+            action: "Start basic",
+            x: 0,
+          }),
+          createProductCard({
+            id: `${id}-pro-plan`,
+            title: "Pro",
+            description: "For growing teams",
+            action: "Start pro",
+            x: 304,
+          }),
+        ],
+      },
+    ],
+  });
+  const results = createDefaultTailwindScreenFiles([
+    createPricingScreen("pricing-a"),
+    createPricingScreen("pricing-b"),
+  ]);
+  const paths = results.flatMap((result) => [
+    result.file.path,
+    ...result.componentFiles.map((file) => file.path),
+  ]);
+
+  assert.equal(new Set(paths).size, paths.length);
+  assert.deepEqual(
+    results.map((result) => result.file.path),
+    ["src/pages/pricing.tsx", "src/pages/pricing-2.tsx"],
+  );
+  assert.deepEqual(
+    results.flatMap((result) => result.componentFiles.map((file) => file.path)),
+    ["src/components/pricing/PlanCard.tsx", "src/components/pricing-2/PlanCard.tsx"],
+  );
+  assert.match(results[0]!.file.content, /import PlanCard from "\.\.\/components\/pricing\/PlanCard";/);
+  assert.match(results[1]!.file.content, /import PlanCard from "\.\.\/components\/pricing-2\/PlanCard";/);
 });
 
 test("default semantic synthesis skips extraction when repeated structures differ beyond typed text props", () => {
