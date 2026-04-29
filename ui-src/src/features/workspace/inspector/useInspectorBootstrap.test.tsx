@@ -80,6 +80,19 @@ function buildFigmaClipboardHtml(): string {
   return `<span data-metadata="<!--(figmeta)${encoded}(/figmeta)-->"></span>`;
 }
 
+function parseRequestBody(init: RequestInit | undefined): Record<string, unknown> {
+  if (typeof init?.body !== "string") {
+    throw new Error("Expected a JSON request body.");
+  }
+
+  const parsed = JSON.parse(init.body) as unknown;
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw new Error("Expected request body to parse to an object.");
+  }
+
+  return parsed as Record<string, unknown>;
+}
+
 beforeEach(() => {
   __resetIntentClassificationMetricsForTests();
   __resetFigmaMcpCallCounterForTests();
@@ -262,6 +275,119 @@ describe("useInspectorBootstrap", () => {
     await waitFor(() => {
       expect(result.current.state.kind).toBe("ready");
     });
+  });
+
+  it("keeps the selected pipeline id through retry and replay paths", async () => {
+    const submitBodies: Record<string, unknown>[] = [];
+    let submitCount = 0;
+
+    fetchJsonMock.mockImplementation(async ({ url, init }) => {
+      if (url === "/workspace/submit") {
+        submitCount += 1;
+        submitBodies.push(parseRequestBody(init));
+        if (submitCount === 1) {
+          return createJsonResponse({
+            status: 500,
+            ok: false,
+            payload: { error: "SERVER_ERROR" },
+          }) as never;
+        }
+
+        return createJsonResponse({
+          status: 202,
+          payload: { jobId: `job-${submitCount}` },
+        }) as never;
+      }
+
+      const jobMatch = url.match(/^\/workspace\/jobs\/(job-\d+)$/);
+      if (jobMatch) {
+        return createJsonResponse({
+          payload: {
+            jobId: jobMatch[1],
+            status: "completed",
+            preview: { url: `http://127.0.0.1:1983/${jobMatch[1]}` },
+          },
+        }) as never;
+      }
+
+      const artifactMatch = url.match(
+        /^\/workspace\/jobs\/(job-\d+)\/(design-ir|component-manifest|files)$/,
+      );
+      if (artifactMatch) {
+        return createJsonResponse({
+          payload: { jobId: artifactMatch[1], screens: [], files: [] },
+        }) as never;
+      }
+
+      if (url.match(/^\/workspace\/jobs\/(job-\d+)\/screenshot$/)) {
+        return createJsonResponse({
+          status: 404,
+          ok: false,
+          payload: {},
+        }) as never;
+      }
+
+      throw new Error(`Unexpected url: ${url}`);
+    });
+
+    const { result } = renderHook(
+      () =>
+        useInspectorBootstrap({
+          availablePipelines: [
+            { id: "pipe-default", displayName: "Pipeline Default" },
+            { id: "pipe-alt", displayName: "Pipeline Alt" },
+          ],
+          defaultPipelineId: "pipe-default",
+        }),
+      {
+        wrapper: makeWrapper(),
+      },
+    );
+
+    expect(result.current.selectedPipelineId).toBe("pipe-default");
+
+    act(() => {
+      result.current.submit({ figmaJsonPayload: buildDirectJsonPayload() });
+    });
+
+    await waitFor(() => {
+      expect(result.current.state.kind).toBe("failed");
+    });
+
+    expect(submitBodies[0]?.pipelineId).toBe("pipe-default");
+
+    act(() => {
+      result.current.retry();
+    });
+
+    await waitFor(() => {
+      expect(result.current.state.kind).toBe("ready");
+    });
+
+    expect(submitBodies[1]?.pipelineId).toBe("pipe-default");
+
+    act(() => {
+      result.current.resubmitFresh();
+    });
+
+    await waitFor(() => {
+      expect(submitBodies).toHaveLength(3);
+    });
+
+    expect(submitBodies[2]?.pipelineId).toBe("pipe-default");
+
+    act(() => {
+      result.current.regenerateScoped({
+        selectedNodeIds: ["node-1"],
+      });
+    });
+
+    await waitFor(() => {
+      expect(submitBodies).toHaveLength(4);
+    });
+
+    expect(submitBodies[3]?.pipelineId).toBe("pipe-default");
+    expect(submitBodies[3]?.selectedNodeIds).toEqual(["node-1"]);
   });
 
   it("routes plugin-shaped JSON node batches through figma_paste (regression for #1105)", async () => {
@@ -825,6 +951,10 @@ describe("useInspectorBootstrap", () => {
     });
 
     act(() => {
+      result.current.setSelectedPipelineId("pipe-url");
+    });
+
+    act(() => {
       result.current.submitUrl("ABC123fileKey", "1-2");
     });
 
@@ -841,12 +971,14 @@ describe("useInspectorBootstrap", () => {
       figmaJsonPayload: string;
       enableGitPr: boolean;
       llmCodegenMode: string;
+      pipelineId?: string;
     };
     expect(parsedBody.figmaSourceMode).toBe("figma_url");
     expect(parsedBody.figmaJsonPayload).toBe(
       JSON.stringify({ figmaFileKey: "ABC123fileKey", nodeId: "1-2" }),
     );
     expect(parsedBody.enableGitPr).toBe(false);
+    expect(parsedBody.pipelineId).toBe("pipe-url");
   });
 
   it("records a classification event for plugin-shaped JSON (high bucket)", () => {
@@ -1014,6 +1146,10 @@ describe("useInspectorBootstrap", () => {
     });
 
     act(() => {
+      result.current.setSelectedPipelineId("pipe-plugin");
+    });
+
+    act(() => {
       result.current.submit({
         figmaJsonPayload: buildPluginEnvelopePayload(),
         sourceMode: "figma_plugin",
@@ -1030,10 +1166,12 @@ describe("useInspectorBootstrap", () => {
       figmaJsonPayload: string;
       enableGitPr: boolean;
       llmCodegenMode: string;
+      pipelineId?: string;
     };
     expect(parsedBody.figmaSourceMode).toBe("figma_plugin");
     expect(parsedBody.figmaJsonPayload).toBe(buildPluginEnvelopePayload());
     expect(parsedBody.enableGitPr).toBe(false);
+    expect(parsedBody.pipelineId).toBe("pipe-plugin");
   });
 
   it("records a correction when confirmIntent changes the detected intent", async () => {

@@ -9,7 +9,9 @@ import {
   getModeChipClasses,
   getRouteFigmaKey,
   getSubmitBadge,
+  getSelectedPipelineId,
   getWorkspaceBadge,
+  hasMultipleAvailablePipelines,
   isJobPayload,
   isRecord,
   toPrettyJson,
@@ -37,6 +39,58 @@ describe("workspace-page.helpers", () => {
     expect(getRouteFigmaKey("ui")).toBeUndefined();
     expect(getRouteFigmaKey("demo%20file")).toBe("demo file");
     expect(getRouteFigmaKey("%E0%A4%A")).toBeUndefined();
+  });
+
+  it("selects the default pipeline when it is available", () => {
+    const availablePipelines: Array<{
+      id: string;
+      displayName: string;
+    }> = [
+      { id: "pipe-a", displayName: "Pipeline A" },
+      { id: "pipe-b", displayName: "Pipeline B" },
+    ];
+
+    expect(
+      getSelectedPipelineId({
+        availablePipelines,
+        defaultPipelineId: "pipe-b",
+      }),
+    ).toBe("pipe-b");
+    expect(hasMultipleAvailablePipelines(availablePipelines)).toBe(true);
+  });
+
+  it("falls back to the first available pipeline when there is no default or current selection", () => {
+    const availablePipelines: Array<{
+      id: string;
+      displayName: string;
+    }> = [
+      { id: "pipe-a", displayName: "Pipeline A" },
+    ];
+
+    expect(
+      getSelectedPipelineId({
+        availablePipelines,
+      }),
+    ).toBe("pipe-a");
+    expect(hasMultipleAvailablePipelines(availablePipelines)).toBe(false);
+  });
+
+  it("keeps the current selection when it remains valid", () => {
+    const availablePipelines: Array<{
+      id: string;
+      displayName: string;
+    }> = [
+      { id: "pipe-a", displayName: "Pipeline A" },
+      { id: "pipe-b", displayName: "Pipeline B" },
+    ];
+
+    expect(
+      getSelectedPipelineId({
+        availablePipelines,
+        defaultPipelineId: "pipe-b",
+        currentPipelineId: "pipe-a",
+      }),
+    ).toBe("pipe-a");
   });
 
   it("formats pretty json with a trailing newline", () => {

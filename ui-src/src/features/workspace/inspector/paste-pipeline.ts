@@ -253,6 +253,7 @@ export interface PipelineOptions {
   signal?: AbortSignal;
   skipScreenshot?: boolean;
   sourceMode?: SubmitSourceMode;
+  pipelineId?: string;
   /** Whitelist of node ids to keep in the generation scope. Empty/undefined = no filtering. */
   selectedNodeIds?: readonly string[];
   /** Hint to the backend delta engine. Defaults to "auto" on the server when omitted. */
@@ -263,6 +264,7 @@ interface PipelineRequest {
   payload: string;
   sourceMode: SubmitSourceMode;
   skipScreenshot: boolean;
+  pipelineId?: string;
   selectedNodeIds?: readonly string[];
   importMode?: PipelineImportMode;
 }
@@ -780,6 +782,7 @@ interface SubmitBody {
   figmaJsonPayload: string;
   enableGitPr: false;
   llmCodegenMode: "deterministic";
+  pipelineId?: string;
   importMode?: PipelineImportMode;
   /** Server enforcement tracked under issue #1010. */
   selectedNodeIds?: readonly string[];
@@ -843,6 +846,12 @@ function buildSubmitBody(request: PipelineRequest): SubmitBody {
     enableGitPr: false,
     llmCodegenMode: "deterministic",
   };
+  if (request.pipelineId !== undefined) {
+    const pipelineId = request.pipelineId.trim();
+    if (pipelineId.length > 0) {
+      body.pipelineId = pipelineId;
+    }
+  }
   if (request.importMode !== undefined) {
     body.importMode = request.importMode;
   }
@@ -2596,6 +2605,9 @@ export function startPastePipeline(
       payload,
       sourceMode: options?.sourceMode ?? "figma_paste",
       skipScreenshot: options?.skipScreenshot === true,
+      ...(options?.pipelineId !== undefined
+        ? { pipelineId: options.pipelineId }
+        : {}),
       ...(options?.selectedNodeIds !== undefined
         ? { selectedNodeIds: options.selectedNodeIds }
         : {}),
@@ -2802,6 +2814,9 @@ export function usePastePipeline(): UsePastePipelineResult {
           payload,
           sourceMode: options?.sourceMode ?? "figma_paste",
           skipScreenshot: options?.skipScreenshot === true,
+          ...(options?.pipelineId !== undefined
+            ? { pipelineId: options.pipelineId }
+            : {}),
           ...(options?.selectedNodeIds !== undefined
             ? { selectedNodeIds: options.selectedNodeIds }
             : {}),

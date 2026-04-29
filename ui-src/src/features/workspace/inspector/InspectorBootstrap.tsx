@@ -9,6 +9,7 @@ import type { InspectorBootstrapState } from "./inspector-bootstrap-state";
 import type { ImportIntent } from "./paste-input-classifier";
 import type { PipelineStage } from "./paste-pipeline";
 import { PreviewPane } from "./PreviewPane";
+import type { RuntimeStatusPayload } from "../workspace-page.helpers";
 
 export interface InspectorBootstrapProps {
   state: InspectorBootstrapState;
@@ -19,6 +20,9 @@ export interface InspectorBootstrapProps {
   onConfirmIntent?: (intent: ImportIntent) => void;
   onDismissIntent?: () => void;
   onFigmaUrl: (fileKey: string, nodeId: string | null) => void;
+  availablePipelines?: RuntimeStatusPayload["availablePipelines"];
+  selectedPipelineId?: string | undefined;
+  onPipelineIdChange?: ((pipelineId: string) => void) | undefined;
   previewUrl?: string | null;
   screenshot?: string | null;
   pipelineStage?: PipelineStage;
@@ -172,8 +176,19 @@ function LogoMark(): JSX.Element {
   );
 }
 
-function BootstrapHeader(): JSX.Element {
+function BootstrapHeader({
+  availablePipelines,
+  selectedPipelineId,
+  onPipelineIdChange,
+}: {
+  availablePipelines?: RuntimeStatusPayload["availablePipelines"];
+  selectedPipelineId?: string | undefined;
+  onPipelineIdChange?: ((pipelineId: string) => void) | undefined;
+}): JSX.Element {
   const buttons: readonly string[] = ["Review", "Sync", "PR", "Coverage"];
+  const showPipelineSelector =
+    (availablePipelines?.length ?? 0) > 1 &&
+    onPipelineIdChange !== undefined;
   return (
     <header className="shrink-0 border-b border-[#000000] bg-[#171717]">
       <div className="flex w-full items-center justify-between gap-3 px-4 py-2">
@@ -215,6 +230,30 @@ function BootstrapHeader(): JSX.Element {
         </div>
 
         <div className="flex items-center gap-2">
+          {showPipelineSelector ? (
+            <div className="flex items-center gap-2">
+              <label
+                htmlFor="inspector-pipeline-id"
+                className="text-[10px] uppercase tracking-[0.22em] text-white/35"
+              >
+                Pipeline
+              </label>
+              <select
+                id="inspector-pipeline-id"
+                value={selectedPipelineId ?? ""}
+                onChange={(event) => {
+                  onPipelineIdChange(event.target.value);
+                }}
+                className="rounded border border-[#333333] bg-[#222222] px-2 py-1 text-[11px] text-white outline-none focus:border-[#4eba87]"
+              >
+                {availablePipelines?.map((pipeline) => (
+                  <option key={pipeline.id} value={pipeline.id}>
+                    {pipeline.displayName}
+                  </option>
+                ))}
+              </select>
+            </div>
+          ) : null}
           <span className="rounded border border-[#000000] bg-[#222222] px-2 py-0.5 text-[10px] font-mono text-white/45">
             rest + deterministic
           </span>
@@ -259,6 +298,9 @@ export function InspectorBootstrap({
   onConfirmIntent,
   onDismissIntent,
   onFigmaUrl,
+  availablePipelines,
+  selectedPipelineId,
+  onPipelineIdChange,
   previewUrl,
   screenshot,
   pipelineStage,
@@ -283,7 +325,11 @@ export function InspectorBootstrap({
       data-testid="inspector-bootstrap"
       className="flex h-screen flex-col overflow-hidden bg-[#101010] text-white"
     >
-      <BootstrapHeader />
+      <BootstrapHeader
+        availablePipelines={availablePipelines}
+        selectedPipelineId={selectedPipelineId}
+        onPipelineIdChange={onPipelineIdChange}
+      />
 
       <main className="flex min-h-0 flex-1 flex-row overflow-hidden">
         {treeNodes && treeNodes.length > 0 ? (

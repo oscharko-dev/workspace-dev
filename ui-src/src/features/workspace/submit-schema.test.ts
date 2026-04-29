@@ -53,6 +53,21 @@ describe("workspaceSubmitSchema", () => {
     });
   });
 
+  it("omits pipelineId when the form leaves it blank", () => {
+    const parsed = workspaceSubmitSchema.parse({
+      pipelineId: "",
+      figmaFileKey: "file-key",
+      figmaAccessToken: "figd_token",
+      enableGitPr: false,
+      repoUrl: "",
+      repoToken: "",
+    });
+
+    const payload = toWorkspaceSubmitPayload({ formData: parsed });
+
+    expect(payload.pipelineId).toBeUndefined();
+  });
+
   it("keeps the frontend workspace allowlist aligned with the backend contract", () => {
     expect(WORKSPACE_FIGMA_SOURCE_MODES).toEqual(ALLOWED_FIGMA_SOURCE_MODES);
   });

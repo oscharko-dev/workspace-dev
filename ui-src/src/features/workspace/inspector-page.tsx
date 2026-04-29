@@ -8,6 +8,7 @@ import { InspectorBootstrap } from "./inspector/InspectorBootstrap";
 import { useInspectorBootstrap } from "./inspector/useInspectorBootstrap";
 import { useStreamingTreeNodes } from "./inspector/component-tree-utils";
 import { useImportHistory } from "./inspector/useImportHistory";
+import type { RuntimeStatusPayload } from "./workspace-page.helpers";
 import type { PasteImportSession } from "./inspector/paste-import-history";
 import type { ImportIntent } from "./inspector/paste-input-classifier";
 import type {
@@ -298,7 +299,23 @@ function PanelView({
 }
 
 function BootstrapView(): JSX.Element {
-  const bootstrap = useInspectorBootstrap();
+  const runtimeStatusQuery = useQuery({
+    queryKey: ["workspace", "runtime-pipelines"],
+    queryFn: async (): Promise<RuntimeStatusPayload | null> => {
+      const response = await fetchJson<RuntimeStatusPayload>({
+        url: "/workspace",
+      });
+      if (!response.ok) {
+        return null;
+      }
+      return response.payload as RuntimeStatusPayload;
+    },
+  });
+
+  const bootstrap = useInspectorBootstrap({
+    availablePipelines: runtimeStatusQuery.data?.availablePipelines,
+    defaultPipelineId: runtimeStatusQuery.data?.defaultPipelineId,
+  });
   const treeNodes = useStreamingTreeNodes(bootstrap.pipelineState);
   const importHistoryHook = useImportHistory();
   const [historyReimportJobId, setHistoryReimportJobId] = useState<
@@ -389,6 +406,13 @@ function BootstrapView(): JSX.Element {
     [bootstrap],
   );
 
+  const handlePipelineIdChange = useCallback(
+    (pipelineId: string): void => {
+      bootstrap.setSelectedPipelineId(pipelineId);
+    },
+    [bootstrap],
+  );
+
   const handleGenerateSelected = useCallback(
     (
       selectedNodeIds: readonly string[],
@@ -473,6 +497,9 @@ function BootstrapView(): JSX.Element {
       onConfirmIntent={handleConfirmIntent}
       onDismissIntent={handleDismissIntent}
       onFigmaUrl={handleFigmaUrl}
+      availablePipelines={runtimeStatusQuery.data?.availablePipelines}
+      selectedPipelineId={bootstrap.selectedPipelineId}
+      onPipelineIdChange={handlePipelineIdChange}
       previewUrl={bootstrap.previewUrl}
       screenshot={bootstrap.screenshot}
       pipelineStage={bootstrap.pipelineStage}

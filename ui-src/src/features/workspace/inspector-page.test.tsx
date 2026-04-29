@@ -8,7 +8,7 @@ import {
   waitFor,
 } from "@testing-library/react";
 import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { InspectorPage } from "./inspector-page";
 import { fetchJson, type JsonResponse } from "../../lib/http";
 
@@ -72,6 +72,18 @@ vi.mock("../../lib/http", () => ({
 }));
 
 const fetchJsonMock = vi.mocked(fetchJson);
+
+const runtimeStatusPayload = {
+  running: true,
+  url: "http://127.0.0.1:1983",
+  host: "127.0.0.1",
+  port: 1983,
+  figmaSourceMode: "rest",
+  llmCodegenMode: "deterministic",
+  uptimeMs: 120_000,
+  outputRoot: "/tmp/workspace-dev",
+  previewEnabled: true,
+};
 
 function LocationProbe(): JSX.Element {
   const location = useLocation();
@@ -168,6 +180,16 @@ describe("InspectorPage — deep-link path", () => {
 });
 
 describe("InspectorPage — bootstrap path", () => {
+  beforeEach(() => {
+    fetchJsonMock.mockImplementation(async ({ url }) => {
+      if (url === "/workspace") {
+        return createJsonResponse({ payload: runtimeStatusPayload }) as never;
+      }
+
+      throw new Error(`Unexpected url: ${url}`);
+    });
+  });
+
   it("renders InspectorBootstrap when no query params", () => {
     renderPage("/workspace/ui/inspector");
 
@@ -189,6 +211,9 @@ describe("InspectorPage — bootstrap path", () => {
 
   it("transitions from bootstrap to panel when bootstrap reaches ready", async () => {
     fetchJsonMock.mockImplementation(async ({ url }) => {
+      if (url === "/workspace") {
+        return createJsonResponse({ payload: runtimeStatusPayload }) as never;
+      }
       if (url === "/workspace/submit") {
         return createJsonResponse({
           status: 202,
@@ -256,6 +281,9 @@ describe("InspectorPage — bootstrap path", () => {
 
   it("enters the inspector panel while the pipeline is still processing", async () => {
     fetchJsonMock.mockImplementation(async ({ url }) => {
+      if (url === "/workspace") {
+        return createJsonResponse({ payload: runtimeStatusPayload }) as never;
+      }
       if (url === "/workspace/submit") {
         return createJsonResponse({
           status: 202,
@@ -312,6 +340,9 @@ describe("InspectorPage — bootstrap path", () => {
 
   it("reimports history entries through the server-owned replay endpoint", async () => {
     fetchJsonMock.mockImplementation(async ({ url, init }) => {
+      if (url === "/workspace") {
+        return createJsonResponse({ payload: runtimeStatusPayload }) as never;
+      }
       if (url === "/workspace/import-sessions") {
         return createJsonResponse({
           payload: {
@@ -513,7 +544,6 @@ describe("InspectorPage — bootstrap path", () => {
     expect(screen.getByTestId("inspector-panel-props")).toHaveTextContent(
       "job-second-paste|http://127.0.0.1:1983/preview||false|",
     );
-    });
   });
 
   it("uses text/html clipboard metadata to classify a Figma clipboard paste before submit", async () => {
@@ -542,3 +572,4 @@ describe("InspectorPage — bootstrap path", () => {
       "Figma-Node JSON",
     );
   });
+});
