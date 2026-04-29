@@ -27,6 +27,7 @@ import {
   createInitialPipelineState,
   postTokenDecisions,
   type PastePipelineState,
+  type PipelineMetadata,
   type PipelineStage,
 } from "./paste-pipeline";
 import {
@@ -367,6 +368,7 @@ interface RegenerationAcceptedPayload {
   sourceJobId: string;
   status: "queued";
   pipelineId?: string;
+  pipelineMetadata?: PipelineMetadata;
 }
 
 function isCreatePrPayload(value: unknown): value is CreatePrPayload {
@@ -1205,6 +1207,12 @@ export function InspectorPanel({
         ...(activePipeline.outcome !== undefined
           ? { outcome: activePipeline.outcome }
           : {}),
+        ...(activePipeline.pipelineId !== undefined
+          ? { pipelineId: activePipeline.pipelineId }
+          : {}),
+        ...(activePipeline.pipelineMetadata !== undefined
+          ? { pipelineMetadata: activePipeline.pipelineMetadata }
+          : {}),
         ...(activePipeline.jobId !== undefined
           ? { jobId: activePipeline.jobId }
           : {}),
@@ -1230,6 +1238,8 @@ export function InspectorPanel({
     activePipeline.jobId,
     activePipeline.jobStatus,
     activePipeline.outcome,
+    activePipeline.pipelineId,
+    activePipeline.pipelineMetadata,
     activePipeline.retryRequest,
     activePipeline.stage,
     activePipeline.stageProgress,
@@ -6230,6 +6240,9 @@ export function InspectorPanel({
           stage={activePipeline.stage}
           errors={activePipeline.errors}
           stageProgress={activePipeline.stageProgress}
+          {...(activePipeline.pipelineMetadata !== undefined
+            ? { pipelineMetadata: activePipeline.pipelineMetadata }
+            : {})}
           {...(activePipeline.fallbackMode !== undefined
             ? { fallbackMode: activePipeline.fallbackMode }
             : {})}

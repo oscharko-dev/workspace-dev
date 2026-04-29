@@ -106,6 +106,12 @@ export function buildPasteImportSession(
   const base: PasteImportSession = {
     id: sessionId,
     jobId: pipelineState.jobId,
+    ...(pipelineState.pipelineId !== undefined
+      ? { pipelineId: pipelineState.pipelineId }
+      : {}),
+    ...(pipelineState.pipelineMetadata !== undefined
+      ? { pipelineMetadata: pipelineState.pipelineMetadata }
+      : {}),
     fileKey: urlContext?.fileKey ?? "",
     nodeId: urlContext?.nodeId ?? "",
     nodeName: resolveNodeName(pipelineState, urlContext),

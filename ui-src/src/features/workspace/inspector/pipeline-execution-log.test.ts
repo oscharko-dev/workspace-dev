@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  buildSanitizedPipelineReport,
   createPipelineExecutionLog,
   redactSensitiveData,
   type PipelineLogEntry,
@@ -128,6 +129,37 @@ describe("entries cache invalidation", () => {
     const after = log.entries;
     expect(after).not.toBe(before);
     expect(after).toHaveLength(0);
+  });
+});
+
+describe("buildSanitizedPipelineReport", () => {
+  it("serializes server-projected pipeline identity and metadata", () => {
+    const report = buildSanitizedPipelineReport({
+      pipeline: {
+        stage: "ready",
+        outcome: "success",
+        pipelineId: "pipe-rocket",
+        pipelineMetadata: {
+          pipelineId: "pipe-rocket",
+          pipelineDisplayName: "Rocket Pipeline",
+          templateBundleId: "react-tailwind-app",
+          buildProfile: "rocket",
+          deterministic: true,
+        },
+        stageProgress: {},
+        errors: [],
+      },
+    });
+
+    const parsed = JSON.parse(report) as Record<string, unknown>;
+    expect(parsed.pipelineId).toBe("pipe-rocket");
+    expect(parsed.pipelineMetadata).toEqual({
+      pipelineId: "pipe-rocket",
+      pipelineDisplayName: "Rocket Pipeline",
+      templateBundleId: "react-tailwind-app",
+      buildProfile: "rocket",
+      deterministic: true,
+    });
   });
 });
 

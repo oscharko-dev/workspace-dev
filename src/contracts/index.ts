@@ -1617,6 +1617,8 @@ export interface WorkspaceImportSessionEventsResponse {
 export interface WorkspaceImportSession {
   id: string;
   jobId: string;
+  pipelineId?: WorkspacePipelineId;
+  pipelineMetadata?: WorkspaceJobPipelineMetadata;
   sourceMode: WorkspaceImportSessionSourceMode;
   fileKey: string;
   nodeId: string;

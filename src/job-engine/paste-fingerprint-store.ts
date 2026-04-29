@@ -19,7 +19,7 @@ import {
 const DEFAULT_MAX_ENTRIES = 64;
 const DEFAULT_TTL_MS = 30 * 24 * 60 * 60_000; // 30 days
 const IDENTITY_KEY_LENGTH = 32;
-const PASTE_DELTA_COMPATIBILITY_VERSION = 1;
+const PASTE_DELTA_COMPATIBILITY_VERSION = 2;
 
 export interface PasteFingerprintNode {
   readonly id: string;
@@ -109,6 +109,8 @@ export const computePasteIdentityKey = (input: {
 };
 
 export const computePasteCompatibilityFingerprint = (input: {
+  readonly pipelineId?: string;
+  readonly templateBundleId?: string;
   readonly figmaSourceMode: string;
   readonly brandTheme: string;
   readonly customerBrandId?: string;
@@ -125,6 +127,10 @@ export const computePasteCompatibilityFingerprint = (input: {
   const canonical = JSON.stringify(
     toCanonicalJsonValue({
       figmaSourceMode: input.figmaSourceMode,
+      ...(input.pipelineId !== undefined ? { pipelineId: input.pipelineId } : {}),
+      ...(input.templateBundleId !== undefined
+        ? { templateBundleId: input.templateBundleId }
+        : {}),
       brandTheme: input.brandTheme,
       ...(input.customerBrandId !== undefined
         ? { customerBrandId: input.customerBrandId }

@@ -11,6 +11,7 @@
 // ---------------------------------------------------------------------------
 
 import type { WorkspaceImportSessionStatus } from "./import-review-state";
+import type { WorkspaceJobPipelineMetadataPayload } from "../workspace-page.helpers";
 
 export const PASTE_IMPORT_HISTORY_VERSION = 1;
 export const MAX_IMPORT_HISTORY_ENTRIES = 20;
@@ -66,6 +67,10 @@ export interface PasteImportSession {
   readonly pasteIdentityKey: string | null;
   /** Underlying jobId so callers can re-open the result. */
   readonly jobId: string;
+  /** Server-accepted pipeline for this import, when known. */
+  readonly pipelineId?: string;
+  /** Server-projected pipeline metadata for this import, when known. */
+  readonly pipelineMetadata?: WorkspaceJobPipelineMetadataPayload;
   /** Whether this session can be re-imported directly from history. */
   readonly replayable?: boolean;
   /** Optional explanation shown when replay is disabled. */
@@ -220,6 +225,23 @@ function isWorkspaceImportSessionStatus(
   );
 }
 
+function isPipelineMetadata(
+  value: unknown,
+): value is WorkspaceJobPipelineMetadataPayload {
+  return (
+    isRecord(value) &&
+    typeof value.pipelineId === "string" &&
+    value.pipelineId.length > 0 &&
+    typeof value.pipelineDisplayName === "string" &&
+    value.pipelineDisplayName.length > 0 &&
+    typeof value.templateBundleId === "string" &&
+    value.templateBundleId.length > 0 &&
+    typeof value.buildProfile === "string" &&
+    value.buildProfile.length > 0 &&
+    value.deterministic === true
+  );
+}
+
 function isPasteImportSession(value: unknown): value is PasteImportSession {
   if (!isRecord(value)) {
     return false;
@@ -251,6 +273,18 @@ function isPasteImportSession(value: unknown): value is PasteImportSession {
     return false;
   }
   if (value.sourceMode !== undefined && typeof value.sourceMode !== "string") {
+    return false;
+  }
+  if (
+    value.pipelineId !== undefined &&
+    (typeof value.pipelineId !== "string" || value.pipelineId.length === 0)
+  ) {
+    return false;
+  }
+  if (
+    value.pipelineMetadata !== undefined &&
+    !isPipelineMetadata(value.pipelineMetadata)
+  ) {
     return false;
   }
   if (

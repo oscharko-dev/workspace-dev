@@ -248,6 +248,18 @@ export function useInspectorBootstrap(
     setLastUrlContext(entry.urlContext);
   }, []);
 
+  useEffect(() => {
+    const acceptedPipelineId = pipeline.state.pipelineId;
+    const last = lastSubmitRef.current;
+    if (acceptedPipelineId === undefined || last === null) {
+      return;
+    }
+    lastSubmitRef.current = {
+      ...last,
+      pipelineId: acceptedPipelineId,
+    };
+  }, [pipeline.state.pipelineId]);
+
   const regenerateScoped = useCallback(
     (regenerateOptions: RegenerateScopedOptions): void => {
       const last = lastSubmitRef.current;
