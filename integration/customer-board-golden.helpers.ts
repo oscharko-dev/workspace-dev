@@ -1354,6 +1354,7 @@ const createExecutionContext = async ({
       jobDir,
       customerProfilePath
     }),
+    pipelineMetadata: ROCKET_PIPELINE_METADATA,
     runtime,
     resolvedPaths: {
       workspaceRoot: WORKSPACE_ROOT,

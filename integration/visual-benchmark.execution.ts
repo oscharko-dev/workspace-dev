@@ -76,6 +76,14 @@ export const BENCHMARK_BROWSER_NAMES =
 
 const DEFAULT_BENCHMARK_BROWSER: BenchmarkBrowserName = DEFAULT_VISUAL_BROWSER;
 
+const ROCKET_PIPELINE_METADATA = {
+  pipelineId: "rocket",
+  pipelineDisplayName: "Rocket",
+  templateBundleId: "react-mui-app",
+  buildProfile: "default-rocket",
+  deterministic: true,
+} as const;
+
 export interface VisualBenchmarkExecutionOptions extends VisualBenchmarkFixtureOptions {
   allowIncompleteVisualQuality?: boolean;
   qualityConfig?: VisualQualityConfig;
@@ -778,6 +786,8 @@ const createJobRecord = ({
     status: "queued",
     submittedAt: nowIso(),
     request: {
+      pipelineId: ROCKET_PIPELINE_METADATA.pipelineId,
+      pipelineMetadata: ROCKET_PIPELINE_METADATA,
       enableVisualQualityValidation: true,
       visualQualityReferenceMode: "frozen_fixture",
       visualQualityViewportWidth,
@@ -796,6 +806,7 @@ const createJobRecord = ({
       generationLocale: "en-US",
       formHandlingMode: "react_hook_form",
     },
+    pipelineMetadata: ROCKET_PIPELINE_METADATA,
     stages: createInitialStages(),
     logs: [],
     artifacts: {
@@ -872,6 +883,7 @@ const createExecutionContext = async ({
       visualQualityDeviceScaleFactor,
       visualQualityBrowsers,
     }),
+    pipelineMetadata: ROCKET_PIPELINE_METADATA,
     input: {
       figmaSourceMode: "local_json",
       figmaJsonPath,

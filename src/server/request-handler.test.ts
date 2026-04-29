@@ -4687,8 +4687,34 @@ test("GET /workspace exposes active pipeline registry metadata", async () => {
 
     assert.equal(response.statusCode, 200);
     const body = response.json<Record<string, unknown>>();
-    assert.equal(body.defaultPipelineId, "rocket");
+    assert.equal(body.defaultPipelineId, "default");
     assert.deepEqual(body.availablePipelines, [
+      {
+        id: "default",
+        displayName: "Default",
+        description:
+          "OSS React, TypeScript, and Tailwind pipeline for deterministic generated apps.",
+        visibility: "oss",
+        deterministic: true,
+        template: {
+          bundleId: "react-tailwind-app",
+          path: "template/react-tailwind-app",
+          stack: {
+            framework: "react",
+            language: "typescript",
+            styling: "tailwind",
+            bundler: "vite",
+          },
+        },
+        supportedSourceModes: [
+          "rest",
+          "hybrid",
+          "local_json",
+          "figma_paste",
+          "figma_plugin",
+        ],
+        supportedScopes: ["board", "node", "selection"],
+      },
       {
         id: "rocket",
         displayName: "Rocket",

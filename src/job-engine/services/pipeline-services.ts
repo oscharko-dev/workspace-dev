@@ -21,6 +21,7 @@ import { TemplatePrepareService } from "./template-prepare-service.js";
 import { ValidateProjectService } from "./validate-project-service.js";
 
 export interface PipelinePlanServiceOverrides {
+  codegenGenerateService?: StageService<CodegenGenerateStageInput> | undefined;
   templatePrepareService?: StageService<void> | undefined;
 }
 
@@ -188,6 +189,7 @@ const isStageBeforeRetryStage = ({
 };
 
 export const buildSubmissionPipelinePlan = ({
+  codegenGenerateService = CodegenGenerateService,
   templatePrepareService = TemplatePrepareService,
 }: PipelinePlanServiceOverrides = {}): PipelineStagePlanEntry[] => {
   return [
@@ -244,7 +246,7 @@ export const buildSubmissionPipelinePlan = ({
       },
     },
     {
-      service: CodegenGenerateService,
+      service: codegenGenerateService,
       resolveArtifacts: resolveCodegenArtifactContract,
       resolveInput: (context) =>
         buildCodegenInput({
@@ -345,6 +347,7 @@ export const buildSubmissionPipelinePlan = ({
 };
 
 export const buildRegenerationPipelinePlan = ({
+  codegenGenerateService = CodegenGenerateService,
   templatePrepareService = TemplatePrepareService,
 }: PipelinePlanServiceOverrides = {}): PipelineStagePlanEntry[] => {
   return [
@@ -383,7 +386,7 @@ export const buildRegenerationPipelinePlan = ({
       },
     },
     {
-      service: CodegenGenerateService,
+      service: codegenGenerateService,
       resolveArtifacts: resolveCodegenArtifactContract,
       resolveInput: (context) =>
         buildCodegenInput({
@@ -470,12 +473,16 @@ export const buildRegenerationPipelinePlan = ({
 };
 
 export const buildRetryPipelinePlan = ({
+  codegenGenerateService,
   retryStage,
   templatePrepareService,
 }: {
   retryStage: WorkspaceJobRetryStage;
 } & PipelinePlanServiceOverrides): PipelineStagePlanEntry[] => {
-  const plan = buildSubmissionPipelinePlan({ templatePrepareService });
+  const plan = buildSubmissionPipelinePlan({
+    codegenGenerateService,
+    templatePrepareService,
+  });
   return plan.map((entry) => {
     const stageName = entry.service.stageName;
     if (

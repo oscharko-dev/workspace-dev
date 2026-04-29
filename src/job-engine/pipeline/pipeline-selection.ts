@@ -10,6 +10,7 @@ import {
   buildRetryPipelinePlan,
   buildSubmissionPipelinePlan,
 } from "../services/pipeline-services.js";
+import { DefaultCodegenGenerateService } from "../services/default-codegen-generate-service.js";
 import { RocketTemplatePrepareService } from "../services/rocket-template-prepare-service.js";
 import type { SubmissionJobInput } from "../types.js";
 import { CURRENT_BUILD_PROFILE_PIPELINE_IDS } from "./pipeline-build-profile.js";
@@ -18,6 +19,40 @@ import { PipelineRequestError } from "./pipeline-errors.js";
 import { PipelineRegistry } from "./pipeline-registry.js";
 
 export const KNOWN_WORKSPACE_PIPELINE_IDS = ["default", "rocket"] as const;
+
+export const DEFAULT_PIPELINE_DEFINITION: PipelineDefinition = {
+  id: "default",
+  displayName: "Default",
+  description:
+    "OSS React, TypeScript, and Tailwind pipeline for deterministic generated apps.",
+  visibility: "oss",
+  deterministic: true,
+  template: {
+    bundleId: "react-tailwind-app",
+    path: "template/react-tailwind-app",
+    stack: {
+      framework: "react",
+      language: "typescript",
+      styling: "tailwind",
+      bundler: "vite",
+    },
+  },
+  supportedSourceModes: [...ALLOWED_FIGMA_SOURCE_MODES],
+  supportedScopes: ["board", "node", "selection"],
+  buildSubmissionPlan: () =>
+    buildSubmissionPipelinePlan({
+      codegenGenerateService: DefaultCodegenGenerateService,
+    }),
+  buildRegenerationPlan: () =>
+    buildRegenerationPipelinePlan({
+      codegenGenerateService: DefaultCodegenGenerateService,
+    }),
+  buildRetryPlan: ({ retryStage }) =>
+    buildRetryPipelinePlan({
+      codegenGenerateService: DefaultCodegenGenerateService,
+      retryStage,
+    }),
+};
 
 export const ROCKET_PIPELINE_DEFINITION: PipelineDefinition = {
   id: "rocket",
@@ -57,7 +92,7 @@ let defaultRegistry: PipelineRegistry | undefined;
 
 export const createDefaultPipelineRegistry = (): PipelineRegistry =>
   new PipelineRegistry({
-    definitions: [ROCKET_PIPELINE_DEFINITION].filter((definition) =>
+    definitions: [DEFAULT_PIPELINE_DEFINITION, ROCKET_PIPELINE_DEFINITION].filter((definition) =>
       CURRENT_BUILD_PROFILE_PIPELINE_IDS.includes(definition.id),
     ),
     knownPipelineIds: [...KNOWN_WORKSPACE_PIPELINE_IDS],

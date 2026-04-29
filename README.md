@@ -35,9 +35,9 @@ checklist.
 
 Existing customer integrations that depend on the current React + MUI generator,
 customer profiles, or storybook-first component mappings should submit jobs with
-`pipelineId: "rocket"` explicitly. The current rocket-only build still defaults
-to `rocket`, but explicit selection keeps upgrades stable when a future build
-ships both `default` and `rocket` pipelines.
+`pipelineId: "rocket"` explicitly. The current build ships both the OSS
+`default` React + TypeScript + Tailwind pipeline and the `rocket` compatibility
+pipeline; omitted `pipelineId` resolves to `default`.
 
 ## Repository branch flow
 

@@ -48,6 +48,14 @@ import { TemplatePrepareService } from "./template-prepare-service.js";
 import { createValidateProjectService } from "./validate-project-service.js";
 import { createPipelineError } from "../errors.js";
 
+const PIPELINE_METADATA = {
+  pipelineId: "rocket",
+  pipelineDisplayName: "Rocket",
+  templateBundleId: "react-mui-app",
+  buildProfile: "default-rocket",
+  deterministic: true,
+} as const;
+
 const createLocalFigmaPayload = () => ({
   name: "Stage Service Board",
   document: {
@@ -1730,6 +1738,7 @@ const createExecutionContext = async ({
     mode,
     job,
     ...(input ? { input } : {}),
+    pipelineMetadata: PIPELINE_METADATA,
     runtime,
     resolvedPaths: {
       outputRoot: root,

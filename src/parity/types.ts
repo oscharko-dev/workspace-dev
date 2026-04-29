@@ -222,6 +222,7 @@ export {
   createDefaultLayoutReportFile,
   createDefaultSemanticComponentReportFile,
   createDefaultTailwindScreenFile,
+  createDefaultTailwindScreenFiles,
   DEFAULT_LAYOUT_REPORT_PATH,
   DEFAULT_SEMANTIC_COMPONENT_REPORT_PATH,
 } from "./default-tailwind-emitter.js";
@@ -230,4 +231,5 @@ export type {
   DefaultSemanticComponentDiagnosticCode,
   DefaultSemanticComponentSummary,
   DefaultTailwindScreenFile,
+  DefaultTailwindScreenFileOptions,
 } from "./default-tailwind-emitter.js";

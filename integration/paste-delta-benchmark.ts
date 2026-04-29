@@ -46,6 +46,14 @@ const DEFAULT_OUTPUT_PATH = path.resolve(
 const DEFAULT_PAYLOAD_SCREEN_COUNT = 6;
 const DEFAULT_PAYLOAD_TEXT_NODES_PER_SCREEN = 12;
 
+const ROCKET_PIPELINE_METADATA = {
+  pipelineId: "rocket",
+  pipelineDisplayName: "Rocket",
+  templateBundleId: "react-mui-app",
+  buildProfile: "default-rocket",
+  deterministic: true,
+} as const;
+
 export interface BenchmarkSample {
   iteration: number;
   order: readonly ["full", "delta"] | readonly ["delta", "full"];
@@ -203,6 +211,8 @@ const createJobRecord = ({
     status: "queued",
     submittedAt: nowIso(),
     request: {
+      pipelineId: ROCKET_PIPELINE_METADATA.pipelineId,
+      pipelineMetadata: ROCKET_PIPELINE_METADATA,
       enableVisualQualityValidation: false,
       enableGitPr: false,
       figmaSourceMode: "local_json",
@@ -212,6 +222,7 @@ const createJobRecord = ({
       formHandlingMode: "react_hook_form",
       ...requestOverrides,
     },
+    pipelineMetadata: ROCKET_PIPELINE_METADATA,
     stages: createInitialStages(),
     logs: [],
     artifacts: {
@@ -273,6 +284,7 @@ const createBenchmarkExecutionContext = async ({
       jobId,
       requestOverrides,
     }),
+    pipelineMetadata: ROCKET_PIPELINE_METADATA,
     input,
     runtime,
     resolvedPaths: {
