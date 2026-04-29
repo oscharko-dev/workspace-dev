@@ -31,6 +31,31 @@ All changes to the public contract surface of `workspace-dev` are documented her
 
 ---
 
+## [4.23.0] - 2026-04-29
+
+### Added (Issue #1555)
+
+WorkspaceDev now defines the deterministic quality-passport contract and
+canonical writer primitive used by the default-pipeline enterprise evidence
+story. This adds the public schema constants and type surface for
+`quality-passport.json` without changing runtime job projection or Inspector
+behavior; runtime emission is owned by Issue #1556.
+
+**Evidence contract:**
+
+- `PIPELINE_QUALITY_PASSPORT_SCHEMA_VERSION` — version stamp for the
+  persisted passport schema.
+- `PIPELINE_QUALITY_PASSPORT_ARTIFACT_FILENAME` — canonical
+  `quality-passport.json` artifact name.
+- `WorkspacePipelineQualityPassport` — secret-free deterministic report shape
+  covering pipeline identity, template bundle, build profile, scope,
+  generated-file rows, validation status, token coverage, semantic coverage,
+  warnings, and caller-provided metadata projection.
+- Supporting quality-passport types for generated files, coverage metrics,
+  validation status, validation summary, warnings, and scope projection.
+
+---
+
 ## [4.22.0] - 2026-04-29
 
 ### Changed (Issue #1553)

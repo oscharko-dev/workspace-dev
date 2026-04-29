@@ -4,7 +4,7 @@
  * These types define the public API surface for workspace-dev consumers.
  * They must not import from internal services.
  *
- * Contract version: 4.22.0
+ * Contract version: 4.23.0
  * See CONTRACT_CHANGELOG.md for contract change history and VERSIONING.md for
  * package-versus-contract versioning policy.
  */
@@ -238,6 +238,13 @@ export const TEST_CASE_COVERAGE_REPORT_ARTIFACT_FILENAME =
 /** Canonical filename for the persisted visual-sidecar validation artifact. */
 export const VISUAL_SIDECAR_VALIDATION_REPORT_ARTIFACT_FILENAME =
   "visual-sidecar-validation-report.json" as const;
+
+/** Schema version for the deterministic pipeline quality passport artifact. */
+export const PIPELINE_QUALITY_PASSPORT_SCHEMA_VERSION = "1.0.0" as const;
+
+/** Canonical filename for the persisted pipeline quality passport artifact. */
+export const PIPELINE_QUALITY_PASSPORT_ARTIFACT_FILENAME =
+  "quality-passport.json" as const;
 
 /**
  * Schema version for the persisted self-verify rubric pass artifact (Issue #1379).
@@ -1203,6 +1210,75 @@ export interface WorkspaceJobPipelineMetadata {
   templateBundleId: string;
   buildProfile: string;
   deterministic: true;
+}
+
+/** Validation status vocabulary used by persisted quality-passport evidence. */
+export type WorkspacePipelineQualityValidationStatus =
+  | "not_run"
+  | "passed"
+  | "warning"
+  | "failed";
+
+/** Severity levels used by deterministic quality-passport warnings. */
+export type WorkspacePipelineQualityWarningSeverity =
+  | "info"
+  | "warning"
+  | "error";
+
+/** Scope projection for a generated pipeline quality passport. */
+export interface WorkspacePipelineQualityScope {
+  sourceMode: WorkspaceFigmaSourceMode;
+  scope: WorkspacePipelineScope;
+  selectedNodeCount: number;
+}
+
+/** Generated-file evidence row for a pipeline quality passport. */
+export interface WorkspacePipelineQualityGeneratedFile {
+  path: string;
+  sizeBytes?: number;
+  sha256?: string;
+}
+
+/** Ratio-based metric used for token and semantic coverage evidence. */
+export interface WorkspacePipelineQualityCoverageMetric {
+  status: WorkspacePipelineQualityValidationStatus;
+  covered: number;
+  total: number;
+  ratio: number;
+}
+
+/** Structured warning row used by deterministic quality-passport evidence. */
+export interface WorkspacePipelineQualityWarning {
+  code: string;
+  severity: WorkspacePipelineQualityWarningSeverity;
+  message: string;
+  source?: string;
+}
+
+/** Stable validation summary for quality-passport evidence. */
+export interface WorkspacePipelineQualityValidationSummary {
+  status: WorkspacePipelineQualityValidationStatus;
+  stages: Array<{
+    name: WorkspaceJobStageName;
+    status: WorkspaceJobStageStatus;
+  }>;
+}
+
+/** Deterministic, secret-free enterprise evidence emitted as `quality-passport.json`. */
+export interface WorkspacePipelineQualityPassport {
+  schemaVersion: typeof PIPELINE_QUALITY_PASSPORT_SCHEMA_VERSION;
+  pipelineId: WorkspacePipelineId;
+  templateBundleId: string;
+  buildProfile: string;
+  scope: WorkspacePipelineQualityScope;
+  generatedFiles: WorkspacePipelineQualityGeneratedFile[];
+  validation: WorkspacePipelineQualityValidationSummary;
+  coverage: {
+    token: WorkspacePipelineQualityCoverageMetric;
+    semantic: WorkspacePipelineQualityCoverageMetric;
+  };
+  warnings: WorkspacePipelineQualityWarning[];
+  metadata: Record<string, unknown>;
 }
 
 /** Configuration for starting a workspace-dev server instance. */
@@ -7463,4 +7539,4 @@ export type SourceMixPlannerResult =
  * Must be bumped according to CONTRACT_CHANGELOG.md rules.
  * Package version alignment is documented in VERSIONING.md.
  */
-export const CONTRACT_VERSION = "4.22.0" as const;
+export const CONTRACT_VERSION = "4.23.0" as const;
