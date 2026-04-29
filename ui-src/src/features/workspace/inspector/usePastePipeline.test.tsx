@@ -563,9 +563,15 @@ describe("usePastePipeline", () => {
   it("cancel() calls the server cancel endpoint for accepted jobs", async () => {
     let cancelRequestCount = 0;
     let polledAfterCancel = false;
+    let submitBody: Record<string, unknown> | null = null;
+    let cancelBody: Record<string, unknown> | null = null;
 
-    fetchJsonMock.mockImplementation(async ({ url }) => {
+    fetchJsonMock.mockImplementation(async ({ url, init }) => {
       if (url === "/workspace/submit") {
+        submitBody =
+          typeof init?.body === "string"
+            ? (JSON.parse(init.body) as Record<string, unknown>)
+            : null;
         return createJsonResponse({
           status: 202,
           payload: { jobId: "job-cancel" },
@@ -574,6 +580,10 @@ describe("usePastePipeline", () => {
 
       if (url === "/workspace/jobs/job-cancel/cancel") {
         cancelRequestCount += 1;
+        cancelBody =
+          typeof init?.body === "string"
+            ? (JSON.parse(init.body) as Record<string, unknown>)
+            : null;
         return createJsonResponse({
           payload: {
             jobId: "job-cancel",
@@ -609,7 +619,9 @@ describe("usePastePipeline", () => {
     });
 
     await act(async () => {
-      result.current.start(buildDirectJsonPayload());
+      result.current.start(buildDirectJsonPayload(), {
+        pipelineId: "rocket",
+      });
     });
 
     await waitFor(() => {
@@ -636,6 +648,13 @@ describe("usePastePipeline", () => {
       ),
     ).toBe(true);
     expect(cancelRequestCount).toBe(1);
+    expect(submitBody).toMatchObject({
+      figmaSourceMode: "figma_paste",
+      pipelineId: "rocket",
+    });
+    expect(cancelBody).toMatchObject({
+      reason: "Cancellation requested from inspector paste pipeline.",
+    });
   });
 
   it("keeps only the latest state when start() is called twice in quick succession", async () => {
