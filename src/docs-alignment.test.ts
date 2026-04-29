@@ -319,6 +319,75 @@ test("docs: pipeline authoring guide stays aligned with canonical stage contract
   );
 });
 
+test("docs: default pipeline demo guide stays aligned with runtime evidence", async () => {
+  const readmeDoc = await readRepoFile("README.md");
+  const troubleshootingDoc = await readRepoFile("TROUBLESHOOTING.md");
+  const demoGuideDoc = await readRepoFile(
+    "docs/default-pipeline/default-demo-guide.md",
+  );
+  const fixtureDoc = await readRepoFile(
+    "docs/default-pipeline/default-demo-fixtures.md",
+  );
+  const packProfileContract = await readRepoFile(
+    "scripts/pack-profile-contract.mjs",
+  );
+  const defaultManifest = await readRepoFile(
+    "src/parity/fixtures/golden/default/manifest.json",
+  );
+  const qualityPassportFixture = await readRepoFile(
+    "src/parity/fixtures/golden/default/fintech-dashboard/expected/quality-passport.json",
+  );
+  const workspacePageSource = await readRepoFile(
+    "ui-src/src/features/workspace/workspace-page.tsx",
+  );
+
+  assert.match(
+    readmeDoc,
+    /docs\/default-pipeline\/default-demo-guide\.md/,
+  );
+  assert.match(
+    troubleshootingDoc,
+    /docs\/default-pipeline\/default-demo-guide\.md/,
+  );
+  assert.match(fixtureDoc, /\[default-demo-guide\.md\]\(default-demo-guide\.md\)/);
+  assert.match(
+    packProfileContract,
+    /"docs\/default-pipeline\/default-demo-guide\.md"/,
+  );
+  assert.match(
+    packProfileContract,
+    /"docs\/default-pipeline\/default-demo-fixtures\.md"/,
+  );
+  assert.match(defaultManifest, /"pipelineId": "default"/);
+  assert.match(defaultManifest, /"oss-neutral-financial-default-demo"/);
+  assert.match(qualityPassportFixture, /"pipelineId": "default"/);
+  assert.match(qualityPassportFixture, /"templateBundleId": "react-tailwind-app"/);
+  assert.match(qualityPassportFixture, /"sourceMode": "local_json"/);
+  assert.match(workspacePageSource, /availablePipelines/);
+  assert.match(workspacePageSource, /defaultPipelineId/);
+  assert.match(workspacePageSource, /hasPipelineSelector/);
+  for (const requiredTerm of [
+    'pipelineId: "default"',
+    'figmaSourceMode: "local_json"',
+    'figmaSourceMode: "figma_paste"',
+    'figmaSourceMode: "figma_plugin"',
+    "availablePipelines",
+    "defaultPipelineId",
+    "preview.url",
+    "artifacts.reproDir",
+    "quality-passport.json",
+    "The published package ships the runtime, templates, and public docs",
+    "PIPELINE_INPUT_UNSUPPORTED",
+    "W_SEMANTIC_COMPONENT_NOT_REUSABLE",
+    "src/parity/fixtures/golden/default/fintech-dashboard/figma.json",
+  ]) {
+    assert.match(demoGuideDoc, new RegExp(escapeRegExp(requiredTerm)));
+  }
+  assert.match(troubleshootingDoc, /template:tailwind:install/);
+  assert.match(troubleshootingDoc, /template:tailwind:typecheck/);
+  assert.match(troubleshootingDoc, /template:tailwind:build/);
+});
+
 test("docs: troubleshooting guide is linked from README and included in the published package", async () => {
   const packProfileContract = await readRepoFile(
     "scripts/pack-profile-contract.mjs",
@@ -387,11 +456,19 @@ test("docs: troubleshooting guide is linked from README and included in the publ
   assert.match(validateProjectSection ?? "", /pnpm run template:install/);
   assert.match(
     templateDependencySection ?? "",
-    /template\/react-mui-app\/pnpm-lock\.yaml/,
+    /`template\/react-tailwind-app`/,
   );
   assert.match(
     templateDependencySection ?? "",
-    /pnpm install --frozen-lockfile/,
+    /`template\/react-mui-app`/,
+  );
+  assert.match(
+    templateDependencySection ?? "",
+    /pnpm run template:tailwind:install/,
+  );
+  assert.match(
+    templateDependencySection ?? "",
+    /pnpm run template:install/,
   );
 });
 

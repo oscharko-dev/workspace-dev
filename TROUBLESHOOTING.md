@@ -157,23 +157,70 @@ The canonical pipeline overview is in [PIPELINE.md](PIPELINE.md).
 
 **Cause**
 
-- `template/react-mui-app/pnpm-lock.yaml` is stale, corrupted, or no longer matches the checked-in template dependency graph.
+- The active pipeline template lockfile is stale, corrupted, or no longer
+  matches the checked-in template dependency graph. The `default` pipeline uses
+  `template/react-tailwind-app`; the `rocket` compatibility pipeline uses
+  `template/react-mui-app`.
 
 **Resolution**
 
-1. Verify the template lockfile and install state directly:
+1. For the `default` pipeline, verify the Tailwind template directly:
 
 ```bash
-cd template/react-mui-app && pnpm install --frozen-lockfile
+pnpm run template:tailwind:install
+pnpm run template:tailwind:typecheck
+pnpm run template:tailwind:build
 ```
 
-2. If that command fails, repair the template dependency state in the repository before rerunning the job.
-3. Once the template install is healthy again, rerun the original `workspace-dev` workflow.
+2. For the `rocket` pipeline, verify the MUI template directly:
+
+```bash
+pnpm run template:install
+pnpm run template:test
+```
+
+3. If those commands fail, repair the template dependency state in the
+   repository before rerunning the job.
+4. Once the template install is healthy again, rerun the original
+   `workspace-dev` workflow.
+
+## Default Pipeline Demo Failures
+
+**Symptom**
+
+- The default demo does not run from a local fixture.
+- The pipeline dropdown is missing or submits a different pipeline than expected.
+- The job completes but the quality-passport warnings are unclear.
+
+**Cause**
+
+- The request is using the wrong source mode, the local fixture path is not
+  resolvable from the runtime working directory, the active package profile only
+  exposes one pipeline, or the warning needs to be read from the generated
+  evidence file rather than treated as an automatic failure.
+
+**Resolution**
+
+1. Use `pipelineId: "default"` and `figmaSourceMode: "local_json"` for the
+   checked-in OSS demo fixtures.
+2. Run the runtime from the repository root or submit an absolute
+   `figmaJsonPath`.
+3. Confirm `GET /workspace` includes the expected `availablePipelines` and
+   `defaultPipelineId` values before debugging the UI selector.
+4. Read
+   `<outputRoot>/jobs/<jobId>/generated-app/quality-passport.json`
+   and inspect each warning's `code`, `message`, `severity`, and `source`.
+
+Canonical demo runbook:
+
+- [docs/default-pipeline/default-demo-guide.md](docs/default-pipeline/default-demo-guide.md)
 
 ## See Also
 
 - [README.md](README.md)
 - [PIPELINE.md](PIPELINE.md)
 - [docs/enterprise-quickstart.md](docs/enterprise-quickstart.md)
+- [docs/default-pipeline/default-demo-guide.md](docs/default-pipeline/default-demo-guide.md)
+- [docs/default-pipeline/default-demo-fixtures.md](docs/default-pipeline/default-demo-fixtures.md)
 - [docs/figma-import.md](docs/figma-import.md)
 - [docs/local-runtime.md](docs/local-runtime.md)

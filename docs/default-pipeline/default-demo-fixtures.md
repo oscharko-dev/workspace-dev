@@ -7,6 +7,10 @@ These fixtures are local JSON inputs for deterministic generation. They do not
 require a Figma token, customer profile, proprietary asset, or customer-specific
 mapping. All business values are synthetic demo values.
 
+For the end-to-end install, source-mode, pipeline-selection, runtime demo,
+quality-passport, warning, and troubleshooting runbook, see
+[default-demo-guide.md](default-demo-guide.md).
+
 ## Coverage
 
 | Fixture                    | Scenario                          | Surface   | Primary coverage                                                  |
