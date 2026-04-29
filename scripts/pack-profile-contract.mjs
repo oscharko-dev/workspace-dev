@@ -55,6 +55,7 @@ export const rootFileAllowlist = [
 export const docsFileAllowlist = [
   "docs/default-pipeline/default-demo-fixtures.md",
   "docs/default-pipeline/default-demo-guide.md",
+  "docs/default-pipeline/pipeline-authoring-and-migration.md",
   "docs/migration-guide.md",
   "docs/template-maintenance.md",
   "docs/test-intelligence.md",

@@ -39,7 +39,10 @@ customer profiles, or storybook-first component mappings should submit jobs with
 `default` React + TypeScript + Tailwind pipeline and the `rocket` compatibility
 pipeline; plain omitted-`pipelineId` jobs resolve to `default`. Legacy
 omitted-`pipelineId` requests with Rocket-specific inputs follow the deprecated
-compatibility fallback documented in the migration guide.
+compatibility fallback documented in the migration guide. Maintainers should use
+the [pipeline authoring and migration guide](docs/default-pipeline/pipeline-authoring-and-migration.md)
+for future pipeline authoring, package-profile boundaries, Rocket migration, and
+fallback-removal policy.
 
 ## Repository branch flow
 
@@ -334,6 +337,9 @@ Golden end-to-end fixtures validate deterministic output from `figma.json -> des
   `docs/default-pipeline/default-demo-fixtures.md`.
 - The default pipeline evaluator runbook is documented in
   `docs/default-pipeline/default-demo-guide.md`.
+- The maintainer guide for pipeline authoring, package profiles, Rocket
+  migration, and compatibility fallback policy is documented in
+  `docs/default-pipeline/pipeline-authoring-and-migration.md`.
 
 ## Scope and mode lock
 
