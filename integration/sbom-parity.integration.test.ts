@@ -19,7 +19,10 @@ test("integration: SBOM parity gate stays wired into scripts and workflows", asy
   const releaseGateWorkflow = await readRepoFile(".github/workflows/release-gate.yml");
   const changesetsReleaseWorkflow = await readRepoFile(".github/workflows/changesets-release.yml");
 
-  assert.equal(packageJson.scripts?.["verify:sbom:parity"], "node scripts/check-sbom-parity.mjs");
+  assert.equal(
+    packageJson.scripts?.["verify:sbom:parity"],
+    "pnpm run sbom:profiles && node scripts/check-sbom-parity.mjs"
+  );
   assert.match(packageJson.scripts?.["release:quality-gates"] ?? "", /pnpm run verify:sbom:parity/);
   assert.match(
     packageJson.scripts?.["release:quality-gates:publish-lifecycle"] ?? "",

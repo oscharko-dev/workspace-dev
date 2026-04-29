@@ -3,6 +3,10 @@ import { access, readFile } from "node:fs/promises";
 import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
+import {
+  docsFileAllowlist,
+  rootFileAllowlist,
+} from "../scripts/pack-profile-contract.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const packageRoot = path.resolve(__dirname, "..");
@@ -25,11 +29,7 @@ const readRepoFile = async (relativePath: string): Promise<string> => {
 };
 
 const getPublishedDocumentationPaths = async (): Promise<string[]> => {
-  const packageJson = JSON.parse(await readRepoFile("package.json")) as {
-    files?: string[];
-  };
-
-  return (packageJson.files ?? [])
+  return [...rootFileAllowlist, ...docsFileAllowlist]
     .filter((entry) => entry.endsWith(".md"))
     .filter((entry) => !ignoredPublishedDocs.has(entry))
     .sort((left, right) => left.localeCompare(right));
