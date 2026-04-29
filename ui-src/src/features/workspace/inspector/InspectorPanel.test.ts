@@ -912,6 +912,12 @@ describe("InspectorPanel data states", () => {
       screen.getByTestId("inspector-summary-quality-passport"),
     ).toBeInTheDocument();
     expect(
+      screen.getByTestId("inspector-summary-quality-passport-pipeline"),
+    ).toHaveTextContent("Pipeline: default / react-tailwind-app / default");
+    expect(
+      screen.getByTestId("inspector-summary-quality-passport-scope"),
+    ).toHaveTextContent("Scope: figma_plugin / selection (2 nodes)");
+    expect(
       screen.getByTestId("inspector-summary-quality-passport-status"),
     ).toHaveTextContent("Validation: passed");
     expect(
@@ -923,6 +929,9 @@ describe("InspectorPanel data states", () => {
     expect(
       screen.getByTestId("inspector-summary-quality-passport-semantic"),
     ).toHaveTextContent("Semantic coverage: 75%");
+    expect(
+      screen.getByTestId("inspector-summary-quality-passport-warnings"),
+    ).toHaveTextContent("Warnings: 1");
     expect(
       screen.getByTestId("inspector-summary-quality-passport-file"),
     ).toHaveTextContent("Evidence: quality-passport.json");
