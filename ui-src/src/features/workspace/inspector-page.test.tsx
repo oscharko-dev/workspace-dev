@@ -23,6 +23,7 @@ vi.mock("./inspector/InspectorPanel", () => ({
     onRegenerationAccepted,
     importHistory,
     onReimportSession,
+    pipeline,
   }: {
     jobId: string;
     previewUrl: string;
@@ -33,6 +34,11 @@ vi.mock("./inspector/InspectorPanel", () => ({
     onRegenerationAccepted: (nextJobId: string) => void;
     importHistory?: Array<{ id: string }>;
     onReimportSession?: (session: { id: string }) => void;
+    pipeline?: {
+      jobId?: string;
+      pipelineId?: string;
+      pipelineMetadata?: { pipelineDisplayName: string };
+    };
   }): JSX.Element => (
     <div>
       <div data-testid="inspector-layout">mock-inspector-layout</div>
@@ -43,6 +49,13 @@ vi.mock("./inspector/InspectorPanel", () => ({
           previousJobId ?? "",
           String(isRegenerationJob),
           openDialog ?? "",
+        ].join("|")}
+      </div>
+      <div data-testid="inspector-panel-pipeline">
+        {[
+          pipeline?.jobId ?? "",
+          pipeline?.pipelineId ?? "",
+          pipeline?.pipelineMetadata?.pipelineDisplayName ?? "",
         ].join("|")}
       </div>
       <button type="button" onClick={() => onRegenerationAccepted("job-2")}>
@@ -151,6 +164,33 @@ afterEach(() => {
 });
 
 describe("InspectorPage — deep-link path", () => {
+  beforeEach(() => {
+    fetchJsonMock.mockImplementation(async ({ url }) => {
+      if (url === "/workspace") {
+        return createJsonResponse({ payload: runtimeStatusPayload }) as never;
+      }
+      if (url === "/workspace/jobs/job-1" || url === "/workspace/jobs/job-2") {
+        const jobId = url.endsWith("job-2") ? "job-2" : "job-1";
+        return createJsonResponse({
+          payload: {
+            jobId,
+            status: "completed",
+            pipelineId: "rocket",
+            pipelineMetadata: {
+              pipelineId: "rocket",
+              pipelineDisplayName: "Rocket Pipeline",
+              templateBundleId: "react-mui-app",
+              buildProfile: "rocket",
+              deterministic: true,
+            },
+          },
+        }) as never;
+      }
+
+      throw new Error(`Unexpected url: ${url}`);
+    });
+  });
+
   it("passes search-param state into the inspector panel and updates regeneration job id", () => {
     renderPage(
       "/workspace/ui/inspector?jobId=job-1&previewUrl=http%3A%2F%2F127.0.0.1%3A1983%2Fpreview&previousJobId=job-0&isRegeneration=true",
@@ -176,6 +216,18 @@ describe("InspectorPage — deep-link path", () => {
     expect(screen.getByTestId("inspector-panel-props")).toHaveTextContent(
       "job-2|http://127.0.0.1:1983/preview|job-0|true|",
     );
+  });
+
+  it("hydrates server-projected pipeline metadata for deep-linked panels", async () => {
+    renderPage(
+      "/workspace/ui/inspector?jobId=job-1&previewUrl=http%3A%2F%2F127.0.0.1%3A1983%2Fpreview",
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId("inspector-panel-pipeline")).toHaveTextContent(
+        "job-1|rocket|Rocket Pipeline",
+      );
+    });
   });
 });
 
@@ -410,6 +462,14 @@ describe("InspectorPage — bootstrap path", () => {
             sessionId: "session-1",
             jobId: "job-reimport",
             sourceJobId: "job-prev",
+            pipelineId: "rocket",
+            pipelineMetadata: {
+              pipelineId: "rocket",
+              pipelineDisplayName: "Rocket Pipeline",
+              templateBundleId: "react-mui-app",
+              buildProfile: "rocket",
+              deterministic: true,
+            },
           },
         }) as never;
       }
@@ -418,6 +478,14 @@ describe("InspectorPage — bootstrap path", () => {
           payload: {
             jobId: "job-reimport",
             status: "running",
+            pipelineId: "rocket",
+            pipelineMetadata: {
+              pipelineId: "rocket",
+              pipelineDisplayName: "Rocket Pipeline",
+              templateBundleId: "react-mui-app",
+              buildProfile: "rocket",
+              deterministic: true,
+            },
             stages: [{ name: "figma.source", status: "completed" }],
           },
         }) as never;
@@ -467,6 +535,11 @@ describe("InspectorPage — bootstrap path", () => {
     expect(screen.getByTestId("inspector-panel-props")).toHaveTextContent(
       "job-reimport||job-prev|false|",
     );
+    await waitFor(() => {
+      expect(screen.getByTestId("inspector-panel-pipeline")).toHaveTextContent(
+        "job-reimport|rocket|Rocket Pipeline",
+      );
+    });
   });
 
   it("allows a corrected second paste after a non-retryable submit failure", async () => {

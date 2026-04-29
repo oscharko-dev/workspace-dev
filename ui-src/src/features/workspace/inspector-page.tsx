@@ -8,13 +8,21 @@ import { InspectorBootstrap } from "./inspector/InspectorBootstrap";
 import { useInspectorBootstrap } from "./inspector/useInspectorBootstrap";
 import { useStreamingTreeNodes } from "./inspector/component-tree-utils";
 import { useImportHistory } from "./inspector/useImportHistory";
-import type { RuntimeStatusPayload } from "./workspace-page.helpers";
+import {
+  isJobPayload,
+  type JobPayload,
+  type RuntimeStatusPayload,
+} from "./workspace-page.helpers";
 import type { PasteImportSession } from "./inspector/paste-import-history";
 import type { ImportIntent } from "./inspector/paste-input-classifier";
-import type {
-  PastePipelineState,
-  PipelineImportMode,
-  PipelineStage,
+import {
+  BACKEND_STAGES,
+  createInitialPipelineState,
+  type PipelineError,
+  type PipelineFallbackMode,
+  type PastePipelineState,
+  type PipelineImportMode,
+  type PipelineStage,
 } from "./inspector/paste-pipeline";
 import type { PipelineExecutionLog } from "./inspector/pipeline-execution-log";
 
@@ -98,6 +106,222 @@ interface PanelViewProps {
   onReimportSession?: (session: PasteImportSession) => void;
 }
 
+const BACKEND_TO_PIPELINE_STAGE: Record<string, PipelineStage> = {
+  "figma.source": "resolving",
+  "ir.derive": "transforming",
+  "template.prepare": "mapping",
+  "codegen.generate": "generating",
+  "validate.project": "generating",
+  "repro.export": "generating",
+  "git.pr": "generating",
+};
+
+function toPipelineStage(value: unknown): PipelineStage | undefined {
+  if (typeof value !== "string") {
+    return undefined;
+  }
+  if (value in BACKEND_TO_PIPELINE_STAGE) {
+    return BACKEND_TO_PIPELINE_STAGE[value];
+  }
+  if (
+    value === "resolving" ||
+    value === "extracting" ||
+    value === "transforming" ||
+    value === "mapping" ||
+    value === "generating"
+  ) {
+    return value;
+  }
+  return undefined;
+}
+
+function toFallbackMode(value: unknown): PipelineFallbackMode | undefined {
+  return value === "rest" ? "rest" : undefined;
+}
+
+function toHydratedPipelineError({
+  source,
+  fallbackStage,
+}: {
+  source: {
+    code?: string;
+    message?: string;
+    stage?: string;
+    retryable?: boolean;
+    retryAfterMs?: number;
+    fallbackMode?: string;
+  };
+  fallbackStage: PipelineStage;
+}): PipelineError {
+  const stage = toPipelineStage(source.stage) ?? fallbackStage;
+  const message = source.message ?? source.code ?? "Pipeline stage failed.";
+
+  return {
+    stage,
+    code: source.code ?? message,
+    message,
+    retryable: source.retryable === true,
+    ...(typeof source.retryAfterMs === "number"
+      ? { retryAfterMs: source.retryAfterMs }
+      : {}),
+    ...(toFallbackMode(source.fallbackMode) !== undefined
+      ? { fallbackMode: toFallbackMode(source.fallbackMode) }
+      : {}),
+  };
+}
+
+function toHydratedPipelineState(payload: JobPayload): PastePipelineState {
+  const state = createInitialPipelineState();
+  const stageProgress = { ...state.stageProgress };
+  const stages = [
+    ...(Array.isArray(payload.stages) ? payload.stages : []),
+    ...(Array.isArray(payload.inspector?.stages) ? payload.inspector.stages : []),
+  ];
+  const errors: PipelineError[] = [];
+  let fallbackMode: PipelineFallbackMode | undefined;
+
+  for (const stagePayload of stages) {
+    const pipelineStage = toPipelineStage(
+      "name" in stagePayload ? stagePayload.name : stagePayload.stage,
+    );
+    if (pipelineStage === undefined) {
+      continue;
+    }
+    const nextStatus =
+      stagePayload.status === "completed"
+        ? "done"
+        : stagePayload.status === "failed"
+          ? "failed"
+          : stagePayload.status === "running"
+            ? "running"
+            : "pending";
+    stageProgress[pipelineStage] = {
+      state: nextStatus,
+      ...(stagePayload.message !== undefined
+        ? { message: stagePayload.message }
+        : {}),
+    };
+    fallbackMode =
+      fallbackMode ?? toFallbackMode(stagePayload.fallbackMode);
+    if (nextStatus === "failed") {
+      errors.push(
+        toHydratedPipelineError({
+          source: stagePayload,
+          fallbackStage: pipelineStage,
+        }),
+      );
+    }
+  }
+
+  if (payload.error !== undefined) {
+    errors.push(
+      toHydratedPipelineError({
+        source: payload.error,
+        fallbackStage: errors[errors.length - 1]?.stage ?? "generating",
+      }),
+    );
+    fallbackMode = fallbackMode ?? toFallbackMode(payload.error.fallbackMode);
+  }
+
+  const uniqueErrors = errors.filter(
+    (error, index) =>
+      errors.findIndex(
+        (candidate) =>
+          candidate.stage === error.stage &&
+          candidate.code === error.code &&
+          candidate.message === error.message,
+      ) === index,
+  );
+  const resolvedStages = BACKEND_STAGES.filter(
+    (stage) => stageProgress[stage].state === "done",
+  ).length;
+  const errorCount = BACKEND_STAGES.filter(
+    (stage) => stageProgress[stage].state === "failed",
+  ).length;
+  const isPartial = errorCount > 0 && resolvedStages > 0;
+  const failedStage = uniqueErrors[uniqueErrors.length - 1]?.stage;
+  const jobStatus =
+    payload.status === "queued" ||
+    payload.status === "running" ||
+    payload.status === "completed" ||
+    payload.status === "partial" ||
+    payload.status === "failed" ||
+    payload.status === "canceled"
+      ? payload.status
+      : undefined;
+  const pipelineId = payload.pipelineId ?? payload.inspector?.pipelineId;
+  const pipelineMetadata =
+    payload.pipelineMetadata ?? payload.inspector?.pipelineMetadata;
+  const previewUrl = payload.preview?.url;
+  const outcome =
+    payload.status === "completed"
+      ? "success"
+      : isPartial
+        ? "partial"
+        : uniqueErrors.length > 0
+          ? "failed"
+          : undefined;
+
+  return {
+    ...state,
+    jobId: payload.jobId,
+    stage:
+      payload.status === "completed"
+        ? "ready"
+        : isPartial
+          ? "partial"
+          : uniqueErrors.length > 0
+            ? "error"
+            : payload.status === "running"
+              ? (failedStage ?? "generating")
+              : state.stage,
+    stageProgress,
+    errors: uniqueErrors,
+    canRetry: uniqueErrors.some((error) => error.retryable),
+    canCancel: payload.status === "queued" || payload.status === "running",
+    ...(jobStatus !== undefined ? { jobStatus } : {}),
+    ...(outcome !== undefined ? { outcome } : {}),
+    ...(pipelineId !== undefined ? { pipelineId } : {}),
+    ...(pipelineMetadata !== undefined ? { pipelineMetadata } : {}),
+    ...(previewUrl !== undefined ? { previewUrl } : {}),
+    ...(fallbackMode !== undefined ? { fallbackMode } : {}),
+    ...(isPartial
+      ? {
+          partialStats: {
+            resolvedStages,
+            totalStages: BACKEND_STAGES.length,
+            errorCount,
+          },
+        }
+      : {}),
+  };
+}
+
+function useHydratedPipelineState({
+  jobId,
+  enabled,
+}: {
+  jobId: string;
+  enabled: boolean;
+}): PastePipelineState | undefined {
+  const jobStatusQuery = useQuery({
+    queryKey: ["inspector-panel-job-pipeline", jobId],
+    enabled,
+    queryFn: async (): Promise<PastePipelineState | undefined> => {
+      const response = await fetchJson<JobPayload>({
+        url: `/workspace/jobs/${encodeURIComponent(jobId)}`,
+      });
+      if (!response.ok || !isJobPayload(response.payload)) {
+        return undefined;
+      }
+      return toHydratedPipelineState(response.payload);
+    },
+    staleTime: Infinity,
+  });
+
+  return jobStatusQuery.data;
+}
+
 function PanelView({
   jobId,
   previewUrl,
@@ -122,6 +346,12 @@ function PanelView({
     acceptedRegeneration?.sourceJobId === jobId
       ? acceptedRegeneration.nextJobId
       : jobId;
+  const activePipeline =
+    pipeline?.jobId === activeJobId ? pipeline : undefined;
+  const hydratedPipeline = useHydratedPipelineState({
+    jobId: activeJobId,
+    enabled: activePipeline === undefined,
+  });
   const activeIsRegenerationJob =
     initialIsRegeneration ||
     acceptedRegeneration?.sourceJobId === jobId ||
@@ -276,7 +506,11 @@ function PanelView({
             onCloseDialog={() => {
               setOpenDialog(null);
             }}
-            {...(pipeline !== undefined ? { pipeline } : {})}
+            {...(activePipeline !== undefined
+              ? { pipeline: activePipeline }
+              : hydratedPipeline !== undefined
+                ? { pipeline: hydratedPipeline }
+                : {})}
             {...(onPipelineRetry !== undefined ? { onPipelineRetry } : {})}
             {...(executionLog !== undefined ? { executionLog } : {})}
             {...(importHistory !== undefined ? { importHistory } : {})}
