@@ -28,6 +28,7 @@ export type {
   WorkspacePipelineQualityCoverageMetric,
   WorkspacePipelineQualityGeneratedFile,
   WorkspacePipelineQualityPassport,
+  WorkspacePipelineQualityPassportSummary,
   WorkspacePipelineQualityScope,
   WorkspacePipelineQualityValidationStatus,
   WorkspacePipelineQualityValidationSummary,

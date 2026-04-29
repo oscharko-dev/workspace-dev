@@ -64,6 +64,7 @@ import {
 } from "./generation-locale.js";
 import {
   createInitialStages,
+  cloneQualityPassportSummary,
   nowIso,
   pushRuntimeLog,
   resolveJobPipelineId,
@@ -4505,6 +4506,13 @@ export const createJobEngine = ({
               retryTargets: job.inspector.retryTargets.map((target) => ({
                 ...target,
               })),
+            }
+          : {}),
+        ...(job.inspector.qualityPassport
+          ? {
+              qualityPassport: cloneQualityPassportSummary(
+                job.inspector.qualityPassport,
+              ),
             }
           : {}),
         stages: job.inspector.stages.map((stage) => ({

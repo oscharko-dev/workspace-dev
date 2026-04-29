@@ -9806,7 +9806,7 @@ Present only when `figmaSourceMode === "figma_paste" | "figma_plugin"` and diff 
 
 ###### Inherited from
 
-[`WorkspaceSubmitAccepted`](#workspacesubmitaccepted).[`pipelineId`](#pipelineid-12)
+[`WorkspaceSubmitAccepted`](#workspacesubmitaccepted).[`pipelineId`](#pipelineid-13)
 
 ##### pipelineMetadata
 
@@ -9913,6 +9913,10 @@ Artifact paths emitted by autonomous job execution.
 ##### outputRoot
 
 > **outputRoot**: `string`
+
+##### qualityPassportFile?
+
+> `optional` **qualityPassportFile?**: `string`
 
 ##### reproDir?
 
@@ -10301,6 +10305,10 @@ Successful MCP read-tool calls consumed by this job.
 ##### pipelineMetadata
 
 > **pipelineMetadata**: [`WorkspaceJobPipelineMetadata`](#workspacejobpipelinemetadata)
+
+##### qualityPassport?
+
+> `optional` **qualityPassport?**: [`WorkspacePipelineQualityPassportSummary`](#workspacepipelinequalitypassportsummary)
 
 ##### retryableStages?
 
@@ -11325,6 +11333,66 @@ Deterministic, secret-free enterprise evidence emitted as `quality-passport.json
 ##### warnings
 
 > **warnings**: [`WorkspacePipelineQualityWarning`](#workspacepipelinequalitywarning)[]
+
+***
+
+### WorkspacePipelineQualityPassportSummary
+
+Inspector-facing compact projection of persisted quality-passport evidence.
+
+#### Properties
+
+##### artifactFile?
+
+> `optional` **artifactFile?**: `string`
+
+##### buildProfile
+
+> **buildProfile**: `string`
+
+##### generatedFileCount
+
+> **generatedFileCount**: `number`
+
+##### pipelineId
+
+> **pipelineId**: [`WorkspacePipelineId`](#workspacepipelineid)
+
+##### schemaVersion
+
+> **schemaVersion**: `"1.0.0"`
+
+##### scope
+
+> **scope**: [`WorkspacePipelineScope`](#workspacepipelinescope)
+
+##### selectedNodeCount
+
+> **selectedNodeCount**: `number`
+
+##### semanticCoverage
+
+> **semanticCoverage**: [`WorkspacePipelineQualityCoverageMetric`](#workspacepipelinequalitycoveragemetric)
+
+##### sourceMode
+
+> **sourceMode**: `"rest"` \| `"hybrid"` \| `"local_json"` \| `"figma_paste"` \| `"figma_plugin"`
+
+##### templateBundleId
+
+> **templateBundleId**: `string`
+
+##### tokenCoverage
+
+> **tokenCoverage**: [`WorkspacePipelineQualityCoverageMetric`](#workspacepipelinequalitycoveragemetric)
+
+##### validationStatus
+
+> **validationStatus**: [`WorkspacePipelineQualityValidationStatus`](#workspacepipelinequalityvalidationstatus)
+
+##### warningCount
+
+> **warningCount**: `number`
 
 ***
 

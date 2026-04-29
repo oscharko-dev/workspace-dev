@@ -38,6 +38,8 @@ export const STAGE_ARTIFACT_KEYS = {
   compositeQualityResult: "composite.quality.result",
   confidenceReport: "confidence.report",
   confidenceResult: "confidence.result",
+  qualityPassport: "pipeline.quality_passport",
+  qualityPassportFile: "pipeline.quality_passport.file",
   validationSummary: "validation.summary",
   validationSummaryFile: "validation.summary.file",
   reproPath: "repro.path",

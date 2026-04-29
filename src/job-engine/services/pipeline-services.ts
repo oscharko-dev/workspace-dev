@@ -291,6 +291,8 @@ export const buildSubmissionPipelinePlan = ({
         writes: [
           STAGE_ARTIFACT_KEYS.validationSummary,
           STAGE_ARTIFACT_KEYS.validationSummaryFile,
+          STAGE_ARTIFACT_KEYS.qualityPassport,
+          STAGE_ARTIFACT_KEYS.qualityPassportFile,
         ],
         optionalWrites: [
           STAGE_ARTIFACT_KEYS.generationDiff,
@@ -314,6 +316,7 @@ export const buildSubmissionPipelinePlan = ({
       },
       artifacts: {
         reads: [STAGE_ARTIFACT_KEYS.generatedProject],
+        optionalReads: [STAGE_ARTIFACT_KEYS.qualityPassportFile],
         writes: [STAGE_ARTIFACT_KEYS.reproPath],
       },
     },
@@ -428,6 +431,8 @@ export const buildRegenerationPipelinePlan = ({
         writes: [
           STAGE_ARTIFACT_KEYS.validationSummary,
           STAGE_ARTIFACT_KEYS.validationSummaryFile,
+          STAGE_ARTIFACT_KEYS.qualityPassport,
+          STAGE_ARTIFACT_KEYS.qualityPassportFile,
         ],
         optionalWrites: [
           STAGE_ARTIFACT_KEYS.generationDiff,
@@ -451,6 +456,7 @@ export const buildRegenerationPipelinePlan = ({
       },
       artifacts: {
         reads: [STAGE_ARTIFACT_KEYS.generatedProject],
+        optionalReads: [STAGE_ARTIFACT_KEYS.qualityPassportFile],
         writes: [STAGE_ARTIFACT_KEYS.reproPath],
       },
     },

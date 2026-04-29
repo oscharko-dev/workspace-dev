@@ -8,6 +8,7 @@ import type {
   WorkspaceJobStatus,
 } from "../contracts/index.js";
 import {
+  cloneQualityPassportSummary,
   cloneCompositeQuality,
   cloneJobConfidence,
   nowIso,
@@ -280,6 +281,13 @@ const toRehydratedJobRecord = ({
             retryTargets: snapshot.inspector.retryTargets.map((target) => ({
               ...target,
             })),
+          }
+        : {}),
+      ...(snapshot.inspector.qualityPassport
+        ? {
+            qualityPassport: cloneQualityPassportSummary(
+              snapshot.inspector.qualityPassport,
+            ),
           }
         : {}),
       stages: snapshot.inspector.stages.map((stage) => ({

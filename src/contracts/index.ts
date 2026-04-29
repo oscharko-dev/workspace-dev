@@ -1281,6 +1281,23 @@ export interface WorkspacePipelineQualityPassport {
   metadata: Record<string, unknown>;
 }
 
+/** Inspector-facing compact projection of persisted quality-passport evidence. */
+export interface WorkspacePipelineQualityPassportSummary {
+  artifactFile?: string;
+  schemaVersion: typeof PIPELINE_QUALITY_PASSPORT_SCHEMA_VERSION;
+  pipelineId: WorkspacePipelineId;
+  templateBundleId: string;
+  buildProfile: string;
+  sourceMode: WorkspaceFigmaSourceMode;
+  scope: WorkspacePipelineScope;
+  selectedNodeCount: number;
+  validationStatus: WorkspacePipelineQualityValidationStatus;
+  generatedFileCount: number;
+  warningCount: number;
+  tokenCoverage: WorkspacePipelineQualityCoverageMetric;
+  semanticCoverage: WorkspacePipelineQualityCoverageMetric;
+}
+
 /** Configuration for starting a workspace-dev server instance. */
 export interface WorkspaceStartOptions {
   /** Host to bind to. Default: "127.0.0.1" */
@@ -1819,6 +1836,7 @@ export interface WorkspaceJobInspector {
   pipelineMetadata: WorkspaceJobPipelineMetadata;
   outcome?: WorkspaceJobOutcome;
   fallbackMode?: WorkspaceJobFallbackMode;
+  qualityPassport?: WorkspacePipelineQualityPassportSummary;
   /** Successful MCP read-tool calls consumed by this job. */
   mcpCallsConsumed?: number;
   retryableStages?: WorkspaceJobRetryStage[];
@@ -1854,6 +1872,7 @@ export interface WorkspaceJobArtifacts {
   visualQualityReportFile?: string;
   compositeQualityReportFile?: string;
   confidenceReportFile?: string;
+  qualityPassportFile?: string;
   reproDir?: string;
 }
 

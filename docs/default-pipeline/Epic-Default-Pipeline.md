@@ -863,31 +863,58 @@ Beispiel:
 {
     "schemaVersion": "1.0.0",
     "pipelineId": "default",
-    "pipelineDisplayName": "Default — React + TypeScript + Tailwind",
     "templateBundleId": "react-tailwind-app",
-    "deterministic": true,
-    "sourceMode": "figma_plugin",
+    "buildProfile": "default",
     "scope": {
-        "kind": "selection",
+        "sourceMode": "figma_plugin",
+        "scope": "selection",
         "selectedNodeCount": 3
     },
-    "generatedFiles": 42,
-    "tokenCoverage": 0.94,
-    "semanticComponentCoverage": 0.81,
-    "unsupportedNodeCount": 2,
+    "generatedFiles": [
+        {
+            "path": "src/App.tsx",
+            "sizeBytes": 12048,
+            "sha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+        }
+    ],
     "validation": {
-        "typecheck": "passed",
-        "lint": "passed",
-        "build": "passed",
-        "unitTests": "passed"
+        "status": "passed",
+        "stages": [
+            {
+                "name": "figma.source",
+                "status": "completed"
+            },
+            {
+                "name": "validate.project",
+                "status": "completed"
+            }
+        ]
+    },
+    "coverage": {
+        "token": {
+            "status": "passed",
+            "covered": 94,
+            "total": 100,
+            "ratio": 0.94
+        },
+        "semantic": {
+            "status": "warning",
+            "covered": 81,
+            "total": 100,
+            "ratio": 0.81
+        }
     },
     "warnings": [
         {
             "code": "W_ABSOLUTE_LAYOUT_FALLBACK",
-            "nodeId": "17:9",
+            "severity": "warning",
+            "source": "codegen.generate",
             "message": "Absolute layout fallback used because constraints were ambiguous."
         }
-    ]
+    ],
+    "metadata": {
+        "status": "ok"
+    }
 }
 ```
 

@@ -1,9 +1,11 @@
 import { useEffect, useReducer, useRef, useState } from "react";
 import { fetchJson } from "../../../lib/http";
 import {
+  getJobQualityPassportPayload,
   isJobPayload,
   isRecord,
   type JobInspectorPayload,
+  type JobQualityPassportPayload,
   type JobPayload,
   type JobStagePayload,
   type WorkspaceJobPipelineMetadataPayload,
@@ -218,6 +220,7 @@ export interface PastePipelineState {
   outcome?: PipelineOutcome | undefined;
   pipelineId?: string | undefined;
   pipelineMetadata?: PipelineMetadata | undefined;
+  qualityPassport?: JobQualityPassportPayload | undefined;
   progress: number;
   stageProgress: Record<PipelineStage, StageStatus>;
   jobId?: string;
@@ -292,6 +295,7 @@ export type PipelineAction =
       previewUrl?: string;
       pipelineId?: string;
       pipelineMetadata?: PipelineMetadata;
+      qualityPassport?: JobQualityPassportPayload;
     }
   | { type: "stage_start"; stage: PipelineStage; message: string }
   | { type: "stage_message"; stage: PipelineStage; message: string }
@@ -319,6 +323,7 @@ export type PipelineAction =
       outcome?: PipelineOutcome;
       fallbackMode?: PipelineFallbackMode;
       mcpCallsConsumed?: number;
+      qualityPassport?: JobQualityPassportPayload;
     };
 
 // ---------------------------------------------------------------------------
@@ -620,6 +625,9 @@ export function pastePipelineReducer(
         ...(action.pipelineMetadata !== undefined
           ? { pipelineMetadata: action.pipelineMetadata }
           : {}),
+        ...(action.qualityPassport !== undefined
+          ? { qualityPassport: action.qualityPassport }
+          : {}),
       };
     }
 
@@ -736,6 +744,9 @@ export function pastePipelineReducer(
           : {}),
         ...(action.mcpCallsConsumed !== undefined
           ? { mcpCallsConsumed: action.mcpCallsConsumed }
+          : {}),
+        ...(action.qualityPassport !== undefined
+          ? { qualityPassport: action.qualityPassport }
           : {}),
         ...(outcome === "partial"
           ? {
@@ -1656,6 +1667,7 @@ function applyJobPayload({
     typeof payload.preview?.url === "string" ? payload.preview.url : undefined;
   const status = payload.status;
   const pipelineProjection = extractPipelineProjection(payload);
+  const qualityPassport = getJobQualityPassportPayload(payload);
   if (
     status === "queued" ||
     status === "running" ||
@@ -1669,6 +1681,7 @@ function applyJobPayload({
       status,
       ...(previewUrl !== undefined ? { previewUrl } : {}),
       ...pipelineProjection,
+      ...(qualityPassport !== undefined ? { qualityPassport } : {}),
     });
   }
 
@@ -2560,12 +2573,14 @@ async function executePipelineRun({
   }
   const fallbackMode = getJobFallbackMode(payload);
   const mcpCallsConsumed = getJobMcpCallsConsumed(payload);
+  const qualityPassport = getJobQualityPassportPayload(payload);
   apply({
     type: "complete",
     ...(previewUrl !== undefined ? { previewUrl } : {}),
     outcome,
     ...(fallbackMode !== undefined ? { fallbackMode } : {}),
     ...(mcpCallsConsumed !== undefined ? { mcpCallsConsumed } : {}),
+    ...(qualityPassport !== undefined ? { qualityPassport } : {}),
   });
   return { jobId };
 }

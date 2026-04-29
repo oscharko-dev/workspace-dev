@@ -154,6 +154,30 @@ test("serializePipelineQualityPassport emits canonical snapshot bytes", () => {
   assert.match(serializePipelineQualityPassport(first), /\n$/);
 });
 
+test("buildPipelineQualityPassport honors explicit warning validation status", () => {
+  const passport = buildPipelineQualityPassport({
+    pipelineMetadata: PIPELINE_METADATA,
+    sourceMode: "figma_plugin",
+    scope: "board",
+    generatedFiles: [],
+    validationStages: [
+      { name: "figma.source", status: "completed" },
+      { name: "ir.derive", status: "completed" },
+      { name: "template.prepare", status: "completed" },
+      { name: "codegen.generate", status: "completed" },
+      { name: "validate.project", status: "completed" },
+    ],
+    validationStatus: "warning",
+    tokenCoverage: { covered: 1, total: 1 },
+    semanticCoverage: { covered: 1, total: 1 },
+    metadata: {
+      validationSummaryStatus: "warn",
+    },
+  });
+
+  assert.equal(passport.validation.status, "warning");
+});
+
 test("projectQualityPassportMetadata redacts secret-shaped fields and values", () => {
   assert.deepEqual(
     projectQualityPassportMetadata({

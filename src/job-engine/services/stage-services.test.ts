@@ -12,7 +12,10 @@ import type {
   BusinessTestIntentIr,
   WorkspaceJobStageName
 } from "../../contracts/index.js";
-import { CONTRACT_VERSION } from "../../contracts/index.js";
+import {
+  CONTRACT_VERSION,
+  PIPELINE_QUALITY_PASSPORT_ARTIFACT_FILENAME,
+} from "../../contracts/index.js";
 import { parseCustomerProfileConfig } from "../../customer-profile.js";
 import { applyCustomerProfileToTemplate } from "../../customer-profile-template.js";
 import { resolveBoardKey } from "../../parity/board-key.js";
@@ -5963,7 +5966,184 @@ test("ValidateProjectService reads generated.project and writes validation.summa
     await executionContext.artifactStore.getPath(STAGE_ARTIFACT_KEYS.validationSummaryFile),
     path.join(executionContext.paths.jobDir, "validation-summary.json")
   );
+  assert.equal(
+    await executionContext.artifactStore.getPath(STAGE_ARTIFACT_KEYS.qualityPassportFile),
+    path.join(
+      executionContext.paths.generatedProjectDir,
+      PIPELINE_QUALITY_PASSPORT_ARTIFACT_FILENAME,
+    )
+  );
   assert.deepEqual(executionContext.job.visualAudit, { status: "not_requested" });
+});
+
+test("ValidateProjectService emits deterministic quality-passport evidence from validation and codegen artifacts", async () => {
+  const { executionContext, stageContextFor } = await createExecutionContext({
+    requestOverrides: {
+      figmaSourceMode: "figma_paste",
+      selectedNodeIds: ["node-1", "node-2"],
+    },
+  });
+  executionContext.job.stages = executionContext.job.stages.map((stage) =>
+    stage.name === "figma.source" ||
+    stage.name === "ir.derive" ||
+    stage.name === "template.prepare" ||
+    stage.name === "codegen.generate"
+      ? { ...stage, status: "completed" }
+      : stage,
+  );
+  await mkdir(path.join(executionContext.paths.generatedProjectDir, "src", "theme"), {
+    recursive: true,
+  });
+  await mkdir(path.join(executionContext.paths.generatedProjectDir, "src", "generated"), {
+    recursive: true,
+  });
+  await writeFile(
+    path.join(executionContext.paths.generatedProjectDir, "src", "App.tsx"),
+    "export default function App() { return null; }\n",
+    "utf8",
+  );
+  await writeFile(
+    path.join(
+      executionContext.paths.generatedProjectDir,
+      "src",
+      "theme",
+      "token-report.json",
+    ),
+    `${JSON.stringify(
+      {
+        tokenCoverage: 0.5,
+        categories: {
+          colors: { mapped: 2, total: 4, source: "figma", fallbacks: 2 },
+          spacing: { mapped: 2, total: 2, source: "derived", fallbacks: 0 },
+        },
+      },
+      null,
+      2,
+    )}\n`,
+    "utf8",
+  );
+  await writeFile(
+    path.join(
+      executionContext.paths.generatedProjectDir,
+      "src",
+      "generated",
+      "semantic-component-report.json",
+    ),
+    `${JSON.stringify(
+      {
+        schemaVersion: "1.0.0",
+        pipelineId: "default",
+        components: [
+          { screenId: "screen-1", nodeId: "button-1", kind: "button" },
+          { screenId: "screen-1", nodeId: "card-1", kind: "card" },
+        ],
+        diagnostics: [
+          {
+            code: "DEFAULT_SEMANTIC_FALLBACK",
+            message: "One element used structural fallback.",
+          },
+        ],
+      },
+      null,
+      2,
+    )}\n`,
+    "utf8",
+  );
+  await executionContext.artifactStore.setPath({
+    key: STAGE_ARTIFACT_KEYS.generatedProject,
+    stage: "template.prepare",
+    absolutePath: executionContext.paths.generatedProjectDir
+  });
+  await executionContext.artifactStore.setValue({
+    key: STAGE_ARTIFACT_KEYS.codegenSummary,
+    stage: "codegen.generate",
+    value: {
+      generatedPaths: [
+        "src/App.tsx",
+        "src/generated/semantic-component-report.json",
+        "src/theme/token-report.json",
+      ],
+      llmWarnings: [
+        {
+          code: "CODEGEN_NOTE",
+          message: "Codegen emitted an informational warning.",
+        },
+      ],
+    }
+  });
+  await executionContext.artifactStore.setValue({
+    key: STAGE_ARTIFACT_KEYS.generationDiffContext,
+    stage: "codegen.generate",
+    value: {
+      boardKey: "test-board-quality-passport"
+    } satisfies GenerationDiffContext
+  });
+  const service = createValidateProjectService({
+    runProjectValidationFn: async () => createSuccessfulValidationResult()
+  });
+
+  await service.execute(undefined, stageContextFor("validate.project"));
+
+  const passportPath = path.join(
+    executionContext.paths.generatedProjectDir,
+    PIPELINE_QUALITY_PASSPORT_ARTIFACT_FILENAME,
+  );
+  const passport = await executionContext.artifactStore.getValue<{
+    pipelineId: string;
+    scope: { sourceMode: string; scope: string; selectedNodeCount: number };
+    generatedFiles: Array<{ path: string; sha256?: string }>;
+    validation: { status: string };
+    coverage: {
+      token: { covered: number; total: number; ratio: number };
+      semantic: { status: string; covered: number; total: number; ratio: number };
+    };
+    warnings: Array<{ code: string; message: string }>;
+  }>(STAGE_ARTIFACT_KEYS.qualityPassport);
+
+  assert.deepEqual(
+    JSON.parse(await readFile(passportPath, "utf8")) as unknown,
+    passport,
+  );
+  assert.equal(
+    await executionContext.artifactStore.getPath(STAGE_ARTIFACT_KEYS.qualityPassportFile),
+    passportPath,
+  );
+  assert.equal(executionContext.job.artifacts.qualityPassportFile, passportPath);
+  assert.equal(passport?.pipelineId, "rocket");
+  assert.deepEqual(passport?.scope, {
+    sourceMode: "figma_paste",
+    scope: "selection",
+    selectedNodeCount: 2,
+  });
+  assert.deepEqual(
+    passport?.generatedFiles.map((file) => file.path),
+    [
+      "src/App.tsx",
+      "src/generated/semantic-component-report.json",
+      "src/theme/token-report.json",
+    ],
+  );
+  assert.equal(
+    passport?.generatedFiles.every((file) => typeof file.sha256 === "string"),
+    true,
+  );
+  assert.equal(passport?.validation.status, "passed");
+  assert.deepEqual(passport?.coverage.token, {
+    status: "passed",
+    covered: 4,
+    total: 6,
+    ratio: 0.666667,
+  });
+  assert.deepEqual(passport?.coverage.semantic, {
+    status: "warning",
+    covered: 2,
+    total: 3,
+    ratio: 0.666667,
+  });
+  assert.deepEqual(
+    passport?.warnings.map((warning) => warning.code),
+    ["CODEGEN_NOTE", "DEFAULT_SEMANTIC_FALLBACK"],
+  );
 });
 
 test("ValidateProjectService uses per-runtime validation policy instead of process env", async () => {
@@ -7813,6 +7993,9 @@ test("ValidateProjectService records standalone visual quality failures without 
       warnings?: string[];
     };
   }>(STAGE_ARTIFACT_KEYS.validationSummary);
+  const passport = await executionContext.artifactStore.getValue<{
+    validation?: { status?: string };
+  }>(STAGE_ARTIFACT_KEYS.qualityPassport);
   const visualQuality = await executionContext.artifactStore.getValue<{
     status?: string;
     referenceSource?: string;
@@ -7822,6 +8005,7 @@ test("ValidateProjectService records standalone visual quality failures without 
 
   assert.equal(captureCalled, false);
   assert.equal(summary?.status, "warn");
+  assert.equal(passport?.validation?.status, "warning");
   assert.equal(summary?.visualQuality?.status, "failed");
   assert.equal(summary?.visualQuality?.referenceSource, "frozen_fixture");
   assert.match(summary?.visualQuality?.message ?? "", /does not match requested viewport width/i);
@@ -10464,6 +10648,43 @@ test("ReproExportService copies dist output and writes repro.path", async () => 
   assert.equal(await executionContext.artifactStore.getPath(STAGE_ARTIFACT_KEYS.reproPath), executionContext.paths.reproDir);
 });
 
+test("ReproExportService includes quality-passport evidence when available", async () => {
+  const { executionContext, stageContextFor } = await createExecutionContext({
+    runtimeOverrides: { enablePreview: true }
+  });
+  const distDir = path.join(executionContext.paths.generatedProjectDir, "dist");
+  await mkdir(distDir, { recursive: true });
+  await writeFile(path.join(distDir, "index.html"), "<html></html>\n", "utf8");
+  const passportPath = path.join(
+    executionContext.paths.generatedProjectDir,
+    PIPELINE_QUALITY_PASSPORT_ARTIFACT_FILENAME,
+  );
+  await writeFile(passportPath, "{\"schemaVersion\":\"1.0.0\"}\n", "utf8");
+  await executionContext.artifactStore.setPath({
+    key: STAGE_ARTIFACT_KEYS.generatedProject,
+    stage: "template.prepare",
+    absolutePath: executionContext.paths.generatedProjectDir
+  });
+  await executionContext.artifactStore.setPath({
+    key: STAGE_ARTIFACT_KEYS.qualityPassportFile,
+    stage: "validate.project",
+    absolutePath: passportPath,
+  });
+
+  await ReproExportService.execute(undefined, stageContextFor("repro.export"));
+
+  assert.equal(
+    await readFile(
+      path.join(
+        executionContext.paths.reproDir,
+        PIPELINE_QUALITY_PASSPORT_ARTIFACT_FILENAME,
+      ),
+      "utf8",
+    ),
+    "{\"schemaVersion\":\"1.0.0\"}\n",
+  );
+});
+
 test("GitPrService reads generation diff from the store and writes git.pr.status", async () => {
   const { executionContext, stageContextFor } = await createExecutionContext({});
   await executionContext.artifactStore.setPath({
@@ -10896,7 +11117,7 @@ test("GitPrService receives the final validation-owned generation diff", async (
     currentJobId: executionContext.job.jobId,
     previousJobId: "job-previous-success",
     generatedAt: (receivedGenerationDiff as { generatedAt: string }).generatedAt,
-    added: ["src/App.tsx"],
+    added: ["quality-passport.json", "src/App.tsx"],
     modified: [
       {
         file: "src/utils.ts",
@@ -10906,7 +11127,7 @@ test("GitPrService receives the final validation-owned generation diff", async (
     ],
     removed: [],
     unchanged: [],
-    summary: "1 file modified, 1 added"
+    summary: "1 file modified, 2 added"
   });
 });
 

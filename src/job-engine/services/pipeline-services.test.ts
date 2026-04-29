@@ -170,7 +170,9 @@ test("submission pipeline plan declares diff ownership across codegen, validate,
   ]);
   assert.deepEqual(validateEntry?.artifacts?.writes, [
     STAGE_ARTIFACT_KEYS.validationSummary,
-    STAGE_ARTIFACT_KEYS.validationSummaryFile
+    STAGE_ARTIFACT_KEYS.validationSummaryFile,
+    STAGE_ARTIFACT_KEYS.qualityPassport,
+    STAGE_ARTIFACT_KEYS.qualityPassportFile
   ]);
   assert.deepEqual(validateEntry?.artifacts?.optionalWrites, [
     STAGE_ARTIFACT_KEYS.generationDiff,
@@ -188,6 +190,9 @@ test("submission pipeline plan declares diff ownership across codegen, validate,
   ]);
   assert.deepEqual(gitPrEntry?.artifacts?.skipWrites, [STAGE_ARTIFACT_KEYS.gitPrStatus]);
   assert.equal(reproExportEntry?.artifacts?.skipWrites, undefined);
+  assert.deepEqual(reproExportEntry?.artifacts?.optionalReads, [
+    STAGE_ARTIFACT_KEYS.qualityPassportFile
+  ]);
   assert.equal(
     gitPrEntry?.shouldSkip?.(context),
     "Git/PR flow disabled by request."
@@ -320,7 +325,9 @@ test("regeneration pipeline plan keeps order and encodes seeded artifact contrac
   ]);
   assert.deepEqual(validateEntry?.artifacts?.writes, [
     STAGE_ARTIFACT_KEYS.validationSummary,
-    STAGE_ARTIFACT_KEYS.validationSummaryFile
+    STAGE_ARTIFACT_KEYS.validationSummaryFile,
+    STAGE_ARTIFACT_KEYS.qualityPassport,
+    STAGE_ARTIFACT_KEYS.qualityPassportFile
   ]);
   assert.deepEqual(validateEntry?.artifacts?.optionalWrites, [
     STAGE_ARTIFACT_KEYS.generationDiff,
@@ -338,6 +345,9 @@ test("regeneration pipeline plan keeps order and encodes seeded artifact contrac
   );
   assert.deepEqual(gitPrEntry?.artifacts?.skipWrites, [STAGE_ARTIFACT_KEYS.gitPrStatus]);
   assert.equal(reproExportEntry?.artifacts?.skipWrites, undefined);
+  assert.deepEqual(reproExportEntry?.artifacts?.optionalReads, [
+    STAGE_ARTIFACT_KEYS.qualityPassportFile
+  ]);
 });
 
 test("submission pipeline codegen contract requires storybook-first artifacts when Storybook input is active", async () => {

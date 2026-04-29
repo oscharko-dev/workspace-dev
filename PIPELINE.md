@@ -37,11 +37,11 @@ flowchart TB
 - `ir.derive` and `codegen.generate` stay deterministic by design; hybrid mode enriches deterministic derivation with MCP metadata but does not switch the runtime into LLM generation.
 - `template.prepare` starts from the selected pipeline template: `default` uses `template/react-tailwind-app`; `rocket` uses the bundled React 19 + MUI v7 + Vite 8 seed in `template/react-mui-app`.
 - `codegen.generate` emits the generated app theme artifacts under `src/theme/`: canonical `tokens.json`, CSS custom properties in `tokens.css`, and token coverage evidence in `token-report.json`. The `default` pipeline additionally emits `src/generated/layout-report.json` and `src/generated/semantic-component-report.json` for transparent layout and semantic fallback diagnostics.
-- `validate.project` is the release-quality gate for generated output and can optionally run generated-project unit tests, UI validation, and performance assertions.
+- `validate.project` is the release-quality gate for generated output and can optionally run generated-project unit tests, UI validation, and performance assertions. It also emits the deterministic `quality-passport.json` evidence file for both `default` and `rocket` jobs.
 - `git.pr` is opt-in and skipped for local-only runs and regeneration jobs.
-- Standard stage artifact keys include: `figma.cleaned`, `design.ir`, `figma.analysis`, `storybook.catalog`, `storybook.evidence`, `storybook.tokens`, `storybook.themes`, `storybook.components`, `figma.library_resolution`, `component.match_report`, `generated.project`, `generation.metrics`, `validation.summary`, `repro.path`, `git.pr.status`.
+- Standard stage artifact keys include: `figma.cleaned`, `design.ir`, `figma.analysis`, `storybook.catalog`, `storybook.evidence`, `storybook.tokens`, `storybook.themes`, `storybook.components`, `figma.library_resolution`, `component.match_report`, `generated.project`, `generation.metrics`, `validation.summary`, `pipeline.quality_passport`, `pipeline.quality_passport.file`, `repro.path`, `git.pr.status`.
 - Required stage `reads` are enforced before execution. Optional reads declare conditionally consumed artifacts such as the storybook-first surface without breaking non-storybook runs.
-- Public job fields such as `artifacts.*`, `generationDiff`, and `gitPr` are projected from the stage store by the pipeline kernel rather than being mutated directly inside stage services. That projection includes the curated storybook-first artifact paths when they are available.
+- Public job fields such as `artifacts.*`, `generationDiff`, `inspector.qualityPassport`, and `gitPr` are projected from the stage store by the pipeline kernel rather than being mutated directly inside stage services. That projection includes the curated storybook-first artifact paths and quality-passport evidence when they are available.
 
 ## Maintainer authoring contract
 

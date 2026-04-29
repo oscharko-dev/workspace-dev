@@ -3626,6 +3626,15 @@ test("createJobEngine supports local_json mode without Figma REST calls", async 
   assert.deepEqual(result?.pipelineMetadata, PIPELINE_METADATA);
   assert.equal(result?.inspector?.pipelineId, "rocket");
   assert.deepEqual(result?.inspector?.pipelineMetadata, PIPELINE_METADATA);
+  assert.ok(result?.inspector?.qualityPassport);
+  const originalTokenCoverageStatus =
+    result.inspector.qualityPassport.tokenCoverage.status;
+  result.inspector.qualityPassport.tokenCoverage.status = "failed";
+  const clonedResult = engine.getJobResult(accepted.jobId);
+  assert.equal(
+    clonedResult?.inspector?.qualityPassport?.tokenCoverage.status,
+    originalTokenCoverageStatus,
+  );
   const terminalSnapshot = JSON.parse(
     await readFile(
       path.join(status.artifacts.jobDir, "stage-timings.json"),
@@ -3634,7 +3643,7 @@ test("createJobEngine supports local_json mode without Figma REST calls", async 
   ) as {
     pipelineMetadata?: unknown;
     request?: { pipelineMetadata?: unknown };
-    inspector?: { pipelineMetadata?: unknown };
+    inspector?: { pipelineMetadata?: unknown; qualityPassport?: unknown };
   };
   assert.deepEqual(terminalSnapshot.pipelineMetadata, PIPELINE_METADATA);
   assert.deepEqual(
@@ -3645,6 +3654,7 @@ test("createJobEngine supports local_json mode without Figma REST calls", async 
     terminalSnapshot.inspector?.pipelineMetadata,
     PIPELINE_METADATA,
   );
+  assert.ok(terminalSnapshot.inspector?.qualityPassport);
 });
 
 test("createJobEngine fails local_json mode with path-aware figma payload validation errors", async () => {
@@ -4855,6 +4865,31 @@ test("loadRehydratedJobs ignores invalid snapshots and clones optional terminal 
       status: "ready",
       retryableStages: ["codegen.generate"],
       retryTargets: [{ stageName: "codegen.generate", reason: "manual" }],
+      qualityPassport: {
+        artifactFile: "/tmp/job/quality-passport.json",
+        schemaVersion: "1.0.0",
+        pipelineId: "rocket",
+        templateBundleId: "react-mui-app",
+        buildProfile: "rocket",
+        sourceMode: "local_json",
+        scope: "board",
+        selectedNodeCount: 0,
+        validationStatus: "passed",
+        generatedFileCount: 1,
+        warningCount: 0,
+        tokenCoverage: {
+          status: "passed",
+          covered: 1,
+          total: 1,
+          ratio: 1,
+        },
+        semanticCoverage: {
+          status: "passed",
+          covered: 1,
+          total: 1,
+          ratio: 1,
+        },
+      },
       stages: [
         {
           name: "codegen.generate",
@@ -4902,15 +4937,20 @@ test("loadRehydratedJobs ignores invalid snapshots and clones optional terminal 
   assert.deepEqual(jobs[1]?.inspector?.stages[0]?.retryTargets, [
     { stageName: "codegen.generate", reason: "manual" },
   ]);
+  assert.equal(jobs[1]?.inspector?.qualityPassport?.tokenCoverage.status, "passed");
   assert.deepEqual(jobs[1]?.error?.retryTargets, [
     { stageName: "codegen.generate", reason: "manual" },
   ]);
 
   jobs[1]?.inspector?.retryableStages?.push("validate.project");
+  if (jobs[1]?.inspector?.qualityPassport) {
+    jobs[1].inspector.qualityPassport.tokenCoverage.status = "failed";
+  }
   assert.deepEqual(jobs[1]?.inspector?.retryableStages, [
     "codegen.generate",
     "validate.project",
   ]);
+  assert.equal(jobs[1]?.inspector?.qualityPassport?.semanticCoverage.status, "passed");
 });
 
 test("createJobEngine evicts oldest terminal jobs when retention count is exceeded", async () => {
