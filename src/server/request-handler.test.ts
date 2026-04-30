@@ -2970,6 +2970,119 @@ test("request handler exposes omitted-pipeline Rocket fallback warnings in job l
   }
 });
 
+test("request handler selects default pipeline when pipelineId is omitted and no Rocket-specific inputs are provided", async () => {
+  const tempRoot = await mkdtemp(
+    path.join(os.tmpdir(), "workspace-dev-request-handler-default-select-"),
+  );
+  const engine = createJobEngine({
+    resolveBaseUrl: () => "http://127.0.0.1:1983",
+    paths: {
+      outputRoot: tempRoot,
+      jobsRoot: path.join(tempRoot, "jobs"),
+      reprosRoot: path.join(tempRoot, "repros"),
+      workspaceRoot: tempRoot,
+    },
+    runtime: resolveRuntimeSettings({
+      enablePreview: false,
+      figmaMaxRetries: 1,
+      figmaRequestTimeoutMs: 1000,
+    }),
+  });
+  const { app, close } = await createRequestHandlerApp({
+    jobEngine: engine,
+    outputRoot: tempRoot,
+    workspaceRoot: tempRoot,
+  });
+
+  try {
+    const submitResponse = await app.inject({
+      method: "POST",
+      url: "/workspace/submit",
+      headers: { "content-type": "application/json" },
+      payload: {
+        figmaSourceMode: "local_json",
+        figmaJsonPath: "missing-figma.json",
+        // no pipelineId, no customerBrandId, no componentMappings — zero Rocket signals
+      },
+    });
+
+    assert.equal(submitResponse.statusCode, 202);
+    const accepted = submitResponse.json<{
+      jobId: string;
+      pipelineId?: string;
+    }>();
+    assert.equal(accepted.pipelineId, "default");
+
+    const jobResponse = await app.inject({
+      method: "GET",
+      url: `/workspace/jobs/${accepted.jobId}`,
+    });
+    assert.equal(jobResponse.statusCode, 200);
+    const job = jobResponse.json<{
+      pipelineId?: string;
+      request?: { pipelineId?: string };
+      logs?: { level?: string; message?: string }[];
+    }>();
+    assert.equal(job.pipelineId, "default");
+    assert.equal(job.request?.pipelineId, "default");
+    assert.equal(
+      job.logs?.some(
+        (entry) =>
+          entry.level === "warn" &&
+          entry.message.includes("legacy Rocket compatibility pipeline"),
+      ),
+      false,
+      "no LEGACY_ROCKET_AUTO_SELECTED warning should appear when no Rocket signals are present",
+    );
+  } finally {
+    await engine.shutdown({ reason: "test cleanup", timeoutMs: 1_000 });
+    await close();
+    await rm(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("request handler accepts regeneration with omitted pipelineId and passes it as absent to the engine", async () => {
+  const submitRegeneration = test.mock.fn(
+    () =>
+      ({
+        jobId: "regen-job",
+        sourceJobId: "source-job",
+        status: "queued",
+        acceptedModes: {
+          figmaSourceMode: "rest",
+          llmCodegenMode: "deterministic",
+        },
+      }) as ReturnType<JobEngine["submitRegeneration"]>,
+  );
+  const { app, close } = await createRequestHandlerApp({
+    jobEngine: createStubJobEngine({ submitRegeneration }),
+  });
+
+  try {
+    const response = await app.inject({
+      method: "POST",
+      url: "/workspace/jobs/source-job/regenerate",
+      headers: { "content-type": "application/json" },
+      payload: {
+        // pipelineId intentionally omitted — engine inherits source-job pipeline
+        overrides: [],
+      },
+    });
+
+    assert.equal(response.statusCode, 202);
+    assert.equal(submitRegeneration.mock.callCount(), 1);
+    assert.equal(
+      submitRegeneration.mock.calls[0]?.arguments[0]?.pipelineId,
+      undefined,
+      "omitted pipelineId must not be fabricated by the handler",
+    );
+    const body = response.json<{ jobId: string }>();
+    assert.equal(body.jobId, "regen-job");
+  } finally {
+    await close();
+  }
+});
+
 test("request handler forwards selectedNodeIds on scoped submit requests", async () => {
   const submitJob = test.mock.fn(() => {
     return {
