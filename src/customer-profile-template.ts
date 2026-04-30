@@ -145,6 +145,7 @@ export const applyCustomerProfileToTemplate = async ({
       : {};
 
   compilerOptions.baseUrl = ".";
+  compilerOptions.ignoreDeprecations = "6.0";
   compilerOptions.paths = sortPathRecord({
     ...existingPaths,
     ...Object.fromEntries(
