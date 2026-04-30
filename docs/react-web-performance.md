@@ -19,10 +19,19 @@ template does not ship Lighthouse's transitive telemetry SDK packages.
 
 - `pnpm --dir template/react-mui-app run perf:baseline` refreshes the approved MUI template baseline.
 - `pnpm --dir template/react-mui-app run perf:assert` is the authoritative MUI template assertion command.
+- `pnpm --dir template/react-tailwind-app run perf:baseline` refreshes the approved Tailwind template baseline.
 - `pnpm --dir template/react-tailwind-app run perf:assert` is the authoritative Tailwind template assertion command.
+- `pnpm run perf:web:tailwind:baseline:gate` captures a Tailwind measured-baseline artifact for release gates without overwriting the committed baseline.
 - `.github/workflows/dev-quality-gate.yml` keeps the matrixed `performance-web` job non-blocking so teams can iterate without the dev gate failing on every approved baseline refresh.
 - `.github/workflows/release-gate.yml` and `.github/workflows/changesets-release.yml` treat the same assertions as blocking.
 - The MUI template currently covers `["/","/overview","/checkout"]`; the Tailwind seed covers `["/"]` until the default pipeline emits routed output. Both templates use the `["mobile","desktop"]` profile matrix.
+
+Workflow gates first run `perf:baseline` with
+`FIGMAPIPE_PERF_BASELINE_PATH=artifacts/performance/perf-measured-baseline.json`
+so reviewers get current run evidence in uploaded artifacts. They then run
+`perf:assert` with `FIGMAPIPE_PERF_BASELINE_PATH=perf-baseline.json` and
+`FIGMAPIPE_PERF_ALLOW_BASELINE_BOOTSTRAP=false`, so blocking checks still
+compare against the reviewed baseline committed beside the template.
 
 At minimum, release reviewers must treat regressions in `lcp_p75_ms` and `cls_p75` as release blockers unless the baseline change is explicitly approved.
 

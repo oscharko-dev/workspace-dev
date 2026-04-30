@@ -649,6 +649,7 @@ Bundled templates include baseline + assertion pipelines:
 - `pnpm --dir template/react-mui-app run perf:assert`
 - `pnpm --dir template/react-tailwind-app run perf:baseline`
 - `pnpm --dir template/react-tailwind-app run perf:assert`
+- `pnpm run perf:web:tailwind:baseline:gate` captures the release-gate measured baseline artifact without changing the committed Tailwind baseline.
 
 Approved release baselines live beside each template, including `template/react-mui-app/perf-baseline.json` and `template/react-tailwind-app/perf-baseline.json`.
 Runtime performance reports are written to `template/<template-name>/artifacts/performance`.

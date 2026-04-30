@@ -64,6 +64,7 @@ also run the generated-app validation path:
 ```bash
 pnpm benchmark:visual
 pnpm --dir template/react-mui-app run perf:assert
+pnpm run perf:web:tailwind:baseline:gate
 pnpm run perf:web:tailwind:assert
 ```
 
@@ -82,6 +83,7 @@ pnpm run template:tailwind:test
 pnpm run template:tailwind:build
 pnpm run template:tailwind:validate:ui
 pnpm run template:tailwind:validate:playwright
+pnpm run perf:web:tailwind:baseline:gate
 pnpm run perf:web:tailwind:assert
 pnpm exec tsx --test src/react-tailwind-template.test.ts
 node --test scripts/check-default-template-denylist.test.mjs
