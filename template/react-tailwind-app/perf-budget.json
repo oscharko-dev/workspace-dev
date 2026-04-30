@@ -1,4 +1,5 @@
 {
+  "measurement": "playwright-browser-timing",
   "budgets": {
     "inp_p75_ms": 200,
     "lcp_p75_ms": 2500,
@@ -8,5 +9,8 @@
   },
   "regressionTolerancePct": 10,
   "routes": ["/"],
-  "profiles": ["mobile", "desktop"]
+  "profiles": ["mobile", "desktop"],
+  "notes": {
+    "initial_js_kb": "Measured as gzip-compressed transfer size via browser resource timing (performance.getEntriesByType('resource').transferSize), not raw vite build output. Raw build output typically exceeds this threshold."
+  }
 }
