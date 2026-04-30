@@ -771,6 +771,35 @@ const meanCompositeMetricOrNull = (
   );
 };
 
+const finiteCompositeMetricOrNull = (value: unknown): number | null =>
+  typeof value === "number" && Number.isFinite(value) ? value : null;
+
+const collectBrowserTimingCheckWarnings = (report: Record<string, unknown>): string[] => {
+  const checks = isRecord(report.checks) ? report.checks : {};
+  const warnings: string[] = [];
+  for (const group of ["budgets", "regression"] as const) {
+    const groupChecks = checks[group];
+    if (!Array.isArray(groupChecks)) {
+      continue;
+    }
+    groupChecks.forEach((check, index) => {
+      if (!isRecord(check) || check.pass !== false) {
+        return;
+      }
+      const metric =
+        typeof check.metric === "string" && check.metric.length > 0
+          ? check.metric
+          : `${group}[${String(index)}]`;
+      const reason =
+        typeof check.reason === "string" && check.reason.length > 0
+          ? `: ${check.reason}`
+          : "";
+      warnings.push(`${group} performance check failed for ${metric}${reason}`);
+    });
+  }
+  return warnings;
+};
+
 const loadCompositePerformanceBreakdown = async ({
   artifactDir,
 }: {
@@ -859,6 +888,7 @@ const loadCompositePerformanceBreakdown = async ({
   const clsValues: number[] = [];
   const tbtValues: number[] = [];
   const speedIndexValues: number[] = [];
+  let browserTimingSampleCount = 0;
 
   const resolveLighthouseRoot = (
     value: unknown,
@@ -912,11 +942,55 @@ const loadCompositePerformanceBreakdown = async ({
       continue;
     }
     const route = typeof sample.route === "string" ? sample.route : "(unknown)";
+    const metrics = isRecord(sample.metrics) ? sample.metrics : undefined;
     const lighthouseReportRaw =
       isRecord(sample.artifacts) &&
       typeof sample.artifacts.lighthouseReport === "string"
         ? sample.artifacts.lighthouseReport
         : undefined;
+    const browserTimingReportRaw =
+      isRecord(sample.artifacts) &&
+      typeof sample.artifacts.browserTimingReport === "string"
+        ? sample.artifacts.browserTimingReport
+        : undefined;
+    const usesBrowserTiming =
+      parsed.measurement === "playwright-browser-timing" ||
+      browserTimingReportRaw !== undefined;
+
+    if (usesBrowserTiming) {
+      if (metrics === undefined) {
+        warnings.push(
+          `sample[${String(index)}] ${profile} ${route}: missing metrics object`,
+        );
+        continue;
+      }
+      const loadedSample: WorkspaceCompositeQualityLighthouseSample = {
+        profile,
+        route,
+        performanceScore: null,
+        fcp_ms: null,
+        lcp_ms: finiteCompositeMetricOrNull(metrics.lcp_ms),
+        cls: finiteCompositeMetricOrNull(metrics.cls),
+        tbt_ms: null,
+        speed_index_ms: null,
+      };
+      samples.push(loadedSample);
+      browserTimingSampleCount += 1;
+
+      const label = `${profile} ${route}`;
+      if (loadedSample.lcp_ms !== null) {
+        lcpValues.push(loadedSample.lcp_ms);
+      } else {
+        warnings.push(`${label}: missing browser-timing LCP`);
+      }
+      if (loadedSample.cls !== null) {
+        clsValues.push(loadedSample.cls);
+      } else {
+        warnings.push(`${label}: missing browser-timing CLS`);
+      }
+      continue;
+    }
+
     if (!lighthouseReportRaw) {
       warnings.push(
         `sample[${String(index)}] ${profile} ${route}: missing artifacts.lighthouseReport path`,
@@ -995,6 +1069,14 @@ const loadCompositePerformanceBreakdown = async ({
     }
   }
 
+  const aggregate = isRecord(parsed.aggregate) ? parsed.aggregate : undefined;
+  const browserTimingLcp = finiteCompositeMetricOrNull(
+    aggregate?.lcp_p75_ms,
+  );
+  const browserTimingCls = finiteCompositeMetricOrNull(aggregate?.cls_p75);
+
+  warnings.push(...collectBrowserTimingCheckWarnings(parsed));
+
   return {
     sourcePath,
     score: meanCompositeMetricOrNull(performanceScores),
@@ -1002,8 +1084,14 @@ const loadCompositePerformanceBreakdown = async ({
     samples,
     aggregateMetrics: {
       fcp_ms: meanCompositeMetricOrNull(fcpValues),
-      lcp_ms: meanCompositeMetricOrNull(lcpValues),
-      cls: meanCompositeMetricOrNull(clsValues),
+      lcp_ms:
+        browserTimingSampleCount > 0
+          ? browserTimingLcp ?? meanCompositeMetricOrNull(lcpValues)
+          : meanCompositeMetricOrNull(lcpValues),
+      cls:
+        browserTimingSampleCount > 0
+          ? browserTimingCls ?? meanCompositeMetricOrNull(clsValues)
+          : meanCompositeMetricOrNull(clsValues),
       tbt_ms: meanCompositeMetricOrNull(tbtValues),
       speed_index_ms: meanCompositeMetricOrNull(speedIndexValues),
     },

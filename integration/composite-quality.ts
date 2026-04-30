@@ -21,6 +21,7 @@ export const DEFAULT_COMPOSITE_QUALITY_WEIGHTS: CompositeQualityWeights = {
 export type LighthouseProfile = "mobile" | "desktop";
 
 export interface CompositeLighthouseSampleMetrics {
+  measurement?: "lighthouse" | "playwright-browser-timing";
   profile: LighthouseProfile;
   route: string;
   performanceScore: number | null;
@@ -247,6 +248,9 @@ const meanOrNull = (values: readonly number[]): number | null => {
   return roundTo(total / values.length, 2);
 };
 
+const finiteNumberOrNull = (value: unknown): number | null =>
+  typeof value === "number" && Number.isFinite(value) ? value : null;
+
 export const computePerformanceScore = (
   samples: readonly CompositeLighthouseSampleMetrics[],
 ): PerformanceScoreBreakdown => {
@@ -276,6 +280,7 @@ export const computePerformanceScore = (
 
   samples.forEach((sample, index) => {
     const label = `sample[${String(index)}] ${sample.profile} ${sample.route}`;
+    const usesBrowserTiming = sample.measurement === "playwright-browser-timing";
     if (
       typeof sample.performanceScore === "number" &&
       Number.isFinite(sample.performanceScore)
@@ -286,12 +291,12 @@ export const computePerformanceScore = (
         );
       }
       perfScores.push(sample.performanceScore);
-    } else {
+    } else if (!usesBrowserTiming) {
       warnings.push(`${label}: missing performance score`);
     }
     if (typeof sample.fcp_ms === "number" && Number.isFinite(sample.fcp_ms)) {
       fcpValues.push(sample.fcp_ms);
-    } else {
+    } else if (!usesBrowserTiming) {
       warnings.push(`${label}: missing FCP`);
     }
     if (typeof sample.lcp_ms === "number" && Number.isFinite(sample.lcp_ms)) {
@@ -306,7 +311,7 @@ export const computePerformanceScore = (
     }
     if (typeof sample.tbt_ms === "number" && Number.isFinite(sample.tbt_ms)) {
       tbtValues.push(sample.tbt_ms);
-    } else {
+    } else if (!usesBrowserTiming) {
       warnings.push(`${label}: missing TBT`);
     }
     if (
@@ -314,7 +319,7 @@ export const computePerformanceScore = (
       Number.isFinite(sample.speed_index_ms)
     ) {
       speedIndexValues.push(sample.speed_index_ms);
-    } else {
+    } else if (!usesBrowserTiming) {
       warnings.push(`${label}: missing Speed Index`);
     }
   });
@@ -322,7 +327,9 @@ export const computePerformanceScore = (
   return {
     score: meanOrNull(perfScores),
     sampleCount: samples.length,
-    samples: samples.map((sample) => ({ ...sample })),
+    samples: samples.map(({ measurement: _measurement, ...sample }) => ({
+      ...sample,
+    })),
     aggregateMetrics: {
       fcp_ms: meanOrNull(fcpValues),
       lcp_ms: meanOrNull(lcpValues),
@@ -366,6 +373,34 @@ const extractPerformanceCategoryScore = (lhr: unknown): number | null => {
     return null;
   }
   return roundTo(score * 100, 2);
+};
+
+const collectPerformanceCheckWarnings = (
+  report: Record<string, unknown>,
+): string[] => {
+  const checks = isPlainRecord(report["checks"]) ? report["checks"] : {};
+  const warnings: string[] = [];
+  for (const group of ["budgets", "regression"] as const) {
+    const groupChecks = checks[group];
+    if (!Array.isArray(groupChecks)) {
+      continue;
+    }
+    groupChecks.forEach((check, index) => {
+      if (!isPlainRecord(check) || check["pass"] !== false) {
+        return;
+      }
+      const metric =
+        typeof check["metric"] === "string" && check["metric"].length > 0
+          ? check["metric"]
+          : `${group}[${String(index)}]`;
+      const reason =
+        typeof check["reason"] === "string" && check["reason"].length > 0
+          ? `: ${check["reason"]}`
+          : "";
+      warnings.push(`${group} performance check failed for ${metric}${reason}`);
+    });
+  }
+  return warnings;
 };
 
 const resolveLighthouseRoot = (
@@ -490,10 +525,41 @@ export const loadLighthouseSamplesFromPerfReport = async (
     }
     const route =
       typeof sample["route"] === "string" ? sample["route"] : "(unknown)";
+    const metrics = isPlainRecord(sample["metrics"])
+      ? sample["metrics"]
+      : undefined;
     const artifacts = sample["artifacts"];
     const lighthouseReportRaw = isPlainRecord(artifacts)
       ? artifacts["lighthouseReport"]
       : undefined;
+    const browserTimingReportRaw = isPlainRecord(artifacts)
+      ? artifacts["browserTimingReport"]
+      : undefined;
+    const usesBrowserTiming =
+      parsed["measurement"] === "playwright-browser-timing" ||
+      typeof browserTimingReportRaw === "string";
+
+    if (usesBrowserTiming) {
+      if (metrics === undefined) {
+        warnings.push(
+          `sample[${String(index)}] ${profile} ${route}: missing metrics object`,
+        );
+        continue;
+      }
+      samples.push({
+        measurement: "playwright-browser-timing",
+        profile,
+        route,
+        performanceScore: null,
+        fcp_ms: null,
+        lcp_ms: finiteNumberOrNull(metrics["lcp_ms"]),
+        cls: finiteNumberOrNull(metrics["cls"]),
+        tbt_ms: null,
+        speed_index_ms: null,
+      });
+      continue;
+    }
+
     if (typeof lighthouseReportRaw !== "string") {
       warnings.push(
         `sample[${String(index)}] ${profile} ${route}: missing artifacts.lighthouseReport path`,
@@ -538,6 +604,8 @@ export const loadLighthouseSamplesFromPerfReport = async (
       speed_index_ms: extractNumericValue(audits, "speed-index"),
     });
   }
+
+  warnings.push(...collectPerformanceCheckWarnings(parsed));
 
   return { samples, sourcePath, warnings };
 };
