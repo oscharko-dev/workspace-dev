@@ -17,7 +17,7 @@
     "test:watch": "vitest",
     "preview": "vite preview",
     "validate:ui": "node ./scripts/validate-ui-report.mjs",
-    "validate:playwright": "playwright test --project=chromium",
+    "validate:playwright": "playwright test",
     "perf:baseline": "node ./scripts/perf-runner.mjs baseline",
     "perf:assert": "node ./scripts/perf-runner.mjs assert"
   },

@@ -8315,6 +8315,13 @@ test("ValidateProjectService populates generatedApp.test when enableUnitTestVali
           args: ["run", "test"],
           attempt: 1,
           timedOut: false
+        },
+        validatePlaywright: {
+          status: "passed",
+          command: "pnpm",
+          args: ["run", "--if-present", "validate:playwright"],
+          attempt: 1,
+          timedOut: false
         }
       };
     }
@@ -8329,6 +8336,7 @@ test("ValidateProjectService populates generatedApp.test when enableUnitTestVali
       typecheck?: { args?: string[] };
       build?: { args?: string[] };
       test?: { args?: string[] };
+      validatePlaywright?: { args?: string[] };
     };
   }>(STAGE_ARTIFACT_KEYS.validationSummary);
   assert.equal(summary?.status, "ok");
@@ -8336,6 +8344,11 @@ test("ValidateProjectService populates generatedApp.test when enableUnitTestVali
   assert.deepEqual(summary?.generatedApp?.typecheck?.args, ["typecheck"]);
   assert.deepEqual(summary?.generatedApp?.build?.args, ["build"]);
   assert.deepEqual(summary?.generatedApp?.test?.args, ["run", "test"]);
+  assert.deepEqual(summary?.generatedApp?.validatePlaywright?.args, [
+    "run",
+    "--if-present",
+    "validate:playwright"
+  ]);
 });
 
 test("ValidateProjectService persists uiA11y summary when UI validation report is available", async () => {
