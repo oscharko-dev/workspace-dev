@@ -11,6 +11,16 @@ Contract-level surface changes remain tracked in `CONTRACT_CHANGELOG.md`.
 
 ### Added
 
+- OSS default demo and documentation story completion (#1532):
+    - The default pipeline now has a synthetic, OSS-neutral financial demo
+      fixture pack covering global banking dashboard, payment authorization
+      card, login/MFA, transaction table, risk alert modal, mobile navigation,
+      token-heavy board, forms, responsive layout, and unsupported-node
+      evidence scenarios.
+    - Maintainer and evaluator docs now cover local install, token-free
+      `local_json` / paste / plugin source modes, default-vs-Rocket pipeline
+      selection, quality-passport evidence, troubleshooting, future pipeline
+      authoring, package-profile boundaries, and Rocket migration guidance.
 - Pipeline quality passport story completion (#1529):
     - Jobs now persist deterministic `quality-passport.json` evidence even
       when a pipeline fails before `validate.project`; successful validation
