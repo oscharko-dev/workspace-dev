@@ -1,0 +1,173 @@
+{
+  "schemaVersion": "1.0.0",
+  "pipelineId": "default",
+  "summary": {
+    "status": "warn",
+    "message": "Generated accessibility report flagged 8 warning(s) across 1 screen(s).",
+    "screenCount": 1,
+    "warningCount": 8,
+    "semanticOutputWarningCount": 4,
+    "formLabelWarningCount": 0,
+    "buttonSemanticsWarningCount": 0,
+    "ariaLabelFallbackWarningCount": 0,
+    "altFallbackWarningCount": 0,
+    "focusOrderWarningCount": 2,
+    "lowContrastWarningCount": 2,
+    "clickDivFallbackWarningCount": 0
+  },
+  "screens": [
+    {
+      "screenId": "screen-table",
+      "screenName": "TransactionTable",
+      "warningCount": 8,
+      "warnings": [
+        {
+          "screenId": "screen-table",
+          "screenName": "TransactionTable",
+          "code": "W_DEFAULT_A11Y_FOCUS_ORDER",
+          "severity": "warning",
+          "nodeId": "row1-status-text",
+          "nodeName": "Label",
+          "message": "Absolute layout fallback for 'Label' can make keyboard focus order depend on implementation details."
+        },
+        {
+          "screenId": "screen-table",
+          "screenName": "TransactionTable",
+          "code": "W_DEFAULT_A11Y_FOCUS_ORDER",
+          "severity": "warning",
+          "nodeId": "row2-status-text",
+          "nodeName": "Label",
+          "message": "Absolute layout fallback for 'Label' can make keyboard focus order depend on implementation details."
+        },
+        {
+          "screenId": "screen-table",
+          "screenName": "TransactionTable",
+          "code": "W_DEFAULT_A11Y_SEMANTIC_OUTPUT",
+          "severity": "warning",
+          "nodeId": "table-row-1",
+          "nodeName": "Table Row",
+          "message": "Default semantic synthesis kept 'Table Row' inline because no matching reusable semantic structure was found."
+        },
+        {
+          "screenId": "screen-table",
+          "screenName": "TransactionTable",
+          "code": "W_DEFAULT_A11Y_SEMANTIC_OUTPUT",
+          "severity": "warning",
+          "nodeId": "row1-status",
+          "nodeName": "Status Chip",
+          "message": "Default semantic synthesis kept 'Status Chip' inline because no matching reusable semantic structure was found."
+        },
+        {
+          "screenId": "screen-table",
+          "screenName": "TransactionTable",
+          "code": "W_DEFAULT_A11Y_SEMANTIC_OUTPUT",
+          "severity": "warning",
+          "nodeId": "table-row-2",
+          "nodeName": "Table Row",
+          "message": "Default semantic synthesis kept 'Table Row' inline because no matching reusable semantic structure was found."
+        },
+        {
+          "screenId": "screen-table",
+          "screenName": "TransactionTable",
+          "code": "W_DEFAULT_A11Y_SEMANTIC_OUTPUT",
+          "severity": "warning",
+          "nodeId": "row2-status",
+          "nodeName": "Status Chip",
+          "message": "Default semantic synthesis kept 'Status Chip' inline because no matching reusable semantic structure was found."
+        },
+        {
+          "screenId": "screen-table",
+          "screenName": "TransactionTable",
+          "code": "W_DEFAULT_A11Y_LOW_CONTRAST",
+          "severity": "warning",
+          "nodeId": "row1-status-text",
+          "nodeName": "Label",
+          "message": "Low contrast text 'Label' uses 4.34:1 against its background."
+        },
+        {
+          "screenId": "screen-table",
+          "screenName": "TransactionTable",
+          "code": "W_DEFAULT_A11Y_LOW_CONTRAST",
+          "severity": "warning",
+          "nodeId": "row2-status-text",
+          "nodeName": "Label",
+          "message": "Low contrast text 'Label' uses 2.75:1 against its background."
+        }
+      ]
+    }
+  ],
+  "warnings": [
+    {
+      "screenId": "screen-table",
+      "screenName": "TransactionTable",
+      "code": "W_DEFAULT_A11Y_FOCUS_ORDER",
+      "severity": "warning",
+      "nodeId": "row1-status-text",
+      "nodeName": "Label",
+      "message": "Absolute layout fallback for 'Label' can make keyboard focus order depend on implementation details."
+    },
+    {
+      "screenId": "screen-table",
+      "screenName": "TransactionTable",
+      "code": "W_DEFAULT_A11Y_FOCUS_ORDER",
+      "severity": "warning",
+      "nodeId": "row2-status-text",
+      "nodeName": "Label",
+      "message": "Absolute layout fallback for 'Label' can make keyboard focus order depend on implementation details."
+    },
+    {
+      "screenId": "screen-table",
+      "screenName": "TransactionTable",
+      "code": "W_DEFAULT_A11Y_SEMANTIC_OUTPUT",
+      "severity": "warning",
+      "nodeId": "table-row-1",
+      "nodeName": "Table Row",
+      "message": "Default semantic synthesis kept 'Table Row' inline because no matching reusable semantic structure was found."
+    },
+    {
+      "screenId": "screen-table",
+      "screenName": "TransactionTable",
+      "code": "W_DEFAULT_A11Y_SEMANTIC_OUTPUT",
+      "severity": "warning",
+      "nodeId": "row1-status",
+      "nodeName": "Status Chip",
+      "message": "Default semantic synthesis kept 'Status Chip' inline because no matching reusable semantic structure was found."
+    },
+    {
+      "screenId": "screen-table",
+      "screenName": "TransactionTable",
+      "code": "W_DEFAULT_A11Y_SEMANTIC_OUTPUT",
+      "severity": "warning",
+      "nodeId": "table-row-2",
+      "nodeName": "Table Row",
+      "message": "Default semantic synthesis kept 'Table Row' inline because no matching reusable semantic structure was found."
+    },
+    {
+      "screenId": "screen-table",
+      "screenName": "TransactionTable",
+      "code": "W_DEFAULT_A11Y_SEMANTIC_OUTPUT",
+      "severity": "warning",
+      "nodeId": "row2-status",
+      "nodeName": "Status Chip",
+      "message": "Default semantic synthesis kept 'Status Chip' inline because no matching reusable semantic structure was found."
+    },
+    {
+      "screenId": "screen-table",
+      "screenName": "TransactionTable",
+      "code": "W_DEFAULT_A11Y_LOW_CONTRAST",
+      "severity": "warning",
+      "nodeId": "row1-status-text",
+      "nodeName": "Label",
+      "message": "Low contrast text 'Label' uses 4.34:1 against its background."
+    },
+    {
+      "screenId": "screen-table",
+      "screenName": "TransactionTable",
+      "code": "W_DEFAULT_A11Y_LOW_CONTRAST",
+      "severity": "warning",
+      "nodeId": "row2-status-text",
+      "nodeName": "Label",
+      "message": "Low contrast text 'Label' uses 2.75:1 against its background."
+    }
+  ]
+}

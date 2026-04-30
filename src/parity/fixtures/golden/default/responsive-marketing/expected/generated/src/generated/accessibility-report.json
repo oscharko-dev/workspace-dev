@@ -1,0 +1,119 @@
+{
+  "schemaVersion": "1.0.0",
+  "pipelineId": "default",
+  "summary": {
+    "status": "warn",
+    "message": "Generated accessibility report flagged 5 warning(s) across 1 screen(s).",
+    "screenCount": 1,
+    "warningCount": 5,
+    "semanticOutputWarningCount": 2,
+    "formLabelWarningCount": 0,
+    "buttonSemanticsWarningCount": 0,
+    "ariaLabelFallbackWarningCount": 0,
+    "altFallbackWarningCount": 1,
+    "focusOrderWarningCount": 1,
+    "lowContrastWarningCount": 1,
+    "clickDivFallbackWarningCount": 0
+  },
+  "screens": [
+    {
+      "screenId": "screen-home-desktop",
+      "screenName": "Home Desktop",
+      "warningCount": 5,
+      "warnings": [
+        {
+          "screenId": "screen-home-desktop",
+          "screenName": "Home Desktop",
+          "code": "W_DEFAULT_A11Y_FOCUS_ORDER",
+          "severity": "warning",
+          "nodeId": "cta-label-desktop",
+          "nodeName": "Label",
+          "message": "Absolute layout fallback for 'Label' can make keyboard focus order depend on implementation details."
+        },
+        {
+          "screenId": "screen-home-desktop",
+          "screenName": "Home Desktop",
+          "code": "W_DEFAULT_A11Y_SEMANTIC_OUTPUT",
+          "severity": "warning",
+          "nodeId": "hero-cta-desktop",
+          "nodeName": "CTA Button",
+          "message": "Default semantic synthesis kept 'CTA Button' inline because no matching reusable semantic structure was found."
+        },
+        {
+          "screenId": "screen-home-desktop",
+          "screenName": "Home Desktop",
+          "code": "W_DEFAULT_A11Y_SEMANTIC_OUTPUT",
+          "severity": "warning",
+          "nodeId": "features-desktop",
+          "nodeName": "Features Section",
+          "message": "Default semantic synthesis kept 'Features Section' inline because no matching reusable semantic structure was found."
+        },
+        {
+          "screenId": "screen-home-desktop",
+          "screenName": "Home Desktop",
+          "code": "W_DEFAULT_A11Y_LOW_CONTRAST",
+          "severity": "warning",
+          "nodeId": "cta-label-desktop",
+          "nodeName": "Label",
+          "message": "Low contrast text 'Label' uses 4.04:1 against its background."
+        },
+        {
+          "screenId": "screen-home-desktop",
+          "screenName": "Home Desktop",
+          "code": "W_DEFAULT_A11Y_ALT_FALLBACK",
+          "severity": "warning",
+          "nodeId": "hero-image-desktop",
+          "nodeName": "Hero Image",
+          "message": "Image 'Hero Image' depends on a generated alt fallback."
+        }
+      ]
+    }
+  ],
+  "warnings": [
+    {
+      "screenId": "screen-home-desktop",
+      "screenName": "Home Desktop",
+      "code": "W_DEFAULT_A11Y_FOCUS_ORDER",
+      "severity": "warning",
+      "nodeId": "cta-label-desktop",
+      "nodeName": "Label",
+      "message": "Absolute layout fallback for 'Label' can make keyboard focus order depend on implementation details."
+    },
+    {
+      "screenId": "screen-home-desktop",
+      "screenName": "Home Desktop",
+      "code": "W_DEFAULT_A11Y_SEMANTIC_OUTPUT",
+      "severity": "warning",
+      "nodeId": "hero-cta-desktop",
+      "nodeName": "CTA Button",
+      "message": "Default semantic synthesis kept 'CTA Button' inline because no matching reusable semantic structure was found."
+    },
+    {
+      "screenId": "screen-home-desktop",
+      "screenName": "Home Desktop",
+      "code": "W_DEFAULT_A11Y_SEMANTIC_OUTPUT",
+      "severity": "warning",
+      "nodeId": "features-desktop",
+      "nodeName": "Features Section",
+      "message": "Default semantic synthesis kept 'Features Section' inline because no matching reusable semantic structure was found."
+    },
+    {
+      "screenId": "screen-home-desktop",
+      "screenName": "Home Desktop",
+      "code": "W_DEFAULT_A11Y_LOW_CONTRAST",
+      "severity": "warning",
+      "nodeId": "cta-label-desktop",
+      "nodeName": "Label",
+      "message": "Low contrast text 'Label' uses 4.04:1 against its background."
+    },
+    {
+      "screenId": "screen-home-desktop",
+      "screenName": "Home Desktop",
+      "code": "W_DEFAULT_A11Y_ALT_FALLBACK",
+      "severity": "warning",
+      "nodeId": "hero-image-desktop",
+      "nodeName": "Hero Image",
+      "message": "Image 'Hero Image' depends on a generated alt fallback."
+    }
+  ]
+}

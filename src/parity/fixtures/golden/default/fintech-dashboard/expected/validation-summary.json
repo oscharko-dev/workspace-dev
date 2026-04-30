@@ -39,6 +39,12 @@
       "outputCaptureKey": "validate.project.attempt-1.build"
     }
   },
+  "generatedAccessibility": {
+    "status": "warn",
+    "reportPath": "src/generated/accessibility-report.json",
+    "warningCount": 16,
+    "summary": "Generated accessibility report flagged 16 warning(s) across 1 screen(s)."
+  },
   "uiA11y": {
     "status": "not_requested"
   },
