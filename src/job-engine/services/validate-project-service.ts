@@ -211,6 +211,7 @@ interface ValidationSummaryArtifact {
         build: ProjectValidationResult["build"];
         test?: ProjectValidationResult["test"];
         validateUi?: ProjectValidationResult["validateUi"];
+        validatePlaywright?: ProjectValidationResult["validatePlaywright"];
         perfAssert?: ProjectValidationResult["perfAssert"];
       }
     | {
@@ -2298,6 +2299,9 @@ const buildValidationSummaryArtifact = async ({
           ...(validationResult.test ? { test: validationResult.test } : {}),
           ...(validationResult.validateUi
             ? { validateUi: validationResult.validateUi }
+            : {}),
+          ...(validationResult.validatePlaywright
+            ? { validatePlaywright: validationResult.validatePlaywright }
             : {}),
           ...(validationResult.perfAssert
             ? { perfAssert: validationResult.perfAssert }

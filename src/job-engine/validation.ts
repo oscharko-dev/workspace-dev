@@ -62,6 +62,7 @@ export interface ProjectValidationResult {
   build: ValidationCommandResult;
   test?: ValidationTestResult;
   validateUi?: ValidationCommandResult;
+  validatePlaywright?: ValidationCommandResult;
   perfAssert?: ValidationCommandResult;
 }
 
@@ -583,10 +584,11 @@ export const runProjectValidationWithDeps = async ({
   if (enableUiValidation) {
     const uiGateEnv = jobDir
       ? (() => {
-          const { reportPath, baselinePath } = getUiGateReportPaths({ jobDir });
+          const { artifactDir, reportPath, baselinePath } = getUiGateReportPaths({ jobDir });
           return {
             FIGMAPIPE_UI_GATE_REPORT_PATH: reportPath,
-            FIGMAPIPE_UI_GATE_BASELINE_PATH: baselinePath
+            FIGMAPIPE_UI_GATE_BASELINE_PATH: baselinePath,
+            FIGMAPIPE_UI_GATE_VISUAL_AUDIT_ARTIFACT_DIR: path.join(artifactDir, "visual-audit")
           };
         })()
       : undefined;
@@ -595,6 +597,12 @@ export const runProjectValidationWithDeps = async ({
       args: ["run", "validate:ui"],
       ...(uiGateEnv ? { env: uiGateEnv } : {}),
       timeoutMs: commandTimeoutMs
+    });
+    attemptCommands.push({
+      name: "validate-playwright",
+      args: ["run", "--if-present", "validate:playwright"],
+      ...(uiGateEnv ? { env: uiGateEnv } : {}),
+      timeoutMs: Math.max(commandTimeoutMs, 20 * 60_000)
     });
   }
 
@@ -807,6 +815,8 @@ export const runProjectValidationWithDeps = async ({
             validationResult.test = successfulCommandResult;
           } else if (command.name === "validate-ui") {
             validationResult.validateUi = successfulCommandResult;
+          } else if (command.name === "validate-playwright") {
+            validationResult.validatePlaywright = successfulCommandResult;
           } else if (command.name === "perf-assert") {
             validationResult.perfAssert = successfulCommandResult;
           }

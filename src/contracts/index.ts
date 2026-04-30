@@ -1380,7 +1380,7 @@ export interface WorkspaceStartOptions {
   enableLintAutofix?: boolean;
   /** Run perf validation during validate.project. Default: false */
   enablePerfValidation?: boolean;
-  /** Run static UI validation in validate.project. Default: false */
+  /** Run generated-project UI validation in validate.project, including static checks and optional browser visual matrix when the template provides `validate:playwright`. Default: false */
   enableUiValidation?: boolean;
   /** Run visual quality validation in validate.project. Default: false */
   enableVisualQualityValidation?: boolean;

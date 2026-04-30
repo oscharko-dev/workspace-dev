@@ -11991,7 +11991,7 @@ Enable local preview export and serving. Default: true
 
 > `optional` **enableUiValidation?**: `boolean`
 
-Run static UI validation in validate.project. Default: false
+Run generated-project UI validation in validate.project, including static checks and optional browser visual matrix when the template provides `validate:playwright`. Default: false
 
 ##### enableUnitTestValidation?
 
