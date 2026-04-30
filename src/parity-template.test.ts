@@ -62,9 +62,9 @@ const toSemverMajor = (
 const TEMPLATE_HASH_SNAPSHOT: Record<(typeof TEMPLATE_FILES)[number], string> =
   {
     "package.json":
-      "1a3edbb499c9fea2a62f9bd0c98268e36bf90ca7b45848df6647be7e281a6e57",
+      "936454ede4c4f87a1a39793e104a10078e145a2c2d267992c399dc545805a606",
     "pnpm-lock.yaml":
-      "109358a95f538535e597a81ca66e40391f2e124253b1eba428a7af35c841035d",
+      "ee1505d405f1b29840463a782cc300381797159ed67d36828158b7e99ac060cf",
     "vite.config.ts":
       "7afffdfa2dc74d6306cd107d1f1410621755f50702b4c9374ed0a40c80241d05",
     "tsconfig.json":
