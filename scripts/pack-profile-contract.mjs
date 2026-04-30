@@ -93,6 +93,7 @@ export const templateFileAllowlists = {
     "template/react-tailwind-app/src/styles.css",
     "template/react-tailwind-app/src/test/setup.ts",
     "template/react-tailwind-app/src/vite-env.d.ts",
+    "template/react-tailwind-app/tsconfig.e2e.json",
     "template/react-tailwind-app/tsconfig.app.json",
     "template/react-tailwind-app/tsconfig.json",
     "template/react-tailwind-app/tsconfig.node.json",
@@ -166,6 +167,7 @@ export const templateRequiredFiles = {
     "template/react-tailwind-app/scripts/validate-ui-report-lib.mjs",
     "template/react-tailwind-app/playwright.config.ts",
     "template/react-tailwind-app/e2e/template.spec.ts",
+    "template/react-tailwind-app/tsconfig.e2e.json",
   ],
   "react-mui-app": [
     "template/react-mui-app/package.json",

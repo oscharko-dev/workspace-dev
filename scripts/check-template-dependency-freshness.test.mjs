@@ -205,6 +205,8 @@ test("renderTemplateDependencyIssueBody includes marker and actionable table", (
   const body = renderTemplateDependencyIssueBody({
     checkedAt: "2026-04-21T00:00:00.000Z",
     thresholdDays: 30,
+    templatePackagePath: "template/react-tailwind-app/package.json",
+    templateLockfilePath: "template/react-tailwind-app/pnpm-lock.yaml",
     staleDependencies: [
       {
         name: "@mui/material",
@@ -219,6 +221,10 @@ test("renderTemplateDependencyIssueBody includes marker and actionable table", (
   });
 
   assert.match(body, new RegExp(TEMPLATE_DEPENDENCY_ISSUE_MARKER));
+  assert.match(body, /template\/react-tailwind-app\/package\.json/);
+  assert.match(body, /template\/react-tailwind-app\/pnpm-lock\.yaml/);
+  assert.doesNotMatch(body, /template\/react-mui-app\/package\.json/);
+  assert.doesNotMatch(body, /template\/react-mui-app\/pnpm-lock\.yaml/);
   assert.match(body, /\| `@mui\/material` \| dependencies \| `\^7\.3\.9` \| `7\.3\.9` \| `7\.4\.0` \| 45 \| 2026-03-07 \|/);
   assert.match(body, /docs\/template-maintenance\.md/);
 });

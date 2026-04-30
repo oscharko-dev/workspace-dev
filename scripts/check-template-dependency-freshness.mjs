@@ -331,7 +331,7 @@ export const renderTemplateDependencyIssueBody = (report) => {
   return `${TEMPLATE_DEPENDENCY_ISSUE_MARKER}
 Template dependency freshness automation found minor or patch updates that have been available for more than ${report.thresholdDays} days.
 
-Review the update policy in \`docs/template-maintenance.md\`, update \`template/react-mui-app/package.json\` and \`template/react-mui-app/pnpm-lock.yaml\` in a dedicated PR, and run the documented template validation gates before merging.
+Review the update policy in \`docs/template-maintenance.md\`, update \`${report.templatePackagePath}\` and \`${report.templateLockfilePath}\` in a dedicated PR, and run the documented template validation gates before merging.
 
 | Package | Type | Current range | Current locked version | Latest same-major version | Days behind | Published |
 | --- | --- | --- | --- | --- | ---: | --- |
