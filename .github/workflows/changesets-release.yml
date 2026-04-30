@@ -178,15 +178,28 @@ jobs:
       - name: Build template app
         run: pnpm --dir "${{ matrix.template.packageDir }}" run build
 
+      - name: Capture web performance baseline
+        env:
+          FIGMAPIPE_PERF_ARTIFACT_DIR: artifacts/performance
+          FIGMAPIPE_PERF_BASELINE_PATH: artifacts/performance/perf-measured-baseline.json
+          FIGMAPIPE_PERF_REPORT_PATH: artifacts/performance/perf-baseline-report.json
+          FIGMAPIPE_PERF_STRICT: "false"
+          FIGMAPIPE_PERF_ALLOW_BASELINE_BOOTSTRAP: "true"
+        run: pnpm --dir "${{ matrix.template.packageDir }}" run perf:baseline
+
       - name: Assert web performance budgets and regression
         env:
-          FIGMAPIPE_PERF_ARTIFACT_DIR: ${{ matrix.template.packageDir }}/artifacts/performance
-          FIGMAPIPE_PERF_BASELINE_PATH: ${{ matrix.template.packageDir }}/perf-baseline.json
+          FIGMAPIPE_PERF_ARTIFACT_DIR: artifacts/performance
+          FIGMAPIPE_PERF_BASELINE_PATH: perf-baseline.json
           FIGMAPIPE_PERF_STRICT: "true"
           FIGMAPIPE_PERF_ALLOW_BASELINE_BOOTSTRAP: "false"
         run: pnpm --dir "${{ matrix.template.packageDir }}" run perf:assert
 
-      - name: Summarize web performance report
+      - name: Summarize web performance baseline report
+        if: always()
+        run: node scripts/print-perf-report-summary.mjs "${{ matrix.template.packageDir }}/artifacts/performance/perf-baseline-report.json"
+
+      - name: Summarize web performance assertion report
         if: always()
         run: node scripts/print-perf-report-summary.mjs "${{ matrix.template.packageDir }}/artifacts/performance/perf-assert-report.json"
 
