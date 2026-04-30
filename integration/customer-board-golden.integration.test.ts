@@ -404,6 +404,7 @@ test("customer-board golden offline fixture reproduces committed derived artifac
   ) as {
     compilerOptions?: {
       baseUrl?: string;
+      ignoreDeprecations?: string;
       paths?: Record<string, string[]>;
     };
   };
@@ -413,6 +414,7 @@ test("customer-board golden offline fixture reproduces committed derived artifac
   assert.equal(generatedPackageJson.dependencies?.["@customer/icons"], "npm:@mui/icons-material@^7.3.9");
   assert.equal(generatedPackageJson.dependencies?.["@customer/ui"], "npm:@mui/material@^7.3.9");
   assert.equal(generatedTsconfig.compilerOptions?.baseUrl, ".");
+  assert.equal(generatedTsconfig.compilerOptions?.ignoreDeprecations, "6.0");
   assert.deepEqual(generatedTsconfig.compilerOptions?.paths?.["@customer/icons"], ["@mui/icons-material"]);
   assert.deepEqual(generatedTsconfig.compilerOptions?.paths?.["@customer/ui"], ["@mui/material"]);
   assert.equal(generatedViteConfig.includes('"@customer/icons": "@mui/icons-material"'), true);

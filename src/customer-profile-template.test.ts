@@ -202,12 +202,14 @@ export default defineConfig({
     const tsconfig = JSON.parse(await readFile(path.join(generatedProjectDir, "tsconfig.json"), "utf8")) as {
       compilerOptions: {
         baseUrl: string;
+        ignoreDeprecations: string;
         paths: Record<string, string[]>;
       };
     };
     const viteConfig = await readFile(path.join(generatedProjectDir, "vite.config.ts"), "utf8");
 
     assert.equal(tsconfig.compilerOptions.baseUrl, ".");
+    assert.equal(tsconfig.compilerOptions.ignoreDeprecations, "6.0");
     assert.deepEqual(tsconfig.compilerOptions.paths, {
       "@customer/ui": ["@customer/components"],
       "@existing/ui": ["src/existing.ts"]
