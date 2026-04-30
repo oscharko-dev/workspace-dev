@@ -6,43 +6,42 @@ import path from "node:path";
 import { spawn } from "node:child_process";
 import { createServer } from "node:net";
 import { fileURLToPath } from "node:url";
-import {
-  defaultBuildProfileIds,
-  profileDefinitions,
-  resolveBuildProfiles,
-} from "./pack-profile-contract.mjs";
+import { parseProfileGateArgs, profilesFromIds } from "./profile-gate-utils.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const packageRoot = path.resolve(__dirname, "..");
 const workspaceDevLauncher = "pnpm";
 const workspaceDevLauncherArgs = ["exec", "workspace-dev"];
 
-const parseArgs = (argv) => {
-  const profiles = [];
+const parseArgs = () => {
+  const args = process.argv.slice(2);
+  const profileArgs = [];
+  let tarballPath = "";
 
-  for (let index = 0; index < argv.length; index += 1) {
-    const current = argv[index];
-    if (current === "--profile" || current === "-p") {
-      const next = argv[index + 1];
+  for (let index = 0; index < args.length; index += 1) {
+    const current = args[index];
+    if (current === "--tarball") {
+      const next = args[index + 1];
       if (!next) {
-        throw new Error(`Missing value for ${current}.`);
+        throw new Error("Missing value for --tarball.");
       }
-      profiles.push(next);
+      tarballPath = path.resolve(packageRoot, next);
       index += 1;
       continue;
     }
-    if (current.startsWith("--profile=")) {
-      profiles.push(current.slice("--profile=".length));
+    if (current.startsWith("--tarball=")) {
+      tarballPath = path.resolve(packageRoot, current.slice("--tarball=".length));
       continue;
     }
-    if (!current.startsWith("-")) {
-      profiles.push(current);
-      continue;
-    }
-    throw new Error(`Unknown argument: ${current}`);
+    profileArgs.push(current);
   }
 
-  return profiles.length > 0 ? resolveBuildProfiles(profiles) : defaultBuildProfileIds;
+  const { profileIds } = parseProfileGateArgs(profileArgs);
+  if (tarballPath && profileIds.length !== 1) {
+    throw new Error("--tarball can only be used with exactly one --profile.");
+  }
+
+  return { profileIds, tarballPath };
 };
 
 const resolveCommandEnv = () => {
@@ -312,7 +311,16 @@ const stopChildProcess = async (child, timeoutMs = 5_000) => {
   });
 };
 
-const verifyProfileAirgap = async (profile) => {
+const findSingleTarball = async (packDir) => {
+  const files = await readdir(packDir);
+  const tarballs = files.filter((file) => file.endsWith(".tgz"));
+  if (tarballs.length !== 1) {
+    throw new Error(`Expected exactly one .tgz in ${packDir}, found ${tarballs.length}.`);
+  }
+  return path.join(packDir, tarballs[0]);
+};
+
+const verifyProfileAirgapInstall = async ({ profile, tarballPath }) => {
   const tmpRoot = await mkdtemp(
     path.join(os.tmpdir(), `workspace-dev-${profile.id}-airgap-`),
   );
@@ -323,26 +331,23 @@ const verifyProfileAirgap = async (profile) => {
   const startOutput = createBoundedOutputBuffer();
 
   try {
-    await run({
-      command: "node",
-      args: [
-        "scripts/build-profile.mjs",
-        "--skip-build",
-        "--profile",
-        profile.id,
-        "--pack-destination",
-        packDir,
-      ],
-      cwd: packageRoot,
-    });
-
-    const files = await readdir(packDir);
-    const tarball = files.find((file) => file.endsWith(".tgz"));
-    if (!tarball) {
-      throw new Error("pnpm pack did not produce a tarball.");
+    let selectedTarballPath = tarballPath;
+    if (!selectedTarballPath) {
+      await run({
+        command: "node",
+        args: [
+          "scripts/build-profile.mjs",
+          "--skip-build",
+          "--profile",
+          profile.id,
+          "--pack-destination",
+          packDir,
+        ],
+        cwd: packageRoot,
+      });
+      selectedTarballPath = await findSingleTarball(packDir);
     }
 
-    const tarballPath = path.join(packDir, tarball);
     await mkdir(installDir, { recursive: true });
     await writeFile(
       path.join(installDir, "package.json"),
@@ -360,7 +365,7 @@ const verifyProfileAirgap = async (profile) => {
 
     await run({
       command: "npm",
-      args: ["install", "--offline", "--ignore-scripts", tarballPath],
+      args: ["install", "--offline", "--ignore-scripts", selectedTarballPath],
       cwd: installDir,
     });
 
@@ -423,7 +428,7 @@ const verifyProfileAirgap = async (profile) => {
     startChild = undefined;
 
     console.log(
-      `[airgap] Offline install, bin, module, and start smoke checks passed for profile '${profile.id}'.`,
+      `[airgap] Profile '${profile.id}' offline install, bin, module, and start smoke checks passed.`,
     );
   } finally {
     if (startChild) {
@@ -438,10 +443,9 @@ const verifyProfileAirgap = async (profile) => {
 };
 
 const main = async () => {
-  const profileIds = parseArgs(process.argv.slice(2));
-  for (const profileId of profileIds) {
-    const profile = profileDefinitions[profileId];
-    await verifyProfileAirgap(profile);
+  const { profileIds, tarballPath } = parseArgs();
+  for (const profile of profilesFromIds(profileIds)) {
+    await verifyProfileAirgapInstall({ profile, tarballPath });
   }
 };
 

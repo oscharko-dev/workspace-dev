@@ -13,16 +13,16 @@ import { readdir, readFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
-  defaultBuildProfileIds,
-  profileDefinitions,
-  resolveBuildProfiles,
-} from "./pack-profile-contract.mjs";
+  parseProfileGateArgs,
+  profilesFromIds,
+  templateMetadata,
+} from "./profile-gate-utils.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const packageRoot = path.resolve(__dirname, "..");
 
 // ── Directories to scan (AC-1.1) ────────────────────────────────────────────
-const SCAN_ROOTS = [
+const BASE_SCAN_ROOTS = [
   path.resolve(packageRoot, "src"),
   path.resolve(packageRoot, "ui-src/src"),
   path.resolve(packageRoot, "plugin"),
@@ -163,38 +163,7 @@ const collectFiles = async (dir) => {
   return files;
 };
 
-const parseArgs = (argv) => {
-  const profiles = [];
-
-  for (let index = 0; index < argv.length; index += 1) {
-    const current = argv[index];
-    if (current === "--profile" || current === "-p") {
-      const next = argv[index + 1];
-      if (!next) {
-        throw new Error(`Missing value for ${current}.`);
-      }
-      profiles.push(next);
-      index += 1;
-      continue;
-    }
-    if (current.startsWith("--profile=")) {
-      profiles.push(current.slice("--profile=".length));
-      continue;
-    }
-    if (!current.startsWith("-")) {
-      profiles.push(current);
-      continue;
-    }
-    throw new Error(`Unknown argument: ${current}`);
-  }
-
-  return profiles.length > 0 ? resolveBuildProfiles(profiles) : defaultBuildProfileIds;
-};
-
-const scanRootsForProfile = (profile) => [
-  ...SCAN_ROOTS,
-  ...profile.templates.map((templateId) => TEMPLATE_SCAN_ROOTS[templateId]),
-];
+const parseArgs = (argv = process.argv.slice(2)) => parseProfileGateArgs(argv).profileIds;
 
 const toRelativePosix = (filePath) => {
   return path.relative(packageRoot, filePath).split(path.sep).join("/");
@@ -284,60 +253,60 @@ const findViolationsInLine = (line) => {
   return findings;
 };
 
-const main = async () => {
-  const profileIds = parseArgs(process.argv.slice(2));
-  let totalScannedFiles = 0;
-  let totalScannedRoots = 0;
-
-  for (const profileId of profileIds) {
-    const profile = profileDefinitions[profileId];
-    const roots = scanRootsForProfile(profile);
-    const fileLists = await Promise.all(roots.map((root) => collectFiles(root)));
-    const files = fileLists.flat();
-    const violations = [];
-    totalScannedFiles += files.length;
-    totalScannedRoots += roots.length;
-
-    for (const filePath of files) {
-      const relativePath = toRelativePosix(filePath);
-      if (ALLOWED_FILES.has(relativePath)) {
-        continue;
-      }
-      const content = await readFile(filePath, "utf8");
-      const lines = content.split("\n");
-      for (let index = 0; index < lines.length; index += 1) {
-        const line = lines[index] ?? "";
-        const findings = findViolationsInLine(line);
-        for (const reason of findings) {
-          violations.push({
-            file: relativePath,
-            line: index + 1,
-            reason,
-            content: line.trim(),
-          });
-        }
-      }
-    }
-
-    if (violations.length > 0) {
-      console.error(
-        `Zero-telemetry guard failed for profile '${profile.id}'. Potential telemetry traces detected:`,
+const resolveScanRoots = (profileIds) => {
+  const templateRoots = new Set();
+  for (const profile of profilesFromIds(profileIds)) {
+    for (const templateId of profile.templates) {
+      templateRoots.add(
+        path.resolve(packageRoot, templateMetadata[templateId].packageRoot),
       );
-      for (const violation of violations) {
-        console.error(
-          `- ${violation.file}:${violation.line} [${violation.reason}] ${violation.content}`,
-        );
-      }
-      process.exit(1);
     }
+  }
+  return [...BASE_SCAN_ROOTS, ...templateRoots];
+};
 
-    console.log(
-      `Zero-telemetry guard passed for profile '${profile.id}'. Scanned ${files.length} files across ${roots.length} roots.`,
+const main = async () => {
+  const profileIds = parseArgs();
+  const scanRoots = resolveScanRoots(profileIds);
+  const fileLists = await Promise.all(scanRoots.map((root) => collectFiles(root)));
+  const files = fileLists.flat();
+  const violations = [];
+
+  for (const filePath of files) {
+    const relativePath = toRelativePosix(filePath);
+    if (ALLOWED_FILES.has(relativePath)) {
+      continue;
+    }
+    const content = await readFile(filePath, "utf8");
+    const lines = content.split("\n");
+    for (let index = 0; index < lines.length; index += 1) {
+      const line = lines[index] ?? "";
+      const findings = findViolationsInLine(line);
+      for (const reason of findings) {
+        violations.push({
+          file: relativePath,
+          line: index + 1,
+          reason,
+          content: line.trim(),
+        });
+      }
+    }
+  }
+
+  if (violations.length > 0) {
+    console.error(
+      `Zero-telemetry guard failed for profile(s) '${profileIds.join(", ")}'. Potential telemetry traces detected:`,
     );
+    for (const violation of violations) {
+      console.error(
+        `- ${violation.file}:${violation.line} [${violation.reason}] ${violation.content}`,
+      );
+    }
+    process.exit(1);
   }
 
   console.log(
-    `Zero-telemetry guard passed. Scanned ${totalScannedFiles} profile-scoped files across ${totalScannedRoots} profile roots.`,
+    `Zero-telemetry guard passed. Scanned ${files.length} files across ${scanRoots.length} roots for profile(s): ${profileIds.join(", ")}.`,
   );
 };
 
@@ -347,10 +316,21 @@ export {
   hasTestSuffix,
   hasIncludedExtension,
   isSafeDestination,
+  resolveScanRoots,
   parseArgs as parseNoTelemetryArgs,
 };
 
-main().catch((error) => {
-  console.error("Zero-telemetry guard failed:", error);
-  process.exit(1);
-});
+const isCliEntry = () => {
+  const entryPath = process.argv[1];
+  return (
+    typeof entryPath === "string" &&
+    path.resolve(entryPath) === fileURLToPath(import.meta.url)
+  );
+};
+
+if (isCliEntry()) {
+  main().catch((error) => {
+    console.error("Zero-telemetry guard failed:", error);
+    process.exit(1);
+  });
+}

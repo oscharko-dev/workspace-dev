@@ -4,10 +4,10 @@ import { lstat, readFile, readdir, realpath } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
-  defaultBuildProfileIds,
-  profileDefinitions,
-  resolveBuildProfiles,
-} from "./pack-profile-contract.mjs";
+  parseProfileGateArgs,
+  profilesFromIds,
+  templateMetadata,
+} from "./profile-gate-utils.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const packageRoot = process.env.WORKSPACE_DEV_PACKAGE_ROOT
@@ -31,72 +31,30 @@ const APPROVED_LICENSES = [
 ];
 
 const ALLOWED_LICENSES = new Set(APPROVED_LICENSES);
-const PACKAGE_MANIFESTS = [
+const createPackageManifests = (profile) => [
   {
     label: "workspace-dev",
     packageJsonPath: path.resolve(packageRoot, "package.json"),
     allowRuntimeDependencies: false
   },
-  {
-    label: "template/react-mui-app",
-    packageJsonPath: path.resolve(packageRoot, "template/react-mui-app/package.json"),
-    allowRuntimeDependencies: true
-  },
-  {
-    label: "template/react-tailwind-app",
-    packageJsonPath: path.resolve(packageRoot, "template/react-tailwind-app/package.json"),
-    allowRuntimeDependencies: true
-  }
-];
-const TEMPLATE_DEPENDENCY_TREES = [
-  {
-    label: "template/react-mui-app",
-    nodeModulesPath: path.resolve(packageRoot, "template/react-mui-app/node_modules")
-  },
-  {
-    label: "template/react-tailwind-app",
-    nodeModulesPath: path.resolve(packageRoot, "template/react-tailwind-app/node_modules")
-  }
+  ...profile.templates.map((templateId) => {
+    const template = templateMetadata[templateId];
+    return {
+      label: template.packageRoot,
+      packageJsonPath: path.resolve(packageRoot, template.packageRoot, "package.json"),
+      allowRuntimeDependencies: true
+    };
+  })
 ];
 
-const TEMPLATE_TARGETS = {
-  "react-mui-app": {
-    manifest: PACKAGE_MANIFESTS[1],
-    dependencyTree: TEMPLATE_DEPENDENCY_TREES[0]
-  },
-  "react-tailwind-app": {
-    manifest: PACKAGE_MANIFESTS[2],
-    dependencyTree: TEMPLATE_DEPENDENCY_TREES[1]
-  }
-};
-
-const parseArgs = (argv) => {
-  const profiles = [];
-
-  for (let index = 0; index < argv.length; index += 1) {
-    const current = argv[index];
-    if (current === "--profile" || current === "-p") {
-      const next = argv[index + 1];
-      if (!next) {
-        throw new Error(`Missing value for ${current}.`);
-      }
-      profiles.push(next);
-      index += 1;
-      continue;
-    }
-    if (current.startsWith("--profile=")) {
-      profiles.push(current.slice("--profile=".length));
-      continue;
-    }
-    if (!current.startsWith("-")) {
-      profiles.push(current);
-      continue;
-    }
-    throw new Error(`Unknown argument: ${current}`);
-  }
-
-  return profiles.length > 0 ? resolveBuildProfiles(profiles) : defaultBuildProfileIds;
-};
+const createTemplateDependencyTrees = (profile) =>
+  profile.templates.map((templateId) => {
+    const template = templateMetadata[templateId];
+    return {
+      label: template.packageRoot,
+      nodeModulesPath: path.resolve(packageRoot, template.packageRoot, "node_modules")
+    };
+  });
 
 const formatAllowedLicenses = () => {
   return APPROVED_LICENSES.join(", ");
@@ -305,16 +263,17 @@ const assertTemplateDependencyTreePolicy = async ({ label, nodeModulesPath }) =>
 };
 
 const main = async () => {
-  const profileIds = parseArgs(process.argv.slice(2));
+  const { profileIds } = parseProfileGateArgs(process.argv.slice(2));
+  const profiles = profilesFromIds(profileIds);
 
-  for (const profileId of profileIds) {
-    const profile = profileDefinitions[profileId];
+  for (const profile of profiles) {
     console.log(`[license-allowlist] Checking profile '${profile.id}'.`);
-    await assertManifestPolicy(PACKAGE_MANIFESTS[0]);
-    for (const templateId of profile.templates) {
-      const target = TEMPLATE_TARGETS[templateId];
-      await assertManifestPolicy(target.manifest);
-      await assertTemplateDependencyTreePolicy(target.dependencyTree);
+    for (const manifest of createPackageManifests(profile)) {
+      await assertManifestPolicy(manifest);
+    }
+
+    for (const templateDependencyTree of createTemplateDependencyTrees(profile)) {
+      await assertTemplateDependencyTreePolicy(templateDependencyTree);
     }
   }
 };

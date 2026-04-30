@@ -13,11 +13,7 @@ import os from "node:os";
 import path from "node:path";
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import {
-  defaultBuildProfileIds,
-  profileDefinitions,
-  resolveBuildProfiles,
-} from "./pack-profile-contract.mjs";
+import { parseProfileGateArgs, profilesFromIds } from "./profile-gate-utils.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const packageRoot = path.resolve(__dirname, "..");
@@ -138,33 +134,7 @@ export const assertReproducibleIterations = (
   }
 };
 
-const parseArgs = (argv) => {
-  const profiles = [];
-
-  for (let index = 0; index < argv.length; index += 1) {
-    const current = argv[index];
-    if (current === "--profile" || current === "-p") {
-      const next = argv[index + 1];
-      if (!next) {
-        throw new Error(`Missing value for ${current}.`);
-      }
-      profiles.push(next);
-      index += 1;
-      continue;
-    }
-    if (current.startsWith("--profile=")) {
-      profiles.push(current.slice("--profile=".length));
-      continue;
-    }
-    if (!current.startsWith("-")) {
-      profiles.push(current);
-      continue;
-    }
-    throw new Error(`Unknown argument: ${current}`);
-  }
-
-  return profiles.length > 0 ? resolveBuildProfiles(profiles) : defaultBuildProfileIds;
-};
+const parseArgs = (argv) => parseProfileGateArgs(argv).profileIds;
 
 const runIteration = async (profile) => {
   await rm(distDir, { recursive: true, force: true });
@@ -202,11 +172,10 @@ const runIteration = async (profile) => {
 };
 
 export const main = async () => {
-  const profileIds = parseArgs(process.argv.slice(2));
+  const { profileIds } = parseProfileGateArgs(process.argv.slice(2));
   const profileReports = [];
 
-  for (const profileId of profileIds) {
-    const profile = profileDefinitions[profileId];
+  for (const profile of profilesFromIds(profileIds)) {
     console.log(
       `[reproducible-build] Verifying profile '${profile.id}' (${profile.envValue}).`,
     );

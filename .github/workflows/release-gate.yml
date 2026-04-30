@@ -184,12 +184,6 @@ jobs:
       - name: Build package
         run: pnpm run build
 
-      - name: Validate package metadata with publint
-        run: pnpm run lint:publint
-
-      - name: Validate published type resolution
-        run: pnpm run lint:types-publish
-
       - name: Enforce package size budget
         run: pnpm run lint:size
 
@@ -204,6 +198,12 @@ jobs:
 
       - name: Enforce profile tarball secret policy
         run: pnpm run lint:secrets:profiles
+
+      - name: Enforce package publishing lint
+        run: pnpm run lint:publint
+
+      - name: Enforce package type publish lint
+        run: pnpm run lint:types-publish
 
       - name: Enforce license allowlist
         run: pnpm run verify:licenses
@@ -232,6 +232,11 @@ jobs:
       - name: Verify SBOM parity
         run: pnpm run verify:sbom:parity
 
+      - name: Run profile release gates
+        shell: bash
+        run: |
+          pnpm run verify:profile-gates -- --skip-airgap --skip-reproducible
+
       - name: Upload flaky retry artifacts
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7
         if: always()
@@ -245,7 +250,10 @@ jobs:
         if: always()
         with:
           name: workspace-dev-sbom-node-${{ matrix.node-version }}
-          path: artifacts/sbom
+          path: |
+            artifacts/sbom
+            artifacts/build-profiles
+            artifacts/reproducibility
           if-no-files-found: ignore
 
       - name: Upload Playwright diagnostics

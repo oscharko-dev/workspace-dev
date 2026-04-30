@@ -162,9 +162,6 @@ jobs:
       - name: Enforce repository secret policy
         run: pnpm run lint:secrets:all
 
-      - name: Enforce license allowlist
-        run: pnpm run verify:licenses
-
       - name: Build package
         run: pnpm run build
 
@@ -174,23 +171,8 @@ jobs:
       - name: Enforce package size budget
         run: pnpm run lint:size
 
-      - name: Verify package tarball contents
-        run: pnpm run verify:pack
-
-      - name: Generate CycloneDX SBOM
-        run: pnpm run sbom:cyclonedx
-
-      - name: Generate template CycloneDX SBOM
-        run: pnpm run sbom:cyclonedx:template
-
-      - name: Generate SPDX SBOM
-        run: pnpm run sbom:spdx
-
-      - name: Generate template SPDX SBOM
-        run: pnpm run sbom:spdx:template
-
-      - name: Verify SBOM parity
-        run: pnpm run verify:sbom:parity
+      - name: Run profile release gates
+        run: pnpm run verify:profile-gates
 
   performance-web:
     timeout-minutes: 180
