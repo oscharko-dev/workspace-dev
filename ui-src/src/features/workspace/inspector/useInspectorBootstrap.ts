@@ -66,6 +66,13 @@ export interface RegenerateScopedOptions {
   importMode?: PipelineImportMode;
 }
 
+export interface ReplayContextSeed {
+  fileKey: string;
+  nodeId: string | null;
+  acceptedPipelineId?: string;
+  sessionPipelineId?: string;
+}
+
 export interface UseInspectorBootstrapResult {
   state: InspectorBootstrapState;
   submit(input: {
@@ -80,6 +87,7 @@ export interface UseInspectorBootstrapResult {
   confirmIntent(intent: ImportIntent): void;
   dismissIntent(): void;
   retry(stage?: PipelineStage, targetIds?: string[]): void;
+  seedReplayContext(seed: ReplayContextSeed): boolean;
   /**
    * Re-run the most recent submit with a scope filter. Used by Generate Selected
    * and the re-import "Update existing" flow. No-op when nothing has been submitted yet.
@@ -243,10 +251,44 @@ export function useInspectorBootstrap(
     );
   }, []);
 
-  const recordSubmit = useCallback((entry: LastSubmitRef): void => {
+  const applyLastSubmit = useCallback((entry: LastSubmitRef): void => {
     lastSubmitRef.current = entry;
     setLastUrlContext(entry.urlContext);
   }, []);
+
+  const recordSubmit = useCallback(
+    (entry: LastSubmitRef): void => {
+      applyLastSubmit(entry);
+    },
+    [applyLastSubmit],
+  );
+
+  const seedReplayContextCallback = useCallback(
+    (seed: ReplayContextSeed): boolean => {
+      const fileKey = seed.fileKey.trim();
+      if (fileKey.length === 0) {
+        return false;
+      }
+
+      const nodeId =
+        typeof seed.nodeId === "string" && seed.nodeId.trim().length > 0
+          ? seed.nodeId.trim()
+          : null;
+
+      const pipelineId =
+        seed.acceptedPipelineId ?? seed.sessionPipelineId ?? undefined;
+      applyLastSubmit({
+        payload: JSON.stringify({ figmaFileKey: fileKey, nodeId }),
+        sourceMode: "figma_url",
+        urlContext: { fileKey, nodeId },
+        ...(pipelineId !== undefined ? { pipelineId } : {}),
+      });
+      setDetectedPaste(null);
+      setLocalFailure(null);
+      return true;
+    },
+    [applyLastSubmit],
+  );
 
   useEffect(() => {
     const acceptedPipelineId = pipeline.state.pipelineId;
@@ -544,6 +586,10 @@ export function useInspectorBootstrap(
       if (localFailure?.retryable) {
         setLocalFailure(null);
       }
+    },
+
+    seedReplayContext(seed: ReplayContextSeed): boolean {
+      return seedReplayContextCallback(seed);
     },
 
     reset(): void {

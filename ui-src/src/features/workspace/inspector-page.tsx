@@ -561,6 +561,17 @@ function BootstrapView(): JSX.Element {
   const [historyReimportSourceJobId, setHistoryReimportSourceJobId] = useState<
     string | null
   >(null);
+  const [historyReimportReplayReady, setHistoryReimportReplayReady] =
+    useState(false);
+  const [historyReimportPending, setHistoryReimportPending] =
+    useState(false);
+
+  const clearHistoryReimportState = useCallback((): void => {
+    setHistoryReimportPending(false);
+    setHistoryReimportReplayReady(false);
+    setHistoryReimportJobId(null);
+    setHistoryReimportSourceJobId(null);
+  }, []);
 
   const previousImportSession = useMemo(() => {
     const pasteIdentityKey = bootstrap.pipelineState.pasteIdentityKey ?? null;
@@ -655,6 +666,7 @@ function BootstrapView(): JSX.Element {
       selectedNodeIds: readonly string[],
       options?: { importMode?: PipelineImportMode },
     ): void => {
+      clearHistoryReimportState();
       bootstrap.regenerateScoped({
         selectedNodeIds,
         ...(options?.importMode !== undefined
@@ -662,12 +674,13 @@ function BootstrapView(): JSX.Element {
           : {}),
       });
     },
-    [bootstrap],
+    [bootstrap, clearHistoryReimportState],
   );
 
   const handleResubmitFresh = useCallback((): void => {
+    clearHistoryReimportState();
     bootstrap.resubmitFresh();
-  }, [bootstrap]);
+  }, [bootstrap, clearHistoryReimportState]);
 
   const handleRemoveImportSession = useCallback(
     (sessionId: string): void => {
@@ -681,22 +694,40 @@ function BootstrapView(): JSX.Element {
       if (session.replayable === false) {
         return;
       }
-      void importHistoryHook
-        .reimportSession(session.id)
-        .then((accepted) => {
+      clearHistoryReimportState();
+      setHistoryReimportPending(true);
+      void (async (): Promise<void> => {
+        try {
+          const accepted = await importHistoryHook.reimportSession(session.id);
+          const replayReady = bootstrap.seedReplayContext({
+            fileKey: session.fileKey,
+            nodeId: session.nodeId,
+            ...(accepted.pipelineId !== undefined
+              ? { acceptedPipelineId: accepted.pipelineId }
+              : {}),
+            ...(session.pipelineId !== undefined
+              ? { sessionPipelineId: session.pipelineId }
+              : {}),
+          });
+          setHistoryReimportReplayReady(replayReady);
           setHistoryReimportJobId(accepted.jobId);
           setHistoryReimportSourceJobId(accepted.sourceJobId);
-        })
-        .catch(() => {
+        } catch {
           // Warning state is surfaced by useImportHistory.
-        });
+        } finally {
+          setHistoryReimportPending(false);
+        }
+      })();
     },
-    [importHistoryHook],
+    [bootstrap, clearHistoryReimportState, importHistoryHook],
   );
 
   const activeJobId =
     historyReimportJobId ??
     (bootstrap.state.kind !== "failed" ? bootstrap.jobId : null);
+  const exposeReplayControls =
+    !historyReimportPending &&
+    (historyReimportJobId === null || historyReimportReplayReady);
 
   if (activeJobId) {
     return (
@@ -716,8 +747,10 @@ function BootstrapView(): JSX.Element {
         previousImportSession={
           historyReimportJobId === null ? previousImportSession : null
         }
-        onGenerateSelected={handleGenerateSelected}
-        onResubmitFresh={handleResubmitFresh}
+        {...(exposeReplayControls
+          ? { onGenerateSelected: handleGenerateSelected }
+          : {})}
+        {...(exposeReplayControls ? { onResubmitFresh: handleResubmitFresh } : {})}
         onRemoveImportSession={handleRemoveImportSession}
         onReimportSession={handleReimportSession}
       />

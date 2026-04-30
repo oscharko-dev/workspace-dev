@@ -23,6 +23,8 @@ vi.mock("./inspector/InspectorPanel", () => ({
     onRegenerationAccepted,
     importHistory,
     onReimportSession,
+    onGenerateSelected,
+    onResubmitFresh,
     pipeline,
   }: {
     jobId: string;
@@ -34,6 +36,11 @@ vi.mock("./inspector/InspectorPanel", () => ({
     onRegenerationAccepted: (nextJobId: string) => void;
     importHistory?: Array<{ id: string }>;
     onReimportSession?: (session: { id: string }) => void;
+    onGenerateSelected?: (
+      selectedNodeIds: readonly string[],
+      options?: { importMode?: string },
+    ) => void;
+    onResubmitFresh?: () => void;
     pipeline?: {
       jobId?: string;
       pipelineId?: string;
@@ -90,6 +97,21 @@ vi.mock("./inspector/InspectorPanel", () => ({
       <button type="button" onClick={() => onRegenerationAccepted("job-2")}>
         Accept regeneration
       </button>
+      {onGenerateSelected ? (
+        <button
+          type="button"
+          onClick={() =>
+            onGenerateSelected(["src/App.tsx"], { importMode: "delta" })
+          }
+        >
+          Generate selected
+        </button>
+      ) : null}
+      {onResubmitFresh ? (
+        <button type="button" onClick={onResubmitFresh}>
+          Create new
+        </button>
+      ) : null}
       {importHistory && importHistory.length > 0 && onReimportSession ? (
         <button
           type="button"
@@ -189,6 +211,17 @@ function createJsonResponse<TPayload>({
   payload: TPayload;
 }): JsonResponse<TPayload> {
   return { status, ok, payload };
+}
+
+function createDeferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((promiseResolve, promiseReject) => {
+    resolve = promiseResolve;
+    reject = promiseReject;
+  });
+
+  return { promise, resolve, reject };
 }
 
 afterEach(() => {
@@ -534,6 +567,8 @@ describe("InspectorPage — bootstrap path", () => {
   });
 
   it("reimports history entries through the server-owned replay endpoint", async () => {
+    const reimportResponse = createDeferred<unknown>();
+
     fetchJsonMock.mockImplementation(async ({ url, init }) => {
       if (url === "/workspace") {
         return createJsonResponse({ payload: runtimeStatusPayload }) as never;
@@ -599,22 +634,7 @@ describe("InspectorPage — bootstrap path", () => {
         url === "/workspace/import-sessions/session-1/reimport" &&
         init?.method === "POST"
       ) {
-        return createJsonResponse({
-          status: 202,
-          payload: {
-            sessionId: "session-1",
-            jobId: "job-reimport",
-            sourceJobId: "job-prev",
-            pipelineId: "rocket",
-            pipelineMetadata: {
-              pipelineId: "rocket",
-              pipelineDisplayName: "Rocket Pipeline",
-              templateBundleId: "react-mui-app",
-              buildProfile: "rocket",
-              deterministic: true,
-            },
-          },
-        }) as never;
+        return reimportResponse.promise as never;
       }
       if (url === "/workspace/jobs/job-reimport") {
         return createJsonResponse({
@@ -672,6 +692,39 @@ describe("InspectorPage — bootstrap path", () => {
     );
 
     await waitFor(() => {
+      expect(
+        screen.queryByRole("button", { name: "Generate selected" }),
+      ).toBeNull();
+      expect(screen.queryByRole("button", { name: "Create new" })).toBeNull();
+    });
+
+    reimportResponse.resolve(
+      createJsonResponse({
+        status: 202,
+        payload: {
+          sessionId: "session-1",
+          jobId: "job-reimport",
+          sourceJobId: "job-prev",
+          pipelineId: "rocket",
+          pipelineMetadata: {
+            pipelineId: "rocket",
+            pipelineDisplayName: "Rocket Pipeline",
+            templateBundleId: "react-mui-app",
+            buildProfile: "rocket",
+            deterministic: true,
+          },
+        },
+      }),
+    );
+
+    await waitFor(() => {
+      expect(
+        screen.getByRole("button", { name: "Generate selected" }),
+      ).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Create new" })).toBeInTheDocument();
+    });
+
+    await waitFor(() => {
       expect(screen.getByTestId("inspector-layout")).toBeInTheDocument();
     });
 
@@ -682,6 +735,313 @@ describe("InspectorPage — bootstrap path", () => {
       expect(screen.getByTestId("inspector-panel-pipeline")).toHaveTextContent(
         "job-reimport|rocket|Rocket Pipeline",
       );
+    });
+  });
+
+  it("restores replay controls if a history reimport request fails", async () => {
+    const reimportResponse = createDeferred<unknown>();
+
+    fetchJsonMock.mockImplementation(async ({ url, init }) => {
+      if (url === "/workspace") {
+        return createJsonResponse({ payload: runtimeStatusPayload }) as never;
+      }
+      if (url === "/workspace/import-sessions") {
+        return createJsonResponse({
+          payload: {
+            sessions: [
+              {
+                id: "session-1",
+                fileKey: "FILE",
+                nodeId: "1:2",
+                nodeName: "Home",
+                importedAt: "2026-04-15T10:00:00.000Z",
+                nodeCount: 5,
+                fileCount: 2,
+                selectedNodes: [],
+                scope: "all",
+                componentMappings: 1,
+                pasteIdentityKey: null,
+                jobId: "job-prev",
+                replayable: true,
+              },
+            ],
+          },
+        }) as never;
+      }
+      if (url === "/workspace/submit") {
+        return createJsonResponse({
+          status: 202,
+          payload: { jobId: "job-bootstrap" },
+        }) as never;
+      }
+      if (url === "/workspace/jobs/job-bootstrap") {
+        return createJsonResponse({
+          payload: {
+            jobId: "job-bootstrap",
+            status: "completed",
+            preview: { url: "http://127.0.0.1:1983/preview" },
+            stages: [
+              { name: "figma.source", status: "completed" },
+              { name: "ir.derive", status: "completed" },
+              { name: "template.prepare", status: "completed" },
+              { name: "codegen.generate", status: "completed" },
+            ],
+          },
+        }) as never;
+      }
+      if (
+        url === "/workspace/jobs/job-bootstrap/design-ir" ||
+        url === "/workspace/jobs/job-bootstrap/component-manifest"
+      ) {
+        return createJsonResponse({
+          payload: { jobId: "job-bootstrap", screens: [] },
+        }) as never;
+      }
+      if (url === "/workspace/jobs/job-bootstrap/files") {
+        return createJsonResponse({
+          payload: { files: [] },
+        }) as never;
+      }
+      if (
+        url === "/workspace/import-sessions/session-1/reimport" &&
+        init?.method === "POST"
+      ) {
+        return reimportResponse.promise as never;
+      }
+      throw new Error(`Unexpected url: ${url}`);
+    });
+
+    renderPage("/workspace/ui/inspector");
+
+    const textarea = screen.getByLabelText(/figma clipboard paste target/i);
+    fireEvent.paste(textarea, {
+      clipboardData: {
+        getData: (type: string) =>
+          type === "text" || type === "text/plain" ? '{"document":{}}' : "",
+      } as DataTransfer,
+    });
+
+    await waitFor(() => {
+      expect(screen.getByTestId("smart-banner")).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByText("Import starten"));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("inspector-layout")).toBeInTheDocument();
+    });
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Reimport history session" }),
+    );
+
+    await waitFor(() => {
+      expect(
+        screen.queryByRole("button", { name: "Generate selected" }),
+      ).toBeNull();
+      expect(screen.queryByRole("button", { name: "Create new" })).toBeNull();
+    });
+
+    reimportResponse.reject(new Error("reimport failed"));
+
+    await waitFor(() => {
+      expect(
+        screen.getByRole("button", { name: "Generate selected" }),
+      ).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Create new" })).toBeInTheDocument();
+    });
+
+    expect(screen.getByTestId("inspector-panel-props")).toHaveTextContent(
+      "job-bootstrap|http://127.0.0.1:1983/preview||false|",
+    );
+  });
+
+  it("reimports full-file history entries with a null replay node id and keeps the accepted pipeline id", async () => {
+    const submitBodies: Array<Record<string, unknown>> = [];
+
+    fetchJsonMock.mockImplementation(async ({ url, init }) => {
+      if (url === "/workspace") {
+        return createJsonResponse({ payload: runtimeStatusPayload }) as never;
+      }
+      if (url === "/workspace/import-sessions") {
+        return createJsonResponse({
+          payload: {
+            sessions: [
+              {
+                id: "session-full",
+                fileKey: "FILE",
+                nodeId: "",
+                nodeName: "FILE",
+                importedAt: "2026-04-15T10:00:00.000Z",
+                nodeCount: 5,
+                fileCount: 2,
+                selectedNodes: [],
+                scope: "all",
+                componentMappings: 1,
+                pasteIdentityKey: null,
+                jobId: "job-prev-full",
+                pipelineId: "legacy",
+                replayable: true,
+              },
+            ],
+          },
+        }) as never;
+      }
+      if (url === "/workspace/submit") {
+        const body = typeof init?.body === "string" ? init.body : null;
+        submitBodies.push(
+          body ? (JSON.parse(body) as Record<string, unknown>) : {},
+        );
+        return createJsonResponse({
+          status: 202,
+          payload: { jobId: "job-bootstrap-full" },
+        }) as never;
+      }
+      if (url === "/workspace/jobs/job-bootstrap-full") {
+        return createJsonResponse({
+          payload: {
+            jobId: "job-bootstrap-full",
+            status: "completed",
+            preview: { url: "http://127.0.0.1:1983/preview" },
+            stages: [
+              { name: "figma.source", status: "completed" },
+              { name: "ir.derive", status: "completed" },
+              { name: "template.prepare", status: "completed" },
+              { name: "codegen.generate", status: "completed" },
+            ],
+          },
+        }) as never;
+      }
+      if (
+        url === "/workspace/jobs/job-bootstrap-full/design-ir" ||
+        url === "/workspace/jobs/job-bootstrap-full/component-manifest"
+      ) {
+        return createJsonResponse({
+          payload: { jobId: "job-bootstrap-full", screens: [] },
+        }) as never;
+      }
+      if (url === "/workspace/jobs/job-bootstrap-full/files") {
+        return createJsonResponse({
+          payload: { files: [] },
+        }) as never;
+      }
+      if (
+        url === "/workspace/import-sessions/session-full/reimport" &&
+        init?.method === "POST"
+      ) {
+        return createJsonResponse({
+          status: 202,
+          payload: {
+            sessionId: "session-full",
+            jobId: "job-reimport-full",
+            sourceJobId: "job-prev-full",
+            pipelineId: "rocket",
+            pipelineMetadata: {
+              pipelineId: "rocket",
+              pipelineDisplayName: "Rocket Pipeline",
+              templateBundleId: "react-mui-app",
+              buildProfile: "rocket",
+              deterministic: true,
+            },
+          },
+        }) as never;
+      }
+      if (url === "/workspace/jobs/job-reimport-full") {
+        return createJsonResponse({
+          payload: {
+            jobId: "job-reimport-full",
+            status: "running",
+            pipelineId: "rocket",
+            pipelineMetadata: {
+              pipelineId: "rocket",
+              pipelineDisplayName: "Rocket Pipeline",
+              templateBundleId: "react-mui-app",
+              buildProfile: "rocket",
+              deterministic: true,
+            },
+            stages: [{ name: "figma.source", status: "completed" }],
+          },
+        }) as never;
+      }
+      if (
+        url === "/workspace/jobs/job-reimport-full/design-ir" ||
+        url === "/workspace/jobs/job-reimport-full/component-manifest" ||
+        url === "/workspace/jobs/job-reimport-full/files" ||
+        url === "/workspace/jobs/job-reimport-full/screenshot"
+      ) {
+        return createJsonResponse({
+          status: 409,
+          ok: false,
+          payload: { error: "JOB_NOT_COMPLETED" },
+        }) as never;
+      }
+      throw new Error(`Unexpected url: ${url}`);
+    });
+
+    renderPage("/workspace/ui/inspector");
+
+    const textarea = screen.getByLabelText(/figma clipboard paste target/i);
+    fireEvent.paste(textarea, {
+      clipboardData: {
+        getData: (type: string) =>
+          type === "text" || type === "text/plain" ? '{"document":{}}' : "",
+      } as DataTransfer,
+    });
+
+    await waitFor(() => {
+      expect(screen.getByTestId("smart-banner")).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByText("Import starten"));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("inspector-layout")).toBeInTheDocument();
+    });
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Reimport history session" }),
+    );
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Generate selected" }))
+        .toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Generate selected" }));
+    await waitFor(() => {
+      expect(submitBodies).toHaveLength(2);
+    });
+    await waitFor(() => {
+      expect(screen.getByTestId("inspector-panel-props")).toHaveTextContent(
+        "job-bootstrap-full|http://127.0.0.1:1983/preview||false|",
+      );
+    });
+    expect(submitBodies[1]).toMatchObject({
+      figmaSourceMode: "figma_url",
+      figmaJsonPayload: JSON.stringify({
+        figmaFileKey: "FILE",
+        nodeId: null,
+      }),
+      pipelineId: "rocket",
+      importMode: "delta",
+      selectedNodeIds: ["src/App.tsx"],
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Create new" }));
+    await waitFor(() => {
+      expect(submitBodies).toHaveLength(3);
+    });
+    await waitFor(() => {
+      expect(screen.getByTestId("inspector-panel-props")).toHaveTextContent(
+        "job-bootstrap-full|http://127.0.0.1:1983/preview||false|",
+      );
+    });
+    expect(submitBodies[2]).toMatchObject({
+      figmaSourceMode: "figma_url",
+      figmaJsonPayload: JSON.stringify({
+        figmaFileKey: "FILE",
+        nodeId: null,
+      }),
+      pipelineId: "rocket",
+      importMode: "full",
     });
   });
 

@@ -856,8 +856,8 @@ describe("startPastePipeline submit body", () => {
       return url === "/workspace/jobs/job-initial/retry-stage";
     });
     expect(retryCall).toBeDefined();
-    expect(JSON.parse(retryCall?.[1]?.body as string)).toMatchObject({
-      stage: "transforming",
+    expect(JSON.parse(retryCall?.[1]?.body as string)).toEqual({
+      retryStage: "ir.derive",
     });
     expect(state.pipelineMetadata?.pipelineDisplayName).toBe("Retry Pipeline");
     controller.cancel();

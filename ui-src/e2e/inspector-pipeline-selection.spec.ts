@@ -387,8 +387,8 @@ test.describe("inspector pipeline selection (issue #1551)", () => {
       .poll(() => retryBodies.length, { timeout: 10_000, intervals: [200] })
       .toBe(1);
     expect(retryBodies[0]).toMatchObject({
-      stage: "generating",
-      targetIds: ["src/App.tsx"],
+      retryStage: "codegen.generate",
+      retryTargets: ["src/App.tsx"],
     });
   });
 

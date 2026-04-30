@@ -477,8 +477,8 @@ describe("usePastePipeline", () => {
         retryStageCalls += 1;
         expect(init?.body).toBe(
           JSON.stringify({
-            stage: "generating",
-            targetIds: ["src/App.tsx"],
+            retryStage: "codegen.generate",
+            retryTargets: ["src/App.tsx"],
           }),
         );
         return createJsonResponse({
@@ -1062,8 +1062,8 @@ describe("usePastePipeline", () => {
         retryStageCalls += 1;
         expect(init?.body).toBe(
           JSON.stringify({
-            stage: "generating",
-            targetIds: ["src/App.tsx"],
+            retryStage: "codegen.generate",
+            retryTargets: ["src/App.tsx"],
           }),
         );
         return Promise.resolve(

@@ -819,9 +819,15 @@ interface SubmitBody {
   selectedNodeIds?: readonly string[];
 }
 
+type RetryStageContract =
+  | "figma.source"
+  | "ir.derive"
+  | "template.prepare"
+  | "codegen.generate";
+
 interface RetryStageBody {
-  stage: PipelineStage;
-  targetIds?: string[];
+  retryStage: RetryStageContract;
+  retryTargets?: string[];
 }
 
 interface RetryStageAcceptedPayload {
@@ -1065,6 +1071,21 @@ function toTargetIds(value: unknown): string[] | undefined {
   return ids.length > 0 ? ids : undefined;
 }
 
+function toRetryStage(stage: PipelineStage): RetryStageContract {
+  switch (stage) {
+    case "resolving":
+      return "figma.source";
+    case "transforming":
+      return "ir.derive";
+    case "mapping":
+      return "template.prepare";
+    case "generating":
+      return "codegen.generate";
+    default:
+      return "figma.source";
+  }
+}
+
 export function normalizeRuntimePipelineErrorCode(code: string): {
   code: string;
   rawCode?: string;
@@ -1260,10 +1281,13 @@ async function postRetryStage({
   request: PipelineRetryRequest;
   signal: AbortSignal;
 }): Promise<AcceptedJobReference> {
+  const retryStage = toRetryStage(request.stage);
   const body: RetryStageBody = {
-    stage: request.stage,
-    ...(request.targetIds !== undefined && request.targetIds.length > 0
-      ? { targetIds: request.targetIds }
+    retryStage,
+    ...(retryStage === "codegen.generate" &&
+    request.targetIds !== undefined &&
+    request.targetIds.length > 0
+      ? { retryTargets: request.targetIds }
       : {}),
   };
   const response = await fetchJson<RetryStageAcceptedPayload>({
