@@ -7243,6 +7243,109 @@ test("ValidateProjectService persists composite quality with perf data and reque
   assert.equal(executionContext.job.compositeQuality?.weights?.visual, 0.75);
 });
 
+test("ValidateProjectService accepts Tailwind browser-timing performance reports without Lighthouse warnings", async () => {
+  const { executionContext, stageContextFor } = await createExecutionContext({});
+  await executionContext.artifactStore.setPath({
+    key: STAGE_ARTIFACT_KEYS.generatedProject,
+    stage: "template.prepare",
+    absolutePath: executionContext.paths.generatedProjectDir
+  });
+  await executionContext.artifactStore.setValue({
+    key: STAGE_ARTIFACT_KEYS.generationDiffContext,
+    stage: "codegen.generate",
+    value: {
+      boardKey: "test-board-browser-timing-performance"
+    } satisfies GenerationDiffContext
+  });
+
+  const distDir = path.join(executionContext.paths.generatedProjectDir, "dist");
+  const perfArtifactDir = path.join(executionContext.paths.generatedProjectDir, ".figmapipe", "performance");
+  await mkdir(distDir, { recursive: true });
+  await mkdir(perfArtifactDir, { recursive: true });
+  await writeFile(path.join(distDir, "index.html"), "<!doctype html><html><body>browser timing</body></html>\n", "utf8");
+  await writeFile(
+    path.join(perfArtifactDir, "perf-assert-report.json"),
+    JSON.stringify(
+      {
+        measurement: "playwright-browser-timing",
+        aggregate: {
+          lcp_p75_ms: 1420,
+          cls_p75: 0.003,
+          initial_js_kb: 38
+        },
+        checks: {
+          budgets: [
+            {
+              metric: "lcp_p75_ms",
+              actual: 1420,
+              budget: 2500,
+              pass: true
+            }
+          ],
+          regression: []
+        },
+        counts: {
+          samples: 1,
+          failedBudgets: 0,
+          failedRegression: 0
+        },
+        samples: [
+          {
+            profile: "mobile",
+            route: "/",
+            metrics: {
+              inp_ms: 0,
+              lcp_ms: 1408,
+              cls: 0.003,
+              initial_js_kb: 38,
+              route_transition_ms: 0
+            },
+            artifacts: {
+              browserTimingReport: "browser-timing-mobile-root.json"
+            }
+          }
+        ]
+      },
+      null,
+      2
+    ),
+    "utf8"
+  );
+
+  const service = createValidateProjectService({
+    runProjectValidationFn: async () =>
+      createSuccessfulValidationResult({ includePerfValidation: true })
+  });
+
+  await service.execute(undefined, stageContextFor("validate.project"));
+
+  const compositeQuality = await executionContext.artifactStore.getValue<{
+    status?: string;
+    performance?: {
+      score?: number | null;
+      sampleCount?: number;
+      aggregateMetrics?: { lcp_ms?: number | null; cls?: number | null };
+      warnings?: string[];
+    };
+    composite?: { includedDimensions?: string[] };
+    warnings?: string[];
+  }>(STAGE_ARTIFACT_KEYS.compositeQualityResult);
+
+  assert.equal(compositeQuality?.status, "completed");
+  assert.equal(compositeQuality?.performance?.score, null);
+  assert.equal(compositeQuality?.performance?.sampleCount, 1);
+  assert.equal(compositeQuality?.performance?.aggregateMetrics?.lcp_ms, 1420);
+  assert.equal(compositeQuality?.performance?.aggregateMetrics?.cls, 0.003);
+  assert.deepEqual(compositeQuality?.performance?.warnings, []);
+  assert.deepEqual(compositeQuality?.composite?.includedDimensions, []);
+  assert.equal(
+    compositeQuality?.warnings?.some((warning) =>
+      warning.includes("missing artifacts.lighthouseReport"),
+    ),
+    false
+  );
+});
+
 test("ValidateProjectService emits browser-aware standalone visual quality reports and artifacts", async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-visual-quality-browsers-"));
   const fixtureRoot = path.join(root, "fixtures", "customer-board");
