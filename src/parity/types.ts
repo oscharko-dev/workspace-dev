@@ -219,14 +219,20 @@ export type {
   DefaultLayoutWarningCode,
 } from "./default-layout-solver.js";
 export {
+  createDefaultAccessibilityReportFile,
   createDefaultLayoutReportFile,
   createDefaultSemanticComponentReportFile,
   createDefaultTailwindScreenFile,
   createDefaultTailwindScreenFiles,
+  DEFAULT_ACCESSIBILITY_REPORT_PATH,
   DEFAULT_LAYOUT_REPORT_PATH,
   DEFAULT_SEMANTIC_COMPONENT_REPORT_PATH,
 } from "./default-tailwind-emitter.js";
 export type {
+  DefaultAccessibilityReportSummary,
+  DefaultAccessibilityScreenSummary,
+  DefaultAccessibilityWarning,
+  DefaultAccessibilityWarningCode,
   DefaultSemanticComponentDiagnostic,
   DefaultSemanticComponentDiagnosticCode,
   DefaultSemanticComponentSummary,

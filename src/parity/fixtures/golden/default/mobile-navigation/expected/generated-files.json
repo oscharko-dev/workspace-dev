@@ -3,6 +3,7 @@
   "generation-metrics.json",
   "src/App.test.tsx",
   "src/App.tsx",
+  "src/generated/accessibility-report.json",
   "src/generated/layout-report.json",
   "src/generated/semantic-component-report.json",
   "src/pages/about.tsx",

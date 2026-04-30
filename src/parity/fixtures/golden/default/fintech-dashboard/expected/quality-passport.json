@@ -36,6 +36,11 @@
       "sizeBytes": 273
     },
     {
+      "path": "src/generated/accessibility-report.json",
+      "sha256": "76d2422c48d6b8fe769aa1cd41e8d239f08e675db8f8f9ec9a8ac57736220367",
+      "sizeBytes": 12460
+    },
+    {
       "path": "src/generated/layout-report.json",
       "sha256": "425b1952b7cb0c0347b75ba284c28c439da14357f51d8f2a9db679720412e1ea",
       "sizeBytes": 9360
@@ -110,6 +115,60 @@
     "status": "passed"
   },
   "warnings": [
+    {
+      "code": "W_DEFAULT_A11Y_FOCUS_ORDER",
+      "message": "Absolute layout fallback for 'Card Title' can make keyboard focus order depend on implementation details.",
+      "severity": "warning",
+      "source": "src/generated/accessibility-report.json"
+    },
+    {
+      "code": "W_DEFAULT_A11Y_FOCUS_ORDER",
+      "message": "Absolute layout fallback for 'Subtitle' can make keyboard focus order depend on implementation details.",
+      "severity": "warning",
+      "source": "src/generated/accessibility-report.json"
+    },
+    {
+      "code": "W_DEFAULT_A11Y_FOCUS_ORDER",
+      "message": "Absolute layout fallback for 'Value' can make keyboard focus order depend on implementation details.",
+      "severity": "warning",
+      "source": "src/generated/accessibility-report.json"
+    },
+    {
+      "code": "W_DEFAULT_A11Y_SEMANTIC_OUTPUT",
+      "message": "Default semantic synthesis kept 'Accounts Card' inline because no matching reusable semantic structure was found.",
+      "severity": "warning",
+      "source": "src/generated/accessibility-report.json"
+    },
+    {
+      "code": "W_DEFAULT_A11Y_SEMANTIC_OUTPUT",
+      "message": "Default semantic synthesis kept 'Approvals Card' inline because no matching reusable semantic structure was found.",
+      "severity": "warning",
+      "source": "src/generated/accessibility-report.json"
+    },
+    {
+      "code": "W_DEFAULT_A11Y_SEMANTIC_OUTPUT",
+      "message": "Default semantic synthesis kept 'Cards Grid' inline because no matching reusable semantic structure was found.",
+      "severity": "warning",
+      "source": "src/generated/accessibility-report.json"
+    },
+    {
+      "code": "W_DEFAULT_A11Y_SEMANTIC_OUTPUT",
+      "message": "Default semantic synthesis kept 'Liquidity Card' inline because no matching reusable semantic structure was found.",
+      "severity": "warning",
+      "source": "src/generated/accessibility-report.json"
+    },
+    {
+      "code": "W_DEFAULT_A11Y_SEMANTIC_OUTPUT",
+      "message": "Default semantic synthesis kept 'Payment Flow Card' inline because no matching reusable semantic structure was found.",
+      "severity": "warning",
+      "source": "src/generated/accessibility-report.json"
+    },
+    {
+      "code": "W_DEFAULT_A11Y_SEMANTIC_OUTPUT",
+      "message": "Default semantic synthesis kept 'Risk Queue Card' inline because no matching reusable semantic structure was found.",
+      "severity": "warning",
+      "source": "src/generated/accessibility-report.json"
+    },
     {
       "code": "W_SEMANTIC_COMPONENT_NOT_REUSABLE",
       "message": "Default semantic synthesis kept 'Accounts Card' inline because no matching reusable semantic structure was found.",

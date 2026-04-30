@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import type { DesignTokens, ScreenIR } from "./types.js";
 import {
+  createDefaultAccessibilityReportFile,
   createDefaultLayoutReportFile,
   createDefaultSemanticComponentReportFile,
   createDefaultTailwindScreenFile,
@@ -798,4 +799,196 @@ test("default semantic component report captures components and transparent fall
     ],
   );
   assert.deepEqual(layoutReport.semanticDiagnostics, report.diagnostics);
+});
+
+test("default accessibility report captures deterministic output accessibility warnings", () => {
+  const screen: ScreenIR = {
+    id: "issue-1567-screen",
+    name: "Issue 1567",
+    layoutMode: "VERTICAL",
+    gap: 24,
+    width: 960,
+    height: 720,
+    fillColor: "#ffffff",
+    padding: { top: 32, right: 32, bottom: 32, left: 32 },
+    children: [
+      {
+        id: "hero",
+        name: "Hero",
+        nodeType: "FRAME",
+        type: "container",
+        layoutMode: "VERTICAL",
+        gap: 8,
+        width: 896,
+        height: 120,
+        fillColor: "#ffffff",
+        children: [
+          {
+            id: "hero-title",
+            name: "Hero Title",
+            nodeType: "TEXT",
+            type: "text",
+            text: "Overview",
+            fontSize: 20,
+            fontWeight: 600,
+            fillColor: "#ffffff",
+          },
+        ],
+      },
+      {
+        id: "prototype-panel",
+        name: "Open Details",
+        nodeType: "FRAME",
+        type: "container",
+        prototypeNavigation: {
+          targetScreenId: "details-screen",
+          mode: "push",
+        },
+        width: 280,
+        height: 80,
+        fillColor: "#f8fafc",
+        children: [],
+      },
+      {
+        id: "form",
+        name: "User Form",
+        nodeType: "FRAME",
+        type: "form",
+        layoutMode: "VERTICAL",
+        gap: 12,
+        width: 896,
+        height: 220,
+        children: [
+          {
+            id: "name-input",
+            name: "Name",
+            nodeType: "FRAME",
+            type: "input",
+            width: 280,
+            height: 40,
+          },
+          {
+            id: "submit-button",
+            name: "Submit",
+            nodeType: "FRAME",
+            type: "button",
+            width: 120,
+            height: 40,
+            fillColor: "#0055cc",
+            children: [],
+          },
+        ],
+      },
+      {
+        id: "hero-image",
+        name: "Hero Image",
+        nodeType: "RECTANGLE",
+        type: "image",
+        asset: {
+          source: "/img/hero.png",
+          kind: "image",
+        },
+        width: 320,
+        height: 180,
+      },
+      {
+        id: "advanced-accordion",
+        name: "Advanced Accordion",
+        nodeType: "FRAME",
+        type: "accordion",
+        semanticType: "Accordion",
+        width: 896,
+        height: 88,
+        children: [],
+      },
+      {
+        id: "absolute-parent",
+        name: "Absolute Parent",
+        nodeType: "FRAME",
+        type: "container",
+        layoutMode: "NONE",
+        width: 400,
+        height: 160,
+        children: [
+          {
+            id: "absolute-later",
+            name: "Later",
+            nodeType: "FRAME",
+            type: "container",
+            x: 0,
+            y: 72,
+            width: 120,
+            height: 40,
+            children: [],
+          },
+          {
+            id: "absolute-earlier",
+            name: "Earlier",
+            nodeType: "FRAME",
+            type: "container",
+            x: 0,
+            y: 16,
+            width: 120,
+            height: 40,
+            children: [],
+          },
+        ],
+      },
+    ],
+  };
+
+  const report = JSON.parse(
+    createDefaultAccessibilityReportFile([screen]).content,
+  ) as {
+    pipelineId?: string;
+    summary?: {
+      status?: string;
+      message?: string;
+      screenCount?: number;
+      warningCount?: number;
+      semanticOutputWarningCount?: number;
+      formLabelWarningCount?: number;
+      buttonSemanticsWarningCount?: number;
+      ariaLabelFallbackWarningCount?: number;
+      altFallbackWarningCount?: number;
+      focusOrderWarningCount?: number;
+      lowContrastWarningCount?: number;
+      clickDivFallbackWarningCount?: number;
+    };
+    screens?: Array<{
+      screenId?: string;
+      warningCount?: number;
+      warnings?: Array<{ code?: string; nodeId?: string; nodeName?: string }>;
+    }>;
+    warnings?: Array<{ code?: string; nodeId?: string; nodeName?: string }>;
+  };
+
+  assert.equal(report.pipelineId, "default");
+  assert.equal(report.summary?.status, "warn");
+  assert.equal(report.summary?.screenCount, 1);
+  assert.equal(report.summary?.warningCount, report.warnings?.length);
+  assert.equal(report.screens?.[0]?.screenId, "issue-1567-screen");
+  assert.equal(report.screens?.[0]?.warningCount, report.warnings?.length);
+
+  const warningCodes = new Set(report.warnings?.map((warning) => warning.code));
+  for (const code of [
+    "W_DEFAULT_A11Y_SEMANTIC_OUTPUT",
+    "W_DEFAULT_A11Y_FORM_LABEL_FALLBACK",
+    "W_DEFAULT_A11Y_BUTTON_SEMANTICS",
+    "W_DEFAULT_A11Y_ARIA_LABEL_FALLBACK",
+    "W_DEFAULT_A11Y_ALT_FALLBACK",
+    "W_DEFAULT_A11Y_FOCUS_ORDER",
+    "W_DEFAULT_A11Y_LOW_CONTRAST",
+    "W_DEFAULT_A11Y_CLICK_DIV_FALLBACK",
+  ]) {
+    assert.equal(warningCodes.has(code), true);
+  }
+  assert.equal((report.summary?.semanticOutputWarningCount ?? 0) > 0, true);
+  assert.equal((report.summary?.formLabelWarningCount ?? 0) > 0, true);
+  assert.equal((report.summary?.buttonSemanticsWarningCount ?? 0) > 0, true);
+  assert.equal((report.summary?.ariaLabelFallbackWarningCount ?? 0) > 0, true);
+  assert.equal((report.summary?.altFallbackWarningCount ?? 0) > 0, true);
+  assert.equal((report.summary?.focusOrderWarningCount ?? 0) > 0, true);
+  assert.equal((report.summary?.lowContrastWarningCount ?? 0) > 0, true);
+  assert.equal((report.summary?.clickDivFallbackWarningCount ?? 0) > 0, true);
 });

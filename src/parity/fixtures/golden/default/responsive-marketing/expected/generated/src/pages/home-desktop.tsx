@@ -11,7 +11,7 @@ export default function HomeDesktop() {
             <span data-ir-id="cta-label-desktop" data-ir-name="Label" className="absolute left-[48px] top-[12px] w-[84px] h-[24px] text-[16px] text-[#ffffff] leading-[24px] font-[600] text-center whitespace-pre-wrap">{"Review Demo"}</span>
           </button>
         </header>
-        <header data-ir-id="hero-image-desktop" data-ir-name="Hero Image" className="w-[662px] h-[400px] bg-[#edf0f5] rounded-[12px]" />
+        <img data-ir-id="hero-image-desktop" data-ir-name="Hero Image" className="w-[662px] h-[400px] bg-[#edf0f5] rounded-[12px]" alt="Hero Image" src="" />
       </header>
       <table data-ir-id="features-desktop" data-ir-name="Features Section" className="flex flex-row items-center gap-[24px] min-h-[300px] w-full max-w-[1344px]">
         <FeatureCard featureTitle={"Fast Onboarding"} featureDescription={"Start local demos from deterministic fixture JSON."} irId={"feature-1"} irName={"Feature Card"} featureTitleIrId={"f1-title"} featureTitleIrName={"Feature Title"} featureDescriptionIrId={"f1-desc"} featureDescriptionIrName={"Feature Description"} />

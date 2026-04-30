@@ -9,12 +9,57 @@ import { solveDefaultScreenLayout } from "./default-layout-solver.js";
 export const DEFAULT_LAYOUT_REPORT_PATH = "src/generated/layout-report.json";
 export const DEFAULT_SEMANTIC_COMPONENT_REPORT_PATH =
   "src/generated/semantic-component-report.json";
+export const DEFAULT_ACCESSIBILITY_REPORT_PATH =
+  "src/generated/accessibility-report.json";
 
 const SEMANTIC_COMPONENT_REPORT_SCHEMA_VERSION = "1.0.0";
+const ACCESSIBILITY_REPORT_SCHEMA_VERSION = "1.0.0";
 
 export type DefaultSemanticComponentDiagnosticCode =
   | "W_SEMANTIC_COMPONENT_STRUCTURAL_FALLBACK"
   | "W_SEMANTIC_COMPONENT_NOT_REUSABLE";
+
+export type DefaultAccessibilityWarningCode =
+  | "W_DEFAULT_A11Y_SEMANTIC_OUTPUT"
+  | "W_DEFAULT_A11Y_FORM_LABEL_FALLBACK"
+  | "W_DEFAULT_A11Y_BUTTON_SEMANTICS"
+  | "W_DEFAULT_A11Y_ARIA_LABEL_FALLBACK"
+  | "W_DEFAULT_A11Y_ALT_FALLBACK"
+  | "W_DEFAULT_A11Y_FOCUS_ORDER"
+  | "W_DEFAULT_A11Y_LOW_CONTRAST"
+  | "W_DEFAULT_A11Y_CLICK_DIV_FALLBACK";
+
+export interface DefaultAccessibilityWarning {
+  code: DefaultAccessibilityWarningCode;
+  severity: "warning";
+  screenId: string;
+  screenName: string;
+  message: string;
+  nodeId?: string;
+  nodeName?: string;
+}
+
+export interface DefaultAccessibilityScreenSummary {
+  screenId: string;
+  screenName: string;
+  warningCount: number;
+  warnings: DefaultAccessibilityWarning[];
+}
+
+export interface DefaultAccessibilityReportSummary {
+  status: "ok" | "warn";
+  message: string;
+  screenCount: number;
+  warningCount: number;
+  semanticOutputWarningCount: number;
+  formLabelWarningCount: number;
+  buttonSemanticsWarningCount: number;
+  ariaLabelFallbackWarningCount: number;
+  altFallbackWarningCount: number;
+  focusOrderWarningCount: number;
+  lowContrastWarningCount: number;
+  clickDivFallbackWarningCount: number;
+}
 
 export interface DefaultSemanticComponentDiagnostic {
   code: DefaultSemanticComponentDiagnosticCode;
@@ -44,6 +89,17 @@ export interface DefaultTailwindScreenFileOptions {
   pageFileName?: string | undefined;
   componentDirectory?: string | undefined;
 }
+
+const ACCESSIBILITY_WARNING_CODES = {
+  semanticOutput: "W_DEFAULT_A11Y_SEMANTIC_OUTPUT",
+  formLabelFallback: "W_DEFAULT_A11Y_FORM_LABEL_FALLBACK",
+  buttonSemantics: "W_DEFAULT_A11Y_BUTTON_SEMANTICS",
+  ariaLabelFallback: "W_DEFAULT_A11Y_ARIA_LABEL_FALLBACK",
+  altFallback: "W_DEFAULT_A11Y_ALT_FALLBACK",
+  focusOrder: "W_DEFAULT_A11Y_FOCUS_ORDER",
+  lowContrast: "W_DEFAULT_A11Y_LOW_CONTRAST",
+  clickDivFallback: "W_DEFAULT_A11Y_CLICK_DIV_FALLBACK",
+} as const;
 
 const sanitizeComponentName = (name: string): string => {
   const words = name
@@ -174,11 +230,407 @@ const collectElementsById = (screen: ScreenIR): Map<string, ScreenElementIR> => 
   return byId;
 };
 
+const isNonEmptyString = (value: unknown): value is string =>
+  typeof value === "string" && value.trim().length > 0;
+
+const parseHexChannel = (value: string): number => Number.parseInt(value, 16) / 255;
+
+const normalizeColorChannel = (value: number): number => {
+  if (!Number.isFinite(value)) {
+    return 0;
+  }
+  return Math.min(1, Math.max(0, value));
+};
+
+const parseHexColor = (
+  value: string,
+): { red: number; green: number; blue: number; alpha: number } | undefined => {
+  const normalized = value.trim();
+  const match = normalized.match(/^#([0-9a-f]{3,8})$/iu);
+  if (!match) {
+    return undefined;
+  }
+  const hex = match[1]!;
+  if (hex.length === 3 || hex.length === 4) {
+    const [red, green, blue, alpha] = hex.split("");
+    return {
+      red: parseHexChannel(`${red}${red}`),
+      green: parseHexChannel(`${green}${green}`),
+      blue: parseHexChannel(`${blue}${blue}`),
+      alpha: alpha ? parseHexChannel(`${alpha}${alpha}`) : 1,
+    };
+  }
+  if (hex.length === 6 || hex.length === 8) {
+    return {
+      red: parseHexChannel(hex.slice(0, 2)),
+      green: parseHexChannel(hex.slice(2, 4)),
+      blue: parseHexChannel(hex.slice(4, 6)),
+      alpha: hex.length === 8 ? parseHexChannel(hex.slice(6, 8)) : 1,
+    };
+  }
+  return undefined;
+};
+
+const blendChannel = (foreground: number, background: number, alpha: number): number =>
+  normalizeColorChannel(foreground * alpha + background * (1 - alpha));
+
+const toOpaqueRgb = (
+  value: string,
+  background: { red: number; green: number; blue: number; alpha: number } = {
+    red: 1,
+    green: 1,
+    blue: 1,
+    alpha: 1,
+  },
+): { red: number; green: number; blue: number } | undefined => {
+  const color = parseHexColor(value);
+  if (!color) {
+    return undefined;
+  }
+  const alpha = normalizeColorChannel(color.alpha);
+  return {
+    red: blendChannel(color.red, background.red, alpha),
+    green: blendChannel(color.green, background.green, alpha),
+    blue: blendChannel(color.blue, background.blue, alpha),
+  };
+};
+
+const relativeLuminance = (value: { red: number; green: number; blue: number }): number => {
+  const toLinear = (channel: number): number =>
+    channel <= 0.03928
+      ? channel / 12.92
+      : ((channel + 0.055) / 1.055) ** 2.4;
+
+  const red = toLinear(normalizeColorChannel(value.red));
+  const green = toLinear(normalizeColorChannel(value.green));
+  const blue = toLinear(normalizeColorChannel(value.blue));
+  return red * 0.2126 + green * 0.7152 + blue * 0.0722;
+};
+
+const contrastRatio = (foreground: string, background: string): number | undefined => {
+  const fg = toOpaqueRgb(foreground);
+  const bg = toOpaqueRgb(background);
+  if (!fg || !bg) {
+    return undefined;
+  }
+  const fgLuminance = relativeLuminance(fg);
+  const bgLuminance = relativeLuminance(bg);
+  const lighter = Math.max(fgLuminance, bgLuminance);
+  const darker = Math.min(fgLuminance, bgLuminance);
+  return (lighter + 0.05) / (darker + 0.05);
+};
+
+const inferBackgroundColor = ({
+  element,
+  inheritedBackgroundColor,
+}: {
+  element: ScreenElementIR | undefined;
+  inheritedBackgroundColor: string | undefined;
+}): string | undefined => {
+  if (isNonEmptyString(element?.fillColor) && parseHexColor(element.fillColor)) {
+    return element.fillColor;
+  }
+  return inheritedBackgroundColor;
+};
+
+const warningKey = (warning: DefaultAccessibilityWarning): string =>
+  [
+    warning.code,
+    warning.screenId,
+    warning.nodeId ?? "",
+    warning.nodeName ?? "",
+    warning.message,
+  ].join("\0");
+
+const countWarningsByCode = (
+  warnings: readonly DefaultAccessibilityWarning[],
+): Record<DefaultAccessibilityWarningCode, number> => {
+  const counts: Record<DefaultAccessibilityWarningCode, number> = {
+    [ACCESSIBILITY_WARNING_CODES.semanticOutput]: 0,
+    [ACCESSIBILITY_WARNING_CODES.formLabelFallback]: 0,
+    [ACCESSIBILITY_WARNING_CODES.buttonSemantics]: 0,
+    [ACCESSIBILITY_WARNING_CODES.ariaLabelFallback]: 0,
+    [ACCESSIBILITY_WARNING_CODES.altFallback]: 0,
+    [ACCESSIBILITY_WARNING_CODES.focusOrder]: 0,
+    [ACCESSIBILITY_WARNING_CODES.lowContrast]: 0,
+    [ACCESSIBILITY_WARNING_CODES.clickDivFallback]: 0,
+  };
+  for (const warning of warnings) {
+    counts[warning.code] += 1;
+  }
+  return counts;
+};
+
+const createAccessibilityWarningCollector = ({
+  screenId,
+  screenName,
+}: {
+  screenId: string;
+  screenName: string;
+}) => {
+  const warnings: DefaultAccessibilityWarning[] = [];
+  const seen = new Set<string>();
+  const push = (warning: Omit<DefaultAccessibilityWarning, "screenId" | "screenName">): void => {
+    const normalized: DefaultAccessibilityWarning = {
+      screenId,
+      screenName,
+      ...warning,
+    };
+    const key = warningKey(normalized);
+    if (seen.has(key)) {
+      return;
+    }
+    seen.add(key);
+    warnings.push(normalized);
+  };
+
+  return { push, warnings };
+};
+
+const mapLayoutWarningsToAccessibilityWarnings = ({
+  layoutWarnings,
+  push,
+}: {
+  layoutWarnings: readonly DefaultLayoutWarning[];
+  push: (warning: Omit<DefaultAccessibilityWarning, "screenId" | "screenName">) => void;
+}): void => {
+  for (const warning of layoutWarnings) {
+    push({
+      code: ACCESSIBILITY_WARNING_CODES.focusOrder,
+      severity: "warning",
+      nodeId: warning.nodeId,
+      nodeName: warning.nodeName,
+      message:
+        warning.code === "W_ABSOLUTE_LAYOUT_FALLBACK"
+          ? `Absolute layout fallback for '${warning.nodeName}' can make keyboard focus order depend on implementation details.`
+          : `Ambiguous grid layout for '${warning.nodeName}' can make keyboard focus order harder to reason about.`,
+    });
+  }
+};
+
+const mapSemanticDiagnosticsToAccessibilityWarnings = ({
+  semanticDiagnostics,
+  push,
+}: {
+  semanticDiagnostics: readonly DefaultSemanticComponentDiagnostic[];
+  push: (warning: Omit<DefaultAccessibilityWarning, "screenId" | "screenName">) => void;
+}): void => {
+  for (const diagnostic of semanticDiagnostics) {
+    push({
+      code: ACCESSIBILITY_WARNING_CODES.semanticOutput,
+      severity: "warning",
+      nodeId: diagnostic.nodeId,
+      nodeName: diagnostic.nodeName,
+      message: diagnostic.message,
+    });
+  }
+};
+
+const collectAccessibilityWarningsForNode = ({
+  element,
+  layout,
+  elementsById,
+  inheritedBackgroundColor,
+  push,
+  parentTag,
+}: {
+  element: ScreenElementIR | undefined;
+  layout: DefaultLayoutNode;
+  elementsById: ReadonlyMap<string, ScreenElementIR>;
+  inheritedBackgroundColor: string | undefined;
+  push: (warning: Omit<DefaultAccessibilityWarning, "screenId" | "screenName">) => void;
+  parentTag?: string;
+}): void => {
+  if (!element) {
+    return;
+  }
+
+  const tag = htmlTagFor({
+    element,
+    layout,
+    root: false,
+    ...(parentTag !== undefined ? { parentTag } : {}),
+  });
+  const firstVisibleText = firstText(element);
+  const hasVisibleLabel = isNonEmptyString(firstVisibleText);
+
+  if (element.prototypeNavigation && tag !== "button") {
+    push({
+      code: ACCESSIBILITY_WARNING_CODES.clickDivFallback,
+      severity: "warning",
+      nodeId: element.id,
+      nodeName: element.name,
+      message: `Interactive element '${element.name}' has prototype navigation but is still rendered as '${tag}', so click behavior would be non-semantic.`,
+    });
+  }
+
+  if (tag === "button") {
+    if (!hasVisibleLabel) {
+      push({
+        code: ACCESSIBILITY_WARNING_CODES.buttonSemantics,
+        severity: "warning",
+        nodeId: element.id,
+        nodeName: element.name,
+        message: `Button '${element.name}' has no visible text and depends on an accessibility-label fallback.`,
+      });
+    }
+    if (!hasVisibleLabel) {
+      push({
+        code: ACCESSIBILITY_WARNING_CODES.ariaLabelFallback,
+        severity: "warning",
+        nodeId: element.id,
+        nodeName: element.name,
+        message: `Button '${element.name}' depends on a generated aria-label fallback.`,
+      });
+    }
+  }
+
+  if (tag === "input" || tag === "select") {
+    if (!hasVisibleLabel) {
+      push({
+        code: ACCESSIBILITY_WARNING_CODES.formLabelFallback,
+        severity: "warning",
+        nodeId: element.id,
+        nodeName: element.name,
+        message: `Form control '${element.name}' has no visible label and depends on a generated label fallback.`,
+      });
+      push({
+        code: ACCESSIBILITY_WARNING_CODES.ariaLabelFallback,
+        severity: "warning",
+        nodeId: element.id,
+        nodeName: element.name,
+        message: `Form control '${element.name}' depends on a generated aria-label fallback.`,
+      });
+    }
+  }
+
+  if (tag === "nav" || semanticKindFor(element) === "dialog") {
+    if (!hasVisibleLabel) {
+      push({
+        code: ACCESSIBILITY_WARNING_CODES.ariaLabelFallback,
+        severity: "warning",
+        nodeId: element.id,
+        nodeName: element.name,
+        message: `Landmark '${element.name}' depends on a generated aria-label fallback.`,
+      });
+    }
+  }
+
+  if (tag === "img" && !element.asset?.alt) {
+    push({
+      code: ACCESSIBILITY_WARNING_CODES.altFallback,
+      severity: "warning",
+      nodeId: element.id,
+      nodeName: element.name,
+      message: `Image '${element.name}' depends on a generated alt fallback.`,
+    });
+  }
+
+  if (isTextElement(element)) {
+    const foreground = element.fillColor;
+    const background = inheritedBackgroundColor;
+    if (isNonEmptyString(foreground) && isNonEmptyString(background)) {
+      const ratio = contrastRatio(foreground, background);
+      if (ratio !== undefined && ratio < 4.5) {
+        push({
+          code: ACCESSIBILITY_WARNING_CODES.lowContrast,
+          severity: "warning",
+          nodeId: element.id,
+          nodeName: element.name,
+          message: `Low contrast text '${element.name}' uses ${Math.round(ratio * 100) / 100}:1 against its background.`,
+        });
+      }
+    }
+  }
+
+  const nextBackground = inferBackgroundColor({
+    element,
+    inheritedBackgroundColor,
+  });
+  for (const childLayout of layout.children) {
+    const childElement = elementsById.get(childLayout.id);
+    collectAccessibilityWarningsForNode({
+      element: childElement,
+      layout: childLayout,
+      elementsById,
+      inheritedBackgroundColor: nextBackground,
+      push,
+      parentTag: tag,
+    });
+  }
+};
+
+const collectAccessibilityWarningsForScreen = ({
+  screen,
+  result,
+}: {
+  screen: ScreenIR;
+  result: DefaultTailwindScreenFile;
+}): DefaultAccessibilityWarning[] => {
+  const elementsById = collectElementsById(screen);
+  const collector = createAccessibilityWarningCollector({
+    screenId: screen.id,
+    screenName: screen.name,
+  });
+  mapLayoutWarningsToAccessibilityWarnings({
+    layoutWarnings: result.warnings,
+    push: collector.push,
+  });
+  mapSemanticDiagnosticsToAccessibilityWarnings({
+    semanticDiagnostics: result.semanticDiagnostics,
+    push: collector.push,
+  });
+  const rootBackgroundColor = screen.fillColor ?? "#ffffff";
+  for (const childLayout of result.layout.children) {
+    const childElement = elementsById.get(childLayout.id);
+    collectAccessibilityWarningsForNode({
+      element: childElement,
+      layout: childLayout,
+      elementsById,
+      inheritedBackgroundColor: rootBackgroundColor,
+      push: collector.push,
+      parentTag: "main",
+    });
+  }
+  return collector.warnings;
+};
+
+const buildAccessibilityReportSummary = ({
+  screenCount,
+  warnings,
+}: {
+  screenCount: number;
+  warnings: readonly DefaultAccessibilityWarning[];
+}): DefaultAccessibilityReportSummary => {
+  const counts = countWarningsByCode(warnings);
+  const warningCount = warnings.length;
+  return {
+    status: warningCount > 0 ? "warn" : "ok",
+    message:
+      warningCount > 0
+        ? `Generated accessibility report flagged ${warningCount} warning(s) across ${screenCount} screen(s).`
+        : `Generated accessibility report found no warnings across ${screenCount} screen(s).`,
+    screenCount,
+    warningCount,
+    semanticOutputWarningCount: counts[ACCESSIBILITY_WARNING_CODES.semanticOutput],
+    formLabelWarningCount: counts[ACCESSIBILITY_WARNING_CODES.formLabelFallback],
+    buttonSemanticsWarningCount: counts[ACCESSIBILITY_WARNING_CODES.buttonSemantics],
+    ariaLabelFallbackWarningCount: counts[ACCESSIBILITY_WARNING_CODES.ariaLabelFallback],
+    altFallbackWarningCount: counts[ACCESSIBILITY_WARNING_CODES.altFallback],
+    focusOrderWarningCount: counts[ACCESSIBILITY_WARNING_CODES.focusOrder],
+    lowContrastWarningCount: counts[ACCESSIBILITY_WARNING_CODES.lowContrast],
+    clickDivFallbackWarningCount: counts[ACCESSIBILITY_WARNING_CODES.clickDivFallback],
+  };
+};
+
 const indent = (depth: number): string => "  ".repeat(depth);
 
 const semanticKindFor = (element: ScreenElementIR | undefined): string => {
   if (!element) {
     return "section";
+  }
+  if (element.type === "image" || element.asset?.kind === "image") {
+    return "image";
   }
   const semantic = normalizeSemanticText(
     [element.semanticType, element.semanticName, element.name].filter(Boolean).join(" "),
@@ -1000,6 +1452,44 @@ export const createDefaultSemanticComponentReportFile = (screens: readonly Scree
             ...diagnostic,
           })),
         ),
+      },
+      null,
+      2,
+    )}\n`,
+  };
+};
+
+export const createDefaultAccessibilityReportFile = (
+  screens: readonly ScreenIR[],
+): GeneratedFile => {
+  const results = createDefaultTailwindScreenFiles(screens);
+  const screenReports: DefaultAccessibilityScreenSummary[] = screens.map((screen, index) => {
+    const result = results[index]!;
+    const warnings = collectAccessibilityWarningsForScreen({
+      screen,
+      result,
+    });
+    return {
+      screenId: screen.id,
+      screenName: screen.name,
+      warningCount: warnings.length,
+      warnings,
+    };
+  });
+  const warnings = screenReports.flatMap((screen) => screen.warnings);
+  const summary = buildAccessibilityReportSummary({
+    screenCount: screens.length,
+    warnings,
+  });
+  return {
+    path: DEFAULT_ACCESSIBILITY_REPORT_PATH,
+    content: `${JSON.stringify(
+      {
+        schemaVersion: ACCESSIBILITY_REPORT_SCHEMA_VERSION,
+        pipelineId: "default",
+        summary,
+        screens: screenReports,
+        warnings,
       },
       null,
       2,
