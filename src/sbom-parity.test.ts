@@ -135,6 +135,15 @@ const runParityCheck = async (
   }
 };
 
+const createProfileDocuments = () => ({
+  "profiles/workspace-dev-default.cdx.json": createCycloneDxDocument("workspace-dev", "1.0.0", []),
+  "profiles/workspace-dev-default.spdx.json": createSpdxDocument("workspace-dev", "1.0.0", []),
+  "profiles/workspace-dev-rocket.cdx.json": createCycloneDxDocument("workspace-dev", "1.0.0", []),
+  "profiles/workspace-dev-rocket.spdx.json": createSpdxDocument("workspace-dev", "1.0.0", []),
+  "profiles/workspace-dev-default-rocket.cdx.json": createCycloneDxDocument("workspace-dev", "1.0.0", []),
+  "profiles/workspace-dev-default-rocket.spdx.json": createSpdxDocument("workspace-dev", "1.0.0", [])
+});
+
 test("SBOM parity check passes when CycloneDX and SPDX describe the same package sets", async () => {
   const result = await runParityCheck({
     "workspace-dev.cdx.json": createCycloneDxDocument("workspace-dev", "1.0.0", []),
@@ -152,13 +161,17 @@ test("SBOM parity check passes when CycloneDX and SPDX describe the same package
     ]),
     "figma-generated-app-react-tailwind.spdx.json": createSpdxDocument("figma-generated-app", "1.0.0", [
       ["tailwind-child", "3.0.0"]
-    ])
+    ]),
+    ...createProfileDocuments()
   });
 
   assert.equal(result.code, 0, `Expected success, got stderr:\n${result.stderr}`);
   assert.match(result.stdout, /\[sbom-parity\] workspace-dev matched 1 packages\./);
   assert.match(result.stdout, /\[sbom-parity\] figma-generated-app-react-mui matched 3 packages\./);
   assert.match(result.stdout, /\[sbom-parity\] figma-generated-app-react-tailwind matched 2 packages\./);
+  assert.match(result.stdout, /\[sbom-parity\] workspace-dev default profile matched 1 packages\./);
+  assert.match(result.stdout, /\[sbom-parity\] workspace-dev rocket profile matched 1 packages\./);
+  assert.match(result.stdout, /\[sbom-parity\] workspace-dev default-rocket profile matched 1 packages\./);
   assert.equal(result.stderr, "");
 });
 
@@ -199,7 +212,8 @@ test("SBOM parity check fails when SPDX misses a transitive dependency", async (
     ]),
     "figma-generated-app-react-tailwind.spdx.json": createSpdxDocument("figma-generated-app", "1.0.0", [
       ["tailwind-child", "3.0.0"]
-    ])
+    ]),
+    ...createProfileDocuments()
   });
 
   assert.equal(result.code, 1, `Expected mismatch failure, got stdout:\n${result.stdout}`);

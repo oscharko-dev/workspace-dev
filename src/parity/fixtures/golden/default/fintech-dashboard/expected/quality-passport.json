@@ -1,0 +1,209 @@
+{
+  "buildProfile": "default-rocket",
+  "coverage": {
+    "semantic": {
+      "covered": 0,
+      "ratio": 0,
+      "status": "warning",
+      "total": 6
+    },
+    "token": {
+      "covered": 54,
+      "ratio": 0.947368,
+      "status": "passed",
+      "total": 57
+    }
+  },
+  "generatedFiles": [
+    {
+      "path": "component-manifest.json",
+      "sha256": "e0aa07191804e4211a0521688c3ae92e4ee6e05579caf49f6c99c5de28d69172",
+      "sizeBytes": 170
+    },
+    {
+      "path": "generation-metrics.json",
+      "sha256": "82adf2072b7a8ef2aadde62560721c7754f02ee64bb8cbd080be35060a603703",
+      "sizeBytes": 502
+    },
+    {
+      "path": "src/App.test.tsx",
+      "sha256": "2a622b772be8762a74e96ce9e83dd4e50827a561e7b6fd6403ca8599cb36660d",
+      "sizeBytes": 247
+    },
+    {
+      "path": "src/App.tsx",
+      "sha256": "68661dcc200006268f905a8120783ac01459fd37e0b2f3f2e6414cfc6394d8da",
+      "sizeBytes": 273
+    },
+    {
+      "path": "src/generated/accessibility-report.json",
+      "sha256": "76d2422c48d6b8fe769aa1cd41e8d239f08e675db8f8f9ec9a8ac57736220367",
+      "sizeBytes": 12460
+    },
+    {
+      "path": "src/generated/layout-report.json",
+      "sha256": "425b1952b7cb0c0347b75ba284c28c439da14357f51d8f2a9db679720412e1ea",
+      "sizeBytes": 9360
+    },
+    {
+      "path": "src/generated/semantic-component-report.json",
+      "sha256": "519babdadc86f1fc5d1c134f61d679635c6b67eecc943bbc26c41bcdeedbf985",
+      "sizeBytes": 4004
+    },
+    {
+      "path": "src/pages/dashboard.tsx",
+      "sha256": "76a0726baf7a80eb8b6bf6e8c29d5996b0fe5a1681874fa7a776b94ce3602a6c",
+      "sizeBytes": 3587
+    },
+    {
+      "path": "src/theme/token-report.json",
+      "sha256": "95ab2f8054ff193861a284b7c67b3f7efeb60c206ced65cecf1c83a4daa66de2",
+      "sizeBytes": 2627
+    },
+    {
+      "path": "src/theme/tokens.css",
+      "sha256": "9bf85c22ec0fdac243ae849118926adfca10f7f18edc7965e647de98d53428d4",
+      "sizeBytes": 2568
+    },
+    {
+      "path": "src/theme/tokens.json",
+      "sha256": "92837e7ac2e3735c1baccb7b92d9c71a397222f811381ca6d68ebbcd15e7eb07",
+      "sizeBytes": 2483
+    }
+  ],
+  "metadata": {
+    "compositeQualityStatus": "not_requested",
+    "confidenceStatus": "completed",
+    "jobId": "golden-default-fintech-dashboard",
+    "pipelineDisplayName": "Default",
+    "storybookStatus": "not_requested",
+    "validatedAt": "<stable-timestamp>",
+    "validationSummaryStatus": "ok",
+    "visualQualityStatus": "not_requested"
+  },
+  "pipelineId": "default",
+  "schemaVersion": "1.0.0",
+  "scope": {
+    "scope": "board",
+    "selectedNodeCount": 0,
+    "sourceMode": "local_json"
+  },
+  "templateBundleId": "react-tailwind-app",
+  "validation": {
+    "stages": [
+      {
+        "name": "figma.source",
+        "status": "completed"
+      },
+      {
+        "name": "ir.derive",
+        "status": "completed"
+      },
+      {
+        "name": "template.prepare",
+        "status": "completed"
+      },
+      {
+        "name": "codegen.generate",
+        "status": "completed"
+      },
+      {
+        "name": "validate.project",
+        "status": "completed"
+      }
+    ],
+    "status": "passed"
+  },
+  "warnings": [
+    {
+      "code": "W_DEFAULT_A11Y_FOCUS_ORDER",
+      "message": "Absolute layout fallback for 'Card Title' can make keyboard focus order depend on implementation details.",
+      "severity": "warning",
+      "source": "src/generated/accessibility-report.json"
+    },
+    {
+      "code": "W_DEFAULT_A11Y_FOCUS_ORDER",
+      "message": "Absolute layout fallback for 'Subtitle' can make keyboard focus order depend on implementation details.",
+      "severity": "warning",
+      "source": "src/generated/accessibility-report.json"
+    },
+    {
+      "code": "W_DEFAULT_A11Y_FOCUS_ORDER",
+      "message": "Absolute layout fallback for 'Value' can make keyboard focus order depend on implementation details.",
+      "severity": "warning",
+      "source": "src/generated/accessibility-report.json"
+    },
+    {
+      "code": "W_DEFAULT_A11Y_SEMANTIC_OUTPUT",
+      "message": "Default semantic synthesis kept 'Accounts Card' inline because no matching reusable semantic structure was found.",
+      "severity": "warning",
+      "source": "src/generated/accessibility-report.json"
+    },
+    {
+      "code": "W_DEFAULT_A11Y_SEMANTIC_OUTPUT",
+      "message": "Default semantic synthesis kept 'Approvals Card' inline because no matching reusable semantic structure was found.",
+      "severity": "warning",
+      "source": "src/generated/accessibility-report.json"
+    },
+    {
+      "code": "W_DEFAULT_A11Y_SEMANTIC_OUTPUT",
+      "message": "Default semantic synthesis kept 'Cards Grid' inline because no matching reusable semantic structure was found.",
+      "severity": "warning",
+      "source": "src/generated/accessibility-report.json"
+    },
+    {
+      "code": "W_DEFAULT_A11Y_SEMANTIC_OUTPUT",
+      "message": "Default semantic synthesis kept 'Liquidity Card' inline because no matching reusable semantic structure was found.",
+      "severity": "warning",
+      "source": "src/generated/accessibility-report.json"
+    },
+    {
+      "code": "W_DEFAULT_A11Y_SEMANTIC_OUTPUT",
+      "message": "Default semantic synthesis kept 'Payment Flow Card' inline because no matching reusable semantic structure was found.",
+      "severity": "warning",
+      "source": "src/generated/accessibility-report.json"
+    },
+    {
+      "code": "W_DEFAULT_A11Y_SEMANTIC_OUTPUT",
+      "message": "Default semantic synthesis kept 'Risk Queue Card' inline because no matching reusable semantic structure was found.",
+      "severity": "warning",
+      "source": "src/generated/accessibility-report.json"
+    },
+    {
+      "code": "W_SEMANTIC_COMPONENT_NOT_REUSABLE",
+      "message": "Default semantic synthesis kept 'Accounts Card' inline because no matching reusable semantic structure was found.",
+      "severity": "warning",
+      "source": "src/generated/semantic-component-report.json"
+    },
+    {
+      "code": "W_SEMANTIC_COMPONENT_NOT_REUSABLE",
+      "message": "Default semantic synthesis kept 'Approvals Card' inline because no matching reusable semantic structure was found.",
+      "severity": "warning",
+      "source": "src/generated/semantic-component-report.json"
+    },
+    {
+      "code": "W_SEMANTIC_COMPONENT_NOT_REUSABLE",
+      "message": "Default semantic synthesis kept 'Cards Grid' inline because no matching reusable semantic structure was found.",
+      "severity": "warning",
+      "source": "src/generated/semantic-component-report.json"
+    },
+    {
+      "code": "W_SEMANTIC_COMPONENT_NOT_REUSABLE",
+      "message": "Default semantic synthesis kept 'Liquidity Card' inline because no matching reusable semantic structure was found.",
+      "severity": "warning",
+      "source": "src/generated/semantic-component-report.json"
+    },
+    {
+      "code": "W_SEMANTIC_COMPONENT_NOT_REUSABLE",
+      "message": "Default semantic synthesis kept 'Payment Flow Card' inline because no matching reusable semantic structure was found.",
+      "severity": "warning",
+      "source": "src/generated/semantic-component-report.json"
+    },
+    {
+      "code": "W_SEMANTIC_COMPONENT_NOT_REUSABLE",
+      "message": "Default semantic synthesis kept 'Risk Queue Card' inline because no matching reusable semantic structure was found.",
+      "severity": "warning",
+      "source": "src/generated/semantic-component-report.json"
+    }
+  ]
+}

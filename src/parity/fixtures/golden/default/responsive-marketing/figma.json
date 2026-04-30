@@ -1,0 +1,282 @@
+{
+  "name": "Responsive Banking Portal Board",
+  "document": {
+    "id": "0:0",
+    "type": "DOCUMENT",
+    "children": [
+      {
+        "id": "0:1",
+        "type": "CANVAS",
+        "name": "Page 1",
+        "children": [
+          {
+            "id": "screen-home-desktop",
+            "type": "FRAME",
+            "name": "Home Desktop",
+            "layoutMode": "VERTICAL",
+            "itemSpacing": 24,
+            "paddingTop": 32,
+            "paddingRight": 48,
+            "paddingBottom": 32,
+            "paddingLeft": 48,
+            "absoluteBoundingBox": { "x": 0, "y": 0, "width": 1440, "height": 900 },
+            "fills": [
+              {
+                "type": "SOLID",
+                "visible": true,
+                "color": { "r": 1, "g": 1, "b": 1, "a": 1 }
+              }
+            ],
+            "children": [
+              {
+                "id": "hero-desktop",
+                "type": "FRAME",
+                "name": "Hero Section",
+                "layoutMode": "HORIZONTAL",
+                "itemSpacing": 32,
+                "absoluteBoundingBox": { "x": 48, "y": 32, "width": 1344, "height": 400 },
+                "children": [
+                  {
+                    "id": "hero-text-desktop",
+                    "type": "FRAME",
+                    "name": "Hero Text",
+                    "layoutMode": "VERTICAL",
+                    "itemSpacing": 16,
+                    "absoluteBoundingBox": { "x": 48, "y": 32, "width": 650, "height": 400 },
+                    "children": [
+                      {
+                        "id": "hero-heading-desktop",
+                        "type": "TEXT",
+                        "name": "Heading",
+                        "characters": "Treasury Portal",
+                        "style": { "fontSize": 48, "fontWeight": 800, "fontFamily": "Inter", "lineHeightPx": 56, "textAlignHorizontal": "LEFT" },
+                        "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 0.07, "g": 0.09, "b": 0.15, "a": 1 } }],
+                        "absoluteBoundingBox": { "x": 48, "y": 32, "width": 650, "height": 56 }
+                      },
+                      {
+                        "id": "hero-body-desktop",
+                        "type": "TEXT",
+                        "name": "Body",
+                        "characters": "A responsive OSS demo for payment operations teams.",
+                        "style": { "fontSize": 18, "fontWeight": 400, "fontFamily": "Inter", "lineHeightPx": 28, "textAlignHorizontal": "LEFT" },
+                        "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 0.4, "g": 0.42, "b": 0.46, "a": 1 } }],
+                        "absoluteBoundingBox": { "x": 48, "y": 104, "width": 500, "height": 56 }
+                      },
+                      {
+                        "id": "hero-cta-desktop",
+                        "type": "FRAME",
+                        "name": "CTA Button",
+                        "absoluteBoundingBox": { "x": 48, "y": 176, "width": 180, "height": 48 },
+                        "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 0.24, "g": 0.47, "b": 0.96, "a": 1 } }],
+                        "cornerRadius": 8,
+                        "children": [
+                          {
+                            "id": "cta-label-desktop",
+                            "type": "TEXT",
+                            "name": "Label",
+                            "characters": "Review Demo",
+                            "style": { "fontSize": 16, "fontWeight": 600, "fontFamily": "Inter", "lineHeightPx": 24, "textAlignHorizontal": "CENTER" },
+                            "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 1, "g": 1, "b": 1, "a": 1 } }],
+                            "absoluteBoundingBox": { "x": 96, "y": 188, "width": 84, "height": 24 }
+                          }
+                        ]
+                      }
+                    ]
+                  },
+                  {
+                    "id": "hero-image-desktop",
+                    "type": "RECTANGLE",
+                    "name": "Hero Image",
+                    "absoluteBoundingBox": { "x": 730, "y": 32, "width": 662, "height": 400 },
+                    "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 0.93, "g": 0.94, "b": 0.96, "a": 1 } }],
+                    "cornerRadius": 12
+                  }
+                ]
+              },
+              {
+                "id": "features-desktop",
+                "type": "FRAME",
+                "name": "Features Section",
+                "layoutMode": "HORIZONTAL",
+                "itemSpacing": 24,
+                "absoluteBoundingBox": { "x": 48, "y": 456, "width": 1344, "height": 300 },
+                "children": [
+                  {
+                    "id": "feature-1",
+                    "type": "FRAME",
+                    "name": "Feature Card",
+                    "layoutMode": "VERTICAL",
+                    "itemSpacing": 8,
+                    "cornerRadius": 8,
+                    "absoluteBoundingBox": { "x": 48, "y": 456, "width": 432, "height": 200 },
+                    "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 0.97, "g": 0.98, "b": 0.99, "a": 1 } }],
+                    "children": [
+                      { "id": "f1-title", "type": "TEXT", "name": "Feature Title", "characters": "Fast Onboarding", "style": { "fontSize": 20, "fontWeight": 600, "fontFamily": "Inter", "lineHeightPx": 28, "textAlignHorizontal": "LEFT" }, "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 0.07, "g": 0.09, "b": 0.15, "a": 1 } }], "absoluteBoundingBox": { "x": 64, "y": 472, "width": 400, "height": 28 } },
+                      { "id": "f1-desc", "type": "TEXT", "name": "Feature Description", "characters": "Start local demos from deterministic fixture JSON.", "style": { "fontSize": 14, "fontWeight": 400, "fontFamily": "Inter", "lineHeightPx": 22, "textAlignHorizontal": "LEFT" }, "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 0.4, "g": 0.42, "b": 0.46, "a": 1 } }], "absoluteBoundingBox": { "x": 64, "y": 508, "width": 400, "height": 44 } }
+                    ]
+                  },
+                  {
+                    "id": "feature-2",
+                    "type": "FRAME",
+                    "name": "Feature Card",
+                    "layoutMode": "VERTICAL",
+                    "itemSpacing": 8,
+                    "cornerRadius": 8,
+                    "absoluteBoundingBox": { "x": 504, "y": 456, "width": 432, "height": 200 },
+                    "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 0.97, "g": 0.98, "b": 0.99, "a": 1 } }],
+                    "children": [
+                      { "id": "f2-title", "type": "TEXT", "name": "Feature Title", "characters": "Approval Collaboration", "style": { "fontSize": 20, "fontWeight": 600, "fontFamily": "Inter", "lineHeightPx": 28, "textAlignHorizontal": "LEFT" }, "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 0.07, "g": 0.09, "b": 0.15, "a": 1 } }], "absoluteBoundingBox": { "x": 520, "y": 472, "width": 400, "height": 28 } },
+                      { "id": "f2-desc", "type": "TEXT", "name": "Feature Description", "characters": "Coordinate payment reviews across synthetic teams.", "style": { "fontSize": 14, "fontWeight": 400, "fontFamily": "Inter", "lineHeightPx": 22, "textAlignHorizontal": "LEFT" }, "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 0.4, "g": 0.42, "b": 0.46, "a": 1 } }], "absoluteBoundingBox": { "x": 520, "y": 508, "width": 400, "height": 44 } }
+                    ]
+                  },
+                  {
+                    "id": "feature-3",
+                    "type": "FRAME",
+                    "name": "Feature Card",
+                    "layoutMode": "VERTICAL",
+                    "itemSpacing": 8,
+                    "cornerRadius": 8,
+                    "absoluteBoundingBox": { "x": 960, "y": 456, "width": 432, "height": 200 },
+                    "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 0.97, "g": 0.98, "b": 0.99, "a": 1 } }],
+                    "children": [
+                      { "id": "f3-title", "type": "TEXT", "name": "Feature Title", "characters": "Liquidity Analytics", "style": { "fontSize": 20, "fontWeight": 600, "fontFamily": "Inter", "lineHeightPx": 28, "textAlignHorizontal": "LEFT" }, "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 0.07, "g": 0.09, "b": 0.15, "a": 1 } }], "absoluteBoundingBox": { "x": 976, "y": 472, "width": 400, "height": 28 } },
+                      { "id": "f3-desc", "type": "TEXT", "name": "Feature Description", "characters": "Review cash-position signals without customer data.", "style": { "fontSize": 14, "fontWeight": 400, "fontFamily": "Inter", "lineHeightPx": 22, "textAlignHorizontal": "LEFT" }, "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 0.4, "g": 0.42, "b": 0.46, "a": 1 } }], "absoluteBoundingBox": { "x": 976, "y": 508, "width": 400, "height": 44 } }
+                    ]
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "id": "screen-home-mobile",
+            "type": "FRAME",
+            "name": "Home Mobile",
+            "layoutMode": "VERTICAL",
+            "itemSpacing": 16,
+            "paddingTop": 16,
+            "paddingRight": 16,
+            "paddingBottom": 16,
+            "paddingLeft": 16,
+            "absoluteBoundingBox": { "x": 1500, "y": 0, "width": 390, "height": 1200 },
+            "fills": [
+              {
+                "type": "SOLID",
+                "visible": true,
+                "color": { "r": 1, "g": 1, "b": 1, "a": 1 }
+              }
+            ],
+            "children": [
+              {
+                "id": "hero-mobile",
+                "type": "FRAME",
+                "name": "Hero Section",
+                "layoutMode": "VERTICAL",
+                "itemSpacing": 16,
+                "absoluteBoundingBox": { "x": 1516, "y": 16, "width": 358, "height": 500 },
+                "children": [
+                  {
+                    "id": "hero-heading-mobile",
+                    "type": "TEXT",
+                    "name": "Heading",
+                    "characters": "Treasury Portal",
+                    "style": { "fontSize": 32, "fontWeight": 800, "fontFamily": "Inter", "lineHeightPx": 40, "textAlignHorizontal": "LEFT" },
+                    "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 0.07, "g": 0.09, "b": 0.15, "a": 1 } }],
+                    "absoluteBoundingBox": { "x": 1516, "y": 16, "width": 358, "height": 80 }
+                  },
+                  {
+                    "id": "hero-body-mobile",
+                    "type": "TEXT",
+                    "name": "Body",
+                    "characters": "A responsive OSS demo for payment operations teams.",
+                    "style": { "fontSize": 16, "fontWeight": 400, "fontFamily": "Inter", "lineHeightPx": 24, "textAlignHorizontal": "LEFT" },
+                    "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 0.4, "g": 0.42, "b": 0.46, "a": 1 } }],
+                    "absoluteBoundingBox": { "x": 1516, "y": 112, "width": 358, "height": 48 }
+                  },
+                  {
+                    "id": "hero-image-mobile",
+                    "type": "RECTANGLE",
+                    "name": "Hero Image",
+                    "absoluteBoundingBox": { "x": 1516, "y": 176, "width": 358, "height": 200 },
+                    "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 0.93, "g": 0.94, "b": 0.96, "a": 1 } }],
+                    "cornerRadius": 8
+                  },
+                  {
+                    "id": "hero-cta-mobile",
+                    "type": "FRAME",
+                    "name": "CTA Button",
+                    "absoluteBoundingBox": { "x": 1516, "y": 392, "width": 358, "height": 48 },
+                    "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 0.24, "g": 0.47, "b": 0.96, "a": 1 } }],
+                    "cornerRadius": 8,
+                    "children": [
+                      {
+                        "id": "cta-label-mobile",
+                        "type": "TEXT",
+                        "name": "Label",
+                        "characters": "Review Demo",
+                        "style": { "fontSize": 16, "fontWeight": 600, "fontFamily": "Inter", "lineHeightPx": 24, "textAlignHorizontal": "CENTER" },
+                        "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 1, "g": 1, "b": 1, "a": 1 } }],
+                        "absoluteBoundingBox": { "x": 1653, "y": 404, "width": 84, "height": 24 }
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "id": "features-mobile",
+                "type": "FRAME",
+                "name": "Features Section",
+                "layoutMode": "VERTICAL",
+                "itemSpacing": 12,
+                "absoluteBoundingBox": { "x": 1516, "y": 532, "width": 358, "height": 600 },
+                "children": [
+                  {
+                    "id": "feature-m1",
+                    "type": "FRAME",
+                    "name": "Feature Card",
+                    "layoutMode": "VERTICAL",
+                    "itemSpacing": 8,
+                    "cornerRadius": 8,
+                    "absoluteBoundingBox": { "x": 1516, "y": 532, "width": 358, "height": 120 },
+                    "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 0.97, "g": 0.98, "b": 0.99, "a": 1 } }],
+                    "children": [
+                      { "id": "fm1-title", "type": "TEXT", "name": "Feature Title", "characters": "Fast Onboarding", "style": { "fontSize": 18, "fontWeight": 600, "fontFamily": "Inter", "lineHeightPx": 24, "textAlignHorizontal": "LEFT" }, "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 0.07, "g": 0.09, "b": 0.15, "a": 1 } }], "absoluteBoundingBox": { "x": 1532, "y": 548, "width": 326, "height": 24 } },
+                      { "id": "fm1-desc", "type": "TEXT", "name": "Feature Description", "characters": "Start local demos from deterministic fixture JSON.", "style": { "fontSize": 14, "fontWeight": 400, "fontFamily": "Inter", "lineHeightPx": 22, "textAlignHorizontal": "LEFT" }, "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 0.4, "g": 0.42, "b": 0.46, "a": 1 } }], "absoluteBoundingBox": { "x": 1532, "y": 580, "width": 326, "height": 44 } }
+                    ]
+                  },
+                  {
+                    "id": "feature-m2",
+                    "type": "FRAME",
+                    "name": "Feature Card",
+                    "layoutMode": "VERTICAL",
+                    "itemSpacing": 8,
+                    "cornerRadius": 8,
+                    "absoluteBoundingBox": { "x": 1516, "y": 664, "width": 358, "height": 120 },
+                    "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 0.97, "g": 0.98, "b": 0.99, "a": 1 } }],
+                    "children": [
+                      { "id": "fm2-title", "type": "TEXT", "name": "Feature Title", "characters": "Approval Collaboration", "style": { "fontSize": 18, "fontWeight": 600, "fontFamily": "Inter", "lineHeightPx": 24, "textAlignHorizontal": "LEFT" }, "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 0.07, "g": 0.09, "b": 0.15, "a": 1 } }], "absoluteBoundingBox": { "x": 1532, "y": 680, "width": 326, "height": 24 } },
+                      { "id": "fm2-desc", "type": "TEXT", "name": "Feature Description", "characters": "Coordinate payment reviews across synthetic teams.", "style": { "fontSize": 14, "fontWeight": 400, "fontFamily": "Inter", "lineHeightPx": 22, "textAlignHorizontal": "LEFT" }, "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 0.4, "g": 0.42, "b": 0.46, "a": 1 } }], "absoluteBoundingBox": { "x": 1532, "y": 712, "width": 326, "height": 44 } }
+                    ]
+                  },
+                  {
+                    "id": "feature-m3",
+                    "type": "FRAME",
+                    "name": "Feature Card",
+                    "layoutMode": "VERTICAL",
+                    "itemSpacing": 8,
+                    "cornerRadius": 8,
+                    "absoluteBoundingBox": { "x": 1516, "y": 796, "width": 358, "height": 120 },
+                    "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 0.97, "g": 0.98, "b": 0.99, "a": 1 } }],
+                    "children": [
+                      { "id": "fm3-title", "type": "TEXT", "name": "Feature Title", "characters": "Liquidity Analytics", "style": { "fontSize": 18, "fontWeight": 600, "fontFamily": "Inter", "lineHeightPx": 24, "textAlignHorizontal": "LEFT" }, "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 0.07, "g": 0.09, "b": 0.15, "a": 1 } }], "absoluteBoundingBox": { "x": 1532, "y": 812, "width": 326, "height": 24 } },
+                      { "id": "fm3-desc", "type": "TEXT", "name": "Feature Description", "characters": "Review cash-position signals without customer data.", "style": { "fontSize": 14, "fontWeight": 400, "fontFamily": "Inter", "lineHeightPx": 22, "textAlignHorizontal": "LEFT" }, "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 0.4, "g": 0.42, "b": 0.46, "a": 1 } }], "absoluteBoundingBox": { "x": 1532, "y": 844, "width": 326, "height": 44 } }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

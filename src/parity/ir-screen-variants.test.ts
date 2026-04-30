@@ -11,7 +11,7 @@ import type { DesignIR, ScreenElementIR, ScreenIR, ScreenVariantFamilyIR } from 
 import { buildTypographyScaleFromAliases } from "./typography-tokens.js";
 
 const MODULE_DIR = typeof __dirname === "string" ? __dirname : path.dirname(fileURLToPath(import.meta.url));
-const GOLDEN_ROOT = path.join(MODULE_DIR, "fixtures", "golden", "variant-shell-signals", "expected");
+const GOLDEN_ROOT = path.join(MODULE_DIR, "fixtures", "golden", "rocket", "variant-shell-signals", "expected");
 
 const createScreen = ({
   id,

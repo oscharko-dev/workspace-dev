@@ -1,0 +1,51 @@
+{
+  "schemaVersion": "1.0.0",
+  "pipelineId": "default",
+  "screens": [
+    {
+      "screenId": "screen-dashboard-light",
+      "screenName": "Dashboard Light",
+      "components": [],
+      "diagnostics": [
+        {
+          "code": "W_SEMANTIC_COMPONENT_NOT_REUSABLE",
+          "nodeId": "light-summary-card",
+          "nodeName": "Summary Card",
+          "message": "Default semantic synthesis kept 'Summary Card' inline because no matching reusable semantic structure was found."
+        }
+      ]
+    },
+    {
+      "screenId": "screen-dashboard-dark",
+      "screenName": "Dashboard Dark",
+      "components": [],
+      "diagnostics": [
+        {
+          "code": "W_SEMANTIC_COMPONENT_NOT_REUSABLE",
+          "nodeId": "dark-summary-card",
+          "nodeName": "Summary Card",
+          "message": "Default semantic synthesis kept 'Summary Card' inline because no matching reusable semantic structure was found."
+        }
+      ]
+    }
+  ],
+  "components": [],
+  "diagnostics": [
+    {
+      "screenId": "screen-dashboard-light",
+      "screenName": "Dashboard Light",
+      "code": "W_SEMANTIC_COMPONENT_NOT_REUSABLE",
+      "nodeId": "light-summary-card",
+      "nodeName": "Summary Card",
+      "message": "Default semantic synthesis kept 'Summary Card' inline because no matching reusable semantic structure was found."
+    },
+    {
+      "screenId": "screen-dashboard-dark",
+      "screenName": "Dashboard Dark",
+      "code": "W_SEMANTIC_COMPONENT_NOT_REUSABLE",
+      "nodeId": "dark-summary-card",
+      "nodeName": "Summary Card",
+      "message": "Default semantic synthesis kept 'Summary Card' inline because no matching reusable semantic structure was found."
+    }
+  ]
+}

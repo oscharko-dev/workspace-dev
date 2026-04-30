@@ -263,12 +263,8 @@ const assertTemplateDependencyTreePolicy = async ({ label, nodeModulesPath }) =>
 };
 
 const main = async () => {
-  const args = process.argv.slice(2);
-  const { profileIds } = parseProfileGateArgs(args);
-  const profiles =
-    args.length === 0
-      ? [{ id: "all", templates: ["react-mui-app", "react-tailwind-app"] }]
-      : profilesFromIds(profileIds);
+  const { profileIds } = parseProfileGateArgs(process.argv.slice(2));
+  const profiles = profilesFromIds(profileIds);
 
   for (const profile of profiles) {
     console.log(`[license-allowlist] Checking profile '${profile.id}'.`);

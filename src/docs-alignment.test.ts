@@ -133,7 +133,9 @@ test("docs: mode lock docs stay aligned with runtime constraints", async () => {
   const compatibilityDoc = await readRepoFile("COMPATIBILITY.md");
   const contributingDoc = await readRepoFile("CONTRIBUTING.md");
   const localRuntimeDoc = await readRepoFile("docs/local-runtime.md");
-  const buildProfileScript = await readRepoFile("scripts/build-profile.mjs");
+  const packProfileContract = await readRepoFile(
+    "scripts/pack-profile-contract.mjs",
+  );
   const readmeDoc = await readRepoFile("README.md");
   const securityDoc = await readRepoFile("SECURITY.md");
   const threatModelDoc = await readRepoFile("THREAT_MODEL.md");
@@ -220,8 +222,8 @@ test("docs: mode lock docs stay aligned with runtime constraints", async () => {
     schemasSource,
     /Collect failures in `ValidationIssue\[\]` with stable paths and messages/,
   );
-  assert.match(buildProfileScript, /"THREAT_MODEL\.md"/);
-  assert.match(buildProfileScript, /"GOVERNANCE\.md"/);
+  assert.match(packProfileContract, /"THREAT_MODEL\.md"/);
+  assert.match(packProfileContract, /"GOVERNANCE\.md"/);
   assert.match(readmeDoc, /## Repository branch flow/i);
   assert.match(readmeDoc, /`dev` is the active development branch/i);
   assert.match(readmeDoc, /`dev-gate` is the protected quality gate branch/i);
@@ -275,6 +277,14 @@ test("docs: validation and app template source contain expected pipeline pattern
 
 test("docs: pipeline authoring guide stays aligned with canonical stage contract", async () => {
   const pipelineDoc = await readRepoFile("PIPELINE.md");
+  const readmeDoc = await readRepoFile("README.md");
+  const migrationGuideDoc = await readRepoFile("docs/migration-guide.md");
+  const authoringGuideDoc = await readRepoFile(
+    "docs/default-pipeline/pipeline-authoring-and-migration.md",
+  );
+  const packProfileContract = await readRepoFile(
+    "scripts/pack-profile-contract.mjs",
+  );
   const authoringSection = extractMarkdownTopLevelSection(
     pipelineDoc,
     "Maintainer authoring contract",
@@ -315,10 +325,122 @@ test("docs: pipeline authoring guide stays aligned with canonical stage contract
     authoringSection,
     /new pipeline behavior must be expressed as delegates, artifact contracts, and skip rules inside the canonical stage order/,
   );
+  assert.match(
+    authoringSection,
+    /docs\/default-pipeline\/pipeline-authoring-and-migration\.md/,
+  );
+  assert.match(
+    readmeDoc,
+    /docs\/default-pipeline\/pipeline-authoring-and-migration\.md/,
+  );
+  assert.match(
+    migrationGuideDoc,
+    /default-pipeline\/pipeline-authoring-and-migration\.md/,
+  );
+  assert.match(
+    packProfileContract,
+    /"docs\/default-pipeline\/pipeline-authoring-and-migration\.md"/,
+  );
+  for (const [index, stageName] of STAGE_ORDER.entries()) {
+    assert.match(
+      authoringGuideDoc,
+      new RegExp(`${index + 1}\\. \`${escapeRegExp(stageName)}\``),
+    );
+  }
+  for (const requiredTerm of [
+    "Future pipelines are authored as registered `PipelineDefinition` entries",
+    "new public DAGs",
+    "`PipelineOrchestrator` validates plans before execution",
+    "`default`",
+    "`rocket`",
+    "`WORKSPACE_DEV_PIPELINES`",
+    "`default-rocket`",
+    "`template/react-tailwind-app`",
+    "`template/react-mui-app`",
+    "`pipelineId: \"rocket\"`",
+    "`PIPELINE_INPUT_UNSUPPORTED`",
+    "`LEGACY_ROCKET_AUTO_SELECTED`",
+    "The fallback may be removed only in a future package-major release.",
+    "Do not use `CONTRACT_VERSION` as a dependency pin",
+    "pnpm run verify:pack",
+  ]) {
+    assert.match(authoringGuideDoc, new RegExp(escapeRegExp(requiredTerm)));
+  }
+});
+
+test("docs: default pipeline demo guide stays aligned with runtime evidence", async () => {
+  const readmeDoc = await readRepoFile("README.md");
+  const troubleshootingDoc = await readRepoFile("TROUBLESHOOTING.md");
+  const demoGuideDoc = await readRepoFile(
+    "docs/default-pipeline/default-demo-guide.md",
+  );
+  const fixtureDoc = await readRepoFile(
+    "docs/default-pipeline/default-demo-fixtures.md",
+  );
+  const packProfileContract = await readRepoFile(
+    "scripts/pack-profile-contract.mjs",
+  );
+  const defaultManifest = await readRepoFile(
+    "src/parity/fixtures/golden/default/manifest.json",
+  );
+  const qualityPassportFixture = await readRepoFile(
+    "src/parity/fixtures/golden/default/fintech-dashboard/expected/quality-passport.json",
+  );
+  const workspacePageSource = await readRepoFile(
+    "ui-src/src/features/workspace/workspace-page.tsx",
+  );
+
+  assert.match(
+    readmeDoc,
+    /docs\/default-pipeline\/default-demo-guide\.md/,
+  );
+  assert.match(
+    troubleshootingDoc,
+    /docs\/default-pipeline\/default-demo-guide\.md/,
+  );
+  assert.match(fixtureDoc, /\[default-demo-guide\.md\]\(default-demo-guide\.md\)/);
+  assert.match(
+    packProfileContract,
+    /"docs\/default-pipeline\/default-demo-guide\.md"/,
+  );
+  assert.match(
+    packProfileContract,
+    /"docs\/default-pipeline\/default-demo-fixtures\.md"/,
+  );
+  assert.match(defaultManifest, /"pipelineId": "default"/);
+  assert.match(defaultManifest, /"oss-neutral-financial-default-demo"/);
+  assert.match(qualityPassportFixture, /"pipelineId": "default"/);
+  assert.match(qualityPassportFixture, /"templateBundleId": "react-tailwind-app"/);
+  assert.match(qualityPassportFixture, /"sourceMode": "local_json"/);
+  assert.match(workspacePageSource, /availablePipelines/);
+  assert.match(workspacePageSource, /defaultPipelineId/);
+  assert.match(workspacePageSource, /hasPipelineSelector/);
+  for (const requiredTerm of [
+    'pipelineId: "default"',
+    'figmaSourceMode: "local_json"',
+    'figmaSourceMode: "figma_paste"',
+    'figmaSourceMode: "figma_plugin"',
+    "availablePipelines",
+    "defaultPipelineId",
+    "preview.url",
+    "artifacts.reproDir",
+    "quality-passport.json",
+    "The published package ships the runtime, templates, and public docs",
+    "PIPELINE_INPUT_UNSUPPORTED",
+    "W_SEMANTIC_COMPONENT_NOT_REUSABLE",
+    "src/parity/fixtures/golden/default/fintech-dashboard/figma.json",
+  ]) {
+    assert.match(demoGuideDoc, new RegExp(escapeRegExp(requiredTerm)));
+  }
+  assert.match(troubleshootingDoc, /template:tailwind:install/);
+  assert.match(troubleshootingDoc, /template:tailwind:typecheck/);
+  assert.match(troubleshootingDoc, /template:tailwind:build/);
 });
 
 test("docs: troubleshooting guide is linked from README and included in the published package", async () => {
-  const buildProfileScript = await readRepoFile("scripts/build-profile.mjs");
+  const packProfileContract = await readRepoFile(
+    "scripts/pack-profile-contract.mjs",
+  );
   const readmeDoc = await readRepoFile("README.md");
   const troubleshootingDoc = await readRepoFile("TROUBLESHOOTING.md");
   const nodeSection = extractMarkdownTopLevelSection(
@@ -346,7 +468,7 @@ test("docs: troubleshooting guide is linked from README and included in the publ
     "Template Dependency Issues",
   );
 
-  assert.match(buildProfileScript, /"TROUBLESHOOTING\.md"/);
+  assert.match(packProfileContract, /"TROUBLESHOOTING\.md"/);
   assert.match(readmeDoc, /\[TROUBLESHOOTING\.md\]\(TROUBLESHOOTING\.md\)/);
   assert.match(troubleshootingDoc, /^# TROUBLESHOOTING$/m);
   for (const section of [
@@ -383,11 +505,19 @@ test("docs: troubleshooting guide is linked from README and included in the publ
   assert.match(validateProjectSection ?? "", /pnpm run template:install/);
   assert.match(
     templateDependencySection ?? "",
-    /template\/react-mui-app\/pnpm-lock\.yaml/,
+    /`template\/react-tailwind-app`/,
   );
   assert.match(
     templateDependencySection ?? "",
-    /pnpm install --frozen-lockfile/,
+    /`template\/react-mui-app`/,
+  );
+  assert.match(
+    templateDependencySection ?? "",
+    /pnpm run template:tailwind:install/,
+  );
+  assert.match(
+    templateDependencySection ?? "",
+    /pnpm run template:install/,
   );
 });
 
@@ -406,7 +536,9 @@ test("docs: versioning policy stays aligned across README and changelogs", async
   const packageManifest = JSON.parse(await readRepoFile("package.json")) as {
     exports: Record<string, unknown>;
   };
-  const buildProfileScript = await readRepoFile("scripts/build-profile.mjs");
+  const packProfileContract = await readRepoFile(
+    "scripts/pack-profile-contract.mjs",
+  );
   const actualIsolationExports = EXPECTED_ISOLATION_RUNTIME_EXPORTS.filter(
     (exportName) => Object.prototype.hasOwnProperty.call(publicApi, exportName),
   ).sort();
@@ -428,7 +560,7 @@ test("docs: versioning policy stays aligned across README and changelogs", async
     readmeDoc,
     /\[contract migration guide\]\(docs\/migration-guide\.md\)/i,
   );
-  assert.match(buildProfileScript, /"docs\/migration-guide\.md"/);
+  assert.match(packProfileContract, /"docs\/migration-guide\.md"/);
   assert.match(migrationGuide, /CONTRACT_VERSION/);
   assert.match(migrationGuide, /workspace-dev\/contracts/);
   assert.match(migrationGuide, /CONTRACT_CHANGELOG\.md/);
@@ -978,7 +1110,9 @@ test("docs: Wave 4 multi-source API reference documents key exported contracts",
   const packageManifest = JSON.parse(await readRepoFile("package.json")) as {
     exports?: Record<string, unknown>;
   };
-  const buildProfileScript = await readRepoFile("scripts/build-profile.mjs");
+  const packProfileContract = await readRepoFile(
+    "scripts/pack-profile-contract.mjs",
+  );
   const testIntelligenceDoc = await readRepoFile("docs/test-intelligence.md");
   const readmeDoc = await readRepoFile("README.md");
   const complianceDoc = await readRepoFile("COMPLIANCE.md");
@@ -1372,7 +1506,7 @@ test("docs: Wave 4 multi-source API reference documents key exported contracts",
   ];
   for (const docPath of publishedDocs) {
     assert.ok(
-      buildProfileScript.includes(`"${docPath}"`),
+      packProfileContract.includes(`"${docPath}"`),
       `${docPath} must be included in the profile pack allowlist`,
     );
   }

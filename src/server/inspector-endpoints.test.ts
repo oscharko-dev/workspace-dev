@@ -10,7 +10,7 @@ import { fileURLToPath } from "node:url";
 const PACKAGE_ROOT = fileURLToPath(new URL("../../", import.meta.url));
 const FIXTURE_PATH = path.join(
   PACKAGE_ROOT,
-  "src/parity/fixtures/golden/prototype-navigation/figma.json",
+  "src/parity/fixtures/golden/rocket/prototype-navigation/figma.json",
 );
 const FIXTURE_PAYLOAD = readFileSync(FIXTURE_PATH, "utf8");
 
@@ -484,7 +484,7 @@ const assertCompletedFixtureArtifacts = async ({
       "string",
       `screen '${screen.id}' must include generatedFile mapping`,
     );
-    assert.equal(screen.generatedFile?.startsWith("src/screens/"), true);
+    assert.match(screen.generatedFile ?? "", /^src\/(pages|screens)\//);
     assert.equal(screen.generatedFile?.endsWith(".tsx"), true);
     assert.equal(
       screen.generatedFile?.startsWith("/"),
@@ -499,15 +499,18 @@ const assertCompletedFixtureArtifacts = async ({
 
   const filePaths = fileList.files.map((entry) => entry.path);
   assert.equal(filePaths.includes("src/App.tsx"), true);
-  assert.equal(filePaths.includes("src/screens/Home.tsx"), true);
-  assert.equal(filePaths.includes("src/screens/Details.tsx"), true);
+  assert.equal(filePaths.includes("src/pages/home.tsx"), true);
+  assert.equal(filePaths.includes("src/pages/details.tsx"), true);
   assert.equal(
     filePaths.some((entry) => /tailwind\.config/.test(entry)),
     false,
   );
   assert.equal(
     filePaths.some(
-      (entry) => (entry.endsWith(".css") || entry.endsWith(".scss")) && entry !== "src/theme/tokens.css",
+      (entry) =>
+        (entry.endsWith(".css") || entry.endsWith(".scss")) &&
+        entry !== "src/theme/tokens.css" &&
+        entry !== "src/styles.css",
     ),
     false,
   );
@@ -534,21 +537,21 @@ const assertCompletedFixtureArtifacts = async ({
   const screenDirFiles = await fetchFiles({
     baseUrl,
     jobId,
-    dir: "src/screens",
+    dir: "src/pages",
   });
   assert.equal(screenDirFiles.files.length >= 2, true);
   for (const file of screenDirFiles.files) {
-    assert.equal(file.path.startsWith("src/screens/"), true);
+    assert.equal(file.path.startsWith("src/pages/"), true);
   }
 
   const homeContent = await fetchGeneratedFile({
     baseUrl,
     jobId,
-    filePath: "src/screens/Home.tsx",
+    filePath: "src/pages/home.tsx",
   });
-  assert.equal(homeContent.includes("import"), true);
-  assert.equal(homeContent.includes("sx={"), true);
-  assert.equal(/className="[a-zA-Z]+-[a-zA-Z0-9-]+"/.test(homeContent), false);
+  assert.equal(homeContent.length > 0, true);
+  assert.equal(homeContent.includes("sx={"), false);
+  assert.equal(homeContent.includes("className"), true);
 
   const traversalResponse = await fetch(
     `${baseUrl}/workspace/jobs/${encodeURIComponent(jobId)}/files/src/..%2F..%2Fetc%2Fpasswd.ts`,
@@ -577,7 +580,7 @@ const assertCompletedFixtureArtifacts = async ({
   assert.equal(blockedExtensionResponse.status, 403);
 
   const missingFileResponse = await fetch(
-    `${baseUrl}/workspace/jobs/${encodeURIComponent(jobId)}/files/src/screens/DoesNotExist.tsx`,
+    `${baseUrl}/workspace/jobs/${encodeURIComponent(jobId)}/files/src/pages/does-not-exist.tsx`,
     { signal: AbortSignal.timeout(3_000) },
   );
   assert.equal(missingFileResponse.status, 404);
@@ -964,11 +967,11 @@ test(
       );
 
       const firstHomeContent = await fetch(
-        `${running.baseUrl}/workspace/jobs/${encodeURIComponent(firstJobId)}/files/${encodeURIComponent("src/screens/Home.tsx")}`,
+        `${running.baseUrl}/workspace/jobs/${encodeURIComponent(firstJobId)}/files/${encodeURIComponent("src/pages/home.tsx")}`,
         { signal: AbortSignal.timeout(5_000) },
       );
       const secondHomeContent = await fetch(
-        `${running.baseUrl}/workspace/jobs/${encodeURIComponent(secondJobId)}/files/${encodeURIComponent("src/screens/Home.tsx")}`,
+        `${running.baseUrl}/workspace/jobs/${encodeURIComponent(secondJobId)}/files/${encodeURIComponent("src/pages/home.tsx")}`,
         { signal: AbortSignal.timeout(5_000) },
       );
       assert.equal(firstHomeContent.status, 200);

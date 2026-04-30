@@ -1,0 +1,93 @@
+{
+  "schemaVersion": "1.0.0",
+  "pipelineId": "default",
+  "warnings": [
+    {
+      "code": "W_ABSOLUTE_LAYOUT_FALLBACK",
+      "nodeId": "cta-label-desktop",
+      "nodeName": "Label",
+      "message": "Absolute layout fallback used for 'Label' because no deterministic flex or grid structure could be inferred."
+    }
+  ],
+  "semanticComponents": [
+    {
+      "screenId": "screen-home-desktop",
+      "screenName": "Home Desktop",
+      "componentName": "FeatureCard",
+      "filePath": "src/components/FeatureCard.tsx",
+      "kind": "card",
+      "instanceNodeIds": [
+        "feature-1",
+        "feature-2",
+        "feature-3"
+      ],
+      "propNames": [
+        "featureTitle",
+        "featureDescription"
+      ]
+    }
+  ],
+  "semanticDiagnostics": [
+    {
+      "screenId": "screen-home-desktop",
+      "screenName": "Home Desktop",
+      "code": "W_SEMANTIC_COMPONENT_NOT_REUSABLE",
+      "nodeId": "hero-cta-desktop",
+      "nodeName": "CTA Button",
+      "message": "Default semantic synthesis kept 'CTA Button' inline because no matching reusable semantic structure was found."
+    },
+    {
+      "screenId": "screen-home-desktop",
+      "screenName": "Home Desktop",
+      "code": "W_SEMANTIC_COMPONENT_NOT_REUSABLE",
+      "nodeId": "features-desktop",
+      "nodeName": "Features Section",
+      "message": "Default semantic synthesis kept 'Features Section' inline because no matching reusable semantic structure was found."
+    }
+  ],
+  "screens": [
+    {
+      "screenId": "screen-home-desktop",
+      "screenName": "Home Desktop",
+      "rootLayoutKind": "flex",
+      "warnings": [
+        {
+          "code": "W_ABSOLUTE_LAYOUT_FALLBACK",
+          "nodeId": "cta-label-desktop",
+          "nodeName": "Label",
+          "message": "Absolute layout fallback used for 'Label' because no deterministic flex or grid structure could be inferred."
+        }
+      ],
+      "semanticComponents": [
+        {
+          "componentName": "FeatureCard",
+          "filePath": "src/components/FeatureCard.tsx",
+          "kind": "card",
+          "instanceNodeIds": [
+            "feature-1",
+            "feature-2",
+            "feature-3"
+          ],
+          "propNames": [
+            "featureTitle",
+            "featureDescription"
+          ]
+        }
+      ],
+      "semanticDiagnostics": [
+        {
+          "code": "W_SEMANTIC_COMPONENT_NOT_REUSABLE",
+          "nodeId": "hero-cta-desktop",
+          "nodeName": "CTA Button",
+          "message": "Default semantic synthesis kept 'CTA Button' inline because no matching reusable semantic structure was found."
+        },
+        {
+          "code": "W_SEMANTIC_COMPONENT_NOT_REUSABLE",
+          "nodeId": "features-desktop",
+          "nodeName": "Features Section",
+          "message": "Default semantic synthesis kept 'Features Section' inline because no matching reusable semantic structure was found."
+        }
+      ]
+    }
+  ]
+}

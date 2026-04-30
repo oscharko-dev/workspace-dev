@@ -28,8 +28,8 @@
     "@hookform/resolvers": "^5.2.2",
     "react": "^19.2.5",
     "react-dom": "^19.2.5",
-    "react-hook-form": "^7.72.1",
-    "react-router-dom": "^7.14.1",
+    "react-hook-form": "^7.74.0",
+    "react-router-dom": "^7.14.2",
     "web-vitals": "^5.2.0",
     "zod": "^4.3.6"
   },
@@ -56,9 +56,9 @@
     "jsdom": "^29.0.2",
     "lighthouse": "^13.1.0",
     "prettier": "^3.8.3",
-    "typescript": "^5.9.2",
+    "typescript": "^6.0.3",
     "typescript-eslint": "^8.58.2",
-    "vite": "^8.0.8",
+    "vite": "^8.0.10",
     "vitest": "^4.1.4"
   },
   "pnpm": {

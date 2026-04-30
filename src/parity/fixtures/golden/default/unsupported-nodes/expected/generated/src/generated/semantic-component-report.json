@@ -1,0 +1,168 @@
+{
+  "schemaVersion": "1.0.0",
+  "pipelineId": "default",
+  "screens": [
+    {
+      "screenId": "screen-profile",
+      "screenName": "Profile",
+      "components": [
+        {
+          "componentName": "StatusChipBadge",
+          "filePath": "src/components/StatusChipBadge.tsx",
+          "kind": "chip",
+          "instanceNodeIds": [
+            "chip-2",
+            "chip-4"
+          ],
+          "propNames": [
+            "label"
+          ]
+        },
+        {
+          "componentName": "StatusChipBadge2",
+          "filePath": "src/components/StatusChipBadge2.tsx",
+          "kind": "chip",
+          "instanceNodeIds": [
+            "chip-1",
+            "chip-3"
+          ],
+          "propNames": [
+            "label"
+          ]
+        }
+      ],
+      "diagnostics": [
+        {
+          "code": "W_SEMANTIC_COMPONENT_STRUCTURAL_FALLBACK",
+          "nodeId": "avatar-section",
+          "nodeName": "Avatar Section",
+          "message": "Default semantic synthesis rendered 'Avatar Section' with structural HTML because 'avatar' does not have a dedicated default Tailwind primitive yet."
+        },
+        {
+          "code": "W_SEMANTIC_COMPONENT_STRUCTURAL_FALLBACK",
+          "nodeId": "avatar",
+          "nodeName": "Avatar",
+          "message": "Default semantic synthesis rendered 'Avatar' with structural HTML because 'avatar' does not have a dedicated default Tailwind primitive yet."
+        },
+        {
+          "code": "W_SEMANTIC_COMPONENT_NOT_REUSABLE",
+          "nodeId": "stats-card-1",
+          "nodeName": "Stats Card",
+          "message": "Default semantic synthesis kept 'Stats Card' inline because no matching reusable semantic structure was found."
+        },
+        {
+          "code": "W_SEMANTIC_COMPONENT_NOT_REUSABLE",
+          "nodeId": "stats-card-2",
+          "nodeName": "Stats Card",
+          "message": "Default semantic synthesis kept 'Stats Card' inline because no matching reusable semantic structure was found."
+        },
+        {
+          "code": "W_SEMANTIC_COMPONENT_NOT_REUSABLE",
+          "nodeId": "stats-card-3",
+          "nodeName": "Stats Card",
+          "message": "Default semantic synthesis kept 'Stats Card' inline because no matching reusable semantic structure was found."
+        },
+        {
+          "code": "W_SEMANTIC_COMPONENT_NOT_REUSABLE",
+          "nodeId": "badge-item",
+          "nodeName": "Notification Badge",
+          "message": "Default semantic synthesis kept 'Notification Badge' inline because no matching reusable semantic structure was found."
+        },
+        {
+          "code": "W_SEMANTIC_COMPONENT_NOT_REUSABLE",
+          "nodeId": "badge-count",
+          "nodeName": "Badge",
+          "message": "Default semantic synthesis kept 'Badge' inline because no matching reusable semantic structure was found."
+        }
+      ]
+    }
+  ],
+  "components": [
+    {
+      "screenId": "screen-profile",
+      "screenName": "Profile",
+      "componentName": "StatusChipBadge",
+      "filePath": "src/components/StatusChipBadge.tsx",
+      "kind": "chip",
+      "instanceNodeIds": [
+        "chip-2",
+        "chip-4"
+      ],
+      "propNames": [
+        "label"
+      ]
+    },
+    {
+      "screenId": "screen-profile",
+      "screenName": "Profile",
+      "componentName": "StatusChipBadge2",
+      "filePath": "src/components/StatusChipBadge2.tsx",
+      "kind": "chip",
+      "instanceNodeIds": [
+        "chip-1",
+        "chip-3"
+      ],
+      "propNames": [
+        "label"
+      ]
+    }
+  ],
+  "diagnostics": [
+    {
+      "screenId": "screen-profile",
+      "screenName": "Profile",
+      "code": "W_SEMANTIC_COMPONENT_STRUCTURAL_FALLBACK",
+      "nodeId": "avatar-section",
+      "nodeName": "Avatar Section",
+      "message": "Default semantic synthesis rendered 'Avatar Section' with structural HTML because 'avatar' does not have a dedicated default Tailwind primitive yet."
+    },
+    {
+      "screenId": "screen-profile",
+      "screenName": "Profile",
+      "code": "W_SEMANTIC_COMPONENT_STRUCTURAL_FALLBACK",
+      "nodeId": "avatar",
+      "nodeName": "Avatar",
+      "message": "Default semantic synthesis rendered 'Avatar' with structural HTML because 'avatar' does not have a dedicated default Tailwind primitive yet."
+    },
+    {
+      "screenId": "screen-profile",
+      "screenName": "Profile",
+      "code": "W_SEMANTIC_COMPONENT_NOT_REUSABLE",
+      "nodeId": "stats-card-1",
+      "nodeName": "Stats Card",
+      "message": "Default semantic synthesis kept 'Stats Card' inline because no matching reusable semantic structure was found."
+    },
+    {
+      "screenId": "screen-profile",
+      "screenName": "Profile",
+      "code": "W_SEMANTIC_COMPONENT_NOT_REUSABLE",
+      "nodeId": "stats-card-2",
+      "nodeName": "Stats Card",
+      "message": "Default semantic synthesis kept 'Stats Card' inline because no matching reusable semantic structure was found."
+    },
+    {
+      "screenId": "screen-profile",
+      "screenName": "Profile",
+      "code": "W_SEMANTIC_COMPONENT_NOT_REUSABLE",
+      "nodeId": "stats-card-3",
+      "nodeName": "Stats Card",
+      "message": "Default semantic synthesis kept 'Stats Card' inline because no matching reusable semantic structure was found."
+    },
+    {
+      "screenId": "screen-profile",
+      "screenName": "Profile",
+      "code": "W_SEMANTIC_COMPONENT_NOT_REUSABLE",
+      "nodeId": "badge-item",
+      "nodeName": "Notification Badge",
+      "message": "Default semantic synthesis kept 'Notification Badge' inline because no matching reusable semantic structure was found."
+    },
+    {
+      "screenId": "screen-profile",
+      "screenName": "Profile",
+      "code": "W_SEMANTIC_COMPONENT_NOT_REUSABLE",
+      "nodeId": "badge-count",
+      "nodeName": "Badge",
+      "message": "Default semantic synthesis kept 'Badge' inline because no matching reusable semantic structure was found."
+    }
+  ]
+}

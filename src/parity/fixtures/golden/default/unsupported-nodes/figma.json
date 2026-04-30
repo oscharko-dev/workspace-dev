@@ -1,0 +1,269 @@
+{
+  "name": "Unsupported Pattern Coverage Board",
+  "document": {
+    "id": "0:0",
+    "type": "DOCUMENT",
+    "children": [
+      {
+        "id": "0:1",
+        "type": "CANVAS",
+        "name": "Page 1",
+        "children": [
+          {
+            "id": "screen-profile",
+            "type": "FRAME",
+            "name": "Profile",
+            "layoutMode": "VERTICAL",
+            "itemSpacing": 16,
+            "paddingTop": 24,
+            "paddingRight": 24,
+            "paddingBottom": 24,
+            "paddingLeft": 24,
+            "absoluteBoundingBox": { "x": 0, "y": 0, "width": 800, "height": 1000 },
+            "fills": [
+              {
+                "type": "SOLID",
+                "visible": true,
+                "color": { "r": 0.97, "g": 0.97, "b": 0.98, "a": 1 }
+              }
+            ],
+            "children": [
+              {
+                "id": "profile-title",
+                "type": "TEXT",
+                "name": "Title",
+                "characters": "Access Review",
+                "style": { "fontSize": 24, "fontWeight": 700, "fontFamily": "Roboto", "lineHeightPx": 32, "textAlignHorizontal": "LEFT" },
+                "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 0.13, "g": 0.13, "b": 0.13, "a": 1 } }],
+                "absoluteBoundingBox": { "x": 24, "y": 24, "width": 200, "height": 32 }
+              },
+              {
+                "id": "avatar-section",
+                "type": "FRAME",
+                "name": "Avatar Section",
+                "layoutMode": "HORIZONTAL",
+                "itemSpacing": 16,
+                "absoluteBoundingBox": { "x": 24, "y": 72, "width": 752, "height": 80 },
+                "children": [
+                  {
+                    "id": "avatar",
+                    "type": "ELLIPSE",
+                    "name": "Avatar",
+                    "absoluteBoundingBox": { "x": 24, "y": 72, "width": 64, "height": 64 },
+                    "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 0.38, "g": 0.49, "b": 0.96, "a": 1 } }]
+                  },
+                  {
+                    "id": "avatar-info",
+                    "type": "FRAME",
+                    "name": "Info",
+                    "layoutMode": "VERTICAL",
+                    "itemSpacing": 4,
+                    "absoluteBoundingBox": { "x": 104, "y": 72, "width": 400, "height": 64 },
+                    "children": [
+                      {
+                        "id": "user-name",
+                        "type": "TEXT",
+                        "name": "Name",
+                        "characters": "Demo Reviewer",
+                        "style": { "fontSize": 20, "fontWeight": 600, "fontFamily": "Roboto", "lineHeightPx": 28, "textAlignHorizontal": "LEFT" },
+                        "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 0.13, "g": 0.13, "b": 0.13, "a": 1 } }],
+                        "absoluteBoundingBox": { "x": 104, "y": 72, "width": 200, "height": 28 }
+                      },
+                      {
+                        "id": "user-role",
+                        "type": "TEXT",
+                        "name": "Role",
+                        "characters": "Risk Operations",
+                        "style": { "fontSize": 14, "fontWeight": 400, "fontFamily": "Roboto", "lineHeightPx": 20, "textAlignHorizontal": "LEFT" },
+                        "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 0.46, "g": 0.46, "b": 0.46, "a": 1 } }],
+                        "absoluteBoundingBox": { "x": 104, "y": 104, "width": 200, "height": 20 }
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "id": "stats-card-1",
+                "type": "FRAME",
+                "name": "Stats Card",
+                "layoutMode": "VERTICAL",
+                "itemSpacing": 8,
+                "cornerRadius": 12,
+                "absoluteBoundingBox": { "x": 24, "y": 168, "width": 240, "height": 120 },
+                "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 1, "g": 1, "b": 1, "a": 1 } }],
+                "children": [
+                  {
+                    "id": "stat1-label",
+                    "type": "TEXT",
+                    "name": "Label",
+                    "characters": "Queues",
+                    "style": { "fontSize": 14, "fontWeight": 500, "fontFamily": "Roboto", "lineHeightPx": 20, "textAlignHorizontal": "LEFT" },
+                    "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 0.46, "g": 0.46, "b": 0.46, "a": 1 } }],
+                    "absoluteBoundingBox": { "x": 40, "y": 184, "width": 80, "height": 20 }
+                  },
+                  {
+                    "id": "stat1-value",
+                    "type": "TEXT",
+                    "name": "Value",
+                    "characters": "42",
+                    "style": { "fontSize": 36, "fontWeight": 700, "fontFamily": "Roboto", "lineHeightPx": 44, "textAlignHorizontal": "LEFT" },
+                    "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 0.13, "g": 0.13, "b": 0.13, "a": 1 } }],
+                    "absoluteBoundingBox": { "x": 40, "y": 212, "width": 60, "height": 44 }
+                  }
+                ]
+              },
+              {
+                "id": "stats-card-2",
+                "type": "FRAME",
+                "name": "Stats Card",
+                "layoutMode": "VERTICAL",
+                "itemSpacing": 8,
+                "cornerRadius": 12,
+                "absoluteBoundingBox": { "x": 280, "y": 168, "width": 240, "height": 120 },
+                "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 1, "g": 1, "b": 1, "a": 1 } }],
+                "children": [
+                  {
+                    "id": "stat2-label",
+                    "type": "TEXT",
+                    "name": "Label",
+                    "characters": "Checks",
+                    "style": { "fontSize": 14, "fontWeight": 500, "fontFamily": "Roboto", "lineHeightPx": 20, "textAlignHorizontal": "LEFT" },
+                    "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 0.46, "g": 0.46, "b": 0.46, "a": 1 } }],
+                    "absoluteBoundingBox": { "x": 296, "y": 184, "width": 120, "height": 20 }
+                  },
+                  {
+                    "id": "stat2-value",
+                    "type": "TEXT",
+                    "name": "Value",
+                    "characters": "1,284",
+                    "style": { "fontSize": 36, "fontWeight": 700, "fontFamily": "Roboto", "lineHeightPx": 44, "textAlignHorizontal": "LEFT" },
+                    "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 0.13, "g": 0.13, "b": 0.13, "a": 1 } }],
+                    "absoluteBoundingBox": { "x": 296, "y": 212, "width": 100, "height": 44 }
+                  }
+                ]
+              },
+              {
+                "id": "stats-card-3",
+                "type": "FRAME",
+                "name": "Stats Card",
+                "layoutMode": "VERTICAL",
+                "itemSpacing": 8,
+                "cornerRadius": 12,
+                "absoluteBoundingBox": { "x": 536, "y": 168, "width": 240, "height": 120 },
+                "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 1, "g": 1, "b": 1, "a": 1 } }],
+                "children": [
+                  {
+                    "id": "stat3-label",
+                    "type": "TEXT",
+                    "name": "Label",
+                    "characters": "Approvals",
+                    "style": { "fontSize": 14, "fontWeight": 500, "fontFamily": "Roboto", "lineHeightPx": 20, "textAlignHorizontal": "LEFT" },
+                    "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 0.46, "g": 0.46, "b": 0.46, "a": 1 } }],
+                    "absoluteBoundingBox": { "x": 552, "y": 184, "width": 80, "height": 20 }
+                  },
+                  {
+                    "id": "stat3-value",
+                    "type": "TEXT",
+                    "name": "Value",
+                    "characters": "89",
+                    "style": { "fontSize": 36, "fontWeight": 700, "fontFamily": "Roboto", "lineHeightPx": 44, "textAlignHorizontal": "LEFT" },
+                    "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 0.13, "g": 0.13, "b": 0.13, "a": 1 } }],
+                    "absoluteBoundingBox": { "x": 552, "y": 212, "width": 50, "height": 44 }
+                  }
+                ]
+              },
+              {
+                "id": "divider-1",
+                "type": "LINE",
+                "name": "Divider",
+                "absoluteBoundingBox": { "x": 24, "y": 304, "width": 752, "height": 1 },
+                "fills": [],
+                "strokes": [{ "type": "SOLID", "visible": true, "color": { "r": 0.88, "g": 0.88, "b": 0.88, "a": 1 } }],
+                "strokeWeight": 1
+              },
+              {
+                "id": "chip-section",
+                "type": "FRAME",
+                "name": "Skills",
+                "layoutMode": "HORIZONTAL",
+                "itemSpacing": 8,
+                "absoluteBoundingBox": { "x": 24, "y": 321, "width": 752, "height": 40 },
+                "children": [
+                  {
+                    "id": "chip-1",
+                    "type": "FRAME",
+                    "name": "Status Chip",
+                    "cornerRadius": 16,
+                    "absoluteBoundingBox": { "x": 24, "y": 321, "width": 80, "height": 32 },
+                    "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 0.91, "g": 0.93, "b": 0.99, "a": 1 } }],
+                    "children": [
+                      { "id": "chip-1-label", "type": "TEXT", "name": "Label", "characters": "Payments", "style": { "fontSize": 13, "fontWeight": 500, "fontFamily": "Roboto", "lineHeightPx": 18, "textAlignHorizontal": "CENTER" }, "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 0.24, "g": 0.32, "b": 0.71, "a": 1 } }], "absoluteBoundingBox": { "x": 40, "y": 328, "width": 48, "height": 18 } }
+                    ]
+                  },
+                  {
+                    "id": "chip-2",
+                    "type": "FRAME",
+                    "name": "Status Chip",
+                    "cornerRadius": 16,
+                    "absoluteBoundingBox": { "x": 112, "y": 321, "width": 100, "height": 32 },
+                    "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 0.91, "g": 0.93, "b": 0.99, "a": 1 } }],
+                    "children": [
+                      { "id": "chip-2-label", "type": "TEXT", "name": "Label", "characters": "Limits", "style": { "fontSize": 13, "fontWeight": 500, "fontFamily": "Roboto", "lineHeightPx": 18, "textAlignHorizontal": "CENTER" }, "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 0.24, "g": 0.32, "b": 0.71, "a": 1 } }], "absoluteBoundingBox": { "x": 128, "y": 328, "width": 68, "height": 18 } }
+                    ]
+                  },
+                  {
+                    "id": "chip-3",
+                    "type": "FRAME",
+                    "name": "Status Chip",
+                    "cornerRadius": 16,
+                    "absoluteBoundingBox": { "x": 220, "y": 321, "width": 80, "height": 32 },
+                    "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 0.91, "g": 0.93, "b": 0.99, "a": 1 } }],
+                    "children": [
+                      { "id": "chip-3-label", "type": "TEXT", "name": "Label", "characters": "Cards", "style": { "fontSize": 13, "fontWeight": 500, "fontFamily": "Roboto", "lineHeightPx": 18, "textAlignHorizontal": "CENTER" }, "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 0.24, "g": 0.32, "b": 0.71, "a": 1 } }], "absoluteBoundingBox": { "x": 236, "y": 328, "width": 48, "height": 18 } }
+                    ]
+                  },
+                  {
+                    "id": "chip-4",
+                    "type": "FRAME",
+                    "name": "Status Chip",
+                    "cornerRadius": 16,
+                    "absoluteBoundingBox": { "x": 308, "y": 321, "width": 100, "height": 32 },
+                    "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 0.91, "g": 0.93, "b": 0.99, "a": 1 } }],
+                    "children": [
+                      { "id": "chip-4-label", "type": "TEXT", "name": "Label", "characters": "Audit", "style": { "fontSize": 13, "fontWeight": 500, "fontFamily": "Roboto", "lineHeightPx": 18, "textAlignHorizontal": "CENTER" }, "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 0.24, "g": 0.32, "b": 0.71, "a": 1 } }], "absoluteBoundingBox": { "x": 324, "y": 328, "width": 68, "height": 18 } }
+                    ]
+                  }
+                ]
+              },
+              {
+                "id": "badge-item",
+                "type": "FRAME",
+                "name": "Notification Badge",
+                "absoluteBoundingBox": { "x": 24, "y": 377, "width": 48, "height": 48 },
+                "children": [
+                  {
+                    "id": "badge-icon",
+                    "type": "ELLIPSE",
+                    "name": "Icon",
+                    "absoluteBoundingBox": { "x": 24, "y": 377, "width": 40, "height": 40 },
+                    "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 0.85, "g": 0.85, "b": 0.85, "a": 1 } }]
+                  },
+                  {
+                    "id": "badge-count",
+                    "type": "ELLIPSE",
+                    "name": "Badge",
+                    "absoluteBoundingBox": { "x": 52, "y": 377, "width": 20, "height": 20 },
+                    "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 0.96, "g": 0.26, "b": 0.21, "a": 1 } }],
+                    "children": [
+                      { "id": "badge-text", "type": "TEXT", "name": "Count", "characters": "3", "style": { "fontSize": 12, "fontWeight": 600, "fontFamily": "Roboto", "lineHeightPx": 16, "textAlignHorizontal": "CENTER" }, "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 1, "g": 1, "b": 1, "a": 1 } }], "absoluteBoundingBox": { "x": 58, "y": 379, "width": 8, "height": 16 } }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -1326,7 +1326,13 @@ test("runProjectValidationWithDeps runs ui validation when enabled", async () =>
   });
 
   assert.equal(calls.includes("pnpm run validate:ui"), true);
+  assert.equal(calls.includes("pnpm run --if-present validate:playwright"), true);
   assert.deepEqual(result.validateUi?.args, ["run", "validate:ui"]);
+  assert.deepEqual(result.validatePlaywright?.args, [
+    "run",
+    "--if-present",
+    "validate:playwright"
+  ]);
 });
 
 test("runProjectValidationWithDeps configures deterministic ui gate report paths when jobDir is available", async () => {
@@ -1335,7 +1341,7 @@ test("runProjectValidationWithDeps configures deterministic ui gate report paths
     env?: NodeJS.ProcessEnv;
   }> = [];
   const jobDir = "/tmp/workspace-dev-job";
-  const { reportPath, baselinePath } = getUiGateReportPaths({ jobDir });
+  const { artifactDir, reportPath, baselinePath } = getUiGateReportPaths({ jobDir });
 
   await runProjectValidationWithDeps({
     generatedProjectDir: "/tmp/generated-project",
@@ -1365,6 +1371,24 @@ test("runProjectValidationWithDeps configures deterministic ui gate report paths
   assert.notEqual(uiValidationCall, undefined);
   assert.equal(uiValidationCall?.env?.FIGMAPIPE_UI_GATE_REPORT_PATH, reportPath);
   assert.equal(uiValidationCall?.env?.FIGMAPIPE_UI_GATE_BASELINE_PATH, baselinePath);
+  assert.equal(
+    uiValidationCall?.env?.FIGMAPIPE_UI_GATE_VISUAL_AUDIT_ARTIFACT_DIR,
+    path.join(artifactDir, "visual-audit")
+  );
+
+  const playwrightValidationCall = calls.find(
+    (call) =>
+      call.args[0] === "run" &&
+      call.args[1] === "--if-present" &&
+      call.args[2] === "validate:playwright"
+  );
+  assert.notEqual(playwrightValidationCall, undefined);
+  assert.equal(playwrightValidationCall?.env?.FIGMAPIPE_UI_GATE_REPORT_PATH, reportPath);
+  assert.equal(playwrightValidationCall?.env?.FIGMAPIPE_UI_GATE_BASELINE_PATH, baselinePath);
+  assert.equal(
+    playwrightValidationCall?.env?.FIGMAPIPE_UI_GATE_VISUAL_AUDIT_ARTIFACT_DIR,
+    path.join(artifactDir, "visual-audit")
+  );
 });
 
 test("runProjectValidationWithDeps runs unit tests when enabled", async () => {

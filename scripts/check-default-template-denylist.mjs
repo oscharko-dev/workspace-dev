@@ -96,12 +96,12 @@ const SOURCE_DENYLIST_PATTERNS = [
   {
     category: "customer",
     pattern:
-      /(?:from\s+|import\s*\(|import\s+|require\s*\()\s*["']@customer(?:\/|["'])/,
+      /(?:from\s+|import\s*\(|import\s+|require\s*\()\s*["'](?:@customer(?:\/|["'])|customer-profile(?:\/|["'])|@figmapipe\/customer(?:[-/]|["']))/,
   },
   {
     category: "rocket",
     pattern:
-      /(?:from\s+|import\s*\(|import\s+|require\s*\()\s*["']@rocket(?:\/|["'])/,
+      /(?:from\s+|import\s*\(|import\s+|require\s*\()\s*["'](?:@rocket(?:\/|["'])|@figmapipe\/rocket(?:[-/]|["']))/,
   },
   {
     category: "telemetry",

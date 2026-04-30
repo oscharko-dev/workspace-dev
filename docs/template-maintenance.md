@@ -43,6 +43,15 @@ pnpm run verify:lockfile-hosts
 pnpm run verify:docs-template-stack
 ```
 
+`template:tailwind:validate:playwright` runs the generated app through the
+desktop, tablet, and mobile Chromium viewport matrix. The gate captures
+reviewer-visible screenshots, checks for horizontal layout collapse, enforces a
+stable recapture diff threshold, and writes visual audit reports under
+`template/react-tailwind-app/artifacts/visual-audit/`.
+When `validate.project` runs with `enableUiValidation=true`, generated default
+apps reuse the same optional `validate:playwright` script and place these
+artifacts under the job's `ui-gate/visual-audit/` directory.
+
 When the update can affect generated output, also run golden fixture parity:
 
 ```bash
@@ -55,6 +64,7 @@ also run the generated-app validation path:
 ```bash
 pnpm benchmark:visual
 pnpm --dir template/react-mui-app run perf:assert
+pnpm run perf:web:tailwind:baseline:gate
 pnpm run perf:web:tailwind:assert
 ```
 
@@ -73,6 +83,7 @@ pnpm run template:tailwind:test
 pnpm run template:tailwind:build
 pnpm run template:tailwind:validate:ui
 pnpm run template:tailwind:validate:playwright
+pnpm run perf:web:tailwind:baseline:gate
 pnpm run perf:web:tailwind:assert
 pnpm exec tsx --test src/react-tailwind-template.test.ts
 node --test scripts/check-default-template-denylist.test.mjs
@@ -122,8 +133,10 @@ in the PR before adding an explicit narrow exception to
 ## Automation
 
 `.github/workflows/template-dependency-freshness.yml` runs weekly and can also
-be dispatched manually. It checks `template/react-mui-app/package.json` and the
-checked-in `template/react-mui-app/pnpm-lock.yaml` against npm registry publish
+be dispatched manually. It checks `template/react-mui-app/package.json` and
+`template/react-mui-app/pnpm-lock.yaml`, plus
+`template/react-tailwind-app/package.json` and
+`template/react-tailwind-app/pnpm-lock.yaml`, against npm registry publish
 times, then opens or updates a GitHub issue when a same-major minor or patch
 update has been available for more than 30 days and the lockfile baseline has
 not caught up.

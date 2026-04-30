@@ -57,6 +57,9 @@ jobs:
       - name: Install Tailwind template dependencies
         run: pnpm --dir template/react-tailwind-app install --frozen-lockfile --ignore-scripts
 
+      - name: Enforce Tailwind template dependency denylist
+        run: pnpm run template:tailwind:dependency-denylist
+
       - name: Enforce dependency vulnerability gate
         run: pnpm audit --audit-level high
 
@@ -107,6 +110,9 @@ jobs:
           pnpm run lint:no-telemetry
           pnpm run lint:secrets:all
           pnpm run build
+          pnpm run lint:secrets:profiles
+          pnpm run lint:publint
+          pnpm run lint:types-publish
           pnpm run lint:size
           pnpm run verify:fips
           pnpm run verify:profile-gates
@@ -167,15 +173,28 @@ jobs:
       - name: Build template app
         run: pnpm --dir "${{ matrix.template.packageDir }}" run build
 
+      - name: Capture web performance baseline
+        env:
+          FIGMAPIPE_PERF_ARTIFACT_DIR: artifacts/performance
+          FIGMAPIPE_PERF_BASELINE_PATH: artifacts/performance/perf-measured-baseline.json
+          FIGMAPIPE_PERF_REPORT_PATH: artifacts/performance/perf-baseline-report.json
+          FIGMAPIPE_PERF_STRICT: "false"
+          FIGMAPIPE_PERF_ALLOW_BASELINE_BOOTSTRAP: "true"
+        run: pnpm --dir "${{ matrix.template.packageDir }}" run perf:baseline
+
       - name: Assert web performance budgets and regression
         env:
-          FIGMAPIPE_PERF_ARTIFACT_DIR: ${{ matrix.template.packageDir }}/artifacts/performance
-          FIGMAPIPE_PERF_BASELINE_PATH: ${{ matrix.template.packageDir }}/perf-baseline.json
+          FIGMAPIPE_PERF_ARTIFACT_DIR: artifacts/performance
+          FIGMAPIPE_PERF_BASELINE_PATH: perf-baseline.json
           FIGMAPIPE_PERF_STRICT: "true"
           FIGMAPIPE_PERF_ALLOW_BASELINE_BOOTSTRAP: "false"
         run: pnpm --dir "${{ matrix.template.packageDir }}" run perf:assert
 
-      - name: Summarize web performance report
+      - name: Summarize web performance baseline report
+        if: always()
+        run: node scripts/print-perf-report-summary.mjs "${{ matrix.template.packageDir }}/artifacts/performance/perf-baseline-report.json"
+
+      - name: Summarize web performance assertion report
         if: always()
         run: node scripts/print-perf-report-summary.mjs "${{ matrix.template.packageDir }}/artifacts/performance/perf-assert-report.json"
 
@@ -288,6 +307,30 @@ jobs:
           EVIDENCE_DIR="${RUNNER_TEMP}/release-evidence"
           mkdir -p "${EVIDENCE_DIR}/sbom"
           echo "RELEASE_EVIDENCE_DIR=${EVIDENCE_DIR}" >> "$GITHUB_ENV"
+
+      - name: Generate CycloneDX SBOM
+        run: node scripts/generate-cyclonedx.mjs "${RELEASE_EVIDENCE_DIR}/sbom/workspace-dev.cdx.json"
+
+      - name: Generate React MUI template CycloneDX SBOM
+        run: node scripts/generate-cyclonedx.mjs "${RELEASE_EVIDENCE_DIR}/sbom/figma-generated-app-react-mui.cdx.json" --package-root template/react-mui-app --ignore-npm-errors
+
+      - name: Generate React Tailwind template CycloneDX SBOM
+        run: node scripts/generate-cyclonedx.mjs "${RELEASE_EVIDENCE_DIR}/sbom/figma-generated-app-react-tailwind.cdx.json" --package-root template/react-tailwind-app --ignore-npm-errors
+
+      - name: Generate SPDX SBOM
+        run: node scripts/generate-spdx.mjs "${RELEASE_EVIDENCE_DIR}/sbom/workspace-dev.spdx.json"
+
+      - name: Generate React MUI template SPDX SBOM
+        run: node scripts/generate-spdx.mjs "${RELEASE_EVIDENCE_DIR}/sbom/figma-generated-app-react-mui.spdx.json" --package-root template/react-mui-app
+
+      - name: Generate React Tailwind template SPDX SBOM
+        run: node scripts/generate-spdx.mjs "${RELEASE_EVIDENCE_DIR}/sbom/figma-generated-app-react-tailwind.spdx.json" --package-root template/react-tailwind-app
+
+      - name: Generate profile SBOMs
+        run: node scripts/generate-profile-sboms.mjs --output-directory "${RELEASE_EVIDENCE_DIR}/sbom/profiles"
+
+      - name: Verify SBOM parity
+        run: node scripts/check-sbom-parity.mjs --directory "${RELEASE_EVIDENCE_DIR}/sbom"
 
       - name: Run profile release gates
         shell: bash

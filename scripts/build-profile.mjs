@@ -17,6 +17,7 @@ import { fileURLToPath } from "node:url";
 import {
   distAllowlist,
   docsFileAllowlist,
+  createProfilePackageManifest,
   profileDefinitions,
   resolveBuildProfiles,
   rootFileAllowlist,
@@ -171,15 +172,7 @@ const createPackagedManifest = async (profile) => {
   const manifest = JSON.parse(
     await readFile(path.join(packageRoot, "package.json"), "utf8"),
   );
-  delete manifest.devDependencies;
-  delete manifest.files;
-  delete manifest.scripts;
-  manifest.workspaceDev = {
-    ...(manifest.workspaceDev ?? {}),
-    buildProfile: profile.id,
-    pipelineIds: profile.pipelineIds,
-  };
-  return `${JSON.stringify(manifest, null, 2)}\n`;
+  return `${JSON.stringify(createProfilePackageManifest(manifest, profile), null, 2)}\n`;
 };
 
 const stagePackage = async ({ profile, stagingRoot }) => {

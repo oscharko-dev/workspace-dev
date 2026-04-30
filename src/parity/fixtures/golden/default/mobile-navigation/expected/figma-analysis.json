@@ -1,0 +1,354 @@
+{
+  "artifactVersion": 1,
+  "sourceName": "Mobile Banking Navigation Board",
+  "summary": {
+    "pageCount": 1,
+    "sectionCount": 0,
+    "topLevelFrameCount": 11,
+    "totalNodeCount": 41,
+    "totalInstanceCount": 0,
+    "localComponentCount": 0,
+    "localStyleCount": 0,
+    "externalComponentCount": 0
+  },
+  "tokenSignals": {
+    "boundVariableIds": [],
+    "variableModeIds": [],
+    "styleReferences": {
+      "allStyleIds": [],
+      "byType": {
+        "fill": [],
+        "stroke": [],
+        "effect": [],
+        "text": [],
+        "generic": []
+      },
+      "localStyleIds": [],
+      "linkedStyleIds": []
+    }
+  },
+  "layoutGraph": {
+    "pages": [
+      {
+        "id": "0:1",
+        "name": "Page 1",
+        "sectionIds": [],
+        "frameIds": [
+          "screen-about",
+          "screen-feed",
+          "screen-home",
+          "screen-login",
+          "screen-notifications",
+          "screen-onboarding",
+          "screen-profile",
+          "screen-register",
+          "screen-search",
+          "screen-settings",
+          "screen-splash"
+        ]
+      }
+    ],
+    "sections": [],
+    "frames": [
+      {
+        "id": "screen-about",
+        "name": "About",
+        "pageId": "0:1",
+        "nodeType": "FRAME",
+        "layoutMode": "VERTICAL",
+        "width": 390,
+        "height": 844,
+        "directChildCount": 3,
+        "subtreeNodeCount": 4,
+        "instanceCount": 0
+      },
+      {
+        "id": "screen-feed",
+        "name": "Feed",
+        "pageId": "0:1",
+        "nodeType": "FRAME",
+        "layoutMode": "VERTICAL",
+        "width": 390,
+        "height": 844,
+        "directChildCount": 1,
+        "subtreeNodeCount": 2,
+        "instanceCount": 0
+      },
+      {
+        "id": "screen-home",
+        "name": "Home",
+        "pageId": "0:1",
+        "nodeType": "FRAME",
+        "layoutMode": "VERTICAL",
+        "width": 390,
+        "height": 844,
+        "directChildCount": 2,
+        "subtreeNodeCount": 3,
+        "instanceCount": 0
+      },
+      {
+        "id": "screen-login",
+        "name": "Login",
+        "pageId": "0:1",
+        "nodeType": "FRAME",
+        "layoutMode": "VERTICAL",
+        "width": 390,
+        "height": 844,
+        "directChildCount": 3,
+        "subtreeNodeCount": 6,
+        "instanceCount": 0
+      },
+      {
+        "id": "screen-notifications",
+        "name": "Notifications",
+        "pageId": "0:1",
+        "nodeType": "FRAME",
+        "layoutMode": "VERTICAL",
+        "width": 390,
+        "height": 844,
+        "directChildCount": 2,
+        "subtreeNodeCount": 3,
+        "instanceCount": 0
+      },
+      {
+        "id": "screen-onboarding",
+        "name": "Onboarding",
+        "pageId": "0:1",
+        "nodeType": "FRAME",
+        "layoutMode": "VERTICAL",
+        "width": 390,
+        "height": 844,
+        "directChildCount": 2,
+        "subtreeNodeCount": 3,
+        "instanceCount": 0
+      },
+      {
+        "id": "screen-profile",
+        "name": "Profile",
+        "pageId": "0:1",
+        "nodeType": "FRAME",
+        "layoutMode": "VERTICAL",
+        "width": 390,
+        "height": 844,
+        "directChildCount": 2,
+        "subtreeNodeCount": 3,
+        "instanceCount": 0
+      },
+      {
+        "id": "screen-register",
+        "name": "Register",
+        "pageId": "0:1",
+        "nodeType": "FRAME",
+        "layoutMode": "VERTICAL",
+        "width": 390,
+        "height": 844,
+        "directChildCount": 2,
+        "subtreeNodeCount": 4,
+        "instanceCount": 0
+      },
+      {
+        "id": "screen-search",
+        "name": "Search",
+        "pageId": "0:1",
+        "nodeType": "FRAME",
+        "layoutMode": "VERTICAL",
+        "width": 390,
+        "height": 844,
+        "directChildCount": 2,
+        "subtreeNodeCount": 4,
+        "instanceCount": 0
+      },
+      {
+        "id": "screen-settings",
+        "name": "Settings",
+        "pageId": "0:1",
+        "nodeType": "FRAME",
+        "layoutMode": "VERTICAL",
+        "width": 390,
+        "height": 844,
+        "directChildCount": 3,
+        "subtreeNodeCount": 4,
+        "instanceCount": 0
+      },
+      {
+        "id": "screen-splash",
+        "name": "Splash",
+        "pageId": "0:1",
+        "nodeType": "FRAME",
+        "layoutMode": "VERTICAL",
+        "width": 390,
+        "height": 844,
+        "directChildCount": 2,
+        "subtreeNodeCount": 3,
+        "instanceCount": 0
+      }
+    ],
+    "edges": [
+      {
+        "parentId": "0:1",
+        "parentType": "page",
+        "childId": "screen-about",
+        "childType": "frame"
+      },
+      {
+        "parentId": "0:1",
+        "parentType": "page",
+        "childId": "screen-feed",
+        "childType": "frame"
+      },
+      {
+        "parentId": "0:1",
+        "parentType": "page",
+        "childId": "screen-home",
+        "childType": "frame"
+      },
+      {
+        "parentId": "0:1",
+        "parentType": "page",
+        "childId": "screen-login",
+        "childType": "frame"
+      },
+      {
+        "parentId": "0:1",
+        "parentType": "page",
+        "childId": "screen-notifications",
+        "childType": "frame"
+      },
+      {
+        "parentId": "0:1",
+        "parentType": "page",
+        "childId": "screen-onboarding",
+        "childType": "frame"
+      },
+      {
+        "parentId": "0:1",
+        "parentType": "page",
+        "childId": "screen-profile",
+        "childType": "frame"
+      },
+      {
+        "parentId": "0:1",
+        "parentType": "page",
+        "childId": "screen-register",
+        "childType": "frame"
+      },
+      {
+        "parentId": "0:1",
+        "parentType": "page",
+        "childId": "screen-search",
+        "childType": "frame"
+      },
+      {
+        "parentId": "0:1",
+        "parentType": "page",
+        "childId": "screen-settings",
+        "childType": "frame"
+      },
+      {
+        "parentId": "0:1",
+        "parentType": "page",
+        "childId": "screen-splash",
+        "childType": "frame"
+      }
+    ]
+  },
+  "componentFamilies": [],
+  "externalComponents": [],
+  "frameVariantGroups": [],
+  "appShellSignals": [],
+  "componentDensity": {
+    "boardDominantFamilies": [],
+    "byFrame": [
+      {
+        "frameId": "screen-about",
+        "frameName": "About",
+        "subtreeNodeCount": 4,
+        "instanceCount": 0,
+        "density": 0,
+        "dominantFamilies": []
+      },
+      {
+        "frameId": "screen-feed",
+        "frameName": "Feed",
+        "subtreeNodeCount": 2,
+        "instanceCount": 0,
+        "density": 0,
+        "dominantFamilies": []
+      },
+      {
+        "frameId": "screen-home",
+        "frameName": "Home",
+        "subtreeNodeCount": 3,
+        "instanceCount": 0,
+        "density": 0,
+        "dominantFamilies": []
+      },
+      {
+        "frameId": "screen-login",
+        "frameName": "Login",
+        "subtreeNodeCount": 6,
+        "instanceCount": 0,
+        "density": 0,
+        "dominantFamilies": []
+      },
+      {
+        "frameId": "screen-notifications",
+        "frameName": "Notifications",
+        "subtreeNodeCount": 3,
+        "instanceCount": 0,
+        "density": 0,
+        "dominantFamilies": []
+      },
+      {
+        "frameId": "screen-onboarding",
+        "frameName": "Onboarding",
+        "subtreeNodeCount": 3,
+        "instanceCount": 0,
+        "density": 0,
+        "dominantFamilies": []
+      },
+      {
+        "frameId": "screen-profile",
+        "frameName": "Profile",
+        "subtreeNodeCount": 3,
+        "instanceCount": 0,
+        "density": 0,
+        "dominantFamilies": []
+      },
+      {
+        "frameId": "screen-register",
+        "frameName": "Register",
+        "subtreeNodeCount": 4,
+        "instanceCount": 0,
+        "density": 0,
+        "dominantFamilies": []
+      },
+      {
+        "frameId": "screen-search",
+        "frameName": "Search",
+        "subtreeNodeCount": 4,
+        "instanceCount": 0,
+        "density": 0,
+        "dominantFamilies": []
+      },
+      {
+        "frameId": "screen-settings",
+        "frameName": "Settings",
+        "subtreeNodeCount": 4,
+        "instanceCount": 0,
+        "density": 0,
+        "dominantFamilies": []
+      },
+      {
+        "frameId": "screen-splash",
+        "frameName": "Splash",
+        "subtreeNodeCount": 3,
+        "instanceCount": 0,
+        "density": 0,
+        "dominantFamilies": []
+      }
+    ],
+    "hotspots": []
+  },
+  "diagnostics": []
+}

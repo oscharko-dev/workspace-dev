@@ -288,6 +288,81 @@ test("runGuard: --all reports blocked tracked paths", () => {
   assert.ok(stderr.some((line) => line.includes(".env")));
 });
 
+test("runGuard: --all can scope template files by build profile", () => {
+  const stderr = [];
+  const stdout = [];
+  const exitCode = runGuard({
+    all: true,
+    profileIds: ["default"],
+    cwd: "/repo",
+    env: {},
+    execFile(command, args) {
+      assert.strictEqual(command, "git");
+      assert.deepStrictEqual(args, ["ls-files", "-z"]);
+      return [
+        "src/core.ts",
+        "template/react-mui-app/src/leak.ts",
+        "template/react-tailwind-app/src/clean.ts",
+        ""
+      ].join("\0");
+    },
+    readTextFile(filePath) {
+      if (filePath.endsWith("src/core.ts")) {
+        return "export const ok = true;\n";
+      }
+      if (filePath.endsWith("template/react-tailwind-app/src/clean.ts")) {
+        return "export const clean = true;\n";
+      }
+      if (filePath.endsWith("template/react-mui-app/src/leak.ts")) {
+        return "export const token = 'AKIAIOSFODNN7EXAMPLE';\n"; // pragma: allowlist secret
+      }
+      throw new Error(`unexpected read: ${filePath}`);
+    },
+    stdout(message) {
+      stdout.push(message);
+    },
+    stderr(message) {
+      stderr.push(message);
+    },
+  });
+
+  assert.strictEqual(exitCode, 0);
+  assert.match(stdout.join("\n"), /Passed for profile 'default'/);
+  assert.deepStrictEqual(stderr, []);
+});
+
+test("runGuard: --all reports selected profile template leaks", () => {
+  const stderr = [];
+  const exitCode = runGuard({
+    all: true,
+    profileIds: ["rocket"],
+    cwd: "/repo",
+    env: {},
+    execFile(command, args) {
+      assert.strictEqual(command, "git");
+      assert.deepStrictEqual(args, ["ls-files", "-z"]);
+      return "template/react-mui-app/src/leak.ts\0template/react-tailwind-app/src/clean.ts\0";
+    },
+    readTextFile(filePath) {
+      if (filePath.endsWith("template/react-mui-app/src/leak.ts")) {
+        return "export const token = 'AKIAIOSFODNN7EXAMPLE';\n"; // pragma: allowlist secret
+      }
+      if (filePath.endsWith("template/react-tailwind-app/src/clean.ts")) {
+        return "export const clean = true;\n";
+      }
+      throw new Error(`unexpected read: ${filePath}`);
+    },
+    stdout() {},
+    stderr(message) {
+      stderr.push(message);
+    },
+  });
+
+  assert.strictEqual(exitCode, 1);
+  assert.match(stderr.join("\n"), /template\/react-mui-app\/src\/leak\.ts:1/);
+  assert.doesNotMatch(stderr.join("\n"), /react-tailwind-app/);
+});
+
 // ── parseStagedDiff ─────────────────────────────────────────────────────────
 
 test("parseStagedDiff: extracts only added lines with file and line number", () => {

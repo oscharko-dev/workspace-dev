@@ -39,7 +39,10 @@ customer profiles, or storybook-first component mappings should submit jobs with
 `default` React + TypeScript + Tailwind pipeline and the `rocket` compatibility
 pipeline; plain omitted-`pipelineId` jobs resolve to `default`. Legacy
 omitted-`pipelineId` requests with Rocket-specific inputs follow the deprecated
-compatibility fallback documented in the migration guide.
+compatibility fallback documented in the migration guide. Maintainers should use
+the [pipeline authoring and migration guide](docs/default-pipeline/pipeline-authoring-and-migration.md)
+for future pipeline authoring, package-profile boundaries, Rocket migration, and
+fallback-removal policy.
 
 ## Repository branch flow
 
@@ -271,6 +274,11 @@ template scaffold for the selected build profile (`default`, `rocket`, or
 `node_modules`, and template build output do not ship. Template-local browser
 validation files may ship when a template exposes an explicit validation script
 that depends on them.
+Release gates run the package boundary per profile: pack validation, package
+metadata linting, type-resolution linting, tarball secret scanning, SBOM parity,
+license allowlisting, zero-telemetry scanning, reproducible build checks, and
+offline install smoke tests all cover `default`, `rocket`, and the normalized
+combined profile `default-rocket`.
 
 ## Frontend stack
 
@@ -325,6 +333,13 @@ Golden end-to-end fixtures validate deterministic output from `figma.json -> des
 
 - `pnpm run test:golden` compares generated artifacts against committed expected files.
 - `pnpm run test:golden:update` updates expected golden files intentionally via `FIGMAPIPE_GOLDEN_APPROVE=true`.
+- The default pipeline OSS-neutral financial demo pack is documented in
+  `docs/default-pipeline/default-demo-fixtures.md`.
+- The default pipeline evaluator runbook is documented in
+  `docs/default-pipeline/default-demo-guide.md`.
+- The maintainer guide for pipeline authoring, package profiles, Rocket
+  migration, and compatibility fallback policy is documented in
+  `docs/default-pipeline/pipeline-authoring-and-migration.md`.
 
 ## Scope and mode lock
 
@@ -634,6 +649,7 @@ Bundled templates include baseline + assertion pipelines:
 - `pnpm --dir template/react-mui-app run perf:assert`
 - `pnpm --dir template/react-tailwind-app run perf:baseline`
 - `pnpm --dir template/react-tailwind-app run perf:assert`
+- `pnpm run perf:web:tailwind:baseline:gate` captures the release-gate measured baseline artifact without changing the committed Tailwind baseline.
 
 Approved release baselines live beside each template, including `template/react-mui-app/perf-baseline.json` and `template/react-tailwind-app/perf-baseline.json`.
 Runtime performance reports are written to `template/<template-name>/artifacts/performance`.

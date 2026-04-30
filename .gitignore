@@ -9,6 +9,9 @@ coverage/
 storybook-static/
 test-results/
 playwright-report/
+**/.figmapipe/
+**/changed-surfaces-resolved.json
+**/ui-gate-*.json
 .nyc_output/
 .next/
 .turbo/

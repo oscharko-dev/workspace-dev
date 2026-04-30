@@ -1,0 +1,229 @@
+{
+  "name": "Transaction Table Board",
+  "document": {
+    "id": "0:0",
+    "type": "DOCUMENT",
+    "children": [
+      {
+        "id": "0:1",
+        "type": "CANVAS",
+        "name": "Page 1",
+        "children": [
+          {
+            "id": "screen-table",
+            "type": "FRAME",
+            "name": "TransactionTable",
+            "layoutMode": "VERTICAL",
+            "itemSpacing": 0,
+            "paddingTop": 16,
+            "paddingRight": 16,
+            "paddingBottom": 16,
+            "paddingLeft": 16,
+            "absoluteBoundingBox": { "x": 0, "y": 0, "width": 800, "height": 600 },
+            "fills": [
+              {
+                "type": "SOLID",
+                "visible": true,
+                "color": { "r": 1, "g": 1, "b": 1, "a": 1 }
+              }
+            ],
+            "children": [
+              {
+                "id": "table-title",
+                "type": "TEXT",
+                "name": "Title",
+                "characters": "Transactions",
+                "style": {
+                  "fontSize": 24,
+                  "fontWeight": 700,
+                  "fontFamily": "Inter",
+                  "lineHeightPx": 32,
+                  "textAlignHorizontal": "LEFT"
+                },
+                "fills": [
+                  {
+                    "type": "SOLID",
+                    "visible": true,
+                    "color": { "r": 0.11, "g": 0.12, "b": 0.14, "a": 1 }
+                  }
+                ],
+                "absoluteBoundingBox": { "x": 16, "y": 16, "width": 100, "height": 32 }
+              },
+              {
+                "id": "table-header",
+                "type": "FRAME",
+                "name": "Table Header",
+                "layoutMode": "HORIZONTAL",
+                "itemSpacing": 0,
+                "primaryAxisAlignItems": "SPACE_BETWEEN",
+                "counterAxisAlignItems": "CENTER",
+                "absoluteBoundingBox": { "x": 16, "y": 64, "width": 768, "height": 48 },
+                "fills": [
+                  {
+                    "type": "SOLID",
+                    "visible": true,
+                    "color": { "r": 0.96, "g": 0.96, "b": 0.97, "a": 1 }
+                  }
+                ],
+                "children": [
+                  {
+                    "id": "header-name",
+                    "type": "TEXT",
+                    "name": "Header Payment ID",
+                    "characters": "Payment ID",
+                    "style": { "fontSize": 14, "fontWeight": 600, "fontFamily": "Inter", "lineHeightPx": 20, "textAlignHorizontal": "LEFT" },
+                    "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 0.4, "g": 0.42, "b": 0.46, "a": 1 } }],
+                    "absoluteBoundingBox": { "x": 32, "y": 78, "width": 180, "height": 20 }
+                  },
+                  {
+                    "id": "header-email",
+                    "type": "TEXT",
+                    "name": "Header Counterparty",
+                    "characters": "Counterparty",
+                    "style": { "fontSize": 14, "fontWeight": 600, "fontFamily": "Inter", "lineHeightPx": 20, "textAlignHorizontal": "LEFT" },
+                    "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 0.4, "g": 0.42, "b": 0.46, "a": 1 } }],
+                    "absoluteBoundingBox": { "x": 228, "y": 78, "width": 200, "height": 20 }
+                  },
+                  {
+                    "id": "header-role",
+                    "type": "TEXT",
+                    "name": "Header Amount",
+                    "characters": "Amount",
+                    "style": { "fontSize": 14, "fontWeight": 600, "fontFamily": "Inter", "lineHeightPx": 20, "textAlignHorizontal": "LEFT" },
+                    "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 0.4, "g": 0.42, "b": 0.46, "a": 1 } }],
+                    "absoluteBoundingBox": { "x": 444, "y": 78, "width": 140, "height": 20 }
+                  },
+                  {
+                    "id": "header-status",
+                    "type": "TEXT",
+                    "name": "Header Status",
+                    "characters": "Status",
+                    "style": { "fontSize": 14, "fontWeight": 600, "fontFamily": "Inter", "lineHeightPx": 20, "textAlignHorizontal": "LEFT" },
+                    "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 0.4, "g": 0.42, "b": 0.46, "a": 1 } }],
+                    "absoluteBoundingBox": { "x": 600, "y": 78, "width": 168, "height": 20 }
+                  }
+                ]
+              },
+              {
+                "id": "table-row-1",
+                "type": "FRAME",
+                "name": "Table Row",
+                "layoutMode": "HORIZONTAL",
+                "itemSpacing": 0,
+                "primaryAxisAlignItems": "SPACE_BETWEEN",
+                "counterAxisAlignItems": "CENTER",
+                "absoluteBoundingBox": { "x": 16, "y": 112, "width": 768, "height": 52 },
+                "children": [
+                  {
+                    "id": "row1-name",
+                    "type": "TEXT",
+                    "name": "Cell Payment ID",
+                    "characters": "PAY-1042",
+                    "style": { "fontSize": 14, "fontWeight": 400, "fontFamily": "Inter", "lineHeightPx": 20, "textAlignHorizontal": "LEFT" },
+                    "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 0.11, "g": 0.12, "b": 0.14, "a": 1 } }],
+                    "absoluteBoundingBox": { "x": 32, "y": 128, "width": 180, "height": 20 }
+                  },
+                  {
+                    "id": "row1-email",
+                    "type": "TEXT",
+                    "name": "Cell Counterparty",
+                    "characters": "Demo Supplier A",
+                    "style": { "fontSize": 14, "fontWeight": 400, "fontFamily": "Inter", "lineHeightPx": 20, "textAlignHorizontal": "LEFT" },
+                    "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 0.11, "g": 0.12, "b": 0.14, "a": 1 } }],
+                    "absoluteBoundingBox": { "x": 228, "y": 128, "width": 200, "height": 20 }
+                  },
+                  {
+                    "id": "row1-role",
+                    "type": "TEXT",
+                    "name": "Cell Amount",
+                    "characters": "EUR 12,450",
+                    "style": { "fontSize": 14, "fontWeight": 400, "fontFamily": "Inter", "lineHeightPx": 20, "textAlignHorizontal": "LEFT" },
+                    "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 0.11, "g": 0.12, "b": 0.14, "a": 1 } }],
+                    "absoluteBoundingBox": { "x": 444, "y": 128, "width": 140, "height": 20 }
+                  },
+                  {
+                    "id": "row1-status",
+                    "type": "FRAME",
+                    "name": "Status Chip",
+                    "absoluteBoundingBox": { "x": 600, "y": 124, "width": 70, "height": 28 },
+                    "cornerRadius": 14,
+                    "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 0.87, "g": 0.96, "b": 0.87, "a": 1 } }],
+                    "children": [
+                      {
+                        "id": "row1-status-text",
+                        "type": "TEXT",
+                        "name": "Label",
+                        "characters": "Cleared",
+                        "style": { "fontSize": 12, "fontWeight": 500, "fontFamily": "Inter", "lineHeightPx": 16, "textAlignHorizontal": "CENTER" },
+                        "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 0.15, "g": 0.5, "b": 0.15, "a": 1 } }],
+                        "absoluteBoundingBox": { "x": 610, "y": 130, "width": 50, "height": 16 }
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "id": "table-row-2",
+                "type": "FRAME",
+                "name": "Table Row",
+                "layoutMode": "HORIZONTAL",
+                "itemSpacing": 0,
+                "primaryAxisAlignItems": "SPACE_BETWEEN",
+                "counterAxisAlignItems": "CENTER",
+                "absoluteBoundingBox": { "x": 16, "y": 164, "width": 768, "height": 52 },
+                "children": [
+                  {
+                    "id": "row2-name",
+                    "type": "TEXT",
+                    "name": "Cell Payment ID",
+                    "characters": "PAY-1043",
+                    "style": { "fontSize": 14, "fontWeight": 400, "fontFamily": "Inter", "lineHeightPx": 20, "textAlignHorizontal": "LEFT" },
+                    "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 0.11, "g": 0.12, "b": 0.14, "a": 1 } }],
+                    "absoluteBoundingBox": { "x": 32, "y": 180, "width": 180, "height": 20 }
+                  },
+                  {
+                    "id": "row2-email",
+                    "type": "TEXT",
+                    "name": "Cell Counterparty",
+                    "characters": "Demo Vendor B",
+                    "style": { "fontSize": 14, "fontWeight": 400, "fontFamily": "Inter", "lineHeightPx": 20, "textAlignHorizontal": "LEFT" },
+                    "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 0.11, "g": 0.12, "b": 0.14, "a": 1 } }],
+                    "absoluteBoundingBox": { "x": 228, "y": 180, "width": 200, "height": 20 }
+                  },
+                  {
+                    "id": "row2-role",
+                    "type": "TEXT",
+                    "name": "Cell Amount",
+                    "characters": "EUR 8,910",
+                    "style": { "fontSize": 14, "fontWeight": 400, "fontFamily": "Inter", "lineHeightPx": 20, "textAlignHorizontal": "LEFT" },
+                    "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 0.11, "g": 0.12, "b": 0.14, "a": 1 } }],
+                    "absoluteBoundingBox": { "x": 444, "y": 180, "width": 140, "height": 20 }
+                  },
+                  {
+                    "id": "row2-status",
+                    "type": "FRAME",
+                    "name": "Status Chip",
+                    "absoluteBoundingBox": { "x": 600, "y": 176, "width": 80, "height": 28 },
+                    "cornerRadius": 14,
+                    "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 1, "g": 0.93, "b": 0.82, "a": 1 } }],
+                    "children": [
+                      {
+                        "id": "row2-status-text",
+                        "type": "TEXT",
+                        "name": "Label",
+                        "characters": "Review",
+                        "style": { "fontSize": 12, "fontWeight": 500, "fontFamily": "Inter", "lineHeightPx": 16, "textAlignHorizontal": "CENTER" },
+                        "fills": [{ "type": "SOLID", "visible": true, "color": { "r": 0.8, "g": 0.5, "b": 0, "a": 1 } }],
+                        "absoluteBoundingBox": { "x": 608, "y": 182, "width": 56, "height": 16 }
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

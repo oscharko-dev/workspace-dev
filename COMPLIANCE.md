@@ -67,6 +67,12 @@ Each release candidate must provide:
     - Inspector summary projection of the same quality passport for local
       audit and support workflows.
 - Supply-chain evidence:
+    - CycloneDX SBOM (`artifacts/sbom/workspace-dev.cdx.json`)
+    - SPDX SBOM (`artifacts/sbom/workspace-dev.spdx.json`)
+    - Profile CycloneDX/SPDX SBOM pairs for `default`, `rocket`, and
+      `default-rocket` under `artifacts/sbom/profiles/`
+    - React MUI template SBOM (`artifacts/sbom/figma-generated-app-react-mui.cdx.json` and `.spdx.json`)
+    - React Tailwind template SBOM (`artifacts/sbom/figma-generated-app-react-tailwind.cdx.json` and `.spdx.json`)
     - Profile-scoped CycloneDX and SPDX SBOMs under
       `artifacts/sbom/<profile>/` for each selected release profile
     - Signature verification (`npm audit signatures`)
@@ -87,10 +93,10 @@ secret-free, and independently reviewable.
 ## License Allowlist Policy
 
 `pnpm run verify:licenses` enforces the manifest license for `workspace-dev`,
-`template/react-mui-app`, and `template/react-tailwind-app`, then scans both
-installed template dependency trees transitively from `node_modules`. The
-profile release gate calls the same policy with `--profile` so `default` checks
-the Tailwind template tree, `rocket` checks the MUI template tree, and
+`template/react-mui-app`, and `template/react-tailwind-app`, then scans the
+installed template dependency trees selected by the active profile set. The
+profile release gate calls the same policy with `--profile` so `default`
+checks the Tailwind template tree, `rocket` checks the MUI template tree, and
 `default-rocket` checks both.
 
 Approved license expressions for the shipped template graph:

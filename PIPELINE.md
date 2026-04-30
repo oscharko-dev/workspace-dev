@@ -46,6 +46,8 @@ flowchart TB
 ## Maintainer authoring contract
 
 Pipeline authors extend `workspace-dev` by choosing implementations behind the shared stages, not by changing the public stage graph.
+For the end-to-end authoring, packaging, Rocket migration, and compatibility fallback runbook, see
+[`docs/default-pipeline/pipeline-authoring-and-migration.md`](docs/default-pipeline/pipeline-authoring-and-migration.md).
 The registry selects a pipeline definition and that definition returns submission, regeneration, and retry plans, but every returned plan must preserve the canonical seven-stage order:
 
 1. `figma.source`

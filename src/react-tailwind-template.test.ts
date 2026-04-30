@@ -58,7 +58,7 @@ test("react-tailwind template manifest exposes the expected OSS stack", async ()
   );
   assert.equal(
     packageJson.scripts?.["validate:playwright"],
-    "playwright test --project=chromium",
+    "playwright test",
   );
   assert.equal(
     packageJson.scripts?.["perf:baseline"],

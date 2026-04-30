@@ -1,0 +1,10 @@
+{
+  "screens": [
+    {
+      "screenId": "screen-products",
+      "screenName": "PaymentAuthorizations",
+      "file": "src/pages/paymentauthorizations.tsx",
+      "components": []
+    }
+  ]
+}

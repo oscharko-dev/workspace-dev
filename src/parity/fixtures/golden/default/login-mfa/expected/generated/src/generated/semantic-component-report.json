@@ -1,0 +1,44 @@
+{
+  "schemaVersion": "1.0.0",
+  "pipelineId": "default",
+  "screens": [
+    {
+      "screenId": "screen-login",
+      "screenName": "Login",
+      "components": [],
+      "diagnostics": [
+        {
+          "code": "W_SEMANTIC_COMPONENT_NOT_REUSABLE",
+          "nodeId": "email-field",
+          "nodeName": "Text Field",
+          "message": "Default semantic synthesis kept 'Text Field' inline because no matching reusable semantic structure was found."
+        },
+        {
+          "code": "W_SEMANTIC_COMPONENT_NOT_REUSABLE",
+          "nodeId": "submit-button",
+          "nodeName": "Primary Button",
+          "message": "Default semantic synthesis kept 'Primary Button' inline because no matching reusable semantic structure was found."
+        }
+      ]
+    }
+  ],
+  "components": [],
+  "diagnostics": [
+    {
+      "screenId": "screen-login",
+      "screenName": "Login",
+      "code": "W_SEMANTIC_COMPONENT_NOT_REUSABLE",
+      "nodeId": "email-field",
+      "nodeName": "Text Field",
+      "message": "Default semantic synthesis kept 'Text Field' inline because no matching reusable semantic structure was found."
+    },
+    {
+      "screenId": "screen-login",
+      "screenName": "Login",
+      "code": "W_SEMANTIC_COMPONENT_NOT_REUSABLE",
+      "nodeId": "submit-button",
+      "nodeName": "Primary Button",
+      "message": "Default semantic synthesis kept 'Primary Button' inline because no matching reusable semantic structure was found."
+    }
+  ]
+}

@@ -29,6 +29,11 @@ const BASE_SCAN_ROOTS = [
   path.resolve(packageRoot, "scripts"),
 ];
 
+const TEMPLATE_SCAN_ROOTS = {
+  "react-mui-app": path.resolve(packageRoot, "template/react-mui-app"),
+  "react-tailwind-app": path.resolve(packageRoot, "template/react-tailwind-app"),
+};
+
 // ── File extensions to include / skip (AC-1.2) ──────────────────────────────
 const INCLUDE_EXTENSIONS = new Set([".ts", ".tsx", ".js", ".mjs"]);
 const TEST_FILE_SUFFIXES = [
@@ -158,6 +163,8 @@ const collectFiles = async (dir) => {
   return files;
 };
 
+const parseArgs = (argv = process.argv.slice(2)) => parseProfileGateArgs(argv).profileIds;
+
 const toRelativePosix = (filePath) => {
   return path.relative(packageRoot, filePath).split(path.sep).join("/");
 };
@@ -246,11 +253,6 @@ const findViolationsInLine = (line) => {
   return findings;
 };
 
-const parseArgs = () => {
-  const { profileIds } = parseProfileGateArgs(process.argv.slice(2));
-  return { profileIds };
-};
-
 const resolveScanRoots = (profileIds) => {
   const templateRoots = new Set();
   for (const profile of profilesFromIds(profileIds)) {
@@ -264,11 +266,9 @@ const resolveScanRoots = (profileIds) => {
 };
 
 const main = async () => {
-  const { profileIds } = parseArgs();
+  const profileIds = parseArgs();
   const scanRoots = resolveScanRoots(profileIds);
-  const fileLists = await Promise.all(
-    scanRoots.map((root) => collectFiles(root)),
-  );
+  const fileLists = await Promise.all(scanRoots.map((root) => collectFiles(root)));
   const files = fileLists.flat();
   const violations = [];
 
@@ -295,7 +295,7 @@ const main = async () => {
 
   if (violations.length > 0) {
     console.error(
-      "Zero-telemetry guard failed. Potential telemetry traces detected:",
+      `Zero-telemetry guard failed for profile(s) '${profileIds.join(", ")}'. Potential telemetry traces detected:`,
     );
     for (const violation of violations) {
       console.error(
@@ -317,6 +317,7 @@ export {
   hasIncludedExtension,
   isSafeDestination,
   resolveScanRoots,
+  parseArgs as parseNoTelemetryArgs,
 };
 
 const isCliEntry = () => {

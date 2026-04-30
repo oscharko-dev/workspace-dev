@@ -1,0 +1,353 @@
+{
+  "schemaVersion": "1.0.0",
+  "pipelineId": "default",
+  "summary": {
+    "status": "warn",
+    "message": "Generated accessibility report flagged 18 warning(s) across 1 screen(s).",
+    "screenCount": 1,
+    "warningCount": 18,
+    "semanticOutputWarningCount": 6,
+    "formLabelWarningCount": 0,
+    "buttonSemanticsWarningCount": 0,
+    "ariaLabelFallbackWarningCount": 0,
+    "altFallbackWarningCount": 6,
+    "focusOrderWarningCount": 0,
+    "lowContrastWarningCount": 6,
+    "clickDivFallbackWarningCount": 0
+  },
+  "screens": [
+    {
+      "screenId": "screen-products",
+      "screenName": "PaymentAuthorizations",
+      "warningCount": 18,
+      "warnings": [
+        {
+          "screenId": "screen-products",
+          "screenName": "PaymentAuthorizations",
+          "code": "W_DEFAULT_A11Y_SEMANTIC_OUTPUT",
+          "severity": "warning",
+          "nodeId": "pc1-info",
+          "nodeName": "Info",
+          "message": "Default semantic synthesis kept 'Info' inline because no matching reusable semantic structure was found."
+        },
+        {
+          "screenId": "screen-products",
+          "screenName": "PaymentAuthorizations",
+          "code": "W_DEFAULT_A11Y_SEMANTIC_OUTPUT",
+          "severity": "warning",
+          "nodeId": "pc2-info",
+          "nodeName": "Info",
+          "message": "Default semantic synthesis kept 'Info' inline because no matching reusable semantic structure was found."
+        },
+        {
+          "screenId": "screen-products",
+          "screenName": "PaymentAuthorizations",
+          "code": "W_DEFAULT_A11Y_SEMANTIC_OUTPUT",
+          "severity": "warning",
+          "nodeId": "pc3-info",
+          "nodeName": "Info",
+          "message": "Default semantic synthesis kept 'Info' inline because no matching reusable semantic structure was found."
+        },
+        {
+          "screenId": "screen-products",
+          "screenName": "PaymentAuthorizations",
+          "code": "W_DEFAULT_A11Y_SEMANTIC_OUTPUT",
+          "severity": "warning",
+          "nodeId": "pc4-info",
+          "nodeName": "Info",
+          "message": "Default semantic synthesis kept 'Info' inline because no matching reusable semantic structure was found."
+        },
+        {
+          "screenId": "screen-products",
+          "screenName": "PaymentAuthorizations",
+          "code": "W_DEFAULT_A11Y_SEMANTIC_OUTPUT",
+          "severity": "warning",
+          "nodeId": "pc5-info",
+          "nodeName": "Info",
+          "message": "Default semantic synthesis kept 'Info' inline because no matching reusable semantic structure was found."
+        },
+        {
+          "screenId": "screen-products",
+          "screenName": "PaymentAuthorizations",
+          "code": "W_DEFAULT_A11Y_SEMANTIC_OUTPUT",
+          "severity": "warning",
+          "nodeId": "pc6-info",
+          "nodeName": "Info",
+          "message": "Default semantic synthesis kept 'Info' inline because no matching reusable semantic structure was found."
+        },
+        {
+          "screenId": "screen-products",
+          "screenName": "PaymentAuthorizations",
+          "code": "W_DEFAULT_A11Y_ALT_FALLBACK",
+          "severity": "warning",
+          "nodeId": "pc1-image",
+          "nodeName": "Image",
+          "message": "Image 'Image' depends on a generated alt fallback."
+        },
+        {
+          "screenId": "screen-products",
+          "screenName": "PaymentAuthorizations",
+          "code": "W_DEFAULT_A11Y_LOW_CONTRAST",
+          "severity": "warning",
+          "nodeId": "pc1-price",
+          "nodeName": "Amount",
+          "message": "Low contrast text 'Amount' uses 4.2:1 against its background."
+        },
+        {
+          "screenId": "screen-products",
+          "screenName": "PaymentAuthorizations",
+          "code": "W_DEFAULT_A11Y_ALT_FALLBACK",
+          "severity": "warning",
+          "nodeId": "pc2-image",
+          "nodeName": "Image",
+          "message": "Image 'Image' depends on a generated alt fallback."
+        },
+        {
+          "screenId": "screen-products",
+          "screenName": "PaymentAuthorizations",
+          "code": "W_DEFAULT_A11Y_LOW_CONTRAST",
+          "severity": "warning",
+          "nodeId": "pc2-price",
+          "nodeName": "Amount",
+          "message": "Low contrast text 'Amount' uses 4.2:1 against its background."
+        },
+        {
+          "screenId": "screen-products",
+          "screenName": "PaymentAuthorizations",
+          "code": "W_DEFAULT_A11Y_ALT_FALLBACK",
+          "severity": "warning",
+          "nodeId": "pc3-image",
+          "nodeName": "Image",
+          "message": "Image 'Image' depends on a generated alt fallback."
+        },
+        {
+          "screenId": "screen-products",
+          "screenName": "PaymentAuthorizations",
+          "code": "W_DEFAULT_A11Y_LOW_CONTRAST",
+          "severity": "warning",
+          "nodeId": "pc3-price",
+          "nodeName": "Amount",
+          "message": "Low contrast text 'Amount' uses 4.2:1 against its background."
+        },
+        {
+          "screenId": "screen-products",
+          "screenName": "PaymentAuthorizations",
+          "code": "W_DEFAULT_A11Y_ALT_FALLBACK",
+          "severity": "warning",
+          "nodeId": "pc4-image",
+          "nodeName": "Image",
+          "message": "Image 'Image' depends on a generated alt fallback."
+        },
+        {
+          "screenId": "screen-products",
+          "screenName": "PaymentAuthorizations",
+          "code": "W_DEFAULT_A11Y_LOW_CONTRAST",
+          "severity": "warning",
+          "nodeId": "pc4-price",
+          "nodeName": "Amount",
+          "message": "Low contrast text 'Amount' uses 4.2:1 against its background."
+        },
+        {
+          "screenId": "screen-products",
+          "screenName": "PaymentAuthorizations",
+          "code": "W_DEFAULT_A11Y_ALT_FALLBACK",
+          "severity": "warning",
+          "nodeId": "pc5-image",
+          "nodeName": "Image",
+          "message": "Image 'Image' depends on a generated alt fallback."
+        },
+        {
+          "screenId": "screen-products",
+          "screenName": "PaymentAuthorizations",
+          "code": "W_DEFAULT_A11Y_LOW_CONTRAST",
+          "severity": "warning",
+          "nodeId": "pc5-price",
+          "nodeName": "Amount",
+          "message": "Low contrast text 'Amount' uses 4.2:1 against its background."
+        },
+        {
+          "screenId": "screen-products",
+          "screenName": "PaymentAuthorizations",
+          "code": "W_DEFAULT_A11Y_ALT_FALLBACK",
+          "severity": "warning",
+          "nodeId": "pc6-image",
+          "nodeName": "Image",
+          "message": "Image 'Image' depends on a generated alt fallback."
+        },
+        {
+          "screenId": "screen-products",
+          "screenName": "PaymentAuthorizations",
+          "code": "W_DEFAULT_A11Y_LOW_CONTRAST",
+          "severity": "warning",
+          "nodeId": "pc6-price",
+          "nodeName": "Amount",
+          "message": "Low contrast text 'Amount' uses 4.2:1 against its background."
+        }
+      ]
+    }
+  ],
+  "warnings": [
+    {
+      "screenId": "screen-products",
+      "screenName": "PaymentAuthorizations",
+      "code": "W_DEFAULT_A11Y_SEMANTIC_OUTPUT",
+      "severity": "warning",
+      "nodeId": "pc1-info",
+      "nodeName": "Info",
+      "message": "Default semantic synthesis kept 'Info' inline because no matching reusable semantic structure was found."
+    },
+    {
+      "screenId": "screen-products",
+      "screenName": "PaymentAuthorizations",
+      "code": "W_DEFAULT_A11Y_SEMANTIC_OUTPUT",
+      "severity": "warning",
+      "nodeId": "pc2-info",
+      "nodeName": "Info",
+      "message": "Default semantic synthesis kept 'Info' inline because no matching reusable semantic structure was found."
+    },
+    {
+      "screenId": "screen-products",
+      "screenName": "PaymentAuthorizations",
+      "code": "W_DEFAULT_A11Y_SEMANTIC_OUTPUT",
+      "severity": "warning",
+      "nodeId": "pc3-info",
+      "nodeName": "Info",
+      "message": "Default semantic synthesis kept 'Info' inline because no matching reusable semantic structure was found."
+    },
+    {
+      "screenId": "screen-products",
+      "screenName": "PaymentAuthorizations",
+      "code": "W_DEFAULT_A11Y_SEMANTIC_OUTPUT",
+      "severity": "warning",
+      "nodeId": "pc4-info",
+      "nodeName": "Info",
+      "message": "Default semantic synthesis kept 'Info' inline because no matching reusable semantic structure was found."
+    },
+    {
+      "screenId": "screen-products",
+      "screenName": "PaymentAuthorizations",
+      "code": "W_DEFAULT_A11Y_SEMANTIC_OUTPUT",
+      "severity": "warning",
+      "nodeId": "pc5-info",
+      "nodeName": "Info",
+      "message": "Default semantic synthesis kept 'Info' inline because no matching reusable semantic structure was found."
+    },
+    {
+      "screenId": "screen-products",
+      "screenName": "PaymentAuthorizations",
+      "code": "W_DEFAULT_A11Y_SEMANTIC_OUTPUT",
+      "severity": "warning",
+      "nodeId": "pc6-info",
+      "nodeName": "Info",
+      "message": "Default semantic synthesis kept 'Info' inline because no matching reusable semantic structure was found."
+    },
+    {
+      "screenId": "screen-products",
+      "screenName": "PaymentAuthorizations",
+      "code": "W_DEFAULT_A11Y_ALT_FALLBACK",
+      "severity": "warning",
+      "nodeId": "pc1-image",
+      "nodeName": "Image",
+      "message": "Image 'Image' depends on a generated alt fallback."
+    },
+    {
+      "screenId": "screen-products",
+      "screenName": "PaymentAuthorizations",
+      "code": "W_DEFAULT_A11Y_LOW_CONTRAST",
+      "severity": "warning",
+      "nodeId": "pc1-price",
+      "nodeName": "Amount",
+      "message": "Low contrast text 'Amount' uses 4.2:1 against its background."
+    },
+    {
+      "screenId": "screen-products",
+      "screenName": "PaymentAuthorizations",
+      "code": "W_DEFAULT_A11Y_ALT_FALLBACK",
+      "severity": "warning",
+      "nodeId": "pc2-image",
+      "nodeName": "Image",
+      "message": "Image 'Image' depends on a generated alt fallback."
+    },
+    {
+      "screenId": "screen-products",
+      "screenName": "PaymentAuthorizations",
+      "code": "W_DEFAULT_A11Y_LOW_CONTRAST",
+      "severity": "warning",
+      "nodeId": "pc2-price",
+      "nodeName": "Amount",
+      "message": "Low contrast text 'Amount' uses 4.2:1 against its background."
+    },
+    {
+      "screenId": "screen-products",
+      "screenName": "PaymentAuthorizations",
+      "code": "W_DEFAULT_A11Y_ALT_FALLBACK",
+      "severity": "warning",
+      "nodeId": "pc3-image",
+      "nodeName": "Image",
+      "message": "Image 'Image' depends on a generated alt fallback."
+    },
+    {
+      "screenId": "screen-products",
+      "screenName": "PaymentAuthorizations",
+      "code": "W_DEFAULT_A11Y_LOW_CONTRAST",
+      "severity": "warning",
+      "nodeId": "pc3-price",
+      "nodeName": "Amount",
+      "message": "Low contrast text 'Amount' uses 4.2:1 against its background."
+    },
+    {
+      "screenId": "screen-products",
+      "screenName": "PaymentAuthorizations",
+      "code": "W_DEFAULT_A11Y_ALT_FALLBACK",
+      "severity": "warning",
+      "nodeId": "pc4-image",
+      "nodeName": "Image",
+      "message": "Image 'Image' depends on a generated alt fallback."
+    },
+    {
+      "screenId": "screen-products",
+      "screenName": "PaymentAuthorizations",
+      "code": "W_DEFAULT_A11Y_LOW_CONTRAST",
+      "severity": "warning",
+      "nodeId": "pc4-price",
+      "nodeName": "Amount",
+      "message": "Low contrast text 'Amount' uses 4.2:1 against its background."
+    },
+    {
+      "screenId": "screen-products",
+      "screenName": "PaymentAuthorizations",
+      "code": "W_DEFAULT_A11Y_ALT_FALLBACK",
+      "severity": "warning",
+      "nodeId": "pc5-image",
+      "nodeName": "Image",
+      "message": "Image 'Image' depends on a generated alt fallback."
+    },
+    {
+      "screenId": "screen-products",
+      "screenName": "PaymentAuthorizations",
+      "code": "W_DEFAULT_A11Y_LOW_CONTRAST",
+      "severity": "warning",
+      "nodeId": "pc5-price",
+      "nodeName": "Amount",
+      "message": "Low contrast text 'Amount' uses 4.2:1 against its background."
+    },
+    {
+      "screenId": "screen-products",
+      "screenName": "PaymentAuthorizations",
+      "code": "W_DEFAULT_A11Y_ALT_FALLBACK",
+      "severity": "warning",
+      "nodeId": "pc6-image",
+      "nodeName": "Image",
+      "message": "Image 'Image' depends on a generated alt fallback."
+    },
+    {
+      "screenId": "screen-products",
+      "screenName": "PaymentAuthorizations",
+      "code": "W_DEFAULT_A11Y_LOW_CONTRAST",
+      "severity": "warning",
+      "nodeId": "pc6-price",
+      "nodeName": "Amount",
+      "message": "Low contrast text 'Amount' uses 4.2:1 against its background."
+    }
+  ]
+}

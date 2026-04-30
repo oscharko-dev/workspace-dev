@@ -1,0 +1,21 @@
+{
+  "fetchedNodes": 0,
+  "skippedHidden": 0,
+  "skippedPlaceholders": 0,
+  "screenElementCounts": [
+    {
+      "screenId": "screen-home-desktop",
+      "screenName": "Home Desktop",
+      "elements": 17
+    }
+  ],
+  "truncatedScreens": [],
+  "depthTruncatedScreens": [],
+  "classificationFallbacks": [],
+  "degradedGeometryNodes": [],
+  "prototypeNavigationDetected": 0,
+  "prototypeNavigationResolved": 0,
+  "prototypeNavigationUnresolved": 0,
+  "prototypeNavigationRendered": 0,
+  "nodeDiagnostics": []
+}

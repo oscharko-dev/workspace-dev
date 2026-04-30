@@ -1,0 +1,225 @@
+{
+  "schemaVersion": "1.0.0",
+  "pipelineId": "default",
+  "warnings": [
+    {
+      "code": "W_ABSOLUTE_LAYOUT_FALLBACK",
+      "nodeId": "rev-label",
+      "nodeName": "Card Title",
+      "message": "Absolute layout fallback used for 'Card Title' because no deterministic flex or grid structure could be inferred."
+    },
+    {
+      "code": "W_ABSOLUTE_LAYOUT_FALLBACK",
+      "nodeId": "rev-value",
+      "nodeName": "Value",
+      "message": "Absolute layout fallback used for 'Value' because no deterministic flex or grid structure could be inferred."
+    },
+    {
+      "code": "W_ABSOLUTE_LAYOUT_FALLBACK",
+      "nodeId": "chart-title",
+      "nodeName": "Card Title",
+      "message": "Absolute layout fallback used for 'Card Title' because no deterministic flex or grid structure could be inferred."
+    },
+    {
+      "code": "W_ABSOLUTE_LAYOUT_FALLBACK",
+      "nodeId": "chart-subtitle",
+      "nodeName": "Subtitle",
+      "message": "Absolute layout fallback used for 'Subtitle' because no deterministic flex or grid structure could be inferred."
+    },
+    {
+      "code": "W_ABSOLUTE_LAYOUT_FALLBACK",
+      "nodeId": "users-label",
+      "nodeName": "Card Title",
+      "message": "Absolute layout fallback used for 'Card Title' because no deterministic flex or grid structure could be inferred."
+    },
+    {
+      "code": "W_ABSOLUTE_LAYOUT_FALLBACK",
+      "nodeId": "users-value",
+      "nodeName": "Value",
+      "message": "Absolute layout fallback used for 'Value' because no deterministic flex or grid structure could be inferred."
+    },
+    {
+      "code": "W_ABSOLUTE_LAYOUT_FALLBACK",
+      "nodeId": "orders-label",
+      "nodeName": "Card Title",
+      "message": "Absolute layout fallback used for 'Card Title' because no deterministic flex or grid structure could be inferred."
+    },
+    {
+      "code": "W_ABSOLUTE_LAYOUT_FALLBACK",
+      "nodeId": "orders-value",
+      "nodeName": "Value",
+      "message": "Absolute layout fallback used for 'Value' because no deterministic flex or grid structure could be inferred."
+    },
+    {
+      "code": "W_ABSOLUTE_LAYOUT_FALLBACK",
+      "nodeId": "activity-title",
+      "nodeName": "Card Title",
+      "message": "Absolute layout fallback used for 'Card Title' because no deterministic flex or grid structure could be inferred."
+    },
+    {
+      "code": "W_ABSOLUTE_LAYOUT_FALLBACK",
+      "nodeId": "activity-subtitle",
+      "nodeName": "Subtitle",
+      "message": "Absolute layout fallback used for 'Subtitle' because no deterministic flex or grid structure could be inferred."
+    }
+  ],
+  "semanticComponents": [],
+  "semanticDiagnostics": [
+    {
+      "screenId": "screen-dashboard",
+      "screenName": "Dashboard",
+      "code": "W_SEMANTIC_COMPONENT_NOT_REUSABLE",
+      "nodeId": "cards-grid",
+      "nodeName": "Cards Grid",
+      "message": "Default semantic synthesis kept 'Cards Grid' inline because no matching reusable semantic structure was found."
+    },
+    {
+      "screenId": "screen-dashboard",
+      "screenName": "Dashboard",
+      "code": "W_SEMANTIC_COMPONENT_NOT_REUSABLE",
+      "nodeId": "card-revenue",
+      "nodeName": "Liquidity Card",
+      "message": "Default semantic synthesis kept 'Liquidity Card' inline because no matching reusable semantic structure was found."
+    },
+    {
+      "screenId": "screen-dashboard",
+      "screenName": "Dashboard",
+      "code": "W_SEMANTIC_COMPONENT_NOT_REUSABLE",
+      "nodeId": "card-chart",
+      "nodeName": "Payment Flow Card",
+      "message": "Default semantic synthesis kept 'Payment Flow Card' inline because no matching reusable semantic structure was found."
+    },
+    {
+      "screenId": "screen-dashboard",
+      "screenName": "Dashboard",
+      "code": "W_SEMANTIC_COMPONENT_NOT_REUSABLE",
+      "nodeId": "card-users",
+      "nodeName": "Accounts Card",
+      "message": "Default semantic synthesis kept 'Accounts Card' inline because no matching reusable semantic structure was found."
+    },
+    {
+      "screenId": "screen-dashboard",
+      "screenName": "Dashboard",
+      "code": "W_SEMANTIC_COMPONENT_NOT_REUSABLE",
+      "nodeId": "card-orders",
+      "nodeName": "Approvals Card",
+      "message": "Default semantic synthesis kept 'Approvals Card' inline because no matching reusable semantic structure was found."
+    },
+    {
+      "screenId": "screen-dashboard",
+      "screenName": "Dashboard",
+      "code": "W_SEMANTIC_COMPONENT_NOT_REUSABLE",
+      "nodeId": "card-activity",
+      "nodeName": "Risk Queue Card",
+      "message": "Default semantic synthesis kept 'Risk Queue Card' inline because no matching reusable semantic structure was found."
+    }
+  ],
+  "screens": [
+    {
+      "screenId": "screen-dashboard",
+      "screenName": "Dashboard",
+      "rootLayoutKind": "flex",
+      "warnings": [
+        {
+          "code": "W_ABSOLUTE_LAYOUT_FALLBACK",
+          "nodeId": "rev-label",
+          "nodeName": "Card Title",
+          "message": "Absolute layout fallback used for 'Card Title' because no deterministic flex or grid structure could be inferred."
+        },
+        {
+          "code": "W_ABSOLUTE_LAYOUT_FALLBACK",
+          "nodeId": "rev-value",
+          "nodeName": "Value",
+          "message": "Absolute layout fallback used for 'Value' because no deterministic flex or grid structure could be inferred."
+        },
+        {
+          "code": "W_ABSOLUTE_LAYOUT_FALLBACK",
+          "nodeId": "chart-title",
+          "nodeName": "Card Title",
+          "message": "Absolute layout fallback used for 'Card Title' because no deterministic flex or grid structure could be inferred."
+        },
+        {
+          "code": "W_ABSOLUTE_LAYOUT_FALLBACK",
+          "nodeId": "chart-subtitle",
+          "nodeName": "Subtitle",
+          "message": "Absolute layout fallback used for 'Subtitle' because no deterministic flex or grid structure could be inferred."
+        },
+        {
+          "code": "W_ABSOLUTE_LAYOUT_FALLBACK",
+          "nodeId": "users-label",
+          "nodeName": "Card Title",
+          "message": "Absolute layout fallback used for 'Card Title' because no deterministic flex or grid structure could be inferred."
+        },
+        {
+          "code": "W_ABSOLUTE_LAYOUT_FALLBACK",
+          "nodeId": "users-value",
+          "nodeName": "Value",
+          "message": "Absolute layout fallback used for 'Value' because no deterministic flex or grid structure could be inferred."
+        },
+        {
+          "code": "W_ABSOLUTE_LAYOUT_FALLBACK",
+          "nodeId": "orders-label",
+          "nodeName": "Card Title",
+          "message": "Absolute layout fallback used for 'Card Title' because no deterministic flex or grid structure could be inferred."
+        },
+        {
+          "code": "W_ABSOLUTE_LAYOUT_FALLBACK",
+          "nodeId": "orders-value",
+          "nodeName": "Value",
+          "message": "Absolute layout fallback used for 'Value' because no deterministic flex or grid structure could be inferred."
+        },
+        {
+          "code": "W_ABSOLUTE_LAYOUT_FALLBACK",
+          "nodeId": "activity-title",
+          "nodeName": "Card Title",
+          "message": "Absolute layout fallback used for 'Card Title' because no deterministic flex or grid structure could be inferred."
+        },
+        {
+          "code": "W_ABSOLUTE_LAYOUT_FALLBACK",
+          "nodeId": "activity-subtitle",
+          "nodeName": "Subtitle",
+          "message": "Absolute layout fallback used for 'Subtitle' because no deterministic flex or grid structure could be inferred."
+        }
+      ],
+      "semanticComponents": [],
+      "semanticDiagnostics": [
+        {
+          "code": "W_SEMANTIC_COMPONENT_NOT_REUSABLE",
+          "nodeId": "cards-grid",
+          "nodeName": "Cards Grid",
+          "message": "Default semantic synthesis kept 'Cards Grid' inline because no matching reusable semantic structure was found."
+        },
+        {
+          "code": "W_SEMANTIC_COMPONENT_NOT_REUSABLE",
+          "nodeId": "card-revenue",
+          "nodeName": "Liquidity Card",
+          "message": "Default semantic synthesis kept 'Liquidity Card' inline because no matching reusable semantic structure was found."
+        },
+        {
+          "code": "W_SEMANTIC_COMPONENT_NOT_REUSABLE",
+          "nodeId": "card-chart",
+          "nodeName": "Payment Flow Card",
+          "message": "Default semantic synthesis kept 'Payment Flow Card' inline because no matching reusable semantic structure was found."
+        },
+        {
+          "code": "W_SEMANTIC_COMPONENT_NOT_REUSABLE",
+          "nodeId": "card-users",
+          "nodeName": "Accounts Card",
+          "message": "Default semantic synthesis kept 'Accounts Card' inline because no matching reusable semantic structure was found."
+        },
+        {
+          "code": "W_SEMANTIC_COMPONENT_NOT_REUSABLE",
+          "nodeId": "card-orders",
+          "nodeName": "Approvals Card",
+          "message": "Default semantic synthesis kept 'Approvals Card' inline because no matching reusable semantic structure was found."
+        },
+        {
+          "code": "W_SEMANTIC_COMPONENT_NOT_REUSABLE",
+          "nodeId": "card-activity",
+          "nodeName": "Risk Queue Card",
+          "message": "Default semantic synthesis kept 'Risk Queue Card' inline because no matching reusable semantic structure was found."
+        }
+      ]
+    }
+  ]
+}

@@ -3,6 +3,7 @@ import { access, readFile } from "node:fs/promises";
 import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
+import { rootFileAllowlist } from "../scripts/pack-profile-contract.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const packageRoot = path.resolve(__dirname, "..");
@@ -13,9 +14,6 @@ const readRepoFile = async (relativePath: string): Promise<string> => {
 };
 
 test("integration: published docs and release workflow stay aligned on versioning policy", async () => {
-  const packageJson = JSON.parse(await readRepoFile("package.json")) as {
-    files?: string[];
-  };
   const readmeDoc = await readRepoFile("README.md");
   const versioningDoc = await readRepoFile("VERSIONING.md");
   const contractChangelog = await readRepoFile("CONTRACT_CHANGELOG.md");
@@ -24,7 +22,7 @@ test("integration: published docs and release workflow stay aligned on versionin
 
   await access(workflowPath);
 
-  assert.ok(packageJson.files?.includes("VERSIONING.md"));
+  assert.ok(rootFileAllowlist.includes("VERSIONING.md"));
   assert.match(readmeDoc, /`VERSIONING\.md`/);
   assert.match(readmeDoc, /npm and GitHub Releases are the authoritative sources for published package versions/i);
 

@@ -38,7 +38,7 @@ import { FigmaSourceService } from "./figma-source-service.js";
 
 const FIXTURE_PATH = path.resolve(
   process.cwd(),
-  "src/parity/fixtures/golden/prototype-navigation/figma.json",
+  "src/parity/fixtures/golden/rocket/prototype-navigation/figma.json",
 );
 
 interface StageHarness {

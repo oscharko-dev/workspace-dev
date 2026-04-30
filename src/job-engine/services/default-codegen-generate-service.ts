@@ -4,6 +4,7 @@ import { buildComponentManifest } from "../../parity/component-manifest.js";
 import type { ScreenArtifactIdentity } from "../../parity/generator-artifacts.js";
 import {
   createDefaultLayoutReportFile,
+  createDefaultAccessibilityReportFile,
   createDefaultSemanticComponentReportFile,
   createDefaultTailwindScreenFiles,
 } from "../../parity/default-tailwind-emitter.js";
@@ -225,6 +226,7 @@ export const DefaultCodegenGenerateService: StageService<CodegenGenerateStageInp
       createDesignTokenReportFile(ir, {
         pipelineId: context.pipelineMetadata.pipelineId,
       }),
+      createDefaultAccessibilityReportFile(ir.screens),
       createDefaultLayoutReportFile(ir.screens),
       createDefaultSemanticComponentReportFile(ir.screens),
     ];

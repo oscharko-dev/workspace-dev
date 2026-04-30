@@ -17,6 +17,7 @@ import type {
   WorkspacePipelineQualityWarning,
 } from "../../contracts/index.js";
 import {
+  DEFAULT_ACCESSIBILITY_REPORT_PATH,
   DEFAULT_SEMANTIC_COMPONENT_REPORT_PATH,
 } from "../../parity/default-tailwind-emitter.js";
 import { DESIGN_TOKEN_REPORT_PATH } from "../../parity/design-token-compiler.js";
@@ -181,6 +182,21 @@ type ValidationUiA11ySummary =
       summary?: string;
     };
 
+interface ValidationGeneratedAccessibilityReportSummary {
+  status: "ok" | "warn";
+  reportPath: string;
+  warningCount: number;
+  summary: string;
+}
+
+type ValidationGeneratedAccessibilitySummary =
+  | ValidationGeneratedAccessibilityReportSummary
+  | {
+      status: "not_available";
+      reportPath?: string;
+      summary?: string;
+    };
+
 interface ValidationSummaryArtifact {
   status: "ok" | "warn" | "failed";
   validatedAt: string;
@@ -195,15 +211,17 @@ interface ValidationSummaryArtifact {
         build: ProjectValidationResult["build"];
         test?: ProjectValidationResult["test"];
         validateUi?: ProjectValidationResult["validateUi"];
+        validatePlaywright?: ProjectValidationResult["validatePlaywright"];
         perfAssert?: ProjectValidationResult["perfAssert"];
       }
     | {
         status: "failed";
         failedCommand: string;
       }
-    | {
-        status: "not_available";
-      };
+      | {
+          status: "not_available";
+        };
+  generatedAccessibility: ValidationGeneratedAccessibilitySummary;
   uiA11y: ValidationUiA11ySummary;
   visualAudit: WorkspaceVisualAuditResult;
   visualQuality: WorkspaceVisualQualityReport;
@@ -753,6 +771,35 @@ const meanCompositeMetricOrNull = (
   );
 };
 
+const finiteCompositeMetricOrNull = (value: unknown): number | null =>
+  typeof value === "number" && Number.isFinite(value) ? value : null;
+
+const collectBrowserTimingCheckWarnings = (report: Record<string, unknown>): string[] => {
+  const checks = isRecord(report.checks) ? report.checks : {};
+  const warnings: string[] = [];
+  for (const group of ["budgets", "regression"] as const) {
+    const groupChecks = checks[group];
+    if (!Array.isArray(groupChecks)) {
+      continue;
+    }
+    groupChecks.forEach((check, index) => {
+      if (!isRecord(check) || check.pass !== false) {
+        return;
+      }
+      const metric =
+        typeof check.metric === "string" && check.metric.length > 0
+          ? check.metric
+          : `${group}[${String(index)}]`;
+      const reason =
+        typeof check.reason === "string" && check.reason.length > 0
+          ? `: ${check.reason}`
+          : "";
+      warnings.push(`${group} performance check failed for ${metric}${reason}`);
+    });
+  }
+  return warnings;
+};
+
 const loadCompositePerformanceBreakdown = async ({
   artifactDir,
 }: {
@@ -841,6 +888,7 @@ const loadCompositePerformanceBreakdown = async ({
   const clsValues: number[] = [];
   const tbtValues: number[] = [];
   const speedIndexValues: number[] = [];
+  let browserTimingSampleCount = 0;
 
   const resolveLighthouseRoot = (
     value: unknown,
@@ -894,11 +942,55 @@ const loadCompositePerformanceBreakdown = async ({
       continue;
     }
     const route = typeof sample.route === "string" ? sample.route : "(unknown)";
+    const metrics = isRecord(sample.metrics) ? sample.metrics : undefined;
     const lighthouseReportRaw =
       isRecord(sample.artifacts) &&
       typeof sample.artifacts.lighthouseReport === "string"
         ? sample.artifacts.lighthouseReport
         : undefined;
+    const browserTimingReportRaw =
+      isRecord(sample.artifacts) &&
+      typeof sample.artifacts.browserTimingReport === "string"
+        ? sample.artifacts.browserTimingReport
+        : undefined;
+    const usesBrowserTiming =
+      parsed.measurement === "playwright-browser-timing" ||
+      browserTimingReportRaw !== undefined;
+
+    if (usesBrowserTiming) {
+      if (metrics === undefined) {
+        warnings.push(
+          `sample[${String(index)}] ${profile} ${route}: missing metrics object`,
+        );
+        continue;
+      }
+      const loadedSample: WorkspaceCompositeQualityLighthouseSample = {
+        profile,
+        route,
+        performanceScore: null,
+        fcp_ms: null,
+        lcp_ms: finiteCompositeMetricOrNull(metrics.lcp_ms),
+        cls: finiteCompositeMetricOrNull(metrics.cls),
+        tbt_ms: null,
+        speed_index_ms: null,
+      };
+      samples.push(loadedSample);
+      browserTimingSampleCount += 1;
+
+      const label = `${profile} ${route}`;
+      if (loadedSample.lcp_ms !== null) {
+        lcpValues.push(loadedSample.lcp_ms);
+      } else {
+        warnings.push(`${label}: missing browser-timing LCP`);
+      }
+      if (loadedSample.cls !== null) {
+        clsValues.push(loadedSample.cls);
+      } else {
+        warnings.push(`${label}: missing browser-timing CLS`);
+      }
+      continue;
+    }
+
     if (!lighthouseReportRaw) {
       warnings.push(
         `sample[${String(index)}] ${profile} ${route}: missing artifacts.lighthouseReport path`,
@@ -977,6 +1069,14 @@ const loadCompositePerformanceBreakdown = async ({
     }
   }
 
+  const aggregate = isRecord(parsed.aggregate) ? parsed.aggregate : undefined;
+  const browserTimingLcp = finiteCompositeMetricOrNull(
+    aggregate?.lcp_p75_ms,
+  );
+  const browserTimingCls = finiteCompositeMetricOrNull(aggregate?.cls_p75);
+
+  warnings.push(...collectBrowserTimingCheckWarnings(parsed));
+
   return {
     sourcePath,
     score: meanCompositeMetricOrNull(performanceScores),
@@ -984,8 +1084,14 @@ const loadCompositePerformanceBreakdown = async ({
     samples,
     aggregateMetrics: {
       fcp_ms: meanCompositeMetricOrNull(fcpValues),
-      lcp_ms: meanCompositeMetricOrNull(lcpValues),
-      cls: meanCompositeMetricOrNull(clsValues),
+      lcp_ms:
+        browserTimingSampleCount > 0
+          ? browserTimingLcp ?? meanCompositeMetricOrNull(lcpValues)
+          : meanCompositeMetricOrNull(lcpValues),
+      cls:
+        browserTimingSampleCount > 0
+          ? browserTimingCls ?? meanCompositeMetricOrNull(clsValues)
+          : meanCompositeMetricOrNull(clsValues),
       tbt_ms: meanCompositeMetricOrNull(tbtValues),
       speed_index_ms: meanCompositeMetricOrNull(speedIndexValues),
     },
@@ -1203,6 +1309,127 @@ const buildUiA11ySummary = async ({
       reportPath,
       summary: "UI/A11y validation produced a malformed ui-gate report.",
       diagnostics: [message],
+    });
+  }
+};
+
+const toGeneratedAccessibilityWarnSummary = ({
+  reportPath,
+  summary,
+  warningCount = 0,
+}: {
+  reportPath: string;
+  summary: string;
+  warningCount?: number;
+}): ValidationGeneratedAccessibilityReportSummary => {
+  return {
+    status: "warn",
+    reportPath,
+    warningCount,
+    summary,
+  };
+};
+
+const parseGeneratedAccessibilityReportSummary = ({
+  input,
+  reportPath,
+}: {
+  input: string;
+  reportPath: string;
+}): ValidationGeneratedAccessibilityReportSummary => {
+  const parsed: unknown = JSON.parse(input);
+  if (!isRecord(parsed)) {
+    throw new Error("Expected accessibility report to be a JSON object.");
+  }
+
+  const summary = isRecord(parsed.summary) ? parsed.summary : undefined;
+  const message =
+    typeof summary?.message === "string" && summary.message.trim().length > 0
+      ? summary.message.trim()
+      : undefined;
+  const warningCount =
+    typeof summary?.warningCount === "number" && Number.isFinite(summary.warningCount)
+      ? Math.max(0, Math.trunc(summary.warningCount))
+      : Array.isArray(parsed.warnings)
+        ? parsed.warnings.length
+        : 0;
+  const status =
+    typeof summary?.status === "string" && summary.status === "ok" && warningCount === 0
+      ? "ok"
+      : "warn";
+
+  if (status === "ok") {
+    return {
+      status,
+      reportPath,
+      warningCount,
+      summary:
+        message ?? `Generated accessibility report found no warnings across 0 screen(s).`,
+    };
+  }
+
+  return {
+    status,
+    reportPath,
+    warningCount,
+    summary:
+      message ??
+      `Generated accessibility report flagged ${warningCount} warning(s).`,
+  };
+};
+
+const buildGeneratedAccessibilitySummary = async ({
+  context,
+}: {
+  context: Parameters<StageService<void>["execute"]>[1];
+}): Promise<ValidationGeneratedAccessibilitySummary> => {
+  const codegenSummary = await context.artifactStore.getValue<CodegenGenerateSummary>(
+    STAGE_ARTIFACT_KEYS.codegenSummary,
+  );
+  const reportPath = DEFAULT_ACCESSIBILITY_REPORT_PATH;
+  const absoluteReportPath = path.join(
+    context.paths.generatedProjectDir,
+    DEFAULT_ACCESSIBILITY_REPORT_PATH,
+  );
+  const codegenSummaryValue = codegenSummary as
+    | CodegenGenerateSummary
+    | null
+    | undefined;
+  const generatedPaths =
+    codegenSummaryValue === undefined || codegenSummaryValue === null
+      ? []
+      : codegenSummaryValue.generatedPaths;
+  if (!generatedPaths.includes(DEFAULT_ACCESSIBILITY_REPORT_PATH)) {
+    return {
+      status: "not_available",
+      reportPath,
+      summary: "Generated accessibility report is not available.",
+    };
+  }
+
+  let reportInput: string;
+  try {
+    reportInput = await readFile(absoluteReportPath, "utf8");
+  } catch {
+    return toGeneratedAccessibilityWarnSummary({
+      reportPath,
+      warningCount: 0,
+      summary:
+        "Generated accessibility report is missing or unreadable.",
+    });
+  }
+
+  try {
+    return parseGeneratedAccessibilityReportSummary({
+      input: reportInput,
+      reportPath,
+    });
+  } catch {
+    return toGeneratedAccessibilityWarnSummary({
+      reportPath,
+      warningCount: 0,
+      summary:
+        "Generated accessibility report is malformed.",
     });
   }
 };
@@ -1649,6 +1876,64 @@ const collectQualityPassportWarnings = async ({
         source: DEFAULT_SEMANTIC_COMPONENT_REPORT_PATH,
       });
     }
+  }
+
+  const codegenSummaryValue = codegenSummary as
+    | CodegenGenerateSummary
+    | null
+    | undefined;
+  const generatedPaths =
+    codegenSummaryValue === undefined || codegenSummaryValue === null
+      ? []
+      : codegenSummaryValue.generatedPaths;
+  const shouldReadAccessibilityReport = generatedPaths.includes(
+    DEFAULT_ACCESSIBILITY_REPORT_PATH,
+  );
+  if (!shouldReadAccessibilityReport) {
+    return warnings;
+  }
+
+  const accessibilityReport = await readJsonArtifact({
+    absolutePath: path.join(
+      generatedProjectDir,
+      DEFAULT_ACCESSIBILITY_REPORT_PATH,
+    ),
+  });
+  if (
+    isRecord(accessibilityReport) &&
+    Array.isArray(accessibilityReport.warnings)
+  ) {
+    for (const warning of accessibilityReport.warnings) {
+      if (!isRecord(warning)) {
+        continue;
+      }
+      const code =
+        typeof warning.code === "string" && warning.code.trim().length > 0
+          ? warning.code
+          : "DEFAULT_ACCESSIBILITY_DIAGNOSTIC";
+      const message =
+        typeof warning.message === "string" &&
+        warning.message.trim().length > 0
+          ? warning.message
+          : "Generated accessibility report emitted a warning.";
+      pushWarning({
+        code,
+        severity:
+          warning.severity === "error" ||
+          warning.severity === "info" ||
+          warning.severity === "warning"
+            ? warning.severity
+            : "warning",
+        message,
+        source: DEFAULT_ACCESSIBILITY_REPORT_PATH,
+      });
+    }
+  } else {
+    pushWarning({
+      code: "DEFAULT_ACCESSIBILITY_REPORT_MISSING",
+      message: "Generated accessibility report is missing or malformed.",
+      source: DEFAULT_ACCESSIBILITY_REPORT_PATH,
+    });
   }
   return warnings;
 };
@@ -2103,6 +2388,9 @@ const buildValidationSummaryArtifact = async ({
           ...(validationResult.validateUi
             ? { validateUi: validationResult.validateUi }
             : {}),
+          ...(validationResult.validatePlaywright
+            ? { validatePlaywright: validationResult.validatePlaywright }
+            : {}),
           ...(validationResult.perfAssert
             ? { perfAssert: validationResult.perfAssert }
             : {}),
@@ -2115,6 +2403,10 @@ const buildValidationSummaryArtifact = async ({
         : {
             status: "not_available",
           };
+  const generatedAccessibilitySummary =
+    await buildGeneratedAccessibilitySummary({
+      context,
+    });
   const uiA11ySummary = await buildUiA11ySummary({
     context,
     ...(validationResult ? { validationResult } : {}),
@@ -2146,6 +2438,7 @@ const buildValidationSummaryArtifact = async ({
     }),
     validatedAt,
     generatedApp: generatedAppSummary,
+    generatedAccessibility: generatedAccessibilitySummary,
     uiA11y: uiA11ySummary,
     visualAudit: resolvedVisualAuditResult,
     visualQuality: resolvedVisualQualityReport,

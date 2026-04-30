@@ -1,0 +1,114 @@
+{
+  "schemaVersion": "1.0.0",
+  "pipelineId": "default",
+  "screens": [
+    {
+      "screenId": "screen-form",
+      "screenName": "AccountOpening",
+      "components": [],
+      "diagnostics": [
+        {
+          "code": "W_SEMANTIC_COMPONENT_STRUCTURAL_FALLBACK",
+          "nodeId": "checkbox-row",
+          "nodeName": "Checkbox Row",
+          "message": "Default semantic synthesis rendered 'Checkbox Row' with structural HTML because 'checkbox' does not have a dedicated default Tailwind primitive yet."
+        },
+        {
+          "code": "W_SEMANTIC_COMPONENT_STRUCTURAL_FALLBACK",
+          "nodeId": "checkbox-icon",
+          "nodeName": "Checkbox",
+          "message": "Default semantic synthesis rendered 'Checkbox' with structural HTML because 'checkbox' does not have a dedicated default Tailwind primitive yet."
+        },
+        {
+          "code": "W_SEMANTIC_COMPONENT_NOT_REUSABLE",
+          "nodeId": "name-row",
+          "nodeName": "Name Row",
+          "message": "Default semantic synthesis kept 'Name Row' inline because no matching reusable semantic structure was found."
+        },
+        {
+          "code": "W_SEMANTIC_COMPONENT_NOT_REUSABLE",
+          "nodeId": "first-name-field",
+          "nodeName": "Text Field",
+          "message": "Default semantic synthesis kept 'Text Field' inline because no matching reusable semantic structure was found."
+        },
+        {
+          "code": "W_SEMANTIC_COMPONENT_NOT_REUSABLE",
+          "nodeId": "last-name-field",
+          "nodeName": "Text Field",
+          "message": "Default semantic synthesis kept 'Text Field' inline because no matching reusable semantic structure was found."
+        },
+        {
+          "code": "W_SEMANTIC_COMPONENT_NOT_REUSABLE",
+          "nodeId": "email-field",
+          "nodeName": "Text Field",
+          "message": "Default semantic synthesis kept 'Text Field' inline because no matching reusable semantic structure was found."
+        },
+        {
+          "code": "W_SEMANTIC_COMPONENT_NOT_REUSABLE",
+          "nodeId": "submit-button",
+          "nodeName": "Primary Button",
+          "message": "Default semantic synthesis kept 'Primary Button' inline because no matching reusable semantic structure was found."
+        }
+      ]
+    }
+  ],
+  "components": [],
+  "diagnostics": [
+    {
+      "screenId": "screen-form",
+      "screenName": "AccountOpening",
+      "code": "W_SEMANTIC_COMPONENT_STRUCTURAL_FALLBACK",
+      "nodeId": "checkbox-row",
+      "nodeName": "Checkbox Row",
+      "message": "Default semantic synthesis rendered 'Checkbox Row' with structural HTML because 'checkbox' does not have a dedicated default Tailwind primitive yet."
+    },
+    {
+      "screenId": "screen-form",
+      "screenName": "AccountOpening",
+      "code": "W_SEMANTIC_COMPONENT_STRUCTURAL_FALLBACK",
+      "nodeId": "checkbox-icon",
+      "nodeName": "Checkbox",
+      "message": "Default semantic synthesis rendered 'Checkbox' with structural HTML because 'checkbox' does not have a dedicated default Tailwind primitive yet."
+    },
+    {
+      "screenId": "screen-form",
+      "screenName": "AccountOpening",
+      "code": "W_SEMANTIC_COMPONENT_NOT_REUSABLE",
+      "nodeId": "name-row",
+      "nodeName": "Name Row",
+      "message": "Default semantic synthesis kept 'Name Row' inline because no matching reusable semantic structure was found."
+    },
+    {
+      "screenId": "screen-form",
+      "screenName": "AccountOpening",
+      "code": "W_SEMANTIC_COMPONENT_NOT_REUSABLE",
+      "nodeId": "first-name-field",
+      "nodeName": "Text Field",
+      "message": "Default semantic synthesis kept 'Text Field' inline because no matching reusable semantic structure was found."
+    },
+    {
+      "screenId": "screen-form",
+      "screenName": "AccountOpening",
+      "code": "W_SEMANTIC_COMPONENT_NOT_REUSABLE",
+      "nodeId": "last-name-field",
+      "nodeName": "Text Field",
+      "message": "Default semantic synthesis kept 'Text Field' inline because no matching reusable semantic structure was found."
+    },
+    {
+      "screenId": "screen-form",
+      "screenName": "AccountOpening",
+      "code": "W_SEMANTIC_COMPONENT_NOT_REUSABLE",
+      "nodeId": "email-field",
+      "nodeName": "Text Field",
+      "message": "Default semantic synthesis kept 'Text Field' inline because no matching reusable semantic structure was found."
+    },
+    {
+      "screenId": "screen-form",
+      "screenName": "AccountOpening",
+      "code": "W_SEMANTIC_COMPONENT_NOT_REUSABLE",
+      "nodeId": "submit-button",
+      "nodeName": "Primary Button",
+      "message": "Default semantic synthesis kept 'Primary Button' inline because no matching reusable semantic structure was found."
+    }
+  ]
+}

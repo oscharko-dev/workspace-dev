@@ -453,3 +453,5 @@ main().catch((error) => {
   console.error("[airgap] Offline install verification failed:", error);
   process.exit(1);
 });
+
+export { parseArgs as parseAirgapArgs };

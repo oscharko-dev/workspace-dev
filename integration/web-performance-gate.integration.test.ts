@@ -62,6 +62,9 @@ test("integration: web performance gate policy, baseline path, and docs stay ali
   const changesetsWorkflow = await readRepoFile(
     ".github/workflows/changesets-release.yml",
   );
+  const packageJson = JSON.parse(await readRepoFile("package.json")) as {
+    scripts?: Record<string, string>;
+  };
 
   await access(path.resolve(packageRoot, performanceDocRelativePath));
   for (const template of templatePerformancePaths) {
@@ -93,6 +96,18 @@ test("integration: web performance gate policy, baseline path, and docs stay ali
     assert.match(performanceDoc, template.baselineCommand);
     assert.match(performanceDoc, template.assertCommand);
   }
+  assert.match(
+    packageJson.scripts?.["perf:web:tailwind:baseline:gate"] ?? "",
+    /FIGMAPIPE_PERF_BASELINE_PATH=artifacts\/performance\/perf-measured-baseline\.json/,
+  );
+  assert.match(
+    packageJson.scripts?.["release:quality-gates"] ?? "",
+    /perf:web:tailwind:baseline:gate && pnpm run perf:web:tailwind:assert/,
+  );
+  assert.match(
+    packageJson.scripts?.["release:quality-gates:publish-lifecycle"] ?? "",
+    /perf:web:tailwind:baseline:gate && pnpm run perf:web:tailwind:assert/,
+  );
   assert.match(performanceDoc, /release-gate\.yml/);
   assert.match(performanceDoc, /changesets-release\.yml/);
   assert.match(performanceDoc, /dev-quality-gate\.yml/);
@@ -116,10 +131,13 @@ test("integration: web performance gate policy, baseline path, and docs stay ali
         ),
       );
     }
+    assert.match(workflow, /run perf:baseline/);
     assert.match(
       workflow,
-      /FIGMAPIPE_PERF_BASELINE_PATH: \$\{\{ matrix\.template\.packageDir \}\}\/perf-baseline\.json/,
+      /FIGMAPIPE_PERF_BASELINE_PATH: artifacts\/performance\/perf-measured-baseline\.json/,
     );
+    assert.match(workflow, /perf-baseline-report\.json/);
+    assert.match(workflow, /FIGMAPIPE_PERF_BASELINE_PATH: perf-baseline\.json/);
     assert.match(workflow, /FIGMAPIPE_PERF_ALLOW_BASELINE_BOOTSTRAP: "false"/);
   }
 

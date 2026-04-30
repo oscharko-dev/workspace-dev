@@ -3682,6 +3682,74 @@ test("createJobEngine supports local_json mode without Figma REST calls", async 
   assert.ok(terminalSnapshot.inspector?.qualityPassport);
 });
 
+test("createJobEngine rehydrates terminal snapshots with default pipeline metadata when the request pipeline id is default", async () => {
+  const tempRoot = await mkdtemp(
+    path.join(os.tmpdir(), "workspace-dev-engine-default-pipeline-metadata-"),
+  );
+  const jobsRoot = path.join(tempRoot, "jobs");
+  const defaultJobDir = await seedTerminalJobSnapshot({
+    jobsRoot,
+    jobId: "default-pipeline-job",
+    finishedAt: "2026-04-18T09:02:00.000Z",
+    outputRoot: tempRoot,
+  });
+  const defaultSnapshotPath = path.join(defaultJobDir, "stage-timings.json");
+  const defaultSnapshot = JSON.parse(
+    await readFile(defaultSnapshotPath, "utf8"),
+  ) as {
+    pipelineMetadata?: unknown;
+    request: Record<string, unknown>;
+  };
+  defaultSnapshot.request.pipelineId = "default";
+  delete defaultSnapshot.pipelineMetadata;
+  delete defaultSnapshot.request.pipelineMetadata;
+  defaultSnapshot.inspector = {
+    stages: defaultSnapshot.stages.map((stage) => ({
+      stage: stage.name,
+      status: stage.status,
+    })),
+  };
+  await writeFile(
+    defaultSnapshotPath,
+    `${JSON.stringify(defaultSnapshot, null, 2)}\n`,
+    "utf8",
+  );
+
+  const engine = createJobEngine({
+    resolveBaseUrl: () => "http://127.0.0.1:1983",
+    paths: {
+      outputRoot: tempRoot,
+      jobsRoot,
+      reprosRoot: path.join(tempRoot, "repros"),
+    },
+    runtime: resolveRuntimeSettings({
+      enablePreview: false,
+      figmaMaxRetries: 1,
+      figmaRequestTimeoutMs: 1_000,
+      jobRetentionMaxCount: 10,
+      jobRetentionMaxAgeMs: 0,
+      localSyncConfirmationSweepIntervalMs: 0,
+    }),
+  });
+
+  const status = engine.getJob("default-pipeline-job");
+  assert.equal(status?.pipelineId, "default");
+  assert.deepEqual(status?.pipelineMetadata, DEFAULT_PIPELINE_METADATA);
+  assert.equal(status?.request.pipelineId, "default");
+  assert.deepEqual(status?.request.pipelineMetadata, DEFAULT_PIPELINE_METADATA);
+  assert.equal(status?.inspector?.pipelineId, "default");
+  assert.deepEqual(status?.inspector?.pipelineMetadata, DEFAULT_PIPELINE_METADATA);
+
+  const result = engine.getJobResult("default-pipeline-job");
+  assert.equal(result?.pipelineId, "default");
+  assert.deepEqual(result?.pipelineMetadata, DEFAULT_PIPELINE_METADATA);
+  assert.equal(result?.inspector?.pipelineId, "default");
+  assert.deepEqual(
+    result?.inspector?.pipelineMetadata,
+    DEFAULT_PIPELINE_METADATA,
+  );
+});
+
 test("createJobEngine fails local_json mode with path-aware figma payload validation errors", async () => {
   const tempRoot = await mkdtemp(
     path.join(os.tmpdir(), "workspace-dev-engine-local-json-invalid-"),

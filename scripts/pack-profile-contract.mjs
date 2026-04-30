@@ -53,6 +53,9 @@ export const rootFileAllowlist = [
 ];
 
 export const docsFileAllowlist = [
+  "docs/default-pipeline/default-demo-fixtures.md",
+  "docs/default-pipeline/default-demo-guide.md",
+  "docs/default-pipeline/pipeline-authoring-and-migration.md",
   "docs/migration-guide.md",
   "docs/template-maintenance.md",
   "docs/test-intelligence.md",
@@ -90,6 +93,7 @@ export const templateFileAllowlists = {
     "template/react-tailwind-app/src/styles.css",
     "template/react-tailwind-app/src/test/setup.ts",
     "template/react-tailwind-app/src/vite-env.d.ts",
+    "template/react-tailwind-app/tsconfig.e2e.json",
     "template/react-tailwind-app/tsconfig.app.json",
     "template/react-tailwind-app/tsconfig.json",
     "template/react-tailwind-app/tsconfig.node.json",
@@ -163,6 +167,7 @@ export const templateRequiredFiles = {
     "template/react-tailwind-app/scripts/validate-ui-report-lib.mjs",
     "template/react-tailwind-app/playwright.config.ts",
     "template/react-tailwind-app/e2e/template.spec.ts",
+    "template/react-tailwind-app/tsconfig.e2e.json",
   ],
   "react-mui-app": [
     "template/react-mui-app/package.json",
@@ -208,3 +213,18 @@ export const normalizeBuildProfileId = (rawProfile) => {
 export const resolveBuildProfiles = (rawProfiles) => [
   ...new Set(rawProfiles.map((profile) => normalizeBuildProfileId(profile))),
 ];
+
+export const defaultBuildProfileIds = Object.keys(profileDefinitions);
+
+export const createProfilePackageManifest = (baseManifest, profile) => {
+  const manifest = structuredClone(baseManifest);
+  delete manifest.devDependencies;
+  delete manifest.files;
+  delete manifest.scripts;
+  manifest.workspaceDev = {
+    ...(manifest.workspaceDev ?? {}),
+    buildProfile: profile.id,
+    pipelineIds: profile.pipelineIds,
+  };
+  return manifest;
+};

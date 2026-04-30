@@ -312,6 +312,125 @@ test("loadLighthouseSamplesFromPerfReport supports legacy report.lhr JSON", asyn
   }
 });
 
+test("loadLighthouseSamplesFromPerfReport supports Tailwind browser timing reports", async () => {
+  const root = await createTempRoot();
+
+  try {
+    const artifactDir = path.join(root, "artifacts", "performance");
+    await mkdir(artifactDir, { recursive: true });
+    await writeJson(path.join(artifactDir, "perf-assert-report.json"), {
+      measurement: "playwright-browser-timing",
+      aggregate: {
+        lcp_p75_ms: 1432,
+        cls_p75: 0.04,
+        initial_js_kb: 42,
+      },
+      checks: {
+        budgets: [
+          {
+            metric: "lcp_p75_ms",
+            actual: 1432,
+            budget: 2500,
+            pass: true,
+          },
+        ],
+        regression: [],
+      },
+      counts: {
+        samples: 1,
+        failedBudgets: 0,
+        failedRegression: 0,
+      },
+      samples: [
+        {
+          profile: "mobile",
+          route: "/",
+          metrics: {
+            inp_ms: 0,
+            lcp_ms: 1432,
+            cls: 0.04,
+            initial_js_kb: 42,
+            route_transition_ms: 0,
+          },
+          artifacts: {
+            browserTimingReport: "browser-timing-mobile-root.json",
+          },
+        },
+      ],
+    });
+
+    const loaded = await loadLighthouseSamplesFromPerfReport({ artifactDir });
+    const scored = computePerformanceScore(loaded.samples);
+
+    assert.deepEqual(loaded.warnings, []);
+    assert.deepEqual(loaded.samples, [
+      {
+        measurement: "playwright-browser-timing",
+        profile: "mobile",
+        route: "/",
+        performanceScore: null,
+        fcp_ms: null,
+        lcp_ms: 1432,
+        cls: 0.04,
+        tbt_ms: null,
+        speed_index_ms: null,
+      },
+    ]);
+    assert.equal(scored.score, null);
+    assert.equal(scored.sampleCount, 1);
+    assert.equal(scored.aggregateMetrics.lcp_ms, 1432);
+    assert.equal(scored.aggregateMetrics.cls, 0.04);
+    assert.deepEqual(scored.warnings, []);
+    assert.deepEqual(scored.samples, [
+      {
+        profile: "mobile",
+        route: "/",
+        performanceScore: null,
+        fcp_ms: null,
+        lcp_ms: 1432,
+        cls: 0.04,
+        tbt_ms: null,
+        speed_index_ms: null,
+      },
+    ]);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("loadLighthouseSamplesFromPerfReport keeps legacy missing-lighthouse warnings when only metrics are present", async () => {
+  const root = await createTempRoot();
+
+  try {
+    const artifactDir = path.join(root, "artifacts", "performance");
+    await mkdir(artifactDir, { recursive: true });
+    await writeJson(path.join(artifactDir, "perf-assert-report.json"), {
+      samples: [
+        {
+          profile: "mobile",
+          route: "/",
+          metrics: {
+            lcp_ms: 1234,
+            cls: 0.01,
+          },
+          artifacts: {},
+        },
+      ],
+    });
+
+    const result = await loadLighthouseSamplesFromPerfReport({ artifactDir });
+
+    assert.deepEqual(result.samples, []);
+    assert.equal(result.warnings.length, 1);
+    assert.match(
+      result.warnings[0]!,
+      /missing artifacts\.lighthouseReport path/,
+    );
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test("loadCompositeQualityHistory falls back to the legacy history filename", async () => {
   const root = await createTempRoot();
 

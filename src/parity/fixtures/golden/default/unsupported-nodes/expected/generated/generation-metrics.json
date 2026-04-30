@@ -1,0 +1,37 @@
+{
+  "fetchedNodes": 0,
+  "skippedHidden": 0,
+  "skippedPlaceholders": 0,
+  "screenElementCounts": [
+    {
+      "screenId": "screen-profile",
+      "screenName": "Profile",
+      "elements": 29
+    }
+  ],
+  "truncatedScreens": [],
+  "depthTruncatedScreens": [],
+  "classificationFallbacks": [
+    {
+      "screenId": "screen-profile",
+      "screenName": "Profile",
+      "nodeId": "badge-icon",
+      "nodeName": "Icon",
+      "nodeType": "ELLIPSE",
+      "depth": 1
+    }
+  ],
+  "degradedGeometryNodes": [],
+  "prototypeNavigationDetected": 0,
+  "prototypeNavigationResolved": 0,
+  "prototypeNavigationUnresolved": 0,
+  "prototypeNavigationRendered": 0,
+  "nodeDiagnostics": [
+    {
+      "nodeId": "badge-icon",
+      "category": "classification-fallback",
+      "reason": "Element type classification used fallback rule for Figma node type 'ELLIPSE'.",
+      "screenId": "screen-profile"
+    }
+  ]
+}

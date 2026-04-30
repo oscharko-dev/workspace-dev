@@ -2089,7 +2089,7 @@ test("IrDeriveService persists screenVariantFamilies together with appShells for
   });
   const localPayloadPath = path.join(executionContext.paths.jobDir, "variant-shell-fixture.json");
   const fixturePayload = await readFile(
-    path.resolve(process.cwd(), "src/parity/fixtures/golden/variant-shell-signals/figma.json"),
+    path.resolve(process.cwd(), "src/parity/fixtures/golden/rocket/variant-shell-signals/figma.json"),
     "utf8"
   );
   await writeFile(localPayloadPath, fixturePayload, "utf8");
@@ -6046,6 +6046,89 @@ test("ValidateProjectService emits deterministic quality-passport evidence from 
       },
       null,
       2,
+      )}\n`,
+    "utf8",
+  );
+  await writeFile(
+    path.join(
+      executionContext.paths.generatedProjectDir,
+      "src",
+      "generated",
+      "accessibility-report.json",
+    ),
+    `${JSON.stringify(
+      {
+        schemaVersion: "1.0.0",
+        pipelineId: "default",
+        summary: {
+          status: "warn",
+          message:
+            "Generated accessibility report flagged 2 warning(s) across 1 screen(s).",
+          screenCount: 1,
+          warningCount: 2,
+          semanticOutputWarningCount: 0,
+          formLabelWarningCount: 0,
+          buttonSemanticsWarningCount: 1,
+          ariaLabelFallbackWarningCount: 1,
+          altFallbackWarningCount: 0,
+          focusOrderWarningCount: 0,
+          lowContrastWarningCount: 0,
+          clickDivFallbackWarningCount: 0,
+        },
+        screens: [
+          {
+            screenId: "screen-1",
+            screenName: "Screen 1",
+            warningCount: 2,
+            warnings: [
+              {
+                code: "W_DEFAULT_A11Y_BUTTON_SEMANTICS",
+                severity: "warning",
+                screenId: "screen-1",
+                screenName: "Screen 1",
+                nodeId: "button-1",
+                nodeName: "Button",
+                message:
+                  "Button 'Button' has no visible text and depends on an accessibility-label fallback.",
+              },
+              {
+                code: "W_DEFAULT_A11Y_ARIA_LABEL_FALLBACK",
+                severity: "warning",
+                screenId: "screen-1",
+                screenName: "Screen 1",
+                nodeId: "button-1",
+                nodeName: "Button",
+                message:
+                  "Button 'Button' depends on a generated aria-label fallback.",
+              },
+            ],
+          },
+        ],
+        warnings: [
+          {
+            code: "W_DEFAULT_A11Y_BUTTON_SEMANTICS",
+            severity: "warning",
+            screenId: "screen-1",
+            screenName: "Screen 1",
+            nodeId: "button-1",
+            nodeName: "Button",
+            message:
+              "Button 'Button' has no visible text and depends on an accessibility-label fallback.",
+          },
+          {
+            code: "W_DEFAULT_A11Y_ARIA_LABEL_FALLBACK",
+            severity: "warning",
+            screenId: "screen-1",
+            screenName: "Screen 1",
+            nodeId: "button-1",
+            nodeName: "Button",
+            message:
+              "Button 'Button' depends on a generated aria-label fallback.",
+          },
+        ],
+      },
+      null,
+      2,
     )}\n`,
     "utf8",
   );
@@ -6060,6 +6143,7 @@ test("ValidateProjectService emits deterministic quality-passport evidence from 
     value: {
       generatedPaths: [
         "src/App.tsx",
+        "src/generated/accessibility-report.json",
         "src/generated/semantic-component-report.json",
         "src/theme/token-report.json",
       ],
@@ -6093,6 +6177,12 @@ test("ValidateProjectService emits deterministic quality-passport evidence from 
     scope: { sourceMode: string; scope: string; selectedNodeCount: number };
     generatedFiles: Array<{ path: string; sha256?: string }>;
     validation: { status: string };
+    generatedAccessibility?: {
+      status: string;
+      reportPath?: string;
+      warningCount?: number;
+      summary?: string;
+    };
     coverage: {
       token: { covered: number; total: number; ratio: number };
       semantic: { status: string; covered: number; total: number; ratio: number };
@@ -6119,6 +6209,7 @@ test("ValidateProjectService emits deterministic quality-passport evidence from 
     passport?.generatedFiles.map((file) => file.path),
     [
       "src/App.tsx",
+      "src/generated/accessibility-report.json",
       "src/generated/semantic-component-report.json",
       "src/theme/token-report.json",
     ],
@@ -6142,7 +6233,49 @@ test("ValidateProjectService emits deterministic quality-passport evidence from 
   });
   assert.deepEqual(
     passport?.warnings.map((warning) => warning.code),
-    ["CODEGEN_NOTE", "DEFAULT_SEMANTIC_FALLBACK"],
+    [
+      "CODEGEN_NOTE",
+      "DEFAULT_SEMANTIC_FALLBACK",
+      "W_DEFAULT_A11Y_ARIA_LABEL_FALLBACK",
+      "W_DEFAULT_A11Y_BUTTON_SEMANTICS",
+    ],
+  );
+  assert.equal(
+    passport?.warnings.some(
+      (warning) =>
+        warning.code === "DEFAULT_SEMANTIC_FALLBACK" &&
+        warning.source === "src/generated/semantic-component-report.json",
+    ),
+    true,
+  );
+  assert.equal(
+    passport?.warnings
+      .filter((warning) => warning.code.startsWith("W_DEFAULT_A11Y_"))
+      .every(
+        (warning) => warning.source === "src/generated/accessibility-report.json",
+      ),
+    true,
+  );
+
+  const validationSummary = await executionContext.artifactStore.getValue<{
+    status?: string;
+    generatedAccessibility?: {
+      status?: string;
+      reportPath?: string;
+      warningCount?: number;
+      summary?: string;
+    };
+  }>(STAGE_ARTIFACT_KEYS.validationSummary);
+  assert.equal(validationSummary?.status, "ok");
+  assert.equal(validationSummary?.generatedAccessibility?.status, "warn");
+  assert.equal(
+    validationSummary?.generatedAccessibility?.reportPath,
+    "src/generated/accessibility-report.json",
+  );
+  assert.equal(validationSummary?.generatedAccessibility?.warningCount, 2);
+  assert.equal(
+    validationSummary?.generatedAccessibility?.summary,
+    "Generated accessibility report flagged 2 warning(s) across 1 screen(s).",
   );
 });
 
@@ -7108,6 +7241,109 @@ test("ValidateProjectService persists composite quality with perf data and reque
     path.join(executionContext.paths.jobDir, "composite-quality", "report.json")
   );
   assert.equal(executionContext.job.compositeQuality?.weights?.visual, 0.75);
+});
+
+test("ValidateProjectService accepts Tailwind browser-timing performance reports without Lighthouse warnings", async () => {
+  const { executionContext, stageContextFor } = await createExecutionContext({});
+  await executionContext.artifactStore.setPath({
+    key: STAGE_ARTIFACT_KEYS.generatedProject,
+    stage: "template.prepare",
+    absolutePath: executionContext.paths.generatedProjectDir
+  });
+  await executionContext.artifactStore.setValue({
+    key: STAGE_ARTIFACT_KEYS.generationDiffContext,
+    stage: "codegen.generate",
+    value: {
+      boardKey: "test-board-browser-timing-performance"
+    } satisfies GenerationDiffContext
+  });
+
+  const distDir = path.join(executionContext.paths.generatedProjectDir, "dist");
+  const perfArtifactDir = path.join(executionContext.paths.generatedProjectDir, ".figmapipe", "performance");
+  await mkdir(distDir, { recursive: true });
+  await mkdir(perfArtifactDir, { recursive: true });
+  await writeFile(path.join(distDir, "index.html"), "<!doctype html><html><body>browser timing</body></html>\n", "utf8");
+  await writeFile(
+    path.join(perfArtifactDir, "perf-assert-report.json"),
+    JSON.stringify(
+      {
+        measurement: "playwright-browser-timing",
+        aggregate: {
+          lcp_p75_ms: 1420,
+          cls_p75: 0.003,
+          initial_js_kb: 38
+        },
+        checks: {
+          budgets: [
+            {
+              metric: "lcp_p75_ms",
+              actual: 1420,
+              budget: 2500,
+              pass: true
+            }
+          ],
+          regression: []
+        },
+        counts: {
+          samples: 1,
+          failedBudgets: 0,
+          failedRegression: 0
+        },
+        samples: [
+          {
+            profile: "mobile",
+            route: "/",
+            metrics: {
+              inp_ms: 0,
+              lcp_ms: 1408,
+              cls: 0.003,
+              initial_js_kb: 38,
+              route_transition_ms: 0
+            },
+            artifacts: {
+              browserTimingReport: "browser-timing-mobile-root.json"
+            }
+          }
+        ]
+      },
+      null,
+      2
+    ),
+    "utf8"
+  );
+
+  const service = createValidateProjectService({
+    runProjectValidationFn: async () =>
+      createSuccessfulValidationResult({ includePerfValidation: true })
+  });
+
+  await service.execute(undefined, stageContextFor("validate.project"));
+
+  const compositeQuality = await executionContext.artifactStore.getValue<{
+    status?: string;
+    performance?: {
+      score?: number | null;
+      sampleCount?: number;
+      aggregateMetrics?: { lcp_ms?: number | null; cls?: number | null };
+      warnings?: string[];
+    };
+    composite?: { includedDimensions?: string[] };
+    warnings?: string[];
+  }>(STAGE_ARTIFACT_KEYS.compositeQualityResult);
+
+  assert.equal(compositeQuality?.status, "completed");
+  assert.equal(compositeQuality?.performance?.score, null);
+  assert.equal(compositeQuality?.performance?.sampleCount, 1);
+  assert.equal(compositeQuality?.performance?.aggregateMetrics?.lcp_ms, 1420);
+  assert.equal(compositeQuality?.performance?.aggregateMetrics?.cls, 0.003);
+  assert.deepEqual(compositeQuality?.performance?.warnings, []);
+  assert.deepEqual(compositeQuality?.composite?.includedDimensions, []);
+  assert.equal(
+    compositeQuality?.warnings?.some((warning) =>
+      warning.includes("missing artifacts.lighthouseReport"),
+    ),
+    false
+  );
 });
 
 test("ValidateProjectService emits browser-aware standalone visual quality reports and artifacts", async () => {
@@ -8182,6 +8418,13 @@ test("ValidateProjectService populates generatedApp.test when enableUnitTestVali
           args: ["run", "test"],
           attempt: 1,
           timedOut: false
+        },
+        validatePlaywright: {
+          status: "passed",
+          command: "pnpm",
+          args: ["run", "--if-present", "validate:playwright"],
+          attempt: 1,
+          timedOut: false
         }
       };
     }
@@ -8196,6 +8439,7 @@ test("ValidateProjectService populates generatedApp.test when enableUnitTestVali
       typecheck?: { args?: string[] };
       build?: { args?: string[] };
       test?: { args?: string[] };
+      validatePlaywright?: { args?: string[] };
     };
   }>(STAGE_ARTIFACT_KEYS.validationSummary);
   assert.equal(summary?.status, "ok");
@@ -8203,6 +8447,11 @@ test("ValidateProjectService populates generatedApp.test when enableUnitTestVali
   assert.deepEqual(summary?.generatedApp?.typecheck?.args, ["typecheck"]);
   assert.deepEqual(summary?.generatedApp?.build?.args, ["build"]);
   assert.deepEqual(summary?.generatedApp?.test?.args, ["run", "test"]);
+  assert.deepEqual(summary?.generatedApp?.validatePlaywright?.args, [
+    "run",
+    "--if-present",
+    "validate:playwright"
+  ]);
 });
 
 test("ValidateProjectService persists uiA11y summary when UI validation report is available", async () => {

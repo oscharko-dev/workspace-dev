@@ -60,6 +60,9 @@ jobs:
       - name: Install Tailwind template dependencies
         run: pnpm --dir template/react-tailwind-app install --frozen-lockfile --ignore-scripts
 
+      - name: Enforce Tailwind template dependency denylist
+        run: pnpm run template:tailwind:dependency-denylist
+
       - name: Enforce dependency vulnerability gate
         run: pnpm audit --audit-level high
 
@@ -193,8 +196,46 @@ jobs:
       - name: Enforce repository secret policy
         run: pnpm run lint:secrets:all
 
+      - name: Enforce profile tarball secret policy
+        run: pnpm run lint:secrets:profiles
+
+      - name: Enforce package publishing lint
+        run: pnpm run lint:publint
+
+      - name: Enforce package type publish lint
+        run: pnpm run lint:types-publish
+
+      - name: Enforce license allowlist
+        run: pnpm run verify:licenses
+
+      - name: Verify package tarball contents
+        run: pnpm run verify:pack
+
+      - name: Verify reproducible build
+        run: pnpm run verify:reproducible-build
+
+      - name: Verify offline install + dual module smoke
+        run: pnpm run verify:airgap
+
+      - name: Generate CycloneDX SBOM
+        run: pnpm run sbom:cyclonedx
+
+      - name: Generate template CycloneDX SBOM
+        run: pnpm run sbom:cyclonedx:template
+
+      - name: Generate SPDX SBOM
+        run: pnpm run sbom:spdx
+
+      - name: Generate template SPDX SBOM
+        run: pnpm run sbom:spdx:template
+
+      - name: Verify SBOM parity
+        run: pnpm run verify:sbom:parity
+
       - name: Run profile release gates
-        run: pnpm run verify:profile-gates
+        shell: bash
+        run: |
+          pnpm run verify:profile-gates -- --skip-airgap --skip-reproducible
 
       - name: Upload flaky retry artifacts
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7
@@ -262,15 +303,28 @@ jobs:
       - name: Build template app
         run: pnpm --dir "${{ matrix.template.packageDir }}" run build
 
+      - name: Capture web performance baseline
+        env:
+          FIGMAPIPE_PERF_ARTIFACT_DIR: artifacts/performance
+          FIGMAPIPE_PERF_BASELINE_PATH: artifacts/performance/perf-measured-baseline.json
+          FIGMAPIPE_PERF_REPORT_PATH: artifacts/performance/perf-baseline-report.json
+          FIGMAPIPE_PERF_STRICT: "false"
+          FIGMAPIPE_PERF_ALLOW_BASELINE_BOOTSTRAP: "true"
+        run: pnpm --dir "${{ matrix.template.packageDir }}" run perf:baseline
+
       - name: Assert web performance budgets and regression
         env:
-          FIGMAPIPE_PERF_ARTIFACT_DIR: ${{ matrix.template.packageDir }}/artifacts/performance
-          FIGMAPIPE_PERF_BASELINE_PATH: ${{ matrix.template.packageDir }}/perf-baseline.json
+          FIGMAPIPE_PERF_ARTIFACT_DIR: artifacts/performance
+          FIGMAPIPE_PERF_BASELINE_PATH: perf-baseline.json
           FIGMAPIPE_PERF_STRICT: "true"
           FIGMAPIPE_PERF_ALLOW_BASELINE_BOOTSTRAP: "false"
         run: pnpm --dir "${{ matrix.template.packageDir }}" run perf:assert
 
-      - name: Summarize web performance report
+      - name: Summarize web performance baseline report
+        if: always()
+        run: node scripts/print-perf-report-summary.mjs "${{ matrix.template.packageDir }}/artifacts/performance/perf-baseline-report.json"
+
+      - name: Summarize web performance assertion report
         if: always()
         run: node scripts/print-perf-report-summary.mjs "${{ matrix.template.packageDir }}/artifacts/performance/perf-assert-report.json"
 

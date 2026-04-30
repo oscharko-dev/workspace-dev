@@ -61,4 +61,44 @@ describe("perf-runner baseline regression checks", () => {
       ]),
     );
   });
+
+  it("returns missing-baseline-or-metric for all metrics when baselineAggregate is undefined", () => {
+    const checks = compareAgainstBaseline({
+      aggregate: {
+        inp_p75_ms: 0,
+        lcp_p75_ms: 36,
+        cls_p75: 0,
+        initial_js_kb: 58.79,
+        route_transition_ms: 0,
+      },
+      baselineAggregate: undefined,
+      tolerancePct: 10,
+    });
+
+    expect(checks.length).toBeGreaterThan(0);
+    expect(checks.every((check) => !check.pass)).toBe(true);
+    expect(
+      checks.every((check) => check.reason === "missing-baseline-or-metric"),
+    ).toBe(true);
+  });
+
+  it("returns missing-baseline-or-metric when a metric is absent from aggregate", () => {
+    const checks = compareAgainstBaseline({
+      aggregate: {},
+      baselineAggregate: {
+        inp_p75_ms: 0,
+        lcp_p75_ms: 36,
+        cls_p75: 0,
+        initial_js_kb: 58.79,
+        route_transition_ms: 0,
+      },
+      tolerancePct: 10,
+    });
+
+    expect(checks.length).toBeGreaterThan(0);
+    expect(checks.every((check) => !check.pass)).toBe(true);
+    expect(
+      checks.every((check) => check.reason === "missing-baseline-or-metric"),
+    ).toBe(true);
+  });
 });

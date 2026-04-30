@@ -6,6 +6,7 @@ import {
   hasIncludedExtension,
   isSafeDestination,
   resolveScanRoots,
+  parseNoTelemetryArgs,
 } from "./check-no-telemetry.mjs";
 
 // ── hasTestSuffix tests ──────────────────────────────────────────────────────
@@ -57,6 +58,17 @@ test("resolveScanRoots: selects template roots for the requested profile", () =>
   assert.ok(!defaultRoots.includes("template/react-mui-app"));
   assert.ok(rocketRoots.includes("template/react-mui-app"));
   assert.ok(!rocketRoots.includes("template/react-tailwind-app"));
+});
+
+test("parseNoTelemetryArgs: defaults to all build profiles and normalizes aliases", () => {
+  assert.deepStrictEqual(parseNoTelemetryArgs([]), [
+    "default",
+    "rocket",
+    "default-rocket",
+  ]);
+  assert.deepStrictEqual(parseNoTelemetryArgs(["--profile", "default,rocket"]), [
+    "default-rocket",
+  ]);
 });
 
 // ── isSafeDestination tests (AC-2.1, AC-2.2, AC-2.3, AC-2.4) ────────────────

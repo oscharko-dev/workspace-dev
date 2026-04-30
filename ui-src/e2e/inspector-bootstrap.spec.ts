@@ -162,6 +162,26 @@ test.describe("inspector bootstrap flow", () => {
   test("paste shows the banner, confirms import, and hydrates into inspector panel when job completes", async ({
     page,
   }) => {
+    await page.route("**/workspace/submit", async (route) => {
+      const request = route.request();
+      if (request.method() !== "POST") {
+        await route.continue();
+        return;
+      }
+
+      const rawPayload = request.postDataJSON() as Record<string, unknown>;
+      await route.continue({
+        headers: {
+          ...request.headers(),
+          "content-type": "application/json",
+        },
+        postData: JSON.stringify({
+          ...rawPayload,
+          pipelineId: "rocket",
+        }),
+      });
+    });
+
     await openInspectorBootstrap(page, BOOTSTRAP_VIEWPORT);
 
     // Confirm bootstrap shell is visible before pasting
@@ -194,6 +214,7 @@ test.describe("inspector bootstrap flow", () => {
       unknown
     >;
     expect(submittedBody["figmaSourceMode"]).toBe("figma_paste");
+    expect(submittedBody["pipelineId"]).toBe("rocket");
     expect(typeof submittedBody["figmaJsonPayload"]).toBe("string");
 
     const {
@@ -232,24 +253,24 @@ test.describe("inspector bootstrap flow", () => {
         (option) => option.value,
       );
     });
-    const generatedScreenFile = fileOptionValues.find((value) =>
-      /^src\/screens\/(?!__tests__\/)(?!.*\.test\.tsx$).+\.tsx$/.test(value),
-    );
-    expect(generatedScreenFile).toBeTruthy();
+    const generatedAppFile = "src/App.tsx";
+    expect(fileOptionValues).toContain(generatedAppFile);
     expect(fileOptionValues).toContain("src/theme/theme.ts");
     expect(fileOptionValues.some((value) => /tailwind/i.test(value))).toBe(
       false,
     );
 
-    await fileSelector.selectOption(generatedScreenFile!);
+    await fileSelector.selectOption(generatedAppFile);
     await expect(page.getByTestId("code-viewer-filepath")).toHaveText(
-      generatedScreenFile!,
+      generatedAppFile,
     );
     const codeContent = page.getByTestId("code-content");
-    await expect(codeContent).toContainText("sx={{", { timeout: 30_000 });
-    const homeCode = (await codeContent.textContent()) ?? "";
-    expect(homeCode).toContain("sx={{");
-    expect(homeCode).not.toContain("tailwind");
+    await expect(codeContent).toContainText("./screens/Home", {
+      timeout: 30_000,
+    });
+    const appCode = (await codeContent.textContent()) ?? "";
+    expect(appCode).toContain("./screens/Details");
+    expect(appCode).not.toContain("tailwind");
 
     await expect(page.getByTestId("inspector-suggestions-host")).toBeVisible();
     await expect(page.getByTestId("suggestions-quality-score")).toBeVisible();
