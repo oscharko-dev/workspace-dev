@@ -192,6 +192,10 @@ test("profile pack distribution includes template lockfile but excludes template
       tarballListing,
       /package\/template\/react-tailwind-app\/e2e\/template\.spec\.ts/,
     );
+    assert.match(
+      tarballListing,
+      /package\/template\/react-tailwind-app\/tsconfig\.e2e\.json/,
+    );
     assert.doesNotMatch(
       tarballListing,
       /package\/template\/react-mui-app\/node_modules\//,

@@ -133,8 +133,10 @@ in the PR before adding an explicit narrow exception to
 ## Automation
 
 `.github/workflows/template-dependency-freshness.yml` runs weekly and can also
-be dispatched manually. It checks `template/react-mui-app/package.json` and the
-checked-in `template/react-mui-app/pnpm-lock.yaml` against npm registry publish
+be dispatched manually. It checks `template/react-mui-app/package.json` and
+`template/react-mui-app/pnpm-lock.yaml`, plus
+`template/react-tailwind-app/package.json` and
+`template/react-tailwind-app/pnpm-lock.yaml`, against npm registry publish
 times, then opens or updates a GitHub issue when a same-major minor or patch
 update has been available for more than 30 days and the lockfile baseline has
 not caught up.

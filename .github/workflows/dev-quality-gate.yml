@@ -53,6 +53,9 @@ jobs:
       - name: Install Tailwind template dependencies
         run: pnpm --dir template/react-tailwind-app install --frozen-lockfile --ignore-scripts
 
+      - name: Enforce Tailwind template dependency denylist
+        run: pnpm run template:tailwind:dependency-denylist
+
       - name: Enforce dependency vulnerability gate
         run: pnpm audit --audit-level high
 
