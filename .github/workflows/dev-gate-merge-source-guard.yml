@@ -4,11 +4,15 @@ on:
   pull_request:
     branches: [dev-gate]
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' && github.ref != 'refs/heads/dev' }}
+
 permissions: {}
 
 jobs:
   allow-only-dev-to-dev-gate:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     env:
       SOURCE_BRANCH: ${{ github.head_ref }}
     steps:

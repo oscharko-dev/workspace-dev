@@ -7,6 +7,10 @@ on:
     - cron: "30 5 * * 1"
   workflow_dispatch:
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' && github.ref != 'refs/heads/dev' }}
+
 permissions:
   actions: read
   contents: read
@@ -19,7 +23,7 @@ jobs:
       contents: read
       security-events: write
       id-token: write
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     steps:
       - name: Checkout repository
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
@@ -52,7 +56,7 @@ jobs:
   enforce-threshold:
     if: github.event_name != 'workflow_dispatch' || github.ref == 'refs/heads/dev'
     needs: analysis
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     env:
       SCORECARD_MIN_SCORE: "5.5"
       SCORECARD_API_URL: https://api.securityscorecards.dev/projects/github.com/${{ github.repository }}
@@ -69,7 +73,7 @@ jobs:
 
   manual-non-dev-info:
     if: github.event_name == 'workflow_dispatch' && github.ref != 'refs/heads/dev'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     steps:
       - name: Explain dev-only publication behavior
         run: |
