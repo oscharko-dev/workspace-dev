@@ -84,6 +84,7 @@ jobs:
       - name: Run release quality gates
         run: |
           pnpm run typecheck
+          pnpm exec playwright install --with-deps chromium
           pnpm run test:dast-smoke
           pnpm run test:load
           pnpm run test
@@ -98,7 +99,6 @@ jobs:
           pnpm run test:ti-multi-source-eval
           pnpm run ui:test:coverage
           pnpm run test:coverage
-          pnpm exec playwright install --with-deps chromium
           pnpm run ui:test:e2e
           pnpm run template:tailwind:validate:playwright
           pnpm run test:flaky-retry
