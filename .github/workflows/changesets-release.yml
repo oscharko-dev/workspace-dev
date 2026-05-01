@@ -81,41 +81,8 @@ jobs:
       - name: Verify template npm signature attestations
         run: pnpm run template:signatures
 
-      - name: Run release quality gates
-        run: |
-          pnpm run typecheck
-          pnpm exec playwright install --with-deps chromium
-          pnpm run test:dast-smoke
-          pnpm run test:load
-          pnpm run test
-          pnpm run template:test
-          pnpm run template:tailwind:lint
-          pnpm run template:tailwind:typecheck
-          pnpm run template:tailwind:test
-          pnpm run template:tailwind:build
-          pnpm run template:tailwind:validate:ui
-          pnpm run test:golden
-          pnpm run test:ti-eval
-          pnpm run test:ti-multi-source-eval
-          pnpm run ui:test:coverage
-          pnpm run test:coverage
-          pnpm run ui:test:e2e
-          pnpm run template:tailwind:validate:playwright
-          pnpm run test:flaky-retry
-          pnpm run test:bdd
-          pnpm run test:property-based
-          pnpm run ui:lint
-          pnpm run lint:boundaries
-          pnpm run lint:ts-style
-          pnpm run lint:no-telemetry
-          pnpm run lint:secrets:all
-          pnpm run build
-          pnpm run lint:secrets:profiles
-          pnpm run lint:publint
-          pnpm run lint:types-publish
-          pnpm run lint:size
-          pnpm run verify:fips
-          pnpm run verify:profile-gates
+      - name: Run release quality gates (canonical)
+        run: pnpm run release:quality-gates:publish-lifecycle
 
       - name: Upload runtime load smoke artifacts
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7
