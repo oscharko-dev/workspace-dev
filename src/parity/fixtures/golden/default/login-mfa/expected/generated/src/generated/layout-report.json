@@ -7,6 +7,12 @@
       "nodeId": "submit-button-label",
       "nodeName": "Label",
       "message": "Absolute layout fallback used for 'Label' because no deterministic flex or grid structure could be inferred."
+    },
+    {
+      "code": "W_ABSOLUTE_LAYOUT_FALLBACK",
+      "nodeId": "verify-button-label",
+      "nodeName": "Label",
+      "message": "Absolute layout fallback used for 'Label' because no deterministic flex or grid structure could be inferred."
     }
   ],
   "semanticComponents": [],
@@ -24,6 +30,22 @@
       "screenName": "Login",
       "code": "W_SEMANTIC_COMPONENT_NOT_REUSABLE",
       "nodeId": "submit-button",
+      "nodeName": "Primary Button",
+      "message": "Default semantic synthesis kept 'Primary Button' inline because no matching reusable semantic structure was found."
+    },
+    {
+      "screenId": "screen-mfa",
+      "screenName": "MFA",
+      "code": "W_SEMANTIC_COMPONENT_NOT_REUSABLE",
+      "nodeId": "mfa-code-field",
+      "nodeName": "Text Field",
+      "message": "Default semantic synthesis kept 'Text Field' inline because no matching reusable semantic structure was found."
+    },
+    {
+      "screenId": "screen-mfa",
+      "screenName": "MFA",
+      "code": "W_SEMANTIC_COMPONENT_NOT_REUSABLE",
+      "nodeId": "verify-button",
       "nodeName": "Primary Button",
       "message": "Default semantic synthesis kept 'Primary Button' inline because no matching reusable semantic structure was found."
     }
@@ -52,6 +74,34 @@
         {
           "code": "W_SEMANTIC_COMPONENT_NOT_REUSABLE",
           "nodeId": "submit-button",
+          "nodeName": "Primary Button",
+          "message": "Default semantic synthesis kept 'Primary Button' inline because no matching reusable semantic structure was found."
+        }
+      ]
+    },
+    {
+      "screenId": "screen-mfa",
+      "screenName": "MFA",
+      "rootLayoutKind": "flex",
+      "warnings": [
+        {
+          "code": "W_ABSOLUTE_LAYOUT_FALLBACK",
+          "nodeId": "verify-button-label",
+          "nodeName": "Label",
+          "message": "Absolute layout fallback used for 'Label' because no deterministic flex or grid structure could be inferred."
+        }
+      ],
+      "semanticComponents": [],
+      "semanticDiagnostics": [
+        {
+          "code": "W_SEMANTIC_COMPONENT_NOT_REUSABLE",
+          "nodeId": "mfa-code-field",
+          "nodeName": "Text Field",
+          "message": "Default semantic synthesis kept 'Text Field' inline because no matching reusable semantic structure was found."
+        },
+        {
+          "code": "W_SEMANTIC_COMPONENT_NOT_REUSABLE",
+          "nodeId": "verify-button",
           "nodeName": "Primary Button",
           "message": "Default semantic synthesis kept 'Primary Button' inline because no matching reusable semantic structure was found."
         }

@@ -143,6 +143,224 @@
       "width": 390,
       "height": 844,
       "fillColor": "#fafafc"
+    },
+    {
+      "id": "screen-mfa",
+      "name": "MFA",
+      "layoutMode": "VERTICAL",
+      "gap": 12,
+      "padding": {
+        "top": 16,
+        "right": 16,
+        "bottom": 16,
+        "left": 16
+      },
+      "children": [
+        {
+          "id": "mfa-step",
+          "name": "Step",
+          "nodeType": "TEXT",
+          "layoutMode": "NONE",
+          "gap": 0,
+          "padding": {
+            "top": 0,
+            "right": 0,
+            "bottom": 0,
+            "left": 0
+          },
+          "type": "text",
+          "text": "Step 2 of 2",
+          "x": 446,
+          "y": 16,
+          "width": 92,
+          "height": 20,
+          "fillColor": "#824adb",
+          "fontSize": 14,
+          "fontWeight": 600,
+          "fontFamily": "Inter",
+          "lineHeight": 20,
+          "textAlign": "LEFT"
+        },
+        {
+          "id": "mfa-title",
+          "name": "Title",
+          "nodeType": "TEXT",
+          "layoutMode": "NONE",
+          "gap": 0,
+          "padding": {
+            "top": 0,
+            "right": 0,
+            "bottom": 0,
+            "left": 0
+          },
+          "type": "text",
+          "text": "Verify access code",
+          "x": 446,
+          "y": 44,
+          "width": 280,
+          "height": 40,
+          "fillColor": "#1c1f24",
+          "fontSize": 32,
+          "fontWeight": 700,
+          "fontFamily": "Inter",
+          "lineHeight": 40,
+          "textAlign": "LEFT"
+        },
+        {
+          "id": "mfa-body",
+          "name": "Body",
+          "nodeType": "TEXT",
+          "layoutMode": "NONE",
+          "gap": 0,
+          "padding": {
+            "top": 0,
+            "right": 0,
+            "bottom": 0,
+            "left": 0
+          },
+          "type": "text",
+          "text": "Enter the 6-digit code sent to your device.",
+          "x": 446,
+          "y": 96,
+          "width": 300,
+          "height": 40,
+          "fillColor": "#3d424d",
+          "fontSize": 14,
+          "fontWeight": 500,
+          "fontFamily": "Inter",
+          "lineHeight": 20,
+          "textAlign": "LEFT"
+        },
+        {
+          "id": "mfa-code-field",
+          "name": "Text Field",
+          "nodeType": "FRAME",
+          "layoutMode": "HORIZONTAL",
+          "gap": 8,
+          "padding": {
+            "top": 0,
+            "right": 0,
+            "bottom": 0,
+            "left": 0
+          },
+          "variantMapping": {
+            "properties": {
+              "variant": "text"
+            },
+            "muiProps": {
+              "variant": "text"
+            }
+          },
+          "primaryAxisAlignItems": "SPACE_BETWEEN",
+          "counterAxisAlignItems": "CENTER",
+          "type": "input",
+          "x": 446,
+          "y": 152,
+          "width": 358,
+          "height": 56,
+          "children": [
+            {
+              "id": "mfa-code-label",
+              "name": "Label",
+              "nodeType": "TEXT",
+              "layoutMode": "NONE",
+              "gap": 0,
+              "padding": {
+                "top": 0,
+                "right": 0,
+                "bottom": 0,
+                "left": 0
+              },
+              "type": "text",
+              "text": "Verification code",
+              "x": 454,
+              "y": 168,
+              "width": 120,
+              "height": 20,
+              "fillColor": "#3d424d",
+              "fontSize": 14,
+              "fontWeight": 500,
+              "fontFamily": "Inter",
+              "lineHeight": 20,
+              "textAlign": "LEFT"
+            }
+          ]
+        },
+        {
+          "id": "verify-button",
+          "name": "Primary Button",
+          "nodeType": "FRAME",
+          "layoutMode": "NONE",
+          "gap": 0,
+          "padding": {
+            "top": 0,
+            "right": 0,
+            "bottom": 0,
+            "left": 0
+          },
+          "type": "paper",
+          "x": 446,
+          "y": 228,
+          "width": 220,
+          "height": 48,
+          "fillColor": "#ed001f",
+          "children": [
+            {
+              "id": "verify-button-label",
+              "name": "Label",
+              "nodeType": "TEXT",
+              "layoutMode": "NONE",
+              "gap": 0,
+              "padding": {
+                "top": 0,
+                "right": 0,
+                "bottom": 0,
+                "left": 0
+              },
+              "type": "text",
+              "text": "Verify code",
+              "x": 507,
+              "y": 241,
+              "width": 98,
+              "height": 22,
+              "fillColor": "#ffffff",
+              "fontSize": 16,
+              "fontWeight": 600,
+              "fontFamily": "Inter",
+              "lineHeight": 22,
+              "textAlign": "CENTER"
+            }
+          ]
+        },
+        {
+          "id": "mfa-help",
+          "name": "Helper",
+          "nodeType": "TEXT",
+          "layoutMode": "NONE",
+          "gap": 0,
+          "padding": {
+            "top": 0,
+            "right": 0,
+            "bottom": 0,
+            "left": 0
+          },
+          "type": "text",
+          "text": "Need a new code? Request a new code.",
+          "x": 446,
+          "y": 292,
+          "width": 310,
+          "height": 40,
+          "fillColor": "#696b75",
+          "fontSize": 14,
+          "fontWeight": 500,
+          "fontFamily": "Inter",
+          "lineHeight": 20,
+          "textAlign": "LEFT"
+        }
+      ],
+      "width": 390,
+      "height": 844,
+      "fillColor": "#fafafc"
     }
   ],
   "tokens": {
@@ -154,7 +372,7 @@
       "success": "#16A34A",
       "warning": "#D97706",
       "error": "#ed001f",
-      "info": "#0288D1",
+      "info": "#696b75",
       "divider": "#1c1f241f",
       "action": {
         "active": "#1c1f248a",
@@ -169,7 +387,7 @@
     "spacingBase": 10,
     "fontFamily": "Inter, Roboto, Arial, sans-serif",
     "headingSize": 32,
-    "bodySize": 16,
+    "bodySize": 14,
     "typography": {
       "h1": {
         "fontSizePx": 32,
@@ -178,51 +396,51 @@
         "fontFamily": "Inter"
       },
       "h2": {
-        "fontSizePx": 32,
-        "fontWeight": 700,
-        "lineHeightPx": 40,
+        "fontSizePx": 16,
+        "fontWeight": 600,
+        "lineHeightPx": 22,
         "fontFamily": "Inter"
       },
       "h3": {
-        "fontSizePx": 32,
-        "fontWeight": 700,
-        "lineHeightPx": 40,
+        "fontSizePx": 16,
+        "fontWeight": 600,
+        "lineHeightPx": 22,
         "fontFamily": "Inter"
       },
       "h4": {
-        "fontSizePx": 32,
-        "fontWeight": 700,
-        "lineHeightPx": 40,
+        "fontSizePx": 16,
+        "fontWeight": 600,
+        "lineHeightPx": 22,
         "fontFamily": "Inter"
       },
       "h5": {
-        "fontSizePx": 32,
-        "fontWeight": 700,
-        "lineHeightPx": 40,
+        "fontSizePx": 16,
+        "fontWeight": 600,
+        "lineHeightPx": 22,
         "fontFamily": "Inter"
       },
       "h6": {
-        "fontSizePx": 32,
-        "fontWeight": 700,
-        "lineHeightPx": 40,
+        "fontSizePx": 16,
+        "fontWeight": 600,
+        "lineHeightPx": 22,
         "fontFamily": "Inter"
       },
       "subtitle1": {
-        "fontSizePx": 32,
+        "fontSizePx": 16,
         "fontWeight": 700,
         "lineHeightPx": 40,
         "fontFamily": "Inter"
       },
       "subtitle2": {
-        "fontSizePx": 32,
-        "fontWeight": 700,
-        "lineHeightPx": 40,
-        "fontFamily": "Inter"
-      },
-      "body1": {
         "fontSizePx": 16,
         "fontWeight": 600,
         "lineHeightPx": 22,
+        "fontFamily": "Inter"
+      },
+      "body1": {
+        "fontSizePx": 14,
+        "fontWeight": 500,
+        "lineHeightPx": 20,
         "fontFamily": "Inter"
       },
       "body2": {
@@ -272,6 +490,11 @@
         "screenId": "screen-login",
         "screenName": "Login",
         "elements": 5
+      },
+      {
+        "screenId": "screen-mfa",
+        "screenName": "MFA",
+        "elements": 8
       }
     ],
     "truncatedScreens": [],
