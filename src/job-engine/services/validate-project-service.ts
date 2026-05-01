@@ -218,9 +218,9 @@ interface ValidationSummaryArtifact {
         status: "failed";
         failedCommand: string;
       }
-      | {
-          status: "not_available";
-        };
+    | {
+        status: "not_available";
+      };
   generatedAccessibility: ValidationGeneratedAccessibilitySummary;
   uiA11y: ValidationUiA11ySummary;
   visualAudit: WorkspaceVisualAuditResult;
@@ -774,7 +774,9 @@ const meanCompositeMetricOrNull = (
 const finiteCompositeMetricOrNull = (value: unknown): number | null =>
   typeof value === "number" && Number.isFinite(value) ? value : null;
 
-const collectBrowserTimingCheckWarnings = (report: Record<string, unknown>): string[] => {
+const collectBrowserTimingCheckWarnings = (
+  report: Record<string, unknown>,
+): string[] => {
   const checks = isRecord(report.checks) ? report.checks : {};
   const warnings: string[] = [];
   for (const group of ["budgets", "regression"] as const) {
@@ -1070,9 +1072,7 @@ const loadCompositePerformanceBreakdown = async ({
   }
 
   const aggregate = isRecord(parsed.aggregate) ? parsed.aggregate : undefined;
-  const browserTimingLcp = finiteCompositeMetricOrNull(
-    aggregate?.lcp_p75_ms,
-  );
+  const browserTimingLcp = finiteCompositeMetricOrNull(aggregate?.lcp_p75_ms);
   const browserTimingCls = finiteCompositeMetricOrNull(aggregate?.cls_p75);
 
   warnings.push(...collectBrowserTimingCheckWarnings(parsed));
@@ -1086,11 +1086,11 @@ const loadCompositePerformanceBreakdown = async ({
       fcp_ms: meanCompositeMetricOrNull(fcpValues),
       lcp_ms:
         browserTimingSampleCount > 0
-          ? browserTimingLcp ?? meanCompositeMetricOrNull(lcpValues)
+          ? (browserTimingLcp ?? meanCompositeMetricOrNull(lcpValues))
           : meanCompositeMetricOrNull(lcpValues),
       cls:
         browserTimingSampleCount > 0
-          ? browserTimingCls ?? meanCompositeMetricOrNull(clsValues)
+          ? (browserTimingCls ?? meanCompositeMetricOrNull(clsValues))
           : meanCompositeMetricOrNull(clsValues),
       tbt_ms: meanCompositeMetricOrNull(tbtValues),
       speed_index_ms: meanCompositeMetricOrNull(speedIndexValues),
@@ -1351,13 +1351,16 @@ const parseGeneratedAccessibilityReportSummary = ({
       ? summary.message.trim()
       : undefined;
   const warningCount =
-    typeof summary?.warningCount === "number" && Number.isFinite(summary.warningCount)
+    typeof summary?.warningCount === "number" &&
+    Number.isFinite(summary.warningCount)
       ? Math.max(0, Math.trunc(summary.warningCount))
       : Array.isArray(parsed.warnings)
         ? parsed.warnings.length
         : 0;
   const status =
-    typeof summary?.status === "string" && summary.status === "ok" && warningCount === 0
+    typeof summary?.status === "string" &&
+    summary.status === "ok" &&
+    warningCount === 0
       ? "ok"
       : "warn";
 
@@ -1367,7 +1370,8 @@ const parseGeneratedAccessibilityReportSummary = ({
       reportPath,
       warningCount,
       summary:
-        message ?? `Generated accessibility report found no warnings across 0 screen(s).`,
+        message ??
+        `Generated accessibility report found no warnings across 0 screen(s).`,
     };
   }
 
@@ -1386,9 +1390,10 @@ const buildGeneratedAccessibilitySummary = async ({
 }: {
   context: Parameters<StageService<void>["execute"]>[1];
 }): Promise<ValidationGeneratedAccessibilitySummary> => {
-  const codegenSummary = await context.artifactStore.getValue<CodegenGenerateSummary>(
-    STAGE_ARTIFACT_KEYS.codegenSummary,
-  );
+  const codegenSummary =
+    await context.artifactStore.getValue<CodegenGenerateSummary>(
+      STAGE_ARTIFACT_KEYS.codegenSummary,
+    );
   const reportPath = DEFAULT_ACCESSIBILITY_REPORT_PATH;
   const absoluteReportPath = path.join(
     context.paths.generatedProjectDir,
@@ -1417,8 +1422,7 @@ const buildGeneratedAccessibilitySummary = async ({
     return toGeneratedAccessibilityWarnSummary({
       reportPath,
       warningCount: 0,
-      summary:
-        "Generated accessibility report is missing or unreadable.",
+      summary: "Generated accessibility report is missing or unreadable.",
     });
   }
 
@@ -1431,8 +1435,7 @@ const buildGeneratedAccessibilitySummary = async ({
     return toGeneratedAccessibilityWarnSummary({
       reportPath,
       warningCount: 0,
-      summary:
-        "Generated accessibility report is malformed.",
+      summary: "Generated accessibility report is malformed.",
     });
   }
 };
@@ -1609,7 +1612,7 @@ const toArtifactStatusSummary = (
       }
     : {
         status: "not_available",
-    };
+      };
 };
 
 const PASSPORT_STAGE_ORDER = [
@@ -1758,7 +1761,10 @@ const resolveSemanticCoverage = async ({
   const mappingCoverage = codegenSummary?.mappingCoverage;
   if (mappingCoverage) {
     const total = Math.max(0, Math.trunc(mappingCoverage.totalCandidateNodes));
-    const fallbackNodes = Math.max(0, Math.trunc(mappingCoverage.fallbackNodes));
+    const fallbackNodes = Math.max(
+      0,
+      Math.trunc(mappingCoverage.fallbackNodes),
+    );
     return {
       covered: Math.max(0, total - fallbackNodes),
       total,
@@ -1915,8 +1921,7 @@ const collectQualityPassportWarnings = async ({
           ? warning.code
           : "DEFAULT_ACCESSIBILITY_DIAGNOSTIC";
       const message =
-        typeof warning.message === "string" &&
-        warning.message.trim().length > 0
+        typeof warning.message === "string" && warning.message.trim().length > 0
           ? warning.message
           : "Generated accessibility report emitted a warning.";
       pushWarning({
@@ -1948,9 +1953,10 @@ const persistQualityPassportArtifact = async ({
   context: Parameters<StageService<void>["execute"]>[1];
   summary: ValidationSummaryArtifact;
 }): Promise<string> => {
-  const codegenSummary = await context.artifactStore.getValue<CodegenGenerateSummary>(
-    STAGE_ARTIFACT_KEYS.codegenSummary,
-  );
+  const codegenSummary =
+    await context.artifactStore.getValue<CodegenGenerateSummary>(
+      STAGE_ARTIFACT_KEYS.codegenSummary,
+    );
   const fallbackStatus = toPassportCoverageStatus(summary.status);
   const generatedPaths = codegenSummary?.generatedPaths ?? [];
   const generatedFiles = await collectQualityPassportGeneratedFiles({
@@ -2798,7 +2804,9 @@ export const createValidateProjectService = ({
                   : 0,
               screenElementCounts: screenElementCounts
                 .filter(
-                  (entry): entry is {
+                  (
+                    entry,
+                  ): entry is {
                     screenId: string;
                     screenName?: string;
                     elements?: number;
@@ -2811,7 +2819,9 @@ export const createValidateProjectService = ({
                 })),
               truncatedScreens: truncatedScreens
                 .filter(
-                  (entry): entry is {
+                  (
+                    entry,
+                  ): entry is {
                     screenId: string;
                     screenName?: string;
                     originalElements?: number;
@@ -2832,7 +2842,9 @@ export const createValidateProjectService = ({
                 ? {
                     depthTruncatedScreens: depthTruncated
                       .filter(
-                        (entry): entry is {
+                        (
+                          entry,
+                        ): entry is {
                           screenId: string;
                           screenName?: string;
                           maxDepth?: number;
@@ -3650,13 +3662,14 @@ export const createValidateProjectService = ({
           Object.keys(context.resolvedCustomerProfile.template.devDependencies)
             .length > 0
         : false;
-      const isDefaultPipeline = context.pipelineMetadata.pipelineId === "default";
+      const isDefaultPipeline =
+        context.pipelineMetadata.pipelineId === "default";
       const enablePerfValidation =
-        context.runtime.enablePerfValidation || isDefaultPipeline;
+        context.runtime.enablePerfValidation ?? isDefaultPipeline;
       const enableUiValidation =
-        context.runtime.enableUiValidation || isDefaultPipeline;
+        context.runtime.enableUiValidation ?? isDefaultPipeline;
       const enableUnitTestValidation =
-        context.runtime.enableUnitTestValidation || isDefaultPipeline;
+        context.runtime.enableUnitTestValidation ?? isDefaultPipeline;
 
       try {
         validationResult = await runProjectValidationFn({
