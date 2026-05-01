@@ -2,11 +2,10 @@
 
 ## Supported Versions
 
-| Version             | Support Status |
-| ------------------- | -------------- |
-| `latest`            | Supported      |
-| `next`              | Best effort    |
-| Older than `latest` | Not supported  |
+| Version line | Supported     |
+| ------------ | ------------- |
+| 1.x          | Active        |
+| < 1.0        | Not supported |
 
 ## Reporting a Vulnerability
 
@@ -77,11 +76,36 @@ Please include:
 - PR-time dependency-review gate (`.github/workflows/dependency-review.yml`) runs `actions/dependency-review-action` against the metadata diff of `package.json` and both `pnpm-lock.yaml` files on every pull request. The gate consults the GitHub Advisory Database before any install step executes, rejecting bumps that introduce advisories at `high` severity or above and denying copyleft licenses (GPL/LGPL/AGPL/SSPL) that are not in the `verify:licenses` allowlist.
 - All `actions/checkout` steps use `persist-credentials: false` to prevent GITHUB_TOKEN from being written to `.git/config` on the runner disk. The only exception is the `release` job in `changesets-release.yml`, which requires authenticated git writes for changeset publish and GitHub release creation. Enforced by `pnpm run verify:workflow-persist-credentials`.
 - SBOM generation:
-  - CycloneDX: `pnpm run sbom:cyclonedx`
-  - SPDX: `pnpm run sbom:spdx`
+    - CycloneDX: `pnpm run sbom:cyclonedx`
+    - SPDX: `pnpm run sbom:spdx`
 
 ## Rollback and Remediation Policy
 
 - Do not unpublish released versions.
 - Use `npm deprecate` for affected versions.
 - Publish patched forward release and update advisories.
+
+## Response SLA
+
+- **Triage**: within 2 business days of report receipt.
+- **Initial assessment** (severity classification using CVSS 4.0): within 5 business days.
+- **Patch timeline**:
+    - **Critical** (CVSS ≥ 9.0): patch released within 7 calendar days.
+    - **High** (CVSS 7.0–8.9): patch released within 14 calendar days.
+    - **Medium** (CVSS 4.0–6.9): patch released in next scheduled minor release (≤30 days).
+    - **Low** (CVSS < 4.0): patch released in next scheduled minor release.
+
+## Disclosure process
+
+1. Reports received via private vulnerability reporting (https://github.com/oscharko-dev/workspace-dev/security/advisories/new).
+2. We confirm receipt within 2 business days.
+3. After fix is developed and tested, we coordinate disclosure date with reporter.
+4. CVE issued for Medium+ severity at our discretion (via GitHub Security Advisory).
+5. Patch ships in a new release with CHANGELOG entry referencing the GHSA ID.
+6. Public disclosure follows 14 days after patch availability (or sooner with reporter consent).
+
+## Out of scope
+
+- Vulnerabilities in third-party dependencies are reported to those projects directly. We monitor advisory databases and patch transitively as updates are available.
+- Issues requiring physical access to a developer machine.
+- Denial-of-service via resource exhaustion in test fixtures or example code.
