@@ -55,10 +55,8 @@ const DEFAULT_ROUTER_MODE: WorkspaceRouterMode = "browser";
 const DEFAULT_COMMAND_TIMEOUT_MS = 15 * 60_000;
 const DEFAULT_COMMAND_STDOUT_MAX_BYTES = 1_048_576;
 const DEFAULT_COMMAND_STDERR_MAX_BYTES = 1_048_576;
-const DEFAULT_ENABLE_UI_VALIDATION = false;
 const DEFAULT_ENABLE_VISUAL_QUALITY_VALIDATION = false;
 const DEFAULT_ENABLE_LINT_AUTOFIX = true;
-const DEFAULT_ENABLE_PERF_VALIDATION = false;
 const DEFAULT_VISUAL_QUALITY_REFERENCE_MODE: WorkspaceVisualQualityReferenceMode =
   "figma_api";
 const DEFAULT_VISUAL_QUALITY_VIEWPORT_WIDTH = 1280;
@@ -69,7 +67,6 @@ const DEFAULT_COMPOSITE_QUALITY_WEIGHTS_INPUT: WorkspaceCompositeQualityWeightsI
     visual: 0.6,
     performance: 0.4,
   };
-const DEFAULT_ENABLE_UNIT_TEST_VALIDATION = false;
 const DEFAULT_INSTALL_PREFER_OFFLINE = true;
 const DEFAULT_SKIP_INSTALL = false;
 const DEFAULT_MAX_CONCURRENT_JOBS = 1;
@@ -219,15 +216,15 @@ const parseBooleanLike = (value: string | undefined): boolean | undefined => {
   return undefined;
 };
 
-const resolvePerfValidationPolicy = (value: boolean | undefined): boolean => {
+const resolvePerfValidationPolicy = (
+  value: boolean | undefined,
+): boolean | undefined => {
   if (typeof value === "boolean") {
     return value;
   }
-  return (
-    parseBooleanLike(
-      process.env.FIGMAPIPE_WORKSPACE_ENABLE_PERF_VALIDATION ??
-        process.env.FIGMAPIPE_ENABLE_PERF_VALIDATION,
-    ) ?? DEFAULT_ENABLE_PERF_VALIDATION
+  return parseBooleanLike(
+    process.env.FIGMAPIPE_WORKSPACE_ENABLE_PERF_VALIDATION ??
+      process.env.FIGMAPIPE_ENABLE_PERF_VALIDATION,
   );
 };
 
@@ -671,9 +668,7 @@ export const resolveRuntimeSettings = ({
     enableLintAutofix: resolveLintAutofixPolicy(enableLintAutofix),
     enablePerfValidation: resolvePerfValidationPolicy(enablePerfValidation),
     enableUiValidation:
-      typeof enableUiValidation === "boolean"
-        ? enableUiValidation
-        : DEFAULT_ENABLE_UI_VALIDATION,
+      typeof enableUiValidation === "boolean" ? enableUiValidation : undefined,
     enableVisualQualityValidation:
       typeof enableVisualQualityValidation === "boolean"
         ? enableVisualQualityValidation
@@ -706,7 +701,7 @@ export const resolveRuntimeSettings = ({
     enableUnitTestValidation:
       typeof enableUnitTestValidation === "boolean"
         ? enableUnitTestValidation
-        : DEFAULT_ENABLE_UNIT_TEST_VALIDATION,
+        : undefined,
     unitTestIgnoreFailure:
       typeof unitTestIgnoreFailure === "boolean"
         ? unitTestIgnoreFailure

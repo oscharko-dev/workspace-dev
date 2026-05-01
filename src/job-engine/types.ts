@@ -192,8 +192,8 @@ export interface JobEngineRuntime {
   commandStderrMaxBytes: number;
   pipelineDiagnosticLimits: PipelineDiagnosticLimits;
   enableLintAutofix: boolean;
-  enablePerfValidation: boolean;
-  enableUiValidation: boolean;
+  enablePerfValidation: boolean | undefined;
+  enableUiValidation: boolean | undefined;
   enableVisualQualityValidation: boolean;
   visualQualityReferenceMode: WorkspaceVisualQualityReferenceMode;
   visualQualityViewportWidth: number;
@@ -201,7 +201,7 @@ export interface JobEngineRuntime {
   visualQualityDeviceScaleFactor: number;
   visualQualityBrowsers: WorkspaceVisualBrowserName[];
   compositeQualityWeights: WorkspaceCompositeQualityWeights;
-  enableUnitTestValidation: boolean;
+  enableUnitTestValidation: boolean | undefined;
   unitTestIgnoreFailure: boolean;
   installPreferOffline: boolean;
   skipInstall: boolean;

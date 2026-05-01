@@ -12,18 +12,21 @@ import type {
   WorkspaceLogFormat,
   WorkspaceRouterMode,
   WorkspaceVisualBrowserName,
-  WorkspaceVisualQualityReferenceMode
+  WorkspaceVisualQualityReferenceMode,
 } from "./contracts/index.js";
 import {
   getDefaultDesignSystemConfigPath,
   inferDesignSystemConfigFromProject,
-  writeDesignSystemConfigFile
+  writeDesignSystemConfigFile,
 } from "./design-system.js";
-import { DEFAULT_GENERATION_LOCALE, resolveGenerationLocale } from "./generation-locale.js";
+import {
+  DEFAULT_GENERATION_LOCALE,
+  resolveGenerationLocale,
+} from "./generation-locale.js";
 import {
   createWorkspaceLogger,
   DEFAULT_WORKSPACE_LOG_FORMAT,
-  resolveWorkspaceLogFormat
+  resolveWorkspaceLogFormat,
 } from "./logging.js";
 import { DEFAULT_PIPELINE_DIAGNOSTIC_LIMITS } from "./job-engine/errors.js";
 import { parseVisualBrowserList } from "./job-engine/visual-browser-matrix.js";
@@ -53,16 +56,20 @@ const DEFAULT_ROUTER_MODE: WorkspaceRouterMode = "browser";
 const DEFAULT_COMMAND_TIMEOUT_MS = 15 * 60_000;
 const DEFAULT_COMMAND_STDOUT_MAX_BYTES = 1_048_576;
 const DEFAULT_COMMAND_STDERR_MAX_BYTES = 1_048_576;
-const DEFAULT_PIPELINE_DIAGNOSTIC_MAX_COUNT = DEFAULT_PIPELINE_DIAGNOSTIC_LIMITS.maxDiagnostics;
-const DEFAULT_PIPELINE_DIAGNOSTIC_TEXT_MAX_LENGTH = DEFAULT_PIPELINE_DIAGNOSTIC_LIMITS.textMaxLength;
-const DEFAULT_PIPELINE_DIAGNOSTIC_DETAILS_MAX_KEYS = DEFAULT_PIPELINE_DIAGNOSTIC_LIMITS.detailsMaxKeys;
-const DEFAULT_PIPELINE_DIAGNOSTIC_DETAILS_MAX_ITEMS = DEFAULT_PIPELINE_DIAGNOSTIC_LIMITS.detailsMaxItems;
-const DEFAULT_PIPELINE_DIAGNOSTIC_DETAILS_MAX_DEPTH = DEFAULT_PIPELINE_DIAGNOSTIC_LIMITS.detailsMaxDepth;
-const DEFAULT_ENABLE_UI_VALIDATION = false;
+const DEFAULT_PIPELINE_DIAGNOSTIC_MAX_COUNT =
+  DEFAULT_PIPELINE_DIAGNOSTIC_LIMITS.maxDiagnostics;
+const DEFAULT_PIPELINE_DIAGNOSTIC_TEXT_MAX_LENGTH =
+  DEFAULT_PIPELINE_DIAGNOSTIC_LIMITS.textMaxLength;
+const DEFAULT_PIPELINE_DIAGNOSTIC_DETAILS_MAX_KEYS =
+  DEFAULT_PIPELINE_DIAGNOSTIC_LIMITS.detailsMaxKeys;
+const DEFAULT_PIPELINE_DIAGNOSTIC_DETAILS_MAX_ITEMS =
+  DEFAULT_PIPELINE_DIAGNOSTIC_LIMITS.detailsMaxItems;
+const DEFAULT_PIPELINE_DIAGNOSTIC_DETAILS_MAX_DEPTH =
+  DEFAULT_PIPELINE_DIAGNOSTIC_LIMITS.detailsMaxDepth;
 const DEFAULT_ENABLE_VISUAL_QUALITY_VALIDATION = false;
-const DEFAULT_VISUAL_QUALITY_REFERENCE_MODE: WorkspaceVisualQualityReferenceMode = "figma_api";
+const DEFAULT_VISUAL_QUALITY_REFERENCE_MODE: WorkspaceVisualQualityReferenceMode =
+  "figma_api";
 const DEFAULT_VISUAL_QUALITY_VIEWPORT_WIDTH = 1280;
-const DEFAULT_ENABLE_UNIT_TEST_VALIDATION = false;
 const DEFAULT_INSTALL_PREFER_OFFLINE = true;
 const DEFAULT_SKIP_INSTALL = false;
 const DEFAULT_ENABLE_LINT_AUTOFIX = true;
@@ -106,13 +113,13 @@ interface CliOptions {
   pipelineDiagnosticDetailsMaxKeys: number;
   pipelineDiagnosticDetailsMaxItems: number;
   pipelineDiagnosticDetailsMaxDepth: number;
-  enableUiValidation: boolean;
+  enableUiValidation: boolean | undefined;
   enableVisualQualityValidation: boolean;
   compositeQualityWeights?: WorkspaceCompositeQualityWeightsInput;
   visualQualityReferenceMode: WorkspaceVisualQualityReferenceMode;
   visualQualityViewportWidth: number;
   visualQualityBrowsers: WorkspaceVisualBrowserName[];
-  enableUnitTestValidation: boolean;
+  enableUnitTestValidation: boolean | undefined;
   installPreferOffline: boolean;
   skipInstall: boolean;
   maxConcurrentJobs: number;
@@ -123,14 +130,17 @@ interface CliOptions {
   logFormat: WorkspaceLogFormat;
   enableLintAutofix: boolean;
   enablePreview: boolean;
-  enablePerfValidation: boolean;
+  enablePerfValidation: boolean | undefined;
   scanProjectRoot: string;
   scanOutputPath: string | undefined;
   scanLibrary: string | undefined;
   scanForce: boolean;
 }
 
-const parseBooleanLike = (value: string | undefined, fallback: boolean): boolean => {
+const parseBooleanLike = (
+  value: string | undefined,
+  fallback: boolean,
+): boolean => {
   if (!value) {
     return fallback;
   }
@@ -144,11 +154,29 @@ const parseBooleanLike = (value: string | undefined, fallback: boolean): boolean
   return fallback;
 };
 
+// Variant that returns `undefined` when no explicit boolean is provided, so
+// callers can distinguish "user opted in/out" from "user did not say". Used
+// for validation flags whose absence delegates to per-pipeline policy in the
+// runtime/job-engine layer.
+const parseBooleanFlag = (value: string | undefined): boolean | undefined => {
+  if (!value) {
+    return undefined;
+  }
+  const normalized = value.trim().toLowerCase();
+  if (["1", "true", "yes", "on"].includes(normalized)) {
+    return true;
+  }
+  if (["0", "false", "no", "off"].includes(normalized)) {
+    return false;
+  }
+  return undefined;
+};
+
 const parseIntInRange = ({
   raw,
   fallback,
   min,
-  max
+  max,
 }: {
   raw: string | undefined;
   fallback: number;
@@ -175,7 +203,7 @@ const parseOptionalFloat = (value: string | undefined): number | undefined => {
 
 const parseBrandTheme = ({
   value,
-  fallback
+  fallback,
 }: {
   value: string | undefined;
   fallback: WorkspaceBrandTheme;
@@ -192,7 +220,7 @@ const parseBrandTheme = ({
 
 const parseRouterMode = ({
   value,
-  fallback
+  fallback,
 }: {
   value: string | undefined;
   fallback: WorkspaceRouterMode;
@@ -209,7 +237,7 @@ const parseRouterMode = ({
 
 const parseVisualQualityReferenceMode = ({
   value,
-  fallback
+  fallback,
 }: {
   value: string | undefined;
   fallback: WorkspaceVisualQualityReferenceMode;
@@ -232,100 +260,106 @@ const parseArgs = (argv: string[]): CliOptions => {
     raw: process.env.FIGMAPIPE_WORKSPACE_PORT,
     fallback: DEFAULT_PORT,
     min: 1,
-    max: 65535
+    max: 65535,
   });
   let host = process.env.FIGMAPIPE_WORKSPACE_HOST?.trim() || DEFAULT_HOST;
-  let outputRoot = process.env.FIGMAPIPE_WORKSPACE_OUTPUT_ROOT?.trim() || DEFAULT_OUTPUT_ROOT;
+  let outputRoot =
+    process.env.FIGMAPIPE_WORKSPACE_OUTPUT_ROOT?.trim() || DEFAULT_OUTPUT_ROOT;
   let figmaTimeoutMs = parseIntInRange({
     raw: process.env.FIGMAPIPE_WORKSPACE_FIGMA_TIMEOUT_MS,
     fallback: DEFAULT_FIGMA_TIMEOUT_MS,
     min: 1_000,
-    max: 120_000
+    max: 120_000,
   });
   let figmaRetries = parseIntInRange({
     raw: process.env.FIGMAPIPE_WORKSPACE_FIGMA_RETRIES,
     fallback: DEFAULT_FIGMA_RETRIES,
     min: 1,
-    max: 10
+    max: 10,
   });
   let figmaCircuitBreakerFailureThreshold = parseIntInRange({
-    raw: process.env.FIGMAPIPE_WORKSPACE_FIGMA_CIRCUIT_BREAKER_FAILURE_THRESHOLD,
+    raw: process.env
+      .FIGMAPIPE_WORKSPACE_FIGMA_CIRCUIT_BREAKER_FAILURE_THRESHOLD,
     fallback: DEFAULT_FIGMA_CIRCUIT_BREAKER_FAILURE_THRESHOLD,
     min: 1,
-    max: 20
+    max: 20,
   });
   let figmaCircuitBreakerResetTimeoutMs = parseIntInRange({
     raw: process.env.FIGMAPIPE_WORKSPACE_FIGMA_CIRCUIT_BREAKER_RESET_TIMEOUT_MS,
     fallback: DEFAULT_FIGMA_CIRCUIT_BREAKER_RESET_TIMEOUT_MS,
     min: 1_000,
-    max: 60 * 60_000
+    max: 60 * 60_000,
   });
   let figmaBootstrapDepth = parseIntInRange({
     raw: process.env.FIGMAPIPE_WORKSPACE_FIGMA_BOOTSTRAP_DEPTH,
     fallback: DEFAULT_FIGMA_BOOTSTRAP_DEPTH,
     min: 1,
-    max: 10
+    max: 10,
   });
   let figmaNodeBatchSize = parseIntInRange({
     raw: process.env.FIGMAPIPE_WORKSPACE_FIGMA_NODE_BATCH_SIZE,
     fallback: DEFAULT_FIGMA_NODE_BATCH_SIZE,
     min: 1,
-    max: 20
+    max: 20,
   });
   let figmaNodeFetchConcurrency = parseIntInRange({
     raw: process.env.FIGMAPIPE_WORKSPACE_FIGMA_NODE_FETCH_CONCURRENCY,
     fallback: DEFAULT_FIGMA_NODE_FETCH_CONCURRENCY,
     min: 1,
-    max: 10
+    max: 10,
   });
   let figmaAdaptiveBatchingEnabled = parseBooleanLike(
     process.env.FIGMAPIPE_WORKSPACE_FIGMA_ADAPTIVE_BATCHING,
-    DEFAULT_FIGMA_ADAPTIVE_BATCHING
+    DEFAULT_FIGMA_ADAPTIVE_BATCHING,
   );
   let figmaMaxScreenCandidates = parseIntInRange({
     raw: process.env.FIGMAPIPE_WORKSPACE_FIGMA_MAX_SCREEN_CANDIDATES,
     fallback: DEFAULT_FIGMA_MAX_SCREEN_CANDIDATES,
     min: 1,
-    max: 200
+    max: 200,
   });
-  let figmaScreenNamePattern = process.env.FIGMAPIPE_WORKSPACE_FIGMA_SCREEN_NAME_PATTERN?.trim() || undefined;
+  let figmaScreenNamePattern =
+    process.env.FIGMAPIPE_WORKSPACE_FIGMA_SCREEN_NAME_PATTERN?.trim() ||
+    undefined;
   let figmaCacheEnabled = !parseBooleanLike(
     process.env.FIGMAPIPE_WORKSPACE_NO_CACHE,
-    !DEFAULT_FIGMA_CACHE_ENABLED
+    !DEFAULT_FIGMA_CACHE_ENABLED,
   );
   let figmaCacheTtlMs = parseIntInRange({
     raw: process.env.FIGMAPIPE_WORKSPACE_FIGMA_CACHE_TTL_MS,
     fallback: DEFAULT_FIGMA_CACHE_TTL_MS,
     min: 1_000,
-    max: 24 * 60 * 60_000
+    max: 24 * 60 * 60_000,
   });
   let figmaPasteTempTtlMs = parseIntInRange({
     raw: process.env.FIGMAPIPE_WORKSPACE_FIGMA_PASTE_TEMP_TTL_MS,
     fallback: DEFAULT_FIGMA_PASTE_TEMP_TTL_MS,
     min: 0,
-    max: 30 * 24 * 60 * 60_000
+    max: 30 * 24 * 60 * 60_000,
   });
-  let iconMapFilePath = process.env.FIGMAPIPE_WORKSPACE_ICON_MAP_FILE?.trim() || undefined;
-  let designSystemFilePath = process.env.FIGMAPIPE_WORKSPACE_DESIGN_SYSTEM_FILE?.trim() || undefined;
+  let iconMapFilePath =
+    process.env.FIGMAPIPE_WORKSPACE_ICON_MAP_FILE?.trim() || undefined;
+  let designSystemFilePath =
+    process.env.FIGMAPIPE_WORKSPACE_DESIGN_SYSTEM_FILE?.trim() || undefined;
   let exportImages = parseBooleanLike(
     process.env.FIGMAPIPE_WORKSPACE_EXPORT_IMAGES,
-    DEFAULT_EXPORT_IMAGES
+    DEFAULT_EXPORT_IMAGES,
   );
   let figmaScreenElementBudget = parseIntInRange({
     raw: process.env.FIGMAPIPE_WORKSPACE_FIGMA_SCREEN_ELEMENT_BUDGET,
     fallback: DEFAULT_FIGMA_SCREEN_ELEMENT_BUDGET,
     min: 100,
-    max: 10000
+    max: 10000,
   });
   let figmaScreenElementMaxDepth = parseIntInRange({
     raw: process.env.FIGMAPIPE_WORKSPACE_FIGMA_SCREEN_ELEMENT_MAX_DEPTH,
     fallback: DEFAULT_FIGMA_SCREEN_ELEMENT_MAX_DEPTH,
     min: 1,
-    max: 64
+    max: 64,
   });
   let brandTheme = parseBrandTheme({
     value: process.env.FIGMAPIPE_WORKSPACE_BRAND,
-    fallback: DEFAULT_BRAND_THEME
+    fallback: DEFAULT_BRAND_THEME,
   });
   const sparkasseTokensFilePath =
     process.env.FIGMAPIPE_WORKSPACE_SPARKASSE_TOKENS_FILE?.trim() ||
@@ -333,145 +367,158 @@ const parseArgs = (argv: string[]): CliOptions => {
     undefined;
   let generationLocale = resolveGenerationLocale({
     requestedLocale: process.env.FIGMAPIPE_WORKSPACE_GENERATION_LOCALE,
-    fallbackLocale: DEFAULT_GENERATION_LOCALE
+    fallbackLocale: DEFAULT_GENERATION_LOCALE,
   }).locale;
   let routerMode = parseRouterMode({
     value: process.env.FIGMAPIPE_WORKSPACE_ROUTER,
-    fallback: DEFAULT_ROUTER_MODE
+    fallback: DEFAULT_ROUTER_MODE,
   });
   let commandTimeoutMs = parseIntInRange({
     raw: process.env.FIGMAPIPE_WORKSPACE_COMMAND_TIMEOUT_MS,
     fallback: DEFAULT_COMMAND_TIMEOUT_MS,
     min: 5_000,
-    max: 60 * 60_000
+    max: 60 * 60_000,
   });
   let commandStdoutMaxBytes = parseIntInRange({
     raw: process.env.FIGMAPIPE_WORKSPACE_COMMAND_STDOUT_MAX_BYTES,
     fallback: DEFAULT_COMMAND_STDOUT_MAX_BYTES,
     min: 4_096,
-    max: 16_777_216
+    max: 16_777_216,
   });
   let commandStderrMaxBytes = parseIntInRange({
     raw: process.env.FIGMAPIPE_WORKSPACE_COMMAND_STDERR_MAX_BYTES,
     fallback: DEFAULT_COMMAND_STDERR_MAX_BYTES,
     min: 4_096,
-    max: 16_777_216
+    max: 16_777_216,
   });
   let pipelineDiagnosticMaxCount = parseIntInRange({
     raw: process.env.FIGMAPIPE_WORKSPACE_PIPELINE_DIAGNOSTIC_MAX_COUNT,
     fallback: DEFAULT_PIPELINE_DIAGNOSTIC_MAX_COUNT,
     min: 1,
-    max: 500
+    max: 500,
   });
   let pipelineDiagnosticTextMaxLength = parseIntInRange({
     raw: process.env.FIGMAPIPE_WORKSPACE_PIPELINE_DIAGNOSTIC_TEXT_MAX_LENGTH,
     fallback: DEFAULT_PIPELINE_DIAGNOSTIC_TEXT_MAX_LENGTH,
     min: 16,
-    max: 4_000
+    max: 4_000,
   });
   let pipelineDiagnosticDetailsMaxKeys = parseIntInRange({
     raw: process.env.FIGMAPIPE_WORKSPACE_PIPELINE_DIAGNOSTIC_DETAILS_MAX_KEYS,
     fallback: DEFAULT_PIPELINE_DIAGNOSTIC_DETAILS_MAX_KEYS,
     min: 1,
-    max: 200
+    max: 200,
   });
   let pipelineDiagnosticDetailsMaxItems = parseIntInRange({
     raw: process.env.FIGMAPIPE_WORKSPACE_PIPELINE_DIAGNOSTIC_DETAILS_MAX_ITEMS,
     fallback: DEFAULT_PIPELINE_DIAGNOSTIC_DETAILS_MAX_ITEMS,
     min: 1,
-    max: 200
+    max: 200,
   });
   let pipelineDiagnosticDetailsMaxDepth = parseIntInRange({
     raw: process.env.FIGMAPIPE_WORKSPACE_PIPELINE_DIAGNOSTIC_DETAILS_MAX_DEPTH,
     fallback: DEFAULT_PIPELINE_DIAGNOSTIC_DETAILS_MAX_DEPTH,
     min: 1,
-    max: 10
+    max: 10,
   });
-  let enableUiValidation = parseBooleanLike(
+  let enableUiValidation: boolean | undefined = parseBooleanFlag(
     process.env.FIGMAPIPE_WORKSPACE_ENABLE_UI_VALIDATION,
-    DEFAULT_ENABLE_UI_VALIDATION
   );
   let enableVisualQualityValidation = parseBooleanLike(
     process.env.FIGMAPIPE_WORKSPACE_ENABLE_VISUAL_QUALITY_VALIDATION,
-    DEFAULT_ENABLE_VISUAL_QUALITY_VALIDATION
+    DEFAULT_ENABLE_VISUAL_QUALITY_VALIDATION,
   );
   const compositeQualityVisualWeight = parseOptionalFloat(
-    process.env.FIGMAPIPE_WORKSPACE_COMPOSITE_QUALITY_VISUAL_WEIGHT
+    process.env.FIGMAPIPE_WORKSPACE_COMPOSITE_QUALITY_VISUAL_WEIGHT,
   );
   const compositeQualityPerformanceWeight = parseOptionalFloat(
-    process.env.FIGMAPIPE_WORKSPACE_COMPOSITE_QUALITY_PERFORMANCE_WEIGHT
+    process.env.FIGMAPIPE_WORKSPACE_COMPOSITE_QUALITY_PERFORMANCE_WEIGHT,
   );
   const compositeQualityWeights =
-    compositeQualityVisualWeight !== undefined || compositeQualityPerformanceWeight !== undefined
+    compositeQualityVisualWeight !== undefined ||
+    compositeQualityPerformanceWeight !== undefined
       ? {
-          ...(compositeQualityVisualWeight !== undefined ? { visual: compositeQualityVisualWeight } : {}),
-          ...(compositeQualityPerformanceWeight !== undefined ? { performance: compositeQualityPerformanceWeight } : {})
+          ...(compositeQualityVisualWeight !== undefined
+            ? { visual: compositeQualityVisualWeight }
+            : {}),
+          ...(compositeQualityPerformanceWeight !== undefined
+            ? { performance: compositeQualityPerformanceWeight }
+            : {}),
         }
       : undefined;
   let visualQualityReferenceMode = parseVisualQualityReferenceMode({
     value: process.env.FIGMAPIPE_WORKSPACE_VISUAL_QUALITY_REFERENCE_MODE,
-    fallback: DEFAULT_VISUAL_QUALITY_REFERENCE_MODE
+    fallback: DEFAULT_VISUAL_QUALITY_REFERENCE_MODE,
   });
   let visualQualityViewportWidth = parseIntInRange({
     raw: process.env.FIGMAPIPE_WORKSPACE_VISUAL_QUALITY_VIEWPORT_WIDTH,
     fallback: DEFAULT_VISUAL_QUALITY_VIEWPORT_WIDTH,
     min: 320,
-    max: 4096
+    max: 4096,
   });
   let visualQualityBrowsers = (() => {
     const raw = process.env.FIGMAPIPE_WORKSPACE_VISUAL_QUALITY_BROWSERS;
     if (!raw || raw.trim().length === 0) {
       return ["chromium"] as WorkspaceVisualBrowserName[];
     }
-    return parseVisualBrowserList(raw, "FIGMAPIPE_WORKSPACE_VISUAL_QUALITY_BROWSERS");
+    return parseVisualBrowserList(
+      raw,
+      "FIGMAPIPE_WORKSPACE_VISUAL_QUALITY_BROWSERS",
+    );
   })();
-  let enableUnitTestValidation = parseBooleanLike(
+  let enableUnitTestValidation: boolean | undefined = parseBooleanFlag(
     process.env.FIGMAPIPE_WORKSPACE_ENABLE_UNIT_TEST_VALIDATION,
-    DEFAULT_ENABLE_UNIT_TEST_VALIDATION
   );
   let installPreferOffline = parseBooleanLike(
     process.env.FIGMAPIPE_WORKSPACE_INSTALL_PREFER_OFFLINE,
-    DEFAULT_INSTALL_PREFER_OFFLINE
+    DEFAULT_INSTALL_PREFER_OFFLINE,
   );
-  let skipInstall = parseBooleanLike(process.env.FIGMAPIPE_WORKSPACE_SKIP_INSTALL, DEFAULT_SKIP_INSTALL);
+  let skipInstall = parseBooleanLike(
+    process.env.FIGMAPIPE_WORKSPACE_SKIP_INSTALL,
+    DEFAULT_SKIP_INSTALL,
+  );
   let maxConcurrentJobs = parseIntInRange({
     raw: process.env.FIGMAPIPE_WORKSPACE_MAX_CONCURRENT_JOBS,
     fallback: DEFAULT_MAX_CONCURRENT_JOBS,
     min: 1,
-    max: 16
+    max: 16,
   });
   let maxQueuedJobs = parseIntInRange({
     raw: process.env.FIGMAPIPE_WORKSPACE_MAX_QUEUED_JOBS,
     fallback: DEFAULT_MAX_QUEUED_JOBS,
     min: 0,
-    max: 1000
+    max: 1000,
   });
   let rateLimitPerMinute = parseIntInRange({
     raw: process.env.FIGMAPIPE_WORKSPACE_RATE_LIMIT_PER_MINUTE,
     fallback: DEFAULT_RATE_LIMIT_PER_MINUTE,
     min: 0,
-    max: 1000
+    max: 1000,
   });
   let shutdownTimeoutMs = parseIntInRange({
     raw: process.env.FIGMAPIPE_WORKSPACE_SHUTDOWN_TIMEOUT_MS,
     fallback: DEFAULT_SHUTDOWN_TIMEOUT_MS,
     min: 0,
-    max: 60 * 60_000
+    max: 60 * 60_000,
   });
   const importSessionEventBearerToken =
-    process.env.FIGMAPIPE_WORKSPACE_IMPORT_SESSION_EVENT_BEARER_TOKEN?.trim() || undefined;
+    process.env.FIGMAPIPE_WORKSPACE_IMPORT_SESSION_EVENT_BEARER_TOKEN?.trim() ||
+    undefined;
   let logFormat = resolveWorkspaceLogFormat({
     value: process.env.FIGMAPIPE_WORKSPACE_LOG_FORMAT,
-    fallback: DEFAULT_WORKSPACE_LOG_FORMAT
+    fallback: DEFAULT_WORKSPACE_LOG_FORMAT,
   });
   let enableLintAutofix = parseBooleanLike(
     process.env.FIGMAPIPE_WORKSPACE_ENABLE_LINT_AUTOFIX,
-    DEFAULT_ENABLE_LINT_AUTOFIX
+    DEFAULT_ENABLE_LINT_AUTOFIX,
   );
-  let enablePreview = parseBooleanLike(process.env.FIGMAPIPE_WORKSPACE_ENABLE_PREVIEW, true);
-  let enablePerfValidation = parseBooleanLike(
-    process.env.FIGMAPIPE_WORKSPACE_ENABLE_PERF_VALIDATION ?? process.env.FIGMAPIPE_ENABLE_PERF_VALIDATION,
-    false
+  let enablePreview = parseBooleanLike(
+    process.env.FIGMAPIPE_WORKSPACE_ENABLE_PREVIEW,
+    true,
+  );
+  let enablePerfValidation: boolean | undefined = parseBooleanFlag(
+    process.env.FIGMAPIPE_WORKSPACE_ENABLE_PERF_VALIDATION ??
+      process.env.FIGMAPIPE_ENABLE_PERF_VALIDATION,
   );
   let scanProjectRoot = process.cwd();
   let scanOutputPath: string | undefined;
@@ -486,7 +533,7 @@ const parseArgs = (argv: string[]): CliOptions => {
         raw: args[index + 1],
         fallback: port,
         min: 1,
-        max: 65535
+        max: 65535,
       });
       index += 1;
       continue;
@@ -515,7 +562,7 @@ const parseArgs = (argv: string[]): CliOptions => {
         raw: args[index + 1],
         fallback: figmaTimeoutMs,
         min: 1_000,
-        max: 120_000
+        max: 120_000,
       });
       index += 1;
       continue;
@@ -526,7 +573,7 @@ const parseArgs = (argv: string[]): CliOptions => {
         raw: args[index + 1],
         fallback: figmaRetries,
         min: 1,
-        max: 10
+        max: 10,
       });
       index += 1;
       continue;
@@ -537,7 +584,7 @@ const parseArgs = (argv: string[]): CliOptions => {
         raw: args[index + 1],
         fallback: figmaCircuitBreakerFailureThreshold,
         min: 1,
-        max: 20
+        max: 20,
       });
       index += 1;
       continue;
@@ -548,7 +595,7 @@ const parseArgs = (argv: string[]): CliOptions => {
         raw: args[index + 1],
         fallback: figmaCircuitBreakerResetTimeoutMs,
         min: 1_000,
-        max: 60 * 60_000
+        max: 60 * 60_000,
       });
       index += 1;
       continue;
@@ -559,7 +606,7 @@ const parseArgs = (argv: string[]): CliOptions => {
         raw: args[index + 1],
         fallback: figmaBootstrapDepth,
         min: 1,
-        max: 10
+        max: 10,
       });
       index += 1;
       continue;
@@ -570,7 +617,7 @@ const parseArgs = (argv: string[]): CliOptions => {
         raw: args[index + 1],
         fallback: figmaNodeBatchSize,
         min: 1,
-        max: 20
+        max: 20,
       });
       index += 1;
       continue;
@@ -581,14 +628,17 @@ const parseArgs = (argv: string[]): CliOptions => {
         raw: args[index + 1],
         fallback: figmaNodeFetchConcurrency,
         min: 1,
-        max: 10
+        max: 10,
       });
       index += 1;
       continue;
     }
 
     if (arg === "--figma-adaptive-batching") {
-      figmaAdaptiveBatchingEnabled = parseBooleanLike(args[index + 1], figmaAdaptiveBatchingEnabled);
+      figmaAdaptiveBatchingEnabled = parseBooleanLike(
+        args[index + 1],
+        figmaAdaptiveBatchingEnabled,
+      );
       index += 1;
       continue;
     }
@@ -598,7 +648,7 @@ const parseArgs = (argv: string[]): CliOptions => {
         raw: args[index + 1],
         fallback: figmaMaxScreenCandidates,
         min: 1,
-        max: 200
+        max: 200,
       });
       index += 1;
       continue;
@@ -606,7 +656,8 @@ const parseArgs = (argv: string[]): CliOptions => {
 
     if (arg === "--figma-screen-name-pattern") {
       const nextValue = args[index + 1]?.trim();
-      figmaScreenNamePattern = nextValue && nextValue.length > 0 ? nextValue : undefined;
+      figmaScreenNamePattern =
+        nextValue && nextValue.length > 0 ? nextValue : undefined;
       index += 1;
       continue;
     }
@@ -621,7 +672,7 @@ const parseArgs = (argv: string[]): CliOptions => {
         raw: args[index + 1],
         fallback: figmaCacheTtlMs,
         min: 1_000,
-        max: 24 * 60 * 60_000
+        max: 24 * 60 * 60_000,
       });
       index += 1;
       continue;
@@ -632,7 +683,7 @@ const parseArgs = (argv: string[]): CliOptions => {
         raw: args[index + 1],
         fallback: figmaPasteTempTtlMs,
         min: 0,
-        max: 30 * 24 * 60 * 60_000
+        max: 30 * 24 * 60 * 60_000,
       });
       index += 1;
       continue;
@@ -640,14 +691,16 @@ const parseArgs = (argv: string[]): CliOptions => {
 
     if (arg === "--icon-map-file") {
       const nextValue = args[index + 1]?.trim();
-      iconMapFilePath = nextValue && nextValue.length > 0 ? nextValue : undefined;
+      iconMapFilePath =
+        nextValue && nextValue.length > 0 ? nextValue : undefined;
       index += 1;
       continue;
     }
 
     if (arg === "--design-system-file") {
       const nextValue = args[index + 1]?.trim();
-      designSystemFilePath = nextValue && nextValue.length > 0 ? nextValue : undefined;
+      designSystemFilePath =
+        nextValue && nextValue.length > 0 ? nextValue : undefined;
       index += 1;
       continue;
     }
@@ -663,7 +716,7 @@ const parseArgs = (argv: string[]): CliOptions => {
         raw: args[index + 1],
         fallback: figmaScreenElementBudget,
         min: 100,
-        max: 10_000
+        max: 10_000,
       });
       index += 1;
       continue;
@@ -674,7 +727,7 @@ const parseArgs = (argv: string[]): CliOptions => {
         raw: args[index + 1],
         fallback: figmaScreenElementMaxDepth,
         min: 1,
-        max: 64
+        max: 64,
       });
       index += 1;
       continue;
@@ -683,7 +736,7 @@ const parseArgs = (argv: string[]): CliOptions => {
     if (arg === "--brand") {
       brandTheme = parseBrandTheme({
         value: args[index + 1],
-        fallback: brandTheme
+        fallback: brandTheme,
       });
       index += 1;
       continue;
@@ -692,7 +745,7 @@ const parseArgs = (argv: string[]): CliOptions => {
     if (arg === "--generation-locale") {
       generationLocale = resolveGenerationLocale({
         requestedLocale: args[index + 1],
-        fallbackLocale: generationLocale
+        fallbackLocale: generationLocale,
       }).locale;
       index += 1;
       continue;
@@ -701,7 +754,7 @@ const parseArgs = (argv: string[]): CliOptions => {
     if (arg === "--router") {
       routerMode = parseRouterMode({
         value: args[index + 1],
-        fallback: routerMode
+        fallback: routerMode,
       });
       index += 1;
       continue;
@@ -712,7 +765,7 @@ const parseArgs = (argv: string[]): CliOptions => {
         raw: args[index + 1],
         fallback: commandTimeoutMs,
         min: 5_000,
-        max: 60 * 60_000
+        max: 60 * 60_000,
       });
       index += 1;
       continue;
@@ -723,7 +776,7 @@ const parseArgs = (argv: string[]): CliOptions => {
         raw: args[index + 1],
         fallback: commandStdoutMaxBytes,
         min: 4_096,
-        max: 16_777_216
+        max: 16_777_216,
       });
       index += 1;
       continue;
@@ -734,7 +787,7 @@ const parseArgs = (argv: string[]): CliOptions => {
         raw: args[index + 1],
         fallback: commandStderrMaxBytes,
         min: 4_096,
-        max: 16_777_216
+        max: 16_777_216,
       });
       index += 1;
       continue;
@@ -745,7 +798,7 @@ const parseArgs = (argv: string[]): CliOptions => {
         raw: args[index + 1],
         fallback: pipelineDiagnosticMaxCount,
         min: 1,
-        max: 500
+        max: 500,
       });
       index += 1;
       continue;
@@ -756,7 +809,7 @@ const parseArgs = (argv: string[]): CliOptions => {
         raw: args[index + 1],
         fallback: pipelineDiagnosticTextMaxLength,
         min: 16,
-        max: 4_000
+        max: 4_000,
       });
       index += 1;
       continue;
@@ -767,7 +820,7 @@ const parseArgs = (argv: string[]): CliOptions => {
         raw: args[index + 1],
         fallback: pipelineDiagnosticDetailsMaxKeys,
         min: 1,
-        max: 200
+        max: 200,
       });
       index += 1;
       continue;
@@ -778,7 +831,7 @@ const parseArgs = (argv: string[]): CliOptions => {
         raw: args[index + 1],
         fallback: pipelineDiagnosticDetailsMaxItems,
         min: 1,
-        max: 200
+        max: 200,
       });
       index += 1;
       continue;
@@ -789,20 +842,24 @@ const parseArgs = (argv: string[]): CliOptions => {
         raw: args[index + 1],
         fallback: pipelineDiagnosticDetailsMaxDepth,
         min: 1,
-        max: 10
+        max: 10,
       });
       index += 1;
       continue;
     }
 
     if (arg === "--ui-validation") {
-      enableUiValidation = parseBooleanLike(args[index + 1], enableUiValidation);
+      enableUiValidation =
+        parseBooleanFlag(args[index + 1]) ?? enableUiValidation;
       index += 1;
       continue;
     }
 
     if (arg === "--visual-quality-validation") {
-      enableVisualQualityValidation = parseBooleanLike(args[index + 1], enableVisualQualityValidation);
+      enableVisualQualityValidation = parseBooleanLike(
+        args[index + 1],
+        enableVisualQualityValidation,
+      );
       index += 1;
       continue;
     }
@@ -810,7 +867,7 @@ const parseArgs = (argv: string[]): CliOptions => {
     if (arg === "--visual-quality-reference-mode") {
       visualQualityReferenceMode = parseVisualQualityReferenceMode({
         value: args[index + 1],
-        fallback: visualQualityReferenceMode
+        fallback: visualQualityReferenceMode,
       });
       index += 1;
       continue;
@@ -821,7 +878,7 @@ const parseArgs = (argv: string[]): CliOptions => {
         raw: args[index + 1],
         fallback: visualQualityViewportWidth,
         min: 320,
-        max: 4096
+        max: 4096,
       });
       index += 1;
       continue;
@@ -830,21 +887,30 @@ const parseArgs = (argv: string[]): CliOptions => {
     if (arg === "--visual-quality-browsers") {
       const raw = args[index + 1];
       if (!raw) {
-        throw new Error("--visual-quality-browsers requires a comma-separated list.");
+        throw new Error(
+          "--visual-quality-browsers requires a comma-separated list.",
+        );
       }
-      visualQualityBrowsers = parseVisualBrowserList(raw, "--visual-quality-browsers");
+      visualQualityBrowsers = parseVisualBrowserList(
+        raw,
+        "--visual-quality-browsers",
+      );
       index += 1;
       continue;
     }
 
     if (arg === "--unit-test-validation") {
-      enableUnitTestValidation = parseBooleanLike(args[index + 1], enableUnitTestValidation);
+      enableUnitTestValidation =
+        parseBooleanFlag(args[index + 1]) ?? enableUnitTestValidation;
       index += 1;
       continue;
     }
 
     if (arg === "--install-prefer-offline") {
-      installPreferOffline = parseBooleanLike(args[index + 1], installPreferOffline);
+      installPreferOffline = parseBooleanLike(
+        args[index + 1],
+        installPreferOffline,
+      );
       index += 1;
       continue;
     }
@@ -865,7 +931,7 @@ const parseArgs = (argv: string[]): CliOptions => {
         raw: args[index + 1],
         fallback: maxConcurrentJobs,
         min: 1,
-        max: 16
+        max: 16,
       });
       index += 1;
       continue;
@@ -876,7 +942,7 @@ const parseArgs = (argv: string[]): CliOptions => {
         raw: args[index + 1],
         fallback: maxQueuedJobs,
         min: 0,
-        max: 1000
+        max: 1000,
       });
       index += 1;
       continue;
@@ -887,7 +953,7 @@ const parseArgs = (argv: string[]): CliOptions => {
         raw: args[index + 1],
         fallback: rateLimitPerMinute,
         min: 0,
-        max: 1000
+        max: 1000,
       });
       index += 1;
       continue;
@@ -898,7 +964,7 @@ const parseArgs = (argv: string[]): CliOptions => {
         raw: args[index + 1],
         fallback: shutdownTimeoutMs,
         min: 0,
-        max: 60 * 60_000
+        max: 60 * 60_000,
       });
       index += 1;
       continue;
@@ -907,7 +973,7 @@ const parseArgs = (argv: string[]): CliOptions => {
     if (arg === "--log-format") {
       logFormat = resolveWorkspaceLogFormat({
         value: args[index + 1],
-        fallback: logFormat
+        fallback: logFormat,
       });
       index += 1;
       continue;
@@ -926,7 +992,8 @@ const parseArgs = (argv: string[]): CliOptions => {
     }
 
     if (arg === "--perf-validation") {
-      enablePerfValidation = parseBooleanLike(args[index + 1], enablePerfValidation);
+      enablePerfValidation =
+        parseBooleanFlag(args[index + 1]) ?? enablePerfValidation;
       index += 1;
       continue;
     }
@@ -942,7 +1009,8 @@ const parseArgs = (argv: string[]): CliOptions => {
 
     if (arg === "--output") {
       const nextValue = args[index + 1]?.trim();
-      scanOutputPath = nextValue && nextValue.length > 0 ? nextValue : undefined;
+      scanOutputPath =
+        nextValue && nextValue.length > 0 ? nextValue : undefined;
       index += 1;
       continue;
     }
@@ -997,7 +1065,9 @@ const parseArgs = (argv: string[]): CliOptions => {
     pipelineDiagnosticDetailsMaxDepth,
     enableUiValidation,
     enableVisualQualityValidation,
-    ...(compositeQualityWeights !== undefined ? { compositeQualityWeights } : {}),
+    ...(compositeQualityWeights !== undefined
+      ? { compositeQualityWeights }
+      : {}),
     visualQualityReferenceMode,
     visualQualityViewportWidth,
     visualQualityBrowsers,
@@ -1016,7 +1086,7 @@ const parseArgs = (argv: string[]): CliOptions => {
     scanProjectRoot,
     scanOutputPath,
     scanLibrary,
-    scanForce
+    scanForce,
   };
 };
 
@@ -1086,7 +1156,7 @@ Options:
   --pipeline-diagnostic-details-max-depth <n>
                              Max detail nesting depth retained per structured diagnostic (default: ${DEFAULT_PIPELINE_DIAGNOSTIC_DETAILS_MAX_DEPTH})
   --ui-validation <true|false>
-                             Run validate:ui in validate.project (default: ${DEFAULT_ENABLE_UI_VALIDATION})
+                             Run validate:ui in validate.project (default: pipeline-defined; default pipeline enables, rocket disables)
   --visual-quality-validation <true|false>
                              Run visual quality validation in validate.project (default: ${DEFAULT_ENABLE_VISUAL_QUALITY_VALIDATION})
   --visual-quality-reference-mode <figma_api|frozen_fixture>
@@ -1096,7 +1166,7 @@ Options:
   --visual-quality-browsers <chromium,firefox,webkit>
                              Browser engines used for visual quality validation (default: chromium)
   --unit-test-validation <true|false>
-                             Run generated-project unit tests in validate.project (default: ${DEFAULT_ENABLE_UNIT_TEST_VALIDATION})
+                             Run generated-project unit tests in validate.project (default: pipeline-defined; default pipeline enables, rocket disables)
   --install-prefer-offline <true|false>
                              Prefer offline install for generated project (default: ${DEFAULT_INSTALL_PREFER_OFFLINE})
   --skip-install <true|false>
@@ -1110,7 +1180,7 @@ Options:
                              Run eslint auto-fix before final lint validation (default: ${DEFAULT_ENABLE_LINT_AUTOFIX})
   --preview <true|false>     Enable preview export/serving (default: true)
   --perf-validation <true|false>
-                             Run perf:assert during validate.project (default: false)
+                             Run perf:assert during validate.project (default: pipeline-defined; default pipeline enables, rocket disables)
   Scan command:
   --project-root <path>      Project root to scan for imports (default: cwd)
   --output <path>            Output file path (default: <project-root>/${DEFAULT_OUTPUT_ROOT}/design-system.json)
@@ -1189,7 +1259,7 @@ Mode lock is always enforced:
 const main = async (): Promise<void> => {
   const options = parseArgs(process.argv);
   const logger = createWorkspaceLogger({
-    format: options.logFormat
+    format: options.logFormat,
   });
 
   if (options.command === "--help" || options.command === "help") {
@@ -1200,60 +1270,104 @@ const main = async (): Promise<void> => {
   if (options.command === "scan-design-system") {
     const projectRoot = path.resolve(options.scanProjectRoot);
     const defaultOutputPath = getDefaultDesignSystemConfigPath({
-      outputRoot: path.resolve(projectRoot, DEFAULT_OUTPUT_ROOT)
+      outputRoot: path.resolve(projectRoot, DEFAULT_OUTPUT_ROOT),
     });
-    const outputPath = path.resolve(options.scanOutputPath ?? defaultOutputPath);
+    const outputPath = path.resolve(
+      options.scanOutputPath ?? defaultOutputPath,
+    );
 
     try {
       const scanResult = await inferDesignSystemConfigFromProject({
         projectRoot,
-        ...(options.scanLibrary ? { libraryOverride: options.scanLibrary } : {})
+        ...(options.scanLibrary
+          ? { libraryOverride: options.scanLibrary }
+          : {}),
       });
       await writeDesignSystemConfigFile({
         outputFilePath: outputPath,
         config: scanResult.config,
-        force: options.scanForce
+        force: options.scanForce,
       });
       logger.log({ level: "info", message: "Design system scan completed." });
       logger.log({ level: "info", message: `Project root: ${projectRoot}` });
-      logger.log({ level: "info", message: `Scanned files: ${scanResult.scannedFiles}` });
-      logger.log({ level: "info", message: `Selected library: ${scanResult.selectedLibrary}` });
+      logger.log({
+        level: "info",
+        message: `Scanned files: ${scanResult.scannedFiles}`,
+      });
+      logger.log({
+        level: "info",
+        message: `Selected library: ${scanResult.selectedLibrary}`,
+      });
       logger.log({ level: "info", message: `Wrote config: ${outputPath}` });
       process.exit(0);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      logger.log({ level: "error", message: `Design system scan failed: ${message}` });
+      logger.log({
+        level: "error",
+        message: `Design system scan failed: ${message}`,
+      });
       process.exit(1);
     }
   }
 
   if (options.command !== "start") {
-    logger.log({ level: "error", message: `Unknown command: ${options.command}` });
-    logger.log({ level: "error", message: 'Use "workspace-dev start" to start the server.' });
-    logger.log({ level: "error", message: 'Use "workspace-dev scan-design-system" to generate a design-system config.' });
-    logger.log({ level: "error", message: 'Use "workspace-dev --help" for usage information.' });
+    logger.log({
+      level: "error",
+      message: `Unknown command: ${options.command}`,
+    });
+    logger.log({
+      level: "error",
+      message: 'Use "workspace-dev start" to start the server.',
+    });
+    logger.log({
+      level: "error",
+      message:
+        'Use "workspace-dev scan-design-system" to generate a design-system config.',
+    });
+    logger.log({
+      level: "error",
+      message: 'Use "workspace-dev --help" for usage information.',
+    });
     process.exit(1);
   }
 
-  logger.log({ level: "info", message: `Starting on http://${options.host}:${options.port}/workspace` });
-  logger.log({ level: "info", message: "Mode lock: figmaSourceMode=rest|hybrid|local_json|figma_paste|figma_plugin, llmCodegenMode=deterministic" });
-  process.env.FIGMAPIPE_WORKSPACE_ENABLE_VISUAL_QUALITY_VALIDATION = options.enableVisualQualityValidation ? "true" : "false";
+  logger.log({
+    level: "info",
+    message: `Starting on http://${options.host}:${options.port}/workspace`,
+  });
+  logger.log({
+    level: "info",
+    message:
+      "Mode lock: figmaSourceMode=rest|hybrid|local_json|figma_paste|figma_plugin, llmCodegenMode=deterministic",
+  });
+  process.env.FIGMAPIPE_WORKSPACE_ENABLE_VISUAL_QUALITY_VALIDATION =
+    options.enableVisualQualityValidation ? "true" : "false";
   if (options.compositeQualityWeights?.visual !== undefined) {
-    process.env.FIGMAPIPE_WORKSPACE_COMPOSITE_QUALITY_VISUAL_WEIGHT = String(options.compositeQualityWeights.visual);
+    process.env.FIGMAPIPE_WORKSPACE_COMPOSITE_QUALITY_VISUAL_WEIGHT = String(
+      options.compositeQualityWeights.visual,
+    );
   } else {
     delete process.env.FIGMAPIPE_WORKSPACE_COMPOSITE_QUALITY_VISUAL_WEIGHT;
   }
   if (options.compositeQualityWeights?.performance !== undefined) {
-    process.env.FIGMAPIPE_WORKSPACE_COMPOSITE_QUALITY_PERFORMANCE_WEIGHT = String(
-      options.compositeQualityWeights.performance
-    );
+    process.env.FIGMAPIPE_WORKSPACE_COMPOSITE_QUALITY_PERFORMANCE_WEIGHT =
+      String(options.compositeQualityWeights.performance);
   } else {
     delete process.env.FIGMAPIPE_WORKSPACE_COMPOSITE_QUALITY_PERFORMANCE_WEIGHT;
   }
-  process.env.FIGMAPIPE_WORKSPACE_VISUAL_QUALITY_REFERENCE_MODE = options.visualQualityReferenceMode;
-  process.env.FIGMAPIPE_WORKSPACE_VISUAL_QUALITY_VIEWPORT_WIDTH = String(options.visualQualityViewportWidth);
-  process.env.FIGMAPIPE_WORKSPACE_VISUAL_QUALITY_BROWSERS = options.visualQualityBrowsers.join(",");
-  process.env.FIGMAPIPE_WORKSPACE_ENABLE_UNIT_TEST_VALIDATION = options.enableUnitTestValidation ? "true" : "false";
+  process.env.FIGMAPIPE_WORKSPACE_VISUAL_QUALITY_REFERENCE_MODE =
+    options.visualQualityReferenceMode;
+  process.env.FIGMAPIPE_WORKSPACE_VISUAL_QUALITY_VIEWPORT_WIDTH = String(
+    options.visualQualityViewportWidth,
+  );
+  process.env.FIGMAPIPE_WORKSPACE_VISUAL_QUALITY_BROWSERS =
+    options.visualQualityBrowsers.join(",");
+  if (options.enableUnitTestValidation === undefined) {
+    delete process.env.FIGMAPIPE_WORKSPACE_ENABLE_UNIT_TEST_VALIDATION;
+  } else {
+    process.env.FIGMAPIPE_WORKSPACE_ENABLE_UNIT_TEST_VALIDATION =
+      options.enableUnitTestValidation ? "true" : "false";
+  }
 
   try {
     const server = await createWorkspaceServer({
@@ -1262,8 +1376,10 @@ const main = async (): Promise<void> => {
       outputRoot: options.outputRoot,
       figmaRequestTimeoutMs: options.figmaTimeoutMs,
       figmaMaxRetries: options.figmaRetries,
-      figmaCircuitBreakerFailureThreshold: options.figmaCircuitBreakerFailureThreshold,
-      figmaCircuitBreakerResetTimeoutMs: options.figmaCircuitBreakerResetTimeoutMs,
+      figmaCircuitBreakerFailureThreshold:
+        options.figmaCircuitBreakerFailureThreshold,
+      figmaCircuitBreakerResetTimeoutMs:
+        options.figmaCircuitBreakerResetTimeoutMs,
       figmaBootstrapDepth: options.figmaBootstrapDepth,
       figmaNodeBatchSize: options.figmaNodeBatchSize,
       figmaNodeFetchConcurrency: options.figmaNodeFetchConcurrency,
@@ -1275,8 +1391,12 @@ const main = async (): Promise<void> => {
       figmaCacheEnabled: options.figmaCacheEnabled,
       figmaCacheTtlMs: options.figmaCacheTtlMs,
       figmaPasteTempTtlMs: options.figmaPasteTempTtlMs,
-      ...(options.iconMapFilePath !== undefined ? { iconMapFilePath: options.iconMapFilePath } : {}),
-      ...(options.designSystemFilePath !== undefined ? { designSystemFilePath: options.designSystemFilePath } : {}),
+      ...(options.iconMapFilePath !== undefined
+        ? { iconMapFilePath: options.iconMapFilePath }
+        : {}),
+      ...(options.designSystemFilePath !== undefined
+        ? { designSystemFilePath: options.designSystemFilePath }
+        : {}),
       exportImages: options.exportImages,
       figmaScreenElementBudget: options.figmaScreenElementBudget,
       figmaScreenElementMaxDepth: options.figmaScreenElementMaxDepth,
@@ -1291,12 +1411,19 @@ const main = async (): Promise<void> => {
       commandStderrMaxBytes: options.commandStderrMaxBytes,
       pipelineDiagnosticMaxCount: options.pipelineDiagnosticMaxCount,
       pipelineDiagnosticTextMaxLength: options.pipelineDiagnosticTextMaxLength,
-      pipelineDiagnosticDetailsMaxKeys: options.pipelineDiagnosticDetailsMaxKeys,
-      pipelineDiagnosticDetailsMaxItems: options.pipelineDiagnosticDetailsMaxItems,
-      pipelineDiagnosticDetailsMaxDepth: options.pipelineDiagnosticDetailsMaxDepth,
+      pipelineDiagnosticDetailsMaxKeys:
+        options.pipelineDiagnosticDetailsMaxKeys,
+      pipelineDiagnosticDetailsMaxItems:
+        options.pipelineDiagnosticDetailsMaxItems,
+      pipelineDiagnosticDetailsMaxDepth:
+        options.pipelineDiagnosticDetailsMaxDepth,
       enableLintAutofix: options.enableLintAutofix,
-      enablePerfValidation: options.enablePerfValidation,
-      enableUiValidation: options.enableUiValidation,
+      ...(options.enablePerfValidation !== undefined
+        ? { enablePerfValidation: options.enablePerfValidation }
+        : {}),
+      ...(options.enableUiValidation !== undefined
+        ? { enableUiValidation: options.enableUiValidation }
+        : {}),
       enableVisualQualityValidation: options.enableVisualQualityValidation,
       ...(options.compositeQualityWeights !== undefined
         ? { compositeQualityWeights: options.compositeQualityWeights }
@@ -1304,7 +1431,9 @@ const main = async (): Promise<void> => {
       visualQualityReferenceMode: options.visualQualityReferenceMode,
       visualQualityViewportWidth: options.visualQualityViewportWidth,
       visualQualityBrowsers: options.visualQualityBrowsers,
-      enableUnitTestValidation: options.enableUnitTestValidation,
+      ...(options.enableUnitTestValidation !== undefined
+        ? { enableUnitTestValidation: options.enableUnitTestValidation }
+        : {}),
       installPreferOffline: options.installPreferOffline,
       skipInstall: options.skipInstall,
       maxConcurrentJobs: options.maxConcurrentJobs,
@@ -1313,13 +1442,19 @@ const main = async (): Promise<void> => {
       rateLimitPerMinute: options.rateLimitPerMinute,
       shutdownTimeoutMs: options.shutdownTimeoutMs,
       ...(options.importSessionEventBearerToken !== undefined
-        ? { importSessionEventBearerToken: options.importSessionEventBearerToken }
+        ? {
+            importSessionEventBearerToken:
+              options.importSessionEventBearerToken,
+          }
         : {}),
-      enablePreview: options.enablePreview
+      enablePreview: options.enablePreview,
     });
 
     const shutdown = async (signal: string): Promise<void> => {
-      logger.log({ level: "info", message: `Received ${signal}, shutting down...` });
+      logger.log({
+        level: "info",
+        message: `Received ${signal}, shutting down...`,
+      });
       await server.app.close();
       process.exit(0);
     };
@@ -1331,63 +1466,129 @@ const main = async (): Promise<void> => {
       void shutdown("SIGTERM");
     });
 
-    logger.log({ level: "info", message: `Server ready at ${server.url}/workspace` });
-    logger.log({ level: "info", message: `Output root: ${options.outputRoot}` });
-    logger.log({ level: "info", message: `Preview enabled: ${options.enablePreview}` });
-    logger.log({ level: "info", message: `Perf validation enabled: ${options.enablePerfValidation}` });
-    logger.log({ level: "info", message: `UI validation enabled: ${options.enableUiValidation}` });
-    logger.log({ level: "info", message: `Visual quality validation enabled: ${options.enableVisualQualityValidation}` });
+    logger.log({
+      level: "info",
+      message: `Server ready at ${server.url}/workspace`,
+    });
+    logger.log({
+      level: "info",
+      message: `Output root: ${options.outputRoot}`,
+    });
+    logger.log({
+      level: "info",
+      message: `Preview enabled: ${options.enablePreview}`,
+    });
+    logger.log({
+      level: "info",
+      message: `Perf validation enabled: ${options.enablePerfValidation ?? "auto (per pipeline)"}`,
+    });
+    logger.log({
+      level: "info",
+      message: `UI validation enabled: ${options.enableUiValidation ?? "auto (per pipeline)"}`,
+    });
+    logger.log({
+      level: "info",
+      message: `Visual quality validation enabled: ${options.enableVisualQualityValidation}`,
+    });
     logger.log({
       level: "info",
       message:
         "Composite quality weights: " +
         `${options.compositeQualityWeights?.visual ?? 0.6} visual, ` +
-        `${options.compositeQualityWeights?.performance ?? 0.4} performance`
+        `${options.compositeQualityWeights?.performance ?? 0.4} performance`,
     });
-    logger.log({ level: "info", message: `Visual quality reference mode: ${options.visualQualityReferenceMode}` });
-    logger.log({ level: "info", message: `Visual quality viewport width: ${options.visualQualityViewportWidth}` });
-    logger.log({ level: "info", message: `Visual quality browsers: ${options.visualQualityBrowsers.join(", ")}` });
-    logger.log({ level: "info", message: `Unit test validation enabled: ${options.enableUnitTestValidation}` });
-    logger.log({ level: "info", message: `Install prefer-offline: ${options.installPreferOffline}` });
-    logger.log({ level: "info", message: `Skip install: ${options.skipInstall}` });
     logger.log({
       level: "info",
-      message: `Queue limits: concurrent=${options.maxConcurrentJobs}, queued=${options.maxQueuedJobs}`
+      message: `Visual quality reference mode: ${options.visualQualityReferenceMode}`,
     });
-    logger.log({ level: "info", message: `Shutdown timeout: ${options.shutdownTimeoutMs}ms` });
-    logger.log({ level: "info", message: `Rate limit per minute: ${options.rateLimitPerMinute}` });
     logger.log({
       level: "info",
-      message: `Import session event write auth enabled: ${options.importSessionEventBearerToken !== undefined}`
+      message: `Visual quality viewport width: ${options.visualQualityViewportWidth}`,
+    });
+    logger.log({
+      level: "info",
+      message: `Visual quality browsers: ${options.visualQualityBrowsers.join(", ")}`,
+    });
+    logger.log({
+      level: "info",
+      message: `Unit test validation enabled: ${options.enableUnitTestValidation ?? "auto (per pipeline)"}`,
+    });
+    logger.log({
+      level: "info",
+      message: `Install prefer-offline: ${options.installPreferOffline}`,
+    });
+    logger.log({
+      level: "info",
+      message: `Skip install: ${options.skipInstall}`,
+    });
+    logger.log({
+      level: "info",
+      message: `Queue limits: concurrent=${options.maxConcurrentJobs}, queued=${options.maxQueuedJobs}`,
+    });
+    logger.log({
+      level: "info",
+      message: `Shutdown timeout: ${options.shutdownTimeoutMs}ms`,
+    });
+    logger.log({
+      level: "info",
+      message: `Rate limit per minute: ${options.rateLimitPerMinute}`,
+    });
+    logger.log({
+      level: "info",
+      message: `Import session event write auth enabled: ${options.importSessionEventBearerToken !== undefined}`,
     });
     logger.log({ level: "info", message: `Log format: ${options.logFormat}` });
-    logger.log({ level: "info", message: `Lint auto-fix enabled: ${options.enableLintAutofix}` });
-    logger.log({ level: "info", message: `Figma cache enabled: ${options.figmaCacheEnabled}, ttlMs=${options.figmaCacheTtlMs}` });
-    logger.log({ level: "info", message: `Figma paste temp cleanup ttlMs=${options.figmaPasteTempTtlMs}` });
+    logger.log({
+      level: "info",
+      message: `Lint auto-fix enabled: ${options.enableLintAutofix}`,
+    });
+    logger.log({
+      level: "info",
+      message: `Figma cache enabled: ${options.figmaCacheEnabled}, ttlMs=${options.figmaCacheTtlMs}`,
+    });
+    logger.log({
+      level: "info",
+      message: `Figma paste temp cleanup ttlMs=${options.figmaPasteTempTtlMs}`,
+    });
     logger.log({
       level: "info",
       message:
         `Figma circuit breaker: threshold=${options.figmaCircuitBreakerFailureThreshold}, ` +
-        `resetTimeoutMs=${options.figmaCircuitBreakerResetTimeoutMs}`
+        `resetTimeoutMs=${options.figmaCircuitBreakerResetTimeoutMs}`,
     });
     logger.log({
       level: "info",
-      message: `Icon fallback map file: ${options.iconMapFilePath ?? "(default: <output-root>/icon-fallback-map.json)"}`
+      message: `Icon fallback map file: ${options.iconMapFilePath ?? "(default: <output-root>/icon-fallback-map.json)"}`,
     });
     logger.log({
       level: "info",
-      message: `Design system file: ${options.designSystemFilePath ?? "(default: <output-root>/design-system.json)"}`
+      message: `Design system file: ${options.designSystemFilePath ?? "(default: <output-root>/design-system.json)"}`,
     });
-    logger.log({ level: "info", message: `Export images: ${options.exportImages}` });
-    logger.log({ level: "info", message: `Figma screen depth max: ${options.figmaScreenElementMaxDepth}` });
-    logger.log({ level: "info", message: `Brand theme default: ${options.brandTheme}` });
-    logger.log({ level: "info", message: `Generation locale default: ${options.generationLocale}` });
-    logger.log({ level: "info", message: `Router mode default: ${options.routerMode}` });
+    logger.log({
+      level: "info",
+      message: `Export images: ${options.exportImages}`,
+    });
+    logger.log({
+      level: "info",
+      message: `Figma screen depth max: ${options.figmaScreenElementMaxDepth}`,
+    });
+    logger.log({
+      level: "info",
+      message: `Brand theme default: ${options.brandTheme}`,
+    });
+    logger.log({
+      level: "info",
+      message: `Generation locale default: ${options.generationLocale}`,
+    });
+    logger.log({
+      level: "info",
+      message: `Router mode default: ${options.routerMode}`,
+    });
     logger.log({
       level: "info",
       message:
         `Command output caps: stdout=${options.commandStdoutMaxBytes}, ` +
-        `stderr=${options.commandStderrMaxBytes}`
+        `stderr=${options.commandStderrMaxBytes}`,
     });
     logger.log({
       level: "info",
@@ -1396,11 +1597,11 @@ const main = async (): Promise<void> => {
         `text=${options.pipelineDiagnosticTextMaxLength}, ` +
         `detailKeys=${options.pipelineDiagnosticDetailsMaxKeys}, ` +
         `detailItems=${options.pipelineDiagnosticDetailsMaxItems}, ` +
-        `detailDepth=${options.pipelineDiagnosticDetailsMaxDepth}`
+        `detailDepth=${options.pipelineDiagnosticDetailsMaxDepth}`,
     });
     logger.log({
       level: "info",
-      message: `Figma screen name pattern: ${options.figmaScreenNamePattern ?? "(unset)"}`
+      message: `Figma screen name pattern: ${options.figmaScreenNamePattern ?? "(unset)"}`,
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
