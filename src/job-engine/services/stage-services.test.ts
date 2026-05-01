@@ -10,6 +10,7 @@ import type {
   WorkspaceFigmaSourceMode,
   WorkspaceFormHandlingMode,
   BusinessTestIntentIr,
+  WorkspaceJobPipelineMetadata,
   WorkspaceJobStageName
 } from "../../contracts/index.js";
 import {
@@ -58,6 +59,13 @@ const PIPELINE_METADATA = {
   buildProfile: "default-rocket",
   deterministic: true,
 } as const;
+const DEFAULT_PIPELINE_METADATA: WorkspaceJobPipelineMetadata = {
+  pipelineId: "default",
+  pipelineDisplayName: "Default",
+  templateBundleId: "react-tailwind-app",
+  buildProfile: "default",
+  deterministic: true
+};
 
 const createLocalFigmaPayload = () => ({
   name: "Stage Service Board",
@@ -1692,6 +1700,7 @@ const createExecutionContext = async ({
   input,
   runtimeOverrides,
   requestOverrides,
+  pipelineMetadata = PIPELINE_METADATA,
   rootDir,
   jobId = "job-stage-test"
 }: {
@@ -1699,6 +1708,7 @@ const createExecutionContext = async ({
   input?: SubmissionJobInput;
   runtimeOverrides?: Partial<Parameters<typeof resolveRuntimeSettings>[0]>;
   requestOverrides?: Partial<JobRecord["request"]>;
+  pipelineMetadata?: WorkspaceJobPipelineMetadata;
   rootDir?: string;
   jobId?: string;
 }): Promise<{
@@ -1741,7 +1751,7 @@ const createExecutionContext = async ({
     mode,
     job,
     ...(input ? { input } : {}),
-    pipelineMetadata: PIPELINE_METADATA,
+    pipelineMetadata,
     runtime,
     resolvedPaths: {
       outputRoot: root,
@@ -6371,6 +6381,138 @@ test("ValidateProjectService uses per-runtime validation policy instead of proce
       process.env.FIGMAPIPE_ENABLE_PERF_VALIDATION = previousLegacyPerf;
     }
   }
+});
+
+test("ValidateProjectService enables default pipeline validation gates without changing runtime defaults", async () => {
+  const { executionContext, stageContextFor } = await createExecutionContext({
+    pipelineMetadata: DEFAULT_PIPELINE_METADATA
+  });
+  assert.equal(executionContext.runtime.enableUiValidation, false);
+  assert.equal(executionContext.runtime.enablePerfValidation, false);
+  assert.equal(executionContext.runtime.enableUnitTestValidation, false);
+
+  await executionContext.artifactStore.setPath({
+    key: STAGE_ARTIFACT_KEYS.generatedProject,
+    stage: "template.prepare",
+    absolutePath: executionContext.paths.generatedProjectDir
+  });
+  await executionContext.artifactStore.setValue({
+    key: STAGE_ARTIFACT_KEYS.generationDiffContext,
+    stage: "codegen.generate",
+    value: {
+      boardKey: "test-board-default-pipeline"
+    } satisfies GenerationDiffContext
+  });
+
+  const uiGateReportPath = path.join(executionContext.paths.jobDir, "ui-gate", "ui-gate-report.json");
+  await mkdir(path.dirname(uiGateReportPath), { recursive: true });
+  await writeFile(
+    uiGateReportPath,
+    `${JSON.stringify(
+      {
+        visualDiffCount: 0,
+        a11yViolationCount: 0,
+        interactionViolationCount: 0,
+        artifacts: [],
+        summary: "UI gate clean",
+        checks: [
+          {
+            name: "visual-baseline",
+            status: "passed",
+            count: 0
+          },
+          {
+            name: "a11y-static",
+            status: "passed",
+            count: 0
+          },
+          {
+            name: "interaction-static",
+            status: "passed",
+            count: 0
+          }
+        ]
+      },
+      null,
+      2
+    )}\n`,
+    "utf8"
+  );
+
+  const capturedPolicies: Array<{
+    enablePerfValidation: boolean;
+    enableUiValidation: boolean;
+    enableUnitTestValidation: boolean;
+    useCommittedPerfBaseline: boolean;
+  }> = [];
+  const service = createValidateProjectService({
+    runProjectValidationFn: async (input) => {
+      capturedPolicies.push({
+        enablePerfValidation: input.enablePerfValidation,
+        enableUiValidation: input.enableUiValidation,
+        enableUnitTestValidation: input.enableUnitTestValidation,
+        useCommittedPerfBaseline: input.useCommittedPerfBaseline ?? false
+      });
+      return {
+        ...createSuccessfulValidationResult({
+          includeUiValidation: input.enableUiValidation,
+          includePerfValidation: input.enablePerfValidation
+        }),
+        ...(input.enableUiValidation
+          ? {
+              validatePlaywright: {
+                status: "passed" as const,
+                command: "pnpm" as const,
+                args: ["run", "--if-present", "validate:playwright"],
+                attempt: 1,
+                timedOut: false
+              }
+            }
+          : {}),
+        ...(input.enableUnitTestValidation
+          ? {
+              test: {
+                status: "passed" as const,
+                command: "pnpm" as const,
+                args: ["run", "test"],
+                attempt: 1,
+                timedOut: false
+              }
+            }
+          : {})
+      };
+    }
+  });
+
+  await service.execute(undefined, stageContextFor("validate.project"));
+
+  assert.deepEqual(capturedPolicies, [
+    {
+      enablePerfValidation: true,
+      enableUiValidation: true,
+      enableUnitTestValidation: true,
+      useCommittedPerfBaseline: true
+    }
+  ]);
+
+  const validationSummary = await executionContext.artifactStore.getValue<{
+    generatedApp?: {
+      validateUi?: { args?: string[] };
+      validatePlaywright?: { args?: string[] };
+      test?: { args?: string[] };
+      perfAssert?: { args?: string[] };
+    };
+    uiA11y?: { status?: string };
+  }>(STAGE_ARTIFACT_KEYS.validationSummary);
+  assert.deepEqual(validationSummary?.generatedApp?.validateUi?.args, ["run", "validate:ui"]);
+  assert.deepEqual(validationSummary?.generatedApp?.validatePlaywright?.args, [
+    "run",
+    "--if-present",
+    "validate:playwright"
+  ]);
+  assert.deepEqual(validationSummary?.generatedApp?.test?.args, ["run", "test"]);
+  assert.deepEqual(validationSummary?.generatedApp?.perfAssert?.args, ["run", "perf:assert"]);
+  assert.equal(validationSummary?.uiA11y?.status, "ok");
 });
 
 test("ValidateProjectService confidence uses collected diagnostics, generation screen inventory, and manifest ownership", async () => {

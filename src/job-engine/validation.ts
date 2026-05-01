@@ -495,6 +495,7 @@ export const runProjectValidationWithDeps = async ({
   enablePerfValidation = false,
   enableUiValidation = false,
   enableUnitTestValidation = false,
+  useCommittedPerfBaseline = false,
   unitTestIgnoreFailure = false,
   commandTimeoutMs = 15 * 60_000,
   commandStdoutMaxBytes = 1_048_576,
@@ -515,6 +516,7 @@ export const runProjectValidationWithDeps = async ({
   enablePerfValidation?: boolean;
   enableUiValidation?: boolean;
   enableUnitTestValidation?: boolean;
+  useCommittedPerfBaseline?: boolean;
   unitTestIgnoreFailure?: boolean;
   commandTimeoutMs?: number;
   commandStdoutMaxBytes?: number;
@@ -607,6 +609,9 @@ export const runProjectValidationWithDeps = async ({
   }
 
   if (enablePerfValidation) {
+    const perfBaselinePath = useCommittedPerfBaseline
+      ? path.join(generatedProjectDir, "perf-baseline.json")
+      : process.env.FIGMAPIPE_PERF_BASELINE_PATH ?? path.join(perfArtifactRoot, "perf-baseline.json");
     attemptCommands.push({
       name: "perf-assert",
       args: ["run", "perf:assert"],
@@ -614,9 +619,10 @@ export const runProjectValidationWithDeps = async ({
       env: {
         ...process.env,
         FIGMAPIPE_PERF_ARTIFACT_DIR: process.env.FIGMAPIPE_PERF_ARTIFACT_DIR ?? perfArtifactRoot,
-        FIGMAPIPE_PERF_BASELINE_PATH:
-          process.env.FIGMAPIPE_PERF_BASELINE_PATH ?? path.join(perfArtifactRoot, "perf-baseline.json"),
-        FIGMAPIPE_PERF_ALLOW_BASELINE_BOOTSTRAP: process.env.FIGMAPIPE_PERF_ALLOW_BASELINE_BOOTSTRAP ?? "true"
+        FIGMAPIPE_PERF_BASELINE_PATH: perfBaselinePath,
+        FIGMAPIPE_PERF_ALLOW_BASELINE_BOOTSTRAP: useCommittedPerfBaseline
+          ? "false"
+          : process.env.FIGMAPIPE_PERF_ALLOW_BASELINE_BOOTSTRAP ?? "true"
       }
     });
   }
@@ -928,6 +934,7 @@ export const runProjectValidation = async ({
   enablePerfValidation = false,
   enableUiValidation = false,
   enableUnitTestValidation = false,
+  useCommittedPerfBaseline = false,
   unitTestIgnoreFailure = false,
   commandTimeoutMs = 15 * 60_000,
   commandStdoutMaxBytes = 1_048_576,
@@ -947,6 +954,7 @@ export const runProjectValidation = async ({
   enablePerfValidation?: boolean;
   enableUiValidation?: boolean;
   enableUnitTestValidation?: boolean;
+  useCommittedPerfBaseline?: boolean;
   unitTestIgnoreFailure?: boolean;
   commandTimeoutMs?: number;
   commandStdoutMaxBytes?: number;
@@ -967,6 +975,7 @@ export const runProjectValidation = async ({
     enablePerfValidation,
     enableUiValidation,
     enableUnitTestValidation,
+    useCommittedPerfBaseline,
     unitTestIgnoreFailure,
     commandTimeoutMs,
     commandStdoutMaxBytes,

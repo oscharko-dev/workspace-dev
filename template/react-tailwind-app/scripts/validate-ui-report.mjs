@@ -271,4 +271,5 @@ const report = {
 };
 
 await writeJson(reportPath, report);
+process.exitCode = checks.some((check) => check.status === "failed") ? 1 : 0;
 console.log(`validate:ui wrote report -> ${reportPath}`);
