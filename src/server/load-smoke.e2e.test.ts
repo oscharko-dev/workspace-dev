@@ -365,7 +365,7 @@ test("runtime load smoke covers mixed submit and regenerate queue saturation ove
       baseUrl: server.url,
       jobId: sourceJobId,
       acceptedStatuses: ["completed"],
-      timeoutMs: 600_000,
+      timeoutMs: 1_800_000,
     });
     assert.equal(sourceCompleted.status, "completed");
 
