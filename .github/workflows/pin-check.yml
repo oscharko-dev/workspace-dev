@@ -6,12 +6,16 @@ on:
   push:
     branches: [dev, main]
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' && github.ref != 'refs/heads/dev' }}
+
 permissions: {}
 
 jobs:
   verify-pinned-shas:
     name: Verify pinned action SHAs
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     steps:
       - name: Checkout repository
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
@@ -44,6 +48,7 @@ jobs:
           unpinned=$(grep -rn --include='*.yml' 'uses:' .github/workflows/ \
             | grep -vE '@[0-9a-f]{40}' \
             | grep -v 'pin-check.yml' \
+            | grep -vE 'slsa-framework/slsa-github-generator/\.github/workflows/generator_generic_slsa3\.yml@v[0-9]+\.[0-9]+\.[0-9]+' \
             | grep -v '^Binary' || true)
           if [[ -n "${unpinned}" ]]; then
             echo "::error::Unpinned GitHub Action reference(s) detected. Every 'uses:' must pin to a full 40-character commit SHA (see .github/workflows/pin-check.yml). Offending lines:" >&2

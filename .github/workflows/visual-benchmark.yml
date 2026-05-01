@@ -44,6 +44,10 @@ on:
         default: false
         type: boolean
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' && github.ref != 'refs/heads/dev' }}
+
 permissions:
   actions: read
   contents: read
@@ -53,7 +57,7 @@ jobs:
     name: benchmark
     permissions:
       checks: write
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     timeout-minutes: 30
     env:
       VISUAL_BENCHMARK_BROWSERS: ${{ github.event_name == 'workflow_dispatch' && inputs.browsers || 'chromium' }}
@@ -106,14 +110,14 @@ jobs:
       - name: Install Playwright browsers
         if: steps.playwright-cache.outputs.cache-hit != 'true'
         run: |
-          browsers="${VISUAL_BENCHMARK_BROWSERS//,/ }"
-          pnpm exec playwright install --with-deps $browsers
+          IFS=' ' read -r -a browsers <<< "${VISUAL_BENCHMARK_BROWSERS//,/ }"
+          pnpm exec playwright install --with-deps "${browsers[@]}"
 
       - name: Install Playwright OS deps (cache hit)
         if: steps.playwright-cache.outputs.cache-hit == 'true'
         run: |
-          browsers="${VISUAL_BENCHMARK_BROWSERS//,/ }"
-          pnpm exec playwright install-deps $browsers
+          IFS=' ' read -r -a browsers <<< "${VISUAL_BENCHMARK_BROWSERS//,/ }"
+          pnpm exec playwright install-deps "${browsers[@]}"
 
       - name: Run visual benchmark verification suites
         run: |
@@ -263,7 +267,7 @@ jobs:
   benchmark-browser-matrix:
     if: github.event_name == 'workflow_dispatch' && inputs.run_browser_matrix
     name: benchmark matrix (${{ matrix.browser }})
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     timeout-minutes: 30
     strategy:
       fail-fast: false
@@ -340,7 +344,7 @@ jobs:
   benchmark-live-drift-audit:
     if: github.event_name == 'workflow_dispatch' && inputs.run_live_drift_audit
     name: benchmark live drift audit
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6

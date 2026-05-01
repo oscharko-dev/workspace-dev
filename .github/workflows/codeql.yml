@@ -9,6 +9,10 @@ on:
     - cron: "0 4 * * 1"
   workflow_dispatch:
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' && github.ref != 'refs/heads/dev' }}
+
 permissions:
   actions: read
   contents: read
@@ -16,7 +20,7 @@ permissions:
 jobs:
   analyze:
     name: Analyze (${{ matrix.language }})
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     permissions:
       security-events: write
     strategy:

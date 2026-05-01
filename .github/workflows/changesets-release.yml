@@ -5,13 +5,17 @@ on:
     branches: [main]
   workflow_dispatch:
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' && github.ref != 'refs/heads/dev' }}
+
 permissions:
   contents: read
 
 jobs:
   quality-matrix:
     timeout-minutes: 480
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     strategy:
       fail-fast: false
       matrix:
@@ -81,41 +85,8 @@ jobs:
       - name: Verify template npm signature attestations
         run: pnpm run template:signatures
 
-      - name: Run release quality gates
-        run: |
-          pnpm run typecheck
-          pnpm exec playwright install --with-deps chromium
-          pnpm run test:dast-smoke
-          pnpm run test:load
-          pnpm run test
-          pnpm run template:test
-          pnpm run template:tailwind:lint
-          pnpm run template:tailwind:typecheck
-          pnpm run template:tailwind:test
-          pnpm run template:tailwind:build
-          pnpm run template:tailwind:validate:ui
-          pnpm run test:golden
-          pnpm run test:ti-eval
-          pnpm run test:ti-multi-source-eval
-          pnpm run ui:test:coverage
-          pnpm run test:coverage
-          pnpm run ui:test:e2e
-          pnpm run template:tailwind:validate:playwright
-          pnpm run test:flaky-retry
-          pnpm run test:bdd
-          pnpm run test:property-based
-          pnpm run ui:lint
-          pnpm run lint:boundaries
-          pnpm run lint:ts-style
-          pnpm run lint:no-telemetry
-          pnpm run lint:secrets:all
-          pnpm run build
-          pnpm run lint:secrets:profiles
-          pnpm run lint:publint
-          pnpm run lint:types-publish
-          pnpm run lint:size
-          pnpm run verify:fips
-          pnpm run verify:profile-gates
+      - name: Run release quality gates (canonical)
+        run: pnpm run release:quality-gates:publish-lifecycle
 
       - name: Upload runtime load smoke artifacts
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7
@@ -138,7 +109,7 @@ jobs:
 
   performance-web:
     timeout-minutes: 180
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     strategy:
       fail-fast: false
       matrix:
@@ -208,7 +179,7 @@ jobs:
 
   mutation-testing:
     timeout-minutes: 420
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     needs: quality-matrix
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
@@ -245,12 +216,13 @@ jobs:
   release:
     timeout-minutes: 240
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     needs: [quality-matrix, performance-web, mutation-testing]
     permissions:
       contents: write
       pull-requests: write
       id-token: write
+      attestations: write
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
         with:
@@ -337,6 +309,53 @@ jobs:
         run: |
           pnpm run verify:profile-gates -- --skip-airgap --skip-reproducible
           cp -R artifacts/sbom/. "${RELEASE_EVIDENCE_DIR}/sbom/"
+
+      - name: Generate SHA256SUMS for profile tarballs
+        shell: bash
+        run: |
+          set -euo pipefail
+          SUMS_PATH="${RELEASE_EVIDENCE_DIR}/SHA256SUMS"
+          : > "${SUMS_PATH}"
+          # Hash each tarball with paths normalized to artifacts/build-profiles/<profile>/<tgz>
+          # so signatures over the file remain meaningful to consumers.
+          while IFS= read -r -d '' tarball; do
+            ( cd artifacts && sha256sum "${tarball#artifacts/}" ) >> "${SUMS_PATH}"
+          done < <(find artifacts/build-profiles -type f -name "*.tgz" -print0 | sort -z)
+          echo "Generated SHA256SUMS:"
+          cat "${SUMS_PATH}"
+
+      - name: Attest build provenance for default profile
+        uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32  # v4.1.0
+        with:
+          subject-path: 'artifacts/build-profiles/default/*.tgz'
+
+      - name: Attest build provenance for rocket profile
+        uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32  # v4.1.0
+        with:
+          subject-path: 'artifacts/build-profiles/rocket/*.tgz'
+
+      - name: Attest build provenance for default-rocket profile
+        uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32  # v4.1.0
+        with:
+          subject-path: 'artifacts/build-profiles/default-rocket/*.tgz'
+
+      - name: Attest CycloneDX SBOM for default profile
+        uses: actions/attest-sbom@c604332985a26aa8cf1bdc465b92731239ec6b9e  # v4.1.0
+        with:
+          subject-path: 'artifacts/build-profiles/default/*.tgz'
+          sbom-path: 'artifacts/sbom/default/workspace-dev.cdx.json'
+
+      - name: Attest CycloneDX SBOM for rocket profile
+        uses: actions/attest-sbom@c604332985a26aa8cf1bdc465b92731239ec6b9e  # v4.1.0
+        with:
+          subject-path: 'artifacts/build-profiles/rocket/*.tgz'
+          sbom-path: 'artifacts/sbom/rocket/workspace-dev.cdx.json'
+
+      - name: Attest CycloneDX SBOM for default-rocket profile
+        uses: actions/attest-sbom@c604332985a26aa8cf1bdc465b92731239ec6b9e  # v4.1.0
+        with:
+          subject-path: 'artifacts/build-profiles/default-rocket/*.tgz'
+          sbom-path: 'artifacts/sbom/default-rocket/workspace-dev.cdx.json'
 
       - name: Configure npm publish auth mode
         id: npm_auth_mode
@@ -432,6 +451,26 @@ jobs:
             UPLOAD_ASSETS+=("${ASSET_PATH}#${PROFILE_ID}-${PACKAGE_VERSION}-$(basename "${ASSET_PATH}")")
           done
 
+          # Attach profile tarballs as release assets so consumers (and the
+          # downstream slsa-provenance.yml workflow) can verify them against
+          # the published SHA256SUMS and Sigstore attestations.
+          mapfile -t TARBALL_ASSETS < <(find artifacts/build-profiles -type f -name "*.tgz" | sort)
+          if [[ "${#TARBALL_ASSETS[@]}" -eq 0 ]]; then
+            echo "No profile tarballs were produced for release upload."
+            exit 1
+          fi
+          for TARBALL_PATH in "${TARBALL_ASSETS[@]}"; do
+            UPLOAD_ASSETS+=("${TARBALL_PATH}#$(basename "${TARBALL_PATH}")")
+          done
+
+          SUMS_PATH="${RELEASE_EVIDENCE_DIR}/SHA256SUMS"
+          if [[ -f "${SUMS_PATH}" ]]; then
+            UPLOAD_ASSETS+=("${SUMS_PATH}#SHA256SUMS")
+          else
+            echo "Expected SHA256SUMS at ${SUMS_PATH} but it was not generated."
+            exit 1
+          fi
+
           if gh release view "${RELEASE_TAG}" >/dev/null 2>&1; then
             echo "GitHub release ${RELEASE_TAG} already exists. Uploading/refreshing evidence assets."
             gh release upload "${RELEASE_TAG}" "${UPLOAD_ASSETS[@]}" --clobber
@@ -455,6 +494,7 @@ jobs:
           name: workspace-dev-release-evidence-${{ github.run_id }}
           path: |
             ${{ runner.temp }}/release-evidence/sbom
+            ${{ runner.temp }}/release-evidence/SHA256SUMS
           if-no-files-found: ignore
 
       - name: Release summary
