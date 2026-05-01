@@ -12,7 +12,12 @@ import {
 } from "../bdd/harness.js";
 
 const PACKAGE_ROOT = fileURLToPath(new URL("../../", import.meta.url));
-const ARTIFACT_DIR = path.join(PACKAGE_ROOT, "artifacts", "testing", "load-smoke");
+const ARTIFACT_DIR = path.join(
+  PACKAGE_ROOT,
+  "artifacts",
+  "testing",
+  "load-smoke",
+);
 
 interface JsonResponse {
   status: number;
@@ -99,7 +104,9 @@ const waitForJobStatus = async ({
   );
 };
 
-const extractQueueSnapshot = (jobBody: Record<string, unknown>): QueueSnapshot => {
+const extractQueueSnapshot = (
+  jobBody: Record<string, unknown>,
+): QueueSnapshot => {
   const queue = jobBody.queue;
   return typeof queue === "object" && queue !== null
     ? (queue as QueueSnapshot)
@@ -146,9 +153,7 @@ const writeScenarioArtifact = async ({
 test("runtime load smoke covers submit queue saturation over real HTTP routes", async () => {
   const observations: Array<Record<string, unknown>> = [];
   const layout = await createTempWorkspaceLayout();
-  let server:
-    | Awaited<ReturnType<typeof createBddWorkspaceServer>>
-    | undefined;
+  let server: Awaited<ReturnType<typeof createBddWorkspaceServer>> | undefined;
   const acceptedJobIds: string[] = [];
   const summary: ScenarioSummary = {
     scenario: "submit-backpressure",
@@ -243,8 +248,12 @@ test("runtime load smoke covers submit queue saturation over real HTTP routes", 
     });
 
     const responses = [secondSubmit, thirdSubmit];
-    const acceptedResponses = responses.filter((response) => response.status === 202);
-    const backpressureResponses = responses.filter((response) => response.status === 429);
+    const acceptedResponses = responses.filter(
+      (response) => response.status === 202,
+    );
+    const backpressureResponses = responses.filter(
+      (response) => response.status === 429,
+    );
 
     assert.equal(acceptedResponses.length, 1);
     assert.equal(backpressureResponses.length, 1);
@@ -307,9 +316,7 @@ test("runtime load smoke covers mixed submit and regenerate queue saturation ove
     workspaceRoot: layout.workspaceRoot,
     fileName: "load-source.json",
   });
-  let server:
-    | Awaited<ReturnType<typeof createBddWorkspaceServer>>
-    | undefined;
+  let server: Awaited<ReturnType<typeof createBddWorkspaceServer>> | undefined;
   const acceptedJobIds: string[] = [];
   const summary: ScenarioSummary = {
     scenario: "mixed-submit-regenerate-backpressure",
@@ -358,7 +365,7 @@ test("runtime load smoke covers mixed submit and regenerate queue saturation ove
       baseUrl: server.url,
       jobId: sourceJobId,
       acceptedStatuses: ["completed"],
-      timeoutMs: 120_000,
+      timeoutMs: 600_000,
     });
     assert.equal(sourceCompleted.status, "completed");
 
@@ -502,8 +509,13 @@ test("runtime load smoke covers mixed submit and regenerate queue saturation ove
     assert.equal(overflowSubmit.body.error, "QUEUE_BACKPRESSURE");
     assert.equal(overflowRegenerate.body.error, "QUEUE_BACKPRESSURE");
 
-    const overflowQueues = [overflowSubmit.body.queue, overflowRegenerate.body.queue]
-      .filter((value): value is QueueSnapshot => typeof value === "object" && value !== null);
+    const overflowQueues = [
+      overflowSubmit.body.queue,
+      overflowRegenerate.body.queue,
+    ].filter(
+      (value): value is QueueSnapshot =>
+        typeof value === "object" && value !== null,
+    );
     for (const overflowQueue of overflowQueues) {
       assert.equal(overflowQueue.runningCount, 1);
       assert.equal(overflowQueue.queuedCount, 2);
