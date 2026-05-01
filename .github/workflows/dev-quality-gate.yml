@@ -15,14 +15,85 @@ permissions:
   contents: read
 
 jobs:
-  quality:
-    timeout-minutes: 360
+  setup:
+    timeout-minutes: 5
     runs-on: ubuntu-22.04
-    strategy:
-      fail-fast: false
-      matrix:
-        node-version: [22]
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      src: ${{ steps.filter.outputs.src }}
+      ui: ${{ steps.filter.outputs.ui }}
+      plugin: ${{ steps.filter.outputs.plugin }}
+      templates: ${{ steps.filter.outputs.templates }}
+      scripts: ${{ steps.filter.outputs.scripts }}
+      workflows: ${{ steps.filter.outputs.workflows }}
+      docs: ${{ steps.filter.outputs.docs }}
+      config: ${{ steps.filter.outputs.config }}
+      full: ${{ steps.full.outputs.value }}
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
+        with:
+          persist-credentials: false
 
+      - id: filter
+        uses: dorny/paths-filter@d1c1ffe0248fe513906c8e24db8ea791d46f8590  # v3.0.3
+        with:
+          filters: |
+            src:
+              - 'src/**'
+              - 'package.json'
+              - 'pnpm-lock.yaml'
+              - 'tsup.config.ts'
+              - 'tsconfig.json'
+            ui:
+              - 'ui-src/**'
+              - 'package.json'
+              - 'pnpm-lock.yaml'
+            plugin:
+              - 'plugin/**'
+              - 'package.json'
+              - 'pnpm-lock.yaml'
+            templates:
+              - 'template/**'
+            scripts:
+              - 'scripts/**'
+              - 'package.json'
+            workflows:
+              - '.github/workflows/**'
+              - '.github/dependabot.yml'
+              - '.github/CODEOWNERS'
+            docs:
+              - '**/*.md'
+              - 'docs/**'
+              - 'CHANGELOG.md'
+              - 'CONTRACT_CHANGELOG.md'
+              - 'README.md'
+            config:
+              - 'package.json'
+              - 'pnpm-lock.yaml'
+              - 'tsconfig.json'
+              - 'eslint.config.js'
+              - 'tsup.config.ts'
+              - 'stryker.config.mjs'
+
+      - id: full
+        env:
+          WORKFLOWS_CHANGED: ${{ steps.filter.outputs.workflows }}
+          CONFIG_CHANGED: ${{ steps.filter.outputs.config }}
+        run: |
+          if [ "$WORKFLOWS_CHANGED" = "true" ] || [ "$CONFIG_CHANGED" = "true" ]; then
+            echo "value=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "value=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  policy-guards:
+    needs: [setup]
+    timeout-minutes: 30
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
         with:
@@ -34,22 +105,11 @@ jobs:
 
       - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e  # v6
         with:
-          node-version: ${{ matrix.node-version }}
+          node-version: 22
           cache: pnpm
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile --ignore-scripts
-
-      - name: Enforce workflow --ignore-scripts policy
-        run: pnpm run verify:workflow-install-scripts
-
-      - name: Enforce pnpm onlyBuiltDependencies allowlist
-        run: pnpm run verify:built-deps-allowlist
-
-      - name: Enforce workflow persist-credentials policy
-        run: pnpm run verify:workflow-persist-credentials
-      - name: Enforce dependency freshness (minimum-release-age) policy
-        run: pnpm run verify:npmrc-freshness
 
       - name: Install template dependencies
         run: pnpm --dir template/react-mui-app install --frozen-lockfile --ignore-scripts
@@ -57,14 +117,17 @@ jobs:
       - name: Install Tailwind template dependencies
         run: pnpm --dir template/react-tailwind-app install --frozen-lockfile --ignore-scripts
 
-      - name: Enforce Tailwind template dependency denylist
-        run: pnpm run template:tailwind:dependency-denylist
+      - name: Enforce workflow --ignore-scripts policy
+        run: pnpm run verify:workflow-install-scripts
 
-      - name: Enforce dependency vulnerability gate
-        run: pnpm audit --audit-level high
+      - name: Enforce workflow persist-credentials policy
+        run: pnpm run verify:workflow-persist-credentials
 
-      - name: Enforce template dependency vulnerability gate
-        run: pnpm --dir template/react-mui-app audit --audit-level high
+      - name: Enforce pnpm onlyBuiltDependencies allowlist
+        run: pnpm run verify:built-deps-allowlist
+
+      - name: Enforce dependency freshness (minimum-release-age) policy
+        run: pnpm run verify:npmrc-freshness
 
       - name: Enforce lockfile host allowlist
         run: pnpm run verify:lockfile-hosts
@@ -72,20 +135,293 @@ jobs:
       - name: Enforce pipeline/template docs version consistency
         run: pnpm run verify:docs-template-stack
 
-      - name: Enforce generated API reference freshness
-        run: pnpm run docs:api:check
+      - name: Enforce Tailwind template dependency denylist
+        run: pnpm run template:tailwind:dependency-denylist
 
-      - name: Verify npm signature attestations
-        run: npm audit signatures
+      - name: Enforce architecture boundaries
+        run: pnpm run lint:boundaries
 
-      - name: Verify template npm signature attestations
-        run: pnpm run template:signatures
+      - name: Enforce zero telemetry policy
+        run: pnpm run lint:no-telemetry
+
+      - name: Enforce repository secret policy
+        run: pnpm run lint:secrets:all
+
+      - name: Enforce TypeScript style
+        run: pnpm run lint:ts-style
+
+      - name: Enforce UI lint rules
+        run: pnpm run ui:lint
+
+  typecheck:
+    needs: [setup]
+    if: needs.setup.outputs.src == 'true' || needs.setup.outputs.ui == 'true' || needs.setup.outputs.plugin == 'true' || needs.setup.outputs.full == 'true'
+    timeout-minutes: 15
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
+        with:
+          persist-credentials: false
+
+      - uses: pnpm/action-setup@903f9c1a6ebcba6cf41d87230be49611ac97822e  # v6
+        with:
+          version: 10.33.0
+
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e  # v6
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile --ignore-scripts
 
       - name: Typecheck
         run: pnpm run typecheck
 
+  unit-tests:
+    needs: [setup]
+    if: needs.setup.outputs.src == 'true' || needs.setup.outputs.ui == 'true' || needs.setup.outputs.plugin == 'true' || needs.setup.outputs.full == 'true'
+    timeout-minutes: 60
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
+        with:
+          persist-credentials: false
+
+      - uses: pnpm/action-setup@903f9c1a6ebcba6cf41d87230be49611ac97822e  # v6
+        with:
+          version: 10.33.0
+
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e  # v6
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile --ignore-scripts
+
+      - name: Canonical tests
+        run: pnpm run test
+
+  template-tests:
+    needs: [setup]
+    if: needs.setup.outputs.templates == 'true' || needs.setup.outputs.src == 'true' || needs.setup.outputs.config == 'true' || needs.setup.outputs.full == 'true'
+    timeout-minutes: 45
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
+        with:
+          persist-credentials: false
+
+      - uses: pnpm/action-setup@903f9c1a6ebcba6cf41d87230be49611ac97822e  # v6
+        with:
+          version: 10.33.0
+
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e  # v6
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile --ignore-scripts
+
+      - name: Install template dependencies
+        run: pnpm --dir template/react-mui-app install --frozen-lockfile --ignore-scripts
+
+      - name: Install Tailwind template dependencies
+        run: pnpm --dir template/react-tailwind-app install --frozen-lockfile --ignore-scripts
+
+      - name: Template Vitest tests
+        run: pnpm run template:test
+
+      - name: Tailwind template lint
+        run: pnpm run template:tailwind:lint
+
+      - name: Tailwind template typecheck
+        run: pnpm run template:tailwind:typecheck
+
+      - name: Tailwind template Vitest tests
+        run: pnpm run template:tailwind:test
+
+      - name: Tailwind template build
+        run: pnpm run template:tailwind:build
+
+      - name: Tailwind template UI validation
+        run: pnpm run template:tailwind:validate:ui
+
+  ui-coverage:
+    needs: [setup]
+    if: needs.setup.outputs.ui == 'true' || needs.setup.outputs.src == 'true' || needs.setup.outputs.config == 'true' || needs.setup.outputs.full == 'true'
+    timeout-minutes: 30
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
+        with:
+          persist-credentials: false
+
+      - uses: pnpm/action-setup@903f9c1a6ebcba6cf41d87230be49611ac97822e  # v6
+        with:
+          version: 10.33.0
+
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e  # v6
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile --ignore-scripts
+
+      - name: UI coverage gate
+        run: pnpm run ui:test:coverage
+
+  golden-and-ti:
+    needs: [setup]
+    if: needs.setup.outputs.src == 'true' || needs.setup.outputs.config == 'true' || needs.setup.outputs.full == 'true'
+    timeout-minutes: 60
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3]
+    env:
+      SHARD: ${{ matrix.shard }}
+      TOTAL: 4
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
+        with:
+          persist-credentials: false
+
+      - uses: pnpm/action-setup@903f9c1a6ebcba6cf41d87230be49611ac97822e  # v6
+        with:
+          version: 10.33.0
+
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e  # v6
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile --ignore-scripts
+
+      - name: Golden parity fixtures (shard 0 only)
+        if: matrix.shard == 0
+        run: pnpm run test:golden
+
+      - name: Test-intelligence multi-source eval gate (shard 0 only)
+        if: matrix.shard == 0
+        run: pnpm run test:ti-multi-source-eval
+
+      - name: Test-intelligence eval gate (shard ${{ matrix.shard }}/4)
+        run: pnpm run test:ti-eval:shard
+
+  coverage:
+    needs: [setup]
+    if: needs.setup.outputs.src == 'true' || needs.setup.outputs.ui == 'true' || needs.setup.outputs.config == 'true' || needs.setup.outputs.full == 'true'
+    timeout-minutes: 30
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
+        with:
+          persist-credentials: false
+
+      - uses: pnpm/action-setup@903f9c1a6ebcba6cf41d87230be49611ac97822e  # v6
+        with:
+          version: 10.33.0
+
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e  # v6
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile --ignore-scripts
+
+      - name: Coverage thresholds
+        run: pnpm run test:coverage
+
+  e2e:
+    needs: [setup]
+    if: needs.setup.outputs.src == 'true' || needs.setup.outputs.ui == 'true' || needs.setup.outputs.templates == 'true' || needs.setup.outputs.config == 'true' || needs.setup.outputs.full == 'true'
+    timeout-minutes: 45
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
+        with:
+          persist-credentials: false
+
+      - uses: pnpm/action-setup@903f9c1a6ebcba6cf41d87230be49611ac97822e  # v6
+        with:
+          version: 10.33.0
+
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e  # v6
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile --ignore-scripts
+
+      - name: Install Tailwind template dependencies
+        run: pnpm --dir template/react-tailwind-app install --frozen-lockfile --ignore-scripts
+
+      - name: Cache Playwright browsers
+        id: playwright-cache
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae  # v5
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
+
       - name: Install Playwright browser (Chromium)
+        if: steps.playwright-cache.outputs.cache-hit != 'true'
         run: pnpm exec playwright install --with-deps chromium
+
+      - name: Install Playwright system deps (cache hit path)
+        if: steps.playwright-cache.outputs.cache-hit == 'true'
+        run: pnpm exec playwright install-deps chromium
+
+      - name: UI E2E tests
+        run: pnpm run ui:test:e2e
+
+      - name: Tailwind template Playwright validation
+        run: pnpm run template:tailwind:validate:playwright
+
+  security-smoke:
+    needs: [setup]
+    if: needs.setup.outputs.src == 'true' || needs.setup.outputs.config == 'true' || needs.setup.outputs.full == 'true'
+    timeout-minutes: 60
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
+        with:
+          persist-credentials: false
+
+      - uses: pnpm/action-setup@903f9c1a6ebcba6cf41d87230be49611ac97822e  # v6
+        with:
+          version: 10.33.0
+
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e  # v6
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile --ignore-scripts
 
       - name: Runtime security smoke suite
         run: pnpm run test:dast-smoke
@@ -109,62 +445,32 @@ jobs:
           path: artifacts/testing/load-smoke
           if-no-files-found: ignore
 
-      - name: Canonical tests
-        run: pnpm run test
+  build-and-publish-checks:
+    needs: [setup]
+    if: needs.setup.outputs.src == 'true' || needs.setup.outputs.config == 'true' || needs.setup.outputs.scripts == 'true' || needs.setup.outputs.full == 'true'
+    timeout-minutes: 30
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
+        with:
+          persist-credentials: false
 
-      - name: Template Vitest tests
-        run: pnpm run template:test
+      - uses: pnpm/action-setup@903f9c1a6ebcba6cf41d87230be49611ac97822e  # v6
+        with:
+          version: 10.33.0
 
-      - name: Tailwind template lint
-        run: pnpm run template:tailwind:lint
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e  # v6
+        with:
+          node-version: 22
+          cache: pnpm
 
-      - name: Tailwind template typecheck
-        run: pnpm run template:tailwind:typecheck
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile --ignore-scripts
 
-      - name: Tailwind template Vitest tests
-        run: pnpm run template:tailwind:test
-
-      - name: Tailwind template build
-        run: pnpm run template:tailwind:build
-
-      - name: Tailwind template UI validation
-        run: pnpm run template:tailwind:validate:ui
-
-      - name: UI coverage gate
-        run: pnpm run ui:test:coverage
-
-      - name: Golden parity fixtures
-        run: pnpm run test:golden
-
-      - name: Test-intelligence Wave 1 POC evaluation gate
-        run: pnpm run test:ti-eval
-
-      - name: Run Wave 4.I multi-source eval gate
-        run: pnpm run test:ti-multi-source-eval
-
-      - name: Coverage thresholds
-        run: pnpm run test:coverage
-
-      - name: UI E2E tests
-        run: pnpm run ui:test:e2e
-
-      - name: Tailwind template Playwright validation
-        run: pnpm run template:tailwind:validate:playwright
-
-      - name: Enforce architecture boundaries
-        run: pnpm run lint:boundaries
-
-      - name: Enforce UI lint rules
-        run: pnpm run ui:lint
-
-      - name: Enforce TypeScript style
-        run: pnpm run lint:ts-style
-
-      - name: Enforce zero telemetry policy
-        run: pnpm run lint:no-telemetry
-
-      - name: Enforce repository secret policy
-        run: pnpm run lint:secrets:all
+      - name: Install template dependencies
+        run: pnpm --dir template/react-mui-app install --frozen-lockfile --ignore-scripts
 
       - name: Build package
         run: pnpm run build
@@ -178,11 +484,29 @@ jobs:
       - name: Run profile release gates
         run: pnpm run verify:profile-gates
 
+      - name: Enforce generated API reference freshness
+        run: pnpm run docs:api:check
+
+      - name: Enforce dependency vulnerability gate
+        run: pnpm run verify:audit
+
+      - name: Enforce template dependency vulnerability gate
+        run: pnpm run template:audit
+
+      - name: Verify npm signature attestations
+        run: npm audit signatures
+
+      - name: Verify template npm signature attestations
+        run: pnpm run template:signatures
+
   performance-web:
+    needs: [setup]
+    if: needs.setup.outputs.templates == 'true' || needs.setup.outputs.full == 'true'
     timeout-minutes: 180
     runs-on: ubuntu-22.04
     continue-on-error: true
-    needs: quality
+    permissions:
+      contents: read
     strategy:
       fail-fast: false
       matrix:
@@ -251,9 +575,12 @@ jobs:
           if-no-files-found: ignore
 
   mutation-testing:
+    needs: [setup]
+    if: contains(github.event.pull_request.labels.*.name, 'mutation-required') || github.event_name == 'workflow_dispatch'
     timeout-minutes: 420
     runs-on: ubuntu-22.04
-    needs: quality
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
         with:
@@ -285,3 +612,57 @@ jobs:
           name: workspace-dev-dev-mutation-${{ github.run_id }}
           path: artifacts/testing/mutation
           if-no-files-found: ignore
+
+  dev-gate-summary:
+    needs:
+      - setup
+      - policy-guards
+      - typecheck
+      - unit-tests
+      - template-tests
+      - ui-coverage
+      - golden-and-ti
+      - coverage
+      - e2e
+      - security-smoke
+      - build-and-publish-checks
+    if: always()
+    timeout-minutes: 5
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: read
+    steps:
+      - name: Aggregate dev-gate result
+        env:
+          SETUP: ${{ needs.setup.result }}
+          POLICY_GUARDS: ${{ needs.policy-guards.result }}
+          TYPECHECK: ${{ needs.typecheck.result }}
+          UNIT_TESTS: ${{ needs.unit-tests.result }}
+          TEMPLATE_TESTS: ${{ needs.template-tests.result }}
+          UI_COVERAGE: ${{ needs.ui-coverage.result }}
+          GOLDEN_AND_TI: ${{ needs.golden-and-ti.result }}
+          COVERAGE: ${{ needs.coverage.result }}
+          E2E: ${{ needs.e2e.result }}
+          SECURITY_SMOKE: ${{ needs.security-smoke.result }}
+          BUILD_AND_PUBLISH_CHECKS: ${{ needs.build-and-publish-checks.result }}
+        run: |
+          set -euo pipefail
+          fail=0
+          echo "SETUP=${SETUP}"
+          if [ "${SETUP}" != "success" ]; then
+            echo "::error::dev-gate aggregate: setup job did not succeed (result=${SETUP}); downstream skips are not safe"
+            fail=1
+          fi
+          for name in POLICY_GUARDS TYPECHECK UNIT_TESTS TEMPLATE_TESTS UI_COVERAGE GOLDEN_AND_TI COVERAGE E2E SECURITY_SMOKE BUILD_AND_PUBLISH_CHECKS; do
+            value="${!name}"
+            echo "${name}=${value}"
+            case "$value" in
+              success|skipped) ;;
+              *) fail=1 ;;
+            esac
+          done
+          if [ "$fail" -ne 0 ]; then
+            echo "::error::dev-gate aggregate: one or more required jobs failed or were cancelled"
+            exit 1
+          fi
+          echo "dev-gate aggregate: setup succeeded and all required jobs succeeded or were skipped"
