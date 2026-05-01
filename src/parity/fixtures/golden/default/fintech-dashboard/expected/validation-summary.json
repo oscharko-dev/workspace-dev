@@ -1,5 +1,5 @@
 {
-  "status": "ok",
+  "status": "warn",
   "validatedAt": "<stable-timestamp>",
   "generatedApp": {
     "status": "ok",
@@ -37,6 +37,51 @@
       "attempt": 1,
       "timedOut": false,
       "outputCaptureKey": "validate.project.attempt-1.build"
+    },
+    "test": {
+      "status": "passed",
+      "command": "pnpm",
+      "args": [
+        "run",
+        "test"
+      ],
+      "attempt": 1,
+      "timedOut": false,
+      "outputCaptureKey": "validate.project.attempt-1.test"
+    },
+    "validateUi": {
+      "status": "passed",
+      "command": "pnpm",
+      "args": [
+        "run",
+        "validate:ui"
+      ],
+      "attempt": 1,
+      "timedOut": false,
+      "outputCaptureKey": "validate.project.attempt-1.validate-ui"
+    },
+    "validatePlaywright": {
+      "status": "passed",
+      "command": "pnpm",
+      "args": [
+        "run",
+        "--if-present",
+        "validate:playwright"
+      ],
+      "attempt": 1,
+      "timedOut": false,
+      "outputCaptureKey": "validate.project.attempt-1.validate-playwright"
+    },
+    "perfAssert": {
+      "status": "passed",
+      "command": "pnpm",
+      "args": [
+        "run",
+        "perf:assert"
+      ],
+      "attempt": 1,
+      "timedOut": false,
+      "outputCaptureKey": "validate.project.attempt-1.perf-assert"
     }
   },
   "generatedAccessibility": {
@@ -46,7 +91,39 @@
     "summary": "Generated accessibility report flagged 16 warning(s) across 1 screen(s)."
   },
   "uiA11y": {
-    "status": "not_requested"
+    "status": "ok",
+    "reportPath": "<stable-path>",
+    "visualDiffCount": 0,
+    "a11yViolationCount": 0,
+    "interactionViolationCount": 0,
+    "checks": [
+      {
+        "name": "visual-baseline",
+        "status": "passed",
+        "count": 0,
+        "details": "Visual baseline created from current surfaces"
+      },
+      {
+        "name": "a11y-static",
+        "status": "passed",
+        "count": 0,
+        "details": "Static accessibility checks over 6 source files"
+      },
+      {
+        "name": "interaction-static",
+        "status": "passed",
+        "count": 0,
+        "details": "Keyboard and semantic interaction checks over 6 source files"
+      }
+    ],
+    "artifacts": [
+      "<stable-path>",
+      "<stable-path>",
+      "<stable-path>",
+      "<stable-path>",
+      "<stable-path>"
+    ],
+    "summary": "UI gate evaluated 6 source file(s): visual=0, a11y=0, interaction=0"
   },
   "visualAudit": {
     "status": "not_requested"
@@ -55,12 +132,56 @@
     "status": "not_requested"
   },
   "compositeQuality": {
-    "status": "not_requested",
+    "status": "completed",
     "generatedAt": "<stable-timestamp>",
     "weights": {
       "visual": 0.6,
       "performance": 0.4
-    }
+    },
+    "visual": null,
+    "performance": {
+      "sourcePath": "<stable-path>",
+      "score": null,
+      "sampleCount": 2,
+      "samples": [
+        {
+          "profile": "mobile",
+          "route": "/",
+          "performanceScore": null,
+          "fcp_ms": null,
+          "lcp_ms": "<stable-number>",
+          "cls": "<stable-number>",
+          "tbt_ms": null,
+          "speed_index_ms": null
+        },
+        {
+          "profile": "desktop",
+          "route": "/",
+          "performanceScore": null,
+          "fcp_ms": null,
+          "lcp_ms": "<stable-number>",
+          "cls": "<stable-number>",
+          "tbt_ms": null,
+          "speed_index_ms": null
+        }
+      ],
+      "aggregateMetrics": {
+        "fcp_ms": null,
+        "lcp_ms": "<stable-number>",
+        "cls": "<stable-number>",
+        "tbt_ms": null,
+        "speed_index_ms": null
+      },
+      "warnings": []
+    },
+    "composite": {
+      "score": null,
+      "includedDimensions": [],
+      "explanation": "no scores available"
+    },
+    "warnings": [
+      "visual score missing"
+    ]
   },
   "confidence": {
     "status": "completed",

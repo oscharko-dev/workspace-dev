@@ -10,7 +10,7 @@
     "token": {
       "covered": 54,
       "ratio": 0.947368,
-      "status": "passed",
+      "status": "warning",
       "total": 57
     }
   },
@@ -19,6 +19,11 @@
       "path": "component-manifest.json",
       "sha256": "e0aa07191804e4211a0521688c3ae92e4ee6e05579caf49f6c99c5de28d69172",
       "sizeBytes": 170
+    },
+    {
+      "path": "e2e/template.spec.ts",
+      "sha256": "79d7d4cb7156a77966a7501abbabde084ca361c8e07673d7df5b1368b25c5087",
+      "sizeBytes": 4675
     },
     {
       "path": "generation-metrics.json",
@@ -72,13 +77,13 @@
     }
   ],
   "metadata": {
-    "compositeQualityStatus": "not_requested",
+    "compositeQualityStatus": "completed",
     "confidenceStatus": "completed",
     "jobId": "golden-default-fintech-dashboard",
     "pipelineDisplayName": "Default",
     "storybookStatus": "not_requested",
     "validatedAt": "<stable-timestamp>",
-    "validationSummaryStatus": "ok",
+    "validationSummaryStatus": "warn",
     "visualQualityStatus": "not_requested"
   },
   "pipelineId": "default",
@@ -112,9 +117,15 @@
         "status": "completed"
       }
     ],
-    "status": "passed"
+    "status": "warning"
   },
   "warnings": [
+    {
+      "code": "VALIDATION_SUMMARY_NOT_OK",
+      "message": "Validation summary completed with status 'warn'.",
+      "severity": "warning",
+      "source": "validation-summary.json"
+    },
     {
       "code": "W_DEFAULT_A11Y_FOCUS_ORDER",
       "message": "Absolute layout fallback for 'Card Title' can make keyboard focus order depend on implementation details.",
