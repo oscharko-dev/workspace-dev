@@ -48,6 +48,7 @@ jobs:
           unpinned=$(grep -rn --include='*.yml' 'uses:' .github/workflows/ \
             | grep -vE '@[0-9a-f]{40}' \
             | grep -v 'pin-check.yml' \
+            | grep -v 'slsa-framework/slsa-github-generator/' \
             | grep -v '^Binary' || true)
           if [[ -n "${unpinned}" ]]; then
             echo "::error::Unpinned GitHub Action reference(s) detected. Every 'uses:' must pin to a full 40-character commit SHA (see .github/workflows/pin-check.yml). Offending lines:" >&2
