@@ -63,7 +63,7 @@ jobs:
           cd artifacts/release
           # The SLSA generator expects the base64-encoded body of an
           # `sha256sum` listing as its subjects payload.
-          HASHES="$(sha256sum *.tgz | base64 -w0)"
+          HASHES="$(sha256sum -- *.tgz | base64 -w0)"
           echo "hashes=${HASHES}" >> "$GITHUB_OUTPUT"
 
   provenance:

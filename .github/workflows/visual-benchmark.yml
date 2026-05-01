@@ -110,14 +110,14 @@ jobs:
       - name: Install Playwright browsers
         if: steps.playwright-cache.outputs.cache-hit != 'true'
         run: |
-          browsers="${VISUAL_BENCHMARK_BROWSERS//,/ }"
-          pnpm exec playwright install --with-deps $browsers
+          IFS=' ' read -r -a browsers <<< "${VISUAL_BENCHMARK_BROWSERS//,/ }"
+          pnpm exec playwright install --with-deps "${browsers[@]}"
 
       - name: Install Playwright OS deps (cache hit)
         if: steps.playwright-cache.outputs.cache-hit == 'true'
         run: |
-          browsers="${VISUAL_BENCHMARK_BROWSERS//,/ }"
-          pnpm exec playwright install-deps $browsers
+          IFS=' ' read -r -a browsers <<< "${VISUAL_BENCHMARK_BROWSERS//,/ }"
+          pnpm exec playwright install-deps "${browsers[@]}"
 
       - name: Run visual benchmark verification suites
         run: |

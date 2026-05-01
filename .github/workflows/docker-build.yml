@@ -53,6 +53,7 @@ jobs:
             --output-root /workspace/.workspace-dev \
             --export-images false
 
+          # shellcheck disable=SC2329  # invoked via trap below
           cleanup() {
             docker logs workspace-dev-smoke || true
             docker stop workspace-dev-smoke >/dev/null 2>&1 || true
