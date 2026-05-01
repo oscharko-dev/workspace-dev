@@ -63,7 +63,11 @@ export const writeLocalFigmaPayload = async ({
   fileName?: string;
 }): Promise<string> => {
   const filePath = path.join(workspaceRoot, fileName);
-  await writeFile(filePath, `${JSON.stringify(createLocalFigmaPayload(), null, 2)}\n`, "utf8");
+  await writeFile(
+    filePath,
+    `${JSON.stringify(createLocalFigmaPayload(), null, 2)}\n`,
+    "utf8",
+  );
   return filePath;
 };
 
@@ -122,7 +126,13 @@ export const createBddWorkspaceServer = async (
     port: 0,
     host: "127.0.0.1",
     enablePreview: false,
+    // BDD harness exists for fast queue/HTTP/contract tests. Heavy
+    // generated-app validation (Playwright, perf assertions, unit tests)
+    // would dominate runtime — and the per-pipeline policy in
+    // validate-project-service.ts respects these explicit opt-outs even on
+    // the default pipeline (see PR #1646).
     enableUiValidation: false,
+    enablePerfValidation: false,
     enableUnitTestValidation: false,
     installPreferOffline: true,
     ...options,
@@ -224,7 +234,9 @@ export const submitLocalJsonJob = async ({
   return response.json<Record<string, unknown>>();
 };
 
-export const readFeatureScenarioNames = async (featurePath: string): Promise<string[]> => {
+export const readFeatureScenarioNames = async (
+  featurePath: string,
+): Promise<string[]> => {
   const featureContent = await readFile(featurePath, "utf8");
   return featureContent
     .split("\n")
