@@ -363,6 +363,61 @@ test("property: duplicate and colliding screen/component names produce unique de
   );
 });
 
+test("property: adversarial color fills keep default Tailwind output sane", () => {
+  const colorCases = [
+    { suffix: "black", color: "#000000" },
+    { suffix: "white", color: "#ffffff" },
+    { suffix: "transparent", color: "#00000000" },
+    { suffix: "opaque-white", color: "#ffffffff" },
+    { suffix: "short-hex", color: "#abc" },
+    { suffix: "short-hex-alpha", color: "#abcd" },
+    { suffix: "invalid-name", color: "not-a-color" },
+    { suffix: "invalid-hex", color: "#gggggg" },
+  ] as const;
+
+  fc.assert(
+    fc.property(
+      fc.array(fc.constantFrom(...colorCases), {
+        minLength: 1,
+        maxLength: colorCases.length,
+      }),
+      (selectedCases) => {
+        for (const { suffix, color } of selectedCases) {
+          const generated = createDefaultTailwindScreenFile(
+            screen({
+              id: `color-screen-${suffix}`,
+              name: `Color ${suffix}`,
+              fillColor: color,
+              children: [
+                containerElement({
+                  id: `color-panel-${suffix}`,
+                  name: "Color Panel",
+                  fillColor: color,
+                  children: [
+                    textElement({
+                      id: `color-copy-${suffix}`,
+                      name: "Copy",
+                      text: `Fill ${suffix}`,
+                      fillColor: color,
+                    }),
+                  ],
+                }),
+              ],
+            }),
+          );
+
+          assert.match(generated.file.content, /data-ir-id="color-panel-/);
+          assertGeneratedSourceIsSane(generated.file.content);
+          for (const component of generated.componentFiles) {
+            assertGeneratedSourceIsSane(component.content);
+          }
+        }
+      },
+    ),
+    { numRuns: 32 },
+  );
+});
+
 test("property: deep trees render without dropping selected descendants", () => {
   fc.assert(
     fc.property(
@@ -608,6 +663,77 @@ test("adversarial selection pruning is deterministic for blank, duplicate, missi
     ["card-a-title"],
   );
   assert.equal(validateDesignIR(first).valid, true);
+});
+
+test("property: invalid selection inputs normalize before pruning", () => {
+  const ir = designIr([
+    screen({
+      id: "screen-a",
+      name: "Selection A",
+      children: [
+        containerElement({
+          id: "section-a",
+          name: "Section",
+          children: [
+            cardElement({
+              id: "card-a",
+              title: "A",
+              description: "Selected",
+            }),
+            cardElement({
+              id: "card-b",
+              title: "B",
+              description: "Sibling",
+            }),
+          ],
+        }),
+      ],
+    }),
+    screen({
+      id: "screen-b",
+      name: "Selection B",
+      children: [
+        cardElement({
+          id: "card-c",
+          title: "C",
+          description: "Other screen",
+        }),
+      ],
+    }),
+  ]);
+
+  const invalidSelectionArb = fc.constantFrom(
+    "",
+    " ",
+    "\n",
+    "\t",
+    "missing",
+    " missing ",
+    "missing\t",
+    "missing\n",
+  );
+
+  fc.assert(
+    fc.property(
+      fc.array(invalidSelectionArb, { minLength: 1, maxLength: 12 }),
+      (selectedNodeIds) => {
+        const normalizedSelectedNodeIds = [
+          ...new Set(selectedNodeIds.map((nodeId) => nodeId.trim()).filter(Boolean)),
+        ];
+        const pruned = pruneDesignIrToSelectedNodeIds({
+          ir,
+          selectedNodeIds,
+        });
+        const normalized = pruneDesignIrToSelectedNodeIds({
+          ir,
+          selectedNodeIds: normalizedSelectedNodeIds,
+        });
+
+        assert.deepEqual(pruned, normalized);
+      },
+    ),
+    { numRuns: 32 },
+  );
 });
 
 test("adversarial invalid DesignIR inputs fail closed without generator fallbacks", () => {
