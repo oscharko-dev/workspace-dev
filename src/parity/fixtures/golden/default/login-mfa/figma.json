@@ -119,6 +119,180 @@
                 ]
               }
             ]
+          },
+          {
+            "id": "screen-mfa",
+            "type": "FRAME",
+            "name": "MFA",
+            "layoutMode": "VERTICAL",
+            "itemSpacing": 12,
+            "paddingTop": 16,
+            "paddingRight": 16,
+            "paddingBottom": 16,
+            "paddingLeft": 16,
+            "absoluteBoundingBox": { "x": 430, "y": 0, "width": 390, "height": 844 },
+            "fills": [
+              {
+                "type": "SOLID",
+                "visible": true,
+                "color": { "r": 0.98, "g": 0.98, "b": 0.99, "a": 1 }
+              }
+            ],
+            "children": [
+              {
+                "id": "mfa-step",
+                "type": "TEXT",
+                "name": "Step",
+                "characters": "Step 2 of 2",
+                "style": {
+                  "fontSize": 14,
+                  "fontWeight": 600,
+                  "fontFamily": "Inter",
+                  "lineHeightPx": 20,
+                  "textAlignHorizontal": "LEFT"
+                },
+                "fills": [
+                  {
+                    "type": "SOLID",
+                    "visible": true,
+                    "color": { "r": 0.51, "g": 0.29, "b": 0.86, "a": 1 }
+                  }
+                ],
+                "absoluteBoundingBox": { "x": 446, "y": 16, "width": 92, "height": 20 }
+              },
+              {
+                "id": "mfa-title",
+                "type": "TEXT",
+                "name": "Title",
+                "characters": "Verify access code",
+                "style": {
+                  "fontSize": 32,
+                  "fontWeight": 700,
+                  "fontFamily": "Inter",
+                  "lineHeightPx": 40,
+                  "textAlignHorizontal": "LEFT"
+                },
+                "fills": [
+                  {
+                    "type": "SOLID",
+                    "visible": true,
+                    "color": { "r": 0.11, "g": 0.12, "b": 0.14, "a": 1 }
+                  }
+                ],
+                "absoluteBoundingBox": { "x": 446, "y": 44, "width": 280, "height": 40 }
+              },
+              {
+                "id": "mfa-body",
+                "type": "TEXT",
+                "name": "Body",
+                "characters": "Enter the 6-digit code sent to your device.",
+                "style": {
+                  "fontSize": 14,
+                  "fontWeight": 500,
+                  "fontFamily": "Inter",
+                  "lineHeightPx": 20,
+                  "textAlignHorizontal": "LEFT"
+                },
+                "fills": [
+                  {
+                    "type": "SOLID",
+                    "visible": true,
+                    "color": { "r": 0.24, "g": 0.26, "b": 0.3, "a": 1 }
+                  }
+                ],
+                "absoluteBoundingBox": { "x": 446, "y": 96, "width": 300, "height": 40 }
+              },
+              {
+                "id": "mfa-code-field",
+                "type": "FRAME",
+                "name": "Text Field",
+                "layoutMode": "HORIZONTAL",
+                "itemSpacing": 8,
+                "primaryAxisAlignItems": "SPACE_BETWEEN",
+                "counterAxisAlignItems": "CENTER",
+                "absoluteBoundingBox": { "x": 446, "y": 152, "width": 358, "height": 56 },
+                "children": [
+                  {
+                    "id": "mfa-code-label",
+                    "type": "TEXT",
+                    "name": "Label",
+                    "characters": "Verification code",
+                    "style": {
+                      "fontSize": 14,
+                      "fontWeight": 500,
+                      "fontFamily": "Inter",
+                      "lineHeightPx": 20,
+                      "textAlignHorizontal": "LEFT"
+                    },
+                    "fills": [
+                      {
+                        "type": "SOLID",
+                        "visible": true,
+                        "color": { "r": 0.24, "g": 0.26, "b": 0.3, "a": 1 }
+                      }
+                    ],
+                    "absoluteBoundingBox": { "x": 454, "y": 168, "width": 120, "height": 20 }
+                  }
+                ]
+              },
+              {
+                "id": "verify-button",
+                "type": "FRAME",
+                "name": "Primary Button",
+                "absoluteBoundingBox": { "x": 446, "y": 228, "width": 220, "height": 48 },
+                "fills": [
+                  {
+                    "type": "SOLID",
+                    "visible": true,
+                    "color": { "r": 0.93, "g": 0, "b": 0.12, "a": 1 }
+                  }
+                ],
+                "children": [
+                  {
+                    "id": "verify-button-label",
+                    "type": "TEXT",
+                    "name": "Label",
+                    "characters": "Verify code",
+                    "style": {
+                      "fontSize": 16,
+                      "fontWeight": 600,
+                      "fontFamily": "Inter",
+                      "lineHeightPx": 22,
+                      "textAlignHorizontal": "CENTER"
+                    },
+                    "fills": [
+                      {
+                        "type": "SOLID",
+                        "visible": true,
+                        "color": { "r": 1, "g": 1, "b": 1, "a": 1 }
+                      }
+                    ],
+                    "absoluteBoundingBox": { "x": 507, "y": 241, "width": 98, "height": 22 }
+                  }
+                ]
+              },
+              {
+                "id": "mfa-help",
+                "type": "TEXT",
+                "name": "Helper",
+                "characters": "Need a new code? Request a new code.",
+                "style": {
+                  "fontSize": 14,
+                  "fontWeight": 500,
+                  "fontFamily": "Inter",
+                  "lineHeightPx": 20,
+                  "textAlignHorizontal": "LEFT"
+                },
+                "fills": [
+                  {
+                    "type": "SOLID",
+                    "visible": true,
+                    "color": { "r": 0.41, "g": 0.42, "b": 0.46, "a": 1 }
+                  }
+                ],
+                "absoluteBoundingBox": { "x": 446, "y": 292, "width": 310, "height": 40 }
+              }
+            ]
           }
         ]
       }

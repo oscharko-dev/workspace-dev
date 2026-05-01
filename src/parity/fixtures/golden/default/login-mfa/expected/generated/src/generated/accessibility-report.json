@@ -3,15 +3,15 @@
   "pipelineId": "default",
   "summary": {
     "status": "warn",
-    "message": "Generated accessibility report flagged 3 warning(s) across 1 screen(s).",
-    "screenCount": 1,
-    "warningCount": 3,
-    "semanticOutputWarningCount": 2,
+    "message": "Generated accessibility report flagged 6 warning(s) across 2 screen(s).",
+    "screenCount": 2,
+    "warningCount": 6,
+    "semanticOutputWarningCount": 4,
     "formLabelWarningCount": 0,
     "buttonSemanticsWarningCount": 0,
     "ariaLabelFallbackWarningCount": 0,
     "altFallbackWarningCount": 0,
-    "focusOrderWarningCount": 1,
+    "focusOrderWarningCount": 2,
     "lowContrastWarningCount": 0,
     "clickDivFallbackWarningCount": 0
   },
@@ -49,6 +49,40 @@
           "message": "Default semantic synthesis kept 'Primary Button' inline because no matching reusable semantic structure was found."
         }
       ]
+    },
+    {
+      "screenId": "screen-mfa",
+      "screenName": "MFA",
+      "warningCount": 3,
+      "warnings": [
+        {
+          "screenId": "screen-mfa",
+          "screenName": "MFA",
+          "code": "W_DEFAULT_A11Y_FOCUS_ORDER",
+          "severity": "warning",
+          "nodeId": "verify-button-label",
+          "nodeName": "Label",
+          "message": "Absolute layout fallback for 'Label' can make keyboard focus order depend on implementation details."
+        },
+        {
+          "screenId": "screen-mfa",
+          "screenName": "MFA",
+          "code": "W_DEFAULT_A11Y_SEMANTIC_OUTPUT",
+          "severity": "warning",
+          "nodeId": "mfa-code-field",
+          "nodeName": "Text Field",
+          "message": "Default semantic synthesis kept 'Text Field' inline because no matching reusable semantic structure was found."
+        },
+        {
+          "screenId": "screen-mfa",
+          "screenName": "MFA",
+          "code": "W_DEFAULT_A11Y_SEMANTIC_OUTPUT",
+          "severity": "warning",
+          "nodeId": "verify-button",
+          "nodeName": "Primary Button",
+          "message": "Default semantic synthesis kept 'Primary Button' inline because no matching reusable semantic structure was found."
+        }
+      ]
     }
   ],
   "warnings": [
@@ -76,6 +110,33 @@
       "code": "W_DEFAULT_A11Y_SEMANTIC_OUTPUT",
       "severity": "warning",
       "nodeId": "submit-button",
+      "nodeName": "Primary Button",
+      "message": "Default semantic synthesis kept 'Primary Button' inline because no matching reusable semantic structure was found."
+    },
+    {
+      "screenId": "screen-mfa",
+      "screenName": "MFA",
+      "code": "W_DEFAULT_A11Y_FOCUS_ORDER",
+      "severity": "warning",
+      "nodeId": "verify-button-label",
+      "nodeName": "Label",
+      "message": "Absolute layout fallback for 'Label' can make keyboard focus order depend on implementation details."
+    },
+    {
+      "screenId": "screen-mfa",
+      "screenName": "MFA",
+      "code": "W_DEFAULT_A11Y_SEMANTIC_OUTPUT",
+      "severity": "warning",
+      "nodeId": "mfa-code-field",
+      "nodeName": "Text Field",
+      "message": "Default semantic synthesis kept 'Text Field' inline because no matching reusable semantic structure was found."
+    },
+    {
+      "screenId": "screen-mfa",
+      "screenName": "MFA",
+      "code": "W_DEFAULT_A11Y_SEMANTIC_OUTPUT",
+      "severity": "warning",
+      "nodeId": "verify-button",
       "nodeName": "Primary Button",
       "message": "Default semantic synthesis kept 'Primary Button' inline because no matching reusable semantic structure was found."
     }

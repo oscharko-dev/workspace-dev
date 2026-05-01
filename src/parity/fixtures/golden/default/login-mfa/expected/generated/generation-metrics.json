@@ -7,6 +7,11 @@
       "screenId": "screen-login",
       "screenName": "Login",
       "elements": 5
+    },
+    {
+      "screenId": "screen-mfa",
+      "screenName": "MFA",
+      "elements": 8
     }
   ],
   "truncatedScreens": [],
