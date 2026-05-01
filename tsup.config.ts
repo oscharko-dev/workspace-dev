@@ -1,5 +1,6 @@
 import { defineConfig } from "tsup";
-import { rmSync } from "node:fs";
+import { readFileSync, rmSync } from "node:fs";
+import path from "node:path";
 
 rmSync("dist", { force: true, recursive: true });
 
@@ -7,6 +8,58 @@ const CJS_IMPORT_META_URL_SHIM = "__workspaceDevImportMetaUrl";
 const ESM_CREATE_REQUIRE_SHIM = "__workspaceDevCreateRequire";
 const WORKSPACE_DEV_PIPELINES =
   process.env.WORKSPACE_DEV_PIPELINES ?? "default,rocket";
+const PACKAGE_VERSION = JSON.parse(readFileSync("package.json", "utf8"))
+  .version;
+const isDefaultOnlyProfile = WORKSPACE_DEV_PIPELINES.trim() === "default";
+
+const defaultProfileBoundaryPlugin = {
+  name: "default-profile-boundary",
+  setup(build) {
+    build.onResolve(
+      { filter: /^(?:\.\.?\/)+customer-profile\.js$/ },
+      () => ({
+        path: path.resolve(
+          "src/profile-boundary/default-customer-profile-stub.ts",
+        ),
+      }),
+    );
+    build.onResolve(
+      { filter: /^(?:\.\.?\/)+customer-profile-validation\.js$/ },
+      () => ({
+        path: path.resolve(
+          "src/profile-boundary/default-profile-validation-stub.ts",
+        ),
+      }),
+    );
+    build.onResolve(
+      { filter: /^(?:\.\.?\/)+rocket-pipeline-definition\.js$/ },
+      () => ({
+        path: path.resolve(
+          "src/profile-boundary/default-rocket-pipeline-definition-stub.ts",
+        ),
+      }),
+    );
+    build.onResolve({ filter: /^\.\.\/\.\.\/package\.json$/ }, (args) => {
+      if (!args.importer.endsWith("src/job-engine/visual-scoring.ts")) {
+        return undefined;
+      }
+      return {
+        namespace: "workspace-dev-profile-boundary",
+        path: "package-version",
+      };
+    });
+    build.onLoad(
+      {
+        filter: /^package-version$/,
+        namespace: "workspace-dev-profile-boundary",
+      },
+      () => ({
+        contents: `export default ${JSON.stringify({ version: PACKAGE_VERSION })};`,
+        loader: "js",
+      }),
+    );
+  },
+};
 
 const baseConfig = {
   format: ["esm", "cjs"],
@@ -21,6 +74,7 @@ const baseConfig = {
   ],
   sourcemap: true,
   cjsInterop: true,
+  esbuildPlugins: isDefaultOnlyProfile ? [defaultProfileBoundaryPlugin] : [],
   esbuildOptions(options, context) {
     options.define = {
       ...(options.define ?? {}),

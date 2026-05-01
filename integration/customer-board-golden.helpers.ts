@@ -28,7 +28,7 @@ import {
 } from "../src/job-engine/pipeline/artifact-store.js";
 import {
   ROCKET_PIPELINE_DEFINITION
-} from "../src/job-engine/pipeline/pipeline-selection.js";
+} from "../src/job-engine/pipeline/rocket-pipeline-definition.js";
 import {
   toPipelineRuntimeMetadata
 } from "../src/job-engine/pipeline/pipeline-runtime-metadata.js";

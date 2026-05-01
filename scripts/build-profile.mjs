@@ -32,6 +32,11 @@ const defaultPackDestination = path.join(
   "artifacts",
   "build-profiles",
 );
+const distBuildProfileMarkerPath = path.join(
+  packageRoot,
+  "dist",
+  "build-profile.json",
+);
 
 const parseArgs = (argv) => {
   const options = {
@@ -118,7 +123,7 @@ const run = (
     const child = spawn(command, args, {
       cwd,
       env,
-      stdio,
+      stdio: stdio === "stdout-to-stderr" ? ["ignore", "pipe", "inherit"] : stdio,
     });
 
     let stdout = "";
@@ -128,6 +133,12 @@ const run = (
         stdout += chunk;
       });
       child.stderr.pipe(process.stderr);
+    }
+    if (stdio === "stdout-to-stderr") {
+      child.stdout.setEncoding("utf8");
+      child.stdout.on("data", (chunk) => {
+        process.stderr.write(chunk);
+      });
     }
 
     child.once("error", reject);
@@ -173,6 +184,55 @@ const createPackagedManifest = async (profile) => {
     await readFile(path.join(packageRoot, "package.json"), "utf8"),
   );
   return `${JSON.stringify(createProfilePackageManifest(manifest, profile), null, 2)}\n`;
+};
+
+const readDistBuildProfileMarker = async () => {
+  try {
+    return JSON.parse(await readFile(distBuildProfileMarkerPath, "utf8"));
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : String(error);
+    throw new Error(
+      `Cannot use --skip-build because dist/build-profile.json is missing or unreadable. ` +
+        `Build the requested profile first or omit --skip-build. ${reason}`,
+    );
+  }
+};
+
+const assertDistMatchesProfile = async (profile) => {
+  const marker = await readDistBuildProfileMarker();
+  const markerProfile = typeof marker?.profile === "string" ? marker.profile : "";
+  const markerPipelines = Array.isArray(marker?.pipelineIds)
+    ? marker.pipelineIds
+    : [];
+  const pipelineIdsMatch =
+    markerPipelines.length === profile.pipelineIds.length &&
+    markerPipelines.every(
+      (pipelineId, index) => pipelineId === profile.pipelineIds[index],
+    );
+
+  if (markerProfile !== profile.id || !pipelineIdsMatch) {
+    throw new Error(
+      `Cannot use --skip-build for profile '${profile.id}' because current dist was built for profile '${markerProfile || "<unknown>"}'. ` +
+        `Build the requested profile first or omit --skip-build.`,
+    );
+  }
+};
+
+const writeDistBuildProfileMarker = async (profile) => {
+  await mkdir(path.dirname(distBuildProfileMarkerPath), { recursive: true });
+  await writeFile(
+    distBuildProfileMarkerPath,
+    `${JSON.stringify(
+      {
+        profile: profile.id,
+        envValue: profile.envValue,
+        pipelineIds: profile.pipelineIds,
+      },
+      null,
+      2,
+    )}\n`,
+    "utf8",
+  );
 };
 
 const stagePackage = async ({ profile, stagingRoot }) => {
@@ -266,8 +326,9 @@ const packStagedPackage = async ({ packDestination, profile, stagingRoot }) => {
   }
 };
 
-const buildProfile = async (profile) => {
-  console.log(
+const buildProfile = async ({ logToStderr = false, profile }) => {
+  const log = logToStderr ? console.error : console.log;
+  log(
     `[build-profile] Building profile '${profile.id}' (${profile.envValue}).`,
   );
   await run("pnpm", ["run", "build"], {
@@ -275,7 +336,9 @@ const buildProfile = async (profile) => {
       ...process.env,
       WORKSPACE_DEV_PIPELINES: profile.envValue,
     },
+    stdio: logToStderr ? "stdout-to-stderr" : "inherit",
   });
+  await writeDistBuildProfileMarker(profile);
 };
 
 const buildPlan = (profiles) =>
@@ -312,7 +375,12 @@ const main = async () => {
   for (const profileId of profileIds) {
     const profile = profileDefinitions[profileId];
     if (!options.skipBuild) {
-      await buildProfile(profile);
+      await buildProfile({
+        logToStderr: options.json || options.printTarball,
+        profile,
+      });
+    } else {
+      await assertDistMatchesProfile(profile);
     }
 
     const stagingRoot = await mkdtemp(

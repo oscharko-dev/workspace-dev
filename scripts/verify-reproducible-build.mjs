@@ -138,25 +138,17 @@ const parseArgs = (argv) => parseProfileGateArgs(argv).profileIds;
 
 const runIteration = async (profile) => {
   await rm(distDir, { recursive: true, force: true });
-  await run("pnpm", ["run", "build"], {
-    env: {
-      ...process.env,
-      WORKSPACE_DEV_PIPELINES: profile.envValue,
-    },
-  });
-
-  const distHashes = await computeDistHashes();
   const packDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-pack-"));
 
   try {
     await run("node", [
       "scripts/build-profile.mjs",
-      "--skip-build",
       "--profile",
       profile.id,
       "--pack-destination",
       packDir,
     ]);
+    const distHashes = await computeDistHashes();
     const tarballPath = await findSingleTarballPath(packDir);
 
     return {

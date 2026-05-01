@@ -337,7 +337,6 @@ const verifyProfileAirgapInstall = async ({ profile, tarballPath }) => {
         command: "node",
         args: [
           "scripts/build-profile.mjs",
-          "--skip-build",
           "--profile",
           profile.id,
           "--pack-destination",

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { mkdtemp, readFile, rm, stat } from "node:fs/promises";
+import { mkdtemp, readFile, readdir, rm, stat } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { spawn } from "node:child_process";
@@ -77,6 +77,17 @@ const extractTarball = async (tarballPath) => {
 };
 
 const formatBytes = (bytes) => `${bytes.toLocaleString("en-US")} bytes`;
+
+const defaultProfileForbiddenCompiledMarkers = [
+  "RocketTemplatePrepareService",
+  "ROCKET_PIPELINE_DEFINITION",
+  "src/customer-profile.ts",
+  "src/customer-profile-template.ts",
+  "template/react-mui-app",
+].map((marker) => ({
+  marker,
+  bytes: Buffer.from(marker),
+}));
 
 const assertTarballSizeBudget = async ({ profile, tarballPath }) => {
   const tarballStat = await stat(tarballPath);
@@ -155,6 +166,54 @@ const assertNoForbiddenPaths = ({ files, profile }) => {
       `Profile '${profile.id}' pack contains forbidden path(s):\n${[
         ...new Set(violations),
       ]
+        .slice(0, 20)
+        .join("\n")}`,
+    );
+  }
+};
+
+const listFilesRecursive = async (root) => {
+  const entries = await readdir(root, { withFileTypes: true });
+  const files = [];
+  for (const entry of entries) {
+    const absolutePath = path.join(root, entry.name);
+    if (entry.isDirectory()) {
+      files.push(...(await listFilesRecursive(absolutePath)));
+      continue;
+    }
+    if (entry.isFile()) {
+      files.push(absolutePath);
+    }
+  }
+  return files;
+};
+
+const assertNoDefaultProfileForbiddenCompiledMarkers = async (
+  extractedPackageRoot,
+  profile,
+) => {
+  if (profile.id !== "default") {
+    return;
+  }
+
+  const distRoot = path.join(extractedPackageRoot, "dist");
+  const violations = [];
+  for (const filePath of await listFilesRecursive(distRoot)) {
+    const content = await readFile(filePath);
+    for (const { marker, bytes } of defaultProfileForbiddenCompiledMarkers) {
+      if (content.includes(bytes)) {
+        violations.push({
+          marker,
+          file: path.relative(extractedPackageRoot, filePath),
+        });
+      }
+    }
+  }
+
+  if (violations.length > 0) {
+    throw new Error(
+      `Profile '${profile.id}' compiled dist contains Rocket/customer-only marker(s):\n${violations
+        .map(({ file, marker }) => `${file}: ${marker}`)
         .slice(0, 20)
         .join("\n")}`,
     );
@@ -243,7 +302,7 @@ const assertManifestShape = (manifest, profile) => {
   }
 };
 
-const runPackedRuntimeSmokes = async (packageRootPath) => {
+const runPackedRuntimeSmokes = async (packageRootPath, profile) => {
   await run("node", [path.join(packageRootPath, "dist", "cli.js"), "--help"], {
     cwd: packageRootPath,
     stdio: "ignore",
@@ -262,6 +321,60 @@ if (typeof mod.createWorkspaceServer !== "function") {
 }
 `,
       path.join(packageRootPath, "dist", "index.js"),
+    ],
+    { cwd: packageRootPath, stdio: "pipe" },
+  );
+
+  await run(
+    "node",
+    [
+      "--input-type=module",
+      "-e",
+      `
+import { mkdtemp, rm } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+import { pathToFileURL } from "node:url";
+
+const expectedPipelineIds = JSON.parse(process.argv[2]);
+const mod = await import(pathToFileURL(process.argv[1]).href);
+const workDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-pack-runtime-"));
+let server;
+try {
+  server = await mod.createWorkspaceServer({
+    host: "127.0.0.1",
+    port: 0,
+    workDir,
+    outputRoot: path.join(workDir, "output"),
+  });
+  const response = await server.app.inject({
+    method: "GET",
+    url: "/workspace",
+  });
+  if (response.statusCode !== 200) {
+    throw new Error(\`GET /workspace returned \${response.statusCode}\`);
+  }
+  const body = JSON.parse(response.body);
+  const actualPipelineIds = Array.isArray(body.availablePipelines)
+    ? body.availablePipelines.map((pipeline) => pipeline.id)
+    : [];
+  const matches =
+    actualPipelineIds.length === expectedPipelineIds.length &&
+    actualPipelineIds.every(
+      (pipelineId, index) => pipelineId === expectedPipelineIds[index],
+    );
+  if (!matches) {
+    throw new Error(
+      \`GET /workspace available pipeline IDs mismatch: expected [\${expectedPipelineIds.join(", ")}], found [\${actualPipelineIds.join(", ")}]\`,
+    );
+  }
+} finally {
+  await server?.app?.close?.();
+  await rm(workDir, { recursive: true, force: true });
+}
+`,
+      path.join(packageRootPath, "dist", "index.js"),
+      JSON.stringify(profile.pipelineIds),
     ],
     { cwd: packageRootPath, stdio: "ignore" },
   );
@@ -389,8 +502,12 @@ const validateTarball = async ({ profile, tarballPath }) => {
       await stat(templatePackageJsonPath);
     }
 
-    await runPackedRuntimeSmokes(extractedPackageRoot);
+    await runPackedRuntimeSmokes(extractedPackageRoot, profile);
     await assertDefaultTemplateDependencies(extractRoot, profile);
+    await assertNoDefaultProfileForbiddenCompiledMarkers(
+      extractedPackageRoot,
+      profile,
+    );
   } finally {
     await rm(extractRoot, { recursive: true, force: true });
   }

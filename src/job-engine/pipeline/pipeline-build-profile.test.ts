@@ -4,6 +4,8 @@ import test from "node:test";
 
 type PipelineProfileProbe = {
   currentBuildProfileId: "default" | "rocket" | "default-rocket";
+  currentBuildProfileIncludesDefault: boolean;
+  currentBuildProfileIncludesRocket: boolean;
   currentBuildProfilePipelineIds: string[];
   registryIds: string[];
   selectedPipelineId: string;
@@ -23,6 +25,8 @@ const probeBuildProfile = (profile: string): PipelineProfileProbe => {
 
       process.stdout.write(JSON.stringify({
         currentBuildProfileId: buildProfile.CURRENT_BUILD_PROFILE_ID,
+        currentBuildProfileIncludesDefault: buildProfile.CURRENT_BUILD_PROFILE_INCLUDES_DEFAULT,
+        currentBuildProfileIncludesRocket: buildProfile.CURRENT_BUILD_PROFILE_INCLUDES_ROCKET,
         currentBuildProfilePipelineIds: buildProfile.CURRENT_BUILD_PROFILE_PIPELINE_IDS,
         registryIds: registry.listDescriptors().map((pipeline) => pipeline.id),
         selectedPipelineId: selected.id,
@@ -53,6 +57,8 @@ const BUILD_PROFILES = [
   {
     profile: "default",
     currentBuildProfileId: "default",
+    currentBuildProfileIncludesDefault: true,
+    currentBuildProfileIncludesRocket: false,
     currentBuildProfilePipelineIds: ["default"],
     registryIds: ["default"],
     selectedPipelineId: "default",
@@ -60,6 +66,8 @@ const BUILD_PROFILES = [
   {
     profile: "rocket",
     currentBuildProfileId: "rocket",
+    currentBuildProfileIncludesDefault: false,
+    currentBuildProfileIncludesRocket: true,
     currentBuildProfilePipelineIds: ["rocket"],
     registryIds: ["rocket"],
     selectedPipelineId: "rocket",
@@ -67,6 +75,8 @@ const BUILD_PROFILES = [
   {
     profile: "default,rocket",
     currentBuildProfileId: "default-rocket",
+    currentBuildProfileIncludesDefault: true,
+    currentBuildProfileIncludesRocket: true,
     currentBuildProfilePipelineIds: ["default", "rocket"],
     registryIds: ["default", "rocket"],
     selectedPipelineId: "default",
@@ -74,8 +84,19 @@ const BUILD_PROFILES = [
   {
     profile: "default-rocket",
     currentBuildProfileId: "default-rocket",
+    currentBuildProfileIncludesDefault: true,
+    currentBuildProfileIncludesRocket: true,
     currentBuildProfilePipelineIds: ["default", "rocket"],
     registryIds: ["default", "rocket"],
+    selectedPipelineId: "default",
+  },
+  {
+    profile: " default ",
+    currentBuildProfileId: "default",
+    currentBuildProfileIncludesDefault: true,
+    currentBuildProfileIncludesRocket: false,
+    currentBuildProfilePipelineIds: ["default"],
+    registryIds: ["default"],
     selectedPipelineId: "default",
   },
 ] as const;
@@ -83,6 +104,8 @@ const BUILD_PROFILES = [
 for (const {
   profile,
   currentBuildProfileId,
+  currentBuildProfileIncludesDefault,
+  currentBuildProfileIncludesRocket,
   currentBuildProfilePipelineIds,
   registryIds,
   selectedPipelineId,
@@ -91,6 +114,14 @@ for (const {
     const probe = probeBuildProfile(profile);
 
     assert.equal(probe.currentBuildProfileId, currentBuildProfileId);
+    assert.equal(
+      probe.currentBuildProfileIncludesDefault,
+      currentBuildProfileIncludesDefault,
+    );
+    assert.equal(
+      probe.currentBuildProfileIncludesRocket,
+      currentBuildProfileIncludesRocket,
+    );
     assert.deepEqual(
       probe.currentBuildProfilePipelineIds,
       currentBuildProfilePipelineIds,

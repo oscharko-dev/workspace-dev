@@ -23,10 +23,8 @@ import {
   createStageRuntimeContext,
   type PipelineExecutionContext,
 } from "../job-engine/pipeline/context.js";
-import {
-  DEFAULT_PIPELINE_DEFINITION,
-  ROCKET_PIPELINE_DEFINITION,
-} from "../job-engine/pipeline/pipeline-selection.js";
+import { DEFAULT_PIPELINE_DEFINITION } from "../job-engine/pipeline/pipeline-selection.js";
+import { ROCKET_PIPELINE_DEFINITION } from "../job-engine/pipeline/rocket-pipeline-definition.js";
 import { createTemplateCopyFilter } from "../job-engine/template-copy-filter.js";
 import { resolveRuntimeSettings } from "../job-engine/runtime.js";
 import { createInitialStages, nowIso } from "../job-engine/stage-state.js";
