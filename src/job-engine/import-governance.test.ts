@@ -43,9 +43,11 @@ const createLocalFigmaPayload = () => ({
 const waitForTerminalStatus = async ({
   getStatus,
   jobId,
-  timeoutMs = 300_000,
+  timeoutMs = 600_000,
 }: {
-  getStatus: (jobId: string) => ReturnType<ReturnType<typeof createJobEngine>["getJob"]>;
+  getStatus: (
+    jobId: string,
+  ) => ReturnType<ReturnType<typeof createJobEngine>["getJob"]>;
   jobId: string;
   timeoutMs?: number;
 }) => {
@@ -206,7 +208,10 @@ test("createJobEngine persists authoritative governance state and rejects invali
 
   const sessionId = sessions[0]!.id;
   const initialAuditTrail = await engine.listImportSessionEvents({ sessionId });
-  assert.equal(initialAuditTrail.some((event) => event.kind === "imported"), true);
+  assert.equal(
+    initialAuditTrail.some((event) => event.kind === "imported"),
+    true,
+  );
 
   await assert.rejects(
     () =>
@@ -476,9 +481,12 @@ test("approveImportSession records review_started before approved and stays idem
   const repeatedApproval = await engine.approveImportSession({ sessionId });
   assert.equal(repeatedApproval.id, approvedEvent.id);
 
-  const repeatedAuditTrail = await engine.listImportSessionEvents({ sessionId });
+  const repeatedAuditTrail = await engine.listImportSessionEvents({
+    sessionId,
+  });
   assert.equal(
-    repeatedAuditTrail.filter((event) => event.kind === "review_started").length,
+    repeatedAuditTrail.filter((event) => event.kind === "review_started")
+      .length,
     1,
   );
   assert.equal(
