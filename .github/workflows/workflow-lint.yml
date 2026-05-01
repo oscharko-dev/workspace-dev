@@ -25,7 +25,7 @@ jobs:
           persist-credentials: false
 
       - name: actionlint
-        uses: rhysd/actionlint@a443f344ff32813837fa49f7aa6cbc478d770e62  # v1.7.9
+        uses: rhysd/actionlint@914e7df21a07ef503a81201c76d2b11c789d3fca  # v1.7.12
 
   zizmor:
     runs-on: ubuntu-22.04
@@ -47,7 +47,7 @@ jobs:
 
       - name: Upload SARIF to code scanning
         if: always()
-        uses: github/codeql-action/upload-sarif@95e58e9a2cdfd71adc6e0353d5c52f41a045d225  # v4
+        uses: github/codeql-action/upload-sarif@e46ed2cbd01164d986452f91f178727624ae40d7  # v4
         with:
           sarif_file: zizmor.sarif
           category: zizmor
