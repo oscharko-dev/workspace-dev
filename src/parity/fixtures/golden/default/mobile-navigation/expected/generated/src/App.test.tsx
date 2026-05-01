@@ -1,8 +1,8 @@
-import { render, screen } from "@testing-library/react";
+import { render } from "@testing-library/react";
 import App from "./App.tsx";
 
 test("renders generated Mobile Banking Navigation Board app", () => {
-  render(<App />);
+  const { container } = render(<App />);
 
-  expect(screen.getByTestId("generated-app")).toBeInTheDocument();
+  expect(container.querySelector('[data-testid="generated-app"]')).not.toBeNull();
 });

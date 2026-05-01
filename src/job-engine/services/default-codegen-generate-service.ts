@@ -93,13 +93,13 @@ ${renderedScreens}
 
 const createAppTestFile = (sourceName: string): GeneratedFile => ({
   path: GENERATED_APP_TEST_PATH,
-  content: `import { render, screen } from "@testing-library/react";
+  content: `import { render } from "@testing-library/react";
 import App from "./App.tsx";
 
 test(${escapeString(`renders generated ${sourceName || "workspace"} app`)}, () => {
-  render(<App />);
+  const { container } = render(<App />);
 
-  expect(screen.getByTestId("generated-app")).toBeInTheDocument();
+  expect(container.querySelector('[data-testid="generated-app"]')).not.toBeNull();
 });
 `,
 });

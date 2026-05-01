@@ -32,8 +32,8 @@
     },
     {
       "path": "src/App.test.tsx",
-      "sha256": "2a622b772be8762a74e96ce9e83dd4e50827a561e7b6fd6403ca8599cb36660d",
-      "sizeBytes": 247
+      "sha256": "be0f48e7f18ed8154c012051443b7e8e5bcfbf617ded4d0c646fb2fc2afda349",
+      "sizeBytes": 277
     },
     {
       "path": "src/App.tsx",

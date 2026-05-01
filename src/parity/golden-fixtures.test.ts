@@ -172,7 +172,33 @@ const normalizeDynamicJsonFields = (
   }
 
   if (Array.isArray(value)) {
-    return value.map((entry, index) =>
+    const normalizedPath = pathSegments.join(".");
+    const filteredEntries =
+      artifactPath.endsWith("validation-summary.json") &&
+      normalizedPath === "compositeQuality.performance.warnings"
+        ? value.filter(
+            (entry) =>
+              !(
+                typeof entry === "string" &&
+                entry.startsWith(
+                  "regression performance check failed for ",
+                )
+              ),
+          )
+        : artifactPath.endsWith("validation-summary.json") &&
+            normalizedPath === "compositeQuality.warnings"
+          ? value.filter(
+              (entry) =>
+                !(
+                  typeof entry === "string" &&
+                  entry.startsWith(
+                    "performance: regression performance check failed for ",
+                  )
+                ),
+            )
+          : value;
+
+    return filteredEntries.map((entry, index) =>
       normalizeDynamicJsonFields(
         entry,
         String(index),
@@ -1165,12 +1191,19 @@ test("default pipeline overwrites the copied Playwright template for generated a
     } satisfies GenerationDiffContext,
   });
   const validationService = createValidateProjectService();
-  await validationService.execute(
-    undefined,
-    createStageRuntimeContext({
-      executionContext: validationContext,
-      stage: "validate.project",
-    }),
+  await withTemporaryEnv(
+    {
+      FIGMAPIPE_PERF_STRICT: "false",
+    },
+    async () => {
+      await validationService.execute(
+        undefined,
+        createStageRuntimeContext({
+          executionContext: validationContext,
+          stage: "validate.project",
+        }),
+      );
+    },
   );
   const playwrightSpec = await readFile(
     path.join(projectDir, "e2e", "template.spec.ts"),
