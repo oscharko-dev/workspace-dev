@@ -24,8 +24,48 @@ permissions:
   contents: read
 
 jobs:
-  review:
-    name: Review dependency diff
+  review-main:
+    name: Review dependency diff (main — release gate)
+    if: github.base_ref == 'main'
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
+        with:
+          persist-credentials: false
+
+      - name: Review dependency changes for known advisories
+        uses: actions/dependency-review-action@2031cfc080254a8a887f58cffee85186f0e49e48  # v4.9.0
+        with:
+          fail-on-severity: moderate
+          fail-on-scopes: runtime
+          comment-summary-in-pr: always
+          deny-licenses: >-
+            AGPL-1.0-only,
+            AGPL-1.0-or-later,
+            AGPL-3.0-only,
+            AGPL-3.0-or-later,
+            GPL-1.0-only,
+            GPL-1.0-or-later,
+            GPL-2.0-only,
+            GPL-2.0-or-later,
+            GPL-3.0-only,
+            GPL-3.0-or-later,
+            LGPL-2.0-only,
+            LGPL-2.0-or-later,
+            LGPL-2.1-only,
+            LGPL-2.1-or-later,
+            LGPL-3.0-only,
+            LGPL-3.0-or-later,
+            SSPL-1.0
+
+  # Broader gate for development PRs: high severity, all scopes (current behavior).
+  review-dev:
+    name: Review dependency diff (dev/dev-gate)
+    if: github.base_ref == 'dev' || github.base_ref == 'dev-gate'
     runs-on: ubuntu-22.04
     permissions:
       contents: read
@@ -41,7 +81,7 @@ jobs:
         with:
           fail-on-severity: high
           fail-on-scopes: runtime, development
-          comment-summary-in-pr: on-failure
+          comment-summary-in-pr: always
           deny-licenses: >-
             AGPL-1.0-only,
             AGPL-1.0-or-later,
