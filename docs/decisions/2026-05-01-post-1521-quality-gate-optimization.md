@@ -21,7 +21,7 @@ The CI quality-gate stack accumulated organically across 16 workflows and 38 cus
 Adopt a 5-wave optimization across the CI/CD stack, repository hygiene, and supply-chain trust:
 
 1. **Wave 1**: Concurrency groups, ubuntu-22.04 pinning, paths-filter, job-split, mutation-off-dev, test-intelligence eval matrix, dependabot grouping, `eslint.yml` retirement, changesets dedup, Playwright cache, zizmor lint.
-2. **Wave 2**: SLSA L3 generator, cosign keyless signing, `actions/attest-build-provenance`, `actions/attest-sbom`, and SHA256 sums.
+2. **Wave 2**: SLSA L3 generator, `actions/attest-build-provenance`, `actions/attest-sbom`, and SHA256 sums. (Standalone cosign signing was deliberately omitted — `actions/attest-*` already produce Sigstore-verifiable attestations via Fulcio + Rekor, so a separate `cosign sign-blob` step would be redundant.)
 3. **Wave 3**: GitHub-side rulesets, signed-commit requirement on `main`, and repository settings hygiene.
 4. **Wave 4**: Mutation threshold 58 → 65, dependency-review runtime-only on release-gate, coverage-diff PR comment, load-test harness redesign.
 5. **Wave 5**: `FUNDING.yml`, GitHub Discussions, devcontainer, OSSF Scorecard floor documentation.

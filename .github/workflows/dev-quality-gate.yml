@@ -626,6 +626,7 @@ jobs:
       - e2e
       - security-smoke
       - build-and-publish-checks
+      - mutation-testing
     if: always()
     timeout-minutes: 5
     runs-on: ubuntu-22.04
@@ -645,6 +646,7 @@ jobs:
           E2E: ${{ needs.e2e.result }}
           SECURITY_SMOKE: ${{ needs.security-smoke.result }}
           BUILD_AND_PUBLISH_CHECKS: ${{ needs.build-and-publish-checks.result }}
+          MUTATION_TESTING: ${{ needs.mutation-testing.result }}
         run: |
           set -euo pipefail
           fail=0
@@ -653,7 +655,7 @@ jobs:
             echo "::error::dev-gate aggregate: setup job did not succeed (result=${SETUP}); downstream skips are not safe"
             fail=1
           fi
-          for name in POLICY_GUARDS TYPECHECK UNIT_TESTS TEMPLATE_TESTS UI_COVERAGE GOLDEN_AND_TI COVERAGE E2E SECURITY_SMOKE BUILD_AND_PUBLISH_CHECKS; do
+          for name in POLICY_GUARDS TYPECHECK UNIT_TESTS TEMPLATE_TESTS UI_COVERAGE GOLDEN_AND_TI COVERAGE E2E SECURITY_SMOKE BUILD_AND_PUBLISH_CHECKS MUTATION_TESTING; do
             value="${!name}"
             echo "${name}=${value}"
             case "$value" in
