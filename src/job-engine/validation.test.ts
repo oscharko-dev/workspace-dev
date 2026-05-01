@@ -1459,6 +1459,56 @@ test("runProjectValidationWithDeps runs unit tests when enabled", async () => {
   assert.deepEqual(result.test?.args, ["run", "test"]);
 });
 
+test("runProjectValidationWithDeps runs unit tests with NODE_ENV=test under production", async () => {
+  const previousNodeEnv = process.env.NODE_ENV;
+  process.env.NODE_ENV = "production";
+
+  const calls: Array<{
+    command: string;
+    args: string[];
+    env?: NodeJS.ProcessEnv;
+  }> = [];
+
+  try {
+    const result = await runProjectValidationWithDeps({
+      generatedProjectDir: "/tmp/generated-project",
+      onLog: () => {
+        // no-op
+      },
+      enableLintAutofix: false,
+      enableUnitTestValidation: true,
+      deps: {
+        runCommand: async ({ command, args, env }) => {
+          calls.push({ command, args, ...(env ? { env } : {}) });
+          return {
+            success: true,
+            code: 0,
+            stdout: "",
+            stderr: "",
+            combined: ""
+          };
+        }
+      }
+    });
+
+    assert.deepEqual(
+      calls.map(({ command, args }) => `${command} ${args.join(" ")}`),
+      ["pnpm install --ignore-scripts --frozen-lockfile --reporter append-only --prefer-offline", "pnpm lint", "pnpm typecheck", "pnpm build", "pnpm run test"]
+    );
+    assert.equal(calls[4]?.env?.NODE_ENV, "test");
+    for (const call of calls.slice(0, 4)) {
+      assert.equal(call.env?.NODE_ENV, undefined);
+    }
+    assert.deepEqual(result.test?.args, ["run", "test"]);
+  } finally {
+    if (previousNodeEnv === undefined) {
+      delete process.env.NODE_ENV;
+    } else {
+      process.env.NODE_ENV = previousNodeEnv;
+    }
+  }
+});
+
 test("runProjectValidationWithDeps does not retry test failures", async () => {
   let feedbackInvocations = 0;
   await assert.rejects(

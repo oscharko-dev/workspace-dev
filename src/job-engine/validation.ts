@@ -751,7 +751,16 @@ export const runProjectValidationWithDeps = async ({
           command: "pnpm",
           args: command.args,
           ...(command.timeoutMs ? { timeoutMs: command.timeoutMs } : {}),
-          ...(command.env ? { env: command.env } : {}),
+          ...(command.name === "test"
+            ? {
+                env: {
+                  ...(command.env ?? {}),
+                  NODE_ENV: "test"
+                }
+              }
+            : command.env
+              ? { env: command.env }
+              : {}),
           ...(jobDir
             ? {
                 outputCapture: toValidationOutputCapture({
