@@ -1267,7 +1267,10 @@ const buildUiA11ySummary = async ({
   context: Parameters<StageService<void>["execute"]>[1];
   validationResult?: ProjectValidationResult;
 }): Promise<ValidationUiA11ySummary> => {
-  if (!context.runtime.enableUiValidation) {
+  if (
+    !context.runtime.enableUiValidation &&
+    context.pipelineMetadata.pipelineId !== "default"
+  ) {
     return {
       status: "not_requested",
     };
@@ -3647,15 +3650,23 @@ export const createValidateProjectService = ({
           Object.keys(context.resolvedCustomerProfile.template.devDependencies)
             .length > 0
         : false;
+      const isDefaultPipeline = context.pipelineMetadata.pipelineId === "default";
+      const enablePerfValidation =
+        context.runtime.enablePerfValidation || isDefaultPipeline;
+      const enableUiValidation =
+        context.runtime.enableUiValidation || isDefaultPipeline;
+      const enableUnitTestValidation =
+        context.runtime.enableUnitTestValidation || isDefaultPipeline;
 
       try {
         validationResult = await runProjectValidationFn({
           generatedProjectDir,
           jobDir: context.paths.jobDir,
           enableLintAutofix: context.runtime.enableLintAutofix,
-          enablePerfValidation: context.runtime.enablePerfValidation,
-          enableUiValidation: context.runtime.enableUiValidation,
-          enableUnitTestValidation: context.runtime.enableUnitTestValidation,
+          enablePerfValidation,
+          enableUiValidation,
+          enableUnitTestValidation,
+          useCommittedPerfBaseline: isDefaultPipeline,
           unitTestIgnoreFailure: context.runtime.unitTestIgnoreFailure,
           commandTimeoutMs: context.runtime.commandTimeoutMs,
           commandStdoutMaxBytes: context.runtime.commandStdoutMaxBytes,

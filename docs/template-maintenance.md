@@ -48,9 +48,9 @@ desktop, tablet, and mobile Chromium viewport matrix. The gate captures
 reviewer-visible screenshots, checks for horizontal layout collapse, enforces a
 stable recapture diff threshold, and writes visual audit reports under
 `template/react-tailwind-app/artifacts/visual-audit/`.
-When `validate.project` runs with `enableUiValidation=true`, generated default
-apps reuse the same optional `validate:playwright` script and place these
-artifacts under the job's `ui-gate/visual-audit/` directory.
+When `validate.project` runs on the default pipeline, generated default apps
+invoke the same `validate:playwright` script and place these artifacts under
+the job's `ui-gate/visual-audit/` directory.
 
 When the update can affect generated output, also run golden fixture parity:
 

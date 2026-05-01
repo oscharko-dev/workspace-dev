@@ -116,11 +116,11 @@ export const runA11yChecks = (relativePath, content) => {
     });
   };
 
-  addFinding("IconButton requires aria-label", toOccurrenceCount(sanitizedContent, /<IconButton(?![^>]*aria-label=)[^>]*>/g));
-  addFinding("img requires alt", toOccurrenceCount(sanitizedContent, /<img(?![^>]*\salt=)[^>]*>/g));
+  addFinding("IconButton requires aria-label", toOccurrenceCount(sanitizedContent, /<IconButton(?=[\s/>])(?![^>]*aria-label=)[^>]*>/g));
+  addFinding("img requires alt", toOccurrenceCount(sanitizedContent, /<img(?=[\s/>])(?![^>]*\salt=)[^>]*>/g));
   addFinding(
     "form controls require aria-label or aria-labelledby",
-    toOccurrenceCount(sanitizedContent, /<(?:input|select|textarea)(?![^>]*(?:aria-label|aria-labelledby)=)[^>]*>/g)
+    toOccurrenceCount(sanitizedContent, /<(?:input|select|textarea)(?=[\s/>])(?![^>]*(?:aria-label|aria-labelledby)=)[^>]*>/g)
   );
 
   return findings;
@@ -140,11 +140,11 @@ export const runInteractionChecks = (relativePath, content) => {
     });
   };
 
-  addFinding("button requires explicit type", toOccurrenceCount(sanitizedContent, /<button(?![^>]*\btype=)[^>]*>/g));
-  addFinding("anchor requires href", toOccurrenceCount(sanitizedContent, /<a(?![^>]*\bhref=)[^>]*>/g));
+  addFinding("button requires explicit type", toOccurrenceCount(sanitizedContent, /<button(?=[\s/>])(?![^>]*\btype=)[^>]*>/g));
+  addFinding("anchor requires href", toOccurrenceCount(sanitizedContent, /<a(?=[\s/>])(?![^>]*\bhref=)[^>]*>/g));
   addFinding(
     "clickable non-semantic element needs keyboard support",
-    toOccurrenceCount(sanitizedContent, /<(?:div|span)(?=[^>]*onClick=)(?![^>]*(?:onKeyDown|onKeyUp|onKeyPress|role=|tabIndex=))[^>]*>/g)
+    toOccurrenceCount(sanitizedContent, /<(?:div|span)(?=[\s/>])(?=[^>]*onClick=)(?![^>]*(?:onKeyDown|onKeyUp|onKeyPress|role=|tabIndex=))[^>]*>/g)
   );
 
   return findings;

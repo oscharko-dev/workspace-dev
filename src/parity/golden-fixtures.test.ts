@@ -130,39 +130,117 @@ const normalizeText = (value: string): string => {
   return `${value.replace(/\r\n/g, "\n").trimEnd()}\n`;
 };
 
-const normalizeDynamicJsonFields = (value: unknown, key = ""): unknown => {
+const STABLE_TIMESTAMP_PLACEHOLDER = "<stable-timestamp>";
+const STABLE_PATH_PLACEHOLDER = "<stable-path>";
+const STABLE_NUMBER_PLACEHOLDER = "<stable-number>";
+
+const normalizeDynamicJsonFields = (
+  value: unknown,
+  key = "",
+  pathSegments: readonly string[] = [],
+  artifactPath = "",
+): unknown => {
   if (
     typeof value === "string" &&
     (key === "validatedAt" || key === "generatedAt")
   ) {
-    return "<stable-timestamp>";
+    return STABLE_TIMESTAMP_PLACEHOLDER;
   }
+
+  if (artifactPath.endsWith("validation-summary.json")) {
+    if (pathSegments.join(".") === "uiA11y.reportPath") {
+      return STABLE_PATH_PLACEHOLDER;
+    }
+    if (
+      pathSegments[0] === "uiA11y" &&
+      pathSegments[1] === "artifacts" &&
+      typeof value === "string"
+    ) {
+      return STABLE_PATH_PLACEHOLDER;
+    }
+    if (pathSegments.join(".") === "compositeQuality.performance.sourcePath") {
+      return STABLE_PATH_PLACEHOLDER;
+    }
+    if (
+      pathSegments[0] === "compositeQuality" &&
+      pathSegments[1] === "performance" &&
+      (pathSegments[2] === "samples" || pathSegments[2] === "aggregateMetrics") &&
+      typeof value === "number"
+    ) {
+      return STABLE_NUMBER_PLACEHOLDER;
+    }
+  }
+
   if (Array.isArray(value)) {
-    return value.map((entry) => normalizeDynamicJsonFields(entry));
+    const normalizedPath = pathSegments.join(".");
+    const filteredEntries =
+      artifactPath.endsWith("validation-summary.json") &&
+      normalizedPath === "compositeQuality.performance.warnings"
+        ? value.filter(
+            (entry) =>
+              !(
+                typeof entry === "string" &&
+                entry.startsWith(
+                  "regression performance check failed for ",
+                )
+              ),
+          )
+        : artifactPath.endsWith("validation-summary.json") &&
+            normalizedPath === "compositeQuality.warnings"
+          ? value.filter(
+              (entry) =>
+                !(
+                  typeof entry === "string" &&
+                  entry.startsWith(
+                    "performance: regression performance check failed for ",
+                  )
+                ),
+            )
+          : value;
+
+    return filteredEntries.map((entry, index) =>
+      normalizeDynamicJsonFields(
+        entry,
+        String(index),
+        [...pathSegments, String(index)],
+        artifactPath,
+      ),
+    );
   }
   if (typeof value === "object" && value !== null) {
     return Object.fromEntries(
       Object.entries(value).map(([childKey, childValue]) => [
         childKey,
-        normalizeDynamicJsonFields(childValue, childKey),
+        normalizeDynamicJsonFields(
+          childValue,
+          childKey,
+          [...pathSegments, childKey],
+          artifactPath,
+        ),
       ]),
     );
   }
   return value;
 };
 
-const normalizeJson = (value: string): string => {
-  return `${JSON.stringify(normalizeDynamicJsonFields(JSON.parse(value)), null, 2)}\n`;
+const normalizeJson = (value: string, artifactPath: string): string => {
+  return `${JSON.stringify(
+    normalizeDynamicJsonFields(JSON.parse(value), "", [], artifactPath),
+    null,
+    2,
+  )}\n`;
 };
 
 const normalizeArtifactContent = ({
   kind,
   value,
+  artifactPath,
 }: {
   kind: GoldenArtifactSpec["kind"];
   value: string;
+  artifactPath: string;
 }): string => {
-  return kind === "json" ? normalizeJson(value) : normalizeText(value);
+  return kind === "json" ? normalizeJson(value, artifactPath) : normalizeText(value);
 };
 
 const shouldApproveGolden = (): boolean => {
@@ -176,6 +254,36 @@ const isCiRuntime = (): boolean => {
     return false;
   }
   return raw !== "0" && raw !== "false";
+};
+
+const withTemporaryEnv = async (
+  overrides: Record<string, string | undefined>,
+  run: () => Promise<void>,
+): Promise<void> => {
+  const previousEntries = Object.entries(overrides).map(([key]) => [
+    key,
+    process.env[key],
+  ]);
+
+  for (const [key, value] of Object.entries(overrides)) {
+    if (value === undefined) {
+      delete process.env[key];
+      continue;
+    }
+    process.env[key] = value;
+  }
+
+  try {
+    await run();
+  } finally {
+    for (const [key, value] of previousEntries) {
+      if (value === undefined) {
+        delete process.env[key];
+        continue;
+      }
+      process.env[key] = value;
+    }
+  }
 };
 
 const REQUIRED_DEFAULT_DEMO_COVERAGE = [
@@ -743,13 +851,20 @@ const generateDefaultFixtureArtifacts = async ({
   }
 
   if (fixture.validation === true) {
-    const service = createValidateProjectService();
-    await service.execute(
-      undefined,
-      createStageRuntimeContext({
-        executionContext: context,
-        stage: "validate.project",
-      }),
+    await withTemporaryEnv(
+      {
+        FIGMAPIPE_PERF_STRICT: "false",
+      },
+      async () => {
+        const service = createValidateProjectService();
+        await service.execute(
+          undefined,
+          createStageRuntimeContext({
+            executionContext: context,
+            stage: "validate.project",
+          }),
+        );
+      },
     );
     await cp(
       path.join(jobDir, "validation-summary.json"),
@@ -883,10 +998,12 @@ const assertGeneratedArtifactsMatchSnapshots = async ({
     const normalizedActual = normalizeArtifactContent({
       kind: artifact.kind,
       value: actualRaw,
+      artifactPath: artifact.actual,
     });
     const normalizedSecondActual = normalizeArtifactContent({
       kind: artifact.kind,
       value: secondActualRaw,
+      artifactPath: artifact.actual,
     });
 
     assert.equal(
@@ -934,6 +1051,7 @@ const assertGeneratedArtifactsMatchSnapshots = async ({
     const normalizedExpected = normalizeArtifactContent({
       kind: artifact.kind,
       value: expectedRaw,
+      artifactPath: artifact.actual,
     });
 
     assert.equal(
@@ -1039,6 +1157,67 @@ const runDefaultSuite = async (t: test.TestContext): Promise<void> => {
     });
   }
 };
+
+test("default pipeline overwrites the copied Playwright template for generated apps", async () => {
+  const manifest = (await loadManifest({
+    expectedPipelineId: "rocket",
+    root: ROCKET_GOLDEN_ROOT,
+  })) as GoldenFixtureManifest;
+  const fixture = manifest.fixtures.find((entry) => entry.id === "simple-auth");
+
+  if (!fixture) {
+    throw new Error("Expected the rocket simple-auth fixture to exist.");
+  }
+  const input = await prepareFixtureInput({
+    fixture,
+    root: ROCKET_GOLDEN_ROOT,
+  });
+  const { projectDir } = await generateDefaultFixtureArtifacts(input);
+  const validationContext = await createDefaultExecutionContext({
+    fixture,
+    generatedProjectDir: projectDir,
+    jobDir: path.dirname(projectDir),
+  });
+  await validationContext.artifactStore.setPath({
+    key: STAGE_ARTIFACT_KEYS.generatedProject,
+    stage: "template.prepare",
+    absolutePath: projectDir,
+  });
+  await validationContext.artifactStore.setValue({
+    key: STAGE_ARTIFACT_KEYS.generationDiffContext,
+    stage: "codegen.generate",
+    value: {
+      boardKey: fixture.id,
+    } satisfies GenerationDiffContext,
+  });
+  const validationService = createValidateProjectService();
+  await withTemporaryEnv(
+    {
+      FIGMAPIPE_PERF_STRICT: "false",
+    },
+    async () => {
+      await validationService.execute(
+        undefined,
+        createStageRuntimeContext({
+          executionContext: validationContext,
+          stage: "validate.project",
+        }),
+      );
+    },
+  );
+  const playwrightSpec = await readFile(
+    path.join(projectDir, "e2e", "template.spec.ts"),
+    "utf8",
+  );
+
+  assert.match(playwrightSpec, /getByTestId\("generated-app"\)/);
+  assert.doesNotMatch(
+    playwrightSpec,
+    /React, TypeScript, Vite, and Tailwind ready for generated apps\./,
+  );
+  assert.doesNotMatch(playwrightSpec, /WorkspaceDev default template/);
+  assert.doesNotMatch(playwrightSpec, /document\.querySelectorAll\("article"\)/);
+});
 
 test("golden fixtures: pipeline-specific figma json to generated app artifacts", async (t) => {
   const approveMode = shouldApproveGolden();

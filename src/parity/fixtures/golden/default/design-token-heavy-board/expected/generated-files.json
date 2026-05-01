@@ -1,5 +1,6 @@
 [
   "component-manifest.json",
+  "e2e/template.spec.ts",
   "generation-metrics.json",
   "src/App.test.tsx",
   "src/App.tsx",

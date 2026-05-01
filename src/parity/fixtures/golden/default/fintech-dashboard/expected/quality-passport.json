@@ -10,7 +10,7 @@
     "token": {
       "covered": 54,
       "ratio": 0.947368,
-      "status": "passed",
+      "status": "warning",
       "total": 57
     }
   },
@@ -21,14 +21,19 @@
       "sizeBytes": 170
     },
     {
+      "path": "e2e/template.spec.ts",
+      "sha256": "79d7d4cb7156a77966a7501abbabde084ca361c8e07673d7df5b1368b25c5087",
+      "sizeBytes": 4675
+    },
+    {
       "path": "generation-metrics.json",
       "sha256": "82adf2072b7a8ef2aadde62560721c7754f02ee64bb8cbd080be35060a603703",
       "sizeBytes": 502
     },
     {
       "path": "src/App.test.tsx",
-      "sha256": "2a622b772be8762a74e96ce9e83dd4e50827a561e7b6fd6403ca8599cb36660d",
-      "sizeBytes": 247
+      "sha256": "be0f48e7f18ed8154c012051443b7e8e5bcfbf617ded4d0c646fb2fc2afda349",
+      "sizeBytes": 277
     },
     {
       "path": "src/App.tsx",
@@ -72,13 +77,13 @@
     }
   ],
   "metadata": {
-    "compositeQualityStatus": "not_requested",
+    "compositeQualityStatus": "completed",
     "confidenceStatus": "completed",
     "jobId": "golden-default-fintech-dashboard",
     "pipelineDisplayName": "Default",
     "storybookStatus": "not_requested",
     "validatedAt": "<stable-timestamp>",
-    "validationSummaryStatus": "ok",
+    "validationSummaryStatus": "warn",
     "visualQualityStatus": "not_requested"
   },
   "pipelineId": "default",
@@ -112,9 +117,15 @@
         "status": "completed"
       }
     ],
-    "status": "passed"
+    "status": "warning"
   },
   "warnings": [
+    {
+      "code": "VALIDATION_SUMMARY_NOT_OK",
+      "message": "Validation summary completed with status 'warn'.",
+      "severity": "warning",
+      "source": "validation-summary.json"
+    },
     {
       "code": "W_DEFAULT_A11Y_FOCUS_ORDER",
       "message": "Absolute layout fallback for 'Card Title' can make keyboard focus order depend on implementation details.",

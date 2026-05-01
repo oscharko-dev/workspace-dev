@@ -356,6 +356,47 @@ test("runProjectValidationWithDeps appends perf assertion when enabled", async (
   assert.match(String(envByCommand["pnpm run perf:assert"]?.FIGMAPIPE_PERF_BASELINE_PATH), /perf-baseline\.json$/);
 });
 
+test("runProjectValidationWithDeps uses the committed perf baseline when requested", async () => {
+  const generatedProjectDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-validation-perf-baseline-"));
+  const calls: string[] = [];
+  const envByCommand: Record<string, NodeJS.ProcessEnv | undefined> = {};
+
+  try {
+    await runProjectValidationWithDeps({
+      generatedProjectDir,
+      onLog: () => {
+        // no-op
+      },
+      enablePerfValidation: true,
+      useCommittedPerfBaseline: true,
+      deps: {
+        runCommand: async ({ command, args, env }) => {
+          const key = `${command} ${args.join(" ")}`;
+          calls.push(key);
+          envByCommand[key] = env;
+          return {
+            success: true,
+            code: 0,
+            stdout: "",
+            stderr: "",
+            combined: ""
+          };
+        }
+      }
+    });
+  } finally {
+    await rm(generatedProjectDir, { recursive: true, force: true });
+  }
+
+  assert.equal(calls.includes("pnpm run perf:assert"), true);
+  assert.equal(
+    envByCommand["pnpm run perf:assert"]?.FIGMAPIPE_PERF_BASELINE_PATH,
+    path.join(generatedProjectDir, "perf-baseline.json")
+  );
+  assert.equal(envByCommand["pnpm run perf:assert"]?.FIGMAPIPE_PERF_ALLOW_BASELINE_BOOTSTRAP, "false");
+  assert.match(String(envByCommand["pnpm run perf:assert"]?.FIGMAPIPE_PERF_ARTIFACT_DIR), /\.figmapipe\/performance$/);
+});
+
 test("runProjectValidationWithDeps falls back to install when the seeded node_modules path does not exist", async () => {
   const generatedProjectDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-validation-seed-missing-"));
   const calls: string[] = [];
@@ -1416,6 +1457,56 @@ test("runProjectValidationWithDeps runs unit tests when enabled", async () => {
 
   assert.equal(calls.includes("pnpm run test"), true);
   assert.deepEqual(result.test?.args, ["run", "test"]);
+});
+
+test("runProjectValidationWithDeps runs unit tests with NODE_ENV=test under production", async () => {
+  const previousNodeEnv = process.env.NODE_ENV;
+  process.env.NODE_ENV = "production";
+
+  const calls: Array<{
+    command: string;
+    args: string[];
+    env?: NodeJS.ProcessEnv;
+  }> = [];
+
+  try {
+    const result = await runProjectValidationWithDeps({
+      generatedProjectDir: "/tmp/generated-project",
+      onLog: () => {
+        // no-op
+      },
+      enableLintAutofix: false,
+      enableUnitTestValidation: true,
+      deps: {
+        runCommand: async ({ command, args, env }) => {
+          calls.push({ command, args, ...(env ? { env } : {}) });
+          return {
+            success: true,
+            code: 0,
+            stdout: "",
+            stderr: "",
+            combined: ""
+          };
+        }
+      }
+    });
+
+    assert.deepEqual(
+      calls.map(({ command, args }) => `${command} ${args.join(" ")}`),
+      ["pnpm install --ignore-scripts --frozen-lockfile --reporter append-only --prefer-offline", "pnpm lint", "pnpm typecheck", "pnpm build", "pnpm run test"]
+    );
+    assert.equal(calls[4]?.env?.NODE_ENV, "test");
+    for (const call of calls.slice(0, 4)) {
+      assert.equal(call.env?.NODE_ENV, undefined);
+    }
+    assert.deepEqual(result.test?.args, ["run", "test"]);
+  } finally {
+    if (previousNodeEnv === undefined) {
+      delete process.env.NODE_ENV;
+    } else {
+      process.env.NODE_ENV = previousNodeEnv;
+    }
+  }
 });
 
 test("runProjectValidationWithDeps does not retry test failures", async () => {
