@@ -7,13 +7,17 @@ on:
     branches: [dev-gate]
   workflow_dispatch:
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' && github.ref != 'refs/heads/dev' }}
+
 permissions:
   contents: read
 
 jobs:
   quality:
     timeout-minutes: 360
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     strategy:
       fail-fast: false
       matrix:
@@ -176,7 +180,7 @@ jobs:
 
   performance-web:
     timeout-minutes: 180
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     continue-on-error: true
     needs: quality
     strategy:
@@ -248,7 +252,7 @@ jobs:
 
   mutation-testing:
     timeout-minutes: 420
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     needs: quality
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6

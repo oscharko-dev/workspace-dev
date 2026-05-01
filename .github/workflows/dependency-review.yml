@@ -16,13 +16,17 @@ on:
       - template/react-tailwind-app/pnpm-lock.yaml
       - .github/workflows/dependency-review.yml
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' && github.ref != 'refs/heads/dev' }}
+
 permissions:
   contents: read
 
 jobs:
   review:
     name: Review dependency diff
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     permissions:
       contents: read
       pull-requests: write
