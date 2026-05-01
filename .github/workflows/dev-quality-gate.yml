@@ -80,6 +80,9 @@ jobs:
       - name: Typecheck
         run: pnpm run typecheck
 
+      - name: Install Playwright browser (Chromium)
+        run: pnpm exec playwright install --with-deps chromium
+
       - name: Runtime security smoke suite
         run: pnpm run test:dast-smoke
 
@@ -137,9 +140,6 @@ jobs:
 
       - name: Coverage thresholds
         run: pnpm run test:coverage
-
-      - name: Install Playwright browser (Chromium)
-        run: pnpm exec playwright install --with-deps chromium
 
       - name: UI E2E tests
         run: pnpm run ui:test:e2e
