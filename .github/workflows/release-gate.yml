@@ -15,9 +15,55 @@ permissions:
   contents: read
 
 jobs:
+  setup:
+    runs-on: ubuntu-22.04
+    outputs:
+      src: ${{ steps.filter.outputs.src }}
+      ui: ${{ steps.filter.outputs.ui }}
+      plugin: ${{ steps.filter.outputs.plugin }}
+      templates: ${{ steps.filter.outputs.templates }}
+      scripts: ${{ steps.filter.outputs.scripts }}
+      workflows: ${{ steps.filter.outputs.workflows }}
+      docs: ${{ steps.filter.outputs.docs }}
+      config: ${{ steps.filter.outputs.config }}
+      full: ${{ steps.filter.outputs.full }}
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
+        with:
+          persist-credentials: false
+
+      - uses: dorny/paths-filter@7267a8516b6f92bdb098633497bad573efdbf271  # v2.12.0
+        id: filter
+        with:
+          filters: |
+            src:
+              - 'src/**'
+            ui:
+              - 'src/ui/**'
+            plugin:
+              - 'src/plugin/**'
+            templates:
+              - 'template/**'
+            scripts:
+              - 'scripts/**'
+            workflows:
+              - '.github/workflows/**'
+            docs:
+              - 'docs/**'
+            config:
+              - '*.json'
+              - '*.yaml'
+              - '*.yml'
+              - '*.mjs'
+              - '*.ts'
+              - 'pnpm-lock.yaml'
+            full:
+              - '**'
+
   quality:
     timeout-minutes: 480
     runs-on: ubuntu-22.04
+    needs: setup
     strategy:
       fail-fast: false
       matrix:
@@ -142,25 +188,35 @@ jobs:
       - name: Golden parity fixtures
         run: pnpm run test:golden
 
-      - name: Test-intelligence Wave 1 POC evaluation gate
-        run: pnpm run test:ti-eval
-
-      - name: Run Wave 4.I multi-source eval gate
-        run: pnpm run test:ti-multi-source-eval
-
       - name: Coverage thresholds
         run: pnpm run test:coverage
 
-      - name: Install Playwright browser (Chromium)
+      - name: Cache Playwright browsers (Chromium)
+        id: pw-cache-chromium
         if: matrix.node-version == 24
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830  # v4.3.0
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ matrix.node-version }}-chromium-${{ hashFiles('pnpm-lock.yaml') }}
+
+      - name: Install Playwright browser (Chromium)
+        if: steps.pw-cache-chromium.outputs.cache-hit != 'true' && matrix.node-version == 24
         run: pnpm exec playwright install --with-deps chromium
 
       - name: UI E2E tests (Chromium)
         if: matrix.node-version == 24
         run: pnpm run ui:test:e2e
 
-      - name: Install Playwright browsers (matrix)
+      - name: Cache Playwright browsers (all)
+        id: pw-cache-allbrowsers
         if: matrix.node-version == 22
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830  # v4.3.0
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ matrix.node-version }}-allbrowsers-${{ hashFiles('pnpm-lock.yaml') }}
+
+      - name: Install Playwright browsers (matrix)
+        if: steps.pw-cache-allbrowsers.outputs.cache-hit != 'true' && matrix.node-version == 22
         run: pnpm exec playwright install --with-deps chromium firefox webkit
 
       - name: UI E2E tests (matrix)
@@ -270,9 +326,46 @@ jobs:
             test-results
           if-no-files-found: ignore
 
+  ti-eval:
+    timeout-minutes: 120
+    runs-on: ubuntu-22.04
+    needs: setup
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3]
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
+        with:
+          persist-credentials: false
+
+      - uses: pnpm/action-setup@903f9c1a6ebcba6cf41d87230be49611ac97822e  # v6
+        with:
+          version: 10.33.0
+
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e  # v6
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile --ignore-scripts
+
+      - name: Test-intelligence evaluation gate (shard ${{ matrix.shard }}/4)
+        env:
+          SHARD: ${{ matrix.shard }}
+          TOTAL: 4
+        run: SHARD=${{ matrix.shard }} TOTAL=4 pnpm run test:ti-eval:shard
+
+      - name: Run Wave 4.I multi-source eval gate
+        if: matrix.shard == 0
+        run: pnpm run test:ti-multi-source-eval
+
   performance-web:
     timeout-minutes: 180
     runs-on: ubuntu-22.04
+    needs: setup
+    if: needs.setup.outputs.templates == 'true' || needs.setup.outputs.full == 'true'
     strategy:
       fail-fast: false
       matrix:
@@ -406,7 +499,8 @@ jobs:
   release-readiness:
     timeout-minutes: 60
     runs-on: ubuntu-22.04
-    needs: [quality, performance-web, mutation-testing, fips-smoke]
+    needs: [quality, ti-eval, performance-web, mutation-testing, fips-smoke]
+    if: always() && !contains(needs.*.result, 'failure') && !contains(needs.*.result, 'cancelled')
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
         with:
