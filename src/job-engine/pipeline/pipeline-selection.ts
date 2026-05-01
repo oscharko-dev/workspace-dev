@@ -11,12 +11,15 @@ import {
   buildSubmissionPipelinePlan,
 } from "../services/pipeline-services.js";
 import { DefaultCodegenGenerateService } from "../services/default-codegen-generate-service.js";
-import { RocketTemplatePrepareService } from "../services/rocket-template-prepare-service.js";
 import type { SubmissionJobInput } from "../types.js";
-import { CURRENT_BUILD_PROFILE_PIPELINE_IDS } from "./pipeline-build-profile.js";
+import {
+  CURRENT_BUILD_PROFILE_INCLUDES_DEFAULT,
+  CURRENT_BUILD_PROFILE_INCLUDES_ROCKET,
+} from "./pipeline-build-profile.js";
 import type { PipelineDefinition } from "./pipeline-definition.js";
 import { PipelineRequestError } from "./pipeline-errors.js";
 import { PipelineRegistry } from "./pipeline-registry.js";
+import { rocketPipelineDefinition } from "./rocket-pipeline-definition.js";
 
 export const KNOWN_WORKSPACE_PIPELINE_IDS = ["default", "rocket"] as const;
 
@@ -85,50 +88,22 @@ export const DEFAULT_PIPELINE_DEFINITION: PipelineDefinition = {
     }),
 };
 
-export const ROCKET_PIPELINE_DEFINITION: PipelineDefinition = {
-  id: "rocket",
-  displayName: "Rocket",
-  description:
-    "Compatibility pipeline for the existing WorkspaceDev generator.",
-  visibility: "customer",
-  deterministic: true,
-  template: {
-    bundleId: "react-mui-app",
-    path: "template/react-mui-app",
-    stack: {
-      framework: "react",
-      language: "typescript",
-      styling: "mui",
-      bundler: "vite",
-    },
-  },
-  supportedSourceModes: [...ALLOWED_FIGMA_SOURCE_MODES],
-  supportedScopes: ["board", "node", "selection"],
-  buildSubmissionPlan: () =>
-    buildSubmissionPipelinePlan({
-      templatePrepareService: RocketTemplatePrepareService,
-    }),
-  buildRegenerationPlan: () =>
-    buildRegenerationPipelinePlan({
-      templatePrepareService: RocketTemplatePrepareService,
-    }),
-  buildRetryPlan: ({ retryStage }) =>
-    buildRetryPipelinePlan({
-      retryStage,
-      templatePrepareService: RocketTemplatePrepareService,
-    }),
-};
-
 let defaultRegistry: PipelineRegistry | undefined;
+
+const createBuildProfilePipelineDefinitions = (): PipelineDefinition[] => {
+  const definitions: PipelineDefinition[] = [];
+  if (CURRENT_BUILD_PROFILE_INCLUDES_DEFAULT) {
+    definitions.push(DEFAULT_PIPELINE_DEFINITION);
+  }
+  if (CURRENT_BUILD_PROFILE_INCLUDES_ROCKET) {
+    definitions.push(rocketPipelineDefinition);
+  }
+  return definitions;
+};
 
 export const createDefaultPipelineRegistry = (): PipelineRegistry =>
   new PipelineRegistry({
-    definitions: [
-      DEFAULT_PIPELINE_DEFINITION,
-      ROCKET_PIPELINE_DEFINITION,
-    ].filter((definition) =>
-      CURRENT_BUILD_PROFILE_PIPELINE_IDS.includes(definition.id),
-    ),
+    definitions: createBuildProfilePipelineDefinitions(),
     knownPipelineIds: [...KNOWN_WORKSPACE_PIPELINE_IDS],
   });
 

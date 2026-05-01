@@ -13,18 +13,19 @@ import { ReproExportService } from "../services/repro-export-service.js";
 import { RocketTemplatePrepareService } from "../services/rocket-template-prepare-service.js";
 import { ValidateProjectService } from "../services/validate-project-service.js";
 import { STAGE_ORDER } from "../stage-state.js";
+import { CURRENT_BUILD_PROFILE_PIPELINE_IDS } from "./pipeline-build-profile.js";
 import type { PipelineDefinition } from "./pipeline-definition.js";
 import { PipelineRequestError } from "./pipeline-errors.js";
 import { PipelineRegistry } from "./pipeline-registry.js";
 import {
   DEFAULT_PIPELINE_DEFINITION,
-  ROCKET_PIPELINE_DEFINITION,
   createDefaultPipelineRegistry,
   inferPipelineScope,
   inferPipelineSourceMode,
   selectPipeline,
   selectPipelineDefinition,
 } from "./pipeline-selection.js";
+import { ROCKET_PIPELINE_DEFINITION } from "./rocket-pipeline-definition.js";
 
 const RETRY_STAGES: readonly WorkspaceJobRetryStage[] = [
   "figma.source",
@@ -138,11 +139,12 @@ const createDefinition = ({
   supportedScopes: scopes,
 });
 
-test("default registry exposes the current default and rocket build-profile pipelines", () => {
+test("default registry exposes the current build-profile pipelines", () => {
   const registry = createDefaultPipelineRegistry();
+  const expectedPipelineIds = [...CURRENT_BUILD_PROFILE_PIPELINE_IDS];
   assert.deepEqual(
     registry.listDescriptors().map((pipeline) => pipeline.id),
-    ["default", "rocket"],
+    expectedPipelineIds,
   );
   assert.equal(
     selectPipelineDefinition({
@@ -150,7 +152,7 @@ test("default registry exposes the current default and rocket build-profile pipe
       sourceMode: "local_json",
       scope: "board",
     }).id,
-    "default",
+    expectedPipelineIds.includes("default") ? "default" : "rocket",
   );
 });
 

@@ -78,7 +78,6 @@ test("profile pack distribution includes template lockfile but excludes template
       command: "node",
       args: [
         "scripts/build-profile.mjs",
-        "--skip-build",
         "--profile",
         "default-rocket",
         "--pack-destination",

@@ -114,7 +114,8 @@ const createFixtureTarball = async ({
     await writeFixtureFile(
       fixtureRoot,
       "dist/index.js",
-      "export const createWorkspaceServer = () => undefined;\n",
+      `const pipelineIds = ${JSON.stringify(profile.pipelineIds)};\n` +
+        "export const createWorkspaceServer = async () => ({ app: { close: async () => undefined, inject: async () => { const body = JSON.stringify({ availablePipelines: pipelineIds.map((id) => ({ id })) }); return { statusCode: 200, body, headers: {}, json: () => JSON.parse(body) }; } } });\n",
     );
     await writeFixtureFile(
       fixtureRoot,
@@ -216,6 +217,50 @@ test("validatePackProfileTarballs rejects unselected template leakage", async ()
   }
 });
 
+test("validatePackProfileTarballs rejects default compiled Rocket markers", async () => {
+  const fixture = await createFixtureTarball({
+    mutate: async ({ fixtureRoot }) => {
+      await writeFixtureFile(
+        fixtureRoot,
+        "dist/leaked-profile-marker.js",
+        "export const marker = 'RocketTemplatePrepareService';\n",
+      );
+    },
+  });
+  try {
+    await assert.rejects(
+      validatePackProfileTarballs({
+        profileId: "default",
+        tarballPaths: [fixture.tarballPath],
+      }),
+      /compiled dist contains Rocket\/customer-only marker/,
+    );
+  } finally {
+    await fixture.cleanup();
+  }
+});
+
+test("validatePackProfileTarballs allows Rocket compiled markers in rocket profile", async () => {
+  const fixture = await createFixtureTarball({
+    profileId: "rocket",
+    mutate: async ({ fixtureRoot }) => {
+      await writeFixtureFile(
+        fixtureRoot,
+        "dist/rocket-profile-marker.js",
+        "export const marker = 'RocketTemplatePrepareService';\n",
+      );
+    },
+  });
+  try {
+    await validatePackProfileTarballs({
+      profileId: "rocket",
+      tarballPaths: [fixture.tarballPath],
+    });
+  } finally {
+    await fixture.cleanup();
+  }
+});
+
 test("validatePackProfileTarballs rejects profile manifest mismatch", async () => {
   const fixture = await createFixtureTarball({
     mutate: async ({ fixtureRoot, manifest }) => {
@@ -231,6 +276,29 @@ test("validatePackProfileTarballs rejects profile manifest mismatch", async () =
         tarballPaths: [fixture.tarballPath],
       }),
       /buildProfile mismatch/,
+    );
+  } finally {
+    await fixture.cleanup();
+  }
+});
+
+test("validatePackProfileTarballs rejects packaged workspace pipeline mismatch", async () => {
+  const fixture = await createFixtureTarball({
+    mutate: async ({ fixtureRoot }) => {
+      await writeFixtureFile(
+        fixtureRoot,
+        "dist/index.js",
+        "export const createWorkspaceServer = async () => ({ app: { close: async () => undefined, inject: async () => { const body = JSON.stringify({ availablePipelines: [{ id: 'rocket' }] }); return { statusCode: 200, body, headers: {}, json: () => JSON.parse(body) }; } } });\n",
+      );
+    },
+  });
+  try {
+    await assert.rejects(
+      validatePackProfileTarballs({
+        profileId: "default",
+        tarballPaths: [fixture.tarballPath],
+      }),
+      /Command failed/,
     );
   } finally {
     await fixture.cleanup();

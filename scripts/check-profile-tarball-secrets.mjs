@@ -201,7 +201,6 @@ const scanProfile = async (profile) => {
   try {
     await run("node", [
       "scripts/build-profile.mjs",
-      "--skip-build",
       "--profile",
       profile.id,
       "--pack-destination",

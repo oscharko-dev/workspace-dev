@@ -147,7 +147,6 @@ const main = async () => {
   try {
     await run("node", [
       "scripts/build-profile.mjs",
-      "--skip-build",
       "--profile",
       "default-rocket",
       "--verify",
