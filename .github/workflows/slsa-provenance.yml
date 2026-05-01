@@ -1,0 +1,83 @@
+name: workspace-dev SLSA L3 provenance
+
+# Generates SLSA Build Level 3 provenance for the published release tarballs
+# via the slsa-github-generator reusable workflow. The reusable workflow runs
+# in an isolated builder runner that meets SLSA L3 requirements (verifiable
+# build environment + signed provenance metadata).
+#
+# Note: this workflow complements but does not replace the npm `--provenance`
+# flag (SLSA L2 baseline) and the `actions/attest-*` Sigstore attestations
+# emitted by the changesets-release workflow. Together they give regulated
+# customers (DORA, EU banking) trustless verification of artifacts via
+# Fulcio + Rekor (no key management required on the consumer side).
+#
+# Cosign keyless signing is intentionally omitted: the actions/attest-*
+# actions and this SLSA generator both produce Sigstore-verifiable
+# attestations through the same Fulcio/Rekor transparency log path, so a
+# separate `cosign sign-blob` step would be redundant.
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    name: Compute artifact hashes for SLSA subjects
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      hashes: ${{ steps.hash.outputs.hashes }}
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
+        with:
+          persist-credentials: false
+
+      - name: Download release tarballs
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts/release
+          gh release download "${RELEASE_TAG}" \
+            --repo "${GITHUB_REPOSITORY}" \
+            --pattern '*.tgz' \
+            --dir artifacts/release
+          echo "Downloaded release tarballs:"
+          ls -1 artifacts/release
+
+      - name: Compute base64-encoded SHA256 subjects
+        id: hash
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd artifacts/release
+          # The SLSA generator expects the base64-encoded body of an
+          # `sha256sum` listing as its subjects payload.
+          HASHES="$(sha256sum *.tgz | base64 -w0)"
+          echo "hashes=${HASHES}" >> "$GITHUB_OUTPUT"
+
+  provenance:
+    name: Generate SLSA L3 provenance
+    needs: [prepare]
+    permissions:
+      actions: read
+      id-token: write
+      contents: write
+    # The SLSA generator reusable workflow MUST be pinned to a release tag
+    # (not a commit SHA) per its security model: the generator validates its
+    # own ref at runtime to anchor the provenance to a vetted release.
+    uses: slsa-framework/slsa-github-generator/.github/workflows/generator_generic_slsa3.yml@v2.1.0
+    with:
+      base64-subjects: ${{ needs.prepare.outputs.hashes }}
+      upload-assets: true
+      provenance-name: workspace-dev-${{ github.event.release.tag_name }}.intoto.jsonl
