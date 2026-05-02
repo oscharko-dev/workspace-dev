@@ -361,6 +361,116 @@ const isLoopbackHostname = (hostname: string): boolean => {
   );
 };
 
+/**
+ * Issue #1683 (audit-2026-05 Wave 1): block obviously unsafe hostnames on the
+ * HTTPS validation path so a misconfigured `figmaMcpServerUrl` cannot pivot
+ * the runtime against internal services with the configured Figma access
+ * token attached.
+ *
+ * Coverage:
+ *   - loopback (already covered by `isLoopbackHostname`).
+ *   - RFC1918 private IPv4: 10/8, 172.16/12, 192.168/16.
+ *   - 169.254/16 (link-local + AWS/GCP IMDS).
+ *   - 0.0.0.0/8 ("this network").
+ *   - 100.64/10 (CGNAT).
+ *   - IPv6 ULA fc00::/7, link-local fe80::/10, IPv4-mapped private ranges.
+ *
+ * Public DNS hostnames are *not* resolved here (no DNS lookup at validation
+ * time, by design — that would be a side-effect on the validation path).
+ * The check is therefore conservative: it blocks operator-supplied IP
+ * literals and hostnames already in literal numeric form.
+ */
+const isRfc1918Ipv4 = (octets: readonly number[]): boolean => {
+  const [a, b] = octets;
+  if (a === undefined || b === undefined) {
+    return false;
+  }
+  if (a === 10) return true;
+  if (a === 172 && b >= 16 && b <= 31) return true;
+  if (a === 192 && b === 168) return true;
+  return false;
+};
+
+const isLinkLocalOrImdsIpv4 = (octets: readonly number[]): boolean => {
+  const [a, b] = octets;
+  return a === 169 && b === 254;
+};
+
+const isThisNetworkIpv4 = (octets: readonly number[]): boolean => {
+  return octets[0] === 0;
+};
+
+const isCgnatIpv4 = (octets: readonly number[]): boolean => {
+  const [a, b] = octets;
+  if (a === undefined || b === undefined) {
+    return false;
+  }
+  return a === 100 && b >= 64 && b <= 127;
+};
+
+const isUniqueLocalIpv6 = (hextets: readonly number[]): boolean => {
+  const first = hextets[0];
+  return first !== undefined && (first & 0xfe00) === 0xfc00;
+};
+
+const isLinkLocalIpv6 = (hextets: readonly number[]): boolean => {
+  const first = hextets[0];
+  return first !== undefined && (first & 0xffc0) === 0xfe80;
+};
+
+const isIpv4MappedPrivateIpv6 = (hextets: readonly number[]): boolean => {
+  const [h0, h1, h2, h3, h4, h5, h6, h7] = hextets;
+  if (
+    h0 !== 0 ||
+    h1 !== 0 ||
+    h2 !== 0 ||
+    h3 !== 0 ||
+    h4 !== 0 ||
+    h5 !== 0xffff ||
+    h6 === undefined ||
+    h7 === undefined
+  ) {
+    return false;
+  }
+  const a = h6 >> 8;
+  const b = h6 & 0xff;
+  const c = h7 >> 8;
+  const d = h7 & 0xff;
+  const octets = [a, b, c, d] as const;
+  return (
+    isRfc1918Ipv4(octets) ||
+    isLinkLocalOrImdsIpv4(octets) ||
+    isThisNetworkIpv4(octets) ||
+    isCgnatIpv4(octets) ||
+    a === 127
+  );
+};
+
+const isBlockedHostname = (hostname: string): boolean => {
+  const normalized = normalizeHostname(hostname);
+  if (isLoopbackHostname(normalized)) {
+    return true;
+  }
+  const ipv4Octets = parseIpv4Address(normalized);
+  if (ipv4Octets !== null) {
+    return (
+      isRfc1918Ipv4(ipv4Octets) ||
+      isLinkLocalOrImdsIpv4(ipv4Octets) ||
+      isThisNetworkIpv4(ipv4Octets) ||
+      isCgnatIpv4(ipv4Octets)
+    );
+  }
+  const ipv6Hextets = parseIpv6Address(normalized);
+  if (ipv6Hextets !== null) {
+    return (
+      isUniqueLocalIpv6(ipv6Hextets) ||
+      isLinkLocalIpv6(ipv6Hextets) ||
+      isIpv4MappedPrivateIpv6(ipv6Hextets)
+    );
+  }
+  return false;
+};
+
 const getMcpServerLogTarget = (parsedUrl: URL): string => parsedUrl.origin;
 
 const validateMcpServerUrl = ({
@@ -394,13 +504,22 @@ const validateMcpServerUrl = ({
     });
   }
 
-  if (parsedUrl.protocol === "https:") {
-    return parsedUrl;
-  }
-
   const insecureLoopbackAllowed = isTruthyEnvValue(
     process.env[ALLOW_INSECURE_MCP_ENV],
   );
+
+  if (parsedUrl.protocol === "https:") {
+    if (isBlockedHostname(parsedUrl.hostname) && !insecureLoopbackAllowed) {
+      throw createPipelineError({
+        code: "E_MCP_NO_SERVER",
+        stage: STAGE,
+        message: `MCP server host is in a blocked range (loopback/RFC1918/IMDS/link-local/ULA/CGNAT). Set ${ALLOW_INSECURE_MCP_ENV}=true only when the deployment intentionally points at an internal endpoint.`,
+        ...limits,
+      });
+    }
+    return parsedUrl;
+  }
+
   if (
     parsedUrl.protocol === "http:" &&
     isLoopbackHostname(parsedUrl.hostname) &&

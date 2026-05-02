@@ -77,7 +77,10 @@ const fetchWithRetry = async ({
   let lastError: unknown;
   for (let attempt = 0; attempt <= maxRetries; attempt += 1) {
     try {
-      const response = await fetchImpl(url, { headers });
+      // Issue #1681 (audit-2026-05 Wave 1): never follow redirects on Figma
+      // CDN fetches. A redirect to an attacker host would be invisible to the
+      // allowlist check above and could exfiltrate any forwarded headers.
+      const response = await fetchImpl(url, { headers, redirect: "error" });
       if (response.ok) {
         return response;
       }
@@ -241,6 +244,51 @@ const fetchRenderableImageUrl = async ({
   return imageUrl;
 };
 
+/**
+ * Issue #1681 (audit-2026-05 Wave 1): Figma image-CDN allowlist for the
+ * screenshot pipeline. Even though the URL originates from a Figma REST
+ * `images` map response (which is trusted), a redirect or compromised CDN
+ * could otherwise pivot the runtime toward an arbitrary host. The allowlist
+ * is hostname-suffix based to tolerate Figma's S3 bucket subdomains while
+ * rejecting everything else.
+ */
+const ALLOWED_FIGMA_CDN_HOSTS: readonly string[] = [
+  "figma.com",
+  ".figma.com",
+  "figma-alpha-api.s3.us-west-2.amazonaws.com",
+  "figma-alpha-api.s3.amazonaws.com",
+];
+
+const isAllowedFigmaCdnHost = (hostname: string): boolean => {
+  const host = hostname.toLowerCase();
+  return ALLOWED_FIGMA_CDN_HOSTS.some((entry) => {
+    if (entry.startsWith(".")) {
+      return host.endsWith(entry);
+    }
+    return host === entry;
+  });
+};
+
+const assertScreenshotUrlIsSafe = (imageUrl: string): URL => {
+  let parsed: URL;
+  try {
+    parsed = new URL(imageUrl);
+  } catch {
+    throw new Error("Figma screenshot URL is not a valid URL.");
+  }
+  if (parsed.protocol !== "https:" && parsed.protocol !== "http:") {
+    throw new Error(
+      `Figma screenshot URL has unsupported scheme: ${parsed.protocol}`,
+    );
+  }
+  if (!isAllowedFigmaCdnHost(parsed.hostname)) {
+    throw new Error(
+      `Figma screenshot URL host "${parsed.hostname}" is not in the Figma CDN allowlist.`,
+    );
+  }
+  return parsed;
+};
+
 const fetchPngBuffer = async ({
   imageUrl,
   fetchImpl,
@@ -252,6 +300,7 @@ const fetchPngBuffer = async ({
   maxRetries: number;
   onLog?: (message: string) => void;
 }): Promise<Buffer> => {
+  assertScreenshotUrlIsSafe(imageUrl);
   const response = await fetchWithRetry({
     url: imageUrl,
     headers: {},

@@ -467,10 +467,12 @@ test("compiler: response schema name is stable", async () => {
     visualBinding: sampleVisualBinding,
     policyBundleVersion: "policy-2026-04-25",
   });
+  const majorVersion = GENERATED_TEST_CASE_SCHEMA_VERSION.split(".")[0];
   assert.equal(
     request.responseSchemaName,
-    `workspace-dev.test-intelligence.generated-test-case-list.v${GENERATED_TEST_CASE_SCHEMA_VERSION}`,
+    `workspace-dev-generated-test-case-list-v${majorVersion}`,
   );
+  assert.match(request.responseSchemaName ?? "", /^[a-zA-Z0-9_-]{1,64}$/);
 });
 
 test("compiler: request schema matches generated test case JSON schema", async () => {

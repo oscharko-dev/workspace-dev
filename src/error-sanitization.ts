@@ -9,6 +9,26 @@ import { redactHighRiskSecrets } from "./secret-redaction.js";
 const EMAIL_PATTERN = /\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi;
 const PAN_PATTERN = /\b\d{13,19}\b/g;
 
+/**
+ * Filesystem-path scrubbers (Issue #1680, audit-2026-05 Wave 1).
+ *
+ * Goal: prevent OS username, home-directory layout, deployment install path,
+ * and node_modules layout from leaking through `Error.stack` strings the
+ * `redactErrorChain` walker emits to gateway responses and evidence
+ * diagnostics. Patterns are intentionally conservative — they match an
+ * absolute home-directory prefix (POSIX or Windows) plus the immediate
+ * username segment, then stop on the next path separator. The caller-supplied
+ * remainder of the path is preserved so stack traces remain readable.
+ *
+ * `MAC_HOME_PATTERN` is split out from generic POSIX so `/Users/<name>` (Mac)
+ * and `/home/<name>` (Linux) both normalise to a uniform `/[redacted-home]`
+ * marker.
+ */
+const POSIX_HOME_PATTERN = /\/(?:Users|home|root)\/[^/\s)"']+/g;
+const WIN_HOME_PATTERN =
+  /[A-Za-z]:\\(?:Users|Documents and Settings)\\[^\\\s)"']+/g;
+const ABS_NODE_MODULES_PATTERN = /(?:\/|\\)node_modules(?:\/|\\)[^\s)"']+/g;
+
 const MAX_MESSAGE_LENGTH = 240;
 const DEFAULT_CAUSE_DEPTH_MAX = 8;
 
@@ -89,6 +109,9 @@ function redact(input: string): string {
   return redactHighRiskSecrets(
     input
       .replace(EMAIL_PATTERN, "[redacted-email]")
+      .replace(POSIX_HOME_PATTERN, "/[redacted-home]")
+      .replace(WIN_HOME_PATTERN, "[redacted-home]")
+      .replace(ABS_NODE_MODULES_PATTERN, "/node_modules/[redacted]")
       .replace(PAN_PATTERN, (candidate) =>
         passesLuhnChecksum(candidate) && isPanLikeCandidate(candidate)
           ? "[redacted-pan]"

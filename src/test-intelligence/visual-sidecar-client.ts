@@ -70,7 +70,7 @@ import { validateVisualSidecar } from "./visual-sidecar-validation.js";
 
 /** Stable schema name for the visual sidecar response envelope. */
 export const VISUAL_SIDECAR_RESPONSE_SCHEMA_NAME =
-  "workspace-dev.test-intelligence.visual-sidecar.v1" as const;
+  "workspace-dev-visual-sidecar-v1" as const;
 
 /**
  * System prompt handed to every multimodal sidecar deployment. The prompt

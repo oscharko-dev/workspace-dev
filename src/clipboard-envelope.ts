@@ -1,6 +1,4 @@
-import {
-  DEFAULT_FIGMA_PASTE_MAX_NODE_COUNT,
-} from "./figma-payload-validation.js";
+import { DEFAULT_FIGMA_PASTE_MAX_NODE_COUNT } from "./figma-payload-validation.js";
 
 /**
  * Clipboard envelope for Figma plugin → Inspector handoff.
@@ -69,12 +67,82 @@ export type EnvelopeValidationResult =
 
 export type EnvelopeComplexityValidationResult =
   | { ok: true; selectionCount: number; rootCount: number; nodeCount: number }
-  | { ok: false; message: string; selectionCount: number; rootCount: number; nodeCount: number };
+  | {
+      ok: false;
+      message: string;
+      selectionCount: number;
+      rootCount: number;
+      nodeCount: number;
+    };
 
 export const DEFAULT_FIGMA_PASTE_MAX_SELECTION_COUNT = 40;
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
+
+/**
+ * Keys that, if used as own-property names on plain objects merged into the
+ * pipeline, can pollute `Object.prototype` via downstream `Object.assign`,
+ * recursive mergers, or `JSON.parse(JSON.stringify(x))` round-trips.
+ *
+ * Stripped at the validation boundary so the rest of the pipeline never sees
+ * them. Defence-in-depth — the existing `key in target` collision guard in
+ * `normalizeEnvelopeToFigmaFile` already blocks direct writes, but keeping
+ * these keys in the in-memory structure leaves a structural foothold for any
+ * future refactor (e.g. switching to `hasOwnProperty.call`) to silently
+ * re-introduce CWE-1321.
+ */
+const FORBIDDEN_PROTOTYPE_KEYS: ReadonlySet<string> = new Set([
+  "__proto__",
+  "constructor",
+  "prototype",
+]);
+
+/**
+ * Recursively rebuild `value` with `__proto__`/`constructor`/`prototype` keys
+ * removed from every plain-object node. Arrays are traversed but kept as
+ * arrays. Non-objects are returned as-is. Cycles are broken via the visited
+ * set; re-encountered nodes are dropped (clipboard envelopes are tree-shaped
+ * by contract — a cycle is itself a malformed input).
+ */
+const stripDangerousKeysDeep = (
+  value: unknown,
+  visited: WeakSet<object>,
+): unknown => {
+  if (Array.isArray(value)) {
+    if (visited.has(value)) {
+      return [];
+    }
+    visited.add(value);
+    return value.map((item) => stripDangerousKeysDeep(item, visited));
+  }
+  if (value !== null && typeof value === "object") {
+    if (visited.has(value)) {
+      return null;
+    }
+    visited.add(value);
+    const out: Record<string, unknown> = {};
+    for (const [key, child] of Object.entries(
+      value as Record<string, unknown>,
+    )) {
+      if (FORBIDDEN_PROTOTYPE_KEYS.has(key)) {
+        continue;
+      }
+      out[key] = stripDangerousKeysDeep(child, visited);
+    }
+    return out;
+  }
+  return value;
+};
+
+/**
+ * Strip prototype-pollution keys from a single record (one level deep is the
+ * mutation; the value-recursion happens via `stripDangerousKeysDeep`).
+ */
+const sanitizeRecord = (
+  record: Record<string, unknown>,
+): Record<string, unknown> =>
+  stripDangerousKeysDeep(record, new WeakSet()) as Record<string, unknown>;
 
 const countSelectionNodes = ({
   root,
@@ -89,7 +157,11 @@ const countSelectionNodes = ({
 
   while (stack.length > 0) {
     const current = stack.pop();
-    if (current === undefined || typeof current !== "object" || current === null) {
+    if (
+      current === undefined ||
+      typeof current !== "object" ||
+      current === null
+    ) {
       continue;
     }
     if (visited.has(current)) {
@@ -255,7 +327,28 @@ export function validateClipboardEnvelope(
     return { valid: false, issues };
   }
 
-  return { valid: true, envelope: input as unknown as ClipboardEnvelope };
+  // Defence-in-depth: strip prototype-pollution keys from every plain-object
+  // subtree the pipeline will see. CWE-1321. Done after structural validation
+  // so the strip cannot mask a missing-required-key violation.
+  const sanitizedSelections = (input.selections as unknown[]).map((sel) => {
+    const record = sel as Record<string, unknown>;
+    return {
+      ...record,
+      document: stripDangerousKeysDeep(record.document, new WeakSet()),
+      components: sanitizeRecord(record.components as Record<string, unknown>),
+      componentSets: sanitizeRecord(
+        record.componentSets as Record<string, unknown>,
+      ),
+      styles: sanitizeRecord(record.styles as Record<string, unknown>),
+    };
+  });
+
+  const sanitizedEnvelope = {
+    ...(input as Record<string, unknown>),
+    selections: sanitizedSelections,
+  } as unknown as ClipboardEnvelope;
+
+  return { valid: true, envelope: sanitizedEnvelope };
 }
 
 // ---------------------------------------------------------------------------

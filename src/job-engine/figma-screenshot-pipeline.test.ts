@@ -57,7 +57,10 @@ const nodePayload = ({
 const imageLookupPayload = (nodeId: string): unknown => {
   return {
     images: {
-      [nodeId]: `https://cdn.example.test/${encodeURIComponent(nodeId)}.png`,
+      // Mirror the real Figma CDN host shape so the SSRF allowlist (Issue
+      // #1681) accepts the URL. The real Figma `images` endpoint returns
+      // signed URLs at `figma-alpha-api.s3.us-west-2.amazonaws.com`.
+      [nodeId]: `https://figma-alpha-api.s3.us-west-2.amazonaws.com/${encodeURIComponent(nodeId)}.png`,
     },
   };
 };
@@ -105,7 +108,7 @@ describe("figma-screenshot-pipeline", () => {
       );
       strictEqual(
         requestedUrls.filter((url) =>
-          url.startsWith("https://cdn.example.test/"),
+          url.startsWith("https://figma-alpha-api.s3.us-west-2.amazonaws.com/"),
         ).length,
         2,
       );
@@ -449,7 +452,6 @@ describe("figma-screenshot-pipeline", () => {
 
       ok(maxConcurrentNodeRequests > 1);
     });
-
   });
 
   describe("persistFigmaScreenshotReferences", () => {
