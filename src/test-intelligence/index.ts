@@ -649,3 +649,33 @@ export {
   writeSourceMixPlan,
   type SourceMixPlan,
 } from "./source-mix-planner.js";
+export {
+  fetchFigmaFileForTestIntelligence,
+  FigmaRestFetchError,
+  parseFigmaUrl,
+  type FetchFigmaFileForTestIntelligenceInput,
+  type FigmaRestFetchErrorClass,
+  type FigmaRestFileSnapshot,
+  type FigmaRestNode,
+} from "./figma-rest-adapter.js";
+export {
+  normalizeFigmaFileToIntentInput,
+  type NormalizeFigmaInput,
+} from "./figma-payload-normalizer.js";
+export {
+  renderCustomerMarkdown,
+  type RenderCustomerMarkdownInput,
+  type RenderedCustomerMarkdown,
+} from "./customer-markdown-renderer.js";
+export {
+  PRODUCTION_RUNNER_FAILURE_CLASSES,
+  PRODUCTION_RUNNER_TEST_GENERATION_DEPLOYMENT,
+  ProductionRunnerError,
+  runFigmaToQcTestCases,
+  type ProductionRunnerFailureClass,
+  type ProductionRunnerLlmConfig,
+  type ProductionRunnerLlmDraftCase,
+  type ProductionRunnerSource,
+  type RunFigmaToQcTestCasesInput,
+  type RunFigmaToQcTestCasesResult,
+} from "./production-runner.js";

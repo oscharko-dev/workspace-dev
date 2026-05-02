@@ -140,6 +140,15 @@ import {
 import { parseEvidenceVerifyRoute } from "../test-intelligence/evidence-verify-route.js";
 import { verifyJobEvidence } from "../test-intelligence/evidence-verify.js";
 import {
+  ProductionRunnerError,
+  type ProductionRunnerSource,
+  type RunFigmaToQcTestCasesResult,
+} from "../test-intelligence/production-runner.js";
+import type {
+  FigmaRestFileSnapshot,
+  FigmaRestNode,
+} from "../test-intelligence/figma-rest-adapter.js";
+import {
   createFileSystemReviewStore,
   type ReviewStore,
 } from "../test-intelligence/review-store.js";
@@ -415,6 +424,226 @@ function resolveRawSubmitJobType(input: unknown): WorkspaceJobType | undefined {
   return normalized === TEST_INTELLIGENCE_JOB_TYPE
     ? TEST_INTELLIGENCE_JOB_TYPE
     : undefined;
+}
+
+type ProductionRunnerSourceResolution =
+  | { ok: true; value: ProductionRunnerSource }
+  | {
+      ok: false;
+      statusCode: number;
+      payload: { error: string; message: string };
+    };
+
+/**
+ * Translate the schema-validated submit payload into a `ProductionRunnerSource`.
+ *
+ * The submit pipeline upstream collapses `figma_url` into the `hybrid` mode
+ * (file key + access token, optionally a node id), so the cases we accept
+ * here are:
+ *   - `hybrid`         → `kind: "figma_url"` (URL synthesised from file key
+ *                        + optional node id; access token forwarded).
+ *   - `figma_paste` /
+ *     `figma_plugin`   → `kind: "figma_paste_normalized"` after parsing the
+ *                        clipboard payload as a Figma file.
+ *
+ * `rest` and `local_json` are not supported on the test-intelligence path
+ * today; they fail closed with a 400 so the caller sees a clear contract.
+ */
+function buildProductionRunnerSource(
+  data: SubmissionJobInput,
+): ProductionRunnerSourceResolution {
+  const figmaSourceMode = data.figmaSourceMode;
+  if (figmaSourceMode === "hybrid") {
+    const figmaFileKey = data.figmaFileKey;
+    const figmaAccessToken = data.figmaAccessToken;
+    if (
+      typeof figmaFileKey !== "string" ||
+      figmaFileKey.length === 0 ||
+      typeof figmaAccessToken !== "string" ||
+      figmaAccessToken.length === 0
+    ) {
+      return {
+        ok: false,
+        statusCode: 400,
+        payload: {
+          error: "INVALID_PAYLOAD",
+          message:
+            "figma_url submissions require figmaFileKey and an accessible FIGMA_ACCESS_TOKEN.",
+        },
+      };
+    }
+    const figmaNodeId = data.figmaNodeId;
+    const params = new URLSearchParams();
+    if (typeof figmaNodeId === "string" && figmaNodeId.length > 0) {
+      params.set("node-id", figmaNodeId.replace(/:/gu, "-"));
+    }
+    const query = params.toString();
+    const figmaUrl = `https://www.figma.com/design/${encodeURIComponent(figmaFileKey)}${query.length > 0 ? `?${query}` : ""}`;
+    return {
+      ok: true,
+      value: {
+        kind: "figma_url",
+        figmaUrl,
+        accessToken: figmaAccessToken,
+      },
+    };
+  }
+  if (figmaSourceMode === "figma_paste" || figmaSourceMode === "figma_plugin") {
+    const payload = data.figmaJsonPayload;
+    if (typeof payload !== "string" || payload.length === 0) {
+      return {
+        ok: false,
+        statusCode: 400,
+        payload: {
+          error: "INVALID_PAYLOAD",
+          message:
+            "figmaJsonPayload is required when figmaSourceMode=figma_paste or figma_plugin.",
+        },
+      };
+    }
+    let parsedPayload: unknown;
+    try {
+      parsedPayload = JSON.parse(payload);
+    } catch {
+      return {
+        ok: false,
+        statusCode: 400,
+        payload: {
+          error: "SCHEMA_MISMATCH",
+          message:
+            "figmaJsonPayload must be valid JSON when figmaSourceMode=figma_paste or figma_plugin.",
+        },
+      };
+    }
+    if (
+      typeof parsedPayload !== "object" ||
+      parsedPayload === null ||
+      Array.isArray(parsedPayload)
+    ) {
+      return {
+        ok: false,
+        statusCode: 400,
+        payload: {
+          error: "SCHEMA_MISMATCH",
+          message:
+            "figmaJsonPayload must decode to a Figma file object with a document field.",
+        },
+      };
+    }
+    const record = parsedPayload as Record<string, unknown>;
+    const documentField = record.document;
+    if (
+      typeof documentField !== "object" ||
+      documentField === null ||
+      Array.isArray(documentField)
+    ) {
+      return {
+        ok: false,
+        statusCode: 400,
+        payload: {
+          error: "SCHEMA_MISMATCH",
+          message: "figmaJsonPayload must include a top-level document object.",
+        },
+      };
+    }
+    const documentRecord = documentField as Record<string, unknown>;
+    const documentId =
+      typeof documentRecord.id === "string" && documentRecord.id.length > 0
+        ? documentRecord.id
+        : "0:0";
+    const documentType =
+      typeof documentRecord.type === "string" && documentRecord.type.length > 0
+        ? documentRecord.type
+        : "DOCUMENT";
+    const safeDocument: FigmaRestNode = {
+      ...documentRecord,
+      id: documentId,
+      type: documentType,
+    } as unknown as FigmaRestNode;
+    const fileKeyField = record.fileKey;
+    const fileKey =
+      typeof fileKeyField === "string" && fileKeyField.length > 0
+        ? fileKeyField
+        : `paste-${createHash("sha256").update(payload).digest("hex").slice(0, 12)}`;
+    const nameField = record.name;
+    const fileName =
+      typeof nameField === "string" && nameField.length > 0
+        ? nameField
+        : "Pasted Figma File";
+    const lastModifiedField = record.lastModified;
+    const file: FigmaRestFileSnapshot = {
+      fileKey,
+      name: fileName,
+      document: safeDocument,
+      ...(typeof lastModifiedField === "string" && lastModifiedField.length > 0
+        ? { lastModified: lastModifiedField }
+        : {}),
+    };
+    return {
+      ok: true,
+      value: { kind: "figma_paste_normalized", file },
+    };
+  }
+  return {
+    ok: false,
+    statusCode: 400,
+    payload: {
+      error: "UNSUPPORTED_FIGMA_SOURCE_MODE",
+      message: `figmaSourceMode=${String(figmaSourceMode)} is not supported by the test-intelligence production runner; use figma_url, figma_paste, or figma_plugin.`,
+    },
+  };
+}
+
+/**
+ * Map a {@link ProductionRunnerError} to a wire-shaped error envelope. Every
+ * failure class is enumerated explicitly so a future addition forces a
+ * compile-time decision rather than silently falling through to a 500.
+ */
+function mapProductionRunnerError(error: unknown): {
+  statusCode: number;
+  payload: { error: string; message: string };
+} {
+  if (error instanceof ProductionRunnerError) {
+    const sanitizedMessage = sanitizeErrorMessage({
+      error,
+      fallback: "Test intelligence production runner failed.",
+    });
+    switch (error.failureClass) {
+      case "EMPTY_FIGMA_INPUT":
+      case "FIGMA_URL_REJECTED":
+        return {
+          statusCode: 400,
+          payload: { error: error.failureClass, message: sanitizedMessage },
+        };
+      case "LLM_REFUSAL":
+        return {
+          statusCode: 422,
+          payload: { error: error.failureClass, message: sanitizedMessage },
+        };
+      case "FIGMA_FETCH_FAILED":
+        return {
+          statusCode: 502,
+          payload: { error: error.failureClass, message: sanitizedMessage },
+        };
+      case "LLM_GATEWAY_FAILED":
+      case "LLM_RESPONSE_INVALID":
+      case "PERSIST_FAILED":
+        return {
+          statusCode: 500,
+          payload: { error: error.failureClass, message: sanitizedMessage },
+        };
+    }
+  }
+  return {
+    statusCode: 500,
+    payload: {
+      error: "INTERNAL_ERROR",
+      message: sanitizeErrorMessage({
+        error,
+        fallback: "Test intelligence production runner failed.",
+      }),
+    },
+  };
 }
 
 function resolveBlockedModeViolation(input: unknown): {
@@ -1010,6 +1239,28 @@ function resolveProtectedWriteRoute(
   return null;
 }
 
+/**
+ * Factory invoked once per `figma_to_qc_test_cases` submission to obtain a
+ * concrete production-runner invocation. Returning `undefined` signals the
+ * factory has not been wired (handler responds with 503
+ * `LLM_GATEWAY_UNCONFIGURED`). Returning a callable lets the handler call
+ * it with the already-normalised input.
+ *
+ * The factory is responsible for building (or reusing) the LLM gateway
+ * client. Tests inject a mock-LLM-backed runner directly so the wire-format
+ * 200 path is exercised without live network calls.
+ */
+export type TestIntelligenceProductionRunnerFactory = (
+  input: TestIntelligenceProductionRunnerFactoryInput,
+) => Promise<RunFigmaToQcTestCasesResult> | RunFigmaToQcTestCasesResult;
+
+export interface TestIntelligenceProductionRunnerFactoryInput {
+  jobId: string;
+  generatedAt: string;
+  source: ProductionRunnerSource;
+  outputRoot: string;
+}
+
 interface CreateWorkspaceRequestHandlerInput {
   host: string;
   getResolvedPort: () => number;
@@ -1082,6 +1333,17 @@ interface CreateWorkspaceRequestHandlerInput {
      * only reads.
      */
     testIntelligenceArtifactRoot?: string;
+    /**
+     * Production-runner factory for `figma_to_qc_test_cases` (#1733).
+     * When configured, `POST /workspace/submit` with that job type calls
+     * the supplied factory to obtain a runner + LLM client and executes
+     * the full Figma → IR → LLM → validation → persist pipeline inline.
+     * When omitted, the route fails closed with `503 LLM_GATEWAY_UNCONFIGURED`
+     * so production deployments must opt in by injecting an Azure-bound
+     * client at startup. Tests inject a mock-LLM-backed runner so the
+     * 200 path is exercised without live network calls.
+     */
+    testIntelligenceProductionRunner?: TestIntelligenceProductionRunnerFactory;
     logger?: WorkspaceRuntimeLogger;
   };
   getServerLifecycleState?: () => "starting" | "ready" | "draining" | "stopped";
@@ -6125,13 +6387,76 @@ export function createWorkspaceRequestHandler({
             return;
           }
 
-          sendRequestFailure({
-            statusCode: 501,
+          const productionRunner = runtime.testIntelligenceProductionRunner;
+          if (productionRunner === undefined) {
+            sendRequestFailure({
+              statusCode: 503,
+              payload: {
+                error: "LLM_GATEWAY_UNCONFIGURED",
+                message:
+                  "production runner not configured at startup; inject testIntelligenceProductionRunner",
+              },
+              fallbackMessage:
+                "Test intelligence production runner not configured.",
+            });
+            return;
+          }
+
+          const sourceResolution = buildProductionRunnerSource(parsed.data);
+          if (!sourceResolution.ok) {
+            sendValidationError({
+              statusCode: sourceResolution.statusCode,
+              payload: sourceResolution.payload,
+              fallbackMessage: "Submit request validation failed.",
+            });
+            return;
+          }
+
+          const tiJobId = `ti-${randomUUID()}`;
+          const tiGeneratedAt = new Date().toISOString();
+          let runnerResult: RunFigmaToQcTestCasesResult;
+          try {
+            runnerResult = await productionRunner({
+              jobId: tiJobId,
+              generatedAt: tiGeneratedAt,
+              source: sourceResolution.value,
+              outputRoot: testIntelligenceArtifactRoot,
+            });
+          } catch (error) {
+            const mapped = mapProductionRunnerError(error);
+            sendRequestFailure({
+              statusCode: mapped.statusCode,
+              payload: mapped.payload,
+              jobId: tiJobId,
+              fallbackMessage: "Test intelligence production runner failed.",
+            });
+            return;
+          }
+
+          logAuditEvent({
+            event: "workspace.submit.accepted",
+            statusCode: 200,
+            jobId: runnerResult.jobId,
+            message: `Test intelligence run '${runnerResult.jobId}' completed: cases=${String(runnerResult.generatedTestCases.testCases.length)} blocked=${String(runnerResult.blocked)}`,
+          });
+          sendJson({
+            response,
+            statusCode: 200,
             payload: {
-              error: "NOT_IMPLEMENTED",
-              message: `${TEST_INTELLIGENCE_JOB_TYPE} requires an isolated local test-intelligence runner and cannot use the existing Figma-to-code pipeline.`,
+              jobId: runnerResult.jobId,
+              summary: {
+                generatedAt: runnerResult.generatedAt,
+                fileKey: runnerResult.fileKey,
+                testCaseCount: runnerResult.generatedTestCases.testCases.length,
+                blocked: runnerResult.blocked,
+                artifactDir: runnerResult.artifactDir,
+                customerMarkdown: {
+                  combined: runnerResult.customerMarkdownPaths.combined,
+                  perCaseCount:
+                    runnerResult.customerMarkdownPaths.perCase.length,
+                },
+              },
             },
-            fallbackMessage: "Test intelligence job execution unavailable.",
           });
           return;
         }

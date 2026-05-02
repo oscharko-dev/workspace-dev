@@ -29,11 +29,13 @@ import {
   ALLOWED_LLM_GATEWAY_COMPATIBILITY_MODES,
   ALLOWED_LLM_GATEWAY_ERROR_CLASSES,
   ALLOWED_LLM_GATEWAY_ROLES,
+  ALLOWED_LLM_GATEWAY_WIRE_STRUCTURED_OUTPUT_MODES,
   type LlmGatewayCapabilities,
   type LlmGatewayClientConfig,
   type LlmGatewayCompatibilityMode,
   type LlmGatewayErrorClass,
   type LlmGatewayRole,
+  type LlmGatewayWireStructuredOutputMode,
   type LlmGenerationFailure,
   type LlmGenerationRequest,
   type LlmGenerationResult,
@@ -537,15 +539,25 @@ const buildOpenAiChatUrl = (baseUrl: string): string => {
 interface OpenAiChatBody {
   model: string;
   messages: ReadonlyArray<{ role: string; content: unknown }>;
-  response_format?: {
-    type: "json_schema";
-    json_schema: { name: string; schema: Record<string, unknown> };
-  };
+  response_format?:
+    | {
+        type: "json_schema";
+        json_schema: { name: string; schema: Record<string, unknown> };
+      }
+    | { type: "json_object" };
   seed?: number;
   reasoning_effort?: "low" | "medium" | "high";
   max_completion_tokens?: number;
   stream?: boolean;
 }
+
+const DEFAULT_WIRE_STRUCTURED_OUTPUT_MODE: LlmGatewayWireStructuredOutputMode =
+  "json_schema";
+
+const resolveWireMode = (
+  config: LlmGatewayClientConfig,
+): LlmGatewayWireStructuredOutputMode =>
+  config.wireStructuredOutputMode ?? DEFAULT_WIRE_STRUCTURED_OUTPUT_MODE;
 
 const buildOpenAiChatBody = (
   config: LlmGatewayClientConfig,
@@ -585,13 +597,21 @@ const buildOpenAiChatBody = (
     responseSchema !== undefined &&
     responseSchemaName !== undefined
   ) {
-    body.response_format = {
-      type: "json_schema",
-      json_schema: {
-        name: responseSchemaName,
-        schema: responseSchema,
-      },
-    };
+    const wireMode = resolveWireMode(config);
+    if (wireMode === "json_schema") {
+      body.response_format = {
+        type: "json_schema",
+        json_schema: {
+          name: responseSchemaName,
+          schema: responseSchema,
+        },
+      };
+    } else if (wireMode === "json_object") {
+      body.response_format = { type: "json_object" };
+    }
+    // wireMode === "none": omit response_format entirely. The gateway still
+    // parses + schema-validates `content` in-process below, so the
+    // structured-output success contract is preserved.
   }
   if (config.declaredCapabilities.seedSupport && request.seed !== undefined) {
     body.seed = request.seed;
@@ -1287,6 +1307,16 @@ const validateConfig = (config: LlmGatewayClientConfig): void => {
   ) {
     throw new RangeError(
       "LlmGatewayClient: maxResponseBytes must be a positive integer",
+    );
+  }
+  if (
+    config.wireStructuredOutputMode !== undefined &&
+    !ALLOWED_LLM_GATEWAY_WIRE_STRUCTURED_OUTPUT_MODES.includes(
+      config.wireStructuredOutputMode,
+    )
+  ) {
+    throw new RangeError(
+      `LlmGatewayClient: invalid wireStructuredOutputMode "${config.wireStructuredOutputMode}"`,
     );
   }
 };

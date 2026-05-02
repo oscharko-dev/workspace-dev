@@ -1181,3 +1181,161 @@ test("seed, reasoning_effort, and max_output_tokens flags only forward when decl
   }
   assert.equal(observedBodies.length, 1);
 });
+
+// ---------------------------------------------------------------------------
+// wireStructuredOutputMode (Issue #1733 customer-demo follow-up):
+// gpt-oss-120b on Azure AI Foundry's openai/v1 path returned empty content for
+// every response_format value (probed 2026-05-02). The new field lets
+// operators downgrade the wire body to `json_object` or omit response_format
+// entirely while keeping the in-process JSON-parse + schema-validate
+// guarantees intact.
+// ---------------------------------------------------------------------------
+
+test("wireStructuredOutputMode: defaults to json_schema when omitted", async () => {
+  let observedBody: string | undefined;
+  const client = createLlmGatewayClient(baseConfig, {
+    fetchImpl: async (_u, init) => {
+      observedBody = init?.body as string | undefined;
+      return okJsonResponse(buildChoiceBody({ ack: "ok" }));
+    },
+    apiKeyProvider: () => "k",
+  });
+  const result = await client.generate(sampleRequest());
+  assert.equal(result.outcome, "success");
+  assert.match(observedBody ?? "", /"type":"json_schema"/);
+  assert.match(observedBody ?? "", /"name":"probe\.v1"/);
+});
+
+test('wireStructuredOutputMode: "json_object" emits weaker wire format but still validates schema in-process', async () => {
+  let observedBody: string | undefined;
+  const client = createLlmGatewayClient(
+    { ...baseConfig, wireStructuredOutputMode: "json_object" },
+    {
+      fetchImpl: async (_u, init) => {
+        observedBody = init?.body as string | undefined;
+        return okJsonResponse(buildChoiceBody({ ack: "ok" }));
+      },
+      apiKeyProvider: () => "k",
+    },
+  );
+  const result = await client.generate(sampleRequest());
+  assert.equal(result.outcome, "success");
+  assert.match(
+    observedBody ?? "",
+    /"response_format":\{"type":"json_object"\}/,
+  );
+  assert.equal((observedBody ?? "").includes("json_schema"), false);
+  if (result.outcome === "success") {
+    // In-process JSON parse + schema validation still apply.
+    assert.deepEqual(result.content, { ack: "ok" });
+  }
+});
+
+test('wireStructuredOutputMode: "json_object" still surfaces schema_invalid for content that violates the schema', async () => {
+  const client = createLlmGatewayClient(
+    { ...baseConfig, wireStructuredOutputMode: "json_object" },
+    {
+      // The schema requires { ack: string }; respond with a number to verify
+      // in-process validation continues to fire even with the weaker wire
+      // format.
+      fetchImpl: async () => okJsonResponse(buildChoiceBody({ ack: 1234 })),
+      apiKeyProvider: () => "k",
+    },
+  );
+  const result = await client.generate(sampleRequest());
+  assert.equal(result.outcome, "error");
+  if (result.outcome === "error") {
+    assert.equal(result.errorClass, "schema_invalid");
+    assert.match(result.message, /violates response schema/);
+  }
+});
+
+test('wireStructuredOutputMode: "none" omits response_format but still parses + schema-validates JSON content', async () => {
+  let observedBody: string | undefined;
+  const client = createLlmGatewayClient(
+    { ...baseConfig, wireStructuredOutputMode: "none" },
+    {
+      fetchImpl: async (_u, init) => {
+        observedBody = init?.body as string | undefined;
+        return okJsonResponse(buildChoiceBody({ ack: "ok" }));
+      },
+      apiKeyProvider: () => "k",
+    },
+  );
+  const result = await client.generate(sampleRequest());
+  assert.equal(result.outcome, "success");
+  assert.equal((observedBody ?? "").includes("response_format"), false);
+  if (result.outcome === "success") {
+    assert.deepEqual(result.content, { ack: "ok" });
+    // raw text MUST still be omitted from the success record (the contract
+    // strips it whenever the caller passed a schema, regardless of wire mode,
+    // so reasoning text smuggled in adjacent fields cannot leak via that
+    // path).
+    assert.equal(result.rawTextContent, undefined);
+  }
+});
+
+test('wireStructuredOutputMode: "none" surfaces schema_invalid when free-form content is not parseable JSON', async () => {
+  const client = createLlmGatewayClient(
+    { ...baseConfig, wireStructuredOutputMode: "none" },
+    {
+      // A model that, despite the prompt, returns prose rather than JSON.
+      fetchImpl: async () =>
+        okJsonResponse({
+          choices: [
+            {
+              finish_reason: "stop",
+              message: {
+                role: "assistant",
+                content: "Sorry, I cannot do that.",
+              },
+            },
+          ],
+          usage: { prompt_tokens: 10, completion_tokens: 5 },
+        }),
+      apiKeyProvider: () => "k",
+    },
+  );
+  const result = await client.generate(sampleRequest());
+  assert.equal(result.outcome, "error");
+  if (result.outcome === "error") {
+    assert.equal(result.errorClass, "schema_invalid");
+    assert.match(result.message, /not valid JSON/);
+  }
+});
+
+test("config validation: rejects invalid wireStructuredOutputMode value", () => {
+  assert.throws(
+    () =>
+      createLlmGatewayClient(
+        {
+          ...baseConfig,
+          // intentionally invalid sentinel — exercise the runtime guard.
+          wireStructuredOutputMode:
+            "raw_text" as unknown as LlmGatewayClientConfig["wireStructuredOutputMode"],
+        },
+        { apiKeyProvider: () => "k" },
+      ),
+    /invalid wireStructuredOutputMode/,
+  );
+});
+
+test('wireStructuredOutputMode: "none" plus structuredOutputs:false still omits response_format (no double-write)', async () => {
+  let observedBody: string | undefined;
+  const client = createLlmGatewayClient(
+    {
+      ...baseConfig,
+      declaredCapabilities: { ...baseCapabilities, structuredOutputs: false },
+      wireStructuredOutputMode: "none",
+    },
+    {
+      fetchImpl: async (_u, init) => {
+        observedBody = init?.body as string | undefined;
+        return okJsonResponse(buildChoiceBody({ ack: "ok" }));
+      },
+      apiKeyProvider: () => "k",
+    },
+  );
+  await client.generate(sampleRequest());
+  assert.equal((observedBody ?? "").includes("response_format"), false);
+});

@@ -31,6 +31,43 @@ All changes to the public contract surface of `workspace-dev` are documented her
 
 ---
 
+## [4.26.0] - 2026-05-02
+
+### Added (Issue #1733 customer-demo follow-up)
+
+`LlmGatewayClientConfig` gains an optional `wireStructuredOutputMode`
+field with three values surfaced via the new
+`ALLOWED_LLM_GATEWAY_WIRE_STRUCTURED_OUTPUT_MODES` runtime list and
+`LlmGatewayWireStructuredOutputMode` type:
+
+- `"json_schema"` (default) — preserves existing behaviour: emit
+  `response_format: { type: "json_schema", json_schema: {...} }` when
+  the client declares `structuredOutputs: true` and the request
+  carries a schema.
+- `"json_object"` — emit `response_format: { type: "json_object" }`.
+  Schema is still validated in-process.
+- `"none"` — omit `response_format` entirely. Schema is still
+  validated in-process from JSON parsed out of the free-form
+  `content` field.
+
+Driven by a 2026-05-02 customer-demo finding: Azure AI Foundry's
+`gpt-oss-120b` deployment on the `openai/v1` path returns empty
+`message.content` for ANY `response_format` value (probed with both
+`json_schema` and `json_object`; both yielded `content: ""` after
+~2 completion tokens). With no `response_format`, the same deployment
+produces clean parseable JSON when the prompt instructs it to. The
+new field gives operators a per-deployment escape hatch without
+weakening the in-process structured-output guarantee surfaced to
+callers.
+
+`LLM_GATEWAY_CONTRACT_VERSION` remains `1.0.0` because the persisted
+gateway evidence-artifact shape is unchanged; this is a client-surface
+addition tracked by the top-level `CONTRACT_VERSION`, per the
+precedent established in 4.7.0.
+
+The default value is `"json_schema"`, so all existing client
+configurations continue to behave exactly as before.
+
 ## [4.25.0] - 2026-05-02
 
 ### Added (Issue #1668, audit-2026-05)
