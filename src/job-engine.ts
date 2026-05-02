@@ -47,7 +47,6 @@ import {
 import {
   loadRehydratedJobs,
   writeTerminalJobSnapshot,
-  writeTerminalJobSnapshotSync,
 } from "./job-engine/job-snapshot.js";
 import {
   getContentType,
@@ -1101,18 +1100,6 @@ export const createJobEngine = ({
   }): Promise<void> => {
     job.queue = toTerminalQueueSnapshot({ jobId: job.jobId });
     await writeTerminalJobSnapshot({ job, diagnostics });
-    enforceJobRetention();
-  };
-
-  const persistTerminalSnapshotSync = ({
-    job,
-    diagnostics,
-  }: {
-    job: JobRecord;
-    diagnostics?: WorkspaceJobDiagnostic[] | undefined;
-  }): void => {
-    job.queue = toTerminalQueueSnapshot({ jobId: job.jobId });
-    writeTerminalJobSnapshotSync({ job, diagnostics });
     enforceJobRetention();
   };
 
@@ -3948,7 +3935,10 @@ export const createJobEngine = ({
         ? { customerProfilePath: sourceJob.request.customerProfilePath }
         : {}),
     });
-    if (sourcePipelineId === "default" && regenerationRocketSignals.length > 0) {
+    if (
+      sourcePipelineId === "default" &&
+      regenerationRocketSignals.length > 0
+    ) {
       throw new PipelineRequestError({
         code: "PIPELINE_INPUT_UNSUPPORTED",
         pipelineId: sourcePipelineId,
@@ -4375,7 +4365,19 @@ export const createJobEngine = ({
         message: `Job canceled while queued: ${cancellationReason}`,
       });
       refreshQueueSnapshots();
-      persistTerminalSnapshotSync({ job });
+      // Issue #1690 (audit-2026-05 Wave 3): the queued-cancel fast path
+      // previously called the sync writer here, blocking the event loop on
+      // disk IO. The in-memory job record is already updated above
+      // (status/finishedAt/cancellation), so the snapshot write is a
+      // side-effect and can be fire-and-forget. The async writer flushes
+      // identical bytes via `fs/promises.writeFile`. We log persist failures
+      // through the existing runtime logger instead of swallowing them.
+      void persistTerminalSnapshot({ job }).catch((err: unknown) => {
+        runtime.logger.log({
+          level: "warn",
+          message: `failed to persist canceled-while-queued job snapshot for ${job.jobId}: ${getErrorMessage(err)}`,
+        });
+      });
       return toPublicJob(job);
     }
 
