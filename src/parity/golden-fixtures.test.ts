@@ -650,6 +650,7 @@ const createDefaultExecutionContext = async ({
   const runtime = resolveRuntimeSettings({
     commandTimeoutMs: 180_000,
     enableLintAutofix: false,
+    enablePerfValidation: false,
     enablePreview: false,
     enableUiValidation: false,
     enableUnitTestValidation: false,
