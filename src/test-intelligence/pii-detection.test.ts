@@ -139,4 +139,96 @@ test("redactPii returns the stable token per kind", () => {
   assert.equal(redactPii("phone"), "[REDACTED:PHONE]");
   assert.equal(redactPii("tax_id"), "[REDACTED:TAX_ID]");
   assert.equal(redactPii("full_name"), "[REDACTED:FULL_NAME]");
+  // Issue #1668 (audit-2026-05) tokens.
+  assert.equal(redactPii("postal_address"), "[REDACTED:POSTAL_ADDRESS]");
+  assert.equal(redactPii("date_of_birth"), "[REDACTED:DOB]");
+  assert.equal(redactPii("account_number"), "[REDACTED:ACCOUNT_NUMBER]");
+  assert.equal(redactPii("national_id"), "[REDACTED:NATIONAL_ID]");
+  assert.equal(redactPii("special_category"), "[REDACTED:SPECIAL_CATEGORY]");
+});
+
+// ---------------------------------------------------------------------------
+// Issue #1668 (audit-2026-05): GDPR Art. 5(1)(c) coverage.
+// ---------------------------------------------------------------------------
+
+test("postal_address: detects DE Musterstraße 12, 10115 Berlin", () => {
+  const m = detectPii("Bitte senden an: Musterstraße 12, 10115 Berlin");
+  assert.equal(m?.kind, "postal_address");
+});
+
+test("postal_address: detects FR rue + numero + code postal + ville", () => {
+  const m = detectPii("Adresse: 12 rue de la Paix, 75002 Paris");
+  assert.equal(m?.kind, "postal_address");
+});
+
+test("postal_address: detects NL Hoofdstraat 12, 1011 AB Amsterdam", () => {
+  const m = detectPii("Hoofdstraat 12, 1011 AB Amsterdam");
+  assert.equal(m?.kind, "postal_address");
+});
+
+test("postal_address: does NOT trigger on a bare postal code alone", () => {
+  const m = detectPii("Reference number 10115 logged in audit table");
+  assert.notEqual(m?.kind, "postal_address");
+});
+
+test("date_of_birth: detects DE 'Geburtsdatum: 12.03.1985'", () => {
+  const m = detectPii("Geburtsdatum: 12.03.1985");
+  assert.ok(m && (m.kind === "date_of_birth" || m.kind === "national_id"));
+});
+
+test("date_of_birth: detects EN 'date of birth: 1985-03-12'", () => {
+  const m = detectPii("Customer date of birth: 1985-03-12 (verified)");
+  assert.equal(m?.kind, "date_of_birth");
+});
+
+test("date_of_birth: does NOT trigger on a bare date with no DOB context", () => {
+  const m = detectPii("Generated on 2026-04-25 by deterministic-runner");
+  assert.equal(m, null);
+});
+
+test("account_number: detects EN labelled 'Account 1234567890'", () => {
+  const m = detectPii("Account 1234567890 was found in legacy system.");
+  assert.equal(m?.kind, "account_number");
+});
+
+test("account_number: detects DE 'Kundennummer 99887766'", () => {
+  const m = detectPii("Kundennummer 99887766 ist gesperrt.");
+  assert.equal(m?.kind, "account_number");
+});
+
+test("account_number: does NOT trigger on a bare digit run with no label", () => {
+  const m = detectPii("Job duration was 1234567890 ms.");
+  assert.equal(m, null);
+});
+
+test("national_id: detects Swiss AHV 756.1234.5678.97", () => {
+  const m = detectPii("AHV-Nummer 756.1234.5678.97 vorgelegt.");
+  assert.equal(m?.kind, "national_id");
+});
+
+test("national_id: detects Swedish personnummer 19850312-1234", () => {
+  const m = detectPii("Pnr 19850312-1234 verified.");
+  assert.equal(m?.kind, "national_id");
+});
+
+test("special_category: flags GDPR Art.9 health keyword (HIV)", () => {
+  const m = detectPii("Patient HIV status confirmed in 2024.");
+  assert.equal(m?.kind, "special_category");
+});
+
+test("special_category: flags GDPR Art.9 union-membership keyword (DE)", () => {
+  const m = detectPii("Mitglied einer Gewerkschaft seit 2018.");
+  assert.equal(m?.kind, "special_category");
+});
+
+test("special_category: flags sexual-orientation keyword", () => {
+  const m = detectPii("self-identified as bisexual on the form.");
+  assert.equal(m?.kind, "special_category");
+});
+
+test("special_category: does NOT trigger on technical prose containing 'union'", () => {
+  const m = detectPii(
+    "TypeScript discriminated union types compile to runtime JSON.",
+  );
+  assert.equal(m, null);
 });

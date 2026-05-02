@@ -916,6 +916,18 @@ const maskKind = (value: string, kind: PiiKind): string => {
         .replace(/\b[0-9a-f]{24,32}\b/giu, "_");
     case "customer_name_placeholder":
       return value;
+    // Issue #1668 (audit-2026-05): the new GDPR Art. 5(1)(c) categories
+    // are detected centrally by `detectPii` but not masked at the
+    // `maskKind` granularity here — the upstream detector returns the
+    // full opaque redaction token. We surface them as no-op cases so
+    // the switch is exhaustive and TypeScript can prove the function
+    // is total over the `PiiKind` union.
+    case "postal_address":
+    case "date_of_birth":
+    case "account_number":
+    case "national_id":
+    case "special_category":
+      return value;
   }
 };
 
