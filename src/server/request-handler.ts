@@ -170,6 +170,10 @@ import {
   serializeRunnerEvent,
   type RunnerEventBus,
 } from "../test-intelligence/production-runner-events.js";
+import {
+  buildCustomerMarkdownZipBundle,
+  readCustomerMarkdownZipInputs,
+} from "../test-intelligence/customer-markdown-zip.js";
 
 /**
  * Decode a URI component safely, sending a 400 response on malformed input.
@@ -3268,6 +3272,43 @@ export function createWorkspaceRequestHandler({
             };
             request.on("close", cleanup);
             request.on("aborted", cleanup);
+            return;
+          }
+          if (route.kind === "customer_markdown_zip") {
+            const inputs = await readCustomerMarkdownZipInputs({
+              artifactRoot: testIntelligenceArtifactRoot,
+              jobId: route.jobId,
+            });
+            if (!inputs.ok) {
+              const statusCode =
+                inputs.reason === "path_outside_root" ? 400 : 404;
+              const errorCode =
+                inputs.reason === "path_outside_root"
+                  ? "INVALID_PATH"
+                  : "JOB_NOT_FOUND";
+              const message =
+                inputs.reason === "path_outside_root"
+                  ? "Job id resolves outside the test-intelligence artifact root."
+                  : `No customer-markdown bundle for job '${route.jobId}'.`;
+              sendJson({
+                response,
+                statusCode,
+                payload: { error: errorCode, message },
+              });
+              return;
+            }
+            const zipBytes = buildCustomerMarkdownZipBundle(inputs.bundle);
+            const safeJobId = route.jobId
+              .replace(/[^A-Za-z0-9_.-]+/gu, "-")
+              .slice(0, 64);
+            response.statusCode = 200;
+            response.setHeader("content-type", "application/zip");
+            response.setHeader(
+              "content-disposition",
+              `attachment; filename="${safeJobId}-testfaelle.zip"`,
+            );
+            response.setHeader("content-length", String(zipBytes.length));
+            response.end(zipBytes);
             return;
           }
           if (route.kind === "customer_markdown_export") {

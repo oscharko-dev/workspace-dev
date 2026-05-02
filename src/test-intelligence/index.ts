@@ -467,6 +467,13 @@ export {
   type RunnerEventBus,
 } from "./production-runner-events.js";
 export {
+  buildCustomerMarkdownZipBundle,
+  readCustomerMarkdownZipInputs,
+  type CustomerMarkdownZipBundle,
+  type ReadCustomerMarkdownZipInput,
+  type ReadCustomerMarkdownZipResult,
+} from "./customer-markdown-zip.js";
+export {
   buildFinOpsBudgetReport,
   createFinOpsUsageRecorder,
   writeFinOpsBudgetReport,

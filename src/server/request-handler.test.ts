@@ -9835,6 +9835,103 @@ test("test-intelligence: POST serializes concurrent review writes via the per-jo
   });
 });
 
+test("test-intelligence: GET /jobs/:jobId/customer-markdown.zip returns a byte-stable ZIP bundle", async () => {
+  await withTestIntelligenceEnv("1", async () => {
+    const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ti-route-zip-"));
+    const artifactRoot = path.join(tempRoot, "ti");
+    const tiDir = path.join(
+      artifactRoot,
+      "jobs",
+      "job-zip",
+      "test-intelligence",
+    );
+    const mdDir = path.join(tiDir, "customer-markdown");
+    await mkdir(mdDir, { recursive: true });
+    await writeFile(path.join(mdDir, "testfaelle.md"), "# Testfälle\nbody\n");
+    await writeFile(path.join(mdDir, "tc-001.md"), "# TC-001\n");
+    await writeFile(
+      path.join(tiDir, "business-intent-ir.json"),
+      '{"schemaVersion":"1.0.0","intents":[]}',
+    );
+    await writeFile(
+      path.join(tiDir, "generated-test-cases.json"),
+      JSON.stringify({
+        schemaVersion: "1.0.0",
+        jobId: "job-zip",
+        testCases: [{ id: "tc-001", title: "Antrag" }],
+      }),
+    );
+    const { app, close } = await createRequestHandlerApp({
+      testIntelligenceEnabled: true,
+      testIntelligenceArtifactRoot: artifactRoot,
+    });
+    try {
+      const response = await app.inject({
+        method: "GET",
+        url: "/workspace/test-intelligence/jobs/job-zip/customer-markdown.zip",
+      });
+      assert.equal(response.statusCode, 200);
+      assert.match(
+        response.headers["content-type"] as string,
+        /application\/zip/,
+      );
+      assert.match(
+        response.headers["content-disposition"] as string,
+        /attachment; filename="job-zip-testfaelle\.zip"/,
+      );
+      const buf = Buffer.from(response.body, "binary");
+      assert.equal(buf.readUInt32LE(0), 0x04034b50);
+    } finally {
+      await close();
+      await rm(tempRoot, { recursive: true, force: true });
+    }
+  });
+});
+
+test("test-intelligence: GET /jobs/:jobId/customer-markdown.zip returns 404 for missing artifact", async () => {
+  await withTestIntelligenceEnv("1", async () => {
+    const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ti-route-zip-404-"));
+    const { app, close } = await createRequestHandlerApp({
+      testIntelligenceEnabled: true,
+      testIntelligenceArtifactRoot: tempRoot,
+    });
+    try {
+      const response = await app.inject({
+        method: "GET",
+        url: "/workspace/test-intelligence/jobs/missing/customer-markdown.zip",
+      });
+      assert.equal(response.statusCode, 404);
+      const body = response.json<Record<string, unknown>>();
+      assert.equal(body.error, "JOB_NOT_FOUND");
+    } finally {
+      await close();
+      await rm(tempRoot, { recursive: true, force: true });
+    }
+  });
+});
+
+test("test-intelligence: GET /jobs/:jobId/customer-markdown.zip returns 503 when TI gates are off", async () => {
+  await withTestIntelligenceEnv(undefined, async () => {
+    const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ti-route-zip-503-"));
+    const { app, close } = await createRequestHandlerApp({
+      testIntelligenceEnabled: false,
+      testIntelligenceArtifactRoot: tempRoot,
+    });
+    try {
+      const response = await app.inject({
+        method: "GET",
+        url: "/workspace/test-intelligence/jobs/job-zip/customer-markdown.zip",
+      });
+      assert.equal(response.statusCode, 503);
+      const body = response.json<Record<string, unknown>>();
+      assert.equal(body.error, "FEATURE_DISABLED");
+    } finally {
+      await close();
+      await rm(tempRoot, { recursive: true, force: true });
+    }
+  });
+});
+
 test("test-intelligence: GET /jobs/:jobId/events streams SSE events with stable framing", async () => {
   await withTestIntelligenceEnv("1", async () => {
     const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ti-route-events-"));
