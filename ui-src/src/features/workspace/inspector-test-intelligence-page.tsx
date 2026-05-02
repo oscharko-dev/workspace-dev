@@ -22,6 +22,7 @@ import {
   TestCaseListPanel,
   type TestCaseListEntry,
 } from "./inspector/test-intelligence/TestCaseListPanel";
+import { TestCasesCardGrid } from "./inspector/test-intelligence/TestCasesCardGrid";
 import { VisualSidecarPanel } from "./inspector/test-intelligence/VisualSidecarPanel";
 import { ConflictResolutionPanel } from "./inspector/test-intelligence/conflict-resolution-panel";
 import { CustomerMarkdownDownload } from "./inspector/test-intelligence/customer-markdown-download";
@@ -414,6 +415,13 @@ function TestIntelligenceInner({
                   <CustomerMarkdownDownload jobId={jobId} />
                 </div>
               </header>
+              <TestCasesCardGrid
+                testCases={listEntries.map((e) => e.testCase)}
+                selectedTestCaseId={selectedTestCaseId}
+                onSelect={(id) => {
+                  setSelectedTestCaseId(id);
+                }}
+              />
               <TestCaseListPanel
                 entries={listEntries}
                 selectedTestCaseId={selectedTestCaseId}
