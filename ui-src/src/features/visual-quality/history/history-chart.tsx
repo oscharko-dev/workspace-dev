@@ -39,7 +39,7 @@ export function HistoryChart({ history }: HistoryChartProps): JSX.Element {
     return (
       <div
         data-testid="history-chart-empty"
-        className="flex h-[120px] items-center justify-center rounded-md border border-white/10 bg-[#171717] text-[11px] text-white/45"
+        className="flex h-[120px] items-center justify-center rounded-md border border-white/10 bg-[#171717] text-[11px] text-white/75"
       >
         No historical runs available.
       </div>
@@ -57,7 +57,7 @@ export function HistoryChart({ history }: HistoryChartProps): JSX.Element {
     >
       <div className="mb-2 flex items-center justify-between text-[11px] font-medium text-white/60">
         <span>Score trend</span>
-        <span className="font-mono text-white/45">
+        <span className="font-mono text-white/75">
           last {series.points.length} runs
         </span>
       </div>

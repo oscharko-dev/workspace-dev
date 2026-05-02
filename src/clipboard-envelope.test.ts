@@ -2,12 +2,15 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   CLIPBOARD_ENVELOPE_KIND,
+  DEFAULT_FIGMA_PASTE_MAX_SELECTION_COUNT,
   isClipboardEnvelope,
   looksLikeClipboardEnvelope,
   normalizeEnvelopeToFigmaFile,
   summarizeEnvelopeValidationIssues,
   validateClipboardEnvelope,
+  validateClipboardEnvelopeComplexity,
 } from "./clipboard-envelope.js";
+import { DEFAULT_FIGMA_PASTE_MAX_NODE_COUNT } from "./figma-payload-validation.js";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -346,4 +349,115 @@ test("summarizeEnvelopeValidationIssues formats multiple issues", () => {
     { path: "pluginVersion", message: "pluginVersion is missing." },
   ]);
   assert.match(summary, /\+1 more/);
+});
+
+// ---------------------------------------------------------------------------
+// validateClipboardEnvelopeComplexity (Issue #1702, audit-2026-05 Wave 4)
+// Closes a zero-coverage gap — these validators are the DoS / memory-
+// exhaustion defence on the figma-paste request path.
+// ---------------------------------------------------------------------------
+
+const buildEnvelopeWithSelections = (count: number) => ({
+  kind: CLIPBOARD_ENVELOPE_KIND,
+  pluginVersion: "0.1.0",
+  copiedAt: "2026-05-02T00:00:00.000Z",
+  selections: Array.from({ length: count }, (_unused, idx) => ({
+    document: { id: `1:${idx}`, type: "FRAME", name: `Frame${idx}` },
+    components: {},
+    componentSets: {},
+    styles: {},
+  })),
+});
+
+test("validateClipboardEnvelopeComplexity accepts a small envelope", () => {
+  const envelope = buildEnvelopeWithSelections(2);
+  const result = validateClipboardEnvelope(envelope);
+  assert.equal(result.valid, true);
+  if (!result.valid) return;
+  const complexity = validateClipboardEnvelopeComplexity(result.envelope);
+  assert.equal(complexity.ok, true);
+  if (!complexity.ok) return;
+  assert.equal(complexity.selectionCount, 2);
+  assert.ok(complexity.nodeCount >= 3);
+});
+
+test("validateClipboardEnvelopeComplexity rejects > selection-count budget", () => {
+  const envelope = buildEnvelopeWithSelections(
+    DEFAULT_FIGMA_PASTE_MAX_SELECTION_COUNT + 1,
+  );
+  const result = validateClipboardEnvelope(envelope);
+  assert.equal(result.valid, true);
+  if (!result.valid) return;
+  const complexity = validateClipboardEnvelopeComplexity(result.envelope);
+  assert.equal(complexity.ok, false);
+  if (complexity.ok) return;
+  assert.match(complexity.message, /selection count budget/);
+  assert.equal(
+    complexity.selectionCount,
+    DEFAULT_FIGMA_PASTE_MAX_SELECTION_COUNT + 1,
+  );
+});
+
+test("validateClipboardEnvelopeComplexity rejects > node-count budget", () => {
+  // Wide-and-shallow tree: one root with `children` array of length
+  // > DEFAULT_FIGMA_PASTE_MAX_NODE_COUNT. Avoids deep recursion in the
+  // recursive `validate` validator and the `JSON` round-trip in the
+  // sanitisation step.
+  const children: Array<Record<string, unknown>> = [];
+  for (let i = 0; i < DEFAULT_FIGMA_PASTE_MAX_NODE_COUNT + 5; i += 1) {
+    children.push({ id: `c${i}`, type: "FRAME", name: `c${i}` });
+  }
+  const envelope = {
+    kind: CLIPBOARD_ENVELOPE_KIND,
+    pluginVersion: "0.1.0",
+    copiedAt: "2026-05-02T00:00:00.000Z",
+    selections: [
+      {
+        document: {
+          id: "root",
+          type: "FRAME",
+          name: "root",
+          children,
+        },
+        components: {},
+        componentSets: {},
+        styles: {},
+      },
+    ],
+  };
+  const result = validateClipboardEnvelope(envelope);
+  assert.equal(result.valid, true);
+  if (!result.valid) return;
+  const complexity = validateClipboardEnvelopeComplexity(result.envelope);
+  assert.equal(complexity.ok, false);
+  if (complexity.ok) return;
+  assert.match(complexity.message, /node count budget/);
+});
+
+test("validateClipboardEnvelopeComplexity tolerates cyclic graphs without infinite loop", () => {
+  const node: Record<string, unknown> = {
+    id: "1:1",
+    type: "FRAME",
+    name: "cycle",
+  };
+  node.children = [node];
+  const envelope = {
+    kind: CLIPBOARD_ENVELOPE_KIND,
+    pluginVersion: "0.1.0",
+    copiedAt: "2026-05-02T00:00:00.000Z",
+    selections: [
+      {
+        document: node,
+        components: {},
+        componentSets: {},
+        styles: {},
+      },
+    ],
+  };
+  const result = validateClipboardEnvelope(envelope);
+  assert.equal(result.valid, true);
+  if (!result.valid) return;
+  // Cycle protection: validator MUST return, not spin forever.
+  const complexity = validateClipboardEnvelopeComplexity(result.envelope);
+  assert.ok(typeof complexity.nodeCount === "number");
 });

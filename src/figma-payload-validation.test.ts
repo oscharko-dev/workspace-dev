@@ -1,6 +1,13 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { formatFigmaPayloadPath, safeParseFigmaPayload, summarizeFigmaPayloadValidationError } from "./figma-payload-validation.js";
+import {
+  DEFAULT_FIGMA_PASTE_MAX_NODE_COUNT,
+  formatFigmaPayloadPath,
+  safeParseFigmaPayload,
+  summarizeFigmaPayloadValidationError,
+  validateFigmaPayloadComplexity,
+  type ValidatedFigmaNode,
+} from "./figma-payload-validation.js";
 
 const createValidPayload = () => ({
   name: "Demo",
@@ -16,21 +23,23 @@ const createValidPayload = () => ({
             id: "1:1",
             type: "FRAME",
             absoluteBoundingBox: { x: 0, y: 0, width: 320, height: 640 },
-            children: []
-          }
-        ]
-      }
-    ]
-  }
+            children: [],
+          },
+        ],
+      },
+    ],
+  },
 });
 
 const toIssuePaths = (
-  result: ReturnType<typeof safeParseFigmaPayload>
+  result: ReturnType<typeof safeParseFigmaPayload>,
 ): string[] => {
   if (result.success) {
     return [];
   }
-  return result.error.issues.map((issue) => formatFigmaPayloadPath({ path: issue.path }));
+  return result.error.issues.map((issue) =>
+    formatFigmaPayloadPath({ path: issue.path }),
+  );
 };
 
 test("safeParseFigmaPayload accepts valid payload and keeps semantic shape intact", () => {
@@ -57,7 +66,10 @@ test("safeParseFigmaPayload rejects non-object root", () => {
   }
 
   assert.deepEqual(toIssuePaths(result), ["(root)"]);
-  assert.match(result.error.issues[0]?.message ?? "", /root must be an object/i);
+  assert.match(
+    result.error.issues[0]?.message ?? "",
+    /root must be an object/i,
+  );
 });
 
 test("safeParseFigmaPayload rejects missing document object", () => {
@@ -69,7 +81,10 @@ test("safeParseFigmaPayload rejects missing document object", () => {
   }
 
   assert.deepEqual(toIssuePaths(result), ["document"]);
-  assert.match(result.error.issues[0]?.message ?? "", /document must be an object/i);
+  assert.match(
+    result.error.issues[0]?.message ?? "",
+    /document must be an object/i,
+  );
 });
 
 test("safeParseFigmaPayload rejects when document.children is not an array", () => {
@@ -79,9 +94,9 @@ test("safeParseFigmaPayload rejects when document.children is not an array", () 
       document: {
         id: "0:0",
         type: "DOCUMENT",
-        children: "not-an-array"
-      }
-    }
+        children: "not-an-array",
+      },
+    },
   });
 
   assert.equal(result.success, false);
@@ -96,7 +111,7 @@ test("safeParseFigmaPayload reports missing node id with exact path", () => {
   const payload = createValidPayload();
   payload.document.children[0] = {
     type: "CANVAS",
-    children: []
+    children: [],
   };
 
   const result = safeParseFigmaPayload({ input: payload });
@@ -112,7 +127,7 @@ test("safeParseFigmaPayload reports missing node type with exact path", () => {
   const payload = createValidPayload();
   payload.document.children[0] = {
     id: "0:1",
-    children: []
+    children: [],
   };
 
   const result = safeParseFigmaPayload({ input: payload });
@@ -121,12 +136,17 @@ test("safeParseFigmaPayload reports missing node type with exact path", () => {
     return;
   }
 
-  assert.equal(toIssuePaths(result).includes("document.children[0].type"), true);
+  assert.equal(
+    toIssuePaths(result).includes("document.children[0].type"),
+    true,
+  );
 });
 
 test("safeParseFigmaPayload reports non-object child entry with exact path", () => {
   const payload = createValidPayload();
-  payload.document.children = [null as unknown as typeof payload.document.children[number]];
+  payload.document.children = [
+    null as unknown as (typeof payload.document.children)[number],
+  ];
 
   const result = safeParseFigmaPayload({ input: payload });
   assert.equal(result.success, false);
@@ -144,9 +164,9 @@ test("summarizeFigmaPayloadValidationError includes first path and issue count",
       document: {
         id: "",
         type: "FRAME",
-        children: "bad"
-      }
-    }
+        children: "bad",
+      },
+    },
   });
   assert.equal(result.success, false);
   if (result.success) {
@@ -179,14 +199,14 @@ test("safeParseFigmaPayload reports deeply nested missing id with exact path", (
                 {
                   // id intentionally omitted at depth 3
                   type: "FRAME",
-                  children: []
-                }
-              ]
-            }
-          ]
-        }
-      ]
-    }
+                  children: [],
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    },
   };
 
   const result = safeParseFigmaPayload({ input: payload });
@@ -198,7 +218,7 @@ test("safeParseFigmaPayload reports deeply nested missing id with exact path", (
   const paths = toIssuePaths(result);
   assert.equal(
     paths.includes("document.children[0].children[0].children[0].id"),
-    true
+    true,
   );
 });
 
@@ -210,9 +230,9 @@ test("safeParseFigmaPayload exposes truncation metadata and summary reports omit
       document: {
         id: "0:0",
         type: "DOCUMENT",
-        children: badChildren
-      }
-    }
+        children: badChildren,
+      },
+    },
   });
 
   assert.equal(result.success, false);
@@ -227,7 +247,9 @@ test("safeParseFigmaPayload exposes truncation metadata and summary reports omit
 
   const summary = summarizeFigmaPayloadValidationError({ error: result.error });
   assert.match(summary, /\+\d+ more issues?; \d+ omitted after cap 128\)$/);
-  const overflowMatch = summary.match(/\+(\d+) more issues?; (\d+) omitted after cap 128\)$/);
+  const overflowMatch = summary.match(
+    /\+(\d+) more issues?; (\d+) omitted after cap 128\)$/,
+  );
   assert.ok(overflowMatch);
   assert.equal(Number(overflowMatch[1]), 127);
   assert.equal(Number(overflowMatch[2]), 122);
@@ -244,10 +266,10 @@ test("safeParseFigmaPayload reports non-object absoluteBoundingBox with exact pa
           id: "0:1",
           type: "CANVAS",
           absoluteBoundingBox: "not-an-object",
-          children: []
-        }
-      ]
-    }
+          children: [],
+        },
+      ],
+    },
   };
 
   const result = safeParseFigmaPayload({ input: payload });
@@ -259,12 +281,71 @@ test("safeParseFigmaPayload reports non-object absoluteBoundingBox with exact pa
   const paths = toIssuePaths(result);
   assert.equal(
     paths.includes("document.children[0].absoluteBoundingBox"),
-    true
+    true,
   );
   const issue = result.error.issues.find(
     (entry) =>
       formatFigmaPayloadPath({ path: entry.path }) ===
-      "document.children[0].absoluteBoundingBox"
+      "document.children[0].absoluteBoundingBox",
   );
   assert.match(issue?.message ?? "", /absoluteBoundingBox must be an object/i);
+});
+
+// ---------------------------------------------------------------------------
+// validateFigmaPayloadComplexity (Issue #1702, audit-2026-05 Wave 4)
+// Closes a zero-coverage gap on the DoS / memory-exhaustion defence.
+// ---------------------------------------------------------------------------
+
+const buildDocumentWithChildren = (count: number): ValidatedFigmaNode =>
+  ({
+    id: "0:0",
+    type: "DOCUMENT",
+    children: Array.from({ length: count }, (_unused, idx) => ({
+      id: `0:${idx + 1}`,
+      type: "CANVAS",
+      children: [],
+    })),
+  }) as ValidatedFigmaNode;
+
+test("validateFigmaPayloadComplexity accepts a small payload", () => {
+  const document = buildDocumentWithChildren(2);
+  const result = validateFigmaPayloadComplexity({ document });
+  assert.equal(result.ok, true);
+  if (!result.ok) return;
+  assert.equal(result.rootCount, 2);
+  assert.ok(result.nodeCount >= 3);
+});
+
+test("validateFigmaPayloadComplexity rejects > root-count budget", () => {
+  const document = buildDocumentWithChildren(50);
+  const result = validateFigmaPayloadComplexity({
+    document,
+    maxRootCount: 10,
+  });
+  assert.equal(result.ok, false);
+  if (result.ok) return;
+  assert.match(result.message, /root count budget/);
+  assert.equal(result.rootCount, 50);
+});
+
+test("validateFigmaPayloadComplexity rejects > node-count budget", () => {
+  const document = buildDocumentWithChildren(
+    DEFAULT_FIGMA_PASTE_MAX_NODE_COUNT + 5,
+  );
+  const result = validateFigmaPayloadComplexity({
+    document,
+    maxRootCount: DEFAULT_FIGMA_PASTE_MAX_NODE_COUNT + 100,
+  });
+  assert.equal(result.ok, false);
+  if (result.ok) return;
+  assert.match(result.message, /node count budget/);
+});
+
+test("validateFigmaPayloadComplexity tolerates cyclic graphs without infinite loop", () => {
+  const node: Record<string, unknown> = { id: "1", type: "FRAME" };
+  node.children = [node];
+  const result = validateFigmaPayloadComplexity({
+    document: node as unknown as ValidatedFigmaNode,
+  });
+  assert.ok(typeof result.nodeCount === "number");
 });

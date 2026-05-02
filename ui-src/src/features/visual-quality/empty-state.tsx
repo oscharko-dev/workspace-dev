@@ -86,7 +86,7 @@ export function EmptyState({
         <div className="text-sm font-semibold text-white">
           Load a visual benchmark report
         </div>
-        <p className="m-0 max-w-md text-[11px] text-white/55">
+        <p className="m-0 max-w-md text-[11px] text-white/85">
           Drop <span className="font-mono text-white/80">last-run.json</span>,{" "}
           <span className="font-mono text-white/80">
             visual-quality/report.json
@@ -132,7 +132,7 @@ export function EmptyState({
         />
         <p className="m-0 text-[10px] text-white/35">
           Tip: you can also load a report by appending{" "}
-          <span className="font-mono text-white/55">
+          <span className="font-mono text-white/85">
             ?report=https://…/last-run.json
           </span>{" "}
           or its supported report-file variants to the page URL.

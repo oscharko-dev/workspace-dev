@@ -223,10 +223,10 @@ export function ZoomModal({
             <span className="truncate text-xs font-semibold text-white">
               {screen.fixtureId}
             </span>
-            <span className="truncate text-[11px] text-white/55">
+            <span className="truncate text-[11px] text-white/85">
               {screen.screenName}
             </span>
-            <span className="rounded border border-white/10 bg-[#0a0a0a] px-1.5 py-0.5 text-[10px] font-mono text-white/45">
+            <span className="rounded border border-white/10 bg-[#0a0a0a] px-1.5 py-0.5 text-[10px] font-mono text-white/75">
               {screen.viewportLabel}
             </span>
           </div>

@@ -1369,12 +1369,31 @@ export const runOpenTextAlmApiTransfer = async (
   records.sort((a, b) => a.testCaseId.localeCompare(b.testCaseId));
   created.sort((a, b) => a.testCaseId.localeCompare(b.testCaseId));
 
-  const createdCount = records.filter((r) => r.outcome === "created").length;
-  const skippedDuplicateCount = records.filter(
-    (r) => r.outcome === "skipped_duplicate",
-  ).length;
-  const failedCount = records.filter((r) => r.outcome === "failed").length;
-  const refusedCount = records.filter((r) => r.outcome === "refused").length;
+  // Issue #1689 (audit-2026-05 Wave 3): single-pass aggregation. The four
+  // `records.filter(...).length` calls below were each O(N); on a 1000-case
+  // batch that's 4000 record comparisons + four intermediate arrays. One
+  // accumulator pass is the correct shape and matches the way the rest of
+  // the orchestrator counts outcomes.
+  let createdCount = 0;
+  let skippedDuplicateCount = 0;
+  let failedCount = 0;
+  let refusedCount = 0;
+  for (const record of records) {
+    switch (record.outcome) {
+      case "created":
+        createdCount += 1;
+        break;
+      case "skipped_duplicate":
+        skippedDuplicateCount += 1;
+        break;
+      case "failed":
+        failedCount += 1;
+        break;
+      case "refused":
+        refusedCount += 1;
+        break;
+    }
+  }
 
   const report: TransferReportArtifact = {
     schemaVersion: TRANSFER_REPORT_SCHEMA_VERSION,

@@ -42,14 +42,14 @@ export function ConfidenceSummary({
           {label}
         </strong>
         {confidence.score !== undefined && (
-          <span className="ml-auto font-mono text-xs tabular-nums text-white/55">
+          <span className="ml-auto font-mono text-xs tabular-nums text-white/85">
             {confidence.score.toFixed(1)}%
           </span>
         )}
       </div>
       {confidence.lowConfidenceSummary &&
         confidence.lowConfidenceSummary.length > 0 && (
-          <ul className="m-0 list-disc space-y-0.5 pl-4 text-[11px] text-white/55">
+          <ul className="m-0 list-disc space-y-0.5 pl-4 text-[11px] text-white/85">
             {confidence.lowConfidenceSummary.map((item, i) => (
               <li key={`${String(i)}-${item}`}>{item}</li>
             ))}
@@ -57,12 +57,12 @@ export function ConfidenceSummary({
         )}
       {confidence.contributors && confidence.contributors.length > 0 && (
         <details className="mt-2">
-          <summary className="cursor-pointer text-[11px] text-white/45">
+          <summary className="cursor-pointer text-[11px] text-white/75">
             Signal breakdown ({confidence.contributors.length} contributors)
           </summary>
           <table className="mt-1 w-full border-collapse text-[11px]">
             <thead>
-              <tr className="border-b border-white/10 text-left text-white/45">
+              <tr className="border-b border-white/10 text-left text-white/75">
                 <th className="px-2 py-1 font-medium">Signal</th>
                 <th className="px-2 py-1 font-medium">Impact</th>
                 <th className="px-2 py-1 font-medium">Weight</th>
@@ -82,15 +82,15 @@ export function ConfidenceSummary({
                         ? "text-rose-400"
                         : c.impact === "positive"
                           ? "text-[#4eba87]"
-                          : "text-white/45"
+                          : "text-white/75"
                     }`}
                   >
                     {c.impact}
                   </td>
-                  <td className="px-2 py-1 font-mono tabular-nums text-white/55">
+                  <td className="px-2 py-1 font-mono tabular-nums text-white/85">
                     {c.weight.toFixed(2)}
                   </td>
-                  <td className="px-2 py-1 font-mono tabular-nums text-white/55">
+                  <td className="px-2 py-1 font-mono tabular-nums text-white/85">
                     {c.value.toFixed(2)}
                   </td>
                 </tr>

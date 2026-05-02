@@ -6402,7 +6402,7 @@ export function InspectorPanel({
             aria-valuemax={100}
             aria-valuenow={treeSeparatorNow}
             data-testid="inspector-splitter-tree-preview"
-            className="group hidden shrink-0 cursor-col-resize select-none focus:outline-none xl:flex xl:w-3 xl:items-stretch xl:justify-center inspector-splitter"
+            className="group hidden shrink-0 cursor-col-resize select-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#4eba87] focus-visible:outline-offset-1 xl:flex xl:w-3 xl:items-stretch xl:justify-center inspector-splitter"
             onPointerDown={handleSplitterPointerDown("tree-preview")}
             onPointerMove={handleSplitterPointerMove}
             onPointerUp={handleSplitterPointerUp}
@@ -6410,9 +6410,18 @@ export function InspectorPanel({
             onLostPointerCapture={handleSplitterLostPointerCapture}
             onKeyDown={handleSplitterKeyDown("tree-preview")}
           >
+            {/*
+             * Issue #1700 (audit-2026-05 Wave 4, WCAG 2.4.7): the visual
+             * focus indicator was previously a 1px-wide colour change on
+             * an `aria-hidden` child, which is imperceptible and never
+             * announced. We now use `focus-visible:outline` on the
+             * splitter wrapper itself (the focusable element) so keyboard
+             * focus produces a perceptible 2px outline. The 1px hover
+             * line is preserved for sighted-mouse affordance.
+             */}
             <div
               aria-hidden="true"
-              className="pointer-events-none h-full w-px bg-[#000000] transition-colors group-hover:bg-[#4eba87] group-focus:bg-[#4eba87]"
+              className="pointer-events-none h-full w-px bg-[#000000] transition-colors group-hover:bg-[#4eba87]"
             />
           </div>
         ) : null}
