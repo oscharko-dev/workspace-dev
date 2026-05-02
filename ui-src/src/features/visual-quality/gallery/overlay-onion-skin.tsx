@@ -39,7 +39,7 @@ export function OverlayOnionSkin({
     return (
       <div
         data-testid="overlay-onion-skin-missing"
-        className="flex h-40 items-center justify-center rounded border border-dashed border-white/10 bg-[#0a0a0a] text-[11px] text-white/45"
+        className="flex h-40 items-center justify-center rounded border border-dashed border-white/10 bg-[#0a0a0a] text-[11px] text-white/75"
       >
         No images attached for onion-skin view.
       </div>
@@ -51,7 +51,7 @@ export function OverlayOnionSkin({
       <div className="flex items-center gap-3 text-[11px] text-white/60">
         <label
           htmlFor="onion-opacity"
-          className="text-[10px] uppercase tracking-wider text-white/45"
+          className="text-[10px] uppercase tracking-wider text-white/75"
         >
           Actual opacity
         </label>

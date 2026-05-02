@@ -71,7 +71,7 @@ function VisualParitySummaryCard({
     >
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <div className="text-[10px] uppercase tracking-wider text-white/45">
+          <div className="text-[10px] uppercase tracking-wider text-white/75">
             Visual parity summary
           </div>
           <h2 className="m-0 mt-1 text-sm font-semibold text-white">
@@ -92,7 +92,7 @@ function VisualParitySummaryCard({
 
       <dl className="m-0 mt-4 grid gap-3 md:grid-cols-2">
         <div>
-          <dt className="text-[10px] uppercase tracking-wider text-white/45">
+          <dt className="text-[10px] uppercase tracking-wider text-white/75">
             Baseline path
           </dt>
           <dd className="m-0 mt-1 break-all font-mono text-[11px] text-white/75">
@@ -100,7 +100,7 @@ function VisualParitySummaryCard({
           </dd>
         </div>
         <div>
-          <dt className="text-[10px] uppercase tracking-wider text-white/45">
+          <dt className="text-[10px] uppercase tracking-wider text-white/75">
             Runtime preview URL
           </dt>
           <dd className="m-0 mt-1 break-all font-mono text-[11px] text-white/75">
@@ -231,7 +231,7 @@ export function VisualQualityPage(): JSX.Element {
           {isLoadingFromUrl ? (
             <div
               data-testid="visual-quality-loading"
-              className="flex items-center justify-center py-10 text-[11px] text-white/55"
+              className="flex items-center justify-center py-10 text-[11px] text-white/85"
             >
               Loading report from URL…
             </div>

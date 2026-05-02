@@ -53,7 +53,7 @@ export function FilterControls({
       className="flex flex-col gap-2 rounded-md border border-white/10 bg-[#171717] p-3"
     >
       <div className="flex flex-wrap items-center gap-2">
-        <label className="flex flex-1 min-w-[180px] flex-col gap-0.5 text-[10px] uppercase tracking-wider text-white/45">
+        <label className="flex flex-1 min-w-[180px] flex-col gap-0.5 text-[10px] uppercase tracking-wider text-white/75">
           Search
           <input
             type="search"
@@ -66,7 +66,7 @@ export function FilterControls({
             className="rounded border border-white/10 bg-[#0a0a0a] px-2 py-1 text-[11px] text-white placeholder-white/35 focus:border-[#4eba87]/60 focus:outline-none"
           />
         </label>
-        <label className="flex w-[120px] flex-col gap-0.5 text-[10px] uppercase tracking-wider text-white/45">
+        <label className="flex w-[120px] flex-col gap-0.5 text-[10px] uppercase tracking-wider text-white/75">
           Min score
           <input
             type="number"
@@ -79,7 +79,7 @@ export function FilterControls({
             className="rounded border border-white/10 bg-[#0a0a0a] px-2 py-1 text-[11px] text-white focus:border-[#4eba87]/60 focus:outline-none"
           />
         </label>
-        <label className="flex w-[200px] flex-col gap-0.5 text-[10px] uppercase tracking-wider text-white/45">
+        <label className="flex w-[200px] flex-col gap-0.5 text-[10px] uppercase tracking-wider text-white/75">
           Sort by
           <select
             data-testid="filter-sort"
@@ -100,7 +100,7 @@ export function FilterControls({
 
       {fixtureOptions.length > 0 ? (
         <div className="flex flex-wrap items-center gap-1.5">
-          <span className="text-[10px] uppercase tracking-wider text-white/45">
+          <span className="text-[10px] uppercase tracking-wider text-white/75">
             Fixtures:
           </span>
           {fixtureOptions.map((fixture) => {
@@ -117,7 +117,7 @@ export function FilterControls({
                 className={`cursor-pointer rounded-full border px-2 py-0.5 text-[10px] transition ${
                   active
                     ? "border-[#4eba87] bg-[#4eba87]/12 text-[#4eba87]"
-                    : "border-white/10 bg-[#0a0a0a] text-white/55 hover:border-white/25 hover:text-white"
+                    : "border-white/10 bg-[#0a0a0a] text-white/85 hover:border-white/25 hover:text-white"
                 }`}
               >
                 {fixture}
@@ -128,7 +128,7 @@ export function FilterControls({
       ) : null}
 
       <div className="flex flex-wrap items-center gap-1.5">
-        <span className="text-[10px] uppercase tracking-wider text-white/45">
+        <span className="text-[10px] uppercase tracking-wider text-white/75">
           Severity:
         </span>
         {SEVERITY_OPTIONS.map((severity) => {
@@ -145,7 +145,7 @@ export function FilterControls({
               className={`cursor-pointer rounded-full border px-2 py-0.5 text-[10px] uppercase transition ${
                 active
                   ? "border-[#4eba87] bg-[#4eba87]/12 text-[#4eba87]"
-                  : "border-white/10 bg-[#0a0a0a] text-white/55 hover:border-white/25 hover:text-white"
+                  : "border-white/10 bg-[#0a0a0a] text-white/85 hover:border-white/25 hover:text-white"
               }`}
             >
               {severity}

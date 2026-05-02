@@ -49,7 +49,7 @@ interface ImagePaneProps {
 function ImagePane({ label, url, onZoom }: ImagePaneProps): JSX.Element {
   return (
     <div className="flex flex-col gap-1">
-      <div className="text-[10px] uppercase tracking-wider text-white/45">
+      <div className="text-[10px] uppercase tracking-wider text-white/75">
         {label}
       </div>
       <div className="relative overflow-auto rounded border border-white/10 bg-[#0a0a0a]">
@@ -74,7 +74,7 @@ function ImagePane({ label, url, onZoom }: ImagePaneProps): JSX.Element {
 
 function OverlayMissing({ label }: { label: string }): JSX.Element {
   return (
-    <div className="flex h-40 items-center justify-center rounded border border-dashed border-white/10 bg-[#0a0a0a] text-[11px] text-white/45">
+    <div className="flex h-40 items-center justify-center rounded border border-dashed border-white/10 bg-[#0a0a0a] text-[11px] text-white/75">
       {label}
     </div>
   );

@@ -22,7 +22,7 @@ export function OverlayConfidenceView({
     return (
       <div
         data-testid="overlay-confidence-missing"
-        className="flex h-40 items-center justify-center rounded border border-dashed border-white/10 bg-[#0a0a0a] text-[11px] text-white/45"
+        className="flex h-40 items-center justify-center rounded border border-dashed border-white/10 bg-[#0a0a0a] text-[11px] text-white/75"
       >
         No confidence data or preview image attached for confidence view.
       </div>
@@ -61,14 +61,14 @@ export function OverlayConfidenceView({
             ) : null}
           </button>
         ) : (
-          <div className="flex h-40 items-center justify-center rounded border border-dashed border-white/10 bg-[#0a0a0a] text-[11px] text-white/45">
+          <div className="flex h-40 items-center justify-center rounded border border-dashed border-white/10 bg-[#0a0a0a] text-[11px] text-white/75">
             No preview image attached for confidence view.
           </div>
         )}
       </div>
 
       <section className="rounded-md border border-white/10 bg-[#171717] p-3">
-        <h3 className="m-0 mb-2 text-[11px] font-semibold uppercase tracking-wider text-white/55">
+        <h3 className="m-0 mb-2 text-[11px] font-semibold uppercase tracking-wider text-white/85">
           Screen confidence
         </h3>
         {confidence ? (
@@ -86,14 +86,14 @@ export function OverlayConfidenceView({
               <span className="text-xs font-medium capitalize text-white/85">
                 {confidence.level.replace("_", " ")}
               </span>
-              <span className="ml-auto font-mono text-xs text-white/55">
+              <span className="ml-auto font-mono text-xs text-white/85">
                 {confidence.score.toFixed(1)}%
               </span>
             </div>
 
             {confidence.components.length > 0 ? (
               <div className="mb-3">
-                <div className="mb-1 text-[10px] uppercase tracking-wider text-white/45">
+                <div className="mb-1 text-[10px] uppercase tracking-wider text-white/75">
                   Components
                 </div>
                 <ul className="m-0 list-none space-y-1 p-0">
@@ -105,7 +105,7 @@ export function OverlayConfidenceView({
                       <span className="truncate text-white/80">
                         {component.componentName}
                       </span>
-                      <span className="font-mono text-white/55">
+                      <span className="font-mono text-white/85">
                         {component.score.toFixed(1)}%
                       </span>
                     </li>
@@ -113,14 +113,14 @@ export function OverlayConfidenceView({
                 </ul>
               </div>
             ) : (
-              <p className="m-0 mb-3 text-[11px] text-white/45">
+              <p className="m-0 mb-3 text-[11px] text-white/75">
                 No screen-scoped components were matched for this screen.
               </p>
             )}
 
             {confidence.contributors.length > 0 ? (
               <details>
-                <summary className="cursor-pointer text-[11px] text-white/45">
+                <summary className="cursor-pointer text-[11px] text-white/75">
                   Screen signal breakdown ({confidence.contributors.length})
                 </summary>
                 <ul className="m-0 mt-2 list-disc space-y-1 pl-4 text-[11px] text-white/60">
@@ -134,7 +134,7 @@ export function OverlayConfidenceView({
             ) : null}
           </>
         ) : (
-          <p className="m-0 text-[11px] text-white/45">
+          <p className="m-0 text-[11px] text-white/75">
             No per-screen confidence payload is attached to this report.
           </p>
         )}

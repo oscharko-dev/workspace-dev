@@ -71,7 +71,7 @@ export function GalleryView({
 
       <div className="grid gap-3 lg:grid-cols-[minmax(0,_1.15fr)_minmax(0,_1fr)]">
         <section className="min-w-0">
-          <div className="mb-2 flex items-center justify-between text-[11px] text-white/55">
+          <div className="mb-2 flex items-center justify-between text-[11px] text-white/85">
             <span>
               {filtered.length} of {allScreens.length} screens
             </span>
@@ -82,7 +82,7 @@ export function GalleryView({
             ) : null}
           </div>
           {filtered.length === 0 ? (
-            <div className="rounded-md border border-white/10 bg-[#171717] p-6 text-center text-[11px] text-white/45">
+            <div className="rounded-md border border-white/10 bg-[#171717] p-6 text-center text-[11px] text-white/75">
               No screens match the current filters.
             </div>
           ) : (
@@ -116,7 +116,7 @@ export function GalleryView({
           {selected ? (
             <ScreenDetail screen={selected} />
           ) : (
-            <p className="m-0 text-[11px] text-white/45">
+            <p className="m-0 text-[11px] text-white/75">
               Select a screen to see its diff detail.
             </p>
           )}
