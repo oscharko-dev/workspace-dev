@@ -916,18 +916,81 @@ const maskKind = (value: string, kind: PiiKind): string => {
         .replace(/\b[0-9a-f]{24,32}\b/giu, "_");
     case "customer_name_placeholder":
       return value;
-    // Issue #1668 (audit-2026-05): the new GDPR Art. 5(1)(c) categories
-    // are detected centrally by `detectPii` but not masked at the
-    // `maskKind` granularity here — the upstream detector returns the
-    // full opaque redaction token. We surface them as no-op cases so
-    // the switch is exhaustive and TypeScript can prove the function
-    // is total over the `PiiKind` union.
+    // Issue #1668 (audit-2026-05): inline masking for the GDPR
+    // Art. 5(1)(c) / Art. 9 categories. Each branch applies the
+    // detector's regex directly so a value containing a postal address /
+    // DOB / account number / national id / special-category keyword is
+    // surgically masked even when the caller routes through the
+    // value-level mask path (`redactInline`) instead of the
+    // detection-level placeholder path. Returning `value` unchanged
+    // here would silently leak the data through the inline writer.
     case "postal_address":
+      return value
+        .replace(
+          /\b\p{Lu}\p{L}+(?:str(?:asse|aße)?|str\.|weg|allee|platz|gasse)\s+\d{1,4}[a-z]?\s*,?\s*\d{5}\s+\p{Lu}\p{L}+/giu,
+          "_",
+        )
+        .replace(
+          /\b\p{Lu}\p{L}+(?:strasse|gasse|weg|platz)\s+\d{1,4}[a-z]?\s*,?\s*\d{4}\s+\p{Lu}\p{L}+/giu,
+          "_",
+        )
+        .replace(
+          /\b\p{Lu}\p{L}+straat\s+\d{1,4}[a-z]?\s*,?\s*\d{4}\s?[A-Z]{2}\s+\p{Lu}\p{L}+/giu,
+          "_",
+        )
+        .replace(
+          /\b\d{1,4}\s+(?:rue|avenue|boulevard|place|impasse)\s+(?:de\s+(?:la|l['’]|le|les)\s+)?\p{L}+\s*,?\s*\d{5}\s+\p{Lu}\p{L}+/giu,
+          "_",
+        )
+        .replace(
+          /\b(?:via|viale|piazza|corso|vicolo)\s+\p{L}+\s+\d{1,4}[a-z]?\s*,?\s*\d{5}\s+\p{Lu}\p{L}+/giu,
+          "_",
+        );
     case "date_of_birth":
+      return value.replace(
+        /(\b(?:born|geboren|geb\.?|dob|date\s+of\s+birth|geburtsdatum|geburtstag|naissance|nacimiento|nascita)\b[^\n]{0,32}?)(\d{1,2}[./-]\d{1,2}[./-](?:19|20)\d{2}|(?:19|20)\d{2}-\d{2}-\d{2})/giu,
+        "$1_",
+      );
     case "account_number":
+      return value.replace(
+        /(\b(?:account|kontonummer|konto-?nr\.?|customer\s*id|kunden(?:nummer|nr\.?)|contract\s*(?:no|number|id)|vertragsnummer|vertrag\s*nr\.?|policy\s*(?:no|number)|membership\s*(?:no|number))\b[^\n]{0,16}?)(\b\d{6,18}\b)/giu,
+        "$1_",
+      );
     case "national_id":
+      return value
+        .replace(
+          /(\b(?:personalausweis(?:nummer)?|ausweisnr\.?|id\s*card)\b[^\n]{0,16}?)\b[A-Z0-9]{9,12}\b/giu,
+          "$1_",
+        )
+        .replace(/\b756[.\-\s]?\d{4}[.\-\s]?\d{4}[.\-\s]?\d{2}\b/gu, "_")
+        .replace(/\b(?:19|20)?\d{6}[-+]\d{4}\b/gu, "_")
+        .replace(/\b[0-9]{8}[A-HJ-NP-TV-Z]\b(?=\s|$|[,.])/gu, "_");
     case "special_category":
-      return value;
+      // Special-category masking: replace just the keyword. The
+      // surrounding prose is informational and not auto-redacted by
+      // policy (false-positive risk). See pii-detection.ts for the
+      // matching detector.
+      return value
+        .replace(
+          /\b(?:HIV|AIDS|cancer|krebs|diabetes|depression|schwanger|pregnant|disabled|disability|behindert|invalidit(?:y|é|ät))\b/giu,
+          "_",
+        )
+        .replace(
+          /\b(?:political\s+(?:party|opinion|affiliation)|gewerkschaft|union\s+member|trade\s+union|partei(?:mitglied)?|syndicat)\b/giu,
+          "_",
+        )
+        .replace(
+          /\b(?:religion|religios|religiös|religieux|judaism|j(?:üd|ued|uw|udisch)|catholic|katholisch|muslim|muslimisch|protestant|protestantisch|atheist|atheismus|hindu|buddhist)\b/giu,
+          "_",
+        )
+        .replace(
+          /\b(?:ethnic(?:ity|al)|race|rasse|ethnie|herkunft|nationality\s+code|asylum\s+status)\b/giu,
+          "_",
+        )
+        .replace(
+          /\b(?:sexual\s+orientation|gay|lesbian|bisexual|homosexuell?|heterosexuell?|transgender|nonbinary)\b/giu,
+          "_",
+        );
   }
 };
 

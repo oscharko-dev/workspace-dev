@@ -67,8 +67,23 @@ const FULL_NAME_PLACEHOLDERS = [
  * Order matters: more specific detectors run first so that an IBAN does
  * not get misreported as a tax id.
  */
+/**
+ * Issue #1668 (audit-2026-05) ReDoS guard: hard input-length cap. The new
+ * GDPR Art. 5(1)(c) regex packs use Unicode property escapes and nested
+ * alternations which carry catastrophic-backtracking risk on adversarial
+ * input. `detectPii` is called on free-text Jira / custom-context fields
+ * which are already byte-capped upstream (see `MAX_JIRA_DESCRIPTION_PLAIN_BYTES`
+ * = 32 KiB and `MAX_CUSTOM_CONTEXT_BYTES_PER_JOB`), but defense-in-depth: refuse
+ * to scan strings longer than 16 KiB so a future caller that bypasses the
+ * upstream cap cannot turn the detector into a CPU-exhaustion vector.
+ */
+const PII_DETECTION_MAX_INPUT_BYTES = 16 * 1024;
+
 export const detectPii = (input: string): PiiMatch | null => {
   if (input.length === 0) return null;
+  if (Buffer.byteLength(input, "utf8") > PII_DETECTION_MAX_INPUT_BYTES) {
+    return null;
+  }
   const normalized = input.normalize("NFKC");
 
   const iban = detectIban(normalized);
