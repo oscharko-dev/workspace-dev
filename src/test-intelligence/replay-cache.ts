@@ -199,9 +199,13 @@ export class ReplayCacheValidationError extends Error {
   }
 }
 
-const cloneEntry = (entry: ReplayCacheEntry): ReplayCacheEntry => {
-  return JSON.parse(JSON.stringify(entry)) as ReplayCacheEntry;
-};
+// `structuredClone` is the platform deep-clone (Node 17+). It avoids the
+// double-allocation of a JSON round-trip on every cache hit and — critically —
+// throws on values JSON would silently drop (`undefined`, `Symbol`, `BigInt`,
+// cycles), so contract drift in `ReplayCacheEntry` surfaces loudly instead of
+// corrupting the clone.
+const cloneEntry = (entry: ReplayCacheEntry): ReplayCacheEntry =>
+  structuredClone(entry);
 
 const markAuditCacheHit = (
   testCases: GeneratedTestCaseList,

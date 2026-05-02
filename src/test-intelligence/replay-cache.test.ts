@@ -271,6 +271,74 @@ test("memory cache: lookup returns a deep clone (caller cannot poison cache)", a
   }
 });
 
+test("memory cache: nested array mutations on a hit do not bleed into the cached entry", async () => {
+  // Regression guard for #1663: switching from JSON-roundtrip to
+  // `structuredClone` must continue to fully detach nested arrays
+  // (steps, expectedResults, figmaTraceRefs) — not just the top-level
+  // entry. Pushing into a nested array on the first read must not be
+  // observable on the second read.
+  const cache = createMemoryReplayCache();
+  const { cacheKey } = compileForFixture("job-1");
+  await cache.store(cacheKey, buildList("job-1"));
+
+  const first = await cache.lookup(cacheKey);
+  assert.equal(first.hit, true);
+  if (first.hit === true) {
+    const tc = first.entry.testCases.testCases[0]!;
+    tc.steps.push({ index: 99, action: "POISONED" });
+    tc.expectedResults.push("POISONED");
+    tc.figmaTraceRefs.push({ screenId: "POISONED", nodeId: "POISONED" });
+  }
+
+  const second = await cache.lookup(cacheKey);
+  assert.equal(second.hit, true);
+  if (second.hit === true) {
+    const tc = second.entry.testCases.testCases[0]!;
+    assert.equal(tc.steps.length, 1, "steps must be cloned independently");
+    assert.equal(
+      tc.expectedResults.length,
+      1,
+      "expectedResults must be cloned independently",
+    );
+    assert.equal(
+      tc.figmaTraceRefs.length,
+      1,
+      "figmaTraceRefs must be cloned independently",
+    );
+  }
+});
+
+test("memory cache: lookup returns a structurally-equal but reference-distinct entry", async () => {
+  // Regression guard for #1663: `structuredClone` must produce a
+  // deep-distinct copy. Asserting reference inequality across nested
+  // levels gives us a tripwire if anyone reverts to a shallow copy.
+  const cache = createMemoryReplayCache();
+  const { cacheKey } = compileForFixture("job-1");
+  await cache.store(cacheKey, buildList("job-1"));
+
+  const a = await cache.lookup(cacheKey);
+  const b = await cache.lookup(cacheKey);
+  assert.equal(a.hit, true);
+  assert.equal(b.hit, true);
+  if (a.hit === true && b.hit === true) {
+    assert.notStrictEqual(a.entry, b.entry);
+    assert.notStrictEqual(a.entry.testCases, b.entry.testCases);
+    assert.notStrictEqual(
+      a.entry.testCases.testCases,
+      b.entry.testCases.testCases,
+    );
+    assert.notStrictEqual(
+      a.entry.testCases.testCases[0],
+      b.entry.testCases.testCases[0],
+    );
+    assert.notStrictEqual(
+      a.entry.testCases.testCases[0]!.steps,
+      b.entry.testCases.testCases[0]!.steps,
+    );
+    assert.deepEqual(a.entry, b.entry);
+  }
+});
+
 test("filesystem cache: miss → store → hit cycle persists JSON on disk", async () => {
   const root = await mkdtemp(join(tmpdir(), "wsd-replay-fs-"));
   try {
