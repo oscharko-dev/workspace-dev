@@ -2159,7 +2159,11 @@ const collectExportBytes = async (
   return out;
 };
 
-const utf8 = (value: string): Uint8Array => new TextEncoder().encode(value);
+// Issue #1692 (audit-2026-05 Wave 3): hoist a single `TextEncoder` to module
+// scope so per-call `new TextEncoder()` allocations are eliminated. The
+// pattern matches `qc-xlsx-writer.ts` and `export-pipeline.ts`.
+const UTF8_ENCODER = new TextEncoder();
+const utf8 = (value: string): Uint8Array => UTF8_ENCODER.encode(value);
 
 const sha256OfBytes = (bytes: Uint8Array): string =>
   createHash("sha256").update(bytes).digest("hex");

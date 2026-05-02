@@ -177,6 +177,25 @@ export function redactErrorChain(
       lines.push(redactedStack);
     }
 
+    // Issue #1686 (audit-2026-05 Wave 3): AggregateError carries an
+    // `errors[]` array (Promise.allSettled / Promise.any concurrent paths)
+    // that the .cause walker would otherwise skip — leaking unredacted
+    // secrets/PII from inner errors. Recurse into each aggregated error
+    // with the remaining depth budget so the same redactor visits them.
+    if (current instanceof AggregateError && Array.isArray(current.errors)) {
+      const remainingDepth = Math.max(0, depthMax - depth - 1);
+      for (const aggregatedErr of current.errors) {
+        const aggLines = redactErrorChain(
+          aggregatedErr,
+          seen,
+          remainingDepth,
+        ).split("\n");
+        for (const aggLine of aggLines) {
+          lines.push(`[aggregated]: ${aggLine}`);
+        }
+      }
+    }
+
     if (depth + 1 >= depthMax) {
       lines.push("[cause]: [truncated: max depth reached]");
       break;
