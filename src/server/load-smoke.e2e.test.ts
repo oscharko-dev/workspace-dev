@@ -365,7 +365,9 @@ test("runtime load smoke covers mixed submit and regenerate queue saturation ove
       baseUrl: server.url,
       jobId: sourceJobId,
       acceptedStatuses: ["completed"],
-      timeoutMs: 1_800_000,
+      // Issue #1675 (audit-2026-05): pre-bump baseline restored — see #1665.
+      // Was 1_800_000 (30 min) as a safety net for the Playwright wall-clock.
+      timeoutMs: 120_000,
     });
     assert.equal(sourceCompleted.status, "completed");
 
