@@ -34,6 +34,8 @@ function BackIcon(): JSX.Element {
       viewBox="0 0 16 16"
       fill="currentColor"
       className="size-4"
+      aria-hidden="true"
+      focusable="false"
     >
       <path
         fillRule="evenodd"
@@ -51,6 +53,8 @@ function ExternalLinkIcon(): JSX.Element {
       viewBox="0 0 16 16"
       fill="currentColor"
       className="size-4"
+      aria-hidden="true"
+      focusable="false"
     >
       <path d="M8.914 6.025a.75.75 0 0 1 1.06 0 3.5 3.5 0 0 1 0 4.95l-2 2a3.5 3.5 0 0 1-5.396-4.402.75.75 0 0 1 1.251.827 2 2 0 0 0 3.085 2.514l2-2a2 2 0 0 0 0-2.828.75.75 0 0 1 0-1.06Z" />
       <path d="M7.086 9.975a.75.75 0 0 1-1.06 0 3.5 3.5 0 0 1 0-4.95l2-2a3.5 3.5 0 0 1 5.396 4.402.75.75 0 0 1-1.251-.827 2 2 0 0 0-3.085-2.514l-2 2a2 2 0 0 0 0 2.828.75.75 0 0 1 0 1.06Z" />
@@ -65,6 +69,8 @@ function SettingsIcon(): JSX.Element {
       viewBox="0 0 16 16"
       fill="currentColor"
       className="size-3.5"
+      aria-hidden="true"
+      focusable="false"
     >
       <path
         fillRule="evenodd"
@@ -176,7 +182,9 @@ function toHydratedPipelineState(payload: JobPayload): PastePipelineState {
   const stageProgress = { ...state.stageProgress };
   const stages = [
     ...(Array.isArray(payload.stages) ? payload.stages : []),
-    ...(Array.isArray(payload.inspector?.stages) ? payload.inspector.stages : []),
+    ...(Array.isArray(payload.inspector?.stages)
+      ? payload.inspector.stages
+      : []),
   ];
   const errors: PipelineError[] = [];
   let fallbackMode: PipelineFallbackMode | undefined;
@@ -202,8 +210,7 @@ function toHydratedPipelineState(payload: JobPayload): PastePipelineState {
         ? { message: stagePayload.message }
         : {}),
     };
-    fallbackMode =
-      fallbackMode ?? toFallbackMode(stagePayload.fallbackMode);
+    fallbackMode = fallbackMode ?? toFallbackMode(stagePayload.fallbackMode);
     if (nextStatus === "failed") {
       errors.push(
         toHydratedPipelineError({
@@ -349,8 +356,7 @@ function PanelView({
     acceptedRegeneration?.sourceJobId === jobId
       ? acceptedRegeneration.nextJobId
       : jobId;
-  const activePipeline =
-    pipeline?.jobId === activeJobId ? pipeline : undefined;
+  const activePipeline = pipeline?.jobId === activeJobId ? pipeline : undefined;
   const hydratedPipeline = useHydratedPipelineState({
     jobId: activeJobId,
     enabled: activePipeline === undefined,
@@ -563,8 +569,7 @@ function BootstrapView(): JSX.Element {
   >(null);
   const [historyReimportReplayReady, setHistoryReimportReplayReady] =
     useState(false);
-  const [historyReimportPending, setHistoryReimportPending] =
-    useState(false);
+  const [historyReimportPending, setHistoryReimportPending] = useState(false);
 
   const clearHistoryReimportState = useCallback((): void => {
     setHistoryReimportPending(false);
@@ -750,7 +755,9 @@ function BootstrapView(): JSX.Element {
         {...(exposeReplayControls
           ? { onGenerateSelected: handleGenerateSelected }
           : {})}
-        {...(exposeReplayControls ? { onResubmitFresh: handleResubmitFresh } : {})}
+        {...(exposeReplayControls
+          ? { onResubmitFresh: handleResubmitFresh }
+          : {})}
         onRemoveImportSession={handleRemoveImportSession}
         onReimportSession={handleReimportSession}
       />

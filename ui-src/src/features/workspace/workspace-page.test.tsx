@@ -189,6 +189,29 @@ describe("WorkspacePage", () => {
     await expectNoBlockingAccessibilityViolations(form);
   });
 
+  it("marks header-button icons as decorative for screen readers (WCAG 1.1.1 / 4.1.2)", async () => {
+    renderWorkspacePage();
+
+    const refreshButton = await screen.findByRole("button", {
+      name: "Refresh",
+    });
+    const cancelButton = screen.getByRole("button", { name: "Cancel Job" });
+
+    for (const button of [refreshButton, cancelButton]) {
+      const svg = button.querySelector("svg");
+      if (!(svg instanceof SVGElement)) {
+        throw new Error("Expected header button to contain a decorative svg.");
+      }
+      expect(svg.getAttribute("aria-hidden")).toBe("true");
+      expect(svg.getAttribute("focusable")).toBe("false");
+    }
+
+    // Accessible names must still be derived from visible text — buttons must
+    // not have an empty accessible name.
+    expect(refreshButton).toHaveAccessibleName("Refresh");
+    expect(cancelButton).toHaveAccessibleName("Cancel Job");
+  });
+
   it("renders the pipeline selector for multi-pipeline runtimes and submits the selected pipeline", async () => {
     fetchJsonMock.mockImplementation(async ({ url, init }) => {
       if (url === "/healthz") {
@@ -604,7 +627,13 @@ describe("WorkspacePage", () => {
     expect(screen.getByText("+1 added")).toBeVisible();
     expect(screen.getByText("~1 modified")).toBeVisible();
     expect(screen.getByText("-1 removed")).toBeVisible();
-    expect(screen.getByText("1 unchanged")).toBeVisible();
+    expect(screen.getByText("=1 unchanged")).toBeVisible();
+    // WCAG 1.4.1 — each diff pill carries an aria-label so the kind is
+    // announced to assistive tech without relying on color alone.
+    expect(screen.getByLabelText("1 added")).toBeInTheDocument();
+    expect(screen.getByLabelText("1 modified")).toBeInTheDocument();
+    expect(screen.getByLabelText("1 removed")).toBeInTheDocument();
+    expect(screen.getByLabelText("1 unchanged")).toBeInTheDocument();
     expect(screen.getByText("unknown")).toBeVisible();
     expect(screen.getByText("QUEUED")).toBeVisible();
 

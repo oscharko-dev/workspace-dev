@@ -82,6 +82,8 @@ function ChevronDownIcon(): JSX.Element {
       viewBox="0 0 16 16"
       fill="currentColor"
       className="size-4"
+      aria-hidden="true"
+      focusable="false"
     >
       <path
         fillRule="evenodd"
@@ -99,6 +101,8 @@ function RefreshIcon(): JSX.Element {
       viewBox="0 0 16 16"
       fill="currentColor"
       className="size-4"
+      aria-hidden="true"
+      focusable="false"
     >
       <path
         fillRule="evenodd"
@@ -116,6 +120,8 @@ function CancelIcon(): JSX.Element {
       viewBox="0 0 16 16"
       fill="currentColor"
       className="size-4"
+      aria-hidden="true"
+      focusable="false"
     >
       <path
         fillRule="evenodd"
@@ -135,6 +141,8 @@ function EmptyPreviewIcon(): JSX.Element {
       stroke="currentColor"
       strokeWidth={1.5}
       className="size-6 text-slate-400"
+      aria-hidden="true"
+      focusable="false"
     >
       <path
         strokeLinecap="round"
@@ -1111,28 +1119,56 @@ export function WorkspacePage(): JSX.Element {
                       Previous job: {jobPayload.generationDiff.previousJobId}
                     </p>
                   ) : null}
-                  <div className="mt-2 flex flex-wrap gap-2 text-xs">
+                  <ul
+                    className="m-0 mt-2 flex list-none flex-wrap gap-2 p-0 text-xs"
+                    aria-label="Generation diff summary"
+                  >
                     {(jobPayload.generationDiff.added?.length ?? 0) > 0 ? (
-                      <span className="rounded-full border border-emerald-400 bg-emerald-50 px-2 py-0.5 text-emerald-800">
-                        +{jobPayload.generationDiff.added?.length} added
-                      </span>
+                      <li
+                        data-diff-kind="added"
+                        aria-label={`${String(jobPayload.generationDiff.added?.length ?? 0)} added`}
+                        className="rounded-full border border-emerald-400 bg-emerald-50 px-2 py-0.5 text-emerald-800"
+                      >
+                        <span aria-hidden="true">
+                          +{jobPayload.generationDiff.added?.length} added
+                        </span>
+                      </li>
                     ) : null}
                     {(jobPayload.generationDiff.modified?.length ?? 0) > 0 ? (
-                      <span className="rounded-full border border-amber-400 bg-amber-50 px-2 py-0.5 text-amber-800">
-                        ~{jobPayload.generationDiff.modified?.length} modified
-                      </span>
+                      <li
+                        data-diff-kind="modified"
+                        aria-label={`${String(jobPayload.generationDiff.modified?.length ?? 0)} modified`}
+                        className="rounded-full border border-amber-400 bg-amber-50 px-2 py-0.5 text-amber-800"
+                      >
+                        <span aria-hidden="true">
+                          ~{jobPayload.generationDiff.modified?.length} modified
+                        </span>
+                      </li>
                     ) : null}
                     {(jobPayload.generationDiff.removed?.length ?? 0) > 0 ? (
-                      <span className="rounded-full border border-rose-400 bg-rose-50 px-2 py-0.5 text-rose-800">
-                        -{jobPayload.generationDiff.removed?.length} removed
-                      </span>
+                      <li
+                        data-diff-kind="removed"
+                        aria-label={`${String(jobPayload.generationDiff.removed?.length ?? 0)} removed`}
+                        className="rounded-full border border-rose-400 bg-rose-50 px-2 py-0.5 text-rose-800"
+                      >
+                        <span aria-hidden="true">
+                          -{jobPayload.generationDiff.removed?.length} removed
+                        </span>
+                      </li>
                     ) : null}
                     {(jobPayload.generationDiff.unchanged?.length ?? 0) > 0 ? (
-                      <span className="rounded-full border border-slate-300 bg-white px-2 py-0.5 text-slate-600">
-                        {jobPayload.generationDiff.unchanged?.length} unchanged
-                      </span>
+                      <li
+                        data-diff-kind="unchanged"
+                        aria-label={`${String(jobPayload.generationDiff.unchanged?.length ?? 0)} unchanged`}
+                        className="rounded-full border border-slate-300 bg-white px-2 py-0.5 text-slate-600"
+                      >
+                        <span aria-hidden="true">
+                          ={jobPayload.generationDiff.unchanged?.length}{" "}
+                          unchanged
+                        </span>
+                      </li>
                     ) : null}
-                  </div>
+                  </ul>
                 </div>
               ) : null}
 
@@ -1191,6 +1227,8 @@ export function WorkspacePage(): JSX.Element {
                         viewBox="0 0 24 24"
                         fill="currentColor"
                         className="size-6 text-emerald-600"
+                        aria-hidden="true"
+                        focusable="false"
                       >
                         <path
                           fillRule="evenodd"

@@ -185,10 +185,8 @@ function BootstrapHeader({
   selectedPipelineId?: string | undefined;
   onPipelineIdChange?: ((pipelineId: string) => void) | undefined;
 }): JSX.Element {
-  const buttons: readonly string[] = ["Review", "Sync", "PR", "Coverage"];
   const showPipelineSelector =
-    (availablePipelines?.length ?? 0) > 1 &&
-    onPipelineIdChange !== undefined;
+    (availablePipelines?.length ?? 0) > 1 && onPipelineIdChange !== undefined;
   return (
     <header className="shrink-0 border-b border-[#000000] bg-[#171717]">
       <div className="flex w-full items-center justify-between gap-3 px-4 py-2">
@@ -214,19 +212,6 @@ function BootstrapHeader({
               </span>
             </div>
           </div>
-        </div>
-
-        <div className="flex items-center gap-1">
-          {buttons.map((label) => (
-            <button
-              key={label}
-              type="button"
-              disabled
-              className="flex cursor-not-allowed items-center gap-1.5 rounded-md border border-transparent bg-transparent px-2.5 py-1 text-[11px] font-medium text-white/25"
-            >
-              {label}
-            </button>
-          ))}
         </div>
 
         <div className="flex items-center gap-2">
