@@ -20,7 +20,9 @@ import {
   type BuildJiraIssueIrInput,
   type JiraAdfSource,
 } from "./jira-issue-ir.js";
-import { canonicalJson, sha256Hex } from "./content-hash.js";
+import { createHash } from "node:crypto";
+
+import { canonicalJson } from "./content-hash.js";
 import { sanitizeErrorMessage } from "../error-sanitization.js";
 import { redactHighRiskSecrets } from "../secret-redaction.js";
 import { DEFAULT_JIRA_FIELD_SELECTION_PROFILE } from "../contracts/index.js";
@@ -553,8 +555,15 @@ const parseIssues = ({
   };
   const issues: JiraIssueIr[] = [];
   const capturedAt = request.capturedAt ?? DETERMINISTIC_CAPTURED_AT;
-  const responseHash = sha256Hex(canonicalJson(data));
-  const responseBytes = Buffer.byteLength(canonicalJson(data), "utf8");
+  // Issue #1688 (audit-2026-05 Wave 3): canonicalise once and reuse for both
+  // the hash and the byte-length. Previously we paid two full
+  // canonicalJson(data) traversals + two large-string allocations per Jira
+  // call (~8 MB peak heap at the 4 MB DEFAULT_MAX_RESPONSE_BYTES ceiling).
+  const canonicalResponse = canonicalJson(data);
+  const responseHash = createHash("sha256")
+    .update(canonicalResponse)
+    .digest("hex");
+  const responseBytes = Buffer.byteLength(canonicalResponse, "utf8");
 
   for (const rawIssue of data.issues) {
     const fields = rawIssue.fields ?? {};

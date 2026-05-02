@@ -454,6 +454,34 @@ test("redactErrorChain redacts PAN-like values in nested causes", () => {
   assert.match(out, /\[redacted-pan]/);
 });
 
+// Issue #1686 (audit-2026-05 Wave 3): AggregateError.errors[] redaction.
+test("redactErrorChain redacts secrets inside AggregateError.errors[]", () => {
+  const inner1 = new Error("token=ghp_inner_secret_value_one");
+  inner1.stack = undefined;
+  const inner2 = new Error("Authorization: Bearer leaked_inner_two");
+  inner2.stack = undefined;
+  const agg = new AggregateError([inner1, inner2], "outer agg failure");
+  agg.stack = undefined;
+
+  const out = redactErrorChain(agg);
+  assert.equal(out.includes("ghp_inner_secret_value_one"), false);
+  assert.equal(out.includes("leaked_inner_two"), false);
+  assert.match(out, /\[aggregated]:/);
+});
+
+test("redactErrorChain handles AggregateError nested in cause chain", () => {
+  const inner = new Error("api-key:secret_inside_aggregate_value");
+  inner.stack = undefined;
+  const agg = new AggregateError([inner], "agg msg");
+  agg.stack = undefined;
+  const root = new Error("outer", { cause: agg });
+  root.stack = undefined;
+
+  const out = redactErrorChain(root);
+  assert.equal(out.includes("secret_inside_aggregate_value"), false);
+  assert.match(out, /\[aggregated]:/);
+});
+
 test("sanitizeErrorMessage uses the cause chain when cause is present", () => {
   const leaf = new Error("inner token=leaf_secret_abc");
   leaf.stack = "Error: inner token=leaf_secret_abc";

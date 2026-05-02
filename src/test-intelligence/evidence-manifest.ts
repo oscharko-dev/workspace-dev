@@ -139,7 +139,13 @@ export const validateWave1PocEvidenceArtifactPath = (
   if (hasLoneSurrogate(value)) {
     return { ok: false, reason: "lone_surrogate" };
   }
-  if (new TextEncoder().encode(value).byteLength > 512) {
+  // Issue #1691 (audit-2026-05 Wave 3): replace per-call `new
+  // TextEncoder().encode(...).byteLength` with `Buffer.byteLength` — same
+  // semantics on UTF-8 strings, no transient encoder allocation, native fast
+  // path. The validator runs once per artifact entry inside hot loops
+  // (#1691), so this removes ~20 short-lived encoder objects per validate
+  // call for a 10-artifact manifest.
+  if (Buffer.byteLength(value, "utf8") > 512) {
     return { ok: false, reason: "exceeds_total_byte_length" };
   }
   const parts = value.split("/");
@@ -148,7 +154,7 @@ export const validateWave1PocEvidenceArtifactPath = (
   ) {
     return { ok: false, reason: "path_traversal" };
   }
-  if (parts.some((part) => new TextEncoder().encode(part).byteLength > 255)) {
+  if (parts.some((part) => Buffer.byteLength(part, "utf8") > 255)) {
     return { ok: false, reason: "segment_exceeds_byte_length" };
   }
   return { ok: true };
@@ -254,9 +260,16 @@ const sha256OfBytes = (bytes: Uint8Array): string => {
   return createHash("sha256").update(bytes).digest("hex");
 };
 
+// Issue #1691 (audit-2026-05 Wave 3): hash a UTF-8 string directly through
+// the streaming `update(string)` API instead of allocating a transient
+// `Uint8Array` via `new TextEncoder().encode(...)` for every hash. Node's
+// `createHash` accepts a string + encoding directly.
+const sha256OfString = (value: string): string =>
+  createHash("sha256").update(value, "utf8").digest("hex");
+
 export const computeWave1PocEvidenceManifestDigest = (
   manifest: Wave1PocEvidenceManifest,
-): string => sha256OfBytes(new TextEncoder().encode(canonicalJson(manifest)));
+): string => sha256OfString(canonicalJson(manifest));
 
 const omitManifestIntegrity = (
   manifest: Wave1PocEvidenceManifest,
@@ -268,10 +281,7 @@ const omitManifestIntegrity = (
 
 const computeWave1PocEvidenceManifestIntegrityHash = (
   manifest: Wave1PocEvidenceManifest,
-): string =>
-  sha256OfBytes(
-    new TextEncoder().encode(canonicalJson(omitManifestIntegrity(manifest))),
-  );
+): string => sha256OfString(canonicalJson(omitManifestIntegrity(manifest)));
 
 const withWave1PocEvidenceManifestIntegrity = (
   manifest: Wave1PocEvidenceManifest,
