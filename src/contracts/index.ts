@@ -857,6 +857,36 @@ export type LlmGatewayAuthMode =
   (typeof ALLOWED_LLM_GATEWAY_AUTH_MODES)[number];
 
 /**
+ * Wire-format strategy for structured outputs. Decouples our in-process
+ * structured-output behaviour (the gateway always parses JSON content and
+ * validates it against `responseSchema` when present) from the on-the-wire
+ * `response_format` field shipped to the upstream provider.
+ *
+ * - `"json_schema"` (default) — emit
+ *   `response_format: { type: "json_schema", json_schema: {...} }` when the
+ *   client config declares `structuredOutputs: true` and the request carries
+ *   a schema. Matches OpenAI / Azure OpenAI Structured Outputs.
+ * - `"json_object"` — emit `response_format: { type: "json_object" }`. The
+ *   schema is still validated in-process. Use for providers that accept the
+ *   weaker `json_object` mode but reject `json_schema`.
+ * - `"none"` — omit `response_format` entirely. Use when the deployment
+ *   silently returns empty content for any `response_format` value (observed
+ *   on `gpt-oss-120b` via Azure AI Foundry's `openai/v1` path on 2026-05-02:
+ *   any `response_format` setting yields `content: ""` after burning ~2
+ *   tokens; with no `response_format`, the model produces clean parseable
+ *   JSON when the prompt instructs it to). The gateway still parses and
+ *   schema-validates the content in-process so the contract guarantee
+ *   ("structured-output success returns parsed JSON") is unchanged.
+ */
+export const ALLOWED_LLM_GATEWAY_WIRE_STRUCTURED_OUTPUT_MODES = [
+  "json_schema",
+  "json_object",
+  "none",
+] as const;
+export type LlmGatewayWireStructuredOutputMode =
+  (typeof ALLOWED_LLM_GATEWAY_WIRE_STRUCTURED_OUTPUT_MODES)[number];
+
+/**
  * Disjoint failure classes surfaced by `LlmGatewayClient.generate`. Refusals,
  * schema-invalid responses, and image-payload guard rejections are NOT
  * retryable; transport, timeout, and rate-limit failures are.
@@ -981,6 +1011,18 @@ export interface LlmGatewayClientConfig {
    * this field.
    */
   maxResponseBytes?: number;
+  /**
+   * Wire-format strategy for structured outputs. Defaults to `"json_schema"`
+   * (preserves existing behaviour). Set to `"json_object"` for providers
+   * that accept the weaker mode but reject `json_schema`. Set to `"none"`
+   * for providers that return empty content for ANY `response_format`
+   * (observed on Azure AI Foundry's `gpt-oss-120b` via the `openai/v1`
+   * path on 2026-05-02). In all three modes, the gateway parses and
+   * validates the response content as JSON in-process when the request
+   * carries a `responseSchema`, so the contract guarantee surfaced to
+   * callers is unchanged. See {@link LlmGatewayWireStructuredOutputMode}.
+   */
+  wireStructuredOutputMode?: LlmGatewayWireStructuredOutputMode;
 }
 
 /** Image payload accepted by visual sidecars. Rejected for `test_generation`. */
@@ -7590,4 +7632,4 @@ export type SourceMixPlannerResult =
  * Must be bumped according to CONTRACT_CHANGELOG.md rules.
  * Package version alignment is documented in VERSIONING.md.
  */
-export const CONTRACT_VERSION = "4.25.0" as const;
+export const CONTRACT_VERSION = "4.26.0" as const;
