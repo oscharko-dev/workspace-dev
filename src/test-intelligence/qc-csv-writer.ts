@@ -49,11 +49,31 @@ export type QcCsvColumn = (typeof QC_CSV_COLUMNS)[number];
 
 const NEEDS_QUOTING_REGEX = /[,"\r\n]/;
 
-const escapeCell = (value: string): string => {
-  if (NEEDS_QUOTING_REGEX.test(value)) {
-    return `"${value.replace(/"/g, '""')}"`;
+/**
+ * Issue #1664 (audit-2026-05): CSV Formula Injection (CWE-1236) defence.
+ * A cell value whose first non-whitespace character is `=`, `+`, `-`,
+ * `@`, `\t`, or `\r` is interpreted as a formula by Excel /
+ * LibreOffice / Sheets / OpenText ALM CSV importers. Prefixing with a
+ * single quote forces literal-string interpretation. Mirrors the
+ * neutralizer in `qc-xlsx-writer.ts` for symmetric defence — when a
+ * customer round-trips XLSX → CSV → re-imports, the same protection
+ * applies on both sides.
+ */
+const FORMULA_LEADER_RE = /^[=+\-@\t\r]/;
+const neutralizeFormulaLeading = (value: string): string => {
+  if (value.length === 0) return value;
+  if (FORMULA_LEADER_RE.test(value)) {
+    return `'${value}`;
   }
   return value;
+};
+
+const escapeCell = (value: string): string => {
+  const neutralized = neutralizeFormulaLeading(value);
+  if (NEEDS_QUOTING_REGEX.test(neutralized)) {
+    return `"${neutralized.replace(/"/g, '""')}"`;
+  }
+  return neutralized;
 };
 
 const joinList = (values: readonly string[]): string => values.join(" | ");

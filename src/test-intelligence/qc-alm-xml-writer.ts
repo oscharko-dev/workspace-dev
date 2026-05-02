@@ -71,15 +71,31 @@ const XML_DECLARATION = '<?xml version="1.0" encoding="UTF-8"?>';
 const INDENT = "  ";
 const NEWLINE = "\n";
 
+/**
+ * Issue #1664 (audit-2026-05): symmetric formula-injection neutralizer
+ * for the OpenText ALM XML export. Customers that re-export ALM data
+ * to XLSX or CSV would otherwise re-introduce the CWE-1236 attack
+ * surface. Mirrors the leader rule used by `qc-xlsx-writer.ts` and
+ * `qc-csv-writer.ts`.
+ */
+const FORMULA_LEADER_RE = /^[=+\-@\t\r]/;
+const neutralizeFormulaLeading = (value: string): string => {
+  if (value.length === 0) return value;
+  if (FORMULA_LEADER_RE.test(value)) {
+    return `'${value}`;
+  }
+  return value;
+};
+
 const escapeText = (value: string): string => {
-  return value
+  return neutralizeFormulaLeading(value)
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;");
 };
 
 const escapeAttr = (value: string): string => {
-  return value
+  return neutralizeFormulaLeading(value)
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")

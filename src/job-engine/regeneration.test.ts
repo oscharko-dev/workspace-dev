@@ -12,7 +12,8 @@ import { ensureTemplateValidationSeedNodeModules } from "./test-validation-seed.
 const waitForTerminalStatus = async ({
   getStatus,
   jobId,
-  timeoutMs = 600_000,
+  // Issue #1675 (audit-2026-05): pre-bump baseline restored — see #1665.
+  timeoutMs = 300_000,
 }: {
   getStatus: (
     jobId: string,

@@ -125,7 +125,11 @@ const writeLocalSyncBaseline = async ({
 const waitForTerminalStatus = async ({
   getStatus,
   jobId,
-  timeoutMs = 600_000,
+  // Issue #1675 (audit-2026-05): restored to the pre-2026-05-01 baseline
+  // now that #1665 (Playwright `webServer.command` rebuilt the app on
+  // every launch) is fixed. The 600_000ms bump existed solely as a
+  // safety net for the 30-min Playwright wall-clock #1665 now eliminates.
+  timeoutMs = 300_000,
 }: {
   getStatus: (
     jobId: string,

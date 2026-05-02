@@ -90,3 +90,55 @@ test("jira-token-leakage: property redacts supported secret shapes deterministic
     { seed: 20260427, numRuns: 256 },
   );
 });
+
+// Issue #1667 (audit-2026-05): bare-token shapes embedded in Jira / Azure
+// upstream error bodies. The label-anchored patterns above don't fire on
+// these because the surrounding `Authorization:` label has been stripped
+// upstream (e.g. by a header-trimming proxy or by JSON-extraction code
+// that quotes only the value).
+test("jira-token-leakage: property redacts bare token shapes (no label) — #1667", () => {
+  const PLACEHOLDER = "[redacted-secret]";
+  const bareTokenArb = fc.oneof(
+    // JWT
+    fc
+      .tuple(
+        fc.stringMatching(/^[A-Za-z0-9_-]{20,40}$/),
+        fc.stringMatching(/^[A-Za-z0-9_-]{20,40}$/),
+        fc.stringMatching(/^[A-Za-z0-9_-]{20,40}$/),
+      )
+      .map(([h, b, s]) => `eyJ${h}.${b}.${s}`),
+    // GitHub PAT family
+    fc
+      .constantFrom("ghp_", "gho_", "ghs_", "ghu_", "ghr_")
+      .chain((prefix) =>
+        fc
+          .stringMatching(/^[A-Za-z0-9]{40,60}$/)
+          .map((suffix) => `${prefix}${suffix}`),
+      ),
+    // Figma
+    fc.stringMatching(/^[A-Za-z0-9_-]{40,60}$/).map((s) => `figd_${s}`),
+    // Atlassian
+    fc.stringMatching(/^[A-Za-z0-9_=-]{40,60}$/).map((s) => `ATATT3${s}`),
+    // AWS
+    fc
+      .constantFrom("AKIA", "ASIA")
+      .chain((prefix) =>
+        fc.stringMatching(/^[A-Z0-9]{16}$/).map((s) => `${prefix}${s}`),
+      ),
+  );
+  fc.assert(
+    fc.property(bareTokenArb, (secret) => {
+      const redacted = redactHighRiskSecrets(
+        `upstream error: ${secret} please rotate`,
+        PLACEHOLDER,
+      );
+      assert.equal(
+        redacted.includes(secret),
+        false,
+        `bare-token "${secret}" survived redaction`,
+      );
+      assert.equal(redacted.includes(PLACEHOLDER), true);
+    }),
+    { seed: 20260502, numRuns: 256 },
+  );
+});
