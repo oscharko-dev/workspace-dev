@@ -24,6 +24,7 @@ import {
 } from "./inspector/test-intelligence/TestCaseListPanel";
 import { VisualSidecarPanel } from "./inspector/test-intelligence/VisualSidecarPanel";
 import { ConflictResolutionPanel } from "./inspector/test-intelligence/conflict-resolution-panel";
+import { CustomerMarkdownDownload } from "./inspector/test-intelligence/customer-markdown-download";
 import { FigmaUrlTab } from "./inspector/test-intelligence/figma-url-tab";
 import { JiraWritePanel } from "./inspector/test-intelligence/jira-write-panel";
 import { MultiSourceIngestionPanel } from "./inspector/test-intelligence/multi-source-ingestion-panel";
@@ -397,18 +398,21 @@ function TestIntelligenceInner({
 
           <div className="grid gap-4 lg:grid-cols-[minmax(0,420px)_minmax(0,1fr)]">
             <div className="flex flex-col gap-3">
-              <header className="flex items-baseline justify-between">
+              <header className="flex flex-wrap items-center justify-between gap-2">
                 <h2 className="m-0 text-sm font-semibold text-white">
                   Generated test cases
                 </h2>
-                {job.reviewStateError ? (
-                  <span
-                    data-testid="ti-page-review-state-error"
-                    className="rounded border border-amber-500/30 bg-amber-950/20 px-1.5 py-[1px] text-[10px] text-amber-200"
-                  >
-                    Review state unavailable
-                  </span>
-                ) : null}
+                <div className="flex items-center gap-2">
+                  {job.reviewStateError ? (
+                    <span
+                      data-testid="ti-page-review-state-error"
+                      className="rounded border border-amber-500/30 bg-amber-950/20 px-1.5 py-[1px] text-[10px] text-amber-200"
+                    >
+                      Review state unavailable
+                    </span>
+                  ) : null}
+                  <CustomerMarkdownDownload jobId={jobId} />
+                </div>
               </header>
               <TestCaseListPanel
                 entries={listEntries}
