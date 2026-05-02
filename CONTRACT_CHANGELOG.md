@@ -31,6 +31,44 @@ All changes to the public contract surface of `workspace-dev` are documented her
 
 ---
 
+## [4.27.0] - 2026-05-02
+
+### Added (Issue #1735 — banking/insurance prompt polish)
+
+`GeneratedTestCase` gains an optional `regulatoryRelevance` field
+surfaced via two new runtime exports:
+
+- `ALLOWED_REGULATORY_RELEVANCE_DOMAINS` — frozen `["banking",
+"insurance", "general"]` enum and matching `RegulatoryRelevanceDomain`
+  union type.
+- `BANKING_INSURANCE_SEMANTIC_KEYWORDS` — frozen list of German
+  banking/insurance flow keywords (`Versicherung`, `Police`,
+  `Schadensfall`, `Risikoprüfung`, `Bonität`, `Antrag`, `Abschluss`,
+  `Auszahlung`, `Kündigung`) used by the production runner to detect
+  regulated screens.
+- `RegulatoryRelevance` interface = `{ domain, rationale }`.
+
+Driven by the customer-demo brief: when the policy profile is
+`eu-banking-default` (the production-runner default), the runner
+augments the LLM user prompt with banking/insurance compliance
+expectations — positive+negative cases per relevant input, PII / IBAN /
+BIC / Vertragsnummer rejection + masking, four-eyes + audit-trail for
+state-changing actions, boundary tests on amount/currency, and exactly
+one regulatory-compliance case for screens whose name matches a
+`BANKING_INSURANCE_SEMANTIC_KEYWORDS` entry. Generic compliance language
+only — the prompt forbids citing specific regulatory paragraphs.
+
+The new field is optional, so previously-persisted artifacts and
+replay-cache entries from contract version 4.26.0 remain valid: this is
+an additive, fully backwards-compatible change.
+
+`LLM_GATEWAY_CONTRACT_VERSION` and
+`TEST_INTELLIGENCE_CONTRACT_VERSION` are unchanged because the LLM
+gateway wire shape and the persisted `GeneratedTestCase` schema both
+remain backwards compatible (additive optional field only); the bump
+is tracked at the top-level `CONTRACT_VERSION` per the precedent
+established in 4.7.0 / 4.26.0.
+
 ## [4.26.0] - 2026-05-02
 
 ### Added (Issue #1733 customer-demo follow-up)

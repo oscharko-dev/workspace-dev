@@ -44,6 +44,9 @@ import { join } from "node:path";
 import { createHash, randomUUID } from "node:crypto";
 
 import {
+  ALLOWED_REGULATORY_RELEVANCE_DOMAINS,
+  BANKING_INSURANCE_SEMANTIC_KEYWORDS,
+  EU_BANKING_DEFAULT_POLICY_PROFILE_ID,
   GENERATED_TESTCASES_ARTIFACT_FILENAME,
   GENERATED_TEST_CASE_SCHEMA_VERSION,
   REDACTION_POLICY_VERSION,
@@ -60,6 +63,8 @@ import {
   type GeneratedTestCaseList,
   type GeneratedTestCaseStep,
   type LlmGenerationRequest,
+  type RegulatoryRelevance,
+  type RegulatoryRelevanceDomain,
   type TestCaseLevel,
   type TestCasePolicyReport,
   type TestCasePriority,
@@ -178,6 +183,16 @@ export interface ProductionRunnerLlmDraftCase {
   }>;
   assumptions?: ReadonlyArray<string>;
   openQuestions?: ReadonlyArray<string>;
+  /**
+   * Optional regulatory-relevance signal (Issue #1735, contract bump 4.27.0).
+   * Populated when the prompt-augmentation pass produced a banking/insurance
+   * compliance case for screens whose name matches a
+   * {@link BANKING_INSURANCE_SEMANTIC_KEYWORDS} entry.
+   */
+  regulatoryRelevance?: {
+    domain: RegulatoryRelevanceDomain;
+    rationale: string;
+  };
 }
 
 /** LLM response envelope. */
@@ -219,6 +234,19 @@ export interface RunFigmaToQcTestCasesInput {
    * headers; defaults to `figmaFile.name` (or the file key if missing).
    */
   customerLabel?: string;
+  /**
+   * Policy profile id used to drive prompt augmentation. Defaults to
+   * `EU_BANKING_DEFAULT_POLICY_PROFILE_ID` (`"eu-banking-default"`),
+   * matching the validation pipeline's default profile. When the resolved
+   * id equals `"eu-banking-default"` the runner injects the banking /
+   * insurance compliance prompt block (Issue #1735): positive + negative
+   * cases per relevant input, PII / IBAN / BIC / Vertragsnummer rejection
+   * + masking, four-eyes + audit-trail for state-changing actions,
+   * boundary tests on amount / currency, and one regulatory-compliance
+   * case for screens whose name matches a
+   * {@link BANKING_INSURANCE_SEMANTIC_KEYWORDS} entry.
+   */
+  policyProfileId?: string;
 }
 
 export interface RunFigmaToQcTestCasesResult {
@@ -316,12 +344,18 @@ export const runFigmaToQcTestCases = async (
   //    LlmDraftResponse shape so the model is not asked to fabricate
   //    audit metadata it cannot know.
   const draftSchema = buildDraftResponseSchema();
+  const policyProfileId =
+    typeof input.policyProfileId === "string" &&
+    input.policyProfileId.length > 0
+      ? input.policyProfileId
+      : EU_BANKING_DEFAULT_POLICY_PROFILE_ID;
   const generationRequest: LlmGenerationRequest = {
     jobId: compiled.request.jobId,
     systemPrompt: compiled.request.systemPrompt,
     userPrompt: buildAugmentedUserPrompt(
       compiled.request.userPrompt,
       wireIntent,
+      policyProfileId,
     ),
     responseSchema: draftSchema,
     responseSchemaName: "workspace-dev-production-runner-draft-list-v1",
@@ -855,7 +889,45 @@ const validateDraftCase = (
   if (validatedTraceRefs.length > 0) {
     draft.figmaTraceRefs = validatedTraceRefs;
   }
+  const regulatoryRelevance = parseDraftRegulatoryRelevance(
+    c.regulatoryRelevance,
+  );
+  if (regulatoryRelevance !== undefined) {
+    draft.regulatoryRelevance = regulatoryRelevance;
+  }
   return { ok: true, value: draft };
+};
+
+/**
+ * Tolerant parser for the optional `regulatoryRelevance` field on a draft
+ * case. The field is optional contract-wise (4.27.0); if absent or shaped
+ * incorrectly we silently skip it rather than failing the whole response —
+ * the validation pipeline is the authoritative gate, not the runner.
+ */
+const parseDraftRegulatoryRelevance = (
+  raw: unknown,
+): { domain: RegulatoryRelevanceDomain; rationale: string } | undefined => {
+  if (raw === undefined || raw === null) return undefined;
+  if (typeof raw !== "object" || Array.isArray(raw)) return undefined;
+  const r = raw as Record<string, unknown>;
+  if (typeof r.domain !== "string" || typeof r.rationale !== "string") {
+    return undefined;
+  }
+  if (
+    !ALLOWED_REGULATORY_RELEVANCE_DOMAINS.includes(
+      r.domain as RegulatoryRelevanceDomain,
+    )
+  ) {
+    return undefined;
+  }
+  const rationale = r.rationale.trim();
+  if (rationale.length === 0) return undefined;
+  // Cap rationale at 240 chars per contract.
+  const trimmed = rationale.length > 240 ? rationale.slice(0, 240) : rationale;
+  return {
+    domain: r.domain as RegulatoryRelevanceDomain,
+    rationale: trimmed,
+  };
 };
 
 const isString = (value: unknown): value is string => typeof value === "string";
@@ -931,37 +1003,99 @@ const stampGeneratedTestCase = (input: {
     },
     reviewState: "draft",
     audit: { ...input.audit },
+    ...(input.draft.regulatoryRelevance !== undefined
+      ? {
+          regulatoryRelevance: {
+            domain: input.draft.regulatoryRelevance.domain,
+            rationale: input.draft.regulatoryRelevance.rationale,
+          } satisfies RegulatoryRelevance,
+        }
+      : {}),
   };
 };
+
+/**
+ * Detect screens whose `screenName` matches a banking/insurance semantic
+ * keyword (case-insensitive substring match). Returns the matching keyword
+ * for each affected screenId so the prompt can name both the screen id and
+ * the keyword that triggered the regulatory case requirement.
+ */
+export const detectBankingInsuranceScreens = (
+  intent: BusinessTestIntentIr,
+): ReadonlyArray<{ screenId: string; keyword: string }> => {
+  const matches: { screenId: string; keyword: string }[] = [];
+  for (const screen of intent.screens) {
+    const haystack = screen.screenName.toLowerCase();
+    for (const keyword of BANKING_INSURANCE_SEMANTIC_KEYWORDS) {
+      if (haystack.includes(keyword.toLowerCase())) {
+        matches.push({ screenId: screen.screenId, keyword });
+        break;
+      }
+    }
+  }
+  return matches;
+};
+
+const BANKING_INSURANCE_PROMPT_RULES: ReadonlyArray<string> = Object.freeze([
+  "- Wenn das Profil 'eu-banking-default' aktiv ist, behandle die Maske als reguliert (Bank/Versicherung).",
+  "- Erzeuge zu jedem regulierten Eingabefeld mindestens EINEN Positiv- und EINEN Negativfall.",
+  "- Erzeuge mindestens EINEN Negativfall, der ungültige IBAN, BIC, Vertragsnummer oder Personenbezogene Daten ablehnt UND maskiert.",
+  "- Erzeuge mindestens EINEN Testfall, der für statusverändernde Aktionen Vier-Augen-Prinzip + Audit-Trail prüft (riskCategory='financial_transaction', priority='p0').",
+  "- Erzeuge Boundary-Tests für Geldbeträge / Währungen (Mindest-/Maximalwerte, Dezimalpräzision).",
+  "- Für jeden Bildschirm, dessen Name ein Banking/Versicherungs-Stichwort enthält, erzeuge GENAU EINEN regulatory-compliance Testfall.",
+  "- Setze regulatoryRelevance.domain auf 'banking' oder 'insurance' (oder 'general' wenn nicht zuordenbar) und schreibe rationale auf DEUTSCH (≤ 240 Zeichen).",
+  "- WICHTIG: Verwende NUR generische Compliance-Sprache. Zitiere KEINE Paragraphen, KEINE Gesetzesnummern, KEINE konkreten Aufsichtsdokumente.",
+]);
 
 const buildAugmentedUserPrompt = (
   basePrompt: string,
   intent: BusinessTestIntentIr,
+  policyProfileId: string,
 ): string => {
   // We hand the model the IR section already (compilePrompt embeds it).
   // Append a short, structured directive that pins the relaxed output
   // shape so a chatty model still produces something the runner can parse.
-  // Keep this deterministic: the same intent + base prompt yield the same
-  // augmentation, which keeps the replay-cache identity meaningful.
+  // Keep this deterministic: the same intent + base prompt + policy profile
+  // yield the same augmentation, which keeps the replay-cache identity
+  // meaningful.
   const screenSummary = intent.screens
     .map((s) => `- ${s.screenId}: ${s.screenName}`)
     .join("\n");
-  return [
+  const isEuBanking = policyProfileId === EU_BANKING_DEFAULT_POLICY_PROFILE_ID;
+  const bankingInsuranceMatches = isEuBanking
+    ? detectBankingInsuranceScreens(intent)
+    : [];
+  const bankingInsuranceList =
+    bankingInsuranceMatches.length > 0
+      ? bankingInsuranceMatches
+          .map((m) => `- ${m.screenId} (Stichwort: ${m.keyword})`)
+          .join("\n")
+      : "(keine)";
+  const sections: string[] = [
     basePrompt,
     "",
     "DELIVERABLE FORMAT:",
     "Respond ONLY with a JSON object of the form:",
-    `{"testCases": [{"title": string, "objective": string, "type": one of [functional|negative|boundary|validation|navigation|regression|exploratory|accessibility], "priority": one of [p0|p1|p2|p3], "riskCategory": one of [low|medium|high|regulated_data|financial_transaction], "technique": one of [equivalence_partitioning|boundary_value_analysis|decision_table|state_transition|use_case|exploratory|error_guessing|syntax_testing|classification_tree], "preconditions": string[], "testData": string[], "steps": [{"index": number, "action": string, "expected": string}], "expectedResults": string[], "figmaTraceRefs": [{"screenId": string, "nodeName": string?}], "assumptions": string[], "openQuestions": string[]}]}`,
+    `{"testCases": [{"title": string, "objective": string, "type": one of [functional|negative|boundary|validation|navigation|regression|exploratory|accessibility], "priority": one of [p0|p1|p2|p3], "riskCategory": one of [low|medium|high|regulated_data|financial_transaction], "technique": one of [equivalence_partitioning|boundary_value_analysis|decision_table|state_transition|use_case|exploratory|error_guessing|syntax_testing|classification_tree], "preconditions": string[], "testData": string[], "steps": [{"index": number, "action": string, "expected": string}], "expectedResults": string[], "figmaTraceRefs": [{"screenId": string, "nodeName": string?}], "assumptions": string[], "openQuestions": string[], "regulatoryRelevance": {"domain": one of [banking|insurance|general], "rationale": string}}]}`,
     "",
     "RULES:",
     "- Schreibe alle Inhalte (title, objective, steps, expected, ...) auf DEUTSCH.",
     "- Bilde Positiv- und Negativfälle ab. Pro relevanter Eingabe einen eigenen Testfall.",
     "- Nutze für screenId die genannten IDs aus dem IR.",
     "- Liefere mindestens einen Testfall pro Bildschirm.",
-    "",
-    "Verfügbare Bildschirme:",
-    screenSummary,
-  ].join("\n");
+  ];
+  if (isEuBanking) {
+    sections.push(
+      "",
+      `POLICY-PROFIL: ${policyProfileId} (regulierte EU-Banking/Versicherung)`,
+      ...BANKING_INSURANCE_PROMPT_RULES,
+      "",
+      "Banking/Versicherungs-Bildschirme (genau ein regulatory-compliance Testfall pro Eintrag):",
+      bankingInsuranceList,
+    );
+  }
+  sections.push("", "Verfügbare Bildschirme:", screenSummary);
+  return sections.join("\n");
 };
 
 const buildDraftResponseSchema = (): Record<string, unknown> => ({
@@ -1027,6 +1161,18 @@ const buildDraftResponseSchema = (): Record<string, unknown> => ({
           },
           assumptions: { type: "array", items: { type: "string" } },
           openQuestions: { type: "array", items: { type: "string" } },
+          regulatoryRelevance: {
+            type: "object",
+            required: ["domain", "rationale"],
+            additionalProperties: false,
+            properties: {
+              domain: {
+                type: "string",
+                enum: [...ALLOWED_REGULATORY_RELEVANCE_DOMAINS],
+              },
+              rationale: { type: "string", minLength: 1 },
+            },
+          },
         },
       },
     },

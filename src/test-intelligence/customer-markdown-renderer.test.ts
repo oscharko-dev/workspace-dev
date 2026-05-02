@@ -180,3 +180,41 @@ test("renderCustomerMarkdown filenames are deterministic for stable input", () =
     b.perCaseFiles.map((f) => f.filename),
   );
 });
+
+test("renderCustomerMarkdown surfaces regulatoryRelevance domain + rationale when present (Issue #1735)", () => {
+  const list: GeneratedTestCaseList = {
+    schemaVersion: GENERATED_TEST_CASE_SCHEMA_VERSION,
+    jobId: "job-1",
+    testCases: [
+      buildCase({
+        id: "tc-banking",
+        title: "Antrag mit Vier-Augen-Prinzip",
+        regulatoryRelevance: {
+          domain: "banking",
+          rationale:
+            "Statusverändernde Aktion (Antragsstellung) erfordert Vier-Augen-Prinzip und Audit-Trail.",
+        },
+      }),
+      buildCase({
+        id: "tc-other",
+        title: "Generischer Testfall ohne Regelung",
+      }),
+    ],
+  };
+  const result = renderCustomerMarkdown({
+    list,
+    fileName: "x",
+    sourceLabel: "x",
+    generatedAt: "2026-05-02T10:00:00Z",
+  });
+  const bankingBody = result.perCaseFiles[0]?.body ?? "";
+  const otherBody = result.perCaseFiles[1]?.body ?? "";
+  assert.match(bankingBody, /Regulatorische Relevanz:\*\* banking/u);
+  assert.match(bankingBody, /Vier-Augen-Prinzip/u);
+  assert.doesNotMatch(otherBody, /Regulatorische Relevanz/u);
+  // Combined doc surfaces it for the banking case as well.
+  assert.match(
+    result.combinedMarkdown,
+    /Regulatorische Relevanz:\*\* banking/u,
+  );
+});

@@ -1,4 +1,5 @@
 import {
+  ALLOWED_REGULATORY_RELEVANCE_DOMAINS,
   GENERATED_TEST_CASE_SCHEMA_VERSION,
   TEST_INTELLIGENCE_CONTRACT_VERSION,
   TEST_INTELLIGENCE_PROMPT_TEMPLATE_VERSION,
@@ -6,6 +7,7 @@ import {
   type GeneratedTestCaseList,
   type GeneratedTestCaseReviewState,
   type GeneratedTestCaseStep,
+  type RegulatoryRelevanceDomain,
   type TestCaseLevel,
   type TestCasePriority,
   type TestCaseRiskCategory,
@@ -90,7 +92,10 @@ const TEST_CASE_KEYS = [
   "qualitySignals",
   "reviewState",
   "audit",
+  // Optional, additive in contract 4.27.0 (Issue #1735).
+  "regulatoryRelevance",
 ] as const;
+const REGULATORY_RELEVANCE_KEYS = ["domain", "rationale"] as const;
 const STEP_KEYS = ["index", "action", "data", "expected"] as const;
 const FIGMA_TRACE_REF_KEYS = [
   "screenId",
@@ -253,6 +258,16 @@ export const buildGeneratedTestCaseListJsonSchema = (): Record<
     },
   };
 
+  const regulatoryRelevance: Record<string, unknown> = {
+    type: "object",
+    additionalProperties: false,
+    required: ["domain", "rationale"],
+    properties: {
+      domain: { enum: [...ALLOWED_REGULATORY_RELEVANCE_DOMAINS] },
+      rationale: { type: "string", minLength: 1, maxLength: 240 },
+    },
+  };
+
   const testCase: Record<string, unknown> = {
     type: "object",
     additionalProperties: false,
@@ -307,6 +322,8 @@ export const buildGeneratedTestCaseListJsonSchema = (): Record<
       qualitySignals,
       reviewState: { enum: [...REVIEW_STATES] },
       audit,
+      // Optional, additive in contract 4.27.0 (Issue #1735).
+      regulatoryRelevance,
     },
   };
 
