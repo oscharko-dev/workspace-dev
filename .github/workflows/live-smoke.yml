@@ -1,0 +1,102 @@
+# Issue #1695 (audit-2026-05 Wave 2): wire `test:ti-live-smoke` into CI so a
+# regression of the #1676 shape (live Azure rejects the payload) is caught
+# before reaching a customer demo.
+#
+# The workflow runs on:
+#   - a nightly schedule against `dev`
+#   - manual `workflow_dispatch`
+#   - pushes to `main` (release-gate parity)
+#
+# It is gated on the secret `WORKSPACE_TEST_SPACE_MODEL_API_KEY` being
+# configured at the repository level. PR builds (including from forks) do
+# NOT run this workflow because the live key is not exposed there. The job
+# is therefore non-blocking for merge but surfaces in the repo's checks
+# panel and badge so a stale red live-smoke is visible at-a-glance.
+#
+# Operator action required (one-time, out-of-band):
+#   1. Configure repo secret `WORKSPACE_TEST_SPACE_MODEL_API_KEY` with a
+#      non-prod Azure AI Foundry key.
+#   2. Configure repo secret `WORKSPACE_TEST_SPACE_MODEL_ENDPOINT` with the
+#      base URL (e.g. `https://<resource>.cognitiveservices.azure.com`).
+#   3. Configure repo secret `WORKSPACE_TEST_SPACE_VISUAL_MODEL_ENDPOINT`
+#      for the visual sidecar deployment endpoint.
+#   4. Optional: pin a `WORKSPACE_TEST_SPACE_API_KEY` alias if the live
+#      smoke test reads that env name (Issue #1660 alias).
+#
+# Until those secrets are set, the workflow short-circuits with a
+# `skipped: secret not configured` job summary instead of failing.
+
+name: workspace-dev live smoke (test-intelligence)
+
+on:
+  schedule:
+    # 03:30 UTC nightly — outside business hours for both EU and US
+    - cron: "30 3 * * *"
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  live-smoke:
+    name: ti-live-smoke
+    timeout-minutes: 15
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: read
+    steps:
+      - name: Check for required secret
+        id: check_secret
+        env:
+          API_KEY: ${{ secrets.WORKSPACE_TEST_SPACE_MODEL_API_KEY }}
+        run: |
+          if [ -z "$API_KEY" ]; then
+            echo "secret_present=false" >> "$GITHUB_OUTPUT"
+            {
+              echo "## live-smoke skipped"
+              echo
+              echo "Repo secret \`WORKSPACE_TEST_SPACE_MODEL_API_KEY\` is not"
+              echo "configured. See \`.github/workflows/live-smoke.yml\` for"
+              echo "the operator setup steps."
+            } >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "secret_present=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
+        if: steps.check_secret.outputs.secret_present == 'true'
+        with:
+          persist-credentials: false
+
+      - uses: pnpm/action-setup@26f6d4f2c533a43e6b5da0b4a5dd983f98f7b49a  # v6
+        if: steps.check_secret.outputs.secret_present == 'true'
+        with:
+          version: 10.33.0
+
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e  # v6
+        if: steps.check_secret.outputs.secret_present == 'true'
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        if: steps.check_secret.outputs.secret_present == 'true'
+        run: pnpm install --frozen-lockfile --ignore-scripts
+
+      - name: Run live smoke
+        if: steps.check_secret.outputs.secret_present == 'true'
+        env:
+          # Issue #1660 alias: the live test reads `WORKSPACE_TEST_SPACE_API_KEY`
+          # while the operator-supplied secret is named with the `MODEL` infix.
+          # Mirror the value into both names so the test resolves either lookup.
+          WORKSPACE_TEST_SPACE_API_KEY: ${{ secrets.WORKSPACE_TEST_SPACE_MODEL_API_KEY }}
+          WORKSPACE_TEST_SPACE_MODEL_API_KEY: ${{ secrets.WORKSPACE_TEST_SPACE_MODEL_API_KEY }}
+          WORKSPACE_TEST_SPACE_MODEL_ENDPOINT: ${{ secrets.WORKSPACE_TEST_SPACE_MODEL_ENDPOINT }}
+          WORKSPACE_TEST_SPACE_VISUAL_MODEL_ENDPOINT: ${{ secrets.WORKSPACE_TEST_SPACE_VISUAL_MODEL_ENDPOINT }}
+        run: pnpm run test:ti-live-smoke

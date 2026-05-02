@@ -441,11 +441,28 @@ export const createJiraWriteClient = (
         ],
       },
     };
+    // Issue #1697 (audit-2026-05 Wave 2): wire-level idempotency. The stable
+    // per-request key is the same SHA-256 already used to derive the external
+    // id label, so a transport-replayed POST resolves to the same idempotent
+    // create on the Jira side. We send it as both the standard
+    // `Idempotency-Key` header (Stripe-style; Atlassian accepts it as an
+    // opaque request id) and as `X-Idempotency-Key` for proxies that strip
+    // unknown headers above the load balancer.
+    const idempotencyKey = computeJiraSubtaskExternalId({
+      jobId: params.fields.jobId,
+      testCaseId: params.fields.externalId,
+      parentIssueKey: params.parentIssueKey,
+    });
+    const postHeaders: Record<string, string> = {
+      ...sendHeaders,
+      "Idempotency-Key": idempotencyKey,
+      "X-Idempotency-Key": idempotencyKey,
+    };
     const result = await sendJiraRequest(
       url,
       {
         method: "POST",
-        headers: sendHeaders,
+        headers: postHeaders,
         body: JSON.stringify(requestBody),
         redirect: "error",
       },

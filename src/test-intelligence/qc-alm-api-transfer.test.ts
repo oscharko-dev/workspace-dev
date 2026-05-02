@@ -274,6 +274,11 @@ interface MockClientCallLog {
 
 interface MockClientOptions {
   preexistingByExternalId?: Record<string, string>;
+  // Issue #1696: simulate the partial-write scenario where the entity exists
+  // on the tenant but the design-step loop aborted partway through a previous
+  // attempt. Maps externalIdCandidate to the count of design steps already
+  // present on the tenant.
+  preexistingDesignStepCountByExternalId?: Record<string, number>;
   failOnCreate?: {
     externalId: string;
     failureClass?: ConstructorParameters<typeof QcApiTransferError>[0];
@@ -323,7 +328,17 @@ const buildMockClient = (
         );
       }
       const hit = options.preexistingByExternalId?.[externalIdCandidate];
-      if (hit) return { kind: "found", qcEntityId: hit };
+      if (hit) {
+        const existingDesignStepCount =
+          options.preexistingDesignStepCountByExternalId?.[externalIdCandidate];
+        return {
+          kind: "found",
+          qcEntityId: hit,
+          ...(existingDesignStepCount !== undefined
+            ? { existingDesignStepCount }
+            : {}),
+        };
+      }
       return { kind: "missing" };
     },
     createTestEntity: ({ entry, folder }): QcApiCreatedEntity => {
@@ -609,7 +624,10 @@ test("api-transfer: invalid mapping profile fails closed before folder resolutio
   const { client, log } = buildMockClient();
   const result = await runOpenTextAlmApiTransfer(
     baseInput({
-      profile: { ...PROFILE, targetFolderPath: "Subject/missing-leading-slash" },
+      profile: {
+        ...PROFILE,
+        targetFolderPath: "Subject/missing-leading-slash",
+      },
       client,
     }),
   );
@@ -679,7 +697,10 @@ test("api-transfer: dot-only per-entry target folder segments fail closed before
       }),
     );
     assert.equal(result.refused, true);
-    assert.equal(result.refusalCodes.includes("folder_resolution_failed"), true);
+    assert.equal(
+      result.refusalCodes.includes("folder_resolution_failed"),
+      true,
+    );
     assert.equal(log.resolveFolderCalls, 0);
     assert.equal(log.lookupCalls.length, 0);
     assert.equal(log.createTestEntityCalls.length, 0);
@@ -937,6 +958,78 @@ test("api-transfer: per-case create failure isolates and continues other cases",
   assert.equal(result.createdEntities.entities.length, 1);
   assert.equal(result.report.failedCount, 1);
   assert.equal(result.report.createdCount, 1);
+});
+
+// Issue #1696 (audit-2026-05 Wave 2): partial-write recovery on rerun.
+test("api-transfer: resumes design-step loop when tenant has incomplete entity", async () => {
+  // Use the standard 3-step preview so we can simulate "first attempt
+  // succeeded for the entity and 1 of 3 steps; rerun must add the missing 2".
+  const preview = buildPreview([buildCase({ id: "tc-1" })]);
+  const externalId = preview.entries[0]?.externalIdCandidate ?? "";
+  assert.notEqual(externalId, "");
+  const totalSteps = preview.entries[0]?.designSteps.length ?? 0;
+  assert.ok(totalSteps >= 2, "fixture must produce >=2 design steps");
+  const alreadyPersisted = 1;
+  const { client, log } = buildMockClient({
+    preexistingByExternalId: { [externalId]: "qc-already-existing" },
+    preexistingDesignStepCountByExternalId: { [externalId]: alreadyPersisted },
+  });
+  const result = await runOpenTextAlmApiTransfer(
+    baseInput({ preview, client }),
+  );
+  assert.equal(result.refused, false);
+  // Recovery path now reports `created` (steps were added on the tenant) and
+  // never short-circuits to `skipped_duplicate` — that is the silent-data-loss
+  // bug the issue closes.
+  assert.equal(result.report.records[0]?.outcome, "created");
+  assert.equal(result.report.records[0]?.qcEntityId, "qc-already-existing");
+  assert.equal(
+    result.report.records[0]?.designStepsCreated,
+    totalSteps - alreadyPersisted,
+  );
+  // No new entity was created; the orchestrator only added the missing
+  // design steps on the existing entity.
+  assert.equal(log.createTestEntityCalls.length, 0);
+  assert.equal(log.createDesignStepCalls.length, totalSteps - alreadyPersisted);
+  // The recovered design steps must be the tail of the sorted-by-index
+  // sequence (steps 2..N when 1 was already persisted).
+  const expectedIndices = Array.from(
+    { length: totalSteps - alreadyPersisted },
+    (_, i) => alreadyPersisted + 1 + i,
+  );
+  assert.deepEqual(
+    log.createDesignStepCalls.map((call) => call.index),
+    expectedIndices,
+  );
+});
+
+test("api-transfer: lookup with matching design-step count short-circuits to skipped_duplicate", async () => {
+  const preview = buildPreview([buildCase({ id: "tc-1" })]);
+  const externalId = preview.entries[0]?.externalIdCandidate ?? "";
+  const totalSteps = preview.entries[0]?.designSteps.length ?? 0;
+  const { client, log } = buildMockClient({
+    preexistingByExternalId: { [externalId]: "qc-already-existing" },
+    preexistingDesignStepCountByExternalId: { [externalId]: totalSteps },
+  });
+  const result = await runOpenTextAlmApiTransfer(
+    baseInput({ preview, client }),
+  );
+  assert.equal(result.report.records[0]?.outcome, "skipped_duplicate");
+  assert.equal(log.createDesignStepCalls.length, 0);
+});
+
+test("api-transfer: legacy lookup omitting existingDesignStepCount preserves skipped_duplicate fast path", async () => {
+  const preview = buildPreview([buildCase({ id: "tc-1" })]);
+  const externalId = preview.entries[0]?.externalIdCandidate ?? "";
+  const { client, log } = buildMockClient({
+    preexistingByExternalId: { [externalId]: "qc-already-existing" },
+    // existingDesignStepCount intentionally omitted — legacy adapter shape.
+  });
+  const result = await runOpenTextAlmApiTransfer(
+    baseInput({ preview, client }),
+  );
+  assert.equal(result.report.records[0]?.outcome, "skipped_duplicate");
+  assert.equal(log.createDesignStepCalls.length, 0);
 });
 
 test("api-transfer: per-step failure records partial designStepsCreated count", async () => {
@@ -1223,7 +1316,10 @@ test("api-transfer: artifacts persist atomically under artifactRoot", async () =
     );
     const reportRaw = await readFile(result.reportPath!, "utf8");
     const createdRaw = await readFile(result.createdEntitiesPath!, "utf8");
-    const traceabilityRaw = await readFile(result.traceabilityMatrixPath!, "utf8");
+    const traceabilityRaw = await readFile(
+      result.traceabilityMatrixPath!,
+      "utf8",
+    );
     for (const raw of [reportRaw, createdRaw]) {
       assert.equal(raw.includes("secret-bearer"), false);
       assert.equal(raw.includes("Bearer "), false);
@@ -1259,10 +1355,7 @@ test("api-transfer: evidence reference overrides must be sha256 hashes", async (
           qcMappingPreviewHash: "5".repeat(64),
           dryRunReportHash: "6".repeat(64),
           visualSidecarReportHash: "7".repeat(64),
-          visualSidecarEvidenceHashes: [
-            "Bearer secret-bearer",
-            "3".repeat(64),
-          ],
+          visualSidecarEvidenceHashes: ["Bearer secret-bearer", "3".repeat(64)],
           generationOutputHash: "https://example.invalid/generated",
           reconciledIntentIrHash: "4".repeat(64),
         },
