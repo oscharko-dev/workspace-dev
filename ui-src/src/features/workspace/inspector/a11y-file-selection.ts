@@ -69,3 +69,22 @@ export function mergeA11yScanInputs(
     return { path: file.path };
   });
 }
+
+/**
+ * `useQueries` from React Query allocates a fresh array on every render
+ * even when the underlying data is unchanged. Depending on it directly in
+ * a `useMemo` invalidates the memo on every parent re-render and re-runs
+ * the a11y scan over every JSX-like file (#1670 — Inspector INP regression).
+ *
+ * This helper produces a deterministic, primitive-typed sentinel from the
+ * per-query `dataUpdatedAt` timestamps. Two calls return the same string
+ * iff each query's `dataUpdatedAt` is identical — making it a safe
+ * `useMemo` dependency that only changes when at least one query actually
+ * received new data. `dataUpdatedAt` semantics from React Query: the
+ * timestamp is updated only when fresh data lands, not on identity churn.
+ */
+export function computeA11yFileDataKey(
+  queries: ReadonlyArray<{ dataUpdatedAt?: number | undefined }>,
+): string {
+  return queries.map((query) => query.dataUpdatedAt ?? 0).join(":");
+}
