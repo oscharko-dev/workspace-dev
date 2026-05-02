@@ -5,9 +5,7 @@ const configuredPort = Number.parseInt(
   10,
 );
 const port =
-  Number.isFinite(configuredPort) && configuredPort > 0
-    ? configuredPort
-    : 4174;
+  Number.isFinite(configuredPort) && configuredPort > 0 ? configuredPort : 4174;
 const baseURL =
   process.env.FIGMAPIPE_TAILWIND_PLAYWRIGHT_BASE_URL?.trim() ??
   `http://127.0.0.1:${String(port)}`;
@@ -29,8 +27,17 @@ export default defineConfig({
     trace: "retain-on-failure",
     screenshot: "only-on-failure",
   },
+  // Issue #1665 (audit-2026-05): the webServer command previously chained
+  // `pnpm run build &&` which re-ran the full Vite production build on every
+  // Playwright invocation. The default-pipeline orchestrator already
+  // produces `dist/` upstream (`template:tailwind:build` runs before
+  // `template:tailwind:validate:playwright`), so paying for the build a
+  // second time per Playwright launch was the root cause of the 30-minute
+  // CI timeout that drove the four PR-#1640..#1645 timeout bumps. We now
+  // expect the caller to ensure `dist/` is current and only launch the
+  // preview server here.
   webServer: {
-    command: `pnpm run build && pnpm exec vite preview --host 127.0.0.1 --port ${String(port)} --strictPort`,
+    command: `pnpm exec vite preview --host 127.0.0.1 --port ${String(port)} --strictPort`,
     url: baseURL,
     timeout: 120_000,
     reuseExistingServer,
