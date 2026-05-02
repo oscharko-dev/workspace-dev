@@ -187,6 +187,58 @@ export const buildVisualSidecarResponseSchema = (): Record<string, unknown> => {
  * position. The image bytes themselves are NOT embedded in the prompt
  * text — the gateway forwards them as `image_url` parts.
  */
+/**
+ * Issue #1687 (audit-2026-05 Wave 3): sanitize a Figma-supplied label
+ * before it is embedded verbatim into the multimodal LLM prompt.
+ *
+ * Removes ASCII / Unicode control characters, RTL/LTR override marks,
+ * embedded newlines, and any double-quote that would close the
+ * `screenName="..."` literal we surround the value with. The output is
+ * truncated to a conservative 120-byte budget so a malicious or
+ * accidentally-overlong screen name cannot drown out the surrounding
+ * instructions.
+ */
+const sanitizeScreenLabel = (raw: string): string => {
+  // Strip C0/C1 control characters (incl. CR, LF, TAB) and Unicode
+  // formatting overrides (U+202A..U+202E, U+2066..U+2069).
+  // Also strip the BOM (U+FEFF) and the embedded NULL.
+  // Replace double quotes with the typographic equivalent so the
+  // surrounding `="..."` literal cannot be terminated early.
+  let cleaned = "";
+  for (const ch of raw) {
+    const code = ch.codePointAt(0) ?? 0;
+    if (code < 0x20 || (code >= 0x7f && code <= 0x9f)) continue;
+    if (code >= 0x202a && code <= 0x202e) continue;
+    if (code >= 0x2066 && code <= 0x2069) continue;
+    if (code === 0xfeff) continue;
+    if (ch === '"') {
+      cleaned += "”";
+      continue;
+    }
+    cleaned += ch;
+  }
+  cleaned = cleaned.trim();
+  if (cleaned.length === 0) {
+    return "";
+  }
+  // Hard byte-length cap. UTF-8 byte budget keeps multibyte characters
+  // from sneaking past a naive code-unit truncation.
+  const MAX_LABEL_BYTES = 120;
+  if (Buffer.byteLength(cleaned, "utf8") <= MAX_LABEL_BYTES) {
+    return cleaned;
+  }
+  // Truncate by code points (not code units) and pad an ellipsis once
+  // we are within the cap.
+  const ELLIPSIS = "…";
+  let out = "";
+  for (const ch of cleaned) {
+    const next = `${out}${ch}${ELLIPSIS}`;
+    if (Buffer.byteLength(next, "utf8") > MAX_LABEL_BYTES) break;
+    out += ch;
+  }
+  return `${out}${ELLIPSIS}`;
+};
+
 export const buildVisualSidecarUserPrompt = (
   captures: ReadonlyArray<VisualSidecarCaptureInput>,
 ): string => {
@@ -199,7 +251,11 @@ export const buildVisualSidecarUserPrompt = (
     const capture = captures[i] as VisualSidecarCaptureInput;
     const labelParts: string[] = [`${i + 1}. screenId="${capture.screenId}"`];
     if (capture.screenName !== undefined) {
-      labelParts.push(`screenName="${capture.screenName}"`);
+      // #1687: never embed Figma-supplied free text verbatim into the prompt.
+      const safeName = sanitizeScreenLabel(capture.screenName);
+      if (safeName.length > 0) {
+        labelParts.push(`screenName="${safeName}"`);
+      }
     }
     if (capture.capturedAt !== undefined) {
       labelParts.push(`capturedAt="${capture.capturedAt}"`);
@@ -653,11 +709,23 @@ const aggregateConfidenceSummary = (
     if (screen.confidenceSummary.max > max) max = screen.confidenceSummary.max;
     meanAccumulator += screen.confidenceSummary.mean;
   }
-  return {
-    min,
-    max,
-    mean: meanAccumulator / screens.length,
-  };
+  const mean = meanAccumulator / screens.length;
+  // Issue #1685 (audit-2026-05 Wave 3): fail closed if any aggregated
+  // value is non-finite (NaN / Infinity). Per-screen confidence values
+  // originate from upstream LLM JSON and the JSON Schema only constrains
+  // the type as `number` — `NaN`/`Infinity` could otherwise propagate
+  // into the evidence manifest, where downstream JSON serialisation
+  // stringifies them lossily as `null`.
+  if (
+    !Number.isFinite(min) ||
+    !Number.isFinite(max) ||
+    !Number.isFinite(mean)
+  ) {
+    throw new RangeError(
+      "aggregateConfidenceSummary produced a non-finite value (corrupt screen confidence)",
+    );
+  }
+  return { min, max, mean };
 };
 
 const clientDeploymentLabel = (

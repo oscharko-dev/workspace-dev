@@ -375,12 +375,15 @@ const guardOutputBudgetSupport = (
 };
 
 const estimateInputTokens = (request: LlmGenerationRequest): number => {
-  const encoder = new TextEncoder();
+  // Issue #1693 (audit-2026-05 Wave 3): use `Buffer.byteLength` so this
+  // hot path (called per request and per retry) avoids allocating a fresh
+  // `TextEncoder` and a transient `Uint8Array` per string. Same UTF-8
+  // semantics, native fast path.
   let bytes =
-    encoder.encode(request.systemPrompt).byteLength +
-    encoder.encode(request.userPrompt).byteLength;
+    Buffer.byteLength(request.systemPrompt, "utf8") +
+    Buffer.byteLength(request.userPrompt, "utf8");
   if (request.responseSchema !== undefined) {
-    bytes += encoder.encode(JSON.stringify(request.responseSchema)).byteLength;
+    bytes += Buffer.byteLength(JSON.stringify(request.responseSchema), "utf8");
   }
   for (const image of request.imageInputs ?? []) {
     bytes += image.base64Data.length;
@@ -994,7 +997,8 @@ const readResponseTextWithLimit = async (
 
   if (response.body === null) {
     const text = await response.text();
-    if (new TextEncoder().encode(text).byteLength > maxResponseBytes) {
+    // Issue #1693: same allocation-free byte-length path as estimateInputTokens.
+    if (Buffer.byteLength(text, "utf8") > maxResponseBytes) {
       return { ok: false };
     }
     return { ok: true, text };
