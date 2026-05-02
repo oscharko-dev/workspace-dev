@@ -1,0 +1,181 @@
+/**
+ * Auto-wiring helper for the Inspector test-intelligence production runner
+ * (Issue #1733). When `WorkspaceStartOptions.testIntelligence.enabled` is
+ * true AND the env-var gate `FIGMAPIPE_WORKSPACE_TEST_INTELLIGENCE` is set,
+ * `resolveTestIntelligenceProductionRunner` returns a factory that builds
+ * an Azure-bound `LlmGatewayClient` from `WORKSPACE_TEST_SPACE_*` env vars
+ * lazily (on first submission), then dispatches to
+ * `runFigmaToQcTestCases`. When required env vars are missing, the factory
+ * returns `undefined` so the request handler keeps its existing
+ * `503 LLM_GATEWAY_UNCONFIGURED` fail-closed behaviour.
+ *
+ * The lazy build avoids forcing operators who only want the read-only
+ * Inspector surface (review/audit/export) to also configure the LLM
+ * endpoint. The first submission validates env, builds, and caches the
+ * client for the lifetime of the process.
+ *
+ * The factory never throws synchronously: missing env vars surface as a
+ * `ProductionRunnerError(LLM_GATEWAY_FAILED)` so the request handler maps
+ * it to the standard 500 envelope rather than crashing the request loop.
+ */
+
+import {
+  PRODUCTION_RUNNER_TEST_GENERATION_DEPLOYMENT,
+  ProductionRunnerError,
+  runFigmaToQcTestCases,
+  type RunFigmaToQcTestCasesResult,
+} from "../test-intelligence/index.js";
+import {
+  createLlmGatewayClient,
+  type LlmGatewayClient,
+} from "../test-intelligence/llm-gateway.js";
+import type { WorkspaceRuntimeLogger } from "../logging.js";
+import type {
+  TestIntelligenceProductionRunnerFactory,
+  TestIntelligenceProductionRunnerFactoryInput,
+} from "./request-handler.js";
+
+const TEST_GENERATION_TIMEOUT_MS = 240_000;
+const TEST_GENERATION_MAX_OUTPUT_TOKENS = 32_000;
+
+export interface ResolveTestIntelligenceProductionRunnerInput {
+  /** Resolved startup gate (`options.testIntelligence?.enabled === true`). */
+  startupEnabled: boolean;
+  /** Resolved env gate (`resolveTestIntelligenceEnabled(env)`). */
+  envEnabled: boolean;
+  /** Process env to read `WORKSPACE_TEST_SPACE_*` from. */
+  env: NodeJS.ProcessEnv;
+  /** Optional logger for one-shot startup-side messages. */
+  logger?: WorkspaceRuntimeLogger;
+  /** Test seam for the LLM gateway client builder. */
+  buildLlmClient?: (config: ResolvedLlmConfig) => LlmGatewayClient;
+  /** Test seam for the runner. */
+  runner?: (
+    input: Parameters<typeof runFigmaToQcTestCases>[0],
+  ) => Promise<RunFigmaToQcTestCasesResult>;
+}
+
+export interface ResolvedLlmConfig {
+  endpoint: string;
+  deployment: string;
+  apiKey: string;
+}
+
+const readTrimmed = (
+  env: NodeJS.ProcessEnv,
+  key: string,
+): string | undefined => {
+  const raw = env[key];
+  if (typeof raw !== "string") return undefined;
+  const trimmed = raw.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
+};
+
+/**
+ * Read endpoint/deployment/api-key from env. Throws
+ * `ProductionRunnerError(LLM_GATEWAY_FAILED)` (retryable=false) when any
+ * required input is missing — this is mapped by the request handler to a
+ * 500 envelope listing the missing env var.
+ */
+export const resolveLlmConfigFromEnv = (
+  env: NodeJS.ProcessEnv,
+): ResolvedLlmConfig => {
+  const endpoint = readTrimmed(env, "WORKSPACE_TEST_SPACE_MODEL_ENDPOINT");
+  if (endpoint === undefined) {
+    throw new ProductionRunnerError({
+      failureClass: "LLM_GATEWAY_FAILED",
+      message:
+        "WORKSPACE_TEST_SPACE_MODEL_ENDPOINT must be set for test-intelligence runner.",
+      retryable: false,
+    });
+  }
+  const apiKey = readTrimmed(env, "WORKSPACE_TEST_SPACE_MODEL_API_KEY");
+  if (apiKey === undefined) {
+    throw new ProductionRunnerError({
+      failureClass: "LLM_GATEWAY_FAILED",
+      message:
+        "WORKSPACE_TEST_SPACE_MODEL_API_KEY must be set for test-intelligence runner.",
+      retryable: false,
+    });
+  }
+  const deployment =
+    readTrimmed(env, "WORKSPACE_TEST_SPACE_TESTCASE_MODEL_DEPLOYMENT") ??
+    PRODUCTION_RUNNER_TEST_GENERATION_DEPLOYMENT;
+  return { endpoint, deployment, apiKey };
+};
+
+const defaultBuildLlmClient = (config: ResolvedLlmConfig): LlmGatewayClient =>
+  createLlmGatewayClient(
+    {
+      role: "test_generation",
+      compatibilityMode: "openai_chat",
+      baseUrl: config.endpoint,
+      deployment: config.deployment,
+      modelRevision: `${config.deployment}@server-auto-wire`,
+      gatewayRelease: "azure-ai-foundry-server-auto-wire",
+      authMode: "api_key",
+      declaredCapabilities: {
+        structuredOutputs: true,
+        seedSupport: false,
+        reasoningEffortSupport: false,
+        maxOutputTokensSupport: true,
+        streamingSupport: false,
+        imageInputSupport: false,
+      },
+      timeoutMs: TEST_GENERATION_TIMEOUT_MS,
+      maxRetries: 1,
+      circuitBreaker: { failureThreshold: 2, resetTimeoutMs: 30_000 },
+      // Azure AI Foundry's `gpt-oss-120b` returns empty content for any
+      // wire `response_format` value; suppress the wire field while
+      // keeping the in-process JSON-parse + schema validation path
+      // (probed and recorded in #1733/#1734).
+      wireStructuredOutputMode: "none",
+    },
+    {
+      apiKeyProvider: () => config.apiKey,
+    },
+  );
+
+/**
+ * Resolve a runner factory when both gates are on; return `undefined`
+ * otherwise so the request handler retains its default 503 fail-closed
+ * behaviour. Callers wire the return value into
+ * `runtime.testIntelligenceProductionRunner`.
+ */
+export const resolveTestIntelligenceProductionRunner = (
+  input: ResolveTestIntelligenceProductionRunnerInput,
+): TestIntelligenceProductionRunnerFactory | undefined => {
+  if (!input.startupEnabled || !input.envEnabled) {
+    return undefined;
+  }
+  const buildLlmClient = input.buildLlmClient ?? defaultBuildLlmClient;
+  const runner = input.runner ?? runFigmaToQcTestCases;
+  let cachedClient: LlmGatewayClient | undefined;
+
+  const factory: TestIntelligenceProductionRunnerFactory = async (
+    factoryInput: TestIntelligenceProductionRunnerFactoryInput,
+  ): Promise<RunFigmaToQcTestCasesResult> => {
+    if (cachedClient === undefined) {
+      // Throws ProductionRunnerError on missing env; request handler maps it.
+      const config = resolveLlmConfigFromEnv(input.env);
+      cachedClient = buildLlmClient(config);
+      input.logger?.log({
+        level: "info",
+        event: "test_intelligence_runner_wired",
+        message: `Test-intelligence production runner LLM client built (deployment=${config.deployment})`,
+      });
+    }
+    return runner({
+      jobId: factoryInput.jobId,
+      generatedAt: factoryInput.generatedAt,
+      source: factoryInput.source,
+      outputRoot: factoryInput.outputRoot,
+      llm: {
+        client: cachedClient,
+        maxOutputTokens: TEST_GENERATION_MAX_OUTPUT_TOKENS,
+        maxWallClockMs: TEST_GENERATION_TIMEOUT_MS,
+      },
+    });
+  };
+  return factory;
+};

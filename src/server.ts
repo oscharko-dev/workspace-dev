@@ -30,8 +30,10 @@ import {
   DEFAULT_OUTPUT_ROOT,
   DEFAULT_PORT,
   DEFAULT_RATE_LIMIT_PER_MINUTE,
+  resolveTestIntelligenceEnabled,
 } from "./server/constants.js";
 import { createWorkspaceRequestHandler } from "./server/request-handler.js";
+import { resolveTestIntelligenceProductionRunner } from "./server/test-intelligence-production-runner-factory.js";
 
 const MODULE_DIR =
   typeof __dirname === "string"
@@ -488,6 +490,17 @@ export const createWorkspaceServer = async (
     runtime,
   });
 
+  // Auto-wire production runner from env when both gates are on (#1733).
+  // Falls back to undefined when either gate is off, preserving the
+  // request-handler's 503 fail-closed behaviour.
+  const testIntelligenceProductionRunner =
+    resolveTestIntelligenceProductionRunner({
+      startupEnabled: options.testIntelligence?.enabled === true,
+      envEnabled: resolveTestIntelligenceEnabled(process.env),
+      env: process.env,
+      ...(runtime.logger !== undefined ? { logger: runtime.logger } : {}),
+    });
+
   const handleRequest = createWorkspaceRequestHandler({
     host,
     getResolvedPort: () => resolvedPort,
@@ -516,6 +529,9 @@ export const createWorkspaceServer = async (
       testIntelligenceAllowJiraWrite:
         options.testIntelligence?.allowJiraWrite === true,
       testIntelligenceArtifactRoot,
+      ...(testIntelligenceProductionRunner !== undefined
+        ? { testIntelligenceProductionRunner }
+        : {}),
       logger: runtime.logger,
     },
     getServerLifecycleState: () => lifecycleState,

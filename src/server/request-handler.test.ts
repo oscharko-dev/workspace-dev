@@ -7985,6 +7985,95 @@ test("test-intelligence: rejects path-traversal jobIds", async () => {
   });
 });
 
+test("test-intelligence: GET /jobs/:jobId/customer-markdown returns the combined Markdown when present", async () => {
+  await withTestIntelligenceEnv("1", async () => {
+    const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ti-route-md-"));
+    const artifactRoot = path.join(tempRoot, "ti");
+    // Mirror the production-runner layout exactly:
+    //   <artifactRoot>/jobs/<jobId>/test-intelligence/customer-markdown/testfaelle.md
+    const markdownDir = path.join(
+      artifactRoot,
+      "jobs",
+      "job-md",
+      "test-intelligence",
+      "customer-markdown",
+    );
+    await mkdir(markdownDir, { recursive: true });
+    await writeFile(
+      path.join(markdownDir, "testfaelle.md"),
+      "# Testfälle\nbody\n",
+      "utf8",
+    );
+    const { app, close } = await createRequestHandlerApp({
+      testIntelligenceEnabled: true,
+      testIntelligenceArtifactRoot: artifactRoot,
+    });
+    try {
+      const response = await app.inject({
+        method: "GET",
+        url: "/workspace/test-intelligence/jobs/job-md/customer-markdown",
+      });
+      assert.equal(response.statusCode, 200);
+      assert.match(
+        response.headers["content-type"] as string,
+        /text\/markdown/,
+      );
+      assert.match(
+        response.headers["content-disposition"] as string,
+        /attachment; filename="job-md-testfaelle\.md"/,
+      );
+      assert.match(response.body, /Testfälle/);
+    } finally {
+      await close();
+      await rm(tempRoot, { recursive: true, force: true });
+    }
+  });
+});
+
+test("test-intelligence: GET /jobs/:jobId/customer-markdown returns 404 for missing artifact", async () => {
+  await withTestIntelligenceEnv("1", async () => {
+    const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ti-route-md-404-"));
+    const { app, close } = await createRequestHandlerApp({
+      testIntelligenceEnabled: true,
+      testIntelligenceArtifactRoot: tempRoot,
+    });
+    try {
+      const response = await app.inject({
+        method: "GET",
+        url: "/workspace/test-intelligence/jobs/missing/customer-markdown",
+      });
+      assert.equal(response.statusCode, 404);
+      const body = response.json<Record<string, unknown>>();
+      assert.equal(body.error, "JOB_NOT_FOUND");
+    } finally {
+      await close();
+      await rm(tempRoot, { recursive: true, force: true });
+    }
+  });
+});
+
+test("test-intelligence: GET /jobs/:jobId/customer-markdown returns 503 when TI gates are off", async () => {
+  await withTestIntelligenceEnv(undefined, async () => {
+    const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ti-route-md-503-"));
+    const { app, close } = await createRequestHandlerApp({
+      testIntelligenceEnabled: false,
+      testIntelligenceArtifactRoot: tempRoot,
+    });
+    try {
+      const response = await app.inject({
+        method: "GET",
+        url: "/workspace/test-intelligence/jobs/job-md/customer-markdown",
+      });
+      assert.equal(response.statusCode, 503);
+      const body = response.json<Record<string, unknown>>();
+      assert.equal(body.error, "FEATURE_DISABLED");
+    } finally {
+      await close();
+      await rm(tempRoot, { recursive: true, force: true });
+    }
+  });
+});
+
 test("test-intelligence: GET /review/:jobId/state returns snapshot + events", async () => {
   await withTestIntelligenceEnv("1", async () => {
     const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ti-route-state-"));

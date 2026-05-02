@@ -13,12 +13,14 @@ import {
   PRODUCTION_RUNNER_FAILURE_CLASSES,
   ProductionRunnerError,
   boundIntentForLlm,
+  detectBankingInsuranceScreens,
   runFigmaToQcTestCases,
   type ProductionRunnerLlmDraftCase,
 } from "./production-runner.js";
 import type { FigmaRestNode } from "./figma-rest-adapter.js";
 import {
   BUSINESS_TEST_INTENT_IR_SCHEMA_VERSION,
+  EU_BANKING_DEFAULT_POLICY_PROFILE_ID,
   type BusinessTestIntentIr,
   type DetectedAction,
   type DetectedField,
@@ -557,5 +559,278 @@ test("boundIntentForLlm: production caps are positive integers", () => {
   ]) {
     assert.equal(Number.isInteger(cap), true);
     assert.ok(cap > 0);
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Banking / insurance prompt polish + regulatoryRelevance schema field
+// (Issue #1735, contract bump 4.27.0).
+// ---------------------------------------------------------------------------
+
+const BANKING_FILE = {
+  fileKey: "BANK",
+  name: "Investitionsfinanzierung",
+  document: node({
+    id: "0:0",
+    type: "DOCUMENT",
+    children: [
+      node({
+        id: "0:1",
+        name: "Page 1",
+        type: "CANVAS",
+        children: [
+          node({
+            id: "1:1",
+            // The screen name carries a banking semantic keyword ("Antrag").
+            name: "Kreditantrag — Bonität",
+            type: "FRAME",
+            absoluteBoundingBox: { x: 0, y: 0, width: 600, height: 800 },
+            children: [
+              node({
+                id: "2:1",
+                name: "IBAN",
+                type: "TEXT",
+                characters: "IBAN",
+              }),
+              node({
+                id: "2:2",
+                name: "Antrag absenden",
+                type: "INSTANCE",
+                characters: "Antrag absenden",
+              }),
+            ],
+          }),
+        ],
+      }),
+    ],
+  }),
+};
+
+const BANKING_DRAFTS: ProductionRunnerLlmDraftCase[] = [
+  {
+    title: "Antrag absenden mit Vier-Augen-Prinzip",
+    objective:
+      "Statusverändernde Aktion (Antrag) erfordert Vier-Augen-Prinzip und Audit-Trail.",
+    type: "functional",
+    priority: "p0",
+    riskCategory: "financial_transaction",
+    technique: "use_case",
+    preconditions: ["Antragsmaske geöffnet", "Zwei berechtigte Reviewer"],
+    testData: ["Antragstyp: Investitionskredit"],
+    steps: [
+      {
+        index: 1,
+        action: "Antrag erfassen und absenden",
+        expected: "Antrag liegt im Status 'Wartet auf 2. Freigabe'",
+      },
+      {
+        index: 2,
+        action: "Zweiter Reviewer bestätigt den Antrag",
+        expected: "Audit-Trail-Eintrag mit beiden Reviewer-IDs vorhanden",
+      },
+    ],
+    expectedResults: [
+      "Vier-Augen-Prinzip erzwungen",
+      "Audit-Trail-Eintrag vorhanden",
+    ],
+    figmaTraceRefs: [{ screenId: "1:1", nodeName: "Kreditantrag — Bonität" }],
+    assumptions: [],
+    openQuestions: [],
+    regulatoryRelevance: {
+      domain: "banking",
+      rationale:
+        "Statusverändernde Antragsaktion erfordert generisch Vier-Augen-Prinzip und Audit-Trail.",
+    },
+  },
+  {
+    title: "Negativtest — ungültige IBAN wird abgelehnt und maskiert",
+    objective:
+      "Ungültige IBAN wird abgelehnt; eingegebene IBAN wird im UI maskiert.",
+    type: "negative",
+    priority: "p0",
+    riskCategory: "regulated_data",
+    technique: "syntax_testing",
+    preconditions: ["Kreditantrag-Maske geöffnet"],
+    testData: ["IBAN: DE00 0000 0000 0000 0000 00"],
+    steps: [
+      {
+        index: 1,
+        action: "Ungültige IBAN in das IBAN-Feld eingeben",
+        expected:
+          "Validierungsfehler wird angezeigt; eingegebene IBAN wird maskiert dargestellt.",
+      },
+    ],
+    expectedResults: ["Antrag kann nicht abgesendet werden"],
+    figmaTraceRefs: [{ screenId: "1:1", nodeName: "IBAN" }],
+    assumptions: [],
+    openQuestions: [],
+    regulatoryRelevance: {
+      domain: "banking",
+      rationale:
+        "Personenbezogene Bankdaten (IBAN) müssen abgelehnt und maskiert werden.",
+    },
+  },
+];
+
+test("detectBankingInsuranceScreens flags screens whose name carries a banking/insurance keyword", () => {
+  const intent = {
+    screens: [
+      { screenId: "s1", screenName: "Kreditantrag — Bonität" },
+      { screenId: "s2", screenName: "Schadensfall melden" },
+      { screenId: "s3", screenName: "Allgemeine Maske" },
+    ],
+  } as unknown as BusinessTestIntentIr;
+  const matches = detectBankingInsuranceScreens(intent);
+  // s1 matches "Antrag" (or "Bonität"); s2 matches "Schadensfall"; s3 unrelated.
+  const matchedIds = matches.map((m) => m.screenId).sort();
+  assert.deepEqual(matchedIds, ["s1", "s2"]);
+});
+
+test("runFigmaToQcTestCases (eu-banking-default profile) augments user prompt with regulatory rules and stamps regulatoryRelevance from drafts", async () => {
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ti-runner-"));
+  try {
+    let observedUserPrompt = "";
+    const client = createMockLlmGatewayClient({
+      role: "test_generation",
+      deployment: "gpt-oss-120b-mock",
+      modelRevision: "mock-1",
+      gatewayRelease: "mock",
+      responder: (request) => {
+        observedUserPrompt = request.userPrompt;
+        return {
+          outcome: "success" as const,
+          content: { testCases: BANKING_DRAFTS },
+          finishReason: "stop" as const,
+          usage: { inputTokens: 100, outputTokens: 200 },
+          modelDeployment: "gpt-oss-120b-mock",
+          modelRevision: "mock-1",
+          gatewayRelease: "mock",
+          attempt: 1,
+        };
+      },
+    });
+    const result = await runFigmaToQcTestCases({
+      jobId: "job-banking",
+      generatedAt: "2026-05-02T10:00:00Z",
+      source: { kind: "figma_paste_normalized", file: BANKING_FILE },
+      outputRoot: tempRoot,
+      llm: { client },
+      // Default policyProfileId is eu-banking-default — explicit here for clarity.
+      policyProfileId: EU_BANKING_DEFAULT_POLICY_PROFILE_ID,
+    });
+
+    // (a) The user prompt was augmented with the banking compliance rules.
+    assert.match(observedUserPrompt, /POLICY-PROFIL: eu-banking-default/u);
+    assert.match(observedUserPrompt, /IBAN/u);
+    assert.match(observedUserPrompt, /Vier-Augen-Prinzip/u);
+    assert.match(observedUserPrompt, /Banking\/Versicherungs-Bildschirme/u);
+    // The IR-derived screen "Kreditantrag — Bonität" surfaces in the
+    // banking screen list (matched by "Antrag" or "Bonität" keyword).
+    assert.match(observedUserPrompt, /Stichwort: (Antrag|Bonität)/u);
+    // Forbids citing specific paragraphs.
+    assert.match(observedUserPrompt, /KEINE Paragraphen/u);
+
+    // (b) ≥ 1 case has regulatoryRelevance.domain === "banking"
+    const cases = result.generatedTestCases.testCases;
+    const bankingCases = cases.filter(
+      (c) => c.regulatoryRelevance?.domain === "banking",
+    );
+    assert.ok(
+      bankingCases.length >= 1,
+      `expected ≥ 1 banking case, got ${bankingCases.length}`,
+    );
+
+    // (c) Negative test for IBAN field present.
+    const ibanNegative = cases.find(
+      (c) => c.type === "negative" && /IBAN/u.test(c.title + c.objective),
+    );
+    assert.ok(ibanNegative, "expected a negative case naming IBAN");
+
+    // (d) Four-eyes case present when "Antrag" is in the screen.
+    const fourEyes = cases.find((c) =>
+      /Vier-Augen-Prinzip/u.test(c.title + c.objective),
+    );
+    assert.ok(fourEyes, "expected a four-eyes case for the Antrag screen");
+    assert.equal(fourEyes.priority, "p0");
+    assert.equal(fourEyes.riskCategory, "financial_transaction");
+
+    // The customer markdown surfaces the regulatory-relevance line.
+    const md = await readFile(result.customerMarkdownPaths.combined, "utf8");
+    assert.match(md, /Regulatorische Relevanz:\*\* banking/u);
+  } finally {
+    await rm(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("runFigmaToQcTestCases skips banking augmentation when policyProfileId is not eu-banking-default", async () => {
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ti-runner-"));
+  try {
+    let observedUserPrompt = "";
+    const client = createMockLlmGatewayClient({
+      role: "test_generation",
+      deployment: "gpt-oss-120b-mock",
+      modelRevision: "mock-1",
+      gatewayRelease: "mock",
+      responder: (request) => {
+        observedUserPrompt = request.userPrompt;
+        return {
+          outcome: "success" as const,
+          content: { testCases: [SAMPLE_DRAFT] },
+          finishReason: "stop" as const,
+          usage: { inputTokens: 100, outputTokens: 200 },
+          modelDeployment: "gpt-oss-120b-mock",
+          modelRevision: "mock-1",
+          gatewayRelease: "mock",
+          attempt: 1,
+        };
+      },
+    });
+    await runFigmaToQcTestCases({
+      jobId: "job-non-banking",
+      generatedAt: "2026-05-02T10:00:00Z",
+      source: { kind: "figma_paste_normalized", file: SAMPLE_FILE },
+      outputRoot: tempRoot,
+      llm: { client },
+      policyProfileId: "non-banking-test-profile",
+    });
+    assert.doesNotMatch(
+      observedUserPrompt,
+      /POLICY-PROFIL: eu-banking-default/u,
+    );
+    assert.doesNotMatch(observedUserPrompt, /Vier-Augen-Prinzip/u);
+  } finally {
+    await rm(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("runFigmaToQcTestCases tolerates malformed regulatoryRelevance on a draft (silently drops)", async () => {
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ti-runner-"));
+  try {
+    const malformed = {
+      ...SAMPLE_DRAFT,
+      regulatoryRelevance: {
+        domain: "not-a-real-domain",
+        rationale: "x",
+      },
+    } as unknown as ProductionRunnerLlmDraftCase;
+    const client = createMockLlmGatewayClient({
+      role: "test_generation",
+      deployment: "gpt-oss-120b-mock",
+      modelRevision: "mock-1",
+      gatewayRelease: "mock",
+      responder: okResponder([malformed]),
+    });
+    const result = await runFigmaToQcTestCases({
+      jobId: "job-bad-reg",
+      generatedAt: "2026-05-02T10:00:00Z",
+      source: { kind: "figma_paste_normalized", file: SAMPLE_FILE },
+      outputRoot: tempRoot,
+      llm: { client },
+    });
+    const stamped = result.generatedTestCases.testCases[0];
+    assert.ok(stamped);
+    assert.equal(stamped.regulatoryRelevance, undefined);
+  } finally {
+    await rm(tempRoot, { recursive: true, force: true });
   }
 });

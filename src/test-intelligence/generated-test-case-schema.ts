@@ -1,4 +1,5 @@
 import {
+  ALLOWED_REGULATORY_RELEVANCE_DOMAINS,
   GENERATED_TEST_CASE_SCHEMA_VERSION,
   TEST_INTELLIGENCE_CONTRACT_VERSION,
   TEST_INTELLIGENCE_PROMPT_TEMPLATE_VERSION,
@@ -6,6 +7,7 @@ import {
   type GeneratedTestCaseList,
   type GeneratedTestCaseReviewState,
   type GeneratedTestCaseStep,
+  type RegulatoryRelevanceDomain,
   type TestCaseLevel,
   type TestCasePriority,
   type TestCaseRiskCategory,
@@ -90,7 +92,10 @@ const TEST_CASE_KEYS = [
   "qualitySignals",
   "reviewState",
   "audit",
+  // Optional, additive in contract 4.27.0 (Issue #1735).
+  "regulatoryRelevance",
 ] as const;
+const REGULATORY_RELEVANCE_KEYS = ["domain", "rationale"] as const;
 const STEP_KEYS = ["index", "action", "data", "expected"] as const;
 const FIGMA_TRACE_REF_KEYS = [
   "screenId",
@@ -253,6 +258,16 @@ export const buildGeneratedTestCaseListJsonSchema = (): Record<
     },
   };
 
+  const regulatoryRelevance: Record<string, unknown> = {
+    type: "object",
+    additionalProperties: false,
+    required: ["domain", "rationale"],
+    properties: {
+      domain: { enum: [...ALLOWED_REGULATORY_RELEVANCE_DOMAINS] },
+      rationale: { type: "string", minLength: 1, maxLength: 240 },
+    },
+  };
+
   const testCase: Record<string, unknown> = {
     type: "object",
     additionalProperties: false,
@@ -307,6 +322,8 @@ export const buildGeneratedTestCaseListJsonSchema = (): Record<
       qualitySignals,
       reviewState: { enum: [...REVIEW_STATES] },
       audit,
+      // Optional, additive in contract 4.27.0 (Issue #1735).
+      regulatoryRelevance,
     },
   };
 
@@ -440,6 +457,52 @@ const validateTestCase = (
   expectQualitySignals(tc["qualitySignals"], `${path}.qualitySignals`, errors);
   expectEnum(tc["reviewState"], REVIEW_STATES, `${path}.reviewState`, errors);
   expectAudit(tc["audit"], `${path}.audit`, errors);
+  // Optional, additive in contract 4.27.0 (Issue #1735). When absent the
+  // field is simply omitted from the persisted record; when present it must
+  // be {domain, rationale} with a known domain and a non-empty rationale of
+  // length 1..240.
+  if ("regulatoryRelevance" in tc && tc["regulatoryRelevance"] !== undefined) {
+    expectRegulatoryRelevance(
+      tc["regulatoryRelevance"],
+      `${path}.regulatoryRelevance`,
+      errors,
+    );
+  }
+};
+
+const expectRegulatoryRelevance = (
+  value: unknown,
+  path: string,
+  errors: GeneratedTestCaseValidationError[],
+): void => {
+  if (!isObject(value)) {
+    errors.push({ path, message: "expected object" });
+    return;
+  }
+  expectExactKeys(value, REGULATORY_RELEVANCE_KEYS, path, errors);
+  const domain = value["domain"];
+  if (
+    typeof domain !== "string" ||
+    !ALLOWED_REGULATORY_RELEVANCE_DOMAINS.includes(
+      domain as RegulatoryRelevanceDomain,
+    )
+  ) {
+    errors.push({
+      path: `${path}.domain`,
+      message: `expected one of ${ALLOWED_REGULATORY_RELEVANCE_DOMAINS.join(", ")}`,
+    });
+  }
+  const rationale = value["rationale"];
+  if (
+    typeof rationale !== "string" ||
+    rationale.length === 0 ||
+    rationale.length > 240
+  ) {
+    errors.push({
+      path: `${path}.rationale`,
+      message: "expected non-empty string of length 1..240",
+    });
+  }
 };
 
 const expectString = (

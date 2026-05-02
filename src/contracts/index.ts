@@ -147,8 +147,15 @@ export interface TestIntelligenceTransferPrincipal {
 /** Contract version for the opt-in test-intelligence surface. */
 export const TEST_INTELLIGENCE_CONTRACT_VERSION = "1.6.0" as const;
 
-/** Schema version for generated test case payloads. */
-export const GENERATED_TEST_CASE_SCHEMA_VERSION = "1.0.0" as const;
+/**
+ * Schema version for generated test case payloads.
+ *
+ * 1.1.0 — Issue #1735: optional additive field `regulatoryRelevance`
+ * ({domain, rationale}) on each test case. Backwards compatible — the
+ * validator accepts both 1.0.0-shaped lists (without the field) and
+ * 1.1.0-shaped lists (with or without the field).
+ */
+export const GENERATED_TEST_CASE_SCHEMA_VERSION = "1.1.0" as const;
 
 /** Prompt template version for the test-intelligence prompt family. */
 export const TEST_INTELLIGENCE_PROMPT_TEMPLATE_VERSION = "1.0.0" as const;
@@ -3977,6 +3984,74 @@ export interface TestCaseQualitySignalRubric {
   rubricScore: number;
 }
 
+/**
+ * Regulatory-domain enum for {@link RegulatoryRelevance.domain}
+ * (Issue #1735, contract bump 4.27.0).
+ *
+ * Drives the banking/insurance prompt-augmentation pass in the production
+ * runner. The enum is intentionally narrow — generic-compliance language
+ * only (no specific paragraph numbers / regulatory-text citations).
+ *
+ * - `"banking"` — semantic banking node names ("Antrag", "Auszahlung",
+ *   "Bonität", IBAN/BIC inputs, four-eyes-state-changing actions, ...).
+ * - `"insurance"` — semantic insurance node names ("Versicherung", "Police",
+ *   "Schadensfall", "Risikoprüfung", ...).
+ * - `"general"` — flagged as compliance-relevant but not specific to the
+ *   above two industries (e.g. PII boundary cases).
+ */
+export const ALLOWED_REGULATORY_RELEVANCE_DOMAINS = [
+  "banking",
+  "insurance",
+  "general",
+] as const;
+export type RegulatoryRelevanceDomain =
+  (typeof ALLOWED_REGULATORY_RELEVANCE_DOMAINS)[number];
+
+/**
+ * Banking / insurance semantic keywords surfaced in screen / node names that
+ * trigger the regulatory-prompt augmentation pass. The list is intentionally
+ * narrow: generic banking + insurance flow vocabulary (German), no specific
+ * regulatory-text citations.
+ *
+ * Exposed as a frozen contract export so callers (production runner +
+ * inspector tooling) share one source of truth for "is this screen regulated".
+ */
+export const BANKING_INSURANCE_SEMANTIC_KEYWORDS = [
+  "Versicherung",
+  "Police",
+  "Schadensfall",
+  "Risikoprüfung",
+  "Bonität",
+  "Antrag",
+  "Abschluss",
+  "Auszahlung",
+  "Kündigung",
+] as const;
+export type BankingInsuranceSemanticKeyword =
+  (typeof BANKING_INSURANCE_SEMANTIC_KEYWORDS)[number];
+
+/**
+ * Optional per-test-case regulatory-relevance signal (Issue #1735, contract
+ * bump 4.27.0). Populated by the production runner when the source screen
+ * matches a banking / insurance semantic keyword (see
+ * {@link BANKING_INSURANCE_SEMANTIC_KEYWORDS}) or when the prompt-augmentation
+ * pass produced a compliance-flavoured case (PII / IBAN rejection,
+ * four-eyes / audit-trail, regulated-data boundary).
+ *
+ * The field is optional — non-banking/insurance Figma sources do not emit
+ * it, which means existing artifacts and replay-cache entries from contract
+ * version 4.26.0 remain valid (additive, backwards-compatible field).
+ */
+export interface RegulatoryRelevance {
+  domain: RegulatoryRelevanceDomain;
+  /**
+   * Free-form German rationale (≤ 240 chars) explaining why the case carries
+   * regulatory weight. Generic compliance language only; the prompt
+   * augmentation forbids the model from citing specific paragraphs.
+   */
+  rationale: string;
+}
+
 /** Audit metadata attached to a generated test case. */
 export interface GeneratedTestCaseAuditMetadata {
   jobId: string;
@@ -4019,6 +4094,13 @@ export interface GeneratedTestCase {
   qualitySignals: GeneratedTestCaseQualitySignals;
   reviewState: GeneratedTestCaseReviewState;
   audit: GeneratedTestCaseAuditMetadata;
+  /**
+   * Optional regulatory-relevance signal (Issue #1735, contract bump
+   * 4.27.0). Populated by the production runner when the source screen
+   * matches banking/insurance semantic keywords or when prompt augmentation
+   * produced a compliance-flavoured case.
+   */
+  regulatoryRelevance?: RegulatoryRelevance;
 }
 
 /** Wrapper produced by the generator for a single job. */
@@ -7632,4 +7714,4 @@ export type SourceMixPlannerResult =
  * Must be bumped according to CONTRACT_CHANGELOG.md rules.
  * Package version alignment is documented in VERSIONING.md.
  */
-export const CONTRACT_VERSION = "4.26.0" as const;
+export const CONTRACT_VERSION = "4.27.0" as const;

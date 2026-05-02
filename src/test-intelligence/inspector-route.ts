@@ -6,6 +6,7 @@
  *   GET  /workspace/test-intelligence/jobs                                  → list jobs
  *   GET  /workspace/test-intelligence/jobs/<jobId>                          → bundle (read)
  *   GET  /workspace/test-intelligence/jobs/<jobId>/sources                  → source refs
+ *   GET  /workspace/test-intelligence/jobs/<jobId>/customer-markdown        → combined customer Markdown export (#1733)
  *   POST /workspace/test-intelligence/jobs/<jobId>/sources/jira-fetch       → Jira REST ingest
  *   POST /workspace/test-intelligence/jobs/<jobId>/conflicts/<conflictId>/resolve
  *                                                                        → reviewer conflict action
@@ -34,6 +35,7 @@ export type InspectorTestIntelligenceRoute =
   | { kind: "list_jobs" }
   | { kind: "read_bundle"; jobId: string }
   | { kind: "list_sources"; jobId: string }
+  | { kind: "customer_markdown_export"; jobId: string }
   | { kind: "jira_fetch_source"; jobId: string }
   | { kind: "remove_source"; jobId: string; sourceId: string }
   | { kind: "resolve_conflict"; jobId: string; conflictId: string }
@@ -112,6 +114,9 @@ export const parseInspectorTestIntelligenceRoute = (
     }
     if (segments.length === 3 && segments[2] === "sources") {
       return { ok: true, route: { kind: "list_sources", jobId } };
+    }
+    if (segments.length === 3 && segments[2] === "customer-markdown") {
+      return { ok: true, route: { kind: "customer_markdown_export", jobId } };
     }
     if (
       segments.length === 4 &&

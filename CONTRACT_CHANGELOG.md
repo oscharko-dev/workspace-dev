@@ -31,6 +31,51 @@ All changes to the public contract surface of `workspace-dev` are documented her
 
 ---
 
+## [4.27.0] - 2026-05-02
+
+### Added (Issue #1735 — banking/insurance prompt polish)
+
+`GeneratedTestCase` gains an optional `regulatoryRelevance` field
+surfaced via two new runtime exports:
+
+- `ALLOWED_REGULATORY_RELEVANCE_DOMAINS` — frozen `["banking",
+"insurance", "general"]` enum and matching `RegulatoryRelevanceDomain`
+  union type.
+- `BANKING_INSURANCE_SEMANTIC_KEYWORDS` — readonly tuple of German
+  banking/insurance flow keywords (`Versicherung`, `Police`,
+  `Schadensfall`, `Risikoprüfung`, `Bonität`, `Antrag`, `Abschluss`,
+  `Auszahlung`, `Kündigung`) used by the production runner to detect
+  regulated screens.
+- `RegulatoryRelevance` interface = `{ domain, rationale }`.
+
+Driven by the customer-demo brief: when the policy profile is
+`eu-banking-default` (the production-runner default), the runner
+augments the LLM user prompt with banking/insurance compliance
+expectations — positive+negative cases per relevant input, PII / IBAN /
+BIC / Vertragsnummer rejection + masking, four-eyes + audit-trail for
+state-changing actions, boundary tests on amount/currency, and exactly
+one regulatory-compliance case for screens whose name matches a
+`BANKING_INSURANCE_SEMANTIC_KEYWORDS` entry. Generic compliance language
+only — the prompt forbids citing specific regulatory paragraphs.
+
+The new field is optional at the TypeScript / runtime level — code
+that constructs a `GeneratedTestCase` without `regulatoryRelevance`
+still type-checks and validates. However,
+`GENERATED_TEST_CASE_SCHEMA_VERSION` bumps `1.0.0` → `1.1.0` in
+lockstep because the JSON-schema hash drifted with the new optional
+property; lists stamped under the prior schema version will be
+rejected by the validator (which pins `schemaVersion` via `const`),
+and replay-cache entries keyed by the schema hash will miss. In both
+cases the producer must re-emit the artifact under the new schema
+version. This is the same shape of change as the prior schema-hash
+bump in Issue #1676.
+
+`LLM_GATEWAY_CONTRACT_VERSION` and `TEST_INTELLIGENCE_CONTRACT_VERSION`
+are unchanged because the LLM gateway wire shape and the
+test-intelligence client surface are otherwise untouched; the
+schema-internal bump is tracked at the top-level `CONTRACT_VERSION`
+per the precedent established in 4.7.0 / 4.26.0.
+
 ## [4.26.0] - 2026-05-02
 
 ### Added (Issue #1733 customer-demo follow-up)
