@@ -161,6 +161,10 @@ import {
 } from "../test-intelligence/jira-paste-ingest.js";
 import { validateCustomContextInput } from "../test-intelligence/custom-context-input.js";
 import { persistCustomContext } from "../test-intelligence/custom-context-store.js";
+import {
+  buildCustomerMarkdownAttachmentName,
+  readCustomerMarkdownArtifact,
+} from "../test-intelligence/customer-markdown-reader.js";
 
 /**
  * Decode a URI component safely, sending a 400 response on malformed input.
@@ -3207,6 +3211,44 @@ export function createWorkspaceRequestHandler({
               response,
               statusCode: 200,
               payload: result.bundle,
+            });
+            return;
+          }
+          if (route.kind === "customer_markdown_export") {
+            const exportResult = await readCustomerMarkdownArtifact({
+              artifactRoot: testIntelligenceArtifactRoot,
+              jobId: route.jobId,
+            });
+            if (!exportResult.ok) {
+              const statusCode =
+                exportResult.reason === "path_outside_root" ? 400 : 404;
+              const errorCode =
+                exportResult.reason === "path_outside_root"
+                  ? "INVALID_PATH"
+                  : "JOB_NOT_FOUND";
+              const message =
+                exportResult.reason === "path_outside_root"
+                  ? "Job id resolves outside the test-intelligence artifact root."
+                  : `No customer Markdown artifact for job '${route.jobId}'.`;
+              sendJson({
+                response,
+                statusCode,
+                payload: { error: errorCode, message },
+              });
+              return;
+            }
+            const attachmentName = buildCustomerMarkdownAttachmentName(
+              route.jobId,
+            );
+            response.setHeader(
+              "content-disposition",
+              `attachment; filename="${attachmentName}"`,
+            );
+            sendText({
+              response,
+              statusCode: 200,
+              contentType: "text/markdown; charset=utf-8",
+              payload: exportResult.combinedMarkdown,
             });
             return;
           }

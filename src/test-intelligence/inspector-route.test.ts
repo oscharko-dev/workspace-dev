@@ -365,4 +365,49 @@ describe("isInspectorTestIntelligenceWriteAction", () => {
       true,
     );
   });
+
+  test("returns false for customer_markdown_export (read-only route)", () => {
+    assert.equal(
+      isInspectorTestIntelligenceWriteAction({
+        kind: "customer_markdown_export",
+        jobId: "job-1",
+      }),
+      false,
+    );
+  });
+});
+
+describe("parseInspectorTestIntelligenceRoute — customer-markdown export", () => {
+  test("parses /jobs/<jobId>/customer-markdown as customer_markdown_export", () => {
+    const result = parseInspectorTestIntelligenceRoute(
+      "/workspace/test-intelligence/jobs/job-1/customer-markdown",
+    );
+    assert.equal(result.ok, true);
+    if (result.ok) {
+      assert.deepEqual(result.route, {
+        kind: "customer_markdown_export",
+        jobId: "job-1",
+      });
+    }
+  });
+
+  test("rejects unsafe job ids on the export route", () => {
+    const result = parseInspectorTestIntelligenceRoute(
+      "/workspace/test-intelligence/jobs/..%2Fetc/customer-markdown",
+    );
+    assert.equal(result.ok, false);
+    if (!result.ok) {
+      assert.equal(result.error.reason, "unsafe_job_id");
+    }
+  });
+
+  test("rejects extra segments after customer-markdown", () => {
+    const result = parseInspectorTestIntelligenceRoute(
+      "/workspace/test-intelligence/jobs/job-1/customer-markdown/extra",
+    );
+    assert.equal(result.ok, false);
+    if (!result.ok) {
+      assert.equal(result.error.reason, "segment_count_invalid");
+    }
+  });
 });
