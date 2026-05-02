@@ -5,8 +5,7 @@
     "status": "ok",
     "attempts": 1,
     "install": {
-      "status": "skipped",
-      "strategy": "reused_seeded_node_modules"
+      "status": "<stable-status>"
     },
     "lint": {
       "status": "passed",
