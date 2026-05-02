@@ -9,19 +9,39 @@ import type {
 } from "../contracts/index.js";
 import { deriveBusinessTestIntentIr } from "./intent-derivation.js";
 import { createLlmGatewayClientBundle } from "./llm-gateway-bundle.js";
-import { loadWave1PocCaptureFixture, loadWave1PocFixture } from "./poc-fixtures.js";
+import {
+  loadWave1PocCaptureFixture,
+  loadWave1PocFixture,
+} from "./poc-fixtures.js";
 import { describeVisualScreens } from "./visual-sidecar-client.js";
 
 const LIVE_SMOKE_FLAG = "WORKSPACE_TEST_SPACE_LIVE_SMOKE";
-const API_KEY_ENV = "WORKSPACE_TEST_SPACE_API_KEY";
 
-const REQUIRED_LIVE_ENV = [
+/**
+ * Issue #1660 (audit-2026-05): API-key env-var alias.
+ *
+ * The live smoke historically read only `WORKSPACE_TEST_SPACE_API_KEY`,
+ * but the operator-facing `.env` and the rest of the runtime set
+ * `WORKSPACE_TEST_SPACE_MODEL_API_KEY`. We now resolve the first
+ * non-empty value in alias-precedence order and surface the resolved
+ * source so the test fail-message points an operator at the right name.
+ *
+ * Precedence is alphabetical-stable: `WORKSPACE_TEST_SPACE_API_KEY`
+ * (legacy) wins when set, so existing CI configurations that already
+ * use the legacy name keep working unchanged. New configurations should
+ * set `WORKSPACE_TEST_SPACE_MODEL_API_KEY`.
+ */
+const API_KEY_ALIASES = [
+  "WORKSPACE_TEST_SPACE_API_KEY",
+  "WORKSPACE_TEST_SPACE_MODEL_API_KEY",
+] as const;
+
+const NON_AUTH_REQUIRED_LIVE_ENV = [
   "WORKSPACE_TEST_SPACE_MODEL_ENDPOINT",
   "WORKSPACE_TEST_SPACE_TESTCASE_MODEL_DEPLOYMENT",
   "WORKSPACE_TEST_SPACE_VISUAL_MODEL_ENDPOINT",
   "WORKSPACE_TEST_SPACE_VISUAL_PRIMARY_DEPLOYMENT",
   "WORKSPACE_TEST_SPACE_VISUAL_FALLBACK_DEPLOYMENT",
-  API_KEY_ENV,
 ] as const;
 
 const testGenerationCapabilities: LlmGatewayCapabilities = {
@@ -40,12 +60,31 @@ const visualCapabilities: LlmGatewayCapabilities = {
 
 const circuitBreaker = { failureThreshold: 2, resetTimeoutMs: 30_000 } as const;
 
-const requireEnv = (name: (typeof REQUIRED_LIVE_ENV)[number]): string => {
+const requireEnv = (
+  name: (typeof NON_AUTH_REQUIRED_LIVE_ENV)[number],
+): string => {
   const value = process.env[name];
   if (typeof value !== "string" || value.length === 0) {
     throw new Error(`${name} is required for live visual-sidecar smoke`);
   }
   return value;
+};
+
+/**
+ * Issue #1660: resolve the API key from any configured alias. Throws a
+ * friendly error naming all candidate env names if none is set so an
+ * operator running from a fresh checkout sees the full set.
+ */
+const requireApiKey = (): string => {
+  for (const candidate of API_KEY_ALIASES) {
+    const value = process.env[candidate];
+    if (typeof value === "string" && value.length > 0) {
+      return value;
+    }
+  }
+  throw new Error(
+    `live visual-sidecar smoke requires one of: ${API_KEY_ALIASES.join(", ")} (set the operator-supplied Azure key under any of these names)`,
+  );
 };
 
 const buildConfig = (input: {
@@ -71,7 +110,9 @@ const buildConfig = (input: {
 
 test("live visual sidecar smoke: fixture capture describes through role-separated Azure deployments", async (t) => {
   if (process.env[LIVE_SMOKE_FLAG] !== "1") {
-    t.skip(`${LIVE_SMOKE_FLAG}=1 enables the operator-controlled live smoke test.`);
+    t.skip(
+      `${LIVE_SMOKE_FLAG}=1 enables the operator-controlled live smoke test.`,
+    );
     return;
   }
 
@@ -92,24 +133,30 @@ test("live visual sidecar smoke: fixture capture describes through role-separate
       testGeneration: buildConfig({
         role: "test_generation",
         baseUrl: requireEnv("WORKSPACE_TEST_SPACE_MODEL_ENDPOINT"),
-        deployment: requireEnv("WORKSPACE_TEST_SPACE_TESTCASE_MODEL_DEPLOYMENT"),
+        deployment: requireEnv(
+          "WORKSPACE_TEST_SPACE_TESTCASE_MODEL_DEPLOYMENT",
+        ),
         imageInputSupport: false,
       }),
       visualPrimary: buildConfig({
         role: "visual_primary",
         baseUrl: requireEnv("WORKSPACE_TEST_SPACE_VISUAL_MODEL_ENDPOINT"),
-        deployment: requireEnv("WORKSPACE_TEST_SPACE_VISUAL_PRIMARY_DEPLOYMENT"),
+        deployment: requireEnv(
+          "WORKSPACE_TEST_SPACE_VISUAL_PRIMARY_DEPLOYMENT",
+        ),
         imageInputSupport: true,
       }),
       visualFallback: buildConfig({
         role: "visual_fallback",
         baseUrl: requireEnv("WORKSPACE_TEST_SPACE_VISUAL_MODEL_ENDPOINT"),
-        deployment: requireEnv("WORKSPACE_TEST_SPACE_VISUAL_FALLBACK_DEPLOYMENT"),
+        deployment: requireEnv(
+          "WORKSPACE_TEST_SPACE_VISUAL_FALLBACK_DEPLOYMENT",
+        ),
         imageInputSupport: true,
       }),
     },
     {
-      apiKeyProvider: () => requireEnv(API_KEY_ENV),
+      apiKeyProvider: () => requireApiKey(),
     },
   );
 
