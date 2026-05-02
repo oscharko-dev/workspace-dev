@@ -7989,7 +7989,15 @@ test("test-intelligence: GET /jobs/:jobId/customer-markdown returns the combined
   await withTestIntelligenceEnv("1", async () => {
     const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ti-route-md-"));
     const artifactRoot = path.join(tempRoot, "ti");
-    const markdownDir = path.join(artifactRoot, "job-md", "customer-markdown");
+    // Mirror the production-runner layout exactly:
+    //   <artifactRoot>/jobs/<jobId>/test-intelligence/customer-markdown/testfaelle.md
+    const markdownDir = path.join(
+      artifactRoot,
+      "jobs",
+      "job-md",
+      "test-intelligence",
+      "customer-markdown",
+    );
     await mkdir(markdownDir, { recursive: true });
     await writeFile(
       path.join(markdownDir, "testfaelle.md"),
