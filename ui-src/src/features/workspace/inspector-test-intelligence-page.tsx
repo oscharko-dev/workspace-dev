@@ -28,6 +28,7 @@ import { ConflictResolutionPanel } from "./inspector/test-intelligence/conflict-
 import { CustomerDownloadsBar } from "./inspector/test-intelligence/CustomerDownloadsBar";
 import { FigmaUrlTab } from "./inspector/test-intelligence/figma-url-tab";
 import { JiraWritePanel } from "./inspector/test-intelligence/jira-write-panel";
+import { JobHistoryStrip } from "./inspector/test-intelligence/JobHistoryStrip";
 import { MultiSourceIngestionPanel } from "./inspector/test-intelligence/multi-source-ingestion-panel";
 import { SourceListPanel } from "./inspector/test-intelligence/source-list-panel";
 import { fetchTestIntelligenceJobs } from "./inspector/test-intelligence/api";
@@ -101,6 +102,7 @@ interface TestIntelligenceInnerProps {
   jiraGatewayConfigured: boolean;
   onBearerTokenChange: (value: string) => void;
   onReviewerHandleChange: (value: string) => void;
+  onSelectJob: (jobId: string) => void;
 }
 
 function buildTestCaseListEntries(props: {
@@ -130,6 +132,7 @@ function TestIntelligenceInner({
   jiraGatewayConfigured,
   onBearerTokenChange,
   onReviewerHandleChange,
+  onSelectJob,
 }: TestIntelligenceInnerProps): JSX.Element {
   const job = useTestIntelligenceJob({
     jobId,
@@ -508,11 +511,48 @@ function TestIntelligenceInner({
                   void job.refresh();
                 }}
               />
+              <JobHistoryStripContainer
+                selectedJobId={jobId}
+                onSelect={onSelectJob}
+              />
             </div>
           </div>
         </>
       )}
     </div>
+  );
+}
+
+interface JobHistoryStripContainerProps {
+  selectedJobId: string;
+  onSelect: (jobId: string) => void;
+}
+
+/**
+ * Right-rail job history container. Owns the jobs query so the strip
+ * itself stays presentational. Empty / failure / loading states are
+ * folded into the empty list — the strip already handles "no rows".
+ */
+function JobHistoryStripContainer({
+  selectedJobId,
+  onSelect,
+}: JobHistoryStripContainerProps): JSX.Element {
+  const query = useQuery({
+    queryKey: ["test-intelligence", "job-history-strip"],
+    queryFn: fetchTestIntelligenceJobs,
+    staleTime: 30_000,
+  });
+  const jobs = useMemo<TestIntelligenceJobSummary[]>(() => {
+    const outcome = query.data;
+    if (outcome === undefined || !outcome.ok) return [];
+    return outcome.value;
+  }, [query.data]);
+  return (
+    <JobHistoryStrip
+      jobs={jobs}
+      selectedJobId={selectedJobId}
+      onSelect={onSelect}
+    />
   );
 }
 
@@ -974,6 +1014,7 @@ export function InspectorTestIntelligencePage(): JSX.Element {
             jiraGatewayConfigured={jiraGatewayConfigured}
             onBearerTokenChange={handleBearerTokenChange}
             onReviewerHandleChange={handleReviewerHandleChange}
+            onSelectJob={handleSelectJob}
           />
         )}
       </main>
