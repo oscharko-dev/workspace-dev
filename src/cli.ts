@@ -31,6 +31,12 @@ import {
 import { DEFAULT_PIPELINE_DIAGNOSTIC_LIMITS } from "./job-engine/errors.js";
 import { parseVisualBrowserList } from "./job-engine/visual-browser-matrix.js";
 import { createWorkspaceServer } from "./server.js";
+import {
+  parseTestIntelligenceRunArgs,
+  runTestIntelligenceCommand,
+  TEST_INTELLIGENCE_RUN_HELP,
+  TestIntelligenceRunOperatorError,
+} from "./test-intelligence-run-cli.js";
 import path from "node:path";
 
 const DEFAULT_PORT = 1983;
@@ -135,6 +141,14 @@ interface CliOptions {
   scanOutputPath: string | undefined;
   scanLibrary: string | undefined;
   scanForce: boolean;
+  /**
+   * Opt-in startup feature gate for the Figma-to-QC test-intelligence
+   * Inspector surface (Issue #1733/#1735/#1736). Defaults to env-var
+   * `FIGMAPIPE_WORKSPACE_TEST_INTELLIGENCE`. The runtime gate combines
+   * this with the env var; both must be true for the
+   * `figma_to_qc_test_cases` job type to be accepted.
+   */
+  enableTestIntelligence: boolean;
 }
 
 const parseBooleanLike = (
@@ -519,6 +533,10 @@ const parseArgs = (argv: string[]): CliOptions => {
   let enablePerfValidation: boolean | undefined = parseBooleanFlag(
     process.env.FIGMAPIPE_WORKSPACE_ENABLE_PERF_VALIDATION ??
       process.env.FIGMAPIPE_ENABLE_PERF_VALIDATION,
+  );
+  let enableTestIntelligence = parseBooleanLike(
+    process.env.FIGMAPIPE_WORKSPACE_TEST_INTELLIGENCE,
+    false,
   );
   let scanProjectRoot = process.cwd();
   let scanOutputPath: string | undefined;
@@ -998,6 +1016,25 @@ const parseArgs = (argv: string[]): CliOptions => {
       continue;
     }
 
+    if (arg === "--enable-test-intelligence") {
+      // Boolean flag with optional value (`--enable-test-intelligence`,
+      // `--enable-test-intelligence true`, or `--enable-test-intelligence false`).
+      // When the next arg is missing or another flag, treat as `true`.
+      const nextArg = args[index + 1];
+      const looksLikeValue =
+        typeof nextArg === "string" && !nextArg.startsWith("--");
+      if (looksLikeValue) {
+        enableTestIntelligence = parseBooleanLike(
+          nextArg,
+          enableTestIntelligence,
+        );
+        index += 1;
+      } else {
+        enableTestIntelligence = true;
+      }
+      continue;
+    }
+
     if (arg === "--project-root") {
       const nextValue = args[index + 1]?.trim();
       if (nextValue && nextValue.length > 0) {
@@ -1087,6 +1124,7 @@ const parseArgs = (argv: string[]): CliOptions => {
     scanOutputPath,
     scanLibrary,
     scanForce,
+    enableTestIntelligence,
   };
 };
 
@@ -1097,7 +1135,10 @@ workspace-dev - autonomous local workspace generator
 Usage:
   workspace-dev start [options]
   workspace-dev scan-design-system [options]
+  workspace-dev test-intelligence run [options]
   workspace-dev --help
+
+Run "workspace-dev test-intelligence --help" for the test-intelligence run flag list.
 
 Options:
   Start command:
@@ -1181,6 +1222,8 @@ Options:
   --preview <true|false>     Enable preview export/serving (default: true)
   --perf-validation <true|false>
                              Run perf:assert during validate.project (default: pipeline-defined; default pipeline enables, rocket disables)
+  --enable-test-intelligence [true|false]
+                             Opt in to the Figma-to-QC test-intelligence Inspector surface (default: env FIGMAPIPE_WORKSPACE_TEST_INTELLIGENCE)
   Scan command:
   --project-root <path>      Project root to scan for imports (default: cwd)
   --output <path>            Output file path (default: <project-root>/${DEFAULT_OUTPUT_ROOT}/design-system.json)
@@ -1256,7 +1299,61 @@ Mode lock is always enforced:
 `);
 };
 
+/**
+ * Dispatch the `test-intelligence run` sub-command. Owns flag parsing,
+ * env-var validation, runner orchestration, and exit-code mapping. Lives
+ * inline here (not behind a logger) so stdout/stderr framing matches the
+ * spec exactly: human-readable summary on success, sanitized error on
+ * stderr on failure, never echoes secrets.
+ */
+const runTestIntelligenceSubCommand = async (
+  args: ReadonlyArray<string>,
+): Promise<never> => {
+  const subCommand = args[0];
+  if (subCommand === "--help" || subCommand === "help") {
+    process.stdout.write(`${TEST_INTELLIGENCE_RUN_HELP}\n`);
+    process.exit(0);
+  }
+  if (subCommand !== "run") {
+    process.stderr.write(
+      `error: unknown sub-command for "test-intelligence": ${subCommand ?? "(none)"}\n`,
+    );
+    process.stderr.write(
+      "usage: workspace-dev test-intelligence run [options]\n",
+    );
+    process.exit(1);
+  }
+
+  let parsed;
+  try {
+    parsed = parseTestIntelligenceRunArgs(args.slice(1));
+  } catch (err) {
+    if (err instanceof TestIntelligenceRunOperatorError) {
+      process.stderr.write(`error: ${err.message}\n`);
+      process.exit(1);
+    }
+    throw err;
+  }
+
+  const exitCode = await runTestIntelligenceCommand(parsed, {
+    stdout: (message) => process.stdout.write(message),
+    stderr: (message) => process.stderr.write(message),
+  });
+  process.exit(exitCode);
+};
+
 const main = async (): Promise<void> => {
+  // The `test-intelligence run` sub-command has its own flag parser (it
+  // accepts flags like `--figma-url` that the start/scan parsers do not
+  // understand and would happily swallow). Dispatch it before `parseArgs`
+  // is invoked so the start-command parser never sees flags it cannot
+  // interpret.
+  const rawArgs = process.argv.slice(2);
+  if (rawArgs[0] === "test-intelligence") {
+    await runTestIntelligenceSubCommand(rawArgs.slice(1));
+    return;
+  }
+
   const options = parseArgs(process.argv);
   const logger = createWorkspaceLogger({
     format: options.logFormat,
@@ -1323,6 +1420,11 @@ const main = async (): Promise<void> => {
       level: "error",
       message:
         'Use "workspace-dev scan-design-system" to generate a design-system config.',
+    });
+    logger.log({
+      level: "error",
+      message:
+        'Use "workspace-dev test-intelligence run" to drive the figma_to_qc_test_cases pipeline from the CLI.',
     });
     logger.log({
       level: "error",
@@ -1448,6 +1550,9 @@ const main = async (): Promise<void> => {
           }
         : {}),
       enablePreview: options.enablePreview,
+      ...(options.enableTestIntelligence
+        ? { testIntelligence: { enabled: true } }
+        : {}),
     });
 
     const shutdown = async (signal: string): Promise<void> => {
