@@ -118,8 +118,11 @@ test("schema: drift guard — the hash is stable for the current contract", () =
   // `workspace-dev.test-intelligence.generated-test-case-list.v1.0.0` ->
   // `workspace-dev-generated-test-case-list-v1` to comply with Azure
   // OpenAI's `response_format.json_schema.name` grammar.
+  // Hash bumped by Issue #1735: optional additive field
+  // `regulatoryRelevance` ({domain, rationale}) on each test case;
+  // GENERATED_TEST_CASE_SCHEMA_VERSION bumped 1.0.0 -> 1.1.0 in lockstep.
   const expected =
-    "fa85539f9b0f0b8075f55555adfbebd6d1704a06f7f61c912f32b2e8dc9883e4";
+    "f858fca53dc42901b071b868728044dde90dad2dac73326fb280c92f37f5c01b";
   const actual = computeGeneratedTestCaseListSchemaHash();
   if (actual !== expected) {
     assert.fail(

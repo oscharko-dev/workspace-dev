@@ -457,6 +457,52 @@ const validateTestCase = (
   expectQualitySignals(tc["qualitySignals"], `${path}.qualitySignals`, errors);
   expectEnum(tc["reviewState"], REVIEW_STATES, `${path}.reviewState`, errors);
   expectAudit(tc["audit"], `${path}.audit`, errors);
+  // Optional, additive in contract 4.27.0 (Issue #1735). When absent the
+  // field is simply omitted from the persisted record; when present it must
+  // be {domain, rationale} with a known domain and a non-empty rationale of
+  // length 1..240.
+  if ("regulatoryRelevance" in tc && tc["regulatoryRelevance"] !== undefined) {
+    expectRegulatoryRelevance(
+      tc["regulatoryRelevance"],
+      `${path}.regulatoryRelevance`,
+      errors,
+    );
+  }
+};
+
+const expectRegulatoryRelevance = (
+  value: unknown,
+  path: string,
+  errors: GeneratedTestCaseValidationError[],
+): void => {
+  if (!isObject(value)) {
+    errors.push({ path, message: "expected object" });
+    return;
+  }
+  expectExactKeys(value, REGULATORY_RELEVANCE_KEYS, path, errors);
+  const domain = value["domain"];
+  if (
+    typeof domain !== "string" ||
+    !ALLOWED_REGULATORY_RELEVANCE_DOMAINS.includes(
+      domain as RegulatoryRelevanceDomain,
+    )
+  ) {
+    errors.push({
+      path: `${path}.domain`,
+      message: `expected one of ${ALLOWED_REGULATORY_RELEVANCE_DOMAINS.join(", ")}`,
+    });
+  }
+  const rationale = value["rationale"];
+  if (
+    typeof rationale !== "string" ||
+    rationale.length === 0 ||
+    rationale.length > 240
+  ) {
+    errors.push({
+      path: `${path}.rationale`,
+      message: "expected non-empty string of length 1..240",
+    });
+  }
 };
 
 const expectString = (

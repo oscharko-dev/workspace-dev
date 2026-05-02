@@ -147,8 +147,15 @@ export interface TestIntelligenceTransferPrincipal {
 /** Contract version for the opt-in test-intelligence surface. */
 export const TEST_INTELLIGENCE_CONTRACT_VERSION = "1.6.0" as const;
 
-/** Schema version for generated test case payloads. */
-export const GENERATED_TEST_CASE_SCHEMA_VERSION = "1.0.0" as const;
+/**
+ * Schema version for generated test case payloads.
+ *
+ * 1.1.0 — Issue #1735: optional additive field `regulatoryRelevance`
+ * ({domain, rationale}) on each test case. Backwards compatible — the
+ * validator accepts both 1.0.0-shaped lists (without the field) and
+ * 1.1.0-shaped lists (with or without the field).
+ */
+export const GENERATED_TEST_CASE_SCHEMA_VERSION = "1.1.0" as const;
 
 /** Prompt template version for the test-intelligence prompt family. */
 export const TEST_INTELLIGENCE_PROMPT_TEMPLATE_VERSION = "1.0.0" as const;
@@ -4009,7 +4016,7 @@ export type RegulatoryRelevanceDomain =
  * Exposed as a frozen contract export so callers (production runner +
  * inspector tooling) share one source of truth for "is this screen regulated".
  */
-export const BANKING_INSURANCE_SEMANTIC_KEYWORDS = Object.freeze([
+export const BANKING_INSURANCE_SEMANTIC_KEYWORDS = [
   "Versicherung",
   "Police",
   "Schadensfall",
@@ -4019,7 +4026,7 @@ export const BANKING_INSURANCE_SEMANTIC_KEYWORDS = Object.freeze([
   "Abschluss",
   "Auszahlung",
   "Kündigung",
-] as const);
+] as const;
 export type BankingInsuranceSemanticKeyword =
   (typeof BANKING_INSURANCE_SEMANTIC_KEYWORDS)[number];
 
