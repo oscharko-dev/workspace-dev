@@ -704,10 +704,19 @@ export const createJiraGatewayClient = (
     request,
     attempt,
     startedAt,
+    perAttemptBudgetMs,
   }: {
     request: JiraFetchRequest;
     attempt: number;
     startedAt: number;
+    /**
+     * Issue #1666 (audit-2026-05): cumulative wall-clock budget remaining
+     * after the prior attempts have consumed their share. The per-attempt
+     * abort timer is capped at the minimum of this value and the
+     * configured `maxWallClockMs` so the second attempt cannot get a
+     * fresh full budget.
+     */
+    perAttemptBudgetMs?: number;
   }): Promise<AttemptResult> => {
     const searchBody = buildSearchBody(request);
     if (isJiraGatewayDiagnostic(searchBody)) {
@@ -747,8 +756,15 @@ export const createJiraGatewayClient = (
       };
     }
 
-    const maxWallClockMs =
+    const requestedBudget =
       request.maxWallClockMs ?? config.maxWallClockMs ?? 30000;
+    // Issue #1666: cap the per-attempt timer at the cumulative remaining
+    // budget so a third attempt cannot consume a fresh full budget after
+    // the first two already burned 90 % of it.
+    const maxWallClockMs =
+      perAttemptBudgetMs !== undefined && perAttemptBudgetMs > 0
+        ? Math.min(perAttemptBudgetMs, requestedBudget)
+        : requestedBudget;
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), maxWallClockMs);
     const url = buildJiraRestUrl(
@@ -1095,7 +1111,49 @@ export const createJiraGatewayClient = (
         break;
       }
 
-      const result = await executeFetch({ request, attempt, startedAt });
+      // Issue #1666 (audit-2026-05): compute the cumulative remaining
+      // budget BEFORE the attempt and pass it as the per-attempt cap.
+      // Previously every attempt got a fresh `maxWallClockMs` timer, so
+      // a 3-attempt run could consume ~3× the declared budget. Now the
+      // attempt-N timer is capped at `totalBudget - elapsed`, so the
+      // total wall-clock can never exceed the declared budget.
+      const totalBudget =
+        request.maxWallClockMs ?? config.maxWallClockMs ?? 30000;
+      const elapsedBeforeAttempt = clock.now() - startedAt;
+      const perAttemptBudgetMs = totalBudget - elapsedBeforeAttempt;
+      if (perAttemptBudgetMs <= 0) {
+        // The accumulated wall-clock has already breached the budget
+        // before this attempt could fire. Surface the dedicated
+        // `jira_total_budget_exceeded` diagnostic so operators can
+        // distinguish it from `jira_retry_budget_exceeded` (which
+        // covers only the retry-sleep overshoot).
+        const diag = diagnostic({
+          code: "jira_total_budget_exceeded",
+          message: `Jira cumulative wall-clock exceeded maxWallClockMs (${totalBudget}ms)`,
+          retryable: false,
+        });
+        lastResult = {
+          issues: [],
+          capability: {
+            version: "unknown",
+            deploymentType: "unknown",
+            adfSupported: false,
+          },
+          responseHash: "",
+          retryable: false,
+          attempts: attempt,
+          responseBytes: 0,
+          diagnostic: diag,
+        };
+        break;
+      }
+
+      const result = await executeFetch({
+        request,
+        attempt,
+        startedAt,
+        perAttemptBudgetMs,
+      });
       lastResult = result;
 
       if (result.issues.length > 0 || !result.retryable) {
@@ -1111,9 +1169,7 @@ export const createJiraGatewayClient = (
         result.retryDelayMs ??
         backoff[Math.min(attempt - 1, backoff.length - 1)] ??
         0;
-      const maxWallClockMs =
-        request.maxWallClockMs ?? config.maxWallClockMs ?? 30000;
-      if (clock.now() - startedAt + waitMs >= maxWallClockMs) {
+      if (clock.now() - startedAt + waitMs >= totalBudget) {
         result.retryable = false;
         result.diagnostic = diagnostic({
           code: "jira_retry_budget_exceeded",
