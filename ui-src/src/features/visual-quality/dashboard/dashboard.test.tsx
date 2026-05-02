@@ -1,5 +1,6 @@
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
+import { expectNoBlockingAccessibilityViolations } from "../../../test/accessibility";
 import { ScoreDashboard } from "./score-dashboard";
 import { DimensionBreakdown } from "./dimension-breakdown";
 import { mergeReport } from "../data/report-loader";
@@ -106,6 +107,79 @@ describe("ScoreDashboard", () => {
     const merged = mergeReport(rest, {}, null);
     render(<ScoreDashboard report={merged} />);
     expect(screen.queryByText("Δ vs baseline")).toBeNull();
+  });
+
+  it("conveys score band with a non-color cue (WCAG 1.4.1) on the overall stat", () => {
+    const merged = mergeReport(aggregate, {}, null);
+    render(<ScoreDashboard report={merged} />);
+    // Overall score 97.5 is in the WARN band (95–98).
+    const dashboard = screen.getByTestId("score-dashboard");
+    expect(dashboard).toHaveTextContent(
+      /Overall score WARN:\s*97\.50 percent/i,
+    );
+    // Visible band symbol & abbreviation render alongside the numeric value.
+    expect(dashboard).toHaveTextContent("⚠");
+    expect(dashboard).toHaveTextContent("WARN");
+  });
+
+  it("renders pass/warn/fail bands per fixture using non-color cues (WCAG 1.4.1)", () => {
+    const passWarnFailAggregate: LastRunAggregate = {
+      ...aggregate,
+      scores: [
+        { ...aggregate.scores[0]!, fixtureId: "pass-fixture", score: 99 },
+        { ...aggregate.scores[1]!, fixtureId: "warn-fixture", score: 96 },
+        {
+          ...aggregate.scores[1]!,
+          fixtureId: "fail-fixture",
+          score: 92,
+          screenId: "3:3",
+          screenName: "Charlie",
+        },
+      ],
+    };
+    const merged = mergeReport(
+      passWarnFailAggregate,
+      {
+        "pass-fixture/1_1/desktop": { report: dimReport(99) },
+        "warn-fixture/2_2/desktop": { report: dimReport(96) },
+        "fail-fixture/3_3/desktop": { report: dimReport(92) },
+      },
+      null,
+    );
+    render(<ScoreDashboard report={merged} />);
+
+    const fixtures = screen.getByTestId("dashboard-fixtures");
+    // Symbol prefixes — ✓ pass, ⚠ warn, ✗ fail.
+    expect(fixtures).toHaveTextContent("✓");
+    expect(fixtures).toHaveTextContent("⚠");
+    expect(fixtures).toHaveTextContent("✗");
+
+    // Each row carries a sr-only band-label string for assistive tech.
+    expect(fixtures).toHaveTextContent(/PASS:\s*99\.00 percent/);
+    expect(fixtures).toHaveTextContent(/WARN:\s*96\.00 percent/);
+    expect(fixtures).toHaveTextContent(/FAIL:\s*92\.00 percent/);
+
+    const items = fixtures.querySelectorAll("li[data-band]");
+    expect(items.length).toBe(3);
+    const bands = Array.from(items)
+      .map((li) => li.getAttribute("data-band"))
+      .sort();
+    expect(bands).toEqual(["fail", "pass", "warn"]);
+  });
+
+  it("has no blocking accessibility violations in the score dashboard", async () => {
+    const merged = mergeReport(
+      aggregate,
+      {
+        "alpha/1_1/desktop": { report: dimReport(99) },
+        "bravo/2_2/desktop": { report: dimReport(96) },
+      },
+      null,
+    );
+    render(<ScoreDashboard report={merged} />);
+    await expectNoBlockingAccessibilityViolations(
+      screen.getByTestId("score-dashboard"),
+    );
   });
 });
 

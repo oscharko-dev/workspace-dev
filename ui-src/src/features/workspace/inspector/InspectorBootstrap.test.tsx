@@ -59,6 +59,16 @@ describe("InspectorBootstrap — layout", () => {
     expect(screen.getByText("Inspector")).toBeInTheDocument();
   });
 
+  it("does not render the disabled Review/Sync/PR/Coverage placeholder buttons", () => {
+    renderBootstrap({ state: { kind: "idle" } });
+
+    for (const label of ["Review", "Sync", "PR", "Coverage"]) {
+      expect(
+        screen.queryByRole("button", { name: label }),
+      ).not.toBeInTheDocument();
+    }
+  });
+
   it("renders a pipeline selector only when more than one pipeline is available", () => {
     renderBootstrap({
       state: { kind: "idle" },
@@ -66,9 +76,7 @@ describe("InspectorBootstrap — layout", () => {
       selectedPipelineId: "pipe-a",
     });
 
-    expect(
-      screen.queryByLabelText("Pipeline"),
-    ).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Pipeline")).not.toBeInTheDocument();
 
     cleanup();
 
