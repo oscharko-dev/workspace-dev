@@ -2662,7 +2662,17 @@ export type PiiKind =
   | "full_name"
   | "internal_hostname"
   | "jira_mention"
-  | "customer_name_placeholder";
+  | "customer_name_placeholder"
+  // Issue #1668 (audit-2026-05): GDPR Art. 5(1)(c) data-minimization
+  // categories that the May 2026 audit identified as previously
+  // uncovered. Each is a hand-rolled detector (no runtime deps per
+  // repo policy). Adding union members is a minor contract bump per
+  // CONTRACT_CHANGELOG.md.
+  | "postal_address"
+  | "date_of_birth"
+  | "account_number"
+  | "national_id"
+  | "special_category";
 
 /** Where a detected element came from during reconciliation. */
 export type IntentProvenance = "figma_node" | "visual_sidecar" | "reconciled";
@@ -7580,4 +7590,4 @@ export type SourceMixPlannerResult =
  * Must be bumped according to CONTRACT_CHANGELOG.md rules.
  * Package version alignment is documented in VERSIONING.md.
  */
-export const CONTRACT_VERSION = "4.24.0" as const;
+export const CONTRACT_VERSION = "4.25.0" as const;

@@ -31,6 +31,33 @@ All changes to the public contract surface of `workspace-dev` are documented her
 
 ---
 
+## [4.25.0] - 2026-05-02
+
+### Added (Issue #1668, audit-2026-05)
+
+The `PiiKind` union is extended with five new GDPR Art. 5(1)(c) /
+Art. 9 categories the May 2026 audit identified as previously
+unrecognized by the central `detectPii` detector:
+
+- `postal_address` — DE / AT / CH / NL / FR / IT / GB shapes
+- `date_of_birth` — labelled (DOB / Geburtsdatum / etc.)
+- `account_number` — labelled (account / Kontonummer / etc.)
+- `national_id` — Swiss AHV, Swedish personnummer, ES NIE/DNI,
+  DE Personalausweis (labelled)
+- `special_category`— Art. 9 keyword block (health, political, union,
+  religion, race, sexual orientation)
+
+Adding union members is a minor bump per `CONTRACT_CHANGELOG.md`'s
+versioning rules. Consumers reading the IR may receive previously-
+unseen `kind` values; downstream redaction tokens are pre-defined.
+
+The detectors are hand-rolled (no runtime deps per repo policy), run
+after the existing PII detectors so labelled / structurally-recognized
+data (IBAN, PAN, tax_id) is classified by its primary detector first.
+The `special_category` kind reports lower confidence (0.6) than the
+others because it is keyword-anchored — reviewers should treat it as a
+flag for attention rather than a deterministic redaction signal.
+
 ## [4.24.0] - 2026-05-02
 
 ### Changed (Issue #1676, #1704 Wave 1)

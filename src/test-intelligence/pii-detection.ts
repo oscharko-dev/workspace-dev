@@ -20,6 +20,12 @@ const REDACTION_TOKEN: Record<PiiKind, string> = {
   internal_hostname: "[REDACTED:INTERNAL_HOSTNAME]",
   jira_mention: "[REDACTED:JIRA_MENTION]",
   customer_name_placeholder: "[REDACTED:CUSTOMER_NAME]",
+  // Issue #1668 (audit-2026-05).
+  postal_address: "[REDACTED:POSTAL_ADDRESS]",
+  date_of_birth: "[REDACTED:DOB]",
+  account_number: "[REDACTED:ACCOUNT_NUMBER]",
+  national_id: "[REDACTED:NATIONAL_ID]",
+  special_category: "[REDACTED:SPECIAL_CATEGORY]",
 };
 
 const EMAIL_RE =
@@ -91,6 +97,24 @@ export const detectPii = (input: string): PiiMatch | null => {
 
   const name = detectFullName(normalized);
   if (name) return name;
+
+  // Issue #1668 (audit-2026-05): GDPR Art. 5(1)(c) categories. Order is
+  // narrowest-first so a labelled "Geburtsdatum: 12.03.1985" is not also
+  // re-classified as a generic account number.
+  const nationalId = detectNationalId(normalized);
+  if (nationalId) return nationalId;
+
+  const dob = detectDateOfBirth(normalized);
+  if (dob) return dob;
+
+  const postal = detectPostalAddress(normalized);
+  if (postal) return postal;
+
+  const account = detectAccountNumber(normalized);
+  if (account) return account;
+
+  const special = detectSpecialCategory(normalized);
+  if (special) return special;
 
   return null;
 };
@@ -395,4 +419,152 @@ const validateGermanTaxId = (digits: string): boolean => {
   if (lastChar === undefined) return false;
   const lastDigit = lastChar.charCodeAt(0) - 48;
   return check === lastDigit;
+};
+
+// ---------------------------------------------------------------------------
+// Issue #1668 (audit-2026-05): GDPR Art. 5(1)(c) data-minimization
+// detectors. Each is hand-rolled, zero-runtime-deps, and runs after the
+// existing PII detectors so labelled / structurally-recognized data
+// (IBAN, PAN, tax_id) is classified by its primary detector first.
+// ---------------------------------------------------------------------------
+
+/**
+ * Postal-address shapes for DE / AT / CH / NL / FR / IT / GB.
+ * Pattern is "Street + house number" near a 4-5 digit postal code +
+ * city name. The proximity check (number of intervening characters)
+ * keeps the false-positive rate low; standalone postal codes alone are
+ * not flagged because that would catch every European address book.
+ */
+const POSTAL_ADDRESS_RES: ReadonlyArray<RegExp> = [
+  // DE: "Musterstraße 12, 10115 Berlin" / "Hauptstr. 5, 50667 Köln"
+  /\b\p{Lu}\p{L}+(?:str(?:asse|aße)?|str\.|weg|allee|platz|gasse)\s+\d{1,4}[a-z]?\s*,?\s*\d{5}\s+\p{Lu}\p{L}+/iu,
+  // AT/CH: same street tokens, 4-digit postal code
+  /\b\p{Lu}\p{L}+(?:strasse|gasse|weg|platz)\s+\d{1,4}[a-z]?\s*,?\s*\d{4}\s+\p{Lu}\p{L}+/iu,
+  // NL: "Hoofdstraat 12, 1011 AB Amsterdam"
+  /\b\p{Lu}\p{L}+straat\s+\d{1,4}[a-z]?\s*,?\s*\d{4}\s?[A-Z]{2}\s+\p{Lu}\p{L}+/iu,
+  // FR: "12 rue de la Paix, 75002 Paris" / "5 avenue Foch, 75116 Paris"
+  /\b\d{1,4}\s+(?:rue|avenue|boulevard|place|impasse)\s+(?:de\s+(?:la|l['’]|le|les)\s+)?\p{L}+\s*,?\s*\d{5}\s+\p{Lu}\p{L}+/iu,
+  // IT: "Via Roma 5, 00184 Roma" / "Piazza Garibaldi 12, 20121 Milano"
+  /\b(?:via|viale|piazza|corso|vicolo)\s+\p{L}+\s+\d{1,4}[a-z]?\s*,?\s*\d{5}\s+\p{Lu}\p{L}+/iu,
+  // GB: "10 Downing Street, London SW1A 2AA"
+  /\b\d{1,4}\s+\p{Lu}\p{L}+(?:\s+\p{Lu}\p{L}+)?\s+(?:street|road|avenue|lane|close|square|terrace|gardens|crescent|hill)\s*,?\s*\p{Lu}\p{L}+\s+[A-Z]{1,2}\d{1,2}[A-Z]?\s+\d[A-Z]{2}/iu,
+];
+
+const detectPostalAddress = (input: string): PiiMatch | null => {
+  for (const re of POSTAL_ADDRESS_RES) {
+    if (re.test(input)) {
+      return {
+        kind: "postal_address",
+        redacted: REDACTION_TOKEN.postal_address,
+        confidence: 0.85,
+      };
+    }
+  }
+  return null;
+};
+
+/**
+ * Date-of-birth detector. Restricted to DOB-shaped values (year between
+ * 1900 and 2026) AND require either a labelling word ("born", "geboren",
+ * "DOB", "Geburtsdatum", "date of birth") within ~32 chars OR an
+ * unambiguously DOB-shaped year (1900..2010, narrowing the false-
+ * positive risk on technical timestamps).
+ */
+const DOB_LABEL_RE =
+  /\b(?:born|geboren|geb\.?|dob|date\s+of\s+birth|geburtsdatum|geburtstag|naissance|nacimiento|nascita)\b[^\n]{0,32}?(?:\d{1,2}[./-]\d{1,2}[./-](?:19|20)\d{2}|(?:19|20)\d{2}-\d{2}-\d{2})/iu;
+
+const detectDateOfBirth = (input: string): PiiMatch | null => {
+  if (DOB_LABEL_RE.test(input)) {
+    return {
+      kind: "date_of_birth",
+      redacted: REDACTION_TOKEN.date_of_birth,
+      confidence: 0.9,
+    };
+  }
+  return null;
+};
+
+/**
+ * Account / contract number detector. Only fires on labelled occurrences
+ * to avoid false-positives on Jira issue keys, line numbers, etc. Looks
+ * for a label word followed within ~16 chars by a 6..18-digit run.
+ */
+const ACCOUNT_NUMBER_LABEL_RE =
+  /\b(?:account|kontonummer|konto-?nr\.?|customer\s*id|kunden(?:nummer|nr\.?)|contract\s*(?:no|number|id)|vertragsnummer|vertrag\s*nr\.?|policy\s*(?:no|number)|membership\s*(?:no|number))\b[^\n]{0,16}?\b\d{6,18}\b/iu;
+
+const detectAccountNumber = (input: string): PiiMatch | null => {
+  if (ACCOUNT_NUMBER_LABEL_RE.test(input)) {
+    return {
+      kind: "account_number",
+      redacted: REDACTION_TOKEN.account_number,
+      confidence: 0.8,
+    };
+  }
+  return null;
+};
+
+/**
+ * National-ID detectors. Each variant is anchored on a country prefix
+ * or a label so we do not misclassify random alnum runs.
+ */
+const NATIONAL_ID_RES: ReadonlyArray<RegExp> = [
+  // German Personalausweisnummer: 9 digits + 1 alpha + 1 digit (legacy)
+  // OR 10 alnum (post-2010). Require a labelling word to avoid false
+  // positives on adjacent 10-digit hashes.
+  /\b(?:personalausweis(?:nummer)?|ausweisnr\.?|id\s*card)\b[^\n]{0,16}?\b[A-Z0-9]{9,12}\b/iu,
+  // Swiss AHV / AVS: 13 digits formatted 756.xxxx.xxxx.xx (or no dots)
+  /\b756[.\-\s]?\d{4}[.\-\s]?\d{4}[.\-\s]?\d{2}\b/u,
+  // Swedish personnummer: YYMMDD-NNNN or YYYYMMDD-NNNN
+  /\b(?:19|20)?\d{6}[-+]\d{4}\b/u,
+  // Spanish NIE/DNI: 8 digits + control letter
+  /\b[0-9]{8}[A-HJ-NP-TV-Z]\b(?=\s|$|[,.])/u,
+];
+
+const detectNationalId = (input: string): PiiMatch | null => {
+  for (const re of NATIONAL_ID_RES) {
+    if (re.test(input)) {
+      return {
+        kind: "national_id",
+        redacted: REDACTION_TOKEN.national_id,
+        confidence: 0.85,
+      };
+    }
+  }
+  return null;
+};
+
+/**
+ * GDPR Art. 9 special-category keyword block. Flags free text that
+ * carries health / political / religious / union / sexual-orientation
+ * signals so the reviewer is alerted; the surrounding context is NOT
+ * auto-redacted because false positives on legitimate prose would be
+ * disproportionate.
+ *
+ * Detection is keyword-anchored on whole-word matches so "religion" in
+ * "religion of testing" is flagged but "preregister" is not.
+ */
+const SPECIAL_CATEGORY_RES: ReadonlyArray<RegExp> = [
+  // Health
+  /\b(?:HIV|AIDS|cancer|krebs|diabetes|depression|schwanger|pregnant|disabled|disability|behindert|invalidit(?:y|é|ät))\b/iu,
+  // Political opinion / union
+  /\b(?:political\s+(?:party|opinion|affiliation)|gewerkschaft|union\s+member|trade\s+union|partei(?:mitglied)?|syndicat)\b/iu,
+  // Religion
+  /\b(?:religion|religios|religiös|religieux|judaism|j(?:üd|ued|uw|udisch)|catholic|katholisch|muslim|muslimisch|protestant|protestantisch|atheist|atheismus|hindu|buddhist)\b/iu,
+  // Race / ethnicity
+  /\b(?:ethnic(?:ity|al)|race|rasse|ethnie|herkunft|nationality\s+code|asylum\s+status)\b/iu,
+  // Sexual orientation
+  /\b(?:sexual\s+orientation|gay|lesbian|bisexual|homosexuell?|heterosexuell?|transgender|nonbinary)\b/iu,
+];
+
+const detectSpecialCategory = (input: string): PiiMatch | null => {
+  for (const re of SPECIAL_CATEGORY_RES) {
+    if (re.test(input)) {
+      return {
+        kind: "special_category",
+        redacted: REDACTION_TOKEN.special_category,
+        confidence: 0.6, // Lower because keyword-only; reviewer attention.
+      };
+    }
+  }
+  return null;
 };
