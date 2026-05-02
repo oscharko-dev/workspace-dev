@@ -25,8 +25,10 @@ import {
 import {
   cloneEuBankingDefaultFinOpsBudget,
   cloneFinOpsBudgetEnvelope,
+  cloneProductionFinOpsBudgetEnvelope,
   DEFAULT_FINOPS_BUDGET_ENVELOPE,
   EU_BANKING_DEFAULT_FINOPS_BUDGET,
+  PRODUCTION_FINOPS_BUDGET_ENVELOPE,
   resolveFinOpsRequestLimits,
   validateFinOpsBudgetEnvelope,
 } from "./finops-budget.js";
@@ -138,8 +140,7 @@ test("cloneEuBankingDefaultFinOpsBudget returns a deep clone", () => {
     a.sourceQuotas,
   );
   assert.equal(
-    EU_BANKING_DEFAULT_FINOPS_BUDGET.sourceQuotas
-      ?.maxJiraApiRequestsPerJob,
+    EU_BANKING_DEFAULT_FINOPS_BUDGET.sourceQuotas?.maxJiraApiRequestsPerJob,
     20,
   );
 });
@@ -517,3 +518,82 @@ test("gateway: reported output token overrun fails closed", async () => {
 
 // Static reference to keep VISUAL_CAPS in scope for future visual tests.
 void VISUAL_CAPS;
+
+// ---------------------------------------------------------------------------
+// PRODUCTION_FINOPS_BUDGET_ENVELOPE (Issue #1740)
+// ---------------------------------------------------------------------------
+
+test("PRODUCTION_FINOPS_BUDGET_ENVELOPE validates clean", () => {
+  const result = validateFinOpsBudgetEnvelope(
+    PRODUCTION_FINOPS_BUDGET_ENVELOPE,
+  );
+  assert.equal(result.valid, true, JSON.stringify(result.errors));
+  assert.equal(result.errors.length, 0);
+});
+
+test("PRODUCTION_FINOPS_BUDGET_ENVELOPE pins the calibrated production limits", () => {
+  // Pin the exact limits operators get when they don't pass an override —
+  // a regression on these values is a contract change requiring a bump.
+  assert.equal(
+    PRODUCTION_FINOPS_BUDGET_ENVELOPE.budgetId,
+    "production-default",
+  );
+  assert.equal(PRODUCTION_FINOPS_BUDGET_ENVELOPE.maxJobWallClockMs, 300_000);
+  const tg = PRODUCTION_FINOPS_BUDGET_ENVELOPE.roles.test_generation;
+  assert.ok(tg !== undefined);
+  assert.equal(tg.maxInputTokensPerRequest, 80_000);
+  assert.equal(tg.maxOutputTokensPerRequest, 8_000);
+  assert.equal(tg.maxRetriesPerRequest, 2);
+  assert.equal(tg.maxWallClockMsPerRequest, 120_000);
+  assert.equal(tg.maxLiveSmokeCalls, 0);
+  const vp = PRODUCTION_FINOPS_BUDGET_ENVELOPE.roles.visual_primary;
+  assert.ok(vp !== undefined);
+  assert.equal(vp.maxInputTokensPerRequest, 40_000);
+  assert.equal(vp.maxOutputTokensPerRequest, 4_000);
+  assert.equal(vp.maxImageBytesPerRequest, 2_097_152);
+  assert.equal(vp.maxRetriesPerRequest, 1);
+  assert.equal(vp.maxWallClockMsPerRequest, 60_000);
+  const vf = PRODUCTION_FINOPS_BUDGET_ENVELOPE.roles.visual_fallback;
+  assert.ok(vf !== undefined);
+  assert.equal(vf.maxWallClockMsPerRequest, 90_000);
+  assert.equal(vf.maxFallbackAttempts, 2);
+});
+
+test("PRODUCTION_FINOPS_BUDGET_ENVELOPE is non-permissive vs DEFAULT (every field tighter or equal)", () => {
+  // The default envelope sets no limits; production sets every limit.
+  // Field-by-field: a defined production limit must be tighter than the
+  // default's `undefined` (which is "no limit") — i.e., production must
+  // never relax a default limit, and must define limits the default
+  // didn't. This is the regression guard requested by #1740.
+  assert.deepEqual(DEFAULT_FINOPS_BUDGET_ENVELOPE.roles, {});
+  assert.notDeepEqual(PRODUCTION_FINOPS_BUDGET_ENVELOPE.roles, {});
+  assert.ok(
+    PRODUCTION_FINOPS_BUDGET_ENVELOPE.maxJobWallClockMs !== undefined,
+    "production must enforce maxJobWallClockMs",
+  );
+  // Confirm the production envelope tightens every role the default would
+  // have left unbounded.
+  for (const role of [
+    "test_generation",
+    "visual_primary",
+    "visual_fallback",
+  ] as const) {
+    assert.ok(
+      PRODUCTION_FINOPS_BUDGET_ENVELOPE.roles[role] !== undefined,
+      `production must define ${role} role`,
+    );
+  }
+});
+
+test("cloneProductionFinOpsBudgetEnvelope returns a fresh, mutable copy", () => {
+  const a = cloneProductionFinOpsBudgetEnvelope();
+  const b = cloneProductionFinOpsBudgetEnvelope();
+  assert.notEqual(a, b);
+  assert.deepEqual(a, b);
+  // Mutation must not propagate back to the frozen original.
+  a.budgetId = "mutated";
+  assert.equal(
+    PRODUCTION_FINOPS_BUDGET_ENVELOPE.budgetId,
+    "production-default",
+  );
+});

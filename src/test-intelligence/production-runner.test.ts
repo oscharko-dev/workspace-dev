@@ -803,6 +803,208 @@ test("runFigmaToQcTestCases skips banking augmentation when policyProfileId is n
   }
 });
 
+// ---------------------------------------------------------------------------
+// FinOps envelope (Issue #1740) + progress events (Issue #1738)
+// ---------------------------------------------------------------------------
+
+test("runFigmaToQcTestCases uses PRODUCTION_FINOPS_BUDGET_ENVELOPE by default", async () => {
+  const { PRODUCTION_FINOPS_BUDGET_ENVELOPE } =
+    await import("./finops-budget.js");
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ti-runner-"));
+  try {
+    const client = createMockLlmGatewayClient({
+      role: "test_generation",
+      deployment: "gpt-oss-120b-mock",
+      modelRevision: "mock-1",
+      gatewayRelease: "mock",
+      responder: okResponder([SAMPLE_DRAFT]),
+    });
+    const result = await runFigmaToQcTestCases({
+      jobId: "job-finops-default",
+      generatedAt: "2026-05-02T10:00:00Z",
+      source: { kind: "figma_paste_normalized", file: SAMPLE_FILE },
+      outputRoot: tempRoot,
+      llm: { client },
+    });
+    assert.equal(result.finopsBudget.budgetId, "production-default");
+    assert.deepEqual(
+      result.finopsBudget.roles.test_generation,
+      PRODUCTION_FINOPS_BUDGET_ENVELOPE.roles.test_generation,
+    );
+  } finally {
+    await rm(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("runFigmaToQcTestCases honours operator FinOps override (no merge with default)", async () => {
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ti-runner-"));
+  try {
+    const client = createMockLlmGatewayClient({
+      role: "test_generation",
+      deployment: "gpt-oss-120b-mock",
+      modelRevision: "mock-1",
+      gatewayRelease: "mock",
+      responder: okResponder([SAMPLE_DRAFT]),
+    });
+    const override = {
+      budgetId: "operator-supplied",
+      budgetVersion: "9.9.9",
+      roles: {
+        test_generation: {
+          maxOutputTokensPerRequest: 1234,
+          maxWallClockMsPerRequest: 5000,
+        },
+      },
+    };
+    const result = await runFigmaToQcTestCases({
+      jobId: "job-finops-override",
+      generatedAt: "2026-05-02T10:00:00Z",
+      source: { kind: "figma_paste_normalized", file: SAMPLE_FILE },
+      outputRoot: tempRoot,
+      llm: { client },
+      finopsBudget: override,
+    });
+    // Operator override wins outright.
+    assert.equal(result.finopsBudget.budgetId, "operator-supplied");
+    assert.equal(result.finopsBudget.budgetVersion, "9.9.9");
+    assert.equal(
+      result.finopsBudget.roles.test_generation?.maxOutputTokensPerRequest,
+      1234,
+    );
+    // Production defaults must NOT leak into the override.
+    assert.equal(
+      result.finopsBudget.roles.visual_primary,
+      undefined,
+      "no merge: visual_primary should be absent when override omits it",
+    );
+  } finally {
+    await rm(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("runFigmaToQcTestCases fails closed on invalid FinOps envelope", async () => {
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ti-runner-"));
+  try {
+    const client = createMockLlmGatewayClient({
+      role: "test_generation",
+      deployment: "gpt-oss-120b-mock",
+      modelRevision: "mock-1",
+      gatewayRelease: "mock",
+      responder: okResponder([SAMPLE_DRAFT]),
+    });
+    const invalid = {
+      budgetId: "",
+      budgetVersion: "1.0.0",
+      roles: {},
+    };
+    await assert.rejects(
+      runFigmaToQcTestCases({
+        jobId: "job-finops-invalid",
+        generatedAt: "2026-05-02T10:00:00Z",
+        source: { kind: "figma_paste_normalized", file: SAMPLE_FILE },
+        outputRoot: tempRoot,
+        llm: { client },
+        finopsBudget: invalid,
+      }),
+      (err) => {
+        assert.ok(err instanceof ProductionRunnerError);
+        assert.equal(err.failureClass, "FINOPS_BUDGET_INVALID");
+        assert.equal(err.retryable, false);
+        return true;
+      },
+    );
+  } finally {
+    await rm(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("runFigmaToQcTestCases emits progress events in expected order", async () => {
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ti-runner-"));
+  try {
+    const client = createMockLlmGatewayClient({
+      role: "test_generation",
+      deployment: "gpt-oss-120b-mock",
+      modelRevision: "mock-1",
+      gatewayRelease: "mock",
+      responder: okResponder([SAMPLE_DRAFT]),
+    });
+    const observed: string[] = [];
+    await runFigmaToQcTestCases({
+      jobId: "job-events",
+      generatedAt: "2026-05-02T10:00:00Z",
+      source: { kind: "figma_paste_normalized", file: SAMPLE_FILE },
+      outputRoot: tempRoot,
+      llm: { client },
+      events: (event) => observed.push(event.phase),
+    });
+    // Order matters for the UI timeline.
+    assert.deepEqual(observed, [
+      "intent_derivation_started",
+      "intent_derivation_complete",
+      "visual_sidecar_skipped",
+      "prompt_compiled",
+      "llm_gateway_request",
+      "llm_gateway_response",
+      "validation_started",
+      "validation_complete",
+      "policy_decision",
+      "export_started",
+      "export_complete",
+      "evidence_sealed",
+      "finops_recorded",
+    ]);
+  } finally {
+    await rm(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("runFigmaToQcTestCases events carry no PII / no raw LLM body", async () => {
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ti-runner-"));
+  try {
+    const client = createMockLlmGatewayClient({
+      role: "test_generation",
+      deployment: "gpt-oss-120b-mock",
+      modelRevision: "mock-1",
+      gatewayRelease: "mock",
+      responder: okResponder([SAMPLE_DRAFT]),
+    });
+    const events: Array<{ phase: string; details?: unknown }> = [];
+    await runFigmaToQcTestCases({
+      jobId: "job-events-pii",
+      generatedAt: "2026-05-02T10:00:00Z",
+      source: { kind: "figma_paste_normalized", file: SAMPLE_FILE },
+      outputRoot: tempRoot,
+      llm: { client },
+      events: (event) =>
+        events.push({ phase: event.phase, details: event.details }),
+    });
+    const blob = JSON.stringify(events);
+    // No raw user-prompt, no raw LLM body, no Figma node data.
+    assert.doesNotMatch(blob, /Investitionssumme/u);
+    assert.doesNotMatch(blob, /Bedarfsermittlung/u);
+    // Sink errors must not propagate.
+    const throwingClient = createMockLlmGatewayClient({
+      role: "test_generation",
+      deployment: "gpt-oss-120b-mock",
+      modelRevision: "mock-1",
+      gatewayRelease: "mock",
+      responder: okResponder([SAMPLE_DRAFT]),
+    });
+    await runFigmaToQcTestCases({
+      jobId: "job-events-throw",
+      generatedAt: "2026-05-02T10:00:00Z",
+      source: { kind: "figma_paste_normalized", file: SAMPLE_FILE },
+      outputRoot: tempRoot,
+      llm: { client: throwingClient },
+      events: () => {
+        throw new Error("boom");
+      },
+    });
+  } finally {
+    await rm(tempRoot, { recursive: true, force: true });
+  }
+});
+
 test("runFigmaToQcTestCases tolerates malformed regulatoryRelevance on a draft (silently drops)", async () => {
   const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ti-runner-"));
   try {

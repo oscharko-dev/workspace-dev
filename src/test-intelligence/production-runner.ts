@@ -57,6 +57,7 @@ import {
   TEST_CASE_VALIDATION_REPORT_ARTIFACT_FILENAME,
   VISUAL_SIDECAR_SCHEMA_VERSION,
   type BusinessTestIntentIr,
+  type FinOpsBudgetEnvelope,
   type GeneratedTestCase,
   type GeneratedTestCaseAuditMetadata,
   type GeneratedTestCaseFigmaTrace,
@@ -76,6 +77,22 @@ import {
 } from "../contracts/index.js";
 import { sanitizeErrorMessage } from "../error-sanitization.js";
 import { canonicalJson } from "./content-hash.js";
+import {
+  cloneFinOpsBudgetEnvelope,
+  PRODUCTION_FINOPS_BUDGET_ENVELOPE,
+  resolveFinOpsRequestLimits,
+  validateFinOpsBudgetEnvelope,
+} from "./finops-budget.js";
+import type {
+  ProductionRunnerEvent,
+  ProductionRunnerEventSink,
+} from "./production-runner-events.js";
+
+export type {
+  ProductionRunnerEvent,
+  ProductionRunnerEventPhase,
+  ProductionRunnerEventSink,
+} from "./production-runner-events.js";
 import { renderCustomerMarkdown } from "./customer-markdown-renderer.js";
 import {
   fetchFigmaFileForTestIntelligence,
@@ -132,6 +149,7 @@ export const PRODUCTION_RUNNER_FAILURE_CLASSES = [
   "LLM_REFUSAL",
   "LLM_RESPONSE_INVALID",
   "PERSIST_FAILED",
+  "FINOPS_BUDGET_INVALID",
 ] as const;
 
 export type ProductionRunnerFailureClass =
@@ -230,6 +248,28 @@ export interface RunFigmaToQcTestCasesInput {
   outputRoot: string;
   llm: ProductionRunnerLlmConfig;
   /**
+   * Optional FinOps budget envelope (Issue #1740). When omitted the runner
+   * uses {@link PRODUCTION_FINOPS_BUDGET_ENVELOPE}. When supplied the
+   * operator value wins outright — the runner does NOT merge with the
+   * default. The envelope is validated; an invalid envelope fails the
+   * job fast with `FINOPS_BUDGET_INVALID` and never reaches the gateway.
+   *
+   * Per-request token / wall-clock limits resolved from the envelope's
+   * `roles.test_generation` entry override the legacy
+   * `llm.maxOutputTokens` / `llm.maxWallClockMs` fields.
+   */
+  finopsBudget?: FinOpsBudgetEnvelope;
+  /**
+   * Optional event sink for runner progress events (Issue #1738). When
+   * supplied the runner emits a typed event for each phase boundary
+   * (intent derivation, prompt compilation, gateway request/response,
+   * validation, export, evidence sealed, FinOps recorded). The sink is
+   * called synchronously inside the pipeline; throwing from the sink
+   * propagates to the caller, so consumers should swallow + log their
+   * own errors.
+   */
+  events?: ProductionRunnerEventSink;
+  /**
    * Optional override for the file name surfaced in customer Markdown
    * headers; defaults to `figmaFile.name` (or the file key if missing).
    */
@@ -259,6 +299,8 @@ export interface RunFigmaToQcTestCasesResult {
   policy: TestCasePolicyReport;
   coverage: TestCaseCoverageReport;
   blocked: boolean;
+  /** Resolved FinOps envelope used for this run (validated, frozen). */
+  finopsBudget: FinOpsBudgetEnvelope;
   artifactDir: string;
   artifactPaths: {
     intent: string;
@@ -283,7 +325,20 @@ export interface RunFigmaToQcTestCasesResult {
 export const runFigmaToQcTestCases = async (
   input: RunFigmaToQcTestCasesInput,
 ): Promise<RunFigmaToQcTestCasesResult> => {
+  const startedAt = Date.now();
+  const emit = makeEmitter(input.events);
+
+  // 0. Resolve + validate FinOps envelope. Operator override wins outright;
+  //    no merging with the production default. Invalid envelopes fail
+  //    fast before any IO touches the network.
+  const finopsBudget = resolveFinopsBudget(input.finopsBudget);
+
   // 1. Resolve Figma source.
+  emit({
+    phase: "intent_derivation_started",
+    timestamp: monotonicMs(),
+    details: { source: input.source.kind },
+  });
   const figmaFile = await resolveFigmaSource(input.source);
 
   // 2. Normalize REST file → IntentDerivationFigmaInput.
@@ -302,6 +357,22 @@ export const runFigmaToQcTestCases = async (
 
   // 3. Derive Business Test Intent IR.
   const intent = deriveBusinessTestIntentIr({ figma: intentInput });
+  emit({
+    phase: "intent_derivation_complete",
+    timestamp: monotonicMs(),
+    details: {
+      screens: intent.screens.length,
+      detectedFields: intent.detectedFields.length,
+      detectedActions: intent.detectedActions.length,
+    },
+  });
+
+  // No visual sidecar in the production runner today (#1359 Wave 5).
+  emit({
+    phase: "visual_sidecar_skipped",
+    timestamp: monotonicMs(),
+    details: { reason: "production_runner_visual_sidecar_not_enabled" },
+  });
 
   // 4. Bound the IR for the LLM prompt. Real-world Figma files (e.g. the
   //    customer's "Investitionsfinanzierung — Bedarfsermittlung" screen with
@@ -349,6 +420,15 @@ export const runFigmaToQcTestCases = async (
     input.policyProfileId.length > 0
       ? input.policyProfileId
       : EU_BANKING_DEFAULT_POLICY_PROFILE_ID;
+  // FinOps-resolved per-request limits override the legacy llm.* fields.
+  const finopsLimits = resolveFinOpsRequestLimits(
+    finopsBudget.roles.test_generation,
+  );
+  const effectiveMaxOutputTokens =
+    finopsLimits.maxOutputTokens ?? input.llm.maxOutputTokens;
+  const effectiveMaxWallClockMs =
+    finopsLimits.maxWallClockMs ?? input.llm.maxWallClockMs;
+  const effectiveMaxRetries = finopsLimits.maxRetries;
   const generationRequest: LlmGenerationRequest = {
     jobId: compiled.request.jobId,
     systemPrompt: compiled.request.systemPrompt,
@@ -359,17 +439,52 @@ export const runFigmaToQcTestCases = async (
     ),
     responseSchema: draftSchema,
     responseSchemaName: "workspace-dev-production-runner-draft-list-v1",
-    ...(input.llm.maxOutputTokens !== undefined
-      ? { maxOutputTokens: input.llm.maxOutputTokens }
+    ...(effectiveMaxOutputTokens !== undefined
+      ? { maxOutputTokens: effectiveMaxOutputTokens }
       : {}),
-    ...(input.llm.maxWallClockMs !== undefined
-      ? { maxWallClockMs: input.llm.maxWallClockMs }
+    ...(effectiveMaxWallClockMs !== undefined
+      ? { maxWallClockMs: effectiveMaxWallClockMs }
+      : {}),
+    ...(effectiveMaxRetries !== undefined
+      ? { maxRetries: effectiveMaxRetries }
       : {}),
     ...(input.llm.abortSignal !== undefined
       ? { abortSignal: input.llm.abortSignal }
       : {}),
   };
+  emit({
+    phase: "prompt_compiled",
+    timestamp: monotonicMs(),
+    details: {
+      promptHash: compiled.request.hashes.promptHash,
+      schemaHash: compiled.request.hashes.schemaHash,
+      maxOutputTokens: effectiveMaxOutputTokens,
+      maxWallClockMs: effectiveMaxWallClockMs,
+    },
+  });
+  emit({
+    phase: "llm_gateway_request",
+    timestamp: monotonicMs(),
+    details: {
+      role: "test_generation",
+      deployment: PRODUCTION_RUNNER_TEST_GENERATION_DEPLOYMENT,
+    },
+  });
   const llmResult = await input.llm.client.generate(generationRequest);
+  emit({
+    phase: "llm_gateway_response",
+    timestamp: monotonicMs(),
+    details: {
+      outcome: llmResult.outcome,
+      ...(llmResult.outcome === "success"
+        ? {
+            inputTokens: llmResult.usage?.inputTokens,
+            outputTokens: llmResult.usage?.outputTokens,
+            finishReason: llmResult.finishReason,
+          }
+        : { errorClass: llmResult.errorClass }),
+    },
+  });
   if (llmResult.outcome !== "success") {
     if (llmResult.errorClass === "refusal") {
       throw new ProductionRunnerError({
@@ -421,14 +536,37 @@ export const runFigmaToQcTestCases = async (
   };
 
   // 8. Validation pipeline.
+  emit({ phase: "validation_started", timestamp: monotonicMs() });
   const validation = runValidationPipeline({
     jobId: input.jobId,
     generatedAt: input.generatedAt,
     list: generatedList,
     intent,
   });
+  emit({
+    phase: "validation_complete",
+    timestamp: monotonicMs(),
+    details: {
+      blocked: validation.blocked,
+      errorCount: validation.validation.errorCount,
+      warningCount: validation.validation.warningCount,
+      cases: validation.generatedTestCases.testCases.length,
+    },
+  });
+  emit({
+    phase: "policy_decision",
+    timestamp: monotonicMs(),
+    details: {
+      blocked: validation.blocked,
+      profileId: validation.policy.policyProfileId,
+      approved: validation.policy.approvedCount,
+      blockedCount: validation.policy.blockedCount,
+      needsReview: validation.policy.needsReviewCount,
+    },
+  });
 
   // 9. Persist artifacts.
+  emit({ phase: "export_started", timestamp: monotonicMs() });
   const artifactDir = join(
     input.outputRoot,
     "jobs",
@@ -492,6 +630,43 @@ export const runFigmaToQcTestCases = async (
     perCasePaths.push(filePath);
   }
 
+  emit({
+    phase: "export_complete",
+    timestamp: monotonicMs(),
+    details: {
+      artifactDir,
+      perCaseFiles: perCasePaths.length,
+    },
+  });
+  // Production runner does not yet seal evidence (separate emitter in
+  // evidence-attestation.ts). Emit a `evidence_sealed` placeholder so the
+  // UI timeline shows a final phase regardless.
+  emit({
+    phase: "evidence_sealed",
+    timestamp: monotonicMs(),
+    details: { sealed: false, reason: "production_runner_evidence_deferred" },
+  });
+  // Emit final FinOps summary derived from the LLM gateway response. The
+  // dedicated FinOps recorder runs separately for in-process callers; this
+  // synthetic event lets a UI render a useful cost summary without
+  // wiring the full recorder.
+  if (llmResult.outcome === "success") {
+    emit({
+      phase: "finops_recorded",
+      timestamp: monotonicMs(),
+      details: {
+        role: "test_generation",
+        deployment: llmResult.modelDeployment,
+        attempts: llmResult.attempt,
+        inputTokens: llmResult.usage.inputTokens ?? 0,
+        outputTokens: llmResult.usage.outputTokens ?? 0,
+        budgetMaxInputTokens: finopsLimits.maxInputTokens,
+        budgetMaxOutputTokens: finopsLimits.maxOutputTokens,
+        durationMs: monotonicMs() - startedAt,
+      },
+    });
+  }
+
   return {
     jobId: input.jobId,
     generatedAt: input.generatedAt,
@@ -502,6 +677,7 @@ export const runFigmaToQcTestCases = async (
     policy: validation.policy,
     coverage: validation.coverage,
     blocked: validation.blocked,
+    finopsBudget,
     artifactDir,
     artifactPaths: {
       intent: intentPath,
@@ -1226,4 +1402,67 @@ const writeAtomicText = async (
   const tmpPath = `${destinationPath}.${process.pid}.${randomUUID()}.tmp`;
   await writeFile(tmpPath, payload, "utf8");
   await rename(tmpPath, destinationPath);
+};
+
+/**
+ * Resolve and validate the FinOps envelope. Operator override wins
+ * outright (no merging with the default). Invalid envelopes throw a
+ * `FINOPS_BUDGET_INVALID` runner error before any IO touches the
+ * network or filesystem.
+ */
+const resolveFinopsBudget = (
+  override: FinOpsBudgetEnvelope | undefined,
+): FinOpsBudgetEnvelope => {
+  const envelope =
+    override !== undefined
+      ? cloneFinOpsBudgetEnvelope(override)
+      : cloneFinOpsBudgetEnvelope(PRODUCTION_FINOPS_BUDGET_ENVELOPE);
+  const validation = validateFinOpsBudgetEnvelope(envelope);
+  if (!validation.valid) {
+    const reasons = validation.errors
+      .map((issue) => `${issue.path}: ${issue.message}`)
+      .join("; ");
+    throw new ProductionRunnerError({
+      failureClass: "FINOPS_BUDGET_INVALID",
+      message: `FinOps envelope rejected: ${reasons}`,
+      retryable: false,
+    });
+  }
+  return envelope;
+};
+
+/**
+ * Build a no-throw event emitter. Errors raised by a sink are swallowed
+ * so a misbehaving consumer cannot crash the runner pipeline.
+ */
+const makeEmitter = (
+  sink: ProductionRunnerEventSink | undefined,
+): ((event: ProductionRunnerEvent) => void) => {
+  if (sink === undefined) {
+    return () => {
+      /* no-op */
+    };
+  }
+  return (event) => {
+    try {
+      sink(event);
+    } catch {
+      /* swallow — sink misbehaviour must not corrupt the pipeline */
+    }
+  };
+};
+
+/**
+ * Monotonic timestamp in milliseconds. Backed by `performance.now()`
+ * when available (Node 20+); falls back to `Date.now()` if not.
+ * Resolution: 1 ms.
+ */
+const monotonicMs = (): number => {
+  if (
+    typeof performance !== "undefined" &&
+    typeof performance.now === "function"
+  ) {
+    return Math.floor(performance.now());
+  }
+  return Date.now();
 };

@@ -7,6 +7,8 @@
  *   GET  /workspace/test-intelligence/jobs/<jobId>                          → bundle (read)
  *   GET  /workspace/test-intelligence/jobs/<jobId>/sources                  → source refs
  *   GET  /workspace/test-intelligence/jobs/<jobId>/customer-markdown        → combined customer Markdown export (#1733)
+ *   GET  /workspace/test-intelligence/jobs/<jobId>/customer-markdown.zip    → ZIP bundle of all customer artifacts (#1747)
+ *   GET  /workspace/test-intelligence/jobs/<jobId>/events                   → SSE stream of runner progress events (#1738)
  *   POST /workspace/test-intelligence/jobs/<jobId>/sources/jira-fetch       → Jira REST ingest
  *   POST /workspace/test-intelligence/jobs/<jobId>/conflicts/<conflictId>/resolve
  *                                                                        → reviewer conflict action
@@ -36,6 +38,8 @@ export type InspectorTestIntelligenceRoute =
   | { kind: "read_bundle"; jobId: string }
   | { kind: "list_sources"; jobId: string }
   | { kind: "customer_markdown_export"; jobId: string }
+  | { kind: "customer_markdown_zip"; jobId: string }
+  | { kind: "events_stream"; jobId: string }
   | { kind: "jira_fetch_source"; jobId: string }
   | { kind: "remove_source"; jobId: string; sourceId: string }
   | { kind: "resolve_conflict"; jobId: string; conflictId: string }
@@ -117,6 +121,12 @@ export const parseInspectorTestIntelligenceRoute = (
     }
     if (segments.length === 3 && segments[2] === "customer-markdown") {
       return { ok: true, route: { kind: "customer_markdown_export", jobId } };
+    }
+    if (segments.length === 3 && segments[2] === "customer-markdown.zip") {
+      return { ok: true, route: { kind: "customer_markdown_zip", jobId } };
+    }
+    if (segments.length === 3 && segments[2] === "events") {
+      return { ok: true, route: { kind: "events_stream", jobId } };
     }
     if (
       segments.length === 4 &&

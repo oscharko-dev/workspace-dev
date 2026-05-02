@@ -20,6 +20,7 @@
  */
 
 import {
+  PRODUCTION_FINOPS_BUDGET_ENVELOPE,
   PRODUCTION_RUNNER_TEST_GENERATION_DEPLOYMENT,
   ProductionRunnerError,
   runFigmaToQcTestCases,
@@ -152,6 +153,15 @@ export const resolveTestIntelligenceProductionRunner = (
   const runner = input.runner ?? runFigmaToQcTestCases;
   let cachedClient: LlmGatewayClient | undefined;
 
+  // One-shot startup log: announce the active FinOps envelope so an
+  // operator reading `journalctl` can confirm what cost ceiling the
+  // server applies before the first job lands.
+  input.logger?.log({
+    level: "info",
+    event: "test_intelligence_finops_envelope",
+    message: `Test-intelligence production FinOps envelope active: ${PRODUCTION_FINOPS_BUDGET_ENVELOPE.budgetId}@${PRODUCTION_FINOPS_BUDGET_ENVELOPE.budgetVersion} (test_generation: ${PRODUCTION_FINOPS_BUDGET_ENVELOPE.roles.test_generation?.maxOutputTokensPerRequest ?? 0} out tokens, ${PRODUCTION_FINOPS_BUDGET_ENVELOPE.roles.test_generation?.maxWallClockMsPerRequest ?? 0}ms wall-clock)`,
+  });
+
   const factory: TestIntelligenceProductionRunnerFactory = async (
     factoryInput: TestIntelligenceProductionRunnerFactoryInput,
   ): Promise<RunFigmaToQcTestCasesResult> => {
@@ -172,9 +182,15 @@ export const resolveTestIntelligenceProductionRunner = (
       outputRoot: factoryInput.outputRoot,
       llm: {
         client: cachedClient,
+        // FinOps envelope's per-request limits override these legacy
+        // fields; they remain set for the (rare) case where an operator
+        // wires a runner that doesn't pass a FinOps budget.
         maxOutputTokens: TEST_GENERATION_MAX_OUTPUT_TOKENS,
         maxWallClockMs: TEST_GENERATION_TIMEOUT_MS,
       },
+      ...(factoryInput.events !== undefined
+        ? { events: factoryInput.events }
+        : {}),
     });
   };
   return factory;

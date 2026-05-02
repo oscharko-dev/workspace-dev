@@ -165,6 +165,15 @@ import {
   buildCustomerMarkdownAttachmentName,
   readCustomerMarkdownArtifact,
 } from "../test-intelligence/customer-markdown-reader.js";
+import {
+  createRunnerEventBus,
+  serializeRunnerEvent,
+  type RunnerEventBus,
+} from "../test-intelligence/production-runner-events.js";
+import {
+  buildCustomerMarkdownZipBundle,
+  readCustomerMarkdownZipInputs,
+} from "../test-intelligence/customer-markdown-zip.js";
 
 /**
  * Decode a URI component safely, sending a 400 response on malformed input.
@@ -1263,6 +1272,12 @@ export interface TestIntelligenceProductionRunnerFactoryInput {
   generatedAt: string;
   source: ProductionRunnerSource;
   outputRoot: string;
+  /**
+   * Optional event sink (Issue #1738). When supplied the factory should
+   * forward this to the underlying `runFigmaToQcTestCases` call so the
+   * SSE route can stream phase progress.
+   */
+  events?: import("../test-intelligence/production-runner-events.js").ProductionRunnerEventSink;
 }
 
 interface CreateWorkspaceRequestHandlerInput {
@@ -1427,6 +1442,13 @@ export function createWorkspaceRequestHandler({
     }
     return cachedReviewStore;
   };
+
+  // Per-server event bus for production-runner progress events (#1738).
+  // The bus is bounded (RUNNER_EVENT_BUS_BUFFER_LIMIT events per job)
+  // and is consumed by the SSE route. The runner factory subscribes its
+  // emitter to the bus so events flow into both the SSE listeners and
+  // the per-job buffer for late subscribers.
+  const runnerEventBus: RunnerEventBus = createRunnerEventBus();
   const resolveLifecycleState = ():
     | "starting"
     | "ready"
@@ -3212,6 +3234,81 @@ export function createWorkspaceRequestHandler({
               statusCode: 200,
               payload: result.bundle,
             });
+            return;
+          }
+          if (route.kind === "events_stream") {
+            // Server-Sent Events stream of production-runner progress
+            // events for the supplied job (#1738). Late subscribers
+            // receive the buffered backlog, then live updates. The
+            // route never closes itself — the client cancels via
+            // EventSource.close() (or by disconnecting).
+            response.statusCode = 200;
+            response.setHeader(
+              "content-type",
+              "text/event-stream; charset=utf-8",
+            );
+            response.setHeader("cache-control", "no-cache, no-transform");
+            response.setHeader("connection", "keep-alive");
+            response.setHeader("x-accel-buffering", "no");
+            response.flushHeaders?.();
+            // Replay buffered events first so a late subscriber catches up.
+            for (const event of runnerEventBus.snapshot(route.jobId)) {
+              response.write(`data: ${serializeRunnerEvent(event)}\n\n`);
+            }
+            const unsubscribe = runnerEventBus.subscribe(
+              route.jobId,
+              (event) => {
+                response.write(`data: ${serializeRunnerEvent(event)}\n\n`);
+              },
+            );
+            // Comment-frame heartbeat every 15 s so intermediaries keep
+            // the connection alive.
+            const heartbeatTimer = setInterval(() => {
+              response.write(": heartbeat\n\n");
+            }, 15_000);
+            const cleanup = (): void => {
+              clearInterval(heartbeatTimer);
+              unsubscribe();
+            };
+            request.on("close", cleanup);
+            request.on("aborted", cleanup);
+            return;
+          }
+          if (route.kind === "customer_markdown_zip") {
+            const inputs = await readCustomerMarkdownZipInputs({
+              artifactRoot: testIntelligenceArtifactRoot,
+              jobId: route.jobId,
+            });
+            if (!inputs.ok) {
+              const statusCode =
+                inputs.reason === "path_outside_root" ? 400 : 404;
+              const errorCode =
+                inputs.reason === "path_outside_root"
+                  ? "INVALID_PATH"
+                  : "JOB_NOT_FOUND";
+              const message =
+                inputs.reason === "path_outside_root"
+                  ? "Job id resolves outside the test-intelligence artifact root."
+                  : `No customer-markdown bundle for job '${route.jobId}'.`;
+              sendJson({
+                response,
+                statusCode,
+                payload: { error: errorCode, message },
+              });
+              return;
+            }
+            const zipBytes = buildCustomerMarkdownZipBundle(inputs.bundle);
+            const safeJobId = route.jobId
+              .replace(/[^A-Za-z0-9_.-]+/gu, "-")
+              .slice(0, 64);
+            response.statusCode = 200;
+            response.setHeader("content-type", "application/zip");
+            response.setHeader(
+              "content-disposition",
+              `attachment; filename="${safeJobId}-testfaelle.zip"`,
+            );
+            response.setHeader("content-length", String(zipBytes.length));
+            response.end(zipBytes);
             return;
           }
           if (route.kind === "customer_markdown_export") {
@@ -6463,6 +6560,7 @@ export function createWorkspaceRequestHandler({
               generatedAt: tiGeneratedAt,
               source: sourceResolution.value,
               outputRoot: testIntelligenceArtifactRoot,
+              events: (event) => runnerEventBus.publish(tiJobId, event),
             });
           } catch (error) {
             const mapped = mapProductionRunnerError(error);

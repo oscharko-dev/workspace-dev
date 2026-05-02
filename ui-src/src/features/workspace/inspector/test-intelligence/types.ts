@@ -113,6 +113,14 @@ export interface GeneratedTestCase {
   qcMappingPreview: QcMappingPreview;
   qualitySignals: QualitySignals;
   reviewState: "draft" | "auto_approved" | "needs_review" | "rejected";
+  regulatoryRelevance?: RegulatoryRelevance;
+}
+
+export type RegulatoryRelevanceDomain = "banking" | "insurance" | "general";
+
+export interface RegulatoryRelevance {
+  domain: RegulatoryRelevanceDomain;
+  rationale?: string;
 }
 
 export interface GeneratedTestCaseList {

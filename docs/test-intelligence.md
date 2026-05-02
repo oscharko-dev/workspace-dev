@@ -838,6 +838,58 @@ smoke (`pnpm run test:ti-live-smoke`) is gated by
 and API key environment variables. It is intended for operator-controlled
 integration verification, never for default CI.
 
+## Live end-to-end smoke (production runner)
+
+The visual-sidecar live smoke documented above exercises a single role-bound
+gateway client. The **production-runner live-E2E** complements it by exercising
+the full `runFigmaToQcTestCases` orchestration — the same code path that the
+local Inspector calls when an operator pastes a Figma URL — against the
+operator-configured Azure AI Foundry deployment. It is the regression net for
+the #1676-class shape (live Azure rejects the production payload while the
+mock-backed CI suite stays green).
+
+**What it runs.** A synthetic German banking-form Figma snapshot
+(`src/test-intelligence/fixtures/live-e2e/banking-antrag.figma.json`, < 50 KB,
+shaped to satisfy `FigmaRestFileSnapshot`) is fed into
+`runFigmaToQcTestCases`. The test asserts that the runner returns a non-empty
+`generatedTestCases` list with non-empty titles and at least one step per case,
+the policy report is finalised under `eu-banking-default`, and the FinOps
+envelope on the result is `PRODUCTION_FINOPS_BUDGET_ENVELOPE` (so a regression
+of the production-default cost ceiling is caught in the same pass).
+
+**Cost ceiling.** A single invocation is bounded by
+`PRODUCTION_FINOPS_BUDGET_ENVELOPE`. At the example pricing in the operator
+runbook the worst-case spend per run is ≈ $0.36 — see Section 9a and the
+runbook for the exact envelope.
+
+**Local trigger.**
+
+```sh
+WORKSPACE_TEST_SPACE_LIVE_E2E=1 \
+WORKSPACE_TEST_SPACE_MODEL_ENDPOINT=https://<resource>.cognitiveservices.azure.com \
+WORKSPACE_TEST_SPACE_TESTCASE_MODEL_DEPLOYMENT=<deployment-id> \
+WORKSPACE_TEST_SPACE_API_KEY=<non-prod-key> \
+pnpm run test:ti-live-e2e
+```
+
+Without `WORKSPACE_TEST_SPACE_LIVE_E2E=1` the test self-skips with a single
+`tap`-visible skip line. The wrapper `pnpm run test:ti-live-e2e` reuses
+`scripts/check-live-smoke-env.mjs` (extended in this lane to recognise both
+`WORKSPACE_TEST_SPACE_LIVE_SMOKE` and `WORKSPACE_TEST_SPACE_LIVE_E2E`) so a
+missing endpoint or API key fails fast with a friendly listing rather than a
+mid-run network error.
+
+**CI lane.** `.github/workflows/test-intelligence-live-e2e.yml` runs the same
+command on `workflow_dispatch` and on a nightly cron at 03:00 Europe/Berlin.
+It is **not** wired into the PR pipeline (live secrets are unavailable to fork
+PRs and the per-run cost must not be paid on every PR). The job is gated on
+the repo-level secret `WORKSPACE_TEST_SPACE_MODEL_API_KEY`; if absent the
+workflow short-circuits with a `skipped: secret not configured` job summary
+instead of failing red. On test failure the run directory (the OS tmpdir tree
+written under `live-e2e-runner-*`) is uploaded as the artifact
+`ti-live-e2e-rundir-<run_id>` for 14 days so the failed Azure response and the
+emitted artifacts are debuggable from the GitHub Actions UI alone.
+
 The package keeps its zero-telemetry posture: no test-intelligence code path
 emits analytics, usage metrics, behavioral telemetry, or unsolicited diagnostic
 beacons. See [ZERO_TELEMETRY.md](../ZERO_TELEMETRY.md).

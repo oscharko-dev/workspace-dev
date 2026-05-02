@@ -445,14 +445,34 @@ export {
 export {
   cloneEuBankingDefaultFinOpsBudget,
   cloneFinOpsBudgetEnvelope,
+  cloneProductionFinOpsBudgetEnvelope,
   DEFAULT_FINOPS_BUDGET_ENVELOPE,
   EU_BANKING_DEFAULT_FINOPS_BUDGET,
+  PRODUCTION_FINOPS_BUDGET_ENVELOPE,
   resolveFinOpsRequestLimits,
   validateFinOpsBudgetEnvelope,
   type FinOpsBudgetValidationIssue,
   type FinOpsBudgetValidationResult,
   type FinOpsResolvedRequestLimits,
 } from "./finops-budget.js";
+export {
+  createRunnerEventBus,
+  PRODUCTION_RUNNER_EVENT_PHASES,
+  RUNNER_EVENT_BUS_BUFFER_LIMIT,
+  serializeRunnerEvent,
+  type ProductionRunnerEvent,
+  type ProductionRunnerEventDetailValue,
+  type ProductionRunnerEventPhase,
+  type ProductionRunnerEventSink,
+  type RunnerEventBus,
+} from "./production-runner-events.js";
+export {
+  buildCustomerMarkdownZipBundle,
+  readCustomerMarkdownZipInputs,
+  type CustomerMarkdownZipBundle,
+  type ReadCustomerMarkdownZipInput,
+  type ReadCustomerMarkdownZipResult,
+} from "./customer-markdown-zip.js";
 export {
   buildFinOpsBudgetReport,
   createFinOpsUsageRecorder,

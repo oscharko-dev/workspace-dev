@@ -1,0 +1,129 @@
+# Issue #1737: live end-to-end smoke for the production runner
+# (`runFigmaToQcTestCases`) against the operator-configured Azure AI Foundry
+# deployment.
+#
+# This workflow is deliberately separated from the PR pipeline:
+#   - it is **never** triggered on `pull_request` (forks cannot read the live
+#     API key, and the per-run cost ceiling — bounded by
+#     `PRODUCTION_FINOPS_BUDGET_ENVELOPE` — must not be paid on every PR);
+#   - it runs nightly on a fixed Europe/Berlin schedule so a regression of
+#     the #1676 shape (live Azure rejects the production runner payload) is
+#     caught before the next customer demo;
+#   - operators can also fire it manually via `workflow_dispatch` to validate
+#     a deployment swap or a credential rotation.
+#
+# The job is gated on the secret `WORKSPACE_TEST_SPACE_MODEL_API_KEY` being
+# configured at the repository level. If the secret is missing it
+# short-circuits with a `skipped: secret not configured` job summary instead
+# of failing red, so the badge stays meaningful before the first secret is
+# provisioned.
+#
+# Operator action required (one-time, out-of-band):
+#   1. Configure repo secret `WORKSPACE_TEST_SPACE_MODEL_API_KEY` with a
+#      non-prod Azure AI Foundry key.
+#   2. Configure repo secret `WORKSPACE_TEST_SPACE_MODEL_ENDPOINT` with the
+#      base URL (e.g. `https://<resource>.cognitiveservices.azure.com`).
+#   3. Configure repo secret `WORKSPACE_TEST_SPACE_TESTCASE_MODEL_DEPLOYMENT`
+#      with the test-generation deployment id (e.g. `gpt-oss-120b-1`).
+#   4. Optional: `WORKSPACE_TEST_SPACE_VISUAL_MODEL_ENDPOINT`,
+#      `WORKSPACE_TEST_SPACE_VISUAL_PRIMARY_DEPLOYMENT`,
+#      `WORKSPACE_TEST_SPACE_VISUAL_FALLBACK_DEPLOYMENT` — when omitted the
+#      live-E2E test reuses the test-generation endpoint/deployment.
+#
+# Until the API-key secret is set the workflow short-circuits.
+
+name: workspace-dev test-intelligence live-E2E
+
+on:
+  schedule:
+    # 03:00 Europe/Berlin — outside business hours and well clear of the
+    # 03:30 UTC `live-smoke.yml` slot to avoid Azure-side rate-limit overlap.
+    # GitHub Actions cron is UTC; 01:00 UTC == 03:00 CEST in summer (and
+    # 02:00 CET in winter — both still in the maintenance window).
+    - cron: "0 1 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  live-e2e:
+    name: ti-live-e2e
+    timeout-minutes: 15
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: read
+    steps:
+      - name: Check for required secret
+        id: check_secret
+        env:
+          API_KEY: ${{ secrets.WORKSPACE_TEST_SPACE_MODEL_API_KEY }}
+        run: |
+          if [ -z "$API_KEY" ]; then
+            echo "secret_present=false" >> "$GITHUB_OUTPUT"
+            {
+              echo "## live-E2E skipped"
+              echo
+              echo "Repo secret \`WORKSPACE_TEST_SPACE_MODEL_API_KEY\` is not"
+              echo "configured. See the header of"
+              echo "\`.github/workflows/test-intelligence-live-e2e.yml\` for"
+              echo "the operator setup steps."
+            } >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "secret_present=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
+        if: steps.check_secret.outputs.secret_present == 'true'
+        with:
+          persist-credentials: false
+
+      - uses: pnpm/action-setup@26f6d4f2c533a43e6b5da0b4a5dd983f98f7b49a  # v6
+        if: steps.check_secret.outputs.secret_present == 'true'
+        with:
+          version: 10.33.0
+
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e  # v6
+        if: steps.check_secret.outputs.secret_present == 'true'
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        if: steps.check_secret.outputs.secret_present == 'true'
+        run: pnpm install --frozen-lockfile --ignore-scripts
+
+      - name: Run production-runner live-E2E
+        id: run_live_e2e
+        if: steps.check_secret.outputs.secret_present == 'true'
+        env:
+          # Issue #1660 alias: mirror the operator-supplied secret into both
+          # env names so either lookup in `production-runner.live-e2e.test.ts`
+          # resolves.
+          WORKSPACE_TEST_SPACE_API_KEY: ${{ secrets.WORKSPACE_TEST_SPACE_MODEL_API_KEY }}
+          WORKSPACE_TEST_SPACE_MODEL_API_KEY: ${{ secrets.WORKSPACE_TEST_SPACE_MODEL_API_KEY }}
+          WORKSPACE_TEST_SPACE_MODEL_ENDPOINT: ${{ secrets.WORKSPACE_TEST_SPACE_MODEL_ENDPOINT }}
+          WORKSPACE_TEST_SPACE_TESTCASE_MODEL_DEPLOYMENT: ${{ secrets.WORKSPACE_TEST_SPACE_TESTCASE_MODEL_DEPLOYMENT }}
+          WORKSPACE_TEST_SPACE_VISUAL_MODEL_ENDPOINT: ${{ secrets.WORKSPACE_TEST_SPACE_VISUAL_MODEL_ENDPOINT }}
+          WORKSPACE_TEST_SPACE_VISUAL_PRIMARY_DEPLOYMENT: ${{ secrets.WORKSPACE_TEST_SPACE_VISUAL_PRIMARY_DEPLOYMENT }}
+          WORKSPACE_TEST_SPACE_VISUAL_FALLBACK_DEPLOYMENT: ${{ secrets.WORKSPACE_TEST_SPACE_VISUAL_FALLBACK_DEPLOYMENT }}
+        run: pnpm run test:ti-live-e2e
+
+      - name: Preserve run directory on failure
+        if: failure() && steps.check_secret.outputs.secret_present == 'true'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7
+        with:
+          name: ti-live-e2e-rundir-${{ github.run_id }}
+          # The live-E2E test writes the production runner output under an
+          # OS tmpdir prefix `live-e2e-runner-*`. We capture both the tmp
+          # tree and the worktree-local artifact roots so a failed run
+          # remains debuggable from the GitHub Actions UI alone.
+          path: |
+            /tmp/live-e2e-runner-*/**
+            artifacts/**
+          if-no-files-found: ignore
+          retention-days: 14
