@@ -825,7 +825,11 @@ environment variables documented in [docs/local-runtime.md](local-runtime.md):
 - `WORKSPACE_TEST_SPACE_VISUAL_MODEL_ENDPOINT`
 - `WORKSPACE_TEST_SPACE_VISUAL_PRIMARY_DEPLOYMENT`
 - `WORKSPACE_TEST_SPACE_VISUAL_FALLBACK_DEPLOYMENT`
-- `WORKSPACE_TEST_SPACE_API_KEY`
+- `WORKSPACE_TEST_SPACE_API_KEY` _or_ `WORKSPACE_TEST_SPACE_MODEL_API_KEY`
+  (Issue #1660 alias; the live smoke accepts either, with
+  `WORKSPACE_TEST_SPACE_API_KEY` taking precedence when both are set).
+  `pnpm run test:ti-live-smoke` runs `scripts/check-live-smoke-env.mjs`
+  first to fail-fast with a friendly listing of any missing variables.
 
 The bundled CI gate (`pnpm run test:ti-eval`) uses the deterministic mock and
 the fixture captures. It performs no outbound network calls. The optional live

@@ -20,7 +20,9 @@ the role-separated model setup for screenshot understanding:
 - `WORKSPACE_TEST_SPACE_VISUAL_MODEL_ENDPOINT`
 - `WORKSPACE_TEST_SPACE_VISUAL_PRIMARY_DEPLOYMENT`
 - `WORKSPACE_TEST_SPACE_VISUAL_FALLBACK_DEPLOYMENT`
-- `WORKSPACE_TEST_SPACE_API_KEY`
+- `WORKSPACE_TEST_SPACE_API_KEY` _or_ `WORKSPACE_TEST_SPACE_MODEL_API_KEY`
+  (Issue #1660 alias; the live smoke accepts either, with
+  `WORKSPACE_TEST_SPACE_API_KEY` taking precedence when both are set)
 
 Run the operator-controlled smoke only from an environment that already has the
 API key in process memory:
