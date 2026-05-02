@@ -245,14 +245,12 @@ test("token isolation — anonymous (no token) and a real token never share a ca
   const fetchImpl: typeof fetch = async (input, init) => {
     const req = new Request(input, init);
     const tool = await parseTool(req);
-    if (tool === "get_design_context") {
-      observedAuth.push(req.headers.get("authorization"));
-      getDesignContextCount += 1;
-    }
     if (tool === "get_metadata") {
       return jsonResponse(mcpOk({ xml: SMALL_XML }));
     }
     if (tool === "get_design_context") {
+      observedAuth.push(req.headers.get("authorization"));
+      getDesignContextCount += 1;
       return jsonResponse(mcpOk({ code: "// payload", assets: {} }));
     }
     if (tool === "get_screenshot") {
