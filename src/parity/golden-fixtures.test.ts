@@ -133,6 +133,7 @@ const normalizeText = (value: string): string => {
 const STABLE_TIMESTAMP_PLACEHOLDER = "<stable-timestamp>";
 const STABLE_PATH_PLACEHOLDER = "<stable-path>";
 const STABLE_NUMBER_PLACEHOLDER = "<stable-number>";
+const STABLE_STATUS_PLACEHOLDER = "<stable-status>";
 
 const normalizeDynamicJsonFields = (
   value: unknown,
@@ -148,6 +149,11 @@ const normalizeDynamicJsonFields = (
   }
 
   if (artifactPath.endsWith("validation-summary.json")) {
+    if (pathSegments.join(".") === "generatedApp.install") {
+      return {
+        status: STABLE_STATUS_PLACEHOLDER,
+      };
+    }
     if (pathSegments.join(".") === "uiA11y.reportPath") {
       return STABLE_PATH_PLACEHOLDER;
     }
@@ -650,6 +656,7 @@ const createDefaultExecutionContext = async ({
   const runtime = resolveRuntimeSettings({
     commandTimeoutMs: 180_000,
     enableLintAutofix: false,
+    enablePerfValidation: false,
     enablePreview: false,
     enableUiValidation: false,
     enableUnitTestValidation: false,

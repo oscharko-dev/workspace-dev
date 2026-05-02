@@ -10,7 +10,7 @@
     "token": {
       "covered": 54,
       "ratio": 0.947368,
-      "status": "warning",
+      "status": "passed",
       "total": 57
     }
   },
@@ -77,13 +77,13 @@
     }
   ],
   "metadata": {
-    "compositeQualityStatus": "completed",
+    "compositeQualityStatus": "not_requested",
     "confidenceStatus": "completed",
     "jobId": "golden-default-fintech-dashboard",
     "pipelineDisplayName": "Default",
     "storybookStatus": "not_requested",
     "validatedAt": "<stable-timestamp>",
-    "validationSummaryStatus": "warn",
+    "validationSummaryStatus": "ok",
     "visualQualityStatus": "not_requested"
   },
   "pipelineId": "default",
@@ -117,15 +117,9 @@
         "status": "completed"
       }
     ],
-    "status": "warning"
+    "status": "passed"
   },
   "warnings": [
-    {
-      "code": "VALIDATION_SUMMARY_NOT_OK",
-      "message": "Validation summary completed with status 'warn'.",
-      "severity": "warning",
-      "source": "validation-summary.json"
-    },
     {
       "code": "W_DEFAULT_A11Y_FOCUS_ORDER",
       "message": "Absolute layout fallback for 'Card Title' can make keyboard focus order depend on implementation details.",
