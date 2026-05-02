@@ -24,6 +24,7 @@ import {
 } from "./inspector/test-intelligence/TestCaseListPanel";
 import { VisualSidecarPanel } from "./inspector/test-intelligence/VisualSidecarPanel";
 import { ConflictResolutionPanel } from "./inspector/test-intelligence/conflict-resolution-panel";
+import { FigmaUrlTab } from "./inspector/test-intelligence/figma-url-tab";
 import { JiraWritePanel } from "./inspector/test-intelligence/jira-write-panel";
 import { MultiSourceIngestionPanel } from "./inspector/test-intelligence/multi-source-ingestion-panel";
 import { SourceListPanel } from "./inspector/test-intelligence/source-list-panel";
@@ -945,6 +946,11 @@ export function InspectorTestIntelligencePage(): JSX.Element {
           </section>
         ) : jobId.length === 0 ? (
           <div className="flex flex-col gap-4 px-4 py-4">
+            <FigmaUrlTab
+              onSubmitted={(submittedJobId) => {
+                handleSelectJob(submittedJobId);
+              }}
+            />
             <JobPicker onSelect={handleSelectJob} />
           </div>
         ) : (
