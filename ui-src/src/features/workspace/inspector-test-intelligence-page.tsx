@@ -25,7 +25,7 @@ import {
 import { TestCasesCardGrid } from "./inspector/test-intelligence/TestCasesCardGrid";
 import { VisualSidecarPanel } from "./inspector/test-intelligence/VisualSidecarPanel";
 import { ConflictResolutionPanel } from "./inspector/test-intelligence/conflict-resolution-panel";
-import { CustomerMarkdownDownload } from "./inspector/test-intelligence/customer-markdown-download";
+import { CustomerDownloadsBar } from "./inspector/test-intelligence/CustomerDownloadsBar";
 import { FigmaUrlTab } from "./inspector/test-intelligence/figma-url-tab";
 import { JiraWritePanel } from "./inspector/test-intelligence/jira-write-panel";
 import { MultiSourceIngestionPanel } from "./inspector/test-intelligence/multi-source-ingestion-panel";
@@ -412,7 +412,7 @@ function TestIntelligenceInner({
                       Review state unavailable
                     </span>
                   ) : null}
-                  <CustomerMarkdownDownload jobId={jobId} />
+                  <CustomerDownloadsBar jobId={jobId} />
                 </div>
               </header>
               <TestCasesCardGrid
