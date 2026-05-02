@@ -15,6 +15,7 @@ on:
       - template/react-tailwind-app/package.json
       - template/react-tailwind-app/pnpm-lock.yaml
       - .github/workflows/dependency-review.yml
+      - .github/workflows/dev-quality-gate.yml
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
