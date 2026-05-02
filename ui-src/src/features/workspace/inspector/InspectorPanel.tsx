@@ -176,6 +176,7 @@ import {
 import { deriveTokenSuggestionModel } from "./token-suggestion-model";
 import { deriveA11yNudges } from "./a11y-nudge";
 import {
+  computeA11yFileDataKey,
   mergeA11yScanInputs,
   selectA11yScanFiles,
 } from "./a11y-file-selection";
@@ -2429,10 +2430,22 @@ export function InspectorPanel({
     })),
   });
 
+  // `useQueries` returns a freshly-allocated array on every render even when
+  // the underlying data is unchanged. Depending on it directly invalidates
+  // downstream memos on every parent re-render and re-runs the a11y scan
+  // over every JSX-like file (#1670). `computeA11yFileDataKey` projects the
+  // queries to a primitive sentinel that only changes when at least one
+  // query actually received new data.
+  const a11yFileDataKey = computeA11yFileDataKey(a11yFileContentQueries);
+  const a11yFileData = useMemo(
+    () => a11yFileContentQueries.map((query) => query.data ?? null),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- a11yFileContentQueries identity churns each render; a11yFileDataKey is the stable proxy (#1670).
+    [a11yFileDataKey],
+  );
+
   const a11yNudgeInputs = useMemo(() => {
-    const fetched = a11yFileContentQueries.map((query) => query.data ?? null);
-    return mergeA11yScanInputs(jsxLikeFiles, fetched);
-  }, [jsxLikeFiles, a11yFileContentQueries]);
+    return mergeA11yScanInputs(jsxLikeFiles, a11yFileData);
+  }, [jsxLikeFiles, a11yFileData]);
 
   const a11yNudgeModel = useMemo(() => {
     return deriveA11yNudges({

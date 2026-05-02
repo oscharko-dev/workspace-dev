@@ -11,6 +11,7 @@ import { describe, expect, it } from "vitest";
 import {
   A11Y_DEFAULT_FETCH_CAP,
   A11Y_DEFAULT_SIZE_CAP_BYTES,
+  computeA11yFileDataKey,
   mergeA11yScanInputs,
   selectA11yScanFiles,
 } from "./a11y-file-selection";
@@ -108,6 +109,89 @@ describe("mergeA11yScanInputs", () => {
       ["<img src='x' />", "extra-not-shown"],
     );
     expect(merged).toEqual([{ path: "only.tsx", contents: "<img src='x' />" }]);
+  });
+});
+
+describe("computeA11yFileDataKey (#1670)", () => {
+  it("returns an empty string for no queries", () => {
+    expect(computeA11yFileDataKey([])).toBe("");
+  });
+
+  it("returns the same key when every query's dataUpdatedAt is unchanged", () => {
+    const a = computeA11yFileDataKey([
+      { dataUpdatedAt: 1_700_000_000 },
+      { dataUpdatedAt: 1_700_000_500 },
+      { dataUpdatedAt: 1_700_000_750 },
+    ]);
+    const b = computeA11yFileDataKey([
+      { dataUpdatedAt: 1_700_000_000 },
+      { dataUpdatedAt: 1_700_000_500 },
+      { dataUpdatedAt: 1_700_000_750 },
+    ]);
+    // Two distinct call sites with the same timestamps must yield the
+    // same primitive — this is what lets `useMemo` skip re-derivation
+    // even though `useQueries` returns a fresh array reference each
+    // render.
+    expect(a).toBe(b);
+  });
+
+  it("changes when any query's dataUpdatedAt advances", () => {
+    const before = computeA11yFileDataKey([
+      { dataUpdatedAt: 100 },
+      { dataUpdatedAt: 200 },
+    ]);
+    const afterFirst = computeA11yFileDataKey([
+      { dataUpdatedAt: 101 },
+      { dataUpdatedAt: 200 },
+    ]);
+    const afterSecond = computeA11yFileDataKey([
+      { dataUpdatedAt: 100 },
+      { dataUpdatedAt: 201 },
+    ]);
+    expect(afterFirst).not.toBe(before);
+    expect(afterSecond).not.toBe(before);
+    expect(afterFirst).not.toBe(afterSecond);
+  });
+
+  it("changes when the query count changes (added or removed file)", () => {
+    const two = computeA11yFileDataKey([
+      { dataUpdatedAt: 100 },
+      { dataUpdatedAt: 200 },
+    ]);
+    const three = computeA11yFileDataKey([
+      { dataUpdatedAt: 100 },
+      { dataUpdatedAt: 200 },
+      { dataUpdatedAt: 300 },
+    ]);
+    const one = computeA11yFileDataKey([{ dataUpdatedAt: 100 }]);
+    expect(two).not.toBe(three);
+    expect(two).not.toBe(one);
+  });
+
+  it("treats missing dataUpdatedAt as 0 (pending queries) without throwing", () => {
+    const allPending = computeA11yFileDataKey([
+      {},
+      { dataUpdatedAt: undefined },
+      {},
+    ]);
+    const oneSettled = computeA11yFileDataKey([{}, { dataUpdatedAt: 1 }, {}]);
+    expect(allPending).toBe("0:0:0");
+    expect(oneSettled).not.toBe(allPending);
+  });
+
+  it("does not collide between [10, 23] and [102, 3] when joined naively", () => {
+    // Regression guard against using a separator that allows numeric
+    // collisions (e.g. concatenation without a delimiter). With ":" as
+    // separator these two arrays must produce distinct keys.
+    const a = computeA11yFileDataKey([
+      { dataUpdatedAt: 10 },
+      { dataUpdatedAt: 23 },
+    ]);
+    const b = computeA11yFileDataKey([
+      { dataUpdatedAt: 102 },
+      { dataUpdatedAt: 3 },
+    ]);
+    expect(a).not.toBe(b);
   });
 });
 
