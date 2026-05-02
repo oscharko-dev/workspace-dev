@@ -25,15 +25,50 @@ jobs:
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3  # v9
         with:
           script: |
-            const { pathToFileURL } = require("node:url");
-            const {
-              PR_AUTOCLOSE_WARNING_MARKER,
-              buildAutoCloseWarningComment,
-              extractIssueReferences,
-              findMissingAutoCloseReferences,
-            } = await import(
-              pathToFileURL(`${process.env.GITHUB_WORKSPACE}/scripts/pr-autoclose-warning.mjs`).href
-            );
+            const PR_AUTOCLOSE_WARNING_MARKER =
+              "<!-- workspace-dev:pr-autoclose-warning -->";
+
+            function uniqueSortedNumbers(values) {
+              return [...new Set(values)].sort((first, second) => first - second);
+            }
+
+            function extractIssueReferences(text) {
+              return uniqueSortedNumbers(
+                [...text.matchAll(/(^|[^\w])#(\d+)\b/g)].map((match) =>
+                  Number(match[2]),
+                ),
+              );
+            }
+
+            function extractAutoCloseReferences(text) {
+              return uniqueSortedNumbers(
+                [
+                  ...text.matchAll(
+                    /\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)\s*:?\s+#(\d+)\b/gi,
+                  ),
+                ].map((match) => Number(match[1])),
+              );
+            }
+
+            function findMissingAutoCloseReferences({ title = "", body = "" }) {
+              const searchableText = `${title}\n\n${body}`;
+              const referencedIssues = extractIssueReferences(searchableText);
+              const autoCloseIssues = new Set(
+                extractAutoCloseReferences(searchableText),
+              );
+
+              return referencedIssues.filter(
+                (issueNumber) => !autoCloseIssues.has(issueNumber),
+              );
+            }
+
+            function buildAutoCloseWarningComment(missingIssueNumbers) {
+              const references = missingIssueNumbers.map((issueNumber) => `#${issueNumber}`);
+              const bullets = references.map((reference) => `- ${reference}`).join("\n");
+
+              return `${PR_AUTOCLOSE_WARNING_MARKER}\nThis pull request references issue numbers without a GitHub auto-close keyword.\n\nAdd \`Fixes #N\`, \`Closes #N\`, or \`Resolves #N\` if merge should close the issue automatically.\n\nMissing auto-close keywords for:\n${bullets}`;
+            }
+
             const pr = context.payload.pull_request;
             if (!pr) {
               core.notice("No pull request payload found; skipping.");
