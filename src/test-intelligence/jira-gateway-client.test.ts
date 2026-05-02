@@ -713,3 +713,116 @@ test("JiraGatewayClient validates auth-specific host shapes", () => {
     }),
   );
 });
+
+// Issue #1666 (audit-2026-05): cumulative wall-clock budget. With 3
+// retries and `maxWallClockMs = 1000`, the total elapsed wall-clock
+// must NOT exceed ~1100 ms. Previously the per-attempt timer reset on
+// every retry, so total ran up to ~3 × 1000 = 3000 ms.
+test("JiraGatewayClient: cumulative wall-clock cannot exceed maxWallClockMs across retries (#1666)", async () => {
+  let now = 0;
+  const clock = { now: () => now };
+  let probeCalls = 0;
+  // Each search call burns 400 ms of mock-clock time before resolving as
+  // a transient 503. With totalBudget = 1000 ms, the orchestrator must
+  // refuse the third attempt (cumulative would exceed 1000 ms).
+  const fetchImpl = async (input: string | URL): Promise<Response> => {
+    const url = typeof input === "string" ? input : input.toString();
+    if (url.endsWith("serverInfo")) {
+      probeCalls += 1;
+      now += 5;
+      return new Response(
+        JSON.stringify({ version: "10.0.0", deploymentType: "Cloud" }),
+        { status: 200 },
+      );
+    }
+    now += 400;
+    return new Response("upstream busy", { status: 503 });
+  };
+  const client = createJiraGatewayClient(
+    { ...DEFAULT_CONFIG, maxRetries: 4 },
+    {
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+      sleep: async () => undefined,
+      clock,
+    },
+  );
+  const start = now;
+  const result = await client.fetchIssues({
+    query: { kind: "jql", jql: "project=PAY", maxResults: 1 },
+    sourceId: "test-source",
+    runDir: "/tmp/test",
+    maxWallClockMs: 1_000,
+  });
+  const elapsed = now - start;
+  assert.equal(
+    probeCalls,
+    1,
+    "capability probe should be cached after first call",
+  );
+  assert.ok(
+    elapsed <= 1_100,
+    `cumulative elapsed ${elapsed}ms must not exceed 1100ms (budget 1000ms + small grace)`,
+  );
+  // The orchestrator must surface a non-retryable budget-exceeded
+  // diagnostic. The two valid codes are `jira_total_budget_exceeded`
+  // (orchestrator refused to start the next attempt because the
+  // cumulative budget was already gone) or `jira_retry_budget_exceeded`
+  // (orchestrator refused the next attempt because including its sleep
+  // would breach the budget). Both are correct closures of #1666;
+  // before the fix, the orchestrator emitted *neither* and instead let
+  // the per-attempt timer reset to a fresh full budget.
+  assert.ok(result.diagnostic);
+  assert.ok(
+    result.diagnostic?.code === "jira_total_budget_exceeded" ||
+      result.diagnostic?.code === "jira_retry_budget_exceeded",
+    `expected a budget-exceeded diagnostic; got ${JSON.stringify(result.diagnostic)}`,
+  );
+  assert.equal(result.diagnostic?.retryable, false);
+});
+
+// Issue #1666: the cumulative-budget pre-attempt path is reachable when
+// the prior attempt's wallclock already breached the budget (e.g. via
+// the per-attempt timer cap firing late). This unit-tests the path
+// directly via a fetchImpl that always advances the mock clock far past
+// the budget on the first attempt.
+test("JiraGatewayClient: pre-attempt cumulative-budget guard refuses subsequent attempts", async () => {
+  let now = 0;
+  const clock = { now: () => now };
+  const fetchImpl = async (input: string | URL): Promise<Response> => {
+    const url = typeof input === "string" ? input : input.toString();
+    if (url.endsWith("serverInfo")) {
+      now += 5;
+      return new Response(
+        JSON.stringify({ version: "10.0.0", deploymentType: "Cloud" }),
+        { status: 200 },
+      );
+    }
+    // Each call burns 2× the budget — first attempt alone exceeds it.
+    now += 2_000;
+    return new Response("upstream busy", { status: 503 });
+  };
+  const client = createJiraGatewayClient(
+    { ...DEFAULT_CONFIG, maxRetries: 3 },
+    {
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+      sleep: async () => undefined,
+      clock,
+    },
+  );
+  const result = await client.fetchIssues({
+    query: { kind: "jql", jql: "project=PAY", maxResults: 1 },
+    sourceId: "test-source",
+    runDir: "/tmp/test",
+    maxWallClockMs: 1_000,
+  });
+  assert.ok(result.diagnostic);
+  assert.equal(result.diagnostic?.retryable, false);
+  // After attempt 1 burned 2000ms, cumulative >= budget. Either the
+  // retry-sleep check or the pre-attempt check fires next; both close
+  // the loop with a budget-exceeded diagnostic.
+  assert.ok(
+    result.diagnostic?.code === "jira_total_budget_exceeded" ||
+      result.diagnostic?.code === "jira_retry_budget_exceeded",
+    `expected budget-exceeded diagnostic; got ${JSON.stringify(result.diagnostic)}`,
+  );
+});
