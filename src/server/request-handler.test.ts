@@ -17,7 +17,10 @@ import { Readable } from "node:stream";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 import { buildApp, type WorkspaceServerApp } from "./app-inject.js";
-import { createWorkspaceRequestHandler } from "./request-handler.js";
+import {
+  createWorkspaceRequestHandler,
+  type TestIntelligenceProductionRunnerFactory,
+} from "./request-handler.js";
 import {
   createJiraGatewayClient,
   type JiraGatewayClient,
@@ -224,6 +227,7 @@ async function createRequestHandlerApp({
   testIntelligenceAllowJiraWrite,
   testIntelligenceJiraWriteClient,
   testIntelligenceArtifactRoot,
+  testIntelligenceProductionRunner,
   workspaceRoot,
   outputRoot,
   getServerLifecycleState,
@@ -242,6 +246,7 @@ async function createRequestHandlerApp({
   testIntelligenceAllowJiraWrite?: boolean;
   testIntelligenceJiraWriteClient?: JiraWriteClient;
   testIntelligenceArtifactRoot?: string;
+  testIntelligenceProductionRunner?: TestIntelligenceProductionRunnerFactory;
   workspaceRoot?: string;
   outputRoot?: string;
   getServerLifecycleState?: () => "starting" | "ready" | "draining" | "stopped";
@@ -296,6 +301,9 @@ async function createRequestHandlerApp({
       ...(testIntelligenceArtifactRoot === undefined
         ? {}
         : { testIntelligenceArtifactRoot }),
+      ...(testIntelligenceProductionRunner === undefined
+        ? {}
+        : { testIntelligenceProductionRunner }),
       logger,
     },
     ...(getServerLifecycleState ? { getServerLifecycleState } : {}),
@@ -7275,7 +7283,7 @@ test("submit figma_to_qc_test_cases returns 503 FEATURE_DISABLED when only start
   });
 });
 
-test("submit figma_to_qc_test_cases does not enter codegen pipeline when both gates are on", async () => {
+test("submit figma_to_qc_test_cases returns 503 LLM_GATEWAY_UNCONFIGURED when both gates are on but no production runner is injected", async () => {
   await withTestIntelligenceEnv("1", async () => {
     const submitJob = test.mock.fn();
     const { app, close } = await createRequestHandlerApp({
@@ -7295,10 +7303,129 @@ test("submit figma_to_qc_test_cases does not enter codegen pipeline when both ga
           testIntelligenceMode: "dry_run",
         },
       });
-      assert.notEqual(response.statusCode, 503);
-      assert.equal(response.statusCode, 501);
+      assert.equal(response.statusCode, 503);
       const body = response.json<Record<string, unknown>>();
-      assert.equal(body.error, "NOT_IMPLEMENTED");
+      assert.equal(body.error, "LLM_GATEWAY_UNCONFIGURED");
+      assert.match(String(body.message), /testIntelligenceProductionRunner/u);
+      assert.equal(submitJob.mock.callCount(), 0);
+    } finally {
+      await close();
+    }
+  });
+});
+
+test("submit figma_to_qc_test_cases returns 200 with summary when both gates on and a production runner is injected", async () => {
+  await withTestIntelligenceEnv("1", async () => {
+    const submitJob = test.mock.fn();
+    type FactoryInput = Parameters<TestIntelligenceProductionRunnerFactory>[0];
+    const calls: FactoryInput[] = [];
+    const productionRunner: TestIntelligenceProductionRunnerFactory = async (
+      input,
+    ) => {
+      calls.push(input);
+      return {
+        jobId: input.jobId,
+        generatedAt: input.generatedAt,
+        fileKey: "file-key",
+        generatedTestCases: {
+          schemaVersion: "1.0.0",
+          jobId: input.jobId,
+          testCases: [],
+        },
+        intent: {
+          schemaVersion: "1.0.0",
+          jobId: input.jobId,
+          generatedAt: input.generatedAt,
+          fileKey: "file-key",
+          screens: [],
+        } as unknown as Awaited<
+          ReturnType<TestIntelligenceProductionRunnerFactory>
+        >["intent"],
+        validation: {
+          schemaVersion: "1.0.0",
+          jobId: input.jobId,
+          generatedAt: input.generatedAt,
+          totalCases: 0,
+          passedCases: 0,
+          failedCases: 0,
+          duplicateCases: 0,
+          issues: [],
+        } as unknown as Awaited<
+          ReturnType<TestIntelligenceProductionRunnerFactory>
+        >["validation"],
+        policy: {
+          schemaVersion: "1.0.0",
+          jobId: input.jobId,
+          generatedAt: input.generatedAt,
+          policyBundleVersion: "v1",
+          decisions: [],
+          blocked: false,
+        } as unknown as Awaited<
+          ReturnType<TestIntelligenceProductionRunnerFactory>
+        >["policy"],
+        coverage: {
+          schemaVersion: "1.0.0",
+          jobId: input.jobId,
+          generatedAt: input.generatedAt,
+          screenCoverage: [],
+          intentCoverage: [],
+        } as unknown as Awaited<
+          ReturnType<TestIntelligenceProductionRunnerFactory>
+        >["coverage"],
+        blocked: false,
+        artifactDir: "/tmp/runner-mock",
+        artifactPaths: {
+          intent: "/tmp/runner-mock/intent.json",
+          compiledPrompt: "/tmp/runner-mock/prompt.json",
+          generatedTestCases: "/tmp/runner-mock/cases.json",
+          validationReport: "/tmp/runner-mock/validation.json",
+          policyReport: "/tmp/runner-mock/policy.json",
+          coverageReport: "/tmp/runner-mock/coverage.json",
+        },
+        customerMarkdownPaths: {
+          combined: "/tmp/runner-mock/customer-markdown/testfaelle.md",
+          perCase: [],
+        },
+      };
+    };
+    const { app, close } = await createRequestHandlerApp({
+      jobEngine: createStubJobEngine({
+        submitJob: submitJob as unknown as JobEngine["submitJob"],
+      }),
+      testIntelligenceEnabled: true,
+      testIntelligenceProductionRunner: productionRunner,
+    });
+    try {
+      const response = await app.inject({
+        method: "POST",
+        url: "/workspace/submit",
+        payload: {
+          figmaFileKey: "file-key",
+          figmaAccessToken: "token",
+          figmaSourceMode: "hybrid",
+          jobType: "figma_to_qc_test_cases",
+          testIntelligenceMode: "dry_run",
+        },
+      });
+      assert.equal(response.statusCode, 200);
+      const body = response.json<Record<string, unknown>>();
+      assert.ok(typeof body.jobId === "string");
+      assert.ok((body.jobId as string).startsWith("ti-"));
+      const summary = body.summary as Record<string, unknown>;
+      assert.equal(summary.fileKey, "file-key");
+      assert.equal(summary.testCaseCount, 0);
+      assert.equal(summary.blocked, false);
+      assert.equal(calls.length, 1);
+      const call = calls[0];
+      assert.ok(call);
+      assert.equal(call.source.kind, "figma_url");
+      if (call.source.kind === "figma_url") {
+        assert.match(
+          call.source.figmaUrl,
+          /^https:\/\/www\.figma\.com\/design\/file-key/u,
+        );
+        assert.equal(call.source.accessToken, "token");
+      }
       assert.equal(submitJob.mock.callCount(), 0);
     } finally {
       await close();
