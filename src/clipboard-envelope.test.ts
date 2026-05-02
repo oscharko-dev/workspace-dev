@@ -245,6 +245,86 @@ test("normalizeEnvelopeToFigmaFile aggregates multi-selection into synthetic doc
 });
 
 // ---------------------------------------------------------------------------
+// Prototype-pollution defence (Issue #1684, audit-2026-05 Wave 1)
+// ---------------------------------------------------------------------------
+
+test("validateClipboardEnvelope strips __proto__ keys from components/styles", () => {
+  const envelope = {
+    kind: CLIPBOARD_ENVELOPE_KIND,
+    pluginVersion: "0.1.0",
+    copiedAt: "2026-05-02T00:00:00.000Z",
+    selections: [
+      {
+        document: { id: "1:2", type: "FRAME", name: "Card" },
+        components: {
+          __proto__: { polluted: true },
+          "comp:1": { name: "Button" },
+        },
+        componentSets: { constructor: { polluted: true } },
+        styles: {
+          prototype: { polluted: true },
+          "style:1": { name: "Primary" },
+        },
+      },
+    ],
+  };
+
+  const result = validateClipboardEnvelope(envelope);
+  assert.equal(result.valid, true);
+  if (!result.valid) return;
+
+  const sel = result.envelope.selections[0]!;
+  assert.equal(Object.hasOwn(sel.components, "__proto__"), false);
+  assert.equal(Object.hasOwn(sel.componentSets, "constructor"), false);
+  assert.equal(Object.hasOwn(sel.styles, "prototype"), false);
+  assert.equal(Object.hasOwn(sel.components, "comp:1"), true);
+  assert.equal(Object.hasOwn(sel.styles, "style:1"), true);
+
+  // Object.prototype must remain unpolluted regardless of input.
+  assert.equal(
+    (Object.prototype as Record<string, unknown>).polluted,
+    undefined,
+  );
+});
+
+test("validateClipboardEnvelope strips __proto__ keys recursively from document subtree", () => {
+  const envelope = {
+    kind: CLIPBOARD_ENVELOPE_KIND,
+    pluginVersion: "0.1.0",
+    copiedAt: "2026-05-02T00:00:00.000Z",
+    selections: [
+      {
+        document: {
+          id: "1:2",
+          type: "FRAME",
+          name: "Card",
+          children: [
+            { __proto__: { polluted: true }, type: "TEXT", name: "Hi" },
+          ],
+        },
+        components: {},
+        componentSets: {},
+        styles: {},
+      },
+    ],
+  };
+
+  const result = validateClipboardEnvelope(envelope);
+  assert.equal(result.valid, true);
+  if (!result.valid) return;
+
+  const child = (
+    result.envelope.selections[0]!.document.children as unknown[]
+  )[0] as Record<string, unknown>;
+  assert.equal(Object.hasOwn(child, "__proto__"), false);
+  assert.equal(child.type, "TEXT");
+  assert.equal(
+    (Object.prototype as Record<string, unknown>).polluted,
+    undefined,
+  );
+});
+
+// ---------------------------------------------------------------------------
 // summarizeEnvelopeValidationIssues
 // ---------------------------------------------------------------------------
 

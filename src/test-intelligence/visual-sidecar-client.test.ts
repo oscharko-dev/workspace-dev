@@ -737,8 +737,9 @@ test("response schema: structure is locked; required fields enforce descent into
   // Schema name is stable.
   assert.equal(
     VISUAL_SIDECAR_RESPONSE_SCHEMA_NAME,
-    "workspace-dev.test-intelligence.visual-sidecar.v1",
+    "workspace-dev-visual-sidecar-v1",
   );
+  assert.match(VISUAL_SIDECAR_RESPONSE_SCHEMA_NAME, /^[a-zA-Z0-9_-]{1,64}$/);
 });
 
 test("allowlists: SVG is intentionally excluded from the MIME allowlist", () => {

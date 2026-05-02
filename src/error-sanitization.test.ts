@@ -465,3 +465,62 @@ test("sanitizeErrorMessage uses the cause chain when cause is present", () => {
   assert.equal(message.includes("outer failure"), true);
   assert.equal(message.includes("[cause]:"), true);
 });
+
+// Issue #1680 (audit-2026-05 Wave 1): scrub filesystem paths and usernames
+// from error stacks before they leave the process.
+
+test("redactErrorChain scrubs POSIX home directory prefixes from stack frames", () => {
+  const err = new Error("boom");
+  err.stack = [
+    "Error: boom",
+    "    at fetchPng (/Users/alice/Projects/workspace-dev/src/job-engine/figma.ts:262:34)",
+    "    at run (/home/bob/repo/src/index.ts:1:1)",
+    "    at root (/root/svc/dist/main.js:99:1)",
+  ].join("\n");
+
+  const out = redactErrorChain(err);
+  assert.equal(out.includes("/Users/alice"), false);
+  assert.equal(out.includes("/home/bob"), false);
+  assert.equal(out.includes("/root/svc"), false);
+  assert.match(out, /\/\[redacted-home]/);
+});
+
+test("redactErrorChain scrubs Windows home directory prefixes from stack frames", () => {
+  const err = new Error("boom");
+  err.stack = [
+    "Error: boom",
+    "    at run (C:\\Users\\carol\\repo\\src\\index.ts:1:1)",
+    "    at legacy (D:\\Documents and Settings\\dave\\app\\main.js:42:7)",
+  ].join("\n");
+
+  const out = redactErrorChain(err);
+  assert.equal(out.includes("C:\\Users\\carol"), false);
+  assert.equal(out.includes("Documents and Settings\\dave"), false);
+  assert.match(out, /\[redacted-home]/);
+});
+
+test("redactErrorChain scrubs absolute node_modules paths", () => {
+  const err = new Error("boom");
+  err.stack = [
+    "Error: boom",
+    "    at f (/some/install/path/node_modules/inner-pkg/dist/index.js:5:5)",
+    "    at g (C:\\app\\node_modules\\foo\\bar.js:1:1)",
+  ].join("\n");
+
+  const out = redactErrorChain(err);
+  assert.equal(out.includes("inner-pkg"), false);
+  assert.match(out, /node_modules\/\[redacted]/);
+});
+
+test("redactErrorChain preserves the readable portion of the stack frame", () => {
+  const err = new Error("boom");
+  err.stack = [
+    "Error: boom",
+    "    at fetchPng (/Users/alice/repo/src/job-engine/figma.ts:262:34)",
+  ].join("\n");
+
+  const out = redactErrorChain(err);
+  // Function name and message are preserved.
+  assert.match(out, /fetchPng/);
+  assert.match(out, /Error: boom/);
+});

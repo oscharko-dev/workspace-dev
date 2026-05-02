@@ -129,7 +129,14 @@ const AUDIT_KEYS = [
 ] as const;
 
 /** Stable schema name shared with structured-output gateways. */
-export const GENERATED_TEST_CASE_LIST_SCHEMA_NAME: string = `workspace-dev.test-intelligence.generated-test-case-list.v${GENERATED_TEST_CASE_SCHEMA_VERSION}`;
+// The runtime version stamp uses dotted semver (e.g. "1.0.0") which Azure's
+// `response_format.json_schema.name` grammar rejects. We embed only the major
+// version in the schema name so Azure accepts the literal while keeping the
+// name stable across patch/minor bumps.
+const SCHEMA_NAME_VERSION_MAJOR = GENERATED_TEST_CASE_SCHEMA_VERSION.split(
+  ".",
+)[0] as string;
+export const GENERATED_TEST_CASE_LIST_SCHEMA_NAME: string = `workspace-dev-generated-test-case-list-v${SCHEMA_NAME_VERSION_MAJOR}`;
 
 /**
  * Build the JSON Schema for the structured test-case generator response.

@@ -31,6 +31,41 @@ All changes to the public contract surface of `workspace-dev` are documented her
 
 ---
 
+## [4.24.0] - 2026-05-02
+
+### Changed (Issue #1676, #1704 Wave 1)
+
+The internal LLM-gateway response schema names emitted on outbound
+structured-output calls have been renormalised to comply with Azure OpenAI's
+`response_format.json_schema.name` grammar (`^[a-zA-Z0-9_-]{1,64}$`).
+Previously the names embedded dots (`.`), which Azure rejects with HTTP 422
+`Invalid input — Json schema name was ... but must be a-z, A-Z, 0-9, or
+contain underscores and dashes`, breaking every live #1359 priority-feature
+end-to-end run against the configured Azure deployment.
+
+**Renames (internal — no public-export surface change):**
+
+- `VISUAL_SIDECAR_RESPONSE_SCHEMA_NAME`
+    - before: `workspace-dev.test-intelligence.visual-sidecar.v1`
+    - after: `workspace-dev-visual-sidecar-v1`
+- `GENERATED_TEST_CASE_LIST_SCHEMA_NAME` (template):
+    - before: `workspace-dev.test-intelligence.generated-test-case-list.v${V}`
+    - after: `workspace-dev-generated-test-case-list-v${V}`
+- `llm-capability-probe.ts` probe `responseSchemaName`:
+    - before: `workspace-dev.test-intelligence.capability-probe.v1`
+    - after: `workspace-dev-capability-probe-v1`
+
+The constant identifiers and JSON Schema `$id` fields are unchanged from a
+TypeScript-export perspective; only the runtime string values change. A
+structural lint (Issue #1678) is added in the same wave to prevent
+re-introduction.
+
+`TEST_INTELLIGENCE_CONTRACT_VERSION` bumps `1.5.0` → `1.6.0` to surface the
+runtime-string change to downstream replay-cache implementations that key on
+the schema name.
+
+---
+
 ## [4.23.0] - 2026-04-29
 
 ### Added (Issue #1555)

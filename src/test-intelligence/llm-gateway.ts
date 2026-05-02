@@ -20,6 +20,8 @@
  *     when structured outputs are unsupported) reaches the caller.
  */
 
+import * as net from "node:net";
+
 import { sanitizeErrorMessage } from "../error-sanitization.js";
 import { redactHighRiskSecrets } from "../secret-redaction.js";
 import {
@@ -463,6 +465,7 @@ const dispatchOnce = async ({
       method: "POST",
       headers: headers.headers,
       body: JSON.stringify(body),
+      redirect: "error",
       signal: controller.signal,
     });
   } catch (err) {
@@ -1183,6 +1186,7 @@ const validateConfig = (config: LlmGatewayClientConfig): void => {
     );
   }
   assertNonEmpty(config.baseUrl, "baseUrl");
+  validateGatewayBaseUrl(config.baseUrl);
   assertNonEmpty(config.deployment, "deployment");
   assertNonEmpty(config.modelRevision, "modelRevision");
   assertNonEmpty(config.gatewayRelease, "gatewayRelease");
@@ -1243,6 +1247,73 @@ const assertNonEmpty = (value: unknown, field: string): void => {
   if (typeof value !== "string" || value.length === 0) {
     throw new RangeError(
       `LlmGatewayClient: ${field} must be a non-empty string`,
+    );
+  }
+};
+
+/**
+ * Issue #1682 (audit-2026-05 Wave 1): SSRF / token-leak hardening for the
+ * LLM-gateway `baseUrl`. Mirrors the guard already enforced on the Jira
+ * gateway. Fails closed at construction time so a misconfigured deployment
+ * cannot reach internal services with the bearer token attached.
+ */
+const isPrivateIpHost = (host: string): boolean => {
+  const unbracketed = host.replace(/^\[/u, "").replace(/\]$/u, "");
+  if (net.isIPv6(unbracketed)) {
+    // Conservative: treat any IPv6 literal as private/blocked. Operators that
+    // need an IPv6 endpoint should use the corresponding DNS name.
+    return true;
+  }
+  if (!net.isIPv4(unbracketed)) {
+    return false;
+  }
+  const parts = unbracketed.split(".").map((part) => Number.parseInt(part, 10));
+  const first = parts[0];
+  const second = parts[1];
+  if (first === undefined || second === undefined) {
+    return true;
+  }
+  if (first === 0 || first === 10 || first === 127) return true;
+  if (first === 169 && second === 254) return true;
+  if (first === 172 && second >= 16 && second <= 31) return true;
+  if (first === 192 && second === 168) return true;
+  if (first === 100 && second >= 64 && second <= 127) return true;
+  return false;
+};
+
+const validateGatewayBaseUrl = (baseUrl: string): void => {
+  let parsed: URL;
+  try {
+    parsed = new URL(baseUrl);
+  } catch {
+    throw new RangeError("LlmGatewayClient: baseUrl is not a valid URL");
+  }
+  if (parsed.protocol !== "https:") {
+    throw new RangeError(
+      "LlmGatewayClient: baseUrl must use https:// (plain HTTP would expose the bearer token in transit)",
+    );
+  }
+  if (parsed.username.length > 0 || parsed.password.length > 0) {
+    throw new RangeError(
+      "LlmGatewayClient: baseUrl must not embed credentials in userinfo",
+    );
+  }
+  const host = parsed.hostname.toLowerCase();
+  if (host.length === 0) {
+    throw new RangeError("LlmGatewayClient: baseUrl must include a hostname");
+  }
+  if (
+    host === "localhost" ||
+    host.endsWith(".localhost") ||
+    host.endsWith(".local")
+  ) {
+    throw new RangeError(
+      `LlmGatewayClient: baseUrl host "${host}" is blocked (loopback/link-local)`,
+    );
+  }
+  if (isPrivateIpHost(host)) {
+    throw new RangeError(
+      `LlmGatewayClient: baseUrl host "${host}" is in a blocked private IP range`,
     );
   }
 };

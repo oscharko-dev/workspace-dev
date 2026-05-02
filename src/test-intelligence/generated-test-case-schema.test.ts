@@ -114,8 +114,12 @@ test("schema: drift guard — the hash is stable for the current contract", () =
   // If this hash changes, the JSON schema (and hence every cache key) has
   // shifted. Bump GENERATED_TEST_CASE_SCHEMA_VERSION and update the
   // expected digest in lockstep.
+  // Hash bumped by Issue #1676: schema $id renormalised
+  // `workspace-dev.test-intelligence.generated-test-case-list.v1.0.0` ->
+  // `workspace-dev-generated-test-case-list-v1` to comply with Azure
+  // OpenAI's `response_format.json_schema.name` grammar.
   const expected =
-    "d9e3b5719d6a114213f9cce2dede977298311cb68e3c667cda4a2f7469c15b66";
+    "fa85539f9b0f0b8075f55555adfbebd6d1704a06f7f61c912f32b2e8dc9883e4";
   const actual = computeGeneratedTestCaseListSchemaHash();
   if (actual !== expected) {
     assert.fail(
@@ -205,9 +209,7 @@ test("validator: rejects unexpected nested properties in a step", () => {
   const result = validateGeneratedTestCaseList(list);
   assert.equal(result.valid, false);
   assert.ok(
-    result.errors.some(
-      (error) => error.path === "$.testCases[0].steps[0]",
-    ),
+    result.errors.some((error) => error.path === "$.testCases[0].steps[0]"),
     "expected nested step property error",
   );
 });

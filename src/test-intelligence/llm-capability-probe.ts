@@ -105,8 +105,7 @@ const buildProbeRequest = ({
       return base;
     case "structuredOutputs":
       base.responseSchema = PROBE_RESPONSE_SCHEMA;
-      base.responseSchemaName =
-        "workspace-dev.test-intelligence.capability-probe.v1";
+      base.responseSchemaName = "workspace-dev-capability-probe-v1";
       return base;
     case "seedSupport":
       base.seed = 7;

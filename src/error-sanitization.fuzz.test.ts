@@ -80,17 +80,15 @@ const panLikeProfileArb = fc.constantFrom(
 );
 
 const luhnPanArb = panLikeProfileArb.chain(({ prefix, lengths }) =>
-  fc
-    .constantFrom(...lengths)
-    .chain((totalLength) =>
-      fc
-        .array(fc.integer({ min: 0, max: 9 }), {
-          minLength: totalLength - prefix.length - 1,
-          maxLength: totalLength - prefix.length - 1,
-        })
-        .map((digits) => toLuhnCandidate(`${prefix}${digits.join("")}`)),
-    ),
-  );
+  fc.constantFrom(...lengths).chain((totalLength) =>
+    fc
+      .array(fc.integer({ min: 0, max: 9 }), {
+        minLength: totalLength - prefix.length - 1,
+        maxLength: totalLength - prefix.length - 1,
+      })
+      .map((digits) => toLuhnCandidate(`${prefix}${digits.join("")}`)),
+  ),
+);
 
 const toSanitizedMessage = ({
   fragment,
@@ -117,16 +115,20 @@ const toSanitizedMessage = ({
 
 test("fuzz: sanitizeErrorMessage redacts secret-bearing fragments in root errors and causes", () => {
   fc.assert(
-    fc.property(secretFragmentArb, fc.boolean(), ({ fragment, secret }, useCause) => {
-      const sanitized = toSanitizedMessage({ fragment, useCause });
+    fc.property(
+      secretFragmentArb,
+      fc.boolean(),
+      ({ fragment, secret }, useCause) => {
+        const sanitized = toSanitizedMessage({ fragment, useCause });
 
-      assert.equal(
-        sanitized.includes(secret),
-        false,
-        `Expected secret to be redacted for fragment=${fragment}`,
-      );
-      assert.match(sanitized, /\[redacted-secret]/);
-    }),
+        assert.equal(
+          sanitized.includes(secret),
+          false,
+          `Expected secret to be redacted for fragment=${fragment}`,
+        );
+        assert.match(sanitized, /\[redacted-secret]/);
+      },
+    ),
     { numRuns: 100 },
   );
 });
@@ -147,5 +149,108 @@ test("fuzz: sanitizeErrorMessage redacts Luhn-valid PAN-like sequences in root e
       assert.match(sanitized, /\[redacted-pan]/);
     }),
     { numRuns: 100 },
+  );
+});
+
+// Issue #1680 (audit-2026-05 Wave 1): property-based coverage for the new
+// filesystem-path scrubbers. The arbs below intentionally generate adversarial
+// shapes (unicode, spaces, traversal segments, symbols) inside the username
+// component to confirm the redactor stops at the next path separator and
+// never re-emits the literal username from the input.
+
+const safeUsernameCharArb = fc.stringMatching(/^[A-Za-z0-9._\- ]$/);
+const usernameArb = fc
+  .array(safeUsernameCharArb, { minLength: 1, maxLength: 24 })
+  .map((chars) => chars.join("").trim())
+  .filter(
+    (value) =>
+      value.length > 0 && !value.includes("/") && !value.includes("\\"),
+  );
+
+const posixHomeStackArb = fc
+  .tuple(fc.constantFrom("Users", "home", "root"), usernameArb)
+  .map(
+    ([root, name]) =>
+      `Error: boom\n    at fn (/${root}/${name}/repo/src/index.ts:1:1)`,
+  );
+
+const winHomeStackArb = fc
+  .tuple(
+    fc.constantFrom("Users", "Documents and Settings"),
+    usernameArb,
+    fc.constantFrom("C", "D", "E"),
+  )
+  .map(
+    ([root, name, drive]) =>
+      `Error: boom\n    at fn (${drive}:\\${root}\\${name}\\repo\\src\\index.ts:1:1)`,
+  );
+
+const nodeModulesStackArb = fc
+  .tuple(usernameArb, fc.constantFrom("/", "\\"))
+  .map(
+    ([pkg, sep]) =>
+      `Error: boom\n    at fn (/install/path${sep}node_modules${sep}${pkg}${sep}dist/index.js:1:1)`,
+  );
+
+test("fuzz: error chain redactor strips POSIX home directory prefixes regardless of username shape", () => {
+  fc.assert(
+    fc.property(posixHomeStackArb, usernameArb, (stack, username) => {
+      // Inject the username into the stack via the arb; assert it does not
+      // appear in the redacted output.
+      const err = new Error("boom");
+      err.stack = stack;
+      const message = sanitizeErrorMessage({
+        error: err,
+        fallback: "fallback",
+      });
+      assert.equal(
+        message.includes(`/Users/${username}`),
+        false,
+        `username "${username}" leaked through POSIX scrub`,
+      );
+      assert.equal(message.includes(`/home/${username}`), false);
+      assert.equal(message.includes(`/root/${username}`), false);
+    }),
+    { numRuns: 50 },
+  );
+});
+
+test("fuzz: error chain redactor strips Windows home directory prefixes regardless of username shape", () => {
+  fc.assert(
+    fc.property(winHomeStackArb, usernameArb, (stack, username) => {
+      const err = new Error("boom");
+      err.stack = stack;
+      const message = sanitizeErrorMessage({
+        error: err,
+        fallback: "fallback",
+      });
+      assert.equal(
+        message.includes(`Users\\${username}`),
+        false,
+        `username "${username}" leaked through Windows scrub`,
+      );
+      assert.equal(
+        message.includes(`Documents and Settings\\${username}`),
+        false,
+      );
+    }),
+    { numRuns: 50 },
+  );
+});
+
+test("fuzz: error chain redactor strips absolute node_modules paths", () => {
+  fc.assert(
+    fc.property(nodeModulesStackArb, (stack) => {
+      const err = new Error("boom");
+      err.stack = stack;
+      const message = sanitizeErrorMessage({
+        error: err,
+        fallback: "fallback",
+      });
+      // Either the path is fully scrubbed or rewritten to /node_modules/[redacted].
+      // The original install path component must not survive.
+      assert.equal(message.includes("/install/path"), false);
+    }),
+    { numRuns: 50 },
   );
 });

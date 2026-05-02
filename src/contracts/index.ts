@@ -145,7 +145,7 @@ export interface TestIntelligenceTransferPrincipal {
 }
 
 /** Contract version for the opt-in test-intelligence surface. */
-export const TEST_INTELLIGENCE_CONTRACT_VERSION = "1.5.0" as const;
+export const TEST_INTELLIGENCE_CONTRACT_VERSION = "1.6.0" as const;
 
 /** Schema version for generated test case payloads. */
 export const GENERATED_TEST_CASE_SCHEMA_VERSION = "1.0.0" as const;
@@ -7558,4 +7558,4 @@ export type SourceMixPlannerResult =
  * Must be bumped according to CONTRACT_CHANGELOG.md rules.
  * Package version alignment is documented in VERSIONING.md.
  */
-export const CONTRACT_VERSION = "4.23.0" as const;
+export const CONTRACT_VERSION = "4.24.0" as const;
