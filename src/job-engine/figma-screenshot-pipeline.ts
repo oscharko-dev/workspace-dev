@@ -372,24 +372,47 @@ export const fetchFigmaScreenshots = async ({
 
         onSafeLog(`Fetching screenshot for node ${target.nodeId}...`);
 
-        const sourceWidth = await fetchNodeSourceWidth({
-          fileKey: target.fileKey,
-          nodeId: target.nodeId,
-          accessToken: config.accessToken,
-          fetchImpl,
-          maxRetries,
-          onLog: onSafeLog,
-        });
+        // #1671 — the geometry probe and the image-render request are
+        // independent given `fileKey + nodeId`; only the PNG download
+        // depends on the resolved imageUrl. Run the geometry probe and a
+        // tentative scale=1 render in parallel, then reuse that imageUrl
+        // when `clampScale(desiredWidth / sourceWidth) === 1` (the common
+        // case where sourceWidth ≈ desiredWidth — saves one round-trip
+        // per node). When scale ≠ 1 we re-issue the image-render at the
+        // corrected scale; total wall-time is still ≤ the previous
+        // sequential 3-RTT chain.
+        const [sourceWidth, imageUrlAt1x] = await Promise.all([
+          fetchNodeSourceWidth({
+            fileKey: target.fileKey,
+            nodeId: target.nodeId,
+            accessToken: config.accessToken,
+            fetchImpl,
+            maxRetries,
+            onLog: onSafeLog,
+          }),
+          fetchRenderableImageUrl({
+            fileKey: target.fileKey,
+            nodeId: target.nodeId,
+            scale: 1,
+            accessToken: config.accessToken,
+            fetchImpl,
+            maxRetries,
+            onLog: onSafeLog,
+          }),
+        ]);
         const scale = clampScale(config.desiredWidth / sourceWidth);
-        const imageUrl = await fetchRenderableImageUrl({
-          fileKey: target.fileKey,
-          nodeId: target.nodeId,
-          scale,
-          accessToken: config.accessToken,
-          fetchImpl,
-          maxRetries,
-          onLog: onSafeLog,
-        });
+        const imageUrl =
+          scale === 1
+            ? imageUrlAt1x
+            : await fetchRenderableImageUrl({
+                fileKey: target.fileKey,
+                nodeId: target.nodeId,
+                scale,
+                accessToken: config.accessToken,
+                fetchImpl,
+                maxRetries,
+                onLog: onSafeLog,
+              });
         const buffer = await fetchPngBuffer({
           imageUrl,
           fetchImpl,

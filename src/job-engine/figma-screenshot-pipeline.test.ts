@@ -232,7 +232,11 @@ describe("figma-screenshot-pipeline", () => {
         },
       });
 
-      strictEqual(mockFetch.mock.callCount(), 2);
+      // Per #1671: geometry probe and 1× image-render run in parallel, so
+      // both retry-chains exhaust independently before Promise.all settles
+      // — 2 attempts × 2 endpoints = 4. The failure is still surfaced as a
+      // single per-screenshot rejection.
+      strictEqual(mockFetch.mock.callCount(), 4);
       strictEqual(result.fetchedCount, 0);
       strictEqual(result.failedCount, 1);
     });
@@ -347,7 +351,11 @@ describe("figma-screenshot-pipeline", () => {
         },
       });
 
-      strictEqual(attemptCount, 1);
+      // Per #1671: geometry probe and 1× image-render run in parallel.
+      // Each endpoint gets exactly one attempt because 4xx is not retried;
+      // 1 × 2 endpoints = 2. The screenshot is still recorded as a single
+      // failure.
+      strictEqual(attemptCount, 2);
       strictEqual(result.failedCount, 1);
     });
 
@@ -414,6 +422,139 @@ describe("figma-screenshot-pipeline", () => {
         ),
       );
       ok(logs.every((log) => !log.includes("secret-token")));
+    });
+
+    it("runs the geometry probe and the image-render request in parallel per node (#1671)", async () => {
+      // Regression guard for #1671: the per-node chain used to be
+      // sequential (geometry → imageUrl → png). The geometry probe and a
+      // 1× image-render are independent given fileKey + nodeId, so they
+      // must overlap in time. We assert this by tracking the number of
+      // simultaneously-in-flight first-stage requests across both
+      // endpoints — it must reach 2 for at least one moment per node.
+      let activeStage1 = 0;
+      let maxConcurrentStage1 = 0;
+      const mockFetch = mock.fn(async (url: string) => {
+        const nodeId = new URL(url).searchParams.get("ids") ?? "";
+        if (url.includes("/v1/files/") || url.includes("/v1/images/")) {
+          activeStage1 += 1;
+          maxConcurrentStage1 = Math.max(maxConcurrentStage1, activeStage1);
+          await new Promise((resolve) => setTimeout(resolve, 15));
+          activeStage1 -= 1;
+          if (url.includes("/v1/files/")) {
+            return jsonResponse(nodePayload({ nodeId }));
+          }
+          return jsonResponse(imageLookupPayload(nodeId));
+        }
+        return new Response(PNG_BUFFER, {
+          headers: { "content-type": "image/png" },
+        });
+      });
+
+      const result = await fetchFigmaScreenshots({
+        screenshots: [screenshot("1:2")],
+        config: {
+          fileKey: "test-key",
+          accessToken: "test-token",
+          desiredWidth: 1280,
+          fetchImpl: mockFetch,
+          maxRetries: 1,
+        },
+      });
+
+      strictEqual(result.fetchedCount, 1);
+      ok(
+        maxConcurrentStage1 >= 2,
+        `expected geometry+image to overlap, observed max concurrency ${String(maxConcurrentStage1)}`,
+      );
+    });
+
+    it("reuses the parallel 1× image-render when the resolved scale is exactly 1 (#1671)", async () => {
+      // When sourceWidth equals desiredWidth, scale == 1 and the
+      // tentative parallel image-render is reusable. Result: 2 round-trips
+      // per node (geometry + image) plus the PNG download = 3 mockFetch
+      // calls — never 4 (which would mean we re-rendered unnecessarily).
+      let imageLookupCount = 0;
+      const mockFetch = mock.fn(async (url: string) => {
+        const nodeId = new URL(url).searchParams.get("ids") ?? "";
+        if (url.includes("/v1/files/")) {
+          return jsonResponse(nodePayload({ nodeId, width: 1280 }));
+        }
+        if (url.includes("/v1/images/")) {
+          imageLookupCount += 1;
+          return jsonResponse(imageLookupPayload(nodeId));
+        }
+        return new Response(PNG_BUFFER, {
+          headers: { "content-type": "image/png" },
+        });
+      });
+
+      const result = await fetchFigmaScreenshots({
+        screenshots: [screenshot("1:2")],
+        config: {
+          fileKey: "test-key",
+          accessToken: "test-token",
+          desiredWidth: 1280,
+          fetchImpl: mockFetch,
+          maxRetries: 1,
+        },
+      });
+
+      strictEqual(result.fetchedCount, 1);
+      strictEqual(
+        imageLookupCount,
+        1,
+        "scale=1 path must not re-issue an image-render",
+      );
+      strictEqual(mockFetch.mock.callCount(), 3);
+    });
+
+    it("re-issues the image-render when the resolved scale differs from 1 (#1671)", async () => {
+      // Behaviour-preserving guard: when sourceWidth ≠ desiredWidth, the
+      // pipeline must end with a PNG fetched via the *corrected*-scale
+      // imageUrl, not the tentative 1× one. We capture the URL handed to
+      // the PNG download and assert its `scale` query parameter.
+      let pngFetchedFromUrl = "";
+      const mockFetch = mock.fn(async (url: string) => {
+        const nodeId = new URL(url).searchParams.get("ids") ?? "";
+        if (url.includes("/v1/files/")) {
+          return jsonResponse(nodePayload({ nodeId, width: 2560 }));
+        }
+        if (url.includes("/v1/images/")) {
+          // Echo the requested scale into the returned signed URL so we
+          // can verify which lookup the PNG download came from.
+          const scale = new URL(url).searchParams.get("scale") ?? "1";
+          return jsonResponse({
+            images: {
+              [nodeId]: `https://figma-alpha-api.s3.us-west-2.amazonaws.com/${encodeURIComponent(nodeId)}-scale-${scale}.png`,
+            },
+          });
+        }
+        pngFetchedFromUrl = url;
+        return new Response(PNG_BUFFER, {
+          headers: { "content-type": "image/png" },
+        });
+      });
+
+      const result = await fetchFigmaScreenshots({
+        screenshots: [screenshot("1:2")],
+        config: {
+          fileKey: "test-key",
+          accessToken: "test-token",
+          desiredWidth: 1280,
+          fetchImpl: mockFetch,
+          maxRetries: 1,
+        },
+      });
+
+      strictEqual(result.fetchedCount, 1);
+      ok(
+        pngFetchedFromUrl.includes("scale-0.5"),
+        `expected PNG download URL to come from the scale=0.5 image-render, got: ${pngFetchedFromUrl}`,
+      );
+      ok(
+        !pngFetchedFromUrl.includes("scale-1.png"),
+        "must not download the tentative 1× render when scale ≠ 1",
+      );
     });
 
     it("fetches screenshot references concurrently", async () => {
