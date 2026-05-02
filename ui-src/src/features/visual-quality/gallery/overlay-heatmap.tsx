@@ -38,7 +38,7 @@ export function OverlayHeatmap({
     return (
       <div
         data-testid="overlay-heatmap-missing"
-        className="flex h-40 items-center justify-center rounded border border-dashed border-white/10 bg-[#0a0a0a] text-[11px] text-white/45"
+        className="flex h-40 items-center justify-center rounded border border-dashed border-white/10 bg-[#0a0a0a] text-[11px] text-white/75"
       >
         No diff image attached for heatmap view.
       </div>
@@ -92,7 +92,7 @@ export function OverlayHeatmap({
           {hotspots.map((hotspot, index) => (
             <li
               key={`legend-${hotspot.region}-${String(index)}`}
-              className="flex items-center gap-1 rounded border border-white/10 bg-[#171717] px-1.5 py-0.5 text-white/55"
+              className="flex items-center gap-1 rounded border border-white/10 bg-[#171717] px-1.5 py-0.5 text-white/85"
             >
               <span
                 className="vq-hotspot-legend-dot size-2 rounded-sm"

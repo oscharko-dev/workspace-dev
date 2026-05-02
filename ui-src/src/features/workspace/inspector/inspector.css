@@ -1031,3 +1031,21 @@
 .inspector-pane-code {
   min-width: 300px;
 }
+
+/* --------------------------------------------------------------------------
+   Issue #1701 (audit-2026-05 Wave 4, WCAG 2.3.3): respect the user's
+   prefers-reduced-motion preference. CSS transitions and animations are
+   collapsed to a near-zero duration when the OS-level setting is enabled,
+   eliminating discomfort for users with vestibular disorders while
+   preserving the final visual state of any state-driven UI.
+   -------------------------------------------------------------------------- */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}

@@ -66,7 +66,7 @@ export function ScoreDashboard({ report }: ScoreDashboardProps): JSX.Element {
           data-testid="dashboard-fixtures"
           className="rounded-md border border-white/10 bg-[#171717] p-3"
         >
-          <h3 className="m-0 mb-2 text-[11px] font-semibold uppercase tracking-wider text-white/55">
+          <h3 className="m-0 mb-2 text-[11px] font-semibold uppercase tracking-wider text-white/85">
             Per-fixture score
           </h3>
           <ul className="m-0 list-none space-y-1.5 p-0">
@@ -124,7 +124,7 @@ function DashboardStat({
 }: DashboardStatProps): JSX.Element {
   return (
     <div className="rounded-md border border-white/10 bg-[#171717] px-3 py-2">
-      <div className="text-[10px] uppercase tracking-wider text-white/45">
+      <div className="text-[10px] uppercase tracking-wider text-white/75">
         {label}
       </div>
       <div className="mt-0.5 flex items-baseline gap-0.5">
@@ -134,7 +134,7 @@ function DashboardStat({
           {value}
         </span>
         {suffix.length > 0 ? (
-          <span className="text-sm text-white/45">{suffix}</span>
+          <span className="text-sm text-white/75">{suffix}</span>
         ) : null}
       </div>
     </div>

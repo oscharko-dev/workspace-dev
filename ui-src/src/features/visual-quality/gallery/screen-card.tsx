@@ -62,7 +62,7 @@ export function ScreenCard({
           <span className="truncate text-[11px] font-medium text-white/85">
             {screen.fixtureId}
           </span>
-          <span className="truncate text-[10px] text-white/45">
+          <span className="truncate text-[10px] text-white/75">
             {screen.screenName}
           </span>
         </div>
@@ -73,7 +73,7 @@ export function ScreenCard({
         </div>
       </div>
       <div className="flex items-center justify-between text-[9px]">
-        <span className="rounded border border-white/10 bg-[#0a0a0a] px-1.5 py-0.5 text-white/45">
+        <span className="rounded border border-white/10 bg-[#0a0a0a] px-1.5 py-0.5 text-white/75">
           {screen.viewportLabel}
         </span>
         {screen.worstSeverity ? (
@@ -84,7 +84,7 @@ export function ScreenCard({
           </span>
         ) : null}
         {deltaLabel ? (
-          <span className="font-mono text-white/45">{deltaLabel}</span>
+          <span className="font-mono text-white/75">{deltaLabel}</span>
         ) : null}
       </div>
     </button>

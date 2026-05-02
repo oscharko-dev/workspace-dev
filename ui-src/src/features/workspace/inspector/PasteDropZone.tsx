@@ -141,7 +141,9 @@ export function PasteDropZone({
     return normalizeManualNodeId(trimmed);
   }, [frameValue, showFileLevelHint, urlValidation]);
   const submitDisabled =
-    interactionDisabled || showInvalid || (showFileLevelHint && resolvedFrameSelection === null);
+    interactionDisabled ||
+    showInvalid ||
+    (showFileLevelHint && resolvedFrameSelection === null);
 
   const describedByIds = [promptId];
   if (errorMessage !== undefined) {
@@ -317,7 +319,13 @@ export function PasteDropZone({
         showFileLevelHint ? resolvedFrameSelection : urlValidation.value.nodeId,
       );
     },
-    [interactionDisabled, onFigmaUrl, resolvedFrameSelection, showFileLevelHint, urlValidation],
+    [
+      interactionDisabled,
+      onFigmaUrl,
+      resolvedFrameSelection,
+      showFileLevelHint,
+      urlValidation,
+    ],
   );
 
   return (
@@ -442,12 +450,21 @@ export function PasteDropZone({
               Which frame? Paste a frame URL from this file or enter its node ID
               before starting the import.
             </p>
+            {/* Issue #1699 (audit-2026-05 Wave 4, WCAG 3.3.2 / 2.5.3):
+                programmatic <label> with explicit `htmlFor` + screen-reader
+                visible-only text. The placeholder alone is not a label —
+                it disappears on focus and is not announced as a label by
+                screen readers. */}
+            <label htmlFor={frameInputId} className="sr-only">
+              Frame URL or node ID
+            </label>
             <input
               id={frameInputId}
               type="text"
               autoComplete="off"
               spellCheck={false}
               placeholder="Frame URL or node-id (for example 1:2)"
+              aria-describedby={urlHintId}
               value={frameValue}
               onChange={handleFrameChange}
               disabled={interactionDisabled}

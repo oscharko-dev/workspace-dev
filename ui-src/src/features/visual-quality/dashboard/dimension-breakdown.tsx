@@ -82,10 +82,10 @@ export function DimensionBreakdown({
         data-testid="dashboard-dimensions"
         className="rounded-md border border-white/10 bg-[#171717] p-3"
       >
-        <h3 className="m-0 mb-2 text-[11px] font-semibold uppercase tracking-wider text-white/55">
+        <h3 className="m-0 mb-2 text-[11px] font-semibold uppercase tracking-wider text-white/85">
           Per-dimension breakdown
         </h3>
-        <p className="m-0 text-[11px] text-white/45">
+        <p className="m-0 text-[11px] text-white/75">
           No dimension data available (per-screen reports were not attached).
         </p>
       </section>
@@ -97,7 +97,7 @@ export function DimensionBreakdown({
       data-testid="dashboard-dimensions"
       className="rounded-md border border-white/10 bg-[#171717] p-3"
     >
-      <h3 className="m-0 mb-2 text-[11px] font-semibold uppercase tracking-wider text-white/55">
+      <h3 className="m-0 mb-2 text-[11px] font-semibold uppercase tracking-wider text-white/85">
         Per-dimension breakdown
       </h3>
       <ul className="m-0 list-none space-y-2 p-0">
