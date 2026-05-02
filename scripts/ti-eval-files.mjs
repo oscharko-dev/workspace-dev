@@ -84,6 +84,7 @@ export const TI_EVAL_FILES = Object.freeze([
   "src/test-intelligence/resource-budget.test.ts",
   "src/test-intelligence/secret-leakage.test.ts",
   "src/test-intelligence/self-verify-rubric.fuzz.test.ts",
+  "src/test-intelligence/spreadsheet-formula-guard.test.ts",
   "src/test-intelligence/self-verify-rubric.test.ts",
   "src/test-intelligence/test-case-dedupe.property.test.ts",
   "src/test-intelligence/test-case-dedupe.test.ts",
@@ -159,11 +160,10 @@ const runShardCommand = ({
     stdout.write(
       `[ti-eval-files] shard ${shard}/${total}: running ${slice.length} file(s)\n`,
     );
-    const child = spawnFn(
-      "pnpm",
-      ["exec", "tsx", "--test", ...slice],
-      { stdio: "inherit", env },
-    );
+    const child = spawnFn("pnpm", ["exec", "tsx", "--test", ...slice], {
+      stdio: "inherit",
+      env,
+    });
     child.on("error", reject);
     child.on("exit", (code, signal) => {
       if (signal !== null && signal !== undefined) {

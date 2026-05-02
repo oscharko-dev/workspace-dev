@@ -115,3 +115,68 @@ test("redactor is idempotent: applying twice equals applying once", () => {
   const twice = redactHighRiskSecrets(once, REDACTED);
   assert.equal(once, twice);
 });
+
+// ---------------------------------------------------------------------------
+// PR #1724 follow-up: mid-word bare-JWT redaction. The bare-JWT pattern
+// uses `\b` boundaries on both ends. A real-world failure mode is a JWT
+// concatenated with a non-credential identifier through a single `-`,
+// e.g. an Azure error body of the form
+// "request-id-eyJhbGc...payload.signature went wrong". The non-word `-`
+// character introduces a word boundary so the JWT must still be redacted
+// even though it is not surrounded by whitespace.
+// ---------------------------------------------------------------------------
+
+test("bare JWT preceded by 'prefix-' (no label, hyphen boundary) is redacted", () => {
+  const jwt =
+    "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9" +
+    ".eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4ifQ" +
+    ".SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c";
+  for (const prefixed of [
+    `prefix-${jwt}`,
+    `request-id-${jwt}`,
+    `[trace-id]-${jwt}`,
+    `customer-${jwt}-suffix`,
+    `--${jwt}--`,
+  ]) {
+    const message = `error body: ${prefixed} please rotate`;
+    const out = redactHighRiskSecrets(message, REDACTED);
+    assert.equal(
+      out.includes(jwt),
+      false,
+      `JWT leaked through mid-word redaction for shape: ${prefixed}`,
+    );
+    assert.match(out, /\[REDACTED]/);
+  }
+});
+
+test("bare JWT inside a colon-delimited shape (no label) is redacted", () => {
+  const jwt =
+    "eyJraWQiOiJhYmNkZWZnaGlqa2xtbm9w" +
+    ".eyJpc3MiOiJodHRwczovL2lkLmF6dXJlLmNvbSI" +
+    ".U2lnbmF0dXJlVmFsdWVfMDEyMzQ1Njc4OQ";
+  // Common shape from Azure / OAuth error bodies where the JWT is wedged
+  // between identifiers separated by `:` (a non-word char).
+  const message = `request-id:trace-foo:${jwt}:span-bar`;
+  const out = redactHighRiskSecrets(message, REDACTED);
+  assert.equal(out.includes(jwt), false);
+});
+
+test("bare JWT directly concatenated to alnum prefix without separator is NOT redacted (intentional)", () => {
+  // This documents the current `\b`-anchored behaviour: when a JWT is
+  // concatenated to alnum word characters with NO separating non-word
+  // character, the leading `\b` cannot fire and the credential is left
+  // alone. Customers that need full coverage should rely on the
+  // label-anchored patterns (Authorization: Bearer ...) or normalise the
+  // payload before redaction. We pin this contract so a future regex
+  // change does not silently flip it without an audit trail.
+  const jwt =
+    "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9" +
+    ".eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4ifQ" +
+    ".SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c";
+  const message = `prefixconcat${jwt}suffix`;
+  const out = redactHighRiskSecrets(message, REDACTED);
+  // Pre-existing contract: alnum-concatenated bare JWT is NOT redacted.
+  // Asserting equality here means a future maintainer who changes the
+  // pattern (e.g. to drop `\b`) breaks this test deliberately.
+  assert.equal(out, message);
+});

@@ -780,6 +780,76 @@ test("JiraGatewayClient: cumulative wall-clock cannot exceed maxWallClockMs acro
   assert.equal(result.diagnostic?.retryable, false);
 });
 
+// Issue #1666 (PR #1724 follow-up): force the `pre-attempt cumulative-
+// budget guard` branch (line ~1130 in jira-gateway-client.ts) without
+// the OR-fallback to `jira_retry_budget_exceeded`. The branch only fires
+// when the mock-clock advances PAST the budget *between* the retry-sleep
+// check and the next attempt — i.e. the realistic scenario where a
+// `sleep(waitMs)` overshoots its requested duration on a busy host.
+//
+// Setup: budget = 1000ms; first attempt burns 100ms; backoff = [50ms];
+// retry-sleep check passes (100 + 50 < 1000); the `sleep` mock advances
+// the mock clock by 1500ms (real-sleep overshoot); attempt 2 sees
+// elapsedBeforeAttempt = 1600ms > 1000ms and the pre-attempt guard
+// fires `jira_total_budget_exceeded` exactly.
+//
+// Without the maskKind-style guard test, a future regression that drops
+// the pre-attempt check would still pass the existing cumulative-budget
+// tests (which OR-accept either diagnostic). This test pins the exact
+// code path.
+test("JiraGatewayClient: pre-attempt cumulative-budget guard fires after sleep overshoot (#1666)", async () => {
+  let now = 0;
+  const clock = { now: () => now };
+  const fetchImpl = async (input: string | URL): Promise<Response> => {
+    const url = typeof input === "string" ? input : input.toString();
+    if (url.endsWith("serverInfo")) {
+      now += 5;
+      return new Response(
+        JSON.stringify({ version: "10.0.0", deploymentType: "Cloud" }),
+        { status: 200 },
+      );
+    }
+    // Each attempt burns 100 ms — well under the 1000 ms budget.
+    now += 100;
+    return new Response("upstream busy", { status: 503 });
+  };
+  const sleepImpl = async (waitMs: number): Promise<void> => {
+    // Real-sleep overshoot: mock the OS scheduler advancing the wall
+    // clock by 15× the requested wait. After attempt 1 (100ms elapsed)
+    // requests a 50ms backoff sleep, the clock jumps to 100 + 750 = 850
+    // ms ... still under budget. We loop the overshoot factor instead so
+    // a single call takes us past the 1000 ms budget.
+    void waitMs;
+    now += 1_500;
+  };
+  const client = createJiraGatewayClient(
+    { ...DEFAULT_CONFIG, maxRetries: 3 },
+    {
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+      sleep: sleepImpl,
+      clock,
+      // Tiny backoff so the retry-sleep check
+      // (`elapsed + waitMs >= totalBudget`) does NOT fire after attempt
+      // 1 (100 + 50 = 150 < 1000). The pre-attempt guard at the top of
+      // attempt 2 must be the breaking diagnostic.
+      retryBackoffMs: [50, 50, 50, 50],
+    },
+  );
+  const result = await client.fetchIssues({
+    query: { kind: "jql", jql: "project=PAY", maxResults: 1 },
+    sourceId: "test-source",
+    runDir: "/tmp/test",
+    maxWallClockMs: 1_000,
+  });
+  assert.ok(result.diagnostic);
+  assert.equal(
+    result.diagnostic?.code,
+    "jira_total_budget_exceeded",
+    `pre-attempt guard must surface jira_total_budget_exceeded exactly; got ${JSON.stringify(result.diagnostic)}`,
+  );
+  assert.equal(result.diagnostic?.retryable, false);
+});
+
 // Issue #1666: the cumulative-budget pre-attempt path is reachable when
 // the prior attempt's wallclock already breached the budget (e.g. via
 // the per-attempt timer cap firing late). This unit-tests the path
