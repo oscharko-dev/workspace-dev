@@ -20,6 +20,7 @@ import type {
   GeneratedTestCaseStep,
   QcMappingPreviewEntry,
 } from "../contracts/index.js";
+import { neutralizeFormulaLeading } from "./spreadsheet-formula-guard.js";
 
 const CSV_LINE_TERMINATOR = "\r\n";
 
@@ -49,24 +50,11 @@ export type QcCsvColumn = (typeof QC_CSV_COLUMNS)[number];
 
 const NEEDS_QUOTING_REGEX = /[,"\r\n]/;
 
-/**
- * Issue #1664 (audit-2026-05): CSV Formula Injection (CWE-1236) defence.
- * A cell value whose first non-whitespace character is `=`, `+`, `-`,
- * `@`, `\t`, or `\r` is interpreted as a formula by Excel /
- * LibreOffice / Sheets / OpenText ALM CSV importers. Prefixing with a
- * single quote forces literal-string interpretation. Mirrors the
- * neutralizer in `qc-xlsx-writer.ts` for symmetric defence — when a
- * customer round-trips XLSX → CSV → re-imports, the same protection
- * applies on both sides.
- */
-const FORMULA_LEADER_RE = /^[=+\-@\t\r]/;
-const neutralizeFormulaLeading = (value: string): string => {
-  if (value.length === 0) return value;
-  if (FORMULA_LEADER_RE.test(value)) {
-    return `'${value}`;
-  }
-  return value;
-};
+// Issue #1664 (audit-2026-05): CSV Formula Injection (CWE-1236) defence.
+// Shared neutralizer in `./spreadsheet-formula-guard.ts`. Mirrors the
+// rule in `qc-xlsx-writer.ts` and `qc-alm-xml-writer.ts` so a customer
+// round-tripping XLSX → CSV → ALM-XML cannot reintroduce the attack
+// surface in any leg of the journey.
 
 const escapeCell = (value: string): string => {
   const neutralized = neutralizeFormulaLeading(value);

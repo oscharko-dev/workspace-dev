@@ -31,6 +31,9 @@ import type {
   QcMappingPreviewEntry,
 } from "../contracts/index.js";
 import { QC_CSV_COLUMNS } from "./qc-csv-writer.js";
+import { neutralizeFormulaLeading } from "./spreadsheet-formula-guard.js";
+
+export { neutralizeFormulaLeading } from "./spreadsheet-formula-guard.js";
 
 // CRC-32 (IEEE 802.3) implementation. Hand-rolled to avoid relying on
 // any platform-specific zlib helper.
@@ -199,30 +202,13 @@ const buildZip = (
   return concat([...localChunks, ...central, eocd]);
 };
 
-/**
- * Issue #1664 (audit-2026-05): CSV/Spreadsheet Formula Injection (CWE-1236)
- * defence. A cell value whose first non-whitespace character is `=`, `+`,
- * `-`, `@`, `\t` or `\r` is interpreted as a formula by Excel,
- * LibreOffice Calc, Google Sheets, and several CSV-round-trip importers.
- * The OOXML escape is to prefix the value with a single quote (`'`),
- * which forces the cell to be treated as a literal string.
- *
- * We apply this BEFORE XML escaping so the leading `'` is preserved
- * literally in the inline string. The single quote itself does not
- * require XML escaping.
- */
-const FORMULA_LEADER_RE = /^[=+\-@\t\r]/;
-export const neutralizeFormulaLeading = (value: string): string => {
-  // Trim leading whitespace for the leader check but keep the original
-  // value otherwise — operators may legitimately start a description with
-  // " - bullet" (space before dash). Only flag actual leading control or
-  // formula prefixes.
-  if (value.length === 0) return value;
-  if (FORMULA_LEADER_RE.test(value)) {
-    return `'${value}`;
-  }
-  return value;
-};
+// Issue #1664 (audit-2026-05): CSV/Spreadsheet Formula Injection (CWE-1236)
+// defence. The neutralizer is shared with `qc-csv-writer.ts` and
+// `qc-alm-xml-writer.ts`; see `./spreadsheet-formula-guard.ts`.
+//
+// We apply it BEFORE XML escaping so the leading `'` is preserved
+// literally in the inline string. The single quote itself does not
+// require XML escaping.
 
 const escapeXml = (value: string): string =>
   neutralizeFormulaLeading(value)

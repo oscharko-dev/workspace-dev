@@ -473,3 +473,178 @@ test("Persisted Jira IR: zero token-shaped substrings present", () => {
     assert.ok(count >= 0 && count <= 2);
   }
 });
+
+// ---------------------------------------------------------------------------
+// Issue #1668 (audit-2026-05) — maskKind coverage for the 5 new GDPR
+// Art. 5(1)(c) / Art. 9 PiiKind members. PR #1724 fixed the no-op branches
+// that previously returned the input unchanged. The test matrix below
+// pins both directions:
+//
+//   Positive: a value containing kind X yields a piiIndicator of kind X.
+//   Negative: a value with no signal of kind X yields no indicator of
+//             kind X.
+//
+// Multi-kind progression: the maskKind fix is the difference between
+// "stage-1 detection loop hangs on the first hit and never surfaces a
+// second category" and "stage-1 visits each distinct category exactly
+// once". The progression test pairs a new kind with a kind detected
+// later in `detectPii` order, so without the fix only the first kind is
+// recorded.
+// ---------------------------------------------------------------------------
+
+const adfPara = (text: string): JiraAdfSource =>
+  adf([{ type: "paragraph", content: [{ type: "text", text }] }]);
+
+const buildIrForText = (text: string) =>
+  buildJiraIssueIr({
+    issueKey: "PAY-1",
+    issueType: "task",
+    summary: "x",
+    description: adfPara(text),
+    status: "Open",
+    capturedAt: ISO,
+  });
+
+test("maskKind/postal_address: positive — DE address yields postal_address indicator", () => {
+  const result = buildIrForText(
+    "Bitte senden an: Musterstraße 12, 10115 Berlin",
+  );
+  assert.equal(result.ok, true);
+  if (!result.ok) return;
+  const kinds = new Set(result.ir.piiIndicators.map((i) => i.kind));
+  assert.ok(
+    kinds.has("postal_address"),
+    `expected postal_address in indicators; got ${[...kinds].join(",")}`,
+  );
+});
+
+test("maskKind/postal_address: negative — bare postal code does not yield postal_address indicator", () => {
+  const result = buildIrForText("Reference number 10115 logged in audit table");
+  assert.equal(result.ok, true);
+  if (!result.ok) return;
+  const kinds = new Set(result.ir.piiIndicators.map((i) => i.kind));
+  assert.equal(kinds.has("postal_address"), false);
+});
+
+test("maskKind/date_of_birth: positive — labelled DOB yields date_of_birth indicator", () => {
+  const result = buildIrForText(
+    "Customer date of birth: 1985-03-12 (verified)",
+  );
+  assert.equal(result.ok, true);
+  if (!result.ok) return;
+  const kinds = new Set(result.ir.piiIndicators.map((i) => i.kind));
+  assert.ok(kinds.has("date_of_birth"));
+});
+
+test("maskKind/date_of_birth: negative — bare timestamp does not yield date_of_birth indicator", () => {
+  const result = buildIrForText(
+    "Generated on 2026-04-25 by deterministic-runner",
+  );
+  assert.equal(result.ok, true);
+  if (!result.ok) return;
+  const kinds = new Set(result.ir.piiIndicators.map((i) => i.kind));
+  assert.equal(kinds.has("date_of_birth"), false);
+});
+
+test("maskKind/account_number: positive — labelled customer id yields account_number indicator", () => {
+  const result = buildIrForText("Kundennummer 99887766 ist gesperrt.");
+  assert.equal(result.ok, true);
+  if (!result.ok) return;
+  const kinds = new Set(result.ir.piiIndicators.map((i) => i.kind));
+  assert.ok(kinds.has("account_number"));
+});
+
+test("maskKind/account_number: negative — unlabelled digit run does not yield account_number indicator", () => {
+  const result = buildIrForText("Job duration was 1234567890 ms.");
+  assert.equal(result.ok, true);
+  if (!result.ok) return;
+  const kinds = new Set(result.ir.piiIndicators.map((i) => i.kind));
+  assert.equal(kinds.has("account_number"), false);
+});
+
+test("maskKind/national_id: positive — Swiss AHV yields national_id indicator", () => {
+  const result = buildIrForText("AHV-Nummer 756.1234.5678.97 vorgelegt.");
+  assert.equal(result.ok, true);
+  if (!result.ok) return;
+  const kinds = new Set(result.ir.piiIndicators.map((i) => i.kind));
+  assert.ok(kinds.has("national_id"));
+});
+
+test("maskKind/national_id: negative — random alnum run does not yield national_id indicator", () => {
+  const result = buildIrForText("Build digest: 8a4b2c9f1d3e5a7b8c9d0e1f");
+  assert.equal(result.ok, true);
+  if (!result.ok) return;
+  const kinds = new Set(result.ir.piiIndicators.map((i) => i.kind));
+  assert.equal(kinds.has("national_id"), false);
+});
+
+test("maskKind/special_category: positive — health keyword yields special_category indicator", () => {
+  const result = buildIrForText("Patient HIV status confirmed in 2024.");
+  assert.equal(result.ok, true);
+  if (!result.ok) return;
+  const kinds = new Set(result.ir.piiIndicators.map((i) => i.kind));
+  assert.ok(kinds.has("special_category"));
+});
+
+test("maskKind/special_category: negative — neutral business prose yields no special_category indicator", () => {
+  const result = buildIrForText(
+    "TypeScript discriminated union types compile to runtime JSON.",
+  );
+  assert.equal(result.ok, true);
+  if (!result.ok) return;
+  const kinds = new Set(result.ir.piiIndicators.map((i) => i.kind));
+  assert.equal(kinds.has("special_category"), false);
+});
+
+test("maskKind: stage-1 progression — postal_address + account_number both surface as distinct indicators", () => {
+  // detectPii visits postal_address (12th) BEFORE account_number (13th).
+  // Pre-fix: maskKind('postal_address') returned the input unchanged, so
+  // the iteration loop kept re-detecting postal_address; account_number
+  // was never reached. Post-fix: the postal address is masked in the
+  // scratch buffer, so the next loop iteration surfaces account_number.
+  const result = buildIrForText(
+    "Musterstraße 12, 10115 Berlin — Kundennummer 99887766 ist gesperrt.",
+  );
+  assert.equal(result.ok, true);
+  if (!result.ok) return;
+  const kinds = new Set(result.ir.piiIndicators.map((i) => i.kind));
+  assert.ok(
+    kinds.has("postal_address"),
+    `progression: postal_address missing from indicators; got ${[...kinds].join(",")}`,
+  );
+  assert.ok(
+    kinds.has("account_number"),
+    `progression: account_number missing — maskKind(postal_address) regressed; got ${[...kinds].join(",")}`,
+  );
+});
+
+test("maskKind: stage-1 progression — date_of_birth + special_category both surface as distinct indicators", () => {
+  // detectPii order: date_of_birth (11th) → special_category (14th).
+  // Without maskKind('date_of_birth'), special_category would be missed.
+  const result = buildIrForText(
+    "Customer date of birth: 1985-03-12 — Patient HIV status confirmed.",
+  );
+  assert.equal(result.ok, true);
+  if (!result.ok) return;
+  const kinds = new Set(result.ir.piiIndicators.map((i) => i.kind));
+  assert.ok(kinds.has("date_of_birth"));
+  assert.ok(
+    kinds.has("special_category"),
+    `progression: special_category missing — maskKind(date_of_birth) regressed; got ${[...kinds].join(",")}`,
+  );
+});
+
+test("maskKind: stage-1 progression — national_id + postal_address both surface as distinct indicators", () => {
+  // detectPii order: national_id (10th) → postal_address (12th).
+  const result = buildIrForText(
+    "AHV-Nummer 756.1234.5678.97 — Wohnsitz: Musterstraße 12, 10115 Berlin",
+  );
+  assert.equal(result.ok, true);
+  if (!result.ok) return;
+  const kinds = new Set(result.ir.piiIndicators.map((i) => i.kind));
+  assert.ok(kinds.has("national_id"));
+  assert.ok(
+    kinds.has("postal_address"),
+    `progression: postal_address missing — maskKind(national_id) regressed; got ${[...kinds].join(",")}`,
+  );
+});
