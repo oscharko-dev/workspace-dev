@@ -194,7 +194,11 @@ export const fetchFigmaFileForTestIntelligence = async (
   const fetchImpl = input.fetchImpl ?? globalThis.fetch.bind(globalThis);
   const timeoutMs = input.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   const maxResponseBytes = input.maxResponseBytes ?? DEFAULT_MAX_RESPONSE_BYTES;
-  const url = buildFigmaRestUrl({ fileKey, nodeId: input.nodeId });
+  const url = buildFigmaRestUrl(
+    input.nodeId === undefined
+      ? { fileKey }
+      : { fileKey, nodeId: input.nodeId },
+  );
   // Hard gate: the constructed URL must point at api.figma.com over https.
   // If a future change introduces a path-template bug, this assertion fails
   // closed before any token leaves the process.
@@ -210,19 +214,30 @@ export const fetchFigmaFileForTestIntelligence = async (
     });
   }
 
+  const dispatchInput =
+    input.nodeId === undefined
+      ? {
+          url,
+          accessToken: input.accessToken,
+          fileKey,
+          timeoutMs,
+          maxResponseBytes,
+          fetchImpl,
+        }
+      : {
+          url,
+          accessToken: input.accessToken,
+          fileKey,
+          nodeId: input.nodeId,
+          timeoutMs,
+          maxResponseBytes,
+          fetchImpl,
+        };
   let lastError: FigmaRestFetchError | undefined;
   for (let attempt = 1; attempt <= 2; attempt += 1) {
     let result: FigmaRestFileSnapshot | FigmaRestFetchError;
     try {
-      result = await dispatchOnce({
-        url,
-        accessToken: input.accessToken,
-        fileKey,
-        nodeId: input.nodeId,
-        timeoutMs,
-        maxResponseBytes,
-        fetchImpl,
-      });
+      result = await dispatchOnce(dispatchInput);
     } catch (err) {
       result = new FigmaRestFetchError({
         errorClass: "transport",
@@ -365,11 +380,11 @@ const dispatchOnce = async (input: {
         status,
       });
     }
-    return interpretFigmaResponse({
-      payload: parsed,
-      fileKey: input.fileKey,
-      nodeId: input.nodeId,
-    });
+    return interpretFigmaResponse(
+      input.nodeId === undefined
+        ? { payload: parsed, fileKey: input.fileKey }
+        : { payload: parsed, fileKey: input.fileKey, nodeId: input.nodeId },
+    );
   } finally {
     clearTimeout(timer);
   }
