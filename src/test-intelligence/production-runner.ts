@@ -97,6 +97,25 @@ const TEST_GENERATION_GATEWAY_RELEASE = "production-runner-1.0" as const;
 const POLICY_BUNDLE_VERSION = "production-runner-eu-banking-default" as const;
 
 /**
+ * Per-screen caps applied to the IR slice that is sent to the LLM. Real
+ * banking-domain Figma files routinely contain thousands of input nodes per
+ * screen (the customer's "Investitionsfinanzierung — Bedarfsermittlung"
+ * canvas has 5600 children); embedding the entire IR pushes the prompt past
+ * every gateway's body limit and burns the entire output budget on
+ * unparseable retries. The full IR is still persisted to
+ * `business-intent-ir.json` so reviewers see everything the runner derived;
+ * these caps only bound what the model receives.
+ *
+ * Truncation is recorded in the wire IR's `assumptions` array so it surfaces
+ * in the audit trail and in any open question the model raises about
+ * partial coverage.
+ */
+export const PROMPT_MAX_FIELDS_PER_SCREEN = 60 as const;
+export const PROMPT_MAX_ACTIONS_PER_SCREEN = 30 as const;
+export const PROMPT_MAX_VALIDATIONS_PER_SCREEN = 30 as const;
+export const PROMPT_MAX_NAVIGATION_PER_SCREEN = 30 as const;
+
+/**
  * Stable failure-class enum surfaced to callers (request handler maps
  * each value to an HTTP status + error envelope).
  */
@@ -256,14 +275,30 @@ export const runFigmaToQcTestCases = async (
   // 3. Derive Business Test Intent IR.
   const intent = deriveBusinessTestIntentIr({ figma: intentInput });
 
-  // 4. Compile prompt.
+  // 4. Bound the IR for the LLM prompt. Real-world Figma files (e.g. the
+  //    customer's "Investitionsfinanzierung — Bedarfsermittlung" screen with
+  //    5600 nodes) blow the prompt past every gateway's body cap. The full
+  //    IR is still persisted as `business-intent-ir.json` for reviewers and
+  //    drives the replay-cache identity below; the wire intent is what the
+  //    model actually sees and is what the audit `promptHash` is computed
+  //    over (so replay-cache hits are coherent with what the model
+  //    received). Truncation is recorded in the IR's `assumptions` array
+  //    so reviewers can tell when the model worked from a partial slice.
+  const wireIntent = boundIntentForLlm(intent, {
+    maxFieldsPerScreen: PROMPT_MAX_FIELDS_PER_SCREEN,
+    maxActionsPerScreen: PROMPT_MAX_ACTIONS_PER_SCREEN,
+    maxValidationsPerScreen: PROMPT_MAX_VALIDATIONS_PER_SCREEN,
+    maxNavigationPerScreen: PROMPT_MAX_NAVIGATION_PER_SCREEN,
+  });
+
+  // 5. Compile prompt.
   // TODO(#1359 Wave 5): once the visual sidecar runs in production, plumb
   //   describeVisualScreens output here. Today the production runner ships
   //   without screenshot capture; the visual sidecar binding records that
   //   no fixture image is bound.
   const compiled = compilePrompt({
     jobId: input.jobId,
-    intent,
+    intent: wireIntent,
     modelBinding: {
       modelRevision: TEST_GENERATION_MODEL_REVISION,
       gatewayRelease: TEST_GENERATION_GATEWAY_RELEASE,
@@ -277,14 +312,17 @@ export const runFigmaToQcTestCases = async (
     },
   });
 
-  // 5. Build the draft request: relax the response_schema to the simpler
+  // 6. Build the draft request: relax the response_schema to the simpler
   //    LlmDraftResponse shape so the model is not asked to fabricate
   //    audit metadata it cannot know.
   const draftSchema = buildDraftResponseSchema();
   const generationRequest: LlmGenerationRequest = {
     jobId: compiled.request.jobId,
     systemPrompt: compiled.request.systemPrompt,
-    userPrompt: buildAugmentedUserPrompt(compiled.request.userPrompt, intent),
+    userPrompt: buildAugmentedUserPrompt(
+      compiled.request.userPrompt,
+      wireIntent,
+    ),
     responseSchema: draftSchema,
     responseSchemaName: "workspace-dev-production-runner-draft-list-v1",
     ...(input.llm.maxOutputTokens !== undefined
@@ -323,7 +361,7 @@ export const runFigmaToQcTestCases = async (
   }
   const drafts = draftValidation.value.testCases;
 
-  // 6. Stamp full GeneratedTestCase records.
+  // 7. Stamp full GeneratedTestCase records.
   const audit: GeneratedTestCaseAuditMetadata = {
     jobId: input.jobId,
     generatedAt: input.generatedAt,
@@ -348,7 +386,7 @@ export const runFigmaToQcTestCases = async (
     testCases,
   };
 
-  // 7. Validation pipeline.
+  // 8. Validation pipeline.
   const validation = runValidationPipeline({
     jobId: input.jobId,
     generatedAt: input.generatedAt,
@@ -356,7 +394,7 @@ export const runFigmaToQcTestCases = async (
     intent,
   });
 
-  // 8. Persist artifacts.
+  // 9. Persist artifacts.
   const artifactDir = join(
     input.outputRoot,
     "jobs",
@@ -400,7 +438,7 @@ export const runFigmaToQcTestCases = async (
     });
   }
 
-  // 9. Customer Markdown.
+  // 10. Customer Markdown.
   const customerLabel = resolveCustomerLabel(input, figmaFile);
   const sourceLabel = resolveSourceLabel(input.source);
   const rendered = renderCustomerMarkdown({
@@ -515,6 +553,94 @@ const resolveSourceLabel = (source: ProductionRunnerSource): string => {
     }
   }
   return "(figma_paste)";
+};
+
+interface BoundIntentForLlmCaps {
+  maxFieldsPerScreen: number;
+  maxActionsPerScreen: number;
+  maxValidationsPerScreen: number;
+  maxNavigationPerScreen: number;
+}
+
+/**
+ * Return a deep copy of the IR with per-screen caps applied to the four
+ * `detected*` arrays. The IR is sorted by `(screenId, id)` upstream
+ * (`deriveBusinessTestIntentIr`) so a deterministic prefix is also a
+ * deterministic representative slice — same input → same wire IR → same
+ * `promptHash` → same replay-cache identity.
+ *
+ * When any array is truncated, an `assumptions` entry is appended naming the
+ * affected screens so the model (and any reviewer reading
+ * `compiled-prompt.json`) sees exactly which slices were partial. The full
+ * IR is still persisted as `business-intent-ir.json` separately.
+ */
+export const boundIntentForLlm = (
+  intent: BusinessTestIntentIr,
+  caps: BoundIntentForLlmCaps,
+): BusinessTestIntentIr => {
+  const truncationNotes: string[] = [];
+
+  const cap = <T extends { screenId: string }>(
+    rows: ReadonlyArray<T>,
+    perScreenCap: number,
+    label: string,
+  ): T[] => {
+    const byScreen = new Map<string, T[]>();
+    for (const row of rows) {
+      const bucket = byScreen.get(row.screenId);
+      if (bucket === undefined) byScreen.set(row.screenId, [row]);
+      else bucket.push(row);
+    }
+    const out: T[] = [];
+    const truncatedScreens: string[] = [];
+    for (const [screenId, bucket] of byScreen) {
+      if (bucket.length > perScreenCap) {
+        truncatedScreens.push(`${screenId} (${bucket.length}→${perScreenCap})`);
+        for (let i = 0; i < perScreenCap; i += 1) {
+          const row = bucket[i];
+          if (row !== undefined) out.push(row);
+        }
+      } else {
+        for (const row of bucket) out.push(row);
+      }
+    }
+    if (truncatedScreens.length > 0) {
+      truncationNotes.push(
+        `LLM-prompt slice: detected${label} truncated for screens ${truncatedScreens.join(", ")}; full IR persisted to business-intent-ir.json.`,
+      );
+    }
+    return out;
+  };
+
+  const boundedFields = cap(
+    intent.detectedFields,
+    caps.maxFieldsPerScreen,
+    "Fields",
+  );
+  const boundedActions = cap(
+    intent.detectedActions,
+    caps.maxActionsPerScreen,
+    "Actions",
+  );
+  const boundedValidations = cap(
+    intent.detectedValidations,
+    caps.maxValidationsPerScreen,
+    "Validations",
+  );
+  const boundedNavigation = cap(
+    intent.detectedNavigation,
+    caps.maxNavigationPerScreen,
+    "Navigation",
+  );
+
+  return {
+    ...intent,
+    detectedFields: boundedFields,
+    detectedActions: boundedActions,
+    detectedValidations: boundedValidations,
+    detectedNavigation: boundedNavigation,
+    assumptions: [...intent.assumptions, ...truncationNotes],
+  };
 };
 
 interface DraftValidationResult {

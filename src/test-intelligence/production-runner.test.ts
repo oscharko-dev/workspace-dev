@@ -6,12 +6,25 @@ import test from "node:test";
 
 import { createMockLlmGatewayClient } from "./llm-mock-gateway.js";
 import {
+  PROMPT_MAX_ACTIONS_PER_SCREEN,
+  PROMPT_MAX_FIELDS_PER_SCREEN,
+  PROMPT_MAX_NAVIGATION_PER_SCREEN,
+  PROMPT_MAX_VALIDATIONS_PER_SCREEN,
   PRODUCTION_RUNNER_FAILURE_CLASSES,
   ProductionRunnerError,
+  boundIntentForLlm,
   runFigmaToQcTestCases,
   type ProductionRunnerLlmDraftCase,
 } from "./production-runner.js";
 import type { FigmaRestNode } from "./figma-rest-adapter.js";
+import {
+  BUSINESS_TEST_INTENT_IR_SCHEMA_VERSION,
+  type BusinessTestIntentIr,
+  type DetectedAction,
+  type DetectedField,
+  type DetectedNavigation,
+  type DetectedValidation,
+} from "../contracts/index.js";
 
 const node = (
   partial: Partial<FigmaRestNode> & { id: string; type: string },
@@ -323,4 +336,226 @@ test("PRODUCTION_RUNNER_FAILURE_CLASSES is the closed set used by the runner", (
   assert.ok(PRODUCTION_RUNNER_FAILURE_CLASSES.includes("EMPTY_FIGMA_INPUT"));
   assert.ok(PRODUCTION_RUNNER_FAILURE_CLASSES.includes("LLM_REFUSAL"));
   assert.ok(PRODUCTION_RUNNER_FAILURE_CLASSES.includes("LLM_RESPONSE_INVALID"));
+});
+
+// ---------------------------------------------------------------------------
+// boundIntentForLlm — Issue #1733 customer-demo follow-up. Real banking
+// Figma files (the customer "Investitionsfinanzierung — Bedarfsermittlung"
+// canvas has 5600 children) blow the LLM prompt past every gateway's body
+// cap, so the runner ships a deterministic per-screen prefix to the model
+// while persisting the full IR for reviewers.
+// ---------------------------------------------------------------------------
+
+const makeField = (id: string, screenId: string): DetectedField =>
+  ({
+    id,
+    screenId,
+    label: id,
+    type: "text",
+    confidence: 0.9,
+    trace: { nodeId: id },
+    provenance: { source: "figma_rest" },
+  }) as unknown as DetectedField;
+
+const makeAction = (id: string, screenId: string): DetectedAction =>
+  ({
+    id,
+    screenId,
+    label: id,
+    kind: "submit",
+    confidence: 0.9,
+    trace: { nodeId: id },
+    provenance: { source: "figma_rest" },
+  }) as unknown as DetectedAction;
+
+const makeValidation = (id: string, screenId: string): DetectedValidation =>
+  ({
+    id,
+    screenId,
+    rule: "required",
+    confidence: 0.9,
+    trace: { nodeId: id },
+    provenance: { source: "figma_rest" },
+  }) as unknown as DetectedValidation;
+
+const makeNavigation = (id: string, screenId: string): DetectedNavigation =>
+  ({
+    id,
+    screenId,
+    targetScreenId: `${screenId}-next`,
+    confidence: 0.9,
+    trace: { nodeId: id },
+    provenance: { source: "figma_rest" },
+  }) as unknown as DetectedNavigation;
+
+const makeIr = (input: {
+  fields: ReadonlyArray<DetectedField>;
+  actions?: ReadonlyArray<DetectedAction>;
+  validations?: ReadonlyArray<DetectedValidation>;
+  navigation?: ReadonlyArray<DetectedNavigation>;
+  assumptions?: ReadonlyArray<string>;
+}): BusinessTestIntentIr =>
+  ({
+    version: BUSINESS_TEST_INTENT_IR_SCHEMA_VERSION,
+    source: { kind: "figma_rest", contentHash: "h" },
+    screens: [],
+    detectedFields: [...input.fields],
+    detectedActions: [...(input.actions ?? [])],
+    detectedValidations: [...(input.validations ?? [])],
+    detectedNavigation: [...(input.navigation ?? [])],
+    inferredBusinessObjects: [],
+    risks: [],
+    assumptions: [...(input.assumptions ?? [])],
+    openQuestions: [],
+    piiIndicators: [],
+    redactions: [],
+  }) as unknown as BusinessTestIntentIr;
+
+const TINY_CAPS = {
+  maxFieldsPerScreen: 2,
+  maxActionsPerScreen: 2,
+  maxValidationsPerScreen: 2,
+  maxNavigationPerScreen: 2,
+};
+
+test("boundIntentForLlm: passes through when every screen is under cap", () => {
+  const ir = makeIr({
+    fields: [
+      makeField("f1", "s1"),
+      makeField("f2", "s1"),
+      makeField("f3", "s2"),
+    ],
+  });
+  const out = boundIntentForLlm(ir, TINY_CAPS);
+  assert.equal(out.detectedFields.length, 3);
+  assert.equal(out.assumptions.length, 0);
+});
+
+test("boundIntentForLlm: caps per-screen and notes truncation in assumptions", () => {
+  const ir = makeIr({
+    fields: [
+      makeField("f1", "s1"),
+      makeField("f2", "s1"),
+      makeField("f3", "s1"),
+      makeField("f4", "s1"),
+      makeField("f5", "s2"),
+    ],
+  });
+  const out = boundIntentForLlm(ir, TINY_CAPS);
+  // s1 truncated to 2; s2 left alone.
+  const s1 = out.detectedFields.filter((f) => f.screenId === "s1");
+  const s2 = out.detectedFields.filter((f) => f.screenId === "s2");
+  assert.equal(s1.length, 2);
+  assert.equal(s2.length, 1);
+  // Deterministic prefix: the first two of the original order survive.
+  assert.deepEqual(
+    s1.map((f) => f.id),
+    ["f1", "f2"],
+  );
+  assert.equal(out.assumptions.length, 1);
+  assert.match(out.assumptions[0] ?? "", /detectedFields truncated/);
+  assert.match(out.assumptions[0] ?? "", /s1 \(4→2\)/);
+  assert.match(
+    out.assumptions[0] ?? "",
+    /full IR persisted to business-intent-ir\.json/,
+  );
+});
+
+test("boundIntentForLlm: independent caps per array; each emits its own assumption", () => {
+  const ir = makeIr({
+    fields: [
+      makeField("f1", "s1"),
+      makeField("f2", "s1"),
+      makeField("f3", "s1"),
+    ],
+    actions: [
+      makeAction("a1", "s1"),
+      makeAction("a2", "s1"),
+      makeAction("a3", "s1"),
+    ],
+    validations: [
+      makeValidation("v1", "s1"),
+      makeValidation("v2", "s1"),
+      makeValidation("v3", "s1"),
+    ],
+    navigation: [
+      makeNavigation("n1", "s1"),
+      makeNavigation("n2", "s1"),
+      makeNavigation("n3", "s1"),
+    ],
+  });
+  const out = boundIntentForLlm(ir, TINY_CAPS);
+  assert.equal(out.detectedFields.length, 2);
+  assert.equal(out.detectedActions.length, 2);
+  assert.equal(out.detectedValidations.length, 2);
+  assert.equal(out.detectedNavigation.length, 2);
+  assert.equal(out.assumptions.length, 4);
+  const joined = out.assumptions.join("\n");
+  assert.match(joined, /detectedFields truncated/);
+  assert.match(joined, /detectedActions truncated/);
+  assert.match(joined, /detectedValidations truncated/);
+  assert.match(joined, /detectedNavigation truncated/);
+});
+
+test("boundIntentForLlm: preserves prior assumptions and appends new ones", () => {
+  const ir = makeIr({
+    fields: [
+      makeField("f1", "s1"),
+      makeField("f2", "s1"),
+      makeField("f3", "s1"),
+    ],
+    assumptions: ["pre-existing assumption from intent derivation"],
+  });
+  const out = boundIntentForLlm(ir, TINY_CAPS);
+  assert.equal(out.assumptions.length, 2);
+  assert.equal(
+    out.assumptions[0],
+    "pre-existing assumption from intent derivation",
+  );
+  assert.match(out.assumptions[1] ?? "", /detectedFields truncated/);
+});
+
+test("boundIntentForLlm: returns a copy — input IR is not mutated", () => {
+  const ir = makeIr({
+    fields: [
+      makeField("f1", "s1"),
+      makeField("f2", "s1"),
+      makeField("f3", "s1"),
+    ],
+  });
+  const beforeLen = ir.detectedFields.length;
+  const beforeAssumptions = ir.assumptions.length;
+  boundIntentForLlm(ir, TINY_CAPS);
+  assert.equal(ir.detectedFields.length, beforeLen);
+  assert.equal(ir.assumptions.length, beforeAssumptions);
+});
+
+test("boundIntentForLlm: deterministic — same input + same caps → same wire IR (replay-cache safe)", () => {
+  const fields = [
+    makeField("f1", "s1"),
+    makeField("f2", "s1"),
+    makeField("f3", "s1"),
+    makeField("f4", "s2"),
+    makeField("f5", "s2"),
+    makeField("f6", "s2"),
+  ];
+  const a = boundIntentForLlm(makeIr({ fields }), TINY_CAPS);
+  const b = boundIntentForLlm(makeIr({ fields }), TINY_CAPS);
+  assert.deepEqual(
+    a.detectedFields.map((f) => f.id),
+    b.detectedFields.map((f) => f.id),
+  );
+  assert.deepEqual(a.assumptions, b.assumptions);
+});
+
+test("boundIntentForLlm: production caps are positive integers", () => {
+  for (const cap of [
+    PROMPT_MAX_FIELDS_PER_SCREEN,
+    PROMPT_MAX_ACTIONS_PER_SCREEN,
+    PROMPT_MAX_VALIDATIONS_PER_SCREEN,
+    PROMPT_MAX_NAVIGATION_PER_SCREEN,
+  ]) {
+    assert.equal(Number.isInteger(cap), true);
+    assert.ok(cap > 0);
+  }
 });
