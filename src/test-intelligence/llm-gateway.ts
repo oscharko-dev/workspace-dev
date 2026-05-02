@@ -459,6 +459,17 @@ const dispatchOnce = async ({
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), effectiveTimeoutMs);
 
+  // Issue #1694 (audit-2026-05 Wave 2): compose the per-request timeout
+  // signal with the caller-supplied `request.abortSignal` (typically the
+  // job-engine's `jobAbortController.signal`) so cancelling the job aborts
+  // the in-flight LLM call instead of waiting for the timeout to fire.
+  const upstreamSignal = request.abortSignal;
+  const fetchSignal: AbortSignal = upstreamSignal
+    ? AbortSignal.any([upstreamSignal, controller.signal])
+    : controller.signal;
+  const upstreamWasAborted = (): boolean =>
+    upstreamSignal !== undefined && upstreamSignal.aborted;
+
   let response: Response;
   try {
     response = await fetchImpl(url, {
@@ -466,11 +477,24 @@ const dispatchOnce = async ({
       headers: headers.headers,
       body: JSON.stringify(body),
       redirect: "error",
-      signal: controller.signal,
+      signal: fetchSignal,
     });
   } catch (err) {
     clearTimeout(timer);
     if (isAbortLikeError(err)) {
+      // Distinguish caller-cancellation from per-request timeout. If the
+      // upstream signal fired, surface "canceled" (not retryable, not a
+      // breaker-recordable transient). Otherwise the controller fired due
+      // to `effectiveTimeoutMs` and we surface "timeout".
+      if (upstreamWasAborted()) {
+        return {
+          outcome: "error",
+          errorClass: "canceled",
+          message: "caller-supplied abortSignal aborted the request",
+          retryable: false,
+          attempt,
+        };
+      }
       return timeoutFailure({
         wallClockBudgetCausedTimeout,
         effectiveTimeoutMs,
@@ -726,9 +750,29 @@ const parseOpenAiChatResponse = async ({
   }
 
   if (status >= 400) {
+    // Issue #1703 (audit-2026-05 Wave 2): separate protocol-level failures
+    // from schema_invalid. Auth/authz/proxy/conflict statuses indicate the
+    // gateway endpoint or credentials are misconfigured — surfacing them
+    // as `schema_invalid` previously confused dashboards and runbooks
+    // (operators would chase a model-output bug when the cause was a key
+    // rotation or routing regression). Distinct mapping:
+    //   401, 403, 407         -> protocol  (auth / proxy auth)
+    //   404, 405, 410         -> protocol  (endpoint / verb / gone)
+    //   400, 409, 412, 422,
+    //   415, 416, 417         -> schema_invalid  (payload / state / contract)
+    //   any other 4xx         -> protocol  (default to operator-actionable)
+    const PROTOCOL_STATUSES = new Set([401, 403, 407, 404, 405, 410]);
+    const SCHEMA_INVALID_STATUSES = new Set([
+      400, 409, 412, 415, 416, 417, 422,
+    ]);
+    const errorClass: LlmGatewayErrorClass = PROTOCOL_STATUSES.has(status)
+      ? "protocol"
+      : SCHEMA_INVALID_STATUSES.has(status)
+        ? "schema_invalid"
+        : "protocol";
     return {
       outcome: "error",
-      errorClass: "schema_invalid",
+      errorClass,
       message: `gateway returned ${status}: ${redactBoundedMessage(bodyText)}`,
       retryable: false,
       attempt,

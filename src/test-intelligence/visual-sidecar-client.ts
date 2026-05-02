@@ -411,6 +411,15 @@ export interface DescribeVisualScreensInput {
    * to `performance.now`-equivalent monotonic milliseconds via `Date.now`.
    */
   clock?: () => number;
+  /**
+   * Optional caller-side AbortSignal (Issue #1694, audit-2026-05 Wave 2).
+   * Plumbed verbatim into every primary and fallback gateway call so a job
+   * cancel from the orchestrator aborts the in-flight LLM completion
+   * immediately rather than waiting for the per-request timeout. Aborts
+   * surface as `errorClass: "canceled"` and short-circuit the fallback
+   * sequence.
+   */
+  abortSignal?: AbortSignal;
 }
 
 const defaultClock = (): number => Date.now();
@@ -461,6 +470,9 @@ export const describeVisualScreens = async (
         base64Data: capture.base64Data,
       })),
       ...(requestLimits ?? {}),
+      ...(input.abortSignal !== undefined
+        ? { abortSignal: input.abortSignal }
+        : {}),
     });
     const durationMs = Math.max(0, clock() - start);
 

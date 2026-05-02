@@ -871,6 +871,17 @@ export const ALLOWED_LLM_GATEWAY_ERROR_CLASSES = [
   "image_payload_rejected",
   "input_budget_exceeded",
   "response_too_large",
+  // Issue #1703 (audit-2026-05 Wave 2): protocol-level failure distinct from
+  // schema_invalid. Covers HTTP status semantics that indicate gateway/auth
+  // misconfiguration rather than model-output schema violations (401 / 403,
+  // and other auth/routing rejections). Not retryable — operator action
+  // required (rotate key, fix endpoint, repair scope).
+  "protocol",
+  // Issue #1694 (audit-2026-05 Wave 2): caller-initiated cancellation via
+  // upstream AbortSignal. Distinct from "timeout" so the breaker does not
+  // record cancellation as a transient failure (and the retry policy does
+  // not bounce it). Not retryable.
+  "canceled",
 ] as const;
 export type LlmGatewayErrorClass =
   (typeof ALLOWED_LLM_GATEWAY_ERROR_CLASSES)[number];
@@ -1016,6 +1027,17 @@ export interface LlmGenerationRequest {
    * (Issue #1371).
    */
   maxRetries?: number;
+  /**
+   * Optional caller-side `AbortSignal`. When the orchestrator cancels a
+   * running job (#1694), this signal is plumbed all the way to the
+   * outbound `fetch` so the in-flight LLM call is aborted immediately
+   * instead of running until the per-request timeout fires. Aborts via
+   * this signal surface as `errorClass: "canceled"` (`retryable: false`),
+   * distinct from `"timeout"` so circuit-breaker accounting and retry
+   * policy do not treat user cancellation as a transient transport
+   * failure.
+   */
+  abortSignal?: AbortSignal;
 }
 
 /** Provider finish reasons normalized to a single set. */
