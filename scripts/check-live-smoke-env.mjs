@@ -58,10 +58,15 @@ export const analyzeEnv = (env) => {
 };
 
 const run = () => {
-  const flag = process.env.WORKSPACE_TEST_SPACE_LIVE_SMOKE;
-  if (typeof flag !== "string" || flag.length === 0) {
+  const liveSmokeFlag = process.env.WORKSPACE_TEST_SPACE_LIVE_SMOKE;
+  const liveE2eFlag = process.env.WORKSPACE_TEST_SPACE_LIVE_E2E;
+  const liveSmokeEnabled =
+    typeof liveSmokeFlag === "string" && liveSmokeFlag.length > 0;
+  const liveE2eEnabled =
+    typeof liveE2eFlag === "string" && liveE2eFlag.length > 0;
+  if (!liveSmokeEnabled && !liveE2eEnabled) {
     process.stdout.write(
-      "[check-live-smoke-env] WORKSPACE_TEST_SPACE_LIVE_SMOKE is not set; live smoke is opt-in and will self-skip. Skipping env check.\n",
+      "[check-live-smoke-env] Neither WORKSPACE_TEST_SPACE_LIVE_SMOKE nor WORKSPACE_TEST_SPACE_LIVE_E2E is set; live tests are opt-in and will self-skip. Skipping env check.\n",
     );
     return;
   }
@@ -75,7 +80,11 @@ const run = () => {
   }
 
   process.stderr.write(
-    "[check-live-smoke-env] Live smoke is enabled (WORKSPACE_TEST_SPACE_LIVE_SMOKE=1) but the environment is incomplete.\n",
+    `[check-live-smoke-env] Live test is enabled (${
+      liveE2eEnabled
+        ? "WORKSPACE_TEST_SPACE_LIVE_E2E"
+        : "WORKSPACE_TEST_SPACE_LIVE_SMOKE"
+    }=1) but the environment is incomplete.\n`,
   );
   if (result.missingNonAuth.length > 0) {
     process.stderr.write("\n  Missing required env vars:\n");
