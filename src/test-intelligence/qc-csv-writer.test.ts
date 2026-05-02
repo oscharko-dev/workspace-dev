@@ -110,3 +110,40 @@ test("csv: visual provenance round-trip when present", () => {
   ]);
   assert.match(out, /llama-4-maverick-vision,none,0\.823456,2,deadbeef/);
 });
+
+// Issue #1664 (audit-2026-05): CSV Formula Injection (CWE-1236) defence.
+test("csv: formula-leading values get a single-quote prefix", () => {
+  const offenders = [`=cmd|'/c calc'!A1`, `+1+1+cmd`, `-2*A1`, `@SUM(A1:A2)`];
+  for (const offender of offenders) {
+    const out = renderQcCsv([baseEntry({ objective: offender })]);
+    // The neutralizer always prefixes with `'`. Verify the prefix appears
+    // before the offender's leading character anywhere in the output.
+    assert.ok(
+      out.includes(`'${offender.charAt(0)}`),
+      `expected leading apostrophe before "${offender.charAt(0)}" in csv output for "${offender}"`,
+    );
+    // And the raw offender does NOT appear at the start of any field.
+    const lines = out.split(/\r\n|\r|\n/).filter(Boolean);
+    const rawOffenderAtFieldStart = lines.some((line) =>
+      line.split(",").some((field) => {
+        const inner =
+          field.startsWith('"') && field.endsWith('"')
+            ? field.slice(1, -1)
+            : field;
+        return inner === offender;
+      }),
+    );
+    assert.equal(
+      rawOffenderAtFieldStart,
+      false,
+      `csv must not emit "${offender}" as a raw field; it must be neutralized`,
+    );
+  }
+});
+
+test("csv: values without a formula leader are emitted unchanged", () => {
+  const safe = "Verify the user can submit the form.";
+  const out = renderQcCsv([baseEntry({ objective: safe })]);
+  assert.ok(out.includes(safe));
+  assert.equal(out.includes(`'${safe}`), false);
+});
