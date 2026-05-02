@@ -700,12 +700,32 @@ const validateLlmDraftResponse = (
   if (!Array.isArray(root.testCases)) {
     return { ok: false, message: "testCases must be an array" };
   }
+  // Per-case soft validation: drop individual bad drafts rather than
+  // failing the whole batch. Live LLM probes (gpt-oss-120b on Azure AI
+  // Foundry, 2026-05-02) showed the model occasionally emitting an
+  // out-of-enum `type` on a single case while the rest of the batch was
+  // well-formed; failing closed on the entire batch turned a 4-of-5
+  // partial success into a 0-of-5 outage. We still require ≥ 1 valid
+  // draft for the response to count as successful.
   const drafts: ProductionRunnerLlmDraftCase[] = [];
+  const droppedReasons: string[] = [];
   for (let i = 0; i < root.testCases.length; i += 1) {
     const candidate = root.testCases[i];
     const validated = validateDraftCase(candidate, `testCases[${i}]`);
-    if (!validated.ok) return validated;
+    if (!validated.ok) {
+      droppedReasons.push(validated.message);
+      continue;
+    }
     drafts.push(validated.value);
+  }
+  if (drafts.length === 0) {
+    return {
+      ok: false,
+      message:
+        droppedReasons.length > 0
+          ? `LLM response did not match the expected draft schema: ${droppedReasons[0]}`
+          : "LLM response contained no test cases",
+    };
   }
   return { ok: true, value: { testCases: drafts } };
 };
@@ -1098,6 +1118,15 @@ const buildAugmentedUserPrompt = (
   return sections.join("\n");
 };
 
+// The runner schema intentionally tolerates unknown sibling properties on
+// each test case. Live LLM probes (gpt-oss-120b on Azure AI Foundry,
+// 2026-05-02) returned `coveredFieldIds` and other downstream-pipeline
+// fields at the test-case level — fields the model picked up from the IR
+// or training-data leak. The strict `additionalProperties: false` policy
+// failed the entire response on those harmless extras. The validator
+// (`validateDraftCase`) only reads the known properties below, so unknown
+// siblings are silently dropped — same outcome the strict schema would
+// have achieved on a model that perfectly obeyed the spec.
 const buildDraftResponseSchema = (): Record<string, unknown> => ({
   type: "object",
   additionalProperties: false,
@@ -1108,7 +1137,8 @@ const buildDraftResponseSchema = (): Record<string, unknown> => ({
       minItems: 1,
       items: {
         type: "object",
-        additionalProperties: false,
+        // additionalProperties is intentionally NOT set to false here; see
+        // the comment above buildDraftResponseSchema for why.
         required: [
           "title",
           "objective",

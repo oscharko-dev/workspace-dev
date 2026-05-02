@@ -25,7 +25,15 @@ async function setup(): Promise<{
 test("readCustomerMarkdownArtifact returns the combined Markdown when present", async () => {
   const { root, cleanup } = await setup();
   try {
-    const jobDir = path.join(root, "job-123", "customer-markdown");
+    // Mirror the runner layout exactly:
+    //   <root>/jobs/<jobId>/test-intelligence/customer-markdown/testfaelle.md
+    const jobDir = path.join(
+      root,
+      "jobs",
+      "job-123",
+      "test-intelligence",
+      "customer-markdown",
+    );
     await mkdir(jobDir, { recursive: true });
     await writeFile(
       path.join(jobDir, "testfaelle.md"),
@@ -41,7 +49,14 @@ test("readCustomerMarkdownArtifact returns the combined Markdown when present", 
       assert.equal(result.combinedMarkdown.startsWith("# Testfälle"), true);
       assert.equal(
         result.combinedPath,
-        path.resolve(root, "job-123", "customer-markdown", "testfaelle.md"),
+        path.resolve(
+          root,
+          "jobs",
+          "job-123",
+          "test-intelligence",
+          "customer-markdown",
+          "testfaelle.md",
+        ),
       );
     }
   } finally {
@@ -68,8 +83,17 @@ test("readCustomerMarkdownArtifact returns not_found when the file does not exis
 test("readCustomerMarkdownArtifact returns not_found when the path is a directory", async () => {
   const { root, cleanup } = await setup();
   try {
+    // Stand up `testfaelle.md` as a directory (not a file) at the runner
+    // layout to assert the file-vs-directory branch.
     await mkdir(
-      path.join(root, "job-2", "customer-markdown", "testfaelle.md"),
+      path.join(
+        root,
+        "jobs",
+        "job-2",
+        "test-intelligence",
+        "customer-markdown",
+        "testfaelle.md",
+      ),
       { recursive: true },
     );
     const result = await readCustomerMarkdownArtifact({
