@@ -6,6 +6,25 @@
 
 Enforce mode lock (`rest|hybrid|local_json|figma_paste|figma_plugin` + `deterministic`) for all local runtime entry points.
 
+## Figma MCP resolver cache scope
+
+The Figma MCP resolver caches both completed payloads and in-flight de-duplication
+promises in the runtime process. To preserve confidentiality boundaries when more
+than one job runs concurrently against different Figma access tokens, the cache
+key is scoped per token.
+
+The cache key is `${fileKey}:${nodeId}:${version}:${tokenScope}`, where
+`tokenScope` is the first 16 hex characters of `sha256(accessToken)` — opaque,
+non-reversible, and never reconstructable back into the token. Jobs without an
+access token use a distinct `anon` scope so anonymous and authenticated payloads
+never share an entry.
+
+A new payload resolved under token A is therefore never served to a job
+authenticated under token B, even when both reference the same `fileKey:nodeId`.
+Regression coverage lives in
+`src/job-engine/figma-mcp-resolver.token-isolation.test.ts` (issue #1669,
+audit-2026-05 Wave 8a).
+
 ## Test-intelligence visual sidecar smoke
 
 The Figma-to-QC test-intelligence path is opt-in. Runtime routes remain disabled

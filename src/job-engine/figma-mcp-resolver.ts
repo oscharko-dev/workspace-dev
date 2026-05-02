@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+
 import type { FigmaMcpAuthMode } from "../parity/types-core.js";
 import {
   createPipelineError,
@@ -35,11 +37,46 @@ interface CacheEntry {
 const resolverCache = new Map<string, CacheEntry>();
 const inflightResolverCache = new Map<string, Promise<FigmaDesignContext>>();
 
+/**
+ * Sentinel `tokenScope` used when no Figma access token is configured (e.g.
+ * desktop / unauthenticated MCP modes). Distinct from the SHA-256 hash space so
+ * an empty/missing token never collides with a real one.
+ *
+ * Issue #1669 (audit-2026-05 Wave 8a): the cache must never serve a payload
+ * resolved under token A to a job authenticated as token B.
+ */
+const ANONYMOUS_TOKEN_SCOPE = "anon";
+
+const TOKEN_SCOPE_LENGTH = 16;
+
+/**
+ * Derive an opaque, non-reversible identifier for a Figma access token. Truncating
+ * the SHA-256 hex digest to 16 chars (64 bits) is enough to make accidental
+ * collisions on a single workstation effectively impossible while keeping the
+ * cache key compact. The token itself never appears in any log, error, or
+ * cache key — only the truncated digest does.
+ */
+const deriveTokenScope = (accessToken: string | undefined): string => {
+  if (typeof accessToken !== "string") {
+    return ANONYMOUS_TOKEN_SCOPE;
+  }
+  const trimmed = accessToken.trim();
+  if (trimmed.length === 0) {
+    return ANONYMOUS_TOKEN_SCOPE;
+  }
+  return createHash("sha256")
+    .update(trimmed)
+    .digest("hex")
+    .slice(0, TOKEN_SCOPE_LENGTH);
+};
+
 const getCacheKey = (
   fileKey: string,
   nodeId: string,
-  version?: string,
-): string => `${fileKey}:${nodeId}:${version?.trim() || "current"}`;
+  version: string | undefined,
+  tokenScope: string,
+): string =>
+  `${fileKey}:${nodeId}:${version?.trim() || "current"}:${tokenScope}`;
 
 export const clearResolverCache = (): void => {
   resolverCache.clear();
@@ -1635,7 +1672,13 @@ export const resolveFigmaDesignContext = async (
   const signal = options?.signal;
   throwIfAborted(signal);
   const resolvedNodeId = await resolveNodeId(meta, config, signal);
-  const cacheKey = getCacheKey(meta.fileKey, resolvedNodeId, meta.version);
+  const tokenScope = deriveTokenScope(config.accessToken);
+  const cacheKey = getCacheKey(
+    meta.fileKey,
+    resolvedNodeId,
+    meta.version,
+    tokenScope,
+  );
 
   const executeResolution = async (): Promise<FigmaDesignContext> => {
     throwIfAborted(signal);
