@@ -658,7 +658,7 @@ export function WorkspacePage(): JSX.Element {
                             shouldValidate: true,
                           });
                         }}
-                        className="rounded-md border border-black/10 bg-[#f9f9f9] px-3 py-2 text-sm text-[#333] outline-none focus:border-[#4eba87]"
+                        className="rounded-md border border-black/10 bg-[#f9f9f9] px-3 py-2 text-sm text-[#333] outline-none focus-visible:[outline:2px_solid_#4eba87] focus-visible:outline-offset-1 focus:border-[#4eba87]"
                       >
                         {runtimeData?.availablePipelines?.map((pipeline) => (
                           <option key={pipeline.id} value={pipeline.id}>
@@ -678,7 +678,7 @@ export function WorkspacePage(): JSX.Element {
                     </label>
                     <select
                       id="figma-source-mode"
-                      className="rounded-md border border-black/10 bg-[#f9f9f9] px-3 py-2 text-sm text-[#333] outline-none focus:border-[#4eba87]"
+                      className="rounded-md border border-black/10 bg-[#f9f9f9] px-3 py-2 text-sm text-[#333] outline-none focus-visible:[outline:2px_solid_#4eba87] focus-visible:outline-offset-1 focus:border-[#4eba87]"
                       {...register("figmaSourceMode")}
                     >
                       <option value="rest">REST</option>
@@ -708,7 +708,7 @@ export function WorkspacePage(): JSX.Element {
                         id="figma-json-path"
                         autoComplete="off"
                         placeholder="/path/to/figma-export.json"
-                        className="rounded-md border border-black/10 bg-[#f9f9f9] px-3 py-2 text-sm text-[#333] outline-none focus:border-[#4eba87]"
+                        className="rounded-md border border-black/10 bg-[#f9f9f9] px-3 py-2 text-sm text-[#333] outline-none focus-visible:[outline:2px_solid_#4eba87] focus-visible:outline-offset-1 focus:border-[#4eba87]"
                         {...register("figmaJsonPath")}
                       />
                       <FieldHint message={errors.figmaJsonPath?.message} />
@@ -726,7 +726,7 @@ export function WorkspacePage(): JSX.Element {
                           id="figma-file-key"
                           autoComplete="off"
                           placeholder="11kmnrt..."
-                          className="rounded-md border border-black/10 bg-[#f9f9f9] px-3 py-2 text-sm text-[#333] outline-none focus:border-[#4eba87]"
+                          className="rounded-md border border-black/10 bg-[#f9f9f9] px-3 py-2 text-sm text-[#333] outline-none focus-visible:[outline:2px_solid_#4eba87] focus-visible:outline-offset-1 focus:border-[#4eba87]"
                           {...register("figmaFileKey")}
                         />
                         <FieldHint message={errors.figmaFileKey?.message} />
@@ -743,7 +743,7 @@ export function WorkspacePage(): JSX.Element {
                           id="figma-access-token"
                           type="password"
                           autoComplete="off"
-                          className="rounded-md border border-black/10 bg-[#f9f9f9] px-3 py-2 text-sm text-[#333] outline-none focus:border-[#4eba87]"
+                          className="rounded-md border border-black/10 bg-[#f9f9f9] px-3 py-2 text-sm text-[#333] outline-none focus-visible:[outline:2px_solid_#4eba87] focus-visible:outline-offset-1 focus:border-[#4eba87]"
                           {...register("figmaAccessToken")}
                         />
                         <FieldHint message={errors.figmaAccessToken?.message} />
@@ -799,7 +799,7 @@ export function WorkspacePage(): JSX.Element {
                         autoComplete="off"
                         placeholder="https://github.com/org/repo.git"
                         disabled={!isGitPrEnabled}
-                        className="rounded-md border border-black/10 bg-[#f9f9f9] px-3 py-2 text-sm text-[#333] outline-none disabled:opacity-50"
+                        className="rounded-md border border-black/10 bg-[#f9f9f9] px-3 py-2 text-sm text-[#333] outline-none focus-visible:[outline:2px_solid_#4eba87] focus-visible:outline-offset-1 disabled:opacity-50"
                         {...register("repoUrl")}
                       />
                       <FieldHint message={errors.repoUrl?.message} />
@@ -817,7 +817,7 @@ export function WorkspacePage(): JSX.Element {
                         type="password"
                         autoComplete="off"
                         disabled={!isGitPrEnabled}
-                        className="rounded-md border border-black/10 bg-[#f9f9f9] px-3 py-2 text-sm text-[#333] outline-none disabled:opacity-50"
+                        className="rounded-md border border-black/10 bg-[#f9f9f9] px-3 py-2 text-sm text-[#333] outline-none focus-visible:[outline:2px_solid_#4eba87] focus-visible:outline-offset-1 disabled:opacity-50"
                         {...register("repoToken")}
                       />
                       <FieldHint message={errors.repoToken?.message} />
@@ -834,7 +834,7 @@ export function WorkspacePage(): JSX.Element {
                         id="project-name"
                         autoComplete="off"
                         placeholder="my-figma-project"
-                        className="rounded-md border border-black/10 bg-[#f9f9f9] px-3 py-2 text-sm text-[#333] outline-none"
+                        className="rounded-md border border-black/10 bg-[#f9f9f9] px-3 py-2 text-sm text-[#333] outline-none focus-visible:[outline:2px_solid_#4eba87] focus-visible:outline-offset-1"
                         {...register("projectName")}
                       />
                     </div>
@@ -850,7 +850,7 @@ export function WorkspacePage(): JSX.Element {
                         id="target-path"
                         autoComplete="off"
                         placeholder="apps/generated"
-                        className="rounded-md border border-black/10 bg-[#f9f9f9] px-3 py-2 text-sm text-[#333] outline-none"
+                        className="rounded-md border border-black/10 bg-[#f9f9f9] px-3 py-2 text-sm text-[#333] outline-none focus-visible:[outline:2px_solid_#4eba87] focus-visible:outline-offset-1"
                         {...register("targetPath")}
                       />
                     </div>
@@ -866,7 +866,7 @@ export function WorkspacePage(): JSX.Element {
                         id="storybook-static-dir"
                         autoComplete="off"
                         placeholder="storybook-static/customer"
-                        className="rounded-md border border-black/10 bg-[#f9f9f9] px-3 py-2 text-sm text-[#333] outline-none"
+                        className="rounded-md border border-black/10 bg-[#f9f9f9] px-3 py-2 text-sm text-[#333] outline-none focus-visible:[outline:2px_solid_#4eba87] focus-visible:outline-offset-1"
                         {...register("storybookStaticDir")}
                       />
                       <FieldHint
@@ -888,7 +888,7 @@ export function WorkspacePage(): JSX.Element {
                         id="customer-profile-path"
                         autoComplete="off"
                         placeholder="profiles/customer-profile.json"
-                        className="rounded-md border border-black/10 bg-[#f9f9f9] px-3 py-2 text-sm text-[#333] outline-none"
+                        className="rounded-md border border-black/10 bg-[#f9f9f9] px-3 py-2 text-sm text-[#333] outline-none focus-visible:[outline:2px_solid_#4eba87] focus-visible:outline-offset-1"
                         {...register("customerProfilePath")}
                       />
                       <FieldHint
