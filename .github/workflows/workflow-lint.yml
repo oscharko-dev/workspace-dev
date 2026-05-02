@@ -2,7 +2,7 @@ name: workflow lint
 
 on:
   pull_request:
-    paths: [".github/workflows/**"]
+    branches: [dev, dev-gate, main]
   push:
     branches: [dev, dev-gate, main]
     paths: [".github/workflows/**"]
