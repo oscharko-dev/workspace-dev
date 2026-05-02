@@ -161,6 +161,103 @@ const cloneRoleBudget = (input: FinOpsRoleBudget): FinOpsRoleBudget => {
 export const cloneEuBankingDefaultFinOpsBudget = (): FinOpsBudgetEnvelope =>
   cloneFinOpsBudgetEnvelope(EU_BANKING_DEFAULT_FINOPS_BUDGET);
 
+/**
+ * Production-default FinOps envelope for the `figma_to_qc_test_cases`
+ * production runner (Issue #1740). Calibrated for the customer's deployment
+ * topology (Azure AI Foundry: `gpt-oss-120b` for test-generation,
+ * `llama-4-maverick-vision` primary + a vision sidecar for visual roles)
+ * and the live-Azure smoke runs from 2026-05-02 (5/5 banking-form fixtures
+ * stayed under these caps with margin).
+ *
+ * The envelope is **fail-closed**: every field is set, no role is
+ * unconstrained. Operators who want a different envelope must pass it
+ * explicitly via `RunFigmaToQcTestCasesInput.finopsBudget`; the runner
+ * does NOT merge — operator override wins outright.
+ *
+ * Design: production uses this; the `poc-harness` keeps using
+ * {@link DEFAULT_FINOPS_BUDGET_ENVELOPE} (the permissive baseline) for
+ * fixture replays where the goal is to reproduce a frozen golden, not to
+ * police cost.
+ */
+export const PRODUCTION_FINOPS_BUDGET_ENVELOPE: FinOpsBudgetEnvelope =
+  Object.freeze({
+    budgetId: "production-default",
+    budgetVersion: "1.0.0",
+    // 5 minutes wall-clock per job — accommodates one test_generation call
+    // (≤ 2 min) + two visual-sidecar attempts (≤ 90 s + ≤ 60 s) with margin.
+    maxJobWallClockMs: 5 * 60 * 1000,
+    // Cap the replay-cache miss rate at 80% to surface degraded cache health
+    // without flagging a clean run. Production runner currently runs without
+    // a disk-backed replay cache (#1739); once enabled the rate becomes
+    // meaningful.
+    maxReplayCacheMissRate: 0.8,
+    roles: Object.freeze({
+      test_generation: Object.freeze({
+        // 80k input tokens — one bounded IR slice (per-screen caps already
+        // applied upstream by `boundIntentForLlm`) plus the German
+        // banking/insurance prompt rules fits in ~40k; 80k leaves margin
+        // for very wide flows.
+        maxInputTokensPerRequest: 80_000,
+        maxTotalInputTokens: 80_000,
+        // 8k output tokens — empirical: 5/5 banking-form runs produced
+        // 4–10 cases, ≈ 600 tokens each; 8k caps a runaway model that
+        // tries to emit 30+ cases in a single response.
+        maxOutputTokensPerRequest: 8_000,
+        maxTotalOutputTokens: 8_000,
+        // 2 retries — one network blip + one schema-rejection retry covers
+        // the failure modes seen on Azure (transient 429 / partial-batch
+        // schema drift).
+        maxRetriesPerRequest: 2,
+        maxAttempts: 3,
+        // 120 s per request — gpt-oss-120b on Azure AI Foundry returned
+        // in 8–25 s for the 5/5 batch; 120 s is 5x headroom.
+        maxWallClockMsPerRequest: 120_000,
+        maxTotalWallClockMs: 120_000,
+        // No live-smoke calls allowed by default; the live-E2E lane sets
+        // its own envelope.
+        maxLiveSmokeCalls: 0,
+      }),
+      visual_primary: Object.freeze({
+        // 40k input tokens — visual prompts bundle one screen image + the
+        // describe-screens directive; 40k is 5x what observed runs use.
+        maxInputTokensPerRequest: 40_000,
+        // 4k output tokens — visual sidecars emit short structured
+        // descriptions, never long-form.
+        maxOutputTokensPerRequest: 4_000,
+        // 2 MiB per request image — matches the upstream visual-sidecar
+        // SSRF / size guard; rejecting larger payloads at the budget layer
+        // avoids burning gateway tokens on a payload that will be refused.
+        maxImageBytesPerRequest: 2_097_152,
+        // 1 retry — visual is best-effort; on persistent failure the runner
+        // continues without a sidecar binding rather than failing the job.
+        maxRetriesPerRequest: 1,
+        maxAttempts: 2,
+        // 60 s per request — vision deployments are slower than chat;
+        // 60 s is 2x what the live runs measured.
+        maxWallClockMsPerRequest: 60_000,
+      }),
+      visual_fallback: Object.freeze({
+        // Same caps as primary; the only difference is the longer wall
+        // clock (90 s) since fallback deployments are typically smaller
+        // and slower.
+        maxInputTokensPerRequest: 40_000,
+        maxOutputTokensPerRequest: 4_000,
+        maxImageBytesPerRequest: 2_097_152,
+        maxRetriesPerRequest: 1,
+        maxAttempts: 2,
+        // 90 s per request — fallback deployments (e.g. lighter vision
+        // models) tolerate a longer first byte than the primary.
+        maxWallClockMsPerRequest: 90_000,
+        // 2 fallback attempts before giving up entirely.
+        maxFallbackAttempts: 2,
+      }),
+    }) as FinOpsBudgetEnvelope["roles"],
+  }) as FinOpsBudgetEnvelope;
+
+/** Clone the production-default envelope so callers can mutate without aliasing. */
+export const cloneProductionFinOpsBudgetEnvelope = (): FinOpsBudgetEnvelope =>
+  cloneFinOpsBudgetEnvelope(PRODUCTION_FINOPS_BUDGET_ENVELOPE);
+
 const POSITIVE_INTEGER_FIELDS: ReadonlyArray<keyof FinOpsRoleBudget> = [
   "maxInputTokensPerRequest",
   "maxOutputTokensPerRequest",

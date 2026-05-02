@@ -1263,6 +1263,12 @@ export interface TestIntelligenceProductionRunnerFactoryInput {
   generatedAt: string;
   source: ProductionRunnerSource;
   outputRoot: string;
+  /**
+   * Optional event sink (Issue #1738). When supplied the factory should
+   * forward this to the underlying `runFigmaToQcTestCases` call so the
+   * SSE route can stream phase progress.
+   */
+  events?: import("../test-intelligence/production-runner-events.js").ProductionRunnerEventSink;
 }
 
 interface CreateWorkspaceRequestHandlerInput {
