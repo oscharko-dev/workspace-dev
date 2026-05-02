@@ -159,6 +159,132 @@ test("isLlmGatewayErrorRetryable: only transient classes retry", () => {
   assert.equal(isLlmGatewayErrorRetryable("incomplete"), false);
   assert.equal(isLlmGatewayErrorRetryable("image_payload_rejected"), false);
   assert.equal(isLlmGatewayErrorRetryable("input_budget_exceeded"), false);
+  // Issue #1703: protocol failures are operator-actionable, never retryable.
+  assert.equal(isLlmGatewayErrorRetryable("protocol"), false);
+  // Issue #1694: caller-cancellation must never re-attempt.
+  assert.equal(isLlmGatewayErrorRetryable("canceled"), false);
+});
+
+// Issue #1703 (audit-2026-05 Wave 2): protocol vs schema_invalid mapping.
+test("4xx mapping: 401/403 surface as protocol (not schema_invalid)", async () => {
+  for (const status of [401, 403, 407, 404, 405, 410]) {
+    const client = createLlmGatewayClient(baseConfig, {
+      fetchImpl: async () =>
+        new Response(`{"error":"unauthorized"}`, {
+          status,
+          headers: { "content-type": "application/json" },
+        }),
+      apiKeyProvider: () => "secret-key-value",
+    });
+    const result = await client.generate({
+      jobId: "j",
+      systemPrompt: "s",
+      userPrompt: "u",
+    });
+    assert.equal(result.outcome, "error", `status ${status}`);
+    if (result.outcome !== "error") return;
+    assert.equal(
+      result.errorClass,
+      "protocol",
+      `expected protocol class for status ${status}, got ${result.errorClass}`,
+    );
+    assert.equal(result.retryable, false);
+  }
+});
+
+test("4xx mapping: 400/409/422 surface as schema_invalid", async () => {
+  for (const status of [400, 409, 412, 415, 416, 417, 422]) {
+    const client = createLlmGatewayClient(baseConfig, {
+      fetchImpl: async () =>
+        new Response(`{"error":"bad payload"}`, {
+          status,
+          headers: { "content-type": "application/json" },
+        }),
+      apiKeyProvider: () => "secret-key-value",
+    });
+    const result = await client.generate({
+      jobId: "j",
+      systemPrompt: "s",
+      userPrompt: "u",
+    });
+    assert.equal(result.outcome, "error", `status ${status}`);
+    if (result.outcome !== "error") return;
+    assert.equal(
+      result.errorClass,
+      "schema_invalid",
+      `expected schema_invalid for status ${status}, got ${result.errorClass}`,
+    );
+  }
+});
+
+// Issue #1694 (audit-2026-05 Wave 2): caller-supplied AbortSignal cancels
+// the in-flight call and surfaces a non-retryable `canceled` error class.
+test("abortSignal: caller-cancellation surfaces canceled (not timeout, not retryable)", async () => {
+  const controller = new AbortController();
+  const client = createLlmGatewayClient(baseConfig, {
+    fetchImpl: (_url: RequestInfo | URL, init?: RequestInit) =>
+      new Promise<Response>((_resolve, reject) => {
+        const signal = init?.signal;
+        // Pre-aborted signal: listeners attached after abort do NOT fire,
+        // so reject synchronously when entering the fetch.
+        if (signal?.aborted) {
+          reject(new DOMException("aborted", "AbortError"));
+          return;
+        }
+        signal?.addEventListener(
+          "abort",
+          () => {
+            reject(new DOMException("aborted", "AbortError"));
+          },
+          { once: true },
+        );
+      }),
+    apiKeyProvider: () => "secret-key-value",
+  });
+  controller.abort();
+  const result = await client.generate({
+    jobId: "j",
+    systemPrompt: "s",
+    userPrompt: "u",
+    abortSignal: controller.signal,
+  });
+  assert.equal(result.outcome, "error");
+  if (result.outcome !== "error") return;
+  assert.equal(result.errorClass, "canceled");
+  assert.equal(result.retryable, false);
+});
+
+test("abortSignal: cancellation mid-flight surfaces canceled", async () => {
+  const controller = new AbortController();
+  const client = createLlmGatewayClient(baseConfig, {
+    fetchImpl: (_url: RequestInfo | URL, init?: RequestInit) =>
+      new Promise<Response>((_resolve, reject) => {
+        const signal = init?.signal;
+        if (signal?.aborted) {
+          reject(new DOMException("aborted", "AbortError"));
+          return;
+        }
+        signal?.addEventListener(
+          "abort",
+          () => {
+            reject(new DOMException("aborted", "AbortError"));
+          },
+          { once: true },
+        );
+        // Trigger upstream abort once the fetch has begun.
+        setTimeout(() => controller.abort(), 5);
+      }),
+    apiKeyProvider: () => "secret-key-value",
+  });
+  const result = await client.generate({
+    jobId: "j",
+    systemPrompt: "s",
+    userPrompt: "u",
+    abortSignal: controller.signal,
+  });
+  assert.equal(result.outcome, "error");
+  if (result.outcome !== "error") return;
+  assert.equal(result.errorClass, "canceled");
 });
 
 test("guards image payloads on test_generation role without making a network call", async () => {

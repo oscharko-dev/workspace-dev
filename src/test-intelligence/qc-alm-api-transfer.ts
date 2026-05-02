@@ -151,10 +151,25 @@ export interface QcApiFolderHandle {
   resolvedPath: string;
 }
 
-/** Outcome of an idempotency lookup against the tenant. */
+/**
+ * Outcome of an idempotency lookup against the tenant.
+ *
+ * Issue #1696 (audit-2026-05 Wave 2): the `found` variant carries an optional
+ * `existingDesignStepCount`. When the live adapter populates it, the
+ * orchestrator can detect partial-write state (entity exists, but design-step
+ * loop interrupted on a previous attempt) and resume the loop from the
+ * missing offset rather than declaring the work `skipped_duplicate` and
+ * leaving the tenant permanently incomplete. Adapters that omit the field
+ * preserve the legacy "treat-as-complete" behaviour for backwards
+ * compatibility.
+ */
 export type QcApiLookupResult =
   | { kind: "missing" }
-  | { kind: "found"; qcEntityId: string };
+  | {
+      kind: "found";
+      qcEntityId: string;
+      existingDesignStepCount?: number;
+    };
 
 /** Outcome of a `createTestEntity` call against the tenant. */
 export interface QcApiCreatedEntity {
@@ -204,7 +219,16 @@ export interface QcApiTransferClient {
     externalIdCandidate: string;
     bearerToken: string;
   }): Promise<QcApiLookupResult> | QcApiLookupResult;
-  /** Create a single test entity. Returns the assigned QC id. */
+  /**
+   * Create a single test entity. Returns the assigned QC id.
+   *
+   * Issue #1697 (audit-2026-05 Wave 2): live HTTP adapters MUST send a
+   * stable per-request `Idempotency-Key` header on the create POST so a
+   * transport-replayed request does not produce a duplicate entity. The
+   * recommended composition is `sha256(jobId|testCaseId|externalIdCandidate)`,
+   * mirroring the same shape used to derive the Jira sub-task external id
+   * (`computeJiraSubtaskExternalId`).
+   */
   createTestEntity(input: {
     profile: QcMappingProfile;
     folder: QcApiFolderHandle;
@@ -215,6 +239,11 @@ export interface QcApiTransferClient {
    * Create a single design step. Adapters that expose a bulk endpoint
    * are expected to wrap the bulk call so the per-step failure surface
    * stays granular.
+   *
+   * Issue #1697: live HTTP adapters MUST send a stable per-request
+   * `Idempotency-Key` header derived from
+   * `sha256(jobId|qcEntityId|step.index)` so a replayed step-create cannot
+   * produce duplicate steps on the tenant.
    */
   createDesignStep(input: {
     profile: QcMappingProfile;
@@ -954,15 +983,84 @@ const attemptTransfer = async (
     };
   }
   if (lookup.kind === "found") {
-    const designStepCount = entry.designSteps.length;
+    const expectedDesignStepCount = entry.designSteps.length;
+    const existingCount = lookup.existingDesignStepCount;
+    // Issue #1696: If the lookup adapter reports an existing-step count and
+    // it is below the expected count, the prior attempt aborted partway
+    // through the design-step loop. Resume from the missing offset rather
+    // than declaring the work complete (which would silently leave the
+    // tenant with a permanently incomplete test case). Adapters that don't
+    // populate `existingDesignStepCount` preserve the legacy fast path.
+    const isPartialWrite =
+      typeof existingCount === "number" &&
+      Number.isFinite(existingCount) &&
+      existingCount >= 0 &&
+      existingCount < expectedDesignStepCount;
+    if (!isPartialWrite) {
+      return {
+        record: {
+          testCaseId: entry.testCaseId,
+          externalIdCandidate: entry.externalIdCandidate,
+          targetFolderPath: entry.targetFolderPath,
+          outcome: "skipped_duplicate",
+          qcEntityId: lookup.qcEntityId,
+          designStepsCreated: 0,
+          recordedAt,
+        },
+        created: {
+          testCaseId: entry.testCaseId,
+          externalIdCandidate: entry.externalIdCandidate,
+          qcEntityId: lookup.qcEntityId,
+          targetFolderPath: entry.targetFolderPath,
+          createdAt: recordedAt,
+          designStepCount: expectedDesignStepCount,
+          preExisting: true,
+        },
+      };
+    }
+    // Partial-write recovery path: resume the design-step loop from the
+    // missing offset. Determinism is guaranteed by `sortedDesignSteps`
+    // (already keyed by `step.index`).
+    const sorted = sortedDesignSteps(entry);
+    const remainingSteps = sorted.slice(existingCount);
+    let stepsAddedDuringRecovery = 0;
+    for (const step of remainingSteps) {
+      try {
+        const out = client.createDesignStep({
+          profile,
+          qcEntityId: lookup.qcEntityId,
+          step,
+          bearerToken,
+        });
+        if (out instanceof Promise) await out;
+        stepsAddedDuringRecovery += 1;
+      } catch (error) {
+        return {
+          record: {
+            testCaseId: entry.testCaseId,
+            externalIdCandidate: entry.externalIdCandidate,
+            targetFolderPath: entry.targetFolderPath,
+            outcome: "failed",
+            qcEntityId: lookup.qcEntityId,
+            designStepsCreated: stepsAddedDuringRecovery,
+            recordedAt,
+            failureClass:
+              error instanceof QcApiTransferError
+                ? error.failureClass
+                : "unknown",
+            failureDetail: sanitizeFailureDetail(error),
+          },
+        };
+      }
+    }
     return {
       record: {
         testCaseId: entry.testCaseId,
         externalIdCandidate: entry.externalIdCandidate,
         targetFolderPath: entry.targetFolderPath,
-        outcome: "skipped_duplicate",
+        outcome: "created",
         qcEntityId: lookup.qcEntityId,
-        designStepsCreated: 0,
+        designStepsCreated: stepsAddedDuringRecovery,
         recordedAt,
       },
       created: {
@@ -971,7 +1069,7 @@ const attemptTransfer = async (
         qcEntityId: lookup.qcEntityId,
         targetFolderPath: entry.targetFolderPath,
         createdAt: recordedAt,
-        designStepCount,
+        designStepCount: expectedDesignStepCount,
         preExisting: true,
       },
     };

@@ -700,6 +700,72 @@ test("live client retries retryable lookup responses before creating", async () 
   });
 });
 
+// Issue #1697 (audit-2026-05 Wave 2): wire-level idempotency.
+test("live client sends Idempotency-Key header on create POST", async () => {
+  await withTempDir(async (runDir) => {
+    let postHeaders: Headers | undefined;
+    const fetchImpl: typeof fetch = async (_url, init) => {
+      if (init?.method === "GET") {
+        return new Response(JSON.stringify({ issues: [] }), { status: 200 });
+      }
+      postHeaders = new Headers(init?.headers as HeadersInit);
+      return new Response(JSON.stringify({ key: "PROJ-123" }), { status: 201 });
+    };
+    const client = createJiraWriteClient({
+      config: TEST_JIRA_CONFIG,
+      fetchImpl,
+      sleep: async () => undefined,
+    });
+    const result = await runJiraSubtaskWrite(
+      buildInput(runDir, { cases: [buildTestCase({ id: "tc-idem" })] }),
+      client,
+    );
+    assert.equal(result.failedCount, 0, "expected the create POST to succeed");
+    assert.ok(postHeaders, "POST request was never made");
+    const idempotencyKey = postHeaders.get("Idempotency-Key");
+    assert.ok(
+      idempotencyKey && /^[a-f0-9]{64}$/.test(idempotencyKey),
+      `expected SHA-256 idempotency key, got "${idempotencyKey ?? "<null>"}"`,
+    );
+    // Mirror header is also present for proxies that strip unknown headers.
+    assert.equal(
+      postHeaders.get("X-Idempotency-Key"),
+      idempotencyKey,
+      "X-Idempotency-Key must mirror Idempotency-Key",
+    );
+  });
+});
+
+// Determinism: re-running the same job/test-case/parent must produce the same
+// idempotency key so a transport-replayed POST hits the same Jira-side
+// dedupe slot. Tested via two consecutive runs that share the input shape.
+test("Idempotency-Key is stable across re-runs for the same job/case/parent", async () => {
+  await withTempDir(async (runDir) => {
+    const observedKeys: string[] = [];
+    const fetchImpl: typeof fetch = async (_url, init) => {
+      if (init?.method === "GET") {
+        return new Response(JSON.stringify({ issues: [] }), { status: 200 });
+      }
+      const headers = new Headers(init?.headers as HeadersInit);
+      const key = headers.get("Idempotency-Key");
+      if (key) observedKeys.push(key);
+      return new Response(JSON.stringify({ key: "PROJ-123" }), { status: 201 });
+    };
+    const client = createJiraWriteClient({
+      config: TEST_JIRA_CONFIG,
+      fetchImpl,
+      sleep: async () => undefined,
+    });
+    const input = buildInput(runDir, {
+      cases: [buildTestCase({ id: "tc-idem-rerun" })],
+    });
+    await runJiraSubtaskWrite(input, client);
+    await runJiraSubtaskWrite(input, client);
+    assert.equal(observedKeys.length, 2);
+    assert.equal(observedKeys[0], observedKeys[1]);
+  });
+});
+
 test("live client does not retry ambiguous create responses directly", async () => {
   await withTempDir(async (runDir) => {
     const calls: Array<{ method: string | undefined }> = [];
