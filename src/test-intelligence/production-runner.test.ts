@@ -611,6 +611,164 @@ test("runFigmaToQcTestCases wires Figma URL screenshots through the visual sidec
   }
 });
 
+test("Issue #1772: both_sidecars_failed routes to needs_review with documented refusal code", async () => {
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ti-runner-"));
+  const originalFetch = globalThis.fetch;
+  const observedEvents: Array<{
+    phase: string;
+    details?: Record<string, unknown>;
+  }> = [];
+  try {
+    const client = createMockLlmGatewayClient({
+      role: "test_generation",
+      deployment: "gpt-oss-120b-mock",
+      modelRevision: "mock-1",
+      gatewayRelease: "mock",
+      responder: okResponder([SAMPLE_DRAFT]),
+    });
+    const failingResponder = (_request: LlmGenerationRequest, attempt: number): LlmGenerationResult => ({
+      outcome: "error",
+      errorClass: "transport",
+      message: "gateway boom",
+      retryable: true,
+      attempt,
+    });
+    const bundle = createMockLlmGatewayClientBundle({
+      testGeneration: {
+        role: "test_generation",
+        deployment: "gpt-oss-120b",
+        modelRevision: "gpt-oss-120b@test",
+        gatewayRelease: "mock",
+        declaredCapabilities: TEST_GENERATION_CAPS,
+      },
+      visualPrimary: {
+        role: "visual_primary",
+        deployment: "llama-4-maverick-vision",
+        modelRevision: "llama-4-maverick-vision@test",
+        gatewayRelease: "mock",
+        declaredCapabilities: VISUAL_CAPS,
+        responder: failingResponder,
+      },
+      visualFallback: {
+        role: "visual_fallback",
+        deployment: "phi-4-multimodal-poc",
+        modelRevision: "phi-4-multimodal-poc@test",
+        gatewayRelease: "mock",
+        declaredCapabilities: VISUAL_CAPS,
+        responder: failingResponder,
+      },
+    });
+    globalThis.fetch = (async (url: string, init?: RequestInit) => {
+      void init;
+      if (url.includes("/v1/files/ABC/nodes?ids=1%3A1")) {
+        return new Response(
+          JSON.stringify({
+            name: "Test View 03",
+            nodes: {
+              "1:1": {
+                document: SAMPLE_FILE.document.children?.[0]?.children?.[0],
+              },
+            },
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        );
+      }
+      if (
+        url ===
+        "https://api.figma.com/v1/images/ABC?ids=1%3A1&format=png&scale=2"
+      ) {
+        return new Response(
+          JSON.stringify({
+            images: {
+              "1:1":
+                "https://figma-alpha-api.s3.us-west-2.amazonaws.com/1_1.png",
+            },
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        );
+      }
+      return new Response(PNG_BYTES, {
+        status: 200,
+        headers: { "content-type": "image/png" },
+      });
+    }) as typeof fetch;
+
+    const result = await runFigmaToQcTestCases({
+      jobId: "job-1772-refusal",
+      generatedAt: "2026-05-03T10:00:00Z",
+      source: {
+        kind: "figma_url",
+        figmaUrl: "https://www.figma.com/design/ABC/Test-View-03?node-id=1-1",
+        accessToken: "figd_test",
+      },
+      outputRoot: tempRoot,
+      llm: { client, bundle },
+      events: (event) =>
+        observedEvents.push({
+          phase: event.phase,
+          ...(event.details !== undefined ? { details: { ...event.details } } : {}),
+        }),
+    });
+
+    // Runner does NOT throw — it produces a complete artifact set.
+    assert.equal(result.visualSidecar?.result.outcome, "failure");
+    assert.equal(result.visualSidecar?.refusal?.failureClass, "both_sidecars_failed");
+    assert.match(
+      result.visualSidecar?.refusal?.failureMessage ?? "",
+      /both_sidecars_failed/,
+    );
+
+    // The refusal event surfaces the documented refusal code.
+    const refusalEvent = observedEvents.find(
+      (e) =>
+        e.phase === "visual_sidecar_complete" &&
+        e.details?.outcome === "refusal",
+    );
+    assert.ok(refusalEvent, "expected visual_sidecar_complete refusal event");
+    assert.equal(refusalEvent?.details?.refusalCode, "both_sidecars_failed");
+
+    // Every test case escalated to needs_review with the documented violation.
+    assert.ok(result.policy.totalTestCases > 0, "expected at least one case");
+    assert.equal(result.policy.needsReviewCount, result.policy.totalTestCases);
+    assert.equal(result.policy.blockedCount, 0);
+    assert.equal(result.policy.approvedCount, 0);
+    for (const decision of result.policy.decisions) {
+      assert.equal(decision.decision, "needs_review");
+      const refused = decision.violations.find(
+        (v) => v.rule === "policy:visual-sidecar-refused",
+      );
+      assert.ok(refused, "expected per-case refusal violation");
+      assert.equal(refused?.outcome, "visual_sidecar_failure");
+      assert.equal(refused?.severity, "warning");
+    }
+
+    // Job-level violation also surfaces the refusal code.
+    const jobLevel = result.policy.jobLevelViolations.find(
+      (v) => v.rule === "policy:visual-sidecar-refused",
+    );
+    assert.ok(jobLevel, "expected job-level refusal violation");
+    assert.equal(jobLevel?.severity, "warning");
+
+    // The visual sidecar result artifact is still persisted (failure form).
+    assert.ok(result.artifactPaths.visualSidecarResult);
+    const sidecarArtifact = JSON.parse(
+      await readFile(result.artifactPaths.visualSidecarResult!, "utf8"),
+    ) as { result: { outcome: string; failureClass?: string } };
+    assert.equal(sidecarArtifact.result.outcome, "failure");
+    assert.equal(sidecarArtifact.result.failureClass, "both_sidecars_failed");
+
+    // Customer Markdown still renders so reviewers can adjudicate.
+    const combinedMarkdown = await readFile(
+      result.customerMarkdownPaths.combined,
+      "utf8",
+    );
+    assert.ok(combinedMarkdown.length > 0);
+  } finally {
+    globalThis.fetch = originalFetch;
+    await rm(tempRoot, { recursive: true, force: true });
+  }
+});
+
 test("PRODUCTION_RUNNER_FAILURE_CLASSES is the closed set used by the runner", () => {
   // Sanity: make sure callers can branch on a stable enum.
   assert.ok(PRODUCTION_RUNNER_FAILURE_CLASSES.includes("EMPTY_FIGMA_INPUT"));
