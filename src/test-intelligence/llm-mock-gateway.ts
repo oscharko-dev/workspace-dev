@@ -35,6 +35,7 @@ import {
   isLlmGatewayErrorRetryable,
   type LlmGatewayClient,
 } from "./llm-gateway.js";
+import { estimateLlmInputTokens } from "./llm-token-estimator.js";
 
 export type MockResponder = (
   request: LlmGenerationRequest,
@@ -152,19 +153,7 @@ const guardInputBudget = (
       attempt: 0,
     };
   }
-  const encoder = new TextEncoder();
-  const estimatedTokens = Math.ceil(
-    (encoder.encode(request.systemPrompt).byteLength +
-      encoder.encode(request.userPrompt).byteLength +
-      (request.responseSchema === undefined
-        ? 0
-        : encoder.encode(JSON.stringify(request.responseSchema)).byteLength) +
-      (request.imageInputs ?? []).reduce(
-        (sum, image) => sum + image.base64Data.length,
-        0,
-      )) /
-      4,
-  );
+  const estimatedTokens = estimateLlmInputTokens(request);
   if (estimatedTokens > request.maxInputTokens) {
     return {
       outcome: "error",

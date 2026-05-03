@@ -40,12 +40,13 @@
  */
 
 import { mkdir, rename, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { createHash, randomUUID } from "node:crypto";
 
 import {
   ALLOWED_REGULATORY_RELEVANCE_DOMAINS,
   BANKING_INSURANCE_SEMANTIC_KEYWORDS,
+  CONTEXT_BUDGET_ARTIFACT_DIRECTORY,
   EU_BANKING_DEFAULT_POLICY_PROFILE_ID,
   GENERATED_TESTCASES_ARTIFACT_FILENAME,
   GENERATED_TEST_CASE_SCHEMA_VERSION,
@@ -305,6 +306,7 @@ export interface RunFigmaToQcTestCasesResult {
   artifactPaths: {
     intent: string;
     compiledPrompt: string;
+    contextBudgetReport?: string;
     generatedTestCases: string;
     validationReport: string;
     policyReport: string;
@@ -390,6 +392,10 @@ export const runFigmaToQcTestCases = async (
     maxNavigationPerScreen: PROMPT_MAX_NAVIGATION_PER_SCREEN,
   });
 
+  const finopsLimits = resolveFinOpsRequestLimits(
+    finopsBudget.roles.test_generation,
+  );
+
   // 5. Compile prompt.
   // TODO(#1359 Wave 5): once the visual sidecar runs in production, plumb
   //   describeVisualScreens output here. Today the production runner ships
@@ -409,7 +415,24 @@ export const runFigmaToQcTestCases = async (
       fallbackReason: "none",
       screenCount: 0,
     },
+    ...(finopsLimits.maxInputTokens !== undefined
+      ? {
+          contextBudget: {
+            roleStepId: "test_generation",
+            maxInputTokens: finopsLimits.maxInputTokens,
+          },
+        }
+      : {}),
   });
+  if (compiled.contextBudgetReport?.action === "needs_review") {
+    throw new ProductionRunnerError({
+      failureClass: "FINOPS_BUDGET_INVALID",
+      message:
+        `context budget analyzer could not fit the test_generation prompt within maxInputTokens ` +
+        `${compiled.contextBudgetReport.maxInputTokens}`,
+      retryable: false,
+    });
+  }
 
   // 6. Build the draft request: relax the response_schema to the simpler
   //    LlmDraftResponse shape so the model is not asked to fabricate
@@ -421,9 +444,7 @@ export const runFigmaToQcTestCases = async (
       ? input.policyProfileId
       : EU_BANKING_DEFAULT_POLICY_PROFILE_ID;
   // FinOps-resolved per-request limits override the legacy llm.* fields.
-  const finopsLimits = resolveFinOpsRequestLimits(
-    finopsBudget.roles.test_generation,
-  );
+  const effectiveMaxInputTokens = finopsLimits.maxInputTokens;
   const effectiveMaxOutputTokens =
     finopsLimits.maxOutputTokens ?? input.llm.maxOutputTokens;
   const effectiveMaxWallClockMs =
@@ -439,6 +460,9 @@ export const runFigmaToQcTestCases = async (
     ),
     responseSchema: draftSchema,
     responseSchemaName: "workspace-dev-production-runner-draft-list-v1",
+    ...(effectiveMaxInputTokens !== undefined
+      ? { maxInputTokens: effectiveMaxInputTokens }
+      : {}),
     ...(effectiveMaxOutputTokens !== undefined
       ? { maxOutputTokens: effectiveMaxOutputTokens }
       : {}),
@@ -592,10 +616,21 @@ export const runFigmaToQcTestCases = async (
     artifactDir,
     TEST_CASE_COVERAGE_REPORT_ARTIFACT_FILENAME,
   );
+  const contextBudgetReportPath =
+    compiled.contextBudgetReport === undefined
+      ? undefined
+      : join(
+          artifactDir,
+          CONTEXT_BUDGET_ARTIFACT_DIRECTORY,
+          `${compiled.contextBudgetReport.roleStepId}.json`,
+        );
   try {
     await Promise.all([
       writeAtomicJson(intentPath, intent),
       writeAtomicJson(compiledPromptPath, compiled.artifacts),
+      ...(contextBudgetReportPath === undefined || compiled.contextBudgetReport === undefined
+        ? []
+        : [writeAtomicJson(contextBudgetReportPath, compiled.contextBudgetReport)]),
       writeAtomicJson(generatedPath, validation.generatedTestCases),
       writeAtomicJson(validationPath, validation.validation),
       writeAtomicJson(policyPath, validation.policy),
@@ -682,6 +717,9 @@ export const runFigmaToQcTestCases = async (
     artifactPaths: {
       intent: intentPath,
       compiledPrompt: compiledPromptPath,
+      ...(contextBudgetReportPath !== undefined
+        ? { contextBudgetReport: contextBudgetReportPath }
+        : {}),
       generatedTestCases: generatedPath,
       validationReport: validationPath,
       policyReport: policyPath,
@@ -1391,6 +1429,7 @@ const writeAtomicJson = async (
 ): Promise<void> => {
   const serialized = canonicalJson(payload);
   const tmpPath = `${destinationPath}.${process.pid}.${randomUUID()}.tmp`;
+  await mkdir(dirname(destinationPath), { recursive: true });
   await writeFile(tmpPath, serialized, "utf8");
   await rename(tmpPath, destinationPath);
 };
@@ -1400,6 +1439,7 @@ const writeAtomicText = async (
   payload: string,
 ): Promise<void> => {
   const tmpPath = `${destinationPath}.${process.pid}.${randomUUID()}.tmp`;
+  await mkdir(dirname(destinationPath), { recursive: true });
   await writeFile(tmpPath, payload, "utf8");
   await rename(tmpPath, destinationPath);
 };

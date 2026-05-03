@@ -263,6 +263,63 @@ test("compiler: jobId does NOT participate in cache key (hash invariant)", async
   assert.equal(a.request.hashes.cacheKey, b.request.hashes.cacheKey);
 });
 
+test("compiler: active context-budget analysis changes the cache key and emits a per-role-step report", async () => {
+  const { intent, visual } = await loadFixture();
+  const customContext: CompiledPromptCustomContext = {
+    markdownSections: [
+      {
+        sourceId: "custom-context-markdown",
+        entryId: "note-1",
+        bodyMarkdown: "# Supporting evidence\n\n" + "A".repeat(2_000),
+        bodyPlain: "Supporting evidence\n" + "A".repeat(2_000),
+        markdownContentHash: "d".repeat(64),
+        plainContentHash: "e".repeat(64),
+      },
+    ],
+    structuredAttributes: [],
+  };
+
+  const raw = compilePrompt({
+    jobId: "job-analyzer",
+    intent,
+    visual,
+    customContext,
+    modelBinding: sampleModelBinding,
+    visualBinding: sampleVisualBinding,
+    policyBundleVersion: "policy-2026-04-25",
+  });
+  const compacted = compilePrompt({
+    jobId: "job-analyzer",
+    intent,
+    visual,
+    customContext,
+    modelBinding: sampleModelBinding,
+    visualBinding: sampleVisualBinding,
+    policyBundleVersion: "policy-2026-04-25",
+    contextBudget: {
+      roleStepId: "test_generation",
+      maxInputTokens: 800,
+    },
+  });
+
+  assert.notEqual(raw.request.hashes.cacheKey, compacted.request.hashes.cacheKey);
+  assert.ok(compacted.request.hashes.contextBudgetHash);
+  assert.equal(compacted.contextBudgetReport?.roleStepId, "test_generation");
+  assert.equal(compacted.contextBudgetReport?.maxInputTokens, 800);
+  assert.ok(
+    (compacted.contextBudgetReport?.compactedFromArtifactHashes.length ?? 0) > 0,
+  );
+  assert.notEqual(compacted.contextBudgetReport?.action, "none");
+  assert.match(
+    compacted.request.userPrompt,
+    /compacted from prompt payload due to context budget\./u,
+  );
+  assert.match(
+    JSON.stringify(compacted.contextBudgetReport),
+    /"action":"(compact_prompt_payload|drop_optional_context|needs_review)"/u,
+  );
+});
+
 test("compiler: artifacts contain only redacted PII (golden snapshot guard)", async () => {
   const { intent, visual } = await loadFixture();
   const result = compilePrompt({

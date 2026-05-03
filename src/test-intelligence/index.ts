@@ -164,9 +164,21 @@ export {
   compilePrompt,
   COMPILED_SYSTEM_PROMPT,
   COMPILED_USER_PROMPT_PREAMBLE,
+  type CompilePromptContextBudgetOptions,
   type CompilePromptInput,
   type CompilePromptResult,
 } from "./prompt-compiler.js";
+export {
+  analyzeContextBudget,
+  type AnalyzeContextBudgetInput,
+  type AnalyzeContextBudgetResult,
+  type ContextBudgetCategoryInput,
+} from "./context-budget-analyzer.js";
+export {
+  estimateLlmInputBytes,
+  estimateLlmInputTokens,
+  estimateTextTokens,
+} from "./llm-token-estimator.js";
 export {
   executeWithReplayCache,
   computeReplayCacheKeyDigest,
