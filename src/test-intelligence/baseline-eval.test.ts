@@ -10,6 +10,7 @@ import {
   baselineEvalFixtureFilename,
   buildAllBaselineArchetypeEvalArtifacts,
   buildBaselineArchetypeEvalArtifact,
+  diffBaselineArchetypeEvalArtifact,
   readBaselineArchetypeEvalArtifact,
   writeBaselineArchetypeEvalArtifact,
 } from "./baseline-eval.js";
@@ -86,4 +87,110 @@ test("baseline-eval: persisted metric surface stays fully populated", async () =
       true,
     );
   }
+});
+
+test("baseline-eval: diff against an identical artifact reports zero deltas", async () => {
+  const artifact = await readBaselineArchetypeEvalArtifact(
+    "baseline-simple-form",
+  );
+  const diff = diffBaselineArchetypeEvalArtifact({
+    baseline: artifact,
+    candidate: artifact,
+  });
+  assert.equal(diff.archetypeId, "baseline-simple-form");
+  assert.equal(diff.schemaVersionMatch, true);
+  assert.equal(diff.contractVersionMatch, true);
+  assert.equal(diff.intentMatch, true);
+  assert.equal(diff.archetypeMatch, true);
+  assert.deepEqual(diff.traceability, {
+    addedTestCaseIds: [],
+    removedTestCaseIds: [],
+    changedTestCaseIds: [],
+  });
+  for (const key of Object.keys(diff.metrics) as Array<
+    keyof typeof diff.metrics
+  >) {
+    assert.equal(diff.metrics[key].delta, 0, key);
+    assert.equal(diff.metrics[key].baseline, diff.metrics[key].candidate, key);
+  }
+});
+
+test("baseline-eval: diff surfaces scalar-metric, traceability, and contract drift", async () => {
+  const baseline = await readBaselineArchetypeEvalArtifact(
+    "baseline-simple-form",
+  );
+  const candidate = JSON.parse(JSON.stringify(baseline)) as typeof baseline;
+  candidate.generatedAt = "2026-06-01T00:00:00.000Z";
+  candidate.schemaVersion = "9.9.9" as typeof candidate.schemaVersion;
+  candidate.intent = `${baseline.intent} (revised)`;
+  candidate.metrics.coveragePositiveCount =
+    baseline.metrics.coveragePositiveCount + 4;
+  candidate.metrics.coverageNegativeCount =
+    baseline.metrics.coverageNegativeCount - 1;
+  candidate.metrics.duplicateRate = baseline.metrics.duplicateRate + 0.125;
+  candidate.metrics.finOpsSpendMinorUnits =
+    baseline.metrics.finOpsSpendMinorUnits + 250;
+  candidate.metrics.latencyMs = baseline.metrics.latencyMs + 35;
+  candidate.metrics.humanAcceptanceRateSnapshot = {
+    ...baseline.metrics.humanAcceptanceRateSnapshot,
+    approvedCount:
+      baseline.metrics.humanAcceptanceRateSnapshot.approvedCount + 1,
+    rate: 1,
+  };
+  candidate.metrics.traceabilityCoverage = {
+    ...baseline.metrics.traceabilityCoverage,
+    totalCases: baseline.metrics.traceabilityCoverage.totalCases + 1,
+    sourceRefPresenceRate: 0.5,
+    perCase: [
+      ...baseline.metrics.traceabilityCoverage.perCase
+        .slice(1)
+        .map((row) => ({ ...row, sourceRefCount: row.sourceRefCount + 1 })),
+      {
+        testCaseId: "tc-new-from-candidate",
+        sourceRefCount: 2,
+        intentRefCount: 1,
+        visualRefCount: 0,
+      },
+    ],
+  };
+
+  const diff = diffBaselineArchetypeEvalArtifact({ baseline, candidate });
+
+  assert.equal(diff.schemaVersionMatch, false);
+  assert.equal(diff.contractVersionMatch, true);
+  assert.equal(diff.intentMatch, false);
+  assert.equal(diff.archetypeMatch, true);
+  assert.equal(diff.baselineGeneratedAt, baseline.generatedAt);
+  assert.equal(diff.candidateGeneratedAt, candidate.generatedAt);
+  assert.equal(diff.metrics.coveragePositiveCount.delta, 4);
+  assert.equal(diff.metrics.coverageNegativeCount.delta, -1);
+  assert.equal(diff.metrics.duplicateRate.delta, 0.125);
+  assert.equal(diff.metrics.finOpsSpendMinorUnits.delta, 250);
+  assert.equal(diff.metrics.latencyMs.delta, 35);
+  assert.equal(diff.metrics.humanAcceptanceApprovedCount.delta, 1);
+  assert.equal(diff.metrics.traceabilityTotalCases.delta, 1);
+  assert.deepEqual(diff.traceability.addedTestCaseIds.sort(), [
+    "tc-new-from-candidate",
+  ]);
+  assert.deepEqual(diff.traceability.removedTestCaseIds.sort(), [
+    baseline.metrics.traceabilityCoverage.perCase[0]!.testCaseId,
+  ]);
+  assert.equal(diff.traceability.changedTestCaseIds.length > 0, true);
+});
+
+test("baseline-eval: diff throws when archetype ids do not match", async () => {
+  const baseline = await readBaselineArchetypeEvalArtifact(
+    "baseline-simple-form",
+  );
+  const candidate = await readBaselineArchetypeEvalArtifact(
+    "baseline-calculation",
+  );
+  assert.throws(
+    () =>
+      diffBaselineArchetypeEvalArtifact({
+        baseline,
+        candidate,
+      }),
+    /archetypeId mismatch/u,
+  );
 });
