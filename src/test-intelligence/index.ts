@@ -220,6 +220,27 @@ export {
   type RunAgentHarnessStepResult,
 } from "./agent-harness.js";
 export {
+  assertAgentHarnessExecutionGraphInvariants,
+  buildAgentHarnessExecutionGraph,
+  buildAgentTeamConfigArtifact,
+  buildAgentTeamResultsArtifact,
+  computeAgentHarnessResumePlan,
+  serializeAgentHarnessExecutionGraph,
+  writeAgentTeamConfigArtifact,
+  writeAgentTeamResultsArtifact,
+  type AgentHarnessResumeBucket,
+  type AgentHarnessResumePlan,
+  type BuildAgentHarnessExecutionGraphInput,
+  type BuildAgentHarnessGraphNodeInput,
+  type BuildAgentTeamConfigInput,
+  type BuildAgentTeamResultsInput,
+  type BuildAgentTeamRoleRunInput,
+  type WriteAgentTeamConfigInput,
+  type WriteAgentTeamConfigResult,
+  type WriteAgentTeamResultsInput,
+  type WriteAgentTeamResultsResult,
+} from "./agent-harness-execution-graph.js";
+export {
   buildGenealogyArtifact,
   writeGenealogyArtifact,
   type GenealogyNodeInput,

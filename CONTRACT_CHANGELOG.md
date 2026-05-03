@@ -31,6 +31,101 @@ All changes to the public contract surface of `workspace-dev` are documented her
 
 ---
 
+## [4.33.0] - 2026-05-03
+
+### Added (Issue #1781 — Execution graph and team artifacts)
+
+The test-intelligence contract surface now ships an
+`AgentHarnessExecutionGraph` and the two team-level rollup artifacts
+the multi-agent harness (Story MA-3, parent #1758) writes per job:
+`<runDir>/agent-team-config.json` and
+`<runDir>/agent-team-results.json`.
+
+The execution graph is a small canonical-JSON-stable adjacency-list
+DAG. It is *not* a workflow framework — there is no scheduler, no
+trigger, no conditional. Each node carries `roleStepId`, `role`,
+sorted `blocks` / `blockedBy` edges, sorted `requiredInputArtifacts`
+and `producedArtifacts`, and a closed `retryPolicy` literal. The
+builder canonicalises edge / artifact lists, asserts the mirror
+invariant `a.blocks ⇔ b.blockedBy`, asserts acyclicity, and computes
+`graphHash = sha256(canonicalJson(nodes))`. Calling the builder
+twice with byte-identical inputs returns graphs whose canonical-JSON
+representations are byte-identical, so the graph hash is suitable
+for evidence anchoring and gateway idempotency keys.
+
+Resume contract: `computeAgentHarnessResumePlan(graph, completed)`
+partitions the graph into `skip` / `runnable` / `blocked` buckets
+given the set of `roleStepId`s already accepted on a previous run
+(read from per-step checkpoint artifacts under
+`<runDir>/agent-role-runs/`). Already-completed steps are skipped;
+nodes whose `blockedBy` set is fully covered become runnable.
+
+Team artifacts are hash-only by construction — both interfaces carry
+a literal `rawPromptsIncluded: false` field that documents the
+contract and is asserted by tests:
+
+  - `AgentTeamConfigArtifact` pins the active profile registry
+    (sorted alphabetically by role), the graph hash, and the
+    operator's `policyProfileHash` (sha256 of the canonical-JSON of
+    the active policy profile). Used by the gateway to scope
+    idempotency and in-flight dedup keys.
+  - `AgentTeamResultsArtifact` rolls up per-step harness rollups
+    (only their hashes, terminal outcomes, error classes, attempt
+    counts, and cost rollups) into a single anchor with a unioned
+    `totalCost`. No raw prompts, no chain-of-thought, no model
+    output bytes, no secrets are ever surfaced.
+
+Both writers use the temp-file + `rename` pattern already in use by
+the per-step rollup writer, so a crash never leaves a half-written
+file behind.
+
+`TEST_INTELLIGENCE_CONTRACT_VERSION` is unchanged at `1.6.0` — the
+new graph and team artifacts are additive and do not change any
+existing test-intelligence artifact schema. Per the precedent set
+by Issues #1767 / #1774 / #1778 / #1779, additive test-intelligence
+surface bumps the top-level `CONTRACT_VERSION` only.
+
+New public exports (additive only):
+
+- Constants:
+  `AGENT_HARNESS_EXECUTION_GRAPH_SCHEMA_VERSION` (`"1.0.0"`),
+  `AGENT_HARNESS_GRAPH_RETRY_POLICIES` (`["none",
+  "retry_from_checkpoint", "retry_transient_once"]`),
+  `AGENT_TEAM_CONFIG_SCHEMA_VERSION` (`"1.0.0"`),
+  `AGENT_TEAM_CONFIG_ARTIFACT_FILENAME`
+  (`"agent-team-config.json"`),
+  `AGENT_TEAM_RESULTS_SCHEMA_VERSION` (`"1.0.0"`),
+  `AGENT_TEAM_RESULTS_ARTIFACT_FILENAME`
+  (`"agent-team-results.json"`),
+  `ALLOWED_AGENT_TEAM_OUTCOMES`.
+- Types: `AgentHarnessExecutionGraph`, `AgentHarnessGraphNode`,
+  `AgentHarnessGraphRetryPolicy`, `AgentTeamOutcome`,
+  `AgentTeamConfigArtifact`, `AgentTeamResultsArtifact`,
+  `AgentTeamRoleRunSummary`, `AgentTeamTotalCost`.
+
+The accompanying `test-intelligence/agent-harness-execution-graph.ts`
+module (re-exported via `src/test-intelligence/index.ts`) ships the
+builders, validators, resume planner, and atomic writers:
+
+- `buildAgentHarnessExecutionGraph(input)` — normalises edges and
+  artifact lists, validates the DAG, computes `graphHash`.
+- `assertAgentHarnessExecutionGraphInvariants(graph)` — boundary
+  validator the Production Runner runs on resume.
+- `serializeAgentHarnessExecutionGraph(graph)` — canonical-JSON
+  serialiser with trailing newline.
+- `computeAgentHarnessResumePlan(graph, completed)` — partitions
+  into skip/runnable/blocked buckets.
+- `buildAgentTeamConfigArtifact(input)` /
+  `writeAgentTeamConfigArtifact(input)` — frozen builder + atomic
+  writer.
+- `buildAgentTeamResultsArtifact(input)` /
+  `writeAgentTeamResultsArtifact(input)` — frozen builder + atomic
+  writer.
+
+This is an additive minor bump — existing serialised artifacts
+remain valid because no field, type, or refusal code is removed or
+renamed.
+
 ## [4.32.0] - 2026-05-03
 
 ### Added (Issue #1779 — Static `AgentRoleProfile` matrix with capability filters)
