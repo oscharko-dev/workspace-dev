@@ -31,7 +31,8 @@ import { runValidationPipeline } from "./validation-pipeline.js";
 const FIXTURES_DIR = join(new URL(".", import.meta.url).pathname, "fixtures");
 
 const BASELINE_EVAL_SCHEMA_VERSION = "1.0.0" as const;
-const BASELINE_EVAL_MODEL_REVISION = "baseline-eval-deterministic-mock" as const;
+const BASELINE_EVAL_MODEL_REVISION =
+  "baseline-eval-deterministic-mock" as const;
 const BASELINE_EVAL_GATEWAY_RELEASE = "baseline-eval-1.0" as const;
 const BASELINE_EVAL_POLICY_BUNDLE_VERSION =
   "baseline-eval-eu-banking-default" as const;
@@ -229,7 +230,9 @@ export const buildBaselineArchetypeEvalArtifact = async (input: {
         validation.generatedTestCases.testCases,
         validation.policy.decisions,
       ),
-      finOpsSpendMinorUnits: Math.round(finopsReport.totals.estimatedCost * 100),
+      finOpsSpendMinorUnits: Math.round(
+        finopsReport.totals.estimatedCost * 100,
+      ),
       latencyMs: finopsReport.totals.durationMs,
       tokensIn: finopsReport.totals.inputTokens,
       tokensOut: finopsReport.totals.outputTokens,
@@ -284,8 +287,156 @@ export const writeAllBaselineArchetypeEvalArtifacts = async (input?: {
 }): Promise<ReadonlyArray<string>> => {
   const artifacts = await buildAllBaselineArchetypeEvalArtifacts(input);
   return Promise.all(
-    artifacts.map((artifact) => writeBaselineArchetypeEvalArtifact({ artifact })),
+    artifacts.map((artifact) =>
+      writeBaselineArchetypeEvalArtifact({ artifact }),
+    ),
   );
+};
+
+export interface BaselineArchetypeEvalScalarDelta {
+  baseline: number;
+  candidate: number;
+  delta: number;
+}
+
+export interface BaselineArchetypeEvalMetricsDiff {
+  coveragePositiveCount: BaselineArchetypeEvalScalarDelta;
+  coverageNegativeCount: BaselineArchetypeEvalScalarDelta;
+  coverageBoundaryCount: BaselineArchetypeEvalScalarDelta;
+  duplicateRate: BaselineArchetypeEvalScalarDelta;
+  genericExpectedResultRate: BaselineArchetypeEvalScalarDelta;
+  unmarkedAssumptionRate: BaselineArchetypeEvalScalarDelta;
+  finOpsSpendMinorUnits: BaselineArchetypeEvalScalarDelta;
+  latencyMs: BaselineArchetypeEvalScalarDelta;
+  tokensIn: BaselineArchetypeEvalScalarDelta;
+  tokensOut: BaselineArchetypeEvalScalarDelta;
+  humanAcceptanceRate: BaselineArchetypeEvalScalarDelta;
+  humanAcceptanceSampleSize: BaselineArchetypeEvalScalarDelta;
+  humanAcceptanceApprovedCount: BaselineArchetypeEvalScalarDelta;
+  traceabilityTotalCases: BaselineArchetypeEvalScalarDelta;
+  traceabilitySourceRefPresenceRate: BaselineArchetypeEvalScalarDelta;
+  traceabilityIntentRefPresenceRate: BaselineArchetypeEvalScalarDelta;
+  traceabilityVisualRefPresenceRate: BaselineArchetypeEvalScalarDelta;
+}
+
+export interface BaselineEvalTraceabilityCoverageDiff {
+  addedTestCaseIds: string[];
+  removedTestCaseIds: string[];
+  changedTestCaseIds: string[];
+}
+
+export interface BaselineArchetypeEvalArtifactDiff {
+  archetypeId: BaselineArchetypeFixtureId;
+  baselineGeneratedAt: string;
+  candidateGeneratedAt: string;
+  schemaVersionMatch: boolean;
+  contractVersionMatch: boolean;
+  intentMatch: boolean;
+  archetypeMatch: boolean;
+  metrics: BaselineArchetypeEvalMetricsDiff;
+  traceability: BaselineEvalTraceabilityCoverageDiff;
+}
+
+export const diffBaselineArchetypeEvalArtifact = (input: {
+  baseline: BaselineArchetypeEvalArtifact;
+  candidate: BaselineArchetypeEvalArtifact;
+}): BaselineArchetypeEvalArtifactDiff => {
+  const { baseline, candidate } = input;
+  if (baseline.archetypeId !== candidate.archetypeId) {
+    throw new Error(
+      `diffBaselineArchetypeEvalArtifact: archetypeId mismatch (baseline=${baseline.archetypeId} candidate=${candidate.archetypeId})`,
+    );
+  }
+  // Widen the literal types so the comparison reflects the runtime check we
+  // actually want for artifacts loaded from disk, where schemaVersion and
+  // contractVersion come from JSON and may legitimately differ.
+  const baselineSchema: string = baseline.schemaVersion;
+  const candidateSchema: string = candidate.schemaVersion;
+  const baselineContract: string = baseline.contractVersion;
+  const candidateContract: string = candidate.contractVersion;
+  return {
+    archetypeId: baseline.archetypeId,
+    baselineGeneratedAt: baseline.generatedAt,
+    candidateGeneratedAt: candidate.generatedAt,
+    schemaVersionMatch: baselineSchema === candidateSchema,
+    contractVersionMatch: baselineContract === candidateContract,
+    intentMatch: baseline.intent === candidate.intent,
+    archetypeMatch: baseline.archetype === candidate.archetype,
+    metrics: {
+      coveragePositiveCount: scalarDelta(
+        baseline.metrics.coveragePositiveCount,
+        candidate.metrics.coveragePositiveCount,
+      ),
+      coverageNegativeCount: scalarDelta(
+        baseline.metrics.coverageNegativeCount,
+        candidate.metrics.coverageNegativeCount,
+      ),
+      coverageBoundaryCount: scalarDelta(
+        baseline.metrics.coverageBoundaryCount,
+        candidate.metrics.coverageBoundaryCount,
+      ),
+      duplicateRate: scalarDelta(
+        baseline.metrics.duplicateRate,
+        candidate.metrics.duplicateRate,
+      ),
+      genericExpectedResultRate: scalarDelta(
+        baseline.metrics.genericExpectedResultRate,
+        candidate.metrics.genericExpectedResultRate,
+      ),
+      unmarkedAssumptionRate: scalarDelta(
+        baseline.metrics.unmarkedAssumptionRate,
+        candidate.metrics.unmarkedAssumptionRate,
+      ),
+      finOpsSpendMinorUnits: scalarDelta(
+        baseline.metrics.finOpsSpendMinorUnits,
+        candidate.metrics.finOpsSpendMinorUnits,
+      ),
+      latencyMs: scalarDelta(
+        baseline.metrics.latencyMs,
+        candidate.metrics.latencyMs,
+      ),
+      tokensIn: scalarDelta(
+        baseline.metrics.tokensIn,
+        candidate.metrics.tokensIn,
+      ),
+      tokensOut: scalarDelta(
+        baseline.metrics.tokensOut,
+        candidate.metrics.tokensOut,
+      ),
+      humanAcceptanceRate: scalarDelta(
+        baseline.metrics.humanAcceptanceRateSnapshot.rate,
+        candidate.metrics.humanAcceptanceRateSnapshot.rate,
+      ),
+      humanAcceptanceSampleSize: scalarDelta(
+        baseline.metrics.humanAcceptanceRateSnapshot.sampleSize,
+        candidate.metrics.humanAcceptanceRateSnapshot.sampleSize,
+      ),
+      humanAcceptanceApprovedCount: scalarDelta(
+        baseline.metrics.humanAcceptanceRateSnapshot.approvedCount,
+        candidate.metrics.humanAcceptanceRateSnapshot.approvedCount,
+      ),
+      traceabilityTotalCases: scalarDelta(
+        baseline.metrics.traceabilityCoverage.totalCases,
+        candidate.metrics.traceabilityCoverage.totalCases,
+      ),
+      traceabilitySourceRefPresenceRate: scalarDelta(
+        baseline.metrics.traceabilityCoverage.sourceRefPresenceRate,
+        candidate.metrics.traceabilityCoverage.sourceRefPresenceRate,
+      ),
+      traceabilityIntentRefPresenceRate: scalarDelta(
+        baseline.metrics.traceabilityCoverage.intentRefPresenceRate,
+        candidate.metrics.traceabilityCoverage.intentRefPresenceRate,
+      ),
+      traceabilityVisualRefPresenceRate: scalarDelta(
+        baseline.metrics.traceabilityCoverage.visualRefPresenceRate,
+        candidate.metrics.traceabilityCoverage.visualRefPresenceRate,
+      ),
+    },
+    traceability: diffTraceabilityCoverage(
+      baseline.metrics.traceabilityCoverage,
+      candidate.metrics.traceabilityCoverage,
+    ),
+  };
 };
 
 const buildAuditMetadata = (input: {
@@ -323,7 +474,9 @@ const computeDuplicateRate = (
 const computeGenericExpectedResultRate = (
   testCases: ReadonlyArray<GeneratedTestCase>,
 ): number => {
-  const expectedResults = testCases.flatMap((testCase) => testCase.expectedResults);
+  const expectedResults = testCases.flatMap(
+    (testCase) => testCase.expectedResults,
+  );
   if (expectedResults.length === 0) return 0;
   const genericCount = expectedResults.filter((value) =>
     isGenericExpectedResult(value),
@@ -343,10 +496,14 @@ const computeUnmarkedAssumptionRate = (
   traceability: ReturnType<typeof buildTraceabilityMatrix>,
 ): number => {
   const ambiguousRows = traceability.rows.filter((row) =>
-    row.reconciliationDecisions.some((decision) => decision.ambiguity !== undefined),
+    row.reconciliationDecisions.some(
+      (decision) => decision.ambiguity !== undefined,
+    ),
   );
   if (ambiguousRows.length === 0) return 0;
-  const casesById = new Map(testCases.map((testCase) => [testCase.id, testCase]));
+  const casesById = new Map(
+    testCases.map((testCase) => [testCase.id, testCase]),
+  );
   const unmarked = ambiguousRows.filter((row) => {
     const testCase = casesById.get(row.testCaseId);
     return (
@@ -362,7 +519,9 @@ const buildTraceabilityCoverage = (
   testCases: ReadonlyArray<GeneratedTestCase>,
   traceability: ReturnType<typeof buildTraceabilityMatrix>,
 ): BaselineEvalTraceabilityCoverage => {
-  const testCasesById = new Map(testCases.map((testCase) => [testCase.id, testCase]));
+  const testCasesById = new Map(
+    testCases.map((testCase) => [testCase.id, testCase]),
+  );
   const perCase = traceability.rows
     .map((row) => {
       const testCase = testCasesById.get(row.testCaseId);
@@ -384,17 +543,26 @@ const buildTraceabilityCoverage = (
       a.testCaseId < b.testCaseId ? -1 : a.testCaseId > b.testCaseId ? 1 : 0,
     );
   const totalCases = perCase.length;
-  const casesWithSourceRefs = perCase.filter((row) => row.sourceRefCount > 0).length;
-  const casesWithIntentRefs = perCase.filter((row) => row.intentRefCount > 0).length;
-  const casesWithVisualRefs = perCase.filter((row) => row.visualRefCount > 0).length;
+  const casesWithSourceRefs = perCase.filter(
+    (row) => row.sourceRefCount > 0,
+  ).length;
+  const casesWithIntentRefs = perCase.filter(
+    (row) => row.intentRefCount > 0,
+  ).length;
+  const casesWithVisualRefs = perCase.filter(
+    (row) => row.visualRefCount > 0,
+  ).length;
   return {
     totalCases,
     casesWithSourceRefs,
     casesWithIntentRefs,
     casesWithVisualRefs,
-    sourceRefPresenceRate: totalCases === 0 ? 0 : roundTo(casesWithSourceRefs / totalCases),
-    intentRefPresenceRate: totalCases === 0 ? 0 : roundTo(casesWithIntentRefs / totalCases),
-    visualRefPresenceRate: totalCases === 0 ? 0 : roundTo(casesWithVisualRefs / totalCases),
+    sourceRefPresenceRate:
+      totalCases === 0 ? 0 : roundTo(casesWithSourceRefs / totalCases),
+    intentRefPresenceRate:
+      totalCases === 0 ? 0 : roundTo(casesWithIntentRefs / totalCases),
+    visualRefPresenceRate:
+      totalCases === 0 ? 0 : roundTo(casesWithVisualRefs / totalCases),
     perCase,
   };
 };
@@ -432,6 +600,53 @@ const estimateTokens = (values: ReadonlyArray<unknown>): number => {
     return sum + encoder.encode(JSON.stringify(value)).byteLength;
   }, 0);
   return Math.ceil(totalBytes / 4);
+};
+
+const scalarDelta = (
+  baseline: number,
+  candidate: number,
+): BaselineArchetypeEvalScalarDelta => ({
+  baseline,
+  candidate,
+  delta: roundTo(candidate - baseline),
+});
+
+const diffTraceabilityCoverage = (
+  baseline: BaselineEvalTraceabilityCoverage,
+  candidate: BaselineEvalTraceabilityCoverage,
+): BaselineEvalTraceabilityCoverageDiff => {
+  const baselineById = new Map(
+    baseline.perCase.map((row) => [row.testCaseId, row]),
+  );
+  const candidateById = new Map(
+    candidate.perCase.map((row) => [row.testCaseId, row]),
+  );
+  const addedTestCaseIds: string[] = [];
+  const removedTestCaseIds: string[] = [];
+  const changedTestCaseIds: string[] = [];
+  for (const [testCaseId, candidateRow] of candidateById) {
+    const baselineRow = baselineById.get(testCaseId);
+    if (baselineRow === undefined) {
+      addedTestCaseIds.push(testCaseId);
+      continue;
+    }
+    if (
+      baselineRow.sourceRefCount !== candidateRow.sourceRefCount ||
+      baselineRow.intentRefCount !== candidateRow.intentRefCount ||
+      baselineRow.visualRefCount !== candidateRow.visualRefCount
+    ) {
+      changedTestCaseIds.push(testCaseId);
+    }
+  }
+  for (const testCaseId of baselineById.keys()) {
+    if (!candidateById.has(testCaseId)) {
+      removedTestCaseIds.push(testCaseId);
+    }
+  }
+  addedTestCaseIds.sort();
+  removedTestCaseIds.sort();
+  changedTestCaseIds.sort();
+  return { addedTestCaseIds, removedTestCaseIds, changedTestCaseIds };
 };
 
 const stripBaselinePrefix = (archetypeId: BaselineArchetypeFixtureId): string =>
