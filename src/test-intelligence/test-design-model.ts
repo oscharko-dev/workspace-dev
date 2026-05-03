@@ -7,8 +7,11 @@ import {
   TEST_DESIGN_MODEL_SCHEMA_VERSION,
   type BusinessTestIntentIr,
   type IntentTraceRef,
+  type MultiSourceConflict,
+  type MultiSourceTestIntentEnvelope,
   type TestDesignAction,
   type TestDesignAssumption,
+  type TestDesignCalculation,
   type TestDesignElement,
   type TestDesignModel,
   type TestDesignOpenQuestion,
@@ -77,11 +80,23 @@ const RISK_SIGNAL_KEYS = [
   "screenId",
   "sourceRefs",
 ] as const;
+const PROMPT_INJECTION_PATTERNS: readonly RegExp[] = [
+  /\bignore (all )?(previous|prior) (instructions|directives)\b/i,
+  /\bdisregard (the )?(system|instructions)\b/i,
+  /\bsystem\s*:\s*/i,
+  /\b<\s*\/?\s*(system|user|assistant)\s*>/i,
+  /\bsudo\s+/i,
+  /\bjailbreak\b/i,
+  /\boverride (this|the) (rule|policy)\b/i,
+] as const;
+const CALCULATION_RULE_PATTERN =
+  /\b(computed|calculate(?:d)?|formula|rounded?|rounding|derived?)\b|=/i;
 
 export interface BuildTestDesignModelInput {
   jobId: string;
   intent: BusinessTestIntentIr;
   visual?: ReadonlyArray<VisualScreenDescription>;
+  sourceEnvelope?: MultiSourceTestIntentEnvelope;
 }
 
 export interface TestDesignModelValidationIssue {
@@ -111,20 +126,114 @@ const stableId = (prefix: string, seed: unknown): string =>
 const toVisualRef = (screenId: string, regionId: string): string =>
   `visual:${screenId}:${regionId}`;
 
+const normalizeText = (value: string): string =>
+  value
+    .toLowerCase()
+    .replace(/[\p{P}\p{S}]+/gu, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
 const collectTraceSourceRefs = (trace: IntentTraceRef | undefined): string[] =>
   uniqueSorted((trace?.sourceRefs ?? []).map((sourceRef) => sourceRef.sourceId));
+
+const buildScreenSourceRefs = ({
+  screenId,
+  intent,
+}: {
+  screenId: string;
+  intent: BusinessTestIntentIr;
+}): string[] =>
+  uniqueSorted([
+    ...collectTraceSourceRefs(
+      intent.screens.find((screen) => screen.screenId === screenId)?.trace,
+    ),
+    ...intent.detectedFields
+      .filter((field) => field.screenId === screenId)
+      .flatMap((field) => [
+        ...collectTraceSourceRefs(field.trace),
+        ...(field.sourceRefs ?? []).map((sourceRef) => sourceRef.sourceId),
+      ]),
+    ...intent.detectedActions
+      .filter((action) => action.screenId === screenId)
+      .flatMap((action) => [
+        ...collectTraceSourceRefs(action.trace),
+        ...(action.sourceRefs ?? []).map((sourceRef) => sourceRef.sourceId),
+      ]),
+    ...intent.detectedValidations
+      .filter((validation) => validation.screenId === screenId)
+      .flatMap((validation) => [
+        ...collectTraceSourceRefs(validation.trace),
+        ...(validation.sourceRefs ?? []).map((sourceRef) => sourceRef.sourceId),
+      ]),
+    ...intent.detectedNavigation
+      .filter((navigation) => navigation.screenId === screenId)
+      .flatMap((navigation) => [
+        ...collectTraceSourceRefs(navigation.trace),
+        ...(navigation.sourceRefs ?? []).map((sourceRef) => sourceRef.sourceId),
+      ]),
+    ...intent.inferredBusinessObjects
+      .filter((businessObject) => businessObject.screenId === screenId)
+      .flatMap((businessObject) => [
+        ...collectTraceSourceRefs(businessObject.trace),
+        ...(businessObject.sourceRefs ?? []).map((sourceRef) => sourceRef.sourceId),
+      ]),
+    ...intent.piiIndicators
+      .filter((indicator) => indicator.screenId === screenId)
+      .flatMap((indicator) => collectTraceSourceRefs(indicator.traceRef)),
+  ]);
+
+const buildAllSourceRefs = ({
+  intent,
+  sourceEnvelope,
+}: {
+  intent: BusinessTestIntentIr;
+  sourceEnvelope: MultiSourceTestIntentEnvelope | undefined;
+}): string[] =>
+  uniqueSorted([
+    ...(sourceEnvelope?.sources.map((source) => source.sourceId) ?? []),
+    ...intent.screens.flatMap((screen) => collectTraceSourceRefs(screen.trace)),
+    ...intent.detectedFields.flatMap((field) => [
+      ...collectTraceSourceRefs(field.trace),
+      ...(field.sourceRefs ?? []).map((sourceRef) => sourceRef.sourceId),
+    ]),
+    ...intent.detectedActions.flatMap((action) => [
+      ...collectTraceSourceRefs(action.trace),
+      ...(action.sourceRefs ?? []).map((sourceRef) => sourceRef.sourceId),
+    ]),
+    ...intent.detectedValidations.flatMap((validation) => [
+      ...collectTraceSourceRefs(validation.trace),
+      ...(validation.sourceRefs ?? []).map((sourceRef) => sourceRef.sourceId),
+    ]),
+    ...intent.detectedNavigation.flatMap((navigation) => [
+      ...collectTraceSourceRefs(navigation.trace),
+      ...(navigation.sourceRefs ?? []).map((sourceRef) => sourceRef.sourceId),
+    ]),
+    ...intent.inferredBusinessObjects.flatMap((businessObject) => [
+      ...collectTraceSourceRefs(businessObject.trace),
+      ...(businessObject.sourceRefs ?? []).map((sourceRef) => sourceRef.sourceId),
+    ]),
+    ...intent.piiIndicators.flatMap((indicator) =>
+      collectTraceSourceRefs(indicator.traceRef),
+    ),
+    ...(intent.multiSourceConflicts ?? []).flatMap(
+      (conflict) => conflict.participatingSourceIds,
+    ),
+  ]);
 
 const buildSourceHash = ({
   intent,
   visual,
+  sourceEnvelope,
 }: {
   intent: BusinessTestIntentIr;
   visual: ReadonlyArray<VisualScreenDescription>;
+  sourceEnvelope: MultiSourceTestIntentEnvelope | undefined;
 }): string =>
   sha256Hex({
     schemaVersion: TEST_DESIGN_MODEL_SCHEMA_VERSION,
     intent,
     visual,
+    sourceEnvelope,
   });
 
 const buildBusinessRuleDescription = ({
@@ -145,12 +254,150 @@ const buildBusinessRuleDescription = ({
   return rule;
 };
 
+const isCalculationRule = (rule: string): boolean =>
+  CALCULATION_RULE_PATTERN.test(rule);
+
+const containsPromptInjectionLikeText = (text: string | undefined): boolean => {
+  if (text === undefined || text.length === 0) return false;
+  return PROMPT_INJECTION_PATTERNS.some((pattern) => pattern.test(text));
+};
+
+const inferCalculationInputElementIds = ({
+  rule,
+  targetElementId,
+  fields,
+}: {
+  rule: string;
+  targetElementId: string | undefined;
+  fields: ReadonlyArray<TestDesignElement>;
+}): string[] => {
+  const normalizedRule = normalizeText(rule);
+  const otherFields = fields.filter((field) => field.elementId !== targetElementId);
+  const explicitMatches = otherFields
+    .filter((field) => {
+      const normalizedLabel = normalizeText(field.label);
+      if (normalizedLabel.length > 0 && normalizedRule.includes(normalizedLabel)) {
+        return true;
+      }
+      const tokens = normalizedLabel
+        .split(" ")
+        .filter((token) => token.length >= 4 || token === "rate");
+      return tokens.some((token) => normalizedRule.includes(token));
+    })
+    .map((field) => field.elementId);
+  if (explicitMatches.length > 0) {
+    return uniqueSorted(explicitMatches);
+  }
+  return otherFields
+    .map((field) => field.elementId)
+    .sort((left, right) => left.localeCompare(right));
+};
+
+const buildCalculationsForScreen = ({
+  screenId,
+  fields,
+  validations,
+}: {
+  screenId: string;
+  fields: ReadonlyArray<TestDesignElement>;
+  validations: ReadonlyArray<TestDesignValidation>;
+}): TestDesignCalculation[] =>
+  validations
+    .filter((validation) => isCalculationRule(validation.rule))
+    .map((validation) => {
+      const inputElementIds = inferCalculationInputElementIds({
+        rule: validation.rule,
+        targetElementId: validation.targetElementId,
+        fields,
+      });
+      const targetLabel =
+        validation.targetElementId === undefined
+          ? undefined
+          : fields.find((field) => field.elementId === validation.targetElementId)?.label;
+      return {
+        calculationId: stableId("calculation", {
+          screenId,
+          rule: validation.rule,
+          targetElementId: validation.targetElementId ?? null,
+          inputElementIds,
+        }),
+        name: targetLabel ?? `Calculation on ${screenId}`,
+        inputElementIds,
+        ...(validation.ambiguity !== undefined
+          ? { ambiguity: validation.ambiguity }
+          : !validation.rule.includes("=") && inputElementIds.length > 0
+            ? {
+                ambiguity:
+                  "Input operands were inferred from same-screen fields because the rule text did not name them explicitly.",
+              }
+            : {}),
+      };
+    })
+    .sort((left, right) => left.calculationId.localeCompare(right.calculationId));
+
+const buildConflictOpenQuestion = (conflict: MultiSourceConflict): string =>
+  `multi-source conflict ${conflict.conflictId} requires reviewer attention`;
+
+const buildEntityAmbiguityQuestion = ({
+  screenName,
+  screenId,
+  entityKind,
+  label,
+  reason,
+}: {
+  screenName: string;
+  screenId: string;
+  entityKind: string;
+  label: string;
+  reason: string;
+}): string =>
+  `${entityKind} "${label}" on screen "${screenName}" (${screenId}) is ambiguous: ${reason}. What should test coverage assume?`;
+
+const buildVisualCoverageQuestions = ({
+  screen,
+  visual,
+}: {
+  screen: TestDesignScreen;
+  visual: VisualScreenDescription | undefined;
+}): string[] => {
+  if (visual === undefined) return [];
+  const mappedIds = new Set([
+    ...screen.elements.map((element) => element.elementId),
+    ...screen.actions.map((action) => action.actionId),
+  ]);
+  const mappedLabels = new Set(
+    [...screen.elements.map((element) => element.label), ...screen.actions.map((action) => action.label)]
+      .map((label) => normalizeText(label))
+      .filter((label) => label.length > 0),
+  );
+  return visual.regions.flatMap((region) => {
+    const regionLabel = region.label ?? region.visibleText ?? region.regionId;
+    const mapped =
+      mappedIds.has(region.regionId) ||
+      mappedLabels.has(normalizeText(regionLabel));
+    const questions: string[] = [];
+    if (!mapped && region.controlType !== undefined) {
+      questions.push(
+        `Visual region "${regionLabel}" on screen "${screen.name}" was not mapped to an intent element or action. Should test coverage include it?`,
+      );
+    }
+    if (region.ambiguity !== undefined) {
+      questions.push(
+        `Visual region "${regionLabel}" on screen "${screen.name}" is ambiguous: ${region.ambiguity.reason}. What should test coverage assume?`,
+      );
+    }
+    return questions;
+  });
+};
+
 export const buildTestDesignModel = (
   input: BuildTestDesignModelInput,
 ): TestDesignModel => {
+  const sourceEnvelope = input.sourceEnvelope ?? input.intent.sourceEnvelope;
   const visual = [...(input.visual ?? [])].sort((left, right) =>
     left.screenId.localeCompare(right.screenId),
   );
+  const allSourceRefs = buildAllSourceRefs({ intent: input.intent, sourceEnvelope });
   const visualByScreenId = new Map(
     visual.map((screen) => [
       screen.screenId,
@@ -215,41 +462,15 @@ export const buildTestDesignModel = (
             : {}),
         }));
 
-      const sourceRefs = uniqueSorted([
-        ...collectTraceSourceRefs(screen.trace),
-        ...input.intent.detectedFields
-          .filter((field) => field.screenId === screen.screenId)
-          .flatMap((field) => [
-            ...collectTraceSourceRefs(field.trace),
-            ...(field.sourceRefs ?? []).map((sourceRef) => sourceRef.sourceId),
-          ]),
-        ...input.intent.detectedActions
-          .filter((action) => action.screenId === screen.screenId)
-          .flatMap((action) => [
-            ...collectTraceSourceRefs(action.trace),
-            ...(action.sourceRefs ?? []).map((sourceRef) => sourceRef.sourceId),
-          ]),
-        ...input.intent.detectedValidations
-          .filter((validation) => validation.screenId === screen.screenId)
-          .flatMap((validation) => [
-            ...collectTraceSourceRefs(validation.trace),
-            ...(validation.sourceRefs ?? []).map((sourceRef) => sourceRef.sourceId),
-          ]),
-        ...input.intent.detectedNavigation
-          .filter((navigation) => navigation.screenId === screen.screenId)
-          .flatMap((navigation) => [
-            ...collectTraceSourceRefs(navigation.trace),
-            ...(navigation.sourceRefs ?? []).map((sourceRef) => sourceRef.sourceId),
-          ]),
-        ...input.intent.inferredBusinessObjects
-          .filter((businessObject) => businessObject.screenId === screen.screenId)
-          .flatMap((businessObject) => [
-            ...collectTraceSourceRefs(businessObject.trace),
-            ...(businessObject.sourceRefs ?? []).map(
-              (sourceRef) => sourceRef.sourceId,
-            ),
-          ]),
-      ]);
+      const sourceRefs = buildScreenSourceRefs({
+        screenId: screen.screenId,
+        intent: input.intent,
+      });
+      const calculations = buildCalculationsForScreen({
+        screenId: screen.screenId,
+        fields: elements,
+        validations,
+      });
 
       return {
         screenId: screen.screenId,
@@ -257,7 +478,7 @@ export const buildTestDesignModel = (
         elements,
         actions,
         validations,
-        calculations: [],
+        calculations,
         visualRefs: visualByScreenId.get(screen.screenId) ?? [],
         sourceRefs,
       };
@@ -298,9 +519,87 @@ export const buildTestDesignModel = (
     }),
   );
 
-  const openQuestions: TestDesignOpenQuestion[] = uniqueSorted(
-    input.intent.openQuestions,
-  ).map((text) => ({
+  const screenNameById = new Map(
+    input.intent.screens.map((screen) => [screen.screenId, screen.screenName] as const),
+  );
+  const visualMap = new Map(visual.map((screen) => [screen.screenId, screen] as const));
+
+  const openQuestions: TestDesignOpenQuestion[] = uniqueSorted([
+    ...input.intent.openQuestions,
+    ...(input.intent.multiSourceConflicts ?? [])
+      .filter((conflict) => conflict.resolution !== "auto_priority")
+      .map(buildConflictOpenQuestion),
+    ...input.intent.detectedFields
+      .filter((field) => field.ambiguity !== undefined)
+      .map((field) =>
+        buildEntityAmbiguityQuestion({
+          screenName: screenNameById.get(field.screenId) ?? field.screenId,
+          screenId: field.screenId,
+          entityKind: "Field",
+          label: field.label,
+          reason: field.ambiguity!.reason,
+        }),
+      ),
+    ...input.intent.detectedActions
+      .filter((action) => action.ambiguity !== undefined)
+      .map((action) =>
+        buildEntityAmbiguityQuestion({
+          screenName: screenNameById.get(action.screenId) ?? action.screenId,
+          screenId: action.screenId,
+          entityKind: "Action",
+          label: action.label,
+          reason: action.ambiguity!.reason,
+        }),
+      ),
+    ...input.intent.detectedValidations
+      .filter((validation) => validation.ambiguity !== undefined)
+      .map((validation) =>
+        buildEntityAmbiguityQuestion({
+          screenName: screenNameById.get(validation.screenId) ?? validation.screenId,
+          screenId: validation.screenId,
+          entityKind: "Validation",
+          label: validation.rule,
+          reason: validation.ambiguity!.reason,
+        }),
+      ),
+    ...input.intent.detectedNavigation
+      .filter((navigation) => navigation.ambiguity !== undefined)
+      .map((navigation) =>
+        buildEntityAmbiguityQuestion({
+          screenName: screenNameById.get(navigation.screenId) ?? navigation.screenId,
+          screenId: navigation.screenId,
+          entityKind: "Navigation",
+          label: navigation.id,
+          reason: navigation.ambiguity!.reason,
+        }),
+      ),
+    ...input.intent.inferredBusinessObjects
+      .filter((businessObject) => businessObject.ambiguity !== undefined)
+      .map((businessObject) =>
+        buildEntityAmbiguityQuestion({
+          screenName:
+            screenNameById.get(businessObject.screenId) ?? businessObject.screenId,
+          screenId: businessObject.screenId,
+          entityKind: "Business object",
+          label: businessObject.name,
+          reason: businessObject.ambiguity!.reason,
+        }),
+      ),
+    ...screens.flatMap((screen) =>
+      buildVisualCoverageQuestions({
+        screen,
+        visual: visualMap.get(screen.screenId),
+      }),
+    ),
+    ...screens.flatMap((screen) =>
+      screen.calculations
+        .filter((calculation) => calculation.ambiguity !== undefined)
+        .map(
+          (calculation) =>
+            `Calculation "${calculation.name}" on screen "${screen.name}" (${screen.screenId}) is ambiguous: ${calculation.ambiguity}. What should test coverage assume?`,
+        ),
+    ),
+  ]).map((text) => ({
     openQuestionId: stableId("open-question", text),
     text,
   }));
@@ -309,8 +608,70 @@ export const buildTestDesignModel = (
     ...uniqueSorted(input.intent.risks).map((text) => ({
       riskSignalId: stableId("risk", { kind: "intent-risk", text }),
       text,
-      sourceRefs: [],
+      sourceRefs: allSourceRefs,
     })),
+    ...input.intent.piiIndicators
+      .slice()
+      .sort((left, right) => left.id.localeCompare(right.id))
+      .map((indicator) => ({
+        riskSignalId: stableId("risk", { kind: "pii-indicator", id: indicator.id }),
+        text: `PII indicator ${indicator.kind} detected in ${indicator.matchLocation}`,
+        ...(indicator.screenId !== undefined ? { screenId: indicator.screenId } : {}),
+        sourceRefs: uniqueSorted([
+          ...collectTraceSourceRefs(indicator.traceRef),
+          ...(indicator.screenId !== undefined
+            ? buildScreenSourceRefs({
+                screenId: indicator.screenId,
+                intent: input.intent,
+              })
+            : allSourceRefs),
+        ]),
+      })),
+    ...visual.flatMap((screen) =>
+      screen.regions
+        .filter((region) => containsPromptInjectionLikeText(region.visibleText))
+        .map((region) => ({
+          riskSignalId: stableId("risk", {
+            kind: "visual-prompt-injection",
+            screenId: screen.screenId,
+            regionId: region.regionId,
+          }),
+          text: `Visual region "${region.label ?? region.regionId}" contains instruction-shaped text (possible prompt injection)`,
+          screenId: screen.screenId,
+          sourceRefs:
+            buildScreenSourceRefs({
+              screenId: screen.screenId,
+              intent: input.intent,
+            }).length > 0
+              ? buildScreenSourceRefs({
+                  screenId: screen.screenId,
+                  intent: input.intent,
+                })
+              : allSourceRefs,
+        })),
+    ),
+    ...visual.flatMap((screen) =>
+      (screen.piiFlags ?? []).map((flag) => ({
+        riskSignalId: stableId("risk", {
+          kind: "visual-pii-flag",
+          screenId: screen.screenId,
+          regionId: flag.regionId,
+          piiKind: flag.kind,
+        }),
+        text: `Visual sidecar flagged ${flag.kind} on region ${flag.regionId}`,
+        screenId: screen.screenId,
+        sourceRefs:
+          buildScreenSourceRefs({
+            screenId: screen.screenId,
+            intent: input.intent,
+          }).length > 0
+            ? buildScreenSourceRefs({
+                screenId: screen.screenId,
+                intent: input.intent,
+              })
+            : allSourceRefs,
+      })),
+    ),
     ...(input.intent.multiSourceConflicts ?? [])
       .slice()
       .sort((left, right) => left.conflictId.localeCompare(right.conflictId))
@@ -325,12 +686,18 @@ export const buildTestDesignModel = (
           : {}),
         sourceRefs: uniqueSorted(conflict.participatingSourceIds),
       })),
-  ].sort((left, right) => left.riskSignalId.localeCompare(right.riskSignalId));
+  ]
+    .sort((left, right) => left.riskSignalId.localeCompare(right.riskSignalId))
+    .filter(
+      (riskSignal, index, list) =>
+        index === 0 ||
+        riskSignal.riskSignalId !== list[index - 1]?.riskSignalId,
+    );
 
   return {
     schemaVersion: TEST_DESIGN_MODEL_SCHEMA_VERSION,
     jobId: input.jobId,
-    sourceHash: buildSourceHash({ intent: input.intent, visual }),
+    sourceHash: buildSourceHash({ intent: input.intent, visual, sourceEnvelope }),
     screens,
     businessRules,
     assumptions,
