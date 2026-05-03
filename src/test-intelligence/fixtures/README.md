@@ -48,6 +48,7 @@ fixtures/
 ├── <id>.jira.json                      # optional: Jira REST snapshot
 ├── <id>.custom.md                      # optional: customer-supplied markdown
 └── <id>.expected.summary.json          # required: hand-curated baseline metrics
+└── eval-baseline-<archetype>.json      # required: deterministic MA-0 eval snapshot
 ```
 
 - `<id>.figma.json` matches `IntentDerivationFigmaInput`
@@ -64,6 +65,15 @@ fixtures/
   `deriveBusinessTestIntentIr` over the figma input produces those
   exact counts. It also re-canonicalises the file through
   `canonicalJson` to assert byte-stability.
+- `eval-baseline-<archetype>.json` stores the deterministic MA-0
+  single-pass eval snapshot used by Issue #1763. The archetype token is
+  the fixture id without the leading `baseline-` prefix, so
+  `baseline-simple-form` maps to `eval-baseline-simple-form.json`.
+  These files pin the coverage-type counters, duplicate rate, generic
+  expected-result rate, ambiguous-case assumption marking rate,
+  per-case traceability ref counts, a deterministic human-review sample
+  snapshot, and the synthetic FinOps/token metrics used by the
+  air-gapped PR lane.
 
 Only `baseline-multi-context` ships the optional `*.jira.json` and
 `*.custom.md` companions. The other six archetypes intentionally
@@ -81,7 +91,8 @@ leave them out so the matrix stays readable.
   — no real customer data, no real bank account, no real tax id.
 - **Canonical-JSON snapshots.** `*.expected.summary.json` parses
   back to the byte-stable form produced by `canonicalJson`. The
-  test asserts this on every run.
+  test asserts this on every run. The same rule applies to the
+  `eval-baseline-*.json` artifacts.
 
 ### How to add a new archetype
 
@@ -95,13 +106,15 @@ leave them out so the matrix stays readable.
    `detectedNavigation`. Record those numbers in
    `<id>.expected.summary.json` together with the archetype's
    intent and any operator-curated open-question keywords.
-5. Append the new id to `BASELINE_ARCHETYPE_FIXTURE_IDS` in
+5. Rebuild the deterministic MA-0 eval artifact for the archetype and
+   persist it as `eval-baseline-<archetype>.json`.
+6. Append the new id to `BASELINE_ARCHETYPE_FIXTURE_IDS` in
    `src/test-intelligence/baseline-fixtures.ts` and to the table
    above.
-6. Run `pnpm run test:ti-eval`. The companion test will fail with
+7. Run `pnpm run test:ti-eval`. The companion tests will fail with
    a precise diff if any of the counts disagree with the figma
-   input, which is exactly the regression signal MA-0 is meant
-   to give.
+   input or if the eval snapshot drifts, which is exactly the
+   regression signal MA-0 is meant to give.
 
 ### Why this suite is small on purpose
 
