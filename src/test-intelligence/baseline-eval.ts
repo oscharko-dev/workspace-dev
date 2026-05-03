@@ -180,6 +180,7 @@ export const buildBaselineArchetypeEvalArtifact = async (input: {
   const finopsRecorder = createFinOpsUsageRecorder();
   finopsRecorder.recordAttempt({
     role: "test_generation",
+    source: "generator",
     deployment: BASELINE_EVAL_MODEL_REVISION,
     durationMs: 0,
     result: {

@@ -43,6 +43,8 @@ import { join, resolve } from "node:path";
 
 import {
   CONTRACT_VERSION,
+  FINOPS_ARTIFACT_DIRECTORY,
+  FINOPS_BUDGET_REPORT_ARTIFACT_FILENAME,
   GENERATED_TEST_CASE_SCHEMA_VERSION,
   REDACTION_POLICY_VERSION,
   TEST_INTELLIGENCE_CONTRACT_VERSION,
@@ -71,6 +73,7 @@ import {
   type Wave1PocAttestationVerificationFailure,
   type Wave1PocAttestationVerificationMaterial,
   type Wave1PocAttestationVerificationResult,
+  type FinOpsBudgetReport,
   type Wave1PocEvidenceManifest,
 } from "../contracts/index.js";
 import { canonicalJson } from "./content-hash.js";
@@ -79,6 +82,7 @@ import {
   resolveWave1PocEvidenceArtifactPath,
   validateWave1PocEvidenceArtifactPath,
 } from "./evidence-manifest.js";
+import { computePerSourceCostBreakdownHashFromReport } from "./per-source-cost.js";
 
 const HEX64 = /^[0-9a-f]{64}$/;
 const KEYID_PATTERN = /^[A-Za-z0-9._:\-/]{1,128}$/;
@@ -197,6 +201,8 @@ export interface BuildWave1PocAttestationStatementInput {
   manifest: Wave1PocEvidenceManifest;
   /** SHA-256 of the canonical manifest bytes. */
   manifestSha256: string;
+  /** Optional SHA-256 of the canonical FinOps per-source breakdown. */
+  bySourceHash?: string;
   signingMode: Wave1PocAttestationSigningMode;
 }
 
@@ -288,6 +294,7 @@ export const buildWave1PocAttestationStatement = (
     ...(visualSidecar !== undefined ? { visualSidecar } : {}),
     signingMode: input.signingMode,
     manifestSha256: input.manifestSha256,
+    ...(input.bySourceHash !== undefined ? { bySourceHash: input.bySourceHash } : {}),
     manifestFilename: WAVE1_POC_EVIDENCE_MANIFEST_ARTIFACT_FILENAME,
     rawScreenshotsIncluded: false,
     secretsIncluded: false,
@@ -984,6 +991,10 @@ const validatePredicate = (
   expectedSigningMode: Wave1PocAttestationSigningMode,
 ): Wave1PocAttestationVerificationFailure[] => {
   const failures: Wave1PocAttestationVerificationFailure[] = [];
+  const finopsReportFilename = `${FINOPS_ARTIFACT_DIRECTORY}/${FINOPS_BUDGET_REPORT_ARTIFACT_FILENAME}`;
+  const requiresBySourceHash = manifest.artifacts.some(
+    (artifact) => artifact.filename === finopsReportFilename,
+  );
   if (!isRecord(predicate)) {
     failures.push({
       code: "statement_predicate_invalid",
@@ -1030,6 +1041,19 @@ const validatePredicate = (
         "predicate.manifestSha256 does not match the manifest digest provided to verify",
     });
   }
+  if (requiresBySourceHash) {
+    if (
+      typeof predicate["bySourceHash"] !== "string" ||
+      !HEX64.test(predicate["bySourceHash"])
+    ) {
+      failures.push({
+        code: "bySource_hash_mismatch",
+        reference: "bySourceHash",
+        message:
+          "predicate.bySourceHash must be a sha256 hex string when a FinOps report is attested",
+      });
+    }
+  }
   if (predicate["jobId"] !== manifest.jobId) {
     failures.push({
       code: "statement_predicate_invalid",
@@ -1068,6 +1092,88 @@ const validatePredicate = (
     });
   }
   return failures;
+};
+
+const verifyBySourceHash = async (input: {
+  predicate: Wave1PocAttestationStatement["predicate"];
+  manifest: Wave1PocEvidenceManifest;
+  artifactsDir: string;
+}): Promise<Wave1PocAttestationVerificationFailure[]> => {
+  const finopsReportFilename = `${FINOPS_ARTIFACT_DIRECTORY}/${FINOPS_BUDGET_REPORT_ARTIFACT_FILENAME}`;
+  if (
+    !input.manifest.artifacts.some(
+      (artifact) => artifact.filename === finopsReportFilename,
+    )
+  ) {
+    return [];
+  }
+  if (
+    typeof input.predicate.bySourceHash !== "string" ||
+    !HEX64.test(input.predicate.bySourceHash)
+  ) {
+    return [
+      {
+        code: "bySource_hash_mismatch",
+        reference: "bySourceHash",
+        message:
+          "predicate.bySourceHash must be present for attested FinOps reports",
+      },
+    ];
+  }
+
+  const reportPath = join(
+    input.artifactsDir,
+    FINOPS_ARTIFACT_DIRECTORY,
+    FINOPS_BUDGET_REPORT_ARTIFACT_FILENAME,
+  );
+  const reportRead = await readJsonFile(reportPath);
+  if (!reportRead.ok) {
+    return [
+      {
+        code: "bySource_hash_mismatch",
+        reference: finopsReportFilename,
+        message:
+          reportRead.reason === "missing"
+            ? `FinOps report not found at ${reportPath}`
+            : `FinOps report at ${reportPath} is not valid JSON`,
+      },
+    ];
+  }
+
+  const report = reportRead.value as Partial<FinOpsBudgetReport>;
+  if (
+    typeof report.jobId !== "string" ||
+    !isRecord(report.bySource) ||
+    !isRecord(report.bySourceTotal) ||
+    typeof report.bySourceSealedAt !== "string"
+  ) {
+    return [
+      {
+        code: "bySource_hash_mismatch",
+        reference: finopsReportFilename,
+        message:
+          "FinOps report must contain jobId, bySource, bySourceTotal, and bySourceSealedAt to verify bySource sealing",
+      },
+    ];
+  }
+
+  const actual = computePerSourceCostBreakdownHashFromReport(
+    report as Pick<
+      FinOpsBudgetReport,
+      "jobId" | "bySource" | "bySourceTotal" | "bySourceSealedAt"
+    >,
+  );
+  if (actual === input.predicate.bySourceHash) {
+    return [];
+  }
+  return [
+    {
+      code: "bySource_hash_mismatch",
+      reference: finopsReportFilename,
+      message:
+        `FinOps bySource hash ${actual} does not match attested ${input.predicate.bySourceHash}`,
+    },
+  ];
 };
 
 const verifySignaturesAgainstPublicKey = (
@@ -1355,6 +1461,13 @@ export const verifyWave1PocAttestation = async (
       )),
     );
   }
+  failures.push(
+    ...(await verifyBySourceHash({
+      predicate: decoded.statement.predicate,
+      manifest: input.manifest,
+      artifactsDir: input.artifactsDir,
+    })),
+  );
 
   const signatures = Array.isArray(input.envelope.signatures)
     ? input.envelope.signatures

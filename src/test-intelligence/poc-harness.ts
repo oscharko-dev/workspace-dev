@@ -160,6 +160,7 @@ import {
   type FinOpsUsageRecorder,
   type WriteFinOpsBudgetReportResult,
 } from "./finops-report.js";
+import { computePerSourceCostBreakdownHashFromReport } from "./per-source-cost.js";
 import {
   buildLbomDocument,
   summarizeLbomArtifact,
@@ -1227,6 +1228,7 @@ export const runWave1Poc = async (
     // harness always uses the mock client for the structured generator.
     finopsRecorder.recordAttempt({
       role: "test_generation",
+      source: "generator",
       deployment: TEST_GENERATION_DEPLOYMENT,
       durationMs: 0,
       result,
@@ -1277,6 +1279,7 @@ export const runWave1Poc = async (
   if (cacheResult?.cacheHit === true) {
     finopsRecorder.recordCacheHit({
       role: "test_generation",
+      source: "generator",
       deployment: TEST_GENERATION_DEPLOYMENT,
     });
   }
@@ -1844,6 +1847,7 @@ export const runWave1Poc = async (
   const attestationStatement = buildWave1PocAttestationStatement({
     manifest,
     manifestSha256,
+    bySourceHash: computePerSourceCostBreakdownHashFromReport(finopsReport),
     signingMode: attestationSigningMode,
   });
   let attestationEnvelope;
@@ -1959,6 +1963,7 @@ const recordVisualSidecarAttempts = (input: {
         };
     input.recorder.recordAttempt({
       role,
+      source: role === "visual_primary" ? "visual_primary" : "visual_fallback",
       deployment: attempt.deployment,
       durationMs: attempt.durationMs,
       imageBytes,

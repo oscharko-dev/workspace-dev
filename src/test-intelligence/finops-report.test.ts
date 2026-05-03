@@ -284,6 +284,53 @@ test("recorder: estimatedCost combines token rates + per-attempt fixed cost", ()
   }
 });
 
+test("buildFinOpsBudgetReport: includes deterministic bySource attribution", () => {
+  const costRates: FinOpsCostRateMap = {
+    currencyLabel: "USD",
+    rates: {
+      test_generation: {
+        inputTokenCostPer1k: 0.5,
+        outputTokenCostPer1k: 1,
+        fixedCostPerAttempt: 0.01,
+      },
+    },
+  };
+  const recorder = createFinOpsUsageRecorder(costRates);
+  recorder.recordAttempt({
+    role: "test_generation",
+    source: "generator",
+    deployment: "gpt-oss-120b",
+    durationMs: 10,
+    result: successResult(2000, 1000),
+  });
+  recorder.recordCacheHit({
+    role: "test_generation",
+    source: "generator",
+  });
+  recorder.recordInFlightDedupHit("generator");
+
+  const report = buildFinOpsBudgetReport({
+    jobId: JOB_ID,
+    generatedAt: GENERATED_AT,
+    budget: permissive,
+    recorder,
+    costRates,
+  });
+
+  assert.equal(report.bySourceSealedAt, GENERATED_AT);
+  assert.equal(report.bySource.generator.costMinorUnits, 201);
+  assert.equal(report.bySource.generator.tokensIn, 2000);
+  assert.equal(report.bySource.generator.tokensOut, 1000);
+  assert.equal(report.bySource.generator.callCount, 1);
+  assert.equal(report.bySource.generator.inFlightDedupHits, 1);
+  assert.equal(report.bySource.generator.idempotentReplayHits, 1);
+  assert.equal(report.bySource.manager.callCount, 0);
+  assert.deepEqual(report.bySourceTotal, {
+    costMinorUnits: 201,
+    callCount: 1,
+  });
+});
+
 // ---------------------------------------------------------------------------
 // Report builder
 // ---------------------------------------------------------------------------

@@ -5556,6 +5556,11 @@ export interface Wave1PocAttestationPredicate {
   signingMode: Wave1PocAttestationSigningMode;
   /** SHA-256 of the canonical evidence manifest the attestation covers. */
   manifestSha256: string;
+  /**
+   * SHA-256 of the canonical per-source FinOps breakdown embedded in the
+   * FinOps report. Present when the run emitted `finops/budget-report.json`.
+   */
+  bySourceHash?: string;
   /** Filename of the manifest artifact (relative to the run dir). */
   manifestFilename: typeof WAVE1_POC_EVIDENCE_MANIFEST_ARTIFACT_FILENAME;
   /** Hard invariant — no raw screenshot bytes attested. */
@@ -5717,7 +5722,8 @@ export interface Wave1PocAttestationVerificationFailure {
     | "bundle_missing"
     | "bundle_envelope_mismatch"
     | "bundle_public_key_missing"
-    | "manifest_sha256_mismatch";
+    | "manifest_sha256_mismatch"
+    | "bySource_hash_mismatch";
   /** Subject / artifact / field that triggered the failure. */
   reference: string;
   /** Human-readable diagnostic. Never includes secrets. */
@@ -6577,6 +6583,24 @@ export const ALLOWED_FINOPS_ROLES = [
 /** Discriminant of an allowed FinOps role. */
 export type FinOpsRole = (typeof ALLOWED_FINOPS_ROLES)[number];
 
+/** Static source labels tracked inside the per-source FinOps breakdown. */
+export const ALLOWED_AGENT_SOURCE_LABELS = [
+  "manager",
+  "judge_primary",
+  "judge_secondary",
+  "visual_primary",
+  "visual_fallback",
+  "generator",
+  "gap_finder",
+  "repair_planner",
+  "ir_mutation_oracle",
+] as const;
+
+/** Discriminant of an allowed per-source FinOps label. */
+export type AgentSourceLabel =
+  | (typeof ALLOWED_AGENT_SOURCE_LABELS)[number]
+  | `hook:${string}`;
+
 /** Allowed budget breach reasons. Discriminated for policy-readable diagnostics. */
 export const ALLOWED_FINOPS_BUDGET_BREACH_REASONS = [
   "max_input_tokens",
@@ -6821,6 +6845,27 @@ export interface FinOpsBudgetReport {
   currencyLabel?: string;
   /** Sorted by `role`. Always lists every role, even when usage is zero. */
   roles: FinOpsRoleUsage[];
+  /** Deterministic per-agent-source attribution sealed in attestation. */
+  bySource: Readonly<
+    Record<
+      AgentSourceLabel,
+      {
+        costMinorUnits: number;
+        tokensIn: number;
+        tokensOut: number;
+        callCount: number;
+        inFlightDedupHits: number;
+        idempotentReplayHits: number;
+      }
+    >
+  >;
+  /** Aggregate counters across the `bySource` map. */
+  bySourceTotal: {
+    costMinorUnits: number;
+    callCount: number;
+  };
+  /** Timestamp used when sealing the `bySource` payload. */
+  bySourceSealedAt: string;
   /** Aggregate counters across every role. */
   totals: {
     inputTokens: number;
@@ -7148,7 +7193,8 @@ export type EvidenceVerifyFailureCode =
   | "bundle_missing"
   | "bundle_envelope_mismatch"
   | "bundle_public_key_missing"
-  | "manifest_sha256_mismatch";
+  | "manifest_sha256_mismatch"
+  | "bySource_hash_mismatch";
 
 /** Stable check-kind labels surfaced in the `EvidenceVerifyResponse.checks` array. */
 export type EvidenceVerifyCheckKind =

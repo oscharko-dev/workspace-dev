@@ -37,6 +37,7 @@ import {
   FINOPS_BUDGET_REPORT_ARTIFACT_FILENAME,
   FINOPS_BUDGET_REPORT_SCHEMA_VERSION,
   TEST_INTELLIGENCE_CONTRACT_VERSION,
+  type AgentSourceLabel,
   type FinOpsBudgetBreach,
   type FinOpsBudgetBreachReason,
   type FinOpsBudgetEnvelope,
@@ -52,6 +53,14 @@ import {
 } from "../contracts/index.js";
 import { canonicalJson } from "./content-hash.js";
 import { cloneFinOpsBudgetEnvelope } from "./finops-budget.js";
+import {
+  finalizePerSourceCostBreakdown,
+  isAgentSourceLabel,
+  recordPerSourceAttempt,
+  recordPerSourceInFlightDedupHit,
+  recordPerSourceReplayHit,
+  type MutablePerSourceCostEntry,
+} from "./per-source-cost.js";
 import { redactHighRiskSecrets } from "../secret-redaction.js";
 
 const MAX_REPORT_LABEL_LENGTH = 160;
@@ -78,6 +87,8 @@ const sanitizeBudgetEnvelope = (
 /** Single attempt observation handed to the recorder. */
 export interface FinOpsAttemptObservation {
   role: FinOpsRole;
+  /** Optional agent-source label for per-source attribution. */
+  source?: AgentSourceLabel;
   /** Deployment label observed (e.g. `gpt-oss-120b-mock`). */
   deployment: string;
   /** Wall-clock duration of the attempt in milliseconds. */
@@ -95,6 +106,8 @@ export interface FinOpsAttemptObservation {
 /** Optional cache-hit observation. Skips gateway counters. */
 export interface FinOpsCacheHitObservation {
   role: FinOpsRole;
+  /** Optional agent-source label credited with the replay hit. */
+  source?: AgentSourceLabel;
   /** Optional deployment label that would have been used had the call run. */
   deployment?: string;
 }
@@ -149,6 +162,7 @@ export interface FinOpsUsageRecorder {
   recordAttempt(observation: FinOpsAttemptObservation): void;
   recordCacheHit(observation: FinOpsCacheHitObservation): void;
   recordCacheMiss(observation: FinOpsCacheMissObservation): void;
+  recordInFlightDedupHit(source: AgentSourceLabel): void;
   recordBudgetBreach(breach: FinOpsBudgetBreach): void;
   /**
    * Record bytes ingested by a non-LLM source-ingest role
@@ -157,6 +171,11 @@ export interface FinOpsUsageRecorder {
   recordIngestBytes(role: FinOpsRole, bytes: number): void;
   /** Snapshot of every role accumulator (immutable copies). */
   snapshot(): FinOpsRoleUsage[];
+  sourceSnapshot(jobId: string, sealedAt: string): FinOpsBudgetReport["bySource"];
+  sourceTotals(
+    jobId: string,
+    sealedAt: string,
+  ): FinOpsBudgetReport["bySourceTotal"];
   /** Explicit fail-closed budget breaches observed outside aggregate counters. */
   budgetBreaches(): FinOpsBudgetBreach[];
 }
@@ -182,6 +201,7 @@ export const createFinOpsUsageRecorder = (
   costRates?: FinOpsCostRateMap,
 ): FinOpsUsageRecorder => {
   const explicitBreaches: FinOpsBudgetBreach[] = [];
+  const sourceAccumulators = new Map<AgentSourceLabel, MutablePerSourceCostEntry>();
   const accumulators: Record<FinOpsRole, RoleAccumulator> = {
     test_generation: createRoleAccumulator("test_generation"),
     visual_primary: createRoleAccumulator("visual_primary"),
@@ -189,6 +209,23 @@ export const createFinOpsUsageRecorder = (
     jira_api_requests: createRoleAccumulator("jira_api_requests"),
     jira_paste_ingest: createRoleAccumulator("jira_paste_ingest"),
     custom_context_ingest: createRoleAccumulator("custom_context_ingest"),
+  };
+
+  const sourceAccumulatorFor = (
+    source: AgentSourceLabel,
+  ): MutablePerSourceCostEntry => {
+    const existing = sourceAccumulators.get(source);
+    if (existing !== undefined) return existing;
+    const created: MutablePerSourceCostEntry = {
+      costMinorUnits: 0,
+      tokensIn: 0,
+      tokensOut: 0,
+      callCount: 0,
+      inFlightDedupHits: 0,
+      idempotentReplayHits: 0,
+    };
+    sourceAccumulators.set(source, created);
+    return created;
   };
 
   const recordAttempt = (observation: FinOpsAttemptObservation): void => {
@@ -221,6 +258,25 @@ export const createFinOpsUsageRecorder = (
       acc.failures += 1;
       acc.lastErrorClass = observation.result.errorClass;
     }
+    if (observation.source !== undefined) {
+      if (!isAgentSourceLabel(observation.source)) {
+        throw new RangeError(
+          `recordAttempt: unknown source "${observation.source}"`,
+        );
+      }
+      recordPerSourceAttempt({
+        accumulator: sourceAccumulatorFor(observation.source),
+        ...(costRates?.rates[observation.role] !== undefined
+          ? { rate: costRates.rates[observation.role] }
+          : {}),
+        ...(observation.result.outcome === "success"
+          ? {
+              inputTokens: observation.result.usage.inputTokens,
+              outputTokens: observation.result.usage.outputTokens,
+            }
+          : {}),
+      });
+    }
   };
 
   const recordCacheHit = (observation: FinOpsCacheHitObservation): void => {
@@ -237,6 +293,14 @@ export const createFinOpsUsageRecorder = (
       observation.deployment.length > 0
     ) {
       acc.deployment = sanitizeReportString(observation.deployment);
+    }
+    if (observation.source !== undefined) {
+      if (!isAgentSourceLabel(observation.source)) {
+        throw new RangeError(
+          `recordCacheHit: unknown source "${observation.source}"`,
+        );
+      }
+      recordPerSourceReplayHit(sourceAccumulatorFor(observation.source));
     }
   };
 
@@ -273,6 +337,13 @@ export const createFinOpsUsageRecorder = (
       finalizeAccumulator(accumulators[role], costRates?.rates[role]),
     );
 
+  const buildPerSourceBreakdown = (jobId: string, sealedAt: string) =>
+    finalizePerSourceCostBreakdown({
+      jobId,
+      sealedAt,
+      entries: sourceAccumulators,
+    });
+
   const recordIngestBytes = (role: FinOpsRole, bytes: number): void => {
     if (!ALLOWED_FINOPS_ROLES.includes(role)) {
       throw new RangeError(`recordIngestBytes: unknown role "${role}"`);
@@ -287,9 +358,21 @@ export const createFinOpsUsageRecorder = (
     recordAttempt,
     recordCacheHit,
     recordCacheMiss,
+    recordInFlightDedupHit: (source) => {
+      if (!isAgentSourceLabel(source)) {
+        throw new RangeError(
+          `recordInFlightDedupHit: unknown source "${source}"`,
+        );
+      }
+      recordPerSourceInFlightDedupHit(sourceAccumulatorFor(source));
+    },
     recordBudgetBreach,
     recordIngestBytes,
     snapshot,
+    sourceSnapshot: (jobId, sealedAt) =>
+      buildPerSourceBreakdown(jobId, sealedAt).bySource,
+    sourceTotals: (jobId, sealedAt) =>
+      buildPerSourceBreakdown(jobId, sealedAt).total,
     budgetBreaches,
   };
 };
@@ -383,6 +466,11 @@ export const buildFinOpsBudgetReport = (
   );
 
   const totals = aggregateTotals(sortedUsages);
+  const bySource = input.recorder.sourceSnapshot(input.jobId, input.generatedAt);
+  const bySourceTotal = input.recorder.sourceTotals(
+    input.jobId,
+    input.generatedAt,
+  );
   const breaches = sortBreaches([
     ...detectBreaches(input.budget, sortedUsages, totals),
     ...input.recorder.budgetBreaches(),
@@ -402,6 +490,9 @@ export const buildFinOpsBudgetReport = (
       ? { currencyLabel: sanitizeReportString(input.costRates.currencyLabel) }
       : {}),
     roles: sortedUsages,
+    bySource,
+    bySourceTotal,
+    bySourceSealedAt: input.generatedAt,
     totals,
     breaches,
     outcome,

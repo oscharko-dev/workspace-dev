@@ -494,6 +494,56 @@ test("poc-harness: sigstore signing returns summary and verifies from disk", asy
   assert.equal(verification.signaturesVerified, true);
 });
 
+test("poc-harness: post-hoc bySource mutation fails signed attestation verify", async () => {
+  const runDir = await newRunDir();
+  const { privateKeyPem, publicKeyPem } = generateWave1PocAttestationKeyPair();
+  const signer = createKeyBoundSigstoreSigner({
+    signerReference: "poc-harness-bysource-signer",
+    privateKeyPem,
+    publicKeyPem,
+  });
+  const run = await runWave1Poc({
+    fixtureId: "poc-onboarding",
+    jobId: "job-poc-onboarding-bysource-tamper",
+    generatedAt: GENERATED_AT,
+    runDir,
+    attestationSigningMode: "sigstore",
+    attestationSigner: signer,
+  });
+
+  const reportPath = join(
+    runDir,
+    FINOPS_ARTIFACT_DIRECTORY,
+    FINOPS_BUDGET_REPORT_ARTIFACT_FILENAME,
+  );
+  const report = JSON.parse(await readFile(reportPath, "utf8")) as FinOpsBudgetReport;
+  const tampered: FinOpsBudgetReport = {
+    ...report,
+    bySource: {
+      ...report.bySource,
+      generator: {
+        ...report.bySource.generator,
+        callCount: report.bySource.generator.callCount + 1,
+      },
+    },
+  };
+  await writeFile(reportPath, canonicalJson(tampered), "utf8");
+
+  const verification = await verifyWave1PocAttestationFromDisk(
+    runDir,
+    run.manifest,
+    computeWave1PocEvidenceManifestDigest(run.manifest),
+    { expectedSigningMode: "sigstore" },
+  );
+  assert.equal(verification.ok, false);
+  assert.ok(
+    verification.failures.some(
+      (failure) => failure.code === "bySource_hash_mismatch",
+    ),
+    JSON.stringify(verification.failures),
+  );
+});
+
 test("poc-harness: visual mask hash participates in compiled prompt identity", async () => {
   const runDir = await newRunDir();
   const result = await runWave1Poc({
@@ -612,6 +662,10 @@ test("poc-harness: FinOps report is returned and persisted with supplied budget 
   assert.equal(result.finopsReport.outcome, "completed");
   assert.equal(result.finopsReport.totals.attempts, 1);
   assert.equal(result.finopsReport.totals.estimatedCost, 0.01);
+  assert.equal(result.finopsReport.bySource.generator.callCount, 1);
+  assert.equal(result.finopsReport.bySource.generator.costMinorUnits, 1);
+  assert.equal(result.finopsReport.bySourceTotal.callCount, 1);
+  assert.equal(result.finopsReport.bySourceSealedAt, GENERATED_AT);
   assert.equal(
     result.manifest.artifacts.find(
       (artifact) =>
@@ -738,6 +792,7 @@ test("poc-harness: replay-cache hit skips generation and reports completed_cache
   assert.equal(second.finopsReport.outcome, "completed_cache_hit");
   assert.equal(second.finopsReport.totals.attempts, 0);
   assert.equal(second.finopsReport.totals.cacheHits, 1);
+  assert.equal(second.finopsReport.bySource.generator.idempotentReplayHits, 1);
   assert.equal(second.generatedList.testCases[0]?.audit.cacheHit, true);
 
   const rawAudit = JSON.parse(
