@@ -277,6 +277,19 @@ export interface ProductionRunnerLlmConfig {
   abortSignal?: AbortSignal;
 }
 
+const toEvidenceVisualDeployment = (
+  deployment: LlmGatewayClient["deployment"],
+): "llama-4-maverick-vision" | "phi-4-multimodal-poc" | "mock" => {
+  switch (deployment) {
+    case "llama-4-maverick-vision":
+      return "llama-4-maverick-vision";
+    case "phi-4-multimodal-poc":
+      return "phi-4-multimodal-poc";
+    default:
+      return "mock";
+  }
+};
+
 export interface RunFigmaToQcTestCasesInput {
   jobId: string;
   generatedAt: string;
@@ -944,19 +957,24 @@ export const runFigmaToQcTestCases = async (
           resultArtifactSha256: sha256OfBytes(visualSidecarArtifactBytes),
         }
       : undefined;
+  const modelDeployments = {
+    testGeneration: PRODUCTION_RUNNER_TEST_GENERATION_DEPLOYMENT,
+    ...(input.llm.bundle !== undefined
+      ? {
+          visualPrimary: toEvidenceVisualDeployment(
+            input.llm.bundle.visualPrimary.deployment,
+          ),
+          visualFallback: toEvidenceVisualDeployment(
+            input.llm.bundle.visualFallback.deployment,
+          ),
+        }
+      : {}),
+  } satisfies Parameters<typeof buildWave1PocEvidenceManifest>[0]["modelDeployments"];
   const evidenceManifest = buildWave1PocEvidenceManifest({
     fixtureId: `production-runner-${input.source.kind}`,
     jobId: input.jobId,
     generatedAt: input.generatedAt,
-    modelDeployments: {
-      testGeneration: PRODUCTION_RUNNER_TEST_GENERATION_DEPLOYMENT,
-      ...(input.llm.bundle !== undefined
-        ? {
-            visualPrimary: input.llm.bundle.visualPrimary.deployment,
-            visualFallback: input.llm.bundle.visualFallback.deployment,
-          }
-        : {}),
-    },
+    modelDeployments,
     policyProfileId: validation.policy.policyProfileId,
     policyProfileVersion: validation.policy.policyProfileVersion,
     exportProfileId: "customer-markdown",

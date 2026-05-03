@@ -5325,7 +5325,7 @@ export interface Wave1PocEvalFailure {
 
 /** Per-fixture metrics computed by the Wave 1 POC evaluation gate. */
 export interface Wave1PocEvalFixtureMetrics {
-  fixtureId: Wave1PocFixtureId;
+  fixtureId: string;
   totalGeneratedCases: number;
   approvedCases: number;
   blockedCases: number;
@@ -5359,7 +5359,7 @@ export interface Wave1PocEvalFixtureMetrics {
 
 /** Per-fixture evaluation outcome. */
 export interface Wave1PocEvalFixtureReport {
-  fixtureId: Wave1PocFixtureId;
+  fixtureId: string;
   pass: boolean;
   metrics: Wave1PocEvalFixtureMetrics;
   failures: Wave1PocEvalFailure[];
@@ -5495,7 +5495,7 @@ export interface Wave1PocAttestationPredicate {
   schemaVersion: typeof WAVE1_POC_ATTESTATION_SCHEMA_VERSION;
   contractVersion: string;
   testIntelligenceContractVersion: typeof TEST_INTELLIGENCE_CONTRACT_VERSION;
-  fixtureId: Wave1PocFixtureId;
+  fixtureId: string;
   jobId: string;
   generatedAt: string;
   /** Versions stamped by the harness at run time. */
