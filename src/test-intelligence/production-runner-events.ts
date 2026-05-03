@@ -33,6 +33,7 @@ export const PRODUCTION_RUNNER_EVENT_PHASES = [
   "export_complete",
   "evidence_sealed",
   "finops_recorded",
+  "cache_break",
 ] as const;
 
 export type ProductionRunnerEventPhase =

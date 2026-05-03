@@ -8140,7 +8140,7 @@ export interface CoveragePlan {
  * Must be bumped according to CONTRACT_CHANGELOG.md rules.
  * Package version alignment is documented in VERSIONING.md.
  */
-export const CONTRACT_VERSION = "4.30.0" as const;
+export const CONTRACT_VERSION = "4.31.0" as const;
 
 // ---------------------------------------------------------------------------
 // Issue #1774 — UntrustedContentNormalizer (2025-vintage injection carriers).
@@ -8217,3 +8217,56 @@ export const ALLOWED_UNTRUSTED_CONTENT_OUTCOMES = [
 /** Discriminated alias for {@link ALLOWED_UNTRUSTED_CONTENT_OUTCOMES}. */
 export type UntrustedContentNormalizationOutcome =
   (typeof ALLOWED_UNTRUSTED_CONTENT_OUTCOMES)[number];
+
+// ---------------------------------------------------------------------------
+// Issue #1778 — Cache-break detector (intent-suppressed, redacted diffs).
+// ---------------------------------------------------------------------------
+
+/**
+ * Subdirectory under `<runDir>/` where the cache-break detector writes
+ * canonical-JSON diff artifacts (one file per detected break). Diffs are
+ * redacted via `UntrustedContentNormalizer` + `redactHighRiskSecrets`
+ * before persistence — a poisoned tool result that broke the cache must
+ * never be persisted raw.
+ */
+export const CACHE_BREAK_ARTIFACT_DIRECTORY =
+  "observability/cache-breaks" as const;
+
+/** Schema version for the per-break diff artifact. */
+export const CACHE_BREAK_DIFF_SCHEMA_VERSION = "1.0.0" as const;
+
+/**
+ * Heuristic threshold: when the observed `cacheReadTokens` is below this
+ * fraction of the expected baseline AND the new `cacheCreationTokens`
+ * exceeds {@link CACHE_BREAK_MIN_CREATION_TOKENS}, the detector flags
+ * the call as a cache break.
+ */
+export const CACHE_BREAK_READ_RATIO_THRESHOLD = 0.05 as const;
+
+/**
+ * Heuristic threshold: minimum `cacheCreationTokens` for the heuristic to
+ * fire. Pairs with {@link CACHE_BREAK_READ_RATIO_THRESHOLD}; ensures a
+ * cold-start small re-prompt does not register as a break.
+ */
+export const CACHE_BREAK_MIN_CREATION_TOKENS = 2_000 as const;
+
+/**
+ * Maximum number of per-`querySource` snapshots retained by the LRU
+ * inside the detector. Keeps the working set bounded under bursty
+ * multi-source jobs.
+ */
+export const CACHE_BREAK_DETECTOR_MAX_SNAPSHOTS = 10 as const;
+
+/**
+ * Closed set of suppression reasons recognised by
+ * `notifyCompaction` / `notifyCacheDeletion`. Stable, locale-independent
+ * strings safe to ship to automation.
+ */
+export const ALLOWED_CACHE_BREAK_SUPPRESSION_REASONS = [
+  "compaction",
+  "cache_deletion",
+] as const;
+
+/** Discriminated alias for {@link ALLOWED_CACHE_BREAK_SUPPRESSION_REASONS}. */
+export type CacheBreakSuppressionReason =
+  (typeof ALLOWED_CACHE_BREAK_SUPPRESSION_REASONS)[number];

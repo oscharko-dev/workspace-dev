@@ -526,6 +526,17 @@ export {
   type RunnerEventBus,
 } from "./production-runner-events.js";
 export {
+  createCacheBreakDetector,
+  type CacheBreakCheckOutcome,
+  type CacheBreakDetector,
+  type CacheBreakPromptMessage,
+  type CacheBreakSnapshot,
+  type CheckResponseForCacheBreakInput,
+  type CreateCacheBreakDetectorOptions,
+  type RecordPromptStateInput,
+  type RecordPromptStateResult,
+} from "./cache-break-detector.js";
+export {
   buildCustomerMarkdownZipBundle,
   readCustomerMarkdownZipInputs,
   type CustomerMarkdownZipBundle,
