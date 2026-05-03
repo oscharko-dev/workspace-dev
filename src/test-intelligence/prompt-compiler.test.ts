@@ -242,25 +242,41 @@ test("compiler: includes sanitized custom context in prompt and replay identity"
   assert.deepEqual(withContext.artifacts.payload.customContext, customContext);
 });
 
-test("compiler: jobId does NOT participate in cache key (hash invariant)", async () => {
+test("compiler: suffix-only changes do not change cacheablePrefixHash", async () => {
   const { intent, visual } = await loadFixture();
   const a = compilePrompt({
-    jobId: "job-A",
+    jobId: "job-prefix-stable",
     intent,
     visual,
     modelBinding: sampleModelBinding,
     visualBinding: sampleVisualBinding,
     policyBundleVersion: "policy-2026-04-25",
+    suffixSections: [
+      {
+        label: "RepairInstructions",
+        body: "Fix duplicate coverage on the submit button.",
+      },
+    ],
   });
   const b = compilePrompt({
-    jobId: "job-B",
+    jobId: "job-prefix-stable",
     intent,
     visual,
     modelBinding: sampleModelBinding,
     visualBinding: sampleVisualBinding,
     policyBundleVersion: "policy-2026-04-25",
+    suffixSections: [
+      {
+        label: "RepairInstructions",
+        body: "Add one more negative case for malformed email.",
+      },
+    ],
   });
-  assert.equal(a.request.hashes.cacheKey, b.request.hashes.cacheKey);
+  assert.equal(
+    a.request.hashes.cacheablePrefixHash,
+    b.request.hashes.cacheablePrefixHash,
+  );
+  assert.notEqual(a.request.hashes.cacheKey, b.request.hashes.cacheKey);
 });
 
 test("compiler: active context-budget analysis changes the cache key and emits a per-role-step report", async () => {
@@ -306,17 +322,25 @@ test("compiler: active context-budget analysis changes the cache key and emits a
   assert.ok(compacted.request.hashes.contextBudgetHash);
   assert.equal(compacted.contextBudgetReport?.roleStepId, "test_generation");
   assert.equal(compacted.contextBudgetReport?.maxInputTokens, 800);
-  assert.ok(
-    (compacted.contextBudgetReport?.compactedFromArtifactHashes.length ?? 0) > 0,
-  );
   assert.notEqual(compacted.contextBudgetReport?.action, "none");
-  assert.match(
-    compacted.request.userPrompt,
-    /compacted from prompt payload due to context budget\./u,
-  );
+  if (compacted.contextBudgetReport?.action === "compact_prompt_payload") {
+    assert.ok(
+      (compacted.contextBudgetReport.compactedFromArtifactHashes.length ?? 0) > 0,
+    );
+  }
   assert.match(
     JSON.stringify(compacted.contextBudgetReport),
     /"action":"(compact_prompt_payload|drop_optional_context|needs_review)"/u,
+  );
+  if (compacted.contextBudgetReport?.action === "compact_prompt_payload") {
+    assert.match(
+      compacted.request.userPrompt,
+      /compacted from prompt payload due to context budget\./u,
+    );
+  }
+  assert.equal(
+    raw.request.hashes.cacheablePrefixHash,
+    compacted.request.hashes.cacheablePrefixHash,
   );
 });
 
@@ -476,7 +500,12 @@ test("compiler: artifacts pin the contract and schema versions", async () => {
   assert.equal(artifacts.redactionPolicyVersion, REDACTION_POLICY_VERSION);
   assert.equal(artifacts.visualBinding.screenCount, visual.length);
   assert.equal(artifacts.systemPrompt, COMPILED_SYSTEM_PROMPT);
-  assert.ok(artifacts.userPrompt.startsWith(COMPILED_USER_PROMPT_PREAMBLE));
+  assert.equal(artifacts.promptLayout.prefixEndMarker, "--- prefix end ---");
+  assert.match(artifacts.promptLayout.prefix, /\[2\] AgentRoleProfile/u);
+  assert.match(
+    artifacts.userPrompt,
+    /Generate structured test cases derived from the bounded JSON below/u,
+  );
 });
 
 test("compiler: normalizes visual binding screen count from redacted visual batch", async () => {

@@ -158,7 +158,7 @@ export const TEST_INTELLIGENCE_CONTRACT_VERSION = "1.6.0" as const;
 export const GENERATED_TEST_CASE_SCHEMA_VERSION = "1.1.0" as const;
 
 /** Prompt template version for the test-intelligence prompt family. */
-export const TEST_INTELLIGENCE_PROMPT_TEMPLATE_VERSION = "1.0.0" as const;
+export const TEST_INTELLIGENCE_PROMPT_TEMPLATE_VERSION = "1.1.0" as const;
 
 /** Visual sidecar schema version consumed by the prompt compiler (Issue #1386). */
 export const VISUAL_SIDECAR_SCHEMA_VERSION = "1.0.0" as const;
@@ -2774,6 +2774,12 @@ export const TEST_DESIGN_MODEL_SCHEMA_VERSION = "1.0.0" as const;
 export const TEST_DESIGN_MODEL_ARTIFACT_FILENAME =
   "test-design-model.json" as const;
 
+/** Schema version for persisted agent-role prompt-run artifacts. */
+export const AGENT_ROLE_RUN_SCHEMA_VERSION = "1.0.0" as const;
+
+/** Directory containing per-role prompt-run metadata artifacts. */
+export const AGENT_ROLE_RUN_ARTIFACT_DIRECTORY = "agent-role-runs" as const;
+
 /**
  * Known PII-like categories detected in mock form data and Jira payloads.
  *
@@ -4486,6 +4492,7 @@ export interface CompiledPromptHashes {
   promptHash: string;
   schemaHash: string;
   cacheKey: string;
+  cacheablePrefixHash: string;
   contextBudgetHash?: string;
 }
 
@@ -4521,10 +4528,18 @@ export interface CompiledPromptArtifacts {
   payload: {
     intent: BusinessTestIntentIr;
     visual: VisualScreenDescription[];
+    testDesignModel?: TestDesignModel;
+    coveragePlan?: CoveragePlan;
+    customerRubric?: Record<string, unknown>;
     customContext?: CompiledPromptCustomContext;
     sourceMixPlan?: SourceMixPlan;
   };
   hashes: CompiledPromptHashes;
+  promptLayout: {
+    prefix: string;
+    suffix: string;
+    prefixEndMarker: "--- prefix end ---";
+  };
   visualBinding: CompiledPromptVisualBinding;
   modelBinding: CompiledPromptModelBinding;
   policyBundleVersion: string;
@@ -4557,9 +4572,25 @@ export interface ReplayCacheKey {
   visualFallbackReason: VisualSidecarFallbackReason;
   fixtureImageHash?: string;
   promptTemplateVersion: typeof TEST_INTELLIGENCE_PROMPT_TEMPLATE_VERSION;
+  cacheablePrefixHash: string;
   seed?: number;
   sourceMixPlanHash?: string;
   contextBudgetHash?: string;
+}
+
+/** Minimal persisted metadata for one compiled role-step prompt run. */
+export interface AgentRoleRunArtifact {
+  schemaVersion: typeof AGENT_ROLE_RUN_SCHEMA_VERSION;
+  jobId: string;
+  roleRunId: string;
+  roleStepId: string;
+  promptTemplateVersion: typeof TEST_INTELLIGENCE_PROMPT_TEMPLATE_VERSION;
+  cacheablePrefixHash: string;
+  promptHash: string;
+  schemaHash: string;
+  inputHash: string;
+  cacheKeyDigest: string;
+  rawPromptsIncluded: false;
 }
 
 /** Stored cache entry. */
@@ -6725,6 +6756,10 @@ export interface FinOpsBudgetReport {
     replayCacheHitRate: number;
     /** `cacheMisses / (cacheHits + cacheMisses)` clamped to `[0, 1]`. NaN → 0. */
     replayCacheMissRate: number;
+    /** Alias for replay-cache hit rate at the prompt layer. */
+    promptCacheHitRate: number;
+    /** Alias for replay-cache miss rate at the prompt layer. */
+    promptCacheMissRate: number;
   };
   /** Sorted by `(rule, role)`. Empty when no budget was breached. */
   breaches: FinOpsBudgetBreach[];

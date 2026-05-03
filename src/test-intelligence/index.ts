@@ -164,10 +164,16 @@ export {
   compilePrompt,
   COMPILED_SYSTEM_PROMPT,
   COMPILED_USER_PROMPT_PREAMBLE,
+  type CompilePromptSuffixSection,
   type CompilePromptContextBudgetOptions,
   type CompilePromptInput,
   type CompilePromptResult,
 } from "./prompt-compiler.js";
+export {
+  writeAgentRoleRunArtifact,
+  type WriteAgentRoleRunArtifactInput,
+  type WriteAgentRoleRunArtifactResult,
+} from "./agent-role-run-artifact.js";
 export {
   analyzeContextBudget,
   type AnalyzeContextBudgetInput,

@@ -8,6 +8,58 @@
 
 ## Interfaces
 
+### AgentRoleRunArtifact
+
+Minimal persisted metadata for one compiled role-step prompt run.
+
+#### Properties
+
+##### cacheablePrefixHash
+
+> **cacheablePrefixHash**: `string`
+
+##### cacheKeyDigest
+
+> **cacheKeyDigest**: `string`
+
+##### inputHash
+
+> **inputHash**: `string`
+
+##### jobId
+
+> **jobId**: `string`
+
+##### promptHash
+
+> **promptHash**: `string`
+
+##### promptTemplateVersion
+
+> **promptTemplateVersion**: `"1.1.0"`
+
+##### rawPromptsIncluded
+
+> **rawPromptsIncluded**: `false`
+
+##### roleRunId
+
+> **roleRunId**: `string`
+
+##### roleStepId
+
+> **roleStepId**: `string`
+
+##### schemaHash
+
+> **schemaHash**: `string`
+
+##### schemaVersion
+
+> **schemaVersion**: `"1.0.0"`
+
+***
+
 ### BusinessTestIntentIr
 
 Redacted, deterministic test-design IR for a job.
@@ -168,9 +220,17 @@ Persisted, fully-redacted artifact form of a compiled prompt.
 
 Redacted JSON payload that the model will reason over.
 
+###### coveragePlan?
+
+> `optional` **coveragePlan?**: [`CoveragePlan`](#coverageplan)
+
 ###### customContext?
 
 > `optional` **customContext?**: [`CompiledPromptCustomContext`](#compiledpromptcustomcontext)
+
+###### customerRubric?
+
+> `optional` **customerRubric?**: `Record`\<`string`, `unknown`\>
 
 ###### intent
 
@@ -180,6 +240,10 @@ Redacted JSON payload that the model will reason over.
 
 > `optional` **sourceMixPlan?**: [`SourceMixPlan`](#sourcemixplan-1)
 
+###### testDesignModel?
+
+> `optional` **testDesignModel?**: [`TestDesignModel`](#testdesignmodel)
+
 ###### visual
 
 > **visual**: [`VisualScreenDescription`](#visualscreendescription)[]
@@ -188,9 +252,25 @@ Redacted JSON payload that the model will reason over.
 
 > **policyBundleVersion**: `string`
 
+##### promptLayout
+
+> **promptLayout**: `object`
+
+###### prefix
+
+> **prefix**: `string`
+
+###### prefixEndMarker
+
+> **prefixEndMarker**: `"--- prefix end ---"`
+
+###### suffix
+
+> **suffix**: `string`
+
 ##### promptTemplateVersion
 
-> **promptTemplateVersion**: `"1.0.0"`
+> **promptTemplateVersion**: `"1.1.0"`
 
 ##### redactionPolicyVersion
 
@@ -280,9 +360,17 @@ Hash bundle attached to a compiled prompt.
 
 #### Properties
 
+##### cacheablePrefixHash
+
+> **cacheablePrefixHash**: `string`
+
 ##### cacheKey
 
 > **cacheKey**: `string`
+
+##### contextBudgetHash?
+
+> `optional` **contextBudgetHash?**: `string`
 
 ##### inputHash
 
@@ -391,6 +479,78 @@ Number of screens covered by the visual binding.
 ##### selectedDeployment
 
 > **selectedDeployment**: `"llama-4-maverick-vision"` \| `"phi-4-multimodal-poc"` \| `"mock"`
+
+***
+
+### ContextBudgetCategory
+
+Reported metadata for one analyzed category.
+
+#### Properties
+
+##### artifactHashes
+
+> `readonly` **artifactHashes**: readonly `string`[]
+
+##### estimatedTokens
+
+> `readonly` **estimatedTokens**: `number`
+
+##### kind
+
+> `readonly` **kind**: `"system_instructions"` \| `"business_intent_ir"` \| `"visual_binding"` \| `"source_context"` \| `"coverage_plan"` \| `"generated_cases"` \| `"validation_findings"` \| `"judge_findings"` \| `"repair_history"`
+
+##### priority
+
+> `readonly` **priority**: `"required"` \| `"important"` \| `"optional"`
+
+##### status
+
+> `readonly` **status**: `"included"` \| `"compacted"` \| `"dropped"`
+
+***
+
+### ContextBudgetReport
+
+Deterministic per-role-step context-budget analyzer report.
+
+#### Properties
+
+##### action
+
+> `readonly` **action**: `"needs_review"` \| `"none"` \| `"compact_prompt_payload"` \| `"drop_optional_context"`
+
+##### categories
+
+> `readonly` **categories**: readonly [`ContextBudgetCategory`](#contextbudgetcategory)[]
+
+##### compactedFromArtifactHashes
+
+> `readonly` **compactedFromArtifactHashes**: readonly `string`[]
+
+##### estimatedInputTokens
+
+> `readonly` **estimatedInputTokens**: `number`
+
+##### jobId
+
+> `readonly` **jobId**: `string`
+
+##### maxInputTokens
+
+> `readonly` **maxInputTokens**: `number`
+
+##### modelBinding
+
+> `readonly` **modelBinding**: `string`
+
+##### roleStepId
+
+> `readonly` **roleStepId**: `string`
+
+##### schemaVersion
+
+> `readonly` **schemaVersion**: `"1.0.0"`
 
 ***
 
@@ -1817,6 +1977,18 @@ Aggregate counters across every role.
 
 > **outputTokens**: `number`
 
+###### promptCacheHitRate
+
+> **promptCacheHitRate**: `number`
+
+Alias for replay-cache hit rate at the prompt layer.
+
+###### promptCacheMissRate
+
+> **promptCacheMissRate**: `number`
+
+Alias for replay-cache miss rate at the prompt layer.
+
 ###### replayCacheHitRate
 
 > **replayCacheHitRate**: `number`
@@ -2183,7 +2355,7 @@ Single generated test case.
 
 ##### promptTemplateVersion
 
-> **promptTemplateVersion**: `"1.0.0"`
+> **promptTemplateVersion**: `"1.1.0"`
 
 ##### qcMappingPreview
 
@@ -2278,7 +2450,7 @@ Whether the artifact came from a replay-cache hit.
 
 ##### promptTemplateVersion
 
-> **promptTemplateVersion**: `"1.0.0"`
+> **promptTemplateVersion**: `"1.1.0"`
 
 ##### redactionPolicyVersion
 
@@ -5290,6 +5462,14 @@ Replay-cache key — the only deterministic-bit-identical replay anchor.
 
 #### Properties
 
+##### cacheablePrefixHash
+
+> **cacheablePrefixHash**: `string`
+
+##### contextBudgetHash?
+
+> `optional` **contextBudgetHash?**: `string`
+
 ##### fixtureImageHash?
 
 > `optional` **fixtureImageHash?**: `string`
@@ -5316,7 +5496,7 @@ Replay-cache key — the only deterministic-bit-identical replay anchor.
 
 ##### promptTemplateVersion
 
-> **promptTemplateVersion**: `"1.0.0"`
+> **promptTemplateVersion**: `"1.1.0"`
 
 ##### redactionPolicyVersion
 
@@ -8367,7 +8547,7 @@ Replay-cache identity hashes.
 
 ##### promptTemplateVersion
 
-> **promptTemplateVersion**: `"1.0.0"`
+> **promptTemplateVersion**: `"1.1.0"`
 
 Versions stamped by the harness at run time.
 
@@ -9078,7 +9258,7 @@ Replay-cache identity hashes for the run (mirrors compiled prompt).
 
 ##### promptTemplateVersion
 
-> **promptTemplateVersion**: `"1.0.0"`
+> **promptTemplateVersion**: `"1.1.0"`
 
 Versions used to compile the prompt and validate the output.
 
@@ -10181,7 +10361,7 @@ Submit response for accepted jobs.
 
 ###### Inherited from
 
-[`WorkspaceSubmitAccepted`](#workspacesubmitaccepted).[`jobId`](#jobid-41)
+[`WorkspaceSubmitAccepted`](#workspacesubmitaccepted).[`jobId`](#jobid-43)
 
 ##### pasteDeltaSummary?
 
@@ -10224,7 +10404,7 @@ Present only when `figmaSourceMode === "figma_paste" | "figma_plugin"` and diff 
 
 ###### Inherited from
 
-[`WorkspaceSubmitAccepted`](#workspacesubmitaccepted).[`status`](#status-16)
+[`WorkspaceSubmitAccepted`](#workspacesubmitaccepted).[`status`](#status-17)
 
 ***
 
@@ -13730,6 +13910,30 @@ Conflict-resolution policy alias.
 
 ***
 
+### ContextBudgetAction
+
+> **ContextBudgetAction** = *typeof* [`ALLOWED_CONTEXT_BUDGET_ACTIONS`](#allowed_context_budget_actions)\[`number`\]
+
+***
+
+### ContextBudgetCategoryKind
+
+> **ContextBudgetCategoryKind** = *typeof* [`ALLOWED_CONTEXT_BUDGET_CATEGORY_KINDS`](#allowed_context_budget_category_kinds)\[`number`\]
+
+***
+
+### ContextBudgetCategoryStatus
+
+> **ContextBudgetCategoryStatus** = *typeof* [`ALLOWED_CONTEXT_BUDGET_CATEGORY_STATUSES`](#allowed_context_budget_category_statuses)\[`number`\]
+
+***
+
+### ContextBudgetPriority
+
+> **ContextBudgetPriority** = *typeof* [`ALLOWED_CONTEXT_BUDGET_PRIORITIES`](#allowed_context_budget_priorities)\[`number`\]
+
+***
+
 ### CoveragePlanTechnique
 
 > **CoveragePlanTechnique** = *typeof* [`ALLOWED_COVERAGE_PLAN_TECHNIQUES`](#allowed_coverage_plan_techniques)\[`number`\]
@@ -14764,6 +14968,22 @@ Supported visual quality reference sources.
 
 ## Variables
 
+### AGENT\_ROLE\_RUN\_ARTIFACT\_DIRECTORY
+
+> `const` **AGENT\_ROLE\_RUN\_ARTIFACT\_DIRECTORY**: `"agent-role-runs"`
+
+Directory containing per-role prompt-run metadata artifacts.
+
+***
+
+### AGENT\_ROLE\_RUN\_SCHEMA\_VERSION
+
+> `const` **AGENT\_ROLE\_RUN\_SCHEMA\_VERSION**: `"1.0.0"`
+
+Schema version for persisted agent-role prompt-run artifacts.
+
+***
+
 ### ALLOWED\_CONFLICT\_RESOLUTION\_POLICIES
 
 > `const` **ALLOWED\_CONFLICT\_RESOLUTION\_POLICIES**: readonly \[`"priority"`, `"reviewer_decides"`, `"keep_both"`\]
@@ -14776,6 +14996,38 @@ Conflict-resolution policy discriminant carried on every envelope.
 - `reviewer_decides` — surface conflicts to the reviewer and keep both
   variants until the reviewer chooses one.
 - `keep_both` — emit independent test cases per source without merging.
+
+***
+
+### ALLOWED\_CONTEXT\_BUDGET\_ACTIONS
+
+> `const` **ALLOWED\_CONTEXT\_BUDGET\_ACTIONS**: readonly \[`"none"`, `"compact_prompt_payload"`, `"drop_optional_context"`, `"needs_review"`\]
+
+Deterministic breach actions surfaced by the context-budget analyzer.
+
+***
+
+### ALLOWED\_CONTEXT\_BUDGET\_CATEGORY\_KINDS
+
+> `const` **ALLOWED\_CONTEXT\_BUDGET\_CATEGORY\_KINDS**: readonly \[`"system_instructions"`, `"business_intent_ir"`, `"visual_binding"`, `"source_context"`, `"coverage_plan"`, `"generated_cases"`, `"validation_findings"`, `"judge_findings"`, `"repair_history"`\]
+
+Stable category kinds consumed by the context-budget analyzer.
+
+***
+
+### ALLOWED\_CONTEXT\_BUDGET\_CATEGORY\_STATUSES
+
+> `const` **ALLOWED\_CONTEXT\_BUDGET\_CATEGORY\_STATUSES**: readonly \[`"included"`, `"compacted"`, `"dropped"`\]
+
+Final disposition of a category after budget analysis.
+
+***
+
+### ALLOWED\_CONTEXT\_BUDGET\_PRIORITIES
+
+> `const` **ALLOWED\_CONTEXT\_BUDGET\_PRIORITIES**: readonly \[`"required"`, `"important"`, `"optional"`\]
+
+Priority drives which categories may be dropped during budget handling.
 
 ***
 
@@ -15557,6 +15809,30 @@ inspector tooling) share one source of truth for "is this screen regulated".
 > `const` **BUSINESS\_TEST\_INTENT\_IR\_SCHEMA\_VERSION**: `"1.0.0"`
 
 Schema version for `BusinessTestIntentIr` artifacts.
+
+***
+
+### CONTEXT\_BUDGET\_ARTIFACT\_DIRECTORY
+
+> `const` **CONTEXT\_BUDGET\_ARTIFACT\_DIRECTORY**: `"context-budget"`
+
+Canonical directory for per-role-step context-budget artifacts.
+
+***
+
+### CONTEXT\_BUDGET\_ESTIMATOR\_BYTES\_PER\_TOKEN
+
+> `const` **CONTEXT\_BUDGET\_ESTIMATOR\_BYTES\_PER\_TOKEN**: `4`
+
+Fixed bytes-per-token estimator used by the shared prompt-size heuristic.
+
+***
+
+### CONTEXT\_BUDGET\_REPORT\_SCHEMA\_VERSION
+
+> `const` **CONTEXT\_BUDGET\_REPORT\_SCHEMA\_VERSION**: `"1.0.0"`
+
+Schema version for persisted context-budget analyzer reports.
 
 ***
 
@@ -16400,7 +16676,7 @@ before a job may compose more than one test-design source.
 
 ### TEST\_INTELLIGENCE\_PROMPT\_TEMPLATE\_VERSION
 
-> `const` **TEST\_INTELLIGENCE\_PROMPT\_TEMPLATE\_VERSION**: `"1.0.0"`
+> `const` **TEST\_INTELLIGENCE\_PROMPT\_TEMPLATE\_VERSION**: `"1.1.0"`
 
 Prompt template version for the test-intelligence prompt family.
 

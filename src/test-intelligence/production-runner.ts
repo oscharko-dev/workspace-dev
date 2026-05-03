@@ -105,7 +105,12 @@ import {
 import { normalizeFigmaFileToIntentInput } from "./figma-payload-normalizer.js";
 import { deriveBusinessTestIntentIr } from "./intent-derivation.js";
 import type { LlmGatewayClient } from "./llm-gateway.js";
-import { compilePrompt } from "./prompt-compiler.js";
+import {
+  compilePrompt,
+  type CompilePromptSuffixSection,
+} from "./prompt-compiler.js";
+import { cloneEuBankingDefaultProfile } from "./policy-profile.js";
+import { writeAgentRoleRunArtifact } from "./agent-role-run-artifact.js";
 import { runValidationPipeline } from "./validation-pipeline.js";
 
 /**
@@ -306,6 +311,7 @@ export interface RunFigmaToQcTestCasesResult {
   artifactPaths: {
     intent: string;
     compiledPrompt: string;
+    agentRoleRun: string;
     contextBudgetReport?: string;
     generatedTestCases: string;
     validationReport: string;
@@ -396,6 +402,21 @@ export const runFigmaToQcTestCases = async (
     finopsBudget.roles.test_generation,
   );
 
+  const draftSchema = buildDraftResponseSchema();
+  const policyProfileId =
+    typeof input.policyProfileId === "string" &&
+    input.policyProfileId.length > 0
+      ? input.policyProfileId
+      : EU_BANKING_DEFAULT_POLICY_PROFILE_ID;
+  const customerRubric =
+    policyProfileId === EU_BANKING_DEFAULT_POLICY_PROFILE_ID
+      ? cloneEuBankingDefaultProfile()
+      : {
+          id: policyProfileId,
+          version: "runtime",
+          description: `Policy profile ${policyProfileId}`,
+        };
+
   // 5. Compile prompt.
   // TODO(#1359 Wave 5): once the visual sidecar runs in production, plumb
   //   describeVisualScreens output here. Today the production runner ships
@@ -409,6 +430,12 @@ export const runFigmaToQcTestCases = async (
       gatewayRelease: TEST_GENERATION_GATEWAY_RELEASE,
     },
     policyBundleVersion: POLICY_BUNDLE_VERSION,
+    roleStepId: "test_generation",
+    customerRubric,
+    responseSchema: draftSchema,
+    responseSchemaName: "workspace-dev-production-runner-draft-list-v1",
+    outputSchemaHintLabel: "ProductionRunnerDraftResponse",
+    suffixSections: buildPromptSuffixSections(wireIntent, policyProfileId),
     visualBinding: {
       schemaVersion: VISUAL_SIDECAR_SCHEMA_VERSION,
       selectedDeployment: "llama-4-maverick-vision",
@@ -434,15 +461,8 @@ export const runFigmaToQcTestCases = async (
     });
   }
 
-  // 6. Build the draft request: relax the response_schema to the simpler
-  //    LlmDraftResponse shape so the model is not asked to fabricate
-  //    audit metadata it cannot know.
-  const draftSchema = buildDraftResponseSchema();
-  const policyProfileId =
-    typeof input.policyProfileId === "string" &&
-    input.policyProfileId.length > 0
-      ? input.policyProfileId
-      : EU_BANKING_DEFAULT_POLICY_PROFILE_ID;
+  // 6. Build the draft request using the compiler-owned schema hint and
+  //    deterministic suffix layout.
   // FinOps-resolved per-request limits override the legacy llm.* fields.
   const effectiveMaxInputTokens = finopsLimits.maxInputTokens;
   const effectiveMaxOutputTokens =
@@ -453,11 +473,7 @@ export const runFigmaToQcTestCases = async (
   const generationRequest: LlmGenerationRequest = {
     jobId: compiled.request.jobId,
     systemPrompt: compiled.request.systemPrompt,
-    userPrompt: buildAugmentedUserPrompt(
-      compiled.request.userPrompt,
-      wireIntent,
-      policyProfileId,
-    ),
+    userPrompt: compiled.request.userPrompt,
     responseSchema: draftSchema,
     responseSchemaName: "workspace-dev-production-runner-draft-list-v1",
     ...(effectiveMaxInputTokens !== undefined
@@ -616,6 +632,13 @@ export const runFigmaToQcTestCases = async (
     artifactDir,
     TEST_CASE_COVERAGE_REPORT_ARTIFACT_FILENAME,
   );
+  const agentRoleRunPromise = writeAgentRoleRunArtifact({
+    runDir: artifactDir,
+    jobId: input.jobId,
+    roleRunId: "test_generation",
+    roleStepId: "test_generation",
+    hashes: compiled.request.hashes,
+  });
   const contextBudgetReportPath =
     compiled.contextBudgetReport === undefined
       ? undefined
@@ -628,6 +651,7 @@ export const runFigmaToQcTestCases = async (
     await Promise.all([
       writeAtomicJson(intentPath, intent),
       writeAtomicJson(compiledPromptPath, compiled.artifacts),
+      agentRoleRunPromise,
       ...(contextBudgetReportPath === undefined || compiled.contextBudgetReport === undefined
         ? []
         : [writeAtomicJson(contextBudgetReportPath, compiled.contextBudgetReport)]),
@@ -644,6 +668,7 @@ export const runFigmaToQcTestCases = async (
       cause: err,
     });
   }
+  const agentRoleRunArtifact = await agentRoleRunPromise;
 
   // 10. Customer Markdown.
   const customerLabel = resolveCustomerLabel(input, figmaFile);
@@ -717,6 +742,7 @@ export const runFigmaToQcTestCases = async (
     artifactPaths: {
       intent: intentPath,
       compiledPrompt: compiledPromptPath,
+      agentRoleRun: agentRoleRunArtifact.artifactPath,
       ...(contextBudgetReportPath !== undefined
         ? { contextBudgetReport: contextBudgetReportPath }
         : {}),
@@ -1281,17 +1307,10 @@ const BANKING_INSURANCE_PROMPT_RULES: ReadonlyArray<string> = Object.freeze([
   "- WICHTIG: Verwende NUR generische Compliance-Sprache. Zitiere KEINE Paragraphen, KEINE Gesetzesnummern, KEINE konkreten Aufsichtsdokumente.",
 ]);
 
-const buildAugmentedUserPrompt = (
-  basePrompt: string,
+const buildPromptSuffixSections = (
   intent: BusinessTestIntentIr,
   policyProfileId: string,
-): string => {
-  // We hand the model the IR section already (compilePrompt embeds it).
-  // Append a short, structured directive that pins the relaxed output
-  // shape so a chatty model still produces something the runner can parse.
-  // Keep this deterministic: the same intent + base prompt + policy profile
-  // yield the same augmentation, which keeps the replay-cache identity
-  // meaningful.
+): CompilePromptSuffixSection[] => {
   const screenSummary = intent.screens
     .map((s) => `- ${s.screenId}: ${s.screenName}`)
     .join("\n");
@@ -1305,31 +1324,40 @@ const buildAugmentedUserPrompt = (
           .map((m) => `- ${m.screenId} (Stichwort: ${m.keyword})`)
           .join("\n")
       : "(keine)";
-  const sections: string[] = [
-    basePrompt,
-    "",
-    "DELIVERABLE FORMAT:",
-    "Respond ONLY with a JSON object of the form:",
-    `{"testCases": [{"title": string, "objective": string, "type": one of [functional|negative|boundary|validation|navigation|regression|exploratory|accessibility], "priority": one of [p0|p1|p2|p3], "riskCategory": one of [low|medium|high|regulated_data|financial_transaction], "technique": one of [equivalence_partitioning|boundary_value_analysis|decision_table|state_transition|use_case|exploratory|error_guessing|syntax_testing|classification_tree], "preconditions": string[], "testData": string[], "steps": [{"index": number, "action": string, "expected": string}], "expectedResults": string[], "figmaTraceRefs": [{"screenId": string, "nodeName": string?}], "assumptions": string[], "openQuestions": string[], "regulatoryRelevance": {"domain": one of [banking|insurance|general], "rationale": string}}]}`,
-    "",
-    "RULES:",
-    "- Schreibe alle Inhalte (title, objective, steps, expected, ...) auf DEUTSCH.",
-    "- Bilde Positiv- und Negativfälle ab. Pro relevanter Eingabe einen eigenen Testfall.",
-    "- Nutze für screenId die genannten IDs aus dem IR.",
-    "- Liefere mindestens einen Testfall pro Bildschirm.",
+  const sections: CompilePromptSuffixSection[] = [
+    {
+      label: "DELIVERABLE FORMAT",
+      body: [
+        "Respond ONLY with a JSON object of the form:",
+        `{"testCases": [{"title": string, "objective": string, "type": one of [functional|negative|boundary|validation|navigation|regression|exploratory|accessibility], "priority": one of [p0|p1|p2|p3], "riskCategory": one of [low|medium|high|regulated_data|financial_transaction], "technique": one of [equivalence_partitioning|boundary_value_analysis|decision_table|state_transition|use_case|exploratory|error_guessing|syntax_testing|classification_tree], "preconditions": string[], "testData": string[], "steps": [{"index": number, "action": string, "expected": string}], "expectedResults": string[], "figmaTraceRefs": [{"screenId": string, "nodeName": string?}], "assumptions": string[], "openQuestions": string[], "regulatoryRelevance": {"domain": one of [banking|insurance|general], "rationale": string}}]}`,
+      ].join("\n"),
+    },
+    {
+      label: "RULES",
+      body: [
+        "- Schreibe alle Inhalte (title, objective, steps, expected, ...) auf DEUTSCH.",
+        "- Bilde Positiv- und Negativfälle ab. Pro relevanter Eingabe einen eigenen Testfall.",
+        "- Nutze für screenId die genannten IDs aus dem IR.",
+        "- Liefere mindestens einen Testfall pro Bildschirm.",
+      ].join("\n"),
+    },
   ];
   if (isEuBanking) {
-    sections.push(
-      "",
-      `POLICY-PROFIL: ${policyProfileId} (regulierte EU-Banking/Versicherung)`,
-      ...BANKING_INSURANCE_PROMPT_RULES,
-      "",
-      "Banking/Versicherungs-Bildschirme (genau ein regulatory-compliance Testfall pro Eintrag):",
-      bankingInsuranceList,
-    );
+    sections.push({
+      label: `POLICY-PROFIL: ${policyProfileId} (regulierte EU-Banking/Versicherung)`,
+      body: [
+        ...BANKING_INSURANCE_PROMPT_RULES,
+        "",
+        "Banking/Versicherungs-Bildschirme (genau ein regulatory-compliance Testfall pro Eintrag):",
+        bankingInsuranceList,
+      ].join("\n"),
+    });
   }
-  sections.push("", "Verfügbare Bildschirme:", screenSummary);
-  return sections.join("\n");
+  sections.push({
+    label: "Verfügbare Bildschirme",
+    body: screenSummary,
+  });
+  return sections;
 };
 
 // The runner schema intentionally tolerates unknown sibling properties on

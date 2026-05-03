@@ -461,6 +461,10 @@ const aggregateTotals = (
     estimatedCost: round6(estimatedCost),
     replayCacheHitRate: round6(Math.min(1, Math.max(0, replayCacheHitRate))),
     replayCacheMissRate: round6(Math.min(1, Math.max(0, replayCacheMissRate))),
+    promptCacheHitRate: round6(Math.min(1, Math.max(0, replayCacheHitRate))),
+    promptCacheMissRate: round6(
+      Math.min(1, Math.max(0, replayCacheMissRate)),
+    ),
   };
 };
 

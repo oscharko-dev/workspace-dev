@@ -744,6 +744,62 @@ https://v8.dev/docs/stack-trace-api#customizing-stack-traces
 
 ## Interfaces
 
+### AnalyzeContextBudgetInput
+
+#### Properties
+
+##### categories
+
+> **categories**: readonly [`ContextBudgetCategoryInput`](#contextbudgetcategoryinput)[]
+
+##### jobId
+
+> **jobId**: `string`
+
+##### maxInputTokens
+
+> **maxInputTokens**: `number`
+
+##### modelBinding
+
+> **modelBinding**: `string`
+
+##### responseSchema?
+
+> `optional` **responseSchema?**: `Record`\<`string`, `unknown`\>
+
+##### roleStepId
+
+> **roleStepId**: `string`
+
+##### systemPrompt
+
+> **systemPrompt**: `string`
+
+***
+
+### AnalyzeContextBudgetResult
+
+#### Properties
+
+##### contextBudgetHash
+
+> **contextBudgetHash**: `string`
+
+##### finalEstimatedInputTokens
+
+> **finalEstimatedInputTokens**: `number`
+
+##### renderedUserPrompt
+
+> **renderedUserPrompt**: `string`
+
+##### report
+
+> **report**: [`ContextBudgetReport`](../contracts/README.md#contextbudgetreport)
+
+***
+
 ### CaptureConfig
 
 #### Properties
@@ -863,6 +919,36 @@ https://v8.dev/docs/stack-trace-api#customizing-stack-traces
 ##### width
 
 > **width**: `number`
+
+***
+
+### ContextBudgetCategoryInput
+
+#### Properties
+
+##### artifactHashes
+
+> **artifactHashes**: readonly `string`[]
+
+##### compactible
+
+> **compactible**: `boolean`
+
+##### droppable
+
+> **droppable**: `boolean`
+
+##### kind
+
+> **kind**: `"system_instructions"` \| `"business_intent_ir"` \| `"visual_binding"` \| `"source_context"` \| `"coverage_plan"` \| `"generated_cases"` \| `"validation_findings"` \| `"judge_findings"` \| `"repair_history"`
+
+##### priority
+
+> **priority**: `"required"` \| `"important"` \| `"optional"`
+
+##### promptPayload
+
+> **promptPayload**: `string`
 
 ***
 
@@ -1418,6 +1504,22 @@ Project-specific working directory.
 
 ## Functions
 
+### analyzeContextBudget()
+
+> **analyzeContextBudget**(`input`): [`AnalyzeContextBudgetResult`](#analyzecontextbudgetresult)
+
+#### Parameters
+
+##### input
+
+[`AnalyzeContextBudgetInput`](#analyzecontextbudgetinput)
+
+#### Returns
+
+[`AnalyzeContextBudgetResult`](#analyzecontextbudgetresult)
+
+***
+
 ### captureFromProject()
 
 > **captureFromProject**(`input`): `Promise`\<[`CaptureResult`](#captureresult)\>
@@ -1650,6 +1752,64 @@ A promise that resolves once the instance is ready and listening.
 #### Returns
 
 `void`
+
+***
+
+### estimateLlmInputBytes()
+
+> **estimateLlmInputBytes**(`request`): `number`
+
+Shared, allocation-light token estimator for prompt-size budgeting.
+
+The estimator intentionally mirrors the same byte-counting heuristic used
+by the gateway and mock gateway so the budget checks stay aligned across
+all call sites.
+
+#### Parameters
+
+##### request
+
+`Pick`\<[`LlmGenerationRequest`](../contracts/README.md#llmgenerationrequest), `"systemPrompt"` \| `"userPrompt"` \| `"responseSchema"` \| `"imageInputs"`\>
+
+#### Returns
+
+`number`
+
+***
+
+### estimateLlmInputTokens()
+
+> **estimateLlmInputTokens**(`request`): `number`
+
+Estimate the total prompt size in tokens using the shared heuristic.
+
+#### Parameters
+
+##### request
+
+`Pick`\<[`LlmGenerationRequest`](../contracts/README.md#llmgenerationrequest), `"systemPrompt"` \| `"userPrompt"` \| `"responseSchema"` \| `"imageInputs"`\>
+
+#### Returns
+
+`number`
+
+***
+
+### estimateTextTokens()
+
+> **estimateTextTokens**(`text`): `number`
+
+Estimate tokens for a single UTF-8 text block using the shared heuristic.
+
+#### Parameters
+
+##### text
+
+`string`
+
+#### Returns
+
+`number`
 
 ***
 
