@@ -1202,6 +1202,38 @@ export interface LlmGenerationRequest {
    * `<runDir>/agent/idempotency-cache/<hmac>.json` with redacted bodies.
    */
   idempotency?: GatewayIdempotencyInputs;
+  /**
+   * Optional in-flight dedup key (Issue #1788). When supplied, one
+   * `LlmGatewayClient` collapses concurrent requests with the same
+   * `(promptHash, modelBinding, schemaHash, policyProfileHash)` into a
+   * single Promise. Only in-flight calls dedupe here; completed-result
+   * memoization remains a separate concern.
+   *
+   * `policyProfileHash` scopes the key so two tenants with identical prompt
+   * + schema hashes never collide.
+   */
+  inFlightDedup?: GatewayInFlightDedupInputs;
+}
+
+/**
+ * Optional caller-supplied key used by one gateway client instance to
+ * collapse concurrent equivalent requests onto the same in-flight Promise
+ * (Issue #1788).
+ */
+export interface GatewayInFlightDedupInputs {
+  /** Optional FinOps source label credited with the dedup hit. */
+  readonly source?: AgentSourceLabel;
+  /** sha256 hex digest of the canonical prompt payload. */
+  readonly promptHash: string;
+  /** Stable model identity string (for example `"rev@release"`). */
+  readonly modelBinding: string;
+  /** sha256 hex digest of the structured-output schema. */
+  readonly schemaHash: string;
+  /**
+   * sha256 hex digest of the active policy profile. Required so two tenants
+   * with identical prompts never share an in-flight slot.
+   */
+  readonly policyProfileHash: string;
 }
 
 /**
