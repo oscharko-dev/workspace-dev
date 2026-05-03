@@ -14,6 +14,7 @@ import type {
 import { createMockLlmGatewayClient } from "./llm-mock-gateway.js";
 import { createMockLlmGatewayClientBundle } from "./llm-gateway-bundle.js";
 import { cloneEuBankingDefaultFinOpsBudget } from "./finops-budget.js";
+import { verifyJobEvidence } from "./evidence-verify.js";
 import {
   PROMPT_MAX_ACTIONS_PER_SCREEN,
   PROMPT_MAX_FIELDS_PER_SCREEN,
@@ -596,6 +597,42 @@ test("runFigmaToQcTestCases wires Figma URL screenshots through the visual sidec
     assert.equal(requestHeaders[0]?.get("x-figma-token"), "figd_test");
     assert.equal(requestHeaders[1]?.get("x-figma-token"), "figd_test");
     assert.equal(requestHeaders[2]?.get("x-figma-token"), null);
+    const manifest = JSON.parse(
+      await readFile(
+        path.join(result.artifactDir, "wave1-poc-evidence-manifest.json"),
+        "utf8",
+      ),
+    ) as {
+      artifacts: Array<{ filename: string }>;
+      visualSidecarCaptureIdentities?: Array<{
+        screenId: string;
+        mimeType: string;
+        byteLength: number;
+        sha256: string;
+      }>;
+    };
+    assert.ok(
+      manifest.artifacts.some(
+        (artifact) => artifact.filename === "visual-sidecar-result.json",
+      ),
+    );
+    assert.deepEqual(manifest.visualSidecarCaptureIdentities, [
+      {
+        screenId: "1:1",
+        mimeType: "image/png",
+        byteLength: PNG_BYTES.byteLength,
+        sha256: createHash("sha256").update(PNG_BYTES).digest("hex"),
+      },
+    ]);
+    const verify = await verifyJobEvidence({
+      artifactsRoot: tempRoot,
+      jobId: result.jobId,
+      verifiedAt: "2026-05-03T12:00:00.000Z",
+    });
+    assert.equal(verify.status, "ok");
+    if (verify.status === "ok") {
+      assert.equal(verify.body.ok, true, JSON.stringify(verify.body, null, 2));
+    }
     const combinedMarkdown = await readFile(
       result.customerMarkdownPaths.combined,
       "utf8",

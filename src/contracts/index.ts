@@ -5185,8 +5185,8 @@ export interface Wave1PocEvidenceManifest {
   contractVersion: string;
   /** Test-intelligence subsurface contract version. */
   testIntelligenceContractVersion: typeof TEST_INTELLIGENCE_CONTRACT_VERSION;
-  /** Identifier of the fixture exercised. */
-  fixtureId: Wave1PocFixtureId;
+  /** Identifier of the fixture or runner profile exercised. */
+  fixtureId: string;
   jobId: string;
   generatedAt: string;
   /** Versions used to compile the prompt and validate the output. */
@@ -5221,6 +5221,12 @@ export interface Wave1PocEvidenceManifest {
   cacheKeyDigest: string;
   /** Direct visual-sidecar evidence summary when the opt-in sidecar path ran. */
   visualSidecar?: Wave1PocEvidenceVisualSidecarSummary;
+  /**
+   * Persisted screenshot capture identities when the visual sidecar ran.
+   * Carries only SHA-256 identities plus MIME type and byte length; raw
+   * screenshot bytes are never embedded in the manifest.
+   */
+  visualSidecarCaptureIdentities?: VisualSidecarCaptureIdentity[];
   /**
    * Self-attestation over the canonical manifest metadata and artifact list.
    * New manifests stamp this field; it remains optional so legacy manifests can
@@ -5319,7 +5325,7 @@ export interface Wave1PocEvalFailure {
 
 /** Per-fixture metrics computed by the Wave 1 POC evaluation gate. */
 export interface Wave1PocEvalFixtureMetrics {
-  fixtureId: Wave1PocFixtureId;
+  fixtureId: string;
   totalGeneratedCases: number;
   approvedCases: number;
   blockedCases: number;
@@ -5353,7 +5359,7 @@ export interface Wave1PocEvalFixtureMetrics {
 
 /** Per-fixture evaluation outcome. */
 export interface Wave1PocEvalFixtureReport {
-  fixtureId: Wave1PocFixtureId;
+  fixtureId: string;
   pass: boolean;
   metrics: Wave1PocEvalFixtureMetrics;
   failures: Wave1PocEvalFailure[];
@@ -5489,7 +5495,7 @@ export interface Wave1PocAttestationPredicate {
   schemaVersion: typeof WAVE1_POC_ATTESTATION_SCHEMA_VERSION;
   contractVersion: string;
   testIntelligenceContractVersion: typeof TEST_INTELLIGENCE_CONTRACT_VERSION;
-  fixtureId: Wave1PocFixtureId;
+  fixtureId: string;
   jobId: string;
   generatedAt: string;
   /** Versions stamped by the harness at run time. */
@@ -7189,6 +7195,7 @@ export interface EvidenceVerifyResponse {
     selectedDeployment?: string;
     fallbackUsed: boolean;
     resultArtifactSha256?: string;
+    captureIdentityCount?: number;
   };
   /** Attestation summary when an attestation envelope is on disk. */
   attestation?: {

@@ -22,6 +22,7 @@
  *     digests, and identity stamps appear.
  */
 
+import { createHash } from "node:crypto";
 import { readdir, readFile, stat } from "node:fs/promises";
 import { basename, isAbsolute, join, resolve } from "node:path";
 
@@ -183,6 +184,114 @@ const tryReadJson = async (
   }
 };
 
+const sha256OfVisualEvidenceRecord = (
+  record: Record<string, unknown>,
+): string | undefined => {
+  const screenId = record["screenId"];
+  const deployment = record["deployment"];
+  const meanConfidence = record["meanConfidence"];
+  const outcomes = record["outcomes"];
+  if (
+    typeof screenId !== "string" ||
+    typeof deployment !== "string" ||
+    typeof meanConfidence !== "number" ||
+    !Array.isArray(outcomes) ||
+    outcomes.some((outcome) => typeof outcome !== "string")
+  ) {
+    return undefined;
+  }
+  const roundedConfidence = Math.round(meanConfidence * 10_000) / 10_000;
+  return createHash("sha256")
+    .update(
+      `${screenId}|${deployment}|${[...outcomes].sort().join(",")}|${roundedConfidence}`,
+      "utf8",
+    )
+    .digest("hex");
+};
+
+const compareVisualEvidenceRefs = (
+  sidecarArtifact: Record<string, unknown>,
+): boolean => {
+  const result = sidecarArtifact["result"];
+  const visualEvidenceRefs = sidecarArtifact["visualEvidenceRefs"];
+  if (!isRecord(result) || result["outcome"] !== "success") return true;
+  const validationReport = result["validationReport"];
+  if (!isRecord(validationReport)) return false;
+  const records = validationReport["records"];
+  if (!Array.isArray(records)) return false;
+  const expected = records
+    .map((record) => {
+      if (!isRecord(record)) return undefined;
+      const evidenceHash = sha256OfVisualEvidenceRecord(record);
+      const screenId = record["screenId"];
+      const deployment = record["deployment"];
+      if (
+        evidenceHash === undefined ||
+        typeof screenId !== "string" ||
+        typeof deployment !== "string"
+      ) {
+        return undefined;
+      }
+      return {
+        screenId,
+        modelDeployment: deployment,
+        evidenceHash,
+      };
+    })
+    .filter((record): record is NonNullable<typeof record> => record !== undefined)
+    .sort(
+      (left, right) =>
+        left.screenId.localeCompare(right.screenId) ||
+        left.modelDeployment.localeCompare(right.modelDeployment) ||
+        left.evidenceHash.localeCompare(right.evidenceHash),
+    );
+  if (
+    !Array.isArray(visualEvidenceRefs) ||
+    visualEvidenceRefs.length !== expected.length
+  ) {
+    return false;
+  }
+  return visualEvidenceRefs.every((entry, index) => {
+    if (!isRecord(entry)) return false;
+    const expectedEntry = expected[index];
+    return (
+      expectedEntry !== undefined &&
+      entry["screenId"] === expectedEntry.screenId &&
+      entry["modelDeployment"] === expectedEntry.modelDeployment &&
+      entry["evidenceHash"] === expectedEntry.evidenceHash
+    );
+  });
+};
+
+const compareManifestCaptureIdentities = (
+  manifest: Wave1PocEvidenceManifest,
+  sidecarArtifact: Record<string, unknown>,
+): boolean => {
+  const manifestRecord = manifest as unknown as Record<string, unknown>;
+  const manifestIdentities = manifestRecord["visualSidecarCaptureIdentities"];
+  const result = sidecarArtifact["result"];
+  if (!Array.isArray(manifestIdentities)) return result === undefined;
+  if (!isRecord(result)) return false;
+  const artifactIdentities = result["captureIdentities"];
+  if (
+    !Array.isArray(artifactIdentities) ||
+    artifactIdentities.length !== manifestIdentities.length
+  ) {
+    return false;
+  }
+  return manifestIdentities.every((identity, index) => {
+    const artifactIdentity = artifactIdentities[index];
+    return (
+      isRecord(identity) &&
+      isRecord(artifactIdentity) &&
+      identity["screenId"] === artifactIdentity["screenId"] &&
+      identity["mimeType"] === artifactIdentity["mimeType"] &&
+      identity["byteLength"] === artifactIdentity["byteLength"] &&
+      identity["sha256"] === artifactIdentity["sha256"]
+    );
+  });
+};
+
 const fileExists = async (path: string): Promise<boolean> => {
   try {
     await stat(path);
@@ -246,9 +355,11 @@ const detectVisualSidecarEvidenceMissing = async (
   manifest: Wave1PocEvidenceManifest,
 ): Promise<string | undefined> => {
   const manifestVisualSidecar = manifest.visualSidecar;
-  const rawArtifacts = (manifest as unknown as Record<string, unknown>)[
-    "artifacts"
-  ];
+  const manifestRecord = manifest as unknown as Record<string, unknown>;
+  const rawArtifacts = manifestRecord["artifacts"];
+  const manifestCaptureIdentities =
+    manifestRecord["visualSidecarCaptureIdentities"];
+  const manifestHasCaptureIdentities = Array.isArray(manifestCaptureIdentities);
   const attestedVisualResult = Array.isArray(rawArtifacts)
     ? rawArtifacts.some(
         (artifact: unknown) =>
@@ -278,13 +389,38 @@ const detectVisualSidecarEvidenceMissing = async (
       ) {
         return VISUAL_SIDECAR_RESULT_ARTIFACT_FILENAME;
       }
+      if (
+        !compareVisualEvidenceRefs(sidecarValue) ||
+        !compareManifestCaptureIdentities(manifest, sidecarValue)
+      ) {
+        return VISUAL_SIDECAR_RESULT_ARTIFACT_FILENAME;
+      }
+    }
+  }
+
+  if (manifestHasCaptureIdentities) {
+    const sidecarPath = join(
+      artifactsDir,
+      VISUAL_SIDECAR_RESULT_ARTIFACT_FILENAME,
+    );
+    const sidecarRead = await tryReadJson(sidecarPath);
+    if (!sidecarRead.ok) {
+      return VISUAL_SIDECAR_RESULT_ARTIFACT_FILENAME;
+    }
+    if (
+      !isRecord(sidecarRead.value) ||
+      !compareManifestCaptureIdentities(manifest, sidecarRead.value)
+    ) {
+      return VISUAL_SIDECAR_RESULT_ARTIFACT_FILENAME;
     }
   }
 
   // Case B: manifest attests the result artifact but leaves the
   // `visualSidecar` summary block unset.
   if (
-    attestedVisualResult && manifestVisualSidecar === undefined
+    attestedVisualResult &&
+    manifestVisualSidecar === undefined &&
+    !manifestHasCaptureIdentities
   ) {
     return VISUAL_SIDECAR_RESULT_ARTIFACT_FILENAME;
   }
@@ -369,6 +505,27 @@ const ensureExpectedDir = (artifactsRoot: string, jobId: string): string => {
   return candidate;
 };
 
+const resolveArtifactsDir = async (
+  artifactsRoot: string,
+  jobId: string,
+): Promise<{ status: "job_not_found" } | { status: "ok"; path: string }> => {
+  const direct = ensureExpectedDir(artifactsRoot, jobId);
+  try {
+    const stats = await stat(direct);
+    if (stats.isDirectory()) return { status: "ok", path: direct };
+  } catch (err) {
+    if (!isENOENT(err)) throw err;
+  }
+  const nested = resolve(join(artifactsRoot, "jobs", jobId, "test-intelligence"));
+  try {
+    const stats = await stat(nested);
+    if (stats.isDirectory()) return { status: "ok", path: nested };
+  } catch (err) {
+    if (!isENOENT(err)) throw err;
+  }
+  return { status: "job_not_found" };
+};
+
 const safeReadDirNames = async (path: string): Promise<string[]> => {
   try {
     return await readdir(path);
@@ -394,21 +551,14 @@ const isAttestationFailureCode = (
 export const verifyJobEvidence = async (
   input: VerifyJobEvidenceInput,
 ): Promise<EvidenceVerifyResult> => {
-  const artifactsDir = ensureExpectedDir(input.artifactsRoot, input.jobId);
-
-  let dirExists = false;
-  try {
-    const stats = await stat(artifactsDir);
-    dirExists = stats.isDirectory();
-  } catch (err) {
-    if (isENOENT(err)) {
-      return { status: "job_not_found" };
-    }
-    throw err;
-  }
-  if (!dirExists) {
+  const resolvedDir = await resolveArtifactsDir(
+    input.artifactsRoot,
+    input.jobId,
+  );
+  if (resolvedDir.status !== "ok") {
     return { status: "job_not_found" };
   }
+  const artifactsDir = resolvedDir.path;
 
   const manifestPath = join(
     artifactsDir,
@@ -670,6 +820,8 @@ export const verifyJobEvidence = async (
   const ok = sortedFailures.length === 0;
 
   const visualSidecar = manifestRecord["visualSidecar"];
+  const visualSidecarCaptureIdentities =
+    manifestRecord["visualSidecarCaptureIdentities"];
   const visualSidecarSummary = isRecord(visualSidecar)
     ? {
         ...(typeof visualSidecar["selectedDeployment"] === "string"
@@ -678,6 +830,9 @@ export const verifyJobEvidence = async (
         fallbackUsed: visualSidecar["fallbackReason"] !== "none",
         ...(typeof visualSidecar["resultArtifactSha256"] === "string"
           ? { resultArtifactSha256: visualSidecar["resultArtifactSha256"] }
+          : {}),
+        ...(Array.isArray(visualSidecarCaptureIdentities)
+          ? { captureIdentityCount: visualSidecarCaptureIdentities.length }
           : {}),
       }
     : undefined;
