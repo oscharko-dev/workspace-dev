@@ -184,6 +184,18 @@ export {
   type WriteAgentRoleRunArtifactResult,
 } from "./agent-role-run-artifact.js";
 export {
+  AGENT_ROLE_PROFILE_REGISTRY,
+  LLM_ROLE_FORBIDDEN_CAPABILITIES,
+  assertAgentRoleProfileInvariants,
+  getAgentRoleProfile,
+  isAgentHarnessRole,
+  isAgentRoleCapability,
+  isAgentRoleFinOpsGroup,
+  isAgentRoleKind,
+  listAgentRoleProfiles,
+  serializeAgentRoleProfile,
+} from "./agent-role-profile.js";
+export {
   buildGenealogyArtifact,
   writeGenealogyArtifact,
   type GenealogyNodeInput,
