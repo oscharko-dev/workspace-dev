@@ -148,7 +148,7 @@ Persisted, fully-redacted artifact form of a compiled prompt.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.5.0"`
+> **contractVersion**: `"1.6.0"`
 
 ##### hashes
 
@@ -198,7 +198,7 @@ Redacted JSON payload that the model will reason over.
 
 ##### schemaVersion
 
-> **schemaVersion**: `"1.0.0"`
+> **schemaVersion**: `"1.1.0"`
 
 ##### systemPrompt
 
@@ -1060,7 +1060,7 @@ Aggregate dry-run report artifact.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.5.0"`
+> **contractVersion**: `"1.6.0"`
 
 ##### credentialsIncluded
 
@@ -1409,7 +1409,7 @@ Sorted by filename for deterministic emission.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.5.0"`
+> **contractVersion**: `"1.6.0"`
 
 ##### exportedTestCaseCount
 
@@ -1641,7 +1641,7 @@ Verbatim copy of the budget envelope applied to this job.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.5.0"`
+> **contractVersion**: `"1.6.0"`
 
 ##### currencyLabel?
 
@@ -1996,7 +1996,7 @@ Sum of input tokens reported by the gateway across all successful attempts.
 
 ##### lastErrorClass?
 
-> `optional` **lastErrorClass?**: `"schema_invalid"` \| `"schema_invalid_response"` \| `"refusal"` \| `"incomplete"` \| `"timeout"` \| `"rate_limited"` \| `"transport"` \| `"image_payload_rejected"` \| `"input_budget_exceeded"` \| `"response_too_large"`
+> `optional` **lastErrorClass?**: `"schema_invalid"` \| `"schema_invalid_response"` \| `"refusal"` \| `"incomplete"` \| `"timeout"` \| `"rate_limited"` \| `"transport"` \| `"image_payload_rejected"` \| `"input_budget_exceeded"` \| `"response_too_large"` \| `"protocol"` \| `"canceled"`
 
 Last error class observed (failure path) — `undefined` if no failure.
 
@@ -2071,7 +2071,7 @@ Single generated test case.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.5.0"`
+> **contractVersion**: `"1.6.0"`
 
 ##### expectedResults
 
@@ -2117,6 +2117,15 @@ Single generated test case.
 
 > **qualitySignals**: [`GeneratedTestCaseQualitySignals`](#generatedtestcasequalitysignals-1)
 
+##### regulatoryRelevance?
+
+> `optional` **regulatoryRelevance?**: [`RegulatoryRelevance`](#regulatoryrelevance-1)
+
+Optional regulatory-relevance signal (Issue #1735, contract bump
+4.27.0). Populated by the production runner when the source screen
+matches banking/insurance semantic keywords or when prompt augmentation
+produced a compliance-flavoured case.
+
 ##### reviewState
 
 > **reviewState**: [`GeneratedTestCaseReviewState`](#generatedtestcasereviewstate-1)
@@ -2127,7 +2136,7 @@ Single generated test case.
 
 ##### schemaVersion
 
-> **schemaVersion**: `"1.0.0"`
+> **schemaVersion**: `"1.1.0"`
 
 ##### sourceJobId
 
@@ -2173,7 +2182,7 @@ Whether the artifact came from a replay-cache hit.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.5.0"`
+> **contractVersion**: `"1.6.0"`
 
 ##### generatedAt
 
@@ -2205,7 +2214,7 @@ Whether the artifact came from a replay-cache hit.
 
 ##### schemaVersion
 
-> **schemaVersion**: `"1.0.0"`
+> **schemaVersion**: `"1.1.0"`
 
 ##### visualSidecarSchemaVersion
 
@@ -2249,7 +2258,7 @@ Wrapper produced by the generator for a single job.
 
 ##### schemaVersion
 
-> **schemaVersion**: `"1.0.0"`
+> **schemaVersion**: `"1.1.0"`
 
 ##### testCases
 
@@ -2464,7 +2473,7 @@ Hard-invariant intent-delta report artifact (Issue #1373).
 
 ##### contractVersion
 
-> **contractVersion**: `"1.5.0"`
+> **contractVersion**: `"1.6.0"`
 
 ##### currentIntentHash
 
@@ -2728,7 +2737,7 @@ Aggregate `jira-created-subtasks.json` artifact (Issue #1482).
 
 ##### contractVersion
 
-> **contractVersion**: `"1.5.0"`
+> **contractVersion**: `"1.6.0"`
 
 ##### credentialsIncluded
 
@@ -3364,7 +3373,7 @@ Audit metadata for the run.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.5.0"`
+> **contractVersion**: `"1.6.0"`
 
 ##### createdCount
 
@@ -4070,6 +4079,20 @@ this field.
 
 > **timeoutMs**: `number`
 
+##### wireStructuredOutputMode?
+
+> `optional` **wireStructuredOutputMode?**: `"none"` \| `"json_schema"` \| `"json_object"`
+
+Wire-format strategy for structured outputs. Defaults to `"json_schema"`
+(preserves existing behaviour). Set to `"json_object"` for providers
+that accept the weaker mode but reject `json_schema`. Set to `"none"`
+for providers that return empty content for ANY `response_format`
+(observed on Azure AI Foundry's `gpt-oss-120b` via the `openai/v1`
+path on 2026-05-02). In all three modes, the gateway parses and
+validates the response content as JSON in-process when the request
+carries a `responseSchema`, so the contract guarantee surfaced to
+callers is unchanged. See [LlmGatewayWireStructuredOutputMode](#llmgatewaywirestructuredoutputmode).
+
 ***
 
 ### LlmGenerationFailure
@@ -4084,7 +4107,7 @@ Failure outcome with a redacted message and an explicit retryable flag.
 
 ##### errorClass
 
-> **errorClass**: `"schema_invalid"` \| `"refusal"` \| `"incomplete"` \| `"timeout"` \| `"rate_limited"` \| `"transport"` \| `"image_payload_rejected"` \| `"input_budget_exceeded"` \| `"response_too_large"`
+> **errorClass**: `"schema_invalid"` \| `"refusal"` \| `"incomplete"` \| `"timeout"` \| `"rate_limited"` \| `"transport"` \| `"image_payload_rejected"` \| `"input_budget_exceeded"` \| `"response_too_large"` \| `"protocol"` \| `"canceled"`
 
 ##### message
 
@@ -4105,6 +4128,19 @@ Failure outcome with a redacted message and an explicit retryable flag.
 Wire-shaped request handed to a gateway client.
 
 #### Properties
+
+##### abortSignal?
+
+> `optional` **abortSignal?**: `AbortSignal`
+
+Optional caller-side `AbortSignal`. When the orchestrator cancels a
+running job (#1694), this signal is plumbed all the way to the
+outbound `fetch` so the in-flight LLM call is aborted immediately
+instead of running until the per-request timeout fires. Aborts via
+this signal surface as `errorClass: "canceled"` (`retryable: false`),
+distinct from `"timeout"` so circuit-breaker accounting and retry
+policy do not treat user cancellation as a transient transport
+failure.
 
 ##### imageInputs?
 
@@ -4662,7 +4698,7 @@ Aggregate `qc-created-entities.json` artifact (Issue #1372).
 
 ##### contractVersion
 
-> **contractVersion**: `"1.5.0"`
+> **contractVersion**: `"1.6.0"`
 
 ##### entities
 
@@ -4752,7 +4788,7 @@ Aggregate QC mapping preview artifact.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.5.0"`
+> **contractVersion**: `"1.6.0"`
 
 ##### entries
 
@@ -5123,6 +5159,35 @@ Semver-shaped descriptor version, bumped when the matrix changes.
 
 ***
 
+### RegulatoryRelevance
+
+Optional per-test-case regulatory-relevance signal (Issue #1735, contract
+bump 4.27.0). Populated by the production runner when the source screen
+matches a banking / insurance semantic keyword (see
+[BANKING\_INSURANCE\_SEMANTIC\_KEYWORDS](#banking_insurance_semantic_keywords)) or when the prompt-augmentation
+pass produced a compliance-flavoured case (PII / IBAN rejection,
+four-eyes / audit-trail, regulated-data boundary).
+
+The field is optional — non-banking/insurance Figma sources do not emit
+it, which means existing artifacts and replay-cache entries from contract
+version 4.26.0 remain valid (additive, backwards-compatible field).
+
+#### Properties
+
+##### domain
+
+> **domain**: `"banking"` \| `"insurance"` \| `"general"`
+
+##### rationale
+
+> **rationale**: `string`
+
+Free-form German rationale (≤ 240 chars) explaining why the case carries
+regulatory weight. Generic compliance language only; the prompt
+augmentation forbids the model from citing specific paragraphs.
+
+***
+
 ### ReplayCacheEntry
 
 Stored cache entry.
@@ -5227,7 +5292,7 @@ ISO-8601 UTC timestamp at the moment of persistence.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.5.0"`
+> **contractVersion**: `"1.6.0"`
 
 ##### fromState?
 
@@ -5295,7 +5360,7 @@ Number of cases currently in `approved` (or `exported`/`transferred`) state.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.5.0"`
+> **contractVersion**: `"1.6.0"`
 
 ##### fourEyesPolicy?
 
@@ -5669,7 +5734,7 @@ Sorted by `testCaseId` for byte stability. Empty when `refusal` is set.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.5.0"`
+> **contractVersion**: `"1.6.0"`
 
 ##### gatewayRelease
 
@@ -5994,7 +6059,7 @@ Avg assumptions per case.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.5.0"`
+> **contractVersion**: `"1.6.0"`
 
 ##### duplicatePairs
 
@@ -6088,7 +6153,7 @@ Aggregate dedupe report artifact (Issue #1373).
 
 ##### contractVersion
 
-> **contractVersion**: `"1.5.0"`
+> **contractVersion**: `"1.6.0"`
 
 ##### embeddingProvider
 
@@ -6198,7 +6263,7 @@ Aggregate test-case delta report (always paired with `IntentDeltaReport`).
 
 ##### contractVersion
 
-> **contractVersion**: `"1.5.0"`
+> **contractVersion**: `"1.6.0"`
 
 ##### generatedAt
 
@@ -6454,7 +6519,7 @@ Whether ANY case was blocked (downstream export gate).
 
 ##### contractVersion
 
-> **contractVersion**: `"1.5.0"`
+> **contractVersion**: `"1.6.0"`
 
 ##### decisions
 
@@ -6593,7 +6658,7 @@ Whether the report blocks downstream review/export (any error => true).
 
 ##### contractVersion
 
-> **contractVersion**: `"1.5.0"`
+> **contractVersion**: `"1.6.0"`
 
 ##### errorCount
 
@@ -6772,7 +6837,7 @@ Aggregate traceability-matrix artifact (Issue #1373).
 
 ##### contractVersion
 
-> **contractVersion**: `"1.5.0"`
+> **contractVersion**: `"1.6.0"`
 
 ##### exportProfile?
 
@@ -7266,7 +7331,7 @@ Audit metadata for the run.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.5.0"`
+> **contractVersion**: `"1.6.0"`
 
 ##### createdCount
 
@@ -7482,7 +7547,7 @@ Wall-clock duration of the attempt in milliseconds.
 
 ##### errorClass?
 
-> `optional` **errorClass?**: `"schema_invalid"` \| `"schema_invalid_response"` \| `"refusal"` \| `"incomplete"` \| `"timeout"` \| `"rate_limited"` \| `"transport"` \| `"image_payload_rejected"` \| `"input_budget_exceeded"` \| `"response_too_large"`
+> `optional` **errorClass?**: `"schema_invalid"` \| `"schema_invalid_response"` \| `"refusal"` \| `"incomplete"` \| `"timeout"` \| `"rate_limited"` \| `"transport"` \| `"image_payload_rejected"` \| `"input_budget_exceeded"` \| `"response_too_large"` \| `"protocol"` \| `"canceled"`
 
 Error class when the attempt failed. Absent on a success.
 
@@ -7599,7 +7664,7 @@ screenshot bytes.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.5.0"`
+> **contractVersion**: `"1.6.0"`
 
 ##### generatedAt
 
@@ -7739,7 +7804,7 @@ Whether any record carries a non-`ok`/non-`fallback_used` outcome that blocks ge
 
 ##### contractVersion
 
-> **contractVersion**: `"1.5.0"`
+> **contractVersion**: `"1.6.0"`
 
 ##### generatedAt
 
@@ -7909,7 +7974,7 @@ Export profile identity (export-only QC pipeline).
 
 ##### generatedTestCaseSchemaVersion
 
-> **generatedTestCaseSchemaVersion**: `"1.0.0"`
+> **generatedTestCaseSchemaVersion**: `"1.1.0"`
 
 ##### imagePayloadSentToTestGeneration
 
@@ -8009,7 +8074,7 @@ Active signing mode; mirrored from the run input for auditability.
 
 ##### testIntelligenceContractVersion
 
-> **testIntelligenceContractVersion**: `"1.5.0"`
+> **testIntelligenceContractVersion**: `"1.6.0"`
 
 ##### visualSidecar?
 
@@ -8438,7 +8503,7 @@ and timestamps are caller-provided.
 
 ##### testIntelligenceContractVersion
 
-> **testIntelligenceContractVersion**: `"1.5.0"`
+> **testIntelligenceContractVersion**: `"1.6.0"`
 
 ##### thresholds
 
@@ -8617,7 +8682,7 @@ Identifier of the fixture exercised.
 
 ##### generatedTestCaseSchemaVersion
 
-> **generatedTestCaseSchemaVersion**: `"1.0.0"`
+> **generatedTestCaseSchemaVersion**: `"1.1.0"`
 
 ##### imagePayloadSentToTestGeneration
 
@@ -8730,7 +8795,7 @@ raw paste bytes, or PII.
 
 ##### testIntelligenceContractVersion
 
-> **testIntelligenceContractVersion**: `"1.5.0"`
+> **testIntelligenceContractVersion**: `"1.6.0"`
 
 Test-intelligence subsurface contract version.
 
@@ -13318,6 +13383,12 @@ Scoring weights for the visual quality composite score.
 
 ## Type Aliases
 
+### BankingInsuranceSemanticKeyword
+
+> **BankingInsuranceSemanticKeyword** = *typeof* [`BANKING_INSURANCE_SEMANTIC_KEYWORDS`](#banking_insurance_semantic_keywords)\[`number`\]
+
+***
+
 ### ConflictResolutionPolicy
 
 > **ConflictResolutionPolicy** = *typeof* [`ALLOWED_CONFLICT_RESOLUTION_POLICIES`](#allowed_conflict_resolution_policies)\[`number`\]
@@ -13566,6 +13637,12 @@ Provider finish reasons normalized to a single set.
 
 ***
 
+### LlmGatewayWireStructuredOutputMode
+
+> **LlmGatewayWireStructuredOutputMode** = *typeof* [`ALLOWED_LLM_GATEWAY_WIRE_STRUCTURED_OUTPUT_MODES`](#allowed_llm_gateway_wire_structured_output_modes)\[`number`\]
+
+***
+
 ### LlmGenerationResult
 
 > **LlmGenerationResult** = [`LlmGenerationSuccess`](#llmgenerationsuccess) \| [`LlmGenerationFailure`](#llmgenerationfailure)
@@ -13617,7 +13694,7 @@ Refusal-code alias for the multi-source mode gate.
 
 ### PiiKind
 
-> **PiiKind** = `"iban"` \| `"bic"` \| `"pan"` \| `"tax_id"` \| `"email"` \| `"phone"` \| `"full_name"` \| `"internal_hostname"` \| `"jira_mention"` \| `"customer_name_placeholder"`
+> **PiiKind** = `"iban"` \| `"bic"` \| `"pan"` \| `"tax_id"` \| `"email"` \| `"phone"` \| `"full_name"` \| `"internal_hostname"` \| `"jira_mention"` \| `"customer_name_placeholder"` \| `"postal_address"` \| `"date_of_birth"` \| `"account_number"` \| `"national_id"` \| `"special_category"`
 
 Known PII-like categories detected in mock form data and Jira payloads.
 
@@ -13674,6 +13751,12 @@ Subset alias for primary source kinds.
 ### QcProviderOperation
 
 > **QcProviderOperation** = *typeof* [`ALLOWED_QC_PROVIDER_OPERATIONS`](#allowed_qc_provider_operations)\[`number`\]
+
+***
+
+### RegulatoryRelevanceDomain
+
+> **RegulatoryRelevanceDomain** = *typeof* [`ALLOWED_REGULATORY_RELEVANCE_DOMAINS`](#allowed_regulatory_relevance_domains)\[`number`\]
 
 ***
 
@@ -14629,7 +14712,7 @@ Wave 1; the array is the source of truth so future modes (`openai_responses`,
 
 ### ALLOWED\_LLM\_GATEWAY\_ERROR\_CLASSES
 
-> `const` **ALLOWED\_LLM\_GATEWAY\_ERROR\_CLASSES**: readonly \[`"refusal"`, `"schema_invalid"`, `"incomplete"`, `"timeout"`, `"rate_limited"`, `"transport"`, `"image_payload_rejected"`, `"input_budget_exceeded"`, `"response_too_large"`\]
+> `const` **ALLOWED\_LLM\_GATEWAY\_ERROR\_CLASSES**: readonly \[`"refusal"`, `"schema_invalid"`, `"incomplete"`, `"timeout"`, `"rate_limited"`, `"transport"`, `"image_payload_rejected"`, `"input_budget_exceeded"`, `"response_too_large"`, `"protocol"`, `"canceled"`\]
 
 Disjoint failure classes surfaced by `LlmGatewayClient.generate`. Refusals,
 schema-invalid responses, and image-payload guard rejections are NOT
@@ -14644,6 +14727,33 @@ retryable; transport, timeout, and rate-limit failures are.
 Allowed gateway roles. Each role is bound to a single deployment to keep the
 structured test-case generator (`gpt-oss-120b`) strictly separated from the
 multimodal visual sidecars (`llama-4-maverick-vision`, `phi-4-multimodal-poc`).
+
+***
+
+### ALLOWED\_LLM\_GATEWAY\_WIRE\_STRUCTURED\_OUTPUT\_MODES
+
+> `const` **ALLOWED\_LLM\_GATEWAY\_WIRE\_STRUCTURED\_OUTPUT\_MODES**: readonly \[`"json_schema"`, `"json_object"`, `"none"`\]
+
+Wire-format strategy for structured outputs. Decouples our in-process
+structured-output behaviour (the gateway always parses JSON content and
+validates it against `responseSchema` when present) from the on-the-wire
+`response_format` field shipped to the upstream provider.
+
+- `"json_schema"` (default) — emit
+  `response_format: { type: "json_schema", json_schema: {...} }` when the
+  client config declares `structuredOutputs: true` and the request carries
+  a schema. Matches OpenAI / Azure OpenAI Structured Outputs.
+- `"json_object"` — emit `response_format: { type: "json_object" }`. The
+  schema is still validated in-process. Use for providers that accept the
+  weaker `json_object` mode but reject `json_schema`.
+- `"none"` — omit `response_format` entirely. Use when the deployment
+  silently returns empty content for any `response_format` value (observed
+  on `gpt-oss-120b` via Azure AI Foundry's `openai/v1` path on 2026-05-02:
+  any `response_format` setting yields `content: ""` after burning ~2
+  tokens; with no `response_format`, the model produces clean parseable
+  JSON when the prompt instructs it to). The gateway still parses and
+  schema-validates the content in-process so the contract guarantee
+  ("structured-output success returns parsed JSON") is unchanged.
 
 ***
 
@@ -14736,6 +14846,26 @@ this provider support" without coupling to a concrete adapter:
   - `api_transfer` — adapter can perform controlled API writes.
   - `register_custom` — caller may register a custom adapter under this
     provider id (only true for the reserved `custom` slot).
+
+***
+
+### ALLOWED\_REGULATORY\_RELEVANCE\_DOMAINS
+
+> `const` **ALLOWED\_REGULATORY\_RELEVANCE\_DOMAINS**: readonly \[`"banking"`, `"insurance"`, `"general"`\]
+
+Regulatory-domain enum for [RegulatoryRelevance.domain](#domain-1)
+(Issue #1735, contract bump 4.27.0).
+
+Drives the banking/insurance prompt-augmentation pass in the production
+runner. The enum is intentionally narrow — generic-compliance language
+only (no specific paragraph numbers / regulatory-text citations).
+
+- `"banking"` — semantic banking node names ("Antrag", "Auszahlung",
+  "Bonität", IBAN/BIC inputs, four-eyes-state-changing actions, ...).
+- `"insurance"` — semantic insurance node names ("Versicherung", "Police",
+  "Schadensfall", "Risikoprüfung", ...).
+- `"general"` — flagged as compliance-relevant but not specific to the
+  above two industries (e.g. PII boundary cases).
 
 ***
 
@@ -15038,6 +15168,20 @@ XML namespace embedded in the OpenText ALM reference export root element.
 
 ***
 
+### BANKING\_INSURANCE\_SEMANTIC\_KEYWORDS
+
+> `const` **BANKING\_INSURANCE\_SEMANTIC\_KEYWORDS**: readonly \[`"Versicherung"`, `"Police"`, `"Schadensfall"`, `"Risikoprüfung"`, `"Bonität"`, `"Antrag"`, `"Abschluss"`, `"Auszahlung"`, `"Kündigung"`\]
+
+Banking / insurance semantic keywords surfaced in screen / node names that
+trigger the regulatory-prompt augmentation pass. The list is intentionally
+narrow: generic banking + insurance flow vocabulary (German), no specific
+regulatory-text citations.
+
+Exposed as a frozen contract export so callers (production runner +
+inspector tooling) share one source of truth for "is this screen regulated".
+
+***
+
 ### BUSINESS\_TEST\_INTENT\_IR\_SCHEMA\_VERSION
 
 > `const` **BUSINESS\_TEST\_INTENT\_IR\_SCHEMA\_VERSION**: `"1.0.0"`
@@ -15048,7 +15192,7 @@ Schema version for `BusinessTestIntentIr` artifacts.
 
 ### CONTRACT\_VERSION
 
-> `const` **CONTRACT\_VERSION**: `"4.23.0"`
+> `const` **CONTRACT\_VERSION**: `"4.27.0"`
 
 Current contract version constant.
 Must be bumped according to CONTRACT_CHANGELOG.md rules.
@@ -15262,9 +15406,14 @@ Schema version for the persisted FinOps budget report artifact (Issue #1371).
 
 ### GENERATED\_TEST\_CASE\_SCHEMA\_VERSION
 
-> `const` **GENERATED\_TEST\_CASE\_SCHEMA\_VERSION**: `"1.0.0"`
+> `const` **GENERATED\_TEST\_CASE\_SCHEMA\_VERSION**: `"1.1.0"`
 
 Schema version for generated test case payloads.
+
+1.1.0 — Issue #1735: optional additive field `regulatoryRelevance`
+({domain, rationale}) on each test case. Backwards compatible — the
+validator accepts both 1.0.0-shaped lists (without the field) and
+1.1.0-shaped lists (with or without the field).
 
 ***
 
@@ -15814,7 +15963,7 @@ Bumped when `TestCaseValidationReport` changes shape.
 
 ### TEST\_INTELLIGENCE\_CONTRACT\_VERSION
 
-> `const` **TEST\_INTELLIGENCE\_CONTRACT\_VERSION**: `"1.5.0"`
+> `const` **TEST\_INTELLIGENCE\_CONTRACT\_VERSION**: `"1.6.0"`
 
 Contract version for the opt-in test-intelligence surface.
 

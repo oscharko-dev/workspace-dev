@@ -208,7 +208,7 @@ operators can plan integration without depending on the runner being wired:
 | `WorkspaceJobInput.jobType`                 | `"figma_to_code"` (default) \| `"figma_to_qc_test_cases"` (reserved) |
 | `WorkspaceJobInput.testIntelligenceMode`    | `"deterministic_llm"` \| `"offline_eval"` \| `"dry_run"`             |
 | `ALLOWED_TEST_INTELLIGENCE_MODES`           | `["deterministic_llm", "offline_eval", "dry_run"]`                   |
-| `TEST_INTELLIGENCE_CONTRACT_VERSION`        | `"1.5.0"`                                                            |
+| `TEST_INTELLIGENCE_CONTRACT_VERSION`        | `"1.6.0"`                                                            |
 | `TEST_INTELLIGENCE_PROMPT_TEMPLATE_VERSION` | `"1.0.0"`                                                            |
 | `TEST_INTELLIGENCE_ENV`                     | `"FIGMAPIPE_WORKSPACE_TEST_INTELLIGENCE"`                            |
 
@@ -847,6 +847,11 @@ local Inspector calls when an operator pastes a Figma URL — against the
 operator-configured Azure AI Foundry deployment. It is the regression net for
 the #1676-class shape (live Azure rejects the production payload while the
 mock-backed CI suite stays green).
+
+The dedicated closing-gate policy for production-wired claims lives in
+`docs/test-intelligence-live-e2e.md`. Use that document for required
+environment, normalized failure taxonomy, artifact expectations, and the PR
+summary or waiver rule before tagging a release.
 
 **What it runs.** A synthetic German banking-form Figma snapshot
 (`src/test-intelligence/fixtures/live-e2e/banking-antrag.figma.json`, < 50 KB,
