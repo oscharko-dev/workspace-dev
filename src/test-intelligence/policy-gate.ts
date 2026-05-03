@@ -47,6 +47,7 @@ import {
   filterSemanticContentOverridesForValidation,
   type SemanticContentOverrideMap,
 } from "./semantic-content-sanitization.js";
+import type { UntrustedContentNormalizationReport } from "./untrusted-content-normalizer.js";
 
 export interface EvaluatePolicyGateInput {
   jobId: string;
@@ -87,6 +88,8 @@ export interface EvaluatePolicyGateInput {
     failureClass: VisualSidecarFailureClass;
     failureMessage: string;
   };
+  /** Optional pre-LLM untrusted-content normalization outcome. */
+  untrustedContentReport?: UntrustedContentNormalizationReport;
 }
 
 /** Maximum strength among per-case decisions: blocked > needs_review > approved. */
@@ -203,6 +206,7 @@ const evaluateCase = (
   overrides: SemanticContentOverrideMap | undefined,
   customContextPolicySignals: readonly CustomContextPolicySignal[],
   visualSidecarRefusal: EvaluatePolicyGateInput["visualSidecarRefusal"],
+  untrustedContentReport: UntrustedContentNormalizationReport | undefined,
 ): TestCasePolicyDecisionRecord => {
   let decision: TestCasePolicyDecision = "approved";
   const violations: TestCasePolicyViolation[] = [];
@@ -213,6 +217,16 @@ const evaluateCase = (
       outcome: "visual_sidecar_failure",
       severity: "warning",
       reason: `visual sidecar refused: ${visualSidecarRefusal.failureClass}: ${visualSidecarRefusal.failureMessage}`,
+    });
+    decision = escalate(decision, "needs_review");
+  }
+
+  if (untrustedContentReport?.outcome === "needs_review") {
+    violations.push({
+      rule: "policy:untrusted-content-normalization",
+      outcome: "ambiguity_review_required",
+      severity: "warning",
+      reason: summarizeUntrustedContentNeedsReview(untrustedContentReport),
     });
     decision = escalate(decision, "needs_review");
   }
@@ -504,6 +518,7 @@ const evaluateJobLevel = (
   visual?: VisualSidecarValidationReport,
   customContextPolicySignals: readonly CustomContextPolicySignal[] = [],
   visualSidecarRefusal?: EvaluatePolicyGateInput["visualSidecarRefusal"],
+  untrustedContentReport?: UntrustedContentNormalizationReport,
 ): TestCasePolicyViolation[] => {
   const violations: TestCasePolicyViolation[] = [];
 
@@ -668,7 +683,26 @@ const evaluateJobLevel = (
     });
   }
 
+  if (untrustedContentReport?.outcome === "needs_review") {
+    violations.push({
+      rule: "policy:untrusted-content-normalization",
+      outcome: "ambiguity_review_required",
+      severity: "warning",
+      reason: summarizeUntrustedContentNeedsReview(untrustedContentReport),
+    });
+  }
+
   return violations;
+};
+
+const summarizeUntrustedContentNeedsReview = (
+  report: UntrustedContentNormalizationReport,
+): string => {
+  const carriers = report.needsReviewReasons
+    .map((reason) => `${reason.carrier}(${reason.count})`)
+    .sort((a, b) => a.localeCompare(b))
+    .join(", ");
+  return `untrusted-content normalization flagged critical carriers before prompt compilation: ${carriers}`;
 };
 
 const mapVisualOutcome = (
@@ -731,6 +765,7 @@ export const evaluatePolicyGate = (
         semanticContentOverrides,
         input.customContextPolicySignals ?? [],
         input.visualSidecarRefusal,
+        input.untrustedContentReport,
       ),
     );
   }
@@ -743,6 +778,7 @@ export const evaluatePolicyGate = (
     input.visual,
     input.customContextPolicySignals ?? [],
     input.visualSidecarRefusal,
+    input.untrustedContentReport,
   );
 
   // Job-level violations of error severity propagate as job-level

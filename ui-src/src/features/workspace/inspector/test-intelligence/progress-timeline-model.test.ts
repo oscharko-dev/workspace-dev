@@ -94,6 +94,16 @@ describe("progress-timeline-model", () => {
     expect(row?.detail).toBe("1234 tokens");
   });
 
+  it("routes cache_break onto the LLM gateway row with query-source detail", () => {
+    const after = applyEventToRows(
+      buildInitialTimelineRows(),
+      evt("cache_break", 250, { querySource: "judge_primary" }),
+    );
+    const row = after.find((r) => r.phase === "llm_gateway");
+    expect(row?.status).toBe("complete");
+    expect(row?.detail).toBe("cache break: judge_primary");
+  });
+
   it("a re-start (retry) demotes a complete row back to running", () => {
     const seq = [
       evt("validation_started", 100),
