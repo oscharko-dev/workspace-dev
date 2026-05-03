@@ -138,6 +138,7 @@ import {
 import { cloneOpenTextAlmReferenceProfile } from "./qc-mapping.js";
 import { compilePrompt } from "./prompt-compiler.js";
 import { cloneEuBankingDefaultProfile } from "./policy-profile.js";
+import { writeAgentRoleRunArtifact } from "./agent-role-run-artifact.js";
 import {
   cloneFourEyesPolicy,
   evaluateFourEyesEnforcement,
@@ -170,6 +171,7 @@ import {
   resolveFinOpsRequestLimits,
   validateFinOpsBudgetEnvelope,
 } from "./finops-budget.js";
+import { writeGenealogyArtifact } from "./genealogy.js";
 
 const TEST_GENERATION_DEPLOYMENT = "gpt-oss-120b-mock";
 const TEST_GENERATION_MODEL_REVISION = "gpt-oss-120b-2026-04-25";
@@ -1329,6 +1331,14 @@ export const runWave1Poc = async (
   const intentBytes = utf8(canonicalJson(intent));
   const compiledPromptBytes = utf8(canonicalJson(compiled.artifacts));
   const gatewayRequestAuditBytes = utf8(canonicalJson(gatewayRequestAudit));
+  const agentRoleRunPromise = writeAgentRoleRunArtifact({
+    runDir: input.runDir,
+    jobId: input.jobId,
+    roleRunId: "test_generation",
+    roleStepId: "test_generation",
+    roleLineageDepth: 0,
+    hashes: compiled.request.hashes,
+  });
   await Promise.all([
     writeAtomic(
       join(input.runDir, BUSINESS_INTENT_IR_ARTIFACT_FILENAME),
@@ -1342,7 +1352,9 @@ export const runWave1Poc = async (
       join(input.runDir, GATEWAY_REQUEST_AUDIT_ARTIFACT_FILENAME),
       gatewayRequestAuditBytes,
     ),
+    agentRoleRunPromise.then(() => undefined),
   ]);
+  const agentRoleRunArtifact = await agentRoleRunPromise;
 
   // 7. Validation pipeline + persist its artifacts. When the opt-in
   //    self-verify rubric pass (Issue #1379) is enabled the harness
@@ -1658,6 +1670,18 @@ export const runWave1Poc = async (
     document: lbomDocument,
     bytes: lbomWritten.bytes,
   });
+  const genealogyWritten = await writeGenealogyArtifact({
+    runDir: input.runDir,
+    generatedAt: input.generatedAt,
+    nodes: [
+      {
+        jobId: input.jobId,
+        roleStepId: "test_generation",
+        artifactFilename: "agent-role-runs/test_generation.json",
+        roleLineageDepth: 0,
+      },
+    ],
+  });
 
   // 10. Build evidence manifest. The manifest records the on-disk
   //     bytes for every artifact emitted above.
@@ -1706,6 +1730,11 @@ export const runWave1Poc = async (
       {
         filename: GATEWAY_REQUEST_AUDIT_ARTIFACT_FILENAME,
         bytes: gatewayRequestAuditBytes,
+        category: "manifest",
+      },
+      {
+        filename: "agent-role-runs/test_generation.json",
+        bytes: agentRoleRunArtifact.bytes,
         category: "manifest",
       },
       {
@@ -1766,6 +1795,11 @@ export const runWave1Poc = async (
         filename: `${LBOM_ARTIFACT_DIRECTORY}/${LBOM_ARTIFACT_FILENAME}`,
         bytes: lbomWritten.bytes,
         category: "lbom",
+      },
+      {
+        filename: "genealogy.json",
+        bytes: genealogyWritten.bytes,
+        category: "genealogy",
       },
       ...(rubricReportBytes !== undefined
         ? [

@@ -22,6 +22,7 @@ import type { FigmaRestNode } from "./figma-rest-adapter.js";
 import {
   BUSINESS_TEST_INTENT_IR_SCHEMA_VERSION,
   EU_BANKING_DEFAULT_POLICY_PROFILE_ID,
+  GENEALOGY_ARTIFACT_FILENAME,
   type BusinessTestIntentIr,
   type DetectedAction,
   type DetectedField,
@@ -167,6 +168,9 @@ test("runFigmaToQcTestCases happy path persists artifacts and renders customer M
       "utf8",
     );
     assert.match(generatedJson, /tc-/u);
+    assert.ok(result.artifactPaths.genealogy.endsWith(GENEALOGY_ARTIFACT_FILENAME));
+    const genealogy = await readFile(result.artifactPaths.genealogy, "utf8");
+    assert.match(genealogy, /agent-role-runs\/test_generation\.json/u);
     // Customer markdown was written.
     assert.ok(result.customerMarkdownPaths.combined.endsWith("testfaelle.md"));
     const md = await readFile(result.customerMarkdownPaths.combined, "utf8");

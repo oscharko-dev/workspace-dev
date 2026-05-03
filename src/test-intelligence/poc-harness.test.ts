@@ -5,6 +5,7 @@ import { join } from "node:path";
 import test from "node:test";
 
 import {
+  GENEALOGY_ARTIFACT_FILENAME,
   BUSINESS_TEST_INTENT_IR_SCHEMA_VERSION,
   FINOPS_ARTIFACT_DIRECTORY,
   FINOPS_BUDGET_REPORT_ARTIFACT_FILENAME,
@@ -238,6 +239,12 @@ for (const fixtureId of WAVE1_POC_FIXTURE_IDS) {
     assert.equal(result.fixtureId, fixtureId);
     assert.ok(result.generatedList.testCases.length > 0);
     assert.equal(result.exportArtifacts.refused, false);
+    assert.equal(
+      result.manifest.artifacts.some(
+        (artifact) => artifact.filename === GENEALOGY_ARTIFACT_FILENAME,
+      ),
+      true,
+    );
     // Every artifact filename must be unique; subdirectory artifacts remain
     // safe relative paths so they can be attested by the manifest.
     const filenames = result.artifactFilenames;
