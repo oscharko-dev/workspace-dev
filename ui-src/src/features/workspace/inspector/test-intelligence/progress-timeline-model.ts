@@ -25,7 +25,8 @@ export type ProductionRunnerEventPhase =
   | "export_started"
   | "export_complete"
   | "evidence_sealed"
-  | "finops_recorded";
+  | "finops_recorded"
+  | "cache_break";
 
 export interface ProductionRunnerEvent {
   phase: ProductionRunnerEventPhase;
@@ -113,6 +114,7 @@ const PHASE_ROUTING: Readonly<
   export_complete: { row: "export", transition: "complete" },
   evidence_sealed: { row: "evidence", transition: "complete" },
   finops_recorded: { row: "finops", transition: "complete" },
+  cache_break: { row: "llm_gateway", transition: "complete" },
 };
 
 export const buildInitialTimelineRows = (): readonly TimelineRow[] =>
@@ -171,6 +173,7 @@ const extractDetail = (event: ProductionRunnerEvent): string | null => {
   if (event.details === undefined) return null;
   const d = event.details as Record<string, unknown>;
   if (typeof d.message === "string") return d.message;
+  if (typeof d.querySource === "string") return `cache break: ${d.querySource}`;
   if (typeof d.deployment === "string") return d.deployment;
   if (typeof d.tokens === "number") return `${d.tokens} tokens`;
   if (typeof d.error === "string") return d.error;

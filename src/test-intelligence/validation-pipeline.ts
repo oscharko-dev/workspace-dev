@@ -51,6 +51,7 @@ import {
   filterSemanticContentOverridesForValidation,
   type SemanticContentOverrideMap,
 } from "./semantic-content-sanitization.js";
+import type { UntrustedContentNormalizationReport } from "./untrusted-content-normalizer.js";
 import {
   runSelfVerifyRubricPass,
   writeSelfVerifyRubricReportArtifact,
@@ -93,6 +94,8 @@ export interface RunValidationPipelineInput {
     failureClass: VisualSidecarFailureClass;
     failureMessage: string;
   };
+  /** Optional pre-LLM untrusted-content routing summary. */
+  untrustedContentReport?: UntrustedContentNormalizationReport;
 }
 
 export interface ValidationPipelineArtifacts {
@@ -216,6 +219,9 @@ export const runValidationPipeline = (
       : {}),
     ...(input.visualSidecarRefusal !== undefined
       ? { visualSidecarRefusal: input.visualSidecarRefusal }
+      : {}),
+    ...(input.untrustedContentReport !== undefined
+      ? { untrustedContentReport: input.untrustedContentReport }
       : {}),
   });
 

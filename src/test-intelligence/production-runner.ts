@@ -90,6 +90,11 @@ import {
   resolveFinOpsRequestLimits,
   validateFinOpsBudgetEnvelope,
 } from "./finops-budget.js";
+import {
+  buildFinOpsBudgetReport,
+  createFinOpsUsageRecorder,
+  writeFinOpsBudgetReport,
+} from "./finops-report.js";
 import type {
   ProductionRunnerEvent,
   ProductionRunnerEventSink,
@@ -120,6 +125,10 @@ import {
 import { cloneEuBankingDefaultProfile } from "./policy-profile.js";
 import { writeAgentRoleRunArtifact } from "./agent-role-run-artifact.js";
 import { writeGenealogyArtifact } from "./genealogy.js";
+import {
+  normalizeUntrustedContent,
+  writeUntrustedContentNormalizationReport,
+} from "./untrusted-content-normalizer.js";
 import { runValidationPipeline } from "./validation-pipeline.js";
 import {
   describeVisualScreens,
@@ -358,6 +367,7 @@ export interface RunFigmaToQcTestCasesResult {
   artifactPaths: {
     intent: string;
     compiledPrompt: string;
+    untrustedContentNormalizationReport: string;
     visualSidecarResult?: string;
     visualSidecarValidationReport?: string;
     agentRoleRun: string;
@@ -367,6 +377,7 @@ export interface RunFigmaToQcTestCasesResult {
     validationReport: string;
     policyReport: string;
     coverageReport: string;
+    finopsReport: string;
   };
   visualSidecar?: {
     result: VisualSidecarResult;
@@ -400,6 +411,13 @@ export const runFigmaToQcTestCases = async (
 ): Promise<RunFigmaToQcTestCasesResult> => {
   const startedAt = Date.now();
   const emit = makeEmitter(input.events);
+  const finopsRecorder = createFinOpsUsageRecorder();
+  const artifactDir = join(
+    input.outputRoot,
+    "jobs",
+    input.jobId,
+    "test-intelligence",
+  );
 
   // 0. Resolve + validate FinOps envelope. Operator override wins outright;
   //    no merging with the production default. Invalid envelopes fail
@@ -413,11 +431,26 @@ export const runFigmaToQcTestCases = async (
     details: { source: input.source.kind },
   });
   const figmaFile = await resolveFigmaSource(input.source);
+  await mkdir(artifactDir, { recursive: true });
+  const normalizedUntrusted = normalizeUntrustedContent({
+    figma: { document: figmaFile.document },
+  });
+  const untrustedContentNormalizationReportPath = (
+    await writeUntrustedContentNormalizationReport(
+      artifactDir,
+      normalizedUntrusted.report,
+    )
+  ).path;
+  const untrustedContentNormalizationReportBytes = Buffer.from(
+    canonicalJson(normalizedUntrusted.report),
+    "utf8",
+  );
 
   // 2. Normalize REST file → IntentDerivationFigmaInput.
   const intentInput = normalizeFigmaFileToIntentInput({
     fileKey: figmaFile.fileKey,
-    document: figmaFile.document as FigmaRestNode,
+    document: (normalizedUntrusted.figma?.document ??
+      figmaFile.document) as FigmaRestNode,
   });
   if (intentInput.screens.length === 0) {
     throw new ProductionRunnerError({
@@ -430,12 +463,6 @@ export const runFigmaToQcTestCases = async (
 
   // 3. Derive Business Test Intent IR.
   let intent = deriveBusinessTestIntentIr({ figma: intentInput });
-  const artifactDir = join(
-    input.outputRoot,
-    "jobs",
-    input.jobId,
-    "test-intelligence",
-  );
   let visualSidecarArtifactPath: string | undefined;
   let visualSidecarResult: VisualSidecarResult | undefined;
   let visualSidecarArtifactBytes: Uint8Array | undefined;
@@ -707,6 +734,7 @@ export const runFigmaToQcTestCases = async (
     },
   });
   const llmResult = await input.llm.client.generate(generationRequest);
+  const llmDurationMs = Date.now() - startedAt;
   emit({
     phase: "llm_gateway_response",
     timestamp: monotonicMs(),
@@ -735,6 +763,15 @@ export const runFigmaToQcTestCases = async (
       retryable: llmResult.retryable,
     });
   }
+  finopsRecorder.recordAttempt({
+    role: "test_generation",
+    source: "generator",
+    deployment: llmResult.modelDeployment,
+    durationMs: llmDurationMs,
+    result: llmResult,
+    liveSmoke: llmResult.modelDeployment !== "mock",
+    fallback: false,
+  });
 
   const draftValidation = validateLlmDraftResponse(llmResult.content);
   if (!draftValidation.ok) {
@@ -787,6 +824,7 @@ export const runFigmaToQcTestCases = async (
     ...(visualSidecarRefusal !== undefined
       ? { visualSidecarRefusal }
       : {}),
+    untrustedContentReport: normalizedUntrusted.report,
   });
   emit({
     phase: "validation_complete",
@@ -838,6 +876,16 @@ export const runFigmaToQcTestCases = async (
     artifactDir,
     TEST_CASE_COVERAGE_REPORT_ARTIFACT_FILENAME,
   );
+  const finopsReport = buildFinOpsBudgetReport({
+    jobId: input.jobId,
+    generatedAt: input.generatedAt,
+    budget: finopsBudget,
+    recorder: finopsRecorder,
+  });
+  const finopsWritten = await writeFinOpsBudgetReport({
+    runDir: artifactDir,
+    report: finopsReport,
+  });
   const intentBytes = encodeCanonicalJson(intent);
   const compiledPromptBytes = encodeCanonicalJson(compiled.artifacts);
   const generatedBytes = encodeCanonicalJson(validation.generatedTestCases);
@@ -1052,6 +1100,16 @@ export const runFigmaToQcTestCases = async (
         bytes: coverageBytes,
         category: "validation",
       },
+      {
+        filename: "untrusted-content-normalization-report.json",
+        bytes: untrustedContentNormalizationReportBytes,
+        category: "manifest",
+      },
+      {
+        filename: `finops/${finopsWritten.filename}`,
+        bytes: finopsWritten.bytes,
+        category: "finops",
+      },
       ...(visualSidecarArtifactBytes === undefined
         ? []
         : [
@@ -1105,12 +1163,12 @@ export const runFigmaToQcTestCases = async (
       details: {
         role: "test_generation",
         deployment: llmResult.modelDeployment,
-        attempts: llmResult.attempt,
-        inputTokens: llmResult.usage.inputTokens ?? 0,
-        outputTokens: llmResult.usage.outputTokens ?? 0,
+        attempts: finopsReport.totals.attempts,
+        inputTokens: finopsReport.totals.inputTokens,
+        outputTokens: finopsReport.totals.outputTokens,
         budgetMaxInputTokens: finopsLimits.maxInputTokens,
         budgetMaxOutputTokens: finopsLimits.maxOutputTokens,
-        durationMs: monotonicMs() - startedAt,
+        durationMs: finopsReport.totals.durationMs,
       },
     });
   }
@@ -1146,6 +1204,8 @@ export const runFigmaToQcTestCases = async (
     artifactPaths: {
       intent: intentPath,
       compiledPrompt: compiledPromptPath,
+      untrustedContentNormalizationReport:
+        untrustedContentNormalizationReportPath,
       ...(visualSidecarArtifactPath !== undefined
         ? { visualSidecarResult: visualSidecarArtifactPath }
         : {}),
@@ -1161,6 +1221,7 @@ export const runFigmaToQcTestCases = async (
         : {}),
       policyReport: policyPath,
       coverageReport: coveragePath,
+      finopsReport: finopsWritten.artifactPath,
     },
     customerMarkdownPaths: {
       combined: combinedMarkdownPath,
