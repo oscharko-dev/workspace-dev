@@ -9,6 +9,24 @@
  * package-versus-contract versioning policy.
  */
 
+export {
+  assertRoleLineageDepth,
+  isBrandedId,
+  isRoleLineageDepth,
+  MAX_ROLE_LINEAGE_DEPTH,
+  toAgentRoleProfileId,
+  toEvidenceArtifactId,
+  toJobId,
+  toLessonId,
+  toRoleStepId,
+  validateBrandedIdLabel,
+  type AgentRoleProfileId,
+  type EvidenceArtifactId,
+  type JobId,
+  type LessonId,
+  type RoleStepId,
+} from "./branded-ids.js";
+
 /**
  * Runtime source-of-truth list of allowed Figma source modes.
  * Keep this array and `WorkspaceFigmaSourceMode` in lockstep;
@@ -1111,6 +1129,8 @@ export interface ContextBudgetReport {
   readonly schemaVersion: typeof CONTEXT_BUDGET_REPORT_SCHEMA_VERSION;
   readonly jobId: string;
   readonly roleStepId: string;
+  readonly parentJobId?: string;
+  readonly roleLineageDepth?: number;
   readonly modelBinding: string;
   readonly maxInputTokens: number;
   readonly estimatedInputTokens: number;
@@ -2779,6 +2799,12 @@ export const AGENT_ROLE_RUN_SCHEMA_VERSION = "1.0.0" as const;
 
 /** Directory containing per-role prompt-run metadata artifacts. */
 export const AGENT_ROLE_RUN_ARTIFACT_DIRECTORY = "agent-role-runs" as const;
+
+/** Canonical filename for per-run genealogy DAG artifacts. */
+export const GENEALOGY_ARTIFACT_FILENAME = "genealogy.json" as const;
+
+/** Schema version for per-run genealogy DAG artifacts. */
+export const GENEALOGY_SCHEMA_VERSION = "1.0.0" as const;
 
 /**
  * Known PII-like categories detected in mock form data and Jira payloads.
@@ -4584,6 +4610,8 @@ export interface AgentRoleRunArtifact {
   jobId: string;
   roleRunId: string;
   roleStepId: string;
+  parentJobId?: string;
+  roleLineageDepth?: number;
   promptTemplateVersion: typeof TEST_INTELLIGENCE_PROMPT_TEMPLATE_VERSION;
   cacheablePrefixHash: string;
   promptHash: string;
@@ -4591,6 +4619,20 @@ export interface AgentRoleRunArtifact {
   inputHash: string;
   cacheKeyDigest: string;
   rawPromptsIncluded: false;
+}
+
+export interface GenealogyArtifactNode {
+  readonly jobId: string;
+  readonly roleStepId: string;
+  readonly artifactFilename: string;
+  readonly parentJobId?: string;
+  readonly roleLineageDepth?: number;
+}
+
+export interface GenealogyArtifact {
+  readonly schemaVersion: typeof GENEALOGY_SCHEMA_VERSION;
+  readonly generatedAt: string;
+  readonly nodes: readonly GenealogyArtifactNode[];
 }
 
 /** Stored cache entry. */
@@ -5030,6 +5072,7 @@ export type Wave1PocEvidenceArtifactCategory =
   | "review"
   | "export"
   | "manifest"
+  | "genealogy"
   | "visual_sidecar"
   | "finops"
   | "attestation"

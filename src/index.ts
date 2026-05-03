@@ -6,6 +6,7 @@
  */
 
 export type {
+  AgentRoleProfileId,
   WorkspaceFigmaSourceMode,
   WorkspaceLlmCodegenMode,
   WorkspaceJobType,
@@ -58,12 +59,18 @@ export type {
   CoveragePlanTechnique,
   CoverageRequirement,
   CoverageRequirementReasonCode,
+  EvidenceArtifactId,
   ContextBudgetCategory,
   ContextBudgetCategoryKind,
   ContextBudgetPriority,
   ContextBudgetAction,
   ContextBudgetCategoryStatus,
   ContextBudgetReport,
+  GenealogyArtifact,
+  GenealogyArtifactNode,
+  JobId,
+  LessonId,
+  RoleStepId,
 } from "./contracts/index.js";
 
 export {
@@ -152,6 +159,8 @@ export {
   FINOPS_ARTIFACT_DIRECTORY,
   FINOPS_BUDGET_REPORT_ARTIFACT_FILENAME,
   FINOPS_BUDGET_REPORT_SCHEMA_VERSION,
+  GENEALOGY_ARTIFACT_FILENAME,
+  GENEALOGY_SCHEMA_VERSION,
   INTENT_DELTA_REPORT_ARTIFACT_FILENAME,
   INTENT_DELTA_REPORT_SCHEMA_VERSION,
   JIRA_CREATED_SUBTASKS_ARTIFACT_FILENAME,
@@ -187,6 +196,7 @@ export {
   MAX_JIRA_API_REQUESTS_PER_JOB,
   MAX_JIRA_LINK_COUNT,
   MAX_JIRA_PASTE_BYTES_PER_JOB,
+  MAX_ROLE_LINEAGE_DEPTH,
   MAX_CUSTOM_CONTEXT_BYTES_PER_JOB,
   MAX_VISUAL_SIDECAR_INPUT_BYTES,
   MULTI_SOURCE_TEST_INTENT_ENVELOPE_SCHEMA_VERSION,
@@ -253,6 +263,14 @@ export {
   ALLOWED_TEST_INTENT_SOURCE_MIX_KINDS,
   SOURCE_MIX_PLAN_ARTIFACT_FILENAME,
   SOURCE_MIX_PLAN_SCHEMA_VERSION,
+  isBrandedId,
+  isRoleLineageDepth,
+  toAgentRoleProfileId,
+  toEvidenceArtifactId,
+  toJobId,
+  toLessonId,
+  toRoleStepId,
+  validateBrandedIdLabel,
 } from "./contracts/index.js";
 
 export { createWorkspaceServer } from "./server.js";

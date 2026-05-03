@@ -175,6 +175,19 @@ export {
   type WriteAgentRoleRunArtifactResult,
 } from "./agent-role-run-artifact.js";
 export {
+  buildGenealogyArtifact,
+  writeGenealogyArtifact,
+  type GenealogyNodeInput,
+  type WriteGenealogyArtifactInput,
+} from "./genealogy.js";
+export {
+  generateAgentRoleProfileId,
+  generateEvidenceArtifactId,
+  generateJobId,
+  generateLessonId,
+  generateRoleStepId,
+} from "./branded-id-generation.js";
+export {
   analyzeContextBudget,
   type AnalyzeContextBudgetInput,
   type AnalyzeContextBudgetResult,

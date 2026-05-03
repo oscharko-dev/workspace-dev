@@ -9,6 +9,7 @@ import {
   type AgentRoleRunArtifact,
   type CompiledPromptHashes,
 } from "../contracts/index.js";
+import { assertRoleLineageDepth } from "../contracts/branded-ids.js";
 import { canonicalJson } from "./content-hash.js";
 
 export interface WriteAgentRoleRunArtifactInput {
@@ -16,12 +17,15 @@ export interface WriteAgentRoleRunArtifactInput {
   jobId: string;
   roleRunId: string;
   roleStepId: string;
+  parentJobId?: string;
+  roleLineageDepth?: number;
   hashes: CompiledPromptHashes;
 }
 
 export interface WriteAgentRoleRunArtifactResult {
   artifactPath: string;
   artifact: AgentRoleRunArtifact;
+  bytes: Uint8Array;
 }
 
 export const writeAgentRoleRunArtifact = async (
@@ -40,12 +44,22 @@ export const writeAgentRoleRunArtifact = async (
       "writeAgentRoleRunArtifact: roleStepId must be non-empty",
     );
   }
+  assertRoleLineageDepth(
+    input.roleLineageDepth,
+    "writeAgentRoleRunArtifact",
+  );
 
   const artifact: AgentRoleRunArtifact = {
     schemaVersion: AGENT_ROLE_RUN_SCHEMA_VERSION,
     jobId: input.jobId,
     roleRunId: input.roleRunId,
     roleStepId: input.roleStepId,
+    ...(input.parentJobId !== undefined
+      ? { parentJobId: input.parentJobId }
+      : {}),
+    ...(input.roleLineageDepth !== undefined
+      ? { roleLineageDepth: input.roleLineageDepth }
+      : {}),
     promptTemplateVersion: TEST_INTELLIGENCE_PROMPT_TEMPLATE_VERSION,
     cacheablePrefixHash: input.hashes.cacheablePrefixHash,
     promptHash: input.hashes.promptHash,
@@ -59,8 +73,10 @@ export const writeAgentRoleRunArtifact = async (
   const artifactPath = join(artifactDir, `${input.roleRunId}.json`);
   const tmpPath = `${artifactPath}.${process.pid}.${randomUUID()}.tmp`;
   await mkdir(artifactDir, { recursive: true });
-  await writeFile(tmpPath, `${canonicalJson(artifact)}\n`, "utf8");
+  const serialized = `${canonicalJson(artifact)}\n`;
+  const bytes = new TextEncoder().encode(serialized);
+  await writeFile(tmpPath, serialized, "utf8");
   await rename(tmpPath, artifactPath);
 
-  return { artifactPath, artifact };
+  return { artifactPath, artifact, bytes };
 };

@@ -7,6 +7,7 @@ import {
   type ContextBudgetPriority,
   type ContextBudgetReport,
 } from "../contracts/index.js";
+import { assertRoleLineageDepth } from "../contracts/branded-ids.js";
 import { canonicalJson, sha256Hex } from "./content-hash.js";
 import { estimateLlmInputTokens, estimateTextTokens } from "./llm-token-estimator.js";
 
@@ -60,6 +61,8 @@ export interface ContextBudgetCategoryInput {
 export interface AnalyzeContextBudgetInput {
   jobId: string;
   roleStepId: string;
+  parentJobId?: string;
+  roleLineageDepth?: number;
   modelBinding: string;
   maxInputTokens: number;
   systemPrompt: string;
@@ -170,6 +173,12 @@ const buildReport = (input: {
     schemaVersion: CONTEXT_BUDGET_REPORT_SCHEMA_VERSION,
     jobId: input.base.jobId,
     roleStepId: input.base.roleStepId,
+    ...(input.base.parentJobId !== undefined
+      ? { parentJobId: input.base.parentJobId }
+      : {}),
+    ...(input.base.roleLineageDepth !== undefined
+      ? { roleLineageDepth: input.base.roleLineageDepth }
+      : {}),
     modelBinding: input.base.modelBinding,
     maxInputTokens: input.base.maxInputTokens,
     estimatedInputTokens: input.estimatedInputTokens,
@@ -207,6 +216,10 @@ const invalidBudgetReport = (
 export const analyzeContextBudget = (
   input: AnalyzeContextBudgetInput,
 ): AnalyzeContextBudgetResult => {
+  assertRoleLineageDepth(
+    input.roleLineageDepth,
+    "analyzeContextBudget",
+  );
   const categories = input.categories.map(toWorkingCategory);
   const renderedFullPrompt = renderUserPrompt(categories);
   const fullEstimatedInputTokens = estimatePromptTokens({

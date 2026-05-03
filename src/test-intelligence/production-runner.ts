@@ -111,6 +111,7 @@ import {
 } from "./prompt-compiler.js";
 import { cloneEuBankingDefaultProfile } from "./policy-profile.js";
 import { writeAgentRoleRunArtifact } from "./agent-role-run-artifact.js";
+import { writeGenealogyArtifact } from "./genealogy.js";
 import { runValidationPipeline } from "./validation-pipeline.js";
 
 /**
@@ -312,6 +313,7 @@ export interface RunFigmaToQcTestCasesResult {
     intent: string;
     compiledPrompt: string;
     agentRoleRun: string;
+    genealogy: string;
     contextBudgetReport?: string;
     generatedTestCases: string;
     validationReport: string;
@@ -669,6 +671,28 @@ export const runFigmaToQcTestCases = async (
     });
   }
   const agentRoleRunArtifact = await agentRoleRunPromise;
+  const genealogyArtifact = await writeGenealogyArtifact({
+    runDir: artifactDir,
+    generatedAt: input.generatedAt,
+    nodes: [
+      {
+        jobId: input.jobId,
+        roleStepId: "test_generation",
+        artifactFilename: "agent-role-runs/test_generation.json",
+        roleLineageDepth: 0,
+      },
+      ...(compiled.contextBudgetReport === undefined
+        ? []
+        : [
+            {
+              jobId: input.jobId,
+              roleStepId: compiled.contextBudgetReport.roleStepId,
+              artifactFilename: `${CONTEXT_BUDGET_ARTIFACT_DIRECTORY}/${compiled.contextBudgetReport.roleStepId}.json`,
+              roleLineageDepth: 0,
+            },
+          ]),
+    ],
+  });
 
   // 10. Customer Markdown.
   const customerLabel = resolveCustomerLabel(input, figmaFile);
@@ -743,6 +767,7 @@ export const runFigmaToQcTestCases = async (
       intent: intentPath,
       compiledPrompt: compiledPromptPath,
       agentRoleRun: agentRoleRunArtifact.artifactPath,
+      genealogy: genealogyArtifact.artifactPath,
       ...(contextBudgetReportPath !== undefined
         ? { contextBudgetReport: contextBudgetReportPath }
         : {}),

@@ -26,6 +26,8 @@ test("writeAgentRoleRunArtifact persists minimal prompt-run metadata without raw
       jobId: "job-1769",
       roleRunId: "test_generation",
       roleStepId: "test_generation",
+      parentJobId: "wd-parent-0123456789abcdef",
+      roleLineageDepth: 0,
       hashes,
     });
 
@@ -39,6 +41,8 @@ test("writeAgentRoleRunArtifact persists minimal prompt-run metadata without raw
       artifact.promptTemplateVersion,
       TEST_INTELLIGENCE_PROMPT_TEMPLATE_VERSION,
     );
+    assert.equal(artifact.parentJobId, "wd-parent-0123456789abcdef");
+    assert.equal(artifact.roleLineageDepth, 0);
     assert.equal(artifact.cacheablePrefixHash, hashes.cacheablePrefixHash);
     assert.equal(artifact.rawPromptsIncluded, false);
 
@@ -48,8 +52,36 @@ test("writeAgentRoleRunArtifact persists minimal prompt-run metadata without raw
     >;
     assert.equal(parsed["cacheablePrefixHash"], hashes.cacheablePrefixHash);
     assert.equal(parsed["rawPromptsIncluded"], false);
+    assert.equal(parsed["parentJobId"], "wd-parent-0123456789abcdef");
+    assert.equal(parsed["roleLineageDepth"], 0);
     assert.equal("systemPrompt" in parsed, false);
     assert.equal("userPrompt" in parsed, false);
+  } finally {
+    await rm(runDir, { recursive: true, force: true });
+  }
+});
+
+test("writeAgentRoleRunArtifact rejects roleLineageDepth above the hard cap", async () => {
+  const runDir = await mkdtemp(join(tmpdir(), "agent-role-run-artifact-"));
+  try {
+    await assert.rejects(
+      () =>
+        writeAgentRoleRunArtifact({
+          runDir,
+          jobId: "job-1769",
+          roleRunId: "test_generation",
+          roleStepId: "test_generation",
+          roleLineageDepth: 11,
+          hashes: {
+            inputHash: "1".repeat(64),
+            promptHash: "2".repeat(64),
+            schemaHash: "3".repeat(64),
+            cacheKey: "4".repeat(64),
+            cacheablePrefixHash: "5".repeat(64),
+          },
+        }),
+      /roleLineageDepth must be an integer in \[0, 10\]/,
+    );
   } finally {
     await rm(runDir, { recursive: true, force: true });
   }
