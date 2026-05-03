@@ -90,18 +90,21 @@ const buildEnvelope = (
 /** Minimal synthetic BusinessTestIntentIr for prompt-compiler calls. */
 const stubIntent = () => ({
   version: "1.0.0" as const,
-  schemaVersion: "1.0.0" as const,
-  contractVersion: "1.4.0" as const,
-  jobId: "job-test-001",
-  source: "figma_local_json" as const,
-  generatedAt: ISO,
+  source: {
+    kind: "figma_local_json" as const,
+    contentHash: HEX("intent-source"),
+  },
   screens: [],
-  businessObjects: [],
+  detectedFields: [],
+  detectedActions: [],
+  detectedValidations: [],
+  detectedNavigation: [],
+  inferredBusinessObjects: [],
+  assumptions: [],
   piiIndicators: [],
   redactions: [],
   risks: [],
   openQuestions: [],
-  reconciliationNotes: [],
 });
 
 /** Minimal model + visual binding for prompt-compiler calls. */
@@ -111,8 +114,8 @@ const stubModelBinding = () => ({
 });
 const stubVisualBinding = () => ({
   schemaVersion: "1.0.0" as const,
-  selectedDeployment: "none",
-  fallbackReason: "not_applicable" as const,
+  selectedDeployment: "mock" as const,
+  fallbackReason: "none" as const,
   screenCount: 0,
 });
 
@@ -503,7 +506,7 @@ test("AC9: Figma-only compiled prompt contains FIGMA_INTENT section", () => {
     visualBinding: stubVisualBinding(),
     sourceMixPlan: r.plan,
   });
-  assert.ok(compiled.request.userPrompt.includes("FIGMA_INTENT"));
+  assert.ok(compiled.request.userPrompt.includes("[3] TestDesignModel"));
   assert.ok(!compiled.request.userPrompt.includes("JIRA_REQUIREMENTS"));
 });
 
@@ -521,7 +524,7 @@ test("AC10: prompt compiled without sourceMixPlan still includes Business Test I
   });
   // Legacy path: no source-mix section emitted
   assert.ok(!compiled.request.userPrompt.includes("Source mix kind:"));
-  assert.ok(compiled.request.userPrompt.includes("Business Test Intent IR"));
+  assert.ok(compiled.request.userPrompt.includes("[3] TestDesignModel"));
   assert.equal(compiled.cacheKey.sourceMixPlanHash, undefined);
 });
 
@@ -583,7 +586,7 @@ test("AC11: Jira REST + custom markdown compiled prompt keeps Jira and custom se
     customContext,
   });
 
-  assert.ok(compiled.request.userPrompt.includes("BUSINESS_TEST_INTENT_IR"));
+  assert.ok(compiled.request.userPrompt.includes("[3] TestDesignModel"));
   assert.ok(compiled.request.userPrompt.includes("JIRA_REQUIREMENTS"));
   assert.ok(
     compiled.request.userPrompt.includes(

@@ -751,4 +751,6 @@ test("buildFinOpsBudgetReport: cache-hit job exposes zero LLM call usage and out
   assert.equal(report.totals.cacheMisses, 0);
   assert.equal(report.totals.replayCacheHitRate, 1);
   assert.equal(report.totals.replayCacheMissRate, 0);
+  assert.equal(report.totals.promptCacheHitRate, 1);
+  assert.equal(report.totals.promptCacheMissRate, 0);
 });
