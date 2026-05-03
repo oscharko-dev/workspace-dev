@@ -23,8 +23,7 @@
  */
 
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { mkdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import test from "node:test";
 
@@ -59,6 +58,12 @@ const NON_AUTH_REQUIRED_ENV = [
 const FIXTURE_PATH = new URL(
   "./fixtures/live-e2e/banking-antrag.figma.json",
   import.meta.url,
+);
+const LIVE_E2E_ARTIFACT_ROOT = join(
+  process.cwd(),
+  "artifacts",
+  "testing",
+  "ti-live-e2e",
 );
 
 const requireEnv = (name: (typeof NON_AUTH_REQUIRED_ENV)[number]): string => {
@@ -177,57 +182,54 @@ test("live-E2E: production runner generates test cases against Azure for a synth
     },
   );
 
-  const outputRoot = await mkdtemp(join(tmpdir(), "live-e2e-runner-"));
-  try {
-    const result = await runFigmaToQcTestCases({
-      jobId: `live-e2e-${Date.now().toString(36)}`,
-      generatedAt: new Date().toISOString(),
-      source: { kind: "figma_paste_normalized", file: fixture },
-      outputRoot,
-      llm: { client: bundle.testGeneration },
-    });
+  await mkdir(LIVE_E2E_ARTIFACT_ROOT, { recursive: true });
+  const result = await runFigmaToQcTestCases({
+    jobId: `live-e2e-${Date.now().toString(36)}`,
+    generatedAt: new Date().toISOString(),
+    source: { kind: "figma_paste_normalized", file: fixture },
+    outputRoot: LIVE_E2E_ARTIFACT_ROOT,
+    llm: { client: bundle.testGeneration },
+  });
 
-    assert.equal(
-      result.finopsBudget.budgetId,
-      PRODUCTION_FINOPS_BUDGET_ENVELOPE.budgetId,
-      "production runner must default to PRODUCTION_FINOPS_BUDGET_ENVELOPE",
-    );
-    assert.equal(
-      bundle.testGeneration.declaredCapabilities.imageInputSupport,
-      false,
-      "test_generation deployment must not advertise image input",
+  assert.equal(
+    result.finopsBudget.budgetId,
+    PRODUCTION_FINOPS_BUDGET_ENVELOPE.budgetId,
+    "production runner must default to PRODUCTION_FINOPS_BUDGET_ENVELOPE",
+  );
+  assert.equal(
+    bundle.testGeneration.declaredCapabilities.imageInputSupport,
+    false,
+    "test_generation deployment must not advertise image input",
+  );
+  assert.ok(
+    result.generatedTestCases.testCases.length > 0,
+    `expected at least one generated test case, got ${result.generatedTestCases.testCases.length}`,
+  );
+  for (const testCase of result.generatedTestCases.testCases) {
+    assert.ok(
+      typeof testCase.title === "string" && testCase.title.length > 0,
+      `test case ${testCase.id} must have a non-empty title`,
     );
     assert.ok(
-      result.generatedTestCases.testCases.length > 0,
-      `expected at least one generated test case, got ${result.generatedTestCases.testCases.length}`,
+      Array.isArray(testCase.steps) && testCase.steps.length > 0,
+      `test case ${testCase.id} must have at least one step`,
     );
-    for (const testCase of result.generatedTestCases.testCases) {
-      assert.ok(
-        typeof testCase.title === "string" && testCase.title.length > 0,
-        `test case ${testCase.id} must have a non-empty title`,
-      );
-      assert.ok(
-        Array.isArray(testCase.steps) && testCase.steps.length > 0,
-        `test case ${testCase.id} must have at least one step`,
-      );
-    }
-    assert.equal(
-      result.policy.policyProfileId,
-      "eu-banking-default",
-      "default policy profile must be applied for the production runner",
-    );
-    assert.notEqual(
-      result.policy.totalTestCases,
-      0,
-      "policy report must enumerate the generated cases",
-    );
-
-    // Surface the actual deployment used so a flaky run is debuggable
-    // from the GitHub Actions log alone.
-    process.stdout.write(
-      `[live-E2E] generated ${String(result.generatedTestCases.testCases.length)} cases via ${PRODUCTION_RUNNER_TEST_GENERATION_DEPLOYMENT}\n`,
-    );
-  } finally {
-    await rm(outputRoot, { recursive: true, force: true });
   }
+  assert.equal(
+    result.policy.policyProfileId,
+    "eu-banking-default",
+    "default policy profile must be applied for the production runner",
+  );
+  assert.notEqual(
+    result.policy.totalTestCases,
+    0,
+    "policy report must enumerate the generated cases",
+  );
+
+  // Surface the deployment and stable artifact directory so the closing-gate
+  // review can verify that the required files were emitted without re-running.
+  process.stdout.write(
+    `[live-E2E] generated ${String(result.generatedTestCases.testCases.length)} cases via ${PRODUCTION_RUNNER_TEST_GENERATION_DEPLOYMENT}\n`,
+  );
+  process.stdout.write(`[live-E2E] artifactDir=${result.artifactDir}\n`);
 });

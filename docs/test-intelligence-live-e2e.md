@@ -127,26 +127,34 @@ claims production wiring unless the PR carries an explicit waiver.
 ## 4. Failure taxonomy
 
 The runtime exposes stable failure enums such as `LLM_GATEWAY_FAILED`,
-`LLM_RESPONSE_INVALID`, and `FINOPS_BUDGET_INVALID`. For wave-closing and PR
-summaries, normalize them into the operator-facing taxonomy below.
+`FIGMA_FETCH_FAILED`, `LLM_RESPONSE_INVALID`, `rate_limited`,
+`primary_quota_exceeded`, `policy_blocked_cases_present`, `transport`,
+`timeout`, `protocol`, and `canceled`. For wave-closing and PR summaries,
+normalize them into the operator-facing taxonomy below.
 
 | Closing-gate class | Map from current signals | What it means operationally |
 | --- | --- | --- |
-| `provider_unavailable` | `LLM_GATEWAY_FAILED`, `FIGMA_FETCH_FAILED`, workflow/network 5xx, `reason="gateway-timeout"` | The upstream provider could not be reached or did not answer reliably enough to finish the run. |
-| `quota_exceeded` | provider `rate_limited`, visual fallback `primary_quota_exceeded`, FinOps cap breaches such as `reason="finops-breach"` | The run hit a provider or local budget ceiling and must not be counted as a successful wired pass. |
-| `policy_block` | `reason="policy-blocked"`, missing approvals, regulated-data policy refusal | The pipeline ran, but policy prevented the operator from treating the output as release-ready evidence. |
-| `schema_invalid_response` | `LLM_RESPONSE_INVALID`, sidecar `schema_invalid_response`, malformed structured output | The provider answered, but the response shape was not trustworthy enough to accept. |
-| `circuit_breaker_open` | `reason="circuit-open"` | The provider has failed repeatedly enough that the client is in cooldown and new requests are intentionally refused. |
+| `provider_unavailable` | `LLM_GATEWAY_FAILED`, `FIGMA_FETCH_FAILED`, gateway `transport`, or gateway `timeout` | The upstream provider could not be reached or did not answer reliably enough to finish the run. |
+| `quota_exceeded` | gateway `rate_limited` or visual fallback `primary_quota_exceeded` | The run hit a provider quota or throttle ceiling and must not be counted as a successful wired pass. |
+| `policy_block` | `policy.blocked === true`, `blockedCount > 0`, or refusal code `policy_blocked_cases_present` | The pipeline ran, but policy prevented the operator from treating the output as release-ready evidence. |
+| `schema_invalid_response` | `LLM_RESPONSE_INVALID` or sidecar `schema_invalid_response` | The provider answered, but the response shape was not trustworthy enough to accept. |
+| `circuit_breaker_open` | gateway `transport` with message `circuit breaker is open` | The provider has failed repeatedly enough that the client is in cooldown and new requests are intentionally refused. |
 
 Use these normalized labels in PR summaries and release waivers, then add the
-underlying runner/workflow reason for debugging detail.
+underlying runner/workflow identifier for debugging detail. Report gateway
+`protocol` and `canceled` verbatim rather than forcing them into one of the five
+release-summary labels above: `protocol` indicates operator/configuration repair
+is required, while `canceled` indicates caller-side abort rather than provider
+instability.
 
 ---
 
 ## 5. What counts as "wired"
 
 A production-wired claim closes only when a successful live-E2E run produces all
-required artifacts under `<outputRoot>/jobs/<jobId>/test-intelligence/`:
+required artifacts. The repository lane preserves them under
+`artifacts/testing/ti-live-e2e/jobs/<jobId>/test-intelligence/`, and the GitHub
+workflow uploads that directory for every live-E2E run:
 
 - `business-intent-ir.json`
 - `compiled-prompt.json`
@@ -163,7 +171,8 @@ The minimum success bar is:
 - non-empty generated test cases with non-empty titles and steps;
 - a final policy report under `eu-banking-default`;
 - the production FinOps envelope in effect;
-- a sanitized run-log review recorded in the PR.
+- a sanitized run-log review recorded in the PR, including the printed
+  `artifactDir`.
 
 If the claim also includes Figma URL ingestion or Jira-backed behavior, note
 whether those credentials were present and whether that adjacent surface was

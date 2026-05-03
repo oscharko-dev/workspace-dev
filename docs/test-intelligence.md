@@ -890,10 +890,11 @@ It is **not** wired into the PR pipeline (live secrets are unavailable to fork
 PRs and the per-run cost must not be paid on every PR). The job is gated on
 the repo-level secret `WORKSPACE_TEST_SPACE_MODEL_API_KEY`; if absent the
 workflow short-circuits with a `skipped: secret not configured` job summary
-instead of failing red. On test failure the run directory (the OS tmpdir tree
-written under `live-e2e-runner-*`) is uploaded as the artifact
-`ti-live-e2e-rundir-<run_id>` for 14 days so the failed Azure response and the
-emitted artifacts are debuggable from the GitHub Actions UI alone.
+instead of failing red. The lane preserves emitted artifacts under
+`artifacts/testing/ti-live-e2e/jobs/<jobId>/test-intelligence/` and uploads
+that tree as `ti-live-e2e-rundir-<run_id>` for 14 days so both successful gate
+evidence and failed Azure responses remain debuggable from the GitHub Actions
+UI alone.
 
 The package keeps its zero-telemetry posture: no test-intelligence code path
 emits analytics, usage metrics, behavioral telemetry, or unsolicited diagnostic

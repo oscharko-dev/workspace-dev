@@ -838,6 +838,10 @@ test("docs: generated API reference stays wired to the public entrypoints", asyn
 });
 
 test("docs: live-E2E closing gate stays aligned across docs and PR checklist", async () => {
+  const contractsSource = await readRepoFile("src/contracts/index.ts");
+  const liveE2eTestSource = await readRepoFile(
+    "src/test-intelligence/production-runner.live-e2e.test.ts",
+  );
   const liveE2eDoc = await readRepoFile("docs/test-intelligence-live-e2e.md");
   const testIntelligenceDoc = await readRepoFile("docs/test-intelligence.md");
   const operatorRunbook = await readRepoFile(
@@ -859,9 +863,27 @@ test("docs: live-E2E closing gate stays aligned across docs and PR checklist", a
   assert.match(liveE2eDoc, /policy_block/);
   assert.match(liveE2eDoc, /schema_invalid_response/);
   assert.match(liveE2eDoc, /circuit_breaker_open/);
+  assert.match(liveE2eDoc, /protocol/);
+  assert.match(liveE2eDoc, /canceled/);
   assert.match(liveE2eDoc, /sanitized run-log review/i);
   assert.match(liveE2eDoc, /customer-markdown\/testfaelle\.md/);
+  assert.match(liveE2eDoc, /artifactDir/);
+  assert.match(
+    liveE2eDoc,
+    /artifacts\/testing\/ti-live-e2e\/jobs\/<jobId>\/test-intelligence\//,
+  );
   assert.match(liveE2eDoc, /mandatory before tagging a release/i);
+  assert.match(contractsSource, /"protocol"/);
+  assert.match(contractsSource, /"canceled"/);
+  assert.match(contractsSource, /"rate_limited"/);
+  assert.match(
+    liveE2eTestSource,
+    /process\.stdout\.write\(`\[live-E2E\] artifactDir=\$\{result\.artifactDir\}\\n`\);/,
+  );
+  assert.match(
+    liveE2eTestSource,
+    /artifacts",\s*"testing",\s*"ti-live-e2e"/,
+  );
 
   assert.match(
     testIntelligenceDoc,
