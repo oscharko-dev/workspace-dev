@@ -1,0 +1,25 @@
+{
+  "archetype": "ambiguous-rules",
+  "archetypeId": "baseline-ambiguous-rules",
+  "expectedOpenQuestionsKeywords": [
+    "policy",
+    "compliance",
+    "TBD",
+    "specification"
+  ],
+  "figma": {
+    "actionNodeCount": 1,
+    "fieldNodeCount": 4,
+    "navigationCount": 0,
+    "nodeCount": 5,
+    "screenCount": 1,
+    "validationCount": 7
+  },
+  "intent": "Validation rules are intentionally underspecified and must be surfaced as openQuestions rather than silently materialised as concrete checks.",
+  "notes": "Claim-intake baseline: every field has at least one rule that defers to an external authority ('see policy', 'ask compliance', 'TBD'). The expected behaviour for downstream generators is to keep these rules in openQuestions and refuse to invent concrete checks. The keywords listed in expectedOpenQuestionsKeywords are the substrings that the rule strings deliberately contain.",
+  "schemaVersion": "1.0.0",
+  "sources": {
+    "hasCustomMarkdown": false,
+    "hasJira": false
+  }
+}

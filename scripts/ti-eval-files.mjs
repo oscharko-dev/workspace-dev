@@ -17,6 +17,7 @@ import { spawn } from "node:child_process";
 
 export const TI_EVAL_FILES = Object.freeze([
   "src/test-intelligence/adversarial-fixtures.test.ts",
+  "src/test-intelligence/baseline-fixtures.test.ts",
   "src/test-intelligence/custom-context-boundaries.test.ts",
   "src/test-intelligence/custom-context-markdown-canonicalization.test.ts",
   "src/test-intelligence/custom-context-markdown-pii-redaction.test.ts",

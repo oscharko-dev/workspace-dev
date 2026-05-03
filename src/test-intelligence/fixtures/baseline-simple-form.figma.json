@@ -1,0 +1,47 @@
+{
+  "source": {
+    "kind": "figma_local_json"
+  },
+  "screens": [
+    {
+      "screenId": "s-newsletter",
+      "screenName": "Newsletter Signup",
+      "nodes": [
+        {
+          "nodeId": "n-display-name",
+          "nodeName": "Display Name",
+          "nodeType": "TEXT_INPUT",
+          "text": "Display Name",
+          "defaultValue": "Anna",
+          "validations": ["Required"],
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-email",
+          "nodeName": "Email",
+          "nodeType": "TEXT_INPUT",
+          "text": "Email",
+          "defaultValue": "anna@example.test",
+          "validations": ["Required"],
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-age",
+          "nodeName": "Age",
+          "nodeType": "TEXT_INPUT",
+          "text": "Age",
+          "defaultValue": "30",
+          "validations": ["Required"],
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-subscribe",
+          "nodeName": "Subscribe",
+          "nodeType": "BUTTON",
+          "text": "Subscribe",
+          "childNodeIds": []
+        }
+      ]
+    }
+  ]
+}

@@ -649,6 +649,16 @@ export {
   type Wave4ProductionReadinessFixtureId,
 } from "./multi-source-fixtures.js";
 export {
+  BASELINE_ARCHETYPE_FIXTURE_IDS,
+  isBaselineArchetypeFixtureId,
+  loadBaselineArchetypeFixture,
+  type BaselineArchetypeFigmaCounts,
+  type BaselineArchetypeFixtureId,
+  type BaselineArchetypeSources,
+  type BaselineArchetypeSummary,
+  type LoadedBaselineArchetypeFixture,
+} from "./baseline-fixtures.js";
+export {
   runWave4ProductionReadiness,
   type RunWave4ProductionReadinessInput,
   type Wave4ProductionReadinessRunResult,
