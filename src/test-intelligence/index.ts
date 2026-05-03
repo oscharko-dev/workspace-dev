@@ -241,6 +241,27 @@ export {
   type WriteAgentTeamResultsResult,
 } from "./agent-harness-execution-graph.js";
 export {
+  JUDGE_BOTH_FAIL_SEVERITY,
+  JUDGE_BOTH_PASS_SEVERITY,
+  JUDGE_DISAGREE_SEVERITY,
+  JUDGE_FAIL_THRESHOLD,
+  JUDGE_PASS_THRESHOLD,
+  assertJudgePanelVerdictInvariants,
+  buildJudgePanelVerdicts,
+  isJudgeId,
+  isJudgePanelAgreement,
+  isJudgePanelEscalationRoute,
+  isJudgePanelPerJudgeVerdict,
+  isJudgePanelResolvedSeverity,
+  serializeJudgePanelVerdicts,
+  writeJudgePanelVerdicts,
+  type BuildJudgePanelVerdictsInput,
+  type JudgePanelPolicy,
+  type JudgePanelRawSample,
+  type WriteJudgePanelVerdictsInput,
+  type WriteJudgePanelVerdictsResult,
+} from "./semantic-judge-panel.js";
+export {
   buildGenealogyArtifact,
   writeGenealogyArtifact,
   type GenealogyNodeInput,

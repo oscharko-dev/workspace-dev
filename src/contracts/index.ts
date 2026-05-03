@@ -3135,6 +3135,160 @@ export interface AgentTeamResultsArtifact {
   readonly rawPromptsIncluded: false;
 }
 
+// ---------------------------------------------------------------------------
+// Issue #1782 — Agent_02 Judge Panel (PoLL) verdict artifact.
+// ---------------------------------------------------------------------------
+
+/**
+ * Schema version literal pinned on every persisted
+ * {@link JudgePanelVerdict} artifact (Issue #1782, Story MA-3 #1758).
+ * Structural changes require a major bump and a `CONTRACT_CHANGELOG.md`
+ * entry.
+ */
+export const JUDGE_PANEL_VERDICT_SCHEMA_VERSION = "1.0.0" as const;
+
+/**
+ * Canonical filename for the per-run Panel-of-LLM-Judges (PoLL)
+ * verdict artifact. The harness writes
+ * `<runDir>/judge-panel-verdicts.json` once per `semantic_judge`
+ * step; the file carries the per-judge raw verdicts the AT-022 audit
+ * requires for disagreement reproduction.
+ */
+export const JUDGE_PANEL_VERDICTS_ARTIFACT_FILENAME =
+  "judge-panel-verdicts.json" as const;
+
+/** Closed runtime list of judge identifiers in the panel. */
+export const JUDGE_PANEL_JUDGE_IDS = [
+  "judge_primary",
+  "judge_secondary",
+] as const;
+
+/** Discriminated alias for {@link JUDGE_PANEL_JUDGE_IDS}. */
+export type JudgePanelJudgeId = (typeof JUDGE_PANEL_JUDGE_IDS)[number];
+
+/** Closed runtime list of per-judge verdict literals. */
+export const JUDGE_PANEL_PER_JUDGE_VERDICTS = [
+  "fail",
+  "pass",
+  "uncertain",
+] as const;
+
+/** Discriminated alias for {@link JUDGE_PANEL_PER_JUDGE_VERDICTS}. */
+export type JudgePanelPerJudgeVerdict =
+  (typeof JUDGE_PANEL_PER_JUDGE_VERDICTS)[number];
+
+/** Closed runtime list of panel-level agreement labels. */
+export const JUDGE_PANEL_AGREEMENT_LABELS = [
+  "both_fail",
+  "both_pass",
+  "disagree",
+] as const;
+
+/** Discriminated alias for {@link JUDGE_PANEL_AGREEMENT_LABELS}. */
+export type JudgePanelAgreement =
+  (typeof JUDGE_PANEL_AGREEMENT_LABELS)[number];
+
+/**
+ * Closed runtime list of resolved-severity labels emitted by the
+ * Trust-or-Escalate router. `downgraded_disagreement` is the
+ * disagreement-routing severity that downstream consumers can audit
+ * against the AT-022 acceptance criterion.
+ */
+export const JUDGE_PANEL_RESOLVED_SEVERITIES = [
+  "critical",
+  "downgraded_disagreement",
+  "major",
+  "minor",
+] as const;
+
+/** Discriminated alias for {@link JUDGE_PANEL_RESOLVED_SEVERITIES}. */
+export type JudgePanelResolvedSeverity =
+  (typeof JUDGE_PANEL_RESOLVED_SEVERITIES)[number];
+
+/** Closed runtime list of escalation routes the panel may emit. */
+export const JUDGE_PANEL_ESCALATION_ROUTES = [
+  "accept",
+  "downgrade",
+  "needs_review",
+] as const;
+
+/** Discriminated alias for {@link JUDGE_PANEL_ESCALATION_ROUTES}. */
+export type JudgePanelEscalationRoute =
+  (typeof JUDGE_PANEL_ESCALATION_ROUTES)[number];
+
+/**
+ * Hard upper bound on the persisted `reason` text emitted per judge.
+ * Reasons longer than this are refused at validation; the limit keeps
+ * the artifact bounded and matches the issue spec (≤ 240 chars).
+ */
+export const JUDGE_PANEL_REASON_MAX_CHARS = 240 as const;
+
+/**
+ * One judge's pointwise rubric verdict for a single
+ * `(testCaseId, criterion)` pair. Raw `score` is the pre-calibration
+ * 0..1 score; `calibratedScore` is the post-hoc CalibraEval-style
+ * mapping against the fixture distribution. No length normalisation
+ * is applied (verbosity-bias inversion 2025).
+ */
+export interface JudgePanelPerJudgeVerdictRecord {
+  /** Judge identifier within the panel. */
+  readonly judgeId: JudgePanelJudgeId;
+  /**
+   * Stable model identifier this judge was bound to at the time of
+   * scoring. Echoed verbatim from the {@link AgentModelBinding}'s
+   * `modelId` (e.g., `"gpt-oss-120b"`, `"phi-4-multimodal-poc"`).
+   */
+  readonly modelBinding: string;
+  /** Raw 0..1 pointwise score before post-hoc calibration. */
+  readonly score: number;
+  /** Post-hoc CalibraEval-style mapped 0..1 score. */
+  readonly calibratedScore: number;
+  /** Per-judge verdict derived from the calibrated score. */
+  readonly verdict: JudgePanelPerJudgeVerdict;
+  /**
+   * Redacted, length-capped justification (≤
+   * {@link JUDGE_PANEL_REASON_MAX_CHARS} chars). Never carries chain
+   * of thought, raw prompts, or secrets — the validator refuses
+   * over-long or non-string reasons before persistence.
+   */
+  readonly reason: string;
+}
+
+/**
+ * Persisted Panel-of-LLM-Judges (PoLL) verdict for a single
+ * `(testCaseId, criterion)` pair (Issue #1782). The harness writes
+ * one verdict per scored case; the per-run artifact at
+ * `<runDir>/judge-panel-verdicts.json` is a canonical-JSON-stable
+ * array of these records (sorted by `(testCaseId, criterion)`).
+ *
+ * Disagreement routing: `agreement === "disagree"` always maps to
+ * `escalationRoute ∈ {downgrade, needs_review}` and the resolved
+ * severity is downgraded to `downgraded_disagreement` (severity-1) or
+ * the case is routed to `needs_review`. Both-pass and both-fail
+ * verdicts are deterministic functions of the per-judge verdicts and
+ * the panel's escalation policy.
+ */
+export interface JudgePanelVerdict {
+  /** Pinned schema version literal. */
+  readonly schemaVersion: typeof JUDGE_PANEL_VERDICT_SCHEMA_VERSION;
+  /** Test-case identifier the verdict applies to. */
+  readonly testCaseId: string;
+  /** Stable rubric criterion identifier the verdict scores. */
+  readonly criterion: string;
+  /**
+   * Per-judge raw verdicts, sorted alphabetically by `judgeId` for
+   * canonical-JSON stability. Always exactly two entries — the
+   * cross-family `judge_primary` and `judge_secondary`.
+   */
+  readonly perJudge: readonly JudgePanelPerJudgeVerdictRecord[];
+  /** Panel-level agreement label derived from per-judge verdicts. */
+  readonly agreement: JudgePanelAgreement;
+  /** Resolved severity after Trust-or-Escalate routing. */
+  readonly resolvedSeverity: JudgePanelResolvedSeverity;
+  /** Final routing decision consumed by the Production Runner. */
+  readonly escalationRoute: JudgePanelEscalationRoute;
+}
+
 /** Canonical filename for per-run genealogy DAG artifacts. */
 export const GENEALOGY_ARTIFACT_FILENAME = "genealogy.json" as const;
 
@@ -8471,7 +8625,7 @@ export interface CoveragePlan {
  * Must be bumped according to CONTRACT_CHANGELOG.md rules.
  * Package version alignment is documented in VERSIONING.md.
  */
-export const CONTRACT_VERSION = "4.33.0" as const;
+export const CONTRACT_VERSION = "4.34.0" as const;
 
 // ---------------------------------------------------------------------------
 // Issue #1774 — UntrustedContentNormalizer (2025-vintage injection carriers).
