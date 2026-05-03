@@ -30,6 +30,7 @@ import {
   ALLOWED_LLM_GATEWAY_ERROR_CLASSES,
   ALLOWED_LLM_GATEWAY_ROLES,
   ALLOWED_LLM_GATEWAY_WIRE_STRUCTURED_OUTPUT_MODES,
+  type GatewayIdempotencyKey,
   type LlmGatewayCapabilities,
   type LlmGatewayClientConfig,
   type LlmGatewayCompatibilityMode,
@@ -48,6 +49,10 @@ import {
   type LlmCircuitClock,
   type LlmCircuitTransitionEvent,
 } from "./llm-circuit-breaker.js";
+import {
+  type GatewayIdempotencyMetrics,
+  type LlmGatewayIdempotencyCache,
+} from "./llm-gateway-idempotency.js";
 import { estimateLlmInputTokens } from "./llm-token-estimator.js";
 
 /** Stable error class with `errorClass` discriminant + retryable flag. */
@@ -96,6 +101,19 @@ export interface LlmGatewayRuntime {
    */
   retryBackoffMs?: ReadonlyArray<number>;
   onCircuitTransition?: (event: LlmCircuitTransitionEvent) => void;
+  /**
+   * Optional gateway-side idempotency cache (Issue #1784). When supplied
+   * AND the per-request `LlmGenerationRequest.idempotency` envelope is
+   * also set, the gateway computes the HMAC of those inputs (using the
+   * cache's operator-configured secret), looks up the TTL-bounded
+   * cache, and returns the cached structured success on a hit without
+   * dispatching a second LLM call. A hit increments the cache's
+   * `replays` counter so downstream FinOps can roll up
+   * `gateway_idempotent_replay` separately from
+   * `replay_cache_hit`. The HMAC secret stays inside the cache instance
+   * and is never exposed via this runtime or persisted to artifacts.
+   */
+  idempotencyCache?: LlmGatewayIdempotencyCache;
 }
 
 export interface LlmGatewayClient {
@@ -108,6 +126,14 @@ export interface LlmGatewayClient {
   readonly declaredCapabilities: Readonly<LlmGatewayCapabilities>;
   generate(request: LlmGenerationRequest): Promise<LlmGenerationResult>;
   getCircuitBreaker(): LlmCircuitBreaker;
+  /**
+   * Snapshot of the per-client idempotency cache counters (Issue #1784).
+   * Returns `undefined` when no `runtime.idempotencyCache` was wired in
+   * — operators can use that to detect a misconfigured client (the
+   * harness expects every gateway client to carry an idempotency cache
+   * outside dry-run mode).
+   */
+  getIdempotencyMetrics(): GatewayIdempotencyMetrics | undefined;
 }
 
 const DEFAULT_BACKOFF_MS: ReadonlyArray<number> = [100, 200, 400, 800, 1600];
@@ -160,6 +186,41 @@ export const createLlmGatewayClient = (
     const outputBudgetError = guardOutputBudgetSupport(config, request);
     if (outputBudgetError !== undefined) return outputBudgetError;
 
+    // Issue #1784: gateway-side idempotency keys (HMAC + TTL). When a
+    // cache is wired AND the per-request inputs are present, we look up
+    // the cache before attempting any dispatch. A hit returns the
+    // cached structured success and counts as `gateway_idempotent_replay`
+    // in FinOps; a miss carries the precomputed key forward so we can
+    // store the result on success without recomputing the HMAC.
+    const idempotencyCache = runtime.idempotencyCache;
+    const idempotencyInputs = request.idempotency;
+    let pendingIdempotencyKey:
+      | { hmac: string; key: GatewayIdempotencyKey }
+      | undefined;
+    if (idempotencyCache !== undefined && idempotencyInputs !== undefined) {
+      let lookup;
+      try {
+        lookup = await idempotencyCache.lookup(idempotencyInputs);
+      } catch (err) {
+        return {
+          outcome: "error",
+          errorClass: "schema_invalid",
+          message: redactBoundedMessage(
+            sanitizeErrorMessage({
+              error: err,
+              fallback: "idempotency lookup failed",
+            }),
+          ),
+          retryable: false,
+          attempt: 0,
+        };
+      }
+      if (lookup.hit) {
+        return lookup.result;
+      }
+      pendingIdempotencyKey = { hmac: lookup.key.hmac, key: lookup.key };
+    }
+
     // Per-request retry cap (Issue #1371): operator may pin a tighter cap
     // for a single job without rebuilding the client. The effective cap is
     // the minimum of the static config and the per-request request value.
@@ -208,6 +269,21 @@ export const createLlmGatewayClient = (
 
       if (result.outcome === "success") {
         breaker.recordSuccess();
+        if (
+          idempotencyCache !== undefined &&
+          pendingIdempotencyKey !== undefined
+        ) {
+          // Best-effort store: a disk-write failure is observable via
+          // `getMetrics().diskWriteFailures` but must not turn a
+          // successful gateway response into a caller-visible failure.
+          // The in-memory entry is still admitted, so a same-process
+          // replay succeeds even when disk persistence does not.
+          try {
+            await idempotencyCache.store(pendingIdempotencyKey.key, result);
+          } catch {
+            // Counters already reflect the failure; swallow here.
+          }
+        }
         return result;
       }
 
@@ -252,6 +328,8 @@ export const createLlmGatewayClient = (
     declaredCapabilities: { ...config.declaredCapabilities },
     generate,
     getCircuitBreaker: () => breaker,
+    getIdempotencyMetrics: () =>
+      runtime.idempotencyCache?.getMetrics(),
   };
 };
 

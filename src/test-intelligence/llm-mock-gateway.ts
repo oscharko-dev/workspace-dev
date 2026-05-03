@@ -321,6 +321,7 @@ export const createMockLlmGatewayClient = (
     declaredCapabilities: { ...declaredCapabilities },
     generate,
     getCircuitBreaker: () => breaker,
+    getIdempotencyMetrics: () => undefined,
     callCount: () => count,
     recordedRequests: () => recorded.map((request) => structuredClone(request)),
     reset: () => {

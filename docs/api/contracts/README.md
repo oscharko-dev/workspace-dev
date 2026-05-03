@@ -2756,6 +2756,111 @@ of risk category. Sorted, deduplicated.
 
 ***
 
+### GatewayIdempotencyInputs
+
+Inputs the LLM gateway hashes (HMAC-SHA256, operator-configured secret)
+to derive the idempotency key for a single role-step attempt
+(Issue #1784).
+
+The harness assembles these fields from already-known per-step values
+— `jobId` and `roleStepId` from the execution graph (#1781), `attempt`
+from the bounded harness state machine (#1780), `promptVersion` and
+`schemaHash` from the agent role profile (#1779), and `inputHash`
+from the canonical-JSON digest of the assembled prompt-and-schema
+payload — so a worker that crashes mid-call can replay the same key
+on resume and pull the cached result out of the gateway cache.
+
+#### Properties
+
+##### attempt
+
+> `readonly` **attempt**: `number`
+
+Attempt index within the harness retry policy.
+
+##### inputHash
+
+> `readonly` **inputHash**: `string`
+
+sha256 hex digest of the canonical-JSON prompt + schema payload.
+
+##### jobId
+
+> `readonly` **jobId**: `string`
+
+Job identifier this attempt belongs to.
+
+##### promptVersion
+
+> `readonly` **promptVersion**: `string`
+
+Prompt-template version pin from the agent role profile.
+
+##### roleStepId
+
+> `readonly` **roleStepId**: `string`
+
+Stable role-step identifier (e.g. `"<jobId>-generator-1"`).
+
+##### schemaHash
+
+> `readonly` **schemaHash**: `string`
+
+sha256 hex digest of the role's structured-output schema.
+
+***
+
+### GatewayIdempotencyKey
+
+Persisted idempotency-key envelope written to
+`<runDir>/agent/idempotency-cache/<hmac>.json` (Issue #1784). The
+`hmac` field doubles as the content-addressable filename so a worker
+resuming after a crash can compute the key from the inputs and
+directly load the cached result.
+
+The `hmac` is the HMAC-SHA256 hex digest of
+`canonicalJson({jobId, roleStepId, attempt, promptVersion, schemaHash, inputHash})`
+keyed by the operator-configured gateway secret. The secret itself is
+**never** persisted in any artifact, log, or error message.
+
+#### Properties
+
+##### attempt
+
+> `readonly` **attempt**: `number`
+
+##### hmac
+
+> `readonly` **hmac**: `string`
+
+HMAC-SHA256 hex digest. Never persisted to artifacts in any other form.
+
+##### inputHash
+
+> `readonly` **inputHash**: `string`
+
+##### jobId
+
+> `readonly` **jobId**: `string`
+
+##### promptVersion
+
+> `readonly` **promptVersion**: `string`
+
+##### roleStepId
+
+> `readonly` **roleStepId**: `string`
+
+##### schemaHash
+
+> `readonly` **schemaHash**: `string`
+
+##### schemaVersion
+
+> `readonly` **schemaVersion**: `"1.0.0"`
+
+***
+
 ### GenealogyArtifact
 
 #### Properties
@@ -5043,6 +5148,21 @@ this signal surface as `errorClass: "canceled"` (`retryable: false`),
 distinct from `"timeout"` so circuit-breaker accounting and retry
 policy do not treat user cancellation as a transient transport
 failure.
+
+##### idempotency?
+
+> `optional` **idempotency?**: [`GatewayIdempotencyInputs`](#gatewayidempotencyinputs)
+
+Optional gateway-side idempotency inputs (Issue #1784). When set
+AND the gateway runtime is wired with an idempotency cache, the
+gateway computes the HMAC of these inputs (using the cache's
+operator-configured secret) and consults the TTL-bounded cache
+before dispatch. A cache hit returns the previously-completed
+structured success result without making a second LLM call and
+counts as `gateway_idempotent_replay` in FinOps (separate from
+`replay_cache_hit`). The HMAC is never persisted to artifacts or
+logs in plaintext; the cache file is stored under
+`<runDir>/agent/idempotency-cache/<hmac>.json` with redacted bodies.
 
 ##### imageInputs?
 
@@ -11052,7 +11172,7 @@ Submit response for accepted jobs.
 
 ###### Inherited from
 
-[`WorkspaceSubmitAccepted`](#workspacesubmitaccepted).[`jobId`](#jobid-48)
+[`WorkspaceSubmitAccepted`](#workspacesubmitaccepted).[`jobId`](#jobid-50)
 
 ##### pasteDeltaSummary?
 
@@ -16884,7 +17004,7 @@ Schema version for persisted context-budget analyzer reports.
 
 ### CONTRACT\_VERSION
 
-> `const` **CONTRACT\_VERSION**: `"4.35.0"`
+> `const` **CONTRACT\_VERSION**: `"4.36.0"`
 
 Current contract version constant.
 Must be bumped according to CONTRACT_CHANGELOG.md rules.
@@ -17117,6 +17237,17 @@ Canonical filename for the FinOps budget report artifact.
 > `const` **FINOPS\_BUDGET\_REPORT\_SCHEMA\_VERSION**: `"1.0.0"`
 
 Schema version for the persisted FinOps budget report artifact (Issue #1371).
+
+***
+
+### GATEWAY\_IDEMPOTENCY\_KEY\_SCHEMA\_VERSION
+
+> `const` **GATEWAY\_IDEMPOTENCY\_KEY\_SCHEMA\_VERSION**: `"1.0.0"`
+
+Schema-version literal pinned on every persisted
+[GatewayIdempotencyKey](#gatewayidempotencykey) (Issue #1784, Story MA-3 #1758). Bumping
+this constant requires a major contract bump and a CONTRACT_CHANGELOG.md
+entry.
 
 ***
 

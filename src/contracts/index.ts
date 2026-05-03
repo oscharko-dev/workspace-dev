@@ -1189,6 +1189,79 @@ export interface LlmGenerationRequest {
    * failure.
    */
   abortSignal?: AbortSignal;
+  /**
+   * Optional gateway-side idempotency inputs (Issue #1784). When set
+   * AND the gateway runtime is wired with an idempotency cache, the
+   * gateway computes the HMAC of these inputs (using the cache's
+   * operator-configured secret) and consults the TTL-bounded cache
+   * before dispatch. A cache hit returns the previously-completed
+   * structured success result without making a second LLM call and
+   * counts as `gateway_idempotent_replay` in FinOps (separate from
+   * `replay_cache_hit`). The HMAC is never persisted to artifacts or
+   * logs in plaintext; the cache file is stored under
+   * `<runDir>/agent/idempotency-cache/<hmac>.json` with redacted bodies.
+   */
+  idempotency?: GatewayIdempotencyInputs;
+}
+
+/**
+ * Schema-version literal pinned on every persisted
+ * {@link GatewayIdempotencyKey} (Issue #1784, Story MA-3 #1758). Bumping
+ * this constant requires a major contract bump and a CONTRACT_CHANGELOG.md
+ * entry.
+ */
+export const GATEWAY_IDEMPOTENCY_KEY_SCHEMA_VERSION = "1.0.0" as const;
+
+/**
+ * Inputs the LLM gateway hashes (HMAC-SHA256, operator-configured secret)
+ * to derive the idempotency key for a single role-step attempt
+ * (Issue #1784).
+ *
+ * The harness assembles these fields from already-known per-step values
+ * — `jobId` and `roleStepId` from the execution graph (#1781), `attempt`
+ * from the bounded harness state machine (#1780), `promptVersion` and
+ * `schemaHash` from the agent role profile (#1779), and `inputHash`
+ * from the canonical-JSON digest of the assembled prompt-and-schema
+ * payload — so a worker that crashes mid-call can replay the same key
+ * on resume and pull the cached result out of the gateway cache.
+ */
+export interface GatewayIdempotencyInputs {
+  /** Job identifier this attempt belongs to. */
+  readonly jobId: string;
+  /** Stable role-step identifier (e.g. `"<jobId>-generator-1"`). */
+  readonly roleStepId: string;
+  /** Attempt index within the harness retry policy. */
+  readonly attempt: number;
+  /** Prompt-template version pin from the agent role profile. */
+  readonly promptVersion: string;
+  /** sha256 hex digest of the role's structured-output schema. */
+  readonly schemaHash: string;
+  /** sha256 hex digest of the canonical-JSON prompt + schema payload. */
+  readonly inputHash: string;
+}
+
+/**
+ * Persisted idempotency-key envelope written to
+ * `<runDir>/agent/idempotency-cache/<hmac>.json` (Issue #1784). The
+ * `hmac` field doubles as the content-addressable filename so a worker
+ * resuming after a crash can compute the key from the inputs and
+ * directly load the cached result.
+ *
+ * The `hmac` is the HMAC-SHA256 hex digest of
+ * `canonicalJson({jobId, roleStepId, attempt, promptVersion, schemaHash, inputHash})`
+ * keyed by the operator-configured gateway secret. The secret itself is
+ * **never** persisted in any artifact, log, or error message.
+ */
+export interface GatewayIdempotencyKey {
+  readonly schemaVersion: typeof GATEWAY_IDEMPOTENCY_KEY_SCHEMA_VERSION;
+  readonly jobId: string;
+  readonly roleStepId: string;
+  readonly attempt: number;
+  readonly promptVersion: string;
+  readonly schemaHash: string;
+  readonly inputHash: string;
+  /** HMAC-SHA256 hex digest. Never persisted to artifacts in any other form. */
+  readonly hmac: string;
 }
 
 /** Provider finish reasons normalized to a single set. */
@@ -8653,7 +8726,7 @@ export interface IrMutationCoverageStrengthReport {
  * Must be bumped according to CONTRACT_CHANGELOG.md rules.
  * Package version alignment is documented in VERSIONING.md.
  */
-export const CONTRACT_VERSION = "4.35.0" as const;
+export const CONTRACT_VERSION = "4.36.0" as const;
 
 // ---------------------------------------------------------------------------
 // Issue #1774 — UntrustedContentNormalizer (2025-vintage injection carriers).

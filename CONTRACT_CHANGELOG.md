@@ -31,6 +31,33 @@ All changes to the public contract surface of `workspace-dev` are documented her
 
 ---
 
+## [4.36.0] - 2026-05-03
+
+### Added (Issue #1784 — gateway-side idempotency keys, HMAC + TTL)
+
+The contract surface now includes the `GatewayIdempotencyKey` envelope and
+the `GatewayIdempotencyInputs` shape consumed by the multi-agent harness's
+gateway-side idempotency cache (Story MA-3 #1758).
+
+- `GATEWAY_IDEMPOTENCY_KEY_SCHEMA_VERSION = "1.0.0"` is the new pinned
+  schema literal; bumping it requires a major contract bump.
+- `GatewayIdempotencyInputs` carries the per-attempt fields the harness
+  hashes to derive the key:
+  `{jobId, roleStepId, attempt, promptVersion, schemaHash, inputHash}`.
+- `GatewayIdempotencyKey` is the persisted envelope that pairs those
+  inputs with the HMAC-SHA256 hex digest. The HMAC secret itself is
+  operator-configured and never persisted to artifacts or logs.
+- `LlmGenerationRequest` gains an additive optional field
+  `idempotency?: GatewayIdempotencyInputs`. When set AND the runtime is
+  wired with `idempotencyCache`, the gateway looks up the cache before
+  dispatch and returns the previously-completed structured success on
+  a hit without making a second LLM call. Cache hits count as
+  `gateway_idempotent_replay` in FinOps, distinct from `replay_cache_hit`.
+
+This is an additive minor bump. Existing callers that omit the
+`idempotency` field and the `idempotencyCache` runtime continue to
+behave as before — the gateway dispatches every call.
+
 ## [4.35.0] - 2026-05-03
 
 ### Added (Issue #1783 — deterministic IR mutation oracle report)
