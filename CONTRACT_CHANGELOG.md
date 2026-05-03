@@ -31,6 +31,30 @@ All changes to the public contract surface of `workspace-dev` are documented her
 
 ---
 
+## [4.35.0] - 2026-05-03
+
+### Added (Issue #1783 — deterministic IR mutation oracle report)
+
+The contract surface now includes `IrMutationCoverageStrengthReport`, the
+machine-readable artifact shape emitted by the deterministic
+`ir-mutation-oracle.ts` companion to the LLM-based Adversarial Gap Finder.
+
+The report carries:
+
+- `schemaVersion = "1.0.0"` and the originating `jobId`
+- aggregate mutation counters: `mutationCount`, `killedMutations`,
+  `mutationKillRate`
+- `perMutation[]` rows containing the stable `mutationId`, closed
+  `mutationKind` literal
+  (`flip_required`, `shrink_boundary`, `drop_state_transition`,
+  `swap_equivalence_class`, `invert_decision_rule`), sorted
+  `affectedSourceRefs`, and sorted `killedByTestCaseIds`
+- `survivingMutationsForRepair`, the sorted list of mutation ids that the
+  repair planner should treat as coverage findings
+
+This is an additive minor bump. Existing serialized artifacts remain valid and
+the new report is opt-in for callers that run the deterministic oracle.
+
 ## [4.34.0] - 2026-05-03
 
 ### Added (Issue #1782 — Agent_02 Judge Panel (PoLL) verdict artifact)

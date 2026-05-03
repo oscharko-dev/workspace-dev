@@ -8621,11 +8621,39 @@ export interface CoveragePlan {
 }
 
 /**
+ * Deterministic mutation-coverage-strength report emitted by the
+ * IR mutation oracle companion (Issue #1783).
+ *
+ * The report is intentionally minimal and machine-readable so the repair
+ * planner can consume surviving mutations without reparsing prose. Arrays are
+ * sorted deterministically by the runtime module.
+ */
+export interface IrMutationCoverageStrengthReport {
+  readonly schemaVersion: "1.0.0";
+  readonly jobId: string;
+  readonly mutationCount: number;
+  readonly killedMutations: number;
+  readonly mutationKillRate: number;
+  readonly perMutation: readonly {
+    readonly mutationId: string;
+    readonly mutationKind:
+      | "flip_required"
+      | "shrink_boundary"
+      | "drop_state_transition"
+      | "swap_equivalence_class"
+      | "invert_decision_rule";
+    readonly affectedSourceRefs: readonly string[];
+    readonly killedByTestCaseIds: readonly string[];
+  }[];
+  readonly survivingMutationsForRepair: readonly string[];
+}
+
+/**
  * Current contract version constant.
  * Must be bumped according to CONTRACT_CHANGELOG.md rules.
  * Package version alignment is documented in VERSIONING.md.
  */
-export const CONTRACT_VERSION = "4.34.0" as const;
+export const CONTRACT_VERSION = "4.35.0" as const;
 
 // ---------------------------------------------------------------------------
 // Issue #1774 — UntrustedContentNormalizer (2025-vintage injection carriers).

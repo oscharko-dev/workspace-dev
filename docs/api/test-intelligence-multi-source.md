@@ -5,8 +5,8 @@ test-intelligence contracts, HTTP routes, and operator configuration options
 introduced in Issues #1431–#1439.
 
 **Contract version:** `TEST_INTELLIGENCE_CONTRACT_VERSION = "1.6.0"`<br>
-**Package contract version:** `CONTRACT_VERSION = "4.32.0"`<br>
-**Authoritative surface:** `CONTRACT_CHANGELOG.md` §4.11.0–4.32.0
+**Package contract version:** `CONTRACT_VERSION = "4.35.0"`<br>
+**Authoritative surface:** `CONTRACT_CHANGELOG.md` §4.11.0–4.35.0
 
 For the operator setup guide see `docs/test-intelligence.md`. For migration
 from single-source jobs see `docs/migration/wave-4-additive.md`.
