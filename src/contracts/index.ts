@@ -2945,6 +2945,196 @@ export interface AgentRoleProfile {
   readonly finOpsGroup: AgentRoleFinOpsGroup;
 }
 
+/**
+ * Schema version literal pinned on every persisted
+ * {@link AgentHarnessExecutionGraph} artifact (Issue #1781). Structural
+ * changes require a major bump and a `CONTRACT_CHANGELOG.md` entry.
+ */
+export const AGENT_HARNESS_EXECUTION_GRAPH_SCHEMA_VERSION = "1.0.0" as const;
+
+/**
+ * Closed runtime list of retry policies a node in the execution graph
+ * may declare. The harness state machine (#1780) consumes the literal
+ * to decide whether a transient gateway error is retried in-place,
+ * resumed from the most recent checkpoint, or terminal.
+ */
+export const AGENT_HARNESS_GRAPH_RETRY_POLICIES = [
+  "none",
+  "retry_from_checkpoint",
+  "retry_transient_once",
+] as const;
+
+/** Retry policy for a single node in {@link AgentHarnessExecutionGraph}. */
+export type AgentHarnessGraphRetryPolicy =
+  (typeof AGENT_HARNESS_GRAPH_RETRY_POLICIES)[number];
+
+/**
+ * One node in the multi-agent harness execution DAG. The shape is
+ * intentionally minimal — `blocks` and `blockedBy` form a reversible
+ * adjacency record that callers can canonicalise byte-for-byte. The
+ * harness Production Runner reads `requiredInputArtifacts` and
+ * `producedArtifacts` to wire role-step IO without a workflow engine.
+ *
+ * The graph is not a workflow framework: there is no scheduler, no
+ * trigger, no conditional. Edge ordering is alphabetical on
+ * `roleStepId`.
+ */
+export interface AgentHarnessGraphNode {
+  /** Stable per-step identifier (e.g., `"<jobId>-generator-1"`). */
+  readonly roleStepId: string;
+  /** Role this step is bound to. */
+  readonly role: AgentHarnessRole;
+  /**
+   * Downstream `roleStepId`s this node unblocks once its outcome is
+   * `accepted` or `needs_review`. Sorted alphabetically; mirrored by
+   * each downstream node's `blockedBy`.
+   */
+  readonly blocks: readonly string[];
+  /**
+   * Upstream `roleStepId`s that must reach a non-failed terminal
+   * outcome before this node may run. Sorted alphabetically;
+   * mirrored by each upstream node's `blocks`.
+   */
+  readonly blockedBy: readonly string[];
+  /**
+   * Stable artifact identifiers (filenames or content addresses) the
+   * step requires as input. Sorted alphabetically.
+   */
+  readonly requiredInputArtifacts: readonly string[];
+  /**
+   * Stable artifact identifiers the step is expected to produce.
+   * Sorted alphabetically.
+   */
+  readonly producedArtifacts: readonly string[];
+  /** Retry policy applied to this node. */
+  readonly retryPolicy: AgentHarnessGraphRetryPolicy;
+}
+
+/**
+ * Persisted execution-graph artifact for a single Production Runner
+ * job. The harness consumes the graph to drive role-step ordering and
+ * to skip already-completed steps on resume. Canonical-JSON-stable for
+ * byte-identical inputs; the `graphHash` is the sha256 of the
+ * canonical-JSON representation of the `nodes` array.
+ */
+export interface AgentHarnessExecutionGraph {
+  /** Pinned schema version literal. */
+  readonly schemaVersion: typeof AGENT_HARNESS_EXECUTION_GRAPH_SCHEMA_VERSION;
+  /** Job identifier this graph belongs to. */
+  readonly jobId: string;
+  /** sha256 hex digest of `canonicalJson(nodes)`. 64 lowercase hex chars. */
+  readonly graphHash: string;
+  /** Nodes sorted alphabetically by `roleStepId`. */
+  readonly nodes: readonly AgentHarnessGraphNode[];
+}
+
+/**
+ * Closed runtime list of terminal outcomes the team-artifact roll-up
+ * may report. Mirrors the harness step-level vocabulary so the team
+ * artifact does not introduce a second outcome surface.
+ */
+export const ALLOWED_AGENT_TEAM_OUTCOMES = [
+  "accepted",
+  "blocked",
+  "failed_permanent",
+  "failed_retryable",
+  "needs_review",
+] as const;
+
+/** Terminal outcome of an entire agent-team run. */
+export type AgentTeamOutcome = (typeof ALLOWED_AGENT_TEAM_OUTCOMES)[number];
+
+/** Schema version literal pinned on `agent-team-config.json`. */
+export const AGENT_TEAM_CONFIG_SCHEMA_VERSION = "1.0.0" as const;
+
+/** Canonical filename for the per-run team configuration artifact. */
+export const AGENT_TEAM_CONFIG_ARTIFACT_FILENAME =
+  "agent-team-config.json" as const;
+
+/** Schema version literal pinned on `agent-team-results.json`. */
+export const AGENT_TEAM_RESULTS_SCHEMA_VERSION = "1.0.0" as const;
+
+/** Canonical filename for the per-run team results artifact. */
+export const AGENT_TEAM_RESULTS_ARTIFACT_FILENAME =
+  "agent-team-results.json" as const;
+
+/**
+ * Persisted team-configuration artifact written once per job at run
+ * start. Contains only profile metadata, the graph hash, and the
+ * policy-profile hash — no secrets, no raw prompts, no chain-of-thought.
+ */
+export interface AgentTeamConfigArtifact {
+  /** Pinned schema version literal. */
+  readonly schemaVersion: typeof AGENT_TEAM_CONFIG_SCHEMA_VERSION;
+  /** Job identifier this configuration belongs to. */
+  readonly jobId: string;
+  /** Profiles wired into this run, sorted alphabetically by role. */
+  readonly profiles: readonly AgentRoleProfile[];
+  /** sha256 hex digest of the run's {@link AgentHarnessExecutionGraph}. */
+  readonly graphHash: string;
+  /**
+   * sha256 hex digest of the canonical-JSON of the active policy
+   * profile (e.g., banking, neutral). Used to scope idempotency and
+   * gateway in-flight dedup keys.
+   */
+  readonly policyProfileHash: string;
+  /** Hard guarantee that the artifact never carries a raw prompt. */
+  readonly rawPromptsIncluded: false;
+}
+
+/** Per-role-step rolled-up record persisted in the team-results artifact. */
+export interface AgentTeamRoleRunSummary {
+  /** Step identifier (matches the per-step harness rollup filename). */
+  readonly roleStepId: string;
+  /** Role that produced the step. */
+  readonly role: AgentHarnessRole;
+  /** Terminal outcome from the harness state machine. */
+  readonly outcome: AgentTeamOutcome;
+  /** Closed taxonomy error class recorded by the harness. */
+  readonly errorClass: string;
+  /** Job-runtime status onto which the outcome was mapped. */
+  readonly mappedJobStatus: "completed" | "failed" | "partial";
+  /** Number of attempts the harness consumed for this step. */
+  readonly attemptsConsumed: number;
+  /** sha256 hex digest of the canonical-JSON step rollup artifact. */
+  readonly artifactHash: string;
+  /** Cost rollup across attempts; never includes pricing data. */
+  readonly costsRollup: {
+    readonly inputTokens: number;
+    readonly outputTokens: number;
+    readonly totalLatencyMs: number;
+  };
+}
+
+/** Cost rollup across every role-run in the team. */
+export interface AgentTeamTotalCost {
+  readonly inputTokens: number;
+  readonly outputTokens: number;
+  readonly totalLatencyMs: number;
+}
+
+/**
+ * Persisted team-results artifact written once per job at run end.
+ * Contains only hashes, status fields, and aggregate cost — never
+ * secrets, raw prompts, raw screenshots, or chain-of-thought.
+ */
+export interface AgentTeamResultsArtifact {
+  /** Pinned schema version literal. */
+  readonly schemaVersion: typeof AGENT_TEAM_RESULTS_SCHEMA_VERSION;
+  /** Job identifier this results bundle belongs to. */
+  readonly jobId: string;
+  /** sha256 hex digest of the graph used by this run. */
+  readonly graphHash: string;
+  /** Aggregate outcome across the team. */
+  readonly outcome: AgentTeamOutcome;
+  /** Per-role-step summaries sorted alphabetically by `roleStepId`. */
+  readonly roleRuns: readonly AgentTeamRoleRunSummary[];
+  /** Aggregate cost rollup. */
+  readonly totalCost: AgentTeamTotalCost;
+  /** Hard guarantee that the artifact never carries a raw prompt. */
+  readonly rawPromptsIncluded: false;
+}
+
 /** Canonical filename for per-run genealogy DAG artifacts. */
 export const GENEALOGY_ARTIFACT_FILENAME = "genealogy.json" as const;
 
@@ -8281,7 +8471,7 @@ export interface CoveragePlan {
  * Must be bumped according to CONTRACT_CHANGELOG.md rules.
  * Package version alignment is documented in VERSIONING.md.
  */
-export const CONTRACT_VERSION = "4.32.0" as const;
+export const CONTRACT_VERSION = "4.33.0" as const;
 
 // ---------------------------------------------------------------------------
 // Issue #1774 — UntrustedContentNormalizer (2025-vintage injection carriers).
