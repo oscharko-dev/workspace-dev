@@ -154,7 +154,12 @@ export const buildVisualSidecarResponseSchema = (): Record<string, unknown> => {
       screenId: { type: "string", minLength: 1 },
       sidecarDeployment: {
         type: "string",
-        enum: ["llama-4-maverick-vision", "phi-4-multimodal-poc", "mock"],
+        enum: [
+          "llama-4-maverick-vision",
+          "phi-4-multimodal-poc",
+          "mistral-document-ai-2512",
+          "mock",
+        ],
       },
       regions: { type: "array", items: region },
       confidenceSummary: {
@@ -770,12 +775,18 @@ const aggregateConfidenceSummary = (
 
 const clientDeploymentLabel = (
   client: LlmGatewayClient,
-): "llama-4-maverick-vision" | "phi-4-multimodal-poc" | "mock" => {
+):
+  | "llama-4-maverick-vision"
+  | "phi-4-multimodal-poc"
+  | "mistral-document-ai-2512"
+  | "mock" => {
   switch (client.deployment) {
     case "llama-4-maverick-vision":
       return "llama-4-maverick-vision";
     case "phi-4-multimodal-poc":
       return "phi-4-multimodal-poc";
+    case "mistral-document-ai-2512":
+      return "mistral-document-ai-2512";
     default:
       return "mock";
   }

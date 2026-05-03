@@ -52,11 +52,11 @@ pnpm run test:ti-live-smoke
 
 Expected role bindings are:
 
-| Role                            | Deployment                |
-| ------------------------------- | ------------------------- |
-| Structured test-case generation | `gpt-oss-120b`            |
-| Primary visual sidecar          | `llama-4-maverick-vision` |
-| Fallback visual sidecar         | `phi-4-multimodal-poc`    |
+| Role                            | Deployment                    |
+| ------------------------------- | ----------------------------- |
+| Structured test-case generation | `gpt-oss-120b`                |
+| Primary visual sidecar          | `mistral-document-ai-2512`    |
+| Fallback visual sidecar         | `llama-4-maverick-vision`     |
 
 The default CI path uses deterministic mocks and fixture captures instead of
 live network calls. Evidence artifacts store deployment names, schema versions,
