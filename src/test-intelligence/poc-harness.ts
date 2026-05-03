@@ -1716,6 +1716,11 @@ export const runWave1Poc = async (
     ...(visualSidecarSummary !== undefined
       ? { visualSidecar: visualSidecarSummary }
       : {}),
+    ...(sidecarResult !== undefined
+      ? {
+          visualSidecarCaptureIdentities: sidecarResult.captureIdentities,
+        }
+      : {}),
     artifacts: [
       {
         filename: BUSINESS_INTENT_IR_ARTIFACT_FILENAME,
@@ -2333,6 +2338,7 @@ const writeVisualSidecarFailureEvidenceManifest = async (input: {
     schemaHash: failureHashes.schemaHash,
     inputHash: failureHashes.inputHash,
     cacheKeyDigest: failureHashes.cacheKeyDigest,
+    visualSidecarCaptureIdentities: input.sidecarResult.captureIdentities,
     artifacts: [
       {
         filename: VISUAL_SIDECAR_RESULT_ARTIFACT_FILENAME,

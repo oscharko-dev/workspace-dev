@@ -5185,8 +5185,8 @@ export interface Wave1PocEvidenceManifest {
   contractVersion: string;
   /** Test-intelligence subsurface contract version. */
   testIntelligenceContractVersion: typeof TEST_INTELLIGENCE_CONTRACT_VERSION;
-  /** Identifier of the fixture exercised. */
-  fixtureId: Wave1PocFixtureId;
+  /** Identifier of the fixture or runner profile exercised. */
+  fixtureId: string;
   jobId: string;
   generatedAt: string;
   /** Versions used to compile the prompt and validate the output. */
@@ -5221,6 +5221,12 @@ export interface Wave1PocEvidenceManifest {
   cacheKeyDigest: string;
   /** Direct visual-sidecar evidence summary when the opt-in sidecar path ran. */
   visualSidecar?: Wave1PocEvidenceVisualSidecarSummary;
+  /**
+   * Persisted screenshot capture identities when the visual sidecar ran.
+   * Carries only SHA-256 identities plus MIME type and byte length; raw
+   * screenshot bytes are never embedded in the manifest.
+   */
+  visualSidecarCaptureIdentities?: VisualSidecarCaptureIdentity[];
   /**
    * Self-attestation over the canonical manifest metadata and artifact list.
    * New manifests stamp this field; it remains optional so legacy manifests can
@@ -7189,6 +7195,7 @@ export interface EvidenceVerifyResponse {
     selectedDeployment?: string;
     fallbackUsed: boolean;
     resultArtifactSha256?: string;
+    captureIdentityCount?: number;
   };
   /** Attestation summary when an attestation envelope is on disk. */
   attestation?: {

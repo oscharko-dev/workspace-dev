@@ -111,6 +111,35 @@ test("evidence-manifest: records direct visual sidecar summary when supplied", (
   });
 });
 
+test("evidence-manifest: records visual sidecar capture identities when supplied", () => {
+  const manifest = buildWave1PocEvidenceManifest({
+    ...baseInput([
+      {
+        filename: "visual-sidecar-result.json",
+        bytes: utf8('{"result":{"outcome":"success"}}'),
+        category: "visual_sidecar",
+      },
+    ]),
+    visualSidecarCaptureIdentities: [
+      {
+        screenId: "screen-1",
+        mimeType: "image/png",
+        byteLength: 4,
+        sha256: ZERO,
+      },
+    ],
+  });
+
+  assert.deepEqual(manifest.visualSidecarCaptureIdentities, [
+    {
+      screenId: "screen-1",
+      mimeType: "image/png",
+      byteLength: 4,
+      sha256: ZERO,
+    },
+  ]);
+});
+
 test("evidence-manifest: artifacts are sorted by filename and de-duplicated", () => {
   const manifest = buildWave1PocEvidenceManifest(
     baseInput([

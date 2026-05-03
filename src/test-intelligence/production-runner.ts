@@ -81,6 +81,10 @@ import {
 import { sanitizeErrorMessage } from "../error-sanitization.js";
 import { canonicalJson } from "./content-hash.js";
 import {
+  buildWave1PocEvidenceManifest,
+  writeWave1PocEvidenceManifest,
+} from "./evidence-manifest.js";
+import {
   cloneFinOpsBudgetEnvelope,
   PRODUCTION_FINOPS_BUDGET_ENVELOPE,
   resolveFinOpsRequestLimits,
@@ -421,6 +425,7 @@ export const runFigmaToQcTestCases = async (
   );
   let visualSidecarArtifactPath: string | undefined;
   let visualSidecarResult: VisualSidecarResult | undefined;
+  let visualSidecarArtifactBytes: Uint8Array | undefined;
   let visualSidecarRefusal:
     | { failureClass: VisualSidecarFailureClass; failureMessage: string }
     | undefined;
@@ -493,12 +498,13 @@ export const runFigmaToQcTestCases = async (
       VISUAL_SIDECAR_RESULT_ARTIFACT_FILENAME,
     );
     visualSidecarResult = sidecarResult;
-    await writeVisualSidecarResultArtifact({
+    const sidecarArtifact = await writeVisualSidecarResultArtifact({
       result: sidecarResult,
       destinationPath: visualSidecarArtifactPath,
       jobId: input.jobId,
       generatedAt: input.generatedAt,
     });
+    visualSidecarArtifactBytes = sidecarArtifact.bytes;
     if (sidecarResult.outcome !== "success") {
       // Issue #1772 AC #4: pre-flight failures are caller bugs and still fail
       // the runner fast. Model-side refusals (both_sidecars_failed and
@@ -819,6 +825,16 @@ export const runFigmaToQcTestCases = async (
     artifactDir,
     TEST_CASE_COVERAGE_REPORT_ARTIFACT_FILENAME,
   );
+  const intentBytes = encodeCanonicalJson(intent);
+  const compiledPromptBytes = encodeCanonicalJson(compiled.artifacts);
+  const generatedBytes = encodeCanonicalJson(validation.generatedTestCases);
+  const validationBytes = encodeCanonicalJson(validation.validation);
+  const visualSidecarValidationBytes =
+    validation.visual === undefined
+      ? undefined
+      : encodeCanonicalJson(validation.visual);
+  const policyBytes = encodeCanonicalJson(validation.policy);
+  const coverageBytes = encodeCanonicalJson(validation.coverage);
   const agentRoleRunPromise = writeAgentRoleRunArtifact({
     runDir: artifactDir,
     jobId: input.jobId,
@@ -834,21 +850,32 @@ export const runFigmaToQcTestCases = async (
           CONTEXT_BUDGET_ARTIFACT_DIRECTORY,
           `${compiled.contextBudgetReport.roleStepId}.json`,
         );
+  const contextBudgetReportBytes =
+    compiled.contextBudgetReport === undefined
+      ? undefined
+      : encodeCanonicalJson(compiled.contextBudgetReport);
   try {
     await Promise.all([
-      writeAtomicJson(intentPath, intent),
-      writeAtomicJson(compiledPromptPath, compiled.artifacts),
+      writeAtomicBytes(intentPath, intentBytes),
+      writeAtomicBytes(compiledPromptPath, compiledPromptBytes),
       agentRoleRunPromise,
-      ...(contextBudgetReportPath === undefined || compiled.contextBudgetReport === undefined
+      ...(contextBudgetReportPath === undefined ||
+      contextBudgetReportBytes === undefined
         ? []
-        : [writeAtomicJson(contextBudgetReportPath, compiled.contextBudgetReport)]),
-      writeAtomicJson(generatedPath, validation.generatedTestCases),
-      writeAtomicJson(validationPath, validation.validation),
-      ...(visualSidecarValidationPath === undefined || validation.visual === undefined
+        : [writeAtomicBytes(contextBudgetReportPath, contextBudgetReportBytes)]),
+      writeAtomicBytes(generatedPath, generatedBytes),
+      writeAtomicBytes(validationPath, validationBytes),
+      ...(visualSidecarValidationPath === undefined ||
+      visualSidecarValidationBytes === undefined
         ? []
-        : [writeAtomicJson(visualSidecarValidationPath, validation.visual)]),
-      writeAtomicJson(policyPath, validation.policy),
-      writeAtomicJson(coveragePath, validation.coverage),
+        : [
+            writeAtomicBytes(
+              visualSidecarValidationPath,
+              visualSidecarValidationBytes,
+            ),
+          ]),
+      writeAtomicBytes(policyPath, policyBytes),
+      writeAtomicBytes(coveragePath, coverageBytes),
     ]);
   } catch (err) {
     throw new ProductionRunnerError({
@@ -894,13 +921,144 @@ export const runFigmaToQcTestCases = async (
   const markdownDir = join(artifactDir, "customer-markdown");
   await mkdir(markdownDir, { recursive: true });
   const combinedMarkdownPath = join(markdownDir, "testfaelle.md");
+  const combinedMarkdownBytes = Buffer.from(rendered.combinedMarkdown, "utf8");
   await writeAtomicText(combinedMarkdownPath, rendered.combinedMarkdown);
   const perCasePaths: string[] = [];
+  const perCaseArtifacts: Array<{ filename: string; bytes: Buffer }> = [];
   for (const file of rendered.perCaseFiles) {
     const filePath = join(markdownDir, file.filename);
     await writeAtomicText(filePath, file.body);
     perCasePaths.push(filePath);
+    perCaseArtifacts.push({
+      filename: `customer-markdown/${file.filename}`,
+      bytes: Buffer.from(file.body, "utf8"),
+    });
   }
+  const visualSidecarSummary =
+    visualSidecarResult?.outcome === "success" &&
+    visualSidecarArtifactBytes !== undefined
+      ? {
+          selectedDeployment: visualSidecarResult.selectedDeployment,
+          fallbackReason: visualSidecarResult.fallbackReason,
+          confidenceSummary: visualSidecarResult.confidenceSummary,
+          resultArtifactSha256: sha256OfBytes(visualSidecarArtifactBytes),
+        }
+      : undefined;
+  const evidenceManifest = buildWave1PocEvidenceManifest({
+    fixtureId: `production-runner-${input.source.kind}`,
+    jobId: input.jobId,
+    generatedAt: input.generatedAt,
+    modelDeployments: {
+      testGeneration: PRODUCTION_RUNNER_TEST_GENERATION_DEPLOYMENT,
+      ...(input.llm.bundle !== undefined
+        ? {
+            visualPrimary: input.llm.bundle.visualPrimary.deployment,
+            visualFallback: input.llm.bundle.visualFallback.deployment,
+          }
+        : {}),
+    },
+    policyProfileId: validation.policy.policyProfileId,
+    policyProfileVersion: validation.policy.policyProfileVersion,
+    exportProfileId: "customer-markdown",
+    exportProfileVersion: "1.0.0",
+    promptHash: compiled.request.hashes.promptHash,
+    schemaHash: compiled.request.hashes.schemaHash,
+    inputHash: compiled.request.hashes.inputHash,
+    cacheKeyDigest: compiled.request.hashes.cacheKey,
+    ...(visualSidecarSummary !== undefined
+      ? { visualSidecar: visualSidecarSummary }
+      : {}),
+    ...(visualSidecarResult !== undefined
+      ? {
+          visualSidecarCaptureIdentities:
+            visualSidecarResult.captureIdentities,
+        }
+      : {}),
+    artifacts: [
+      {
+        filename: "business-intent-ir.json",
+        bytes: intentBytes,
+        category: "intent",
+      },
+      {
+        filename: "compiled-prompt.json",
+        bytes: compiledPromptBytes,
+        category: "intent",
+      },
+      {
+        filename: "agent-role-runs/test_generation.json",
+        bytes: agentRoleRunArtifact.bytes,
+        category: "manifest",
+      },
+      {
+        filename: "genealogy.json",
+        bytes: genealogyArtifact.bytes,
+        category: "genealogy",
+      },
+      ...(contextBudgetReportBytes === undefined ||
+      compiled.contextBudgetReport === undefined
+        ? []
+        : [
+            {
+              filename: `${CONTEXT_BUDGET_ARTIFACT_DIRECTORY}/${compiled.contextBudgetReport.roleStepId}.json`,
+              bytes: contextBudgetReportBytes,
+              category: "manifest" as const,
+            },
+          ]),
+      {
+        filename: GENERATED_TESTCASES_ARTIFACT_FILENAME,
+        bytes: generatedBytes,
+        category: "validation",
+      },
+      {
+        filename: TEST_CASE_VALIDATION_REPORT_ARTIFACT_FILENAME,
+        bytes: validationBytes,
+        category: "validation",
+      },
+      ...(visualSidecarValidationBytes === undefined
+        ? []
+        : [
+            {
+              filename: VISUAL_SIDECAR_VALIDATION_REPORT_ARTIFACT_FILENAME,
+              bytes: visualSidecarValidationBytes,
+              category: "validation" as const,
+            },
+          ]),
+      {
+        filename: TEST_CASE_POLICY_REPORT_ARTIFACT_FILENAME,
+        bytes: policyBytes,
+        category: "validation",
+      },
+      {
+        filename: TEST_CASE_COVERAGE_REPORT_ARTIFACT_FILENAME,
+        bytes: coverageBytes,
+        category: "validation",
+      },
+      ...(visualSidecarArtifactBytes === undefined
+        ? []
+        : [
+            {
+              filename: VISUAL_SIDECAR_RESULT_ARTIFACT_FILENAME,
+              bytes: visualSidecarArtifactBytes,
+              category: "visual_sidecar" as const,
+            },
+          ]),
+      {
+        filename: "customer-markdown/testfaelle.md",
+        bytes: combinedMarkdownBytes,
+        category: "export",
+      },
+      ...perCaseArtifacts.map((artifact) => ({
+        filename: artifact.filename,
+        bytes: artifact.bytes,
+        category: "export" as const,
+      })),
+    ],
+  });
+  await writeWave1PocEvidenceManifest({
+    manifest: evidenceManifest,
+    destinationDir: artifactDir,
+  });
 
   emit({
     phase: "export_complete",
@@ -1686,17 +1844,6 @@ const buildDraftResponseSchema = (): Record<string, unknown> => ({
   },
 });
 
-const writeAtomicJson = async (
-  destinationPath: string,
-  payload: unknown,
-): Promise<void> => {
-  const serialized = canonicalJson(payload);
-  const tmpPath = `${destinationPath}.${process.pid}.${randomUUID()}.tmp`;
-  await mkdir(dirname(destinationPath), { recursive: true });
-  await writeFile(tmpPath, serialized, "utf8");
-  await rename(tmpPath, destinationPath);
-};
-
 const writeAtomicText = async (
   destinationPath: string,
   payload: string,
@@ -1706,6 +1853,22 @@ const writeAtomicText = async (
   await writeFile(tmpPath, payload, "utf8");
   await rename(tmpPath, destinationPath);
 };
+
+const encodeCanonicalJson = (payload: unknown): Uint8Array =>
+  new TextEncoder().encode(canonicalJson(payload));
+
+const writeAtomicBytes = async (
+  destinationPath: string,
+  payload: Uint8Array | Buffer,
+): Promise<void> => {
+  const tmpPath = `${destinationPath}.${process.pid}.${randomUUID()}.tmp`;
+  await mkdir(dirname(destinationPath), { recursive: true });
+  await writeFile(tmpPath, payload);
+  await rename(tmpPath, destinationPath);
+};
+
+const sha256OfBytes = (bytes: Uint8Array): string =>
+  createHash("sha256").update(bytes).digest("hex");
 
 /**
  * Resolve and validate the FinOps envelope. Operator override wins
