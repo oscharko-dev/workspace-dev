@@ -151,3 +151,24 @@ test("rocket modules can import shared template prepare core", async () => {
 
   assert.deepEqual(report.violations, []);
 });
+
+test("finding and repair suffix sections must use typed JSON payloads, not body strings", async () => {
+  const report = await analyzeFixture({
+    "src/test-intelligence/prompt-builder.ts": [
+      "const sections = [",
+      "  {",
+      '    kind: "repair_instructions",',
+      '    label: "Repair Instructions",',
+      '    body: findings.map((finding) => `- ${finding.message}`).join("\\n"),',
+      "  },",
+      "];",
+      "export const ok = sections;",
+      "",
+    ].join("\n"),
+  });
+
+  assert.match(
+    violationContents(report.violations),
+    /finding\/repair sections must use typed JSON payloads, not body strings/,
+  );
+});

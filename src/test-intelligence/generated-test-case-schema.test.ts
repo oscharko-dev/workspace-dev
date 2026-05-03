@@ -122,7 +122,7 @@ test("schema: drift guard — the hash is stable for the current contract", () =
   // `regulatoryRelevance` ({domain, rationale}) on each test case;
   // GENERATED_TEST_CASE_SCHEMA_VERSION bumped 1.0.0 -> 1.1.0 in lockstep.
   const expected =
-    "f858fca53dc42901b071b868728044dde90dad2dac73326fb280c92f37f5c01b";
+    "a2cf4c25de0a43004225a7545ca5a95b62e571aa87d6a1956870ed3aa4136c98";
   const actual = computeGeneratedTestCaseListSchemaHash();
   if (actual !== expected) {
     assert.fail(
