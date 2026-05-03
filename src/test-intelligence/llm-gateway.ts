@@ -30,7 +30,9 @@ import {
   ALLOWED_LLM_GATEWAY_ERROR_CLASSES,
   ALLOWED_LLM_GATEWAY_ROLES,
   ALLOWED_LLM_GATEWAY_WIRE_STRUCTURED_OUTPUT_MODES,
+  type AgentSourceLabel,
   type GatewayIdempotencyKey,
+  type GatewayInFlightDedupInputs,
   type LlmGatewayCapabilities,
   type LlmGatewayClientConfig,
   type LlmGatewayCompatibilityMode,
@@ -43,6 +45,7 @@ import {
   type LlmGenerationSuccess,
   type LlmFinishReason,
 } from "../contracts/index.js";
+import { canonicalJson } from "./content-hash.js";
 import {
   createLlmCircuitBreaker,
   type LlmCircuitBreaker,
@@ -114,6 +117,11 @@ export interface LlmGatewayRuntime {
    * and is never exposed via this runtime or persisted to artifacts.
    */
   idempotencyCache?: LlmGatewayIdempotencyCache;
+  /**
+   * Optional callback fired when a concurrent request joins an existing
+   * in-flight Promise for the same `request.inFlightDedup` key.
+   */
+  onInFlightDedupHit?: (source: AgentSourceLabel) => void;
 }
 
 export interface LlmGatewayClient {
@@ -134,6 +142,10 @@ export interface LlmGatewayClient {
    * outside dry-run mode).
    */
   getIdempotencyMetrics(): GatewayIdempotencyMetrics | undefined;
+}
+
+interface LlmGenerationRequestInternal extends LlmGenerationRequest {
+  onInFlightDedupHit?: (source: AgentSourceLabel) => void;
 }
 
 const DEFAULT_BACKOFF_MS: ReadonlyArray<number> = [100, 200, 400, 800, 1600];
@@ -163,6 +175,7 @@ export const createLlmGatewayClient = (
   const fetchImpl = runtime.fetchImpl ?? globalThis.fetch.bind(globalThis);
   const sleep = runtime.sleep ?? defaultSleep;
   const backoff = runtime.retryBackoffMs ?? DEFAULT_BACKOFF_MS;
+  const inFlightRequests = new Map<string, Promise<LlmGenerationResult>>();
   const breaker = createLlmCircuitBreaker({
     failureThreshold: config.circuitBreaker.failureThreshold,
     resetTimeoutMs: config.circuitBreaker.resetTimeoutMs,
@@ -172,7 +185,7 @@ export const createLlmGatewayClient = (
       : {}),
   });
 
-  const generate = async (
+  const generateUncached = async (
     request: LlmGenerationRequest,
   ): Promise<LlmGenerationResult> => {
     const guardError = guardImagePayload(config.role, request);
@@ -318,6 +331,53 @@ export const createLlmGatewayClient = (
     );
   };
 
+  const generate = async (
+    request: LlmGenerationRequest,
+  ): Promise<LlmGenerationResult> => {
+    const requestInternal = request as LlmGenerationRequestInternal;
+    const dedupInputs = request.inFlightDedup;
+    if (dedupInputs === undefined) {
+      return generateUncached(request);
+    }
+
+    let dedupKey: string;
+    try {
+      dedupKey = buildInFlightDedupKey(dedupInputs);
+    } catch (err) {
+      return {
+        outcome: "error",
+        errorClass: "schema_invalid",
+        message: redactBoundedMessage(
+          sanitizeErrorMessage({
+            error: err,
+            fallback: "in-flight dedup key rejected",
+          }),
+        ),
+        retryable: false,
+        attempt: 0,
+      };
+    }
+
+    const existing = inFlightRequests.get(dedupKey);
+    if (existing !== undefined) {
+      if (dedupInputs.source !== undefined) {
+        requestInternal.onInFlightDedupHit?.(dedupInputs.source);
+        runtime.onInFlightDedupHit?.(dedupInputs.source);
+      }
+      return existing;
+    }
+
+    const pending = generateUncached(request);
+    inFlightRequests.set(dedupKey, pending);
+    try {
+      return await pending;
+    } finally {
+      if (inFlightRequests.get(dedupKey) === pending) {
+        inFlightRequests.delete(dedupKey);
+      }
+    }
+  };
+
   return {
     role: config.role,
     compatibilityMode: config.compatibilityMode,
@@ -331,6 +391,40 @@ export const createLlmGatewayClient = (
     getIdempotencyMetrics: () =>
       runtime.idempotencyCache?.getMetrics(),
   };
+};
+
+const HEX64_RE = /^[0-9a-f]{64}$/u;
+
+const buildInFlightDedupKey = (input: GatewayInFlightDedupInputs): string => {
+  if (!HEX64_RE.test(input.promptHash)) {
+    throw new RangeError("promptHash must be a 64-char lowercase hex digest");
+  }
+  if (
+    typeof input.modelBinding !== "string" ||
+    input.modelBinding.trim().length === 0
+  ) {
+    throw new RangeError("modelBinding must be a non-empty string");
+  }
+  if (!HEX64_RE.test(input.schemaHash)) {
+    throw new RangeError("schemaHash must be a 64-char lowercase hex digest");
+  }
+  if (!HEX64_RE.test(input.policyProfileHash)) {
+    throw new RangeError(
+      "policyProfileHash must be a 64-char lowercase hex digest",
+    );
+  }
+  if (
+    input.source !== undefined &&
+    (typeof input.source !== "string" || input.source.length === 0)
+  ) {
+    throw new RangeError("source must be a non-empty string when provided");
+  }
+  return canonicalJson({
+    promptHash: input.promptHash,
+    modelBinding: input.modelBinding,
+    schemaHash: input.schemaHash,
+    policyProfileHash: input.policyProfileHash,
+  });
 };
 
 const guardImagePayload = (

@@ -31,6 +31,23 @@ All changes to the public contract surface of `workspace-dev` are documented her
 
 ---
 
+## [4.37.0] - 2026-05-03
+
+### Added (Issue #1788 — policy-aware gateway in-flight dedup keys)
+
+The contract surface now includes `GatewayInFlightDedupInputs` plus the
+optional `LlmGenerationRequest.inFlightDedup` field.
+
+- `GatewayInFlightDedupInputs` carries
+  `{promptHash, modelBinding, schemaHash, policyProfileHash, source?}` for
+  one request.
+- `policyProfileHash` is now an explicit part of the gateway in-flight dedup
+  identity so concurrent identical requests from different policy profiles do
+  not collapse onto the same Promise.
+- `source?` is an optional FinOps attribution label used to credit
+  `inFlightDedupHits` in the `bySource` report when a caller joins an existing
+  in-flight request.
+
 ## [4.36.0] - 2026-05-03
 
 ### Added (Issue #1784 — gateway-side idempotency keys, HMAC + TTL)

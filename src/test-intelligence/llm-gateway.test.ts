@@ -2,10 +2,16 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   ALLOWED_LLM_GATEWAY_ERROR_CLASSES,
+  type GatewayInFlightDedupInputs,
   type LlmGatewayCapabilities,
   type LlmGatewayClientConfig,
   type LlmGenerationRequest,
 } from "../contracts/index.js";
+import {
+  buildFinOpsBudgetReport,
+  createFinOpsUsageRecorder,
+} from "./finops-report.js";
+import { DEFAULT_FINOPS_BUDGET_ENVELOPE } from "./finops-budget.js";
 import {
   createLlmGatewayClient,
   isLlmGatewayErrorRetryable,
@@ -41,6 +47,11 @@ const baseConfig: LlmGatewayClientConfig = {
   circuitBreaker: { failureThreshold: 3, resetTimeoutMs: 1_000 },
 };
 
+const HEX64 = "0".repeat(64);
+const HEX64_ALT = "1".repeat(64);
+const HEX64_POLICY = "2".repeat(64);
+const HEX64_POLICY_ALT = "3".repeat(64);
+
 const sampleRequest = (
   overrides: Partial<LlmGenerationRequest> = {},
 ): LlmGenerationRequest => ({
@@ -53,6 +64,17 @@ const sampleRequest = (
     required: ["ack"],
   },
   responseSchemaName: "probe.v1",
+  ...overrides,
+});
+
+const sampleInFlightDedup = (
+  overrides: Partial<GatewayInFlightDedupInputs> = {},
+): GatewayInFlightDedupInputs => ({
+  source: "ir_mutation_oracle",
+  promptHash: HEX64,
+  modelBinding: "gpt-oss-120b@azure-ai-foundry@2026.04",
+  schemaHash: HEX64_ALT,
+  policyProfileHash: HEX64_POLICY,
   ...overrides,
 });
 
@@ -1301,6 +1323,103 @@ test('wireStructuredOutputMode: "none" surfaces schema_invalid when free-form co
   if (result.outcome === "error") {
     assert.equal(result.errorClass, "schema_invalid");
     assert.match(result.message, /not valid JSON/);
+  }
+});
+
+test("in-flight dedup: concurrent identical keys collapse to one gateway call and increment FinOps bySource hit counter", async () => {
+  const recorder = createFinOpsUsageRecorder();
+  let dispatches = 0;
+  let releaseFetch: (() => void) | undefined;
+  const releasePromise = new Promise<void>((resolve) => {
+    releaseFetch = resolve;
+  });
+  const client = createLlmGatewayClient(baseConfig, {
+    fetchImpl: async () => {
+      dispatches += 1;
+      await releasePromise;
+      return okJsonResponse(buildChoiceBody({ ack: "ok" }));
+    },
+    apiKeyProvider: () => "k",
+    onInFlightDedupHit: (source) => recorder.recordInFlightDedupHit(source),
+  });
+
+  const first = client.generate({
+    ...sampleRequest(),
+    inFlightDedup: sampleInFlightDedup(),
+  });
+  const second = client.generate({
+    ...sampleRequest(),
+    inFlightDedup: sampleInFlightDedup(),
+  });
+
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.equal(dispatches, 1);
+  releaseFetch?.();
+
+  const [r1, r2] = await Promise.all([first, second]);
+  assert.equal(dispatches, 1);
+  assert.deepEqual(r1, r2);
+
+  const report = buildFinOpsBudgetReport({
+    jobId: "job-1",
+    generatedAt: "2026-05-03T12:00:00.000Z",
+    budget: DEFAULT_FINOPS_BUDGET_ENVELOPE,
+    recorder,
+  });
+  assert.equal(report.bySource.ir_mutation_oracle.inFlightDedupHits, 1);
+});
+
+test("in-flight dedup: different policyProfileHash values do not collapse", async () => {
+  let dispatches = 0;
+  const client = createLlmGatewayClient(baseConfig, {
+    fetchImpl: async () => {
+      dispatches += 1;
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      return okJsonResponse(buildChoiceBody({ ack: "ok" }));
+    },
+    apiKeyProvider: () => "k",
+  });
+
+  await Promise.all([
+    client.generate({
+      ...sampleRequest(),
+      inFlightDedup: sampleInFlightDedup({
+        policyProfileHash: HEX64_POLICY,
+      }),
+    }),
+    client.generate({
+      ...sampleRequest(),
+      inFlightDedup: sampleInFlightDedup({
+        policyProfileHash: HEX64_POLICY_ALT,
+      }),
+    }),
+  ]);
+
+  assert.equal(dispatches, 2);
+});
+
+test("in-flight dedup: malformed key surfaces schema_invalid before transport", async () => {
+  let dispatches = 0;
+  const client = createLlmGatewayClient(baseConfig, {
+    fetchImpl: async () => {
+      dispatches += 1;
+      return okJsonResponse(buildChoiceBody({ ack: "ok" }));
+    },
+    apiKeyProvider: () => "k",
+  });
+
+  const result = await client.generate({
+    ...sampleRequest(),
+    inFlightDedup: sampleInFlightDedup({
+      policyProfileHash: "short",
+    }),
+  });
+
+  assert.equal(dispatches, 0);
+  assert.equal(result.outcome, "error");
+  if (result.outcome === "error") {
+    assert.equal(result.errorClass, "schema_invalid");
+    assert.match(result.message, /policyProfileHash/u);
   }
 });
 
