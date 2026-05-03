@@ -58,6 +58,12 @@ export type {
   CoveragePlanTechnique,
   CoverageRequirement,
   CoverageRequirementReasonCode,
+  ContextBudgetCategory,
+  ContextBudgetCategoryKind,
+  ContextBudgetPriority,
+  ContextBudgetAction,
+  ContextBudgetCategoryStatus,
+  ContextBudgetReport,
 } from "./contracts/index.js";
 
 export {
@@ -84,6 +90,10 @@ export {
   ALLOWED_JIRA_WRITE_MODE_VALUES,
   ALLOWED_JIRA_WRITE_REFUSAL_CODES,
   ALLOWED_CONFLICT_RESOLUTION_POLICIES,
+  ALLOWED_CONTEXT_BUDGET_ACTIONS,
+  ALLOWED_CONTEXT_BUDGET_CATEGORY_KINDS,
+  ALLOWED_CONTEXT_BUDGET_CATEGORY_STATUSES,
+  ALLOWED_CONTEXT_BUDGET_PRIORITIES,
   ALLOWED_LBOM_MODEL_ROLES,
   ALLOWED_LLM_CODEGEN_MODES,
   ALLOWED_LLM_GATEWAY_AUTH_MODES,
@@ -123,6 +133,9 @@ export {
   ALM_EXPORT_XML_NAMESPACE,
   BANKING_INSURANCE_SEMANTIC_KEYWORDS,
   CONTRACT_VERSION,
+  CONTEXT_BUDGET_ARTIFACT_DIRECTORY,
+  CONTEXT_BUDGET_ESTIMATOR_BYTES_PER_TOKEN,
+  CONTEXT_BUDGET_REPORT_SCHEMA_VERSION,
   COVERAGE_PLAN_ARTIFACT_FILENAME,
   COVERAGE_PLAN_SCHEMA_VERSION,
   DEFAULT_MUTATION_KILL_RATE_TARGET,
@@ -271,3 +284,12 @@ export type { ProjectInstance } from "./isolation.js";
 export * from "./job-engine/visual-capture.js";
 export * from "./job-engine/visual-diff.js";
 export * from "./job-engine/visual-scoring.js";
+export {
+  analyzeContextBudget,
+  type AnalyzeContextBudgetInput,
+  type AnalyzeContextBudgetResult,
+  type ContextBudgetCategoryInput,
+  estimateLlmInputBytes,
+  estimateLlmInputTokens,
+  estimateTextTokens,
+} from "./test-intelligence/index.js";

@@ -1041,6 +1041,84 @@ export interface LlmImageInput {
 /** Reasoning-effort hint forwarded only when `reasoningEffortSupport` is true. */
 export type LlmReasoningEffort = "low" | "medium" | "high";
 
+/** Fixed bytes-per-token estimator used by the shared prompt-size heuristic. */
+export const CONTEXT_BUDGET_ESTIMATOR_BYTES_PER_TOKEN = 4 as const;
+
+/** Schema version for persisted context-budget analyzer reports. */
+export const CONTEXT_BUDGET_REPORT_SCHEMA_VERSION = "1.0.0" as const;
+
+/** Canonical directory for per-role-step context-budget artifacts. */
+export const CONTEXT_BUDGET_ARTIFACT_DIRECTORY = "context-budget" as const;
+
+/** Deterministic breach actions surfaced by the context-budget analyzer. */
+export const ALLOWED_CONTEXT_BUDGET_ACTIONS = [
+  "none",
+  "compact_prompt_payload",
+  "drop_optional_context",
+  "needs_review",
+] as const;
+
+export type ContextBudgetAction =
+  (typeof ALLOWED_CONTEXT_BUDGET_ACTIONS)[number];
+
+/** Stable category kinds consumed by the context-budget analyzer. */
+export const ALLOWED_CONTEXT_BUDGET_CATEGORY_KINDS = [
+  "system_instructions",
+  "business_intent_ir",
+  "visual_binding",
+  "source_context",
+  "coverage_plan",
+  "generated_cases",
+  "validation_findings",
+  "judge_findings",
+  "repair_history",
+] as const;
+
+export type ContextBudgetCategoryKind =
+  (typeof ALLOWED_CONTEXT_BUDGET_CATEGORY_KINDS)[number];
+
+/** Priority drives which categories may be dropped during budget handling. */
+export const ALLOWED_CONTEXT_BUDGET_PRIORITIES = [
+  "required",
+  "important",
+  "optional",
+] as const;
+
+export type ContextBudgetPriority =
+  (typeof ALLOWED_CONTEXT_BUDGET_PRIORITIES)[number];
+
+/** Final disposition of a category after budget analysis. */
+export const ALLOWED_CONTEXT_BUDGET_CATEGORY_STATUSES = [
+  "included",
+  "compacted",
+  "dropped",
+] as const;
+
+export type ContextBudgetCategoryStatus =
+  (typeof ALLOWED_CONTEXT_BUDGET_CATEGORY_STATUSES)[number];
+
+/** Reported metadata for one analyzed category. */
+export interface ContextBudgetCategory {
+  readonly kind: ContextBudgetCategoryKind;
+  readonly priority: ContextBudgetPriority;
+  readonly estimatedTokens: number;
+  readonly status: ContextBudgetCategoryStatus;
+  readonly artifactHashes: readonly string[];
+}
+
+/** Deterministic per-role-step context-budget analyzer report. */
+export interface ContextBudgetReport {
+  readonly schemaVersion: typeof CONTEXT_BUDGET_REPORT_SCHEMA_VERSION;
+  readonly jobId: string;
+  readonly roleStepId: string;
+  readonly modelBinding: string;
+  readonly maxInputTokens: number;
+  readonly estimatedInputTokens: number;
+  readonly categories: readonly ContextBudgetCategory[];
+  readonly action: ContextBudgetAction;
+  readonly compactedFromArtifactHashes: readonly string[];
+}
+
 /** Wire-shaped request handed to a gateway client. */
 export interface LlmGenerationRequest {
   jobId: string;
@@ -4408,6 +4486,7 @@ export interface CompiledPromptHashes {
   promptHash: string;
   schemaHash: string;
   cacheKey: string;
+  contextBudgetHash?: string;
 }
 
 /** Sanitized custom supporting context visible to prompt compilation. */
@@ -4480,6 +4559,7 @@ export interface ReplayCacheKey {
   promptTemplateVersion: typeof TEST_INTELLIGENCE_PROMPT_TEMPLATE_VERSION;
   seed?: number;
   sourceMixPlanHash?: string;
+  contextBudgetHash?: string;
 }
 
 /** Stored cache entry. */

@@ -48,6 +48,7 @@ import {
   type LlmCircuitClock,
   type LlmCircuitTransitionEvent,
 } from "./llm-circuit-breaker.js";
+import { estimateLlmInputTokens } from "./llm-token-estimator.js";
 
 /** Stable error class with `errorClass` discriminant + retryable flag. */
 export class LlmGatewayError extends Error {
@@ -287,7 +288,7 @@ const guardInputBudget = (
       attempt: 0,
     };
   }
-  const estimatedTokens = estimateInputTokens(request);
+  const estimatedTokens = estimateLlmInputTokens(request);
   if (estimatedTokens > request.maxInputTokens) {
     return {
       outcome: "error",
@@ -374,23 +375,6 @@ const guardOutputBudgetSupport = (
     };
   }
   return undefined;
-};
-
-const estimateInputTokens = (request: LlmGenerationRequest): number => {
-  // Issue #1693 (audit-2026-05 Wave 3): use `Buffer.byteLength` so this
-  // hot path (called per request and per retry) avoids allocating a fresh
-  // `TextEncoder` and a transient `Uint8Array` per string. Same UTF-8
-  // semantics, native fast path.
-  let bytes =
-    Buffer.byteLength(request.systemPrompt, "utf8") +
-    Buffer.byteLength(request.userPrompt, "utf8");
-  if (request.responseSchema !== undefined) {
-    bytes += Buffer.byteLength(JSON.stringify(request.responseSchema), "utf8");
-  }
-  for (const image of request.imageInputs ?? []) {
-    bytes += image.base64Data.length;
-  }
-  return Math.ceil(bytes / 4);
 };
 
 const isTransientFailure = (errorClass: LlmGatewayErrorClass): boolean => {

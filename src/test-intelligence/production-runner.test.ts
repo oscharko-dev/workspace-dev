@@ -5,6 +5,7 @@ import path from "node:path";
 import test from "node:test";
 
 import { createMockLlmGatewayClient } from "./llm-mock-gateway.js";
+import { cloneEuBankingDefaultFinOpsBudget } from "./finops-budget.js";
 import {
   PROMPT_MAX_ACTIONS_PER_SCREEN,
   PROMPT_MAX_FIELDS_PER_SCREEN,
@@ -171,6 +172,37 @@ test("runFigmaToQcTestCases happy path persists artifacts and renders customer M
     const md = await readFile(result.customerMarkdownPaths.combined, "utf8");
     assert.match(md, /Testfälle/u);
     assert.match(md, /Investitionssumme/u);
+  } finally {
+    await rm(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("runFigmaToQcTestCases forwards maxInputTokens from the resolved FinOps budget", async () => {
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ti-runner-"));
+  try {
+    const client = createMockLlmGatewayClient({
+      role: "test_generation",
+      deployment: "gpt-oss-120b-mock",
+      modelRevision: "mock-1",
+      gatewayRelease: "mock",
+      responder: okResponder([SAMPLE_DRAFT]),
+    });
+    const finopsBudget = cloneEuBankingDefaultFinOpsBudget();
+    finopsBudget.roles.test_generation!.maxInputTokensPerRequest = 5_000;
+
+    const result = await runFigmaToQcTestCases({
+      jobId: "job-max-input",
+      generatedAt: "2026-05-02T10:00:00Z",
+      source: { kind: "figma_paste_normalized", file: SAMPLE_FILE },
+      outputRoot: tempRoot,
+      llm: { client },
+      finopsBudget,
+    });
+
+    const recorded = client.recordedRequests();
+    assert.equal(result.finopsBudget.roles.test_generation?.maxInputTokensPerRequest, 5_000);
+    assert.equal(recorded.length, 1);
+    assert.equal(recorded[0]?.maxInputTokens, 5_000);
   } finally {
     await rm(tempRoot, { recursive: true, force: true });
   }
