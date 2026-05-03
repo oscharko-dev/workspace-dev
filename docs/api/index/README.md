@@ -764,9 +764,17 @@ https://v8.dev/docs/stack-trace-api#customizing-stack-traces
 
 > **modelBinding**: `string`
 
+##### parentJobId?
+
+> `optional` **parentJobId?**: `string`
+
 ##### responseSchema?
 
 > `optional` **responseSchema?**: `Record`\<`string`, `unknown`\>
+
+##### roleLineageDepth?
+
+> `optional` **roleLineageDepth?**: `number`
 
 ##### roleStepId
 
@@ -1462,9 +1470,94 @@ Project-specific working directory.
 
 ## Type Aliases
 
+### AgentRoleProfileId
+
+> **AgentRoleProfileId** = `string` & `object`
+
+workspace-dev — Public API surface.
+
+Re-exports contracts, server factory, mode-lock utilities,
+and per-project isolation helpers.
+
+#### Type Declaration
+
+##### \_\_brand
+
+> `readonly` **\_\_brand**: `"AgentRoleProfileId"`
+
+***
+
 ### CaptureDeviceProfileId
 
 > **CaptureDeviceProfileId** = `"pixel-7"`
+
+***
+
+### EvidenceArtifactId
+
+> **EvidenceArtifactId** = `string` & `object`
+
+workspace-dev — Public API surface.
+
+Re-exports contracts, server factory, mode-lock utilities,
+and per-project isolation helpers.
+
+#### Type Declaration
+
+##### \_\_brand
+
+> `readonly` **\_\_brand**: `"EvidenceArtifactId"`
+
+***
+
+### JobId
+
+> **JobId** = `string` & `object`
+
+workspace-dev — Public API surface.
+
+Re-exports contracts, server factory, mode-lock utilities,
+and per-project isolation helpers.
+
+#### Type Declaration
+
+##### \_\_brand
+
+> `readonly` **\_\_brand**: `"JobId"`
+
+***
+
+### LessonId
+
+> **LessonId** = `string` & `object`
+
+workspace-dev — Public API surface.
+
+Re-exports contracts, server factory, mode-lock utilities,
+and per-project isolation helpers.
+
+#### Type Declaration
+
+##### \_\_brand
+
+> `readonly` **\_\_brand**: `"LessonId"`
+
+***
+
+### RoleStepId
+
+> **RoleStepId** = `string` & `object`
+
+workspace-dev — Public API surface.
+
+Re-exports contracts, server factory, mode-lock utilities,
+and per-project isolation helpers.
+
+#### Type Declaration
+
+##### \_\_brand
+
+> `readonly` **\_\_brand**: `"RoleStepId"`
 
 ## Variables
 
@@ -1495,6 +1588,12 @@ Project-specific working directory.
 ### DEFAULT\_VIEWPORT
 
 > `const` **DEFAULT\_VIEWPORT**: [`ViewportConfig`](#viewportconfig)
+
+***
+
+### MAX\_ROLE\_LINEAGE\_DEPTH
+
+> `const` **MAX\_ROLE\_LINEAGE\_DEPTH**: `10`
 
 ***
 
@@ -1865,6 +1964,38 @@ Returns the active instance for a project key, if any.
 
 ***
 
+### isBrandedId()
+
+> **isBrandedId**(`value`): `boolean`
+
+#### Parameters
+
+##### value
+
+`string`
+
+#### Returns
+
+`boolean`
+
+***
+
+### isRoleLineageDepth()
+
+> **isRoleLineageDepth**(`value`): `value is number`
+
+#### Parameters
+
+##### value
+
+`unknown`
+
+#### Returns
+
+`value is number`
+
+***
+
 ### listProjectInstances()
 
 > **listProjectInstances**(): `ReadonlyMap`\<`string`, [`ProjectInstance`](#projectinstance)\>
@@ -1972,6 +2103,86 @@ true if an instance was found and removed, false otherwise.
 
 ***
 
+### toAgentRoleProfileId()
+
+> **toAgentRoleProfileId**(`value`): [`AgentRoleProfileId`](#agentroleprofileid) \| `null`
+
+#### Parameters
+
+##### value
+
+`string`
+
+#### Returns
+
+[`AgentRoleProfileId`](#agentroleprofileid) \| `null`
+
+***
+
+### toEvidenceArtifactId()
+
+> **toEvidenceArtifactId**(`value`): [`EvidenceArtifactId`](#evidenceartifactid) \| `null`
+
+#### Parameters
+
+##### value
+
+`string`
+
+#### Returns
+
+[`EvidenceArtifactId`](#evidenceartifactid) \| `null`
+
+***
+
+### toJobId()
+
+> **toJobId**(`value`): [`JobId`](#jobid-1) \| `null`
+
+#### Parameters
+
+##### value
+
+`string`
+
+#### Returns
+
+[`JobId`](#jobid-1) \| `null`
+
+***
+
+### toLessonId()
+
+> **toLessonId**(`value`): [`LessonId`](#lessonid) \| `null`
+
+#### Parameters
+
+##### value
+
+`string`
+
+#### Returns
+
+[`LessonId`](#lessonid) \| `null`
+
+***
+
+### toRoleStepId()
+
+> **toRoleStepId**(`value`): [`RoleStepId`](#rolestepid-1) \| `null`
+
+#### Parameters
+
+##### value
+
+`string`
+
+#### Returns
+
+[`RoleStepId`](#rolestepid-1) \| `null`
+
+***
+
 ### unregisterIsolationProcessCleanup()
 
 > **unregisterIsolationProcessCleanup**(): `void`
@@ -1979,6 +2190,22 @@ true if an instance was found and removed, false otherwise.
 #### Returns
 
 `void`
+
+***
+
+### validateBrandedIdLabel()
+
+> **validateBrandedIdLabel**(`value`): `string` \| `null`
+
+#### Parameters
+
+##### value
+
+`string` \| `undefined`
+
+#### Returns
+
+`string` \| `null`
 
 ***
 

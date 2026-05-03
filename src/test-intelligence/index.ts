@@ -158,6 +158,15 @@ export {
   type BuildCoveragePlanInput,
 } from "./coverage-planner.js";
 export {
+  computeIrMutationCoverageStrength,
+  IR_MUTATION_COVERAGE_STRENGTH_REPORT_ARTIFACT_FILENAME,
+  IR_MUTATION_COVERAGE_STRENGTH_REPORT_SCHEMA_VERSION,
+  IR_MUTATION_KINDS,
+  writeIrMutationCoverageStrengthArtifact,
+  type ComputeIrMutationCoverageStrengthInput,
+  type IrMutationKind,
+} from "./ir-mutation-oracle.js";
+export {
   selectTestDesignHeuristics,
   type TestDesignHeuristic,
 } from "./test-design-heuristics.js";

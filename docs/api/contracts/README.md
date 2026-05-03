@@ -8,6 +8,225 @@
 
 ## Interfaces
 
+### AgentHarnessExecutionGraph
+
+Persisted execution-graph artifact for a single Production Runner
+job. The harness consumes the graph to drive role-step ordering and
+to skip already-completed steps on resume. Canonical-JSON-stable for
+byte-identical inputs; the `graphHash` is the sha256 of the
+canonical-JSON representation of the `nodes` array.
+
+#### Properties
+
+##### graphHash
+
+> `readonly` **graphHash**: `string`
+
+sha256 hex digest of `canonicalJson(nodes)`. 64 lowercase hex chars.
+
+##### jobId
+
+> `readonly` **jobId**: `string`
+
+Job identifier this graph belongs to.
+
+##### nodes
+
+> `readonly` **nodes**: readonly [`AgentHarnessGraphNode`](#agentharnessgraphnode)[]
+
+Nodes sorted alphabetically by `roleStepId`.
+
+##### schemaVersion
+
+> `readonly` **schemaVersion**: `"1.0.0"`
+
+Pinned schema version literal.
+
+***
+
+### AgentHarnessGraphNode
+
+One node in the multi-agent harness execution DAG. The shape is
+intentionally minimal — `blocks` and `blockedBy` form a reversible
+adjacency record that callers can canonicalise byte-for-byte. The
+harness Production Runner reads `requiredInputArtifacts` and
+`producedArtifacts` to wire role-step IO without a workflow engine.
+
+The graph is not a workflow framework: there is no scheduler, no
+trigger, no conditional. Edge ordering is alphabetical on
+`roleStepId`.
+
+#### Properties
+
+##### blockedBy
+
+> `readonly` **blockedBy**: readonly `string`[]
+
+Upstream `roleStepId`s that must reach a non-failed terminal
+outcome before this node may run. Sorted alphabetically;
+mirrored by each upstream node's `blocks`.
+
+##### blocks
+
+> `readonly` **blocks**: readonly `string`[]
+
+Downstream `roleStepId`s this node unblocks once its outcome is
+`accepted` or `needs_review`. Sorted alphabetically; mirrored by
+each downstream node's `blockedBy`.
+
+##### producedArtifacts
+
+> `readonly` **producedArtifacts**: readonly `string`[]
+
+Stable artifact identifiers the step is expected to produce.
+Sorted alphabetically.
+
+##### requiredInputArtifacts
+
+> `readonly` **requiredInputArtifacts**: readonly `string`[]
+
+Stable artifact identifiers (filenames or content addresses) the
+step requires as input. Sorted alphabetically.
+
+##### retryPolicy
+
+> `readonly` **retryPolicy**: `"none"` \| `"retry_from_checkpoint"` \| `"retry_transient_once"`
+
+Retry policy applied to this node.
+
+##### role
+
+> `readonly` **role**: `"adversarial_gap_finder"` \| `"final_verifier"` \| `"generator"` \| `"repair_planner"` \| `"semantic_judge"` \| `"visual_sidecar"`
+
+Role this step is bound to.
+
+##### roleStepId
+
+> `readonly` **roleStepId**: `string`
+
+Stable per-step identifier (e.g., `"<jobId>-generator-1"`).
+
+***
+
+### AgentModelBinding
+
+Static binding of an agent role to a model identity. The optional
+`ictRegisterRef` is mandatory under `policyProfile = "banking"` and is
+enforced by Wave MA-4; this contract defines the slot but does not
+itself enforce the banking policy.
+
+#### Properties
+
+##### ictRegisterRef?
+
+> `readonly` `optional` **ictRegisterRef?**: `string`
+
+Optional reference into the operator's ICT register. Mandatory
+under banking profiles (enforced in MA-4) so deployed models map
+back to a registered ICT asset.
+
+##### inferenceProfileId?
+
+> `readonly` `optional` **inferenceProfileId?**: `string`
+
+Optional inference profile / deployment identifier for providers
+that route by deployment name (e.g., Azure deployments).
+
+##### modelId
+
+> `readonly` **modelId**: `string`
+
+Stable model identifier inside the provider namespace.
+
+##### providerId
+
+> `readonly` **providerId**: `string`
+
+Stable provider identifier (e.g., `"azure-openai"`, `"in-house"`).
+
+***
+
+### AgentRoleProfile
+
+Static, hand-rolled profile that pins a role to a budget tier,
+capability filter, output schema, and FinOps group. Profiles are
+frozen at module load and serialise to canonical JSON for evidence
+anchoring.
+
+#### Properties
+
+##### capability
+
+> `readonly` **capability**: `"none"` \| `"propose_changes"` \| `"read_artifacts"` \| `"score_only"`
+
+Capability filter — what kinds of side effects the role may declare.
+
+##### finOpsGroup
+
+> `readonly` **finOpsGroup**: `"visual"` \| `"generation"` \| `"judge"` \| `"repair"` \| `"verification"`
+
+FinOps attribution group used for cost rollups.
+
+##### maxAttempts
+
+> `readonly` **maxAttempts**: `1` \| `2` \| `3`
+
+Maximum attempts the harness may make before declaring failure.
+
+##### maxInputTokens
+
+> `readonly` **maxInputTokens**: `number`
+
+Hard cap on input tokens passed to the gateway for this role.
+
+##### maxOutputTokens
+
+> `readonly` **maxOutputTokens**: `number`
+
+Hard cap on output tokens the gateway may emit for this role.
+
+##### modelBinding?
+
+> `readonly` `optional` **modelBinding?**: [`AgentModelBinding`](#agentmodelbinding)
+
+Optional model binding. Required for `llm_role` profiles
+(validated at registry construction); omitted for deterministic
+services that do not call the gateway.
+
+##### outputSchema
+
+> `readonly` **outputSchema**: `string`
+
+Stable identifier of the structured-output JSON schema this role emits.
+
+##### promptVersion?
+
+> `readonly` `optional` **promptVersion?**: `string`
+
+Optional prompt-template version pin. Required for `llm_role`
+profiles (validated at registry construction); omitted for
+deterministic services that do not compile a prompt.
+
+##### role
+
+> `readonly` **role**: `"adversarial_gap_finder"` \| `"final_verifier"` \| `"generator"` \| `"repair_planner"` \| `"semantic_judge"` \| `"visual_sidecar"`
+
+Role identifier this profile binds to.
+
+##### roleKind
+
+> `readonly` **roleKind**: `"deterministic_service"` \| `"llm_role"`
+
+Whether the role is deterministic or LLM-driven.
+
+##### schemaVersion
+
+> `readonly` **schemaVersion**: `"1.0.0"`
+
+Pinned schema version literal. Bumping requires a major contract bump.
+
+***
+
 ### AgentRoleRunArtifact
 
 Minimal persisted metadata for one compiled role-step prompt run.
@@ -30,6 +249,10 @@ Minimal persisted metadata for one compiled role-step prompt run.
 
 > **jobId**: `string`
 
+##### parentJobId?
+
+> `optional` **parentJobId?**: `string`
+
 ##### promptHash
 
 > **promptHash**: `string`
@@ -41,6 +264,10 @@ Minimal persisted metadata for one compiled role-step prompt run.
 ##### rawPromptsIncluded
 
 > **rawPromptsIncluded**: `false`
+
+##### roleLineageDepth?
+
+> `optional` **roleLineageDepth?**: `number`
 
 ##### roleRunId
 
@@ -57,6 +284,194 @@ Minimal persisted metadata for one compiled role-step prompt run.
 ##### schemaVersion
 
 > **schemaVersion**: `"1.0.0"`
+
+***
+
+### AgentTeamConfigArtifact
+
+Persisted team-configuration artifact written once per job at run
+start. Contains only profile metadata, the graph hash, and the
+policy-profile hash — no secrets, no raw prompts, no chain-of-thought.
+
+#### Properties
+
+##### graphHash
+
+> `readonly` **graphHash**: `string`
+
+sha256 hex digest of the run's [AgentHarnessExecutionGraph](#agentharnessexecutiongraph).
+
+##### jobId
+
+> `readonly` **jobId**: `string`
+
+Job identifier this configuration belongs to.
+
+##### policyProfileHash
+
+> `readonly` **policyProfileHash**: `string`
+
+sha256 hex digest of the canonical-JSON of the active policy
+profile (e.g., banking, neutral). Used to scope idempotency and
+gateway in-flight dedup keys.
+
+##### profiles
+
+> `readonly` **profiles**: readonly [`AgentRoleProfile`](#agentroleprofile)[]
+
+Profiles wired into this run, sorted alphabetically by role.
+
+##### rawPromptsIncluded
+
+> `readonly` **rawPromptsIncluded**: `false`
+
+Hard guarantee that the artifact never carries a raw prompt.
+
+##### schemaVersion
+
+> `readonly` **schemaVersion**: `"1.0.0"`
+
+Pinned schema version literal.
+
+***
+
+### AgentTeamResultsArtifact
+
+Persisted team-results artifact written once per job at run end.
+Contains only hashes, status fields, and aggregate cost — never
+secrets, raw prompts, raw screenshots, or chain-of-thought.
+
+#### Properties
+
+##### graphHash
+
+> `readonly` **graphHash**: `string`
+
+sha256 hex digest of the graph used by this run.
+
+##### jobId
+
+> `readonly` **jobId**: `string`
+
+Job identifier this results bundle belongs to.
+
+##### outcome
+
+> `readonly` **outcome**: `"blocked"` \| `"needs_review"` \| `"accepted"` \| `"failed_permanent"` \| `"failed_retryable"`
+
+Aggregate outcome across the team.
+
+##### rawPromptsIncluded
+
+> `readonly` **rawPromptsIncluded**: `false`
+
+Hard guarantee that the artifact never carries a raw prompt.
+
+##### roleRuns
+
+> `readonly` **roleRuns**: readonly [`AgentTeamRoleRunSummary`](#agentteamrolerunsummary)[]
+
+Per-role-step summaries sorted alphabetically by `roleStepId`.
+
+##### schemaVersion
+
+> `readonly` **schemaVersion**: `"1.0.0"`
+
+Pinned schema version literal.
+
+##### totalCost
+
+> `readonly` **totalCost**: [`AgentTeamTotalCost`](#agentteamtotalcost)
+
+Aggregate cost rollup.
+
+***
+
+### AgentTeamRoleRunSummary
+
+Per-role-step rolled-up record persisted in the team-results artifact.
+
+#### Properties
+
+##### artifactHash
+
+> `readonly` **artifactHash**: `string`
+
+sha256 hex digest of the canonical-JSON step rollup artifact.
+
+##### attemptsConsumed
+
+> `readonly` **attemptsConsumed**: `number`
+
+Number of attempts the harness consumed for this step.
+
+##### costsRollup
+
+> `readonly` **costsRollup**: `object`
+
+Cost rollup across attempts; never includes pricing data.
+
+###### inputTokens
+
+> `readonly` **inputTokens**: `number`
+
+###### outputTokens
+
+> `readonly` **outputTokens**: `number`
+
+###### totalLatencyMs
+
+> `readonly` **totalLatencyMs**: `number`
+
+##### errorClass
+
+> `readonly` **errorClass**: `string`
+
+Closed taxonomy error class recorded by the harness.
+
+##### mappedJobStatus
+
+> `readonly` **mappedJobStatus**: `"partial"` \| `"completed"` \| `"failed"`
+
+Job-runtime status onto which the outcome was mapped.
+
+##### outcome
+
+> `readonly` **outcome**: `"blocked"` \| `"needs_review"` \| `"accepted"` \| `"failed_permanent"` \| `"failed_retryable"`
+
+Terminal outcome from the harness state machine.
+
+##### role
+
+> `readonly` **role**: `"adversarial_gap_finder"` \| `"final_verifier"` \| `"generator"` \| `"repair_planner"` \| `"semantic_judge"` \| `"visual_sidecar"`
+
+Role that produced the step.
+
+##### roleStepId
+
+> `readonly` **roleStepId**: `string`
+
+Step identifier (matches the per-step harness rollup filename).
+
+***
+
+### AgentTeamTotalCost
+
+Cost rollup across every role-run in the team.
+
+#### Properties
+
+##### inputTokens
+
+> `readonly` **inputTokens**: `number`
+
+##### outputTokens
+
+> `readonly` **outputTokens**: `number`
+
+##### totalLatencyMs
+
+> `readonly` **totalLatencyMs**: `number`
 
 ***
 
@@ -468,7 +883,7 @@ Hex digest of the screenshot/fixture used for visual analysis, if any.
 
 ##### schemaVersion
 
-> **schemaVersion**: `"1.0.0"`
+> **schemaVersion**: `"1.1.0"`
 
 ##### screenCount
 
@@ -478,7 +893,7 @@ Number of screens covered by the visual binding.
 
 ##### selectedDeployment
 
-> **selectedDeployment**: `"llama-4-maverick-vision"` \| `"phi-4-multimodal-poc"` \| `"mock"`
+> **selectedDeployment**: `"llama-4-maverick-vision"` \| `"phi-4-multimodal-poc"` \| `"mistral-document-ai-2512"` \| `"mock"`
 
 ***
 
@@ -543,6 +958,14 @@ Deterministic per-role-step context-budget analyzer report.
 ##### modelBinding
 
 > `readonly` **modelBinding**: `string`
+
+##### parentJobId?
+
+> `readonly` `optional` **parentJobId?**: `string`
+
+##### roleLineageDepth?
+
+> `readonly` `optional` **roleLineageDepth?**: `number`
 
 ##### roleStepId
 
@@ -1591,6 +2014,10 @@ ISO-8601 timestamp the verification completed at.
 
 Visual sidecar metadata when the manifest carries it.
 
+###### captureIdentityCount?
+
+> `optional` **captureIdentityCount?**: `number`
+
 ###### fallbackUsed
 
 > **fallbackUsed**: `boolean`
@@ -1671,11 +2098,11 @@ Identity of the deployments behind the run.
 
 ###### visualFallback?
 
-> `optional` **visualFallback?**: `"llama-4-maverick-vision"` \| `"phi-4-multimodal-poc"` \| `"mock"` \| `"none"`
+> `optional` **visualFallback?**: `"llama-4-maverick-vision"` \| `"phi-4-multimodal-poc"` \| `"mistral-document-ai-2512"` \| `"mock"` \| `"none"`
 
 ###### visualPrimary?
 
-> `optional` **visualPrimary?**: `"llama-4-maverick-vision"` \| `"phi-4-multimodal-poc"` \| `"mock"` \| `"none"`
+> `optional` **visualPrimary?**: `"llama-4-maverick-vision"` \| `"phi-4-multimodal-poc"` \| `"mistral-document-ai-2512"` \| `"mock"` \| `"none"`
 
 ##### profileId
 
@@ -1874,6 +2301,32 @@ Sorted by `(rule, role)`. Empty when no budget was breached.
 > **budget**: [`FinOpsBudgetEnvelope`](#finopsbudgetenvelope)
 
 Verbatim copy of the budget envelope applied to this job.
+
+##### bySource
+
+> **bySource**: `Readonly`\<`Record`\<[`AgentSourceLabel`](#agentsourcelabel), \{ `callCount`: `number`; `costMinorUnits`: `number`; `idempotentReplayHits`: `number`; `inFlightDedupHits`: `number`; `tokensIn`: `number`; `tokensOut`: `number`; \}\>\>
+
+Deterministic per-agent-source attribution sealed in attestation.
+
+##### bySourceSealedAt
+
+> **bySourceSealedAt**: `string`
+
+Timestamp used when sealing the `bySource` payload.
+
+##### bySourceTotal
+
+> **bySourceTotal**: `object`
+
+Aggregate counters across the `bySource` map.
+
+###### callCount
+
+> **callCount**: `number`
+
+###### costMinorUnits
+
+> **costMinorUnits**: `number`
 
 ##### contractVersion
 
@@ -2303,6 +2756,50 @@ of risk category. Sorted, deduplicated.
 
 ***
 
+### GenealogyArtifact
+
+#### Properties
+
+##### generatedAt
+
+> `readonly` **generatedAt**: `string`
+
+##### nodes
+
+> `readonly` **nodes**: readonly [`GenealogyArtifactNode`](#genealogyartifactnode)[]
+
+##### schemaVersion
+
+> `readonly` **schemaVersion**: `"1.0.0"`
+
+***
+
+### GenealogyArtifactNode
+
+#### Properties
+
+##### artifactFilename
+
+> `readonly` **artifactFilename**: `string`
+
+##### jobId
+
+> `readonly` **jobId**: `string`
+
+##### parentJobId?
+
+> `readonly` `optional` **parentJobId?**: `string`
+
+##### roleLineageDepth?
+
+> `readonly` `optional` **roleLineageDepth?**: `number`
+
+##### roleStepId
+
+> `readonly` **roleStepId**: `string`
+
+***
+
 ### GeneratedTestCase
 
 Single generated test case.
@@ -2466,7 +2963,7 @@ Whether the artifact came from a replay-cache hit.
 
 ##### visualSidecarSchemaVersion
 
-> **visualSidecarSchemaVersion**: `"1.0.0"`
+> **visualSidecarSchemaVersion**: `"1.1.0"`
 
 ***
 
@@ -2854,6 +3351,47 @@ Optional — omitted for legacy single-source Figma jobs to keep
 artifacts byte-stable. When present, each entry MUST match an entry
 in the surrounding [MultiSourceTestIntentEnvelope.sources](#sources)
 array by `sourceId`.
+
+***
+
+### IrMutationCoverageStrengthReport
+
+Deterministic mutation-coverage-strength report emitted by the
+IR mutation oracle companion (Issue #1783).
+
+The report is intentionally minimal and machine-readable so the repair
+planner can consume surviving mutations without reparsing prose. Arrays are
+sorted deterministically by the runtime module.
+
+#### Properties
+
+##### jobId
+
+> `readonly` **jobId**: `string`
+
+##### killedMutations
+
+> `readonly` **killedMutations**: `number`
+
+##### mutationCount
+
+> `readonly` **mutationCount**: `number`
+
+##### mutationKillRate
+
+> `readonly` **mutationKillRate**: `number`
+
+##### perMutation
+
+> `readonly` **perMutation**: readonly `object`[]
+
+##### schemaVersion
+
+> `readonly` **schemaVersion**: `"1.0.0"`
+
+##### survivingMutationsForRepair
+
+> `readonly` **survivingMutationsForRepair**: readonly `string`[]
 
 ***
 
@@ -3692,6 +4230,122 @@ Number of records whose outcome is `skipped_duplicate`.
 > **totalCases**: `number`
 
 Total number of approved test cases supplied to the pipeline.
+
+***
+
+### JudgePanelPerJudgeVerdictRecord
+
+One judge's pointwise rubric verdict for a single
+`(testCaseId, criterion)` pair. Raw `score` is the pre-calibration
+0..1 score; `calibratedScore` is the post-hoc CalibraEval-style
+mapping against the fixture distribution. No length normalisation
+is applied (verbosity-bias inversion 2025).
+
+#### Properties
+
+##### calibratedScore
+
+> `readonly` **calibratedScore**: `number`
+
+Post-hoc CalibraEval-style mapped 0..1 score.
+
+##### judgeId
+
+> `readonly` **judgeId**: `"judge_primary"` \| `"judge_secondary"`
+
+Judge identifier within the panel.
+
+##### modelBinding
+
+> `readonly` **modelBinding**: `string`
+
+Stable model identifier this judge was bound to at the time of
+scoring. Echoed verbatim from the [AgentModelBinding](#agentmodelbinding)'s
+`modelId` (e.g., `"gpt-oss-120b"`, `"phi-4-multimodal-poc"`).
+
+##### reason
+
+> `readonly` **reason**: `string`
+
+Redacted, length-capped justification (≤
+[JUDGE\_PANEL\_REASON\_MAX\_CHARS](#judge_panel_reason_max_chars) chars). Never carries chain
+of thought, raw prompts, or secrets — the validator refuses
+over-long or non-string reasons before persistence.
+
+##### score
+
+> `readonly` **score**: `number`
+
+Raw 0..1 pointwise score before post-hoc calibration.
+
+##### verdict
+
+> `readonly` **verdict**: `"fail"` \| `"pass"` \| `"uncertain"`
+
+Per-judge verdict derived from the calibrated score.
+
+***
+
+### JudgePanelVerdict
+
+Persisted Panel-of-LLM-Judges (PoLL) verdict for a single
+`(testCaseId, criterion)` pair (Issue #1782). The harness writes
+one verdict per scored case; the per-run artifact at
+`<runDir>/judge-panel-verdicts.json` is a canonical-JSON-stable
+array of these records (sorted by `(testCaseId, criterion)`).
+
+Disagreement routing: `agreement === "disagree"` always maps to
+`escalationRoute ∈ {downgrade, needs_review}` and the resolved
+severity is downgraded to `downgraded_disagreement` (severity-1) or
+the case is routed to `needs_review`. Both-pass and both-fail
+verdicts are deterministic functions of the per-judge verdicts and
+the panel's escalation policy.
+
+#### Properties
+
+##### agreement
+
+> `readonly` **agreement**: `"both_fail"` \| `"both_pass"` \| `"disagree"`
+
+Panel-level agreement label derived from per-judge verdicts.
+
+##### criterion
+
+> `readonly` **criterion**: `string`
+
+Stable rubric criterion identifier the verdict scores.
+
+##### escalationRoute
+
+> `readonly` **escalationRoute**: `"needs_review"` \| `"accept"` \| `"downgrade"`
+
+Final routing decision consumed by the Production Runner.
+
+##### perJudge
+
+> `readonly` **perJudge**: readonly [`JudgePanelPerJudgeVerdictRecord`](#judgepanelperjudgeverdictrecord)[]
+
+Per-judge raw verdicts, sorted alphabetically by `judgeId` for
+canonical-JSON stability. Always exactly two entries — the
+cross-family `judge_primary` and `judge_secondary`.
+
+##### resolvedSeverity
+
+> `readonly` **resolvedSeverity**: `"critical"` \| `"downgraded_disagreement"` \| `"major"` \| `"minor"`
+
+Resolved severity after Trust-or-Escalate routing.
+
+##### schemaVersion
+
+> `readonly` **schemaVersion**: `"1.0.0"`
+
+Pinned schema version literal.
+
+##### testCaseId
+
+> `readonly` **testCaseId**: `string`
+
+Test-case identifier the verdict applies to.
 
 ***
 
@@ -5286,7 +5940,7 @@ Visual provenance attached to a QC mapping preview entry (Issue #1386).
 
 ##### deployment
 
-> **deployment**: `"llama-4-maverick-vision"` \| `"phi-4-multimodal-poc"` \| `"mock"` \| `"none"`
+> **deployment**: `"llama-4-maverick-vision"` \| `"phi-4-multimodal-poc"` \| `"mistral-document-ai-2512"` \| `"mock"` \| `"none"`
 
 ##### evidenceHash
 
@@ -5520,11 +6174,11 @@ Replay-cache key — the only deterministic-bit-identical replay anchor.
 
 ##### visualSelectedDeployment
 
-> **visualSelectedDeployment**: `"llama-4-maverick-vision"` \| `"phi-4-multimodal-poc"` \| `"mock"`
+> **visualSelectedDeployment**: `"llama-4-maverick-vision"` \| `"phi-4-multimodal-poc"` \| `"mistral-document-ai-2512"` \| `"mock"`
 
 ##### visualSidecarSchemaVersion
 
-> **visualSidecarSchemaVersion**: `"1.0.0"`
+> **visualSidecarSchemaVersion**: `"1.1.0"`
 
 ***
 
@@ -7652,7 +8306,7 @@ Single per-screen visual observation row inside the matrix.
 
 ##### deployment
 
-> **deployment**: `"llama-4-maverick-vision"` \| `"phi-4-multimodal-poc"` \| `"mock"`
+> **deployment**: `"llama-4-maverick-vision"` \| `"phi-4-multimodal-poc"` \| `"mistral-document-ai-2512"` \| `"mock"`
 
 ##### meanConfidence
 
@@ -8024,7 +8678,7 @@ Visual-sidecar description produced by a multimodal vision model (Issue #1386).
 
 ##### sidecarDeployment
 
-> **sidecarDeployment**: `"llama-4-maverick-vision"` \| `"phi-4-multimodal-poc"` \| `"mock"`
+> **sidecarDeployment**: `"llama-4-maverick-vision"` \| `"phi-4-multimodal-poc"` \| `"mistral-document-ai-2512"` \| `"mock"`
 
 ***
 
@@ -8044,7 +8698,7 @@ Sequence index, 1-based across both primary and fallback attempts.
 
 ##### deployment
 
-> **deployment**: `"llama-4-maverick-vision"` \| `"phi-4-multimodal-poc"` \| `"mock"`
+> **deployment**: `"llama-4-maverick-vision"` \| `"phi-4-multimodal-poc"` \| `"mistral-document-ai-2512"` \| `"mock"`
 
 Sidecar deployment that was attempted.
 
@@ -8197,9 +8851,31 @@ Hard invariant — image bytes are never embedded in this artifact.
 
 > **schemaVersion**: `"1.0.0"`
 
+##### visualEvidenceRefs?
+
+> `optional` **visualEvidenceRefs?**: `object`[]
+
+Deterministic derivative evidence refs extracted from the validation
+report. Each ref hashes the canonical tuple
+`(screenId|deployment|sortedOutcomes|roundedConfidence)` so downstream
+audit consumers can correlate prompt-time visual evidence without relying
+on raw screenshot-byte hashes.
+
+###### evidenceHash
+
+> **evidenceHash**: `string`
+
+###### modelDeployment
+
+> **modelDeployment**: `string`
+
+###### screenId
+
+> **screenId**: `string`
+
 ##### visualSidecarSchemaVersion
 
-> **visualSidecarSchemaVersion**: `"1.0.0"`
+> **visualSidecarSchemaVersion**: `"1.1.0"`
 
 ***
 
@@ -8248,7 +8924,7 @@ Aggregated confidence summary across every screen description.
 
 ##### selectedDeployment
 
-> **selectedDeployment**: `"llama-4-maverick-vision"` \| `"phi-4-multimodal-poc"` \| `"mock"`
+> **selectedDeployment**: `"llama-4-maverick-vision"` \| `"phi-4-multimodal-poc"` \| `"mistral-document-ai-2512"` \| `"mock"`
 
 Deployment that produced the descriptions.
 
@@ -8275,7 +8951,7 @@ Single per-screen visual-sidecar validation row.
 
 ##### deployment
 
-> **deployment**: `"llama-4-maverick-vision"` \| `"phi-4-multimodal-poc"` \| `"mock"`
+> **deployment**: `"llama-4-maverick-vision"` \| `"phi-4-multimodal-poc"` \| `"mistral-document-ai-2512"` \| `"mock"`
 
 ##### issues
 
@@ -8341,7 +9017,7 @@ Whether any record carries a non-`ok`/non-`fallback_used` outcome that blocks ge
 
 ##### visualSidecarSchemaVersion
 
-> **visualSidecarSchemaVersion**: `"1.0.0"`
+> **visualSidecarSchemaVersion**: `"1.1.0"`
 
 ***
 
@@ -8455,6 +9131,13 @@ bodies are embedded — only identity hashes and version stamps.
 
 #### Properties
 
+##### bySourceHash?
+
+> `optional` **bySourceHash?**: `string`
+
+SHA-256 of the canonical per-source FinOps breakdown embedded in the
+FinOps report. Present when the run emitted `finops/budget-report.json`.
+
 ##### cacheKeyDigest
 
 > **cacheKeyDigest**: `string`
@@ -8475,7 +9158,7 @@ Export profile identity (export-only QC pipeline).
 
 ##### fixtureId
 
-> **fixtureId**: `"poc-onboarding"` \| `"poc-payment-auth"`
+> **fixtureId**: `string`
 
 ##### generatedAt
 
@@ -8523,11 +9206,11 @@ Identity of every model role active during the run.
 
 ###### visualFallback?
 
-> `optional` **visualFallback?**: `"llama-4-maverick-vision"` \| `"phi-4-multimodal-poc"` \| `"mock"` \| `"none"`
+> `optional` **visualFallback?**: `"llama-4-maverick-vision"` \| `"phi-4-multimodal-poc"` \| `"mistral-document-ai-2512"` \| `"mock"` \| `"none"`
 
 ###### visualPrimary?
 
-> `optional` **visualPrimary?**: `"llama-4-maverick-vision"` \| `"phi-4-multimodal-poc"` \| `"mock"` \| `"none"`
+> `optional` **visualPrimary?**: `"llama-4-maverick-vision"` \| `"phi-4-multimodal-poc"` \| `"mistral-document-ai-2512"` \| `"mock"` \| `"none"`
 
 ##### policyProfileId
 
@@ -8593,7 +9276,7 @@ Visual-sidecar chain-of-custody identity (when present).
 
 ##### visualSidecarSchemaVersion
 
-> **visualSidecarSchemaVersion**: `"1.0.0"`
+> **visualSidecarSchemaVersion**: `"1.1.0"`
 
 ***
 
@@ -8751,7 +9434,7 @@ harness.
 
 ##### code
 
-> **code**: `"envelope_unparseable"` \| `"envelope_payload_type_mismatch"` \| `"envelope_payload_decode_failed"` \| `"statement_unparseable"` \| `"statement_type_mismatch"` \| `"statement_predicate_type_mismatch"` \| `"statement_predicate_invalid"` \| `"subject_missing_artifact"` \| `"subject_digest_mismatch"` \| `"subject_unattested_artifact"` \| `"signing_mode_mismatch"` \| `"signature_required"` \| `"signature_unsigned_envelope_carries_signatures"` \| `"signature_invalid_keyid"` \| `"signature_invalid_encoding"` \| `"signature_unverified"` \| `"bundle_missing"` \| `"bundle_envelope_mismatch"` \| `"bundle_public_key_missing"` \| `"manifest_sha256_mismatch"`
+> **code**: `"envelope_unparseable"` \| `"envelope_payload_type_mismatch"` \| `"envelope_payload_decode_failed"` \| `"statement_unparseable"` \| `"statement_type_mismatch"` \| `"statement_predicate_type_mismatch"` \| `"statement_predicate_invalid"` \| `"subject_missing_artifact"` \| `"subject_digest_mismatch"` \| `"subject_unattested_artifact"` \| `"signing_mode_mismatch"` \| `"signature_required"` \| `"signature_unsigned_envelope_carries_signatures"` \| `"signature_invalid_keyid"` \| `"signature_invalid_encoding"` \| `"signature_unverified"` \| `"bundle_missing"` \| `"bundle_envelope_mismatch"` \| `"bundle_public_key_missing"` \| `"manifest_sha256_mismatch"` \| `"bySource_hash_mismatch"`
 
 Stable failure code.
 
@@ -8822,15 +9505,15 @@ evidence manifest but pinned to the predicate version.
 
 ##### selectedDeployment
 
-> **selectedDeployment**: `"llama-4-maverick-vision"` \| `"phi-4-multimodal-poc"` \| `"mock"`
+> **selectedDeployment**: `"llama-4-maverick-vision"` \| `"phi-4-multimodal-poc"` \| `"mistral-document-ai-2512"` \| `"mock"`
 
 ##### visualFallback?
 
-> `optional` **visualFallback?**: `"llama-4-maverick-vision"` \| `"phi-4-multimodal-poc"` \| `"mock"` \| `"none"`
+> `optional` **visualFallback?**: `"llama-4-maverick-vision"` \| `"phi-4-multimodal-poc"` \| `"mistral-document-ai-2512"` \| `"mock"` \| `"none"`
 
 ##### visualPrimary?
 
-> `optional` **visualPrimary?**: `"llama-4-maverick-vision"` \| `"phi-4-multimodal-poc"` \| `"mock"` \| `"none"`
+> `optional` **visualPrimary?**: `"llama-4-maverick-vision"` \| `"phi-4-multimodal-poc"` \| `"mistral-document-ai-2512"` \| `"mock"` \| `"none"`
 
 ***
 
@@ -8910,7 +9593,7 @@ Per-fixture metrics computed by the Wave 1 POC evaluation gate.
 
 ##### fixtureId
 
-> **fixtureId**: `"poc-onboarding"` \| `"poc-payment-auth"`
+> **fixtureId**: `string`
 
 ##### jobRubricScore?
 
@@ -8970,7 +9653,7 @@ Per-fixture evaluation outcome.
 
 ##### fixtureId
 
-> **fixtureId**: `"poc-onboarding"` \| `"poc-payment-auth"`
+> **fixtureId**: `string`
 
 ##### metrics
 
@@ -9181,9 +9864,9 @@ OpenText ALM (or override) export profile identity.
 
 ##### fixtureId
 
-> **fixtureId**: `"poc-onboarding"` \| `"poc-payment-auth"`
+> **fixtureId**: `string`
 
-Identifier of the fixture exercised.
+Identifier of the fixture or runner profile exercised.
 
 ##### generatedAt
 
@@ -9228,11 +9911,11 @@ Identities of the deployments behind the run.
 
 ###### visualFallback?
 
-> `optional` **visualFallback?**: `"llama-4-maverick-vision"` \| `"phi-4-multimodal-poc"` \| `"mock"` \| `"none"`
+> `optional` **visualFallback?**: `"llama-4-maverick-vision"` \| `"phi-4-multimodal-poc"` \| `"mistral-document-ai-2512"` \| `"mock"` \| `"none"`
 
 ###### visualPrimary?
 
-> `optional` **visualPrimary?**: `"llama-4-maverick-vision"` \| `"phi-4-multimodal-poc"` \| `"mock"` \| `"none"`
+> `optional` **visualPrimary?**: `"llama-4-maverick-vision"` \| `"phi-4-multimodal-poc"` \| `"mistral-document-ai-2512"` \| `"mock"` \| `"none"`
 
 ##### multiSourceEnabled?
 
@@ -9314,9 +9997,17 @@ Test-intelligence subsurface contract version.
 
 Direct visual-sidecar evidence summary when the opt-in sidecar path ran.
 
+##### visualSidecarCaptureIdentities?
+
+> `optional` **visualSidecarCaptureIdentities?**: [`VisualSidecarCaptureIdentity`](#visualsidecarcaptureidentity)[]
+
+Persisted screenshot capture identities when the visual sidecar ran.
+Carries only SHA-256 identities plus MIME type and byte length; raw
+screenshot bytes are never embedded in the manifest.
+
 ##### visualSidecarSchemaVersion
 
-> **visualSidecarSchemaVersion**: `"1.0.0"`
+> **visualSidecarSchemaVersion**: `"1.1.0"`
 
 ***
 
@@ -9442,7 +10133,7 @@ SHA-256 hex of the persisted `visual-sidecar-result.json` artifact.
 
 ##### selectedDeployment
 
-> **selectedDeployment**: `"llama-4-maverick-vision"` \| `"phi-4-multimodal-poc"` \| `"mock"`
+> **selectedDeployment**: `"llama-4-maverick-vision"` \| `"phi-4-multimodal-poc"` \| `"mistral-document-ai-2512"` \| `"mock"`
 
 ***
 
@@ -10361,7 +11052,7 @@ Submit response for accepted jobs.
 
 ###### Inherited from
 
-[`WorkspaceSubmitAccepted`](#workspacesubmitaccepted).[`jobId`](#jobid-43)
+[`WorkspaceSubmitAccepted`](#workspacesubmitaccepted).[`jobId`](#jobid-48)
 
 ##### pasteDeltaSummary?
 
@@ -13896,9 +14587,88 @@ Scoring weights for the visual quality composite score.
 
 ## Type Aliases
 
+### AgentHarnessGraphRetryPolicy
+
+> **AgentHarnessGraphRetryPolicy** = *typeof* [`AGENT_HARNESS_GRAPH_RETRY_POLICIES`](#agent_harness_graph_retry_policies)\[`number`\]
+
+Retry policy for a single node in [AgentHarnessExecutionGraph](#agentharnessexecutiongraph).
+
+***
+
+### AgentHarnessRole
+
+> **AgentHarnessRole** = *typeof* [`AGENT_HARNESS_ROLES`](#agent_harness_roles)\[`number`\]
+
+Discrete role identifiers consumed by the multi-agent harness state
+machine.
+
+- `visual_sidecar` — deterministic screenshot/spec-check service.
+- `generator` — LLM that produces structured test cases.
+- `semantic_judge` — LLM judge panel that scores generated cases.
+- `adversarial_gap_finder` — LLM that surfaces missing coverage.
+- `repair_planner` — LLM that proposes a structured repair plan
+  consumed by a deterministic apply-step gated by `RepairChangeGuard`.
+- `final_verifier` — deterministic post-repair verifier that produces
+  the evidence anchor.
+
+***
+
+### AgentRoleCapability
+
+> **AgentRoleCapability** = *typeof* [`AGENT_ROLE_CAPABILITIES`](#agent_role_capabilities)\[`number`\]
+
+Capability filter that determines what side effects a role is allowed
+to declare. The boundary lint in
+`src/test-intelligence/agent-role-profile.test.ts` proves that no role
+with `roleKind === "llm_role"` is ever assigned `propose_changes`;
+filesystem / gateway / review-store mutations are reserved for
+deterministic services.
+
+***
+
+### AgentRoleFinOpsGroup
+
+> **AgentRoleFinOpsGroup** = *typeof* [`AGENT_ROLE_FINOPS_GROUPS`](#agent_role_finops_groups)\[`number`\]
+
+FinOps attribution group used for per-source cost rollups.
+
+***
+
+### AgentRoleKind
+
+> **AgentRoleKind** = *typeof* [`AGENT_ROLE_KINDS`](#agent_role_kinds)\[`number`\]
+
+Whether a role is a deterministic service or a LLM-driven role.
+
+***
+
+### AgentSourceLabel
+
+> **AgentSourceLabel** = *typeof* [`ALLOWED_AGENT_SOURCE_LABELS`](#allowed_agent_source_labels)\[`number`\] \| `` `hook:${string}` ``
+
+Discriminant of an allowed per-source FinOps label.
+
+***
+
+### AgentTeamOutcome
+
+> **AgentTeamOutcome** = *typeof* [`ALLOWED_AGENT_TEAM_OUTCOMES`](#allowed_agent_team_outcomes)\[`number`\]
+
+Terminal outcome of an entire agent-team run.
+
+***
+
 ### BankingInsuranceSemanticKeyword
 
 > **BankingInsuranceSemanticKeyword** = *typeof* [`BANKING_INSURANCE_SEMANTIC_KEYWORDS`](#banking_insurance_semantic_keywords)\[`number`\]
+
+***
+
+### CacheBreakSuppressionReason
+
+> **CacheBreakSuppressionReason** = *typeof* [`ALLOWED_CACHE_BREAK_SUPPRESSION_REASONS`](#allowed_cache_break_suppression_reasons)\[`number`\]
+
+Discriminated alias for [ALLOWED\_CACHE\_BREAK\_SUPPRESSION\_REASONS](#allowed_cache_break_suppression_reasons).
 
 ***
 
@@ -13984,7 +14754,7 @@ Stable check-kind labels surfaced in the `EvidenceVerifyResponse.checks` array.
 
 ### EvidenceVerifyFailureCode
 
-> **EvidenceVerifyFailureCode** = `"manifest_unparseable"` \| `"manifest_metadata_invalid"` \| `"manifest_digest_witness_invalid"` \| `"artifact_missing"` \| `"artifact_mutated"` \| `"artifact_resized"` \| `"unexpected_artifact"` \| `"visual_sidecar_evidence_missing"` \| `"envelope_unparseable"` \| `"envelope_payload_type_mismatch"` \| `"envelope_payload_decode_failed"` \| `"statement_unparseable"` \| `"statement_type_mismatch"` \| `"statement_predicate_type_mismatch"` \| `"statement_predicate_invalid"` \| `"subject_missing_artifact"` \| `"subject_digest_mismatch"` \| `"subject_unattested_artifact"` \| `"signing_mode_mismatch"` \| `"signature_required"` \| `"signature_unsigned_envelope_carries_signatures"` \| `"signature_invalid_keyid"` \| `"signature_invalid_encoding"` \| `"signature_unverified"` \| `"bundle_missing"` \| `"bundle_envelope_mismatch"` \| `"bundle_public_key_missing"` \| `"manifest_sha256_mismatch"`
+> **EvidenceVerifyFailureCode** = `"manifest_unparseable"` \| `"manifest_metadata_invalid"` \| `"manifest_digest_witness_invalid"` \| `"artifact_missing"` \| `"artifact_mutated"` \| `"artifact_resized"` \| `"unexpected_artifact"` \| `"visual_sidecar_evidence_missing"` \| `"envelope_unparseable"` \| `"envelope_payload_type_mismatch"` \| `"envelope_payload_decode_failed"` \| `"statement_unparseable"` \| `"statement_type_mismatch"` \| `"statement_predicate_type_mismatch"` \| `"statement_predicate_invalid"` \| `"subject_missing_artifact"` \| `"subject_digest_mismatch"` \| `"subject_unattested_artifact"` \| `"signing_mode_mismatch"` \| `"signature_required"` \| `"signature_unsigned_envelope_carries_signatures"` \| `"signature_invalid_keyid"` \| `"signature_invalid_encoding"` \| `"signature_unverified"` \| `"bundle_missing"` \| `"bundle_envelope_mismatch"` \| `"bundle_public_key_missing"` \| `"manifest_sha256_mismatch"` \| `"bySource_hash_mismatch"`
 
 Stable failure-code surface for evidence verification. Re-uses the
 existing `Wave1PocAttestationVerificationFailureCode` literals where
@@ -14123,6 +14893,46 @@ Discriminated alias for [ALLOWED\_JIRA\_ISSUE\_TYPES](#allowed_jira_issue_types)
 ### JiraWriteRefusalCode
 
 > **JiraWriteRefusalCode** = *typeof* [`ALLOWED_JIRA_WRITE_REFUSAL_CODES`](#allowed_jira_write_refusal_codes)\[`number`\]
+
+***
+
+### JudgePanelAgreement
+
+> **JudgePanelAgreement** = *typeof* [`JUDGE_PANEL_AGREEMENT_LABELS`](#judge_panel_agreement_labels)\[`number`\]
+
+Discriminated alias for [JUDGE\_PANEL\_AGREEMENT\_LABELS](#judge_panel_agreement_labels).
+
+***
+
+### JudgePanelEscalationRoute
+
+> **JudgePanelEscalationRoute** = *typeof* [`JUDGE_PANEL_ESCALATION_ROUTES`](#judge_panel_escalation_routes)\[`number`\]
+
+Discriminated alias for [JUDGE\_PANEL\_ESCALATION\_ROUTES](#judge_panel_escalation_routes).
+
+***
+
+### JudgePanelJudgeId
+
+> **JudgePanelJudgeId** = *typeof* [`JUDGE_PANEL_JUDGE_IDS`](#judge_panel_judge_ids)\[`number`\]
+
+Discriminated alias for [JUDGE\_PANEL\_JUDGE\_IDS](#judge_panel_judge_ids).
+
+***
+
+### JudgePanelPerJudgeVerdict
+
+> **JudgePanelPerJudgeVerdict** = *typeof* [`JUDGE_PANEL_PER_JUDGE_VERDICTS`](#judge_panel_per_judge_verdicts)\[`number`\]
+
+Discriminated alias for [JUDGE\_PANEL\_PER\_JUDGE\_VERDICTS](#judge_panel_per_judge_verdicts).
+
+***
+
+### JudgePanelResolvedSeverity
+
+> **JudgePanelResolvedSeverity** = *typeof* [`JUDGE_PANEL_RESOLVED_SEVERITIES`](#judge_panel_resolved_severities)\[`number`\]
+
+Discriminated alias for [JUDGE\_PANEL\_RESOLVED\_SEVERITIES](#judge_panel_resolved_severities).
 
 ***
 
@@ -14525,6 +15335,30 @@ Discriminated union of all supported source-mix kinds (Issue #1441).
 
 ***
 
+### UntrustedContentCarrierKind
+
+> **UntrustedContentCarrierKind** = *typeof* [`ALLOWED_UNTRUSTED_CONTENT_CARRIER_KINDS`](#allowed_untrusted_content_carrier_kinds)\[`number`\]
+
+Discriminated alias for [ALLOWED\_UNTRUSTED\_CONTENT\_CARRIER\_KINDS](#allowed_untrusted_content_carrier_kinds).
+
+***
+
+### UntrustedContentNormalizationOutcome
+
+> **UntrustedContentNormalizationOutcome** = *typeof* [`ALLOWED_UNTRUSTED_CONTENT_OUTCOMES`](#allowed_untrusted_content_outcomes)\[`number`\]
+
+Discriminated alias for [ALLOWED\_UNTRUSTED\_CONTENT\_OUTCOMES](#allowed_untrusted_content_outcomes).
+
+***
+
+### UntrustedContentSeverity
+
+> **UntrustedContentSeverity** = *typeof* [`ALLOWED_UNTRUSTED_CONTENT_SEVERITIES`](#allowed_untrusted_content_severities)\[`number`\]
+
+Discriminated alias for [ALLOWED\_UNTRUSTED\_CONTENT\_SEVERITIES](#allowed_untrusted_content_severities).
+
+***
+
 ### VisualSidecarFailureClass
 
 > **VisualSidecarFailureClass** = *typeof* [`ALLOWED_VISUAL_SIDECAR_FAILURE_CLASSES`](#allowed_visual_sidecar_failure_classes)\[`number`\]
@@ -14584,7 +15418,7 @@ supplied integration with Fulcio + Rekor).
 
 ### Wave1PocEvidenceArtifactCategory
 
-> **Wave1PocEvidenceArtifactCategory** = `"intent"` \| `"validation"` \| `"review"` \| `"export"` \| `"manifest"` \| `"visual_sidecar"` \| `"finops"` \| `"attestation"` \| `"signature"` \| `"lbom"` \| `"self_verify_rubric"` \| `"intent_delta"` \| `"dedupe_report"` \| `"traceability_matrix"` \| `"multi_source_reconciliation"` \| `"source_ir"` \| `"source_provenance"` \| `"multi_source_conflicts"` \| `"production_readiness_eval"`
+> **Wave1PocEvidenceArtifactCategory** = `"intent"` \| `"validation"` \| `"review"` \| `"export"` \| `"manifest"` \| `"genealogy"` \| `"visual_sidecar"` \| `"finops"` \| `"attestation"` \| `"signature"` \| `"lbom"` \| `"self_verify_rubric"` \| `"intent_delta"` \| `"dedupe_report"` \| `"traceability_matrix"` \| `"multi_source_reconciliation"` \| `"source_ir"` \| `"source_provenance"` \| `"multi_source_conflicts"` \| `"production_readiness_eval"`
 
 Categorisation of an artifact attested by the evidence manifest.
 
@@ -14968,6 +15802,81 @@ Supported visual quality reference sources.
 
 ## Variables
 
+### AGENT\_HARNESS\_EXECUTION\_GRAPH\_SCHEMA\_VERSION
+
+> `const` **AGENT\_HARNESS\_EXECUTION\_GRAPH\_SCHEMA\_VERSION**: `"1.0.0"`
+
+Schema version literal pinned on every persisted
+[AgentHarnessExecutionGraph](#agentharnessexecutiongraph) artifact (Issue #1781). Structural
+changes require a major bump and a `CONTRACT_CHANGELOG.md` entry.
+
+***
+
+### AGENT\_HARNESS\_GRAPH\_RETRY\_POLICIES
+
+> `const` **AGENT\_HARNESS\_GRAPH\_RETRY\_POLICIES**: readonly \[`"none"`, `"retry_from_checkpoint"`, `"retry_transient_once"`\]
+
+Closed runtime list of retry policies a node in the execution graph
+may declare. The harness state machine (#1780) consumes the literal
+to decide whether a transient gateway error is retried in-place,
+resumed from the most recent checkpoint, or terminal.
+
+***
+
+### AGENT\_HARNESS\_ROLES
+
+> `const` **AGENT\_HARNESS\_ROLES**: readonly \[`"adversarial_gap_finder"`, `"final_verifier"`, `"generator"`, `"repair_planner"`, `"semantic_judge"`, `"visual_sidecar"`\]
+
+Closed runtime list of agent harness roles tracked by the Production
+Runner state machine. The order is alphabetical for stable
+canonical-JSON serialisation; `contract-version.test.ts` enforces the
+shape via the public-export snapshot.
+
+***
+
+### AGENT\_ROLE\_CAPABILITIES
+
+> `const` **AGENT\_ROLE\_CAPABILITIES**: readonly \[`"none"`, `"propose_changes"`, `"read_artifacts"`, `"score_only"`\]
+
+Closed runtime list of agent-role capability filters.
+
+***
+
+### AGENT\_ROLE\_FINOPS\_GROUPS
+
+> `const` **AGENT\_ROLE\_FINOPS\_GROUPS**: readonly \[`"generation"`, `"judge"`, `"repair"`, `"verification"`, `"visual"`\]
+
+Closed runtime list of FinOps attribution groups for agent-role runs.
+
+***
+
+### AGENT\_ROLE\_KINDS
+
+> `const` **AGENT\_ROLE\_KINDS**: readonly \[`"deterministic_service"`, `"llm_role"`\]
+
+Closed runtime list of agent-role kinds.
+
+***
+
+### AGENT\_ROLE\_MAX\_ATTEMPT\_VALUES
+
+> `const` **AGENT\_ROLE\_MAX\_ATTEMPT\_VALUES**: readonly \[`1`, `2`, `3`\]
+
+Closed runtime list of allowed `maxAttempts` budgets for an agent role.
+
+***
+
+### AGENT\_ROLE\_PROFILE\_SCHEMA\_VERSION
+
+> `const` **AGENT\_ROLE\_PROFILE\_SCHEMA\_VERSION**: `"1.0.0"`
+
+Schema version for the static `AgentRoleProfile` matrix introduced for
+Issue #1779 (Story MA-3). The profile shape is locked behind this
+version; structural changes require a major bump and a migration entry
+in `CONTRACT_CHANGELOG.md`.
+
+***
+
 ### AGENT\_ROLE\_RUN\_ARTIFACT\_DIRECTORY
 
 > `const` **AGENT\_ROLE\_RUN\_ARTIFACT\_DIRECTORY**: `"agent-role-runs"`
@@ -14981,6 +15890,66 @@ Directory containing per-role prompt-run metadata artifacts.
 > `const` **AGENT\_ROLE\_RUN\_SCHEMA\_VERSION**: `"1.0.0"`
 
 Schema version for persisted agent-role prompt-run artifacts.
+
+***
+
+### AGENT\_TEAM\_CONFIG\_ARTIFACT\_FILENAME
+
+> `const` **AGENT\_TEAM\_CONFIG\_ARTIFACT\_FILENAME**: `"agent-team-config.json"`
+
+Canonical filename for the per-run team configuration artifact.
+
+***
+
+### AGENT\_TEAM\_CONFIG\_SCHEMA\_VERSION
+
+> `const` **AGENT\_TEAM\_CONFIG\_SCHEMA\_VERSION**: `"1.0.0"`
+
+Schema version literal pinned on `agent-team-config.json`.
+
+***
+
+### AGENT\_TEAM\_RESULTS\_ARTIFACT\_FILENAME
+
+> `const` **AGENT\_TEAM\_RESULTS\_ARTIFACT\_FILENAME**: `"agent-team-results.json"`
+
+Canonical filename for the per-run team results artifact.
+
+***
+
+### AGENT\_TEAM\_RESULTS\_SCHEMA\_VERSION
+
+> `const` **AGENT\_TEAM\_RESULTS\_SCHEMA\_VERSION**: `"1.0.0"`
+
+Schema version literal pinned on `agent-team-results.json`.
+
+***
+
+### ALLOWED\_AGENT\_SOURCE\_LABELS
+
+> `const` **ALLOWED\_AGENT\_SOURCE\_LABELS**: readonly \[`"manager"`, `"judge_primary"`, `"judge_secondary"`, `"visual_primary"`, `"visual_fallback"`, `"generator"`, `"gap_finder"`, `"repair_planner"`, `"ir_mutation_oracle"`\]
+
+Static source labels tracked inside the per-source FinOps breakdown.
+
+***
+
+### ALLOWED\_AGENT\_TEAM\_OUTCOMES
+
+> `const` **ALLOWED\_AGENT\_TEAM\_OUTCOMES**: readonly \[`"accepted"`, `"blocked"`, `"failed_permanent"`, `"failed_retryable"`, `"needs_review"`\]
+
+Closed runtime list of terminal outcomes the team-artifact roll-up
+may report. Mirrors the harness step-level vocabulary so the team
+artifact does not introduce a second outcome surface.
+
+***
+
+### ALLOWED\_CACHE\_BREAK\_SUPPRESSION\_REASONS
+
+> `const` **ALLOWED\_CACHE\_BREAK\_SUPPRESSION\_REASONS**: readonly \[`"compaction"`, `"cache_deletion"`\]
+
+Closed set of suppression reasons recognised by
+`notifyCompaction` / `notifyCacheDeletion`. Stable, locale-independent
+strings safe to ship to automation.
 
 ***
 
@@ -15348,7 +16317,7 @@ retryable; transport, timeout, and rate-limit failures are.
 
 Allowed gateway roles. Each role is bound to a single deployment to keep the
 structured test-case generator (`gpt-oss-120b`) strictly separated from the
-multimodal visual sidecars (`llama-4-maverick-vision`, `phi-4-multimodal-poc`).
+multimodal visual sidecars (`mistral-document-ai-2512`, `llama-4-maverick-vision`, `phi-4-multimodal-poc`).
 
 ***
 
@@ -15716,6 +16685,32 @@ the operator can address them all in one cycle.
 
 ***
 
+### ALLOWED\_UNTRUSTED\_CONTENT\_CARRIER\_KINDS
+
+> `const` **ALLOWED\_UNTRUSTED\_CONTENT\_CARRIER\_KINDS**: readonly \[`"figma_hidden_layer"`, `"figma_zero_opacity_layer"`, `"figma_off_canvas_layer"`, `"figma_zero_font_size_layer"`, `"sentinel_layer_name"`, `"zero_width_character"`, `"adf_collapsed_node"`, `"element_truncated"`, `"pii_match"`, `"secret_match"`, `"markdown_injection_pattern"`\]
+
+Carrier kinds tracked by the untrusted-content normalizer. Each entry
+corresponds to one drop-count counter in the report. Stable,
+locale-independent strings safe to ship to automation.
+
+***
+
+### ALLOWED\_UNTRUSTED\_CONTENT\_OUTCOMES
+
+> `const` **ALLOWED\_UNTRUSTED\_CONTENT\_OUTCOMES**: readonly \[`"ok"`, `"needs_review"`\]
+
+Outcome routing emitted by the normalizer.
+
+***
+
+### ALLOWED\_UNTRUSTED\_CONTENT\_SEVERITIES
+
+> `const` **ALLOWED\_UNTRUSTED\_CONTENT\_SEVERITIES**: readonly \[`"info"`, `"warning"`, `"critical"`\]
+
+Severity levels emitted alongside untrusted-content carrier counts.
+
+***
+
 ### ALLOWED\_VISUAL\_SIDECAR\_FAILURE\_CLASSES
 
 > `const` **ALLOWED\_VISUAL\_SIDECAR\_FAILURE\_CLASSES**: readonly \[`"primary_unavailable"`, `"primary_quota_exceeded"`, `"both_sidecars_failed"`, `"schema_invalid_response"`, `"image_payload_too_large"`, `"image_mime_unsupported"`, `"duplicate_screen_id"`, `"empty_screen_capture_set"`\]
@@ -15812,6 +16807,57 @@ Schema version for `BusinessTestIntentIr` artifacts.
 
 ***
 
+### CACHE\_BREAK\_ARTIFACT\_DIRECTORY
+
+> `const` **CACHE\_BREAK\_ARTIFACT\_DIRECTORY**: `"observability/cache-breaks"`
+
+Subdirectory under `<runDir>/` where the cache-break detector writes
+canonical-JSON diff artifacts (one file per detected break). Diffs are
+redacted via `UntrustedContentNormalizer` + `redactHighRiskSecrets`
+before persistence — a poisoned tool result that broke the cache must
+never be persisted raw.
+
+***
+
+### CACHE\_BREAK\_DETECTOR\_MAX\_SNAPSHOTS
+
+> `const` **CACHE\_BREAK\_DETECTOR\_MAX\_SNAPSHOTS**: `10`
+
+Maximum number of per-`querySource` snapshots retained by the LRU
+inside the detector. Keeps the working set bounded under bursty
+multi-source jobs.
+
+***
+
+### CACHE\_BREAK\_DIFF\_SCHEMA\_VERSION
+
+> `const` **CACHE\_BREAK\_DIFF\_SCHEMA\_VERSION**: `"1.0.0"`
+
+Schema version for the per-break diff artifact.
+
+***
+
+### CACHE\_BREAK\_MIN\_CREATION\_TOKENS
+
+> `const` **CACHE\_BREAK\_MIN\_CREATION\_TOKENS**: `2000`
+
+Heuristic threshold: minimum `cacheCreationTokens` for the heuristic to
+fire. Pairs with [CACHE\_BREAK\_READ\_RATIO\_THRESHOLD](#cache_break_read_ratio_threshold); ensures a
+cold-start small re-prompt does not register as a break.
+
+***
+
+### CACHE\_BREAK\_READ\_RATIO\_THRESHOLD
+
+> `const` **CACHE\_BREAK\_READ\_RATIO\_THRESHOLD**: `0.05`
+
+Heuristic threshold: when the observed `cacheReadTokens` is below this
+fraction of the expected baseline AND the new `cacheCreationTokens`
+exceeds [CACHE\_BREAK\_MIN\_CREATION\_TOKENS](#cache_break_min_creation_tokens), the detector flags
+the call as a cache break.
+
+***
+
 ### CONTEXT\_BUDGET\_ARTIFACT\_DIRECTORY
 
 > `const` **CONTEXT\_BUDGET\_ARTIFACT\_DIRECTORY**: `"context-budget"`
@@ -15838,7 +16884,7 @@ Schema version for persisted context-budget analyzer reports.
 
 ### CONTRACT\_VERSION
 
-> `const` **CONTRACT\_VERSION**: `"4.28.0"`
+> `const` **CONTRACT\_VERSION**: `"4.35.0"`
 
 Current contract version constant.
 Must be bumped according to CONTRACT_CHANGELOG.md rules.
@@ -16074,6 +17120,22 @@ Schema version for the persisted FinOps budget report artifact (Issue #1371).
 
 ***
 
+### GENEALOGY\_ARTIFACT\_FILENAME
+
+> `const` **GENEALOGY\_ARTIFACT\_FILENAME**: `"genealogy.json"`
+
+Canonical filename for per-run genealogy DAG artifacts.
+
+***
+
+### GENEALOGY\_SCHEMA\_VERSION
+
+> `const` **GENEALOGY\_SCHEMA\_VERSION**: `"1.0.0"`
+
+Schema version for per-run genealogy DAG artifacts.
+
+***
+
 ### GENERATED\_TEST\_CASE\_SCHEMA\_VERSION
 
 > `const` **GENERATED\_TEST\_CASE\_SCHEMA\_VERSION**: `"1.1.0"`
@@ -16175,6 +17237,82 @@ Canonical filename for the Jira write report artifact.
 > `const` **JIRA\_WRITE\_REPORT\_SCHEMA\_VERSION**: `"1.0.0"`
 
 Schema version for the persisted Jira write report artifact (Issue #1482).
+
+***
+
+### JUDGE\_PANEL\_AGREEMENT\_LABELS
+
+> `const` **JUDGE\_PANEL\_AGREEMENT\_LABELS**: readonly \[`"both_fail"`, `"both_pass"`, `"disagree"`\]
+
+Closed runtime list of panel-level agreement labels.
+
+***
+
+### JUDGE\_PANEL\_ESCALATION\_ROUTES
+
+> `const` **JUDGE\_PANEL\_ESCALATION\_ROUTES**: readonly \[`"accept"`, `"downgrade"`, `"needs_review"`\]
+
+Closed runtime list of escalation routes the panel may emit.
+
+***
+
+### JUDGE\_PANEL\_JUDGE\_IDS
+
+> `const` **JUDGE\_PANEL\_JUDGE\_IDS**: readonly \[`"judge_primary"`, `"judge_secondary"`\]
+
+Closed runtime list of judge identifiers in the panel.
+
+***
+
+### JUDGE\_PANEL\_PER\_JUDGE\_VERDICTS
+
+> `const` **JUDGE\_PANEL\_PER\_JUDGE\_VERDICTS**: readonly \[`"fail"`, `"pass"`, `"uncertain"`\]
+
+Closed runtime list of per-judge verdict literals.
+
+***
+
+### JUDGE\_PANEL\_REASON\_MAX\_CHARS
+
+> `const` **JUDGE\_PANEL\_REASON\_MAX\_CHARS**: `240`
+
+Hard upper bound on the persisted `reason` text emitted per judge.
+Reasons longer than this are refused at validation; the limit keeps
+the artifact bounded and matches the issue spec (≤ 240 chars).
+
+***
+
+### JUDGE\_PANEL\_RESOLVED\_SEVERITIES
+
+> `const` **JUDGE\_PANEL\_RESOLVED\_SEVERITIES**: readonly \[`"critical"`, `"downgraded_disagreement"`, `"major"`, `"minor"`\]
+
+Closed runtime list of resolved-severity labels emitted by the
+Trust-or-Escalate router. `downgraded_disagreement` is the
+disagreement-routing severity that downstream consumers can audit
+against the AT-022 acceptance criterion.
+
+***
+
+### JUDGE\_PANEL\_VERDICT\_SCHEMA\_VERSION
+
+> `const` **JUDGE\_PANEL\_VERDICT\_SCHEMA\_VERSION**: `"1.0.0"`
+
+Schema version literal pinned on every persisted
+[JudgePanelVerdict](#judgepanelverdict) artifact (Issue #1782, Story MA-3 #1758).
+Structural changes require a major bump and a `CONTRACT_CHANGELOG.md`
+entry.
+
+***
+
+### JUDGE\_PANEL\_VERDICTS\_ARTIFACT\_FILENAME
+
+> `const` **JUDGE\_PANEL\_VERDICTS\_ARTIFACT\_FILENAME**: `"judge-panel-verdicts.json"`
+
+Canonical filename for the per-run Panel-of-LLM-Judges (PoLL)
+verdict artifact. The harness writes
+`<runDir>/judge-panel-verdicts.json` once per `semantic_judge`
+step; the file carries the per-judge raw verdicts the AT-022 audit
+requires for disagreement reproduction.
 
 ***
 
@@ -16333,6 +17471,28 @@ Hard cap on the number of Jira linked-issue refs persisted in a single IR.
 
 Maximum raw paste bytes allowed per production-readiness job.
 Enforced before Jira paste ingest begins; breach emits `jira_paste_quota_exceeded`.
+
+***
+
+### MAX\_UNTRUSTED\_CONTENT\_ELEMENT\_BYTES
+
+> `const` **MAX\_UNTRUSTED\_CONTENT\_ELEMENT\_BYTES**: `4096`
+
+Per-element hard byte cap applied to individual untrusted text spans
+(Figma TEXT layer characters, individual ADF inline runs). Reuses the
+Jira comment-body cap as the baseline so the normalizer never persists
+a single element larger than the smallest existing Jira ceiling.
+
+***
+
+### MAX\_UNTRUSTED\_CONTENT\_MARKDOWN\_BYTES
+
+> `const` **MAX\_UNTRUSTED\_CONTENT\_MARKDOWN\_BYTES**: `32768`
+
+Hard cap on the UTF-8 byte length of any single Markdown body fed to
+the normalizer. Matches `MAX_CUSTOM_CONTEXT_RAW_MARKDOWN_BYTES` so a
+caller that bypassed the upstream custom-context cap cannot turn the
+normalizer into a CPU-exhaustion vector.
 
 ***
 
@@ -16714,6 +17874,24 @@ Schema version for the persisted transfer-report artifact (Issue #1372).
 
 ***
 
+### UNTRUSTED\_CONTENT\_NORMALIZATION\_REPORT\_ARTIFACT\_FILENAME
+
+> `const` **UNTRUSTED\_CONTENT\_NORMALIZATION\_REPORT\_ARTIFACT\_FILENAME**: `"untrusted-content-normalization-report.json"`
+
+Filename of the canonical-JSON drop-count report emitted by the
+untrusted-content normalizer at `<runDir>/`. The report carries
+**drop counts only** — no raw stripped content is ever persisted.
+
+***
+
+### UNTRUSTED\_CONTENT\_NORMALIZATION\_REPORT\_SCHEMA\_VERSION
+
+> `const` **UNTRUSTED\_CONTENT\_NORMALIZATION\_REPORT\_SCHEMA\_VERSION**: `"1.0.0"`
+
+Schema version for the untrusted-content-normalization report.
+
+***
+
 ### VISUAL\_SIDECAR\_RESULT\_ARTIFACT\_FILENAME
 
 > `const` **VISUAL\_SIDECAR\_RESULT\_ARTIFACT\_FILENAME**: `"visual-sidecar-result.json"`
@@ -16736,7 +17914,7 @@ envelope plus capture identities, attempts, and failure classes.
 
 ### VISUAL\_SIDECAR\_SCHEMA\_VERSION
 
-> `const` **VISUAL\_SIDECAR\_SCHEMA\_VERSION**: `"1.0.0"`
+> `const` **VISUAL\_SIDECAR\_SCHEMA\_VERSION**: `"1.1.0"`
 
 Visual sidecar schema version consumed by the prompt compiler (Issue #1386).
 
@@ -16904,3 +18082,32 @@ On-disk filename for `Wave4ProductionReadinessEvalReport`.
 > `const` **WAVE4\_PRODUCTION\_READINESS\_EVAL\_REPORT\_SCHEMA\_VERSION**: `"1.0.0"`
 
 Schema version for `Wave4ProductionReadinessEvalReport`.
+
+## Functions
+
+### assertRoleLineageDepth()
+
+> **assertRoleLineageDepth**(`value`, `context`): `void`
+
+workspace-dev — Public contracts for autonomous REST + deterministic generation.
+
+These types define the public API surface for workspace-dev consumers.
+They must not import from internal services.
+
+Contract version: 4.23.0
+See CONTRACT_CHANGELOG.md for contract change history and VERSIONING.md for
+package-versus-contract versioning policy.
+
+#### Parameters
+
+##### value
+
+`number` \| `undefined`
+
+##### context
+
+`string`
+
+#### Returns
+
+`void`
