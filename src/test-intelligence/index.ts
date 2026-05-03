@@ -36,6 +36,15 @@ export {
   type JiraAdfRejection,
 } from "./jira-adf-parser.js";
 export {
+  normalizeUntrustedContent,
+  writeUntrustedContentNormalizationReport,
+  type UntrustedContentDropCounts,
+  type UntrustedContentNeedsReviewReason,
+  type UntrustedContentNormalizationOutput,
+  type UntrustedContentNormalizationReport,
+  type UntrustedContentNormalizerInput,
+} from "./untrusted-content-normalizer.js";
+export {
   buildJiraIssueIr,
   isValidJiraIssueKey,
   sanitizeJqlFragment,

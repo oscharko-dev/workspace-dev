@@ -8094,4 +8094,80 @@ export interface CoveragePlan {
  * Must be bumped according to CONTRACT_CHANGELOG.md rules.
  * Package version alignment is documented in VERSIONING.md.
  */
-export const CONTRACT_VERSION = "4.29.0" as const;
+export const CONTRACT_VERSION = "4.30.0" as const;
+
+// ---------------------------------------------------------------------------
+// Issue #1774 — UntrustedContentNormalizer (2025-vintage injection carriers).
+// ---------------------------------------------------------------------------
+
+/**
+ * Filename of the canonical-JSON drop-count report emitted by the
+ * untrusted-content normalizer at `<runDir>/`. The report carries
+ * **drop counts only** — no raw stripped content is ever persisted.
+ */
+export const UNTRUSTED_CONTENT_NORMALIZATION_REPORT_ARTIFACT_FILENAME =
+  "untrusted-content-normalization-report.json" as const;
+
+/** Schema version for the untrusted-content-normalization report. */
+export const UNTRUSTED_CONTENT_NORMALIZATION_REPORT_SCHEMA_VERSION =
+  "1.0.0" as const;
+
+/**
+ * Per-element hard byte cap applied to individual untrusted text spans
+ * (Figma TEXT layer characters, individual ADF inline runs). Reuses the
+ * Jira comment-body cap as the baseline so the normalizer never persists
+ * a single element larger than the smallest existing Jira ceiling.
+ */
+export const MAX_UNTRUSTED_CONTENT_ELEMENT_BYTES = 4_096 as const;
+
+/**
+ * Hard cap on the UTF-8 byte length of any single Markdown body fed to
+ * the normalizer. Matches `MAX_CUSTOM_CONTEXT_RAW_MARKDOWN_BYTES` so a
+ * caller that bypassed the upstream custom-context cap cannot turn the
+ * normalizer into a CPU-exhaustion vector.
+ */
+export const MAX_UNTRUSTED_CONTENT_MARKDOWN_BYTES = 32_768 as const;
+
+/**
+ * Carrier kinds tracked by the untrusted-content normalizer. Each entry
+ * corresponds to one drop-count counter in the report. Stable,
+ * locale-independent strings safe to ship to automation.
+ */
+export const ALLOWED_UNTRUSTED_CONTENT_CARRIER_KINDS = [
+  "figma_hidden_layer",
+  "figma_zero_opacity_layer",
+  "figma_off_canvas_layer",
+  "figma_zero_font_size_layer",
+  "sentinel_layer_name",
+  "zero_width_character",
+  "adf_collapsed_node",
+  "element_truncated",
+  "pii_match",
+  "secret_match",
+  "markdown_injection_pattern",
+] as const;
+
+/** Discriminated alias for {@link ALLOWED_UNTRUSTED_CONTENT_CARRIER_KINDS}. */
+export type UntrustedContentCarrierKind =
+  (typeof ALLOWED_UNTRUSTED_CONTENT_CARRIER_KINDS)[number];
+
+/** Severity levels emitted alongside untrusted-content carrier counts. */
+export const ALLOWED_UNTRUSTED_CONTENT_SEVERITIES = [
+  "info",
+  "warning",
+  "critical",
+] as const;
+
+/** Discriminated alias for {@link ALLOWED_UNTRUSTED_CONTENT_SEVERITIES}. */
+export type UntrustedContentSeverity =
+  (typeof ALLOWED_UNTRUSTED_CONTENT_SEVERITIES)[number];
+
+/** Outcome routing emitted by the normalizer. */
+export const ALLOWED_UNTRUSTED_CONTENT_OUTCOMES = [
+  "ok",
+  "needs_review",
+] as const;
+
+/** Discriminated alias for {@link ALLOWED_UNTRUSTED_CONTENT_OUTCOMES}. */
+export type UntrustedContentNormalizationOutcome =
+  (typeof ALLOWED_UNTRUSTED_CONTENT_OUTCOMES)[number];
