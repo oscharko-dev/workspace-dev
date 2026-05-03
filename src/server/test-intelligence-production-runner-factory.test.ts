@@ -23,6 +23,9 @@ const ENV_OK = {
   WORKSPACE_TEST_SPACE_MODEL_ENDPOINT: "https://aoai.example/openai/v1",
   WORKSPACE_TEST_SPACE_TESTCASE_MODEL_DEPLOYMENT: "gpt-oss-120b",
   WORKSPACE_TEST_SPACE_MODEL_API_KEY: "k-key-secret",
+  WORKSPACE_TEST_SPACE_VISUAL_MODEL_ENDPOINT: "https://aoai.example/openai/vision",
+  WORKSPACE_TEST_SPACE_VISUAL_PRIMARY_DEPLOYMENT: "llama-4-maverick-vision",
+  WORKSPACE_TEST_SPACE_VISUAL_FALLBACK_DEPLOYMENT: "phi-4-multimodal-poc",
 };
 
 test("resolveTestIntelligenceProductionRunner: undefined when startup gate off", () => {
@@ -80,27 +83,31 @@ test("resolveLlmConfigFromEnv: defaults deployment when not set", () => {
     WORKSPACE_TEST_SPACE_MODEL_API_KEY: "k",
   });
   assert.ok(config.deployment.length > 0);
+  assert.equal(config.visualEndpoint, "https://aoai.example/openai/v1");
+  assert.equal(config.visualPrimaryDeployment, config.deployment);
+  assert.equal(config.visualFallbackDeployment, config.deployment);
 });
 
-test("resolveTestIntelligenceProductionRunner: factory builds client lazily and forwards to runner", async () => {
+test("resolveTestIntelligenceProductionRunner: factory builds bundle lazily and forwards to runner", async () => {
   let buildCalls = 0;
   let runnerCalls = 0;
   const factory = resolveTestIntelligenceProductionRunner({
     startupEnabled: true,
     envEnabled: true,
     env: ENV_OK,
-    buildLlmClient: () => {
+    buildLlmBundle: () => {
       buildCalls += 1;
-      return {} as unknown as ReturnType<
-        Required<
-          Parameters<typeof resolveTestIntelligenceProductionRunner>[0]
-        >["buildLlmClient"]
-      >;
+      return {
+        testGeneration: { tag: "test" },
+        visualPrimary: { tag: "primary" },
+        visualFallback: { tag: "fallback" },
+      } as never;
     },
     runner: async (input) => {
       runnerCalls += 1;
       assert.equal(input.outputRoot, "/tmp/out");
       assert.ok(input.llm.client);
+      assert.ok(input.llm.bundle);
       return {
         jobId: input.jobId,
         generatedAt: input.generatedAt,

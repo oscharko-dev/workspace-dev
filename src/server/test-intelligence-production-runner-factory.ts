@@ -27,9 +27,9 @@ import {
   type RunFigmaToQcTestCasesResult,
 } from "../test-intelligence/index.js";
 import {
-  createLlmGatewayClient,
-  type LlmGatewayClient,
-} from "../test-intelligence/llm-gateway.js";
+  createLlmGatewayClientBundle,
+  type LlmGatewayClientBundle,
+} from "../test-intelligence/llm-gateway-bundle.js";
 import type { WorkspaceRuntimeLogger } from "../logging.js";
 import type {
   TestIntelligenceProductionRunnerFactory,
@@ -48,8 +48,8 @@ export interface ResolveTestIntelligenceProductionRunnerInput {
   env: NodeJS.ProcessEnv;
   /** Optional logger for one-shot startup-side messages. */
   logger?: WorkspaceRuntimeLogger;
-  /** Test seam for the LLM gateway client builder. */
-  buildLlmClient?: (config: ResolvedLlmConfig) => LlmGatewayClient;
+  /** Test seam for the LLM gateway bundle builder. */
+  buildLlmBundle?: (config: ResolvedLlmConfig) => LlmGatewayClientBundle;
   /** Test seam for the runner. */
   runner?: (
     input: Parameters<typeof runFigmaToQcTestCases>[0],
@@ -59,6 +59,9 @@ export interface ResolveTestIntelligenceProductionRunnerInput {
 export interface ResolvedLlmConfig {
   endpoint: string;
   deployment: string;
+  visualEndpoint: string;
+  visualPrimaryDeployment: string;
+  visualFallbackDeployment: string;
   apiKey: string;
 }
 
@@ -90,47 +93,108 @@ export const resolveLlmConfigFromEnv = (
       retryable: false,
     });
   }
-  const apiKey = readTrimmed(env, "WORKSPACE_TEST_SPACE_MODEL_API_KEY");
+  const apiKey =
+    readTrimmed(env, "WORKSPACE_TEST_SPACE_API_KEY") ??
+    readTrimmed(env, "WORKSPACE_TEST_SPACE_MODEL_API_KEY");
   if (apiKey === undefined) {
     throw new ProductionRunnerError({
       failureClass: "LLM_GATEWAY_FAILED",
       message:
-        "WORKSPACE_TEST_SPACE_MODEL_API_KEY must be set for test-intelligence runner.",
+        "WORKSPACE_TEST_SPACE_API_KEY or WORKSPACE_TEST_SPACE_MODEL_API_KEY must be set for test-intelligence runner.",
       retryable: false,
     });
   }
   const deployment =
     readTrimmed(env, "WORKSPACE_TEST_SPACE_TESTCASE_MODEL_DEPLOYMENT") ??
     PRODUCTION_RUNNER_TEST_GENERATION_DEPLOYMENT;
-  return { endpoint, deployment, apiKey };
+  const visualEndpoint =
+    readTrimmed(env, "WORKSPACE_TEST_SPACE_VISUAL_MODEL_ENDPOINT") ?? endpoint;
+  const visualPrimaryDeployment =
+    readTrimmed(env, "WORKSPACE_TEST_SPACE_VISUAL_PRIMARY_DEPLOYMENT") ??
+    deployment;
+  const visualFallbackDeployment =
+    readTrimmed(env, "WORKSPACE_TEST_SPACE_VISUAL_FALLBACK_DEPLOYMENT") ??
+    visualPrimaryDeployment;
+  return {
+    endpoint,
+    deployment,
+    visualEndpoint,
+    visualPrimaryDeployment,
+    visualFallbackDeployment,
+    apiKey,
+  };
 };
 
-const defaultBuildLlmClient = (config: ResolvedLlmConfig): LlmGatewayClient =>
-  createLlmGatewayClient(
+const defaultBuildLlmBundle = (
+  config: ResolvedLlmConfig,
+): LlmGatewayClientBundle =>
+  createLlmGatewayClientBundle(
     {
-      role: "test_generation",
-      compatibilityMode: "openai_chat",
-      baseUrl: config.endpoint,
-      deployment: config.deployment,
-      modelRevision: `${config.deployment}@server-auto-wire`,
-      gatewayRelease: "azure-ai-foundry-server-auto-wire",
-      authMode: "api_key",
-      declaredCapabilities: {
-        structuredOutputs: true,
-        seedSupport: false,
-        reasoningEffortSupport: false,
-        maxOutputTokensSupport: true,
-        streamingSupport: false,
-        imageInputSupport: false,
+      testGeneration: {
+        role: "test_generation",
+        compatibilityMode: "openai_chat",
+        baseUrl: config.endpoint,
+        deployment: config.deployment,
+        modelRevision: `${config.deployment}@server-auto-wire`,
+        gatewayRelease: "azure-ai-foundry-server-auto-wire",
+        authMode: "api_key",
+        declaredCapabilities: {
+          structuredOutputs: true,
+          seedSupport: false,
+          reasoningEffortSupport: false,
+          maxOutputTokensSupport: true,
+          streamingSupport: false,
+          imageInputSupport: false,
+        },
+        timeoutMs: TEST_GENERATION_TIMEOUT_MS,
+        maxRetries: 1,
+        circuitBreaker: { failureThreshold: 2, resetTimeoutMs: 30_000 },
+        // Azure AI Foundry's `gpt-oss-120b` returns empty content for any
+        // wire `response_format` value; suppress the wire field while
+        // keeping the in-process JSON-parse + schema validation path
+        // (probed and recorded in #1733/#1734).
+        wireStructuredOutputMode: "none",
       },
-      timeoutMs: TEST_GENERATION_TIMEOUT_MS,
-      maxRetries: 1,
-      circuitBreaker: { failureThreshold: 2, resetTimeoutMs: 30_000 },
-      // Azure AI Foundry's `gpt-oss-120b` returns empty content for any
-      // wire `response_format` value; suppress the wire field while
-      // keeping the in-process JSON-parse + schema validation path
-      // (probed and recorded in #1733/#1734).
-      wireStructuredOutputMode: "none",
+      visualPrimary: {
+        role: "visual_primary",
+        compatibilityMode: "openai_chat",
+        baseUrl: config.visualEndpoint,
+        deployment: config.visualPrimaryDeployment,
+        modelRevision: `${config.visualPrimaryDeployment}@server-auto-wire`,
+        gatewayRelease: "azure-ai-foundry-server-auto-wire",
+        authMode: "api_key",
+        declaredCapabilities: {
+          structuredOutputs: true,
+          seedSupport: false,
+          reasoningEffortSupport: false,
+          maxOutputTokensSupport: true,
+          streamingSupport: false,
+          imageInputSupport: true,
+        },
+        timeoutMs: 60_000,
+        maxRetries: 1,
+        circuitBreaker: { failureThreshold: 2, resetTimeoutMs: 30_000 },
+      },
+      visualFallback: {
+        role: "visual_fallback",
+        compatibilityMode: "openai_chat",
+        baseUrl: config.visualEndpoint,
+        deployment: config.visualFallbackDeployment,
+        modelRevision: `${config.visualFallbackDeployment}@server-auto-wire`,
+        gatewayRelease: "azure-ai-foundry-server-auto-wire",
+        authMode: "api_key",
+        declaredCapabilities: {
+          structuredOutputs: true,
+          seedSupport: false,
+          reasoningEffortSupport: false,
+          maxOutputTokensSupport: true,
+          streamingSupport: false,
+          imageInputSupport: true,
+        },
+        timeoutMs: 60_000,
+        maxRetries: 1,
+        circuitBreaker: { failureThreshold: 2, resetTimeoutMs: 30_000 },
+      },
     },
     {
       apiKeyProvider: () => config.apiKey,
@@ -149,9 +213,9 @@ export const resolveTestIntelligenceProductionRunner = (
   if (!input.startupEnabled || !input.envEnabled) {
     return undefined;
   }
-  const buildLlmClient = input.buildLlmClient ?? defaultBuildLlmClient;
+  const buildLlmBundle = input.buildLlmBundle ?? defaultBuildLlmBundle;
   const runner = input.runner ?? runFigmaToQcTestCases;
-  let cachedClient: LlmGatewayClient | undefined;
+  let cachedBundle: LlmGatewayClientBundle | undefined;
 
   // One-shot startup log: announce the active FinOps envelope so an
   // operator reading `journalctl` can confirm what cost ceiling the
@@ -165,14 +229,13 @@ export const resolveTestIntelligenceProductionRunner = (
   const factory: TestIntelligenceProductionRunnerFactory = async (
     factoryInput: TestIntelligenceProductionRunnerFactoryInput,
   ): Promise<RunFigmaToQcTestCasesResult> => {
-    if (cachedClient === undefined) {
-      // Throws ProductionRunnerError on missing env; request handler maps it.
+    if (cachedBundle === undefined) {
       const config = resolveLlmConfigFromEnv(input.env);
-      cachedClient = buildLlmClient(config);
+      cachedBundle = buildLlmBundle(config);
       input.logger?.log({
         level: "info",
         event: "test_intelligence_runner_wired",
-        message: `Test-intelligence production runner LLM client built (deployment=${config.deployment})`,
+        message: `Test-intelligence production runner LLM bundle built (deployment=${config.deployment}, visualPrimary=${config.visualPrimaryDeployment}, visualFallback=${config.visualFallbackDeployment})`,
       });
     }
     return runner({
@@ -181,7 +244,8 @@ export const resolveTestIntelligenceProductionRunner = (
       source: factoryInput.source,
       outputRoot: factoryInput.outputRoot,
       llm: {
-        client: cachedClient,
+        client: cachedBundle.testGeneration,
+        bundle: cachedBundle,
         // FinOps envelope's per-request limits override these legacy
         // fields; they remain set for the (rare) case where an operator
         // wires a runner that doesn't pass a FinOps budget.

@@ -1,10 +1,18 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 
+import type {
+  LlmGatewayCapabilities,
+  LlmGenerationRequest,
+  LlmGenerationResult,
+  VisualScreenDescription,
+} from "../contracts/index.js";
 import { createMockLlmGatewayClient } from "./llm-mock-gateway.js";
+import { createMockLlmGatewayClientBundle } from "./llm-gateway-bundle.js";
 import { cloneEuBankingDefaultFinOpsBudget } from "./finops-budget.js";
 import {
   PROMPT_MAX_ACTIONS_PER_SCREEN,
@@ -107,6 +115,76 @@ const SAMPLE_DRAFT: ProductionRunnerLlmDraftCase = {
   assumptions: [],
   openQuestions: [],
 };
+
+const PNG_BYTES = Buffer.from(
+  "89504e470d0a1a0a0000000d4948445200000001000000010802000000907753de0000000c49444154789c63606060000000040001f61738550000000049454e44ae426082",
+  "hex",
+);
+const PNG_BASE64 = PNG_BYTES.toString("base64");
+
+const TEST_GENERATION_CAPS: LlmGatewayCapabilities = {
+  structuredOutputs: true,
+  seedSupport: false,
+  reasoningEffortSupport: false,
+  maxOutputTokensSupport: true,
+  streamingSupport: false,
+  imageInputSupport: false,
+};
+
+const VISUAL_CAPS: LlmGatewayCapabilities = {
+  ...TEST_GENERATION_CAPS,
+  imageInputSupport: true,
+};
+
+const buildVisualEnvelope = (
+  screenId: string,
+  deployment: VisualScreenDescription["sidecarDeployment"] = "llama-4-maverick-vision",
+): { screens: VisualScreenDescription[] } => ({
+  screens: [
+    {
+      screenId,
+      sidecarDeployment: deployment,
+      regions: [
+        {
+          regionId: `${screenId}-field`,
+          confidence: 0.91,
+          label: "Investitionssumme",
+          controlType: "text_input",
+        },
+      ],
+      confidenceSummary: { min: 0.91, max: 0.91, mean: 0.91 },
+    },
+  ],
+});
+
+const buildVisualSuccess = (
+  request: LlmGenerationRequest,
+  attempt: number,
+  screenId: string,
+): LlmGenerationResult => ({
+  outcome: "success",
+  content: buildVisualEnvelope(screenId),
+  finishReason: "stop",
+  usage: { inputTokens: 0, outputTokens: 0 },
+  modelDeployment: "llama-4-maverick-vision",
+  modelRevision: "llama-4-maverick-vision@test",
+  gatewayRelease: "mock",
+  attempt,
+});
+
+const visualEvidenceHash = (input: {
+  screenId: string;
+  deployment: string;
+  outcomes: ReadonlyArray<string>;
+  meanConfidence: number;
+}): string =>
+  createHash("sha256")
+    .update(
+      `${input.screenId}|${input.deployment}|${[...input.outcomes]
+        .sort()
+        .join(",")}|${Math.round(input.meanConfidence * 10_000) / 10_000}`,
+    )
+    .digest("hex");
 
 const okResponder = (cases: ProductionRunnerLlmDraftCase[]) => () => ({
   outcome: "success" as const,
@@ -365,6 +443,170 @@ test("runFigmaToQcTestCases rejects an SSRF-flavoured Figma URL with FIGMA_URL_R
     );
     assert.equal(client.callCount(), 0);
   } finally {
+    await rm(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("runFigmaToQcTestCases wires Figma URL screenshots through the visual sidecar and persists evidence refs", async () => {
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ti-runner-"));
+  const originalFetch = globalThis.fetch;
+  const requestedUrls: string[] = [];
+  const requestHeaders: Headers[] = [];
+  const observedEvents: string[] = [];
+  try {
+    const client = createMockLlmGatewayClient({
+      role: "test_generation",
+      deployment: "gpt-oss-120b-mock",
+      modelRevision: "mock-1",
+      gatewayRelease: "mock",
+      responder: okResponder([SAMPLE_DRAFT]),
+    });
+    const bundle = createMockLlmGatewayClientBundle({
+      testGeneration: {
+        role: "test_generation",
+        deployment: "gpt-oss-120b",
+        modelRevision: "gpt-oss-120b@test",
+        gatewayRelease: "mock",
+        declaredCapabilities: TEST_GENERATION_CAPS,
+      },
+      visualPrimary: {
+        role: "visual_primary",
+        deployment: "llama-4-maverick-vision",
+        modelRevision: "llama-4-maverick-vision@test",
+        gatewayRelease: "mock",
+        declaredCapabilities: VISUAL_CAPS,
+        responder: (request, attempt) => {
+          assert.equal(request.imageInputs?.length, 1);
+          assert.equal(request.imageInputs?.[0]?.mimeType, "image/png");
+          assert.equal(request.imageInputs?.[0]?.base64Data, PNG_BASE64);
+          return buildVisualSuccess(request, attempt, "1:1");
+        },
+      },
+      visualFallback: {
+        role: "visual_fallback",
+        deployment: "phi-4-multimodal-poc",
+        modelRevision: "phi-4-multimodal-poc@test",
+        gatewayRelease: "mock",
+        declaredCapabilities: VISUAL_CAPS,
+      },
+    });
+    globalThis.fetch = (async (url: string, init?: RequestInit) => {
+      requestedUrls.push(url);
+      requestHeaders.push(new Headers(init?.headers));
+      if (url.includes("/v1/files/ABC/nodes?ids=1%3A1")) {
+        return new Response(
+          JSON.stringify({
+            name: "Test View 03",
+            nodes: {
+              "1:1": {
+                document: SAMPLE_FILE.document.children?.[0]?.children?.[0],
+              },
+            },
+          }),
+          {
+            status: 200,
+            headers: { "content-type": "application/json" },
+          },
+        );
+      }
+      if (
+        url === "https://api.figma.com/v1/images/ABC?ids=1%3A1&format=png&scale=2"
+      ) {
+        return new Response(
+          JSON.stringify({
+            images: {
+              "1:1":
+                "https://figma-alpha-api.s3.us-west-2.amazonaws.com/1_1.png",
+            },
+          }),
+          {
+            status: 200,
+            headers: { "content-type": "application/json" },
+          },
+        );
+      }
+      return new Response(PNG_BYTES, {
+        status: 200,
+        headers: { "content-type": "image/png" },
+      });
+    }) as typeof fetch;
+    const result = await runFigmaToQcTestCases({
+      jobId: "job-figma-url-visual",
+      generatedAt: "2026-05-02T10:00:00Z",
+      source: {
+        kind: "figma_url",
+        figmaUrl:
+          "https://www.figma.com/design/ABC/Test-View-03?node-id=1-1&access_token=figd_supersecret_test_token_value_1234567890_padded_padded",
+        accessToken: "figd_test",
+      },
+      outputRoot: tempRoot,
+      llm: { client, bundle },
+      events: (event) => observedEvents.push(event.phase),
+    });
+    assert.deepEqual(observedEvents, [
+      "intent_derivation_started",
+      "intent_derivation_complete",
+      "visual_sidecar_started",
+      "visual_sidecar_complete",
+      "prompt_compiled",
+      "llm_gateway_request",
+      "llm_gateway_response",
+      "validation_started",
+      "validation_complete",
+      "policy_decision",
+      "export_started",
+      "export_complete",
+      "evidence_sealed",
+      "finops_recorded",
+    ]);
+    assert.equal(
+      result.artifactPaths.visualSidecarResult?.endsWith(
+        "visual-sidecar-result.json",
+      ),
+      true,
+    );
+    const sidecarArtifact = JSON.parse(
+      await readFile(result.artifactPaths.visualSidecarResult!, "utf8"),
+    ) as {
+      result: { outcome: string };
+      visualEvidenceRefs?: Array<{
+        screenId: string;
+        modelDeployment: string;
+        evidenceHash: string;
+      }>;
+    };
+    assert.equal(sidecarArtifact.result.outcome, "success");
+    assert.deepEqual(sidecarArtifact.visualEvidenceRefs, [
+      {
+        screenId: "1:1",
+        modelDeployment: "llama-4-maverick-vision",
+        evidenceHash: visualEvidenceHash({
+          screenId: "1:1",
+          deployment: "llama-4-maverick-vision",
+          outcomes: ["ok"],
+          meanConfidence: 0.91,
+        }),
+      },
+    ]);
+    assert.deepEqual(requestedUrls, [
+      "https://api.figma.com/v1/files/ABC/nodes?ids=1%3A1",
+      "https://api.figma.com/v1/images/ABC?ids=1%3A1&format=png&scale=2",
+      "https://figma-alpha-api.s3.us-west-2.amazonaws.com/1_1.png",
+    ]);
+    assert.equal(requestHeaders[0]?.get("x-figma-token"), "figd_test");
+    assert.equal(requestHeaders[1]?.get("x-figma-token"), "figd_test");
+    assert.equal(requestHeaders[2]?.get("x-figma-token"), null);
+    const combinedMarkdown = await readFile(
+      result.customerMarkdownPaths.combined,
+      "utf8",
+    );
+    assert.doesNotMatch(
+      combinedMarkdown,
+      /figd_supersecret_test_token_value_1234567890_padded_padded/u,
+    );
+    assert.doesNotMatch(combinedMarkdown, /access_token=/u);
+  } finally {
+    globalThis.fetch = originalFetch;
     await rm(tempRoot, { recursive: true, force: true });
   }
 });

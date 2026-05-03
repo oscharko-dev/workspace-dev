@@ -27,8 +27,6 @@
  *
  * Deferred to follow-up issues (TODO comments inline):
  *
- *   - Visual sidecar (#1359 Wave 5): the runner does not yet capture
- *     screenshots or call `describeVisualScreens`.
  *   - In-toto attestation, LBOM emission, signed evidence: separate
  *     emitters tracked elsewhere.
  *   - Disk-backed replay cache (#1739).
@@ -56,6 +54,8 @@ import {
   TEST_CASE_COVERAGE_REPORT_ARTIFACT_FILENAME,
   TEST_CASE_POLICY_REPORT_ARTIFACT_FILENAME,
   TEST_CASE_VALIDATION_REPORT_ARTIFACT_FILENAME,
+  VISUAL_SIDECAR_RESULT_ARTIFACT_FILENAME,
+  VISUAL_SIDECAR_VALIDATION_REPORT_ARTIFACT_FILENAME,
   VISUAL_SIDECAR_SCHEMA_VERSION,
   type BusinessTestIntentIr,
   type FinOpsBudgetEnvelope,
@@ -75,6 +75,7 @@ import {
   type TestCaseType,
   type TestCaseValidationReport,
   type TestCaseCoverageReport,
+  type VisualSidecarResult,
 } from "../contracts/index.js";
 import { sanitizeErrorMessage } from "../error-sanitization.js";
 import { canonicalJson } from "./content-hash.js";
@@ -97,6 +98,7 @@ export type {
 import { renderCustomerMarkdown } from "./customer-markdown-renderer.js";
 import {
   fetchFigmaFileForTestIntelligence,
+  fetchFigmaScreenCapturesForTestIntelligence,
   FigmaRestFetchError,
   parseFigmaUrl,
   type FigmaRestFileSnapshot,
@@ -105,6 +107,7 @@ import {
 import { normalizeFigmaFileToIntentInput } from "./figma-payload-normalizer.js";
 import { deriveBusinessTestIntentIr } from "./intent-derivation.js";
 import type { LlmGatewayClient } from "./llm-gateway.js";
+import type { LlmGatewayClientBundle } from "./llm-gateway-bundle.js";
 import {
   compilePrompt,
   type CompilePromptSuffixSection,
@@ -113,6 +116,10 @@ import { cloneEuBankingDefaultProfile } from "./policy-profile.js";
 import { writeAgentRoleRunArtifact } from "./agent-role-run-artifact.js";
 import { writeGenealogyArtifact } from "./genealogy.js";
 import { runValidationPipeline } from "./validation-pipeline.js";
+import {
+  describeVisualScreens,
+  writeVisualSidecarResultArtifact,
+} from "./visual-sidecar-client.js";
 
 /**
  * Default test-generation deployment label. Exported so callers building
@@ -236,6 +243,8 @@ export type ProductionRunnerSource =
 
 export interface ProductionRunnerLlmConfig {
   client: LlmGatewayClient;
+  /** Optional multimodal bundle used to resolve visual sidecar screenshots. */
+  bundle?: LlmGatewayClientBundle;
   /** Optional per-request token budget. */
   maxOutputTokens?: number;
   /** Optional per-request wall-clock budget (ms). */
@@ -312,6 +321,8 @@ export interface RunFigmaToQcTestCasesResult {
   artifactPaths: {
     intent: string;
     compiledPrompt: string;
+    visualSidecarResult?: string;
+    visualSidecarValidationReport?: string;
     agentRoleRun: string;
     genealogy: string;
     contextBudgetReport?: string;
@@ -319,6 +330,11 @@ export interface RunFigmaToQcTestCasesResult {
     validationReport: string;
     policyReport: string;
     coverageReport: string;
+  };
+  visualSidecar?: {
+    result: VisualSidecarResult;
+    artifactPath: string;
+    validationReportPath?: string;
   };
   customerMarkdownPaths: {
     combined: string;
@@ -366,7 +382,24 @@ export const runFigmaToQcTestCases = async (
   }
 
   // 3. Derive Business Test Intent IR.
-  const intent = deriveBusinessTestIntentIr({ figma: intentInput });
+  let intent = deriveBusinessTestIntentIr({ figma: intentInput });
+  const artifactDir = join(
+    input.outputRoot,
+    "jobs",
+    input.jobId,
+    "test-intelligence",
+  );
+  let visualSidecarArtifactPath: string | undefined;
+  let visualSidecarResult: VisualSidecarResult | undefined;
+  let promptVisualBinding: Parameters<typeof compilePrompt>[0]["visualBinding"] = {
+    schemaVersion: VISUAL_SIDECAR_SCHEMA_VERSION,
+    selectedDeployment: "llama-4-maverick-vision",
+    fallbackReason: "none",
+    screenCount: 0,
+  };
+  let promptVisualBatch:
+    | Parameters<typeof compilePrompt>[0]["visual"]
+    | undefined;
   emit({
     phase: "intent_derivation_complete",
     timestamp: monotonicMs(),
@@ -376,14 +409,112 @@ export const runFigmaToQcTestCases = async (
       detectedActions: intent.detectedActions.length,
     },
   });
-
-  // No visual sidecar in the production runner today (#1359 Wave 5).
-  emit({
-    phase: "visual_sidecar_skipped",
-    timestamp: monotonicMs(),
-    details: { reason: "production_runner_visual_sidecar_not_enabled" },
-  });
-
+  if (input.source.kind === "figma_url" && input.llm.bundle !== undefined) {
+    emit({
+      phase: "visual_sidecar_started",
+      timestamp: monotonicMs(),
+      details: { screens: intent.screens.length },
+    });
+    const captures = await fetchFigmaScreenCapturesForTestIntelligence({
+      fileKey: figmaFile.fileKey,
+      accessToken: input.source.accessToken,
+      screens: intent.screens.map((screen) => ({
+        screenId: screen.screenId,
+        screenName: screen.screenName,
+      })),
+    });
+    const sidecarResult = await describeVisualScreens({
+      bundle: input.llm.bundle,
+      captures,
+      jobId: input.jobId,
+      generatedAt: input.generatedAt,
+      intent,
+      requestLimits: {
+        visualPrimary: resolveFinOpsRequestLimits(finopsBudget.roles.visual_primary),
+        visualFallback: resolveFinOpsRequestLimits(
+          finopsBudget.roles.visual_fallback,
+        ),
+      },
+      maxImageBytesPerRequest: {
+        ...(finopsBudget.roles.visual_primary?.maxImageBytesPerRequest !==
+        undefined
+          ? {
+              visualPrimary:
+                finopsBudget.roles.visual_primary.maxImageBytesPerRequest,
+            }
+          : {}),
+        ...(finopsBudget.roles.visual_fallback?.maxImageBytesPerRequest !==
+        undefined
+          ? {
+              visualFallback:
+                finopsBudget.roles.visual_fallback.maxImageBytesPerRequest,
+            }
+          : {}),
+      },
+      ...(input.llm.abortSignal !== undefined
+        ? { abortSignal: input.llm.abortSignal }
+        : {}),
+    });
+    visualSidecarArtifactPath = join(
+      artifactDir,
+      VISUAL_SIDECAR_RESULT_ARTIFACT_FILENAME,
+    );
+    visualSidecarResult = sidecarResult;
+    await writeVisualSidecarResultArtifact({
+      result: sidecarResult,
+      destinationPath: visualSidecarArtifactPath,
+      jobId: input.jobId,
+      generatedAt: input.generatedAt,
+    });
+    if (sidecarResult.outcome !== "success") {
+      throw new ProductionRunnerError({
+        failureClass: "LLM_GATEWAY_FAILED",
+        message: `Visual sidecar failed: ${sidecarResult.failureClass}`,
+        retryable:
+          sidecarResult.failureClass === "primary_quota_exceeded" ||
+          sidecarResult.failureClass === "primary_unavailable",
+      });
+    }
+    if (sidecarResult.validationReport.blocked) {
+      throw new ProductionRunnerError({
+        failureClass: "LLM_RESPONSE_INVALID",
+        message:
+          "Visual sidecar validation blocked the Figma screenshot batch before prompt compilation.",
+        retryable: false,
+      });
+    }
+    promptVisualBatch = sidecarResult.visual;
+    intent = deriveBusinessTestIntentIr({
+      figma: intentInput,
+      visual: promptVisualBatch,
+    });
+    promptVisualBinding = {
+      schemaVersion: VISUAL_SIDECAR_SCHEMA_VERSION,
+      selectedDeployment: sidecarResult.selectedDeployment,
+      fallbackReason: sidecarResult.fallbackReason,
+      screenCount: sidecarResult.visual.length,
+    };
+    emit({
+      phase: "visual_sidecar_complete",
+      timestamp: monotonicMs(),
+      details: {
+        selectedDeployment: sidecarResult.selectedDeployment,
+        fallbackReason: sidecarResult.fallbackReason,
+        screens: sidecarResult.visual.length,
+      },
+    });
+  } else {
+    emit({
+      phase: "visual_sidecar_skipped",
+      timestamp: monotonicMs(),
+      details: {
+        reason:
+          input.source.kind !== "figma_url"
+            ? "non_figma_url_source"
+            : "visual_sidecar_bundle_not_configured",
+      },
+    });
+  }
   // 4. Bound the IR for the LLM prompt. Real-world Figma files (e.g. the
   //    customer's "Investitionsfinanzierung — Bedarfsermittlung" screen with
   //    5600 nodes) blow the prompt past every gateway's body cap. The full
@@ -420,13 +551,10 @@ export const runFigmaToQcTestCases = async (
         };
 
   // 5. Compile prompt.
-  // TODO(#1359 Wave 5): once the visual sidecar runs in production, plumb
-  //   describeVisualScreens output here. Today the production runner ships
-  //   without screenshot capture; the visual sidecar binding records that
-  //   no fixture image is bound.
   const compiled = compilePrompt({
     jobId: input.jobId,
     intent: wireIntent,
+    ...(promptVisualBatch !== undefined ? { visual: promptVisualBatch } : {}),
     modelBinding: {
       modelRevision: TEST_GENERATION_MODEL_REVISION,
       gatewayRelease: TEST_GENERATION_GATEWAY_RELEASE,
@@ -438,12 +566,7 @@ export const runFigmaToQcTestCases = async (
     responseSchemaName: "workspace-dev-production-runner-draft-list-v1",
     outputSchemaHintLabel: "ProductionRunnerDraftResponse",
     suffixSections: buildPromptSuffixSections(wireIntent, policyProfileId),
-    visualBinding: {
-      schemaVersion: VISUAL_SIDECAR_SCHEMA_VERSION,
-      selectedDeployment: "llama-4-maverick-vision",
-      fallbackReason: "none",
-      screenCount: 0,
-    },
+    visualBinding: promptVisualBinding,
     ...(finopsLimits.maxInputTokens !== undefined
       ? {
           contextBudget: {
@@ -584,6 +707,12 @@ export const runFigmaToQcTestCases = async (
     generatedAt: input.generatedAt,
     list: generatedList,
     intent,
+    ...(promptVisualBatch !== undefined ? { visual: promptVisualBatch } : {}),
+    ...(promptVisualBatch !== undefined
+      ? {
+          primaryVisualDeployment: "llama-4-maverick-vision" as const,
+        }
+      : {}),
   });
   emit({
     phase: "validation_complete",
@@ -609,12 +738,6 @@ export const runFigmaToQcTestCases = async (
 
   // 9. Persist artifacts.
   emit({ phase: "export_started", timestamp: monotonicMs() });
-  const artifactDir = join(
-    input.outputRoot,
-    "jobs",
-    input.jobId,
-    "test-intelligence",
-  );
   await mkdir(artifactDir, { recursive: true });
   const intentPath = join(artifactDir, "business-intent-ir.json");
   const compiledPromptPath = join(artifactDir, "compiled-prompt.json");
@@ -626,6 +749,13 @@ export const runFigmaToQcTestCases = async (
     artifactDir,
     TEST_CASE_VALIDATION_REPORT_ARTIFACT_FILENAME,
   );
+  const visualSidecarValidationPath =
+    validation.visual === undefined
+      ? undefined
+      : join(
+          artifactDir,
+          VISUAL_SIDECAR_VALIDATION_REPORT_ARTIFACT_FILENAME,
+        );
   const policyPath = join(
     artifactDir,
     TEST_CASE_POLICY_REPORT_ARTIFACT_FILENAME,
@@ -659,6 +789,9 @@ export const runFigmaToQcTestCases = async (
         : [writeAtomicJson(contextBudgetReportPath, compiled.contextBudgetReport)]),
       writeAtomicJson(generatedPath, validation.generatedTestCases),
       writeAtomicJson(validationPath, validation.validation),
+      ...(visualSidecarValidationPath === undefined || validation.visual === undefined
+        ? []
+        : [writeAtomicJson(visualSidecarValidationPath, validation.visual)]),
       writeAtomicJson(policyPath, validation.policy),
       writeAtomicJson(coveragePath, validation.coverage),
     ]);
@@ -761,11 +894,27 @@ export const runFigmaToQcTestCases = async (
     policy: validation.policy,
     coverage: validation.coverage,
     blocked: validation.blocked,
+    ...(visualSidecarResult !== undefined
+      ? {
+          visualSidecar: {
+            result: visualSidecarResult,
+            artifactPath:
+              visualSidecarArtifactPath ??
+              join(artifactDir, VISUAL_SIDECAR_RESULT_ARTIFACT_FILENAME),
+            ...(visualSidecarValidationPath !== undefined
+              ? { validationReportPath: visualSidecarValidationPath }
+              : {}),
+          },
+        }
+      : {}),
     finopsBudget,
     artifactDir,
     artifactPaths: {
       intent: intentPath,
       compiledPrompt: compiledPromptPath,
+      ...(visualSidecarArtifactPath !== undefined
+        ? { visualSidecarResult: visualSidecarArtifactPath }
+        : {}),
       agentRoleRun: agentRoleRunArtifact.artifactPath,
       genealogy: genealogyArtifact.artifactPath,
       ...(contextBudgetReportPath !== undefined
@@ -773,6 +922,9 @@ export const runFigmaToQcTestCases = async (
         : {}),
       generatedTestCases: generatedPath,
       validationReport: validationPath,
+      ...(visualSidecarValidationPath !== undefined
+        ? { visualSidecarValidationReport: visualSidecarValidationPath }
+        : {}),
       policyReport: policyPath,
       coverageReport: coveragePath,
     },

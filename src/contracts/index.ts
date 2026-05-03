@@ -4482,6 +4482,18 @@ export interface VisualSidecarResultArtifact {
   jobId: string;
   generatedAt: string;
   result: VisualSidecarResult;
+  /**
+   * Deterministic derivative evidence refs extracted from the validation
+   * report. Each ref hashes the canonical tuple
+   * `(screenId|deployment|sortedOutcomes|roundedConfidence)` so downstream
+   * audit consumers can correlate prompt-time visual evidence without relying
+   * on raw screenshot-byte hashes.
+   */
+  visualEvidenceRefs?: {
+    screenId: string;
+    modelDeployment: string;
+    evidenceHash: string;
+  }[];
   /** Hard invariant — image bytes are never embedded in this artifact. */
   rawScreenshotsIncluded: false;
 }

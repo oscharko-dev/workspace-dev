@@ -91,6 +91,7 @@ export const VISUAL_SIDECAR_SYSTEM_PROMPT: string = [
 
 const MAX_FAILURE_MESSAGE_LENGTH = 240;
 const MAX_BASE64_OVERHEAD_FACTOR = 1.4; // safety margin for base64 length checks
+const VISUAL_CONFIDENCE_PRECISION = 10_000;
 
 interface ScreenDescriptionEnvelope {
   screens: ReadonlyArray<unknown>;
@@ -678,6 +679,7 @@ export interface WriteVisualSidecarResultArtifactInput {
 export const writeVisualSidecarResultArtifact = async (
   input: WriteVisualSidecarResultArtifactInput,
 ): Promise<{ artifact: VisualSidecarResultArtifact; bytes: Uint8Array }> => {
+  const visualEvidenceRefs = buildVisualEvidenceRefs(input.result);
   const artifact: VisualSidecarResultArtifact = {
     schemaVersion: VISUAL_SIDECAR_RESULT_SCHEMA_VERSION,
     contractVersion: TEST_INTELLIGENCE_CONTRACT_VERSION,
@@ -685,6 +687,7 @@ export const writeVisualSidecarResultArtifact = async (
     jobId: input.jobId,
     generatedAt: input.generatedAt,
     result: input.result,
+    ...(visualEvidenceRefs !== undefined ? { visualEvidenceRefs } : {}),
     rawScreenshotsIncluded: false,
   };
   const serialized = canonicalJson(artifact);
@@ -694,6 +697,43 @@ export const writeVisualSidecarResultArtifact = async (
   await writeFile(tmp, serialized, "utf8");
   await rename(tmp, input.destinationPath);
   return { artifact, bytes };
+};
+
+const roundVisualConfidence = (value: number): number =>
+  Math.round(value * VISUAL_CONFIDENCE_PRECISION) / VISUAL_CONFIDENCE_PRECISION;
+
+const computeVisualEvidenceHash = (
+  record: VisualSidecarSuccess["validationReport"]["records"][number],
+): string => {
+  const sortedOutcomes = [...record.outcomes].sort().join(",");
+  const roundedConfidence = roundVisualConfidence(record.meanConfidence);
+  return createHash("sha256")
+    .update(
+      `${record.screenId}|${record.deployment}|${sortedOutcomes}|${String(roundedConfidence)}`,
+    )
+    .digest("hex");
+};
+
+const buildVisualEvidenceRefs = (
+  result: VisualSidecarResult,
+): {
+  screenId: string;
+  modelDeployment: string;
+  evidenceHash: string;
+}[] | undefined => {
+  if (result.outcome !== "success") return undefined;
+  return result.validationReport.records
+    .map((record) => ({
+      screenId: record.screenId,
+      modelDeployment: record.deployment,
+      evidenceHash: computeVisualEvidenceHash(record),
+    }))
+    .sort(
+      (left, right) =>
+        left.screenId.localeCompare(right.screenId) ||
+        left.modelDeployment.localeCompare(right.modelDeployment) ||
+        left.evidenceHash.localeCompare(right.evidenceHash),
+    );
 };
 
 /** Aggregate per-screen confidence summaries into a single envelope. */
