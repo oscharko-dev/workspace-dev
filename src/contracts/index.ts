@@ -2804,6 +2804,147 @@ export const AGENT_ROLE_RUN_SCHEMA_VERSION = "1.0.0" as const;
 /** Directory containing per-role prompt-run metadata artifacts. */
 export const AGENT_ROLE_RUN_ARTIFACT_DIRECTORY = "agent-role-runs" as const;
 
+/**
+ * Schema version for the static `AgentRoleProfile` matrix introduced for
+ * Issue #1779 (Story MA-3). The profile shape is locked behind this
+ * version; structural changes require a major bump and a migration entry
+ * in `CONTRACT_CHANGELOG.md`.
+ */
+export const AGENT_ROLE_PROFILE_SCHEMA_VERSION = "1.0.0" as const;
+
+/**
+ * Closed runtime list of agent harness roles tracked by the Production
+ * Runner state machine. The order is alphabetical for stable
+ * canonical-JSON serialisation; `contract-version.test.ts` enforces the
+ * shape via the public-export snapshot.
+ */
+export const AGENT_HARNESS_ROLES = [
+  "adversarial_gap_finder",
+  "final_verifier",
+  "generator",
+  "repair_planner",
+  "semantic_judge",
+  "visual_sidecar",
+] as const;
+
+/** Closed runtime list of agent-role capability filters. */
+export const AGENT_ROLE_CAPABILITIES = [
+  "none",
+  "propose_changes",
+  "read_artifacts",
+  "score_only",
+] as const;
+
+/** Closed runtime list of agent-role kinds. */
+export const AGENT_ROLE_KINDS = ["deterministic_service", "llm_role"] as const;
+
+/** Closed runtime list of FinOps attribution groups for agent-role runs. */
+export const AGENT_ROLE_FINOPS_GROUPS = [
+  "generation",
+  "judge",
+  "repair",
+  "verification",
+  "visual",
+] as const;
+
+/** Closed runtime list of allowed `maxAttempts` budgets for an agent role. */
+export const AGENT_ROLE_MAX_ATTEMPT_VALUES = [1, 2, 3] as const;
+
+/**
+ * Discrete role identifiers consumed by the multi-agent harness state
+ * machine.
+ *
+ * - `visual_sidecar` — deterministic screenshot/spec-check service.
+ * - `generator` — LLM that produces structured test cases.
+ * - `semantic_judge` — LLM judge panel that scores generated cases.
+ * - `adversarial_gap_finder` — LLM that surfaces missing coverage.
+ * - `repair_planner` — LLM that proposes a structured repair plan
+ *   consumed by a deterministic apply-step gated by `RepairChangeGuard`.
+ * - `final_verifier` — deterministic post-repair verifier that produces
+ *   the evidence anchor.
+ */
+export type AgentHarnessRole = (typeof AGENT_HARNESS_ROLES)[number];
+
+/**
+ * Capability filter that determines what side effects a role is allowed
+ * to declare. The boundary lint in
+ * `src/test-intelligence/agent-role-profile.test.ts` proves that no role
+ * with `roleKind === "llm_role"` is ever assigned `propose_changes`;
+ * filesystem / gateway / review-store mutations are reserved for
+ * deterministic services.
+ */
+export type AgentRoleCapability = (typeof AGENT_ROLE_CAPABILITIES)[number];
+
+/** Whether a role is a deterministic service or a LLM-driven role. */
+export type AgentRoleKind = (typeof AGENT_ROLE_KINDS)[number];
+
+/** FinOps attribution group used for per-source cost rollups. */
+export type AgentRoleFinOpsGroup =
+  (typeof AGENT_ROLE_FINOPS_GROUPS)[number];
+
+/**
+ * Static binding of an agent role to a model identity. The optional
+ * `ictRegisterRef` is mandatory under `policyProfile = "banking"` and is
+ * enforced by Wave MA-4; this contract defines the slot but does not
+ * itself enforce the banking policy.
+ */
+export interface AgentModelBinding {
+  /** Stable provider identifier (e.g., `"azure-openai"`, `"in-house"`). */
+  readonly providerId: string;
+  /** Stable model identifier inside the provider namespace. */
+  readonly modelId: string;
+  /**
+   * Optional inference profile / deployment identifier for providers
+   * that route by deployment name (e.g., Azure deployments).
+   */
+  readonly inferenceProfileId?: string;
+  /**
+   * Optional reference into the operator's ICT register. Mandatory
+   * under banking profiles (enforced in MA-4) so deployed models map
+   * back to a registered ICT asset.
+   */
+  readonly ictRegisterRef?: string;
+}
+
+/**
+ * Static, hand-rolled profile that pins a role to a budget tier,
+ * capability filter, output schema, and FinOps group. Profiles are
+ * frozen at module load and serialise to canonical JSON for evidence
+ * anchoring.
+ */
+export interface AgentRoleProfile {
+  /** Pinned schema version literal. Bumping requires a major contract bump. */
+  readonly schemaVersion: typeof AGENT_ROLE_PROFILE_SCHEMA_VERSION;
+  /** Role identifier this profile binds to. */
+  readonly role: AgentHarnessRole;
+  /** Whether the role is deterministic or LLM-driven. */
+  readonly roleKind: AgentRoleKind;
+  /**
+   * Optional prompt-template version pin. Required for `llm_role`
+   * profiles (validated at registry construction); omitted for
+   * deterministic services that do not compile a prompt.
+   */
+  readonly promptVersion?: string;
+  /**
+   * Optional model binding. Required for `llm_role` profiles
+   * (validated at registry construction); omitted for deterministic
+   * services that do not call the gateway.
+   */
+  readonly modelBinding?: AgentModelBinding;
+  /** Stable identifier of the structured-output JSON schema this role emits. */
+  readonly outputSchema: string;
+  /** Maximum attempts the harness may make before declaring failure. */
+  readonly maxAttempts: 1 | 2 | 3;
+  /** Hard cap on input tokens passed to the gateway for this role. */
+  readonly maxInputTokens: number;
+  /** Hard cap on output tokens the gateway may emit for this role. */
+  readonly maxOutputTokens: number;
+  /** Capability filter — what kinds of side effects the role may declare. */
+  readonly capability: AgentRoleCapability;
+  /** FinOps attribution group used for cost rollups. */
+  readonly finOpsGroup: AgentRoleFinOpsGroup;
+}
+
 /** Canonical filename for per-run genealogy DAG artifacts. */
 export const GENEALOGY_ARTIFACT_FILENAME = "genealogy.json" as const;
 
@@ -8140,7 +8281,7 @@ export interface CoveragePlan {
  * Must be bumped according to CONTRACT_CHANGELOG.md rules.
  * Package version alignment is documented in VERSIONING.md.
  */
-export const CONTRACT_VERSION = "4.31.0" as const;
+export const CONTRACT_VERSION = "4.32.0" as const;
 
 // ---------------------------------------------------------------------------
 // Issue #1774 — UntrustedContentNormalizer (2025-vintage injection carriers).

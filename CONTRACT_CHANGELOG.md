@@ -31,6 +31,75 @@ All changes to the public contract surface of `workspace-dev` are documented her
 
 ---
 
+## [4.32.0] - 2026-05-03
+
+### Added (Issue #1779 — Static `AgentRoleProfile` matrix with capability filters)
+
+The test-intelligence contract surface now ships a static, hand-rolled
+`AgentRoleProfile` registry that pins every multi-agent harness role
+(Story MA-3, parent #1758) to a deterministic budget tier, capability
+filter, output schema, FinOps attribution group, and (for LLM roles)
+prompt-template version + model binding.
+
+Profiles are deeply frozen at module load and serialise to canonical
+JSON, so they round-trip cleanly into evidence anchors. There is no
+runtime configuration surface — adding or mutating a role requires a
+contract bump and a `CONTRACT_CHANGELOG.md` entry.
+
+Capability invariant: no profile with `roleKind === "llm_role"` may
+declare `capability === "propose_changes"`. Filesystem, gateway, and
+review-store mutations remain reserved for deterministic services
+gated by `RepairChangeGuard`. The invariant is enforced both at
+registry construction (`assertAgentRoleProfileInvariants` throws) and
+by `agent-role-profile.test.ts` as a boundary self-test.
+
+`AgentModelBinding` carries the optional `ictRegisterRef?: string`
+slot defined by Wave MA-4; the field is accepted today but only
+becomes mandatory once the banking-policy gate ships in MA-4.
+
+`TEST_INTELLIGENCE_CONTRACT_VERSION` is unchanged at `1.6.0` — the
+new registry is additive and does not change any existing
+test-intelligence artifact schema. Per the precedent set by Issues
+#1767 / #1774 / #1778, additive test-intelligence surface bumps the
+top-level `CONTRACT_VERSION` only.
+
+New public exports (additive only):
+
+- Constants: `AGENT_ROLE_PROFILE_SCHEMA_VERSION` (`"1.0.0"`),
+  `AGENT_HARNESS_ROLES`, `AGENT_ROLE_CAPABILITIES`,
+  `AGENT_ROLE_KINDS`, `AGENT_ROLE_FINOPS_GROUPS`,
+  `AGENT_ROLE_MAX_ATTEMPT_VALUES`.
+- Types: `AgentHarnessRole`, `AgentRoleCapability`, `AgentRoleKind`,
+  `AgentRoleFinOpsGroup`, `AgentModelBinding`, `AgentRoleProfile`.
+
+The accompanying `test-intelligence/agent-role-profile.ts` module
+(re-exported via `src/test-intelligence/index.ts`) ships the
+registry and helpers:
+
+- `AGENT_ROLE_PROFILE_REGISTRY` — frozen
+  `Record<AgentHarnessRole, AgentRoleProfile>`.
+- `getAgentRoleProfile(role)` — exhaustive accessor.
+- `listAgentRoleProfiles()` — alphabetical, canonical-JSON-stable order.
+- `serializeAgentRoleProfile(profile)` — canonical-JSON serialiser.
+- `assertAgentRoleProfileInvariants(profile)` — boundary validator
+  re-used by the self-test.
+- `LLM_ROLE_FORBIDDEN_CAPABILITIES` — the closed set referenced by
+  the boundary lint.
+- Type guards: `isAgentHarnessRole`, `isAgentRoleCapability`,
+  `isAgentRoleKind`, `isAgentRoleFinOpsGroup`.
+
+This release also reconciles the public-export snapshot in
+`contract-version.test.ts` with the actual surface: prior additive
+merges (issues #1364/#1365/#1386 context-budget + coverage-planner
+artifacts, #1769 agent-role-run + genealogy artifacts, #1775 agent
+source labels, branded-id helpers) had landed as runtime exports
+without being added to the snapshot. The snapshot now matches the
+runtime surface byte-for-byte; no exports are renamed or removed.
+
+This is an additive minor bump — existing serialised artifacts
+remain valid because no field, type, or refusal code is removed or
+renamed.
+
 ## [4.31.0] - 2026-05-03
 
 ### Added (Issue #1778 — CacheBreakDetector with intent suppression and redacted diffs)
