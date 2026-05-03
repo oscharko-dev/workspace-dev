@@ -31,6 +31,66 @@ All changes to the public contract surface of `workspace-dev` are documented her
 
 ---
 
+## [4.31.0] - 2026-05-03
+
+### Added (Issue #1778 — CacheBreakDetector with intent suppression and redacted diffs)
+
+The test-intelligence contract surface now includes a two-phase
+cache-break detector that wraps the LLM gateway. Between consecutive
+iterations of the same `querySource`, the detector compares the
+observed `cacheReadTokens` / `cacheCreationTokens` against the
+previously recorded baseline; when
+`cacheReadTokens < 0.05 * expected` AND
+`cacheCreationTokens > 2_000` it emits a structured `cache_break`
+event onto the `RunnerEventBus` and writes a canonical-JSON diff
+artifact to `<runDir>/observability/cache-breaks/<ts>.diff.json`.
+
+Diff dumps run through `normalizeUntrustedContent` +
+`redactHighRiskSecrets` before persistence — a poisoned tool result
+that broke the cache must never be persisted raw.
+
+Each `cache_break` event carries the current Merkle `parentHash` so
+it remains part of the chain.
+
+`PRODUCTION_RUNNER_EVENT_PHASES` adds the new `"cache_break"` phase
+literal. Adding a union member to a closed exported set is a minor
+bump per the rules at the top of this file.
+
+`TEST_INTELLIGENCE_CONTRACT_VERSION` is unchanged at `1.6.0` — the new
+detector is additive and does not change any existing
+test-intelligence artifact schema. Per the precedent set by Issues
+#1767 / #1774, additive test-intelligence surface bumps the top-level
+`CONTRACT_VERSION` only.
+
+New public exports (additive only):
+
+- `createCacheBreakDetector` — factory. Returns an object exposing
+  `recordPromptState`, `checkResponseForCacheBreak`,
+  `notifyCompaction`, `notifyCacheDeletion`.
+- Types: `CacheBreakDetector`, `CacheBreakSnapshot`,
+  `RecordPromptStateInput`, `RecordPromptStateResult`,
+  `CheckResponseForCacheBreakInput`, `CacheBreakCheckOutcome`,
+  `CacheBreakPromptMessage`, `CreateCacheBreakDetectorOptions`,
+  `CacheBreakSuppressionReason`.
+- Constants: `CACHE_BREAK_ARTIFACT_DIRECTORY`
+  (`"observability/cache-breaks"`),
+  `CACHE_BREAK_DIFF_SCHEMA_VERSION` (`"1.0.0"`),
+  `CACHE_BREAK_READ_RATIO_THRESHOLD` (`0.05`),
+  `CACHE_BREAK_MIN_CREATION_TOKENS` (`2_000`),
+  `CACHE_BREAK_DETECTOR_MAX_SNAPSHOTS` (`10`),
+  `ALLOWED_CACHE_BREAK_SUPPRESSION_REASONS`.
+- Phase: `"cache_break"` added to `PRODUCTION_RUNNER_EVENT_PHASES`.
+
+Suppression APIs flag the next break for a `jobId` as intentional so
+it produces neither an event nor an artifact; suppression is one-shot
+and consumed by the next `checkResponseForCacheBreak` for the same
+`jobId`. State is an LRU `Map<querySource, Snapshot>` capped at 10
+entries.
+
+This is an additive minor bump — existing serialised artifacts
+remain valid because no field, type, or refusal code is removed or
+renamed.
+
 ## [4.30.0] - 2026-05-03
 
 ### Added (Issue #1774 — UntrustedContentNormalizer for 2025-vintage injection carriers)
