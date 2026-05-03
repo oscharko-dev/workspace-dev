@@ -95,6 +95,8 @@ export const TI_EVAL_FILES = Object.freeze([
   "src/test-intelligence/traceability-matrix.property.test.ts",
   "src/test-intelligence/traceability-matrix.test.ts",
   "src/test-intelligence/traceability-pipeline.test.ts",
+  "src/test-intelligence/untrusted-content-normalizer.property.test.ts",
+  "src/test-intelligence/untrusted-content-normalizer.test.ts",
   "src/test-intelligence/validation-pipeline.golden.test.ts",
   "src/test-intelligence/validation-pipeline.self-verify.test.ts",
   "src/test-intelligence/visual-sidecar-adversarial.test.ts",

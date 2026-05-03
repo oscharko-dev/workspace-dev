@@ -31,6 +31,65 @@ All changes to the public contract surface of `workspace-dev` are documented her
 
 ---
 
+## [4.30.0] - 2026-05-03
+
+### Added (Issue #1774 — UntrustedContentNormalizer for 2025-vintage injection carriers)
+
+The test-intelligence contract surface now includes a new pre-LLM
+normalization pass that strips 2025-vintage prompt-injection carriers
+from untrusted content before the prompt compiler runs. The carriers
+covered are: hidden Figma layers (`visible=false`), zero-opacity
+layers, off-canvas layers (bounding box outside the parent screen),
+zero font-size layers, sentinel layer names (anything starting with
+`__`, including `__system` and `__instructions`), zero-width Unicode
+in source text (U+200B / U+200C / U+200D / U+FEFF), and Atlassian
+Document Format (ADF) nodes outside the existing `parseJiraAdfDocument`
+allow-list. A hard per-element byte cap (Jira-comment baseline) is
+applied to every untrusted text span. Findings from the existing
+`detectPii` and `redactHighRiskSecrets` detectors plus a pinned
+Markdown prompt-injection regex set are integrated into the drop
+counts.
+
+`TEST_INTELLIGENCE_CONTRACT_VERSION` is unchanged at `1.6.0` — the new
+normalization is additive and does not change any existing
+test-intelligence artifact schema. Per the precedent set by Issue
+#1767 (`[4.28.0]`), additive test-intelligence surface bumps the
+top-level `CONTRACT_VERSION` only.
+
+New public exports (additive only):
+
+- `normalizeUntrustedContent` — pure function over an
+  `UntrustedContentNormalizerInput` describing optional Figma /
+  Jira-ADF / Markdown / generic-text-field payloads. Returns sanitised
+  payloads + an `UntrustedContentNormalizationReport`.
+- `writeUntrustedContentNormalizationReport` — persists the canonical
+  drop-count report to
+  `<runDir>/untrusted-content-normalization-report.json`. Counts
+  only — never raw stripped content.
+- `UNTRUSTED_CONTENT_NORMALIZATION_REPORT_ARTIFACT_FILENAME`,
+  `UNTRUSTED_CONTENT_NORMALIZATION_REPORT_SCHEMA_VERSION` (`"1.0.0"`),
+  `MAX_UNTRUSTED_CONTENT_ELEMENT_BYTES` (`4_096`),
+  `MAX_UNTRUSTED_CONTENT_MARKDOWN_BYTES` (`32_768`),
+  `ALLOWED_UNTRUSTED_CONTENT_CARRIER_KINDS`,
+  `ALLOWED_UNTRUSTED_CONTENT_SEVERITIES`,
+  `ALLOWED_UNTRUSTED_CONTENT_OUTCOMES`.
+- Types: `UntrustedContentNormalizerInput`,
+  `UntrustedContentDropCounts`,
+  `UntrustedContentNeedsReviewReason`,
+  `UntrustedContentNormalizationReport`,
+  `UntrustedContentNormalizationOutput`,
+  `UntrustedContentCarrierKind`, `UntrustedContentSeverity`,
+  `UntrustedContentNormalizationOutcome`.
+
+Sentinel-name hits (severity `critical`) flip the report `outcome`
+to `needs_review`; secret matches and Markdown injection-pattern
+hits do the same. The banking profile pins this normalization as
+enforced — there is no opt-out.
+
+This is an additive minor bump — existing serialised artifacts
+remain valid because no field, type, or refusal code is removed or
+renamed.
+
 ## [4.29.0] - 2026-05-03
 
 ### Changed (Issue #1756 — visual sidecar deployment correction)

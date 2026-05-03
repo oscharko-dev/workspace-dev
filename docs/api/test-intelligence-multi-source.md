@@ -5,8 +5,8 @@ test-intelligence contracts, HTTP routes, and operator configuration options
 introduced in Issues #1431–#1439.
 
 **Contract version:** `TEST_INTELLIGENCE_CONTRACT_VERSION = "1.6.0"`<br>
-**Package contract version:** `CONTRACT_VERSION = "4.27.0"`<br>
-**Authoritative surface:** `CONTRACT_CHANGELOG.md` §4.11.0–4.27.0
+**Package contract version:** `CONTRACT_VERSION = "4.30.0"`<br>
+**Authoritative surface:** `CONTRACT_CHANGELOG.md` §4.11.0–4.30.0
 
 For the operator setup guide see `docs/test-intelligence.md`. For migration
 from single-source jobs see `docs/migration/wave-4-additive.md`.
@@ -70,16 +70,16 @@ a primary source.
 
 ## 3. Source-mix decision table
 
-| Sources present                                 | Accepted? | Notes                                                             |
-| ----------------------------------------------- | --------- | ----------------------------------------------------------------- |
-| Figma-only                                      | Yes       | Wave 1 baseline; works when multi-source gate is off              |
-| Jira REST only                                  | Yes       | No Figma, no screenshots, no visual sidecar                       |
-| Jira paste only                                 | Yes       | Air-gap safe                                                      |
-| Figma + Jira REST                               | Yes       | Reconciliation in Wave 4.F                                        |
-| Figma + Jira paste                              | Yes       | Reconciliation in Wave 4.F                                        |
+| Sources present                                 | Accepted? | Notes                                                                               |
+| ----------------------------------------------- | --------- | ----------------------------------------------------------------------------------- |
+| Figma-only                                      | Yes       | Wave 1 baseline; works when multi-source gate is off                                |
+| Jira REST only                                  | Yes       | No Figma, no screenshots, no visual sidecar                                         |
+| Jira paste only                                 | Yes       | Air-gap safe                                                                        |
+| Figma + Jira REST                               | Yes       | Reconciliation in Wave 4.F                                                          |
+| Figma + Jira paste                              | Yes       | Reconciliation in Wave 4.F                                                          |
 | Jira REST + Jira paste                          | Yes       | Refused with `duplicate_jira_paste_collision` only when `canonicalIssueKey` matches |
-| Any above + `custom_text` / `custom_structured` | Yes       | Custom kinds are supporting evidence only                         |
-| `custom_text` / `custom_structured` only        | Refused   | `primary_source_required`                                         |
+| Any above + `custom_text` / `custom_structured` | Yes       | Custom kinds are supporting evidence only                                           |
+| `custom_text` / `custom_structured` only        | Refused   | `primary_source_required`                                                           |
 
 ---
 
@@ -366,13 +366,13 @@ routes to be reachable.
 
 ### 8.2 New Wave 4 routes
 
-| Route                                                                          | Method | Auth   | Purpose                                      |
-| ------------------------------------------------------------------------------ | ------ | ------ | -------------------------------------------- |
-| `/workspace/test-intelligence/jobs/<jobId>/sources/jira-fetch`                 | POST   | bearer | Ingest Jira REST issues via configured gateway |
-| `/workspace/test-intelligence/jobs/<jobId>/sources/<sourceId>`                 | DELETE | bearer | Remove a source from a job                   |
-| `/workspace/test-intelligence/jobs/<jobId>/conflicts/<conflictId>/resolve`     | POST   | bearer | Record reviewer conflict resolution          |
-| `/workspace/test-intelligence/sources/<jobId>/jira-paste`                      | POST   | bearer | Ingest paste-only Jira source                |
-| `/workspace/test-intelligence/sources/<jobId>/custom-context`                  | POST   | bearer | Ingest reviewer custom-context source        |
+| Route                                                                      | Method | Auth   | Purpose                                        |
+| -------------------------------------------------------------------------- | ------ | ------ | ---------------------------------------------- |
+| `/workspace/test-intelligence/jobs/<jobId>/sources/jira-fetch`             | POST   | bearer | Ingest Jira REST issues via configured gateway |
+| `/workspace/test-intelligence/jobs/<jobId>/sources/<sourceId>`             | DELETE | bearer | Remove a source from a job                     |
+| `/workspace/test-intelligence/jobs/<jobId>/conflicts/<conflictId>/resolve` | POST   | bearer | Record reviewer conflict resolution            |
+| `/workspace/test-intelligence/sources/<jobId>/jira-paste`                  | POST   | bearer | Ingest paste-only Jira source                  |
+| `/workspace/test-intelligence/sources/<jobId>/custom-context`              | POST   | bearer | Ingest reviewer custom-context source          |
 
 #### `POST /workspace/test-intelligence/sources/<jobId>/jira-paste`
 
@@ -415,7 +415,12 @@ rejected with `xss_content_detected` before parsing.
     },
     "sourceEnvelope": {
         "version": "1.0.0",
-        "sources": [{ "sourceId": "jira-paste-1f3870be-a7d3c7f4d9e2", "kind": "jira_paste" }],
+        "sources": [
+            {
+                "sourceId": "jira-paste-1f3870be-a7d3c7f4d9e2",
+                "kind": "jira_paste"
+            }
+        ],
         "aggregateContentHash": "<sha256>",
         "conflictResolutionPolicy": "reviewer_decides"
     },
@@ -484,9 +489,15 @@ custom-context evidence.
     "sourceEnvelope": {
         "version": "1.0.0",
         "sources": [
-            { "sourceId": "jira-paste-1f3870be-a7d3c7f4d9e2", "kind": "jira_paste" },
+            {
+                "sourceId": "jira-paste-1f3870be-a7d3c7f4d9e2",
+                "kind": "jira_paste"
+            },
             { "sourceId": "custom-context-markdown", "kind": "custom_text" },
-            { "sourceId": "custom-context-structured", "kind": "custom_structured" }
+            {
+                "sourceId": "custom-context-structured",
+                "kind": "custom_structured"
+            }
         ],
         "aggregateContentHash": "<sha256>",
         "conflictResolutionPolicy": "reviewer_decides"
