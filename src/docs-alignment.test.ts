@@ -1161,6 +1161,9 @@ test("docs: Wave 4 multi-source API reference documents key exported contracts",
   const migrationDoc = await readRepoFile("docs/migration/wave-4-additive.md");
   const dpiaJira = await readRepoFile("docs/dpia/jira-source.md");
   const dpiaCustom = await readRepoFile("docs/dpia/custom-context-source.md");
+  const productionRunnerDpia = await readRepoFile(
+    "docs/test-intelligence-dpia-production-runner.md",
+  );
   const doraDoc = await readRepoFile("docs/dora/multi-source.md");
   const euAiActDoc = await readRepoFile("docs/eu-ai-act/human-oversight.md");
   const runbookJira = await readRepoFile("docs/runbooks/jira-source-setup.md");
@@ -1432,6 +1435,8 @@ test("docs: Wave 4 multi-source API reference documents key exported contracts",
     dpiaCustom,
     new RegExp(escapeRegExp(`\`${CUSTOM_CONTEXT_ARTIFACT_FILENAME}\``)),
   );
+  assert.match(productionRunnerDpia, /No raw screenshot bytes are ever persisted/i);
+  assert.match(productionRunnerDpia, /SHA-256 capture identity/i);
 
   // DORA doc must reference real article numbers
   assert.match(doraDoc, /Article 6/);

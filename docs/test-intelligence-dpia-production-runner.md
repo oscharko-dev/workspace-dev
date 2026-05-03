@@ -126,6 +126,9 @@ artifact. The verify script
 (`scripts/verify-evidence-manifest.ts`) recomputes the hashes and
 exits non-zero on mismatch — auditors can run it without read access
 to the source.
+No raw screenshot bytes are ever persisted; the only persisted visual
+evidence is structured sidecar output plus SHA-256 capture identity
+records and derived evidence hashes.
 
 ---
 

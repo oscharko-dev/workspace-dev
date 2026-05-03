@@ -45,8 +45,8 @@ import {
   type Wave1PocEvidenceArtifactCategory,
   type Wave1PocEvidenceManifest,
   type Wave1PocEvidenceVerificationResult,
-  type Wave1PocFixtureId,
   type MultiSourceSourceProvenanceRecord,
+  type VisualSidecarCaptureIdentity,
 } from "../contracts/index.js";
 import { canonicalJson } from "./content-hash.js";
 
@@ -218,7 +218,7 @@ export interface BuildEvidenceArtifactRecord {
 }
 
 export interface BuildWave1PocEvidenceManifestInput {
-  fixtureId: Wave1PocFixtureId;
+  fixtureId: string;
   jobId: string;
   generatedAt: string;
   /** Identities of the deployments behind the run. */
@@ -236,6 +236,8 @@ export interface BuildWave1PocEvidenceManifestInput {
   artifacts: ReadonlyArray<BuildEvidenceArtifactRecord>;
   /** Direct visual-sidecar summary when the opt-in sidecar path ran. */
   visualSidecar?: Wave1PocEvidenceManifest["visualSidecar"];
+  /** Persisted capture identities for the opt-in visual sidecar path. */
+  visualSidecarCaptureIdentities?: readonly VisualSidecarCaptureIdentity[];
   /** Additive Wave 4 multi-source evidence metadata. */
   multiSource?: {
     sourceProvenanceRecords: readonly MultiSourceSourceProvenanceRecord[];
@@ -255,6 +257,11 @@ const toBytes = (value: Uint8Array | Buffer): Uint8Array => {
   if (value instanceof Uint8Array && !Buffer.isBuffer(value)) return value;
   return new Uint8Array(value.buffer, value.byteOffset, value.byteLength);
 };
+
+const cloneVisualSidecarCaptureIdentities = (
+  identities: readonly VisualSidecarCaptureIdentity[],
+): VisualSidecarCaptureIdentity[] =>
+  identities.map((identity) => ({ ...identity }));
 
 const sha256OfBytes = (bytes: Uint8Array): string => {
   return createHash("sha256").update(bytes).digest("hex");
@@ -352,6 +359,12 @@ export const buildWave1PocEvidenceManifest = (
           artifacts,
         })
       : undefined;
+  const visualSidecarCaptureIdentities =
+    input.visualSidecarCaptureIdentities !== undefined
+      ? cloneVisualSidecarCaptureIdentities(
+          input.visualSidecarCaptureIdentities,
+        )
+      : undefined;
 
   const manifest: Wave1PocEvidenceManifest = {
     schemaVersion: WAVE1_POC_EVIDENCE_MANIFEST_SCHEMA_VERSION,
@@ -375,6 +388,9 @@ export const buildWave1PocEvidenceManifest = (
     cacheKeyDigest: input.cacheKeyDigest,
     ...(input.visualSidecar !== undefined
       ? { visualSidecar: input.visualSidecar }
+      : {}),
+    ...(visualSidecarCaptureIdentities !== undefined
+      ? { visualSidecarCaptureIdentities }
       : {}),
     artifacts,
     ...(sourceProvenanceRecords !== undefined
@@ -626,6 +642,52 @@ export const validateWave1PocEvidenceManifestMetadata = (
     const deployment = visualSidecar["selectedDeployment"];
     if (typeof deployment !== "string" || !VISUAL_DEPLOYMENTS.has(deployment)) {
       issues.push("visualSidecar.selectedDeployment has an unknown deployment");
+    }
+  }
+
+  if (manifest.visualSidecarCaptureIdentities !== undefined) {
+    if (!Array.isArray(manifest.visualSidecarCaptureIdentities)) {
+      issues.push("visualSidecarCaptureIdentities must be an array");
+    } else {
+      for (const identity of manifest.visualSidecarCaptureIdentities) {
+        if (!isRecord(identity)) {
+          issues.push("visualSidecarCaptureIdentities entry must be an object");
+          continue;
+        }
+        if (
+          typeof identity["screenId"] !== "string" ||
+          identity["screenId"].length === 0
+        ) {
+          issues.push(
+            "visualSidecarCaptureIdentities.screenId must be a non-empty string",
+          );
+        }
+        if (
+          typeof identity["mimeType"] !== "string" ||
+          identity["mimeType"].length === 0
+        ) {
+          issues.push(
+            "visualSidecarCaptureIdentities.mimeType must be a non-empty string",
+          );
+        }
+        if (
+          typeof identity["byteLength"] !== "number" ||
+          !Number.isSafeInteger(identity["byteLength"]) ||
+          identity["byteLength"] < 0
+        ) {
+          issues.push(
+            "visualSidecarCaptureIdentities.byteLength must be a non-negative safe integer",
+          );
+        }
+        if (
+          typeof identity["sha256"] !== "string" ||
+          !HEX64.test(identity["sha256"])
+        ) {
+          issues.push(
+            "visualSidecarCaptureIdentities.sha256 must be a sha256 hex string",
+          );
+        }
+      }
     }
   }
 
