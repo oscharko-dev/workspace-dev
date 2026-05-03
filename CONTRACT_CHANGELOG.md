@@ -31,6 +31,41 @@ All changes to the public contract surface of `workspace-dev` are documented her
 
 ---
 
+## [4.28.0] - 2026-05-03
+
+### Added (Issue #1767)
+
+The test-intelligence contract surface now includes a deterministic
+pre-generation coverage-planning artifact for Wave MA-1. This is additive
+only: it does not change `GeneratedTestCase`, `coverage-report.json`, the
+prompt compiler cache key, or existing production-runner behavior.
+
+New public exports:
+
+- `COVERAGE_PLAN_SCHEMA_VERSION` — schema version stamp for
+  `coverage-plan.json`.
+- `COVERAGE_PLAN_ARTIFACT_FILENAME` — canonical artifact filename
+  (`"coverage-plan.json"`).
+- `DEFAULT_MUTATION_KILL_RATE_TARGET` — default mutation objective (`0.85`)
+  used when callers do not supply an override.
+- `ALLOWED_COVERAGE_PLAN_TECHNIQUES` and `CoveragePlanTechnique` —
+  deterministic planner technique enum:
+  `initial_state`, `equivalence_partitioning`, `boundary_value`,
+  `decision_table`, `state_transition`, `pairwise`, `error_guessing`.
+- `ALLOWED_COVERAGE_REQUIREMENT_REASON_CODES` and
+  `CoverageRequirementReasonCode` — machine-readable reason codes explaining
+  why each requirement exists.
+- `CoverageRequirement` — stable requirement rows carrying
+  `requirementId`, `technique`, `reasonCode`, optional `screenId`,
+  `targetIds`, `sourceRefs`, and `visualRefs`.
+- `CoveragePlan` — additive deterministic plan shape containing
+  `minimumCases`, `recommendedCases`, ordered `techniques`, and
+  `mutationKillRateTarget`.
+
+This is a minor contract bump because it adds new exported constants and
+types. Existing consumers remain source- and runtime-compatible unless they
+choose to adopt the new artifact.
+
 ## [4.27.0] - 2026-05-02
 
 ### Added (Issue #1735 — banking/insurance prompt polish)

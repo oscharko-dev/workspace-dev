@@ -57,6 +57,7 @@ const createJob = async (): Promise<{
           jobDir,
           "stale-business-test-intent-ir.json",
         ),
+        coveragePlanFile: path.join(jobDir, "stale-coverage-plan.json"),
         generationMetricsFile: path.join(
           jobDir,
           "stale-generation-metrics.json",
@@ -210,6 +211,7 @@ test("syncPublicJobProjection maps stage artifacts back into public job fields a
     jobDir,
     "business-test-intent-ir.json",
   );
+  const coveragePlanFile = path.join(jobDir, "coverage-plan.json");
   const llmCapabilitiesEvidenceDir = path.join(jobDir, "evidence", "llm");
   const figmaJsonFile = path.join(jobDir, "figma.json");
   const reproDir = path.join(jobDir, "repro");
@@ -302,6 +304,11 @@ test("syncPublicJobProjection maps stage artifacts back into public job fields a
     key: STAGE_ARTIFACT_KEYS.businessTestIntentIr,
     stage: "ir.derive",
     absolutePath: businessTestIntentIrFile,
+  });
+  await artifactStore.setPath({
+    key: STAGE_ARTIFACT_KEYS.coveragePlan,
+    stage: "ir.derive",
+    absolutePath: coveragePlanFile,
   });
   await artifactStore.setPath({
     key: STAGE_ARTIFACT_KEYS.llmCapabilitiesEvidence,
@@ -632,6 +639,7 @@ test("syncPublicJobProjection maps stage artifacts back into public job fields a
     job.artifacts.businessTestIntentIrFile,
     businessTestIntentIrFile,
   );
+  assert.equal(job.artifacts.coveragePlanFile, coveragePlanFile);
   assert.equal(
     job.artifacts.llmCapabilitiesEvidenceDir,
     llmCapabilitiesEvidenceDir,

@@ -60,6 +60,10 @@ Out of scope:
 - All persisted artifacts use deterministic canonical-JSON serialization plus
   atomic temp-file rename, so replay produces byte-identical files for the same
   inputs.
+- Deterministic coverage planning is additive: `coverage-plan.json` can be
+  derived from `TestDesignModel` plus source-mix context before case
+  generation. The plan's `mutationKillRateTarget` defaults to `0.85` when the
+  caller does not supply an override.
 
 ## 1. Enable the subsurface
 

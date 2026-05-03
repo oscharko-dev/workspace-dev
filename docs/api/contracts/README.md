@@ -394,6 +394,82 @@ Number of screens covered by the visual binding.
 
 ***
 
+### CoveragePlan
+
+Deterministic pre-generation coverage plan derived from `TestDesignModel`
+plus optional source-mix context.
+
+`mutationKillRateTarget` defaults to `0.85` when the caller does not supply
+an override; callers may only provide values in the closed interval `[0, 1]`.
+
+#### Properties
+
+##### jobId
+
+> `readonly` **jobId**: `string`
+
+##### minimumCases
+
+> `readonly` **minimumCases**: readonly [`CoverageRequirement`](#coveragerequirement)[]
+
+##### mutationKillRateTarget
+
+> `readonly` **mutationKillRateTarget**: `number`
+
+##### recommendedCases
+
+> `readonly` **recommendedCases**: readonly [`CoverageRequirement`](#coveragerequirement)[]
+
+##### schemaVersion
+
+> `readonly` **schemaVersion**: `"1.0.0"`
+
+##### techniques
+
+> `readonly` **techniques**: readonly (`"equivalence_partitioning"` \| `"decision_table"` \| `"state_transition"` \| `"error_guessing"` \| `"initial_state"` \| `"boundary_value"` \| `"pairwise"`)[]
+
+***
+
+### CoverageRequirement
+
+A single deterministic coverage requirement emitted by `coverage-planner.ts`.
+
+Each requirement is machine-readable and points at the model entities and
+source refs that justified it. Human-readable wording is intentionally kept
+out of the contract so equivalent inputs remain byte-stable.
+
+#### Properties
+
+##### reasonCode
+
+> `readonly` **reasonCode**: `"screen_baseline"` \| `"element_partition"` \| `"rule_partition"` \| `"rule_boundary"` \| `"rule_decision"` \| `"action_transition"` \| `"calculation_rule"` \| `"screen_pairwise"` \| `"risk_regression"` \| `"open_question_probe"` \| `"source_reconciliation_probe"` \| `"supporting_context_probe"`
+
+##### requirementId
+
+> `readonly` **requirementId**: `string`
+
+##### screenId?
+
+> `readonly` `optional` **screenId?**: `string`
+
+##### sourceRefs
+
+> `readonly` **sourceRefs**: readonly `string`[]
+
+##### targetIds
+
+> `readonly` **targetIds**: readonly `string`[]
+
+##### technique
+
+> `readonly` **technique**: `"equivalence_partitioning"` \| `"decision_table"` \| `"state_transition"` \| `"error_guessing"` \| `"initial_state"` \| `"boundary_value"` \| `"pairwise"`
+
+##### visualRefs
+
+> `readonly` **visualRefs**: readonly `string`[]
+
+***
+
 ### CustomContextNoteEntry
 
 PII-redacted Markdown note persisted as custom supporting context.
@@ -6690,6 +6766,259 @@ Whether the report blocks downstream review/export (any error => true).
 
 ***
 
+### TestDesignAction
+
+#### Properties
+
+##### actionId
+
+> **actionId**: `string`
+
+##### ambiguity?
+
+> `optional` **ambiguity?**: `string`
+
+##### kind
+
+> **kind**: `string`
+
+##### label
+
+> **label**: `string`
+
+##### targetScreenId?
+
+> `optional` **targetScreenId?**: `string`
+
+***
+
+### TestDesignAssumption
+
+#### Properties
+
+##### assumptionId
+
+> **assumptionId**: `string`
+
+##### text
+
+> **text**: `string`
+
+***
+
+### TestDesignCalculation
+
+#### Properties
+
+##### ambiguity?
+
+> `optional` **ambiguity?**: `string`
+
+##### calculationId
+
+> **calculationId**: `string`
+
+##### inputElementIds
+
+> **inputElementIds**: `string`[]
+
+##### name
+
+> **name**: `string`
+
+***
+
+### TestDesignElement
+
+#### Properties
+
+##### ambiguity?
+
+> `optional` **ambiguity?**: `string`
+
+##### defaultValue?
+
+> `optional` **defaultValue?**: `string`
+
+##### elementId
+
+> **elementId**: `string`
+
+##### kind
+
+> **kind**: `string`
+
+##### label
+
+> **label**: `string`
+
+***
+
+### TestDesignModel
+
+Compact, versioned projection of `BusinessTestIntentIr` plus optional
+visual-sidecar evidence. This additive artifact gives downstream prompt
+compilation a bounded, test-design-oriented surface without replacing the
+source IR.
+
+#### Properties
+
+##### assumptions
+
+> **assumptions**: [`TestDesignAssumption`](#testdesignassumption)[]
+
+##### businessRules
+
+> **businessRules**: [`TestDesignRule`](#testdesignrule)[]
+
+##### jobId
+
+> **jobId**: `string`
+
+##### openQuestions
+
+> **openQuestions**: [`TestDesignOpenQuestion`](#testdesignopenquestion)[]
+
+##### riskSignals
+
+> **riskSignals**: [`TestDesignRiskSignal`](#testdesignrisksignal)[]
+
+##### schemaVersion
+
+> **schemaVersion**: `"1.0.0"`
+
+##### screens
+
+> **screens**: [`TestDesignScreen`](#testdesignscreen)[]
+
+##### sourceHash
+
+> **sourceHash**: `string`
+
+***
+
+### TestDesignOpenQuestion
+
+#### Properties
+
+##### openQuestionId
+
+> **openQuestionId**: `string`
+
+##### text
+
+> **text**: `string`
+
+***
+
+### TestDesignRiskSignal
+
+#### Properties
+
+##### riskSignalId
+
+> **riskSignalId**: `string`
+
+##### screenId?
+
+> `optional` **screenId?**: `string`
+
+##### sourceRefs
+
+> **sourceRefs**: `string`[]
+
+##### text
+
+> **text**: `string`
+
+***
+
+### TestDesignRule
+
+#### Properties
+
+##### description
+
+> **description**: `string`
+
+##### ruleId
+
+> **ruleId**: `string`
+
+##### screenId?
+
+> `optional` **screenId?**: `string`
+
+##### sourceRefs
+
+> **sourceRefs**: `string`[]
+
+***
+
+### TestDesignScreen
+
+#### Properties
+
+##### actions
+
+> **actions**: [`TestDesignAction`](#testdesignaction)[]
+
+##### calculations
+
+> **calculations**: [`TestDesignCalculation`](#testdesigncalculation)[]
+
+##### elements
+
+> **elements**: [`TestDesignElement`](#testdesignelement)[]
+
+##### name
+
+> **name**: `string`
+
+##### purpose?
+
+> `optional` **purpose?**: `string`
+
+##### screenId
+
+> **screenId**: `string`
+
+##### sourceRefs
+
+> **sourceRefs**: `string`[]
+
+##### validations
+
+> **validations**: [`TestDesignValidation`](#testdesignvalidation)[]
+
+##### visualRefs
+
+> **visualRefs**: `string`[]
+
+***
+
+### TestDesignValidation
+
+#### Properties
+
+##### ambiguity?
+
+> `optional` **ambiguity?**: `string`
+
+##### rule
+
+> **rule**: `string`
+
+##### targetElementId?
+
+> `optional` **targetElementId?**: `string`
+
+##### validationId
+
+> **validationId**: `string`
+
+***
+
 ### TestIntelligenceReviewPrincipal
 
 Bearer credential bound to a single review principal.
@@ -9852,7 +10181,7 @@ Submit response for accepted jobs.
 
 ###### Inherited from
 
-[`WorkspaceSubmitAccepted`](#workspacesubmitaccepted).[`jobId`](#jobid-39)
+[`WorkspaceSubmitAccepted`](#workspacesubmitaccepted).[`jobId`](#jobid-41)
 
 ##### pasteDeltaSummary?
 
@@ -9938,6 +10267,10 @@ Artifact paths emitted by autonomous job execution.
 ##### confidenceReportFile?
 
 > `optional` **confidenceReportFile?**: `string`
+
+##### coveragePlanFile?
+
+> `optional` **coveragePlanFile?**: `string`
 
 ##### designIrFile?
 
@@ -12765,7 +13098,7 @@ Region result returned as part of a visual audit.
 
 ###### Inherited from
 
-[`WorkspaceVisualDiffRegion`](#workspacevisualdiffregion).[`name`](#name-9)
+[`WorkspaceVisualDiffRegion`](#workspacevisualdiffregion).[`name`](#name-11)
 
 ##### totalPixels
 
@@ -13394,6 +13727,22 @@ Scoring weights for the visual quality composite score.
 > **ConflictResolutionPolicy** = *typeof* [`ALLOWED_CONFLICT_RESOLUTION_POLICIES`](#allowed_conflict_resolution_policies)\[`number`\]
 
 Conflict-resolution policy alias.
+
+***
+
+### CoveragePlanTechnique
+
+> **CoveragePlanTechnique** = *typeof* [`ALLOWED_COVERAGE_PLAN_TECHNIQUES`](#allowed_coverage_plan_techniques)\[`number`\]
+
+Discriminated union of deterministic coverage-planning techniques.
+
+***
+
+### CoverageRequirementReasonCode
+
+> **CoverageRequirementReasonCode** = *typeof* [`ALLOWED_COVERAGE_REQUIREMENT_REASON_CODES`](#allowed_coverage_requirement_reason_codes)\[`number`\]
+
+Stable reason-code union for deterministic coverage requirements.
 
 ***
 
@@ -14430,6 +14779,27 @@ Conflict-resolution policy discriminant carried on every envelope.
 
 ***
 
+### ALLOWED\_COVERAGE\_PLAN\_TECHNIQUES
+
+> `const` **ALLOWED\_COVERAGE\_PLAN\_TECHNIQUES**: readonly \[`"initial_state"`, `"equivalence_partitioning"`, `"boundary_value"`, `"decision_table"`, `"state_transition"`, `"pairwise"`, `"error_guessing"`\]
+
+Technique identifiers selected by the deterministic coverage planner.
+
+These are plan-level test-design techniques, not the same enum as
+`GeneratedTestCase.technique`.
+
+***
+
+### ALLOWED\_COVERAGE\_REQUIREMENT\_REASON\_CODES
+
+> `const` **ALLOWED\_COVERAGE\_REQUIREMENT\_REASON\_CODES**: readonly \[`"screen_baseline"`, `"element_partition"`, `"rule_partition"`, `"rule_boundary"`, `"rule_decision"`, `"action_transition"`, `"calculation_rule"`, `"screen_pairwise"`, `"risk_regression"`, `"open_question_probe"`, `"source_reconciliation_probe"`, `"supporting_context_probe"`\]
+
+Stable reason codes explaining why a coverage requirement exists.
+These allow downstream generation and auditing to distinguish requirements
+without parsing human-readable labels.
+
+***
+
 ### ALLOWED\_DEDUPE\_EXTERNAL\_PROBE\_STATES
 
 > `const` **ALLOWED\_DEDUPE\_EXTERNAL\_PROBE\_STATES**: readonly \[`"disabled"`, `"unconfigured"`, `"partial_failure"`, `"executed"`\]
@@ -15192,11 +15562,27 @@ Schema version for `BusinessTestIntentIr` artifacts.
 
 ### CONTRACT\_VERSION
 
-> `const` **CONTRACT\_VERSION**: `"4.27.0"`
+> `const` **CONTRACT\_VERSION**: `"4.28.0"`
 
 Current contract version constant.
 Must be bumped according to CONTRACT_CHANGELOG.md rules.
 Package version alignment is documented in VERSIONING.md.
+
+***
+
+### COVERAGE\_PLAN\_ARTIFACT\_FILENAME
+
+> `const` **COVERAGE\_PLAN\_ARTIFACT\_FILENAME**: `"coverage-plan.json"`
+
+Canonical filename for the deterministic coverage-plan artifact.
+
+***
+
+### COVERAGE\_PLAN\_SCHEMA\_VERSION
+
+> `const` **COVERAGE\_PLAN\_SCHEMA\_VERSION**: `"1.0.0"`
+
+Schema version for persisted `coverage-plan.json` artifacts.
 
 ***
 
@@ -15285,6 +15671,14 @@ Default Jira field selection profile — data-minimized by default. No
 comments, no attachments, no linked issues, no unknown custom fields.
 Description is included; acceptance criteria require explicit
 configuration.
+
+***
+
+### DEFAULT\_MUTATION\_KILL\_RATE\_TARGET
+
+> `const` **DEFAULT\_MUTATION\_KILL\_RATE\_TARGET**: `0.85`
+
+Default mutation kill-rate target for deterministic coverage planning.
 
 ***
 
@@ -15958,6 +16352,22 @@ Canonical filename for the persisted validation diagnostics artifact.
 
 Schema version for the persisted test-case validation report artifact (Issue #1364).
 Bumped when `TestCaseValidationReport` changes shape.
+
+***
+
+### TEST\_DESIGN\_MODEL\_ARTIFACT\_FILENAME
+
+> `const` **TEST\_DESIGN\_MODEL\_ARTIFACT\_FILENAME**: `"test-design-model.json"`
+
+Canonical filename for persisted `TestDesignModel` artifacts.
+
+***
+
+### TEST\_DESIGN\_MODEL\_SCHEMA\_VERSION
+
+> `const` **TEST\_DESIGN\_MODEL\_SCHEMA\_VERSION**: `"1.0.0"`
+
+Schema version for persisted `TestDesignModel` projection artifacts.
 
 ***
 

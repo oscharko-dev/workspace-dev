@@ -48,6 +48,7 @@ export const STAGE_ARTIFACT_KEYS = {
   pasteFingerprint: "figma.paste.fingerprint",
   businessTestIntentIr: "test_intelligence.business_intent_ir",
   testDesignModel: "test_intelligence.test_design_model",
+  coveragePlan: "test_intelligence.coverage_plan",
   llmCapabilitiesEvidence: "test_intelligence.llm_capabilities_evidence",
 } as const;
 

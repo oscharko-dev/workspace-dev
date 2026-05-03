@@ -37,10 +37,12 @@ import type {
   TruncatedScreenMetric,
 } from "../../parity/types-ir.js";
 import {
+  buildCoveragePlan,
   deriveBusinessTestIntentIr,
   buildTestDesignModel,
   type IntentDerivationFigmaInput,
   type IntentDerivationNodeInput,
+  writeCoveragePlanArtifact,
   writeTestDesignModelArtifact,
 } from "../../test-intelligence/index.js";
 import type { FigmaFetchDiagnostics, FigmaFileResponse } from "../types.js";
@@ -326,6 +328,9 @@ const persistBusinessTestIntentIr = async ({
     jobId: context.jobId,
     intent: businessTestIntentIr,
   });
+  const coveragePlan = buildCoveragePlan({
+    model: testDesignModel,
+  });
   const businessTestIntentIrFile = path.join(
     context.paths.jobDir,
     "business-test-intent-ir.json",
@@ -339,6 +344,10 @@ const persistBusinessTestIntentIr = async ({
     model: testDesignModel,
     runDir: context.paths.jobDir,
   });
+  const coveragePlanFile = await writeCoveragePlanArtifact({
+    plan: coveragePlan,
+    runDir: context.paths.jobDir,
+  });
   await context.artifactStore.setPath({
     key: STAGE_ARTIFACT_KEYS.businessTestIntentIr,
     stage: "ir.derive",
@@ -348,6 +357,11 @@ const persistBusinessTestIntentIr = async ({
     key: STAGE_ARTIFACT_KEYS.testDesignModel,
     stage: "ir.derive",
     absolutePath: testDesignModelFile,
+  });
+  await context.artifactStore.setPath({
+    key: STAGE_ARTIFACT_KEYS.coveragePlan,
+    stage: "ir.derive",
+    absolutePath: coveragePlanFile.artifactPath,
   });
 };
 

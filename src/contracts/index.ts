@@ -1923,6 +1923,7 @@ export interface WorkspaceJobArtifacts {
   designIrFile?: string;
   figmaAnalysisFile?: string;
   businessTestIntentIrFile?: string;
+  coveragePlanFile?: string;
   llmCapabilitiesEvidenceDir?: string;
   figmaJsonFile?: string;
   storybookTokensFile?: string;
@@ -7799,9 +7800,95 @@ export type SourceMixPlannerResult =
   | { ok: true; plan: SourceMixPlan }
   | { ok: false; issues: SourceMixPlannerIssue[] };
 
+/** Schema version for persisted `coverage-plan.json` artifacts. */
+export const COVERAGE_PLAN_SCHEMA_VERSION = "1.0.0" as const;
+
+/** Canonical filename for the deterministic coverage-plan artifact. */
+export const COVERAGE_PLAN_ARTIFACT_FILENAME = "coverage-plan.json" as const;
+
+/** Default mutation kill-rate target for deterministic coverage planning. */
+export const DEFAULT_MUTATION_KILL_RATE_TARGET = 0.85 as const;
+
+/**
+ * Technique identifiers selected by the deterministic coverage planner.
+ *
+ * These are plan-level test-design techniques, not the same enum as
+ * `GeneratedTestCase.technique`.
+ */
+export const ALLOWED_COVERAGE_PLAN_TECHNIQUES = [
+  "initial_state",
+  "equivalence_partitioning",
+  "boundary_value",
+  "decision_table",
+  "state_transition",
+  "pairwise",
+  "error_guessing",
+] as const;
+
+/** Discriminated union of deterministic coverage-planning techniques. */
+export type CoveragePlanTechnique =
+  (typeof ALLOWED_COVERAGE_PLAN_TECHNIQUES)[number];
+
+/**
+ * Stable reason codes explaining why a coverage requirement exists.
+ * These allow downstream generation and auditing to distinguish requirements
+ * without parsing human-readable labels.
+ */
+export const ALLOWED_COVERAGE_REQUIREMENT_REASON_CODES = [
+  "screen_baseline",
+  "element_partition",
+  "rule_partition",
+  "rule_boundary",
+  "rule_decision",
+  "action_transition",
+  "calculation_rule",
+  "screen_pairwise",
+  "risk_regression",
+  "open_question_probe",
+  "source_reconciliation_probe",
+  "supporting_context_probe",
+] as const;
+
+/** Stable reason-code union for deterministic coverage requirements. */
+export type CoverageRequirementReasonCode =
+  (typeof ALLOWED_COVERAGE_REQUIREMENT_REASON_CODES)[number];
+
+/**
+ * A single deterministic coverage requirement emitted by `coverage-planner.ts`.
+ *
+ * Each requirement is machine-readable and points at the model entities and
+ * source refs that justified it. Human-readable wording is intentionally kept
+ * out of the contract so equivalent inputs remain byte-stable.
+ */
+export interface CoverageRequirement {
+  readonly requirementId: string;
+  readonly technique: CoveragePlanTechnique;
+  readonly reasonCode: CoverageRequirementReasonCode;
+  readonly screenId?: string;
+  readonly targetIds: readonly string[];
+  readonly sourceRefs: readonly string[];
+  readonly visualRefs: readonly string[];
+}
+
+/**
+ * Deterministic pre-generation coverage plan derived from `TestDesignModel`
+ * plus optional source-mix context.
+ *
+ * `mutationKillRateTarget` defaults to `0.85` when the caller does not supply
+ * an override; callers may only provide values in the closed interval `[0, 1]`.
+ */
+export interface CoveragePlan {
+  readonly schemaVersion: typeof COVERAGE_PLAN_SCHEMA_VERSION;
+  readonly jobId: string;
+  readonly minimumCases: readonly CoverageRequirement[];
+  readonly recommendedCases: readonly CoverageRequirement[];
+  readonly techniques: readonly CoveragePlanTechnique[];
+  readonly mutationKillRateTarget: number;
+}
+
 /**
  * Current contract version constant.
  * Must be bumped according to CONTRACT_CHANGELOG.md rules.
  * Package version alignment is documented in VERSIONING.md.
  */
-export const CONTRACT_VERSION = "4.27.0" as const;
+export const CONTRACT_VERSION = "4.28.0" as const;

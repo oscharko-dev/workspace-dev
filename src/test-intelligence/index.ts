@@ -143,6 +143,16 @@ export {
   type TestDesignModelValidationResult,
 } from "./test-design-model.js";
 export {
+  buildCoveragePlan,
+  hasBoundaryEvidence,
+  writeCoveragePlanArtifact,
+  type BuildCoveragePlanInput,
+} from "./coverage-planner.js";
+export {
+  selectTestDesignHeuristics,
+  type TestDesignHeuristic,
+} from "./test-design-heuristics.js";
+export {
   buildGeneratedTestCaseListJsonSchema,
   computeGeneratedTestCaseListSchemaHash,
   GENERATED_TEST_CASE_LIST_SCHEMA_NAME,
