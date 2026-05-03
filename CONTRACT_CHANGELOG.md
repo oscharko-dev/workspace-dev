@@ -31,6 +31,75 @@ All changes to the public contract surface of `workspace-dev` are documented her
 
 ---
 
+## [4.34.0] - 2026-05-03
+
+### Added (Issue #1782 — Agent_02 Judge Panel (PoLL) verdict artifact)
+
+The test-intelligence contract surface now ships the Panel-of-LLM-
+Judges (PoLL) verdict shape that the multi-agent harness (Story MA-3,
+parent #1758) writes for every `semantic_judge` step:
+`<runDir>/judge-panel-verdicts.json`.
+
+The new exports cover the full Trust-or-Escalate routing surface:
+
+- `JUDGE_PANEL_VERDICT_SCHEMA_VERSION = "1.0.0"` and
+  `JUDGE_PANEL_VERDICTS_ARTIFACT_FILENAME = "judge-panel-verdicts.json"`
+  pin the on-disk schema and filename.
+- `JUDGE_PANEL_JUDGE_IDS = ["judge_primary", "judge_secondary"]`
+  closes the panel to two cross-family judges
+  (`gpt-oss-120b` × `phi-4-multimodal-poc` per
+  `AGENT_ROLE_PROFILE_REGISTRY`).
+- `JUDGE_PANEL_PER_JUDGE_VERDICTS = ["fail", "pass", "uncertain"]`
+  closes the per-judge verdict literal.
+- `JUDGE_PANEL_AGREEMENT_LABELS = ["both_fail", "both_pass", "disagree"]`
+  closes the panel-level agreement label.
+- `JUDGE_PANEL_RESOLVED_SEVERITIES = ["critical", "downgraded_disagreement", "major", "minor"]`
+  is the closed severity vocabulary the router emits;
+  `downgraded_disagreement` is the AT-022-mandated label for
+  cross-judge disagreement.
+- `JUDGE_PANEL_ESCALATION_ROUTES = ["accept", "downgrade", "needs_review"]`
+  closes the routing decision.
+- `JUDGE_PANEL_REASON_MAX_CHARS = 240` enforces the per-judge reason
+  length cap from the issue spec.
+
+`JudgePanelVerdict` and `JudgePanelPerJudgeVerdictRecord` carry the
+shape consumed by the harness: per-judge raw + post-hoc-calibrated
+scores (CalibraEval-style empirical-CDF mapping per judge), the
+derived per-judge verdict, the panel agreement, the resolved
+severity, and the routing decision. Per-judge entries are sorted
+alphabetically by `judgeId`; the persisted artifact is sorted by
+`(testCaseId, criterion)` so calling the panel builder twice with
+byte-identical inputs returns byte-identical canonical JSON.
+
+The runtime module ships in `src/test-intelligence/semantic-judge-panel.ts`
+and is re-exported through `src/test-intelligence/index.ts`. It does
+not extend the public API (`src/index.ts`) surface; consumers that
+need the panel import it from the test-intelligence subpath, mirroring
+the AGENT_HARNESS_* / AGENT_TEAM_* contracts shipped in 4.32.0–4.33.0.
+
+### Disagreement routing (AT-022)
+
+A panel agreement of `disagree` always maps to
+`resolvedSeverity = "downgraded_disagreement"` and
+`escalationRoute ∈ {downgrade, needs_review}` (operator-selectable
+via `JudgePanelPolicy`; default `downgrade`). Both-pass and both-fail
+remain deterministic — `both_pass` ⇒ `accept` / `minor`, `both_fail`
+⇒ `needs_review` / `critical`.
+
+### Bias controls
+
+- Calibration is the empirical CDF of raw scores observed in the
+  same run, per judge. Monotonic, distribution-aware, no naive
+  shuffling.
+- No length normalisation (verbosity-bias inversion 2025).
+- Reasons are length-capped to `JUDGE_PANEL_REASON_MAX_CHARS` and
+  refuse `LF`, `CR`, `U+2028`, and `U+2029` to prevent line-ending
+  smuggling into evidence.
+- The artifact carries no chain-of-thought, no raw prompts, no
+  screenshots, no model logits — `assertJudgePanelVerdictInvariants`
+  refuses verdicts whose `agreement` does not match the per-judge
+  verdicts or whose routing violates the AT-022 mapping.
+
 ## [4.33.0] - 2026-05-03
 
 ### Added (Issue #1781 — Execution graph and team artifacts)
