@@ -57,6 +57,7 @@ import {
   VISUAL_SIDECAR_RESULT_ARTIFACT_FILENAME,
   VISUAL_SIDECAR_VALIDATION_REPORT_ARTIFACT_FILENAME,
   VISUAL_SIDECAR_SCHEMA_VERSION,
+  type AgentSourceLabel,
   type BusinessTestIntentIr,
   type FinOpsBudgetEnvelope,
   type GeneratedTestCase,
@@ -647,6 +648,9 @@ export const runFigmaToQcTestCases = async (
           version: "runtime",
           description: `Policy profile ${policyProfileId}`,
         };
+  const policyProfileHash = createHash("sha256")
+    .update(canonicalJson(customerRubric), "utf8")
+    .digest("hex");
 
   // 5. Compile prompt.
   const compiled = compilePrompt({
@@ -693,12 +697,23 @@ export const runFigmaToQcTestCases = async (
   const effectiveMaxWallClockMs =
     finopsLimits.maxWallClockMs ?? input.llm.maxWallClockMs;
   const effectiveMaxRetries = finopsLimits.maxRetries;
-  const generationRequest: LlmGenerationRequest = {
+  const generationRequest: LlmGenerationRequest & {
+    onInFlightDedupHit?: (source: AgentSourceLabel) => void;
+  } = {
     jobId: compiled.request.jobId,
     systemPrompt: compiled.request.systemPrompt,
     userPrompt: compiled.request.userPrompt,
     responseSchema: draftSchema,
     responseSchemaName: "workspace-dev-production-runner-draft-list-v1",
+    inFlightDedup: {
+      source: "generator",
+      promptHash: compiled.request.hashes.promptHash,
+      modelBinding: canonicalJson(compiled.request.modelBinding),
+      schemaHash: compiled.request.hashes.schemaHash,
+      policyProfileHash,
+    },
+    onInFlightDedupHit: (source) =>
+      finopsRecorder.recordInFlightDedupHit(source),
     ...(effectiveMaxInputTokens !== undefined
       ? { maxInputTokens: effectiveMaxInputTokens }
       : {}),

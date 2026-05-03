@@ -30,6 +30,7 @@ import {
   ALLOWED_LLM_GATEWAY_ERROR_CLASSES,
   ALLOWED_LLM_GATEWAY_ROLES,
   ALLOWED_LLM_GATEWAY_WIRE_STRUCTURED_OUTPUT_MODES,
+  type AgentSourceLabel,
   type GatewayIdempotencyKey,
   type GatewayInFlightDedupInputs,
   type LlmGatewayCapabilities,
@@ -120,7 +121,7 @@ export interface LlmGatewayRuntime {
    * Optional callback fired when a concurrent request joins an existing
    * in-flight Promise for the same `request.inFlightDedup` key.
    */
-  onInFlightDedupHit?: (source: string) => void;
+  onInFlightDedupHit?: (source: AgentSourceLabel) => void;
 }
 
 export interface LlmGatewayClient {
@@ -141,6 +142,10 @@ export interface LlmGatewayClient {
    * outside dry-run mode).
    */
   getIdempotencyMetrics(): GatewayIdempotencyMetrics | undefined;
+}
+
+interface LlmGenerationRequestInternal extends LlmGenerationRequest {
+  onInFlightDedupHit?: (source: AgentSourceLabel) => void;
 }
 
 const DEFAULT_BACKOFF_MS: ReadonlyArray<number> = [100, 200, 400, 800, 1600];
@@ -329,6 +334,7 @@ export const createLlmGatewayClient = (
   const generate = async (
     request: LlmGenerationRequest,
   ): Promise<LlmGenerationResult> => {
+    const requestInternal = request as LlmGenerationRequestInternal;
     const dedupInputs = request.inFlightDedup;
     if (dedupInputs === undefined) {
       return generateUncached(request);
@@ -355,6 +361,7 @@ export const createLlmGatewayClient = (
     const existing = inFlightRequests.get(dedupKey);
     if (existing !== undefined) {
       if (dedupInputs.source !== undefined) {
+        requestInternal.onInFlightDedupHit?.(dedupInputs.source);
         runtime.onInFlightDedupHit?.(dedupInputs.source);
       }
       return existing;
