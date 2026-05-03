@@ -146,6 +146,8 @@ const failureMessageFor = (
       return `File '${reference}' is present in the run dir but is not attested by the manifest.`;
     case "visual_sidecar_evidence_missing":
       return `Visual-sidecar evidence for '${reference}' is missing or inconsistent with the manifest.`;
+    case "bySource_hash_mismatch":
+      return `FinOps bySource payload for '${reference}' does not match the attested hash.`;
     default:
       return `Attestation verification failed for '${reference}'.`;
   }
@@ -200,10 +202,11 @@ const sha256OfVisualEvidenceRecord = (
   ) {
     return undefined;
   }
+  const outcomeStrings = outcomes as string[];
   const roundedConfidence = Math.round(meanConfidence * 10_000) / 10_000;
   return createHash("sha256")
     .update(
-      `${screenId}|${deployment}|${[...outcomes].sort().join(",")}|${roundedConfidence}`,
+      `${screenId}|${deployment}|${[...outcomeStrings].sort().join(",")}|${roundedConfidence}`,
       "utf8",
     )
     .digest("hex");
@@ -280,7 +283,7 @@ const compareManifestCaptureIdentities = (
     return false;
   }
   return manifestIdentities.every((identity, index) => {
-    const artifactIdentity = artifactIdentities[index];
+    const artifactIdentity: unknown = artifactIdentities[index];
     return (
       isRecord(identity) &&
       isRecord(artifactIdentity) &&
@@ -772,7 +775,8 @@ export const verifyJobEvidence = async (
           failure.code !== "subject_missing_artifact" &&
           failure.code !== "subject_digest_mismatch" &&
           failure.code !== "subject_unattested_artifact" &&
-          failure.code !== "manifest_sha256_mismatch",
+          failure.code !== "manifest_sha256_mismatch" &&
+          failure.code !== "bySource_hash_mismatch",
       ),
       signingMode: expectedSigningMode,
     });

@@ -545,6 +545,17 @@ export {
   type WriteFinOpsBudgetReportResult,
 } from "./finops-report.js";
 export {
+  PER_SOURCE_COST_BREAKDOWN_SCHEMA_VERSION,
+  STATIC_AGENT_SOURCE_LABELS,
+  computePerSourceCostBreakdownHash,
+  computePerSourceCostBreakdownHashFromReport,
+  finalizePerSourceCostBreakdown,
+  isAgentSourceLabel,
+  type AgentSourceLabel,
+  type PerSourceCostBreakdown,
+  type PerSourceCostEntry,
+} from "./per-source-cost.js";
+export {
   buildLbomDocument,
   isAllowedVisualFallbackReason,
   lbomDataKindFromBomRef,
