@@ -50,6 +50,7 @@ export interface RepairPlanRefusal {
   readonly code:
     | "repair_case_not_found"
     | "repair_case_sticky_accepted"
+    | "repair_change_guard_refused"
     | "repair_hash_mismatch_refused";
   readonly findingIds: readonly string[];
   readonly testCaseId?: string;
@@ -105,7 +106,7 @@ export const buildRepairPlan = (input: BuildRepairPlanInput): RepairPlan => {
   const iterationCount = resolveRepairPlannerIterationCount(
     input.iterationCount,
   );
-  const items: RepairPlanItem[] = [];
+  const planItemsByKey = new Map<string, RepairPlanItem>();
   const refusals: RepairPlanRefusal[] = [];
 
   for (const finding of [...input.findings].sort(compareFindings)) {
@@ -131,14 +132,21 @@ export const buildRepairPlan = (input: BuildRepairPlanInput): RepairPlan => {
       });
       continue;
     }
-    items.push(buildPlanItem(testCase, finding));
+    const item = buildPlanItem(testCase, finding);
+    const planKey = `${item.guard.testCaseId}:${item.guard.allowedChange}`;
+    const existing = planItemsByKey.get(planKey);
+    if (existing === undefined) {
+      planItemsByKey.set(planKey, item);
+    } else {
+      planItemsByKey.set(planKey, mergePlanItems(existing, item));
+    }
   }
 
   return {
     schemaVersion: REPAIR_PLANNER_SCHEMA_VERSION,
     iterationCount,
     outcome: refusals.length === 0 ? "planned" : "needs_review",
-    items: items.sort(comparePlanItems),
+    items: [...planItemsByKey.values()].sort(comparePlanItems),
     refusals: refusals.sort(compareRefusals),
   };
 };
@@ -153,38 +161,68 @@ export const applyRepairPlan = (input: {
     input.list.testCases.map((testCase) => [testCase.id, testCase] as const),
   );
   const refusals = [...input.plan.refusals];
+  const itemsByCaseId = new Map<string, RepairPlanItem[]>();
 
   for (const item of input.plan.items) {
-    const current = byId.get(item.guard.testCaseId);
+    const existing = itemsByCaseId.get(item.guard.testCaseId);
+    if (existing === undefined) {
+      itemsByCaseId.set(item.guard.testCaseId, [item]);
+    } else {
+      existing.push(item);
+    }
+  }
+
+  for (const [testCaseId, items] of itemsByCaseId) {
+    const current = byId.get(testCaseId);
     if (current === undefined) {
-      refusals.push({
-        code: "repair_case_not_found",
-        findingIds: [...item.guard.findingIds],
-        testCaseId: item.guard.testCaseId,
-        detail: `Case ${item.guard.testCaseId} no longer exists.`,
-      });
+      for (const item of items) {
+        refusals.push({
+          code: "repair_case_not_found",
+          findingIds: [...item.guard.findingIds],
+          testCaseId,
+          detail: `Case ${testCaseId} no longer exists.`,
+        });
+      }
       continue;
     }
     if (acceptedCaseIds.has(current.id)) {
-      refusals.push({
-        code: "repair_case_sticky_accepted",
-        findingIds: [...item.guard.findingIds],
-        testCaseId: current.id,
-        detail: `Accepted case ${current.id} must remain unchanged.`,
-      });
+      for (const item of items) {
+        refusals.push({
+          code: "repair_case_sticky_accepted",
+          findingIds: [...item.guard.findingIds],
+          testCaseId: current.id,
+          detail: `Accepted case ${current.id} must remain unchanged.`,
+        });
+      }
       continue;
     }
     const currentHash = computeGeneratedTestCaseRepairHash(current);
-    if (currentHash !== item.guard.expectedCurrentHash) {
-      refusals.push({
-        code: "repair_hash_mismatch_refused",
-        findingIds: [...item.guard.findingIds],
-        testCaseId: current.id,
-        detail: `Expected ${item.guard.expectedCurrentHash} but found ${currentHash}.`,
-      });
+    const guardFailure = items.find((item) => {
+      const mismatch = currentHash !== item.guard.expectedCurrentHash;
+      const patchInvalid = !isPatchAllowed(item);
+      return mismatch || patchInvalid;
+    });
+    if (guardFailure !== undefined) {
+      for (const item of items) {
+        const patchInvalid = !isPatchAllowed(item);
+        refusals.push({
+          code: patchInvalid
+            ? "repair_change_guard_refused"
+            : "repair_hash_mismatch_refused",
+          findingIds: [...item.guard.findingIds],
+          testCaseId: current.id,
+          detail: patchInvalid
+            ? `Patch fields exceed allowedChange "${item.guard.allowedChange}".`
+            : `Expected ${item.guard.expectedCurrentHash} but found ${currentHash}.`,
+        });
+      }
       continue;
     }
-    byId.set(current.id, applyPlanItem(current, item));
+    let nextCase = current;
+    for (const item of items.sort(comparePlanItems)) {
+      nextCase = applyPlanItem(nextCase, item);
+    }
+    byId.set(current.id, nextCase);
   }
 
   return {
@@ -276,6 +314,48 @@ const buildGuard = (
   allowedChange: finding.repairTarget,
 });
 
+const mergePlanItems = (
+  left: RepairPlanItem,
+  right: RepairPlanItem,
+): RepairPlanItem => {
+  const appendExpectedResults = mergeOptionalLists(
+    left.patch.appendExpectedResults,
+    right.patch.appendExpectedResults,
+  );
+  const appendOpenQuestions = mergeOptionalLists(
+    left.patch.appendOpenQuestions,
+    right.patch.appendOpenQuestions,
+  );
+  const appendSteps =
+    left.patch.appendSteps === undefined && right.patch.appendSteps === undefined
+      ? undefined
+      : [...(left.patch.appendSteps ?? []), ...(right.patch.appendSteps ?? [])];
+  const appendTestData = mergeOptionalLists(
+    left.patch.appendTestData,
+    right.patch.appendTestData,
+  );
+  const setReviewState = right.patch.setReviewState ?? left.patch.setReviewState;
+
+  return {
+    guard: {
+      ...left.guard,
+      findingIds: uniqueAppend(left.guard.findingIds, right.guard.findingIds),
+    },
+    summary: [left.summary, right.summary]
+      .filter((value, index, array) => array.indexOf(value) === index)
+      .join(" | "),
+    patch: {
+      ...(appendExpectedResults !== undefined
+        ? { appendExpectedResults }
+        : {}),
+      ...(appendOpenQuestions !== undefined ? { appendOpenQuestions } : {}),
+      ...(appendSteps !== undefined ? { appendSteps } : {}),
+      ...(appendTestData !== undefined ? { appendTestData } : {}),
+      ...(setReviewState !== undefined ? { setReviewState } : {}),
+    },
+  };
+};
+
 const applyPlanItem = (
   testCase: GeneratedTestCase,
   item: RepairPlanItem,
@@ -317,6 +397,57 @@ const uniqueAppend = (
     return [...current];
   }
   return [...new Set([...current, ...additions])];
+};
+
+const mergeOptionalLists = (
+  left: readonly string[] | undefined,
+  right: readonly string[] | undefined,
+): readonly string[] | undefined => {
+  if (left === undefined && right === undefined) {
+    return undefined;
+  }
+  return [...new Set([...(left ?? []), ...(right ?? [])])];
+};
+
+const isPatchAllowed = (item: RepairPlanItem): boolean => {
+  switch (item.guard.allowedChange) {
+    case "expected_result":
+      return (
+        item.patch.appendExpectedResults !== undefined &&
+        item.patch.appendOpenQuestions === undefined &&
+        item.patch.appendSteps === undefined &&
+        item.patch.appendTestData === undefined &&
+        item.patch.setReviewState === undefined
+      );
+    case "metadata":
+      return (
+        item.patch.appendExpectedResults === undefined &&
+        item.patch.appendSteps === undefined &&
+        item.patch.appendTestData === undefined
+      );
+    case "steps":
+      return (
+        item.patch.appendExpectedResults === undefined &&
+        item.patch.appendOpenQuestions === undefined &&
+        item.patch.appendSteps !== undefined &&
+        item.patch.appendTestData === undefined &&
+        item.patch.setReviewState === undefined
+      );
+    case "test_data":
+      return (
+        item.patch.appendExpectedResults === undefined &&
+        item.patch.appendOpenQuestions === undefined &&
+        item.patch.appendSteps === undefined &&
+        item.patch.appendTestData !== undefined &&
+        item.patch.setReviewState === undefined
+      );
+    case "traceability":
+      return (
+        item.patch.appendExpectedResults === undefined &&
+        item.patch.appendSteps === undefined &&
+        item.patch.appendTestData === undefined
+      );
+  }
 };
 
 const selectTargetCase = (

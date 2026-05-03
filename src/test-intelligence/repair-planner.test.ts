@@ -144,3 +144,55 @@ test("repair planner refuses hash mismatches with repair_hash_mismatch_refused",
   assert.equal(result.refusals[0]?.code, "repair_hash_mismatch_refused");
   assert.equal(result.list.testCases[0]?.objective, mutated.objective);
 });
+
+test("repair planner applies multiple same-case findings without self-triggering the hash guard", () => {
+  const list = makeList(makeCase({ id: "tc-edit" }));
+  const plan = buildRepairPlan({
+    list,
+    findings: [
+      findings[0]!,
+      {
+        ...findings[0]!,
+        findingId: "repair-gap-2",
+        fingerprint: "d".repeat(64),
+        repairTarget: "metadata",
+        summary: "Need review metadata for the same case.",
+      },
+    ],
+  });
+  const result = applyRepairPlan({ list, plan });
+
+  assert.equal(result.outcome, "applied");
+  assert.deepEqual(result.refusals, []);
+  assert.deepEqual(result.list.testCases[0]?.testData, [
+    "Negative-path coverage is incomplete for surviving adversarial checks.",
+  ]);
+  assert.deepEqual(result.list.testCases[0]?.openQuestions, [
+    "Need review metadata for the same case.",
+  ]);
+});
+
+test("repair planner enforces allowedChange against tampered patches", () => {
+  const list = makeList(makeCase({ id: "tc-edit" }));
+  const plan = buildRepairPlan({
+    list,
+    findings: [findings[0]!],
+  });
+  const tampered = {
+    ...plan,
+    items: [
+      {
+        ...plan.items[0]!,
+        guard: {
+          ...plan.items[0]!.guard,
+          allowedChange: "metadata" as const,
+        },
+      },
+    ],
+  };
+  const result = applyRepairPlan({ list, plan: tampered });
+
+  assert.equal(result.outcome, "needs_review");
+  assert.equal(result.refusals[0]?.code, "repair_change_guard_refused");
+  assert.deepEqual(result.list.testCases[0]?.testData, []);
+});
