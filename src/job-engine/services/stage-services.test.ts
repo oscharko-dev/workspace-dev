@@ -15,6 +15,7 @@ import type {
 } from "../../contracts/index.js";
 import {
   CONTRACT_VERSION,
+  COVERAGE_PLAN_ARTIFACT_FILENAME,
   PIPELINE_QUALITY_PASSPORT_ARTIFACT_FILENAME,
   TEST_DESIGN_MODEL_ARTIFACT_FILENAME,
 } from "../../contracts/index.js";
@@ -2149,11 +2150,19 @@ test("IrDeriveService writes design.ir and figma.analysis for cleaned local_json
     executionContext.paths.jobDir,
     TEST_DESIGN_MODEL_ARTIFACT_FILENAME,
   );
+  const coveragePlanPath = path.join(
+    executionContext.paths.jobDir,
+    COVERAGE_PLAN_ARTIFACT_FILENAME,
+  );
   assert.equal(
     await executionContext.artifactStore.getPath(
       STAGE_ARTIFACT_KEYS.testDesignModel,
     ),
     testDesignModelPath,
+  );
+  assert.equal(
+    await executionContext.artifactStore.getPath(STAGE_ARTIFACT_KEYS.coveragePlan),
+    coveragePlanPath,
   );
   const businessTestIntentIr = JSON.parse(
     await readFile(businessTestIntentIrPath, "utf8"),
@@ -2164,6 +2173,14 @@ test("IrDeriveService writes design.ir and figma.analysis for cleaned local_json
     sourceHash: string;
     screens: Array<{ screenId: string; elements: Array<{ elementId: string }> }>;
   };
+  const coveragePlan = JSON.parse(
+    await readFile(coveragePlanPath, "utf8"),
+  ) as {
+    schemaVersion: string;
+    jobId: string;
+    mutationKillRateTarget: number;
+    minimumCases: Array<{ technique: string }>;
+  };
   assert.equal(businessTestIntentIr.source.kind, "figma_local_json");
   assert.equal(businessTestIntentIr.screens[0]?.screenId, "screen-1");
   assert.equal(businessTestIntentIr.detectedFields[0]?.trace.nodeId, "title-1");
@@ -2172,6 +2189,14 @@ test("IrDeriveService writes design.ir and figma.analysis for cleaned local_json
   assert.equal(
     testDesignModel.screens[0]?.elements[0]?.elementId,
     "screen-1::field::title-1",
+  );
+  assert.equal(coveragePlan.schemaVersion, "1.0.0");
+  assert.equal(coveragePlan.jobId, executionContext.job.jobId);
+  assert.equal(coveragePlan.mutationKillRateTarget, 0.85);
+  assert.ok(
+    coveragePlan.minimumCases.some(
+      (requirement) => requirement.technique === "initial_state",
+    ),
   );
   assert.equal(
     (await readFile(executionContext.paths.figmaAnalysisFile, "utf8")).includes(

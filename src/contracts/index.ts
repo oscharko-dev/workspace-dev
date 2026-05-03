@@ -1923,6 +1923,7 @@ export interface WorkspaceJobArtifacts {
   designIrFile?: string;
   figmaAnalysisFile?: string;
   businessTestIntentIrFile?: string;
+  coveragePlanFile?: string;
   llmCapabilitiesEvidenceDir?: string;
   figmaJsonFile?: string;
   storybookTokensFile?: string;

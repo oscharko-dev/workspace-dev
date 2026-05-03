@@ -224,6 +224,7 @@ export const buildSubmissionPipelinePlan = ({
           STAGE_ARTIFACT_KEYS.figmaAnalysis,
           STAGE_ARTIFACT_KEYS.businessTestIntentIr,
           STAGE_ARTIFACT_KEYS.testDesignModel,
+          STAGE_ARTIFACT_KEYS.coveragePlan,
         ],
         optionalWrites: [
           STAGE_ARTIFACT_KEYS.llmCapabilitiesEvidence,
@@ -372,6 +373,7 @@ export const buildRegenerationPipelinePlan = ({
           STAGE_ARTIFACT_KEYS.figmaAnalysis,
           STAGE_ARTIFACT_KEYS.businessTestIntentIr,
           STAGE_ARTIFACT_KEYS.testDesignModel,
+          STAGE_ARTIFACT_KEYS.coveragePlan,
         ],
         optionalWrites: [
           STAGE_ARTIFACT_KEYS.storybookCatalog,

@@ -258,6 +258,22 @@ test("buildCoveragePlan rejects out-of-range mutation targets", () => {
       }),
     /mutationKillRateTarget must be in \[0, 1\]/,
   );
+  assert.throws(
+    () =>
+      buildCoveragePlan({
+        model: buildModel(),
+        mutationKillRateTarget: Number.NaN,
+      }),
+    /mutationKillRateTarget must be in \[0, 1\]/,
+  );
+  assert.throws(
+    () =>
+      buildCoveragePlan({
+        model: buildModel(),
+        mutationKillRateTarget: "0.5" as unknown as number,
+      }),
+    /mutationKillRateTarget must be in \[0, 1\]/,
+  );
 });
 
 test("property: repeated coverage planning yields identical canonical bytes", () => {

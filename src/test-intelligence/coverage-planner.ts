@@ -173,7 +173,12 @@ const pushRiskRequirement = ({
 export const buildCoveragePlan = (input: BuildCoveragePlanInput): CoveragePlan => {
   const mutationKillRateTarget =
     input.mutationKillRateTarget ?? DEFAULT_MUTATION_KILL_RATE_TARGET;
-  if (mutationKillRateTarget < 0 || mutationKillRateTarget > 1) {
+  if (
+    typeof mutationKillRateTarget !== "number" ||
+    !Number.isFinite(mutationKillRateTarget) ||
+    mutationKillRateTarget < 0 ||
+    mutationKillRateTarget > 1
+  ) {
     throw new RangeError("mutationKillRateTarget must be in [0, 1]");
   }
 

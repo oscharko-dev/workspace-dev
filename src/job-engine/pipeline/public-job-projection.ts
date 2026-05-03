@@ -201,6 +201,15 @@ export const syncPublicJobProjection = async ({
     },
   });
   await syncOptionalArtifactPath({
+    key: STAGE_ARTIFACT_KEYS.coveragePlan,
+    assign: (value) => {
+      job.artifacts.coveragePlanFile = value;
+    },
+    clear: () => {
+      delete job.artifacts.coveragePlanFile;
+    },
+  });
+  await syncOptionalArtifactPath({
     key: STAGE_ARTIFACT_KEYS.llmCapabilitiesEvidence,
     assign: (value) => {
       job.artifacts.llmCapabilitiesEvidenceDir = value;

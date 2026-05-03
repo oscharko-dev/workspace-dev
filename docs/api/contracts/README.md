@@ -10268,6 +10268,10 @@ Artifact paths emitted by autonomous job execution.
 
 > `optional` **confidenceReportFile?**: `string`
 
+##### coveragePlanFile?
+
+> `optional` **coveragePlanFile?**: `string`
+
 ##### designIrFile?
 
 > `optional` **designIrFile?**: `string`
