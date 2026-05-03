@@ -324,6 +324,20 @@ export {
   type LlmGatewayRuntime,
 } from "./llm-gateway.js";
 export {
+  computeGatewayIdempotencyHmac,
+  createLlmGatewayIdempotencyCache,
+  DEFAULT_GATEWAY_IDEMPOTENCY_MAX_ENTRIES,
+  DEFAULT_GATEWAY_IDEMPOTENCY_TTL_MS,
+  GATEWAY_IDEMPOTENCY_CACHE_DIRNAME,
+  gatewayIdempotencyCacheDir,
+  gatewayIdempotencyCachePath,
+  type CreateLlmGatewayIdempotencyCacheOptions,
+  type GatewayIdempotencyLookupResult,
+  type GatewayIdempotencyMetrics,
+  type GatewayIdempotencySecretProvider,
+  type LlmGatewayIdempotencyCache,
+} from "./llm-gateway-idempotency.js";
+export {
   createMockLlmGatewayClient,
   createMockLlmGatewayClientFromConfig,
   type CreateMockLlmGatewayClientInput,
