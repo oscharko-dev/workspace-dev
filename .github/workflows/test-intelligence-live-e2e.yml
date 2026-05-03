@@ -113,17 +113,15 @@ jobs:
           WORKSPACE_TEST_SPACE_VISUAL_FALLBACK_DEPLOYMENT: ${{ secrets.WORKSPACE_TEST_SPACE_VISUAL_FALLBACK_DEPLOYMENT }}
         run: pnpm run test:ti-live-e2e
 
-      - name: Preserve run directory on failure
-        if: failure() && steps.check_secret.outputs.secret_present == 'true'
+      - name: Upload live-E2E artifacts
+        if: always() && steps.check_secret.outputs.secret_present == 'true'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7
         with:
           name: ti-live-e2e-rundir-${{ github.run_id }}
-          # The live-E2E test writes the production runner output under an
-          # OS tmpdir prefix `live-e2e-runner-*`. We capture both the tmp
-          # tree and the worktree-local artifact roots so a failed run
-          # remains debuggable from the GitHub Actions UI alone.
+          # Preserve emitted artifacts for both success and failure so the
+          # closing-gate review can confirm the required files exist without
+          # needing shell access to the runner.
           path: |
-            /tmp/live-e2e-runner-*/**
-            artifacts/**
+            artifacts/testing/ti-live-e2e/**
           if-no-files-found: ignore
           retention-days: 14

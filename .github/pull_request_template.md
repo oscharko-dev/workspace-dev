@@ -7,6 +7,7 @@
 - [ ] `pnpm run typecheck`
 - [ ] `pnpm run test`
 - [ ] `pnpm run lint:boundaries`
+- [ ] If this change claims production-wired behavior: live-E2E run produces all required artifacts, or this PR includes an explicit waiver with reason
 - [ ] Additional checks relevant to this change
 
 ## Risk

@@ -7,7 +7,9 @@ and exports them for downstream tooling.
 
 This runbook is task-oriented. It assumes you have already shipped the
 runner per `docs/test-intelligence.md` and have a working customer
-deployment.
+deployment. For the wave-closing policy that decides when a "production-wired"
+claim may be merged or released, see
+`docs/test-intelligence-live-e2e.md`.
 
 ---
 
@@ -226,6 +228,8 @@ forecast.
 
 ## See also
 
+- `docs/test-intelligence-live-e2e.md` — closing-gate policy for
+  production-wired claims.
 - `docs/test-intelligence.md` — feature overview, event taxonomy, live
   smoke instructions.
 - `docs/test-intelligence-dpia-production-runner.md` — data flows and

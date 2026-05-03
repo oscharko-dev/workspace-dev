@@ -208,7 +208,7 @@ operators can plan integration without depending on the runner being wired:
 | `WorkspaceJobInput.jobType`                 | `"figma_to_code"` (default) \| `"figma_to_qc_test_cases"` (reserved) |
 | `WorkspaceJobInput.testIntelligenceMode`    | `"deterministic_llm"` \| `"offline_eval"` \| `"dry_run"`             |
 | `ALLOWED_TEST_INTELLIGENCE_MODES`           | `["deterministic_llm", "offline_eval", "dry_run"]`                   |
-| `TEST_INTELLIGENCE_CONTRACT_VERSION`        | `"1.5.0"`                                                            |
+| `TEST_INTELLIGENCE_CONTRACT_VERSION`        | `"1.6.0"`                                                            |
 | `TEST_INTELLIGENCE_PROMPT_TEMPLATE_VERSION` | `"1.0.0"`                                                            |
 | `TEST_INTELLIGENCE_ENV`                     | `"FIGMAPIPE_WORKSPACE_TEST_INTELLIGENCE"`                            |
 
@@ -848,6 +848,11 @@ operator-configured Azure AI Foundry deployment. It is the regression net for
 the #1676-class shape (live Azure rejects the production payload while the
 mock-backed CI suite stays green).
 
+The dedicated closing-gate policy for production-wired claims lives in
+`docs/test-intelligence-live-e2e.md`. Use that document for required
+environment, normalized failure taxonomy, artifact expectations, and the PR
+summary or waiver rule before tagging a release.
+
 **What it runs.** A synthetic German banking-form Figma snapshot
 (`src/test-intelligence/fixtures/live-e2e/banking-antrag.figma.json`, < 50 KB,
 shaped to satisfy `FigmaRestFileSnapshot`) is fed into
@@ -885,10 +890,11 @@ It is **not** wired into the PR pipeline (live secrets are unavailable to fork
 PRs and the per-run cost must not be paid on every PR). The job is gated on
 the repo-level secret `WORKSPACE_TEST_SPACE_MODEL_API_KEY`; if absent the
 workflow short-circuits with a `skipped: secret not configured` job summary
-instead of failing red. On test failure the run directory (the OS tmpdir tree
-written under `live-e2e-runner-*`) is uploaded as the artifact
-`ti-live-e2e-rundir-<run_id>` for 14 days so the failed Azure response and the
-emitted artifacts are debuggable from the GitHub Actions UI alone.
+instead of failing red. The lane preserves emitted artifacts under
+`artifacts/testing/ti-live-e2e/jobs/<jobId>/test-intelligence/` and uploads
+that tree as `ti-live-e2e-rundir-<run_id>` for 14 days so both successful gate
+evidence and failed Azure responses remain debuggable from the GitHub Actions
+UI alone.
 
 The package keeps its zero-telemetry posture: no test-intelligence code path
 emits analytics, usage metrics, behavioral telemetry, or unsolicited diagnostic

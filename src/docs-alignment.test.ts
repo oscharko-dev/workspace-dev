@@ -837,6 +837,66 @@ test("docs: generated API reference stays wired to the public entrypoints", asyn
   );
 });
 
+test("docs: live-E2E closing gate stays aligned across docs and PR checklist", async () => {
+  const contractsSource = await readRepoFile("src/contracts/index.ts");
+  const liveE2eTestSource = await readRepoFile(
+    "src/test-intelligence/production-runner.live-e2e.test.ts",
+  );
+  const liveE2eDoc = await readRepoFile("docs/test-intelligence-live-e2e.md");
+  const testIntelligenceDoc = await readRepoFile("docs/test-intelligence.md");
+  const operatorRunbook = await readRepoFile(
+    "docs/test-intelligence-operator-runbook.md",
+  );
+  const pullRequestTemplate = await readRepoFile(
+    ".github/pull_request_template.md",
+  );
+
+  assert.match(liveE2eDoc, /`pnpm run test:ti-live-e2e`/);
+  assert.match(
+    liveE2eDoc,
+    /WORKSPACE_TEST_SPACE_MODEL_ENDPOINT[\s\S]*WORKSPACE_TEST_SPACE_API_KEY/,
+  );
+  assert.match(liveE2eDoc, /WORKSPACE_FIGMA_PERSONAL_ACCESS_TOKEN/);
+  assert.match(liveE2eDoc, /WORKSPACE_TI_JIRA_API_TOKEN/);
+  assert.match(liveE2eDoc, /provider_unavailable/);
+  assert.match(liveE2eDoc, /quota_exceeded/);
+  assert.match(liveE2eDoc, /policy_block/);
+  assert.match(liveE2eDoc, /schema_invalid_response/);
+  assert.match(liveE2eDoc, /circuit_breaker_open/);
+  assert.match(liveE2eDoc, /protocol/);
+  assert.match(liveE2eDoc, /canceled/);
+  assert.match(liveE2eDoc, /sanitized run-log review/i);
+  assert.match(liveE2eDoc, /customer-markdown\/testfaelle\.md/);
+  assert.match(liveE2eDoc, /artifactDir/);
+  assert.match(
+    liveE2eDoc,
+    /artifacts\/testing\/ti-live-e2e\/jobs\/<jobId>\/test-intelligence\//,
+  );
+  assert.match(liveE2eDoc, /mandatory before tagging a release/i);
+  assert.match(contractsSource, /"protocol"/);
+  assert.match(contractsSource, /"canceled"/);
+  assert.match(contractsSource, /"rate_limited"/);
+  assert.match(
+    liveE2eTestSource,
+    /process\.stdout\.write\(`\[live-E2E\] artifactDir=\$\{result\.artifactDir\}\\n`\);/,
+  );
+  assert.match(
+    liveE2eTestSource,
+    /artifacts",\s*"testing",\s*"ti-live-e2e"/,
+  );
+
+  assert.match(
+    testIntelligenceDoc,
+    /docs\/test-intelligence-live-e2e\.md/,
+  );
+  assert.match(operatorRunbook, /docs\/test-intelligence-live-e2e\.md/);
+  assert.match(
+    pullRequestTemplate,
+    /live-E2E run produces all required artifacts/i,
+  );
+  assert.match(pullRequestTemplate, /explicit waiver with reason/i);
+});
+
 test("docs: figma direct-import guide stays aligned with inspector submit flow", async () => {
   const figmaImportDoc = await readRepoFile("docs/figma-import.md");
   const pluginTestingDoc = await readRepoFile("plugin/TESTING.md");
