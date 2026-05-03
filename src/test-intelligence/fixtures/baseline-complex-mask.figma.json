@@ -1,0 +1,146 @@
+{
+  "source": {
+    "kind": "figma_local_json"
+  },
+  "screens": [
+    {
+      "screenId": "s-application",
+      "screenName": "Application",
+      "screenPath": "/onboarding/application",
+      "nodes": [
+        {
+          "nodeId": "n-given-name",
+          "nodeName": "Given Name",
+          "nodeType": "TEXT_INPUT",
+          "nodePath": "personal/given-name",
+          "text": "Given Name",
+          "defaultValue": "Anna",
+          "validations": ["Required"],
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-dob",
+          "nodeName": "Date of Birth",
+          "nodeType": "TEXT_INPUT",
+          "nodePath": "personal/dob",
+          "text": "Date of Birth",
+          "defaultValue": "1990-04-12",
+          "validations": ["Required", "ISO date"],
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-contact-email",
+          "nodeName": "Contact Email",
+          "nodeType": "TEXT_INPUT",
+          "nodePath": "contact/email",
+          "text": "Contact Email",
+          "defaultValue": "anna@example.test",
+          "validations": ["Required"],
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-contact-phone",
+          "nodeName": "Contact Phone",
+          "nodeType": "TEXT_INPUT",
+          "nodePath": "contact/phone",
+          "text": "Contact Phone",
+          "defaultValue": "+49 30 5550199",
+          "validations": ["Required"],
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-tax-id",
+          "nodeName": "Tax ID",
+          "nodeType": "TEXT_INPUT",
+          "nodePath": "identity/tax-id",
+          "text": "Tax ID",
+          "defaultValue": "65929970489",
+          "validations": ["Required", "Tax ID checksum"],
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-passport",
+          "nodeName": "Passport Number",
+          "nodeType": "TEXT_INPUT",
+          "nodePath": "identity/passport",
+          "text": "Passport Number (visible if Country is non-EU)",
+          "defaultValue": "",
+          "validations": ["Required if Country is non-EU"],
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-continue",
+          "nodeName": "Continue to Items",
+          "nodeType": "BUTTON",
+          "nodePath": "actions/continue",
+          "text": "Continue to Items",
+          "navigationTarget": "s-items",
+          "childNodeIds": []
+        }
+      ]
+    },
+    {
+      "screenId": "s-items",
+      "screenName": "Items",
+      "screenPath": "/onboarding/items",
+      "nodes": [
+        {
+          "nodeId": "n-line-description",
+          "nodeName": "Line Description",
+          "nodeType": "TEXT_INPUT",
+          "nodePath": "line-items[*]/description",
+          "text": "Line Description (repeating)",
+          "defaultValue": "Service A",
+          "validations": ["Required for each row"],
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-line-qty",
+          "nodeName": "Quantity",
+          "nodeType": "TEXT_INPUT",
+          "nodePath": "line-items[*]/qty",
+          "text": "Quantity (repeating)",
+          "defaultValue": "1",
+          "validations": ["Required for each row", "Integer >= 1"],
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-line-unit-price",
+          "nodeName": "Unit Price",
+          "nodeType": "TEXT_INPUT",
+          "nodePath": "line-items[*]/unit-price",
+          "text": "Unit Price (repeating)",
+          "defaultValue": "100.00",
+          "validations": ["Required for each row", "Numeric >= 0"],
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-grand-total",
+          "nodeName": "Grand Total",
+          "nodeType": "TEXT_INPUT",
+          "nodePath": "totals/grand-total",
+          "text": "Grand Total",
+          "defaultValue": "<computed>",
+          "validations": ["Computed = sum(qty * unit-price) over all line-items"],
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-add-row",
+          "nodeName": "Add Row",
+          "nodeType": "BUTTON",
+          "nodePath": "actions/add-row",
+          "text": "Add Row",
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-submit",
+          "nodeName": "Submit",
+          "nodeType": "BUTTON",
+          "nodePath": "actions/submit",
+          "text": "Submit",
+          "childNodeIds": []
+        }
+      ]
+    }
+  ]
+}

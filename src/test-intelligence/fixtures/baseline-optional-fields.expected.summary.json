@@ -1,0 +1,20 @@
+{
+  "archetype": "optional-fields",
+  "archetypeId": "baseline-optional-fields",
+  "expectedOpenQuestionsKeywords": [],
+  "figma": {
+    "actionNodeCount": 1,
+    "fieldNodeCount": 5,
+    "navigationCount": 0,
+    "nodeCount": 6,
+    "screenCount": 1,
+    "validationCount": 5
+  },
+  "intent": "Mix of mandatory, optional and cross-field-required inputs to exercise conditional requiredness.",
+  "notes": "Contact-profile baseline: Email is unconditionally Required; Phone becomes Required when Email is empty; Job Title becomes Required when Company is filled. Country is unconditionally Required and Company itself is Optional. Used to test that generators emit cases that exercise both branches of every conditional requiredness rule.",
+  "schemaVersion": "1.0.0",
+  "sources": {
+    "hasCustomMarkdown": false,
+    "hasJira": false
+  }
+}

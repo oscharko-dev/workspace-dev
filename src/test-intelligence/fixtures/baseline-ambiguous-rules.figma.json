@@ -1,0 +1,56 @@
+{
+  "source": {
+    "kind": "figma_local_json"
+  },
+  "screens": [
+    {
+      "screenId": "s-claim-intake",
+      "screenName": "Claim Intake",
+      "nodes": [
+        {
+          "nodeId": "n-policy-number",
+          "nodeName": "Policy Number",
+          "nodeType": "TEXT_INPUT",
+          "text": "Policy Number",
+          "defaultValue": "POL-100200",
+          "validations": ["Required", "See policy specification"],
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-incident-date",
+          "nodeName": "Incident Date",
+          "nodeType": "TEXT_INPUT",
+          "text": "Incident Date",
+          "defaultValue": "2026-04-01",
+          "validations": ["Required", "Date format: ask compliance"],
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-loss-amount",
+          "nodeName": "Loss Amount",
+          "nodeType": "TEXT_INPUT",
+          "text": "Loss Amount",
+          "defaultValue": "0",
+          "validations": ["Required", "Threshold rule TBD"],
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-description",
+          "nodeName": "Description",
+          "nodeType": "TEXT_INPUT",
+          "text": "Description",
+          "defaultValue": "",
+          "validations": ["Maximum length: see policy"],
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-submit",
+          "nodeName": "Submit Claim",
+          "nodeType": "BUTTON",
+          "text": "Submit Claim",
+          "childNodeIds": []
+        }
+      ]
+    }
+  ]
+}

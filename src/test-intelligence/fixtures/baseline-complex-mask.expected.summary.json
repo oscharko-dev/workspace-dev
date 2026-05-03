@@ -1,0 +1,20 @@
+{
+  "archetype": "complex-mask",
+  "archetypeId": "baseline-complex-mask",
+  "expectedOpenQuestionsKeywords": [],
+  "figma": {
+    "actionNodeCount": 3,
+    "fieldNodeCount": 10,
+    "navigationCount": 1,
+    "nodeCount": 13,
+    "screenCount": 2,
+    "validationCount": 14
+  },
+  "intent": "Five logical groups, conditional sections, and repeating rows on a multi-screen mask.",
+  "notes": "Application + Items baseline: nodePath segments encode five logical groups (personal, contact, identity, line-items, totals); the Passport field is conditional on a non-EU Country; the Items screen models a repeating row with three repeating fields plus a derived Grand Total. Used to exercise group-aware coverage and repeating-row test-case enumeration.",
+  "schemaVersion": "1.0.0",
+  "sources": {
+    "hasCustomMarkdown": false,
+    "hasJira": false
+  }
+}

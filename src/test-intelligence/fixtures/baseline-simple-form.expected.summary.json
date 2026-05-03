@@ -1,0 +1,20 @@
+{
+  "archetype": "simple-form",
+  "archetypeId": "baseline-simple-form",
+  "expectedOpenQuestionsKeywords": [],
+  "figma": {
+    "actionNodeCount": 1,
+    "fieldNodeCount": 3,
+    "navigationCount": 0,
+    "nodeCount": 4,
+    "screenCount": 1,
+    "validationCount": 3
+  },
+  "intent": "Single submit form with text + numeric inputs and a single primary action.",
+  "notes": "Newsletter signup baseline: minimum viable Figma input with one screen, three fields (Display Name, Email, Age) and one Subscribe button. Each field has a single Required rule; no navigation. Used to anchor the lower bound of MA-0 metrics.",
+  "schemaVersion": "1.0.0",
+  "sources": {
+    "hasCustomMarkdown": false,
+    "hasJira": false
+  }
+}

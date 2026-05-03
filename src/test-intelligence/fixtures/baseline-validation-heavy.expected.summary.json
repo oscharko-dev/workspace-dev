@@ -1,0 +1,20 @@
+{
+  "archetype": "validation-heavy",
+  "archetypeId": "baseline-validation-heavy",
+  "expectedOpenQuestionsKeywords": [],
+  "figma": {
+    "actionNodeCount": 1,
+    "fieldNodeCount": 6,
+    "navigationCount": 0,
+    "nodeCount": 7,
+    "screenCount": 1,
+    "validationCount": 16
+  },
+  "intent": "Every field carries multiple validations spanning regex, range, cross-field, and async-shape rule kinds.",
+  "notes": "Payment-method baseline: IBAN and BIC carry regex format rules; Amount carries range and decimal-precision rules; Confirm Amount carries a cross-field equality rule; Tax ID and IBAN carry async-shape rules ('server-side IBAN validation', 'tax-id checksum service'). Used to test that generators emit cases for every rule kind.",
+  "schemaVersion": "1.0.0",
+  "sources": {
+    "hasCustomMarkdown": false,
+    "hasJira": false
+  }
+}

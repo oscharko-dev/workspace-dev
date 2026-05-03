@@ -1,0 +1,20 @@
+{
+  "archetype": "multi-context",
+  "archetypeId": "baseline-multi-context",
+  "expectedOpenQuestionsKeywords": [],
+  "figma": {
+    "actionNodeCount": 2,
+    "fieldNodeCount": 4,
+    "navigationCount": 1,
+    "nodeCount": 6,
+    "screenCount": 2,
+    "validationCount": 5
+  },
+  "intent": "Bundle a Figma design, a Jira story, and a customer markdown brief that all describe the same Open-Account flow but contribute different pieces of intent.",
+  "notes": "Open-Account baseline: Figma describes the screens and fields; the Jira story (ACCT-2001) carries the regulatory framing and reviewer flow; the customer markdown adds business rules (German postcode, Tax-ID checksum reviewer step) that never made it into either of the other two sources. Used to exercise multi-source reconciliation.",
+  "schemaVersion": "1.0.0",
+  "sources": {
+    "hasCustomMarkdown": true,
+    "hasJira": true
+  }
+}

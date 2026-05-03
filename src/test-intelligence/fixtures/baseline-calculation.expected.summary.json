@@ -1,0 +1,20 @@
+{
+  "archetype": "calculation",
+  "archetypeId": "baseline-calculation",
+  "expectedOpenQuestionsKeywords": [],
+  "figma": {
+    "actionNodeCount": 1,
+    "fieldNodeCount": 4,
+    "navigationCount": 0,
+    "nodeCount": 5,
+    "screenCount": 1,
+    "validationCount": 7
+  },
+  "intent": "Input fields produce a derived value via a formula, with explicit rounding and formatting rules.",
+  "notes": "Loan-quote baseline: Principal, Annual Rate %, and Term (Years) drive a Monthly Payment field whose validation rule encodes the closed-form annuity formula and the HALF_UP rounding policy. The computed-value rule is the canonical surface for the MA-1+ generators to learn calculation behaviour from.",
+  "schemaVersion": "1.0.0",
+  "sources": {
+    "hasCustomMarkdown": false,
+    "hasJira": false
+  }
+}
