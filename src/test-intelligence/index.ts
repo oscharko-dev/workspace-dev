@@ -158,6 +158,17 @@ export {
   type BuildCoveragePlanInput,
 } from "./coverage-planner.js";
 export {
+  ADVERSARIAL_GAP_FINDINGS_ARTIFACT_FILENAME,
+  ADVERSARIAL_GAP_FINDING_KINDS,
+  ADVERSARIAL_GAP_FINDING_SCHEMA_VERSION,
+  findAdversarialGaps,
+  serializeAdversarialGapFindings,
+  writeAdversarialGapFindings,
+  type AdversarialGapFinding,
+  type AdversarialGapFindingKind,
+  type FindAdversarialGapsInput,
+} from "./adversarial-gap-finder.js";
+export {
   computeIrMutationCoverageStrength,
   IR_MUTATION_COVERAGE_STRENGTH_REPORT_ARTIFACT_FILENAME,
   IR_MUTATION_COVERAGE_STRENGTH_REPORT_SCHEMA_VERSION,
@@ -170,6 +181,19 @@ export {
   selectTestDesignHeuristics,
   type TestDesignHeuristic,
 } from "./test-design-heuristics.js";
+export {
+  CONSOLIDATED_FINDINGS_ARTIFACT_FILENAME,
+  CONSOLIDATED_FINDING_SCHEMA_VERSION,
+  consolidateFindings,
+  REPAIR_CHANGE_TARGETS,
+  serializeConsolidatedFindings,
+  writeConsolidatedFindings,
+  type ConsolidatedFinding,
+  type ConsolidatedFindingSeverity,
+  type ConsolidatedFindingSource,
+  type ConsolidateFindingsInput,
+  type RepairChangeTarget,
+} from "./finding-consolidator.js";
 export {
   buildGeneratedTestCaseListJsonSchema,
   computeGeneratedTestCaseListSchemaHash,
@@ -228,6 +252,24 @@ export {
   type RunAgentHarnessStepInput,
   type RunAgentHarnessStepResult,
 } from "./agent-harness.js";
+export {
+  applyRepairPlan,
+  buildRepairPlan,
+  computeGeneratedTestCaseRepairHash,
+  DEFAULT_REPAIR_PLANNER_ITERATIONS,
+  MAX_REPAIR_PLANNER_ITERATIONS,
+  REPAIR_PLANNER_ARTIFACT_FILENAME,
+  REPAIR_PLANNER_SCHEMA_VERSION,
+  resolveRepairPlannerIterationCount,
+  serializeRepairPlan,
+  writeRepairPlan,
+  type ApplyRepairPlanResult,
+  type BuildRepairPlanInput,
+  type RepairChangeGuard,
+  type RepairPlan,
+  type RepairPlanItem,
+  type RepairPlanRefusal,
+} from "./repair-planner.js";
 export {
   assertAgentHarnessExecutionGraphInvariants,
   buildAgentHarnessExecutionGraph,
