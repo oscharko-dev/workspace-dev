@@ -41,8 +41,8 @@ test("resolveRuntimeSettings applies defaults for staged fetch and IR budget", (
   assert.equal(runtime.pipelineDiagnosticLimits.detailsMaxItems, 20);
   assert.equal(runtime.pipelineDiagnosticLimits.detailsMaxDepth, 4);
   assert.equal(runtime.enableLintAutofix, true);
-  assert.equal(runtime.enablePerfValidation, false);
-  assert.equal(runtime.enableUiValidation, false);
+  assert.equal(runtime.enablePerfValidation, undefined);
+  assert.equal(runtime.enableUiValidation, undefined);
   assert.equal(runtime.enableVisualQualityValidation, false);
   assert.equal(runtime.visualQualityReferenceMode, "figma_api");
   assert.equal(runtime.visualQualityViewportWidth, 1280);
@@ -52,7 +52,7 @@ test("resolveRuntimeSettings applies defaults for staged fetch and IR budget", (
     visual: 0.6,
     performance: 0.4
   });
-  assert.equal(runtime.enableUnitTestValidation, false);
+  assert.equal(runtime.enableUnitTestValidation, undefined);
   assert.equal(runtime.installPreferOffline, true);
   assert.equal(runtime.skipInstall, false);
   assert.equal(runtime.maxConcurrentJobs, 1);
@@ -142,7 +142,7 @@ test("resolveRuntimeSettings clamps staged fetch and budget parameters", () => {
   assert.equal(runtime.pipelineDiagnosticLimits.detailsMaxItems, 200);
   assert.equal(runtime.pipelineDiagnosticLimits.detailsMaxDepth, 1);
   assert.equal(runtime.enableLintAutofix, true);
-  assert.equal(runtime.enablePerfValidation, false);
+  assert.equal(runtime.enablePerfValidation, undefined);
   assert.equal(runtime.enableUiValidation, false);
   assert.equal(runtime.enableVisualQualityValidation, true);
   assert.equal(runtime.visualQualityReferenceMode, "frozen_fixture");

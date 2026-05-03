@@ -38,8 +38,10 @@ import type {
 } from "../../parity/types-ir.js";
 import {
   deriveBusinessTestIntentIr,
+  buildTestDesignModel,
   type IntentDerivationFigmaInput,
   type IntentDerivationNodeInput,
+  writeTestDesignModelArtifact,
 } from "../../test-intelligence/index.js";
 import type { FigmaFetchDiagnostics, FigmaFileResponse } from "../types.js";
 import type { CleanFigmaResult } from "../figma-clean.js";
@@ -320,6 +322,10 @@ const persistBusinessTestIntentIr = async ({
   const businessTestIntentIr = deriveBusinessTestIntentIr({
     figma: toIntentDerivationInput({ context, ir }),
   });
+  const testDesignModel = buildTestDesignModel({
+    jobId: context.jobId,
+    intent: businessTestIntentIr,
+  });
   const businessTestIntentIrFile = path.join(
     context.paths.jobDir,
     "business-test-intent-ir.json",
@@ -329,10 +335,19 @@ const persistBusinessTestIntentIr = async ({
     `${JSON.stringify(businessTestIntentIr, null, 2)}\n`,
     "utf8",
   );
+  const testDesignModelFile = await writeTestDesignModelArtifact({
+    model: testDesignModel,
+    runDir: context.paths.jobDir,
+  });
   await context.artifactStore.setPath({
     key: STAGE_ARTIFACT_KEYS.businessTestIntentIr,
     stage: "ir.derive",
     absolutePath: businessTestIntentIrFile,
+  });
+  await context.artifactStore.setPath({
+    key: STAGE_ARTIFACT_KEYS.testDesignModel,
+    stage: "ir.derive",
+    absolutePath: testDesignModelFile,
   });
 };
 

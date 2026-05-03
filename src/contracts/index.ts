@@ -2688,6 +2688,13 @@ export interface WorkspaceJobConfidence {
 /** Schema version for `BusinessTestIntentIr` artifacts. */
 export const BUSINESS_TEST_INTENT_IR_SCHEMA_VERSION = "1.0.0" as const;
 
+/** Schema version for persisted `TestDesignModel` projection artifacts. */
+export const TEST_DESIGN_MODEL_SCHEMA_VERSION = "1.0.0" as const;
+
+/** Canonical filename for persisted `TestDesignModel` artifacts. */
+export const TEST_DESIGN_MODEL_ARTIFACT_FILENAME =
+  "test-design-model.json" as const;
+
 /**
  * Known PII-like categories detected in mock form data and Jira payloads.
  *
@@ -2965,6 +2972,89 @@ export interface BusinessTestIntentIr {
    * jobs so existing artifacts remain byte-stable.
    */
   multiSourceConflicts?: MultiSourceConflict[];
+}
+
+/**
+ * Compact, versioned projection of `BusinessTestIntentIr` plus optional
+ * visual-sidecar evidence. This additive artifact gives downstream prompt
+ * compilation a bounded, test-design-oriented surface without replacing the
+ * source IR.
+ */
+export interface TestDesignModel {
+  schemaVersion: typeof TEST_DESIGN_MODEL_SCHEMA_VERSION;
+  jobId: string;
+  sourceHash: string;
+  screens: TestDesignScreen[];
+  businessRules: TestDesignRule[];
+  assumptions: TestDesignAssumption[];
+  openQuestions: TestDesignOpenQuestion[];
+  riskSignals: TestDesignRiskSignal[];
+}
+
+export interface TestDesignScreen {
+  screenId: string;
+  name: string;
+  purpose?: string;
+  elements: TestDesignElement[];
+  actions: TestDesignAction[];
+  validations: TestDesignValidation[];
+  calculations: TestDesignCalculation[];
+  visualRefs: string[];
+  sourceRefs: string[];
+}
+
+export interface TestDesignElement {
+  elementId: string;
+  label: string;
+  kind: string;
+  defaultValue?: string;
+  ambiguity?: string;
+}
+
+export interface TestDesignAction {
+  actionId: string;
+  label: string;
+  kind: string;
+  targetScreenId?: string;
+  ambiguity?: string;
+}
+
+export interface TestDesignValidation {
+  validationId: string;
+  rule: string;
+  targetElementId?: string;
+  ambiguity?: string;
+}
+
+export interface TestDesignCalculation {
+  calculationId: string;
+  name: string;
+  inputElementIds: string[];
+  ambiguity?: string;
+}
+
+export interface TestDesignRule {
+  ruleId: string;
+  description: string;
+  screenId?: string;
+  sourceRefs: string[];
+}
+
+export interface TestDesignAssumption {
+  assumptionId: string;
+  text: string;
+}
+
+export interface TestDesignOpenQuestion {
+  openQuestionId: string;
+  text: string;
+}
+
+export interface TestDesignRiskSignal {
+  riskSignalId: string;
+  text: string;
+  screenId?: string;
+  sourceRefs: string[];
 }
 
 /**

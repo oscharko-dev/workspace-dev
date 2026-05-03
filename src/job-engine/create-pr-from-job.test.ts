@@ -90,6 +90,7 @@ const createFastJobEngine = ({ tempRoot }: { tempRoot: string }) =>
     runtime: resolveRuntimeSettings({
       enablePreview: false,
       installPreferOffline: true,
+      enablePerfValidation: false,
       enableUiValidation: false,
       enableUnitTestValidation: false,
       figmaMaxRetries: 1,
@@ -197,6 +198,7 @@ test("createPrFromJob throws E_PR_NOT_REGENERATION_JOB for non-regeneration comp
     runtime: resolveRuntimeSettings({
       enablePreview: false,
       installPreferOffline: true,
+      enablePerfValidation: false,
       enableUiValidation: false,
       enableUnitTestValidation: false,
     }),

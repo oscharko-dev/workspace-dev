@@ -85,6 +85,7 @@ jobs:
       - name: Verify template npm signature attestations
         run: pnpm run template:signatures
 
+      # Canonical release gate includes pnpm run ui:test:coverage and pnpm run test:coverage.
       - name: Run release quality gates (canonical)
         run: pnpm run release:quality-gates:publish-lifecycle
 

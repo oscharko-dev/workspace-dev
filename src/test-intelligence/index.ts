@@ -134,6 +134,15 @@ export {
 } from "./multi-source-reconciliation.js";
 export { canonicalJson, sha256Hex } from "./content-hash.js";
 export {
+  buildTestDesignModel,
+  computeTestDesignModelSchemaHash,
+  validateTestDesignModel,
+  writeTestDesignModelArtifact,
+  type BuildTestDesignModelInput,
+  type TestDesignModelValidationIssue,
+  type TestDesignModelValidationResult,
+} from "./test-design-model.js";
+export {
   buildGeneratedTestCaseListJsonSchema,
   computeGeneratedTestCaseListSchemaHash,
   GENERATED_TEST_CASE_LIST_SCHEMA_NAME,
