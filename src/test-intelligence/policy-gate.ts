@@ -40,6 +40,7 @@ import {
   type TestCaseValidationIssue,
   type TestCaseValidationIssueCode,
   type TestCaseValidationReport,
+  type VisualSidecarFailureClass,
   type VisualSidecarValidationReport,
 } from "../contracts/index.js";
 import {
@@ -69,6 +70,23 @@ export interface EvaluatePolicyGateInput {
   semanticContentOverrides?: SemanticContentOverrideMap;
   /** Recognized custom supporting-context attributes that escalate risk. */
   customContextPolicySignals?: readonly CustomContextPolicySignal[];
+  /**
+   * Documented visual-sidecar refusal (Issue #1772). When the visual sidecar
+   * dispatch exhausts both primary and fallback deployments (or otherwise
+   * refuses to produce screen descriptions), the production runner records
+   * the `VisualSidecarFailureClass` here. The gate then emits a per-case
+   * `policy:visual-sidecar-refused` violation at warning severity, escalating
+   * every test case to `needs_review` with a documented refusal code so
+   * reviewers can adjudicate without the visual context.
+   *
+   * Pre-flight failure classes (caller errors such as `image_payload_too_large`
+   * or `empty_screen_capture_set`) are NOT routed here — those still fail
+   * the runner fast.
+   */
+  visualSidecarRefusal?: {
+    failureClass: VisualSidecarFailureClass;
+    failureMessage: string;
+  };
 }
 
 /** Maximum strength among per-case decisions: blocked > needs_review > approved. */
@@ -184,9 +202,20 @@ const evaluateCase = (
   caseIssues: TestCaseValidationIssue[],
   overrides: SemanticContentOverrideMap | undefined,
   customContextPolicySignals: readonly CustomContextPolicySignal[],
+  visualSidecarRefusal: EvaluatePolicyGateInput["visualSidecarRefusal"],
 ): TestCasePolicyDecisionRecord => {
   let decision: TestCasePolicyDecision = "approved";
   const violations: TestCasePolicyViolation[] = [];
+
+  if (visualSidecarRefusal !== undefined) {
+    violations.push({
+      rule: "policy:visual-sidecar-refused",
+      outcome: "visual_sidecar_failure",
+      severity: "warning",
+      reason: `visual sidecar refused: ${visualSidecarRefusal.failureClass}: ${visualSidecarRefusal.failureMessage}`,
+    });
+    decision = escalate(decision, "needs_review");
+  }
 
   for (const issue of caseIssues) {
     const overridden = isSemanticOverrideActive(issue, overrides);
@@ -474,8 +503,18 @@ const evaluateJobLevel = (
   profile: TestCasePolicyProfile,
   visual?: VisualSidecarValidationReport,
   customContextPolicySignals: readonly CustomContextPolicySignal[] = [],
+  visualSidecarRefusal?: EvaluatePolicyGateInput["visualSidecarRefusal"],
 ): TestCasePolicyViolation[] => {
   const violations: TestCasePolicyViolation[] = [];
+
+  if (visualSidecarRefusal !== undefined) {
+    violations.push({
+      rule: "policy:visual-sidecar-refused",
+      outcome: "visual_sidecar_failure",
+      severity: "warning",
+      reason: `visual sidecar refused: ${visualSidecarRefusal.failureClass}: ${visualSidecarRefusal.failureMessage}`,
+    });
+  }
 
   // Required-field coverage: each detected validation rule needs at least
   // one case of type=negative or type=validation that lists the rule's
@@ -691,6 +730,7 @@ export const evaluatePolicyGate = (
         issues,
         semanticContentOverrides,
         input.customContextPolicySignals ?? [],
+        input.visualSidecarRefusal,
       ),
     );
   }
@@ -702,6 +742,7 @@ export const evaluatePolicyGate = (
     input.profile,
     input.visual,
     input.customContextPolicySignals ?? [],
+    input.visualSidecarRefusal,
   );
 
   // Job-level violations of error severity propagate as job-level

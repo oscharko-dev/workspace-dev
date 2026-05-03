@@ -75,6 +75,7 @@ import {
   type TestCaseType,
   type TestCaseValidationReport,
   type TestCaseCoverageReport,
+  type VisualSidecarFailureClass,
   type VisualSidecarResult,
 } from "../contracts/index.js";
 import { sanitizeErrorMessage } from "../error-sanitization.js";
@@ -168,6 +169,25 @@ export const PRODUCTION_RUNNER_FAILURE_CLASSES = [
 
 export type ProductionRunnerFailureClass =
   (typeof PRODUCTION_RUNNER_FAILURE_CLASSES)[number];
+
+/**
+ * Visual-sidecar failure classes treated as caller-side pre-flight errors —
+ * the runner fails fast on these because they indicate a programming/config
+ * bug rather than a model-side refusal. The remaining failure classes are
+ * routed to `needs_review` per Issue #1772 acceptance criterion #4 and
+ * surfaced as a documented refusal code on the runner result.
+ */
+const VISUAL_SIDECAR_PREFLIGHT_FAILURE_CLASSES: ReadonlySet<VisualSidecarFailureClass> =
+  new Set<VisualSidecarFailureClass>([
+    "empty_screen_capture_set",
+    "duplicate_screen_id",
+    "image_mime_unsupported",
+    "image_payload_too_large",
+  ]);
+
+const isVisualSidecarRefusal = (
+  failureClass: VisualSidecarFailureClass,
+): boolean => !VISUAL_SIDECAR_PREFLIGHT_FAILURE_CLASSES.has(failureClass);
 
 /** Stable error class used by `runFigmaToQcTestCases`. */
 export class ProductionRunnerError extends Error {
@@ -335,6 +355,16 @@ export interface RunFigmaToQcTestCasesResult {
     result: VisualSidecarResult;
     artifactPath: string;
     validationReportPath?: string;
+    /**
+     * Documented refusal code surfaced when the multimodal sidecar exhausted
+     * both deployments (or otherwise refused to produce screen descriptions).
+     * Issue #1772: this routes every test case to `needs_review` via the
+     * policy gate while the runner still publishes a complete artifact set.
+     */
+    refusal?: {
+      failureClass: VisualSidecarFailureClass;
+      failureMessage: string;
+    };
   };
   customerMarkdownPaths: {
     combined: string;
@@ -391,6 +421,9 @@ export const runFigmaToQcTestCases = async (
   );
   let visualSidecarArtifactPath: string | undefined;
   let visualSidecarResult: VisualSidecarResult | undefined;
+  let visualSidecarRefusal:
+    | { failureClass: VisualSidecarFailureClass; failureMessage: string }
+    | undefined;
   let promptVisualBinding: Parameters<typeof compilePrompt>[0]["visualBinding"] = {
     schemaVersion: VISUAL_SIDECAR_SCHEMA_VERSION,
     selectedDeployment: "llama-4-maverick-vision",
@@ -467,42 +500,61 @@ export const runFigmaToQcTestCases = async (
       generatedAt: input.generatedAt,
     });
     if (sidecarResult.outcome !== "success") {
-      throw new ProductionRunnerError({
-        failureClass: "LLM_GATEWAY_FAILED",
-        message: `Visual sidecar failed: ${sidecarResult.failureClass}`,
-        retryable:
-          sidecarResult.failureClass === "primary_quota_exceeded" ||
-          sidecarResult.failureClass === "primary_unavailable",
+      // Issue #1772 AC #4: pre-flight failures are caller bugs and still fail
+      // the runner fast. Model-side refusals (both_sidecars_failed and
+      // friends) instead route every test case to `needs_review` via the
+      // policy gate, with the documented `VisualSidecarFailureClass` as the
+      // refusal code. The runner still publishes a complete artifact set so
+      // a reviewer can adjudicate without the visual context.
+      if (!isVisualSidecarRefusal(sidecarResult.failureClass)) {
+        throw new ProductionRunnerError({
+          failureClass: "LLM_GATEWAY_FAILED",
+          message: `Visual sidecar failed: ${sidecarResult.failureClass}`,
+          retryable: false,
+        });
+      }
+      visualSidecarRefusal = {
+        failureClass: sidecarResult.failureClass,
+        failureMessage: sidecarResult.failureMessage,
+      };
+      emit({
+        phase: "visual_sidecar_complete",
+        timestamp: monotonicMs(),
+        details: {
+          outcome: "refusal",
+          refusalCode: sidecarResult.failureClass,
+          screens: 0,
+        },
       });
-    }
-    if (sidecarResult.validationReport.blocked) {
+    } else if (sidecarResult.validationReport.blocked) {
       throw new ProductionRunnerError({
         failureClass: "LLM_RESPONSE_INVALID",
         message:
           "Visual sidecar validation blocked the Figma screenshot batch before prompt compilation.",
         retryable: false,
       });
-    }
-    promptVisualBatch = sidecarResult.visual;
-    intent = deriveBusinessTestIntentIr({
-      figma: intentInput,
-      visual: promptVisualBatch,
-    });
-    promptVisualBinding = {
-      schemaVersion: VISUAL_SIDECAR_SCHEMA_VERSION,
-      selectedDeployment: sidecarResult.selectedDeployment,
-      fallbackReason: sidecarResult.fallbackReason,
-      screenCount: sidecarResult.visual.length,
-    };
-    emit({
-      phase: "visual_sidecar_complete",
-      timestamp: monotonicMs(),
-      details: {
+    } else {
+      promptVisualBatch = sidecarResult.visual;
+      intent = deriveBusinessTestIntentIr({
+        figma: intentInput,
+        visual: promptVisualBatch,
+      });
+      promptVisualBinding = {
+        schemaVersion: VISUAL_SIDECAR_SCHEMA_VERSION,
         selectedDeployment: sidecarResult.selectedDeployment,
         fallbackReason: sidecarResult.fallbackReason,
-        screens: sidecarResult.visual.length,
-      },
-    });
+        screenCount: sidecarResult.visual.length,
+      };
+      emit({
+        phase: "visual_sidecar_complete",
+        timestamp: monotonicMs(),
+        details: {
+          selectedDeployment: sidecarResult.selectedDeployment,
+          fallbackReason: sidecarResult.fallbackReason,
+          screens: sidecarResult.visual.length,
+        },
+      });
+    }
   } else {
     emit({
       phase: "visual_sidecar_skipped",
@@ -713,6 +765,9 @@ export const runFigmaToQcTestCases = async (
           primaryVisualDeployment: "llama-4-maverick-vision" as const,
         }
       : {}),
+    ...(visualSidecarRefusal !== undefined
+      ? { visualSidecarRefusal }
+      : {}),
   });
   emit({
     phase: "validation_complete",
@@ -903,6 +958,9 @@ export const runFigmaToQcTestCases = async (
               join(artifactDir, VISUAL_SIDECAR_RESULT_ARTIFACT_FILENAME),
             ...(visualSidecarValidationPath !== undefined
               ? { validationReportPath: visualSidecarValidationPath }
+              : {}),
+            ...(visualSidecarRefusal !== undefined
+              ? { refusal: visualSidecarRefusal }
               : {}),
           },
         }

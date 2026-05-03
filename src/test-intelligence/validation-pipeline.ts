@@ -40,6 +40,7 @@ import {
   type TestCasePolicyViolation,
   type TestCaseValidationReport,
   type VisualScreenDescription,
+  type VisualSidecarFailureClass,
   type VisualSidecarValidationReport,
 } from "../contracts/index.js";
 import { canonicalJson } from "./content-hash.js";
@@ -81,6 +82,17 @@ export interface RunValidationPipelineInput {
    * the original error finding.
    */
   semanticContentOverrides?: SemanticContentOverrideMap;
+  /**
+   * Documented visual-sidecar refusal forwarded to the policy gate
+   * (Issue #1772). When set, every per-case decision is escalated to
+   * `needs_review` with a `policy:visual-sidecar-refused` violation that
+   * carries the documented `VisualSidecarFailureClass` so reviewers can
+   * adjudicate without the visual context.
+   */
+  visualSidecarRefusal?: {
+    failureClass: VisualSidecarFailureClass;
+    failureMessage: string;
+  };
 }
 
 export interface ValidationPipelineArtifacts {
@@ -201,6 +213,9 @@ export const runValidationPipeline = (
     ...(visualReport !== undefined ? { visual: visualReport } : {}),
     ...(semanticContentOverrides !== undefined
       ? { semanticContentOverrides }
+      : {}),
+    ...(input.visualSidecarRefusal !== undefined
+      ? { visualSidecarRefusal: input.visualSidecarRefusal }
       : {}),
   });
 
@@ -497,6 +512,9 @@ export const runValidationPipelineWithSelfVerify = async (
     ...(visualReport !== undefined ? { visual: visualReport } : {}),
     ...(semanticContentOverrides !== undefined
       ? { semanticContentOverrides }
+      : {}),
+    ...(input.visualSidecarRefusal !== undefined
+      ? { visualSidecarRefusal: input.visualSidecarRefusal }
       : {}),
   });
 

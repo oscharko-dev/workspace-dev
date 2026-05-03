@@ -198,6 +198,50 @@ test("missing accessibility case for form screens raises a job-level violation",
   assert.equal(report.blocked, true);
 });
 
+test("Issue #1772: visualSidecarRefusal escalates every case to needs_review with documented refusal code", () => {
+  const tc = buildCase({});
+  const ctx = harness([tc], buildIntent());
+  const report = evaluatePolicyGate({
+    jobId: "job-1",
+    generatedAt: GENERATED_AT,
+    list: ctx.list,
+    intent: ctx.intent,
+    profile: ctx.profile,
+    validation: ctx.validation,
+    coverage: ctx.coverage,
+    visualSidecarRefusal: {
+      failureClass: "both_sidecars_failed",
+      failureMessage:
+        "both_sidecars_failed: primary llama-4-maverick-vision (rate_limited), fallback phi-4-multimodal-poc (gateway_timeout)",
+    },
+  });
+
+  // Per-case: every case escalates to needs_review (warning severity).
+  assert.equal(report.decisions[0]?.decision, "needs_review");
+  const caseViolation = report.decisions[0]?.violations.find(
+    (v) => v.rule === "policy:visual-sidecar-refused",
+  );
+  assert.ok(caseViolation, "per-case refusal violation must be present");
+  assert.equal(caseViolation?.outcome, "visual_sidecar_failure");
+  assert.equal(caseViolation?.severity, "warning");
+  assert.match(caseViolation?.reason ?? "", /both_sidecars_failed/);
+
+  // Job-level: parallel violation surfaces the documented refusal code without
+  // marking the job as blocked (warning severity does not block).
+  const jobViolation = report.jobLevelViolations.find(
+    (v) => v.rule === "policy:visual-sidecar-refused",
+  );
+  assert.ok(jobViolation, "job-level refusal violation must be present");
+  assert.equal(jobViolation?.outcome, "visual_sidecar_failure");
+  assert.equal(jobViolation?.severity, "warning");
+
+  // Counts reflect the escalation.
+  assert.equal(report.needsReviewCount, 1);
+  assert.equal(report.blockedCount, 0);
+  assert.equal(report.approvedCount, 0);
+  assert.equal(report.blocked, false);
+});
+
 test("resolved multi-source conflicts are pruned before policy blockers are counted", () => {
   const report = pruneResolvedMultiSourceConflictViolations({
     report: {
