@@ -804,6 +804,7 @@ test("job-engine local sync persists a baseline and surfaces manual edits as con
     },
     runtime: resolveRuntimeSettings({
       enablePreview: false,
+      enablePerfValidation: false,
       enableUiValidation: false,
       enableUnitTestValidation: false,
       installPreferOffline: true,
@@ -911,6 +912,7 @@ test("job-engine local sync rejects apply when the preview becomes stale", async
     },
     runtime: resolveRuntimeSettings({
       enablePreview: false,
+      enablePerfValidation: false,
       enableUiValidation: false,
       enableUnitTestValidation: false,
       installPreferOffline: true,
@@ -1010,6 +1012,7 @@ test("job-engine local sync rejects unreviewed sessions before any writes occur"
     },
     runtime: resolveRuntimeSettings({
       enablePreview: false,
+      enablePerfValidation: false,
       enableUiValidation: false,
       enableUnitTestValidation: false,
       installPreferOffline: true,
@@ -1106,6 +1109,7 @@ test("job-engine local sync ignores a forged stored approved status when event h
     },
     runtime: resolveRuntimeSettings({
       enablePreview: false,
+      enablePerfValidation: false,
       enableUiValidation: false,
       enableUnitTestValidation: false,
       installPreferOffline: true,
@@ -1217,6 +1221,7 @@ test("job-engine local sync applies for approved sessions without appending a fr
     },
     runtime: resolveRuntimeSettings({
       enablePreview: false,
+      enablePerfValidation: false,
       enableUiValidation: false,
       enableUnitTestValidation: false,
       installPreferOffline: true,

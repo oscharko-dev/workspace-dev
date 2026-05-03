@@ -183,6 +183,7 @@ test("createJobEngine persists authoritative governance state and rejects invali
     runtime: resolveRuntimeSettings({
       enablePreview: false,
       installPreferOffline: true,
+      enablePerfValidation: false,
       enableUiValidation: false,
       enableUnitTestValidation: false,
     }),
@@ -328,6 +329,7 @@ test("createJobEngine does not reuse file-key-only sessions for figma_paste impo
     runtime: resolveRuntimeSettings({
       enablePreview: false,
       installPreferOffline: true,
+      enablePerfValidation: false,
       enableUiValidation: false,
       enableUnitTestValidation: false,
     }),
@@ -388,6 +390,7 @@ test("createJobEngine reuses whole-file sessions for stable non-paste imports wi
     runtime: resolveRuntimeSettings({
       enablePreview: false,
       installPreferOffline: true,
+      enablePerfValidation: false,
       enableUiValidation: false,
       enableUnitTestValidation: false,
     }),
@@ -442,6 +445,7 @@ test("approveImportSession records review_started before approved and stays idem
     runtime: resolveRuntimeSettings({
       enablePreview: false,
       installPreferOffline: true,
+      enablePerfValidation: false,
       enableUiValidation: false,
       enableUnitTestValidation: false,
     }),

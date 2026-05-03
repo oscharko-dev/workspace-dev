@@ -16,6 +16,7 @@ import type {
 import {
   CONTRACT_VERSION,
   PIPELINE_QUALITY_PASSPORT_ARTIFACT_FILENAME,
+  TEST_DESIGN_MODEL_ARTIFACT_FILENAME,
 } from "../../contracts/index.js";
 import { parseCustomerProfileConfig } from "../../customer-profile.js";
 import { applyCustomerProfileToTemplate } from "../../customer-profile-template.js";
@@ -2144,12 +2145,34 @@ test("IrDeriveService writes design.ir and figma.analysis for cleaned local_json
     ),
     businessTestIntentIrPath,
   );
+  const testDesignModelPath = path.join(
+    executionContext.paths.jobDir,
+    TEST_DESIGN_MODEL_ARTIFACT_FILENAME,
+  );
+  assert.equal(
+    await executionContext.artifactStore.getPath(
+      STAGE_ARTIFACT_KEYS.testDesignModel,
+    ),
+    testDesignModelPath,
+  );
   const businessTestIntentIr = JSON.parse(
     await readFile(businessTestIntentIrPath, "utf8"),
   ) as BusinessTestIntentIr;
+  const testDesignModel = JSON.parse(
+    await readFile(testDesignModelPath, "utf8"),
+  ) as {
+    sourceHash: string;
+    screens: Array<{ screenId: string; elements: Array<{ elementId: string }> }>;
+  };
   assert.equal(businessTestIntentIr.source.kind, "figma_local_json");
   assert.equal(businessTestIntentIr.screens[0]?.screenId, "screen-1");
   assert.equal(businessTestIntentIr.detectedFields[0]?.trace.nodeId, "title-1");
+  assert.match(testDesignModel.sourceHash, /^[0-9a-f]{64}$/);
+  assert.equal(testDesignModel.screens[0]?.screenId, "screen-1");
+  assert.equal(
+    testDesignModel.screens[0]?.elements[0]?.elementId,
+    "screen-1::field::title-1",
+  );
   assert.equal(
     (await readFile(executionContext.paths.figmaAnalysisFile, "utf8")).includes(
       '"artifactVersion": 1',

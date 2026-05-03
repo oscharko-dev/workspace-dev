@@ -601,6 +601,7 @@ test("submitJob completes when preview-disabled repro export and git.pr are skip
     runtime: resolveRuntimeSettings({
       enablePreview: false,
       installPreferOffline: true,
+      enablePerfValidation: false,
       enableUiValidation: false,
       enableUnitTestValidation: false,
     }),
@@ -652,6 +653,7 @@ test("submitRegeneration creates a queued job with lineage metadata from a compl
     runtime: resolveRuntimeSettings({
       enablePreview: false,
       installPreferOffline: true,
+      enablePerfValidation: false,
       enableUiValidation: false,
       enableUnitTestValidation: false,
     }),
@@ -754,6 +756,7 @@ test("submitRegeneration rejects cross-pipeline pipelineId overrides", async () 
     runtime: resolveRuntimeSettings({
       enablePreview: false,
       installPreferOffline: true,
+      enablePerfValidation: false,
       enableUiValidation: false,
       enableUnitTestValidation: false,
     }),
@@ -834,6 +837,7 @@ test("submitRegeneration rejects Rocket-specific inputs on default-pipeline sour
     runtime: resolveRuntimeSettings({
       enablePreview: false,
       installPreferOffline: true,
+      enablePerfValidation: false,
       enableUiValidation: false,
       enableUnitTestValidation: false,
     }),
@@ -895,6 +899,7 @@ test("submitRegeneration result endpoint includes lineage", async () => {
     runtime: resolveRuntimeSettings({
       enablePreview: false,
       installPreferOffline: true,
+      enablePerfValidation: false,
       enableUiValidation: false,
       enableUnitTestValidation: false,
     }),
@@ -945,6 +950,7 @@ test("submitRegeneration reuses the source customerBrandId by default and honors
     runtime: resolveRuntimeSettings({
       enablePreview: false,
       installPreferOffline: true,
+      enablePerfValidation: false,
       enableUiValidation: false,
       enableUnitTestValidation: false,
     }),
@@ -1005,6 +1011,7 @@ test("submitRegeneration reuses source componentMappings by default and honors e
     runtime: resolveRuntimeSettings({
       enablePreview: false,
       installPreferOffline: true,
+      enablePerfValidation: false,
       enableUiValidation: false,
       enableUnitTestValidation: false,
     }),
@@ -1134,6 +1141,7 @@ test("submitRegeneration reuses the stored customer profile snapshot even when t
     runtime: resolveRuntimeSettings({
       enablePreview: false,
       installPreferOffline: true,
+      enablePerfValidation: false,
       enableUiValidation: false,
       enableUnitTestValidation: false,
     }),
@@ -1279,6 +1287,7 @@ test("submitRegeneration keeps storybook-first generated imports pinned to the s
     runtime: resolveRuntimeSettings({
       enablePreview: false,
       installPreferOffline: true,
+      enablePerfValidation: false,
       enableUiValidation: false,
       enableUnitTestValidation: false,
     }),
@@ -1422,6 +1431,7 @@ test("submitRegeneration consumes reused component.match_report mappings after s
     runtime: resolveRuntimeSettings({
       enablePreview: false,
       installPreferOffline: true,
+      enablePerfValidation: false,
       enableUiValidation: false,
       enableUnitTestValidation: false,
     }),
@@ -1644,6 +1654,7 @@ test("submitRegeneration fails with E_CUSTOMER_PROFILE_SNAPSHOT_MISSING when an 
     runtime: resolveRuntimeSettings({
       enablePreview: false,
       installPreferOffline: true,
+      enablePerfValidation: false,
       enableUiValidation: false,
       enableUnitTestValidation: false,
     }),
@@ -1707,8 +1718,10 @@ test("queued regeneration jobs drain when a running job releases the only queue 
       maxConcurrentJobs: 1,
       maxQueuedJobs: 2,
       installPreferOffline: true,
+      enablePerfValidation: false,
       enableUiValidation: false,
       enableUnitTestValidation: false,
+      enablePerfValidation: false,
       figmaMaxRetries: 1,
       figmaRequestTimeoutMs: 1_000,
       fetchImpl: async (_input, init) =>
@@ -1818,6 +1831,7 @@ test("regeneration reuses Storybook artifacts from the source job after the orig
     runtime: resolveRuntimeSettings({
       enablePreview: false,
       installPreferOffline: true,
+      enablePerfValidation: false,
       enableUiValidation: false,
       enableUnitTestValidation: false,
     }),
@@ -1926,6 +1940,7 @@ test("regeneration fails when a source job declared Storybook input but a reusab
     runtime: resolveRuntimeSettings({
       enablePreview: false,
       installPreferOffline: true,
+      enablePerfValidation: false,
       enableUiValidation: false,
       enableUnitTestValidation: false,
     }),

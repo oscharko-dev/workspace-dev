@@ -431,6 +431,7 @@ const createFastJobEngine = ({
     runtime: resolveRuntimeSettings({
       enablePreview,
       installPreferOffline: true,
+      enablePerfValidation: false,
       enableUiValidation: false,
       enableUnitTestValidation: false,
       figmaMaxRetries: 1,
@@ -915,6 +916,7 @@ test("createJobEngine rejects storybookStaticDir traversal outside the configure
     runtime: resolveRuntimeSettings({
       enablePreview: false,
       installPreferOffline: true,
+      enablePerfValidation: false,
       enableUiValidation: false,
       enableUnitTestValidation: false,
     }),
@@ -3173,6 +3175,7 @@ test("createJobEngine resolves relative customerProfilePath, persists the snapsh
     runtime: resolveRuntimeSettings({
       enablePreview: false,
       installPreferOffline: true,
+      enablePerfValidation: false,
       enableUiValidation: false,
       enableUnitTestValidation: false,
     }),
@@ -3276,6 +3279,7 @@ test("createJobEngine fails explicit customerProfilePath loads with E_CUSTOMER_P
     runtime: resolveRuntimeSettings({
       enablePreview: false,
       installPreferOffline: true,
+      enablePerfValidation: false,
       enableUiValidation: false,
       enableUnitTestValidation: false,
     }),
@@ -3325,6 +3329,7 @@ test("createJobEngine rejects customerProfilePath that traverses outside the wor
     runtime: resolveRuntimeSettings({
       enablePreview: false,
       installPreferOffline: true,
+      enablePerfValidation: false,
       enableUiValidation: false,
       enableUnitTestValidation: false,
     }),
@@ -3373,6 +3378,7 @@ test("#698 createJobEngine rejects customerProfilePath containing a null byte", 
     runtime: resolveRuntimeSettings({
       enablePreview: false,
       installPreferOffline: true,
+      enablePerfValidation: false,
       enableUiValidation: false,
       enableUnitTestValidation: false,
     }),
