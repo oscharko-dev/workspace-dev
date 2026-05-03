@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   FigmaRestFetchError,
   fetchFigmaFileForTestIntelligence,
+  fetchFigmaScreenCapturesForTestIntelligence,
   parseFigmaUrl,
 } from "./figma-rest-adapter.js";
 
@@ -31,6 +32,11 @@ const minimalFile = {
     children: [],
   },
 };
+
+const PNG_BYTES = Buffer.from(
+  "89504e470d0a1a0a0000000d4948445200000001000000010802000000907753de0000000c49444154789c63606060000000040001f61738550000000049454e44ae426082",
+  "hex",
+);
 
 test("parseFigmaUrl extracts fileKey + nodeId from a design URL", () => {
   const parsed = parseFigmaUrl(
@@ -184,4 +190,74 @@ test("fetchFigmaFileForTestIntelligence appends ids when nodeId is supplied", as
   assert.ok(seenUrl?.includes("ids=0%3A1"));
   // For node-scoped fetches, the adapter wraps the returned subtree as the document root.
   assert.equal(result.document.id, "0:1");
+});
+
+test("fetchFigmaScreenCapturesForTestIntelligence resolves image lookup URLs and returns PNG captures", async () => {
+  const requestedUrls: string[] = [];
+  const requestHeaders: Headers[] = [];
+  const fetchImpl = (async (url: string, init?: RequestInit) => {
+    requestedUrls.push(url);
+    requestHeaders.push(new Headers(init?.headers));
+    if (url.includes("/v1/images/")) {
+      return okJson({
+        images: {
+          "1:1":
+            "https://figma-alpha-api.s3.us-west-2.amazonaws.com/1_1.png",
+        },
+      });
+    }
+    return new Response(PNG_BYTES, {
+      status: 200,
+      headers: { "content-type": "image/png" },
+    });
+  }) as unknown as typeof fetch;
+  const captures = await fetchFigmaScreenCapturesForTestIntelligence({
+    fileKey: "ABC",
+    accessToken: "figd_test",
+    screens: [{ screenId: "1:1", screenName: "Main Screen" }],
+    fetchImpl,
+  });
+  assert.equal(captures.length, 1);
+  assert.equal(captures[0]?.screenId, "1:1");
+  assert.equal(captures[0]?.screenName, "Main Screen");
+  assert.equal(captures[0]?.mimeType, "image/png");
+  assert.equal(
+    Buffer.from(captures[0]?.base64Data ?? "", "base64").equals(PNG_BYTES),
+    true,
+  );
+  assert.deepEqual(requestedUrls, [
+    "https://api.figma.com/v1/images/ABC?ids=1%3A1&format=png&scale=2",
+    "https://figma-alpha-api.s3.us-west-2.amazonaws.com/1_1.png",
+  ]);
+  assert.equal(requestHeaders.length, 2);
+  assert.equal(requestHeaders[0]?.get("x-figma-token"), "figd_test");
+  assert.equal(requestHeaders[1]?.get("x-figma-token"), null);
+});
+
+test("fetchFigmaScreenCapturesForTestIntelligence rejects non-Figma CDN screenshot URLs", async () => {
+  const fetchImpl = (async (url: string) => {
+    if (url.includes("/v1/images/")) {
+      return okJson({
+        images: {
+          "1:1": "https://evil.example.com/1_1.png",
+        },
+      });
+    }
+    return new Response(PNG_BYTES, {
+      status: 200,
+      headers: { "content-type": "image/png" },
+    });
+  }) as unknown as typeof fetch;
+  await assert.rejects(
+    () =>
+      fetchFigmaScreenCapturesForTestIntelligence({
+        fileKey: "ABC",
+        accessToken: "figd_test",
+        screens: [{ screenId: "1:1" }],
+        fetchImpl,
+      }),
+    (err: unknown): boolean =>
+      err instanceof FigmaRestFetchError &&
+      err.errorClass === "ssrf_refused",
+  );
 });

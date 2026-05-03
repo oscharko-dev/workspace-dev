@@ -65,6 +65,8 @@ const LIVE_E2E_ARTIFACT_ROOT = join(
   "testing",
   "ti-live-e2e",
 );
+const LIVE_FIGMA_URL_ENV = "WORKSPACE_TEST_SPACE_FIGMA_URL";
+const FIGMA_ACCESS_TOKEN_ENV = "WORKSPACE_FIGMA_PERSONAL_ACCESS_TOKEN";
 
 const requireEnv = (name: (typeof NON_AUTH_REQUIRED_ENV)[number]): string => {
   const value = process.env[name];
@@ -143,6 +145,9 @@ test("live-E2E: production runner generates test cases against Azure for a synth
   }
 
   const fixture = await loadFixture();
+  const figmaUrl = process.env[LIVE_FIGMA_URL_ENV];
+  const figmaAccessToken = process.env[FIGMA_ACCESS_TOKEN_ENV];
+  const observedEvents: string[] = [];
 
   const visualBaseUrl =
     process.env["WORKSPACE_TEST_SPACE_VISUAL_MODEL_ENDPOINT"] ??
@@ -186,9 +191,20 @@ test("live-E2E: production runner generates test cases against Azure for a synth
   const result = await runFigmaToQcTestCases({
     jobId: `live-e2e-${Date.now().toString(36)}`,
     generatedAt: new Date().toISOString(),
-    source: { kind: "figma_paste_normalized", file: fixture },
+    source:
+      typeof figmaUrl === "string" &&
+      figmaUrl.length > 0 &&
+      typeof figmaAccessToken === "string" &&
+      figmaAccessToken.length > 0
+        ? {
+            kind: "figma_url",
+            figmaUrl,
+            accessToken: figmaAccessToken,
+          }
+        : { kind: "figma_paste_normalized", file: fixture },
     outputRoot: LIVE_E2E_ARTIFACT_ROOT,
-    llm: { client: bundle.testGeneration },
+    llm: { client: bundle.testGeneration, bundle },
+    events: (event) => observedEvents.push(event.phase),
   });
 
   assert.equal(
@@ -225,6 +241,39 @@ test("live-E2E: production runner generates test cases against Azure for a synth
     0,
     "policy report must enumerate the generated cases",
   );
+  if (
+    typeof figmaUrl === "string" &&
+    figmaUrl.length > 0 &&
+    typeof figmaAccessToken === "string" &&
+    figmaAccessToken.length > 0
+  ) {
+    assert.ok(
+      observedEvents.includes("visual_sidecar_started"),
+      "Figma URL live-E2E must exercise the visual sidecar path",
+    );
+    assert.ok(
+      result.artifactPaths.visualSidecarResult,
+      "Figma URL live-E2E must persist visual-sidecar-result.json",
+    );
+    const raw = await readFile(result.artifactPaths.visualSidecarResult!, "utf8");
+    const parsed = JSON.parse(raw) as {
+      visualEvidenceRefs?: Array<{ screenId: string }>;
+    };
+    assert.ok(
+      (parsed.visualEvidenceRefs?.length ?? 0) > 0,
+      "Figma URL live-E2E must emit non-empty visualEvidenceRefs",
+    );
+  } else {
+    assert.ok(
+      observedEvents.includes("visual_sidecar_skipped"),
+      "paste-normalized live-E2E must skip the visual sidecar path",
+    );
+    assert.equal(
+      result.artifactPaths.visualSidecarResult,
+      undefined,
+      "paste-normalized live-E2E must not persist visual-sidecar-result.json",
+    );
+  }
 
   // Surface the deployment and stable artifact directory so the closing-gate
   // review can verify that the required files were emitted without re-running.

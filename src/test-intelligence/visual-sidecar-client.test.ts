@@ -129,6 +129,20 @@ const buildSuccess = (
   attempt,
 });
 
+const visualEvidenceHash = (input: {
+  screenId: string;
+  deployment: string;
+  outcomes: ReadonlyArray<string>;
+  meanConfidence: number;
+}): string =>
+  createHash("sha256")
+    .update(
+      `${input.screenId}|${input.deployment}|${[...input.outcomes]
+        .sort()
+        .join(",")}|${Math.round(input.meanConfidence * 10_000) / 10_000}`,
+    )
+    .digest("hex");
+
 const PRIMARY_DEPLOYMENT = "llama-4-maverick-vision";
 const FALLBACK_DEPLOYMENT = "phi-4-multimodal-poc";
 
@@ -691,6 +705,29 @@ test("determinism: identical inputs produce byte-identical artifacts (canonical 
     parsed.visualSidecarSchemaVersion,
     VISUAL_SIDECAR_SCHEMA_VERSION,
   );
+  assert.equal(parsed.visualEvidenceRefs?.length, 2);
+  assert.deepEqual(parsed.visualEvidenceRefs?.map((ref) => ref.screenId), [
+    "s-1",
+    "s-2",
+  ]);
+  assert.equal(
+    parsed.visualEvidenceRefs?.[0]?.evidenceHash,
+    visualEvidenceHash({
+      screenId: "s-1",
+      deployment: PRIMARY_DEPLOYMENT,
+      outcomes: ["ok"],
+      meanConfidence: 0.92,
+    }),
+  );
+  assert.equal(
+    parsed.visualEvidenceRefs?.[1]?.evidenceHash,
+    visualEvidenceHash({
+      screenId: "s-2",
+      deployment: PRIMARY_DEPLOYMENT,
+      outcomes: ["ok"],
+      meanConfidence: 0.92,
+    }),
+  );
 });
 
 test("write artifact: filename matches contract and lands at the requested path", async () => {
@@ -727,6 +764,8 @@ test("write artifact: filename matches contract and lands at the requested path"
   ) as VisualSidecarResultArtifact;
   assert.equal(parsed.jobId, "job-write");
   assert.equal(parsed.rawScreenshotsIncluded, false);
+  assert.equal(parsed.visualEvidenceRefs?.length, 1);
+  assert.equal(parsed.visualEvidenceRefs?.[0]?.screenId, "s-1");
 });
 
 test("response schema: structure is locked; required fields enforce descent into screens", () => {

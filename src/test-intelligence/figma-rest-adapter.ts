@@ -29,6 +29,13 @@ import { redactHighRiskSecrets } from "../secret-redaction.js";
 const FIGMA_REST_HOST = "api.figma.com" as const;
 const DEFAULT_TIMEOUT_MS = 30_000;
 const FIGMA_URL_DESIGN_PATH_RE = /^\/(?:design|file|proto)\/([^/]+)/u;
+const DEFAULT_FIGMA_IMAGE_SCALE = 2;
+const ALLOWED_FIGMA_CDN_HOSTS: readonly string[] = [
+  "figma.com",
+  ".figma.com",
+  "figma-alpha-api.s3.us-west-2.amazonaws.com",
+  "figma-alpha-api.s3.amazonaws.com",
+];
 
 /** Failure classes returned by {@link FigmaRestFetchError.errorClass}. */
 export type FigmaRestFetchErrorClass =
@@ -115,6 +122,16 @@ export interface FetchFigmaFileForTestIntelligenceInput {
 }
 
 const DEFAULT_MAX_RESPONSE_BYTES = 32 * 1024 * 1024;
+
+export interface FetchFigmaScreenCapturesForTestIntelligenceInput {
+  fileKey: string;
+  accessToken: string;
+  screens: ReadonlyArray<{ screenId: string; screenName?: string }>;
+  fetchImpl?: typeof fetch;
+  timeoutMs?: number;
+  maxResponseBytes?: number;
+  scale?: number;
+}
 
 /** Parse a public Figma URL and extract the (fileKey, nodeId?) pair. */
 export const parseFigmaUrl = (
@@ -266,6 +283,72 @@ export const fetchFigmaFileForTestIntelligence = async (
   );
 };
 
+export const fetchFigmaScreenCapturesForTestIntelligence = async (
+  input: FetchFigmaScreenCapturesForTestIntelligenceInput,
+): Promise<
+  Array<{
+    screenId: string;
+    screenName?: string;
+    mimeType: "image/png";
+    base64Data: string;
+  }>
+> => {
+  const fileKey = input.fileKey.trim();
+  if (fileKey.length === 0) {
+    throw new FigmaRestFetchError({
+      errorClass: "request_invalid",
+      message: "fileKey is required",
+      retryable: false,
+    });
+  }
+  if (typeof input.accessToken !== "string" || input.accessToken.length === 0) {
+    throw new FigmaRestFetchError({
+      errorClass: "request_invalid",
+      message: "accessToken is required",
+      retryable: false,
+    });
+  }
+  const fetchImpl = input.fetchImpl ?? globalThis.fetch.bind(globalThis);
+  const timeoutMs = input.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+  const maxResponseBytes = input.maxResponseBytes ?? DEFAULT_MAX_RESPONSE_BYTES;
+  const scale = clampImageScale(input.scale ?? DEFAULT_FIGMA_IMAGE_SCALE);
+  return Promise.all(
+    input.screens.map(async (screen) => {
+      const screenId = screen.screenId.trim();
+      if (screenId.length === 0) {
+        throw new FigmaRestFetchError({
+          errorClass: "request_invalid",
+          message: "screenId is required",
+          retryable: false,
+        });
+      }
+      const imageUrl = await fetchFigmaRenderableImageUrl({
+        fileKey,
+        screenId,
+        accessToken: input.accessToken,
+        fetchImpl,
+        timeoutMs,
+        maxResponseBytes,
+        scale,
+      });
+      const pngBytes = await fetchFigmaScreenshotBytes({
+        imageUrl,
+        fetchImpl,
+        timeoutMs,
+        maxResponseBytes,
+      });
+      return {
+        screenId,
+        ...(screen.screenName !== undefined
+          ? { screenName: screen.screenName }
+          : {}),
+        mimeType: "image/png" as const,
+        base64Data: Buffer.from(pngBytes).toString("base64"),
+      };
+    }),
+  );
+};
+
 const buildFigmaRestUrl = (input: {
   fileKey: string;
   nodeId?: string;
@@ -277,6 +360,22 @@ const buildFigmaRestUrl = (input: {
   const ids = encodeURIComponent(input.nodeId);
   return `https://${FIGMA_REST_HOST}/v1/files/${file}/nodes?ids=${ids}`;
 };
+
+const buildFigmaImageLookupUrl = (input: {
+  fileKey: string;
+  screenId: string;
+  scale: number;
+}): string => {
+  const params = new URLSearchParams({
+    ids: input.screenId,
+    format: "png",
+    scale: String(input.scale),
+  });
+  return `https://${FIGMA_REST_HOST}/v1/images/${encodeURIComponent(input.fileKey)}?${params.toString()}`;
+};
+
+const clampImageScale = (value: number): number =>
+  Math.max(0.5, Math.min(3, value));
 
 const dispatchOnce = async (input: {
   url: string;
@@ -482,6 +581,275 @@ const interpretFigmaResponse = (input: {
     fileKey: input.fileKey,
     document: document as FigmaRestNode,
   };
+};
+
+const fetchFigmaRenderableImageUrl = async (input: {
+  fileKey: string;
+  screenId: string;
+  accessToken: string;
+  fetchImpl: typeof fetch;
+  timeoutMs: number;
+  maxResponseBytes: number;
+  scale: number;
+}): Promise<string> => {
+  const url = buildFigmaImageLookupUrl({
+    fileKey: input.fileKey,
+    screenId: input.screenId,
+    scale: input.scale,
+  });
+  const parsed = new URL(url);
+  if (
+    parsed.protocol !== "https:" ||
+    parsed.hostname.toLowerCase() !== FIGMA_REST_HOST
+  ) {
+    throw new FigmaRestFetchError({
+      errorClass: "ssrf_refused",
+      message: "internal URL guard refused Figma image lookup destination",
+      retryable: false,
+    });
+  }
+  const response = await dispatchHttpRequest({
+    url,
+    accessToken: input.accessToken,
+    fetchImpl: input.fetchImpl,
+    timeoutMs: input.timeoutMs,
+  });
+  const bodyText = await readBoundedText(response, input.maxResponseBytes);
+  let payload: unknown;
+  try {
+    payload = JSON.parse(bodyText) as unknown;
+  } catch {
+    throw new FigmaRestFetchError({
+      errorClass: "parse_error",
+      message: "Figma image lookup response body is not valid JSON",
+      retryable: false,
+    });
+  }
+  if (
+    typeof payload !== "object" ||
+    payload === null ||
+    Array.isArray(payload) ||
+    typeof (payload as Record<string, unknown>).images !== "object" ||
+    (payload as Record<string, unknown>).images === null
+  ) {
+    throw new FigmaRestFetchError({
+      errorClass: "parse_error",
+      message: "Figma image lookup response is missing an images map",
+      retryable: false,
+    });
+  }
+  const imageUrl = ((payload as Record<string, unknown>).images as Record<
+    string,
+    unknown
+  >)[input.screenId];
+  if (typeof imageUrl !== "string" || imageUrl.trim().length === 0) {
+    throw new FigmaRestFetchError({
+      errorClass: "not_found",
+      message: `Figma image export returned no renderable screenshot for screen '${input.screenId}'`,
+      retryable: false,
+    });
+  }
+  assertFigmaCdnUrlIsSafe(imageUrl);
+  return imageUrl;
+};
+
+const fetchFigmaScreenshotBytes = async (input: {
+  imageUrl: string;
+  fetchImpl: typeof fetch;
+  timeoutMs: number;
+  maxResponseBytes: number;
+}): Promise<Uint8Array> => {
+  assertFigmaCdnUrlIsSafe(input.imageUrl);
+  const response = await dispatchHttpRequest({
+    url: input.imageUrl,
+    fetchImpl: input.fetchImpl,
+    timeoutMs: input.timeoutMs,
+  });
+  const bytes = new Uint8Array(await response.arrayBuffer());
+  if (bytes.byteLength > input.maxResponseBytes) {
+    throw new FigmaRestFetchError({
+      errorClass: "transport",
+      message: `Figma screenshot response exceeds ${input.maxResponseBytes} bytes`,
+      retryable: false,
+    });
+  }
+  if (!isValidPngBytes(bytes)) {
+    throw new FigmaRestFetchError({
+      errorClass: "parse_error",
+      message: "Figma image export returned an invalid PNG",
+      retryable: false,
+    });
+  }
+  return bytes;
+};
+
+const dispatchHttpRequest = async (input: {
+  url: string;
+  accessToken?: string;
+  fetchImpl: typeof fetch;
+  timeoutMs: number;
+}): Promise<Response> => {
+  let lastError: FigmaRestFetchError | undefined;
+  for (let attempt = 1; attempt <= 2; attempt += 1) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), input.timeoutMs);
+    try {
+      const response = await input.fetchImpl(input.url, {
+        method: "GET",
+        headers:
+          input.accessToken === undefined
+            ? { accept: "application/json" }
+            : {
+                "x-figma-token": input.accessToken,
+                accept: "application/json",
+              },
+        redirect: "error",
+        signal: controller.signal,
+      });
+      const handled = await handleHttpStatus(response, {
+        retryableTransportMessage: "Figma REST returned a transient error",
+      });
+      if (!(handled instanceof FigmaRestFetchError)) {
+        return handled;
+      }
+      lastError = handled;
+      if (!handled.retryable || attempt === 2) {
+        throw handled;
+      }
+    } catch (err) {
+      const normalized =
+        err instanceof FigmaRestFetchError
+          ? err
+          : new FigmaRestFetchError({
+              errorClass:
+                err instanceof Error && /aborted/iu.test(err.message)
+                  ? "timeout"
+                  : "transport",
+              message:
+                err instanceof Error && /aborted/iu.test(err.message)
+                  ? `Figma REST request timed out after ${input.timeoutMs}ms`
+                  : redactBoundedMessage(
+                      sanitizeErrorMessage({
+                        error: err,
+                        fallback: "Figma REST transport failure",
+                      }),
+                    ),
+              retryable: true,
+              cause: err,
+            });
+      lastError = normalized;
+      if (!normalized.retryable || attempt === 2) {
+        throw normalized;
+      }
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+  throw (
+    lastError ??
+    new FigmaRestFetchError({
+      errorClass: "transport",
+      message: "no attempts executed",
+      retryable: false,
+    })
+  );
+};
+
+const handleHttpStatus = async (
+  response: Response,
+  input: { retryableTransportMessage: string },
+): Promise<Response | FigmaRestFetchError> => {
+  const status = response.status;
+  if (status === 401 || status === 403) {
+    await drainBody(response);
+    return new FigmaRestFetchError({
+      errorClass: "auth_failed",
+      message: `Figma REST returned ${status}: access token rejected`,
+      retryable: false,
+      status,
+    });
+  }
+  if (status === 404) {
+    await drainBody(response);
+    return new FigmaRestFetchError({
+      errorClass: "not_found",
+      message: "Figma REST returned 404",
+      retryable: false,
+      status,
+    });
+  }
+  if (status === 429) {
+    await drainBody(response);
+    return new FigmaRestFetchError({
+      errorClass: "rate_limited",
+      message: "Figma REST returned 429 (rate limited)",
+      retryable: true,
+      status,
+    });
+  }
+  if (status >= 500 && status <= 599) {
+    await drainBody(response);
+    return new FigmaRestFetchError({
+      errorClass: "transport",
+      message: input.retryableTransportMessage,
+      retryable: true,
+      status,
+    });
+  }
+  if (status >= 400) {
+    await drainBody(response);
+    return new FigmaRestFetchError({
+      errorClass: "request_invalid",
+      message: `Figma REST returned ${status}`,
+      retryable: false,
+      status,
+    });
+  }
+  return response;
+};
+
+const isAllowedFigmaCdnHost = (hostname: string): boolean => {
+  const host = hostname.toLowerCase();
+  return ALLOWED_FIGMA_CDN_HOSTS.some((entry) => {
+    if (entry.startsWith(".")) {
+      return host.endsWith(entry);
+    }
+    return host === entry;
+  });
+};
+
+const assertFigmaCdnUrlIsSafe = (imageUrl: string): URL => {
+  let parsed: URL;
+  try {
+    parsed = new URL(imageUrl);
+  } catch {
+    throw new FigmaRestFetchError({
+      errorClass: "ssrf_refused",
+      message: "Figma screenshot URL is not a valid URL",
+      retryable: false,
+    });
+  }
+  if (parsed.protocol !== "https:") {
+    throw new FigmaRestFetchError({
+      errorClass: "ssrf_refused",
+      message: `Figma screenshot URL must use https:// (got ${parsed.protocol})`,
+      retryable: false,
+    });
+  }
+  if (!isAllowedFigmaCdnHost(parsed.hostname)) {
+    throw new FigmaRestFetchError({
+      errorClass: "ssrf_refused",
+      message: `Figma screenshot URL host "${parsed.hostname}" is not in the Figma CDN allowlist`,
+      retryable: false,
+    });
+  }
+  return parsed;
+};
+
+const isValidPngBytes = (bytes: Uint8Array): boolean => {
+  const signature = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
+  if (bytes.byteLength < signature.length) return false;
+  return signature.every((value, index) => bytes[index] === value);
 };
 
 const MAX_REDACTED_MESSAGE_LENGTH = 240;
