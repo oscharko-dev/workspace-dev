@@ -649,6 +649,21 @@ export {
   type Wave4ProductionReadinessFixtureId,
 } from "./multi-source-fixtures.js";
 export {
+  BASELINE_EVAL_FIXTURE_GENERATED_AT,
+  baselineEvalFixtureFilename,
+  baselineEvalFixturePath,
+  buildAllBaselineArchetypeEvalArtifacts,
+  buildBaselineArchetypeEvalArtifact,
+  readBaselineArchetypeEvalArtifact,
+  writeAllBaselineArchetypeEvalArtifacts,
+  writeBaselineArchetypeEvalArtifact,
+  type BaselineArchetypeEvalArtifact,
+  type BaselineArchetypeEvalMetrics,
+  type BaselineEvalHumanAcceptanceSnapshot,
+  type BaselineEvalTraceabilityCaseCoverage,
+  type BaselineEvalTraceabilityCoverage,
+} from "./baseline-eval.js";
+export {
   BASELINE_ARCHETYPE_FIXTURE_IDS,
   isBaselineArchetypeFixtureId,
   loadBaselineArchetypeFixture,
