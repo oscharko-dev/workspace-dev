@@ -1968,8 +1968,9 @@ const roleFromVisualDeployment = (
   deployment: VisualSidecarAttempt["deployment"],
   isFirstAttempt: boolean,
 ): FinOpsRole => {
+  if (deployment === "mistral-document-ai-2512") return "visual_primary";
   if (deployment === "phi-4-multimodal-poc") return "visual_fallback";
-  if (deployment === "llama-4-maverick-vision") return "visual_primary";
+  if (deployment === "llama-4-maverick-vision") return "visual_fallback";
   return isFirstAttempt ? "visual_primary" : "visual_fallback";
 };
 

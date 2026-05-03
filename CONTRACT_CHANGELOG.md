@@ -31,6 +31,42 @@ All changes to the public contract surface of `workspace-dev` are documented her
 
 ---
 
+## [4.29.0] - 2026-05-03
+
+### Changed (Issue #1756 — visual sidecar deployment correction)
+
+All deployment-name union types across the visual sidecar contract surface now
+include `"mistral-document-ai-2512"` as a recognized deployment literal.
+Previously the unions only covered `"llama-4-maverick-vision"`,
+`"phi-4-multimodal-poc"`, and `"mock"`. The production environment changed
+primary/fallback roles:
+
+- **Primary**: `mistral-document-ai-2512`
+  (`WORKSPACE_TEST_SPACE_VISUAL_PRIMARY_DEPLOYMENT`)
+- **Fallback**: `llama-4-maverick-vision`
+  (`WORKSPACE_TEST_SPACE_VISUAL_FALLBACK_DEPLOYMENT`)
+
+Affected interfaces: `VisualScreenDescription`, `VisualSidecarAttempt`,
+`VisualSidecarSuccess`, `CompiledPromptVisualBinding`,
+`VisualSidecarValidationRecord`, `QcMappingVisualProvenance`,
+`Wave1PocEvidenceVisualSidecarSummary`,
+`Wave1PocAttestationVisualSidecarIdentity`,
+`ExportReportArtifact.modelDeployments`,
+`Wave1PocEvidenceManifest.modelDeployments`,
+`Wave1PocAttestationPredicateBody.modelDeployments`,
+`TraceabilityVisualObservation`.
+
+`VISUAL_SIDECAR_SCHEMA_VERSION` bumps `1.0.0` → `1.1.0` because the JSON
+schema used to validate LLM responses now accepts the new literal; existing
+replay-cache entries keyed by the old schema hash will miss and be re-emitted.
+
+The `roleFromVisualDeployment` FinOps heuristic in `poc-harness.ts` is updated
+to treat `mistral-document-ai-2512` as `visual_primary` and
+`llama-4-maverick-vision` as `visual_fallback`.
+
+This is an additive minor bump — existing serialized artifacts with
+`"llama-4-maverick-vision"` or `"phi-4-multimodal-poc"` remain valid.
+
 ## [4.28.0] - 2026-05-03
 
 ### Added (Issue #1767)

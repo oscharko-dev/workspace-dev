@@ -179,7 +179,7 @@ export const GENERATED_TEST_CASE_SCHEMA_VERSION = "1.1.0" as const;
 export const TEST_INTELLIGENCE_PROMPT_TEMPLATE_VERSION = "1.1.0" as const;
 
 /** Visual sidecar schema version consumed by the prompt compiler (Issue #1386). */
-export const VISUAL_SIDECAR_SCHEMA_VERSION = "1.0.0" as const;
+export const VISUAL_SIDECAR_SCHEMA_VERSION = "1.1.0" as const;
 
 /** Redaction policy bundle version applied before prompt compilation. */
 export const REDACTION_POLICY_VERSION = "1.0.0" as const;
@@ -829,7 +829,11 @@ export type VisualSidecarValidationOutcome =
 /** Single per-screen visual-sidecar validation row. */
 export interface VisualSidecarValidationRecord {
   screenId: string;
-  deployment: "llama-4-maverick-vision" | "phi-4-multimodal-poc" | "mock";
+  deployment:
+    | "llama-4-maverick-vision"
+    | "phi-4-multimodal-poc"
+    | "mistral-document-ai-2512"
+    | "mock";
   outcomes: VisualSidecarValidationOutcome[];
   /** Issues found while structurally validating the description. */
   issues: TestCaseValidationIssue[];
@@ -854,7 +858,7 @@ export interface VisualSidecarValidationReport {
 /**
  * Allowed gateway roles. Each role is bound to a single deployment to keep the
  * structured test-case generator (`gpt-oss-120b`) strictly separated from the
- * multimodal visual sidecars (`llama-4-maverick-vision`, `phi-4-multimodal-poc`).
+ * multimodal visual sidecars (`mistral-document-ai-2512`, `llama-4-maverick-vision`, `phi-4-multimodal-poc`).
  */
 export const ALLOWED_LLM_GATEWAY_ROLES = [
   "test_generation",
@@ -4050,6 +4054,7 @@ export interface VisualScreenDescription {
   sidecarDeployment:
     | "llama-4-maverick-vision"
     | "phi-4-multimodal-poc"
+    | "mistral-document-ai-2512"
     | "mock";
   regions: Array<{
     regionId: string;
@@ -4415,7 +4420,11 @@ export interface VisualSidecarCaptureIdentity {
  */
 export interface VisualSidecarAttempt {
   /** Sidecar deployment that was attempted. */
-  deployment: "llama-4-maverick-vision" | "phi-4-multimodal-poc" | "mock";
+  deployment:
+    | "llama-4-maverick-vision"
+    | "phi-4-multimodal-poc"
+    | "mistral-document-ai-2512"
+    | "mock";
   /** Sequence index, 1-based across both primary and fallback attempts. */
   attempt: number;
   /** Wall-clock duration of the attempt in milliseconds. */
@@ -4436,6 +4445,7 @@ export interface VisualSidecarSuccess {
   selectedDeployment:
     | "llama-4-maverick-vision"
     | "phi-4-multimodal-poc"
+    | "mistral-document-ai-2512"
     | "mock";
   fallbackReason: VisualSidecarFallbackReason;
   visual: VisualScreenDescription[];
@@ -4508,6 +4518,7 @@ export interface CompiledPromptVisualBinding {
   selectedDeployment:
     | "llama-4-maverick-vision"
     | "phi-4-multimodal-poc"
+    | "mistral-document-ai-2512"
     | "mock";
   fallbackReason: VisualSidecarFallbackReason;
   /** Hex digest of the screenshot/fixture used for visual analysis, if any. */
@@ -4922,6 +4933,7 @@ export interface QcMappingVisualProvenance {
   deployment:
     | "llama-4-maverick-vision"
     | "phi-4-multimodal-poc"
+    | "mistral-document-ai-2512"
     | "mock"
     | "none";
   fallbackReason: VisualSidecarFallbackReason;
@@ -5016,11 +5028,13 @@ export interface ExportReportArtifact {
     visualPrimary?:
       | "llama-4-maverick-vision"
       | "phi-4-multimodal-poc"
+      | "mistral-document-ai-2512"
       | "mock"
       | "none";
     visualFallback?:
       | "llama-4-maverick-vision"
       | "phi-4-multimodal-poc"
+      | "mistral-document-ai-2512"
       | "mock"
       | "none";
   };
@@ -5154,6 +5168,7 @@ export interface Wave1PocEvidenceVisualSidecarSummary {
   selectedDeployment:
     | "llama-4-maverick-vision"
     | "phi-4-multimodal-poc"
+    | "mistral-document-ai-2512"
     | "mock";
   fallbackReason: VisualSidecarFallbackReason;
   confidenceSummary: { min: number; max: number; mean: number };
@@ -5206,11 +5221,13 @@ export interface Wave1PocEvidenceManifest {
     visualPrimary?:
       | "llama-4-maverick-vision"
       | "phi-4-multimodal-poc"
+      | "mistral-document-ai-2512"
       | "mock"
       | "none";
     visualFallback?:
       | "llama-4-maverick-vision"
       | "phi-4-multimodal-poc"
+      | "mistral-document-ai-2512"
       | "mock"
       | "none";
   };
@@ -5462,16 +5479,19 @@ export interface Wave1PocAttestationVisualSidecarIdentity {
   selectedDeployment:
     | "llama-4-maverick-vision"
     | "phi-4-multimodal-poc"
+    | "mistral-document-ai-2512"
     | "mock";
   fallbackReason: VisualSidecarFallbackReason;
   visualPrimary?:
     | "llama-4-maverick-vision"
     | "phi-4-multimodal-poc"
+    | "mistral-document-ai-2512"
     | "mock"
     | "none";
   visualFallback?:
     | "llama-4-maverick-vision"
     | "phi-4-multimodal-poc"
+    | "mistral-document-ai-2512"
     | "mock"
     | "none";
   resultArtifactSha256: string;
@@ -5514,11 +5534,13 @@ export interface Wave1PocAttestationPredicate {
     visualPrimary?:
       | "llama-4-maverick-vision"
       | "phi-4-multimodal-poc"
+      | "mistral-document-ai-2512"
       | "mock"
       | "none";
     visualFallback?:
       | "llama-4-maverick-vision"
       | "phi-4-multimodal-poc"
+      | "mistral-document-ai-2512"
       | "mock"
       | "none";
   };
@@ -7593,7 +7615,11 @@ export interface TraceabilityStepRow {
 /** Single per-screen visual observation row inside the matrix. */
 export interface TraceabilityVisualObservation {
   screenId: string;
-  deployment: "llama-4-maverick-vision" | "phi-4-multimodal-poc" | "mock";
+  deployment:
+    | "llama-4-maverick-vision"
+    | "phi-4-multimodal-poc"
+    | "mistral-document-ai-2512"
+    | "mock";
   /** Sorted, deduplicated outcome codes that fired on the screen. */
   outcomes: VisualSidecarValidationOutcome[];
   meanConfidence: number;
@@ -8061,4 +8087,4 @@ export interface CoveragePlan {
  * Must be bumped according to CONTRACT_CHANGELOG.md rules.
  * Package version alignment is documented in VERSIONING.md.
  */
-export const CONTRACT_VERSION = "4.28.0" as const;
+export const CONTRACT_VERSION = "4.29.0" as const;
