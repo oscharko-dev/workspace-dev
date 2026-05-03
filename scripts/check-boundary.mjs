@@ -96,6 +96,12 @@ const ROCKET_DEFAULT_TEMPLATE_INTERNAL_IMPORT_PATTERN =
 // ── Package.json forbidden runtime dependencies ─────────────────────────────
 const FORBIDDEN_DEPENDENCIES = ["pg", "ioredis", "bullmq", "figmapipe-api", "@figmapipe/api", "sqlite3", "better-sqlite3", "fastify", "zod"];
 
+const FORBIDDEN_FINDINGS_PROMPT_BODY_PATTERN =
+  /kind\s*:\s*["'`](?:findings|repair_instructions)["'`][\s\S]{0,240}?body\s*:/i;
+
+const computeLineNumber = (content, index) =>
+  content.slice(0, index).split("\n").length;
+
 const collectTsFiles = async (dir) => {
   const entries = await readdir(dir, { withFileTypes: true });
   const files = [];
@@ -234,6 +240,16 @@ export const analyzeWorkspaceBoundaries = async ({
           type: "import"
         });
       }
+    }
+    const findingsPromptBodyMatch = content.match(FORBIDDEN_FINDINGS_PROMPT_BODY_PATTERN);
+    if (!isTestFile && findingsPromptBodyMatch?.index !== undefined) {
+      violations.push({
+        file: relativePath,
+        line: computeLineNumber(content, findingsPromptBodyMatch.index),
+        content:
+          "Prompt boundary violation: finding/repair sections must use typed JSON payloads, not body strings.",
+        type: "import"
+      });
     }
   }
 

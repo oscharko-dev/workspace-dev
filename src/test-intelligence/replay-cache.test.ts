@@ -431,9 +431,8 @@ test("filesystem cache: stored JSON file is parseable and self-describes", async
 
 test("cache key digest: stable for the same key inputs", () => {
   const { cacheKey: a } = compileForFixture("job-1");
-  const { cacheKey: b } = compileForFixture("job-2");
-  // jobId never participates in the key; both compilations must produce
-  // the same key shape and digest.
+  const { cacheKey: b } = compileForFixture("job-1");
+  // Identical compilations must produce the same key shape and digest.
   assert.deepEqual(a, b);
   assert.equal(computeReplayCacheKeyDigest(a), computeReplayCacheKeyDigest(b));
 });

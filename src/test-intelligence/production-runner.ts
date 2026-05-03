@@ -1718,13 +1718,42 @@ const BANKING_INSURANCE_PROMPT_RULES: ReadonlyArray<string> = Object.freeze([
   "- WICHTIG: Verwende NUR generische Compliance-Sprache. Zitiere KEINE Paragraphen, KEINE Gesetzesnummern, KEINE konkreten Aufsichtsdokumente.",
 ]);
 
+const escapePromptBlockText = (value: string): string =>
+  value.replace(/[&<>"']/g, (char) => {
+    switch (char) {
+      case "&":
+        return "&amp;";
+      case "<":
+        return "&lt;";
+      case ">":
+        return "&gt;";
+      case "\"":
+        return "&quot;";
+      case "'":
+        return "&apos;";
+      default:
+        return char;
+    }
+  });
+
+const wrapUntrustedFigmaPromptText = (value: string, id: string): string =>
+  `<UNTRUSTED_FIGMA_TEXT id="${escapePromptBlockText(
+    id,
+  )}" sha256="${createHash("sha256").update(value).digest("hex")}" source="figma_node">${escapePromptBlockText(
+    value,
+  )}</UNTRUSTED_FIGMA_TEXT>`;
+
 const buildPromptSuffixSections = (
   intent: BusinessTestIntentIr,
   policyProfileId: string,
 ): CompilePromptSuffixSection[] => {
-  const screenSummary = intent.screens
-    .map((s) => `- ${s.screenId}: ${s.screenName}`)
-    .join("\n");
+  const screenSummary = intent.screens.map((screen) => ({
+    screenId: screen.screenId,
+    screenName: wrapUntrustedFigmaPromptText(
+      screen.screenName,
+      `${screen.screenId}:screenName`,
+    ),
+  }));
   const isEuBanking = policyProfileId === EU_BANKING_DEFAULT_POLICY_PROFILE_ID;
   const bankingInsuranceMatches = isEuBanking
     ? detectBankingInsuranceScreens(intent)
@@ -1737,6 +1766,7 @@ const buildPromptSuffixSections = (
       : "(keine)";
   const sections: CompilePromptSuffixSection[] = [
     {
+      kind: "text",
       label: "DELIVERABLE FORMAT",
       body: [
         "Respond ONLY with a JSON object of the form:",
@@ -1744,6 +1774,7 @@ const buildPromptSuffixSections = (
       ].join("\n"),
     },
     {
+      kind: "text",
       label: "RULES",
       body: [
         "- Schreibe alle Inhalte (title, objective, steps, expected, ...) auf DEUTSCH.",
@@ -1755,6 +1786,7 @@ const buildPromptSuffixSections = (
   ];
   if (isEuBanking) {
     sections.push({
+      kind: "text",
       label: `POLICY-PROFIL: ${policyProfileId} (regulierte EU-Banking/Versicherung)`,
       body: [
         ...BANKING_INSURANCE_PROMPT_RULES,
@@ -1765,8 +1797,9 @@ const buildPromptSuffixSections = (
     });
   }
   sections.push({
+    kind: "json",
     label: "Verfügbare Bildschirme",
-    body: screenSummary,
+    jsonPayload: screenSummary,
   });
   return sections;
 };

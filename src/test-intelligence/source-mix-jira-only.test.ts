@@ -593,6 +593,7 @@ test("AC11: Jira REST + custom markdown compiled prompt keeps Jira and custom se
       "CUSTOM_CONTEXT_MARKDOWN_SUPPORTING_EVIDENCE",
     ),
   );
+  assert.ok(compiled.request.userPrompt.includes("<UNTRUSTED_CUSTOM"));
   assert.ok(!compiled.request.userPrompt.includes("FIGMA_INTENT"));
 });
 
