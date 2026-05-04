@@ -1016,7 +1016,7 @@ test("runFigmaToQcTestCases wires Figma URL screenshots through the visual sidec
       source: {
         kind: "figma_url",
         figmaUrl:
-          "https://www.figma.com/design/ABC/Test-View-03?node-id=1-1&access_token=figd_supersecret_test_token_value_1234567890_padded_padded",
+          "https://www.figma.com/design/ABC/Test-View-03?node-id=1-1&access_token=figd_supersecret_test_token_value_1234567890_padded_padded", // pragma: allowlist secret
         accessToken: "figd_test",
       },
       outputRoot: tempRoot,
@@ -1118,7 +1118,7 @@ test("runFigmaToQcTestCases wires Figma URL screenshots through the visual sidec
     );
     assert.doesNotMatch(
       combinedMarkdown,
-      /figd_supersecret_test_token_value_1234567890_padded_padded/u,
+      /figd_supersecret_test_token_value_1234567890_padded_padded/u, // pragma: allowlist secret
     );
     assert.doesNotMatch(combinedMarkdown, /access_token=/u);
   } finally {

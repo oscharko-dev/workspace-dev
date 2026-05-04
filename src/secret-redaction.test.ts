@@ -78,7 +78,7 @@ test("bare AWS access-key id (AKIA*) is redacted", () => {
 });
 
 test("bare Slack bot token (xoxb-...) is redacted", () => {
-  const slack = "xoxb-12345-67890-" + "A".repeat(20);
+  const slack = "xoxb-12345-67890-" + "A".repeat(20); // pragma: allowlist secret
   const out = redactHighRiskSecrets(`token ${slack} expired`, REDACTED);
   assert.equal(out.includes(slack), false);
 });

@@ -441,7 +441,7 @@ test("diff artifact redacts high-risk secrets pasted into a prompt body", async 
         {
           role: "user",
           content:
-            "after paste — Authorization: Bearer ghp_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA tail",
+            "after paste — Authorization: Bearer ghp_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA tail", // pragma: allowlist secret
         },
       ],
       systemPrompt: "stable",
@@ -455,7 +455,7 @@ test("diff artifact redacts high-risk secrets pasted into a prompt body", async 
     assert.equal(outcome.fired, true);
     const raw = await readFile(outcome.artifactPath!, "utf8");
     assert.equal(
-      raw.includes("ghp_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"),
+      raw.includes("ghp_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"), // pragma: allowlist secret
       false,
     );
     assert.ok(raw.includes("[REDACTED:SECRET]"));
