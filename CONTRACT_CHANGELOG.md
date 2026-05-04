@@ -31,6 +31,66 @@ All changes to the public contract surface of `workspace-dev` are documented her
 
 ---
 
+## [4.43.0] - 2026-05-04
+
+### Added (Issue #1803 — release-pipeline integration with consolidated release-readiness report)
+
+The release pipeline (`release:quality-gates`) is wired to a single
+orchestrator that runs the canonical twelve harness gates as ordered
+subprocesses, captures per-gate stdout+stderr to a log file, and
+consolidates the verdicts into a canonical-JSON release-readiness report
+committed to evidence at
+`evidence/release-readiness/release-readiness-report.json`.
+
+Acceptance contract (Issue #1803):
+
+- Single command (`pnpm run release:readiness`) produces the complete
+  release-readiness report. `release:quality-gates` runs that orchestrator
+  as its terminal step so the consolidated artifact is always produced.
+- The report is canonical-JSON (sorted keys via `canonicalJson`, trailing
+  newline) and atomically written (tmp + rename) so partial writes never
+  become evidence.
+- Failures are attributable to the offending gate: each entry carries
+  `gateId`, `command`, `status`, `exitCode`, `durationMs`, `logPath`
+  (repo-relative), and `attribution[]`. The CI summary prints the failing
+  gate's `logPath` so the on-call jumps straight to the offending log.
+
+Additive public-contract changes:
+
+- New runtime constants exported from `src/contracts/index.ts` and the
+  package root:
+  - `RELEASE_READINESS_REPORT_ARTIFACT_FILENAME = "release-readiness-report.json"`
+  - `RELEASE_READINESS_ARTIFACT_DIRECTORY = "evidence/release-readiness"`
+  - `RELEASE_READINESS_REPORT_SCHEMA_VERSION = "1.0.0"`
+  - `ALLOWED_RELEASE_READINESS_GATE_IDS` — closed, ordered list of the
+    twelve canonical gates: `typecheck`, `test`, `test_ti_eval`,
+    `test_ti_live_e2e`, `lint_no_telemetry`, `lint_secrets_all`,
+    `lint_agent_boundaries`, `lint_ts_style`, `build`,
+    `release_ml_bom_emit`, `release_merkle_roundtrip`,
+    `release_library_coverage_report`.
+  - `ALLOWED_RELEASE_READINESS_GATE_STATUSES = ["passed", "failed", "skipped"]`.
+- New contract types: `ReleaseReadinessGateId`,
+  `ReleaseReadinessGateStatus`, `ReleaseReadinessGateResult`,
+  `ReleaseReadinessReport`.
+- New test-intelligence module exports
+  (`src/test-intelligence/release-readiness-report.ts` and the
+  `test-intelligence` barrel): `buildReleaseReadinessReport`,
+  `isReleaseReadinessGateResult`, `isReleaseReadinessReport`,
+  `parseReleaseReadinessReport`, `serializeReleaseReadinessReport`,
+  `writeReleaseReadinessReport`, `RELEASE_READINESS_GATE_SPECS`, plus
+  the `BuildReleaseReadinessReportInput`,
+  `ReleaseReadinessGateSpec`,
+  `WriteReleaseReadinessReportInput`,
+  `WriteReleaseReadinessReportResult` types.
+- `TEST_INTELLIGENCE_CONTRACT_VERSION` bumps from `1.8.0` to `1.9.0`.
+- `CONTRACT_VERSION` bumps from `4.42.0` to `4.43.0`.
+
+This is an additive minor bump. No removals or renames. No new
+banking-profile migrations are registered in this release; the
+`migrationHash:` registry from 4.42.0 carries over unchanged.
+
+---
+
 ## [4.42.0] - 2026-05-04
 
 ### Added (Issue #1802 — evidence + library-coverage + architecture-fit self-test gates)
