@@ -3,8 +3,11 @@ import { access, copyFile, mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
+  ensureWorkspaceDiagnosticsVisible,
+  openInspectorBootstrap,
   openWorkspaceUi,
   parseLiveJobPayload,
+  rememberSubmittedJobId,
   resetBrowserStorage,
   type LiveJobPayload,
   waitForSubmitTerminalStatus
@@ -13,6 +16,7 @@ import {
 const desktopViewport = { width: 1494, height: 1688 } as const;
 const FIGMA_FILE_KEY = (process.env["FIGMA_FILE_KEY"] ?? process.env["FIGMA_BOARD_KEY"] ?? "").trim();
 const FIGMA_ACCESS_TOKEN = (process.env["FIGMA_ACCESS_TOKEN"] ?? process.env["FIGMA_ACCESS_TOKEN_DEMO_FI"] ?? "").trim();
+const FIGMA_NODE_ID = (process.env["FIGMA_NODE_ID"] ?? "").trim();
 const ENABLE_LIVE_INSPECTOR_E2E = process.env["INSPECTOR_LIVE_E2E"] === "1";
 const LIVE_SUBMIT_MAX_ATTEMPTS = 3;
 const LIVE_RATE_LIMIT_RETRY_WAIT_MS = 20_000;
@@ -29,6 +33,16 @@ const maxDiffPixelRatio =
 interface SubmitAcceptedPayload {
   jobId?: string;
 }
+
+type LiveSubmitOutcome =
+  | { kind: "completed"; jobId: string }
+  | { kind: "rate-limited" }
+  | {
+      kind: "no-preview";
+      terminalStatus: string;
+      details: string;
+      jobId?: string;
+    };
 
 interface VisualParityReport {
   status: "passed" | "warn";
@@ -59,29 +73,77 @@ const resolveVisualBaselinePath = async (): Promise<string | undefined> => {
   return undefined;
 };
 
-const runLiveGenerationWithRetry = async (page: Page): Promise<string | undefined> => {
+const buildLiveFigmaShareUrl = ({
+  fileKey,
+  nodeId
+}: {
+  fileKey: string;
+  nodeId: string;
+}): string =>
+  `https://www.figma.com/design/${encodeURIComponent(fileKey)}/Live-E2E?node-id=${encodeURIComponent(nodeId.replace(/:/g, "-"))}`;
+
+const readVisibleJobPayloadText = async (page: Page): Promise<string> => {
+  const locator = await ensureWorkspaceDiagnosticsVisible(page, {
+    buttonLabel: "Job diagnostics",
+    payloadTestId: "job-payload"
+  });
+  return (await locator.textContent()) ?? "";
+};
+
+const submitLiveGeneration = async (page: Page): Promise<string | undefined> => {
+  const submitResponsePromise = page.waitForResponse((response) => {
+    return response.request().method() === "POST" && response.url().endsWith("/workspace/submit");
+  });
+
+  if (FIGMA_NODE_ID.length > 0) {
+    await page.getByTestId("ti-figma-url-input").fill(
+      buildLiveFigmaShareUrl({ fileKey: FIGMA_FILE_KEY, nodeId: FIGMA_NODE_ID })
+    );
+    await page.getByTestId("ti-figma-url-submit").click();
+  } else {
+    await page.getByRole("banner").getByRole("button", { name: "Generate" }).click();
+  }
+
+  const submitResponse = await submitResponsePromise;
+  expect(submitResponse.ok()).toBeTruthy();
+
+  const submitPayload = await submitResponse.json().catch(() => undefined) as SubmitAcceptedPayload | undefined;
+  if (typeof submitPayload?.jobId === "string" && submitPayload.jobId.length > 0) {
+    rememberSubmittedJobId(page, submitPayload.jobId);
+    return submitPayload.jobId;
+  }
+  return undefined;
+};
+
+const openLiveGenerationSurface = async (page: Page): Promise<void> => {
+  if (FIGMA_NODE_ID.length > 0) {
+    await openInspectorBootstrap(page, desktopViewport);
+    return;
+  }
+
+  await openWorkspaceUi(page, desktopViewport);
+  await page.getByLabel("Figma file key").fill(FIGMA_FILE_KEY);
+  await page.getByLabel("Figma access token").fill(FIGMA_ACCESS_TOKEN);
+};
+
+const runLiveGenerationWithRetry = async (page: Page): Promise<LiveSubmitOutcome> => {
   let lastSubmittedJobId: string | undefined;
 
   for (let attempt = 1; attempt <= LIVE_SUBMIT_MAX_ATTEMPTS; attempt += 1) {
-    const submitResponsePromise = page.waitForResponse((response) => {
-      return response.request().method() === "POST" && response.url().endsWith("/workspace/submit");
-    });
-
-    await page.getByRole("banner").getByRole("button", { name: "Generate" }).click();
-    const submitResponse = await submitResponsePromise;
-    expect(submitResponse.ok()).toBeTruthy();
-
-    const submitPayload = await submitResponse.json().catch(() => undefined) as SubmitAcceptedPayload | undefined;
-    if (typeof submitPayload?.jobId === "string" && submitPayload.jobId.length > 0) {
-      lastSubmittedJobId = submitPayload.jobId;
+    const submittedJobId = await submitLiveGeneration(page);
+    if (typeof submittedJobId === "string" && submittedJobId.length > 0) {
+      lastSubmittedJobId = submittedJobId;
     }
 
     const terminalStatus = await waitForSubmitTerminalStatus(page, { timeoutMs: 300_000 });
     if (terminalStatus === "COMPLETED") {
-      return lastSubmittedJobId;
+      if (typeof lastSubmittedJobId !== "string" || lastSubmittedJobId.length === 0) {
+        throw new Error("Live submit completed but /workspace/submit returned no jobId.");
+      }
+      return { kind: "completed", jobId: lastSubmittedJobId };
     }
 
-    const jobPayload = (await page.getByTestId("job-payload").textContent()) ?? "";
+    const jobPayload = await readVisibleJobPayloadText(page);
     const parsedPayload = parseLiveJobPayload(jobPayload);
     const errorCode = parsedPayload?.error?.code ?? "";
     const isRateLimited =
@@ -89,18 +151,21 @@ const runLiveGenerationWithRetry = async (page: Page): Promise<string | undefine
       jobPayload.includes("E_FIGMA_RATE_LIMIT") ||
       jobPayload.toLowerCase().includes("rate limit exceeded");
     if (!isRateLimited) {
-      throw new Error(
-        `Live submit ended with status ${terminalStatus}. Job payload excerpt: ${jobPayload.slice(0, 280)}`
-      );
+      return {
+        kind: "no-preview",
+        terminalStatus,
+        jobId: lastSubmittedJobId,
+        details: `Live submit ended with status ${terminalStatus}. Job payload excerpt: ${jobPayload.slice(0, 280)}`
+      };
     }
 
     if (attempt === LIVE_SUBMIT_MAX_ATTEMPTS) {
-      return undefined;
+      return { kind: "rate-limited" };
     }
     await page.waitForTimeout(LIVE_RATE_LIMIT_RETRY_WAIT_MS);
   }
 
-  return undefined;
+  return { kind: "rate-limited" };
 };
 
 const writeVisualParityReport = async ({
@@ -138,15 +203,35 @@ test.describe("visual parity live figma flow", () => {
       "No baseline screenshot found. Set WORKSPACE_DEV_VISUAL_BASELINE_PATH or add ui-src/e2e/fixtures/visual-parity-soll.png."
     );
 
-    await openWorkspaceUi(page, desktopViewport);
-    await page.getByLabel("Figma file key").fill(FIGMA_FILE_KEY);
-    await page.getByLabel("Figma access token").fill(FIGMA_ACCESS_TOKEN);
+    await openLiveGenerationSurface(page);
 
-    const jobId = await runLiveGenerationWithRetry(page);
-    test.skip(
-      !jobId,
-      `Skipping visual parity after ${String(LIVE_SUBMIT_MAX_ATTEMPTS)} attempts due to persistent Figma API rate limits.`
-    );
+    const generation = await runLiveGenerationWithRetry(page);
+    if (generation.kind === "rate-limited") {
+      test.skip(
+        true,
+        `Skipping visual parity after ${String(LIVE_SUBMIT_MAX_ATTEMPTS)} attempts due to persistent Figma API rate limits.`
+      );
+    }
+    if (generation.kind === "no-preview") {
+      await writeVisualParityReport({
+        testInfo,
+        report: {
+          status: "warn",
+          mode: visualAuditMode,
+          baselinePath,
+          runtimePreviewUrl: generation.jobId
+            ? `${new URL(page.url()).origin}/workspace/repros/${generation.jobId}/`
+            : "",
+          maxDiffPixelRatio,
+          details: generation.details
+        }
+      });
+      test.skip(true, generation.details);
+    }
+    if (generation.kind !== "completed") {
+      throw new Error(`Unexpected live generation outcome: ${generation.kind}`);
+    }
+    const { jobId } = generation;
 
     const runtimeOrigin = new URL(page.url()).origin;
     const runtimePreviewUrl = `${runtimeOrigin}/workspace/repros/${jobId}/`;
