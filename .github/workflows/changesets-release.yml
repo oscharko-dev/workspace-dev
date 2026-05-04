@@ -19,6 +19,8 @@ jobs:
         node-version: [22, 24]
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          persist-credentials: false
 
       - uses: pnpm/action-setup@26f6d4f2c533a43e6b5da0b4a5dd983f98f7b49a # v4
         with:
@@ -36,7 +38,7 @@ jobs:
           echo "TZ=UTC" >> "$GITHUB_ENV"
 
       - name: Install dependencies
-        run: pnpm install --frozen-lockfile
+        run: pnpm install --frozen-lockfile --ignore-scripts
 
       - name: Enforce dependency vulnerability gate
         run: pnpm audit --audit-level high
@@ -86,6 +88,8 @@ jobs:
     continue-on-error: true
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          persist-credentials: false
 
       - uses: pnpm/action-setup@26f6d4f2c533a43e6b5da0b4a5dd983f98f7b49a # v4
         with:
@@ -98,7 +102,7 @@ jobs:
           cache-dependency-path: template/react-mui-app/pnpm-lock.yaml
 
       - name: Install template dependencies
-        run: pnpm --dir template/react-mui-app install --frozen-lockfile
+        run: pnpm --dir template/react-mui-app install --frozen-lockfile --ignore-scripts
 
       - name: Typecheck template app
         run: pnpm --dir template/react-mui-app run typecheck
@@ -137,6 +141,8 @@ jobs:
     needs: quality-matrix
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          persist-credentials: false
 
       - uses: pnpm/action-setup@26f6d4f2c533a43e6b5da0b4a5dd983f98f7b49a # v4
         with:
@@ -148,7 +154,7 @@ jobs:
           cache: pnpm
 
       - name: Install dependencies
-        run: pnpm install --frozen-lockfile
+        run: pnpm install --frozen-lockfile --ignore-scripts
 
       - name: Run mutation baseline (blocking >=58%)
         run: pnpm run test:mutation
@@ -171,6 +177,8 @@ jobs:
     needs: [quality-matrix, performance-web, mutation-testing]
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          persist-credentials: false
 
       - uses: pnpm/action-setup@26f6d4f2c533a43e6b5da0b4a5dd983f98f7b49a # v4
         with:
@@ -185,11 +193,11 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          npm install --global npm@11
+          npm install --ignore-scripts --global npm@11
           npm --version
 
       - name: Install dependencies
-        run: pnpm install --frozen-lockfile
+        run: pnpm install --frozen-lockfile --ignore-scripts
 
       - name: Set reproducible build metadata
         shell: bash
