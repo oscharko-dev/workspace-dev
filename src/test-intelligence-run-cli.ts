@@ -9,28 +9,37 @@
  * the operator-supplied output directory.
  *
  * Modes:
- *   - `deterministic_llm` (default): real LLM gateway client; writes Markdown.
- *   - `dry_run`: validate args + env + Figma source resolution but skip the
- *     LLM call. Writes nothing. Useful for CI smoke tests.
+ *   - `dry_run` (default): validate args + env + Figma source resolution but
+ *     skip the LLM call. Writes nothing. Useful for CI smoke tests.
+ *   - `deterministic_llm`: real LLM gateway client; writes Markdown.
  *   - `offline_eval`: reserved for the on-disk eval-harness wiring (#1737).
  *     Currently rejected with an explicit `not implemented` operator error.
  *
+ * Feature gates (both required at command start):
+ *   FIGMAPIPE_WORKSPACE_TEST_INTELLIGENCE=1
+ *
  * Exit codes:
  *   0  success
- *   1  operator/config error (missing flag, bad value, missing env)
+ *   1  operator/config error (missing flag, bad value, missing env, gate off)
  *   2  runner error (LLM / Figma / persist / validation)
  *   3  policy refusal (LLM_REFUSAL or runner blocked=true)
  *   4  budget exceeded (mapped from gateway `budget_exceeded` outcome)
  */
 
-import { mkdir, copyFile, readdir } from "node:fs/promises";
+import { mkdir, copyFile, readdir, readFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 
 import { sanitizeErrorMessage } from "./error-sanitization.js";
 import {
+  DEFAULT_OUTPUT_ROOT,
+  resolveTestIntelligenceEnabled,
+} from "./server/constants.js";
+import type { FinOpsBudgetEnvelope } from "./contracts/index.js";
+import {
   PRODUCTION_RUNNER_TEST_GENERATION_DEPLOYMENT,
   ProductionRunnerError,
   runFigmaToQcTestCases,
+  validateFinOpsBudgetEnvelope,
   type FigmaRestNode,
   type ProductionRunnerSource,
   type RunFigmaToQcTestCasesInput,
@@ -57,13 +66,18 @@ const isRunMode = (value: string): value is TestIntelligenceRunMode =>
 export interface TestIntelligenceRunOptions {
   figmaUrl: string | undefined;
   figmaJsonFile: string | undefined;
-  output: string;
+  /** Output directory for customer Markdown. `undefined` → default derived from job id. */
+  output: string | undefined;
   modelEndpoint: string | undefined;
   modelDeployment: string;
   modelApiKey: string | undefined;
   figmaToken: string | undefined;
   policyProfile: string | undefined;
   mode: TestIntelligenceRunMode;
+  /** When true, skip the visual sidecar pass even if a bundle is configured. */
+  noVisualSidecar: boolean;
+  /** Path to a JSON FinOps budget envelope to apply. `undefined` → production default. */
+  finopsBudgetPath: string | undefined;
 }
 
 /**
@@ -88,7 +102,9 @@ export const parseTestIntelligenceRunArgs = (
   let figmaToken: string | undefined =
     env.FIGMA_ACCESS_TOKEN?.trim() || undefined;
   let policyProfile: string | undefined;
-  let mode: TestIntelligenceRunMode = "deterministic_llm";
+  let mode: TestIntelligenceRunMode = "dry_run";
+  let noVisualSidecar = false;
+  let finopsBudgetPath: string | undefined;
 
   for (let index = 0; index < args.length; index += 1) {
     const arg = args[index];
@@ -202,6 +218,23 @@ export const parseTestIntelligenceRunArgs = (
       continue;
     }
 
+    if (arg === "--no-visual-sidecar") {
+      noVisualSidecar = true;
+      continue;
+    }
+
+    if (arg === "--finops-budget") {
+      const value = next?.trim();
+      if (!value) {
+        throw new TestIntelligenceRunOperatorError(
+          "--finops-budget requires a non-empty file path",
+        );
+      }
+      finopsBudgetPath = value;
+      index += 1;
+      continue;
+    }
+
     throw new TestIntelligenceRunOperatorError(
       `Unknown flag for "test-intelligence run": ${arg}`,
     );
@@ -217,9 +250,6 @@ export const parseTestIntelligenceRunArgs = (
       "One of --figma-url or --figma-json-file is required",
     );
   }
-  if (output === undefined) {
-    throw new TestIntelligenceRunOperatorError("--output is required");
-  }
 
   return {
     figmaUrl,
@@ -231,6 +261,8 @@ export const parseTestIntelligenceRunArgs = (
     figmaToken,
     policyProfile,
     mode,
+    noVisualSidecar,
+    finopsBudgetPath,
   };
 };
 
@@ -268,6 +300,11 @@ export interface TestIntelligenceRunRuntime {
    */
   loadFigmaJsonFile?: (filePath: string) => Promise<unknown>;
   /**
+   * Override the generic JSON loader used for the FinOps budget file and
+   * post-run artifact reads. Default: `readFile` + `JSON.parse`.
+   */
+  loadJsonFile?: (filePath: string) => Promise<unknown>;
+  /**
    * Override the file-system mkdir/copy step (tests). Default uses
    * `node:fs/promises`.
    */
@@ -277,6 +314,11 @@ export interface TestIntelligenceRunRuntime {
   ) => Promise<number>;
   /** Wall-clock provider for deterministic job ids in tests. */
   now?: () => number;
+  /**
+   * Environment variable map for the feature gate check. Defaults to
+   * `process.env`. Inject in tests to avoid touching process state.
+   */
+  env?: NodeJS.ProcessEnv;
 }
 
 /**
@@ -333,7 +375,11 @@ export const buildLiveLlmGatewayClient = (
 };
 
 const defaultLoadFigmaJsonFile = async (filePath: string): Promise<unknown> => {
-  const { readFile } = await import("node:fs/promises");
+  const text = await readFile(filePath, "utf8");
+  return JSON.parse(text) as unknown;
+};
+
+const defaultLoadJsonFile = async (filePath: string): Promise<unknown> => {
   const text = await readFile(filePath, "utf8");
   return JSON.parse(text) as unknown;
 };
@@ -476,6 +522,56 @@ const exitCodeForRunnerError = (err: unknown): number => {
   return 2;
 };
 
+const safeReadFinopsTotals = async (
+  finopsReportPath: string,
+  loadJsonFile: (p: string) => Promise<unknown>,
+): Promise<string> => {
+  try {
+    const raw = await loadJsonFile(finopsReportPath);
+    if (
+      typeof raw !== "object" ||
+      raw === null ||
+      typeof (raw as Record<string, unknown>).totals !== "object"
+    ) {
+      return "";
+    }
+    const totals = (raw as Record<string, unknown>).totals as Record<
+      string,
+      unknown
+    >;
+    const tokensIn =
+      typeof totals.inputTokens === "number" ? String(totals.inputTokens) : "?";
+    const tokensOut =
+      typeof totals.outputTokens === "number"
+        ? String(totals.outputTokens)
+        : "?";
+    const costPart =
+      typeof totals.estimatedCost === "number"
+        ? ` (est. cost: ${totals.estimatedCost})`
+        : "";
+    return `  finops tokens in/out    : ${tokensIn}/${tokensOut}${costPart}`;
+  } catch {
+    return "";
+  }
+};
+
+const safeReadEvidenceDigest = async (
+  evidenceSealPath: string,
+  loadJsonFile: (p: string) => Promise<unknown>,
+): Promise<string> => {
+  try {
+    const raw = await loadJsonFile(evidenceSealPath);
+    if (typeof raw !== "object" || raw === null) return "";
+    const predicate = (raw as Record<string, unknown>).predicate;
+    if (typeof predicate !== "object" || predicate === null) return "";
+    const sha256 = (predicate as Record<string, unknown>).manifestSha256;
+    if (typeof sha256 !== "string" || sha256.length === 0) return "";
+    return `  evidence manifest digest: ${sha256.slice(0, 16)}…`;
+  } catch {
+    return "";
+  }
+};
+
 /**
  * Public entry point used by `cli.ts` and by the contract tests. Accepts a
  * parsed options object and an optional runtime injection seam. Returns the
@@ -486,14 +582,65 @@ export const runTestIntelligenceCommand = async (
   sink: TestIntelligenceRunSink,
   runtime: TestIntelligenceRunRuntime = {},
 ): Promise<number> => {
+  const env = runtime.env ?? process.env;
+
+  if (!resolveTestIntelligenceEnabled(env)) {
+    sink.stderr(
+      `error: FIGMAPIPE_WORKSPACE_TEST_INTELLIGENCE=1 must be set to use "workspace-dev test-intelligence run"\n`,
+    );
+    return 1;
+  }
+
   const now = runtime.now ?? Date.now;
   const loadFigmaJsonFile =
     runtime.loadFigmaJsonFile ?? defaultLoadFigmaJsonFile;
+  const loadJsonFile = runtime.loadJsonFile ?? defaultLoadJsonFile;
   const copyArtifactsToOutput =
     runtime.copyArtifactsToOutput ?? defaultCopyArtifactsToOutput;
 
-  const outputDir = resolve(options.output);
+  const jobId = `ti-cli-${now()}`;
+  const generatedAt = new Date(now()).toISOString();
+
+  const outputDir =
+    options.output !== undefined
+      ? resolve(options.output)
+      : resolve(join(DEFAULT_OUTPUT_ROOT, "jobs", jobId, "test-intelligence"));
+
   await mkdir(outputDir, { recursive: true });
+
+  // Load and validate the operator-supplied FinOps budget, if any.
+  let finopsBudget: FinOpsBudgetEnvelope | undefined;
+  if (options.finopsBudgetPath !== undefined) {
+    const absolutePath = resolve(options.finopsBudgetPath);
+    let rawBudget: unknown;
+    try {
+      rawBudget = await loadJsonFile(absolutePath);
+    } catch (err) {
+      sink.stderr(
+        `error: failed to read --finops-budget file: ${sanitizeErrorMessage({ error: err, fallback: "filesystem failure" })}\n`,
+      );
+      return 1;
+    }
+    let validation: ReturnType<typeof validateFinOpsBudgetEnvelope>;
+    try {
+      validation = validateFinOpsBudgetEnvelope(
+        rawBudget as FinOpsBudgetEnvelope,
+      );
+    } catch (err) {
+      sink.stderr(
+        `error: --finops-budget file is invalid: ${sanitizeErrorMessage({ error: err, fallback: "malformed envelope" })}\n`,
+      );
+      return 1;
+    }
+    if (!validation.valid) {
+      const msgs = validation.errors
+        .map((e) => `${e.path}: ${e.message}`)
+        .join("; ");
+      sink.stderr(`error: --finops-budget file is invalid: ${msgs}\n`);
+      return 1;
+    }
+    finopsBudget = rawBudget as FinOpsBudgetEnvelope;
+  }
 
   let resolved: ResolvedSource;
   try {
@@ -516,8 +663,6 @@ export const runTestIntelligenceCommand = async (
     return 1;
   }
 
-  const jobId = `ti-cli-${now()}`;
-  const generatedAt = new Date(now()).toISOString();
   const runnerOutputRoot = join(outputDir, "_runner-output");
   await mkdir(runnerOutputRoot, { recursive: true });
 
@@ -530,6 +675,8 @@ export const runTestIntelligenceCommand = async (
         `  source kind   : ${resolved.source.kind}`,
         `  deployment    : ${options.modelDeployment}`,
         `  policy profile: ${options.policyProfile ?? "(default)"}`,
+        `  visual sidecar: ${options.noVisualSidecar ? "disabled (--no-visual-sidecar)" : "enabled when bundle configured"}`,
+        `  finops budget : ${options.finopsBudgetPath ?? "(production default)"}`,
         "",
       ].join("\n"),
     );
@@ -562,6 +709,10 @@ export const runTestIntelligenceCommand = async (
       maxOutputTokens: 32_000,
       maxWallClockMs: 240_000,
     },
+    ...(finopsBudget !== undefined ? { finopsBudget } : {}),
+    ...(options.policyProfile !== undefined
+      ? { policyProfileId: options.policyProfile }
+      : {}),
   };
 
   let result: RunFigmaToQcTestCasesResult;
@@ -593,21 +744,32 @@ export const runTestIntelligenceCommand = async (
     return 3;
   }
 
-  sink.stdout(
-    [
-      "test-intelligence run completed",
-      `  job id              : ${result.jobId}`,
-      `  output dir          : ${outputDir}`,
-      `  test cases generated: ${result.generatedTestCases.testCases.length}`,
-      `  customer files      : ${copiedFileCount}`,
-      `  combined markdown   : ${join(outputDir, "testfaelle.md")}`,
-      "",
-    ].join("\n"),
+  const finopsTotalsLine = await safeReadFinopsTotals(
+    result.artifactPaths.finopsReport,
+    loadJsonFile,
   );
+  const evidenceDigestLine = await safeReadEvidenceDigest(
+    result.artifactPaths.evidenceSeal,
+    loadJsonFile,
+  );
+
+  const summaryLines = [
+    "test-intelligence run completed",
+    `  job id              : ${result.jobId}`,
+    `  output dir          : ${outputDir}`,
+    `  test cases generated: ${result.generatedTestCases.testCases.length}`,
+    `  customer files      : ${copiedFileCount}`,
+    `  combined markdown   : ${join(outputDir, "testfaelle.md")}`,
+  ];
+  if (finopsTotalsLine) summaryLines.push(finopsTotalsLine);
+  if (evidenceDigestLine) summaryLines.push(evidenceDigestLine);
+  summaryLines.push("");
+
+  sink.stdout(summaryLines.join("\n"));
   return 0;
 };
 
-export const TEST_INTELLIGENCE_RUN_HELP = `
+export const TEST_INTELLIGENCE_RUN_HELP: string = `
 workspace-dev test-intelligence run - drive the figma_to_qc_test_cases pipeline
 
 Usage:
@@ -618,7 +780,8 @@ Source (exactly one required):
   --figma-json-file <path>   Local Figma REST JSON (FigmaRestFileSnapshot shape)
 
 Output:
-  --output <dir>             Required. Customer-format Markdown is written here.
+  --output <dir>             Customer-format Markdown destination.
+                             Default: ${DEFAULT_OUTPUT_ROOT}/jobs/<jobId>/test-intelligence
 
 LLM (defaults from environment):
   --model-endpoint <url>     default: env WORKSPACE_TEST_SPACE_MODEL_ENDPOINT
@@ -630,14 +793,25 @@ LLM (defaults from environment):
 Figma (URL mode only):
   --figma-token <token>      default: env FIGMA_ACCESS_TOKEN
 
+FinOps:
+  --finops-budget <path>     Path to a JSON FinOps budget envelope.
+                             Default: production envelope
+
+Visual sidecar:
+  --no-visual-sidecar        Skip the visual sidecar pass even when a
+                             bundle is configured (default: enabled)
+
 Other:
   --policy-profile <id>      Optional policy profile id (default: built-in EU banking)
   --mode <m>                 deterministic_llm | offline_eval | dry_run
-                             (default: deterministic_llm)
+                             (default: dry_run)
+
+Feature gate:
+  FIGMAPIPE_WORKSPACE_TEST_INTELLIGENCE=1 must be set.
 
 Exit codes:
   0  success
-  1  operator/config error
+  1  operator/config error (includes missing feature gate)
   2  runner error
   3  policy refusal / blocked
   4  budget exceeded
