@@ -10,7 +10,7 @@
  *    `querySource` so the diff-artifact review jumps straight to evidence.
  *
  * The evaluator is a pure function. The CLI runner under
- * `scripts/check-release-quality-gates.mjs` produces and consumes the
+ * `scripts/check-release-quality-gates.ts` produces and consumes the
  * canonical-JSON report this module defines.
  */
 
@@ -57,7 +57,7 @@ const isAttributionLabel = (value: unknown): value is string =>
 const round6 = (value: number): number => Math.round(value * 1_000_000) / 1_000_000;
 
 const compareStrings = (left: string, right: string): number =>
-  left.localeCompare(right);
+  left < right ? -1 : left > right ? 1 : 0;
 
 const sortedUnique = (values: readonly string[]): readonly string[] => {
   const set = new Set<string>();
@@ -181,8 +181,12 @@ const aggregateMutationKillRate = (
   for (const fixture of fixtures) {
     totalMutations += fixture.mutationCount;
     totalKilled += fixture.killedMutations;
+    const perFixtureRate =
+      fixture.mutationCount === 0
+        ? 0
+        : fixture.killedMutations / fixture.mutationCount;
     if (
-      fixture.mutationKillRate <
+      perFixtureRate <
       RELEASE_QUALITY_GATES_THRESHOLDS.minMutationKillRate
     ) {
       offenders.push(fixture.fixtureId);
@@ -210,8 +214,10 @@ const aggregatePromptCacheHitRate = (
   for (const role of counted) {
     totalHits += role.cacheHits;
     totalLookups += role.cacheHits + role.cacheMisses;
+    const roleLookups = role.cacheHits + role.cacheMisses;
+    const perRoleRate = roleLookups === 0 ? 0 : role.cacheHits / roleLookups;
     if (
-      role.promptCacheHitRate <
+      perRoleRate <
       RELEASE_QUALITY_GATES_THRESHOLDS.minPromptCacheHitRate
     ) {
       offenders.push(role.roleId);
@@ -244,7 +250,7 @@ const aggregateCacheBreakRate = (
   samples: readonly ReleaseQualityGateCacheBreakSample[],
 ): { rate: number; offenders: readonly string[] } => {
   if (samples.length === 0) {
-    return { rate: 0, offenders: [] };
+    return { rate: 1, offenders: ["no_cache_break_samples"] };
   }
   let totalResponses = 0;
   let totalBreaks = 0;
@@ -273,13 +279,13 @@ const buildVerdict = (
   let passed: boolean;
   switch (comparator) {
     case "gte":
-      passed = observed >= threshold && attribution.length === 0;
+      passed = observed >= threshold;
       break;
     case "lte":
-      passed = observed <= threshold && attribution.length === 0;
+      passed = observed <= threshold;
       break;
     case "eq":
-      passed = observed === threshold && attribution.length === 0;
+      passed = observed === threshold;
       break;
   }
   return {
@@ -423,7 +429,9 @@ export const parseReleaseQualityGatesReport = (
     if (seenIds.has(verdict["gateId"] as string)) return undefined;
     seenIds.add(verdict["gateId"] as string);
     if (typeof verdict["observed"] !== "number") return undefined;
+    if (!Number.isFinite(verdict["observed"])) return undefined;
     if (typeof verdict["threshold"] !== "number") return undefined;
+    if (!Number.isFinite(verdict["threshold"])) return undefined;
     if (
       verdict["comparator"] !== "gte" &&
       verdict["comparator"] !== "lte" &&
@@ -432,12 +440,24 @@ export const parseReleaseQualityGatesReport = (
       return undefined;
     }
     if (typeof verdict["passed"] !== "boolean") return undefined;
+    // Validate internal consistency: `passed` must match the comparator.
+    const obs = verdict["observed"];
+    const thr = verdict["threshold"];
+    const cmp = verdict["comparator"] as string;
+    const expectedPassed =
+      cmp === "gte" ? obs >= thr : cmp === "lte" ? obs <= thr : obs === thr;
+    if (verdict["passed"] !== expectedPassed) return undefined;
     if (!Array.isArray(verdict["attribution"])) return undefined;
     for (const label of verdict["attribution"] as readonly unknown[]) {
       if (!isAttributionLabel(label)) return undefined;
     }
   }
   if (seenIds.size !== ALLOWED_RELEASE_QUALITY_GATE_IDS.length) return undefined;
+  // Validate top-level `passed` matches all verdict `passed` values.
+  const allVerdictsPassed = (parsed["verdicts"] as readonly { passed: boolean }[]).every(
+    (v) => v.passed,
+  );
+  if (parsed["passed"] !== allVerdictsPassed) return undefined;
   return parsed as unknown as ReleaseQualityGatesReport;
 };
 

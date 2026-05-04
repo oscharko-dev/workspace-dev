@@ -255,6 +255,52 @@ test("evaluateReleaseQualityGates: empty mutation fixture set fails the gate", (
   assert.deepEqual(verdict.attribution, ["no_curated_fixtures"]);
 });
 
+test("evaluateReleaseQualityGates: cache-break gate fails when zero samples are provided", () => {
+  const input = buildPassingInput();
+  const breaching: ReleaseQualityGatesInput = {
+    ...input,
+    cacheBreak: { samples: [] },
+  };
+  const report = evaluateReleaseQualityGates(breaching);
+  const verdict = findVerdict(report, "cache_break_rate");
+  assert.equal(verdict.passed, false);
+  assert.equal(report.passed, false);
+  assert.deepEqual(verdict.attribution, ["no_cache_break_samples"]);
+});
+
+test("evaluateReleaseQualityGates: aggregate passes even when a single fixture breaches per-item threshold", () => {
+  // Aggregate rate of 0.9 passes the 0.85 threshold even though one fixture (0.8) breaches.
+  // Attribution is informational; passed is based on the aggregate.
+  const input = buildPassingInput();
+  const mixed: ReleaseQualityGatesInput = {
+    ...input,
+    mutation: {
+      fixtures: [
+        {
+          fixtureId: "fix-strong",
+          mutationCount: 10,
+          killedMutations: 10,
+          mutationKillRate: 1.0,
+          survivingMutationsForRepair: [],
+        },
+        {
+          fixtureId: "fix-weak",
+          mutationCount: 10,
+          killedMutations: 8,
+          mutationKillRate: 0.8,
+          survivingMutationsForRepair: ["mut-w-1", "mut-w-2"],
+        },
+      ],
+    },
+  };
+  const report = evaluateReleaseQualityGates(mixed);
+  const verdict = findVerdict(report, "mutation_kill_rate");
+  // Aggregated: 18/20 = 0.9 >= 0.85 → passes
+  assert.equal(verdict.passed, true);
+  // fix-weak is below per-fixture threshold → attributed for visibility
+  assert.deepEqual(verdict.attribution, ["fix-weak"]);
+});
+
 test("evaluateReleaseQualityGates: rejects malformed input", () => {
   assert.throws(() => evaluateReleaseQualityGates({} as never));
   assert.throws(() =>
@@ -339,6 +385,40 @@ test("parseReleaseQualityGatesReport: rejects unknown gateId in verdicts", () =>
       index === 0 ? { ...verdict, gateId: "unknown_gate" } : verdict,
     ),
   };
+  const payload = `${JSON.stringify(tampered)}\n`;
+  assert.equal(parseReleaseQualityGatesReport(payload), undefined);
+});
+
+test("parseReleaseQualityGatesReport: rejects NaN in verdict observed", () => {
+  const report = evaluateReleaseQualityGates(buildPassingInput());
+  const tampered = {
+    ...report,
+    verdicts: report.verdicts.map((verdict, index) =>
+      index === 0 ? { ...verdict, observed: NaN } : verdict,
+    ),
+  };
+  const payload = `${JSON.stringify(tampered)}\n`;
+  assert.equal(parseReleaseQualityGatesReport(payload), undefined);
+});
+
+test("parseReleaseQualityGatesReport: rejects inconsistent verdict passed flag", () => {
+  const report = evaluateReleaseQualityGates(buildPassingInput());
+  // Flip one verdict's passed flag so it disagrees with the comparator result.
+  const tampered = {
+    ...report,
+    passed: false,
+    verdicts: report.verdicts.map((verdict, index) =>
+      index === 0 ? { ...verdict, passed: false } : verdict,
+    ),
+  };
+  const payload = `${JSON.stringify(tampered)}\n`;
+  assert.equal(parseReleaseQualityGatesReport(payload), undefined);
+});
+
+test("parseReleaseQualityGatesReport: rejects mismatched top-level passed flag", () => {
+  const report = evaluateReleaseQualityGates(buildPassingInput());
+  // Top-level passed disagrees with verdicts (all pass but top-level says false).
+  const tampered = { ...report, passed: false };
   const payload = `${JSON.stringify(tampered)}\n`;
   assert.equal(parseReleaseQualityGatesReport(payload), undefined);
 });
