@@ -17,7 +17,7 @@
 <!-- prettier-ignore -->
 | Area | workspace-dev |
 | --- | --- |
-| Contract version | `4.39.0` |
+| Contract version | `4.40.0` |
 | `figmaSourceMode=rest` | Supported |
 | `figmaSourceMode=local_json` | Supported |
 | `figmaSourceMode=figma_paste` | Supported |
@@ -70,6 +70,16 @@ All gates are fail-closed; a violation in any gate prevents any write.
 | Policy clear         | No `policy_blocked` decisions                                                     |
 | Schema clear         | No `schema_invalid` cases                                                         |
 | Visual sidecar clear | No visual-sidecar-blocked cases                                                   |
+
+## Settings Migration Matrix (Issue #1798)
+
+| Scenario                                                                                   | Result                                     |
+| ------------------------------------------------------------------------------------------ | ------------------------------------------ |
+| Non-banking profile, applicable migration, valid rollback policy                           | Supported                                  |
+| Banking profile with matching `SignedMigrationBundle` entry for every applicable migration | Supported                                  |
+| Banking profile with missing bundle or missing `{id, hash}` entry                          | Refused with `migration_unsigned`          |
+| Evidence-bearing migration without rollback                                                | Refused with `migration_rollback_required` |
+| Re-run with the same `{id, hash}` sentinel already stamped in state                        | Supported, skipped idempotently            |
 
 ## Notes
 

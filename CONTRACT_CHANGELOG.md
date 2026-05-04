@@ -31,6 +31,48 @@ All changes to the public contract surface of `workspace-dev` are documented her
 
 ---
 
+## [4.40.0] - 2026-05-04
+
+### Added (Issue #1798 — settings migration pipeline with signed-bundle enforcement)
+
+The test-intelligence surface now ships a deterministic settings migration
+runner for per-run state upgrades, with banking-profile signed-bundle
+enforcement and canonical JSONL audit logging.
+
+Additive public-contract changes:
+
+- New runtime constants:
+    - `MIGRATIONS_LOG_ARTIFACT_FILENAME = "migrations.log.jsonl"`
+    - `MIGRATION_BUNDLE_SCHEMA_VERSION = "1.0.0"`
+    - `ALLOWED_MIGRATION_REFUSAL_CODES = ["migration_apply_failed", "migration_audit_log_invalid", "migration_registry_invalid", "migration_rollback_failed", "migration_rollback_required", "migration_state_invalid", "migration_unsigned"]`
+- New contract types:
+    - `MigrationRefusalCode`
+    - `SignedMigrationBundleEntry`
+    - `SignedMigrationBundle`
+- `ALLOWED_HARNESS_ARTIFACT_FILENAMES` now includes
+  `migrations.log.jsonl`, so the harness artifact manifest may hash the
+  migration audit log offline without re-running a job.
+- New public runtime helpers exported from the package root:
+    - `buildMigrationHash`
+    - `parseMigrationAuditLog`
+    - `runMigrations`
+
+Banking-profile governance for signed migration bundles:
+
+- A banking-profile run must supply a `SignedMigrationBundle` whose
+  `entries[]` contain the exact `{id, hash}` pair for every migration that
+  would apply. Missing entries refuse with `migration_unsigned`.
+- `SignedMigrationBundle.entries[].hash` is governed by the contract process:
+  future contract headings that introduce or change banking-profile
+  migrations must register each approved hash inline using
+  `migrationHash: \`<sha256>\`` entries under the same heading.
+- This release introduces the bundle format and enforcement path only; it
+  does not ship any pre-registered banking migrations yet.
+
+This is an additive minor bump. Existing callers remain source-compatible
+until they opt into `runMigrations`, and existing jobs remain readable
+because `migrations.log.jsonl` is optional.
+
 ## [4.39.0] - 2026-05-04
 
 ### Added (Issue #1795 — canonical-JSON harness job artifacts)
@@ -46,31 +88,31 @@ Additive public-contract changes (no removals or renames):
 
 - New filename + schema-version constants and persisted artifact
   shapes:
-  - `AGENT_ITERATIONS_ARTIFACT_FILENAME`,
-    `AGENT_ITERATIONS_SCHEMA_VERSION`, `AgentIterationsArtifact`,
-    `AgentIterationRecord`, `ALLOWED_AGENT_ITERATION_OUTCOMES`,
-    `AgentIterationOutcome` — consolidated repair-iteration log.
-  - `CACHE_BREAK_EVENTS_LOG_ARTIFACT_FILENAME`,
-    `CACHE_BREAK_EVENTS_LOG_SCHEMA_VERSION`,
-    `CacheBreakEventLogEntry` — consolidated cache-break event log
-    (newline-delimited JSON).
-  - `COMPACT_BOUNDARY_LOG_ARTIFACT_FILENAME`,
-    `COMPACT_BOUNDARY_LOG_SCHEMA_VERSION`,
-    `CompactBoundaryLogEntry`,
-    `ALLOWED_COMPACT_BOUNDARY_LOG_TIERS`, `CompactBoundaryLogTier`
-    — consolidated compaction-boundary log (newline-delimited JSON).
-  - `LIBRARY_COVERAGE_REPORT_ARTIFACT_FILENAME`,
-    `LIBRARY_COVERAGE_REPORT_SCHEMA_VERSION`,
-    `LibraryCoverageReport`, `LibraryPrimitiveCoverageEntry`,
-    `LibraryCoverageReportCounts`,
-    `ALLOWED_LIBRARY_PRIMITIVE_STATUSES`, `LibraryPrimitiveStatus`
-    — per-release primitive-map status report.
-  - `HARNESS_ARTIFACT_MANIFEST_ARTIFACT_FILENAME`,
-    `HARNESS_ARTIFACT_MANIFEST_SCHEMA_VERSION`,
-    `HarnessArtifactManifest`, `HarnessArtifactManifestEntry`,
-    `ALLOWED_HARNESS_ARTIFACT_FILENAMES`, `HarnessArtifactFilename`
-    — per-job manifest pinning every artifact's
-    `{filename, schemaVersion, sha256, sizeBytes}`.
+    - `AGENT_ITERATIONS_ARTIFACT_FILENAME`,
+      `AGENT_ITERATIONS_SCHEMA_VERSION`, `AgentIterationsArtifact`,
+      `AgentIterationRecord`, `ALLOWED_AGENT_ITERATION_OUTCOMES`,
+      `AgentIterationOutcome` — consolidated repair-iteration log.
+    - `CACHE_BREAK_EVENTS_LOG_ARTIFACT_FILENAME`,
+      `CACHE_BREAK_EVENTS_LOG_SCHEMA_VERSION`,
+      `CacheBreakEventLogEntry` — consolidated cache-break event log
+      (newline-delimited JSON).
+    - `COMPACT_BOUNDARY_LOG_ARTIFACT_FILENAME`,
+      `COMPACT_BOUNDARY_LOG_SCHEMA_VERSION`,
+      `CompactBoundaryLogEntry`,
+      `ALLOWED_COMPACT_BOUNDARY_LOG_TIERS`, `CompactBoundaryLogTier`
+      — consolidated compaction-boundary log (newline-delimited JSON).
+    - `LIBRARY_COVERAGE_REPORT_ARTIFACT_FILENAME`,
+      `LIBRARY_COVERAGE_REPORT_SCHEMA_VERSION`,
+      `LibraryCoverageReport`, `LibraryPrimitiveCoverageEntry`,
+      `LibraryCoverageReportCounts`,
+      `ALLOWED_LIBRARY_PRIMITIVE_STATUSES`, `LibraryPrimitiveStatus`
+      — per-release primitive-map status report.
+    - `HARNESS_ARTIFACT_MANIFEST_ARTIFACT_FILENAME`,
+      `HARNESS_ARTIFACT_MANIFEST_SCHEMA_VERSION`,
+      `HarnessArtifactManifest`, `HarnessArtifactManifestEntry`,
+      `ALLOWED_HARNESS_ARTIFACT_FILENAMES`, `HarnessArtifactFilename`
+      — per-job manifest pinning every artifact's
+      `{filename, schemaVersion, sha256, sizeBytes}`.
 
 - New writer / validator / verify functions in
   `src/test-intelligence`:
@@ -227,7 +269,7 @@ The runtime module ships in `src/test-intelligence/semantic-judge-panel.ts`
 and is re-exported through `src/test-intelligence/index.ts`. It does
 not extend the public API (`src/index.ts`) surface; consumers that
 need the panel import it from the test-intelligence subpath, mirroring
-the AGENT_HARNESS_* / AGENT_TEAM_* contracts shipped in 4.32.0–4.33.0.
+the AGENT*HARNESS*_ / AGENT*TEAM*_ contracts shipped in 4.32.0–4.33.0.
 
 ### Disagreement routing (AT-022)
 
@@ -263,7 +305,7 @@ the multi-agent harness (Story MA-3, parent #1758) writes per job:
 `<runDir>/agent-team-results.json`.
 
 The execution graph is a small canonical-JSON-stable adjacency-list
-DAG. It is *not* a workflow framework — there is no scheduler, no
+DAG. It is _not_ a workflow framework — there is no scheduler, no
 trigger, no conditional. Each node carries `roleStepId`, `role`,
 sorted `blocks` / `blockedBy` edges, sorted `requiredInputArtifacts`
 and `producedArtifacts`, and a closed `retryPolicy` literal. The
@@ -285,16 +327,16 @@ Team artifacts are hash-only by construction — both interfaces carry
 a literal `rawPromptsIncluded: false` field that documents the
 contract and is asserted by tests:
 
-  - `AgentTeamConfigArtifact` pins the active profile registry
-    (sorted alphabetically by role), the graph hash, and the
-    operator's `policyProfileHash` (sha256 of the canonical-JSON of
-    the active policy profile). Used by the gateway to scope
-    idempotency and in-flight dedup keys.
-  - `AgentTeamResultsArtifact` rolls up per-step harness rollups
-    (only their hashes, terminal outcomes, error classes, attempt
-    counts, and cost rollups) into a single anchor with a unioned
-    `totalCost`. No raw prompts, no chain-of-thought, no model
-    output bytes, no secrets are ever surfaced.
+- `AgentTeamConfigArtifact` pins the active profile registry
+  (sorted alphabetically by role), the graph hash, and the
+  operator's `policyProfileHash` (sha256 of the canonical-JSON of
+  the active policy profile). Used by the gateway to scope
+  idempotency and in-flight dedup keys.
+- `AgentTeamResultsArtifact` rolls up per-step harness rollups
+  (only their hashes, terminal outcomes, error classes, attempt
+  counts, and cost rollups) into a single anchor with a unioned
+  `totalCost`. No raw prompts, no chain-of-thought, no model
+  output bytes, no secrets are ever surfaced.
 
 Both writers use the temp-file + `rename` pattern already in use by
 the per-step rollup writer, so a crash never leaves a half-written
@@ -311,7 +353,7 @@ New public exports (additive only):
 - Constants:
   `AGENT_HARNESS_EXECUTION_GRAPH_SCHEMA_VERSION` (`"1.0.0"`),
   `AGENT_HARNESS_GRAPH_RETRY_POLICIES` (`["none",
-  "retry_from_checkpoint", "retry_transient_once"]`),
+"retry_from_checkpoint", "retry_transient_once"]`),
   `AGENT_TEAM_CONFIG_SCHEMA_VERSION` (`"1.0.0"`),
   `AGENT_TEAM_CONFIG_ARTIFACT_FILENAME`
   (`"agent-team-config.json"`),

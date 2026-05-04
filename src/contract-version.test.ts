@@ -74,6 +74,7 @@ const EXPECTED_CONTRACT_RUNTIME_EXPORTS = [
   "ALLOWED_LLM_GATEWAY_ERROR_CLASSES",
   "ALLOWED_LLM_GATEWAY_ROLES",
   "ALLOWED_LLM_GATEWAY_WIRE_STRUCTURED_OUTPUT_MODES",
+  "ALLOWED_MIGRATION_REFUSAL_CODES",
   "ALLOWED_MULTI_SOURCE_ENVELOPE_REFUSAL_CODES",
   "ALLOWED_MULTI_SOURCE_MODE_GATE_REFUSAL_CODES",
   "ALLOWED_PIPELINE_REQUEST_ERROR_CODES",
@@ -185,6 +186,7 @@ const EXPECTED_CONTRACT_RUNTIME_EXPORTS = [
   "LLM_CAPABILITIES_ARTIFACT_FILENAME",
   "LLM_CAPABILITIES_SCHEMA_VERSION",
   "LLM_GATEWAY_CONTRACT_VERSION",
+  "MIGRATION_BUNDLE_SCHEMA_VERSION",
   "MAX_CUSTOM_CONTEXT_BYTES_PER_JOB",
   "MAX_JIRA_ADF_INPUT_BYTES",
   "MAX_JIRA_API_REQUESTS_PER_JOB",
@@ -197,6 +199,7 @@ const EXPECTED_CONTRACT_RUNTIME_EXPORTS = [
   "MAX_JIRA_LINK_COUNT",
   "MAX_JIRA_PASTE_BYTES_PER_JOB",
   "MAX_ROLE_LINEAGE_DEPTH",
+  "MIGRATIONS_LOG_ARTIFACT_FILENAME",
   "MAX_UNTRUSTED_CONTENT_ELEMENT_BYTES",
   "MAX_UNTRUSTED_CONTENT_MARKDOWN_BYTES",
   "MAX_VISUAL_SIDECAR_INPUT_BYTES",
@@ -316,6 +319,7 @@ const EXPECTED_PUBLIC_RUNTIME_EXPORTS = [
   "ALLOWED_LLM_GATEWAY_ERROR_CLASSES",
   "ALLOWED_LLM_GATEWAY_ROLES",
   "ALLOWED_LLM_GATEWAY_WIRE_STRUCTURED_OUTPUT_MODES",
+  "ALLOWED_MIGRATION_REFUSAL_CODES",
   "ALLOWED_MULTI_SOURCE_ENVELOPE_REFUSAL_CODES",
   "ALLOWED_MULTI_SOURCE_MODE_GATE_REFUSAL_CODES",
   "ALLOWED_PIPELINE_REQUEST_ERROR_CODES",
@@ -411,6 +415,7 @@ const EXPECTED_PUBLIC_RUNTIME_EXPORTS = [
   "LLM_CAPABILITIES_ARTIFACT_FILENAME",
   "LLM_CAPABILITIES_SCHEMA_VERSION",
   "LLM_GATEWAY_CONTRACT_VERSION",
+  "MIGRATION_BUNDLE_SCHEMA_VERSION",
   "MAX_CUSTOM_CONTEXT_BYTES_PER_JOB",
   "MAX_JIRA_ADF_INPUT_BYTES",
   "MAX_JIRA_API_REQUESTS_PER_JOB",
@@ -423,6 +428,7 @@ const EXPECTED_PUBLIC_RUNTIME_EXPORTS = [
   "MAX_JIRA_LINK_COUNT",
   "MAX_JIRA_PASTE_BYTES_PER_JOB",
   "MAX_ROLE_LINEAGE_DEPTH",
+  "MIGRATIONS_LOG_ARTIFACT_FILENAME",
   "MAX_UNTRUSTED_CONTENT_ELEMENT_BYTES",
   "MAX_UNTRUSTED_CONTENT_MARKDOWN_BYTES",
   "MAX_VISUAL_SIDECAR_INPUT_BYTES",
@@ -493,6 +499,7 @@ const EXPECTED_PUBLIC_RUNTIME_EXPORTS = [
   "WAVE4_PRODUCTION_READINESS_EVAL_REPORT_ARTIFACT_FILENAME",
   "WAVE4_PRODUCTION_READINESS_EVAL_REPORT_SCHEMA_VERSION",
   "analyzeContextBudget",
+  "buildMigrationHash",
   "captureFromProject",
   "captureScreenshot",
   "comparePngBuffers",
@@ -510,12 +517,14 @@ const EXPECTED_PUBLIC_RUNTIME_EXPORTS = [
   "isBrandedId",
   "isRoleLineageDepth",
   "listProjectInstances",
+  "parseMigrationAuditLog",
   "registerIsolationProcessCleanup",
   "removeAllInstances",
   "removeProjectInstance",
   "resolveCaptureConfig",
   "resolveCaptureContextOptions",
   "resolveCaptureContextOptionsForBrowser",
+  "runMigrations",
   "toAgentRoleProfileId",
   "toEvidenceArtifactId",
   "toJobId",
@@ -555,4 +564,20 @@ test("contract process gate: changelog contains current contract version heading
   const changelog = await readFile(contractChangelogPath, "utf8");
   const heading = `## [${contracts.CONTRACT_VERSION}]`;
   assert.match(changelog, new RegExp(`^${escapeRegExp(heading)}`, "m"));
+});
+
+test("contract process gate: current changelog heading documents migration hash registration workflow", async () => {
+  const changelog = await readFile(contractChangelogPath, "utf8");
+  const heading = `## [${contracts.CONTRACT_VERSION}]`;
+  const headingIndex = changelog.indexOf(heading);
+  assert.notEqual(headingIndex, -1);
+  const nextHeadingIndex = changelog.indexOf(
+    "\n## [",
+    headingIndex + heading.length,
+  );
+  const section =
+    nextHeadingIndex === -1
+      ? changelog.slice(headingIndex)
+      : changelog.slice(headingIndex, nextHeadingIndex);
+  assert.match(section, /migrationHash:/);
 });
