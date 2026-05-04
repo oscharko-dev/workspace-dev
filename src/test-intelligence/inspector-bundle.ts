@@ -30,15 +30,19 @@
 import { readFile, readdir, stat } from "node:fs/promises";
 import { join } from "node:path";
 
+import { ADVERSARIAL_GAP_FINDINGS_ARTIFACT_FILENAME } from "./adversarial-gap-finder.js";
 import {
   AGENT_ITERATIONS_ARTIFACT_FILENAME,
   CACHE_BREAK_EVENTS_LOG_ARTIFACT_FILENAME,
   COMPACT_BOUNDARY_LOG_ARTIFACT_FILENAME,
+  COVERAGE_PLAN_ARTIFACT_FILENAME,
   EXPORT_REPORT_ARTIFACT_FILENAME,
   EXPORT_REPORT_SCHEMA_VERSION,
   GENERATED_TESTCASES_ARTIFACT_FILENAME,
   GENERATED_TEST_CASE_SCHEMA_VERSION,
   HARNESS_ARTIFACT_MANIFEST_ARTIFACT_FILENAME,
+  JUDGE_PANEL_VERDICT_SCHEMA_VERSION,
+  JUDGE_PANEL_VERDICTS_ARTIFACT_FILENAME,
   LIBRARY_COVERAGE_REPORT_ARTIFACT_FILENAME,
   QC_MAPPING_PREVIEW_ARTIFACT_FILENAME,
   QC_MAPPING_PREVIEW_SCHEMA_VERSION,
@@ -55,12 +59,15 @@ import {
   VISUAL_SIDECAR_SCHEMA_VERSION,
   VISUAL_SIDECAR_VALIDATION_REPORT_ARTIFACT_FILENAME,
   VISUAL_SIDECAR_VALIDATION_REPORT_SCHEMA_VERSION,
+  type AdversarialGapFinding,
   type AgentIterationsArtifact,
   type CacheBreakEventLogEntry,
   type CompactBoundaryLogEntry,
+  type CoveragePlan,
   type ExportReportArtifact,
   type GeneratedTestCaseList,
   type HarnessArtifactManifest,
+  type JudgePanelVerdict,
   type LibraryCoverageReport,
   type MultiSourceReconciliationReport,
   type MultiSourceTestIntentEnvelope,
@@ -102,6 +109,9 @@ export type InspectorBundleArtifactKind =
   | "reviewSnapshot"
   | "reviewEvents"
   | "multiSourceReconciliation"
+  | "coveragePlan"
+  | "judgePanelVerdicts"
+  | "adversarialGapFindings"
   // Issue #1795 — canonical-JSON harness job artifacts.
   | "agentIterations"
   | "cacheBreakEventsLog"
@@ -148,6 +158,9 @@ export interface InspectorTestIntelligenceBundle {
   multiSourceReconciliation?: InspectorMultiSourceReconciliationReport;
   conflictDecisions?: Record<string, InspectorConflictDecisionSnapshot>;
   testCaseProvenance?: Record<string, InspectorTestCaseProvenance>;
+  coveragePlan?: CoveragePlan;
+  judgePanelVerdicts?: readonly JudgePanelVerdict[];
+  adversarialGapFindings?: readonly AdversarialGapFinding[];
   /** Issue #1795 — consolidated repair-iteration log. */
   agentIterations?: AgentIterationsArtifact;
   /** Issue #1795 — consolidated cache-break event log. */
@@ -167,6 +180,9 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
 
 const isStringArray = (value: unknown): value is string[] =>
   Array.isArray(value) && value.every((entry) => typeof entry === "string");
+
+const isFiniteNumber = (value: unknown): value is number =>
+  typeof value === "number" && Number.isFinite(value);
 
 const isFlatMetadata = (
   value: unknown,
@@ -356,6 +372,60 @@ const isReviewEventsEnvelope = (
   return value["events"].every(isReviewEvent);
 };
 
+const isCoveragePlan = (value: unknown): value is CoveragePlan => {
+  if (!isRecord(value)) return false;
+  return (
+    value["schemaVersion"] === "1.0.0" &&
+    typeof value["jobId"] === "string" &&
+    Array.isArray(value["minimumCases"]) &&
+    Array.isArray(value["recommendedCases"]) &&
+    Array.isArray(value["techniques"]) &&
+    isFiniteNumber(value["mutationKillRateTarget"])
+  );
+};
+
+const isJudgePanelVerdict = (value: unknown): value is JudgePanelVerdict => {
+  if (!isRecord(value)) return false;
+  return (
+    value["schemaVersion"] === JUDGE_PANEL_VERDICT_SCHEMA_VERSION &&
+    typeof value["testCaseId"] === "string" &&
+    typeof value["criterion"] === "string" &&
+    Array.isArray(value["perJudge"]) &&
+    typeof value["agreement"] === "string" &&
+    typeof value["resolvedSeverity"] === "string" &&
+    typeof value["escalationRoute"] === "string"
+  );
+};
+
+const isJudgePanelVerdictArray = (
+  value: unknown,
+): value is readonly JudgePanelVerdict[] =>
+  Array.isArray(value) && value.every(isJudgePanelVerdict);
+
+const isAdversarialGapFinding = (
+  value: unknown,
+): value is AdversarialGapFinding => {
+  if (!isRecord(value)) return false;
+  return (
+    value["schemaVersion"] === "1.0.0" &&
+    typeof value["findingId"] === "string" &&
+    typeof value["kind"] === "string" &&
+    value["severity"] === "major" &&
+    typeof value["summary"] === "string" &&
+    isStringArray(value["sourceRefs"]) &&
+    isStringArray(value["ruleRefs"]) &&
+    isStringArray(value["relatedMutationIds"]) &&
+    (value["missingCaseType"] === "boundary" ||
+      value["missingCaseType"] === "negative" ||
+      value["missingCaseType"] === "navigation")
+  );
+};
+
+const isAdversarialGapFindingArray = (
+  value: unknown,
+): value is readonly AdversarialGapFinding[] =>
+  Array.isArray(value) && value.every(isAdversarialGapFinding);
+
 interface ReadResult<T> {
   parsed?: T;
   error?: InspectorBundleParseError;
@@ -515,6 +585,9 @@ export const readInspectorTestIntelligenceBundle = async (
     reviewSnapshot,
     reviewEventsEnvelope,
     multiSourceReconciliation,
+    coveragePlan,
+    judgePanelVerdicts,
+    adversarialGapFindings,
     agentIterations,
     cacheBreakEventsLog,
     compactBoundaryLog,
@@ -583,6 +656,24 @@ export const readInspectorTestIntelligenceBundle = async (
         isRecord(value) && Array.isArray(value["conflicts"]),
     ),
     readJsonArtifact(
+      join(jobDir, COVERAGE_PLAN_ARTIFACT_FILENAME),
+      COVERAGE_PLAN_ARTIFACT_FILENAME,
+      "coveragePlan",
+      isCoveragePlan,
+    ),
+    readJsonArtifact(
+      join(jobDir, JUDGE_PANEL_VERDICTS_ARTIFACT_FILENAME),
+      JUDGE_PANEL_VERDICTS_ARTIFACT_FILENAME,
+      "judgePanelVerdicts",
+      isJudgePanelVerdictArray,
+    ),
+    readJsonArtifact(
+      join(jobDir, ADVERSARIAL_GAP_FINDINGS_ARTIFACT_FILENAME),
+      ADVERSARIAL_GAP_FINDINGS_ARTIFACT_FILENAME,
+      "adversarialGapFindings",
+      isAdversarialGapFindingArray,
+    ),
+    readJsonArtifact(
       join(jobDir, AGENT_ITERATIONS_ARTIFACT_FILENAME),
       AGENT_ITERATIONS_ARTIFACT_FILENAME,
       "agentIterations",
@@ -630,6 +721,9 @@ export const readInspectorTestIntelligenceBundle = async (
   collect(reviewSnapshot);
   collect(reviewEventsEnvelope);
   collect(multiSourceReconciliation);
+  collect(coveragePlan);
+  collect(judgePanelVerdicts);
+  collect(adversarialGapFindings);
   collect(agentIterations);
   collect(cacheBreakEventsLog);
   collect(compactBoundaryLog);
@@ -702,6 +796,13 @@ export const readInspectorTestIntelligenceBundle = async (
       : {}),
     ...(Object.keys(testCaseProvenance).length > 0
       ? { testCaseProvenance }
+      : {}),
+    ...(coveragePlan.parsed ? { coveragePlan: coveragePlan.parsed } : {}),
+    ...(judgePanelVerdicts.parsed
+      ? { judgePanelVerdicts: judgePanelVerdicts.parsed }
+      : {}),
+    ...(adversarialGapFindings.parsed
+      ? { adversarialGapFindings: adversarialGapFindings.parsed }
       : {}),
     ...(agentIterations.parsed
       ? { agentIterations: agentIterations.parsed }
@@ -787,6 +888,11 @@ export const listInspectorTestIntelligenceJobs = async (
         reviewSnapshot: present.has(REVIEW_STATE_ARTIFACT_FILENAME),
         reviewEvents: present.has(REVIEW_EVENTS_ARTIFACT_FILENAME),
         multiSourceReconciliation: present.has("multi-source-conflicts.json"),
+        coveragePlan: present.has(COVERAGE_PLAN_ARTIFACT_FILENAME),
+        judgePanelVerdicts: present.has(JUDGE_PANEL_VERDICTS_ARTIFACT_FILENAME),
+        adversarialGapFindings: present.has(
+          ADVERSARIAL_GAP_FINDINGS_ARTIFACT_FILENAME,
+        ),
         agentIterations: present.has(AGENT_ITERATIONS_ARTIFACT_FILENAME),
         cacheBreakEventsLog: present.has(
           CACHE_BREAK_EVENTS_LOG_ARTIFACT_FILENAME,

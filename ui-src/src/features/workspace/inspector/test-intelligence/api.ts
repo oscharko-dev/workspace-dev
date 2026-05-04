@@ -24,6 +24,7 @@ import {
   type ReviewStateEnvelope,
 } from "./payload-guards";
 import type {
+  EvidenceVerifyResponse,
   FetchSourcesResponse,
   ResolveConflictInput,
   ResolveConflictResponse,
@@ -41,6 +42,55 @@ export type FetchOutcome<T> =
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
+
+const isEvidenceVerifyResponse = (
+  value: unknown,
+): value is EvidenceVerifyResponse => {
+  if (!isRecord(value)) {
+    return false;
+  }
+  if (
+    typeof value["schemaVersion"] !== "string" ||
+    typeof value["verifiedAt"] !== "string" ||
+    typeof value["jobId"] !== "string" ||
+    typeof value["ok"] !== "boolean" ||
+    typeof value["manifestSha256"] !== "string" ||
+    !Array.isArray(value["checks"]) ||
+    !Array.isArray(value["failures"])
+  ) {
+    return false;
+  }
+
+  return value["checks"].every((entry) => {
+    if (!isRecord(entry)) {
+      return false;
+    }
+    if (
+      typeof entry["kind"] !== "string" ||
+      typeof entry["ok"] !== "boolean" ||
+      typeof entry["reference"] !== "string"
+    ) {
+      return false;
+    }
+    const detail = entry["detail"];
+    if (detail === undefined) {
+      return true;
+    }
+    return (
+      isRecord(detail) &&
+      (detail["severity"] === undefined ||
+        typeof detail["severity"] === "string") &&
+      (detail["message"] === undefined || typeof detail["message"] === "string")
+    );
+  }) && value["failures"].every((entry) => {
+    return (
+      isRecord(entry) &&
+      typeof entry["code"] === "string" &&
+      typeof entry["reference"] === "string" &&
+      typeof entry["message"] === "string"
+    );
+  });
+};
 
 const errorOutcomeFromPayload = <T>(
   status: number,
@@ -108,6 +158,25 @@ export async function fetchTestIntelligenceBundle(
   }
   if (!isTestIntelligenceBundle(response.payload)) {
     return invalidResponse(response.status, "the test-intelligence bundle");
+  }
+  return { ok: true, value: response.payload };
+}
+
+export async function fetchEvidenceVerifyStatus(
+  jobId: string,
+): Promise<FetchOutcome<EvidenceVerifyResponse>> {
+  const response = await fetchJson<EvidenceVerifyResponse>({
+    url: `${WORKSPACE_ROOT}/jobs/${encodeURIComponent(jobId)}/evidence/verify`,
+  });
+  if (!response.ok) {
+    return errorOutcomeFromPayload(
+      response.status,
+      response.payload,
+      "Failed to verify evidence artifacts.",
+    );
+  }
+  if (!isEvidenceVerifyResponse(response.payload)) {
+    return invalidResponse(response.status, "the evidence verification response");
   }
   return { ok: true, value: response.payload };
 }

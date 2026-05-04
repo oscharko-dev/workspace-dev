@@ -439,6 +439,48 @@ const isExportReport = (value: unknown): value is ExportReport => {
   );
 };
 
+const isCoveragePlan = (value: unknown): boolean =>
+  isRecord(value) &&
+  typeof value["jobId"] === "string" &&
+  Array.isArray(value["minimumCases"]) &&
+  Array.isArray(value["recommendedCases"]) &&
+  Array.isArray(value["techniques"]) &&
+  typeof value["mutationKillRateTarget"] === "number";
+
+const isJudgePanelVerdict = (value: unknown): boolean =>
+  isRecord(value) &&
+  typeof value["testCaseId"] === "string" &&
+  typeof value["criterion"] === "string" &&
+  Array.isArray(value["perJudge"]) &&
+  typeof value["agreement"] === "string" &&
+  typeof value["resolvedSeverity"] === "string" &&
+  typeof value["escalationRoute"] === "string";
+
+const isJudgePanelVerdictArray = (value: unknown): boolean =>
+  Array.isArray(value) && value.every((entry) => isJudgePanelVerdict(entry));
+
+const isAdversarialGapFinding = (value: unknown): boolean =>
+  isRecord(value) &&
+  typeof value["findingId"] === "string" &&
+  typeof value["kind"] === "string" &&
+  value["severity"] === "major" &&
+  typeof value["summary"] === "string" &&
+  isStringArray(value["sourceRefs"]) &&
+  isStringArray(value["ruleRefs"]) &&
+  isStringArray(value["relatedMutationIds"]) &&
+  (value["missingCaseType"] === "boundary" ||
+    value["missingCaseType"] === "negative" ||
+    value["missingCaseType"] === "navigation");
+
+const isAdversarialGapFindingArray = (value: unknown): boolean =>
+  Array.isArray(value) &&
+  value.every((entry) => isAdversarialGapFinding(entry));
+
+const isAgentIterationsArtifact = (value: unknown): boolean =>
+  isRecord(value) &&
+  typeof value["jobId"] === "string" &&
+  Array.isArray(value["iterations"]);
+
 const optionalGuard = <T>(
   value: unknown,
   guard: (v: unknown) => v is T,
@@ -486,6 +528,10 @@ export const isTestIntelligenceBundle = (
       guard: isCoverageReport as (v: unknown) => v is unknown,
     },
     {
+      key: "coveragePlan",
+      guard: isCoveragePlan as (v: unknown) => v is unknown,
+    },
+    {
       key: "visualSidecarReport",
       guard: isVisualSidecarReport as (v: unknown) => v is unknown,
     },
@@ -519,6 +565,18 @@ export const isTestIntelligenceBundle = (
     {
       key: "conflictDecisions",
       guard: isConflictDecisionSnapshotRecord as (v: unknown) => v is unknown,
+    },
+    {
+      key: "judgePanelVerdicts",
+      guard: isJudgePanelVerdictArray as (v: unknown) => v is unknown,
+    },
+    {
+      key: "adversarialGapFindings",
+      guard: isAdversarialGapFindingArray as (v: unknown) => v is unknown,
+    },
+    {
+      key: "agentIterations",
+      guard: isAgentIterationsArtifact as (v: unknown) => v is unknown,
     },
   ];
 
