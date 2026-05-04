@@ -306,6 +306,7 @@ test("createMockLlmGatewayClientFromConfig copies identity and config", async ()
     deployment: "phi-4-multimodal-poc",
     modelRevision: "rev",
     gatewayRelease: "rel",
+    ictRegisterRef: "ICT-VISUAL-01",
     modelWeightsSha256: "a".repeat(64),
     authMode: "api_key",
     declaredCapabilities: visualCapabilities,
@@ -316,5 +317,6 @@ test("createMockLlmGatewayClientFromConfig copies identity and config", async ()
   const client = createMockLlmGatewayClientFromConfig(config);
   assert.equal(client.role, "visual_fallback");
   assert.equal(client.deployment, "phi-4-multimodal-poc");
+  assert.equal(client.ictRegisterRef, "ICT-VISUAL-01");
   assert.equal(client.modelWeightsSha256, "a".repeat(64));
 });

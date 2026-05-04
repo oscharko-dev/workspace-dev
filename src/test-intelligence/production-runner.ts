@@ -57,6 +57,7 @@ import {
   VISUAL_SIDECAR_RESULT_ARTIFACT_FILENAME,
   VISUAL_SIDECAR_VALIDATION_REPORT_ARTIFACT_FILENAME,
   VISUAL_SIDECAR_SCHEMA_VERSION,
+  type ActiveModelBinding,
   type AgentSourceLabel,
   type BusinessTestIntentIr,
   type FinOpsBudgetEnvelope,
@@ -378,6 +379,43 @@ const toEvidenceVisualDeployment = (
     default:
       return "mock";
   }
+};
+
+const buildActiveModelBindings = (input: {
+  client: LlmGatewayClient;
+  bundle?: LlmGatewayClientBundle;
+}): readonly ActiveModelBinding[] => {
+  const bindings: ActiveModelBinding[] = [
+    {
+      providerId: "llm-gateway",
+      modelId: input.client.modelRevision,
+      inferenceProfileId: input.client.deployment,
+      ...(input.client.ictRegisterRef !== undefined
+        ? { ictRegisterRef: input.client.ictRegisterRef }
+        : {}),
+    },
+  ];
+  if (input.bundle !== undefined) {
+    bindings.push(
+      {
+        providerId: "llm-gateway",
+        modelId: input.bundle.visualPrimary.modelRevision,
+        inferenceProfileId: input.bundle.visualPrimary.deployment,
+        ...(input.bundle.visualPrimary.ictRegisterRef !== undefined
+          ? { ictRegisterRef: input.bundle.visualPrimary.ictRegisterRef }
+          : {}),
+      },
+      {
+        providerId: "llm-gateway",
+        modelId: input.bundle.visualFallback.modelRevision,
+        inferenceProfileId: input.bundle.visualFallback.deployment,
+        ...(input.bundle.visualFallback.ictRegisterRef !== undefined
+          ? { ictRegisterRef: input.bundle.visualFallback.ictRegisterRef }
+          : {}),
+      },
+    );
+  }
+  return bindings;
 };
 
 export interface RunFigmaToQcTestCasesInput {
@@ -735,6 +773,10 @@ export const runFigmaToQcTestCases = async (
   const finopsLimits = resolveFinOpsRequestLimits(
     finopsBudget.roles.test_generation,
   );
+  const activeModelBindings = buildActiveModelBindings({
+    client: input.llm.client,
+    ...(input.llm.bundle !== undefined ? { bundle: input.llm.bundle } : {}),
+  });
 
   const draftSchema = buildDraftResponseSchema();
   const policyProfileId =
@@ -976,6 +1018,7 @@ export const runFigmaToQcTestCases = async (
       ? { visualSidecarRefusal }
       : {}),
     untrustedContentReport: normalizedUntrusted.report,
+    activeModelBindings,
   });
   emit({
     phase: "validation_complete",
@@ -1227,6 +1270,7 @@ export const runFigmaToQcTestCases = async (
     policyProfileVersion: validation.policy.policyProfileVersion,
     exportProfileId: "customer-markdown",
     exportProfileVersion: "1.0.0",
+    activeModelBindings,
     promptHash: compiled.request.hashes.promptHash,
     schemaHash: compiled.request.hashes.schemaHash,
     inputHash: compiled.request.hashes.inputHash,

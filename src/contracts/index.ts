@@ -455,6 +455,7 @@ export const ALLOWED_TEST_CASE_POLICY_OUTCOMES = [
   "missing_trace",
   "missing_expected_results",
   "pii_in_test_data",
+  "ict_register_ref_required",
   "missing_negative_or_validation_for_required_field",
   "missing_accessibility_case",
   "missing_boundary_case",
@@ -512,6 +513,28 @@ export interface TestCasePolicyReport {
   decisions: TestCasePolicyDecisionRecord[];
   /** Job-level policy violations (e.g., job-wide duplicate fingerprint). */
   jobLevelViolations: TestCasePolicyViolation[];
+}
+
+/**
+ * Runtime summary of an active model binding used by a job. The optional
+ * `ictRegisterRef` is enforced by the banking policy gate when provided to
+ * policy evaluation and is attested in evidence artifacts when persisted.
+ */
+export interface ActiveModelBinding {
+  /** Stable provider / operator identifier for the bound model. */
+  readonly providerId: string;
+  /** Stable model identifier inside the provider namespace. */
+  readonly modelId: string;
+  /**
+   * Optional deployment / inference-profile identifier that distinguishes
+   * multiple ICT services serving the same base model.
+   */
+  readonly inferenceProfileId?: string;
+  /**
+   * Optional operator-managed ICT register reference. Mandatory for banking
+   * policy enforcement when the binding is active for a regulated job.
+   */
+  readonly ictRegisterRef?: string;
 }
 
 /** Tunable knobs of a policy profile (defaults shown for `eu-banking-default`). */
@@ -1020,6 +1043,8 @@ export interface LlmGatewayClientConfig {
   deployment: string;
   modelRevision: string;
   gatewayRelease: string;
+  /** Optional operator-configured ICT register reference for this deployment. */
+  ictRegisterRef?: string;
   modelWeightsSha256?: string;
   authMode: LlmGatewayAuthMode;
   declaredCapabilities: LlmGatewayCapabilities;
@@ -5822,6 +5847,11 @@ export interface Wave1PocEvidenceManifest {
       | "mock"
       | "none";
   };
+  /**
+   * Active model-binding summary attested for the run. Under banking
+   * profiles every active binding must carry `ictRegisterRef`.
+   */
+  activeModelBindings?: readonly ActiveModelBinding[];
   /** Replay-cache identity hashes for the run (mirrors compiled prompt). */
   promptHash: string;
   schemaHash: string;

@@ -130,6 +130,7 @@ export interface LlmGatewayClient {
   readonly deployment: string;
   readonly modelRevision: string;
   readonly gatewayRelease: string;
+  readonly ictRegisterRef: string | undefined;
   readonly operatorEndpointReference: string;
   readonly modelWeightsSha256: string | undefined;
   readonly declaredCapabilities: Readonly<LlmGatewayCapabilities>;
@@ -394,6 +395,7 @@ export const createLlmGatewayClient = (
     deployment: config.deployment,
     modelRevision: config.modelRevision,
     gatewayRelease: config.gatewayRelease,
+    ictRegisterRef: config.ictRegisterRef,
     operatorEndpointReference: redactGatewayEndpointReference(config.baseUrl),
     modelWeightsSha256: config.modelWeightsSha256,
     declaredCapabilities: { ...config.declaredCapabilities },
@@ -1425,6 +1427,14 @@ const validateConfig = (config: LlmGatewayClientConfig): void => {
   assertNonEmpty(config.deployment, "deployment");
   assertNonEmpty(config.modelRevision, "modelRevision");
   assertNonEmpty(config.gatewayRelease, "gatewayRelease");
+  if (
+    config.ictRegisterRef !== undefined &&
+    config.ictRegisterRef.trim().length === 0
+  ) {
+    throw new RangeError(
+      "LlmGatewayClient: ictRegisterRef must be a non-empty string when provided",
+    );
+  }
   if (
     config.modelWeightsSha256 !== undefined &&
     !/^[0-9a-f]{64}$/.test(config.modelWeightsSha256)

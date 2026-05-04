@@ -41,6 +41,8 @@ import {
   WAVE1_POC_EVIDENCE_MANIFEST_ARTIFACT_FILENAME,
   WAVE1_POC_EVIDENCE_MANIFEST_DIGEST_FILENAME,
   WAVE1_POC_EVIDENCE_MANIFEST_SCHEMA_VERSION,
+  type ActiveModelBinding,
+  type AgentModelBinding,
   type Wave1PocEvidenceArtifact,
   type Wave1PocEvidenceArtifactCategory,
   type Wave1PocEvidenceManifest,
@@ -238,6 +240,8 @@ export interface BuildWave1PocEvidenceManifestInput {
   visualSidecar?: Wave1PocEvidenceManifest["visualSidecar"];
   /** Persisted capture identities for the opt-in visual sidecar path. */
   visualSidecarCaptureIdentities?: readonly VisualSidecarCaptureIdentity[];
+  /** Active model-binding summary attested for this run. */
+  activeModelBindings?: readonly ActiveModelBinding[];
   /** Additive Wave 4 multi-source evidence metadata. */
   multiSource?: {
     sourceProvenanceRecords: readonly MultiSourceSourceProvenanceRecord[];
@@ -257,6 +261,61 @@ const toBytes = (value: Uint8Array | Buffer): Uint8Array => {
   if (value instanceof Uint8Array && !Buffer.isBuffer(value)) return value;
   return new Uint8Array(value.buffer, value.byteOffset, value.byteLength);
 };
+
+const cloneActiveModelBinding = (
+  binding: AgentModelBinding,
+): ActiveModelBinding => {
+  if (typeof binding.providerId !== "string" || binding.providerId.length === 0) {
+    throw new RangeError(
+      "buildWave1PocEvidenceManifest: activeModelBindings.providerId must be a non-empty string",
+    );
+  }
+  if (typeof binding.modelId !== "string" || binding.modelId.length === 0) {
+    throw new RangeError(
+      "buildWave1PocEvidenceManifest: activeModelBindings.modelId must be a non-empty string",
+    );
+  }
+  if (
+    binding.inferenceProfileId !== undefined &&
+    binding.inferenceProfileId.length === 0
+  ) {
+    throw new RangeError(
+      "buildWave1PocEvidenceManifest: activeModelBindings.inferenceProfileId must be a non-empty string when provided",
+    );
+  }
+  if (
+    binding.ictRegisterRef !== undefined &&
+    binding.ictRegisterRef.length === 0
+  ) {
+    throw new RangeError(
+      "buildWave1PocEvidenceManifest: activeModelBindings.ictRegisterRef must be a non-empty string when provided",
+    );
+  }
+  return Object.freeze({
+    providerId: binding.providerId,
+    modelId: binding.modelId,
+    ...(binding.inferenceProfileId !== undefined
+      ? { inferenceProfileId: binding.inferenceProfileId }
+      : {}),
+    ...(binding.ictRegisterRef !== undefined
+      ? { ictRegisterRef: binding.ictRegisterRef }
+      : {}),
+  });
+};
+
+const cloneActiveModelBindings = (
+  bindings: readonly ActiveModelBinding[],
+): ActiveModelBinding[] =>
+  [...bindings]
+    .map((binding) => cloneActiveModelBinding(binding))
+    .sort((left, right) =>
+      left.providerId.localeCompare(right.providerId) ||
+      left.modelId.localeCompare(right.modelId) ||
+      (left.inferenceProfileId ?? "").localeCompare(
+        right.inferenceProfileId ?? "",
+      ) ||
+      (left.ictRegisterRef ?? "").localeCompare(right.ictRegisterRef ?? ""),
+    );
 
 const cloneVisualSidecarCaptureIdentities = (
   identities: readonly VisualSidecarCaptureIdentity[],
@@ -365,6 +424,10 @@ export const buildWave1PocEvidenceManifest = (
           input.visualSidecarCaptureIdentities,
         )
       : undefined;
+  const activeModelBindings =
+    input.activeModelBindings !== undefined
+      ? cloneActiveModelBindings(input.activeModelBindings)
+      : undefined;
 
   const manifest: Wave1PocEvidenceManifest = {
     schemaVersion: WAVE1_POC_EVIDENCE_MANIFEST_SCHEMA_VERSION,
@@ -382,6 +445,7 @@ export const buildWave1PocEvidenceManifest = (
     exportProfileId: input.exportProfileId,
     exportProfileVersion: input.exportProfileVersion,
     modelDeployments: { ...input.modelDeployments },
+    ...(activeModelBindings !== undefined ? { activeModelBindings } : {}),
     promptHash: input.promptHash,
     schemaHash: input.schemaHash,
     inputHash: input.inputHash,
@@ -685,6 +749,51 @@ export const validateWave1PocEvidenceManifestMetadata = (
         ) {
           issues.push(
             "visualSidecarCaptureIdentities.sha256 must be a sha256 hex string",
+          );
+        }
+      }
+    }
+  }
+
+  if (manifest.activeModelBindings !== undefined) {
+    if (!Array.isArray(manifest.activeModelBindings)) {
+      issues.push("activeModelBindings must be an array");
+    } else {
+      for (const binding of manifest.activeModelBindings) {
+        if (!isRecord(binding)) {
+          issues.push("activeModelBindings entry must be an object");
+          continue;
+        }
+        if (
+          typeof binding["providerId"] !== "string" ||
+          binding["providerId"].length === 0
+        ) {
+          issues.push(
+            "activeModelBindings.providerId must be a non-empty string",
+          );
+        }
+        if (
+          typeof binding["modelId"] !== "string" ||
+          binding["modelId"].length === 0
+        ) {
+          issues.push("activeModelBindings.modelId must be a non-empty string");
+        }
+        if (
+          binding["inferenceProfileId"] !== undefined &&
+          (typeof binding["inferenceProfileId"] !== "string" ||
+            binding["inferenceProfileId"].length === 0)
+        ) {
+          issues.push(
+            "activeModelBindings.inferenceProfileId must be a non-empty string when provided",
+          );
+        }
+        if (
+          binding["ictRegisterRef"] !== undefined &&
+          (typeof binding["ictRegisterRef"] !== "string" ||
+            binding["ictRegisterRef"].length === 0)
+        ) {
+          issues.push(
+            "activeModelBindings.ictRegisterRef must be a non-empty string when provided",
           );
         }
       }
