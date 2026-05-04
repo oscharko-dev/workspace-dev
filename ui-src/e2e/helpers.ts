@@ -104,6 +104,14 @@ export function parseLiveJobPayload(
   }
 }
 
+export function rememberSubmittedJobId(page: Page, jobId: string): void {
+  const normalizedJobId = jobId.trim();
+  if (normalizedJobId.length === 0) {
+    return;
+  }
+  submittedJobIds.set(page, normalizedJobId);
+}
+
 function isJsonRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }

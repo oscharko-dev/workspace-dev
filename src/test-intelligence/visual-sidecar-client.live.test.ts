@@ -13,9 +13,14 @@ import {
   loadWave1ValidationCaptureFixture,
   loadWave1ValidationFixture,
 } from "./validation-fixtures.js";
+import {
+  findMissingRequiredLiveEnv,
+  formatMissingRequiredLiveEnvMessage,
+  isLiveSmokeEnabled,
+  LIVE_SMOKE_SKIP_MESSAGE,
+  REQUIRED_LIVE_ENV,
+} from "./visual-sidecar-client.live-env.js";
 import { describeVisualScreens } from "./visual-sidecar-client.js";
-
-const LIVE_SMOKE_FLAG = "WORKSPACE_TEST_SPACE_LIVE_SMOKE";
 
 /**
  * Issue #1660 (audit-2026-05): API-key env-var alias.
@@ -36,14 +41,6 @@ const API_KEY_ALIASES = [
   "WORKSPACE_TEST_SPACE_MODEL_API_KEY",
 ] as const;
 
-const NON_AUTH_REQUIRED_LIVE_ENV = [
-  "WORKSPACE_TEST_SPACE_MODEL_ENDPOINT",
-  "WORKSPACE_TEST_SPACE_TESTCASE_MODEL_DEPLOYMENT",
-  "WORKSPACE_TEST_SPACE_VISUAL_MODEL_ENDPOINT",
-  "WORKSPACE_TEST_SPACE_VISUAL_PRIMARY_DEPLOYMENT",
-  "WORKSPACE_TEST_SPACE_VISUAL_FALLBACK_DEPLOYMENT",
-] as const;
-
 const testGenerationCapabilities: LlmGatewayCapabilities = {
   structuredOutputs: true,
   seedSupport: false,
@@ -61,7 +58,7 @@ const visualCapabilities: LlmGatewayCapabilities = {
 const circuitBreaker = { failureThreshold: 2, resetTimeoutMs: 30_000 } as const;
 
 const requireEnv = (
-  name: (typeof NON_AUTH_REQUIRED_LIVE_ENV)[number],
+  name: (typeof REQUIRED_LIVE_ENV)[number],
 ): string => {
   const value = process.env[name];
   if (typeof value !== "string" || value.length === 0) {
@@ -109,21 +106,16 @@ const buildConfig = (input: {
 });
 
 test("live visual sidecar smoke: fixture capture describes through role-separated Azure deployments", async (t) => {
-  if (process.env[LIVE_SMOKE_FLAG] !== "1") {
-    t.skip(
-      `${LIVE_SMOKE_FLAG}=1 enables the operator-controlled live smoke test.`,
-    );
+  if (!isLiveSmokeEnabled()) {
+    t.skip(LIVE_SMOKE_SKIP_MESSAGE);
     return;
   }
 
-  const missing = REQUIRED_LIVE_ENV.filter((name) => {
-    const value = process.env[name];
-    return typeof value !== "string" || value.length === 0;
-  });
+  const missing = findMissingRequiredLiveEnv();
   assert.deepEqual(
     missing,
     [],
-    `missing required live smoke env names: ${missing.join(", ")}`,
+    formatMissingRequiredLiveEnvMessage(missing),
   );
 
   const fixture = await loadWave1ValidationFixture("validation-onboarding");

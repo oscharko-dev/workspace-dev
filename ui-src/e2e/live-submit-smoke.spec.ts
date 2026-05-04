@@ -9,7 +9,9 @@
  */
 import { expect, test } from "@playwright/test";
 import {
+  ensureWorkspaceDiagnosticsVisible,
   openWorkspaceUi,
+  rememberSubmittedJobId,
   resetBrowserStorage,
   waitForSubmitTerminalStatus
 } from "./helpers";
@@ -42,11 +44,18 @@ test.describe("live submit smoke", () => {
     await page.getByRole("banner").getByRole("button", { name: "Generate" }).click();
     const submitResponse = await submitResponsePromise;
     expect(submitResponse.ok()).toBeTruthy();
+    const submitPayload = await submitResponse.json().catch(() => undefined) as { jobId?: string } | undefined;
+    if (typeof submitPayload?.jobId === "string" && submitPayload.jobId.length > 0) {
+      rememberSubmittedJobId(page, submitPayload.jobId);
+    }
 
     const terminalStatus = await waitForSubmitTerminalStatus(page, { timeoutMs: 300_000 });
     expect(["COMPLETED", "FAILED", "CANCELED"]).toContain(terminalStatus);
 
-    const jobPayload = (await page.getByTestId("job-payload").textContent()) ?? "";
+    const jobPayload = ((await ensureWorkspaceDiagnosticsVisible(page, {
+      buttonLabel: "Job diagnostics",
+      payloadTestId: "job-payload"
+    }).then((locator) => locator.textContent())) ?? "");
     expect(jobPayload).toContain(`"status": "${terminalStatus.toLowerCase()}"`);
 
     if (terminalStatus === "COMPLETED") {
