@@ -1051,3 +1051,99 @@ test("cli contract: published binaries and quickstart command are in sync", asyn
   assert.deepEqual(Object.keys(packageJson.bin ?? {}).sort(), ["workspace-dev"]);
   assert.match(readme, /npx workspace-dev start/i);
 });
+
+// ---------------------------------------------------------------------------
+// test-intelligence run sub-command (Issue #1736)
+// ---------------------------------------------------------------------------
+
+test("cli contract: test-intelligence run --help prints all required flags", async () => {
+  const result = await runCliToExit({ args: ["test-intelligence", "--help"] });
+  assert.equal(result.exitCode, 0, result.stderr);
+  assert.match(result.stdout, /--figma-url/i);
+  assert.match(result.stdout, /--figma-json-file/i);
+  assert.match(result.stdout, /--output/i);
+  assert.match(result.stdout, /--mode/i);
+  assert.match(result.stdout, /--no-visual-sidecar/i);
+  assert.match(result.stdout, /--finops-budget/i);
+  assert.match(result.stdout, /--policy-profile/i);
+  assert.match(result.stdout, /FIGMAPIPE_WORKSPACE_TEST_INTELLIGENCE/i);
+  assert.match(result.stdout, /dry_run/i);
+});
+
+test("cli contract: test-intelligence run without feature gate → exit 1 with clear error", async () => {
+  const tmpDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-ti-"));
+  const figmaJsonPath = path.join(tmpDir, "figma.json");
+  await writeFile(
+    figmaJsonPath,
+    JSON.stringify({
+      fileKey: "abc",
+      name: "Test",
+      document: { id: "0:0", type: "DOCUMENT" },
+    }),
+  );
+
+  const result = await runCliToExit({
+    args: [
+      "test-intelligence",
+      "run",
+      "--figma-json-file",
+      figmaJsonPath,
+      "--output",
+      tmpDir,
+    ],
+    env: { FIGMAPIPE_WORKSPACE_TEST_INTELLIGENCE: "0" },
+  });
+
+  assert.equal(result.exitCode, 1, result.stdout);
+  assert.match(result.stderr, /FIGMAPIPE_WORKSPACE_TEST_INTELLIGENCE/i);
+});
+
+test("cli contract: test-intelligence run dry_run with gate set → exit 0", async () => {
+  const tmpDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-ti-"));
+  const figmaJsonPath = path.join(tmpDir, "figma.json");
+  await writeFile(
+    figmaJsonPath,
+    JSON.stringify({
+      fileKey: "abc",
+      name: "Test",
+      document: { id: "0:0", type: "DOCUMENT" },
+    }),
+  );
+
+  const result = await runCliToExit({
+    args: [
+      "test-intelligence",
+      "run",
+      "--figma-json-file",
+      figmaJsonPath,
+      "--output",
+      tmpDir,
+      "--mode",
+      "dry_run",
+    ],
+    env: { FIGMAPIPE_WORKSPACE_TEST_INTELLIGENCE: "1" },
+    timeoutMs: 15_000,
+  });
+
+  assert.equal(result.exitCode, 0, result.stderr);
+  assert.match(result.stdout, /dry_run/i);
+  assert.match(result.stdout, /job id/i);
+});
+
+test("cli contract: test-intelligence run without source → exit 1", async () => {
+  const result = await runCliToExit({
+    args: ["test-intelligence", "run", "--output", "/tmp/x"],
+    env: { FIGMAPIPE_WORKSPACE_TEST_INTELLIGENCE: "1" },
+  });
+  assert.equal(result.exitCode, 1);
+  assert.match(result.stderr, /--figma-url|--figma-json-file/i);
+});
+
+test("cli contract: test-intelligence run unknown sub-command → exit 1", async () => {
+  const result = await runCliToExit({
+    args: ["test-intelligence", "invalid-cmd"],
+    env: { FIGMAPIPE_WORKSPACE_TEST_INTELLIGENCE: "1" },
+  });
+  assert.equal(result.exitCode, 1);
+  assert.match(result.stderr, /unknown sub-command/i);
+});
