@@ -31,6 +31,67 @@ All changes to the public contract surface of `workspace-dev` are documented her
 
 ---
 
+## [4.39.0] - 2026-05-04
+
+### Added (Issue #1795 — canonical-JSON harness job artifacts)
+
+The harness now persists every per-job report listed under Story MA-4
+as a canonical-JSON job artifact. All artifacts are atomic-write
+(tmp + rename), byte-stable for byte-identical inputs, and
+schema-versioned. A sibling `harness-artifact-manifest.json` indexes
+every present artifact so the evidence verify route can reproduce
+each hash offline without re-running the harness.
+
+Additive public-contract changes (no removals or renames):
+
+- New filename + schema-version constants and persisted artifact
+  shapes:
+  - `AGENT_ITERATIONS_ARTIFACT_FILENAME`,
+    `AGENT_ITERATIONS_SCHEMA_VERSION`, `AgentIterationsArtifact`,
+    `AgentIterationRecord`, `ALLOWED_AGENT_ITERATION_OUTCOMES`,
+    `AgentIterationOutcome` — consolidated repair-iteration log.
+  - `CACHE_BREAK_EVENTS_LOG_ARTIFACT_FILENAME`,
+    `CACHE_BREAK_EVENTS_LOG_SCHEMA_VERSION`,
+    `CacheBreakEventLogEntry` — consolidated cache-break event log
+    (newline-delimited JSON).
+  - `COMPACT_BOUNDARY_LOG_ARTIFACT_FILENAME`,
+    `COMPACT_BOUNDARY_LOG_SCHEMA_VERSION`,
+    `CompactBoundaryLogEntry`,
+    `ALLOWED_COMPACT_BOUNDARY_LOG_TIERS`, `CompactBoundaryLogTier`
+    — consolidated compaction-boundary log (newline-delimited JSON).
+  - `LIBRARY_COVERAGE_REPORT_ARTIFACT_FILENAME`,
+    `LIBRARY_COVERAGE_REPORT_SCHEMA_VERSION`,
+    `LibraryCoverageReport`, `LibraryPrimitiveCoverageEntry`,
+    `LibraryCoverageReportCounts`,
+    `ALLOWED_LIBRARY_PRIMITIVE_STATUSES`, `LibraryPrimitiveStatus`
+    — per-release primitive-map status report.
+  - `HARNESS_ARTIFACT_MANIFEST_ARTIFACT_FILENAME`,
+    `HARNESS_ARTIFACT_MANIFEST_SCHEMA_VERSION`,
+    `HarnessArtifactManifest`, `HarnessArtifactManifestEntry`,
+    `ALLOWED_HARNESS_ARTIFACT_FILENAMES`, `HarnessArtifactFilename`
+    — per-job manifest pinning every artifact's
+    `{filename, schemaVersion, sha256, sizeBytes}`.
+
+- New writer / validator / verify functions in
+  `src/test-intelligence`:
+  `writeAgentIterationsArtifact`, `isAgentIterationsArtifact`,
+  `writeCacheBreakEventsLog`, `parseCacheBreakEventsLog`,
+  `isCacheBreakEventLogEntry`, `writeCompactBoundaryLog`,
+  `parseCompactBoundaryLog`, `isCompactBoundaryLogEntry`,
+  `writeLibraryCoverageReport`, `isLibraryCoverageReport`,
+  `writeHarnessArtifactManifest`, `readHarnessArtifactManifest`,
+  `verifyHarnessArtifactManifest`, `isHarnessArtifactManifest`.
+
+- Inspector bundle now surfaces each new artifact in its
+  corresponding tab (`agentIterations`, `cacheBreakEventsLog`,
+  `compactBoundaryLog`, `libraryCoverageReport`,
+  `harnessArtifactManifest`); missing artifacts continue to render
+  empty placeholders so existing layouts are unaffected.
+
+This is an additive minor bump. Existing callers and persisted
+artifacts remain source-compatible — every new field is optional or
+lives on a new artifact, and no existing schema changed shape.
+
 ## [4.38.0] - 2026-05-04
 
 ### Added (Issue #1794 — banking ICT register enforcement metadata)

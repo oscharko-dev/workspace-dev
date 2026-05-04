@@ -3425,6 +3425,262 @@ export const GENEALOGY_ARTIFACT_FILENAME = "genealogy.json" as const;
 /** Schema version for per-run genealogy DAG artifacts. */
 export const GENEALOGY_SCHEMA_VERSION = "1.0.0" as const;
 
+// ---------------------------------------------------------------------------
+// Issue #1795 — canonical-JSON harness job artifacts
+//
+// The harness persists every report it produces under the per-job runDir as
+// canonical-JSON (or canonical newline-delimited JSON for append-mostly
+// event logs). All artifacts below are atomic-write (tmp + rename),
+// byte-stable for byte-identical inputs, and schema-versioned. They are
+// hashed into a sibling {@link HarnessArtifactManifest} so the evidence
+// verify route can reproduce every hash offline without re-running the
+// harness.
+// ---------------------------------------------------------------------------
+
+/** Canonical filename for the consolidated per-repair-iteration log. */
+export const AGENT_ITERATIONS_ARTIFACT_FILENAME =
+  "agent-iterations.json" as const;
+
+/** Schema version for {@link AgentIterationsArtifact}. */
+export const AGENT_ITERATIONS_SCHEMA_VERSION = "1.0.0" as const;
+
+/** Closed runtime list of repair-iteration outcome literals. */
+export const ALLOWED_AGENT_ITERATION_OUTCOMES = [
+  "exhausted",
+  "halted",
+  "needs_repair",
+  "passed",
+] as const;
+
+/** Discriminated alias for {@link ALLOWED_AGENT_ITERATION_OUTCOMES}. */
+export type AgentIterationOutcome =
+  (typeof ALLOWED_AGENT_ITERATION_OUTCOMES)[number];
+
+/** One persisted record describing a single repair-iteration step. */
+export interface AgentIterationRecord {
+  /** 0-based iteration index inside the repair budget. */
+  readonly iteration: number;
+  /** Stable {@link AgentRoleStepId} of the harness role that ran. */
+  readonly roleStepId: string;
+  /** ISO-8601 timestamp at which the iteration started. */
+  readonly startedAt: string;
+  /** ISO-8601 timestamp at which the iteration completed. */
+  readonly completedAt: string;
+  /** Resolved outcome of the iteration. */
+  readonly outcome: AgentIterationOutcome;
+  /** Total finding count surfaced by this iteration. */
+  readonly findingsCount: number;
+  /** Optional repair-plan identifier carried into the next iteration. */
+  readonly repairPlanId?: string;
+  /** Merkle parent hash linking this iteration into the harness chain. */
+  readonly parentHash: string;
+}
+
+/** Persisted, canonical-JSON, per-job repair-iteration log. */
+export interface AgentIterationsArtifact {
+  readonly schemaVersion: typeof AGENT_ITERATIONS_SCHEMA_VERSION;
+  readonly contractVersion: typeof TEST_INTELLIGENCE_CONTRACT_VERSION;
+  readonly jobId: string;
+  /** ISO-8601 timestamp the artifact was assembled (server clock). */
+  readonly generatedAt: string;
+  /** Iteration records sorted by `iteration` ascending. */
+  readonly iterations: readonly AgentIterationRecord[];
+}
+
+/** Canonical filename for the consolidated cache-break event log. */
+export const CACHE_BREAK_EVENTS_LOG_ARTIFACT_FILENAME =
+  "cache-break-events.jsonl" as const;
+
+/** Schema version for {@link CacheBreakEventLogEntry}. */
+export const CACHE_BREAK_EVENTS_LOG_SCHEMA_VERSION = "1.0.0" as const;
+
+/**
+ * One persisted line in `cache-break-events.jsonl`. Each line is an
+ * independent canonical-JSON object so the file is byte-stable when the
+ * input set is byte-identical and the entries are sorted before write.
+ */
+export interface CacheBreakEventLogEntry {
+  readonly schemaVersion: typeof CACHE_BREAK_EVENTS_LOG_SCHEMA_VERSION;
+  readonly contractVersion: typeof TEST_INTELLIGENCE_CONTRACT_VERSION;
+  readonly jobId: string;
+  readonly roleStepId: string;
+  readonly querySource: string;
+  /** ISO-8601 timestamp at which the break was observed. */
+  readonly ts: string;
+  /** Merkle parent hash carried by the original `cache_break` event. */
+  readonly parentHash: string;
+  /** `cache_read_input_tokens` observed on the breaking response. */
+  readonly cacheReadTokens: number;
+  /** `cache_creation_input_tokens` observed on the breaking response. */
+  readonly cacheCreationTokens: number;
+  /** Basename of the per-event diff artifact, when persisted. */
+  readonly diffArtifactBasename?: string;
+  /** Suppression reason when the break was intentional, if any. */
+  readonly suppressionReason?: CacheBreakSuppressionReason;
+}
+
+/** Canonical filename for the consolidated CompactBoundary log. */
+export const COMPACT_BOUNDARY_LOG_ARTIFACT_FILENAME =
+  "compact-boundary-log.jsonl" as const;
+
+/** Schema version for {@link CompactBoundaryLogEntry}. */
+export const COMPACT_BOUNDARY_LOG_SCHEMA_VERSION = "1.0.0" as const;
+
+/** Closed runtime list of compaction-boundary tier literals (mirrors {@link COMPACT_BOUNDARY_TIERS}). */
+export const ALLOWED_COMPACT_BOUNDARY_LOG_TIERS = [
+  "context_budget",
+  "manual",
+  "post_repair",
+  "task_round",
+] as const;
+
+/** Discriminated alias for {@link ALLOWED_COMPACT_BOUNDARY_LOG_TIERS}. */
+export type CompactBoundaryLogTier =
+  (typeof ALLOWED_COMPACT_BOUNDARY_LOG_TIERS)[number];
+
+/**
+ * One persisted line in `compact-boundary-log.jsonl`. Carries only
+ * non-sensitive identifiers (sha256 of the summary, byte-counts) so the
+ * log can be persisted alongside the per-job artifacts without leaking
+ * raw conversation text.
+ */
+export interface CompactBoundaryLogEntry {
+  readonly schemaVersion: typeof COMPACT_BOUNDARY_LOG_SCHEMA_VERSION;
+  readonly contractVersion: typeof TEST_INTELLIGENCE_CONTRACT_VERSION;
+  readonly jobId: string;
+  /** ISO-8601 timestamp of the compaction boundary. */
+  readonly ts: string;
+  /** Tier the boundary belongs to. */
+  readonly tier: CompactBoundaryLogTier;
+  /** sha256-hex of the canonical-JSON summary string. */
+  readonly summarySha256: string;
+  /** Total bytes of cleared tool result blocks at the boundary. */
+  readonly clearedToolResultBytes: number;
+  /** Merkle parent hash linking this boundary into the harness chain. */
+  readonly parentHash: string;
+}
+
+/** Canonical filename for the per-release library coverage report. */
+export const LIBRARY_COVERAGE_REPORT_ARTIFACT_FILENAME =
+  "library-coverage-report.json" as const;
+
+/** Schema version for {@link LibraryCoverageReport}. */
+export const LIBRARY_COVERAGE_REPORT_SCHEMA_VERSION = "1.0.0" as const;
+
+/** Closed runtime list of library-primitive status literals. */
+export const ALLOWED_LIBRARY_PRIMITIVE_STATUSES = [
+  "deprecated",
+  "implemented",
+  "stub",
+  "unimplemented",
+] as const;
+
+/** Discriminated alias for {@link ALLOWED_LIBRARY_PRIMITIVE_STATUSES}. */
+export type LibraryPrimitiveStatus =
+  (typeof ALLOWED_LIBRARY_PRIMITIVE_STATUSES)[number];
+
+/** Per-primitive coverage row in {@link LibraryCoverageReport.primitives}. */
+export interface LibraryPrimitiveCoverageEntry {
+  /** Stable identifier of the primitive within the library version. */
+  readonly primitiveId: string;
+  /** Library name (e.g. design-system or component-library). */
+  readonly libraryName: string;
+  /** Library version — must match the release's pinned version. */
+  readonly libraryVersion: string;
+  /** Status of the primitive in this release. */
+  readonly status: LibraryPrimitiveStatus;
+  /** Number of generated test cases that exercise this primitive. */
+  readonly testCaseCount: number;
+  /** Optional human-readable note (length-capped at validation). */
+  readonly notes?: string;
+}
+
+/** Roll-up counts in {@link LibraryCoverageReport.counts}. */
+export interface LibraryCoverageReportCounts {
+  readonly total: number;
+  readonly deprecated: number;
+  readonly implemented: number;
+  readonly stub: number;
+  readonly unimplemented: number;
+}
+
+/** Per-release primitive-map status report. */
+export interface LibraryCoverageReport {
+  readonly schemaVersion: typeof LIBRARY_COVERAGE_REPORT_SCHEMA_VERSION;
+  readonly contractVersion: typeof TEST_INTELLIGENCE_CONTRACT_VERSION;
+  /** Stable release identifier (e.g. `"figma-ds@2026.05.0"`). */
+  readonly releaseId: string;
+  /** ISO-8601 timestamp the report was assembled. */
+  readonly generatedAt: string;
+  /**
+   * Per-primitive rows, sorted by `(libraryName, libraryVersion,
+   * primitiveId)` for canonical-JSON stability.
+   */
+  readonly primitives: readonly LibraryPrimitiveCoverageEntry[];
+  /** Roll-up counts, derived from `primitives`. */
+  readonly counts: LibraryCoverageReportCounts;
+}
+
+/** Canonical filename for the per-job harness artifact manifest. */
+export const HARNESS_ARTIFACT_MANIFEST_ARTIFACT_FILENAME =
+  "harness-artifact-manifest.json" as const;
+
+/** Schema version for {@link HarnessArtifactManifest}. */
+export const HARNESS_ARTIFACT_MANIFEST_SCHEMA_VERSION = "1.0.0" as const;
+
+/**
+ * Closed runtime list of canonical-JSON harness artifact filenames the
+ * manifest may reference. Adding a member is an additive minor bump.
+ */
+export const ALLOWED_HARNESS_ARTIFACT_FILENAMES = [
+  "agent-findings.json",
+  "agent-iterations.json",
+  "cache-break-events.jsonl",
+  "compact-boundary-log.jsonl",
+  "coverage-plan.json",
+  "genealogy.json",
+  "ir-mutation-coverage-strength.json",
+  "judge-panel-verdicts.json",
+  "library-coverage-report.json",
+  "self-verify-rubric.json",
+  "test-design-model.json",
+] as const;
+
+/** Discriminated alias for {@link ALLOWED_HARNESS_ARTIFACT_FILENAMES}. */
+export type HarnessArtifactFilename =
+  (typeof ALLOWED_HARNESS_ARTIFACT_FILENAMES)[number];
+
+/** One row of {@link HarnessArtifactManifest.entries}. */
+export interface HarnessArtifactManifestEntry {
+  /** Basename of the artifact, relative to the per-job runDir. */
+  readonly filename: HarnessArtifactFilename;
+  /** Schema version literal of the artifact at the time of write. */
+  readonly schemaVersion: string;
+  /** sha256-hex of the on-disk artifact bytes. */
+  readonly sha256: string;
+  /** Total byte length of the on-disk artifact. */
+  readonly sizeBytes: number;
+}
+
+/**
+ * Per-job manifest of canonical-JSON harness artifacts. Persisted as
+ * `harness-artifact-manifest.json` next to the artifacts it indexes.
+ * The {@link HarnessArtifactManifest.digest} is a sha256 over the
+ * canonical-JSON of the sorted `entries` array, so the evidence verify
+ * route can reproduce every artifact hash offline by re-reading the
+ * referenced files and recomputing each row.
+ */
+export interface HarnessArtifactManifest {
+  readonly schemaVersion: typeof HARNESS_ARTIFACT_MANIFEST_SCHEMA_VERSION;
+  readonly contractVersion: typeof TEST_INTELLIGENCE_CONTRACT_VERSION;
+  readonly jobId: string;
+  readonly generatedAt: string;
+  /** Entries sorted by `filename` ascending. */
+  readonly entries: readonly HarnessArtifactManifestEntry[];
+  /** sha256-hex over `canonicalJson(entries)`. */
+  readonly digest: string;
+}
+
 /**
  * Known PII-like categories detected in mock form data and Jira payloads.
  *
@@ -8789,7 +9045,7 @@ export interface IrMutationCoverageStrengthReport {
  * Must be bumped according to CONTRACT_CHANGELOG.md rules.
  * Package version alignment is documented in VERSIONING.md.
  */
-export const CONTRACT_VERSION = "4.36.0" as const;
+export const CONTRACT_VERSION = "4.39.0" as const;
 
 // ---------------------------------------------------------------------------
 // Issue #1774 — UntrustedContentNormalizer (2025-vintage injection carriers).

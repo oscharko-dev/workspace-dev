@@ -486,6 +486,56 @@ export {
   type WriteGenealogyArtifactInput,
 } from "./genealogy.js";
 export {
+  buildAgentIterationsArtifact,
+  isAgentIterationsArtifact,
+  writeAgentIterationsArtifact,
+  type BuildAgentIterationsArtifactInput,
+  type WriteAgentIterationsArtifactInput,
+  type WriteAgentIterationsArtifactResult,
+} from "./agent-iterations.js";
+export {
+  buildCacheBreakEventsLog,
+  isCacheBreakEventLogEntry,
+  parseCacheBreakEventsLog,
+  writeCacheBreakEventsLog,
+  type BuildCacheBreakEventsLogInput,
+  type BuildCacheBreakEventsLogResult,
+  type WriteCacheBreakEventsLogInput,
+  type WriteCacheBreakEventsLogResult,
+} from "./cache-break-events-log.js";
+export {
+  buildCompactBoundaryLog,
+  isCompactBoundaryLogEntry,
+  parseCompactBoundaryLog,
+  writeCompactBoundaryLog,
+  type BuildCompactBoundaryLogInput,
+  type BuildCompactBoundaryLogResult,
+  type WriteCompactBoundaryLogInput,
+  type WriteCompactBoundaryLogResult,
+} from "./compact-boundary-log.js";
+export {
+  buildLibraryCoverageReport,
+  isLibraryCoverageReport,
+  writeLibraryCoverageReport,
+  type BuildLibraryCoverageReportInput,
+  type WriteLibraryCoverageReportInput,
+  type WriteLibraryCoverageReportResult,
+} from "./library-coverage-report.js";
+export {
+  buildHarnessArtifactManifest,
+  hasHarnessArtifactManifest,
+  isHarnessArtifactManifest,
+  readHarnessArtifactManifest,
+  verifyHarnessArtifactManifest,
+  writeHarnessArtifactManifest,
+  type BuildHarnessArtifactManifestInput,
+  type BuildHarnessArtifactManifestResult,
+  type HarnessArtifactManifestMismatch,
+  type VerifyHarnessArtifactManifestResult,
+  type WriteHarnessArtifactManifestInput,
+  type WriteHarnessArtifactManifestResult,
+} from "./harness-artifact-manifest.js";
+export {
   generateAgentRoleProfileId,
   generateEvidenceArtifactId,
   generateJobId,
