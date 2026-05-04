@@ -1,12 +1,9 @@
 #!/usr/bin/env node
 
 import { spawn } from "node:child_process";
-import { mkdtemp, readdir, readFile, rm, stat } from "node:fs/promises";
-import os from "node:os";
+import { readFile, stat } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { scanProfileTarball } from "./check-profile-tarball-secrets.mjs";
-import { profileDefinitions } from "./pack-profile-contract.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const packageRoot = path.resolve(__dirname, "..");
@@ -15,7 +12,7 @@ const REQUIRED_DIST_FILES = [
   "dist/index.js",
   "dist/index.cjs",
   "dist/contracts/index.js",
-  "dist/contracts/index.cjs",
+  "dist/contracts/index.cjs"
 ];
 
 const run = (command, args, env = process.env) =>
@@ -23,7 +20,7 @@ const run = (command, args, env = process.env) =>
     const child = spawn(command, args, {
       cwd: packageRoot,
       env,
-      stdio: "inherit",
+      stdio: "inherit"
     });
 
     child.once("error", reject);
@@ -32,37 +29,25 @@ const run = (command, args, env = process.env) =>
         resolve(undefined);
         return;
       }
-      reject(
-        new Error(
-          `Command failed with exit code ${code ?? 1}: ${command} ${args.join(" ")}`,
-        ),
-      );
+      reject(new Error(`Command failed with exit code ${code ?? 1}: ${command} ${args.join(" ")}`));
     });
   });
 
 const resolvePublishEnv = () => {
   const publishEnv = { ...process.env };
   const publishAuthMode = String(
-    publishEnv.WORKSPACE_DEV_PUBLISH_AUTH_MODE ?? "trusted-publisher-oidc",
+    publishEnv.WORKSPACE_DEV_PUBLISH_AUTH_MODE ?? "trusted-publisher-oidc"
   ).trim();
 
-  if (
-    publishEnv.GITHUB_ACTIONS === "true" &&
-    publishAuthMode !== "trusted-publisher-oidc"
-  ) {
+  if (publishEnv.GITHUB_ACTIONS === "true" && publishAuthMode !== "trusted-publisher-oidc") {
     throw new Error(
-      "Trusted publishing is mandatory in GitHub Actions. Set WORKSPACE_DEV_PUBLISH_AUTH_MODE=trusted-publisher-oidc.",
+      "Trusted publishing is mandatory in GitHub Actions. Set WORKSPACE_DEV_PUBLISH_AUTH_MODE=trusted-publisher-oidc."
     );
   }
 
   if (publishEnv.GITHUB_ACTIONS === "true") {
-    if (
-      !publishEnv.ACTIONS_ID_TOKEN_REQUEST_URL ||
-      !publishEnv.ACTIONS_ID_TOKEN_REQUEST_TOKEN
-    ) {
-      throw new Error(
-        "Trusted publishing prerequisites missing: id-token permission is not available.",
-      );
+    if (!publishEnv.ACTIONS_ID_TOKEN_REQUEST_URL || !publishEnv.ACTIONS_ID_TOKEN_REQUEST_TOKEN) {
+      throw new Error("Trusted publishing prerequisites missing: id-token permission is not available.");
     }
 
     // Enforce OIDC trusted publishing and prevent token fallback in CI.
@@ -86,44 +71,22 @@ const assertPathExists = async (relativePath) => {
   try {
     const fileStat = await stat(absolutePath);
     if (!fileStat.isFile()) {
-      throw new Error(
-        `Expected file but found non-file entry: ${relativePath}`,
-      );
+      throw new Error(`Expected file but found non-file entry: ${relativePath}`);
     }
   } catch (error) {
     const reason = error instanceof Error ? error.message : String(error);
-    throw new Error(
-      `Missing required publish artifact '${relativePath}': ${reason}`,
-    );
+    throw new Error(`Missing required publish artifact '${relativePath}': ${reason}`);
   }
 };
 
 const ensurePublishArtifacts = async () => {
-  console.log(
-    "[changesets-publish] Building package artifacts before publish.",
-  );
+  console.log("[changesets-publish] Building package artifacts before publish.");
   await run("pnpm", ["run", "build"]);
 
   for (const relativePath of REQUIRED_DIST_FILES) {
     await assertPathExists(relativePath);
   }
-  console.log(
-    "[changesets-publish] Verified required dist artifacts for publish.",
-  );
-};
-
-const findProfileTarball = async (packDir) => {
-  const entries = await readdir(packDir, { withFileTypes: true });
-  const tarballs = entries
-    .filter((entry) => entry.isFile() && entry.name.endsWith(".tgz"))
-    .map((entry) => path.join(packDir, entry.name))
-    .sort((first, second) => first.localeCompare(second));
-  if (tarballs.length !== 1) {
-    throw new Error(
-      `Expected exactly one profile tarball in ${packDir}, found ${tarballs.length}.`,
-    );
-  }
-  return tarballs[0];
+  console.log("[changesets-publish] Verified required dist artifacts for publish.");
 };
 
 const main = async () => {
@@ -137,43 +100,17 @@ const main = async () => {
 
   const npmTag = packageVersion.includes("-") ? "next" : "latest";
 
-  console.log(
-    `[changesets-publish] Publishing ${packageJson.name}@${packageVersion} with npm tag '${npmTag}'.`,
-  );
+  console.log(`[changesets-publish] Publishing ${packageJson.name}@${packageVersion} with npm tag '${npmTag}'.`);
   await ensurePublishArtifacts();
-  const packDir = await mkdtemp(
-    path.join(os.tmpdir(), "workspace-dev-publish-pack-"),
-  );
-  try {
-    await run("node", [
-      "scripts/build-profile.mjs",
-      "--profile",
-      "default-rocket",
-      "--verify",
-      "--pack-destination",
-      packDir,
-    ]);
-    const tarballPath = await findProfileTarball(packDir);
-    await scanProfileTarball({
-      tarballPath,
-      profile: profileDefinitions["default-rocket"],
-    });
-    await run(
-      "npm",
-      [
-        "publish",
-        tarballPath,
-        "--access",
-        "public",
-        "--provenance",
-        "--tag",
-        npmTag,
-      ],
-      resolvePublishEnv(),
-    );
-  } finally {
-    await rm(packDir, { recursive: true, force: true });
-  }
+  await run("pnpm", [
+    "changeset",
+    "publish",
+    "--access",
+    "public",
+    "--provenance",
+    "--tag",
+    npmTag
+  ], resolvePublishEnv());
 };
 
 main().catch((error) => {
