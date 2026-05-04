@@ -50,6 +50,16 @@ interface CliOptions {
   readonly outputDir: string;
 }
 
+const resolveWithinRepo = (flag: string, value: string): string => {
+  const resolved = path.resolve(repoRoot, value);
+  if (resolved !== repoRoot && !resolved.startsWith(`${repoRoot}${path.sep}`)) {
+    throw new Error(
+      `${flag}: path must resolve inside the repo root (${repoRoot}); got ${resolved}`,
+    );
+  }
+  return resolved;
+};
+
 const parseArgs = (argv: readonly string[]): CliOptions => {
   let inputPath = DEFAULT_INPUT_PATH;
   let outputDir = DEFAULT_OUTPUT_DIR;
@@ -60,7 +70,7 @@ const parseArgs = (argv: readonly string[]): CliOptions => {
       if (typeof value !== "string" || value.length === 0) {
         throw new Error("--input requires a path argument");
       }
-      inputPath = path.resolve(repoRoot, value);
+      inputPath = resolveWithinRepo("--input", value);
       index += 1;
       continue;
     }
@@ -69,7 +79,7 @@ const parseArgs = (argv: readonly string[]): CliOptions => {
       if (typeof value !== "string" || value.length === 0) {
         throw new Error("--output-dir requires a path argument");
       }
-      outputDir = path.resolve(repoRoot, value);
+      outputDir = resolveWithinRepo("--output-dir", value);
       index += 1;
       continue;
     }
