@@ -242,7 +242,7 @@ test("PII matches in text fields are counted (no raw match exposure)", () => {
 
 test("secret-shaped strings flip the secret_match counter and outcome", () => {
   const text =
-    "Authorization: Bearer eyJabcdefghijklmnop.eyJabcdefghijklmnop.signaturesignatureXX";
+    "Authorization: Bearer eyJabcdefghijklmnop.eyJabcdefghijklmnop.signaturesignatureXX"; // pragma: allowlist secret
   const result = normalizeUntrustedContent({
     textFields: [{ id: "f", text }],
   });
@@ -389,7 +389,7 @@ test("report contains no raw stripped content (counts only)", () => {
     textFields: [
       {
         id: "f",
-        text: "Bearer eyJabcdefghijklmnop.eyJabcdefghijklmnop.signaturesignatureXX",
+        text: "Bearer eyJabcdefghijklmnop.eyJabcdefghijklmnop.signaturesignatureXX", // pragma: allowlist secret
       },
     ],
   });

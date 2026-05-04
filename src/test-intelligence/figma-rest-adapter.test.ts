@@ -139,7 +139,7 @@ test("fetchFigmaFileForTestIntelligence retries once on 5xx then succeeds", asyn
 });
 
 test("fetchFigmaFileForTestIntelligence does NOT echo the access token in error messages", async () => {
-  const tok = "figd_supersecret_test_token_value_1234567890_padded_padded";
+  const tok = "figd_supersecret_test_token_value_1234567890_padded_padded"; // pragma: allowlist secret
   const fetchImpl = (async () => {
     return errJson(403, { err: tok });
   }) as unknown as typeof fetch;
