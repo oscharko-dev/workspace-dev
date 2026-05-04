@@ -47,6 +47,7 @@ test("event phases form a stable, non-empty enumeration", () => {
     "evidence_sealed",
     "finops_recorded",
     "cache_break",
+    "replay_cache_hit",
   ] satisfies ProductionRunnerEventPhase[]);
 });
 

@@ -585,6 +585,12 @@ export {
   type ReplayCache,
 } from "./replay-cache.js";
 export {
+  createPersistentReplayCache,
+  DEFAULT_PERSISTENT_REPLAY_CACHE_BYTE_BUDGET,
+  DEFAULT_PERSISTENT_REPLAY_CACHE_STALE_THRESHOLD_MS,
+  type PersistentReplayCacheOptions,
+} from "./replay-cache-persistent.js";
+export {
   createLlmCircuitBreaker,
   type LlmCircuitBreaker,
   type LlmCircuitClock,
