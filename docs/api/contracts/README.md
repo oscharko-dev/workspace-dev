@@ -8,6 +8,42 @@
 
 ## Interfaces
 
+### ActiveModelBinding
+
+Runtime summary of an active model binding used by a job. The optional
+`ictRegisterRef` is enforced by the banking policy gate when provided to
+policy evaluation and is attested in evidence artifacts when persisted.
+
+#### Properties
+
+##### ictRegisterRef?
+
+> `readonly` `optional` **ictRegisterRef?**: `string`
+
+Optional operator-managed ICT register reference. Mandatory for banking
+policy enforcement when the binding is active for a regulated job.
+
+##### inferenceProfileId?
+
+> `readonly` `optional` **inferenceProfileId?**: `string`
+
+Optional deployment / inference-profile identifier that distinguishes
+multiple ICT services serving the same base model.
+
+##### modelId
+
+> `readonly` **modelId**: `string`
+
+Stable model identifier inside the provider namespace.
+
+##### providerId
+
+> `readonly` **providerId**: `string`
+
+Stable provider / operator identifier for the bound model.
+
+***
+
 ### AgentHarnessExecutionGraph
 
 Persisted execution-graph artifact for a single Production Runner
@@ -96,7 +132,7 @@ Retry policy applied to this node.
 
 ##### role
 
-> `readonly` **role**: `"adversarial_gap_finder"` \| `"final_verifier"` \| `"generator"` \| `"repair_planner"` \| `"semantic_judge"` \| `"visual_sidecar"`
+> `readonly` **role**: `"generator"` \| `"repair_planner"` \| `"adversarial_gap_finder"` \| `"final_verifier"` \| `"semantic_judge"` \| `"visual_sidecar"`
 
 Role this step is bound to.
 
@@ -209,7 +245,7 @@ deterministic services that do not compile a prompt.
 
 ##### role
 
-> `readonly` **role**: `"adversarial_gap_finder"` \| `"final_verifier"` \| `"generator"` \| `"repair_planner"` \| `"semantic_judge"` \| `"visual_sidecar"`
+> `readonly` **role**: `"generator"` \| `"repair_planner"` \| `"adversarial_gap_finder"` \| `"final_verifier"` \| `"semantic_judge"` \| `"visual_sidecar"`
 
 Role identifier this profile binds to.
 
@@ -443,7 +479,7 @@ Terminal outcome from the harness state machine.
 
 ##### role
 
-> `readonly` **role**: `"adversarial_gap_finder"` \| `"final_verifier"` \| `"generator"` \| `"repair_planner"` \| `"semantic_judge"` \| `"visual_sidecar"`
+> `readonly` **role**: `"generator"` \| `"repair_planner"` \| `"adversarial_gap_finder"` \| `"final_verifier"` \| `"semantic_judge"` \| `"visual_sidecar"`
 
 Role that produced the step.
 
@@ -2861,6 +2897,47 @@ HMAC-SHA256 hex digest. Never persisted to artifacts in any other form.
 
 ***
 
+### GatewayInFlightDedupInputs
+
+Optional caller-supplied key used by one gateway client instance to
+collapse concurrent equivalent requests onto the same in-flight Promise
+(Issue #1788).
+
+#### Properties
+
+##### modelBinding
+
+> `readonly` **modelBinding**: `string`
+
+Stable model identity string (for example `"rev@release"`).
+
+##### policyProfileHash
+
+> `readonly` **policyProfileHash**: `string`
+
+sha256 hex digest of the active policy profile. Required so two tenants
+with identical prompts never share an in-flight slot.
+
+##### promptHash
+
+> `readonly` **promptHash**: `string`
+
+sha256 hex digest of the canonical prompt payload.
+
+##### schemaHash
+
+> `readonly` **schemaHash**: `string`
+
+sha256 hex digest of the structured-output schema.
+
+##### source?
+
+> `readonly` `optional` **source?**: [`AgentSourceLabel`](#agentsourcelabel)
+
+Optional FinOps source label credited with the dedup hit.
+
+***
+
 ### GenealogyArtifact
 
 #### Properties
@@ -5050,6 +5127,12 @@ is held only for the duration of that request.
 
 > **gatewayRelease**: `string`
 
+##### ictRegisterRef?
+
+> `optional` **ictRegisterRef?**: `string`
+
+Optional operator-configured ICT register reference for this deployment.
+
 ##### maxResponseBytes?
 
 > `optional` **maxResponseBytes?**: `number`
@@ -5167,6 +5250,19 @@ logs in plaintext; the cache file is stored under
 ##### imageInputs?
 
 > `optional` **imageInputs?**: readonly [`LlmImageInput`](#llmimageinput)[]
+
+##### inFlightDedup?
+
+> `optional` **inFlightDedup?**: [`GatewayInFlightDedupInputs`](#gatewayinflightdedupinputs)
+
+Optional in-flight dedup key (Issue #1788). When supplied, one
+`LlmGatewayClient` collapses concurrent requests with the same
+`(promptHash, modelBinding, schemaHash, policyProfileHash)` into a
+single Promise. Only in-flight calls dedupe here; completed-result
+memoization remains a separate concern.
+
+`policyProfileHash` scopes the key so two tenants with identical prompt
++ schema hashes never collide.
 
 ##### jobId
 
@@ -7599,7 +7695,7 @@ Single policy-rule violation surfaced for a generated test case.
 
 ##### outcome
 
-> **outcome**: `"schema_invalid"` \| `"missing_trace"` \| `"missing_expected_results"` \| `"semantic_suspicious_content"` \| `"pii_in_test_data"` \| `"missing_negative_or_validation_for_required_field"` \| `"missing_accessibility_case"` \| `"missing_boundary_case"` \| `"duplicate_test_case"` \| `"regulated_risk_review_required"` \| `"ambiguity_review_required"` \| `"qc_mapping_not_exportable"` \| `"low_confidence_review_required"` \| `"open_questions_review_required"` \| `"visual_sidecar_failure"` \| `"visual_sidecar_fallback_used"` \| `"visual_sidecar_low_confidence"` \| `"visual_sidecar_possible_pii"` \| `"visual_sidecar_prompt_injection_text"` \| `"risk_tag_downgrade_detected"` \| `"custom_context_risk_escalation"` \| `"multi_source_conflict_present"`
+> **outcome**: `"schema_invalid"` \| `"missing_trace"` \| `"missing_expected_results"` \| `"semantic_suspicious_content"` \| `"pii_in_test_data"` \| `"ict_register_ref_required"` \| `"missing_negative_or_validation_for_required_field"` \| `"missing_accessibility_case"` \| `"missing_boundary_case"` \| `"duplicate_test_case"` \| `"regulated_risk_review_required"` \| `"ambiguity_review_required"` \| `"qc_mapping_not_exportable"` \| `"low_confidence_review_required"` \| `"open_questions_review_required"` \| `"visual_sidecar_failure"` \| `"visual_sidecar_fallback_used"` \| `"visual_sidecar_low_confidence"` \| `"visual_sidecar_possible_pii"` \| `"visual_sidecar_prompt_injection_text"` \| `"risk_tag_downgrade_detected"` \| `"custom_context_risk_escalation"` \| `"multi_source_conflict_present"`
 
 ##### path?
 
@@ -8260,7 +8356,7 @@ Per-case policy decision (mirrors `TestCasePolicyDecisionRecord.decision`).
 
 ##### policyOutcomes
 
-> **policyOutcomes**: (`"schema_invalid"` \| `"missing_trace"` \| `"missing_expected_results"` \| `"semantic_suspicious_content"` \| `"pii_in_test_data"` \| `"missing_negative_or_validation_for_required_field"` \| `"missing_accessibility_case"` \| `"missing_boundary_case"` \| `"duplicate_test_case"` \| `"regulated_risk_review_required"` \| `"ambiguity_review_required"` \| `"qc_mapping_not_exportable"` \| `"low_confidence_review_required"` \| `"open_questions_review_required"` \| `"visual_sidecar_failure"` \| `"visual_sidecar_fallback_used"` \| `"visual_sidecar_low_confidence"` \| `"visual_sidecar_possible_pii"` \| `"visual_sidecar_prompt_injection_text"` \| `"risk_tag_downgrade_detected"` \| `"custom_context_risk_escalation"` \| `"multi_source_conflict_present"`)[]
+> **policyOutcomes**: (`"schema_invalid"` \| `"missing_trace"` \| `"missing_expected_results"` \| `"semantic_suspicious_content"` \| `"pii_in_test_data"` \| `"ict_register_ref_required"` \| `"missing_negative_or_validation_for_required_field"` \| `"missing_accessibility_case"` \| `"missing_boundary_case"` \| `"duplicate_test_case"` \| `"regulated_risk_review_required"` \| `"ambiguity_review_required"` \| `"qc_mapping_not_exportable"` \| `"low_confidence_review_required"` \| `"open_questions_review_required"` \| `"visual_sidecar_failure"` \| `"visual_sidecar_fallback_used"` \| `"visual_sidecar_low_confidence"` \| `"visual_sidecar_possible_pii"` \| `"visual_sidecar_prompt_injection_text"` \| `"risk_tag_downgrade_detected"` \| `"custom_context_risk_escalation"` \| `"multi_source_conflict_present"`)[]
 
 Per-case sorted, deduplicated policy outcome codes that fired.
 
@@ -8390,7 +8486,7 @@ Per-case policy decision at the time this step row was built.
 
 ##### policyOutcomes
 
-> **policyOutcomes**: (`"schema_invalid"` \| `"missing_trace"` \| `"missing_expected_results"` \| `"semantic_suspicious_content"` \| `"pii_in_test_data"` \| `"missing_negative_or_validation_for_required_field"` \| `"missing_accessibility_case"` \| `"missing_boundary_case"` \| `"duplicate_test_case"` \| `"regulated_risk_review_required"` \| `"ambiguity_review_required"` \| `"qc_mapping_not_exportable"` \| `"low_confidence_review_required"` \| `"open_questions_review_required"` \| `"visual_sidecar_failure"` \| `"visual_sidecar_fallback_used"` \| `"visual_sidecar_low_confidence"` \| `"visual_sidecar_possible_pii"` \| `"visual_sidecar_prompt_injection_text"` \| `"risk_tag_downgrade_detected"` \| `"custom_context_risk_escalation"` \| `"multi_source_conflict_present"`)[]
+> **policyOutcomes**: (`"schema_invalid"` \| `"missing_trace"` \| `"missing_expected_results"` \| `"semantic_suspicious_content"` \| `"pii_in_test_data"` \| `"ict_register_ref_required"` \| `"missing_negative_or_validation_for_required_field"` \| `"missing_accessibility_case"` \| `"missing_boundary_case"` \| `"duplicate_test_case"` \| `"regulated_risk_review_required"` \| `"ambiguity_review_required"` \| `"qc_mapping_not_exportable"` \| `"low_confidence_review_required"` \| `"open_questions_review_required"` \| `"visual_sidecar_failure"` \| `"visual_sidecar_fallback_used"` \| `"visual_sidecar_low_confidence"` \| `"visual_sidecar_possible_pii"` \| `"visual_sidecar_prompt_injection_text"` \| `"risk_tag_downgrade_detected"` \| `"custom_context_risk_escalation"` \| `"multi_source_conflict_present"`)[]
 
 Per-case sorted, deduplicated policy outcomes at the time this step row was built.
 
@@ -9141,7 +9237,7 @@ Whether any record carries a non-`ok`/non-`fallback_used` outcome that blocks ge
 
 ***
 
-### Wave1PocAttestationBundle
+### Wave1ValidationAttestationBundle
 
 Sigstore-shaped bundle persisted alongside a signed attestation.
 
@@ -9149,7 +9245,7 @@ Sigstore-shaped bundle persisted alongside a signed attestation.
 
 ##### dsseEnvelope
 
-> **dsseEnvelope**: [`Wave1PocAttestationDsseEnvelope`](#wave1pocattestationdsseenvelope)
+> **dsseEnvelope**: [`Wave1ValidationAttestationDsseEnvelope`](#wave1validationattestationdsseenvelope)
 
 The DSSE envelope this bundle witnesses. Identical bytes to the
 `evidence/attestations/...` artifact; duplication is intentional so
@@ -9161,13 +9257,13 @@ the bundle is self-contained.
 
 ##### verificationMaterial
 
-> **verificationMaterial**: [`Wave1PocAttestationVerificationMaterial`](#wave1pocattestationverificationmaterial)
+> **verificationMaterial**: [`Wave1ValidationAttestationVerificationMaterial`](#wave1validationattestationverificationmaterial)
 
 Verification material — public key OR x509 certificate chain.
 
 ***
 
-### Wave1PocAttestationCertificateChainMaterial
+### Wave1ValidationAttestationCertificateChainMaterial
 
 X.509 certificate-chain verification material. Used by the Sigstore
 keyless signing flow: the leaf certificate carries the OIDC-bound
@@ -9202,7 +9298,7 @@ up to a trust root.
 
 > **hint**: `string`
 
-Stable, non-secret signer reference (matches `Wave1PocAttestationSignature.keyid`).
+Stable, non-secret signer reference (matches `Wave1ValidationAttestationSignature.keyid`).
 
 ##### rekorLogIndex?
 
@@ -9215,7 +9311,7 @@ default; the field is opaque metadata.
 
 ***
 
-### Wave1PocAttestationDsseEnvelope
+### Wave1ValidationAttestationDsseEnvelope
 
 DSSE envelope (canonical form). When `signatures` is empty the
 envelope represents an unsigned attestation. When populated, each
@@ -9228,7 +9324,7 @@ signature is an ECDSA P-256 signature over the PAE-encoded
 
 > **payload**: `string`
 
-Base64 (RFC 4648 §4) encoded `Wave1PocAttestationStatement` JSON.
+Base64 (RFC 4648 §4) encoded `Wave1ValidationAttestationStatement` JSON.
 
 ##### payloadType
 
@@ -9236,13 +9332,13 @@ Base64 (RFC 4648 §4) encoded `Wave1PocAttestationStatement` JSON.
 
 ##### signatures
 
-> **signatures**: [`Wave1PocAttestationSignature`](#wave1pocattestationsignature)[]
+> **signatures**: [`Wave1ValidationAttestationSignature`](#wave1validationattestationsignature)[]
 
 ***
 
-### Wave1PocAttestationPredicate
+### Wave1ValidationAttestationPredicate
 
-Predicate body of the Wave 1 POC attestation. The predicate carries
+Predicate body of the Wave 1 Validation attestation. The predicate carries
 pipeline-identity facts (model deployments, prompt template, schema,
 policy, export profile) plus the manifest's own SHA-256 so the
 statement attests both the artifact subjects and the metadata
@@ -9304,7 +9400,7 @@ Hard invariant — test_generation never received an image payload.
 
 ##### manifestFilename
 
-> **manifestFilename**: `"wave1-poc-evidence-manifest.json"`
+> **manifestFilename**: `"wave1-validation-evidence-manifest.json"`
 
 Filename of the manifest artifact (relative to the run dir).
 
@@ -9390,7 +9486,7 @@ Active signing mode; mirrored from the run input for auditability.
 
 ##### visualSidecar?
 
-> `optional` **visualSidecar?**: [`Wave1PocAttestationVisualSidecarIdentity`](#wave1pocattestationvisualsidecaridentity)
+> `optional` **visualSidecar?**: [`Wave1ValidationAttestationVisualSidecarIdentity`](#wave1validationattestationvisualsidecaridentity)
 
 Visual-sidecar chain-of-custody identity (when present).
 
@@ -9400,7 +9496,7 @@ Visual-sidecar chain-of-custody identity (when present).
 
 ***
 
-### Wave1PocAttestationPublicKeyMaterial
+### Wave1ValidationAttestationPublicKeyMaterial
 
 Public-key verification material. Used by the key-bound Sigstore
 signing flow (and by air-gapped verifiers that pin a single signer
@@ -9419,7 +9515,7 @@ Signing algorithm used to produce the DSSE signatures.
 
 > **hint**: `string`
 
-Stable, non-secret signer reference (matches `Wave1PocAttestationSignature.keyid`).
+Stable, non-secret signer reference (matches `Wave1ValidationAttestationSignature.keyid`).
 
 ##### publicKeyPem
 
@@ -9429,7 +9525,7 @@ PEM-encoded SubjectPublicKeyInfo for the matching public key.
 
 ***
 
-### Wave1PocAttestationSignature
+### Wave1ValidationAttestationSignature
 
 A single signature attached to a DSSE envelope.
 
@@ -9449,7 +9545,7 @@ Base64 (RFC 4648 §4) encoded signature bytes.
 
 ***
 
-### Wave1PocAttestationStatement
+### Wave1ValidationAttestationStatement
 
 in-toto v1 statement envelope (the DSSE payload after base64 decode).
 
@@ -9461,21 +9557,21 @@ in-toto v1 statement envelope (the DSSE payload after base64 decode).
 
 ##### predicate
 
-> **predicate**: [`Wave1PocAttestationPredicate`](#wave1pocattestationpredicate)
+> **predicate**: [`Wave1ValidationAttestationPredicate`](#wave1validationattestationpredicate)
 
 ##### predicateType
 
-> **predicateType**: `"https://workspace-dev.figmapipe.dev/test-intelligence/wave1-poc-evidence/v1"`
+> **predicateType**: `"https://workspace-dev.figmapipe.dev/test-intelligence/wave1-validation-evidence/v1"`
 
 ##### subject
 
-> **subject**: [`Wave1PocAttestationSubject`](#wave1pocattestationsubject)[]
+> **subject**: [`Wave1ValidationAttestationSubject`](#wave1validationattestationsubject)[]
 
 Sorted-by-name, de-duplicated subject list.
 
 ***
 
-### Wave1PocAttestationSubject
+### Wave1ValidationAttestationSubject
 
 Subject record inside the in-toto v1 statement.
 
@@ -9499,7 +9595,7 @@ Relative artifact path inside the run directory (no leading slash).
 
 ***
 
-### Wave1PocAttestationSummary
+### Wave1ValidationAttestationSummary
 
 Audit-timeline summary surfaced on the harness result. Carries only
 non-secret identifiers and digests so callers can render signing
@@ -9543,9 +9639,9 @@ Stable signer identifier (matches `keyid`). `undefined` when unsigned.
 
 ***
 
-### Wave1PocAttestationVerificationFailure
+### Wave1ValidationAttestationVerificationFailure
 
-Failure record produced by `verifyWave1PocAttestation`. Each failure
+Failure record produced by `verifyWave1ValidationAttestation`. Each failure
 names the specific subject / signature / metadata field that failed
 so an auditor can pinpoint the mismatch without re-running the
 harness.
@@ -9572,15 +9668,15 @@ Subject / artifact / field that triggered the failure.
 
 ***
 
-### Wave1PocAttestationVerificationResult
+### Wave1ValidationAttestationVerificationResult
 
-Result of `verifyWave1PocAttestation`.
+Result of `verifyWave1ValidationAttestation`.
 
 #### Properties
 
 ##### failures
 
-> **failures**: [`Wave1PocAttestationVerificationFailure`](#wave1pocattestationverificationfailure)[]
+> **failures**: [`Wave1ValidationAttestationVerificationFailure`](#wave1validationattestationverificationfailure)[]
 
 Structured failure list — empty when `ok === true`.
 
@@ -9606,7 +9702,7 @@ True iff every present signature verified against `publicKey`.
 
 ***
 
-### Wave1PocAttestationVisualSidecarIdentity
+### Wave1ValidationAttestationVisualSidecarIdentity
 
 Visual-sidecar identity carried into the attestation predicate so an
 auditor can verify the multimodal chain of custody (Issue #1386
@@ -9637,7 +9733,7 @@ evidence manifest but pinned to the predicate version.
 
 ***
 
-### Wave1PocEvalFailure
+### Wave1ValidationEvalFailure
 
 Failure record describing a single threshold breach.
 
@@ -9665,9 +9761,9 @@ Numeric or boolean threshold that was breached.
 
 ***
 
-### Wave1PocEvalFixtureMetrics
+### Wave1ValidationEvalFixtureMetrics
 
-Per-fixture metrics computed by the Wave 1 POC evaluation gate.
+Per-fixture metrics computed by the Wave 1 Validation evaluation gate.
 
 #### Properties
 
@@ -9761,7 +9857,7 @@ failed schema validation, or the per-case score set was incomplete.
 
 ***
 
-### Wave1PocEvalFixtureReport
+### Wave1ValidationEvalFixtureReport
 
 Per-fixture evaluation outcome.
 
@@ -9769,7 +9865,7 @@ Per-fixture evaluation outcome.
 
 ##### failures
 
-> **failures**: [`Wave1PocEvalFailure`](#wave1pocevalfailure)[]
+> **failures**: [`Wave1ValidationEvalFailure`](#wave1validationevalfailure)[]
 
 ##### fixtureId
 
@@ -9777,7 +9873,7 @@ Per-fixture evaluation outcome.
 
 ##### metrics
 
-> **metrics**: [`Wave1PocEvalFixtureMetrics`](#wave1pocevalfixturemetrics)
+> **metrics**: [`Wave1ValidationEvalFixtureMetrics`](#wave1validationevalfixturemetrics)
 
 ##### pass
 
@@ -9785,7 +9881,7 @@ Per-fixture evaluation outcome.
 
 ***
 
-### Wave1PocEvalReport
+### Wave1ValidationEvalReport
 
 Aggregate evaluation report covering one or more fixtures. This artifact
 is byte-stable: fixtures and failures are sorted, hashes are not embedded,
@@ -9799,7 +9895,7 @@ and timestamps are caller-provided.
 
 ##### fixtures
 
-> **fixtures**: [`Wave1PocEvalFixtureReport`](#wave1pocevalfixturereport)[]
+> **fixtures**: [`Wave1ValidationEvalFixtureReport`](#wave1validationevalfixturereport)[]
 
 ##### generatedAt
 
@@ -9819,13 +9915,13 @@ and timestamps are caller-provided.
 
 ##### thresholds
 
-> **thresholds**: [`Wave1PocEvalThresholds`](#wave1pocevalthresholds)
+> **thresholds**: [`Wave1ValidationEvalThresholds`](#wave1validationevalthresholds)
 
 ***
 
-### Wave1PocEvalThresholds
+### Wave1ValidationEvalThresholds
 
-Numeric thresholds applied by the Wave 1 POC evaluation gate. Each
+Numeric thresholds applied by the Wave 1 Validation evaluation gate. Each
 threshold is enforced on a per-fixture basis. Fractions are in `[0, 1]`.
 
 #### Properties
@@ -9905,9 +10001,9 @@ Visual sidecar gate must not block (when sidecar is present).
 
 ***
 
-### Wave1PocEvidenceArtifact
+### Wave1ValidationEvidenceArtifact
 
-Single artifact attested by the Wave 1 POC evidence manifest.
+Single artifact attested by the Wave 1 Validation evidence manifest.
 
 #### Properties
 
@@ -9919,7 +10015,7 @@ Byte length on disk at manifest creation time.
 
 ##### category
 
-> **category**: [`Wave1PocEvidenceArtifactCategory`](#wave1pocevidenceartifactcategory-1)
+> **category**: [`Wave1ValidationEvidenceArtifactCategory`](#wave1validationevidenceartifactcategory-1)
 
 ##### filename
 
@@ -9935,9 +10031,9 @@ SHA-256 of the on-disk byte stream.
 
 ***
 
-### Wave1PocEvidenceManifest
+### Wave1ValidationEvidenceManifest
 
-Wave 1 POC evidence manifest. Frozen, deterministic, byte-identical
+Wave 1 Validation evidence manifest. Frozen, deterministic, byte-identical
 across runs of the same fixture and mock output. Lists every artifact
 the harness emits with its SHA-256 hash and byte length, plus the
 contract / template / schema / policy / model identities used during
@@ -9956,9 +10052,16 @@ evidence audit trail rather than being inferred from absence:
 
 #### Properties
 
+##### activeModelBindings?
+
+> `optional` **activeModelBindings?**: readonly [`ActiveModelBinding`](#activemodelbinding)[]
+
+Active model-binding summary attested for the run. Under banking
+profiles every active binding must carry `ictRegisterRef`.
+
 ##### artifacts
 
-> **artifacts**: [`Wave1PocEvidenceArtifact`](#wave1pocevidenceartifact)[]
+> **artifacts**: [`Wave1ValidationEvidenceArtifact`](#wave1validationevidenceartifact)[]
 
 Sorted-by-filename, de-duplicated artifact list.
 
@@ -10013,7 +10116,7 @@ received an image payload during the run.
 
 ##### manifestIntegrity?
 
-> `optional` **manifestIntegrity?**: [`Wave1PocEvidenceManifestIntegrity`](#wave1pocevidencemanifestintegrity)
+> `optional` **manifestIntegrity?**: [`Wave1ValidationEvidenceManifestIntegrity`](#wave1validationevidencemanifestintegrity)
 
 Self-attestation over the canonical manifest metadata and artifact list.
 New manifests stamp this field; it remains optional so legacy manifests can
@@ -10113,7 +10216,7 @@ Test-intelligence subsurface contract version.
 
 ##### visualSidecar?
 
-> `optional` **visualSidecar?**: [`Wave1PocEvidenceVisualSidecarSummary`](#wave1pocevidencevisualsidecarsummary)
+> `optional` **visualSidecar?**: [`Wave1ValidationEvidenceVisualSidecarSummary`](#wave1validationevidencevisualsidecarsummary)
 
 Direct visual-sidecar evidence summary when the opt-in sidecar path ran.
 
@@ -10131,7 +10234,7 @@ screenshot bytes are never embedded in the manifest.
 
 ***
 
-### Wave1PocEvidenceManifestIntegrity
+### Wave1ValidationEvidenceManifestIntegrity
 
 Self-attestation stamped into the Wave 1 evidence manifest.
 
@@ -10149,7 +10252,7 @@ SHA-256 of canonical manifest JSON with `manifestIntegrity` omitted.
 
 ***
 
-### Wave1PocEvidenceManifestIntegrityVerification
+### Wave1ValidationEvidenceManifestIntegrityVerification
 
 Structured verification result for the manifest self-attestation.
 
@@ -10173,9 +10276,9 @@ Structured verification result for the manifest self-attestation.
 
 ***
 
-### Wave1PocEvidenceVerificationResult
+### Wave1ValidationEvidenceVerificationResult
 
-Result of `verifyWave1PocEvidenceManifest` against a directory of artifacts.
+Result of `verifyWave1ValidationEvidenceManifest` against a directory of artifacts.
 Determines whether ALL attested artifacts still hash to the values stored
 in the manifest. Any mismatch fails the verification fail-closed.
 
@@ -10183,7 +10286,7 @@ in the manifest. Any mismatch fails the verification fail-closed.
 
 ##### manifestIntegrity?
 
-> `optional` **manifestIntegrity?**: [`Wave1PocEvidenceManifestIntegrityVerification`](#wave1pocevidencemanifestintegrityverification)
+> `optional` **manifestIntegrity?**: [`Wave1ValidationEvidenceManifestIntegrityVerification`](#wave1validationevidencemanifestintegrityverification)
 
 Manifest self-attestation result when the manifest carries a
 `manifestIntegrity` block, or when a current-version manifest is missing
@@ -10219,7 +10322,7 @@ Filenames present on disk but not attested by the manifest.
 
 ***
 
-### Wave1PocEvidenceVisualSidecarSummary
+### Wave1ValidationEvidenceVisualSidecarSummary
 
 Visual-sidecar summary duplicated into the Wave 1 evidence manifest.
 
@@ -10257,7 +10360,7 @@ SHA-256 hex of the persisted `visual-sidecar-result.json` artifact.
 
 ***
 
-### Wave1PocLbomDocument
+### Wave1ValidationLbomDocument
 
 Per-job LLM Bill of Materials document (CycloneDX 1.6 ML-BOM, Issue #1378).
 
@@ -10302,7 +10405,7 @@ CycloneDX-required document version. workspace-dev always emits `1`.
 
 ***
 
-### Wave1PocLbomSummary
+### Wave1ValidationLbomSummary
 
 Audit-timeline summary of the per-job LBOM emit. Carries the on-disk
 filename, byte length, the canonical SHA-256 (matches the manifest
@@ -14877,7 +14980,7 @@ Stable check-kind labels surfaced in the `EvidenceVerifyResponse.checks` array.
 > **EvidenceVerifyFailureCode** = `"manifest_unparseable"` \| `"manifest_metadata_invalid"` \| `"manifest_digest_witness_invalid"` \| `"artifact_missing"` \| `"artifact_mutated"` \| `"artifact_resized"` \| `"unexpected_artifact"` \| `"visual_sidecar_evidence_missing"` \| `"envelope_unparseable"` \| `"envelope_payload_type_mismatch"` \| `"envelope_payload_decode_failed"` \| `"statement_unparseable"` \| `"statement_type_mismatch"` \| `"statement_predicate_type_mismatch"` \| `"statement_predicate_invalid"` \| `"subject_missing_artifact"` \| `"subject_digest_mismatch"` \| `"subject_unattested_artifact"` \| `"signing_mode_mismatch"` \| `"signature_required"` \| `"signature_unsigned_envelope_carries_signatures"` \| `"signature_invalid_keyid"` \| `"signature_invalid_encoding"` \| `"signature_unverified"` \| `"bundle_missing"` \| `"bundle_envelope_mismatch"` \| `"bundle_public_key_missing"` \| `"manifest_sha256_mismatch"` \| `"bySource_hash_mismatch"`
 
 Stable failure-code surface for evidence verification. Re-uses the
-existing `Wave1PocAttestationVerificationFailureCode` literals where
+existing `Wave1ValidationAttestationVerificationFailureCode` literals where
 applicable so a single auditor can route on a unified vocabulary.
 
 ***
@@ -15517,17 +15620,17 @@ Discriminated union returned by `describeVisualScreens`.
 
 ***
 
-### Wave1PocAttestationSigningMode
+### Wave1ValidationAttestationSigningMode
 
-> **Wave1PocAttestationSigningMode** = *typeof* [`ALLOWED_WAVE1_POC_ATTESTATION_SIGNING_MODES`](#allowed_wave1_poc_attestation_signing_modes)\[`number`\]
+> **Wave1ValidationAttestationSigningMode** = *typeof* [`ALLOWED_WAVE1_VALIDATION_ATTESTATION_SIGNING_MODES`](#allowed_wave1_validation_attestation_signing_modes)\[`number`\]
 
 Discriminant of the active signing mode.
 
 ***
 
-### Wave1PocAttestationVerificationMaterial
+### Wave1ValidationAttestationVerificationMaterial
 
-> **Wave1PocAttestationVerificationMaterial** = \{ `publicKey`: [`Wave1PocAttestationPublicKeyMaterial`](#wave1pocattestationpublickeymaterial); \} \| \{ `x509CertificateChain`: [`Wave1PocAttestationCertificateChainMaterial`](#wave1pocattestationcertificatechainmaterial); \}
+> **Wave1ValidationAttestationVerificationMaterial** = \{ `publicKey`: [`Wave1ValidationAttestationPublicKeyMaterial`](#wave1validationattestationpublickeymaterial); \} \| \{ `x509CertificateChain`: [`Wave1ValidationAttestationCertificateChainMaterial`](#wave1validationattestationcertificatechainmaterial); \}
 
 Sigstore bundle verification material. Discriminated by which form
 the operator wires: `publicKey` for key-bound signing (the repo's
@@ -15536,19 +15639,19 @@ supplied integration with Fulcio + Rekor).
 
 ***
 
-### Wave1PocEvidenceArtifactCategory
+### Wave1ValidationEvidenceArtifactCategory
 
-> **Wave1PocEvidenceArtifactCategory** = `"intent"` \| `"validation"` \| `"review"` \| `"export"` \| `"manifest"` \| `"genealogy"` \| `"visual_sidecar"` \| `"finops"` \| `"attestation"` \| `"signature"` \| `"lbom"` \| `"self_verify_rubric"` \| `"intent_delta"` \| `"dedupe_report"` \| `"traceability_matrix"` \| `"multi_source_reconciliation"` \| `"source_ir"` \| `"source_provenance"` \| `"multi_source_conflicts"` \| `"production_readiness_eval"`
+> **Wave1ValidationEvidenceArtifactCategory** = `"intent"` \| `"validation"` \| `"review"` \| `"export"` \| `"manifest"` \| `"genealogy"` \| `"visual_sidecar"` \| `"finops"` \| `"attestation"` \| `"signature"` \| `"lbom"` \| `"ml_bom"` \| `"self_verify_rubric"` \| `"intent_delta"` \| `"dedupe_report"` \| `"traceability_matrix"` \| `"multi_source_reconciliation"` \| `"source_ir"` \| `"source_provenance"` \| `"multi_source_conflicts"` \| `"production_readiness_eval"`
 
 Categorisation of an artifact attested by the evidence manifest.
 
 ***
 
-### Wave1PocFixtureId
+### Wave1ValidationFixtureId
 
-> **Wave1PocFixtureId** = *typeof* [`WAVE1_POC_FIXTURE_IDS`](#wave1_poc_fixture_ids)\[`number`\]
+> **Wave1ValidationFixtureId** = *typeof* [`WAVE1_VALIDATION_FIXTURE_IDS`](#wave1_validation_fixture_ids)\[`number`\]
 
-Identifier of a Wave 1 POC fixture.
+Identifier of a Wave 1 Validation fixture.
 
 ***
 
@@ -16700,7 +16803,7 @@ Allowed policy-gate decisions (Issue #1364).
 
 ### ALLOWED\_TEST\_CASE\_POLICY\_OUTCOMES
 
-> `const` **ALLOWED\_TEST\_CASE\_POLICY\_OUTCOMES**: readonly \[`"missing_trace"`, `"missing_expected_results"`, `"pii_in_test_data"`, `"missing_negative_or_validation_for_required_field"`, `"missing_accessibility_case"`, `"missing_boundary_case"`, `"schema_invalid"`, `"duplicate_test_case"`, `"regulated_risk_review_required"`, `"ambiguity_review_required"`, `"qc_mapping_not_exportable"`, `"low_confidence_review_required"`, `"open_questions_review_required"`, `"visual_sidecar_failure"`, `"visual_sidecar_fallback_used"`, `"visual_sidecar_low_confidence"`, `"visual_sidecar_possible_pii"`, `"visual_sidecar_prompt_injection_text"`, `"semantic_suspicious_content"`, `"risk_tag_downgrade_detected"`, `"custom_context_risk_escalation"`, `"multi_source_conflict_present"`\]
+> `const` **ALLOWED\_TEST\_CASE\_POLICY\_OUTCOMES**: readonly \[`"missing_trace"`, `"missing_expected_results"`, `"pii_in_test_data"`, `"ict_register_ref_required"`, `"missing_negative_or_validation_for_required_field"`, `"missing_accessibility_case"`, `"missing_boundary_case"`, `"schema_invalid"`, `"duplicate_test_case"`, `"regulated_risk_review_required"`, `"ambiguity_review_required"`, `"qc_mapping_not_exportable"`, `"low_confidence_review_required"`, `"open_questions_review_required"`, `"visual_sidecar_failure"`, `"visual_sidecar_fallback_used"`, `"visual_sidecar_low_confidence"`, `"visual_sidecar_possible_pii"`, `"visual_sidecar_prompt_injection_text"`, `"semantic_suspicious_content"`, `"risk_tag_downgrade_detected"`, `"custom_context_risk_escalation"`, `"multi_source_conflict_present"`\]
 
 Allowed policy outcome codes attached to a single decision row.
 Visual-sidecar codes (`visual_*`) come from the multimodal sidecar
@@ -16863,11 +16966,11 @@ report when the multimodal sidecar misbehaves or is downgraded.
 
 ***
 
-### ALLOWED\_WAVE1\_POC\_ATTESTATION\_SIGNING\_MODES
+### ALLOWED\_WAVE1\_VALIDATION\_ATTESTATION\_SIGNING\_MODES
 
-> `const` **ALLOWED\_WAVE1\_POC\_ATTESTATION\_SIGNING\_MODES**: readonly \[`"unsigned"`, `"sigstore"`\]
+> `const` **ALLOWED\_WAVE1\_VALIDATION\_ATTESTATION\_SIGNING\_MODES**: readonly \[`"unsigned"`, `"sigstore"`\]
 
-Allowed signing modes for the Wave 1 POC attestation.
+Allowed signing modes for the Wave 1 Validation attestation.
 
 - `unsigned` (default) — emit DSSE envelope with empty `signatures`,
   no Sigstore bundle. Always works air-gapped without network access.
@@ -18067,33 +18170,33 @@ Schema version for the persisted visual-sidecar validation report artifact (Issu
 
 ***
 
-### WAVE1\_POC\_ATTESTATION\_ARTIFACT\_FILENAME
+### WAVE1\_VALIDATION\_ATTESTATION\_ARTIFACT\_FILENAME
 
-> `const` **WAVE1\_POC\_ATTESTATION\_ARTIFACT\_FILENAME**: `"wave1-poc-attestation.intoto.json"`
+> `const` **WAVE1\_VALIDATION\_ATTESTATION\_ARTIFACT\_FILENAME**: `"wave1-validation-attestation.intoto.json"`
 
 Filename of the persisted in-toto DSSE envelope.
 
 ***
 
-### WAVE1\_POC\_ATTESTATION\_BUNDLE\_FILENAME
+### WAVE1\_VALIDATION\_ATTESTATION\_BUNDLE\_FILENAME
 
-> `const` **WAVE1\_POC\_ATTESTATION\_BUNDLE\_FILENAME**: `"wave1-poc-attestation.bundle.json"`
+> `const` **WAVE1\_VALIDATION\_ATTESTATION\_BUNDLE\_FILENAME**: `"wave1-validation-attestation.bundle.json"`
 
 Filename of the persisted Sigstore bundle when signing is enabled.
 
 ***
 
-### WAVE1\_POC\_ATTESTATION\_BUNDLE\_MEDIA\_TYPE
+### WAVE1\_VALIDATION\_ATTESTATION\_BUNDLE\_MEDIA\_TYPE
 
-> `const` **WAVE1\_POC\_ATTESTATION\_BUNDLE\_MEDIA\_TYPE**: `"application/vnd.dev.sigstore.bundle.v0.3+json"`
+> `const` **WAVE1\_VALIDATION\_ATTESTATION\_BUNDLE\_MEDIA\_TYPE**: `"application/vnd.dev.sigstore.bundle.v0.3+json"`
 
 Sigstore bundle media type — pinned to the v0.3 envelope shape.
 
 ***
 
-### WAVE1\_POC\_ATTESTATION\_PAYLOAD\_TYPE
+### WAVE1\_VALIDATION\_ATTESTATION\_PAYLOAD\_TYPE
 
-> `const` **WAVE1\_POC\_ATTESTATION\_PAYLOAD\_TYPE**: `"application/vnd.in-toto+json"`
+> `const` **WAVE1\_VALIDATION\_ATTESTATION\_PAYLOAD\_TYPE**: `"application/vnd.in-toto+json"`
 
 DSSE `payloadType` stamped onto every in-toto attestation. The pre-
 authentication encoding (PAE) hashes this value alongside the payload
@@ -18101,89 +18204,89 @@ bytes so it is bound to the signature.
 
 ***
 
-### WAVE1\_POC\_ATTESTATION\_PREDICATE\_TYPE
+### WAVE1\_VALIDATION\_ATTESTATION\_PREDICATE\_TYPE
 
-> `const` **WAVE1\_POC\_ATTESTATION\_PREDICATE\_TYPE**: `"https://workspace-dev.figmapipe.dev/test-intelligence/wave1-poc-evidence/v1"`
+> `const` **WAVE1\_VALIDATION\_ATTESTATION\_PREDICATE\_TYPE**: `"https://workspace-dev.figmapipe.dev/test-intelligence/wave1-validation-evidence/v1"`
 
-Predicate type URI identifying the Wave 1 POC evidence shape. Bumped
+Predicate type URI identifying the Wave 1 Validation evidence shape. Bumped
 in lockstep with the schema version when the predicate fields change.
 
 ***
 
-### WAVE1\_POC\_ATTESTATION\_SCHEMA\_VERSION
+### WAVE1\_VALIDATION\_ATTESTATION\_SCHEMA\_VERSION
 
-> `const` **WAVE1\_POC\_ATTESTATION\_SCHEMA\_VERSION**: `"1.0.0"`
+> `const` **WAVE1\_VALIDATION\_ATTESTATION\_SCHEMA\_VERSION**: `"1.0.0"`
 
 Schema version for the in-toto v1 attestation envelope produced per
-job by the Wave 1 POC harness. Bumped on any breaking change to the
+job by the Wave 1 Validation harness. Bumped on any breaking change to the
 statement payload, predicate shape, or DSSE encoding.
 
 ***
 
-### WAVE1\_POC\_ATTESTATION\_STATEMENT\_TYPE
+### WAVE1\_VALIDATION\_ATTESTATION\_STATEMENT\_TYPE
 
-> `const` **WAVE1\_POC\_ATTESTATION\_STATEMENT\_TYPE**: `"https://in-toto.io/Statement/v1"`
+> `const` **WAVE1\_VALIDATION\_ATTESTATION\_STATEMENT\_TYPE**: `"https://in-toto.io/Statement/v1"`
 
 in-toto v1 statement type URI.
 
 ***
 
-### WAVE1\_POC\_ATTESTATIONS\_DIRECTORY
+### WAVE1\_VALIDATION\_ATTESTATIONS\_DIRECTORY
 
-> `const` **WAVE1\_POC\_ATTESTATIONS\_DIRECTORY**: `"evidence/attestations"`
+> `const` **WAVE1\_VALIDATION\_ATTESTATIONS\_DIRECTORY**: `"evidence/attestations"`
 
 Subdirectory under a run dir where attestation envelopes are persisted.
 
 ***
 
-### WAVE1\_POC\_EVAL\_REPORT\_ARTIFACT\_FILENAME
+### WAVE1\_VALIDATION\_EVAL\_REPORT\_ARTIFACT\_FILENAME
 
-> `const` **WAVE1\_POC\_EVAL\_REPORT\_ARTIFACT\_FILENAME**: `"wave1-poc-eval-report.json"` = `"wave1-poc-eval-report.json"`
+> `const` **WAVE1\_VALIDATION\_EVAL\_REPORT\_ARTIFACT\_FILENAME**: `"wave1-validation-eval-report.json"` = `"wave1-validation-eval-report.json"`
 
-Filename used for the Wave 1 POC evaluation report artifact.
-
-***
-
-### WAVE1\_POC\_EVAL\_REPORT\_SCHEMA\_VERSION
-
-> `const` **WAVE1\_POC\_EVAL\_REPORT\_SCHEMA\_VERSION**: `"1.0.0"`
-
-Schema version for the Wave 1 POC evaluation report envelope.
+Filename used for the Wave 1 Validation evaluation report artifact.
 
 ***
 
-### WAVE1\_POC\_EVIDENCE\_MANIFEST\_ARTIFACT\_FILENAME
+### WAVE1\_VALIDATION\_EVAL\_REPORT\_SCHEMA\_VERSION
 
-> `const` **WAVE1\_POC\_EVIDENCE\_MANIFEST\_ARTIFACT\_FILENAME**: `"wave1-poc-evidence-manifest.json"` = `"wave1-poc-evidence-manifest.json"`
+> `const` **WAVE1\_VALIDATION\_EVAL\_REPORT\_SCHEMA\_VERSION**: `"1.0.0"`
 
-Filename used for the Wave 1 POC evidence manifest artifact.
-
-***
-
-### WAVE1\_POC\_EVIDENCE\_MANIFEST\_DIGEST\_FILENAME
-
-> `const` **WAVE1\_POC\_EVIDENCE\_MANIFEST\_DIGEST\_FILENAME**: `"wave1-poc-evidence-manifest.sha256"` = `"wave1-poc-evidence-manifest.sha256"`
-
-Filename used for the Wave 1 POC evidence manifest digest witness.
+Schema version for the Wave 1 Validation evaluation report envelope.
 
 ***
 
-### WAVE1\_POC\_EVIDENCE\_MANIFEST\_SCHEMA\_VERSION
+### WAVE1\_VALIDATION\_EVIDENCE\_MANIFEST\_ARTIFACT\_FILENAME
 
-> `const` **WAVE1\_POC\_EVIDENCE\_MANIFEST\_SCHEMA\_VERSION**: `"1.0.0"`
+> `const` **WAVE1\_VALIDATION\_EVIDENCE\_MANIFEST\_ARTIFACT\_FILENAME**: `"wave1-validation-evidence-manifest.json"` = `"wave1-validation-evidence-manifest.json"`
 
-Schema version for the Wave 1 POC evidence manifest envelope.
+Filename used for the Wave 1 Validation evidence manifest artifact.
 
 ***
 
-### WAVE1\_POC\_FIXTURE\_IDS
+### WAVE1\_VALIDATION\_EVIDENCE\_MANIFEST\_DIGEST\_FILENAME
 
-> `const` **WAVE1\_POC\_FIXTURE\_IDS**: readonly \[`"poc-onboarding"`, `"poc-payment-auth"`\]
+> `const` **WAVE1\_VALIDATION\_EVIDENCE\_MANIFEST\_DIGEST\_FILENAME**: `"wave1-validation-evidence-manifest.sha256"` = `"wave1-validation-evidence-manifest.sha256"`
 
-Allowed Wave 1 POC fixture identifiers.
+Filename used for the Wave 1 Validation evidence manifest digest witness.
 
-`poc-onboarding` — synthetic onboarding-style sign-up flow.
-`poc-payment-auth` — synthetic payment + 3-D Secure authorisation flow.
+***
+
+### WAVE1\_VALIDATION\_EVIDENCE\_MANIFEST\_SCHEMA\_VERSION
+
+> `const` **WAVE1\_VALIDATION\_EVIDENCE\_MANIFEST\_SCHEMA\_VERSION**: `"1.0.0"`
+
+Schema version for the Wave 1 Validation evidence manifest envelope.
+
+***
+
+### WAVE1\_VALIDATION\_FIXTURE\_IDS
+
+> `const` **WAVE1\_VALIDATION\_FIXTURE\_IDS**: readonly \[`"validation-onboarding"`, `"validation-payment-auth"`\]
+
+Allowed Wave 1 Validation fixture identifiers.
+
+`validation-onboarding` — synthetic onboarding-style sign-up flow.
+`validation-payment-auth` — synthetic payment + 3-D Secure authorisation flow.
 
 Both fixtures are public, contain only synthetic data, and ship with a
 companion visual sidecar fixture so the Figma → Visual Sidecar →
@@ -18192,9 +18295,9 @@ end-to-end against an air-gapped mock LLM.
 
 ***
 
-### WAVE1\_POC\_SIGNATURES\_DIRECTORY
+### WAVE1\_VALIDATION\_SIGNATURES\_DIRECTORY
 
-> `const` **WAVE1\_POC\_SIGNATURES\_DIRECTORY**: `"evidence/signatures"`
+> `const` **WAVE1\_VALIDATION\_SIGNATURES\_DIRECTORY**: `"evidence/signatures"`
 
 Subdirectory under a run dir where Sigstore signature bundles are persisted.
 

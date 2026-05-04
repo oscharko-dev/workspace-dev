@@ -1,5 +1,5 @@
 /**
- * Concurrency safety test for `persistWave1PocAttestation`'s atomic
+ * Concurrency safety test for `persistWave1ValidationAttestation`'s atomic
  * rename idiom (Issue #1377 follow-up).
  *
  * The temp filename is `${path}.${pid}.${randomUUID()}.tmp`. Even with
@@ -20,36 +20,36 @@ import { join } from "node:path";
 import test from "node:test";
 
 import {
-  WAVE1_POC_ATTESTATION_ARTIFACT_FILENAME,
-  WAVE1_POC_ATTESTATIONS_DIRECTORY,
-  type Wave1PocAttestationDsseEnvelope,
+  WAVE1_VALIDATION_ATTESTATION_ARTIFACT_FILENAME,
+  WAVE1_VALIDATION_ATTESTATIONS_DIRECTORY,
+  type Wave1ValidationAttestationDsseEnvelope,
 } from "../contracts/index.js";
 import { canonicalJson } from "./content-hash.js";
 import {
-  buildUnsignedWave1PocAttestationEnvelope,
-  buildWave1PocAttestationStatement,
-  persistWave1PocAttestation,
+  buildUnsignedWave1ValidationAttestationEnvelope,
+  buildWave1ValidationAttestationStatement,
+  persistWave1ValidationAttestation,
 } from "./evidence-attestation.js";
 import {
-  buildWave1PocEvidenceManifest,
-  computeWave1PocEvidenceManifestDigest,
-  writeWave1PocEvidenceManifest,
+  buildWave1ValidationEvidenceManifest,
+  computeWave1ValidationEvidenceManifestDigest,
+  writeWave1ValidationEvidenceManifest,
 } from "./evidence-manifest.js";
 
 const ZERO = "0".repeat(64);
 const utf8 = (value: string): Uint8Array => new TextEncoder().encode(value);
 
 test("evidence-attestation [concurrency]: 16 parallel persists into the same run dir produce a complete file with no leftover .tmp", async (t) => {
-  const runDir = await mkdtemp(join(tmpdir(), "wave1-poc-concur-"));
+  const runDir = await mkdtemp(join(tmpdir(), "wave1-validation-concur-"));
   t.after(() => rm(runDir, { recursive: true, force: true }));
 
   // Manifest is the same across all writers — what differs is the
   // envelope payload (each writer uses a unique jobId variant). Note:
-  // the manifest goes through writeWave1PocEvidenceManifest once; the
+  // the manifest goes through writeWave1ValidationEvidenceManifest once; the
   // race is purely on the attestation envelope.
   const intent = utf8('{"intent":"concurrency"}\n');
-  const baseManifest = buildWave1PocEvidenceManifest({
-    fixtureId: "poc-onboarding",
+  const baseManifest = buildWave1ValidationEvidenceManifest({
+    fixtureId: "validation-onboarding",
     jobId: "concurrency-job",
     generatedAt: "2026-04-26T00:00:00.000Z",
     modelDeployments: { testGeneration: "gpt-oss-120b-mock" },
@@ -69,22 +69,22 @@ test("evidence-attestation [concurrency]: 16 parallel persists into the same run
       },
     ],
   });
-  await writeWave1PocEvidenceManifest({
+  await writeWave1ValidationEvidenceManifest({
     manifest: baseManifest,
     destinationDir: runDir,
   });
-  const manifestSha256 = computeWave1PocEvidenceManifestDigest(baseManifest);
+  const manifestSha256 = computeWave1ValidationEvidenceManifestDigest(baseManifest);
 
   const writerCount = 16;
-  const envelopes: Wave1PocAttestationDsseEnvelope[] = [];
+  const envelopes: Wave1ValidationAttestationDsseEnvelope[] = [];
   const persistPromises: Promise<unknown>[] = [];
   for (let i = 0; i < writerCount; i += 1) {
     // Each writer uses an envelope with a different `payload` byte
     // payload. They share the same on-disk filename, so they race on
     // the rename target. UUID-based temp names guarantee no collision.
-    const synthetic: Wave1PocAttestationDsseEnvelope = {
-      ...buildUnsignedWave1PocAttestationEnvelope(
-        buildWave1PocAttestationStatement({
+    const synthetic: Wave1ValidationAttestationDsseEnvelope = {
+      ...buildUnsignedWave1ValidationAttestationEnvelope(
+        buildWave1ValidationAttestationStatement({
           manifest: baseManifest,
           manifestSha256,
           signingMode: "unsigned",
@@ -94,7 +94,7 @@ test("evidence-attestation [concurrency]: 16 parallel persists into the same run
     };
     envelopes.push(synthetic);
     persistPromises.push(
-      persistWave1PocAttestation({ envelope: synthetic, runDir }),
+      persistWave1ValidationAttestation({ envelope: synthetic, runDir }),
     );
   }
   await Promise.all(persistPromises);
@@ -103,8 +103,8 @@ test("evidence-attestation [concurrency]: 16 parallel persists into the same run
   const onDisk = await readFile(
     join(
       runDir,
-      WAVE1_POC_ATTESTATIONS_DIRECTORY,
-      WAVE1_POC_ATTESTATION_ARTIFACT_FILENAME,
+      WAVE1_VALIDATION_ATTESTATIONS_DIRECTORY,
+      WAVE1_VALIDATION_ATTESTATION_ARTIFACT_FILENAME,
     ),
     "utf8",
   );
@@ -116,7 +116,7 @@ test("evidence-attestation [concurrency]: 16 parallel persists into the same run
 
   // No leftover *.tmp file should remain in the attestations dir.
   const dirEntries = await readdir(
-    join(runDir, WAVE1_POC_ATTESTATIONS_DIRECTORY),
+    join(runDir, WAVE1_VALIDATION_ATTESTATIONS_DIRECTORY),
   );
   const tmpLeftovers = dirEntries.filter((name) => name.endsWith(".tmp"));
   assert.deepEqual(

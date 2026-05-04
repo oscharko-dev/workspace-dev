@@ -1,5 +1,5 @@
 /**
- * Integration tests for the `visualCaptures` opt-in path in `runWave1Poc`
+ * Integration tests for the `visualCaptures` opt-in path in `runWave1Validation`
  * (Issue #1386, AC4). Exercises the multimodal visual sidecar end-to-end at
  * the harness level.
  *
@@ -27,12 +27,12 @@ import {
   TEST_CASE_VALIDATION_REPORT_ARTIFACT_FILENAME,
   VISUAL_SIDECAR_RESULT_ARTIFACT_FILENAME,
   VISUAL_SIDECAR_VALIDATION_REPORT_ARTIFACT_FILENAME,
-  WAVE1_POC_EVIDENCE_MANIFEST_ARTIFACT_FILENAME,
+  WAVE1_VALIDATION_EVIDENCE_MANIFEST_ARTIFACT_FILENAME,
   type FinOpsBudgetReport,
   type LlmGenerationRequest,
   type LlmGenerationResult,
   type VisualScreenDescription,
-  type Wave1PocLbomDocument,
+  type Wave1ValidationLbomDocument,
 } from "../contracts/index.js";
 import { validateLbomDocument } from "./lbom-emitter.js";
 import {
@@ -43,16 +43,16 @@ import {
 } from "./ml-bom.js";
 import {
   createMockLlmGatewayClientBundle,
-  loadWave1PocCaptureFixture,
-  runWave1Poc,
+  loadWave1ValidationCaptureFixture,
+  runWave1Validation,
   synthesizeGeneratedTestCases,
-  verifyWave1PocEvidenceFromDisk,
-  Wave1PocVisualSidecarFailureError,
+  verifyWave1ValidationEvidenceFromDisk,
+  Wave1ValidationVisualSidecarFailureError,
   type MockResponder,
 } from "./index.js";
 
 const GENERATED_AT = "2026-04-25T10:00:00.000Z";
-const FIXTURE_ID = "poc-onboarding" as const;
+const FIXTURE_ID = "validation-onboarding" as const;
 const PRIMARY_DEPLOYMENT = "llama-4-maverick-vision" as const;
 const FALLBACK_DEPLOYMENT = "phi-4-multimodal-poc" as const;
 
@@ -71,7 +71,7 @@ const VISUAL_CAPS = {
 } as const;
 
 const newRunDir = async (): Promise<string> => {
-  return mkdtemp(join(tmpdir(), "ti-poc-visual-"));
+  return mkdtemp(join(tmpdir(), "ti-validation-visual-"));
 };
 
 const cleanupRunDir = async (runDir: string): Promise<void> => {
@@ -81,7 +81,7 @@ const cleanupRunDir = async (runDir: string): Promise<void> => {
 const assertFailureManifestAttestsSidecar = async (
   runDir: string,
 ): Promise<void> => {
-  const { manifest, result } = await verifyWave1PocEvidenceFromDisk(runDir);
+  const { manifest, result } = await verifyWave1ValidationEvidenceFromDisk(runDir);
   assert.equal(result.ok, true, JSON.stringify(result));
   assert.equal(manifest.rawScreenshotsIncluded, false);
   assert.equal(manifest.imagePayloadSentToTestGeneration, false);
@@ -95,7 +95,7 @@ const assertFailureManifestAttestsSidecar = async (
   assert.ok(
     manifest.artifacts.some(
       (artifact) =>
-        artifact.filename === WAVE1_POC_EVIDENCE_MANIFEST_ARTIFACT_FILENAME,
+        artifact.filename === WAVE1_VALIDATION_EVIDENCE_MANIFEST_ARTIFACT_FILENAME,
     ) === false,
     "manifest should attest emitted artifacts, not recursively attest itself",
   );
@@ -109,7 +109,7 @@ const assertFailureManifestAttestsSidecar = async (
   assert.ok(lbomEntry, "failure manifest must attest the per-job LBOM");
   assert.equal(lbomEntry.category, "lbom");
   const lbomRaw = await readFile(join(runDir, lbomFilename), "utf8");
-  const parsedLbom = JSON.parse(lbomRaw) as Wave1PocLbomDocument;
+  const parsedLbom = JSON.parse(lbomRaw) as Wave1ValidationLbomDocument;
   const lbomValidation = validateLbomDocument(parsedLbom);
   assert.equal(
     lbomValidation.valid,
@@ -143,7 +143,7 @@ const assertFailureManifestAttestsSidecar = async (
 
 /**
  * Build a `VisualScreenDescription[]` whose screen IDs match those in the
- * poc-onboarding visual fixture. The mock sidecar must return the same
+ * validation-onboarding visual fixture. The mock sidecar must return the same
  * screen IDs as the captures so reconciliation finds no conflicts.
  */
 const buildScreenDescriptions = (
@@ -165,9 +165,10 @@ const buildScreenDescriptions = (
   }));
 
 /**
- * Screen IDs for the poc-onboarding fixture, derived from poc-onboarding.visual.json.
+ * Screen IDs for the validation-onboarding fixture, derived from
+ * validation-onboarding.visual.json.
  */
-const POC_ONBOARDING_SCREEN_IDS: ReadonlyArray<string> = [
+const VALIDATION_ONBOARDING_SCREEN_IDS: ReadonlyArray<string> = [
   "s-onboarding-account",
   "s-onboarding-verify",
 ];
@@ -191,13 +192,13 @@ const buildSuccessResult = (
 // Test 1: End-to-end happy path with visualCaptures
 // ---------------------------------------------------------------------------
 
-test("poc-harness visualCaptures: happy path — primary succeeds, artifacts land on disk", async () => {
+test("validation-harness visualCaptures: happy path — primary succeeds, artifacts land on disk", async () => {
   const runDir = await newRunDir();
   try {
-    const { captures } = await loadWave1PocCaptureFixture(FIXTURE_ID);
+    const { captures } = await loadWave1ValidationCaptureFixture(FIXTURE_ID);
 
     const visualScreens = buildScreenDescriptions(
-      POC_ONBOARDING_SCREEN_IDS,
+      VALIDATION_ONBOARDING_SCREEN_IDS,
       PRIMARY_DEPLOYMENT,
     );
 
@@ -223,7 +224,7 @@ test("poc-harness visualCaptures: happy path — primary succeeds, artifacts lan
       buildSuccessResult(
         // The harness synthesizes and passes the list to the mock as content
         // via its internal responder override; here we use a minimal valid shell
-        // that the harness replaces internally. Since runWave1Poc builds its own
+        // that the harness replaces internally. Since runWave1Validation builds its own
         // mockClient (not from the bundle), the bundle's testGeneration is only
         // used for the image-payload assertion path. Any success content works.
         {
@@ -269,7 +270,7 @@ test("poc-harness visualCaptures: happy path — primary succeeds, artifacts lan
       },
     });
 
-    const result = await runWave1Poc({
+    const result = await runWave1Validation({
       fixtureId: FIXTURE_ID,
       jobId: "job-visual-happy",
       generatedAt: GENERATED_AT,
@@ -387,16 +388,16 @@ test("poc-harness visualCaptures: happy path — primary succeeds, artifacts lan
 });
 
 // ---------------------------------------------------------------------------
-// Test 2: Visual sidecar fallback during runWave1Poc
+// Test 2: Visual sidecar fallback during runWave1Validation
 // ---------------------------------------------------------------------------
 
-test("poc-harness visualCaptures: fallback path — primary timeout, fallback succeeds", async () => {
+test("validation-harness visualCaptures: fallback path — primary timeout, fallback succeeds", async () => {
   const runDir = await newRunDir();
   try {
-    const { captures } = await loadWave1PocCaptureFixture(FIXTURE_ID);
+    const { captures } = await loadWave1ValidationCaptureFixture(FIXTURE_ID);
 
     const visualScreensFallback = buildScreenDescriptions(
-      POC_ONBOARDING_SCREEN_IDS,
+      VALIDATION_ONBOARDING_SCREEN_IDS,
       FALLBACK_DEPLOYMENT,
     );
 
@@ -447,7 +448,7 @@ test("poc-harness visualCaptures: fallback path — primary timeout, fallback su
       },
     });
 
-    const result = await runWave1Poc({
+    const result = await runWave1Validation({
       fixtureId: FIXTURE_ID,
       jobId: "job-visual-fallback",
       generatedAt: GENERATED_AT,
@@ -495,10 +496,10 @@ test("poc-harness visualCaptures: fallback path — primary timeout, fallback su
   }
 });
 
-test("poc-harness visualCaptures: FinOps image byte budget fails closed before sidecar calls", async () => {
+test("validation-harness visualCaptures: FinOps image byte budget fails closed before sidecar calls", async () => {
   const runDir = await newRunDir();
   try {
-    const { captures } = await loadWave1PocCaptureFixture(FIXTURE_ID);
+    const { captures } = await loadWave1ValidationCaptureFixture(FIXTURE_ID);
     const decodedImageBytes = captures.reduce(
       (total, capture) =>
         total + Buffer.byteLength(capture.base64Data, "base64"),
@@ -547,7 +548,7 @@ test("poc-harness visualCaptures: FinOps image byte budget fails closed before s
     });
 
     await assert.rejects(
-      runWave1Poc({
+      runWave1Validation({
         fixtureId: FIXTURE_ID,
         jobId: "job-visual-finops-image-budget",
         generatedAt: GENERATED_AT,
@@ -567,7 +568,7 @@ test("poc-harness visualCaptures: FinOps image byte budget fails closed before s
           },
         },
       }),
-      Wave1PocVisualSidecarFailureError,
+      Wave1ValidationVisualSidecarFailureError,
     );
 
     assert.equal(
@@ -609,10 +610,10 @@ test("poc-harness visualCaptures: FinOps image byte budget fails closed before s
 // Test 3: Invalid sidecar JSON — harness aborts cleanly (AC2 / AC5 invariant)
 // ---------------------------------------------------------------------------
 
-test("poc-harness visualCaptures: invalid sidecar JSON — harness throws, no test cases produced", async () => {
+test("validation-harness visualCaptures: invalid sidecar JSON — harness throws, no test cases produced", async () => {
   const runDir = await newRunDir();
   try {
-    const { captures } = await loadWave1PocCaptureFixture(FIXTURE_ID);
+    const { captures } = await loadWave1ValidationCaptureFixture(FIXTURE_ID);
 
     const invalidResponder =
       (deployment: typeof PRIMARY_DEPLOYMENT | typeof FALLBACK_DEPLOYMENT) =>
@@ -647,7 +648,7 @@ test("poc-harness visualCaptures: invalid sidecar JSON — harness throws, no te
 
     await assert.rejects(
       () =>
-        runWave1Poc({
+        runWave1Validation({
           fixtureId: FIXTURE_ID,
           jobId: "job-visual-invalid-json",
           generatedAt: GENERATED_AT,
@@ -657,7 +658,7 @@ test("poc-harness visualCaptures: invalid sidecar JSON — harness throws, no te
         }),
       (err: unknown) => {
         assert.ok(
-          err instanceof Wave1PocVisualSidecarFailureError,
+          err instanceof Wave1ValidationVisualSidecarFailureError,
           "must throw a structured visual-sidecar failure error",
         );
         assert.equal(err.visualSidecar.outcome, "failure");
@@ -704,10 +705,10 @@ test("poc-harness visualCaptures: invalid sidecar JSON — harness throws, no te
 // Test 4: Both visual sidecars fail — harness aborts cleanly (AC5 invariant)
 // ---------------------------------------------------------------------------
 
-test("poc-harness visualCaptures: both sidecars fail — harness throws, no test cases produced", async () => {
+test("validation-harness visualCaptures: both sidecars fail — harness throws, no test cases produced", async () => {
   const runDir = await newRunDir();
   try {
-    const { captures } = await loadWave1PocCaptureFixture(FIXTURE_ID);
+    const { captures } = await loadWave1ValidationCaptureFixture(FIXTURE_ID);
 
     const errorResponder =
       (errorClass: "timeout" | "transport"): MockResponder =>
@@ -748,11 +749,11 @@ test("poc-harness visualCaptures: both sidecars fail — harness throws, no test
       },
     });
 
-    // The harness throws when both sidecars are exhausted (see poc-harness.ts
+    // The harness throws when both sidecars are exhausted
     // lines ~684-689: sidecarResult.outcome === "failure" → throw Error).
     await assert.rejects(
       () =>
-        runWave1Poc({
+        runWave1Validation({
           fixtureId: FIXTURE_ID,
           jobId: "job-visual-both-fail",
           generatedAt: GENERATED_AT,
@@ -762,7 +763,7 @@ test("poc-harness visualCaptures: both sidecars fail — harness throws, no test
         }),
       (err: unknown) => {
         assert.ok(
-          err instanceof Wave1PocVisualSidecarFailureError,
+          err instanceof Wave1ValidationVisualSidecarFailureError,
           "must throw a structured visual-sidecar failure error",
         );
         assert.equal(err.visualSidecar.outcome, "failure");

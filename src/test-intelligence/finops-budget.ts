@@ -174,7 +174,7 @@ export const cloneEuBankingDefaultFinOpsBudget = (): FinOpsBudgetEnvelope =>
  * explicitly via `RunFigmaToQcTestCasesInput.finopsBudget`; the runner
  * does NOT merge — operator override wins outright.
  *
- * Design: production uses this; the `poc-harness` keeps using
+ * Design: production uses this; the validation fixture baseline keeps using
  * {@link DEFAULT_FINOPS_BUDGET_ENVELOPE} (the permissive baseline) for
  * fixture replays where the goal is to reproduce a frozen golden, not to
  * police cost.

@@ -28,17 +28,17 @@ import fc from "fast-check";
 import {
   CONTRACT_VERSION,
   TEST_INTELLIGENCE_CONTRACT_VERSION,
-  WAVE1_POC_EVIDENCE_MANIFEST_ARTIFACT_FILENAME,
-  WAVE1_POC_EVIDENCE_MANIFEST_SCHEMA_VERSION,
-  type Wave1PocEvidenceManifest,
+  WAVE1_VALIDATION_EVIDENCE_MANIFEST_ARTIFACT_FILENAME,
+  WAVE1_VALIDATION_EVIDENCE_MANIFEST_SCHEMA_VERSION,
+  type Wave1ValidationEvidenceManifest,
 } from "../contracts/index.js";
 import { canonicalJson } from "./content-hash.js";
 import {
-  buildWave1PocEvidenceManifest,
-  computeWave1PocEvidenceManifestDigest,
-  verifyWave1PocEvidenceFromDisk,
-  verifyWave1PocEvidenceManifest,
-  writeWave1PocEvidenceManifest,
+  buildWave1ValidationEvidenceManifest,
+  computeWave1ValidationEvidenceManifestDigest,
+  verifyWave1ValidationEvidenceFromDisk,
+  verifyWave1ValidationEvidenceManifest,
+  writeWave1ValidationEvidenceManifest,
   type BuildEvidenceArtifactRecord,
 } from "./evidence-manifest.js";
 
@@ -56,8 +56,8 @@ const sha256Hex = (bytes: Uint8Array): string =>
 
 const baseInput = (
   artifacts: ReadonlyArray<BuildEvidenceArtifactRecord>,
-): Parameters<typeof buildWave1PocEvidenceManifest>[0] => ({
-  fixtureId: "poc-onboarding",
+): Parameters<typeof buildWave1ValidationEvidenceManifest>[0] => ({
+  fixtureId: "validation-onboarding",
   jobId: "job-1369",
   generatedAt: GENERATED_AT,
   modelDeployments: {
@@ -97,7 +97,7 @@ test("evidence-tampering: round-trip success — build + write + verify returns 
     const content = '{"v":1}';
     await writeArtifact(dir, "alpha.json", content);
 
-    const manifest = buildWave1PocEvidenceManifest(
+    const manifest = buildWave1ValidationEvidenceManifest(
       baseInput([
         {
           filename: "alpha.json",
@@ -106,9 +106,9 @@ test("evidence-tampering: round-trip success — build + write + verify returns 
         },
       ]),
     );
-    await writeWave1PocEvidenceManifest({ manifest, destinationDir: dir });
+    await writeWave1ValidationEvidenceManifest({ manifest, destinationDir: dir });
 
-    const { result } = await verifyWave1PocEvidenceFromDisk(dir);
+    const { result } = await verifyWave1ValidationEvidenceFromDisk(dir);
 
     assert.equal(result.ok, true, "round-trip must verify ok");
     assert.deepEqual(result.missing, []);
@@ -133,7 +133,7 @@ test("evidence-tampering: multi-artifact mutation — ALL mutations reported, no
     await writeArtifact(dir, "beta.json", betaOriginal);
     await writeArtifact(dir, "gamma.json", gammaOriginal);
 
-    const manifest = buildWave1PocEvidenceManifest(
+    const manifest = buildWave1ValidationEvidenceManifest(
       baseInput([
         {
           filename: "alpha.json",
@@ -157,7 +157,7 @@ test("evidence-tampering: multi-artifact mutation — ALL mutations reported, no
     await writeArtifact(dir, "alpha.json", '{"a":99}');
     await writeArtifact(dir, "beta.json", '{"b":99}');
 
-    const result = await verifyWave1PocEvidenceManifest({
+    const result = await verifyWave1ValidationEvidenceManifest({
       manifest,
       artifactsDir: dir,
     });
@@ -196,7 +196,7 @@ test("evidence-tampering: byte-length resize (additive append) is detected", asy
     const original = '{"v":1}';
     await writeArtifact(dir, "artifact.json", original);
 
-    const manifest = buildWave1PocEvidenceManifest(
+    const manifest = buildWave1ValidationEvidenceManifest(
       baseInput([
         {
           filename: "artifact.json",
@@ -213,7 +213,7 @@ test("evidence-tampering: byte-length resize (additive append) is detected", asy
       original + ",extra content appended by attacker",
     );
 
-    const result = await verifyWave1PocEvidenceManifest({
+    const result = await verifyWave1ValidationEvidenceManifest({
       manifest,
       artifactsDir: dir,
     });
@@ -236,7 +236,7 @@ test("evidence-tampering: byte-length resize (truncate) is detected", async () =
       '{"payload":"large content that will be truncated by an attacker"}';
     await writeArtifact(dir, "artifact.json", original);
 
-    const manifest = buildWave1PocEvidenceManifest(
+    const manifest = buildWave1ValidationEvidenceManifest(
       baseInput([
         {
           filename: "artifact.json",
@@ -249,7 +249,7 @@ test("evidence-tampering: byte-length resize (truncate) is detected", async () =
     // Truncate to fewer bytes.
     await writeArtifact(dir, "artifact.json", '{"x":1}');
 
-    const result = await verifyWave1PocEvidenceManifest({
+    const result = await verifyWave1ValidationEvidenceManifest({
       manifest,
       artifactsDir: dir,
     });
@@ -278,7 +278,7 @@ test("evidence-tampering: manifest modelDeployments mutation is detected on re-v
     const content = '{"v":1}';
     await writeArtifact(dir, "alpha.json", content);
 
-    const manifest = buildWave1PocEvidenceManifest(
+    const manifest = buildWave1ValidationEvidenceManifest(
       baseInput([
         {
           filename: "alpha.json",
@@ -287,7 +287,7 @@ test("evidence-tampering: manifest modelDeployments mutation is detected on re-v
         },
       ]),
     );
-    const manifestPath = await writeWave1PocEvidenceManifest({
+    const manifestPath = await writeWave1ValidationEvidenceManifest({
       manifest,
       destinationDir: dir,
     });
@@ -300,9 +300,9 @@ test("evidence-tampering: manifest modelDeployments mutation is detected on re-v
 
     const tamperedManifest = JSON.parse(
       await readFile(manifestPath, "utf8"),
-    ) as Wave1PocEvidenceManifest;
+    ) as Wave1ValidationEvidenceManifest;
 
-    const result = await verifyWave1PocEvidenceManifest({
+    const result = await verifyWave1ValidationEvidenceManifest({
       manifest: tamperedManifest,
       artifactsDir: dir,
     });
@@ -313,7 +313,7 @@ test("evidence-tampering: manifest modelDeployments mutation is detected on re-v
       "manifest metadata mutation must fail verification",
     );
     assert.ok(
-      result.mutated.includes(WAVE1_POC_EVIDENCE_MANIFEST_ARTIFACT_FILENAME),
+      result.mutated.includes(WAVE1_VALIDATION_EVIDENCE_MANIFEST_ARTIFACT_FILENAME),
       "tampered manifest metadata must be reported as a manifest mutation",
     );
     assert.equal(
@@ -339,7 +339,7 @@ test("evidence-tampering: valid-looking manifest metadata rewrite is detected by
     const content = '{"v":1}';
     await writeArtifact(dir, "alpha.json", content);
 
-    const manifest = buildWave1PocEvidenceManifest(
+    const manifest = buildWave1ValidationEvidenceManifest(
       baseInput([
         {
           filename: "alpha.json",
@@ -349,8 +349,8 @@ test("evidence-tampering: valid-looking manifest metadata rewrite is detected by
       ]),
     );
     const expectedManifestSha256 =
-      computeWave1PocEvidenceManifestDigest(manifest);
-    const manifestPath = await writeWave1PocEvidenceManifest({
+      computeWave1ValidationEvidenceManifestDigest(manifest);
+    const manifestPath = await writeWave1ValidationEvidenceManifest({
       manifest,
       destinationDir: dir,
     });
@@ -361,8 +361,8 @@ test("evidence-tampering: valid-looking manifest metadata rewrite is detected by
     parsed["policyProfileId"] = "attacker-profile";
     await writeFile(manifestPath, JSON.stringify(parsed), "utf8");
 
-    const defaultVerification = await verifyWave1PocEvidenceFromDisk(dir);
-    const { result } = await verifyWave1PocEvidenceFromDisk(dir, {
+    const defaultVerification = await verifyWave1ValidationEvidenceFromDisk(dir);
+    const { result } = await verifyWave1ValidationEvidenceFromDisk(dir, {
       expectedManifestSha256,
     });
 
@@ -373,7 +373,7 @@ test("evidence-tampering: valid-looking manifest metadata rewrite is detected by
     );
     assert.ok(
       defaultVerification.result.mutated.includes(
-        WAVE1_POC_EVIDENCE_MANIFEST_ARTIFACT_FILENAME,
+        WAVE1_VALIDATION_EVIDENCE_MANIFEST_ARTIFACT_FILENAME,
       ),
       "default digest mismatch must be reported as a manifest mutation",
     );
@@ -388,7 +388,7 @@ test("evidence-tampering: valid-looking manifest metadata rewrite is detected by
       "valid-looking manifest metadata rewrite must fail trusted-digest verification",
     );
     assert.ok(
-      result.mutated.includes(WAVE1_POC_EVIDENCE_MANIFEST_ARTIFACT_FILENAME),
+      result.mutated.includes(WAVE1_VALIDATION_EVIDENCE_MANIFEST_ARTIFACT_FILENAME),
       "trusted digest mismatch must be reported as a manifest mutation",
     );
     assert.equal(
@@ -408,7 +408,7 @@ test("evidence-tampering: rawScreenshotsIncluded mutation from false to true is 
     const content = '{"v":1}';
     await writeArtifact(dir, "alpha.json", content);
 
-    const manifest = buildWave1PocEvidenceManifest(
+    const manifest = buildWave1ValidationEvidenceManifest(
       baseInput([
         {
           filename: "alpha.json",
@@ -417,7 +417,7 @@ test("evidence-tampering: rawScreenshotsIncluded mutation from false to true is 
         },
       ]),
     );
-    const manifestPath = await writeWave1PocEvidenceManifest({
+    const manifestPath = await writeWave1ValidationEvidenceManifest({
       manifest,
       destinationDir: dir,
     });
@@ -435,9 +435,9 @@ test("evidence-tampering: rawScreenshotsIncluded mutation from false to true is 
 
     const tamperedManifest = JSON.parse(
       await readFile(manifestPath, "utf8"),
-    ) as Wave1PocEvidenceManifest;
+    ) as Wave1ValidationEvidenceManifest;
 
-    const result = await verifyWave1PocEvidenceManifest({
+    const result = await verifyWave1ValidationEvidenceManifest({
       manifest: tamperedManifest,
       artifactsDir: dir,
     });
@@ -448,7 +448,7 @@ test("evidence-tampering: rawScreenshotsIncluded mutation from false to true is 
       "rawScreenshotsIncluded flip must fail verification",
     );
     assert.ok(
-      result.mutated.includes(WAVE1_POC_EVIDENCE_MANIFEST_ARTIFACT_FILENAME),
+      result.mutated.includes(WAVE1_VALIDATION_EVIDENCE_MANIFEST_ARTIFACT_FILENAME),
       "tampered manifest invariant must be reported as a manifest mutation",
     );
     assert.equal(
@@ -473,7 +473,7 @@ test("evidence-tampering: rawScreenshotsIncluded mutation from false to true is 
 test("evidence-tampering: filename with null byte is refused", () => {
   assert.throws(
     () =>
-      buildWave1PocEvidenceManifest(
+      buildWave1ValidationEvidenceManifest(
         baseInput([
           {
             filename: "valid\x00inject.json",
@@ -501,7 +501,7 @@ test("evidence-tampering: every C0 control character (0x00–0x1F) + DEL (0x7F) 
     const ch = String.fromCharCode(code);
     assert.throws(
       () =>
-        buildWave1PocEvidenceManifest(
+        buildWave1ValidationEvidenceManifest(
           baseInput([
             {
               filename: `valid${ch}inject.json`,
@@ -524,7 +524,7 @@ test("evidence-tampering: whitespace control chars (tab, LF, CR, VT, FF) in file
   for (const ch of ["\t", "\n", "\r", "\v", "\f"]) {
     assert.throws(
       () =>
-        buildWave1PocEvidenceManifest(
+        buildWave1ValidationEvidenceManifest(
           baseInput([
             {
               filename: `name${ch}.json`,
@@ -546,7 +546,7 @@ test("evidence-tampering: whitespace control chars (tab, LF, CR, VT, FF) in file
 test("evidence-tampering: filename with a lone high surrogate is refused", () => {
   assert.throws(
     () =>
-      buildWave1PocEvidenceManifest(
+      buildWave1ValidationEvidenceManifest(
         baseInput([
           {
             filename: `valid${String.fromCharCode(0xd800)}inject.json`,
@@ -563,7 +563,7 @@ test("evidence-tampering: filename with a lone high surrogate is refused", () =>
 test("evidence-tampering: filename with a lone low surrogate is refused", () => {
   assert.throws(
     () =>
-      buildWave1PocEvidenceManifest(
+      buildWave1ValidationEvidenceManifest(
         baseInput([
           {
             filename: `valid${String.fromCharCode(0xdc00)}inject.json`,
@@ -580,7 +580,7 @@ test("evidence-tampering: filename with a lone low surrogate is refused", () => 
 test("evidence-tampering: filename ending with an unpaired high surrogate is refused", () => {
   assert.throws(
     () =>
-      buildWave1PocEvidenceManifest(
+      buildWave1ValidationEvidenceManifest(
         baseInput([
           {
             filename: `tail${String.fromCharCode(0xd800)}`,
@@ -599,7 +599,7 @@ test("evidence-tampering: filename with a high surrogate followed by a non-low-s
   // surrogate) is invalid.
   assert.throws(
     () =>
-      buildWave1PocEvidenceManifest(
+      buildWave1ValidationEvidenceManifest(
         baseInput([
           {
             filename: `mid${String.fromCharCode(0xd800)}A.json`,
@@ -617,7 +617,7 @@ test("evidence-tampering: filename with a high surrogate followed by a non-low-s
 // such as an emoji) is *not* lone and must be accepted, so the validator
 // does not over-reject legitimate Unicode filenames.
 test("evidence-tampering: filename with a valid astral character (paired surrogates) is accepted", () => {
-  const manifest = buildWave1PocEvidenceManifest(
+  const manifest = buildWave1ValidationEvidenceManifest(
     baseInput([
       // U+1F512 LOCK — encoded as the surrogate pair D83D DD12. Length 2 in
       // UTF-16 code units; valid Unicode.
@@ -652,7 +652,7 @@ test("evidence-tampering: property — any unsafe code unit in any position is r
         const filename =
           base.slice(0, pos) + String.fromCharCode(code) + base.slice(pos);
         try {
-          buildWave1PocEvidenceManifest(
+          buildWave1ValidationEvidenceManifest(
             baseInput([{ filename, bytes: utf8("x"), category: "validation" }]),
           );
         } catch (err) {
@@ -674,7 +674,7 @@ test("evidence-tampering: verifier rejects manifests whose artifact entries carr
   await withDir(async (dir) => {
     const content = '{"v":1}';
     await writeArtifact(dir, "alpha.json", content);
-    const validManifest = buildWave1PocEvidenceManifest(
+    const validManifest = buildWave1ValidationEvidenceManifest(
       baseInput([
         {
           filename: "alpha.json",
@@ -695,9 +695,9 @@ test("evidence-tampering: verifier rejects manifests whose artifact entries carr
           filename: "alpha\x00.json",
         },
       ],
-    } as unknown as Wave1PocEvidenceManifest;
+    } as unknown as Wave1ValidationEvidenceManifest;
 
-    const result = await verifyWave1PocEvidenceManifest({
+    const result = await verifyWave1ValidationEvidenceManifest({
       manifest: tampered,
       artifactsDir: dir,
     });
@@ -708,7 +708,7 @@ test("evidence-tampering: verifier rejects manifests whose artifact entries carr
       "manifest carrying a control-char filename must fail verification",
     );
     assert.ok(
-      result.mutated.includes(WAVE1_POC_EVIDENCE_MANIFEST_ARTIFACT_FILENAME),
+      result.mutated.includes(WAVE1_VALIDATION_EVIDENCE_MANIFEST_ARTIFACT_FILENAME),
       "tampered filename must be reported as a manifest mutation",
     );
   });
@@ -718,7 +718,7 @@ test("evidence-tampering: verifier rejects manifests whose artifact entries carr
   await withDir(async (dir) => {
     const content = '{"v":1}';
     await writeArtifact(dir, "alpha.json", content);
-    const validManifest = buildWave1PocEvidenceManifest(
+    const validManifest = buildWave1ValidationEvidenceManifest(
       baseInput([
         {
           filename: "alpha.json",
@@ -736,9 +736,9 @@ test("evidence-tampering: verifier rejects manifests whose artifact entries carr
           filename: `alpha${String.fromCharCode(0xd800)}.json`,
         },
       ],
-    } as unknown as Wave1PocEvidenceManifest;
+    } as unknown as Wave1ValidationEvidenceManifest;
 
-    const result = await verifyWave1PocEvidenceManifest({
+    const result = await verifyWave1ValidationEvidenceManifest({
       manifest: tampered,
       artifactsDir: dir,
     });
@@ -749,7 +749,7 @@ test("evidence-tampering: verifier rejects manifests whose artifact entries carr
       "manifest carrying a lone surrogate filename must fail verification",
     );
     assert.ok(
-      result.mutated.includes(WAVE1_POC_EVIDENCE_MANIFEST_ARTIFACT_FILENAME),
+      result.mutated.includes(WAVE1_VALIDATION_EVIDENCE_MANIFEST_ARTIFACT_FILENAME),
       "lone-surrogate filename must be reported as a manifest mutation",
     );
   });
@@ -758,7 +758,7 @@ test("evidence-tampering: verifier rejects manifests whose artifact entries carr
 test("evidence-tampering: filename with directory traversal (../) is refused", () => {
   assert.throws(
     () =>
-      buildWave1PocEvidenceManifest(
+      buildWave1ValidationEvidenceManifest(
         baseInput([
           {
             filename: "../etc/passwd",
@@ -779,7 +779,7 @@ test("evidence-tampering: absolute filename is refused", () => {
   // remain refused.
   assert.throws(
     () =>
-      buildWave1PocEvidenceManifest(
+      buildWave1ValidationEvidenceManifest(
         baseInput([
           {
             filename: "/etc/passwd",
@@ -797,7 +797,7 @@ test("evidence-tampering: filename longer than 255 bytes is refused", () => {
   const longName = "a".repeat(256) + ".json";
   assert.throws(
     () =>
-      buildWave1PocEvidenceManifest(
+      buildWave1ValidationEvidenceManifest(
         baseInput([
           {
             filename: longName,
@@ -818,7 +818,7 @@ test("evidence-tampering: filename longer than 255 bytes is refused", () => {
 test("evidence-tampering: identical bytes in two artifacts produce identical sha256", () => {
   const sharedContent = utf8('{"canonical":true,"value":42}');
 
-  const manifest = buildWave1PocEvidenceManifest(
+  const manifest = buildWave1ValidationEvidenceManifest(
     baseInput([
       { filename: "copy-a.json", bytes: sharedContent, category: "validation" },
       { filename: "copy-b.json", bytes: sharedContent, category: "review" },
@@ -839,7 +839,7 @@ test("evidence-tampering: identical bytes in two artifacts produce identical sha
 });
 
 test("evidence-tampering: different bytes produce different sha256", () => {
-  const manifest = buildWave1PocEvidenceManifest(
+  const manifest = buildWave1ValidationEvidenceManifest(
     baseInput([
       { filename: "x.json", bytes: utf8('{"v":1}'), category: "validation" },
       { filename: "y.json", bytes: utf8('{"v":2}'), category: "review" },
@@ -865,7 +865,7 @@ test("evidence-tampering: rejectUnexpected catches extra file dropped in run dir
     const content = '{"v":1}';
     await writeArtifact(dir, "alpha.json", content);
 
-    const manifest = buildWave1PocEvidenceManifest(
+    const manifest = buildWave1ValidationEvidenceManifest(
       baseInput([
         {
           filename: "alpha.json",
@@ -874,12 +874,12 @@ test("evidence-tampering: rejectUnexpected catches extra file dropped in run dir
         },
       ]),
     );
-    await writeWave1PocEvidenceManifest({ manifest, destinationDir: dir });
+    await writeWave1ValidationEvidenceManifest({ manifest, destinationDir: dir });
 
     // Attacker drops a stray file.
     await writeArtifact(dir, "injected-payload.json", '{"evil":true}');
 
-    const { result } = await verifyWave1PocEvidenceFromDisk(dir, {
+    const { result } = await verifyWave1ValidationEvidenceFromDisk(dir, {
       rejectUnexpected: true,
     });
 
@@ -901,7 +901,7 @@ test("evidence-tampering: rejectUnexpected=false ignores extra files (default be
     await writeArtifact(dir, "alpha.json", content);
     await writeArtifact(dir, "sibling-log.txt", "debug log");
 
-    const manifest = buildWave1PocEvidenceManifest(
+    const manifest = buildWave1ValidationEvidenceManifest(
       baseInput([
         {
           filename: "alpha.json",
@@ -910,9 +910,9 @@ test("evidence-tampering: rejectUnexpected=false ignores extra files (default be
         },
       ]),
     );
-    await writeWave1PocEvidenceManifest({ manifest, destinationDir: dir });
+    await writeWave1ValidationEvidenceManifest({ manifest, destinationDir: dir });
 
-    const { result } = await verifyWave1PocEvidenceFromDisk(dir);
+    const { result } = await verifyWave1ValidationEvidenceFromDisk(dir);
 
     assert.equal(
       result.ok,
@@ -934,7 +934,7 @@ test("evidence-tampering: missing artifact (deleted post-write) is detected", as
     await writeArtifact(dir, "alpha.json", aContent);
     await writeArtifact(dir, "beta.json", bContent);
 
-    const manifest = buildWave1PocEvidenceManifest(
+    const manifest = buildWave1ValidationEvidenceManifest(
       baseInput([
         {
           filename: "alpha.json",
@@ -948,7 +948,7 @@ test("evidence-tampering: missing artifact (deleted post-write) is detected", as
     // Delete beta after manifest is built.
     await rm(join(dir, "beta.json"));
 
-    const result = await verifyWave1PocEvidenceManifest({
+    const result = await verifyWave1ValidationEvidenceManifest({
       manifest,
       artifactsDir: dir,
     });

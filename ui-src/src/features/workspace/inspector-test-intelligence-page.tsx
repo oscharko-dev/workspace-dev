@@ -812,7 +812,7 @@ function JobPicker({ onSelect }: JobPickerProps): JSX.Element {
           onChange={(event) => {
             setManualJobId(event.target.value);
           }}
-          placeholder="job id (e.g. poc-onboarding)"
+          placeholder="job id (e.g. validation-onboarding)"
           className="flex-1 rounded border border-white/10 bg-[#0a0a0a] px-2 py-1 font-mono text-[11px] text-white/85 focus:outline-none focus:ring-1 focus:ring-[#4eba87]/50"
         />
         <button

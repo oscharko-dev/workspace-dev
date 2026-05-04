@@ -1,10 +1,10 @@
 /**
- * Wave 1 POC evaluation gate (Issue #1366).
+ * Wave 1 Validation evaluation gate (Issue #1366).
  *
  * Computes per-fixture metrics over the artifact bundle produced by
- * `runWave1Poc` and decides pass/fail against a threshold profile.
+ * `runWave1Validation` and decides pass/fail against a threshold profile.
  *
- * Default thresholds are intentionally conservative for the Wave 1 POC:
+ * Default thresholds are intentionally conservative for the Wave 1 Validation:
  *
  *   - Trace coverage (fields, actions, validations) ≥ 1.0
  *   - QC mapping exportable fraction ≥ 1.0
@@ -25,18 +25,18 @@ import { join } from "node:path";
 import {
   CONTRACT_VERSION,
   TEST_INTELLIGENCE_CONTRACT_VERSION,
-  WAVE1_POC_EVAL_REPORT_ARTIFACT_FILENAME,
-  WAVE1_POC_EVAL_REPORT_SCHEMA_VERSION,
+  WAVE1_VALIDATION_EVAL_REPORT_ARTIFACT_FILENAME,
+  WAVE1_VALIDATION_EVAL_REPORT_SCHEMA_VERSION,
   type BusinessTestIntentIr,
   type GeneratedTestCase,
   type GeneratedTestCaseList,
   type ReviewGateSnapshot,
-  type Wave1PocEvalFailure,
-  type Wave1PocEvalFixtureMetrics,
-  type Wave1PocEvalFixtureReport,
-  type Wave1PocEvalReport,
-  type Wave1PocEvalThresholds,
-  type Wave1PocFixtureId,
+  type Wave1ValidationEvalFailure,
+  type Wave1ValidationEvalFixtureMetrics,
+  type Wave1ValidationEvalFixtureReport,
+  type Wave1ValidationEvalReport,
+  type Wave1ValidationEvalThresholds,
+  type Wave1ValidationFixtureId,
 } from "../contracts/index.js";
 import type { ExportPipelineArtifacts } from "./export-pipeline.js";
 import type { ValidationPipelineArtifacts } from "./validation-pipeline.js";
@@ -44,15 +44,15 @@ import { canonicalJson } from "./content-hash.js";
 import { detectDuplicateTestCases } from "./test-case-duplicate.js";
 
 /**
- * Default thresholds applied by the Wave 1 POC evaluation gate.
+ * Default thresholds applied by the Wave 1 Validation evaluation gate.
  *
  * The `Issue #1379` fields (`minJobRubricScore`, `requireRubricPass`) are
  * intentionally OMITTED from the default so the persisted eval report
  * remains byte-stable for fixtures that do not opt into the rubric pass.
  * Operators that want to enforce a rubric threshold pass an explicit
- * thresholds object to `evaluateWave1Poc`.
+ * thresholds object to `evaluateWave1Validation`.
  */
-export const WAVE1_POC_DEFAULT_EVAL_THRESHOLDS: Wave1PocEvalThresholds =
+export const WAVE1_VALIDATION_DEFAULT_EVAL_THRESHOLDS: Wave1ValidationEvalThresholds =
   Object.freeze({
     minTraceCoverageFields: 1,
     minTraceCoverageActions: 1,
@@ -65,8 +65,8 @@ export const WAVE1_POC_DEFAULT_EVAL_THRESHOLDS: Wave1PocEvalThresholds =
     requireVisualSidecarPass: true,
   });
 
-export interface EvaluateWave1PocFixtureInput {
-  fixtureId: Wave1PocFixtureId;
+export interface EvaluateWave1ValidationFixtureInput {
+  fixtureId: Wave1ValidationFixtureId;
   intent: BusinessTestIntentIr;
   generatedList: GeneratedTestCaseList;
   validation: ValidationPipelineArtifacts;
@@ -107,8 +107,8 @@ const filterApproved = (
 };
 
 const computeFixtureMetrics = (
-  input: EvaluateWave1PocFixtureInput,
-): Wave1PocEvalFixtureMetrics => {
+  input: EvaluateWave1ValidationFixtureInput,
+): Wave1ValidationEvalFixtureMetrics => {
   const approvedIds = approvedCaseIds(input.reviewSnapshot);
   const approvedCases = filterApproved(input.generatedList, approvedIds);
 
@@ -180,7 +180,7 @@ const computeFixtureMetrics = (
   const rubricRefused =
     rubricReport !== undefined ? rubricReport.refusal !== undefined : undefined;
 
-  const metrics: Wave1PocEvalFixtureMetrics = {
+  const metrics: Wave1ValidationEvalFixtureMetrics = {
     fixtureId: input.fixtureId,
     totalGeneratedCases: input.generatedList.testCases.length,
     approvedCases: approvedCases.length,
@@ -206,10 +206,10 @@ const computeFixtureMetrics = (
 };
 
 const evaluateThresholds = (
-  metrics: Wave1PocEvalFixtureMetrics,
-  thresholds: Wave1PocEvalThresholds,
-): Wave1PocEvalFailure[] => {
-  const failures: Wave1PocEvalFailure[] = [];
+  metrics: Wave1ValidationEvalFixtureMetrics,
+  thresholds: Wave1ValidationEvalThresholds,
+): Wave1ValidationEvalFailure[] => {
+  const failures: Wave1ValidationEvalFailure[] = [];
 
   const fieldFraction = computeFraction(
     metrics.coveredFields,
@@ -353,10 +353,10 @@ const evaluateThresholds = (
 };
 
 /** Evaluate a single fixture against the thresholds. */
-export const evaluateWave1PocFixture = (
-  input: EvaluateWave1PocFixtureInput,
-  thresholds: Wave1PocEvalThresholds = WAVE1_POC_DEFAULT_EVAL_THRESHOLDS,
-): Wave1PocEvalFixtureReport => {
+export const evaluateWave1ValidationFixture = (
+  input: EvaluateWave1ValidationFixtureInput,
+  thresholds: Wave1ValidationEvalThresholds = WAVE1_VALIDATION_DEFAULT_EVAL_THRESHOLDS,
+): Wave1ValidationEvalFixtureReport => {
   const metrics = computeFixtureMetrics(input);
   const failures = evaluateThresholds(metrics, thresholds);
   return {
@@ -367,10 +367,10 @@ export const evaluateWave1PocFixture = (
   };
 };
 
-export interface EvaluateWave1PocInput {
+export interface EvaluateWave1ValidationInput {
   generatedAt: string;
-  thresholds?: Wave1PocEvalThresholds;
-  fixtures: ReadonlyArray<EvaluateWave1PocFixtureInput>;
+  thresholds?: Wave1ValidationEvalThresholds;
+  fixtures: ReadonlyArray<EvaluateWave1ValidationFixtureInput>;
 }
 
 /**
@@ -378,18 +378,18 @@ export interface EvaluateWave1PocInput {
  * report is byte-stable: fixtures are sorted by `fixtureId`, failures
  * are sorted by rule name, and `generatedAt` is caller-provided.
  */
-export const evaluateWave1Poc = (
-  input: EvaluateWave1PocInput,
-): Wave1PocEvalReport => {
-  const thresholds = input.thresholds ?? WAVE1_POC_DEFAULT_EVAL_THRESHOLDS;
+export const evaluateWave1Validation = (
+  input: EvaluateWave1ValidationInput,
+): Wave1ValidationEvalReport => {
+  const thresholds = input.thresholds ?? WAVE1_VALIDATION_DEFAULT_EVAL_THRESHOLDS;
   const fixtures = input.fixtures
-    .map((f) => evaluateWave1PocFixture(f, thresholds))
+    .map((f) => evaluateWave1ValidationFixture(f, thresholds))
     .sort((a, b) =>
       a.fixtureId < b.fixtureId ? -1 : a.fixtureId > b.fixtureId ? 1 : 0,
     );
   const pass = fixtures.every((f) => f.pass);
   return {
-    schemaVersion: WAVE1_POC_EVAL_REPORT_SCHEMA_VERSION,
+    schemaVersion: WAVE1_VALIDATION_EVAL_REPORT_SCHEMA_VERSION,
     contractVersion: CONTRACT_VERSION,
     testIntelligenceContractVersion: TEST_INTELLIGENCE_CONTRACT_VERSION,
     generatedAt: input.generatedAt,
@@ -399,19 +399,19 @@ export const evaluateWave1Poc = (
   };
 };
 
-export interface WriteWave1PocEvalReportInput {
-  report: Wave1PocEvalReport;
+export interface WriteWave1ValidationEvalReportInput {
+  report: Wave1ValidationEvalReport;
   destinationDir: string;
 }
 
-/** Persist the eval report under `wave1-poc-eval-report.json` atomically. */
-export const writeWave1PocEvalReport = async (
-  input: WriteWave1PocEvalReportInput,
+/** Persist the eval report under `wave1-validation-eval-report.json` atomically. */
+export const writeWave1ValidationEvalReport = async (
+  input: WriteWave1ValidationEvalReportInput,
 ): Promise<string> => {
   await mkdir(input.destinationDir, { recursive: true });
   const path = join(
     input.destinationDir,
-    WAVE1_POC_EVAL_REPORT_ARTIFACT_FILENAME,
+    WAVE1_VALIDATION_EVAL_REPORT_ARTIFACT_FILENAME,
   );
   const tmp = `${path}.${process.pid}.tmp`;
   await writeFile(tmp, canonicalJson(input.report), "utf8");

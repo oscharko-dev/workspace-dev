@@ -24,8 +24,8 @@ import {
 import { sanitizeErrorMessage } from "../error-sanitization.js";
 import { redactHighRiskSecrets } from "../secret-redaction.js";
 import {
-  buildWave1PocEvidenceManifest,
-  writeWave1PocEvidenceManifest,
+  buildWave1ValidationEvidenceManifest,
+  writeWave1ValidationEvidenceManifest,
   type BuildEvidenceArtifactRecord,
 } from "./evidence-manifest.js";
 import {
@@ -136,8 +136,8 @@ const utf8Bytes = (s: string): Uint8Array => new TextEncoder().encode(s);
 
 const baseManifestInput = (
   artifacts: ReadonlyArray<BuildEvidenceArtifactRecord>,
-): Parameters<typeof buildWave1PocEvidenceManifest>[0] => ({
-  fixtureId: "poc-onboarding",
+): Parameters<typeof buildWave1ValidationEvidenceManifest>[0] => ({
+  fixtureId: "validation-onboarding",
   jobId: "job-secret-test",
   generatedAt: GENERATED_AT,
   modelDeployments: {
@@ -388,12 +388,12 @@ test("sanitizeFolderResolutionEvidence via redactHighRiskSecrets strips x-figma-
 // -----------------------------------------------------------------------
 
 test("evidence manifest: modelDeployments field only contains allowed deployment strings, not free-form tokens", () => {
-  // The Wave1PocEvidenceManifest.modelDeployments type is a closed union
+  // The Wave1ValidationEvidenceManifest.modelDeployments type is a closed union
   // (testGeneration: string, visualPrimary?: known | "none"). Building a
   // manifest and serialising it proves that the token-shaped metadata
   // provided by the operator surfaces only in the known fields, not
   // leaking through an open key.
-  const manifest = buildWave1PocEvidenceManifest(
+  const manifest = buildWave1ValidationEvidenceManifest(
     baseManifestInput([
       { filename: "a.json", bytes: utf8Bytes("{}"), category: "validation" },
     ]),
@@ -431,19 +431,19 @@ test("evidence manifest: modelDeployments field only contains allowed deployment
 
 test("evidence manifest: write + read does not introduce unexpected token-shaped fields", async () => {
   const dir = await mkdtemp(join(tmpdir(), "secret-leakage-"));
-  const manifest = buildWave1PocEvidenceManifest(
+  const manifest = buildWave1ValidationEvidenceManifest(
     baseManifestInput([
       { filename: "b.json", bytes: utf8Bytes("{}"), category: "export" },
     ]),
   );
 
-  await writeWave1PocEvidenceManifest({ manifest, destinationDir: dir });
+  await writeWave1ValidationEvidenceManifest({ manifest, destinationDir: dir });
 
   // The persisted JSON must not contain any "Authorization" or "Bearer"
   // substrings that could indicate an accidentally-persisted credential.
   const { readFile } = await import("node:fs/promises");
   const written = await readFile(
-    join(dir, "wave1-poc-evidence-manifest.json"),
+    join(dir, "wave1-validation-evidence-manifest.json"),
     "utf8",
   );
   assert.equal(

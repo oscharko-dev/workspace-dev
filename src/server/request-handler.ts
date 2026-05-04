@@ -3537,7 +3537,7 @@ export function createWorkspaceRequestHandler({
       }
 
       // Issue #1380: GET /workspace/jobs/:jobId/evidence/verify — read-only
-      // governance audit endpoint that wraps the local Wave 1 POC evidence
+      // governance audit endpoint that wraps the local Wave 1 Validation evidence
       // verifier (#1366) and (when present) the in-toto attestation
       // verifier (#1377). Bearer-protected per the existing governance
       // convention; per-IP rate limited; feature-gated identically to

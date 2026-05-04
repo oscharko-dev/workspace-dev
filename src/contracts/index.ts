@@ -5922,48 +5922,48 @@ export interface ExportReportArtifact {
 }
 
 /* ------------------------------------------------------------------ */
-/*  Wave 1 POC evidence manifest + evaluation report (Issue #1366)     */
+/*  Wave 1 Validation evidence manifest + evaluation report (Issue #1366)     */
 /* ------------------------------------------------------------------ */
 
-/** Schema version for the Wave 1 POC evidence manifest envelope. */
-export const WAVE1_POC_EVIDENCE_MANIFEST_SCHEMA_VERSION = "1.0.0" as const;
+/** Schema version for the Wave 1 Validation evidence manifest envelope. */
+export const WAVE1_VALIDATION_EVIDENCE_MANIFEST_SCHEMA_VERSION = "1.0.0" as const;
 
-/** Filename used for the Wave 1 POC evidence manifest artifact. */
-export const WAVE1_POC_EVIDENCE_MANIFEST_ARTIFACT_FILENAME =
-  "wave1-poc-evidence-manifest.json";
+/** Filename used for the Wave 1 Validation evidence manifest artifact. */
+export const WAVE1_VALIDATION_EVIDENCE_MANIFEST_ARTIFACT_FILENAME =
+  "wave1-validation-evidence-manifest.json";
 
-/** Filename used for the Wave 1 POC evidence manifest digest witness. */
-export const WAVE1_POC_EVIDENCE_MANIFEST_DIGEST_FILENAME =
-  "wave1-poc-evidence-manifest.sha256";
+/** Filename used for the Wave 1 Validation evidence manifest digest witness. */
+export const WAVE1_VALIDATION_EVIDENCE_MANIFEST_DIGEST_FILENAME =
+  "wave1-validation-evidence-manifest.sha256";
 
-/** Schema version for the Wave 1 POC evaluation report envelope. */
-export const WAVE1_POC_EVAL_REPORT_SCHEMA_VERSION = "1.0.0" as const;
+/** Schema version for the Wave 1 Validation evaluation report envelope. */
+export const WAVE1_VALIDATION_EVAL_REPORT_SCHEMA_VERSION = "1.0.0" as const;
 
-/** Filename used for the Wave 1 POC evaluation report artifact. */
-export const WAVE1_POC_EVAL_REPORT_ARTIFACT_FILENAME =
-  "wave1-poc-eval-report.json";
+/** Filename used for the Wave 1 Validation evaluation report artifact. */
+export const WAVE1_VALIDATION_EVAL_REPORT_ARTIFACT_FILENAME =
+  "wave1-validation-eval-report.json";
 
 /**
- * Allowed Wave 1 POC fixture identifiers.
+ * Allowed Wave 1 Validation fixture identifiers.
  *
- * `poc-onboarding` — synthetic onboarding-style sign-up flow.
- * `poc-payment-auth` — synthetic payment + 3-D Secure authorisation flow.
+ * `validation-onboarding` — synthetic onboarding-style sign-up flow.
+ * `validation-payment-auth` — synthetic payment + 3-D Secure authorisation flow.
  *
  * Both fixtures are public, contain only synthetic data, and ship with a
  * companion visual sidecar fixture so the Figma → Visual Sidecar →
  * Business Test Intent IR → structured generation chain is exercised
  * end-to-end against an air-gapped mock LLM.
  */
-export const WAVE1_POC_FIXTURE_IDS = [
-  "poc-onboarding",
-  "poc-payment-auth",
+export const WAVE1_VALIDATION_FIXTURE_IDS = [
+  "validation-onboarding",
+  "validation-payment-auth",
 ] as const;
 
-/** Identifier of a Wave 1 POC fixture. */
-export type Wave1PocFixtureId = (typeof WAVE1_POC_FIXTURE_IDS)[number];
+/** Identifier of a Wave 1 Validation fixture. */
+export type Wave1ValidationFixtureId = (typeof WAVE1_VALIDATION_FIXTURE_IDS)[number];
 
 /** Categorisation of an artifact attested by the evidence manifest. */
-export type Wave1PocEvidenceArtifactCategory =
+export type Wave1ValidationEvidenceArtifactCategory =
   | "intent"
   | "validation"
   | "review"
@@ -5986,23 +5986,23 @@ export type Wave1PocEvidenceArtifactCategory =
   | "multi_source_conflicts"
   | "production_readiness_eval";
 
-/** Single artifact attested by the Wave 1 POC evidence manifest. */
-export interface Wave1PocEvidenceArtifact {
+/** Single artifact attested by the Wave 1 Validation evidence manifest. */
+export interface Wave1ValidationEvidenceArtifact {
   /** Relative filename inside the run directory. */
   filename: string;
   /** SHA-256 of the on-disk byte stream. */
   sha256: string;
   /** Byte length on disk at manifest creation time. */
   bytes: number;
-  category: Wave1PocEvidenceArtifactCategory;
+  category: Wave1ValidationEvidenceArtifactCategory;
 }
 
 /**
- * Result of `verifyWave1PocEvidenceManifest` against a directory of artifacts.
+ * Result of `verifyWave1ValidationEvidenceManifest` against a directory of artifacts.
  * Determines whether ALL attested artifacts still hash to the values stored
  * in the manifest. Any mismatch fails the verification fail-closed.
  */
-export interface Wave1PocEvidenceVerificationResult {
+export interface Wave1ValidationEvidenceVerificationResult {
   ok: boolean;
   /** Filenames listed in the manifest that are missing on disk. */
   missing: string[];
@@ -6017,18 +6017,18 @@ export interface Wave1PocEvidenceVerificationResult {
    * `manifestIntegrity` block, or when a current-version manifest is missing
    * the block and therefore fails closed.
    */
-  manifestIntegrity?: Wave1PocEvidenceManifestIntegrityVerification;
+  manifestIntegrity?: Wave1ValidationEvidenceManifestIntegrityVerification;
 }
 
 /** Self-attestation stamped into the Wave 1 evidence manifest. */
-export interface Wave1PocEvidenceManifestIntegrity {
+export interface Wave1ValidationEvidenceManifestIntegrity {
   algorithm: "sha256";
   /** SHA-256 of canonical manifest JSON with `manifestIntegrity` omitted. */
   hash: string;
 }
 
 /** Structured verification result for the manifest self-attestation. */
-export interface Wave1PocEvidenceManifestIntegrityVerification {
+export interface Wave1ValidationEvidenceManifestIntegrityVerification {
   algorithm: "sha256";
   actualHash: string;
   expectedHash?: string;
@@ -6036,7 +6036,7 @@ export interface Wave1PocEvidenceManifestIntegrityVerification {
 }
 
 /** Visual-sidecar summary duplicated into the Wave 1 evidence manifest. */
-export interface Wave1PocEvidenceVisualSidecarSummary {
+export interface Wave1ValidationEvidenceVisualSidecarSummary {
   selectedDeployment:
     | "llama-4-maverick-vision"
     | "phi-4-multimodal-poc"
@@ -6049,7 +6049,7 @@ export interface Wave1PocEvidenceVisualSidecarSummary {
 }
 
 /**
- * Wave 1 POC evidence manifest. Frozen, deterministic, byte-identical
+ * Wave 1 Validation evidence manifest. Frozen, deterministic, byte-identical
  * across runs of the same fixture and mock output. Lists every artifact
  * the harness emits with its SHA-256 hash and byte length, plus the
  * contract / template / schema / policy / model identities used during
@@ -6066,8 +6066,8 @@ export interface Wave1PocEvidenceVisualSidecarSummary {
  *     payload during the run; image-bearing payloads only flow into the
  *     visual sidecar role.
  */
-export interface Wave1PocEvidenceManifest {
-  schemaVersion: typeof WAVE1_POC_EVIDENCE_MANIFEST_SCHEMA_VERSION;
+export interface Wave1ValidationEvidenceManifest {
+  schemaVersion: typeof WAVE1_VALIDATION_EVIDENCE_MANIFEST_SCHEMA_VERSION;
   /** workspace-dev contract version that produced the artifacts. */
   contractVersion: string;
   /** Test-intelligence subsurface contract version. */
@@ -6114,7 +6114,7 @@ export interface Wave1PocEvidenceManifest {
   inputHash: string;
   cacheKeyDigest: string;
   /** Direct visual-sidecar evidence summary when the opt-in sidecar path ran. */
-  visualSidecar?: Wave1PocEvidenceVisualSidecarSummary;
+  visualSidecar?: Wave1ValidationEvidenceVisualSidecarSummary;
   /**
    * Persisted screenshot capture identities when the visual sidecar ran.
    * Carries only SHA-256 identities plus MIME type and byte length; raw
@@ -6126,9 +6126,9 @@ export interface Wave1PocEvidenceManifest {
    * New manifests stamp this field; it remains optional so legacy manifests can
    * still be parsed and verified with their existing digest witness.
    */
-  manifestIntegrity?: Wave1PocEvidenceManifestIntegrity;
+  manifestIntegrity?: Wave1ValidationEvidenceManifestIntegrity;
   /** Sorted-by-filename, de-duplicated artifact list. */
-  artifacts: Wave1PocEvidenceArtifact[];
+  artifacts: Wave1ValidationEvidenceArtifact[];
   /**
    * Per-source provenance records added when the multi-source pipeline ran.
    * Present only when `multiSourceEnabled` is `true`. Each entry records the
@@ -6153,10 +6153,10 @@ export interface Wave1PocEvidenceManifest {
 }
 
 /**
- * Numeric thresholds applied by the Wave 1 POC evaluation gate. Each
+ * Numeric thresholds applied by the Wave 1 Validation evaluation gate. Each
  * threshold is enforced on a per-fixture basis. Fractions are in `[0, 1]`.
  */
-export interface Wave1PocEvalThresholds {
+export interface Wave1ValidationEvalThresholds {
   /** Fraction of detected fields covered by at least one approved test case. */
   minTraceCoverageFields: number;
   /** Fraction of detected actions covered by at least one approved test case. */
@@ -6195,7 +6195,7 @@ export interface Wave1PocEvalThresholds {
 }
 
 /** Failure record describing a single threshold breach. */
-export interface Wave1PocEvalFailure {
+export interface Wave1ValidationEvalFailure {
   rule:
     | "min_trace_coverage_fields"
     | "min_trace_coverage_actions"
@@ -6217,8 +6217,8 @@ export interface Wave1PocEvalFailure {
   message: string;
 }
 
-/** Per-fixture metrics computed by the Wave 1 POC evaluation gate. */
-export interface Wave1PocEvalFixtureMetrics {
+/** Per-fixture metrics computed by the Wave 1 Validation evaluation gate. */
+export interface Wave1ValidationEvalFixtureMetrics {
   fixtureId: string;
   totalGeneratedCases: number;
   approvedCases: number;
@@ -6252,11 +6252,11 @@ export interface Wave1PocEvalFixtureMetrics {
 }
 
 /** Per-fixture evaluation outcome. */
-export interface Wave1PocEvalFixtureReport {
+export interface Wave1ValidationEvalFixtureReport {
   fixtureId: string;
   pass: boolean;
-  metrics: Wave1PocEvalFixtureMetrics;
-  failures: Wave1PocEvalFailure[];
+  metrics: Wave1ValidationEvalFixtureMetrics;
+  failures: Wave1ValidationEvalFailure[];
 }
 
 /**
@@ -6264,67 +6264,67 @@ export interface Wave1PocEvalFixtureReport {
  * is byte-stable: fixtures and failures are sorted, hashes are not embedded,
  * and timestamps are caller-provided.
  */
-export interface Wave1PocEvalReport {
-  schemaVersion: typeof WAVE1_POC_EVAL_REPORT_SCHEMA_VERSION;
+export interface Wave1ValidationEvalReport {
+  schemaVersion: typeof WAVE1_VALIDATION_EVAL_REPORT_SCHEMA_VERSION;
   contractVersion: string;
   testIntelligenceContractVersion: typeof TEST_INTELLIGENCE_CONTRACT_VERSION;
   generatedAt: string;
-  thresholds: Wave1PocEvalThresholds;
-  fixtures: Wave1PocEvalFixtureReport[];
+  thresholds: Wave1ValidationEvalThresholds;
+  fixtures: Wave1ValidationEvalFixtureReport[];
   pass: boolean;
 }
 
 /* ------------------------------------------------------------------ */
-/*  Wave 1 POC in-toto attestation + Sigstore signing (Issue #1377)    */
+/*  Wave 1 Validation in-toto attestation + Sigstore signing (Issue #1377)    */
 /* ------------------------------------------------------------------ */
 
 /**
  * Schema version for the in-toto v1 attestation envelope produced per
- * job by the Wave 1 POC harness. Bumped on any breaking change to the
+ * job by the Wave 1 Validation harness. Bumped on any breaking change to the
  * statement payload, predicate shape, or DSSE encoding.
  */
-export const WAVE1_POC_ATTESTATION_SCHEMA_VERSION = "1.0.0" as const;
+export const WAVE1_VALIDATION_ATTESTATION_SCHEMA_VERSION = "1.0.0" as const;
 
 /** in-toto v1 statement type URI. */
-export const WAVE1_POC_ATTESTATION_STATEMENT_TYPE =
+export const WAVE1_VALIDATION_ATTESTATION_STATEMENT_TYPE =
   "https://in-toto.io/Statement/v1" as const;
 
 /**
- * Predicate type URI identifying the Wave 1 POC evidence shape. Bumped
+ * Predicate type URI identifying the Wave 1 Validation evidence shape. Bumped
  * in lockstep with the schema version when the predicate fields change.
  */
-export const WAVE1_POC_ATTESTATION_PREDICATE_TYPE =
-  "https://workspace-dev.figmapipe.dev/test-intelligence/wave1-poc-evidence/v1" as const;
+export const WAVE1_VALIDATION_ATTESTATION_PREDICATE_TYPE =
+  "https://workspace-dev.figmapipe.dev/test-intelligence/wave1-validation-evidence/v1" as const;
 
 /**
  * DSSE `payloadType` stamped onto every in-toto attestation. The pre-
  * authentication encoding (PAE) hashes this value alongside the payload
  * bytes so it is bound to the signature.
  */
-export const WAVE1_POC_ATTESTATION_PAYLOAD_TYPE =
+export const WAVE1_VALIDATION_ATTESTATION_PAYLOAD_TYPE =
   "application/vnd.in-toto+json" as const;
 
 /** Filename of the persisted in-toto DSSE envelope. */
-export const WAVE1_POC_ATTESTATION_ARTIFACT_FILENAME =
-  "wave1-poc-attestation.intoto.json" as const;
+export const WAVE1_VALIDATION_ATTESTATION_ARTIFACT_FILENAME =
+  "wave1-validation-attestation.intoto.json" as const;
 
 /** Filename of the persisted Sigstore bundle when signing is enabled. */
-export const WAVE1_POC_ATTESTATION_BUNDLE_FILENAME =
-  "wave1-poc-attestation.bundle.json" as const;
+export const WAVE1_VALIDATION_ATTESTATION_BUNDLE_FILENAME =
+  "wave1-validation-attestation.bundle.json" as const;
 
 /** Subdirectory under a run dir where attestation envelopes are persisted. */
-export const WAVE1_POC_ATTESTATIONS_DIRECTORY =
+export const WAVE1_VALIDATION_ATTESTATIONS_DIRECTORY =
   "evidence/attestations" as const;
 
 /** Subdirectory under a run dir where Sigstore signature bundles are persisted. */
-export const WAVE1_POC_SIGNATURES_DIRECTORY = "evidence/signatures" as const;
+export const WAVE1_VALIDATION_SIGNATURES_DIRECTORY = "evidence/signatures" as const;
 
 /** Sigstore bundle media type — pinned to the v0.3 envelope shape. */
-export const WAVE1_POC_ATTESTATION_BUNDLE_MEDIA_TYPE =
+export const WAVE1_VALIDATION_ATTESTATION_BUNDLE_MEDIA_TYPE =
   "application/vnd.dev.sigstore.bundle.v0.3+json" as const;
 
 /**
- * Allowed signing modes for the Wave 1 POC attestation.
+ * Allowed signing modes for the Wave 1 Validation attestation.
  *
  * - `unsigned` (default) — emit DSSE envelope with empty `signatures`,
  *   no Sigstore bundle. Always works air-gapped without network access.
@@ -6335,17 +6335,17 @@ export const WAVE1_POC_ATTESTATION_BUNDLE_MEDIA_TYPE =
  *   flow (Fulcio + Rekor) plugs into the same signer interface but is
  *   never invoked by default.
  */
-export const ALLOWED_WAVE1_POC_ATTESTATION_SIGNING_MODES = [
+export const ALLOWED_WAVE1_VALIDATION_ATTESTATION_SIGNING_MODES = [
   "unsigned",
   "sigstore",
 ] as const;
 
 /** Discriminant of the active signing mode. */
-export type Wave1PocAttestationSigningMode =
-  (typeof ALLOWED_WAVE1_POC_ATTESTATION_SIGNING_MODES)[number];
+export type Wave1ValidationAttestationSigningMode =
+  (typeof ALLOWED_WAVE1_VALIDATION_ATTESTATION_SIGNING_MODES)[number];
 
 /** Subject record inside the in-toto v1 statement. */
-export interface Wave1PocAttestationSubject {
+export interface Wave1ValidationAttestationSubject {
   /** Relative artifact path inside the run directory (no leading slash). */
   name: string;
   /** Subject digest map. Always populated with at least `sha256`. */
@@ -6358,7 +6358,7 @@ export interface Wave1PocAttestationSubject {
  * addendum to #1377). Mirrors the fields already attested on the
  * evidence manifest but pinned to the predicate version.
  */
-export interface Wave1PocAttestationVisualSidecarIdentity {
+export interface Wave1ValidationAttestationVisualSidecarIdentity {
   selectedDeployment:
     | "llama-4-maverick-vision"
     | "phi-4-multimodal-poc"
@@ -6381,15 +6381,15 @@ export interface Wave1PocAttestationVisualSidecarIdentity {
 }
 
 /**
- * Predicate body of the Wave 1 POC attestation. The predicate carries
+ * Predicate body of the Wave 1 Validation attestation. The predicate carries
  * pipeline-identity facts (model deployments, prompt template, schema,
  * policy, export profile) plus the manifest's own SHA-256 so the
  * statement attests both the artifact subjects and the metadata
  * envelope used to produce them. No secrets, prompts, or response
  * bodies are embedded — only identity hashes and version stamps.
  */
-export interface Wave1PocAttestationPredicate {
-  schemaVersion: typeof WAVE1_POC_ATTESTATION_SCHEMA_VERSION;
+export interface Wave1ValidationAttestationPredicate {
+  schemaVersion: typeof WAVE1_VALIDATION_ATTESTATION_SCHEMA_VERSION;
   contractVersion: string;
   testIntelligenceContractVersion: typeof TEST_INTELLIGENCE_CONTRACT_VERSION;
   fixtureId: string;
@@ -6428,9 +6428,9 @@ export interface Wave1PocAttestationPredicate {
       | "none";
   };
   /** Visual-sidecar chain-of-custody identity (when present). */
-  visualSidecar?: Wave1PocAttestationVisualSidecarIdentity;
+  visualSidecar?: Wave1ValidationAttestationVisualSidecarIdentity;
   /** Active signing mode; mirrored from the run input for auditability. */
-  signingMode: Wave1PocAttestationSigningMode;
+  signingMode: Wave1ValidationAttestationSigningMode;
   /** SHA-256 of the canonical evidence manifest the attestation covers. */
   manifestSha256: string;
   /**
@@ -6439,7 +6439,7 @@ export interface Wave1PocAttestationPredicate {
    */
   bySourceHash?: string;
   /** Filename of the manifest artifact (relative to the run dir). */
-  manifestFilename: typeof WAVE1_POC_EVIDENCE_MANIFEST_ARTIFACT_FILENAME;
+  manifestFilename: typeof WAVE1_VALIDATION_EVIDENCE_MANIFEST_ARTIFACT_FILENAME;
   /** Hard invariant — no raw screenshot bytes attested. */
   rawScreenshotsIncluded: false;
   /** Hard invariant — no API keys / bearer tokens attested. */
@@ -6449,16 +6449,16 @@ export interface Wave1PocAttestationPredicate {
 }
 
 /** in-toto v1 statement envelope (the DSSE payload after base64 decode). */
-export interface Wave1PocAttestationStatement {
-  _type: typeof WAVE1_POC_ATTESTATION_STATEMENT_TYPE;
-  predicateType: typeof WAVE1_POC_ATTESTATION_PREDICATE_TYPE;
+export interface Wave1ValidationAttestationStatement {
+  _type: typeof WAVE1_VALIDATION_ATTESTATION_STATEMENT_TYPE;
+  predicateType: typeof WAVE1_VALIDATION_ATTESTATION_PREDICATE_TYPE;
   /** Sorted-by-name, de-duplicated subject list. */
-  subject: Wave1PocAttestationSubject[];
-  predicate: Wave1PocAttestationPredicate;
+  subject: Wave1ValidationAttestationSubject[];
+  predicate: Wave1ValidationAttestationPredicate;
 }
 
 /** A single signature attached to a DSSE envelope. */
-export interface Wave1PocAttestationSignature {
+export interface Wave1ValidationAttestationSignature {
   /** Stable, non-secret identifier for the signing key. */
   keyid: string;
   /** Base64 (RFC 4648 §4) encoded signature bytes. */
@@ -6471,11 +6471,11 @@ export interface Wave1PocAttestationSignature {
  * signature is an ECDSA P-256 signature over the PAE-encoded
  * (payloadType, payload) tuple, base64-encoded into `sig`.
  */
-export interface Wave1PocAttestationDsseEnvelope {
-  /** Base64 (RFC 4648 §4) encoded `Wave1PocAttestationStatement` JSON. */
+export interface Wave1ValidationAttestationDsseEnvelope {
+  /** Base64 (RFC 4648 §4) encoded `Wave1ValidationAttestationStatement` JSON. */
   payload: string;
-  payloadType: typeof WAVE1_POC_ATTESTATION_PAYLOAD_TYPE;
-  signatures: Wave1PocAttestationSignature[];
+  payloadType: typeof WAVE1_VALIDATION_ATTESTATION_PAYLOAD_TYPE;
+  signatures: Wave1ValidationAttestationSignature[];
 }
 
 /**
@@ -6484,8 +6484,8 @@ export interface Wave1PocAttestationDsseEnvelope {
  * key). The PEM-encoded public key MUST be a SubjectPublicKeyInfo over
  * the prime256v1 (P-256) curve.
  */
-export interface Wave1PocAttestationPublicKeyMaterial {
-  /** Stable, non-secret signer reference (matches `Wave1PocAttestationSignature.keyid`). */
+export interface Wave1ValidationAttestationPublicKeyMaterial {
+  /** Stable, non-secret signer reference (matches `Wave1ValidationAttestationSignature.keyid`). */
   hint: string;
   /** PEM-encoded SubjectPublicKeyInfo for the matching public key. */
   publicKeyPem: string;
@@ -6505,8 +6505,8 @@ export interface Wave1PocAttestationPublicKeyMaterial {
  * a load-bearing type so the Sigstore bundle media type can carry
  * keyless signatures end-to-end without breaking changes.
  */
-export interface Wave1PocAttestationCertificateChainMaterial {
-  /** Stable, non-secret signer reference (matches `Wave1PocAttestationSignature.keyid`). */
+export interface Wave1ValidationAttestationCertificateChainMaterial {
+  /** Stable, non-secret signer reference (matches `Wave1ValidationAttestationSignature.keyid`). */
   hint: string;
   /**
    * PEM-encoded certificate chain, leaf first. The leaf certificate's
@@ -6533,23 +6533,23 @@ export interface Wave1PocAttestationCertificateChainMaterial {
  * default), `x509CertificateChain` for keyless signing (operator-
  * supplied integration with Fulcio + Rekor).
  */
-export type Wave1PocAttestationVerificationMaterial =
-  | { publicKey: Wave1PocAttestationPublicKeyMaterial }
+export type Wave1ValidationAttestationVerificationMaterial =
+  | { publicKey: Wave1ValidationAttestationPublicKeyMaterial }
   | {
-      x509CertificateChain: Wave1PocAttestationCertificateChainMaterial;
+      x509CertificateChain: Wave1ValidationAttestationCertificateChainMaterial;
     };
 
 /** Sigstore-shaped bundle persisted alongside a signed attestation. */
-export interface Wave1PocAttestationBundle {
-  mediaType: typeof WAVE1_POC_ATTESTATION_BUNDLE_MEDIA_TYPE;
+export interface Wave1ValidationAttestationBundle {
+  mediaType: typeof WAVE1_VALIDATION_ATTESTATION_BUNDLE_MEDIA_TYPE;
   /**
    * The DSSE envelope this bundle witnesses. Identical bytes to the
    * `evidence/attestations/...` artifact; duplication is intentional so
    * the bundle is self-contained.
    */
-  dsseEnvelope: Wave1PocAttestationDsseEnvelope;
+  dsseEnvelope: Wave1ValidationAttestationDsseEnvelope;
   /** Verification material — public key OR x509 certificate chain. */
-  verificationMaterial: Wave1PocAttestationVerificationMaterial;
+  verificationMaterial: Wave1ValidationAttestationVerificationMaterial;
 }
 
 /**
@@ -6557,8 +6557,8 @@ export interface Wave1PocAttestationBundle {
  * non-secret identifiers and digests so callers can render signing
  * provenance without re-reading on-disk artifacts.
  */
-export interface Wave1PocAttestationSummary {
-  signingMode: Wave1PocAttestationSigningMode;
+export interface Wave1ValidationAttestationSummary {
+  signingMode: Wave1ValidationAttestationSigningMode;
   /** Stable signer identifier (matches `keyid`). `undefined` when unsigned. */
   signerReference?: string;
   /** Relative path of the persisted in-toto envelope. */
@@ -6572,12 +6572,12 @@ export interface Wave1PocAttestationSummary {
 }
 
 /**
- * Failure record produced by `verifyWave1PocAttestation`. Each failure
+ * Failure record produced by `verifyWave1ValidationAttestation`. Each failure
  * names the specific subject / signature / metadata field that failed
  * so an auditor can pinpoint the mismatch without re-running the
  * harness.
  */
-export interface Wave1PocAttestationVerificationFailure {
+export interface Wave1ValidationAttestationVerificationFailure {
   /** Stable failure code. */
   code:
     | "envelope_unparseable"
@@ -6607,16 +6607,16 @@ export interface Wave1PocAttestationVerificationFailure {
   message: string;
 }
 
-/** Result of `verifyWave1PocAttestation`. */
-export interface Wave1PocAttestationVerificationResult {
+/** Result of `verifyWave1ValidationAttestation`. */
+export interface Wave1ValidationAttestationVerificationResult {
   ok: boolean;
-  signingMode: Wave1PocAttestationSigningMode;
+  signingMode: Wave1ValidationAttestationSigningMode;
   /** Number of signatures present (0 for unsigned). */
   signatureCount: number;
   /** True iff every present signature verified against `publicKey`. */
   signaturesVerified: boolean;
   /** Structured failure list — empty when `ok === true`. */
-  failures: Wave1PocAttestationVerificationFailure[];
+  failures: Wave1ValidationAttestationVerificationFailure[];
 }
 
 /* ------------------------------------------------------------------ */
@@ -7969,7 +7969,7 @@ export interface LbomMetadata {
  * are intentionally omitted from the type to keep emission and validation
  * aligned with what callers can audit.
  */
-export interface Wave1PocLbomDocument {
+export interface Wave1ValidationLbomDocument {
   bomFormat: "CycloneDX";
   specVersion: typeof LBOM_CYCLONEDX_SPEC_VERSION;
   /** CycloneDX-required document version. workspace-dev always emits `1`. */
@@ -8013,7 +8013,7 @@ export interface LbomValidationResult {
  * attestation), and a count of components by kind so a verifier can spot
  * "only one model row" regression without re-parsing the artifact.
  */
-export interface Wave1PocLbomSummary {
+export interface Wave1ValidationLbomSummary {
   schemaVersion: typeof LBOM_ARTIFACT_SCHEMA_VERSION;
   /** Relative filename inside the run directory (`lbom/ai-bom.cdx.json`). */
   filename: string;
@@ -8039,7 +8039,7 @@ export const EVIDENCE_VERIFY_RESPONSE_SCHEMA_VERSION = "1.0.0" as const;
 
 /**
  * Stable failure-code surface for evidence verification. Re-uses the
- * existing `Wave1PocAttestationVerificationFailureCode` literals where
+ * existing `Wave1ValidationAttestationVerificationFailureCode` literals where
  * applicable so a single auditor can route on a unified vocabulary.
  */
 export type EvidenceVerifyFailureCode =
@@ -8096,7 +8096,7 @@ export interface EvidenceVerifyCheck {
   /** Failure code when `ok === false`. Omitted when `ok === true`. */
   failureCode?: EvidenceVerifyFailureCode;
   /** Optional structured detail attached to attestation checks. */
-  signingMode?: Wave1PocAttestationSigningMode;
+  signingMode?: Wave1ValidationAttestationSigningMode;
 }
 
 /** One row in the `failures` array. Flat, sorted by reference + code. */
@@ -8145,7 +8145,7 @@ export interface EvidenceVerifyResponse {
   /** Attestation summary when an attestation envelope is on disk. */
   attestation?: {
     present: boolean;
-    signingMode: Wave1PocAttestationSigningMode;
+    signingMode: Wave1ValidationAttestationSigningMode;
     signatureCount: number;
     signaturesVerified: boolean;
   };

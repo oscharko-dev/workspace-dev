@@ -83,9 +83,9 @@ import {
 import { sanitizeErrorMessage } from "../error-sanitization.js";
 import { canonicalJson } from "./content-hash.js";
 import {
-  buildWave1PocEvidenceManifest,
-  verifyWave1PocEvidenceFromDisk,
-  writeWave1PocEvidenceManifest,
+  buildWave1ValidationEvidenceManifest,
+  verifyWave1ValidationEvidenceFromDisk,
+  writeWave1ValidationEvidenceManifest,
 } from "./evidence-manifest.js";
 import {
   cloneFinOpsBudgetEnvelope,
@@ -1260,8 +1260,8 @@ export const runFigmaToQcTestCases = async (
           ),
         }
       : {}),
-  } satisfies Parameters<typeof buildWave1PocEvidenceManifest>[0]["modelDeployments"];
-  const evidenceManifest = buildWave1PocEvidenceManifest({
+  } satisfies Parameters<typeof buildWave1ValidationEvidenceManifest>[0]["modelDeployments"];
+  const evidenceManifest = buildWave1ValidationEvidenceManifest({
     fixtureId: `production-runner-${input.source.kind}`,
     jobId: input.jobId,
     generatedAt: input.generatedAt,
@@ -1385,7 +1385,7 @@ export const runFigmaToQcTestCases = async (
       productionRunnerEvidenceSealPath,
       productionRunnerEvidenceSealBytes,
     );
-    await writeWave1PocEvidenceManifest({
+    await writeWave1ValidationEvidenceManifest({
       manifest: evidenceManifest,
       destinationDir: artifactDir,
     });
@@ -1397,7 +1397,7 @@ export const runFigmaToQcTestCases = async (
       cause: err,
     });
   }
-  const manifestVerification = await verifyWave1PocEvidenceFromDisk(artifactDir, {
+  const manifestVerification = await verifyWave1ValidationEvidenceFromDisk(artifactDir, {
     rejectUnexpected: false,
   });
   if (!manifestVerification.result.ok) {
@@ -1435,7 +1435,7 @@ export const runFigmaToQcTestCases = async (
     details: {
       sealed: true,
       sealArtifact: PRODUCTION_RUNNER_EVIDENCE_SEAL_ARTIFACT_FILENAME,
-      manifest: "wave1-poc-evidence-manifest.json",
+      manifest: "wave1-validation-evidence-manifest.json",
       headOfChainHash: harnessCheckpointSummary.headOfChainHash,
       chainLength: harnessCheckpointSummary.chainLength,
       bySourceHash: computePerSourceCostBreakdownHashFromReport(finopsReport),

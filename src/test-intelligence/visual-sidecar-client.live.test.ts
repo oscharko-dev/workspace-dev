@@ -10,9 +10,9 @@ import type {
 import { deriveBusinessTestIntentIr } from "./intent-derivation.js";
 import { createLlmGatewayClientBundle } from "./llm-gateway-bundle.js";
 import {
-  loadWave1PocCaptureFixture,
-  loadWave1PocFixture,
-} from "./poc-fixtures.js";
+  loadWave1ValidationCaptureFixture,
+  loadWave1ValidationFixture,
+} from "./validation-fixtures.js";
 import { describeVisualScreens } from "./visual-sidecar-client.js";
 
 const LIVE_SMOKE_FLAG = "WORKSPACE_TEST_SPACE_LIVE_SMOKE";
@@ -126,8 +126,10 @@ test("live visual sidecar smoke: fixture capture describes through role-separate
     `missing required live smoke env names: ${missing.join(", ")}`,
   );
 
-  const fixture = await loadWave1PocFixture("poc-onboarding");
-  const { captures } = await loadWave1PocCaptureFixture("poc-onboarding");
+  const fixture = await loadWave1ValidationFixture("validation-onboarding");
+  const { captures } = await loadWave1ValidationCaptureFixture(
+    "validation-onboarding",
+  );
   const bundle = createLlmGatewayClientBundle(
     {
       testGeneration: buildConfig({

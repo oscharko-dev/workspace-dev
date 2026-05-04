@@ -18,25 +18,25 @@ import {
   LBOM_CYCLONEDX_SPEC_VERSION,
   TEST_INTELLIGENCE_CONTRACT_VERSION,
   TEST_INTELLIGENCE_PROMPT_TEMPLATE_VERSION,
-  WAVE1_POC_ATTESTATION_ARTIFACT_FILENAME,
-  WAVE1_POC_ATTESTATION_BUNDLE_FILENAME,
-  WAVE1_POC_ATTESTATIONS_DIRECTORY,
-  WAVE1_POC_FIXTURE_IDS,
-  WAVE1_POC_SIGNATURES_DIRECTORY,
+  WAVE1_VALIDATION_ATTESTATION_ARTIFACT_FILENAME,
+  WAVE1_VALIDATION_ATTESTATION_BUNDLE_FILENAME,
+  WAVE1_VALIDATION_ATTESTATIONS_DIRECTORY,
+  WAVE1_VALIDATION_FIXTURE_IDS,
+  WAVE1_VALIDATION_SIGNATURES_DIRECTORY,
   VISUAL_SIDECAR_SCHEMA_VERSION,
   type BusinessTestIntentIr,
-  type Wave1PocFixtureId,
-  type Wave1PocLbomDocument,
+  type Wave1ValidationFixtureId,
+  type Wave1ValidationLbomDocument,
 } from "../contracts/index.js";
 import { canonicalJson } from "./content-hash.js";
 import {
   createKeyBoundSigstoreSigner,
-  generateWave1PocAttestationKeyPair,
-  verifyWave1PocAttestationFromDisk,
+  generateWave1ValidationAttestationKeyPair,
+  verifyWave1ValidationAttestationFromDisk,
 } from "./evidence-attestation.js";
 import {
-  computeWave1PocEvidenceManifestDigest,
-  verifyWave1PocEvidenceFromDisk,
+  computeWave1ValidationEvidenceManifestDigest,
+  verifyWave1ValidationEvidenceFromDisk,
 } from "./evidence-manifest.js";
 import { validateLbomDocument } from "./lbom-emitter.js";
 import {
@@ -47,42 +47,42 @@ import {
   type MlBomDocument,
 } from "./ml-bom.js";
 import { deriveBusinessTestIntentIr } from "./intent-derivation.js";
-import { loadWave1PocFixture } from "./poc-fixtures.js";
+import { loadWave1ValidationFixture } from "./validation-fixtures.js";
 import {
   BUSINESS_INTENT_IR_ARTIFACT_FILENAME,
   COMPILED_PROMPT_ARTIFACT_FILENAME,
   GATEWAY_REQUEST_AUDIT_ARTIFACT_FILENAME,
-  runWave1Poc,
+  runWave1Validation,
   synthesizeGeneratedTestCases,
-  Wave1PocFinOpsBudgetExceededError,
-} from "./poc-harness.js";
+  Wave1ValidationFinOpsBudgetExceededError,
+} from "./validation-harness.js";
 import { compilePrompt } from "./prompt-compiler.js";
 import { createMemoryReplayCache } from "./replay-cache.js";
 
 const GENERATED_AT = "2026-04-25T10:00:00.000Z";
 const TEST_GENERATION_MODEL_REVISION = "gpt-oss-120b-2026-04-25";
-const TEST_GENERATION_GATEWAY_RELEASE = "wave1-poc-mock";
-const POLICY_BUNDLE_VERSION = "wave1-poc";
+const TEST_GENERATION_GATEWAY_RELEASE = "wave1-validation-mock";
+const POLICY_BUNDLE_VERSION = "wave1-validation";
 const VISUAL_PRIMARY_DEPLOYMENT = "llama-4-maverick-vision";
 
 const ORIGINAL_PII_SUBSTRINGS: Record<
-  Wave1PocFixtureId,
+  Wave1ValidationFixtureId,
   ReadonlyArray<string>
 > = {
-  "poc-onboarding": [
+  "validation-onboarding": [
     "anna.beispiel@example.test",
     "+49 30 5550199",
     "65929970489",
   ],
-  "poc-payment-auth": ["DE02500105170137075030", "INGDDEFFXXX"],
+  "validation-payment-auth": ["DE02500105170137075030", "INGDDEFFXXX"],
 };
 
 const newRunDir = async (): Promise<string> => {
-  return mkdtemp(join(tmpdir(), "ti-poc-run-"));
+  return mkdtemp(join(tmpdir(), "ti-validation-run-"));
 };
 
 const lbomPropertyMap = (
-  lbom: Wave1PocLbomDocument,
+  lbom: Wave1ValidationLbomDocument,
 ): Map<string, string> =>
   new Map(lbom.metadata.properties.map((property) => [property.name, property.value]));
 
@@ -101,7 +101,7 @@ const audit = {
   schemaHash: "0".repeat(64),
 };
 
-test("poc-harness: synthetic test generation covers risk labels, actions, navigation, and trace fallbacks", () => {
+test("validation-harness: synthetic test generation covers risk labels, actions, navigation, and trace fallbacks", () => {
   const intent: BusinessTestIntentIr = {
     version: BUSINESS_TEST_INTENT_IR_SCHEMA_VERSION,
     source: { kind: "figma_local_json", contentHash: "1".repeat(64) },
@@ -242,10 +242,10 @@ test("poc-harness: synthetic test generation covers risk labels, actions, naviga
   );
 });
 
-for (const fixtureId of WAVE1_POC_FIXTURE_IDS) {
-  test(`poc-harness: ${fixtureId} runs end-to-end without external network`, async () => {
+for (const fixtureId of WAVE1_VALIDATION_FIXTURE_IDS) {
+  test(`validation-harness: ${fixtureId} runs end-to-end without external network`, async () => {
     const runDir = await newRunDir();
-    const result = await runWave1Poc({
+    const result = await runWave1Validation({
       fixtureId,
       jobId: `job-${fixtureId}`,
       generatedAt: GENERATED_AT,
@@ -282,7 +282,7 @@ for (const fixtureId of WAVE1_POC_FIXTURE_IDS) {
     assert.equal(result.attestation.signerReference, undefined);
     assert.equal(
       result.attestation.attestationFilename,
-      `${WAVE1_POC_ATTESTATIONS_DIRECTORY}/${WAVE1_POC_ATTESTATION_ARTIFACT_FILENAME}`,
+      `${WAVE1_VALIDATION_ATTESTATIONS_DIRECTORY}/${WAVE1_VALIDATION_ATTESTATION_ARTIFACT_FILENAME}`,
     );
     assert.match(result.attestation.attestationSha256, /^[0-9a-f]{64}$/);
     assert.equal(result.attestation.bundleFilename, undefined);
@@ -313,7 +313,7 @@ for (const fixtureId of WAVE1_POC_FIXTURE_IDS) {
     );
     assert.ok(filenames.includes(result.lbomSummary.filename));
     const lbomBytes = await readFile(result.lbomArtifactPath, "utf8");
-    const parsedLbom = JSON.parse(lbomBytes) as Wave1PocLbomDocument;
+    const parsedLbom = JSON.parse(lbomBytes) as Wave1ValidationLbomDocument;
     const lbomValidation = validateLbomDocument(parsedLbom);
     assert.equal(
       lbomValidation.valid,
@@ -352,16 +352,16 @@ for (const fixtureId of WAVE1_POC_FIXTURE_IDS) {
     assert.equal(attestedMlBom?.bytes, result.mlBomSummary.bytes);
   });
 
-  test(`poc-harness: ${fixtureId} produces deterministic artifacts on replay`, async () => {
+  test(`validation-harness: ${fixtureId} produces deterministic artifacts on replay`, async () => {
     const dirA = await newRunDir();
     const dirB = await newRunDir();
-    const a = await runWave1Poc({
+    const a = await runWave1Validation({
       fixtureId,
       jobId: `job-${fixtureId}-deterministic`,
       generatedAt: GENERATED_AT,
       runDir: dirA,
     });
-    const b = await runWave1Poc({
+    const b = await runWave1Validation({
       fixtureId,
       jobId: `job-${fixtureId}-deterministic`,
       generatedAt: GENERATED_AT,
@@ -382,9 +382,9 @@ for (const fixtureId of WAVE1_POC_FIXTURE_IDS) {
     );
   });
 
-  test(`poc-harness: ${fixtureId} no original PII substrings appear in any persisted artifact`, async () => {
+  test(`validation-harness: ${fixtureId} no original PII substrings appear in any persisted artifact`, async () => {
     const runDir = await newRunDir();
-    const result = await runWave1Poc({
+    const result = await runWave1Validation({
       fixtureId,
       jobId: `job-${fixtureId}-pii`,
       generatedAt: GENERATED_AT,
@@ -411,21 +411,21 @@ for (const fixtureId of WAVE1_POC_FIXTURE_IDS) {
     }
   });
 
-  test(`poc-harness: ${fixtureId} verifies clean against verifyWave1PocEvidenceFromDisk`, async () => {
+  test(`validation-harness: ${fixtureId} verifies clean against verifyWave1ValidationEvidenceFromDisk`, async () => {
     const runDir = await newRunDir();
-    await runWave1Poc({
+    await runWave1Validation({
       fixtureId,
       jobId: `job-${fixtureId}-verify`,
       generatedAt: GENERATED_AT,
       runDir,
     });
-    const { result } = await verifyWave1PocEvidenceFromDisk(runDir);
+    const { result } = await verifyWave1ValidationEvidenceFromDisk(runDir);
     assert.equal(result.ok, true, JSON.stringify(result));
   });
 
-  test(`poc-harness: ${fixtureId} verification fails after deliberate artifact mutation`, async () => {
+  test(`validation-harness: ${fixtureId} verification fails after deliberate artifact mutation`, async () => {
     const runDir = await newRunDir();
-    const run = await runWave1Poc({
+    const run = await runWave1Validation({
       fixtureId,
       jobId: `job-${fixtureId}-mutate`,
       generatedAt: GENERATED_AT,
@@ -433,13 +433,13 @@ for (const fixtureId of WAVE1_POC_FIXTURE_IDS) {
     });
     // Mutate the first non-manifest artifact.
     const target = run.artifactFilenames.find(
-      (f) => f !== "wave1-poc-evidence-manifest.json",
+      (f) => f !== "wave1-validation-evidence-manifest.json",
     );
     assert.ok(target);
     const path = join(runDir, target);
     const raw = await readFile(path, "utf8");
     await writeFile(path, raw + "\n# tampered\n", "utf8");
-    const { result } = await verifyWave1PocEvidenceFromDisk(runDir);
+    const { result } = await verifyWave1ValidationEvidenceFromDisk(runDir);
     assert.equal(result.ok, false);
     assert.ok(
       result.mutated.includes(target) || result.resized.includes(target),
@@ -447,10 +447,10 @@ for (const fixtureId of WAVE1_POC_FIXTURE_IDS) {
   });
 }
 
-test("poc-harness: export-refused run still emits and attests the release ML-BOM", async () => {
-  const fixtureId = "poc-onboarding";
-  const jobId = "job-poc-onboarding-export-refused";
-  const fixture = await loadWave1PocFixture(fixtureId);
+test("validation-harness: export-refused run still emits and attests the release ML-BOM", async () => {
+  const fixtureId = "validation-onboarding";
+  const jobId = "job-validation-onboarding-export-refused";
+  const fixture = await loadWave1ValidationFixture(fixtureId);
   const intent = deriveBusinessTestIntentIr({
     figma: fixture.figma,
     visual: fixture.visual,
@@ -506,7 +506,7 @@ test("poc-harness: export-refused run still emits and attests the release ML-BOM
   });
 
   const runDir = await newRunDir();
-  const result = await runWave1Poc({
+  const result = await runWave1Validation({
     fixtureId,
     jobId,
     generatedAt: GENERATED_AT,
@@ -539,11 +539,11 @@ test("poc-harness: export-refused run still emits and attests the release ML-BOM
   assert.equal(manifestMlBom?.bytes, result.mlBomSummary.bytes);
 });
 
-test("poc-harness: seals request audit proof that test generation received no images", async () => {
+test("validation-harness: seals request audit proof that test generation received no images", async () => {
   const runDir = await newRunDir();
-  const result = await runWave1Poc({
-    fixtureId: "poc-payment-auth",
-    jobId: "job-poc-payment-auth-request-audit",
+  const result = await runWave1Validation({
+    fixtureId: "validation-payment-auth",
+    jobId: "job-validation-payment-auth-request-audit",
     generatedAt: GENERATED_AT,
     runDir,
   });
@@ -584,17 +584,17 @@ test("poc-harness: seals request audit proof that test generation received no im
   assert.equal(attested?.category, "manifest");
 });
 
-test("poc-harness: sigstore signing returns summary and verifies from disk", async () => {
+test("validation-harness: sigstore signing returns summary and verifies from disk", async () => {
   const runDir = await newRunDir();
-  const { privateKeyPem, publicKeyPem } = generateWave1PocAttestationKeyPair();
+  const { privateKeyPem, publicKeyPem } = generateWave1ValidationAttestationKeyPair();
   const signer = createKeyBoundSigstoreSigner({
-    signerReference: "poc-harness-signer",
+    signerReference: "validation-harness-signer",
     privateKeyPem,
     publicKeyPem,
   });
-  const run = await runWave1Poc({
-    fixtureId: "poc-onboarding",
-    jobId: "job-poc-onboarding-signed",
+  const run = await runWave1Validation({
+    fixtureId: "validation-onboarding",
+    jobId: "job-validation-onboarding-signed",
     generatedAt: GENERATED_AT,
     runDir,
     attestationSigningMode: "sigstore",
@@ -602,39 +602,39 @@ test("poc-harness: sigstore signing returns summary and verifies from disk", asy
   });
 
   assert.equal(run.attestation.signingMode, "sigstore");
-  assert.equal(run.attestation.signerReference, "poc-harness-signer");
+  assert.equal(run.attestation.signerReference, "validation-harness-signer");
   assert.equal(
     run.attestation.attestationFilename,
-    `${WAVE1_POC_ATTESTATIONS_DIRECTORY}/${WAVE1_POC_ATTESTATION_ARTIFACT_FILENAME}`,
+    `${WAVE1_VALIDATION_ATTESTATIONS_DIRECTORY}/${WAVE1_VALIDATION_ATTESTATION_ARTIFACT_FILENAME}`,
   );
   assert.equal(
     run.attestation.bundleFilename,
-    `${WAVE1_POC_SIGNATURES_DIRECTORY}/${WAVE1_POC_ATTESTATION_BUNDLE_FILENAME}`,
+    `${WAVE1_VALIDATION_SIGNATURES_DIRECTORY}/${WAVE1_VALIDATION_ATTESTATION_BUNDLE_FILENAME}`,
   );
   assert.match(run.attestation.attestationSha256, /^[0-9a-f]{64}$/);
   assert.match(run.attestation.bundleSha256 ?? "", /^[0-9a-f]{64}$/);
 
-  const verification = await verifyWave1PocAttestationFromDisk(
+  const verification = await verifyWave1ValidationAttestationFromDisk(
     runDir,
     run.manifest,
-    computeWave1PocEvidenceManifestDigest(run.manifest),
+    computeWave1ValidationEvidenceManifestDigest(run.manifest),
     { expectedSigningMode: "sigstore" },
   );
   assert.equal(verification.ok, true, JSON.stringify(verification.failures));
   assert.equal(verification.signaturesVerified, true);
 });
 
-test("poc-harness: post-hoc bySource mutation fails signed attestation verify", async () => {
+test("validation-harness: post-hoc bySource mutation fails signed attestation verify", async () => {
   const runDir = await newRunDir();
-  const { privateKeyPem, publicKeyPem } = generateWave1PocAttestationKeyPair();
+  const { privateKeyPem, publicKeyPem } = generateWave1ValidationAttestationKeyPair();
   const signer = createKeyBoundSigstoreSigner({
-    signerReference: "poc-harness-bysource-signer",
+    signerReference: "validation-harness-bysource-signer",
     privateKeyPem,
     publicKeyPem,
   });
-  const run = await runWave1Poc({
-    fixtureId: "poc-onboarding",
-    jobId: "job-poc-onboarding-bysource-tamper",
+  const run = await runWave1Validation({
+    fixtureId: "validation-onboarding",
+    jobId: "job-validation-onboarding-bysource-tamper",
     generatedAt: GENERATED_AT,
     runDir,
     attestationSigningMode: "sigstore",
@@ -659,10 +659,10 @@ test("poc-harness: post-hoc bySource mutation fails signed attestation verify", 
   };
   await writeFile(reportPath, canonicalJson(tampered), "utf8");
 
-  const verification = await verifyWave1PocAttestationFromDisk(
+  const verification = await verifyWave1ValidationAttestationFromDisk(
     runDir,
     run.manifest,
-    computeWave1PocEvidenceManifestDigest(run.manifest),
+    computeWave1ValidationEvidenceManifestDigest(run.manifest),
     { expectedSigningMode: "sigstore" },
   );
   assert.equal(verification.ok, false);
@@ -674,11 +674,11 @@ test("poc-harness: post-hoc bySource mutation fails signed attestation verify", 
   );
 });
 
-test("poc-harness: visual mask hash participates in compiled prompt identity", async () => {
+test("validation-harness: visual mask hash participates in compiled prompt identity", async () => {
   const runDir = await newRunDir();
-  const result = await runWave1Poc({
-    fixtureId: "poc-payment-auth",
-    jobId: "job-poc-payment-auth-mask",
+  const result = await runWave1Validation({
+    fixtureId: "validation-payment-auth",
+    jobId: "job-validation-payment-auth-mask",
     generatedAt: GENERATED_AT,
     runDir,
   });
@@ -692,10 +692,10 @@ test("poc-harness: visual mask hash participates in compiled prompt identity", a
   );
 });
 
-test("poc-harness: visual sidecar gate must not block on shipped fixtures", async () => {
-  for (const fixtureId of WAVE1_POC_FIXTURE_IDS) {
+test("validation-harness: visual sidecar gate must not block on shipped fixtures", async () => {
+  for (const fixtureId of WAVE1_VALIDATION_FIXTURE_IDS) {
     const runDir = await newRunDir();
-    const run = await runWave1Poc({
+    const run = await runWave1Validation({
       fixtureId,
       jobId: `job-${fixtureId}-visual`,
       generatedAt: GENERATED_AT,
@@ -706,15 +706,15 @@ test("poc-harness: visual sidecar gate must not block on shipped fixtures", asyn
   }
 });
 
-test("poc-harness: structured-test-case generator never receives image payloads", async () => {
+test("validation-harness: structured-test-case generator never receives image payloads", async () => {
   // The mock LLM gateway already enforces this fail-closed; the harness
   // additionally asserts at runtime that no recorded request carries
   // imageInputs. A successful run is itself the proof: any leak would
-  // throw in `runWave1Poc`. We exercise the assert path here by running
+  // throw in `runWave1Validation`. We exercise the assert path here by running
   // every fixture and observing the harness completes successfully.
-  for (const fixtureId of WAVE1_POC_FIXTURE_IDS) {
+  for (const fixtureId of WAVE1_VALIDATION_FIXTURE_IDS) {
     const runDir = await newRunDir();
-    await runWave1Poc({
+    await runWave1Validation({
       fixtureId,
       jobId: `job-${fixtureId}-leak`,
       generatedAt: GENERATED_AT,
@@ -723,19 +723,19 @@ test("poc-harness: structured-test-case generator never receives image payloads"
   }
 });
 
-test("poc-harness: default execution does not touch live gateway fetch", async () => {
+test("validation-harness: default execution does not touch live gateway fetch", async () => {
   const originalFetch = globalThis.fetch;
   let fetchCalls = 0;
   globalThis.fetch = (async () => {
     fetchCalls += 1;
-    throw new Error("default POC path attempted live fetch");
+    throw new Error("default validation path attempted live fetch");
   }) as typeof fetch;
 
   try {
     const runDir = await newRunDir();
-    const result = await runWave1Poc({
-      fixtureId: "poc-onboarding",
-      jobId: "job-poc-default-no-live-fetch",
+    const result = await runWave1Validation({
+      fixtureId: "validation-onboarding",
+      jobId: "job-validation-default-no-live-fetch",
       generatedAt: GENERATED_AT,
       runDir,
     });
@@ -751,7 +751,7 @@ test("poc-harness: default execution does not touch live gateway fetch", async (
   }
 });
 
-test("poc-harness: FinOps report is returned and persisted with supplied budget and cost rates", async () => {
+test("validation-harness: FinOps report is returned and persisted with supplied budget and cost rates", async () => {
   const runDir = await newRunDir();
   const budget = {
     budgetId: "test-success-budget",
@@ -763,9 +763,9 @@ test("poc-harness: FinOps report is returned and persisted with supplied budget 
       },
     },
   };
-  const result = await runWave1Poc({
-    fixtureId: "poc-onboarding",
-    jobId: "job-poc-finops-success",
+  const result = await runWave1Validation({
+    fixtureId: "validation-onboarding",
+    jobId: "job-validation-finops-success",
     generatedAt: GENERATED_AT,
     runDir,
     finopsBudget: budget,
@@ -814,12 +814,12 @@ test("poc-harness: FinOps report is returned and persisted with supplied budget 
   assert.equal(onDisk.rawScreenshotsIncluded, false);
 });
 
-test("poc-harness: FinOps maxInputTokensPerRequest fails closed before downstream artifacts", async () => {
+test("validation-harness: FinOps maxInputTokensPerRequest fails closed before downstream artifacts", async () => {
   const runDir = await newRunDir();
   await assert.rejects(
-    runWave1Poc({
-      fixtureId: "poc-onboarding",
-      jobId: "job-poc-finops-input-budget",
+    runWave1Validation({
+      fixtureId: "validation-onboarding",
+      jobId: "job-validation-finops-input-budget",
       generatedAt: GENERATED_AT,
       runDir,
       finopsBudget: {
@@ -832,7 +832,7 @@ test("poc-harness: FinOps maxInputTokensPerRequest fails closed before downstrea
         },
       },
     }),
-    Wave1PocFinOpsBudgetExceededError,
+    Wave1ValidationFinOpsBudgetExceededError,
   );
 
   const rawReport = await readFile(
@@ -858,12 +858,12 @@ test("poc-harness: FinOps maxInputTokensPerRequest fails closed before downstrea
   );
 });
 
-test("poc-harness: aggregate FinOps breaches stop before validation and export", async () => {
+test("validation-harness: aggregate FinOps breaches stop before validation and export", async () => {
   const runDir = await newRunDir();
   await assert.rejects(
-    runWave1Poc({
-      fixtureId: "poc-onboarding",
-      jobId: "job-poc-finops-aggregate-budget",
+    runWave1Validation({
+      fixtureId: "validation-onboarding",
+      jobId: "job-validation-finops-aggregate-budget",
       generatedAt: GENERATED_AT,
       runDir,
       finopsBudget: {
@@ -876,7 +876,7 @@ test("poc-harness: aggregate FinOps breaches stop before validation and export",
         },
       },
     }),
-    Wave1PocFinOpsBudgetExceededError,
+    Wave1ValidationFinOpsBudgetExceededError,
   );
 
   const report = JSON.parse(
@@ -900,20 +900,20 @@ test("poc-harness: aggregate FinOps breaches stop before validation and export",
   );
 });
 
-test("poc-harness: replay-cache hit skips generation and reports completed_cache_hit", async () => {
+test("validation-harness: replay-cache hit skips generation and reports completed_cache_hit", async () => {
   const cache = createMemoryReplayCache();
   const firstDir = await newRunDir();
   const secondDir = await newRunDir();
-  await runWave1Poc({
-    fixtureId: "poc-onboarding",
-    jobId: "job-poc-cache-hit",
+  await runWave1Validation({
+    fixtureId: "validation-onboarding",
+    jobId: "job-validation-cache-hit",
     generatedAt: GENERATED_AT,
     runDir: firstDir,
     replayCache: cache,
   });
-  const second = await runWave1Poc({
-    fixtureId: "poc-onboarding",
-    jobId: "job-poc-cache-hit",
+  const second = await runWave1Validation({
+    fixtureId: "validation-onboarding",
+    jobId: "job-validation-cache-hit",
     generatedAt: GENERATED_AT,
     runDir: secondDir,
     replayCache: cache,

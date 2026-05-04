@@ -7,7 +7,7 @@ each suite owns a fixed naming convention and a matching loader in
 
 | Suite                        | Loader                                           | File-name prefix                          |
 | ---------------------------- | ------------------------------------------------ | ----------------------------------------- |
-| Wave-1 POC                   | `poc-fixtures.ts`                                | `poc-onboarding`, `poc-payment-auth`      |
+| Wave-1 Validation           | `validation-fixtures.ts`                           | `validation-onboarding`, `validation-payment-auth`      |
 | Wave-4 multi-source release  | `multi-source-fixtures.ts`                       | `release-multisource-*`                   |
 | Adversarial inputs           | `adversarial-fixtures.test.ts`                   | `adversarial-*`                           |
 | Issue-pinned export goldens  | `export-pipeline.golden.test.ts` and friends     | `issue-1364.*`, `issue-1365.*`            |
@@ -82,7 +82,7 @@ leave them out so the matrix stays readable.
 ### Hard rules
 
 - **No raw screenshots.** Fixtures must be plain text (`.json`,
-  `.md`). Visual coverage lives in the Wave-1 POC mask SVGs;
+  `.md`). Visual coverage lives in the validation mask SVGs;
   archetype baselines are intentionally text-only.
 - **No secrets.** Fixtures are diffed in PRs and inlined into eval
   reports. Tokens, API keys and PEM bodies are forbidden. The test
