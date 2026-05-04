@@ -5,6 +5,7 @@ node_modules/
 # Build, test, and generated artifacts
 dist/
 artifacts/
+evidence/
 coverage/
 storybook-static/
 test-results/

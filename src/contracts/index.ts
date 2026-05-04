@@ -163,7 +163,7 @@ export interface TestIntelligenceTransferPrincipal {
 }
 
 /** Contract version for the opt-in test-intelligence surface. */
-export const TEST_INTELLIGENCE_CONTRACT_VERSION = "1.8.0" as const;
+export const TEST_INTELLIGENCE_CONTRACT_VERSION = "1.9.0" as const;
 
 /**
  * Schema version for generated test case payloads.
@@ -9365,7 +9365,7 @@ export interface ReleaseQualityGatesReport {
  * Must be bumped according to CONTRACT_CHANGELOG.md rules.
  * Package version alignment is documented in VERSIONING.md.
  */
-export const CONTRACT_VERSION = "4.42.0" as const;
+export const CONTRACT_VERSION = "4.43.0" as const;
 
 // ---------------------------------------------------------------------------
 // Issue #1774 — UntrustedContentNormalizer (2025-vintage injection carriers).
@@ -9495,3 +9495,113 @@ export const ALLOWED_CACHE_BREAK_SUPPRESSION_REASONS = [
 /** Discriminated alias for {@link ALLOWED_CACHE_BREAK_SUPPRESSION_REASONS}. */
 export type CacheBreakSuppressionReason =
   (typeof ALLOWED_CACHE_BREAK_SUPPRESSION_REASONS)[number];
+
+// ---------------------------------------------------------------------------
+// Issue #1803 — release-pipeline integration with consolidated readiness report.
+// ---------------------------------------------------------------------------
+
+/**
+ * Filename of the canonical-JSON release-readiness report committed to
+ * evidence at `<RELEASE_READINESS_ARTIFACT_DIRECTORY>/release-readiness-report.json`.
+ *
+ * Issue #1803: the consolidated single-command output of the release pipeline
+ * (`release:quality-gates`). The orchestrator runs the twelve canonical
+ * release-pipeline gates as subprocesses, captures per-gate logs to disk,
+ * and writes this report referencing each log so a CI failure attributes
+ * directly to the offending gate.
+ */
+export const RELEASE_READINESS_REPORT_ARTIFACT_FILENAME =
+  "release-readiness-report.json" as const;
+
+/** Directory where the consolidated readiness report is committed to evidence. */
+export const RELEASE_READINESS_ARTIFACT_DIRECTORY =
+  "evidence/release-readiness" as const;
+
+/** Schema version for the canonical-JSON release-readiness report. */
+export const RELEASE_READINESS_REPORT_SCHEMA_VERSION = "1.0.0" as const;
+
+/**
+ * Closed list of release-readiness gate identifiers, in the canonical
+ * pipeline order from Issue #1803. The orchestrator MUST run gates in this
+ * exact order; the report MUST list verdicts in this exact order.
+ *
+ * The list is closed: the parser refuses any payload with unknown gate ids,
+ * duplicates, or missing entries — the consolidated report cannot silently
+ * skip a gate.
+ */
+export const ALLOWED_RELEASE_READINESS_GATE_IDS = [
+  "typecheck",
+  "test",
+  "test_ti_eval",
+  "test_ti_live_e2e",
+  "lint_no_telemetry",
+  "lint_secrets_all",
+  "lint_agent_boundaries",
+  "lint_ts_style",
+  "build",
+  "release_ml_bom_emit",
+  "release_merkle_roundtrip",
+  "release_library_coverage_report",
+] as const;
+
+/** Discriminated alias for {@link ALLOWED_RELEASE_READINESS_GATE_IDS}. */
+export type ReleaseReadinessGateId =
+  (typeof ALLOWED_RELEASE_READINESS_GATE_IDS)[number];
+
+/**
+ * Closed list of per-gate statuses recognised by the consolidated
+ * release-readiness report. `skipped` records intentional opt-outs (e.g.
+ * `test_ti_live_e2e` when live-credentials are absent and the gate is
+ * declared opt-in) without polluting `failed` attribution.
+ */
+export const ALLOWED_RELEASE_READINESS_GATE_STATUSES = [
+  "passed",
+  "failed",
+  "skipped",
+] as const;
+
+/** Discriminated alias for {@link ALLOWED_RELEASE_READINESS_GATE_STATUSES}. */
+export type ReleaseReadinessGateStatus =
+  (typeof ALLOWED_RELEASE_READINESS_GATE_STATUSES)[number];
+
+/**
+ * Per-gate result row in the consolidated release-readiness report.
+ *
+ * - `command` records the exact pnpm script invocation (e.g.
+ *   `"pnpm run lint:ts-style"`) so the report is reproducible offline.
+ * - `exitCode` is `0` for `passed`, non-zero for `failed`, and `null` for
+ *   `skipped` (no subprocess ran).
+ * - `durationMs` is wall-clock duration in milliseconds; `0` for skipped
+ *   gates.
+ * - `logPath` is repo-relative path to the captured stdout+stderr log,
+ *   so the consolidated report links each failure to its evidence.
+ *   `null` for skipped gates.
+ * - `attribution` carries short, locale-independent labels surfaced from
+ *   the gate (e.g. `"merkle_chain_break"`, `"ml_bom_hash_mismatch"`); the
+ *   release-pipeline runner forwards them verbatim.
+ */
+export interface ReleaseReadinessGateResult {
+  readonly gateId: ReleaseReadinessGateId;
+  readonly command: string;
+  readonly status: ReleaseReadinessGateStatus;
+  readonly exitCode: number | null;
+  readonly durationMs: number;
+  readonly logPath: string | null;
+  readonly attribution: readonly string[];
+}
+
+/**
+ * Consolidated release-readiness report (Issue #1803).
+ *
+ * `gates[]` MUST list one entry per `ALLOWED_RELEASE_READINESS_GATE_IDS`
+ * member, in canonical order. `passed` is `true` iff every non-skipped
+ * gate passed.
+ */
+export interface ReleaseReadinessReport {
+  readonly schemaVersion: typeof RELEASE_READINESS_REPORT_SCHEMA_VERSION;
+  readonly contractVersion: typeof TEST_INTELLIGENCE_CONTRACT_VERSION;
+  readonly releaseId: string;
+  readonly generatedAt: string;
+  readonly passed: boolean;
+  readonly gates: readonly ReleaseReadinessGateResult[];
+}

@@ -1253,3 +1253,16 @@ export {
   type WriteReleaseQualityGatesReportInput,
   type WriteReleaseQualityGatesReportResult,
 } from "./release-quality-gates.js";
+export {
+  buildReleaseReadinessReport,
+  isReleaseReadinessGateResult,
+  isReleaseReadinessReport,
+  parseReleaseReadinessReport,
+  RELEASE_READINESS_GATE_SPECS,
+  serializeReleaseReadinessReport,
+  writeReleaseReadinessReport,
+  type BuildReleaseReadinessReportInput,
+  type ReleaseReadinessGateSpec,
+  type WriteReleaseReadinessReportInput,
+  type WriteReleaseReadinessReportResult,
+} from "./release-readiness-report.js";
