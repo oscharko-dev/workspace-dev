@@ -1,0 +1,97 @@
+{
+  "schemaVersion": "1.0.0",
+  "contractVersion": "1.7.0",
+  "releaseId": "baseline-2026-05-04",
+  "mutation": {
+    "fixtures": [
+      {
+        "fixtureId": "wave1-banking-onboarding",
+        "mutationCount": 20,
+        "killedMutations": 19,
+        "mutationKillRate": 0.95,
+        "survivingMutationsForRepair": ["mut-banking-onboarding-decision-3"]
+      },
+      {
+        "fixtureId": "wave1-insurance-quote",
+        "mutationCount": 18,
+        "killedMutations": 17,
+        "mutationKillRate": 0.944444,
+        "survivingMutationsForRepair": ["mut-insurance-quote-boundary-2"]
+      },
+      {
+        "fixtureId": "wave1-payments-transfer",
+        "mutationCount": 15,
+        "killedMutations": 13,
+        "mutationKillRate": 0.866666,
+        "survivingMutationsForRepair": [
+          "mut-payments-transfer-required-1",
+          "mut-payments-transfer-equivalence-4"
+        ]
+      }
+    ]
+  },
+  "promptCache": {
+    "roles": [
+      {
+        "roleId": "test-designer",
+        "iterationsCounted": 6,
+        "cacheHits": 5,
+        "cacheMisses": 1,
+        "promptCacheHitRate": 0.833333
+      },
+      {
+        "roleId": "self-verifier",
+        "iterationsCounted": 4,
+        "cacheHits": 3,
+        "cacheMisses": 1,
+        "promptCacheHitRate": 0.75
+      },
+      {
+        "roleId": "repair-planner",
+        "iterationsCounted": 5,
+        "cacheHits": 4,
+        "cacheMisses": 1,
+        "promptCacheHitRate": 0.8
+      }
+    ]
+  },
+  "tamper": {
+    "samples": [
+      {
+        "sampleId": "release-job-banking-001",
+        "merkleChainVerified": true,
+        "headOfChainHashVerified": true,
+        "mlBomHashVerified": true
+      },
+      {
+        "sampleId": "release-job-insurance-001",
+        "merkleChainVerified": true,
+        "headOfChainHashVerified": true,
+        "mlBomHashVerified": true
+      }
+    ]
+  },
+  "cacheBreak": {
+    "samples": [
+      {
+        "querySource": "figma-only",
+        "responseCount": 100,
+        "breakCount": 2,
+        "diffArtifactBasenames": [
+          "cache-break-figma-only-001.json",
+          "cache-break-figma-only-002.json"
+        ]
+      },
+      {
+        "querySource": "figma-plus-jira",
+        "responseCount": 80,
+        "breakCount": 3,
+        "diffArtifactBasenames": [
+          "cache-break-figma-plus-jira-001.json",
+          "cache-break-figma-plus-jira-002.json",
+          "cache-break-figma-plus-jira-003.json"
+        ]
+      }
+    ]
+  }
+}
