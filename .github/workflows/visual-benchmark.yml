@@ -55,6 +55,7 @@ jobs:
     name: benchmark
     permissions:
       actions: read
+      contents: read
       issues: write
     runs-on: ubuntu-22.04
     timeout-minutes: 30

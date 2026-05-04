@@ -47,13 +47,15 @@ jobs:
 
             const buildWarningComment = (missingIssueNumbers) => {
               const bullets = missingIssueNumbers.map((issueNumber) => `- #${issueNumber}`).join("\n");
-              return `${MARKER}
-              This pull request references issue numbers without a GitHub auto-close keyword.
-
-              Add \`Fixes #N\`, \`Closes #N\`, or \`Resolves #N\` if merge should close the issue automatically.
-
-              Missing auto-close keywords for:
-              ${bullets}`;
+              return [
+                MARKER,
+                "This pull request references issue numbers without a GitHub auto-close keyword.",
+                "",
+                "Add `Fixes #N`, `Closes #N`, or `Resolves #N` if merge should close the issue automatically.",
+                "",
+                "Missing auto-close keywords for:",
+                bullets,
+              ].join("\n");
             };
 
             const pr = context.payload.pull_request;
