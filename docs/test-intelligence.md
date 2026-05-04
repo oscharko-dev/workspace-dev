@@ -246,6 +246,7 @@ Artifacts are persisted under
 | `wave1-validation-evidence-manifest.json`      | `WAVE1_VALIDATION_EVIDENCE_MANIFEST_SCHEMA_VERSION`                   | Validation        |
 | `wave1-validation-evidence-manifest.sha256`    | `WAVE1_VALIDATION_EVIDENCE_MANIFEST_DIGEST_FILENAME`                  | Validation        |
 | `wave1-validation-eval-report.json`            | `WAVE1_VALIDATION_EVAL_REPORT_SCHEMA_VERSION`                         | Validation        |
+| `agent-lessons-eval-report.json`               | `AGENT_LESSONS_EVAL_REPORT_SCHEMA_VERSION`                            | AgentLessons eval |
 | `llm-capabilities.json`                 | `LLM_CAPABILITIES_SCHEMA_VERSION`                              | LLM gateway probe |
 | `finops/budget-report.json`             | `FINOPS_BUDGET_REPORT_SCHEMA_VERSION`                          | FinOps            |
 | `lbom/ai-bom.cdx.json`                  | `LBOM_ARTIFACT_SCHEMA_VERSION` + `LBOM_CYCLONEDX_SPEC_VERSION` | LBOM              |
@@ -276,6 +277,12 @@ fixtures under `src/test-intelligence/fixtures/`:
 - `eval-baseline-<archetype>.json` pins the MA-0 single-pass snapshot.
 - `eval-ab-input.json` carries the curated MA-5 A/B and human-review sample.
 - `eval-ab-<archetype>.json` is the generated MA-5 report per archetype.
+- `agent-lessons-eval-input.json` carries the approved-lesson fixture matrix
+  for Issue #1805.
+- `agent-lessons-eval-report.json` is the deterministic Issue #1805 quality
+  report. The builder loads each referenced Wave-1 fixture, compiles prompts
+  with and without the approved lesson, and records whether the lesson became
+  active plus its expected-term coverage delta versus baseline.
 - `agent-online-eval-traces.json` carries the curated MA-5 production-trace
   sample consumed by `agent-eval-online-sampler.ts`. The sampler picks
   traces deterministically from the seed and sample rate, redacts PII via

@@ -392,6 +392,16 @@ export {
   type WriteAgentHarnessCheckpointResult,
 } from "./agent-harness-checkpoint.js";
 export {
+  agentLessonsEvalInputFixturePath,
+  agentLessonsEvalReportFixturePath,
+  buildAgentLessonsEvalReport,
+  readAgentLessonsEvalReport,
+  writeAgentLessonsEvalReport,
+  type AgentLessonEvalEntry,
+  type AgentLessonsEvalFixtureCase,
+  type AgentLessonsEvalReport,
+} from "./agent-lessons-eval.js";
+export {
   AGENT_LESSON_FILE_EXTENSION,
   AGENT_LESSON_FRESHNESS_THRESHOLD_MS,
   AGENT_LESSON_FRONTMATTER_FENCE,

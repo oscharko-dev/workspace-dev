@@ -15,6 +15,7 @@ import type {
 import { createLlmGatewayClient } from "./llm-gateway.js";
 import { createMockLlmGatewayClient } from "./llm-mock-gateway.js";
 import { createMockLlmGatewayClientBundle } from "./llm-gateway-bundle.js";
+import { writeAgentLesson } from "./agent-lessons-memdir.js";
 import { cloneEuBankingDefaultFinOpsBudget } from "./finops-budget.js";
 import { verifyJobEvidence } from "./evidence-verify.js";
 import { PRODUCTION_RUNNER_EVIDENCE_SEAL_ARTIFACT_FILENAME } from "./production-runner-evidence.js";
@@ -266,6 +267,52 @@ test("runFigmaToQcTestCases happy path persists artifacts and renders customer M
     const md = await readFile(result.customerMarkdownPaths.combined, "utf8");
     assert.match(md, /Testfälle/u);
     assert.match(md, /Investitionssumme/u);
+  } finally {
+    await rm(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("runFigmaToQcTestCases loads reviewer-approved agent lessons from memdir into the compiled prompt", async () => {
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ti-runner-"));
+  const jobId = "job-lesson-runtime";
+  const artifactDir = path.join(tempRoot, "jobs", jobId, "test-intelligence");
+  try {
+    const lessonResult = await writeAgentLesson({
+      runDir: artifactDir,
+      id: "lesson-investitionssumme",
+      name: "investitionssumme-guardrail",
+      description:
+        "Add a negative case for malformed Investitionssumme inputs on Bedarfsermittlung screens.",
+      type: "project",
+      policyProfileScope: [EU_BANKING_DEFAULT_POLICY_PROFILE_ID],
+      approvedBy: ["reviewer@workspace-dev"],
+      body:
+        "Always include a malformed Investitionssumme negative case.\nHighlight Bedarfsermittlung-specific validation expectations.\n",
+      nowMs: Date.parse("2026-05-04T00:00:00.000Z"),
+    });
+    assert.equal(lessonResult.ok, true);
+
+    const client = createMockLlmGatewayClient({
+      role: "test_generation",
+      deployment: "gpt-oss-120b-mock",
+      modelRevision: "mock-1",
+      gatewayRelease: "mock",
+      responder: okResponder([SAMPLE_DRAFT]),
+    });
+    const result = await runFigmaToQcTestCases({
+      jobId,
+      generatedAt: "2026-05-04T10:00:00Z",
+      source: { kind: "figma_paste_normalized", file: SAMPLE_FILE },
+      outputRoot: tempRoot,
+      llm: { client },
+    });
+
+    const compiledPrompt = await readFile(result.artifactPaths.compiledPrompt, "utf8");
+    assert.match(compiledPrompt, /investitionssumme-guardrail/u);
+    assert.match(
+      compiledPrompt,
+      /Always include a malformed Investitionssumme negative case\./u,
+    );
   } finally {
     await rm(tempRoot, { recursive: true, force: true });
   }
@@ -621,6 +668,102 @@ test("runFigmaToQcTestCases records real in-flight dedup hits in the persisted F
         secondReport.bySource.generator.inFlightDedupHits,
       1,
     );
+  } finally {
+    await rm(rootA, { recursive: true, force: true });
+    await rm(rootB, { recursive: true, force: true });
+  }
+});
+
+test("runFigmaToQcTestCases does not collapse concurrent requests with different active agent lessons", async () => {
+  const rootA = await mkdtemp(path.join(os.tmpdir(), "prod-runner-lesson-a-"));
+  const rootB = await mkdtemp(path.join(os.tmpdir(), "prod-runner-lesson-b-"));
+  try {
+    let dispatches = 0;
+    let releaseFetch: (() => void) | undefined;
+    const releasePromise = new Promise<void>((resolve) => {
+      releaseFetch = resolve;
+    });
+    const client = createLlmGatewayClient(
+      {
+        role: "test_generation",
+        compatibilityMode: "openai_chat",
+        baseUrl: "https://example.cognitiveservices.azure.com/openai/v1",
+        deployment: "gpt-oss-120b",
+        modelRevision: "gpt-oss-120b@2026-05-03",
+        gatewayRelease: "azure-ai-foundry@2026.05",
+        authMode: "api_key",
+        declaredCapabilities: TEST_GENERATION_CAPS,
+        timeoutMs: 5_000,
+        maxRetries: 0,
+        circuitBreaker: { failureThreshold: 3, resetTimeoutMs: 1_000 },
+      },
+      {
+        fetchImpl: async () => {
+          dispatches += 1;
+          await releasePromise;
+          return new Response(
+            JSON.stringify({
+              choices: [
+                {
+                  finish_reason: "stop",
+                  message: {
+                    role: "assistant",
+                    content: JSON.stringify({ testCases: [SAMPLE_DRAFT] }),
+                  },
+                },
+              ],
+              usage: { prompt_tokens: 10, completion_tokens: 5 },
+            }),
+            {
+              status: 200,
+              headers: { "content-type": "application/json" },
+            },
+          );
+        },
+        apiKeyProvider: () => "test-key",
+      },
+    );
+    const jobId = "job-1805-lessons-dedup";
+    const seededLesson = await writeAgentLesson({
+      runDir: path.join(rootA, "jobs", jobId, "test-intelligence"),
+      id: "lesson-investitionssumme-dedup",
+      name: "investitionssumme-dedup",
+      description: "Force a malformed Investitionssumme negative case.",
+      type: "project",
+      policyProfileScope: [EU_BANKING_DEFAULT_POLICY_PROFILE_ID],
+      approvedBy: ["reviewer@workspace-dev"],
+      body: "Always include a malformed Investitionssumme negative case.\n",
+      nowMs: Date.parse("2026-05-04T00:00:00.000Z"),
+    });
+    assert.equal(seededLesson.ok, true);
+
+    const run = (outputRoot: string) =>
+      runFigmaToQcTestCases({
+        jobId,
+        generatedAt: "2026-05-04T12:00:00Z",
+        source: { kind: "figma_rest_file", file: SAMPLE_FILE },
+        outputRoot,
+        llm: { client },
+      });
+
+    const first = run(rootA);
+    const second = run(rootB);
+
+    for (let attempt = 0; attempt < 50 && dispatches < 2; attempt += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+    assert.equal(dispatches, 2);
+    releaseFetch?.();
+
+    const [firstResult, secondResult] = await Promise.all([first, second]);
+    const firstReport = JSON.parse(
+      await readFile(firstResult.artifactPaths.finopsReport, "utf8"),
+    ) as FinOpsBudgetReport;
+    const secondReport = JSON.parse(
+      await readFile(secondResult.artifactPaths.finopsReport, "utf8"),
+    ) as FinOpsBudgetReport;
+    assert.equal(firstReport.bySource.generator.inFlightDedupHits, 0);
+    assert.equal(secondReport.bySource.generator.inFlightDedupHits, 0);
   } finally {
     await rm(rootA, { recursive: true, force: true });
     await rm(rootB, { recursive: true, force: true });

@@ -1248,6 +1248,8 @@ export interface LlmGenerationRequest {
 export interface GatewayInFlightDedupInputs {
   /** Optional FinOps source label credited with the dedup hit. */
   readonly source?: AgentSourceLabel;
+  /** sha256 hex digest of the canonical request input payload. */
+  readonly inputHash: string;
   /** sha256 hex digest of the canonical prompt payload. */
   readonly promptHash: string;
   /** Stable model identity string (for example `"rev@release"`). */
@@ -5978,6 +5980,13 @@ export const WAVE1_VALIDATION_EVAL_REPORT_SCHEMA_VERSION = "1.0.0" as const;
 /** Filename used for the Wave 1 Validation evaluation report artifact. */
 export const WAVE1_VALIDATION_EVAL_REPORT_ARTIFACT_FILENAME =
   "wave1-validation-eval-report.json";
+
+/** Schema version for the AgentLessons eval report envelope. */
+export const AGENT_LESSONS_EVAL_REPORT_SCHEMA_VERSION = "1.0.0" as const;
+
+/** Filename used for the AgentLessons eval report artifact. */
+export const AGENT_LESSONS_EVAL_REPORT_ARTIFACT_FILENAME =
+  "agent-lessons-eval-report.json" as const;
 
 /**
  * Allowed Wave 1 Validation fixture identifiers.

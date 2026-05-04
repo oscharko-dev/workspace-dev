@@ -27,6 +27,10 @@ import {
 } from "./context-budget-analyzer.js";
 import { canonicalJson, sha256Hex } from "./content-hash.js";
 import {
+  assertAgentLessonFrontmatterInvariants,
+  type AgentLessonRecord,
+} from "./agent-lessons-memdir.js";
+import {
   GENERATED_TEST_CASE_LIST_SCHEMA_NAME,
   buildGeneratedTestCaseListJsonSchema,
   computeGeneratedTestCaseListSchemaHash,
@@ -105,6 +109,7 @@ export interface CompilePromptInput {
   jobId: string;
   intent: BusinessTestIntentIr;
   visual?: VisualScreenDescription[];
+  agentLessons?: readonly AgentLessonRecord[];
   modelBinding: CompiledPromptModelBinding;
   policyBundleVersion: string;
   visualBinding: CompiledPromptVisualBinding;
@@ -190,6 +195,7 @@ export const compilePrompt = (
       : sha256Hex(responseSchema);
   const responseSchemaName =
     input.responseSchemaName ?? GENERATED_TEST_CASE_LIST_SCHEMA_NAME;
+  const agentLessons = normalizeAgentLessons(input.agentLessons);
   const stablePrefixSection = buildStablePrefixSection({
     roleStepId,
     testDesignModelPromptJson: serializePromptTestDesignModel(
@@ -197,6 +203,7 @@ export const compilePrompt = (
       input.intent,
     ),
     customerRubric,
+    agentLessonsJson: canonicalJson(agentLessons),
   });
   const coveragePlanSection = buildCoveragePlanSection(coveragePlan);
   const sourceContextSection = buildSourceContextSection({
@@ -248,11 +255,12 @@ export const compilePrompt = (
     coveragePlan,
     visualBinding,
     customerRubric,
+    agentLessons,
     customContext,
     sourceMixPlan,
     input.suffixSections ?? [],
   );
-const promptHash = computePromptHash(
+  const promptHash = computePromptHash(
     SYSTEM_PROMPT,
     USER_PROMPT_PREAMBLE,
     responseSchemaName,
@@ -328,6 +336,7 @@ const promptHash = computePromptHash(
     payload: {
       intent: input.intent,
       visual,
+      ...(agentLessons.length > 0 ? { agentLessons } : {}),
       testDesignModel,
       coveragePlan,
       customerRubric,
@@ -460,6 +469,7 @@ const buildStablePrefixSection = (input: {
   roleStepId: string;
   testDesignModelPromptJson: string;
   customerRubric: Record<string, unknown>;
+  agentLessonsJson: string;
 }): string =>
   [
     "[2] AgentRoleProfile",
@@ -475,7 +485,7 @@ const buildStablePrefixSection = (input: {
     "[5] Customer Rubric",
     canonicalJson(input.customerRubric),
     "[6] AgentLessons",
-    canonicalJson([]),
+    input.agentLessonsJson,
   ].join("\n");
 
 const buildCoveragePlanSection = (coveragePlan: CoveragePlan): string =>
@@ -738,11 +748,42 @@ const buildOutputSchemaHintSection = (input: {
 const uniqueSorted = (values: readonly string[]): string[] =>
   [...new Set(values)].sort((left, right) => left.localeCompare(right));
 
+const toPromptSafeAgentLesson = (lesson: AgentLessonRecord) => {
+  assertAgentLessonFrontmatterInvariants(
+    lesson.frontmatter,
+    "compilePrompt.agentLessons",
+  );
+  return Object.freeze({
+    id: lesson.frontmatter.id,
+    name: lesson.frontmatter.name,
+    description: lesson.frontmatter.description,
+    type: lesson.frontmatter.type,
+    policyProfileScope: lesson.frontmatter.policyProfileScope,
+    approvedBy: lesson.frontmatter.approvedBy,
+    contentHash: lesson.frontmatter.contentHash,
+    bodyPreviewLines: lesson.bodyPreviewLines,
+    bodyTruncated: lesson.bodyTruncated,
+    ...(lesson.freshnessNote !== undefined
+      ? { freshnessNote: lesson.freshnessNote }
+      : {}),
+  });
+};
+
+const normalizeAgentLessons = (
+  lessons: readonly AgentLessonRecord[] | undefined,
+): readonly ReturnType<typeof toPromptSafeAgentLesson>[] => {
+  if (lessons === undefined || lessons.length === 0) {
+    return Object.freeze([]);
+  }
+  return Object.freeze(lessons.map((lesson) => toPromptSafeAgentLesson(lesson)));
+};
+
 const computeInputHash = (
   testDesignModel: TestDesignModel,
   coveragePlan: CoveragePlan,
   visualBinding: CompiledPromptVisualBinding,
   customerRubric: Record<string, unknown>,
+  agentLessons: readonly ReturnType<typeof toPromptSafeAgentLesson>[],
   customContext: CompiledPromptCustomContext | undefined,
   sourceMixPlan: SourceMixPlan | undefined,
   suffixSections: readonly CompilePromptSuffixSection[],
@@ -752,6 +793,7 @@ const computeInputHash = (
     coveragePlan,
     visualBinding,
     customerRubric,
+    ...(agentLessons.length > 0 ? { agentLessons } : {}),
     ...(customContext !== undefined ? { customContext } : {}),
     ...(sourceMixPlan !== undefined
       ? { sourceMixPlanHash: sourceMixPlan.sourceMixPlanHash }

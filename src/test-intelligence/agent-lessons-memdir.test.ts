@@ -504,6 +504,45 @@ test("selectRelevantLessons filters by policyProfileId when provided", async () 
   });
 });
 
+test("selectRelevantLessons excludes policy-matching lessons when query overlap is zero", async () => {
+  await withRunDir(async (runDir) => {
+    const unrelated = await writeAgentLesson({
+      runDir,
+      id: "a",
+      name: "customer-profile",
+      description: "review stale profile details",
+      type: "project",
+      policyProfileScope: ["eu-banking-default"],
+      approvedBy: ["reviewer-1"],
+      body: "body a\n",
+      nowMs: NOW,
+    });
+    assert.equal(unrelated.ok, true);
+    const matching = await writeAgentLesson({
+      runDir,
+      id: "b",
+      name: "iban-guardrails",
+      description: "reject malformed iban values",
+      type: "regulatory",
+      policyProfileScope: ["eu-banking-default"],
+      approvedBy: ["reviewer-1"],
+      body: "body b\n",
+      nowMs: NOW,
+    });
+    assert.equal(matching.ok, true);
+    const manifest = await scanLessons({ runDir, nowMs: NOW });
+    const picks = selectRelevantLessons({
+      query: { tokens: ["iban", "invalid"], policyProfileId: "eu-banking-default" },
+      manifest,
+      max: 5,
+    });
+    assert.deepEqual(
+      picks.map((lesson) => lesson.frontmatter.id),
+      ["b"],
+    );
+  });
+});
+
 // ---------------------------------------------------------------------------
 // AT-033: full-system path-traversal refusal at the write helper
 // ---------------------------------------------------------------------------
