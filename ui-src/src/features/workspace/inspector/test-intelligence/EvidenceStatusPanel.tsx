@@ -3,16 +3,31 @@ import { useQuery } from "@tanstack/react-query";
 import { fetchEvidenceVerifyStatus } from "./api";
 
 export interface EvidenceStatusPanelProps {
+  bearerToken: string;
   jobId: string;
 }
 
 export function EvidenceStatusPanel({
+  bearerToken,
   jobId,
 }: EvidenceStatusPanelProps): JSX.Element {
   const query = useQuery({
-    queryKey: ["test-intelligence", "evidence-status", jobId],
-    queryFn: () => fetchEvidenceVerifyStatus(jobId),
+    queryKey: ["test-intelligence", "evidence-status", jobId, bearerToken],
+    queryFn: () => fetchEvidenceVerifyStatus(jobId, bearerToken),
+    enabled: bearerToken.length > 0,
   });
+
+  if (bearerToken.length === 0) {
+    return (
+      <section
+        data-testid="ti-evidence-status-panel"
+        aria-label="Evidence status"
+        className="rounded border border-amber-500/30 bg-amber-950/20 px-4 py-6 text-center text-[12px] text-amber-200"
+      >
+        Add a reviewer bearer token to verify evidence artifacts.
+      </section>
+    );
+  }
 
   if (query.isPending) {
     return (
