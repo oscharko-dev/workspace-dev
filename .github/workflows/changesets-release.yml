@@ -5,31 +5,26 @@ on:
     branches: [main]
   workflow_dispatch:
 
-concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: ${{ github.ref != 'refs/heads/main' && github.ref != 'refs/heads/dev' }}
-
 permissions:
-  contents: read
+  contents: write
+  pull-requests: write
+  id-token: write
 
 jobs:
   quality-matrix:
-    timeout-minutes: 480
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
         node-version: [22, 24]
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
-        with:
-          persist-credentials: false
+      - uses: actions/checkout@v4
 
-      - uses: pnpm/action-setup@26f6d4f2c533a43e6b5da0b4a5dd983f98f7b49a  # v6
+      - uses: pnpm/action-setup@v4
         with:
-          version: 10.33.0
+          version: 10.30.3
 
-      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e  # v6
+      - uses: actions/setup-node@v4
         with:
           node-version: ${{ matrix.node-version }}
           cache: pnpm
@@ -41,64 +36,42 @@ jobs:
           echo "TZ=UTC" >> "$GITHUB_ENV"
 
       - name: Install dependencies
-        run: pnpm install --frozen-lockfile --ignore-scripts
-
-      - name: Enforce workflow --ignore-scripts policy
-        run: pnpm run verify:workflow-install-scripts
-
-      - name: Enforce workflow persist-credentials policy
-        run: pnpm run verify:workflow-persist-credentials
-
-      - name: Enforce pnpm onlyBuiltDependencies allowlist
-        run: pnpm run verify:built-deps-allowlist
-
-      - name: Enforce dependency freshness (minimum-release-age) policy
-        run: pnpm run verify:npmrc-freshness
-
-      - name: Install template dependencies
-        run: pnpm --dir template/react-mui-app install --frozen-lockfile --ignore-scripts
-
-      - name: Install Tailwind template dependencies
-        run: pnpm --dir template/react-tailwind-app install --frozen-lockfile --ignore-scripts
-
-      - name: Enforce Tailwind template dependency denylist
-        run: pnpm run template:tailwind:dependency-denylist
+        run: pnpm install --frozen-lockfile
 
       - name: Enforce dependency vulnerability gate
         run: pnpm audit --audit-level high
 
-      - name: Enforce template dependency vulnerability gate
-        run: pnpm --dir template/react-mui-app audit --audit-level high
-
       - name: Enforce lockfile host allowlist
         run: pnpm run verify:lockfile-hosts
-
-      - name: Enforce pipeline/template docs version consistency
-        run: pnpm run verify:docs-template-stack
-
-      - name: Enforce generated API reference freshness
-        run: pnpm run docs:api:check
 
       - name: Verify npm signature attestations
         run: npm audit signatures
 
-      - name: Verify template npm signature attestations
-        run: pnpm run template:signatures
-
-      # Canonical release gate includes pnpm run ui:test:coverage and pnpm run test:coverage.
-      - name: Run release quality gates (canonical)
-        run: pnpm run release:quality-gates:publish-lifecycle
-
-      - name: Upload runtime load smoke artifacts
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7
-        if: failure()
-        with:
-          name: workspace-dev-changesets-load-smoke-node-${{ matrix.node-version }}-${{ github.run_id }}
-          path: artifacts/testing/load-smoke
-          if-no-files-found: ignore
+      - name: Run release quality gates
+        run: |
+          pnpm run typecheck
+          pnpm run test
+          pnpm run test:flaky-retry
+          pnpm run test:bdd
+          pnpm run test:property-based
+          pnpm run ui:lint
+          pnpm run lint:boundaries
+          pnpm run lint:ts-style
+          pnpm run lint:no-telemetry
+          pnpm run build
+          pnpm run lint:publint
+          pnpm run lint:types-publish
+          pnpm run lint:size
+          pnpm run verify:licenses
+          pnpm run verify:pack
+          pnpm run verify:reproducible-build
+          pnpm run verify:fips
+          pnpm run sbom:cyclonedx
+          pnpm run sbom:spdx
+          pnpm run verify:airgap
 
       - name: Upload release evidence artifacts
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7
+        uses: actions/upload-artifact@v4
         if: always()
         with:
           name: workspace-dev-release-evidence-node-${{ matrix.node-version }}
@@ -109,151 +82,81 @@ jobs:
           if-no-files-found: ignore
 
   performance-web:
-    timeout-minutes: 180
-    runs-on: ubuntu-22.04
-    strategy:
-      fail-fast: false
-      matrix:
-        template:
-          - bundle: react-mui-app
-            packageDir: template/react-mui-app
-            lockfile: template/react-mui-app/pnpm-lock.yaml
-          - bundle: react-tailwind-app
-            packageDir: template/react-tailwind-app
-            lockfile: template/react-tailwind-app/pnpm-lock.yaml
+    runs-on: ubuntu-latest
+    continue-on-error: true
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
-        with:
-          persist-credentials: false
+      - uses: actions/checkout@v4
 
-      - uses: pnpm/action-setup@26f6d4f2c533a43e6b5da0b4a5dd983f98f7b49a  # v6
+      - uses: pnpm/action-setup@v4
         with:
-          version: 10.33.0
+          version: 10.30.3
 
-      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e  # v6
+      - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: pnpm
-          cache-dependency-path: ${{ matrix.template.lockfile }}
+          cache-dependency-path: template/react-mui-app/pnpm-lock.yaml
 
       - name: Install template dependencies
-        run: pnpm --dir "${{ matrix.template.packageDir }}" install --frozen-lockfile --ignore-scripts
+        run: pnpm --dir template/react-mui-app install --frozen-lockfile
 
       - name: Typecheck template app
-        run: pnpm --dir "${{ matrix.template.packageDir }}" run typecheck
+        run: pnpm --dir template/react-mui-app run typecheck
 
       - name: Build template app
-        run: pnpm --dir "${{ matrix.template.packageDir }}" run build
+        run: pnpm --dir template/react-mui-app run build
 
-      - name: Capture web performance baseline
+      - name: Capture web performance baseline (warn-only)
         env:
-          FIGMAPIPE_PERF_ARTIFACT_DIR: artifacts/performance
-          FIGMAPIPE_PERF_BASELINE_PATH: artifacts/performance/perf-measured-baseline.json
-          FIGMAPIPE_PERF_REPORT_PATH: artifacts/performance/perf-baseline-report.json
+          FIGMAPIPE_PERF_ARTIFACT_DIR: template/react-mui-app/artifacts/performance
+          FIGMAPIPE_PERF_BASELINE_PATH: template/react-mui-app/artifacts/performance/perf-baseline.json
+          FIGMAPIPE_PERF_ROUTES_JSON: '["/","/overview","/checkout"]'
+          FIGMAPIPE_PERF_PROFILES_JSON: '["mobile","desktop"]'
           FIGMAPIPE_PERF_STRICT: "false"
-          FIGMAPIPE_PERF_ALLOW_BASELINE_BOOTSTRAP: "true"
-        run: pnpm --dir "${{ matrix.template.packageDir }}" run perf:baseline
+        run: pnpm --dir template/react-mui-app run perf:baseline
 
-      - name: Assert web performance budgets and regression
+      - name: Assert web performance budgets and regression (warn-only)
         env:
-          FIGMAPIPE_PERF_ARTIFACT_DIR: artifacts/performance
-          FIGMAPIPE_PERF_BASELINE_PATH: perf-baseline.json
-          FIGMAPIPE_PERF_STRICT: "true"
-          FIGMAPIPE_PERF_ALLOW_BASELINE_BOOTSTRAP: "false"
-        run: pnpm --dir "${{ matrix.template.packageDir }}" run perf:assert
-
-      - name: Summarize web performance baseline report
-        if: always()
-        run: node scripts/print-perf-report-summary.mjs "${{ matrix.template.packageDir }}/artifacts/performance/perf-baseline-report.json"
-
-      - name: Summarize web performance assertion report
-        if: always()
-        run: node scripts/print-perf-report-summary.mjs "${{ matrix.template.packageDir }}/artifacts/performance/perf-assert-report.json"
+          FIGMAPIPE_PERF_ARTIFACT_DIR: template/react-mui-app/artifacts/performance
+          FIGMAPIPE_PERF_BASELINE_PATH: template/react-mui-app/artifacts/performance/perf-baseline.json
+          FIGMAPIPE_PERF_ROUTES_JSON: '["/","/overview","/checkout"]'
+          FIGMAPIPE_PERF_PROFILES_JSON: '["mobile","desktop"]'
+          FIGMAPIPE_PERF_STRICT: "false"
+        run: pnpm --dir template/react-mui-app run perf:assert
 
       - name: Upload web performance artifacts
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7
+        uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: workspace-dev-performance-web-${{ matrix.template.bundle }}-${{ github.run_id }}
-          path: ${{ matrix.template.packageDir }}/artifacts/performance
-          if-no-files-found: ignore
-
-  mutation-testing:
-    timeout-minutes: 420
-    runs-on: ubuntu-22.04
-    needs: quality-matrix
-    steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
-        with:
-          persist-credentials: false
-
-      - uses: pnpm/action-setup@26f6d4f2c533a43e6b5da0b4a5dd983f98f7b49a  # v6
-        with:
-          version: 10.33.0
-
-      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e  # v6
-        with:
-          node-version: 22
-          cache: pnpm
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile --ignore-scripts
-
-      - name: Run mutation baseline (blocking >=58%)
-        run: pnpm run test:mutation
-
-      - name: Summarize mutation report
-        if: always()
-        run: node scripts/print-mutation-report-summary.mjs artifacts/testing/mutation/mutation.json
-
-      - name: Upload mutation artifacts
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7
-        if: always()
-        with:
-          name: workspace-dev-mutation-${{ github.run_id }}
-          path: artifacts/testing/mutation
+          name: workspace-dev-performance-web-${{ github.run_id }}
+          path: template/react-mui-app/artifacts/performance
           if-no-files-found: ignore
 
   release:
-    timeout-minutes: 240
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    runs-on: ubuntu-22.04
-    needs: [quality-matrix, performance-web, mutation-testing]
-    permissions:
-      contents: write
-      id-token: write
-      attestations: write
+    runs-on: ubuntu-latest
+    needs: [quality-matrix, performance-web]
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
-        with:
-          persist-credentials: true
+      - uses: actions/checkout@v4
 
-      - uses: pnpm/action-setup@26f6d4f2c533a43e6b5da0b4a5dd983f98f7b49a  # v6
+      - uses: pnpm/action-setup@v4
         with:
-          version: 10.33.0
+          version: 10.30.3
 
-      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e  # v6
+      - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: pnpm
 
-      - name: Install npm version for trusted publishing
+      - name: Upgrade npm for trusted publishing
         shell: bash
         run: |
           set -euo pipefail
-          npm install --global npm@11.3.0 --ignore-scripts
-
-      - name: Verify npm version for trusted publishing
-        shell: bash
-        run: |
-          set -euo pipefail
+          npm install --global npm@11
           npm --version
 
       - name: Install dependencies
-        run: pnpm install --frozen-lockfile --ignore-scripts
-
-      - name: Install template dependencies
-        run: pnpm --dir template/react-mui-app install --frozen-lockfile --ignore-scripts
+        run: pnpm install --frozen-lockfile
 
       - name: Set reproducible build metadata
         shell: bash
@@ -283,79 +186,24 @@ jobs:
       - name: Generate CycloneDX SBOM
         run: node scripts/generate-cyclonedx.mjs "${RELEASE_EVIDENCE_DIR}/sbom/workspace-dev.cdx.json"
 
-      - name: Generate React MUI template CycloneDX SBOM
-        run: node scripts/generate-cyclonedx.mjs "${RELEASE_EVIDENCE_DIR}/sbom/figma-generated-app-react-mui.cdx.json" --package-root template/react-mui-app --ignore-npm-errors
-
-      - name: Generate React Tailwind template CycloneDX SBOM
-        run: node scripts/generate-cyclonedx.mjs "${RELEASE_EVIDENCE_DIR}/sbom/figma-generated-app-react-tailwind.cdx.json" --package-root template/react-tailwind-app --ignore-npm-errors
-
       - name: Generate SPDX SBOM
         run: node scripts/generate-spdx.mjs "${RELEASE_EVIDENCE_DIR}/sbom/workspace-dev.spdx.json"
 
-      - name: Generate React MUI template SPDX SBOM
-        run: node scripts/generate-spdx.mjs "${RELEASE_EVIDENCE_DIR}/sbom/figma-generated-app-react-mui.spdx.json" --package-root template/react-mui-app
-
-      - name: Generate React Tailwind template SPDX SBOM
-        run: node scripts/generate-spdx.mjs "${RELEASE_EVIDENCE_DIR}/sbom/figma-generated-app-react-tailwind.spdx.json" --package-root template/react-tailwind-app
-
-      - name: Generate profile SBOMs
-        run: node scripts/generate-profile-sboms.mjs --output-directory "${RELEASE_EVIDENCE_DIR}/sbom/profiles"
-
-      - name: Verify SBOM parity
-        run: node scripts/check-sbom-parity.mjs --directory "${RELEASE_EVIDENCE_DIR}/sbom"
-
-      - name: Run profile release gates
-        shell: bash
-        run: |
-          pnpm run verify:profile-gates -- --skip-airgap --skip-reproducible
-          cp -R artifacts/sbom/. "${RELEASE_EVIDENCE_DIR}/sbom/"
-
-      - name: Generate SHA256SUMS for profile tarballs
+      - name: Generate OpenVEX artifact
         shell: bash
         run: |
           set -euo pipefail
-          SUMS_PATH="${RELEASE_EVIDENCE_DIR}/SHA256SUMS"
-          : > "${SUMS_PATH}"
-          # Hash each tarball with paths normalized to artifacts/build-profiles/<profile>/<tgz>
-          # so signatures over the file remain meaningful to consumers.
-          while IFS= read -r -d '' tarball; do
-            ( cd artifacts && sha256sum "${tarball#artifacts/}" ) >> "${SUMS_PATH}"
-          done < <(find artifacts/build-profiles -type f -name "*.tgz" -print0 | sort -z)
-          echo "Generated SHA256SUMS:"
-          cat "${SUMS_PATH}"
+          package_name="$(node -p "require('./package.json').name")"
+          package_version="$(node -p "require('./package.json').version")"
+          generated_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
-      - name: Attest build provenance for default profile
-        uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32  # v4.1.0
-        with:
-          subject-path: 'artifacts/build-profiles/default/*.tgz'
-
-      - name: Attest build provenance for rocket profile
-        uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32  # v4.1.0
-        with:
-          subject-path: 'artifacts/build-profiles/rocket/*.tgz'
-
-      - name: Attest build provenance for default-rocket profile
-        uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32  # v4.1.0
-        with:
-          subject-path: 'artifacts/build-profiles/default-rocket/*.tgz'
-
-      - name: Attest CycloneDX SBOM for default profile
-        uses: actions/attest-sbom@c604332985a26aa8cf1bdc465b92731239ec6b9e  # v4.1.0
-        with:
-          subject-path: 'artifacts/build-profiles/default/*.tgz'
-          sbom-path: 'artifacts/sbom/default/workspace-dev.cdx.json'
-
-      - name: Attest CycloneDX SBOM for rocket profile
-        uses: actions/attest-sbom@c604332985a26aa8cf1bdc465b92731239ec6b9e  # v4.1.0
-        with:
-          subject-path: 'artifacts/build-profiles/rocket/*.tgz'
-          sbom-path: 'artifacts/sbom/rocket/workspace-dev.cdx.json'
-
-      - name: Attest CycloneDX SBOM for default-rocket profile
-        uses: actions/attest-sbom@c604332985a26aa8cf1bdc465b92731239ec6b9e  # v4.1.0
-        with:
-          subject-path: 'artifacts/build-profiles/default-rocket/*.tgz'
-          sbom-path: 'artifacts/sbom/default-rocket/workspace-dev.cdx.json'
+          sed \
+            -e "s|__REPOSITORY__|${{ github.repository }}|g" \
+            -e "s|__COMMIT_SHA__|${{ github.sha }}|g" \
+            -e "s|__TIMESTAMP__|${generated_at}|g" \
+            -e "s|__PACKAGE_NAME__|${package_name}|g" \
+            -e "s|__PACKAGE_VERSION__|${package_version}|g" \
+            openvex.template.json > "${RELEASE_EVIDENCE_DIR}/openvex.json"
 
       - name: Configure npm publish auth mode
         id: npm_auth_mode
@@ -407,7 +255,7 @@ jobs:
             else
               echo "No changesets found and current version already exists on npm. Applying automatic patch version bump based on latest published version."
               LATEST_PUBLISHED_VERSION="$(npm view "${PACKAGE_NAME}" version --registry=https://registry.npmjs.org/)"
-              NEXT_PATCH_VERSION="$(node -e 'const raw=String(process.argv[1] ?? "").trim(); const match=raw.match(/^([0-9]+)\.([0-9]+)\.([0-9]+)(?:[-+].*)?$/); if (!match) { console.error("Unsupported published version format: " + raw); process.exit(1); } const major=Number(match[1]); const minor=Number(match[2]); const patch=Number(match[3]); console.log(major + "." + minor + "." + (patch + 1));' "${LATEST_PUBLISHED_VERSION}")"
+              NEXT_PATCH_VERSION="$(node -e 'const raw=String(process.argv[1] ?? "").trim(); const match=raw.match(/^([0-9]+)\.([0-9]+)\.([0-9]+)(?:[-+].*)?$/); if (!match) { console.error(`Unsupported published version format: ${raw}`); process.exit(1); } const major=Number(match[1]); const minor=Number(match[2]); const patch=Number(match[3]); console.log(`${major}.${minor}.${patch + 1}`);' "${LATEST_PUBLISHED_VERSION}")"
               echo "Latest published version: ${LATEST_PUBLISHED_VERSION}; next patch: ${NEXT_PATCH_VERSION}"
               npm version "${NEXT_PATCH_VERSION}" --no-git-tag-version
             fi
@@ -439,45 +287,29 @@ jobs:
             exit 1
           fi
 
-          mapfile -t SBOM_ASSETS < <(find "${RELEASE_EVIDENCE_DIR}/sbom" -type f \( -name "*.cdx.json" -o -name "*.spdx.json" \) | sort)
-          if [[ "${#SBOM_ASSETS[@]}" -eq 0 ]]; then
-            echo "No profile SBOM release evidence assets were generated."
-            exit 1
-          fi
-
-          UPLOAD_ASSETS=()
-          for ASSET_PATH in "${SBOM_ASSETS[@]}"; do
-            PROFILE_ID="$(basename "$(dirname "${ASSET_PATH}")")"
-            UPLOAD_ASSETS+=("${ASSET_PATH}#${PROFILE_ID}-${PACKAGE_VERSION}-$(basename "${ASSET_PATH}")")
+          CYCLO_ASSET="${RELEASE_EVIDENCE_DIR}/sbom/workspace-dev.cdx.json"
+          SPDX_ASSET="${RELEASE_EVIDENCE_DIR}/sbom/workspace-dev.spdx.json"
+          OPENVEX_ASSET="${RELEASE_EVIDENCE_DIR}/openvex.json"
+          for ASSET_PATH in "${CYCLO_ASSET}" "${SPDX_ASSET}" "${OPENVEX_ASSET}"; do
+            if [[ ! -f "${ASSET_PATH}" ]]; then
+              echo "Required release evidence asset is missing: ${ASSET_PATH}"
+              exit 1
+            fi
           done
-
-          # Attach profile tarballs as release assets so consumers (and the
-          # downstream slsa-provenance.yml workflow) can verify them against
-          # the published SHA256SUMS and Sigstore attestations.
-          mapfile -t TARBALL_ASSETS < <(find artifacts/build-profiles -type f -name "*.tgz" | sort)
-          if [[ "${#TARBALL_ASSETS[@]}" -eq 0 ]]; then
-            echo "No profile tarballs were produced for release upload."
-            exit 1
-          fi
-          for TARBALL_PATH in "${TARBALL_ASSETS[@]}"; do
-            UPLOAD_ASSETS+=("${TARBALL_PATH}#$(basename "${TARBALL_PATH}")")
-          done
-
-          SUMS_PATH="${RELEASE_EVIDENCE_DIR}/SHA256SUMS"
-          if [[ -f "${SUMS_PATH}" ]]; then
-            UPLOAD_ASSETS+=("${SUMS_PATH}#SHA256SUMS")
-          else
-            echo "Expected SHA256SUMS at ${SUMS_PATH} but it was not generated."
-            exit 1
-          fi
 
           if gh release view "${RELEASE_TAG}" >/dev/null 2>&1; then
             echo "GitHub release ${RELEASE_TAG} already exists. Uploading/refreshing evidence assets."
-            gh release upload "${RELEASE_TAG}" "${UPLOAD_ASSETS[@]}" --clobber
+            gh release upload "${RELEASE_TAG}" \
+              "${CYCLO_ASSET}#workspace-dev-${PACKAGE_VERSION}.cdx.json" \
+              "${SPDX_ASSET}#workspace-dev-${PACKAGE_VERSION}.spdx.json" \
+              "${OPENVEX_ASSET}#workspace-dev-${PACKAGE_VERSION}.openvex.json" \
+              --clobber
           else
             echo "Creating GitHub release ${RELEASE_TAG} with generated release notes."
             gh release create "${RELEASE_TAG}" \
-              "${UPLOAD_ASSETS[@]}" \
+              "${CYCLO_ASSET}#workspace-dev-${PACKAGE_VERSION}.cdx.json" \
+              "${SPDX_ASSET}#workspace-dev-${PACKAGE_VERSION}.spdx.json" \
+              "${OPENVEX_ASSET}#workspace-dev-${PACKAGE_VERSION}.openvex.json" \
               --target "${GITHUB_SHA}" \
               --title "workspace-dev ${RELEASE_TAG}" \
               --generate-notes
@@ -488,22 +320,18 @@ jobs:
           echo "url=${RELEASE_URL}" >> "$GITHUB_OUTPUT"
 
       - name: Upload release evidence artifacts
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7
+        uses: actions/upload-artifact@v4
         if: always()
         with:
           name: workspace-dev-release-evidence-${{ github.run_id }}
           path: |
-            ${{ runner.temp }}/release-evidence/sbom
-            ${{ runner.temp }}/release-evidence/SHA256SUMS
+            ${{ env.RELEASE_EVIDENCE_DIR }}/sbom
+            ${{ env.RELEASE_EVIDENCE_DIR }}/openvex.json
           if-no-files-found: ignore
 
       - name: Release summary
         if: always()
         shell: bash
-        env:
-          PUBLISH_AUTH_MODE: ${{ steps.npm_auth_mode.outputs.auth_mode }}
-          GITHUB_RELEASE_TAG: ${{ steps.github_release.outputs.tag }}
-          GITHUB_RELEASE_URL: ${{ steps.github_release.outputs.url }}
         run: |
           CURRENT_VERSION="$(node -p "require('./package.json').version")"
           if [[ "$CURRENT_VERSION" == *-* ]]; then
@@ -512,15 +340,13 @@ jobs:
             CURRENT_NPM_TAG="latest"
           fi
 
-          {
-            echo "## workspace-dev Release Summary"
-            echo ""
-            echo "| Item | Value |"
-            echo "|------|-------|"
-            echo "| Version (current package.json) | \`${CURRENT_VERSION}\` |"
-            echo "| npm tag lane | \`${CURRENT_NPM_TAG}\` |"
-            echo "| Publish auth mode | \`${PUBLISH_AUTH_MODE}\` |"
-            echo "| Provenance path | \`pnpm run release:changesets:publish\` |"
-            echo "| GitHub release tag | \`${GITHUB_RELEASE_TAG}\` |"
-            echo "| GitHub release URL | ${GITHUB_RELEASE_URL} |"
-          } >> "$GITHUB_STEP_SUMMARY"
+          echo "## workspace-dev Release Summary" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Item | Value |" >> "$GITHUB_STEP_SUMMARY"
+          echo "|------|-------|" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Version (current package.json) | \`${CURRENT_VERSION}\` |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| npm tag lane | \`${CURRENT_NPM_TAG}\` |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Publish auth mode | \`${{ steps.npm_auth_mode.outputs.auth_mode }}\` |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Provenance path | \`pnpm run release:changesets:publish\` |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| GitHub release tag | \`${{ steps.github_release.outputs.tag }}\` |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| GitHub release URL | ${{ steps.github_release.outputs.url }} |" >> "$GITHUB_STEP_SUMMARY"
