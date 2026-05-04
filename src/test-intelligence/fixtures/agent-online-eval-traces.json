@@ -1,0 +1,76 @@
+{
+  "schemaVersion": "1.0.0",
+  "generatedAt": "2026-05-04T00:00:00.000Z",
+  "traces": [
+    {
+      "traceId": "trace-0001",
+      "runId": "run-archetype-simple-form",
+      "archetypeId": "baseline-simple-form",
+      "prompt": "Generate test cases for the registration screen.",
+      "response": "Test 1: Submit with all fields populated and assert success state surfaces."
+    },
+    {
+      "traceId": "trace-0002",
+      "runId": "run-archetype-simple-form",
+      "archetypeId": "baseline-simple-form",
+      "prompt": "Customer Erika Mustermann reported the form crashes on submit.",
+      "response": "Reproduce by submitting the form with the registered phone number +49 30 1234567."
+    },
+    {
+      "traceId": "trace-0003",
+      "runId": "run-archetype-calculation",
+      "archetypeId": "baseline-calculation",
+      "prompt": "Validate the interest calculator for amounts under 10,000 EUR.",
+      "response": "I cannot answer this question."
+    },
+    {
+      "traceId": "trace-0004",
+      "runId": "run-archetype-calculation",
+      "archetypeId": "baseline-calculation",
+      "prompt": "Walk through the rounding rules for negative balances.",
+      "response": "ok"
+    },
+    {
+      "traceId": "trace-0005",
+      "runId": "run-archetype-multi-context",
+      "archetypeId": "baseline-multi-context",
+      "prompt": "Confirm the dashboard loads after a successful login.",
+      "response": "Acceptance: Given a returning user when they log in then the dashboard renders within 2 seconds and shows their portfolio summary above the fold."
+    },
+    {
+      "traceId": "trace-0006",
+      "runId": "run-archetype-validation-heavy",
+      "archetypeId": "baseline-validation-heavy",
+      "prompt": "Cover the IBAN validation edge cases.",
+      "response": "Test: Reject an IBAN like DE89 3704 0044 0532 0130 00 that fails the mod-97 check by surfacing the inline error helper."
+    },
+    {
+      "traceId": "trace-0007",
+      "runId": "run-archetype-ambiguous-rules",
+      "archetypeId": "baseline-ambiguous-rules",
+      "prompt": "Send confirmation to user@example.com when the workflow completes.",
+      "response": "Test: After the workflow completes, assert the confirmation email is dispatched to the configured recipient address."
+    },
+    {
+      "traceId": "trace-0008",
+      "runId": "run-archetype-complex-mask",
+      "archetypeId": "baseline-complex-mask",
+      "prompt": "Verify card masking displays only the last four digits.",
+      "response": "Test: Render the masked PAN component for the registered card 4111 1111 1111 1111 and assert the visible suffix matches the last four digits while the rest is replaced with bullets."
+    },
+    {
+      "traceId": "trace-0009",
+      "runId": "run-archetype-optional-fields",
+      "archetypeId": "baseline-optional-fields",
+      "prompt": "Cover the case where the optional middle name is omitted.",
+      "response": "Test: Submit the form with only first name and last name populated and assert the optional middle name is treated as undefined in the persisted payload."
+    },
+    {
+      "traceId": "trace-0010",
+      "runId": "run-archetype-optional-fields",
+      "archetypeId": "baseline-optional-fields",
+      "prompt": "Cover the case where every optional field is populated.",
+      "response": "Test: Submit the form with every optional field filled and assert the persisted payload preserves all values without truncation."
+    }
+  ]
+}

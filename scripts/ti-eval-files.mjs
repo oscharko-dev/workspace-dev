@@ -18,6 +18,7 @@ import { spawn } from "node:child_process";
 export const TI_EVAL_FILES = Object.freeze([
   "src/test-intelligence/adversarial-2025.test.ts",
   "src/test-intelligence/adversarial-fixtures.test.ts",
+  "src/test-intelligence/agent-eval-online-sampler.test.ts",
   "src/test-intelligence/agent-iterations.test.ts",
   "src/test-intelligence/eval-ab.test.ts",
   "src/test-intelligence/baseline-eval.test.ts",

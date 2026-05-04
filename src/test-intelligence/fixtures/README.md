@@ -51,6 +51,7 @@ fixtures/
 └── eval-baseline-<archetype>.json      # required: deterministic MA-0 eval snapshot
 └── eval-ab-input.json                  # required: curated MA-5 A/B + human-review input
 └── eval-ab-<archetype>.json            # required: deterministic MA-5 A/B report
+└── agent-online-eval-traces.json       # required: curated MA-5 production-trace sample
 ```
 
 - `<id>.figma.json` matches `IntentDerivationFigmaInput`
@@ -88,6 +89,13 @@ fixtures/
   empirical-CDF post-hoc calibration for position bias, no hard length
   normalization for verbosity bias, and a cross-family judge panel to
   break self-preference.
+- `agent-online-eval-traces.json` is the curated MA-5 production-trace
+  sample used by Issue #1804. Each entry carries a `traceId`, `runId`,
+  optional `archetypeId`, prompt, response, and optional metadata.
+  `agent-eval-online-sampler.ts` consumes this fixture deterministically
+  (SHA-256 of `seed::traceId` truncated to 48 bits, compared against the
+  sample rate), redacts PII before evaluation, and writes
+  `<runDir>/agent-online-eval-report.json` as canonical JSON.
 
 Only `baseline-multi-context` ships the optional `*.jira.json` and
 `*.custom.md` companions. The other six archetypes intentionally

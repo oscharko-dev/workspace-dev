@@ -276,6 +276,13 @@ fixtures under `src/test-intelligence/fixtures/`:
 - `eval-baseline-<archetype>.json` pins the MA-0 single-pass snapshot.
 - `eval-ab-input.json` carries the curated MA-5 A/B and human-review sample.
 - `eval-ab-<archetype>.json` is the generated MA-5 report per archetype.
+- `agent-online-eval-traces.json` carries the curated MA-5 production-trace
+  sample consumed by `agent-eval-online-sampler.ts`. The sampler picks
+  traces deterministically from the seed and sample rate, redacts PII via
+  `pii-detection.ts` (whole-field token replacement), runs an air-gapped
+  default evaluator (or a caller-supplied evaluator), and persists
+  `agent-online-eval-report.json` under `<runDir>/` as canonical JSON
+  with population, aggregate, and per-sample blocks.
 
 Each `eval-ab-<archetype>.json` report is canonical JSON and records:
 
