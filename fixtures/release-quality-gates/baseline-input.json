@@ -1,6 +1,6 @@
 {
   "schemaVersion": "1.0.0",
-  "contractVersion": "1.7.0",
+  "contractVersion": "1.8.0",
   "releaseId": "baseline-2026-05-04",
   "mutation": {
     "fixtures": [
@@ -93,5 +93,92 @@
         ]
       }
     ]
+  },
+  "perSourceCostPlausibility": {
+    "samples": [
+      {
+        "sampleId": "cost-banking-onboarding-001",
+        "attestedBySourceHash": "aabbccddeeff00112233445566778899aabbccddeeff00112233445566778899",
+        "observedBySourceHash": "aabbccddeeff00112233445566778899aabbccddeeff00112233445566778899",
+        "sealed": true
+      },
+      {
+        "sampleId": "cost-insurance-quote-001",
+        "attestedBySourceHash": "bbccddeeff00112233445566778899aabbccddeeff00112233445566778899aa",
+        "observedBySourceHash": "bbccddeeff00112233445566778899aabbccddeeff00112233445566778899aa",
+        "sealed": true
+      }
+    ]
+  },
+  "memdirManifestConsistency": {
+    "pathValidator": {
+      "coveredCases": 8,
+      "totalCases": 8
+    },
+    "lessons": [
+      {
+        "lessonId": "lesson-banking-eu-onboarding",
+        "profile": "banking",
+        "mtimeMs": 1746230400000,
+        "lastRefreshAtMs": 1746316800000,
+        "nowMs": 1746403200000
+      },
+      {
+        "lessonId": "lesson-banking-payments-transfer",
+        "profile": "banking",
+        "mtimeMs": 1746144000000,
+        "nowMs": 1746403200000
+      },
+      {
+        "lessonId": "lesson-default-general-flow",
+        "profile": "default",
+        "mtimeMs": 1729296000000,
+        "nowMs": 1746403200000
+      }
+    ]
+  },
+  "libraryCoverageStatusCompleteness": {
+    "primitives": [
+      {
+        "primitiveId": "langgraph/StateGraph.add_node",
+        "status": "COVERED",
+        "justification": "Fully covered by the harness StepGraph adapter in src/test-intelligence/agent-harness-step-graph.ts.",
+        "referencedModulePath": "src/test-intelligence/agent-harness-step-graph.ts",
+        "moduleImplemented": true
+      },
+      {
+        "primitiveId": "langgraph/StateGraph.compile",
+        "status": "COVERED",
+        "justification": "Compilation is exercised transitively through all harness integration tests.",
+        "moduleImplemented": true
+      },
+      {
+        "primitiveId": "langgraph/MemorySaver",
+        "status": "PARITY-PATH",
+        "justification": "Workspace-dev uses an in-process review-store instead of LangGraph MemorySaver; parity verified by contract tests.",
+        "moduleImplemented": true
+      },
+      {
+        "primitiveId": "langgraph/interrupt",
+        "status": "NICHT-UEBERNOMMEN",
+        "justification": "Human-in-the-loop interrupt not in scope for the current release; deferred to post-release increment.",
+        "moduleImplemented": false
+      }
+    ]
+  },
+  "architectureFitSelfTest": {
+    "scannedFileCount": 1,
+    "violations": []
+  },
+  "contextBudgetRegression": {
+    "baseline": {
+      "meanInputTokens": 18500,
+      "sampleCount": 12
+    },
+    "harness": {
+      "meanInputTokens": 19200,
+      "sampleCount": 12
+    },
+    "qualityDeltaScore": 0.02
   }
 }
