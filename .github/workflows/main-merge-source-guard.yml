@@ -9,12 +9,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Enforce dev-gate as the only source branch for main
-        env:
-          GITHUB_HEAD_REF: ${{ github.head_ref }}
         shell: bash
         run: |
           set -euo pipefail
-          if [[ "${GITHUB_HEAD_REF}" != "dev-gate" ]]; then
-            echo "Only branch 'dev-gate' may merge into 'main'. Current source branch: '${GITHUB_HEAD_REF}'." >&2
+          if [[ "${{ github.head_ref }}" != "dev-gate" ]]; then
+            echo "Only branch 'dev-gate' may merge into 'main'. Current source branch: '${{ github.head_ref }}'." >&2
             exit 1
           fi
