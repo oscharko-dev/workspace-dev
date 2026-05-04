@@ -48,13 +48,14 @@ concurrency:
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' && github.ref != 'refs/heads/dev' }}
 
 permissions:
-  actions: read
   contents: read
-  issues: write
 
 jobs:
   benchmark:
     name: benchmark
+    permissions:
+      actions: read
+      issues: write
     runs-on: ubuntu-22.04
     timeout-minutes: 30
     env:
