@@ -125,6 +125,15 @@ import {
 } from "./prompt-compiler.js";
 import { cloneEuBankingDefaultProfile } from "./policy-profile.js";
 import { writeAgentRoleRunArtifact } from "./agent-role-run-artifact.js";
+import {
+  runAgentHarnessStep,
+  type AgentHarnessAttemptResult,
+  type AgentHarnessErrorClass,
+  type AgentHarnessMappedJobStatus,
+  type AgentHarnessOutcome,
+  type AgentHarnessTestDepth,
+  type RunAgentHarnessStepResult,
+} from "./agent-harness.js";
 import { writeGenealogyArtifact } from "./genealogy.js";
 import {
   normalizeUntrustedContent,
@@ -287,6 +296,64 @@ export interface ProductionRunnerLlmConfig {
   abortSignal?: AbortSignal;
 }
 
+/**
+ * Production runner harness modes (Issue #1791, Story MA-3 #1758).
+ *
+ *   - `off` (default) — single-pass fallback. The runner calls the LLM
+ *     gateway once and fails fast on errors. No harness step artifact is
+ *     written. This is the legacy behavior that all existing callers
+ *     receive when they omit the {@link ProductionRunnerHarnessConfig}.
+ *   - `shadow_eval` — observation mode. The runner still executes the
+ *     single-pass LLM call exactly as in `off`, but additionally writes a
+ *     per-step harness artifact reflecting the classified outcome. Failure
+ *     classification is identical to `off`; the harness artifact is purely
+ *     informational so operators can compare the multi-agent harness's
+ *     decisions against production behavior before enabling enforcement.
+ *   - `enforced` — the harness owns the terminal decision. The runner
+ *     executes the single-pass LLM call, classifies the result through
+ *     {@link runAgentHarnessStep}, and refuses to proceed when the harness
+ *     outcome is anything other than `accepted`. Non-accepted outcomes map
+ *     to the same {@link ProductionRunnerError} failure classes as the
+ *     legacy fallback so request handlers continue to receive a stable
+ *     error envelope.
+ */
+export const PRODUCTION_RUNNER_HARNESS_MODES = [
+  "enforced",
+  "off",
+  "shadow_eval",
+] as const;
+
+export type ProductionRunnerHarnessMode =
+  (typeof PRODUCTION_RUNNER_HARNESS_MODES)[number];
+
+/** Harness role step id used when wrapping the test_generation LLM call. */
+export const PRODUCTION_RUNNER_HARNESS_ROLE_STEP_ID =
+  "test_generation_harness" as const;
+
+export interface ProductionRunnerHarnessConfig {
+  /** Harness routing mode. Defaults to `"off"` when this field is omitted. */
+  readonly mode: ProductionRunnerHarnessMode;
+  /** Iteration budget tag forwarded to the harness. Defaults to `"standard"`. */
+  readonly testDepth?: AgentHarnessTestDepth;
+  /**
+   * Override for the harness role step id used to namespace the per-step
+   * artifact. Defaults to {@link PRODUCTION_RUNNER_HARNESS_ROLE_STEP_ID}.
+   * Override only when running multiple harness wrappers in the same job.
+   */
+  readonly roleStepId?: string;
+}
+
+/** Summary surfaced when the runner ran in `shadow_eval` or `enforced` mode. */
+export interface ProductionRunnerHarnessSummary {
+  readonly mode: Exclude<ProductionRunnerHarnessMode, "off">;
+  readonly outcome: AgentHarnessOutcome;
+  readonly mappedJobStatus: AgentHarnessMappedJobStatus;
+  readonly errorClass: AgentHarnessErrorClass;
+  readonly attemptsConsumed: number;
+  readonly maxAttemptsAllowed: number;
+  readonly artifactPath: string;
+}
+
 const toEvidenceVisualDeployment = (
   deployment: LlmGatewayClient["deployment"],
 ): "llama-4-maverick-vision" | "phi-4-multimodal-poc" | "mock" => {
@@ -350,6 +417,15 @@ export interface RunFigmaToQcTestCasesInput {
    * {@link BANKING_INSURANCE_SEMANTIC_KEYWORDS} entry.
    */
   policyProfileId?: string;
+  /**
+   * Optional multi-agent harness routing (Issue #1791). Defaults to
+   * {@link ProductionRunnerHarnessMode} `"off"` — the single-pass LLM call
+   * remains the production fallback. When set to `"shadow_eval"` the runner
+   * additionally writes a per-step harness artifact for observation; when
+   * set to `"enforced"` the harness owns the terminal decision and refuses
+   * to proceed when the classified outcome is not `accepted`.
+   */
+  harness?: ProductionRunnerHarnessConfig;
 }
 
 export interface RunFigmaToQcTestCasesResult {
@@ -379,7 +455,15 @@ export interface RunFigmaToQcTestCasesResult {
     policyReport: string;
     coverageReport: string;
     finopsReport: string;
+    /** Path to the per-step harness artifact when `harness.mode !== "off"`. */
+    harnessStep?: string;
   };
+  /**
+   * Harness summary surfaced when the runner ran with
+   * `harness.mode === "shadow_eval"` or `"enforced"`. Absent in `"off"` mode
+   * so legacy callers see no field-shape change.
+   */
+  harness?: ProductionRunnerHarnessSummary;
   visualSidecar?: {
     result: VisualSidecarResult;
     artifactPath: string;
@@ -757,46 +841,80 @@ export const runFigmaToQcTestCases = async (
       outcome: llmResult.outcome,
       ...(llmResult.outcome === "success"
         ? {
-            inputTokens: llmResult.usage?.inputTokens,
-            outputTokens: llmResult.usage?.outputTokens,
+            inputTokens: llmResult.usage.inputTokens,
+            outputTokens: llmResult.usage.outputTokens,
             finishReason: llmResult.finishReason,
           }
         : { errorClass: llmResult.errorClass }),
     },
   });
-  if (llmResult.outcome !== "success") {
-    if (llmResult.errorClass === "refusal") {
-      throw new ProductionRunnerError({
-        failureClass: "LLM_REFUSAL",
-        message: `LLM refused to produce test cases: ${llmResult.message}`,
-        retryable: false,
-      });
-    }
-    throw new ProductionRunnerError({
-      failureClass: "LLM_GATEWAY_FAILED",
-      message: `LLM gateway returned ${llmResult.errorClass}: ${llmResult.message}`,
-      retryable: llmResult.retryable,
-    });
-  }
-  finopsRecorder.recordAttempt({
-    role: "test_generation",
-    source: "generator",
-    deployment: llmResult.modelDeployment,
-    durationMs: llmDurationMs,
-    result: llmResult,
-    liveSmoke: llmResult.modelDeployment !== "mock",
-    fallback: false,
+
+  // 6. Classify the LLM attempt into a harness-shaped envelope before
+  // throwing, so `harness.mode === "shadow_eval"` / `"enforced"` can record
+  // a per-step artifact even on failure.
+  const attemptOutcome = classifyLlmAttempt({
+    llmResult,
+    finopsRecorder,
+    llmDurationMs,
   });
 
-  const draftValidation = validateLlmDraftResponse(llmResult.content);
-  if (!draftValidation.ok) {
-    throw new ProductionRunnerError({
-      failureClass: "LLM_RESPONSE_INVALID",
-      message: `LLM response did not match the expected draft schema: ${draftValidation.message}`,
-      retryable: false,
+  const harnessMode: ProductionRunnerHarnessMode = input.harness?.mode ?? "off";
+  let harnessSummary: ProductionRunnerHarnessSummary | undefined;
+  let harnessArtifactPath: string | undefined;
+  if (harnessMode !== "off") {
+    const harnessRoleStepId =
+      input.harness?.roleStepId ?? PRODUCTION_RUNNER_HARNESS_ROLE_STEP_ID;
+    const harnessTestDepth: AgentHarnessTestDepth =
+      input.harness?.testDepth ?? "standard";
+    const harnessAttemptResult = buildHarnessAttemptResult({
+      hashes: compiled.request.hashes,
+      attemptOutcome,
+      llmDurationMs,
+      llmInputTokens:
+        llmResult.outcome === "success"
+          ? (llmResult.usage.inputTokens ?? 0)
+          : 0,
+      llmOutputTokens:
+        llmResult.outcome === "success"
+          ? (llmResult.usage.outputTokens ?? 0)
+          : 0,
     });
+    const harnessRunResult: RunAgentHarnessStepResult =
+      await runAgentHarnessStep({
+        runDir: artifactDir,
+        jobId: input.jobId,
+        role: "generator",
+        roleStepId: harnessRoleStepId,
+        testDepth: harnessTestDepth,
+        // The callback is deterministic across attempts because we are
+        // wrapping a single LLM result. The harness loop terminates after
+        // attempt 1 for `accepted` / `permanent` / `policy_block`, and
+        // after the role's `maxAttempts` cap for `retryable` results.
+        executeAttempt: async () => harnessAttemptResult,
+      });
+    harnessArtifactPath = harnessRunResult.artifactPath;
+    harnessSummary = {
+      mode: harnessMode,
+      outcome: harnessRunResult.outcome,
+      mappedJobStatus: harnessRunResult.mappedJobStatus,
+      errorClass: harnessRunResult.artifact.errorClass,
+      attemptsConsumed: harnessRunResult.artifact.attemptsConsumed,
+      maxAttemptsAllowed: harnessRunResult.artifact.maxAttemptsAllowed,
+      artifactPath: harnessRunResult.artifactPath,
+    };
   }
-  const drafts = draftValidation.value.testCases;
+
+  if (attemptOutcome.kind === "error") {
+    throw attemptOutcome.error;
+  }
+  if (
+    harnessMode === "enforced" &&
+    harnessSummary !== undefined &&
+    harnessSummary.outcome !== "accepted"
+  ) {
+    throw mapHarnessOutcomeToProductionRunnerError(harnessSummary);
+  }
+  const drafts = attemptOutcome.drafts;
 
   // 7. Stamp full GeneratedTestCase records.
   const audit: GeneratedTestCaseAuditMetadata = {
@@ -1237,11 +1355,15 @@ export const runFigmaToQcTestCases = async (
       policyReport: policyPath,
       coverageReport: coveragePath,
       finopsReport: finopsWritten.artifactPath,
+      ...(harnessArtifactPath !== undefined
+        ? { harnessStep: harnessArtifactPath }
+        : {}),
     },
     customerMarkdownPaths: {
       combined: combinedMarkdownPath,
       perCase: perCasePaths,
     },
+    ...(harnessSummary !== undefined ? { harness: harnessSummary } : {}),
   };
 };
 
@@ -1412,6 +1534,144 @@ interface DraftValidationFailure {
   ok: false;
   message: string;
 }
+
+// ── Harness wiring helpers (Issue #1791) ────────────────────────────────────
+
+type LlmAttemptOutcome =
+  | {
+      readonly kind: "ok";
+      readonly drafts: ReadonlyArray<ProductionRunnerLlmDraftCase>;
+    }
+  | {
+      readonly kind: "error";
+      readonly error: ProductionRunnerError;
+      readonly errorKind: AgentHarnessAttemptResult["errorKind"];
+      readonly errorClass: AgentHarnessErrorClass;
+    };
+
+interface ClassifyLlmAttemptInput {
+  readonly llmResult: Awaited<ReturnType<LlmGatewayClient["generate"]>>;
+  readonly finopsRecorder: ReturnType<typeof createFinOpsUsageRecorder>;
+  readonly llmDurationMs: number;
+}
+
+const classifyLlmAttempt = (
+  input: ClassifyLlmAttemptInput,
+): LlmAttemptOutcome => {
+  const { llmResult, finopsRecorder, llmDurationMs } = input;
+  if (llmResult.outcome !== "success") {
+    if (llmResult.errorClass === "refusal") {
+      return {
+        kind: "error",
+        errorKind: "policy_block",
+        errorClass: "policy_refusal",
+        error: new ProductionRunnerError({
+          failureClass: "LLM_REFUSAL",
+          message: `LLM refused to produce test cases: ${llmResult.message}`,
+          retryable: false,
+        }),
+      };
+    }
+    return {
+      kind: "error",
+      errorKind: llmResult.retryable ? "retryable" : "permanent",
+      errorClass: llmResult.retryable ? "gateway_error" : "schema_validation",
+      error: new ProductionRunnerError({
+        failureClass: "LLM_GATEWAY_FAILED",
+        message: `LLM gateway returned ${llmResult.errorClass}: ${llmResult.message}`,
+        retryable: llmResult.retryable,
+      }),
+    };
+  }
+  finopsRecorder.recordAttempt({
+    role: "test_generation",
+    source: "generator",
+    deployment: llmResult.modelDeployment,
+    durationMs: llmDurationMs,
+    result: llmResult,
+    liveSmoke: llmResult.modelDeployment !== "mock",
+    fallback: false,
+  });
+  const draftValidation = validateLlmDraftResponse(llmResult.content);
+  if (!draftValidation.ok) {
+    return {
+      kind: "error",
+      errorKind: "permanent",
+      errorClass: "schema_validation",
+      error: new ProductionRunnerError({
+        failureClass: "LLM_RESPONSE_INVALID",
+        message: `LLM response did not match the expected draft schema: ${draftValidation.message}`,
+        retryable: false,
+      }),
+    };
+  }
+  return { kind: "ok", drafts: draftValidation.value.testCases };
+};
+
+interface BuildHarnessAttemptResultInput {
+  readonly hashes: {
+    readonly inputHash: string;
+    readonly promptHash: string;
+    readonly schemaHash: string;
+    readonly cacheKey: string;
+    readonly cacheablePrefixHash: string;
+  };
+  readonly attemptOutcome: LlmAttemptOutcome;
+  readonly llmDurationMs: number;
+  readonly llmInputTokens: number;
+  readonly llmOutputTokens: number;
+}
+
+const buildHarnessAttemptResult = (
+  input: BuildHarnessAttemptResultInput,
+): AgentHarnessAttemptResult => {
+  const judgeAccepted = input.attemptOutcome.kind === "ok";
+  if (judgeAccepted) {
+    return {
+      inputHash: input.hashes.inputHash,
+      promptHash: input.hashes.promptHash,
+      schemaHash: input.hashes.schemaHash,
+      cacheKeyDigest: input.hashes.cacheKey,
+      cacheablePrefixHash: input.hashes.cacheablePrefixHash,
+      judgeAccepted: true,
+      errorKind: "none",
+      errorClass: "none",
+      inputTokens: input.llmInputTokens,
+      outputTokens: input.llmOutputTokens,
+      latencyMs: input.llmDurationMs,
+    };
+  }
+  return {
+    inputHash: input.hashes.inputHash,
+    promptHash: input.hashes.promptHash,
+    schemaHash: input.hashes.schemaHash,
+    cacheKeyDigest: input.hashes.cacheKey,
+    cacheablePrefixHash: input.hashes.cacheablePrefixHash,
+    judgeAccepted: false,
+    errorKind: input.attemptOutcome.errorKind,
+    errorClass: input.attemptOutcome.errorClass,
+    inputTokens: input.llmInputTokens,
+    outputTokens: input.llmOutputTokens,
+    latencyMs: input.llmDurationMs,
+  };
+};
+
+const mapHarnessOutcomeToProductionRunnerError = (
+  summary: ProductionRunnerHarnessSummary,
+): ProductionRunnerError => {
+  if (summary.outcome === "blocked") {
+    return new ProductionRunnerError({
+      failureClass: "LLM_REFUSAL",
+      message: `Harness blocked test_generation: ${summary.errorClass}`,
+      retryable: false,
+    });
+  }
+  return new ProductionRunnerError({
+    failureClass: "LLM_GATEWAY_FAILED",
+    message: `Harness refused test_generation outcome: ${summary.outcome} (${summary.errorClass})`,
+    retryable: summary.outcome === "failed_retryable",
+  });
+};
 
 const validateLlmDraftResponse = (
   content: unknown,
