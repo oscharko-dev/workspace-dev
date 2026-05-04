@@ -481,6 +481,44 @@ const isAgentIterationsArtifact = (value: unknown): boolean =>
   typeof value["jobId"] === "string" &&
   Array.isArray(value["iterations"]);
 
+const CATCH_UP_BRIEF_KINDS = new Set([
+  "judge_panel",
+  "gap_finder",
+  "ir_mutation",
+  "repair",
+  "policy",
+  "evidence",
+]);
+
+const isCatchUpBriefEventGroup = (value: unknown): boolean => {
+  if (!isRecord(value)) return false;
+  if (typeof value["kind"] !== "string") return false;
+  if (!CATCH_UP_BRIEF_KINDS.has(value["kind"])) return false;
+  if (typeof value["count"] !== "number" || !Number.isInteger(value["count"])) {
+    return false;
+  }
+  return isStringArray(value["significant"]);
+};
+
+const isCatchUpBrief = (value: unknown): boolean => {
+  if (!isRecord(value)) return false;
+  return (
+    value["schemaVersion"] === "1.0.0" &&
+    typeof value["jobId"] === "string" &&
+    typeof value["summary"] === "string" &&
+    Array.isArray(value["eventsCovered"]) &&
+    value["eventsCovered"].every((entry) => isCatchUpBriefEventGroup(entry)) &&
+    typeof value["sinceMs"] === "number" &&
+    typeof value["generatedAt"] === "string" &&
+    (value["generatorMode"] === "deterministic" ||
+      value["generatorMode"] === "no_tools_llm") &&
+    typeof value["contentHash"] === "string"
+  );
+};
+
+const isCatchUpBriefArray = (value: unknown): boolean =>
+  Array.isArray(value) && value.every((entry) => isCatchUpBrief(entry));
+
 const optionalGuard = <T>(
   value: unknown,
   guard: (v: unknown) => v is T,
@@ -577,6 +615,10 @@ export const isTestIntelligenceBundle = (
     {
       key: "agentIterations",
       guard: isAgentIterationsArtifact as (v: unknown) => v is unknown,
+    },
+    {
+      key: "catchUpBriefs",
+      guard: isCatchUpBriefArray as (v: unknown) => v is unknown,
     },
   ];
 
