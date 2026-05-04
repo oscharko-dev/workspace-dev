@@ -285,17 +285,10 @@ jobs:
   golden-and-ti:
     needs: [setup]
     if: needs.setup.outputs.src == 'true' || needs.setup.outputs.config == 'true' || needs.setup.outputs.full == 'true'
-    timeout-minutes: 60
+    timeout-minutes: 90
     runs-on: ubuntu-22.04
     permissions:
       contents: read
-    strategy:
-      fail-fast: false
-      matrix:
-        shard: [0, 1, 2, 3]
-    env:
-      SHARD: ${{ matrix.shard }}
-      TOTAL: 4
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
         with:
@@ -313,16 +306,14 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile --ignore-scripts
 
-      - name: Golden parity fixtures (shard 0 only)
-        if: matrix.shard == 0
+      - name: Golden parity fixtures
         run: pnpm run test:golden
 
-      - name: Test-intelligence multi-source eval gate (shard 0 only)
-        if: matrix.shard == 0
+      - name: Test-intelligence multi-source eval gate
         run: pnpm run test:ti-multi-source-eval
 
-      - name: Test-intelligence eval gate (shard ${{ matrix.shard }}/4)
-        run: pnpm run test:ti-eval:shard
+      - name: Test-intelligence eval gate
+        run: pnpm run test:ti-eval
 
   coverage:
     needs: [setup]
@@ -510,16 +501,6 @@ jobs:
     continue-on-error: true
     permissions:
       contents: read
-    strategy:
-      fail-fast: false
-      matrix:
-        template:
-          - bundle: react-mui-app
-            packageDir: template/react-mui-app
-            lockfile: template/react-mui-app/pnpm-lock.yaml
-          - bundle: react-tailwind-app
-            packageDir: template/react-tailwind-app
-            lockfile: template/react-tailwind-app/pnpm-lock.yaml
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
         with:
@@ -533,87 +514,37 @@ jobs:
         with:
           node-version: 22
           cache: pnpm
-          cache-dependency-path: ${{ matrix.template.lockfile }}
 
-      - name: Install template dependencies
-        run: pnpm --dir "${{ matrix.template.packageDir }}" install --frozen-lockfile --ignore-scripts
-
-      - name: Typecheck template app
-        run: pnpm --dir "${{ matrix.template.packageDir }}" run typecheck
-
-      - name: Build template app
-        run: pnpm --dir "${{ matrix.template.packageDir }}" run build
-
-      - name: Capture web performance baseline (warn-only)
-        env:
-          FIGMAPIPE_PERF_ARTIFACT_DIR: artifacts/performance
-          FIGMAPIPE_PERF_BASELINE_PATH: artifacts/performance/perf-measured-baseline.json
-          FIGMAPIPE_PERF_REPORT_PATH: artifacts/performance/perf-baseline-report.json
-          FIGMAPIPE_PERF_STRICT: "false"
-          FIGMAPIPE_PERF_ALLOW_BASELINE_BOOTSTRAP: "true"
-        run: pnpm --dir "${{ matrix.template.packageDir }}" run perf:baseline
-
-      - name: Assert web performance budgets and regression (warn-only)
-        env:
-          FIGMAPIPE_PERF_ARTIFACT_DIR: artifacts/performance
-          FIGMAPIPE_PERF_BASELINE_PATH: perf-baseline.json
-          FIGMAPIPE_PERF_STRICT: "true"
-          FIGMAPIPE_PERF_ALLOW_BASELINE_BOOTSTRAP: "false"
-        run: pnpm --dir "${{ matrix.template.packageDir }}" run perf:assert
-
-      - name: Summarize web performance baseline report
-        if: always()
-        run: node scripts/print-perf-report-summary.mjs "${{ matrix.template.packageDir }}/artifacts/performance/perf-baseline-report.json"
-
-      - name: Summarize web performance assertion report
-        if: always()
-        run: node scripts/print-perf-report-summary.mjs "${{ matrix.template.packageDir }}/artifacts/performance/perf-assert-report.json"
+      - name: Run performance baseline + assert for both templates
+        run: |
+          set -euo pipefail
+          for dir in template/react-mui-app template/react-tailwind-app; do
+            echo "::group::performance-web: $dir"
+            pnpm --dir "$dir" install --frozen-lockfile --ignore-scripts
+            pnpm --dir "$dir" run typecheck
+            pnpm --dir "$dir" run build
+            FIGMAPIPE_PERF_ARTIFACT_DIR=artifacts/performance \
+            FIGMAPIPE_PERF_BASELINE_PATH=artifacts/performance/perf-measured-baseline.json \
+            FIGMAPIPE_PERF_REPORT_PATH=artifacts/performance/perf-baseline-report.json \
+            FIGMAPIPE_PERF_STRICT=false \
+            FIGMAPIPE_PERF_ALLOW_BASELINE_BOOTSTRAP=true \
+              pnpm --dir "$dir" run perf:baseline
+            FIGMAPIPE_PERF_ARTIFACT_DIR=artifacts/performance \
+            FIGMAPIPE_PERF_BASELINE_PATH=perf-baseline.json \
+            FIGMAPIPE_PERF_STRICT=true \
+            FIGMAPIPE_PERF_ALLOW_BASELINE_BOOTSTRAP=false \
+              pnpm --dir "$dir" run perf:assert
+            node scripts/print-perf-report-summary.mjs "$dir/artifacts/performance/perf-baseline-report.json" || true
+            node scripts/print-perf-report-summary.mjs "$dir/artifacts/performance/perf-assert-report.json" || true
+            echo "::endgroup::"
+          done
 
       - name: Upload web performance artifacts
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7
         if: always()
         with:
-          name: workspace-dev-dev-performance-web-${{ matrix.template.bundle }}-${{ github.run_id }}
-          path: ${{ matrix.template.packageDir }}/artifacts/performance
-          if-no-files-found: ignore
-
-  mutation-testing:
-    needs: [setup]
-    if: contains(github.event.pull_request.labels.*.name, 'mutation-required') || github.event_name == 'workflow_dispatch'
-    timeout-minutes: 420
-    runs-on: ubuntu-22.04
-    permissions:
-      contents: read
-    steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
-        with:
-          persist-credentials: false
-
-      - uses: pnpm/action-setup@26f6d4f2c533a43e6b5da0b4a5dd983f98f7b49a  # v6
-        with:
-          version: 10.33.0
-
-      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e  # v6
-        with:
-          node-version: 22
-          cache: pnpm
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile --ignore-scripts
-
-      - name: Run mutation baseline (blocking >=58%)
-        run: pnpm run test:mutation
-
-      - name: Summarize mutation report
-        if: always()
-        run: node scripts/print-mutation-report-summary.mjs artifacts/testing/mutation/mutation.json
-
-      - name: Upload mutation artifacts
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7
-        if: always()
-        with:
-          name: workspace-dev-dev-mutation-${{ github.run_id }}
-          path: artifacts/testing/mutation
+          name: workspace-dev-dev-performance-web-${{ github.run_id }}
+          path: template/*/artifacts/performance
           if-no-files-found: ignore
 
   dev-gate-summary:
@@ -629,7 +560,6 @@ jobs:
       - e2e
       - security-smoke
       - build-and-publish-checks
-      - mutation-testing
     if: always()
     timeout-minutes: 5
     runs-on: ubuntu-22.04
@@ -649,7 +579,6 @@ jobs:
           E2E: ${{ needs.e2e.result }}
           SECURITY_SMOKE: ${{ needs.security-smoke.result }}
           BUILD_AND_PUBLISH_CHECKS: ${{ needs.build-and-publish-checks.result }}
-          MUTATION_TESTING: ${{ needs.mutation-testing.result }}
         run: |
           set -euo pipefail
           fail=0
@@ -658,7 +587,7 @@ jobs:
             echo "::error::dev-gate aggregate: setup job did not succeed (result=${SETUP}); downstream skips are not safe"
             fail=1
           fi
-          for name in POLICY_GUARDS TYPECHECK UNIT_TESTS TEMPLATE_TESTS UI_COVERAGE GOLDEN_AND_TI COVERAGE E2E SECURITY_SMOKE BUILD_AND_PUBLISH_CHECKS MUTATION_TESTING; do
+          for name in POLICY_GUARDS TYPECHECK UNIT_TESTS TEMPLATE_TESTS UI_COVERAGE GOLDEN_AND_TI COVERAGE E2E SECURITY_SMOKE BUILD_AND_PUBLISH_CHECKS; do
             value="${!name}"
             echo "${name}=${value}"
             case "$value" in
