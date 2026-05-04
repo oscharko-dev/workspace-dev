@@ -674,6 +674,102 @@ test("runFigmaToQcTestCases records real in-flight dedup hits in the persisted F
   }
 });
 
+test("runFigmaToQcTestCases does not collapse concurrent requests with different active agent lessons", async () => {
+  const rootA = await mkdtemp(path.join(os.tmpdir(), "prod-runner-lesson-a-"));
+  const rootB = await mkdtemp(path.join(os.tmpdir(), "prod-runner-lesson-b-"));
+  try {
+    let dispatches = 0;
+    let releaseFetch: (() => void) | undefined;
+    const releasePromise = new Promise<void>((resolve) => {
+      releaseFetch = resolve;
+    });
+    const client = createLlmGatewayClient(
+      {
+        role: "test_generation",
+        compatibilityMode: "openai_chat",
+        baseUrl: "https://example.cognitiveservices.azure.com/openai/v1",
+        deployment: "gpt-oss-120b",
+        modelRevision: "gpt-oss-120b@2026-05-03",
+        gatewayRelease: "azure-ai-foundry@2026.05",
+        authMode: "api_key",
+        declaredCapabilities: TEST_GENERATION_CAPS,
+        timeoutMs: 5_000,
+        maxRetries: 0,
+        circuitBreaker: { failureThreshold: 3, resetTimeoutMs: 1_000 },
+      },
+      {
+        fetchImpl: async () => {
+          dispatches += 1;
+          await releasePromise;
+          return new Response(
+            JSON.stringify({
+              choices: [
+                {
+                  finish_reason: "stop",
+                  message: {
+                    role: "assistant",
+                    content: JSON.stringify({ testCases: [SAMPLE_DRAFT] }),
+                  },
+                },
+              ],
+              usage: { prompt_tokens: 10, completion_tokens: 5 },
+            }),
+            {
+              status: 200,
+              headers: { "content-type": "application/json" },
+            },
+          );
+        },
+        apiKeyProvider: () => "test-key",
+      },
+    );
+    const jobId = "job-1805-lessons-dedup";
+    const seededLesson = await writeAgentLesson({
+      runDir: path.join(rootA, "jobs", jobId, "test-intelligence"),
+      id: "lesson-investitionssumme-dedup",
+      name: "investitionssumme-dedup",
+      description: "Force a malformed Investitionssumme negative case.",
+      type: "project",
+      policyProfileScope: [EU_BANKING_DEFAULT_POLICY_PROFILE_ID],
+      approvedBy: ["reviewer@workspace-dev"],
+      body: "Always include a malformed Investitionssumme negative case.\n",
+      nowMs: Date.parse("2026-05-04T00:00:00.000Z"),
+    });
+    assert.equal(seededLesson.ok, true);
+
+    const run = (outputRoot: string) =>
+      runFigmaToQcTestCases({
+        jobId,
+        generatedAt: "2026-05-04T12:00:00Z",
+        source: { kind: "figma_rest_file", file: SAMPLE_FILE },
+        outputRoot,
+        llm: { client },
+      });
+
+    const first = run(rootA);
+    const second = run(rootB);
+
+    for (let attempt = 0; attempt < 50 && dispatches < 2; attempt += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+    assert.equal(dispatches, 2);
+    releaseFetch?.();
+
+    const [firstResult, secondResult] = await Promise.all([first, second]);
+    const firstReport = JSON.parse(
+      await readFile(firstResult.artifactPaths.finopsReport, "utf8"),
+    ) as FinOpsBudgetReport;
+    const secondReport = JSON.parse(
+      await readFile(secondResult.artifactPaths.finopsReport, "utf8"),
+    ) as FinOpsBudgetReport;
+    assert.equal(firstReport.bySource.generator.inFlightDedupHits, 0);
+    assert.equal(secondReport.bySource.generator.inFlightDedupHits, 0);
+  } finally {
+    await rm(rootA, { recursive: true, force: true });
+    await rm(rootB, { recursive: true, force: true });
+  }
+});
+
 test("runFigmaToQcTestCases returns EMPTY_FIGMA_INPUT when the document has no screens", async () => {
   const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ti-runner-"));
   try {

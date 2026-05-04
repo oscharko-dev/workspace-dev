@@ -71,6 +71,7 @@ const sampleInFlightDedup = (
   overrides: Partial<GatewayInFlightDedupInputs> = {},
 ): GatewayInFlightDedupInputs => ({
   source: "ir_mutation_oracle",
+  inputHash: HEX64_POLICY,
   promptHash: HEX64,
   modelBinding: "gpt-oss-120b@azure-ai-foundry@2026.04",
   schemaHash: HEX64_ALT,
@@ -1398,6 +1399,35 @@ test("in-flight dedup: different policyProfileHash values do not collapse", asyn
       ...sampleRequest(),
       inFlightDedup: sampleInFlightDedup({
         policyProfileHash: HEX64_POLICY_ALT,
+      }),
+    }),
+  ]);
+
+  assert.equal(dispatches, 2);
+});
+
+test("in-flight dedup: different inputHash values do not collapse", async () => {
+  let dispatches = 0;
+  const client = createLlmGatewayClient(baseConfig, {
+    fetchImpl: async () => {
+      dispatches += 1;
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      return okJsonResponse(buildChoiceBody({ ack: "ok" }));
+    },
+    apiKeyProvider: () => "k",
+  });
+
+  await Promise.all([
+    client.generate({
+      ...sampleRequest(),
+      inFlightDedup: sampleInFlightDedup({
+        inputHash: HEX64_POLICY,
+      }),
+    }),
+    client.generate({
+      ...sampleRequest(),
+      inFlightDedup: sampleInFlightDedup({
+        inputHash: HEX64_POLICY_ALT,
       }),
     }),
   ]);

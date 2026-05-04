@@ -869,6 +869,7 @@ export const runFigmaToQcTestCases = async (
     responseSchemaName: "workspace-dev-production-runner-draft-list-v1",
     inFlightDedup: {
       source: "generator",
+      inputHash: compiled.request.hashes.inputHash,
       promptHash: compiled.request.hashes.promptHash,
       modelBinding: canonicalJson(compiled.request.modelBinding),
       schemaHash: compiled.request.hashes.schemaHash,

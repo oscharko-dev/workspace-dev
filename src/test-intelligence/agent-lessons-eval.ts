@@ -69,7 +69,7 @@ export interface AgentLessonEvalEntry {
   readonly baselineCoverageRate: number;
   readonly candidateCoverageRate: number;
   readonly deltaVsBaseline: number;
-  readonly promptHashChanged: boolean;
+  readonly replayIdentityChanged: boolean;
   readonly expectedPromptTerms: readonly string[];
   readonly pass: boolean;
 }
@@ -262,7 +262,7 @@ const buildEvalEntry = async (
       baselineCoverageRate,
       candidateCoverageRate,
       deltaVsBaseline: round6(candidateCoverageRate - baselineCoverageRate),
-      promptHashChanged:
+      replayIdentityChanged:
         baseline.request.hashes.cacheKey !== candidate.request.hashes.cacheKey,
       expectedPromptTerms: [...fixtureCase.expectedPromptTerms],
       pass:

@@ -34,7 +34,7 @@ test("agent-lessons-eval: every approved lesson passes its referenced fixture", 
     assert.equal(lesson.pass, true, lesson.lessonId);
     assert.equal(lesson.candidateCoverageRate, 1, lesson.lessonId);
     assert.ok(lesson.deltaVsBaseline >= 0, lesson.lessonId);
-    assert.equal(lesson.promptHashChanged, true, lesson.lessonId);
+    assert.equal(lesson.replayIdentityChanged, true, lesson.lessonId);
   }
 });
 

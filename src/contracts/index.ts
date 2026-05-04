@@ -1248,6 +1248,8 @@ export interface LlmGenerationRequest {
 export interface GatewayInFlightDedupInputs {
   /** Optional FinOps source label credited with the dedup hit. */
   readonly source?: AgentSourceLabel;
+  /** sha256 hex digest of the canonical request input payload. */
+  readonly inputHash: string;
   /** sha256 hex digest of the canonical prompt payload. */
   readonly promptHash: string;
   /** Stable model identity string (for example `"rev@release"`). */

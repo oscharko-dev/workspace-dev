@@ -998,6 +998,7 @@ export const selectRelevantLessons = (
     for (const token of queryTokens) {
       if (lessonTokens.has(token)) intersection += 1;
     }
+    if (intersection === 0) continue;
     const union = queryTokens.size + lessonTokens.size - intersection;
     const score = union === 0 ? 0 : intersection / union;
     scored.push({ record, score });

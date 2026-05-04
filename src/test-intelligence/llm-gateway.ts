@@ -409,6 +409,9 @@ export const createLlmGatewayClient = (
 const HEX64_RE = /^[0-9a-f]{64}$/u;
 
 const buildInFlightDedupKey = (input: GatewayInFlightDedupInputs): string => {
+  if (!HEX64_RE.test(input.inputHash)) {
+    throw new RangeError("inputHash must be a 64-char lowercase hex digest");
+  }
   if (!HEX64_RE.test(input.promptHash)) {
     throw new RangeError("promptHash must be a 64-char lowercase hex digest");
   }
@@ -433,6 +436,7 @@ const buildInFlightDedupKey = (input: GatewayInFlightDedupInputs): string => {
     throw new RangeError("source must be a non-empty string when provided");
   }
   return canonicalJson({
+    inputHash: input.inputHash,
     promptHash: input.promptHash,
     modelBinding: input.modelBinding,
     schemaHash: input.schemaHash,
