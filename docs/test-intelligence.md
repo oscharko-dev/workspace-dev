@@ -268,6 +268,26 @@ Persistence guarantees:
   client also walks recorded gateway requests at runtime to enforce the
   invariant.
 
+### Fixture-driven eval gates
+
+The hermetic `pnpm run test:ti-eval` lane also consumes checked-in eval
+fixtures under `src/test-intelligence/fixtures/`:
+
+- `eval-baseline-<archetype>.json` pins the MA-0 single-pass snapshot.
+- `eval-ab-input.json` carries the curated MA-5 A/B and human-review sample.
+- `eval-ab-<archetype>.json` is the generated MA-5 report per archetype.
+
+Each `eval-ab-<archetype>.json` report is canonical JSON and records:
+
+- Single-pass vs multi-agent-harness metric deltas for coverage, duplicate
+  rate, generic expected-result rate, and FinOps spend.
+- Per-criterion human-calibration error derived from the cross-family judge
+  panel.
+- Explicit bias controls:
+  empirical-CDF post-hoc calibration for position bias, no hard length
+  normalization for verbosity bias, and cross-family judging to reduce
+  self-preference.
+
 ## 5. Review flow
 
 The review gate is a deterministic state machine with a persistent event log.

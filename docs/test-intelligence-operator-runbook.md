@@ -88,6 +88,22 @@ the mode is not `off`. The harness summary
 change. Bumping the mode enum is a contract change — record it in
 `CONTRACT_CHANGELOG.md` + `COMPATIBILITY.md`.
 
+For Issue #1800, the hermetic eval lane turns the curated
+`src/test-intelligence/fixtures/eval-ab-input.json` sample into
+canonical `eval-ab-<archetype>.json` reports. Those reports are the
+CI-facing A/B artifact for `shadow_eval` rollout decisions: they expose
+per-pipeline metric deltas, human-calibration error per criterion, and
+the active bias controls.
+
+Bias controls enforced by the A/B lane:
+
+- Position bias: empirical-CDF post-hoc calibration on per-judge pointwise
+  scores. No naive shuffling.
+- Verbosity bias: concise output cap only; no hard length normalization in
+  the score path.
+- Self-preference: cross-family panel (`gpt-oss-120b`,
+  `phi-4-multimodal-poc`).
+
 ---
 
 ## Day-2 operations

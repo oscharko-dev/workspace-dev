@@ -144,6 +144,94 @@ Stable per-step identifier (e.g., `"<jobId>-generator-1"`).
 
 ***
 
+### AgentIterationRecord
+
+One persisted record describing a single repair-iteration step.
+
+#### Properties
+
+##### completedAt
+
+> `readonly` **completedAt**: `string`
+
+ISO-8601 timestamp at which the iteration completed.
+
+##### findingsCount
+
+> `readonly` **findingsCount**: `number`
+
+Total finding count surfaced by this iteration.
+
+##### iteration
+
+> `readonly` **iteration**: `number`
+
+0-based iteration index inside the repair budget.
+
+##### outcome
+
+> `readonly` **outcome**: `"passed"` \| `"exhausted"` \| `"halted"` \| `"needs_repair"`
+
+Resolved outcome of the iteration.
+
+##### parentHash
+
+> `readonly` **parentHash**: `string`
+
+Merkle parent hash linking this iteration into the harness chain.
+
+##### repairPlanId?
+
+> `readonly` `optional` **repairPlanId?**: `string`
+
+Optional repair-plan identifier carried into the next iteration.
+
+##### roleStepId
+
+> `readonly` **roleStepId**: `string`
+
+Stable harness role-step identifier of the role that ran.
+
+##### startedAt
+
+> `readonly` **startedAt**: `string`
+
+ISO-8601 timestamp at which the iteration started.
+
+***
+
+### AgentIterationsArtifact
+
+Persisted, canonical-JSON, per-job repair-iteration log.
+
+#### Properties
+
+##### contractVersion
+
+> `readonly` **contractVersion**: `"1.6.0"`
+
+##### generatedAt
+
+> `readonly` **generatedAt**: `string`
+
+ISO-8601 timestamp the artifact was assembled (server clock).
+
+##### iterations
+
+> `readonly` **iterations**: readonly [`AgentIterationRecord`](#agentiterationrecord)[]
+
+Iteration records sorted by `iteration` ascending.
+
+##### jobId
+
+> `readonly` **jobId**: `string`
+
+##### schemaVersion
+
+> `readonly` **schemaVersion**: `"1.0.0"`
+
+***
+
 ### AgentModelBinding
 
 Static binding of an agent role to a model identity. The optional
@@ -640,6 +728,125 @@ Per-screen slice of the intent.
 ##### trace
 
 > **trace**: [`IntentTraceRef`](#intenttraceref)
+
+***
+
+### CacheBreakEventLogEntry
+
+One persisted line in `cache-break-events.jsonl`. Each line is an
+independent canonical-JSON object so the file is byte-stable when the
+input set is byte-identical and the entries are sorted before write.
+
+#### Properties
+
+##### cacheCreationTokens
+
+> `readonly` **cacheCreationTokens**: `number`
+
+`cache_creation_input_tokens` observed on the breaking response.
+
+##### cacheReadTokens
+
+> `readonly` **cacheReadTokens**: `number`
+
+`cache_read_input_tokens` observed on the breaking response.
+
+##### contractVersion
+
+> `readonly` **contractVersion**: `"1.6.0"`
+
+##### diffArtifactBasename?
+
+> `readonly` `optional` **diffArtifactBasename?**: `string`
+
+Basename of the per-event diff artifact, when persisted.
+
+##### jobId
+
+> `readonly` **jobId**: `string`
+
+##### parentHash
+
+> `readonly` **parentHash**: `string`
+
+Merkle parent hash carried by the original `cache_break` event.
+
+##### querySource
+
+> `readonly` **querySource**: `string`
+
+##### roleStepId
+
+> `readonly` **roleStepId**: `string`
+
+##### schemaVersion
+
+> `readonly` **schemaVersion**: `"1.0.0"`
+
+##### suppressionReason?
+
+> `readonly` `optional` **suppressionReason?**: `"compaction"` \| `"cache_deletion"`
+
+Suppression reason when the break was intentional, if any.
+
+##### ts
+
+> `readonly` **ts**: `string`
+
+ISO-8601 timestamp at which the break was observed.
+
+***
+
+### CompactBoundaryLogEntry
+
+One persisted line in `compact-boundary-log.jsonl`. Carries only
+non-sensitive identifiers (sha256 of the summary, byte-counts) so the
+log can be persisted alongside the per-job artifacts without leaking
+raw conversation text.
+
+#### Properties
+
+##### clearedToolResultBytes
+
+> `readonly` **clearedToolResultBytes**: `number`
+
+Total bytes of cleared tool result blocks at the boundary.
+
+##### contractVersion
+
+> `readonly` **contractVersion**: `"1.6.0"`
+
+##### jobId
+
+> `readonly` **jobId**: `string`
+
+##### parentHash
+
+> `readonly` **parentHash**: `string`
+
+Merkle parent hash linking this boundary into the harness chain.
+
+##### schemaVersion
+
+> `readonly` **schemaVersion**: `"1.0.0"`
+
+##### summarySha256
+
+> `readonly` **summarySha256**: `string`
+
+sha256-hex of the canonical-JSON summary string.
+
+##### tier
+
+> `readonly` **tier**: `"context_budget"` \| `"manual"` \| `"post_repair"` \| `"task_round"`
+
+Tier the boundary belongs to.
+
+##### ts
+
+> `readonly` **ts**: `string`
+
+ISO-8601 timestamp of the compaction boundary.
 
 ***
 
@@ -3285,6 +3492,79 @@ Single ordered step inside a generated test case.
 
 ***
 
+### HarnessArtifactManifest
+
+Per-job manifest of canonical-JSON harness artifacts. Persisted as
+`harness-artifact-manifest.json` next to the artifacts it indexes.
+The [HarnessArtifactManifest.digest](#digest) is a sha256 over the
+canonical-JSON of the sorted `entries` array, so the evidence verify
+route can reproduce every artifact hash offline by re-reading the
+referenced files and recomputing each row.
+
+#### Properties
+
+##### contractVersion
+
+> `readonly` **contractVersion**: `"1.6.0"`
+
+##### digest
+
+> `readonly` **digest**: `string`
+
+sha256-hex over `canonicalJson(entries)`.
+
+##### entries
+
+> `readonly` **entries**: readonly [`HarnessArtifactManifestEntry`](#harnessartifactmanifestentry)[]
+
+Entries sorted by `filename` ascending.
+
+##### generatedAt
+
+> `readonly` **generatedAt**: `string`
+
+##### jobId
+
+> `readonly` **jobId**: `string`
+
+##### schemaVersion
+
+> `readonly` **schemaVersion**: `"1.0.0"`
+
+***
+
+### HarnessArtifactManifestEntry
+
+One row of [HarnessArtifactManifest.entries](#entries).
+
+#### Properties
+
+##### filename
+
+> `readonly` **filename**: `"self-verify-rubric.json"` \| `"test-design-model.json"` \| `"judge-panel-verdicts.json"` \| `"genealogy.json"` \| `"agent-iterations.json"` \| `"cache-break-events.jsonl"` \| `"compact-boundary-log.jsonl"` \| `"migrations.log.jsonl"` \| `"library-coverage-report.json"` \| `"agent-findings.json"` \| `"coverage-plan.json"` \| `"ir-mutation-coverage-strength.json"`
+
+Basename of the artifact, relative to the per-job runDir.
+
+##### schemaVersion
+
+> `readonly` **schemaVersion**: `string`
+
+Schema version literal of the artifact at the time of write.
+
+##### sha256
+
+> `readonly` **sha256**: `string`
+
+sha256-hex of the on-disk artifact bytes.
+
+##### sizeBytes
+
+> `readonly` **sizeBytes**: `number`
+
+Total byte length of the on-disk artifact.
+
+***
+
 ### InferredBusinessObject
 
 Business-object cluster inferred across one or more fields.
@@ -4953,6 +5233,119 @@ Result of `validateLbomDocument`.
 ##### valid
 
 > **valid**: `boolean`
+
+***
+
+### LibraryCoverageReport
+
+Per-release primitive-map status report.
+
+#### Properties
+
+##### contractVersion
+
+> `readonly` **contractVersion**: `"1.6.0"`
+
+##### counts
+
+> `readonly` **counts**: [`LibraryCoverageReportCounts`](#librarycoveragereportcounts-1)
+
+Roll-up counts, derived from `primitives`.
+
+##### generatedAt
+
+> `readonly` **generatedAt**: `string`
+
+ISO-8601 timestamp the report was assembled.
+
+##### primitives
+
+> `readonly` **primitives**: readonly [`LibraryPrimitiveCoverageEntry`](#libraryprimitivecoverageentry)[]
+
+Per-primitive rows, sorted by `(libraryName, libraryVersion,
+primitiveId)` for canonical-JSON stability.
+
+##### releaseId
+
+> `readonly` **releaseId**: `string`
+
+Stable release identifier (e.g. `"figma-ds@2026.05.0"`).
+
+##### schemaVersion
+
+> `readonly` **schemaVersion**: `"1.0.0"`
+
+***
+
+### LibraryCoverageReportCounts
+
+Roll-up counts in [LibraryCoverageReport.counts](#counts).
+
+#### Properties
+
+##### deprecated
+
+> `readonly` **deprecated**: `number`
+
+##### implemented
+
+> `readonly` **implemented**: `number`
+
+##### stub
+
+> `readonly` **stub**: `number`
+
+##### total
+
+> `readonly` **total**: `number`
+
+##### unimplemented
+
+> `readonly` **unimplemented**: `number`
+
+***
+
+### LibraryPrimitiveCoverageEntry
+
+Per-primitive coverage row in [LibraryCoverageReport.primitives](#primitives).
+
+#### Properties
+
+##### libraryName
+
+> `readonly` **libraryName**: `string`
+
+Library name (e.g. design-system or component-library).
+
+##### libraryVersion
+
+> `readonly` **libraryVersion**: `string`
+
+Library version — must match the release's pinned version.
+
+##### notes?
+
+> `readonly` `optional` **notes?**: `string`
+
+Optional human-readable note (length-capped at validation).
+
+##### primitiveId
+
+> `readonly` **primitiveId**: `string`
+
+Stable identifier of the primitive within the library version.
+
+##### status
+
+> `readonly` **status**: `"deprecated"` \| `"implemented"` \| `"stub"` \| `"unimplemented"`
+
+Status of the primitive in this release.
+
+##### testCaseCount
+
+> `readonly` **testCaseCount**: `number`
+
+Number of generated test cases that exercise this primitive.
 
 ***
 
@@ -6942,6 +7335,50 @@ Score in `[0, 1]`; rounded to 6 digits in the persisted artifact.
 ##### subscore
 
 > **subscore**: `"visible_control_coverage"` \| `"state_validation_coverage"` \| `"ambiguity_handling"` \| `"unsupported_visual_claims"`
+
+***
+
+### SignedMigrationBundle
+
+Changelog-approved signed migration bundle for banking-profile runs.
+
+#### Properties
+
+##### contractVersion
+
+> `readonly` **contractVersion**: `"4.40.0"`
+
+##### entries
+
+> `readonly` **entries**: readonly [`SignedMigrationBundleEntry`](#signedmigrationbundleentry)[]
+
+##### schemaVersion
+
+> `readonly` **schemaVersion**: `"1.0.0"`
+
+***
+
+### SignedMigrationBundleEntry
+
+One approved entry inside a signed migration bundle.
+
+#### Properties
+
+##### description
+
+> `readonly` **description**: `string`
+
+##### evidenceBearing?
+
+> `readonly` `optional` **evidenceBearing?**: `boolean`
+
+##### hash
+
+> `readonly` **hash**: `string`
+
+##### id
+
+> `readonly` **id**: `string`
 
 ***
 
@@ -11275,7 +11712,7 @@ Submit response for accepted jobs.
 
 ###### Inherited from
 
-[`WorkspaceSubmitAccepted`](#workspacesubmitaccepted).[`jobId`](#jobid-50)
+[`WorkspaceSubmitAccepted`](#workspacesubmitaccepted).[`jobId`](#jobid-54)
 
 ##### pasteDeltaSummary?
 
@@ -11318,7 +11755,7 @@ Present only when `figmaSourceMode === "figma_paste" | "figma_plugin"` and diff 
 
 ###### Inherited from
 
-[`WorkspaceSubmitAccepted`](#workspacesubmitaccepted).[`status`](#status-17)
+[`WorkspaceSubmitAccepted`](#workspacesubmitaccepted).[`status`](#status-18)
 
 ***
 
@@ -14836,6 +15273,14 @@ machine.
 
 ***
 
+### AgentIterationOutcome
+
+> **AgentIterationOutcome** = *typeof* [`ALLOWED_AGENT_ITERATION_OUTCOMES`](#allowed_agent_iteration_outcomes)\[`number`\]
+
+Discriminated alias for [ALLOWED\_AGENT\_ITERATION\_OUTCOMES](#allowed_agent_iteration_outcomes).
+
+***
+
 ### AgentRoleCapability
 
 > **AgentRoleCapability** = *typeof* [`AGENT_ROLE_CAPABILITIES`](#agent_role_capabilities)\[`number`\]
@@ -14892,6 +15337,14 @@ Terminal outcome of an entire agent-team run.
 > **CacheBreakSuppressionReason** = *typeof* [`ALLOWED_CACHE_BREAK_SUPPRESSION_REASONS`](#allowed_cache_break_suppression_reasons)\[`number`\]
 
 Discriminated alias for [ALLOWED\_CACHE\_BREAK\_SUPPRESSION\_REASONS](#allowed_cache_break_suppression_reasons).
+
+***
+
+### CompactBoundaryLogTier
+
+> **CompactBoundaryLogTier** = *typeof* [`ALLOWED_COMPACT_BOUNDARY_LOG_TIERS`](#allowed_compact_boundary_log_tiers)\[`number`\]
+
+Discriminated alias for [ALLOWED\_COMPACT\_BOUNDARY\_LOG\_TIERS](#allowed_compact_boundary_log_tiers).
 
 ***
 
@@ -15035,6 +15488,14 @@ Review state at the moment the test case is emitted.
 
 ***
 
+### HarnessArtifactFilename
+
+> **HarnessArtifactFilename** = *typeof* [`ALLOWED_HARNESS_ARTIFACT_FILENAMES`](#allowed_harness_artifact_filenames)\[`number`\]
+
+Discriminated alias for [ALLOWED\_HARNESS\_ARTIFACT\_FILENAMES](#allowed_harness_artifact_filenames).
+
+***
+
 ### IntentDeltaChangeType
 
 > **IntentDeltaChangeType** = *typeof* [`ALLOWED_INTENT_DELTA_CHANGE_TYPES`](#allowed_intent_delta_change_types)\[`number`\]
@@ -15175,6 +15636,14 @@ Discriminant of an LBOM model role.
 
 ***
 
+### LibraryPrimitiveStatus
+
+> **LibraryPrimitiveStatus** = *typeof* [`ALLOWED_LIBRARY_PRIMITIVE_STATUSES`](#allowed_library_primitive_statuses)\[`number`\]
+
+Discriminated alias for [ALLOWED\_LIBRARY\_PRIMITIVE\_STATUSES](#allowed_library_primitive_statuses).
+
+***
+
 ### LlmCapabilityProbeCapability
 
 > **LlmCapabilityProbeCapability** = keyof [`LlmGatewayCapabilities`](#llmgatewaycapabilities) \| `"textChat"`
@@ -15242,6 +15711,14 @@ Discriminated union returned by `LlmGatewayClient.generate`.
 > **LlmReasoningEffort** = `"low"` \| `"medium"` \| `"high"`
 
 Reasoning-effort hint forwarded only when `reasoningEffortSupport` is true.
+
+***
+
+### MigrationRefusalCode
+
+> **MigrationRefusalCode** = *typeof* [`ALLOWED_MIGRATION_REFUSAL_CODES`](#allowed_migration_refusal_codes)\[`number`\]
+
+Discriminated alias for [ALLOWED\_MIGRATION\_REFUSAL\_CODES](#allowed_migration_refusal_codes).
 
 ***
 
@@ -16057,6 +16534,22 @@ shape via the public-export snapshot.
 
 ***
 
+### AGENT\_ITERATIONS\_ARTIFACT\_FILENAME
+
+> `const` **AGENT\_ITERATIONS\_ARTIFACT\_FILENAME**: `"agent-iterations.json"`
+
+Canonical filename for the consolidated per-repair-iteration log.
+
+***
+
+### AGENT\_ITERATIONS\_SCHEMA\_VERSION
+
+> `const` **AGENT\_ITERATIONS\_SCHEMA\_VERSION**: `"1.0.0"`
+
+Schema version for [AgentIterationsArtifact](#agentiterationsartifact).
+
+***
+
 ### AGENT\_ROLE\_CAPABILITIES
 
 > `const` **AGENT\_ROLE\_CAPABILITIES**: readonly \[`"none"`, `"propose_changes"`, `"read_artifacts"`, `"score_only"`\]
@@ -16148,6 +16641,14 @@ Schema version literal pinned on `agent-team-results.json`.
 
 ***
 
+### ALLOWED\_AGENT\_ITERATION\_OUTCOMES
+
+> `const` **ALLOWED\_AGENT\_ITERATION\_OUTCOMES**: readonly \[`"exhausted"`, `"halted"`, `"needs_repair"`, `"passed"`\]
+
+Closed runtime list of repair-iteration outcome literals.
+
+***
+
 ### ALLOWED\_AGENT\_SOURCE\_LABELS
 
 > `const` **ALLOWED\_AGENT\_SOURCE\_LABELS**: readonly \[`"manager"`, `"judge_primary"`, `"judge_secondary"`, `"visual_primary"`, `"visual_fallback"`, `"generator"`, `"gap_finder"`, `"repair_planner"`, `"ir_mutation_oracle"`\]
@@ -16173,6 +16674,14 @@ artifact does not introduce a second outcome surface.
 Closed set of suppression reasons recognised by
 `notifyCompaction` / `notifyCacheDeletion`. Stable, locale-independent
 strings safe to ship to automation.
+
+***
+
+### ALLOWED\_COMPACT\_BOUNDARY\_LOG\_TIERS
+
+> `const` **ALLOWED\_COMPACT\_BOUNDARY\_LOG\_TIERS**: readonly \[`"context_budget"`, `"manual"`, `"post_repair"`, `"task_round"`\]
+
+Closed runtime list of compaction-boundary tier literals.
 
 ***
 
@@ -16363,6 +16872,15 @@ sorted on the `ReviewSnapshot.fourEyesReasons` field.
 
 ***
 
+### ALLOWED\_HARNESS\_ARTIFACT\_FILENAMES
+
+> `const` **ALLOWED\_HARNESS\_ARTIFACT\_FILENAMES**: readonly \[`"agent-findings.json"`, `"agent-iterations.json"`, `"cache-break-events.jsonl"`, `"compact-boundary-log.jsonl"`, `"coverage-plan.json"`, `"genealogy.json"`, `"ir-mutation-coverage-strength.json"`, `"judge-panel-verdicts.json"`, `"library-coverage-report.json"`, `"migrations.log.jsonl"`, `"self-verify-rubric.json"`, `"test-design-model.json"`\]
+
+Closed runtime list of canonical-JSON harness artifact filenames the
+manifest may reference. Adding a member is an additive minor bump.
+
+***
+
 ### ALLOWED\_INTENT\_DELTA\_CHANGE\_TYPES
 
 > `const` **ALLOWED\_INTENT\_DELTA\_CHANGE\_TYPES**: readonly \[`"added"`, `"removed"`, `"changed"`, `"confidence_dropped"`, `"ambiguity_increased"`\]
@@ -16495,6 +17013,14 @@ chain that produced a job's test cases.
 
 ***
 
+### ALLOWED\_LIBRARY\_PRIMITIVE\_STATUSES
+
+> `const` **ALLOWED\_LIBRARY\_PRIMITIVE\_STATUSES**: readonly \[`"deprecated"`, `"implemented"`, `"stub"`, `"unimplemented"`\]
+
+Closed runtime list of library-primitive status literals.
+
+***
+
 ### ALLOWED\_LLM\_CODEGEN\_MODES
 
 > `const` **ALLOWED\_LLM\_CODEGEN\_MODES**: readonly \[`"deterministic"`\]
@@ -16568,6 +17094,14 @@ validates it against `responseSchema` when present) from the on-the-wire
   JSON when the prompt instructs it to). The gateway still parses and
   schema-validates the content in-process so the contract guarantee
   ("structured-output success returns parsed JSON") is unchanged.
+
+***
+
+### ALLOWED\_MIGRATION\_REFUSAL\_CODES
+
+> `const` **ALLOWED\_MIGRATION\_REFUSAL\_CODES**: readonly \[`"migration_apply_failed"`, `"migration_audit_log_invalid"`, `"migration_registry_invalid"`, `"migration_rollback_failed"`, `"migration_rollback_required"`, `"migration_state_invalid"`, `"migration_unsigned"`\]
+
+Closed runtime list of migration refusal codes.
 
 ***
 
@@ -17060,6 +17594,22 @@ Schema version for the per-break diff artifact.
 
 ***
 
+### CACHE\_BREAK\_EVENTS\_LOG\_ARTIFACT\_FILENAME
+
+> `const` **CACHE\_BREAK\_EVENTS\_LOG\_ARTIFACT\_FILENAME**: `"cache-break-events.jsonl"`
+
+Canonical filename for the consolidated cache-break event log.
+
+***
+
+### CACHE\_BREAK\_EVENTS\_LOG\_SCHEMA\_VERSION
+
+> `const` **CACHE\_BREAK\_EVENTS\_LOG\_SCHEMA\_VERSION**: `"1.0.0"`
+
+Schema version for [CacheBreakEventLogEntry](#cachebreakeventlogentry).
+
+***
+
 ### CACHE\_BREAK\_MIN\_CREATION\_TOKENS
 
 > `const` **CACHE\_BREAK\_MIN\_CREATION\_TOKENS**: `2000`
@@ -17078,6 +17628,22 @@ Heuristic threshold: when the observed `cacheReadTokens` is below this
 fraction of the expected baseline AND the new `cacheCreationTokens`
 exceeds [CACHE\_BREAK\_MIN\_CREATION\_TOKENS](#cache_break_min_creation_tokens), the detector flags
 the call as a cache break.
+
+***
+
+### COMPACT\_BOUNDARY\_LOG\_ARTIFACT\_FILENAME
+
+> `const` **COMPACT\_BOUNDARY\_LOG\_ARTIFACT\_FILENAME**: `"compact-boundary-log.jsonl"`
+
+Canonical filename for the consolidated CompactBoundary log.
+
+***
+
+### COMPACT\_BOUNDARY\_LOG\_SCHEMA\_VERSION
+
+> `const` **COMPACT\_BOUNDARY\_LOG\_SCHEMA\_VERSION**: `"1.0.0"`
+
+Schema version for [CompactBoundaryLogEntry](#compactboundarylogentry).
 
 ***
 
@@ -17107,7 +17673,7 @@ Schema version for persisted context-budget analyzer reports.
 
 ### CONTRACT\_VERSION
 
-> `const` **CONTRACT\_VERSION**: `"4.36.0"`
+> `const` **CONTRACT\_VERSION**: `"4.40.0"`
 
 Current contract version constant.
 Must be bumped according to CONTRACT_CHANGELOG.md rules.
@@ -17391,6 +17957,22 @@ Canonical filename for the persisted test-case payload accepted into review/expo
 
 ***
 
+### HARNESS\_ARTIFACT\_MANIFEST\_ARTIFACT\_FILENAME
+
+> `const` **HARNESS\_ARTIFACT\_MANIFEST\_ARTIFACT\_FILENAME**: `"harness-artifact-manifest.json"`
+
+Canonical filename for the per-job harness artifact manifest.
+
+***
+
+### HARNESS\_ARTIFACT\_MANIFEST\_SCHEMA\_VERSION
+
+> `const` **HARNESS\_ARTIFACT\_MANIFEST\_SCHEMA\_VERSION**: `"1.0.0"`
+
+Schema version for [HarnessArtifactManifest](#harnessartifactmanifest).
+
+***
+
 ### INTENT\_DELTA\_REPORT\_ARTIFACT\_FILENAME
 
 > `const` **INTENT\_DELTA\_REPORT\_ARTIFACT\_FILENAME**: `"intent-delta-report.json"`
@@ -17582,6 +18164,22 @@ CycloneDX spec version targeted by the per-job LBOM.
 
 ***
 
+### LIBRARY\_COVERAGE\_REPORT\_ARTIFACT\_FILENAME
+
+> `const` **LIBRARY\_COVERAGE\_REPORT\_ARTIFACT\_FILENAME**: `"library-coverage-report.json"`
+
+Canonical filename for the per-release library coverage report.
+
+***
+
+### LIBRARY\_COVERAGE\_REPORT\_SCHEMA\_VERSION
+
+> `const` **LIBRARY\_COVERAGE\_REPORT\_SCHEMA\_VERSION**: `"1.0.0"`
+
+Schema version for [LibraryCoverageReport](#librarycoveragereport).
+
+***
+
 ### LLM\_CAPABILITIES\_ARTIFACT\_FILENAME
 
 > `const` **LLM\_CAPABILITIES\_ARTIFACT\_FILENAME**: `"llm-capabilities.json"`
@@ -17738,6 +18336,22 @@ Maximum decoded byte size of a single visual sidecar capture. The bound
 is enforced AFTER base64 decoding (i.e. on the actual image bytes the
 gateway would forward). Five MiB matches the conservative ceiling Azure
 OpenAI imposes on multimodal payloads.
+
+***
+
+### MIGRATION\_BUNDLE\_SCHEMA\_VERSION
+
+> `const` **MIGRATION\_BUNDLE\_SCHEMA\_VERSION**: `"1.0.0"`
+
+Schema version for approved signed migration bundles.
+
+***
+
+### MIGRATIONS\_LOG\_ARTIFACT\_FILENAME
+
+> `const` **MIGRATIONS\_LOG\_ARTIFACT\_FILENAME**: `"migrations.log.jsonl"`
+
+Canonical filename for the per-run settings migration audit log.
 
 ***
 
@@ -18328,7 +18942,7 @@ workspace-dev — Public contracts for autonomous REST + deterministic generatio
 These types define the public API surface for workspace-dev consumers.
 They must not import from internal services.
 
-Contract version: 4.23.0
+Contract version: 4.40.0
 See CONTRACT_CHANGELOG.md for contract change history and VERSIONING.md for
 package-versus-contract versioning policy.
 
