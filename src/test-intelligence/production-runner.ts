@@ -67,6 +67,7 @@ import {
   type GeneratedTestCaseList,
   type GeneratedTestCaseStep,
   type LlmGenerationRequest,
+  type LlmGenerationResult,
   type RegulatoryRelevance,
   type RegulatoryRelevanceDomain,
   type TestCaseLevel,
@@ -162,6 +163,13 @@ import {
   describeVisualScreens,
   writeVisualSidecarResultArtifact,
 } from "./visual-sidecar-client.js";
+import {
+  createPersistentReplayCache,
+} from "./replay-cache-persistent.js";
+import {
+  executeWithReplayCache,
+  type ReplayCache,
+} from "./replay-cache.js";
 
 /**
  * Default test-generation deployment label. Exported so callers building
@@ -481,6 +489,22 @@ export interface RunFigmaToQcTestCasesInput {
    * to proceed when the classified outcome is not `accepted`.
    */
   harness?: ProductionRunnerHarnessConfig;
+  /**
+   * Optional replay cache (Issue #1739). When omitted the runner creates a
+   * disk-backed, token-scoped, LRU-bounded cache under
+   * `<outputRoot>/test-intelligence/replay-cache/<replayCacheTokenScope>/`.
+   * Pass an explicit cache (e.g. `createMemoryReplayCache()`) to override the
+   * default — useful in tests and dry-run pipelines.
+   */
+  replayCache?: ReplayCache;
+  /**
+   * Token scope key for the default disk-backed replay cache (Issue #1739).
+   * Should be a non-reversible identifier derived from the operator's auth
+   * credential, e.g. `sha256(apiToken).slice(0, 16)`.  Defaults to
+   * `"default"` when omitted.  Has no effect when `replayCache` is supplied
+   * explicitly.
+   */
+  replayCacheTokenScope?: string;
 }
 
 export interface RunFigmaToQcTestCasesResult {
@@ -903,122 +927,162 @@ export const runFigmaToQcTestCases = async (
       maxWallClockMs: effectiveMaxWallClockMs,
     },
   });
-  emit({
-    phase: "llm_gateway_request",
-    timestamp: monotonicMs(),
-    details: {
-      role: "test_generation",
-      deployment: PRODUCTION_RUNNER_TEST_GENERATION_DEPLOYMENT,
-    },
-  });
-  const llmResult = await input.llm.client.generate(generationRequest);
-  const llmDurationMs = Date.now() - startedAt;
-  emit({
-    phase: "llm_gateway_response",
-    timestamp: monotonicMs(),
-    details: {
-      outcome: llmResult.outcome,
-      ...(llmResult.outcome === "success"
-        ? {
-            inputTokens: llmResult.usage.inputTokens,
-            outputTokens: llmResult.usage.outputTokens,
-            finishReason: llmResult.finishReason,
-          }
-        : { errorClass: llmResult.errorClass }),
-    },
-  });
 
-  // 6. Classify the LLM attempt into a harness-shaped envelope before
-  // throwing, so `harness.mode === "shadow_eval"` / `"enforced"` can record
-  // a per-step artifact even on failure.
-  const attemptOutcome = classifyLlmAttempt({
-    llmResult,
-    finopsRecorder,
-    llmDurationMs,
-  });
-
-  const harnessMode: ProductionRunnerHarnessMode = input.harness?.mode ?? "off";
+  // 5.5. Replay cache (Issue #1739). Check before any LLM dispatch. On a hit
+  // the generate callback is never invoked and tokens are saved entirely.
+  const replayCache: ReplayCache =
+    input.replayCache ??
+    createPersistentReplayCache(
+      join(input.outputRoot, "test-intelligence", "replay-cache"),
+      { tokenScope: input.replayCacheTokenScope ?? "default" },
+    );
+  // Declared here so the generate callback can set them via closure on the
+  // cache-miss path; all remain undefined on cache hits (same as mode="off").
   let harnessSummary: ProductionRunnerHarnessSummary | undefined;
   let harnessArtifactPath: string | undefined;
-  if (harnessMode !== "off") {
-    const harnessRoleStepId =
-      input.harness?.roleStepId ?? PRODUCTION_RUNNER_HARNESS_ROLE_STEP_ID;
-    const harnessTestDepth: AgentHarnessTestDepth =
-      input.harness?.testDepth ?? "standard";
-    const harnessAttemptResult = buildHarnessAttemptResult({
-      hashes: compiled.request.hashes,
-      attemptOutcome,
-      llmDurationMs,
-      llmInputTokens:
-        llmResult.outcome === "success"
-          ? (llmResult.usage.inputTokens ?? 0)
-          : 0,
-      llmOutputTokens:
-        llmResult.outcome === "success"
-          ? (llmResult.usage.outputTokens ?? 0)
-          : 0,
-    });
-    const harnessRunResult: RunAgentHarnessStepResult =
-      await runAgentHarnessStep({
-        runDir: artifactDir,
-        jobId: input.jobId,
-        role: "generator",
-        roleStepId: harnessRoleStepId,
-        testDepth: harnessTestDepth,
-        // The callback is deterministic across attempts because we are
-        // wrapping a single LLM result. The harness loop terminates after
-        // attempt 1 for `accepted` / `permanent` / `policy_block`, and
-        // after the role's `maxAttempts` cap for `retryable` results.
-        executeAttempt: async () => harnessAttemptResult,
+  let capturedLlmResult: LlmGenerationResult | undefined;
+
+  const cacheExecResult = await executeWithReplayCache({
+    cache: replayCache,
+    cacheKey: compiled.cacheKey,
+    generate: async (_cacheKeyDigest) => {
+      // 6. LLM dispatch.
+      emit({
+        phase: "llm_gateway_request",
+        timestamp: monotonicMs(),
+        details: {
+          role: "test_generation",
+          deployment: PRODUCTION_RUNNER_TEST_GENERATION_DEPLOYMENT,
+        },
       });
-    harnessArtifactPath = harnessRunResult.artifactPath;
-    harnessSummary = {
-      mode: harnessMode,
-      outcome: harnessRunResult.outcome,
-      mappedJobStatus: harnessRunResult.mappedJobStatus,
-      errorClass: harnessRunResult.artifact.errorClass,
-      attemptsConsumed: harnessRunResult.artifact.attemptsConsumed,
-      maxAttemptsAllowed: harnessRunResult.artifact.maxAttemptsAllowed,
-      artifactPath: harnessRunResult.artifactPath,
-    };
-  }
+      const llmResult = await input.llm.client.generate(generationRequest);
+      capturedLlmResult = llmResult;
+      const llmDurationMs = Date.now() - startedAt;
+      emit({
+        phase: "llm_gateway_response",
+        timestamp: monotonicMs(),
+        details: {
+          outcome: llmResult.outcome,
+          ...(llmResult.outcome === "success"
+            ? {
+                inputTokens: llmResult.usage.inputTokens,
+                outputTokens: llmResult.usage.outputTokens,
+                finishReason: llmResult.finishReason,
+              }
+            : { errorClass: llmResult.errorClass }),
+        },
+      });
 
-  if (attemptOutcome.kind === "error") {
-    throw attemptOutcome.error;
-  }
-  if (
-    harnessMode === "enforced" &&
-    harnessSummary !== undefined &&
-    harnessSummary.outcome !== "accepted"
-  ) {
-    throw mapHarnessOutcomeToProductionRunnerError(harnessSummary);
-  }
-  const drafts = attemptOutcome.drafts;
+      // Classify the LLM attempt into a harness-shaped envelope before
+      // throwing, so `harness.mode === "shadow_eval"` / `"enforced"` can
+      // record a per-step artifact even on failure.
+      const attemptOutcome = classifyLlmAttempt({
+        llmResult,
+        finopsRecorder,
+        llmDurationMs,
+      });
 
-  // 7. Stamp full GeneratedTestCase records.
-  const audit: GeneratedTestCaseAuditMetadata = {
-    jobId: input.jobId,
-    generatedAt: input.generatedAt,
-    contractVersion: TEST_INTELLIGENCE_CONTRACT_VERSION,
-    schemaVersion: GENERATED_TEST_CASE_SCHEMA_VERSION,
-    promptTemplateVersion: TEST_INTELLIGENCE_PROMPT_TEMPLATE_VERSION,
-    redactionPolicyVersion: REDACTION_POLICY_VERSION,
-    visualSidecarSchemaVersion: VISUAL_SIDECAR_SCHEMA_VERSION,
-    cacheHit: false,
-    cacheKey: compiled.request.hashes.cacheKey,
-    inputHash: compiled.request.hashes.inputHash,
-    promptHash: compiled.request.hashes.promptHash,
-    schemaHash: compiled.request.hashes.schemaHash,
-  };
-  const testCases = drafts.map((draft, index) =>
-    stampGeneratedTestCase({ draft, jobId: input.jobId, index, audit, intent }),
-  );
-  testCases.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
-  const generatedList: GeneratedTestCaseList = {
-    schemaVersion: GENERATED_TEST_CASE_SCHEMA_VERSION,
-    jobId: input.jobId,
-    testCases,
-  };
+      const harnessMode: ProductionRunnerHarnessMode =
+        input.harness?.mode ?? "off";
+      if (harnessMode !== "off") {
+        const harnessRoleStepId =
+          input.harness?.roleStepId ?? PRODUCTION_RUNNER_HARNESS_ROLE_STEP_ID;
+        const harnessTestDepth: AgentHarnessTestDepth =
+          input.harness?.testDepth ?? "standard";
+        const harnessAttemptResult = buildHarnessAttemptResult({
+          hashes: compiled.request.hashes,
+          attemptOutcome,
+          llmDurationMs,
+          llmInputTokens:
+            llmResult.outcome === "success"
+              ? (llmResult.usage.inputTokens ?? 0)
+              : 0,
+          llmOutputTokens:
+            llmResult.outcome === "success"
+              ? (llmResult.usage.outputTokens ?? 0)
+              : 0,
+        });
+        const harnessRunResult: RunAgentHarnessStepResult =
+          await runAgentHarnessStep({
+            runDir: artifactDir,
+            jobId: input.jobId,
+            role: "generator",
+            roleStepId: harnessRoleStepId,
+            testDepth: harnessTestDepth,
+            // The callback is deterministic across attempts because we are
+            // wrapping a single LLM result. The harness loop terminates after
+            // attempt 1 for `accepted` / `permanent` / `policy_block`, and
+            // after the role's `maxAttempts` cap for `retryable` results.
+            executeAttempt: async () => harnessAttemptResult,
+          });
+        harnessArtifactPath = harnessRunResult.artifactPath;
+        harnessSummary = {
+          mode: harnessMode,
+          outcome: harnessRunResult.outcome,
+          mappedJobStatus: harnessRunResult.mappedJobStatus,
+          errorClass: harnessRunResult.artifact.errorClass,
+          attemptsConsumed: harnessRunResult.artifact.attemptsConsumed,
+          maxAttemptsAllowed: harnessRunResult.artifact.maxAttemptsAllowed,
+          artifactPath: harnessRunResult.artifactPath,
+        };
+      }
+
+      if (attemptOutcome.kind === "error") {
+        throw attemptOutcome.error;
+      }
+      if (
+        harnessMode === "enforced" &&
+        harnessSummary !== undefined &&
+        harnessSummary.outcome !== "accepted"
+      ) {
+        throw mapHarnessOutcomeToProductionRunnerError(harnessSummary);
+      }
+      const drafts = attemptOutcome.drafts;
+
+      // 7. Stamp full GeneratedTestCase records.
+      const audit: GeneratedTestCaseAuditMetadata = {
+        jobId: input.jobId,
+        generatedAt: input.generatedAt,
+        contractVersion: TEST_INTELLIGENCE_CONTRACT_VERSION,
+        schemaVersion: GENERATED_TEST_CASE_SCHEMA_VERSION,
+        promptTemplateVersion: TEST_INTELLIGENCE_PROMPT_TEMPLATE_VERSION,
+        redactionPolicyVersion: REDACTION_POLICY_VERSION,
+        visualSidecarSchemaVersion: VISUAL_SIDECAR_SCHEMA_VERSION,
+        cacheHit: false,
+        cacheKey: compiled.request.hashes.cacheKey,
+        inputHash: compiled.request.hashes.inputHash,
+        promptHash: compiled.request.hashes.promptHash,
+        schemaHash: compiled.request.hashes.schemaHash,
+      };
+      const testCases = drafts.map((draft, index) =>
+        stampGeneratedTestCase({
+          draft,
+          jobId: input.jobId,
+          index,
+          audit,
+          intent,
+        }),
+      );
+      testCases.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+      return {
+        schemaVersion: GENERATED_TEST_CASE_SCHEMA_VERSION,
+        jobId: input.jobId,
+        testCases,
+      };
+    },
+  });
+
+  if (cacheExecResult.cacheHit) {
+    emit({
+      phase: "replay_cache_hit",
+      timestamp: monotonicMs(),
+      details: {
+        key: cacheExecResult.key,
+        testCaseCount: cacheExecResult.testCases.testCases.length,
+      },
+    });
+  }
+  const generatedList: GeneratedTestCaseList = cacheExecResult.testCases;
 
   // 8. Validation pipeline.
   emit({ phase: "validation_started", timestamp: monotonicMs() });
@@ -1460,17 +1524,15 @@ export const runFigmaToQcTestCases = async (
       bySourceHash: computePerSourceCostBreakdownHashFromReport(finopsReport),
     },
   });
-  // Emit final FinOps summary derived from the LLM gateway response. The
-  // dedicated FinOps recorder runs separately for in-process callers; this
-  // synthetic event lets a UI render a useful cost summary without
-  // wiring the full recorder.
-  if (llmResult.outcome === "success") {
+  // Emit final FinOps summary derived from the LLM gateway response. Skipped
+  // on cache hits (no LLM call was made, so there is nothing to report).
+  if (!cacheExecResult.cacheHit && capturedLlmResult?.outcome === "success") {
     emit({
       phase: "finops_recorded",
       timestamp: monotonicMs(),
       details: {
         role: "test_generation",
-        deployment: llmResult.modelDeployment,
+        deployment: capturedLlmResult.modelDeployment,
         attempts: finopsReport.totals.attempts,
         inputTokens: finopsReport.totals.inputTokens,
         outputTokens: finopsReport.totals.outputTokens,
