@@ -243,35 +243,47 @@ jobs:
               core.setFailed(`Invalid pull request number: '${context.payload.pull_request?.number}'.`);
               return;
             }
+            try {
+              const comments = await github.paginate(
+                github.rest.issues.listComments,
+                { owner, repo, issue_number: prNumber, per_page: 100 },
+              );
+              const existingComment = comments.find(
+                (comment) =>
+                  typeof comment.body === "string" &&
+                  comment.body.startsWith(payload.marker),
+              );
 
-            const comments = await github.paginate(
-              github.rest.issues.listComments,
-              { owner, repo, issue_number: prNumber, per_page: 100 },
-            );
-            const existingComment = comments.find(
-              (comment) =>
-                typeof comment.body === "string" &&
-                comment.body.startsWith(payload.marker),
-            );
+              if (existingComment) {
+                await github.rest.issues.updateComment({
+                  owner,
+                  repo,
+                  comment_id: existingComment.id,
+                  body: payload.body,
+                });
+                core.info(`Updated existing PR comment ${existingComment.id}.`);
+                return;
+              }
 
-            if (existingComment) {
-              await github.rest.issues.updateComment({
+              const created = await github.rest.issues.createComment({
                 owner,
                 repo,
-                comment_id: existingComment.id,
+                issue_number: prNumber,
                 body: payload.body,
               });
-              core.info(`Updated existing PR comment ${existingComment.id}.`);
-              return;
+              core.info(`Created new PR comment ${created.data.id}.`);
+            } catch (error) {
+              if (
+                error?.status === 403 &&
+                error?.response?.data?.message === "Resource not accessible by integration"
+              ) {
+                core.warning(
+                  `Skipping visual benchmark PR comment because the workflow token cannot write issue comments for PR #${prNumber}.`,
+                );
+                return;
+              }
+              throw error;
             }
-
-            const created = await github.rest.issues.createComment({
-              owner,
-              repo,
-              issue_number: prNumber,
-              body: payload.body,
-            });
-            core.info(`Created new PR comment ${created.data.id}.`);
 
       - name: Upload visual benchmark artifacts (public PR summary)
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7
