@@ -10,6 +10,7 @@ import {
   FINOPS_ARTIFACT_DIRECTORY,
   FINOPS_BUDGET_REPORT_ARTIFACT_FILENAME,
   GENERATED_TEST_CASE_SCHEMA_VERSION,
+  REDACTION_POLICY_VERSION,
   type FinOpsBudgetReport,
   LBOM_ARTIFACT_DIRECTORY,
   LBOM_ARTIFACT_FILENAME,
@@ -45,6 +46,8 @@ import {
   validateMlBomDocument,
   type MlBomDocument,
 } from "./ml-bom.js";
+import { deriveBusinessTestIntentIr } from "./intent-derivation.js";
+import { loadWave1PocFixture } from "./poc-fixtures.js";
 import {
   BUSINESS_INTENT_IR_ARTIFACT_FILENAME,
   COMPILED_PROMPT_ARTIFACT_FILENAME,
@@ -53,9 +56,14 @@ import {
   synthesizeGeneratedTestCases,
   Wave1PocFinOpsBudgetExceededError,
 } from "./poc-harness.js";
+import { compilePrompt } from "./prompt-compiler.js";
 import { createMemoryReplayCache } from "./replay-cache.js";
 
 const GENERATED_AT = "2026-04-25T10:00:00.000Z";
+const TEST_GENERATION_MODEL_REVISION = "gpt-oss-120b-2026-04-25";
+const TEST_GENERATION_GATEWAY_RELEASE = "wave1-poc-mock";
+const POLICY_BUNDLE_VERSION = "wave1-poc";
+const VISUAL_PRIMARY_DEPLOYMENT = "llama-4-maverick-vision";
 
 const ORIGINAL_PII_SUBSTRINGS: Record<
   Wave1PocFixtureId,
@@ -438,6 +446,98 @@ for (const fixtureId of WAVE1_POC_FIXTURE_IDS) {
     );
   });
 }
+
+test("poc-harness: export-refused run still emits and attests the release ML-BOM", async () => {
+  const fixtureId = "poc-onboarding";
+  const jobId = "job-poc-onboarding-export-refused";
+  const fixture = await loadWave1PocFixture(fixtureId);
+  const intent = deriveBusinessTestIntentIr({
+    figma: fixture.figma,
+    visual: fixture.visual,
+  });
+  const compiled = compilePrompt({
+    jobId,
+    intent,
+    visual: fixture.visual,
+    modelBinding: {
+      modelRevision: TEST_GENERATION_MODEL_REVISION,
+      gatewayRelease: TEST_GENERATION_GATEWAY_RELEASE,
+    },
+    policyBundleVersion: POLICY_BUNDLE_VERSION,
+    visualBinding: {
+      schemaVersion: VISUAL_SIDECAR_SCHEMA_VERSION,
+      selectedDeployment: VISUAL_PRIMARY_DEPLOYMENT,
+      fallbackReason: "none",
+      screenCount: fixture.visual.length,
+      ...(fixture.visualImageSha256 !== undefined
+        ? { fixtureImageHash: fixture.visualImageSha256 }
+        : {}),
+    },
+  });
+  const replayCache = createMemoryReplayCache();
+  const cachedList = synthesizeGeneratedTestCases({
+    jobId,
+    generatedAt: GENERATED_AT,
+    intent,
+    audit: {
+      jobId,
+      generatedAt: GENERATED_AT,
+      contractVersion: TEST_INTELLIGENCE_CONTRACT_VERSION,
+      schemaVersion: GENERATED_TEST_CASE_SCHEMA_VERSION,
+      promptTemplateVersion: TEST_INTELLIGENCE_PROMPT_TEMPLATE_VERSION,
+      redactionPolicyVersion: REDACTION_POLICY_VERSION,
+      visualSidecarSchemaVersion: VISUAL_SIDECAR_SCHEMA_VERSION,
+      cacheHit: false,
+      cacheKey: compiled.request.hashes.cacheKey,
+      inputHash: compiled.request.hashes.inputHash,
+      promptHash: compiled.request.hashes.promptHash,
+      schemaHash: compiled.request.hashes.schemaHash,
+    },
+  });
+  await replayCache.store(compiled.cacheKey, {
+    ...cachedList,
+    testCases: cachedList.testCases.map((testCase) => ({
+      ...testCase,
+      qcMappingPreview: {
+        ...testCase.qcMappingPreview,
+        exportable: false,
+      },
+    })),
+  });
+
+  const runDir = await newRunDir();
+  const result = await runWave1Poc({
+    fixtureId,
+    jobId,
+    generatedAt: GENERATED_AT,
+    runDir,
+    replayCache,
+  });
+
+  assert.equal(result.exportArtifacts.refused, true);
+  assert.ok(
+    result.exportArtifacts.refusalCodes.includes("policy_blocked_cases_present"),
+  );
+  assert.equal(result.mlBom.specVersion, ML_BOM_CYCLONEDX_SPEC_VERSION);
+  const mlBomRaw = await readFile(result.mlBomArtifactPath, "utf8");
+  const parsedMlBom = JSON.parse(mlBomRaw) as MlBomDocument;
+  const mlBomValidation = validateMlBomDocument(parsedMlBom);
+  assert.equal(
+    mlBomValidation.valid,
+    true,
+    JSON.stringify(mlBomValidation.issues, null, 2),
+  );
+  const manifestMlBom = result.manifest.artifacts.find(
+    (artifact) => artifact.filename === result.mlBomSummary.filename,
+  );
+  assert.ok(
+    manifestMlBom,
+    "export-refused manifest must attest the release ML-BOM artifact",
+  );
+  assert.equal(manifestMlBom?.category, "ml_bom");
+  assert.equal(manifestMlBom?.sha256, result.mlBomSummary.sha256);
+  assert.equal(manifestMlBom?.bytes, result.mlBomSummary.bytes);
+});
 
 test("poc-harness: seals request audit proof that test generation received no images", async () => {
   const runDir = await newRunDir();
