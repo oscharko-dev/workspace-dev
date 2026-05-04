@@ -23,8 +23,10 @@
  */
 
 import {
+  EU_BANKING_DEFAULT_POLICY_PROFILE_ID,
   TEST_CASE_POLICY_REPORT_SCHEMA_VERSION,
   TEST_INTELLIGENCE_CONTRACT_VERSION,
+  type ActiveModelBinding,
   type BusinessTestIntentIr,
   type CustomContextPolicySignal,
   type GeneratedTestCase,
@@ -90,6 +92,12 @@ export interface EvaluatePolicyGateInput {
   };
   /** Optional pre-LLM untrusted-content normalization outcome. */
   untrustedContentReport?: UntrustedContentNormalizationReport;
+  /**
+   * Optional summary of the active model bindings used by the job. When
+   * supplied under `eu-banking-default`, every binding must carry an
+   * operator-managed `ictRegisterRef`.
+   */
+  activeModelBindings?: readonly ActiveModelBinding[];
 }
 
 /** Maximum strength among per-case decisions: blocked > needs_review > approved. */
@@ -128,6 +136,44 @@ const parseMultiSourceConflictIds = (
 
 const sortedUnique = <T extends string>(values: readonly T[]): T[] =>
   Array.from(new Set(values)).sort();
+
+const formatModelBindingIdentity = (binding: ActiveModelBinding): string => {
+  const deployment =
+    binding.inferenceProfileId !== undefined
+      ? `@${binding.inferenceProfileId}`
+      : "";
+  return `${binding.providerId}/${binding.modelId}${deployment}`;
+};
+
+const evaluateActiveModelBindings = (
+  profile: TestCasePolicyProfile,
+  activeModelBindings: readonly ActiveModelBinding[] | undefined,
+): TestCasePolicyViolation[] => {
+  if (profile.id !== EU_BANKING_DEFAULT_POLICY_PROFILE_ID) {
+    return [];
+  }
+  if (activeModelBindings === undefined || activeModelBindings.length === 0) {
+    return [];
+  }
+
+  const missing = activeModelBindings.filter(
+    (binding) => binding.ictRegisterRef === undefined,
+  );
+  if (missing.length === 0) {
+    return [];
+  }
+
+  return [
+    {
+      rule: "policy:ict-register-ref-required",
+      outcome: "ict_register_ref_required",
+      severity: "error",
+      reason:
+        `refusal code ict_register_ref_required: active model binding(s) ` +
+        `${missing.map(formatModelBindingIdentity).join(", ")} missing ictRegisterRef under profile "${profile.id}"`,
+    },
+  ];
+};
 
 const VALIDATION_ISSUE_TO_OUTCOME: Partial<
   Record<TestCaseValidationIssueCode, TestCasePolicyOutcome>
@@ -519,8 +565,9 @@ const evaluateJobLevel = (
   customContextPolicySignals: readonly CustomContextPolicySignal[] = [],
   visualSidecarRefusal?: EvaluatePolicyGateInput["visualSidecarRefusal"],
   untrustedContentReport?: UntrustedContentNormalizationReport,
+  activeModelBindings?: readonly ActiveModelBinding[],
 ): TestCasePolicyViolation[] => {
-  const violations: TestCasePolicyViolation[] = [];
+  const violations = evaluateActiveModelBindings(profile, activeModelBindings);
 
   if (visualSidecarRefusal !== undefined) {
     violations.push({
@@ -779,6 +826,7 @@ export const evaluatePolicyGate = (
     input.customContextPolicySignals ?? [],
     input.visualSidecarRefusal,
     input.untrustedContentReport,
+    input.activeModelBindings,
   );
 
   // Job-level violations of error severity propagate as job-level

@@ -47,6 +47,9 @@ export interface CreateMockLlmGatewayClientInput {
   deployment: string;
   modelRevision: string;
   gatewayRelease: string;
+  ictRegisterRef?: string;
+  /** Test-only escape hatch for banking-policy refusal scenarios. */
+  omitIctRegisterRef?: boolean;
   operatorEndpointReference?: string;
   modelWeightsSha256?: string;
   compatibilityMode?: LlmGatewayCompatibilityMode;
@@ -318,6 +321,9 @@ export const createMockLlmGatewayClient = (
     deployment: input.deployment,
     modelRevision: input.modelRevision,
     gatewayRelease: input.gatewayRelease,
+    ictRegisterRef: input.omitIctRegisterRef
+      ? undefined
+      : (input.ictRegisterRef ?? `mock-ict:${input.deployment}`),
     operatorEndpointReference:
       input.operatorEndpointReference ??
       `mock://${input.deployment}/[redacted]`,
@@ -353,6 +359,9 @@ export const createMockLlmGatewayClientFromConfig = (
     deployment: config.deployment,
     modelRevision: config.modelRevision,
     gatewayRelease: config.gatewayRelease,
+    ...(config.ictRegisterRef !== undefined
+      ? { ictRegisterRef: config.ictRegisterRef }
+      : {}),
     ...(config.modelWeightsSha256 !== undefined
       ? { modelWeightsSha256: config.modelWeightsSha256 }
       : {}),

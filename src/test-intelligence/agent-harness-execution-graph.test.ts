@@ -8,12 +8,14 @@ import test from "node:test";
 import {
   AGENT_HARNESS_EXECUTION_GRAPH_SCHEMA_VERSION,
   AGENT_HARNESS_GRAPH_RETRY_POLICIES,
+  AGENT_ROLE_PROFILE_SCHEMA_VERSION,
   AGENT_TEAM_CONFIG_ARTIFACT_FILENAME,
   AGENT_TEAM_CONFIG_SCHEMA_VERSION,
   AGENT_TEAM_RESULTS_ARTIFACT_FILENAME,
   AGENT_TEAM_RESULTS_SCHEMA_VERSION,
   ALLOWED_AGENT_TEAM_OUTCOMES,
   type AgentHarnessExecutionGraph,
+  type AgentRoleProfile,
 } from "../contracts/index.js";
 import {
   AGENT_ROLE_PROFILE_REGISTRY,
@@ -438,6 +440,35 @@ test("buildAgentTeamConfigArtifact pins schema, sorts profiles, validates hashes
       }),
     /duplicate/u,
   );
+});
+
+test("buildAgentTeamConfigArtifact preserves modelBinding.ictRegisterRef when configured", () => {
+  const profile: AgentRoleProfile = {
+    schemaVersion: AGENT_ROLE_PROFILE_SCHEMA_VERSION,
+    role: "generator",
+    roleKind: "llm_role",
+    promptVersion: "generator.v1",
+    modelBinding: {
+      providerId: "azure-openai",
+      modelId: "gpt-oss-120b",
+      inferenceProfileId: "deployment-1",
+      ictRegisterRef: "ICT-GEN-01",
+    },
+    outputSchema: "generated-test-cases.v1",
+    maxAttempts: 1,
+    maxInputTokens: 1_000,
+    maxOutputTokens: 1_000,
+    capability: "read_artifacts",
+    finOpsGroup: "generation",
+  };
+  const artifact = buildAgentTeamConfigArtifact({
+    jobId: "job-team",
+    profiles: [profile, AGENT_ROLE_PROFILE_REGISTRY.visual_sidecar],
+    graphHash: HEX_A,
+    policyProfileHash: HEX_B,
+  });
+  const generator = artifact.profiles.find((entry) => entry.role === "generator");
+  assert.equal(generator?.modelBinding?.ictRegisterRef, "ICT-GEN-01");
 });
 
 test("buildAgentTeamResultsArtifact sums totals and sorts role-runs", () => {

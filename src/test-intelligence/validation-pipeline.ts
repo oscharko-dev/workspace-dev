@@ -31,6 +31,7 @@ import {
   TEST_CASE_VALIDATION_REPORT_ARTIFACT_FILENAME,
   TEST_INTELLIGENCE_CONTRACT_VERSION,
   VISUAL_SIDECAR_VALIDATION_REPORT_ARTIFACT_FILENAME,
+  type ActiveModelBinding,
   type BusinessTestIntentIr,
   type GeneratedTestCaseList,
   type SelfVerifyRubricReport,
@@ -96,6 +97,8 @@ export interface RunValidationPipelineInput {
   };
   /** Optional pre-LLM untrusted-content routing summary. */
   untrustedContentReport?: UntrustedContentNormalizationReport;
+  /** Optional summary of active model bindings used by the job. */
+  activeModelBindings?: readonly ActiveModelBinding[];
 }
 
 export interface ValidationPipelineArtifacts {
@@ -222,6 +225,9 @@ export const runValidationPipeline = (
       : {}),
     ...(input.untrustedContentReport !== undefined
       ? { untrustedContentReport: input.untrustedContentReport }
+      : {}),
+    ...(input.activeModelBindings !== undefined
+      ? { activeModelBindings: input.activeModelBindings }
       : {}),
   });
 
@@ -521,6 +527,9 @@ export const runValidationPipelineWithSelfVerify = async (
       : {}),
     ...(input.visualSidecarRefusal !== undefined
       ? { visualSidecarRefusal: input.visualSidecarRefusal }
+      : {}),
+    ...(input.activeModelBindings !== undefined
+      ? { activeModelBindings: input.activeModelBindings }
       : {}),
   });
 
