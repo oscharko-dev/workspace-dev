@@ -214,9 +214,9 @@ jobs:
       - name: Post or update visual benchmark PR comment
         if: always() && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && hashFiles('artifacts/visual-benchmark/public-summary/visual-benchmark-pr-comment.json') != ''
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3  # v9
+        env:
+          PAYLOAD_PATH: artifacts/visual-benchmark/public-summary/visual-benchmark-pr-comment.json
         with:
-          env:
-            PAYLOAD_PATH: artifacts/visual-benchmark/public-summary/visual-benchmark-pr-comment.json
           script: |
             const fs = require("node:fs");
             const { owner, repo } = context.repo;
