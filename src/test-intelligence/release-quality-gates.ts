@@ -147,7 +147,7 @@ const isHex64 = (value: unknown): value is string =>
   typeof value === "string" && HEX64_PATTERN.test(value);
 
 /** Validates a primitiveId: `^[A-Za-z0-9][A-Za-z0-9_.:/-]{0,127}$` (paths allowed). */
-const PRIMITIVE_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_.:/\-]{0,127}$/;
+const PRIMITIVE_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_.:/-]{0,127}$/;
 const isPrimitiveId = (value: unknown): value is string =>
   typeof value === "string" && PRIMITIVE_ID_PATTERN.test(value);
 
@@ -324,24 +324,24 @@ export const isReleaseQualityGatesInput = (
   if (!isRecord(cbBaseline)) return false;
   if (typeof cbBaseline["meanInputTokens"] !== "number") return false;
   if (!Number.isFinite(cbBaseline["meanInputTokens"])) return false;
-  if ((cbBaseline["meanInputTokens"] as number) < 0) return false;
+  if (cbBaseline["meanInputTokens"] < 0) return false;
   if (!isFiniteNonNegativeInteger(cbBaseline["sampleCount"])) return false;
   const cbHarness = contextBudgetRegression["harness"];
   if (!isRecord(cbHarness)) return false;
   if (typeof cbHarness["meanInputTokens"] !== "number") return false;
   if (!Number.isFinite(cbHarness["meanInputTokens"])) return false;
-  if ((cbHarness["meanInputTokens"] as number) < 0) return false;
+  if (cbHarness["meanInputTokens"] < 0) return false;
   if (!isFiniteNonNegativeInteger(cbHarness["sampleCount"])) return false;
   const qualityDeltaScore = contextBudgetRegression["qualityDeltaScore"];
   if (typeof qualityDeltaScore !== "number") return false;
   if (!Number.isFinite(qualityDeltaScore)) return false;
-  if ((qualityDeltaScore as number) < -1 || (qualityDeltaScore as number) > 1)
+  if (qualityDeltaScore < -1 || qualityDeltaScore > 1)
     return false;
   if (contextBudgetRegression["maxBloatRatio"] !== undefined) {
     const maxBloat = contextBudgetRegression["maxBloatRatio"];
-    if (typeof maxBloat !== "number" || !Number.isFinite(maxBloat as number))
+    if (typeof maxBloat !== "number" || !Number.isFinite(maxBloat))
       return false;
-    if ((maxBloat as number) <= 0) return false;
+    if (maxBloat <= 0) return false;
   }
 
   return true;

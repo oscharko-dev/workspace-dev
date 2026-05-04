@@ -53,42 +53,34 @@ export const assertAgentRoleProfileInvariants = (
 ): void => {
   const where = `AgentRoleProfile[${profile.role}]`;
 
-  if (profile.schemaVersion !== AGENT_ROLE_PROFILE_SCHEMA_VERSION) {
+  if ((profile.schemaVersion as string) !== AGENT_ROLE_PROFILE_SCHEMA_VERSION) {
     throw new TypeError(
-      `${where}: schemaVersion must be "${AGENT_ROLE_PROFILE_SCHEMA_VERSION}", got "${String(
-        profile.schemaVersion,
-      )}"`,
+      `${where}: schemaVersion must be "${AGENT_ROLE_PROFILE_SCHEMA_VERSION}", got "${profile.schemaVersion}"`,
     );
   }
   if (!AGENT_HARNESS_ROLES.includes(profile.role)) {
     throw new TypeError(
-      `${where}: role "${String(profile.role)}" is not a known AgentHarnessRole`,
+      `${where}: role "${profile.role}" is not a known AgentHarnessRole`,
     );
   }
   if (!AGENT_ROLE_KINDS.includes(profile.roleKind)) {
     throw new TypeError(
-      `${where}: roleKind "${String(
-        profile.roleKind,
-      )}" is not a known AgentRoleKind`,
+      `${where}: roleKind "${profile.roleKind}" is not a known AgentRoleKind`,
     );
   }
   if (!AGENT_ROLE_CAPABILITIES.includes(profile.capability)) {
     throw new TypeError(
-      `${where}: capability "${String(
-        profile.capability,
-      )}" is not a known AgentRoleCapability`,
+      `${where}: capability "${profile.capability}" is not a known AgentRoleCapability`,
     );
   }
   if (!AGENT_ROLE_FINOPS_GROUPS.includes(profile.finOpsGroup)) {
     throw new TypeError(
-      `${where}: finOpsGroup "${String(
-        profile.finOpsGroup,
-      )}" is not a known AgentRoleFinOpsGroup`,
+      `${where}: finOpsGroup "${profile.finOpsGroup}" is not a known AgentRoleFinOpsGroup`,
     );
   }
   if (
     !AGENT_ROLE_MAX_ATTEMPT_VALUES.includes(
-      profile.maxAttempts as 1 | 2 | 3,
+      profile.maxAttempts,
     )
   ) {
     throw new TypeError(
@@ -345,10 +337,10 @@ export const AGENT_ROLE_PROFILE_REGISTRY: Readonly<
 export const getAgentRoleProfile = (
   role: AgentHarnessRole,
 ): AgentRoleProfile => {
-  const profile = AGENT_ROLE_PROFILE_REGISTRY[role];
+  const profile = AGENT_ROLE_PROFILE_REGISTRY[role] as AgentRoleProfile | undefined;
   if (profile === undefined) {
     throw new RangeError(
-      `getAgentRoleProfile: no profile registered for role "${String(role)}"`,
+      `getAgentRoleProfile: no profile registered for role "${role}"`,
     );
   }
   return profile;

@@ -162,10 +162,7 @@ const parseEvalAbInputDocument = (raw: string): EvalAbInputDocument => {
   }
   for (const [index, entry] of parsed.archetypes.entries()) {
     const where = `eval-ab input archetypes[${index}]`;
-    if (
-      entry === undefined ||
-      !BASELINE_ARCHETYPE_FIXTURE_IDS.includes(entry.archetypeId)
-    ) {
+    if (!BASELINE_ARCHETYPE_FIXTURE_IDS.includes(entry.archetypeId)) {
       throw new RangeError(`${where}.archetypeId is invalid`);
     }
     assertMetricBlock(entry.singlePass, `${where}.singlePass`);

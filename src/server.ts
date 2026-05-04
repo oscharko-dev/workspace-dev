@@ -498,7 +498,7 @@ export const createWorkspaceServer = async (
       startupEnabled: options.testIntelligence?.enabled === true,
       envEnabled: resolveTestIntelligenceEnabled(process.env),
       env: process.env,
-      ...(runtime.logger !== undefined ? { logger: runtime.logger } : {}),
+      logger: runtime.logger,
     });
 
   const handleRequest = createWorkspaceRequestHandler({

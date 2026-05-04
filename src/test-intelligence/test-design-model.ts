@@ -807,7 +807,7 @@ export const validateTestDesignModel = (
           required.forEach((requiredKey) => {
             if (
               typeof entry[requiredKey] !== "string" ||
-              (entry[requiredKey] as string).length === 0
+              entry[requiredKey].length === 0
             ) {
               errors.push({
                 path: `${nestedPath}.${requiredKey}`,
@@ -915,7 +915,7 @@ export const validateTestDesignModel = (
       if (!hasOnlyKeys(entry, keys)) {
         errors.push({ path: entryPath, message: "unexpected property" });
       }
-      if (typeof entry[idKey] !== "string" || (entry[idKey] as string).length === 0) {
+      if (typeof entry[idKey] !== "string" || entry[idKey].length === 0) {
         errors.push({
           path: `${entryPath}.${idKey}`,
           message: "expected non-empty string",

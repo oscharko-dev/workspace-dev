@@ -1873,7 +1873,7 @@ const validateLlmDraftResponse = (
   const drafts: ProductionRunnerLlmDraftCase[] = [];
   const droppedReasons: string[] = [];
   for (let i = 0; i < root.testCases.length; i += 1) {
-    const candidate = root.testCases[i];
+    const candidate: unknown = root.testCases[i];
     const validated = validateDraftCase(candidate, `testCases[${i}]`);
     if (!validated.ok) {
       droppedReasons.push(validated.message);
@@ -1996,7 +1996,7 @@ const validateDraftCase = (
   }
   const steps: ProductionRunnerLlmDraftCase["steps"][number][] = [];
   for (let i = 0; i < c.steps.length; i += 1) {
-    const step = c.steps[i];
+    const step: unknown = c.steps[i];
     if (typeof step !== "object" || step === null || Array.isArray(step)) {
       return { ok: false, message: `${path}.steps[${i}] is not an object` };
     }
@@ -2024,7 +2024,7 @@ const validateDraftCase = (
     nodePath?: string;
   }> = [];
   for (let i = 0; i < traceRefs.length; i += 1) {
-    const ref = traceRefs[i];
+    const ref: unknown = traceRefs[i];
     if (typeof ref !== "object" || ref === null || Array.isArray(ref)) {
       return { ok: false, message: `${path}.figmaTraceRefs[${i}] not object` };
     }
@@ -2056,10 +2056,10 @@ const validateDraftCase = (
     priority: c.priority as TestCasePriority,
     riskCategory: c.riskCategory as TestCaseRiskCategory,
     technique: c.technique as TestCaseTechnique29119,
-    preconditions: c.preconditions as string[],
-    testData: c.testData as string[],
+    preconditions: c.preconditions,
+    testData: c.testData,
     steps,
-    expectedResults: c.expectedResults as string[],
+    expectedResults: c.expectedResults,
     assumptions,
     openQuestions,
   };

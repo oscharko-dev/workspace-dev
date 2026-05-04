@@ -135,12 +135,10 @@ export const buildHumanReviewCalibrationReport = (input: {
   }
   if (!HUMAN_REVIEW_PIPELINE_IDS.includes(input.pipelineId)) {
     throw new RangeError(
-      `buildHumanReviewCalibrationReport: unknown pipelineId "${String(
-        input.pipelineId,
-      )}"`,
+      `buildHumanReviewCalibrationReport: unknown pipelineId "${input.pipelineId}"`,
     );
   }
-  if (!Array.isArray(input.samples) || input.samples.length === 0) {
+  if (input.samples.length === 0) {
     throw new TypeError(
       "buildHumanReviewCalibrationReport: samples must be a non-empty array",
     );

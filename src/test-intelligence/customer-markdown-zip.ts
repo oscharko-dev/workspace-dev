@@ -377,8 +377,8 @@ const buildRegulatorySummary = async (tiDir: string): Promise<string> => {
     const domain = tc.regulatoryRelevance?.domain ?? "unknown";
     domainCounts[domain] = (domainCounts[domain] ?? 0) + 1;
     summaryCases.push({
-      id: tc.id ?? "",
-      title: tc.title ?? "",
+      id: tc.id,
+      title: tc.title,
       domain,
       ...(tc.regulatoryRelevance?.rationale !== undefined
         ? { rationale: tc.regulatoryRelevance.rationale }

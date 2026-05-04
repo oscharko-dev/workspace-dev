@@ -514,7 +514,7 @@ const rollbackFailureState = async (input: {
     }
     let rollbackState = cloneState(input.workingState);
     for (const appliedMigration of [...input.appliedRuntime].reverse()) {
-      if (appliedMigration.evidenceBearing === true) {
+      if (appliedMigration.evidenceBearing) {
         rollbackState = await executeRollback(
           appliedMigration.migration,
           rollbackState,
@@ -599,11 +599,7 @@ const getSentinelHash = (
 export async function runMigrations(
   state: unknown,
   registry: readonly Migration[],
-): Promise<MigrationResult>;
-export async function runMigrations(
-  state: unknown,
-  registry: readonly Migration[],
-  options: RunMigrationsOptions,
+  options?: RunMigrationsOptions,
 ): Promise<MigrationResult>;
 export async function runMigrations(
   state: unknown,
