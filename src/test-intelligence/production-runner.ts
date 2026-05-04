@@ -945,7 +945,7 @@ export const runFigmaToQcTestCases = async (
   const cacheExecResult = await executeWithReplayCache({
     cache: replayCache,
     cacheKey: compiled.cacheKey,
-    generate: async (_cacheKeyDigest) => {
+    generate: async () => {
       // 6. LLM dispatch.
       emit({
         phase: "llm_gateway_request",
