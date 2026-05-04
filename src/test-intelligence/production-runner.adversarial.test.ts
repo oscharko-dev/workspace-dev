@@ -6,6 +6,7 @@ import path, { join } from "node:path";
 import test from "node:test";
 
 import type {
+  LlmGatewayClient,
   LlmGatewayCapabilities,
   LlmGenerationRequest,
   LlmGenerationResult,
@@ -284,9 +285,11 @@ test("production runner adversarial: oversized Figma payloads above 10 MiB fail 
 test("production runner adversarial: persisted artifacts never leak figma tokens, query tokens, or bearer strings", async () => {
   const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ti-runner-adv-"));
   const originalFetch = globalThis.fetch;
-  const figmaAccessToken = "opaque-figma-token";
+  const figmaAccessToken =
+    "figd_supersecret_test_token_value_1234567890_padded_padded"; // pragma: allowlist secret
   const queryToken = "opaque-query-token";
   const bearerToken = "opaque-bearer-token";
+  const azureApiKey = "opaque-azure-api-key";
   try {
     const client = createMockLlmGatewayClient({
       role: "test_generation",
@@ -333,6 +336,47 @@ test("production runner adversarial: persisted artifacts never leak figma tokens
     assert.doesNotMatch(persisted, /\bBearer\b/u);
     assert.doesNotMatch(persisted, new RegExp(bearerToken, "u"));
     assert.doesNotMatch(persisted, /access_token=/u);
+
+    const erroringClient = createLlmGatewayClient(
+      {
+        role: "test_generation",
+        compatibilityMode: "openai_chat",
+        baseUrl: "https://example.cognitiveservices.azure.com/openai/v1",
+        deployment: "gpt-oss-120b",
+        modelRevision: "gpt-oss-120b@test",
+        gatewayRelease: "mock",
+        authMode: "bearer_token",
+        declaredCapabilities: TEST_GENERATION_CAPS,
+        timeoutMs: 5_000,
+        maxRetries: 0,
+        circuitBreaker: { failureThreshold: 3, resetTimeoutMs: 1_000 },
+      },
+      {
+        apiKeyProvider: () => bearerToken,
+        fetchImpl: async () => {
+          throw new Error(
+            `Authorization: Bearer ${bearerToken}; api-key=${azureApiKey}; figmaAccessToken=${figmaAccessToken}`,
+          );
+        },
+      },
+    );
+    await assert.rejects(
+      runFigmaToQcTestCases({
+        jobId: "job-token-redaction-error",
+        generatedAt: "2026-05-04T10:00:00Z",
+        source: { kind: "figma_rest_file", file: buildFile() },
+        outputRoot: tempRoot,
+        llm: { client: erroringClient },
+      }),
+      (err) => {
+        assert.ok(err instanceof ProductionRunnerError);
+        assert.equal(err.failureClass, "LLM_GATEWAY_FAILED");
+        assert.doesNotMatch(err.message, new RegExp(bearerToken, "u"));
+        assert.doesNotMatch(err.message, new RegExp(azureApiKey, "u"));
+        assert.doesNotMatch(err.message, new RegExp(figmaAccessToken, "u"));
+        return true;
+      },
+    );
   } finally {
     globalThis.fetch = originalFetch;
     await rm(tempRoot, { recursive: true, force: true });
@@ -363,7 +407,7 @@ test("production runner adversarial: corrupted persistent replay-cache entries a
     });
     const cacheFiles = await walkFiles(cacheRoot);
     assert.equal(cacheFiles.length, 1);
-    await writeFile(cacheFiles[0]!, "{\"key\":\"wrong\",\"testCases\":42}", "utf8");
+    await writeFile(cacheFiles[0]!, "{", "utf8");
 
     await assert.rejects(
       runFigmaToQcTestCases({
@@ -391,57 +435,64 @@ test("production runner adversarial: corrupted persistent replay-cache entries a
 test("production runner adversarial: cancellation releases the gateway slot and emits a cancelled terminal event", async () => {
   const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ti-runner-adv-"));
   let dispatches = 0;
-  const client = createLlmGatewayClient(
-    {
-      role: "test_generation",
-      compatibilityMode: "openai_chat",
-      baseUrl: "https://example.cognitiveservices.azure.com/openai/v1",
-      deployment: "gpt-oss-120b",
-      modelRevision: "gpt-oss-120b@test",
-      gatewayRelease: "mock",
-      authMode: "api_key",
-      declaredCapabilities: TEST_GENERATION_CAPS,
-      timeoutMs: 5_000,
-      maxRetries: 0,
-      circuitBreaker: { failureThreshold: 3, resetTimeoutMs: 1_000 },
-    },
-    {
-      apiKeyProvider: () => "test-key",
-      fetchImpl: async (_url: string, init?: RequestInit) => {
-        dispatches += 1;
-        const signal = init?.signal;
-        if (dispatches === 1) {
-          return await new Promise<Response>((_resolve, reject) => {
-            const abort = () =>
-              reject(new DOMException("This operation was aborted", "AbortError"));
-            if (signal?.aborted) {
-              abort();
-              return;
-            }
-            signal?.addEventListener("abort", abort, { once: true });
+  let slotInUse = false;
+  const partialSentinel = "partial-llm-response-should-not-leak";
+  const client: LlmGatewayClient = {
+    role: "test_generation",
+    compatibilityMode: "openai_chat",
+    deployment: "gpt-oss-120b",
+    modelRevision: "gpt-oss-120b@test",
+    gatewayRelease: "mock",
+    ictRegisterRef: undefined,
+    operatorEndpointReference: "https://example.invalid/[redacted]",
+    modelWeightsSha256: undefined,
+    declaredCapabilities: TEST_GENERATION_CAPS,
+    generate: async (request: LlmGenerationRequest) => {
+      if (slotInUse) {
+        throw new Error("gateway slot leak");
+      }
+      slotInUse = true;
+      dispatches += 1;
+      if (dispatches === 1) {
+        await new Promise<void>((resolve) => {
+          const onAbort = () => {
+            request.abortSignal?.removeEventListener("abort", onAbort);
+            resolve();
+          };
+          if (request.abortSignal?.aborted) {
+            resolve();
+            return;
+          }
+          request.abortSignal?.addEventListener("abort", onAbort, {
+            once: true,
           });
-        }
-        return new Response(
-          JSON.stringify({
-            choices: [
-              {
-                finish_reason: "stop",
-                message: {
-                  role: "assistant",
-                  content: JSON.stringify({ testCases: [SAMPLE_DRAFT] }),
-                },
-              },
-            ],
-            usage: { prompt_tokens: 10, completion_tokens: 5 },
-          }),
-          {
-            status: 200,
-            headers: { "content-type": "application/json" },
-          },
-        );
-      },
+        });
+        slotInUse = false;
+        return {
+          outcome: "error",
+          errorClass: "canceled",
+          message: partialSentinel,
+          retryable: false,
+          attempt: 1,
+        };
+      }
+      slotInUse = false;
+      return {
+        outcome: "success",
+        content: { testCases: [SAMPLE_DRAFT] },
+        finishReason: "stop",
+        usage: { inputTokens: 10, outputTokens: 5 },
+        modelDeployment: "gpt-oss-120b",
+        modelRevision: "gpt-oss-120b@test",
+        gatewayRelease: "mock",
+        attempt: 1,
+      };
     },
-  );
+    getCircuitBreaker: () => {
+      throw new Error("not used in test");
+    },
+    getIdempotencyMetrics: () => undefined,
+  };
 
   try {
     const controller = new AbortController();
@@ -463,7 +514,8 @@ test("production runner adversarial: cancellation releases the gateway slot and 
     await assert.rejects(firstRun, (err) => {
       assert.ok(err instanceof ProductionRunnerError);
       assert.equal(err.failureClass, "LLM_GATEWAY_FAILED");
-      assert.match(err.message, /canceled/u);
+      assert.match(err.message, /canceled by caller/u);
+      assert.doesNotMatch(err.message, new RegExp(partialSentinel, "u"));
       return true;
     });
     assert.deepEqual(events.slice(-2), ["llm_gateway_response", "cancelled"]);
@@ -472,6 +524,15 @@ test("production runner adversarial: cancellation releases the gateway slot and 
       false,
       "cancellation must stop the pipeline before validation/export",
     );
+    const eventBlob = JSON.stringify(events);
+    assert.doesNotMatch(eventBlob, new RegExp(partialSentinel, "u"));
+    const artifactFiles = await walkFiles(tempRoot);
+    const persisted = (
+      await Promise.all(
+        artifactFiles.map(async (file) => await readFile(file, "utf8")),
+      )
+    ).join("\n");
+    assert.doesNotMatch(persisted, new RegExp(partialSentinel, "u"));
 
     const secondRun = await runFigmaToQcTestCases({
       jobId: "job-cancelled",

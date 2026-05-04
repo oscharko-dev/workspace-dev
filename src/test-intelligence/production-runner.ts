@@ -1865,6 +1865,18 @@ const classifyLlmAttempt = (
         }),
       };
     }
+    if (llmResult.errorClass === "canceled") {
+      return {
+        kind: "error",
+        errorKind: "permanent",
+        errorClass: "gateway_error",
+        error: new ProductionRunnerError({
+          failureClass: "LLM_GATEWAY_FAILED",
+          message: "LLM gateway request canceled by caller.",
+          retryable: false,
+        }),
+      };
+    }
     return {
       kind: "error",
       errorKind: llmResult.retryable ? "retryable" : "permanent",

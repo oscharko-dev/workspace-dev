@@ -288,6 +288,45 @@ jobs:
       - name: Test-intelligence eval gate
         run: pnpm run test:ti-eval
 
+  mutation-testing:
+    needs: [setup]
+    if: needs.setup.outputs.src == 'true' || needs.setup.outputs.config == 'true' || needs.setup.outputs.full == 'true'
+    timeout-minutes: 120
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
+        with:
+          persist-credentials: false
+
+      - uses: pnpm/action-setup@26f6d4f2c533a43e6b5da0b4a5dd983f98f7b49a  # v6
+        with:
+          version: 10.33.0
+
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e  # v6
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile --ignore-scripts
+
+      - name: Run mutation baseline (blocking >=58%)
+        run: pnpm run test:mutation
+
+      - name: Summarize mutation report
+        if: always()
+        run: node scripts/print-mutation-report-summary.mjs artifacts/testing/mutation/mutation.json
+
+      - name: Upload mutation artifacts
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7
+        if: always()
+        with:
+          name: workspace-dev-dev-mutation-${{ github.run_id }}
+          path: artifacts/testing/mutation
+          if-no-files-found: ignore
+
   coverage:
     needs: [setup]
     if: github.event_name == 'workflow_disabled'  # temporarily disabled — re-enable by restoring the original if: condition
@@ -530,6 +569,7 @@ jobs:
       - typecheck
       - template-tests
       - golden-and-ti
+      - mutation-testing
       - security-smoke
       # unit-tests, coverage, e2e, build-and-publish-checks temporarily excluded (#1736)
     if: always()
@@ -545,6 +585,7 @@ jobs:
           TYPECHECK: ${{ needs.typecheck.result }}
           TEMPLATE_TESTS: ${{ needs.template-tests.result }}
           GOLDEN_AND_TI: ${{ needs.golden-and-ti.result }}
+          MUTATION_TESTING: ${{ needs.mutation-testing.result }}
           SECURITY_SMOKE: ${{ needs.security-smoke.result }}
         run: |
           set -euo pipefail
@@ -554,7 +595,7 @@ jobs:
             echo "::error::dev-gate aggregate: setup job did not succeed (result=${SETUP}); downstream skips are not safe"
             fail=1
           fi
-          for name in POLICY_GUARDS TYPECHECK TEMPLATE_TESTS GOLDEN_AND_TI SECURITY_SMOKE; do
+          for name in POLICY_GUARDS TYPECHECK TEMPLATE_TESTS GOLDEN_AND_TI MUTATION_TESTING SECURITY_SMOKE; do
             value="${!name}"
             echo "${name}=${value}"
             case "$value" in
