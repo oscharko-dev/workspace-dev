@@ -31,10 +31,15 @@ import { readFile, readdir, stat } from "node:fs/promises";
 import { join } from "node:path";
 
 import {
+  AGENT_ITERATIONS_ARTIFACT_FILENAME,
+  CACHE_BREAK_EVENTS_LOG_ARTIFACT_FILENAME,
+  COMPACT_BOUNDARY_LOG_ARTIFACT_FILENAME,
   EXPORT_REPORT_ARTIFACT_FILENAME,
   EXPORT_REPORT_SCHEMA_VERSION,
   GENERATED_TESTCASES_ARTIFACT_FILENAME,
   GENERATED_TEST_CASE_SCHEMA_VERSION,
+  HARNESS_ARTIFACT_MANIFEST_ARTIFACT_FILENAME,
+  LIBRARY_COVERAGE_REPORT_ARTIFACT_FILENAME,
   QC_MAPPING_PREVIEW_ARTIFACT_FILENAME,
   QC_MAPPING_PREVIEW_SCHEMA_VERSION,
   REVIEW_EVENTS_ARTIFACT_FILENAME,
@@ -50,8 +55,13 @@ import {
   VISUAL_SIDECAR_SCHEMA_VERSION,
   VISUAL_SIDECAR_VALIDATION_REPORT_ARTIFACT_FILENAME,
   VISUAL_SIDECAR_VALIDATION_REPORT_SCHEMA_VERSION,
+  type AgentIterationsArtifact,
+  type CacheBreakEventLogEntry,
+  type CompactBoundaryLogEntry,
   type ExportReportArtifact,
   type GeneratedTestCaseList,
+  type HarnessArtifactManifest,
+  type LibraryCoverageReport,
   type MultiSourceReconciliationReport,
   type MultiSourceTestIntentEnvelope,
   type QcMappingPreviewArtifact,
@@ -62,6 +72,11 @@ import {
   type TestCaseValidationReport,
   type VisualSidecarValidationReport,
 } from "../contracts/index.js";
+import { isAgentIterationsArtifact } from "./agent-iterations.js";
+import { parseCacheBreakEventsLog } from "./cache-break-events-log.js";
+import { parseCompactBoundaryLog } from "./compact-boundary-log.js";
+import { isHarnessArtifactManifest } from "./harness-artifact-manifest.js";
+import { isLibraryCoverageReport } from "./library-coverage-report.js";
 import {
   buildInspectorTestCaseProvenance,
   listInspectorSourceRecords,
@@ -86,7 +101,13 @@ export type InspectorBundleArtifactKind =
   | "exportReport"
   | "reviewSnapshot"
   | "reviewEvents"
-  | "multiSourceReconciliation";
+  | "multiSourceReconciliation"
+  // Issue #1795 — canonical-JSON harness job artifacts.
+  | "agentIterations"
+  | "cacheBreakEventsLog"
+  | "compactBoundaryLog"
+  | "libraryCoverageReport"
+  | "harnessArtifactManifest";
 
 /** Single parse error attached to an artifact slot. */
 export interface InspectorBundleParseError {
@@ -127,6 +148,16 @@ export interface InspectorTestIntelligenceBundle {
   multiSourceReconciliation?: InspectorMultiSourceReconciliationReport;
   conflictDecisions?: Record<string, InspectorConflictDecisionSnapshot>;
   testCaseProvenance?: Record<string, InspectorTestCaseProvenance>;
+  /** Issue #1795 — consolidated repair-iteration log. */
+  agentIterations?: AgentIterationsArtifact;
+  /** Issue #1795 — consolidated cache-break event log. */
+  cacheBreakEventsLog?: readonly CacheBreakEventLogEntry[];
+  /** Issue #1795 — consolidated compaction-boundary log. */
+  compactBoundaryLog?: readonly CompactBoundaryLogEntry[];
+  /** Issue #1795 — per-release library-coverage report. */
+  libraryCoverageReport?: LibraryCoverageReport;
+  /** Issue #1795 — per-job harness artifact manifest. */
+  harnessArtifactManifest?: HarnessArtifactManifest;
   /** Per-artifact parse errors. Empty when every present file parsed cleanly. */
   parseErrors: InspectorBundleParseError[];
 }
@@ -387,6 +418,48 @@ const readJsonArtifact = async <T>(
   return { parsed };
 };
 
+/**
+ * Read a newline-delimited JSON artifact. Each line is parsed via the
+ * supplied entry validator; the file must end in a single trailing
+ * newline (or be empty). Returns the validated entries on success or a
+ * parse-error reason on any deviation.
+ */
+const readJsonlArtifact = async <T>(
+  filePath: string,
+  filename: string,
+  artifact: InspectorBundleArtifactKind,
+  parse: (payload: string) => readonly T[] | undefined,
+): Promise<ReadResult<readonly T[]>> => {
+  let raw: string;
+  try {
+    raw = await readFile(filePath, "utf8");
+  } catch (err) {
+    if (isEnoent(err)) {
+      return { missing: true };
+    }
+    return {
+      error: {
+        artifact,
+        filename,
+        reason: "io_error",
+        message: err instanceof Error ? err.message : String(err),
+      },
+    };
+  }
+  const parsed = parse(raw);
+  if (parsed === undefined) {
+    return {
+      error: {
+        artifact,
+        filename,
+        reason: "schema_mismatch",
+        message: `${filename} did not match its expected JSON-lines schema.`,
+      },
+    };
+  }
+  return { parsed };
+};
+
 /** Resolve `<rootDir>/<jobId>` if the directory exists; otherwise undefined. */
 const resolveJobDir = async (
   rootDir: string,
@@ -442,6 +515,11 @@ export const readInspectorTestIntelligenceBundle = async (
     reviewSnapshot,
     reviewEventsEnvelope,
     multiSourceReconciliation,
+    agentIterations,
+    cacheBreakEventsLog,
+    compactBoundaryLog,
+    libraryCoverageReport,
+    harnessArtifactManifest,
   ] = await Promise.all([
     readJsonArtifact(
       join(jobDir, GENERATED_TESTCASES_ARTIFACT_FILENAME),
@@ -504,6 +582,36 @@ export const readInspectorTestIntelligenceBundle = async (
       (value): value is MultiSourceReconciliationReport =>
         isRecord(value) && Array.isArray(value["conflicts"]),
     ),
+    readJsonArtifact(
+      join(jobDir, AGENT_ITERATIONS_ARTIFACT_FILENAME),
+      AGENT_ITERATIONS_ARTIFACT_FILENAME,
+      "agentIterations",
+      isAgentIterationsArtifact,
+    ),
+    readJsonlArtifact<CacheBreakEventLogEntry>(
+      join(jobDir, CACHE_BREAK_EVENTS_LOG_ARTIFACT_FILENAME),
+      CACHE_BREAK_EVENTS_LOG_ARTIFACT_FILENAME,
+      "cacheBreakEventsLog",
+      parseCacheBreakEventsLog,
+    ),
+    readJsonlArtifact<CompactBoundaryLogEntry>(
+      join(jobDir, COMPACT_BOUNDARY_LOG_ARTIFACT_FILENAME),
+      COMPACT_BOUNDARY_LOG_ARTIFACT_FILENAME,
+      "compactBoundaryLog",
+      parseCompactBoundaryLog,
+    ),
+    readJsonArtifact(
+      join(jobDir, LIBRARY_COVERAGE_REPORT_ARTIFACT_FILENAME),
+      LIBRARY_COVERAGE_REPORT_ARTIFACT_FILENAME,
+      "libraryCoverageReport",
+      isLibraryCoverageReport,
+    ),
+    readJsonArtifact(
+      join(jobDir, HARNESS_ARTIFACT_MANIFEST_ARTIFACT_FILENAME),
+      HARNESS_ARTIFACT_MANIFEST_ARTIFACT_FILENAME,
+      "harnessArtifactManifest",
+      isHarnessArtifactManifest,
+    ),
   ]);
 
   const parseErrors: InspectorBundleParseError[] = [];
@@ -522,6 +630,11 @@ export const readInspectorTestIntelligenceBundle = async (
   collect(reviewSnapshot);
   collect(reviewEventsEnvelope);
   collect(multiSourceReconciliation);
+  collect(agentIterations);
+  collect(cacheBreakEventsLog);
+  collect(compactBoundaryLog);
+  collect(libraryCoverageReport);
+  collect(harnessArtifactManifest);
 
   const [sourceEnvelope, sourceRefs, conflictDecisions, testCaseProvenance] =
     await Promise.all([
@@ -589,6 +702,21 @@ export const readInspectorTestIntelligenceBundle = async (
       : {}),
     ...(Object.keys(testCaseProvenance).length > 0
       ? { testCaseProvenance }
+      : {}),
+    ...(agentIterations.parsed
+      ? { agentIterations: agentIterations.parsed }
+      : {}),
+    ...(cacheBreakEventsLog.parsed
+      ? { cacheBreakEventsLog: cacheBreakEventsLog.parsed }
+      : {}),
+    ...(compactBoundaryLog.parsed
+      ? { compactBoundaryLog: compactBoundaryLog.parsed }
+      : {}),
+    ...(libraryCoverageReport.parsed
+      ? { libraryCoverageReport: libraryCoverageReport.parsed }
+      : {}),
+    ...(harnessArtifactManifest.parsed
+      ? { harnessArtifactManifest: harnessArtifactManifest.parsed }
       : {}),
   };
 
@@ -659,6 +787,19 @@ export const listInspectorTestIntelligenceJobs = async (
         reviewSnapshot: present.has(REVIEW_STATE_ARTIFACT_FILENAME),
         reviewEvents: present.has(REVIEW_EVENTS_ARTIFACT_FILENAME),
         multiSourceReconciliation: present.has("multi-source-conflicts.json"),
+        agentIterations: present.has(AGENT_ITERATIONS_ARTIFACT_FILENAME),
+        cacheBreakEventsLog: present.has(
+          CACHE_BREAK_EVENTS_LOG_ARTIFACT_FILENAME,
+        ),
+        compactBoundaryLog: present.has(
+          COMPACT_BOUNDARY_LOG_ARTIFACT_FILENAME,
+        ),
+        libraryCoverageReport: present.has(
+          LIBRARY_COVERAGE_REPORT_ARTIFACT_FILENAME,
+        ),
+        harnessArtifactManifest: present.has(
+          HARNESS_ARTIFACT_MANIFEST_ARTIFACT_FILENAME,
+        ),
       },
     });
   }
