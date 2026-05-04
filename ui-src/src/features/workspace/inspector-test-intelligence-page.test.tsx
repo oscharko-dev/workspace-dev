@@ -33,6 +33,7 @@ function buildJsonResponse(value: MockResponse): JsonResponse<unknown> {
 
 interface RouteMockSpec {
   bundle?: MockResponse;
+  evidenceVerify?: MockResponse;
   reviewState?: MockResponse;
   workspaceStatus?: MockResponse;
   jobsList?: MockResponse;
@@ -69,6 +70,22 @@ function configureFetchJson(spec: RouteMockSpec): void {
             ok: true,
             snapshot: buildBundle().reviewSnapshot,
             events: [],
+          },
+        },
+      );
+    }
+    if (url.endsWith("/evidence/verify")) {
+      return buildJsonResponse(
+        spec.evidenceVerify ?? {
+          status: 200,
+          payload: {
+            schemaVersion: "1.0.0",
+            verifiedAt: "2026-05-04T10:00:00.000Z",
+            jobId: "job-1",
+            ok: true,
+            manifestSha256: "a".repeat(64),
+            checks: [],
+            failures: [],
           },
         },
       );
@@ -159,6 +176,11 @@ describe("InspectorTestIntelligencePage — empty + loading + ready", () => {
     configureFetchJson({});
     renderPage("/workspace/ui/inspector/test-intelligence?jobId=job-1");
     await waitFor(() => {
+      expect(screen.getByTestId("ti-tablist")).toBeInTheDocument();
+      expect(screen.getByRole("tab", { name: "Overview" })).toHaveAttribute(
+        "aria-selected",
+        "true",
+      );
       expect(screen.getByTestId("ti-policy-summary")).toBeInTheDocument();
       expect(screen.getByTestId("ti-test-case-list")).toBeInTheDocument();
       expect(screen.getByTestId("ti-coverage-panel")).toBeInTheDocument();
@@ -168,6 +190,48 @@ describe("InspectorTestIntelligencePage — empty + loading + ready", () => {
         "Workspace/Login",
       );
     });
+  });
+
+  it("loads the evidence status panel lazily when its tab is selected", async () => {
+    configureFetchJson({
+      evidenceVerify: {
+        status: 200,
+        payload: {
+          schemaVersion: "1.0.0",
+          verifiedAt: "2026-05-04T10:00:00.000Z",
+          jobId: "job-1",
+          ok: true,
+          manifestSha256: "a".repeat(64),
+          checks: [{ kind: "ml_bom", ok: true, reference: "ml-bom.json" }],
+          failures: [],
+        },
+      },
+    });
+    renderPage("/workspace/ui/inspector/test-intelligence?jobId=job-1");
+
+    await waitFor(() => {
+      expect(screen.getByRole("tab", { name: "Overview" })).toHaveAttribute(
+        "aria-selected",
+        "true",
+      );
+    });
+    expect(
+      fetchJsonMock.mock.calls.some(
+        ([request]) => request.url === "/workspace/jobs/job-1/evidence/verify",
+      ),
+    ).toBe(false);
+
+    fireEvent.click(screen.getByRole("tab", { name: "Evidence Status" }));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("ti-evidence-status-panel")).toBeInTheDocument();
+      expect(screen.getByTestId("ti-evidence-checks")).toHaveTextContent("1");
+    });
+    expect(
+      fetchJsonMock.mock.calls.some(
+        ([request]) => request.url === "/workspace/jobs/job-1/evidence/verify",
+      ),
+    ).toBe(true);
   });
 
   it("renders the loading state while artifact fetches are pending", async () => {
@@ -481,10 +545,60 @@ describe("InspectorTestIntelligencePage — multi-source tab state", () => {
     });
     renderPage("/workspace/ui/inspector/test-intelligence?jobId=job-1");
     await waitFor(() => {
-      expect(
-        screen.getByRole("button", { name: "Multi-Source" }),
-      ).toBeInTheDocument();
+      expect(screen.getByRole("tab", { name: "Multi-Source" })).toBeInTheDocument();
     });
+  });
+
+  it("switches to the multi-source tab and remains free of blocking a11y violations", async () => {
+    configureFetchJson({
+      workspaceStatus: {
+        status: 200,
+        payload: {
+          testIntelligenceEnabled: true,
+          testIntelligenceMultiSourceEnabled: true,
+          testIntelligenceJiraGatewayConfigured: true,
+        },
+      },
+      bundle: {
+        status: 200,
+        payload: buildBundle({
+          sourceRefs: [
+            {
+              sourceId: "jira-primary",
+              kind: "jira_paste",
+              capturedAt: "2026-04-27T11:00:00.000Z",
+              contentHash: "a".repeat(64),
+              role: "primary",
+              label: "Jira paste PAY-1437",
+            },
+          ],
+          sourceEnvelope: {
+            aggregateContentHash: "hash-1",
+            conflictResolutionPolicy: "reviewer_decides",
+          },
+          multiSourceReconciliation: {
+            envelopeHash: "hash-1",
+            conflicts: [],
+            unmatchedSources: [],
+            contributingSourcesPerCase: [],
+            policyApplied: "reviewer_decides",
+          },
+        }),
+      },
+    });
+    renderPage("/workspace/ui/inspector/test-intelligence?jobId=job-1");
+    await waitFor(() => {
+      expect(screen.getByRole("tab", { name: "Multi-Source" })).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByRole("tab", { name: "Multi-Source" }));
+    await waitFor(() => {
+      expect(screen.getByRole("tab", { name: "Multi-Source" })).toHaveAttribute(
+        "aria-selected",
+        "true",
+      );
+      expect(screen.getByTestId("ti-multisource-source-mix")).toBeInTheDocument();
+    });
+    await expectNoBlockingAccessibilityViolations(screen.getByTestId("ti-page"));
   });
 
   it("persists the selected multi-source tab in localStorage using the reviewer key", async () => {
@@ -530,7 +644,7 @@ describe("InspectorTestIntelligencePage — multi-source tab state", () => {
     fireEvent.change(screen.getByTestId("ti-reviewer-handle-input"), {
       target: { value: "Alice Example" },
     });
-    fireEvent.click(screen.getByRole("button", { name: "Multi-Source" }));
+    fireEvent.click(screen.getByRole("tab", { name: "Multi-Source" }));
     await waitFor(() => {
       expect(screen.getByTestId("ti-multisource-source-list")).toBeInTheDocument();
       expect(screen.getByTestId("ti-multisource-source-mix")).toBeInTheDocument();
@@ -804,7 +918,7 @@ describe("InspectorTestIntelligencePage — multi-source ingestion flow", () => 
       target: { value: "secret-token" },
     });
 
-    fireEvent.click(screen.getByRole("button", { name: "Multi-Source" }));
+    fireEvent.click(screen.getByRole("tab", { name: "Multi-Source" }));
     await waitFor(() => {
       expect(screen.getByTestId("ti-multisource-ingestion")).toBeInTheDocument();
     });
@@ -865,7 +979,7 @@ describe("InspectorTestIntelligencePage — multi-source ingestion flow", () => 
       ).toHaveTextContent("resolved");
     });
 
-    fireEvent.click(screen.getByRole("button", { name: "Overview" }));
+    fireEvent.click(screen.getByRole("tab", { name: "Overview" }));
     await waitFor(() => {
       expect(screen.getByTestId("ti-test-case-list")).toBeInTheDocument();
     });

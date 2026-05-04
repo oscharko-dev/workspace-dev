@@ -173,8 +173,20 @@ const extractDetail = (event: ProductionRunnerEvent): string | null => {
   if (event.details === undefined) return null;
   const d = event.details as Record<string, unknown>;
   if (typeof d.message === "string") return d.message;
-  if (typeof d.querySource === "string") return `cache break: ${d.querySource}`;
+  if (typeof d.querySource === "string") {
+    const roleStepId =
+      typeof d.roleStepId === "string" ? ` · ${d.roleStepId}` : "";
+    return `cache break: ${d.querySource}${roleStepId}`;
+  }
+  if (typeof d.deployment === "string" && typeof d.role === "string") {
+    return `${d.role}: ${d.deployment}`;
+  }
   if (typeof d.deployment === "string") return d.deployment;
+  if (typeof d.refusalCode === "string") return d.refusalCode;
+  if (typeof d.errorClass === "string") return d.errorClass;
+  if (typeof d.headOfChainHash === "string") {
+    return `chain ${d.headOfChainHash.slice(0, 12)}`;
+  }
   if (typeof d.tokens === "number") return `${d.tokens} tokens`;
   if (typeof d.error === "string") return d.error;
   return null;

@@ -206,6 +206,25 @@ export interface CoverageReport {
   rubricScore?: number;
 }
 
+export interface CoverageRequirement {
+  requirementId: string;
+  technique: string;
+  reasonCode: string;
+  screenId?: string;
+  targetIds: string[];
+  sourceRefs: string[];
+  visualRefs: string[];
+}
+
+export interface CoveragePlan {
+  schemaVersion: string;
+  jobId: string;
+  minimumCases: CoverageRequirement[];
+  recommendedCases: CoverageRequirement[];
+  techniques: string[];
+  mutationKillRateTarget: number;
+}
+
 export type VisualSidecarOutcome =
   | "ok"
   | "schema_invalid"
@@ -278,6 +297,101 @@ export interface ReviewEvent {
   actor?: string;
   note?: string;
   metadata?: Record<string, string | number | boolean | null>;
+}
+
+export interface JudgePanelPerJudgeVerdictRecord {
+  judgeId: string;
+  modelBinding: string;
+  score: number;
+  calibratedScore: number;
+  verdict: "fail" | "pass" | "uncertain";
+  reason: string;
+}
+
+export interface JudgePanelVerdict {
+  schemaVersion: string;
+  testCaseId: string;
+  criterion: string;
+  perJudge: JudgePanelPerJudgeVerdictRecord[];
+  agreement: "both_fail" | "both_pass" | "disagree";
+  resolvedSeverity: "critical" | "downgraded_disagreement" | "major" | "minor";
+  escalationRoute: "accept" | "downgrade" | "needs_review";
+}
+
+export interface AdversarialGapFinding {
+  schemaVersion: string;
+  findingId: string;
+  kind: string;
+  severity: "major";
+  summary: string;
+  sourceRefs: string[];
+  ruleRefs: string[];
+  relatedMutationIds: string[];
+  missingCaseType: "boundary" | "negative" | "navigation";
+}
+
+export interface AgentIterationRecord {
+  iteration: number;
+  roleStepId: string;
+  startedAt: string;
+  completedAt: string;
+  outcome: "exhausted" | "halted" | "needs_repair" | "passed";
+  findingsCount: number;
+  repairPlanId?: string;
+  parentHash: string;
+}
+
+export interface AgentIterationsArtifact {
+  schemaVersion: string;
+  contractVersion: string;
+  jobId: string;
+  generatedAt: string;
+  iterations: AgentIterationRecord[];
+}
+
+export interface EvidenceVerifyCheck {
+  kind: string;
+  ok: boolean;
+  reference: string;
+  detail?: {
+    severity?: string;
+    message?: string;
+  };
+}
+
+export interface EvidenceVerifyFailure {
+  code: string;
+  reference: string;
+  message: string;
+}
+
+export interface EvidenceVerifyResponse {
+  schemaVersion: string;
+  verifiedAt: string;
+  jobId: string;
+  ok: boolean;
+  manifestSha256: string;
+  manifestSchemaVersion?: string;
+  testIntelligenceContractVersion?: string;
+  modelDeployments?: {
+    testGeneration: string;
+    visualPrimary?: string;
+    visualFallback?: string;
+  };
+  visualSidecar?: {
+    selectedDeployment?: string;
+    fallbackUsed: boolean;
+    resultArtifactSha256?: string;
+    captureIdentityCount?: number;
+  };
+  attestation?: {
+    present: boolean;
+    signingMode: string;
+    signatureCount: number;
+    signaturesVerified: boolean;
+  };
+  checks: EvidenceVerifyCheck[];
+  failures: EvidenceVerifyFailure[];
 }
 
 export interface ExportArtifactRecord {
@@ -415,6 +529,7 @@ export interface TestIntelligenceBundle {
   validationReport?: ValidationReport;
   policyReport?: PolicyReport;
   coverageReport?: CoverageReport;
+  coveragePlan?: CoveragePlan;
   visualSidecarReport?: VisualSidecarReport;
   qcMappingPreview?: QcMappingPreviewArtifact;
   exportReport?: ExportReport;
@@ -425,6 +540,9 @@ export interface TestIntelligenceBundle {
   multiSourceReconciliation?: MultiSourceReconciliationReport;
   conflictDecisions?: Record<string, InspectorConflictDecisionSnapshot>;
   testCaseProvenance?: Record<string, InspectorTestCaseProvenance>;
+  judgePanelVerdicts?: JudgePanelVerdict[];
+  adversarialGapFindings?: AdversarialGapFinding[];
+  agentIterations?: AgentIterationsArtifact;
   parseErrors: BundleParseError[];
 }
 

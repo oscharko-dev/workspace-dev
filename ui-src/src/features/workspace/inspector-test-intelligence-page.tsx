@@ -8,7 +8,17 @@
 // states explicitly per Issue #1367 acceptance criteria.
 // ---------------------------------------------------------------------------
 
-import { useCallback, useEffect, useMemo, useState, type JSX } from "react";
+import {
+  lazy,
+  Suspense,
+  useCallback,
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+  type JSX,
+} from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { fetchJson } from "../../lib/http";
@@ -51,7 +61,46 @@ import type {
 const REVIEWER_HANDLE_STORAGE_KEY = "workspace-dev:ti-reviewer-handle:v1";
 const REVIEWER_BEARER_STORAGE_KEY = "workspace-dev:ti-reviewer-bearer:v1";
 const MULTI_SOURCE_STORAGE_KEY_PREFIX = "workspace-dev:ti-multisource-";
-type TestIntelligenceTab = "overview" | "multi-source";
+type TestIntelligenceTab =
+  | "overview"
+  | "coverage-plan"
+  | "agent-findings"
+  | "iterations"
+  | "open-questions"
+  | "evidence-status"
+  | "role-monitor"
+  | "multi-source";
+
+const LazyCoveragePlanPanel = lazy(async () => ({
+  default: (await import("./inspector/test-intelligence/CoveragePlanPanel"))
+    .CoveragePlanPanel,
+}));
+
+const LazyAgentFindingsPanel = lazy(async () => ({
+  default: (await import("./inspector/test-intelligence/AgentFindingsPanel"))
+    .AgentFindingsPanel,
+}));
+
+const LazyIterationsPanel = lazy(async () => ({
+  default: (await import("./inspector/test-intelligence/IterationsPanel"))
+    .IterationsPanel,
+}));
+
+const LazyOpenQuestionsPanel = lazy(async () => ({
+  default: (await import("./inspector/test-intelligence/OpenQuestionsPanel"))
+    .OpenQuestionsPanel,
+}));
+
+const LazyEvidenceStatusPanel = lazy(async () => ({
+  default: (await import("./inspector/test-intelligence/EvidenceStatusPanel"))
+    .EvidenceStatusPanel,
+}));
+
+const LazyRoleMonitorTimelinePanel = lazy(async () => ({
+  default: (
+    await import("./inspector/test-intelligence/RoleMonitorTimelinePanel")
+  ).RoleMonitorTimelinePanel,
+}));
 
 const normalizeReviewerStorageSegment = (value: string): string => {
   const trimmed = value.trim().toLowerCase();
@@ -64,7 +113,30 @@ const multiSourceStorageKey = (reviewerHandle: string): string =>
   `${MULTI_SOURCE_STORAGE_KEY_PREFIX}${normalizeReviewerStorageSegment(reviewerHandle)}:v1`;
 
 const parseStoredTab = (value: string): TestIntelligenceTab =>
-  value === "multi-source" ? "multi-source" : "overview";
+  value === "coverage-plan" ||
+  value === "agent-findings" ||
+  value === "iterations" ||
+  value === "open-questions" ||
+  value === "evidence-status" ||
+  value === "role-monitor" ||
+  value === "multi-source"
+    ? value
+    : "overview";
+
+interface TabDefinition {
+  id: TestIntelligenceTab;
+  label: string;
+}
+
+const PRIMARY_TAB_DEFINITIONS: readonly TabDefinition[] = [
+  { id: "overview", label: "Overview" },
+  { id: "coverage-plan", label: "Coverage Plan" },
+  { id: "agent-findings", label: "Agent Findings" },
+  { id: "iterations", label: "Iterations" },
+  { id: "open-questions", label: "Open Questions" },
+  { id: "evidence-status", label: "Evidence Status" },
+  { id: "role-monitor", label: "Role Monitor Timeline" },
+] as const;
 
 function BackIcon(): JSX.Element {
   return (
@@ -124,6 +196,125 @@ function buildTestCaseListEntries(props: {
   });
 }
 
+function buildCatchUpBrief(props: {
+  bundle: ReturnType<typeof useTestIntelligenceJob>["bundle"];
+  listEntries: readonly TestCaseListEntry[];
+}): string[] {
+  const items: string[] = [];
+  if ((props.bundle?.parseErrors.length ?? 0) > 0) {
+    items.push(
+      `Resolve ${props.bundle?.parseErrors.length ?? 0} partial-result artifact parse issue(s) before final review decisions.`,
+    );
+  }
+  const needsReviewCount =
+    props.bundle?.reviewSnapshot?.needsReviewCount ??
+    props.listEntries.filter((entry) => entry.reviewState === "needs_review")
+      .length;
+  if (needsReviewCount > 0) {
+    items.push(`${needsReviewCount} generated case(s) still need reviewer attention.`);
+  }
+  const unresolvedConflictCount =
+    props.bundle?.multiSourceReconciliation?.conflicts.filter(
+      (conflict) => conflict.effectiveState !== "resolved",
+    ).length ?? 0;
+  if (unresolvedConflictCount > 0) {
+    items.push(
+      `Resolve ${unresolvedConflictCount} multi-source conflict(s) before relying on reconciled findings.`,
+    );
+  }
+  const evidenceIssues =
+    (props.bundle?.judgePanelVerdicts?.filter(
+      (verdict) => verdict.escalationRoute === "needs_review",
+    ).length ?? 0) +
+    (props.bundle?.adversarialGapFindings?.length ?? 0);
+  if (evidenceIssues > 0) {
+    items.push(
+      `${evidenceIssues} agent finding(s) may require follow-up before export or transfer.`,
+    );
+  }
+  return items.slice(0, 3);
+}
+
+function TestIntelligenceTabList({
+  tabs,
+  selectedTab,
+  onSelect,
+}: {
+  tabs: readonly TabDefinition[];
+  selectedTab: TestIntelligenceTab;
+  onSelect: (tab: TestIntelligenceTab) => void;
+}): JSX.Element {
+  const tabListId = useId();
+  const tabRefs = useRef<Array<HTMLButtonElement | null>>([]);
+
+  return (
+    <div
+      data-testid="ti-tablist"
+      role="tablist"
+      aria-label="Test intelligence views"
+      id={tabListId}
+      className="flex flex-wrap items-center gap-2"
+    >
+      {tabs.map((tab, index) => (
+        <button
+          key={tab.id}
+          ref={(element) => {
+            tabRefs.current[index] = element;
+          }}
+          type="button"
+          role="tab"
+          id={`ti-tab-${tab.id}`}
+          aria-selected={selectedTab === tab.id}
+          aria-controls={`ti-panel-${tab.id}`}
+          tabIndex={selectedTab === tab.id ? 0 : -1}
+          onClick={() => {
+            onSelect(tab.id);
+          }}
+          onKeyDown={(event) => {
+            if (event.key !== "ArrowRight" && event.key !== "ArrowLeft") {
+              return;
+            }
+            event.preventDefault();
+            const direction = event.key === "ArrowRight" ? 1 : -1;
+            const nextIndex = (index + direction + tabs.length) % tabs.length;
+            const nextTab = tabs[nextIndex];
+            if (!nextTab) return;
+            onSelect(nextTab.id);
+            tabRefs.current[nextIndex]?.focus();
+          }}
+          className={`cursor-pointer rounded border px-2 py-1 text-[11px] ${
+            selectedTab === tab.id
+              ? "border-[#4eba87]/40 bg-emerald-950/20 text-[#4eba87]"
+              : "border-white/10 bg-[#171717] text-white/60"
+          }`}
+        >
+          {tab.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function CatchUpBriefPanel({ items }: { items: readonly string[] }): JSX.Element | null {
+  if (items.length === 0) return null;
+  return (
+    <section
+      data-testid="ti-catch-up-brief"
+      aria-label="Catch-up brief"
+      className="rounded border border-sky-500/25 bg-sky-950/15 px-4 py-3 text-[12px] text-sky-100"
+    >
+      <h2 className="m-0 text-[11px] font-semibold uppercase tracking-wide text-sky-200">
+        Catch-Up Brief
+      </h2>
+      <ul className="m-0 mt-2 flex list-none flex-col gap-1 p-0">
+        {items.map((item, index) => (
+          <li key={`${item}-${index}`}>{item}</li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
 function TestIntelligenceInner({
   jobId,
   bearerToken,
@@ -153,6 +344,12 @@ function TestIntelligenceInner({
   useEffect(() => {
     safeWriteStorage(selectedTabStorageKey, selectedTab);
   }, [selectedTab, selectedTabStorageKey]);
+
+  useEffect(() => {
+    if (selectedTab === "multi-source" && !multiSourceEnabled) {
+      setSelectedTab("overview");
+    }
+  }, [multiSourceEnabled, selectedTab]);
 
   const reviewSnapshotByCase = useMemo<
     Record<string, ReviewSnapshotEntry>
@@ -223,6 +420,18 @@ function TestIntelligenceInner({
       (entry) => entry.testCaseId === selectedEntry.testCase.id,
     );
   }, [job.bundle?.qcMappingPreview?.entries, selectedEntry]);
+  const availableTabs = useMemo<readonly TabDefinition[]>(() => {
+    return multiSourceEnabled
+      ? [
+          ...PRIMARY_TAB_DEFINITIONS,
+          { id: "multi-source", label: "Multi-Source" },
+        ]
+      : [...PRIMARY_TAB_DEFINITIONS];
+  }, [multiSourceEnabled]);
+  const catchUpBriefItems = useMemo(
+    () => buildCatchUpBrief({ bundle: job.bundle, listEntries }),
+    [job.bundle, listEntries],
+  );
 
   const handleAction = useCallback(
     ({ action, note }: { action: ReviewActionKind; note?: string }) => {
@@ -260,36 +469,11 @@ function TestIntelligenceInner({
         }}
       />
 
-      <div className="flex items-center gap-2">
-        <button
-          type="button"
-          onClick={() => {
-            setSelectedTab("overview");
-          }}
-          className={`cursor-pointer rounded border px-2 py-1 text-[11px] ${
-            selectedTab === "overview"
-              ? "border-[#4eba87]/40 bg-emerald-950/20 text-[#4eba87]"
-              : "border-white/10 bg-[#171717] text-white/60"
-          }`}
-        >
-          Overview
-        </button>
-        {multiSourceEnabled ? (
-          <button
-            type="button"
-            onClick={() => {
-              setSelectedTab("multi-source");
-            }}
-            className={`cursor-pointer rounded border px-2 py-1 text-[11px] ${
-              selectedTab === "multi-source"
-                ? "border-[#4eba87]/40 bg-emerald-950/20 text-[#4eba87]"
-                : "border-white/10 bg-[#171717] text-white/60"
-            }`}
-          >
-            Multi-Source
-          </button>
-        ) : null}
-      </div>
+      <TestIntelligenceTabList
+        tabs={availableTabs}
+        selectedTab={selectedTab}
+        onSelect={setSelectedTab}
+      />
 
       {bundleErrorIs404 ? (
         <section
@@ -317,8 +501,18 @@ function TestIntelligenceInner({
         >
           {job.bundleError}
         </section>
-      ) : selectedTab === "multi-source" ? (
-        <div className="grid gap-4 lg:grid-cols-[minmax(0,420px)_minmax(0,1fr)]">
+      ) : (
+        <CatchUpBriefPanel items={catchUpBriefItems} />
+      )}
+      {bundleErrorIs404 ||
+      (isLoading && !job.bundle) ||
+      job.bundleStatus === "error" ? null : selectedTab === "multi-source" ? (
+        <div
+          id="ti-panel-multi-source"
+          role="tabpanel"
+          aria-labelledby="ti-tab-multi-source"
+          className="grid gap-4 lg:grid-cols-[minmax(0,420px)_minmax(0,1fr)]"
+        >
           <div className="flex flex-col gap-4">
             <MultiSourceIngestionPanel
               key={jobId}
@@ -372,7 +566,12 @@ function TestIntelligenceInner({
           />
         </div>
       ) : (
-        <>
+        <div
+          id={`ti-panel-${selectedTab}`}
+          role="tabpanel"
+          aria-labelledby={`ti-tab-${selectedTab}`}
+          className="flex flex-col gap-4"
+        >
           {job.bundle && job.bundle.parseErrors.length > 0 ? (
             <section
               data-testid="ti-page-parse-errors"
@@ -497,27 +696,64 @@ function TestIntelligenceInner({
                   Select a test case to inspect its detail.
                 </section>
               )}
-              <CoveragePanel coverage={job.bundle?.coverageReport} />
-              <VisualSidecarPanel report={job.bundle?.visualSidecarReport} />
-              <ExportDiagnosticsPanel
-                mapping={job.bundle?.qcMappingPreview}
-                exportReport={job.bundle?.exportReport}
-              />
-              <JiraWritePanel
-                key={jobId}
-                jobId={jobId}
-                bearerToken={bearerToken}
-                onWriteComplete={() => {
-                  void job.refresh();
-                }}
-              />
-              <JobHistoryStripContainer
-                selectedJobId={jobId}
-                onSelect={onSelectJob}
-              />
+              {selectedTab === "overview" ? (
+                <>
+                  <CoveragePanel coverage={job.bundle?.coverageReport} />
+                  <VisualSidecarPanel report={job.bundle?.visualSidecarReport} />
+                  <ExportDiagnosticsPanel
+                    mapping={job.bundle?.qcMappingPreview}
+                    exportReport={job.bundle?.exportReport}
+                  />
+                  <JiraWritePanel
+                    key={jobId}
+                    jobId={jobId}
+                    bearerToken={bearerToken}
+                    onWriteComplete={() => {
+                      void job.refresh();
+                    }}
+                  />
+                  <JobHistoryStripContainer
+                    selectedJobId={jobId}
+                    onSelect={onSelectJob}
+                  />
+                </>
+              ) : (
+                <Suspense
+                  fallback={
+                    <section className="rounded border border-white/10 bg-[#171717] px-4 py-6 text-center text-[12px] text-white/45">
+                      Loading panel…
+                    </section>
+                  }
+                >
+                  {selectedTab === "coverage-plan" ? (
+                    <LazyCoveragePlanPanel
+                      coveragePlan={job.bundle?.coveragePlan}
+                    />
+                  ) : selectedTab === "agent-findings" ? (
+                    <LazyAgentFindingsPanel
+                      judgePanelVerdicts={job.bundle?.judgePanelVerdicts}
+                      adversarialGapFindings={
+                        job.bundle?.adversarialGapFindings
+                      }
+                    />
+                  ) : selectedTab === "iterations" ? (
+                    <LazyIterationsPanel
+                      agentIterations={job.bundle?.agentIterations}
+                    />
+                  ) : selectedTab === "open-questions" ? (
+                    <LazyOpenQuestionsPanel
+                      testCases={job.bundle?.generatedTestCases?.testCases ?? []}
+                    />
+                  ) : selectedTab === "evidence-status" ? (
+                    <LazyEvidenceStatusPanel jobId={jobId} />
+                  ) : selectedTab === "role-monitor" ? (
+                    <LazyRoleMonitorTimelinePanel jobId={jobId} />
+                  ) : null}
+                </Suspense>
+              )}
             </div>
           </div>
-        </>
+        </div>
       )}
     </div>
   );

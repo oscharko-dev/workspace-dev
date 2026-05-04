@@ -4,11 +4,15 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, test } from "node:test";
 
+import { ADVERSARIAL_GAP_FINDINGS_ARTIFACT_FILENAME } from "./adversarial-gap-finder.js";
 import {
+  COVERAGE_PLAN_ARTIFACT_FILENAME,
   EXPORT_REPORT_ARTIFACT_FILENAME,
   EXPORT_REPORT_SCHEMA_VERSION,
   GENERATED_TESTCASES_ARTIFACT_FILENAME,
   GENERATED_TEST_CASE_SCHEMA_VERSION,
+  JUDGE_PANEL_VERDICT_SCHEMA_VERSION,
+  JUDGE_PANEL_VERDICTS_ARTIFACT_FILENAME,
   QC_MAPPING_PREVIEW_ARTIFACT_FILENAME,
   QC_MAPPING_PREVIEW_SCHEMA_VERSION,
   REVIEW_EVENTS_ARTIFACT_FILENAME,
@@ -185,6 +189,68 @@ const sampleExportReport = (jobId: string): unknown => ({
   visualEvidenceHashes: [],
   rawScreenshotsIncluded: false,
 });
+
+const sampleCoveragePlan = (jobId: string): unknown => ({
+  schemaVersion: "1.0.0",
+  jobId,
+  minimumCases: [
+    {
+      requirementId: "req-1",
+      technique: "boundary_value",
+      reasonCode: "open_question_probe",
+      screenId: "screen-login",
+      targetIds: ["field-password"],
+      sourceRefs: ["figma:screen-login"],
+      visualRefs: [],
+    },
+  ],
+  recommendedCases: [],
+  techniques: ["boundary_value"],
+  mutationKillRateTarget: 0.85,
+});
+
+const sampleJudgePanelVerdicts = (): unknown => [
+  {
+    schemaVersion: JUDGE_PANEL_VERDICT_SCHEMA_VERSION,
+    testCaseId: "tc-1",
+    criterion: "traceability",
+    perJudge: [
+      {
+        judgeId: "judge_primary",
+        modelBinding: "gpt-oss-120b",
+        score: 0.4,
+        calibratedScore: 0.4,
+        verdict: "fail",
+        reason: "Trace refs are incomplete.",
+      },
+      {
+        judgeId: "judge_secondary",
+        modelBinding: "phi-4-multimodal-poc",
+        score: 0.6,
+        calibratedScore: 0.6,
+        verdict: "uncertain",
+        reason: "Coverage looks partial.",
+      },
+    ],
+    agreement: "disagree",
+    resolvedSeverity: "downgraded_disagreement",
+    escalationRoute: "needs_review",
+  },
+];
+
+const sampleAdversarialGapFindings = (): unknown => [
+  {
+    schemaVersion: "1.0.0",
+    findingId: "gap-1",
+    kind: "missing_boundary_case",
+    severity: "major",
+    summary: "Boundary coverage is incomplete for surviving adversarial checks.",
+    sourceRefs: ["figma:screen-login"],
+    ruleRefs: ["mutation-1"],
+    relatedMutationIds: ["mutation-1"],
+    missingCaseType: "boundary",
+  },
+];
 
 const sampleReviewSnapshot = (jobId: string): unknown => ({
   schemaVersion: REVIEW_GATE_SCHEMA_VERSION,
@@ -365,6 +431,15 @@ describe("readInspectorTestIntelligenceBundle", () => {
         join(dir, EXPORT_REPORT_ARTIFACT_FILENAME),
         sampleExportReport(jobId),
       ),
+      writeJson(join(dir, COVERAGE_PLAN_ARTIFACT_FILENAME), sampleCoveragePlan(jobId)),
+      writeJson(
+        join(dir, JUDGE_PANEL_VERDICTS_ARTIFACT_FILENAME),
+        sampleJudgePanelVerdicts(),
+      ),
+      writeJson(
+        join(dir, ADVERSARIAL_GAP_FINDINGS_ARTIFACT_FILENAME),
+        sampleAdversarialGapFindings(),
+      ),
       writeJson(
         join(dir, REVIEW_STATE_ARTIFACT_FILENAME),
         sampleReviewSnapshot(jobId),
@@ -391,6 +466,9 @@ describe("readInspectorTestIntelligenceBundle", () => {
     assert.equal(bundle.visualSidecarReport?.totalScreens, 1);
     assert.equal(bundle.qcMappingPreview?.profileId, "opentext-alm-default");
     assert.equal(bundle.exportReport?.refused, true);
+    assert.equal(bundle.coveragePlan?.minimumCases.length, 1);
+    assert.equal(bundle.judgePanelVerdicts?.length, 1);
+    assert.equal(bundle.adversarialGapFindings?.length, 1);
     assert.equal(bundle.reviewSnapshot?.needsReviewCount, 1);
     assert.equal(bundle.reviewEvents?.length, 1);
     assert.equal(bundle.reviewEvents?.[0]?.kind, "generated");
