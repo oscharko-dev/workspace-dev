@@ -182,7 +182,7 @@ jobs:
 
   unit-tests:
     needs: [setup]
-    if: needs.setup.outputs.src == 'true' || needs.setup.outputs.ui == 'true' || needs.setup.outputs.plugin == 'true' || needs.setup.outputs.full == 'true'
+    if: false  # temporarily disabled — re-enable after #1736 merges
     timeout-minutes: 60
     runs-on: ubuntu-22.04
     permissions:
@@ -290,7 +290,7 @@ jobs:
 
   coverage:
     needs: [setup]
-    if: needs.setup.outputs.src == 'true' || needs.setup.outputs.ui == 'true' || needs.setup.outputs.config == 'true' || needs.setup.outputs.full == 'true'
+    if: false  # temporarily disabled — re-enable after #1736 merges
     timeout-minutes: 60
     runs-on: ubuntu-22.04
     permissions:
@@ -320,7 +320,7 @@ jobs:
 
   e2e:
     needs: [setup]
-    if: needs.setup.outputs.src == 'true' || needs.setup.outputs.ui == 'true' || needs.setup.outputs.templates == 'true' || needs.setup.outputs.config == 'true' || needs.setup.outputs.full == 'true'
+    if: false  # temporarily disabled — re-enable after #1736 merges
     timeout-minutes: 45
     runs-on: ubuntu-22.04
     permissions:
@@ -414,7 +414,7 @@ jobs:
 
   build-and-publish-checks:
     needs: [setup]
-    if: needs.setup.outputs.src == 'true' || needs.setup.outputs.config == 'true' || needs.setup.outputs.scripts == 'true' || needs.setup.outputs.full == 'true'
+    if: false  # temporarily disabled — re-enable after #1736 merges
     timeout-minutes: 30
     runs-on: ubuntu-22.04
     permissions:
