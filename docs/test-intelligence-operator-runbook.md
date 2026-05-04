@@ -104,6 +104,16 @@ Bias controls enforced by the A/B lane:
 - Self-preference: cross-family panel (`gpt-oss-120b`,
   `phi-4-multimodal-poc`).
 
+For Issue #1804, `agent-eval-online-sampler.ts` runs an air-gapped online
+evaluator over a deterministic sample of redacted production traces. The
+sample rate defaults to 1%; sampling is deterministic given the seed and
+sample rate (SHA-256 of `seed::traceId` truncated to 48 bits, compared
+against the rate). PII is redacted before the evaluator sees the trace,
+using whole-field token replacement to match the rest of the
+test-intelligence redaction surface. Results land under
+`<runDir>/agent-online-eval-report.json` as canonical JSON; no external
+service is contacted by the default evaluator.
+
 ---
 
 ## Day-2 operations
