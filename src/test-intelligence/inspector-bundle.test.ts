@@ -33,6 +33,11 @@ import {
 } from "../contracts/index.js";
 
 import {
+  buildDeterministicCatchUpBrief,
+  CATCH_UP_BRIEF_DIRECTORY,
+  writeCatchUpBrief,
+} from "./catch-up-brief.js";
+import {
   isSafeJobId,
   listInspectorTestIntelligenceJobs,
   readInspectorTestIntelligenceBundle,
@@ -534,6 +539,71 @@ describe("readInspectorTestIntelligenceBundle", () => {
     assert.deepEqual(result.bundle.policyReport?.decisions[0]?.violations, []);
   });
 
+  test("surfaces persisted catch-up briefs in chronological order", async () => {
+    const jobId = "briefs-job";
+    const dir = join(workDir, jobId);
+    await mkdir(dir, { recursive: true });
+    const briefA = buildDeterministicCatchUpBrief({
+      jobId,
+      sources: { judge_panel: { count: 2, significant: ["tc-1"] } },
+      sinceMs: 5 * 60_000,
+      generatedAt: "2026-05-04T10:00:00.000Z",
+    });
+    const briefB = buildDeterministicCatchUpBrief({
+      jobId,
+      sources: { repair: { count: 3, significant: ["iter-2"] } },
+      sinceMs: 5 * 60_000,
+      generatedAt: "2026-05-04T10:30:00.000Z",
+    });
+    await writeCatchUpBrief({ runDir: dir, brief: briefB });
+    await writeCatchUpBrief({ runDir: dir, brief: briefA });
+
+    const result = await readInspectorTestIntelligenceBundle({
+      rootDir: workDir,
+      jobId,
+      assembledAt: ASSEMBLED_AT,
+    });
+    assert.equal(result.ok, true);
+    if (!result.ok) return;
+    assert.equal(result.bundle.parseErrors.length, 0);
+    assert.equal(result.bundle.catchUpBriefs?.length, 2);
+    assert.equal(
+      result.bundle.catchUpBriefs?.[0]?.generatedAt,
+      "2026-05-04T10:00:00.000Z",
+    );
+    assert.equal(
+      result.bundle.catchUpBriefs?.[1]?.generatedAt,
+      "2026-05-04T10:30:00.000Z",
+    );
+  });
+
+  test("surfaces malformed catch-up brief files as parse errors with the briefs/ prefix", async () => {
+    const jobId = "broken-briefs";
+    const dir = join(workDir, jobId);
+    const briefsDir = join(dir, CATCH_UP_BRIEF_DIRECTORY);
+    await mkdir(briefsDir, { recursive: true });
+    await writeFile(
+      join(briefsDir, "2026-05-04T10-00-00-000Z.json"),
+      "{not-json",
+      "utf8",
+    );
+    const result = await readInspectorTestIntelligenceBundle({
+      rootDir: workDir,
+      jobId,
+      assembledAt: ASSEMBLED_AT,
+    });
+    assert.equal(result.ok, true);
+    if (!result.ok) return;
+    assert.equal(result.bundle.catchUpBriefs, undefined);
+    assert.equal(result.bundle.parseErrors.length, 1);
+    assert.equal(result.bundle.parseErrors[0]?.artifact, "catchUpBriefs");
+    assert.equal(
+      result.bundle.parseErrors[0]?.filename,
+      `${CATCH_UP_BRIEF_DIRECTORY}/2026-05-04T10-00-00-000Z.json`,
+    );
+    assert.equal(result.bundle.parseErrors[0]?.reason, "invalid_json");
+  });
+
   test("surfaces parse errors instead of throwing on malformed JSON", async () => {
     const jobId = "broken-json";
     const dir = join(workDir, jobId);
@@ -602,15 +672,26 @@ describe("listInspectorTestIntelligenceJobs", () => {
       join(bDir, REVIEW_STATE_ARTIFACT_FILENAME),
       sampleReviewSnapshot("job-b"),
     );
+    await writeCatchUpBrief({
+      runDir: bDir,
+      brief: buildDeterministicCatchUpBrief({
+        jobId: "job-b",
+        sources: { judge_panel: { count: 1, significant: ["tc-1"] } },
+        sinceMs: 5 * 60_000,
+        generatedAt: "2026-05-04T10:00:00.000Z",
+      }),
+    });
 
     const summaries = await listInspectorTestIntelligenceJobs(workDir);
     assert.equal(summaries.length, 2);
     assert.equal(summaries[0]?.jobId, "job-a");
     assert.equal(summaries[0]?.hasArtifacts.generatedTestCases, true);
     assert.equal(summaries[0]?.hasArtifacts.reviewSnapshot, false);
+    assert.equal(summaries[0]?.hasArtifacts.catchUpBriefs, false);
     assert.equal(summaries[1]?.jobId, "job-b");
     assert.equal(summaries[1]?.hasArtifacts.reviewSnapshot, true);
     assert.equal(summaries[1]?.hasArtifacts.generatedTestCases, false);
+    assert.equal(summaries[1]?.hasArtifacts.catchUpBriefs, true);
   });
 
   test("ignores entries whose names fail the safe-id filter", async () => {

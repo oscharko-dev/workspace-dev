@@ -83,6 +83,12 @@ import {
 } from "../contracts/index.js";
 import { isAgentIterationsArtifact } from "./agent-iterations.js";
 import { parseCacheBreakEventsLog } from "./cache-break-events-log.js";
+import {
+  CATCH_UP_BRIEF_DIRECTORY,
+  readCatchUpBriefs,
+  type CatchUpBrief,
+  type CatchUpBriefParseError,
+} from "./catch-up-brief.js";
 import { parseCompactBoundaryLog } from "./compact-boundary-log.js";
 import { isHarnessArtifactManifest } from "./harness-artifact-manifest.js";
 import { isLibraryCoverageReport } from "./library-coverage-report.js";
@@ -119,7 +125,9 @@ export type InspectorBundleArtifactKind =
   | "cacheBreakEventsLog"
   | "compactBoundaryLog"
   | "libraryCoverageReport"
-  | "harnessArtifactManifest";
+  | "harnessArtifactManifest"
+  // Issue #1797 — reviewer catch-up briefs persisted under <runDir>/briefs/.
+  | "catchUpBriefs";
 
 /** Single parse error attached to an artifact slot. */
 export interface InspectorBundleParseError {
@@ -173,6 +181,14 @@ export interface InspectorTestIntelligenceBundle {
   libraryCoverageReport?: LibraryCoverageReport;
   /** Issue #1795 — per-job harness artifact manifest. */
   harnessArtifactManifest?: HarnessArtifactManifest;
+  /**
+   * Issue #1797 — reviewer catch-up briefs persisted under
+   * `<jobDir>/briefs/`. Sorted chronologically (oldest first). Absent
+   * when the directory does not exist or contains no parseable briefs;
+   * malformed files surface in {@link InspectorTestIntelligenceBundle.parseErrors}
+   * tagged with the `catchUpBriefs` artifact kind.
+   */
+  catchUpBriefs?: readonly CatchUpBrief[];
   /** Per-artifact parse errors. Empty when every present file parsed cleanly. */
   parseErrors: InspectorBundleParseError[];
 }
@@ -732,20 +748,30 @@ export const readInspectorTestIntelligenceBundle = async (
   collect(libraryCoverageReport);
   collect(harnessArtifactManifest);
 
-  const [sourceEnvelope, sourceRefs, conflictDecisions, testCaseProvenance] =
-    await Promise.all([
-      readInspectorSourceEnvelope(jobDir),
-      listInspectorSourceRecords(jobDir),
-      readInspectorConflictDecisions({ runDir: jobDir, jobId: input.jobId }),
-      buildInspectorTestCaseProvenance(
-        testCases.parsed !== undefined
-          ? {
-              runDir: jobDir,
-              generatedTestCases: testCases.parsed,
-            }
-          : { runDir: jobDir },
-      ),
-    ]);
+  const [
+    sourceEnvelope,
+    sourceRefs,
+    conflictDecisions,
+    testCaseProvenance,
+    catchUpBriefsResult,
+  ] = await Promise.all([
+    readInspectorSourceEnvelope(jobDir),
+    listInspectorSourceRecords(jobDir),
+    readInspectorConflictDecisions({ runDir: jobDir, jobId: input.jobId }),
+    buildInspectorTestCaseProvenance(
+      testCases.parsed !== undefined
+        ? {
+            runDir: jobDir,
+            generatedTestCases: testCases.parsed,
+          }
+        : { runDir: jobDir },
+    ),
+    readCatchUpBriefs({ runDir: jobDir }),
+  ]);
+
+  for (const briefError of catchUpBriefsResult.parseErrors) {
+    parseErrors.push(catchUpBriefParseErrorToBundleParseError(briefError));
+  }
 
   const projectedMultiSourceReconciliation:
     | InspectorMultiSourceReconciliationReport
@@ -821,10 +847,22 @@ export const readInspectorTestIntelligenceBundle = async (
     ...(harnessArtifactManifest.parsed
       ? { harnessArtifactManifest: harnessArtifactManifest.parsed }
       : {}),
+    ...(catchUpBriefsResult.briefs.length > 0
+      ? { catchUpBriefs: catchUpBriefsResult.briefs }
+      : {}),
   };
 
   return { ok: true, bundle };
 };
+
+const catchUpBriefParseErrorToBundleParseError = (
+  err: CatchUpBriefParseError,
+): InspectorBundleParseError => ({
+  artifact: "catchUpBriefs",
+  filename: `${CATCH_UP_BRIEF_DIRECTORY}/${err.filename}`,
+  reason: err.reason,
+  message: err.message,
+});
 
 /** Lightweight summary entry used by the Inspector job list. */
 export interface InspectorTestIntelligenceJobSummary {
@@ -870,6 +908,19 @@ export const listInspectorTestIntelligenceJobs = async (
     }
     if (!isStringArray(dirEntries)) continue;
     const present = new Set(dirEntries);
+    let hasCatchUpBriefs = false;
+    if (present.has(CATCH_UP_BRIEF_DIRECTORY)) {
+      try {
+        const briefsDir = join(jobDir, CATCH_UP_BRIEF_DIRECTORY);
+        const briefStats = await stat(briefsDir);
+        if (briefStats.isDirectory()) {
+          const briefEntries = await readdir(briefsDir);
+          hasCatchUpBriefs = briefEntries.some((name) => name.endsWith(".json"));
+        }
+      } catch {
+        hasCatchUpBriefs = false;
+      }
+    }
 
     summaries.push({
       jobId: entry,
@@ -908,6 +959,7 @@ export const listInspectorTestIntelligenceJobs = async (
         harnessArtifactManifest: present.has(
           HARNESS_ARTIFACT_MANIFEST_ARTIFACT_FILENAME,
         ),
+        catchUpBriefs: hasCatchUpBriefs,
       },
     });
   }

@@ -67,6 +67,7 @@ type TestIntelligenceTab =
   | "agent-findings"
   | "iterations"
   | "open-questions"
+  | "catch-up-brief"
   | "evidence-status"
   | "role-monitor"
   | "multi-source";
@@ -96,6 +97,11 @@ const LazyEvidenceStatusPanel = lazy(async () => ({
     .EvidenceStatusPanel,
 }));
 
+const LazyCatchUpBriefPanel = lazy(async () => ({
+  default: (await import("./inspector/test-intelligence/CatchUpBriefPanel"))
+    .CatchUpBriefPanel,
+}));
+
 const LazyRoleMonitorTimelinePanel = lazy(async () => ({
   default: (
     await import("./inspector/test-intelligence/RoleMonitorTimelinePanel")
@@ -117,6 +123,7 @@ const parseStoredTab = (value: string): TestIntelligenceTab =>
   value === "agent-findings" ||
   value === "iterations" ||
   value === "open-questions" ||
+  value === "catch-up-brief" ||
   value === "evidence-status" ||
   value === "role-monitor" ||
   value === "multi-source"
@@ -134,6 +141,7 @@ const PRIMARY_TAB_DEFINITIONS: readonly TabDefinition[] = [
   { id: "agent-findings", label: "Agent Findings" },
   { id: "iterations", label: "Iterations" },
   { id: "open-questions", label: "Open Questions" },
+  { id: "catch-up-brief", label: "Catch-Up Brief" },
   { id: "evidence-status", label: "Evidence Status" },
   { id: "role-monitor", label: "Role Monitor Timeline" },
 ] as const;
@@ -743,6 +751,10 @@ function TestIntelligenceInner({
                   ) : selectedTab === "open-questions" ? (
                     <LazyOpenQuestionsPanel
                       testCases={job.bundle?.generatedTestCases?.testCases ?? []}
+                    />
+                  ) : selectedTab === "catch-up-brief" ? (
+                    <LazyCatchUpBriefPanel
+                      briefs={job.bundle?.catchUpBriefs}
                     />
                   ) : selectedTab === "evidence-status" ? (
                     <LazyEvidenceStatusPanel

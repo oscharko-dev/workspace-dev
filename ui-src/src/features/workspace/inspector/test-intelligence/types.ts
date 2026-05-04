@@ -349,6 +349,37 @@ export interface AgentIterationsArtifact {
   iterations: AgentIterationRecord[];
 }
 
+// ---------------------------------------------------------------------------
+// Catch-Up Brief (Issue #1797) — persisted at <runDir>/briefs/<ts>.json.
+// ---------------------------------------------------------------------------
+
+export type CatchUpBriefEventKind =
+  | "judge_panel"
+  | "gap_finder"
+  | "ir_mutation"
+  | "repair"
+  | "policy"
+  | "evidence";
+
+export type CatchUpBriefGeneratorMode = "deterministic" | "no_tools_llm";
+
+export interface CatchUpBriefEventGroup {
+  kind: CatchUpBriefEventKind;
+  count: number;
+  significant: string[];
+}
+
+export interface CatchUpBrief {
+  schemaVersion: "1.0.0";
+  jobId: string;
+  summary: string;
+  eventsCovered: CatchUpBriefEventGroup[];
+  sinceMs: number;
+  generatedAt: string;
+  generatorMode: CatchUpBriefGeneratorMode;
+  contentHash: string;
+}
+
 export interface EvidenceVerifyCheck {
   kind:
     | "artifact_sha256"
@@ -547,6 +578,7 @@ export interface TestIntelligenceBundle {
   judgePanelVerdicts?: JudgePanelVerdict[];
   adversarialGapFindings?: AdversarialGapFinding[];
   agentIterations?: AgentIterationsArtifact;
+  catchUpBriefs?: CatchUpBrief[];
   parseErrors: BundleParseError[];
 }
 

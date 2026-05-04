@@ -248,6 +248,60 @@ describe("InspectorTestIntelligencePage — empty + loading + ready", () => {
     ).toBe(true);
   });
 
+  it("loads the catch-up-brief panel lazily and renders persisted briefs", async () => {
+    window.localStorage.clear();
+    window.sessionStorage.clear();
+    configureFetchJson({
+      bundle: {
+        status: 200,
+        payload: buildBundle({
+          catchUpBriefs: [
+            {
+              schemaVersion: "1.0.0",
+              jobId: "job-1",
+              summary:
+                "Idle 5 minutes since last interaction. 2 judge-panel verdicts pending.",
+              eventsCovered: [
+                {
+                  kind: "judge_panel",
+                  count: 2,
+                  significant: ["tc-1", "tc-2"],
+                },
+              ],
+              sinceMs: 5 * 60_000,
+              generatedAt: "2026-05-04T10:00:00.000Z",
+              generatorMode: "deterministic",
+              contentHash: "a".repeat(64),
+            },
+          ],
+        }),
+      },
+    });
+    renderPage("/workspace/ui/inspector/test-intelligence?jobId=job-1");
+
+    await waitFor(() => {
+      expect(screen.getByRole("tab", { name: "Overview" })).toHaveAttribute(
+        "aria-selected",
+        "true",
+      );
+    });
+
+    fireEvent.click(screen.getByRole("tab", { name: "Catch-Up Brief" }));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("ti-catch-up-brief-panel")).toBeInTheDocument();
+      expect(
+        screen.getByTestId(`ti-catch-up-brief-${"a".repeat(12)}`),
+      ).toBeInTheDocument();
+      expect(
+        screen.getByTestId(`ti-catch-up-brief-mode-${"a".repeat(12)}`),
+      ).toHaveTextContent("deterministic");
+      expect(
+        screen.getByTestId(`ti-catch-up-brief-summary-${"a".repeat(12)}`),
+      ).toHaveTextContent("Idle 5 minutes");
+    });
+  });
+
   it("renders the loading state while artifact fetches are pending", async () => {
     fetchJsonMock.mockImplementation(async ({ url }) => {
       if (url === "/workspace") {
