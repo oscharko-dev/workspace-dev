@@ -888,6 +888,27 @@ export {
   type WriteLbomArtifactResult,
 } from "./lbom-emitter.js";
 export {
+  ML_BOM_ARTIFACT_DIRECTORY,
+  ML_BOM_ARTIFACT_FILENAME,
+  ML_BOM_ARTIFACT_SCHEMA_VERSION,
+  ML_BOM_CYCLONEDX_SPEC_VERSION,
+  buildMlBomDocument,
+  summarizeMlBomArtifact,
+  validateMlBomDocument,
+  writeMlBomArtifact,
+  type BuildMlBomDocumentInput,
+  type MlBomCitation,
+  type MlBomComponent,
+  type MlBomDocument,
+  type MlBomModelBinding,
+  type MlBomRole,
+  type MlBomSummary,
+  type MlBomValidationIssue,
+  type MlBomValidationResult,
+  type WriteMlBomArtifactInput,
+  type WriteMlBomArtifactResult,
+} from "./ml-bom.js";
+export {
   evaluateWave1Poc,
   evaluateWave1PocFixture,
   WAVE1_POC_DEFAULT_EVAL_THRESHOLDS,

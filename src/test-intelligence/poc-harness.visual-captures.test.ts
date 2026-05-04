@@ -36,6 +36,12 @@ import {
 } from "../contracts/index.js";
 import { validateLbomDocument } from "./lbom-emitter.js";
 import {
+  ML_BOM_ARTIFACT_DIRECTORY,
+  ML_BOM_ARTIFACT_FILENAME,
+  validateMlBomDocument,
+  type MlBomDocument,
+} from "./ml-bom.js";
+import {
   createMockLlmGatewayClientBundle,
   loadWave1PocCaptureFixture,
   runWave1Poc,
@@ -109,6 +115,20 @@ const assertFailureManifestAttestsSidecar = async (
     lbomValidation.valid,
     true,
     JSON.stringify(lbomValidation.issues, null, 2),
+  );
+  const mlBomFilename = `${ML_BOM_ARTIFACT_DIRECTORY}/${ML_BOM_ARTIFACT_FILENAME}`;
+  const mlBomEntry = manifest.artifacts.find(
+    (artifact) => artifact.filename === mlBomFilename,
+  );
+  assert.ok(mlBomEntry, "failure manifest must attest the release ML-BOM");
+  assert.equal(mlBomEntry.category, "ml_bom");
+  const mlBomRaw = await readFile(join(runDir, mlBomFilename), "utf8");
+  const parsedMlBom = JSON.parse(mlBomRaw) as MlBomDocument;
+  const mlBomValidation = validateMlBomDocument(parsedMlBom);
+  assert.equal(
+    mlBomValidation.valid,
+    true,
+    JSON.stringify(mlBomValidation.issues, null, 2),
   );
   const lbomProps = new Map(
     parsedLbom.metadata.properties.map((property) => [

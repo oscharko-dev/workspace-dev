@@ -47,6 +47,7 @@ export interface CreateMockLlmGatewayClientInput {
   deployment: string;
   modelRevision: string;
   gatewayRelease: string;
+  operatorEndpointReference?: string;
   modelWeightsSha256?: string;
   compatibilityMode?: LlmGatewayCompatibilityMode;
   declaredCapabilities?: LlmGatewayCapabilities;
@@ -317,6 +318,9 @@ export const createMockLlmGatewayClient = (
     deployment: input.deployment,
     modelRevision: input.modelRevision,
     gatewayRelease: input.gatewayRelease,
+    operatorEndpointReference:
+      input.operatorEndpointReference ??
+      `mock://${input.deployment}/[redacted]`,
     modelWeightsSha256: input.modelWeightsSha256,
     declaredCapabilities: { ...declaredCapabilities },
     generate,

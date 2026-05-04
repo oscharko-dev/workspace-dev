@@ -5694,6 +5694,7 @@ export type Wave1PocEvidenceArtifactCategory =
   | "attestation"
   | "signature"
   | "lbom"
+  | "ml_bom"
   | "self_verify_rubric"
   | "intent_delta"
   | "dedupe_report"

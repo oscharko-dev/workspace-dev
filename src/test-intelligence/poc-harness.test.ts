@@ -39,6 +39,13 @@ import {
 } from "./evidence-manifest.js";
 import { validateLbomDocument } from "./lbom-emitter.js";
 import {
+  ML_BOM_ARTIFACT_DIRECTORY,
+  ML_BOM_ARTIFACT_FILENAME,
+  ML_BOM_CYCLONEDX_SPEC_VERSION,
+  validateMlBomDocument,
+  type MlBomDocument,
+} from "./ml-bom.js";
+import {
   BUSINESS_INTENT_IR_ARTIFACT_FILENAME,
   COMPILED_PROMPT_ARTIFACT_FILENAME,
   GATEWAY_REQUEST_AUDIT_ARTIFACT_FILENAME,
@@ -312,6 +319,29 @@ for (const fixtureId of WAVE1_POC_FIXTURE_IDS) {
     assert.equal(attestedLbom?.category, "lbom");
     assert.equal(attestedLbom?.sha256, result.lbomSummary.sha256);
     assert.equal(attestedLbom?.bytes, result.lbomSummary.bytes);
+
+    assert.equal(result.mlBom.bomFormat, "CycloneDX");
+    assert.equal(result.mlBom.specVersion, ML_BOM_CYCLONEDX_SPEC_VERSION);
+    assert.equal(
+      result.mlBomSummary.filename,
+      `${ML_BOM_ARTIFACT_DIRECTORY}/${ML_BOM_ARTIFACT_FILENAME}`,
+    );
+    assert.ok(filenames.includes(result.mlBomSummary.filename));
+    const mlBomBytes = await readFile(result.mlBomArtifactPath, "utf8");
+    const parsedMlBom = JSON.parse(mlBomBytes) as MlBomDocument;
+    const mlBomValidation = validateMlBomDocument(parsedMlBom);
+    assert.equal(
+      mlBomValidation.valid,
+      true,
+      JSON.stringify(mlBomValidation.issues, null, 2),
+    );
+    const attestedMlBom = result.manifest.artifacts.find(
+      (artifact) => artifact.filename === result.mlBomSummary.filename,
+    );
+    assert.ok(attestedMlBom, "manifest must attest the release ML-BOM artifact");
+    assert.equal(attestedMlBom?.category, "ml_bom");
+    assert.equal(attestedMlBom?.sha256, result.mlBomSummary.sha256);
+    assert.equal(attestedMlBom?.bytes, result.mlBomSummary.bytes);
   });
 
   test(`poc-harness: ${fixtureId} produces deterministic artifacts on replay`, async () => {
