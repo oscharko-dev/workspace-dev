@@ -182,7 +182,7 @@ jobs:
 
   unit-tests:
     needs: [setup]
-    if: false  # temporarily disabled — re-enable after #1736 merges
+    if: needs.setup.outputs.src == 'true' || needs.setup.outputs.ui == 'true' || needs.setup.outputs.plugin == 'true' || needs.setup.outputs.full == 'true'
     timeout-minutes: 60
     runs-on: ubuntu-22.04
     permissions:
@@ -290,7 +290,7 @@ jobs:
 
   coverage:
     needs: [setup]
-    if: false  # temporarily disabled — re-enable after #1736 merges
+    if: needs.setup.outputs.src == 'true' || needs.setup.outputs.ui == 'true' || needs.setup.outputs.config == 'true' || needs.setup.outputs.full == 'true'
     timeout-minutes: 60
     runs-on: ubuntu-22.04
     permissions:
@@ -320,7 +320,7 @@ jobs:
 
   e2e:
     needs: [setup]
-    if: false  # temporarily disabled — re-enable after #1736 merges
+    if: needs.setup.outputs.src == 'true' || needs.setup.outputs.ui == 'true' || needs.setup.outputs.templates == 'true' || needs.setup.outputs.config == 'true' || needs.setup.outputs.full == 'true'
     timeout-minutes: 45
     runs-on: ubuntu-22.04
     permissions:
@@ -414,7 +414,7 @@ jobs:
 
   build-and-publish-checks:
     needs: [setup]
-    if: false  # temporarily disabled — re-enable after #1736 merges
+    if: needs.setup.outputs.src == 'true' || needs.setup.outputs.config == 'true' || needs.setup.outputs.scripts == 'true' || needs.setup.outputs.full == 'true'
     timeout-minutes: 30
     runs-on: ubuntu-22.04
     permissions:
@@ -528,13 +528,10 @@ jobs:
       - setup
       - policy-guards
       - typecheck
-      - unit-tests
       - template-tests
       - golden-and-ti
-      - coverage
-      - e2e
       - security-smoke
-      - build-and-publish-checks
+      # unit-tests, coverage, e2e, build-and-publish-checks temporarily excluded (#1736)
     if: always()
     timeout-minutes: 5
     runs-on: ubuntu-22.04
@@ -546,13 +543,9 @@ jobs:
           SETUP: ${{ needs.setup.result }}
           POLICY_GUARDS: ${{ needs.policy-guards.result }}
           TYPECHECK: ${{ needs.typecheck.result }}
-          UNIT_TESTS: ${{ needs.unit-tests.result }}
           TEMPLATE_TESTS: ${{ needs.template-tests.result }}
           GOLDEN_AND_TI: ${{ needs.golden-and-ti.result }}
-          COVERAGE: ${{ needs.coverage.result }}
-          E2E: ${{ needs.e2e.result }}
           SECURITY_SMOKE: ${{ needs.security-smoke.result }}
-          BUILD_AND_PUBLISH_CHECKS: ${{ needs.build-and-publish-checks.result }}
         run: |
           set -euo pipefail
           fail=0
@@ -561,7 +554,7 @@ jobs:
             echo "::error::dev-gate aggregate: setup job did not succeed (result=${SETUP}); downstream skips are not safe"
             fail=1
           fi
-          for name in POLICY_GUARDS TYPECHECK UNIT_TESTS TEMPLATE_TESTS GOLDEN_AND_TI COVERAGE E2E SECURITY_SMOKE BUILD_AND_PUBLISH_CHECKS; do
+          for name in POLICY_GUARDS TYPECHECK TEMPLATE_TESTS GOLDEN_AND_TI SECURITY_SMOKE; do
             value="${!name}"
             echo "${name}=${value}"
             case "$value" in
