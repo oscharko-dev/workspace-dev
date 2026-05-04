@@ -2,7 +2,7 @@
  * Per-job LLM Bill of Materials emitter (CycloneDX 1.6 ML-BOM, Issue #1378).
  *
  * The emitter composes a deterministic, byte-stable CycloneDX 1.6 ML-BOM
- * document from the artifacts the Wave 1 POC harness already produced:
+ * document from the artifacts the Wave 1 Validation harness already produced:
  *
  *   - test-generation model component (`gpt-oss-120b` family)
  *   - visual primary model component (`llama-4-maverick-vision`)
@@ -57,9 +57,9 @@ import {
   type TestCasePolicyProfile,
   type VisualSidecarFallbackReason,
   type VisualSidecarResult,
-  type Wave1PocFixtureId,
-  type Wave1PocLbomDocument,
-  type Wave1PocLbomSummary,
+  type Wave1ValidationFixtureId,
+  type Wave1ValidationLbomDocument,
+  type Wave1ValidationLbomSummary,
 } from "../contracts/index.js";
 import { canonicalJson, sha256Hex } from "./content-hash.js";
 import { redactHighRiskSecrets } from "../secret-redaction.js";
@@ -92,7 +92,7 @@ const sortPropertiesByName = (props: LbomProperty[]): LbomProperty[] =>
 
 /** Inputs for `buildLbomDocument`. */
 export interface BuildLbomDocumentInput {
-  fixtureId: Wave1PocFixtureId;
+  fixtureId: Wave1ValidationFixtureId;
   jobId: string;
   generatedAt: string;
   /** Identities of the deployments behind the run, mirroring the manifest. */
@@ -412,7 +412,7 @@ const buildPolicyProfileComponent = (
 };
 
 const buildSubjectComponent = (input: {
-  fixtureId: Wave1PocFixtureId;
+  fixtureId: Wave1ValidationFixtureId;
   jobId: string;
   exportProfile: { id: string; version: string };
 }): LbomSubjectComponent => ({
@@ -421,7 +421,7 @@ const buildSubjectComponent = (input: {
   name: "workspace-dev-test-intelligence-job",
   version: sanitizeLabel(input.jobId),
   description:
-    "Wave 1 POC test-intelligence job. Composes the model chain, the curated few-shot bundle, and the active policy profile that produced the run's structured test cases.",
+    "Wave 1 Validation test-intelligence job. Composes the model chain, the curated few-shot bundle, and the active policy profile that produced the run's structured test cases.",
   properties: sortPropertiesByName([
     { name: "workspace-dev:fixtureId", value: input.fixtureId },
     { name: "workspace-dev:jobId", value: sanitizeLabel(input.jobId) },
@@ -437,7 +437,7 @@ const buildSubjectComponent = (input: {
 });
 
 const buildSerialNumber = (input: {
-  fixtureId: Wave1PocFixtureId;
+  fixtureId: Wave1ValidationFixtureId;
   jobId: string;
   cacheKeyDigest: string;
   contractVersion: string;
@@ -467,7 +467,7 @@ const buildSerialNumber = (input: {
 
 const buildMetadata = (input: {
   generatedAt: string;
-  fixtureId: Wave1PocFixtureId;
+  fixtureId: Wave1ValidationFixtureId;
   jobId: string;
   policyProfile: TestCasePolicyProfile;
   exportProfile: { id: string; version: string };
@@ -580,7 +580,7 @@ const buildMetadata = (input: {
  */
 export const buildLbomDocument = (
   input: BuildLbomDocumentInput,
-): Wave1PocLbomDocument => {
+): Wave1ValidationLbomDocument => {
   if (typeof input.jobId !== "string" || input.jobId.length === 0) {
     throw new RangeError("buildLbomDocument: jobId must be non-empty");
   }
@@ -715,7 +715,7 @@ export const buildLbomDocument = (
     },
   ];
 
-  const document: Wave1PocLbomDocument = {
+  const document: Wave1ValidationLbomDocument = {
     bomFormat: "CycloneDX",
     specVersion: LBOM_CYCLONEDX_SPEC_VERSION,
     version: 1,
@@ -1287,7 +1287,7 @@ const sha256OfBytes = (bytes: Uint8Array): string =>
 
 /** Inputs for `writeLbomArtifact`. */
 export interface WriteLbomArtifactInput {
-  document: Wave1PocLbomDocument;
+  document: Wave1ValidationLbomDocument;
   /** Run directory; the LBOM is written under `lbom/ai-bom.cdx.json`. */
   runDir: string;
 }
@@ -1344,9 +1344,9 @@ export const writeLbomArtifact = async (
 
 /** Build a non-secret summary of a written LBOM artifact. */
 export const summarizeLbomArtifact = (input: {
-  document: Wave1PocLbomDocument;
+  document: Wave1ValidationLbomDocument;
   bytes: Uint8Array;
-}): Wave1PocLbomSummary => {
+}): Wave1ValidationLbomSummary => {
   const models = input.document.components.filter(
     (component) => component.type === "machine-learning-model",
   ).length;

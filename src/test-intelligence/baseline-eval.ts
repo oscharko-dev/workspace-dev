@@ -23,7 +23,7 @@ import {
   createFinOpsUsageRecorder,
 } from "./finops-report.js";
 import { deriveBusinessTestIntentIr } from "./intent-derivation.js";
-import { synthesizeGeneratedTestCases } from "./poc-harness.js";
+import { synthesizeGeneratedTestCases } from "./validation-harness.js";
 import { compilePrompt } from "./prompt-compiler.js";
 import { buildTraceabilityMatrix } from "./traceability-matrix.js";
 import { runValidationPipeline } from "./validation-pipeline.js";

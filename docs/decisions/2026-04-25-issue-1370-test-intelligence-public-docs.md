@@ -17,7 +17,7 @@ Issue #1370 is the documentation deliverable for Wave 2 (Enterprise hardening).
 It does not change runtime behavior or the public contract; it produces public,
 professional documentation that:
 
-- A developer can use to enable and run the bundled Wave 1 POC from public
+- A developer can use to enable and run the bundled Wave 1 Validation from public
   docs alone.
 - A platform or security reviewer can use to evaluate network calls, secret
   handling, artifact retention, and fail-closed behavior.
@@ -91,7 +91,7 @@ Not introduced:
 ## Consequences
 
 - The public docs are now sufficient for a developer to enable and run the
-  Wave 1 POC without reading `src/test-intelligence/` source.
+  Wave 1 Validation without reading `src/test-intelligence/` source.
 - Compliance reviewers have a single entry point to test-intelligence
   evidence and a positioning statement for DORA, GDPR, and EU AI Act.
 - Operators are explicitly informed that they own model-revision pinning,

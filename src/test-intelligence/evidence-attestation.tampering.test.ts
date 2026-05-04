@@ -3,11 +3,11 @@
  * to the new in-toto attestation envelope (Issue #1377).
  *
  * Every attack here corresponds to a field an auditor must be able to
- * detect via `verifyWave1PocAttestation`. Each test mutates the on-disk
+ * detect via `verifyWave1ValidationAttestation`. Each test mutates the on-disk
  * artifacts AFTER the attestation is persisted, so the manifest+digest
  * witnesses still claim the original bytes.
  *
- * The verifier MUST surface a structured `Wave1PocAttestationVerificationFailure`
+ * The verifier MUST surface a structured `Wave1ValidationAttestationVerificationFailure`
  * naming the specific subject / artifact path / signature reference
  * that failed.
  */
@@ -19,28 +19,28 @@ import { join } from "node:path";
 import test from "node:test";
 
 import {
-  WAVE1_POC_ATTESTATION_ARTIFACT_FILENAME,
-  WAVE1_POC_ATTESTATION_BUNDLE_FILENAME,
-  WAVE1_POC_ATTESTATIONS_DIRECTORY,
-  WAVE1_POC_SIGNATURES_DIRECTORY,
-  type Wave1PocAttestationDsseEnvelope,
-  type Wave1PocEvidenceManifest,
+  WAVE1_VALIDATION_ATTESTATION_ARTIFACT_FILENAME,
+  WAVE1_VALIDATION_ATTESTATION_BUNDLE_FILENAME,
+  WAVE1_VALIDATION_ATTESTATIONS_DIRECTORY,
+  WAVE1_VALIDATION_SIGNATURES_DIRECTORY,
+  type Wave1ValidationAttestationDsseEnvelope,
+  type Wave1ValidationEvidenceManifest,
 } from "../contracts/index.js";
 import { canonicalJson } from "./content-hash.js";
 import {
-  buildSignedWave1PocAttestation,
-  buildUnsignedWave1PocAttestationEnvelope,
-  buildWave1PocAttestationStatement,
+  buildSignedWave1ValidationAttestation,
+  buildUnsignedWave1ValidationAttestationEnvelope,
+  buildWave1ValidationAttestationStatement,
   createKeyBoundSigstoreSigner,
-  generateWave1PocAttestationKeyPair,
-  persistWave1PocAttestation,
-  verifyWave1PocAttestation,
-  verifyWave1PocAttestationFromDisk,
+  generateWave1ValidationAttestationKeyPair,
+  persistWave1ValidationAttestation,
+  verifyWave1ValidationAttestation,
+  verifyWave1ValidationAttestationFromDisk,
 } from "./evidence-attestation.js";
 import {
-  buildWave1PocEvidenceManifest,
-  computeWave1PocEvidenceManifestDigest,
-  writeWave1PocEvidenceManifest,
+  buildWave1ValidationEvidenceManifest,
+  computeWave1ValidationEvidenceManifestDigest,
+  writeWave1ValidationEvidenceManifest,
 } from "./evidence-manifest.js";
 
 const ZERO = "0".repeat(64);
@@ -48,19 +48,19 @@ const utf8 = (value: string): Uint8Array => new TextEncoder().encode(value);
 
 interface ScenarioFixture {
   runDir: string;
-  manifest: Wave1PocEvidenceManifest;
+  manifest: Wave1ValidationEvidenceManifest;
   manifestSha256: string;
   cleanup: () => Promise<void>;
 }
 
 const setupScenario = async (): Promise<ScenarioFixture> => {
-  const runDir = await mkdtemp(join(tmpdir(), "wave1-poc-tamper-"));
+  const runDir = await mkdtemp(join(tmpdir(), "wave1-validation-tamper-"));
   const intent = utf8('{"intent":"sample-tamper"}\n');
   const validation = utf8('{"validation":"sample-tamper"}\n');
   await writeFile(join(runDir, "business-intent-ir.json"), intent);
   await writeFile(join(runDir, "validation-report.json"), validation);
-  const manifest = buildWave1PocEvidenceManifest({
-    fixtureId: "poc-onboarding",
+  const manifest = buildWave1ValidationEvidenceManifest({
+    fixtureId: "validation-onboarding",
     jobId: "job-1377-tamper",
     generatedAt: "2026-04-26T00:00:00.000Z",
     modelDeployments: {
@@ -88,11 +88,11 @@ const setupScenario = async (): Promise<ScenarioFixture> => {
       },
     ],
   });
-  await writeWave1PocEvidenceManifest({ manifest, destinationDir: runDir });
+  await writeWave1ValidationEvidenceManifest({ manifest, destinationDir: runDir });
   return {
     runDir,
     manifest,
-    manifestSha256: computeWave1PocEvidenceManifestDigest(manifest),
+    manifestSha256: computeWave1ValidationEvidenceManifestDigest(manifest),
     cleanup: () => rm(runDir, { recursive: true, force: true }),
   };
 };
@@ -100,13 +100,13 @@ const setupScenario = async (): Promise<ScenarioFixture> => {
 test("attestation-tampering: subject digest mismatch when artifact is mutated", async (t) => {
   const fx = await setupScenario();
   t.after(() => fx.cleanup());
-  const statement = buildWave1PocAttestationStatement({
+  const statement = buildWave1ValidationAttestationStatement({
     manifest: fx.manifest,
     manifestSha256: fx.manifestSha256,
     signingMode: "unsigned",
   });
-  const envelope = buildUnsignedWave1PocAttestationEnvelope(statement);
-  await persistWave1PocAttestation({ envelope, runDir: fx.runDir });
+  const envelope = buildUnsignedWave1ValidationAttestationEnvelope(statement);
+  await persistWave1ValidationAttestation({ envelope, runDir: fx.runDir });
   // Append a single byte to the validation report on disk.
   await writeFile(
     join(fx.runDir, "validation-report.json"),
@@ -115,7 +115,7 @@ test("attestation-tampering: subject digest mismatch when artifact is mutated", 
       Buffer.from("X"),
     ]),
   );
-  const result = await verifyWave1PocAttestationFromDisk(
+  const result = await verifyWave1ValidationAttestationFromDisk(
     fx.runDir,
     fx.manifest,
     fx.manifestSha256,
@@ -140,7 +140,7 @@ test("attestation-tampering: subject digest mismatch when artifact is mutated", 
 test("attestation-tampering: unsafe artifact filenames fail closed with escaped diagnostics", async (t) => {
   const fx = await setupScenario();
   t.after(() => fx.cleanup());
-  const statement = buildWave1PocAttestationStatement({
+  const statement = buildWave1ValidationAttestationStatement({
     manifest: fx.manifest,
     manifestSha256: fx.manifestSha256,
     signingMode: "unsigned",
@@ -162,7 +162,7 @@ test("attestation-tampering: unsafe artifact filenames fail closed with escaped 
           ? { ...artifact, filename: unsafeFilename }
           : artifact,
       ),
-    } as Wave1PocEvidenceManifest;
+    } as Wave1ValidationEvidenceManifest;
     const tamperedStatement = {
       ...statement,
       subject: statement.subject.map((subject) =>
@@ -171,9 +171,9 @@ test("attestation-tampering: unsafe artifact filenames fail closed with escaped 
           : subject,
       ),
     };
-    const envelope = buildUnsignedWave1PocAttestationEnvelope(tamperedStatement);
+    const envelope = buildUnsignedWave1ValidationAttestationEnvelope(tamperedStatement);
 
-    const result = await verifyWave1PocAttestation({
+    const result = await verifyWave1ValidationAttestation({
       envelope,
       manifest: tamperedManifest,
       manifestSha256: fx.manifestSha256,
@@ -202,26 +202,26 @@ test("attestation-tampering: unsafe artifact filenames fail closed with escaped 
 test("attestation-tampering: payload byte mutation invalidates signature (sigstore)", async (t) => {
   const fx = await setupScenario();
   t.after(() => fx.cleanup());
-  const { privateKeyPem, publicKeyPem } = generateWave1PocAttestationKeyPair();
+  const { privateKeyPem, publicKeyPem } = generateWave1ValidationAttestationKeyPair();
   const signer = createKeyBoundSigstoreSigner({
     signerReference: "tamper-test-signer",
     privateKeyPem,
     publicKeyPem,
   });
-  const statement = buildWave1PocAttestationStatement({
+  const statement = buildWave1ValidationAttestationStatement({
     manifest: fx.manifest,
     manifestSha256: fx.manifestSha256,
     signingMode: "sigstore",
   });
-  const signed = await buildSignedWave1PocAttestation({ statement, signer });
+  const signed = await buildSignedWave1ValidationAttestation({ statement, signer });
   // Build an evil envelope that flips bytes in payload but keeps signature.
   const evilPayload = Buffer.from(signed.envelope.payload, "base64");
   evilPayload[0] = (evilPayload[0] ?? 0) ^ 0xff;
-  const tampered: Wave1PocAttestationDsseEnvelope = {
+  const tampered: Wave1ValidationAttestationDsseEnvelope = {
     ...signed.envelope,
     payload: evilPayload.toString("base64"),
   };
-  const result = await verifyWave1PocAttestation({
+  const result = await verifyWave1ValidationAttestation({
     envelope: tampered,
     bundle: signed.bundle,
     manifest: fx.manifest,
@@ -247,22 +247,22 @@ test("attestation-tampering: payload byte mutation invalidates signature (sigsto
 test("attestation-tampering: signature byte flip fails verification", async (t) => {
   const fx = await setupScenario();
   t.after(() => fx.cleanup());
-  const { privateKeyPem, publicKeyPem } = generateWave1PocAttestationKeyPair();
+  const { privateKeyPem, publicKeyPem } = generateWave1ValidationAttestationKeyPair();
   const signer = createKeyBoundSigstoreSigner({
     signerReference: "tamper-sig-signer",
     privateKeyPem,
     publicKeyPem,
   });
-  const statement = buildWave1PocAttestationStatement({
+  const statement = buildWave1ValidationAttestationStatement({
     manifest: fx.manifest,
     manifestSha256: fx.manifestSha256,
     signingMode: "sigstore",
   });
-  const signed = await buildSignedWave1PocAttestation({ statement, signer });
+  const signed = await buildSignedWave1ValidationAttestation({ statement, signer });
   // Flip a byte inside the base64 signature.
   const sigBytes = Buffer.from(signed.envelope.signatures[0]!.sig, "base64");
   sigBytes[10] = (sigBytes[10] ?? 0) ^ 0xff;
-  const tampered: Wave1PocAttestationDsseEnvelope = {
+  const tampered: Wave1ValidationAttestationDsseEnvelope = {
     ...signed.envelope,
     signatures: [
       {
@@ -275,7 +275,7 @@ test("attestation-tampering: signature byte flip fails verification", async (t) 
     ...signed.bundle,
     dsseEnvelope: tampered,
   };
-  const result = await verifyWave1PocAttestation({
+  const result = await verifyWave1ValidationAttestation({
     envelope: tampered,
     bundle: tamperedBundle,
     manifest: fx.manifest,
@@ -294,7 +294,7 @@ test("attestation-tampering: missing envelope file fails closed", async (t) => {
   const fx = await setupScenario();
   t.after(() => fx.cleanup());
   // Don't persist any attestation — verifyFromDisk should fail closed.
-  const result = await verifyWave1PocAttestationFromDisk(
+  const result = await verifyWave1ValidationAttestationFromDisk(
     fx.runDir,
     fx.manifest,
     fx.manifestSha256,
@@ -307,24 +307,24 @@ test("attestation-tampering: missing envelope file fails closed", async (t) => {
 test("attestation-tampering: missing bundle in sigstore mode fails closed", async (t) => {
   const fx = await setupScenario();
   t.after(() => fx.cleanup());
-  const { privateKeyPem, publicKeyPem } = generateWave1PocAttestationKeyPair();
+  const { privateKeyPem, publicKeyPem } = generateWave1ValidationAttestationKeyPair();
   const signer = createKeyBoundSigstoreSigner({
     signerReference: "no-bundle-signer",
     privateKeyPem,
     publicKeyPem,
   });
-  const statement = buildWave1PocAttestationStatement({
+  const statement = buildWave1ValidationAttestationStatement({
     manifest: fx.manifest,
     manifestSha256: fx.manifestSha256,
     signingMode: "sigstore",
   });
-  const signed = await buildSignedWave1PocAttestation({ statement, signer });
+  const signed = await buildSignedWave1ValidationAttestation({ statement, signer });
   // Persist envelope but NOT bundle.
-  await persistWave1PocAttestation({
+  await persistWave1ValidationAttestation({
     envelope: signed.envelope,
     runDir: fx.runDir,
   });
-  const result = await verifyWave1PocAttestationFromDisk(
+  const result = await verifyWave1ValidationAttestationFromDisk(
     fx.runDir,
     fx.manifest,
     fx.manifestSha256,
@@ -337,22 +337,22 @@ test("attestation-tampering: missing bundle in sigstore mode fails closed", asyn
 test("attestation-tampering: unparseable envelope JSON fails closed", async (t) => {
   const fx = await setupScenario();
   t.after(() => fx.cleanup());
-  const statement = buildWave1PocAttestationStatement({
+  const statement = buildWave1ValidationAttestationStatement({
     manifest: fx.manifest,
     manifestSha256: fx.manifestSha256,
     signingMode: "unsigned",
   });
-  const envelope = buildUnsignedWave1PocAttestationEnvelope(statement);
-  await persistWave1PocAttestation({ envelope, runDir: fx.runDir });
+  const envelope = buildUnsignedWave1ValidationAttestationEnvelope(statement);
+  await persistWave1ValidationAttestation({ envelope, runDir: fx.runDir });
   await writeFile(
     join(
       fx.runDir,
-      WAVE1_POC_ATTESTATIONS_DIRECTORY,
-      WAVE1_POC_ATTESTATION_ARTIFACT_FILENAME,
+      WAVE1_VALIDATION_ATTESTATIONS_DIRECTORY,
+      WAVE1_VALIDATION_ATTESTATION_ARTIFACT_FILENAME,
     ),
     "not valid json {",
   );
-  const result = await verifyWave1PocAttestationFromDisk(
+  const result = await verifyWave1ValidationAttestationFromDisk(
     fx.runDir,
     fx.manifest,
     fx.manifestSha256,
@@ -365,25 +365,25 @@ test("attestation-tampering: unparseable envelope JSON fails closed", async (t) 
 test("attestation-tampering: predicate jobId rewrite is detected", async (t) => {
   const fx = await setupScenario();
   t.after(() => fx.cleanup());
-  const statement = buildWave1PocAttestationStatement({
+  const statement = buildWave1ValidationAttestationStatement({
     manifest: fx.manifest,
     manifestSha256: fx.manifestSha256,
     signingMode: "unsigned",
   });
-  const envelope = buildUnsignedWave1PocAttestationEnvelope(statement);
-  await persistWave1PocAttestation({ envelope, runDir: fx.runDir });
+  const envelope = buildUnsignedWave1ValidationAttestationEnvelope(statement);
+  await persistWave1ValidationAttestation({ envelope, runDir: fx.runDir });
 
   const path = join(
     fx.runDir,
-    WAVE1_POC_ATTESTATIONS_DIRECTORY,
-    WAVE1_POC_ATTESTATION_ARTIFACT_FILENAME,
+    WAVE1_VALIDATION_ATTESTATIONS_DIRECTORY,
+    WAVE1_VALIDATION_ATTESTATION_ARTIFACT_FILENAME,
   );
   const onDisk = JSON.parse(
     (await readFile(path)).toString("utf8"),
-  ) as Wave1PocAttestationDsseEnvelope;
+  ) as Wave1ValidationAttestationDsseEnvelope;
   const decodedStatement = JSON.parse(
     Buffer.from(onDisk.payload, "base64").toString("utf8"),
-  ) as ReturnType<typeof buildWave1PocAttestationStatement>;
+  ) as ReturnType<typeof buildWave1ValidationAttestationStatement>;
   decodedStatement.predicate.jobId = "job-evil-rewrite";
   const evilPayload = Buffer.from(canonicalJson(decodedStatement), "utf8");
   await writeFile(
@@ -394,7 +394,7 @@ test("attestation-tampering: predicate jobId rewrite is detected", async (t) => 
     }),
   );
 
-  const result = await verifyWave1PocAttestationFromDisk(
+  const result = await verifyWave1ValidationAttestationFromDisk(
     fx.runDir,
     fx.manifest,
     fx.manifestSha256,
@@ -410,25 +410,25 @@ test("attestation-tampering: predicate jobId rewrite is detected", async (t) => 
 test("attestation-tampering: predicate hard invariant rewrite (rawScreenshotsIncluded=true) detected", async (t) => {
   const fx = await setupScenario();
   t.after(() => fx.cleanup());
-  const statement = buildWave1PocAttestationStatement({
+  const statement = buildWave1ValidationAttestationStatement({
     manifest: fx.manifest,
     manifestSha256: fx.manifestSha256,
     signingMode: "unsigned",
   });
-  const envelope = buildUnsignedWave1PocAttestationEnvelope(statement);
-  await persistWave1PocAttestation({ envelope, runDir: fx.runDir });
+  const envelope = buildUnsignedWave1ValidationAttestationEnvelope(statement);
+  await persistWave1ValidationAttestation({ envelope, runDir: fx.runDir });
 
   const path = join(
     fx.runDir,
-    WAVE1_POC_ATTESTATIONS_DIRECTORY,
-    WAVE1_POC_ATTESTATION_ARTIFACT_FILENAME,
+    WAVE1_VALIDATION_ATTESTATIONS_DIRECTORY,
+    WAVE1_VALIDATION_ATTESTATION_ARTIFACT_FILENAME,
   );
   const onDisk = JSON.parse(
     (await readFile(path)).toString("utf8"),
-  ) as Wave1PocAttestationDsseEnvelope;
+  ) as Wave1ValidationAttestationDsseEnvelope;
   const decodedStatement = JSON.parse(
     Buffer.from(onDisk.payload, "base64").toString("utf8"),
-  ) as ReturnType<typeof buildWave1PocAttestationStatement>;
+  ) as ReturnType<typeof buildWave1ValidationAttestationStatement>;
   // Defeat the type-level `false` literal at runtime to test the verifier.
   (
     decodedStatement.predicate as unknown as { rawScreenshotsIncluded: boolean }
@@ -443,7 +443,7 @@ test("attestation-tampering: predicate hard invariant rewrite (rawScreenshotsInc
     }),
   );
 
-  const result = await verifyWave1PocAttestationFromDisk(
+  const result = await verifyWave1ValidationAttestationFromDisk(
     fx.runDir,
     fx.manifest,
     fx.manifestSha256,
@@ -464,49 +464,49 @@ test("attestation-tampering: bundle file replaced with attacker bundle is detect
   t.after(() => fx.cleanup());
 
   // Real signer and real bundle.
-  const real = generateWave1PocAttestationKeyPair();
+  const real = generateWave1ValidationAttestationKeyPair();
   const realSigner = createKeyBoundSigstoreSigner({
     signerReference: "real-signer-99",
     privateKeyPem: real.privateKeyPem,
     publicKeyPem: real.publicKeyPem,
   });
-  const statement = buildWave1PocAttestationStatement({
+  const statement = buildWave1ValidationAttestationStatement({
     manifest: fx.manifest,
     manifestSha256: fx.manifestSha256,
     signingMode: "sigstore",
   });
-  const realSigned = await buildSignedWave1PocAttestation({
+  const realSigned = await buildSignedWave1ValidationAttestation({
     statement,
     signer: realSigner,
   });
-  await persistWave1PocAttestation({
+  await persistWave1ValidationAttestation({
     envelope: realSigned.envelope,
     bundle: realSigned.bundle,
     runDir: fx.runDir,
   });
 
   // Attacker swaps the bundle file for one signed with their own key.
-  const attacker = generateWave1PocAttestationKeyPair();
+  const attacker = generateWave1ValidationAttestationKeyPair();
   const attackerSigner = createKeyBoundSigstoreSigner({
     signerReference: "real-signer-99", // pretend to be real
     privateKeyPem: attacker.privateKeyPem,
     publicKeyPem: attacker.publicKeyPem,
   });
-  const attackerSigned = await buildSignedWave1PocAttestation({
+  const attackerSigned = await buildSignedWave1ValidationAttestation({
     statement,
     signer: attackerSigner,
   });
   await writeFile(
     join(
       fx.runDir,
-      WAVE1_POC_SIGNATURES_DIRECTORY,
-      WAVE1_POC_ATTESTATION_BUNDLE_FILENAME,
+      WAVE1_VALIDATION_SIGNATURES_DIRECTORY,
+      WAVE1_VALIDATION_ATTESTATION_BUNDLE_FILENAME,
     ),
     canonicalJson(attackerSigned.bundle),
   );
 
   // Verify with the REAL public key — attacker's signature must fail.
-  const result = await verifyWave1PocAttestationFromDisk(
+  const result = await verifyWave1ValidationAttestationFromDisk(
     fx.runDir,
     fx.manifest,
     fx.manifestSha256,
@@ -533,7 +533,7 @@ test("attestation-tampering: bundle file replaced with attacker bundle is detect
 test("attestation-tampering: requireFullSubjectCoverage catches dropped subject", async (t) => {
   const fx = await setupScenario();
   t.after(() => fx.cleanup());
-  const statement = buildWave1PocAttestationStatement({
+  const statement = buildWave1ValidationAttestationStatement({
     manifest: fx.manifest,
     manifestSha256: fx.manifestSha256,
     signingMode: "unsigned",
@@ -544,7 +544,7 @@ test("attestation-tampering: requireFullSubjectCoverage catches dropped subject"
   );
   const tamperedStatement = { ...statement, subject: tamperedSubjects };
   const tamperedPayload = utf8(canonicalJson(tamperedStatement));
-  const tamperedEnvelope: Wave1PocAttestationDsseEnvelope = {
+  const tamperedEnvelope: Wave1ValidationAttestationDsseEnvelope = {
     payload: Buffer.from(tamperedPayload).toString("base64"),
     payloadType: statement.predicate
       ? // ensure pinned payloadType remains
@@ -552,7 +552,7 @@ test("attestation-tampering: requireFullSubjectCoverage catches dropped subject"
       : ("application/vnd.in-toto+json" as const),
     signatures: [],
   };
-  const result = await verifyWave1PocAttestation({
+  const result = await verifyWave1ValidationAttestation({
     envelope: tamperedEnvelope,
     manifest: fx.manifest,
     manifestSha256: fx.manifestSha256,

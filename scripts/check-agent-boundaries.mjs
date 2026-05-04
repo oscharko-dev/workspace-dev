@@ -83,7 +83,7 @@ const HARNESS_FILE_BASENAME_PATTERNS = [
   /^ir-mutation-oracle(?:[-.]|$)/,
   /^repair-planner(?:[-.]|$)/,
   /^finding-consolidator(?:[-.]|$)/,
-  /^poc-harness(?:[-.]|$)/,
+  /^validation-harness(?:[-.]|$)/,
   /^agent-lessons-memdir(?:[-.]|$)/,
   /^lessons-consolidation-lock(?:[-.]|$)/,
 ];

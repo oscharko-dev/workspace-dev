@@ -24,15 +24,15 @@ import test from "node:test";
 import { fileURLToPath } from "node:url";
 
 import {
-  buildUnsignedWave1PocAttestationEnvelope,
-  buildWave1PocAttestationStatement,
-  persistWave1PocAttestation,
-  verifyWave1PocAttestationFromDisk,
+  buildUnsignedWave1ValidationAttestationEnvelope,
+  buildWave1ValidationAttestationStatement,
+  persistWave1ValidationAttestation,
+  verifyWave1ValidationAttestationFromDisk,
 } from "./evidence-attestation.js";
 import {
-  buildWave1PocEvidenceManifest,
-  computeWave1PocEvidenceManifestDigest,
-  writeWave1PocEvidenceManifest,
+  buildWave1ValidationEvidenceManifest,
+  computeWave1ValidationEvidenceManifestDigest,
+  writeWave1ValidationEvidenceManifest,
 } from "./evidence-manifest.js";
 
 const ZERO = "0".repeat(64);
@@ -130,14 +130,14 @@ test("evidence-attestation [airgap]: unsigned signing+persist+verify works with 
     }
   });
 
-  const runDir = await mkdtemp(join(tmpdir(), "wave1-poc-airgap-"));
+  const runDir = await mkdtemp(join(tmpdir(), "wave1-validation-airgap-"));
   t.after(() => rm(runDir, { recursive: true, force: true }));
   const intent = utf8('{"intent":"airgap-fixture"}\n');
   await (
     await import("node:fs/promises")
   ).writeFile(join(runDir, "business-intent-ir.json"), intent);
-  const manifest = buildWave1PocEvidenceManifest({
-    fixtureId: "poc-onboarding",
+  const manifest = buildWave1ValidationEvidenceManifest({
+    fixtureId: "validation-onboarding",
     jobId: "job-1377-airgap",
     generatedAt: "2026-04-26T00:00:00.000Z",
     modelDeployments: { testGeneration: "gpt-oss-120b-mock" },
@@ -157,22 +157,22 @@ test("evidence-attestation [airgap]: unsigned signing+persist+verify works with 
       },
     ],
   });
-  await writeWave1PocEvidenceManifest({ manifest, destinationDir: runDir });
-  const manifestSha256 = computeWave1PocEvidenceManifestDigest(manifest);
+  await writeWave1ValidationEvidenceManifest({ manifest, destinationDir: runDir });
+  const manifestSha256 = computeWave1ValidationEvidenceManifestDigest(manifest);
 
-  const statement = buildWave1PocAttestationStatement({
+  const statement = buildWave1ValidationAttestationStatement({
     manifest,
     manifestSha256,
     signingMode: "unsigned",
   });
-  const envelope = buildUnsignedWave1PocAttestationEnvelope(statement);
-  const persisted = await persistWave1PocAttestation({
+  const envelope = buildUnsignedWave1ValidationAttestationEnvelope(statement);
+  const persisted = await persistWave1ValidationAttestation({
     envelope,
     runDir,
   });
   assert.equal(persisted.bundleFilename, undefined);
 
-  const result = await verifyWave1PocAttestationFromDisk(
+  const result = await verifyWave1ValidationAttestationFromDisk(
     runDir,
     manifest,
     manifestSha256,

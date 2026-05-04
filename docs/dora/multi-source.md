@@ -55,7 +55,7 @@ to their impact on operations, data integrity, and service continuity.
 | Structured refusal codes       | All validation failures are emitted as typed `refusalCode` values, not free-form error strings, so monitoring systems can classify incidents without string parsing     | `ALLOWED_MULTI_SOURCE_ENVELOPE_REFUSAL_CODES`, `ALLOWED_JIRA_IR_REFUSAL_CODES`, `ALLOWED_MULTI_SOURCE_MODE_GATE_REFUSAL_CODES` |
 | Fail-closed on every gate miss | Gate failures write no artifacts and return a deterministic code; callers cannot proceed past a gate failure                                                            | `enforceMultiSourceModeGate` throws `MultiSourceModeGateError`                                                                 |
 | Paste collision detection      | Duplicate `canonicalIssueKey` between a `jira_rest` and `jira_paste` source is detected and surfaced as `duplicate_jira_paste_collision` before any artifact is written | `validateMultiSourceTestIntentEnvelope`                                                                                        |
-| Evidence manifest              | Every job emits a `wave1-poc-evidence-manifest.json` (or Wave 4 equivalent) with SHA-256 hashes for every persisted artifact; tampering can be detected post-incident   | `verifyWave1PocEvidenceManifest`                                                                                               |
+| Evidence manifest              | Every job emits a `wave1-validation-evidence-manifest.json` (or Wave 4 equivalent) with SHA-256 hashes for every persisted artifact; tampering can be detected post-incident   | `verifyWave1ValidationEvidenceManifest`                                                                                               |
 
 ---
 

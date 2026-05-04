@@ -35,7 +35,7 @@ import {
   BUSINESS_TEST_INTENT_IR_SCHEMA_VERSION,
   EU_BANKING_DEFAULT_POLICY_PROFILE_ID,
   GENEALOGY_ARTIFACT_FILENAME,
-  WAVE1_POC_EVIDENCE_MANIFEST_ARTIFACT_FILENAME,
+  WAVE1_VALIDATION_EVIDENCE_MANIFEST_ARTIFACT_FILENAME,
   type BusinessTestIntentIr,
   type DetectedAction,
   type DetectedField,
@@ -302,7 +302,7 @@ test("Issue #1794: banking profile blocks when the active deployment is missing 
       await readFile(
         path.join(
           result.artifactDir,
-          WAVE1_POC_EVIDENCE_MANIFEST_ARTIFACT_FILENAME,
+          WAVE1_VALIDATION_EVIDENCE_MANIFEST_ARTIFACT_FILENAME,
         ),
         "utf8",
       ),
@@ -376,7 +376,7 @@ test("Issue #1792: runFigmaToQcTestCases seals production-runner evidence and em
     assert.deepEqual(sealedEvent?.details, {
       sealed: true,
       sealArtifact: PRODUCTION_RUNNER_EVIDENCE_SEAL_ARTIFACT_FILENAME,
-      manifest: "wave1-poc-evidence-manifest.json",
+      manifest: "wave1-validation-evidence-manifest.json",
       headOfChainHash: evidenceSeal.headOfChainHash,
       chainLength: 0,
       bySourceHash: evidenceSeal.bySourceHash,
@@ -935,7 +935,7 @@ test("runFigmaToQcTestCases wires Figma URL screenshots through the visual sidec
     assert.equal(requestHeaders[2]?.get("x-figma-token"), null);
     const manifest = JSON.parse(
       await readFile(
-        path.join(result.artifactDir, "wave1-poc-evidence-manifest.json"),
+        path.join(result.artifactDir, "wave1-validation-evidence-manifest.json"),
         "utf8",
       ),
     ) as {

@@ -22,25 +22,25 @@ import { join } from "node:path";
 import test from "node:test";
 
 import {
-  WAVE1_POC_ATTESTATION_BUNDLE_MEDIA_TYPE,
-  WAVE1_POC_ATTESTATION_PAYLOAD_TYPE,
-  type Wave1PocAttestationVerificationMaterial,
-  type Wave1PocEvidenceManifest,
+  WAVE1_VALIDATION_ATTESTATION_BUNDLE_MEDIA_TYPE,
+  WAVE1_VALIDATION_ATTESTATION_PAYLOAD_TYPE,
+  type Wave1ValidationAttestationVerificationMaterial,
+  type Wave1ValidationEvidenceManifest,
 } from "../contracts/index.js";
 import {
-  buildSignedWave1PocAttestation,
-  buildWave1PocAttestationStatement,
+  buildSignedWave1ValidationAttestation,
+  buildWave1ValidationAttestationStatement,
   createKeylessSigstoreSignerScaffold,
-  generateWave1PocAttestationKeyPair,
-  persistWave1PocAttestation,
-  verifyWave1PocAttestation,
-  verifyWave1PocAttestationFromDisk,
-  type Wave1PocKeylessSignerCallback,
+  generateWave1ValidationAttestationKeyPair,
+  persistWave1ValidationAttestation,
+  verifyWave1ValidationAttestation,
+  verifyWave1ValidationAttestationFromDisk,
+  type Wave1ValidationKeylessSignerCallback,
 } from "./evidence-attestation.js";
 import {
-  buildWave1PocEvidenceManifest,
-  computeWave1PocEvidenceManifestDigest,
-  writeWave1PocEvidenceManifest,
+  buildWave1ValidationEvidenceManifest,
+  computeWave1ValidationEvidenceManifestDigest,
+  writeWave1ValidationEvidenceManifest,
 } from "./evidence-manifest.js";
 
 const ZERO = "0".repeat(64);
@@ -166,8 +166,8 @@ const synthesizeSelfSignedCertPem = (
   // commonName OID
   const cnOid = oid(2, 5, 4, 3);
 
-  // Issuer + Subject: CN=wave1-poc-keyless-test
-  const cn = enc(UTF8STR, new TextEncoder().encode("wave1-poc-keyless-test"));
+  // Issuer + Subject: CN=wave1-validation-keyless-test
+  const cn = enc(UTF8STR, new TextEncoder().encode("wave1-validation-keyless-test"));
   const rdn = enc(SET, enc(SEQ, concat(cnOid, cn)));
   const dn = enc(SEQ, rdn);
 
@@ -226,7 +226,7 @@ const synthesizeSelfSignedCertPem = (
  * flow except the cert is locally minted (no Fulcio call).
  */
 const buildStubKeylessCallback = (): {
-  callback: Wave1PocKeylessSignerCallback;
+  callback: Wave1ValidationKeylessSignerCallback;
   certificatePem: string;
   publicKeyPem: string;
 } => {
@@ -266,17 +266,17 @@ const buildStubKeylessCallback = (): {
 
 interface ScenarioFixture {
   runDir: string;
-  manifest: Wave1PocEvidenceManifest;
+  manifest: Wave1ValidationEvidenceManifest;
   manifestSha256: string;
   cleanup: () => Promise<void>;
 }
 
 const setupScenario = async (): Promise<ScenarioFixture> => {
-  const runDir = await mkdtemp(join(tmpdir(), "wave1-poc-keyless-"));
+  const runDir = await mkdtemp(join(tmpdir(), "wave1-validation-keyless-"));
   const intent = utf8('{"intent":"keyless"}\n');
   await writeFile(join(runDir, "business-intent-ir.json"), intent);
-  const manifest = buildWave1PocEvidenceManifest({
-    fixtureId: "poc-onboarding",
+  const manifest = buildWave1ValidationEvidenceManifest({
+    fixtureId: "validation-onboarding",
     jobId: "job-1377-keyless",
     generatedAt: "2026-04-26T00:00:00.000Z",
     modelDeployments: { testGeneration: "gpt-oss-120b-mock" },
@@ -296,11 +296,11 @@ const setupScenario = async (): Promise<ScenarioFixture> => {
       },
     ],
   });
-  await writeWave1PocEvidenceManifest({ manifest, destinationDir: runDir });
+  await writeWave1ValidationEvidenceManifest({ manifest, destinationDir: runDir });
   return {
     runDir,
     manifest,
-    manifestSha256: computeWave1PocEvidenceManifestDigest(manifest),
+    manifestSha256: computeWave1ValidationEvidenceManifestDigest(manifest),
     cleanup: () => rm(runDir, { recursive: true, force: true }),
   };
 };
@@ -314,19 +314,19 @@ test("evidence-attestation [keyless]: scaffold round-trips with a stub callback"
     signerReference: "ci-build-keyless",
     callback: stub.callback,
   });
-  const statement = buildWave1PocAttestationStatement({
+  const statement = buildWave1ValidationAttestationStatement({
     manifest: fx.manifest,
     manifestSha256: fx.manifestSha256,
     signingMode: "sigstore",
   });
-  const signed = await buildSignedWave1PocAttestation({ statement, signer });
+  const signed = await buildSignedWave1ValidationAttestation({ statement, signer });
 
   // Bundle now carries an x509 cert chain, NOT an in-line public key.
   assert.equal(
     signed.bundle.mediaType,
-    WAVE1_POC_ATTESTATION_BUNDLE_MEDIA_TYPE,
+    WAVE1_VALIDATION_ATTESTATION_BUNDLE_MEDIA_TYPE,
   );
-  const material: Wave1PocAttestationVerificationMaterial =
+  const material: Wave1ValidationAttestationVerificationMaterial =
     signed.bundle.verificationMaterial;
   assert.ok("x509CertificateChain" in material, "expected cert-chain material");
   if ("x509CertificateChain" in material) {
@@ -339,7 +339,7 @@ test("evidence-attestation [keyless]: scaffold round-trips with a stub callback"
     );
   }
   assert.equal(signed.envelope.signatures.length, 1);
-  assert.equal(signed.envelope.payloadType, WAVE1_POC_ATTESTATION_PAYLOAD_TYPE);
+  assert.equal(signed.envelope.payloadType, WAVE1_VALIDATION_ATTESTATION_PAYLOAD_TYPE);
 });
 
 test("evidence-attestation [keyless]: persisted bundle verifies end-to-end via cert chain", async (t) => {
@@ -350,19 +350,19 @@ test("evidence-attestation [keyless]: persisted bundle verifies end-to-end via c
     signerReference: "ci-build-keyless-2",
     callback: stub.callback,
   });
-  const statement = buildWave1PocAttestationStatement({
+  const statement = buildWave1ValidationAttestationStatement({
     manifest: fx.manifest,
     manifestSha256: fx.manifestSha256,
     signingMode: "sigstore",
   });
-  const signed = await buildSignedWave1PocAttestation({ statement, signer });
-  await persistWave1PocAttestation({
+  const signed = await buildSignedWave1ValidationAttestation({ statement, signer });
+  await persistWave1ValidationAttestation({
     envelope: signed.envelope,
     bundle: signed.bundle,
     runDir: fx.runDir,
   });
 
-  const result = await verifyWave1PocAttestationFromDisk(
+  const result = await verifyWave1ValidationAttestationFromDisk(
     fx.runDir,
     fx.manifest,
     fx.manifestSha256,
@@ -381,12 +381,12 @@ test("evidence-attestation [keyless]: invalid certificate-chain content fails cl
     signerReference: "ci-build-keyless-bad",
     callback: stub.callback,
   });
-  const statement = buildWave1PocAttestationStatement({
+  const statement = buildWave1ValidationAttestationStatement({
     manifest: fx.manifest,
     manifestSha256: fx.manifestSha256,
     signingMode: "sigstore",
   });
-  const signed = await buildSignedWave1PocAttestation({ statement, signer });
+  const signed = await buildSignedWave1ValidationAttestation({ statement, signer });
   // Replace cert chain with garbage.
   if (!("x509CertificateChain" in signed.bundle.verificationMaterial)) {
     throw new Error("test invariant: bundle must use cert chain material");
@@ -400,7 +400,7 @@ test("evidence-attestation [keyless]: invalid certificate-chain content fails cl
       },
     },
   };
-  const result = await verifyWave1PocAttestation({
+  const result = await verifyWave1ValidationAttestation({
     envelope: signed.envelope,
     bundle: tamperedBundle,
     manifest: fx.manifest,

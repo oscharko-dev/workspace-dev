@@ -31,7 +31,7 @@ import {
   LBOM_CYCLONEDX_SPEC_VERSION,
   type TestCasePolicyProfile,
   type VisualSidecarResult,
-  type Wave1PocLbomDocument,
+  type Wave1ValidationLbomDocument,
 } from "../contracts/index.js";
 import { canonicalJson, sha256Hex } from "./content-hash.js";
 import {
@@ -56,7 +56,7 @@ const SAMPLE_HASHES = {
 const baseInput = (
   overrides?: Partial<Parameters<typeof buildLbomDocument>[0]>,
 ): Parameters<typeof buildLbomDocument>[0] => ({
-  fixtureId: "poc-onboarding",
+  fixtureId: "validation-onboarding",
   jobId: "job-test-1378",
   generatedAt: GENERATED_AT,
   modelDeployments: {
@@ -69,15 +69,15 @@ const baseInput = (
   hashes: SAMPLE_HASHES,
   testGenerationBinding: {
     modelRevision: "gpt-oss-120b-2026-04-25",
-    gatewayRelease: "wave1-poc-mock",
+    gatewayRelease: "wave1-validation-mock",
   },
   ...(overrides ?? {}),
 });
 
 const findComponent = (
-  doc: Wave1PocLbomDocument,
+  doc: Wave1ValidationLbomDocument,
   bomRef: string,
-): Wave1PocLbomDocument["components"][number] | undefined =>
+): Wave1ValidationLbomDocument["components"][number] | undefined =>
   doc.components.find((component) => component["bom-ref"] === bomRef);
 
 const propertyMap = (
@@ -320,7 +320,7 @@ test("validateLbomDocument: passes on a freshly built document", () => {
 });
 
 test("validateLbomDocument: catches invalid bomFormat", () => {
-  const doc = buildLbomDocument(baseInput()) as Wave1PocLbomDocument & {
+  const doc = buildLbomDocument(baseInput()) as Wave1ValidationLbomDocument & {
     bomFormat: string;
   };
   const tampered = { ...doc, bomFormat: "SPDX" };
@@ -353,7 +353,7 @@ test("validateLbomDocument: catches invalid serialNumber", () => {
 });
 
 test("validateLbomDocument: catches non-hex hash content", () => {
-  const doc = buildLbomDocument(baseInput()) as Wave1PocLbomDocument;
+  const doc = buildLbomDocument(baseInput()) as Wave1ValidationLbomDocument;
   const components = doc.components.map((c) => ({ ...c }));
   const policyComponent = components.find(
     (c) => c["bom-ref"] === "data:policy-profile",
@@ -434,7 +434,7 @@ test("validateLbomDocument: catches raw `contents` payload on a data component",
 });
 
 test("validateLbomDocument: catches a high-risk secret pattern in a property value", () => {
-  const doc = buildLbomDocument(baseInput()) as Wave1PocLbomDocument;
+  const doc = buildLbomDocument(baseInput()) as Wave1ValidationLbomDocument;
   const components = doc.components.map((c) => ({
     ...c,
     properties: [...c.properties],
@@ -492,7 +492,7 @@ test("writeLbomArtifact: persists canonical JSON under runDir/lbom and validates
   );
   const onDisk = await readFile(result.artifactPath, "utf8");
   assert.equal(onDisk, canonicalJson(doc));
-  const parsed = JSON.parse(onDisk) as Wave1PocLbomDocument;
+  const parsed = JSON.parse(onDisk) as Wave1ValidationLbomDocument;
   const validation = validateLbomDocument(parsed);
   assert.equal(
     validation.valid,
@@ -503,7 +503,7 @@ test("writeLbomArtifact: persists canonical JSON under runDir/lbom and validates
 
 test("writeLbomArtifact: refuses to persist an invalid document", async () => {
   const runDir = await mkdtemp(join(tmpdir(), "ti-lbom-bad-"));
-  const doc = buildLbomDocument(baseInput()) as Wave1PocLbomDocument;
+  const doc = buildLbomDocument(baseInput()) as Wave1ValidationLbomDocument;
   const tampered = {
     ...doc,
     metadata: {
@@ -514,7 +514,7 @@ test("writeLbomArtifact: refuses to persist an invalid document", async () => {
           : property,
       ),
     },
-  } as unknown as Wave1PocLbomDocument;
+  } as unknown as Wave1ValidationLbomDocument;
   await assert.rejects(
     () => writeLbomArtifact({ document: tampered, runDir }),
     /refusing to persist invalid LBOM/,

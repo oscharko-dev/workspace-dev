@@ -1,5 +1,5 @@
 /**
- * Wave 1 POC in-toto attestation + optional Sigstore signing (Issue #1377).
+ * Wave 1 Validation in-toto attestation + optional Sigstore signing (Issue #1377).
  *
  * The attestation is an in-toto v1 statement wrapped in a DSSE envelope.
  * The statement enumerates every artifact the harness produced (subject
@@ -50,37 +50,37 @@ import {
   TEST_INTELLIGENCE_CONTRACT_VERSION,
   TEST_INTELLIGENCE_PROMPT_TEMPLATE_VERSION,
   VISUAL_SIDECAR_SCHEMA_VERSION,
-  WAVE1_POC_ATTESTATION_ARTIFACT_FILENAME,
-  WAVE1_POC_ATTESTATION_BUNDLE_FILENAME,
-  WAVE1_POC_ATTESTATION_BUNDLE_MEDIA_TYPE,
-  WAVE1_POC_ATTESTATION_PAYLOAD_TYPE,
-  WAVE1_POC_ATTESTATION_PREDICATE_TYPE,
-  WAVE1_POC_ATTESTATION_SCHEMA_VERSION,
-  WAVE1_POC_ATTESTATION_STATEMENT_TYPE,
-  WAVE1_POC_ATTESTATIONS_DIRECTORY,
-  WAVE1_POC_EVIDENCE_MANIFEST_ARTIFACT_FILENAME,
-  WAVE1_POC_SIGNATURES_DIRECTORY,
-  type Wave1PocAttestationBundle,
-  type Wave1PocAttestationCertificateChainMaterial,
-  type Wave1PocAttestationDsseEnvelope,
-  type Wave1PocAttestationPredicate,
-  type Wave1PocAttestationPublicKeyMaterial,
-  type Wave1PocAttestationSignature,
-  type Wave1PocAttestationSigningMode,
-  type Wave1PocAttestationStatement,
-  type Wave1PocAttestationSubject,
-  type Wave1PocAttestationSummary,
-  type Wave1PocAttestationVerificationFailure,
-  type Wave1PocAttestationVerificationMaterial,
-  type Wave1PocAttestationVerificationResult,
+  WAVE1_VALIDATION_ATTESTATION_ARTIFACT_FILENAME,
+  WAVE1_VALIDATION_ATTESTATION_BUNDLE_FILENAME,
+  WAVE1_VALIDATION_ATTESTATION_BUNDLE_MEDIA_TYPE,
+  WAVE1_VALIDATION_ATTESTATION_PAYLOAD_TYPE,
+  WAVE1_VALIDATION_ATTESTATION_PREDICATE_TYPE,
+  WAVE1_VALIDATION_ATTESTATION_SCHEMA_VERSION,
+  WAVE1_VALIDATION_ATTESTATION_STATEMENT_TYPE,
+  WAVE1_VALIDATION_ATTESTATIONS_DIRECTORY,
+  WAVE1_VALIDATION_EVIDENCE_MANIFEST_ARTIFACT_FILENAME,
+  WAVE1_VALIDATION_SIGNATURES_DIRECTORY,
+  type Wave1ValidationAttestationBundle,
+  type Wave1ValidationAttestationCertificateChainMaterial,
+  type Wave1ValidationAttestationDsseEnvelope,
+  type Wave1ValidationAttestationPredicate,
+  type Wave1ValidationAttestationPublicKeyMaterial,
+  type Wave1ValidationAttestationSignature,
+  type Wave1ValidationAttestationSigningMode,
+  type Wave1ValidationAttestationStatement,
+  type Wave1ValidationAttestationSubject,
+  type Wave1ValidationAttestationSummary,
+  type Wave1ValidationAttestationVerificationFailure,
+  type Wave1ValidationAttestationVerificationMaterial,
+  type Wave1ValidationAttestationVerificationResult,
   type FinOpsBudgetReport,
-  type Wave1PocEvidenceManifest,
+  type Wave1ValidationEvidenceManifest,
 } from "../contracts/index.js";
 import { canonicalJson } from "./content-hash.js";
 import {
-  formatWave1PocEvidenceArtifactPathForDiagnostic,
-  resolveWave1PocEvidenceArtifactPath,
-  validateWave1PocEvidenceArtifactPath,
+  formatWave1ValidationEvidenceArtifactPathForDiagnostic,
+  resolveWave1ValidationEvidenceArtifactPath,
+  validateWave1ValidationEvidenceArtifactPath,
 } from "./evidence-manifest.js";
 import { computePerSourceCostBreakdownHashFromReport } from "./per-source-cost.js";
 
@@ -156,19 +156,19 @@ const isPositiveLengthString = (value: unknown): value is string =>
   typeof value === "string" && value.length > 0;
 
 const validateManifestForAttestation = (
-  manifest: Wave1PocEvidenceManifest,
+  manifest: Wave1ValidationEvidenceManifest,
 ): void => {
   const rawScreenshotsIncluded = manifest.rawScreenshotsIncluded as boolean;
   const imagePayloadSentToTestGeneration =
     manifest.imagePayloadSentToTestGeneration as boolean;
   if (rawScreenshotsIncluded) {
     throw new RangeError(
-      "buildWave1PocAttestationStatement: manifest.rawScreenshotsIncluded must be false",
+      "buildWave1ValidationAttestationStatement: manifest.rawScreenshotsIncluded must be false",
     );
   }
   if (imagePayloadSentToTestGeneration) {
     throw new RangeError(
-      "buildWave1PocAttestationStatement: manifest.imagePayloadSentToTestGeneration must be false",
+      "buildWave1ValidationAttestationStatement: manifest.imagePayloadSentToTestGeneration must be false",
     );
   }
   for (const field of [
@@ -179,31 +179,31 @@ const validateManifestForAttestation = (
   ] as const) {
     if (!HEX64.test(manifest[field])) {
       throw new RangeError(
-        `buildWave1PocAttestationStatement: manifest.${field} must be a sha256 hex string`,
+        `buildWave1ValidationAttestationStatement: manifest.${field} must be a sha256 hex string`,
       );
     }
   }
   for (const artifact of manifest.artifacts) {
-    if (!validateWave1PocEvidenceArtifactPath(artifact.filename).ok) {
+    if (!validateWave1ValidationEvidenceArtifactPath(artifact.filename).ok) {
       throw new RangeError(
-        `buildWave1PocAttestationStatement: invalid artifact filename ${formatWave1PocEvidenceArtifactPathForDiagnostic(artifact.filename)}`,
+        `buildWave1ValidationAttestationStatement: invalid artifact filename ${formatWave1ValidationEvidenceArtifactPathForDiagnostic(artifact.filename)}`,
       );
     }
     if (!HEX64.test(artifact.sha256)) {
       throw new RangeError(
-        `buildWave1PocAttestationStatement: artifact ${formatWave1PocEvidenceArtifactPathForDiagnostic(artifact.filename)} has an invalid sha256`,
+        `buildWave1ValidationAttestationStatement: artifact ${formatWave1ValidationEvidenceArtifactPathForDiagnostic(artifact.filename)} has an invalid sha256`,
       );
     }
   }
 };
 
-export interface BuildWave1PocAttestationStatementInput {
-  manifest: Wave1PocEvidenceManifest;
+export interface BuildWave1ValidationAttestationStatementInput {
+  manifest: Wave1ValidationEvidenceManifest;
   /** SHA-256 of the canonical manifest bytes. */
   manifestSha256: string;
   /** Optional SHA-256 of the canonical FinOps per-source breakdown. */
   bySourceHash?: string;
-  signingMode: Wave1PocAttestationSigningMode;
+  signingMode: Wave1ValidationAttestationSigningMode;
 }
 
 /**
@@ -216,31 +216,31 @@ export interface BuildWave1PocAttestationStatementInput {
  * The returned object is canonical-JSON-stable: every key is sorted on
  * serialization and only deterministic fields are included.
  */
-export const buildWave1PocAttestationStatement = (
-  input: BuildWave1PocAttestationStatementInput,
-): Wave1PocAttestationStatement => {
+export const buildWave1ValidationAttestationStatement = (
+  input: BuildWave1ValidationAttestationStatementInput,
+): Wave1ValidationAttestationStatement => {
   validateManifestForAttestation(input.manifest);
   if (!HEX64.test(input.manifestSha256)) {
     throw new RangeError(
-      "buildWave1PocAttestationStatement: manifestSha256 must be a sha256 hex string",
+      "buildWave1ValidationAttestationStatement: manifestSha256 must be a sha256 hex string",
     );
   }
   const signingMode = input.signingMode as string;
   if (signingMode !== "unsigned" && signingMode !== "sigstore") {
     throw new RangeError(
-      `buildWave1PocAttestationStatement: unknown signingMode "${input.signingMode}"`,
+      `buildWave1ValidationAttestationStatement: unknown signingMode "${input.signingMode}"`,
     );
   }
 
-  const subjectMap = new Map<string, Wave1PocAttestationSubject>();
+  const subjectMap = new Map<string, Wave1ValidationAttestationSubject>();
   for (const artifact of input.manifest.artifacts) {
     subjectMap.set(artifact.filename, {
       name: artifact.filename,
       digest: { sha256: artifact.sha256 },
     });
   }
-  subjectMap.set(WAVE1_POC_EVIDENCE_MANIFEST_ARTIFACT_FILENAME, {
-    name: WAVE1_POC_EVIDENCE_MANIFEST_ARTIFACT_FILENAME,
+  subjectMap.set(WAVE1_VALIDATION_EVIDENCE_MANIFEST_ARTIFACT_FILENAME, {
+    name: WAVE1_VALIDATION_EVIDENCE_MANIFEST_ARTIFACT_FILENAME,
     digest: { sha256: input.manifestSha256 },
   });
   const subject = Array.from(subjectMap.values()).sort((a, b) =>
@@ -261,7 +261,7 @@ export const buildWave1PocAttestationStatement = (
       }
     : undefined;
 
-  const modelDeployments: Wave1PocAttestationPredicate["modelDeployments"] = {
+  const modelDeployments: Wave1ValidationAttestationPredicate["modelDeployments"] = {
     testGeneration: input.manifest.modelDeployments.testGeneration,
     ...(input.manifest.modelDeployments.visualPrimary !== undefined
       ? { visualPrimary: input.manifest.modelDeployments.visualPrimary }
@@ -271,8 +271,8 @@ export const buildWave1PocAttestationStatement = (
       : {}),
   };
 
-  const predicate: Wave1PocAttestationPredicate = {
-    schemaVersion: WAVE1_POC_ATTESTATION_SCHEMA_VERSION,
+  const predicate: Wave1ValidationAttestationPredicate = {
+    schemaVersion: WAVE1_VALIDATION_ATTESTATION_SCHEMA_VERSION,
     contractVersion: CONTRACT_VERSION,
     testIntelligenceContractVersion: TEST_INTELLIGENCE_CONTRACT_VERSION,
     fixtureId: input.manifest.fixtureId,
@@ -295,33 +295,33 @@ export const buildWave1PocAttestationStatement = (
     signingMode: input.signingMode,
     manifestSha256: input.manifestSha256,
     ...(input.bySourceHash !== undefined ? { bySourceHash: input.bySourceHash } : {}),
-    manifestFilename: WAVE1_POC_EVIDENCE_MANIFEST_ARTIFACT_FILENAME,
+    manifestFilename: WAVE1_VALIDATION_EVIDENCE_MANIFEST_ARTIFACT_FILENAME,
     rawScreenshotsIncluded: false,
     secretsIncluded: false,
     imagePayloadSentToTestGeneration: false,
   };
 
   return {
-    _type: WAVE1_POC_ATTESTATION_STATEMENT_TYPE,
-    predicateType: WAVE1_POC_ATTESTATION_PREDICATE_TYPE,
+    _type: WAVE1_VALIDATION_ATTESTATION_STATEMENT_TYPE,
+    predicateType: WAVE1_VALIDATION_ATTESTATION_PREDICATE_TYPE,
     subject,
     predicate,
   };
 };
 
 /** Canonical-JSON encode a statement and base64-wrap it as DSSE payload. */
-export const encodeWave1PocAttestationPayload = (
-  statement: Wave1PocAttestationStatement,
+export const encodeWave1ValidationAttestationPayload = (
+  statement: Wave1ValidationAttestationStatement,
 ): Uint8Array => utf8(canonicalJson(statement));
 
 /** Build an unsigned DSSE envelope for `statement`. */
-export const buildUnsignedWave1PocAttestationEnvelope = (
-  statement: Wave1PocAttestationStatement,
-): Wave1PocAttestationDsseEnvelope => {
-  const payload = encodeWave1PocAttestationPayload(statement);
+export const buildUnsignedWave1ValidationAttestationEnvelope = (
+  statement: Wave1ValidationAttestationStatement,
+): Wave1ValidationAttestationDsseEnvelope => {
+  const payload = encodeWave1ValidationAttestationPayload(statement);
   return {
     payload: bytesToBase64(payload),
-    payloadType: WAVE1_POC_ATTESTATION_PAYLOAD_TYPE,
+    payloadType: WAVE1_VALIDATION_ATTESTATION_PAYLOAD_TYPE,
     signatures: [],
   };
 };
@@ -337,7 +337,7 @@ export const buildUnsignedWave1PocAttestationEnvelope = (
  * untrusted services. Built-in signers in this module honour that
  * contract; custom signers do so at the operator's risk.
  */
-export interface Wave1PocAttestationSigner {
+export interface Wave1ValidationAttestationSigner {
   /** Stable signer identity, used for `keyid` and audit-timeline output. */
   readonly signerReference: string;
   /**
@@ -347,11 +347,11 @@ export interface Wave1PocAttestationSigner {
    *     certificate's subject public key is used to verify the
    *     signature; operator pins their trust root separately).
    */
-  readonly verificationMaterial: Wave1PocAttestationVerificationMaterial;
+  readonly verificationMaterial: Wave1ValidationAttestationVerificationMaterial;
   /** Sign the PAE-encoded payload. */
   signPreAuthenticatedBytes(
     paeBytes: Uint8Array,
-  ): Promise<Wave1PocAttestationSignature>;
+  ): Promise<Wave1ValidationAttestationSignature>;
 }
 
 const stripPemHeaders = (pem: string): string =>
@@ -361,7 +361,7 @@ const subjectPublicKeyInfoFromPem = (publicKeyPem: string): KeyObject => {
   const key = createPublicKey({ key: publicKeyPem, format: "pem" });
   if (key.asymmetricKeyType !== "ec") {
     throw new RangeError(
-      "Wave 1 POC attestation public key must be an ECDSA key (P-256)",
+      "Wave 1 Validation attestation public key must be an ECDSA key (P-256)",
     );
   }
   const details = key.asymmetricKeyDetails;
@@ -371,7 +371,7 @@ const subjectPublicKeyInfoFromPem = (publicKeyPem: string): KeyObject => {
     details.namedCurve !== "prime256v1"
   ) {
     throw new RangeError(
-      "Wave 1 POC attestation public key must use the prime256v1 (P-256) curve",
+      "Wave 1 Validation attestation public key must use the prime256v1 (P-256) curve",
     );
   }
   return key;
@@ -380,13 +380,13 @@ const subjectPublicKeyInfoFromPem = (publicKeyPem: string): KeyObject => {
 const ecdsaPrivateKeyFromPem = (privateKeyPem: string): KeyObject => {
   if (!ECDSA_PEM_BLOCK_PATTERN.test(privateKeyPem)) {
     throw new RangeError(
-      "Wave 1 POC attestation private key must be PEM-encoded ECDSA",
+      "Wave 1 Validation attestation private key must be PEM-encoded ECDSA",
     );
   }
   const key = createPrivateKey({ key: privateKeyPem, format: "pem" });
   if (key.asymmetricKeyType !== "ec") {
     throw new RangeError(
-      "Wave 1 POC attestation private key must be an ECDSA key (P-256)",
+      "Wave 1 Validation attestation private key must be an ECDSA key (P-256)",
     );
   }
   const details = key.asymmetricKeyDetails;
@@ -396,7 +396,7 @@ const ecdsaPrivateKeyFromPem = (privateKeyPem: string): KeyObject => {
     details.namedCurve !== "prime256v1"
   ) {
     throw new RangeError(
-      "Wave 1 POC attestation private key must use the prime256v1 (P-256) curve",
+      "Wave 1 Validation attestation private key must use the prime256v1 (P-256) curve",
     );
   }
   return key;
@@ -471,10 +471,10 @@ const subjectPublicKeyFromCertificateChain = (
 };
 
 const derivePublicKeyFromBundleMaterial = (
-  material: Wave1PocAttestationVerificationMaterial,
+  material: Wave1ValidationAttestationVerificationMaterial,
 ):
-  | { ok: true; material: Wave1PocAttestationPublicKeyMaterial }
-  | { ok: false; failure: Wave1PocAttestationVerificationFailure } => {
+  | { ok: true; material: Wave1ValidationAttestationPublicKeyMaterial }
+  | { ok: false; failure: Wave1ValidationAttestationVerificationFailure } => {
   if ("publicKey" in material) {
     return { ok: true, material: material.publicKey };
   }
@@ -521,11 +521,11 @@ export interface CreateKeyBoundSigstoreSignerInput {
  * with ECDSA P-256 (DER-encoded signatures, SHA-256 digest). All
  * signing happens locally via `node:crypto`; no network calls are
  * made. The returned object is the air-gapped reference implementation
- * of `Wave1PocAttestationSigner`.
+ * of `Wave1ValidationAttestationSigner`.
  */
 export const createKeyBoundSigstoreSigner = (
   input: CreateKeyBoundSigstoreSignerInput,
-): Wave1PocAttestationSigner => {
+): Wave1ValidationAttestationSigner => {
   if (!isPositiveLengthString(input.signerReference)) {
     throw new RangeError(
       "createKeyBoundSigstoreSigner: signerReference must be a non-empty string",
@@ -564,7 +564,7 @@ export const createKeyBoundSigstoreSigner = (
   }
   // Touch publicKey to ensure validation ran above; not used after this.
   void publicKey;
-  const publicKeyMaterial: Wave1PocAttestationPublicKeyMaterial = {
+  const publicKeyMaterial: Wave1ValidationAttestationPublicKeyMaterial = {
     hint: input.signerReference,
     publicKeyPem,
     algorithm: "ecdsa-p256-sha256",
@@ -594,7 +594,7 @@ export const createKeyBoundSigstoreSigner = (
  * available. The private key is returned only via the result; it is
  * never written to disk by this helper.
  */
-export const generateWave1PocAttestationKeyPair = (): {
+export const generateWave1ValidationAttestationKeyPair = (): {
   privateKeyPem: string;
   publicKeyPem: string;
 } => {
@@ -625,7 +625,7 @@ export const generateWave1PocAttestationKeyPair = (): {
  * the air-gap baseline. Operators who need keyless wire this callback
  * to their preferred Sigstore client (e.g., `sigstore-js`, `cosign`).
  */
-export type Wave1PocKeylessSignerCallback = (input: {
+export type Wave1ValidationKeylessSignerCallback = (input: {
   paeBytes: Uint8Array;
 }) => Promise<{
   signature: Uint8Array;
@@ -639,7 +639,7 @@ export interface CreateKeylessSigstoreSignerInput {
   /** Stable, non-secret signer reference (e.g., the OIDC subject). */
   signerReference: string;
   /** Operator-supplied function producing signature + cert chain. */
-  callback: Wave1PocKeylessSignerCallback;
+  callback: Wave1ValidationKeylessSignerCallback;
 }
 
 /**
@@ -652,14 +652,14 @@ export interface CreateKeylessSigstoreSignerInput {
  * material on the bundle, so verifiers extract the leaf certificate's
  * subject public key automatically. Trust-root validation (chain → an
  * operator-pinned root) is OUT OF SCOPE here — operators run that
- * validation before invoking `verifyWave1PocAttestation`.
+ * validation before invoking `verifyWave1ValidationAttestation`.
  *
  * The scaffold is fully exercised by tests via a stub callback so the
  * signer/verifier round-trip is validated end-to-end without network.
  */
 export const createKeylessSigstoreSignerScaffold = (
   input: CreateKeylessSigstoreSignerInput,
-): Wave1PocAttestationSigner => {
+): Wave1ValidationAttestationSigner => {
   if (!isPositiveLengthString(input.signerReference)) {
     throw new RangeError(
       "createKeylessSigstoreSignerScaffold: signerReference must be a non-empty string",
@@ -675,11 +675,11 @@ export const createKeylessSigstoreSignerScaffold = (
   // We hold a placeholder that the bundle build path replaces after
   // `signPreAuthenticatedBytes` resolves.
   let materializedChain:
-    | Wave1PocAttestationCertificateChainMaterial
+    | Wave1ValidationAttestationCertificateChainMaterial
     | undefined;
-  const signer: Wave1PocAttestationSigner = {
+  const signer: Wave1ValidationAttestationSigner = {
     signerReference: input.signerReference,
-    get verificationMaterial(): Wave1PocAttestationVerificationMaterial {
+    get verificationMaterial(): Wave1ValidationAttestationVerificationMaterial {
       if (materializedChain === undefined) {
         throw new Error(
           "createKeylessSigstoreSignerScaffold: verificationMaterial accessed before signPreAuthenticatedBytes resolved",
@@ -719,9 +719,9 @@ export const createKeylessSigstoreSignerScaffold = (
   return signer;
 };
 
-export interface BuildSignedWave1PocAttestationInput {
-  statement: Wave1PocAttestationStatement;
-  signer: Wave1PocAttestationSigner;
+export interface BuildSignedWave1ValidationAttestationInput {
+  statement: Wave1ValidationAttestationStatement;
+  signer: Wave1ValidationAttestationSigner;
 }
 
 /**
@@ -730,35 +730,35 @@ export interface BuildSignedWave1PocAttestationInput {
  * envelope by value so a verifier can rely on a single artifact when
  * cross-referencing the signature material.
  */
-export const buildSignedWave1PocAttestation = async (
-  input: BuildSignedWave1PocAttestationInput,
+export const buildSignedWave1ValidationAttestation = async (
+  input: BuildSignedWave1ValidationAttestationInput,
 ): Promise<{
-  envelope: Wave1PocAttestationDsseEnvelope;
-  bundle: Wave1PocAttestationBundle;
+  envelope: Wave1ValidationAttestationDsseEnvelope;
+  bundle: Wave1ValidationAttestationBundle;
 }> => {
-  const payloadBytes = encodeWave1PocAttestationPayload(input.statement);
+  const payloadBytes = encodeWave1ValidationAttestationPayload(input.statement);
   const pae = encodeDssePreAuth(
-    WAVE1_POC_ATTESTATION_PAYLOAD_TYPE,
+    WAVE1_VALIDATION_ATTESTATION_PAYLOAD_TYPE,
     payloadBytes,
   );
   const signature = await input.signer.signPreAuthenticatedBytes(pae);
   if (!KEYID_PATTERN.test(signature.keyid)) {
     throw new RangeError(
-      "buildSignedWave1PocAttestation: signer returned an invalid keyid",
+      "buildSignedWave1ValidationAttestation: signer returned an invalid keyid",
     );
   }
   if (!BASE64_STD_PATTERN.test(signature.sig)) {
     throw new RangeError(
-      "buildSignedWave1PocAttestation: signer returned a non-base64 signature",
+      "buildSignedWave1ValidationAttestation: signer returned a non-base64 signature",
     );
   }
-  const envelope: Wave1PocAttestationDsseEnvelope = {
+  const envelope: Wave1ValidationAttestationDsseEnvelope = {
     payload: bytesToBase64(payloadBytes),
-    payloadType: WAVE1_POC_ATTESTATION_PAYLOAD_TYPE,
+    payloadType: WAVE1_VALIDATION_ATTESTATION_PAYLOAD_TYPE,
     signatures: [signature],
   };
-  const bundle: Wave1PocAttestationBundle = {
-    mediaType: WAVE1_POC_ATTESTATION_BUNDLE_MEDIA_TYPE,
+  const bundle: Wave1ValidationAttestationBundle = {
+    mediaType: WAVE1_VALIDATION_ATTESTATION_BUNDLE_MEDIA_TYPE,
     dsseEnvelope: envelope,
     verificationMaterial: input.signer.verificationMaterial,
   };
@@ -801,14 +801,14 @@ const writeAtomic = async (
   return { path, bytes: utf8(contents) };
 };
 
-export interface PersistWave1PocAttestationInput {
-  envelope: Wave1PocAttestationDsseEnvelope;
-  bundle?: Wave1PocAttestationBundle;
+export interface PersistWave1ValidationAttestationInput {
+  envelope: Wave1ValidationAttestationDsseEnvelope;
+  bundle?: Wave1ValidationAttestationBundle;
   /** Run directory under which `evidence/attestations/...` is created. */
   runDir: string;
 }
 
-export interface PersistedWave1PocAttestation {
+export interface PersistedWave1ValidationAttestation {
   attestationFilename: string;
   attestationPath: string;
   attestationBytes: Uint8Array;
@@ -825,18 +825,18 @@ export interface PersistedWave1PocAttestation {
  * within the same process / millisecond) cannot corrupt each other's
  * artifacts.
  */
-export const persistWave1PocAttestation = async (
-  input: PersistWave1PocAttestationInput,
-): Promise<PersistedWave1PocAttestation> => {
+export const persistWave1ValidationAttestation = async (
+  input: PersistWave1ValidationAttestationInput,
+): Promise<PersistedWave1ValidationAttestation> => {
   const attestationsDir = await ensureSubdir(
     input.runDir,
-    WAVE1_POC_ATTESTATIONS_DIRECTORY,
+    WAVE1_VALIDATION_ATTESTATIONS_DIRECTORY,
   );
-  const attestationFilename = `${WAVE1_POC_ATTESTATIONS_DIRECTORY}/${WAVE1_POC_ATTESTATION_ARTIFACT_FILENAME}`;
+  const attestationFilename = `${WAVE1_VALIDATION_ATTESTATIONS_DIRECTORY}/${WAVE1_VALIDATION_ATTESTATION_ARTIFACT_FILENAME}`;
   const envelopeContents = canonicalJson(input.envelope);
   const written = await writeAtomic(
     attestationsDir,
-    WAVE1_POC_ATTESTATION_ARTIFACT_FILENAME,
+    WAVE1_VALIDATION_ATTESTATION_ARTIFACT_FILENAME,
     envelopeContents,
   );
   if (input.bundle === undefined) {
@@ -848,13 +848,13 @@ export const persistWave1PocAttestation = async (
   }
   const signaturesDir = await ensureSubdir(
     input.runDir,
-    WAVE1_POC_SIGNATURES_DIRECTORY,
+    WAVE1_VALIDATION_SIGNATURES_DIRECTORY,
   );
-  const bundleFilename = `${WAVE1_POC_SIGNATURES_DIRECTORY}/${WAVE1_POC_ATTESTATION_BUNDLE_FILENAME}`;
+  const bundleFilename = `${WAVE1_VALIDATION_SIGNATURES_DIRECTORY}/${WAVE1_VALIDATION_ATTESTATION_BUNDLE_FILENAME}`;
   const bundleContents = canonicalJson(input.bundle);
   const writtenBundle = await writeAtomic(
     signaturesDir,
-    WAVE1_POC_ATTESTATION_BUNDLE_FILENAME,
+    WAVE1_VALIDATION_ATTESTATION_BUNDLE_FILENAME,
     bundleContents,
   );
   return {
@@ -872,11 +872,11 @@ export const persistWave1PocAttestation = async (
  * signing mode, signer reference, and artifact hashes for a UI / log
  * consumer; no secrets are leaked.
  */
-export const summarizeWave1PocAttestation = (input: {
-  signingMode: Wave1PocAttestationSigningMode;
+export const summarizeWave1ValidationAttestation = (input: {
+  signingMode: Wave1ValidationAttestationSigningMode;
   signerReference?: string;
-  persisted: PersistedWave1PocAttestation;
-}): Wave1PocAttestationSummary => {
+  persisted: PersistedWave1ValidationAttestation;
+}): Wave1ValidationAttestationSummary => {
   return {
     signingMode: input.signingMode,
     ...(input.signerReference !== undefined
@@ -901,30 +901,30 @@ const isENOENT = (err: unknown): boolean =>
 const decodeStatement = (
   envelope: unknown,
 ): {
-  statement?: Wave1PocAttestationStatement;
-  failures: Wave1PocAttestationVerificationFailure[];
+  statement?: Wave1ValidationAttestationStatement;
+  failures: Wave1ValidationAttestationVerificationFailure[];
 } => {
-  const failures: Wave1PocAttestationVerificationFailure[] = [];
+  const failures: Wave1ValidationAttestationVerificationFailure[] = [];
   if (!isRecord(envelope)) {
     failures.push({
       code: "envelope_unparseable",
-      reference: WAVE1_POC_ATTESTATION_ARTIFACT_FILENAME,
+      reference: WAVE1_VALIDATION_ATTESTATION_ARTIFACT_FILENAME,
       message: "DSSE envelope must be an object",
     });
     return { failures };
   }
-  if (envelope["payloadType"] !== WAVE1_POC_ATTESTATION_PAYLOAD_TYPE) {
+  if (envelope["payloadType"] !== WAVE1_VALIDATION_ATTESTATION_PAYLOAD_TYPE) {
     failures.push({
       code: "envelope_payload_type_mismatch",
-      reference: WAVE1_POC_ATTESTATION_ARTIFACT_FILENAME,
-      message: `payloadType must be "${WAVE1_POC_ATTESTATION_PAYLOAD_TYPE}"`,
+      reference: WAVE1_VALIDATION_ATTESTATION_ARTIFACT_FILENAME,
+      message: `payloadType must be "${WAVE1_VALIDATION_ATTESTATION_PAYLOAD_TYPE}"`,
     });
     return { failures };
   }
   if (typeof envelope["payload"] !== "string") {
     failures.push({
       code: "envelope_payload_decode_failed",
-      reference: WAVE1_POC_ATTESTATION_ARTIFACT_FILENAME,
+      reference: WAVE1_VALIDATION_ATTESTATION_ARTIFACT_FILENAME,
       message: "payload must be a base64 string",
     });
     return { failures };
@@ -935,7 +935,7 @@ const decodeStatement = (
   } catch {
     failures.push({
       code: "envelope_payload_decode_failed",
-      reference: WAVE1_POC_ATTESTATION_ARTIFACT_FILENAME,
+      reference: WAVE1_VALIDATION_ATTESTATION_ARTIFACT_FILENAME,
       message: "payload is not canonical base64",
     });
     return { failures };
@@ -948,7 +948,7 @@ const decodeStatement = (
   } catch {
     failures.push({
       code: "statement_unparseable",
-      reference: WAVE1_POC_ATTESTATION_ARTIFACT_FILENAME,
+      reference: WAVE1_VALIDATION_ATTESTATION_ARTIFACT_FILENAME,
       message: "decoded payload is not valid JSON",
     });
     return { failures };
@@ -956,41 +956,41 @@ const decodeStatement = (
   if (!isRecord(parsed)) {
     failures.push({
       code: "statement_unparseable",
-      reference: WAVE1_POC_ATTESTATION_ARTIFACT_FILENAME,
+      reference: WAVE1_VALIDATION_ATTESTATION_ARTIFACT_FILENAME,
       message: "decoded payload must be an object",
     });
     return { failures };
   }
-  if (parsed["_type"] !== WAVE1_POC_ATTESTATION_STATEMENT_TYPE) {
+  if (parsed["_type"] !== WAVE1_VALIDATION_ATTESTATION_STATEMENT_TYPE) {
     failures.push({
       code: "statement_type_mismatch",
-      reference: WAVE1_POC_ATTESTATION_ARTIFACT_FILENAME,
-      message: `statement _type must be "${WAVE1_POC_ATTESTATION_STATEMENT_TYPE}"`,
+      reference: WAVE1_VALIDATION_ATTESTATION_ARTIFACT_FILENAME,
+      message: `statement _type must be "${WAVE1_VALIDATION_ATTESTATION_STATEMENT_TYPE}"`,
     });
   }
-  if (parsed["predicateType"] !== WAVE1_POC_ATTESTATION_PREDICATE_TYPE) {
+  if (parsed["predicateType"] !== WAVE1_VALIDATION_ATTESTATION_PREDICATE_TYPE) {
     failures.push({
       code: "statement_predicate_type_mismatch",
-      reference: WAVE1_POC_ATTESTATION_ARTIFACT_FILENAME,
-      message: `predicateType must be "${WAVE1_POC_ATTESTATION_PREDICATE_TYPE}"`,
+      reference: WAVE1_VALIDATION_ATTESTATION_ARTIFACT_FILENAME,
+      message: `predicateType must be "${WAVE1_VALIDATION_ATTESTATION_PREDICATE_TYPE}"`,
     });
   }
   if (failures.length > 0) {
     return { failures };
   }
   return {
-    statement: parsed as unknown as Wave1PocAttestationStatement,
+    statement: parsed as unknown as Wave1ValidationAttestationStatement,
     failures,
   };
 };
 
 const validatePredicate = (
   predicate: unknown,
-  manifest: Wave1PocEvidenceManifest,
+  manifest: Wave1ValidationEvidenceManifest,
   manifestSha256: string,
-  expectedSigningMode: Wave1PocAttestationSigningMode,
-): Wave1PocAttestationVerificationFailure[] => {
-  const failures: Wave1PocAttestationVerificationFailure[] = [];
+  expectedSigningMode: Wave1ValidationAttestationSigningMode,
+): Wave1ValidationAttestationVerificationFailure[] => {
+  const failures: Wave1ValidationAttestationVerificationFailure[] = [];
   const finopsReportFilename = `${FINOPS_ARTIFACT_DIRECTORY}/${FINOPS_BUDGET_REPORT_ARTIFACT_FILENAME}`;
   const requiresBySourceHash = manifest.artifacts.some(
     (artifact) => artifact.filename === finopsReportFilename,
@@ -1095,10 +1095,10 @@ const validatePredicate = (
 };
 
 const verifyBySourceHash = async (input: {
-  predicate: Wave1PocAttestationStatement["predicate"];
-  manifest: Wave1PocEvidenceManifest;
+  predicate: Wave1ValidationAttestationStatement["predicate"];
+  manifest: Wave1ValidationEvidenceManifest;
   artifactsDir: string;
-}): Promise<Wave1PocAttestationVerificationFailure[]> => {
+}): Promise<Wave1ValidationAttestationVerificationFailure[]> => {
   const finopsReportFilename = `${FINOPS_ARTIFACT_DIRECTORY}/${FINOPS_BUDGET_REPORT_ARTIFACT_FILENAME}`;
   if (
     !input.manifest.artifacts.some(
@@ -1178,10 +1178,10 @@ const verifyBySourceHash = async (input: {
 
 const verifySignaturesAgainstPublicKey = (
   paeBytes: Uint8Array,
-  signatures: Wave1PocAttestationSignature[],
-  publicKey: Wave1PocAttestationPublicKeyMaterial,
-): Wave1PocAttestationVerificationFailure[] => {
-  const failures: Wave1PocAttestationVerificationFailure[] = [];
+  signatures: Wave1ValidationAttestationSignature[],
+  publicKey: Wave1ValidationAttestationPublicKeyMaterial,
+): Wave1ValidationAttestationVerificationFailure[] => {
+  const failures: Wave1ValidationAttestationVerificationFailure[] = [];
   let pkObject: KeyObject;
   try {
     pkObject = subjectPublicKeyInfoFromPem(publicKey.publicKeyPem);
@@ -1233,24 +1233,24 @@ const verifySignaturesAgainstPublicKey = (
   return failures;
 };
 
-export interface VerifyWave1PocAttestationInput {
-  envelope: Wave1PocAttestationDsseEnvelope;
-  manifest: Wave1PocEvidenceManifest;
+export interface VerifyWave1ValidationAttestationInput {
+  envelope: Wave1ValidationAttestationDsseEnvelope;
+  manifest: Wave1ValidationEvidenceManifest;
   /** SHA-256 of the canonical manifest bytes. */
   manifestSha256: string;
   artifactsDir: string;
-  expectedSigningMode: Wave1PocAttestationSigningMode;
+  expectedSigningMode: Wave1ValidationAttestationSigningMode;
   /**
    * Bundle witnessing the same envelope. REQUIRED for `sigstore` mode;
    * MUST be omitted (or `undefined`) for `unsigned` mode.
    */
-  bundle?: Wave1PocAttestationBundle;
+  bundle?: Wave1ValidationAttestationBundle;
   /**
    * Optional public-key override. When supplied, signatures verify
    * against this material instead of the bundle's. Used by callers
    * that pin a specific signer identity (e.g., compliance audits).
    */
-  publicKey?: Wave1PocAttestationPublicKeyMaterial;
+  publicKey?: Wave1ValidationAttestationPublicKeyMaterial;
   /**
    * When true, every artifact in the manifest must appear as a
    * subject. Defaults to `true` so a tampered statement that drops a
@@ -1260,18 +1260,18 @@ export interface VerifyWave1PocAttestationInput {
 }
 
 const verifySubjectsAgainstDisk = async (
-  subjects: Wave1PocAttestationSubject[],
-  manifest: Wave1PocEvidenceManifest,
+  subjects: Wave1ValidationAttestationSubject[],
+  manifest: Wave1ValidationEvidenceManifest,
   artifactsDir: string,
   manifestSha256: string,
   requireFullSubjectCoverage: boolean,
-): Promise<Wave1PocAttestationVerificationFailure[]> => {
-  const failures: Wave1PocAttestationVerificationFailure[] = [];
+): Promise<Wave1ValidationAttestationVerificationFailure[]> => {
+  const failures: Wave1ValidationAttestationVerificationFailure[] = [];
   const subjectMap = new Map<string, string>();
   const safeReference = (filename: string): string =>
-    validateWave1PocEvidenceArtifactPath(filename).ok
+    validateWave1ValidationEvidenceArtifactPath(filename).ok
       ? filename
-      : formatWave1PocEvidenceArtifactPathForDiagnostic(filename);
+      : formatWave1ValidationEvidenceArtifactPathForDiagnostic(filename);
   for (const subject of subjects) {
     if (!isRecord(subject)) {
       failures.push({
@@ -1290,8 +1290,8 @@ const verifySubjectsAgainstDisk = async (
       continue;
     }
     if (
-      subject.name !== WAVE1_POC_EVIDENCE_MANIFEST_ARTIFACT_FILENAME &&
-      !validateWave1PocEvidenceArtifactPath(subject.name).ok
+      subject.name !== WAVE1_VALIDATION_EVIDENCE_MANIFEST_ARTIFACT_FILENAME &&
+      !validateWave1ValidationEvidenceArtifactPath(subject.name).ok
     ) {
       const reference = safeReference(subject.name);
       failures.push({
@@ -1316,7 +1316,7 @@ const verifySubjectsAgainstDisk = async (
     subjectMap.set(subject.name, subject.digest.sha256);
   }
 
-  const manifestSubjectName = WAVE1_POC_EVIDENCE_MANIFEST_ARTIFACT_FILENAME;
+  const manifestSubjectName = WAVE1_VALIDATION_EVIDENCE_MANIFEST_ARTIFACT_FILENAME;
   if (!subjectMap.has(manifestSubjectName)) {
     failures.push({
       code: "subject_missing_artifact",
@@ -1333,7 +1333,7 @@ const verifySubjectsAgainstDisk = async (
   }
 
   for (const artifact of manifest.artifacts) {
-    if (!validateWave1PocEvidenceArtifactPath(artifact.filename).ok) {
+    if (!validateWave1ValidationEvidenceArtifactPath(artifact.filename).ok) {
       const reference = safeReference(artifact.filename);
       failures.push({
         code: "statement_predicate_invalid",
@@ -1364,7 +1364,7 @@ const verifySubjectsAgainstDisk = async (
     }
     let path: string;
     try {
-      path = resolveWave1PocEvidenceArtifactPath(
+      path = resolveWave1ValidationEvidenceArtifactPath(
         artifactsDir,
         artifact.filename,
       );
@@ -1417,10 +1417,10 @@ const verifySubjectsAgainstDisk = async (
  *     bytes as the standalone artifact. All signatures must verify
  *     against the (overridden or bundle-embedded) public key.
  */
-export const verifyWave1PocAttestation = async (
-  input: VerifyWave1PocAttestationInput,
-): Promise<Wave1PocAttestationVerificationResult> => {
-  const failures: Wave1PocAttestationVerificationFailure[] = [];
+export const verifyWave1ValidationAttestation = async (
+  input: VerifyWave1ValidationAttestationInput,
+): Promise<Wave1ValidationAttestationVerificationResult> => {
+  const failures: Wave1ValidationAttestationVerificationFailure[] = [];
   const requireFullSubjectCoverage = input.requireFullSubjectCoverage ?? true;
   const decoded = decodeStatement(input.envelope);
   failures.push(...decoded.failures);
@@ -1478,7 +1478,7 @@ export const verifyWave1PocAttestation = async (
     if (signatureCount > 0) {
       failures.push({
         code: "signature_unsigned_envelope_carries_signatures",
-        reference: WAVE1_POC_ATTESTATION_ARTIFACT_FILENAME,
+        reference: WAVE1_VALIDATION_ATTESTATION_ARTIFACT_FILENAME,
         message: "unsigned envelope must carry zero signatures",
       });
     } else {
@@ -1487,7 +1487,7 @@ export const verifyWave1PocAttestation = async (
     if (input.bundle !== undefined) {
       failures.push({
         code: "bundle_envelope_mismatch",
-        reference: WAVE1_POC_ATTESTATION_BUNDLE_FILENAME,
+        reference: WAVE1_VALIDATION_ATTESTATION_BUNDLE_FILENAME,
         message: "unsigned mode must not produce a Sigstore bundle",
       });
     }
@@ -1495,7 +1495,7 @@ export const verifyWave1PocAttestation = async (
     if (signatureCount === 0) {
       failures.push({
         code: "signature_required",
-        reference: WAVE1_POC_ATTESTATION_ARTIFACT_FILENAME,
+        reference: WAVE1_VALIDATION_ATTESTATION_ARTIFACT_FILENAME,
         message: "sigstore mode requires at least one signature",
       });
     }
@@ -1503,7 +1503,7 @@ export const verifyWave1PocAttestation = async (
     if (input.bundle === undefined) {
       failures.push({
         code: "bundle_missing",
-        reference: WAVE1_POC_ATTESTATION_BUNDLE_FILENAME,
+        reference: WAVE1_VALIDATION_ATTESTATION_BUNDLE_FILENAME,
         message: "sigstore mode requires the matching Sigstore bundle",
       });
     } else {
@@ -1514,7 +1514,7 @@ export const verifyWave1PocAttestation = async (
       if (sha256OfBytes(bundleEnvelopeBytes) !== sha256OfBytes(envelopeBytes)) {
         failures.push({
           code: "bundle_envelope_mismatch",
-          reference: WAVE1_POC_ATTESTATION_BUNDLE_FILENAME,
+          reference: WAVE1_VALIDATION_ATTESTATION_BUNDLE_FILENAME,
           message:
             "bundle.dsseEnvelope does not match the standalone DSSE envelope",
         });
@@ -1533,7 +1533,7 @@ export const verifyWave1PocAttestation = async (
     if (publicKey === undefined) {
       failures.push({
         code: "bundle_public_key_missing",
-        reference: WAVE1_POC_ATTESTATION_BUNDLE_FILENAME,
+        reference: WAVE1_VALIDATION_ATTESTATION_BUNDLE_FILENAME,
         message: "sigstore mode requires verification public key material",
       });
     } else if (signatureCount > 0) {
@@ -1543,7 +1543,7 @@ export const verifyWave1PocAttestation = async (
       } catch {
         failures.push({
           code: "envelope_payload_decode_failed",
-          reference: WAVE1_POC_ATTESTATION_ARTIFACT_FILENAME,
+          reference: WAVE1_VALIDATION_ATTESTATION_ARTIFACT_FILENAME,
           message: "envelope.payload is not canonical base64",
         });
         return {
@@ -1555,7 +1555,7 @@ export const verifyWave1PocAttestation = async (
         };
       }
       const pae = encodeDssePreAuth(
-        WAVE1_POC_ATTESTATION_PAYLOAD_TYPE,
+        WAVE1_VALIDATION_ATTESTATION_PAYLOAD_TYPE,
         payloadBytes,
       );
       const sigFailures = verifySignaturesAgainstPublicKey(
@@ -1577,9 +1577,9 @@ export const verifyWave1PocAttestation = async (
   };
 };
 
-export interface VerifyWave1PocAttestationFromDiskOptions {
-  expectedSigningMode: Wave1PocAttestationSigningMode;
-  publicKey?: Wave1PocAttestationPublicKeyMaterial;
+export interface VerifyWave1ValidationAttestationFromDiskOptions {
+  expectedSigningMode: Wave1ValidationAttestationSigningMode;
+  publicKey?: Wave1ValidationAttestationPublicKeyMaterial;
   requireFullSubjectCoverage?: boolean;
 }
 
@@ -1606,20 +1606,20 @@ const readJsonFile = async (
 /**
  * Convenience wrapper: read the in-toto envelope (and bundle when in
  * `sigstore` mode) from `<runDir>/evidence/...`, then call
- * `verifyWave1PocAttestation`. Throws only when the envelope file is
+ * `verifyWave1ValidationAttestation`. Throws only when the envelope file is
  * missing or unparseable; tampering with the file content is reported
  * via the returned `failures` array.
  */
-export const verifyWave1PocAttestationFromDisk = async (
+export const verifyWave1ValidationAttestationFromDisk = async (
   runDir: string,
-  manifest: Wave1PocEvidenceManifest,
+  manifest: Wave1ValidationEvidenceManifest,
   manifestSha256: string,
-  options: VerifyWave1PocAttestationFromDiskOptions,
-): Promise<Wave1PocAttestationVerificationResult> => {
+  options: VerifyWave1ValidationAttestationFromDiskOptions,
+): Promise<Wave1ValidationAttestationVerificationResult> => {
   const attestationPath = join(
     runDir,
-    WAVE1_POC_ATTESTATIONS_DIRECTORY,
-    WAVE1_POC_ATTESTATION_ARTIFACT_FILENAME,
+    WAVE1_VALIDATION_ATTESTATIONS_DIRECTORY,
+    WAVE1_VALIDATION_ATTESTATION_ARTIFACT_FILENAME,
   );
   const envelopeRead = await readJsonFile(attestationPath);
   if (!envelopeRead.ok) {
@@ -1634,7 +1634,7 @@ export const verifyWave1PocAttestationFromDisk = async (
             envelopeRead.reason === "missing"
               ? "envelope_unparseable"
               : "envelope_unparseable",
-          reference: WAVE1_POC_ATTESTATION_ARTIFACT_FILENAME,
+          reference: WAVE1_VALIDATION_ATTESTATION_ARTIFACT_FILENAME,
           message:
             envelopeRead.reason === "missing"
               ? `attestation envelope not found at ${attestationPath}`
@@ -1643,14 +1643,14 @@ export const verifyWave1PocAttestationFromDisk = async (
       ],
     };
   }
-  const envelope = envelopeRead.value as Wave1PocAttestationDsseEnvelope;
+  const envelope = envelopeRead.value as Wave1ValidationAttestationDsseEnvelope;
 
-  let bundle: Wave1PocAttestationBundle | undefined;
+  let bundle: Wave1ValidationAttestationBundle | undefined;
   if (options.expectedSigningMode === "sigstore") {
     const bundlePath = join(
       runDir,
-      WAVE1_POC_SIGNATURES_DIRECTORY,
-      WAVE1_POC_ATTESTATION_BUNDLE_FILENAME,
+      WAVE1_VALIDATION_SIGNATURES_DIRECTORY,
+      WAVE1_VALIDATION_ATTESTATION_BUNDLE_FILENAME,
     );
     const bundleRead = await readJsonFile(bundlePath);
     if (!bundleRead.ok) {
@@ -1664,7 +1664,7 @@ export const verifyWave1PocAttestationFromDisk = async (
         failures: [
           {
             code: "bundle_missing",
-            reference: WAVE1_POC_ATTESTATION_BUNDLE_FILENAME,
+            reference: WAVE1_VALIDATION_ATTESTATION_BUNDLE_FILENAME,
             message:
               bundleRead.reason === "missing"
                 ? `Sigstore bundle not found at ${bundlePath}`
@@ -1673,10 +1673,10 @@ export const verifyWave1PocAttestationFromDisk = async (
         ],
       };
     }
-    bundle = bundleRead.value as Wave1PocAttestationBundle;
+    bundle = bundleRead.value as Wave1ValidationAttestationBundle;
   }
 
-  return verifyWave1PocAttestation({
+  return verifyWave1ValidationAttestation({
     envelope,
     manifest,
     manifestSha256,
@@ -1697,20 +1697,20 @@ export const verifyWave1PocAttestationFromDisk = async (
  * given signing mode. Useful for callers that want to attest the
  * attestation files themselves (e.g., as evidence-manifest artifacts).
  */
-export const listWave1PocAttestationArtifactPaths = (
-  signingMode: Wave1PocAttestationSigningMode,
+export const listWave1ValidationAttestationArtifactPaths = (
+  signingMode: Wave1ValidationAttestationSigningMode,
 ): string[] => {
   const paths = [
-    `${WAVE1_POC_ATTESTATIONS_DIRECTORY}/${WAVE1_POC_ATTESTATION_ARTIFACT_FILENAME}`,
+    `${WAVE1_VALIDATION_ATTESTATIONS_DIRECTORY}/${WAVE1_VALIDATION_ATTESTATION_ARTIFACT_FILENAME}`,
   ];
   if (signingMode === "sigstore") {
     paths.push(
-      `${WAVE1_POC_SIGNATURES_DIRECTORY}/${WAVE1_POC_ATTESTATION_BUNDLE_FILENAME}`,
+      `${WAVE1_VALIDATION_SIGNATURES_DIRECTORY}/${WAVE1_VALIDATION_ATTESTATION_BUNDLE_FILENAME}`,
     );
   }
   return paths;
 };
 
-export const computeWave1PocAttestationEnvelopeDigest = (
-  envelope: Wave1PocAttestationDsseEnvelope,
+export const computeWave1ValidationAttestationEnvelopeDigest = (
+  envelope: Wave1ValidationAttestationDsseEnvelope,
 ): string => sha256OfBytes(utf8(canonicalJson(envelope)));

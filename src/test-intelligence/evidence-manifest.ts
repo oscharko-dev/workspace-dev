@@ -1,7 +1,8 @@
 /**
- * Wave 1 POC evidence manifest builder + verifier (Issue #1366).
+ * Wave 1 Validation evidence manifest builder + verifier (Issue #1366).
  *
- * The manifest is an attestation of the artifacts a POC run produced:
+ * The manifest is an attestation of the artifacts a validation fixture run
+ * produced:
  * for each artifact it stores the SHA-256 of the on-disk byte stream and
  * the byte length, plus the contract / template / schema / policy / model
  * identities that were active during the run. The manifest carries a
@@ -38,15 +39,15 @@ import {
   TEST_INTELLIGENCE_CONTRACT_VERSION,
   TEST_INTELLIGENCE_PROMPT_TEMPLATE_VERSION,
   VISUAL_SIDECAR_SCHEMA_VERSION,
-  WAVE1_POC_EVIDENCE_MANIFEST_ARTIFACT_FILENAME,
-  WAVE1_POC_EVIDENCE_MANIFEST_DIGEST_FILENAME,
-  WAVE1_POC_EVIDENCE_MANIFEST_SCHEMA_VERSION,
+  WAVE1_VALIDATION_EVIDENCE_MANIFEST_ARTIFACT_FILENAME,
+  WAVE1_VALIDATION_EVIDENCE_MANIFEST_DIGEST_FILENAME,
+  WAVE1_VALIDATION_EVIDENCE_MANIFEST_SCHEMA_VERSION,
   type ActiveModelBinding,
   type AgentModelBinding,
-  type Wave1PocEvidenceArtifact,
-  type Wave1PocEvidenceArtifactCategory,
-  type Wave1PocEvidenceManifest,
-  type Wave1PocEvidenceVerificationResult,
+  type Wave1ValidationEvidenceArtifact,
+  type Wave1ValidationEvidenceArtifactCategory,
+  type Wave1ValidationEvidenceManifest,
+  type Wave1ValidationEvidenceVerificationResult,
   type MultiSourceSourceProvenanceRecord,
   type VisualSidecarCaptureIdentity,
 } from "../contracts/index.js";
@@ -110,7 +111,7 @@ const hasLoneSurrogate = (value: string): boolean => {
  * "invalid filename" string. The boolean form `isSafeArtifactPath` is
  * preserved for the verifier hot path where the reason is irrelevant.
  */
-export const validateWave1PocEvidenceArtifactPath = (
+export const validateWave1ValidationEvidenceArtifactPath = (
   value: string,
 ):
   | { ok: true }
@@ -164,7 +165,7 @@ export const validateWave1PocEvidenceArtifactPath = (
 
 const REASON_DIAGNOSTIC: Record<
   Exclude<
-    ReturnType<typeof validateWave1PocEvidenceArtifactPath>,
+    ReturnType<typeof validateWave1ValidationEvidenceArtifactPath>,
     { ok: true }
   >["reason"],
   string
@@ -181,20 +182,20 @@ const REASON_DIAGNOSTIC: Record<
 };
 
 const isSafeArtifactPath = (value: string): boolean =>
-  validateWave1PocEvidenceArtifactPath(value).ok;
+  validateWave1ValidationEvidenceArtifactPath(value).ok;
 
-export const formatWave1PocEvidenceArtifactPathForDiagnostic = (
+export const formatWave1ValidationEvidenceArtifactPathForDiagnostic = (
   value: string,
 ): string => JSON.stringify(value).replaceAll("\u007f", "\\u007f");
 
-export const resolveWave1PocEvidenceArtifactPath = (
+export const resolveWave1ValidationEvidenceArtifactPath = (
   rootDir: string,
   filename: string,
 ): string => {
-  const check = validateWave1PocEvidenceArtifactPath(filename);
+  const check = validateWave1ValidationEvidenceArtifactPath(filename);
   if (!check.ok) {
     throw new RangeError(
-      `invalid artifact filename ${formatWave1PocEvidenceArtifactPathForDiagnostic(filename)}: ${REASON_DIAGNOSTIC[check.reason]}`,
+      `invalid artifact filename ${formatWave1ValidationEvidenceArtifactPathForDiagnostic(filename)}: ${REASON_DIAGNOSTIC[check.reason]}`,
     );
   }
   const root = resolve(rootDir);
@@ -205,7 +206,7 @@ export const resolveWave1PocEvidenceArtifactPath = (
     (relativePath.startsWith("..") || isAbsolute(relativePath))
   ) {
     throw new RangeError(
-      `artifact filename escapes run dir ${formatWave1PocEvidenceArtifactPathForDiagnostic(filename)}`,
+      `artifact filename escapes run dir ${formatWave1ValidationEvidenceArtifactPathForDiagnostic(filename)}`,
     );
   }
   return resolved;
@@ -216,15 +217,15 @@ export interface BuildEvidenceArtifactRecord {
   filename: string;
   /** Raw bytes that were/will be persisted. */
   bytes: Uint8Array | Buffer;
-  category: Wave1PocEvidenceArtifactCategory;
+  category: Wave1ValidationEvidenceArtifactCategory;
 }
 
-export interface BuildWave1PocEvidenceManifestInput {
+export interface BuildWave1ValidationEvidenceManifestInput {
   fixtureId: string;
   jobId: string;
   generatedAt: string;
   /** Identities of the deployments behind the run. */
-  modelDeployments: Wave1PocEvidenceManifest["modelDeployments"];
+  modelDeployments: Wave1ValidationEvidenceManifest["modelDeployments"];
   policyProfileId: string;
   policyProfileVersion: string;
   exportProfileId: string;
@@ -237,7 +238,7 @@ export interface BuildWave1PocEvidenceManifestInput {
   /** Each artifact byte stream attested by this manifest. */
   artifacts: ReadonlyArray<BuildEvidenceArtifactRecord>;
   /** Direct visual-sidecar summary when the opt-in sidecar path ran. */
-  visualSidecar?: Wave1PocEvidenceManifest["visualSidecar"];
+  visualSidecar?: Wave1ValidationEvidenceManifest["visualSidecar"];
   /** Persisted capture identities for the opt-in visual sidecar path. */
   visualSidecarCaptureIdentities?: readonly VisualSidecarCaptureIdentity[];
   /** Active model-binding summary attested for this run. */
@@ -267,12 +268,12 @@ const cloneActiveModelBinding = (
 ): ActiveModelBinding => {
   if (typeof binding.providerId !== "string" || binding.providerId.length === 0) {
     throw new RangeError(
-      "buildWave1PocEvidenceManifest: activeModelBindings.providerId must be a non-empty string",
+      "buildWave1ValidationEvidenceManifest: activeModelBindings.providerId must be a non-empty string",
     );
   }
   if (typeof binding.modelId !== "string" || binding.modelId.length === 0) {
     throw new RangeError(
-      "buildWave1PocEvidenceManifest: activeModelBindings.modelId must be a non-empty string",
+      "buildWave1ValidationEvidenceManifest: activeModelBindings.modelId must be a non-empty string",
     );
   }
   if (
@@ -280,7 +281,7 @@ const cloneActiveModelBinding = (
     binding.inferenceProfileId.length === 0
   ) {
     throw new RangeError(
-      "buildWave1PocEvidenceManifest: activeModelBindings.inferenceProfileId must be a non-empty string when provided",
+      "buildWave1ValidationEvidenceManifest: activeModelBindings.inferenceProfileId must be a non-empty string when provided",
     );
   }
   if (
@@ -288,7 +289,7 @@ const cloneActiveModelBinding = (
     binding.ictRegisterRef.length === 0
   ) {
     throw new RangeError(
-      "buildWave1PocEvidenceManifest: activeModelBindings.ictRegisterRef must be a non-empty string when provided",
+      "buildWave1ValidationEvidenceManifest: activeModelBindings.ictRegisterRef must be a non-empty string when provided",
     );
   }
   return Object.freeze({
@@ -333,27 +334,27 @@ const sha256OfBytes = (bytes: Uint8Array): string => {
 const sha256OfString = (value: string): string =>
   createHash("sha256").update(value, "utf8").digest("hex");
 
-export const computeWave1PocEvidenceManifestDigest = (
-  manifest: Wave1PocEvidenceManifest,
+export const computeWave1ValidationEvidenceManifestDigest = (
+  manifest: Wave1ValidationEvidenceManifest,
 ): string => sha256OfString(canonicalJson(manifest));
 
 const omitManifestIntegrity = (
-  manifest: Wave1PocEvidenceManifest,
-): Omit<Wave1PocEvidenceManifest, "manifestIntegrity"> => {
+  manifest: Wave1ValidationEvidenceManifest,
+): Omit<Wave1ValidationEvidenceManifest, "manifestIntegrity"> => {
   const unsignedManifest = { ...manifest };
   delete unsignedManifest.manifestIntegrity;
   return unsignedManifest;
 };
 
-const computeWave1PocEvidenceManifestIntegrityHash = (
-  manifest: Wave1PocEvidenceManifest,
+const computeWave1ValidationEvidenceManifestIntegrityHash = (
+  manifest: Wave1ValidationEvidenceManifest,
 ): string => sha256OfString(canonicalJson(omitManifestIntegrity(manifest)));
 
-const withWave1PocEvidenceManifestIntegrity = (
-  manifest: Wave1PocEvidenceManifest,
-): Wave1PocEvidenceManifest => {
+const withWave1ValidationEvidenceManifestIntegrity = (
+  manifest: Wave1ValidationEvidenceManifest,
+): Wave1ValidationEvidenceManifest => {
   const unsignedManifest = omitManifestIntegrity(manifest);
-  const hash = computeWave1PocEvidenceManifestIntegrityHash(manifest);
+  const hash = computeWave1ValidationEvidenceManifestIntegrityHash(manifest);
   return {
     ...unsignedManifest,
     manifestIntegrity: { algorithm: "sha256", hash },
@@ -367,9 +368,9 @@ const withWave1PocEvidenceManifestIntegrity = (
  * "stamp" a final value (e.g. when the manifest itself appears in the
  * list as the last record).
  */
-export const buildWave1PocEvidenceManifest = (
-  input: BuildWave1PocEvidenceManifestInput,
-): Wave1PocEvidenceManifest => {
+export const buildWave1ValidationEvidenceManifest = (
+  input: BuildWave1ValidationEvidenceManifestInput,
+): Wave1ValidationEvidenceManifest => {
   for (const hashField of [
     "promptHash",
     "schemaHash",
@@ -378,7 +379,7 @@ export const buildWave1PocEvidenceManifest = (
   ] as const) {
     if (!HEX64.test(input[hashField])) {
       throw new RangeError(
-        `buildWave1PocEvidenceManifest: ${hashField} must be a sha256 hex string`,
+        `buildWave1ValidationEvidenceManifest: ${hashField} must be a sha256 hex string`,
       );
     }
   }
@@ -387,17 +388,17 @@ export const buildWave1PocEvidenceManifest = (
     !HEX64.test(input.visualSidecar.resultArtifactSha256)
   ) {
     throw new RangeError(
-      "buildWave1PocEvidenceManifest: visualSidecar.resultArtifactSha256 must be a sha256 hex string",
+      "buildWave1ValidationEvidenceManifest: visualSidecar.resultArtifactSha256 must be a sha256 hex string",
     );
   }
 
-  const seen = new Map<string, Wave1PocEvidenceArtifact>();
+  const seen = new Map<string, Wave1ValidationEvidenceArtifact>();
   for (const record of input.artifacts) {
     const filename = record.filename;
-    const check = validateWave1PocEvidenceArtifactPath(filename);
+    const check = validateWave1ValidationEvidenceArtifactPath(filename);
     if (!check.ok) {
       throw new RangeError(
-        `buildWave1PocEvidenceManifest: invalid artifact filename ${formatWave1PocEvidenceArtifactPathForDiagnostic(record.filename)} — ${REASON_DIAGNOSTIC[check.reason]}`,
+        `buildWave1ValidationEvidenceManifest: invalid artifact filename ${formatWave1ValidationEvidenceArtifactPathForDiagnostic(record.filename)} — ${REASON_DIAGNOSTIC[check.reason]}`,
       );
     }
     const bytes = toBytes(record.bytes);
@@ -429,8 +430,8 @@ export const buildWave1PocEvidenceManifest = (
       ? cloneActiveModelBindings(input.activeModelBindings)
       : undefined;
 
-  const manifest: Wave1PocEvidenceManifest = {
-    schemaVersion: WAVE1_POC_EVIDENCE_MANIFEST_SCHEMA_VERSION,
+  const manifest: Wave1ValidationEvidenceManifest = {
+    schemaVersion: WAVE1_VALIDATION_EVIDENCE_MANIFEST_SCHEMA_VERSION,
     contractVersion: CONTRACT_VERSION,
     testIntelligenceContractVersion: TEST_INTELLIGENCE_CONTRACT_VERSION,
     fixtureId: input.fixtureId,
@@ -468,29 +469,29 @@ export const buildWave1PocEvidenceManifest = (
     rawScreenshotsIncluded: false,
     imagePayloadSentToTestGeneration: false,
   };
-  return withWave1PocEvidenceManifestIntegrity(manifest);
+  return withWave1ValidationEvidenceManifestIntegrity(manifest);
 };
 
 const SOURCE_ID_RE = /^[A-Za-z0-9._-]{1,64}$/;
 
 const validateAndCloneSourceProvenanceRecords = (input: {
   records: readonly MultiSourceSourceProvenanceRecord[];
-  artifacts: readonly Wave1PocEvidenceArtifact[];
+  artifacts: readonly Wave1ValidationEvidenceArtifact[];
 }): MultiSourceSourceProvenanceRecord[] => {
   return input.records.map((record, index) => {
     if (!SOURCE_ID_RE.test(record.sourceId)) {
       throw new RangeError(
-        `buildWave1PocEvidenceManifest: sourceProvenanceRecords[${index}].sourceId is invalid`,
+        `buildWave1ValidationEvidenceManifest: sourceProvenanceRecords[${index}].sourceId is invalid`,
       );
     }
     if (!HEX64.test(record.contentHash)) {
       throw new RangeError(
-        `buildWave1PocEvidenceManifest: sourceProvenanceRecords[${index}].contentHash must be a sha256 hex string`,
+        `buildWave1ValidationEvidenceManifest: sourceProvenanceRecords[${index}].contentHash must be a sha256 hex string`,
       );
     }
     if (!Number.isSafeInteger(record.bytes) || record.bytes < 0) {
       throw new RangeError(
-        `buildWave1PocEvidenceManifest: sourceProvenanceRecords[${index}].bytes must be a non-negative safe integer`,
+        `buildWave1ValidationEvidenceManifest: sourceProvenanceRecords[${index}].bytes must be a non-negative safe integer`,
       );
     }
     const matchingArtifact = input.artifacts.find(
@@ -502,7 +503,7 @@ const validateAndCloneSourceProvenanceRecords = (input: {
     );
     if (matchingArtifact === undefined) {
       throw new RangeError(
-        `buildWave1PocEvidenceManifest: sourceProvenanceRecords[${index}] is not backed by a matching source_ir artifact`,
+        `buildWave1ValidationEvidenceManifest: sourceProvenanceRecords[${index}] is not backed by a matching source_ir artifact`,
       );
     }
     const cloned: MultiSourceSourceProvenanceRecord = {
@@ -521,8 +522,8 @@ const validateAndCloneSourceProvenanceRecords = (input: {
   });
 };
 
-export interface WriteWave1PocEvidenceManifestInput {
-  manifest: Wave1PocEvidenceManifest;
+export interface WriteWave1ValidationEvidenceManifestInput {
+  manifest: Wave1ValidationEvidenceManifest;
   destinationDir: string;
 }
 
@@ -530,36 +531,36 @@ export interface WriteWave1PocEvidenceManifestInput {
  * Persist the evidence manifest and its digest witness atomically using
  * `${path}.${pid}.tmp` renames.
  */
-export const writeWave1PocEvidenceManifest = async (
-  input: WriteWave1PocEvidenceManifestInput,
+export const writeWave1ValidationEvidenceManifest = async (
+  input: WriteWave1ValidationEvidenceManifestInput,
 ): Promise<string> => {
   await mkdir(input.destinationDir, { recursive: true });
   const path = join(
     input.destinationDir,
-    WAVE1_POC_EVIDENCE_MANIFEST_ARTIFACT_FILENAME,
+    WAVE1_VALIDATION_EVIDENCE_MANIFEST_ARTIFACT_FILENAME,
   );
-  const manifest = withWave1PocEvidenceManifestIntegrity(input.manifest);
+  const manifest = withWave1ValidationEvidenceManifestIntegrity(input.manifest);
   const serialized = canonicalJson(manifest);
   const tmp = `${path}.${process.pid}.tmp`;
   await writeFile(tmp, serialized, "utf8");
   await rename(tmp, path);
   const digestPath = join(
     input.destinationDir,
-    WAVE1_POC_EVIDENCE_MANIFEST_DIGEST_FILENAME,
+    WAVE1_VALIDATION_EVIDENCE_MANIFEST_DIGEST_FILENAME,
   );
   const digestTmp = `${digestPath}.${process.pid}.tmp`;
   await writeFile(
     digestTmp,
-    `${computeWave1PocEvidenceManifestDigest(manifest)}\n`,
+    `${computeWave1ValidationEvidenceManifestDigest(manifest)}\n`,
     "utf8",
   );
   await rename(digestTmp, digestPath);
   return path;
 };
 
-export interface VerifyWave1PocEvidenceManifestInput {
+export interface VerifyWave1ValidationEvidenceManifestInput {
   /** The manifest payload (typically the in-memory copy or a re-parsed file). */
-  manifest: Wave1PocEvidenceManifest;
+  manifest: Wave1ValidationEvidenceManifest;
   /** The directory containing the artifacts the manifest attests. */
   artifactsDir: string;
   /**
@@ -577,18 +578,18 @@ export interface VerifyWave1PocEvidenceManifestInput {
   rejectUnexpected?: boolean;
 }
 
-export class Wave1PocEvidenceManifestLoadError extends Error {
+export class Wave1ValidationEvidenceManifestLoadError extends Error {
   readonly reason:
     | "manifest_missing"
     | "manifest_unparseable"
     | "manifest_schema_mismatch";
 
   constructor(
-    reason: Wave1PocEvidenceManifestLoadError["reason"],
+    reason: Wave1ValidationEvidenceManifestLoadError["reason"],
     manifestPath: string,
   ) {
-    super(`verifyWave1PocEvidenceFromDisk: ${reason} in ${manifestPath}`);
-    this.name = "Wave1PocEvidenceManifestLoadError";
+    super(`verifyWave1ValidationEvidenceFromDisk: ${reason} in ${manifestPath}`);
+    this.name = "Wave1ValidationEvidenceManifestLoadError";
     this.reason = reason;
   }
 }
@@ -599,10 +600,10 @@ const isENOENT = (err: unknown): boolean =>
   (err as { code?: string }).code === "ENOENT";
 
 const markManifestMutated = (
-  result: Wave1PocEvidenceVerificationResult,
-): Wave1PocEvidenceVerificationResult => {
+  result: Wave1ValidationEvidenceVerificationResult,
+): Wave1ValidationEvidenceVerificationResult => {
   const mutated = new Set(result.mutated);
-  mutated.add(WAVE1_POC_EVIDENCE_MANIFEST_ARTIFACT_FILENAME);
+  mutated.add(WAVE1_VALIDATION_EVIDENCE_MANIFEST_ARTIFACT_FILENAME);
   return {
     ...result,
     ok: false,
@@ -615,7 +616,7 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
 
 const isVerifiableArtifact = (
   artifact: unknown,
-): artifact is Wave1PocEvidenceArtifact => {
+): artifact is Wave1ValidationEvidenceArtifact => {
   if (!isRecord(artifact)) return false;
   return (
     typeof artifact["filename"] === "string" &&
@@ -633,8 +634,8 @@ const hasOnlyKnownKeys = (
   allowed: ReadonlySet<string>,
 ): boolean => Object.keys(value).every((key) => allowed.has(key));
 
-export const validateWave1PocEvidenceManifestMetadata = (
-  manifest: Wave1PocEvidenceManifest,
+export const validateWave1ValidationEvidenceManifestMetadata = (
+  manifest: Wave1ValidationEvidenceManifest,
 ): string[] => {
   const issues: string[] = [];
   const raw = manifest as unknown as Record<string, unknown>;
@@ -830,7 +831,7 @@ export const validateWave1PocEvidenceManifestMetadata = (
 };
 
 const evaluateManifestIntegrity = (
-  manifest: Wave1PocEvidenceManifest,
+  manifest: Wave1ValidationEvidenceManifest,
 ):
   | {
       algorithm: "sha256";
@@ -839,7 +840,7 @@ const evaluateManifestIntegrity = (
       ok: boolean;
     }
   | undefined => {
-  const actualHash = computeWave1PocEvidenceManifestIntegrityHash(manifest);
+  const actualHash = computeWave1ValidationEvidenceManifestIntegrityHash(manifest);
   const raw = manifest as unknown as Record<string, unknown>;
   const integrity = raw["manifestIntegrity"];
 
@@ -886,33 +887,33 @@ const evaluateManifestIntegrity = (
  * throws on a missing or mutated artifact — verification is fail-closed
  * but observability-rich, so callers can log the precise failure mode.
  */
-export const verifyWave1PocEvidenceManifest = async (
-  input: VerifyWave1PocEvidenceManifestInput,
-): Promise<Wave1PocEvidenceVerificationResult> => {
+export const verifyWave1ValidationEvidenceManifest = async (
+  input: VerifyWave1ValidationEvidenceManifestInput,
+): Promise<Wave1ValidationEvidenceVerificationResult> => {
   const missing: string[] = [];
   const mutated: string[] = [];
   const resized: string[] = [];
-  const metadataIssues = validateWave1PocEvidenceManifestMetadata(
+  const metadataIssues = validateWave1ValidationEvidenceManifestMetadata(
     input.manifest,
   );
   const manifestIntegrity = evaluateManifestIntegrity(input.manifest);
   if (metadataIssues.length > 0) {
-    mutated.push(WAVE1_POC_EVIDENCE_MANIFEST_ARTIFACT_FILENAME);
+    mutated.push(WAVE1_VALIDATION_EVIDENCE_MANIFEST_ARTIFACT_FILENAME);
   }
   if (
     manifestIntegrity !== undefined &&
     !manifestIntegrity.ok &&
-    !mutated.includes(WAVE1_POC_EVIDENCE_MANIFEST_ARTIFACT_FILENAME)
+    !mutated.includes(WAVE1_VALIDATION_EVIDENCE_MANIFEST_ARTIFACT_FILENAME)
   ) {
-    mutated.push(WAVE1_POC_EVIDENCE_MANIFEST_ARTIFACT_FILENAME);
+    mutated.push(WAVE1_VALIDATION_EVIDENCE_MANIFEST_ARTIFACT_FILENAME);
   }
   if (
     input.expectedManifestSha256 !== undefined &&
-    computeWave1PocEvidenceManifestDigest(input.manifest) !==
+    computeWave1ValidationEvidenceManifestDigest(input.manifest) !==
       input.expectedManifestSha256 &&
-    !mutated.includes(WAVE1_POC_EVIDENCE_MANIFEST_ARTIFACT_FILENAME)
+    !mutated.includes(WAVE1_VALIDATION_EVIDENCE_MANIFEST_ARTIFACT_FILENAME)
   ) {
-    mutated.push(WAVE1_POC_EVIDENCE_MANIFEST_ARTIFACT_FILENAME);
+    mutated.push(WAVE1_VALIDATION_EVIDENCE_MANIFEST_ARTIFACT_FILENAME);
   }
 
   const artifacts = Array.isArray(input.manifest.artifacts)
@@ -920,7 +921,7 @@ export const verifyWave1PocEvidenceManifest = async (
     : [];
 
   for (const artifact of artifacts) {
-    const path = resolveWave1PocEvidenceArtifactPath(
+    const path = resolveWave1ValidationEvidenceArtifactPath(
       input.artifactsDir,
       artifact.filename,
     );
@@ -954,8 +955,8 @@ export const verifyWave1PocEvidenceManifest = async (
       if (!isENOENT(err)) throw err;
     }
     unexpected = entries
-      .filter((name) => name !== WAVE1_POC_EVIDENCE_MANIFEST_ARTIFACT_FILENAME)
-      .filter((name) => name !== WAVE1_POC_EVIDENCE_MANIFEST_DIGEST_FILENAME)
+      .filter((name) => name !== WAVE1_VALIDATION_EVIDENCE_MANIFEST_ARTIFACT_FILENAME)
+      .filter((name) => name !== WAVE1_VALIDATION_EVIDENCE_MANIFEST_DIGEST_FILENAME)
       .filter((name) => !attested.has(name))
       .sort();
   }
@@ -981,23 +982,23 @@ export const verifyWave1PocEvidenceManifest = async (
  * surrounding directory. Throws if the manifest file is missing or
  * unparseable; for those cases there is nothing useful to verify.
  */
-export const verifyWave1PocEvidenceFromDisk = async (
+export const verifyWave1ValidationEvidenceFromDisk = async (
   artifactsDir: string,
   options: { rejectUnexpected?: boolean; expectedManifestSha256?: string } = {},
 ): Promise<{
-  manifest: Wave1PocEvidenceManifest;
-  result: Wave1PocEvidenceVerificationResult;
+  manifest: Wave1ValidationEvidenceManifest;
+  result: Wave1ValidationEvidenceVerificationResult;
 }> => {
   const manifestPath = join(
     artifactsDir,
-    WAVE1_POC_EVIDENCE_MANIFEST_ARTIFACT_FILENAME,
+    WAVE1_VALIDATION_EVIDENCE_MANIFEST_ARTIFACT_FILENAME,
   );
   let raw: string;
   try {
     raw = await readFile(manifestPath, "utf8");
   } catch (err) {
     if (isENOENT(err)) {
-      throw new Wave1PocEvidenceManifestLoadError(
+      throw new Wave1ValidationEvidenceManifestLoadError(
         "manifest_missing",
         manifestPath,
       );
@@ -1008,28 +1009,28 @@ export const verifyWave1PocEvidenceFromDisk = async (
   try {
     parsedRaw = JSON.parse(raw) as Record<string, unknown>;
   } catch {
-    throw new Wave1PocEvidenceManifestLoadError(
+    throw new Wave1ValidationEvidenceManifestLoadError(
       "manifest_unparseable",
       manifestPath,
     );
   }
   if (
-    parsedRaw["schemaVersion"] !== WAVE1_POC_EVIDENCE_MANIFEST_SCHEMA_VERSION ||
+    parsedRaw["schemaVersion"] !== WAVE1_VALIDATION_EVIDENCE_MANIFEST_SCHEMA_VERSION ||
     parsedRaw["testIntelligenceContractVersion"] !==
       TEST_INTELLIGENCE_CONTRACT_VERSION
   ) {
-    throw new Wave1PocEvidenceManifestLoadError(
+    throw new Wave1ValidationEvidenceManifestLoadError(
       "manifest_schema_mismatch",
       manifestPath,
     );
   }
-  const parsed = parsedRaw as unknown as Wave1PocEvidenceManifest;
+  const parsed = parsedRaw as unknown as Wave1ValidationEvidenceManifest;
   let expectedManifestSha256 = options.expectedManifestSha256;
   let digestWitnessInvalid = false;
   if (expectedManifestSha256 === undefined) {
     try {
       const rawDigest = await readFile(
-        join(artifactsDir, WAVE1_POC_EVIDENCE_MANIFEST_DIGEST_FILENAME),
+        join(artifactsDir, WAVE1_VALIDATION_EVIDENCE_MANIFEST_DIGEST_FILENAME),
         "utf8",
       );
       const digest = rawDigest.trim();
@@ -1046,7 +1047,7 @@ export const verifyWave1PocEvidenceFromDisk = async (
       }
     }
   }
-  const result = await verifyWave1PocEvidenceManifest({
+  const result = await verifyWave1ValidationEvidenceManifest({
     manifest: parsed,
     artifactsDir,
     ...(options.rejectUnexpected !== undefined

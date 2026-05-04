@@ -122,7 +122,7 @@ no existing artifact paths change.
 │   ├── coverage-report.json
 │   ├── review-events.json
 │   ├── export-report.json
-│   └── wave1-poc-evidence-manifest.json
+│   └── wave1-validation-evidence-manifest.json
 │
 └── sources/                         ← NEW (Wave 4)
     ├── <sourceId-jira>/

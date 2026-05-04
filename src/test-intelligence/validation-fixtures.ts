@@ -1,7 +1,7 @@
 /**
- * Wave 1 POC fixture loader (Issue #1366).
+ * Wave 1 Validation fixture loader (Issue #1366).
  *
- * The Wave 1 end-to-end POC is gated by two public, fully synthetic Figma
+ * The Wave 1 validation harness is gated by two public, fully synthetic Figma
  * fixtures plus their visual sidecar companions. This module is the
  * single source of truth for resolving a fixture id into the on-disk
  * inputs the harness consumes:
@@ -20,21 +20,21 @@ import { join } from "node:path";
 
 import {
   ALLOWED_VISUAL_SIDECAR_INPUT_MIME_TYPES,
-  WAVE1_POC_FIXTURE_IDS,
+  WAVE1_VALIDATION_FIXTURE_IDS,
   type VisualScreenDescription,
   type VisualSidecarCaptureInput,
   type VisualSidecarInputMimeType,
-  type Wave1PocFixtureId,
+  type Wave1ValidationFixtureId,
 } from "../contracts/index.js";
 import type { IntentDerivationFigmaInput } from "./intent-derivation.js";
 
 const FIXTURES_DIR = join(new URL(".", import.meta.url).pathname, "fixtures");
 
 /** Re-export for convenience so callers do not have to reach into `contracts`. */
-export { WAVE1_POC_FIXTURE_IDS, type Wave1PocFixtureId };
+export { WAVE1_VALIDATION_FIXTURE_IDS, type Wave1ValidationFixtureId };
 
-export interface LoadedWave1PocFixture {
-  fixtureId: Wave1PocFixtureId;
+export interface LoadedWave1ValidationFixture {
+  fixtureId: Wave1ValidationFixtureId;
   /** Normalised Figma input ready for `deriveBusinessTestIntentIr`. */
   figma: IntentDerivationFigmaInput;
   /** Visual sidecar batch covering the same screens as `figma`. */
@@ -50,34 +50,34 @@ export interface LoadedWave1PocFixture {
 }
 
 /**
- * Whether `value` matches one of the registered Wave 1 POC fixture ids.
+ * Whether `value` matches one of the registered Wave 1 Validation fixture ids.
  * Useful at API boundaries that accept user-provided strings.
  */
-export const isWave1PocFixtureId = (
+export const isWave1ValidationFixtureId = (
   value: unknown,
-): value is Wave1PocFixtureId => {
+): value is Wave1ValidationFixtureId => {
   return (
     typeof value === "string" &&
-    (WAVE1_POC_FIXTURE_IDS as readonly string[]).includes(value)
+    (WAVE1_VALIDATION_FIXTURE_IDS as readonly string[]).includes(value)
   );
 };
 
 /**
- * Load a Wave 1 POC fixture into the shapes the harness consumes. Reads
+ * Load a Wave 1 Validation fixture into the shapes the harness consumes. Reads
  * the JSON files lazily and returns plain in-memory objects; both files
- * are required and `fixtureId` MUST belong to `WAVE1_POC_FIXTURE_IDS`.
+ * are required and `fixtureId` MUST belong to `WAVE1_VALIDATION_FIXTURE_IDS`.
  *
- * `loadWave1PocFixture` does NOT validate the visual sidecar against the
+ * `loadWave1ValidationFixture` does NOT validate the visual sidecar against the
  * sidecar gate — that is the harness's job, since validation is one of
- * the steps the POC exercises.
+ * the steps the production validation flow exercises.
  */
-export const loadWave1PocFixture = async (
-  fixtureId: Wave1PocFixtureId,
-): Promise<LoadedWave1PocFixture> => {
-  if (!isWave1PocFixtureId(fixtureId)) {
+export const loadWave1ValidationFixture = async (
+  fixtureId: Wave1ValidationFixtureId,
+): Promise<LoadedWave1ValidationFixture> => {
+  if (!isWave1ValidationFixtureId(fixtureId)) {
     throw new RangeError(
-      `loadWave1PocFixture: unknown fixtureId "${String(fixtureId)}". ` +
-        `Allowed: ${WAVE1_POC_FIXTURE_IDS.join(", ")}.`,
+      `loadWave1ValidationFixture: unknown fixtureId "${String(fixtureId)}". ` +
+        `Allowed: ${WAVE1_VALIDATION_FIXTURE_IDS.join(", ")}.`,
     );
   }
   const figmaPath = join(FIXTURES_DIR, `${fixtureId}.figma.json`);
@@ -121,21 +121,21 @@ export const loadWave1PocFixture = async (
  * fixtures directory.
  */
 const CAPTURE_FIXTURE_MIME: Record<
-  Wave1PocFixtureId,
+  Wave1ValidationFixtureId,
   VisualSidecarInputMimeType
 > = {
-  "poc-onboarding": "image/png",
-  "poc-payment-auth": "image/png",
+  "validation-onboarding": "image/png",
+  "validation-payment-auth": "image/png",
 };
 
 /**
- * Result of loading the capture-side fixture for a Wave 1 POC fixture.
+ * Result of loading the capture-side fixture for a Wave 1 Validation fixture.
  * The captures cover every screen in the companion `*.visual.json`
  * fixture so the harness's visual-sidecar pipeline can exercise the
  * same screens the deterministic mock-only path emits.
  */
-export interface LoadedWave1PocCaptureFixture {
-  fixtureId: Wave1PocFixtureId;
+export interface LoadedWave1ValidationCaptureFixture {
+  fixtureId: Wave1ValidationFixtureId;
   captures: VisualSidecarCaptureInput[];
   /** SHA-256 hex of the original PNG bytes that backs every capture. */
   imageSha256: string;
@@ -144,7 +144,7 @@ export interface LoadedWave1PocCaptureFixture {
 }
 
 /**
- * Load the deterministic capture fixture for a Wave 1 POC fixture. Each
+ * Load the deterministic capture fixture for a Wave 1 Validation fixture. Each
  * capture reuses the same single PNG so the test surface is small and
  * the byte stream is byte-stable across runs. The screen ids match
  * the companion `*.visual.json` fixture verbatim, which is what lets
@@ -153,12 +153,12 @@ export interface LoadedWave1PocCaptureFixture {
  * Throws if the capture image is missing — callers should fail loudly
  * rather than silently fall back to the fixture-only path.
  */
-export const loadWave1PocCaptureFixture = async (
-  fixtureId: Wave1PocFixtureId,
-): Promise<LoadedWave1PocCaptureFixture> => {
-  if (!isWave1PocFixtureId(fixtureId)) {
+export const loadWave1ValidationCaptureFixture = async (
+  fixtureId: Wave1ValidationFixtureId,
+): Promise<LoadedWave1ValidationCaptureFixture> => {
+  if (!isWave1ValidationFixtureId(fixtureId)) {
     throw new RangeError(
-      `loadWave1PocCaptureFixture: unknown fixtureId "${String(fixtureId)}"`,
+      `loadWave1ValidationCaptureFixture: unknown fixtureId "${String(fixtureId)}"`,
     );
   }
   const mimeType = CAPTURE_FIXTURE_MIME[fixtureId];
@@ -168,7 +168,7 @@ export const loadWave1PocCaptureFixture = async (
     )
   ) {
     throw new RangeError(
-      `loadWave1PocCaptureFixture: unsupported mime type for ${fixtureId}`,
+      `loadWave1ValidationCaptureFixture: unsupported mime type for ${fixtureId}`,
     );
   }
   const imagePath = join(FIXTURES_DIR, `${fixtureId}.capture.png`);

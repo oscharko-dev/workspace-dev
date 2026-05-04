@@ -8,17 +8,17 @@ import test from "node:test";
 import {
   CONTRACT_VERSION,
   TEST_INTELLIGENCE_CONTRACT_VERSION,
-  WAVE1_POC_EVIDENCE_MANIFEST_ARTIFACT_FILENAME,
-  WAVE1_POC_EVIDENCE_MANIFEST_DIGEST_FILENAME,
-  WAVE1_POC_EVIDENCE_MANIFEST_SCHEMA_VERSION,
-  type Wave1PocEvidenceManifest,
+  WAVE1_VALIDATION_EVIDENCE_MANIFEST_ARTIFACT_FILENAME,
+  WAVE1_VALIDATION_EVIDENCE_MANIFEST_DIGEST_FILENAME,
+  WAVE1_VALIDATION_EVIDENCE_MANIFEST_SCHEMA_VERSION,
+  type Wave1ValidationEvidenceManifest,
 } from "../contracts/index.js";
 import {
-  buildWave1PocEvidenceManifest,
-  computeWave1PocEvidenceManifestDigest,
-  verifyWave1PocEvidenceFromDisk,
-  verifyWave1PocEvidenceManifest,
-  writeWave1PocEvidenceManifest,
+  buildWave1ValidationEvidenceManifest,
+  computeWave1ValidationEvidenceManifestDigest,
+  verifyWave1ValidationEvidenceFromDisk,
+  verifyWave1ValidationEvidenceManifest,
+  writeWave1ValidationEvidenceManifest,
   type BuildEvidenceArtifactRecord,
 } from "./evidence-manifest.js";
 import { canonicalJson } from "./content-hash.js";
@@ -29,7 +29,7 @@ const GENERATED_AT = "2026-04-25T10:00:00.000Z";
 const utf8 = (value: string): Uint8Array => new TextEncoder().encode(value);
 
 const manifestIntegrityPayloadDigest = (
-  manifest: ReturnType<typeof buildWave1PocEvidenceManifest>,
+  manifest: ReturnType<typeof buildWave1ValidationEvidenceManifest>,
 ): string => {
   const payload = { ...manifest };
   delete payload.manifestIntegrity;
@@ -38,8 +38,8 @@ const manifestIntegrityPayloadDigest = (
 
 const baseInput = (
   artifacts: ReadonlyArray<BuildEvidenceArtifactRecord>,
-): Parameters<typeof buildWave1PocEvidenceManifest>[0] => ({
-  fixtureId: "poc-onboarding",
+): Parameters<typeof buildWave1ValidationEvidenceManifest>[0] => ({
+  fixtureId: "validation-onboarding",
   jobId: "job-1366",
   generatedAt: GENERATED_AT,
   modelDeployments: {
@@ -58,7 +58,7 @@ const baseInput = (
 });
 
 test("evidence-manifest: stamps schema/contract versions and hard invariants", () => {
-  const manifest = buildWave1PocEvidenceManifest(
+  const manifest = buildWave1ValidationEvidenceManifest(
     baseInput([
       {
         filename: "alpha.json",
@@ -69,7 +69,7 @@ test("evidence-manifest: stamps schema/contract versions and hard invariants", (
   );
   assert.equal(
     manifest.schemaVersion,
-    WAVE1_POC_EVIDENCE_MANIFEST_SCHEMA_VERSION,
+    WAVE1_VALIDATION_EVIDENCE_MANIFEST_SCHEMA_VERSION,
   );
   assert.equal(manifest.contractVersion, CONTRACT_VERSION);
   assert.equal(
@@ -87,7 +87,7 @@ test("evidence-manifest: stamps schema/contract versions and hard invariants", (
 });
 
 test("evidence-manifest: records direct visual sidecar summary when supplied", () => {
-  const manifest = buildWave1PocEvidenceManifest({
+  const manifest = buildWave1ValidationEvidenceManifest({
     ...baseInput([
       {
         filename: "visual-sidecar-result.json",
@@ -112,7 +112,7 @@ test("evidence-manifest: records direct visual sidecar summary when supplied", (
 });
 
 test("evidence-manifest: records visual sidecar capture identities when supplied", () => {
-  const manifest = buildWave1PocEvidenceManifest({
+  const manifest = buildWave1ValidationEvidenceManifest({
     ...baseInput([
       {
         filename: "visual-sidecar-result.json",
@@ -141,7 +141,7 @@ test("evidence-manifest: records visual sidecar capture identities when supplied
 });
 
 test("evidence-manifest: records active model bindings when supplied", () => {
-  const manifest = buildWave1PocEvidenceManifest({
+  const manifest = buildWave1ValidationEvidenceManifest({
     ...baseInput([
       {
         filename: "alpha.json",
@@ -184,7 +184,7 @@ test("evidence-manifest: records active model bindings when supplied", () => {
 test("evidence-manifest: rejects blank active model binding ictRegisterRef", () => {
   assert.throws(
     () =>
-      buildWave1PocEvidenceManifest({
+      buildWave1ValidationEvidenceManifest({
         ...baseInput([
           {
             filename: "alpha.json",
@@ -206,7 +206,7 @@ test("evidence-manifest: rejects blank active model binding ictRegisterRef", () 
 });
 
 test("evidence-manifest: artifacts are sorted by filename and de-duplicated", () => {
-  const manifest = buildWave1PocEvidenceManifest(
+  const manifest = buildWave1ValidationEvidenceManifest(
     baseInput([
       { filename: "b.json", bytes: utf8("first"), category: "validation" },
       { filename: "a.json", bytes: utf8("first"), category: "validation" },
@@ -225,7 +225,7 @@ test("evidence-manifest: artifacts are sorted by filename and de-duplicated", ()
 });
 
 test("evidence-manifest: accepts safe relative artifact paths", () => {
-  const manifest = buildWave1PocEvidenceManifest(
+  const manifest = buildWave1ValidationEvidenceManifest(
     baseInput([
       {
         filename: "finops/budget-report.json",
@@ -238,11 +238,11 @@ test("evidence-manifest: accepts safe relative artifact paths", () => {
 });
 
 test("evidence-manifest: verifies safe nested artifact paths on disk", async () => {
-  const dir = await mkdtemp(join(tmpdir(), "ti-poc-evidence-"));
+  const dir = await mkdtemp(join(tmpdir(), "ti-validation-evidence-"));
   try {
     await mkdir(join(dir, "finops"), { recursive: true });
     await writeFile(join(dir, "finops", "budget-report.json"), "x");
-    const manifest = buildWave1PocEvidenceManifest(
+    const manifest = buildWave1ValidationEvidenceManifest(
       baseInput([
         {
           filename: "finops/budget-report.json",
@@ -251,7 +251,7 @@ test("evidence-manifest: verifies safe nested artifact paths on disk", async () 
         },
       ]),
     );
-    const result = await verifyWave1PocEvidenceManifest({
+    const result = await verifyWave1ValidationEvidenceManifest({
       manifest,
       artifactsDir: dir,
     });
@@ -268,7 +268,7 @@ test("evidence-manifest: verifies safe nested artifact paths on disk", async () 
 test("evidence-manifest: refuses unsafe relative filenames", () => {
   assert.throws(
     () =>
-      buildWave1PocEvidenceManifest(
+      buildWave1ValidationEvidenceManifest(
         baseInput([
           {
             filename: "../alpha.json",
@@ -289,7 +289,7 @@ test("evidence-manifest: refuses Windows-shaped artifact paths on every host", (
   ]) {
     assert.throws(
       () =>
-        buildWave1PocEvidenceManifest(
+        buildWave1ValidationEvidenceManifest(
           baseInput([
             {
               filename,
@@ -307,7 +307,7 @@ test("evidence-manifest: refuses Windows-shaped artifact paths on every host", (
 test("evidence-manifest: invalid filename diagnostics escape unsafe code units", () => {
   let newlineError: Error | undefined;
   try {
-    buildWave1PocEvidenceManifest(
+    buildWave1ValidationEvidenceManifest(
       baseInput([
         {
           filename: "line\nbreak.json",
@@ -328,7 +328,7 @@ test("evidence-manifest: invalid filename diagnostics escape unsafe code units",
 
   let delError: Error | undefined;
   try {
-    buildWave1PocEvidenceManifest(
+    buildWave1ValidationEvidenceManifest(
       baseInput([
         {
           filename: "del\u007f.json",
@@ -346,7 +346,7 @@ test("evidence-manifest: invalid filename diagnostics escape unsafe code units",
 
   assert.throws(
     () =>
-      buildWave1PocEvidenceManifest(
+      buildWave1ValidationEvidenceManifest(
         baseInput([
           {
             filename: `bad${String.fromCharCode(0xd800)}name.json`,
@@ -362,7 +362,7 @@ test("evidence-manifest: invalid filename diagnostics escape unsafe code units",
 test("evidence-manifest: refuses non-sha256 hash inputs", () => {
   assert.throws(
     () =>
-      buildWave1PocEvidenceManifest({
+      buildWave1ValidationEvidenceManifest({
         ...baseInput([]),
         promptHash: "not-a-hash",
       }),
@@ -370,7 +370,7 @@ test("evidence-manifest: refuses non-sha256 hash inputs", () => {
   );
   assert.throws(
     () =>
-      buildWave1PocEvidenceManifest({
+      buildWave1ValidationEvidenceManifest({
         ...baseInput([]),
         visualSidecar: {
           selectedDeployment: "llama-4-maverick-vision",
@@ -384,7 +384,7 @@ test("evidence-manifest: refuses non-sha256 hash inputs", () => {
 });
 
 test("evidence-manifest: byte length and sha256 match the input bytes", () => {
-  const manifest = buildWave1PocEvidenceManifest(
+  const manifest = buildWave1ValidationEvidenceManifest(
     baseInput([
       { filename: "x.json", bytes: utf8("hello"), category: "validation" },
     ]),
@@ -394,10 +394,10 @@ test("evidence-manifest: byte length and sha256 match the input bytes", () => {
 });
 
 test("evidence-manifest: verify returns ok when artifacts match disk", async () => {
-  const dir = await mkdtemp(join(tmpdir(), "ti-poc-evidence-"));
+  const dir = await mkdtemp(join(tmpdir(), "ti-validation-evidence-"));
   await writeFile(join(dir, "alpha.json"), '{"a":1}');
   await writeFile(join(dir, "beta.json"), '{"b":2}');
-  const manifest = buildWave1PocEvidenceManifest(
+  const manifest = buildWave1ValidationEvidenceManifest(
     baseInput([
       {
         filename: "alpha.json",
@@ -407,7 +407,7 @@ test("evidence-manifest: verify returns ok when artifacts match disk", async () 
       { filename: "beta.json", bytes: utf8('{"b":2}'), category: "review" },
     ]),
   );
-  const result = await verifyWave1PocEvidenceManifest({
+  const result = await verifyWave1ValidationEvidenceManifest({
     manifest,
     artifactsDir: dir,
   });
@@ -418,9 +418,9 @@ test("evidence-manifest: verify returns ok when artifacts match disk", async () 
 });
 
 test("evidence-manifest: verify detects single-byte mutation fail-closed", async () => {
-  const dir = await mkdtemp(join(tmpdir(), "ti-poc-evidence-"));
+  const dir = await mkdtemp(join(tmpdir(), "ti-validation-evidence-"));
   await writeFile(join(dir, "alpha.json"), '{"a":1}');
-  const manifest = buildWave1PocEvidenceManifest(
+  const manifest = buildWave1ValidationEvidenceManifest(
     baseInput([
       {
         filename: "alpha.json",
@@ -431,7 +431,7 @@ test("evidence-manifest: verify detects single-byte mutation fail-closed", async
   );
   // Mutate one byte on disk after the manifest is built.
   await writeFile(join(dir, "alpha.json"), '{"a":2}');
-  const result = await verifyWave1PocEvidenceManifest({
+  const result = await verifyWave1ValidationEvidenceManifest({
     manifest,
     artifactsDir: dir,
   });
@@ -441,8 +441,8 @@ test("evidence-manifest: verify detects single-byte mutation fail-closed", async
 });
 
 test("evidence-manifest: verify reports missing artifact", async () => {
-  const dir = await mkdtemp(join(tmpdir(), "ti-poc-evidence-"));
-  const manifest = buildWave1PocEvidenceManifest(
+  const dir = await mkdtemp(join(tmpdir(), "ti-validation-evidence-"));
+  const manifest = buildWave1ValidationEvidenceManifest(
     baseInput([
       {
         filename: "alpha.json",
@@ -451,7 +451,7 @@ test("evidence-manifest: verify reports missing artifact", async () => {
       },
     ]),
   );
-  const result = await verifyWave1PocEvidenceManifest({
+  const result = await verifyWave1ValidationEvidenceManifest({
     manifest,
     artifactsDir: dir,
   });
@@ -461,9 +461,9 @@ test("evidence-manifest: verify reports missing artifact", async () => {
 });
 
 test("evidence-manifest: verify detects byte-length resize", async () => {
-  const dir = await mkdtemp(join(tmpdir(), "ti-poc-evidence-"));
+  const dir = await mkdtemp(join(tmpdir(), "ti-validation-evidence-"));
   await writeFile(join(dir, "alpha.json"), '{"a":111111}'); // 12 bytes vs manifest 7
-  const manifest = buildWave1PocEvidenceManifest(
+  const manifest = buildWave1ValidationEvidenceManifest(
     baseInput([
       {
         filename: "alpha.json",
@@ -472,7 +472,7 @@ test("evidence-manifest: verify detects byte-length resize", async () => {
       },
     ]),
   );
-  const result = await verifyWave1PocEvidenceManifest({
+  const result = await verifyWave1ValidationEvidenceManifest({
     manifest,
     artifactsDir: dir,
   });
@@ -482,10 +482,10 @@ test("evidence-manifest: verify detects byte-length resize", async () => {
 });
 
 test("evidence-manifest: verify reports unexpected files when rejectUnexpected", async () => {
-  const dir = await mkdtemp(join(tmpdir(), "ti-poc-evidence-"));
+  const dir = await mkdtemp(join(tmpdir(), "ti-validation-evidence-"));
   await writeFile(join(dir, "alpha.json"), '{"a":1}');
   await writeFile(join(dir, "stray.txt"), "stray");
-  const manifest = buildWave1PocEvidenceManifest(
+  const manifest = buildWave1ValidationEvidenceManifest(
     baseInput([
       {
         filename: "alpha.json",
@@ -494,7 +494,7 @@ test("evidence-manifest: verify reports unexpected files when rejectUnexpected",
       },
     ]),
   );
-  const result = await verifyWave1PocEvidenceManifest({
+  const result = await verifyWave1ValidationEvidenceManifest({
     manifest,
     artifactsDir: dir,
     rejectUnexpected: true,
@@ -504,10 +504,10 @@ test("evidence-manifest: verify reports unexpected files when rejectUnexpected",
 });
 
 test("evidence-manifest: malformed artifact metadata fails closed without throwing", async () => {
-  const dir = await mkdtemp(join(tmpdir(), "ti-poc-evidence-"));
+  const dir = await mkdtemp(join(tmpdir(), "ti-validation-evidence-"));
   await writeFile(join(dir, "alpha.json"), '{"a":1}');
   const manifest = {
-    ...buildWave1PocEvidenceManifest(
+    ...buildWave1ValidationEvidenceManifest(
       baseInput([
         {
           filename: "alpha.json",
@@ -517,9 +517,9 @@ test("evidence-manifest: malformed artifact metadata fails closed without throwi
       ]),
     ),
     artifacts: [null],
-  } as unknown as Wave1PocEvidenceManifest;
+  } as unknown as Wave1ValidationEvidenceManifest;
 
-  const result = await verifyWave1PocEvidenceManifest({
+  const result = await verifyWave1ValidationEvidenceManifest({
     manifest,
     artifactsDir: dir,
     rejectUnexpected: true,
@@ -527,15 +527,15 @@ test("evidence-manifest: malformed artifact metadata fails closed without throwi
 
   assert.equal(result.ok, false);
   assert.deepEqual(result.mutated, [
-    WAVE1_POC_EVIDENCE_MANIFEST_ARTIFACT_FILENAME,
+    WAVE1_VALIDATION_EVIDENCE_MANIFEST_ARTIFACT_FILENAME,
   ]);
   assert.deepEqual(result.unexpected, ["alpha.json"]);
 });
 
-test("evidence-manifest: write + verify round-trip via verifyWave1PocEvidenceFromDisk", async () => {
-  const dir = await mkdtemp(join(tmpdir(), "ti-poc-evidence-"));
+test("evidence-manifest: write + verify round-trip via verifyWave1ValidationEvidenceFromDisk", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "ti-validation-evidence-"));
   await writeFile(join(dir, "alpha.json"), '{"a":1}');
-  const manifest = buildWave1PocEvidenceManifest(
+  const manifest = buildWave1ValidationEvidenceManifest(
     baseInput([
       {
         filename: "alpha.json",
@@ -544,39 +544,39 @@ test("evidence-manifest: write + verify round-trip via verifyWave1PocEvidenceFro
       },
     ]),
   );
-  const path = await writeWave1PocEvidenceManifest({
+  const path = await writeWave1ValidationEvidenceManifest({
     manifest,
     destinationDir: dir,
   });
   assert.match(
     path,
-    new RegExp(`${WAVE1_POC_EVIDENCE_MANIFEST_ARTIFACT_FILENAME}$`),
+    new RegExp(`${WAVE1_VALIDATION_EVIDENCE_MANIFEST_ARTIFACT_FILENAME}$`),
   );
   const persistedRaw = await readFile(path, "utf8");
   // Persisted content is canonicalJson — re-parse and check shape.
   const reparsed = JSON.parse(persistedRaw);
   assert.equal(
     reparsed.schemaVersion,
-    WAVE1_POC_EVIDENCE_MANIFEST_SCHEMA_VERSION,
+    WAVE1_VALIDATION_EVIDENCE_MANIFEST_SCHEMA_VERSION,
   );
   const persistedDigest = await readFile(
-    join(dir, WAVE1_POC_EVIDENCE_MANIFEST_DIGEST_FILENAME),
+    join(dir, WAVE1_VALIDATION_EVIDENCE_MANIFEST_DIGEST_FILENAME),
     "utf8",
   );
   assert.equal(
     persistedDigest,
-    `${computeWave1PocEvidenceManifestDigest(manifest)}\n`,
+    `${computeWave1ValidationEvidenceManifestDigest(manifest)}\n`,
   );
 
-  const { result } = await verifyWave1PocEvidenceFromDisk(dir);
+  const { result } = await verifyWave1ValidationEvidenceFromDisk(dir);
   assert.equal(result.ok, true);
   assert.equal(result.manifestIntegrity?.ok, true);
 });
 
 test("evidence-manifest: default disk verifier detects valid metadata rewrites via digest witness", async () => {
-  const dir = await mkdtemp(join(tmpdir(), "ti-poc-evidence-"));
+  const dir = await mkdtemp(join(tmpdir(), "ti-validation-evidence-"));
   await writeFile(join(dir, "alpha.json"), '{"a":1}');
-  const manifest = buildWave1PocEvidenceManifest(
+  const manifest = buildWave1ValidationEvidenceManifest(
     baseInput([
       {
         filename: "alpha.json",
@@ -586,8 +586,8 @@ test("evidence-manifest: default disk verifier detects valid metadata rewrites v
     ]),
   );
   const expectedManifestSha256 =
-    computeWave1PocEvidenceManifestDigest(manifest);
-  const manifestPath = await writeWave1PocEvidenceManifest({
+    computeWave1ValidationEvidenceManifestDigest(manifest);
+  const manifestPath = await writeWave1ValidationEvidenceManifest({
     manifest,
     destinationDir: dir,
   });
@@ -602,10 +602,10 @@ test("evidence-manifest: default disk verifier detects valid metadata rewrites v
   };
   await writeFile(manifestPath, JSON.stringify(tampered), "utf8");
 
-  const { result } = await verifyWave1PocEvidenceFromDisk(dir);
+  const { result } = await verifyWave1ValidationEvidenceFromDisk(dir);
   assert.equal(result.ok, false);
   assert.deepEqual(result.mutated, [
-    WAVE1_POC_EVIDENCE_MANIFEST_ARTIFACT_FILENAME,
+    WAVE1_VALIDATION_EVIDENCE_MANIFEST_ARTIFACT_FILENAME,
   ]);
   assert.equal(result.manifestIntegrity?.ok, false);
   assert.equal(
@@ -617,18 +617,18 @@ test("evidence-manifest: default disk verifier detects valid metadata rewrites v
     manifest.manifestIntegrity?.hash,
   );
 
-  const explicit = await verifyWave1PocEvidenceFromDisk(dir, {
+  const explicit = await verifyWave1ValidationEvidenceFromDisk(dir, {
     expectedManifestSha256,
   });
   assert.deepEqual(explicit.result.mutated, [
-    WAVE1_POC_EVIDENCE_MANIFEST_ARTIFACT_FILENAME,
+    WAVE1_VALIDATION_EVIDENCE_MANIFEST_ARTIFACT_FILENAME,
   ]);
 });
 
 test("evidence-manifest: direct verifier detects valid-looking metadata rewrite via self-attestation", async () => {
-  const dir = await mkdtemp(join(tmpdir(), "ti-poc-evidence-"));
+  const dir = await mkdtemp(join(tmpdir(), "ti-validation-evidence-"));
   await writeFile(join(dir, "alpha.json"), '{"a":1}');
-  const manifest = buildWave1PocEvidenceManifest(
+  const manifest = buildWave1ValidationEvidenceManifest(
     baseInput([
       {
         filename: "alpha.json",
@@ -641,16 +641,16 @@ test("evidence-manifest: direct verifier detects valid-looking metadata rewrite 
     ...manifest,
     modelDeployments: { testGeneration: "gpt-oss-120b" },
     policyProfileId: "attacker-profile",
-  } as Wave1PocEvidenceManifest;
+  } as Wave1ValidationEvidenceManifest;
 
-  const result = await verifyWave1PocEvidenceManifest({
+  const result = await verifyWave1ValidationEvidenceManifest({
     manifest: tamperedManifest,
     artifactsDir: dir,
   });
 
   assert.equal(result.ok, false);
   assert.deepEqual(result.mutated, [
-    WAVE1_POC_EVIDENCE_MANIFEST_ARTIFACT_FILENAME,
+    WAVE1_VALIDATION_EVIDENCE_MANIFEST_ARTIFACT_FILENAME,
   ]);
   assert.equal(result.manifestIntegrity?.ok, false);
   assert.equal(
@@ -666,7 +666,7 @@ test("evidence-manifest: direct verifier detects valid-looking metadata rewrite 
 test("evidence-manifest: source provenance records are self-attested", async () => {
   const sourceIr = utf8('{"issueKey":"PAY-1442","summary":"Original"}');
   const sourceHash = createHash("sha256").update(sourceIr).digest("hex");
-  const manifest = buildWave1PocEvidenceManifest({
+  const manifest = buildWave1ValidationEvidenceManifest({
     ...baseInput([
       {
         filename: "sources/jira-1/jira-issue-ir.json",
@@ -714,13 +714,13 @@ test("evidence-manifest: source provenance records are self-attested", async () 
         bytes: sourceIr.byteLength + 1,
       },
     ],
-  } as Wave1PocEvidenceManifest;
+  } as Wave1ValidationEvidenceManifest;
 
-  const dir = await mkdtemp(join(tmpdir(), "ti-poc-evidence-"));
+  const dir = await mkdtemp(join(tmpdir(), "ti-validation-evidence-"));
   try {
     await mkdir(join(dir, "sources", "jira-1"), { recursive: true });
     await writeFile(join(dir, "sources", "jira-1", "jira-issue-ir.json"), sourceIr);
-    const result = await verifyWave1PocEvidenceManifest({
+    const result = await verifyWave1ValidationEvidenceManifest({
       manifest: tamperedManifest,
       artifactsDir: dir,
     });
@@ -735,7 +735,7 @@ test("evidence-manifest: source provenance must match an attested source_ir arti
   const sourceIr = utf8('{"issueKey":"PAY-1442","summary":"Original"}');
   assert.throws(
     () =>
-      buildWave1PocEvidenceManifest({
+      buildWave1ValidationEvidenceManifest({
         ...baseInput([
           {
             filename: "sources/jira-1/jira-issue-ir.json",
@@ -759,9 +759,9 @@ test("evidence-manifest: source provenance must match an attested source_ir arti
 });
 
 test("evidence-manifest: current manifest missing self-attestation fails closed", async () => {
-  const dir = await mkdtemp(join(tmpdir(), "ti-poc-evidence-"));
+  const dir = await mkdtemp(join(tmpdir(), "ti-validation-evidence-"));
   await writeFile(join(dir, "alpha.json"), '{"a":1}');
-  const manifest = buildWave1PocEvidenceManifest(
+  const manifest = buildWave1ValidationEvidenceManifest(
     baseInput([
       {
         filename: "alpha.json",
@@ -773,14 +773,14 @@ test("evidence-manifest: current manifest missing self-attestation fails closed"
   const manifestWithoutIntegrity = { ...manifest };
   delete manifestWithoutIntegrity.manifestIntegrity;
 
-  const result = await verifyWave1PocEvidenceManifest({
+  const result = await verifyWave1ValidationEvidenceManifest({
     manifest: manifestWithoutIntegrity,
     artifactsDir: dir,
   });
 
   assert.equal(result.ok, false);
   assert.deepEqual(result.mutated, [
-    WAVE1_POC_EVIDENCE_MANIFEST_ARTIFACT_FILENAME,
+    WAVE1_VALIDATION_EVIDENCE_MANIFEST_ARTIFACT_FILENAME,
   ]);
   assert.equal(result.manifestIntegrity?.ok, false);
   assert.equal(result.manifestIntegrity?.expectedHash, undefined);
@@ -788,9 +788,9 @@ test("evidence-manifest: current manifest missing self-attestation fails closed"
 });
 
 test("evidence-manifest: missing digest witness fails closed on disk verify", async () => {
-  const dir = await mkdtemp(join(tmpdir(), "ti-poc-evidence-"));
+  const dir = await mkdtemp(join(tmpdir(), "ti-validation-evidence-"));
   await writeFile(join(dir, "alpha.json"), '{"a":1}');
-  const manifest = buildWave1PocEvidenceManifest(
+  const manifest = buildWave1ValidationEvidenceManifest(
     baseInput([
       {
         filename: "alpha.json",
@@ -799,16 +799,16 @@ test("evidence-manifest: missing digest witness fails closed on disk verify", as
       },
     ]),
   );
-  await writeWave1PocEvidenceManifest({
+  await writeWave1ValidationEvidenceManifest({
     manifest,
     destinationDir: dir,
   });
-  await rm(join(dir, WAVE1_POC_EVIDENCE_MANIFEST_DIGEST_FILENAME));
+  await rm(join(dir, WAVE1_VALIDATION_EVIDENCE_MANIFEST_DIGEST_FILENAME));
 
-  const { result } = await verifyWave1PocEvidenceFromDisk(dir);
+  const { result } = await verifyWave1ValidationEvidenceFromDisk(dir);
 
   assert.equal(result.ok, false);
   assert.deepEqual(result.mutated, [
-    WAVE1_POC_EVIDENCE_MANIFEST_ARTIFACT_FILENAME,
+    WAVE1_VALIDATION_EVIDENCE_MANIFEST_ARTIFACT_FILENAME,
   ]);
 });

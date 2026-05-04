@@ -13,11 +13,11 @@ import {
   TEST_INTELLIGENCE_PROMPT_TEMPLATE_VERSION,
   VISUAL_SIDECAR_SCHEMA_VERSION,
   type TestCasePolicyProfile,
-  type Wave1PocAttestationSigningMode,
+  type Wave1ValidationAttestationSigningMode,
 } from "../contracts/index.js";
 import { redactHighRiskSecrets } from "../secret-redaction.js";
 import { canonicalJson, sha256Hex } from "./content-hash.js";
-import { listWave1PocAttestationArtifactPaths } from "./evidence-attestation.js";
+import { listWave1ValidationAttestationArtifactPaths } from "./evidence-attestation.js";
 import {
   GENERATED_TEST_CASE_LIST_SCHEMA_NAME,
   computeGeneratedTestCaseListSchemaHash,
@@ -190,7 +190,7 @@ export interface MlBomSummary {
 
 export interface BuildMlBomDocumentInput {
   generatedAt: string;
-  signingMode: Wave1PocAttestationSigningMode;
+  signingMode: Wave1ValidationAttestationSigningMode;
   policyProfile: TestCasePolicyProfile;
   modelBindings: ReadonlyArray<MlBomModelBinding>;
 }
@@ -364,7 +364,7 @@ export const buildMlBomDocument = (
   const policyBundleHash = sha256Hex(input.policyProfile);
   const promptTemplateHashes = computePromptTemplateHashes();
   const systemPromptHashes = computeSystemPromptHashes();
-  const attestationRefs = listWave1PocAttestationArtifactPaths(input.signingMode);
+  const attestationRefs = listWave1ValidationAttestationArtifactPaths(input.signingMode);
   const sortedBindings = [...input.modelBindings].sort(
     (left, right) =>
       ML_BOM_ROLE_ORDER.indexOf(left.role) - ML_BOM_ROLE_ORDER.indexOf(right.role),

@@ -139,7 +139,7 @@ describe("InspectorTestIntelligencePage — empty + loading + ready", () => {
         payload: {
           jobs: [
             {
-              jobId: "poc-onboarding",
+              jobId: "validation-onboarding",
               hasArtifacts: { generatedTestCases: true },
             },
           ],
@@ -150,7 +150,7 @@ describe("InspectorTestIntelligencePage — empty + loading + ready", () => {
     await waitFor(() => {
       expect(screen.getByTestId("ti-page-job-picker")).toBeInTheDocument();
       expect(
-        screen.getByTestId("ti-job-picker-row-poc-onboarding"),
+        screen.getByTestId("ti-job-picker-row-validation-onboarding"),
       ).toBeInTheDocument();
     });
   });
