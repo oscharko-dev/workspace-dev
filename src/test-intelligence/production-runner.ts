@@ -83,6 +83,7 @@ import { sanitizeErrorMessage } from "../error-sanitization.js";
 import { canonicalJson } from "./content-hash.js";
 import {
   buildWave1PocEvidenceManifest,
+  verifyWave1PocEvidenceFromDisk,
   writeWave1PocEvidenceManifest,
 } from "./evidence-manifest.js";
 import {
@@ -96,6 +97,7 @@ import {
   createFinOpsUsageRecorder,
   writeFinOpsBudgetReport,
 } from "./finops-report.js";
+import { computePerSourceCostBreakdownHashFromReport } from "./per-source-cost.js";
 import type {
   ProductionRunnerEvent,
   ProductionRunnerEventSink,
@@ -126,6 +128,11 @@ import {
 import { cloneEuBankingDefaultProfile } from "./policy-profile.js";
 import { writeAgentRoleRunArtifact } from "./agent-role-run-artifact.js";
 import {
+  AGENT_HARNESS_CHECKPOINT_ROOT_PARENT_HASH,
+  readAgentHarnessCheckpointChain,
+  summarizeAgentHarnessCheckpointChain,
+} from "./agent-harness-checkpoint.js";
+import {
   runAgentHarnessStep,
   type AgentHarnessAttemptResult,
   type AgentHarnessErrorClass,
@@ -135,6 +142,12 @@ import {
   type RunAgentHarnessStepResult,
 } from "./agent-harness.js";
 import { writeGenealogyArtifact } from "./genealogy.js";
+import {
+  buildProductionRunnerEvidenceSeal,
+  PRODUCTION_RUNNER_EVIDENCE_SEAL_ARTIFACT_FILENAME,
+  serializeProductionRunnerEvidenceSeal,
+  verifyProductionRunnerEvidenceSealFromDisk,
+} from "./production-runner-evidence.js";
 import {
   normalizeUntrustedContent,
   writeUntrustedContentNormalizationReport,
@@ -445,6 +458,7 @@ export interface RunFigmaToQcTestCasesResult {
     intent: string;
     compiledPrompt: string;
     untrustedContentNormalizationReport: string;
+    evidenceSeal: string;
     visualSidecarResult?: string;
     visualSidecarValidationReport?: string;
     agentRoleRun: string;
@@ -551,6 +565,9 @@ export const runFigmaToQcTestCases = async (
   let visualSidecarArtifactPath: string | undefined;
   let visualSidecarResult: VisualSidecarResult | undefined;
   let visualSidecarArtifactBytes: Uint8Array | undefined;
+  let visualSidecarArtifact:
+    | Awaited<ReturnType<typeof writeVisualSidecarResultArtifact>>["artifact"]
+    | undefined;
   let visualSidecarRefusal:
     | { failureClass: VisualSidecarFailureClass; failureMessage: string }
     | undefined;
@@ -629,6 +646,7 @@ export const runFigmaToQcTestCases = async (
       jobId: input.jobId,
       generatedAt: input.generatedAt,
     });
+    visualSidecarArtifact = sidecarArtifact.artifact;
     visualSidecarArtifactBytes = sidecarArtifact.bytes;
     if (sidecarResult.outcome !== "success") {
       // Issue #1772 AC #4: pre-flight failures are caller bugs and still fail
@@ -1102,6 +1120,18 @@ export const runFigmaToQcTestCases = async (
           ]),
     ],
   });
+  const harnessCheckpointSummary =
+    harnessArtifactPath !== undefined
+      ? summarizeAgentHarnessCheckpointChain(
+          await readAgentHarnessCheckpointChain({
+            runDir: artifactDir,
+            jobId: input.jobId,
+          }),
+        )
+      : {
+          headOfChainHash: AGENT_HARNESS_CHECKPOINT_ROOT_PARENT_HASH,
+          chainLength: 0,
+        };
 
   // 10. Customer Markdown.
   const customerLabel = resolveCustomerLabel(input, figmaFile);
@@ -1138,6 +1168,43 @@ export const runFigmaToQcTestCases = async (
           resultArtifactSha256: sha256OfBytes(visualSidecarArtifactBytes),
         }
       : undefined;
+  const finopsArtifactFilename = `finops/${finopsWritten.filename}`;
+  const productionRunnerEvidenceSealPath = join(
+    artifactDir,
+    PRODUCTION_RUNNER_EVIDENCE_SEAL_ARTIFACT_FILENAME,
+  );
+  const productionRunnerEvidenceSealBytes = Buffer.from(
+    serializeProductionRunnerEvidenceSeal(
+      buildProductionRunnerEvidenceSeal({
+        jobId: input.jobId,
+        generatedAt: input.generatedAt,
+        harnessArtifactFilenames: [
+          "agent-role-runs/test_generation.json",
+          ...(contextBudgetReportPath !== undefined &&
+          compiled.contextBudgetReport !== undefined
+            ? [
+                `${CONTEXT_BUDGET_ARTIFACT_DIRECTORY}/${compiled.contextBudgetReport.roleStepId}.json`,
+              ]
+            : []),
+          ...(harnessArtifactPath !== undefined
+            ? [harnessArtifactPath.slice(artifactDir.length + 1)]
+            : []),
+        ],
+        headOfChainHash: harnessCheckpointSummary.headOfChainHash,
+        chainLength: harnessCheckpointSummary.chainLength,
+        finopsArtifactFilename,
+        bySourceHash: computePerSourceCostBreakdownHashFromReport(finopsReport),
+        genealogyDagHash: sha256OfBytes(genealogyArtifact.bytes),
+        visualEvidenceHashes:
+          visualSidecarArtifact?.visualEvidenceRefs?.map((ref) => ({
+            screenId: ref.screenId,
+            modelDeployment: ref.modelDeployment,
+            evidenceHash: ref.evidenceHash,
+          })) ?? [],
+      }),
+    ),
+    "utf8",
+  );
   const modelDeployments = {
     testGeneration: PRODUCTION_RUNNER_TEST_GENERATION_DEPLOYMENT,
     ...(input.llm.bundle !== undefined
@@ -1239,9 +1306,14 @@ export const runFigmaToQcTestCases = async (
         category: "manifest",
       },
       {
-        filename: `finops/${finopsWritten.filename}`,
+        filename: finopsArtifactFilename,
         bytes: finopsWritten.bytes,
         category: "finops",
+      },
+      {
+        filename: PRODUCTION_RUNNER_EVIDENCE_SEAL_ARTIFACT_FILENAME,
+        bytes: productionRunnerEvidenceSealBytes,
+        category: "manifest",
       },
       ...(visualSidecarArtifactBytes === undefined
         ? []
@@ -1264,10 +1336,46 @@ export const runFigmaToQcTestCases = async (
       })),
     ],
   });
-  await writeWave1PocEvidenceManifest({
-    manifest: evidenceManifest,
-    destinationDir: artifactDir,
+  try {
+    await writeAtomicBytes(
+      productionRunnerEvidenceSealPath,
+      productionRunnerEvidenceSealBytes,
+    );
+    await writeWave1PocEvidenceManifest({
+      manifest: evidenceManifest,
+      destinationDir: artifactDir,
+    });
+  } catch (err) {
+    throw new ProductionRunnerError({
+      failureClass: "PERSIST_FAILED",
+      message: `Could not seal production-runner evidence: ${sanitizeErrorMessage({ error: err, fallback: "filesystem failure" })}`,
+      retryable: false,
+      cause: err,
+    });
+  }
+  const manifestVerification = await verifyWave1PocEvidenceFromDisk(artifactDir, {
+    rejectUnexpected: false,
   });
+  if (!manifestVerification.result.ok) {
+    throw new ProductionRunnerError({
+      failureClass: "PERSIST_FAILED",
+      message:
+        "Production-runner evidence manifest failed immediate post-write verification.",
+      retryable: false,
+    });
+  }
+  const sealVerification = await verifyProductionRunnerEvidenceSealFromDisk({
+    artifactsDir: artifactDir,
+    jobId: input.jobId,
+  });
+  if (sealVerification.failures.length > 0) {
+    throw new ProductionRunnerError({
+      failureClass: "PERSIST_FAILED",
+      message:
+        "Production-runner evidence seal failed immediate post-write verification.",
+      retryable: false,
+    });
+  }
 
   emit({
     phase: "export_complete",
@@ -1277,13 +1385,17 @@ export const runFigmaToQcTestCases = async (
       perCaseFiles: perCasePaths.length,
     },
   });
-  // Production runner does not yet seal evidence (separate emitter in
-  // evidence-attestation.ts). Emit a `evidence_sealed` placeholder so the
-  // UI timeline shows a final phase regardless.
   emit({
     phase: "evidence_sealed",
     timestamp: monotonicMs(),
-    details: { sealed: false, reason: "production_runner_evidence_deferred" },
+    details: {
+      sealed: true,
+      sealArtifact: PRODUCTION_RUNNER_EVIDENCE_SEAL_ARTIFACT_FILENAME,
+      manifest: "wave1-poc-evidence-manifest.json",
+      headOfChainHash: harnessCheckpointSummary.headOfChainHash,
+      chainLength: harnessCheckpointSummary.chainLength,
+      bySourceHash: computePerSourceCostBreakdownHashFromReport(finopsReport),
+    },
   });
   // Emit final FinOps summary derived from the LLM gateway response. The
   // dedicated FinOps recorder runs separately for in-process callers; this
@@ -1339,6 +1451,7 @@ export const runFigmaToQcTestCases = async (
       compiledPrompt: compiledPromptPath,
       untrustedContentNormalizationReport:
         untrustedContentNormalizationReportPath,
+      evidenceSeal: productionRunnerEvidenceSealPath,
       ...(visualSidecarArtifactPath !== undefined
         ? { visualSidecarResult: visualSidecarArtifactPath }
         : {}),
