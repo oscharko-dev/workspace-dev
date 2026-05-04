@@ -5979,6 +5979,13 @@ export const WAVE1_VALIDATION_EVAL_REPORT_SCHEMA_VERSION = "1.0.0" as const;
 export const WAVE1_VALIDATION_EVAL_REPORT_ARTIFACT_FILENAME =
   "wave1-validation-eval-report.json";
 
+/** Schema version for the AgentLessons eval report envelope. */
+export const AGENT_LESSONS_EVAL_REPORT_SCHEMA_VERSION = "1.0.0" as const;
+
+/** Filename used for the AgentLessons eval report artifact. */
+export const AGENT_LESSONS_EVAL_REPORT_ARTIFACT_FILENAME =
+  "agent-lessons-eval-report.json" as const;
+
 /**
  * Allowed Wave 1 Validation fixture identifiers.
  *

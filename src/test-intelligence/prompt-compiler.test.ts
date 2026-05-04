@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import {
@@ -13,6 +14,11 @@ import {
   type CompiledPromptVisualBinding,
   type VisualScreenDescription,
 } from "../contracts/index.js";
+import {
+  scanLessons,
+  writeAgentLesson,
+  type AgentLessonRecord,
+} from "./agent-lessons-memdir.js";
 import {
   deriveBusinessTestIntentIr,
   type IntentDerivationFigmaInput,
@@ -70,6 +76,33 @@ const loadFixture = async (): Promise<{
     visual,
   });
   return { intent, visual };
+};
+
+const buildApprovedLesson = async (): Promise<AgentLessonRecord> => {
+  const runDir = await mkdtemp(join(tmpdir(), "prompt-lesson-"));
+  try {
+    const writeResult = await writeAgentLesson({
+      runDir,
+      id: "lesson-iban-guardrails",
+      name: "iban-guardrails",
+      description: "Enforce IBAN masking and invalid-input rejection.",
+      type: "regulatory",
+      policyProfileScope: ["eu-banking-default"],
+      approvedBy: ["reviewer@workspace-dev"],
+      body: "Always reject malformed IBAN values.\nMask IBAN-like values in evidence.\n",
+      nowMs: Date.parse("2026-05-04T00:00:00.000Z"),
+    });
+    assert.equal(writeResult.ok, true);
+    const manifest = await scanLessons({
+      runDir,
+      nowMs: Date.parse("2026-05-04T00:00:00.000Z"),
+    });
+    const lesson = manifest[0];
+    assert.ok(lesson);
+    return lesson!;
+  } finally {
+    await rm(runDir, { recursive: true, force: true });
+  }
 };
 
 test("compiler: produces stable inputHash, promptHash, schemaHash, cacheKey", async () => {
@@ -188,6 +221,48 @@ test("compiler: hash differs when fixture image hash changes", async () => {
     policyBundleVersion: "policy-2026-04-25",
   });
   assert.notEqual(a.request.hashes.cacheKey, b.request.hashes.cacheKey);
+});
+
+test("compiler: includes reviewer-approved agent lessons in the AgentLessons prompt section", async () => {
+  const { intent, visual } = await loadFixture();
+  const lesson = await buildApprovedLesson();
+  const compiled = compilePrompt({
+    jobId: "job-lesson-approved",
+    intent,
+    visual,
+    agentLessons: [lesson],
+    modelBinding: sampleModelBinding,
+    visualBinding: sampleVisualBinding,
+    policyBundleVersion: "policy-2026-04-25",
+  });
+
+  assert.match(compiled.request.userPrompt, /\[6\] AgentLessons/u);
+  assert.match(compiled.request.userPrompt, /iban-guardrails/u);
+  assert.match(compiled.request.userPrompt, /Always reject malformed IBAN values\./u);
+});
+
+test("compiler: refuses agent lessons that are not reviewer-approved", async () => {
+  const { intent, visual } = await loadFixture();
+  const approvedLesson = await buildApprovedLesson();
+  const unapprovedLesson = {
+    ...approvedLesson,
+    frontmatter: {
+      ...approvedLesson.frontmatter,
+      reviewState: "draft",
+    },
+  } as unknown as AgentLessonRecord;
+
+  assert.throws(() =>
+    compilePrompt({
+      jobId: "job-lesson-rejected",
+      intent,
+      visual,
+      agentLessons: [unapprovedLesson],
+      modelBinding: sampleModelBinding,
+      visualBinding: sampleVisualBinding,
+      policyBundleVersion: "policy-2026-04-25",
+    }),
+  );
 });
 
 test("compiler: includes sanitized custom context in prompt and replay identity", async () => {

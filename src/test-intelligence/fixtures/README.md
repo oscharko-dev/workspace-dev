@@ -51,6 +51,8 @@ fixtures/
 └── eval-baseline-<archetype>.json      # required: deterministic MA-0 eval snapshot
 └── eval-ab-input.json                  # required: curated MA-5 A/B + human-review input
 └── eval-ab-<archetype>.json            # required: deterministic MA-5 A/B report
+└── agent-lessons-eval-input.json       # required: Issue #1805 approved-lesson fixture matrix
+└── agent-lessons-eval-report.json      # required: deterministic Issue #1805 quality report
 └── agent-online-eval-traces.json       # required: curated MA-5 production-trace sample
 ```
 
@@ -89,6 +91,16 @@ fixtures/
   empirical-CDF post-hoc calibration for position bias, no hard length
   normalization for verbosity bias, and a cross-family judge panel to
   break self-preference.
+- `agent-lessons-eval-input.json` is the curated Issue #1805 fixture
+  matrix. Each entry points at one shipped Wave-1 validation fixture,
+  one reviewer-approved lesson payload, the policy profile used for
+  selection, and the exact prompt terms the eval expects the lesson to
+  contribute.
+- `agent-lessons-eval-report.json` is the deterministic Issue #1805
+  quality report. The builder compiles prompts with and without each
+  approved lesson, verifies that the lesson becomes active only through
+  the approved path, and records the expected-term coverage delta for
+  the referenced fixture.
 - `agent-online-eval-traces.json` is the curated MA-5 production-trace
   sample used by Issue #1804. Each entry carries a `traceId`, `runId`,
   optional `archetypeId`, prompt, response, and optional metadata.
@@ -114,7 +126,8 @@ leave them out so the matrix stays readable.
 - **Canonical-JSON snapshots.** `*.expected.summary.json` parses
   back to the byte-stable form produced by `canonicalJson`. The
   test asserts this on every run. The same rule applies to the
-  `eval-baseline-*.json` and `eval-ab-*.json` artifacts.
+  `eval-baseline-*.json`, `eval-ab-*.json`, and
+  `agent-lessons-eval-report.json` artifacts.
 
 ### How to add a new archetype
 

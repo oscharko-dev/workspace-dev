@@ -15,6 +15,7 @@ import type {
 import { createLlmGatewayClient } from "./llm-gateway.js";
 import { createMockLlmGatewayClient } from "./llm-mock-gateway.js";
 import { createMockLlmGatewayClientBundle } from "./llm-gateway-bundle.js";
+import { writeAgentLesson } from "./agent-lessons-memdir.js";
 import { cloneEuBankingDefaultFinOpsBudget } from "./finops-budget.js";
 import { verifyJobEvidence } from "./evidence-verify.js";
 import { PRODUCTION_RUNNER_EVIDENCE_SEAL_ARTIFACT_FILENAME } from "./production-runner-evidence.js";
@@ -266,6 +267,52 @@ test("runFigmaToQcTestCases happy path persists artifacts and renders customer M
     const md = await readFile(result.customerMarkdownPaths.combined, "utf8");
     assert.match(md, /Testfälle/u);
     assert.match(md, /Investitionssumme/u);
+  } finally {
+    await rm(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("runFigmaToQcTestCases loads reviewer-approved agent lessons from memdir into the compiled prompt", async () => {
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ti-runner-"));
+  const jobId = "job-lesson-runtime";
+  const artifactDir = path.join(tempRoot, "jobs", jobId, "test-intelligence");
+  try {
+    const lessonResult = await writeAgentLesson({
+      runDir: artifactDir,
+      id: "lesson-investitionssumme",
+      name: "investitionssumme-guardrail",
+      description:
+        "Add a negative case for malformed Investitionssumme inputs on Bedarfsermittlung screens.",
+      type: "project",
+      policyProfileScope: [EU_BANKING_DEFAULT_POLICY_PROFILE_ID],
+      approvedBy: ["reviewer@workspace-dev"],
+      body:
+        "Always include a malformed Investitionssumme negative case.\nHighlight Bedarfsermittlung-specific validation expectations.\n",
+      nowMs: Date.parse("2026-05-04T00:00:00.000Z"),
+    });
+    assert.equal(lessonResult.ok, true);
+
+    const client = createMockLlmGatewayClient({
+      role: "test_generation",
+      deployment: "gpt-oss-120b-mock",
+      modelRevision: "mock-1",
+      gatewayRelease: "mock",
+      responder: okResponder([SAMPLE_DRAFT]),
+    });
+    const result = await runFigmaToQcTestCases({
+      jobId,
+      generatedAt: "2026-05-04T10:00:00Z",
+      source: { kind: "figma_paste_normalized", file: SAMPLE_FILE },
+      outputRoot: tempRoot,
+      llm: { client },
+    });
+
+    const compiledPrompt = await readFile(result.artifactPaths.compiledPrompt, "utf8");
+    assert.match(compiledPrompt, /investitionssumme-guardrail/u);
+    assert.match(
+      compiledPrompt,
+      /Always include a malformed Investitionssumme negative case\./u,
+    );
   } finally {
     await rm(tempRoot, { recursive: true, force: true });
   }

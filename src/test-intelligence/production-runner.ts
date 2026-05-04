@@ -123,6 +123,10 @@ import { deriveBusinessTestIntentIr } from "./intent-derivation.js";
 import type { LlmGatewayClient } from "./llm-gateway.js";
 import type { LlmGatewayClientBundle } from "./llm-gateway-bundle.js";
 import {
+  scanLessons,
+  selectRelevantLessons,
+} from "./agent-lessons-memdir.js";
+import {
   compilePrompt,
   type CompilePromptSuffixSection,
 } from "./prompt-compiler.js";
@@ -795,12 +799,26 @@ export const runFigmaToQcTestCases = async (
   const policyProfileHash = createHash("sha256")
     .update(canonicalJson(customerRubric), "utf8")
     .digest("hex");
+  const agentLessonsManifest = await scanLessons({
+    runDir: artifactDir,
+    nowMs: Date.parse(input.generatedAt),
+  });
+  const activeAgentLessons = selectRelevantLessons({
+    manifest: agentLessonsManifest,
+    query: {
+      tokens: [buildAgentLessonsQuery(wireIntent)],
+      policyProfileId,
+    },
+  });
 
   // 5. Compile prompt.
   const compiled = compilePrompt({
     jobId: input.jobId,
     intent: wireIntent,
     ...(promptVisualBatch !== undefined ? { visual: promptVisualBatch } : {}),
+    ...(activeAgentLessons.length > 0
+      ? { agentLessons: activeAgentLessons }
+      : {}),
     modelBinding: {
       modelRevision: TEST_GENERATION_MODEL_REVISION,
       gatewayRelease: TEST_GENERATION_GATEWAY_RELEASE,
@@ -2199,6 +2217,18 @@ export const detectBankingInsuranceScreens = (
   }
   return matches;
 };
+
+const buildAgentLessonsQuery = (intent: BusinessTestIntentIr): string =>
+  [
+    ...intent.screens.map((screen) => screen.screenName),
+    ...intent.detectedFields.map((field) => field.label),
+    ...intent.detectedActions.map((action) => action.label),
+    ...intent.detectedValidations.map((validation) => validation.rule),
+    ...intent.openQuestions,
+  ]
+    .map((value) => value.trim())
+    .filter((value) => value.length > 0)
+    .join("\n");
 
 const BANKING_INSURANCE_PROMPT_RULES: ReadonlyArray<string> = Object.freeze([
   "- Wenn das Profil 'eu-banking-default' aktiv ist, behandle die Maske als reguliert (Bank/Versicherung).",
