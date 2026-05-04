@@ -31,6 +31,65 @@ All changes to the public contract surface of `workspace-dev` are documented her
 
 ---
 
+## [4.42.0] - 2026-05-04
+
+### Added (Issue #1802 — evidence + library-coverage + architecture-fit self-test gates)
+
+The `release:quality-gates` evaluator is extended with five additional hard
+release gates (Gates 5–9). All gates flow through the same canonical-JSON
+report artifact at `artifacts/release-quality-gates/release-quality-gates.json`.
+
+Additive public-contract changes:
+
+- New runtime constants exported from `src/contracts/index.ts` and the
+  package root:
+    - `ALLOWED_LIBRARY_COVERAGE_RELEASE_STATUSES = ["COVERED", "PARITY-PATH", "NICHT-UEBERNOMMEN"]`
+    - `RELEASE_QUALITY_GATES_THRESHOLDS.perSourceCostPlausibility = { allowedFailures: 0 }`
+    - `RELEASE_QUALITY_GATES_THRESHOLDS.MEMDIR_MAX_AGE_MS = 7776000000` (90 days)
+    - `RELEASE_QUALITY_GATES_THRESHOLDS.contextBudget = { defaultMaxBloatRatio: 1.20, minSampleCount: 5 }`
+    - `ALLOWED_RELEASE_QUALITY_GATE_IDS` extended with five new members:
+      `"per_source_cost_plausibility"`, `"memdir_manifest_consistency"`,
+      `"library_coverage_status_completeness"`, `"architecture_fit_self_test"`,
+      `"context_budget_regression"`
+- New contract types:
+    - `LibraryCoverageReleaseStatus`
+    - `ReleaseQualityGatePerSourceCostSample`
+    - `ReleaseQualityGateMemdirLesson`
+    - `ReleaseQualityGateLibraryCoveragePrimitive`
+    - `ReleaseQualityGateArchitectureViolation`
+- `ReleaseQualityGatesInput` extended with five new required sections:
+    - `perSourceCostPlausibility`
+    - `memdirManifestConsistency`
+    - `libraryCoverageStatusCompleteness`
+    - `architectureFitSelfTest`
+    - `contextBudgetRegression`
+- `TEST_INTELLIGENCE_CONTRACT_VERSION` bumps from `1.7.0` to `1.8.0`.
+- `CONTRACT_VERSION` bumps from `4.41.0` to `4.42.0`.
+
+Gate semantics:
+
+- **Gate 5** (`per_source_cost_plausibility`): Every sample must be sealed
+  (`sealed === true`) and have matching `attestedBySourceHash` /
+  `observedBySourceHash` (lowercase hex64). A mismatch surfaces
+  `bySource_hash_mismatch:<sampleId>` in attribution.
+- **Gate 6** (`memdir_manifest_consistency`): Banking-profile lessons must be
+  within 90 days of their effective freshness timestamp; path validator must
+  have `coveredCases === totalCases >= 1`.
+- **Gate 7** (`library_coverage_status_completeness`): Every primitive must
+  have a valid `LibraryCoverageReleaseStatus` and a non-empty justification
+  (1–480 chars). A `COVERED` entry with `moduleImplemented === false` is
+  rejected with `covered_unimplemented` attribution.
+- **Gate 8** (`architecture_fit_self_test`): Zero boundary violations across
+  scanned files; `scannedFileCount >= 1`. The CLI runner auto-derives this
+  from `analyzeAgentBoundaries` — the fixture value is overwritten at runtime.
+- **Gate 9** (`context_budget_regression`): `harness.meanInputTokens /
+  baseline.meanInputTokens <= maxBloatRatio (default 1.20)` OR
+  `qualityDeltaScore >= 0.05`. Both sample counts must be `>= 5`.
+
+This is an additive minor bump. No removals or renames. No new
+banking-profile migrations are registered in this release; the
+`migrationHash:` registry from 4.41.0 carries over unchanged.
+
 ## [4.41.0] - 2026-05-04
 
 ### Added (Issue #1801 — release:quality-gates hard CI gates)

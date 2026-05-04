@@ -13,7 +13,7 @@ import {
 
 const validationReport: TestCaseValidationReport = {
   schemaVersion: "1.0.0",
-  contractVersion: "1.7.0",
+  contractVersion: "1.8.0",
   generatedAt: "2026-05-03T00:00:00.000Z",
   jobId: "job-1786",
   blocked: true,

@@ -1,11 +1,12 @@
 #!/usr/bin/env tsx
 
 /**
- * Release-quality-gates runner (Issue #1801).
+ * Release-quality-gates runner (Issue #1801 + Issue #1802).
  *
  * Loads the canonical-JSON input envelope produced by the harness
- * (or a curated baseline fixture committed to evidence), evaluates the
- * four hard gates, atomically writes the canonical-JSON report, and
+ * (or a curated baseline fixture committed to evidence), auto-derives the
+ * Gate 8 architecture-fit input from `analyzeAgentBoundaries`, evaluates
+ * all nine hard gates, atomically writes the canonical-JSON report, and
  * exits non-zero on threshold breach so `release:quality-gates` fails
  * the release.
  *
@@ -32,6 +33,7 @@ import {
   isReleaseQualityGatesInput,
   writeReleaseQualityGatesReport,
 } from "../src/test-intelligence/release-quality-gates.js";
+import { analyzeAgentBoundaries } from "./check-agent-boundaries.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, "..");
@@ -114,12 +116,43 @@ const main = async (): Promise<number> => {
       `[release-quality-gates] Could not parse JSON at ${options.inputPath}: ${(cause as Error).message}`,
     );
   }
-  if (!isReleaseQualityGatesInput(parsed)) {
+
+  // Gate 8: auto-derive architecture-fit data from analyzeAgentBoundaries.
+  // The pure evaluator accepts the input envelope as-is (so tests can inject
+  // values directly), but the runner always overwrites architectureFitSelfTest
+  // with a fresh live scan so the gate cannot be bypassed via fixture editing.
+  console.log(
+    "[release-quality-gates] Running architecture-fit self-test (Gate 8)…",
+  );
+  const { files, violations } = await analyzeAgentBoundaries({
+    repoRoot,
+  });
+  const archViolations = violations.map(
+    (v: { file: string; type: string; line: number }) => ({
+      file: v.file,
+      type: v.type,
+      line: v.line,
+    }),
+  );
+  console.log(
+    `[release-quality-gates] Gate 8 scanned ${files.length} file(s), found ${archViolations.length} violation(s).`,
+  );
+
+  // Merge the live architecture-fit result into the input envelope.
+  const inputWithArch = {
+    ...(parsed as Record<string, unknown>),
+    architectureFitSelfTest: {
+      scannedFileCount: files.length,
+      violations: archViolations,
+    },
+  };
+
+  if (!isReleaseQualityGatesInput(inputWithArch)) {
     throw new Error(
       `[release-quality-gates] Input at ${options.inputPath} failed structural validation`,
     );
   }
-  const input: ReleaseQualityGatesInput = parsed;
+  const input: ReleaseQualityGatesInput = inputWithArch;
   const report = evaluateReleaseQualityGates(input);
   const { artifactPath } = await writeReleaseQualityGatesReport({
     report,

@@ -163,7 +163,7 @@ export interface TestIntelligenceTransferPrincipal {
 }
 
 /** Contract version for the opt-in test-intelligence surface. */
-export const TEST_INTELLIGENCE_CONTRACT_VERSION = "1.7.0" as const;
+export const TEST_INTELLIGENCE_CONTRACT_VERSION = "1.8.0" as const;
 
 /**
  * Schema version for generated test case payloads.
@@ -9093,25 +9093,72 @@ export const RELEASE_QUALITY_GATES_REPORT_ARTIFACT_FILENAME =
 export const RELEASE_QUALITY_GATES_REPORT_SCHEMA_VERSION = "1.0.0" as const;
 
 /**
- * Hard release thresholds for Issue #1801. Each gate either fails the
- * release on breach (mutation, prompt-cache, tamper) or attributes the
- * breach to a specific fixture/role for diff-artifact review (cache-break).
+ * Hard release thresholds for Issue #1801 and Issue #1802. Each gate either
+ * fails the release on breach or attributes the breach to a specific fixture,
+ * role, or query source for diff-artifact review.
  */
-export const RELEASE_QUALITY_GATES_THRESHOLDS = {
+export const RELEASE_QUALITY_GATES_THRESHOLDS: {
+  readonly minMutationKillRate: 0.85;
+  readonly minPromptCacheHitRate: 0.7;
+  readonly maxCacheBreakRate: 0.05;
+  readonly perSourceCostPlausibility: { readonly allowedFailures: 0 };
+  readonly MEMDIR_MAX_AGE_MS: 7776000000;
+  readonly contextBudget: {
+    readonly defaultMaxBloatRatio: 1.2;
+    readonly minSampleCount: 5;
+  };
+} = {
   /** `mutationKillRate >= 0.85` against curated mutation fixtures. */
   minMutationKillRate: 0.85,
   /** `promptCacheHitRate >= 0.7` across repair iterations 2..N. */
   minPromptCacheHitRate: 0.7,
   /** `cacheBreakRate <= 5%` over the release sample. */
   maxCacheBreakRate: 0.05,
+  /**
+   * Gate 5 (Issue #1802): `allowedFailures: 0` means a single hash mismatch
+   * or unsealed sample fails the entire gate.
+   */
+  perSourceCostPlausibility: { allowedFailures: 0 },
+  /**
+   * Gate 6 (Issue #1802): Maximum age for banking-profile lessons.
+   * 90 days in milliseconds = 7_776_000_000.
+   */
+  MEMDIR_MAX_AGE_MS: 7776000000,
+  /**
+   * Gate 9 (Issue #1802): Context budget regression thresholds.
+   * `defaultMaxBloatRatio` of 1.20 allows up to 20% token bloat before
+   * failing — unless the quality delta score is >= 0.05 (material win).
+   */
+  contextBudget: { defaultMaxBloatRatio: 1.2, minSampleCount: 5 },
 } as const;
 
-/** Identifiers for the four hard gates wired into release:quality-gates. */
+/**
+ * Closed list of allowed statuses for the library-coverage-status-completeness
+ * release gate (Issue #1802, Gate 7). Distinct from
+ * `ALLOWED_LIBRARY_PRIMITIVE_STATUSES` which tracks per-release implementation
+ * snapshots; this constant tracks release-report coverage decisions.
+ */
+export const ALLOWED_LIBRARY_COVERAGE_RELEASE_STATUSES = [
+  "COVERED",
+  "PARITY-PATH",
+  "NICHT-UEBERNOMMEN",
+] as const;
+
+/** Discriminated alias for {@link ALLOWED_LIBRARY_COVERAGE_RELEASE_STATUSES}. */
+export type LibraryCoverageReleaseStatus =
+  (typeof ALLOWED_LIBRARY_COVERAGE_RELEASE_STATUSES)[number];
+
+/** Identifiers for all nine hard gates wired into release:quality-gates. */
 export const ALLOWED_RELEASE_QUALITY_GATE_IDS = [
   "mutation_kill_rate",
   "prompt_cache_hit_rate",
   "tamper_detection_round_trip",
   "cache_break_rate",
+  "per_source_cost_plausibility",
+  "memdir_manifest_consistency",
+  "library_coverage_status_completeness",
+  "architecture_fit_self_test",
+  "context_budget_regression",
 ] as const;
 
 /** Discriminated alias for {@link ALLOWED_RELEASE_QUALITY_GATE_IDS}. */
@@ -9170,10 +9217,62 @@ export interface ReleaseQualityGateCacheBreakSample {
 }
 
 /**
+ * Per-sample input for Gate 5 — per-source cost plausibility (Issue #1802).
+ * Both hash fields must be lowercase hex64; `sealed` must be true for the
+ * gate to pass.
+ */
+export interface ReleaseQualityGatePerSourceCostSample {
+  readonly sampleId: string;
+  readonly attestedBySourceHash: string;
+  readonly observedBySourceHash: string;
+  readonly sealed: boolean;
+}
+
+/**
+ * Per-lesson input for Gate 6 — memdir manifest consistency (Issue #1802).
+ * Banking-profile lessons are age-checked against `MEMDIR_MAX_AGE_MS`.
+ * Non-banking lessons are included in the report for visibility but do not
+ * cause the gate to fail.
+ */
+export interface ReleaseQualityGateMemdirLesson {
+  readonly lessonId: string;
+  readonly profile: "banking" | "default" | "cross-tenant";
+  readonly mtimeMs: number;
+  readonly lastRefreshAtMs?: number;
+  readonly nowMs: number;
+}
+
+/**
+ * Per-primitive input for Gate 7 — library coverage status completeness
+ * (Issue #1802). Every primitive must have a non-empty justification and a
+ * valid `LibraryCoverageReleaseStatus`. A `COVERED` entry with
+ * `moduleImplemented === false` fails the gate.
+ */
+export interface ReleaseQualityGateLibraryCoveragePrimitive {
+  readonly primitiveId: string;
+  readonly status: LibraryCoverageReleaseStatus;
+  readonly justification: string;
+  readonly referencedModulePath?: string;
+  readonly moduleImplemented: boolean;
+}
+
+/**
+ * Per-violation record produced by `analyzeAgentBoundaries` for Gate 8 —
+ * architecture fit self-test (Issue #1802).
+ */
+export interface ReleaseQualityGateArchitectureViolation {
+  readonly file: string;
+  readonly type: string;
+  readonly line: number;
+}
+
+/**
  * Complete input envelope consumed by `evaluateReleaseQualityGates` and
- * by the release-quality-gates CLI runner. Every field is required so
- * a missing data source surfaces as a hard gate failure rather than a
- * silent pass.
+ * by the release-quality-gates CLI runner. The first four sections (mutation,
+ * promptCache, tamper, cacheBreak) were introduced in Issue #1801 and remain
+ * required. The five new sections introduced in Issue #1802 are also required;
+ * they are validated structurally but carry sensible defaults in the baseline
+ * fixture so existing callers can migrate incrementally.
  */
 export interface ReleaseQualityGatesInput {
   readonly schemaVersion: typeof RELEASE_QUALITY_GATES_REPORT_SCHEMA_VERSION;
@@ -9190,6 +9289,44 @@ export interface ReleaseQualityGatesInput {
   };
   readonly cacheBreak: {
     readonly samples: readonly ReleaseQualityGateCacheBreakSample[];
+  };
+  /** Gate 5 — per-source cost plausibility (Issue #1802). */
+  readonly perSourceCostPlausibility: {
+    readonly samples: readonly ReleaseQualityGatePerSourceCostSample[];
+  };
+  /** Gate 6 — memdir manifest consistency (Issue #1802). */
+  readonly memdirManifestConsistency: {
+    readonly pathValidator: {
+      readonly coveredCases: number;
+      readonly totalCases: number;
+    };
+    readonly lessons: readonly ReleaseQualityGateMemdirLesson[];
+  };
+  /** Gate 7 — library coverage status completeness (Issue #1802). */
+  readonly libraryCoverageStatusCompleteness: {
+    readonly primitives: readonly ReleaseQualityGateLibraryCoveragePrimitive[];
+  };
+  /**
+   * Gate 8 — architecture fit self-test (Issue #1802).
+   * The runner populates this automatically from `analyzeAgentBoundaries`;
+   * the pure evaluator accepts it as-is so tests can inject values directly.
+   */
+  readonly architectureFitSelfTest: {
+    readonly scannedFileCount: number;
+    readonly violations: readonly ReleaseQualityGateArchitectureViolation[];
+  };
+  /** Gate 9 — context budget regression (Issue #1802). */
+  readonly contextBudgetRegression: {
+    readonly baseline: {
+      readonly meanInputTokens: number;
+      readonly sampleCount: number;
+    };
+    readonly harness: {
+      readonly meanInputTokens: number;
+      readonly sampleCount: number;
+    };
+    readonly qualityDeltaScore: number;
+    readonly maxBloatRatio?: number;
   };
 }
 
@@ -9228,7 +9365,7 @@ export interface ReleaseQualityGatesReport {
  * Must be bumped according to CONTRACT_CHANGELOG.md rules.
  * Package version alignment is documented in VERSIONING.md.
  */
-export const CONTRACT_VERSION = "4.41.0" as const;
+export const CONTRACT_VERSION = "4.42.0" as const;
 
 // ---------------------------------------------------------------------------
 // Issue #1774 — UntrustedContentNormalizer (2025-vintage injection carriers).
