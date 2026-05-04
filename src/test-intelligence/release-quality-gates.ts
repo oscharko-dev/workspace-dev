@@ -250,6 +250,10 @@ const aggregateCacheBreakRate = (
   samples: readonly ReleaseQualityGateCacheBreakSample[],
 ): { rate: number; offenders: readonly string[] } => {
   if (samples.length === 0) {
+    // Rate 1 (100%) is the conservative worst-case sentinel: it naturally
+    // fails the `lte` threshold check without needing out-of-range values
+    // (which would break isFiniteRate validation in the parser). Attribution
+    // explains the root cause.
     return { rate: 1, offenders: ["no_cache_break_samples"] };
   }
   let totalResponses = 0;
