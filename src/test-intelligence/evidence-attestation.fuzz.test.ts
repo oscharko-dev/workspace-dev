@@ -13,27 +13,27 @@ import test from "node:test";
 import fc from "fast-check";
 
 import {
-  WAVE1_POC_ATTESTATION_PAYLOAD_TYPE,
-  type Wave1PocAttestationDsseEnvelope,
-  type Wave1PocEvidenceManifest,
+  WAVE1_VALIDATION_ATTESTATION_PAYLOAD_TYPE,
+  type Wave1ValidationAttestationDsseEnvelope,
+  type Wave1ValidationEvidenceManifest,
 } from "../contracts/index.js";
 import {
-  buildSignedWave1PocAttestation,
-  buildUnsignedWave1PocAttestationEnvelope,
-  buildWave1PocAttestationStatement,
+  buildSignedWave1ValidationAttestation,
+  buildUnsignedWave1ValidationAttestationEnvelope,
+  buildWave1ValidationAttestationStatement,
   createKeyBoundSigstoreSigner,
   encodeDssePreAuth,
-  generateWave1PocAttestationKeyPair,
-  verifyWave1PocAttestation,
+  generateWave1ValidationAttestationKeyPair,
+  verifyWave1ValidationAttestation,
 } from "./evidence-attestation.js";
 
 const ZERO = "0".repeat(64);
 
-const fakeManifest = (jobId: string): Wave1PocEvidenceManifest => ({
+const fakeManifest = (jobId: string): Wave1ValidationEvidenceManifest => ({
   schemaVersion: "1.0.0" as const,
   contractVersion: "3.31.0",
   testIntelligenceContractVersion: "1.0.0" as const,
-  fixtureId: "poc-onboarding",
+  fixtureId: "validation-onboarding",
   jobId,
   generatedAt: "2026-04-26T00:00:00.000Z",
   promptTemplateVersion: "1.0.0" as const,
@@ -74,11 +74,11 @@ test("fuzz: PAE length tail equals payload byte length and content", () => {
   fc.assert(
     fc.property(fc.uint8Array({ maxLength: 4096 }), (payload) => {
       const pae = encodeDssePreAuth(
-        WAVE1_POC_ATTESTATION_PAYLOAD_TYPE,
+        WAVE1_VALIDATION_ATTESTATION_PAYLOAD_TYPE,
         payload,
       );
       // PAE = "DSSEv1 LEN(type) SP type SP LEN(payload) SP payload"
-      const headerStr = `DSSEv1 ${WAVE1_POC_ATTESTATION_PAYLOAD_TYPE.length} ${WAVE1_POC_ATTESTATION_PAYLOAD_TYPE} ${payload.byteLength} `;
+      const headerStr = `DSSEv1 ${WAVE1_VALIDATION_ATTESTATION_PAYLOAD_TYPE.length} ${WAVE1_VALIDATION_ATTESTATION_PAYLOAD_TYPE} ${payload.byteLength} `;
       const headerBytes = new TextEncoder().encode(headerStr);
       if (pae.byteLength !== headerBytes.byteLength + payload.byteLength) {
         return false;
@@ -140,7 +140,7 @@ test("fuzz: base64 round-trip preserves arbitrary bytes (encode→decode)", () =
 });
 
 test("fuzz: signed envelope verifies for any well-formed jobId", async () => {
-  const { privateKeyPem, publicKeyPem } = generateWave1PocAttestationKeyPair();
+  const { privateKeyPem, publicKeyPem } = generateWave1ValidationAttestationKeyPair();
   await fc.assert(
     fc.asyncProperty(
       fc
@@ -156,16 +156,16 @@ test("fuzz: signed envelope verifies for any well-formed jobId", async () => {
           privateKeyPem,
           publicKeyPem,
         });
-        const statement = buildWave1PocAttestationStatement({
+        const statement = buildWave1ValidationAttestationStatement({
           manifest,
           manifestSha256,
           signingMode: "sigstore",
         });
-        const signed = await buildSignedWave1PocAttestation({
+        const signed = await buildSignedWave1ValidationAttestation({
           statement,
           signer,
         });
-        const result = await verifyWave1PocAttestation({
+        const result = await verifyWave1ValidationAttestation({
           envelope: signed.envelope,
           bundle: signed.bundle,
           manifest,
@@ -184,19 +184,19 @@ test("fuzz: signed envelope verifies for any well-formed jobId", async () => {
 });
 
 test("fuzz: any single byte flip in DSSE payload invalidates signature", async () => {
-  const { privateKeyPem, publicKeyPem } = generateWave1PocAttestationKeyPair();
+  const { privateKeyPem, publicKeyPem } = generateWave1ValidationAttestationKeyPair();
   const signer = createKeyBoundSigstoreSigner({
     signerReference: "fuzz-flip-signer",
     privateKeyPem,
     publicKeyPem,
   });
   const baseManifest = fakeManifest("fuzz-flip-job");
-  const statement = buildWave1PocAttestationStatement({
+  const statement = buildWave1ValidationAttestationStatement({
     manifest: baseManifest,
     manifestSha256: ZERO,
     signingMode: "sigstore",
   });
-  const signed = await buildSignedWave1PocAttestation({ statement, signer });
+  const signed = await buildSignedWave1ValidationAttestation({ statement, signer });
   const baseBytes = Buffer.from(signed.envelope.payload, "base64");
 
   await fc.assert(
@@ -207,11 +207,11 @@ test("fuzz: any single byte flip in DSSE payload invalidates signature", async (
         const flipped = Buffer.from(baseBytes);
         flipped[idx] = (flipped[idx] ?? 0) ^ xor;
         if (flipped.equals(baseBytes)) return true; // skip degenerate flip
-        const tampered: Wave1PocAttestationDsseEnvelope = {
+        const tampered: Wave1ValidationAttestationDsseEnvelope = {
           ...signed.envelope,
           payload: flipped.toString("base64"),
         };
-        const result = await verifyWave1PocAttestation({
+        const result = await verifyWave1ValidationAttestation({
           envelope: tampered,
           bundle: signed.bundle,
           manifest: baseManifest,
@@ -237,14 +237,14 @@ test("fuzz: unsigned envelope verifier rejects ANY signature insertion", async (
       fc.uint8Array({ minLength: 1, maxLength: 128 }),
       async (keyid, sigBytes) => {
         const manifest = fakeManifest("fuzz-unsigned-stray-sig");
-        const statement = buildWave1PocAttestationStatement({
+        const statement = buildWave1ValidationAttestationStatement({
           manifest,
           manifestSha256: ZERO,
           signingMode: "unsigned",
         });
         const baseEnvelope =
-          buildUnsignedWave1PocAttestationEnvelope(statement);
-        const tampered: Wave1PocAttestationDsseEnvelope = {
+          buildUnsignedWave1ValidationAttestationEnvelope(statement);
+        const tampered: Wave1ValidationAttestationDsseEnvelope = {
           ...baseEnvelope,
           signatures: [
             {
@@ -253,7 +253,7 @@ test("fuzz: unsigned envelope verifier rejects ANY signature insertion", async (
             },
           ],
         };
-        const result = await verifyWave1PocAttestation({
+        const result = await verifyWave1ValidationAttestation({
           envelope: tampered,
           manifest,
           manifestSha256: ZERO,
@@ -273,19 +273,19 @@ test("fuzz: unsigned envelope verifier rejects ANY signature insertion", async (
 });
 
 test("fuzz: invalid base64 in signature.sig fails closed (no exception leak)", async () => {
-  const { privateKeyPem, publicKeyPem } = generateWave1PocAttestationKeyPair();
+  const { privateKeyPem, publicKeyPem } = generateWave1ValidationAttestationKeyPair();
   const signer = createKeyBoundSigstoreSigner({
     signerReference: "fuzz-bad-b64-signer",
     privateKeyPem,
     publicKeyPem,
   });
   const manifest = fakeManifest("fuzz-bad-b64-job");
-  const statement = buildWave1PocAttestationStatement({
+  const statement = buildWave1ValidationAttestationStatement({
     manifest,
     manifestSha256: ZERO,
     signingMode: "sigstore",
   });
-  const signed = await buildSignedWave1PocAttestation({ statement, signer });
+  const signed = await buildSignedWave1ValidationAttestation({ statement, signer });
 
   // Produce strings that are NOT canonical base64 (forbidden chars).
   await fc.assert(
@@ -294,11 +294,11 @@ test("fuzz: invalid base64 in signature.sig fails closed (no exception leak)", a
         .string({ minLength: 1, maxLength: 64 })
         .filter((s) => /[#?@!^&]/.test(s)),
       async (badSig) => {
-        const tampered: Wave1PocAttestationDsseEnvelope = {
+        const tampered: Wave1ValidationAttestationDsseEnvelope = {
           ...signed.envelope,
           signatures: [{ keyid: "fuzz-bad-b64-signer", sig: badSig }],
         };
-        const result = await verifyWave1PocAttestation({
+        const result = await verifyWave1ValidationAttestation({
           envelope: tampered,
           bundle: { ...signed.bundle, dsseEnvelope: tampered },
           manifest,

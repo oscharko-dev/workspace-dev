@@ -5,14 +5,14 @@ import { join } from "node:path";
 import test from "node:test";
 
 import {
-  WAVE1_POC_EVIDENCE_MANIFEST_ARTIFACT_FILENAME,
-  WAVE1_POC_EVIDENCE_MANIFEST_DIGEST_FILENAME,
+  WAVE1_VALIDATION_EVIDENCE_MANIFEST_ARTIFACT_FILENAME,
+  WAVE1_VALIDATION_EVIDENCE_MANIFEST_DIGEST_FILENAME,
 } from "../contracts/index.js";
 import { canonicalJson } from "./content-hash.js";
 import {
-  buildWave1PocEvidenceManifest,
-  computeWave1PocEvidenceManifestDigest,
-  verifyWave1PocEvidenceFromDisk,
+  buildWave1ValidationEvidenceManifest,
+  computeWave1ValidationEvidenceManifestDigest,
+  verifyWave1ValidationEvidenceFromDisk,
 } from "./evidence-manifest.js";
 
 const ZERO = "0".repeat(64);
@@ -38,8 +38,8 @@ const seedRun = async (label: string) => {
   for (const [name, body] of files) {
     await writeFile(join(dir, name), body, "utf8");
   }
-  const manifest = buildWave1PocEvidenceManifest({
-    fixtureId: "poc-onboarding",
+  const manifest = buildWave1ValidationEvidenceManifest({
+    fixtureId: "validation-onboarding",
     jobId: "job-evidence-tamper",
     generatedAt: GENERATED_AT,
     modelDeployments: { testGeneration: "gpt-oss-120b-mock" },
@@ -58,13 +58,13 @@ const seedRun = async (label: string) => {
     })),
   });
   await writeFile(
-    join(dir, WAVE1_POC_EVIDENCE_MANIFEST_ARTIFACT_FILENAME),
+    join(dir, WAVE1_VALIDATION_EVIDENCE_MANIFEST_ARTIFACT_FILENAME),
     canonicalJson(manifest),
     "utf8",
   );
   await writeFile(
-    join(dir, WAVE1_POC_EVIDENCE_MANIFEST_DIGEST_FILENAME),
-    `${computeWave1PocEvidenceManifestDigest(manifest)}\n`,
+    join(dir, WAVE1_VALIDATION_EVIDENCE_MANIFEST_DIGEST_FILENAME),
+    `${computeWave1ValidationEvidenceManifestDigest(manifest)}\n`,
     "utf8",
   );
   return dir;
@@ -74,7 +74,7 @@ test("multi-source-evidence-tampering: manifest verifier detects conflict, sourc
   const mutations: Array<{
     label: string;
     apply: (dir: string) => Promise<void>;
-    assertResult: (result: Awaited<ReturnType<typeof verifyWave1PocEvidenceFromDisk>>["result"]) => void;
+    assertResult: (result: Awaited<ReturnType<typeof verifyWave1ValidationEvidenceFromDisk>>["result"]) => void;
   }> = [
     {
       label: "conflicts",
@@ -122,14 +122,14 @@ test("multi-source-evidence-tampering: manifest verifier detects conflict, sourc
     const dir = await seedRun(mutation.label);
     try {
       await mutation.apply(dir);
-      const { result } = await verifyWave1PocEvidenceFromDisk(dir, {
+      const { result } = await verifyWave1ValidationEvidenceFromDisk(dir, {
         rejectUnexpected: true,
       });
       assert.equal(result.ok, false, mutation.label);
       mutation.assertResult(result);
       const serialized = JSON.stringify(result);
       assert.equal(serialized.includes("/tmp/"), false);
-      assert.equal(serialized.includes(await readFile(join(dir, WAVE1_POC_EVIDENCE_MANIFEST_ARTIFACT_FILENAME), "utf8")), false);
+      assert.equal(serialized.includes(await readFile(join(dir, WAVE1_VALIDATION_EVIDENCE_MANIFEST_ARTIFACT_FILENAME), "utf8")), false);
     } finally {
       await rm(dir, { recursive: true, force: true });
     }

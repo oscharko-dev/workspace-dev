@@ -16,21 +16,21 @@ import fc from "fast-check";
 import {
   TEST_CASE_POLICY_REPORT_ARTIFACT_FILENAME,
   TEST_INTELLIGENCE_CONTRACT_VERSION,
-  WAVE1_POC_ATTESTATION_BUNDLE_FILENAME,
-  WAVE1_POC_EVIDENCE_MANIFEST_DIGEST_FILENAME,
-  WAVE1_POC_EVIDENCE_MANIFEST_ARTIFACT_FILENAME,
-  WAVE1_POC_SIGNATURES_DIRECTORY,
+  WAVE1_VALIDATION_ATTESTATION_BUNDLE_FILENAME,
+  WAVE1_VALIDATION_EVIDENCE_MANIFEST_DIGEST_FILENAME,
+  WAVE1_VALIDATION_EVIDENCE_MANIFEST_ARTIFACT_FILENAME,
+  WAVE1_VALIDATION_SIGNATURES_DIRECTORY,
 } from "../contracts/index.js";
 import {
   createKeyBoundSigstoreSigner,
-  generateWave1PocAttestationKeyPair,
+  generateWave1ValidationAttestationKeyPair,
 } from "./evidence-attestation.js";
 import {
   EVIDENCE_VERIFY_RESPONSE_SCHEMA_VERSION,
   verifyJobEvidence,
   type EvidenceVerifyResponse,
 } from "./evidence-verify.js";
-import { runWave1Poc } from "./poc-harness.js";
+import { runWave1Validation } from "./validation-harness.js";
 
 const GENERATED_AT = "2026-04-25T10:00:00.000Z";
 const VERIFIED_AT = "2026-04-26T10:00:00.000Z";
@@ -61,14 +61,14 @@ const seedHarnessRun = async (
   await mkdir(runDir, { recursive: true });
   if (options.attestationSigningMode === "sigstore") {
     const { privateKeyPem, publicKeyPem } =
-      generateWave1PocAttestationKeyPair();
+      generateWave1ValidationAttestationKeyPair();
     const signer = createKeyBoundSigstoreSigner({
       signerReference: "evidence-verify-test-signer",
       privateKeyPem,
       publicKeyPem,
     });
-    await runWave1Poc({
-      fixtureId: "poc-onboarding",
+    await runWave1Validation({
+      fixtureId: "validation-onboarding",
       jobId,
       generatedAt: GENERATED_AT,
       runDir,
@@ -76,8 +76,8 @@ const seedHarnessRun = async (
       attestationSigner: signer,
     });
   } else {
-    await runWave1Poc({
-      fixtureId: "poc-onboarding",
+    await runWave1Validation({
+      fixtureId: "validation-onboarding",
       jobId,
       generatedAt: GENERATED_AT,
       runDir,
@@ -91,7 +91,7 @@ const seedHarnessRun = async (
   };
 };
 
-test("verifyJobEvidence: untouched POC run verifies clean (ok=true, no failures)", async () => {
+test("verifyJobEvidence: untouched validation run verifies clean (ok=true, no failures)", async () => {
   const seed = await seedHarnessRun("untouched");
   try {
     const result = await verifyJobEvidence({
@@ -129,14 +129,14 @@ test("verifyJobEvidence: untouched POC run verifies clean (ok=true, no failures)
       result.body.checks.some(
         (c) =>
           c.kind === "manifest_metadata" &&
-          c.reference === WAVE1_POC_EVIDENCE_MANIFEST_ARTIFACT_FILENAME,
+          c.reference === WAVE1_VALIDATION_EVIDENCE_MANIFEST_ARTIFACT_FILENAME,
       ),
     );
     assert.ok(
       result.body.checks.some(
         (c) =>
           c.kind === "manifest_digest_witness" &&
-          c.reference === WAVE1_POC_EVIDENCE_MANIFEST_ARTIFACT_FILENAME,
+          c.reference === WAVE1_VALIDATION_EVIDENCE_MANIFEST_ARTIFACT_FILENAME,
       ),
     );
     // Visual sidecar evidence row present.
@@ -157,7 +157,7 @@ test("verifyJobEvidence: tampered manifest field surfaces digest_witness failure
   try {
     const manifestPath = join(
       seed.runDir,
-      WAVE1_POC_EVIDENCE_MANIFEST_ARTIFACT_FILENAME,
+      WAVE1_VALIDATION_EVIDENCE_MANIFEST_ARTIFACT_FILENAME,
     );
     const raw = await readFile(manifestPath, "utf8");
     // Replace promptHash with all zeros — keeps the JSON valid but
@@ -181,7 +181,7 @@ test("verifyJobEvidence: tampered manifest field surfaces digest_witness failure
       result.body.checks.find((c) => c.kind === "manifest_metadata"),
       {
         kind: "manifest_metadata",
-        reference: WAVE1_POC_EVIDENCE_MANIFEST_ARTIFACT_FILENAME,
+        reference: WAVE1_VALIDATION_EVIDENCE_MANIFEST_ARTIFACT_FILENAME,
         ok: true,
       },
     );
@@ -189,7 +189,7 @@ test("verifyJobEvidence: tampered manifest field surfaces digest_witness failure
       result.body.checks.find((c) => c.kind === "manifest_digest_witness"),
       {
         kind: "manifest_digest_witness",
-        reference: WAVE1_POC_EVIDENCE_MANIFEST_ARTIFACT_FILENAME,
+        reference: WAVE1_VALIDATION_EVIDENCE_MANIFEST_ARTIFACT_FILENAME,
         ok: false,
         failureCode: "manifest_digest_witness_invalid",
       },
@@ -198,7 +198,7 @@ test("verifyJobEvidence: tampered manifest field surfaces digest_witness failure
       result.body.failures.some(
         (f) =>
           f.code === "manifest_digest_witness_invalid" &&
-          f.reference === WAVE1_POC_EVIDENCE_MANIFEST_ARTIFACT_FILENAME,
+          f.reference === WAVE1_VALIDATION_EVIDENCE_MANIFEST_ARTIFACT_FILENAME,
       ),
       JSON.stringify(result.body.failures, null, 2),
     );
@@ -212,7 +212,7 @@ test("verifyJobEvidence: schema-mismatched manifest returns manifest_unparseable
   try {
     const manifestPath = join(
       seed.runDir,
-      WAVE1_POC_EVIDENCE_MANIFEST_ARTIFACT_FILENAME,
+      WAVE1_VALIDATION_EVIDENCE_MANIFEST_ARTIFACT_FILENAME,
     );
     const manifest = JSON.parse(await readFile(manifestPath, "utf8")) as Record<
       string,
@@ -233,9 +233,9 @@ test("verifyJobEvidence: schema-mismatched manifest returns manifest_unparseable
     assert.deepEqual(result.body.failures, [
       {
         code: "manifest_unparseable",
-        reference: WAVE1_POC_EVIDENCE_MANIFEST_ARTIFACT_FILENAME,
+        reference: WAVE1_VALIDATION_EVIDENCE_MANIFEST_ARTIFACT_FILENAME,
         message:
-          "Evidence manifest 'wave1-poc-evidence-manifest.json' is missing, malformed, or carries a mismatched schema/contract version.",
+          "Evidence manifest 'wave1-validation-evidence-manifest.json' is missing, malformed, or carries a mismatched schema/contract version.",
       },
     ]);
   } finally {
@@ -247,7 +247,7 @@ test("verifyJobEvidence: digest witness failure does not mark manifest metadata 
   const seed = await seedHarnessRun("digest-witness");
   try {
     await writeFile(
-      join(seed.runDir, WAVE1_POC_EVIDENCE_MANIFEST_DIGEST_FILENAME),
+      join(seed.runDir, WAVE1_VALIDATION_EVIDENCE_MANIFEST_DIGEST_FILENAME),
       `${"0".repeat(64)}\n`,
       "utf8",
     );
@@ -264,7 +264,7 @@ test("verifyJobEvidence: digest witness failure does not mark manifest metadata 
       result.body.checks.find((c) => c.kind === "manifest_metadata"),
       {
         kind: "manifest_metadata",
-        reference: WAVE1_POC_EVIDENCE_MANIFEST_ARTIFACT_FILENAME,
+        reference: WAVE1_VALIDATION_EVIDENCE_MANIFEST_ARTIFACT_FILENAME,
         ok: true,
       },
     );
@@ -272,7 +272,7 @@ test("verifyJobEvidence: digest witness failure does not mark manifest metadata 
       result.body.checks.find((c) => c.kind === "manifest_digest_witness"),
       {
         kind: "manifest_digest_witness",
-        reference: WAVE1_POC_EVIDENCE_MANIFEST_ARTIFACT_FILENAME,
+        reference: WAVE1_VALIDATION_EVIDENCE_MANIFEST_ARTIFACT_FILENAME,
         ok: false,
         failureCode: "manifest_digest_witness_invalid",
       },
@@ -299,7 +299,7 @@ test("verifyJobEvidence: malformed versioned manifest returns ok=false instead o
   try {
     const manifestPath = join(
       seed.runDir,
-      WAVE1_POC_EVIDENCE_MANIFEST_ARTIFACT_FILENAME,
+      WAVE1_VALIDATION_EVIDENCE_MANIFEST_ARTIFACT_FILENAME,
     );
     const manifest = JSON.parse(await readFile(manifestPath, "utf8")) as Record<
       string,
@@ -332,7 +332,7 @@ test("verifyJobEvidence: metadata failure with a matching digest witness is clas
   try {
     const manifestPath = join(
       seed.runDir,
-      WAVE1_POC_EVIDENCE_MANIFEST_ARTIFACT_FILENAME,
+      WAVE1_VALIDATION_EVIDENCE_MANIFEST_ARTIFACT_FILENAME,
     );
     const manifest = JSON.parse(await readFile(manifestPath, "utf8")) as Record<
       string,
@@ -340,13 +340,13 @@ test("verifyJobEvidence: metadata failure with a matching digest witness is clas
     >;
     manifest["rawScreenshotsIncluded"] = true;
     await writeFile(manifestPath, JSON.stringify(manifest), "utf8");
-    const { computeWave1PocEvidenceManifestDigest } =
+    const { computeWave1ValidationEvidenceManifestDigest } =
       await import("./evidence-manifest.js");
-    const digest = computeWave1PocEvidenceManifestDigest(
-      manifest as Parameters<typeof computeWave1PocEvidenceManifestDigest>[0],
+    const digest = computeWave1ValidationEvidenceManifestDigest(
+      manifest as Parameters<typeof computeWave1ValidationEvidenceManifestDigest>[0],
     );
     await writeFile(
-      join(seed.runDir, WAVE1_POC_EVIDENCE_MANIFEST_DIGEST_FILENAME),
+      join(seed.runDir, WAVE1_VALIDATION_EVIDENCE_MANIFEST_DIGEST_FILENAME),
       `${digest}\n`,
       "utf8",
     );
@@ -363,7 +363,7 @@ test("verifyJobEvidence: metadata failure with a matching digest witness is clas
       result.body.checks.find((c) => c.kind === "manifest_metadata"),
       {
         kind: "manifest_metadata",
-        reference: WAVE1_POC_EVIDENCE_MANIFEST_ARTIFACT_FILENAME,
+        reference: WAVE1_VALIDATION_EVIDENCE_MANIFEST_ARTIFACT_FILENAME,
         ok: false,
         failureCode: "manifest_metadata_invalid",
       },
@@ -372,7 +372,7 @@ test("verifyJobEvidence: metadata failure with a matching digest witness is clas
       result.body.checks.find((c) => c.kind === "manifest_digest_witness"),
       {
         kind: "manifest_digest_witness",
-        reference: WAVE1_POC_EVIDENCE_MANIFEST_ARTIFACT_FILENAME,
+        reference: WAVE1_VALIDATION_EVIDENCE_MANIFEST_ARTIFACT_FILENAME,
         ok: true,
       },
     );
@@ -502,8 +502,8 @@ test("verifyJobEvidence: tampered signed bundle surfaces a verification failure"
   try {
     const bundlePath = join(
       seed.runDir,
-      WAVE1_POC_SIGNATURES_DIRECTORY,
-      WAVE1_POC_ATTESTATION_BUNDLE_FILENAME,
+      WAVE1_VALIDATION_SIGNATURES_DIRECTORY,
+      WAVE1_VALIDATION_ATTESTATION_BUNDLE_FILENAME,
     );
     const raw = await readFile(bundlePath, "utf8");
     // Mutate the first base64 signature character to flip the verifier.
@@ -567,7 +567,7 @@ test("verifyJobEvidence: visual_sidecar_evidence_missing when manifest lacks vis
       schemaVersion: "1.0.0",
       contractVersion: "4.1.0",
       testIntelligenceContractVersion: TEST_INTELLIGENCE_CONTRACT_VERSION,
-      fixtureId: "poc-onboarding",
+      fixtureId: "validation-onboarding",
       jobId,
       generatedAt: GENERATED_AT,
       promptTemplateVersion: "1.0.0",
@@ -596,17 +596,17 @@ test("verifyJobEvidence: visual_sidecar_evidence_missing when manifest lacks vis
     };
     const serialized = canonicalJson(manifest);
     await writeFile(
-      join(dir, WAVE1_POC_EVIDENCE_MANIFEST_ARTIFACT_FILENAME),
+      join(dir, WAVE1_VALIDATION_EVIDENCE_MANIFEST_ARTIFACT_FILENAME),
       serialized,
       "utf8",
     );
-    const { computeWave1PocEvidenceManifestDigest } =
+    const { computeWave1ValidationEvidenceManifestDigest } =
       await import("./evidence-manifest.js");
-    const digest = computeWave1PocEvidenceManifestDigest(
-      manifest as Parameters<typeof computeWave1PocEvidenceManifestDigest>[0],
+    const digest = computeWave1ValidationEvidenceManifestDigest(
+      manifest as Parameters<typeof computeWave1ValidationEvidenceManifestDigest>[0],
     );
     await writeFile(
-      join(dir, "wave1-poc-evidence-manifest.sha256"),
+      join(dir, "wave1-validation-evidence-manifest.sha256"),
       `${digest}\n`,
       "utf8",
     );

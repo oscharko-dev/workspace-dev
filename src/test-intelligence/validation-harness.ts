@@ -1,5 +1,5 @@
 /**
- * Wave 1 POC harness (Issue #1366).
+ * Wave 1 Validation harness (Issue #1366).
  *
  * Runs the full Figma-to-Test chain end-to-end against an air-gapped
  * mock LLM, persists every artifact in a deterministic `runDir`, builds
@@ -101,36 +101,36 @@ import {
   type VisualSidecarResult,
   type VisualSidecarValidationReport,
   type SelfVerifyRubricReport,
-  type Wave1PocAttestationSigningMode,
-  type Wave1PocAttestationSummary,
-  type Wave1PocEvidenceManifest,
-  type Wave1PocFixtureId,
-  type Wave1PocLbomDocument,
-  type Wave1PocLbomSummary,
+  type Wave1ValidationAttestationSigningMode,
+  type Wave1ValidationAttestationSummary,
+  type Wave1ValidationEvidenceManifest,
+  type Wave1ValidationFixtureId,
+  type Wave1ValidationLbomDocument,
+  type Wave1ValidationLbomSummary,
 } from "../contracts/index.js";
 import type { ExportPipelineArtifacts } from "./export-pipeline.js";
 import type { ValidationPipelineArtifacts } from "./validation-pipeline.js";
 import { canonicalJson, sha256Hex } from "./content-hash.js";
 import {
-  buildWave1PocEvidenceManifest,
-  computeWave1PocEvidenceManifestDigest,
-  writeWave1PocEvidenceManifest,
+  buildWave1ValidationEvidenceManifest,
+  computeWave1ValidationEvidenceManifestDigest,
+  writeWave1ValidationEvidenceManifest,
 } from "./evidence-manifest.js";
 import {
-  buildSignedWave1PocAttestation,
-  buildUnsignedWave1PocAttestationEnvelope,
-  buildWave1PocAttestationStatement,
-  listWave1PocAttestationArtifactPaths,
-  persistWave1PocAttestation,
-  summarizeWave1PocAttestation,
-  type Wave1PocAttestationSigner,
+  buildSignedWave1ValidationAttestation,
+  buildUnsignedWave1ValidationAttestationEnvelope,
+  buildWave1ValidationAttestationStatement,
+  listWave1ValidationAttestationArtifactPaths,
+  persistWave1ValidationAttestation,
+  summarizeWave1ValidationAttestation,
+  type Wave1ValidationAttestationSigner,
 } from "./evidence-attestation.js";
 import { runAndPersistExportPipeline } from "./export-pipeline.js";
 import { deriveBusinessTestIntentIr } from "./intent-derivation.js";
 import type { LlmGatewayClient } from "./llm-gateway.js";
 import type { LlmGatewayClientBundle } from "./llm-gateway-bundle.js";
 import { createMockLlmGatewayClient } from "./llm-mock-gateway.js";
-import { loadWave1PocFixture } from "./poc-fixtures.js";
+import { loadWave1ValidationFixture } from "./validation-fixtures.js";
 import {
   assertNoImagePayloadToTestGeneration,
   describeVisualScreens,
@@ -188,10 +188,10 @@ import { writeGenealogyArtifact } from "./genealogy.js";
 
 const TEST_GENERATION_DEPLOYMENT = "gpt-oss-120b-mock";
 const TEST_GENERATION_MODEL_REVISION = "gpt-oss-120b-2026-04-25";
-const TEST_GENERATION_GATEWAY_RELEASE = "wave1-poc-mock";
+const TEST_GENERATION_GATEWAY_RELEASE = "wave1-validation-mock";
 const VISUAL_PRIMARY_DEPLOYMENT = "llama-4-maverick-vision";
 const VISUAL_FALLBACK_DEPLOYMENT = "phi-4-multimodal-poc";
-const POLICY_BUNDLE_VERSION = "wave1-poc";
+const POLICY_BUNDLE_VERSION = "wave1-validation";
 export const BUSINESS_INTENT_IR_ARTIFACT_FILENAME =
   "business-intent-ir.json" as const;
 export const COMPILED_PROMPT_ARTIFACT_FILENAME =
@@ -215,8 +215,8 @@ interface GatewayRequestAuditArtifact {
   cacheKeyDigest: string;
 }
 
-export interface RunWave1PocInput {
-  fixtureId: Wave1PocFixtureId;
+export interface RunWave1ValidationInput {
+  fixtureId: Wave1ValidationFixtureId;
   jobId: string;
   /** ISO-8601 timestamp stamped onto every artifact. */
   generatedAt: string;
@@ -269,18 +269,18 @@ export interface RunWave1PocInput {
   fourEyesPolicy?: FourEyesPolicy;
   /**
    * Optional signing mode for the in-toto v1 attestation (Issue #1377).
-   * Defaults to `"unsigned"` so the air-gapped POC fixture path remains
+  * Defaults to `"unsigned"` so the air-gapped fixture-only path remains
    * byte-stable and never invokes a signer. When set to `"sigstore"`,
    * `attestationSigner` MUST be supplied.
    */
-  attestationSigningMode?: Wave1PocAttestationSigningMode;
+  attestationSigningMode?: Wave1ValidationAttestationSigningMode;
   /**
    * Operator-supplied signer used when `attestationSigningMode` is
    * `"sigstore"`. The harness invokes the signer exactly once per run,
    * never logs the signer's secret material, and only records the
    * `signerReference` in the audit timeline.
    */
-  attestationSigner?: Wave1PocAttestationSigner;
+  attestationSigner?: Wave1ValidationAttestationSigner;
   /**
    * Opt-in self-verify rubric pass (Issue #1379). When omitted the
    * harness skips the rubric pass entirely and the run remains
@@ -288,21 +288,21 @@ export interface RunWave1PocInput {
    * `{ enabled: true }`, the harness threads the rubric pass through
    * the validation pipeline (between `testcase.validate` and
    * `testcase.policy`) and persists `<runDir>/testcases/self-verify-rubric.json`.
-   * The deterministic POC default uses a synthesized perfect-score mock
-   * responder so fixture replays remain byte-stable.
+  * The deterministic validation default uses a synthesized perfect-score mock
+  * responder so fixture replays remain byte-stable.
    */
-  selfVerifyRubric?: Wave1PocSelfVerifyRubricInput;
+  selfVerifyRubric?: Wave1ValidationSelfVerifyRubricInput;
 }
 
 /**
- * Optional rubric-pass inputs accepted by `runWave1Poc` (Issue #1379).
+ * Optional rubric-pass inputs accepted by `runWave1Validation` (Issue #1379).
  *
  * `client`, when supplied, MUST carry role `test_generation` per the
  * non-goal "no use of a second model different from the generator". When
  * omitted, the harness builds a deterministic perfect-score mock client
  * inline so fixture replays stay byte-stable.
  */
-export interface Wave1PocSelfVerifyRubricInput {
+export interface Wave1ValidationSelfVerifyRubricInput {
   enabled: true;
   /** Optional override; defaults to a synthesized perfect-score mock client. */
   client?: LlmGatewayClient;
@@ -319,8 +319,8 @@ export interface Wave1PocSelfVerifyRubricInput {
   /**
    * Optional override for the rubric-mock responder. When omitted the
    * harness uses `synthesizePerfectRubricResponse` (every dimension and
-   * visual subscore returns 1.0) so the deterministic POC fixture
-   * replays remain byte-stable.
+  * visual subscore returns 1.0) so the deterministic validation fixture
+  * replays remain byte-stable.
    */
   mockResponder?: (
     request: LlmGenerationRequest,
@@ -328,8 +328,8 @@ export interface Wave1PocSelfVerifyRubricInput {
   ) => LlmGenerationResult | Promise<LlmGenerationResult>;
 }
 
-export interface Wave1PocRunResult {
-  fixtureId: Wave1PocFixtureId;
+export interface Wave1ValidationRunResult {
+  fixtureId: Wave1ValidationFixtureId;
   jobId: string;
   generatedAt: string;
   runDir: string;
@@ -343,7 +343,7 @@ export interface Wave1PocRunResult {
   validation: ValidationPipelineArtifacts;
   reviewSnapshot: ReviewGateSnapshot;
   exportArtifacts: ExportPipelineArtifacts;
-  manifest: Wave1PocEvidenceManifest;
+  manifest: Wave1ValidationEvidenceManifest;
   /**
    * Sorted list of artifact filenames the manifest attests, for callers
    * that want to assert on artifact identity without re-reading the
@@ -374,16 +374,16 @@ export interface Wave1PocRunResult {
    * mode, the non-secret signer reference (when signed), and the
    * SHA-256 of the persisted envelope and bundle.
    */
-  attestation: Wave1PocAttestationSummary;
+  attestation: Wave1ValidationAttestationSummary;
   /**
    * Per-job CycloneDX 1.6 ML-BOM (Issue #1378). The harness always emits
    * the LBOM under `<runDir>/lbom/ai-bom.cdx.json` so an operator can
    * inventory the model chain, the curated few-shot bundle, and the
    * active policy profile that produced the run's structured test cases.
    */
-  lbom: Wave1PocLbomDocument;
+  lbom: Wave1ValidationLbomDocument;
   /** Audit-timeline summary of the per-job LBOM artifact. */
-  lbomSummary: Wave1PocLbomSummary;
+  lbomSummary: Wave1ValidationLbomSummary;
   /** Absolute path of the persisted `lbom/ai-bom.cdx.json` artifact. */
   lbomArtifactPath: string;
   /**
@@ -409,7 +409,7 @@ export interface Wave1PocRunResult {
   selfVerifyRubricArtifactPath?: string;
 }
 
-export class Wave1PocVisualSidecarFailureError extends Error {
+export class Wave1ValidationVisualSidecarFailureError extends Error {
   readonly visualSidecar: VisualSidecarFailure;
   readonly artifactPath: string;
 
@@ -418,23 +418,23 @@ export class Wave1PocVisualSidecarFailureError extends Error {
     artifactPath: string;
   }) {
     super(
-      `runWave1Poc: multimodal visual sidecar failed (${input.visualSidecar.failureClass}: ${input.visualSidecar.failureMessage}). The harness refuses to proceed because both visual sidecars are exhausted.`,
+      `runWave1Validation: multimodal visual sidecar failed (${input.visualSidecar.failureClass}: ${input.visualSidecar.failureMessage}). The harness refuses to proceed because both visual sidecars are exhausted.`,
     );
-    this.name = "Wave1PocVisualSidecarFailureError";
+    this.name = "Wave1ValidationVisualSidecarFailureError";
     this.visualSidecar = input.visualSidecar;
     this.artifactPath = input.artifactPath;
   }
 }
 
-export class Wave1PocFinOpsBudgetExceededError extends Error {
+export class Wave1ValidationFinOpsBudgetExceededError extends Error {
   readonly report: FinOpsBudgetReport;
   readonly artifactPath: string;
 
   constructor(input: { report: FinOpsBudgetReport; artifactPath: string }) {
     super(
-      `runWave1Poc: FinOps budget exceeded (${input.report.breaches.map((b) => b.rule).join(", ")})`,
+      `runWave1Validation: FinOps budget exceeded (${input.report.breaches.map((b) => b.rule).join(", ")})`,
     );
-    this.name = "Wave1PocFinOpsBudgetExceededError";
+    this.name = "Wave1ValidationFinOpsBudgetExceededError";
     this.report = input.report;
     this.artifactPath = input.artifactPath;
   }
@@ -759,7 +759,7 @@ const stableSlug = (input: string): string => {
 
 /**
  * Build a deterministic rubric mock LLM gateway client used by the
- * Wave 1 POC harness when `selfVerifyRubric: { enabled: true }` is set
+ * Wave 1 Validation harness when `selfVerifyRubric: { enabled: true }` is set
  * without an explicit `client`. Test case ids are passed in by the
  * harness via closure capture (NOT parsed back out of the prompt) so
  * the responder is robust to any future change in prompt rendering and
@@ -770,7 +770,7 @@ const stableSlug = (input: string): string => {
  * true. This keeps fixture replays byte-stable while still exercising
  * the full validation + parsing path.
  */
-const buildWave1PocRubricMockClient = (input: {
+const buildWave1ValidationRubricMockClient = (input: {
   expectedTestCaseIds: ReadonlyArray<string>;
   visualPresent: boolean;
   responder?: (
@@ -788,12 +788,12 @@ const buildWave1PocRubricMockClient = (input: {
         outcome: "error",
         errorClass: "schema_invalid",
         message:
-          "Wave1Poc rubric mock: unexpected responseSchemaName on rubric request",
+          "Wave1Validation rubric mock: unexpected responseSchemaName on rubric request",
         retryable: false,
         attempt: 1,
       };
     }
-    return synthesizePerfectWave1PocRubricResponse({
+    return synthesizePerfectWave1ValidationRubricResponse({
       expectedTestCaseIds: input.expectedTestCaseIds,
       visualPresent: input.visualPresent,
     });
@@ -811,9 +811,9 @@ const buildWave1PocRubricMockClient = (input: {
  * Synthesize a perfect-score rubric response for the supplied test
  * case ids. Pure: identical inputs produce byte-identical responses,
  * which is what guarantees the rubric replay-cache hit path documented
- * on Issue #1379 stays byte-stable for the POC fixtures.
+ * on Issue #1379 stays byte-stable for the fixture suite.
  */
-const synthesizePerfectWave1PocRubricResponse = (input: {
+const synthesizePerfectWave1ValidationRubricResponse = (input: {
   expectedTestCaseIds: ReadonlyArray<string>;
   visualPresent: boolean;
 }): LlmGenerationResult => {
@@ -832,7 +832,7 @@ const synthesizePerfectWave1PocRubricResponse = (input: {
         {
           ruleId: "wave1.synth.default",
           message:
-            "Synthesized perfect score for the deterministic Wave 1 POC fixture",
+            "Synthesized perfect score for the deterministic Wave 1 Validation fixture",
         },
       ],
     };
@@ -985,10 +985,10 @@ const buildAuditMetadata = (input: {
   schemaHash: input.schemaHash,
 });
 
-/** Run a single Wave 1 POC fixture end-to-end. */
-export const runWave1Poc = async (
-  input: RunWave1PocInput,
-): Promise<Wave1PocRunResult> => {
+/** Run a single Wave 1 Validation fixture end-to-end. */
+export const runWave1Validation = async (
+  input: RunWave1ValidationInput,
+): Promise<Wave1ValidationRunResult> => {
   await mkdir(input.runDir, { recursive: true });
 
   // FinOps recorder (Issue #1371). Aggregates per-role usage and produces a
@@ -1001,13 +1001,13 @@ export const runWave1Poc = async (
   const finopsBudgetValidation = validateFinOpsBudgetEnvelope(finopsBudget);
   if (!finopsBudgetValidation.valid) {
     throw new RangeError(
-      `runWave1Poc: invalid FinOps budget envelope (${finopsBudgetValidation.errors.map((e) => `${e.path}: ${e.message}`).join("; ")})`,
+      `runWave1Validation: invalid FinOps budget envelope (${finopsBudgetValidation.errors.map((e) => `${e.path}: ${e.message}`).join("; ")})`,
     );
   }
   let finopsTerminalOutcome: FinOpsJobOutcome | undefined;
 
   // 1. Load fixture.
-  const fixture = await loadWave1PocFixture(input.fixtureId);
+  const fixture = await loadWave1ValidationFixture(input.fixtureId);
 
   // 1b. Optional: run multimodal visual sidecar. When `visualCaptures` is
   //     supplied along with a `bundle`, the harness asks the visual
@@ -1020,12 +1020,12 @@ export const runWave1Poc = async (
   if (input.visualCaptures !== undefined && input.visualCaptures.length > 0) {
     if (input.bundle === undefined) {
       throw new RangeError(
-        "runWave1Poc: visualCaptures requires bundle (an LlmGatewayClientBundle) to route the multimodal request",
+        "runWave1Validation: visualCaptures requires bundle (an LlmGatewayClientBundle) to route the multimodal request",
       );
     }
     if (input.bundle.testGeneration.declaredCapabilities.imageInputSupport) {
       throw new RangeError(
-        "runWave1Poc: bundle.testGeneration must not declare imageInputSupport=true",
+        "runWave1Validation: bundle.testGeneration must not declare imageInputSupport=true",
       );
     }
     // The intent built from Figma alone is enough for the sidecar gate
@@ -1128,7 +1128,7 @@ export const runWave1Poc = async (
         finopsReportBytes: finopsFailureWritten.bytes,
         policyProfile: input.policyProfile ?? cloneEuBankingDefaultProfile(),
       });
-      throw new Wave1PocVisualSidecarFailureError({
+      throw new Wave1ValidationVisualSidecarFailureError({
         visualSidecar: sidecarResult,
         artifactPath: sidecarArtifactPath,
       });
@@ -1271,7 +1271,7 @@ export const runWave1Poc = async (
           : {}),
       });
       throw new Error(
-        `runWave1Poc: mock LLM returned a failure (${result.errorClass}: ${result.message})`,
+        `runWave1Validation: mock LLM returned a failure (${result.errorClass}: ${result.message})`,
       );
     }
     await assertFinOpsBudgetOpen({
@@ -1321,7 +1321,7 @@ export const runWave1Poc = async (
   for (const request of recordedRequests) {
     if (request.imageInputs !== undefined && request.imageInputs.length > 0) {
       throw new Error(
-        "runWave1Poc: the test_generation gateway must never receive image payloads",
+        "runWave1Validation: the test_generation gateway must never receive image payloads",
       );
     }
   }
@@ -1392,7 +1392,7 @@ export const runWave1Poc = async (
     const rubricVisualPresent = visualForDerivation.length > 0;
     const rubricClient =
       input.selfVerifyRubric.client ??
-      buildWave1PocRubricMockClient({
+      buildWave1ValidationRubricMockClient({
         expectedTestCaseIds: expectedRubricIds,
         visualPresent: rubricVisualPresent,
         ...(input.selfVerifyRubric.mockResponder !== undefined
@@ -1401,7 +1401,7 @@ export const runWave1Poc = async (
       });
     if (rubricClient.role !== "test_generation") {
       throw new RangeError(
-        "runWave1Poc: selfVerifyRubric.client must declare role test_generation",
+        "runWave1Validation: selfVerifyRubric.client must declare role test_generation",
       );
     }
     validation = await runValidationPipelineWithSelfVerify({
@@ -1517,7 +1517,7 @@ export const runWave1Poc = async (
   ]);
 
   // 8. Seed review state and approve every case the policy did not
-  //    BLOCK. Wave 1 POC determinism requires byte-identical events,
+  //    BLOCK. Wave 1 Validation determinism requires byte-identical events,
   //    so the harness deliberately bypasses the file-system review
   //    store (whose `randomUUID()` event ids would defeat replay) and
   //    seeds + transitions in-memory using `transitionReviewState`.
@@ -1686,7 +1686,7 @@ export const runWave1Poc = async (
       .map((issue) => `${issue.path}: ${issue.message}`)
       .join("; ");
     throw new Error(
-      `runWave1Poc: refusing to persist invalid LBOM (${summary})`,
+      `runWave1Validation: refusing to persist invalid LBOM (${summary})`,
     );
   }
   const lbomWritten = await writeLbomArtifact({
@@ -1710,7 +1710,7 @@ export const runWave1Poc = async (
       .map((issue) => `${issue.path}: ${issue.message}`)
       .join("; ");
     throw new Error(
-      `runWave1Poc: refusing to persist invalid release ML-BOM (${summary})`,
+      `runWave1Validation: refusing to persist invalid release ML-BOM (${summary})`,
     );
   }
   const mlBomWritten = await writeMlBomArtifact({
@@ -1745,7 +1745,7 @@ export const runWave1Poc = async (
           resultArtifactSha256: sha256OfBytes(sidecarArtifactBytes),
         }
       : undefined;
-  const manifest = buildWave1PocEvidenceManifest({
+  const manifest = buildWave1ValidationEvidenceManifest({
     fixtureId: input.fixtureId,
     jobId: input.jobId,
     generatedAt: input.generatedAt,
@@ -1874,19 +1874,19 @@ export const runWave1Poc = async (
         : []),
     ],
   });
-  await writeWave1PocEvidenceManifest({
+  await writeWave1ValidationEvidenceManifest({
     manifest,
     destinationDir: input.runDir,
   });
 
-  const attestationSigningMode: Wave1PocAttestationSigningMode =
+  const attestationSigningMode: Wave1ValidationAttestationSigningMode =
     input.attestationSigningMode ?? "unsigned";
   if (
     attestationSigningMode === "sigstore" &&
     input.attestationSigner === undefined
   ) {
     throw new Error(
-      'runWave1Poc: attestationSigningMode="sigstore" requires an attestationSigner',
+      'runWave1Validation: attestationSigningMode="sigstore" requires an attestationSigner',
     );
   }
   if (
@@ -1894,11 +1894,11 @@ export const runWave1Poc = async (
     input.attestationSigner !== undefined
   ) {
     throw new Error(
-      'runWave1Poc: attestationSigner must not be supplied when attestationSigningMode="unsigned"',
+      'runWave1Validation: attestationSigner must not be supplied when attestationSigningMode="unsigned"',
     );
   }
-  const manifestSha256 = computeWave1PocEvidenceManifestDigest(manifest);
-  const attestationStatement = buildWave1PocAttestationStatement({
+  const manifestSha256 = computeWave1ValidationEvidenceManifestDigest(manifest);
+  const attestationStatement = buildWave1ValidationAttestationStatement({
     manifest,
     manifestSha256,
     bySourceHash: computePerSourceCostBreakdownHashFromReport(finopsReport),
@@ -1908,7 +1908,7 @@ export const runWave1Poc = async (
   let attestationBundle;
   let signerReference: string | undefined;
   if (attestationSigningMode === "sigstore" && input.attestationSigner) {
-    const signed = await buildSignedWave1PocAttestation({
+    const signed = await buildSignedWave1ValidationAttestation({
       statement: attestationStatement,
       signer: input.attestationSigner,
     });
@@ -1917,17 +1917,17 @@ export const runWave1Poc = async (
     signerReference = input.attestationSigner.signerReference;
   } else {
     attestationEnvelope =
-      buildUnsignedWave1PocAttestationEnvelope(attestationStatement);
+      buildUnsignedWave1ValidationAttestationEnvelope(attestationStatement);
   }
-  const persistedAttestation = await persistWave1PocAttestation({
+  const persistedAttestation = await persistWave1ValidationAttestation({
     envelope: attestationEnvelope,
     ...(attestationBundle !== undefined ? { bundle: attestationBundle } : {}),
     runDir: input.runDir,
   });
   // Reference the path lister so verifier-driven callers can stay in
   // sync with the harness layout without duplicating constants.
-  void listWave1PocAttestationArtifactPaths(attestationSigningMode);
-  const attestationSummary = summarizeWave1PocAttestation({
+  void listWave1ValidationAttestationArtifactPaths(attestationSigningMode);
+  const attestationSummary = summarizeWave1ValidationAttestation({
     signingMode: attestationSigningMode,
     ...(signerReference !== undefined ? { signerReference } : {}),
     persisted: persistedAttestation,
@@ -2171,7 +2171,7 @@ const assertFinOpsBudgetOpen = async (input: {
     report: { ...report, outcome: "budget_exceeded" },
     runDir: input.runDir,
   });
-  throw new Wave1PocFinOpsBudgetExceededError({
+  throw new Wave1ValidationFinOpsBudgetExceededError({
     report: { ...report, outcome: "budget_exceeded" },
     artifactPath: written.artifactPath,
   });
@@ -2271,7 +2271,7 @@ const sha256OfBytes = (bytes: Uint8Array): string =>
   createHash("sha256").update(bytes).digest("hex");
 
 type ManifestVisualDeployment = NonNullable<
-  Wave1PocEvidenceManifest["modelDeployments"]["visualPrimary"]
+  Wave1ValidationEvidenceManifest["modelDeployments"]["visualPrimary"]
 >;
 
 const toManifestVisualDeployment = (
@@ -2383,7 +2383,7 @@ const buildActiveModelBindings = (
 ];
 
 const writeVisualSidecarFailureEvidenceManifest = async (input: {
-  fixtureId: Wave1PocFixtureId;
+  fixtureId: Wave1ValidationFixtureId;
   jobId: string;
   generatedAt: string;
   runDir: string;
@@ -2468,7 +2468,7 @@ const writeVisualSidecarFailureEvidenceManifest = async (input: {
       .map((issue) => `${issue.path}: ${issue.message}`)
       .join("; ");
     throw new Error(
-      `runWave1Poc: refusing to persist invalid failure-mode LBOM (${summary})`,
+      `runWave1Validation: refusing to persist invalid failure-mode LBOM (${summary})`,
     );
   }
   const lbomWritten = await writeLbomArtifact({
@@ -2488,14 +2488,14 @@ const writeVisualSidecarFailureEvidenceManifest = async (input: {
       .map((issue) => `${issue.path}: ${issue.message}`)
       .join("; ");
     throw new Error(
-      `runWave1Poc: refusing to persist invalid failure-mode release ML-BOM (${summary})`,
+      `runWave1Validation: refusing to persist invalid failure-mode release ML-BOM (${summary})`,
     );
   }
   const mlBomWritten = await writeMlBomArtifact({
     document: mlBomDocument,
     runDir: input.runDir,
   });
-  const manifest = buildWave1PocEvidenceManifest({
+  const manifest = buildWave1ValidationEvidenceManifest({
     fixtureId: input.fixtureId,
     jobId: input.jobId,
     generatedAt: input.generatedAt,
@@ -2541,7 +2541,7 @@ const writeVisualSidecarFailureEvidenceManifest = async (input: {
       },
     ],
   });
-  await writeWave1PocEvidenceManifest({
+  await writeWave1ValidationEvidenceManifest({
     manifest,
     destinationDir: input.runDir,
   });
@@ -2639,16 +2639,16 @@ const computeReviewCounts = (
 };
 
 /** Deterministic primary approver actor used by the harness fixture. */
-const POC_PRIMARY_REVIEWER = "wave1-poc-harness";
+const VALIDATION_PRIMARY_REVIEWER = "wave1-validation-harness";
 /**
  * Deterministic secondary approver actor used by the harness fixture
  * when four-eyes is enforced. Distinct from the primary so the harness
  * exercises the two-distinct-principal branch end-to-end.
  */
-const POC_SECONDARY_REVIEWER = "wave1-poc-harness-secondary";
+const VALIDATION_SECONDARY_REVIEWER = "wave1-validation-harness-secondary";
 
 /**
- * Wave 1 POC convention: seed every test case from the policy decision,
+ * Wave 1 Validation convention: seed every test case from the policy decision,
  * then approve every case the policy did not BLOCK. Cases the policy
  * marked `blocked` remain in `needs_review` so a future deliberate-fail
  * fixture can demonstrate the export-refusal path.
@@ -2743,13 +2743,13 @@ const buildDeterministicReviewBundle = (input: {
             sequence,
             fromState: currentState,
             toState: primaryTransition.to,
-            actor: POC_PRIMARY_REVIEWER,
+            actor: VALIDATION_PRIMARY_REVIEWER,
           });
           currentState = primaryTransition.to;
           lastEventId = primaryEventId;
           sequence += 1;
-          approvers = [POC_PRIMARY_REVIEWER];
-          primaryReviewer = POC_PRIMARY_REVIEWER;
+          approvers = [VALIDATION_PRIMARY_REVIEWER];
+          primaryReviewer = VALIDATION_PRIMARY_REVIEWER;
           primaryApprovalAt = input.generatedAt;
 
           // Secondary approval — fail-closed if the state machine refuses.
@@ -2776,13 +2776,13 @@ const buildDeterministicReviewBundle = (input: {
               sequence,
               fromState: currentState,
               toState: secondaryTransition.to,
-              actor: POC_SECONDARY_REVIEWER,
+            actor: VALIDATION_SECONDARY_REVIEWER,
             });
             currentState = secondaryTransition.to;
             lastEventId = secondaryEventId;
             sequence += 1;
-            approvers = [POC_PRIMARY_REVIEWER, POC_SECONDARY_REVIEWER].sort();
-            secondaryReviewer = POC_SECONDARY_REVIEWER;
+            approvers = [VALIDATION_PRIMARY_REVIEWER, VALIDATION_SECONDARY_REVIEWER].sort();
+            secondaryReviewer = VALIDATION_SECONDARY_REVIEWER;
             secondaryApprovalAt = input.generatedAt;
           }
         }
@@ -2799,7 +2799,7 @@ const buildDeterministicReviewBundle = (input: {
             sequence,
             "approved",
           );
-          approvers = [POC_PRIMARY_REVIEWER];
+          approvers = [VALIDATION_PRIMARY_REVIEWER];
           events.push({
             schemaVersion: REVIEW_GATE_SCHEMA_VERSION,
             contractVersion: TEST_INTELLIGENCE_CONTRACT_VERSION,
@@ -2811,7 +2811,7 @@ const buildDeterministicReviewBundle = (input: {
             sequence,
             fromState: currentState,
             toState: transition.to,
-            actor: POC_PRIMARY_REVIEWER,
+            actor: VALIDATION_PRIMARY_REVIEWER,
           });
           currentState = transition.to;
           lastEventId = approveEventId;

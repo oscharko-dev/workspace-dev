@@ -21,14 +21,14 @@
       "bom-ref": "job:job-template",
       "name": "workspace-dev-test-intelligence-job",
       "version": "job-template",
-      "description": "Wave 1 POC test-intelligence job. Composes the model chain, the curated few-shot bundle, and the active policy profile that produced the run's structured test cases.",
+      "description": "Wave 1 Validation test-intelligence job. Composes the model chain, the curated few-shot bundle, and the active policy profile that produced the run's structured test cases.",
       "properties": [
         {
           "name": "workspace-dev:exportProfileId",
           "value": "opentext-alm-default"
         },
         { "name": "workspace-dev:exportProfileVersion", "value": "1.0.0" },
-        { "name": "workspace-dev:fixtureId", "value": "poc-onboarding" },
+        { "name": "workspace-dev:fixtureId", "value": "validation-onboarding" },
         { "name": "workspace-dev:jobId", "value": "job-template" }
       ]
     },
@@ -80,7 +80,7 @@
         { "name": "workspace-dev:deployment", "value": "gpt-oss-120b-mock" },
         { "name": "workspace-dev:fallbackUsed", "value": "false" },
         { "name": "workspace-dev:format", "value": "openai_chat" },
-        { "name": "workspace-dev:gatewayRelease", "value": "wave1-poc-mock" },
+        { "name": "workspace-dev:gatewayRelease", "value": "wave1-validation-mock" },
         { "name": "workspace-dev:imageInputSupport", "value": "false" },
         { "name": "workspace-dev:licenseStatus", "value": "unknown" },
         { "name": "workspace-dev:provider", "value": "unknown" },

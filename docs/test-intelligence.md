@@ -15,8 +15,8 @@ introduce new public APIs beyond what is already documented in
 
 In scope:
 
-- How to enable the subsurface and run the repository Wave 1 proof-of-concept
-  (POC) against synthetic fixtures from a source checkout.
+- How to enable the subsurface and run the repository Wave 1 validation
+  harness against synthetic fixtures from a source checkout.
 - Job type and mode namespace for test-intelligence submissions.
 - Artifact tree, schema versions, and persistence guarantees.
 - Reviewer-driven review-gate state machine and bearer-protected write routes.
@@ -54,7 +54,7 @@ Out of scope:
   isolated by design.
 - A new optional job type `figma_to_qc_test_cases` is reserved on
   `WorkspaceJobType`. It currently returns `501 NOT_IMPLEMENTED` from
-  `POST /workspace/submit`; the Wave 1 POC harness, review gate, and export
+  `POST /workspace/submit`; the Wave 1 Validation harness, review gate, and export
   pipeline are reachable in-process and via the Inspector test-intelligence
   routes only. A future wave will wire the runner.
 - All persisted artifacts use deterministic canonical-JSON serialization plus
@@ -165,11 +165,11 @@ The visual-sidecar defaults also enforce review for low confidence, fallback
 execution, possible PII, prompt-injection-like text, and Figma metadata
 conflicts without storing raw screenshots in the review state.
 
-## 2. Run the Wave 1 POC from a repository checkout
+## 2. Run the Wave 1 Validation from a repository checkout
 
-The Wave 1 POC harness composes the full pipeline on synthetic fixtures and
+The Wave 1 Validation harness composes the full pipeline on synthetic fixtures and
 emits a verifiable evidence manifest. It uses a deterministic mock LLM by
-default and never performs network calls. The POC harness and its fixtures are
+default and never performs network calls. The validation harness and its fixtures are
 repository verification surfaces for maintainers and integrators auditing the
 package from source. Installed-package consumers should use the exported
 `createWorkspaceServer` runtime, the `workspace-dev/contracts` surface, and the
@@ -177,8 +177,8 @@ Inspector routes described in this guide.
 
 Two repository fixtures are provided under `src/test-intelligence/fixtures/`:
 
-- `poc-onboarding` — sign-up plus identity verification flow.
-- `poc-payment-auth` — SEPA payment plus 3-D Secure authorization flow.
+- `validation-onboarding` — sign-up plus identity verification flow.
+- `validation-payment-auth` — SEPA payment plus 3-D Secure authorization flow.
 
 Both fixtures ship a companion `*.visual.json` sidecar so the visual sidecar
 gate has a deterministic input.
@@ -189,7 +189,7 @@ Run the dedicated CI script from the repository root:
 pnpm run test:ti-eval
 ```
 
-This script runs the full POC harness, the validation pipeline, the export
+This script runs the full validation harness, the validation pipeline, the export
 pipeline, the visual sidecar client, the QC ALM dry-run adapter, plus the
 golden-fixture and evidence verification suites. The script does not require
 network access. Replay produces byte-identical artifact hashes for the same
@@ -199,7 +199,7 @@ For an interactive source checkout walk-through, call the harness directly from
 a Node.js script. These helpers are intentionally not exported from the npm
 package today; the stable installed-package surface remains the root runtime
 entry point plus `workspace-dev/contracts`. See the contract API reference for
-`Wave1PocFixtureId`, `Wave1PocEvidenceManifest`, `Wave1PocEvalReport`, and the
+`Wave1ValidationFixtureId`, `Wave1ValidationEvidenceManifest`, `Wave1ValidationEvalReport`, and the
 supporting exported types.
 
 ## 3. Job type and mode namespace
@@ -217,7 +217,7 @@ operators can plan integration without depending on the runner being wired:
 | `TEST_INTELLIGENCE_ENV`                     | `"FIGMAPIPE_WORKSPACE_TEST_INTELLIGENCE"`                            |
 
 The submit route accepts `jobType: "figma_to_qc_test_cases"` for forward
-compatibility but currently returns `501 NOT_IMPLEMENTED`. Use the Wave 1 POC
+compatibility but currently returns `501 NOT_IMPLEMENTED`. Use the Wave 1 Validation
 harness or the Inspector test-intelligence routes for the in-process workflow.
 
 ## 4. Artifact tree
@@ -243,9 +243,9 @@ Artifacts are persisted under
 | `testcases.alm.xml`                     | `ALM_EXPORT_SCHEMA_VERSION` + `ALM_EXPORT_XML_NAMESPACE`       | Export            |
 | `export-report.json`                    | `EXPORT_REPORT_SCHEMA_VERSION`                                 | Export            |
 | `dry-run-report.json`                   | `DRY_RUN_REPORT_SCHEMA_VERSION`                                | QC dry-run        |
-| `wave1-poc-evidence-manifest.json`      | `WAVE1_POC_EVIDENCE_MANIFEST_SCHEMA_VERSION`                   | POC               |
-| `wave1-poc-evidence-manifest.sha256`    | `WAVE1_POC_EVIDENCE_MANIFEST_DIGEST_FILENAME`                  | POC               |
-| `wave1-poc-eval-report.json`            | `WAVE1_POC_EVAL_REPORT_SCHEMA_VERSION`                         | POC               |
+| `wave1-validation-evidence-manifest.json`      | `WAVE1_VALIDATION_EVIDENCE_MANIFEST_SCHEMA_VERSION`                   | Validation        |
+| `wave1-validation-evidence-manifest.sha256`    | `WAVE1_VALIDATION_EVIDENCE_MANIFEST_DIGEST_FILENAME`                  | Validation        |
+| `wave1-validation-eval-report.json`            | `WAVE1_VALIDATION_EVAL_REPORT_SCHEMA_VERSION`                         | Validation        |
 | `llm-capabilities.json`                 | `LLM_CAPABILITIES_SCHEMA_VERSION`                              | LLM gateway probe |
 | `finops/budget-report.json`             | `FINOPS_BUDGET_REPORT_SCHEMA_VERSION`                          | FinOps            |
 | `lbom/ai-bom.cdx.json`                  | `LBOM_ARTIFACT_SCHEMA_VERSION` + `LBOM_CYCLONEDX_SPEC_VERSION` | LBOM              |
@@ -445,7 +445,7 @@ the input.
 
 ## 8. Evidence verification
 
-The Wave 1 POC harness emits `wave1-poc-evidence-manifest.json` next to the
+The Wave 1 Validation harness emits `wave1-validation-evidence-manifest.json` next to the
 artifact set. The manifest records, for every artifact:
 
 - relative filename
@@ -454,8 +454,8 @@ artifact set. The manifest records, for every artifact:
 - artifact category (`generated_testcases`, `validation_report`,
   `policy_report`, `coverage_report`, `visual_sidecar_validation`,
   `visual_sidecar_result`, `qc_mapping_preview`, `export_report`,
-  `review_state`, `review_events`, `alm_export`, `dry_run_report`, plus the
-  POC fixture identity and CSV/XLSX/JSON export rows)
+  `review_state`, `review_events`, `alm_export`, `dry_run_report`,
+  validation fixture identity and CSV/XLSX/JSON export rows)
 
 The manifest also stamps:
 
@@ -472,16 +472,16 @@ The manifest also stamps:
 From a repository checkout, operators and maintainers verify a manifest with
 the bundled helper functions:
 
-- `verifyWave1PocEvidenceManifest(manifest, recomputedArtifacts)` — re-hashes
+- `verifyWave1ValidationEvidenceManifest(manifest, recomputedArtifacts)` — re-hashes
   artifacts already in memory and validates the manifest self-attestation when
   present.
-- `verifyWave1PocEvidenceFromDisk(runDirectory)` — re-reads each artifact and
-  recomputes the SHA-256, returning `Wave1PocEvidenceVerificationResult` with
+- `verifyWave1ValidationEvidenceFromDisk(runDirectory)` — re-reads each artifact and
+  recomputes the SHA-256, returning `Wave1ValidationEvidenceVerificationResult` with
   pass/fail per artifact, manifest self-attestation details, and an overall
   verdict. It also checks the sibling digest witness.
-- `computeWave1PocEvidenceManifestDigest(manifest)` — returns a single
+- `computeWave1ValidationEvidenceManifestDigest(manifest)` — returns a single
   manifest-level digest suitable for inclusion in a downstream attestation.
-- `verifyWave1PocAttestationFromDisk(runDirectory, manifest, manifestDigest)` —
+- `verifyWave1ValidationAttestationFromDisk(runDirectory, manifest, manifestDigest)` —
   verifies the sibling in-toto DSSE envelope under `evidence/attestations/` and,
   when signing mode is `sigstore`, the local Sigstore-shaped bundle under
   `evidence/signatures/`.
@@ -494,7 +494,7 @@ The default attestation mode is `unsigned`, which writes a deterministic DSSE
 envelope with an empty `signatures` array and makes no network calls. Operators
 who explicitly set `attestationSigningMode: "sigstore"` must supply a signer;
 the built-in key-bound signer uses local ECDSA P-256 material, while the
-keyless scaffold delegates Fulcio/Rekor/OIDC work to operator code. The POC
+keyless scaffold delegates Fulcio/Rekor/OIDC work to operator code. The validation
 harness returns a compact audit summary with signing mode, optional signer
 reference, and SHA-256 identifiers; it never records keys, bearer tokens, or
 gateway credentials.
@@ -517,7 +517,7 @@ Response (`200 OK`, `application/json`, `EvidenceVerifyResponse` shape):
 {
     "schemaVersion": "1.0.0",
     "verifiedAt": "2026-04-26T10:00:00.000Z",
-    "jobId": "wave1-poc-onboarding",
+    "jobId": "wave1-validation-onboarding",
     "ok": true,
     "manifestSha256": "<64-char hex>",
     "manifestSchemaVersion": "1.0.0",
@@ -547,7 +547,7 @@ Status codes:
 - `404 JOB_NOT_FOUND` — no job directory exists under the configured
   `testIntelligenceArtifactRoot`. The response carries no path information.
 - `409 EVIDENCE_NOT_AVAILABLE` — the job directory exists but no
-  `wave1-poc-evidence-manifest.json` has been written yet.
+  `wave1-validation-evidence-manifest.json` has been written yet.
 - `401 UNAUTHORIZED` — missing or invalid Bearer token; the response includes a
   `WWW-Authenticate: Bearer realm="workspace-dev"` header.
 - `503 AUTHENTICATION_UNAVAILABLE` — `testIntelligence.reviewBearerToken` is
@@ -579,7 +579,7 @@ Three deployments participate, in customer-safe terms:
 | --------------------------------- | ------------------------- | ----------- |
 | Structured test-case generation   | `gpt-oss-120b`            | Never       |
 | Primary multimodal sidecar        | `llama-4-maverick-vision` | Required    |
-| Fallback multimodal sidecar (POC) | `phi-4-multimodal-poc`    | Required    |
+| Fallback multimodal sidecar       | `phi-4-multimodal-poc`    | Required    |
 
 Hard invariants on the role-separated client bundle:
 
@@ -604,7 +604,7 @@ duplicate_screen_id, empty_screen_capture_set
 ```
 
 When both the primary and the fallback sidecar fail, the harness throws
-`Wave1PocVisualSidecarFailureError` and writes no downstream artifacts. The
+`Wave1ValidationVisualSidecarFailureError` and writes no downstream artifacts. The
 visual sidecar result envelope is still persisted with the failure attribution
 so audit replay can see why generation refused to proceed.
 
@@ -664,8 +664,8 @@ Configured budgets fail closed before downstream validation/export can proceed:
 Aggregate role/job caps (`maxAttempts`, total token caps, total wall-clock,
 replay-cache miss rate, live-smoke calls, and estimated cost) are evaluated
 immediately after each recorded LLM/sidecar attempt. On breach,
-`runWave1Poc` writes the current FinOps report with structured breach records,
-throws `Wave1PocFinOpsBudgetExceededError`, and does not continue into
+`runWave1Validation` writes the current FinOps report with structured breach records,
+throws `Wave1ValidationFinOpsBudgetExceededError`, and does not continue into
 validation or export.
 
 ### Cache hits and the budget report
@@ -675,7 +675,7 @@ A cache hit signals "no LLM call, no token usage" verbatim:
 - `recordCacheHit({ role })` increments only `cacheHits`. Every other counter
   stays at 0 — including `attempts`, `inputTokens`, `outputTokens`,
   `durationMs`, and `imageBytes`.
-- When `runWave1Poc` receives a `replayCache`, it wraps test generation with
+- When `runWave1Validation` receives a `replayCache`, it wraps test generation with
   the existing replay-cache helper. Hits skip the test-generation gateway call,
   mark generated-case audit metadata as `cacheHit: true`, and produce a
   `completed_cache_hit` FinOps report.
@@ -711,17 +711,17 @@ before serialization.
 
 ### Wiring it into a run
 
-`runWave1Poc` accepts optional `finopsBudget` and `finopsCostRates` inputs for
+`runWave1Validation` accepts optional `finopsBudget` and `finopsCostRates` inputs for
 in-repo evaluation harnesses:
 
 ```ts
 import {
     cloneEuBankingDefaultFinOpsBudget,
-    runWave1Poc,
+    runWave1Validation,
 } from "../src/test-intelligence/index.js";
 
-const result = await runWave1Poc({
-    fixtureId: "poc-onboarding",
+const result = await runWave1Validation({
+    fixtureId: "validation-onboarding",
     jobId: "job-42",
     generatedAt: "2026-04-25T10:00:00.000Z",
     runDir: "/tmp/job-42",
@@ -749,7 +749,7 @@ absolute paths, `..`, empty path segments, backslashes, and control characters.
 
 ## 9b. Per-job LBOM (Issue #1378)
 
-Every completed Wave 1 POC run emits a per-job LLM Bill of Materials in
+Every completed Wave 1 Validation run emits a per-job LLM Bill of Materials in
 CycloneDX 1.6 ML-BOM format under `<runDir>/lbom/ai-bom.cdx.json`. The
 artifact inventories the model chain (`gpt-oss-120b` test generator,
 `llama-4-maverick-vision` visual primary, `phi-4-multimodal-poc` visual
@@ -964,7 +964,7 @@ The subsurface implements data-minimization and PII-redaction controls:
 DPIA-ready evidence emitted per job:
 
 - `validation-report.json`, `policy-report.json`, `coverage-report.json`,
-  `review-events.json`, `wave1-poc-evidence-manifest.json`.
+  `review-events.json`, `wave1-validation-evidence-manifest.json`.
 
 Retention is operator-controlled. The package writes artifacts under the
 operator-supplied `artifactRoot` and never deletes them.
@@ -983,7 +983,7 @@ classification themselves:
 - Prompt template version and JSON-schema digest used to constrain output.
 - Per-case validation, policy, coverage, and visual-sidecar outcomes.
 - Review-state event log with reviewer handles and timestamps.
-- Pass/fail evaluation report with thresholds (`wave1-poc-eval-report.json`).
+- Pass/fail evaluation report with thresholds (`wave1-validation-eval-report.json`).
 
 The reviewer-driven gate enforces a human-in-the-loop step before any case
 reaches the export pipeline. For cases covered by the resolved four-eyes

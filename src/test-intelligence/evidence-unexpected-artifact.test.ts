@@ -5,8 +5,8 @@ import { join } from "node:path";
 import test from "node:test";
 
 import {
-  buildWave1PocEvidenceManifest,
-  verifyWave1PocEvidenceManifest,
+  buildWave1ValidationEvidenceManifest,
+  verifyWave1ValidationEvidenceManifest,
 } from "./evidence-manifest.js";
 
 const utf8 = (value: string): Uint8Array => new TextEncoder().encode(value);
@@ -16,8 +16,8 @@ test("evidence-unexpected-artifact: verifier reports extra multi-source artifact
   await writeFile(join(dir, "alpha.json"), '{"ok":true}', "utf8");
   await writeFile(join(dir, "multi-source-conflicts.json"), '{"phantom":true}', "utf8");
 
-  const manifest = buildWave1PocEvidenceManifest({
-    fixtureId: "poc-onboarding",
+  const manifest = buildWave1ValidationEvidenceManifest({
+    fixtureId: "validation-onboarding",
     jobId: "job-1438",
     generatedAt: "2026-04-27T10:00:00.000Z",
     modelDeployments: {
@@ -41,7 +41,7 @@ test("evidence-unexpected-artifact: verifier reports extra multi-source artifact
     ],
   });
 
-  const result = await verifyWave1PocEvidenceManifest({
+  const result = await verifyWave1ValidationEvidenceManifest({
     manifest,
     artifactsDir: dir,
     rejectUnexpected: true,

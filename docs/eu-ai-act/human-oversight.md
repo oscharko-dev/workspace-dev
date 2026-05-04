@@ -142,7 +142,7 @@ The following per-job artifacts provide evidence of human oversight controls:
 | `review-events.json`                      | Complete audit log of reviewer handles, actions, and timestamps for every approved/rejected/noted case |
 | `multi-source-conflicts.json`             | Documents source conflicts, the applied resolution policy, and the final reconciled intent used for AI generation |
 | `policy-report.json`                      | Per-case policy decisions, including four-eyes flags and conflict-triggered escalations                |
-| `wave1-poc-evidence-manifest.json`        | SHA-256 hashes for every artifact plus model deployment names and prompt template version              |
+| `wave1-validation-evidence-manifest.json`        | SHA-256 hashes for every artifact plus model deployment names and prompt template version              |
 | `validation-report.json`                  | Per-case AI output validation, including semantic-suspicious-content findings                          |
 
 ---

@@ -20,34 +20,34 @@ import test from "node:test";
 import {
   CONTRACT_VERSION,
   TEST_INTELLIGENCE_CONTRACT_VERSION,
-  WAVE1_POC_ATTESTATION_ARTIFACT_FILENAME,
-  WAVE1_POC_ATTESTATION_BUNDLE_FILENAME,
-  WAVE1_POC_ATTESTATION_BUNDLE_MEDIA_TYPE,
-  WAVE1_POC_ATTESTATION_PAYLOAD_TYPE,
-  WAVE1_POC_ATTESTATIONS_DIRECTORY,
-  WAVE1_POC_EVIDENCE_MANIFEST_ARTIFACT_FILENAME,
-  WAVE1_POC_EVIDENCE_MANIFEST_SCHEMA_VERSION,
-  WAVE1_POC_SIGNATURES_DIRECTORY,
-  type Wave1PocAttestationBundle,
-  type Wave1PocAttestationDsseEnvelope,
-  type Wave1PocEvidenceManifest,
+  WAVE1_VALIDATION_ATTESTATION_ARTIFACT_FILENAME,
+  WAVE1_VALIDATION_ATTESTATION_BUNDLE_FILENAME,
+  WAVE1_VALIDATION_ATTESTATION_BUNDLE_MEDIA_TYPE,
+  WAVE1_VALIDATION_ATTESTATION_PAYLOAD_TYPE,
+  WAVE1_VALIDATION_ATTESTATIONS_DIRECTORY,
+  WAVE1_VALIDATION_EVIDENCE_MANIFEST_ARTIFACT_FILENAME,
+  WAVE1_VALIDATION_EVIDENCE_MANIFEST_SCHEMA_VERSION,
+  WAVE1_VALIDATION_SIGNATURES_DIRECTORY,
+  type Wave1ValidationAttestationBundle,
+  type Wave1ValidationAttestationDsseEnvelope,
+  type Wave1ValidationEvidenceManifest,
 } from "../contracts/index.js";
 import { canonicalJson } from "./content-hash.js";
 import {
-  buildSignedWave1PocAttestation,
-  buildUnsignedWave1PocAttestationEnvelope,
-  buildWave1PocAttestationStatement,
+  buildSignedWave1ValidationAttestation,
+  buildUnsignedWave1ValidationAttestationEnvelope,
+  buildWave1ValidationAttestationStatement,
   createKeyBoundSigstoreSigner,
-  generateWave1PocAttestationKeyPair,
-  persistWave1PocAttestation,
-  summarizeWave1PocAttestation,
-  verifyWave1PocAttestation,
-  verifyWave1PocAttestationFromDisk,
+  generateWave1ValidationAttestationKeyPair,
+  persistWave1ValidationAttestation,
+  summarizeWave1ValidationAttestation,
+  verifyWave1ValidationAttestation,
+  verifyWave1ValidationAttestationFromDisk,
 } from "./evidence-attestation.js";
 import {
-  buildWave1PocEvidenceManifest,
-  computeWave1PocEvidenceManifestDigest,
-  writeWave1PocEvidenceManifest,
+  buildWave1ValidationEvidenceManifest,
+  computeWave1ValidationEvidenceManifestDigest,
+  writeWave1ValidationEvidenceManifest,
 } from "./evidence-manifest.js";
 
 const ZERO = "0".repeat(64);
@@ -57,25 +57,25 @@ const sha256 = (bytes: Uint8Array): string =>
 
 interface ScenarioFixture {
   runDir: string;
-  manifest: Wave1PocEvidenceManifest;
+  manifest: Wave1ValidationEvidenceManifest;
   manifestSha256: string;
   cleanup: () => Promise<void>;
 }
 
 /**
- * Build a tmpdir-backed POC-shaped fixture: write a few artifact bytes
+ * Build a tmpdir-backed validation-shaped fixture: write a few artifact bytes
  * to disk, build the matching manifest, persist the manifest with its
  * digest witness. Returns the pieces tests need to exercise the
- * attestation flow without booting the full POC harness.
+ * attestation flow without booting the full validation harness.
  */
 const setupScenario = async (): Promise<ScenarioFixture> => {
-  const runDir = await mkdtemp(join(tmpdir(), "wave1-poc-attestation-"));
+  const runDir = await mkdtemp(join(tmpdir(), "wave1-validation-attestation-"));
   const intent = utf8('{"intent":"sample"}\n');
   const validation = utf8('{"validation":"sample"}\n');
   await writeFile(join(runDir, "business-intent-ir.json"), intent);
   await writeFile(join(runDir, "validation-report.json"), validation);
-  const manifest = buildWave1PocEvidenceManifest({
-    fixtureId: "poc-onboarding",
+  const manifest = buildWave1ValidationEvidenceManifest({
+    fixtureId: "validation-onboarding",
     jobId: "job-1377-signing",
     generatedAt: "2026-04-26T00:00:00.000Z",
     modelDeployments: {
@@ -103,8 +103,8 @@ const setupScenario = async (): Promise<ScenarioFixture> => {
       },
     ],
   });
-  await writeWave1PocEvidenceManifest({ manifest, destinationDir: runDir });
-  const manifestSha256 = computeWave1PocEvidenceManifestDigest(manifest);
+  await writeWave1ValidationEvidenceManifest({ manifest, destinationDir: runDir });
+  const manifestSha256 = computeWave1ValidationEvidenceManifestDigest(manifest);
   return {
     runDir,
     manifest,
@@ -117,20 +117,20 @@ test("evidence-attestation [signing]: unsigned mode persists envelope only", asy
   const fx = await setupScenario();
   t.after(() => fx.cleanup());
 
-  const statement = buildWave1PocAttestationStatement({
+  const statement = buildWave1ValidationAttestationStatement({
     manifest: fx.manifest,
     manifestSha256: fx.manifestSha256,
     signingMode: "unsigned",
   });
-  const envelope = buildUnsignedWave1PocAttestationEnvelope(statement);
-  const persisted = await persistWave1PocAttestation({
+  const envelope = buildUnsignedWave1ValidationAttestationEnvelope(statement);
+  const persisted = await persistWave1ValidationAttestation({
     envelope,
     runDir: fx.runDir,
   });
 
   assert.equal(
     persisted.attestationFilename,
-    `${WAVE1_POC_ATTESTATIONS_DIRECTORY}/${WAVE1_POC_ATTESTATION_ARTIFACT_FILENAME}`,
+    `${WAVE1_VALIDATION_ATTESTATIONS_DIRECTORY}/${WAVE1_VALIDATION_ATTESTATION_ARTIFACT_FILENAME}`,
   );
   assert.equal(persisted.bundleFilename, undefined);
   assert.equal(persisted.bundleBytes, undefined);
@@ -143,17 +143,17 @@ test("evidence-attestation [signing]: unsigned audit summary records mode + dige
   const fx = await setupScenario();
   t.after(() => fx.cleanup());
 
-  const statement = buildWave1PocAttestationStatement({
+  const statement = buildWave1ValidationAttestationStatement({
     manifest: fx.manifest,
     manifestSha256: fx.manifestSha256,
     signingMode: "unsigned",
   });
-  const envelope = buildUnsignedWave1PocAttestationEnvelope(statement);
-  const persisted = await persistWave1PocAttestation({
+  const envelope = buildUnsignedWave1ValidationAttestationEnvelope(statement);
+  const persisted = await persistWave1ValidationAttestation({
     envelope,
     runDir: fx.runDir,
   });
-  const summary = summarizeWave1PocAttestation({
+  const summary = summarizeWave1ValidationAttestation({
     signingMode: "unsigned",
     persisted,
   });
@@ -168,33 +168,33 @@ test("evidence-attestation [signing]: sigstore key-bound signer produces valid b
   const fx = await setupScenario();
   t.after(() => fx.cleanup());
 
-  const { privateKeyPem, publicKeyPem } = generateWave1PocAttestationKeyPair();
+  const { privateKeyPem, publicKeyPem } = generateWave1ValidationAttestationKeyPair();
   const signer = createKeyBoundSigstoreSigner({
-    signerReference: "wave1-poc-test-signer",
+    signerReference: "wave1-validation-test-signer",
     privateKeyPem,
     publicKeyPem,
   });
-  const statement = buildWave1PocAttestationStatement({
+  const statement = buildWave1ValidationAttestationStatement({
     manifest: fx.manifest,
     manifestSha256: fx.manifestSha256,
     signingMode: "sigstore",
   });
-  const { envelope, bundle } = await buildSignedWave1PocAttestation({
+  const { envelope, bundle } = await buildSignedWave1ValidationAttestation({
     statement,
     signer,
   });
 
   assert.equal(envelope.signatures.length, 1);
-  assert.equal(envelope.signatures[0]?.keyid, "wave1-poc-test-signer");
+  assert.equal(envelope.signatures[0]?.keyid, "wave1-validation-test-signer");
   assert.match(envelope.signatures[0]?.sig ?? "", /^[A-Za-z0-9+/]+={0,2}$/);
-  assert.equal(bundle.mediaType, WAVE1_POC_ATTESTATION_BUNDLE_MEDIA_TYPE);
+  assert.equal(bundle.mediaType, WAVE1_VALIDATION_ATTESTATION_BUNDLE_MEDIA_TYPE);
   assert.equal(
     bundle.dsseEnvelope.payloadType,
-    WAVE1_POC_ATTESTATION_PAYLOAD_TYPE,
+    WAVE1_VALIDATION_ATTESTATION_PAYLOAD_TYPE,
   );
   assert.equal(
     bundle.verificationMaterial.publicKey.hint,
-    "wave1-poc-test-signer",
+    "wave1-validation-test-signer",
   );
   assert.equal(
     bundle.verificationMaterial.publicKey.algorithm,
@@ -206,29 +206,29 @@ test("evidence-attestation [signing]: sigstore mode persists envelope + bundle t
   const fx = await setupScenario();
   t.after(() => fx.cleanup());
 
-  const { privateKeyPem } = generateWave1PocAttestationKeyPair();
+  const { privateKeyPem } = generateWave1ValidationAttestationKeyPair();
   const signer = createKeyBoundSigstoreSigner({
     signerReference: "operator-test-key",
     privateKeyPem,
   });
-  const statement = buildWave1PocAttestationStatement({
+  const statement = buildWave1ValidationAttestationStatement({
     manifest: fx.manifest,
     manifestSha256: fx.manifestSha256,
     signingMode: "sigstore",
   });
-  const signed = await buildSignedWave1PocAttestation({ statement, signer });
-  const persisted = await persistWave1PocAttestation({
+  const signed = await buildSignedWave1ValidationAttestation({ statement, signer });
+  const persisted = await persistWave1ValidationAttestation({
     envelope: signed.envelope,
     bundle: signed.bundle,
     runDir: fx.runDir,
   });
   assert.equal(
     persisted.attestationFilename,
-    `${WAVE1_POC_ATTESTATIONS_DIRECTORY}/${WAVE1_POC_ATTESTATION_ARTIFACT_FILENAME}`,
+    `${WAVE1_VALIDATION_ATTESTATIONS_DIRECTORY}/${WAVE1_VALIDATION_ATTESTATION_ARTIFACT_FILENAME}`,
   );
   assert.equal(
     persisted.bundleFilename,
-    `${WAVE1_POC_SIGNATURES_DIRECTORY}/${WAVE1_POC_ATTESTATION_BUNDLE_FILENAME}`,
+    `${WAVE1_VALIDATION_SIGNATURES_DIRECTORY}/${WAVE1_VALIDATION_ATTESTATION_BUNDLE_FILENAME}`,
   );
   // Bundle on disk equals canonical JSON.
   const bundleOnDisk = await readFile(persisted.bundlePath ?? "");
@@ -239,15 +239,15 @@ test("evidence-attestation [signing]: unsigned verify accepts untouched artifact
   const fx = await setupScenario();
   t.after(() => fx.cleanup());
 
-  const statement = buildWave1PocAttestationStatement({
+  const statement = buildWave1ValidationAttestationStatement({
     manifest: fx.manifest,
     manifestSha256: fx.manifestSha256,
     signingMode: "unsigned",
   });
-  const envelope = buildUnsignedWave1PocAttestationEnvelope(statement);
-  await persistWave1PocAttestation({ envelope, runDir: fx.runDir });
+  const envelope = buildUnsignedWave1ValidationAttestationEnvelope(statement);
+  await persistWave1ValidationAttestation({ envelope, runDir: fx.runDir });
 
-  const result = await verifyWave1PocAttestationFromDisk(
+  const result = await verifyWave1ValidationAttestationFromDisk(
     fx.runDir,
     fx.manifest,
     fx.manifestSha256,
@@ -263,25 +263,25 @@ test("evidence-attestation [signing]: sigstore verify accepts untouched signed b
   const fx = await setupScenario();
   t.after(() => fx.cleanup());
 
-  const { privateKeyPem, publicKeyPem } = generateWave1PocAttestationKeyPair();
+  const { privateKeyPem, publicKeyPem } = generateWave1ValidationAttestationKeyPair();
   const signer = createKeyBoundSigstoreSigner({
     signerReference: "ci-build-signer-001",
     privateKeyPem,
     publicKeyPem,
   });
-  const statement = buildWave1PocAttestationStatement({
+  const statement = buildWave1ValidationAttestationStatement({
     manifest: fx.manifest,
     manifestSha256: fx.manifestSha256,
     signingMode: "sigstore",
   });
-  const signed = await buildSignedWave1PocAttestation({ statement, signer });
-  await persistWave1PocAttestation({
+  const signed = await buildSignedWave1ValidationAttestation({ statement, signer });
+  await persistWave1ValidationAttestation({
     envelope: signed.envelope,
     bundle: signed.bundle,
     runDir: fx.runDir,
   });
 
-  const result = await verifyWave1PocAttestationFromDisk(
+  const result = await verifyWave1ValidationAttestationFromDisk(
     fx.runDir,
     fx.manifest,
     fx.manifestSha256,
@@ -294,8 +294,8 @@ test("evidence-attestation [signing]: sigstore verify accepts untouched signed b
 });
 
 test("evidence-attestation [signing]: sigstore mode rejects mismatched private/public key pair", () => {
-  const a = generateWave1PocAttestationKeyPair();
-  const b = generateWave1PocAttestationKeyPair();
+  const a = generateWave1ValidationAttestationKeyPair();
+  const b = generateWave1ValidationAttestationKeyPair();
   assert.throws(
     () =>
       createKeyBoundSigstoreSigner({
@@ -320,7 +320,7 @@ test("evidence-attestation [signing]: sigstore mode rejects non-EC private key s
 });
 
 test("evidence-attestation [signing]: signer reference rejects disallowed characters", () => {
-  const { privateKeyPem } = generateWave1PocAttestationKeyPair();
+  const { privateKeyPem } = generateWave1ValidationAttestationKeyPair();
   assert.throws(
     () =>
       createKeyBoundSigstoreSigner({
@@ -335,21 +335,21 @@ test("evidence-attestation [signing]: harness-runner that supplies wrong public 
   const fx = await setupScenario();
   t.after(() => fx.cleanup());
 
-  const a = generateWave1PocAttestationKeyPair();
-  const b = generateWave1PocAttestationKeyPair();
+  const a = generateWave1ValidationAttestationKeyPair();
+  const b = generateWave1ValidationAttestationKeyPair();
   const signer = createKeyBoundSigstoreSigner({
     signerReference: "real-signer",
     privateKeyPem: a.privateKeyPem,
     publicKeyPem: a.publicKeyPem,
   });
-  const statement = buildWave1PocAttestationStatement({
+  const statement = buildWave1ValidationAttestationStatement({
     manifest: fx.manifest,
     manifestSha256: fx.manifestSha256,
     signingMode: "sigstore",
   });
-  const signed = await buildSignedWave1PocAttestation({ statement, signer });
+  const signed = await buildSignedWave1ValidationAttestation({ statement, signer });
 
-  const result = await verifyWave1PocAttestation({
+  const result = await verifyWave1ValidationAttestation({
     envelope: signed.envelope,
     bundle: signed.bundle,
     manifest: fx.manifest,
@@ -370,22 +370,22 @@ test("evidence-attestation [signing]: sigstore mode without bundle fails closed"
   const fx = await setupScenario();
   t.after(() => fx.cleanup());
 
-  const { privateKeyPem } = generateWave1PocAttestationKeyPair();
+  const { privateKeyPem } = generateWave1ValidationAttestationKeyPair();
   const signer = createKeyBoundSigstoreSigner({
     signerReference: "lonely-signer",
     privateKeyPem,
   });
-  const statement = buildWave1PocAttestationStatement({
+  const statement = buildWave1ValidationAttestationStatement({
     manifest: fx.manifest,
     manifestSha256: fx.manifestSha256,
     signingMode: "sigstore",
   });
-  const { envelope } = await buildSignedWave1PocAttestation({
+  const { envelope } = await buildSignedWave1ValidationAttestation({
     statement,
     signer,
   });
 
-  const result = await verifyWave1PocAttestation({
+  const result = await verifyWave1ValidationAttestation({
     envelope,
     manifest: fx.manifest,
     manifestSha256: fx.manifestSha256,
@@ -400,17 +400,17 @@ test("evidence-attestation [signing]: unsigned envelope with stray signatures is
   const fx = await setupScenario();
   t.after(() => fx.cleanup());
 
-  const statement = buildWave1PocAttestationStatement({
+  const statement = buildWave1ValidationAttestationStatement({
     manifest: fx.manifest,
     manifestSha256: fx.manifestSha256,
     signingMode: "unsigned",
   });
-  const envelope: Wave1PocAttestationDsseEnvelope = {
-    ...buildUnsignedWave1PocAttestationEnvelope(statement),
+  const envelope: Wave1ValidationAttestationDsseEnvelope = {
+    ...buildUnsignedWave1ValidationAttestationEnvelope(statement),
     signatures: [{ keyid: "spurious", sig: "AAAA" }],
   };
 
-  const result = await verifyWave1PocAttestation({
+  const result = await verifyWave1ValidationAttestation({
     envelope,
     manifest: fx.manifest,
     manifestSha256: fx.manifestSha256,
@@ -429,19 +429,19 @@ test("evidence-attestation [signing]: sigstore mode with mismatched bundle envel
   const fx = await setupScenario();
   t.after(() => fx.cleanup());
 
-  const { privateKeyPem, publicKeyPem } = generateWave1PocAttestationKeyPair();
+  const { privateKeyPem, publicKeyPem } = generateWave1ValidationAttestationKeyPair();
   const signer = createKeyBoundSigstoreSigner({
     signerReference: "honest-signer",
     privateKeyPem,
     publicKeyPem,
   });
-  const statement = buildWave1PocAttestationStatement({
+  const statement = buildWave1ValidationAttestationStatement({
     manifest: fx.manifest,
     manifestSha256: fx.manifestSha256,
     signingMode: "sigstore",
   });
-  const signed = await buildSignedWave1PocAttestation({ statement, signer });
-  const tamperedBundle: Wave1PocAttestationBundle = {
+  const signed = await buildSignedWave1ValidationAttestation({ statement, signer });
+  const tamperedBundle: Wave1ValidationAttestationBundle = {
     ...signed.bundle,
     dsseEnvelope: {
       ...signed.envelope,
@@ -449,7 +449,7 @@ test("evidence-attestation [signing]: sigstore mode with mismatched bundle envel
     },
   };
 
-  const result = await verifyWave1PocAttestation({
+  const result = await verifyWave1ValidationAttestation({
     envelope: signed.envelope,
     bundle: tamperedBundle,
     manifest: fx.manifest,
@@ -466,14 +466,14 @@ test("evidence-attestation [signing]: signing mode mismatch in predicate fails v
   t.after(() => fx.cleanup());
 
   // Build a statement claiming sigstore but verify expecting unsigned.
-  const statement = buildWave1PocAttestationStatement({
+  const statement = buildWave1ValidationAttestationStatement({
     manifest: fx.manifest,
     manifestSha256: fx.manifestSha256,
     signingMode: "sigstore",
   });
-  const envelope = buildUnsignedWave1PocAttestationEnvelope(statement);
+  const envelope = buildUnsignedWave1ValidationAttestationEnvelope(statement);
 
-  const result = await verifyWave1PocAttestation({
+  const result = await verifyWave1ValidationAttestation({
     envelope,
     manifest: fx.manifest,
     manifestSha256: fx.manifestSha256,
@@ -488,14 +488,14 @@ test("evidence-attestation [signing]: predicate manifestSha256 mismatch fails ve
   const fx = await setupScenario();
   t.after(() => fx.cleanup());
 
-  const statement = buildWave1PocAttestationStatement({
+  const statement = buildWave1ValidationAttestationStatement({
     manifest: fx.manifest,
     manifestSha256: fx.manifestSha256,
     signingMode: "unsigned",
   });
-  const envelope = buildUnsignedWave1PocAttestationEnvelope(statement);
+  const envelope = buildUnsignedWave1ValidationAttestationEnvelope(statement);
 
-  const result = await verifyWave1PocAttestation({
+  const result = await verifyWave1ValidationAttestation({
     envelope,
     manifest: fx.manifest,
     manifestSha256: "f".repeat(64),
@@ -510,18 +510,18 @@ test("evidence-attestation [signing]: missing on-disk artifact reports specific 
   const fx = await setupScenario();
   t.after(() => fx.cleanup());
 
-  const statement = buildWave1PocAttestationStatement({
+  const statement = buildWave1ValidationAttestationStatement({
     manifest: fx.manifest,
     manifestSha256: fx.manifestSha256,
     signingMode: "unsigned",
   });
-  const envelope = buildUnsignedWave1PocAttestationEnvelope(statement);
-  await persistWave1PocAttestation({ envelope, runDir: fx.runDir });
+  const envelope = buildUnsignedWave1ValidationAttestationEnvelope(statement);
+  await persistWave1ValidationAttestation({ envelope, runDir: fx.runDir });
 
   // Delete one attested artifact.
   await rm(join(fx.runDir, "validation-report.json"));
 
-  const result = await verifyWave1PocAttestationFromDisk(
+  const result = await verifyWave1ValidationAttestationFromDisk(
     fx.runDir,
     fx.manifest,
     fx.manifestSha256,
@@ -547,7 +547,7 @@ test("evidence-attestation [signing]: subject points to consistent manifest", as
   t.after(() => fx.cleanup());
 
   const onDisk = await readFile(
-    join(fx.runDir, WAVE1_POC_EVIDENCE_MANIFEST_ARTIFACT_FILENAME),
+    join(fx.runDir, WAVE1_VALIDATION_EVIDENCE_MANIFEST_ARTIFACT_FILENAME),
   );
   const recomputed = sha256(
     new Uint8Array(onDisk.buffer, onDisk.byteOffset, onDisk.byteLength),
@@ -555,10 +555,10 @@ test("evidence-attestation [signing]: subject points to consistent manifest", as
   assert.equal(recomputed, fx.manifestSha256);
   const parsed = JSON.parse(
     onDisk.toString("utf8"),
-  ) as Wave1PocEvidenceManifest;
+  ) as Wave1ValidationEvidenceManifest;
   assert.equal(
     parsed.schemaVersion,
-    WAVE1_POC_EVIDENCE_MANIFEST_SCHEMA_VERSION,
+    WAVE1_VALIDATION_EVIDENCE_MANIFEST_SCHEMA_VERSION,
   );
   assert.equal(parsed.contractVersion, CONTRACT_VERSION);
   assert.equal(

@@ -233,7 +233,7 @@ this document:
    `<artifactRoot>/<jobId>/sources/<sourceId>/jira-issue-ir.json`. The
    `piiIndicators[]`, `redactions[]`, and `dataMinimization` fields document
    exactly what was processed and what was redacted.
-2. Review `wave1-poc-evidence-manifest.json` (or the Wave 4 equivalent) for
+2. Review `wave1-validation-evidence-manifest.json` (or the Wave 4 equivalent) for
    the full run evidence including `REDACTION_POLICY_VERSION`.
 3. The full contract surface is documented in `CONTRACT_CHANGELOG.md` versions
    `4.11.0` through `4.14.0` (Wave 4 range).

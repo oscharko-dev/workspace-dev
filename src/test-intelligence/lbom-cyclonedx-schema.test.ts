@@ -7,7 +7,7 @@ import { fileURLToPath } from "node:url";
 import Ajv, { type ErrorObject, type ValidateFunction } from "ajv";
 import addFormats from "ajv-formats";
 
-import { type Wave1PocLbomDocument } from "../contracts/index.js";
+import { type Wave1ValidationLbomDocument } from "../contracts/index.js";
 import { buildLbomDocument, validateLbomDocument } from "./lbom-emitter.js";
 import { cloneEuBankingDefaultProfile } from "./policy-profile.js";
 
@@ -59,9 +59,9 @@ const compileCycloneDxValidator = async (): Promise<ValidateFunction> => {
   return ajv.compile(cyclonedx);
 };
 
-const buildSchemaFixture = (): Wave1PocLbomDocument =>
+const buildSchemaFixture = (): Wave1ValidationLbomDocument =>
   buildLbomDocument({
-    fixtureId: "poc-onboarding",
+    fixtureId: "validation-onboarding",
     jobId: "job-schema-1378",
     generatedAt: "2026-04-26T12:00:00.000Z",
     modelDeployments: {
@@ -79,7 +79,7 @@ const buildSchemaFixture = (): Wave1PocLbomDocument =>
     },
     testGenerationBinding: {
       modelRevision: "gpt-oss-120b-2026-04-25",
-      gatewayRelease: "wave1-poc-mock",
+      gatewayRelease: "wave1-validation-mock",
     },
     weightsSha256: {
       test_generation: "e".repeat(64),

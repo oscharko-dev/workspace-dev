@@ -17,22 +17,22 @@ import test from "node:test";
 import {
   CONTRACT_VERSION,
   TEST_INTELLIGENCE_CONTRACT_VERSION,
-  WAVE1_POC_ATTESTATION_PAYLOAD_TYPE,
-  WAVE1_POC_ATTESTATION_PREDICATE_TYPE,
-  WAVE1_POC_ATTESTATION_SCHEMA_VERSION,
-  WAVE1_POC_ATTESTATION_STATEMENT_TYPE,
-  WAVE1_POC_EVIDENCE_MANIFEST_ARTIFACT_FILENAME,
-  WAVE1_POC_EVIDENCE_MANIFEST_SCHEMA_VERSION,
-  type Wave1PocEvidenceManifest,
+  WAVE1_VALIDATION_ATTESTATION_PAYLOAD_TYPE,
+  WAVE1_VALIDATION_ATTESTATION_PREDICATE_TYPE,
+  WAVE1_VALIDATION_ATTESTATION_SCHEMA_VERSION,
+  WAVE1_VALIDATION_ATTESTATION_STATEMENT_TYPE,
+  WAVE1_VALIDATION_EVIDENCE_MANIFEST_ARTIFACT_FILENAME,
+  WAVE1_VALIDATION_EVIDENCE_MANIFEST_SCHEMA_VERSION,
+  type Wave1ValidationEvidenceManifest,
 } from "../contracts/index.js";
 import { canonicalJson } from "./content-hash.js";
 import {
-  buildUnsignedWave1PocAttestationEnvelope,
-  buildWave1PocAttestationStatement,
-  computeWave1PocAttestationEnvelopeDigest,
+  buildUnsignedWave1ValidationAttestationEnvelope,
+  buildWave1ValidationAttestationStatement,
+  computeWave1ValidationAttestationEnvelopeDigest,
   encodeDssePreAuth,
-  encodeWave1PocAttestationPayload,
-  verifyWave1PocAttestation,
+  encodeWave1ValidationAttestationPayload,
+  verifyWave1ValidationAttestation,
 } from "./evidence-attestation.js";
 
 const ZERO = "0".repeat(64);
@@ -40,12 +40,12 @@ const ONE = "1".repeat(64);
 const TWO = "2".repeat(64);
 
 const fakeManifest = (
-  overrides: Partial<Wave1PocEvidenceManifest> = {},
-): Wave1PocEvidenceManifest => ({
-  schemaVersion: WAVE1_POC_EVIDENCE_MANIFEST_SCHEMA_VERSION,
+  overrides: Partial<Wave1ValidationEvidenceManifest> = {},
+): Wave1ValidationEvidenceManifest => ({
+  schemaVersion: WAVE1_VALIDATION_EVIDENCE_MANIFEST_SCHEMA_VERSION,
   contractVersion: CONTRACT_VERSION,
   testIntelligenceContractVersion: TEST_INTELLIGENCE_CONTRACT_VERSION,
-  fixtureId: "poc-onboarding",
+  fixtureId: "validation-onboarding",
   jobId: "job-1377-test",
   generatedAt: "2026-04-26T00:00:00.000Z",
   promptTemplateVersion: "1.0.0",
@@ -94,29 +94,29 @@ const sha256Hex = (bytes: Uint8Array): string =>
 
 test("evidence-attestation: statement carries pinned URIs and schema version", () => {
   const manifest = fakeManifest();
-  const statement = buildWave1PocAttestationStatement({
+  const statement = buildWave1ValidationAttestationStatement({
     manifest,
     manifestSha256: ZERO,
     signingMode: "unsigned",
   });
-  assert.equal(statement._type, WAVE1_POC_ATTESTATION_STATEMENT_TYPE);
-  assert.equal(statement.predicateType, WAVE1_POC_ATTESTATION_PREDICATE_TYPE);
+  assert.equal(statement._type, WAVE1_VALIDATION_ATTESTATION_STATEMENT_TYPE);
+  assert.equal(statement.predicateType, WAVE1_VALIDATION_ATTESTATION_PREDICATE_TYPE);
   assert.equal(
     statement.predicate.schemaVersion,
-    WAVE1_POC_ATTESTATION_SCHEMA_VERSION,
+    WAVE1_VALIDATION_ATTESTATION_SCHEMA_VERSION,
   );
   assert.equal(statement.predicate.contractVersion, CONTRACT_VERSION);
   assert.equal(statement.predicate.signingMode, "unsigned");
   assert.equal(statement.predicate.manifestSha256, ZERO);
   assert.equal(
     statement.predicate.manifestFilename,
-    WAVE1_POC_EVIDENCE_MANIFEST_ARTIFACT_FILENAME,
+    WAVE1_VALIDATION_EVIDENCE_MANIFEST_ARTIFACT_FILENAME,
   );
 });
 
 test("evidence-attestation: hard invariants are type-level false on predicate", () => {
   const manifest = fakeManifest();
-  const statement = buildWave1PocAttestationStatement({
+  const statement = buildWave1ValidationAttestationStatement({
     manifest,
     manifestSha256: ZERO,
     signingMode: "unsigned",
@@ -128,7 +128,7 @@ test("evidence-attestation: hard invariants are type-level false on predicate", 
 
 test("evidence-attestation: subjects include manifest + every artifact, sorted", () => {
   const manifest = fakeManifest();
-  const statement = buildWave1PocAttestationStatement({
+  const statement = buildWave1ValidationAttestationStatement({
     manifest,
     manifestSha256: ZERO,
     signingMode: "unsigned",
@@ -144,7 +144,7 @@ test("evidence-attestation: subjects include manifest + every artifact, sorted",
   }
   // Manifest itself appears as a subject.
   const manifestSubject = statement.subject.find(
-    (s) => s.name === WAVE1_POC_EVIDENCE_MANIFEST_ARTIFACT_FILENAME,
+    (s) => s.name === WAVE1_VALIDATION_EVIDENCE_MANIFEST_ARTIFACT_FILENAME,
   );
   assert.ok(manifestSubject, "manifest must be a subject");
   assert.equal(manifestSubject.digest.sha256, ZERO);
@@ -152,12 +152,12 @@ test("evidence-attestation: subjects include manifest + every artifact, sorted",
 
 test("evidence-attestation: statement is byte-stable across runs (deterministic)", () => {
   const manifest = fakeManifest();
-  const a = buildWave1PocAttestationStatement({
+  const a = buildWave1ValidationAttestationStatement({
     manifest,
     manifestSha256: ZERO,
     signingMode: "unsigned",
   });
-  const b = buildWave1PocAttestationStatement({
+  const b = buildWave1ValidationAttestationStatement({
     manifest,
     manifestSha256: ZERO,
     signingMode: "unsigned",
@@ -173,7 +173,7 @@ test("evidence-attestation: rejects manifest with rawScreenshotsIncluded=true", 
   ).rawScreenshotsIncluded = true;
   assert.throws(
     () =>
-      buildWave1PocAttestationStatement({
+      buildWave1ValidationAttestationStatement({
         manifest,
         manifestSha256: ZERO,
         signingMode: "unsigned",
@@ -189,7 +189,7 @@ test("evidence-attestation: rejects manifest with imagePayloadSentToTestGenerati
   ).imagePayloadSentToTestGeneration = true;
   assert.throws(
     () =>
-      buildWave1PocAttestationStatement({
+      buildWave1ValidationAttestationStatement({
         manifest,
         manifestSha256: ZERO,
         signingMode: "unsigned",
@@ -202,7 +202,7 @@ test("evidence-attestation: rejects non-sha256 manifest digest", () => {
   const manifest = fakeManifest();
   assert.throws(
     () =>
-      buildWave1PocAttestationStatement({
+      buildWave1ValidationAttestationStatement({
         manifest,
         manifestSha256: "not-a-hex-digest",
         signingMode: "unsigned",
@@ -215,7 +215,7 @@ test("evidence-attestation: rejects unknown signing mode", () => {
   const manifest = fakeManifest();
   assert.throws(
     () =>
-      buildWave1PocAttestationStatement({
+      buildWave1ValidationAttestationStatement({
         manifest,
         manifestSha256: ZERO,
         // @ts-expect-error — runtime-only validation
@@ -239,7 +239,7 @@ test("evidence-attestation: predicate carries visual sidecar identity when prese
       resultArtifactSha256: ZERO,
     },
   });
-  const statement = buildWave1PocAttestationStatement({
+  const statement = buildWave1ValidationAttestationStatement({
     manifest,
     manifestSha256: ZERO,
     signingMode: "unsigned",
@@ -252,7 +252,7 @@ test("evidence-attestation: predicate carries visual sidecar identity when prese
   assert.equal(statement.predicate.visualSidecar?.resultArtifactSha256, ZERO);
   assert.equal(statement.predicate.visualSidecar?.visualFallback, "llama-4-scout-vision");
 
-  const fallbackOnly = buildWave1PocAttestationStatement({
+  const fallbackOnly = buildWave1ValidationAttestationStatement({
     manifest: fakeManifest({
       modelDeployments: {
         testGeneration: "gpt-oss-120b-mock",
@@ -272,7 +272,7 @@ test("evidence-attestation: predicate carries visual sidecar identity when prese
 
 test("evidence-attestation: predicate omits visual sidecar when absent on manifest", () => {
   const manifest = fakeManifest();
-  const statement = buildWave1PocAttestationStatement({
+  const statement = buildWave1ValidationAttestationStatement({
     manifest,
     manifestSha256: ZERO,
     signingMode: "unsigned",
@@ -282,12 +282,12 @@ test("evidence-attestation: predicate omits visual sidecar when absent on manife
 
 test("evidence-attestation: encode payload returns canonical-JSON UTF-8 bytes", () => {
   const manifest = fakeManifest();
-  const statement = buildWave1PocAttestationStatement({
+  const statement = buildWave1ValidationAttestationStatement({
     manifest,
     manifestSha256: ZERO,
     signingMode: "unsigned",
   });
-  const bytes = encodeWave1PocAttestationPayload(statement);
+  const bytes = encodeWave1ValidationAttestationPayload(statement);
   const decoded = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
   assert.equal(decoded, canonicalJson(statement));
   assert.deepEqual(JSON.parse(decoded), JSON.parse(canonicalJson(statement)));
@@ -295,10 +295,10 @@ test("evidence-attestation: encode payload returns canonical-JSON UTF-8 bytes", 
 
 test("evidence-attestation: PAE prefix follows DSSEv1 format", () => {
   const payload = new Uint8Array([1, 2, 3, 4, 5]);
-  const pae = encodeDssePreAuth(WAVE1_POC_ATTESTATION_PAYLOAD_TYPE, payload);
+  const pae = encodeDssePreAuth(WAVE1_VALIDATION_ATTESTATION_PAYLOAD_TYPE, payload);
   const text = new TextDecoder().decode(pae);
   // PAE = "DSSEv1 LEN(type) type LEN(body) body"
-  const expectedPrefix = `DSSEv1 ${WAVE1_POC_ATTESTATION_PAYLOAD_TYPE.length} ${WAVE1_POC_ATTESTATION_PAYLOAD_TYPE} ${payload.byteLength} `;
+  const expectedPrefix = `DSSEv1 ${WAVE1_VALIDATION_ATTESTATION_PAYLOAD_TYPE.length} ${WAVE1_VALIDATION_ATTESTATION_PAYLOAD_TYPE} ${payload.byteLength} `;
   assert.ok(
     text.startsWith(expectedPrefix),
     `PAE prefix mismatch — got "${text.slice(0, expectedPrefix.length)}"`,
@@ -315,14 +315,14 @@ test("evidence-attestation: PAE binds payloadType (different types → different
 
 test("evidence-attestation: unsigned envelope has empty signatures and base64 payload", () => {
   const manifest = fakeManifest();
-  const statement = buildWave1PocAttestationStatement({
+  const statement = buildWave1ValidationAttestationStatement({
     manifest,
     manifestSha256: ZERO,
     signingMode: "unsigned",
   });
-  const envelope = buildUnsignedWave1PocAttestationEnvelope(statement);
+  const envelope = buildUnsignedWave1ValidationAttestationEnvelope(statement);
   assert.deepEqual(envelope.signatures, []);
-  assert.equal(envelope.payloadType, WAVE1_POC_ATTESTATION_PAYLOAD_TYPE);
+  assert.equal(envelope.payloadType, WAVE1_VALIDATION_ATTESTATION_PAYLOAD_TYPE);
   // Decode base64 and check we get back the canonical JSON.
   const decoded = Buffer.from(envelope.payload, "base64").toString("utf8");
   assert.equal(decoded, canonicalJson(statement));
@@ -330,14 +330,14 @@ test("evidence-attestation: unsigned envelope has empty signatures and base64 pa
 
 test("evidence-attestation: envelope digest is byte-stable across runs", () => {
   const manifest = fakeManifest();
-  const statement = buildWave1PocAttestationStatement({
+  const statement = buildWave1ValidationAttestationStatement({
     manifest,
     manifestSha256: ZERO,
     signingMode: "unsigned",
   });
-  const envelope = buildUnsignedWave1PocAttestationEnvelope(statement);
-  const digestA = computeWave1PocAttestationEnvelopeDigest(envelope);
-  const digestB = computeWave1PocAttestationEnvelopeDigest(envelope);
+  const envelope = buildUnsignedWave1ValidationAttestationEnvelope(statement);
+  const digestA = computeWave1ValidationAttestationEnvelopeDigest(envelope);
+  const digestB = computeWave1ValidationAttestationEnvelopeDigest(envelope);
   assert.equal(digestA, digestB);
   assert.match(digestA, /^[0-9a-f]{64}$/);
 });
@@ -347,7 +347,7 @@ test("evidence-attestation: rejects malformed manifest identity fields", () => {
     const manifest = fakeManifest({ [field]: "not-a-sha256" });
     assert.throws(
       () =>
-        buildWave1PocAttestationStatement({
+        buildWave1ValidationAttestationStatement({
           manifest,
           manifestSha256: ZERO,
           signingMode: "unsigned",
@@ -358,7 +358,7 @@ test("evidence-attestation: rejects malformed manifest identity fields", () => {
 
   assert.throws(
     () =>
-      buildWave1PocAttestationStatement({
+      buildWave1ValidationAttestationStatement({
         manifest: fakeManifest({
           artifacts: [
             {
@@ -376,7 +376,7 @@ test("evidence-attestation: rejects malformed manifest identity fields", () => {
   );
   assert.throws(
     () =>
-      buildWave1PocAttestationStatement({
+      buildWave1ValidationAttestationStatement({
         manifest: fakeManifest({
           artifacts: [
             {
@@ -396,7 +396,7 @@ test("evidence-attestation: rejects malformed manifest identity fields", () => {
 
 test("evidence-attestation: verifier fails closed for malformed envelopes", async () => {
   const manifest = fakeManifest();
-  const statement = buildWave1PocAttestationStatement({
+  const statement = buildWave1ValidationAttestationStatement({
     manifest,
     manifestSha256: ZERO,
     signingMode: "unsigned",
@@ -404,7 +404,7 @@ test("evidence-attestation: verifier fails closed for malformed envelopes", asyn
   const payload = (value: unknown): string =>
     Buffer.from(canonicalJson(value), "utf8").toString("base64");
   const verify = (envelope: unknown) =>
-    verifyWave1PocAttestation({
+    verifyWave1ValidationAttestation({
       envelope: envelope as never,
       manifest,
       manifestSha256: ZERO,
@@ -421,7 +421,7 @@ test("evidence-attestation: verifier fails closed for malformed envelopes", asyn
     },
     {
       envelope: {
-        payloadType: WAVE1_POC_ATTESTATION_PAYLOAD_TYPE,
+        payloadType: WAVE1_VALIDATION_ATTESTATION_PAYLOAD_TYPE,
         payload: 123,
         signatures: [],
       },
@@ -429,7 +429,7 @@ test("evidence-attestation: verifier fails closed for malformed envelopes", asyn
     },
     {
       envelope: {
-        payloadType: WAVE1_POC_ATTESTATION_PAYLOAD_TYPE,
+        payloadType: WAVE1_VALIDATION_ATTESTATION_PAYLOAD_TYPE,
         payload: "not canonical base64",
         signatures: [],
       },
@@ -437,7 +437,7 @@ test("evidence-attestation: verifier fails closed for malformed envelopes", asyn
     },
     {
       envelope: {
-        payloadType: WAVE1_POC_ATTESTATION_PAYLOAD_TYPE,
+        payloadType: WAVE1_VALIDATION_ATTESTATION_PAYLOAD_TYPE,
         payload: Buffer.from("{", "utf8").toString("base64"),
         signatures: [],
       },
@@ -445,7 +445,7 @@ test("evidence-attestation: verifier fails closed for malformed envelopes", asyn
     },
     {
       envelope: {
-        payloadType: WAVE1_POC_ATTESTATION_PAYLOAD_TYPE,
+        payloadType: WAVE1_VALIDATION_ATTESTATION_PAYLOAD_TYPE,
         payload: payload(null),
         signatures: [],
       },
@@ -453,7 +453,7 @@ test("evidence-attestation: verifier fails closed for malformed envelopes", asyn
     },
     {
       envelope: {
-        payloadType: WAVE1_POC_ATTESTATION_PAYLOAD_TYPE,
+        payloadType: WAVE1_VALIDATION_ATTESTATION_PAYLOAD_TYPE,
         payload: payload({ ...statement, _type: "https://example.test/wrong" }),
         signatures: [],
       },
@@ -461,7 +461,7 @@ test("evidence-attestation: verifier fails closed for malformed envelopes", asyn
     },
     {
       envelope: {
-        payloadType: WAVE1_POC_ATTESTATION_PAYLOAD_TYPE,
+        payloadType: WAVE1_VALIDATION_ATTESTATION_PAYLOAD_TYPE,
         payload: payload({ ...statement, subject: "not-array" }),
         signatures: [],
       },
@@ -469,7 +469,7 @@ test("evidence-attestation: verifier fails closed for malformed envelopes", asyn
     },
     {
       envelope: {
-        payloadType: WAVE1_POC_ATTESTATION_PAYLOAD_TYPE,
+        payloadType: WAVE1_VALIDATION_ATTESTATION_PAYLOAD_TYPE,
         payload: payload({
           ...statement,
           subject: "not-array",
@@ -481,7 +481,7 @@ test("evidence-attestation: verifier fails closed for malformed envelopes", asyn
     },
     {
       envelope: {
-        payloadType: WAVE1_POC_ATTESTATION_PAYLOAD_TYPE,
+        payloadType: WAVE1_VALIDATION_ATTESTATION_PAYLOAD_TYPE,
         payload: payload({
           ...statement,
           subject: "not-array",
@@ -493,7 +493,7 @@ test("evidence-attestation: verifier fails closed for malformed envelopes", asyn
     },
     {
       envelope: {
-        payloadType: WAVE1_POC_ATTESTATION_PAYLOAD_TYPE,
+        payloadType: WAVE1_VALIDATION_ATTESTATION_PAYLOAD_TYPE,
         payload: payload({ ...statement, subject: "not-array", predicate: null }),
         signatures: [],
       },
@@ -501,7 +501,7 @@ test("evidence-attestation: verifier fails closed for malformed envelopes", asyn
     },
     {
       envelope: {
-        payloadType: WAVE1_POC_ATTESTATION_PAYLOAD_TYPE,
+        payloadType: WAVE1_VALIDATION_ATTESTATION_PAYLOAD_TYPE,
         payload: payload({
           ...statement,
           subject: "not-array",
@@ -513,7 +513,7 @@ test("evidence-attestation: verifier fails closed for malformed envelopes", asyn
     },
     {
       envelope: {
-        payloadType: WAVE1_POC_ATTESTATION_PAYLOAD_TYPE,
+        payloadType: WAVE1_VALIDATION_ATTESTATION_PAYLOAD_TYPE,
         payload: payload({
           ...statement,
           subject: "not-array",
@@ -525,7 +525,7 @@ test("evidence-attestation: verifier fails closed for malformed envelopes", asyn
     },
     {
       envelope: {
-        payloadType: WAVE1_POC_ATTESTATION_PAYLOAD_TYPE,
+        payloadType: WAVE1_VALIDATION_ATTESTATION_PAYLOAD_TYPE,
         payload: payload({
           ...statement,
           subject: "not-array",
@@ -537,7 +537,7 @@ test("evidence-attestation: verifier fails closed for malformed envelopes", asyn
     },
     {
       envelope: {
-        payloadType: WAVE1_POC_ATTESTATION_PAYLOAD_TYPE,
+        payloadType: WAVE1_VALIDATION_ATTESTATION_PAYLOAD_TYPE,
         payload: payload({
           ...statement,
           subject: "not-array",
@@ -549,7 +549,7 @@ test("evidence-attestation: verifier fails closed for malformed envelopes", asyn
     },
     {
       envelope: {
-        payloadType: WAVE1_POC_ATTESTATION_PAYLOAD_TYPE,
+        payloadType: WAVE1_VALIDATION_ATTESTATION_PAYLOAD_TYPE,
         payload: payload({
           ...statement,
           subject: "not-array",
@@ -561,7 +561,7 @@ test("evidence-attestation: verifier fails closed for malformed envelopes", asyn
     },
     {
       envelope: {
-        payloadType: WAVE1_POC_ATTESTATION_PAYLOAD_TYPE,
+        payloadType: WAVE1_VALIDATION_ATTESTATION_PAYLOAD_TYPE,
         payload: payload({
           ...statement,
           subject: "not-array",
@@ -573,7 +573,7 @@ test("evidence-attestation: verifier fails closed for malformed envelopes", asyn
     },
     {
       envelope: {
-        payloadType: WAVE1_POC_ATTESTATION_PAYLOAD_TYPE,
+        payloadType: WAVE1_VALIDATION_ATTESTATION_PAYLOAD_TYPE,
         payload: payload({
           ...statement,
           subject: "not-array",
@@ -588,7 +588,7 @@ test("evidence-attestation: verifier fails closed for malformed envelopes", asyn
     },
     {
       envelope: {
-        payloadType: WAVE1_POC_ATTESTATION_PAYLOAD_TYPE,
+        payloadType: WAVE1_VALIDATION_ATTESTATION_PAYLOAD_TYPE,
         payload: payload({
           ...statement,
           subject: "not-array",
@@ -600,7 +600,7 @@ test("evidence-attestation: verifier fails closed for malformed envelopes", asyn
     },
     {
       envelope: {
-        payloadType: WAVE1_POC_ATTESTATION_PAYLOAD_TYPE,
+        payloadType: WAVE1_VALIDATION_ATTESTATION_PAYLOAD_TYPE,
         payload: payload({
           ...statement,
           subject: [
@@ -629,7 +629,7 @@ test("evidence-attestation: verifier fails closed for malformed envelopes", asyn
   }
 
   const unsignedWithSignature = await verify({
-    payloadType: WAVE1_POC_ATTESTATION_PAYLOAD_TYPE,
+    payloadType: WAVE1_VALIDATION_ATTESTATION_PAYLOAD_TYPE,
     payload: payload({ ...statement, subject: "not-array" }),
     signatures: [{ keyid: "offline-key", sig: "AAAA" }],
   });
@@ -640,9 +640,9 @@ test("evidence-attestation: verifier fails closed for malformed envelopes", asyn
     true,
   );
 
-  const sigstoreMissingBundle = await verifyWave1PocAttestation({
+  const sigstoreMissingBundle = await verifyWave1ValidationAttestation({
     envelope: {
-      payloadType: WAVE1_POC_ATTESTATION_PAYLOAD_TYPE,
+      payloadType: WAVE1_VALIDATION_ATTESTATION_PAYLOAD_TYPE,
       payload: payload({ ...statement, subject: "not-array" }),
       signatures: [],
     },
@@ -664,14 +664,14 @@ test("evidence-attestation: verifier fails closed for malformed envelopes", asyn
     true,
   );
 
-  const subjectDigestMismatch = await verifyWave1PocAttestation({
+  const subjectDigestMismatch = await verifyWave1ValidationAttestation({
     envelope: {
-      payloadType: WAVE1_POC_ATTESTATION_PAYLOAD_TYPE,
+      payloadType: WAVE1_VALIDATION_ATTESTATION_PAYLOAD_TYPE,
       payload: payload({
         ...statement,
         subject: [
           {
-            name: WAVE1_POC_EVIDENCE_MANIFEST_ARTIFACT_FILENAME,
+            name: WAVE1_VALIDATION_EVIDENCE_MANIFEST_ARTIFACT_FILENAME,
             digest: { sha256: ONE },
           },
         ],
@@ -696,14 +696,14 @@ test("evidence-attestation: verifier fails closed for malformed envelopes", asyn
     true,
   );
 
-  const artifactDigestMismatch = await verifyWave1PocAttestation({
+  const artifactDigestMismatch = await verifyWave1ValidationAttestation({
     envelope: {
-      payloadType: WAVE1_POC_ATTESTATION_PAYLOAD_TYPE,
+      payloadType: WAVE1_VALIDATION_ATTESTATION_PAYLOAD_TYPE,
       payload: payload({
         ...statement,
         subject: [
           {
-            name: WAVE1_POC_EVIDENCE_MANIFEST_ARTIFACT_FILENAME,
+            name: WAVE1_VALIDATION_EVIDENCE_MANIFEST_ARTIFACT_FILENAME,
             digest: { sha256: ZERO },
           },
           {
@@ -726,14 +726,14 @@ test("evidence-attestation: verifier fails closed for malformed envelopes", asyn
     true,
   );
 
-  const invalidManifestArtifact = await verifyWave1PocAttestation({
+  const invalidManifestArtifact = await verifyWave1ValidationAttestation({
     envelope: {
-      payloadType: WAVE1_POC_ATTESTATION_PAYLOAD_TYPE,
+      payloadType: WAVE1_VALIDATION_ATTESTATION_PAYLOAD_TYPE,
       payload: payload({
         ...statement,
         subject: [
           {
-            name: WAVE1_POC_EVIDENCE_MANIFEST_ARTIFACT_FILENAME,
+            name: WAVE1_VALIDATION_EVIDENCE_MANIFEST_ARTIFACT_FILENAME,
             digest: { sha256: ZERO },
           },
         ],
@@ -779,14 +779,14 @@ test("evidence-attestation: verifier fails closed for malformed envelopes", asyn
     true,
   );
 
-  const missingArtifactOnDisk = await verifyWave1PocAttestation({
+  const missingArtifactOnDisk = await verifyWave1ValidationAttestation({
     envelope: {
-      payloadType: WAVE1_POC_ATTESTATION_PAYLOAD_TYPE,
+      payloadType: WAVE1_VALIDATION_ATTESTATION_PAYLOAD_TYPE,
       payload: payload({
         ...statement,
         subject: [
           {
-            name: WAVE1_POC_EVIDENCE_MANIFEST_ARTIFACT_FILENAME,
+            name: WAVE1_VALIDATION_EVIDENCE_MANIFEST_ARTIFACT_FILENAME,
             digest: { sha256: ZERO },
           },
           {

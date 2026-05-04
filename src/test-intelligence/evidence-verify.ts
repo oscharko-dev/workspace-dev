@@ -1,8 +1,8 @@
 /**
  * Evidence verification orchestrator (Issue #1380).
  *
- * Wraps the existing on-disk verifiers (`verifyWave1PocEvidenceFromDisk`
- * and `verifyWave1PocAttestationFromDisk`) into a single read-only
+ * Wraps the existing on-disk verifiers (`verifyWave1ValidationEvidenceFromDisk`
+ * and `verifyWave1ValidationAttestationFromDisk`) into a single read-only
  * response surface so an HTTP route can return a deterministic
  * `EvidenceVerifyResponse` body.
  *
@@ -29,27 +29,27 @@ import { basename, isAbsolute, join, resolve } from "node:path";
 import {
   EVIDENCE_VERIFY_RESPONSE_SCHEMA_VERSION,
   VISUAL_SIDECAR_RESULT_ARTIFACT_FILENAME,
-  WAVE1_POC_ATTESTATION_ARTIFACT_FILENAME,
-  WAVE1_POC_ATTESTATION_BUNDLE_FILENAME,
-  WAVE1_POC_ATTESTATIONS_DIRECTORY,
-  WAVE1_POC_EVIDENCE_MANIFEST_DIGEST_FILENAME,
-  WAVE1_POC_EVIDENCE_MANIFEST_ARTIFACT_FILENAME,
-  WAVE1_POC_SIGNATURES_DIRECTORY,
+  WAVE1_VALIDATION_ATTESTATION_ARTIFACT_FILENAME,
+  WAVE1_VALIDATION_ATTESTATION_BUNDLE_FILENAME,
+  WAVE1_VALIDATION_ATTESTATIONS_DIRECTORY,
+  WAVE1_VALIDATION_EVIDENCE_MANIFEST_DIGEST_FILENAME,
+  WAVE1_VALIDATION_EVIDENCE_MANIFEST_ARTIFACT_FILENAME,
+  WAVE1_VALIDATION_SIGNATURES_DIRECTORY,
   type EvidenceVerifyCheck,
   type EvidenceVerifyFailure,
   type EvidenceVerifyFailureCode,
   type EvidenceVerifyResponse,
-  type Wave1PocAttestationSigningMode,
-  type Wave1PocAttestationVerificationFailure,
-  type Wave1PocEvidenceManifest,
+  type Wave1ValidationAttestationSigningMode,
+  type Wave1ValidationAttestationVerificationFailure,
+  type Wave1ValidationEvidenceManifest,
 } from "../contracts/index.js";
 import {
-  computeWave1PocEvidenceManifestDigest,
-  validateWave1PocEvidenceManifestMetadata,
-  Wave1PocEvidenceManifestLoadError,
-  verifyWave1PocEvidenceFromDisk,
+  computeWave1ValidationEvidenceManifestDigest,
+  validateWave1ValidationEvidenceManifestMetadata,
+  Wave1ValidationEvidenceManifestLoadError,
+  verifyWave1ValidationEvidenceFromDisk,
 } from "./evidence-manifest.js";
-import { verifyWave1PocAttestationFromDisk } from "./evidence-attestation.js";
+import { verifyWave1ValidationAttestationFromDisk } from "./evidence-attestation.js";
 import { verifyProductionRunnerEvidenceSealFromDisk } from "./production-runner-evidence.js";
 
 export {
@@ -268,7 +268,7 @@ const compareVisualEvidenceRefs = (
 };
 
 const compareManifestCaptureIdentities = (
-  manifest: Wave1PocEvidenceManifest,
+  manifest: Wave1ValidationEvidenceManifest,
   sidecarArtifact: Record<string, unknown>,
 ): boolean => {
   const manifestRecord = manifest as unknown as Record<string, unknown>;
@@ -310,7 +310,7 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
 
 const isManifestReadOrParseError = (err: unknown): boolean => {
-  return err instanceof Wave1PocEvidenceManifestLoadError;
+  return err instanceof Wave1ValidationEvidenceManifestLoadError;
 };
 
 const readManifestDigestWitness = async (
@@ -318,7 +318,7 @@ const readManifestDigestWitness = async (
 ): Promise<string | undefined> => {
   const digestPath = join(
     artifactsDir,
-    WAVE1_POC_EVIDENCE_MANIFEST_DIGEST_FILENAME,
+    WAVE1_VALIDATION_EVIDENCE_MANIFEST_DIGEST_FILENAME,
   );
   try {
     return (await readFile(digestPath, "utf8")).trim();
@@ -349,14 +349,14 @@ const readManifestDigestWitness = async (
  *     `visualEvidenceRefs` that name screens with no corresponding
  *     `visualSidecar` summary in the manifest.
  *
- * The default fixture-only POC path (no opt-in `visualCaptures`)
+ * The default fixture-only path (no opt-in `visualCaptures`)
  * intentionally has no `manifest.visualSidecar` block AND no attested
  * result artifact, so the detector returns `undefined` — visual
  * evidence is simply not part of that run's contract.
  */
 const detectVisualSidecarEvidenceMissing = async (
   artifactsDir: string,
-  manifest: Wave1PocEvidenceManifest,
+  manifest: Wave1ValidationEvidenceManifest,
 ): Promise<string | undefined> => {
   const manifestVisualSidecar = manifest.visualSidecar;
   const manifestRecord = manifest as unknown as Record<string, unknown>;
@@ -460,10 +460,10 @@ const buildEmptyManifestResponse = (
 ): EvidenceVerifyResponse => {
   const failure: EvidenceVerifyFailure = {
     code: "manifest_unparseable",
-    reference: WAVE1_POC_EVIDENCE_MANIFEST_ARTIFACT_FILENAME,
+    reference: WAVE1_VALIDATION_EVIDENCE_MANIFEST_ARTIFACT_FILENAME,
     message: failureMessageFor(
       "manifest_unparseable",
-      WAVE1_POC_EVIDENCE_MANIFEST_ARTIFACT_FILENAME,
+      WAVE1_VALIDATION_EVIDENCE_MANIFEST_ARTIFACT_FILENAME,
     ),
   };
   return {
@@ -475,7 +475,7 @@ const buildEmptyManifestResponse = (
     checks: [
       {
         kind: "manifest_metadata",
-        reference: WAVE1_POC_EVIDENCE_MANIFEST_ARTIFACT_FILENAME,
+        reference: WAVE1_VALIDATION_EVIDENCE_MANIFEST_ARTIFACT_FILENAME,
         ok: false,
         failureCode: "manifest_unparseable",
       },
@@ -486,11 +486,11 @@ const buildEmptyManifestResponse = (
 
 const detectAttestationSigningMode = async (
   artifactsDir: string,
-): Promise<Wave1PocAttestationSigningMode> => {
+): Promise<Wave1ValidationAttestationSigningMode> => {
   const bundlePath = join(
     artifactsDir,
-    WAVE1_POC_SIGNATURES_DIRECTORY,
-    WAVE1_POC_ATTESTATION_BUNDLE_FILENAME,
+    WAVE1_VALIDATION_SIGNATURES_DIRECTORY,
+    WAVE1_VALIDATION_ATTESTATION_BUNDLE_FILENAME,
   );
   return (await fileExists(bundlePath)) ? "sigstore" : "unsigned";
 };
@@ -540,7 +540,7 @@ const safeReadDirNames = async (path: string): Promise<string[]> => {
 };
 
 const isAttestationFailureCode = (
-  code: Wave1PocAttestationVerificationFailure["code"],
+  code: Wave1ValidationAttestationVerificationFailure["code"],
 ): EvidenceVerifyFailureCode => code;
 
 /**
@@ -566,7 +566,7 @@ export const verifyJobEvidence = async (
 
   const manifestPath = join(
     artifactsDir,
-    WAVE1_POC_EVIDENCE_MANIFEST_ARTIFACT_FILENAME,
+    WAVE1_VALIDATION_EVIDENCE_MANIFEST_ARTIFACT_FILENAME,
   );
   if (!(await fileExists(manifestPath))) {
     return { status: "no_evidence" };
@@ -575,13 +575,13 @@ export const verifyJobEvidence = async (
   // Try to verify; only manifest read/parse/schema failures are
   // converted into a completed verification response. Operational
   // filesystem errors still bubble to the HTTP layer as server errors.
-  let manifest: Wave1PocEvidenceManifest;
+  let manifest: Wave1ValidationEvidenceManifest;
   let missing: string[] = [];
   let mutated: string[] = [];
   let resized: string[] = [];
   let unexpected: string[] = [];
   try {
-    const verifyResult = await verifyWave1PocEvidenceFromDisk(artifactsDir, {
+    const verifyResult = await verifyWave1ValidationEvidenceFromDisk(artifactsDir, {
       rejectUnexpected: false,
     });
     manifest = verifyResult.manifest;
@@ -597,11 +597,11 @@ export const verifyJobEvidence = async (
     };
   }
 
-  const manifestSha256 = computeWave1PocEvidenceManifestDigest(manifest);
+  const manifestSha256 = computeWave1ValidationEvidenceManifestDigest(manifest);
   const checks: EvidenceVerifyCheck[] = [];
   const failures: EvidenceVerifyFailure[] = [];
   const manifestMetadataIssues =
-    validateWave1PocEvidenceManifestMetadata(manifest);
+    validateWave1ValidationEvidenceManifestMetadata(manifest);
   const manifestMetadataOk = manifestMetadataIssues.length === 0;
   const manifestDigestWitness = await readManifestDigestWitness(artifactsDir);
   const manifestDigestWitnessOk = manifestDigestWitness === manifestSha256;
@@ -666,7 +666,7 @@ export const verifyJobEvidence = async (
   // Manifest-level checks are classified independently: metadata
   // invariants come from the manifest verifier, while the digest
   // witness is compared against the canonical manifest digest.
-  const manifestRef = WAVE1_POC_EVIDENCE_MANIFEST_ARTIFACT_FILENAME;
+  const manifestRef = WAVE1_VALIDATION_EVIDENCE_MANIFEST_ARTIFACT_FILENAME;
   checks.push({
     kind: "manifest_metadata",
     reference: manifestRef,
@@ -753,13 +753,13 @@ export const verifyJobEvidence = async (
   let attestationSummary: EvidenceVerifyResponse["attestation"];
   const attestationPath = join(
     artifactsDir,
-    WAVE1_POC_ATTESTATIONS_DIRECTORY,
-    WAVE1_POC_ATTESTATION_ARTIFACT_FILENAME,
+    WAVE1_VALIDATION_ATTESTATIONS_DIRECTORY,
+    WAVE1_VALIDATION_ATTESTATION_ARTIFACT_FILENAME,
   );
   if ((await fileExists(attestationPath)) && manifestMetadataOk) {
     const expectedSigningMode =
       await detectAttestationSigningMode(artifactsDir);
-    const attestationResult = await verifyWave1PocAttestationFromDisk(
+    const attestationResult = await verifyWave1ValidationAttestationFromDisk(
       artifactsDir,
       manifest,
       manifestSha256,
@@ -773,7 +773,7 @@ export const verifyJobEvidence = async (
     };
     checks.push({
       kind: "attestation_envelope",
-      reference: WAVE1_POC_ATTESTATION_ARTIFACT_FILENAME,
+      reference: WAVE1_VALIDATION_ATTESTATION_ARTIFACT_FILENAME,
       ok: attestationResult.failures.every(
         (failure) =>
           failure.code !== "envelope_unparseable" &&
@@ -793,7 +793,7 @@ export const verifyJobEvidence = async (
     });
     checks.push({
       kind: "attestation_signatures",
-      reference: WAVE1_POC_ATTESTATION_ARTIFACT_FILENAME,
+      reference: WAVE1_VALIDATION_ATTESTATION_ARTIFACT_FILENAME,
       ok:
         attestationResult.signaturesVerified ||
         expectedSigningMode === "unsigned"

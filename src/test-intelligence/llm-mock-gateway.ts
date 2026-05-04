@@ -1,5 +1,5 @@
 /**
- * Deterministic mock LLM gateway for CI and air-gapped POC execution
+ * Deterministic mock LLM gateway for CI and air-gapped validation execution
  * (Issue #1363).
  *
  * The mock implements the full `LlmGatewayClient` contract without making

@@ -2,7 +2,7 @@
  * End-to-end tests for `GET /workspace/jobs/:jobId/evidence/verify`
  * (Issue #1380). Brings up an in-process HTTP server with the
  * test-intelligence subsurface enabled, then drives the route via
- * `fetch` against a real POC run materialized by `runWave1Poc`.
+ * `fetch` against a real validation run materialized by `runWave1Validation`.
  *
  * Covers all status codes named in the issue acceptance criteria
  * (200 ok, 200 fail, 404, 409, 401, 503, 405, 429, feature-disabled
@@ -31,7 +31,7 @@ import {
   runFigmaToQcTestCases,
   type ProductionRunnerLlmDraftCase,
 } from "../test-intelligence/production-runner.js";
-import { runWave1Poc } from "../test-intelligence/poc-harness.js";
+import { runWave1Validation } from "../test-intelligence/validation-harness.js";
 import type { FigmaRestNode } from "../test-intelligence/figma-rest-adapter.js";
 import { createJobEngine, resolveRuntimeSettings } from "../job-engine.js";
 import { createWorkspaceRequestHandler } from "./request-handler.js";
@@ -40,7 +40,7 @@ const moduleDir = fileURLToPath(new URL(".", import.meta.url));
 
 const TEST_BEARER_TOKEN =
   "test-evidence-verify-bearer-token-do-not-use-in-prod";
-const POC_FIXTURE_GENERATED_AT = "2026-04-25T10:00:00.000Z";
+const VALIDATION_FIXTURE_GENERATED_AT = "2026-04-25T10:00:00.000Z";
 
 interface TestServerHandle {
   baseUrl: string;
@@ -74,10 +74,10 @@ const startTestServer = async (
   const jobId = "evidence-verify-job";
   const runDir = join(artifactsRoot, jobId);
   await mkdir(runDir, { recursive: true });
-  await runWave1Poc({
-    fixtureId: "poc-onboarding",
+  await runWave1Validation({
+    fixtureId: "validation-onboarding",
     jobId,
-    generatedAt: POC_FIXTURE_GENERATED_AT,
+    generatedAt: VALIDATION_FIXTURE_GENERATED_AT,
     runDir,
   });
 
@@ -275,14 +275,14 @@ const seedProductionRunnerJob = async (
   });
   await runFigmaToQcTestCases({
     jobId,
-    generatedAt: POC_FIXTURE_GENERATED_AT,
+    generatedAt: VALIDATION_FIXTURE_GENERATED_AT,
     source: { kind: "figma_paste_normalized", file: SAMPLE_FILE },
     outputRoot: artifactsRoot,
     llm: { client },
   });
 };
 
-test("e2e #1380: GET evidence/verify returns 200 ok=true for an untouched POC run", async () => {
+test("e2e #1380: GET evidence/verify returns 200 ok=true for an untouched validation run", async () => {
   const handle = await startTestServer();
   try {
     const result = await fetchVerify(handle.baseUrl, handle.jobId);
@@ -390,7 +390,7 @@ test("e2e #1380: GET evidence/verify returns 200 ok=false for a malformed versio
     const manifestPath = join(
       handle.artifactsRoot,
       handle.jobId,
-      "wave1-poc-evidence-manifest.json",
+      "wave1-validation-evidence-manifest.json",
     );
     const manifest = JSON.parse(await readFile(manifestPath, "utf8")) as Record<
       string,

@@ -41,7 +41,7 @@ this is the default to keep the surface area small for non-customers.
 The runner ships with two named envelopes:
 
 - `DEFAULT_FINOPS_BUDGET_ENVELOPE` — permissive, intended for the
-  `poc-harness` and fixture replays. Do **not** use in production.
+  `validation-harness` and fixture replays. Do **not** use in production.
 - `PRODUCTION_FINOPS_BUDGET_ENVELOPE` — fail-closed, calibrated for
   the `gpt-oss-120b` + visual-sidecar topology. Every role has caps
   on tokens, attempts, wall clock, and image payload size.

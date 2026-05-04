@@ -1,5 +1,5 @@
 /**
- * LLM gateway client surface for the Figma-to-Test Wave 1 POC (Issue #1363).
+ * LLM gateway client surface for the Figma-to-Test Wave 1 Validation (Issue #1363).
  *
  * Goals enforced here:
  *   - Role separation: `test_generation` is bound to a non-multimodal
