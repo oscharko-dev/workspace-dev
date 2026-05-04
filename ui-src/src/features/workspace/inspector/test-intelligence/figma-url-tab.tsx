@@ -156,7 +156,7 @@ export function FigmaUrlTab({ onSubmitted }: FigmaUrlTabProps): JSX.Element {
         aria-live="polite"
         className="m-0 min-h-[16px] text-[11px] text-amber-200"
       >
-        {showInlineError && !parsed.ok
+        {!parsed.ok && url.trim().length > 0
           ? describeFigmaUrlError(parsed.reason)
           : ""}
       </p>

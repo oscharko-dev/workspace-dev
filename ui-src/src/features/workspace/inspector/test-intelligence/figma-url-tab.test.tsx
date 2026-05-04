@@ -92,7 +92,7 @@ describe("FigmaUrlTab", () => {
     const [url, init] = mockFetch.mock.calls[0] as [string, FetchInit];
     expect(url).toBe("/workspace/submit");
     expect(init.method).toBe("POST");
-    const body = JSON.parse(String(init.body));
+    const body = JSON.parse(init.body as string);
     expect(body.figmaSourceMode).toBe("figma_url");
     expect(body.jobType).toBe("figma_to_qc_test_cases");
     const innerPayload = JSON.parse(String(body.figmaJsonPayload));
@@ -139,7 +139,7 @@ describe("FigmaUrlTab", () => {
       expect(mockFetch).toHaveBeenCalledTimes(1);
     });
     const [, init] = mockFetch.mock.calls[0] as [string, FetchInit];
-    const body = JSON.parse(String(init.body));
+    const body = JSON.parse(init.body as string);
     const innerPayload = JSON.parse(String(body.figmaJsonPayload));
     expect(innerPayload).toEqual({ figmaFileKey: "abc" });
   });

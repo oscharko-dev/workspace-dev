@@ -134,7 +134,7 @@ export const applyEventToRows = (
   rows: readonly TimelineRow[],
   event: ProductionRunnerEvent,
 ): readonly TimelineRow[] => {
-  const routing = PHASE_ROUTING[event.phase];
+  const routing = (PHASE_ROUTING as Readonly<Record<string, { row: TimelineRowPhase; transition: "start" | "complete" | "skip" } | undefined>>)[event.phase];
   if (routing === undefined) return rows;
   return rows.map((row) => {
     if (row.phase !== routing.row) return row;
