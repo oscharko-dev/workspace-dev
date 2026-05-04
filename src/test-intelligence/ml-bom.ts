@@ -359,8 +359,8 @@ export const buildMlBomDocument = (
   if (!ISO_TIMESTAMP.test(input.generatedAt)) {
     throw new RangeError("buildMlBomDocument: generatedAt must be ISO-8601");
   }
-  const releaseName = String(packageJson.name);
-  const releaseVersion = String(packageJson.version);
+  const releaseName = packageJson.name;
+  const releaseVersion = packageJson.version;
   const policyBundleHash = sha256Hex(input.policyProfile);
   const promptTemplateHashes = computePromptTemplateHashes();
   const systemPromptHashes = computeSystemPromptHashes();
@@ -605,14 +605,14 @@ export const validateMlBomDocument = (
 ): MlBomValidationResult => {
   const issues: MlBomValidationIssue[] = [];
 
-  if (document.bomFormat !== "CycloneDX") {
+  if ((document.bomFormat as string) !== "CycloneDX") {
     issues.push({
       path: "bomFormat",
       code: "invalid_value",
       message: 'bomFormat must equal "CycloneDX"',
     });
   }
-  if (document.specVersion !== ML_BOM_CYCLONEDX_SPEC_VERSION) {
+  if ((document.specVersion as string) !== ML_BOM_CYCLONEDX_SPEC_VERSION) {
     issues.push({
       path: "specVersion",
       code: "invalid_value",

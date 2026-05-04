@@ -168,6 +168,7 @@ import {
 import {
   createRunnerEventBus,
   serializeRunnerEvent,
+  type ProductionRunnerEventSink,
   type RunnerEventBus,
 } from "../test-intelligence/production-runner-events.js";
 import {
@@ -1277,7 +1278,7 @@ export interface TestIntelligenceProductionRunnerFactoryInput {
    * forward this to the underlying `runFigmaToQcTestCases` call so the
    * SSE route can stream phase progress.
    */
-  events?: import("../test-intelligence/production-runner-events.js").ProductionRunnerEventSink;
+  events?: ProductionRunnerEventSink;
 }
 
 interface CreateWorkspaceRequestHandlerInput {
@@ -3250,7 +3251,7 @@ export function createWorkspaceRequestHandler({
             response.setHeader("cache-control", "no-cache, no-transform");
             response.setHeader("connection", "keep-alive");
             response.setHeader("x-accel-buffering", "no");
-            response.flushHeaders?.();
+            response.flushHeaders();
             // Replay buffered events first so a late subscriber catches up.
             for (const event of runnerEventBus.snapshot(route.jobId)) {
               response.write(`data: ${serializeRunnerEvent(event)}\n\n`);

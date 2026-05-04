@@ -97,7 +97,7 @@ const stripUndefined = (
   value: ProductionRunnerEventDetailValue,
 ): ProductionRunnerEventDetailValue => {
   if (Array.isArray(value)) {
-    return value.map((entry) => stripUndefined(entry));
+    return (value as ReadonlyArray<ProductionRunnerEventDetailValue>).map((entry) => stripUndefined(entry));
   }
   if (value !== null && typeof value === "object") {
     const out: Record<string, ProductionRunnerEventDetailValue> = {};

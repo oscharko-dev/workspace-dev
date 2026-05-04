@@ -344,7 +344,7 @@ export function validateClipboardEnvelope(
   });
 
   const sanitizedEnvelope = {
-    ...(input as Record<string, unknown>),
+    ...input,
     selections: sanitizedSelections,
   } as unknown as ClipboardEnvelope;
 

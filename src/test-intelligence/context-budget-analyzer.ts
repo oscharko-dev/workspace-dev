@@ -235,7 +235,7 @@ export const analyzeContextBudget = (
     input.maxInputTokens <= 0 ||
     categories.some(
       (category) =>
-        category.priority === "required" && category.droppable === true,
+        category.priority === "required" && category.droppable,
     )
   ) {
     return invalidBudgetReport(input, fullEstimatedInputTokens, categories);

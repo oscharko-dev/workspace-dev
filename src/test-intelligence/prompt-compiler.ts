@@ -993,7 +993,7 @@ const wrapUntrustedPromptSpan = (
 
 const collectSourceRefIds = (
   trace: { sourceRefs?: ReadonlyArray<{ sourceId: string }> } | undefined,
-  extra: ReadonlyArray<{ sourceId: string }> | undefined = undefined,
+  extra?: ReadonlyArray<{ sourceId: string }>,
 ): string[] =>
   uniqueSorted([
     ...(trace?.sourceRefs ?? []).map((sourceRef) => sourceRef.sourceId),
