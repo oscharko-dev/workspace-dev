@@ -1110,10 +1110,15 @@ export {
 } from "./customer-markdown-renderer.js";
 export {
   PRODUCTION_RUNNER_FAILURE_CLASSES,
+  PRODUCTION_RUNNER_HARNESS_MODES,
+  PRODUCTION_RUNNER_HARNESS_ROLE_STEP_ID,
   PRODUCTION_RUNNER_TEST_GENERATION_DEPLOYMENT,
   ProductionRunnerError,
   runFigmaToQcTestCases,
   type ProductionRunnerFailureClass,
+  type ProductionRunnerHarnessConfig,
+  type ProductionRunnerHarnessMode,
+  type ProductionRunnerHarnessSummary,
   type ProductionRunnerLlmConfig,
   type ProductionRunnerLlmDraftCase,
   type ProductionRunnerSource,
