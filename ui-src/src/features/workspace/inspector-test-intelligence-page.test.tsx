@@ -202,7 +202,13 @@ describe("InspectorTestIntelligencePage — empty + loading + ready", () => {
           jobId: "job-1",
           ok: true,
           manifestSha256: "a".repeat(64),
-          checks: [{ kind: "ml_bom", ok: true, reference: "ml-bom.json" }],
+          checks: [
+            {
+              kind: "manifest_metadata",
+              ok: true,
+              reference: "manifest.json",
+            },
+          ],
           failures: [],
         },
       },
@@ -214,6 +220,9 @@ describe("InspectorTestIntelligencePage — empty + loading + ready", () => {
         "aria-selected",
         "true",
       );
+    });
+    fireEvent.change(screen.getByTestId("ti-reviewer-bearer-input"), {
+      target: { value: "review-token" },
     });
     expect(
       fetchJsonMock.mock.calls.some(
@@ -229,7 +238,12 @@ describe("InspectorTestIntelligencePage — empty + loading + ready", () => {
     });
     expect(
       fetchJsonMock.mock.calls.some(
-        ([request]) => request.url === "/workspace/jobs/job-1/evidence/verify",
+        ([request]) =>
+          request.url === "/workspace/jobs/job-1/evidence/verify" &&
+          request.init?.headers &&
+          typeof request.init.headers === "object" &&
+          "authorization" in request.init.headers &&
+          request.init.headers.authorization === "Bearer review-token",
       ),
     ).toBe(true);
   });

@@ -30,7 +30,10 @@
 import { readFile, readdir, stat } from "node:fs/promises";
 import { join } from "node:path";
 
-import { ADVERSARIAL_GAP_FINDINGS_ARTIFACT_FILENAME } from "./adversarial-gap-finder.js";
+import {
+  ADVERSARIAL_GAP_FINDINGS_ARTIFACT_FILENAME,
+  type AdversarialGapFinding,
+} from "./adversarial-gap-finder.js";
 import {
   AGENT_ITERATIONS_ARTIFACT_FILENAME,
   CACHE_BREAK_EVENTS_LOG_ARTIFACT_FILENAME,
@@ -59,7 +62,6 @@ import {
   VISUAL_SIDECAR_SCHEMA_VERSION,
   VISUAL_SIDECAR_VALIDATION_REPORT_ARTIFACT_FILENAME,
   VISUAL_SIDECAR_VALIDATION_REPORT_SCHEMA_VERSION,
-  type AdversarialGapFinding,
   type AgentIterationsArtifact,
   type CacheBreakEventLogEntry,
   type CompactBoundaryLogEntry,

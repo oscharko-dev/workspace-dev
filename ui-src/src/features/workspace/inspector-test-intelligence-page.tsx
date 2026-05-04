@@ -745,7 +745,10 @@ function TestIntelligenceInner({
                       testCases={job.bundle?.generatedTestCases?.testCases ?? []}
                     />
                   ) : selectedTab === "evidence-status" ? (
-                    <LazyEvidenceStatusPanel jobId={jobId} />
+                    <LazyEvidenceStatusPanel
+                      jobId={jobId}
+                      bearerToken={bearerToken}
+                    />
                   ) : selectedTab === "role-monitor" ? (
                     <LazyRoleMonitorTimelinePanel jobId={jobId} />
                   ) : null}

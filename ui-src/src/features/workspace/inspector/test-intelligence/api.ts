@@ -43,6 +43,15 @@ export type FetchOutcome<T> =
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
 
+const EVIDENCE_VERIFY_CHECK_KINDS = new Set([
+  "artifact_sha256",
+  "manifest_metadata",
+  "manifest_digest_witness",
+  "visual_sidecar_evidence",
+  "attestation_envelope",
+  "attestation_signatures",
+]);
+
 const isEvidenceVerifyResponse = (
   value: unknown,
 ): value is EvidenceVerifyResponse => {
@@ -67,20 +76,17 @@ const isEvidenceVerifyResponse = (
     }
     if (
       typeof entry["kind"] !== "string" ||
+      !EVIDENCE_VERIFY_CHECK_KINDS.has(entry["kind"]) ||
       typeof entry["ok"] !== "boolean" ||
       typeof entry["reference"] !== "string"
     ) {
       return false;
     }
-    const detail = entry["detail"];
-    if (detail === undefined) {
-      return true;
-    }
     return (
-      isRecord(detail) &&
-      (detail["severity"] === undefined ||
-        typeof detail["severity"] === "string") &&
-      (detail["message"] === undefined || typeof detail["message"] === "string")
+      (entry["failureCode"] === undefined ||
+        typeof entry["failureCode"] === "string") &&
+      (entry["signingMode"] === undefined ||
+        typeof entry["signingMode"] === "string")
     );
   }) && value["failures"].every((entry) => {
     return (
@@ -164,9 +170,15 @@ export async function fetchTestIntelligenceBundle(
 
 export async function fetchEvidenceVerifyStatus(
   jobId: string,
+  bearerToken: string,
 ): Promise<FetchOutcome<EvidenceVerifyResponse>> {
   const response = await fetchJson<EvidenceVerifyResponse>({
     url: `${WORKSPACE_ROOT}/jobs/${encodeURIComponent(jobId)}/evidence/verify`,
+    init: {
+      headers: {
+        authorization: `Bearer ${bearerToken}`,
+      },
+    },
   });
   if (!response.ok) {
     return errorOutcomeFromPayload(

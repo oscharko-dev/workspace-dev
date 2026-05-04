@@ -350,13 +350,17 @@ export interface AgentIterationsArtifact {
 }
 
 export interface EvidenceVerifyCheck {
-  kind: string;
+  kind:
+    | "artifact_sha256"
+    | "manifest_metadata"
+    | "manifest_digest_witness"
+    | "visual_sidecar_evidence"
+    | "attestation_envelope"
+    | "attestation_signatures";
   ok: boolean;
   reference: string;
-  detail?: {
-    severity?: string;
-    message?: string;
-  };
+  failureCode?: string;
+  signingMode?: string;
 }
 
 export interface EvidenceVerifyFailure {
