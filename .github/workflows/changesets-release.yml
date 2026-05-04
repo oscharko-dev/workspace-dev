@@ -36,7 +36,7 @@ jobs:
           echo "TZ=UTC" >> "$GITHUB_ENV"
 
       - name: Install dependencies
-        run: pnpm install --frozen-lockfile
+        run: pnpm install --frozen-lockfile --ignore-scripts
 
       - name: Enforce dependency vulnerability gate
         run: pnpm audit --audit-level high
@@ -98,7 +98,7 @@ jobs:
           cache-dependency-path: template/react-mui-app/pnpm-lock.yaml
 
       - name: Install template dependencies
-        run: pnpm --dir template/react-mui-app install --frozen-lockfile
+        run: pnpm --dir template/react-mui-app install --frozen-lockfile --ignore-scripts
 
       - name: Typecheck template app
         run: pnpm --dir template/react-mui-app run typecheck
@@ -148,7 +148,7 @@ jobs:
           cache: pnpm
 
       - name: Install dependencies
-        run: pnpm install --frozen-lockfile
+        run: pnpm install --frozen-lockfile --ignore-scripts
 
       - name: Run mutation baseline (blocking >=58%)
         run: pnpm run test:mutation
@@ -185,11 +185,11 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          npm install --global npm@11
+          npm install --ignore-scripts --global npm@11
           npm --version
 
       - name: Install dependencies
-        run: pnpm install --frozen-lockfile
+        run: pnpm install --frozen-lockfile --ignore-scripts
 
       - name: Set reproducible build metadata
         shell: bash

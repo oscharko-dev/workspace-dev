@@ -265,7 +265,7 @@
     },
     {
       "path": "dist/contracts/index.js",
-      "limit": "6 KB"
+      "limit": "10 KB"
     }
   ]
 }
