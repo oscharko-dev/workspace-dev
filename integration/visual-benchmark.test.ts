@@ -2303,7 +2303,8 @@ test("visual benchmark workflow enforces thresholds and updates the existing che
     /actions\/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3/,
   );
   assert.match(workflow, /check-output\.json/);
-  assert.match(workflow, /github\.rest\.checks\.update/);
+  assert.match(workflow, /github\.rest\.issues\.updateComment/);
+  assert.match(workflow, /github\.rest\.issues\.createComment/);
   assert.match(workflow, /integration\/composite-quality\*/);
   assert.match(workflow, /scripts\/compute-composite-quality\.ts/);
   assert.match(workflow, /scripts\/print-visual-benchmark-summary\.mjs/);
@@ -2315,11 +2316,11 @@ test("visual benchmark workflow enforces thresholds and updates the existing che
     workflow,
     /if: always\(\) && hashFiles\('artifacts\/visual-benchmark\/last-run\.json'\) != ''/,
   );
-  assert.doesNotMatch(
+  assert.match(
     workflow,
     /name:\s+Post or update visual benchmark PR comment/,
   );
-  assert.doesNotMatch(workflow, /issues:\s*write/);
+  assert.match(workflow, /issues:\s*write/);
 });
 
 test("runVisualBenchmark is silent by default and writes via output callback when provided", async () => {
@@ -2355,25 +2356,27 @@ test("runVisualBenchmark is silent by default and writes via output callback whe
   }
 });
 
-test("visual benchmark comment workflow renders trusted PR comments from structured workflow_run artifacts", async () => {
+test("visual benchmark workflow renders trusted PR comments from structured artifacts", async () => {
   const workflow = await readFile(
-    path.join(
-      process.cwd(),
-      ".github",
-      "workflows",
-      "visual-benchmark-comment.yml",
-    ),
+    path.join(process.cwd(), ".github", "workflows", "visual-benchmark.yml"),
     "utf8",
   );
-  assert.match(workflow, /workflow_run:/);
-  assert.match(workflow, /workflows:\s+\['workspace-dev visual benchmark'\]/);
   assert.match(
     workflow,
-    /if:\s+github\.event\.workflow_run\.event == 'pull_request' && github\.event\.workflow_run\.conclusion == 'success'/,
+    /name:\s+Render visual benchmark PR comment payload/,
   );
-  assert.match(workflow, /issues:\s*write/);
-  assert.match(workflow, /persist-credentials:\s*false/);
-  assert.match(workflow, /ref:\s*\$\{\{\s*github\.event\.repository\.default_branch\s*\}\}/);
+  assert.match(
+    workflow,
+    /name:\s+Post or update visual benchmark PR comment/,
+  );
+  assert.match(
+    workflow,
+    /hashFiles\('artifacts\/visual-benchmark\/public-summary\/visual-benchmark-pr-comment\.json'\) != ''/,
+  );
+  assert.match(
+    workflow,
+    /VISUAL_BENCHMARK_ALLOW_STEP_SUMMARY:\s*"false"/,
+  );
   assert.match(workflow, /last-run\.public\.json/);
   assert.match(workflow, /print-visual-benchmark-pr-comment\.mjs/);
   assert.match(workflow, /payload\.body\.startsWith\(payload\.marker\)/);

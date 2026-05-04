@@ -26,7 +26,7 @@ jobs:
       workflows: ${{ steps.filter.outputs.workflows }}
       docs: ${{ steps.filter.outputs.docs }}
       config: ${{ steps.filter.outputs.config }}
-      full: ${{ steps.full.outputs.value }}
+      full: ${{ steps.full.outputs.value == 'true' || steps.full-workflows.outputs.value == 'true' }}
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
         with:
@@ -72,12 +72,13 @@ jobs:
       - id: full
         shell: bash
         run: |
-          set -euo pipefail
-          if [ "${{ steps.filter.outputs.workflows }}" = "true" ] || [ "${{ steps.filter.outputs.config }}" = "true" ]; then
-            echo "value=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "value=false" >> "$GITHUB_OUTPUT"
-          fi
+          echo "value=false" >> "$GITHUB_OUTPUT"
+
+      - id: full-workflows
+        if: steps.filter.outputs.workflows == 'true' || steps.filter.outputs.config == 'true'
+        shell: bash
+        run: |
+          echo "value=true" >> "$GITHUB_OUTPUT"
 
   quality:
     timeout-minutes: 480

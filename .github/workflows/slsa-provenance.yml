@@ -73,10 +73,7 @@ jobs:
       actions: read
       id-token: write
       contents: write
-    # The SLSA generator reusable workflow MUST be pinned to a release tag
-    # (not a commit SHA) per its security model: the generator validates its
-    # own ref at runtime to anchor the provenance to a vetted release.
-    uses: slsa-framework/slsa-github-generator/.github/workflows/generator_generic_slsa3.yml@v2.1.0
+    uses: slsa-framework/slsa-github-generator/.github/workflows/generator_generic_slsa3.yml@f7dd8c54c2067bafc12ca7a55595d5ee9b75204a
     with:
       base64-subjects: ${{ needs.prepare.outputs.hashes }}
       upload-assets: true

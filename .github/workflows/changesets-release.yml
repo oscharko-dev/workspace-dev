@@ -221,7 +221,6 @@ jobs:
     needs: [quality-matrix, performance-web, mutation-testing]
     permissions:
       contents: write
-      pull-requests: write
       id-token: write
       attestations: write
     steps:
