@@ -2,9 +2,9 @@ name: workspace-dev dev quality gate
 
 on:
   push:
-    branches: [dev-gate, dev]
+    branches: [dev]
   pull_request:
-    branches: [dev-gate, dev]
+    branches: [dev]
   workflow_dispatch:
 
 concurrency:
