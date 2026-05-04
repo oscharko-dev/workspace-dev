@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -17,6 +17,7 @@ import { createMockLlmGatewayClient } from "./llm-mock-gateway.js";
 import { createMockLlmGatewayClientBundle } from "./llm-gateway-bundle.js";
 import { cloneEuBankingDefaultFinOpsBudget } from "./finops-budget.js";
 import { verifyJobEvidence } from "./evidence-verify.js";
+import { PRODUCTION_RUNNER_EVIDENCE_SEAL_ARTIFACT_FILENAME } from "./production-runner-evidence.js";
 import {
   PROMPT_MAX_ACTIONS_PER_SCREEN,
   PROMPT_MAX_FIELDS_PER_SCREEN,
@@ -264,6 +265,112 @@ test("runFigmaToQcTestCases happy path persists artifacts and renders customer M
     const md = await readFile(result.customerMarkdownPaths.combined, "utf8");
     assert.match(md, /Testfälle/u);
     assert.match(md, /Investitionssumme/u);
+  } finally {
+    await rm(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("Issue #1792: runFigmaToQcTestCases seals production-runner evidence and emits a verified evidence_sealed event", async () => {
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ti-runner-"));
+  const observedEvents: Array<{
+    phase: string;
+    details?: Record<string, unknown>;
+  }> = [];
+  try {
+    const client = createMockLlmGatewayClient({
+      role: "test_generation",
+      deployment: "gpt-oss-120b-mock",
+      modelRevision: "mock-1",
+      gatewayRelease: "mock",
+      responder: okResponder([SAMPLE_DRAFT]),
+    });
+    const result = await runFigmaToQcTestCases({
+      jobId: "job-1792-sealed",
+      generatedAt: "2026-05-02T10:00:00Z",
+      source: { kind: "figma_paste_normalized", file: SAMPLE_FILE },
+      outputRoot: tempRoot,
+      llm: { client },
+      events: (event) => observedEvents.push(event),
+    });
+    const evidenceSeal = JSON.parse(
+      await readFile(result.artifactPaths.evidenceSeal, "utf8"),
+    ) as {
+      headOfChainHash: string;
+      chainLength: number;
+      bySourceHash: string;
+      genealogyDagHash: string;
+      harnessArtifactFilenames: string[];
+    };
+    assert.equal(
+      path.basename(result.artifactPaths.evidenceSeal),
+      PRODUCTION_RUNNER_EVIDENCE_SEAL_ARTIFACT_FILENAME,
+    );
+    assert.equal(evidenceSeal.chainLength, 0);
+    assert.match(evidenceSeal.headOfChainHash, /^[0-9a-f]{64}$/u);
+    assert.match(evidenceSeal.bySourceHash, /^[0-9a-f]{64}$/u);
+    assert.match(evidenceSeal.genealogyDagHash, /^[0-9a-f]{64}$/u);
+    assert.deepEqual(evidenceSeal.harnessArtifactFilenames, [
+      "agent-role-runs/test_generation.json",
+      "context-budget/test_generation.json",
+    ]);
+    const sealedEvent = observedEvents.find(
+      (event) => event.phase === "evidence_sealed",
+    );
+    assert.deepEqual(sealedEvent?.details, {
+      sealed: true,
+      sealArtifact: PRODUCTION_RUNNER_EVIDENCE_SEAL_ARTIFACT_FILENAME,
+      manifest: "wave1-poc-evidence-manifest.json",
+      headOfChainHash: evidenceSeal.headOfChainHash,
+      chainLength: 0,
+      bySourceHash: evidenceSeal.bySourceHash,
+    });
+  } finally {
+    await rm(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("Issue #1792: verifyJobEvidence fails closed when production-runner evidence seal headOfChainHash is tampered", async () => {
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ti-runner-"));
+  try {
+    const client = createMockLlmGatewayClient({
+      role: "test_generation",
+      deployment: "gpt-oss-120b-mock",
+      modelRevision: "mock-1",
+      gatewayRelease: "mock",
+      responder: okResponder([SAMPLE_DRAFT]),
+    });
+    const result = await runFigmaToQcTestCases({
+      jobId: "job-1792-tamper",
+      generatedAt: "2026-05-02T10:00:00Z",
+      source: { kind: "figma_paste_normalized", file: SAMPLE_FILE },
+      outputRoot: tempRoot,
+      llm: { client },
+    });
+    const tampered = JSON.parse(
+      await readFile(result.artifactPaths.evidenceSeal, "utf8"),
+    ) as Record<string, unknown>;
+    tampered.headOfChainHash = "f".repeat(64);
+    await writeFile(
+      result.artifactPaths.evidenceSeal,
+      JSON.stringify(tampered),
+      "utf8",
+    );
+    const verify = await verifyJobEvidence({
+      artifactsRoot: tempRoot,
+      jobId: result.jobId,
+      verifiedAt: "2026-05-03T12:00:00.000Z",
+    });
+    assert.equal(verify.status, "ok");
+    if (verify.status !== "ok") return;
+    assert.equal(verify.body.ok, false);
+    assert.ok(
+      verify.body.failures.some(
+        (failure) =>
+          failure.code === "manifest_metadata_invalid" &&
+          failure.reference === PRODUCTION_RUNNER_EVIDENCE_SEAL_ARTIFACT_FILENAME,
+      ),
+      JSON.stringify(verify.body.failures, null, 2),
+    );
   } finally {
     await rm(tempRoot, { recursive: true, force: true });
   }

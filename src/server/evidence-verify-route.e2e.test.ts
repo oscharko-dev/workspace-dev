@@ -25,7 +25,14 @@ import test from "node:test";
 import { fileURLToPath } from "node:url";
 
 import { TEST_INTELLIGENCE_ENV } from "../contracts/index.js";
+import { createMockLlmGatewayClient } from "../test-intelligence/llm-mock-gateway.js";
+import { PRODUCTION_RUNNER_EVIDENCE_SEAL_ARTIFACT_FILENAME } from "../test-intelligence/production-runner-evidence.js";
+import {
+  runFigmaToQcTestCases,
+  type ProductionRunnerLlmDraftCase,
+} from "../test-intelligence/production-runner.js";
 import { runWave1Poc } from "../test-intelligence/poc-harness.js";
+import type { FigmaRestNode } from "../test-intelligence/figma-rest-adapter.js";
 import { createJobEngine, resolveRuntimeSettings } from "../job-engine.js";
 import { createWorkspaceRequestHandler } from "./request-handler.js";
 
@@ -159,6 +166,64 @@ const startTestServer = async (
 const verifyUrl = (baseUrl: string, jobId: string): string =>
   `${baseUrl}/workspace/jobs/${encodeURIComponent(jobId)}/evidence/verify`;
 
+const node = (
+  partial: Partial<FigmaRestNode> & { id: string; type: string },
+): FigmaRestNode => partial as FigmaRestNode;
+
+const SAMPLE_FILE = {
+  fileKey: "ABC",
+  name: "Evidence Verify Route",
+  document: node({
+    id: "0:0",
+    type: "DOCUMENT",
+    children: [
+      node({
+        id: "0:1",
+        name: "Page 1",
+        type: "CANVAS",
+        children: [
+          node({
+            id: "1:1",
+            name: "Bedarfsermittlung",
+            type: "FRAME",
+            absoluteBoundingBox: { x: 0, y: 0, width: 600, height: 800 },
+            children: [
+              node({
+                id: "2:1",
+                name: "Investitionssumme",
+                type: "TEXT",
+                characters: "Investitionssumme",
+              }),
+            ],
+          }),
+        ],
+      }),
+    ],
+  }),
+};
+
+const SAMPLE_DRAFT: ProductionRunnerLlmDraftCase = {
+  title: "Gültige Investitionssumme",
+  objective: "Validiert, dass die Eingabe akzeptiert wird.",
+  type: "functional",
+  priority: "p1",
+  riskCategory: "low",
+  technique: "use_case",
+  preconditions: ["Maske ist geöffnet"],
+  testData: ["Investitionssumme: 100000"],
+  steps: [
+    {
+      index: 1,
+      action: "Trage 100000 ein",
+      expected: "Eingabe wird akzeptiert",
+    },
+  ],
+  expectedResults: ["Investitionssumme wird gespeichert"],
+  figmaTraceRefs: [{ screenId: "1:1", nodeName: "Bedarfsermittlung" }],
+  assumptions: [],
+  openQuestions: [],
+};
+
 const fetchVerify = async (
   baseUrl: string,
   jobId: string,
@@ -186,6 +251,35 @@ const fetchVerify = async (
     body = undefined;
   }
   return { status: response.status, body, headers: response.headers };
+};
+
+const seedProductionRunnerJob = async (
+  artifactsRoot: string,
+  jobId: string,
+): Promise<void> => {
+  const client = createMockLlmGatewayClient({
+    role: "test_generation",
+    deployment: "gpt-oss-120b-mock",
+    modelRevision: "mock-1",
+    gatewayRelease: "mock",
+    responder: () => ({
+      outcome: "success" as const,
+      content: { testCases: [SAMPLE_DRAFT] },
+      finishReason: "stop" as const,
+      usage: { inputTokens: 10, outputTokens: 20 },
+      modelDeployment: "gpt-oss-120b-mock",
+      modelRevision: "mock-1",
+      gatewayRelease: "mock",
+      attempt: 1,
+    }),
+  });
+  await runFigmaToQcTestCases({
+    jobId,
+    generatedAt: POC_FIXTURE_GENERATED_AT,
+    source: { kind: "figma_paste_normalized", file: SAMPLE_FILE },
+    outputRoot: artifactsRoot,
+    llm: { client },
+  });
 };
 
 test("e2e #1380: GET evidence/verify returns 200 ok=true for an untouched POC run", async () => {
@@ -247,6 +341,43 @@ test("e2e #1380: GET evidence/verify returns 200 ok=false after artifact tamperi
     assert.ok(
       codes.includes("artifact_resized") || codes.includes("artifact_mutated"),
       `expected artifact_resized or artifact_mutated, saw: ${codes.join(",")}`,
+    );
+  } finally {
+    await handle.close();
+  }
+});
+
+test("e2e #1792: GET evidence/verify reports production-runner seal headOfChainHash tampering", async () => {
+  const handle = await startTestServer();
+  const jobId = "production-runner-1792";
+  try {
+    await seedProductionRunnerJob(handle.artifactsRoot, jobId);
+    const sealPath = join(
+      handle.artifactsRoot,
+      "jobs",
+      jobId,
+      "test-intelligence",
+      PRODUCTION_RUNNER_EVIDENCE_SEAL_ARTIFACT_FILENAME,
+    );
+    const seal = JSON.parse(await readFile(sealPath, "utf8")) as Record<
+      string,
+      unknown
+    >;
+    seal.headOfChainHash = "f".repeat(64);
+    await writeFile(sealPath, JSON.stringify(seal), "utf8");
+
+    const result = await fetchVerify(handle.baseUrl, jobId);
+    assert.equal(result.status, 200);
+    const body = result.body as Record<string, unknown>;
+    assert.equal(body.ok, false);
+    const failures = body.failures as Array<Record<string, unknown>>;
+    assert.ok(
+      failures.some(
+        (failure) =>
+          failure.code === "manifest_metadata_invalid" &&
+          failure.reference === PRODUCTION_RUNNER_EVIDENCE_SEAL_ARTIFACT_FILENAME,
+      ),
+      JSON.stringify(failures, null, 2),
     );
   } finally {
     await handle.close();

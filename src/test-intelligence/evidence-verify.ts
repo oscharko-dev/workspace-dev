@@ -50,6 +50,7 @@ import {
   verifyWave1PocEvidenceFromDisk,
 } from "./evidence-manifest.js";
 import { verifyWave1PocAttestationFromDisk } from "./evidence-attestation.js";
+import { verifyProductionRunnerEvidenceSealFromDisk } from "./production-runner-evidence.js";
 
 export {
   EVIDENCE_VERIFY_RESPONSE_SCHEMA_VERSION,
@@ -724,6 +725,16 @@ export const verifyJobEvidence = async (
         visualSidecarMissingFor,
       ),
     });
+  }
+
+  const productionSealVerification =
+    await verifyProductionRunnerEvidenceSealFromDisk({
+      artifactsDir,
+      jobId: input.jobId,
+    });
+  checks.push(...productionSealVerification.checks);
+  for (const failure of productionSealVerification.failures) {
+    pushIfAbsent(failures, failure);
   }
 
   // Unexpected files (only when the underlying verifier emits them; we
