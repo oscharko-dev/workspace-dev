@@ -168,6 +168,17 @@ import {
   writeLbomArtifact,
 } from "./lbom-emitter.js";
 import {
+  ML_BOM_ARTIFACT_DIRECTORY,
+  ML_BOM_ARTIFACT_FILENAME,
+  buildMlBomDocument,
+  summarizeMlBomArtifact,
+  validateMlBomDocument,
+  writeMlBomArtifact,
+  type MlBomDocument,
+  type MlBomModelBinding,
+  type MlBomSummary,
+} from "./ml-bom.js";
+import {
   DEFAULT_FINOPS_BUDGET_ENVELOPE,
   resolveFinOpsRequestLimits,
   validateFinOpsBudgetEnvelope,
@@ -374,6 +385,15 @@ export interface Wave1PocRunResult {
   lbomSummary: Wave1PocLbomSummary;
   /** Absolute path of the persisted `lbom/ai-bom.cdx.json` artifact. */
   lbomArtifactPath: string;
+  /**
+   * Release-scoped CycloneDX 1.7 ML-BOM persisted under
+   * `<runDir>/evidence/ml-bom/cyclonedx-1.7-ml-bom.json`.
+   */
+  mlBom: MlBomDocument;
+  /** Audit-timeline summary of the release-scoped ML-BOM artifact. */
+  mlBomSummary: MlBomSummary;
+  /** Absolute path of the persisted release-scoped ML-BOM artifact. */
+  mlBomArtifactPath: string;
   /**
    * Self-verify rubric report (Issue #1379) when the opt-in pass ran
    * for this run. Mirrors `validation.rubric` for callers that prefer a
@@ -1673,6 +1693,30 @@ export const runWave1Poc = async (
     document: lbomDocument,
     bytes: lbomWritten.bytes,
   });
+  const mlBomDocument = buildMlBomDocument({
+    generatedAt: input.generatedAt,
+    signingMode: input.attestationSigningMode ?? "unsigned",
+    policyProfile: profile,
+    modelBindings: buildMlBomModelBindings(input.bundle),
+  });
+  const mlBomValidation = validateMlBomDocument(mlBomDocument);
+  if (!mlBomValidation.valid) {
+    const summary = mlBomValidation.issues
+      .slice(0, 5)
+      .map((issue) => `${issue.path}: ${issue.message}`)
+      .join("; ");
+    throw new Error(
+      `runWave1Poc: refusing to persist invalid release ML-BOM (${summary})`,
+    );
+  }
+  const mlBomWritten = await writeMlBomArtifact({
+    document: mlBomDocument,
+    runDir: input.runDir,
+  });
+  const mlBomSummary = summarizeMlBomArtifact({
+    document: mlBomDocument,
+    bytes: mlBomWritten.bytes,
+  });
   const genealogyWritten = await writeGenealogyArtifact({
     runDir: input.runDir,
     generatedAt: input.generatedAt,
@@ -1805,6 +1849,11 @@ export const runWave1Poc = async (
         category: "lbom",
       },
       {
+        filename: `${ML_BOM_ARTIFACT_DIRECTORY}/${ML_BOM_ARTIFACT_FILENAME}`,
+        bytes: mlBomWritten.bytes,
+        category: "ml_bom",
+      },
+      {
         filename: "genealogy.json",
         bytes: genealogyWritten.bytes,
         category: "genealogy",
@@ -1903,6 +1952,9 @@ export const runWave1Poc = async (
     lbom: lbomDocument,
     lbomSummary,
     lbomArtifactPath: lbomWritten.artifactPath,
+    mlBom: mlBomDocument,
+    mlBomSummary,
+    mlBomArtifactPath: mlBomWritten.artifactPath,
     ...(validation.rubric !== undefined
       ? { selfVerifyRubric: validation.rubric }
       : {}),
@@ -2230,6 +2282,66 @@ const toManifestVisualDeployment = (
   }
 };
 
+const buildMlBomModelBindings = (
+  bundle?: LlmGatewayClientBundle,
+): readonly [MlBomModelBinding, MlBomModelBinding, MlBomModelBinding] => [
+  {
+    role: "test_generation",
+    deployment: bundle?.testGeneration.deployment ?? TEST_GENERATION_DEPLOYMENT,
+    modelRevision:
+      bundle?.testGeneration.modelRevision ?? TEST_GENERATION_MODEL_REVISION,
+    gatewayRelease:
+      bundle?.testGeneration.gatewayRelease ?? TEST_GENERATION_GATEWAY_RELEASE,
+    operatorEndpointReference:
+      bundle?.testGeneration.operatorEndpointReference ??
+      `mock://${TEST_GENERATION_DEPLOYMENT}/[redacted]`,
+    compatibilityMode:
+      bundle?.testGeneration.compatibilityMode ?? "openai_chat",
+    ...(bundle?.testGeneration.modelWeightsSha256 !== undefined
+      ? {
+          modelWeightsSha256: bundle.testGeneration.modelWeightsSha256,
+        }
+      : {}),
+  },
+  {
+    role: "visual_primary",
+    deployment: bundle?.visualPrimary.deployment ?? VISUAL_PRIMARY_DEPLOYMENT,
+    modelRevision:
+      bundle?.visualPrimary.modelRevision ??
+      "llama-4-maverick-vision-2026-04-25",
+    gatewayRelease:
+      bundle?.visualPrimary.gatewayRelease ?? TEST_GENERATION_GATEWAY_RELEASE,
+    operatorEndpointReference:
+      bundle?.visualPrimary.operatorEndpointReference ??
+      `mock://${VISUAL_PRIMARY_DEPLOYMENT}/[redacted]`,
+    compatibilityMode:
+      bundle?.visualPrimary.compatibilityMode ?? "openai_responses",
+    ...(bundle?.visualPrimary.modelWeightsSha256 !== undefined
+      ? {
+          modelWeightsSha256: bundle.visualPrimary.modelWeightsSha256,
+        }
+      : {}),
+  },
+  {
+    role: "visual_fallback",
+    deployment: bundle?.visualFallback.deployment ?? VISUAL_FALLBACK_DEPLOYMENT,
+    modelRevision:
+      bundle?.visualFallback.modelRevision ?? "phi-4-multimodal-poc-2026-04-25",
+    gatewayRelease:
+      bundle?.visualFallback.gatewayRelease ?? TEST_GENERATION_GATEWAY_RELEASE,
+    operatorEndpointReference:
+      bundle?.visualFallback.operatorEndpointReference ??
+      `mock://${VISUAL_FALLBACK_DEPLOYMENT}/[redacted]`,
+    compatibilityMode:
+      bundle?.visualFallback.compatibilityMode ?? "openai_responses",
+    ...(bundle?.visualFallback.modelWeightsSha256 !== undefined
+      ? {
+          modelWeightsSha256: bundle.visualFallback.modelWeightsSha256,
+        }
+      : {}),
+  },
+];
+
 const writeVisualSidecarFailureEvidenceManifest = async (input: {
   fixtureId: Wave1PocFixtureId;
   jobId: string;
@@ -2323,6 +2435,26 @@ const writeVisualSidecarFailureEvidenceManifest = async (input: {
     document: lbomDocument,
     runDir: input.runDir,
   });
+  const mlBomDocument = buildMlBomDocument({
+    generatedAt: input.generatedAt,
+    signingMode: "unsigned",
+    policyProfile: input.policyProfile,
+    modelBindings: buildMlBomModelBindings(input.bundle),
+  });
+  const mlBomValidation = validateMlBomDocument(mlBomDocument);
+  if (!mlBomValidation.valid) {
+    const summary = mlBomValidation.issues
+      .slice(0, 5)
+      .map((issue) => `${issue.path}: ${issue.message}`)
+      .join("; ");
+    throw new Error(
+      `runWave1Poc: refusing to persist invalid failure-mode release ML-BOM (${summary})`,
+    );
+  }
+  const mlBomWritten = await writeMlBomArtifact({
+    document: mlBomDocument,
+    runDir: input.runDir,
+  });
   const manifest = buildWave1PocEvidenceManifest({
     fixtureId: input.fixtureId,
     jobId: input.jobId,
@@ -2360,6 +2492,11 @@ const writeVisualSidecarFailureEvidenceManifest = async (input: {
         filename: `${LBOM_ARTIFACT_DIRECTORY}/${LBOM_ARTIFACT_FILENAME}`,
         bytes: lbomWritten.bytes,
         category: "lbom",
+      },
+      {
+        filename: `${ML_BOM_ARTIFACT_DIRECTORY}/${ML_BOM_ARTIFACT_FILENAME}`,
+        bytes: mlBomWritten.bytes,
+        category: "ml_bom",
       },
     ],
   });

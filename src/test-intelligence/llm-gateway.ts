@@ -130,6 +130,7 @@ export interface LlmGatewayClient {
   readonly deployment: string;
   readonly modelRevision: string;
   readonly gatewayRelease: string;
+  readonly operatorEndpointReference: string;
   readonly modelWeightsSha256: string | undefined;
   readonly declaredCapabilities: Readonly<LlmGatewayCapabilities>;
   generate(request: LlmGenerationRequest): Promise<LlmGenerationResult>;
@@ -161,6 +162,15 @@ const DEFAULT_MAX_RESPONSE_BYTES = 8 * 1024 * 1024;
 
 const defaultSleep = (ms: number): Promise<void> =>
   new Promise((resolve) => setTimeout(resolve, Math.max(0, ms)));
+
+const redactGatewayEndpointReference = (baseUrl: string): string => {
+  try {
+    const url = new URL(baseUrl);
+    return `${url.protocol}//${url.host}/[redacted]`;
+  } catch {
+    return "[redacted-endpoint]";
+  }
+};
 
 /**
  * Construct an LLM gateway client. The factory validates the configuration
@@ -384,6 +394,7 @@ export const createLlmGatewayClient = (
     deployment: config.deployment,
     modelRevision: config.modelRevision,
     gatewayRelease: config.gatewayRelease,
+    operatorEndpointReference: redactGatewayEndpointReference(config.baseUrl),
     modelWeightsSha256: config.modelWeightsSha256,
     declaredCapabilities: { ...config.declaredCapabilities },
     generate,

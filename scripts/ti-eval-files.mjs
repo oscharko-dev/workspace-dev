@@ -58,6 +58,7 @@ export const TI_EVAL_FILES = Object.freeze([
   "src/test-intelligence/jira-token-leakage.test.ts",
   "src/test-intelligence/lbom-cyclonedx-schema.test.ts",
   "src/test-intelligence/lbom-emitter.test.ts",
+  "src/test-intelligence/ml-bom.test.ts",
   "src/test-intelligence/llm-gateway-bundle.test.ts",
   "src/test-intelligence/llm-gateway.test.ts",
   "src/test-intelligence/llm-mock-gateway.test.ts",
