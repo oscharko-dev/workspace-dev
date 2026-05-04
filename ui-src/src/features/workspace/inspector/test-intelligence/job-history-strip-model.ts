@@ -42,9 +42,9 @@ export const buildJobHistoryRow = (
   return {
     jobId: summary.jobId,
     shortId: truncateJobId(summary.jobId),
-    artifactCount: slots.filter((present) => present === true).length,
+    artifactCount: slots.filter(Boolean).length,
     artifactTotal: slots.length,
-    ready: summary.hasArtifacts["generatedTestCases"] === true,
+    ready: summary.hasArtifacts["generatedTestCases"] ?? false,
   };
 };
 

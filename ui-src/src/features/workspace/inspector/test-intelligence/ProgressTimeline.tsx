@@ -19,7 +19,7 @@
  *   - prefers-reduced-motion suppresses the spinner animation
  */
 
-import { useEffect, useMemo, useRef, useState, type JSX } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type JSX } from "react";
 
 import type {
   ProductionRunnerEvent,
@@ -54,7 +54,9 @@ export function ProgressTimeline({
   const [streamError, setStreamError] = useState<string | null>(null);
   const [startedAt, setStartedAt] = useState<number | null>(null);
   const factoryRef = useRef(eventSourceFactory);
-  factoryRef.current = eventSourceFactory;
+  useLayoutEffect(() => {
+    factoryRef.current = eventSourceFactory;
+  });
 
   useEffect(() => {
     const url = `/workspace/test-intelligence/jobs/${encodeURIComponent(jobId)}/events`;
@@ -64,7 +66,7 @@ export function ProgressTimeline({
     try {
       source = factory(url);
     } catch {
-      setStreamError("Unable to open progress stream.");
+      queueMicrotask(() => { setStreamError("Unable to open progress stream."); });
       return undefined;
     }
     const handleMessage = (event: MessageEvent<string>): void => {

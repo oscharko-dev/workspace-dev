@@ -355,7 +355,7 @@ function TestIntelligenceInner({
 
   useEffect(() => {
     if (selectedTab === "multi-source" && !multiSourceEnabled) {
-      setSelectedTab("overview");
+      queueMicrotask(() => { setSelectedTab("overview"); });
     }
   }, [multiSourceEnabled, selectedTab]);
 
@@ -761,9 +761,9 @@ function TestIntelligenceInner({
                       jobId={jobId}
                       bearerToken={bearerToken}
                     />
-                  ) : selectedTab === "role-monitor" ? (
+                  ) : (
                     <LazyRoleMonitorTimelinePanel jobId={jobId} />
-                  ) : null}
+                  )}
                 </Suspense>
               )}
             </div>
