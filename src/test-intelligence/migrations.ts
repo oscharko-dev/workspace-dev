@@ -4,6 +4,7 @@ import { randomUUID } from "node:crypto";
 
 import {
   ALLOWED_MIGRATION_REFUSAL_CODES,
+  CONTRACT_VERSION,
   EU_BANKING_DEFAULT_POLICY_PROFILE_ID,
   MIGRATION_BUNDLE_SCHEMA_VERSION,
   MIGRATIONS_LOG_ARTIFACT_FILENAME,
@@ -212,7 +213,7 @@ const isSignedMigrationBundle = (
   if (!isRecord(value)) return false;
   if (
     value["schemaVersion"] !== MIGRATION_BUNDLE_SCHEMA_VERSION ||
-    typeof value["contractVersion"] !== "string" ||
+    value["contractVersion"] !== CONTRACT_VERSION ||
     !Array.isArray(value["entries"])
   ) {
     return false;
@@ -236,6 +237,19 @@ const resolveOptions = (
   | { ok: true; value: ResolvedOptions }
   | { ok: false; result: MigrationRefusalResult } => {
   if (options !== undefined) {
+    if (
+      options.signedBundle !== undefined &&
+      !isSignedMigrationBundle(options.signedBundle)
+    ) {
+      return {
+        ok: false,
+        result: createRefusal(
+          "migration_state_invalid",
+          "runMigrations: options.signedBundle must match the current SignedMigrationBundle contract",
+          state,
+        ),
+      };
+    }
     if (typeof options.runDir !== "string" || options.runDir.length === 0) {
       return {
         ok: false,
@@ -481,6 +495,60 @@ const executeRollback = async (
   return normalizeReturnedState(rolledBack, cloned);
 };
 
+const rollbackFailureState = async (input: {
+  migration: Migration;
+  cause: unknown;
+  candidateState: unknown;
+  appliedRuntime: readonly AppliedMigrationRuntime[];
+  originalState: unknown;
+  workingState: unknown;
+  auditLogPath: string;
+  rollbackCurrentMigration?: boolean;
+}): Promise<MigrationRefusalResult> => {
+  try {
+    if (
+      input.rollbackCurrentMigration !== false &&
+      input.migration.evidenceBearing === true
+    ) {
+      await executeRollback(input.migration, input.candidateState);
+    }
+    let rollbackState = cloneState(input.workingState);
+    for (const appliedMigration of [...input.appliedRuntime].reverse()) {
+      if (appliedMigration.evidenceBearing === true) {
+        rollbackState = await executeRollback(
+          appliedMigration.migration,
+          rollbackState,
+        );
+      } else {
+        rollbackState = cloneState(appliedMigration.beforeState);
+      }
+    }
+  } catch (rollbackError) {
+    return createRefusal(
+      "migration_rollback_failed",
+      `runMigrations: rollback failed after migration "${input.migration.id}" errored`,
+      cloneState(input.originalState),
+      {
+        migrationId: input.migration.id,
+        rolledBack: false,
+        auditLogPath: input.auditLogPath,
+        cause: rollbackError,
+      },
+    );
+  }
+  return createRefusal(
+    "migration_apply_failed",
+    `runMigrations: migration "${input.migration.id}" failed and rollback completed cleanly`,
+    cloneState(input.originalState),
+    {
+      migrationId: input.migration.id,
+      rolledBack: true,
+      auditLogPath: input.auditLogPath,
+      cause: input.cause,
+    },
+  );
+};
+
 export const parseMigrationAuditLog = (
   payload: string,
 ): readonly MigrationAuditEntry[] | undefined => {
@@ -577,10 +645,6 @@ export async function runMigrations(
         },
       );
     }
-    if (!migration.condition(workingState)) {
-      skippedIds.push(migration.id);
-      continue;
-    }
 
     const unsignedRefusal = requireSignedMigration(
       migration,
@@ -596,6 +660,26 @@ export async function runMigrations(
     const beforeState = cloneState(workingState);
     const beforeHash = sha256Hex(beforeState);
     const candidateState = cloneState(workingState);
+    let shouldApply = false;
+
+    try {
+      shouldApply = migration.condition(candidateState);
+    } catch (error) {
+      return await rollbackFailureState({
+        migration,
+        cause: error,
+        candidateState,
+        appliedRuntime,
+        originalState: state,
+        workingState,
+        auditLogPath,
+      });
+    }
+
+    if (!shouldApply) {
+      skippedIds.push(migration.id);
+      continue;
+    }
 
     try {
       const appliedState = normalizeReturnedState(
@@ -618,51 +702,40 @@ export async function runMigrations(
         beforeState,
       });
     } catch (error) {
-      try {
-        if (migration.evidenceBearing === true) {
-          await executeRollback(migration, candidateState);
-        }
-        let rollbackState = cloneState(workingState);
-        for (const appliedMigration of [...appliedRuntime].reverse()) {
-          if (appliedMigration.evidenceBearing === true) {
-            rollbackState = await executeRollback(
-              appliedMigration.migration,
-              rollbackState,
-            );
-          } else {
-            rollbackState = cloneState(appliedMigration.beforeState);
-          }
-        }
-      } catch (rollbackError) {
-        return createRefusal(
-          "migration_rollback_failed",
-          `runMigrations: rollback failed after migration "${migration.id}" errored`,
-          cloneState(state),
-          {
-            migrationId: migration.id,
-            rolledBack: false,
-            auditLogPath,
-            cause: rollbackError,
-          },
-        );
-      }
-      return createRefusal(
-        "migration_apply_failed",
-        `runMigrations: migration "${migration.id}" failed and rollback completed cleanly`,
-        cloneState(state),
-        {
-          migrationId: migration.id,
-          rolledBack: true,
-          auditLogPath,
-          cause: error,
-        },
-      );
+      return await rollbackFailureState({
+        migration,
+        cause: error,
+        candidateState,
+        appliedRuntime,
+        originalState: state,
+        workingState,
+        auditLogPath,
+      });
     }
   }
 
   const persisted = await persistAuditEntries(auditLogPath, applied);
   if (persisted !== true) {
-    return { ...persisted, state: workingState };
+    if (
+      appliedRuntime.some((migration) => migration.evidenceBearing) &&
+      appliedRuntime.length > 0
+    ) {
+      const lastApplied = appliedRuntime[appliedRuntime.length - 1];
+      if (lastApplied === undefined) {
+        return { ...persisted, state: cloneState(state) };
+      }
+      return await rollbackFailureState({
+        migration: lastApplied.migration,
+        cause: persisted,
+        candidateState: workingState,
+        appliedRuntime,
+        originalState: state,
+        workingState,
+        auditLogPath,
+        rollbackCurrentMigration: false,
+      });
+    }
+    return { ...persisted, state: cloneState(state) };
   }
 
   return {
