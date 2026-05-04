@@ -35,6 +35,7 @@ export const PRODUCTION_RUNNER_EVENT_PHASES = [
   "finops_recorded",
   "cache_break",
   "replay_cache_hit",
+  "cancelled",
 ] as const;
 
 export type ProductionRunnerEventPhase =

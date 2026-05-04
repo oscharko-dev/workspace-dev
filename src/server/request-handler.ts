@@ -624,9 +624,11 @@ function mapProductionRunnerError(error: unknown): {
     });
     switch (error.failureClass) {
       case "EMPTY_FIGMA_INPUT":
+      case "FIGMA_PAYLOAD_TOO_LARGE":
       case "FIGMA_URL_REJECTED":
         return {
-          statusCode: 400,
+          statusCode:
+            error.failureClass === "FIGMA_PAYLOAD_TOO_LARGE" ? 413 : 400,
           payload: { error: error.failureClass, message: sanitizedMessage },
         };
       case "LLM_REFUSAL":
