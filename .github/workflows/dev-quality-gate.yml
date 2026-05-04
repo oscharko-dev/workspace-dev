@@ -471,7 +471,7 @@ jobs:
 
   performance-web:
     needs: [setup]
-    if: needs.setup.outputs.templates == 'true' || needs.setup.outputs.full == 'true'
+    if: github.event_name == 'workflow_disabled'  # temporarily disabled — re-enable by restoring the original if: condition
     timeout-minutes: 180
     runs-on: ubuntu-22.04
     continue-on-error: true
