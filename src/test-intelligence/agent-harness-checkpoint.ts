@@ -7,14 +7,49 @@
  * so any byte-level mutation of a middle checkpoint propagates a
  * `chain_break` at the first affected `chainIndex`.
  *
+ * Schema 1.1.0 (Issue #1758, LangSmith-adapter compatibility) adds
+ * five fields per checkpoint:
+ *
+ *   - `runId`         — stable UUID per role-step execution; multiple
+ *                       checkpoints sharing one execution (e.g. the
+ *                       `started` and `completed` snapshot pair) carry
+ *                       the same `runId`. Different attempts get
+ *                       different `runId`s.
+ *   - `parentRunId`   — `null` for the root checkpoint of a job; for
+ *                       every other checkpoint, the `runId` of an
+ *                       earlier checkpoint in the same chain (the
+ *                       calling step in the agent execution graph).
+ *   - `completedAt`   — ISO-8601 timestamp of the step's terminal
+ *                       state, or `startedAt` for `status === "started"`
+ *                       snapshots (the snapshot itself has zero
+ *                       duration, but every checkpoint must carry a
+ *                       finite `completedAt` so a downstream LangSmith
+ *                       adapter can render a per-step latency band).
+ *   - `promptTokens`  — non-negative integer count of input tokens
+ *                       attributed to this role-step's LLM call. `0`
+ *                       for non-LLM steps.
+ *   - `completionTokens` — non-negative integer count of output tokens
+ *                       attributed to this role-step's LLM call. `0`
+ *                       for non-LLM steps.
+ *
+ * `runId` and `parentRunId` are pure ID fields — they do *not* replace
+ * `parentHash` (the Merkle invariant is unaffected); they sit alongside
+ * the hash chain to make the trace tree reconstructible without a
+ * synthetic UUID derivation step.
+ *
  * Hard invariants enforced by this module:
  *
- *   - Schema is fixed at v1.0.0; the field set is closed.
+ *   - Schema is fixed at v1.1.0; the field set is closed.
  *   - All hashes are 64-char lowercase hex (sha256). The root
  *     checkpoint's `parentHash` is the zero-hash sentinel
  *     ({@link AGENT_HARNESS_CHECKPOINT_ROOT_PARENT_HASH}).
  *   - `chainIndex` is monotonic and strictly equals the (0-based)
  *     position of the checkpoint within the chain.
+ *   - `runId` is a lowercase RFC-4122 UUID (any version).
+ *   - `parentRunId` is `null` exactly at `chainIndex === 0`; for every
+ *     subsequent checkpoint it must equal the `runId` of an earlier
+ *     checkpoint in the same chain.
+ *   - `promptTokens` and `completionTokens` are non-negative integers.
  *   - Persistence uses canonical-JSON so byte-identical input always
  *     produces byte-identical files (and therefore byte-identical
  *     `headOfChainHash` values).
@@ -23,7 +58,7 @@
  *     checkpoint that would corrupt the chain.
  *   - No raw prompts, no chain-of-thought, no model output bytes,
  *     no secrets are ever persisted — only hashes and lightweight
- *     status / timing metadata.
+ *     status / timing / token-count metadata.
  *
  * The module is purely local: there is no external DB, no network
  * I/O, no telemetry. Verification is fully offline.
@@ -40,7 +75,7 @@ import { canonicalJson, sha256Hex } from "./content-hash.js";
 // ---------------------------------------------------------------------------
 
 /** Schema version for {@link AgentHarnessCheckpoint}. */
-export const AGENT_HARNESS_CHECKPOINT_SCHEMA_VERSION = "1.0.0" as const;
+export const AGENT_HARNESS_CHECKPOINT_SCHEMA_VERSION = "1.1.0" as const;
 
 /** Filename of the per-job checkpoint directory under `<runDir>`. */
 export const AGENT_HARNESS_CHECKPOINT_DIRECTORY =
@@ -53,6 +88,16 @@ export const AGENT_HARNESS_CHECKPOINT_DIRECTORY =
  * `parentHash` is a 64-char lowercase hex digest.
  */
 export const AGENT_HARNESS_CHECKPOINT_ROOT_PARENT_HASH: string = "0".repeat(64);
+
+/**
+ * Marker substring embedded in the error message thrown by the
+ * asserter when one of the LangSmith-adapter-required fields is
+ * missing or malformed. The verifier inspects this marker to map a
+ * structural-invariant failure into the dedicated
+ * `checkpoint_schema_violation` break reason (vs. the generic
+ * `schema_invalid` reason used for other structural issues).
+ */
+const CHECKPOINT_SCHEMA_VIOLATION_MARKER = "checkpoint_schema_violation:";
 
 /**
  * Closed list of allowed checkpoint statuses. Order is alphabetical so
@@ -91,12 +136,20 @@ export interface AgentHarnessCheckpoint {
   readonly outputHash?: string;
   readonly nextRoleStepIds: readonly string[];
   readonly startedAt: string;
-  readonly completedAt?: string;
+  readonly completedAt: string;
   readonly errorClass?: string;
   /** sha256 of canonical-JSON of previous checkpoint; root uses zero-hash sentinel. */
   readonly parentHash: string;
   /** Monotonic, 0-based position within the per-`jobId` chain. */
   readonly chainIndex: number;
+  /** Stable UUID identifying one role-step execution. */
+  readonly runId: string;
+  /** `runId` of the calling step; `null` for the root of a job. */
+  readonly parentRunId: string | null;
+  /** Non-negative input-token count attributed to this step's LLM call (0 for non-LLM steps). */
+  readonly promptTokens: number;
+  /** Non-negative output-token count attributed to this step's LLM call (0 for non-LLM steps). */
+  readonly completionTokens: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -106,9 +159,14 @@ export interface AgentHarnessCheckpoint {
 const HEX_64 = /^[0-9a-f]{64}$/u;
 const ISO_8601_BASIC =
   /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,9})?(Z|[+-]\d{2}:\d{2})$/u;
+const UUID_RFC_4122 =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/u;
 
 const isHex64 = (value: unknown): value is string =>
   typeof value === "string" && HEX_64.test(value);
+
+const isUuid = (value: unknown): value is string =>
+  typeof value === "string" && UUID_RFC_4122.test(value);
 
 const isNonEmptyString = (value: unknown): value is string =>
   typeof value === "string" && value.length > 0;
@@ -150,6 +208,12 @@ const dedupSortedStrings = (
  * not satisfy every structural invariant of the schema. Callers in
  * the read path use this defensively before trusting any on-disk
  * checkpoint bytes.
+ *
+ * Failures involving the LangSmith-adapter-required fields (`runId`,
+ * `parentRunId`, `completedAt`, `promptTokens`, `completionTokens`)
+ * carry the {@link CHECKPOINT_SCHEMA_VIOLATION_MARKER} prefix in their
+ * message so the verifier can route them to the dedicated
+ * `checkpoint_schema_violation` break reason.
  */
 export const assertAgentHarnessCheckpointInvariants = (
   checkpoint: AgentHarnessCheckpoint,
@@ -215,14 +279,21 @@ export const assertAgentHarnessCheckpointInvariants = (
     }
   }
   if (!isIsoTimestamp(checkpoint.startedAt)) {
-    throw new TypeError(`${where}: startedAt must be an ISO-8601 timestamp`);
-  }
-  if (
-    checkpoint.completedAt !== undefined &&
-    !isIsoTimestamp(checkpoint.completedAt)
-  ) {
     throw new TypeError(
-      `${where}: completedAt must be an ISO-8601 timestamp when present`,
+      `${where}: ${CHECKPOINT_SCHEMA_VIOLATION_MARKER} startedAt must be an ISO-8601 timestamp`,
+    );
+  }
+  if (!isIsoTimestamp(checkpoint.completedAt)) {
+    throw new TypeError(
+      `${where}: ${CHECKPOINT_SCHEMA_VIOLATION_MARKER} completedAt must be an ISO-8601 timestamp`,
+    );
+  }
+  // completedAt must not predate startedAt — a negative duration is
+  // semantically meaningless and would corrupt LangSmith latency
+  // breakdowns.
+  if (Date.parse(checkpoint.completedAt) < Date.parse(checkpoint.startedAt)) {
+    throw new RangeError(
+      `${where}: ${CHECKPOINT_SCHEMA_VIOLATION_MARKER} completedAt must be greater than or equal to startedAt`,
     );
   }
   if (
@@ -251,6 +322,47 @@ export const assertAgentHarnessCheckpointInvariants = (
       `${where}: root checkpoint (chainIndex 0) must use the zero-hash sentinel as parentHash`,
     );
   }
+  if (!isUuid(checkpoint.runId)) {
+    throw new TypeError(
+      `${where}: ${CHECKPOINT_SCHEMA_VIOLATION_MARKER} runId must be a lowercase RFC-4122 UUID`,
+    );
+  }
+  if (
+    checkpoint.parentRunId !== null &&
+    !isUuid(checkpoint.parentRunId)
+  ) {
+    throw new TypeError(
+      `${where}: ${CHECKPOINT_SCHEMA_VIOLATION_MARKER} parentRunId must be a lowercase RFC-4122 UUID or null`,
+    );
+  }
+  if (
+    checkpoint.chainIndex === 0 &&
+    checkpoint.parentRunId !== null
+  ) {
+    throw new RangeError(
+      `${where}: ${CHECKPOINT_SCHEMA_VIOLATION_MARKER} root checkpoint (chainIndex 0) must have parentRunId === null`,
+    );
+  }
+  // Self-reference is meaningless and would create a degenerate trace
+  // tree edge in any LangSmith export.
+  if (
+    checkpoint.parentRunId !== null &&
+    checkpoint.parentRunId === checkpoint.runId
+  ) {
+    throw new RangeError(
+      `${where}: ${CHECKPOINT_SCHEMA_VIOLATION_MARKER} parentRunId must not equal runId (self-reference forbidden)`,
+    );
+  }
+  if (!isNonNegativeInteger(checkpoint.promptTokens)) {
+    throw new TypeError(
+      `${where}: ${CHECKPOINT_SCHEMA_VIOLATION_MARKER} promptTokens must be a non-negative integer`,
+    );
+  }
+  if (!isNonNegativeInteger(checkpoint.completionTokens)) {
+    throw new TypeError(
+      `${where}: ${CHECKPOINT_SCHEMA_VIOLATION_MARKER} completionTokens must be a non-negative integer`,
+    );
+  }
 };
 
 // ---------------------------------------------------------------------------
@@ -277,8 +389,12 @@ export interface AppendAgentHarnessCheckpointInput {
   readonly outputHash?: string;
   readonly nextRoleStepIds?: readonly string[];
   readonly startedAt: string;
-  readonly completedAt?: string;
+  readonly completedAt: string;
   readonly errorClass?: string;
+  readonly runId: string;
+  readonly parentRunId: string | null;
+  readonly promptTokens: number;
+  readonly completionTokens: number;
 }
 
 /**
@@ -328,12 +444,14 @@ export const appendAgentHarnessCheckpoint = (
     ...(input.outputHash !== undefined ? { outputHash: input.outputHash } : {}),
     nextRoleStepIds,
     startedAt: input.startedAt,
-    ...(input.completedAt !== undefined
-      ? { completedAt: input.completedAt }
-      : {}),
+    completedAt: input.completedAt,
     ...(input.errorClass !== undefined ? { errorClass: input.errorClass } : {}),
     parentHash,
     chainIndex,
+    runId: input.runId,
+    parentRunId: input.parentRunId,
+    promptTokens: input.promptTokens,
+    completionTokens: input.completionTokens,
   };
 
   assertAgentHarnessCheckpointInvariants(checkpoint, where);
@@ -489,6 +607,7 @@ export const readAgentHarnessCheckpointChain = async (
 /** Diagnostic taxonomy for chain-break reasons. */
 export const AGENT_HARNESS_CHECKPOINT_BREAK_REASONS = [
   "chain_index_mismatch",
+  "checkpoint_schema_violation",
   "duplicate_chain_index",
   "missing_root",
   "parent_hash_mismatch",
@@ -522,11 +641,17 @@ export type VerifyAgentHarnessCheckpointChainResult =
  *
  *   1. The checkpoint at position `i` has `chainIndex === i`. (Catches
  *      reordering, gaps, duplicates.)
- *   2. The checkpoint passes structural invariants.
+ *   2. The checkpoint passes structural invariants. Failures involving
+ *      LangSmith-adapter-required fields surface as
+ *      `checkpoint_schema_violation`; other structural failures keep
+ *      the existing `schema_invalid` reason.
  *   3. The root (`i === 0`) has `parentHash` equal to the zero-hash
  *      sentinel.
  *   4. For `i > 0`, `parentHash` equals
  *      sha256(canonicalJson(chain[i - 1])).
+ *   5. `parentRunId` is `null` at `i === 0`; for `i > 0`, it must
+ *      equal the `runId` of an earlier checkpoint in the same chain.
+ *      Violations also surface as `checkpoint_schema_violation`.
  */
 export const verifyAgentHarnessCheckpointChain = (
   checkpoints: readonly AgentHarnessCheckpoint[],
@@ -540,6 +665,11 @@ export const verifyAgentHarnessCheckpointChain = (
   }
 
   const seenIndexes = new Set<number>();
+  // Map from runId to the parentRunId that runId was first registered
+  // with. A checkpoint that re-uses an existing runId (snapshot pair
+  // for the same role-step execution) must declare the same parent —
+  // otherwise the chain disagrees on its own trace tree.
+  const runIdToParent = new Map<string, string | null>();
   let previousHash = AGENT_HARNESS_CHECKPOINT_ROOT_PARENT_HASH;
 
   for (let i = 0; i < checkpoints.length; i++) {
@@ -585,12 +715,15 @@ export const verifyAgentHarnessCheckpointChain = (
         `verifyAgentHarnessCheckpointChain[${i}]`,
       );
     } catch (err) {
+      const detail = err instanceof Error ? err.message : String(err);
       return {
         ok: false,
         code: "chain_break",
         firstBreakIndex: i,
-        reason: "schema_invalid",
-        detail: err instanceof Error ? err.message : String(err),
+        reason: detail.includes(CHECKPOINT_SCHEMA_VIOLATION_MARKER)
+          ? "checkpoint_schema_violation"
+          : "schema_invalid",
+        detail,
       };
     }
 
@@ -612,6 +745,56 @@ export const verifyAgentHarnessCheckpointChain = (
         firstBreakIndex: i,
         reason: "parent_hash_mismatch",
         detail: `parentHash mismatch at chainIndex ${i}: expected ${previousHash}, found ${current.parentHash}`,
+      };
+    }
+
+    // parentRunId chain-level rule. The model: each unique `runId`
+    // identifies one role-step execution; multiple checkpoints can
+    // share a runId (snapshot pair: `started` and `completed` for
+    // one attempt). Within one runId all checkpoints must declare
+    // the same `parentRunId`. The first runId in the chain (root
+    // step) carries `parentRunId === null`; every subsequent unique
+    // runId must reference a runId observed earlier (the calling
+    // step in the agent execution graph).
+    const existingParent = runIdToParent.get(current.runId);
+    if (existingParent === undefined) {
+      // First time we see this runId.
+      if (i === 0) {
+        // Root step. Structural assertion already enforced
+        // parentRunId === null at chainIndex 0.
+        runIdToParent.set(current.runId, current.parentRunId);
+      } else {
+        // Non-root step → must reference an earlier closed runId.
+        const parentRunId = current.parentRunId;
+        if (parentRunId === null) {
+          return {
+            ok: false,
+            code: "chain_break",
+            firstBreakIndex: i,
+            reason: "checkpoint_schema_violation",
+            detail: `${CHECKPOINT_SCHEMA_VIOLATION_MARKER} new runId at chainIndex ${i} must reference a parent runId observed earlier (parentRunId may not be null)`,
+          };
+        }
+        if (!runIdToParent.has(parentRunId)) {
+          return {
+            ok: false,
+            code: "chain_break",
+            firstBreakIndex: i,
+            reason: "checkpoint_schema_violation",
+            detail: `${CHECKPOINT_SCHEMA_VIOLATION_MARKER} parentRunId "${parentRunId}" at chainIndex ${i} does not reference any earlier runId in the chain`,
+          };
+        }
+        runIdToParent.set(current.runId, parentRunId);
+      }
+    } else if (existingParent !== current.parentRunId) {
+      // Continuation of an existing runId — parentRunId must match
+      // what the first checkpoint of this execution declared.
+      return {
+        ok: false,
+        code: "chain_break",
+        firstBreakIndex: i,
+        reason: "checkpoint_schema_violation",
+        detail: `${CHECKPOINT_SCHEMA_VIOLATION_MARKER} runId "${current.runId}" at chainIndex ${i} declares parentRunId "${current.parentRunId ?? "null"}" but earlier checkpoint of the same runId declared "${existingParent ?? "null"}"`,
       };
     }
 
