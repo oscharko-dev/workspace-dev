@@ -208,7 +208,7 @@ Persisted, canonical-JSON, per-job repair-iteration log.
 
 ##### contractVersion
 
-> `readonly` **contractVersion**: `"1.6.0"`
+> `readonly` **contractVersion**: `"1.9.0"`
 
 ##### generatedAt
 
@@ -753,7 +753,7 @@ input set is byte-identical and the entries are sorted before write.
 
 ##### contractVersion
 
-> `readonly` **contractVersion**: `"1.6.0"`
+> `readonly` **contractVersion**: `"1.9.0"`
 
 ##### diffArtifactBasename?
 
@@ -814,7 +814,7 @@ Total bytes of cleared tool result blocks at the boundary.
 
 ##### contractVersion
 
-> `readonly` **contractVersion**: `"1.6.0"`
+> `readonly` **contractVersion**: `"1.9.0"`
 
 ##### jobId
 
@@ -858,7 +858,7 @@ Persisted, fully-redacted artifact form of a compiled prompt.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.6.0"`
+> **contractVersion**: `"1.9.0"`
 
 ##### hashes
 
@@ -1962,7 +1962,7 @@ Aggregate dry-run report artifact.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.6.0"`
+> **contractVersion**: `"1.9.0"`
 
 ##### credentialsIncluded
 
@@ -2315,7 +2315,7 @@ Sorted by filename for deterministic emission.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.6.0"`
+> **contractVersion**: `"1.9.0"`
 
 ##### exportedTestCaseCount
 
@@ -2573,7 +2573,7 @@ Aggregate counters across the `bySource` map.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.6.0"`
+> **contractVersion**: `"1.9.0"`
 
 ##### currencyLabel?
 
@@ -3112,6 +3112,12 @@ collapse concurrent equivalent requests onto the same in-flight Promise
 
 #### Properties
 
+##### inputHash
+
+> `readonly` **inputHash**: `string`
+
+sha256 hex digest of the canonical request input payload.
+
 ##### modelBinding
 
 > `readonly` **modelBinding**: `string`
@@ -3205,7 +3211,7 @@ Single generated test case.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.6.0"`
+> **contractVersion**: `"1.9.0"`
 
 ##### expectedResults
 
@@ -3316,7 +3322,7 @@ Whether the artifact came from a replay-cache hit.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.6.0"`
+> **contractVersion**: `"1.9.0"`
 
 ##### generatedAt
 
@@ -3505,7 +3511,7 @@ referenced files and recomputing each row.
 
 ##### contractVersion
 
-> `readonly` **contractVersion**: `"1.6.0"`
+> `readonly` **contractVersion**: `"1.9.0"`
 
 ##### digest
 
@@ -3680,7 +3686,7 @@ Hard-invariant intent-delta report artifact (Issue #1373).
 
 ##### contractVersion
 
-> **contractVersion**: `"1.6.0"`
+> **contractVersion**: `"1.9.0"`
 
 ##### currentIntentHash
 
@@ -3985,7 +3991,7 @@ Aggregate `jira-created-subtasks.json` artifact (Issue #1482).
 
 ##### contractVersion
 
-> **contractVersion**: `"1.6.0"`
+> **contractVersion**: `"1.9.0"`
 
 ##### credentialsIncluded
 
@@ -4621,7 +4627,7 @@ Audit metadata for the run.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.6.0"`
+> **contractVersion**: `"1.9.0"`
 
 ##### createdCount
 
@@ -5244,7 +5250,7 @@ Per-release primitive-map status report.
 
 ##### contractVersion
 
-> `readonly` **contractVersion**: `"1.6.0"`
+> `readonly` **contractVersion**: `"1.9.0"`
 
 ##### counts
 
@@ -6209,7 +6215,7 @@ Aggregate `qc-created-entities.json` artifact (Issue #1372).
 
 ##### contractVersion
 
-> **contractVersion**: `"1.6.0"`
+> **contractVersion**: `"1.9.0"`
 
 ##### entities
 
@@ -6299,7 +6305,7 @@ Aggregate QC mapping preview artifact.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.6.0"`
+> **contractVersion**: `"1.9.0"`
 
 ##### entries
 
@@ -6699,6 +6705,545 @@ augmentation forbids the model from citing specific paragraphs.
 
 ***
 
+### ReleaseQualityGateArchitectureViolation
+
+Per-violation record produced by `analyzeAgentBoundaries` for Gate 8 —
+architecture fit self-test (Issue #1802).
+
+#### Properties
+
+##### file
+
+> `readonly` **file**: `string`
+
+##### line
+
+> `readonly` **line**: `number`
+
+##### type
+
+> `readonly` **type**: `string`
+
+***
+
+### ReleaseQualityGateCacheBreakSample
+
+Per-source cache-break observation. Used both to compute the global
+`cacheBreakRate` and to attribute a spike to the offending source for
+diff-artifact review.
+
+#### Properties
+
+##### breakCount
+
+> `readonly` **breakCount**: `number`
+
+##### diffArtifactBasenames
+
+> `readonly` **diffArtifactBasenames**: readonly `string`[]
+
+##### querySource
+
+> `readonly` **querySource**: `string`
+
+##### responseCount
+
+> `readonly` **responseCount**: `number`
+
+***
+
+### ReleaseQualityGateLibraryCoveragePrimitive
+
+Per-primitive input for Gate 7 — library coverage status completeness
+(Issue #1802). Every primitive must have a non-empty justification and a
+valid `LibraryCoverageReleaseStatus`. A `COVERED` entry with
+`moduleImplemented === false` fails the gate.
+
+#### Properties
+
+##### justification
+
+> `readonly` **justification**: `string`
+
+##### moduleImplemented
+
+> `readonly` **moduleImplemented**: `boolean`
+
+##### primitiveId
+
+> `readonly` **primitiveId**: `string`
+
+##### referencedModulePath?
+
+> `readonly` `optional` **referencedModulePath?**: `string`
+
+##### status
+
+> `readonly` **status**: `"COVERED"` \| `"PARITY-PATH"` \| `"NICHT-UEBERNOMMEN"`
+
+***
+
+### ReleaseQualityGateMemdirLesson
+
+Per-lesson input for Gate 6 — memdir manifest consistency (Issue #1802).
+Banking-profile lessons are age-checked against `MEMDIR_MAX_AGE_MS`.
+Non-banking lessons are included in the report for visibility but do not
+cause the gate to fail.
+
+#### Properties
+
+##### lastRefreshAtMs?
+
+> `readonly` `optional` **lastRefreshAtMs?**: `number`
+
+##### lessonId
+
+> `readonly` **lessonId**: `string`
+
+##### mtimeMs
+
+> `readonly` **mtimeMs**: `number`
+
+##### nowMs
+
+> `readonly` **nowMs**: `number`
+
+##### profile
+
+> `readonly` **profile**: `"default"` \| `"banking"` \| `"cross-tenant"`
+
+***
+
+### ReleaseQualityGateMutationFixture
+
+Per-fixture mutation-kill input. Mirrors the relevant subset of
+[IrMutationCoverageStrengthReport](#irmutationcoveragestrengthreport) but pinned to the curated
+release fixture set so the gate is reproducible offline.
+
+#### Properties
+
+##### fixtureId
+
+> `readonly` **fixtureId**: `string`
+
+##### killedMutations
+
+> `readonly` **killedMutations**: `number`
+
+##### mutationCount
+
+> `readonly` **mutationCount**: `number`
+
+##### mutationKillRate
+
+> `readonly` **mutationKillRate**: `number`
+
+##### survivingMutationsForRepair
+
+> `readonly` **survivingMutationsForRepair**: readonly `string`[]
+
+***
+
+### ReleaseQualityGatePerSourceCostSample
+
+Per-sample input for Gate 5 — per-source cost plausibility (Issue #1802).
+Both hash fields must be lowercase hex64; `sealed` must be true for the
+gate to pass.
+
+#### Properties
+
+##### attestedBySourceHash
+
+> `readonly` **attestedBySourceHash**: `string`
+
+##### observedBySourceHash
+
+> `readonly` **observedBySourceHash**: `string`
+
+##### sampleId
+
+> `readonly` **sampleId**: `string`
+
+##### sealed
+
+> `readonly` **sealed**: `boolean`
+
+***
+
+### ReleaseQualityGatePromptCacheRole
+
+Per-role prompt-cache statistics across repair iterations 2..N
+(iteration 1 is excluded — the first attempt cannot benefit from
+cache reads of its own prompt prefix).
+
+#### Properties
+
+##### cacheHits
+
+> `readonly` **cacheHits**: `number`
+
+##### cacheMisses
+
+> `readonly` **cacheMisses**: `number`
+
+##### iterationsCounted
+
+> `readonly` **iterationsCounted**: `number`
+
+##### promptCacheHitRate
+
+> `readonly` **promptCacheHitRate**: `number`
+
+##### roleId
+
+> `readonly` **roleId**: `string`
+
+***
+
+### ReleaseQualityGatesInput
+
+Complete input envelope consumed by `evaluateReleaseQualityGates` and
+by the release-quality-gates CLI runner. The first four sections (mutation,
+promptCache, tamper, cacheBreak) were introduced in Issue #1801 and remain
+required. The five new sections introduced in Issue #1802 are also required;
+they are validated structurally but carry sensible defaults in the baseline
+fixture so existing callers can migrate incrementally.
+
+#### Properties
+
+##### architectureFitSelfTest
+
+> `readonly` **architectureFitSelfTest**: `object`
+
+Gate 8 — architecture fit self-test (Issue #1802).
+The runner populates this automatically from `analyzeAgentBoundaries`;
+the pure evaluator accepts it as-is so tests can inject values directly.
+
+###### scannedFileCount
+
+> `readonly` **scannedFileCount**: `number`
+
+###### violations
+
+> `readonly` **violations**: readonly [`ReleaseQualityGateArchitectureViolation`](#releasequalitygatearchitectureviolation)[]
+
+##### cacheBreak
+
+> `readonly` **cacheBreak**: `object`
+
+###### samples
+
+> `readonly` **samples**: readonly [`ReleaseQualityGateCacheBreakSample`](#releasequalitygatecachebreaksample)[]
+
+##### contextBudgetRegression
+
+> `readonly` **contextBudgetRegression**: `object`
+
+Gate 9 — context budget regression (Issue #1802).
+
+###### baseline
+
+> `readonly` **baseline**: `object`
+
+###### baseline.meanInputTokens
+
+> `readonly` **meanInputTokens**: `number`
+
+###### baseline.sampleCount
+
+> `readonly` **sampleCount**: `number`
+
+###### harness
+
+> `readonly` **harness**: `object`
+
+###### harness.meanInputTokens
+
+> `readonly` **meanInputTokens**: `number`
+
+###### harness.sampleCount
+
+> `readonly` **sampleCount**: `number`
+
+###### maxBloatRatio?
+
+> `readonly` `optional` **maxBloatRatio?**: `number`
+
+###### qualityDeltaScore
+
+> `readonly` **qualityDeltaScore**: `number`
+
+##### contractVersion
+
+> `readonly` **contractVersion**: `"1.9.0"`
+
+##### libraryCoverageStatusCompleteness
+
+> `readonly` **libraryCoverageStatusCompleteness**: `object`
+
+Gate 7 — library coverage status completeness (Issue #1802).
+
+###### primitives
+
+> `readonly` **primitives**: readonly [`ReleaseQualityGateLibraryCoveragePrimitive`](#releasequalitygatelibrarycoverageprimitive)[]
+
+##### memdirManifestConsistency
+
+> `readonly` **memdirManifestConsistency**: `object`
+
+Gate 6 — memdir manifest consistency (Issue #1802).
+
+###### lessons
+
+> `readonly` **lessons**: readonly [`ReleaseQualityGateMemdirLesson`](#releasequalitygatememdirlesson)[]
+
+###### pathValidator
+
+> `readonly` **pathValidator**: `object`
+
+###### pathValidator.coveredCases
+
+> `readonly` **coveredCases**: `number`
+
+###### pathValidator.totalCases
+
+> `readonly` **totalCases**: `number`
+
+##### mutation
+
+> `readonly` **mutation**: `object`
+
+###### fixtures
+
+> `readonly` **fixtures**: readonly [`ReleaseQualityGateMutationFixture`](#releasequalitygatemutationfixture)[]
+
+##### perSourceCostPlausibility
+
+> `readonly` **perSourceCostPlausibility**: `object`
+
+Gate 5 — per-source cost plausibility (Issue #1802).
+
+###### samples
+
+> `readonly` **samples**: readonly [`ReleaseQualityGatePerSourceCostSample`](#releasequalitygatepersourcecostsample)[]
+
+##### promptCache
+
+> `readonly` **promptCache**: `object`
+
+###### roles
+
+> `readonly` **roles**: readonly [`ReleaseQualityGatePromptCacheRole`](#releasequalitygatepromptcacherole)[]
+
+##### releaseId
+
+> `readonly` **releaseId**: `string`
+
+##### schemaVersion
+
+> `readonly` **schemaVersion**: `"1.0.0"`
+
+##### tamper
+
+> `readonly` **tamper**: `object`
+
+###### samples
+
+> `readonly` **samples**: readonly [`ReleaseQualityGateTamperSample`](#releasequalitygatetampersample)[]
+
+***
+
+### ReleaseQualityGatesReport
+
+Canonical-JSON report emitted by the release-quality-gates runner.
+The release pipeline fails when any verdict has `passed === false`.
+
+#### Properties
+
+##### cacheBreakRate
+
+> `readonly` **cacheBreakRate**: `number`
+
+##### contractVersion
+
+> `readonly` **contractVersion**: `"1.9.0"`
+
+##### mutationKillRate
+
+> `readonly` **mutationKillRate**: `number`
+
+##### passed
+
+> `readonly` **passed**: `boolean`
+
+##### promptCacheHitRate
+
+> `readonly` **promptCacheHitRate**: `number`
+
+##### releaseId
+
+> `readonly` **releaseId**: `string`
+
+##### schemaVersion
+
+> `readonly` **schemaVersion**: `"1.0.0"`
+
+##### tamperDetectionPassed
+
+> `readonly` **tamperDetectionPassed**: `boolean`
+
+##### verdicts
+
+> `readonly` **verdicts**: readonly [`ReleaseQualityGateVerdict`](#releasequalitygateverdict)[]
+
+***
+
+### ReleaseQualityGateTamperSample
+
+Tamper-detection round-trip outcome per release job. The harness
+Merkle chain + `headOfChainHash` + ML-BOM hash are verified offline
+against the evidence manifest. A single failure across `samples`
+fails the gate.
+
+#### Properties
+
+##### headOfChainHashVerified
+
+> `readonly` **headOfChainHashVerified**: `boolean`
+
+##### merkleChainVerified
+
+> `readonly` **merkleChainVerified**: `boolean`
+
+##### mlBomHashVerified
+
+> `readonly` **mlBomHashVerified**: `boolean`
+
+##### sampleId
+
+> `readonly` **sampleId**: `string`
+
+***
+
+### ReleaseQualityGateVerdict
+
+Per-gate verdict. `attribution[]` carries fixture/role/source
+identifiers when the threshold was breached so a reviewer can jump to
+the offending evidence without rerunning the pipeline.
+
+#### Properties
+
+##### attribution
+
+> `readonly` **attribution**: readonly `string`[]
+
+##### comparator
+
+> `readonly` **comparator**: `"gte"` \| `"lte"` \| `"eq"`
+
+##### gateId
+
+> `readonly` **gateId**: `"mutation_kill_rate"` \| `"prompt_cache_hit_rate"` \| `"tamper_detection_round_trip"` \| `"cache_break_rate"` \| `"per_source_cost_plausibility"` \| `"memdir_manifest_consistency"` \| `"library_coverage_status_completeness"` \| `"architecture_fit_self_test"` \| `"context_budget_regression"`
+
+##### observed
+
+> `readonly` **observed**: `number`
+
+##### passed
+
+> `readonly` **passed**: `boolean`
+
+##### threshold
+
+> `readonly` **threshold**: `number`
+
+***
+
+### ReleaseReadinessGateResult
+
+Per-gate result row in the consolidated release-readiness report.
+
+- `command` records the exact pnpm script invocation (e.g.
+  `"pnpm run lint:ts-style"`) so the report is reproducible offline.
+- `exitCode` is `0` for `passed`, non-zero for `failed`, and `null` for
+  `skipped` (no subprocess ran).
+- `durationMs` is wall-clock duration in milliseconds; `0` for skipped
+  gates.
+- `logPath` is repo-relative path to the captured stdout+stderr log,
+  so the consolidated report links each failure to its evidence.
+  `null` for skipped gates.
+- `attribution` carries short, locale-independent labels surfaced from
+  the gate (e.g. `"merkle_chain_break"`, `"ml_bom_hash_mismatch"`); the
+  release-pipeline runner forwards them verbatim.
+
+#### Properties
+
+##### attribution
+
+> `readonly` **attribution**: readonly `string`[]
+
+##### command
+
+> `readonly` **command**: `string`
+
+##### durationMs
+
+> `readonly` **durationMs**: `number`
+
+##### exitCode
+
+> `readonly` **exitCode**: `number` \| `null`
+
+##### gateId
+
+> `readonly` **gateId**: `"typecheck"` \| `"test"` \| `"test_ti_eval"` \| `"test_ti_live_e2e"` \| `"lint_no_telemetry"` \| `"lint_secrets_all"` \| `"lint_agent_boundaries"` \| `"lint_ts_style"` \| `"build"` \| `"release_ml_bom_emit"` \| `"release_merkle_roundtrip"` \| `"release_library_coverage_report"`
+
+##### logPath
+
+> `readonly` **logPath**: `string` \| `null`
+
+##### status
+
+> `readonly` **status**: `"failed"` \| `"skipped"` \| `"passed"`
+
+***
+
+### ReleaseReadinessReport
+
+Consolidated release-readiness report (Issue #1803).
+
+`gates[]` MUST list one entry per `ALLOWED_RELEASE_READINESS_GATE_IDS`
+member, in canonical order. `passed` is `true` iff every non-skipped
+gate passed.
+
+#### Properties
+
+##### contractVersion
+
+> `readonly` **contractVersion**: `"1.9.0"`
+
+##### gates
+
+> `readonly` **gates**: readonly [`ReleaseReadinessGateResult`](#releasereadinessgateresult)[]
+
+##### generatedAt
+
+> `readonly` **generatedAt**: `string`
+
+##### passed
+
+> `readonly` **passed**: `boolean`
+
+##### releaseId
+
+> `readonly` **releaseId**: `string`
+
+##### schemaVersion
+
+> `readonly` **schemaVersion**: `"1.0.0"`
+
+***
+
 ### ReplayCacheEntry
 
 Stored cache entry.
@@ -6811,7 +7356,7 @@ ISO-8601 UTC timestamp at the moment of persistence.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.6.0"`
+> **contractVersion**: `"1.9.0"`
 
 ##### fromState?
 
@@ -6879,7 +7424,7 @@ Number of cases currently in `approved` (or `exported`/`transferred`) state.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.6.0"`
+> **contractVersion**: `"1.9.0"`
 
 ##### fourEyesPolicy?
 
@@ -7253,7 +7798,7 @@ Sorted by `testCaseId` for byte stability. Empty when `refusal` is set.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.6.0"`
+> **contractVersion**: `"1.9.0"`
 
 ##### gatewayRelease
 
@@ -7346,7 +7891,7 @@ Changelog-approved signed migration bundle for banking-profile runs.
 
 ##### contractVersion
 
-> `readonly` **contractVersion**: `"4.40.0"`
+> `readonly` **contractVersion**: `"4.43.0"`
 
 ##### entries
 
@@ -7622,7 +8167,7 @@ Avg assumptions per case.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.6.0"`
+> **contractVersion**: `"1.9.0"`
 
 ##### duplicatePairs
 
@@ -7716,7 +8261,7 @@ Aggregate dedupe report artifact (Issue #1373).
 
 ##### contractVersion
 
-> **contractVersion**: `"1.6.0"`
+> **contractVersion**: `"1.9.0"`
 
 ##### embeddingProvider
 
@@ -7826,7 +8371,7 @@ Aggregate test-case delta report (always paired with `IntentDeltaReport`).
 
 ##### contractVersion
 
-> **contractVersion**: `"1.6.0"`
+> **contractVersion**: `"1.9.0"`
 
 ##### generatedAt
 
@@ -8082,7 +8627,7 @@ Whether ANY case was blocked (downstream export gate).
 
 ##### contractVersion
 
-> **contractVersion**: `"1.6.0"`
+> **contractVersion**: `"1.9.0"`
 
 ##### decisions
 
@@ -8221,7 +8766,7 @@ Whether the report blocks downstream review/export (any error => true).
 
 ##### contractVersion
 
-> **contractVersion**: `"1.6.0"`
+> **contractVersion**: `"1.9.0"`
 
 ##### errorCount
 
@@ -8653,7 +9198,7 @@ Aggregate traceability-matrix artifact (Issue #1373).
 
 ##### contractVersion
 
-> **contractVersion**: `"1.6.0"`
+> **contractVersion**: `"1.9.0"`
 
 ##### exportProfile?
 
@@ -9147,7 +9692,7 @@ Audit metadata for the run.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.6.0"`
+> **contractVersion**: `"1.9.0"`
 
 ##### createdCount
 
@@ -9480,7 +10025,7 @@ screenshot bytes.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.6.0"`
+> **contractVersion**: `"1.9.0"`
 
 ##### generatedAt
 
@@ -9642,7 +10187,7 @@ Whether any record carries a non-`ok`/non-`fallback_used` outcome that blocks ge
 
 ##### contractVersion
 
-> **contractVersion**: `"1.6.0"`
+> **contractVersion**: `"1.9.0"`
 
 ##### generatedAt
 
@@ -9919,7 +10464,7 @@ Active signing mode; mirrored from the run input for auditability.
 
 ##### testIntelligenceContractVersion
 
-> **testIntelligenceContractVersion**: `"1.6.0"`
+> **testIntelligenceContractVersion**: `"1.9.0"`
 
 ##### visualSidecar?
 
@@ -10348,7 +10893,7 @@ and timestamps are caller-provided.
 
 ##### testIntelligenceContractVersion
 
-> **testIntelligenceContractVersion**: `"1.6.0"`
+> **testIntelligenceContractVersion**: `"1.9.0"`
 
 ##### thresholds
 
@@ -10647,7 +11192,7 @@ raw paste bytes, or PII.
 
 ##### testIntelligenceContractVersion
 
-> **testIntelligenceContractVersion**: `"1.6.0"`
+> **testIntelligenceContractVersion**: `"1.9.0"`
 
 Test-intelligence subsurface contract version.
 
@@ -11755,7 +12300,7 @@ Present only when `figmaSourceMode === "figma_paste" | "figma_plugin"` and diff 
 
 ###### Inherited from
 
-[`WorkspaceSubmitAccepted`](#workspacesubmitaccepted).[`status`](#status-18)
+[`WorkspaceSubmitAccepted`](#workspacesubmitaccepted).[`status`](#status-20)
 
 ***
 
@@ -15636,6 +16181,14 @@ Discriminant of an LBOM model role.
 
 ***
 
+### LibraryCoverageReleaseStatus
+
+> **LibraryCoverageReleaseStatus** = *typeof* [`ALLOWED_LIBRARY_COVERAGE_RELEASE_STATUSES`](#allowed_library_coverage_release_statuses)\[`number`\]
+
+Discriminated alias for [ALLOWED\_LIBRARY\_COVERAGE\_RELEASE\_STATUSES](#allowed_library_coverage_release_statuses).
+
+***
+
 ### LibraryPrimitiveStatus
 
 > **LibraryPrimitiveStatus** = *typeof* [`ALLOWED_LIBRARY_PRIMITIVE_STATUSES`](#allowed_library_primitive_statuses)\[`number`\]
@@ -15820,6 +16373,30 @@ Subset alias for primary source kinds.
 ### RegulatoryRelevanceDomain
 
 > **RegulatoryRelevanceDomain** = *typeof* [`ALLOWED_REGULATORY_RELEVANCE_DOMAINS`](#allowed_regulatory_relevance_domains)\[`number`\]
+
+***
+
+### ReleaseQualityGateId
+
+> **ReleaseQualityGateId** = *typeof* [`ALLOWED_RELEASE_QUALITY_GATE_IDS`](#allowed_release_quality_gate_ids)\[`number`\]
+
+Discriminated alias for [ALLOWED\_RELEASE\_QUALITY\_GATE\_IDS](#allowed_release_quality_gate_ids).
+
+***
+
+### ReleaseReadinessGateId
+
+> **ReleaseReadinessGateId** = *typeof* [`ALLOWED_RELEASE_READINESS_GATE_IDS`](#allowed_release_readiness_gate_ids)\[`number`\]
+
+Discriminated alias for [ALLOWED\_RELEASE\_READINESS\_GATE\_IDS](#allowed_release_readiness_gate_ids).
+
+***
+
+### ReleaseReadinessGateStatus
+
+> **ReleaseReadinessGateStatus** = *typeof* [`ALLOWED_RELEASE_READINESS_GATE_STATUSES`](#allowed_release_readiness_gate_statuses)\[`number`\]
+
+Discriminated alias for [ALLOWED\_RELEASE\_READINESS\_GATE\_STATUSES](#allowed_release_readiness_gate_statuses).
 
 ***
 
@@ -16550,6 +17127,22 @@ Schema version for [AgentIterationsArtifact](#agentiterationsartifact).
 
 ***
 
+### AGENT\_LESSONS\_EVAL\_REPORT\_ARTIFACT\_FILENAME
+
+> `const` **AGENT\_LESSONS\_EVAL\_REPORT\_ARTIFACT\_FILENAME**: `"agent-lessons-eval-report.json"`
+
+Filename used for the AgentLessons eval report artifact.
+
+***
+
+### AGENT\_LESSONS\_EVAL\_REPORT\_SCHEMA\_VERSION
+
+> `const` **AGENT\_LESSONS\_EVAL\_REPORT\_SCHEMA\_VERSION**: `"1.0.0"`
+
+Schema version for the AgentLessons eval report envelope.
+
+***
+
 ### AGENT\_ROLE\_CAPABILITIES
 
 > `const` **AGENT\_ROLE\_CAPABILITIES**: readonly \[`"none"`, `"propose_changes"`, `"read_artifacts"`, `"score_only"`\]
@@ -17013,6 +17606,17 @@ chain that produced a job's test cases.
 
 ***
 
+### ALLOWED\_LIBRARY\_COVERAGE\_RELEASE\_STATUSES
+
+> `const` **ALLOWED\_LIBRARY\_COVERAGE\_RELEASE\_STATUSES**: readonly \[`"COVERED"`, `"PARITY-PATH"`, `"NICHT-UEBERNOMMEN"`\]
+
+Closed list of allowed statuses for the library-coverage-status-completeness
+release gate (Issue #1802, Gate 7). Distinct from
+`ALLOWED_LIBRARY_PRIMITIVE_STATUSES` which tracks per-release implementation
+snapshots; this constant tracks release-report coverage decisions.
+
+***
+
 ### ALLOWED\_LIBRARY\_PRIMITIVE\_STATUSES
 
 > `const` **ALLOWED\_LIBRARY\_PRIMITIVE\_STATUSES**: readonly \[`"deprecated"`, `"implemented"`, `"stub"`, `"unimplemented"`\]
@@ -17214,6 +17818,39 @@ only (no specific paragraph numbers / regulatory-text citations).
   "Schadensfall", "Risikoprüfung", ...).
 - `"general"` — flagged as compliance-relevant but not specific to the
   above two industries (e.g. PII boundary cases).
+
+***
+
+### ALLOWED\_RELEASE\_QUALITY\_GATE\_IDS
+
+> `const` **ALLOWED\_RELEASE\_QUALITY\_GATE\_IDS**: readonly \[`"mutation_kill_rate"`, `"prompt_cache_hit_rate"`, `"tamper_detection_round_trip"`, `"cache_break_rate"`, `"per_source_cost_plausibility"`, `"memdir_manifest_consistency"`, `"library_coverage_status_completeness"`, `"architecture_fit_self_test"`, `"context_budget_regression"`\]
+
+Identifiers for all nine hard gates wired into release:quality-gates.
+
+***
+
+### ALLOWED\_RELEASE\_READINESS\_GATE\_IDS
+
+> `const` **ALLOWED\_RELEASE\_READINESS\_GATE\_IDS**: readonly \[`"typecheck"`, `"test"`, `"test_ti_eval"`, `"test_ti_live_e2e"`, `"lint_no_telemetry"`, `"lint_secrets_all"`, `"lint_agent_boundaries"`, `"lint_ts_style"`, `"build"`, `"release_ml_bom_emit"`, `"release_merkle_roundtrip"`, `"release_library_coverage_report"`\]
+
+Closed list of release-readiness gate identifiers, in the canonical
+pipeline order from Issue #1803. The orchestrator MUST run gates in this
+exact order; the report MUST list verdicts in this exact order.
+
+The list is closed: the parser refuses any payload with unknown gate ids,
+duplicates, or missing entries — the consolidated report cannot silently
+skip a gate.
+
+***
+
+### ALLOWED\_RELEASE\_READINESS\_GATE\_STATUSES
+
+> `const` **ALLOWED\_RELEASE\_READINESS\_GATE\_STATUSES**: readonly \[`"passed"`, `"failed"`, `"skipped"`\]
+
+Closed list of per-gate statuses recognised by the consolidated
+release-readiness report. `skipped` records intentional opt-outs (e.g.
+`test_ti_live_e2e` when live-credentials are absent and the gate is
+declared opt-in) without polluting `failed` attribution.
 
 ***
 
@@ -17673,7 +18310,7 @@ Schema version for persisted context-budget analyzer reports.
 
 ### CONTRACT\_VERSION
 
-> `const` **CONTRACT\_VERSION**: `"4.40.0"`
+> `const` **CONTRACT\_VERSION**: `"4.43.0"`
 
 Current contract version constant.
 Must be bumped according to CONTRACT_CHANGELOG.md rules.
@@ -18463,6 +19100,102 @@ Redaction policy bundle version applied before prompt compilation.
 
 ***
 
+### RELEASE\_QUALITY\_GATES\_REPORT\_ARTIFACT\_FILENAME
+
+> `const` **RELEASE\_QUALITY\_GATES\_REPORT\_ARTIFACT\_FILENAME**: `"release-quality-gates.json"`
+
+Filename of the canonical-JSON release-quality-gates report emitted by
+the release pipeline at `<runDir>/release-quality-gates.json`.
+
+***
+
+### RELEASE\_QUALITY\_GATES\_REPORT\_SCHEMA\_VERSION
+
+> `const` **RELEASE\_QUALITY\_GATES\_REPORT\_SCHEMA\_VERSION**: `"1.0.0"`
+
+Schema version for the release-quality-gates report.
+
+***
+
+### RELEASE\_QUALITY\_GATES\_THRESHOLDS
+
+> `const` **RELEASE\_QUALITY\_GATES\_THRESHOLDS**: `object`
+
+Hard release thresholds for Issue #1801 and Issue #1802. Each gate either
+fails the release on breach or attributes the breach to a specific fixture,
+role, or query source for diff-artifact review.
+
+#### Type Declaration
+
+##### contextBudget
+
+> `readonly` **contextBudget**: `object`
+
+###### contextBudget.defaultMaxBloatRatio
+
+> `readonly` **defaultMaxBloatRatio**: `1.2`
+
+###### contextBudget.minSampleCount
+
+> `readonly` **minSampleCount**: `5`
+
+##### maxCacheBreakRate
+
+> `readonly` **maxCacheBreakRate**: `0.05`
+
+##### MEMDIR\_MAX\_AGE\_MS
+
+> `readonly` **MEMDIR\_MAX\_AGE\_MS**: `7776000000`
+
+##### minMutationKillRate
+
+> `readonly` **minMutationKillRate**: `0.85`
+
+##### minPromptCacheHitRate
+
+> `readonly` **minPromptCacheHitRate**: `0.7`
+
+##### perSourceCostPlausibility
+
+> `readonly` **perSourceCostPlausibility**: `object`
+
+###### perSourceCostPlausibility.allowedFailures
+
+> `readonly` **allowedFailures**: `0`
+
+***
+
+### RELEASE\_READINESS\_ARTIFACT\_DIRECTORY
+
+> `const` **RELEASE\_READINESS\_ARTIFACT\_DIRECTORY**: `"evidence/release-readiness"`
+
+Directory where the consolidated readiness report is committed to evidence.
+
+***
+
+### RELEASE\_READINESS\_REPORT\_ARTIFACT\_FILENAME
+
+> `const` **RELEASE\_READINESS\_REPORT\_ARTIFACT\_FILENAME**: `"release-readiness-report.json"`
+
+Filename of the canonical-JSON release-readiness report committed to
+evidence at `<RELEASE_READINESS_ARTIFACT_DIRECTORY>/release-readiness-report.json`.
+
+Issue #1803: the consolidated single-command output of the release pipeline
+(`release:quality-gates`). The orchestrator runs the twelve canonical
+release-pipeline gates as subprocesses, captures per-gate logs to disk,
+and writes this report referencing each log so a CI failure attributes
+directly to the offending gate.
+
+***
+
+### RELEASE\_READINESS\_REPORT\_SCHEMA\_VERSION
+
+> `const` **RELEASE\_READINESS\_REPORT\_SCHEMA\_VERSION**: `"1.0.0"`
+
+Schema version for the canonical-JSON release-readiness report.
+
+***
+
 ### REVIEW\_EVENTS\_ARTIFACT\_FILENAME
 
 > `const` **REVIEW\_EVENTS\_ARTIFACT\_FILENAME**: `"review-events.json"`
@@ -18657,7 +19390,7 @@ Schema version for persisted `TestDesignModel` projection artifacts.
 
 ### TEST\_INTELLIGENCE\_CONTRACT\_VERSION
 
-> `const` **TEST\_INTELLIGENCE\_CONTRACT\_VERSION**: `"1.6.0"`
+> `const` **TEST\_INTELLIGENCE\_CONTRACT\_VERSION**: `"1.9.0"`
 
 Contract version for the opt-in test-intelligence surface.
 
