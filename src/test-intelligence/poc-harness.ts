@@ -66,6 +66,7 @@ import {
   VISUAL_SIDECAR_RESULT_ARTIFACT_FILENAME,
   VISUAL_SIDECAR_SCHEMA_VERSION,
   VISUAL_SIDECAR_VALIDATION_REPORT_ARTIFACT_FILENAME,
+  type ActiveModelBinding,
   type BusinessTestIntentIr,
   type CompiledPromptArtifacts,
   type CompiledPromptRequest,
@@ -1181,6 +1182,7 @@ export const runWave1Poc = async (
     promptHash: compiled.request.hashes.promptHash,
     schemaHash: compiled.request.hashes.schemaHash,
   });
+  const activeModelBindings = buildActiveModelBindings(input.bundle);
 
   const expectedList = synthesizeGeneratedTestCases({
     jobId: input.jobId,
@@ -1435,6 +1437,7 @@ export const runWave1Poc = async (
           ? { maxInputTokens: input.selfVerifyRubric.maxInputTokens }
           : {}),
       },
+      activeModelBindings,
     });
   } else {
     validation = runValidationPipeline({
@@ -1445,6 +1448,7 @@ export const runWave1Poc = async (
       visual: visualForDerivation,
       profile,
       primaryVisualDeployment: VISUAL_PRIMARY_DEPLOYMENT,
+      activeModelBindings,
     });
   }
   const validationDir = input.runDir;
@@ -1756,6 +1760,7 @@ export const runWave1Poc = async (
     policyProfileVersion: profile.version,
     exportProfileId: exportProfile.id,
     exportProfileVersion: exportProfile.version,
+    activeModelBindings,
     promptHash: compiled.request.hashes.promptHash,
     schemaHash: compiled.request.hashes.schemaHash,
     inputHash: compiled.request.hashes.inputHash,
@@ -2342,6 +2347,41 @@ const buildMlBomModelBindings = (
   },
 ];
 
+const buildActiveModelBindings = (
+  bundle?: LlmGatewayClientBundle,
+): readonly [ActiveModelBinding, ActiveModelBinding, ActiveModelBinding] => [
+  {
+    providerId: "llm-gateway",
+    modelId: bundle?.testGeneration.modelRevision ?? TEST_GENERATION_MODEL_REVISION,
+    inferenceProfileId:
+      bundle?.testGeneration.deployment ?? TEST_GENERATION_DEPLOYMENT,
+    ictRegisterRef:
+      bundle?.testGeneration.ictRegisterRef ??
+      `mock-ict:${bundle?.testGeneration.deployment ?? TEST_GENERATION_DEPLOYMENT}`,
+  },
+  {
+    providerId: "llm-gateway",
+    modelId:
+      bundle?.visualPrimary.modelRevision ??
+      "llama-4-maverick-vision-2026-04-25",
+    inferenceProfileId:
+      bundle?.visualPrimary.deployment ?? VISUAL_PRIMARY_DEPLOYMENT,
+    ictRegisterRef:
+      bundle?.visualPrimary.ictRegisterRef ??
+      `mock-ict:${bundle?.visualPrimary.deployment ?? VISUAL_PRIMARY_DEPLOYMENT}`,
+  },
+  {
+    providerId: "llm-gateway",
+    modelId:
+      bundle?.visualFallback.modelRevision ?? "phi-4-multimodal-poc-2026-04-25",
+    inferenceProfileId:
+      bundle?.visualFallback.deployment ?? VISUAL_FALLBACK_DEPLOYMENT,
+    ictRegisterRef:
+      bundle?.visualFallback.ictRegisterRef ??
+      `mock-ict:${bundle?.visualFallback.deployment ?? VISUAL_FALLBACK_DEPLOYMENT}`,
+  },
+];
+
 const writeVisualSidecarFailureEvidenceManifest = async (input: {
   fixtureId: Wave1PocFixtureId;
   jobId: string;
@@ -2472,6 +2512,7 @@ const writeVisualSidecarFailureEvidenceManifest = async (input: {
     policyProfileVersion: input.policyProfile.version,
     exportProfileId: exportProfile.id,
     exportProfileVersion: exportProfile.version,
+    activeModelBindings: buildActiveModelBindings(input.bundle),
     promptHash: failureHashes.promptHash,
     schemaHash: failureHashes.schemaHash,
     inputHash: failureHashes.inputHash,

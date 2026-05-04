@@ -35,6 +35,7 @@ import {
   BUSINESS_TEST_INTENT_IR_SCHEMA_VERSION,
   EU_BANKING_DEFAULT_POLICY_PROFILE_ID,
   GENEALOGY_ARTIFACT_FILENAME,
+  WAVE1_POC_EVIDENCE_MANIFEST_ARTIFACT_FILENAME,
   type BusinessTestIntentIr,
   type DetectedAction,
   type DetectedField,
@@ -265,6 +266,62 @@ test("runFigmaToQcTestCases happy path persists artifacts and renders customer M
     const md = await readFile(result.customerMarkdownPaths.combined, "utf8");
     assert.match(md, /Testfälle/u);
     assert.match(md, /Investitionssumme/u);
+  } finally {
+    await rm(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("Issue #1794: banking profile blocks when the active deployment is missing ictRegisterRef", async () => {
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ti-runner-"));
+  try {
+    const client = createMockLlmGatewayClient({
+      role: "test_generation",
+      deployment: "gpt-oss-120b-mock",
+      modelRevision: "mock-1",
+      gatewayRelease: "mock",
+      omitIctRegisterRef: true,
+      responder: okResponder([SAMPLE_DRAFT]),
+    });
+    const result = await runFigmaToQcTestCases({
+      jobId: "job-1794-banking-refusal",
+      generatedAt: "2026-05-04T10:00:00Z",
+      source: { kind: "figma_paste_normalized", file: SAMPLE_FILE },
+      outputRoot: tempRoot,
+      llm: { client },
+    });
+
+    assert.equal(result.blocked, true);
+    const violation = result.policy.jobLevelViolations.find(
+      (entry) => entry.outcome === "ict_register_ref_required",
+    );
+    assert.ok(violation, "expected banking ICT register violation");
+    assert.equal(violation?.severity, "error");
+    assert.match(violation?.reason ?? "", /ict_register_ref_required/);
+
+    const manifest = JSON.parse(
+      await readFile(
+        path.join(
+          result.artifactDir,
+          WAVE1_POC_EVIDENCE_MANIFEST_ARTIFACT_FILENAME,
+        ),
+        "utf8",
+      ),
+    ) as {
+      activeModelBindings?: Array<{
+        providerId: string;
+        modelId: string;
+        inferenceProfileId?: string;
+        ictRegisterRef?: string;
+      }>;
+    };
+    assert.equal(manifest.activeModelBindings?.length, 1);
+    assert.equal(manifest.activeModelBindings?.[0]?.providerId, "llm-gateway");
+    assert.equal(manifest.activeModelBindings?.[0]?.modelId, "mock-1");
+    assert.equal(
+      manifest.activeModelBindings?.[0]?.inferenceProfileId,
+      "gpt-oss-120b-mock",
+    );
+    assert.equal(manifest.activeModelBindings?.[0]?.ictRegisterRef, undefined);
   } finally {
     await rm(tempRoot, { recursive: true, force: true });
   }

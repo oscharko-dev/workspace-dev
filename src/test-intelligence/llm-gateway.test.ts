@@ -152,6 +152,13 @@ test("config validation: rejects empty deployment / bad sha", () => {
   );
 });
 
+test("config validation: rejects blank ictRegisterRef", () => {
+  assert.throws(
+    () => createLlmGatewayClient({ ...baseConfig, ictRegisterRef: "   " }),
+    /ictRegisterRef/u,
+  );
+});
+
 test("LlmGatewayError discriminates errorClass / retryable / attempt", () => {
   const err = new LlmGatewayError({
     errorClass: "rate_limited",

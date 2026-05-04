@@ -198,6 +198,39 @@ test("missing accessibility case for form screens raises a job-level violation",
   assert.equal(report.blocked, true);
 });
 
+test("Issue #1794: banking profile blocks when an active model binding is missing ictRegisterRef", () => {
+  const ctx = harness([buildCase({})], buildIntent());
+  const report = evaluatePolicyGate({
+    jobId: "job-1",
+    generatedAt: GENERATED_AT,
+    list: ctx.list,
+    intent: ctx.intent,
+    profile: ctx.profile,
+    validation: ctx.validation,
+    coverage: ctx.coverage,
+    activeModelBindings: [
+      {
+        providerId: "llm-gateway",
+        modelId: "gpt-oss-120b@test",
+        inferenceProfileId: "gpt-oss-120b",
+      },
+      {
+        providerId: "llm-gateway",
+        modelId: "llama-4-maverick-vision@test",
+        inferenceProfileId: "llama-4-maverick-vision",
+        ictRegisterRef: "ICT-LLAMA-01",
+      },
+    ],
+  });
+  const violation = report.jobLevelViolations.find(
+    (entry) => entry.outcome === "ict_register_ref_required",
+  );
+  assert.ok(violation, "expected banking ICT register violation");
+  assert.equal(violation?.severity, "error");
+  assert.match(violation?.reason ?? "", /ict_register_ref_required/);
+  assert.equal(report.blocked, true);
+});
+
 test("Issue #1772: visualSidecarRefusal escalates every case to needs_review with documented refusal code", () => {
   const tc = buildCase({});
   const ctx = harness([tc], buildIntent());

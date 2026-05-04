@@ -31,6 +31,29 @@ All changes to the public contract surface of `workspace-dev` are documented her
 
 ---
 
+## [4.38.0] - 2026-05-04
+
+### Added (Issue #1794 — banking ICT register enforcement metadata)
+
+The banking-policy surface now exposes and attests ICT register metadata for
+active model bindings.
+
+Additive public-contract changes:
+
+- `TestCasePolicyOutcome` adds `ict_register_ref_required` for the banking
+  refusal path triggered when an active model binding is missing its operator
+  ICT register reference.
+- New exported type `ActiveModelBinding` models the runtime binding summary
+  persisted into evidence and forwarded into policy evaluation.
+- `LlmGatewayClientConfig` adds optional `ictRegisterRef?: string` so operators
+  can configure the DORA register-of-information reference per deployment.
+- `Wave1PocEvidenceManifest` adds optional `activeModelBindings` so banking
+  jobs attest the binding metadata, including `ictRegisterRef` when present.
+
+This is an additive minor bump. Existing callers remain source-compatible, and
+existing persisted manifests remain readable because the new fields are
+optional.
+
 ## [4.37.0] - 2026-05-03
 
 ### Added (Issue #1788 — policy-aware gateway in-flight dedup keys)

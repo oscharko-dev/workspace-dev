@@ -140,6 +140,71 @@ test("evidence-manifest: records visual sidecar capture identities when supplied
   ]);
 });
 
+test("evidence-manifest: records active model bindings when supplied", () => {
+  const manifest = buildWave1PocEvidenceManifest({
+    ...baseInput([
+      {
+        filename: "alpha.json",
+        bytes: utf8('{"a":1}'),
+        category: "validation",
+      },
+    ]),
+    activeModelBindings: [
+      {
+        providerId: "llm-gateway",
+        modelId: "llama-4-maverick-vision@test",
+        inferenceProfileId: "llama-4-maverick-vision",
+        ictRegisterRef: "ICT-LLAMA-01",
+      },
+      {
+        providerId: "llm-gateway",
+        modelId: "gpt-oss-120b@test",
+        inferenceProfileId: "gpt-oss-120b",
+        ictRegisterRef: "ICT-GEN-01",
+      },
+    ],
+  });
+
+  assert.deepEqual(manifest.activeModelBindings, [
+    {
+      providerId: "llm-gateway",
+      modelId: "gpt-oss-120b@test",
+      inferenceProfileId: "gpt-oss-120b",
+      ictRegisterRef: "ICT-GEN-01",
+    },
+    {
+      providerId: "llm-gateway",
+      modelId: "llama-4-maverick-vision@test",
+      inferenceProfileId: "llama-4-maverick-vision",
+      ictRegisterRef: "ICT-LLAMA-01",
+    },
+  ]);
+});
+
+test("evidence-manifest: rejects blank active model binding ictRegisterRef", () => {
+  assert.throws(
+    () =>
+      buildWave1PocEvidenceManifest({
+        ...baseInput([
+          {
+            filename: "alpha.json",
+            bytes: utf8('{"a":1}'),
+            category: "validation",
+          },
+        ]),
+        activeModelBindings: [
+          {
+            providerId: "llm-gateway",
+            modelId: "gpt-oss-120b@test",
+            inferenceProfileId: "gpt-oss-120b",
+            ictRegisterRef: "",
+          },
+        ],
+      }),
+    /activeModelBindings\.ictRegisterRef/u,
+  );
+});
+
 test("evidence-manifest: artifacts are sorted by filename and de-duplicated", () => {
   const manifest = buildWave1PocEvidenceManifest(
     baseInput([
