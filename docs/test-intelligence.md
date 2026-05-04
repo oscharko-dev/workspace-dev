@@ -212,7 +212,7 @@ operators can plan integration without depending on the runner being wired:
 | `WorkspaceJobInput.jobType`                 | `"figma_to_code"` (default) \| `"figma_to_qc_test_cases"` (reserved) |
 | `WorkspaceJobInput.testIntelligenceMode`    | `"deterministic_llm"` \| `"offline_eval"` \| `"dry_run"`             |
 | `ALLOWED_TEST_INTELLIGENCE_MODES`           | `["deterministic_llm", "offline_eval", "dry_run"]`                   |
-| `TEST_INTELLIGENCE_CONTRACT_VERSION`        | `"1.6.0"`                                                            |
+| `TEST_INTELLIGENCE_CONTRACT_VERSION`        | `"1.9.0"`                                                            |
 | `TEST_INTELLIGENCE_PROMPT_TEMPLATE_VERSION` | `"1.0.0"`                                                            |
 | `TEST_INTELLIGENCE_ENV`                     | `"FIGMAPIPE_WORKSPACE_TEST_INTELLIGENCE"`                            |
 

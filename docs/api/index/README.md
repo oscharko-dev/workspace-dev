@@ -24,7 +24,7 @@
 
 ###### which
 
-`"reference"` \| `"test"`
+`"test"` \| `"reference"`
 
 ###### cause?
 
