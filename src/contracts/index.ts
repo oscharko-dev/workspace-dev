@@ -4,7 +4,7 @@
  * These types define the public API surface for workspace-dev consumers.
  * They must not import from internal services.
  *
- * Contract version: 4.23.0
+ * Contract version: 4.40.0
  * See CONTRACT_CHANGELOG.md for contract change history and VERSIONING.md for
  * package-versus-contract versioning policy.
  */
@@ -3009,8 +3009,7 @@ export type AgentRoleCapability = (typeof AGENT_ROLE_CAPABILITIES)[number];
 export type AgentRoleKind = (typeof AGENT_ROLE_KINDS)[number];
 
 /** FinOps attribution group used for per-source cost rollups. */
-export type AgentRoleFinOpsGroup =
-  (typeof AGENT_ROLE_FINOPS_GROUPS)[number];
+export type AgentRoleFinOpsGroup = (typeof AGENT_ROLE_FINOPS_GROUPS)[number];
 
 /**
  * Static binding of an agent role to a model identity. The optional
@@ -3315,8 +3314,7 @@ export const JUDGE_PANEL_AGREEMENT_LABELS = [
 ] as const;
 
 /** Discriminated alias for {@link JUDGE_PANEL_AGREEMENT_LABELS}. */
-export type JudgePanelAgreement =
-  (typeof JUDGE_PANEL_AGREEMENT_LABELS)[number];
+export type JudgePanelAgreement = (typeof JUDGE_PANEL_AGREEMENT_LABELS)[number];
 
 /**
  * Closed runtime list of resolved-severity labels emitted by the
@@ -3560,6 +3558,42 @@ export interface CompactBoundaryLogEntry {
   readonly parentHash: string;
 }
 
+/** Canonical filename for the per-run settings migration audit log. */
+export const MIGRATIONS_LOG_ARTIFACT_FILENAME = "migrations.log.jsonl" as const;
+
+/** Schema version for approved signed migration bundles. */
+export const MIGRATION_BUNDLE_SCHEMA_VERSION = "1.0.0" as const;
+
+/** Closed runtime list of migration refusal codes. */
+export const ALLOWED_MIGRATION_REFUSAL_CODES = [
+  "migration_apply_failed",
+  "migration_audit_log_invalid",
+  "migration_registry_invalid",
+  "migration_rollback_failed",
+  "migration_rollback_required",
+  "migration_state_invalid",
+  "migration_unsigned",
+] as const;
+
+/** Discriminated alias for {@link ALLOWED_MIGRATION_REFUSAL_CODES}. */
+export type MigrationRefusalCode =
+  (typeof ALLOWED_MIGRATION_REFUSAL_CODES)[number];
+
+/** One approved entry inside a signed migration bundle. */
+export interface SignedMigrationBundleEntry {
+  readonly id: string;
+  readonly hash: string;
+  readonly description: string;
+  readonly evidenceBearing?: boolean;
+}
+
+/** Changelog-approved signed migration bundle for banking-profile runs. */
+export interface SignedMigrationBundle {
+  readonly schemaVersion: typeof MIGRATION_BUNDLE_SCHEMA_VERSION;
+  readonly contractVersion: typeof CONTRACT_VERSION;
+  readonly entries: readonly SignedMigrationBundleEntry[];
+}
+
 /** Canonical filename for the per-release library coverage report. */
 export const LIBRARY_COVERAGE_REPORT_ARTIFACT_FILENAME =
   "library-coverage-report.json" as const;
@@ -3642,6 +3676,7 @@ export const ALLOWED_HARNESS_ARTIFACT_FILENAMES = [
   "ir-mutation-coverage-strength.json",
   "judge-panel-verdicts.json",
   "library-coverage-report.json",
+  "migrations.log.jsonl",
   "self-verify-rubric.json",
   "test-design-model.json",
 ] as const;
@@ -5926,7 +5961,8 @@ export interface ExportReportArtifact {
 /* ------------------------------------------------------------------ */
 
 /** Schema version for the Wave 1 Validation evidence manifest envelope. */
-export const WAVE1_VALIDATION_EVIDENCE_MANIFEST_SCHEMA_VERSION = "1.0.0" as const;
+export const WAVE1_VALIDATION_EVIDENCE_MANIFEST_SCHEMA_VERSION =
+  "1.0.0" as const;
 
 /** Filename used for the Wave 1 Validation evidence manifest artifact. */
 export const WAVE1_VALIDATION_EVIDENCE_MANIFEST_ARTIFACT_FILENAME =
@@ -5960,7 +5996,8 @@ export const WAVE1_VALIDATION_FIXTURE_IDS = [
 ] as const;
 
 /** Identifier of a Wave 1 Validation fixture. */
-export type Wave1ValidationFixtureId = (typeof WAVE1_VALIDATION_FIXTURE_IDS)[number];
+export type Wave1ValidationFixtureId =
+  (typeof WAVE1_VALIDATION_FIXTURE_IDS)[number];
 
 /** Categorisation of an artifact attested by the evidence manifest. */
 export type Wave1ValidationEvidenceArtifactCategory =
@@ -6317,7 +6354,8 @@ export const WAVE1_VALIDATION_ATTESTATIONS_DIRECTORY =
   "evidence/attestations" as const;
 
 /** Subdirectory under a run dir where Sigstore signature bundles are persisted. */
-export const WAVE1_VALIDATION_SIGNATURES_DIRECTORY = "evidence/signatures" as const;
+export const WAVE1_VALIDATION_SIGNATURES_DIRECTORY =
+  "evidence/signatures" as const;
 
 /** Sigstore bundle media type — pinned to the v0.3 envelope shape. */
 export const WAVE1_VALIDATION_ATTESTATION_BUNDLE_MEDIA_TYPE =
@@ -9045,7 +9083,7 @@ export interface IrMutationCoverageStrengthReport {
  * Must be bumped according to CONTRACT_CHANGELOG.md rules.
  * Package version alignment is documented in VERSIONING.md.
  */
-export const CONTRACT_VERSION = "4.39.0" as const;
+export const CONTRACT_VERSION = "4.40.0" as const;
 
 // ---------------------------------------------------------------------------
 // Issue #1774 — UntrustedContentNormalizer (2025-vintage injection carriers).

@@ -143,6 +143,17 @@ export {
 } from "./multi-source-reconciliation.js";
 export { canonicalJson, sha256Hex } from "./content-hash.js";
 export {
+  buildMigrationHash,
+  parseMigrationAuditLog,
+  runMigrations,
+  type Migration,
+  type MigrationAuditEntry,
+  type MigrationRefusalResult,
+  type MigrationResult,
+  type MigrationSuccessResult,
+  type RunMigrationsOptions,
+} from "./migrations.js";
+export {
   buildTestDesignModel,
   computeTestDesignModelSchemaHash,
   validateTestDesignModel,
