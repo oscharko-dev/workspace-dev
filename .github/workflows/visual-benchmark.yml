@@ -17,7 +17,6 @@ on:
       - "integration/visual-quality*"
       - "integration/fixtures/visual-benchmark/**"
       - ".github/workflows/visual-benchmark.yml"
-      - ".github/workflows/visual-benchmark-comment.yml"
       - "package.json"
       - "scripts/compute-composite-quality.ts"
       - "scripts/assert-no-skipped-tests.mjs"
@@ -51,12 +50,11 @@ concurrency:
 permissions:
   actions: read
   contents: read
+  issues: write
 
 jobs:
   benchmark:
     name: benchmark
-    permissions:
-      checks: write
     runs-on: ubuntu-22.04
     timeout-minutes: 30
     env:
@@ -201,52 +199,77 @@ jobs:
         if: always() && hashFiles('artifacts/visual-benchmark/last-run.json') != ''
         run: node scripts/prepare-visual-benchmark-public-artifacts.mjs
 
-      - name: Update benchmark check output
-        if: always() && hashFiles('artifacts/visual-benchmark/check-output.json') != ''
+      - name: Render visual benchmark PR comment payload
+        if: always() && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && hashFiles('artifacts/visual-benchmark/public-summary/last-run.public.json') != ''
+        env:
+          VISUAL_BENCHMARK_ALLOW_STEP_SUMMARY: "false"
+          REPORT_PATH: artifacts/visual-benchmark/public-summary/last-run.public.json
+          ARTIFACT_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: >-
+          node scripts/print-visual-benchmark-pr-comment.mjs
+          "$REPORT_PATH"
+          --output artifacts/visual-benchmark/public-summary/visual-benchmark-pr-comment.json
+          --artifact-url "$ARTIFACT_RUN_URL"
+
+      - name: Post or update visual benchmark PR comment
+        if: always() && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && hashFiles('artifacts/visual-benchmark/public-summary/visual-benchmark-pr-comment.json') != ''
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3  # v9
         with:
+          env:
+            PAYLOAD_PATH: artifacts/visual-benchmark/public-summary/visual-benchmark-pr-comment.json
           script: |
             const fs = require("node:fs");
-
-            const outputPath = "artifacts/visual-benchmark/check-output.json";
-            const payload = JSON.parse(fs.readFileSync(outputPath, "utf8"));
             const { owner, repo } = context.repo;
-            const runId = context.runId;
-            const attemptNumber = Number(process.env.GITHUB_RUN_ATTEMPT ?? "1");
-            const jobsResponse = await github.request(
-              "GET /repos/{owner}/{repo}/actions/runs/{run_id}/attempts/{attempt_number}/jobs",
-              {
+            const payloadPath = process.env.PAYLOAD_PATH;
+            const payload = JSON.parse(
+              fs.readFileSync(payloadPath, "utf8"),
+            );
+            if (typeof payload.marker !== "string" || payload.marker.length === 0) {
+              core.setFailed("The PR comment payload marker is missing or invalid.");
+              return;
+            }
+            if (typeof payload.body !== "string" || payload.body.length === 0) {
+              core.setFailed("The PR comment payload body is missing or invalid.");
+              return;
+            }
+            if (!payload.body.startsWith(payload.marker)) {
+              core.setFailed("The PR comment payload body must start with its marker.");
+              return;
+            }
+            const prNumber = Number(context.payload.pull_request?.number);
+            if (!Number.isInteger(prNumber) || prNumber <= 0) {
+              core.setFailed(`Invalid pull request number: '${context.payload.pull_request?.number}'.`);
+              return;
+            }
+
+            const comments = await github.paginate(
+              github.rest.issues.listComments,
+              { owner, repo, issue_number: prNumber, per_page: 100 },
+            );
+            const existingComment = comments.find(
+              (comment) =>
+                typeof comment.body === "string" &&
+                comment.body.startsWith(payload.marker),
+            );
+
+            if (existingComment) {
+              await github.rest.issues.updateComment({
                 owner,
                 repo,
-                run_id: runId,
-                attempt_number: attemptNumber,
-                per_page: 100,
-              },
-            );
-            const jobs = jobsResponse.data.jobs ?? [];
-            const job = jobs.find((candidate) => candidate.name === process.env.GITHUB_JOB);
-            if (!job || typeof job.check_run_url !== "string") {
-              core.setFailed(`Could not locate check_run_url for job '${process.env.GITHUB_JOB}'.`);
+                comment_id: existingComment.id,
+                body: payload.body,
+              });
+              core.info(`Updated existing PR comment ${existingComment.id}.`);
               return;
             }
 
-            const match = job.check_run_url.match(/\/check-runs\/(\d+)$/);
-            if (!match) {
-              core.setFailed(`Could not parse check run id from '${job.check_run_url}'.`);
-              return;
-            }
-
-            await github.rest.checks.update({
+            const created = await github.rest.issues.createComment({
               owner,
               repo,
-              check_run_id: Number(match[1]),
-              output: {
-                title: String(payload.title).slice(0, 255),
-                summary: String(payload.summary).slice(0, 65535),
-                text: String(payload.text ?? "").slice(0, 65535),
-                annotations: Array.isArray(payload.annotations) ? payload.annotations.slice(0, 50) : [],
-              },
+              issue_number: prNumber,
+              body: payload.body,
             });
+            core.info(`Created new PR comment ${created.data.id}.`);
 
       - name: Upload visual benchmark artifacts (public PR summary)
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7
