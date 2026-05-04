@@ -163,7 +163,7 @@ export interface TestIntelligenceTransferPrincipal {
 }
 
 /** Contract version for the opt-in test-intelligence surface. */
-export const TEST_INTELLIGENCE_CONTRACT_VERSION = "1.6.0" as const;
+export const TEST_INTELLIGENCE_CONTRACT_VERSION = "1.7.0" as const;
 
 /**
  * Schema version for generated test case payloads.
@@ -9078,12 +9078,157 @@ export interface IrMutationCoverageStrengthReport {
   readonly survivingMutationsForRepair: readonly string[];
 }
 
+// ---------------------------------------------------------------------------
+// Issue #1801 — release:quality-gates hard CI gates.
+// ---------------------------------------------------------------------------
+
+/**
+ * Filename of the canonical-JSON release-quality-gates report emitted by
+ * the release pipeline at `<runDir>/release-quality-gates.json`.
+ */
+export const RELEASE_QUALITY_GATES_REPORT_ARTIFACT_FILENAME =
+  "release-quality-gates.json" as const;
+
+/** Schema version for the release-quality-gates report. */
+export const RELEASE_QUALITY_GATES_REPORT_SCHEMA_VERSION = "1.0.0" as const;
+
+/**
+ * Hard release thresholds for Issue #1801. Each gate either fails the
+ * release on breach (mutation, prompt-cache, tamper) or attributes the
+ * breach to a specific fixture/role for diff-artifact review (cache-break).
+ */
+export const RELEASE_QUALITY_GATES_THRESHOLDS = {
+  /** `mutationKillRate >= 0.85` against curated mutation fixtures. */
+  minMutationKillRate: 0.85,
+  /** `promptCacheHitRate >= 0.7` across repair iterations 2..N. */
+  minPromptCacheHitRate: 0.7,
+  /** `cacheBreakRate <= 5%` over the release sample. */
+  maxCacheBreakRate: 0.05,
+} as const;
+
+/** Identifiers for the four hard gates wired into release:quality-gates. */
+export const ALLOWED_RELEASE_QUALITY_GATE_IDS = [
+  "mutation_kill_rate",
+  "prompt_cache_hit_rate",
+  "tamper_detection_round_trip",
+  "cache_break_rate",
+] as const;
+
+/** Discriminated alias for {@link ALLOWED_RELEASE_QUALITY_GATE_IDS}. */
+export type ReleaseQualityGateId =
+  (typeof ALLOWED_RELEASE_QUALITY_GATE_IDS)[number];
+
+/**
+ * Per-fixture mutation-kill input. Mirrors the relevant subset of
+ * {@link IrMutationCoverageStrengthReport} but pinned to the curated
+ * release fixture set so the gate is reproducible offline.
+ */
+export interface ReleaseQualityGateMutationFixture {
+  readonly fixtureId: string;
+  readonly mutationCount: number;
+  readonly killedMutations: number;
+  readonly mutationKillRate: number;
+  readonly survivingMutationsForRepair: readonly string[];
+}
+
+/**
+ * Per-role prompt-cache statistics across repair iterations 2..N
+ * (iteration 1 is excluded — the first attempt cannot benefit from
+ * cache reads of its own prompt prefix).
+ */
+export interface ReleaseQualityGatePromptCacheRole {
+  readonly roleId: string;
+  readonly iterationsCounted: number;
+  readonly cacheHits: number;
+  readonly cacheMisses: number;
+  readonly promptCacheHitRate: number;
+}
+
+/**
+ * Tamper-detection round-trip outcome per release job. The harness
+ * Merkle chain + `headOfChainHash` + ML-BOM hash are verified offline
+ * against the evidence manifest. A single failure across `samples`
+ * fails the gate.
+ */
+export interface ReleaseQualityGateTamperSample {
+  readonly sampleId: string;
+  readonly merkleChainVerified: boolean;
+  readonly headOfChainHashVerified: boolean;
+  readonly mlBomHashVerified: boolean;
+}
+
+/**
+ * Per-source cache-break observation. Used both to compute the global
+ * `cacheBreakRate` and to attribute a spike to the offending source for
+ * diff-artifact review.
+ */
+export interface ReleaseQualityGateCacheBreakSample {
+  readonly querySource: string;
+  readonly responseCount: number;
+  readonly breakCount: number;
+  readonly diffArtifactBasenames: readonly string[];
+}
+
+/**
+ * Complete input envelope consumed by `evaluateReleaseQualityGates` and
+ * by the release-quality-gates CLI runner. Every field is required so
+ * a missing data source surfaces as a hard gate failure rather than a
+ * silent pass.
+ */
+export interface ReleaseQualityGatesInput {
+  readonly schemaVersion: typeof RELEASE_QUALITY_GATES_REPORT_SCHEMA_VERSION;
+  readonly contractVersion: typeof TEST_INTELLIGENCE_CONTRACT_VERSION;
+  readonly releaseId: string;
+  readonly mutation: {
+    readonly fixtures: readonly ReleaseQualityGateMutationFixture[];
+  };
+  readonly promptCache: {
+    readonly roles: readonly ReleaseQualityGatePromptCacheRole[];
+  };
+  readonly tamper: {
+    readonly samples: readonly ReleaseQualityGateTamperSample[];
+  };
+  readonly cacheBreak: {
+    readonly samples: readonly ReleaseQualityGateCacheBreakSample[];
+  };
+}
+
+/**
+ * Per-gate verdict. `attribution[]` carries fixture/role/source
+ * identifiers when the threshold was breached so a reviewer can jump to
+ * the offending evidence without rerunning the pipeline.
+ */
+export interface ReleaseQualityGateVerdict {
+  readonly gateId: ReleaseQualityGateId;
+  readonly observed: number;
+  readonly threshold: number;
+  readonly comparator: "gte" | "lte" | "eq";
+  readonly passed: boolean;
+  readonly attribution: readonly string[];
+}
+
+/**
+ * Canonical-JSON report emitted by the release-quality-gates runner.
+ * The release pipeline fails when any verdict has `passed === false`.
+ */
+export interface ReleaseQualityGatesReport {
+  readonly schemaVersion: typeof RELEASE_QUALITY_GATES_REPORT_SCHEMA_VERSION;
+  readonly contractVersion: typeof TEST_INTELLIGENCE_CONTRACT_VERSION;
+  readonly releaseId: string;
+  readonly mutationKillRate: number;
+  readonly promptCacheHitRate: number;
+  readonly tamperDetectionPassed: boolean;
+  readonly cacheBreakRate: number;
+  readonly verdicts: readonly ReleaseQualityGateVerdict[];
+  readonly passed: boolean;
+}
+
 /**
  * Current contract version constant.
  * Must be bumped according to CONTRACT_CHANGELOG.md rules.
  * Package version alignment is documented in VERSIONING.md.
  */
-export const CONTRACT_VERSION = "4.40.0" as const;
+export const CONTRACT_VERSION = "4.41.0" as const;
 
 // ---------------------------------------------------------------------------
 // Issue #1774 — UntrustedContentNormalizer (2025-vintage injection carriers).

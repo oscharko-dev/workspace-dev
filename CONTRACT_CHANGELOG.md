@@ -31,6 +31,52 @@ All changes to the public contract surface of `workspace-dev` are documented her
 
 ---
 
+## [4.41.0] - 2026-05-04
+
+### Added (Issue #1801 — release:quality-gates hard CI gates)
+
+The `release:quality-gates` script now enforces four hard release gates
+that fail the release on threshold breach. Each gate produces a section
+of a single canonical-JSON report whose breaches are attributed to the
+offending fixture, role, or query source.
+
+Additive public-contract changes:
+
+- New runtime constants exported from `src/contracts/index.ts` and the
+  package root:
+    - `RELEASE_QUALITY_GATES_REPORT_ARTIFACT_FILENAME = "release-quality-gates.json"`
+    - `RELEASE_QUALITY_GATES_REPORT_SCHEMA_VERSION = "1.0.0"`
+    - `RELEASE_QUALITY_GATES_THRESHOLDS = { minMutationKillRate: 0.85, minPromptCacheHitRate: 0.7, maxCacheBreakRate: 0.05 }`
+    - `ALLOWED_RELEASE_QUALITY_GATE_IDS = ["mutation_kill_rate", "prompt_cache_hit_rate", "tamper_detection_round_trip", "cache_break_rate"]`
+- New contract types:
+    - `ReleaseQualityGateId`
+    - `ReleaseQualityGateMutationFixture`
+    - `ReleaseQualityGatePromptCacheRole`
+    - `ReleaseQualityGateTamperSample`
+    - `ReleaseQualityGateCacheBreakSample`
+    - `ReleaseQualityGatesInput`
+    - `ReleaseQualityGateVerdict`
+    - `ReleaseQualityGatesReport`
+- New test-intelligence helpers (re-exported from
+  `src/test-intelligence/index.ts`):
+    - `evaluateReleaseQualityGates` — pure evaluator.
+    - `isReleaseQualityGatesInput` — strict structural validator.
+    - `serializeReleaseQualityGatesReport` — canonical-JSON byte payload.
+    - `parseReleaseQualityGatesReport` — strict round-trip parser.
+    - `writeReleaseQualityGatesReport` — atomic tmp+rename writer.
+- `TEST_INTELLIGENCE_CONTRACT_VERSION` bumps from `1.6.0` to `1.7.0`.
+
+The new `verify:release-quality-gates` package script consumes a
+canonical-JSON input envelope (default fixture
+`fixtures/release-quality-gates/baseline-input.json`) and writes the
+report to `artifacts/release-quality-gates/release-quality-gates.json`.
+The script exits non-zero on any threshold breach, so the existing
+`release:quality-gates` chain fails the release on regression.
+
+This is an additive minor bump. No removals or renames. No new
+banking-profile migrations are registered in this release; the
+`migrationHash:` registry from 4.40.0 carries over unchanged.
+
 ## [4.40.0] - 2026-05-04
 
 ### Added (Issue #1798 — settings migration pipeline with signed-bundle enforcement)

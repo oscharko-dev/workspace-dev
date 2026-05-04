@@ -92,6 +92,7 @@ export const TI_EVAL_FILES = Object.freeze([
   "src/test-intelligence/qc-alm-mapping-profile.test.ts",
   "src/test-intelligence/qc-xlsx-writer.test.ts",
   "src/test-intelligence/reconciliation.test.ts",
+  "src/test-intelligence/release-quality-gates.test.ts",
   "src/test-intelligence/resource-budget.test.ts",
   "src/test-intelligence/secret-leakage.test.ts",
   "src/test-intelligence/self-verify-rubric.fuzz.test.ts",

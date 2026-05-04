@@ -1244,3 +1244,12 @@ export {
   type RunFigmaToQcTestCasesInput,
   type RunFigmaToQcTestCasesResult,
 } from "./production-runner.js";
+export {
+  evaluateReleaseQualityGates,
+  isReleaseQualityGatesInput,
+  parseReleaseQualityGatesReport,
+  serializeReleaseQualityGatesReport,
+  writeReleaseQualityGatesReport,
+  type WriteReleaseQualityGatesReportInput,
+  type WriteReleaseQualityGatesReportResult,
+} from "./release-quality-gates.js";
