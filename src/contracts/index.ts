@@ -3458,7 +3458,7 @@ export type AgentIterationOutcome =
 export interface AgentIterationRecord {
   /** 0-based iteration index inside the repair budget. */
   readonly iteration: number;
-  /** Stable {@link AgentRoleStepId} of the harness role that ran. */
+  /** Stable harness role-step identifier of the role that ran. */
   readonly roleStepId: string;
   /** ISO-8601 timestamp at which the iteration started. */
   readonly startedAt: string;
@@ -3524,7 +3524,7 @@ export const COMPACT_BOUNDARY_LOG_ARTIFACT_FILENAME =
 /** Schema version for {@link CompactBoundaryLogEntry}. */
 export const COMPACT_BOUNDARY_LOG_SCHEMA_VERSION = "1.0.0" as const;
 
-/** Closed runtime list of compaction-boundary tier literals (mirrors {@link COMPACT_BOUNDARY_TIERS}). */
+/** Closed runtime list of compaction-boundary tier literals. */
 export const ALLOWED_COMPACT_BOUNDARY_LOG_TIERS = [
   "context_budget",
   "manual",

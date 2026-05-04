@@ -49,6 +49,8 @@ fixtures/
 ├── <id>.custom.md                      # optional: customer-supplied markdown
 └── <id>.expected.summary.json          # required: hand-curated baseline metrics
 └── eval-baseline-<archetype>.json      # required: deterministic MA-0 eval snapshot
+└── eval-ab-input.json                  # required: curated MA-5 A/B + human-review input
+└── eval-ab-<archetype>.json            # required: deterministic MA-5 A/B report
 ```
 
 - `<id>.figma.json` matches `IntentDerivationFigmaInput`
@@ -74,6 +76,18 @@ fixtures/
   per-case traceability ref counts, a deterministic human-review sample
   snapshot, and the synthetic FinOps/token metrics used by the
   air-gapped PR lane.
+- `eval-ab-input.json` is the curated MA-5 review sample used by
+  Issue #1800. It carries, for each archetype, the single-pass and
+  multi-agent-harness metric snapshot plus a human-verdict sample with
+  cross-family judge scores. The builder turns this into canonical
+  `eval-ab-<archetype>.json` reports.
+- `eval-ab-<archetype>.json` stores the deterministic MA-5 A/B report.
+  Each artifact pins both pipelines' metric surfaces, deltas versus the
+  single-pass reference, per-criterion human-calibration error, and the
+  active bias controls:
+  empirical-CDF post-hoc calibration for position bias, no hard length
+  normalization for verbosity bias, and a cross-family judge panel to
+  break self-preference.
 
 Only `baseline-multi-context` ships the optional `*.jira.json` and
 `*.custom.md` companions. The other six archetypes intentionally
@@ -92,7 +106,7 @@ leave them out so the matrix stays readable.
 - **Canonical-JSON snapshots.** `*.expected.summary.json` parses
   back to the byte-stable form produced by `canonicalJson`. The
   test asserts this on every run. The same rule applies to the
-  `eval-baseline-*.json` artifacts.
+  `eval-baseline-*.json` and `eval-ab-*.json` artifacts.
 
 ### How to add a new archetype
 
@@ -108,13 +122,16 @@ leave them out so the matrix stays readable.
    intent and any operator-curated open-question keywords.
 5. Rebuild the deterministic MA-0 eval artifact for the archetype and
    persist it as `eval-baseline-<archetype>.json`.
-6. Append the new id to `BASELINE_ARCHETYPE_FIXTURE_IDS` in
+6. Update `eval-ab-input.json` with the curated single-pass vs
+   multi-agent metric snapshot and the human-review sample for the
+   archetype, then rebuild `eval-ab-<archetype>.json`.
+7. Append the new id to `BASELINE_ARCHETYPE_FIXTURE_IDS` in
    `src/test-intelligence/baseline-fixtures.ts` and to the table
    above.
-7. Run `pnpm run test:ti-eval`. The companion tests will fail with
+8. Run `pnpm run test:ti-eval`. The companion tests will fail with
    a precise diff if any of the counts disagree with the figma
    input or if the eval snapshot drifts, which is exactly the
-   regression signal MA-0 is meant to give.
+   regression signal the MA-0 and MA-5 lanes are meant to give.
 
 ### Why this suite is small on purpose
 

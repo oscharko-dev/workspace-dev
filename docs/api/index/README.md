@@ -1014,6 +1014,162 @@ https://v8.dev/docs/stack-trace-api#customizing-stack-traces
 
 ***
 
+### Migration
+
+#### Properties
+
+##### apply
+
+> `readonly` **apply**: (`state`) => `unknown`
+
+###### Parameters
+
+###### state
+
+`unknown`
+
+###### Returns
+
+`unknown`
+
+##### condition
+
+> `readonly` **condition**: (`state`) => `boolean`
+
+###### Parameters
+
+###### state
+
+`unknown`
+
+###### Returns
+
+`boolean`
+
+##### description
+
+> `readonly` **description**: `string`
+
+##### evidenceBearing?
+
+> `readonly` `optional` **evidenceBearing?**: `boolean`
+
+When true, banking-profile runs require an explicit rollback handler and
+failure paths must execute it cleanly before the runner refuses.
+
+##### hash?
+
+> `readonly` `optional` **hash?**: `string`
+
+Optional stable hash registered in a signed migration bundle. When omitted
+the runner derives a hash from the canonical migration descriptor.
+
+##### id
+
+> `readonly` **id**: `string`
+
+##### rollback?
+
+> `readonly` `optional` **rollback?**: (`state`) => `unknown`
+
+###### Parameters
+
+###### state
+
+`unknown`
+
+###### Returns
+
+`unknown`
+
+***
+
+### MigrationAuditEntry
+
+#### Properties
+
+##### afterHash
+
+> `readonly` **afterHash**: `string`
+
+##### beforeHash
+
+> `readonly` **beforeHash**: `string`
+
+##### id
+
+> `readonly` **id**: `string`
+
+##### ts
+
+> `readonly` **ts**: `string`
+
+***
+
+### MigrationRefusalResult
+
+#### Properties
+
+##### auditLogPath?
+
+> `readonly` `optional` **auditLogPath?**: `string`
+
+##### cause?
+
+> `readonly` `optional` **cause?**: `unknown`
+
+##### code
+
+> `readonly` **code**: `"migration_apply_failed"` \| `"migration_audit_log_invalid"` \| `"migration_registry_invalid"` \| `"migration_rollback_failed"` \| `"migration_rollback_required"` \| `"migration_state_invalid"` \| `"migration_unsigned"`
+
+##### message
+
+> `readonly` **message**: `string`
+
+##### migrationId?
+
+> `readonly` `optional` **migrationId?**: `string`
+
+##### rolledBack
+
+> `readonly` **rolledBack**: `boolean`
+
+##### state
+
+> `readonly` **state**: `unknown`
+
+##### status
+
+> `readonly` **status**: `"refused"`
+
+***
+
+### MigrationSuccessResult
+
+#### Properties
+
+##### applied
+
+> `readonly` **applied**: readonly [`MigrationAuditEntry`](#migrationauditentry)[]
+
+##### auditLogPath
+
+> `readonly` **auditLogPath**: `string`
+
+##### skippedIds
+
+> `readonly` **skippedIds**: readonly `string`[]
+
+##### state
+
+> `readonly` **state**: `unknown`
+
+##### status
+
+> `readonly` **status**: `"ok"`
+
+***
+
 ### ModeLockValidationResult
 
 #### Properties
@@ -1067,6 +1223,28 @@ Project key this instance belongs to.
 > **workDir**: `string`
 
 Project-specific working directory.
+
+***
+
+### RunMigrationsOptions
+
+#### Properties
+
+##### generatedAt?
+
+> `readonly` `optional` **generatedAt?**: `string` \| (() => `string`)
+
+##### policyProfileId?
+
+> `readonly` `optional` **policyProfileId?**: `string`
+
+##### runDir
+
+> `readonly` **runDir**: `string`
+
+##### signedBundle?
+
+> `readonly` `optional` **signedBundle?**: [`SignedMigrationBundle`](../contracts/README.md#signedmigrationbundle)
 
 ***
 
@@ -1544,6 +1722,12 @@ and per-project isolation helpers.
 
 ***
 
+### MigrationResult
+
+> **MigrationResult** = [`MigrationSuccessResult`](#migrationsuccessresult) \| [`MigrationRefusalResult`](#migrationrefusalresult)
+
+***
+
 ### RoleStepId
 
 > **RoleStepId** = `string` & `object`
@@ -1616,6 +1800,22 @@ and per-project isolation helpers.
 #### Returns
 
 [`AnalyzeContextBudgetResult`](#analyzecontextbudgetresult)
+
+***
+
+### buildMigrationHash()
+
+> **buildMigrationHash**(`migration`): `string`
+
+#### Parameters
+
+##### migration
+
+[`Migration`](#migration)
+
+#### Returns
+
+`string`
 
 ***
 
@@ -2008,6 +2208,22 @@ Returns all active project instances (public interface only).
 
 ***
 
+### parseMigrationAuditLog()
+
+> **parseMigrationAuditLog**(`payload`): readonly [`MigrationAuditEntry`](#migrationauditentry)[] \| `undefined`
+
+#### Parameters
+
+##### payload
+
+`string`
+
+#### Returns
+
+readonly [`MigrationAuditEntry`](#migrationauditentry)[] \| `undefined`
+
+***
+
 ### registerIsolationProcessCleanup()
 
 > **registerIsolationProcessCleanup**(): `void`
@@ -2100,6 +2316,50 @@ true if an instance was found and removed, false otherwise.
 #### Returns
 
 [`CaptureContextOptions`](#capturecontextoptions)
+
+***
+
+### runMigrations()
+
+#### Call Signature
+
+> **runMigrations**(`state`, `registry`): `Promise`\<[`MigrationResult`](#migrationresult)\>
+
+##### Parameters
+
+###### state
+
+`unknown`
+
+###### registry
+
+readonly [`Migration`](#migration)[]
+
+##### Returns
+
+`Promise`\<[`MigrationResult`](#migrationresult)\>
+
+#### Call Signature
+
+> **runMigrations**(`state`, `registry`, `options`): `Promise`\<[`MigrationResult`](#migrationresult)\>
+
+##### Parameters
+
+###### state
+
+`unknown`
+
+###### registry
+
+readonly [`Migration`](#migration)[]
+
+###### options
+
+[`RunMigrationsOptions`](#runmigrationsoptions)
+
+##### Returns
+
+`Promise`\<[`MigrationResult`](#migrationresult)\>
 
 ***
 
