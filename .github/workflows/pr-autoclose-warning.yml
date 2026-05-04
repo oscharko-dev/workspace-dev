@@ -111,6 +111,7 @@ jobs:
               return;
             }
 
+            const missingList = missingAutoClose.map((issueNumber) => `#${issueNumber}`).join(", ");
             const commentBody = buildWarningComment(missingAutoClose);
             if (existingComment) {
               await github.rest.issues.updateComment({
@@ -120,13 +121,15 @@ jobs:
                 body: commentBody,
               });
               core.info(`Updated warning comment ${existingComment.id}.`);
-              return;
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: pr.number,
+                body: commentBody,
+              });
+              core.info("Created PR auto-close warning comment.");
             }
-
-            await github.rest.issues.createComment({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              issue_number: pr.number,
-              body: commentBody,
-            });
-            core.info("Created PR auto-close warning comment.");
+            core.warning(
+              `PR references ${missingList} without an auto-close keyword. Prefer 'Fixes #N', 'Closes #N', or 'Resolves #N'.`,
+            );
