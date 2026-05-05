@@ -999,13 +999,21 @@ const collectSectionScreensCount = (sectionNode: Record<string, unknown>): numbe
   }
 
   let total = 0;
-  for (const child of sectionNode.children) {
-    if (!isRecord(child)) {
+  const stack = sectionNode.children.filter((child): child is Record<string, unknown> => isRecord(child));
+  while (stack.length > 0) {
+    const current = stack.pop();
+    if (!current) {
       continue;
     }
-    const childType = typeof child.type === "string" ? child.type : "";
+    const childType = typeof current.type === "string" ? current.type : "";
     if (childType === "SECTION") {
-      total += collectSectionScreensCount(child);
+      if (Array.isArray(current.children)) {
+        for (const child of current.children) {
+          if (isRecord(child)) {
+            stack.push(child);
+          }
+        }
+      }
       continue;
     }
     if (childType === "FRAME" || childType === "COMPONENT") {

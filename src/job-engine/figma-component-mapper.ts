@@ -965,8 +965,13 @@ const collectComponentCandidates = ({
   };
 
   if (ir) {
-    const walkNodes = (nodes: readonly ScreenElementIR[]): void => {
-      for (const node of nodes) {
+    for (const screen of ir.screens) {
+      const stack = [...screen.children].reverse();
+      while (stack.length > 0) {
+        const node = stack.pop();
+        if (!node) {
+          continue;
+        }
         if (isComponentLikeNodeType(node.nodeType)) {
           const figmaComponentKey = getLooseStringField(node, [
             "figmaComponentKey",
@@ -981,13 +986,15 @@ const collectComponentCandidates = ({
           });
         }
         if (node.children) {
-          walkNodes(node.children);
+          for (let index = node.children.length - 1; index >= 0; index -= 1) {
+            const child = node.children[index];
+            if (!child) {
+              continue;
+            }
+            stack.push(child);
+          }
         }
       }
-    };
-
-    for (const screen of ir.screens) {
-      walkNodes(screen.children);
     }
   }
 

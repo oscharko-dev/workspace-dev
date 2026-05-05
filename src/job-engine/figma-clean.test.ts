@@ -1,6 +1,13 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { cleanFigmaForCodegen } from "./figma-clean.js";
+import {
+  ADVERSARIAL_TAILWIND_FIXTURES,
+  assertCompletesWithinBudget,
+  expandPathologicalStyleFixture,
+  loadAdversarialTailwindFixture,
+  measureExecution,
+} from "./figma-reverse-parser-adversarial.test-helpers.js";
 
 const findNodeById = (node: unknown, id: string): Record<string, unknown> | undefined => {
   if (!node || typeof node !== "object" || Array.isArray(node)) {
@@ -1018,3 +1025,23 @@ test("cleanFigmaForCodegen drops invalid interaction payloads and unsupported ef
     }
   ]);
 });
+
+for (const fixture of ADVERSARIAL_TAILWIND_FIXTURES) {
+  test(`cleanFigmaForCodegen adversarial fixture: ${fixture.name}`, async () => {
+    const loadedFixture = await loadAdversarialTailwindFixture(fixture.name);
+    const file =
+      fixture.name === "pathological-style-stacks"
+        ? expandPathologicalStyleFixture(loadedFixture)
+        : loadedFixture;
+
+    const { elapsedMs, result } = await measureExecution(() =>
+      cleanFigmaForCodegen({ file }),
+    );
+
+    assertCompletesWithinBudget(elapsedMs);
+    assert.equal(
+      JSON.stringify(result.cleanedFile).includes(fixture.rawIdentifier),
+      false,
+    );
+  });
+}

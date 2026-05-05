@@ -1,0 +1,76 @@
+{
+  "name": "Adversarial malformed token references",
+  "lastModified": "2026-05-05T00:00:00.000Z",
+  "document": {
+    "id": "0:0",
+    "type": "DOCUMENT",
+    "children": [
+      {
+        "id": "0:1",
+        "type": "CANVAS",
+        "name": "Page 1",
+        "children": [
+          {
+            "id": "screen-root",
+            "type": "FRAME",
+            "name": "Safe Token Screen",
+            "absoluteBoundingBox": {
+              "x": 0,
+              "y": 0,
+              "width": 1440,
+              "height": 900
+            },
+            "children": [
+              {
+                "id": "token-card",
+                "type": "FRAME",
+                "name": "Token Card",
+                "absoluteBoundingBox": {
+                  "x": 60,
+                  "y": 60,
+                  "width": 520,
+                  "height": 240
+                },
+                "tokenReference": "{token.theme.primary",
+                "children": [
+                  {
+                    "id": "token-title",
+                    "type": "TEXT",
+                    "name": "Title",
+                    "characters": "Parser should survive malformed references",
+                    "style": {
+                      "fontSize": 20,
+                      "fontWeight": 600,
+                      "fontFamily": "Inter",
+                      "lineHeightPx": 26,
+                      "textAlignHorizontal": "LEFT"
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "helper-token-node",
+                "type": "FRAME",
+                "name": "_Item",
+                "absoluteBoundingBox": {
+                  "x": 0,
+                  "y": 0,
+                  "width": 0,
+                  "height": 0
+                },
+                "children": [
+                  {
+                    "id": "helper-token-text",
+                    "type": "TEXT",
+                    "name": "Ignored helper text",
+                    "characters": "{token.theme.primary"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}
