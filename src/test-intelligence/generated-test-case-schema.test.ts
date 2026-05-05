@@ -125,8 +125,11 @@ test("schema: drift guard — the hash is stable for the current contract", () =
   // 1.8.0 -> 1.9.0 (additive new readiness-report constants); the schema
   // pins `contractVersion: { const: TEST_INTELLIGENCE_CONTRACT_VERSION }` so
   // the digest shifts in lockstep with the contract bump.
+  // Hash bumped by Issue #1894: TEST_INTELLIGENCE_CONTRACT_VERSION bumped
+  // 1.9.0 -> 1.10.0 (additive `customContextMarkdown` runner input + CLI
+  // flag); the schema's pinned `contractVersion` const shifts in lockstep.
   const expected =
-    "321ce900c1e468017c9f2a353f184768574e641973b8b3763c571bb82b2f3be8";
+    "c7548980e45da0afaef0ceca7757c1e1a882724bd662856aadc51f3ed0eb0a24";
   const actual = computeGeneratedTestCaseListSchemaHash();
   if (actual !== expected) {
     assert.fail(

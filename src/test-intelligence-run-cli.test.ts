@@ -56,6 +56,7 @@ const baseOptions = (): TestIntelligenceRunOptions => ({
   harnessMode: "off",
   harnessTestDepth: "standard",
   harnessRoleStepId: undefined,
+  customContextMarkdownPath: undefined,
 });
 
 // ---------------------------------------------------------------------------
@@ -500,6 +501,7 @@ test("runTestIntelligenceCommand: deterministic_llm with injected runner returns
     harnessMode: "off",
     harnessTestDepth: "standard",
     harnessRoleStepId: undefined,
+    customContextMarkdownPath: undefined,
   };
 
   const runner = async (): Promise<RunFigmaToQcTestCasesResult> => ({
@@ -607,6 +609,7 @@ test("runTestIntelligenceCommand: deterministic_llm blocked → exit 3", async (
     harnessMode: "off",
     harnessTestDepth: "standard",
     harnessRoleStepId: undefined,
+    customContextMarkdownPath: undefined,
   };
 
   const runner = async (): Promise<RunFigmaToQcTestCasesResult> => ({
@@ -715,6 +718,7 @@ test("runTestIntelligenceCommand: deterministic_llm + harness-mode shadow_eval f
     harnessMode: "shadow_eval",
     harnessTestDepth: "exhaustive",
     harnessRoleStepId: "test_generation_alt",
+    customContextMarkdownPath: undefined,
   };
 
   let capturedHarness: unknown;
@@ -1025,4 +1029,209 @@ test("runTestIntelligenceCommand: dry_run output mentions harness mode line", as
     now: () => 1700000000000,
   });
   assert.match(stdout.join(""), /harness mode/u);
+});
+
+// ---------------------------------------------------------------------------
+// runTestIntelligenceCommand — --custom-context-markdown wiring (Issue #1894)
+// ---------------------------------------------------------------------------
+
+test("parseTestIntelligenceRunArgs: --custom-context-markdown captures path", () => {
+  const opts = parseTestIntelligenceRunArgs(
+    [
+      "--figma-url",
+      "https://figma.com/design/abc/foo",
+      "--custom-context-markdown",
+      "./demo-context.md",
+    ],
+    {},
+  );
+  assert.equal(opts.customContextMarkdownPath, "./demo-context.md");
+});
+
+test("parseTestIntelligenceRunArgs: --custom-context-markdown rejects empty value", () => {
+  assert.throws(
+    () =>
+      parseTestIntelligenceRunArgs(
+        [
+          "--figma-url",
+          "https://figma.com/design/abc/foo",
+          "--custom-context-markdown",
+          "   ",
+        ],
+        {},
+      ),
+    TestIntelligenceRunOperatorError,
+  );
+});
+
+test("parseTestIntelligenceRunArgs: --custom-context-markdown rejects duplicate flag", () => {
+  assert.throws(
+    () =>
+      parseTestIntelligenceRunArgs(
+        [
+          "--figma-url",
+          "https://figma.com/design/abc/foo",
+          "--custom-context-markdown",
+          "./a.md",
+          "--custom-context-markdown",
+          "./b.md",
+        ],
+        {},
+      ),
+    TestIntelligenceRunOperatorError,
+  );
+});
+
+test("runTestIntelligenceCommand: dry_run with --custom-context-markdown reports loaded byte count", async () => {
+  const { sink, stdout, stderr } = collectingSink();
+  let observedPath: string | undefined;
+  const exitCode = await runTestIntelligenceCommand(
+    {
+      ...baseOptions(),
+      customContextMarkdownPath: "/operator/context.md",
+    },
+    sink,
+    {
+      env: GATE_ON,
+      now: () => 1700000000000,
+      loadCustomContextMarkdownFile: async (path) => {
+        observedPath = path;
+        return "# Demo\nNon-PII supporting evidence.";
+      },
+    },
+  );
+  assert.equal(exitCode, 0, stderr.join(""));
+  assert.match(observedPath ?? "", /context\.md$/u);
+  assert.match(stdout.join(""), /custom md ctx\s*: loaded \(\d+ bytes\)/u);
+});
+
+test("runTestIntelligenceCommand: --custom-context-markdown loader failure surfaces operator error and exits 1", async () => {
+  const { sink, stderr } = collectingSink();
+  const exitCode = await runTestIntelligenceCommand(
+    {
+      ...baseOptions(),
+      customContextMarkdownPath: "/missing/context.md",
+    },
+    sink,
+    {
+      env: GATE_ON,
+      now: () => 1700000000000,
+      loadCustomContextMarkdownFile: async () => {
+        throw new TestIntelligenceRunOperatorError(
+          "--custom-context-markdown file not found: /missing/context.md",
+        );
+      },
+    },
+  );
+  assert.equal(exitCode, 1);
+  assert.match(stderr.join(""), /file not found/u);
+});
+
+test("runTestIntelligenceCommand: --custom-context-markdown unexpected loader failure exits 1 with sanitised message", async () => {
+  const { sink, stderr } = collectingSink();
+  const exitCode = await runTestIntelligenceCommand(
+    {
+      ...baseOptions(),
+      customContextMarkdownPath: "/locked/context.md",
+    },
+    sink,
+    {
+      env: GATE_ON,
+      now: () => 1700000000000,
+      loadCustomContextMarkdownFile: async () => {
+        throw new Error("EACCES: permission denied");
+      },
+    },
+  );
+  assert.equal(exitCode, 1);
+  assert.match(
+    stderr.join(""),
+    /failed to read --custom-context-markdown file/u,
+  );
+});
+
+test("runTestIntelligenceCommand: deterministic_llm forwards customContextMarkdown to runner input", async () => {
+  const { sink, stderr } = collectingSink();
+  const options: TestIntelligenceRunOptions = {
+    figmaUrl: undefined,
+    figmaJsonFile: "/tmp/figma.json",
+    output: "/tmp/cli-md-output",
+    modelEndpoint: "https://aoai.example/openai/v1",
+    modelDeployment: "gpt-oss-120b",
+    modelApiKey: "k-key",
+    figmaToken: undefined,
+    policyProfile: undefined,
+    mode: "deterministic_llm",
+    noVisualSidecar: false,
+    finopsBudgetPath: undefined,
+    harnessMode: "off",
+    harnessTestDepth: "standard",
+    harnessRoleStepId: undefined,
+    customContextMarkdownPath: "/operator/forwarded.md",
+  };
+  let capturedMarkdown: string | undefined;
+  const runner = async (
+    input: Parameters<
+      Required<Parameters<typeof runTestIntelligenceCommand>[2]>["runner"]
+    >[0],
+  ): Promise<RunFigmaToQcTestCasesResult> => {
+    capturedMarkdown = (input as unknown as { customContextMarkdown?: string })
+      .customContextMarkdown;
+    return {
+      jobId: "ti-cli-md",
+      generatedAt: "2026-05-05T12:00:00.000Z",
+      fileKey: "abc",
+      generatedTestCases: {
+        testCases: [],
+      } as unknown as RunFigmaToQcTestCasesResult["generatedTestCases"],
+      intent: {} as unknown as RunFigmaToQcTestCasesResult["intent"],
+      validation: {} as unknown as RunFigmaToQcTestCasesResult["validation"],
+      policy: {} as unknown as RunFigmaToQcTestCasesResult["policy"],
+      coverage: {} as unknown as RunFigmaToQcTestCasesResult["coverage"],
+      blocked: false,
+      finopsBudget:
+        {} as unknown as RunFigmaToQcTestCasesResult["finopsBudget"],
+      artifactDir:
+        "/tmp/cli-md-output/_runner-output/jobs/ti-cli-md/test-intelligence",
+      artifactPaths: {
+        intent: "/tmp/intent.json",
+        compiledPrompt: "/tmp/compiled-prompt.json",
+        untrustedContentNormalizationReport: "/tmp/ucnr.json",
+        evidenceSeal: "/tmp/evidence-seal.json",
+        agentRoleRun: "/tmp/agent-role-run.json",
+        genealogy: "/tmp/genealogy.json",
+        generatedTestCases: "/tmp/generated.json",
+        validationReport: "/tmp/validation.json",
+        policyReport: "/tmp/policy.json",
+        coverageReport: "/tmp/coverage.json",
+        finopsReport: "/tmp/finops.json",
+      },
+      customerMarkdownPaths: {
+        combined: "/tmp/customer-markdown/testfaelle.md",
+        perCase: [],
+      },
+    };
+  };
+  const exitCode = await runTestIntelligenceCommand(options, sink, {
+    env: GATE_ON,
+    runner,
+    buildLlmClient: () =>
+      ({}) as unknown as ReturnType<
+        Required<
+          Parameters<typeof runTestIntelligenceCommand>[2]
+        >["buildLlmClient"]
+      >,
+    loadFigmaJsonFile: async () => ({
+      fileKey: "abc",
+      name: "Foo",
+      document: { id: "0:0", type: "DOCUMENT" },
+    }),
+    loadJsonFile: async () => ({}),
+    copyArtifactsToOutput: async () => 0,
+    loadCustomContextMarkdownFile: async () =>
+      "# Risk Profile\n- Limit: 10000 EUR.",
+    now: () => 1700000000000,
+  });
+  assert.equal(exitCode, 0, stderr.join(""));
+  assert.equal(capturedMarkdown, "# Risk Profile\n- Limit: 10000 EUR.");
 });

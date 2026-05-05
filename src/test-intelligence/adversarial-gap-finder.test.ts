@@ -63,7 +63,7 @@ const makeCase = (input: {
 }): GeneratedTestCase => ({
   id: input.id,
   sourceJobId: "job-1786",
-  contractVersion: "1.9.0",
+  contractVersion: "1.10.0",
   schemaVersion: "1.0.0",
   promptTemplateVersion: "prompt-v1",
   title: input.id,
@@ -92,7 +92,7 @@ const makeCase = (input: {
   audit: {
     jobId: "job-1786",
     generatedAt: "2026-05-03T00:00:00.000Z",
-    contractVersion: "1.9.0",
+    contractVersion: "1.10.0",
     schemaVersion: "1.0.0",
     promptTemplateVersion: "prompt-v1",
     redactionPolicyVersion: "redaction-v1",
