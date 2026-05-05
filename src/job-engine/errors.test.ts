@@ -271,6 +271,7 @@ test("createPipelineError respects injected diagnostic limits", () => {
 test("createPipelineError redacts absolute filesystem paths from public messages and details", () => {
   const workspacePath = path.join(process.cwd(), "src", "job-engine.ts");
   const homePath = path.join(os.homedir(), ".ssh", "config");
+  const generatedProjectDir = path.join(process.cwd(), "generated-app");
   const tempArtifactPath = path.join(
     os.tmpdir(),
     "workspace-dev-job",
@@ -282,7 +283,7 @@ test("createPipelineError redacts absolute filesystem paths from public messages
   const error = createPipelineError({
     code: "E_REDACT",
     stage: "validate.project",
-    message: `Validation failed for ${workspacePath} with config ${homePath} and output at ${tempArtifactPath}`,
+    message: `Validation failed for ${workspacePath} with config ${homePath} and project ${generatedProjectDir} and output at ${tempArtifactPath}`,
     diagnostics: [
       {
         code: "W_REDACT",
@@ -291,6 +292,7 @@ test("createPipelineError redacts absolute filesystem paths from public messages
         details: {
           filePath: workspacePath,
           homePath,
+          generatedProjectDir,
           artifactPath: tempArtifactPath,
         },
       },
@@ -324,6 +326,10 @@ test("createPipelineError redacts absolute filesystem paths from public messages
   assert.equal(
     error.diagnostics?.[0]?.details?.homePath,
     "[redacted-path]/config",
+  );
+  assert.equal(
+    error.diagnostics?.[0]?.details?.generatedProjectDir,
+    "[redacted-path]/generated-app",
   );
   assert.equal(
     error.diagnostics?.[0]?.details?.artifactPath,

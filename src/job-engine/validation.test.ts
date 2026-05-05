@@ -918,8 +918,84 @@ test("runProjectValidationWithDeps emits structured diagnostics for failed retry
   }
 });
 
+test("runProjectValidationWithDeps redacts generatedProjectDir from primary validation diagnostics", async () => {
+  const generatedProjectDir = path.join(
+    os.homedir(),
+    "workspace-dev-validation-generated-app",
+  );
+
+  await assert.rejects(
+    () =>
+      runProjectValidationWithDeps({
+        generatedProjectDir,
+        onLog: () => {
+          // no-op
+        },
+        deps: {
+          runCommand: async ({ args }) => {
+            if (args[0] === "lint" && args.length === 1) {
+              return {
+                success: false,
+                code: 1,
+                stdout: "",
+                stderr: "lint failed",
+                combined: `lint failed while validating ${generatedProjectDir}`
+              };
+            }
+            return {
+              success: true,
+              code: 0,
+              stdout: "",
+              stderr: "",
+              combined: ""
+            };
+          },
+          runValidationFeedback: async () => ({
+            diagnostics: [],
+            changedFiles: [],
+            correctionsApplied: 0,
+            fileCorrections: [],
+            summary: "lint failed"
+          })
+        }
+      }),
+    (error: unknown) => {
+      assert.equal(error instanceof Error, true);
+      const typed = error as Error & {
+        diagnostics?: Array<{
+          details?: Record<string, unknown>;
+        }>;
+      };
+      const primaryDetails = typed.diagnostics?.[0]?.details ?? {};
+      assert.equal(typed.message.includes(generatedProjectDir), false);
+      assert.equal(typed.message.includes(os.homedir()), false);
+      assert.equal(
+        String(primaryDetails.generatedProjectDir ?? "").includes(
+          generatedProjectDir,
+        ),
+        false,
+      );
+      assert.equal(
+        String(primaryDetails.generatedProjectDir ?? "").includes(os.homedir()),
+        false,
+      );
+      assert.equal(
+        primaryDetails.generatedProjectDir,
+        "[redacted-path]/workspace-dev-validation-generated-app"
+      );
+      assert.match(
+        String(primaryDetails.output ?? ""),
+        /\[redacted-path\]\/workspace-dev-validation-generated-app/
+      );
+      return true;
+    }
+  );
+});
+
 test("runProjectValidationWithDeps preserves bounded truncation diagnostics for failed commands", async () => {
   const artifactPath = "/tmp/workspace-dev-job/.stage-store/cmd-output/validate_project_attempt-1_lint.stdout.log";
+  const workspacePath = path.join(process.cwd(), "src", "job-engine.ts");
+  const homePath = path.join(os.homedir(), ".ssh", "config");
   const generatedProjectDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-validation-truncated-output-"));
 
   await mkdir(path.join(generatedProjectDir, "node_modules"), { recursive: true });
@@ -937,15 +1013,18 @@ test("runProjectValidationWithDeps preserves bounded truncation diagnostics for 
           deps: {
             runCommand: async ({ args }) => {
               if (args[0] === "lint" && args.length === 1) {
+                const combined = [
+                  `lint failed prefix from ${workspacePath}`,
+                  `config path ${homePath}`,
+                  `stdout truncated after retaining 64 of 256 bytes; full output stored at ${artifactPath}`,
+                  "x".repeat(700)
+                ].join("\n");
                 return {
                   success: false,
                   code: 1,
                   stdout: "lint failed prefix",
                   stderr: "",
-                  combined: [
-                    "lint failed prefix",
-                    `stdout truncated after retaining 64 of 256 bytes; full output stored at ${artifactPath}`
-                  ].join("\n"),
+                  combined,
                   stdoutMetadata: {
                     observedBytes: 256,
                     retainedBytes: 64,
@@ -980,13 +1059,24 @@ test("runProjectValidationWithDeps preserves bounded truncation diagnostics for 
         assert.equal(error instanceof Error, true);
         const typed = error as Error & {
           diagnostics?: Array<{
+            message?: string;
             details?: Record<string, unknown>;
           }>;
         };
         assert.equal(typed.message.length <= 320, true);
+        assert.equal(typed.message.includes(workspacePath), false);
+        assert.equal(typed.message.includes(homePath), false);
         assert.equal(String(typed.diagnostics?.[0]?.details?.output).includes(artifactPath), false);
+        assert.equal(String(typed.diagnostics?.[0]?.details?.output).includes(workspacePath), false);
+        assert.equal(String(typed.diagnostics?.[0]?.details?.output).includes(homePath), false);
+        assert.equal(
+          String(typed.diagnostics?.[0]?.details?.generatedProjectDir),
+          `[redacted-path]/${path.basename(generatedProjectDir)}`
+        );
+        assert.equal(typed.message.endsWith("..."), true);
         assert.equal(String(typed.diagnostics?.[0]?.details?.output ?? "").length <= 320, true);
         assert.match(String(typed.diagnostics?.[0]?.details?.output ?? ""), /\[redacted-path\]\/validate_project_attempt-1_lint\.stdout\.log/);
+        assert.equal(String(typed.diagnostics?.[0]?.details?.output ?? "").endsWith("..."), true);
         assert.deepEqual(typed.diagnostics?.[0]?.details?.outputCapture, {
           stdout: {
             observedBytes: 256,
