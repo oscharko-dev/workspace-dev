@@ -6,14 +6,19 @@ import path from "node:path";
 import test from "node:test";
 
 import type {
+  FaithfulnessVerdict,
   FinOpsBudgetReport,
+  JudgeVerdict,
   LlmGatewayCapabilities,
   LlmGenerationRequest,
   LlmGenerationResult,
   VisualScreenDescription,
 } from "../contracts/index.js";
 import { createLlmGatewayClient } from "./llm-gateway.js";
-import { createMockLlmGatewayClient } from "./llm-mock-gateway.js";
+import {
+  createMockLlmGatewayClient,
+  type MockLlmGatewayClient,
+} from "./llm-mock-gateway.js";
 import { createMockLlmGatewayClientBundle } from "./llm-gateway-bundle.js";
 import { writeAgentLesson } from "./agent-lessons-memdir.js";
 import { cloneEuBankingDefaultFinOpsBudget } from "./finops-budget.js";
@@ -35,7 +40,9 @@ import type { FigmaRestNode } from "./figma-rest-adapter.js";
 import {
   BUSINESS_TEST_INTENT_IR_SCHEMA_VERSION,
   EU_BANKING_DEFAULT_POLICY_PROFILE_ID,
+  FAITHFULNESS_VERDICT_ARTIFACT_FILENAME,
   GENEALOGY_ARTIFACT_FILENAME,
+  LOGIC_JUDGE_VERDICT_ARTIFACT_FILENAME,
   WAVE1_VALIDATION_EVIDENCE_MANIFEST_ARTIFACT_FILENAME,
   type BusinessTestIntentIr,
   type DetectedAction,
@@ -221,16 +228,34 @@ const visualEvidenceHash = (input: {
 const okResponder = (
   cases: ProductionRunnerLlmDraftCase[],
   deployment = "gpt-oss-120b-mock",
-) => () => ({
-  outcome: "success" as const,
-  content: { testCases: cases },
-  finishReason: "stop" as const,
-  usage: { inputTokens: 100, outputTokens: 200 },
-  modelDeployment: deployment,
-  modelRevision: "mock-1",
-  gatewayRelease: "mock",
-  attempt: 1,
-});
+) => (request: LlmGenerationRequest, attempt: number) => {
+  if (request.responseSchemaName === "workspace-dev-logic-judge-v1") {
+    return {
+      outcome: "success" as const,
+      content: {
+        verdict: "accept",
+        findings: [],
+        repairInstructions: [],
+      },
+      finishReason: "stop" as const,
+      usage: { inputTokens: 20, outputTokens: 10 },
+      modelDeployment: deployment,
+      modelRevision: "mock-1",
+      gatewayRelease: "mock",
+      attempt,
+    };
+  }
+  return {
+    outcome: "success" as const,
+    content: { testCases: cases },
+    finishReason: "stop" as const,
+    usage: { inputTokens: 100, outputTokens: 200 },
+    modelDeployment: deployment,
+    modelRevision: "mock-1",
+    gatewayRelease: "mock",
+    attempt,
+  };
+};
 
 const refusalResponder = () => () => ({
   outcome: "error" as const,
@@ -449,6 +474,7 @@ test("Issue #1792: runFigmaToQcTestCases seals production-runner evidence and em
     assert.match(evidenceSeal.bySourceHash, /^[0-9a-f]{64}$/u);
     assert.match(evidenceSeal.genealogyDagHash, /^[0-9a-f]{64}$/u);
     assert.deepEqual(evidenceSeal.harnessArtifactFilenames, [
+      "agent-role-runs/logic_judge.json",
       "agent-role-runs/test_generation.json",
       "context-budget/test_generation.json",
     ]);
@@ -614,9 +640,17 @@ test("runFigmaToQcTestCases forwards maxInputTokens from the resolved FinOps bud
     });
 
     const recorded = client.recordedRequests();
-    assert.equal(result.finopsBudget.roles.test_generation?.maxInputTokensPerRequest, 5_000);
-    assert.equal(recorded.length, 1);
-    assert.equal(recorded[0]?.maxInputTokens, 5_000);
+    const generationRequests = recorded.filter(
+      (request) =>
+        request.responseSchemaName ===
+        "workspace-dev-production-runner-draft-list-v1",
+    );
+    assert.equal(
+      result.finopsBudget.roles.test_generation?.maxInputTokensPerRequest,
+      5_000,
+    );
+    assert.equal(generationRequests.length, 1);
+    assert.equal(generationRequests[0]?.maxInputTokens, 5_000);
   } finally {
     await rm(tempRoot, { recursive: true, force: true });
   }
@@ -697,7 +731,7 @@ test("runFigmaToQcTestCases records real in-flight dedup hits in the persisted F
     releaseFetch?.();
 
     const [firstResult, secondResult] = await Promise.all([first, second]);
-    assert.equal(dispatches, 1);
+    assert.equal(dispatches, 3);
 
     const firstReport = JSON.parse(
       await readFile(firstResult.artifactPaths.finopsReport, "utf8"),
@@ -1167,6 +1201,144 @@ test("runFigmaToQcTestCases wires Figma URL screenshots through the visual sidec
       /figd_supersecret_test_token_value_1234567890_padded_padded/u, // pragma: allowlist secret
     );
     assert.doesNotMatch(combinedMarkdown, /access_token=/u);
+  } finally {
+    globalThis.fetch = originalFetch;
+    await rm(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("runFigmaToQcTestCases runs both judges, persists their artifacts, and keeps the job unblocked on the happy path", async () => {
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ti-runner-"));
+  const originalFetch = globalThis.fetch;
+  try {
+    const client = createMockLlmGatewayClient({
+      role: "test_generation",
+      deployment: "gpt-oss-120b-mock",
+      modelRevision: "mock-1",
+      gatewayRelease: "mock",
+      responder: okResponder([SAMPLE_DRAFT]),
+    });
+    const bundle = createMockLlmGatewayClientBundle({
+      testGeneration: {
+        role: "test_generation",
+        deployment: "gpt-oss-120b",
+        modelRevision: "gpt-oss-120b@test",
+        gatewayRelease: "mock",
+        declaredCapabilities: TEST_GENERATION_CAPS,
+      },
+      visualPrimary: {
+        role: "visual_primary",
+        deployment: "llama-4-maverick-vision",
+        modelRevision: "llama-4-maverick-vision@test",
+        gatewayRelease: "mock",
+        declaredCapabilities: VISUAL_CAPS,
+        responder: (request, attempt) => {
+          if (
+            request.responseSchemaName ===
+            "workspace-dev-faithfulness-judge-v1"
+          ) {
+            return {
+              outcome: "success" as const,
+              content: {
+                verdict: "accept",
+                hallucinations: [],
+                mismatches: [],
+              },
+              finishReason: "stop" as const,
+              usage: { inputTokens: 12, outputTokens: 8 },
+              modelDeployment: "llama-4-maverick-vision",
+              modelRevision: "llama-4-maverick-vision@test",
+              gatewayRelease: "mock",
+              attempt,
+            };
+          }
+          return buildVisualSuccess(request, attempt, "1:1");
+        },
+      },
+      visualFallback: {
+        role: "visual_fallback",
+        deployment: "phi-4-multimodal-poc",
+        modelRevision: "phi-4-multimodal-poc@test",
+        gatewayRelease: "mock",
+        declaredCapabilities: VISUAL_CAPS,
+      },
+    });
+    globalThis.fetch = (async (url: string) => {
+      if (url.includes("/v1/files/ABC/nodes?ids=1%3A1")) {
+        return new Response(
+          JSON.stringify({
+            name: "Test View 03",
+            nodes: {
+              "1:1": {
+                document: SAMPLE_FILE.document.children?.[0]?.children?.[0],
+              },
+            },
+          }),
+          {
+            status: 200,
+            headers: { "content-type": "application/json" },
+          },
+        );
+      }
+      if (
+        url === "https://api.figma.com/v1/images/ABC?ids=1%3A1&format=png&scale=2"
+      ) {
+        return new Response(
+          JSON.stringify({
+            images: {
+              "1:1":
+                "https://figma-alpha-api.s3.us-west-2.amazonaws.com/1_1.png",
+            },
+          }),
+          {
+            status: 200,
+            headers: { "content-type": "application/json" },
+          },
+        );
+      }
+      return new Response(PNG_BYTES, {
+        status: 200,
+        headers: { "content-type": "image/png" },
+      });
+    }) as typeof fetch;
+
+    const result = await runFigmaToQcTestCases({
+      jobId: "job-1899-happy",
+      generatedAt: "2026-05-05T10:00:00Z",
+      source: {
+        kind: "figma_url",
+        figmaUrl: "https://www.figma.com/design/ABC/Test-View-03?node-id=1-1",
+        accessToken: "figd_test",
+      },
+      outputRoot: tempRoot,
+      llm: { client, bundle },
+    });
+
+    assert.equal(result.logicJudge?.verdict.verdict, "accept");
+    assert.equal(result.faithfulnessJudge?.verdict.verdict, "accept");
+    assert.ok(result.artifactPaths.logicJudgeVerdict);
+    assert.ok(result.artifactPaths.faithfulnessJudgeVerdict);
+    const logicJudgeOnDisk = JSON.parse(
+      await readFile(result.artifactPaths.logicJudgeVerdict!, "utf8"),
+    ) as JudgeVerdict;
+    const faithfulnessJudgeOnDisk = JSON.parse(
+      await readFile(result.artifactPaths.faithfulnessJudgeVerdict!, "utf8"),
+    ) as FaithfulnessVerdict;
+    assert.equal(logicJudgeOnDisk.verdict, "accept");
+    assert.equal(faithfulnessJudgeOnDisk.verdict, "accept");
+    assert.match(
+      result.artifactPaths.logicJudgeVerdict ?? "",
+      new RegExp(`${LOGIC_JUDGE_VERDICT_ARTIFACT_FILENAME}$`, "u"),
+    );
+    assert.match(
+      result.artifactPaths.faithfulnessJudgeVerdict ?? "",
+      new RegExp(`${FAITHFULNESS_VERDICT_ARTIFACT_FILENAME}$`, "u"),
+    );
+    assert.equal(client.callCount(), 2);
+    assert.equal(
+      (bundle.visualPrimary as MockLlmGatewayClient).callCount(),
+      2,
+    );
   } finally {
     globalThis.fetch = originalFetch;
     await rm(tempRoot, { recursive: true, force: true });
@@ -1693,8 +1865,13 @@ test("runFigmaToQcTestCases (eu-banking-default profile) augments user prompt wi
       deployment: "gpt-oss-120b-mock",
       modelRevision: "mock-1",
       gatewayRelease: "mock",
-      responder: (request) => {
-        observedUserPrompt = request.userPrompt;
+      responder: (request, attempt) => {
+        if (
+          request.responseSchemaName ===
+          "workspace-dev-production-runner-draft-list-v1"
+        ) {
+          observedUserPrompt = request.userPrompt;
+        }
         return {
           outcome: "success" as const,
           content: { testCases: BANKING_DRAFTS },
@@ -1703,7 +1880,7 @@ test("runFigmaToQcTestCases (eu-banking-default profile) augments user prompt wi
           modelDeployment: "gpt-oss-120b-mock",
           modelRevision: "mock-1",
           gatewayRelease: "mock",
-          attempt: 1,
+          attempt,
         };
       },
     });
@@ -1777,8 +1954,13 @@ test("runFigmaToQcTestCases wraps hostile Figma screen names instead of emitting
       deployment: "gpt-oss-120b-mock",
       modelRevision: "mock-1",
       gatewayRelease: "mock",
-      responder: (request) => {
-        observedUserPrompt = request.userPrompt;
+      responder: (request, attempt) => {
+        if (
+          request.responseSchemaName ===
+          "workspace-dev-production-runner-draft-list-v1"
+        ) {
+          observedUserPrompt = request.userPrompt;
+        }
         return {
           outcome: "success" as const,
           content: { testCases: BANKING_DRAFTS },
@@ -1787,7 +1969,7 @@ test("runFigmaToQcTestCases wraps hostile Figma screen names instead of emitting
           modelDeployment: "gpt-oss-120b-mock",
           modelRevision: "mock-1",
           gatewayRelease: "mock",
-          attempt: 1,
+          attempt,
         };
       },
     });
@@ -1824,8 +2006,13 @@ test("runFigmaToQcTestCases skips banking augmentation when policyProfileId is n
       deployment: "gpt-oss-120b-mock",
       modelRevision: "mock-1",
       gatewayRelease: "mock",
-      responder: (request) => {
-        observedUserPrompt = request.userPrompt;
+      responder: (request, attempt) => {
+        if (
+          request.responseSchemaName ===
+          "workspace-dev-production-runner-draft-list-v1"
+        ) {
+          observedUserPrompt = request.userPrompt;
+        }
         return {
           outcome: "success" as const,
           content: { testCases: [SAMPLE_DRAFT] },
@@ -1834,7 +2021,7 @@ test("runFigmaToQcTestCases skips banking augmentation when policyProfileId is n
           modelDeployment: "gpt-oss-120b-mock",
           modelRevision: "mock-1",
           gatewayRelease: "mock",
-          attempt: 1,
+          attempt,
         };
       },
     });
@@ -1918,7 +2105,7 @@ test("runFigmaToQcTestCases treats CLI live deployments as regular live runs, no
       await readFile(result.artifactPaths.finopsReport, "utf8"),
     ) as FinOpsBudgetReport;
     assert.equal(report.outcome, "completed");
-    assert.equal(report.totals.attempts, 1);
+    assert.equal(report.totals.attempts, 2);
     assert.equal(report.totals.liveSmokeCalls, 0);
     const testGeneration = report.roles.find(
       (entry) => entry.role === "test_generation",
