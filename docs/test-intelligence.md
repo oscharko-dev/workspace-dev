@@ -52,11 +52,13 @@ Out of scope:
   namespace (`deterministic_llm`, `offline_eval`, `dry_run`). Changes to that
   namespace never affect `ALLOWED_LLM_CODEGEN_MODES`. The two namespaces are
   isolated by design.
-- A new optional job type `figma_to_qc_test_cases` is reserved on
-  `WorkspaceJobType`. It currently returns `501 NOT_IMPLEMENTED` from
-  `POST /workspace/submit`; the Wave 1 Validation harness, review gate, and export
-  pipeline are reachable in-process and via the Inspector test-intelligence
-  routes only. A future wave will wire the runner.
+- A new optional job type `figma_to_qc_test_cases` is available on
+  `WorkspaceJobType`. When the dual test-intelligence gate is enabled and the
+  workspace starts with a production-runner factory, `POST /workspace/submit`
+  executes the production runner synchronously and returns a completed
+  `{ jobId, summary }` response for the persisted artifact bundle. When either
+  gate is off or no production runner is configured, the route fails closed
+  with `503`.
 - All persisted artifacts use deterministic canonical-JSON serialization plus
   atomic temp-file rename, so replay produces byte-identical files for the same
   inputs.
@@ -204,21 +206,24 @@ supporting exported types.
 
 ## 3. Job type and mode namespace
 
-The opt-in job type and mode namespace appear on the public contract surface so
-operators can plan integration without depending on the runner being wired:
+The opt-in job type and mode namespace appear on the public contract surface for
+production-runner and CLI integrations:
 
 | Symbol                                      | Value                                                                |
 | ------------------------------------------- | -------------------------------------------------------------------- |
-| `WorkspaceJobInput.jobType`                 | `"figma_to_code"` (default) \| `"figma_to_qc_test_cases"` (reserved) |
+| `WorkspaceJobInput.jobType`                 | `"figma_to_code"` (default) \| `"figma_to_qc_test_cases"`             |
 | `WorkspaceJobInput.testIntelligenceMode`    | `"deterministic_llm"` \| `"offline_eval"` \| `"dry_run"`             |
 | `ALLOWED_TEST_INTELLIGENCE_MODES`           | `["deterministic_llm", "offline_eval", "dry_run"]`                   |
 | `TEST_INTELLIGENCE_CONTRACT_VERSION`        | `"1.9.0"`                                                            |
 | `TEST_INTELLIGENCE_PROMPT_TEMPLATE_VERSION` | `"1.0.0"`                                                            |
 | `TEST_INTELLIGENCE_ENV`                     | `"FIGMAPIPE_WORKSPACE_TEST_INTELLIGENCE"`                            |
 
-The submit route accepts `jobType: "figma_to_qc_test_cases"` for forward
-compatibility but currently returns `501 NOT_IMPLEMENTED`. Use the Wave 1 Validation
-harness or the Inspector test-intelligence routes for the in-process workflow.
+The submit route accepts `jobType: "figma_to_qc_test_cases"` and, when the dual
+gate is enabled plus a production runner is configured at startup, executes the
+runner and returns `{ jobId, summary }` with the persisted artifact location,
+generated-at timestamp, file key, case count, blocked flag, and customer
+Markdown counts. The Inspector test-intelligence routes remain the read/review
+surface for the emitted artifacts.
 
 ## 4. Artifact tree
 
