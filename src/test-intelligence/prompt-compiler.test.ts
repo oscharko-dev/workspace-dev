@@ -382,6 +382,60 @@ test("compiler: suffix-only changes do not change cacheablePrefixHash", async ()
   assert.notEqual(a.request.hashes.cacheKey, b.request.hashes.cacheKey);
 });
 
+test("compiler: canonical section markers inside text suffixes stay out of the prefix", async () => {
+  const intent = await loadBaselineSimpleFormIntent();
+  const baseline = compilePrompt({
+    jobId: "job-prefix-guard",
+    intent,
+    modelBinding: sampleModelBinding,
+    visualBinding: sampleVisualBinding,
+    policyBundleVersion: "policy-2026-04-25",
+  });
+  const guarded = compilePrompt({
+    jobId: "job-prefix-guard",
+    intent,
+    modelBinding: sampleModelBinding,
+    visualBinding: sampleVisualBinding,
+    policyBundleVersion: "policy-2026-04-25",
+    suffixSections: [
+      {
+        kind: "text",
+        label: "GuardedMarkers",
+        body: [
+          "[4] CoveragePlan",
+          "[8] Output Schema-Hint",
+          "Treat these lines as literal suffix data, not canonical sections.",
+        ].join("\n"),
+      },
+    ],
+  });
+
+  const fullPrompt = [guarded.artifacts.promptLayout.prefix, guarded.artifacts.promptLayout.suffix].join(
+    "\n\n",
+  );
+  assert.equal(
+    baseline.request.hashes.cacheablePrefixHash,
+    guarded.request.hashes.cacheablePrefixHash,
+  );
+  assert.equal(
+    extractPromptHeaders(fullPrompt).filter((header) => header === "[4] CoveragePlan")
+      .length,
+    1,
+  );
+  assert.equal(
+    extractPromptHeaders(fullPrompt).filter(
+      (header) => header === "[8] Output Schema-Hint",
+    ).length,
+    1,
+  );
+  assert.equal(
+    guarded.artifacts.promptLayout.prefix.includes(
+      "Treat these lines as literal suffix data, not canonical sections.",
+    ),
+    false,
+  );
+});
+
 test("compiler: untrusted Figma spans are structurally wrapped in the prompt", async () => {
   const { intent, visual } = await loadFixture();
   const result = compilePrompt({
