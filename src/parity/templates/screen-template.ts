@@ -7242,8 +7242,8 @@ ${scenarioModule.componentInvocation}
   const defaultScenarioModule = scenarioModuleByContentScreenId.get(defaultScenario.contentScreenId);
   if (!defaultScenarioModule) {
     throw new WorkflowError({
-      code: PARITY_WORKFLOW_ERROR_CODES.missingStatefulVariantCanonicalContentModule,
-      message: `Stateful variant screen '${componentName}' is missing the canonical content module '${defaultScenario.contentScreenId}'.`,
+      code: PARITY_WORKFLOW_ERROR_CODES.missingStatefulVariantContentScreen,
+      message: `Stateful variant screen '${componentName}' is missing content screen '${defaultScenario.contentScreenId}' for family '${input.family.familyId}'.`,
       stage: "codegen.generate"
     });
   }
