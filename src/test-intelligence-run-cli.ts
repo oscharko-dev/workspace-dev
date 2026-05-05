@@ -36,11 +36,15 @@ import {
 } from "./server/constants.js";
 import type { FinOpsBudgetEnvelope } from "./contracts/index.js";
 import {
+  PRODUCTION_RUNNER_HARNESS_MODES,
   PRODUCTION_RUNNER_TEST_GENERATION_DEPLOYMENT,
   ProductionRunnerError,
   runFigmaToQcTestCases,
   validateFinOpsBudgetEnvelope,
+  type AgentHarnessTestDepth,
   type FigmaRestNode,
+  type ProductionRunnerHarnessConfig,
+  type ProductionRunnerHarnessMode,
   type ProductionRunnerSource,
   type RunFigmaToQcTestCasesInput,
   type RunFigmaToQcTestCasesResult,
@@ -62,6 +66,19 @@ export type TestIntelligenceRunMode =
 const isRunMode = (value: string): value is TestIntelligenceRunMode =>
   (TEST_INTELLIGENCE_RUN_MODES as ReadonlyArray<string>).includes(value);
 
+/**
+ * CLI-side enumeration of {@link AgentHarnessTestDepth}. Mirrors the type
+ * declared in `agent-harness.ts`; kept local because the contract module does
+ * not expose a runtime constant for it. Add new depths in both places.
+ */
+const AGENT_HARNESS_TEST_DEPTHS = ["standard", "exhaustive"] as const;
+
+const isHarnessMode = (value: string): value is ProductionRunnerHarnessMode =>
+  (PRODUCTION_RUNNER_HARNESS_MODES as ReadonlyArray<string>).includes(value);
+
+const isHarnessTestDepth = (value: string): value is AgentHarnessTestDepth =>
+  (AGENT_HARNESS_TEST_DEPTHS as ReadonlyArray<string>).includes(value);
+
 /** Parsed, validated flags for the test-intelligence run command. */
 export interface TestIntelligenceRunOptions {
   figmaUrl: string | undefined;
@@ -78,6 +95,26 @@ export interface TestIntelligenceRunOptions {
   noVisualSidecar: boolean;
   /** Path to a JSON FinOps budget envelope to apply. `undefined` → production default. */
   finopsBudgetPath: string | undefined;
+  /**
+   * Multi-agent harness routing mode (Issue #1791). Defaults to `"off"`,
+   * which preserves the legacy single-pass LLM behavior. `"shadow_eval"` runs
+   * the harness alongside the call and emits a per-step harness artifact for
+   * observation only. `"enforced"` lets the harness own the terminal decision
+   * and refuses to proceed when the classified outcome is not `accepted`.
+   * Only takes effect when `mode === "deterministic_llm"`.
+   */
+  harnessMode: ProductionRunnerHarnessMode;
+  /**
+   * Iteration-budget tag forwarded to the harness. Defaults to `"standard"`.
+   * Only consulted when `harnessMode !== "off"`.
+   */
+  harnessTestDepth: AgentHarnessTestDepth;
+  /**
+   * Override for the harness role-step id used to namespace the per-step
+   * artifact. `undefined` → runner uses its built-in default. Set this only
+   * when running multiple harness wrappers in the same job.
+   */
+  harnessRoleStepId: string | undefined;
 }
 
 /**
@@ -105,6 +142,9 @@ export const parseTestIntelligenceRunArgs = (
   let mode: TestIntelligenceRunMode = "dry_run";
   let noVisualSidecar = false;
   let finopsBudgetPath: string | undefined;
+  let harnessMode: ProductionRunnerHarnessMode = "off";
+  let harnessTestDepth: AgentHarnessTestDepth = "standard";
+  let harnessRoleStepId: string | undefined;
 
   for (let index = 0; index < args.length; index += 1) {
     const arg = args[index];
@@ -235,6 +275,42 @@ export const parseTestIntelligenceRunArgs = (
       continue;
     }
 
+    if (arg === "--harness-mode") {
+      const value = next?.trim();
+      if (!value || !isHarnessMode(value)) {
+        throw new TestIntelligenceRunOperatorError(
+          `--harness-mode must be one of ${PRODUCTION_RUNNER_HARNESS_MODES.join("|")}`,
+        );
+      }
+      harnessMode = value;
+      index += 1;
+      continue;
+    }
+
+    if (arg === "--harness-test-depth") {
+      const value = next?.trim();
+      if (!value || !isHarnessTestDepth(value)) {
+        throw new TestIntelligenceRunOperatorError(
+          `--harness-test-depth must be one of ${AGENT_HARNESS_TEST_DEPTHS.join("|")}`,
+        );
+      }
+      harnessTestDepth = value;
+      index += 1;
+      continue;
+    }
+
+    if (arg === "--harness-role-step-id") {
+      const value = next?.trim();
+      if (!value) {
+        throw new TestIntelligenceRunOperatorError(
+          "--harness-role-step-id requires a non-empty id",
+        );
+      }
+      harnessRoleStepId = value;
+      index += 1;
+      continue;
+    }
+
     throw new TestIntelligenceRunOperatorError(
       `Unknown flag for "test-intelligence run": ${arg}`,
     );
@@ -263,6 +339,9 @@ export const parseTestIntelligenceRunArgs = (
     mode,
     noVisualSidecar,
     finopsBudgetPath,
+    harnessMode,
+    harnessTestDepth,
+    harnessRoleStepId,
   };
 };
 
@@ -663,6 +742,17 @@ export const runTestIntelligenceCommand = async (
     return 1;
   }
 
+  // Cross-flag validation: the multi-agent harness wraps the LLM call. In
+  // dry_run no LLM call is dispatched, so requesting a harness mode is a
+  // configuration mistake the operator should hear about loudly rather than
+  // discover from a silent no-op.
+  if (options.mode === "dry_run" && options.harnessMode !== "off") {
+    sink.stderr(
+      `error: --harness-mode ${options.harnessMode} requires --mode deterministic_llm; the harness wraps the LLM call and dry_run does not dispatch one\n`,
+    );
+    return 1;
+  }
+
   const runnerOutputRoot = join(outputDir, "_runner-output");
   await mkdir(runnerOutputRoot, { recursive: true });
 
@@ -677,6 +767,7 @@ export const runTestIntelligenceCommand = async (
         `  policy profile: ${options.policyProfile ?? "(default)"}`,
         `  visual sidecar: ${options.noVisualSidecar ? "disabled (--no-visual-sidecar)" : "enabled when bundle configured"}`,
         `  finops budget : ${options.finopsBudgetPath ?? "(production default)"}`,
+        `  harness mode  : off (dry_run never reaches the harness)`,
         "",
       ].join("\n"),
     );
@@ -699,6 +790,22 @@ export const runTestIntelligenceCommand = async (
   }
 
   const runner = runtime.runner ?? runFigmaToQcTestCases;
+
+  // Build the harness configuration only when explicitly requested. Omitting
+  // the field preserves the runner's documented `"off"` default and keeps
+  // the wire shape identical to the legacy single-pass invocation for
+  // operators who never opt in.
+  const harnessConfig: ProductionRunnerHarnessConfig | undefined =
+    options.harnessMode === "off"
+      ? undefined
+      : {
+          mode: options.harnessMode,
+          testDepth: options.harnessTestDepth,
+          ...(options.harnessRoleStepId !== undefined
+            ? { roleStepId: options.harnessRoleStepId }
+            : {}),
+        };
+
   const runInput: RunFigmaToQcTestCasesInput = {
     jobId,
     generatedAt,
@@ -713,6 +820,7 @@ export const runTestIntelligenceCommand = async (
     ...(options.policyProfile !== undefined
       ? { policyProfileId: options.policyProfile }
       : {}),
+    ...(harnessConfig !== undefined ? { harness: harnessConfig } : {}),
   };
 
   let result: RunFigmaToQcTestCasesResult;
@@ -763,6 +871,13 @@ export const runTestIntelligenceCommand = async (
   ];
   if (finopsTotalsLine) summaryLines.push(finopsTotalsLine);
   if (evidenceDigestLine) summaryLines.push(evidenceDigestLine);
+  if (result.harness !== undefined) {
+    const h = result.harness;
+    summaryLines.push(
+      `  multi-agent harness : mode=${h.mode} outcome=${h.outcome} status=${h.mappedJobStatus} attempts=${h.attemptsConsumed}/${h.maxAttemptsAllowed}`,
+      `  harness artifact    : ${h.artifactPath}`,
+    );
+  }
   summaryLines.push("");
 
   sink.stdout(summaryLines.join("\n"));
@@ -806,13 +921,29 @@ Other:
   --mode <m>                 deterministic_llm | offline_eval | dry_run
                              (default: dry_run)
 
+Multi-agent harness (Issue #1791):
+  --harness-mode <m>         off | shadow_eval | enforced
+                             (default: off — legacy single-pass LLM)
+                             shadow_eval: writes a per-step harness artifact
+                                          alongside the LLM call (observation-only).
+                             enforced:    harness owns the terminal decision and
+                                          fails the run when outcome != accepted.
+                             Requires --mode deterministic_llm.
+  --harness-test-depth <d>   standard | exhaustive (default: standard)
+                             Iteration-budget tag forwarded to the harness.
+  --harness-role-step-id <id>
+                             Override the harness role-step id used to namespace
+                             the per-step artifact. Defaults to the runner's
+                             built-in id; only set this when wrapping multiple
+                             harness steps inside the same job.
+
 Feature gate:
   FIGMAPIPE_WORKSPACE_TEST_INTELLIGENCE=1 must be set.
 
 Exit codes:
   0  success
   1  operator/config error (includes missing feature gate)
-  2  runner error
+  2  runner error (includes enforced-harness refusal mapped via runner)
   3  policy refusal / blocked
   4  budget exceeded
 `;

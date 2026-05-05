@@ -52,6 +52,9 @@ const baseOptions = (): TestIntelligenceRunOptions => ({
   mode: "dry_run",
   noVisualSidecar: false,
   finopsBudgetPath: undefined,
+  harnessMode: "off",
+  harnessTestDepth: "standard",
+  harnessRoleStepId: undefined,
 });
 
 // ---------------------------------------------------------------------------
@@ -197,6 +200,123 @@ test("parseTestIntelligenceRunArgs: --finops-budget captures path", () => {
 });
 
 // ---------------------------------------------------------------------------
+// parseTestIntelligenceRunArgs — multi-agent harness flags (Issue #1791)
+// ---------------------------------------------------------------------------
+
+test("parseTestIntelligenceRunArgs: harness defaults are off/standard/undefined", () => {
+  const opts = parseTestIntelligenceRunArgs(
+    ["--figma-url", "https://figma.com/design/abc", "--output", "/tmp/x"],
+    {},
+  );
+  assert.equal(opts.harnessMode, "off");
+  assert.equal(opts.harnessTestDepth, "standard");
+  assert.equal(opts.harnessRoleStepId, undefined);
+});
+
+test("parseTestIntelligenceRunArgs: --harness-mode accepts shadow_eval and enforced", () => {
+  for (const mode of ["off", "shadow_eval", "enforced"] as const) {
+    const opts = parseTestIntelligenceRunArgs(
+      [
+        "--figma-url",
+        "https://figma.com/design/abc",
+        "--output",
+        "/tmp/x",
+        "--harness-mode",
+        mode,
+      ],
+      {},
+    );
+    assert.equal(opts.harnessMode, mode);
+  }
+});
+
+test("parseTestIntelligenceRunArgs: --harness-mode rejects unknown value", () => {
+  assert.throws(
+    () =>
+      parseTestIntelligenceRunArgs(
+        [
+          "--figma-url",
+          "https://figma.com/design/abc",
+          "--output",
+          "/tmp/x",
+          "--harness-mode",
+          "yolo",
+        ],
+        {},
+      ),
+    /--harness-mode must be one of/u,
+  );
+});
+
+test("parseTestIntelligenceRunArgs: --harness-test-depth accepts standard and exhaustive", () => {
+  for (const depth of ["standard", "exhaustive"] as const) {
+    const opts = parseTestIntelligenceRunArgs(
+      [
+        "--figma-url",
+        "https://figma.com/design/abc",
+        "--output",
+        "/tmp/x",
+        "--harness-test-depth",
+        depth,
+      ],
+      {},
+    );
+    assert.equal(opts.harnessTestDepth, depth);
+  }
+});
+
+test("parseTestIntelligenceRunArgs: --harness-test-depth rejects unknown value", () => {
+  assert.throws(
+    () =>
+      parseTestIntelligenceRunArgs(
+        [
+          "--figma-url",
+          "https://figma.com/design/abc",
+          "--output",
+          "/tmp/x",
+          "--harness-test-depth",
+          "shallow",
+        ],
+        {},
+      ),
+    /--harness-test-depth must be one of/u,
+  );
+});
+
+test("parseTestIntelligenceRunArgs: --harness-role-step-id captures non-empty id", () => {
+  const opts = parseTestIntelligenceRunArgs(
+    [
+      "--figma-url",
+      "https://figma.com/design/abc",
+      "--output",
+      "/tmp/x",
+      "--harness-role-step-id",
+      "test_generation_alt",
+    ],
+    {},
+  );
+  assert.equal(opts.harnessRoleStepId, "test_generation_alt");
+});
+
+test("parseTestIntelligenceRunArgs: --harness-role-step-id rejects empty/whitespace", () => {
+  assert.throws(
+    () =>
+      parseTestIntelligenceRunArgs(
+        [
+          "--figma-url",
+          "https://figma.com/design/abc",
+          "--output",
+          "/tmp/x",
+          "--harness-role-step-id",
+          "   ",
+        ],
+        {},
+      ),
+    TestIntelligenceRunOperatorError,
+  );
+});
+
+// ---------------------------------------------------------------------------
 // runTestIntelligenceCommand — feature gate
 // ---------------------------------------------------------------------------
 
@@ -333,6 +453,9 @@ test("runTestIntelligenceCommand: deterministic_llm with injected runner returns
     mode: "deterministic_llm",
     noVisualSidecar: false,
     finopsBudgetPath: undefined,
+    harnessMode: "off",
+    harnessTestDepth: "standard",
+    harnessRoleStepId: undefined,
   };
 
   const runner = async (): Promise<RunFigmaToQcTestCasesResult> => ({
@@ -351,8 +474,7 @@ test("runTestIntelligenceCommand: deterministic_llm with injected runner returns
     policy: {} as unknown as RunFigmaToQcTestCasesResult["policy"],
     coverage: {} as unknown as RunFigmaToQcTestCasesResult["coverage"],
     blocked: false,
-    finopsBudget:
-      {} as unknown as RunFigmaToQcTestCasesResult["finopsBudget"],
+    finopsBudget: {} as unknown as RunFigmaToQcTestCasesResult["finopsBudget"],
     artifactDir:
       "/tmp/det-output/_runner-output/jobs/ti-cli-1/test-intelligence",
     artifactPaths: {
@@ -401,7 +523,10 @@ test("runTestIntelligenceCommand: deterministic_llm with injected runner returns
       }
       if (p.includes("evidence")) {
         return {
-          predicate: { manifestSha256: "abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890" },
+          predicate: {
+            manifestSha256:
+              "abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890",
+          },
         };
       }
       return {};
@@ -434,6 +559,9 @@ test("runTestIntelligenceCommand: deterministic_llm blocked → exit 3", async (
     mode: "deterministic_llm",
     noVisualSidecar: false,
     finopsBudgetPath: undefined,
+    harnessMode: "off",
+    harnessTestDepth: "standard",
+    harnessRoleStepId: undefined,
   };
 
   const runner = async (): Promise<RunFigmaToQcTestCasesResult> => ({
@@ -448,8 +576,7 @@ test("runTestIntelligenceCommand: deterministic_llm blocked → exit 3", async (
     policy: {} as unknown as RunFigmaToQcTestCasesResult["policy"],
     coverage: {} as unknown as RunFigmaToQcTestCasesResult["coverage"],
     blocked: true,
-    finopsBudget:
-      {} as unknown as RunFigmaToQcTestCasesResult["finopsBudget"],
+    finopsBudget: {} as unknown as RunFigmaToQcTestCasesResult["finopsBudget"],
     artifactDir: "/tmp/blocked-output/_runner-output/jobs/ti-cli-blocked",
     artifactPaths: {
       intent: "/tmp/intent.json",
@@ -475,7 +602,9 @@ test("runTestIntelligenceCommand: deterministic_llm blocked → exit 3", async (
     runner,
     buildLlmClient: () =>
       ({}) as unknown as ReturnType<
-        Required<Parameters<typeof runTestIntelligenceCommand>[2]>["buildLlmClient"]
+        Required<
+          Parameters<typeof runTestIntelligenceCommand>[2]
+        >["buildLlmClient"]
       >,
     loadFigmaJsonFile: async () => ({
       fileKey: "abc",
@@ -503,4 +632,213 @@ test("runTestIntelligenceCommand: computes default output from job id when --out
     now: () => 1700000000000,
   });
   assert.match(stdout.join(""), /jobs\/ti-cli-1700000000000/u);
+});
+
+// ---------------------------------------------------------------------------
+// runTestIntelligenceCommand — multi-agent harness wiring (Issue #1791)
+// ---------------------------------------------------------------------------
+
+test("runTestIntelligenceCommand: dry_run + harness-mode != off → exit 1 cross-flag error", async () => {
+  const { sink, stderr } = collectingSink();
+  const exitCode = await runTestIntelligenceCommand(
+    { ...baseOptions(), harnessMode: "enforced" },
+    sink,
+    { env: GATE_ON, now: () => 1700000000000 },
+  );
+  assert.equal(exitCode, 1);
+  assert.match(
+    stderr.join(""),
+    /--harness-mode enforced requires --mode deterministic_llm/u,
+  );
+});
+
+test("runTestIntelligenceCommand: deterministic_llm + harness-mode shadow_eval forwards harness config to runner and surfaces summary", async () => {
+  const { sink, stdout, stderr } = collectingSink();
+  const options: TestIntelligenceRunOptions = {
+    figmaUrl: undefined,
+    figmaJsonFile: "/tmp/figma.json",
+    output: "/tmp/harness-output",
+    modelEndpoint: "https://aoai.example/openai/v1",
+    modelDeployment: "gpt-oss-120b",
+    modelApiKey: "k-key",
+    figmaToken: undefined,
+    policyProfile: undefined,
+    mode: "deterministic_llm",
+    noVisualSidecar: false,
+    finopsBudgetPath: undefined,
+    harnessMode: "shadow_eval",
+    harnessTestDepth: "exhaustive",
+    harnessRoleStepId: "test_generation_alt",
+  };
+
+  let capturedHarness: unknown;
+  const runner = async (
+    input: Parameters<
+      Required<Parameters<typeof runTestIntelligenceCommand>[2]>["runner"]
+    >[0],
+  ): Promise<RunFigmaToQcTestCasesResult> => {
+    capturedHarness = (input as unknown as { harness?: unknown }).harness;
+    return {
+      jobId: "ti-cli-2",
+      generatedAt: "2026-05-02T12:00:00.000Z",
+      fileKey: "abc",
+      generatedTestCases: {
+        testCases: [],
+      } as unknown as RunFigmaToQcTestCasesResult["generatedTestCases"],
+      intent: {} as unknown as RunFigmaToQcTestCasesResult["intent"],
+      validation: {} as unknown as RunFigmaToQcTestCasesResult["validation"],
+      policy: {} as unknown as RunFigmaToQcTestCasesResult["policy"],
+      coverage: {} as unknown as RunFigmaToQcTestCasesResult["coverage"],
+      blocked: false,
+      finopsBudget:
+        {} as unknown as RunFigmaToQcTestCasesResult["finopsBudget"],
+      artifactDir: "/tmp/harness-output/_runner-output",
+      artifactPaths: {
+        intent: "/tmp/intent.json",
+        compiledPrompt: "/tmp/compiled-prompt.json",
+        untrustedContentNormalizationReport: "/tmp/ucnr.json",
+        evidenceSeal: "/tmp/evidence-seal.json",
+        agentRoleRun: "/tmp/agent-role-run.json",
+        genealogy: "/tmp/genealogy.json",
+        generatedTestCases: "/tmp/generated.json",
+        validationReport: "/tmp/validation.json",
+        policyReport: "/tmp/policy.json",
+        coverageReport: "/tmp/coverage.json",
+        finopsReport: "/tmp/finops.json",
+        harnessStep: "/tmp/harness-step.json",
+      },
+      customerMarkdownPaths: {
+        combined: "/tmp/customer-markdown/testfaelle.md",
+        perCase: [],
+      },
+      harness: {
+        mode: "shadow_eval",
+        outcome: "accepted",
+        mappedJobStatus: "succeeded",
+        errorClass: "none",
+        attemptsConsumed: 1,
+        maxAttemptsAllowed: 3,
+        artifactPath: "/tmp/harness-step.json",
+      },
+    } as unknown as RunFigmaToQcTestCasesResult;
+  };
+
+  const exitCode = await runTestIntelligenceCommand(options, sink, {
+    env: GATE_ON,
+    runner,
+    buildLlmClient: () =>
+      ({}) as unknown as ReturnType<
+        Required<
+          Parameters<typeof runTestIntelligenceCommand>[2]
+        >["buildLlmClient"]
+      >,
+    loadFigmaJsonFile: async () => ({
+      fileKey: "abc",
+      name: "Foo",
+      document: { id: "0:0", type: "DOCUMENT" },
+    }),
+    loadJsonFile: async () => ({}),
+    copyArtifactsToOutput: async () => 0,
+    now: () => 1700000000000,
+  });
+
+  assert.equal(exitCode, 0, stderr.join(""));
+  assert.deepEqual(capturedHarness, {
+    mode: "shadow_eval",
+    testDepth: "exhaustive",
+    roleStepId: "test_generation_alt",
+  });
+  const out = stdout.join("");
+  assert.match(out, /multi-agent harness/u);
+  assert.match(out, /mode=shadow_eval/u);
+  assert.match(out, /outcome=accepted/u);
+  assert.match(out, /attempts=1\/3/u);
+  assert.match(out, /\/tmp\/harness-step\.json/u);
+});
+
+test("runTestIntelligenceCommand: deterministic_llm + harness-mode off omits harness key from runner input", async () => {
+  const { sink } = collectingSink();
+  const options: TestIntelligenceRunOptions = {
+    ...baseOptions(),
+    figmaUrl: undefined,
+    figmaJsonFile: "/tmp/figma.json",
+    figmaToken: undefined,
+    modelEndpoint: "https://aoai.example/openai/v1",
+    modelApiKey: "k-key",
+    mode: "deterministic_llm",
+    harnessMode: "off",
+  };
+
+  let capturedHarness: unknown = "untouched";
+  const runner = async (
+    input: Parameters<
+      Required<Parameters<typeof runTestIntelligenceCommand>[2]>["runner"]
+    >[0],
+  ): Promise<RunFigmaToQcTestCasesResult> => {
+    capturedHarness = (input as unknown as { harness?: unknown }).harness;
+    return {
+      jobId: "ti-cli-3",
+      generatedAt: "2026-05-02T12:00:00.000Z",
+      fileKey: "abc",
+      generatedTestCases: {
+        testCases: [],
+      } as unknown as RunFigmaToQcTestCasesResult["generatedTestCases"],
+      intent: {} as unknown as RunFigmaToQcTestCasesResult["intent"],
+      validation: {} as unknown as RunFigmaToQcTestCasesResult["validation"],
+      policy: {} as unknown as RunFigmaToQcTestCasesResult["policy"],
+      coverage: {} as unknown as RunFigmaToQcTestCasesResult["coverage"],
+      blocked: false,
+      finopsBudget:
+        {} as unknown as RunFigmaToQcTestCasesResult["finopsBudget"],
+      artifactDir: "/tmp/off-output/_runner-output",
+      artifactPaths: {
+        intent: "/tmp/intent.json",
+        compiledPrompt: "/tmp/compiled-prompt.json",
+        untrustedContentNormalizationReport: "/tmp/ucnr.json",
+        evidenceSeal: "/tmp/evidence-seal.json",
+        agentRoleRun: "/tmp/agent-role-run.json",
+        genealogy: "/tmp/genealogy.json",
+        generatedTestCases: "/tmp/generated.json",
+        validationReport: "/tmp/validation.json",
+        policyReport: "/tmp/policy.json",
+        coverageReport: "/tmp/coverage.json",
+        finopsReport: "/tmp/finops.json",
+      },
+      customerMarkdownPaths: {
+        combined: "/tmp/customer-markdown/testfaelle.md",
+        perCase: [],
+      },
+    } as unknown as RunFigmaToQcTestCasesResult;
+  };
+
+  const exitCode = await runTestIntelligenceCommand(options, sink, {
+    env: GATE_ON,
+    runner,
+    buildLlmClient: () =>
+      ({}) as unknown as ReturnType<
+        Required<
+          Parameters<typeof runTestIntelligenceCommand>[2]
+        >["buildLlmClient"]
+      >,
+    loadFigmaJsonFile: async () => ({
+      fileKey: "abc",
+      name: "Foo",
+      document: { id: "0:0", type: "DOCUMENT" },
+    }),
+    loadJsonFile: async () => ({}),
+    copyArtifactsToOutput: async () => 0,
+    now: () => 1700000000000,
+  });
+
+  assert.equal(exitCode, 0);
+  assert.equal(capturedHarness, undefined);
+});
+
+test("runTestIntelligenceCommand: dry_run output mentions harness mode line", async () => {
+  const { sink, stdout } = collectingSink();
+  await runTestIntelligenceCommand(baseOptions(), sink, {
+    env: GATE_ON,
+    now: () => 1700000000000,
+  });
+  assert.match(stdout.join(""), /harness mode/u);
 });
