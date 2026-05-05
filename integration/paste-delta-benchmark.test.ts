@@ -202,9 +202,7 @@ test("paste-delta benchmark docs and workflow wire the command and artifact path
     path.join(process.cwd(), ".github", "workflows", "visual-benchmark.yml"),
     "utf8",
   );
-  assert.match(workflow, /src\/job-engine\.ts/);
-  assert.match(workflow, /src\/server\/request-handler\.ts/);
-  assert.match(workflow, /integration\/paste-delta-benchmark\*/);
+  assert.match(workflow, /name:\s+Run paste delta benchmark gate/);
   assert.match(workflow, /integration\/paste-delta-benchmark\.test\.ts/);
   assert.match(workflow, /pnpm run benchmark:paste-delta -- --check/);
 
@@ -212,6 +210,8 @@ test("paste-delta benchmark docs and workflow wire the command and artifact path
     path.join(process.cwd(), "CONTRIBUTING.md"),
     "utf8",
   );
+  assert.match(contributing, /src\/job-engine\.ts/);
+  assert.match(contributing, /src\/server\/request-handler\.ts/);
   assert.match(contributing, /pnpm benchmark:paste-delta/);
   assert.match(contributing, /artifacts\/testing\/paste-delta-benchmark\.json/);
 });
