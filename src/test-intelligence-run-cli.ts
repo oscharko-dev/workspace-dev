@@ -26,8 +26,17 @@
  *   4  budget exceeded (mapped from gateway `budget_exceeded` outcome)
  */
 
-import { mkdir, copyFile, readdir, readFile } from "node:fs/promises";
+import { mkdir, copyFile, readdir, readFile, stat } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
+
+/**
+ * CLI-side hard cap on the raw `--custom-context-markdown` file size
+ * (Issue #1894). Matches the safety bound documented on the issue: any
+ * file larger than this is rejected with exit code 1 before the CLI
+ * even reads the body. The runner then enforces the tighter
+ * canonical-Markdown limits from `custom-context-markdown.ts`.
+ */
+export const MAX_CUSTOM_CONTEXT_MARKDOWN_FILE_BYTES: number = 256 * 1024;
 
 import { sanitizeErrorMessage } from "./error-sanitization.js";
 import {
@@ -113,6 +122,16 @@ export interface TestIntelligenceRunOptions {
   /** Path to a JSON FinOps budget envelope to apply. `undefined` → production default. */
   finopsBudgetPath: string | undefined;
   /**
+   * Path to an optional UTF-8 Markdown file (Issue #1894) that supplies
+   * custom supporting context to the production runner. The CLI loads the
+   * file, enforces a hard 256 KiB size cap, and forwards the raw bytes to
+   * {@link runFigmaToQcTestCases} via `customContextMarkdown`. The runner
+   * canonicalizes the body (PII redaction, prompt-injection neutralization,
+   * size enforcement, link/HTML/MDX/image refusal) before it ever reaches
+   * the LLM gateway.
+   */
+  customContextMarkdownPath: string | undefined;
+  /**
    * Multi-agent harness routing mode (Issue #1791). Defaults to `"off"`,
    * which preserves the legacy single-pass LLM behavior. `"shadow_eval"` runs
    * the harness alongside the call and emits a per-step harness artifact for
@@ -165,6 +184,7 @@ export const parseTestIntelligenceRunArgs = (
   let harnessMode: ProductionRunnerHarnessMode = "off";
   let harnessTestDepth: AgentHarnessTestDepth = "standard";
   let harnessRoleStepId: string | undefined;
+  let customContextMarkdownPath: string | undefined;
 
   for (let index = 0; index < args.length; index += 1) {
     const arg = args[index];
@@ -336,6 +356,23 @@ export const parseTestIntelligenceRunArgs = (
       continue;
     }
 
+    if (arg === "--custom-context-markdown") {
+      const value = next?.trim();
+      if (!value) {
+        throw new TestIntelligenceRunOperatorError(
+          "--custom-context-markdown requires a non-empty file path",
+        );
+      }
+      if (customContextMarkdownPath !== undefined) {
+        throw new TestIntelligenceRunOperatorError(
+          "--custom-context-markdown may be specified at most once",
+        );
+      }
+      customContextMarkdownPath = value;
+      index += 1;
+      continue;
+    }
+
     throw new TestIntelligenceRunOperatorError(
       `Unknown flag for "test-intelligence run": ${arg}`,
     );
@@ -373,6 +410,7 @@ export const parseTestIntelligenceRunArgs = (
     harnessMode,
     harnessTestDepth,
     harnessRoleStepId,
+    customContextMarkdownPath,
   };
 };
 
@@ -431,6 +469,13 @@ export interface TestIntelligenceRunRuntime {
     runnerCustomerMarkdownDir: string,
     outputDir: string,
   ) => Promise<number>;
+  /**
+   * Override the loader for `--custom-context-markdown` files (Issue #1894).
+   * Default uses `stat` + `readFile` against the local filesystem and
+   * enforces the 256 KiB hard cap before the body is returned. Tests
+   * inject a deterministic loader to avoid touching the disk.
+   */
+  loadCustomContextMarkdownFile?: (filePath: string) => Promise<string>;
   /** Wall-clock provider for deterministic job ids in tests. */
   now?: () => number;
   /**
@@ -613,6 +658,44 @@ const defaultLoadFigmaJsonFile = async (filePath: string): Promise<unknown> => {
 const defaultLoadJsonFile = async (filePath: string): Promise<unknown> => {
   const text = await readFile(filePath, "utf8");
   return JSON.parse(text) as unknown;
+};
+
+/**
+ * Default `--custom-context-markdown` loader. Stats the file before reading
+ * to enforce the 256 KiB hard cap so an oversize file never lands in the
+ * Node Buffer pool. Throws {@link TestIntelligenceRunOperatorError} on the
+ * documented failure modes (missing file, oversize file) so the caller can
+ * emit a clean operator-facing message and exit 1.
+ */
+const defaultLoadCustomContextMarkdownFile = async (
+  filePath: string,
+): Promise<string> => {
+  let stats: Awaited<ReturnType<typeof stat>>;
+  try {
+    stats = await stat(filePath);
+  } catch (err) {
+    if (
+      typeof err === "object" &&
+      err !== null &&
+      (err as { code?: string }).code === "ENOENT"
+    ) {
+      throw new TestIntelligenceRunOperatorError(
+        `--custom-context-markdown file not found: ${filePath}`,
+      );
+    }
+    throw err;
+  }
+  if (!stats.isFile()) {
+    throw new TestIntelligenceRunOperatorError(
+      `--custom-context-markdown path is not a regular file: ${filePath}`,
+    );
+  }
+  if (stats.size > MAX_CUSTOM_CONTEXT_MARKDOWN_FILE_BYTES) {
+    throw new TestIntelligenceRunOperatorError(
+      `--custom-context-markdown file exceeds ${MAX_CUSTOM_CONTEXT_MARKDOWN_FILE_BYTES} bytes (got ${stats.size}); shrink the source or split it across runs`,
+    );
+  }
+  return readFile(filePath, "utf8");
 };
 
 const defaultCopyArtifactsToOutput = async (
@@ -828,6 +911,9 @@ export const runTestIntelligenceCommand = async (
   const loadJsonFile = runtime.loadJsonFile ?? defaultLoadJsonFile;
   const copyArtifactsToOutput =
     runtime.copyArtifactsToOutput ?? defaultCopyArtifactsToOutput;
+  const loadCustomContextMarkdownFile =
+    runtime.loadCustomContextMarkdownFile ??
+    defaultLoadCustomContextMarkdownFile;
 
   const jobId = `ti-cli-${now()}`;
   const generatedAt = new Date(now()).toISOString();
@@ -887,6 +973,30 @@ export const runTestIntelligenceCommand = async (
     return 1;
   }
 
+  // Load `--custom-context-markdown` (Issue #1894). The CLI enforces the
+  // 256 KiB hard cap and rejects missing files with exit code 1 before any
+  // network IO. The runner re-validates the canonical Markdown body and
+  // fails with `CUSTOM_CONTEXT_MARKDOWN_INVALID` (exit 2) if PII redaction
+  // or prompt-injection neutralization rejects the content.
+  let customContextMarkdownBody: string | undefined;
+  if (options.customContextMarkdownPath !== undefined) {
+    const absolutePath = resolve(options.customContextMarkdownPath);
+    try {
+      customContextMarkdownBody = await loadCustomContextMarkdownFile(
+        absolutePath,
+      );
+    } catch (err) {
+      if (err instanceof TestIntelligenceRunOperatorError) {
+        sink.stderr(`error: ${err.message}\n`);
+        return 1;
+      }
+      sink.stderr(
+        `error: failed to read --custom-context-markdown file: ${sanitizeErrorMessage({ error: err, fallback: "filesystem failure" })}\n`,
+      );
+      return 1;
+    }
+  }
+
   if (options.mode === "offline_eval") {
     sink.stderr(
       "error: --mode offline_eval is not implemented in the CLI yet (#1737 tracks the eval-harness wiring)\n",
@@ -926,6 +1036,7 @@ export const runTestIntelligenceCommand = async (
         }`,
         `  finops budget : ${options.finopsBudgetPath ?? "(production default)"}`,
         `  harness mode  : off (dry_run never reaches the harness)`,
+        `  custom md ctx : ${customContextMarkdownBody !== undefined ? `loaded (${Buffer.byteLength(customContextMarkdownBody, "utf8")} bytes)` : "(none)"}`,
         "",
       ].join("\n"),
     );
@@ -988,6 +1099,9 @@ export const runTestIntelligenceCommand = async (
       ? { policyProfileId: options.policyProfile }
       : {}),
     ...(harnessConfig !== undefined ? { harness: harnessConfig } : {}),
+    ...(customContextMarkdownBody !== undefined
+      ? { customContextMarkdown: customContextMarkdownBody }
+      : {}),
   };
 
   let result: RunFigmaToQcTestCasesResult;
@@ -1078,6 +1192,16 @@ Figma (URL mode only):
 FinOps:
   --finops-budget <path>     Path to a JSON FinOps budget envelope.
                              Default: production envelope
+
+Custom supporting context (Issue #1894):
+  --custom-context-markdown <path>
+                             UTF-8 Markdown file (max 256 KiB) carrying
+                             additional supporting context for the LLM.
+                             The runner canonicalizes the body (PII redaction,
+                             prompt-injection neutralization, link/HTML/MDX/
+                             image refusal) before any LLM call. Oversize
+                             files exit 1; missing files exit 1; canonical
+                             rejection exits 2 with CUSTOM_CONTEXT_MARKDOWN_INVALID.
 
 Visual sidecar:
   --enable-visual-sidecar    Build and attach the visual-sidecar bundle

@@ -31,6 +31,18 @@ export interface ProductionRunnerEvidenceVisualHash {
   readonly evidenceHash: string;
 }
 
+/**
+ * Hash digest of the canonicalised Markdown supporting context attached to
+ * a run via the `--custom-context-markdown` CLI flag (Issue #1894). Only
+ * present when the operator supplied Markdown context; otherwise the field
+ * is absent from the seal so legacy seals remain bit-for-bit identical.
+ */
+export interface ProductionRunnerEvidenceCustomMarkdownHash {
+  readonly sourceId: string;
+  readonly markdownContentHash: string;
+  readonly plainContentHash: string;
+}
+
 export interface ProductionRunnerEvidenceSeal {
   readonly schemaVersion: typeof PRODUCTION_RUNNER_EVIDENCE_SEAL_SCHEMA_VERSION;
   readonly jobId: string;
@@ -43,6 +55,7 @@ export interface ProductionRunnerEvidenceSeal {
   readonly genealogyArtifactFilename: typeof GENEALOGY_ARTIFACT_FILENAME;
   readonly genealogyDagHash: string;
   readonly visualEvidenceHashes: readonly ProductionRunnerEvidenceVisualHash[];
+  readonly customContextMarkdownHashes?: readonly ProductionRunnerEvidenceCustomMarkdownHash[];
 }
 
 export interface BuildProductionRunnerEvidenceSealInput {
@@ -55,6 +68,7 @@ export interface BuildProductionRunnerEvidenceSealInput {
   readonly bySourceHash: string;
   readonly genealogyDagHash: string;
   readonly visualEvidenceHashes?: readonly ProductionRunnerEvidenceVisualHash[];
+  readonly customContextMarkdownHashes?: readonly ProductionRunnerEvidenceCustomMarkdownHash[];
 }
 
 export interface VerifyProductionRunnerEvidenceSealFromDiskResult {
@@ -81,6 +95,22 @@ const sortVisualEvidenceHashes = (
         left.screenId.localeCompare(right.screenId) ||
         left.modelDeployment.localeCompare(right.modelDeployment) ||
         left.evidenceHash.localeCompare(right.evidenceHash),
+    );
+
+const sortCustomContextMarkdownHashes = (
+  values: readonly ProductionRunnerEvidenceCustomMarkdownHash[],
+): ProductionRunnerEvidenceCustomMarkdownHash[] =>
+  [...values]
+    .map((value) => ({
+      sourceId: value.sourceId,
+      markdownContentHash: value.markdownContentHash,
+      plainContentHash: value.plainContentHash,
+    }))
+    .sort(
+      (left, right) =>
+        left.sourceId.localeCompare(right.sourceId) ||
+        left.markdownContentHash.localeCompare(right.markdownContentHash) ||
+        left.plainContentHash.localeCompare(right.plainContentHash),
     );
 
 const isEnoent = (error: unknown): boolean =>
@@ -129,6 +159,7 @@ const parseSeal = (raw: unknown): ProductionRunnerEvidenceSeal | undefined => {
   if (!isRecord(raw)) return undefined;
   const harnessArtifactFilenames = raw["harnessArtifactFilenames"];
   const visualEvidenceHashes = raw["visualEvidenceHashes"];
+  const customContextMarkdownHashesRaw = raw["customContextMarkdownHashes"];
   if (
     raw["schemaVersion"] !== PRODUCTION_RUNNER_EVIDENCE_SEAL_SCHEMA_VERSION ||
     typeof raw["jobId"] !== "string" ||
@@ -158,6 +189,28 @@ const parseSeal = (raw: unknown): ProductionRunnerEvidenceSeal | undefined => {
   ) {
     return undefined;
   }
+  let customContextMarkdownHashes:
+    | ProductionRunnerEvidenceCustomMarkdownHash[]
+    | undefined;
+  if (customContextMarkdownHashesRaw !== undefined) {
+    if (
+      !Array.isArray(customContextMarkdownHashesRaw) ||
+      customContextMarkdownHashesRaw.some(
+        (entry) =>
+          !isRecord(entry) ||
+          typeof entry["sourceId"] !== "string" ||
+          typeof entry["markdownContentHash"] !== "string" ||
+          typeof entry["plainContentHash"] !== "string" ||
+          !HEX64.test(entry["markdownContentHash"]) ||
+          !HEX64.test(entry["plainContentHash"]),
+      )
+    ) {
+      return undefined;
+    }
+    customContextMarkdownHashes = sortCustomContextMarkdownHashes(
+      customContextMarkdownHashesRaw as readonly ProductionRunnerEvidenceCustomMarkdownHash[],
+    );
+  }
   return {
     schemaVersion: PRODUCTION_RUNNER_EVIDENCE_SEAL_SCHEMA_VERSION,
     jobId: raw["jobId"],
@@ -172,6 +225,9 @@ const parseSeal = (raw: unknown): ProductionRunnerEvidenceSeal | undefined => {
     visualEvidenceHashes: sortVisualEvidenceHashes(
       visualEvidenceHashes as readonly ProductionRunnerEvidenceVisualHash[],
     ),
+    ...(customContextMarkdownHashes !== undefined
+      ? { customContextMarkdownHashes }
+      : {}),
   };
 };
 
@@ -227,19 +283,33 @@ const compareVisualHashes = (
 
 export const buildProductionRunnerEvidenceSeal = (
   input: BuildProductionRunnerEvidenceSealInput,
-): ProductionRunnerEvidenceSeal => ({
-  schemaVersion: PRODUCTION_RUNNER_EVIDENCE_SEAL_SCHEMA_VERSION,
-  jobId: input.jobId,
-  generatedAt: input.generatedAt,
-  harnessArtifactFilenames: uniqueSortedStrings(input.harnessArtifactFilenames),
-  headOfChainHash: input.headOfChainHash,
-  chainLength: input.chainLength,
-  finopsArtifactFilename: input.finopsArtifactFilename,
-  bySourceHash: input.bySourceHash,
-  genealogyArtifactFilename: GENEALOGY_ARTIFACT_FILENAME,
-  genealogyDagHash: input.genealogyDagHash,
-  visualEvidenceHashes: sortVisualEvidenceHashes(input.visualEvidenceHashes ?? []),
-});
+): ProductionRunnerEvidenceSeal => {
+  const customContextMarkdownHashes =
+    input.customContextMarkdownHashes !== undefined &&
+    input.customContextMarkdownHashes.length > 0
+      ? sortCustomContextMarkdownHashes(input.customContextMarkdownHashes)
+      : undefined;
+  return {
+    schemaVersion: PRODUCTION_RUNNER_EVIDENCE_SEAL_SCHEMA_VERSION,
+    jobId: input.jobId,
+    generatedAt: input.generatedAt,
+    harnessArtifactFilenames: uniqueSortedStrings(
+      input.harnessArtifactFilenames,
+    ),
+    headOfChainHash: input.headOfChainHash,
+    chainLength: input.chainLength,
+    finopsArtifactFilename: input.finopsArtifactFilename,
+    bySourceHash: input.bySourceHash,
+    genealogyArtifactFilename: GENEALOGY_ARTIFACT_FILENAME,
+    genealogyDagHash: input.genealogyDagHash,
+    visualEvidenceHashes: sortVisualEvidenceHashes(
+      input.visualEvidenceHashes ?? [],
+    ),
+    ...(customContextMarkdownHashes !== undefined
+      ? { customContextMarkdownHashes }
+      : {}),
+  };
+};
 
 export const serializeProductionRunnerEvidenceSeal = (
   seal: ProductionRunnerEvidenceSeal,

@@ -131,6 +131,17 @@ import {
   compilePrompt,
   type CompilePromptSuffixSection,
 } from "./prompt-compiler.js";
+import {
+  canonicalizeCustomContextMarkdown,
+  type CustomContextMarkdownIssue,
+} from "./custom-context-markdown.js";
+import { computeSourceMixPlanHash } from "./source-mix-planner.js";
+import {
+  CUSTOM_CONTEXT_MARKDOWN_SOURCE_ID,
+  SOURCE_MIX_PLAN_SCHEMA_VERSION,
+  type CompiledPromptCustomContext,
+  type SourceMixPlan,
+} from "../contracts/index.js";
 import { cloneEuBankingDefaultProfile } from "./policy-profile.js";
 import { writeAgentRoleRunArtifact } from "./agent-role-run-artifact.js";
 import {
@@ -217,6 +228,7 @@ export const PRODUCTION_RUNNER_FAILURE_CLASSES = [
   "LLM_RESPONSE_INVALID",
   "PERSIST_FAILED",
   "FINOPS_BUDGET_INVALID",
+  "CUSTOM_CONTEXT_MARKDOWN_INVALID",
 ] as const;
 
 export type ProductionRunnerFailureClass =
@@ -508,6 +520,16 @@ export interface RunFigmaToQcTestCasesInput {
    * explicitly.
    */
   replayCacheTokenScope?: string;
+  /**
+   * Optional Markdown supporting-context body (Issue #1894). When supplied
+   * the runner canonicalizes the Markdown via
+   * {@link canonicalizeCustomContextMarkdown} (PII redaction, prompt-injection
+   * tagging, link/HTML/MDX/image refusal, byte-cap enforcement) and surfaces
+   * it as a dedicated `custom_context_markdown` source-mix section in the
+   * compiled prompt. Failures fail the job fast with
+   * `CUSTOM_CONTEXT_MARKDOWN_INVALID` before any LLM call is dispatched.
+   */
+  customContextMarkdown?: string;
 }
 
 export interface RunFigmaToQcTestCasesResult {
@@ -591,6 +613,14 @@ export const runFigmaToQcTestCases = async (
   //    no merging with the production default. Invalid envelopes fail
   //    fast before any IO touches the network.
   const finopsBudget = resolveFinopsBudget(input.finopsBudget);
+
+  // 0b. Canonicalize the optional Markdown supporting context (Issue #1894).
+  //     Runs before any IO so a malformed or oversize Markdown body fails
+  //     the job fast with `CUSTOM_CONTEXT_MARKDOWN_INVALID` and never
+  //     reaches the LLM gateway, the prompt artifact, or the seal.
+  const customContextMarkdown = resolveCustomContextMarkdown(
+    input.customContextMarkdown,
+  );
 
   // 1. Resolve Figma source.
   emit({
@@ -840,6 +870,20 @@ export const runFigmaToQcTestCases = async (
   });
 
   // 5. Compile prompt.
+  const figmaSourceContentHash = createHash("sha256")
+    .update(canonicalJson({ figma: intentInput }), "utf8")
+    .digest("hex");
+  const compiledCustomContext = customContextMarkdown
+    ? buildCompiledCustomContextMarkdown(customContextMarkdown)
+    : undefined;
+  const compiledSourceMixPlan =
+    customContextMarkdown !== undefined
+      ? buildFigmaWithCustomMarkdownSourceMixPlan({
+          figmaSourceContentHash,
+          markdownContentHash: customContextMarkdown.markdownContentHash,
+          plainContentHash: customContextMarkdown.plainContentHash,
+        })
+      : undefined;
   const compiled = compilePrompt({
     jobId: input.jobId,
     intent: wireIntent,
@@ -857,8 +901,18 @@ export const runFigmaToQcTestCases = async (
     responseSchema: draftSchema,
     responseSchemaName: "workspace-dev-production-runner-draft-list-v1",
     outputSchemaHintLabel: "ProductionRunnerDraftResponse",
-    suffixSections: buildPromptSuffixSections(wireIntent, policyProfileId),
+    suffixSections: buildPromptSuffixSections(
+      wireIntent,
+      policyProfileId,
+      customContextMarkdown !== undefined,
+    ),
     visualBinding: promptVisualBinding,
+    ...(compiledCustomContext !== undefined
+      ? { customContext: compiledCustomContext }
+      : {}),
+    ...(compiledSourceMixPlan !== undefined
+      ? { sourceMixPlan: compiledSourceMixPlan }
+      : {}),
     ...(finopsLimits.maxInputTokens !== undefined
       ? {
           contextBudget: {
@@ -1355,6 +1409,18 @@ export const runFigmaToQcTestCases = async (
             modelDeployment: ref.modelDeployment,
             evidenceHash: ref.evidenceHash,
           })) ?? [],
+        ...(customContextMarkdown !== undefined
+          ? {
+              customContextMarkdownHashes: [
+                {
+                  sourceId: CUSTOM_CONTEXT_MARKDOWN_SOURCE_ID,
+                  markdownContentHash:
+                    customContextMarkdown.markdownContentHash,
+                  plainContentHash: customContextMarkdown.plainContentHash,
+                },
+              ],
+            }
+          : {}),
       }),
     ),
     "utf8",
@@ -2399,6 +2465,7 @@ const wrapUntrustedFigmaPromptText = (value: string, id: string): string =>
 const buildPromptSuffixSections = (
   intent: BusinessTestIntentIr,
   policyProfileId: string,
+  hasCustomContextMarkdown: boolean = false,
 ): CompilePromptSuffixSection[] => {
   const screenSummary = intent.screens.map((screen) => ({
     screenId: screen.screenId,
@@ -2446,6 +2513,17 @@ const buildPromptSuffixSections = (
         "",
         "Banking/Versicherungs-Bildschirme (genau ein regulatory-compliance Testfall pro Eintrag):",
         bankingInsuranceList,
+      ].join("\n"),
+    });
+  }
+  if (hasCustomContextMarkdown) {
+    sections.push({
+      kind: "text",
+      label: "CUSTOM_CONTEXT_MARKDOWN EVIDENCE RULE",
+      body: [
+        "Die Sektion `custom_context_markdown` ist eigenständige Evidenzquelle.",
+        "Sobald ein Testfall fachlich auf eine Anforderung aus `custom_context_markdown` zurückgeht, MUSS er im Output eine identifizierende Quellen-Referenz tragen, die diese Markdown-Sektion benennt.",
+        "Trage diese Referenz entweder als zusätzlichen Eintrag in `figmaTraceRefs` mit `screenId = \"custom_context_markdown\"` und einer kurzen `nodeName`-Beschreibung des zitierten Abschnitts oder als Eintrag in `assumptions`/`openQuestions` mit dem Präfix `custom_context_markdown:`. Mindestens ein Testfall pro Lauf muss eine solche Referenz enthalten, wenn der Markdown-Inhalt für die Generierung relevant war.",
       ].join("\n"),
     });
   }
@@ -2619,6 +2697,112 @@ const makeEmitter = (
     } catch {
       /* swallow — sink misbehaviour must not corrupt the pipeline */
     }
+  };
+};
+
+interface ResolvedCustomContextMarkdown {
+  bodyMarkdown: string;
+  bodyPlain: string;
+  markdownContentHash: string;
+  plainContentHash: string;
+}
+
+const formatCustomContextMarkdownIssues = (
+  issues: readonly CustomContextMarkdownIssue[],
+): string =>
+  issues
+    .map((issue) =>
+      issue.detail !== undefined
+        ? `${issue.code}:${issue.detail}`
+        : issue.code,
+    )
+    .join(",");
+
+const resolveCustomContextMarkdown = (
+  raw: string | undefined,
+): ResolvedCustomContextMarkdown | undefined => {
+  if (raw === undefined) return undefined;
+  const result = canonicalizeCustomContextMarkdown(raw);
+  if (!result.ok) {
+    throw new ProductionRunnerError({
+      failureClass: "CUSTOM_CONTEXT_MARKDOWN_INVALID",
+      message: `customContextMarkdown rejected: ${formatCustomContextMarkdownIssues(result.issues)}`,
+      retryable: false,
+    });
+  }
+  return {
+    bodyMarkdown: result.value.bodyMarkdown,
+    bodyPlain: result.value.bodyPlain,
+    markdownContentHash: result.value.markdownContentHash,
+    plainContentHash: result.value.plainContentHash,
+  };
+};
+
+const buildCompiledCustomContextMarkdown = (
+  resolved: ResolvedCustomContextMarkdown,
+): CompiledPromptCustomContext => ({
+  markdownSections: [
+    {
+      sourceId: CUSTOM_CONTEXT_MARKDOWN_SOURCE_ID,
+      entryId: resolved.markdownContentHash,
+      bodyMarkdown: resolved.bodyMarkdown,
+      bodyPlain: resolved.bodyPlain,
+      markdownContentHash: resolved.markdownContentHash,
+      plainContentHash: resolved.plainContentHash,
+    },
+  ],
+  structuredAttributes: [],
+});
+
+const PRODUCTION_RUNNER_FIGMA_PRIMARY_SOURCE_ID =
+  "production-runner-figma-primary" as const;
+
+const buildFigmaWithCustomMarkdownSourceMixPlan = (input: {
+  figmaSourceContentHash: string;
+  markdownContentHash: string;
+  plainContentHash: string;
+}): SourceMixPlan => {
+  const primarySourceIds = [PRODUCTION_RUNNER_FIGMA_PRIMARY_SOURCE_ID];
+  const supportingSourceIds = [CUSTOM_CONTEXT_MARKDOWN_SOURCE_ID];
+  const visualSidecarRequirement: SourceMixPlan["visualSidecarRequirement"] =
+    "optional";
+  const promptSections: SourceMixPlan["promptSections"] = [
+    "figma_intent",
+    "custom_context_markdown",
+  ];
+  const sourceDigests: SourceMixPlan["sourceDigests"] = [
+    {
+      sourceId: PRODUCTION_RUNNER_FIGMA_PRIMARY_SOURCE_ID,
+      kind: "figma_rest",
+      contentHash: input.figmaSourceContentHash,
+    },
+    {
+      sourceId: CUSTOM_CONTEXT_MARKDOWN_SOURCE_ID,
+      kind: "custom_markdown",
+      contentHash: input.markdownContentHash,
+      redactedMarkdownHash: input.markdownContentHash,
+      plainTextDerivativeHash: input.plainContentHash,
+    },
+  ];
+  const sourceMixPlanHash = computeSourceMixPlanHash({
+    kind: "figma_only",
+    primarySourceIds,
+    supportingSourceIds,
+    visualSidecarRequirement,
+    promptSections,
+    sourceDigests,
+  });
+  return {
+    version: SOURCE_MIX_PLAN_SCHEMA_VERSION,
+    kind: "figma_only",
+    primarySourceIds,
+    supportingSourceIds,
+    visualSidecarRequirement,
+    promptSections,
+    sourceDigests,
+    sourceMixPlanHash,
+    rawJiraResponsePersisted: false,
+    rawPasteBytesPersisted: false,
   };
 };
 

@@ -31,6 +31,55 @@ All changes to the public contract surface of `workspace-dev` are documented her
 
 ---
 
+## [4.44.0] - 2026-05-05
+
+### Added (Issue #1894 — `--custom-context-markdown` CLI flag and production-runner wiring)
+
+The `workspace-dev test-intelligence run` CLI gains a new optional flag,
+`--custom-context-markdown <path>`, that loads a UTF-8 Markdown file (max
+256 KiB) and forwards the body to the production runner as supporting
+evidence. The runner canonicalises the body via the existing
+`canonicalizeCustomContextMarkdown` pipeline (PII redaction,
+prompt-injection neutralisation, link/HTML/MDX/image refusal) before the
+content ever reaches the LLM gateway. The redacted Markdown surfaces in
+the compiled prompt as a dedicated `custom_context_markdown` source-mix
+section wrapped in `<UNTRUSTED_CUSTOM>` tags, and its content hashes are
+sealed into `production-runner-evidence-seal.json` for audit replay.
+
+Operator behaviour:
+
+- File missing, unreadable, or larger than 256 KiB → exit code `1` with
+  a clean operator-facing message; no LLM call is dispatched.
+- Canonicalisation refusal (oversize after canonicalisation, raw HTML,
+  unsafe URL, MDX, Mermaid, frontmatter, etc.) → runner throws
+  `ProductionRunnerError` with `failureClass = "CUSTOM_CONTEXT_MARKDOWN_INVALID"`,
+  CLI exits `2`.
+
+Additive public-contract changes:
+
+- `RunFigmaToQcTestCasesInput` gains the optional field
+  `customContextMarkdown?: string` (Issue #1894). When omitted the runner
+  is byte-for-byte equivalent to the legacy single-source pipeline, so
+  existing callers see no wire-shape change.
+- `TestIntelligenceRunOptions` gains
+  `customContextMarkdownPath: string | undefined`.
+- `MAX_CUSTOM_CONTEXT_MARKDOWN_FILE_BYTES` is exported from
+  `src/test-intelligence-run-cli.ts` so callers can pin the same limit.
+- `PRODUCTION_RUNNER_FAILURE_CLASSES` gains the new value
+  `"CUSTOM_CONTEXT_MARKDOWN_INVALID"` (failure-class enum bump).
+- `ProductionRunnerEvidenceSeal` gains the optional, content-hash-only
+  field `customContextMarkdownHashes?: ProductionRunnerEvidenceCustomMarkdownHash[]`.
+  The new field is additive — legacy seals with no Markdown context omit
+  it entirely, so existing seal verifiers keep working.
+- `TEST_INTELLIGENCE_CONTRACT_VERSION` bumps from `1.9.0` to `1.10.0`.
+- `CONTRACT_VERSION` bumps from `4.43.0` to `4.44.0`.
+
+This is an additive minor bump. No removals or renames. No new
+banking-profile migrations are registered in this release; the
+`migrationHash:` registry from 4.42.0 carries over unchanged.
+
+---
+
 ## [4.43.0] - 2026-05-04
 
 ### Added (Issue #1803 — release-pipeline integration with consolidated release-readiness report)
