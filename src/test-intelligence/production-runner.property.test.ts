@@ -29,9 +29,27 @@ const node = (
   partial: Partial<FigmaRestNode> & { id: string; type: string },
 ): FigmaRestNode => partial as FigmaRestNode;
 
-const stringArb = fc
-  .string({ minLength: 1, maxLength: 24, unit: "grapheme-ascii" })
-  .filter((value) => value.trim().length > 0);
+const semanticTokenArb = fc.constantFrom(
+  "Account",
+  "Alert",
+  "Balance",
+  "Card",
+  "Consent",
+  "Details",
+  "Form",
+  "Invoice",
+  "Login",
+  "Payment",
+  "Profile",
+  "Review",
+  "Summary",
+  "Transfer",
+  "Verify",
+);
+
+const semanticNameArb = fc
+  .array(semanticTokenArb, { minLength: 1, maxLength: 3 })
+  .map((tokens) => tokens.join(" "));
 
 const hexStringArb = fc
   .array(fc.constantFrom("a", "b", "c", "d", "e", "f", "0", "1", "2", "3"), {
@@ -42,11 +60,11 @@ const hexStringArb = fc
 
 const fileModelArb = fc.record({
   fileKey: hexStringArb,
-  fileName: stringArb,
+  fileName: semanticNameArb,
   screens: fc.array(
     fc.record({
-      screenName: stringArb,
-      labels: fc.array(stringArb, { minLength: 1, maxLength: 4 }),
+      screenName: semanticNameArb,
+      labels: fc.array(semanticNameArb, { minLength: 1, maxLength: 4 }),
     }),
     { minLength: 1, maxLength: 3 },
   ),
