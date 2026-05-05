@@ -169,6 +169,7 @@ import {
 import {
   executeWithReplayCache,
   type ReplayCache,
+  ReplayCacheValidationError,
 } from "./replay-cache.js";
 
 /**
@@ -200,6 +201,7 @@ export const PROMPT_MAX_FIELDS_PER_SCREEN = 60 as const;
 export const PROMPT_MAX_ACTIONS_PER_SCREEN = 30 as const;
 export const PROMPT_MAX_VALIDATIONS_PER_SCREEN = 30 as const;
 export const PROMPT_MAX_NAVIGATION_PER_SCREEN = 30 as const;
+export const MAX_FIGMA_PAYLOAD_BYTES: number = 10 * 1024 * 1024;
 
 /**
  * Stable failure-class enum surfaced to callers (request handler maps
@@ -208,6 +210,7 @@ export const PROMPT_MAX_NAVIGATION_PER_SCREEN = 30 as const;
 export const PRODUCTION_RUNNER_FAILURE_CLASSES = [
   "EMPTY_FIGMA_INPUT",
   "FIGMA_FETCH_FAILED",
+  "FIGMA_PAYLOAD_TOO_LARGE",
   "FIGMA_URL_REJECTED",
   "LLM_GATEWAY_FAILED",
   "LLM_REFUSAL",
@@ -596,6 +599,7 @@ export const runFigmaToQcTestCases = async (
     details: { source: input.source.kind },
   });
   const figmaFile = await resolveFigmaSource(input.source);
+  assertFigmaPayloadWithinLimit(figmaFile);
   await mkdir(artifactDir, { recursive: true });
   const normalizedUntrusted = normalizeUntrustedContent({
     figma: { document: figmaFile.document },
@@ -942,10 +946,12 @@ export const runFigmaToQcTestCases = async (
   let harnessArtifactPath: string | undefined;
   let capturedLlmResult: LlmGenerationResult | undefined;
 
-  const cacheExecResult = await executeWithReplayCache({
-    cache: replayCache,
-    cacheKey: compiled.cacheKey,
-    generate: async () => {
+  let cacheExecResult: Awaited<ReturnType<typeof executeWithReplayCache>>;
+  try {
+    cacheExecResult = await executeWithReplayCache({
+      cache: replayCache,
+      cacheKey: compiled.cacheKey,
+      generate: async () => {
       // 6. LLM dispatch.
       emit({
         phase: "llm_gateway_request",
@@ -1028,6 +1034,16 @@ export const runFigmaToQcTestCases = async (
       }
 
       if (attemptOutcome.kind === "error") {
+        if (
+          llmResult.outcome !== "success" &&
+          llmResult.errorClass === "canceled"
+        ) {
+          emit({
+            phase: "cancelled",
+            timestamp: monotonicMs(),
+            details: { reason: "llm_gateway_canceled" },
+          });
+        }
         throw attemptOutcome.error;
       }
       if (
@@ -1069,8 +1085,20 @@ export const runFigmaToQcTestCases = async (
         jobId: input.jobId,
         testCases,
       };
-    },
-  });
+      },
+    });
+  } catch (err) {
+    if (err instanceof ReplayCacheValidationError) {
+      throw new ProductionRunnerError({
+        failureClass: "PERSIST_FAILED",
+        message:
+          "Persistent replay cache entry failed validation; refusing to reuse corrupted cached output.",
+        retryable: false,
+        cause: err,
+      });
+    }
+    throw err;
+  }
 
   if (cacheExecResult.cacheHit) {
     emit({
@@ -1633,9 +1661,22 @@ const resolveFigmaSource = async (
     return await fetchFigmaFileForTestIntelligence({
       fileKey: parsed.fileKey,
       accessToken: source.accessToken,
+      maxResponseBytes: MAX_FIGMA_PAYLOAD_BYTES,
       ...(parsed.nodeId !== undefined ? { nodeId: parsed.nodeId } : {}),
     });
   } catch (err) {
+    if (
+      err instanceof FigmaRestFetchError &&
+      err.errorClass === "transport" &&
+      /exceeds\s+\d+\s+bytes/iu.test(err.message)
+    ) {
+      throw new ProductionRunnerError({
+        failureClass: "FIGMA_PAYLOAD_TOO_LARGE",
+        message: `Figma payload exceeds ${MAX_FIGMA_PAYLOAD_BYTES} bytes limit.`,
+        retryable: false,
+        cause: err,
+      });
+    }
     if (err instanceof FigmaRestFetchError) {
       throw new ProductionRunnerError({
         failureClass: "FIGMA_FETCH_FAILED",
@@ -1646,6 +1687,20 @@ const resolveFigmaSource = async (
     }
     throw err;
   }
+};
+
+const assertFigmaPayloadWithinLimit = (
+  file: FigmaRestFileSnapshot,
+): void => {
+  const payloadBytes = Buffer.byteLength(JSON.stringify(file), "utf8");
+  if (payloadBytes <= MAX_FIGMA_PAYLOAD_BYTES) {
+    return;
+  }
+  throw new ProductionRunnerError({
+    failureClass: "FIGMA_PAYLOAD_TOO_LARGE",
+    message: `Figma payload exceeds ${MAX_FIGMA_PAYLOAD_BYTES} bytes limit.`,
+    retryable: false,
+  });
 };
 
 const resolveCustomerLabel = (
@@ -1806,6 +1861,18 @@ const classifyLlmAttempt = (
         error: new ProductionRunnerError({
           failureClass: "LLM_REFUSAL",
           message: `LLM refused to produce test cases: ${llmResult.message}`,
+          retryable: false,
+        }),
+      };
+    }
+    if (llmResult.errorClass === "canceled") {
+      return {
+        kind: "error",
+        errorKind: "permanent",
+        errorClass: "gateway_error",
+        error: new ProductionRunnerError({
+          failureClass: "LLM_GATEWAY_FAILED",
+          message: "LLM gateway request canceled by caller.",
           retryable: false,
         }),
       };

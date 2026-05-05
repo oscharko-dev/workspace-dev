@@ -117,7 +117,10 @@ export const createPersistentReplayCache = (
         entry = decodeEntry(digest, parsed);
       } catch (err) {
         if (err instanceof ReplayCacheValidationError) throw err;
-        return { hit: false, key: digest };
+        throw new ReplayCacheValidationError(
+          `persistent replay cache entry ${digest} is not valid JSON`,
+          [{ path: "$", message: "invalid JSON" }],
+        );
       }
 
       const validation = validateGeneratedTestCaseList(entry.testCases);

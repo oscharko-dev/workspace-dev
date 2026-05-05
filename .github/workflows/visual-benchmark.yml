@@ -3,28 +3,6 @@ name: workspace-dev visual benchmark
 on:
   push:
     branches: [dev]
-  pull_request:
-    branches: [dev]
-    paths:
-      - "src/job-engine.ts"
-      - "src/parity/**"
-      - "src/job-engine/**"
-      - "src/server/request-handler.ts"
-      - "template/**"
-      - "integration/paste-delta-benchmark*"
-      - "integration/visual-benchmark*"
-      - "integration/composite-quality*"
-      - "integration/visual-quality*"
-      - "integration/fixtures/visual-benchmark/**"
-      - ".github/workflows/visual-benchmark.yml"
-      - "package.json"
-      - "scripts/compute-composite-quality.ts"
-      - "scripts/assert-no-skipped-tests.mjs"
-      - "scripts/prepare-visual-benchmark-public-artifacts.mjs"
-      - "scripts/print-visual-benchmark-summary.mjs"
-      - "scripts/visual-benchmark-summary.mjs"
-      - "scripts/print-visual-benchmark-pr-comment.mjs"
-      - "scripts/visual-benchmark-pr-comment.mjs"
   workflow_dispatch:
     inputs:
       browsers:

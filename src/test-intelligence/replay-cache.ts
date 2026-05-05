@@ -144,7 +144,15 @@ export const createFileSystemReplayCache = (rootDir: string): ReplayCache => {
         }
         throw err;
       }
-      const parsed = JSON.parse(raw) as unknown;
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(raw) as unknown;
+      } catch {
+        throw new ReplayCacheValidationError(
+          `replay cache entry ${digest} is not valid JSON`,
+          [{ path: "$", message: "invalid JSON" }],
+        );
+      }
       const entry = decodeEntry(digest, parsed);
       const validation = validateGeneratedTestCaseList(entry.testCases);
       if (!validation.valid) {
