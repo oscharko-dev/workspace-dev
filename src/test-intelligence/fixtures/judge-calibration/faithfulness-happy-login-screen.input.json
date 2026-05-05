@@ -1,0 +1,24 @@
+{
+  "judge": "faithfulness",
+  "input": {
+    "captures": [
+      {
+        "screenId": "11:1",
+        "screenName": "Login",
+        "imageHashSha256": "0000000000000000000000000000000000000000000000000000000000000011",
+        "visibleLabels": ["Username", "Password", "Sign in", "Forgot password"]
+      }
+    ],
+    "generatedTestCases": [
+      {
+        "id": "tc-login-1",
+        "title": "Sign in with valid credentials",
+        "steps": [
+          { "stepIndex": 1, "action": "Type username", "expected": "Username field accepts text" },
+          { "stepIndex": 2, "action": "Type password", "expected": "Password field accepts masked input" },
+          { "stepIndex": 3, "action": "Click Sign in", "expected": "Authenticated session opens" }
+        ]
+      }
+    ]
+  }
+}

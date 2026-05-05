@@ -1,0 +1,30 @@
+{
+  "judge": "logic",
+  "input": {
+    "testDesignModel": {
+      "screens": [{ "screenId": "5:1", "screenName": "Loan form (empty coverage)" }],
+      "fields": [
+        { "id": "field-amount", "screenId": "5:1", "label": "Loan amount" }
+      ]
+    },
+    "coveragePlan": {
+      "perScreen": [{ "screenId": "5:1", "requiredFlows": ["submit"] }]
+    },
+    "generatedTestCases": {
+      "schemaVersion": "1.0.0",
+      "jobId": "calibration-logic-adversarial-empty-coverage",
+      "testCases": [
+        {
+          "id": "tc-empty-1",
+          "title": "Trivial smoke (empty quality signals)",
+          "type": "functional",
+          "qualitySignals": {
+            "coveredFieldIds": [],
+            "coveredActionIds": [],
+            "coveredScreenIds": []
+          }
+        }
+      ]
+    }
+  }
+}

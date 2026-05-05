@@ -70,6 +70,7 @@ jobs:
           pnpm run test:ti-faithfulness
           pnpm run test:ti-hallucination
           pnpm run test:ti-a11y
+          pnpm run test:ti-judge-calibration
 
       - name: Runtime smoke gates
         run: |

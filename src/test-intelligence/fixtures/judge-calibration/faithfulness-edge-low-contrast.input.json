@@ -1,0 +1,23 @@
+{
+  "judge": "faithfulness",
+  "input": {
+    "captures": [
+      {
+        "screenId": "18:1",
+        "screenName": "Promo banner",
+        "imageHashSha256": "0000000000000000000000000000000000000000000000000000000000000018",
+        "visibleLabels": ["Claim offer"],
+        "annotations": ["promo button has low color contrast against background"]
+      }
+    ],
+    "generatedTestCases": [
+      {
+        "id": "tc-low-contrast-1",
+        "title": "Verify the Claim offer button is reachable and readable",
+        "steps": [
+          { "stepIndex": 1, "action": "Locate Claim offer", "expected": "Button is readable" }
+        ]
+      }
+    ]
+  }
+}

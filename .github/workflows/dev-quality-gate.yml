@@ -295,6 +295,9 @@ jobs:
       - name: Test-intelligence form-screen a11y coverage gate
         run: pnpm run test:ti-a11y
 
+      - name: Test-intelligence judge-calibration gate (Issue #1906)
+        run: pnpm run test:ti-judge-calibration
+
   mutation-testing:
     needs: [setup]
     if: needs.setup.outputs.src == 'true' || needs.setup.outputs.config == 'true' || needs.setup.outputs.full == 'true'

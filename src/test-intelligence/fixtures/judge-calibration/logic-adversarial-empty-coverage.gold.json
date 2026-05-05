@@ -1,0 +1,12 @@
+{
+  "fixtureId": "logic-adversarial-empty-coverage",
+  "judge": "logic",
+  "scenarioKind": "adversarial",
+  "humanVerdict": "reject",
+  "humanFindingCodes": ["empty_coverage_signals"],
+  "rationale": "All qualitySignals arrays are empty, so the case carries zero evidence; reviewer rejected as fundamentally unsound.",
+  "mockJudgeResponse": {
+    "predictedVerdict": "reject",
+    "predictedFindingCodes": ["empty_coverage_signals"]
+  }
+}

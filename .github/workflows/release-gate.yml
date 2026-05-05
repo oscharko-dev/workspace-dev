@@ -401,6 +401,10 @@ jobs:
         if: matrix.shard == 0
         run: pnpm run test:ti-a11y
 
+      - name: Run judge-calibration eval gate (Issue #1906)
+        if: matrix.shard == 0
+        run: pnpm run test:ti-judge-calibration
+
   performance-web:
     timeout-minutes: 180
     runs-on: ubuntu-22.04

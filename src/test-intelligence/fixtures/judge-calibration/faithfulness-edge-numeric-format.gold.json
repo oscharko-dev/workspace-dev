@@ -1,0 +1,12 @@
+{
+  "fixtureId": "faithfulness-edge-numeric-format",
+  "judge": "faithfulness",
+  "scenarioKind": "edge",
+  "humanVerdict": "accept",
+  "humanFindingCodes": [],
+  "rationale": "The case asserts the exact numeric format ('1.234,56 €') visible in the capture, which matches the German locale rendering; reviewer accepted. The recorded judge response over-flags this as repair (over-strict on locale formatting) — captured here to keep the calibration surface honest.",
+  "mockJudgeResponse": {
+    "predictedVerdict": "repair",
+    "predictedFindingCodes": ["mismatch_numeric_format"]
+  }
+}

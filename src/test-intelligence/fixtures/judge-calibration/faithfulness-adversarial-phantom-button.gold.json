@@ -1,0 +1,12 @@
+{
+  "fixtureId": "faithfulness-adversarial-phantom-button",
+  "judge": "faithfulness",
+  "scenarioKind": "adversarial",
+  "humanVerdict": "reject",
+  "humanFindingCodes": ["hallucination_invented_button"],
+  "rationale": "Cancel order button is not visible on the capture — the case invented a control; reviewer rejected.",
+  "mockJudgeResponse": {
+    "predictedVerdict": "reject",
+    "predictedFindingCodes": ["hallucination_invented_button"]
+  }
+}

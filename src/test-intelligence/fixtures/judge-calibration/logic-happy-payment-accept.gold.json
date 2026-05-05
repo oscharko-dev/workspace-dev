@@ -1,0 +1,12 @@
+{
+  "fixtureId": "logic-happy-payment-accept",
+  "judge": "logic",
+  "scenarioKind": "happy",
+  "humanVerdict": "accept",
+  "humanFindingCodes": [],
+  "rationale": "Payment authorization case covers all card fields and the auth action; reviewer accepted.",
+  "mockJudgeResponse": {
+    "predictedVerdict": "accept",
+    "predictedFindingCodes": []
+  }
+}

@@ -1,0 +1,22 @@
+{
+  "judge": "faithfulness",
+  "input": {
+    "captures": [
+      {
+        "screenId": "15:1",
+        "screenName": "Order details",
+        "imageHashSha256": "0000000000000000000000000000000000000000000000000000000000000015",
+        "visibleLabels": ["Order id", "Items", "Total"]
+      }
+    ],
+    "generatedTestCases": [
+      {
+        "id": "tc-phantom-1",
+        "title": "Cancel an order via the Cancel order button",
+        "steps": [
+          { "stepIndex": 1, "action": "Click the Cancel order button", "expected": "Order is cancelled" }
+        ]
+      }
+    ]
+  }
+}

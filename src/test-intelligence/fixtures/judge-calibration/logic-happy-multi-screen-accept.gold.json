@@ -1,0 +1,12 @@
+{
+  "fixtureId": "logic-happy-multi-screen-accept",
+  "judge": "logic",
+  "scenarioKind": "happy",
+  "humanVerdict": "accept",
+  "humanFindingCodes": [],
+  "rationale": "Two-screen transfer flow covers every plan-required action with trace anchors on both screens; reviewer accepted.",
+  "mockJudgeResponse": {
+    "predictedVerdict": "accept",
+    "predictedFindingCodes": []
+  }
+}

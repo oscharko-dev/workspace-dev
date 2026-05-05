@@ -1,0 +1,12 @@
+{
+  "fixtureId": "logic-happy-loan-form-accept",
+  "judge": "logic",
+  "scenarioKind": "happy",
+  "humanVerdict": "accept",
+  "humanFindingCodes": [],
+  "rationale": "Loan-form coverage cites every required field and the submit action with proper trace anchors; reviewer accepted the case set as production-ready.",
+  "mockJudgeResponse": {
+    "predictedVerdict": "accept",
+    "predictedFindingCodes": []
+  }
+}

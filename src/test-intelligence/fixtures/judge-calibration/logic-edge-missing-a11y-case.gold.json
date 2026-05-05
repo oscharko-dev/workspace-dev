@@ -1,0 +1,12 @@
+{
+  "fixtureId": "logic-edge-missing-a11y-case",
+  "judge": "logic",
+  "scenarioKind": "edge",
+  "humanVerdict": "repair",
+  "humanFindingCodes": ["missing_form_screen_a11y_case"],
+  "rationale": "Form screen with input fields lacks a type=accessibility case anchored to the screen (Issue #1905 policy); reviewer marked it as repairable.",
+  "mockJudgeResponse": {
+    "predictedVerdict": "repair",
+    "predictedFindingCodes": ["missing_form_screen_a11y_case"]
+  }
+}

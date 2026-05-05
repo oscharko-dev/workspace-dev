@@ -1,0 +1,31 @@
+{
+  "judge": "logic",
+  "input": {
+    "testDesignModel": {
+      "screens": [{ "screenId": "9:1", "screenName": "Subscription form" }],
+      "fields": [
+        { "id": "field-plan", "screenId": "9:1", "label": "Plan" },
+        { "id": "field-card", "screenId": "9:1", "label": "Card" }
+      ]
+    },
+    "coveragePlan": {
+      "perScreen": [{ "screenId": "9:1", "requiredFlows": ["subscribe"] }]
+    },
+    "generatedTestCases": {
+      "schemaVersion": "1.0.0",
+      "jobId": "calibration-logic-edge-missing-a11y-case",
+      "testCases": [
+        {
+          "id": "tc-funct-1",
+          "title": "Subscribe to standard plan",
+          "type": "functional",
+          "qualitySignals": {
+            "coveredFieldIds": ["field-plan", "field-card"],
+            "coveredActionIds": ["subscribe"],
+            "coveredScreenIds": ["9:1"]
+          }
+        }
+      ]
+    }
+  }
+}

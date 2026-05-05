@@ -1,0 +1,12 @@
+{
+  "fixtureId": "faithfulness-happy-settings-screen",
+  "judge": "faithfulness",
+  "scenarioKind": "happy",
+  "humanVerdict": "accept",
+  "humanFindingCodes": [],
+  "rationale": "Display name and Save changes both appear in the capture; reviewer accepted.",
+  "mockJudgeResponse": {
+    "predictedVerdict": "accept",
+    "predictedFindingCodes": []
+  }
+}

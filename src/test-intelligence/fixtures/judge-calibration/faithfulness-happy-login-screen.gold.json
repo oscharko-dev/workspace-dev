@@ -1,0 +1,12 @@
+{
+  "fixtureId": "faithfulness-happy-login-screen",
+  "judge": "faithfulness",
+  "scenarioKind": "happy",
+  "humanVerdict": "accept",
+  "humanFindingCodes": [],
+  "rationale": "Every referenced control (Username, Password, Sign in) is visible in the capture; reviewer accepted as visually faithful.",
+  "mockJudgeResponse": {
+    "predictedVerdict": "accept",
+    "predictedFindingCodes": []
+  }
+}

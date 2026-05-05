@@ -1,0 +1,23 @@
+{
+  "judge": "faithfulness",
+  "input": {
+    "captures": [
+      {
+        "screenId": "14:1",
+        "screenName": "Search",
+        "imageHashSha256": "0000000000000000000000000000000000000000000000000000000000000014",
+        "visibleLabels": ["Search query", "Search"]
+      }
+    ],
+    "generatedTestCases": [
+      {
+        "id": "tc-search-1",
+        "title": "Submit a free-text search",
+        "steps": [
+          { "stepIndex": 1, "action": "Type into Search query", "expected": "Field accepts free text" },
+          { "stepIndex": 2, "action": "Click Search", "expected": "Results list appears" }
+        ]
+      }
+    ]
+  }
+}

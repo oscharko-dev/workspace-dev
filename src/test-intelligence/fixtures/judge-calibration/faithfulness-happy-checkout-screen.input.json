@@ -1,0 +1,23 @@
+{
+  "judge": "faithfulness",
+  "input": {
+    "captures": [
+      {
+        "screenId": "12:1",
+        "screenName": "Checkout",
+        "imageHashSha256": "0000000000000000000000000000000000000000000000000000000000000012",
+        "visibleLabels": ["Cart total", "Shipping address", "Place order"]
+      }
+    ],
+    "generatedTestCases": [
+      {
+        "id": "tc-checkout-1",
+        "title": "Place an order with default address",
+        "steps": [
+          { "stepIndex": 1, "action": "Verify Cart total is shown", "expected": "Total is non-zero" },
+          { "stepIndex": 2, "action": "Click Place order", "expected": "Order confirmation appears" }
+        ]
+      }
+    ]
+  }
+}
