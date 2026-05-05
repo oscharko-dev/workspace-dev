@@ -175,8 +175,16 @@ export const TEST_INTELLIGENCE_CONTRACT_VERSION = "1.11.0" as const;
  */
 export const GENERATED_TEST_CASE_SCHEMA_VERSION = "1.1.0" as const;
 
-/** Prompt template version for the test-intelligence prompt family. */
-export const TEST_INTELLIGENCE_PROMPT_TEMPLATE_VERSION = "1.1.0" as const;
+/**
+ * Prompt template version for the test-intelligence prompt family.
+ *
+ * 1.2.0 — Issue #1905: explicit form-screen accessibility directive added
+ * to the generator system prompt and user-prompt preamble. Bump forces a
+ * replay-cache miss for cached generator outputs that pre-date the new
+ * directive so the cache cannot serve a stale list that lacks an a11y case
+ * for a form screen.
+ */
+export const TEST_INTELLIGENCE_PROMPT_TEMPLATE_VERSION = "1.2.0" as const;
 
 /** Visual sidecar schema version consumed by the prompt compiler (Issue #1386). */
 export const VISUAL_SIDECAR_SCHEMA_VERSION = "1.1.0" as const;

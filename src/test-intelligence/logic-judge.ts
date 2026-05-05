@@ -20,6 +20,7 @@ import {
   type LlmGenerationResult,
 } from "../contracts/index.js";
 import { sanitizeErrorMessage } from "../error-sanitization.js";
+import { GENERATOR_FORM_SCREEN_A11Y_REPAIR_INSTRUCTION } from "./agent-role-profile.js";
 import { canonicalJson, sha256Hex } from "./content-hash.js";
 import type { LlmGatewayClient } from "./llm-gateway.js";
 
@@ -91,6 +92,15 @@ export const LOGIC_JUDGE_COVERAGE_HARD_GATE_FINDING_CODES = {
   hallucinatedId: "hallucinated_id",
   insufficientCoverageBreadth: "insufficient_coverage_breadth",
   weakTrace: "weak_trace",
+  /**
+   * Issue #1905 — fired when a TestDesignModel screen carries input
+   * elements but the candidate list is missing a `type=accessibility`
+   * test case anchored to that screen via `figmaTraceRefs[].screenId`.
+   * Severity: error — upgrades an `accept` verdict to `repair` so the
+   * existing repair loop drives regeneration with the canonical
+   * accessibility instruction.
+   */
+  missingFormScreenA11yCase: "missing_form_screen_a11y_case",
 } as const;
 
 /**
@@ -823,6 +833,54 @@ const computeCoverageRatios = (
   };
 };
 
+const evaluateMissingFormScreenA11yCase = (
+  acc: HardGateAccumulator,
+  cases: ReadonlyArray<GeneratedTestCase>,
+  testDesignModel: TestDesignModel,
+): void => {
+  const formScreenIds = new Set<string>();
+  for (const screen of safeArray(testDesignModel.screens)) {
+    if (safeArray(screen.elements).length > 0) {
+      formScreenIds.add(screen.screenId);
+    }
+  }
+  if (formScreenIds.size === 0) return;
+  const coveredScreenIds = new Set<string>();
+  for (const testCase of cases) {
+    if (testCase.type !== "accessibility") continue;
+    for (const traceRef of safeArray(testCase.figmaTraceRefs)) {
+      if (formScreenIds.has(traceRef.screenId)) {
+        coveredScreenIds.add(traceRef.screenId);
+      }
+    }
+  }
+  const missing = [...formScreenIds].filter((id) => !coveredScreenIds.has(id));
+  if (missing.length === 0) return;
+  for (const screenId of missing.sort()) {
+    pushFinding(
+      acc,
+      {
+        testCaseId: "$job",
+        code: LOGIC_JUDGE_COVERAGE_HARD_GATE_FINDING_CODES.missingFormScreenA11yCase,
+        severity: "error",
+        message: `screen "${screenId}" carries form fields but the list has no accessibility test case anchored to it`,
+      },
+      {
+        testCaseId: "$job",
+        path: "qualitySignals.coveredScreenIds",
+        // Render the canonical template from agent-role-profile.ts so the
+        // logic-judge instruction stays byte-identical with the
+        // `buildA11yCoverageRepairInstruction` helper used by the eval +
+        // operator tooling.
+        instruction: GENERATOR_FORM_SCREEN_A11Y_REPAIR_INSTRUCTION.replace(
+          "{screenId}",
+          screenId,
+        ),
+      },
+    );
+  }
+};
+
 const evaluateInsufficientBreadth = (
   acc: HardGateAccumulator,
   cases: ReadonlyArray<GeneratedTestCase>,
@@ -871,10 +929,12 @@ const evaluateInsufficientBreadth = (
 /**
  * Issue #1901 — deterministic post-LLM coverage hard-gate.
  *
- * Augments the LLM-produced verdict with four finding codes:
+ * Augments the LLM-produced verdict with five finding codes:
  * - `empty_coverage_signals` (severity: error) — all four coveredXxxIds empty
  * - `hallucinated_id` (severity: error) — covered id absent from the IR
  * - `insufficient_coverage_breadth` (severity: error) — job-level ratios below policy
+ * - `missing_form_screen_a11y_case` (severity: error, Issue #1905) — a screen
+ *   carries input elements but the list has no anchored accessibility case
  * - `weak_trace` (severity: warning) — figmaTraceRefs entry without nodeId
  *
  * Error-severity findings upgrade an `accept` verdict to `repair` so the
@@ -930,6 +990,7 @@ export const applyCoverageHardGate = (
     ir,
     input.coverageThresholds ?? {},
   );
+  evaluateMissingFormScreenA11yCase(acc, cases, input.testDesignModel);
 
   if (acc.findings.length === 0) {
     return verdict;

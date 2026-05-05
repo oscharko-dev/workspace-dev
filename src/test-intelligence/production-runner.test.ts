@@ -394,7 +394,13 @@ test("Issue #1794: banking profile blocks when the active deployment is missing 
       modelRevision: "mock-1",
       gatewayRelease: "mock",
       omitIctRegisterRef: true,
-      responder: okResponder([SAMPLE_DRAFT], "gpt-oss-120b"),
+      // Issue #1905: include the form-screen accessibility draft so the
+      // logic-judge a11y hard-gate stays green and `policy_blocked` is the
+      // outcome the runner reports (not `validation_blocked`).
+      responder: okResponder(
+        [SAMPLE_DRAFT, SAMPLE_ACCESSIBILITY_DRAFT],
+        "gpt-oss-120b",
+      ),
     });
     const result = await runFigmaToQcTestCases({
       jobId: "job-1794-banking-refusal",
@@ -1032,7 +1038,10 @@ test("runFigmaToQcTestCases wires Figma URL screenshots through the visual sidec
       deployment: "gpt-oss-120b-mock",
       modelRevision: "mock-1",
       gatewayRelease: "mock",
-      responder: okResponder([SAMPLE_DRAFT]),
+      // Issue #1905: anchored a11y case so the post-LLM hard-gate does
+      // not trigger repair-loop iterations the event-order assertion
+      // does not expect.
+      responder: okResponder([SAMPLE_DRAFT, SAMPLE_ACCESSIBILITY_DRAFT]),
     });
     const bundle = createMockLlmGatewayClientBundle({
       testGeneration: {
@@ -1229,7 +1238,9 @@ test("runFigmaToQcTestCases runs both judges, persists their artifacts, and keep
       deployment: "gpt-oss-120b-mock",
       modelRevision: "mock-1",
       gatewayRelease: "mock",
-      responder: okResponder([SAMPLE_DRAFT]),
+      // Issue #1905: anchored a11y case keeps the post-LLM hard-gate
+      // green so the happy-path verdict stays `accept`.
+      responder: okResponder([SAMPLE_DRAFT, SAMPLE_ACCESSIBILITY_DRAFT]),
     });
     const bundle = createMockLlmGatewayClientBundle({
       testGeneration: {
@@ -2223,7 +2234,10 @@ test("runFigmaToQcTestCases preserves policy_blocked as the FinOps outcome even 
       modelRevision: "gpt-oss-120b@cli-test-intelligence-run",
       gatewayRelease: "azure-ai-foundry-cli-test-intelligence-run",
       omitIctRegisterRef: true,
-      responder: okResponder([SAMPLE_DRAFT]),
+      // Issue #1905: anchored a11y case so policy_blocked is the
+      // attributed FinOps outcome, not validation_blocked from a
+      // missing-form-screen-a11y-case repair upgrade.
+      responder: okResponder([SAMPLE_DRAFT, SAMPLE_ACCESSIBILITY_DRAFT]),
     });
     const result = await runFigmaToQcTestCases({
       jobId: "job-finops-policy-precedence",
@@ -2300,7 +2314,10 @@ test("runFigmaToQcTestCases emits progress events in expected order", async () =
       deployment: "gpt-oss-120b-mock",
       modelRevision: "mock-1",
       gatewayRelease: "mock",
-      responder: okResponder([SAMPLE_DRAFT]),
+      // Issue #1905: anchored a11y case keeps the post-LLM hard-gate
+      // green so the expected event order does not include
+      // repair_loop_iteration entries.
+      responder: okResponder([SAMPLE_DRAFT, SAMPLE_ACCESSIBILITY_DRAFT]),
     });
     const observed: string[] = [];
     await runFigmaToQcTestCases({

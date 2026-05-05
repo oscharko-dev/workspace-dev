@@ -247,6 +247,24 @@ const GENERATOR_PROFILE: AgentRoleProfile = freezeProfile({
   finOpsGroup: "generation",
 });
 
+/**
+ * Issue #1905 — explicit, hard-coded directive that every form screen must
+ * carry at least one accessibility test case. The string is mirrored in
+ * `prompt-compiler.ts` (SYSTEM_PROMPT) so the live LLM receives it; this
+ * exported constant is the single source of truth for the rule and is
+ * surfaced by operator tooling (eval reports, policy dashboards).
+ */
+export const GENERATOR_FORM_SCREEN_A11Y_RULE =
+  "For every screen that contains input fields, you MUST generate at least one accessibility test case (type=accessibility) covering keyboard navigation, focus order, and screen-reader announcements." as const;
+
+/**
+ * Issue #1905 — canonical repair instruction the logic-judge / repair
+ * planner emits when a form screen is missing its accessibility case.
+ * `{screenId}` is replaced with the offending screen id at emission time.
+ */
+export const GENERATOR_FORM_SCREEN_A11Y_REPAIR_INSTRUCTION =
+  "Add at least one accessibility test case for screen {screenId} covering keyboard navigation, focus order, and screen-reader announcements." as const;
+
 const LOGIC_JUDGE_PROFILE: AgentRoleProfile = freezeProfile({
   schemaVersion: AGENT_ROLE_PROFILE_SCHEMA_VERSION,
   role: "logic_judge",

@@ -397,6 +397,10 @@ jobs:
         if: matrix.shard == 0
         run: pnpm run test:ti-hallucination
 
+      - name: Run form-screen a11y coverage eval gate (Issue #1905)
+        if: matrix.shard == 0
+        run: pnpm run test:ti-a11y
+
   performance-web:
     timeout-minutes: 180
     runs-on: ubuntu-22.04

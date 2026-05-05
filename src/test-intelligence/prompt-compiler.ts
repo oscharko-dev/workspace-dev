@@ -21,6 +21,7 @@ import {
   type VisualScreenDescription,
   type VisualSidecarFallbackReason,
 } from "../contracts/index.js";
+import { GENERATOR_FORM_SCREEN_A11Y_RULE } from "./agent-role-profile.js";
 import {
   analyzeContextBudget,
   type ContextBudgetCategoryInput,
@@ -57,6 +58,9 @@ const SYSTEM_PROMPT = [
   "When multiple source sections are present (figma_intent, jira_requirements, custom_context, custom_context_markdown, reconciliation_report),",
   "treat each role-tagged section as a distinct evidence source; do not conflate them.",
   "For Jira-only jobs (no figma_intent section), set figmaTraceRefs to an empty array for every test case.",
+  // Issue #1905: form-screen accessibility hardening rule sourced from
+  // agent-role-profile.ts so prompt body and operator tooling never drift.
+  GENERATOR_FORM_SCREEN_A11Y_RULE,
 ].join(" ");
 
 const USER_PROMPT_PREAMBLE = [
@@ -68,6 +72,10 @@ const USER_PROMPT_PREAMBLE = [
   "Every id you cite in coveredFieldIds, coveredActionIds, coveredValidationIds, or coveredNavigationIds must already exist in the TestDesignModel below; fabricated ids are rejected.",
   "Reference the source Figma trace for every produced case via figmaTraceRefs and populate figmaTraceRefs[].nodeId — a screenId-only trace is a weak trace.",
   "Cite ambiguity or open questions when the IR is incomplete; do not fabricate behavior.",
+  // Issue #1905: per-screen accessibility coverage requirement enforced by
+  // policy-gate (`policy:form-screen-needs-accessibility-case`) and by the
+  // a11y-coverage eval (`src/test-intelligence/a11y-coverage-eval.ts`).
+  "For every screen with input fields you MUST emit at least one type=\"accessibility\" test case anchored to that screen via figmaTraceRefs[].screenId; cover keyboard navigation, focus order/visible focus, label-for-input, and screen-reader announcements (aria-live).",
 ].join(" ");
 
 const PREFIX_END_MARKER = "--- prefix end ---" as const;
