@@ -201,6 +201,7 @@ import {
   createFileSystemLogicJudgeCache,
   createMemoryLogicJudgeCache,
   runLogicJudge,
+  type LogicJudgeCoverageThresholds,
   type RunLogicJudgeResult,
 } from "./logic-judge.js";
 import {
@@ -337,6 +338,21 @@ export interface ProductionRunnerLlmDraftCase {
   regulatoryRelevance?: {
     domain: RegulatoryRelevanceDomain;
     rationale: string;
+  };
+  /**
+   * Optional coverage signals captured from the LLM response (Issue #1901).
+   * The generator prompt asks the model to populate these so the
+   * downstream coverage hard-gate has machine-readable evidence of which
+   * IR ids each test case covers. Older models or fixtures that omit
+   * them round-trip cleanly: the runner falls back to empty arrays and
+   * the hard-gate emits its `empty_coverage_signals` finding.
+   */
+  qualitySignals?: {
+    coveredFieldIds?: ReadonlyArray<string>;
+    coveredActionIds?: ReadonlyArray<string>;
+    coveredValidationIds?: ReadonlyArray<string>;
+    coveredNavigationIds?: ReadonlyArray<string>;
+    confidence?: number;
   };
 }
 
@@ -1262,6 +1278,19 @@ export const runFigmaToQcTestCases = async (
       "logic-judge",
     ),
   );
+  const logicJudgeKnownNavigationIds = wireIntent.detectedNavigation.map(
+    (navigation) => navigation.id,
+  );
+  const customerRubricRules =
+    "rules" in customerRubric ? customerRubric.rules : undefined;
+  const logicJudgeCoverageThresholds: LogicJudgeCoverageThresholds = {
+    ...(customerRubricRules?.fieldCoverageRatioMin !== undefined
+      ? { fieldCoverageRatioMin: customerRubricRules.fieldCoverageRatioMin }
+      : {}),
+    ...(customerRubricRules?.actionCoverageRatioMin !== undefined
+      ? { actionCoverageRatioMin: customerRubricRules.actionCoverageRatioMin }
+      : {}),
+  };
   let logicJudgeResult: RunLogicJudgeResult = logicJudgeEnabled
     ? await runLogicJudge({
         jobId: input.jobId,
@@ -1271,6 +1300,8 @@ export const runFigmaToQcTestCases = async (
         generatedTestCases: generatedList,
         client: input.llm.client,
         cache: logicJudgeCache,
+        knownNavigationIds: logicJudgeKnownNavigationIds,
+        coverageThresholds: logicJudgeCoverageThresholds,
         ...(finopsBudget.roles.test_generation?.maxInputTokensPerRequest !==
         undefined
           ? {
@@ -1607,6 +1638,8 @@ export const runFigmaToQcTestCases = async (
           // repeat-iteration mocks (test fixtures) can still hit byte-stable
           // verdicts without poisoning the shared logic-judge cache.
           cache: createMemoryLogicJudgeCache(),
+          knownNavigationIds: logicJudgeKnownNavigationIds,
+          coverageThresholds: logicJudgeCoverageThresholds,
           ...(finopsBudget.roles.test_generation?.maxInputTokensPerRequest !==
           undefined
             ? {
@@ -3131,7 +3164,47 @@ const validateDraftCase = (
   if (regulatoryRelevance !== undefined) {
     draft.regulatoryRelevance = regulatoryRelevance;
   }
+  const qualitySignals = parseDraftQualitySignals(c.qualitySignals);
+  if (qualitySignals !== undefined) {
+    draft.qualitySignals = qualitySignals;
+  }
   return { ok: true, value: draft };
+};
+
+/**
+ * Tolerant parser for the optional `qualitySignals` field on a draft case
+ * (Issue #1901). The strict generator response schema accepts the field
+ * but does not require it; the runner gathers whichever covered* arrays
+ * the model emitted and falls back to empty arrays for the rest. This
+ * is what feeds the downstream coverage hard-gate with the LLM's view
+ * of which IR ids each test case covers.
+ */
+const parseDraftQualitySignals = (
+  raw: unknown,
+): NonNullable<ProductionRunnerLlmDraftCase["qualitySignals"]> | undefined => {
+  if (raw === undefined || raw === null) return undefined;
+  if (typeof raw !== "object" || Array.isArray(raw)) return undefined;
+  const r = raw as Record<string, unknown>;
+  const result: NonNullable<ProductionRunnerLlmDraftCase["qualitySignals"]> = {};
+  const stringArray = (value: unknown): ReadonlyArray<string> | undefined =>
+    Array.isArray(value) && value.every(isString) ? value : undefined;
+  const fieldIds = stringArray(r.coveredFieldIds);
+  if (fieldIds !== undefined) result.coveredFieldIds = fieldIds;
+  const actionIds = stringArray(r.coveredActionIds);
+  if (actionIds !== undefined) result.coveredActionIds = actionIds;
+  const validationIds = stringArray(r.coveredValidationIds);
+  if (validationIds !== undefined) result.coveredValidationIds = validationIds;
+  const navigationIds = stringArray(r.coveredNavigationIds);
+  if (navigationIds !== undefined) result.coveredNavigationIds = navigationIds;
+  if (
+    typeof r.confidence === "number" &&
+    Number.isFinite(r.confidence) &&
+    r.confidence >= 0 &&
+    r.confidence <= 1
+  ) {
+    result.confidence = r.confidence;
+  }
+  return Object.keys(result).length === 0 ? undefined : result;
 };
 
 /**
@@ -3231,11 +3304,17 @@ const stampGeneratedTestCase = (input: {
     openQuestions: [...(input.draft.openQuestions ?? [])],
     qcMappingPreview: { exportable: true },
     qualitySignals: {
-      coveredFieldIds: [],
-      coveredActionIds: [],
-      coveredValidationIds: [],
-      coveredNavigationIds: [],
-      confidence: 0.85,
+      coveredFieldIds: [...(input.draft.qualitySignals?.coveredFieldIds ?? [])],
+      coveredActionIds: [
+        ...(input.draft.qualitySignals?.coveredActionIds ?? []),
+      ],
+      coveredValidationIds: [
+        ...(input.draft.qualitySignals?.coveredValidationIds ?? []),
+      ],
+      coveredNavigationIds: [
+        ...(input.draft.qualitySignals?.coveredNavigationIds ?? []),
+      ],
+      confidence: input.draft.qualitySignals?.confidence ?? 0.85,
     },
     reviewState: "draft",
     audit: { ...input.audit },
@@ -3476,6 +3555,32 @@ const buildDraftResponseSchema = (): Record<string, unknown> => ({
                 enum: [...ALLOWED_REGULATORY_RELEVANCE_DOMAINS],
               },
               rationale: { type: "string", minLength: 1 },
+            },
+          },
+          // Issue #1901 — coverage signals from the LLM. The schema
+          // intentionally omits `additionalProperties: false` to mirror
+          // the surrounding tolerance; the runner picks up the four
+          // covered* arrays plus an optional confidence in [0, 1].
+          qualitySignals: {
+            type: "object",
+            properties: {
+              coveredFieldIds: {
+                type: "array",
+                items: { type: "string", minLength: 1 },
+              },
+              coveredActionIds: {
+                type: "array",
+                items: { type: "string", minLength: 1 },
+              },
+              coveredValidationIds: {
+                type: "array",
+                items: { type: "string", minLength: 1 },
+              },
+              coveredNavigationIds: {
+                type: "array",
+                items: { type: "string", minLength: 1 },
+              },
+              confidence: { type: "number", minimum: 0, maximum: 1 },
             },
           },
         },

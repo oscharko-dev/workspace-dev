@@ -124,9 +124,22 @@ const SAMPLE_DRAFT: ProductionRunnerLlmDraftCase = {
     "Investitionssumme wird gespeichert",
     "Folgemaske erreichbar",
   ],
-  figmaTraceRefs: [{ screenId: "1:1", nodeName: "Bedarfsermittlung" }],
+  figmaTraceRefs: [
+    { screenId: "1:1", nodeId: "2:1", nodeName: "Bedarfsermittlung" },
+  ],
   assumptions: [],
   openQuestions: [],
+  // Issue #1901 — populated coverage signals so the logic-judge
+  // coverage hard-gate does not flip the verdict to `repair` and
+  // displace `policy_blocked` / `accept` outcomes the rest of the
+  // production-runner test suite asserts.
+  qualitySignals: {
+    coveredFieldIds: ["1:1::field::2:1"],
+    coveredActionIds: ["1:1::action::2:2"],
+    coveredValidationIds: [],
+    coveredNavigationIds: [],
+    confidence: 0.9,
+  },
 };
 
 const SAMPLE_ACCESSIBILITY_DRAFT: ProductionRunnerLlmDraftCase = {

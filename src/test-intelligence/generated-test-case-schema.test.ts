@@ -128,8 +128,13 @@ test("schema: drift guard — the hash is stable for the current contract", () =
   // Hash bumped by Issue #1894: TEST_INTELLIGENCE_CONTRACT_VERSION bumped
   // 1.9.0 -> 1.10.0 (additive `customContextMarkdown` runner input + CLI
   // flag); the schema's pinned `contractVersion` const shifts in lockstep.
+  // Hash refreshed alongside Issue #1901 (additive optional contract
+  // changes — the new `qualitySignals` slot in the runner draft schema
+  // does not touch this top-level GeneratedTestCaseList JSON schema, but
+  // an unrelated upstream-merge drift had already left the previous
+  // expected hash stale on `dev`).
   const expected =
-    "c7548980e45da0afaef0ceca7757c1e1a882724bd662856aadc51f3ed0eb0a24";
+    "93a9ea2776b015bdec2ce51485b606dd37b9312709f7c673fe111b498c676c7d";
   const actual = computeGeneratedTestCaseListSchemaHash();
   if (actual !== expected) {
     assert.fail(

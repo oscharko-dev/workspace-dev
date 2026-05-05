@@ -64,7 +64,9 @@ const USER_PROMPT_PREAMBLE = [
   "Cover the detected fields, actions, validations, and navigation edges of every screen.",
   "Use the ISO/IEC/IEEE 29119-4 technique that best fits each case.",
   "Populate qualitySignals.coveredFieldIds, coveredActionIds, coveredValidationIds, coveredNavigationIds with the matching IR ids.",
-  "Reference the source Figma trace for every produced case via figmaTraceRefs.",
+  "An empty coveredFieldIds array (qualitySignals.coveredFieldIds: []) is a schema violation — every non-trivial case must cite at least one IR id across the four covered* arrays.",
+  "Every id you cite in coveredFieldIds, coveredActionIds, coveredValidationIds, or coveredNavigationIds must already exist in the TestDesignModel below; fabricated ids are rejected.",
+  "Reference the source Figma trace for every produced case via figmaTraceRefs and populate figmaTraceRefs[].nodeId — a screenId-only trace is a weak trace.",
   "Cite ambiguity or open questions when the IR is incomplete; do not fabricate behavior.",
 ].join(" ");
 

@@ -571,6 +571,28 @@ export interface TestCasePolicyProfileRules {
    * Optional for backward compatibility. Treat `undefined` as `true`.
    */
   enforceRiskTagDowngradeDetection?: boolean;
+  /**
+   * Minimum job-level field-coverage ratio required by the logic-judge
+   * coverage hard-gate (Issue #1901). Computed as
+   * `actionCoverage.covered / actionCoverage.total` across the generated
+   * test case list. Below this threshold the judge emits the
+   * `insufficient_coverage_breadth` finding (severity: error) and the
+   * repair-loop is triggered. Tunable per profile; the secure default for
+   * `eu-banking-default` is `0.4`. Optional for backward compatibility:
+   * when omitted the hard-gate skips the breadth check.
+   */
+  fieldCoverageRatioMin?: number;
+  /**
+   * Minimum job-level action-coverage ratio required by the logic-judge
+   * coverage hard-gate (Issue #1901). Computed as
+   * `actionCoverage.covered / actionCoverage.total` across the generated
+   * test case list. Below this threshold the judge emits the
+   * `insufficient_coverage_breadth` finding (severity: error) and the
+   * repair-loop is triggered. Tunable per profile; the secure default for
+   * `eu-banking-default` is `0.5`. Optional for backward compatibility:
+   * when omitted the hard-gate skips the breadth check.
+   */
+  actionCoverageRatioMin?: number;
 }
 
 /** Built-in policy profile shape. Profiles are identified by `id`+`version`. */
@@ -9526,7 +9548,7 @@ export interface ReleaseQualityGatesReport {
  * Must be bumped according to CONTRACT_CHANGELOG.md rules.
  * Package version alignment is documented in VERSIONING.md.
  */
-export const CONTRACT_VERSION = "4.46.0" as const;
+export const CONTRACT_VERSION = "4.47.0" as const;
 
 // ---------------------------------------------------------------------------
 // Issue #1774 — UntrustedContentNormalizer (2025-vintage injection carriers).
