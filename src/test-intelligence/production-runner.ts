@@ -198,6 +198,7 @@ import {
 import {
   createFileSystemLogicJudgeCache,
   runLogicJudge,
+  type RunLogicJudgeResult,
 } from "./logic-judge.js";
 
 /**
@@ -1227,7 +1228,7 @@ export const runFigmaToQcTestCases = async (
       "logic-judge",
     ),
   );
-  const logicJudgeResult = logicJudgeEnabled
+  const logicJudgeResult: RunLogicJudgeResult = logicJudgeEnabled
     ? await runLogicJudge({
         jobId: input.jobId,
         generatedAt: input.generatedAt,
@@ -1296,7 +1297,7 @@ export const runFigmaToQcTestCases = async (
           modelDeployment: input.llm.client.deployment,
           modelRevision: input.llm.client.modelRevision,
           gatewayRelease: input.llm.client.gatewayRelease,
-          verdict: "accept",
+          verdict: "accept" as const,
           findings: [],
           repairInstructions: [],
         },

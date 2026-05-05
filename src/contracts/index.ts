@@ -3432,6 +3432,10 @@ export const LOGIC_JUDGE_VERDICT_SCHEMA_VERSION = "1.0.0" as const;
 /** Prompt-template version pinned onto logic-judge verdict artifacts. */
 export const LOGIC_JUDGE_PROMPT_TEMPLATE_VERSION = "logic-judge.v1" as const;
 
+/** Structured-output schema name used by the logic-judge LLM call. */
+export const LOGIC_JUDGE_OUTPUT_SCHEMA_NAME =
+  "workspace-dev-logic-judge-v1" as const;
+
 /** Canonical filename for the persisted logic-judge prompt artifact. */
 export const LOGIC_JUDGE_COMPILED_PROMPT_ARTIFACT_FILENAME =
   "compiled-prompt-logic-judge.json" as const;
