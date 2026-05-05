@@ -731,7 +731,7 @@ test("runFigmaToQcTestCases records real in-flight dedup hits in the persisted F
     releaseFetch?.();
 
     const [firstResult, secondResult] = await Promise.all([first, second]);
-    assert.equal(dispatches, 3);
+    assert.equal(dispatches, 1);
 
     const firstReport = JSON.parse(
       await readFile(firstResult.artifactPaths.finopsReport, "utf8"),
@@ -2105,7 +2105,7 @@ test("runFigmaToQcTestCases treats CLI live deployments as regular live runs, no
       await readFile(result.artifactPaths.finopsReport, "utf8"),
     ) as FinOpsBudgetReport;
     assert.equal(report.outcome, "completed");
-    assert.equal(report.totals.attempts, 2);
+    assert.equal(report.totals.attempts, 1);
     assert.equal(report.totals.liveSmokeCalls, 0);
     const testGeneration = report.roles.find(
       (entry) => entry.role === "test_generation",
