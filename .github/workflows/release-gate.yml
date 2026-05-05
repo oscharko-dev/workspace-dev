@@ -389,6 +389,10 @@ jobs:
         if: matrix.shard == 0
         run: pnpm run test:ti-multi-source-eval
 
+      - name: Run faithfulness eval gate (Issue #1903)
+        if: matrix.shard == 0
+        run: pnpm run test:ti-faithfulness
+
   performance-web:
     timeout-minutes: 180
     runs-on: ubuntu-22.04
