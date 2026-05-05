@@ -115,6 +115,7 @@ const buildTestCase = (
   override: {
     qualitySignals?: Partial<GeneratedTestCaseQualitySignals>;
     figmaTraceRefs?: GeneratedTestCaseFigmaTrace[];
+    type?: GeneratedTestCase["type"];
   } = {},
 ): GeneratedTestCase =>
   ({
@@ -126,7 +127,7 @@ const buildTestCase = (
     title: `Case ${id}`,
     objective: "Cover IR fields and actions",
     level: "system",
-    type: "functional",
+    type: override.type ?? "functional",
     priority: "p1",
     riskCategory: "low",
     technique: "use_case",
@@ -294,6 +295,16 @@ test("hard-gate emits weak_trace as warning and does NOT upgrade accept to repai
       },
       figmaTraceRefs: [{ screenId: SCREEN_ID }],
     }),
+    // Issue #1905: form screens require an anchored accessibility case;
+    // include one here so the new missing_form_screen_a11y_case finding
+    // does not trip and confound this test's weak_trace assertion.
+    buildTestCase("tc-a11y", {
+      type: "accessibility",
+      qualitySignals: {
+        coveredFieldIds: ["fld-a"],
+      },
+      figmaTraceRefs: [buildFigmaTraceRef()],
+    }),
   ]);
   const augmented = applyCoverageHardGate(buildLlmVerdict("accept"), {
     testDesignModel: buildTestDesignModel(),
@@ -381,6 +392,15 @@ test("hard-gate accepts a fully covered, IR-faithful test case set with no findi
         coveredActionIds: ["act-x", "act-y"],
         coveredValidationIds: ["val-1"],
         coveredNavigationIds: ["nav-1"],
+      },
+      figmaTraceRefs: [buildFigmaTraceRef()],
+    }),
+    // Issue #1905: form screens require an anchored accessibility case
+    // for the hard-gate to remain finding-free.
+    buildTestCase("tc-a11y", {
+      type: "accessibility",
+      qualitySignals: {
+        coveredFieldIds: ["fld-a"],
       },
       figmaTraceRefs: [buildFigmaTraceRef()],
     }),

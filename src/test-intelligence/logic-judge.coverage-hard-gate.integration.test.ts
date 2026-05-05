@@ -110,6 +110,7 @@ const buildFigmaTraceRef = (): GeneratedTestCaseFigmaTrace => ({
 const buildTestCase = (
   id: string,
   qualitySignals: Partial<GeneratedTestCaseQualitySignals>,
+  type: GeneratedTestCase["type"] = "functional",
 ): GeneratedTestCase =>
   ({
     id,
@@ -120,7 +121,7 @@ const buildTestCase = (
     title: `Case ${id}`,
     objective: "Cover IR fields and actions",
     level: "system",
-    type: "functional",
+    type,
     priority: "p1",
     riskCategory: "low",
     technique: "use_case",
@@ -242,7 +243,9 @@ test("end-to-end repair: empty coveredFieldIds triggers and resolves a repair it
     }),
   ]);
   // Repaired list: same case id, now populated with real IR ids that
-  // exceed both field-coverage and action-coverage thresholds.
+  // exceed both field-coverage and action-coverage thresholds. Issue
+  // #1905: form screens require an anchored accessibility case, so add
+  // one to the repaired list to satisfy the hard-gate.
   const repairedList = buildList([
     buildTestCase("tc-empty", {
       coveredFieldIds: ["fld-a", "fld-b"],
@@ -250,6 +253,11 @@ test("end-to-end repair: empty coveredFieldIds triggers and resolves a repair it
       coveredValidationIds: ["val-1"],
       coveredNavigationIds: ["nav-1"],
     }),
+    buildTestCase(
+      "tc-a11y",
+      { coveredFieldIds: ["fld-a"] },
+      "accessibility",
+    ),
   ]);
 
   const initialVerdict = applyCoverageHardGate(buildBaseLlmVerdict("accept"), {
@@ -307,6 +315,13 @@ test("end-to-end repair: hallucinated id is replaced with a real IR id across on
       coveredActionIds: ["act-x", "act-y"],
       coveredValidationIds: ["val-1"],
     }),
+    // Issue #1905: anchored a11y case so the form-screen hard-gate
+    // does not block the repair-loop's `accepted` outcome.
+    buildTestCase(
+      "tc-a11y",
+      { coveredFieldIds: ["fld-a"] },
+      "accessibility",
+    ),
   ]);
 
   const initialVerdict = applyCoverageHardGate(buildBaseLlmVerdict("accept"), {
