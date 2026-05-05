@@ -151,6 +151,13 @@ export interface TestIntelligenceRunOptions {
    * when running multiple harness wrappers in the same job.
    */
   harnessRoleStepId: string | undefined;
+  /**
+   * Cap on repair iterations after the initial pass (Issue #1900).
+   * `undefined` → runner default (3). Clamped to the runner's hard cap.
+   * Only takes effect when `mode === "deterministic_llm"` and the judge
+   * panel produces a `repair` verdict.
+   */
+  harnessMaxRepairIterations: number | undefined;
 }
 
 /**
@@ -184,6 +191,7 @@ export const parseTestIntelligenceRunArgs = (
   let harnessMode: ProductionRunnerHarnessMode = "off";
   let harnessTestDepth: AgentHarnessTestDepth = "standard";
   let harnessRoleStepId: string | undefined;
+  let harnessMaxRepairIterations: number | undefined;
   let customContextMarkdownPath: string | undefined;
 
   for (let index = 0; index < args.length; index += 1) {
@@ -356,6 +364,24 @@ export const parseTestIntelligenceRunArgs = (
       continue;
     }
 
+    if (arg === "--harness-max-repair-iterations") {
+      const value = next?.trim();
+      if (!value) {
+        throw new TestIntelligenceRunOperatorError(
+          "--harness-max-repair-iterations requires a non-negative integer",
+        );
+      }
+      const parsed = Number(value);
+      if (!Number.isInteger(parsed) || parsed < 0) {
+        throw new TestIntelligenceRunOperatorError(
+          `--harness-max-repair-iterations must be a non-negative integer; got ${value}`,
+        );
+      }
+      harnessMaxRepairIterations = parsed;
+      index += 1;
+      continue;
+    }
+
     if (arg === "--custom-context-markdown") {
       const value = next?.trim();
       if (!value) {
@@ -410,6 +436,7 @@ export const parseTestIntelligenceRunArgs = (
     harnessMode,
     harnessTestDepth,
     harnessRoleStepId,
+    harnessMaxRepairIterations,
     customContextMarkdownPath,
   };
 };
@@ -1080,6 +1107,9 @@ export const runTestIntelligenceCommand = async (
           testDepth: options.harnessTestDepth,
           ...(options.harnessRoleStepId !== undefined
             ? { roleStepId: options.harnessRoleStepId }
+            : {}),
+          ...(options.harnessMaxRepairIterations !== undefined
+            ? { maxRepairIterations: options.harnessMaxRepairIterations }
             : {}),
         };
 

@@ -36,6 +36,7 @@ export const PRODUCTION_RUNNER_EVENT_PHASES = [
   "cache_break",
   "replay_cache_hit",
   "cancelled",
+  "repair_loop_iteration",
 ] as const;
 
 export type ProductionRunnerEventPhase =

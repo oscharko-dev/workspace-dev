@@ -193,13 +193,25 @@ import {
 } from "./replay-cache.js";
 import {
   createFileSystemFaithfulnessJudgeCache,
+  createMemoryFaithfulnessJudgeCache,
   runFaithfulnessJudge,
+  type RunFaithfulnessJudgeResult,
 } from "./faithfulness-judge.js";
 import {
   createFileSystemLogicJudgeCache,
+  createMemoryLogicJudgeCache,
   runLogicJudge,
   type RunLogicJudgeResult,
 } from "./logic-judge.js";
+import {
+  REPAIR_LOOP_DEFAULT_MAX_ITERATIONS,
+  REPAIR_LOOP_MAX_ITERATIONS_HARD_CAP,
+  REPAIR_PLANNER_ARTIFACT_PREFIX,
+  TEST_GENERATION_REPAIR_ARTIFACT_PREFIX,
+  runRepairLoop,
+  type RepairLoopIterationRecord,
+  type RepairLoopResult,
+} from "./repair-loop.js";
 
 /**
  * Default test-generation deployment label. Exported so callers building
@@ -400,6 +412,17 @@ export interface ProductionRunnerHarnessConfig {
    * Override only when running multiple harness wrappers in the same job.
    */
   readonly roleStepId?: string;
+  /**
+   * Cap on repair iterations after the initial pass (Issue #1900). Defaults
+   * to {@link REPAIR_LOOP_DEFAULT_MAX_ITERATIONS} (3) when omitted; clamped to
+   * {@link REPAIR_LOOP_MAX_ITERATIONS_HARD_CAP} (5). When at least one judge
+   * returns `repair` and none returns `reject`, the runner consolidates the
+   * judge `repairInstructions`, re-invokes the generator with the augmented
+   * prompt, and re-runs both judges. The loop terminates with `accepted` /
+   * `rejected` when both judges agree, otherwise with `needs_review` after
+   * the cap is exhausted (mapped to job runtime status `partial`).
+   */
+  readonly maxRepairIterations?: number;
 }
 
 /** Summary surfaced when the runner ran in `shadow_eval` or `enforced` mode. */
@@ -632,6 +655,18 @@ export interface RunFigmaToQcTestCasesResult {
     verdict: FaithfulnessVerdict;
     artifactPath: string;
     compiledPromptPath: string;
+  };
+  /**
+   * Repair-loop summary surfaced when at least one judge returned `repair`
+   * on the initial pass and the runner ran the bounded repair loop
+   * (Issue #1900). Absent when the initial verdicts were terminal
+   * (`accept` on both judges, or any `reject`).
+   */
+  repairLoop?: {
+    readonly outcome: RepairLoopResult["outcome"];
+    readonly repairIterationCount: number;
+    readonly maxRepairIterations: number;
+    readonly iterations: ReadonlyArray<RepairLoopIterationRecord>;
   };
   customerMarkdownPaths: {
     combined: string;
@@ -1218,7 +1253,7 @@ export const runFigmaToQcTestCases = async (
       },
     });
   }
-  const generatedList: GeneratedTestCaseList = cacheExecResult.testCases;
+  let generatedList: GeneratedTestCaseList = cacheExecResult.testCases;
   const logicJudgeCache = createFileSystemLogicJudgeCache(
     join(
       input.outputRoot,
@@ -1228,7 +1263,7 @@ export const runFigmaToQcTestCases = async (
       "logic-judge",
     ),
   );
-  const logicJudgeResult: RunLogicJudgeResult = logicJudgeEnabled
+  let logicJudgeResult: RunLogicJudgeResult = logicJudgeEnabled
     ? await runLogicJudge({
         jobId: input.jobId,
         generatedAt: input.generatedAt,
@@ -1324,7 +1359,7 @@ export const runFigmaToQcTestCases = async (
       "faithfulness-judge",
     ),
   );
-  const faithfulnessJudgeResult =
+  let faithfulnessJudgeResult: RunFaithfulnessJudgeResult | undefined =
     logicJudgeResult.verdict.verdict === "accept" &&
     visualCaptures !== undefined &&
     input.llm.bundle !== undefined
@@ -1379,6 +1414,368 @@ export const runFigmaToQcTestCases = async (
       result: attempt.result,
     });
   }
+  // 7b. Repair loop (Issue #1900). When at least one judge returned
+  //     `repair` and none returned `reject`, consolidate the union of
+  //     `repairInstructions`, re-invoke the generator with the augmented
+  //     prompt, and re-run both judges — bounded by `maxRepairIterations`.
+  //     Per-iteration artifacts (`agent-role-runs/repair_planner_iter_K.json`
+  //     and `agent-role-runs/test_generation_repair_iter_K.json`) are written
+  //     by the loop driver. Token spend is attributed to FinOps role
+  //     `test_generation` (source `generator`) for the regenerator and
+  //     `judge_primary` / `judge_secondary` for the re-runs.
+  const initialJudgeAccepted =
+    logicJudgeResult.verdict.verdict === "accept" &&
+    (faithfulnessJudgeResult === undefined ||
+      faithfulnessJudgeResult.verdict.verdict === "accept");
+  const initialJudgeRejected =
+    logicJudgeResult.verdict.verdict === "reject" ||
+    (faithfulnessJudgeResult !== undefined &&
+      faithfulnessJudgeResult.verdict.verdict === "reject");
+  let repairLoopResult: RepairLoopResult | undefined;
+  if (!initialJudgeAccepted && !initialJudgeRejected) {
+    const maxRepairIterations =
+      input.harness?.maxRepairIterations ??
+      REPAIR_LOOP_DEFAULT_MAX_ITERATIONS;
+    const faithfulnessSnapshot = faithfulnessJudgeResult;
+    repairLoopResult = await runRepairLoop({
+      jobId: input.jobId,
+      runDir: artifactDir,
+      initialList: generatedList,
+      initialLogicVerdict: logicJudgeResult.verdict,
+      ...(faithfulnessSnapshot !== undefined
+        ? { initialFaithfulnessVerdict: faithfulnessSnapshot.verdict }
+        : {}),
+      maxRepairIterations,
+      regenerate: async ({ previousList, repairInstructions, iteration }) => {
+        const repairCompiled = compilePrompt({
+          jobId: input.jobId,
+          intent: wireIntent,
+          ...(promptVisualBatch !== undefined ? { visual: promptVisualBatch } : {}),
+          ...(activeAgentLessons.length > 0
+            ? { agentLessons: activeAgentLessons }
+            : {}),
+          modelBinding: {
+            modelRevision: TEST_GENERATION_MODEL_REVISION,
+            gatewayRelease: TEST_GENERATION_GATEWAY_RELEASE,
+          },
+          policyBundleVersion: POLICY_BUNDLE_VERSION,
+          roleStepId: "test_generation",
+          customerRubric,
+          responseSchema: draftSchema,
+          responseSchemaName:
+            "workspace-dev-production-runner-draft-list-v1",
+          outputSchemaHintLabel: "ProductionRunnerDraftResponse",
+          suffixSections: [
+            ...buildPromptSuffixSections(
+              wireIntent,
+              policyProfileId,
+              customContextMarkdown !== undefined,
+            ),
+            {
+              kind: "repair_instructions" as const,
+              label: `RepairInstructions (iteration ${iteration})`,
+              jsonPayload: repairInstructions,
+            },
+            {
+              kind: "json" as const,
+              label: `PreviousGeneratedTestCases (iteration ${iteration})`,
+              jsonPayload: previousList,
+            },
+          ],
+          visualBinding: promptVisualBinding,
+          ...(compiledCustomContext !== undefined
+            ? { customContext: compiledCustomContext }
+            : {}),
+          ...(compiledSourceMixPlan !== undefined
+            ? { sourceMixPlan: compiledSourceMixPlan }
+            : {}),
+          ...(finopsLimits.maxInputTokens !== undefined
+            ? {
+                contextBudget: {
+                  roleStepId: "test_generation",
+                  maxInputTokens: finopsLimits.maxInputTokens,
+                },
+              }
+            : {}),
+        });
+        const repairRequest: LlmGenerationRequest = {
+          jobId: repairCompiled.request.jobId,
+          systemPrompt: repairCompiled.request.systemPrompt,
+          userPrompt: repairCompiled.request.userPrompt,
+          responseSchema: draftSchema,
+          responseSchemaName:
+            "workspace-dev-production-runner-draft-list-v1",
+          ...(effectiveMaxInputTokens !== undefined
+            ? { maxInputTokens: effectiveMaxInputTokens }
+            : {}),
+          ...(effectiveMaxOutputTokens !== undefined
+            ? { maxOutputTokens: effectiveMaxOutputTokens }
+            : {}),
+          ...(effectiveMaxWallClockMs !== undefined
+            ? { maxWallClockMs: effectiveMaxWallClockMs }
+            : {}),
+          ...(effectiveMaxRetries !== undefined
+            ? { maxRetries: effectiveMaxRetries }
+            : {}),
+          ...(input.llm.abortSignal !== undefined
+            ? { abortSignal: input.llm.abortSignal }
+            : {}),
+        };
+        const startedAtRepair = Date.now();
+        const llmResult = await input.llm.client.generate(repairRequest);
+        const llmDurationMs = Date.now() - startedAtRepair;
+        finopsRecorder.recordAttempt({
+          role: "test_generation",
+          source: "generator",
+          deployment:
+            llmResult.outcome === "success"
+              ? llmResult.modelDeployment
+              : input.llm.client.deployment,
+          durationMs: llmDurationMs,
+          result: llmResult,
+        });
+        if (llmResult.outcome !== "success") {
+          throw new ProductionRunnerError({
+            failureClass: "LLM_GATEWAY_FAILED",
+            message: `Repair iteration ${iteration} generator failed: ${llmResult.errorClass}`,
+            retryable: false,
+          });
+        }
+        const repairContent = llmResult.content as
+          | LlmDraftResponse
+          | undefined;
+        if (
+          repairContent === undefined ||
+          !Array.isArray(repairContent.testCases)
+        ) {
+          throw new ProductionRunnerError({
+            failureClass: "LLM_RESPONSE_INVALID",
+            message: `Repair iteration ${iteration} returned a payload without testCases`,
+            retryable: false,
+          });
+        }
+        const repairAudit: GeneratedTestCaseAuditMetadata = {
+          jobId: input.jobId,
+          generatedAt: input.generatedAt,
+          contractVersion: TEST_INTELLIGENCE_CONTRACT_VERSION,
+          schemaVersion: GENERATED_TEST_CASE_SCHEMA_VERSION,
+          promptTemplateVersion: TEST_INTELLIGENCE_PROMPT_TEMPLATE_VERSION,
+          redactionPolicyVersion: REDACTION_POLICY_VERSION,
+          visualSidecarSchemaVersion: VISUAL_SIDECAR_SCHEMA_VERSION,
+          cacheHit: false,
+          cacheKey: repairCompiled.request.hashes.cacheKey,
+          inputHash: repairCompiled.request.hashes.inputHash,
+          promptHash: repairCompiled.request.hashes.promptHash,
+          schemaHash: repairCompiled.request.hashes.schemaHash,
+        };
+        const repairCases = repairContent.testCases.map((draft, index) =>
+          stampGeneratedTestCase({
+            draft,
+            jobId: input.jobId,
+            index,
+            audit: repairAudit,
+            intent,
+          }),
+        );
+        repairCases.sort((a, b) =>
+          a.id < b.id ? -1 : a.id > b.id ? 1 : 0,
+        );
+        const repairList: GeneratedTestCaseList = {
+          schemaVersion: GENERATED_TEST_CASE_SCHEMA_VERSION,
+          jobId: input.jobId,
+          testCases: repairCases,
+        };
+        return {
+          list: repairList,
+          llmResult,
+          llmDurationMs,
+          inputTokens: llmResult.usage.inputTokens ?? 0,
+          outputTokens: llmResult.usage.outputTokens ?? 0,
+          hashes: {
+            inputHash: repairCompiled.request.hashes.inputHash,
+            promptHash: repairCompiled.request.hashes.promptHash,
+            schemaHash: repairCompiled.request.hashes.schemaHash,
+            cacheKey: repairCompiled.request.hashes.cacheKey,
+          },
+        };
+      },
+      runLogicJudge: async ({ list }) => {
+        const repairLogicResult = await runLogicJudge({
+          jobId: input.jobId,
+          generatedAt: input.generatedAt,
+          testDesignModel: compiled.artifacts.payload.testDesignModel!,
+          coveragePlan: compiled.artifacts.payload.coveragePlan!,
+          generatedTestCases: list,
+          client: input.llm.client,
+          // Per-iteration regen produces a unique input hash; bypass the
+          // disk-backed cache and use a fresh in-memory cache so deterministic
+          // repeat-iteration mocks (test fixtures) can still hit byte-stable
+          // verdicts without poisoning the shared logic-judge cache.
+          cache: createMemoryLogicJudgeCache(),
+          ...(finopsBudget.roles.test_generation?.maxInputTokensPerRequest !==
+          undefined
+            ? {
+                maxInputTokens:
+                  finopsBudget.roles.test_generation
+                    .maxInputTokensPerRequest,
+              }
+            : {}),
+          ...(finopsBudget.roles.test_generation?.maxOutputTokensPerRequest !==
+          undefined
+            ? {
+                maxOutputTokens:
+                  finopsBudget.roles.test_generation
+                    .maxOutputTokensPerRequest,
+              }
+            : {}),
+          ...(finopsBudget.roles.test_generation?.maxWallClockMsPerRequest !==
+          undefined
+            ? {
+                maxWallClockMs:
+                  finopsBudget.roles.test_generation
+                    .maxWallClockMsPerRequest,
+              }
+            : {}),
+          ...(finopsBudget.roles.test_generation?.maxRetriesPerRequest !==
+          undefined
+            ? {
+                maxRetries:
+                  finopsBudget.roles.test_generation.maxRetriesPerRequest,
+              }
+            : {}),
+        });
+        if (repairLogicResult.gatewayResult !== undefined) {
+          finopsRecorder.recordAttempt({
+            role: "test_generation",
+            source: "judge_primary",
+            deployment:
+              repairLogicResult.gatewayResult.outcome === "success"
+                ? repairLogicResult.gatewayResult.modelDeployment
+                : input.llm.client.deployment,
+            durationMs: 0,
+            result: repairLogicResult.gatewayResult,
+          });
+        }
+        const usage =
+          repairLogicResult.gatewayResult?.outcome === "success"
+            ? repairLogicResult.gatewayResult.usage
+            : { inputTokens: 0, outputTokens: 0 };
+        return {
+          verdict: repairLogicResult.verdict,
+          inputTokens: usage.inputTokens ?? 0,
+          outputTokens: usage.outputTokens ?? 0,
+        };
+      },
+      ...(faithfulnessSnapshot !== undefined &&
+      visualCaptures !== undefined &&
+      input.llm.bundle !== undefined
+        ? {
+            runFaithfulnessJudge: async ({ list }) => {
+              const repairFaithResult = await runFaithfulnessJudge({
+                jobId: input.jobId,
+                generatedAt: input.generatedAt,
+                captures: visualCaptures,
+                generatedTestCases: list,
+                bundle: input.llm.bundle!,
+                cache: createMemoryFaithfulnessJudgeCache(),
+                ...(finopsBudget.roles.visual_primary
+                  ?.maxInputTokensPerRequest !== undefined
+                  ? {
+                      maxInputTokens:
+                        finopsBudget.roles.visual_primary
+                          .maxInputTokensPerRequest,
+                    }
+                  : {}),
+                ...(finopsBudget.roles.visual_primary
+                  ?.maxOutputTokensPerRequest !== undefined
+                  ? {
+                      maxOutputTokens:
+                        finopsBudget.roles.visual_primary
+                          .maxOutputTokensPerRequest,
+                    }
+                  : {}),
+                ...(finopsBudget.roles.visual_primary
+                  ?.maxWallClockMsPerRequest !== undefined
+                  ? {
+                      maxWallClockMs:
+                        finopsBudget.roles.visual_primary
+                          .maxWallClockMsPerRequest,
+                    }
+                  : {}),
+                ...(finopsBudget.roles.visual_primary
+                  ?.maxRetriesPerRequest !== undefined
+                  ? {
+                      maxRetries:
+                        finopsBudget.roles.visual_primary
+                          .maxRetriesPerRequest,
+                    }
+                  : {}),
+              });
+              for (const attempt of repairFaithResult.attempts) {
+                finopsRecorder.recordAttempt({
+                  role: attempt.role,
+                  source: "judge_secondary",
+                  deployment:
+                    attempt.result.outcome === "success"
+                      ? attempt.result.modelDeployment
+                      : attempt.role === "visual_primary"
+                        ? input.llm.bundle!.visualPrimary.deployment
+                        : input.llm.bundle!.visualFallback.deployment,
+                  durationMs: 0,
+                  result: attempt.result,
+                });
+              }
+              const totalUsage = repairFaithResult.attempts.reduce(
+                (acc, attempt) => {
+                  if (attempt.result.outcome === "success") {
+                    acc.inputTokens +=
+                      attempt.result.usage.inputTokens ?? 0;
+                    acc.outputTokens +=
+                      attempt.result.usage.outputTokens ?? 0;
+                  }
+                  return acc;
+                },
+                { inputTokens: 0, outputTokens: 0 },
+              );
+              return {
+                verdict: repairFaithResult.verdict,
+                inputTokens: totalUsage.inputTokens,
+                outputTokens: totalUsage.outputTokens,
+              };
+            },
+          }
+        : {}),
+      onIterationComplete: (record) => {
+        emit({
+          phase: "repair_loop_iteration",
+          timestamp: monotonicMs(),
+          details: {
+            iteration: record.iteration,
+            logicVerdict: record.logicVerdict,
+            faithfulnessVerdict: record.faithfulnessVerdict,
+            generatedCaseCount: record.generatedCaseCount,
+            inputTokens: record.inputTokens,
+            outputTokens: record.outputTokens,
+          },
+        });
+      },
+    });
+    generatedList = repairLoopResult.finalList;
+    logicJudgeResult = {
+      ...logicJudgeResult,
+      verdict: repairLoopResult.finalLogicVerdict,
+    };
+    if (
+      repairLoopResult.finalFaithfulnessVerdict !== undefined &&
+      faithfulnessJudgeResult !== undefined
+    ) {
+      faithfulnessJudgeResult = {
+        ...faithfulnessJudgeResult,
+        verdict: repairLoopResult.finalFaithfulnessVerdict,
+      };
+    }
+  }
+
   const judgeAccepted =
     logicJudgeResult.verdict.verdict === "accept" &&
     (faithfulnessJudgeResult === undefined ||
@@ -1658,6 +2055,27 @@ export const runFigmaToQcTestCases = async (
               roleLineageDepth: 0,
             },
           ]),
+      ...(repairLoopResult === undefined
+        ? []
+        : Array.from({ length: repairLoopResult.repairIterationCount }).flatMap(
+            (_unused, index) => {
+              const iteration = index + 1;
+              return [
+                {
+                  jobId: input.jobId,
+                  roleStepId: `repair_planner_iter_${iteration}`,
+                  artifactFilename: `agent-role-runs/${REPAIR_PLANNER_ARTIFACT_PREFIX}${iteration}.json`,
+                  roleLineageDepth: iteration,
+                },
+                {
+                  jobId: input.jobId,
+                  roleStepId: `test_generation_repair_iter_${iteration}`,
+                  artifactFilename: `agent-role-runs/${TEST_GENERATION_REPAIR_ARTIFACT_PREFIX}${iteration}.json`,
+                  roleLineageDepth: iteration,
+                },
+              ];
+            },
+          )),
     ],
   });
   const harnessCheckpointSummary =
@@ -2092,6 +2510,16 @@ export const runFigmaToQcTestCases = async (
       perCase: perCasePaths,
     },
     ...(harnessSummary !== undefined ? { harness: harnessSummary } : {}),
+    ...(repairLoopResult !== undefined
+      ? {
+          repairLoop: {
+            outcome: repairLoopResult.outcome,
+            repairIterationCount: repairLoopResult.repairIterationCount,
+            maxRepairIterations: repairLoopResult.maxRepairIterations,
+            iterations: repairLoopResult.iterations,
+          },
+        }
+      : {}),
   };
 };
 
