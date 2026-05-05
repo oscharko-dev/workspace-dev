@@ -205,7 +205,6 @@ import {
 } from "./logic-judge.js";
 import {
   REPAIR_LOOP_DEFAULT_MAX_ITERATIONS,
-  REPAIR_LOOP_MAX_ITERATIONS_HARD_CAP,
   REPAIR_PLANNER_ARTIFACT_PREFIX,
   TEST_GENERATION_REPAIR_ARTIFACT_PREFIX,
   runRepairLoop,
@@ -1541,16 +1540,11 @@ export const runFigmaToQcTestCases = async (
             retryable: false,
           });
         }
-        const repairContent = llmResult.content as
-          | LlmDraftResponse
-          | undefined;
-        if (
-          repairContent === undefined ||
-          !Array.isArray(repairContent.testCases)
-        ) {
+        const repairValidation = validateLlmDraftResponse(llmResult.content);
+        if (!repairValidation.ok) {
           throw new ProductionRunnerError({
             failureClass: "LLM_RESPONSE_INVALID",
-            message: `Repair iteration ${iteration} returned a payload without testCases`,
+            message: `Repair iteration ${iteration} returned an invalid payload: ${repairValidation.message}`,
             retryable: false,
           });
         }
@@ -1568,14 +1562,15 @@ export const runFigmaToQcTestCases = async (
           promptHash: repairCompiled.request.hashes.promptHash,
           schemaHash: repairCompiled.request.hashes.schemaHash,
         };
-        const repairCases = repairContent.testCases.map((draft, index) =>
-          stampGeneratedTestCase({
-            draft,
-            jobId: input.jobId,
-            index,
-            audit: repairAudit,
-            intent,
-          }),
+        const repairCases = repairValidation.value.testCases.map(
+          (draft, index) =>
+            stampGeneratedTestCase({
+              draft,
+              jobId: input.jobId,
+              index,
+              audit: repairAudit,
+              intent,
+            }),
         );
         repairCases.sort((a, b) =>
           a.id < b.id ? -1 : a.id > b.id ? 1 : 0,
