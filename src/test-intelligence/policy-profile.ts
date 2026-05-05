@@ -19,6 +19,21 @@ import {
   type TestCasePolicyProfileRules,
 } from "../contracts/index.js";
 
+/**
+ * Issue #1901 — minimum job-level field-coverage ratio required by the
+ * logic-judge coverage hard-gate. Below this threshold the judge emits
+ * the `insufficient_coverage_breadth` finding (severity: error) and the
+ * repair-loop is triggered.
+ */
+export const EU_BANKING_DEFAULT_FIELD_COVERAGE_RATIO_MIN = 0.4 as const;
+
+/**
+ * Issue #1901 — minimum job-level action-coverage ratio required by the
+ * logic-judge coverage hard-gate. Same emission semantics as
+ * {@link EU_BANKING_DEFAULT_FIELD_COVERAGE_RATIO_MIN}.
+ */
+export const EU_BANKING_DEFAULT_ACTION_COVERAGE_RATIO_MIN = 0.5 as const;
+
 const EU_BANKING_DEFAULT_RULES: TestCasePolicyProfileRules = {
   reviewOnlyRiskCategories: ["regulated_data", "financial_transaction"],
   strictRiskCategories: ["regulated_data", "financial_transaction", "high"],
@@ -30,6 +45,8 @@ const EU_BANKING_DEFAULT_RULES: TestCasePolicyProfileRules = {
   maxOpenQuestionsPerCase: 5,
   maxAssumptionsPerCase: 8,
   enforceRiskTagDowngradeDetection: true,
+  fieldCoverageRatioMin: EU_BANKING_DEFAULT_FIELD_COVERAGE_RATIO_MIN,
+  actionCoverageRatioMin: EU_BANKING_DEFAULT_ACTION_COVERAGE_RATIO_MIN,
 };
 
 /** Default `eu-banking-default` policy profile (deep-frozen). */
@@ -87,6 +104,16 @@ export const cloneEuBankingDefaultProfile = (): TestCasePolicyProfile => {
     EU_BANKING_DEFAULT_POLICY_PROFILE.rules.enforceRiskTagDowngradeDetection;
   if (enforceFlag !== undefined) {
     rules.enforceRiskTagDowngradeDetection = enforceFlag;
+  }
+  const fieldCoverageRatioMin =
+    EU_BANKING_DEFAULT_POLICY_PROFILE.rules.fieldCoverageRatioMin;
+  if (fieldCoverageRatioMin !== undefined) {
+    rules.fieldCoverageRatioMin = fieldCoverageRatioMin;
+  }
+  const actionCoverageRatioMin =
+    EU_BANKING_DEFAULT_POLICY_PROFILE.rules.actionCoverageRatioMin;
+  if (actionCoverageRatioMin !== undefined) {
+    rules.actionCoverageRatioMin = actionCoverageRatioMin;
   }
   return {
     id: EU_BANKING_DEFAULT_POLICY_PROFILE.id,

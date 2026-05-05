@@ -88,9 +88,21 @@ const SAMPLE_DRAFT: ProductionRunnerLlmDraftCase = {
     "Investitionssumme wird gespeichert",
     "Folgemaske erreichbar",
   ],
-  figmaTraceRefs: [{ screenId: "1:1", nodeName: "Bedarfsermittlung" }],
+  figmaTraceRefs: [
+    { screenId: "1:1", nodeId: "2:1", nodeName: "Bedarfsermittlung" },
+  ],
   assumptions: [],
   openQuestions: [],
+  // Issue #1901 — populated coverage signals so the logic-judge
+  // coverage hard-gate stays green and the harness tests can
+  // assert on the LLM verdict rather than on hard-gate findings.
+  qualitySignals: {
+    coveredFieldIds: ["1:1::field::2:1"],
+    coveredActionIds: ["1:1::action::2:2"],
+    coveredValidationIds: [],
+    coveredNavigationIds: [],
+    confidence: 0.9,
+  },
 };
 
 const okResponder =

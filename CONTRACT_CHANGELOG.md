@@ -31,6 +31,55 @@ All changes to the public contract surface of `workspace-dev` are documented her
 
 ---
 
+## [4.47.0] - 2026-05-05
+
+### Added (Issue #1901 — coverage hard-gate in the logic judge)
+
+The `eu-banking-default` policy profile gains two optional, additive
+threshold rules consumed by the logic-judge coverage hard-gate:
+
+- `TestCasePolicyProfileRules.fieldCoverageRatioMin?: number` — minimum
+  job-level field-coverage ratio required by the hard-gate (default
+  `0.4`). Below this threshold the judge emits the
+  `insufficient_coverage_breadth` finding (severity: `error`) and the
+  repair-loop is triggered.
+- `TestCasePolicyProfileRules.actionCoverageRatioMin?: number` — minimum
+  job-level action-coverage ratio (default `0.5`). Same emission
+  semantics.
+
+Both fields are optional for backward compatibility: when omitted the
+hard-gate skips the breadth check. Pre-`4.47.0` profiles round-trip
+unchanged.
+
+The logic judge (`runLogicJudge`) gains an additive deterministic
+post-LLM coverage hard-gate that augments the LLM verdict with four
+finding codes — `empty_coverage_signals`, `hallucinated_id`,
+`insufficient_coverage_breadth` (all `severity: error`), and
+`weak_trace` (`severity: warning`). Error-severity findings upgrade an
+LLM `accept` to `repair` so the existing repair-loop (Issue #1900)
+drives regeneration. The hard-gate runs deterministically on cache hit
+and miss — no extra LLM call, no replay-cache invalidation.
+
+Generator prompt hardening: the user-prompt preamble in
+`prompt-compiler.ts` now states that an empty `coveredFieldIds: []` is
+a schema violation and that any id outside the IR is rejected. The
+existing `[3] TestDesignModel` section already exposes the real IR ids
+that the model must cite; the hardened preamble points the generator
+at them.
+
+Additive public-contract changes:
+
+- `CONTRACT_VERSION` bumps from `4.46.0` to `4.47.0` (additive minor
+  bump; new optional rules fields).
+- `TEST_INTELLIGENCE_CONTRACT_VERSION` is unchanged at `1.11.0` (the
+  judge verdict and policy-profile wire shapes remain compatible —
+  only optional fields and runtime-emitted finding codes are added).
+
+No removals or renames. No new migrations are registered; the
+`migrationHash:` registry from 4.42.0 carries over unchanged.
+
+---
+
 ## [4.46.0] - 2026-05-05
 
 ### Changed (Issue #1898 follow-up — Logic-Judge defaults to ON)
