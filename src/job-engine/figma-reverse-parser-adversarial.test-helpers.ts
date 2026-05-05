@@ -73,13 +73,17 @@ export const assertCompletesWithinBudget = (elapsedMs: number): void => {
 };
 
 export const serializeWithStableMaps = (value: unknown): string =>
-  JSON.stringify(value, (_key, entry) => {
-    if (entry instanceof Map) {
-      return Array.from(entry.entries()).sort(([left], [right]) =>
-        left.localeCompare(right),
-      );
+  JSON.stringify(value, (_key, entry): unknown => {
+    if (!(entry instanceof Map)) {
+      return entry;
     }
-    return entry;
+    const pairs: Array<[string, unknown]> = [];
+    for (const [key, mapValue] of entry.entries()) {
+      if (typeof key === "string") {
+        pairs.push([key, mapValue]);
+      }
+    }
+    return pairs.sort(([left], [right]) => left.localeCompare(right));
   });
 
 const findNodeById = (
@@ -345,16 +349,24 @@ export const expandPathologicalStyleFixture = (
     return next;
   }
 
+  const recordArray = (value: unknown): Array<Record<string, unknown>> =>
+    Array.isArray(value)
+      ? value.filter(
+          (entry): entry is Record<string, unknown> =>
+            Boolean(entry) && typeof entry === "object" && !Array.isArray(entry),
+        )
+      : [];
+
   const fills = Array.isArray(stressNode.fills)
-    ? [...stressNode.fills]
+    ? recordArray(stressNode.fills)
     : [];
   while (fills.length < 1024) {
     fills.push({
       type: fills.length % 2 === 0 ? "SOLID" : "GRADIENT_LINEAR",
       color: {
-        r: Number(((fills.length % 7) + 1) / 10),
-        g: Number(((fills.length % 11) + 1) / 12),
-        b: Number(((fills.length % 13) + 1) / 14),
+        r: ((fills.length % 7) + 1) / 10,
+        g: ((fills.length % 11) + 1) / 12,
+        b: ((fills.length % 13) + 1) / 14,
         a: 1,
       },
       opacity: 1,
@@ -377,7 +389,7 @@ export const expandPathologicalStyleFixture = (
   stressNode.fills = fills;
 
   const children = Array.isArray(stressNode.children)
-    ? [...stressNode.children]
+    ? recordArray(stressNode.children)
     : [];
   const baseText = {
     id: "style-stress-seed",
