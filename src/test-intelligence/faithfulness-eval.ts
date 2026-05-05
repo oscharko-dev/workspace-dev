@@ -227,8 +227,12 @@ export const computeFaithfulnessMetrics = (
           hallucinatedIdCount += 1;
         }
       }
+      // Every screenId citation contributes to the denominator; only
+      // invalid screenIds count as hallucinations. Counting only the
+      // failing branch would inflate the rate by under-counting valid
+      // citations.
+      citedIdCount += 1;
       if (!validScreenIds.has(traceRef.screenId)) {
-        citedIdCount += 1;
         hallucinatedIdCount += 1;
       }
     }

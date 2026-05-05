@@ -286,6 +286,9 @@ jobs:
       - name: Test-intelligence eval gate
         run: pnpm run test:ti-eval
 
+      - name: Test-intelligence faithfulness gate
+        run: pnpm run test:ti-faithfulness
+
   mutation-testing:
     needs: [setup]
     if: needs.setup.outputs.src == 'true' || needs.setup.outputs.config == 'true' || needs.setup.outputs.full == 'true'
