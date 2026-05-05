@@ -393,6 +393,10 @@ jobs:
         if: matrix.shard == 0
         run: pnpm run test:ti-faithfulness
 
+      - name: Run hallucination eval gate (Issue #1904)
+        if: matrix.shard == 0
+        run: pnpm run test:ti-hallucination
+
   performance-web:
     timeout-minutes: 180
     runs-on: ubuntu-22.04
