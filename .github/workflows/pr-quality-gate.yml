@@ -71,6 +71,7 @@ jobs:
           pnpm run test:ti-hallucination
           pnpm run test:ti-a11y
           pnpm run test:ti-judge-calibration
+          pnpm run test:ti-regression
 
       - name: Runtime smoke gates
         run: |

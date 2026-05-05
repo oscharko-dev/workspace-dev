@@ -405,6 +405,10 @@ jobs:
         if: matrix.shard == 0
         run: pnpm run test:ti-judge-calibration
 
+      - name: Run regression-eval drift gate (Issue #1907)
+        if: matrix.shard == 0
+        run: pnpm run test:ti-regression
+
   performance-web:
     timeout-minutes: 180
     runs-on: ubuntu-22.04

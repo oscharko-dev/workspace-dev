@@ -298,6 +298,9 @@ jobs:
       - name: Test-intelligence judge-calibration gate (Issue #1906)
         run: pnpm run test:ti-judge-calibration
 
+      - name: Test-intelligence regression-eval drift gate (Issue #1907)
+        run: pnpm run test:ti-regression
+
   mutation-testing:
     needs: [setup]
     if: needs.setup.outputs.src == 'true' || needs.setup.outputs.config == 'true' || needs.setup.outputs.full == 'true'
