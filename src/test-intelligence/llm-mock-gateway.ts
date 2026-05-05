@@ -18,6 +18,7 @@
  */
 
 import {
+  LOGIC_JUDGE_OUTPUT_SCHEMA_NAME,
   type LlmGatewayCapabilities,
   type LlmGatewayClientConfig,
   type LlmGatewayCompatibilityMode,
@@ -201,6 +202,43 @@ const guardOutputBudget = (
 };
 
 /**
+ * Default Logic-Judge "accept" envelope (Issue #1898). The mock
+ * substitutes this whenever a request targets the logic-judge
+ * structured-output schema and the user-provided responder returned
+ * a non-judge-shape success — generator-only fixtures continue to
+ * work after Logic-Judge defaulted to ON without each test author
+ * having to know about the judge surface. Tests that explicitly want
+ * to exercise judge behaviour override the responder with a
+ * judge-shape return value.
+ */
+const buildDefaultJudgeAcceptEnvelope = (): {
+  readonly verdict: "accept";
+  readonly summary: string;
+  readonly findings: readonly never[];
+  readonly repairInstructions: readonly never[];
+} => ({
+  verdict: "accept",
+  summary: "mock judge: default accept",
+  findings: [],
+  repairInstructions: [],
+});
+
+/**
+ * Returns true when `content` looks like a Logic-Judge envelope a
+ * caller deliberately produced (any `verdict` field is treated as
+ * "the test is exercising the judge surface", even if the literal is
+ * out of range — the parser test path needs to see it). Generator
+ * fixtures whose content lacks a `verdict` field get the
+ * auto-`accept` substitution.
+ */
+const looksLikeLogicJudgeIntent = (content: unknown): boolean => {
+  if (typeof content !== "object" || content === null) return false;
+  const obj = content as Record<string, unknown>;
+  return Object.prototype.hasOwnProperty.call(obj, "verdict");
+};
+
+
+/**
  * Build the default success envelope. Fully deterministic given the request
  * shape — `attempt` is encoded so retries are observable in fixtures.
  */
@@ -282,6 +320,31 @@ export const createMockLlmGatewayClient = (
       result = input.staticResponse;
     } else {
       result = buildDefaultSuccess(request, config, count);
+    }
+
+    // Issue #1898: Logic-Judge defaults to ON in the production runner.
+    // Pre-existing fixtures wired generator-shaped responders only; for
+    // those, transparently substitute a default `accept` verdict when
+    // the request targets the logic-judge schema and the responder
+    // returned a result that does not even attempt the judge surface
+    // (no `verdict` field at all). Responders that DO supply a
+    // `verdict` field — including out-of-range literals used by parser
+    // tests — pass through untouched.
+    if (
+      result.outcome === "success" &&
+      request.responseSchemaName === LOGIC_JUDGE_OUTPUT_SCHEMA_NAME &&
+      !looksLikeLogicJudgeIntent(result.content)
+    ) {
+      result = {
+        outcome: "success",
+        content: buildDefaultJudgeAcceptEnvelope(),
+        finishReason: "stop",
+        usage: { inputTokens: 0, outputTokens: 0 },
+        modelDeployment: config.deployment,
+        modelRevision: config.modelRevision,
+        gatewayRelease: config.gatewayRelease,
+        attempt: count,
+      };
     }
 
     if (

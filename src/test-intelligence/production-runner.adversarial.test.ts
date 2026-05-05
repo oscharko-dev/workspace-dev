@@ -404,6 +404,10 @@ test("production runner adversarial: corrupted persistent replay-cache entries a
       outputRoot: tempRoot,
       llm: { client },
       replayCache,
+      // Persistent replay-cache adversarial test — opt out of the
+      // second Logic-Judge LLM call so `client.callCount()` remains
+      // 1 (the generator dispatch).
+      logicJudge: { enabled: false },
     });
     const cacheFiles = await walkFiles(cacheRoot);
     assert.equal(cacheFiles.length, 1);
@@ -417,6 +421,7 @@ test("production runner adversarial: corrupted persistent replay-cache entries a
         outputRoot: tempRoot,
         llm: { client },
         replayCache,
+        logicJudge: { enabled: false },
       }),
       (err) => {
         assert.ok(err instanceof ProductionRunnerError);
@@ -509,6 +514,10 @@ test("production runner adversarial: cancellation releases the gateway slot and 
           controller.abort();
         }
       },
+      // Cancellation-path adversarial test — the custom `client.generate`
+      // counts dispatches and would error on a Logic-Judge second
+      // call. Opt out so cancellation semantics remain isolated.
+      logicJudge: { enabled: false },
     });
 
     await assert.rejects(firstRun, (err) => {
@@ -540,6 +549,9 @@ test("production runner adversarial: cancellation releases the gateway slot and 
       source: { kind: "figma_rest_file", file: buildFile() },
       outputRoot: tempRoot,
       llm: { client },
+      // Same opt-out as the first run — the custom `client.generate`
+      // is generator-only and dispatches must remain at 2.
+      logicJudge: { enabled: false },
     });
     assert.equal(secondRun.generatedTestCases.testCases.length, 1);
     assert.equal(dispatches, 2);
