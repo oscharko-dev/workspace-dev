@@ -3,6 +3,7 @@ import { mkdtemp, readFile, writeFile, mkdir } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
+import fc from "fast-check";
 import {
   normalizeComponentName,
   extractBaseComponentName,
@@ -22,6 +23,16 @@ import {
   savePersistedMappings,
   type MappedComponent,
 } from "./figma-component-mapper.js";
+import {
+  ADVERSARIAL_TAILWIND_FIXTURES,
+  assertCompletesWithinBudget,
+  createDeepTreeFixture,
+  createExactCodeConnectFetch,
+  expandPathologicalStyleFixture,
+  loadAdversarialTailwindFixture,
+  measureExecution,
+  serializeWithStableMaps,
+} from "./figma-reverse-parser-adversarial.test-helpers.js";
 import type { McpResolverConfig } from "./figma-mcp-resolver.js";
 import type { DesignIR, ScreenElementIR } from "../parity/types-ir.js";
 
@@ -1870,4 +1881,82 @@ test("ir-derive flow: heuristic enrichment results flow through resolveComponent
   assert.ok(tooltipMapping);
   assert.equal(tooltipMapping.confidence, "heuristic");
   assert.equal(tooltipMapping.source, "src/Tooltip.tsx");
+});
+
+for (const fixture of ADVERSARIAL_TAILWIND_FIXTURES) {
+  test(`resolveComponentMappings adversarial fixture: ${fixture.name}`, async () => {
+    const loadedFixture = await loadAdversarialTailwindFixture(fixture.name);
+    const rawFile =
+      fixture.name === "pathological-style-stacks"
+        ? expandPathologicalStyleFixture(loadedFixture)
+        : loadedFixture;
+
+    const { elapsedMs, result } = await measureExecution(() =>
+      resolveComponentMappings({
+        fileKey: "adversarial-demo",
+        nodeId: "screen-root",
+        mcpConfig: createConfig(
+          createExactCodeConnectFetch({
+            rawFile,
+            fallbackComponentName: "SafeMappedComponent",
+          }),
+        ),
+        rawFile,
+      }),
+    );
+
+    assertCompletesWithinBudget(elapsedMs);
+    assert.equal(
+      serializeWithStableMaps({
+        mappings: result.mappings,
+        codeConnectMappings: result.codeConnectMappings,
+        designSystemMappings: result.designSystemMappings,
+        unmapped: result.unmapped,
+        stats: result.stats,
+      }).includes(fixture.rawIdentifier),
+      false,
+    );
+  });
+}
+
+test("resolveComponentMappings property: deep trees are deterministic and terminate for the same seed", async () => {
+  await fc.assert(
+    fc.asyncProperty(fc.integer({ min: 0, max: 10_000 }), async (seed) => {
+      const rawIdentifier = `seed-${seed}-\u200braw`;
+      const rawFile = createDeepTreeFixture({
+        depth: 50,
+        rawIdentifier,
+      });
+
+      const runOnce = async (): Promise<string> => {
+        const { elapsedMs, result } = await measureExecution(() =>
+          resolveComponentMappings({
+            fileKey: `seed-${seed}`,
+            nodeId: "screen-root",
+            mcpConfig: createConfig(
+              createExactCodeConnectFetch({
+                rawFile,
+                fallbackComponentName: "DeepSeedComponent",
+              }),
+            ),
+            rawFile,
+          }),
+        );
+        assertCompletesWithinBudget(elapsedMs);
+        return serializeWithStableMaps({
+          mappings: result.mappings,
+          codeConnectMappings: result.codeConnectMappings,
+          designSystemMappings: result.designSystemMappings,
+          unmapped: result.unmapped,
+          stats: result.stats,
+        });
+      };
+
+      const first = await runOnce();
+      const second = await runOnce();
+      assert.equal(first, second);
+      assert.equal(first.includes(rawIdentifier), false);
+    }),
+    { seed: 1716, numRuns: 32 },
+  );
 });

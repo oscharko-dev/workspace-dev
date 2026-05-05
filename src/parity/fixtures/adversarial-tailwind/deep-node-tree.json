@@ -1,0 +1,86 @@
+{
+  "name": "Adversarial deep node tree",
+  "lastModified": "2026-05-05T00:00:00.000Z",
+  "document": {
+    "id": "0:0",
+    "type": "DOCUMENT",
+    "children": [
+      {
+        "id": "0:1",
+        "type": "CANVAS",
+        "name": "Page 1",
+        "children": [
+          {
+            "id": "screen-root",
+            "type": "FRAME",
+            "name": "Deep Tree Screen",
+            "absoluteBoundingBox": {
+              "x": 0,
+              "y": 0,
+              "width": 1024,
+              "height": 768
+            },
+            "children": [
+              {
+                "id": "deep-frame-root",
+                "type": "FRAME",
+                "name": "Depth 0",
+                "children": [
+                  {
+                    "id": "deep-frame-1",
+                    "type": "FRAME",
+                    "name": "Depth 1",
+                    "children": [
+                      {
+                        "id": "deep-frame-2",
+                        "type": "FRAME",
+                        "name": "Depth 2",
+                        "children": [
+                          {
+                            "id": "deep-frame-3",
+                            "type": "FRAME",
+                            "name": "Depth 3",
+                            "children": [
+                              {
+                                "id": "deep-frame-4",
+                                "type": "FRAME",
+                                "name": "Depth 4",
+                                "children": [
+                                  {
+                                    "id": "deep-frame-5",
+                                    "type": "FRAME",
+                                    "name": "Depth 5",
+                                    "children": [
+                                      {
+                                        "id": "deep-hidden-leaf",
+                                        "type": "FRAME",
+                                        "name": "Hidden leaf",
+                                        "visible": false,
+                                        "children": [
+                                          {
+                                            "id": "deep-hidden-text",
+                                            "type": "TEXT",
+                                            "name": "Hidden raw trace",
+                                            "characters": "deep-leaf-​raw-identifier"
+                                          }
+                                        ]
+                                      }
+                                    ]
+                                  }
+                                ]
+                              }
+                            ]
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

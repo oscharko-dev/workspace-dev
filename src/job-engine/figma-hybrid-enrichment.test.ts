@@ -5,6 +5,14 @@ import path from "node:path";
 import test from "node:test";
 import { createDefaultFigmaMcpEnrichmentLoader } from "./figma-hybrid-enrichment.js";
 import { clearResolverCache } from "./figma-mcp-resolver.js";
+import {
+  ADVERSARIAL_TAILWIND_FIXTURES,
+  assertCompletesWithinBudget,
+  createHybridLoaderFetch,
+  expandPathologicalStyleFixture,
+  loadAdversarialTailwindFixture,
+  measureExecution,
+} from "./figma-reverse-parser-adversarial.test-helpers.js";
 import type { FigmaFileResponse } from "./types.js";
 
 const jsonResponse = (body: unknown, init?: ResponseInit): Response =>
@@ -1143,3 +1151,35 @@ test("default hybrid loader returns empty nodeHints when no authoritative subtre
     "toolNames must not list figma-rest-authoritative-subtrees",
   );
 });
+
+for (const fixture of ADVERSARIAL_TAILWIND_FIXTURES) {
+  test(`default hybrid loader adversarial fixture: ${fixture.name}`, async () => {
+    const loadedFixture = await loadAdversarialTailwindFixture(fixture.name);
+    const rawFile =
+      fixture.name === "pathological-style-stacks"
+        ? expandPathologicalStyleFixture(loadedFixture)
+        : loadedFixture;
+
+    const fetchImpl = createHybridLoaderFetch({ rootNodeName: "Safe Screen" });
+    const loader = createDefaultFigmaMcpEnrichmentLoader({
+      timeoutMs: 1_000,
+      maxRetries: 1,
+      maxScreenCandidates: 5,
+    });
+
+    const { elapsedMs, result } = await measureExecution(() =>
+      loader({
+        figmaFileKey: "adversarial-demo",
+        cleanedFile: rawFile,
+        rawFile,
+        jobDir: "/tmp/workspace-dev-job",
+        fetchImpl,
+        figmaRestFetch: fetchImpl,
+        figmaMcpFetch: fetchImpl,
+      }),
+    );
+
+    assertCompletesWithinBudget(elapsedMs);
+    assert.equal(JSON.stringify(result).includes(fixture.rawIdentifier), false);
+  });
+}

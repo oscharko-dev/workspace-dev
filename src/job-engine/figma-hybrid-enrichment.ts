@@ -149,34 +149,6 @@ const mapResolverDiagnostics = ({
   }));
 };
 
-const collectNodeHints = ({
-  node,
-  hints,
-}: {
-  node: Record<string, unknown>;
-  hints: FigmaMcpNodeHint[];
-}): void => {
-  const id = typeof node["id"] === "string" ? node["id"] : undefined;
-  const type = typeof node["type"] === "string" ? node["type"] : undefined;
-  const name = typeof node["name"] === "string" ? node["name"] : undefined;
-  if (id && type) {
-    hints.push({
-      nodeId: id,
-      semanticName: name ?? id,
-      semanticType: type,
-      sourceTools: ["figma-rest-authoritative-subtrees"],
-    });
-  }
-  const children = node["children"];
-  if (Array.isArray(children)) {
-    for (const child of children) {
-      if (isRecord(child)) {
-        collectNodeHints({ node: child, hints });
-      }
-    }
-  }
-};
-
 const buildNodeHintsFromSubtrees = ({
   authoritativeSubtrees,
 }: {
@@ -185,7 +157,32 @@ const buildNodeHintsFromSubtrees = ({
   const hints: FigmaMcpNodeHint[] = [];
   for (const subtree of authoritativeSubtrees) {
     if (!isRecord(subtree.document)) continue;
-    collectNodeHints({ node: subtree.document, hints });
+    const stack: Array<Record<string, unknown>> = [subtree.document];
+    while (stack.length > 0) {
+      const node = stack.pop();
+      if (!node) {
+        continue;
+      }
+      const id = typeof node["id"] === "string" ? node["id"] : undefined;
+      const type = typeof node["type"] === "string" ? node["type"] : undefined;
+      const name = typeof node["name"] === "string" ? node["name"] : undefined;
+      if (id && type) {
+        hints.push({
+          nodeId: id,
+          semanticName: name ?? id,
+          semanticType: type,
+          sourceTools: ["figma-rest-authoritative-subtrees"],
+        });
+      }
+      const children = node["children"];
+      if (Array.isArray(children)) {
+        for (const child of children) {
+          if (isRecord(child)) {
+            stack.push(child);
+          }
+        }
+      }
+    }
   }
   return hints;
 };
