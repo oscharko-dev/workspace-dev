@@ -2,6 +2,7 @@ import type {
   WorkspaceCompositeQualityReport,
   WorkspaceFigmaSourceMode,
   WorkspaceJobConfidence,
+  WorkspaceJobDiagnostic,
   WorkspaceJobLog,
   WorkspaceJobStage,
   WorkspaceJobStageName,
@@ -229,6 +230,39 @@ export const cloneQualityPassportSummary = (
   semanticCoverage: { ...qualityPassport.semanticCoverage },
 });
 
+const cloneJobDiagnostics = (
+  diagnostics: WorkspaceJobDiagnostic[],
+): WorkspaceJobDiagnostic[] =>
+  diagnostics.map((diagnostic) => structuredClone(diagnostic));
+
+export const cloneJobLineage = (
+  lineage: NonNullable<JobRecord["lineage"]>,
+): NonNullable<WorkspaceJobStatus["lineage"]> => ({
+  ...lineage,
+  ...(lineage.pipelineMetadata
+    ? {
+        pipelineMetadata: clonePipelineMetadata(lineage.pipelineMetadata),
+      }
+    : {}),
+  ...(lineage.retryTargets ? { retryTargets: [...lineage.retryTargets] } : {}),
+});
+
+export const cloneJobError = (
+  error: NonNullable<JobRecord["error"]>,
+): NonNullable<WorkspaceJobStatus["error"]> => ({
+  ...error,
+  ...(error.retryTargets
+    ? {
+        retryTargets: error.retryTargets.map((target) => ({
+          ...target,
+        })),
+      }
+    : {}),
+  ...(error.diagnostics
+    ? { diagnostics: cloneJobDiagnostics(error.diagnostics) }
+    : {}),
+});
+
 export const toPublicJob = (job: JobRecord): WorkspaceJobStatus => {
   const pipelineId = resolveJobPipelineId(job);
   const pipelineMetadata = resolveJobPipelineMetadata(job);
@@ -265,16 +299,7 @@ export const toPublicJob = (job: JobRecord): WorkspaceJobStatus => {
     status.finishedAt = job.finishedAt;
   }
   if (job.lineage) {
-    status.lineage = {
-      ...job.lineage,
-      ...(job.lineage.pipelineMetadata
-        ? {
-            pipelineMetadata: clonePipelineMetadata(
-              job.lineage.pipelineMetadata,
-            ),
-          }
-        : {}),
-    };
+    status.lineage = cloneJobLineage(job.lineage);
   }
   if (job.cancellation) {
     status.cancellation = { ...job.cancellation };
@@ -337,16 +362,7 @@ export const toPublicJob = (job: JobRecord): WorkspaceJobStatus => {
     };
   }
   if (job.error) {
-    status.error = {
-      ...job.error,
-      ...(job.error.retryTargets
-        ? {
-            retryTargets: job.error.retryTargets.map((target) => ({
-              ...target,
-            })),
-          }
-        : {}),
-    };
+    status.error = cloneJobError(job.error);
   }
 
   return status;
