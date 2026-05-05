@@ -1387,8 +1387,7 @@ export const runFigmaToQcTestCases = async (
     const harnessAttemptResult = buildHarnessAttemptResult({
       hashes: compiled.request.hashes,
       judgeAccepted,
-      errorClass:
-        judgeAccepted === false ? "judge_rejection" : "none",
+      errorClass: "judge_rejection",
       llmDurationMs: capturedLlmDurationMs,
       llmInputTokens:
         capturedLlmResult?.outcome === "success"
