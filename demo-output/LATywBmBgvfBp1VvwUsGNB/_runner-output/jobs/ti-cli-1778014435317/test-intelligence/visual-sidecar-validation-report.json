@@ -1,0 +1,1 @@
+{"blocked":false,"contractVersion":"1.11.0","generatedAt":"2026-05-05T20:53:55.317Z","jobId":"ti-cli-1778014435317","records":[{"deployment":"phi-4-multimodal-poc","issues":[],"meanConfidence":1,"outcomes":["fallback_used"],"screenId":"1:48176"}],"schemaVersion":"1.0.0","screensWithFindings":1,"totalScreens":1,"visualSidecarSchemaVersion":"1.1.0"}

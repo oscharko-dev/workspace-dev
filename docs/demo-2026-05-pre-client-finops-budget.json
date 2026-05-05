@@ -1,0 +1,41 @@
+{
+  "budgetId": "demo-2026-05-pre-client",
+  "budgetVersion": "1.0.0",
+  "maxJobWallClockMs": 600000,
+  "maxReplayCacheMissRate": 1,
+  "roles": {
+    "test_generation": {
+      "maxInputTokensPerRequest": 120000,
+      "maxOutputTokensPerRequest": 12000,
+      "maxTotalInputTokens": 200000,
+      "maxTotalOutputTokens": 24000,
+      "maxRetriesPerRequest": 2,
+      "maxAttempts": 4,
+      "maxWallClockMsPerRequest": 240000,
+      "maxTotalWallClockMs": 480000,
+      "maxLiveSmokeCalls": 8
+    },
+    "visual_primary": {
+      "maxInputTokensPerRequest": 200000,
+      "maxOutputTokensPerRequest": 6000,
+      "maxImageBytesPerRequest": 8388608,
+      "maxRetriesPerRequest": 2,
+      "maxAttempts": 3,
+      "maxWallClockMsPerRequest": 120000
+    },
+    "visual_fallback": {
+      "maxInputTokensPerRequest": 200000,
+      "maxOutputTokensPerRequest": 6000,
+      "maxImageBytesPerRequest": 8388608,
+      "maxRetriesPerRequest": 2,
+      "maxAttempts": 3,
+      "maxWallClockMsPerRequest": 150000,
+      "maxFallbackAttempts": 3
+    }
+  },
+  "sourceQuotas": {
+    "maxJiraApiRequestsPerJob": 0,
+    "maxJiraPasteBytesPerJob": 0,
+    "maxCustomContextBytesPerJob": 32768
+  }
+}
