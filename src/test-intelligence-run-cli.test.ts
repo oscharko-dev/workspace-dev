@@ -56,6 +56,7 @@ const baseOptions = (): TestIntelligenceRunOptions => ({
   harnessMode: "off",
   harnessTestDepth: "standard",
   harnessRoleStepId: undefined,
+  harnessMaxRepairIterations: undefined,
   customContextMarkdownPath: undefined,
 });
 
@@ -360,6 +361,42 @@ test("parseTestIntelligenceRunArgs: --harness-role-step-id rejects empty/whitesp
   );
 });
 
+test("parseTestIntelligenceRunArgs: --harness-max-repair-iterations captures a non-negative integer", () => {
+  const opts = parseTestIntelligenceRunArgs(
+    [
+      "--figma-url",
+      "https://figma.com/design/abc",
+      "--output",
+      "/tmp/x",
+      "--harness-max-repair-iterations",
+      "2",
+    ],
+    {},
+  );
+  assert.equal(opts.harnessMaxRepairIterations, 2);
+});
+
+test("parseTestIntelligenceRunArgs: --harness-max-repair-iterations rejects non-integers and negatives", () => {
+  for (const value of ["-1", "1.5", "abc", "  "]) {
+    assert.throws(
+      () =>
+        parseTestIntelligenceRunArgs(
+          [
+            "--figma-url",
+            "https://figma.com/design/abc",
+            "--output",
+            "/tmp/x",
+            "--harness-max-repair-iterations",
+            value,
+          ],
+          {},
+        ),
+      TestIntelligenceRunOperatorError,
+      `value ${value} should have been rejected`,
+    );
+  }
+});
+
 // ---------------------------------------------------------------------------
 // runTestIntelligenceCommand — feature gate
 // ---------------------------------------------------------------------------
@@ -501,6 +538,7 @@ test("runTestIntelligenceCommand: deterministic_llm with injected runner returns
     harnessMode: "off",
     harnessTestDepth: "standard",
     harnessRoleStepId: undefined,
+    harnessMaxRepairIterations: undefined,
     customContextMarkdownPath: undefined,
   };
 
@@ -609,6 +647,7 @@ test("runTestIntelligenceCommand: deterministic_llm blocked → exit 3", async (
     harnessMode: "off",
     harnessTestDepth: "standard",
     harnessRoleStepId: undefined,
+    harnessMaxRepairIterations: undefined,
     customContextMarkdownPath: undefined,
   };
 
@@ -718,6 +757,7 @@ test("runTestIntelligenceCommand: deterministic_llm + harness-mode shadow_eval f
     harnessMode: "shadow_eval",
     harnessTestDepth: "exhaustive",
     harnessRoleStepId: "test_generation_alt",
+    harnessMaxRepairIterations: undefined,
     customContextMarkdownPath: undefined,
   };
 
@@ -1167,6 +1207,7 @@ test("runTestIntelligenceCommand: deterministic_llm forwards customContextMarkdo
     harnessMode: "off",
     harnessTestDepth: "standard",
     harnessRoleStepId: undefined,
+    harnessMaxRepairIterations: undefined,
     customContextMarkdownPath: "/operator/forwarded.md",
   };
   let capturedMarkdown: string | undefined;

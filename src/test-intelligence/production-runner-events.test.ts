@@ -49,6 +49,7 @@ test("event phases form a stable, non-empty enumeration", () => {
     "cache_break",
     "replay_cache_hit",
     "cancelled",
+    "repair_loop_iteration",
   ] satisfies ProductionRunnerEventPhase[]);
 });
 

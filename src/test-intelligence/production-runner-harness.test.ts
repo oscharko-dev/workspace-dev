@@ -457,3 +457,148 @@ test("runFigmaToQcTestCases harness modes are exhaustively covered by the integr
     );
   }
 });
+
+// ---------------------------------------------------------------------------
+// Issue #1900: production-runner repair-loop wiring
+// ---------------------------------------------------------------------------
+
+test("runFigmaToQcTestCases drives the repair loop when the logic-judge initially asks for repair", async () => {
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ti-runner-repair-"));
+  try {
+    let logicCallIndex = 0;
+    let generatorCallIndex = 0;
+    const client = createMockLlmGatewayClient({
+      role: "test_generation",
+      deployment: "gpt-oss-120b-mock",
+      modelRevision: "mock-1",
+      gatewayRelease: "mock",
+      responder: (request, attempt) => {
+        if (request.responseSchemaName === "workspace-dev-logic-judge-v1") {
+          logicCallIndex += 1;
+          // First logic-judge call (initial pass) → repair.
+          // Subsequent calls (repair iterations) → accept.
+          if (logicCallIndex === 1) {
+            return {
+              outcome: "success" as const,
+              content: {
+                verdict: "repair",
+                findings: [
+                  {
+                    testCaseId: "$job",
+                    code: "coverage_gap",
+                    severity: "warning",
+                    message: "coveredFieldIds is empty",
+                  },
+                ],
+                repairInstructions: [
+                  {
+                    testCaseId: "$job",
+                    path: "qualitySignals.coveredFieldIds",
+                    instruction: "Populate coveredFieldIds with cited IR ids.",
+                  },
+                ],
+              },
+              finishReason: "stop" as const,
+              usage: { inputTokens: 20, outputTokens: 10 },
+              modelDeployment: "gpt-oss-120b-mock",
+              modelRevision: "mock-1",
+              gatewayRelease: "mock",
+              attempt,
+            };
+          }
+          return {
+            outcome: "success" as const,
+            content: {
+              verdict: "accept",
+              findings: [],
+              repairInstructions: [],
+            },
+            finishReason: "stop" as const,
+            usage: { inputTokens: 20, outputTokens: 10 },
+            modelDeployment: "gpt-oss-120b-mock",
+            modelRevision: "mock-1",
+            gatewayRelease: "mock",
+            attempt,
+          };
+        }
+        generatorCallIndex += 1;
+        return {
+          outcome: "success" as const,
+          content: { testCases: [SAMPLE_DRAFT] },
+          finishReason: "stop" as const,
+          usage: { inputTokens: 100, outputTokens: 200 },
+          modelDeployment: "gpt-oss-120b-mock",
+          modelRevision: "mock-1",
+          gatewayRelease: "mock",
+          attempt,
+        };
+      },
+    });
+    const result = await runFigmaToQcTestCases({
+      jobId: "job-repair-loop",
+      generatedAt: "2026-05-04T10:00:00Z",
+      source: { kind: "figma_paste_normalized", file: SAMPLE_FILE },
+      outputRoot: tempRoot,
+      llm: { client },
+      harness: { mode: "shadow_eval", maxRepairIterations: 2 },
+    });
+    assert.ok(result.repairLoop, "expected repair-loop summary");
+    assert.equal(result.repairLoop.outcome, "accepted");
+    assert.equal(result.repairLoop.repairIterationCount, 1);
+    assert.equal(result.repairLoop.iterations.length, 2);
+    assert.equal(generatorCallIndex, 2, "expected generator to run twice");
+    const plannerArtifact = path.join(
+      result.artifactDir,
+      "agent-role-runs",
+      "repair_planner_iter_1.json",
+    );
+    const generatorArtifact = path.join(
+      result.artifactDir,
+      "agent-role-runs",
+      "test_generation_repair_iter_1.json",
+    );
+    const plannerPayload = JSON.parse(await readFile(plannerArtifact, "utf8"));
+    const generatorPayload = JSON.parse(
+      await readFile(generatorArtifact, "utf8"),
+    );
+    assert.equal(plannerPayload.iteration, 1);
+    assert.equal(plannerPayload.outputs.repairInstructionCount, 1);
+    assert.equal(generatorPayload.iteration, 1);
+    assert.equal(generatorPayload.llmGateway.outcome, "success");
+  } finally {
+    await rm(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("runFigmaToQcTestCases skips the repair loop entirely on a clean accept verdict", async () => {
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ti-runner-repair-"));
+  try {
+    const client = createMockLlmGatewayClient({
+      role: "test_generation",
+      deployment: "gpt-oss-120b-mock",
+      modelRevision: "mock-1",
+      gatewayRelease: "mock",
+      responder: okResponder([SAMPLE_DRAFT]),
+    });
+    const result = await runFigmaToQcTestCases({
+      jobId: "job-no-repair",
+      generatedAt: "2026-05-04T10:00:00Z",
+      source: { kind: "figma_paste_normalized", file: SAMPLE_FILE },
+      outputRoot: tempRoot,
+      llm: { client },
+      harness: { mode: "shadow_eval" },
+    });
+    assert.equal(result.repairLoop, undefined);
+    await assert.rejects(
+      stat(
+        path.join(
+          result.artifactDir,
+          "agent-role-runs",
+          "repair_planner_iter_1.json",
+        ),
+      ),
+    );
+  } finally {
+    await rm(tempRoot, { recursive: true, force: true });
+  }
+});
