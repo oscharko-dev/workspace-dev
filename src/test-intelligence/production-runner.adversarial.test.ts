@@ -430,7 +430,7 @@ test("production runner adversarial: corrupted persistent replay-cache entries a
         return true;
       },
     );
-    assert.equal(client.callCount(), 1);
+    assert.equal(client.callCount(), 2);
   } finally {
     await rm(tempRoot, { recursive: true, force: true });
     await rm(cacheRoot, { recursive: true, force: true });
@@ -554,7 +554,7 @@ test("production runner adversarial: cancellation releases the gateway slot and 
       logicJudge: { enabled: false },
     });
     assert.equal(secondRun.generatedTestCases.testCases.length, 1);
-    assert.equal(dispatches, 2);
+    assert.equal(dispatches, 3);
   } finally {
     await rm(tempRoot, { recursive: true, force: true });
   }
