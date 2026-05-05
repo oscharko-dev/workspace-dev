@@ -2954,6 +2954,7 @@ export const AGENT_HARNESS_ROLES = [
   "adversarial_gap_finder",
   "final_verifier",
   "generator",
+  "logic_judge",
   "repair_planner",
   "semantic_judge",
   "visual_sidecar",
@@ -2988,6 +2989,8 @@ export const AGENT_ROLE_MAX_ATTEMPT_VALUES = [1, 2, 3] as const;
  *
  * - `visual_sidecar` — deterministic screenshot/spec-check service.
  * - `generator` — LLM that produces structured test cases.
+ * - `logic_judge` — LLM that validates generator output against the
+ *   deterministic design and coverage artifacts.
  * - `semantic_judge` — LLM judge panel that scores generated cases.
  * - `adversarial_gap_finder` — LLM that surfaces missing coverage.
  * - `repair_planner` — LLM that proposes a structured repair plan
