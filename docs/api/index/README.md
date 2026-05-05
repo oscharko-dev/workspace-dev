@@ -2321,43 +2321,23 @@ true if an instance was found and removed, false otherwise.
 
 ### runMigrations()
 
-#### Call Signature
+> **runMigrations**(`state`, `registry`, `options?`): `Promise`\<[`MigrationResult`](#migrationresult)\>
 
-> **runMigrations**(`state`, `registry`): `Promise`\<[`MigrationResult`](#migrationresult)\>
+#### Parameters
 
-##### Parameters
-
-###### state
+##### state
 
 `unknown`
 
-###### registry
+##### registry
 
 readonly [`Migration`](#migration)[]
 
-##### Returns
-
-`Promise`\<[`MigrationResult`](#migrationresult)\>
-
-#### Call Signature
-
-> **runMigrations**(`state`, `registry`, `options`): `Promise`\<[`MigrationResult`](#migrationresult)\>
-
-##### Parameters
-
-###### state
-
-`unknown`
-
-###### registry
-
-readonly [`Migration`](#migration)[]
-
-###### options
+##### options?
 
 [`RunMigrationsOptions`](#runmigrationsoptions)
 
-##### Returns
+#### Returns
 
 `Promise`\<[`MigrationResult`](#migrationresult)\>
 
