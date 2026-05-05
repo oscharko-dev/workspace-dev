@@ -31,6 +31,93 @@ All changes to the public contract surface of `workspace-dev` are documented her
 
 ---
 
+## [4.45.0] - 2026-05-05
+
+### Added (Issue #1898 — real Logic-Judge LLM roundtrip + verdict artifact)
+
+The Production Runner historically dispatched a single generator LLM
+call; the "harness" classified that one output (schema-pass /
+token-limit / refusal) and called the result `judgeAccepted`, but the
+classification was a deterministic reflection of the same dispatch
+rather than an independent judgement (`production-runner.ts:1018`,
+"the callback is deterministic across attempts because we are wrapping
+a single LLM result"). On the live `ti-cli-1777975419948` run the
+finops `bySource` breakdown showed `judge_primary.callCount === 0`
+and the harness still reported `judgeAccepted: true`.
+
+This release wires in the missing second roundtrip:
+
+- A new `logic_judge` `AgentHarnessRole` is registered in the
+  static role-profile matrix (`agent-role-profile.ts`). It is bound
+  to the in-house `gpt-oss-120b` model with `promptVersion =
+  "logic-judge.v1"`, `outputSchema = "logic-judge-verdict.v1"`,
+  `capability = "score_only"`, `finOpsGroup = "judge"`, and a token
+  budget of 24k input / 4k output.
+- A new `LogicJudgeVerdict` JSON schema is exported with
+  `schemaVersion = "1.0.0"`. The verdict carries a closed
+  `verdict ∈ {accept, repair, reject}` literal, code-tagged
+  `findings[]` (`coverage_fields_missing`,
+  `coverage_actions_missing`, `faithfulness_unknown_field`,
+  `faithfulness_unknown_action`, `schema_required_field_blank`,
+  `banking_four_eyes_missing`, `trace_node_id_missing`, `other`),
+  code-tagged `repairInstructions[]`, prompt + schema + input
+  hashes, and the billed token counts.
+- The Production Runner's `runFigmaToQcTestCases` accepts a new
+  optional `logicJudge?: { enabled: boolean }` field. When `enabled`
+  is `true` and the generator step succeeds the runner stamps the
+  drafts, dispatches a second LLM call against the same gateway
+  client (attributed to the FinOps source `judge_primary`), parses
+  the structured response into a `LogicJudgeVerdict`, and feeds
+  `judgeAccepted = (verdict === "accept")` into
+  `AgentHarnessAttemptResult`. A heuristic local cross-check
+  conservatively downgrades a fabricated `accept` verdict against a
+  plainly-broken case to `repair` or `reject` (it never upgrades a
+  `repair`/`reject` verdict). Off by default — legacy callers see
+  the deterministic single-pass behaviour unchanged.
+- Three new persisted artifacts surface for runs that dispatched
+  the judge: `compiled-prompt-judge.json`,
+  `logic-judge-verdict.json`, and
+  `agent-role-runs/logic_judge.json`.
+
+Additive public-contract changes:
+
+- `AGENT_HARNESS_ROLES` gains the new role literal
+  `"logic_judge"` (additive — closed union grows by one).
+- New runtime constants exported from `src/contracts/index.ts`:
+  - `LOGIC_JUDGE_VERDICT_SCHEMA_VERSION = "1.0.0"`
+  - `LOGIC_JUDGE_VERDICT_ARTIFACT_FILENAME = "logic-judge-verdict.json"`
+  - `COMPILED_PROMPT_JUDGE_ARTIFACT_FILENAME = "compiled-prompt-judge.json"`
+  - `LOGIC_JUDGE_OUTPUT_SCHEMA_NAME = "logic-judge-verdict.v1"`
+  - `LOGIC_JUDGE_PROMPT_TEMPLATE_VERSION = "1.0.0"`
+  - `LOGIC_JUDGE_REASON_MAX_CHARS = 480`
+  - `LOGIC_JUDGE_MAX_FINDINGS = 32`
+  - `LOGIC_JUDGE_MAX_REPAIR_INSTRUCTIONS = 32`
+  - `ALLOWED_LOGIC_JUDGE_VERDICTS = ["accept", "reject", "repair"]`
+  - `ALLOWED_LOGIC_JUDGE_FINDING_SEVERITIES =
+    ["blocker", "major", "minor"]`
+  - `ALLOWED_LOGIC_JUDGE_FINDING_CODES` — closed list of seven
+    finding codes plus `"other"` (see schema definition).
+- New exported types (`LogicJudgeVerdict`, `LogicJudgeFinding`,
+  `LogicJudgeRepairInstruction`, `LogicJudgeVerdictKind`,
+  `LogicJudgeFindingCode`, `LogicJudgeFindingSeverity`).
+- `RunFigmaToQcTestCasesInput` gains the optional field
+  `logicJudge?: { enabled: boolean }` (off by default).
+- `RunFigmaToQcTestCasesResult.artifactPaths` gains optional
+  `logicJudgeVerdict`, `compiledPromptJudge`, and
+  `logicJudgeRoleRun` fields. The result envelope also gains an
+  optional `logicJudge?: { verdict, judgeAccepted }` summary.
+- `TEST_INTELLIGENCE_CONTRACT_VERSION` stays at `1.10.0` — the
+  shape of every artifact that stamps that version (e.g.
+  `GeneratedTestCase`) is unchanged. Logic-Judge artifacts carry
+  their own `LOGIC_JUDGE_VERDICT_SCHEMA_VERSION = "1.0.0"`.
+- `CONTRACT_VERSION` bumps from `4.44.0` to `4.45.0`.
+
+This is an additive minor bump. No removals or renames. No
+banking-profile migrations are registered in this release; the
+`migrationHash:` registry from 4.42.0 carries over unchanged.
+
+---
+
 ## [4.44.0] - 2026-05-05
 
 ### Added (Issue #1894 — `--custom-context-markdown` CLI flag and production-runner wiring)
