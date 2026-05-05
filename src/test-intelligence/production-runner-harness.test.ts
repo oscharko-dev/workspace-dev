@@ -167,6 +167,11 @@ test("runFigmaToQcTestCases harness mode shadow_eval persists an accepted step a
       outputRoot: tempRoot,
       llm: { client },
       harness: { mode: "shadow_eval" },
+      // This test focuses on shadow_eval harness routing for the
+      // generator-only path. Logic-Judge integration is exercised in
+      // logic-judge.test.ts; opt out here to keep the assertions
+      // narrow.
+      logicJudge: { enabled: false },
     });
     assert.ok(result.harness, "expected harness summary in result");
     assert.equal(result.harness.mode, "shadow_eval");
@@ -207,6 +212,9 @@ test("runFigmaToQcTestCases harness mode enforced succeeds on a happy path", asy
       outputRoot: tempRoot,
       llm: { client },
       harness: { mode: "enforced" },
+      // Generator-only happy-path test. Logic-Judge default-on
+      // semantics covered separately in logic-judge.test.ts.
+      logicJudge: { enabled: false },
     });
     assert.ok(result.harness);
     assert.equal(result.harness.mode, "enforced");

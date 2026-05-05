@@ -541,13 +541,14 @@ export interface RunFigmaToQcTestCasesInput {
    */
   customContextMarkdown?: string;
   /**
-   * Optional Logic-Judge integration (Issue #1898). When `enabled` is
-   * true and the generator step succeeds, the runner dispatches a
-   * second LLM roundtrip against the same gateway client (attributed
-   * to FinOps source `judge_primary`) and consumes the verdict to
-   * drive {@link AgentHarnessAttemptResult.judgeAccepted}. Off by
-   * default — legacy callers see the deterministic single-pass
-   * behaviour unchanged.
+   * Logic-Judge integration (Issue #1898). Defaults to **enabled** —
+   * when the generator step succeeds the runner dispatches a second
+   * LLM roundtrip against the same gateway client (attributed to
+   * FinOps source `judge_primary`) and consumes the verdict to
+   * drive {@link AgentHarnessAttemptResult.judgeAccepted}. Pass
+   * `{ enabled: false }` explicitly to keep the legacy single-pass
+   * behaviour (e.g. unit tests that mock only the generator
+   * responder).
    *
    * In `harness.mode === "enforced"` a non-`accept` verdict surfaces
    * as a {@link ProductionRunnerError} via the existing harness
@@ -1045,7 +1046,13 @@ export const runFigmaToQcTestCases = async (
   let harnessArtifactPath: string | undefined;
   let capturedLlmResult: LlmGenerationResult | undefined;
   let logicJudgeRunResult: RunLogicJudgeResult | undefined;
-  const logicJudgeEnabled = input.logicJudge?.enabled === true;
+  // Issue #1898: Logic-Judge defaults to ON. Callers that need the
+  // legacy single-pass behaviour (deterministic generator-only
+  // classification) must pass `logicJudge: { enabled: false }`
+  // explicitly. The judge dispatches a second LLM call against the
+  // same gateway client and is attributed to FinOps source
+  // `judge_primary`.
+  const logicJudgeEnabled = input.logicJudge?.enabled !== false;
 
   let cacheExecResult: Awaited<ReturnType<typeof executeWithReplayCache>>;
   try {

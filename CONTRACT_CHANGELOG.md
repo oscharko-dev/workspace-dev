@@ -31,6 +31,47 @@ All changes to the public contract surface of `workspace-dev` are documented her
 
 ---
 
+## [4.46.0] - 2026-05-05
+
+### Changed (Issue #1898 follow-up — Logic-Judge defaults to ON)
+
+Flips the default for `RunFigmaToQcTestCasesInput.logicJudge` from
+opt-in to opt-out. Callers that omit the field (or pass
+`logicJudge: { enabled: true }`) now dispatch the second LLM
+roundtrip and the harness consumes the real `LogicJudgeVerdict`.
+Callers that need the legacy deterministic single-pass behaviour
+(unit tests that mock only the generator responder, etc.) must pass
+`logicJudge: { enabled: false }` explicitly.
+
+Mock-gateway compatibility: `createMockLlmGatewayClient` now
+auto-substitutes a default `accept` verdict envelope when a request
+targets the logic-judge structured-output schema and the
+user-provided responder returned a result that does not even attempt
+the judge surface (no `verdict` field at all). This keeps generator-
+only test fixtures green after the default flip without forcing
+every test author to thread judge-shape responders. Responders that
+DO supply a `verdict` field — including out-of-range literals used
+by parser tests — pass through untouched.
+
+Contract surface impact: none. The field already existed at
+`4.45.0`; only its default-on/off semantic flipped, which is a
+behavioural change rather than a wire-shape change.
+
+Also fixes a pre-existing snapshot drift in
+`production-runner-events.test.ts` (the `"cancelled"` event phase
+landed in `0db87b9c` without the snapshot update), unblocking the
+dev-quality-gate `test:coverage` lane.
+
+- `CONTRACT_VERSION` bumps from `4.45.0` to `4.46.0` (default-flip
+  is a contract-observable behaviour change; documented for
+  consumers depending on the pre-flip semantics).
+
+This is an additive minor bump. No removals or renames. No
+banking-profile migrations are registered in this release; the
+`migrationHash:` registry from 4.42.0 carries over unchanged.
+
+---
+
 ## [4.45.0] - 2026-05-05
 
 ### Added (Issue #1898 — real Logic-Judge LLM roundtrip + verdict artifact)

@@ -608,6 +608,9 @@ test("runFigmaToQcTestCases forwards maxInputTokens from the resolved FinOps bud
       outputRoot: tempRoot,
       llm: { client },
       finopsBudget,
+      // Narrow assertion on the generator dispatch only — opt out of
+      // the second Logic-Judge call so `recorded.length === 1`.
+      logicJudge: { enabled: false },
     });
 
     const recorded = client.recordedRequests();
@@ -676,6 +679,10 @@ test("runFigmaToQcTestCases records real in-flight dedup hits in the persisted F
         source: { kind: "figma_rest_file", file: SAMPLE_FILE },
         outputRoot,
         llm: { client },
+        // The custom fetch impl returns generator-shape JSON; the
+        // gateway pre-validates Logic-Judge structured output, so opt
+        // out for the dedup test.
+        logicJudge: { enabled: false },
       });
 
     const first = run(rootA);
@@ -779,6 +786,10 @@ test("runFigmaToQcTestCases does not collapse concurrent requests with different
         source: { kind: "figma_rest_file", file: SAMPLE_FILE },
         outputRoot,
         llm: { client },
+        // Tests the agent-lessons branch of the in-flight dedup key.
+        // Logic-Judge default-on would add unrelated dispatches; opt
+        // out so the dedup-related count assertion remains exact.
+        logicJudge: { enabled: false },
       });
 
     const first = run(rootA);
@@ -1704,6 +1715,10 @@ test("runFigmaToQcTestCases (eu-banking-default profile) augments user prompt wi
       llm: { client },
       // Default policyProfileId is eu-banking-default — explicit here for clarity.
       policyProfileId: EU_BANKING_DEFAULT_POLICY_PROFILE_ID,
+      // Test asserts on the generator's user prompt only; opt out of
+      // the second Logic-Judge call so the captured prompt is the
+      // one with the regulatory rules, not the judge prompt.
+      logicJudge: { enabled: false },
     });
 
     // (a) The user prompt was augmented with the banking compliance rules.
@@ -1784,6 +1799,10 @@ test("runFigmaToQcTestCases wraps hostile Figma screen names instead of emitting
       outputRoot: tempRoot,
       llm: { client },
       policyProfileId: EU_BANKING_DEFAULT_POLICY_PROFILE_ID,
+      // Captures the generator's user prompt; opt out of the second
+      // Logic-Judge call so the closure-captured `observedUserPrompt`
+      // is the generator prompt under test.
+      logicJudge: { enabled: false },
     });
 
     assert.match(observedUserPrompt, /<UNTRUSTED_FIGMA_TEXT[^>]*>/u);
@@ -1890,6 +1909,9 @@ test("runFigmaToQcTestCases treats CLI live deployments as regular live runs, no
       outputRoot: tempRoot,
       llm: { client },
       policyProfileId: "non-banking-test-profile",
+      // Asserts on the generator's `attempts === 1`; opt out of the
+      // Logic-Judge second call so the count stays at 1.
+      logicJudge: { enabled: false },
     });
 
     const report = JSON.parse(
