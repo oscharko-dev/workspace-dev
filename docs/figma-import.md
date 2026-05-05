@@ -123,8 +123,8 @@ design, but `code.js` runs in a non-browser sandbox where CORS does not apply.
 
 1. Select one or more frames or components on the Figma canvas.
 2. In the plugin UI, confirm the **WorkspaceDev URL** field shows
-   `http://127.0.0.1:1983` (or enter a different URL if using a non-default
-   port).
+   `http://127.0.0.1:1983` (or enter a loopback URL on a different local port
+   if needed).
 3. Click **Send to WorkspaceDev**.
 4. On success, the status area shows
    `"Sent! Job <jobId> is processing."` with a clickable link to the job page.
@@ -137,9 +137,11 @@ clipboard paste path. No clipboard access or paste step is required.
 ### Manifest port note
 
 The plugin manifest declares `networkAccess.allowedDomains` to control which
-domains `code.js` may fetch. The default is `["http://127.0.0.1:1983"]`. If
-WorkspaceDev is running on a different port, update this list in
-`plugin/manifest.json` and reload the plugin in Figma.
+domains `code.js` may fetch. The default is `["http://127.0.0.1:1983"]`. The
+plugin UI also restricts direct upload targets to loopback hosts
+(`localhost`, `127.0.0.1`, `::1`). If WorkspaceDev is running on a different
+local port, update this list in `plugin/manifest.json` and reload the plugin
+in Figma.
 
 ## Inspector paste-zone reference
 

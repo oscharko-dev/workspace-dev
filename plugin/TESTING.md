@@ -72,6 +72,7 @@ in automated CI. Follow these steps to verify the export flow.
 1. Select one or more frames or components on the Figma canvas.
 2. In the plugin UI, confirm the **WorkspaceDev URL** field shows
    `http://127.0.0.1:1983` (the default).
+   Only loopback hosts are accepted: `localhost`, `127.0.0.1`, or `::1`.
 3. Click **Send to WorkspaceDev**.
 4. Verify the status area shows "Uploading to WorkspaceDev..." briefly, then
    transitions to a success message like
@@ -81,7 +82,7 @@ in automated CI. Follow these steps to verify the export flow.
    are re-enabled after the operation completes.
 
 **Non-default ports**: if WorkspaceDev is running on a port other than 1983,
-update the **WorkspaceDev URL** input in the plugin UI to match
-(e.g. `http://127.0.0.1:8080`). Additionally, update
+update the **WorkspaceDev URL** input in the plugin UI to a loopback URL on
+that port (for example `http://127.0.0.1:8080`). Additionally, update
 `networkAccess.allowedDomains` in `plugin/manifest.json` to include the
 alternate port URL — Figma blocks `fetch()` calls to domains not listed there.

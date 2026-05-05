@@ -22,6 +22,15 @@ function normalizeWorkspaceDevUrl(rawUrl: unknown): string {
     if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
       return "";
     }
+    const hostname = parsed.hostname.toLowerCase();
+    if (
+      hostname !== "localhost" &&
+      hostname !== "127.0.0.1" &&
+      hostname !== "::1" &&
+      hostname !== "[::1]"
+    ) {
+      return "";
+    }
     parsed.search = "";
     parsed.hash = "";
     parsed.pathname = parsed.pathname.replace(/\/+$/, "");
@@ -88,8 +97,8 @@ describe("normalizeWorkspaceDevUrl", () => {
 
   it("accepts https:// URLs", () => {
     assert.equal(
-      normalizeWorkspaceDevUrl("https://myserver.example.com"),
-      "https://myserver.example.com",
+      normalizeWorkspaceDevUrl("https://localhost:1983"),
+      "https://localhost:1983",
     );
   });
 
@@ -97,6 +106,20 @@ describe("normalizeWorkspaceDevUrl", () => {
     assert.equal(
       normalizeWorkspaceDevUrl("  http://127.0.0.1:1983  "),
       "http://127.0.0.1:1983",
+    );
+  });
+
+  it("accepts loopback IPv6 URLs", () => {
+    assert.equal(
+      normalizeWorkspaceDevUrl("http://[::1]:1983"),
+      "http://[::1]:1983",
+    );
+  });
+
+  it("rejects non-loopback origins", () => {
+    assert.equal(
+      normalizeWorkspaceDevUrl("https://workspace-dev.example.com"),
+      "",
     );
   });
 });
