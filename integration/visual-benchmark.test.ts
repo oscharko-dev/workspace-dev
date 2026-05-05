@@ -2305,10 +2305,8 @@ test("visual benchmark workflow enforces thresholds and updates the existing che
   assert.match(workflow, /check-output\.json/);
   assert.match(workflow, /github\.rest\.issues\.updateComment/);
   assert.match(workflow, /github\.rest\.issues\.createComment/);
-  assert.match(workflow, /integration\/composite-quality\*/);
-  assert.match(workflow, /scripts\/compute-composite-quality\.ts/);
+  assert.match(workflow, /name:\s+Run performance assertion for composite quality/);
   assert.match(workflow, /scripts\/print-visual-benchmark-summary\.mjs/);
-  assert.match(workflow, /scripts\/visual-benchmark-summary\.mjs/);
   assert.match(workflow, /pnpm perf:web:assert/);
   assert.match(workflow, /pnpm composite:quality/);
   assert.match(workflow, /composite-quality-report\.json/);

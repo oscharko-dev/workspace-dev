@@ -46,6 +46,8 @@ test("integration: paste delta benchmark config, docs, and workflow stay aligned
   assert.match(contributingDoc, /artifacts\/testing\/paste-delta-benchmark\.json/);
   assert.match(contributingDoc, /30% wall-clock reduction/i);
   assert.match(contributingDoc, /80th percentile/i);
+  assert.match(contributingDoc, /src\/job-engine\.ts/);
+  assert.match(contributingDoc, /src\/server\/request-handler\.ts/);
 
   const benchmarkJobBlock = extractWorkflowJobBlock({
     workflow: visualBenchmarkWorkflow,
@@ -56,13 +58,5 @@ test("integration: paste delta benchmark config, docs, and workflow stay aligned
   assert.match(benchmarkJobBlock, /paste-delta-roots\.test\.ts/);
   assert.match(benchmarkJobBlock, /pnpm run benchmark:paste-delta -- --check/);
   assert.match(benchmarkJobBlock, /artifacts\/testing\/paste-delta-benchmark\.json/);
-
-  for (const requiredPath of [
-    'src/job-engine.ts',
-    'src/server/request-handler.ts',
-    'integration/paste-delta-benchmark*',
-    'package.json',
-  ]) {
-    assert.match(visualBenchmarkWorkflow, new RegExp(requiredPath.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
-  }
+  assert.match(benchmarkJobBlock, /name:\s+Run paste delta benchmark gate/);
 });
