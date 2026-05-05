@@ -1063,11 +1063,53 @@ test("cli contract: test-intelligence run --help prints all required flags", asy
   assert.match(result.stdout, /--figma-json-file/i);
   assert.match(result.stdout, /--output/i);
   assert.match(result.stdout, /--mode/i);
+  assert.match(result.stdout, /--enable-visual-sidecar/i);
   assert.match(result.stdout, /--no-visual-sidecar/i);
   assert.match(result.stdout, /--finops-budget/i);
   assert.match(result.stdout, /--policy-profile/i);
   assert.match(result.stdout, /FIGMAPIPE_WORKSPACE_TEST_INTELLIGENCE/i);
+  assert.match(result.stdout, /FIGMAPIPE_WORKSPACE_TI_ENABLE_VISUAL_SIDECAR/i);
   assert.match(result.stdout, /dry_run/i);
+});
+
+test("cli contract: test-intelligence run --enable-visual-sidecar fails closed when visual envs are missing", async () => {
+  const tmpDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-ti-visual-"));
+  const figmaJsonPath = path.join(tmpDir, "figma.json");
+  await writeFile(
+    figmaJsonPath,
+    JSON.stringify({
+      fileKey: "abc",
+      name: "Test",
+      document: { id: "0:0", type: "DOCUMENT" },
+    }),
+  );
+
+  const result = await runCliToExit({
+    args: [
+      "test-intelligence",
+      "run",
+      "--figma-json-file",
+      figmaJsonPath,
+      "--output",
+      path.join(tmpDir, "out"),
+      "--model-endpoint",
+      "https://aoai.example/openai/v1",
+      "--model-api-key",
+      "k-key",
+      "--mode",
+      "deterministic_llm",
+      "--enable-visual-sidecar",
+    ],
+    env: {
+      FIGMAPIPE_WORKSPACE_TEST_INTELLIGENCE: "1",
+    },
+  });
+
+  assert.equal(result.exitCode, 1);
+  assert.match(
+    result.stderr,
+    /requires WORKSPACE_TEST_SPACE_VISUAL_MODEL_ENDPOINT, WORKSPACE_TEST_SPACE_VISUAL_PRIMARY_DEPLOYMENT, WORKSPACE_TEST_SPACE_VISUAL_FALLBACK_DEPLOYMENT/i,
+  );
 });
 
 test("cli contract: test-intelligence run without feature gate → exit 1 with clear error", async () => {

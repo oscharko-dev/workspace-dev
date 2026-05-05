@@ -50,6 +50,10 @@ import {
   type RunFigmaToQcTestCasesResult,
 } from "./test-intelligence/index.js";
 import {
+  createLlmGatewayClientBundle,
+  type LlmGatewayClientBundle,
+} from "./test-intelligence/llm-gateway-bundle.js";
+import {
   createLlmGatewayClient,
   type LlmGatewayClient,
 } from "./test-intelligence/llm-gateway.js";
@@ -79,6 +83,17 @@ const isHarnessMode = (value: string): value is ProductionRunnerHarnessMode =>
 const isHarnessTestDepth = (value: string): value is AgentHarnessTestDepth =>
   (AGENT_HARNESS_TEST_DEPTHS as ReadonlyArray<string>).includes(value);
 
+const isTruthyFlag = (value: string | undefined): boolean => {
+  if (typeof value !== "string") return false;
+  const normalized = value.trim().toLowerCase();
+  return (
+    normalized === "1" ||
+    normalized === "true" ||
+    normalized === "yes" ||
+    normalized === "on"
+  );
+};
+
 /** Parsed, validated flags for the test-intelligence run command. */
 export interface TestIntelligenceRunOptions {
   figmaUrl: string | undefined;
@@ -91,6 +106,8 @@ export interface TestIntelligenceRunOptions {
   figmaToken: string | undefined;
   policyProfile: string | undefined;
   mode: TestIntelligenceRunMode;
+  /** When true, opt into constructing the visual-sidecar bundle. */
+  enableVisualSidecar: boolean;
   /** When true, skip the visual sidecar pass even if a bundle is configured. */
   noVisualSidecar: boolean;
   /** Path to a JSON FinOps budget envelope to apply. `undefined` → production default. */
@@ -140,6 +157,9 @@ export const parseTestIntelligenceRunArgs = (
     env.FIGMA_ACCESS_TOKEN?.trim() || undefined;
   let policyProfile: string | undefined;
   let mode: TestIntelligenceRunMode = "dry_run";
+  let enableVisualSidecar = isTruthyFlag(
+    env.FIGMAPIPE_WORKSPACE_TI_ENABLE_VISUAL_SIDECAR,
+  );
   let noVisualSidecar = false;
   let finopsBudgetPath: string | undefined;
   let harnessMode: ProductionRunnerHarnessMode = "off";
@@ -258,6 +278,11 @@ export const parseTestIntelligenceRunArgs = (
       continue;
     }
 
+    if (arg === "--enable-visual-sidecar") {
+      enableVisualSidecar = true;
+      continue;
+    }
+
     if (arg === "--no-visual-sidecar") {
       noVisualSidecar = true;
       continue;
@@ -326,6 +351,11 @@ export const parseTestIntelligenceRunArgs = (
       "One of --figma-url or --figma-json-file is required",
     );
   }
+  if (enableVisualSidecar && noVisualSidecar) {
+    throw new TestIntelligenceRunOperatorError(
+      "--enable-visual-sidecar and --no-visual-sidecar are mutually exclusive",
+    );
+  }
 
   return {
     figmaUrl,
@@ -337,6 +367,7 @@ export const parseTestIntelligenceRunArgs = (
     figmaToken,
     policyProfile,
     mode,
+    enableVisualSidecar,
     noVisualSidecar,
     finopsBudgetPath,
     harnessMode,
@@ -373,6 +404,15 @@ export interface TestIntelligenceRunRuntime {
    * (matching the production-runner identity).
    */
   buildLlmClient?: (options: TestIntelligenceRunOptions) => LlmGatewayClient;
+  /**
+   * Override the visual-sidecar bundle builder. When omitted, the live
+   * Azure-bound `createLlmGatewayClientBundle` path is used when
+   * `enableVisualSidecar === true`.
+   */
+  buildLlmBundle?: (
+    options: TestIntelligenceRunOptions,
+    env: NodeJS.ProcessEnv,
+  ) => LlmGatewayClientBundle;
   /**
    * Override the JSON-file loader (tests). Default loads UTF-8 from disk
    * with strict JSON.parse.
@@ -451,6 +491,118 @@ export const buildLiveLlmGatewayClient = (
       apiKeyProvider: () => apiKey,
     },
   );
+};
+
+const requireVisualSidecarEnv = (
+  env: NodeJS.ProcessEnv,
+  key: string,
+): string => {
+  const value = env[key]?.trim();
+  if (value) {
+    return value;
+  }
+  throw new TestIntelligenceRunOperatorError(
+    "--enable-visual-sidecar requires WORKSPACE_TEST_SPACE_VISUAL_MODEL_ENDPOINT, WORKSPACE_TEST_SPACE_VISUAL_PRIMARY_DEPLOYMENT, WORKSPACE_TEST_SPACE_VISUAL_FALLBACK_DEPLOYMENT",
+  );
+};
+
+export const buildLiveVisualSidecarBundle = (
+  options: TestIntelligenceRunOptions,
+  env: NodeJS.ProcessEnv = process.env,
+): LlmGatewayClientBundle => {
+  if (!options.modelEndpoint) {
+    throw new TestIntelligenceRunOperatorError(
+      "--model-endpoint or WORKSPACE_TEST_SPACE_MODEL_ENDPOINT is required for mode=deterministic_llm",
+    );
+  }
+  const apiKey = options.modelApiKey;
+  if (!apiKey) {
+    throw new TestIntelligenceRunOperatorError(
+      "--model-api-key or WORKSPACE_TEST_SPACE_MODEL_API_KEY is required for mode=deterministic_llm",
+    );
+  }
+  const visualEndpoint = requireVisualSidecarEnv(
+    env,
+    "WORKSPACE_TEST_SPACE_VISUAL_MODEL_ENDPOINT",
+  );
+  const visualPrimaryDeployment = requireVisualSidecarEnv(
+    env,
+    "WORKSPACE_TEST_SPACE_VISUAL_PRIMARY_DEPLOYMENT",
+  );
+  const visualFallbackDeployment = requireVisualSidecarEnv(
+    env,
+    "WORKSPACE_TEST_SPACE_VISUAL_FALLBACK_DEPLOYMENT",
+  );
+
+  const bundle = createLlmGatewayClientBundle(
+    {
+      testGeneration: {
+        role: "test_generation",
+        compatibilityMode: "openai_chat",
+        baseUrl: options.modelEndpoint,
+        deployment: options.modelDeployment,
+        modelRevision: `${options.modelDeployment}@cli-test-intelligence-run`,
+        gatewayRelease: "azure-ai-foundry-cli-test-intelligence-run",
+        authMode: "api_key",
+        declaredCapabilities: {
+          structuredOutputs: true,
+          seedSupport: false,
+          reasoningEffortSupport: false,
+          maxOutputTokensSupport: true,
+          streamingSupport: false,
+          imageInputSupport: false,
+        },
+        timeoutMs: 240_000,
+        maxRetries: 1,
+        circuitBreaker: { failureThreshold: 2, resetTimeoutMs: 30_000 },
+        wireStructuredOutputMode: "none",
+      },
+      visualPrimary: {
+        role: "visual_primary",
+        compatibilityMode: "openai_chat",
+        baseUrl: visualEndpoint,
+        deployment: visualPrimaryDeployment,
+        modelRevision: `${visualPrimaryDeployment}@cli-test-intelligence-run`,
+        gatewayRelease: "azure-ai-foundry-cli-test-intelligence-run",
+        authMode: "api_key",
+        declaredCapabilities: {
+          structuredOutputs: true,
+          seedSupport: false,
+          reasoningEffortSupport: false,
+          maxOutputTokensSupport: true,
+          streamingSupport: false,
+          imageInputSupport: true,
+        },
+        timeoutMs: 60_000,
+        maxRetries: 1,
+        circuitBreaker: { failureThreshold: 2, resetTimeoutMs: 30_000 },
+      },
+      visualFallback: {
+        role: "visual_fallback",
+        compatibilityMode: "openai_chat",
+        baseUrl: visualEndpoint,
+        deployment: visualFallbackDeployment,
+        modelRevision: `${visualFallbackDeployment}@cli-test-intelligence-run`,
+        gatewayRelease: "azure-ai-foundry-cli-test-intelligence-run",
+        authMode: "api_key",
+        declaredCapabilities: {
+          structuredOutputs: true,
+          seedSupport: false,
+          reasoningEffortSupport: false,
+          maxOutputTokensSupport: true,
+          streamingSupport: false,
+          imageInputSupport: true,
+        },
+        timeoutMs: 60_000,
+        maxRetries: 1,
+        circuitBreaker: { failureThreshold: 2, resetTimeoutMs: 30_000 },
+      },
+    },
+    {
+      apiKeyProvider: () => apiKey,
+    },
+  );
+  return bundle;
 };
 
 const defaultLoadFigmaJsonFile = async (filePath: string): Promise<unknown> => {
@@ -765,7 +917,13 @@ export const runTestIntelligenceCommand = async (
         `  source kind   : ${resolved.source.kind}`,
         `  deployment    : ${options.modelDeployment}`,
         `  policy profile: ${options.policyProfile ?? "(default)"}`,
-        `  visual sidecar: ${options.noVisualSidecar ? "disabled (--no-visual-sidecar)" : "enabled when bundle configured"}`,
+        `  visual sidecar: ${
+          options.noVisualSidecar
+            ? "disabled (--no-visual-sidecar)"
+            : options.enableVisualSidecar
+              ? "enabled (--enable-visual-sidecar)"
+              : "disabled (default; set --enable-visual-sidecar or FIGMAPIPE_WORKSPACE_TI_ENABLE_VISUAL_SIDECAR=1)"
+        }`,
         `  finops budget : ${options.finopsBudgetPath ?? "(production default)"}`,
         `  harness mode  : off (dry_run never reaches the harness)`,
         "",
@@ -775,9 +933,17 @@ export const runTestIntelligenceCommand = async (
   }
 
   let llmClient: LlmGatewayClient;
+  let llmBundle: LlmGatewayClientBundle | undefined;
   try {
-    llmClient =
-      runtime.buildLlmClient?.(options) ?? buildLiveLlmGatewayClient(options);
+    if (options.enableVisualSidecar) {
+      llmBundle =
+        runtime.buildLlmBundle?.(options, env) ??
+        buildLiveVisualSidecarBundle(options, env);
+      llmClient = llmBundle.testGeneration;
+    } else {
+      llmClient =
+        runtime.buildLlmClient?.(options) ?? buildLiveLlmGatewayClient(options);
+    }
   } catch (err) {
     if (err instanceof TestIntelligenceRunOperatorError) {
       sink.stderr(`error: ${err.message}\n`);
@@ -813,6 +979,7 @@ export const runTestIntelligenceCommand = async (
     outputRoot: runnerOutputRoot,
     llm: {
       client: llmClient,
+      ...(llmBundle !== undefined ? { bundle: llmBundle } : {}),
       maxOutputTokens: 32_000,
       maxWallClockMs: 240_000,
     },
@@ -913,8 +1080,17 @@ FinOps:
                              Default: production envelope
 
 Visual sidecar:
+  --enable-visual-sidecar    Build and attach the visual-sidecar bundle
+                             (default: off; env override:
+                             FIGMAPIPE_WORKSPACE_TI_ENABLE_VISUAL_SIDECAR=1)
+                             Requires:
+                             WORKSPACE_TEST_SPACE_VISUAL_MODEL_ENDPOINT
+                             WORKSPACE_TEST_SPACE_VISUAL_PRIMARY_DEPLOYMENT
+                             WORKSPACE_TEST_SPACE_VISUAL_FALLBACK_DEPLOYMENT
   --no-visual-sidecar        Skip the visual sidecar pass even when a
-                             bundle is configured (default: enabled)
+                             bundle is configured.
+                             Mutually exclusive with
+                             --enable-visual-sidecar.
 
 Other:
   --policy-profile <id>      Optional policy profile id (default: built-in EU banking)
@@ -942,7 +1118,8 @@ Feature gate:
 
 Exit codes:
   0  success
-  1  operator/config error (includes missing feature gate)
+  1  operator/config error (includes missing feature gate, missing visual env,
+                            and conflicting visual-sidecar flags)
   2  runner error (includes enforced-harness refusal mapped via runner)
   3  policy refusal / blocked
   4  budget exceeded
