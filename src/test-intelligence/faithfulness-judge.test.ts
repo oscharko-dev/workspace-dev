@@ -298,5 +298,258 @@ test("runFaithfulnessJudge reuses the replay cache on the second invocation", as
   assert.equal(resultCallCount(bundle.visualFallback), 0);
 });
 
+test("runFaithfulnessJudge surfaces a label-mismatch repair verdict from the primary model", async () => {
+  const bundle = createMockLlmGatewayClientBundle({
+    testGeneration: {
+      role: "test_generation",
+      deployment: "gpt-oss-120b",
+      modelRevision: "gpt-oss-120b@test",
+      gatewayRelease: "mock",
+    },
+    visualPrimary: {
+      role: "visual_primary",
+      deployment: "mistral-document-ai-2512",
+      modelRevision: "mistral-document-ai-2512@test",
+      gatewayRelease: "mock",
+      declaredCapabilities: VISUAL_CAPS,
+      responder: (_request, attempt) => ({
+        outcome: "success",
+        content: {
+          verdict: "repair",
+          hallucinations: [],
+          mismatches: [
+            {
+              testCaseId: "tc-1",
+              stepIndex: 1,
+              expectedLabel: "Sicherheiten verwalten",
+              visibleLabel: "Sicherheiten anlegen",
+              message: "The visible label differs from the generated step label.",
+            },
+          ],
+        },
+        finishReason: "stop",
+        usage: { inputTokens: 9, outputTokens: 5 },
+        modelDeployment: "mistral-document-ai-2512",
+        modelRevision: "mistral-document-ai-2512@test",
+        gatewayRelease: "mock",
+        attempt,
+      }),
+    },
+    visualFallback: {
+      role: "visual_fallback",
+      deployment: "llama-4-maverick-vision",
+      modelRevision: "llama-4-maverick-vision@test",
+      gatewayRelease: "mock",
+      declaredCapabilities: VISUAL_CAPS,
+    },
+  });
+
+  const result = await runFaithfulnessJudge({
+    jobId: "faithfulness-mismatch",
+    generatedAt: "2026-05-05T10:00:00Z",
+    captures: SAMPLE_CAPTURES,
+    generatedTestCases: SAMPLE_CASE_SET,
+    bundle,
+  });
+
+  assert.equal(result.verdict.verdict, "repair");
+  assert.deepEqual(result.verdict.hallucinations, []);
+  assert.equal(result.verdict.mismatches.length, 1);
+  assert.equal(
+    result.verdict.mismatches[0]?.expectedLabel,
+    "Sicherheiten verwalten",
+  );
+  assert.equal(
+    result.verdict.mismatches[0]?.visibleLabel,
+    "Sicherheiten anlegen",
+  );
+  assert.equal(result.attempts.length, 1);
+  assert.equal(resultCallCount(bundle.visualFallback), 0);
+});
+
+test("runFaithfulnessJudge emits a refusal when both gateways reject the image payload", async () => {
+  const bundle = createMockLlmGatewayClientBundle({
+    testGeneration: {
+      role: "test_generation",
+      deployment: "gpt-oss-120b",
+      modelRevision: "gpt-oss-120b@test",
+      gatewayRelease: "mock",
+    },
+    visualPrimary: {
+      role: "visual_primary",
+      deployment: "mistral-document-ai-2512",
+      modelRevision: "mistral-document-ai-2512@test",
+      gatewayRelease: "mock",
+      declaredCapabilities: VISUAL_CAPS,
+      responder: (_request, _attempt) => ({
+        outcome: "error",
+        errorClass: "image_payload_rejected",
+        message: "primary refused decoded screenshot payload",
+        retryable: false,
+        attempt: 0,
+      }),
+    },
+    visualFallback: {
+      role: "visual_fallback",
+      deployment: "llama-4-maverick-vision",
+      modelRevision: "llama-4-maverick-vision@test",
+      gatewayRelease: "mock",
+      declaredCapabilities: VISUAL_CAPS,
+      responder: (_request, _attempt) => ({
+        outcome: "error",
+        errorClass: "image_payload_rejected",
+        message: "fallback refused decoded screenshot payload",
+        retryable: false,
+        attempt: 0,
+      }),
+    },
+  });
+
+  const result = await runFaithfulnessJudge({
+    jobId: "faithfulness-image-fail",
+    generatedAt: "2026-05-05T10:00:00Z",
+    captures: SAMPLE_CAPTURES,
+    generatedTestCases: SAMPLE_CASE_SET,
+    bundle,
+  });
+
+  assert.equal(result.verdict.verdict, "reject");
+  assert.equal(result.verdict.fallbackReason, "primary_unavailable");
+  assert.equal(result.verdict.refusal?.code, "image_payload_rejected");
+  assert.match(
+    result.verdict.refusal?.message ?? "",
+    /fallback refused decoded screenshot payload/u,
+  );
+  assert.equal(result.verdict.modelDeployment, "llama-4-maverick-vision");
+  assert.equal(result.verdict.hallucinations.length, 1);
+  assert.equal(result.verdict.hallucinations[0]?.testCaseId, "$job");
+  assert.deepEqual(result.verdict.mismatches, []);
+  assert.equal(result.attempts.length, 2);
+});
+
+test("runFaithfulnessJudge emits a refusal when both gateways exceed the input-token budget", async () => {
+  const bundle = createMockLlmGatewayClientBundle({
+    testGeneration: {
+      role: "test_generation",
+      deployment: "gpt-oss-120b",
+      modelRevision: "gpt-oss-120b@test",
+      gatewayRelease: "mock",
+    },
+    visualPrimary: {
+      role: "visual_primary",
+      deployment: "mistral-document-ai-2512",
+      modelRevision: "mistral-document-ai-2512@test",
+      gatewayRelease: "mock",
+      declaredCapabilities: VISUAL_CAPS,
+      responder: (_request, _attempt) => ({
+        outcome: "error",
+        errorClass: "input_budget_exceeded",
+        message: "primary input-token budget exceeded",
+        retryable: false,
+        attempt: 0,
+      }),
+    },
+    visualFallback: {
+      role: "visual_fallback",
+      deployment: "llama-4-maverick-vision",
+      modelRevision: "llama-4-maverick-vision@test",
+      gatewayRelease: "mock",
+      declaredCapabilities: VISUAL_CAPS,
+      responder: (_request, _attempt) => ({
+        outcome: "error",
+        errorClass: "input_budget_exceeded",
+        message: "fallback input-token budget exceeded",
+        retryable: false,
+        attempt: 0,
+      }),
+    },
+  });
+
+  const result = await runFaithfulnessJudge({
+    jobId: "faithfulness-token-limit",
+    generatedAt: "2026-05-05T10:00:00Z",
+    captures: SAMPLE_CAPTURES,
+    generatedTestCases: SAMPLE_CASE_SET,
+    bundle,
+    maxInputTokens: 16,
+  });
+
+  assert.equal(result.verdict.verdict, "reject");
+  assert.equal(result.verdict.refusal?.code, "input_budget_exceeded");
+  assert.match(result.verdict.refusal?.message ?? "", /input/iu);
+  assert.equal(result.attempts.length, 2);
+  assert.equal(result.attempts[0]?.role, "visual_primary");
+  assert.equal(result.attempts[1]?.result.outcome, "error");
+  if (result.attempts[1]?.result.outcome === "error") {
+    assert.equal(
+      result.attempts[1]?.result.errorClass,
+      "input_budget_exceeded",
+    );
+  }
+  assert.equal(result.attempts[1]?.role, "visual_fallback");
+});
+
+test("runFaithfulnessJudge emits a schema-invalid refusal when both responses fail validation", async () => {
+  const bundle = createMockLlmGatewayClientBundle({
+    testGeneration: {
+      role: "test_generation",
+      deployment: "gpt-oss-120b",
+      modelRevision: "gpt-oss-120b@test",
+      gatewayRelease: "mock",
+    },
+    visualPrimary: {
+      role: "visual_primary",
+      deployment: "mistral-document-ai-2512",
+      modelRevision: "mistral-document-ai-2512@test",
+      gatewayRelease: "mock",
+      declaredCapabilities: VISUAL_CAPS,
+      responder: (_request, attempt) => ({
+        outcome: "success",
+        content: { verdict: "definitely-not-a-label" },
+        finishReason: "stop",
+        usage: { inputTokens: 9, outputTokens: 5 },
+        modelDeployment: "mistral-document-ai-2512",
+        modelRevision: "mistral-document-ai-2512@test",
+        gatewayRelease: "mock",
+        attempt,
+      }),
+    },
+    visualFallback: {
+      role: "visual_fallback",
+      deployment: "llama-4-maverick-vision",
+      modelRevision: "llama-4-maverick-vision@test",
+      gatewayRelease: "mock",
+      declaredCapabilities: VISUAL_CAPS,
+      responder: (_request, attempt) => ({
+        outcome: "success",
+        content: { hallucinations: "not an array" },
+        finishReason: "stop",
+        usage: { inputTokens: 7, outputTokens: 4 },
+        modelDeployment: "llama-4-maverick-vision",
+        modelRevision: "llama-4-maverick-vision@test",
+        gatewayRelease: "mock",
+        attempt,
+      }),
+    },
+  });
+
+  const result = await runFaithfulnessJudge({
+    jobId: "faithfulness-schema-refusal",
+    generatedAt: "2026-05-05T10:00:00Z",
+    captures: SAMPLE_CAPTURES,
+    generatedTestCases: SAMPLE_CASE_SET,
+    bundle,
+  });
+
+  assert.equal(result.verdict.verdict, "reject");
+  assert.equal(result.verdict.refusal?.code, "schema_invalid_response");
+  assert.equal(result.verdict.modelDeployment, "llama-4-maverick-vision");
+  assert.equal(result.verdict.fallbackReason, "primary_unavailable");
+  assert.equal(result.verdict.hallucinations.length, 1);
+  assert.equal(result.verdict.hallucinations[0]?.testCaseId, "$job");
+  assert.deepEqual(result.verdict.mismatches, []);
+  assert.equal(result.attempts.length, 2);
+});
+
 const resultCallCount = (client: object): number =>
   (client as { callCount?: () => number }).callCount?.() ?? 0;
