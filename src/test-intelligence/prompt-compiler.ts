@@ -707,9 +707,6 @@ const extractOrderedPromptSections = (
   const sections = new Map<OrderedPromptSectionNumber, string>();
   for (const [index, match] of matches.entries()) {
     const sectionStart = match.index;
-    if (sectionStart === undefined) {
-      continue;
-    }
     const sectionEnd =
       index + 1 < matches.length
         ? (matches[index + 1]?.index ?? renderedUserPrompt.length)
