@@ -600,6 +600,38 @@ test("buildFinOpsBudgetReport: outcomeOverride takes precedence over auto-derive
   assert.equal(report.outcome, "policy_blocked");
 });
 
+test("buildFinOpsBudgetReport: outcomeOverride beats live-smoke budget breaches", () => {
+  for (const outcome of ["policy_blocked", "validation_blocked"] as const) {
+    const recorder = createFinOpsUsageRecorder();
+    recorder.recordAttempt({
+      role: "test_generation",
+      deployment: "gpt-oss-120b",
+      durationMs: 10,
+      liveSmoke: true,
+      result: successResult(0, 0),
+    });
+    const report = buildFinOpsBudgetReport({
+      jobId: JOB_ID,
+      generatedAt: GENERATED_AT,
+      budget: {
+        budgetId: "test-live-smoke-override",
+        budgetVersion: "1.0.0",
+        roles: {
+          test_generation: {
+            maxLiveSmokeCalls: 0,
+          },
+        },
+      },
+      recorder,
+      outcomeOverride: outcome,
+    });
+    assert.equal(report.outcome, outcome);
+    assert.ok(
+      report.breaches.some((breach) => breach.rule === "max_live_smoke_calls"),
+    );
+  }
+});
+
 test("buildFinOpsBudgetReport: byte-stable for identical input", () => {
   const buildOnce = () => {
     const recorder = createFinOpsUsageRecorder();

@@ -122,6 +122,32 @@ const SAMPLE_DRAFT: ProductionRunnerLlmDraftCase = {
   openQuestions: [],
 };
 
+const SAMPLE_ACCESSIBILITY_DRAFT: ProductionRunnerLlmDraftCase = {
+  ...SAMPLE_DRAFT,
+  title: "Formular ist per Tastatur bedienbar",
+  objective:
+    "Bestätigen, dass die Bedarfsermittlung ohne Maus vollständig bedienbar ist.",
+  type: "accessibility",
+  technique: "exploratory",
+  testData: [],
+  steps: [
+    {
+      index: 1,
+      action: "Navigiere ausschließlich per Tastatur durch die Maske",
+      expected: "Alle interaktiven Elemente erhalten einen sichtbaren Fokus",
+    },
+    {
+      index: 2,
+      action: "Aktiviere die Schaltfläche Weiter per Tastatur",
+      expected: "Die Folgemaske wird ohne Maus geöffnet",
+    },
+  ],
+  expectedResults: [
+    "Die Formularfelder sind in sinnvoller Reihenfolge erreichbar",
+    "Weiter ist per Tastatur auslösbar",
+  ],
+};
+
 const PNG_BYTES = Buffer.from(
   "89504e470d0a1a0a0000000d4948445200000001000000010802000000907753de0000000c49444154789c63606060000000040001f61738550000000049454e44ae426082",
   "hex",
@@ -192,12 +218,15 @@ const visualEvidenceHash = (input: {
     )
     .digest("hex");
 
-const okResponder = (cases: ProductionRunnerLlmDraftCase[]) => () => ({
+const okResponder = (
+  cases: ProductionRunnerLlmDraftCase[],
+  deployment = "gpt-oss-120b-mock",
+) => () => ({
   outcome: "success" as const,
   content: { testCases: cases },
   finishReason: "stop" as const,
   usage: { inputTokens: 100, outputTokens: 200 },
-  modelDeployment: "gpt-oss-120b-mock",
+  modelDeployment: deployment,
   modelRevision: "mock-1",
   gatewayRelease: "mock",
   attempt: 1,
@@ -323,11 +352,11 @@ test("Issue #1794: banking profile blocks when the active deployment is missing 
   try {
     const client = createMockLlmGatewayClient({
       role: "test_generation",
-      deployment: "gpt-oss-120b-mock",
+      deployment: "gpt-oss-120b",
       modelRevision: "mock-1",
       gatewayRelease: "mock",
       omitIctRegisterRef: true,
-      responder: okResponder([SAMPLE_DRAFT]),
+      responder: okResponder([SAMPLE_DRAFT], "gpt-oss-120b"),
     });
     const result = await runFigmaToQcTestCases({
       jobId: "job-1794-banking-refusal",
@@ -366,9 +395,15 @@ test("Issue #1794: banking profile blocks when the active deployment is missing 
     assert.equal(manifest.activeModelBindings?.[0]?.modelId, "mock-1");
     assert.equal(
       manifest.activeModelBindings?.[0]?.inferenceProfileId,
-      "gpt-oss-120b-mock",
+      "gpt-oss-120b",
     );
     assert.equal(manifest.activeModelBindings?.[0]?.ictRegisterRef, undefined);
+
+    const finopsReport = JSON.parse(
+      await readFile(result.artifactPaths.finopsReport, "utf8"),
+    ) as FinOpsBudgetReport;
+    assert.equal(finopsReport.outcome, "policy_blocked");
+    assert.deepEqual(finopsReport.breaches, []);
   } finally {
     await rm(tempRoot, { recursive: true, force: true });
   }
@@ -1835,6 +1870,82 @@ test("runFigmaToQcTestCases uses PRODUCTION_FINOPS_BUDGET_ENVELOPE by default", 
   }
 });
 
+test("runFigmaToQcTestCases treats CLI live deployments as regular live runs, not live-smoke", async () => {
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ti-runner-"));
+  try {
+    const client = createMockLlmGatewayClient({
+      role: "test_generation",
+      deployment: "gpt-oss-120b",
+      modelRevision: "gpt-oss-120b@cli-test-intelligence-run",
+      gatewayRelease: "azure-ai-foundry-cli-test-intelligence-run",
+      responder: okResponder(
+        [SAMPLE_DRAFT, SAMPLE_ACCESSIBILITY_DRAFT],
+        "gpt-oss-120b",
+      ),
+    });
+    const result = await runFigmaToQcTestCases({
+      jobId: "job-finops-cli-live",
+      generatedAt: "2026-05-05T10:00:00Z",
+      source: { kind: "figma_paste_normalized", file: SAMPLE_FILE },
+      outputRoot: tempRoot,
+      llm: { client },
+      policyProfileId: "non-banking-test-profile",
+    });
+
+    const report = JSON.parse(
+      await readFile(result.artifactPaths.finopsReport, "utf8"),
+    ) as FinOpsBudgetReport;
+    assert.equal(report.outcome, "completed");
+    assert.equal(report.totals.attempts, 1);
+    assert.equal(report.totals.liveSmokeCalls, 0);
+    const testGeneration = report.roles.find(
+      (entry) => entry.role === "test_generation",
+    );
+    assert.ok(testGeneration);
+    assert.equal(testGeneration?.deployment, "gpt-oss-120b");
+    assert.equal(testGeneration?.liveSmokeCalls, 0);
+    assert.deepEqual(report.breaches, []);
+  } finally {
+    await rm(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("runFigmaToQcTestCases still counts smoke-tagged live lanes against maxLiveSmokeCalls", async () => {
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ti-runner-"));
+  try {
+    const client = createMockLlmGatewayClient({
+      role: "test_generation",
+      deployment: "gpt-oss-120b",
+      modelRevision: "gpt-oss-120b@live-e2e",
+      gatewayRelease: "azure-ai-foundry-live-e2e",
+      responder: okResponder(
+        [SAMPLE_DRAFT, SAMPLE_ACCESSIBILITY_DRAFT],
+        "gpt-oss-120b",
+      ),
+    });
+    const result = await runFigmaToQcTestCases({
+      jobId: "job-finops-live-smoke",
+      generatedAt: "2026-05-05T10:00:00Z",
+      source: { kind: "figma_paste_normalized", file: SAMPLE_FILE },
+      outputRoot: tempRoot,
+      llm: { client },
+      policyProfileId: "non-banking-test-profile",
+    });
+
+    const report = JSON.parse(
+      await readFile(result.artifactPaths.finopsReport, "utf8"),
+    ) as FinOpsBudgetReport;
+    assert.equal(report.outcome, "budget_exceeded");
+    assert.equal(report.totals.liveSmokeCalls, 1);
+    assert.deepEqual(
+      report.breaches.map((breach) => breach.rule),
+      ["max_live_smoke_calls"],
+    );
+  } finally {
+    await rm(tempRoot, { recursive: true, force: true });
+  }
+});
+
 test("runFigmaToQcTestCases honours operator FinOps override (no merge with default)", async () => {
   const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ti-runner-"));
   try {
@@ -1875,6 +1986,48 @@ test("runFigmaToQcTestCases honours operator FinOps override (no merge with defa
       result.finopsBudget.roles.visual_primary,
       undefined,
       "no merge: visual_primary should be absent when override omits it",
+    );
+  } finally {
+    await rm(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("runFigmaToQcTestCases preserves policy_blocked as the FinOps outcome even when a budget breach exists", async () => {
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ti-runner-"));
+  try {
+    const client = createMockLlmGatewayClient({
+      role: "test_generation",
+      deployment: "gpt-oss-120b",
+      modelRevision: "gpt-oss-120b@cli-test-intelligence-run",
+      gatewayRelease: "azure-ai-foundry-cli-test-intelligence-run",
+      omitIctRegisterRef: true,
+      responder: okResponder([SAMPLE_DRAFT]),
+    });
+    const result = await runFigmaToQcTestCases({
+      jobId: "job-finops-policy-precedence",
+      generatedAt: "2026-05-05T10:00:00Z",
+      source: { kind: "figma_paste_normalized", file: SAMPLE_FILE },
+      outputRoot: tempRoot,
+      llm: { client },
+      finopsBudget: {
+        budgetId: "tight-max-attempts",
+        budgetVersion: "1.0.0",
+        roles: {
+          test_generation: {
+            maxAttempts: 0,
+          },
+        },
+      },
+    });
+
+    assert.equal(result.blocked, true);
+    const report = JSON.parse(
+      await readFile(result.artifactPaths.finopsReport, "utf8"),
+    ) as FinOpsBudgetReport;
+    assert.equal(report.outcome, "policy_blocked");
+    assert.deepEqual(
+      report.breaches.map((breach) => breach.rule),
+      ["max_attempts"],
     );
   } finally {
     await rm(tempRoot, { recursive: true, force: true });

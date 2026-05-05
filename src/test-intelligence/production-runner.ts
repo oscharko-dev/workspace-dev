@@ -68,6 +68,7 @@ import {
   type GeneratedTestCaseStep,
   type LlmGenerationRequest,
   type LlmGenerationResult,
+  type FinOpsJobOutcome,
   type RegulatoryRelevance,
   type RegulatoryRelevanceDomain,
   type TestCaseLevel,
@@ -984,6 +985,7 @@ export const runFigmaToQcTestCases = async (
       // record a per-step artifact even on failure.
       const attemptOutcome = classifyLlmAttempt({
         llmResult,
+        gatewayRelease: input.llm.client.gatewayRelease,
         finopsRecorder,
         llmDurationMs,
       });
@@ -1181,11 +1183,15 @@ export const runFigmaToQcTestCases = async (
     artifactDir,
     TEST_CASE_COVERAGE_REPORT_ARTIFACT_FILENAME,
   );
+  const finopsOutcomeOverride = deriveFinopsOutcomeFromValidation(validation);
   const finopsReport = buildFinOpsBudgetReport({
     jobId: input.jobId,
     generatedAt: input.generatedAt,
     budget: finopsBudget,
     recorder: finopsRecorder,
+    ...(finopsOutcomeOverride !== undefined
+      ? { outcomeOverride: finopsOutcomeOverride }
+      : {}),
   });
   const finopsWritten = await writeFinOpsBudgetReport({
     runDir: artifactDir,
@@ -1844,14 +1850,32 @@ type LlmAttemptOutcome =
 
 interface ClassifyLlmAttemptInput {
   readonly llmResult: Awaited<ReturnType<LlmGatewayClient["generate"]>>;
+  readonly gatewayRelease: string;
   readonly finopsRecorder: ReturnType<typeof createFinOpsUsageRecorder>;
   readonly llmDurationMs: number;
 }
 
+const LIVE_SMOKE_GATEWAY_RELEASE_MARKERS = [
+  "live-smoke",
+  "live-e2e",
+] as const;
+
+const isSmokeTaggedGatewayRelease = (
+  gatewayRelease: string | undefined,
+): boolean => {
+  if (typeof gatewayRelease !== "string" || gatewayRelease.length === 0) {
+    return false;
+  }
+  const normalized = gatewayRelease.trim().toLowerCase();
+  return LIVE_SMOKE_GATEWAY_RELEASE_MARKERS.some((marker) =>
+    normalized.includes(marker),
+  );
+};
+
 const classifyLlmAttempt = (
   input: ClassifyLlmAttemptInput,
 ): LlmAttemptOutcome => {
-  const { llmResult, finopsRecorder, llmDurationMs } = input;
+  const { llmResult, gatewayRelease, finopsRecorder, llmDurationMs } = input;
   if (llmResult.outcome !== "success") {
     if (llmResult.errorClass === "refusal") {
       return {
@@ -1894,7 +1918,9 @@ const classifyLlmAttempt = (
     deployment: llmResult.modelDeployment,
     durationMs: llmDurationMs,
     result: llmResult,
-    liveSmoke: llmResult.modelDeployment !== "mock",
+    // Only smoke-tagged lanes count toward the live-smoke budget; ordinary
+    // CLI/live runs keep the live-smoke counter at zero.
+    liveSmoke: isSmokeTaggedGatewayRelease(gatewayRelease),
     fallback: false,
   });
   const draftValidation = validateLlmDraftResponse(llmResult.content);
@@ -1959,6 +1985,21 @@ const buildHarnessAttemptResult = (
     outputTokens: input.llmOutputTokens,
     latencyMs: input.llmDurationMs,
   };
+};
+
+const deriveFinopsOutcomeFromValidation = (
+  validation: ReturnType<typeof runValidationPipeline>,
+): FinOpsJobOutcome | undefined => {
+  if (validation.visual !== undefined && validation.visual.blocked) {
+    return "visual_sidecar_failed";
+  }
+  if (validation.policy.blocked) {
+    return "policy_blocked";
+  }
+  if (validation.validation.blocked) {
+    return "validation_blocked";
+  }
+  return undefined;
 };
 
 const mapHarnessOutcomeToProductionRunnerError = (
