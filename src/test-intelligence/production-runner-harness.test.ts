@@ -93,16 +93,36 @@ const SAMPLE_DRAFT: ProductionRunnerLlmDraftCase = {
   openQuestions: [],
 };
 
-const okResponder = (cases: ProductionRunnerLlmDraftCase[]) => () => ({
-  outcome: "success" as const,
-  content: { testCases: cases },
-  finishReason: "stop" as const,
-  usage: { inputTokens: 100, outputTokens: 200 },
-  modelDeployment: "gpt-oss-120b-mock",
-  modelRevision: "mock-1",
-  gatewayRelease: "mock",
-  attempt: 1,
-});
+const okResponder =
+  (cases: ProductionRunnerLlmDraftCase[]) =>
+  (request: { responseSchemaName?: string }, attempt: number) => {
+    if (request.responseSchemaName === "workspace-dev-logic-judge-v1") {
+      return {
+        outcome: "success" as const,
+        content: {
+          verdict: "accept",
+          findings: [],
+          repairInstructions: [],
+        },
+        finishReason: "stop" as const,
+        usage: { inputTokens: 20, outputTokens: 10 },
+        modelDeployment: "gpt-oss-120b-mock",
+        modelRevision: "mock-1",
+        gatewayRelease: "mock",
+        attempt,
+      };
+    }
+    return {
+      outcome: "success" as const,
+      content: { testCases: cases },
+      finishReason: "stop" as const,
+      usage: { inputTokens: 100, outputTokens: 200 },
+      modelDeployment: "gpt-oss-120b-mock",
+      modelRevision: "mock-1",
+      gatewayRelease: "mock",
+      attempt,
+    };
+  };
 
 const refusalResponder = () => () => ({
   outcome: "error" as const,
@@ -225,6 +245,79 @@ test("runFigmaToQcTestCases harness mode enforced succeeds on a happy path", asy
   }
 });
 
+test("runFigmaToQcTestCases harness mode enforced blocks when the logic judge rejects the generated cases", async () => {
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ti-runner-harness-"));
+  try {
+    let callIndex = 0;
+    const client = createMockLlmGatewayClient({
+      role: "test_generation",
+      deployment: "gpt-oss-120b-mock",
+      modelRevision: "mock-1",
+      gatewayRelease: "mock",
+      responder: (_request, attempt) => {
+        callIndex += 1;
+        if (callIndex === 1) {
+          return okResponder([SAMPLE_DRAFT])(
+            { responseSchemaName: "workspace-dev-production-runner-draft-list-v1" },
+            attempt,
+          );
+        }
+        return {
+          outcome: "success" as const,
+          content: {
+            verdict: "reject",
+            findings: [
+              {
+                testCaseId: "tc-1",
+                code: "traceability_missing",
+                severity: "error",
+                message: "The generated cases do not cover the expected path.",
+              },
+            ],
+            repairInstructions: [],
+          },
+          finishReason: "stop" as const,
+          usage: { inputTokens: 12, outputTokens: 6 },
+          modelDeployment: "gpt-oss-120b-mock",
+          modelRevision: "mock-1",
+          gatewayRelease: "mock",
+          attempt,
+        };
+      },
+    });
+    let capturedError: unknown;
+    try {
+      await runFigmaToQcTestCases({
+        jobId: "job-enforced-judge-reject",
+        generatedAt: "2026-05-05T10:00:00Z",
+        source: { kind: "figma_paste_normalized", file: SAMPLE_FILE },
+        outputRoot: tempRoot,
+        llm: { client },
+        harness: { mode: "enforced" },
+      });
+    } catch (err) {
+      capturedError = err;
+    }
+    assert.ok(capturedError instanceof ProductionRunnerError);
+    assert.equal(capturedError.failureClass, "LLM_GATEWAY_FAILED");
+    const expected = path.join(
+      tempRoot,
+      "jobs",
+      "job-enforced-judge-reject",
+      "test-intelligence",
+      "agent-role-runs",
+      `${PRODUCTION_RUNNER_HARNESS_ROLE_STEP_ID}.json`,
+    );
+    const onDisk = await readFile(expected, "utf8");
+    const parsed = JSON.parse(onDisk);
+    assert.equal(parsed.outcome, "failed_permanent");
+    assert.equal(parsed.errorClass, "judge_rejection");
+    assert.equal(parsed.attempts.length, 1);
+  } finally {
+    await rm(tempRoot, { recursive: true, force: true });
+  }
+});
+
 test("runFigmaToQcTestCases harness mode enforced surfaces LLM refusal as ProductionRunnerError", async () => {
   const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ti-runner-harness-"));
   try {
@@ -263,9 +356,9 @@ test("runFigmaToQcTestCases harness mode enforced surfaces LLM refusal as Produc
     );
     const onDisk = await readFile(expected, "utf8");
     const parsed = JSON.parse(onDisk);
-    assert.equal(parsed.outcome, "blocked");
+    assert.equal(parsed.outcome, "failed_permanent");
     assert.equal(parsed.errorClass, "policy_refusal");
-    assert.equal(parsed.mappedJobStatus, "partial");
+    assert.equal(parsed.mappedJobStatus, "failed");
   } finally {
     await rm(tempRoot, { recursive: true, force: true });
   }
@@ -308,7 +401,7 @@ test("runFigmaToQcTestCases harness mode shadow_eval does not throw on LLM refus
       `${PRODUCTION_RUNNER_HARNESS_ROLE_STEP_ID}.json`,
     );
     const parsed = JSON.parse(await readFile(expected, "utf8"));
-    assert.equal(parsed.outcome, "blocked");
+    assert.equal(parsed.outcome, "failed_permanent");
   } finally {
     await rm(tempRoot, { recursive: true, force: true });
   }

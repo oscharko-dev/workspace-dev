@@ -163,7 +163,7 @@ export interface TestIntelligenceTransferPrincipal {
 }
 
 /** Contract version for the opt-in test-intelligence surface. */
-export const TEST_INTELLIGENCE_CONTRACT_VERSION = "1.10.0" as const;
+export const TEST_INTELLIGENCE_CONTRACT_VERSION = "1.11.0" as const;
 
 /**
  * Schema version for generated test case payloads.
@@ -2989,10 +2989,8 @@ export const AGENT_ROLE_MAX_ATTEMPT_VALUES = [1, 2, 3] as const;
  *
  * - `visual_sidecar` — deterministic screenshot/spec-check service.
  * - `generator` — LLM that produces structured test cases.
- * - `logic_judge` — LLM that runs a second, independent roundtrip
- *   against the generator output and emits a `LogicJudgeVerdict`
- *   (Issue #1898). Drives `judgeAccepted` in the harness attempt
- *   result for `enforced` mode.
+ * - `logic_judge` — LLM that validates generator output against the
+ *   deterministic design and coverage artifacts.
  * - `semantic_judge` — LLM judge panel that scores generated cases.
  * - `adversarial_gap_finder` — LLM that surfaces missing coverage.
  * - `repair_planner` — LLM that proposes a structured repair plan
@@ -3425,216 +3423,152 @@ export interface JudgePanelVerdict {
 }
 
 // ---------------------------------------------------------------------------
-// Issue #1898 — Logic-Judge verdict artifact (real second LLM roundtrip).
-//
-// The Production Runner currently makes a single generator LLM call and the
-// "harness" classifies that one output (schema/token/etc.) — `judgeAccepted`
-// in {@link AgentHarnessAttemptResult} is therefore a deterministic
-// reflection of the same generator dispatch, not an independent judgement.
-//
-// Logic-Judge is the second, independent roundtrip against `gpt-oss-120b`
-// with its own prompt template and structured-output schema. The Production
-// Runner consumes the verdict here to drive `judgeAccepted` and to persist
-// a per-run `agent-role-runs/logic_judge.json` plus
-// `compiled-prompt-judge.json` (compiled judge prompt) artifact under the
-// run dir. The verdict surface is intentionally additive on the public
-// contract — legacy callers without a `logic_judge` step see no field-shape
-// change.
+// Issue #1898 / #1899 — production-runner logic + faithfulness judges.
 // ---------------------------------------------------------------------------
 
-/**
- * Schema version literal pinned on every persisted
- * {@link LogicJudgeVerdict} artifact (Issue #1898). Structural changes
- * require a major bump and a `CONTRACT_CHANGELOG.md` entry.
- */
+/** Schema version for persisted logic-judge verdict artifacts. */
 export const LOGIC_JUDGE_VERDICT_SCHEMA_VERSION = "1.0.0" as const;
 
-/**
- * Canonical filename for the per-run Logic-Judge verdict artifact. The
- * harness writes `<runDir>/logic-judge-verdict.json` once per
- * `logic_judge` step.
- */
+/** Prompt-template version pinned onto logic-judge verdict artifacts. */
+export const LOGIC_JUDGE_PROMPT_TEMPLATE_VERSION = "logic-judge.v1" as const;
+
+/** Structured-output schema name used by the logic-judge LLM call. */
+export const LOGIC_JUDGE_OUTPUT_SCHEMA_NAME =
+  "workspace-dev-logic-judge-v1" as const;
+
+/** Canonical filename for the persisted logic-judge prompt artifact. */
+export const LOGIC_JUDGE_COMPILED_PROMPT_ARTIFACT_FILENAME =
+  "compiled-prompt-logic-judge.json" as const;
+
+/** Canonical filename for the persisted logic-judge verdict artifact. */
 export const LOGIC_JUDGE_VERDICT_ARTIFACT_FILENAME =
-  "logic-judge-verdict.json" as const;
+  "logic_judge.json" as const;
 
-/**
- * Canonical filename for the persisted compiled judge prompt artifact. The
- * runner writes `<runDir>/compiled-prompt-judge.json` alongside
- * `compiled-prompt.json` so reviewers can audit the judge-side prompt
- * separately from the generator prompt.
- */
-export const COMPILED_PROMPT_JUDGE_ARTIFACT_FILENAME =
-  "compiled-prompt-judge.json" as const;
-
-/**
- * Stable identifier of the logic-judge structured-output schema. Echoed
- * in the role-profile registry and surfaced inside the compiled judge
- * prompt artifact so reviewers can pin the wire shape.
- */
-export const LOGIC_JUDGE_OUTPUT_SCHEMA_NAME = "logic-judge-verdict.v1" as const;
-
-/**
- * Logic-Judge prompt template version. Bumped when the prompt body
- * changes; pinned on the role profile and surfaced in the compiled
- * judge prompt artifact so cache-key derivation stays deterministic.
- */
-export const LOGIC_JUDGE_PROMPT_TEMPLATE_VERSION = "1.0.0" as const;
-
-/** Closed runtime list of logic-judge verdict literals. */
+/** Closed runtime list of logic-judge terminal verdicts. */
 export const ALLOWED_LOGIC_JUDGE_VERDICTS = [
   "accept",
-  "reject",
   "repair",
+  "reject",
 ] as const;
 
-/** Discriminated alias for {@link ALLOWED_LOGIC_JUDGE_VERDICTS}. */
-export type LogicJudgeVerdictKind =
+/** Discriminant of an allowed logic-judge terminal verdict. */
+export type LogicJudgeVerdictLabel =
   (typeof ALLOWED_LOGIC_JUDGE_VERDICTS)[number];
 
 /** Closed runtime list of logic-judge finding severities. */
 export const ALLOWED_LOGIC_JUDGE_FINDING_SEVERITIES = [
-  "blocker",
-  "major",
-  "minor",
+  "warning",
+  "error",
 ] as const;
 
-/** Discriminated alias for {@link ALLOWED_LOGIC_JUDGE_FINDING_SEVERITIES}. */
+/** Discriminant of an allowed logic-judge finding severity. */
 export type LogicJudgeFindingSeverity =
   (typeof ALLOWED_LOGIC_JUDGE_FINDING_SEVERITIES)[number];
 
-/**
- * Closed runtime list of logic-judge finding codes. Each code names a
- * single class of contract violation the judge prompt is required to
- * surface so downstream consumers (repair-loop, dashboards, evals) can
- * route by stable identifier instead of free-text reason.
- */
-export const ALLOWED_LOGIC_JUDGE_FINDING_CODES = [
-  "banking_four_eyes_missing",
-  "coverage_actions_missing",
-  "coverage_fields_missing",
-  "faithfulness_unknown_action",
-  "faithfulness_unknown_field",
-  "schema_required_field_blank",
-  "trace_node_id_missing",
-  "other",
+/** One logic-judge finding anchored to a generated test case. */
+export interface JudgeFinding {
+  readonly testCaseId: string;
+  readonly code: string;
+  readonly severity: LogicJudgeFindingSeverity;
+  readonly message: string;
+}
+
+/** One structured repair hint emitted by the logic judge. */
+export interface RepairInstruction {
+  readonly testCaseId: string;
+  readonly path: string;
+  readonly instruction: string;
+}
+
+/** Optional refusal attached to a logic-judge verdict. */
+export interface JudgeVerdictRefusal {
+  readonly code: string;
+  readonly message: string;
+}
+
+/** Persisted logic-judge verdict artifact. */
+export interface JudgeVerdict {
+  readonly schemaVersion: typeof LOGIC_JUDGE_VERDICT_SCHEMA_VERSION;
+  readonly contractVersion: typeof TEST_INTELLIGENCE_CONTRACT_VERSION;
+  readonly promptTemplateVersion: typeof LOGIC_JUDGE_PROMPT_TEMPLATE_VERSION;
+  readonly generatedAt: string;
+  readonly jobId: string;
+  readonly cacheHit: boolean;
+  readonly cacheKeyDigest: string;
+  readonly modelDeployment: string;
+  readonly modelRevision: string;
+  readonly gatewayRelease: string;
+  readonly verdict: LogicJudgeVerdictLabel;
+  readonly findings: readonly JudgeFinding[];
+  readonly repairInstructions: readonly RepairInstruction[];
+  readonly refusal?: JudgeVerdictRefusal;
+}
+
+/** Schema version for persisted cross-modal faithfulness-judge verdicts. */
+export const FAITHFULNESS_VERDICT_SCHEMA_VERSION = "1.0.0" as const;
+
+/** Prompt-template version pinned onto faithfulness-judge verdict artifacts. */
+export const FAITHFULNESS_JUDGE_PROMPT_TEMPLATE_VERSION =
+  "faithfulness-judge.v1" as const;
+
+/** Canonical filename for the persisted faithfulness-judge prompt artifact. */
+export const FAITHFULNESS_JUDGE_COMPILED_PROMPT_ARTIFACT_FILENAME =
+  "compiled-prompt-faithfulness-judge.json" as const;
+
+/** Canonical filename for the persisted faithfulness-judge verdict artifact. */
+export const FAITHFULNESS_VERDICT_ARTIFACT_FILENAME =
+  "faithfulness_judge.json" as const;
+
+/** Closed runtime list of faithfulness-judge terminal verdicts. */
+export const ALLOWED_FAITHFULNESS_VERDICTS = [
+  "accept",
+  "repair",
+  "reject",
 ] as const;
 
-/** Discriminated alias for {@link ALLOWED_LOGIC_JUDGE_FINDING_CODES}. */
-export type LogicJudgeFindingCode =
-  (typeof ALLOWED_LOGIC_JUDGE_FINDING_CODES)[number];
+/** Discriminant of an allowed faithfulness-judge terminal verdict. */
+export type FaithfulnessVerdictLabel =
+  (typeof ALLOWED_FAITHFULNESS_VERDICTS)[number];
 
-/**
- * Hard upper bound on each redacted free-text field inside a
- * {@link LogicJudgeVerdict} (`reason`, `repairInstructions[i].guidance`,
- * etc.). Keeps the artifact bounded; the validator refuses over-long
- * strings before persistence.
- */
-export const LOGIC_JUDGE_REASON_MAX_CHARS = 480 as const;
-
-/** Hard upper bound on the number of findings per verdict. */
-export const LOGIC_JUDGE_MAX_FINDINGS = 32 as const;
-
-/** Hard upper bound on the number of repair instructions per verdict. */
-export const LOGIC_JUDGE_MAX_REPAIR_INSTRUCTIONS = 32 as const;
-
-/**
- * One contract-violation finding emitted by Logic-Judge. Findings are
- * code-tagged so downstream consumers route on a closed enum rather
- * than free-text. The optional `testCaseId` pins the finding to a
- * specific case in the {@link GeneratedTestCaseList} when applicable.
- */
-export interface LogicJudgeFinding {
-  /** Stable finding identifier from {@link ALLOWED_LOGIC_JUDGE_FINDING_CODES}. */
-  readonly code: LogicJudgeFindingCode;
-  /** Severity tier; routes to verdict (`blocker`/`major` ⇒ at least repair). */
-  readonly severity: LogicJudgeFindingSeverity;
-  /**
-   * Optional `GeneratedTestCase.id` the finding applies to. Omitted
-   * when the finding is list-level (e.g., overall coverage gap).
-   */
-  readonly testCaseId?: string;
-  /**
-   * Redacted, length-capped justification (≤
-   * {@link LOGIC_JUDGE_REASON_MAX_CHARS} chars). Never carries chain
-   * of thought, raw prompts, or secrets — the validator refuses
-   * over-long or non-string reasons before persistence.
-   */
-  readonly reason: string;
-}
-
-/**
- * One repair instruction emitted by Logic-Judge for verdict
- * `"repair"`. The instruction names a target case + a closed
- * `mutationKind` so the future repair-loop (sister Welle-2 issue) can
- * route deterministically without parsing free-text guidance.
- */
-export interface LogicJudgeRepairInstruction {
-  /** Stable identifier of the target case (`GeneratedTestCase.id`). */
+/** Hallucination reported by the screenshot-based judge. */
+export interface HallucinationFinding {
   readonly testCaseId: string;
-  /**
-   * Closed mutation kind drawn from the same finding-code namespace so
-   * a `coverage_fields_missing` finding pairs with a
-   * `coverage_fields_missing` repair instruction.
-   */
-  readonly mutationKind: LogicJudgeFindingCode;
-  /**
-   * Operator-readable, length-capped guidance (≤
-   * {@link LOGIC_JUDGE_REASON_MAX_CHARS} chars). Never carries chain
-   * of thought.
-   */
-  readonly guidance: string;
+  readonly stepIndex?: number;
+  readonly message: string;
 }
 
-/**
- * Persisted Logic-Judge verdict for a single generator dispatch. The
- * Production Runner writes one verdict per `logic_judge` step at
- * `<runDir>/logic-judge-verdict.json` and consumes
- * `verdict === "accept"` to drive
- * {@link AgentHarnessAttemptResult.judgeAccepted}.
- *
- * `findings` is sorted alphabetically by `(code, testCaseId, reason)`
- * for canonical-JSON stability; `repairInstructions` is sorted by
- * `(testCaseId, mutationKind)`. Both arrays are bounded by
- * {@link LOGIC_JUDGE_MAX_FINDINGS} and
- * {@link LOGIC_JUDGE_MAX_REPAIR_INSTRUCTIONS}.
- */
-export interface LogicJudgeVerdict {
-  /** Pinned schema version literal. */
-  readonly schemaVersion: typeof LOGIC_JUDGE_VERDICT_SCHEMA_VERSION;
-  /** Job identifier the verdict applies to. */
+/** Label mismatch reported by the screenshot-based judge. */
+export interface VisualMismatch {
+  readonly testCaseId: string;
+  readonly stepIndex?: number;
+  readonly expectedLabel: string;
+  readonly visibleLabel: string;
+  readonly message: string;
+}
+
+/** Optional refusal attached to a faithfulness-judge verdict. */
+export interface FaithfulnessVerdictRefusal {
+  readonly code: string;
+  readonly message: string;
+}
+
+/** Persisted screenshot-vs-cases faithfulness verdict artifact. */
+export interface FaithfulnessVerdict {
+  readonly schemaVersion: typeof FAITHFULNESS_VERDICT_SCHEMA_VERSION;
+  readonly contractVersion: typeof TEST_INTELLIGENCE_CONTRACT_VERSION;
+  readonly promptTemplateVersion: typeof FAITHFULNESS_JUDGE_PROMPT_TEMPLATE_VERSION;
+  readonly generatedAt: string;
   readonly jobId: string;
-  /** Closed verdict literal: `accept`, `repair`, or `reject`. */
-  readonly verdict: LogicJudgeVerdictKind;
-  /**
-   * Stable model identifier the judge was bound to at the time of
-   * dispatch (echoed verbatim from the {@link AgentModelBinding}'s
-   * `modelId`, e.g. `"gpt-oss-120b"`).
-   */
-  readonly modelBinding: string;
-  /** Prompt template version pinned on this verdict. */
-  readonly promptTemplateVersion: typeof LOGIC_JUDGE_PROMPT_TEMPLATE_VERSION;
-  /** sha256 hex digest of the canonical compiled judge prompt. */
-  readonly promptHash: string;
-  /** sha256 hex digest of the canonical judge response schema. */
-  readonly schemaHash: string;
-  /** sha256 hex digest of the canonical judge input payload. */
-  readonly inputHash: string;
-  /** Code-tagged findings (sorted, length-bounded). */
-  readonly findings: readonly LogicJudgeFinding[];
-  /**
-   * Code-tagged repair instructions (sorted, length-bounded). MUST be
-   * empty when `verdict !== "repair"`.
-   */
-  readonly repairInstructions: readonly LogicJudgeRepairInstruction[];
-  /**
-   * Redacted, length-capped panel-level justification (≤
-   * {@link LOGIC_JUDGE_REASON_MAX_CHARS} chars).
-   */
-  readonly summary: string;
-  /** Input tokens billed to `judge_primary` for this verdict, if known. */
-  readonly inputTokens?: number;
-  /** Output tokens billed to `judge_primary` for this verdict, if known. */
-  readonly outputTokens?: number;
+  readonly cacheHit: boolean;
+  readonly cacheKeyDigest: string;
+  readonly modelDeployment: string;
+  readonly modelRevision: string;
+  readonly gatewayRelease: string;
+  readonly fallbackReason: VisualSidecarFallbackReason;
+  readonly verdict: FaithfulnessVerdictLabel;
+  readonly hallucinations: readonly HallucinationFinding[];
+  readonly mismatches: readonly VisualMismatch[];
+  readonly refusal?: FaithfulnessVerdictRefusal;
 }
 
 /** Canonical filename for per-run genealogy DAG artifacts. */

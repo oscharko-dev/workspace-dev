@@ -44,12 +44,16 @@ import { createHash, randomUUID } from "node:crypto";
 import {
   ALLOWED_REGULATORY_RELEVANCE_DOMAINS,
   BANKING_INSURANCE_SEMANTIC_KEYWORDS,
-  COMPILED_PROMPT_JUDGE_ARTIFACT_FILENAME,
   CONTEXT_BUDGET_ARTIFACT_DIRECTORY,
   EU_BANKING_DEFAULT_POLICY_PROFILE_ID,
+  FAITHFULNESS_JUDGE_COMPILED_PROMPT_ARTIFACT_FILENAME,
+  FAITHFULNESS_VERDICT_ARTIFACT_FILENAME,
   GENERATED_TESTCASES_ARTIFACT_FILENAME,
   GENERATED_TEST_CASE_SCHEMA_VERSION,
+  LOGIC_JUDGE_COMPILED_PROMPT_ARTIFACT_FILENAME,
+  LOGIC_JUDGE_PROMPT_TEMPLATE_VERSION,
   LOGIC_JUDGE_VERDICT_ARTIFACT_FILENAME,
+  LOGIC_JUDGE_VERDICT_SCHEMA_VERSION,
   REDACTION_POLICY_VERSION,
   TEST_INTELLIGENCE_CONTRACT_VERSION,
   TEST_INTELLIGENCE_PROMPT_TEMPLATE_VERSION,
@@ -70,10 +74,11 @@ import {
   type GeneratedTestCaseStep,
   type LlmGenerationRequest,
   type LlmGenerationResult,
-  type LogicJudgeVerdict,
   type FinOpsJobOutcome,
+  type FaithfulnessVerdict,
   type RegulatoryRelevance,
   type RegulatoryRelevanceDomain,
+  type JudgeVerdict,
   type TestCaseLevel,
   type TestCasePolicyReport,
   type TestCasePriority,
@@ -149,12 +154,6 @@ import {
 import { cloneEuBankingDefaultProfile } from "./policy-profile.js";
 import { writeAgentRoleRunArtifact } from "./agent-role-run-artifact.js";
 import {
-  LogicJudgeError,
-  runLogicJudge,
-  type CompiledLogicJudgePrompt,
-  type RunLogicJudgeResult,
-} from "./logic-judge.js";
-import {
   AGENT_HARNESS_CHECKPOINT_ROOT_PARENT_HASH,
   readAgentHarnessCheckpointChain,
   summarizeAgentHarnessCheckpointChain,
@@ -192,6 +191,15 @@ import {
   type ReplayCache,
   ReplayCacheValidationError,
 } from "./replay-cache.js";
+import {
+  createFileSystemFaithfulnessJudgeCache,
+  runFaithfulnessJudge,
+} from "./faithfulness-judge.js";
+import {
+  createFileSystemLogicJudgeCache,
+  runLogicJudge,
+  type RunLogicJudgeResult,
+} from "./logic-judge.js";
 
 /**
  * Default test-generation deployment label. Exported so callers building
@@ -536,9 +544,9 @@ export interface RunFigmaToQcTestCasesInput {
    * {@link canonicalizeCustomContextMarkdown} (PII redaction, prompt-injection
    * tagging, link/HTML/MDX/image refusal, byte-cap enforcement) and surfaces
    * it as a dedicated `custom_context_markdown` source-mix section in the
-   * compiled prompt. Failures fail the job fast with
-   * `CUSTOM_CONTEXT_MARKDOWN_INVALID` before any LLM call is dispatched.
-   */
+  * compiled prompt. Failures fail the job fast with
+  * `CUSTOM_CONTEXT_MARKDOWN_INVALID` before any LLM call is dispatched.
+  */
   customContextMarkdown?: string;
   /**
    * Logic-Judge integration (Issue #1898). Defaults to **enabled** —
@@ -575,11 +583,15 @@ export interface RunFigmaToQcTestCasesResult {
   artifactPaths: {
     intent: string;
     compiledPrompt: string;
+    logicJudgeCompiledPrompt?: string;
+    faithfulnessJudgeCompiledPrompt?: string;
     untrustedContentNormalizationReport: string;
     evidenceSeal: string;
     visualSidecarResult?: string;
     visualSidecarValidationReport?: string;
     agentRoleRun: string;
+    logicJudgeVerdict?: string;
+    faithfulnessJudgeVerdict?: string;
     genealogy: string;
     contextBudgetReport?: string;
     generatedTestCases: string;
@@ -589,25 +601,6 @@ export interface RunFigmaToQcTestCasesResult {
     finopsReport: string;
     /** Path to the per-step harness artifact when `harness.mode !== "off"`. */
     harnessStep?: string;
-    /**
-     * Path to the per-run Logic-Judge verdict artifact (Issue #1898).
-     * Present when `logicJudge.enabled === true` and the generator
-     * step produced a successful draft list.
-     */
-    logicJudgeVerdict?: string;
-    /** Path to `compiled-prompt-judge.json` (Issue #1898). */
-    compiledPromptJudge?: string;
-    /** Path to `agent-role-runs/logic_judge.json` (Issue #1898). */
-    logicJudgeRoleRun?: string;
-  };
-  /**
-   * Logic-Judge verdict summary when the runner dispatched a second
-   * LLM roundtrip (Issue #1898). Absent when `logicJudge.enabled` is
-   * unset or false.
-   */
-  logicJudge?: {
-    readonly verdict: LogicJudgeVerdict;
-    readonly judgeAccepted: boolean;
   };
   /**
    * Harness summary surfaced when the runner ran with
@@ -629,6 +622,16 @@ export interface RunFigmaToQcTestCasesResult {
       failureClass: VisualSidecarFailureClass;
       failureMessage: string;
     };
+  };
+  logicJudge?: {
+    verdict: JudgeVerdict;
+    artifactPath: string;
+    compiledPromptPath: string;
+  };
+  faithfulnessJudge?: {
+    verdict: FaithfulnessVerdict;
+    artifactPath: string;
+    compiledPromptPath: string;
   };
   customerMarkdownPaths: {
     combined: string;
@@ -710,6 +713,9 @@ export const runFigmaToQcTestCases = async (
   let intent = deriveBusinessTestIntentIr({ figma: intentInput });
   let visualSidecarArtifactPath: string | undefined;
   let visualSidecarResult: VisualSidecarResult | undefined;
+  let visualCaptures:
+    | Awaited<ReturnType<typeof fetchFigmaScreenCapturesForTestIntelligence>>
+    | undefined;
   let visualSidecarArtifactBytes: Uint8Array | undefined;
   let visualSidecarArtifact:
     | Awaited<ReturnType<typeof writeVisualSidecarResultArtifact>>["artifact"]
@@ -749,6 +755,7 @@ export const runFigmaToQcTestCases = async (
         screenName: screen.screenName,
       })),
     });
+    visualCaptures = captures;
     const sidecarResult = await describeVisualScreens({
       bundle: input.llm.bundle,
       captures,
@@ -1045,7 +1052,13 @@ export const runFigmaToQcTestCases = async (
   let harnessSummary: ProductionRunnerHarnessSummary | undefined;
   let harnessArtifactPath: string | undefined;
   let capturedLlmResult: LlmGenerationResult | undefined;
-  let logicJudgeRunResult: RunLogicJudgeResult | undefined;
+  let capturedLlmDurationMs = 0;
+  const harnessMode: ProductionRunnerHarnessMode =
+    input.harness?.mode ?? "off";
+  const harnessRoleStepId =
+    input.harness?.roleStepId ?? PRODUCTION_RUNNER_HARNESS_ROLE_STEP_ID;
+  const harnessTestDepth: AgentHarnessTestDepth =
+    input.harness?.testDepth ?? "standard";
   // Issue #1898: Logic-Judge defaults to ON. Callers that need the
   // legacy single-pass behaviour (deterministic generator-only
   // classification) must pass `logicJudge: { enabled: false }`
@@ -1060,171 +1073,95 @@ export const runFigmaToQcTestCases = async (
       cache: replayCache,
       cacheKey: compiled.cacheKey,
       generate: async () => {
-      // 6. LLM dispatch.
-      emit({
-        phase: "llm_gateway_request",
-        timestamp: monotonicMs(),
-        details: {
-          role: "test_generation",
-          deployment: PRODUCTION_RUNNER_TEST_GENERATION_DEPLOYMENT,
-        },
-      });
-      const llmResult = await input.llm.client.generate(generationRequest);
-      capturedLlmResult = llmResult;
-      const llmDurationMs = Date.now() - startedAt;
-      emit({
-        phase: "llm_gateway_response",
-        timestamp: monotonicMs(),
-        details: {
-          outcome: llmResult.outcome,
-          ...(llmResult.outcome === "success"
-            ? {
-                inputTokens: llmResult.usage.inputTokens,
-                outputTokens: llmResult.usage.outputTokens,
-                finishReason: llmResult.finishReason,
-              }
-            : { errorClass: llmResult.errorClass }),
-        },
-      });
+        // 6. LLM dispatch.
+        emit({
+          phase: "llm_gateway_request",
+          timestamp: monotonicMs(),
+          details: {
+            role: "test_generation",
+            deployment: PRODUCTION_RUNNER_TEST_GENERATION_DEPLOYMENT,
+          },
+        });
+        const llmResult = await input.llm.client.generate(generationRequest);
+        capturedLlmResult = llmResult;
+        const llmDurationMs = Date.now() - startedAt;
+        capturedLlmDurationMs = llmDurationMs;
+        emit({
+          phase: "llm_gateway_response",
+          timestamp: monotonicMs(),
+          details: {
+            outcome: llmResult.outcome,
+            ...(llmResult.outcome === "success"
+              ? {
+                  inputTokens: llmResult.usage.inputTokens,
+                  outputTokens: llmResult.usage.outputTokens,
+                  finishReason: llmResult.finishReason,
+                }
+              : { errorClass: llmResult.errorClass }),
+          },
+        });
 
-      // Classify the LLM attempt into a harness-shaped envelope before
-      // throwing, so `harness.mode === "shadow_eval"` / `"enforced"` can
-      // record a per-step artifact even on failure.
-      const attemptOutcome = classifyLlmAttempt({
-        llmResult,
-        gatewayRelease: input.llm.client.gatewayRelease,
-        finopsRecorder,
-        llmDurationMs,
-      });
+        // Classify the LLM attempt into a harness-shaped envelope before
+        // throwing, so `harness.mode === "shadow_eval"` / `"enforced"` can
+        // record a per-step artifact even on failure.
+        const attemptOutcome = classifyLlmAttempt({
+          llmResult,
+          gatewayRelease: input.llm.client.gatewayRelease,
+          finopsRecorder,
+          llmDurationMs,
+        });
 
-      // Issue #1898: real Logic-Judge roundtrip. Runs after a successful
-      // generator dispatch and before the harness attempt result is
-      // built so `judgeAccepted` reflects the judge verdict instead of
-      // a deterministic reflection of the generator outcome. Uses the
-      // same gateway client (gpt-oss-120b) and is attributed to the
-      // FinOps source `judge_primary`. Skipped when disabled.
-      if (logicJudgeEnabled && attemptOutcome.kind === "ok") {
-        const judgeAudit: GeneratedTestCaseAuditMetadata = {
-          jobId: input.jobId,
-          generatedAt: input.generatedAt,
-          contractVersion: TEST_INTELLIGENCE_CONTRACT_VERSION,
-          schemaVersion: GENERATED_TEST_CASE_SCHEMA_VERSION,
-          promptTemplateVersion: TEST_INTELLIGENCE_PROMPT_TEMPLATE_VERSION,
-          redactionPolicyVersion: REDACTION_POLICY_VERSION,
-          visualSidecarSchemaVersion: VISUAL_SIDECAR_SCHEMA_VERSION,
-          cacheHit: false,
-          cacheKey: compiled.request.hashes.cacheKey,
-          inputHash: compiled.request.hashes.inputHash,
-          promptHash: compiled.request.hashes.promptHash,
-          schemaHash: compiled.request.hashes.schemaHash,
-        };
-        const stamped = attemptOutcome.drafts.map((draft, idx) =>
-          stampGeneratedTestCase({
-            draft,
-            jobId: input.jobId,
-            index: idx,
-            audit: judgeAudit,
-            intent,
-          }),
-        );
-        stamped.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
-        try {
-          logicJudgeRunResult = await runLogicJudge({
-            jobId: input.jobId,
-            intent,
-            generatedList: {
-              schemaVersion: GENERATED_TEST_CASE_SCHEMA_VERSION,
-              jobId: input.jobId,
-              testCases: stamped,
-            },
-            llmClient: input.llm.client,
-            finopsRecorder,
-            ...(input.llm.abortSignal !== undefined
-              ? { abortSignal: input.llm.abortSignal }
-              : {}),
+        if (harnessMode !== "off") {
+          const harnessAttemptResult = buildHarnessAttemptResult({
+            hashes: compiled.request.hashes,
+            judgeAccepted: attemptOutcome.kind === "ok",
+            errorClass:
+              attemptOutcome.kind === "ok" ? "none" : attemptOutcome.errorClass,
+            llmDurationMs,
+            llmInputTokens:
+              llmResult.outcome === "success"
+                ? (llmResult.usage.inputTokens ?? 0)
+                : 0,
+            llmOutputTokens:
+              llmResult.outcome === "success"
+                ? (llmResult.usage.outputTokens ?? 0)
+                : 0,
           });
-        } catch (judgeErr) {
-          if (judgeErr instanceof LogicJudgeError) {
-            throw new ProductionRunnerError({
-              failureClass: "LLM_RESPONSE_INVALID",
-              message: judgeErr.message,
-              retryable: judgeErr.retryable,
-              cause: judgeErr,
+          const harnessRunResult: RunAgentHarnessStepResult =
+            await runAgentHarnessStep({
+              runDir: artifactDir,
+              jobId: input.jobId,
+              role: "generator",
+              roleStepId: harnessRoleStepId,
+              testDepth: harnessTestDepth,
+              executeAttempt: async () => harnessAttemptResult,
+            });
+          harnessArtifactPath = harnessRunResult.artifactPath;
+          harnessSummary = {
+            mode: harnessMode,
+            outcome: harnessRunResult.outcome,
+            mappedJobStatus: harnessRunResult.mappedJobStatus,
+            errorClass: harnessRunResult.artifact.errorClass,
+            attemptsConsumed: harnessRunResult.artifact.attemptsConsumed,
+            maxAttemptsAllowed: harnessRunResult.artifact.maxAttemptsAllowed,
+            artifactPath: harnessRunResult.artifactPath,
+          };
+        }
+
+        if (attemptOutcome.kind === "error") {
+          if (
+            llmResult.outcome !== "success" &&
+            llmResult.errorClass === "canceled"
+          ) {
+            emit({
+              phase: "cancelled",
+              timestamp: monotonicMs(),
+              details: { reason: "llm_gateway_canceled" },
             });
           }
-          throw judgeErr;
+          throw attemptOutcome.error;
         }
-      }
-
-      const harnessMode: ProductionRunnerHarnessMode =
-        input.harness?.mode ?? "off";
-      if (harnessMode !== "off") {
-        const harnessRoleStepId =
-          input.harness?.roleStepId ?? PRODUCTION_RUNNER_HARNESS_ROLE_STEP_ID;
-        const harnessTestDepth: AgentHarnessTestDepth =
-          input.harness?.testDepth ?? "standard";
-        const harnessAttemptResult = buildHarnessAttemptResult({
-          hashes: compiled.request.hashes,
-          attemptOutcome,
-          llmDurationMs,
-          llmInputTokens:
-            llmResult.outcome === "success"
-              ? (llmResult.usage.inputTokens ?? 0)
-              : 0,
-          llmOutputTokens:
-            llmResult.outcome === "success"
-              ? (llmResult.usage.outputTokens ?? 0)
-              : 0,
-          ...(logicJudgeRunResult !== undefined
-            ? { judgeAcceptedOverride: logicJudgeRunResult.judgeAccepted }
-            : {}),
-        });
-        const harnessRunResult: RunAgentHarnessStepResult =
-          await runAgentHarnessStep({
-            runDir: artifactDir,
-            jobId: input.jobId,
-            role: "generator",
-            roleStepId: harnessRoleStepId,
-            testDepth: harnessTestDepth,
-            // The callback is deterministic across attempts because we are
-            // wrapping a single LLM result. The harness loop terminates after
-            // attempt 1 for `accepted` / `permanent` / `policy_block`, and
-            // after the role's `maxAttempts` cap for `retryable` results.
-            executeAttempt: async () => harnessAttemptResult,
-          });
-        harnessArtifactPath = harnessRunResult.artifactPath;
-        harnessSummary = {
-          mode: harnessMode,
-          outcome: harnessRunResult.outcome,
-          mappedJobStatus: harnessRunResult.mappedJobStatus,
-          errorClass: harnessRunResult.artifact.errorClass,
-          attemptsConsumed: harnessRunResult.artifact.attemptsConsumed,
-          maxAttemptsAllowed: harnessRunResult.artifact.maxAttemptsAllowed,
-          artifactPath: harnessRunResult.artifactPath,
-        };
-      }
-
-      if (attemptOutcome.kind === "error") {
-        if (
-          llmResult.outcome !== "success" &&
-          llmResult.errorClass === "canceled"
-        ) {
-          emit({
-            phase: "cancelled",
-            timestamp: monotonicMs(),
-            details: { reason: "llm_gateway_canceled" },
-          });
-        }
-        throw attemptOutcome.error;
-      }
-      if (
-        harnessMode === "enforced" &&
-        harnessSummary !== undefined &&
-        harnessSummary.outcome !== "accepted"
-      ) {
-        throw mapHarnessOutcomeToProductionRunnerError(harnessSummary);
-      }
-      const drafts = attemptOutcome.drafts;
+        const drafts = attemptOutcome.drafts;
 
       // 7. Stamp full GeneratedTestCase records.
       const audit: GeneratedTestCaseAuditMetadata = {
@@ -1282,6 +1219,206 @@ export const runFigmaToQcTestCases = async (
     });
   }
   const generatedList: GeneratedTestCaseList = cacheExecResult.testCases;
+  const logicJudgeCache = createFileSystemLogicJudgeCache(
+    join(
+      input.outputRoot,
+      "test-intelligence",
+      "replay-cache",
+      input.replayCacheTokenScope ?? "default",
+      "logic-judge",
+    ),
+  );
+  const logicJudgeResult: RunLogicJudgeResult = logicJudgeEnabled
+    ? await runLogicJudge({
+        jobId: input.jobId,
+        generatedAt: input.generatedAt,
+        testDesignModel: compiled.artifacts.payload.testDesignModel!,
+        coveragePlan: compiled.artifacts.payload.coveragePlan!,
+        generatedTestCases: generatedList,
+        client: input.llm.client,
+        cache: logicJudgeCache,
+        ...(finopsBudget.roles.test_generation?.maxInputTokensPerRequest !==
+        undefined
+          ? {
+              maxInputTokens:
+                finopsBudget.roles.test_generation.maxInputTokensPerRequest,
+            }
+          : {}),
+        ...(finopsBudget.roles.test_generation?.maxOutputTokensPerRequest !==
+        undefined
+          ? {
+              maxOutputTokens:
+                finopsBudget.roles.test_generation.maxOutputTokensPerRequest,
+            }
+          : {}),
+        ...(finopsBudget.roles.test_generation?.maxWallClockMsPerRequest !==
+        undefined
+          ? {
+              maxWallClockMs:
+                finopsBudget.roles.test_generation.maxWallClockMsPerRequest,
+            }
+          : {}),
+        ...(finopsBudget.roles.test_generation?.maxRetriesPerRequest !==
+        undefined
+          ? {
+              maxRetries:
+                finopsBudget.roles.test_generation.maxRetriesPerRequest,
+            }
+          : {}),
+      })
+    : {
+        cacheHit: false,
+        promptArtifact: {
+          jobId: input.jobId,
+          systemPrompt: "",
+          userPrompt: "",
+          responseSchemaName: "logic-judge-disabled",
+          responseSchema: {},
+          hashes: {
+            promptHash: "logic-judge-disabled",
+            schemaHash: "logic-judge-disabled",
+            inputHash: "logic-judge-disabled",
+            cacheKeyDigest: "logic-judge-disabled",
+          },
+          modelBinding: {
+            deployment: input.llm.client.deployment,
+            modelRevision: input.llm.client.modelRevision,
+            gatewayRelease: input.llm.client.gatewayRelease,
+          },
+        },
+        verdict: {
+          schemaVersion: LOGIC_JUDGE_VERDICT_SCHEMA_VERSION,
+          contractVersion: TEST_INTELLIGENCE_CONTRACT_VERSION,
+          promptTemplateVersion: LOGIC_JUDGE_PROMPT_TEMPLATE_VERSION,
+          generatedAt: input.generatedAt,
+          jobId: input.jobId,
+          cacheHit: false,
+          cacheKeyDigest: "logic-judge-disabled",
+          modelDeployment: input.llm.client.deployment,
+          modelRevision: input.llm.client.modelRevision,
+          gatewayRelease: input.llm.client.gatewayRelease,
+          verdict: "accept" as const,
+          findings: [],
+          repairInstructions: [],
+        },
+      };
+  if (logicJudgeResult.gatewayResult !== undefined) {
+    finopsRecorder.recordAttempt({
+      role: "test_generation",
+      source: "judge_primary",
+      deployment:
+        logicJudgeResult.gatewayResult.outcome === "success"
+          ? logicJudgeResult.gatewayResult.modelDeployment
+          : input.llm.client.deployment,
+      durationMs: 0,
+      result: logicJudgeResult.gatewayResult,
+    });
+  }
+
+  const faithfulnessJudgeCache = createFileSystemFaithfulnessJudgeCache(
+    join(
+      input.outputRoot,
+      "test-intelligence",
+      "replay-cache",
+      input.replayCacheTokenScope ?? "default",
+      "faithfulness-judge",
+    ),
+  );
+  const faithfulnessJudgeResult =
+    logicJudgeResult.verdict.verdict === "accept" &&
+    visualCaptures !== undefined &&
+    input.llm.bundle !== undefined
+      ? await runFaithfulnessJudge({
+          jobId: input.jobId,
+          generatedAt: input.generatedAt,
+          captures: visualCaptures,
+          generatedTestCases: generatedList,
+          bundle: input.llm.bundle,
+          cache: faithfulnessJudgeCache,
+          ...(finopsBudget.roles.visual_primary?.maxInputTokensPerRequest !==
+          undefined
+            ? {
+                maxInputTokens:
+                  finopsBudget.roles.visual_primary.maxInputTokensPerRequest,
+              }
+            : {}),
+          ...(finopsBudget.roles.visual_primary?.maxOutputTokensPerRequest !==
+          undefined
+            ? {
+                maxOutputTokens:
+                  finopsBudget.roles.visual_primary.maxOutputTokensPerRequest,
+              }
+            : {}),
+          ...(finopsBudget.roles.visual_primary?.maxWallClockMsPerRequest !==
+          undefined
+            ? {
+                maxWallClockMs:
+                  finopsBudget.roles.visual_primary.maxWallClockMsPerRequest,
+              }
+            : {}),
+          ...(finopsBudget.roles.visual_primary?.maxRetriesPerRequest !==
+          undefined
+            ? {
+                maxRetries:
+                  finopsBudget.roles.visual_primary.maxRetriesPerRequest,
+              }
+            : {}),
+        })
+      : undefined;
+  for (const attempt of faithfulnessJudgeResult?.attempts ?? []) {
+    finopsRecorder.recordAttempt({
+      role: attempt.role,
+      source: "judge_secondary",
+      deployment:
+        attempt.result.outcome === "success"
+          ? attempt.result.modelDeployment
+          : attempt.role === "visual_primary"
+            ? input.llm.bundle!.visualPrimary.deployment
+            : input.llm.bundle!.visualFallback.deployment,
+      durationMs: 0,
+      result: attempt.result,
+    });
+  }
+  const judgeAccepted =
+    logicJudgeResult.verdict.verdict === "accept" &&
+    (faithfulnessJudgeResult === undefined ||
+      faithfulnessJudgeResult.verdict.verdict === "accept");
+
+  if (harnessMode !== "off" && !judgeAccepted) {
+    const harnessAttemptResult = buildHarnessAttemptResult({
+      hashes: compiled.request.hashes,
+      judgeAccepted,
+      errorClass: "judge_rejection",
+      llmDurationMs: capturedLlmDurationMs,
+      llmInputTokens:
+        capturedLlmResult?.outcome === "success"
+          ? (capturedLlmResult.usage.inputTokens ?? 0)
+          : 0,
+      llmOutputTokens:
+        capturedLlmResult?.outcome === "success"
+          ? (capturedLlmResult.usage.outputTokens ?? 0)
+          : 0,
+    });
+    const harnessRunResult: RunAgentHarnessStepResult =
+      await runAgentHarnessStep({
+        runDir: artifactDir,
+        jobId: input.jobId,
+        role: "generator",
+        roleStepId: harnessRoleStepId,
+        testDepth: harnessTestDepth,
+        executeAttempt: async () => harnessAttemptResult,
+      });
+    harnessArtifactPath = harnessRunResult.artifactPath;
+    harnessSummary = {
+      mode: harnessMode,
+      outcome: harnessRunResult.outcome,
+      mappedJobStatus: harnessRunResult.mappedJobStatus,
+      errorClass: harnessRunResult.artifact.errorClass,
+      attemptsConsumed: harnessRunResult.artifact.attemptsConsumed,
+      maxAttemptsAllowed: harnessRunResult.artifact.maxAttemptsAllowed,
+      artifactPath: harnessRunResult.artifactPath,
+    };
+  }
 
   // 8. Validation pipeline.
   emit({ phase: "validation_started", timestamp: monotonicMs() });
@@ -1302,11 +1439,12 @@ export const runFigmaToQcTestCases = async (
     untrustedContentReport: normalizedUntrusted.report,
     activeModelBindings,
   });
+  const blocked = validation.blocked || !judgeAccepted;
   emit({
     phase: "validation_complete",
     timestamp: monotonicMs(),
     details: {
-      blocked: validation.blocked,
+      blocked,
       errorCount: validation.validation.errorCount,
       warningCount: validation.validation.warningCount,
       cases: validation.generatedTestCases.testCases.length,
@@ -1316,7 +1454,7 @@ export const runFigmaToQcTestCases = async (
     phase: "policy_decision",
     timestamp: monotonicMs(),
     details: {
-      blocked: validation.blocked,
+      blocked,
       profileId: validation.policy.policyProfileId,
       approved: validation.policy.approvedCount,
       blockedCount: validation.policy.blockedCount,
@@ -1329,6 +1467,30 @@ export const runFigmaToQcTestCases = async (
   await mkdir(artifactDir, { recursive: true });
   const intentPath = join(artifactDir, "business-intent-ir.json");
   const compiledPromptPath = join(artifactDir, "compiled-prompt.json");
+  const logicJudgeCompiledPromptPath = join(
+    artifactDir,
+    LOGIC_JUDGE_COMPILED_PROMPT_ARTIFACT_FILENAME,
+  );
+  const logicJudgeVerdictPath = join(
+    artifactDir,
+    "agent-role-runs",
+    LOGIC_JUDGE_VERDICT_ARTIFACT_FILENAME,
+  );
+  const faithfulnessJudgeCompiledPromptPath =
+    faithfulnessJudgeResult === undefined
+      ? undefined
+      : join(
+          artifactDir,
+          FAITHFULNESS_JUDGE_COMPILED_PROMPT_ARTIFACT_FILENAME,
+        );
+  const faithfulnessJudgeVerdictPath =
+    faithfulnessJudgeResult === undefined
+      ? undefined
+      : join(
+          artifactDir,
+          "agent-role-runs",
+          FAITHFULNESS_VERDICT_ARTIFACT_FILENAME,
+        );
   const generatedPath = join(
     artifactDir,
     GENERATED_TESTCASES_ARTIFACT_FILENAME,
@@ -1352,7 +1514,10 @@ export const runFigmaToQcTestCases = async (
     artifactDir,
     TEST_CASE_COVERAGE_REPORT_ARTIFACT_FILENAME,
   );
-  const finopsOutcomeOverride = deriveFinopsOutcomeFromValidation(validation);
+  const finopsOutcomeOverride = deriveFinopsOutcomeFromValidation(
+    validation,
+    judgeAccepted,
+  );
   const finopsReport = buildFinOpsBudgetReport({
     jobId: input.jobId,
     generatedAt: input.generatedAt,
@@ -1368,6 +1533,18 @@ export const runFigmaToQcTestCases = async (
   });
   const intentBytes = encodeCanonicalJson(intent);
   const compiledPromptBytes = encodeCanonicalJson(compiled.artifacts);
+  const logicJudgeCompiledPromptBytes = encodeCanonicalJson(
+    logicJudgeResult.promptArtifact,
+  );
+  const logicJudgeVerdictBytes = encodeCanonicalJson(logicJudgeResult.verdict);
+  const faithfulnessJudgeCompiledPromptBytes =
+    faithfulnessJudgeResult === undefined
+      ? undefined
+      : encodeCanonicalJson(faithfulnessJudgeResult.promptArtifact);
+  const faithfulnessJudgeVerdictBytes =
+    faithfulnessJudgeResult === undefined
+      ? undefined
+      : encodeCanonicalJson(faithfulnessJudgeResult.verdict);
   const generatedBytes = encodeCanonicalJson(validation.generatedTestCases);
   const validationBytes = encodeCanonicalJson(validation.validation);
   const visualSidecarValidationBytes =
@@ -1383,47 +1560,6 @@ export const runFigmaToQcTestCases = async (
     roleStepId: "test_generation",
     hashes: compiled.request.hashes,
   });
-  // Issue #1898: persist Logic-Judge artifacts (compiled prompt, role
-  // run, verdict). These are emitted whenever the runner actually
-  // dispatched the second LLM roundtrip — i.e. on a cache-miss with
-  // `logicJudge.enabled === true`.
-  const logicJudgeRunArtifactPromise =
-    logicJudgeRunResult !== undefined
-      ? writeAgentRoleRunArtifact({
-          runDir: artifactDir,
-          jobId: input.jobId,
-          roleRunId: "logic_judge",
-          roleStepId: "logic_judge",
-          hashes: {
-            inputHash: logicJudgeRunResult.compiledPrompt.hashes.inputHash,
-            promptHash: logicJudgeRunResult.compiledPrompt.hashes.promptHash,
-            schemaHash: logicJudgeRunResult.compiledPrompt.hashes.schemaHash,
-            cacheKey: logicJudgeRunResult.compiledPrompt.hashes.promptHash,
-            cacheablePrefixHash:
-              logicJudgeRunResult.compiledPrompt.hashes.promptHash,
-          },
-        })
-      : undefined;
-  const compiledPromptJudgePath =
-    logicJudgeRunResult !== undefined
-      ? join(artifactDir, COMPILED_PROMPT_JUDGE_ARTIFACT_FILENAME)
-      : undefined;
-  const compiledPromptJudgeBytes =
-    logicJudgeRunResult !== undefined
-      ? encodeCanonicalJson(
-          serializableCompiledLogicJudgePrompt(
-            logicJudgeRunResult.compiledPrompt,
-          ),
-        )
-      : undefined;
-  const logicJudgeVerdictPath =
-    logicJudgeRunResult !== undefined
-      ? join(artifactDir, LOGIC_JUDGE_VERDICT_ARTIFACT_FILENAME)
-      : undefined;
-  const logicJudgeVerdictBytes =
-    logicJudgeRunResult !== undefined
-      ? encodeCanonicalJson(logicJudgeRunResult.verdict)
-      : undefined;
   const contextBudgetReportPath =
     compiled.contextBudgetReport === undefined
       ? undefined
@@ -1440,7 +1576,25 @@ export const runFigmaToQcTestCases = async (
     await Promise.all([
       writeAtomicBytes(intentPath, intentBytes),
       writeAtomicBytes(compiledPromptPath, compiledPromptBytes),
+      writeAtomicBytes(
+        logicJudgeCompiledPromptPath,
+        logicJudgeCompiledPromptBytes,
+      ),
+      writeAtomicBytes(logicJudgeVerdictPath, logicJudgeVerdictBytes),
       agentRoleRunPromise,
+      ...(faithfulnessJudgeCompiledPromptPath === undefined ||
+      faithfulnessJudgeCompiledPromptBytes === undefined
+        ? []
+        : [
+            writeAtomicBytes(
+              faithfulnessJudgeCompiledPromptPath,
+              faithfulnessJudgeCompiledPromptBytes,
+            ),
+          ]),
+      ...(faithfulnessJudgeVerdictPath === undefined ||
+      faithfulnessJudgeVerdictBytes === undefined
+        ? []
+        : [writeAtomicBytes(faithfulnessJudgeVerdictPath, faithfulnessJudgeVerdictBytes)]),
       ...(contextBudgetReportPath === undefined ||
       contextBudgetReportBytes === undefined
         ? []
@@ -1458,17 +1612,6 @@ export const runFigmaToQcTestCases = async (
           ]),
       writeAtomicBytes(policyPath, policyBytes),
       writeAtomicBytes(coveragePath, coverageBytes),
-      ...(logicJudgeRunArtifactPromise !== undefined
-        ? [logicJudgeRunArtifactPromise]
-        : []),
-      ...(compiledPromptJudgePath !== undefined &&
-      compiledPromptJudgeBytes !== undefined
-        ? [writeAtomicBytes(compiledPromptJudgePath, compiledPromptJudgeBytes)]
-        : []),
-      ...(logicJudgeVerdictPath !== undefined &&
-      logicJudgeVerdictBytes !== undefined
-        ? [writeAtomicBytes(logicJudgeVerdictPath, logicJudgeVerdictBytes)]
-        : []),
     ]);
   } catch (err) {
     throw new ProductionRunnerError({
@@ -1479,10 +1622,6 @@ export const runFigmaToQcTestCases = async (
     });
   }
   const agentRoleRunArtifact = await agentRoleRunPromise;
-  const logicJudgeRoleRunArtifact =
-    logicJudgeRunArtifactPromise !== undefined
-      ? await logicJudgeRunArtifactPromise
-      : undefined;
   const genealogyArtifact = await writeGenealogyArtifact({
     runDir: artifactDir,
     generatedAt: input.generatedAt,
@@ -1493,6 +1632,22 @@ export const runFigmaToQcTestCases = async (
         artifactFilename: "agent-role-runs/test_generation.json",
         roleLineageDepth: 0,
       },
+      {
+        jobId: input.jobId,
+        roleStepId: "logic_judge",
+        artifactFilename: `agent-role-runs/${LOGIC_JUDGE_VERDICT_ARTIFACT_FILENAME}`,
+        roleLineageDepth: 0,
+      },
+      ...(faithfulnessJudgeResult === undefined
+        ? []
+        : [
+            {
+              jobId: input.jobId,
+              roleStepId: "faithfulness_judge",
+              artifactFilename: `agent-role-runs/${FAITHFULNESS_VERDICT_ARTIFACT_FILENAME}`,
+              roleLineageDepth: 0,
+            },
+          ]),
       ...(compiled.contextBudgetReport === undefined
         ? []
         : [
@@ -1565,6 +1720,10 @@ export const runFigmaToQcTestCases = async (
         generatedAt: input.generatedAt,
         harnessArtifactFilenames: [
           "agent-role-runs/test_generation.json",
+          `agent-role-runs/${LOGIC_JUDGE_VERDICT_ARTIFACT_FILENAME}`,
+          ...(faithfulnessJudgeResult === undefined
+            ? []
+            : [`agent-role-runs/${FAITHFULNESS_VERDICT_ARTIFACT_FILENAME}`]),
           ...(contextBudgetReportPath !== undefined &&
           compiled.contextBudgetReport !== undefined
             ? [
@@ -1649,6 +1808,34 @@ export const runFigmaToQcTestCases = async (
         bytes: compiledPromptBytes,
         category: "intent",
       },
+      {
+        filename: LOGIC_JUDGE_COMPILED_PROMPT_ARTIFACT_FILENAME,
+        bytes: logicJudgeCompiledPromptBytes,
+        category: "intent",
+      },
+      {
+        filename: `agent-role-runs/${LOGIC_JUDGE_VERDICT_ARTIFACT_FILENAME}`,
+        bytes: logicJudgeVerdictBytes,
+        category: "manifest",
+      },
+      ...(faithfulnessJudgeCompiledPromptBytes === undefined
+        ? []
+        : [
+            {
+              filename: FAITHFULNESS_JUDGE_COMPILED_PROMPT_ARTIFACT_FILENAME,
+              bytes: faithfulnessJudgeCompiledPromptBytes,
+              category: "intent" as const,
+            },
+          ]),
+      ...(faithfulnessJudgeVerdictBytes === undefined
+        ? []
+        : [
+            {
+              filename: `agent-role-runs/${FAITHFULNESS_VERDICT_ARTIFACT_FILENAME}`,
+              bytes: faithfulnessJudgeVerdictBytes,
+              category: "manifest" as const,
+            },
+          ]),
       {
         filename: "agent-role-runs/test_generation.json",
         bytes: agentRoleRunArtifact.bytes,
@@ -1814,6 +2001,14 @@ export const runFigmaToQcTestCases = async (
     });
   }
 
+  if (
+    harnessMode === "enforced" &&
+    harnessSummary !== undefined &&
+    harnessSummary.outcome !== "accepted"
+  ) {
+    throw mapHarnessOutcomeToProductionRunnerError(harnessSummary);
+  }
+
   return {
     jobId: input.jobId,
     generatedAt: input.generatedAt,
@@ -1823,7 +2018,23 @@ export const runFigmaToQcTestCases = async (
     validation: validation.validation,
     policy: validation.policy,
     coverage: validation.coverage,
-    blocked: validation.blocked,
+    blocked,
+    logicJudge: {
+      verdict: logicJudgeResult.verdict,
+      artifactPath: logicJudgeVerdictPath,
+      compiledPromptPath: logicJudgeCompiledPromptPath,
+    },
+    ...(faithfulnessJudgeResult !== undefined &&
+    faithfulnessJudgeVerdictPath !== undefined &&
+    faithfulnessJudgeCompiledPromptPath !== undefined
+      ? {
+          faithfulnessJudge: {
+            verdict: faithfulnessJudgeResult.verdict,
+            artifactPath: faithfulnessJudgeVerdictPath,
+            compiledPromptPath: faithfulnessJudgeCompiledPromptPath,
+          },
+        }
+      : {}),
     ...(visualSidecarResult !== undefined
       ? {
           visualSidecar: {
@@ -1845,6 +2056,10 @@ export const runFigmaToQcTestCases = async (
     artifactPaths: {
       intent: intentPath,
       compiledPrompt: compiledPromptPath,
+      logicJudgeCompiledPrompt: logicJudgeCompiledPromptPath,
+      ...(faithfulnessJudgeCompiledPromptPath !== undefined
+        ? { faithfulnessJudgeCompiledPrompt: faithfulnessJudgeCompiledPromptPath }
+        : {}),
       untrustedContentNormalizationReport:
         untrustedContentNormalizationReportPath,
       evidenceSeal: productionRunnerEvidenceSealPath,
@@ -1852,6 +2067,10 @@ export const runFigmaToQcTestCases = async (
         ? { visualSidecarResult: visualSidecarArtifactPath }
         : {}),
       agentRoleRun: agentRoleRunArtifact.artifactPath,
+      logicJudgeVerdict: logicJudgeVerdictPath,
+      ...(faithfulnessJudgeVerdictPath !== undefined
+        ? { faithfulnessJudgeVerdict: faithfulnessJudgeVerdictPath }
+        : {}),
       genealogy: genealogyArtifact.artifactPath,
       ...(contextBudgetReportPath !== undefined
         ? { contextBudgetReport: contextBudgetReportPath }
@@ -1867,56 +2086,14 @@ export const runFigmaToQcTestCases = async (
       ...(harnessArtifactPath !== undefined
         ? { harnessStep: harnessArtifactPath }
         : {}),
-      ...(logicJudgeVerdictPath !== undefined
-        ? { logicJudgeVerdict: logicJudgeVerdictPath }
-        : {}),
-      ...(compiledPromptJudgePath !== undefined
-        ? { compiledPromptJudge: compiledPromptJudgePath }
-        : {}),
-      ...(logicJudgeRoleRunArtifact !== undefined
-        ? { logicJudgeRoleRun: logicJudgeRoleRunArtifact.artifactPath }
-        : {}),
     },
     customerMarkdownPaths: {
       combined: combinedMarkdownPath,
       perCase: perCasePaths,
     },
     ...(harnessSummary !== undefined ? { harness: harnessSummary } : {}),
-    ...(logicJudgeRunResult !== undefined
-      ? {
-          logicJudge: {
-            verdict: logicJudgeRunResult.verdict,
-            judgeAccepted: logicJudgeRunResult.judgeAccepted,
-          },
-        }
-      : {}),
   };
 };
-
-/**
- * Project a {@link CompiledLogicJudgePrompt} into a canonical-JSON-stable
- * artifact body. Excludes the inline JSON Schema (already captured by
- * `hashes.schemaHash`) so the persisted artifact stays small.
- */
-const serializableCompiledLogicJudgePrompt = (
-  compiled: CompiledLogicJudgePrompt,
-): {
-  readonly schemaVersion: CompiledLogicJudgePrompt["schemaVersion"];
-  readonly promptTemplateVersion: CompiledLogicJudgePrompt["promptTemplateVersion"];
-  readonly outputSchemaName: CompiledLogicJudgePrompt["outputSchemaName"];
-  readonly modelBinding: string;
-  readonly systemPrompt: string;
-  readonly userPrompt: string;
-  readonly hashes: CompiledLogicJudgePrompt["hashes"];
-} => ({
-  schemaVersion: compiled.schemaVersion,
-  promptTemplateVersion: compiled.promptTemplateVersion,
-  outputSchemaName: compiled.outputSchemaName,
-  modelBinding: compiled.modelBinding,
-  systemPrompt: compiled.systemPrompt,
-  userPrompt: compiled.userPrompt,
-  hashes: compiled.hashes,
-});
 
 const resolveFigmaSource = async (
   source: ProductionRunnerSource,
@@ -2226,27 +2403,17 @@ interface BuildHarnessAttemptResultInput {
     readonly cacheKey: string;
     readonly cacheablePrefixHash: string;
   };
-  readonly attemptOutcome: LlmAttemptOutcome;
+  readonly judgeAccepted: boolean;
+  readonly errorClass: AgentHarnessErrorClass;
   readonly llmDurationMs: number;
   readonly llmInputTokens: number;
   readonly llmOutputTokens: number;
-  /**
-   * Issue #1898: when the Production Runner ran the real Logic-Judge
-   * roundtrip, it passes the verdict-derived flag here so the harness
-   * attempt-result reflects the judge outcome instead of a
-   * deterministic reflection of the generator outcome. Conservative —
-   * the override never upgrades a generator-error to accepted.
-   */
-  readonly judgeAcceptedOverride?: boolean;
 }
 
 const buildHarnessAttemptResult = (
   input: BuildHarnessAttemptResultInput,
 ): AgentHarnessAttemptResult => {
-  const generatorOk = input.attemptOutcome.kind === "ok";
-  const judgeAccepted =
-    generatorOk && (input.judgeAcceptedOverride ?? true);
-  if (judgeAccepted) {
+  if (input.judgeAccepted) {
     return {
       inputHash: input.hashes.inputHash,
       promptHash: input.hashes.promptHash,
@@ -2261,26 +2428,6 @@ const buildHarnessAttemptResult = (
       latencyMs: input.llmDurationMs,
     };
   }
-  // Issue #1898: when the generator step itself succeeded but the
-  // Logic-Judge override declared a non-accept verdict, surface the
-  // refusal as a `policy_block` so the harness state machine routes
-  // it to needs_review (or refuses to proceed under `enforced` mode)
-  // without re-classifying it as a transient gateway error.
-  if (generatorOk) {
-    return {
-      inputHash: input.hashes.inputHash,
-      promptHash: input.hashes.promptHash,
-      schemaHash: input.hashes.schemaHash,
-      cacheKeyDigest: input.hashes.cacheKey,
-      cacheablePrefixHash: input.hashes.cacheablePrefixHash,
-      judgeAccepted: false,
-      errorKind: "policy_block",
-      errorClass: "policy_refusal",
-      inputTokens: input.llmInputTokens,
-      outputTokens: input.llmOutputTokens,
-      latencyMs: input.llmDurationMs,
-    };
-  }
   return {
     inputHash: input.hashes.inputHash,
     promptHash: input.hashes.promptHash,
@@ -2288,8 +2435,8 @@ const buildHarnessAttemptResult = (
     cacheKeyDigest: input.hashes.cacheKey,
     cacheablePrefixHash: input.hashes.cacheablePrefixHash,
     judgeAccepted: false,
-    errorKind: input.attemptOutcome.errorKind,
-    errorClass: input.attemptOutcome.errorClass,
+    errorKind: "permanent",
+    errorClass: input.errorClass,
     inputTokens: input.llmInputTokens,
     outputTokens: input.llmOutputTokens,
     latencyMs: input.llmDurationMs,
@@ -2298,9 +2445,13 @@ const buildHarnessAttemptResult = (
 
 const deriveFinopsOutcomeFromValidation = (
   validation: ReturnType<typeof runValidationPipeline>,
+  judgeAccepted: boolean,
 ): FinOpsJobOutcome | undefined => {
   if (validation.visual !== undefined && validation.visual.blocked) {
     return "visual_sidecar_failed";
+  }
+  if (!judgeAccepted) {
+    return "validation_blocked";
   }
   if (validation.policy.blocked) {
     return "policy_blocked";
