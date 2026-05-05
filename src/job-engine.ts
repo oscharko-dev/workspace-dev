@@ -63,6 +63,8 @@ import {
 } from "./generation-locale.js";
 import {
   createInitialStages,
+  cloneJobError,
+  cloneJobLineage,
   cloneQualityPassportSummary,
   nowIso,
   pushRuntimeLog,
@@ -4465,16 +4467,7 @@ export const createJobEngine = ({
       result.pasteDeltaSummary = { ...job.pasteDeltaSummary };
     }
     if (job.lineage) {
-      result.lineage = {
-        ...job.lineage,
-        ...(job.lineage.pipelineMetadata
-          ? {
-              pipelineMetadata: clonePipelineMetadata(
-                job.lineage.pipelineMetadata,
-              ),
-            }
-          : {}),
-      };
+      result.lineage = cloneJobLineage(job.lineage);
     }
     if (job.cancellation) {
       result.cancellation = { ...job.cancellation };
@@ -4533,16 +4526,7 @@ export const createJobEngine = ({
       };
     }
     if (job.error) {
-      result.error = {
-        ...job.error,
-        ...(job.error.retryTargets
-          ? {
-              retryTargets: job.error.retryTargets.map((target) => ({
-                ...target,
-              })),
-            }
-          : {}),
-      };
+      result.error = cloneJobError(job.error);
     }
 
     return result;
