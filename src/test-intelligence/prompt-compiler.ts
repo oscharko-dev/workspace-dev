@@ -246,6 +246,7 @@ export const compilePrompt = (
         input.outputSchemaHintLabel ?? DEFAULT_OUTPUT_SCHEMA_HINT_LABEL,
     }),
   });
+  assertPromptHeaderOrder([prefix, suffix].filter(Boolean).join("\n\n"));
   const userPrompt = [prefixBody(prefix), suffix].filter(Boolean).join("\n\n");
   const cacheablePrefixHash = sha256Hex(prefix);
 
@@ -784,6 +785,38 @@ const renderPromptSuffix = (input: {
         typeof section === "string" && section.length > 0,
     )
     .join("\n\n");
+
+const escapeCanonicalPromptHeaderLines = (text: string): string =>
+  text.replace(
+    /^\[(1|2|3|4|5|6|7|8)\] /gmu,
+    String.raw`\[$1] `,
+  );
+
+const assertPromptHeaderOrder = (fullPrompt: string): void => {
+  const matches = [
+    ...fullPrompt.matchAll(/^\[(1|2|3|4|5|6|7|8)\] .+$/gmu),
+  ];
+  let previousSectionNumber = 0;
+  const seen = new Set<number>();
+  for (const match of matches) {
+    const sectionNumber = Number(match[1]);
+    if (!Number.isSafeInteger(sectionNumber)) {
+      continue;
+    }
+    if (seen.has(sectionNumber)) {
+      throw new Error(
+        `compilePrompt: duplicate top-level prompt section [${sectionNumber}] detected`,
+      );
+    }
+    if (sectionNumber < previousSectionNumber) {
+      throw new Error(
+        `compilePrompt: prompt sections out of order at [${sectionNumber}]`,
+      );
+    }
+    seen.add(sectionNumber);
+    previousSectionNumber = sectionNumber;
+  }
+};
 
 const buildOutputSchemaHintSection = (input: {
   schemaHash: string;
@@ -1390,5 +1423,5 @@ const renderSuffixSectionPayload = (
   if (section.kind !== "text") {
     return canonicalJson(section.jsonPayload);
   }
-  return section.body;
+  return escapeCanonicalPromptHeaderLines(section.body);
 };
