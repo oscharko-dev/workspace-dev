@@ -1180,6 +1180,7 @@ test("figmaToDesignIr throws when no top-level screen nodes exist", () => {
   assert.throws(() => figmaToDesignIr({ name: "Empty", document: { id: "0:0", type: "DOCUMENT", children: [] } }), (error: unknown) => {
     assert.equal(error instanceof WorkflowError, true);
     assert.equal((error as WorkflowError).code, PARITY_WORKFLOW_ERROR_CODES.noScreens);
+    assert.equal((error as WorkflowError).stage, "ir.derive");
     assert.match((error as WorkflowError).message, /No top-level frames\/components found/);
     return true;
   });
@@ -1202,6 +1203,7 @@ test("figmaToDesignIr throws path-aware validation errors for malformed payload"
     }), (error: unknown) => {
     assert.equal(error instanceof WorkflowError, true);
     assert.equal((error as WorkflowError).code, PARITY_WORKFLOW_ERROR_CODES.invalidFigmaPayload);
+    assert.equal((error as WorkflowError).stage, "ir.derive");
     assert.match((error as WorkflowError).message, /Invalid Figma payload: document\.children\[0\]\.id:/);
     return true;
   });

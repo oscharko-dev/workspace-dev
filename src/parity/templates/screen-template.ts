@@ -36,6 +36,10 @@ import type {
   GeneratedSourceValidationSkippedState
 } from "../generated-source-validation.js";
 import {
+  PARITY_WORKFLOW_ERROR_CODES,
+  WorkflowError
+} from "../workflow-error.js";
+import {
   registerMuiImports,
   registerMappedImport,
   registerIconImport,
@@ -5053,7 +5057,11 @@ export const renderElement = (
 ): string | null => {
   context.renderNodeVisitCount += 1;
   if (context.renderNodeVisitCount > 200_000) {
-    throw new Error(`Render traversal exceeded safety limit for screen '${context.screenName}'`);
+    throw new WorkflowError({
+      code: PARITY_WORKFLOW_ERROR_CODES.renderTraversalLimitExceeded,
+      message: `Render traversal exceeded safety limit for screen '${context.screenName}'`,
+      stage: "codegen.generate"
+    });
   }
   if (context.activeRenderElements.has(element)) {
     return null;
@@ -7036,9 +7044,11 @@ export const statefulVariantScreenFile = (input: StatefulVariantScreenFileInput)
   const scenarioModules = uniqueContentScreenIds.map((contentScreenId, index) => {
     const screen = input.scenarioScreensById.get(contentScreenId);
     if (!screen) {
-      throw new Error(
-        `Stateful variant screen '${componentName}' is missing content screen '${contentScreenId}' for family '${input.family.familyId}'.`
-      );
+      throw new WorkflowError({
+        code: PARITY_WORKFLOW_ERROR_CODES.missingStatefulVariantContentScreen,
+        message: `Stateful variant screen '${componentName}' is missing content screen '${contentScreenId}' for family '${input.family.familyId}'.`,
+        stage: "codegen.generate"
+      });
     }
     const scenarioComponentName = `${componentName}${toComponentName(`variant-${index + 1}-${contentScreenId}`)}Content`;
     return buildStatefulScenarioModule({
@@ -7055,9 +7065,11 @@ export const statefulVariantScreenFile = (input: StatefulVariantScreenFileInput)
   const defaultVariantId = input.family.canonicalScreenId;
   const defaultScenario = scenarioByScreenId.get(defaultVariantId);
   if (!defaultScenario) {
-    throw new Error(
-      `Stateful variant screen '${componentName}' is missing the canonical scenario '${defaultVariantId}'.`
-    );
+    throw new WorkflowError({
+      code: PARITY_WORKFLOW_ERROR_CODES.missingStatefulVariantCanonicalScenario,
+      message: `Stateful variant screen '${componentName}' is missing the canonical scenario '${defaultVariantId}'.`,
+      stage: "codegen.generate"
+    });
   }
 
   const importLines: string[] = [];
@@ -7229,9 +7241,11 @@ ${scenarioModule.componentInvocation}
     .join("\n");
   const defaultScenarioModule = scenarioModuleByContentScreenId.get(defaultScenario.contentScreenId);
   if (!defaultScenarioModule) {
-    throw new Error(
-      `Stateful variant screen '${componentName}' is missing the canonical content module '${defaultScenario.contentScreenId}'.`
-    );
+    throw new WorkflowError({
+      code: PARITY_WORKFLOW_ERROR_CODES.missingStatefulVariantCanonicalContentModule,
+      message: `Stateful variant screen '${componentName}' is missing the canonical content module '${defaultScenario.contentScreenId}'.`,
+      stage: "codegen.generate"
+    });
   }
 
   const shellImportLine =

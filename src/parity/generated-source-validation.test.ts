@@ -84,6 +84,7 @@ test("validateGeneratedJsxFragment rejects stray closing tags with node context"
         (error as WorkflowError).code,
         PARITY_WORKFLOW_ERROR_CODES.invalidGeneratedJsxFragment
       );
+      assert.equal((error as WorkflowError).stage, "codegen.generate");
       assert.match(
         (error as WorkflowError).message,
         /Invalid generated JSX fragment in screen 'Broken Screen' for node 'node-2' \(Broken Header, appbar\) during pre-dispatch strategy: __generated_fragment__\.tsx:1:\d+ - Expected corresponding closing tag for JSX fragment\./
@@ -115,6 +116,7 @@ test("validateGeneratedSourceFile rejects malformed TSX modules with file path c
         (error as WorkflowError).code,
         PARITY_WORKFLOW_ERROR_CODES.invalidGeneratedSourceFile
       );
+      assert.equal((error as WorkflowError).stage, "codegen.generate");
       assert.match(
         (error as WorkflowError).message,
         /Invalid generated source file 'src\/screens\/Broken\.tsx': src\/screens\/Broken\.tsx:\d+:\d+ - JSX element 'Box' has no corresponding closing tag\./
@@ -163,6 +165,7 @@ test("validateGeneratedSourceFile includes screen context when provided", () => 
         (error as WorkflowError).code,
         PARITY_WORKFLOW_ERROR_CODES.invalidGeneratedSourceFile
       );
+      assert.equal((error as WorkflowError).stage, "codegen.generate");
       assert.match(
         (error as WorkflowError).message,
         /Invalid generated source file 'src\/screens\/Checkout\.tsx' for screen 'Checkout': src\/screens\/Checkout\.tsx:\d+:\d+ - JSX element 'Stack' has no corresponding closing tag\./
