@@ -78,6 +78,20 @@ const loadFixture = async (): Promise<{
   return { intent, visual };
 };
 
+const loadBaselineSimpleFormIntent = async (): Promise<
+  ReturnType<typeof deriveBusinessTestIntentIr>
+> => {
+  const figmaRaw = await readFile(
+    join(FIXTURES_DIR, "baseline-simple-form.figma.json"),
+    "utf8",
+  );
+  const figma = JSON.parse(figmaRaw) as IntentDerivationFigmaInput;
+  return deriveBusinessTestIntentIr({ figma });
+};
+
+const extractPromptHeaders = (text: string): string[] =>
+  [...text.matchAll(/^\[(\d+)\] .+$/gmu)].map((match) => match[0]);
+
 const buildApprovedLesson = async (): Promise<AgentLessonRecord> => {
   const runDir = await mkdtemp(join(tmpdir(), "prompt-lesson-"));
   try {
@@ -630,6 +644,87 @@ test("compiler: includes versioned breadcrumbs in user prompt body", async () =>
     new RegExp(
       `Visual sidecar schema version: ${VISUAL_SIDECAR_SCHEMA_VERSION}\\.`,
     ),
+  );
+});
+
+test("compiler: renders numbered prompt sections exactly once in ascending order", async () => {
+  const intent = await loadBaselineSimpleFormIntent();
+  const expectedHeaders = JSON.parse(
+    await readFile(
+      join(FIXTURES_DIR, "baseline-simple-form.expected.prompt-headers.json"),
+      "utf8",
+    ),
+  ) as string[];
+
+  const { artifacts, request } = compilePrompt({
+    jobId: "job-section-order",
+    intent,
+    modelBinding: sampleModelBinding,
+    visualBinding: sampleVisualBinding,
+    policyBundleVersion: "policy-2026-04-25",
+    suffixSections: [
+      {
+        kind: "text",
+        label: "Iteration Inputs",
+        body: "Use only canonical field ids from the bounded IR.",
+      },
+      {
+        kind: "text",
+        label: "RepairInstructions",
+        body: [
+          "[7] Findings / RepairInstructions / Iteration Inputs",
+          "Preserve deterministic section ordering.",
+        ].join("\n"),
+      },
+    ],
+  });
+
+  const fullPrompt = [artifacts.promptLayout.prefix, artifacts.promptLayout.suffix].join(
+    "\n\n",
+  );
+  const fullPromptHeaders = extractPromptHeaders(fullPrompt);
+  assert.deepEqual(fullPromptHeaders, expectedHeaders);
+  assert.equal(new Set(fullPromptHeaders).size, expectedHeaders.length);
+  assert.deepEqual(
+    extractPromptHeaders(request.userPrompt),
+    expectedHeaders.filter((header) => !header.startsWith("[1] ")),
+  );
+});
+
+test("compiler: prompt section assembly is idempotent across repeated compilation", async () => {
+  const intent = await loadBaselineSimpleFormIntent();
+  const compile = () =>
+    compilePrompt({
+      jobId: "job-section-idempotence",
+      intent,
+      modelBinding: sampleModelBinding,
+      visualBinding: sampleVisualBinding,
+      policyBundleVersion: "policy-2026-04-25",
+      suffixSections: [
+        {
+          kind: "repair_instructions",
+          label: "RepairInstructions",
+          jsonPayload: [
+            {
+              code: "section-order",
+              message: "Keep numbered prompt sections canonical.",
+            },
+          ],
+        },
+      ],
+    });
+
+  const first = compile();
+  const second = compile();
+
+  assert.equal(first.request.userPrompt, second.request.userPrompt);
+  assert.equal(
+    first.artifacts.promptLayout.prefix,
+    second.artifacts.promptLayout.prefix,
+  );
+  assert.equal(
+    first.artifacts.promptLayout.suffix,
+    second.artifacts.promptLayout.suffix,
   );
 });
 

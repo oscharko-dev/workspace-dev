@@ -234,8 +234,7 @@ export const compilePrompt = (
   );
   const prefix = renderPromptPrefix({
     systemPrompt: SYSTEM_PROMPT,
-    stablePrefixSection: promptSections.stablePrefixSection,
-    coveragePlanSection: promptSections.coveragePlanSection,
+    orderedPrefixSections: promptSections.orderedPrefixSections,
   });
   const suffix = renderPromptSuffix({
     sourceContextSection: promptSections.sourceContextSection,
@@ -664,54 +663,114 @@ const renderUserPromptFromCategories = (
   categories: readonly ContextBudgetCategoryInput[],
 ): string => categories.map((category) => category.promptPayload).join("\n");
 
+const ORDERED_PROMPT_SECTION_NUMBERS = [2, 3, 4, 5, 6, 7] as const;
+type OrderedPromptSectionNumber =
+  (typeof ORDERED_PROMPT_SECTION_NUMBERS)[number];
+
+const ORDERED_PROMPT_SECTION_HEADER_REGEX =
+  /^\[(2|3|4|5|6|7)\] [^\n]+$/gmu;
+
+const SOURCE_CONTEXT_COMPACTED_MARKER =
+  "SOURCE_CONTEXT compacted from prompt payload due to context budget." as const;
+
 interface ResolvedPromptSections {
-  stablePrefixSection: string;
-  coveragePlanSection: string;
+  orderedPrefixSections: string[];
   sourceContextSection?: string;
 }
+
+const mergeDuplicatePromptSection = (
+  existingSection: string,
+  incomingSection: string,
+): string => {
+  if (existingSection === incomingSection) {
+    return existingSection;
+  }
+  const existingSplit = existingSection.split("\n");
+  const incomingSplit = incomingSection.split("\n");
+  const header = existingSplit[0]!;
+  const existingBody = existingSplit.slice(1).join("\n").trim();
+  const incomingBody = incomingSplit.slice(1).join("\n").trim();
+  if (incomingBody.length === 0 || existingBody.includes(incomingBody)) {
+    return existingSection;
+  }
+  if (existingBody.length === 0) {
+    return [header, incomingBody].join("\n");
+  }
+  return [header, existingBody, incomingBody].join("\n");
+};
+
+const extractOrderedPromptSections = (
+  renderedUserPrompt: string,
+): ReadonlyMap<OrderedPromptSectionNumber, string> => {
+  const matches = [...renderedUserPrompt.matchAll(ORDERED_PROMPT_SECTION_HEADER_REGEX)];
+  const sections = new Map<OrderedPromptSectionNumber, string>();
+  for (const [index, match] of matches.entries()) {
+    const sectionStart = match.index;
+    if (sectionStart === undefined) {
+      continue;
+    }
+    const sectionEnd =
+      index + 1 < matches.length
+        ? (matches[index + 1]?.index ?? renderedUserPrompt.length)
+        : renderedUserPrompt.length;
+    const sectionText = renderedUserPrompt.slice(sectionStart, sectionEnd).trim();
+    const sectionNumber = Number(match[1]) as OrderedPromptSectionNumber;
+    const existingSection = sections.get(sectionNumber);
+    sections.set(
+      sectionNumber,
+      existingSection === undefined
+        ? sectionText
+        : mergeDuplicatePromptSection(existingSection, sectionText),
+    );
+  }
+  return sections;
+};
 
 const resolvePromptSections = (
   renderedUserPrompt: string,
 ): ResolvedPromptSections => {
-  const coverageMarker = "[4] CoveragePlan";
-  const sourceMarker = "[7] Findings / RepairInstructions / Iteration Inputs";
-  const coverageStart = renderedUserPrompt.indexOf(coverageMarker);
-  if (coverageStart < 0) {
-    throw new Error("compilePrompt: coverage plan section missing from rendered prompt");
-  }
-  const sourceStart = renderedUserPrompt.indexOf(sourceMarker);
-  const stablePrefixSection = renderedUserPrompt
-    .slice(0, coverageStart)
-    .trim();
-  const coveragePlanSection =
-    sourceStart < 0
-      ? renderedUserPrompt.slice(coverageStart).trim()
-      : renderedUserPrompt.slice(coverageStart, sourceStart).trim();
-  if (sourceStart < 0) {
-    return {
-      stablePrefixSection,
-      coveragePlanSection,
-    };
-  }
+  const sections = extractOrderedPromptSections(renderedUserPrompt);
+  const orderedPrefixSections = ORDERED_PROMPT_SECTION_NUMBERS.filter(
+    (sectionNumber) => sectionNumber !== 7,
+  ).map((sectionNumber) => {
+    const sectionText = sections.get(sectionNumber);
+    if (sectionText === undefined) {
+      throw new Error(
+        `compilePrompt: section [${sectionNumber}] missing from rendered prompt`,
+      );
+    }
+    return sectionText;
+  });
+  const sourceContextSection =
+    sections.get(7) ??
+    (() => {
+      const compactedSourceContextStart = renderedUserPrompt.indexOf(
+        SOURCE_CONTEXT_COMPACTED_MARKER,
+      );
+      return compactedSourceContextStart < 0
+        ? undefined
+        : renderedUserPrompt.slice(compactedSourceContextStart).trim();
+    })();
   return {
-    stablePrefixSection,
-    coveragePlanSection,
-    sourceContextSection: renderedUserPrompt.slice(sourceStart).trim(),
+    orderedPrefixSections,
+    ...(sourceContextSection !== undefined ? { sourceContextSection } : {}),
   };
 };
 
 const renderPromptPrefix = (input: {
   systemPrompt: string;
-  stablePrefixSection: string;
-  coveragePlanSection: string;
-}): string =>
-  [
+  orderedPrefixSections: readonly string[];
+}): string => {
+  if (input.orderedPrefixSections.length === 0) {
+    throw new Error("compilePrompt: prompt prefix requires at least one section");
+  }
+  return [
     "[1] System Instructions",
     input.systemPrompt,
-    input.stablePrefixSection,
-    input.coveragePlanSection,
+    ...input.orderedPrefixSections,
     PREFIX_END_MARKER,
   ].join("\n\n");
+};
 
 const prefixBody = (prefix: string): string => prefix.split("\n\n").slice(2).join("\n\n");
 
