@@ -50,6 +50,7 @@ const baseOptions = (): TestIntelligenceRunOptions => ({
   figmaToken: "figd_xxx",
   policyProfile: undefined,
   mode: "dry_run",
+  enableVisualSidecar: false,
   noVisualSidecar: false,
   finopsBudgetPath: undefined,
   harnessMode: "off",
@@ -182,6 +183,48 @@ test("parseTestIntelligenceRunArgs: --no-visual-sidecar sets noVisualSidecar", (
     {},
   );
   assert.equal(opts.noVisualSidecar, true);
+});
+
+test("parseTestIntelligenceRunArgs: --enable-visual-sidecar sets enableVisualSidecar", () => {
+  const opts = parseTestIntelligenceRunArgs(
+    [
+      "--figma-url",
+      "https://figma.com/design/abc",
+      "--output",
+      "/tmp/x",
+      "--enable-visual-sidecar",
+    ],
+    {},
+  );
+  assert.equal(opts.enableVisualSidecar, true);
+  assert.equal(opts.noVisualSidecar, false);
+});
+
+test("parseTestIntelligenceRunArgs: env override enables visual sidecar", () => {
+  const opts = parseTestIntelligenceRunArgs(
+    ["--figma-url", "https://figma.com/design/abc", "--output", "/tmp/x"],
+    { FIGMAPIPE_WORKSPACE_TI_ENABLE_VISUAL_SIDECAR: "1" },
+  );
+  assert.equal(opts.enableVisualSidecar, true);
+  assert.equal(opts.noVisualSidecar, false);
+});
+
+test("parseTestIntelligenceRunArgs: --enable-visual-sidecar conflicts with --no-visual-sidecar", () => {
+  assert.throws(
+    () =>
+      parseTestIntelligenceRunArgs(
+        [
+          "--figma-url",
+          "https://figma.com/design/abc",
+          "--output",
+          "/tmp/x",
+          "--enable-visual-sidecar",
+          "--no-visual-sidecar",
+        ],
+        {},
+      ),
+    /--enable-visual-sidecar and --no-visual-sidecar are mutually exclusive/u,
+  );
 });
 
 test("parseTestIntelligenceRunArgs: --finops-budget captures path", () => {
@@ -451,6 +494,7 @@ test("runTestIntelligenceCommand: deterministic_llm with injected runner returns
     figmaToken: undefined,
     policyProfile: undefined,
     mode: "deterministic_llm",
+    enableVisualSidecar: false,
     noVisualSidecar: false,
     finopsBudgetPath: undefined,
     harnessMode: "off",
@@ -557,6 +601,7 @@ test("runTestIntelligenceCommand: deterministic_llm blocked → exit 3", async (
     figmaToken: undefined,
     policyProfile: undefined,
     mode: "deterministic_llm",
+    enableVisualSidecar: false,
     noVisualSidecar: false,
     finopsBudgetPath: undefined,
     harnessMode: "off",
@@ -664,6 +709,7 @@ test("runTestIntelligenceCommand: deterministic_llm + harness-mode shadow_eval f
     figmaToken: undefined,
     policyProfile: undefined,
     mode: "deterministic_llm",
+    enableVisualSidecar: false,
     noVisualSidecar: false,
     finopsBudgetPath: undefined,
     harnessMode: "shadow_eval",
@@ -766,6 +812,7 @@ test("runTestIntelligenceCommand: deterministic_llm + harness-mode off omits har
     modelEndpoint: "https://aoai.example/openai/v1",
     modelApiKey: "k-key",
     mode: "deterministic_llm",
+    enableVisualSidecar: false,
     harnessMode: "off",
   };
 
@@ -832,6 +879,143 @@ test("runTestIntelligenceCommand: deterministic_llm + harness-mode off omits har
 
   assert.equal(exitCode, 0);
   assert.equal(capturedHarness, undefined);
+});
+
+test("runTestIntelligenceCommand: enable-visual-sidecar builds and forwards runner bundle", async () => {
+  const { sink, stderr } = collectingSink();
+  const options: TestIntelligenceRunOptions = {
+    ...baseOptions(),
+    figmaUrl: undefined,
+    figmaJsonFile: "/tmp/figma.json",
+    figmaToken: undefined,
+    modelEndpoint: "https://aoai.example/openai/v1",
+    modelApiKey: "k-key",
+    mode: "deterministic_llm",
+    enableVisualSidecar: true,
+    harnessMode: "off",
+  };
+
+  const bundle = {
+    testGeneration: { kind: "test-generation-client" },
+    visualPrimary: { kind: "visual-primary-client" },
+    visualFallback: { kind: "visual-fallback-client" },
+  };
+
+  let buildBundleCalls = 0;
+  let capturedBundle: unknown;
+  const runner = async (
+    input: Parameters<
+      Required<Parameters<typeof runTestIntelligenceCommand>[2]>["runner"]
+    >[0],
+  ): Promise<RunFigmaToQcTestCasesResult> => {
+    capturedBundle = (input as unknown as { llm: { bundle?: unknown } }).llm
+      .bundle;
+    return {
+      jobId: "ti-cli-visual",
+      generatedAt: "2026-05-02T12:00:00.000Z",
+      fileKey: "abc",
+      generatedTestCases: {
+        testCases: [],
+      } as unknown as RunFigmaToQcTestCasesResult["generatedTestCases"],
+      intent: {} as unknown as RunFigmaToQcTestCasesResult["intent"],
+      validation: {} as unknown as RunFigmaToQcTestCasesResult["validation"],
+      policy: {} as unknown as RunFigmaToQcTestCasesResult["policy"],
+      coverage: {} as unknown as RunFigmaToQcTestCasesResult["coverage"],
+      blocked: false,
+      finopsBudget:
+        {} as unknown as RunFigmaToQcTestCasesResult["finopsBudget"],
+      artifactDir: "/tmp/visual-output/_runner-output",
+      artifactPaths: {
+        intent: "/tmp/intent.json",
+        compiledPrompt: "/tmp/compiled-prompt.json",
+        untrustedContentNormalizationReport: "/tmp/ucnr.json",
+        evidenceSeal: "/tmp/evidence-seal.json",
+        agentRoleRun: "/tmp/agent-role-run.json",
+        genealogy: "/tmp/genealogy.json",
+        generatedTestCases: "/tmp/generated.json",
+        validationReport: "/tmp/validation.json",
+        policyReport: "/tmp/policy.json",
+        coverageReport: "/tmp/coverage.json",
+        finopsReport: "/tmp/finops.json",
+      },
+      customerMarkdownPaths: {
+        combined: "/tmp/customer-markdown/testfaelle.md",
+        perCase: [],
+      },
+    } as unknown as RunFigmaToQcTestCasesResult;
+  };
+
+  const exitCode = await runTestIntelligenceCommand(options, sink, {
+    env: {
+      ...GATE_ON,
+      WORKSPACE_TEST_SPACE_VISUAL_MODEL_ENDPOINT: "https://aoai.example/openai/vision",
+      WORKSPACE_TEST_SPACE_VISUAL_PRIMARY_DEPLOYMENT: "llama-4-maverick-vision",
+      WORKSPACE_TEST_SPACE_VISUAL_FALLBACK_DEPLOYMENT: "phi-4-multimodal-poc",
+    },
+    runner,
+    buildLlmClient: () =>
+      ({}) as unknown as ReturnType<
+        Required<
+          Parameters<typeof runTestIntelligenceCommand>[2]
+        >["buildLlmClient"]
+      >,
+    buildLlmBundle: () => {
+      buildBundleCalls += 1;
+      return bundle as unknown as ReturnType<
+        Required<
+          Parameters<typeof runTestIntelligenceCommand>[2]
+        >["buildLlmBundle"]
+      >;
+    },
+    loadFigmaJsonFile: async () => ({
+      fileKey: "abc",
+      name: "Foo",
+      document: { id: "0:0", type: "DOCUMENT" },
+    }),
+    loadJsonFile: async () => ({}),
+    copyArtifactsToOutput: async () => 0,
+    now: () => 1700000000000,
+  });
+
+  assert.equal(exitCode, 0, stderr.join(""));
+  assert.equal(buildBundleCalls, 1);
+  assert.strictEqual(capturedBundle, bundle);
+});
+
+test("runTestIntelligenceCommand: enable-visual-sidecar fails closed when visual envs are missing", async () => {
+  const { sink, stderr } = collectingSink();
+  const exitCode = await runTestIntelligenceCommand(
+    {
+      ...baseOptions(),
+      figmaUrl: undefined,
+      figmaJsonFile: "/tmp/figma.json",
+      figmaToken: undefined,
+      modelEndpoint: "https://aoai.example/openai/v1",
+      modelApiKey: "k-key",
+      mode: "deterministic_llm",
+      enableVisualSidecar: true,
+      harnessMode: "off",
+    },
+    sink,
+    {
+      env: GATE_ON,
+      buildLlmClient: () =>
+        ({}) as unknown as ReturnType<
+          Required<
+            Parameters<typeof runTestIntelligenceCommand>[2]
+          >["buildLlmClient"]
+        >,
+      loadFigmaJsonFile: async () => ({
+        fileKey: "abc",
+        name: "Foo",
+        document: { id: "0:0", type: "DOCUMENT" },
+      }),
+      now: () => 1700000000000,
+    },
+  );
+
+  assert.equal(exitCode, 1);
+  assert.match(stderr.join(""), /requires WORKSPACE_TEST_SPACE_VISUAL_MODEL_ENDPOINT, WORKSPACE_TEST_SPACE_VISUAL_PRIMARY_DEPLOYMENT, WORKSPACE_TEST_SPACE_VISUAL_FALLBACK_DEPLOYMENT/u);
 });
 
 test("runTestIntelligenceCommand: dry_run output mentions harness mode line", async () => {
