@@ -3982,6 +3982,13 @@ export interface IntentTraceRef {
    * array by `sourceId`.
    */
   sourceRefs?: TestIntentSourceRef[];
+  /**
+   * Original Figma component name for an instance/component-shaped node
+   * whose visible label was synthesised from a descendant TEXT node
+   * (Issue #1902). Provenance-only — preserved so a downstream judge can
+   * always recover the raw component identity.
+   */
+  componentName?: string;
 }
 
 /** Ambiguity note attached to a detected element or PII indicator. */
@@ -4030,6 +4037,25 @@ export interface DetectedField {
   ambiguity?: IntentAmbiguity;
   /** Contributing sources (Issue #1431). Optional, additive. */
   sourceRefs?: TestIntentSourceRef[];
+  /**
+   * How the visible label was derived (Issue #1902). Optional, additive.
+   * - `node_text`: TEXT node `characters` (default).
+   * - `node_name`: fallback to the Figma node name.
+   * - `sibling_text`: synthesised from a spatially-paired TEXT node.
+   */
+  labelSource?: LabelSource;
+  /**
+   * Confidence in the synthesised label (Issue #1902). Optional, additive.
+   * `0` signals a generic/weak label that downstream judges may treat as a
+   * `weak_label` finding. Omitted for trivially derived labels.
+   */
+  labelConfidence?: number;
+  /**
+   * Spatial cluster id (Issue #1902). Optional, additive. Fields whose bboxes
+   * sit close together (label/value pairs, summary blocks) share the same
+   * cluster id so the generator can write coherent cases.
+   */
+  clusterId?: string;
 }
 
 /**
@@ -4049,7 +4075,25 @@ export interface DetectedAction {
   ambiguity?: IntentAmbiguity;
   /** Contributing sources (Issue #1431). Optional, additive. */
   sourceRefs?: TestIntentSourceRef[];
+  /**
+   * How the visible label was derived (Issue #1902). Optional, additive.
+   * See {@link DetectedField.labelSource} for semantics.
+   */
+  labelSource?: LabelSource;
+  /**
+   * Confidence in the synthesised label (Issue #1902). Optional, additive.
+   * `0` signals a generic component-instance label (e.g. `<Button>`) that
+   * could not be paired with a sibling TEXT node — downstream judges may
+   * surface this as a `weak_label` finding.
+   */
+  labelConfidence?: number;
 }
+
+/**
+ * Origin of the visible label for a detected element (Issue #1902).
+ * Closed enum so judge code can pattern-match safely without sniffing strings.
+ */
+export type LabelSource = "node_text" | "node_name" | "sibling_text";
 
 /**
  * Validation rule inferred from design hints.

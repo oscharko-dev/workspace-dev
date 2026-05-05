@@ -41,6 +41,28 @@ export interface IntentDerivationNodeInput {
   validations?: string[];
   navigationTarget?: string;
   childNodeIds?: string[];
+  /**
+   * Original Figma component-instance name for actions/fields whose visible
+   * label was synthesised from a sibling TEXT node (Issue #1902). Surfaced
+   * onto the trace so judges can recover the raw component identity.
+   */
+  componentName?: string;
+  /**
+   * How the visible label was derived (Issue #1902). Either a real text node
+   * (`node_text`), a fallback to the node name (`node_name`), or a spatial
+   * cluster donor (`sibling_text`).
+   */
+  labelSource?: "node_text" | "node_name" | "sibling_text";
+  /** Confidence in the synthesised label (Issue #1902); 0 = weak label. */
+  labelConfidence?: number;
+  /** Spatial-cluster id assigned by the normalizer (Issue #1902). */
+  clusterId?: string;
+  /**
+   * Absolute bounding box of the source Figma node. Optional and unused by
+   * the public derivation, but carried for downstream consumers that want to
+   * re-derive geometry without re-walking the REST tree.
+   */
+  bbox?: { x: number; y: number; width: number; height: number };
 }
 
 export interface DeriveBusinessTestIntentIrInput {
@@ -223,6 +245,11 @@ const deriveFields = (
           redactions,
         );
       }
+      if (node.labelSource !== undefined) field.labelSource = node.labelSource;
+      if (node.labelConfidence !== undefined) {
+        field.labelConfidence = node.labelConfidence;
+      }
+      if (node.clusterId !== undefined) field.clusterId = node.clusterId;
       fields.push(field);
     }
   }
@@ -266,6 +293,12 @@ const deriveActions = (
         ),
         kind: node.nodeType.toLowerCase(),
       };
+      if (node.labelSource !== undefined) {
+        action.labelSource = node.labelSource;
+      }
+      if (node.labelConfidence !== undefined) {
+        action.labelConfidence = node.labelConfidence;
+      }
       actions.push(action);
     }
   }
@@ -400,6 +433,19 @@ const buildTrace = (
         elementId,
         traceRef,
         location: "trace_node_path",
+      },
+      piiIndicators,
+      redactions,
+    );
+  }
+  if (node.componentName !== undefined) {
+    trace.componentName = maybeRedact(
+      node.componentName,
+      {
+        screenId,
+        elementId,
+        traceRef,
+        location: "trace_node_name",
       },
       piiIndicators,
       redactions,
