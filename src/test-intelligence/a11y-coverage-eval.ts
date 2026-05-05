@@ -19,9 +19,19 @@
  *     dashboard can render the same WCAG 2.2 AA pillar list the suite
  *     enforces.
  *
- * The module is pure and deterministic; identical inputs produce
- * byte-identical artifacts. No filesystem I/O outside of the explicit
- * `writeA11yCoverageEvalArtifact` writer; no LLM calls.
+ * Determinism / I/O surface:
+ *   - `computeA11yCoverage`, `isFormScreenA11yCase`,
+ *     `buildA11yCoverageRepairInstruction`,
+ *     `buildA11yCoverageEvalArtifactForValidationFixture`, and the
+ *     threshold constants are pure functions over their inputs;
+ *     identical inputs produce byte-identical outputs.
+ *   - `buildA11yCoverageEvalArtifactForBaseline` (and the bulk wrapper
+ *     `buildAllBaselineA11yCoverageEvalArtifacts`) read the baseline
+ *     archetype fixture from disk via `loadBaselineArchetypeFixture`;
+ *     `writeA11yCoverageEvalArtifact` writes the canonical-JSON report
+ *     atomically (temp file + rename); `readA11yCoverageEvalArtifact`
+ *     round-trips a written artifact for golden-style tests. No LLM
+ *     calls anywhere.
  *
  * Companion to:
  *   - `policy-gate.ts` (`policy:form-screen-needs-accessibility-case`)

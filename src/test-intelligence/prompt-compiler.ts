@@ -21,6 +21,7 @@ import {
   type VisualScreenDescription,
   type VisualSidecarFallbackReason,
 } from "../contracts/index.js";
+import { GENERATOR_FORM_SCREEN_A11Y_RULE } from "./agent-role-profile.js";
 import {
   analyzeContextBudget,
   type ContextBudgetCategoryInput,
@@ -57,11 +58,9 @@ const SYSTEM_PROMPT = [
   "When multiple source sections are present (figma_intent, jira_requirements, custom_context, custom_context_markdown, reconciliation_report),",
   "treat each role-tagged section as a distinct evidence source; do not conflate them.",
   "For Jira-only jobs (no figma_intent section), set figmaTraceRefs to an empty array for every test case.",
-  // Issue #1905: form-screen accessibility hardening rule. Mirrored as the
-  // exported `GENERATOR_FORM_SCREEN_A11Y_RULE` constant in agent-role-profile.ts
-  // so callers can render the directive in operator dashboards without
-  // duplicating the string.
-  "For every screen that contains input fields, you MUST generate at least one accessibility test case (type=accessibility) covering keyboard navigation, focus order, and screen-reader announcements.",
+  // Issue #1905: form-screen accessibility hardening rule sourced from
+  // agent-role-profile.ts so prompt body and operator tooling never drift.
+  GENERATOR_FORM_SCREEN_A11Y_RULE,
 ].join(" ");
 
 const USER_PROMPT_PREAMBLE = [

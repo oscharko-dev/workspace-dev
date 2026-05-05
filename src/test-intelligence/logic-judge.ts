@@ -20,6 +20,7 @@ import {
   type LlmGenerationResult,
 } from "../contracts/index.js";
 import { sanitizeErrorMessage } from "../error-sanitization.js";
+import { GENERATOR_FORM_SCREEN_A11Y_REPAIR_INSTRUCTION } from "./agent-role-profile.js";
 import { canonicalJson, sha256Hex } from "./content-hash.js";
 import type { LlmGatewayClient } from "./llm-gateway.js";
 
@@ -867,7 +868,14 @@ const evaluateMissingFormScreenA11yCase = (
       {
         testCaseId: "$job",
         path: "qualitySignals.coveredScreenIds",
-        instruction: `Add at least one accessibility test case for screen ${screenId} covering keyboard navigation, focus order, and screen-reader announcements.`,
+        // Render the canonical template from agent-role-profile.ts so the
+        // logic-judge instruction stays byte-identical with the
+        // `buildA11yCoverageRepairInstruction` helper used by the eval +
+        // operator tooling.
+        instruction: GENERATOR_FORM_SCREEN_A11Y_REPAIR_INSTRUCTION.replace(
+          "{screenId}",
+          screenId,
+        ),
       },
     );
   }
