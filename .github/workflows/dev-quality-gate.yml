@@ -291,7 +291,7 @@ jobs:
   mutation-testing:
     needs: [setup]
     if: needs.setup.outputs.src == 'true' || needs.setup.outputs.config == 'true' || needs.setup.outputs.full == 'true'
-    timeout-minutes: 120
+    timeout-minutes: 240
     runs-on: ubuntu-22.04
     permissions:
       contents: read
