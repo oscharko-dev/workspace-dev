@@ -1,0 +1,34 @@
+{
+  "judge": "logic",
+  "input": {
+    "testDesignModel": {
+      "screens": [{ "screenId": "3:1", "screenName": "Payment authorization" }],
+      "fields": [
+        { "id": "field-card", "screenId": "3:1", "label": "Card number" },
+        { "id": "field-cvv", "screenId": "3:1", "label": "Security code" },
+        { "id": "field-expiry", "screenId": "3:1", "label": "Expiry" }
+      ]
+    },
+    "coveragePlan": {
+      "perScreen": [
+        { "screenId": "3:1", "requiredFlows": ["authorize-payment"] }
+      ]
+    },
+    "generatedTestCases": {
+      "schemaVersion": "1.0.0",
+      "jobId": "calibration-logic-happy-payment-accept",
+      "testCases": [
+        {
+          "id": "tc-pay-1",
+          "title": "Authorize a valid card payment",
+          "type": "functional",
+          "qualitySignals": {
+            "coveredFieldIds": ["field-card", "field-cvv", "field-expiry"],
+            "coveredActionIds": ["authorize-payment"],
+            "coveredScreenIds": ["3:1"]
+          }
+        }
+      ]
+    }
+  }
+}

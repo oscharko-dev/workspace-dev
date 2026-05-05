@@ -1,0 +1,23 @@
+{
+  "judge": "faithfulness",
+  "input": {
+    "captures": [
+      {
+        "screenId": "19:1",
+        "screenName": "Tablet layout",
+        "imageHashSha256": "0000000000000000000000000000000000000000000000000000000000000019",
+        "visibleLabels": ["Submit"],
+        "annotations": ["Submit button is partially clipped at the right edge"]
+      }
+    ],
+    "generatedTestCases": [
+      {
+        "id": "tc-cropped-1",
+        "title": "Submit the form on tablet width",
+        "steps": [
+          { "stepIndex": 1, "action": "Click Submit", "expected": "Form submits" }
+        ]
+      }
+    ]
+  }
+}

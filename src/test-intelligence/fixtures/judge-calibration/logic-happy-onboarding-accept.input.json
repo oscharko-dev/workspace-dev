@@ -1,0 +1,31 @@
+{
+  "judge": "logic",
+  "input": {
+    "testDesignModel": {
+      "screens": [{ "screenId": "4:1", "screenName": "Onboarding step 1" }],
+      "fields": [
+        { "id": "field-name", "screenId": "4:1", "label": "Full name" },
+        { "id": "field-email", "screenId": "4:1", "label": "Email address" }
+      ]
+    },
+    "coveragePlan": {
+      "perScreen": [{ "screenId": "4:1", "requiredFlows": ["next"] }]
+    },
+    "generatedTestCases": {
+      "schemaVersion": "1.0.0",
+      "jobId": "calibration-logic-happy-onboarding-accept",
+      "testCases": [
+        {
+          "id": "tc-ob-1",
+          "title": "Submit onboarding profile",
+          "type": "functional",
+          "qualitySignals": {
+            "coveredFieldIds": ["field-name", "field-email"],
+            "coveredActionIds": ["next"],
+            "coveredScreenIds": ["4:1"]
+          }
+        }
+      ]
+    }
+  }
+}

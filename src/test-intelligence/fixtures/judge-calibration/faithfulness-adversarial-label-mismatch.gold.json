@@ -1,0 +1,12 @@
+{
+  "fixtureId": "faithfulness-adversarial-label-mismatch",
+  "judge": "faithfulness",
+  "scenarioKind": "adversarial",
+  "humanVerdict": "repair",
+  "humanFindingCodes": ["mismatch_label_text"],
+  "rationale": "The visible label is 'Update profile' but the case references 'Save profile' — same control, wrong text; reviewer marked it as repairable.",
+  "mockJudgeResponse": {
+    "predictedVerdict": "repair",
+    "predictedFindingCodes": ["mismatch_label_text"]
+  }
+}

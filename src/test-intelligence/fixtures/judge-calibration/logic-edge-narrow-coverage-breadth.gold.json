@@ -1,0 +1,12 @@
+{
+  "fixtureId": "logic-edge-narrow-coverage-breadth",
+  "judge": "logic",
+  "scenarioKind": "edge",
+  "humanVerdict": "repair",
+  "humanFindingCodes": ["insufficient_coverage_breadth"],
+  "rationale": "Only 1 of 4 fields is covered (25% < 0.40 ratio); reviewer marked it as repairable to add missing field cases.",
+  "mockJudgeResponse": {
+    "predictedVerdict": "repair",
+    "predictedFindingCodes": ["insufficient_coverage_breadth"]
+  }
+}

@@ -1,0 +1,23 @@
+{
+  "judge": "faithfulness",
+  "input": {
+    "captures": [
+      {
+        "screenId": "17:1",
+        "screenName": "Dashboard",
+        "imageHashSha256": "0000000000000000000000000000000000000000000000000000000000000017",
+        "visibleLabels": ["Dashboard"]
+      }
+    ],
+    "generatedTestCases": [
+      {
+        "id": "tc-invented-screen-1",
+        "title": "Visit the Admin Console screen and toggle dark mode",
+        "steps": [
+          { "stepIndex": 1, "action": "Navigate to Admin Console", "expected": "Console is visible" },
+          { "stepIndex": 2, "action": "Toggle dark mode", "expected": "Theme switches" }
+        ]
+      }
+    ]
+  }
+}

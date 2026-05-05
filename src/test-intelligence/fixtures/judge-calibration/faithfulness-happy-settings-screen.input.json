@@ -1,0 +1,23 @@
+{
+  "judge": "faithfulness",
+  "input": {
+    "captures": [
+      {
+        "screenId": "13:1",
+        "screenName": "Account settings",
+        "imageHashSha256": "0000000000000000000000000000000000000000000000000000000000000013",
+        "visibleLabels": ["Display name", "Notifications", "Save changes"]
+      }
+    ],
+    "generatedTestCases": [
+      {
+        "id": "tc-settings-1",
+        "title": "Update display name",
+        "steps": [
+          { "stepIndex": 1, "action": "Edit Display name", "expected": "Field accepts new value" },
+          { "stepIndex": 2, "action": "Click Save changes", "expected": "Toast confirms saved settings" }
+        ]
+      }
+    ]
+  }
+}

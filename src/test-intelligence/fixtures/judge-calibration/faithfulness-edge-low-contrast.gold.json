@@ -1,0 +1,12 @@
+{
+  "fixtureId": "faithfulness-edge-low-contrast",
+  "judge": "faithfulness",
+  "scenarioKind": "edge",
+  "humanVerdict": "repair",
+  "humanFindingCodes": ["mismatch_visual_contrast"],
+  "rationale": "Button text is visually low-contrast against its background — the case needs to add a contrast assertion; reviewer marked it as repairable.",
+  "mockJudgeResponse": {
+    "predictedVerdict": "repair",
+    "predictedFindingCodes": ["mismatch_visual_contrast"]
+  }
+}

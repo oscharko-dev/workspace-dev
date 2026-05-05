@@ -1,0 +1,12 @@
+{
+  "fixtureId": "logic-adversarial-hallucinated-id",
+  "judge": "logic",
+  "scenarioKind": "adversarial",
+  "humanVerdict": "repair",
+  "humanFindingCodes": ["hallucinated_id"],
+  "rationale": "coveredFieldIds references field-NEVER_EXISTED which is not in the IR; reviewer marked the case as repairable by deleting the bogus id.",
+  "mockJudgeResponse": {
+    "predictedVerdict": "repair",
+    "predictedFindingCodes": ["hallucinated_id"]
+  }
+}

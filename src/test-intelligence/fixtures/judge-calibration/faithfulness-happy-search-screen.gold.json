@@ -1,0 +1,12 @@
+{
+  "fixtureId": "faithfulness-happy-search-screen",
+  "judge": "faithfulness",
+  "scenarioKind": "happy",
+  "humanVerdict": "accept",
+  "humanFindingCodes": [],
+  "rationale": "Both controls (Search query, Search) are visible; reviewer accepted.",
+  "mockJudgeResponse": {
+    "predictedVerdict": "accept",
+    "predictedFindingCodes": []
+  }
+}

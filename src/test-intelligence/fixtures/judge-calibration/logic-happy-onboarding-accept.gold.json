@@ -1,0 +1,12 @@
+{
+  "fixtureId": "logic-happy-onboarding-accept",
+  "judge": "logic",
+  "scenarioKind": "happy",
+  "humanVerdict": "accept",
+  "humanFindingCodes": [],
+  "rationale": "Onboarding step coverage hits both fields and the next action; reviewer accepted.",
+  "mockJudgeResponse": {
+    "predictedVerdict": "accept",
+    "predictedFindingCodes": []
+  }
+}

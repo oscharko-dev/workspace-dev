@@ -1,0 +1,33 @@
+{
+  "judge": "logic",
+  "input": {
+    "testDesignModel": {
+      "screens": [{ "screenId": "8:1", "screenName": "Search filters" }],
+      "fields": [
+        { "id": "field-q", "screenId": "8:1", "label": "Query" },
+        { "id": "field-cat", "screenId": "8:1", "label": "Category" },
+        { "id": "field-min-price", "screenId": "8:1", "label": "Min price" },
+        { "id": "field-max-price", "screenId": "8:1", "label": "Max price" }
+      ]
+    },
+    "coveragePlan": {
+      "perScreen": [{ "screenId": "8:1", "requiredFlows": ["apply-filters"] }]
+    },
+    "generatedTestCases": {
+      "schemaVersion": "1.0.0",
+      "jobId": "calibration-logic-edge-narrow-coverage-breadth",
+      "testCases": [
+        {
+          "id": "tc-narrow-1",
+          "title": "Apply only the query filter",
+          "type": "functional",
+          "qualitySignals": {
+            "coveredFieldIds": ["field-q"],
+            "coveredActionIds": ["apply-filters"],
+            "coveredScreenIds": ["8:1"]
+          }
+        }
+      ]
+    }
+  }
+}

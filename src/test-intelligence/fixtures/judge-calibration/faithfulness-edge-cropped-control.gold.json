@@ -1,0 +1,12 @@
+{
+  "fixtureId": "faithfulness-edge-cropped-control",
+  "judge": "faithfulness",
+  "scenarioKind": "edge",
+  "humanVerdict": "repair",
+  "humanFindingCodes": ["mismatch_cropped_control"],
+  "rationale": "Submit is visible but clipped — the case must verify the button is fully tappable at this viewport; reviewer marked it as repairable.",
+  "mockJudgeResponse": {
+    "predictedVerdict": "repair",
+    "predictedFindingCodes": ["mismatch_cropped_control"]
+  }
+}

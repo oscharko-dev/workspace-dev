@@ -1,0 +1,22 @@
+{
+  "judge": "faithfulness",
+  "input": {
+    "captures": [
+      {
+        "screenId": "16:1",
+        "screenName": "Profile",
+        "imageHashSha256": "0000000000000000000000000000000000000000000000000000000000000016",
+        "visibleLabels": ["Update profile"]
+      }
+    ],
+    "generatedTestCases": [
+      {
+        "id": "tc-mismatch-1",
+        "title": "Save profile changes",
+        "steps": [
+          { "stepIndex": 1, "action": "Click the Save profile button", "expected": "Profile is persisted" }
+        ]
+      }
+    ]
+  }
+}

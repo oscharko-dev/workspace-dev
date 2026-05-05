@@ -1,0 +1,38 @@
+{
+  "judge": "logic",
+  "input": {
+    "testDesignModel": {
+      "screens": [
+        { "screenId": "1:1", "screenName": "Loan application form" }
+      ],
+      "fields": [
+        { "id": "field-amount", "screenId": "1:1", "label": "Loan amount" },
+        { "id": "field-term", "screenId": "1:1", "label": "Term in months" }
+      ]
+    },
+    "coveragePlan": {
+      "perScreen": [
+        {
+          "screenId": "1:1",
+          "requiredFlows": ["submit", "validate-amount", "validate-term"]
+        }
+      ]
+    },
+    "generatedTestCases": {
+      "schemaVersion": "1.0.0",
+      "jobId": "calibration-logic-happy-loan-form-accept",
+      "testCases": [
+        {
+          "id": "tc-loan-1",
+          "title": "Submit a valid loan amount",
+          "type": "functional",
+          "qualitySignals": {
+            "coveredFieldIds": ["field-amount", "field-term"],
+            "coveredActionIds": ["submit"],
+            "coveredScreenIds": ["1:1"]
+          }
+        }
+      ]
+    }
+  }
+}

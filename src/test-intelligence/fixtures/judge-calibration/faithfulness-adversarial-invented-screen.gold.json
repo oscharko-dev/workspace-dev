@@ -1,0 +1,12 @@
+{
+  "fixtureId": "faithfulness-adversarial-invented-screen",
+  "judge": "faithfulness",
+  "scenarioKind": "adversarial",
+  "humanVerdict": "reject",
+  "humanFindingCodes": ["hallucination_invented_screen"],
+  "rationale": "There is no Admin Console capture in the bundle — the case invented an entire screen; reviewer rejected.",
+  "mockJudgeResponse": {
+    "predictedVerdict": "reject",
+    "predictedFindingCodes": ["hallucination_invented_screen"]
+  }
+}

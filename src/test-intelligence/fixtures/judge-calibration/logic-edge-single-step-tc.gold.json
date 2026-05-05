@@ -1,0 +1,12 @@
+{
+  "fixtureId": "logic-edge-single-step-tc",
+  "judge": "logic",
+  "scenarioKind": "edge",
+  "humanVerdict": "accept",
+  "humanFindingCodes": [],
+  "rationale": "Single-step confirmation case is intentionally minimal because the screen has only one action; reviewer accepted as logically complete. The recorded judge response over-flags this as repair (over-strict on terse cases) — captured here to keep the calibration surface honest.",
+  "mockJudgeResponse": {
+    "predictedVerdict": "repair",
+    "predictedFindingCodes": ["unbalanced_step_count"]
+  }
+}

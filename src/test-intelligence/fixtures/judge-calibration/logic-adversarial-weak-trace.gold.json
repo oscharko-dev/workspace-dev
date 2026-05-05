@@ -1,0 +1,12 @@
+{
+  "fixtureId": "logic-adversarial-weak-trace",
+  "judge": "logic",
+  "scenarioKind": "adversarial",
+  "humanVerdict": "repair",
+  "humanFindingCodes": ["weak_trace"],
+  "rationale": "qualitySignals are populated but figmaTraceRefs is empty so the case has no anchored evidence; reviewer marked it as repairable.",
+  "mockJudgeResponse": {
+    "predictedVerdict": "repair",
+    "predictedFindingCodes": ["weak_trace"]
+  }
+}

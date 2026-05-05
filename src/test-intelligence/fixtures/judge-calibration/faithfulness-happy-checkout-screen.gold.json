@@ -1,0 +1,12 @@
+{
+  "fixtureId": "faithfulness-happy-checkout-screen",
+  "judge": "faithfulness",
+  "scenarioKind": "happy",
+  "humanVerdict": "accept",
+  "humanFindingCodes": [],
+  "rationale": "All referenced controls match the visible labels in the capture; reviewer accepted.",
+  "mockJudgeResponse": {
+    "predictedVerdict": "accept",
+    "predictedFindingCodes": []
+  }
+}
