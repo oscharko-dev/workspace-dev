@@ -1,0 +1,74 @@
+name: workspace-dev PR quality gate
+
+on:
+  pull_request:
+    branches: [dev]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' && github.ref != 'refs/heads/dev' }}
+
+permissions:
+  contents: read
+
+jobs:
+  dev-gate-summary:
+    name: dev-gate-summary
+    runs-on: ubuntu-22.04
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
+        with:
+          persist-credentials: false
+
+      - uses: pnpm/action-setup@26f6d4f2c533a43e6b5da0b4a5dd983f98f7b49a  # v6
+        with:
+          version: 10.33.0
+
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e  # v6
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile --ignore-scripts
+
+      - name: Workflow and supply-chain policy
+        run: |
+          pnpm run verify:workflow-install-scripts
+          pnpm run verify:workflow-persist-credentials
+          pnpm run verify:built-deps-allowlist
+          pnpm run verify:npmrc-freshness
+          pnpm run verify:lockfile-hosts
+
+      - name: Repository policy
+        run: |
+          pnpm run lint:boundaries
+          pnpm run lint:no-telemetry
+          pnpm run lint:secrets:all
+          pnpm run lint:ts-style
+
+      - name: Typecheck
+        run: pnpm run typecheck
+
+      - name: Test-intelligence runner boundary
+        run: |
+          pnpm exec tsx --test \
+            src/test-intelligence/production-runner.test.ts \
+            src/test-intelligence/production-runner.adversarial.test.ts \
+            src/test-intelligence/production-runner.property.test.ts \
+            integration/mutation-testing.integration.test.ts
+
+      - name: Test-intelligence gates
+        run: |
+          pnpm run test:golden
+          pnpm run test:ti-multi-source-eval
+          pnpm run test:ti-eval
+
+      - name: Runtime smoke gates
+        run: |
+          pnpm run test:dast-smoke
+          pnpm run test:load
