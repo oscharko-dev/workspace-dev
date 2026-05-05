@@ -18,6 +18,13 @@ export const PARITY_WORKFLOW_ERROR_CODES = {
   noScreens: "E_PARITY_NO_SCREENS",
   invalidGeneratedJsxFragment: "E_PARITY_INVALID_GENERATED_JSX_FRAGMENT",
   invalidGeneratedSourceFile: "E_PARITY_INVALID_GENERATED_SOURCE_FILE",
+  renderTraversalLimitExceeded: "E_PARITY_RENDER_TRAVERSAL_LIMIT_EXCEEDED",
+  missingStatefulVariantContentScreen:
+    "E_PARITY_MISSING_STATEFUL_VARIANT_CONTENT_SCREEN",
+  missingStatefulVariantCanonicalScenario:
+    "E_PARITY_MISSING_STATEFUL_VARIANT_CANONICAL_SCENARIO",
+  missingStatefulVariantCanonicalContentModule:
+    "E_PARITY_MISSING_STATEFUL_VARIANT_CANONICAL_CONTENT_MODULE",
 } as const;
 
 export type ParityWorkflowErrorCode =

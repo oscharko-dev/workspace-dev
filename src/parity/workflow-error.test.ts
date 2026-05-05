@@ -61,6 +61,13 @@ test("workflow error helpers match structured parity codes", () => {
     ),
     false,
   );
+  assert.equal(
+    hasWorkflowErrorCode(
+      noScreensError,
+      PARITY_WORKFLOW_ERROR_CODES.invalidFigmaPayload,
+    ),
+    false,
+  );
 });
 
 test("toWorkflowError returns existing WorkflowError untouched", () => {
