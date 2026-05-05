@@ -12,7 +12,10 @@ interface Harness {
   window: JSDOM["window"];
   statusEl: HTMLElement;
   downloadBtn: HTMLButtonElement;
+  uploadBtn: HTMLButtonElement;
+  urlInput: HTMLInputElement;
   createObjectUrlCalls: string[];
+  parentMessages: unknown[];
 }
 
 function createHarness(writeTextImpl: (text: string) => Promise<void>): Harness {
@@ -23,6 +26,7 @@ function createHarness(writeTextImpl: (text: string) => Promise<void>): Harness 
   const { window } = dom;
   const createObjectUrlCalls: string[] = [];
   const revokeObjectUrlCalls: string[] = [];
+  const parentMessages: unknown[] = [];
 
   Object.defineProperty(window.navigator, "clipboard", {
     configurable: true,
@@ -33,7 +37,11 @@ function createHarness(writeTextImpl: (text: string) => Promise<void>): Harness 
 
   Object.defineProperty(window, "parent", {
     configurable: true,
-    value: { postMessage: () => undefined },
+    value: {
+      postMessage: (message: unknown) => {
+        parentMessages.push(message);
+      },
+    },
   });
 
   window.URL.createObjectURL = ((blob: Blob) => {
@@ -47,16 +55,23 @@ function createHarness(writeTextImpl: (text: string) => Promise<void>): Harness 
 
   const statusEl = window.document.getElementById("status");
   const downloadBtn = window.document.getElementById("download-btn");
+  const uploadBtn = window.document.getElementById("upload-btn");
+  const urlInput = window.document.getElementById("endpoint-url");
 
   assert.ok(statusEl instanceof window.HTMLElement);
   assert.ok(downloadBtn instanceof window.HTMLButtonElement);
+  assert.ok(uploadBtn instanceof window.HTMLButtonElement);
+  assert.ok(urlInput instanceof window.HTMLInputElement);
   assert.equal(revokeObjectUrlCalls.length, 0);
 
   return {
     window,
     statusEl,
     downloadBtn,
+    uploadBtn,
+    urlInput,
     createObjectUrlCalls,
+    parentMessages,
   };
 }
 
@@ -102,5 +117,18 @@ describe("plugin/ui.html clipboard fallback", () => {
     assert.equal(harness.createObjectUrlCalls[0], "application/json");
     assert.equal(harness.statusEl.textContent, "Downloaded!");
     assert.equal(harness.statusEl.className, "status-success");
+  });
+
+  it("rejects non-loopback upload URLs before posting to the plugin host", () => {
+    harness.urlInput.value = "https://workspace-dev.example.com";
+
+    harness.uploadBtn.click();
+
+    assert.equal(
+      harness.statusEl.textContent,
+      "Please enter a valid local WorkspaceDev URL (localhost, 127.0.0.1, or ::1).",
+    );
+    assert.equal(harness.statusEl.className, "status-error");
+    assert.deepEqual(harness.parentMessages, []);
   });
 });

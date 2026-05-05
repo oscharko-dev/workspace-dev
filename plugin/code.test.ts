@@ -100,6 +100,21 @@ function makeNode(type = "FRAME", name = "Test Frame"): FakeNode {
   };
 }
 
+function makeOversizedNode(): FakeNode {
+  const oversizedName = "x".repeat(6 * 1024 * 1024);
+  return {
+    id: "123:456",
+    type: "FRAME",
+    name: "Oversized Frame",
+    exportAsync: async (_opts: ExportAsyncOptions) => ({
+      document: { id: "123:456", type: "FRAME", name: oversizedName },
+      components: {},
+      componentSets: {},
+      styles: {},
+    }),
+  };
+}
+
 /**
  * Loads code.js into this context with the supplied figma mock.
  * Returns the onmessage handler that code.js registered.
@@ -478,6 +493,50 @@ describe("upload-to-local — unsupported node type", () => {
       typeof err.message === "string" && err.message.includes("FRAME"),
       `Expected 'FRAME' in supported list: ${String(err.message)}`,
     );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Oversized payload guard
+// ---------------------------------------------------------------------------
+
+describe("export-selection — oversized payload", () => {
+  it("posts an error and skips clipboard export when the envelope exceeds 6 MiB", async () => {
+    const figmaMock = makeFigmaMock([makeOversizedNode()]);
+    let fetchCalled = false;
+    const fetchMock: FakeFetch = async () => {
+      fetchCalled = true;
+      throw new Error("fetch should not be called in clipboard mode");
+    };
+
+    const onmessage = loadPlugin(figmaMock, fetchMock);
+    await onmessage({ type: "export-selection" });
+
+    const err = singleMessageOfType(figmaMock, "error");
+    assert.equal(err.message, "Payload is too large. The limit is 6 MiB.");
+    assert.equal(messagesOfType(figmaMock, "copy-to-clipboard").length, 0);
+    assert.equal(fetchCalled, false);
+  });
+
+  it("posts an error and skips upload when the envelope exceeds 6 MiB", async () => {
+    const figmaMock = makeFigmaMock([makeOversizedNode()]);
+    let fetchCalled = false;
+    const fetchMock: FakeFetch = async () => {
+      fetchCalled = true;
+      throw new Error("fetch should not be called for oversized payloads");
+    };
+
+    const onmessage = loadPlugin(figmaMock, fetchMock);
+    await onmessage({
+      type: "upload-to-local",
+      endpointUrl: "http://127.0.0.1:1983",
+    });
+
+    const err = singleMessageOfType(figmaMock, "error");
+    assert.equal(err.message, "Payload is too large. The limit is 6 MiB.");
+    assert.equal(messagesOfType(figmaMock, "upload-error").length, 0);
+    assert.equal(messagesOfType(figmaMock, "upload-result").length, 0);
+    assert.equal(fetchCalled, false);
   });
 });
 

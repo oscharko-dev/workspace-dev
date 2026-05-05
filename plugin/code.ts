@@ -10,6 +10,10 @@
 
 const ENVELOPE_KIND = "workspace-dev/figma-selection@1";
 const PLUGIN_VERSION = "0.2.0";
+const FIGMA_PASTE_MAX_BYTES = 6 * 1024 * 1024;
+const FIGMA_PASTE_MAX_LABEL = `${
+  FIGMA_PASTE_MAX_BYTES / (1024 * 1024)
+} MiB`;
 
 /**
  * Node types that can be meaningfully exported.
@@ -159,6 +163,10 @@ async function exportSelection(
     copiedAt: new Date().toISOString(),
     selections,
   };
+  const serializedEnvelope = serializeEnvelope(envelope);
+  if (serializedEnvelope === null) {
+    return;
+  }
 
   if (mode === "upload") {
     figma.ui.postMessage({
@@ -171,7 +179,7 @@ async function exportSelection(
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
           figmaSourceMode: "figma_plugin",
-          figmaJsonPayload: JSON.stringify(envelope),
+          figmaJsonPayload: serializedEnvelope,
         }),
       })) as unknown as UploadResponse;
       if (response.ok) {
@@ -210,8 +218,41 @@ async function exportSelection(
   // clipboard mode (default)
   figma.ui.postMessage({
     type: "copy-to-clipboard",
-    payload: JSON.stringify(envelope),
+    payload: serializedEnvelope,
   });
+}
+
+function serializeEnvelope(envelope: ExportEnvelope): string | null {
+  const serialized = JSON.stringify(envelope);
+  const byteLength = utf8ByteLength(serialized);
+  if (byteLength > FIGMA_PASTE_MAX_BYTES) {
+    figma.ui.postMessage({
+      type: "error",
+      message: `Payload is too large. The limit is ${FIGMA_PASTE_MAX_LABEL}.`,
+    });
+    return null;
+  }
+  return serialized;
+}
+
+function utf8ByteLength(value: string): number {
+  let total = 0;
+  for (const char of value) {
+    const codePoint = char.codePointAt(0);
+    if (codePoint === undefined) {
+      continue;
+    }
+    if (codePoint <= 0x7f) {
+      total += 1;
+    } else if (codePoint <= 0x7ff) {
+      total += 2;
+    } else if (codePoint <= 0xffff) {
+      total += 3;
+    } else {
+      total += 4;
+    }
+  }
+  return total;
 }
 
 function createSelectionUnit(
