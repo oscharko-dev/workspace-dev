@@ -68,6 +68,7 @@ jobs:
           pnpm run test:ti-multi-source-eval
           pnpm run test:ti-eval
           pnpm run test:ti-faithfulness
+          pnpm run test:ti-hallucination
           pnpm run test:ti-a11y
 
       - name: Runtime smoke gates

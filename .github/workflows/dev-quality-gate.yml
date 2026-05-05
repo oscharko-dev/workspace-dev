@@ -289,6 +289,9 @@ jobs:
       - name: Test-intelligence faithfulness gate
         run: pnpm run test:ti-faithfulness
 
+      - name: Test-intelligence hallucination gate
+        run: pnpm run test:ti-hallucination
+
       - name: Test-intelligence form-screen a11y coverage gate
         run: pnpm run test:ti-a11y
 
