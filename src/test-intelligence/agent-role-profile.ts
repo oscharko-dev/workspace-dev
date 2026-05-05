@@ -247,6 +247,23 @@ const GENERATOR_PROFILE: AgentRoleProfile = freezeProfile({
   finOpsGroup: "generation",
 });
 
+const LOGIC_JUDGE_PROFILE: AgentRoleProfile = freezeProfile({
+  schemaVersion: AGENT_ROLE_PROFILE_SCHEMA_VERSION,
+  role: "logic_judge",
+  roleKind: "llm_role",
+  promptVersion: "logic-judge.v1",
+  modelBinding: {
+    providerId: "in-house",
+    modelId: "gpt-oss-120b",
+  },
+  outputSchema: "logic-judge-verdict.v1",
+  maxAttempts: 2,
+  maxInputTokens: 24_000,
+  maxOutputTokens: 4_000,
+  capability: "score_only",
+  finOpsGroup: "judge",
+});
+
 const SEMANTIC_JUDGE_PROFILE: AgentRoleProfile = freezeProfile({
   schemaVersion: AGENT_ROLE_PROFILE_SCHEMA_VERSION,
   role: "semantic_judge",
@@ -314,6 +331,7 @@ const REGISTRY_OBJECT: Record<AgentHarnessRole, AgentRoleProfile> = {
   adversarial_gap_finder: ADVERSARIAL_GAP_FINDER_PROFILE,
   final_verifier: FINAL_VERIFIER_PROFILE,
   generator: GENERATOR_PROFILE,
+  logic_judge: LOGIC_JUDGE_PROFILE,
   repair_planner: REPAIR_PLANNER_PROFILE,
   semantic_judge: SEMANTIC_JUDGE_PROFILE,
   visual_sidecar: VISUAL_SIDECAR_PROFILE,
