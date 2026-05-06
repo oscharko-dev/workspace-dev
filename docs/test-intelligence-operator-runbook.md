@@ -21,17 +21,75 @@ the snapshot test in `src/contract-version.test.ts`.
 
 ### 1. Environment matrix
 
-| Variable                                                | Required              | Purpose                                                                         |
-| ------------------------------------------------------- | --------------------- | ------------------------------------------------------------------------------- |
-| `WORKSPACE_AZURE_AI_FOUNDRY_ENDPOINT`                   | yes                   | Base URL of the Azure AI Foundry deployment.                                    |
-| `WORKSPACE_AZURE_AI_FOUNDRY_API_KEY`                    | yes                   | Bearer token for the gateway. Stored in your secrets manager — never committed. |
-| `WORKSPACE_AZURE_AI_FOUNDRY_TEST_GENERATION_DEPLOYMENT` | yes                   | Deployment name for the test-generation model (default: `gpt-oss-120b`).        |
-| `WORKSPACE_AZURE_AI_FOUNDRY_VISUAL_PRIMARY_DEPLOYMENT`  | yes                   | Deployment for the primary visual sidecar (e.g. `llama-4-maverick-vision`).     |
-| `WORKSPACE_AZURE_AI_FOUNDRY_VISUAL_FALLBACK_DEPLOYMENT` | optional              | Lighter deployment used when primary refuses or times out.                      |
-| `WORKSPACE_FIGMA_PERSONAL_ACCESS_TOKEN`                 | yes for URL ingestion | Bearer for the Figma REST API. Token-scoped, server-side only.                  |
+The production runner reads its model bindings from
+`WORKSPACE_TEST_SPACE_*` environment variables. The two endpoint variables
+share an Azure AI Foundry account; the per-role deployment variables select
+which deployment under that account is used for which agent role.
+
+#### 1a. Endpoint and credential variables
+
+| Variable                                       | Required              | Purpose                                                                                                    |
+| ---------------------------------------------- | --------------------- | ---------------------------------------------------------------------------------------------------------- |
+| `WORKSPACE_TEST_SPACE_MODEL_ENDPOINT`          | yes                   | Base URL of the Azure AI Foundry account that hosts the chat-completion deployments. Includes `/openai/v1`. |
+| `WORKSPACE_TEST_SPACE_MODEL_API_KEY`           | yes                   | Bearer token for the gateway. Stored in your secrets manager — never committed.                            |
+| `WORKSPACE_TEST_SPACE_VISUAL_MODEL_ENDPOINT`   | yes                   | Base URL for the visual-sidecar deployments. May equal `WORKSPACE_TEST_SPACE_MODEL_ENDPOINT`.              |
+| `FIGMA_ACCESS_TOKEN`                           | yes for URL ingestion | Bearer for the Figma REST API. Token-scoped, server-side only.                                             |
+
+#### 1b. Role-to-deployment matrix
+
+| Variable                                              | Wave | Required              | Role and recommended deployment                                                                                                                                                                                                                       |
+| ----------------------------------------------------- | :--: | --------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `WORKSPACE_TEST_SPACE_TESTCASE_MODEL_DEPLOYMENT`      |  —   | yes                   | Generator. Recommended: `mistral-large-3` (cross-vendor against `gpt-oss-120b` Logic-Judge). Backwards-compatible default: `gpt-oss-120b`.                                                                                                            |
+| `WORKSPACE_TEST_SPACE_VISUAL_PRIMARY_DEPLOYMENT`      |  —   | yes                   | Visual-Sidecar primary describer. Recommended: `llama-4-maverick-vision` (Stable, multimodal chat). The previous `mistral-document-ai-2512` value is invalid for chat-completion paths and must not be used here.                                       |
+| `WORKSPACE_TEST_SPACE_VISUAL_FALLBACK_DEPLOYMENT`     |  —   | yes                   | Visual-Sidecar fallback. Recommended: `phi-4-multimodal-instruct` (cross-vendor diversity, Microsoft, Stable, multimodal).                                                                                                                            |
+| `WORKSPACE_TEST_SPACE_LOGIC_JUDGE_DEPLOYMENT`         |  1   | optional              | Logic-Judge. Falls back to `WORKSPACE_TEST_SPACE_TESTCASE_MODEL_DEPLOYMENT` when unset. Recommended: `gpt-oss-120b` when the generator is `mistral-large-3` (cross-model voting). Activated by issue #1932.                                            |
+| `WORKSPACE_TEST_SPACE_COVERAGE_PLANNER_DEPLOYMENT`    |  2   | optional              | Coverage-Planner LLM augmentation. Deterministic-only when unset. Recommended: `phi-4-mini-instruct`. Activated by issue #1934.                                                                                                                       |
+| `WORKSPACE_TEST_SPACE_RISK_RANKER_DEPLOYMENT`         |  2   | optional              | Risk-Ranker LLM augmentation. Deterministic-only when unset. Recommended: `phi-4`. Activated by issue #1935.                                                                                                                                          |
+| `WORKSPACE_TEST_SPACE_A11Y_JUDGE_DEPLOYMENT`          |  2   | optional              | LLM-augmented A11y-Judge. Deterministic eval still runs when unset. Recommended: `phi-4-multimodal-instruct` (may share the deployment with `WORKSPACE_TEST_SPACE_VISUAL_FALLBACK_DEPLOYMENT`). Activated by issue #1940.                              |
 
 Verification: `pnpm exec node scripts/check-live-smoke-env.mjs` exits 0
-when the matrix is complete.
+when the endpoint and credential variables are complete. The role-to-deployment
+variables marked **Wave 1+** are read by the corresponding follow-up issues
+once they ship; they are safe to set in advance.
+
+#### 1c. Recommended Azure AI Foundry deployments
+
+The deployments below are the production-ready, Stable Azure AI Foundry
+models that the multi-agent topology was validated against. Each row maps a
+role to the catalog model name, the deployment name we recommend, and the
+SKU configuration we exercised.
+
+| Role                                  | Catalog model                              | Deployment name (recommended)   | SKU              | Capacity |
+| ------------------------------------- | ------------------------------------------ | ------------------------------- | ---------------- | -------- |
+| Generator (cross-vendor primary)      | `Mistral-Large-3` (Mistral AI, v1)         | `mistral-large-3`               | `GlobalStandard` | ≥ 10     |
+| Generator (legacy)                    | `gpt-oss-120b` (OpenAI-OSS, v1)            | `gpt-oss-120b`                  | `GlobalStandard` | ≥ 10     |
+| Logic-Judge (cross-model)             | `gpt-oss-120b` (OpenAI-OSS, v1)            | `gpt-oss-120b`                  | `GlobalStandard` | shared   |
+| Visual-Primary                        | `Llama-4-Maverick-17B-128E-Instruct-FP8`   | `llama-4-maverick-vision`       | `GlobalStandard` | ≥ 10     |
+| Visual-Fallback                       | `Phi-4-multimodal-instruct` (Microsoft, v1)| `phi-4-multimodal-instruct`     | `GlobalStandard` | ≥ 1      |
+| Coverage-Planner (LLM augmentation)   | `Phi-4-mini-instruct` (Microsoft, v1)      | `phi-4-mini-instruct`           | `GlobalStandard` | ≥ 1      |
+| Risk-Ranker (LLM augmentation)        | `Phi-4` (Microsoft, v7)                    | `phi-4`                         | `GlobalStandard` | ≥ 1      |
+| A11y-Judge (LLM augmentation)         | `Phi-4-multimodal-instruct` (Microsoft, v1)| `phi-4-multimodal-instruct`     | `GlobalStandard` | shared   |
+
+Notes on substitutions made versus the original Wave-0 plan (issue #1927):
+
+- `Mistral-Nemo` was the originally proposed Coverage-Planner model. The
+  Azure catalog flags `Mistral-Nemo` v1 as `Deprecated` (inference end of
+  service 2026-01-30); new deployments are rejected. `Phi-4-mini-instruct`
+  is the Stable replacement with a comparable footprint.
+- `Phi-3.5-vision-instruct` was the originally proposed A11y-Judge model.
+  Azure flags v1 and v2 as `Deprecated` (inference end of service
+  2025-08-30). `Phi-4-multimodal-instruct` is the Stable Microsoft
+  multimodal-vision successor; we share the same deployment between the
+  Visual-Fallback and the A11y-Judge roles to keep the deployment count low.
+- `Llama-3.2-90B-Vision-Instruct` was the originally proposed
+  Visual-Primary. Azure flags v1, v2, and v3 as `Deprecating` (inference
+  end of service 2026-06-13) and rejects new deployments. The existing
+  `llama-4-maverick-vision` deployment (Stable, no deprecation date)
+  becomes the Visual-Primary; `Phi-4-multimodal-instruct` becomes the
+  cross-vendor Visual-Fallback.
+- `mistral-document-ai-2512` stays deployed but exposes
+  `chatCompletion: false` and is not used in any chat-completion path. It
+  is reserved for the Wave-3 OCR-sidecar discussion (separate issue).
 
 ### 2. Enable the runner
 
