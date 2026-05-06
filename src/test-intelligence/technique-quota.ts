@@ -13,6 +13,16 @@ export interface TechniqueQuotaDeficit {
 }
 
 /**
+ * Defensive coercion of a (possibly undefined / non-array) value to a
+ * read-only array. Mirrors the `safeArray` helper in `logic-judge.ts`
+ * so the hard-gate can be invoked from operator-supplied inputs (test
+ * fixtures, partial canonicalised plans) that may omit non-optional
+ * contract fields without throwing.
+ */
+const safeArray = <T>(value: unknown): ReadonlyArray<T> =>
+  Array.isArray(value) ? (value as ReadonlyArray<T>) : [];
+
+/**
  * Compare generated cases to per-screen coverage-plan quotas using the same
  * anchoring semantics everywhere: only cases whose `figmaTraceRefs` include
  * the target `screenId` count toward that screen's minimum.
@@ -26,10 +36,20 @@ export const collectTechniqueQuotaDeficits = (
   }
 
   const deficits: TechniqueQuotaDeficit[] = [];
-  for (const screen of [...coveragePlan.perScreen].sort((left, right) =>
+  const perScreen = safeArray<CoveragePlan["perScreen"][number]>(
+    coveragePlan.perScreen,
+  );
+  for (const screen of [...perScreen].sort((left, right) =>
     left.screenId.localeCompare(right.screenId),
   )) {
-    const quotas = [...screen.techniqueQuotas]
+    // Defensive against legacy / partial CoveragePlan fixtures that
+    // omit `techniqueQuotas`; the contract field is non-optional in
+    // current builds, but the hard-gate runs against arbitrary
+    // operator inputs and must never throw on a missing array.
+    const screenQuotas = safeArray<
+      CoveragePlan["perScreen"][number]["techniqueQuotas"][number]
+    >(screen.techniqueQuotas);
+    const quotas = [...screenQuotas]
       .filter((quota) => quota.minCount > 0)
       .sort(
         (left, right) =>

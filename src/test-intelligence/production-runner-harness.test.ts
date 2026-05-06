@@ -106,6 +106,27 @@ const SAMPLE_DRAFT: ProductionRunnerLlmDraftCase = {
   },
 };
 
+// Issue #1942 — the technique-quota hard-gate requires every screen
+// referenced by `figmaTraceRefs` to satisfy the per-screen quotas the
+// coverage planner emits (for the `SAMPLE_FILE` form: at least one
+// `use_case` baseline plus one `equivalence_partitioning` element
+// case). `SAMPLE_DRAFT` covers `use_case`; this draft fills the
+// `equivalence_partitioning` slot so test mocks that return both
+// drafts do not trip the quota check and prematurely upgrade an
+// `accept` verdict to `repair`.
+const SAMPLE_EQUIVALENCE_DRAFT: ProductionRunnerLlmDraftCase = {
+  ...SAMPLE_DRAFT,
+  title: "Investitionssumme — Äquivalenzklassen",
+  objective:
+    "Bestätigen, dass das Feld Investitionssumme die zulässige Äquivalenzklasse akzeptiert und benachbarte Klassen ablehnt.",
+  technique: "equivalence_partitioning",
+  testData: [
+    "Investitionssumme: -1",
+    "Investitionssumme: 1",
+    "Investitionssumme: 999999999",
+  ],
+};
+
 const SAMPLE_ACCESSIBILITY_DRAFT: ProductionRunnerLlmDraftCase = {
   ...SAMPLE_DRAFT,
   title: "Formular ist per Tastatur bedienbar",
@@ -181,10 +202,11 @@ const refusalResponder = () => () => ({
 });
 
 test("PRODUCTION_RUNNER_HARNESS_MODES exposes the closed mode set", () => {
-  assert.deepEqual(
-    [...PRODUCTION_RUNNER_HARNESS_MODES].sort(),
-    ["enforced", "off", "shadow_eval"],
-  );
+  assert.deepEqual([...PRODUCTION_RUNNER_HARNESS_MODES].sort(), [
+    "enforced",
+    "off",
+    "shadow_eval",
+  ]);
 });
 
 test("runFigmaToQcTestCases harness mode off writes no harness step artifact", async () => {
@@ -423,10 +445,17 @@ test("runFigmaToQcTestCases harness mode enforced blocks when the logic judge re
       }>;
     };
     assert.equal(trace.outcome, "convergence_stalled");
-    assert.equal(trace.stallDetectedAtIteration, 1);
+    // Issue #1939 (k>=2 correctness): stall fires earliest at the
+    // second post-repair iteration so the LLM has had at least one
+    // honest chance to incorporate repair instructions before being
+    // declared stuck. The mock here keeps returning the same `reject`
+    // verdict, so iter 1 and iter 2 share a signature and the
+    // detector trips at k=2.
+    assert.equal(trace.stallDetectedAtIteration, 2);
+    assert.equal(trace.iterations.length, 3);
     assert.equal(
-      trace.iterations[0]!.verdictSignature,
       trace.iterations[1]!.verdictSignature,
+      trace.iterations[2]!.verdictSignature,
     );
   } finally {
     await rm(tempRoot, { recursive: true, force: true });
@@ -640,7 +669,11 @@ test("runFigmaToQcTestCases drives the repair loop when the logic-judge initiall
         return {
           outcome: "success" as const,
           content: {
-            testCases: [SAMPLE_DRAFT, SAMPLE_ACCESSIBILITY_DRAFT],
+            testCases: [
+              SAMPLE_DRAFT,
+              SAMPLE_ACCESSIBILITY_DRAFT,
+              SAMPLE_EQUIVALENCE_DRAFT,
+            ],
           },
           finishReason: "stop" as const,
           usage: { inputTokens: 100, outputTokens: 200 },
@@ -695,7 +728,11 @@ test("runFigmaToQcTestCases skips the repair loop entirely on a clean accept ver
       deployment: "gpt-oss-120b-mock",
       modelRevision: "mock-1",
       gatewayRelease: "mock",
-      responder: okResponder([SAMPLE_DRAFT, SAMPLE_ACCESSIBILITY_DRAFT]),
+      responder: okResponder([
+        SAMPLE_DRAFT,
+        SAMPLE_ACCESSIBILITY_DRAFT,
+        SAMPLE_EQUIVALENCE_DRAFT,
+      ]),
     });
     const result = await runFigmaToQcTestCases({
       jobId: "job-no-repair",
@@ -730,16 +767,42 @@ test("runFigmaToQcTestCases skips the repair loop entirely on a clean accept ver
 test("runFigmaToQcTestCases drives the repair loop when the initial Logic-Judge verdict is repair and recovers post-repair (Issue #1928)", async () => {
   const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ti-runner-repair-"));
   try {
-    // Issue #1905 form-screen a11y hard-gate requires an accessibility
-    // case anchored to every form screen; include one so the post-LLM
-    // hard-gate does not upgrade the LLM `accept` verdict back to
-    // `repair` and confound the assertion that the runner converges.
+    // Issue #1905 / #1951 form-screen a11y hard-gate requires every
+    // form screen to carry an `accessibility` case that explicitly
+    // covers all three WCAG 2.2 AA criteria (`keyboard-nav`,
+    // `focus-order`, `screen-reader`). The criterion detection runs
+    // regex matches over the case's title + objective + steps; the
+    // payload below mentions Tastatur (keyboard-nav), sichtbaren Fokus
+    // (focus-order), and Screen Reader / Bildschirmleser
+    // (screen-reader) so the policy gate stays green and the test can
+    // assert end-to-end recovery (`result.blocked === false`).
     const SAMPLE_A11Y_DRAFT: ProductionRunnerLlmDraftCase = {
       ...SAMPLE_DRAFT,
-      title: "Bedarfsermittlung — Tastatur- und Screenreader-A11y",
+      title: "Bedarfsermittlung — Tastatur, Fokusreihenfolge und Screen Reader",
       objective:
-        "Bestätigen, dass die Maske Bedarfsermittlung Tastatur- und Screenreader-Zugriff unterstützt.",
+        "Bestätigen, dass die Maske Bedarfsermittlung mit Tastatur, sichtbarer Fokusreihenfolge und Screen-Reader-Ankündigungen bedienbar ist.",
       type: "accessibility",
+      technique: "exploratory",
+      steps: [
+        {
+          index: 1,
+          action: "Navigiere ausschließlich per Tastatur durch die Maske.",
+          expected:
+            "Alle interaktiven Elemente erhalten in sichtbarer Fokusreihenfolge einen sichtbaren Fokus.",
+        },
+        {
+          index: 2,
+          action:
+            "Aktiviere die Schaltfläche Weiter mit dem Bildschirmleser (Screen Reader, aria-live).",
+          expected:
+            "Der Screen Reader kündigt die Aktion und das Folgeziel an (announcement).",
+        },
+      ],
+      expectedResults: [
+        "Tastatur-Bedienung deckt alle Felder und Aktionen ab.",
+        "Fokusreihenfolge ist sichtbar und logisch.",
+        "Screen Reader kündigt Statusänderungen an.",
+      ],
     };
     let logicCallIndex = 0;
     let generatorCallIndex = 0;
@@ -802,7 +865,13 @@ test("runFigmaToQcTestCases drives the repair loop when the initial Logic-Judge 
         generatorCallIndex += 1;
         return {
           outcome: "success" as const,
-          content: { testCases: [SAMPLE_DRAFT, SAMPLE_A11Y_DRAFT] },
+          content: {
+            testCases: [
+              SAMPLE_DRAFT,
+              SAMPLE_A11Y_DRAFT,
+              SAMPLE_EQUIVALENCE_DRAFT,
+            ],
+          },
           finishReason: "stop" as const,
           usage: { inputTokens: 100, outputTokens: 200 },
           modelDeployment: "gpt-oss-120b-mock",
@@ -819,6 +888,12 @@ test("runFigmaToQcTestCases drives the repair loop when the initial Logic-Judge 
       outputRoot: tempRoot,
       llm: { client },
       harness: { mode: "shadow_eval", maxRepairIterations: 2 },
+      // Issue #1946 — the EU-Banking-Default policy gate blocks the run
+      // when the active model bindings carry no `ictRegisterRef`. Supply
+      // a deterministic test value via customerProfile so this test can
+      // assert end-to-end recovery (`result.blocked === false`) instead
+      // of being short-circuited by an unrelated DORA Art. 9 gate.
+      customerProfile: { ictRegisterRef: "ICT-REG-TEST-1928" },
     });
     assert.ok(
       result.repairLoop,
