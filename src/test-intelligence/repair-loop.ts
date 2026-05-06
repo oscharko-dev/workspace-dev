@@ -199,6 +199,11 @@ export interface RunRepairLoopInput {
   readonly regenerate: RepairLoopRegenerator;
   readonly runLogicJudge: RepairLoopLogicJudgeRunner;
   readonly runFaithfulnessJudge?: RepairLoopFaithfulnessJudgeRunner;
+  /**
+   * When true, the loop recovers from unexpected generator / judge failures
+   * by returning `needs_review` with the current list instead of throwing.
+   */
+  readonly softFailOnIterationError?: boolean;
   /** Notification fired once per iteration record (including iteration 0). */
   readonly onIterationComplete?: (record: RepairLoopIterationRecord) => void;
 }
@@ -468,6 +473,31 @@ export const runRepairLoop = async (
   let currentFaith: FaithfulnessVerdict | undefined =
     input.initialFaithfulnessVerdict;
 
+  const softFailIfEnabled = (
+    iteration: number,
+    error: unknown,
+    context: string,
+  ): RepairLoopResult => {
+    if (input.softFailOnIterationError !== true) {
+      if (error instanceof Error) {
+        throw error;
+      }
+      throw new Error(`${context}: ${String(error)}`);
+    }
+
+    return {
+      outcome: "needs_review",
+      finalList: currentList,
+      finalLogicVerdict: currentLogic,
+      ...(currentFaith !== undefined
+        ? { finalFaithfulnessVerdict: currentFaith }
+        : {}),
+      iterations,
+      repairIterationCount: Math.max(iteration - 1, 0),
+      maxRepairIterations: max,
+    };
+  };
+
   for (let k = 1; k <= max; k++) {
     const repairInstructions = consolidateRepairInstructions({
       logic: currentLogic,
@@ -501,11 +531,16 @@ export const runRepairLoop = async (
       plannerArtifact,
     );
 
-    const regen = await input.regenerate({
-      previousList: currentList,
-      repairInstructions,
-      iteration: k,
-    });
+    let regen: Awaited<ReturnType<RepairLoopRegenerator>>;
+    try {
+      regen = await input.regenerate({
+        previousList: currentList,
+        repairInstructions,
+        iteration: k,
+      });
+    } catch (error) {
+      return softFailIfEnabled(k, error, `regenerate iteration ${k}`);
+    }
 
     const newListHash = sha256Hex(regen.list);
     const generatorArtifact: TestGenerationRepairIterationArtifact = {
@@ -547,10 +582,15 @@ export const runRepairLoop = async (
 
     currentList = regen.list;
 
-    const logicResult = await input.runLogicJudge({
-      list: currentList,
-      iteration: k,
-    });
+    let logicResult: Awaited<ReturnType<RepairLoopLogicJudgeRunner>>;
+    try {
+      logicResult = await input.runLogicJudge({
+        list: currentList,
+        iteration: k,
+      });
+    } catch (error) {
+      return softFailIfEnabled(k, error, `logic judge iteration ${k}`);
+    }
     currentLogic = logicResult.verdict;
 
     let faithInputTokens = 0;
@@ -559,10 +599,15 @@ export const runRepairLoop = async (
       input.runFaithfulnessJudge !== undefined &&
       currentLogic.verdict === "accept"
     ) {
-      const faithResult = await input.runFaithfulnessJudge({
-        list: currentList,
-        iteration: k,
-      });
+      let faithResult: Awaited<ReturnType<RepairLoopFaithfulnessJudgeRunner>>;
+      try {
+        faithResult = await input.runFaithfulnessJudge({
+          list: currentList,
+          iteration: k,
+        });
+      } catch (error) {
+        return softFailIfEnabled(k, error, `faithfulness judge iteration ${k}`);
+      }
       currentFaith = faithResult.verdict;
       faithInputTokens = faithResult.inputTokens;
       faithOutputTokens = faithResult.outputTokens;

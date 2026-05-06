@@ -2011,6 +2011,7 @@ export const runFigmaToQcTestCases = async (
         ? { initialFaithfulnessVerdict: faithfulnessSnapshot.verdict }
         : {}),
       maxRepairIterations,
+      softFailOnIterationError: true,
       regenerate: async ({ previousList, repairInstructions, iteration }) => {
         const repairSuffixSections: readonly CompilePromptSuffixSection[] = [
           {
