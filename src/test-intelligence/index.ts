@@ -172,6 +172,14 @@ export {
   type CoveragePlanBuildResult,
 } from "./coverage-planner.js";
 export {
+  buildRiskRanking,
+  buildRiskRankingWithAugmentation,
+  writeRiskRankingArtifact,
+  type BuildRiskRankingInput,
+  type BuildRiskRankingWithAugmentationInput,
+  type RiskRankingBuildResult,
+} from "./risk-ranker.js";
+export {
   ADVERSARIAL_GAP_FINDINGS_ARTIFACT_FILENAME,
   ADVERSARIAL_GAP_FINDING_KINDS,
   ADVERSARIAL_GAP_FINDING_SCHEMA_VERSION,
