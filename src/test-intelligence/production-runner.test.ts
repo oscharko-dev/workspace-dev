@@ -172,6 +172,79 @@ const SAMPLE_ACCESSIBILITY_DRAFT: ProductionRunnerLlmDraftCase = {
   ],
 };
 
+const SAMPLE_EQUIVALENCE_PARTITION_DRAFT: ProductionRunnerLlmDraftCase = {
+  ...SAMPLE_DRAFT,
+  title: "Äquivalenzklasse: zulässige Investitionssumme im Fachbereichsbereich",
+  objective:
+    "Bestätigen, dass eine fachlich zulässige Investitionssumme aus derselben Eingabeklasse akzeptiert wird.",
+  technique: "equivalence_partitioning",
+  testData: ["Investitionssumme: 250000"],
+  steps: [
+    {
+      index: 1,
+      action: "Öffne die Maske Bedarfsermittlung Investitionsfinanzierung",
+      expected: "Maske ist sichtbar",
+    },
+    {
+      index: 2,
+      action: "Trage 250000 in das Feld Investitionssumme ein",
+      expected: "Eingabe wird akzeptiert",
+    },
+    {
+      index: 3,
+      action: "Klicke auf Weiter",
+      expected: "Folgemaske wird angezeigt",
+    },
+  ],
+  expectedResults: [
+    "Investitionssumme aus derselben Äquivalenzklasse wird gespeichert",
+    "Folgemaske erreichbar",
+  ],
+};
+
+const SAMPLE_HARD_GATE_GREEN_DRAFTS: ProductionRunnerLlmDraftCase[] = [
+  SAMPLE_DRAFT,
+  SAMPLE_EQUIVALENCE_PARTITION_DRAFT,
+  SAMPLE_ACCESSIBILITY_DRAFT,
+];
+
+const SAMPLE_VISUAL_EQUIVALENCE_PARTITION_DRAFT: ProductionRunnerLlmDraftCase =
+  {
+    ...SAMPLE_EQUIVALENCE_PARTITION_DRAFT,
+    title: "Äquivalenzklasse: alternative zulässige Investitionssumme",
+    objective:
+      "Bestätigen, dass eine zweite zulässige Investitionssumme aus einer separaten Eingabeprobe derselben Klasse akzeptiert wird.",
+    testData: ["Investitionssumme: 500000"],
+    steps: [
+      {
+        index: 1,
+        action: "Öffne die Maske Bedarfsermittlung Investitionsfinanzierung",
+        expected: "Maske ist sichtbar",
+      },
+      {
+        index: 2,
+        action: "Trage 500000 in das Feld Investitionssumme ein",
+        expected: "Eingabe wird akzeptiert",
+      },
+      {
+        index: 3,
+        action: "Klicke auf Weiter",
+        expected: "Folgemaske wird angezeigt",
+      },
+    ],
+    expectedResults: [
+      "Die alternative Investitionssumme wird gespeichert",
+      "Folgemaske erreichbar",
+    ],
+  };
+
+const SAMPLE_VISUAL_HARD_GATE_GREEN_DRAFTS: ProductionRunnerLlmDraftCase[] = [
+  SAMPLE_DRAFT,
+  SAMPLE_EQUIVALENCE_PARTITION_DRAFT,
+  SAMPLE_VISUAL_EQUIVALENCE_PARTITION_DRAFT,
+  SAMPLE_ACCESSIBILITY_DRAFT,
+];
+
 const PNG_BYTES = Buffer.from(
   "89504e470d0a1a0a0000000d4948445200000001000000010802000000907753de0000000c49444154789c63606060000000040001f61738550000000049454e44ae426082",
   "hex",
@@ -404,13 +477,10 @@ test("Issue #1794: banking profile blocks when the active deployment is missing 
       modelRevision: "mock-1",
       gatewayRelease: "mock",
       omitIctRegisterRef: true,
-      // Issue #1905: include the form-screen accessibility draft so the
-      // logic-judge a11y hard-gate stays green and `policy_blocked` is the
-      // outcome the runner reports (not `validation_blocked`).
-      responder: okResponder(
-        [SAMPLE_DRAFT, SAMPLE_ACCESSIBILITY_DRAFT],
-        "gpt-oss-120b",
-      ),
+      // Issue #1942: satisfy both the a11y screen coverage hard-gate and
+      // the default CoveragePlan.techniqueQuotas for SAMPLE_FILE so
+      // `policy_blocked` remains the dominant outcome under test.
+      responder: okResponder(SAMPLE_HARD_GATE_GREEN_DRAFTS, "gpt-oss-120b"),
     });
     const result = await runFigmaToQcTestCases({
       jobId: "job-1794-banking-refusal",
@@ -1272,10 +1342,10 @@ test("runFigmaToQcTestCases wires Figma URL screenshots through the visual sidec
       deployment: "gpt-oss-120b-mock",
       modelRevision: "mock-1",
       gatewayRelease: "mock",
-      // Issue #1905: anchored a11y case so the post-LLM hard-gate does
-      // not trigger repair-loop iterations the event-order assertion
-      // does not expect.
-      responder: okResponder([SAMPLE_DRAFT, SAMPLE_ACCESSIBILITY_DRAFT]),
+      // Issue #1942: include a quota-satisfying equivalence-partition case
+      // alongside the a11y anchor so the hard-gates stay green and this
+      // event-order assertion remains stable.
+      responder: okResponder(SAMPLE_VISUAL_HARD_GATE_GREEN_DRAFTS),
     });
     const bundle = createMockLlmGatewayClientBundle({
       testGeneration: {
@@ -1500,9 +1570,9 @@ test("runFigmaToQcTestCases runs both judges, persists their artifacts, and keep
       deployment: "gpt-oss-120b-mock",
       modelRevision: "mock-1",
       gatewayRelease: "mock",
-      // Issue #1905: anchored a11y case keeps the post-LLM hard-gate
-      // green so the happy-path verdict stays `accept`.
-      responder: okResponder([SAMPLE_DRAFT, SAMPLE_ACCESSIBILITY_DRAFT]),
+      // Issue #1942: satisfy both the a11y and technique-quota hard-gates
+      // so the happy-path verdict stays `accept`.
+      responder: okResponder(SAMPLE_VISUAL_HARD_GATE_GREEN_DRAFTS),
     });
     const bundle = createMockLlmGatewayClientBundle({
       testGeneration: {
@@ -1956,7 +2026,7 @@ test("Issue #1929: runFigmaToQcTestCases preserves all 9 initial logic/faithfuln
                 attempt,
               };
             }
-            return okResponder([SAMPLE_DRAFT, SAMPLE_ACCESSIBILITY_DRAFT])(
+            return okResponder(SAMPLE_VISUAL_HARD_GATE_GREEN_DRAFTS)(
               request,
               attempt,
             );
@@ -2867,10 +2937,7 @@ test("runFigmaToQcTestCases treats CLI live deployments as regular live runs, no
       deployment: "gpt-oss-120b",
       modelRevision: "gpt-oss-120b@cli-test-intelligence-run",
       gatewayRelease: "azure-ai-foundry-cli-test-intelligence-run",
-      responder: okResponder(
-        [SAMPLE_DRAFT, SAMPLE_ACCESSIBILITY_DRAFT],
-        "gpt-oss-120b",
-      ),
+      responder: okResponder(SAMPLE_HARD_GATE_GREEN_DRAFTS, "gpt-oss-120b"),
     });
     const result = await runFigmaToQcTestCases({
       jobId: "job-finops-cli-live",
@@ -2910,10 +2977,7 @@ test("runFigmaToQcTestCases still counts smoke-tagged live lanes against maxLive
       deployment: "gpt-oss-120b",
       modelRevision: "gpt-oss-120b@live-e2e",
       gatewayRelease: "azure-ai-foundry-live-e2e",
-      responder: okResponder(
-        [SAMPLE_DRAFT, SAMPLE_ACCESSIBILITY_DRAFT],
-        "gpt-oss-120b",
-      ),
+      responder: okResponder(SAMPLE_HARD_GATE_GREEN_DRAFTS, "gpt-oss-120b"),
     });
     const result = await runFigmaToQcTestCases({
       jobId: "job-finops-live-smoke",
@@ -2993,10 +3057,9 @@ test("runFigmaToQcTestCases preserves policy_blocked as the FinOps outcome even 
       modelRevision: "gpt-oss-120b@cli-test-intelligence-run",
       gatewayRelease: "azure-ai-foundry-cli-test-intelligence-run",
       omitIctRegisterRef: true,
-      // Issue #1905: anchored a11y case so policy_blocked is the
-      // attributed FinOps outcome, not validation_blocked from a
-      // missing-form-screen-a11y-case repair upgrade.
-      responder: okResponder([SAMPLE_DRAFT, SAMPLE_ACCESSIBILITY_DRAFT]),
+      // Issue #1942: keep validation green so policy precedence is tested
+      // against FinOps, not masked by a technique-quota or a11y repair.
+      responder: okResponder(SAMPLE_HARD_GATE_GREEN_DRAFTS),
     });
     const result = await runFigmaToQcTestCases({
       jobId: "job-finops-policy-precedence",
@@ -3073,10 +3136,9 @@ test("runFigmaToQcTestCases emits progress events in expected order", async () =
       deployment: "gpt-oss-120b-mock",
       modelRevision: "mock-1",
       gatewayRelease: "mock",
-      // Issue #1905: anchored a11y case keeps the post-LLM hard-gate
-      // green so the expected event order does not include
-      // repair_loop_iteration entries.
-      responder: okResponder([SAMPLE_DRAFT, SAMPLE_ACCESSIBILITY_DRAFT]),
+      // Issue #1942: include the quota-satisfying equivalence case so the
+      // expected event order does not gain repair_loop_iteration entries.
+      responder: okResponder(SAMPLE_HARD_GATE_GREEN_DRAFTS),
     });
     const observed: string[] = [];
     await runFigmaToQcTestCases({
