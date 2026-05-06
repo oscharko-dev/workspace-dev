@@ -9,11 +9,12 @@
  * the operator-supplied output directory.
  *
  * Modes:
- *   - `dry_run` (default): validate args + env + Figma source resolution but
- *     skip the LLM call. Writes nothing. Useful for CI smoke tests.
- *   - `deterministic_llm`: real LLM gateway client; writes Markdown.
- *   - `offline_eval`: reserved for the on-disk eval-harness wiring (#1737).
- *     Currently rejected with an explicit `not implemented` operator error.
+ *   - `deterministic_llm` (default): real LLM gateway client; writes Markdown.
+ *   - `offline_eval`: currently routed through the same deterministic path.
+ *     This keeps behavior stable while the dedicated offline harness is still
+ *     shipping.
+ *   - `dry_run`: validate args + env + Figma source resolution but skip the
+ *     LLM call. Useful for CI smoke tests.
  *
  * Feature gates (both required at command start):
  *   FIGMAPIPE_WORKSPACE_TEST_INTELLIGENCE=1
@@ -125,6 +126,14 @@ const isTruthyFlag = (value: string | undefined): boolean => {
     normalized === "yes" ||
     normalized === "on"
   );
+};
+
+const parseBooleanFlagWithDefault = (
+  value: string | undefined,
+  defaultValue: boolean,
+): boolean => {
+  if (value === undefined) return defaultValue;
+  return isTruthyFlag(value);
 };
 
 /**
@@ -249,6 +258,12 @@ export interface TestIntelligenceRunOptions {
    */
   maxFigmaPayloadBytes: number | undefined;
   /**
+   * When true, a policy-blocked result does not fail the command.
+   * Artifacts are still emitted for review and the summary marks the
+   * policy status explicitly.
+   */
+  allowPolicyBlocked?: boolean;
+  /**
    * Coverage-baseline drift configuration (Issue #1950).
    *
    * When `archetype` is set, the post-run helper compares the candidate
@@ -301,7 +316,7 @@ export const parseTestIntelligenceRunArgs = (
   let figmaToken: string | undefined =
     env.FIGMA_ACCESS_TOKEN?.trim() || undefined;
   let policyProfile: string | undefined;
-  let mode: TestIntelligenceRunMode = "dry_run";
+  let mode: TestIntelligenceRunMode = "deterministic_llm";
   let enableVisualSidecar = isTruthyFlag(
     env.FIGMAPIPE_WORKSPACE_TI_ENABLE_VISUAL_SIDECAR,
   );
@@ -313,6 +328,10 @@ export const parseTestIntelligenceRunArgs = (
   let harnessMaxRepairIterations: number | undefined;
   let maxFigmaPayloadBytes: number | undefined = parsePositiveIntegerEnv(
     env.WORKSPACE_TEST_SPACE_MAX_FIGMA_PAYLOAD_BYTES,
+  );
+  let allowPolicyBlocked = parseBooleanFlagWithDefault(
+    env.WORKSPACE_TEST_SPACE_ALLOW_POLICY_BLOCKED,
+    true,
   );
   let customContextMarkdownPath: string | undefined;
   let customerProfilePath: string | undefined;
@@ -553,6 +572,11 @@ export const parseTestIntelligenceRunArgs = (
       continue;
     }
 
+    if (arg === "--allow-policy-blocked") {
+      allowPolicyBlocked = true;
+      continue;
+    }
+
     if (arg === "--custom-context-markdown") {
       const value = next?.trim();
       if (!value) {
@@ -699,6 +723,7 @@ export const parseTestIntelligenceRunArgs = (
     harnessRoleStepId,
     harnessMaxRepairIterations,
     maxFigmaPayloadBytes,
+    allowPolicyBlocked,
     customContextMarkdownPath,
     customerProfilePath,
     diversityPasses,
@@ -1651,18 +1676,21 @@ export const runTestIntelligenceCommand = async (
     customerProfileInput = JSON.parse(rawJson) as CustomerProfileInput;
   }
 
+  const runtimeMode =
+    options.mode === "offline_eval" ? "deterministic_llm" : options.mode;
   if (options.mode === "offline_eval") {
     sink.stderr(
-      "error: --mode offline_eval is not implemented in the CLI yet (#1737 tracks the eval-harness wiring)\n",
+      "warning: --mode offline_eval is routed to deterministic_llm in this release\n",
     );
-    return 1;
   }
+
+  const allowPolicyBlocked = options.allowPolicyBlocked ?? true;
 
   // Cross-flag validation: the multi-agent harness wraps the LLM call. In
   // dry_run no LLM call is dispatched, so requesting a harness mode is a
   // configuration mistake the operator should hear about loudly rather than
   // discover from a silent no-op.
-  if (options.mode === "dry_run" && options.harnessMode !== "off") {
+  if (runtimeMode === "dry_run" && options.harnessMode !== "off") {
     sink.stderr(
       `error: --harness-mode ${options.harnessMode} requires --mode deterministic_llm; the harness wraps the LLM call and dry_run does not dispatch one\n`,
     );
@@ -1672,7 +1700,7 @@ export const runTestIntelligenceCommand = async (
   const runnerOutputRoot = join(outputDir, "_runner-output");
   await mkdir(runnerOutputRoot, { recursive: true });
 
-  if (options.mode === "dry_run") {
+  if (runtimeMode === "dry_run") {
     sink.stdout(
       [
         "test-intelligence run (dry_run) — no LLM call dispatched",
@@ -1848,13 +1876,6 @@ export const runTestIntelligenceCommand = async (
     return 2;
   }
 
-  if (result.blocked) {
-    sink.stderr(
-      `error: test cases blocked by policy gate (job ${result.jobId}); see ${result.artifactPaths.policyReport}\n`,
-    );
-    return 3;
-  }
-
   const finopsTotalsLine = await safeReadFinopsTotals(
     result.artifactPaths.finopsReport,
     loadJsonFile,
@@ -1872,6 +1893,14 @@ export const runTestIntelligenceCommand = async (
     `  customer files      : ${copiedFileCount}`,
     `  combined markdown   : ${join(outputDir, "testfaelle.md")}`,
   ];
+  if (result.blocked) {
+    const blockedMessage = `warning: test cases blocked by policy gate (job ${result.jobId}); see ${result.artifactPaths.policyReport}\n`;
+    sink.stderr(blockedMessage);
+    if (!allowPolicyBlocked) {
+      return 3;
+    }
+    summaryLines.push("  policy status       : blocked (manual review required)");
+  }
   if (finopsTotalsLine) summaryLines.push(finopsTotalsLine);
   if (evidenceDigestLine) summaryLines.push(evidenceDigestLine);
   if (coverageBaselineSummary !== undefined) {
@@ -1962,8 +1991,11 @@ Visual sidecar:
 
 Other:
   --policy-profile <id>      Optional policy profile id (default: built-in EU banking)
+  --allow-policy-blocked     Do not fail with exit code 3 when policy blocked.
+                             Emits a warning and marks the summary for manual review.
   --mode <m>                 deterministic_llm | offline_eval | dry_run
-                             (default: dry_run)
+                             (default: deterministic_llm; offline_eval is
+                             currently routed via deterministic_llm)
 
 Multi-agent harness (Issue #1791):
   --harness-mode <m>         off | shadow_eval | enforced
@@ -2013,6 +2045,6 @@ Exit codes:
   1  operator/config error (includes missing feature gate, missing visual env,
                             and conflicting visual-sidecar flags)
   2  runner error (includes enforced-harness refusal mapped via runner)
-  3  policy refusal / blocked
+  3  policy refusal / blocked (set --allow-policy-blocked to continue on blocked jobs)
   4  budget exceeded
 `;

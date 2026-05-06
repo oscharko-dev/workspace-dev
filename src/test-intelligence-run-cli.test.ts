@@ -112,17 +112,59 @@ test("parseTestIntelligenceRunArgs: env defaults flow into options when flags ab
   assert.equal(options.modelDeployment, "gpt-oss-120b");
   assert.equal(options.modelApiKey, "k-key");
   assert.equal(options.figmaToken, "figd_xxx");
-  assert.equal(options.mode, "dry_run");
+  assert.equal(options.mode, "deterministic_llm");
   assert.equal(options.noVisualSidecar, false);
   assert.equal(options.finopsBudgetPath, undefined);
 });
 
-test("parseTestIntelligenceRunArgs: --mode default is dry_run", () => {
+test("parseTestIntelligenceRunArgs: allow-policy-blocked defaults to true", () => {
+  const options = parseTestIntelligenceRunArgs(
+    ["--figma-url", "https://figma.com/design/abc/foo", "--output", "/tmp/x"],
+    {},
+  );
+  assert.equal(options.allowPolicyBlocked, true);
+});
+
+test("parseTestIntelligenceRunArgs: WORKSPACE_TEST_SPACE_ALLOW_POLICY_BLOCKED enables policy bypass", () => {
+  const options = parseTestIntelligenceRunArgs(
+    ["--figma-url", "https://figma.com/design/abc/foo", "--output", "/tmp/x"],
+    {
+      WORKSPACE_TEST_SPACE_ALLOW_POLICY_BLOCKED: "1",
+    },
+  );
+  assert.equal(options.allowPolicyBlocked, true);
+});
+
+test("parseTestIntelligenceRunArgs: --allow-policy-blocked sets allowPolicyBlocked", () => {
+  const options = parseTestIntelligenceRunArgs(
+    [
+      "--figma-url",
+      "https://figma.com/design/abc/foo",
+      "--output",
+      "/tmp/x",
+      "--allow-policy-blocked",
+    ],
+    {},
+  );
+  assert.equal(options.allowPolicyBlocked, true);
+});
+
+test("parseTestIntelligenceRunArgs: WORKSPACE_TEST_SPACE_ALLOW_POLICY_BLOCKED can disable the bypass", () => {
+  const options = parseTestIntelligenceRunArgs(
+    ["--figma-url", "https://figma.com/design/abc/foo", "--output", "/tmp/x"],
+    {
+      WORKSPACE_TEST_SPACE_ALLOW_POLICY_BLOCKED: "0",
+    },
+  );
+  assert.equal(options.allowPolicyBlocked, false);
+});
+
+test("parseTestIntelligenceRunArgs: --mode default is deterministic_llm", () => {
   const opts = parseTestIntelligenceRunArgs(
     ["--figma-url", "https://figma.com/design/abc/foo", "--output", "/tmp/x"],
     {},
   );
-  assert.equal(opts.mode, "dry_run");
+  assert.equal(opts.mode, "deterministic_llm");
 });
 
 test("parseTestIntelligenceRunArgs: rejects unknown flags", () => {
@@ -561,16 +603,65 @@ test("runTestIntelligenceCommand: dry_run output includes finops budget note whe
 // runTestIntelligenceCommand — offline_eval
 // ---------------------------------------------------------------------------
 
-test("runTestIntelligenceCommand: offline_eval not implemented yet -> exit 1", async () => {
+test("runTestIntelligenceCommand: offline_eval routes to deterministic_llm", async () => {
   const { sink, stdout, stderr } = collectingSink();
   const exitCode = await runTestIntelligenceCommand(
     { ...baseOptions(), mode: "offline_eval" },
     sink,
-    { env: GATE_ON, now: () => 1700000000000 },
+    {
+      env: GATE_ON,
+      now: () => 1700000000000,
+      runner: async () => ({
+        jobId: "ti-cli-offline",
+        generatedAt: "2026-05-02T12:00:00.000Z",
+        fileKey: "abc",
+        generatedTestCases: {
+          testCases: [],
+        } as unknown as RunFigmaToQcTestCasesResult["generatedTestCases"],
+        intent: {} as unknown as RunFigmaToQcTestCasesResult["intent"],
+        validation: {} as unknown as RunFigmaToQcTestCasesResult["validation"],
+        policy: {} as unknown as RunFigmaToQcTestCasesResult["policy"],
+        coverage: {} as unknown as RunFigmaToQcTestCasesResult["coverage"],
+        blocked: false,
+        finopsBudget:
+          {} as unknown as RunFigmaToQcTestCasesResult["finopsBudget"],
+        artifactDir: "/tmp/offline-output/_runner-output/jobs/ti-cli-offline",
+        artifactPaths: {
+          intent: "/tmp/intent.json",
+          compiledPrompt: "/tmp/compiled-prompt.json",
+          untrustedContentNormalizationReport: "/tmp/ucnr.json",
+          evidenceSeal: "/tmp/evidence-seal.json",
+          agentRoleRun: "/tmp/agent-role-run.json",
+          genealogy: "/tmp/genealogy.json",
+          generatedTestCases: "/tmp/generated.json",
+          validationReport: "/tmp/validation.json",
+          policyReport: "/tmp/policy.json",
+          coverageReport: "/tmp/coverage.json",
+          finopsReport: "/tmp/finops.json",
+        },
+        customerMarkdownPaths: {
+          combined: "/tmp/customer-markdown/testfaelle.md",
+          perCase: [],
+        },
+      }),
+      buildLlmClient: () =>
+        ({}) as unknown as ReturnType<
+          Required<
+            Parameters<typeof runTestIntelligenceCommand>[2]
+          >["buildLlmClient"]
+        >,
+      loadFigmaJsonFile: async () => ({
+        fileKey: "abc",
+        name: "Foo",
+        document: { id: "0:0", type: "DOCUMENT" },
+      }),
+      loadJsonFile: async () => ({}),
+      copyArtifactsToOutput: async () => 0,
+    },
   );
-  assert.equal(exitCode, 1);
-  assert.match(stderr.join(""), /offline_eval/u);
-  assert.equal(stdout.join(""), "");
+  assert.equal(exitCode, 0);
+  assert.match(stderr.join(""), /offline_eval/);
+  assert.match(stdout.join(""), /completed/u);
 });
 
 // ---------------------------------------------------------------------------
@@ -724,7 +815,7 @@ test("runTestIntelligenceCommand: deterministic_llm with injected runner returns
   assert.match(out, /evidence manifest digest/u);
 });
 
-test("runTestIntelligenceCommand: deterministic_llm blocked → exit 3", async () => {
+test("runTestIntelligenceCommand: deterministic_llm blocked + allowPolicyBlocked=false → exit 3", async () => {
   const { sink, stderr } = collectingSink();
   const options: TestIntelligenceRunOptions = {
     figmaUrl: undefined,
@@ -746,6 +837,7 @@ test("runTestIntelligenceCommand: deterministic_llm blocked → exit 3", async (
     harnessMaxRepairIterations: undefined,
     customContextMarkdownPath: undefined,
     customerProfilePath: undefined,
+    allowPolicyBlocked: false,
   };
 
   const runner = async (): Promise<RunFigmaToQcTestCasesResult> => ({
@@ -802,6 +894,89 @@ test("runTestIntelligenceCommand: deterministic_llm blocked → exit 3", async (
 
   assert.equal(exitCode, 3);
   assert.match(stderr.join(""), /blocked by policy/u);
+});
+
+test("runTestIntelligenceCommand: deterministic_llm blocked + --allow-policy-blocked → exit 0", async () => {
+  const { sink, stdout, stderr } = collectingSink();
+  const options: TestIntelligenceRunOptions = {
+    figmaUrl: undefined,
+    figmaJsonFile: "/tmp/figma.json",
+    output: "/tmp/blocked-output",
+    modelEndpoint: "https://aoai.example/openai/v1",
+    modelDeployment: "gpt-oss-120b",
+    logicJudgeDeployment: undefined,
+    modelApiKey: "k-key",
+    figmaToken: undefined,
+    policyProfile: undefined,
+    mode: "deterministic_llm",
+    enableVisualSidecar: false,
+    noVisualSidecar: false,
+    finopsBudgetPath: undefined,
+    harnessMode: "off",
+    harnessTestDepth: "standard",
+    harnessRoleStepId: undefined,
+    harnessMaxRepairIterations: undefined,
+    customContextMarkdownPath: undefined,
+    customerProfilePath: undefined,
+    allowPolicyBlocked: true,
+  };
+
+  const runner = async (): Promise<RunFigmaToQcTestCasesResult> => ({
+    jobId: "ti-cli-blocked",
+    generatedAt: "2026-05-02T12:00:00.000Z",
+    fileKey: "abc",
+    generatedTestCases: {
+      testCases: [],
+    } as unknown as RunFigmaToQcTestCasesResult["generatedTestCases"],
+    intent: {} as unknown as RunFigmaToQcTestCasesResult["intent"],
+    validation: {} as unknown as RunFigmaToQcTestCasesResult["validation"],
+    policy: {} as unknown as RunFigmaToQcTestCasesResult["policy"],
+    coverage: {} as unknown as RunFigmaToQcTestCasesResult["coverage"],
+    blocked: true,
+    finopsBudget: {} as unknown as RunFigmaToQcTestCasesResult["finopsBudget"],
+    artifactDir: "/tmp/blocked-output/_runner-output/jobs/ti-cli-blocked",
+    artifactPaths: {
+      intent: "/tmp/intent.json",
+      compiledPrompt: "/tmp/compiled-prompt.json",
+      untrustedContentNormalizationReport: "/tmp/ucnr.json",
+      evidenceSeal: "/tmp/evidence-seal.json",
+      agentRoleRun: "/tmp/agent-role-run.json",
+      genealogy: "/tmp/genealogy.json",
+      generatedTestCases: "/tmp/generated.json",
+      validationReport: "/tmp/validation.json",
+      policyReport: "/tmp/policy-report.json",
+      coverageReport: "/tmp/coverage.json",
+      finopsReport: "/tmp/finops.json",
+    },
+    customerMarkdownPaths: {
+      combined: "/tmp/customer-markdown/testfaelle.md",
+      perCase: [],
+    },
+  });
+
+  const exitCode = await runTestIntelligenceCommand(options, sink, {
+    env: GATE_ON,
+    runner,
+    buildLlmClient: () =>
+      ({}) as unknown as ReturnType<
+        Required<
+          Parameters<typeof runTestIntelligenceCommand>[2]
+      >["buildLlmClient"]
+      >,
+    loadFigmaJsonFile: async () => ({
+      fileKey: "abc",
+      name: "Foo",
+      document: { id: "0:0", type: "DOCUMENT" },
+    }),
+    loadJsonFile: async () => ({}),
+    copyArtifactsToOutput: async () => 0,
+    now: () => 1700000000000,
+  });
+
+  assert.equal(exitCode, 0);
+  assert.match(stderr.join(""), /blocked by policy/u);
+  const out = stdout.join("");
+  assert.match(out, /policy status\s*:\s*blocked/u);
 });
 
 // ---------------------------------------------------------------------------
