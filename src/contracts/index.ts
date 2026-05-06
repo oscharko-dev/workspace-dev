@@ -1107,16 +1107,90 @@ export interface LlmGatewayClientConfig {
    * callers is unchanged. See {@link LlmGatewayWireStructuredOutputMode}.
    */
   wireStructuredOutputMode?: LlmGatewayWireStructuredOutputMode;
+  /**
+   * Per-modality token-estimation strategy used by the client-side input
+   * budget guard (Issue #1930). Defaults to
+   * {@link DEFAULT_LLM_IMAGE_TOKEN_STRATEGY} (`"openai_tiles"`) when omitted.
+   * The wire payload is unaffected: the strategy only changes how the gateway
+   * estimates `imageInputs` against
+   * {@link LlmGenerationRequest.maxInputTokens}, so a Visual-Sidecar request
+   * carrying a 119 KiB / 1280×720 PNG no longer pre-flight-rejects under the
+   * production-default `visual_primary.maxInputTokensPerRequest = 40_000`.
+   */
+  imageTokenStrategy?: LlmImageTokenStrategy;
 }
 
 /** Image payload accepted by visual sidecars. Rejected for `test_generation`. */
 export interface LlmImageInput {
   mimeType: string;
   base64Data: string;
+  /**
+   * Decoded pixel width of the image. When present together with
+   * {@link LlmImageInput.heightPx} the prompt-size estimator can use a
+   * tile-based formula (Issue #1930) instead of charging the raw base64
+   * byte length against the token budget. The base64 string remains the
+   * canonical wire payload; these fields only inform the estimator.
+   */
+  widthPx?: number;
+  /** Decoded pixel height. Paired with {@link LlmImageInput.widthPx}. */
+  heightPx?: number;
 }
 
 /** Reasoning-effort hint forwarded only when `reasoningEffortSupport` is true. */
 export type LlmReasoningEffort = "low" | "medium" | "high";
+
+/**
+ * Per-modality token-estimation strategy for image inputs (Issue #1930).
+ *
+ * - `openai_tiles`: OpenAI Chat-Vision aligned default. Charges
+ *   `ceil(widthPx*heightPx / {@link LLM_IMAGE_OPENAI_TILE_SIZE_PX}^2) *
+ *   {@link LLM_IMAGE_OPENAI_TOKENS_PER_TILE} +
+ *   {@link LLM_IMAGE_OPENAI_BASE_TOKENS}` tokens per image.
+ * - `llama_tiles`: Llama-Vision aligned default. Charges
+ *   `ceil(widthPx*heightPx / {@link LLM_IMAGE_LLAMA_TILE_SIZE_PX}^2) *
+ *   {@link LLM_IMAGE_LLAMA_TOKENS_PER_TILE} +
+ *   {@link LLM_IMAGE_LLAMA_BASE_TOKENS}` tokens per image.
+ * - `raw_bytes`: legacy behaviour — charges `ceil(base64.length / 4)` tokens.
+ *   Retained as an explicit override for providers whose multimodal billing
+ *   actually scales with payload size, and as the fallback for any image
+ *   whose pixel dimensions are not supplied.
+ */
+export const ALLOWED_LLM_IMAGE_TOKEN_STRATEGIES = [
+  "openai_tiles",
+  "llama_tiles",
+  "raw_bytes",
+] as const;
+
+export type LlmImageTokenStrategy =
+  (typeof ALLOWED_LLM_IMAGE_TOKEN_STRATEGIES)[number];
+
+/**
+ * Default per-modality strategy used when a gateway client does not pin
+ * `imageTokenStrategy` in its `LlmGatewayClientConfig`. OpenAI-aligned tiles
+ * keep the FinOps envelope realistic for the most common deployments and
+ * remain a safe upper bound for providers whose actual multimodal token cost
+ * is lower than tile + base.
+ */
+export const DEFAULT_LLM_IMAGE_TOKEN_STRATEGY: LlmImageTokenStrategy =
+  "openai_tiles";
+
+/** Tile edge length (px) for the OpenAI Chat-Vision token estimate. */
+export const LLM_IMAGE_OPENAI_TILE_SIZE_PX = 512 as const;
+/** Tokens charged per OpenAI Chat-Vision tile (high-detail). */
+export const LLM_IMAGE_OPENAI_TOKENS_PER_TILE = 85 as const;
+/** Constant base tokens added once per OpenAI Chat-Vision image. */
+export const LLM_IMAGE_OPENAI_BASE_TOKENS = 85 as const;
+
+/** Tile edge length (px) for the Llama-Vision token estimate. */
+export const LLM_IMAGE_LLAMA_TILE_SIZE_PX = 560 as const;
+/**
+ * Tokens charged per Llama-Vision tile. Tracks the published
+ * Llama-3.2-Vision / Llama-4-Maverick-Vision tile encoding (CLS + 1600
+ * patches per tile at 14 px patch size).
+ */
+export const LLM_IMAGE_LLAMA_TOKENS_PER_TILE = 1601 as const;
+/** Constant base tokens added once per Llama-Vision image. */
+export const LLM_IMAGE_LLAMA_BASE_TOKENS = 1 as const;
 
 /** Fixed bytes-per-token estimator used by the shared prompt-size heuristic. */
 export const CONTEXT_BUDGET_ESTIMATOR_BYTES_PER_TOKEN = 4 as const;
@@ -5531,6 +5605,14 @@ export interface VisualSidecarCaptureInput {
   screenName?: string;
   /** Optional ISO-8601 capture timestamp (sourced from a screenshot pipeline). */
   capturedAt?: string;
+  /**
+   * Optional decoded pixel dimensions. When present they are forwarded into
+   * {@link LlmImageInput.widthPx}/{@link LlmImageInput.heightPx} so the
+   * gateway's input-budget guard can apply tile-based token estimation
+   * (Issue #1930) instead of charging the raw base64 byte length.
+   */
+  widthPx?: number;
+  heightPx?: number;
 }
 
 /**
@@ -9600,7 +9682,7 @@ export interface ReleaseQualityGatesReport {
  * Must be bumped according to CONTRACT_CHANGELOG.md rules.
  * Package version alignment is documented in VERSIONING.md.
  */
-export const CONTRACT_VERSION = "4.47.0" as const;
+export const CONTRACT_VERSION = "4.48.0" as const;
 
 // ---------------------------------------------------------------------------
 // Issue #1774 — UntrustedContentNormalizer (2025-vintage injection carriers).

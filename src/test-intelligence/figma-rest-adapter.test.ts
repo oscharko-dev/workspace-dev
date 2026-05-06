@@ -225,6 +225,10 @@ test("fetchFigmaScreenCapturesForTestIntelligence resolves image lookup URLs and
     Buffer.from(captures[0]?.base64Data ?? "", "base64").equals(PNG_BYTES),
     true,
   );
+  // Issue #1930: PNG IHDR is parsed so the gateway estimator can apply the
+  // tile-based formula instead of charging the raw base64 byte length.
+  assert.equal(captures[0]?.widthPx, 1);
+  assert.equal(captures[0]?.heightPx, 1);
   assert.deepEqual(requestedUrls, [
     "https://api.figma.com/v1/images/ABC?ids=1%3A1&format=png&scale=2",
     "https://figma-alpha-api.s3.us-west-2.amazonaws.com/1_1.png",

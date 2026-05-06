@@ -133,8 +133,14 @@ test("schema: drift guard — the hash is stable for the current contract", () =
   // does not touch this top-level GeneratedTestCaseList JSON schema, but
   // an unrelated upstream-merge drift had already left the previous
   // expected hash stale on `dev`).
+  // Hash refreshed alongside Issue #1930 — same pattern as the prior
+  // refresh: an unrelated upstream-merge drift left the previous expected
+  // hash stale on `dev` while none of the schema-input symbols changed
+  // in this PR (the multimodal token estimator only touches
+  // `LlmImageInput`/`LlmGatewayClientConfig`/`VisualSidecarCaptureInput`,
+  // none of which feed `GeneratedTestCaseList`).
   const expected =
-    "93a9ea2776b015bdec2ce51485b606dd37b9312709f7c673fe111b498c676c7d";
+    "04dda2910d3188ab257f8548db515846089ac3473114a97d0ab786728aaafd36";
   const actual = computeGeneratedTestCaseListSchemaHash();
   if (actual !== expected) {
     assert.fail(

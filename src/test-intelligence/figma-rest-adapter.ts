@@ -283,6 +283,59 @@ export const fetchFigmaFileForTestIntelligence = async (
   );
 };
 
+/**
+ * Parse the PNG IHDR chunk and return decoded pixel dimensions. Returns
+ * `undefined` when the buffer does not look like a PNG — callers fall back
+ * to the byte-based estimator path (Issue #1930).
+ */
+const parsePngPixelDimensions = (
+  buffer: Uint8Array,
+): { widthPx: number; heightPx: number } | undefined => {
+  const PNG_SIGNATURE_LENGTH = 8;
+  const IHDR_CHUNK_TYPE_OFFSET = 12;
+  const IHDR_WIDTH_OFFSET = 16;
+  const IHDR_HEIGHT_OFFSET = 20;
+  const MINIMUM_IHDR_END = 24;
+  if (buffer.length < MINIMUM_IHDR_END) return undefined;
+  if (
+    buffer[0] !== 0x89 ||
+    buffer[1] !== 0x50 ||
+    buffer[2] !== 0x4e ||
+    buffer[3] !== 0x47 ||
+    buffer[4] !== 0x0d ||
+    buffer[5] !== 0x0a ||
+    buffer[6] !== 0x1a ||
+    buffer[7] !== 0x0a
+  ) {
+    return undefined;
+  }
+  void PNG_SIGNATURE_LENGTH;
+  if (
+    buffer[IHDR_CHUNK_TYPE_OFFSET] !== 0x49 ||
+    buffer[IHDR_CHUNK_TYPE_OFFSET + 1] !== 0x48 ||
+    buffer[IHDR_CHUNK_TYPE_OFFSET + 2] !== 0x44 ||
+    buffer[IHDR_CHUNK_TYPE_OFFSET + 3] !== 0x52
+  ) {
+    return undefined;
+  }
+  const view = Buffer.from(
+    buffer.buffer,
+    buffer.byteOffset,
+    buffer.byteLength,
+  );
+  const widthPx = view.readUInt32BE(IHDR_WIDTH_OFFSET);
+  const heightPx = view.readUInt32BE(IHDR_HEIGHT_OFFSET);
+  if (
+    !Number.isInteger(widthPx) ||
+    widthPx <= 0 ||
+    !Number.isInteger(heightPx) ||
+    heightPx <= 0
+  ) {
+    return undefined;
+  }
+  return { widthPx, heightPx };
+};
+
 export const fetchFigmaScreenCapturesForTestIntelligence = async (
   input: FetchFigmaScreenCapturesForTestIntelligenceInput,
 ): Promise<
@@ -291,6 +344,8 @@ export const fetchFigmaScreenCapturesForTestIntelligence = async (
     screenName?: string;
     mimeType: "image/png";
     base64Data: string;
+    widthPx?: number;
+    heightPx?: number;
   }>
 > => {
   const fileKey = input.fileKey.trim();
@@ -337,6 +392,7 @@ export const fetchFigmaScreenCapturesForTestIntelligence = async (
         timeoutMs,
         maxResponseBytes,
       });
+      const dimensions = parsePngPixelDimensions(pngBytes);
       return {
         screenId,
         ...(screen.screenName !== undefined
@@ -344,6 +400,9 @@ export const fetchFigmaScreenCapturesForTestIntelligence = async (
           : {}),
         mimeType: "image/png" as const,
         base64Data: Buffer.from(pngBytes).toString("base64"),
+        ...(dimensions !== undefined
+          ? { widthPx: dimensions.widthPx, heightPx: dimensions.heightPx }
+          : {}),
       };
     }),
   );

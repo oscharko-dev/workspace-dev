@@ -18,6 +18,7 @@
  */
 
 import {
+  ALLOWED_LLM_IMAGE_TOKEN_STRATEGIES,
   LOGIC_JUDGE_OUTPUT_SCHEMA_NAME,
   type LlmGatewayCapabilities,
   type LlmGatewayClientConfig,
@@ -27,6 +28,7 @@ import {
   type LlmGenerationRequest,
   type LlmGenerationResult,
   type LlmGenerationSuccess,
+  type LlmImageTokenStrategy,
 } from "../contracts/index.js";
 import {
   createLlmCircuitBreaker,
@@ -63,6 +65,13 @@ export interface CreateMockLlmGatewayClientInput {
   responder?: MockResponder;
   /** Optional circuit-breaker thresholds; defaults are reasonable for tests. */
   circuitBreaker?: { failureThreshold: number; resetTimeoutMs: number };
+  /**
+   * Per-modality image-token strategy mirrored from
+   * {@link LlmGatewayClientConfig.imageTokenStrategy}. Defaults to
+   * `"openai_tiles"` when omitted (Issue #1930) so the mock guard rejects
+   * the same payload sizes the real gateway would accept.
+   */
+  imageTokenStrategy?: LlmImageTokenStrategy;
 }
 
 export interface MockLlmGatewayClient extends LlmGatewayClient {
@@ -144,6 +153,7 @@ const guardImagePayload = (
 
 const guardInputBudget = (
   request: LlmGenerationRequest,
+  imageTokenStrategy: LlmImageTokenStrategy | undefined,
 ): LlmGenerationFailure | undefined => {
   if (request.maxInputTokens === undefined) return undefined;
   if (
@@ -158,7 +168,10 @@ const guardInputBudget = (
       attempt: 0,
     };
   }
-  const estimatedTokens = estimateLlmInputTokens(request);
+  const estimatedTokens = estimateLlmInputTokens(
+    request,
+    imageTokenStrategy !== undefined ? { imageTokenStrategy } : {},
+  );
   if (estimatedTokens > request.maxInputTokens) {
     return {
       outcome: "error",
@@ -277,6 +290,14 @@ export const createMockLlmGatewayClient = (
       "createMockLlmGatewayClient: test_generation role must not declare imageInputSupport",
     );
   }
+  if (
+    input.imageTokenStrategy !== undefined &&
+    !ALLOWED_LLM_IMAGE_TOKEN_STRATEGIES.includes(input.imageTokenStrategy)
+  ) {
+    throw new RangeError(
+      `createMockLlmGatewayClient: invalid imageTokenStrategy "${input.imageTokenStrategy}"`,
+    );
+  }
 
   const breakerConfig = input.circuitBreaker ?? DEFAULT_BREAKER;
   let breaker: LlmCircuitBreaker = createLlmCircuitBreaker(breakerConfig);
@@ -294,7 +315,7 @@ export const createMockLlmGatewayClient = (
   ): Promise<LlmGenerationResult> => {
     const guard = guardImagePayload(input.role, request);
     if (guard !== undefined) return guard;
-    const budgetGuard = guardInputBudget(request);
+    const budgetGuard = guardInputBudget(request, input.imageTokenStrategy);
     if (budgetGuard !== undefined) return budgetGuard;
     const outputBudgetGuard = guardOutputBudget(request, declaredCapabilities);
     if (outputBudgetGuard !== undefined) return outputBudgetGuard;
@@ -431,6 +452,9 @@ export const createMockLlmGatewayClientFromConfig = (
     compatibilityMode: config.compatibilityMode,
     declaredCapabilities: config.declaredCapabilities,
     circuitBreaker: config.circuitBreaker,
+    ...(config.imageTokenStrategy !== undefined
+      ? { imageTokenStrategy: config.imageTokenStrategy }
+      : {}),
     ...(overrides.responder !== undefined
       ? { responder: overrides.responder }
       : {}),

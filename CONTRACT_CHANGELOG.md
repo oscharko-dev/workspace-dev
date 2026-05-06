@@ -31,6 +31,86 @@ All changes to the public contract surface of `workspace-dev` are documented her
 
 ---
 
+## [4.48.0] - 2026-05-06
+
+### Added (Issue #1930 — multimodal token estimator counts image tiles, not base64 bytes)
+
+The shared `estimateLlmInputTokens` heuristic in
+`src/test-intelligence/llm-token-estimator.ts` previously charged the raw
+base64 string length of every image input against the input-token budget,
+divided by `CONTEXT_BUDGET_ESTIMATOR_BYTES_PER_TOKEN = 4`. For a typical
+119 KiB / 1280×720 Banking-Form screenshot this estimated ~40 605 input
+tokens — exceeding the production default
+`visual_primary.maxInputTokensPerRequest = 40_000` before any system or
+user prompt bytes — and pre-flight-rejected realistic Visual-Sidecar
+requests with `errorClass: input_budget_exceeded`.
+
+The estimator now uses a per-modality strategy. Text bytes still divide
+by 4; image inputs use a tile-based formula aligned with provider
+billing:
+
+- `openai_tiles` (default): `ceil(widthPx*heightPx / 512^2) * 85 + 85`
+  tokens per image — OpenAI Chat-Vision high-detail aligned.
+- `llama_tiles`: `ceil(widthPx*heightPx / 560^2) * 1601 + 1` tokens per
+  image — Llama-Vision tile encoding (CLS + 1600 patches per tile).
+- `raw_bytes`: explicit override that preserves the legacy
+  `ceil(base64.length / 4)` rule.
+
+Any image whose pixel dimensions are not supplied falls back to
+`raw_bytes` regardless of the requested strategy, preserving back-compat
+for callers that have not yet plumbed dimensions through to the
+estimator.
+
+Additive public-contract changes:
+
+- `LlmImageInput` gains optional `widthPx?: number` and
+  `heightPx?: number` fields. The wire payload is unchanged; the fields
+  only inform the estimator.
+- `LlmGatewayClientConfig` gains optional
+  `imageTokenStrategy?: LlmImageTokenStrategy` (default
+  `DEFAULT_LLM_IMAGE_TOKEN_STRATEGY = "openai_tiles"`). The mock and
+  real gateway clients honour the field in their `guardInputBudget`
+  pre-flight.
+- `VisualSidecarCaptureInput` gains optional `widthPx?` / `heightPx?`
+  fields. The Figma REST adapter
+  (`fetchFigmaScreenCapturesForTestIntelligence`) parses the PNG IHDR
+  chunk and propagates decoded dimensions; both the visual sidecar
+  client and the faithfulness judge forward them into
+  `LlmImageInput`.
+- New runtime exports:
+  `ALLOWED_LLM_IMAGE_TOKEN_STRATEGIES`,
+  `DEFAULT_LLM_IMAGE_TOKEN_STRATEGY`,
+  `LLM_IMAGE_OPENAI_TILE_SIZE_PX`,
+  `LLM_IMAGE_OPENAI_TOKENS_PER_TILE`,
+  `LLM_IMAGE_OPENAI_BASE_TOKENS`,
+  `LLM_IMAGE_LLAMA_TILE_SIZE_PX`,
+  `LLM_IMAGE_LLAMA_TOKENS_PER_TILE`,
+  `LLM_IMAGE_LLAMA_BASE_TOKENS`,
+  `estimateImageInputTokens`,
+  and the `LlmTokenEstimationOptions` type.
+- `estimateLlmInputBytes` now returns the **text-only** payload size
+  (system + user + serialised schema). Image inputs are no longer
+  summed into this helper — callers that need a token estimate must
+  use `estimateLlmInputTokens`. The single internal caller is the
+  estimator itself; no other production call site relied on the
+  previous image-inclusive behaviour.
+
+Contract version bumps:
+
+- `CONTRACT_VERSION` bumps from `4.47.0` to `4.48.0` (additive minor
+  bump; new optional fields, new runtime exports, no removals).
+- `TEST_INTELLIGENCE_CONTRACT_VERSION` is unchanged at `1.11.0` (the
+  visual-sidecar wire artifacts and gateway request audit shapes are
+  unaffected — only optional, in-memory fields on
+  `VisualSidecarCaptureInput`/`LlmImageInput`/`LlmGatewayClientConfig`
+  are added).
+
+No removals or renames. No FinOps role limit changes — the fix is
+purely on the estimator side. No new migrations are registered; the
+`migrationHash:` registry from 4.42.0 carries over unchanged.
+
+---
+
 ## [4.47.0] - 2026-05-05
 
 ### Added (Issue #1901 — coverage hard-gate in the logic judge)
