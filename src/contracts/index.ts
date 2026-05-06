@@ -8584,6 +8584,97 @@ export const DEDUPE_REPORT_SCHEMA_VERSION = "1.0.0" as const;
 /** Canonical filename for the persisted dedupe artifact. */
 export const DEDUPE_REPORT_ARTIFACT_FILENAME = "dedupe-report.json" as const;
 
+/**
+ * Schema version for the persisted parallel-pass case-merger artifact
+ * (Issue #1937). The case-merger consumes two `GeneratedTestCaseList`s
+ * emitted by parallel diversity passes (Issue #1936) and emits a single
+ * deterministic merged list plus a per-case provenance/conflict log so
+ * downstream auditors can reconstruct which pass contributed each case.
+ */
+export const CASE_MERGER_REPORT_SCHEMA_VERSION = "1.0.0" as const;
+
+/** Canonical filename for the persisted case-merger artifact. */
+export const CASE_MERGER_REPORT_ARTIFACT_FILENAME =
+  "case-merger-report.json" as const;
+
+/** Provenance of a merged test case relative to the two input passes. */
+export const ALLOWED_CASE_MERGER_PROVENANCES = [
+  "runA",
+  "runB",
+  "both",
+] as const;
+export type CaseMergerProvenance =
+  (typeof ALLOWED_CASE_MERGER_PROVENANCES)[number];
+
+/**
+ * Reason a merged entry was selected over its conflicting counterpart.
+ *
+ * - `no_conflict` — the case existed in only one pass (no choice required).
+ * - `prefer_unrepaired` — both passes produced the case; one pass had
+ *   non-empty `repairInstructions` for it and the other did not, so the
+ *   un-repaired side won (Issue #1937 conflict-resolution rule 1).
+ * - `positive_bias_run_a` — both passes produced the case with comparable
+ *   repair-state, so pass A wins (Issue #1937 conflict-resolution rule 2).
+ */
+export const ALLOWED_CASE_MERGER_CONFLICT_RESOLUTIONS = [
+  "no_conflict",
+  "prefer_unrepaired",
+  "positive_bias_run_a",
+] as const;
+export type CaseMergerConflictResolution =
+  (typeof ALLOWED_CASE_MERGER_CONFLICT_RESOLUTIONS)[number];
+
+/**
+ * One row of the case-merger report. Each entry corresponds to a single
+ * merged test case. `signature` is the dedup key
+ * `(screenId, sorted(coveredFieldIds), sorted(coveredActionIds), technique)`
+ * canonical-JSON-serialised so two entries with identical signatures are
+ * guaranteed to have been merged (or, equivalently, the report has at most
+ * one entry per signature).
+ */
+export interface CaseMergerReportEntry {
+  readonly testCaseId: string;
+  readonly provenance: CaseMergerProvenance;
+  readonly signature: string;
+  readonly technique: TestCaseTechnique29119;
+  readonly screenId: string;
+  readonly coveredFieldIds: readonly string[];
+  readonly coveredActionIds: readonly string[];
+  readonly conflictResolution: CaseMergerConflictResolution;
+  /**
+   * The id of the test case that lost the conflict (only populated when
+   * `provenance === "both"`). The losing case's `qualitySignals` are merged
+   * into the winning entry's coverage sets — see
+   * `qualitySignalsCoverageMerged`.
+   */
+  readonly droppedTestCaseId?: string;
+  /**
+   * Whether the winning case absorbed coverage ids from the losing pass's
+   * counterpart. When `true`, the merged test case carries a strict superset
+   * of either side's `coveredFieldIds` / `coveredActionIds`.
+   */
+  readonly qualitySignalsCoverageMerged: boolean;
+}
+
+/** Persisted case-merger artifact (Issue #1937). */
+export interface CaseMergerReport {
+  readonly schemaVersion: typeof CASE_MERGER_REPORT_SCHEMA_VERSION;
+  readonly contractVersion: typeof TEST_INTELLIGENCE_CONTRACT_VERSION;
+  readonly jobId: string;
+  readonly generatedAt: string;
+  readonly totals: {
+    readonly runACount: number;
+    readonly runBCount: number;
+    readonly mergedCount: number;
+    readonly onlyInRunA: number;
+    readonly onlyInRunB: number;
+    readonly inBoth: number;
+    readonly conflictsResolvedByRepair: number;
+    readonly conflictsResolvedByPositiveBias: number;
+  };
+  readonly entries: readonly CaseMergerReportEntry[];
+}
+
 /** Schema version for the persisted traceability-matrix artifact (Issue #1373). */
 export const TRACEABILITY_MATRIX_SCHEMA_VERSION = "1.0.0" as const;
 
