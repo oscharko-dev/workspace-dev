@@ -40,6 +40,7 @@
 import { mkdir, rename, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { createHash, randomUUID } from "node:crypto";
+import type { Meter, Tracer } from "@opentelemetry/api";
 
 import {
   A11Y_JUDGE_VERDICT_ARTIFACT_FILENAME,
@@ -116,6 +117,10 @@ import {
   writeFinOpsBudgetReport,
 } from "./finops-report.js";
 import { computePerSourceCostBreakdownHashFromReport } from "./per-source-cost.js";
+import {
+  composeProductionRunnerEventSinks,
+  createProductionRunnerOpenTelemetrySink,
+} from "./production-runner-events.js";
 import type {
   ProductionRunnerEvent,
   ProductionRunnerEventSink,
@@ -629,6 +634,20 @@ export interface RunFigmaToQcTestCasesInput {
    */
   events?: ProductionRunnerEventSink;
   /**
+   * Optional OpenTelemetry tracer (Issue #1945). When supplied the runner
+   * emits one span per phase boundary using the stable attribute contract
+   * documented in `docs/test-intelligence-observability.md`. The runner
+   * never creates or configures an exporter automatically.
+   */
+  otelTracer?: Tracer;
+  /**
+   * Optional OpenTelemetry meter (Issue #1945). When supplied the runner
+   * increments the production-runner phase counter alongside any spans
+   * emitted via `otelTracer`. The runner never creates or configures an
+   * exporter automatically.
+   */
+  otelMeter?: Meter;
+  /**
    * Optional override for the file name surfaced in customer Markdown
    * headers; defaults to `figmaFile.name` (or the file key if missing).
    */
@@ -823,7 +842,15 @@ export const runFigmaToQcTestCases = async (
   input: RunFigmaToQcTestCasesInput,
 ): Promise<RunFigmaToQcTestCasesResult> => {
   const startedAt = Date.now();
-  const emit = makeEmitter(input.events);
+  const emit = makeEmitter(
+    composeProductionRunnerEventSinks(
+      input.events,
+      createProductionRunnerOpenTelemetrySink({
+        ...(input.otelTracer !== undefined ? { tracer: input.otelTracer } : {}),
+        ...(input.otelMeter !== undefined ? { meter: input.otelMeter } : {}),
+      }),
+    ),
+  );
   const finopsRecorder = createFinOpsUsageRecorder();
   const artifactDir = join(
     input.outputRoot,

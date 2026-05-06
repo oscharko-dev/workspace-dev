@@ -3128,6 +3128,47 @@ test("runFigmaToQcTestCases fails closed on invalid FinOps envelope", async () =
   }
 });
 
+const createRunnerOtelRecorder = () => {
+  const spans: Array<{
+    name: string;
+    attributes?: Record<string, unknown>;
+    endTime?: number;
+  }> = [];
+  const counters: Array<{
+    name: string;
+    value: number;
+    attributes?: Record<string, unknown>;
+  }> = [];
+  return {
+    spans,
+    counters,
+    tracer: {
+      startSpan(name: string, options?: { attributes?: Record<string, unknown> }) {
+        const span = {
+          name,
+          attributes: options?.attributes,
+          endTime: undefined as number | undefined,
+        };
+        spans.push(span);
+        return {
+          end(endTime?: number) {
+            span.endTime = endTime;
+          },
+        };
+      },
+    },
+    meter: {
+      createCounter(name: string) {
+        return {
+          add(value: number, attributes?: Record<string, unknown>) {
+            counters.push({ name, value, attributes });
+          },
+        };
+      },
+    },
+  };
+};
+
 test("runFigmaToQcTestCases emits progress events in expected order", async () => {
   const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ti-runner-"));
   try {
@@ -3165,6 +3206,64 @@ test("runFigmaToQcTestCases emits progress events in expected order", async () =
       "evidence_sealed",
       "finops_recorded",
     ]);
+  } finally {
+    await rm(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("Issue #1945: runFigmaToQcTestCases emits one OTel span per phase when operator sinks are supplied", async () => {
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ti-runner-"));
+  try {
+    const client = createMockLlmGatewayClient({
+      role: "test_generation",
+      deployment: "gpt-oss-120b-mock",
+      modelRevision: "mock-1",
+      gatewayRelease: "mock",
+      responder: okResponder(SAMPLE_HARD_GATE_GREEN_DRAFTS),
+    });
+    const observed: string[] = [];
+    const otel = createRunnerOtelRecorder();
+    await runFigmaToQcTestCases({
+      jobId: "job-events-otel",
+      generatedAt: "2026-05-02T10:00:00Z",
+      source: { kind: "figma_paste_normalized", file: SAMPLE_FILE },
+      outputRoot: tempRoot,
+      llm: { client },
+      events: (event) => observed.push(event.phase),
+      otelTracer: otel.tracer,
+      otelMeter: otel.meter,
+    });
+
+    assert.equal(otel.spans.length, observed.length);
+    assert.equal(otel.counters.length, observed.length);
+    assert.equal(
+      otel.spans[0]?.name,
+      "workspace.test_intelligence.production_runner.intent_derivation_started",
+    );
+    const policySpan = otel.spans.find((span) =>
+      span.name.endsWith(".policy_decision"),
+    );
+    assert.match(
+      String(policySpan?.attributes?.["workspace.test_intelligence.verdict"]),
+      /accepted|blocked/,
+    );
+    const llmSpan = otel.spans.find((span) =>
+      span.name.endsWith(".llm_gateway_response"),
+    );
+    assert.equal(
+      llmSpan?.attributes?.["workspace.test_intelligence.model_deployment"],
+      "gpt-oss-120b",
+    );
+    assert.equal(
+      typeof llmSpan?.attributes?.["workspace.test_intelligence.prompt_hash"],
+      "string",
+    );
+    const finalSpan = otel.spans[otel.spans.length - 1];
+    assert.equal(
+      finalSpan?.attributes?.["workspace.test_intelligence.prompt_hash"] !==
+        "none",
+      true,
+    );
   } finally {
     await rm(tempRoot, { recursive: true, force: true });
   }

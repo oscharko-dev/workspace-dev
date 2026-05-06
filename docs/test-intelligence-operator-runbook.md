@@ -725,6 +725,8 @@ either a sanitized run-log review or an explicit waiver.
   production-wired claims, full env matrix, and failure taxonomy.
 - `docs/test-intelligence.md` — feature overview, event taxonomy, live
   smoke instructions.
+- `docs/test-intelligence-observability.md` — optional OpenTelemetry span
+  names, counter name, stable attributes, and severity mapping.
 - `docs/test-intelligence-dpia-production-runner.md` — data flows,
   redaction layers, evidence chain, ICT-register references, and
   DORA mapping for the production runner.
