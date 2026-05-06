@@ -287,6 +287,59 @@ test("repair loop terminates at iteration 0 when both judges accept the initial 
   });
 });
 
+test("Issue #1929: repair loop preserves all 9 initial logic/faithfulness verdict combinations in iteration 0", async () => {
+  const logicVerdicts: readonly LogicJudgeVerdictLabel[] = [
+    "accept",
+    "repair",
+    "reject",
+  ];
+  const faithfulnessVerdicts: readonly FaithfulnessVerdictLabel[] = [
+    "accept",
+    "repair",
+    "reject",
+  ];
+
+  for (const logicVerdict of logicVerdicts) {
+    for (const faithfulnessVerdict of faithfulnessVerdicts) {
+      await withTempDir(async (runDir) => {
+        const result = await runRepairLoop({
+          jobId: "job-fixture",
+          runDir,
+          maxRepairIterations: 0,
+          initialList: buildList(["tc-1"]),
+          initialLogicVerdict: buildLogicVerdict(logicVerdict),
+          initialFaithfulnessVerdict: buildFaithfulnessVerdict(
+            faithfulnessVerdict,
+          ),
+          regenerate: okRegenerate(buildList(["tc-1"])),
+          runLogicJudge: sequencedLogicJudge([buildLogicVerdict("accept")]),
+          runFaithfulnessJudge: sequencedFaithfulnessJudge([
+            buildFaithfulnessVerdict("accept"),
+          ]),
+        });
+
+        assert.equal(result.iterations.length, 1);
+        assert.equal(result.iterations[0]!.logicVerdict, logicVerdict);
+        assert.equal(
+          result.iterations[0]!.faithfulnessVerdict,
+          faithfulnessVerdict,
+        );
+        assert.equal(result.finalLogicVerdict.verdict, logicVerdict);
+        assert.equal(
+          result.finalFaithfulnessVerdict?.verdict,
+          faithfulnessVerdict,
+        );
+        assert.equal(
+          result.outcome,
+          logicVerdict === "accept" && faithfulnessVerdict === "accept"
+            ? "accepted"
+            : "needs_review",
+        );
+      });
+    }
+  }
+});
+
 // ---------------------------------------------------------------------------
 // Scenario 2: 2-iter repair (initial repair, second iteration accepts)
 // ---------------------------------------------------------------------------

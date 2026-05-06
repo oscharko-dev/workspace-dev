@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -1391,6 +1391,211 @@ test("runFigmaToQcTestCases runs both judges, persists their artifacts, and keep
   } finally {
     globalThis.fetch = originalFetch;
     await rm(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("Issue #1929: runFigmaToQcTestCases preserves all 9 initial logic/faithfulness verdict combinations when visual captures exist", async () => {
+  const logicVerdicts = ["accept", "repair", "reject"] as const;
+  const faithfulnessVerdicts = ["accept", "repair", "reject"] as const;
+
+  for (const logicVerdict of logicVerdicts) {
+    for (const faithfulnessVerdict of faithfulnessVerdicts) {
+      const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ti-runner-1929-"));
+      const originalFetch = globalThis.fetch;
+      try {
+        const client = createMockLlmGatewayClient({
+          role: "test_generation",
+          deployment: "gpt-oss-120b-mock",
+          modelRevision: "mock-1",
+          gatewayRelease: "mock",
+          responder: (request, attempt) => {
+            if (request.responseSchemaName === "workspace-dev-logic-judge-v1") {
+              return {
+                outcome: "success" as const,
+                content: {
+                  verdict: logicVerdict,
+                  findings: [],
+                  repairInstructions:
+                    logicVerdict === "accept"
+                      ? []
+                      : [
+                          {
+                            testCaseId: "$job",
+                            path: "qualitySignals.coveredFieldIds",
+                            instruction:
+                              "Populate coveredFieldIds with cited IR ids.",
+                          },
+                        ],
+                },
+                finishReason: "stop" as const,
+                usage: { inputTokens: 20, outputTokens: 10 },
+                modelDeployment: "gpt-oss-120b-mock",
+                modelRevision: "mock-1",
+                gatewayRelease: "mock",
+                attempt,
+              };
+            }
+            return okResponder([SAMPLE_DRAFT, SAMPLE_ACCESSIBILITY_DRAFT])(
+              request,
+              attempt,
+            );
+          },
+        });
+        const bundle = createMockLlmGatewayClientBundle({
+          testGeneration: {
+            role: "test_generation",
+            deployment: "gpt-oss-120b",
+            modelRevision: "gpt-oss-120b@test",
+            gatewayRelease: "mock",
+            declaredCapabilities: TEST_GENERATION_CAPS,
+          },
+          visualPrimary: {
+            role: "visual_primary",
+            deployment: "llama-4-maverick-vision",
+            modelRevision: "llama-4-maverick-vision@test",
+            gatewayRelease: "mock",
+            declaredCapabilities: VISUAL_CAPS,
+            responder: (request, attempt) => {
+              if (
+                request.responseSchemaName ===
+                "workspace-dev-faithfulness-judge-v1"
+              ) {
+                return {
+                  outcome: "success" as const,
+                  content: {
+                    verdict: faithfulnessVerdict,
+                    hallucinations:
+                      faithfulnessVerdict === "accept"
+                        ? []
+                        : faithfulnessVerdict === "repair"
+                          ? [
+                              {
+                                testCaseId: "tc-1",
+                                stepIndex: 2,
+                                message:
+                                  "The button described in the step is not visible.",
+                              },
+                            ]
+                          : [
+                              {
+                                testCaseId: "$job",
+                                message:
+                                  "The generated case cites a control that is not visible in the capture.",
+                              },
+                            ],
+                    mismatches: [],
+                  },
+                  finishReason: "stop" as const,
+                  usage: { inputTokens: 12, outputTokens: 8 },
+                  modelDeployment: "llama-4-maverick-vision",
+                  modelRevision: "llama-4-maverick-vision@test",
+                  gatewayRelease: "mock",
+                  attempt,
+                };
+              }
+              return buildVisualSuccess(request, attempt, "1:1");
+            },
+          },
+          visualFallback: {
+            role: "visual_fallback",
+            deployment: "phi-4-multimodal-poc",
+            modelRevision: "phi-4-multimodal-poc@test",
+            gatewayRelease: "mock",
+            declaredCapabilities: VISUAL_CAPS,
+          },
+        });
+        globalThis.fetch = (async (url: string) => {
+          if (url.includes("/v1/files/ABC/nodes?ids=1%3A1")) {
+            return new Response(
+              JSON.stringify({
+                name: "Test View 03",
+                nodes: {
+                  "1:1": {
+                    document: SAMPLE_FILE.document.children?.[0]?.children?.[0],
+                  },
+                },
+              }),
+              {
+                status: 200,
+                headers: { "content-type": "application/json" },
+              },
+            );
+          }
+          if (
+            url ===
+            "https://api.figma.com/v1/images/ABC?ids=1%3A1&format=png&scale=2"
+          ) {
+            return new Response(
+              JSON.stringify({
+                images: {
+                  "1:1":
+                    "https://figma-alpha-api.s3.us-west-2.amazonaws.com/1_1.png",
+                },
+              }),
+              {
+                status: 200,
+                headers: { "content-type": "application/json" },
+              },
+            );
+          }
+          return new Response(PNG_BYTES, {
+            status: 200,
+            headers: { "content-type": "image/png" },
+          });
+        }) as typeof fetch;
+
+        const result = await runFigmaToQcTestCases({
+          jobId: `job-1929-${logicVerdict}-${faithfulnessVerdict}`,
+          generatedAt: "2026-05-06T12:00:00Z",
+          source: {
+            kind: "figma_url",
+            figmaUrl:
+              "https://www.figma.com/design/ABC/Test-View-03?node-id=1-1",
+            accessToken: "figd_test",
+          },
+          outputRoot: tempRoot,
+          llm: { client, bundle },
+          harness: { mode: "shadow_eval", maxRepairIterations: 0 },
+        });
+
+        assert.equal(result.logicJudge?.verdict.verdict, logicVerdict);
+        assert.equal(
+          result.faithfulnessJudge?.verdict.verdict,
+          faithfulnessVerdict,
+        );
+        assert.ok(
+          result.artifactPaths.faithfulnessJudgeVerdict,
+          `${logicVerdict}/${faithfulnessVerdict}: missing faithfulness artifact path`,
+        );
+        await stat(
+          path.join(
+            result.artifactDir,
+            "agent-role-runs",
+            "faithfulness_judge.json",
+          ),
+        );
+        assert.equal(client.callCount(), 2);
+        assert.equal(
+          (bundle.visualPrimary as MockLlmGatewayClient).callCount(),
+          2,
+        );
+        if (logicVerdict === "accept" && faithfulnessVerdict === "accept") {
+          assert.equal(result.repairLoop, undefined);
+        } else {
+          assert.equal(
+            result.repairLoop?.iterations[0]?.logicVerdict,
+            logicVerdict,
+          );
+          assert.equal(
+            result.repairLoop?.iterations[0]?.faithfulnessVerdict,
+            faithfulnessVerdict,
+          );
+        }
+      } finally {
+        globalThis.fetch = originalFetch;
+        await rm(tempRoot, { recursive: true, force: true });
+      }
+    }
   }
 });
 
