@@ -1172,6 +1172,17 @@ export const runFigmaToQcTestCases = async (
     });
   }
   const diversityPasses = resolveDiversityPassCount(input.generation);
+  if (
+    diversityPasses === 2 &&
+    !input.llm.client.declaredCapabilities.seedSupport
+  ) {
+    throw new ProductionRunnerError({
+      failureClass: "LLM_GATEWAY_FAILED",
+      message:
+        "runFigmaToQcTestCases: generation.diversityPasses=2 requires a generator gateway client with seed support.",
+      retryable: false,
+    });
+  }
   const generationPasses = resolveGenerationPasses(diversityPasses);
 
   // 6. Build the draft request using the compiler-owned schema hint and
@@ -1198,6 +1209,8 @@ export const runFigmaToQcTestCases = async (
   let harnessArtifactPath: string | undefined;
   let capturedLlmResult: LlmGenerationResult | undefined;
   let capturedLlmDurationMs = 0;
+  let capturedLlmInputTokens = 0;
+  let capturedLlmOutputTokens = 0;
   const harnessMode: ProductionRunnerHarnessMode = input.harness?.mode ?? "off";
   const harnessRoleStepId =
     input.harness?.roleStepId ?? PRODUCTION_RUNNER_HARNESS_ROLE_STEP_ID;
@@ -1372,6 +1385,10 @@ export const runFigmaToQcTestCases = async (
           }
           const llmDurationMs = Date.now() - startedAt;
           capturedLlmDurationMs += llmDurationMs;
+          if (llmResult.outcome === "success") {
+            capturedLlmInputTokens += llmResult.usage.inputTokens ?? 0;
+            capturedLlmOutputTokens += llmResult.usage.outputTokens ?? 0;
+          }
           emit({
             phase: "llm_gateway_response",
             timestamp: monotonicMs(),
@@ -2054,20 +2071,44 @@ export const runFigmaToQcTestCases = async (
     (faithfulnessJudgeResult === undefined ||
       faithfulnessJudgeResult.verdict.verdict === "accept");
 
+  if (harnessMode !== "off" && judgeAccepted && harnessSummary === undefined) {
+    const harnessAttemptResult = buildHarnessAttemptResult({
+      hashes: compiled.request.hashes,
+      judgeAccepted,
+      errorClass: "none",
+      llmDurationMs: capturedLlmDurationMs,
+      llmInputTokens: capturedLlmInputTokens,
+      llmOutputTokens: capturedLlmOutputTokens,
+    });
+    const harnessRunResult: RunAgentHarnessStepResult =
+      await runAgentHarnessStep({
+        runDir: artifactDir,
+        jobId: input.jobId,
+        role: "generator",
+        roleStepId: harnessRoleStepId,
+        testDepth: harnessTestDepth,
+        executeAttempt: async () => harnessAttemptResult,
+      });
+    harnessArtifactPath = harnessRunResult.artifactPath;
+    harnessSummary = {
+      mode: harnessMode,
+      outcome: harnessRunResult.outcome,
+      mappedJobStatus: harnessRunResult.mappedJobStatus,
+      errorClass: harnessRunResult.artifact.errorClass,
+      attemptsConsumed: harnessRunResult.artifact.attemptsConsumed,
+      maxAttemptsAllowed: harnessRunResult.artifact.maxAttemptsAllowed,
+      artifactPath: harnessRunResult.artifactPath,
+    };
+  }
+
   if (harnessMode !== "off" && !judgeAccepted) {
     const harnessAttemptResult = buildHarnessAttemptResult({
       hashes: compiled.request.hashes,
       judgeAccepted,
       errorClass: "judge_rejection",
       llmDurationMs: capturedLlmDurationMs,
-      llmInputTokens:
-        capturedLlmResult?.outcome === "success"
-          ? (capturedLlmResult.usage.inputTokens ?? 0)
-          : 0,
-      llmOutputTokens:
-        capturedLlmResult?.outcome === "success"
-          ? (capturedLlmResult.usage.outputTokens ?? 0)
-          : 0,
+      llmInputTokens: capturedLlmInputTokens,
+      llmOutputTokens: capturedLlmOutputTokens,
     });
     const harnessRunResult: RunAgentHarnessStepResult =
       await runAgentHarnessStep({

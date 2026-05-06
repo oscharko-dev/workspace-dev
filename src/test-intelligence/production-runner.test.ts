@@ -829,6 +829,39 @@ test("Issue #1936: diversityPasses=2 dispatches two seeded generator passes, mer
   }
 });
 
+test("Issue #1936: diversityPasses=2 fails closed when the generator gateway does not declare seed support", async () => {
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ti-prod-runner-"));
+  try {
+    const client = createMockLlmGatewayClient({
+      role: "test_generation",
+      deployment: "gpt-oss-120b-mock",
+      modelRevision: "mock-1",
+      gatewayRelease: "mock",
+      declaredCapabilities: TEST_GENERATION_CAPS,
+      responder: okResponder([SAMPLE_DRAFT]),
+    });
+    await assert.rejects(
+      runFigmaToQcTestCases({
+        jobId: "job-diversity-seedless",
+        generatedAt: "2026-05-04T10:00:00Z",
+        source: { kind: "figma_paste_normalized", file: SAMPLE_FILE },
+        outputRoot: tempRoot,
+        llm: { client },
+        generation: { diversityPasses: 2 },
+        logicJudge: { enabled: false },
+      }),
+      (error: unknown) => {
+        assert.ok(error instanceof ProductionRunnerError);
+        assert.equal(error.failureClass, "LLM_GATEWAY_FAILED");
+        assert.match(error.message, /requires a generator gateway client with seed support/u);
+        return true;
+      },
+    );
+  } finally {
+    await rm(tempRoot, { recursive: true, force: true });
+  }
+});
+
 test("runFigmaToQcTestCases forwards maxInputTokens from the resolved FinOps budget", async () => {
   const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ti-runner-"));
   try {
