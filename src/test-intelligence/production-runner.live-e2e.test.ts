@@ -257,11 +257,44 @@ test("live-E2E: production runner generates test cases against Azure for a synth
     );
     const raw = await readFile(result.artifactPaths.visualSidecarResult!, "utf8");
     const parsed = JSON.parse(raw) as {
-      visualEvidenceRefs?: Array<{ screenId: string }>;
+      visualEvidenceRefs?: Array<{ screenId: string; modelDeployment: string }>;
+      result?: {
+        outcome?: string;
+        selectedDeployment?: string;
+        fallbackReason?: string;
+      };
     };
     assert.ok(
       (parsed.visualEvidenceRefs?.length ?? 0) > 0,
       "Figma URL live-E2E must emit non-empty visualEvidenceRefs",
+    );
+    // Issue #1933: harden the smoke so the visual-primary path is actually
+    // exercised, not silently routed through the fallback. A `success`
+    // outcome with `fallbackReason: "none"` proves the operator-supplied
+    // primary deployment responded directly. The deployment label must
+    // match the env-supplied primary so a misconfigured operator setup
+    // (e.g., the deprecated `mistral-document-ai-2512`) cannot pass green
+    // by silently falling through to the cross-vendor fallback.
+    assert.equal(
+      parsed.result?.outcome,
+      "success",
+      "Figma URL live-E2E must reach a successful visual-sidecar outcome",
+    );
+    assert.equal(
+      parsed.result?.selectedDeployment,
+      visualPrimaryDeployment,
+      `visual-sidecar selectedDeployment must equal the operator-supplied primary (${visualPrimaryDeployment})`,
+    );
+    assert.equal(
+      parsed.result?.fallbackReason,
+      "none",
+      "visual-primary path must respond directly — fallback must not be used",
+    );
+    assert.ok(
+      parsed.visualEvidenceRefs?.every(
+        (ref) => ref.modelDeployment === visualPrimaryDeployment,
+      ),
+      `every visualEvidenceRef must be tagged with the primary deployment (${visualPrimaryDeployment})`,
     );
   } else {
     assert.ok(
