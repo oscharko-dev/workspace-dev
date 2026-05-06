@@ -641,6 +641,194 @@ test("runFigmaToQcTestCases escalates critical untrusted-content findings to nee
   }
 });
 
+test("Issue #1936: diversityPasses=1 preserves the legacy single-pass request shape", async () => {
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ti-runner-"));
+  try {
+    const declaredCapabilities: LlmGatewayCapabilities = {
+      ...TEST_GENERATION_CAPS,
+      seedSupport: true,
+    };
+    const firstClient = createMockLlmGatewayClient({
+      role: "test_generation",
+      deployment: "gpt-oss-120b-mock",
+      modelRevision: "mock-1",
+      gatewayRelease: "mock",
+      declaredCapabilities,
+      responder: okResponder([SAMPLE_DRAFT]),
+    });
+    const secondClient = createMockLlmGatewayClient({
+      role: "test_generation",
+      deployment: "gpt-oss-120b-mock",
+      modelRevision: "mock-1",
+      gatewayRelease: "mock",
+      declaredCapabilities,
+      responder: okResponder([SAMPLE_DRAFT]),
+    });
+
+    const withoutGeneration = await runFigmaToQcTestCases({
+      jobId: "job-1936-default-a",
+      generatedAt: "2026-05-06T10:00:00.000Z",
+      source: { kind: "figma_paste_normalized", file: SAMPLE_FILE },
+      outputRoot: tempRoot,
+      llm: { client: firstClient },
+    });
+    const withSinglePass = await runFigmaToQcTestCases({
+      jobId: "job-1936-default-b",
+      generatedAt: "2026-05-06T10:00:00.000Z",
+      source: { kind: "figma_paste_normalized", file: SAMPLE_FILE },
+      outputRoot: tempRoot,
+      llm: { client: secondClient },
+      generation: { diversityPasses: 1 },
+    });
+
+    const firstGeneratorRequests = firstClient
+      .recordedRequests()
+      .filter(
+        (request) =>
+          request.responseSchemaName ===
+            "workspace-dev-production-runner-draft-list-v1" &&
+          request.seed === undefined,
+      );
+    const secondGeneratorRequests = secondClient
+      .recordedRequests()
+      .filter(
+        (request) =>
+          request.responseSchemaName ===
+            "workspace-dev-production-runner-draft-list-v1" &&
+          request.seed === undefined,
+      );
+    assert.ok(firstGeneratorRequests.length >= 1);
+    assert.ok(secondGeneratorRequests.length >= 1);
+    assert.deepEqual(
+      withoutGeneration.generatedTestCases.testCases.map((testCase) => ({
+        title: testCase.title,
+        promptHash: testCase.audit.promptHash,
+      })),
+      withSinglePass.generatedTestCases.testCases.map((testCase) => ({
+        title: testCase.title,
+        promptHash: testCase.audit.promptHash,
+      })),
+    );
+  } finally {
+    await rm(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("Issue #1936: diversityPasses=2 dispatches two seeded generator passes, merges outputs, and persists pass artifacts", async () => {
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ti-runner-"));
+  try {
+    const declaredCapabilities: LlmGatewayCapabilities = {
+      ...TEST_GENERATION_CAPS,
+      seedSupport: true,
+    };
+    const duplicateDraft: ProductionRunnerLlmDraftCase = {
+      ...SAMPLE_DRAFT,
+      title: "Gemeinsamer Testfall",
+      objective: "Dedupe probe",
+    };
+    const negativeDraft: ProductionRunnerLlmDraftCase = {
+      ...SAMPLE_DRAFT,
+      title: "Ungueltige Investitionssumme wird abgelehnt",
+      objective:
+        "Bestätigen, dass eine negative Investitionssumme validiert und abgelehnt wird.",
+      type: "negative",
+      technique: "boundary_value_analysis",
+      testData: ["Investitionssumme: -1"],
+      expectedResults: ["Die Eingabe wird mit einer Fehlermeldung abgelehnt"],
+    };
+    const responder = (
+      request: LlmGenerationRequest,
+      attempt: number,
+    ): LlmGenerationResult => {
+      if (request.responseSchemaName === "workspace-dev-logic-judge-v1") {
+        return {
+          outcome: "success",
+          content: {
+            verdict: "accept",
+            findings: [],
+            repairInstructions: [],
+          },
+          finishReason: "stop",
+          usage: { inputTokens: 20, outputTokens: 10 },
+          modelDeployment: "gpt-oss-120b-mock",
+          modelRevision: "mock-1",
+          gatewayRelease: "mock",
+          attempt,
+        };
+      }
+      const testCases =
+        request.seed === 11
+          ? [duplicateDraft]
+          : request.seed === 29
+            ? [duplicateDraft, negativeDraft]
+            : [SAMPLE_DRAFT];
+      return {
+        outcome: "success",
+        content: { testCases },
+        finishReason: "stop",
+        usage: { inputTokens: 40, outputTokens: 20 },
+        modelDeployment: "gpt-oss-120b-mock",
+        modelRevision: "mock-1",
+        gatewayRelease: "mock",
+        attempt,
+      };
+    };
+    const client = createMockLlmGatewayClient({
+      role: "test_generation",
+      deployment: "gpt-oss-120b-mock",
+      modelRevision: "mock-1",
+      gatewayRelease: "mock",
+      declaredCapabilities,
+      responder,
+    });
+
+    const result = await runFigmaToQcTestCases({
+      jobId: "job-1936-diversity",
+      generatedAt: "2026-05-06T11:00:00.000Z",
+      source: { kind: "figma_paste_normalized", file: SAMPLE_FILE },
+      outputRoot: tempRoot,
+      llm: { client },
+      generation: { diversityPasses: 2 },
+    });
+
+    const generatorRequests = client
+      .recordedRequests()
+      .filter(
+        (request) =>
+          request.responseSchemaName ===
+            "workspace-dev-production-runner-draft-list-v1" &&
+          (request.seed === 11 || request.seed === 29),
+      );
+    assert.deepEqual(
+      Array.from(new Set(generatorRequests.map((request) => request.seed))).sort(),
+      [11, 29],
+    );
+    assert.equal(result.generatedTestCases.testCases.length, 2);
+    assert.deepEqual(
+      result.generatedTestCases.testCases.map((testCase) => testCase.title).sort(),
+      ["Gemeinsamer Testfall", "Ungueltige Investitionssumme wird abgelehnt"],
+    );
+    assert.notEqual(
+      result.generatedTestCases.testCases[0]?.audit.cacheKey,
+      result.generatedTestCases.testCases[1]?.audit.cacheKey,
+    );
+
+    const finopsReport = JSON.parse(
+      await readFile(result.artifactPaths.finopsReport, "utf8"),
+    ) as FinOpsBudgetReport;
+    assert.ok(finopsReport.bySource.generator.callCount >= 2);
+    assert.deepEqual(finopsReport.bySource.generator.attemptIds, [
+      "generator-run-a",
+      "generator-run-b",
+    ]);
+
+    await stat(path.join(result.artifactDir, "agent-role-runs", "generator-run-a.json"));
+    await stat(path.join(result.artifactDir, "agent-role-runs", "generator-run-b.json"));
+  } finally {
+    await rm(tempRoot, { recursive: true, force: true });
+  }
+});
+
 test("runFigmaToQcTestCases forwards maxInputTokens from the resolved FinOps budget", async () => {
   const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ti-runner-"));
   try {

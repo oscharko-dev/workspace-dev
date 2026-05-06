@@ -60,6 +60,7 @@ const baseOptions = (): TestIntelligenceRunOptions => ({
   harnessRoleStepId: undefined,
   harnessMaxRepairIterations: undefined,
   customContextMarkdownPath: undefined,
+  diversityPasses: 1,
 });
 
 // ---------------------------------------------------------------------------
@@ -1220,6 +1221,39 @@ test("parseTestIntelligenceRunArgs: --custom-context-markdown rejects duplicate 
   );
 });
 
+test("parseTestIntelligenceRunArgs: --diversity-passes accepts 1 and 2", () => {
+  for (const value of ["1", "2"] as const) {
+    const opts = parseTestIntelligenceRunArgs(
+      [
+        "--figma-url",
+        "https://figma.com/design/abc/foo",
+        "--custom-context-markdown",
+        "./demo-context.md",
+        "--diversity-passes",
+        value,
+      ],
+      {},
+    );
+    assert.equal(opts.diversityPasses, Number(value));
+  }
+});
+
+test("parseTestIntelligenceRunArgs: --diversity-passes rejects unsupported values", () => {
+  assert.throws(
+    () =>
+      parseTestIntelligenceRunArgs(
+        [
+          "--figma-url",
+          "https://figma.com/design/abc/foo",
+          "--diversity-passes",
+          "3",
+        ],
+        {},
+      ),
+    /--diversity-passes must be 1 or 2/u,
+  );
+});
+
 test("runTestIntelligenceCommand: dry_run with --custom-context-markdown reports loaded byte count", async () => {
   const { sink, stdout, stderr } = collectingSink();
   let observedPath: string | undefined;
@@ -1374,4 +1408,84 @@ test("runTestIntelligenceCommand: deterministic_llm forwards customContextMarkdo
   });
   assert.equal(exitCode, 0, stderr.join(""));
   assert.equal(capturedMarkdown, "# Risk Profile\n- Limit: 10000 EUR.");
+});
+
+test("runTestIntelligenceCommand: deterministic_llm forwards diversityPasses to runner input", async () => {
+  const { sink, stderr } = collectingSink();
+  const options: TestIntelligenceRunOptions = {
+    ...baseOptions(),
+    figmaUrl: undefined,
+    figmaJsonFile: "/tmp/figma.json",
+    output: "/tmp/cli-diversity-output",
+    modelEndpoint: "https://aoai.example/openai/v1",
+    modelApiKey: "k-key",
+    mode: "deterministic_llm",
+    diversityPasses: 2,
+  };
+  let capturedDiversityPasses: number | undefined;
+  const runner = async (
+    input: Parameters<
+      Required<Parameters<typeof runTestIntelligenceCommand>[2]>["runner"]
+    >[0],
+  ): Promise<RunFigmaToQcTestCasesResult> => {
+    capturedDiversityPasses = (
+      input as unknown as {
+        generation?: { diversityPasses?: number };
+      }
+    ).generation?.diversityPasses;
+    return {
+      jobId: "ti-cli-diversity",
+      generatedAt: "2026-05-06T12:00:00.000Z",
+      fileKey: "abc",
+      generatedTestCases: {
+        testCases: [],
+      } as unknown as RunFigmaToQcTestCasesResult["generatedTestCases"],
+      intent: {} as unknown as RunFigmaToQcTestCasesResult["intent"],
+      validation: {} as unknown as RunFigmaToQcTestCasesResult["validation"],
+      policy: {} as unknown as RunFigmaToQcTestCasesResult["policy"],
+      coverage: {} as unknown as RunFigmaToQcTestCasesResult["coverage"],
+      blocked: false,
+      finopsBudget:
+        {} as unknown as RunFigmaToQcTestCasesResult["finopsBudget"],
+      artifactDir:
+        "/tmp/cli-diversity-output/_runner-output/jobs/ti-cli-diversity/test-intelligence",
+      artifactPaths: {
+        intent: "/tmp/intent.json",
+        compiledPrompt: "/tmp/compiled-prompt.json",
+        untrustedContentNormalizationReport: "/tmp/ucnr.json",
+        evidenceSeal: "/tmp/evidence-seal.json",
+        agentRoleRun: "/tmp/agent-role-run.json",
+        genealogy: "/tmp/genealogy.json",
+        generatedTestCases: "/tmp/generated.json",
+        validationReport: "/tmp/validation.json",
+        policyReport: "/tmp/policy.json",
+        coverageReport: "/tmp/coverage.json",
+        finopsReport: "/tmp/finops.json",
+      },
+      customerMarkdownPaths: {
+        combined: "/tmp/customer-markdown/testfaelle.md",
+        perCase: [],
+      },
+    };
+  };
+  const exitCode = await runTestIntelligenceCommand(options, sink, {
+    env: GATE_ON,
+    runner,
+    buildLlmClient: () =>
+      ({}) as unknown as ReturnType<
+        Required<
+          Parameters<typeof runTestIntelligenceCommand>[2]
+        >["buildLlmClient"]
+      >,
+    loadFigmaJsonFile: async () => ({
+      fileKey: "abc",
+      name: "Foo",
+      document: { id: "0:0", type: "DOCUMENT" },
+    }),
+    loadJsonFile: async () => ({}),
+    copyArtifactsToOutput: async () => 0,
+    now: () => 1700000000000,
+  });
+  assert.equal(exitCode, 0, stderr.join(""));
+  assert.equal(capturedDiversityPasses, 2);
 });

@@ -8097,6 +8097,14 @@ export interface FinOpsBudgetReport {
         inFlightDedupHits: number;
         idempotentReplayHits: number;
         /**
+         * Optional per-attempt identifiers surfaced when a source emits
+         * multiple logically-distinct attempts that share the same
+         * `AgentSourceLabel` (Issue #1936 diversity passes). Omitted for
+         * legacy single-pass runs so byte-stable FinOps artifacts stay
+         * unchanged unless the feature is enabled.
+         */
+        attemptIds?: readonly string[];
+        /**
          * Optional deployment label this source ran against (Issue
          * #1932). Surfaces the **judge** deployment for
          * `judge_primary` / `judge_secondary` when the operator wired

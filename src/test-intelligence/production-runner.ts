@@ -138,6 +138,7 @@ import {
   compilePrompt,
   type CompilePromptSuffixSection,
 } from "./prompt-compiler.js";
+import { mergeGeneratedTestCaseLists } from "./case-merger.js";
 import {
   canonicalizeCustomContextMarkdown,
   type CustomContextMarkdownIssue,
@@ -151,6 +152,7 @@ import {
 } from "../contracts/index.js";
 import { cloneEuBankingDefaultProfile } from "./policy-profile.js";
 import { writeAgentRoleRunArtifact } from "./agent-role-run-artifact.js";
+import { listGeneratorDiversityPassProfiles } from "./agent-role-profile.js";
 import {
   AGENT_HARNESS_CHECKPOINT_ROOT_PARENT_HASH,
   readAgentHarnessCheckpointChain,
@@ -633,6 +635,16 @@ export interface RunFigmaToQcTestCasesInput {
    */
   logicJudge?: {
     readonly enabled: boolean;
+  };
+  /**
+   * Optional diversity-sampling configuration (Issue #1936). Omit this
+   * block or set `diversityPasses: 1` to preserve the legacy single-pass
+   * generator path byte-for-byte. `diversityPasses: 2` enables two
+   * deterministic generator passes that run in parallel with distinct bias
+   * hints and seeds before their outputs are merged downstream.
+   */
+  generation?: {
+    readonly diversityPasses?: 1 | 2;
   };
 }
 
@@ -1158,56 +1170,8 @@ export const runFigmaToQcTestCases = async (
       result: riskRankingResult.gatewayResult,
     });
   }
-  const compiled = compilePrompt({
-    jobId: input.jobId,
-    intent: wireIntent,
-    ...(promptVisualBatch !== undefined ? { visual: promptVisualBatch } : {}),
-    ...(activeAgentLessons.length > 0
-      ? { agentLessons: activeAgentLessons }
-      : {}),
-    modelBinding: {
-      modelRevision: TEST_GENERATION_MODEL_REVISION,
-      gatewayRelease: TEST_GENERATION_GATEWAY_RELEASE,
-    },
-    policyBundleVersion: POLICY_BUNDLE_VERSION,
-    roleStepId: "test_generation",
-    customerRubric,
-    testDesignModel,
-    coveragePlan: coveragePlanResult.plan,
-    riskRanking: riskRankingResult.ranking,
-    responseSchema: draftSchema,
-    responseSchemaName: "workspace-dev-production-runner-draft-list-v1",
-    outputSchemaHintLabel: "ProductionRunnerDraftResponse",
-    suffixSections: buildPromptSuffixSections(
-      wireIntent,
-      policyProfileId,
-      customContextMarkdown !== undefined,
-    ),
-    visualBinding: promptVisualBinding,
-    ...(compiledCustomContext !== undefined
-      ? { customContext: compiledCustomContext }
-      : {}),
-    ...(compiledSourceMixPlan !== undefined
-      ? { sourceMixPlan: compiledSourceMixPlan }
-      : {}),
-    ...(finopsLimits.maxInputTokens !== undefined
-      ? {
-          contextBudget: {
-            roleStepId: "test_generation",
-            maxInputTokens: finopsLimits.maxInputTokens,
-          },
-        }
-      : {}),
-  });
-  if (compiled.contextBudgetReport?.action === "needs_review") {
-    throw new ProductionRunnerError({
-      failureClass: "FINOPS_BUDGET_INVALID",
-      message:
-        `context budget analyzer could not fit the test_generation prompt within maxInputTokens ` +
-        `${compiled.contextBudgetReport.maxInputTokens}`,
-      retryable: false,
-    });
-  }
+  const diversityPasses = resolveDiversityPassCount(input.generation);
+  const generationPasses = resolveGenerationPasses(diversityPasses);
 
   // 6. Build the draft request using the compiler-owned schema hint and
   //    deterministic suffix layout.
@@ -1218,50 +1182,6 @@ export const runFigmaToQcTestCases = async (
   const effectiveMaxWallClockMs =
     finopsLimits.maxWallClockMs ?? input.llm.maxWallClockMs;
   const effectiveMaxRetries = finopsLimits.maxRetries;
-  const generationRequest: LlmGenerationRequest & {
-    onInFlightDedupHit?: (source: AgentSourceLabel) => void;
-  } = {
-    jobId: compiled.request.jobId,
-    systemPrompt: compiled.request.systemPrompt,
-    userPrompt: compiled.request.userPrompt,
-    responseSchema: draftSchema,
-    responseSchemaName: "workspace-dev-production-runner-draft-list-v1",
-    inFlightDedup: {
-      source: "generator",
-      inputHash: compiled.request.hashes.inputHash,
-      promptHash: compiled.request.hashes.promptHash,
-      modelBinding: canonicalJson(compiled.request.modelBinding),
-      schemaHash: compiled.request.hashes.schemaHash,
-      policyProfileHash,
-    },
-    onInFlightDedupHit: (source) =>
-      finopsRecorder.recordInFlightDedupHit(source),
-    ...(effectiveMaxInputTokens !== undefined
-      ? { maxInputTokens: effectiveMaxInputTokens }
-      : {}),
-    ...(effectiveMaxOutputTokens !== undefined
-      ? { maxOutputTokens: effectiveMaxOutputTokens }
-      : {}),
-    ...(effectiveMaxWallClockMs !== undefined
-      ? { maxWallClockMs: effectiveMaxWallClockMs }
-      : {}),
-    ...(effectiveMaxRetries !== undefined
-      ? { maxRetries: effectiveMaxRetries }
-      : {}),
-    ...(input.llm.abortSignal !== undefined
-      ? { abortSignal: input.llm.abortSignal }
-      : {}),
-  };
-  emit({
-    phase: "prompt_compiled",
-    timestamp: monotonicMs(),
-    details: {
-      promptHash: compiled.request.hashes.promptHash,
-      schemaHash: compiled.request.hashes.schemaHash,
-      maxOutputTokens: effectiveMaxOutputTokens,
-      maxWallClockMs: effectiveMaxWallClockMs,
-    },
-  });
 
   // 5.5. Replay cache (Issue #1739). Check before any LLM dispatch. On a hit
   // the generate callback is never invoked and tokens are saved entirely.
@@ -1299,158 +1219,321 @@ export const runFigmaToQcTestCases = async (
   const logicJudgeClient: LlmGatewayClient =
     input.llm.bundle?.logicJudge ?? input.llm.logicJudge ?? input.llm.client;
 
-  let cacheExecResult: Awaited<ReturnType<typeof executeWithReplayCache>>;
-  try {
-    cacheExecResult = await executeWithReplayCache({
-      cache: replayCache,
-      cacheKey: compiled.cacheKey,
-      generate: async () => {
-        // 6. LLM dispatch.
-        emit({
-          phase: "llm_gateway_request",
-          timestamp: monotonicMs(),
-          details: {
-            role: "test_generation",
-            deployment: PRODUCTION_RUNNER_TEST_GENERATION_DEPLOYMENT,
-          },
-        });
-        const llmResult = await input.llm.client.generate(generationRequest);
-        capturedLlmResult = llmResult;
-        const llmDurationMs = Date.now() - startedAt;
-        capturedLlmDurationMs = llmDurationMs;
-        emit({
-          phase: "llm_gateway_response",
-          timestamp: monotonicMs(),
-          details: {
-            outcome: llmResult.outcome,
-            ...(llmResult.outcome === "success"
-              ? {
-                  inputTokens: llmResult.usage.inputTokens,
-                  outputTokens: llmResult.usage.outputTokens,
-                  finishReason: llmResult.finishReason,
-                }
-              : { errorClass: llmResult.errorClass }),
-          },
-        });
-
-        // Classify the LLM attempt into a harness-shaped envelope before
-        // throwing, so `harness.mode === "shadow_eval"` / `"enforced"` can
-        // record a per-step artifact even on failure.
-        const attemptOutcome = classifyLlmAttempt({
-          llmResult,
-          gatewayRelease: input.llm.client.gatewayRelease,
-          finopsRecorder,
-          llmDurationMs,
-        });
-
-        if (harnessMode !== "off") {
-          const harnessAttemptResult = buildHarnessAttemptResult({
-            hashes: compiled.request.hashes,
-            judgeAccepted: attemptOutcome.kind === "ok",
-            errorClass:
-              attemptOutcome.kind === "ok" ? "none" : attemptOutcome.errorClass,
-            llmDurationMs,
-            llmInputTokens:
-              llmResult.outcome === "success"
-                ? (llmResult.usage.inputTokens ?? 0)
-                : 0,
-            llmOutputTokens:
-              llmResult.outcome === "success"
-                ? (llmResult.usage.outputTokens ?? 0)
-                : 0,
-          });
-          const harnessRunResult: RunAgentHarnessStepResult =
-            await runAgentHarnessStep({
-              runDir: artifactDir,
-              jobId: input.jobId,
-              role: "generator",
-              roleStepId: harnessRoleStepId,
-              testDepth: harnessTestDepth,
-              executeAttempt: async () => harnessAttemptResult,
-            });
-          harnessArtifactPath = harnessRunResult.artifactPath;
-          harnessSummary = {
-            mode: harnessMode,
-            outcome: harnessRunResult.outcome,
-            mappedJobStatus: harnessRunResult.mappedJobStatus,
-            errorClass: harnessRunResult.artifact.errorClass,
-            attemptsConsumed: harnessRunResult.artifact.attemptsConsumed,
-            maxAttemptsAllowed: harnessRunResult.artifact.maxAttemptsAllowed,
-            artifactPath: harnessRunResult.artifactPath,
-          };
-        }
-
-        if (attemptOutcome.kind === "error") {
-          if (
-            llmResult.outcome !== "success" &&
-            llmResult.errorClass === "canceled"
-          ) {
-            emit({
-              phase: "cancelled",
-              timestamp: monotonicMs(),
-              details: { reason: "llm_gateway_canceled" },
-            });
-          }
-          throw attemptOutcome.error;
-        }
-        const drafts = attemptOutcome.drafts;
-
-        // 7. Stamp full GeneratedTestCase records.
-        const audit: GeneratedTestCaseAuditMetadata = {
-          jobId: input.jobId,
-          generatedAt: input.generatedAt,
-          contractVersion: TEST_INTELLIGENCE_CONTRACT_VERSION,
-          schemaVersion: GENERATED_TEST_CASE_SCHEMA_VERSION,
-          promptTemplateVersion: TEST_INTELLIGENCE_PROMPT_TEMPLATE_VERSION,
-          redactionPolicyVersion: REDACTION_POLICY_VERSION,
-          visualSidecarSchemaVersion: VISUAL_SIDECAR_SCHEMA_VERSION,
-          cacheHit: false,
-          cacheKey: compiled.request.hashes.cacheKey,
-          inputHash: compiled.request.hashes.inputHash,
-          promptHash: compiled.request.hashes.promptHash,
-          schemaHash: compiled.request.hashes.schemaHash,
-        };
-        const testCases = drafts.map((draft, index) =>
-          stampGeneratedTestCase({
-            draft,
-            jobId: input.jobId,
-            index,
-            audit,
-            intent,
-          }),
-        );
-        testCases.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
-        return {
-          schemaVersion: GENERATED_TEST_CASE_SCHEMA_VERSION,
-          jobId: input.jobId,
-          testCases,
-        };
+  const compileGenerationPass = (
+    pass: GenerationPassConfig,
+    extraSuffixSections: readonly CompilePromptSuffixSection[] = [],
+  ) => {
+    const compiled = compilePrompt({
+      jobId: input.jobId,
+      intent: wireIntent,
+      ...(promptVisualBatch !== undefined ? { visual: promptVisualBatch } : {}),
+      ...(activeAgentLessons.length > 0
+        ? { agentLessons: activeAgentLessons }
+        : {}),
+      modelBinding: {
+        modelRevision: TEST_GENERATION_MODEL_REVISION,
+        gatewayRelease: TEST_GENERATION_GATEWAY_RELEASE,
+        ...(pass.seed !== undefined ? { seed: pass.seed } : {}),
       },
+      policyBundleVersion: POLICY_BUNDLE_VERSION,
+      roleStepId: "test_generation",
+      customerRubric,
+      testDesignModel,
+      coveragePlan: coveragePlanResult.plan,
+      riskRanking: riskRankingResult.ranking,
+      responseSchema: draftSchema,
+      responseSchemaName: "workspace-dev-production-runner-draft-list-v1",
+      outputSchemaHintLabel: "ProductionRunnerDraftResponse",
+      suffixSections: [
+        ...buildPromptSuffixSections(
+          wireIntent,
+          policyProfileId,
+          customContextMarkdown !== undefined,
+          pass.diversityBias,
+        ),
+        ...extraSuffixSections,
+      ],
+      visualBinding: promptVisualBinding,
+      ...(compiledCustomContext !== undefined
+        ? { customContext: compiledCustomContext }
+        : {}),
+      ...(compiledSourceMixPlan !== undefined
+        ? { sourceMixPlan: compiledSourceMixPlan }
+        : {}),
+      ...(finopsLimits.maxInputTokens !== undefined
+        ? {
+            contextBudget: {
+              roleStepId: "test_generation",
+              maxInputTokens: finopsLimits.maxInputTokens,
+            },
+          }
+        : {}),
     });
-  } catch (err) {
-    if (err instanceof ReplayCacheValidationError) {
+    if (compiled.contextBudgetReport?.action === "needs_review") {
       throw new ProductionRunnerError({
-        failureClass: "PERSIST_FAILED",
+        failureClass: "FINOPS_BUDGET_INVALID",
         message:
-          "Persistent replay cache entry failed validation; refusing to reuse corrupted cached output.",
+          `context budget analyzer could not fit the test_generation prompt within maxInputTokens ` +
+          `${compiled.contextBudgetReport.maxInputTokens}`,
         retryable: false,
-        cause: err,
       });
     }
-    throw err;
-  }
+    return compiled;
+  };
 
-  if (cacheExecResult.cacheHit) {
-    emit({
-      phase: "replay_cache_hit",
-      timestamp: monotonicMs(),
-      details: {
-        key: cacheExecResult.key,
-        testCaseCount: cacheExecResult.testCases.testCases.length,
-      },
-    });
-  }
-  let generatedList: GeneratedTestCaseList = cacheExecResult.testCases;
+  const buildGenerationRequest = (
+    compiled: ReturnType<typeof compileGenerationPass>,
+  ): LlmGenerationRequest & {
+    onInFlightDedupHit?: (source: AgentSourceLabel) => void;
+  } => ({
+    jobId: compiled.request.jobId,
+    systemPrompt: compiled.request.systemPrompt,
+    userPrompt: compiled.request.userPrompt,
+    responseSchema: draftSchema,
+    responseSchemaName: "workspace-dev-production-runner-draft-list-v1",
+    inFlightDedup: {
+      source: "generator",
+      inputHash: compiled.request.hashes.inputHash,
+      promptHash: compiled.request.hashes.promptHash,
+      modelBinding: canonicalJson(compiled.request.modelBinding),
+      schemaHash: compiled.request.hashes.schemaHash,
+      policyProfileHash,
+    },
+    onInFlightDedupHit: (source) =>
+      finopsRecorder.recordInFlightDedupHit(source),
+    ...(compiled.request.modelBinding.seed !== undefined
+      ? { seed: compiled.request.modelBinding.seed }
+      : {}),
+    ...(effectiveMaxInputTokens !== undefined
+      ? { maxInputTokens: effectiveMaxInputTokens }
+      : {}),
+    ...(effectiveMaxOutputTokens !== undefined
+      ? { maxOutputTokens: effectiveMaxOutputTokens }
+      : {}),
+    ...(effectiveMaxWallClockMs !== undefined
+      ? { maxWallClockMs: effectiveMaxWallClockMs }
+      : {}),
+    ...(effectiveMaxRetries !== undefined
+      ? { maxRetries: effectiveMaxRetries }
+      : {}),
+    ...(input.llm.abortSignal !== undefined
+      ? { abortSignal: input.llm.abortSignal }
+      : {}),
+  });
+
+  const executeGenerationPass = async (inputPass: {
+    pass: GenerationPassConfig;
+    extraSuffixSections?: readonly CompilePromptSuffixSection[];
+    emitPrimaryPromptCompiled: boolean;
+    recordHarnessAttempt: boolean;
+  }) => {
+    const compiled = compileGenerationPass(
+      inputPass.pass,
+      inputPass.extraSuffixSections,
+    );
+    if (inputPass.emitPrimaryPromptCompiled) {
+      emit({
+        phase: "prompt_compiled",
+        timestamp: monotonicMs(),
+        details: {
+          promptHash: compiled.request.hashes.promptHash,
+          schemaHash: compiled.request.hashes.schemaHash,
+          maxOutputTokens: effectiveMaxOutputTokens,
+          maxWallClockMs: effectiveMaxWallClockMs,
+        },
+      });
+    }
+    const generationRequest = buildGenerationRequest(compiled);
+    let cacheExecResult: Awaited<ReturnType<typeof executeWithReplayCache>>;
+    try {
+      cacheExecResult = await executeWithReplayCache({
+        cache: replayCache,
+        cacheKey: compiled.cacheKey,
+        generate: async () => {
+          emit({
+            phase: "llm_gateway_request",
+            timestamp: monotonicMs(),
+            details: {
+              role: "test_generation",
+              deployment: PRODUCTION_RUNNER_TEST_GENERATION_DEPLOYMENT,
+              ...(inputPass.pass.passId !== undefined
+                ? { passId: inputPass.pass.passId }
+                : {}),
+            },
+          });
+          const llmResult = await input.llm.client.generate(generationRequest);
+          if (
+            capturedLlmResult === undefined ||
+            inputPass.pass.passId === undefined ||
+            inputPass.pass.passId === "a"
+          ) {
+            capturedLlmResult = llmResult;
+          }
+          const llmDurationMs = Date.now() - startedAt;
+          capturedLlmDurationMs += llmDurationMs;
+          emit({
+            phase: "llm_gateway_response",
+            timestamp: monotonicMs(),
+            details: {
+              outcome: llmResult.outcome,
+              ...(inputPass.pass.passId !== undefined
+                ? { passId: inputPass.pass.passId }
+                : {}),
+              ...(llmResult.outcome === "success"
+                ? {
+                    inputTokens: llmResult.usage.inputTokens,
+                    outputTokens: llmResult.usage.outputTokens,
+                    finishReason: llmResult.finishReason,
+                  }
+                : { errorClass: llmResult.errorClass }),
+            },
+          });
+
+          const attemptOutcome = classifyLlmAttempt({
+            llmResult,
+            gatewayRelease: input.llm.client.gatewayRelease,
+            finopsRecorder,
+            llmDurationMs,
+            ...(diversityPasses === 2
+              ? { attemptId: inputPass.pass.roleRunId }
+              : {}),
+          });
+
+          if (inputPass.recordHarnessAttempt && harnessMode !== "off") {
+            const harnessAttemptResult = buildHarnessAttemptResult({
+              hashes: compiled.request.hashes,
+              judgeAccepted: attemptOutcome.kind === "ok",
+              errorClass:
+                attemptOutcome.kind === "ok"
+                  ? "none"
+                  : attemptOutcome.errorClass,
+              llmDurationMs,
+              llmInputTokens:
+                llmResult.outcome === "success"
+                  ? (llmResult.usage.inputTokens ?? 0)
+                  : 0,
+              llmOutputTokens:
+                llmResult.outcome === "success"
+                  ? (llmResult.usage.outputTokens ?? 0)
+                  : 0,
+            });
+            const harnessRunResult: RunAgentHarnessStepResult =
+              await runAgentHarnessStep({
+                runDir: artifactDir,
+                jobId: input.jobId,
+                role: "generator",
+                roleStepId: harnessRoleStepId,
+                testDepth: harnessTestDepth,
+                executeAttempt: async () => harnessAttemptResult,
+              });
+            harnessArtifactPath = harnessRunResult.artifactPath;
+            harnessSummary = {
+              mode: harnessMode,
+              outcome: harnessRunResult.outcome,
+              mappedJobStatus: harnessRunResult.mappedJobStatus,
+              errorClass: harnessRunResult.artifact.errorClass,
+              attemptsConsumed: harnessRunResult.artifact.attemptsConsumed,
+              maxAttemptsAllowed: harnessRunResult.artifact.maxAttemptsAllowed,
+              artifactPath: harnessRunResult.artifactPath,
+            };
+          }
+
+          if (attemptOutcome.kind === "error") {
+            if (
+              llmResult.outcome !== "success" &&
+              llmResult.errorClass === "canceled"
+            ) {
+              emit({
+                phase: "cancelled",
+                timestamp: monotonicMs(),
+                details: { reason: "llm_gateway_canceled" },
+              });
+            }
+            throw attemptOutcome.error;
+          }
+          const audit: GeneratedTestCaseAuditMetadata = {
+            jobId: input.jobId,
+            generatedAt: input.generatedAt,
+            contractVersion: TEST_INTELLIGENCE_CONTRACT_VERSION,
+            schemaVersion: GENERATED_TEST_CASE_SCHEMA_VERSION,
+            promptTemplateVersion: TEST_INTELLIGENCE_PROMPT_TEMPLATE_VERSION,
+            redactionPolicyVersion: REDACTION_POLICY_VERSION,
+            visualSidecarSchemaVersion: VISUAL_SIDECAR_SCHEMA_VERSION,
+            cacheHit: false,
+            cacheKey: compiled.request.hashes.cacheKey,
+            inputHash: compiled.request.hashes.inputHash,
+            promptHash: compiled.request.hashes.promptHash,
+            schemaHash: compiled.request.hashes.schemaHash,
+          };
+          const testCases = attemptOutcome.drafts.map((draft, index) =>
+            stampGeneratedTestCase({
+              draft,
+              jobId: input.jobId,
+              index,
+              audit,
+              intent,
+              ...(inputPass.pass.identitySalt !== undefined
+                ? { identitySalt: inputPass.pass.identitySalt }
+                : {}),
+            }),
+          );
+          testCases.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+          return {
+            schemaVersion: GENERATED_TEST_CASE_SCHEMA_VERSION,
+            jobId: input.jobId,
+            testCases,
+          };
+        },
+      });
+    } catch (err) {
+      if (err instanceof ReplayCacheValidationError) {
+        throw new ProductionRunnerError({
+          failureClass: "PERSIST_FAILED",
+          message:
+            "Persistent replay cache entry failed validation; refusing to reuse corrupted cached output.",
+          retryable: false,
+          cause: err,
+        });
+      }
+      throw err;
+    }
+
+    if (cacheExecResult.cacheHit) {
+      emit({
+        phase: "replay_cache_hit",
+        timestamp: monotonicMs(),
+        details: {
+          key: cacheExecResult.key,
+          testCaseCount: cacheExecResult.testCases.testCases.length,
+          ...(inputPass.pass.passId !== undefined
+            ? { passId: inputPass.pass.passId }
+            : {}),
+        },
+      });
+    }
+    return { compiled, cacheExecResult, pass: inputPass.pass };
+  };
+
+  const generationExecutions = await Promise.all(
+    generationPasses.map((pass, index) =>
+      executeGenerationPass({
+        pass,
+        emitPrimaryPromptCompiled: index === 0,
+        recordHarnessAttempt: diversityPasses === 1,
+      }),
+    ),
+  );
+  const compiled = generationExecutions[0]!.compiled;
+  const generationCacheHit = generationExecutions.every(
+    (execution) => execution.cacheExecResult.cacheHit,
+  );
+  let generatedList: GeneratedTestCaseList =
+    generationExecutions.length === 1
+      ? generationExecutions[0]!.cacheExecResult.testCases
+      : mergeGeneratedTestCaseLists([
+          generationExecutions[0]!.cacheExecResult.testCases,
+          generationExecutions[1]!.cacheExecResult.testCases,
+        ]);
   const logicJudgeCache = createFileSystemLogicJudgeCache(
     join(
       input.outputRoot,
@@ -1668,153 +1751,126 @@ export const runFigmaToQcTestCases = async (
         : {}),
       maxRepairIterations,
       regenerate: async ({ previousList, repairInstructions, iteration }) => {
-        const repairCompiled = compilePrompt({
-          jobId: input.jobId,
-          intent: wireIntent,
-          ...(promptVisualBatch !== undefined
-            ? { visual: promptVisualBatch }
-            : {}),
-          ...(activeAgentLessons.length > 0
-            ? { agentLessons: activeAgentLessons }
-            : {}),
-          modelBinding: {
-            modelRevision: TEST_GENERATION_MODEL_REVISION,
-            gatewayRelease: TEST_GENERATION_GATEWAY_RELEASE,
+        const repairSuffixSections: readonly CompilePromptSuffixSection[] = [
+          {
+            kind: "repair_instructions",
+            label: `RepairInstructions (iteration ${iteration})`,
+            jsonPayload: repairInstructions,
           },
-          policyBundleVersion: POLICY_BUNDLE_VERSION,
-          roleStepId: "test_generation",
-          customerRubric,
-          testDesignModel,
-          coveragePlan: coveragePlanResult.plan,
-          riskRanking: riskRankingResult.ranking,
-          responseSchema: draftSchema,
-          responseSchemaName: "workspace-dev-production-runner-draft-list-v1",
-          outputSchemaHintLabel: "ProductionRunnerDraftResponse",
-          suffixSections: [
-            ...buildPromptSuffixSections(
-              wireIntent,
-              policyProfileId,
-              customContextMarkdown !== undefined,
-            ),
-            {
-              kind: "repair_instructions" as const,
-              label: `RepairInstructions (iteration ${iteration})`,
-              jsonPayload: repairInstructions,
-            },
-            {
-              kind: "json" as const,
-              label: `PreviousGeneratedTestCases (iteration ${iteration})`,
-              jsonPayload: previousList,
-            },
-          ],
-          visualBinding: promptVisualBinding,
-          ...(compiledCustomContext !== undefined
-            ? { customContext: compiledCustomContext }
-            : {}),
-          ...(compiledSourceMixPlan !== undefined
-            ? { sourceMixPlan: compiledSourceMixPlan }
-            : {}),
-          ...(finopsLimits.maxInputTokens !== undefined
-            ? {
-                contextBudget: {
-                  roleStepId: "test_generation",
-                  maxInputTokens: finopsLimits.maxInputTokens,
-                },
-              }
-            : {}),
-        });
-        const repairRequest: LlmGenerationRequest = {
-          jobId: repairCompiled.request.jobId,
-          systemPrompt: repairCompiled.request.systemPrompt,
-          userPrompt: repairCompiled.request.userPrompt,
-          responseSchema: draftSchema,
-          responseSchemaName: "workspace-dev-production-runner-draft-list-v1",
-          ...(effectiveMaxInputTokens !== undefined
-            ? { maxInputTokens: effectiveMaxInputTokens }
-            : {}),
-          ...(effectiveMaxOutputTokens !== undefined
-            ? { maxOutputTokens: effectiveMaxOutputTokens }
-            : {}),
-          ...(effectiveMaxWallClockMs !== undefined
-            ? { maxWallClockMs: effectiveMaxWallClockMs }
-            : {}),
-          ...(effectiveMaxRetries !== undefined
-            ? { maxRetries: effectiveMaxRetries }
-            : {}),
-          ...(input.llm.abortSignal !== undefined
-            ? { abortSignal: input.llm.abortSignal }
-            : {}),
-        };
-        const startedAtRepair = Date.now();
-        const llmResult = await input.llm.client.generate(repairRequest);
-        const llmDurationMs = Date.now() - startedAtRepair;
-        finopsRecorder.recordAttempt({
-          role: "test_generation",
-          source: "generator",
-          deployment:
-            llmResult.outcome === "success"
-              ? llmResult.modelDeployment
-              : input.llm.client.deployment,
-          durationMs: llmDurationMs,
-          result: llmResult,
-        });
-        if (llmResult.outcome !== "success") {
-          throw new ProductionRunnerError({
-            failureClass: "LLM_GATEWAY_FAILED",
-            message: `Repair iteration ${iteration} generator failed: ${llmResult.errorClass}`,
-            retryable: false,
-          });
-        }
-        const repairValidation = validateLlmDraftResponse(llmResult.content);
-        if (!repairValidation.ok) {
-          throw new ProductionRunnerError({
-            failureClass: "LLM_RESPONSE_INVALID",
-            message: `Repair iteration ${iteration} returned an invalid payload: ${repairValidation.message}`,
-            retryable: false,
-          });
-        }
-        const repairAudit: GeneratedTestCaseAuditMetadata = {
-          jobId: input.jobId,
-          generatedAt: input.generatedAt,
-          contractVersion: TEST_INTELLIGENCE_CONTRACT_VERSION,
-          schemaVersion: GENERATED_TEST_CASE_SCHEMA_VERSION,
-          promptTemplateVersion: TEST_INTELLIGENCE_PROMPT_TEMPLATE_VERSION,
-          redactionPolicyVersion: REDACTION_POLICY_VERSION,
-          visualSidecarSchemaVersion: VISUAL_SIDECAR_SCHEMA_VERSION,
-          cacheHit: false,
-          cacheKey: repairCompiled.request.hashes.cacheKey,
-          inputHash: repairCompiled.request.hashes.inputHash,
-          promptHash: repairCompiled.request.hashes.promptHash,
-          schemaHash: repairCompiled.request.hashes.schemaHash,
-        };
-        const repairCases = repairValidation.value.testCases.map(
-          (draft, index) =>
-            stampGeneratedTestCase({
-              draft,
+          {
+            kind: "json",
+            label: `PreviousGeneratedTestCases (iteration ${iteration})`,
+            jsonPayload: previousList,
+          },
+        ];
+        const repairPassResults = await Promise.all(
+          generationPasses.map(async (pass) => {
+            const repairCompiled = compileGenerationPass(
+              pass,
+              repairSuffixSections,
+            );
+            const repairRequest = buildGenerationRequest(repairCompiled);
+            const startedAtRepair = Date.now();
+            const llmResult = await input.llm.client.generate(repairRequest);
+            const llmDurationMs = Date.now() - startedAtRepair;
+            finopsRecorder.recordAttempt({
+              role: "test_generation",
+              source: "generator",
+              ...(diversityPasses === 2 ? { attemptId: pass.roleRunId } : {}),
+              deployment:
+                llmResult.outcome === "success"
+                  ? llmResult.modelDeployment
+                  : input.llm.client.deployment,
+              durationMs: llmDurationMs,
+              result: llmResult,
+            });
+            if (llmResult.outcome !== "success") {
+              throw new ProductionRunnerError({
+                failureClass: "LLM_GATEWAY_FAILED",
+                message:
+                  `Repair iteration ${iteration} generator failed: ${llmResult.errorClass}`,
+                retryable: false,
+              });
+            }
+            const repairValidation = validateLlmDraftResponse(llmResult.content);
+            if (!repairValidation.ok) {
+              throw new ProductionRunnerError({
+                failureClass: "LLM_RESPONSE_INVALID",
+                message:
+                  `Repair iteration ${iteration} returned an invalid payload: ${repairValidation.message}`,
+                retryable: false,
+              });
+            }
+            const repairAudit: GeneratedTestCaseAuditMetadata = {
               jobId: input.jobId,
-              index,
-              audit: repairAudit,
-              intent,
-            }),
+              generatedAt: input.generatedAt,
+              contractVersion: TEST_INTELLIGENCE_CONTRACT_VERSION,
+              schemaVersion: GENERATED_TEST_CASE_SCHEMA_VERSION,
+              promptTemplateVersion: TEST_INTELLIGENCE_PROMPT_TEMPLATE_VERSION,
+              redactionPolicyVersion: REDACTION_POLICY_VERSION,
+              visualSidecarSchemaVersion: VISUAL_SIDECAR_SCHEMA_VERSION,
+              cacheHit: false,
+              cacheKey: repairCompiled.request.hashes.cacheKey,
+              inputHash: repairCompiled.request.hashes.inputHash,
+              promptHash: repairCompiled.request.hashes.promptHash,
+              schemaHash: repairCompiled.request.hashes.schemaHash,
+            };
+            const repairCases = repairValidation.value.testCases.map(
+              (draft, index) =>
+                stampGeneratedTestCase({
+                  draft,
+                  jobId: input.jobId,
+                  index,
+                  audit: repairAudit,
+                  intent,
+                  ...(pass.identitySalt !== undefined
+                    ? { identitySalt: pass.identitySalt }
+                    : {}),
+                }),
+            );
+            repairCases.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+            const repairList: GeneratedTestCaseList = {
+              schemaVersion: GENERATED_TEST_CASE_SCHEMA_VERSION,
+              jobId: input.jobId,
+              testCases: repairCases,
+            };
+            return {
+              list: repairList,
+              llmResult,
+              llmDurationMs,
+              inputTokens: llmResult.usage.inputTokens ?? 0,
+              outputTokens: llmResult.usage.outputTokens ?? 0,
+              hashes: {
+                inputHash: repairCompiled.request.hashes.inputHash,
+                promptHash: repairCompiled.request.hashes.promptHash,
+                schemaHash: repairCompiled.request.hashes.schemaHash,
+                cacheKey: repairCompiled.request.hashes.cacheKey,
+              },
+            };
+          }),
         );
-        repairCases.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
-        const repairList: GeneratedTestCaseList = {
-          schemaVersion: GENERATED_TEST_CASE_SCHEMA_VERSION,
-          jobId: input.jobId,
-          testCases: repairCases,
-        };
         return {
-          list: repairList,
-          llmResult,
-          llmDurationMs,
-          inputTokens: llmResult.usage.inputTokens ?? 0,
-          outputTokens: llmResult.usage.outputTokens ?? 0,
-          hashes: {
-            inputHash: repairCompiled.request.hashes.inputHash,
-            promptHash: repairCompiled.request.hashes.promptHash,
-            schemaHash: repairCompiled.request.hashes.schemaHash,
-            cacheKey: repairCompiled.request.hashes.cacheKey,
-          },
+          list:
+            repairPassResults.length === 1
+              ? repairPassResults[0]!.list
+              : mergeGeneratedTestCaseLists([
+                  repairPassResults[0]!.list,
+                  repairPassResults[1]!.list,
+                ]),
+          llmResult: repairPassResults[0]!.llmResult,
+          llmDurationMs: repairPassResults.reduce(
+            (sum, pass) => sum + pass.llmDurationMs,
+            0,
+          ),
+          inputTokens: repairPassResults.reduce(
+            (sum, pass) => sum + pass.inputTokens,
+            0,
+          ),
+          outputTokens: repairPassResults.reduce(
+            (sum, pass) => sum + pass.outputTokens,
+            0,
+          ),
+          hashes: repairPassResults[0]!.hashes,
         };
       },
       runLogicJudge: async ({ list }) => {
@@ -2167,6 +2223,17 @@ export const runFigmaToQcTestCases = async (
     roleStepId: "test_generation",
     hashes: compiled.request.hashes,
   });
+  const generatorPassRunPromises = generationExecutions
+    .filter((execution) => execution.pass.roleRunId !== "test_generation")
+    .map((execution) =>
+      writeAgentRoleRunArtifact({
+        runDir: artifactDir,
+        jobId: input.jobId,
+        roleRunId: execution.pass.roleRunId,
+        roleStepId: execution.pass.roleRunId,
+        hashes: execution.compiled.request.hashes,
+      }),
+    );
   const contextBudgetReportPath =
     compiled.contextBudgetReport === undefined
       ? undefined
@@ -2197,6 +2264,7 @@ export const runFigmaToQcTestCases = async (
       ),
       writeAtomicBytes(logicJudgeVerdictPath, logicJudgeVerdictBytes),
       agentRoleRunPromise,
+      ...generatorPassRunPromises,
       ...(faithfulnessJudgeCompiledPromptPath === undefined ||
       faithfulnessJudgeCompiledPromptBytes === undefined
         ? []
@@ -2246,6 +2314,7 @@ export const runFigmaToQcTestCases = async (
     });
   }
   const agentRoleRunArtifact = await agentRoleRunPromise;
+  const generatorPassRunArtifacts = await Promise.all(generatorPassRunPromises);
   const genealogyArtifact = await writeGenealogyArtifact({
     runDir: artifactDir,
     generatedAt: input.generatedAt,
@@ -2256,6 +2325,12 @@ export const runFigmaToQcTestCases = async (
         artifactFilename: "agent-role-runs/test_generation.json",
         roleLineageDepth: 0,
       },
+      ...generatorPassRunArtifacts.map((artifact) => ({
+        jobId: input.jobId,
+        roleStepId: artifact.artifact.roleRunId,
+        artifactFilename: `agent-role-runs/${artifact.artifact.roleRunId}.json`,
+        roleLineageDepth: 0,
+      })),
       {
         jobId: input.jobId,
         roleStepId: "logic_judge",
@@ -2365,6 +2440,9 @@ export const runFigmaToQcTestCases = async (
         generatedAt: input.generatedAt,
         harnessArtifactFilenames: [
           "agent-role-runs/test_generation.json",
+          ...generatorPassRunArtifacts.map(
+            (artifact) => `agent-role-runs/${artifact.artifact.roleRunId}.json`,
+          ),
           `agent-role-runs/${LOGIC_JUDGE_VERDICT_ARTIFACT_FILENAME}`,
           ...(faithfulnessJudgeResult === undefined
             ? []
@@ -2487,6 +2565,11 @@ export const runFigmaToQcTestCases = async (
         bytes: agentRoleRunArtifact.bytes,
         category: "manifest",
       },
+      ...generatorPassRunArtifacts.map((artifact) => ({
+        filename: `agent-role-runs/${artifact.artifact.roleRunId}.json`,
+        bytes: artifact.bytes,
+        category: "manifest" as const,
+      })),
       {
         filename: "genealogy.json",
         bytes: genealogyArtifact.bytes,
@@ -2633,7 +2716,7 @@ export const runFigmaToQcTestCases = async (
   });
   // Emit final FinOps summary derived from the LLM gateway response. Skipped
   // on cache hits (no LLM call was made, so there is nothing to report).
-  if (!cacheExecResult.cacheHit && capturedLlmResult?.outcome === "success") {
+  if (!generationCacheHit && capturedLlmResult?.outcome === "success") {
     emit({
       phase: "finops_recorded",
       timestamp: monotonicMs(),
@@ -2971,6 +3054,7 @@ interface ClassifyLlmAttemptInput {
   readonly gatewayRelease: string;
   readonly finopsRecorder: ReturnType<typeof createFinOpsUsageRecorder>;
   readonly llmDurationMs: number;
+  readonly attemptId?: string;
 }
 
 const LIVE_SMOKE_GATEWAY_RELEASE_MARKERS = ["live-smoke", "live-e2e"] as const;
@@ -2990,7 +3074,8 @@ const isSmokeTaggedGatewayRelease = (
 const classifyLlmAttempt = (
   input: ClassifyLlmAttemptInput,
 ): LlmAttemptOutcome => {
-  const { llmResult, gatewayRelease, finopsRecorder, llmDurationMs } = input;
+  const { llmResult, gatewayRelease, finopsRecorder, llmDurationMs, attemptId } =
+    input;
   if (llmResult.outcome !== "success") {
     if (llmResult.errorClass === "refusal") {
       return {
@@ -3030,6 +3115,7 @@ const classifyLlmAttempt = (
   finopsRecorder.recordAttempt({
     role: "test_generation",
     source: "generator",
+    ...(attemptId !== undefined ? { attemptId } : {}),
     deployment: llmResult.modelDeployment,
     durationMs: llmDurationMs,
     result: llmResult,
@@ -3451,6 +3537,7 @@ const stampGeneratedTestCase = (input: {
   index: number;
   audit: GeneratedTestCaseAuditMetadata;
   intent: BusinessTestIntentIr;
+  identitySalt?: string;
 }): GeneratedTestCase => {
   const slug = createHash("sha256")
     .update(
@@ -3458,6 +3545,9 @@ const stampGeneratedTestCase = (input: {
         jobId: input.jobId,
         index: input.index,
         title: input.draft.title,
+        ...(input.identitySalt !== undefined
+          ? { identitySalt: input.identitySalt }
+          : {}),
       }),
     )
     .digest("hex")
@@ -3607,6 +3697,7 @@ const buildPromptSuffixSections = (
   intent: BusinessTestIntentIr,
   policyProfileId: string,
   hasCustomContextMarkdown: boolean = false,
+  diversityBias: string | undefined = undefined,
 ): CompilePromptSuffixSection[] => {
   const screenSummary = intent.screens.map((screen) => ({
     screenId: screen.screenId,
@@ -3668,12 +3759,58 @@ const buildPromptSuffixSections = (
       ].join("\n"),
     });
   }
+  if (diversityBias !== undefined) {
+    sections.push({
+      kind: "text",
+      label: "DIVERSITY SAMPLING BIAS",
+      body: diversityBias,
+    });
+  }
   sections.push({
     kind: "json",
     label: "Verfügbare Bildschirme",
     jsonPayload: screenSummary,
   });
   return sections;
+};
+
+type ProductionRunnerDiversityPassCount = 1 | 2;
+
+interface GenerationPassConfig {
+  readonly passId?: "a" | "b";
+  readonly roleRunId: string;
+  readonly seed?: number;
+  readonly diversityBias?: string;
+  readonly identitySalt?: string;
+}
+
+const resolveDiversityPassCount = (
+  generation: RunFigmaToQcTestCasesInput["generation"],
+): ProductionRunnerDiversityPassCount => {
+  const value = generation?.diversityPasses ?? 1;
+  if (value !== 1 && value !== 2) {
+    throw new RangeError(
+      `runFigmaToQcTestCases: generation.diversityPasses must be 1 or 2, got ${String(
+        value,
+      )}`,
+    );
+  }
+  return value;
+};
+
+const resolveGenerationPasses = (
+  diversityPasses: ProductionRunnerDiversityPassCount,
+): readonly GenerationPassConfig[] => {
+  if (diversityPasses === 1) {
+    return [{ roleRunId: "test_generation" }];
+  }
+  return listGeneratorDiversityPassProfiles(2).map((profile) => ({
+    passId: profile.passId,
+    roleRunId: profile.roleRunId,
+    seed: profile.seed,
+    diversityBias: profile.bias,
+    identitySalt: profile.roleRunId,
+  }));
 };
 
 // The runner schema intentionally tolerates unknown sibling properties on

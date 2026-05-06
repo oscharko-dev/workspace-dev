@@ -32,6 +32,11 @@ export interface PerSourceCostEntry {
   readonly inFlightDedupHits: number;
   readonly idempotentReplayHits: number;
   /**
+   * Optional per-attempt identifiers surfaced when one source label
+   * fan-outs into multiple generator attempts (Issue #1936).
+   */
+  readonly attemptIds?: readonly string[];
+  /**
    * Optional deployment label this source ran against (Issue #1932).
    * Surfaces the **judge** deployment for `judge_primary` /
    * `judge_secondary` when the operator wired a cross-model bundle so
@@ -60,6 +65,7 @@ export interface MutablePerSourceCostEntry {
   callCount: number;
   inFlightDedupHits: number;
   idempotentReplayHits: number;
+  attemptIds?: string[];
   /**
    * Last deployment label observed for this source (Issue #1932).
    * `undefined` until the first attempt records one. The accumulator
@@ -126,6 +132,7 @@ export const recordPerSourceAttempt = (input: {
   rate?: FinOpsCostRate;
   inputTokens?: number;
   outputTokens?: number;
+  attemptId?: string;
   /**
    * Optional deployment label associated with this attempt (Issue
    * #1932). When supplied, it is stamped on the accumulator so the
@@ -144,6 +151,14 @@ export const recordPerSourceAttempt = (input: {
     callCount: input.accumulator.callCount,
     ...(input.rate !== undefined ? { rate: input.rate } : {}),
   });
+  if (typeof input.attemptId === "string" && input.attemptId.length > 0) {
+    const ids = input.accumulator.attemptIds ?? [];
+    if (!ids.includes(input.attemptId)) {
+      ids.push(input.attemptId);
+      ids.sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+    }
+    input.accumulator.attemptIds = ids;
+  }
   if (typeof input.deployment === "string" && input.deployment.length > 0) {
     input.accumulator.deployment = input.deployment;
   }
@@ -190,13 +205,16 @@ export const finalizePerSourceCostBreakdown = (input: {
           callCount: entry.callCount,
           inFlightDedupHits: entry.inFlightDedupHits,
           idempotentReplayHits: entry.idempotentReplayHits,
+          ...(entry.attemptIds !== undefined && entry.attemptIds.length > 0
+            ? { attemptIds: entry.attemptIds }
+            : {}),
           ...(entry.deployment !== undefined && entry.deployment.length > 0
             ? { deployment: entry.deployment }
             : {}),
         } satisfies PerSourceCostEntry,
       ];
     }),
-  ) as Record<AgentSourceLabel, PerSourceCostEntry>;
+  ) as unknown as Record<AgentSourceLabel, PerSourceCostEntry>;
 
   return {
     schemaVersion: PER_SOURCE_COST_BREAKDOWN_SCHEMA_VERSION,
