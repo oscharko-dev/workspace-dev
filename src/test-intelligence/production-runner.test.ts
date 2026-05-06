@@ -8,6 +8,7 @@ import test from "node:test";
 import type {
   FaithfulnessVerdict,
   FinOpsBudgetReport,
+  JudgeConsensusVerdict,
   JudgeVerdict,
   LlmGatewayCapabilities,
   LlmGenerationRequest,
@@ -42,6 +43,7 @@ import {
   EU_BANKING_DEFAULT_POLICY_PROFILE_ID,
   FAITHFULNESS_VERDICT_ARTIFACT_FILENAME,
   GENEALOGY_ARTIFACT_FILENAME,
+  JUDGE_CONSENSUS_ARTIFACT_FILENAME,
   LOGIC_JUDGE_VERDICT_ARTIFACT_FILENAME,
   WAVE1_VALIDATION_EVIDENCE_MANIFEST_ARTIFACT_FILENAME,
   type BusinessTestIntentIr,
@@ -502,6 +504,7 @@ test("Issue #1792: runFigmaToQcTestCases seals production-runner evidence and em
       "agent-role-runs/logic_judge.json",
       "agent-role-runs/test_generation.json",
       "context-budget/test_generation.json",
+      "judge-consensus.json",
     ]);
     const sealedEvent = observedEvents.find(
       (event) => event.phase === "evidence_sealed",
@@ -1596,17 +1599,27 @@ test("runFigmaToQcTestCases runs both judges, persists their artifacts, and keep
     });
 
     assert.equal(result.logicJudge?.verdict.verdict, "accept");
+    assert.equal(result.judgeConsensus.verdict.verdict, "accept");
     assert.equal(result.faithfulnessJudge?.verdict.verdict, "accept");
+    assert.ok(result.artifactPaths.judgeConsensus);
     assert.ok(result.artifactPaths.logicJudgeVerdict);
     assert.ok(result.artifactPaths.faithfulnessJudgeVerdict);
+    const judgeConsensusOnDisk = JSON.parse(
+      await readFile(result.artifactPaths.judgeConsensus, "utf8"),
+    ) as JudgeConsensusVerdict;
     const logicJudgeOnDisk = JSON.parse(
       await readFile(result.artifactPaths.logicJudgeVerdict!, "utf8"),
     ) as JudgeVerdict;
     const faithfulnessJudgeOnDisk = JSON.parse(
       await readFile(result.artifactPaths.faithfulnessJudgeVerdict!, "utf8"),
     ) as FaithfulnessVerdict;
+    assert.equal(judgeConsensusOnDisk.verdict, "accept");
     assert.equal(logicJudgeOnDisk.verdict, "accept");
     assert.equal(faithfulnessJudgeOnDisk.verdict, "accept");
+    assert.match(
+      result.artifactPaths.judgeConsensus,
+      new RegExp(`${JUDGE_CONSENSUS_ARTIFACT_FILENAME}$`, "u"),
+    );
     assert.match(
       result.artifactPaths.logicJudgeVerdict ?? "",
       new RegExp(`${LOGIC_JUDGE_VERDICT_ARTIFACT_FILENAME}$`, "u"),

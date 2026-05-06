@@ -3725,6 +3725,84 @@ export interface FaithfulnessVerdict {
   readonly refusal?: FaithfulnessVerdictRefusal;
 }
 
+/** Schema version for persisted production-runner judge-consensus artifacts. */
+export const JUDGE_CONSENSUS_SCHEMA_VERSION = "1.0.0" as const;
+
+/** Canonical filename for the persisted judge-consensus artifact. */
+export const JUDGE_CONSENSUS_ARTIFACT_FILENAME =
+  "judge-consensus.json" as const;
+
+/** Closed runtime list of known production-runner judge ids. */
+export const KNOWN_JUDGE_CONSENSUS_JUDGE_IDS = [
+  "logic_judge",
+  "faithfulness_judge",
+  "hallucination_judge",
+  "a11y_judge",
+  "coverage_judge",
+] as const;
+
+/** Known judge ids surfaced in the production-runner consensus panel. */
+export type KnownJudgeConsensusJudgeId =
+  (typeof KNOWN_JUDGE_CONSENSUS_JUDGE_IDS)[number];
+
+/** Closed runtime list of consensus finding categories. */
+export const JUDGE_CONSENSUS_FINDING_CATEGORIES = [
+  "schema_class",
+  "cross_modal_mismatch",
+  "ir_allowlist_violation",
+  "hallucination",
+  "a11y_gap",
+  "coverage_gap",
+  "other",
+] as const;
+
+/** Category tag used by the consensus module for veto / repair routing. */
+export type JudgeConsensusFindingCategory =
+  (typeof JUDGE_CONSENSUS_FINDING_CATEGORIES)[number];
+
+/** One normalized finding consumed by the production-runner consensus module. */
+export interface JudgeConsensusFinding {
+  readonly testCaseId: string;
+  readonly code: string;
+  readonly message: string;
+  readonly severity?: LogicJudgeFindingSeverity;
+  readonly category: JudgeConsensusFindingCategory;
+}
+
+/** One normalized judge entry consumed by the consensus module. */
+export interface JudgeConsensusPanelEntry {
+  readonly judgeId: string;
+  readonly verdict:
+    | LogicJudgeVerdictLabel
+    | FaithfulnessVerdictLabel;
+  readonly weight: number;
+  readonly findings: readonly JudgeConsensusFinding[];
+  readonly repairInstructions: readonly RepairInstruction[];
+}
+
+/** Primary veto attribution surfaced by the consensus artifact. */
+export interface JudgeConsensusVeto {
+  readonly judgeId: string;
+  readonly verdict:
+    | LogicJudgeVerdictLabel
+    | FaithfulnessVerdictLabel;
+  readonly findingCodes: readonly string[];
+}
+
+/** Persisted production-runner judge-consensus artifact. */
+export interface JudgeConsensusVerdict {
+  readonly schemaVersion: typeof JUDGE_CONSENSUS_SCHEMA_VERSION;
+  readonly contractVersion: typeof TEST_INTELLIGENCE_CONTRACT_VERSION;
+  readonly generatedAt: string;
+  readonly jobId: string;
+  readonly verdict:
+    | LogicJudgeVerdictLabel
+    | FaithfulnessVerdictLabel;
+  readonly repairInstructions: readonly RepairInstruction[];
+  readonly vetoBy?: JudgeConsensusVeto;
+  readonly panel: readonly JudgeConsensusPanelEntry[];
+}
+
 /** Canonical filename for per-run genealogy DAG artifacts. */
 export const GENEALOGY_ARTIFACT_FILENAME = "genealogy.json" as const;
 
