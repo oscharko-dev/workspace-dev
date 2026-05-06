@@ -1006,6 +1006,50 @@ test("computeVerdictSignature is invariant to finding-code order and instruction
   assert.notEqual(computeVerdictSignature(a), computeVerdictSignature(c));
 });
 
+test("computeVerdictSignature distinguishes a11y findings for different unresolved criteria", () => {
+  const focusCriterion = buildLogicVerdict(
+    "repair",
+    [
+      {
+        testCaseId: "$job",
+        path: "$job.a11yCoverage[1:1::focus-visible]",
+        instruction: "Strengthen the focus-visible case.",
+      },
+    ],
+    [
+      {
+        testCaseId: "$job",
+        code: "criterion_covered_weakly:1:1::focus-visible",
+        severity: "warning",
+        message: "Focus-visible coverage is weak.",
+      },
+    ],
+  );
+  const errorCriterion = buildLogicVerdict(
+    "repair",
+    [
+      {
+        testCaseId: "$job",
+        path: "$job.a11yCoverage[1:1::error-identification]",
+        instruction: "Add an error-identification assertion.",
+      },
+    ],
+    [
+      {
+        testCaseId: "$job",
+        code: "criterion_covered_weakly:1:1::error-identification",
+        severity: "warning",
+        message: "Error-identification coverage is weak.",
+      },
+    ],
+  );
+
+  assert.notEqual(
+    computeVerdictSignature(focusCriterion),
+    computeVerdictSignature(errorCriterion),
+  );
+});
+
 test("onIterationComplete fires once per iteration including iteration 0", async () => {
   await withTempDir(async (runDir) => {
     const records: number[] = [];
