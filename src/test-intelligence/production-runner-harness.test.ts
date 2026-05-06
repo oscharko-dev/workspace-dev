@@ -4,6 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 
+import type { LlmGatewayCapabilities } from "../contracts/index.js";
 import { createMockLlmGatewayClient } from "./llm-mock-gateway.js";
 import {
   PRODUCTION_RUNNER_HARNESS_MODES,
@@ -129,6 +130,15 @@ const SAMPLE_ACCESSIBILITY_DRAFT: ProductionRunnerLlmDraftCase = {
     "Die Formularfelder sind in sinnvoller Reihenfolge erreichbar",
     "Weiter ist per Tastatur auslösbar",
   ],
+};
+
+const SEEDED_TEST_GENERATION_CAPS: LlmGatewayCapabilities = {
+  structuredOutputs: true,
+  seedSupport: true,
+  reasoningEffortSupport: false,
+  maxOutputTokensSupport: true,
+  streamingSupport: false,
+  imageInputSupport: false,
 };
 
 const okResponder =
@@ -277,6 +287,38 @@ test("runFigmaToQcTestCases harness mode enforced succeeds on a happy path", asy
     assert.ok(result.harness);
     assert.equal(result.harness.mode, "enforced");
     assert.equal(result.harness.outcome, "accepted");
+    assert.ok(result.artifactPaths.harnessStep);
+  } finally {
+    await rm(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("runFigmaToQcTestCases harness mode shadow_eval persists an accepted step artifact for dual-pass generation", async () => {
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ti-runner-harness-"));
+  try {
+    const client = createMockLlmGatewayClient({
+      role: "test_generation",
+      deployment: "gpt-oss-120b-mock",
+      modelRevision: "mock-1",
+      gatewayRelease: "mock",
+      declaredCapabilities: SEEDED_TEST_GENERATION_CAPS,
+      responder: okResponder([SAMPLE_DRAFT]),
+    });
+    const result = await runFigmaToQcTestCases({
+      jobId: "job-shadow-dual-pass",
+      generatedAt: "2026-05-04T10:00:00Z",
+      source: { kind: "figma_paste_normalized", file: SAMPLE_FILE },
+      outputRoot: tempRoot,
+      llm: { client },
+      harness: { mode: "shadow_eval" },
+      generation: { diversityPasses: 2 },
+      logicJudge: { enabled: false },
+    });
+    assert.ok(result.harness, "expected harness summary in result");
+    assert.equal(result.harness.mode, "shadow_eval");
+    assert.equal(result.harness.outcome, "accepted");
+    assert.equal(result.harness.mappedJobStatus, "completed");
+    assert.equal(result.harness.errorClass, "none");
     assert.ok(result.artifactPaths.harnessStep);
   } finally {
     await rm(tempRoot, { recursive: true, force: true });
