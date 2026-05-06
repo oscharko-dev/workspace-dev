@@ -946,6 +946,7 @@ export const ALLOWED_LLM_GATEWAY_ROLES = [
   "visual_fallback",
   "logic_judge",
   "coverage_planner",
+  "risk_ranker",
 ] as const;
 export type LlmGatewayRole = (typeof ALLOWED_LLM_GATEWAY_ROLES)[number];
 
@@ -1248,6 +1249,7 @@ export const ALLOWED_CONTEXT_BUDGET_CATEGORY_KINDS = [
   "visual_binding",
   "source_context",
   "coverage_plan",
+  "risk_priorities",
   "generated_cases",
   "validation_findings",
   "judge_findings",
@@ -5831,6 +5833,7 @@ export interface CompiledPromptArtifacts {
     visual: VisualScreenDescription[];
     testDesignModel?: TestDesignModel;
     coveragePlan?: CoveragePlan;
+    riskRanking?: RiskRanking;
     customerRubric?: Record<string, unknown>;
     customContext?: CompiledPromptCustomContext;
     sourceMixPlan?: SourceMixPlan;
@@ -7827,6 +7830,7 @@ export const ALLOWED_AGENT_SOURCE_LABELS = [
   "visual_fallback",
   "generator",
   "coverage_planner",
+  "risk_ranker",
   "gap_finder",
   "repair_planner",
   "ir_mutation_oracle",
@@ -9405,6 +9409,66 @@ export interface CoveragePlan {
   readonly recommendedCases: readonly CoverageRequirement[];
   readonly techniques: readonly CoveragePlanTechnique[];
   readonly mutationKillRateTarget: number;
+}
+
+/** Schema version for persisted `risk-ranking.json` artifacts (Issue #1935). */
+export const RISK_RANKING_SCHEMA_VERSION = "1.0.0" as const;
+
+/** Canonical filename for the deterministic risk-ranking artifact. */
+export const RISK_RANKING_ARTIFACT_FILENAME = "risk-ranking.json" as const;
+
+/**
+ * Stable rationale tokens for a `RiskRankingElement` (Issue #1935).
+ *
+ * The deterministic baseline emits one of these tokens; LLM augmentation may
+ * only re-order or raise scores within the same closed taxonomy. Tokens are
+ * machine-readable so downstream consumers (generator prompt, judges) can
+ * reason about rank reasons without parsing prose.
+ */
+export const ALLOWED_RISK_RANKING_RATIONALES = [
+  "policy_strict",
+  "regulated_data",
+  "financial_transaction",
+  "high_risk_signal",
+  "must_have_case",
+  "medium_risk_signal",
+  "baseline",
+] as const;
+
+/** Discriminated union of allowed rationale tokens. */
+export type RiskRankingRationale =
+  (typeof ALLOWED_RISK_RANKING_RATIONALES)[number];
+
+/**
+ * One ranked IR element. Each entry refers back to the same
+ * `(screenId, elementId)` pair surfaced by `CoveragePlanPerElement` so the
+ * ranking can be cross-referenced against the deterministic coverage plan.
+ *
+ * `riskScore` lies in the closed interval `[0, 1]`. Higher scores mean the
+ * element should attract more cases in the generator output.
+ */
+export interface RiskRankingElement {
+  readonly screenId: string;
+  readonly elementId: string;
+  readonly riskScore: number;
+  readonly rationale: RiskRankingRationale;
+}
+
+/**
+ * Deterministic risk ranking emitted by `risk-ranker.ts` (Issue #1935).
+ *
+ * The ranking augments `CoveragePlan` with a sorted priority list so the
+ * generator prompt can require explicit coverage of the top-K elements. The
+ * artifact is persisted as `risk-ranking.json` for downstream auditing.
+ *
+ * `topKElementIds` is the prefix of `rankedElements` whose `(screenId,
+ * elementId)` pairs the generator MUST cover with at least one case each.
+ */
+export interface RiskRanking {
+  readonly schemaVersion: typeof RISK_RANKING_SCHEMA_VERSION;
+  readonly jobId: string;
+  readonly rankedElements: readonly RiskRankingElement[];
+  readonly topKElementIds: readonly string[];
 }
 
 /**

@@ -14,6 +14,7 @@ import {
   type CompiledPromptVisualBinding,
   type ContextBudgetReport,
   type ReplayCacheKey,
+  type RiskRanking,
   type SourceMixPlan,
   type TestDesignModel,
   type TestCasePolicyProfile,
@@ -39,6 +40,7 @@ import {
 import { detectPii } from "./pii-detection.js";
 import { planSourceMix } from "./source-mix-planner.js";
 import { buildCoveragePlan } from "./coverage-planner.js";
+import { buildRiskRanking } from "./risk-ranker.js";
 import { buildTestDesignModel } from "./test-design-model.js";
 
 /**
@@ -125,6 +127,13 @@ export interface CompilePromptInput {
   visualBinding: CompiledPromptVisualBinding;
   testDesignModel?: TestDesignModel;
   coveragePlan?: CoveragePlan;
+  /**
+   * Optional pre-computed risk ranking (Issue #1935). When omitted, the
+   * compiler derives a deterministic baseline ranking from the
+   * (possibly-augmented) `coveragePlan`. Suppliers MUST keep the ranking's
+   * `jobId` consistent with the request `jobId`.
+   */
+  riskRanking?: RiskRanking;
   customerRubric?: TestCasePolicyProfile | Record<string, unknown>;
   roleStepId?: string;
   responseSchema?: Record<string, unknown>;
@@ -193,6 +202,12 @@ export const compilePrompt = (
       model: testDesignModel,
       ...(sourceMixPlan !== undefined ? { sourceMixPlan } : {}),
     });
+  const riskRanking =
+    input.riskRanking ??
+    buildRiskRanking({
+      jobId: input.jobId,
+      coveragePlan,
+    });
   const customerRubric = normalizeCustomerRubric(
     input.customerRubric,
     input.policyBundleVersion,
@@ -216,6 +231,7 @@ export const compilePrompt = (
     agentLessonsJson: canonicalJson(agentLessons),
   });
   const coveragePlanSection = buildCoveragePlanSection(coveragePlan);
+  const riskPrioritiesSection = buildRiskPrioritiesSection(riskRanking);
   const sourceContextSection = buildSourceContextSection({
     customContext,
     sourceMixPlan,
@@ -224,6 +240,7 @@ export const compilePrompt = (
   const promptCategories = buildUserPromptCategories({
     stablePrefixSection,
     coveragePlanSection,
+    riskPrioritiesSection,
     sourceContextSection,
   });
   const contextBudgetResult =
@@ -255,6 +272,7 @@ export const compilePrompt = (
       outputSchemaHintLabel:
         input.outputSchemaHintLabel ?? DEFAULT_OUTPUT_SCHEMA_HINT_LABEL,
     }),
+    riskPrioritiesSection: promptSections.riskPrioritiesSection,
   });
   assertPromptHeaderOrder([prefix, suffix].filter(Boolean).join("\n\n"));
   const userPrompt = [prefixBody(prefix), suffix].filter(Boolean).join("\n\n");
@@ -263,6 +281,7 @@ export const compilePrompt = (
   const inputHash = computeInputHash(
     testDesignModel,
     coveragePlan,
+    riskRanking,
     visualBinding,
     customerRubric,
     agentLessons,
@@ -349,6 +368,7 @@ export const compilePrompt = (
       ...(agentLessons.length > 0 ? { agentLessons } : {}),
       testDesignModel,
       coveragePlan,
+      riskRanking,
       customerRubric,
       ...(customContext !== undefined ? { customContext } : {}),
       ...(sourceMixPlan !== undefined ? { sourceMixPlan } : {}),
@@ -501,6 +521,16 @@ const buildStablePrefixSection = (input: {
 const buildCoveragePlanSection = (coveragePlan: CoveragePlan): string =>
   ["[4] CoveragePlan", canonicalJson(coveragePlan)].join("\n");
 
+const RISK_PRIORITIES_INSTRUCTION =
+  "Every (screenId, elementId) listed below in `topKElementIds` MUST be covered by at least one generated test case. The list is sorted by descending risk score; do not lower the priority order. Use the `rationale` token only for ranking context; never copy it into the test case body.";
+
+const buildRiskPrioritiesSection = (riskRanking: RiskRanking): string =>
+  [
+    "[9] RiskPriorities",
+    RISK_PRIORITIES_INSTRUCTION,
+    canonicalJson(riskRanking),
+  ].join("\n");
+
 const buildSourceContextSection = (input: {
   customContext: CompiledPromptCustomContext | undefined;
   sourceMixPlan: SourceMixPlan | undefined;
@@ -637,6 +667,7 @@ const buildSourceContextSection = (input: {
 const buildUserPromptCategories = (input: {
   stablePrefixSection: string;
   coveragePlanSection: string;
+  riskPrioritiesSection: string;
   sourceContextSection: { promptPayload: string; artifactHashes: string[] } | undefined;
 }): ContextBudgetCategoryInput[] => {
   const categories: ContextBudgetCategoryInput[] = [
@@ -653,6 +684,14 @@ const buildUserPromptCategories = (input: {
       priority: "required",
       promptPayload: input.coveragePlanSection,
       artifactHashes: [sha256Hex(input.coveragePlanSection)],
+      compactible: false,
+      droppable: false,
+    },
+    {
+      kind: "risk_priorities",
+      priority: "required",
+      promptPayload: input.riskPrioritiesSection,
+      artifactHashes: [sha256Hex(input.riskPrioritiesSection)],
       compactible: false,
       droppable: false,
     },
@@ -674,19 +713,23 @@ const renderUserPromptFromCategories = (
   categories: readonly ContextBudgetCategoryInput[],
 ): string => categories.map((category) => category.promptPayload).join("\n");
 
-const ORDERED_PROMPT_SECTION_NUMBERS = [2, 3, 4, 5, 6, 7] as const;
+const ORDERED_PROMPT_SECTION_NUMBERS = [2, 3, 4, 5, 6, 7, 9] as const;
 type OrderedPromptSectionNumber =
   (typeof ORDERED_PROMPT_SECTION_NUMBERS)[number];
 
 const ORDERED_PROMPT_SECTION_HEADER_REGEX =
-  /^\[(2|3|4|5|6|7)\] [^\n]+$/gmu;
+  /^\[(2|3|4|5|6|7|9)\] [^\n]+$/gmu;
 
 const SOURCE_CONTEXT_COMPACTED_MARKER =
   "SOURCE_CONTEXT compacted from prompt payload due to context budget." as const;
 
+const RISK_PRIORITIES_COMPACTED_MARKER =
+  "RISK_PRIORITIES compacted from prompt payload due to context budget." as const;
+
 interface ResolvedPromptSections {
   orderedPrefixSections: string[];
   sourceContextSection?: string;
+  riskPrioritiesSection?: string;
 }
 
 const mergeDuplicatePromptSection = (
@@ -739,7 +782,7 @@ const resolvePromptSections = (
 ): ResolvedPromptSections => {
   const sections = extractOrderedPromptSections(renderedUserPrompt);
   const orderedPrefixSections = ORDERED_PROMPT_SECTION_NUMBERS.filter(
-    (sectionNumber) => sectionNumber !== 7,
+    (sectionNumber) => sectionNumber !== 7 && sectionNumber !== 9,
   ).map((sectionNumber) => {
     const sectionText = sections.get(sectionNumber);
     if (sectionText === undefined) {
@@ -759,9 +802,20 @@ const resolvePromptSections = (
         ? undefined
         : renderedUserPrompt.slice(compactedSourceContextStart).trim();
     })();
+  const riskPrioritiesSection =
+    sections.get(9) ??
+    (() => {
+      const compactedRiskPrioritiesStart = renderedUserPrompt.indexOf(
+        RISK_PRIORITIES_COMPACTED_MARKER,
+      );
+      return compactedRiskPrioritiesStart < 0
+        ? undefined
+        : renderedUserPrompt.slice(compactedRiskPrioritiesStart).trim();
+    })();
   return {
     orderedPrefixSections,
     ...(sourceContextSection !== undefined ? { sourceContextSection } : {}),
+    ...(riskPrioritiesSection !== undefined ? { riskPrioritiesSection } : {}),
   };
 };
 
@@ -785,8 +839,13 @@ const prefixBody = (prefix: string): string => prefix.split("\n\n").slice(2).joi
 const renderPromptSuffix = (input: {
   sourceContextSection: string | undefined;
   outputSchemaHintSection: string;
+  riskPrioritiesSection: string | undefined;
 }): string =>
-  [input.sourceContextSection, input.outputSchemaHintSection]
+  [
+    input.sourceContextSection,
+    input.outputSchemaHintSection,
+    input.riskPrioritiesSection,
+  ]
     .filter(
       (section): section is string =>
         typeof section === "string" && section.length > 0,
@@ -795,13 +854,13 @@ const renderPromptSuffix = (input: {
 
 const escapeCanonicalPromptHeaderLines = (text: string): string =>
   text.replace(
-    /^\[(1|2|3|4|5|6|7|8)\] /gmu,
+    /^\[(1|2|3|4|5|6|7|8|9)\] /gmu,
     String.raw`\[$1] `,
   );
 
 const assertPromptHeaderOrder = (fullPrompt: string): void => {
   const matches = [
-    ...fullPrompt.matchAll(/^\[(1|2|3|4|5|6|7|8)\] .+$/gmu),
+    ...fullPrompt.matchAll(/^\[(1|2|3|4|5|6|7|8|9)\] .+$/gmu),
   ];
   let previousSectionNumber = 0;
   const seen = new Set<number>();
@@ -880,6 +939,7 @@ const normalizeAgentLessons = (
 const computeInputHash = (
   testDesignModel: TestDesignModel,
   coveragePlan: CoveragePlan,
+  riskRanking: RiskRanking,
   visualBinding: CompiledPromptVisualBinding,
   customerRubric: Record<string, unknown>,
   agentLessons: readonly ReturnType<typeof toPromptSafeAgentLesson>[],
@@ -890,6 +950,7 @@ const computeInputHash = (
   return sha256Hex({
     testDesignModel,
     coveragePlan,
+    riskRanking,
     visualBinding,
     customerRubric,
     ...(agentLessons.length > 0 ? { agentLessons } : {}),

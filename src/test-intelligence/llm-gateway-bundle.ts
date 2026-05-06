@@ -45,6 +45,16 @@ export interface LlmGatewayClientBundle {
    * image-input support because the planner consumes structured JSON only.
    */
   coveragePlanner?: LlmGatewayClient;
+  /**
+   * Optional dedicated client for the Risk-Ranker augmentation (Issue #1935).
+   * When set, the production runner may ask this smaller model to refine the
+   * deterministic ranking of IR elements by risk score and emit a sorted
+   * priority list for the generator prompt.
+   *
+   * The client must declare role `"risk_ranker"` and must NOT advertise
+   * image-input support because the ranker consumes structured JSON only.
+   */
+  riskRanker?: LlmGatewayClient;
 }
 
 export interface LlmGatewayClientBundleConfigs {
@@ -53,6 +63,7 @@ export interface LlmGatewayClientBundleConfigs {
   visualFallback: LlmGatewayClientConfig;
   logicJudge?: LlmGatewayClientConfig;
   coveragePlanner?: LlmGatewayClientConfig;
+  riskRanker?: LlmGatewayClientConfig;
 }
 
 export interface MockLlmGatewayClientBundleInputs {
@@ -61,6 +72,7 @@ export interface MockLlmGatewayClientBundleInputs {
   visualFallback: CreateMockLlmGatewayClientInput;
   logicJudge?: CreateMockLlmGatewayClientInput;
   coveragePlanner?: CreateMockLlmGatewayClientInput;
+  riskRanker?: CreateMockLlmGatewayClientInput;
 }
 
 export interface LlmGatewayBundleProbeArtifact {
@@ -79,6 +91,7 @@ const ROLE_ORDER = [
   "visual_fallback",
   "logic_judge",
   "coverage_planner",
+  "risk_ranker",
 ] as const;
 
 const assertRole = ({
@@ -152,6 +165,18 @@ const assertBundle = (bundle: LlmGatewayClientBundle): void => {
       );
     }
   }
+  if (bundle.riskRanker !== undefined) {
+    assertRole({
+      actual: bundle.riskRanker.role,
+      expected: "risk_ranker",
+      label: "riskRanker",
+    });
+    if (bundle.riskRanker.declaredCapabilities.imageInputSupport) {
+      throw new RangeError(
+        "LlmGatewayClientBundle: riskRanker must not declare image input support",
+      );
+    }
+  }
 };
 
 export const createLlmGatewayClientBundle = (
@@ -173,6 +198,11 @@ export const createLlmGatewayClientBundle = (
           ),
         }
       : {}),
+    ...(configs.riskRanker !== undefined
+      ? {
+          riskRanker: createLlmGatewayClient(configs.riskRanker, runtime),
+        }
+      : {}),
   };
   assertBundle(bundle);
   return bundle;
@@ -190,6 +220,9 @@ export const createMockLlmGatewayClientBundle = (
       : {}),
     ...(inputs.coveragePlanner !== undefined
       ? { coveragePlanner: createMockLlmGatewayClient(inputs.coveragePlanner) }
+      : {}),
+    ...(inputs.riskRanker !== undefined
+      ? { riskRanker: createMockLlmGatewayClient(inputs.riskRanker) }
       : {}),
   };
   assertBundle(bundle);
@@ -217,6 +250,9 @@ export const probeLlmGatewayClientBundle = async ({
       : {}),
     ...(bundle.coveragePlanner !== undefined
       ? { coverage_planner: bundle.coveragePlanner }
+      : {}),
+    ...(bundle.riskRanker !== undefined
+      ? { risk_ranker: bundle.riskRanker }
       : {}),
   };
   const artifacts: LlmGatewayBundleProbeArtifact[] = [];

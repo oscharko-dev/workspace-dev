@@ -89,6 +89,7 @@ import {
   type TestCaseCoverageReport,
   type VisualSidecarFailureClass,
   type VisualSidecarResult,
+  RISK_RANKING_ARTIFACT_FILENAME,
 } from "../contracts/index.js";
 import { sanitizeErrorMessage } from "../error-sanitization.js";
 import { canonicalJson } from "./content-hash.js";
@@ -203,6 +204,10 @@ import {
   buildCoveragePlanWithAugmentation,
   writeCoveragePlanArtifact,
 } from "./coverage-planner.js";
+import {
+  buildRiskRankingWithAugmentation,
+  writeRiskRankingArtifact,
+} from "./risk-ranker.js";
 import {
   REPAIR_LOOP_DEFAULT_MAX_ITERATIONS,
   REPAIR_PLANNER_ARTIFACT_PREFIX,
@@ -393,6 +398,13 @@ export interface ProductionRunnerLlmConfig {
    * this field and `bundle.coveragePlanner` are present, the bundle slot wins.
    */
   coveragePlanner?: LlmGatewayClient;
+  /**
+   * Optional dedicated risk-ranker client (Issue #1935). When supplied
+   * directly, the production runner can ask a smaller model to refine the
+   * deterministic risk ranking without requiring a full bundle. When both this
+   * field and `bundle.riskRanker` are present, the bundle slot wins.
+   */
+  riskRanker?: LlmGatewayClient;
   /** Optional per-request token budget. */
   maxOutputTokens?: number;
   /** Optional per-request wall-clock budget (ms). */
@@ -641,6 +653,7 @@ export interface RunFigmaToQcTestCasesResult {
     intent: string;
     compiledPrompt: string;
     coveragePlan: string;
+    riskRanking: string;
     logicJudgeCompiledPrompt?: string;
     faithfulnessJudgeCompiledPrompt?: string;
     untrustedContentNormalizationReport: string;
@@ -1084,6 +1097,67 @@ export const runFigmaToQcTestCases = async (
       result: coveragePlanResult.gatewayResult,
     });
   }
+  const riskRankerClient =
+    input.llm.bundle?.riskRanker ?? input.llm.riskRanker;
+  const riskRankerStartedAt =
+    riskRankerClient === undefined ? undefined : Date.now();
+  const riskRankingResult = await buildRiskRankingWithAugmentation({
+    jobId: input.jobId,
+    coveragePlan: coveragePlanResult.plan,
+    policyProfile: customerRubric as Record<string, unknown>,
+    ...(riskRankerClient !== undefined
+      ? {
+          rankerClient: riskRankerClient,
+          ...(finopsBudget.roles.test_generation?.maxInputTokensPerRequest !==
+          undefined
+            ? {
+                maxInputTokens:
+                  finopsBudget.roles.test_generation.maxInputTokensPerRequest,
+              }
+            : {}),
+          ...(finopsBudget.roles.test_generation?.maxOutputTokensPerRequest !==
+          undefined
+            ? {
+                maxOutputTokens:
+                  finopsBudget.roles.test_generation.maxOutputTokensPerRequest,
+              }
+            : {}),
+          ...(finopsBudget.roles.test_generation?.maxWallClockMsPerRequest !==
+          undefined
+            ? {
+                maxWallClockMs:
+                  finopsBudget.roles.test_generation.maxWallClockMsPerRequest,
+              }
+            : {}),
+          ...(finopsBudget.roles.test_generation?.maxRetriesPerRequest !==
+          undefined
+            ? {
+                maxRetries:
+                  finopsBudget.roles.test_generation.maxRetriesPerRequest,
+              }
+            : {}),
+          ...(input.llm.abortSignal !== undefined
+            ? { abortSignal: input.llm.abortSignal }
+            : {}),
+        }
+      : {}),
+  });
+  if (
+    riskRankerClient !== undefined &&
+    riskRankerStartedAt !== undefined &&
+    riskRankingResult.gatewayResult !== undefined
+  ) {
+    finopsRecorder.recordAttempt({
+      role: "test_generation",
+      source: "risk_ranker",
+      deployment:
+        riskRankingResult.gatewayResult.outcome === "success"
+          ? riskRankingResult.gatewayResult.modelDeployment
+          : riskRankerClient.deployment,
+      durationMs: Date.now() - riskRankerStartedAt,
+      result: riskRankingResult.gatewayResult,
+    });
+  }
   const compiled = compilePrompt({
     jobId: input.jobId,
     intent: wireIntent,
@@ -1100,6 +1174,7 @@ export const runFigmaToQcTestCases = async (
     customerRubric,
     testDesignModel,
     coveragePlan: coveragePlanResult.plan,
+    riskRanking: riskRankingResult.ranking,
     responseSchema: draftSchema,
     responseSchemaName: "workspace-dev-production-runner-draft-list-v1",
     outputSchemaHintLabel: "ProductionRunnerDraftResponse",
@@ -1611,6 +1686,7 @@ export const runFigmaToQcTestCases = async (
           customerRubric,
           testDesignModel,
           coveragePlan: coveragePlanResult.plan,
+          riskRanking: riskRankingResult.ranking,
           responseSchema: draftSchema,
           responseSchemaName: "workspace-dev-production-runner-draft-list-v1",
           outputSchemaHintLabel: "ProductionRunnerDraftResponse",
@@ -2040,6 +2116,7 @@ export const runFigmaToQcTestCases = async (
     TEST_CASE_POLICY_REPORT_ARTIFACT_FILENAME,
   );
   const coveragePlanPath = join(artifactDir, "coverage-plan.json");
+  const riskRankingPath = join(artifactDir, RISK_RANKING_ARTIFACT_FILENAME);
   const coveragePath = join(
     artifactDir,
     TEST_CASE_COVERAGE_REPORT_ARTIFACT_FILENAME,
@@ -2107,6 +2184,10 @@ export const runFigmaToQcTestCases = async (
       plan: coveragePlanResult.plan,
       runDir: artifactDir,
     });
+    const riskRankingWritePromise = writeRiskRankingArtifact({
+      ranking: riskRankingResult.ranking,
+      runDir: artifactDir,
+    });
     await Promise.all([
       writeAtomicBytes(intentPath, intentBytes),
       writeAtomicBytes(compiledPromptPath, compiledPromptBytes),
@@ -2154,6 +2235,7 @@ export const runFigmaToQcTestCases = async (
       writeAtomicBytes(policyPath, policyBytes),
       writeAtomicBytes(coveragePath, coverageBytes),
       coveragePlanWritePromise,
+      riskRankingWritePromise,
     ]);
   } catch (err) {
     throw new ProductionRunnerError({
@@ -2624,6 +2706,7 @@ export const runFigmaToQcTestCases = async (
       intent: intentPath,
       compiledPrompt: compiledPromptPath,
       coveragePlan: coveragePlanPath,
+      riskRanking: riskRankingPath,
       logicJudgeCompiledPrompt: logicJudgeCompiledPromptPath,
       ...(faithfulnessJudgeCompiledPromptPath !== undefined
         ? {

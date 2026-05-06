@@ -63,6 +63,7 @@ export interface ResolvedLlmConfig {
   visualPrimaryDeployment: string;
   visualFallbackDeployment: string;
   coveragePlannerDeployment?: string;
+  riskRankerDeployment?: string;
   apiKey: string;
 }
 
@@ -120,6 +121,10 @@ export const resolveLlmConfigFromEnv = (
     env,
     "WORKSPACE_TEST_SPACE_COVERAGE_PLANNER_DEPLOYMENT",
   );
+  const riskRankerDeployment = readTrimmed(
+    env,
+    "WORKSPACE_TEST_SPACE_RISK_RANKER_DEPLOYMENT",
+  );
   return {
     endpoint,
     deployment,
@@ -129,6 +134,7 @@ export const resolveLlmConfigFromEnv = (
     ...(coveragePlannerDeployment !== undefined
       ? { coveragePlannerDeployment }
       : {}),
+    ...(riskRankerDeployment !== undefined ? { riskRankerDeployment } : {}),
     apiKey,
   };
 };
@@ -228,6 +234,31 @@ const defaultBuildLlmBundle = (
             },
           }
         : {}),
+      ...(config.riskRankerDeployment !== undefined
+        ? {
+            riskRanker: {
+              role: "risk_ranker" as const,
+              compatibilityMode: "openai_chat" as const,
+              baseUrl: config.endpoint,
+              deployment: config.riskRankerDeployment,
+              modelRevision: `${config.riskRankerDeployment}@server-auto-wire`,
+              gatewayRelease: "azure-ai-foundry-server-auto-wire",
+              authMode: "api_key" as const,
+              declaredCapabilities: {
+                structuredOutputs: true,
+                seedSupport: false,
+                reasoningEffortSupport: false,
+                maxOutputTokensSupport: true,
+                streamingSupport: false,
+                imageInputSupport: false,
+              },
+              timeoutMs: 60_000,
+              maxRetries: 1,
+              circuitBreaker: { failureThreshold: 2, resetTimeoutMs: 30_000 },
+              wireStructuredOutputMode: "none" as const,
+            },
+          }
+        : {}),
     },
     {
       apiKeyProvider: () => config.apiKey,
@@ -268,7 +299,7 @@ export const resolveTestIntelligenceProductionRunner = (
       input.logger?.log({
         level: "info",
         event: "test_intelligence_runner_wired",
-        message: `Test-intelligence production runner LLM bundle built (deployment=${config.deployment}, visualPrimary=${config.visualPrimaryDeployment}, visualFallback=${config.visualFallbackDeployment}${config.coveragePlannerDeployment !== undefined ? `, coveragePlanner=${config.coveragePlannerDeployment}` : ""})`,
+        message: `Test-intelligence production runner LLM bundle built (deployment=${config.deployment}, visualPrimary=${config.visualPrimaryDeployment}, visualFallback=${config.visualFallbackDeployment}${config.coveragePlannerDeployment !== undefined ? `, coveragePlanner=${config.coveragePlannerDeployment}` : ""}${config.riskRankerDeployment !== undefined ? `, riskRanker=${config.riskRankerDeployment}` : ""})`,
       });
     }
     return runner({

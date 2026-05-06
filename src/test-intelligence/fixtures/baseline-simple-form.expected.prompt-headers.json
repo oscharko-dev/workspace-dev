@@ -6,5 +6,6 @@
   "[5] Customer Rubric",
   "[6] AgentLessons",
   "[7] Findings / RepairInstructions / Iteration Inputs",
-  "[8] Output Schema-Hint"
+  "[8] Output Schema-Hint",
+  "[9] RiskPriorities"
 ]
