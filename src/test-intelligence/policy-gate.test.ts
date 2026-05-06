@@ -840,3 +840,70 @@ test("custom context policy signal escalates low-risk cases and records policy r
     true,
   );
 });
+
+// ---------------------------------------------------------------------------
+// Issue #1946: customerProfile.ictRegisterRef inheritance
+// ---------------------------------------------------------------------------
+
+test("Issue #1946: ictRegisterRef inherited from customerProfile satisfies policy:ict-register-ref-required", () => {
+  // Simulate what production-runner does: applyCustomerProfileIctRef fills
+  // in missing ictRegisterRef on bindings before the policy gate runs.
+  // The test drives policy-gate directly with the already-enriched bindings.
+  const ctx = harness([buildCase({})], buildIntent());
+  const report = evaluatePolicyGate({
+    jobId: "job-1",
+    generatedAt: GENERATED_AT,
+    list: ctx.list,
+    intent: ctx.intent,
+    profile: ctx.profile,
+    validation: ctx.validation,
+    coverage: ctx.coverage,
+    activeModelBindings: [
+      {
+        providerId: "llm-gateway",
+        modelId: "gpt-oss-120b@test",
+        inferenceProfileId: "gpt-oss-120b",
+        // ictRegisterRef provided via profile inheritance
+        ictRegisterRef: "ICT-PROFILE-REF-42",
+      },
+    ],
+  });
+  const violation = report.jobLevelViolations.find(
+    (entry) => entry.outcome === "ict_register_ref_required",
+  );
+  assert.equal(
+    violation,
+    undefined,
+    "should have no ict_register_ref_required violation when all bindings carry the ref",
+  );
+  assert.equal(report.blocked, false);
+});
+
+test("Issue #1946: missing ictRegisterRef still fires when no profile ref is present", () => {
+  const ctx = harness([buildCase({})], buildIntent());
+  const report = evaluatePolicyGate({
+    jobId: "job-1",
+    generatedAt: GENERATED_AT,
+    list: ctx.list,
+    intent: ctx.intent,
+    profile: ctx.profile,
+    validation: ctx.validation,
+    coverage: ctx.coverage,
+    activeModelBindings: [
+      {
+        providerId: "llm-gateway",
+        modelId: "gpt-oss-120b@test",
+        inferenceProfileId: "gpt-oss-120b",
+        // no ictRegisterRef — no profile to inherit from
+      },
+    ],
+  });
+  const violation = report.jobLevelViolations.find(
+    (entry) => entry.outcome === "ict_register_ref_required",
+  );
+  assert.ok(
+    violation,
+    "expected ict_register_ref_required violation when binding is missing ref and no profile",
+  );
+  assert.equal(report.blocked, true);
+});

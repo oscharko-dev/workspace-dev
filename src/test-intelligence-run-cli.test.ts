@@ -60,6 +60,7 @@ const baseOptions = (): TestIntelligenceRunOptions => ({
   harnessRoleStepId: undefined,
   harnessMaxRepairIterations: undefined,
   customContextMarkdownPath: undefined,
+  customerProfilePath: undefined,
   diversityPasses: 1,
 });
 
@@ -633,6 +634,7 @@ test("runTestIntelligenceCommand: deterministic_llm with injected runner returns
     harnessRoleStepId: undefined,
     harnessMaxRepairIterations: undefined,
     customContextMarkdownPath: undefined,
+    customerProfilePath: undefined,
   };
 
   const runner = async (): Promise<RunFigmaToQcTestCasesResult> => ({
@@ -743,6 +745,7 @@ test("runTestIntelligenceCommand: deterministic_llm blocked → exit 3", async (
     harnessRoleStepId: undefined,
     harnessMaxRepairIterations: undefined,
     customContextMarkdownPath: undefined,
+    customerProfilePath: undefined,
   };
 
   const runner = async (): Promise<RunFigmaToQcTestCasesResult> => ({
@@ -854,6 +857,7 @@ test("runTestIntelligenceCommand: deterministic_llm + harness-mode shadow_eval f
     harnessRoleStepId: "test_generation_alt",
     harnessMaxRepairIterations: undefined,
     customContextMarkdownPath: undefined,
+    customerProfilePath: undefined,
   };
 
   let capturedHarness: unknown;
@@ -1342,6 +1346,7 @@ test("runTestIntelligenceCommand: deterministic_llm forwards customContextMarkdo
     harnessRoleStepId: undefined,
     harnessMaxRepairIterations: undefined,
     customContextMarkdownPath: "/operator/forwarded.md",
+    customerProfilePath: undefined,
   };
   let capturedMarkdown: string | undefined;
   const runner = async (
@@ -1488,4 +1493,220 @@ test("runTestIntelligenceCommand: deterministic_llm forwards diversityPasses to 
   });
   assert.equal(exitCode, 0, stderr.join(""));
   assert.equal(capturedDiversityPasses, 2);
+});
+
+// ---------------------------------------------------------------------------
+// parseTestIntelligenceRunArgs — --customer-profile flag (Issue #1946)
+// ---------------------------------------------------------------------------
+
+test("parseTestIntelligenceRunArgs: --customer-profile captures path", () => {
+  const opts = parseTestIntelligenceRunArgs(
+    [
+      "--figma-url",
+      "https://figma.com/design/abc",
+      "--output",
+      "/tmp/x",
+      "--customer-profile",
+      "./profile.json",
+    ],
+    {},
+  );
+  assert.equal(opts.customerProfilePath, "./profile.json");
+});
+
+test("parseTestIntelligenceRunArgs: --customer-profile rejects empty value", () => {
+  assert.throws(
+    () =>
+      parseTestIntelligenceRunArgs(
+        [
+          "--figma-url",
+          "https://figma.com/design/abc",
+          "--customer-profile",
+          "",
+        ],
+        {},
+      ),
+    /--customer-profile requires a non-empty file path/u,
+  );
+});
+
+test("parseTestIntelligenceRunArgs: --customer-profile rejects duplicate flag", () => {
+  assert.throws(
+    () =>
+      parseTestIntelligenceRunArgs(
+        [
+          "--figma-url",
+          "https://figma.com/design/abc",
+          "--customer-profile",
+          "a.json",
+          "--customer-profile",
+          "b.json",
+        ],
+        {},
+      ),
+    /--customer-profile may be specified at most once/u,
+  );
+});
+
+test("runTestIntelligenceCommand: dry_run with --customer-profile reports loaded byte count", async () => {
+  const { sink, stdout } = collectingSink();
+  const options: TestIntelligenceRunOptions = {
+    ...baseOptions(),
+    customerProfilePath: "/operator/profile.json",
+  };
+  const profileJson = JSON.stringify({ ictRegisterRef: "ICT-REF-99" });
+  const exitCode = await runTestIntelligenceCommand(options, sink, {
+    env: GATE_ON,
+    loadCustomerProfileFile: async () => profileJson,
+    now: () => 1700000000000,
+  });
+  assert.equal(exitCode, 0);
+  const out = stdout.join("");
+  assert.match(out, /customer prof\s*:.*loaded/u);
+  assert.match(out, new RegExp(String(Buffer.byteLength(profileJson, "utf8"))));
+});
+
+test("runTestIntelligenceCommand: --customer-profile loader failure surfaces operator error and exits 1", async () => {
+  const { sink, stderr } = collectingSink();
+  const options: TestIntelligenceRunOptions = {
+    ...baseOptions(),
+    customerProfilePath: "/missing/profile.json",
+  };
+  const exitCode = await runTestIntelligenceCommand(options, sink, {
+    env: GATE_ON,
+    loadCustomerProfileFile: async () => {
+      throw new TestIntelligenceRunOperatorError(
+        "--customer-profile file not found: /missing/profile.json",
+      );
+    },
+    now: () => 1700000000000,
+  });
+  assert.equal(exitCode, 1);
+  assert.match(
+    stderr.join(""),
+    /--customer-profile file not found: \/missing\/profile\.json/u,
+  );
+});
+
+test("runTestIntelligenceCommand: --customer-profile oversize file is rejected with exit 1", async () => {
+  const { sink, stderr } = collectingSink();
+  const options: TestIntelligenceRunOptions = {
+    ...baseOptions(),
+    customerProfilePath: "/big/profile.json",
+  };
+  const exitCode = await runTestIntelligenceCommand(options, sink, {
+    env: GATE_ON,
+    loadCustomerProfileFile: async () => {
+      throw new TestIntelligenceRunOperatorError(
+        `--customer-profile file exceeds ${256 * 1024} bytes (got ${300000}); shrink the file`,
+      );
+    },
+    now: () => 1700000000000,
+  });
+  assert.equal(exitCode, 1);
+  assert.match(stderr.join(""), /exceeds.*bytes/u);
+});
+
+test("runTestIntelligenceCommand: --customer-profile schema error surfaces all issues and exits 1", async () => {
+  const { sink, stderr } = collectingSink();
+  const options: TestIntelligenceRunOptions = {
+    ...baseOptions(),
+    customerProfilePath: "/bad/profile.json",
+  };
+  const invalidJson = JSON.stringify({ ictRegisterRef: 999 }); // number not string
+  const exitCode = await runTestIntelligenceCommand(options, sink, {
+    env: GATE_ON,
+    loadCustomerProfileFile: async () => invalidJson,
+    now: () => 1700000000000,
+  });
+  assert.equal(exitCode, 1);
+  assert.match(stderr.join(""), /--customer-profile file is invalid/u);
+  assert.match(stderr.join(""), /ictRegisterRef/u);
+});
+
+test("runTestIntelligenceCommand: deterministic_llm forwards customerProfile to runner input", async () => {
+  const { sink, stderr } = collectingSink();
+  const options: TestIntelligenceRunOptions = {
+    ...baseOptions(),
+    figmaUrl: undefined,
+    figmaJsonFile: "/tmp/figma.json",
+    output: "/tmp/cli-profile-output",
+    modelEndpoint: "https://aoai.example/openai/v1",
+    modelApiKey: "k-key",
+    mode: "deterministic_llm",
+    customerProfilePath: "/operator/profile.json",
+  };
+  const profileJson = JSON.stringify({
+    ictRegisterRef: "ICT-CLI-FWDED-01",
+    glossary: [{ term: "IBAN", definition: "Bank account number" }],
+  });
+  let capturedProfile: unknown;
+  const runner = async (
+    input: Parameters<
+      Required<Parameters<typeof runTestIntelligenceCommand>[2]>["runner"]
+    >[0],
+  ): Promise<RunFigmaToQcTestCasesResult> => {
+    capturedProfile = (input as unknown as { customerProfile?: unknown })
+      .customerProfile;
+    return {
+      jobId: "ti-cli-profile",
+      generatedAt: "2026-05-06T12:00:00.000Z",
+      fileKey: "abc",
+      generatedTestCases: {
+        testCases: [],
+      } as unknown as RunFigmaToQcTestCasesResult["generatedTestCases"],
+      intent: {} as unknown as RunFigmaToQcTestCasesResult["intent"],
+      validation: {} as unknown as RunFigmaToQcTestCasesResult["validation"],
+      policy: {} as unknown as RunFigmaToQcTestCasesResult["policy"],
+      coverage: {} as unknown as RunFigmaToQcTestCasesResult["coverage"],
+      blocked: false,
+      finopsBudget:
+        {} as unknown as RunFigmaToQcTestCasesResult["finopsBudget"],
+      artifactDir:
+        "/tmp/cli-profile-output/_runner-output/jobs/ti-cli-profile/test-intelligence",
+      artifactPaths: {
+        intent: "/tmp/intent.json",
+        compiledPrompt: "/tmp/compiled-prompt.json",
+        untrustedContentNormalizationReport: "/tmp/ucnr.json",
+        evidenceSeal: "/tmp/evidence-seal.json",
+        agentRoleRun: "/tmp/agent-role-run.json",
+        genealogy: "/tmp/genealogy.json",
+        generatedTestCases: "/tmp/generated.json",
+        validationReport: "/tmp/validation.json",
+        policyReport: "/tmp/policy.json",
+        coverageReport: "/tmp/coverage.json",
+        finopsReport: "/tmp/finops.json",
+      },
+      customerMarkdownPaths: {
+        combined: "/tmp/customer-markdown/testfaelle.md",
+        perCase: [],
+      },
+    };
+  };
+  const exitCode = await runTestIntelligenceCommand(options, sink, {
+    env: GATE_ON,
+    runner,
+    buildLlmClient: () =>
+      ({}) as unknown as ReturnType<
+        Required<
+          Parameters<typeof runTestIntelligenceCommand>[2]
+        >["buildLlmClient"]
+      >,
+    loadFigmaJsonFile: async () => ({
+      fileKey: "abc",
+      name: "Foo",
+      document: { id: "0:0", type: "DOCUMENT" },
+    }),
+    loadJsonFile: async () => ({}),
+    copyArtifactsToOutput: async () => 0,
+    loadCustomerProfileFile: async () => profileJson,
+    now: () => 1700000000000,
+  });
+  assert.equal(exitCode, 0, stderr.join(""));
+  assert.ok(
+    capturedProfile !== undefined,
+    "customerProfile must be forwarded to runner",
+  );
+  const profile = capturedProfile as { ictRegisterRef?: string };
+  assert.equal(profile.ictRegisterRef, "ICT-CLI-FWDED-01");
 });
