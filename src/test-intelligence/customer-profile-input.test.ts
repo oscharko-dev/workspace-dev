@@ -193,10 +193,28 @@ test("parseAndCanonicalizeCustomerProfile: sorts riskTaxonomyOverrides by class"
 
 test("parseAndCanonicalizeCustomerProfile: valid policyOverrides", () => {
   const profile = parseOk({
-    policyOverrides: [{ ruleId: "policy:ict-register-ref-required", severity: "warning" }],
+    policyOverrides: [
+      {
+        ruleId: "policy:ict-register-ref-required",
+        severity: "warning",
+      },
+    ],
   });
   assert.equal(profile.policyOverrides.length, 1);
   assert.equal(profile.policyOverrides[0]?.severity, "warning");
+});
+
+test("parseAndCanonicalizeCustomerProfile: accepts optional policyOverride threshold", () => {
+  const profile = parseOk({
+    policyOverrides: [
+      {
+        ruleId: "policy:cross-modal-faithfulness-score",
+        severity: "warning",
+        threshold: 0.72,
+      },
+    ],
+  });
+  assert.equal(profile.policyOverrides[0]?.threshold, 0.72);
 });
 
 test("parseAndCanonicalizeCustomerProfile: accepts all severity values", () => {
@@ -213,6 +231,19 @@ test("parseAndCanonicalizeCustomerProfile: rejects invalid severity", () => {
     policyOverrides: [{ ruleId: "rule-1", severity: "critical" }],
   });
   assert.ok(issues.some((i) => i.path === "policyOverrides[0].severity"));
+});
+
+test("parseAndCanonicalizeCustomerProfile: rejects out-of-range threshold", () => {
+  const issues = parseFail({
+    policyOverrides: [
+      {
+        ruleId: "policy:cross-modal-faithfulness-score",
+        severity: "warning",
+        threshold: 1.2,
+      },
+    ],
+  });
+  assert.ok(issues.some((i) => i.path === "policyOverrides[0].threshold"));
 });
 
 test("parseAndCanonicalizeCustomerProfile: sorts policyOverrides by ruleId", () => {

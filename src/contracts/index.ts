@@ -537,6 +537,7 @@ export const ALLOWED_TEST_CASE_POLICY_OUTCOMES = [
   "visual_sidecar_possible_pii",
   "visual_sidecar_prompt_injection_text",
   "semantic_suspicious_content",
+  "cross_modal_faithfulness_score_below_threshold",
   "risk_tag_downgrade_detected",
   "custom_context_risk_escalation",
   "multi_source_conflict_present",
@@ -3750,6 +3751,8 @@ export interface FaithfulnessVerdict {
   readonly modelRevision: string;
   readonly gatewayRelease: string;
   readonly fallbackReason: VisualSidecarFallbackReason;
+  /** Aggregate cross-modal faithfulness score in `[0, 1]`. */
+  readonly score: number;
   readonly verdict: FaithfulnessVerdictLabel;
   readonly hallucinations: readonly HallucinationFinding[];
   readonly mismatches: readonly VisualMismatch[];

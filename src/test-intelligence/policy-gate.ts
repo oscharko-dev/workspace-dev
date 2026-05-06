@@ -30,6 +30,7 @@ import {
   type BusinessTestIntentIr,
   type CoveragePlan,
   type CustomContextPolicySignal,
+  type FaithfulnessVerdict,
   type GeneratedTestCase,
   type GeneratedTestCaseList,
   type TestCaseCoverageReport,
@@ -67,7 +68,9 @@ export interface EvaluatePolicyGateInput {
   policyOverrides?: ReadonlyArray<{
     ruleId: string;
     severity: "error" | "warning";
+    threshold?: number;
   }>;
+  faithfulnessVerdict?: FaithfulnessVerdict;
   /**
    * Active reviewer overrides for `semantic_suspicious_content` findings,
    * keyed by `testCaseId → set of validation issue paths`. When a finding's
@@ -107,6 +110,11 @@ export interface EvaluatePolicyGateInput {
    */
   activeModelBindings?: readonly ActiveModelBinding[];
 }
+
+const CROSS_MODAL_FAITHFULNESS_RULE =
+  "policy:cross-modal-faithfulness-score" as const;
+const DEFAULT_CROSS_MODAL_FAITHFULNESS_THRESHOLD = 0.8;
+const CROSS_MODAL_FAITHFULNESS_GRAY_ZONE = 0.05;
 
 /** Maximum strength among per-case decisions: blocked > needs_review > approved. */
 const decisionRank: Record<TestCasePolicyDecision, number> = {
@@ -272,6 +280,7 @@ const evaluateCase = (
   customContextPolicySignals: readonly CustomContextPolicySignal[],
   visualSidecarRefusal: EvaluatePolicyGateInput["visualSidecarRefusal"],
   untrustedContentReport: UntrustedContentNormalizationReport | undefined,
+  faithfulnessViolation: TestCasePolicyViolation | undefined,
 ): TestCasePolicyDecisionRecord => {
   let decision: TestCasePolicyDecision = "approved";
   const violations: TestCasePolicyViolation[] = [];
@@ -304,6 +313,14 @@ const evaluateCase = (
     decision = escalate(
       decision,
       v.severity === "error" ? "blocked" : "needs_review",
+    );
+  }
+
+  if (faithfulnessViolation !== undefined) {
+    violations.push(faithfulnessViolation);
+    decision = escalate(
+      decision,
+      severityToDecision(faithfulnessViolation.severity),
     );
   }
 
@@ -799,6 +816,18 @@ const buildPolicyOverrideMap = (
       [],
   );
 
+const resolvePolicyThresholdOverride = (
+  policyOverrides: EvaluatePolicyGateInput["policyOverrides"],
+  ruleId: string,
+): number | undefined => {
+  for (const override of policyOverrides ?? []) {
+    if (override.ruleId === ruleId && override.threshold !== undefined) {
+      return override.threshold;
+    }
+  }
+  return undefined;
+};
+
 const applyPolicyOverrideViolations = (
   violations: readonly TestCasePolicyViolation[],
   overrideMap: ReadonlyMap<string, "error" | "warning">,
@@ -863,6 +892,33 @@ const mapVisualOutcome = (
   }
 };
 
+const buildFaithfulnessScoreViolation = (
+  verdict: FaithfulnessVerdict | undefined,
+  threshold: number,
+): TestCasePolicyViolation | undefined => {
+  if (verdict === undefined) return undefined;
+  if (verdict.refusal !== undefined) return undefined;
+  const grayZoneFloor = Math.max(
+    0,
+    threshold - CROSS_MODAL_FAITHFULNESS_GRAY_ZONE,
+  );
+  if (verdict.score >= threshold) return undefined;
+  const severity: "error" | "warning" =
+    verdict.score >= grayZoneFloor ? "warning" : "error";
+  const band =
+    severity === "warning"
+      ? `gray zone [${grayZoneFloor.toFixed(2)}, ${threshold.toFixed(2)})`
+      : `below gray-zone floor ${grayZoneFloor.toFixed(2)}`;
+  return {
+    rule: CROSS_MODAL_FAITHFULNESS_RULE,
+    outcome: "cross_modal_faithfulness_score_below_threshold",
+    severity,
+    reason:
+      `cross-modal faithfulness score ${verdict.score.toFixed(6)} is below ` +
+      `threshold ${threshold.toFixed(2)} (${band})`,
+  };
+};
+
 /**
  * Run the policy gate and produce the persistable
  * `TestCasePolicyReport` artifact.
@@ -879,6 +935,15 @@ export const evaluatePolicyGate = (
         );
   const validationByCase = indexValidationByTestCase(input.validation);
   const decisions: TestCasePolicyDecisionRecord[] = [];
+  const faithfulnessThreshold =
+    resolvePolicyThresholdOverride(
+      input.policyOverrides,
+      CROSS_MODAL_FAITHFULNESS_RULE,
+    ) ?? DEFAULT_CROSS_MODAL_FAITHFULNESS_THRESHOLD;
+  const faithfulnessViolation = buildFaithfulnessScoreViolation(
+    input.faithfulnessVerdict,
+    faithfulnessThreshold,
+  );
 
   for (const tc of input.list.testCases) {
     const issues = validationByCase.get(tc.id) ?? [];
@@ -892,24 +957,28 @@ export const evaluatePolicyGate = (
         input.customContextPolicySignals ?? [],
         input.visualSidecarRefusal,
         input.untrustedContentReport,
+        faithfulnessViolation,
       ),
     );
   }
 
   const overrideMap = buildPolicyOverrideMap(input.policyOverrides);
   const jobLevelViolations = applyPolicyOverrideViolations(
-    evaluateJobLevel(
-      input.list,
-      input.intent,
-      input.coverage,
-      input.profile,
-      input.coveragePlan,
-      input.visual,
-      input.customContextPolicySignals ?? [],
-      input.visualSidecarRefusal,
-      input.untrustedContentReport,
-      input.activeModelBindings,
-    ),
+    [
+      ...evaluateJobLevel(
+        input.list,
+        input.intent,
+        input.coverage,
+        input.profile,
+        input.coveragePlan,
+        input.visual,
+        input.customContextPolicySignals ?? [],
+        input.visualSidecarRefusal,
+        input.untrustedContentReport,
+        input.activeModelBindings,
+      ),
+      ...(faithfulnessViolation !== undefined ? [faithfulnessViolation] : []),
+    ],
     overrideMap,
   );
 

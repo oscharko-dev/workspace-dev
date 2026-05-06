@@ -101,6 +101,9 @@ export interface FaithfulnessJudgeAttempt {
   result: LlmGenerationResult;
 }
 
+const roundFaithfulnessScore = (value: number): number =>
+  Math.round(value * 1_000_000) / 1_000_000;
+
 export interface RunFaithfulnessJudgeResult {
   verdict: FaithfulnessVerdict;
   cacheHit: boolean;
@@ -317,6 +320,7 @@ export const runFaithfulnessJudge = async (
         gatewayRelease: input.bundle.visualPrimary.gatewayRelease,
         fallbackReason: "none",
         verdict: validated.verdict,
+        score: computeFaithfulnessScore(input.generatedTestCases, validated),
         hallucinations: validated.hallucinations,
         mismatches: validated.mismatches,
       });
@@ -344,6 +348,7 @@ export const runFaithfulnessJudge = async (
         gatewayRelease: input.bundle.visualFallback.gatewayRelease,
         fallbackReason: "primary_unavailable",
         verdict: validated.verdict,
+        score: computeFaithfulnessScore(input.generatedTestCases, validated),
         hallucinations: validated.hallucinations,
         mismatches: validated.mismatches,
       });
@@ -543,6 +548,7 @@ const buildFaithfulnessVerdict = (input: {
   gatewayRelease: string;
   fallbackReason: VisualSidecarFallbackReason;
   verdict: FaithfulnessVerdictLabel;
+  score: number;
   hallucinations: readonly HallucinationFinding[];
   mismatches: readonly VisualMismatch[];
 }): FaithfulnessVerdict => ({
@@ -557,6 +563,7 @@ const buildFaithfulnessVerdict = (input: {
   modelRevision: input.modelRevision,
   gatewayRelease: input.gatewayRelease,
   fallbackReason: input.fallbackReason,
+  score: input.score,
   verdict: input.verdict,
   hallucinations: [...input.hallucinations],
   mismatches: [...input.mismatches],
@@ -584,6 +591,7 @@ const buildFaithfulnessRefusal = (input: {
   modelRevision: input.modelRevision,
   gatewayRelease: input.gatewayRelease,
   fallbackReason: input.fallbackReason,
+  score: 0,
   verdict: "reject",
   hallucinations: [
     {
@@ -613,6 +621,47 @@ const stampFaithfulnessVerdict = (
   cacheHit: stamps.cacheHit,
   cacheKeyDigest: stamps.cacheKeyDigest,
 });
+
+const extractGeneratedTestCaseIds = (value: unknown): string[] => {
+  if (!isRecord(value)) return [];
+  const testCases = value["testCases"];
+  if (!Array.isArray(testCases)) return [];
+  const ids: string[] = [];
+  for (const testCase of testCases) {
+    if (!isRecord(testCase)) continue;
+    const id =
+      typeof testCase["id"] === "string"
+        ? testCase["id"]
+        : typeof testCase["testCaseId"] === "string"
+          ? testCase["testCaseId"]
+          : undefined;
+    if (id !== undefined && id.length > 0) ids.push(id);
+  }
+  return ids;
+};
+
+const computeFaithfulnessScore = (
+  generatedTestCases: unknown,
+  response: {
+    hallucinations: readonly HallucinationFinding[];
+    mismatches: readonly VisualMismatch[];
+  },
+): number => {
+  const caseIds = extractGeneratedTestCaseIds(generatedTestCases);
+  if (caseIds.length === 0) return 0;
+  const failedCaseIds = new Set<string>();
+  for (const finding of response.hallucinations) {
+    failedCaseIds.add(finding.testCaseId);
+  }
+  for (const mismatch of response.mismatches) {
+    failedCaseIds.add(mismatch.testCaseId);
+  }
+  let passingCases = 0;
+  for (const caseId of caseIds) {
+    if (!failedCaseIds.has(caseId)) passingCases += 1;
+  }
+  return roundFaithfulnessScore(passingCases / caseIds.length);
+};
 
 const isFaithfulnessVerdictLabel = (
   value: unknown,

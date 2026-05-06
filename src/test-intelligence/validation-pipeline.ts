@@ -34,6 +34,7 @@ import {
   type ActiveModelBinding,
   type BusinessTestIntentIr,
   type CoveragePlan,
+  type FaithfulnessVerdict,
   type GeneratedTestCaseList,
   type SelfVerifyRubricReport,
   type TestCaseCoverageReport,
@@ -78,7 +79,9 @@ export interface RunValidationPipelineInput {
   policyOverrides?: ReadonlyArray<{
     ruleId: string;
     severity: "error" | "warning";
+    threshold?: number;
   }>;
+  faithfulnessVerdict?: FaithfulnessVerdict;
   /** Optional rubric score (0..1) from a downstream rater. */
   rubricScore?: number;
   /** Optional primary visual deployment, used for fallback detection. */
@@ -230,6 +233,9 @@ export const runValidationPipeline = (
     ...(visualReport !== undefined ? { visual: visualReport } : {}),
     ...(input.policyOverrides !== undefined
       ? { policyOverrides: input.policyOverrides }
+      : {}),
+    ...(input.faithfulnessVerdict !== undefined
+      ? { faithfulnessVerdict: input.faithfulnessVerdict }
       : {}),
     ...(semanticContentOverrides !== undefined
       ? { semanticContentOverrides }

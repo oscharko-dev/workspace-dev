@@ -6,6 +6,8 @@ import test from "node:test";
 import {
   COVERAGE_PLAN_SCHEMA_VERSION,
   EU_BANKING_DEFAULT_POLICY_PROFILE_ID,
+  FAITHFULNESS_JUDGE_PROMPT_TEMPLATE_VERSION,
+  FAITHFULNESS_VERDICT_SCHEMA_VERSION,
   GENERATED_TESTCASES_ARTIFACT_FILENAME,
   GENERATED_TEST_CASE_SCHEMA_VERSION,
   TEST_CASE_COVERAGE_REPORT_ARTIFACT_FILENAME,
@@ -16,6 +18,7 @@ import {
   VISUAL_SIDECAR_VALIDATION_REPORT_ARTIFACT_FILENAME,
   type BusinessTestIntentIr,
   type CoveragePlan,
+  type FaithfulnessVerdict,
   type GeneratedTestCase,
   type GeneratedTestCaseList,
   type VisualScreenDescription,
@@ -216,6 +219,27 @@ const buildCoveragePlan = (
   ...overrides,
 });
 
+const buildFaithfulnessVerdict = (
+  overrides: Partial<FaithfulnessVerdict> = {},
+): FaithfulnessVerdict => ({
+  schemaVersion: FAITHFULNESS_VERDICT_SCHEMA_VERSION,
+  contractVersion: TEST_INTELLIGENCE_CONTRACT_VERSION,
+  promptTemplateVersion: FAITHFULNESS_JUDGE_PROMPT_TEMPLATE_VERSION,
+  generatedAt: GENERATED_AT,
+  jobId: "job-1",
+  cacheHit: false,
+  cacheKeyDigest: ZERO,
+  modelDeployment: "llama-4-maverick-vision",
+  modelRevision: "llama-4-maverick-vision@test",
+  gatewayRelease: "mock",
+  fallbackReason: "none",
+  score: 1,
+  verdict: "accept",
+  hallucinations: [],
+  mismatches: [],
+  ...overrides,
+});
+
 test("pipeline runs in-memory without filesystem touch", () => {
   const result = runValidationPipeline({
     jobId: "job-1",
@@ -284,6 +308,35 @@ test("Issue #1947: policyOverrides downgrade technique quota minimum inside vali
     (entry) => entry.rule === "policy:technique-coverage-minimum",
   );
   assert.equal(violation?.severity, "warning");
+  assert.equal(result.policy.blocked, false);
+  assert.equal(result.blocked, false);
+});
+
+test("Issue #1949: cross-modal faithfulness threshold override flows through validation pipeline", () => {
+  const result = runValidationPipeline({
+    jobId: "job-1",
+    generatedAt: GENERATED_AT,
+    list: richList(),
+    intent: buildIntent(),
+    faithfulnessVerdict: buildFaithfulnessVerdict({
+      score: 0.74,
+      verdict: "repair",
+    }),
+    policyOverrides: [
+      {
+        ruleId: "policy:cross-modal-faithfulness-score",
+        severity: "warning",
+        threshold: 0.7,
+      },
+    ],
+  });
+  assert.equal(
+    result.policy.jobLevelViolations.some(
+      (violation) =>
+        violation.rule === "policy:cross-modal-faithfulness-score",
+    ),
+    false,
+  );
   assert.equal(result.policy.blocked, false);
   assert.equal(result.blocked, false);
 });
