@@ -28,6 +28,7 @@ import {
   TEST_DESIGN_MODEL_SCHEMA_VERSION,
   TEST_INTELLIGENCE_CONTRACT_VERSION,
   TEST_INTELLIGENCE_PROMPT_TEMPLATE_VERSION,
+  type CoveragePlan,
   type GeneratedTestCase,
   type GeneratedTestCaseFigmaTrace,
   type GeneratedTestCaseList,
@@ -184,6 +185,22 @@ const HASHES = {
   cacheKey: "4".repeat(64),
 };
 
+const buildCoveragePlan = (): CoveragePlan => ({
+  jobId: "job-1901-int",
+  schemaVersion: "1.0.0",
+  mutationKillRateTarget: 0.85,
+  minimumCases: [],
+  recommendedCases: [],
+  perScreen: [
+    {
+      screenId: SCREEN_ID,
+      techniqueQuotas: [{ technique: "boundary_value_analysis", minCount: 2 }],
+    },
+  ],
+  perElement: [],
+  techniques: ["boundary_value"],
+});
+
 const buildRegenerator = (
   newList: GeneratedTestCaseList,
 ): RepairLoopRegenerator =>
@@ -208,11 +225,13 @@ const buildRegenerator = (
 const buildHardGateLogicJudgeRunner = (
   testDesignModel: TestDesignModel,
   thresholds: LogicJudgeCoverageThresholds,
+  coveragePlan?: CoveragePlan,
 ): RepairLoopLogicJudgeRunner =>
   async ({ list }) => ({
     verdict: applyCoverageHardGate(buildBaseLlmVerdict("accept"), {
       testDesignModel,
       generatedTestCases: list,
+      ...(coveragePlan !== undefined ? { coveragePlan } : {}),
       knownNavigationIds: [...NAVIGATION_IDS],
       coverageThresholds: thresholds,
     }),
@@ -363,6 +382,97 @@ test("end-to-end repair: hallucinated id is replaced with a real IR id across on
       result.finalLogicVerdict.findings.length,
       0,
       "no hard-gate findings remain after repair",
+    );
+  });
+});
+
+test("end-to-end repair: unmet technique quota triggers repair before acceptance", async () => {
+  const testDesignModel = buildTestDesignModel();
+  const coveragePlan = buildCoveragePlan();
+  const boundaryCase = {
+    ...buildTestCase(
+      "tc-boundary-1",
+      {
+        coveredFieldIds: ["fld-a", "fld-b"],
+        coveredActionIds: ["act-x"],
+        coveredValidationIds: ["val-1"],
+      },
+      "boundary",
+    ),
+    technique: "boundary_value_analysis",
+  } as GeneratedTestCase;
+  const initialList = buildList([
+    boundaryCase,
+    buildTestCase(
+      "tc-a11y",
+      { coveredFieldIds: ["fld-a"] },
+      "accessibility",
+    ),
+  ]);
+  const repairedList = buildList([
+    boundaryCase,
+    {
+      ...buildTestCase(
+        "tc-boundary-2",
+        {
+          coveredFieldIds: ["fld-c"],
+          coveredActionIds: ["act-y"],
+          coveredValidationIds: ["val-1"],
+        },
+        "boundary",
+      ),
+      technique: "boundary_value_analysis",
+    } as GeneratedTestCase,
+    buildTestCase(
+      "tc-a11y",
+      { coveredFieldIds: ["fld-a"] },
+      "accessibility",
+    ),
+  ]);
+
+  const initialVerdict = applyCoverageHardGate(buildBaseLlmVerdict("accept"), {
+    testDesignModel,
+    generatedTestCases: initialList,
+    coveragePlan,
+    knownNavigationIds: [...NAVIGATION_IDS],
+    coverageThresholds: STRICT_THRESHOLDS,
+  });
+  assert.equal(initialVerdict.verdict, "repair");
+  assert.ok(
+    initialVerdict.findings.some(
+      (finding) => finding.code === "technique_quota_breach",
+    ),
+  );
+  assert.match(
+    initialVerdict.repairInstructions[0]?.instruction ?? "",
+    /CoveragePlan\.techniqueQuotas/u,
+  );
+
+  await withTempDir(async (runDir) => {
+    const result = await runRepairLoop({
+      jobId: "job-1901-int",
+      runDir,
+      initialList,
+      initialLogicVerdict: initialVerdict,
+      regenerate: buildRegenerator(repairedList),
+      runLogicJudge: buildHardGateLogicJudgeRunner(
+        testDesignModel,
+        STRICT_THRESHOLDS,
+        coveragePlan,
+      ),
+    });
+    assert.equal(result.outcome, "accepted");
+    assert.equal(result.repairIterationCount, 1);
+    assert.equal(result.finalLogicVerdict.verdict, "accept");
+    assert.equal(
+      result.finalList.testCases.filter(
+        (testCase) =>
+          testCase.technique === "boundary_value_analysis" &&
+          testCase.figmaTraceRefs.some(
+            (traceRef) => traceRef.screenId === SCREEN_ID,
+          ),
+      ).length,
+      2,
     );
   });
 });
