@@ -588,10 +588,12 @@ test("AC11: Jira REST + custom markdown compiled prompt keeps Jira and custom se
 
   assert.ok(compiled.request.userPrompt.includes("[3] TestDesignModel"));
   assert.ok(compiled.request.userPrompt.includes("JIRA_REQUIREMENTS"));
+  // Issue #1941: custom markdown is now promoted to its own
+  // [5] CustomerDomainContext section under the dedicated label
+  // CUSTOMER_DOMAIN_CONTEXT_MARKDOWN.
+  assert.ok(compiled.request.userPrompt.includes("[5] CustomerDomainContext"));
   assert.ok(
-    compiled.request.userPrompt.includes(
-      "CUSTOM_CONTEXT_MARKDOWN_SUPPORTING_EVIDENCE",
-    ),
+    compiled.request.userPrompt.includes("CUSTOMER_DOMAIN_CONTEXT_MARKDOWN"),
   );
   assert.ok(compiled.request.userPrompt.includes("<UNTRUSTED_CUSTOM"));
   assert.ok(!compiled.request.userPrompt.includes("FIGMA_INTENT"));
