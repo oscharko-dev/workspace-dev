@@ -3772,9 +3772,7 @@ export interface JudgeConsensusFinding {
 /** One normalized judge entry consumed by the consensus module. */
 export interface JudgeConsensusPanelEntry {
   readonly judgeId: string;
-  readonly verdict:
-    | LogicJudgeVerdictLabel
-    | FaithfulnessVerdictLabel;
+  readonly verdict: LogicJudgeVerdictLabel;
   readonly weight: number;
   readonly findings: readonly JudgeConsensusFinding[];
   readonly repairInstructions: readonly RepairInstruction[];
@@ -3783,9 +3781,7 @@ export interface JudgeConsensusPanelEntry {
 /** Primary veto attribution surfaced by the consensus artifact. */
 export interface JudgeConsensusVeto {
   readonly judgeId: string;
-  readonly verdict:
-    | LogicJudgeVerdictLabel
-    | FaithfulnessVerdictLabel;
+  readonly verdict: LogicJudgeVerdictLabel;
   readonly findingCodes: readonly string[];
 }
 
@@ -3795,9 +3791,7 @@ export interface JudgeConsensusVerdict {
   readonly contractVersion: typeof TEST_INTELLIGENCE_CONTRACT_VERSION;
   readonly generatedAt: string;
   readonly jobId: string;
-  readonly verdict:
-    | LogicJudgeVerdictLabel
-    | FaithfulnessVerdictLabel;
+  readonly verdict: LogicJudgeVerdictLabel;
   readonly repairInstructions: readonly RepairInstruction[];
   readonly vetoBy?: JudgeConsensusVeto;
   readonly panel: readonly JudgeConsensusPanelEntry[];
