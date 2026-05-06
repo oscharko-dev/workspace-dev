@@ -27,6 +27,7 @@ import {
   TEST_CASE_POLICY_REPORT_SCHEMA_VERSION,
   TEST_INTELLIGENCE_CONTRACT_VERSION,
   type ActiveModelBinding,
+  type A11yVerdict,
   type BusinessTestIntentIr,
   type CoveragePlan,
   type CustomContextPolicySignal,
@@ -47,6 +48,10 @@ import {
   type VisualSidecarFailureClass,
   type VisualSidecarValidationReport,
 } from "../contracts/index.js";
+import {
+  FORM_SCREEN_A11Y_REQUIRED_CRITERIA,
+  listCoveredFormScreenA11yCriteria,
+} from "./a11y-coverage-eval.js";
 import {
   buildCoverageDriftPolicyViolation,
   type CoverageBaselineDriftEvaluation,
@@ -69,6 +74,7 @@ export interface EvaluatePolicyGateInput {
   coverage: TestCaseCoverageReport;
   coveragePlan?: CoveragePlan;
   visual?: VisualSidecarValidationReport;
+  a11yVerdict?: A11yVerdict;
   policyOverrides?: ReadonlyArray<{
     ruleId: string;
     severity: "error" | "warning";
@@ -619,8 +625,10 @@ const evaluateJobLevel = (
   untrustedContentReport?: UntrustedContentNormalizationReport,
   activeModelBindings?: readonly ActiveModelBinding[],
   coverageBaselineDrift?: CoverageBaselineDriftEvaluation,
+  a11yVerdict?: A11yVerdict,
 ): TestCasePolicyViolation[] => {
   const violations = evaluateActiveModelBindings(profile, activeModelBindings);
+  const formScreenIds = collectFormScreenIds(intent);
 
   const coverageDriftViolation =
     coverageBaselineDrift === undefined
@@ -723,24 +731,38 @@ const evaluateJobLevel = (
 
   // Accessibility coverage when form fields are present.
   if (profile.rules.requireAccessibilityCaseWhenFormPresent) {
-    const screensWithFields = new Set(
-      intent.detectedFields.map((f) => f.screenId),
-    );
-    for (const screenId of screensWithFields) {
-      const hasA11yCase = list.testCases.some(
-        (tc) =>
-          tc.type === "accessibility" &&
-          tc.figmaTraceRefs.some((r) => r.screenId === screenId),
+    for (const screenId of formScreenIds) {
+      const coveredCriteria = collectCoveredFormScreenA11yCriteria(
+        list,
+        screenId,
       );
-      if (!hasA11yCase) {
+      if (coveredCriteria.length === 0) {
         violations.push({
           rule: "policy:form-screen-needs-accessibility-case",
           outcome: "missing_accessibility_case",
           severity: "error",
           reason: `screen "${screenId}" carries form fields but has no covering accessibility test case`,
         });
+        continue;
+      }
+      const missingCriteria = FORM_SCREEN_A11Y_REQUIRED_CRITERIA.filter(
+        (criterion) => !coveredCriteria.includes(criterion),
+      );
+      if (missingCriteria.length > 0) {
+        violations.push({
+          rule: "policy:form-screen-needs-accessibility-case",
+          outcome: "missing_accessibility_case",
+          severity: "error",
+          reason:
+            `screen "${screenId}" carries form fields but is missing ` +
+            `accessibility coverage for ${missingCriteria.join(", ")}`,
+        });
       }
     }
+  }
+
+  if (profile.rules.requireAccessibilityCaseWhenFormPresent) {
+    violations.push(...evaluateA11yJudgeVerdict(formScreenIds, a11yVerdict));
   }
 
   // Duplicate fingerprint — coverage reports the pairs; the gate downgrades.
@@ -943,6 +965,60 @@ const buildFaithfulnessScoreViolation = (
   };
 };
 
+const collectFormScreenIds = (intent: BusinessTestIntentIr): readonly string[] =>
+  sortedUnique(intent.detectedFields.map((field) => field.screenId));
+
+const collectCoveredFormScreenA11yCriteria = (
+  list: GeneratedTestCaseList,
+  screenId: string,
+): ReadonlyArray<(typeof FORM_SCREEN_A11Y_REQUIRED_CRITERIA)[number]> => {
+  const covered = new Set<(typeof FORM_SCREEN_A11Y_REQUIRED_CRITERIA)[number]>();
+  for (const testCase of list.testCases) {
+    if (
+      testCase.type !== "accessibility" ||
+      !testCase.figmaTraceRefs.some((traceRef) => traceRef.screenId === screenId)
+    ) {
+      continue;
+    }
+    for (const criterion of listCoveredFormScreenA11yCriteria(testCase)) {
+      covered.add(criterion);
+    }
+  }
+  return [...covered].sort();
+};
+
+const evaluateA11yJudgeVerdict = (
+  formScreenIds: readonly string[],
+  verdict: A11yVerdict | undefined,
+): TestCasePolicyViolation[] => {
+  if (verdict === undefined || verdict.refusal !== undefined) {
+    return [];
+  }
+  const eligibleScreens = new Set(formScreenIds);
+  const violations: TestCasePolicyViolation[] = [];
+  for (const criterion of verdict.criteria) {
+    if (!eligibleScreens.has(criterion.screenId)) {
+      continue;
+    }
+    if (criterion.verdict === "covered_passes") {
+      continue;
+    }
+    violations.push({
+      rule: "policy:form-screen-needs-accessibility-case",
+      outcome:
+        criterion.verdict === "not_covered"
+          ? "a11y_criterion_not_covered"
+          : "a11y_criterion_covered_weakly",
+      severity: criterion.verdict === "not_covered" ? "error" : "warning",
+      reason:
+        `screen "${criterion.screenId}" (${criterion.screenName}) ` +
+        `${criterion.successCriterion} is ${criterion.verdict}; ` +
+        `${criterion.pillarId}: ${criterion.rationale}`,
+    });
+  }
+  return violations;
+};
+
 /**
  * Run the policy gate and produce the persistable
  * `TestCasePolicyReport` artifact.
@@ -1001,6 +1077,7 @@ export const evaluatePolicyGate = (
         input.untrustedContentReport,
         input.activeModelBindings,
         input.coverageBaselineDrift,
+        input.a11yVerdict,
       ),
       ...(faithfulnessViolation !== undefined ? [faithfulnessViolation] : []),
     ],

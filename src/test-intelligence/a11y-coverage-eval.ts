@@ -65,7 +65,7 @@ import { GENERATOR_FORM_SCREEN_A11Y_REPAIR_INSTRUCTION } from "./agent-role-prof
 import { synthesizeGeneratedTestCases } from "./validation-harness.js";
 
 /** Schema version pinned on every persisted a11y-coverage eval artifact. */
-export const A11Y_COVERAGE_EVAL_SCHEMA_VERSION = "1.0.0" as const;
+export const A11Y_COVERAGE_EVAL_SCHEMA_VERSION = "1.1.0" as const;
 
 /** Stable profile id used by the eval suite. */
 export const A11Y_COVERAGE_EVAL_PROFILE_ID = "wcag-2.2-aa-form-screen" as const;
@@ -164,6 +164,10 @@ export interface A11yScreenCoverageReport {
   readonly hardGatePassed: boolean;
   /** Soft target verdict — `false` means below the per-screen target. */
   readonly softTargetPassed: boolean;
+  /** Required accessibility sub-criteria currently covered by anchored cases. */
+  readonly coveredCriteria: ReadonlyArray<FormScreenA11yCriterionId>;
+  /** Required accessibility sub-criteria still missing for the screen. */
+  readonly missingCriteria: ReadonlyArray<FormScreenA11yCriterionId>;
   /**
    * The WCAG 2.2 AA pillars expected for this screen. Stable, hand-curated
    * list — does NOT depend on the candidate list.
@@ -173,6 +177,7 @@ export interface A11yScreenCoverageReport {
 
 export type A11yCoverageGateFailureReason =
   | "form_screen_missing_accessibility_case"
+  | "form_screen_missing_accessibility_criterion"
   | "form_screen_below_soft_target";
 
 export interface A11yCoverageGateFailure {
@@ -252,6 +257,70 @@ export interface A11yCoverageComputation {
   readonly repairInstructions: ReadonlyArray<A11yCoverageRepairInstruction>;
 }
 
+export const FORM_SCREEN_A11Y_REQUIRED_CRITERIA = [
+  "keyboard-nav",
+  "focus-order",
+  "screen-reader",
+] as const;
+
+export type FormScreenA11yCriterionId =
+  (typeof FORM_SCREEN_A11Y_REQUIRED_CRITERIA)[number];
+
+const FORM_SCREEN_A11Y_CRITERION_PATTERNS: Readonly<
+  Record<FormScreenA11yCriterionId, readonly RegExp[]>
+> = Object.freeze({
+  "keyboard-nav": Object.freeze([
+    /\bkeyboard\b/u,
+    /\btastatur\b/u,
+    /\btab(?:bing|bed)?\b/u,
+    /\btab order\b/u,
+  ]),
+  "focus-order": Object.freeze([
+    /\bfocus order\b/u,
+    /\bfocus-order\b/u,
+    /\bfokusreihenfolge\b/u,
+    /\bvisible focus\b/u,
+    /\bsichtbar(?:e|en|er)? fokus(?:anzeige)?\b/u,
+    /\bfocus indicator\b/u,
+    /\bfocus state\b/u,
+  ]),
+  "screen-reader": Object.freeze([
+    /\bscreen reader\b/u,
+    /\bscreen-reader\b/u,
+    /\bbildschirmleser\b/u,
+    /\baria-live\b/u,
+    /\bannounce(?:ment|ments|s|d)?\b/u,
+    /\bangekündigt\b/u,
+    /\bassistive tech(?:nology)?\b/u,
+  ]),
+});
+
+const summarizeA11yCaseText = (testCase: GeneratedTestCase): string =>
+  [
+    testCase.title,
+    testCase.objective,
+    ...testCase.expectedResults,
+    ...testCase.steps.flatMap((step) =>
+      step.expected === undefined ? [step.action] : [step.action, step.expected],
+    ),
+  ]
+    .join("\n")
+    .toLowerCase();
+
+export const listCoveredFormScreenA11yCriteria = (
+  testCase: GeneratedTestCase,
+): ReadonlyArray<FormScreenA11yCriterionId> => {
+  if (testCase.type !== "accessibility") {
+    return [];
+  }
+  const text = summarizeA11yCaseText(testCase);
+  return FORM_SCREEN_A11Y_REQUIRED_CRITERIA.filter((criterion) =>
+    FORM_SCREEN_A11Y_CRITERION_PATTERNS[criterion].some((pattern) =>
+      pattern.test(text),
+    ),
+  );
+};
+
 /**
  * A test case counts as a form-screen accessibility case when its `type`
  * is `accessibility` AND it carries a `figmaTraceRefs` entry pointing at
@@ -305,13 +374,26 @@ export const computeA11yCoverage = (
 
   for (const screenId of formScreenIds) {
     const fieldCount = fieldsByScreen.get(screenId) ?? 0;
-    const matched = input.generatedList.testCases
-      .filter((tc) => isFormScreenA11yCase(tc, screenId))
+    const matchedCases = input.generatedList.testCases.filter((tc) =>
+      isFormScreenA11yCase(tc, screenId),
+    );
+    const matched = matchedCases
       .map((tc) => tc.id)
       .slice()
       .sort();
+    const coveredCriteria = FORM_SCREEN_A11Y_REQUIRED_CRITERIA.filter(
+      (criterion) =>
+        matchedCases.some((testCase) =>
+          listCoveredFormScreenA11yCriteria(testCase).includes(criterion),
+        ),
+    );
+    const missingCriteria = FORM_SCREEN_A11Y_REQUIRED_CRITERIA.filter(
+      (criterion) => !coveredCriteria.includes(criterion),
+    );
     const a11yCaseCoverage = matched.length;
-    const hardGatePassed = a11yCaseCoverage >= thresholds.hardThresholdPerScreen;
+    const hardGatePassed =
+      a11yCaseCoverage >= thresholds.hardThresholdPerScreen &&
+      missingCriteria.length === 0;
     const softTargetPassed = a11yCaseCoverage >= thresholds.softTargetPerScreen;
 
     if (hardGatePassed) formScreensWithCoverage += 1;
@@ -326,15 +408,26 @@ export const computeA11yCoverage = (
       matchedTestCaseIds: matched,
       hardGatePassed,
       softTargetPassed,
+      coveredCriteria,
+      missingCriteria,
       expectedPillars: A11Y_WCAG_22_AA_PILLAR_IDS,
     });
 
-    if (!hardGatePassed) {
+    if (a11yCaseCoverage < thresholds.hardThresholdPerScreen) {
       failures.push({
         reason: "form_screen_missing_accessibility_case",
         screenId,
         observed: a11yCaseCoverage,
         threshold: thresholds.hardThresholdPerScreen,
+        severity: "error",
+      });
+      repairInstructions.push(buildA11yCoverageRepairInstruction({ screenId }));
+    } else if (missingCriteria.length > 0) {
+      failures.push({
+        reason: "form_screen_missing_accessibility_criterion",
+        screenId,
+        observed: coveredCriteria.length,
+        threshold: FORM_SCREEN_A11Y_REQUIRED_CRITERIA.length,
         severity: "error",
       });
       repairInstructions.push(buildA11yCoverageRepairInstruction({ screenId }));

@@ -542,6 +542,8 @@ export const ALLOWED_TEST_CASE_POLICY_OUTCOMES = [
   "custom_context_risk_escalation",
   "multi_source_conflict_present",
   "coverage_drift_exceeded",
+  "a11y_criterion_covered_weakly",
+  "a11y_criterion_not_covered",
 ] as const;
 export type TestCasePolicyOutcome =
   (typeof ALLOWED_TEST_CASE_POLICY_OUTCOMES)[number];
