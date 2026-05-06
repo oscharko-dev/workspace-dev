@@ -1058,6 +1058,31 @@ test("runFigmaToQcTestCases wires Figma URL screenshots through the visual sidec
         gatewayRelease: "mock",
         declaredCapabilities: VISUAL_CAPS,
         responder: (request, attempt) => {
+          // Issue #1928: with the gate now firing the repair-loop on
+          // any non-`accept` verdict, an unmocked faithfulness-judge
+          // call defaulted to `reject` (refusal) and triggered loop
+          // iterations the event-order assertion does not expect.
+          // Dispatch on schema name so the faithfulness-judge surface
+          // gets a clean `accept`.
+          if (
+            request.responseSchemaName ===
+            "workspace-dev-faithfulness-judge-v1"
+          ) {
+            return {
+              outcome: "success" as const,
+              content: {
+                verdict: "accept",
+                hallucinations: [],
+                mismatches: [],
+              },
+              finishReason: "stop" as const,
+              usage: { inputTokens: 12, outputTokens: 8 },
+              modelDeployment: "llama-4-maverick-vision",
+              modelRevision: "llama-4-maverick-vision@test",
+              gatewayRelease: "mock",
+              attempt,
+            };
+          }
           assert.equal(request.imageInputs?.length, 1);
           assert.equal(request.imageInputs?.[0]?.mimeType, "image/png");
           assert.equal(request.imageInputs?.[0]?.base64Data, PNG_BASE64);

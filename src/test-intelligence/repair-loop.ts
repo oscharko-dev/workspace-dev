@@ -1,5 +1,6 @@
 /**
- * Production-runner repair loop (Issue #1900, Story MA-3 #1758).
+ * Production-runner repair loop (Issue #1900, Story MA-3 #1758,
+ * Issue #1928).
  *
  * Orchestrates the bounded-iteration repair loop that drives the
  * generator → judge-panel → repair-planner → re-generator cycle. The
@@ -8,11 +9,13 @@
  *
  *   1. Returns immediately with `outcome="accepted"` when both judges
  *      already accept the initial output.
- *   2. Returns immediately with `outcome="rejected"` when at least one
- *      judge issued a terminal `reject` — repair is not attempted.
- *   3. Otherwise runs up to `maxRepairIterations` repair iterations
+ *   2. Otherwise runs up to `maxRepairIterations` repair iterations
  *      (default 3, bounded by {@link REPAIR_LOOP_MAX_ITERATIONS_HARD_CAP}).
- *      Each iteration:
+ *      Initial-pass `reject` verdicts also enter the loop (Issue #1928):
+ *      live runs showed the Logic-Judge frequently emits `reject` for
+ *      recoverable structured-output schema violations from the
+ *      generator LLM, and short-circuiting before iteration 1 silently
+ *      disabled recovery. Each iteration:
  *        a. Consolidates the union of `repairInstructions` from the
  *           logic-judge plus the synthesized hallucination/mismatch
  *           hints from the faithfulness-judge.
@@ -21,7 +24,11 @@
  *           via the caller-supplied `regenerate` callback.
  *        d. Persists `agent-role-runs/test_generation_repair_iter_K.json`.
  *        e. Re-runs both judges on the new list.
- *        f. Terminates with `accepted`, `rejected`, or continues.
+ *        f. Terminates with `accepted` when the logic-judge accepts
+ *           and the faithfulness-judge either accepts or was not run
+ *           for this iteration; `rejected` when the logic-judge
+ *           rejects, or the faithfulness-judge rejects when it was
+ *           run; otherwise continues.
  *      When the cap is exhausted the outcome is `"needs_review"`.
  *
  * The repair_planner is a deterministic consolidator: it does NOT
@@ -350,24 +357,9 @@ export const runRepairLoop = async (
   const iterations: RepairLoopIterationRecord[] = [initialIteration];
   input.onIterationComplete?.(initialIteration);
 
-  if (
-    judgePanelRejected(
-      input.initialLogicVerdict,
-      input.initialFaithfulnessVerdict,
-    )
-  ) {
-    return {
-      outcome: "rejected",
-      finalList: input.initialList,
-      finalLogicVerdict: input.initialLogicVerdict,
-      ...(input.initialFaithfulnessVerdict !== undefined
-        ? { finalFaithfulnessVerdict: input.initialFaithfulnessVerdict }
-        : {}),
-      iterations,
-      repairIterationCount: 0,
-      maxRepairIterations: max,
-    };
-  }
+  // Issue #1928: initial-pass `reject` verdicts no longer short-circuit
+  // the loop; recoverable schema violations need the iteration loop to
+  // exercise the repair-instruction → regenerate cycle.
   if (
     judgePanelAccepted(
       input.initialLogicVerdict,

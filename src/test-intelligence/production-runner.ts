@@ -672,10 +672,12 @@ export interface RunFigmaToQcTestCasesResult {
     compiledPromptPath: string;
   };
   /**
-   * Repair-loop summary surfaced when at least one judge returned `repair`
-   * on the initial pass and the runner ran the bounded repair loop
-   * (Issue #1900). Absent when the initial verdicts were terminal
-   * (`accept` on both judges, or any `reject`).
+   * Repair-loop summary surfaced when the initial judge panel did not
+   * unanimously accept the output and the runner ran the bounded repair
+   * loop (Issue #1900, Issue #1928). Absent only when both judges accept
+   * on the initial pass. Initial-pass `reject` verdicts also trigger the
+   * loop because live runs showed the Logic-Judge frequently emits
+   * `reject` for recoverable structured-output schema violations.
    */
   repairLoop?: {
     readonly outcome: RepairLoopResult["outcome"];
@@ -1444,10 +1446,21 @@ export const runFigmaToQcTestCases = async (
       result: attempt.result,
     });
   }
-  // 7b. Repair loop (Issue #1900). When at least one judge returned
-  //     `repair` and none returned `reject`, consolidate the union of
+  // 7b. Repair loop (Issue #1900, Issue #1928). When the judge panel did
+  //     not unanimously accept the initial output — including the case
+  //     where a judge returned `reject` — consolidate the union of
   //     `repairInstructions`, re-invoke the generator with the augmented
-  //     prompt, and re-run both judges — bounded by `maxRepairIterations`.
+  //     prompt, and re-run both judges, bounded by `maxRepairIterations`.
+  //     Issue #1928: live runs showed the Logic-Judge frequently emits
+  //     `reject` for recoverable structured-output schema violations from
+  //     the generator LLM; gating repair on `repair`-only verdicts
+  //     silently disabled the recovery mechanism. The repair driver
+  //     terminates as soon as the panel reaches `accept` (logic-judge
+  //     accepts and the faithfulness-judge either accepts or is not
+  //     run for that iteration) or any judge in a post-iteration
+  //     verdict round returns `reject` (logic-judge `reject` always
+  //     terminates; faithfulness-judge `reject` terminates when it is
+  //     run).
   //     Per-iteration artifacts (`agent-role-runs/repair_planner_iter_K.json`
   //     and `agent-role-runs/test_generation_repair_iter_K.json`) are written
   //     by the loop driver. Token spend is attributed to FinOps role
@@ -1457,12 +1470,8 @@ export const runFigmaToQcTestCases = async (
     logicJudgeResult.verdict.verdict === "accept" &&
     (faithfulnessJudgeResult === undefined ||
       faithfulnessJudgeResult.verdict.verdict === "accept");
-  const initialJudgeRejected =
-    logicJudgeResult.verdict.verdict === "reject" ||
-    (faithfulnessJudgeResult !== undefined &&
-      faithfulnessJudgeResult.verdict.verdict === "reject");
   let repairLoopResult: RepairLoopResult | undefined;
-  if (!initialJudgeAccepted && !initialJudgeRejected) {
+  if (!initialJudgeAccepted) {
     const maxRepairIterations =
       input.harness?.maxRepairIterations ??
       REPAIR_LOOP_DEFAULT_MAX_ITERATIONS;
