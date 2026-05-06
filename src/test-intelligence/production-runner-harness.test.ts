@@ -654,7 +654,7 @@ test("runFigmaToQcTestCases skips the repair loop entirely on a clean accept ver
 // loop on `repair`-only verdicts silently disabled recovery.
 // ---------------------------------------------------------------------------
 
-test("runFigmaToQcTestCases drives the repair loop when the initial Logic-Judge verdict is reject and recovers post-repair (Issue #1928)", async () => {
+test("runFigmaToQcTestCases drives the repair loop when the initial Logic-Judge verdict is repair and recovers post-repair (Issue #1928)", async () => {
   const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ti-runner-repair-"));
   try {
     // Issue #1905 form-screen a11y hard-gate requires an accessibility
@@ -678,13 +678,13 @@ test("runFigmaToQcTestCases drives the repair loop when the initial Logic-Judge 
       responder: (request, attempt) => {
         if (request.responseSchemaName === "workspace-dev-logic-judge-v1") {
           logicCallIndex += 1;
-          // Initial pass → reject (e.g. recoverable schema violation).
+          // Initial pass → repair (e.g. recoverable schema violation).
           // Repair iteration → accept once the regenerator re-runs.
           if (logicCallIndex === 1) {
             return {
               outcome: "success" as const,
               content: {
-                verdict: "reject",
+                verdict: "repair",
                 findings: [
                   {
                     testCaseId: "$job",
@@ -697,7 +697,7 @@ test("runFigmaToQcTestCases drives the repair loop when the initial Logic-Judge 
                 repairInstructions: [
                   {
                     testCaseId: "$job",
-                    path: "qualitySignals.coveredFieldIds",
+                    path: "$.qualitySignals.coveredFieldIds",
                     instruction:
                       "Emit coveredFieldIds as an array of cited IR ids.",
                   },
@@ -740,7 +740,7 @@ test("runFigmaToQcTestCases drives the repair loop when the initial Logic-Judge 
       },
     });
     const result = await runFigmaToQcTestCases({
-      jobId: "job-repair-loop-on-reject",
+      jobId: "job-repair-loop-on-repair",
       generatedAt: "2026-05-06T10:00:00Z",
       source: { kind: "figma_paste_normalized", file: SAMPLE_FILE },
       outputRoot: tempRoot,
@@ -749,12 +749,12 @@ test("runFigmaToQcTestCases drives the repair loop when the initial Logic-Judge 
     });
     assert.ok(
       result.repairLoop,
-      "expected repair-loop summary even when initial verdict was reject",
+      "expected repair-loop summary even when initial verdict was repair",
     );
     assert.equal(result.repairLoop.outcome, "accepted");
     assert.equal(result.repairLoop.repairIterationCount, 1);
     assert.equal(result.repairLoop.iterations.length, 2);
-    assert.equal(result.repairLoop.iterations[0]!.logicVerdict, "reject");
+    assert.equal(result.repairLoop.iterations[0]!.logicVerdict, "repair");
     assert.equal(result.repairLoop.iterations[1]!.logicVerdict, "accept");
     assert.equal(
       result.logicJudge.verdict.verdict,
@@ -764,7 +764,7 @@ test("runFigmaToQcTestCases drives the repair loop when the initial Logic-Judge 
     assert.equal(
       generatorCallIndex,
       2,
-      "expected the regenerator to run once after the initial reject",
+      "expected the regenerator to run once after the initial repair verdict",
     );
     assert.equal(logicCallIndex, 2);
     assert.equal(result.blocked, false);

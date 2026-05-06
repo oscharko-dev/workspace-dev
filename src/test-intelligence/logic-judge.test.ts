@@ -311,30 +311,110 @@ test("runLogicJudge converts a token-limit overrun into a reject verdict", async
   assert.equal(result.verdict.findings[0]?.severity, "error");
 });
 
-test("runLogicJudge converts a schema-invalid model response into a reject verdict", async () => {
+const SCHEMA_VIOLATION_REPAIR_CASES = [
+  {
+    jobId: "logic-judge-schema-missing-required",
+    title: "missing required field",
+    content: {
+      verdict: "repair",
+      findings: [
+        {
+          testCaseId: "$job",
+          code: "schema_violation",
+          severity: "error",
+        },
+      ],
+      repairInstructions: [],
+    },
+    repairPath: "$.findings[0].message",
+  },
+  {
+    jobId: "logic-judge-schema-extra-forbidden",
+    title: "extra forbidden field",
+    content: {
+      verdict: "repair",
+      findings: [],
+      repairInstructions: [],
+      unexpectedField: true,
+    },
+    repairPath: "$.unexpectedField",
+  },
+  {
+    jobId: "logic-judge-schema-type-mismatch",
+    title: "type mismatch",
+    content: {
+      verdict: ["repair"],
+      findings: [],
+      repairInstructions: [],
+    },
+    repairPath: "$.verdict",
+  },
+] as const;
+
+for (const scenario of SCHEMA_VIOLATION_REPAIR_CASES) {
+  test(`runLogicJudge surfaces a schema_violation repair verdict for ${scenario.title}`, async () => {
+    const client = createMockLlmGatewayClient({
+      role: "test_generation",
+      deployment: "mistral-document-ai-2512",
+      modelRevision: "mistral-document-ai-2512@test",
+      gatewayRelease: "mock",
+      responder: (_request, attempt) => ({
+        outcome: "success",
+        content: scenario.content,
+        finishReason: "stop",
+        usage: { inputTokens: 11, outputTokens: 7 },
+        modelDeployment: "mistral-document-ai-2512",
+        modelRevision: "mistral-document-ai-2512@test",
+        gatewayRelease: "mock",
+        attempt,
+      }),
+    });
+
+    const result = await runLogicJudge({
+      jobId: scenario.jobId,
+      generatedAt: "2026-05-05T10:00:00Z",
+      testDesignModel: SAMPLE_TEST_DESIGN_MODEL,
+      coveragePlan: SAMPLE_COVERAGE_PLAN,
+      generatedTestCases: SAMPLE_GENERATED_TEST_CASES,
+      client,
+    });
+
+    assert.equal(result.verdict.verdict, "repair");
+    assert.equal(result.verdict.refusal, undefined);
+    assert.equal(result.verdict.findings[0]?.code, "schema_invalid_response");
+    assert.equal(result.verdict.findings[0]?.severity, "error");
+    assert.equal(
+      result.verdict.repairInstructions[0]?.kind,
+      "schema_violation",
+    );
+    assert.equal(result.verdict.repairInstructions[0]?.path, scenario.repairPath);
+    assert.match(result.verdict.repairInstructions[0]?.path ?? "", /^\$/u);
+    assert.match(
+      result.verdict.repairInstructions[0]?.instruction ?? "",
+      /response schema/u,
+    );
+    assert.equal(client.callCount(), 1);
+  });
+}
+
+test("runLogicJudge converts gateway schema_invalid response-shape failures into repair", async () => {
   const client = createMockLlmGatewayClient({
     role: "test_generation",
     deployment: "mistral-document-ai-2512",
     modelRevision: "mistral-document-ai-2512@test",
     gatewayRelease: "mock",
     responder: (_request, attempt) => ({
-      outcome: "success",
-      content: {
-        verdict: "definitely-not-a-valid-label",
-        findings: [],
-        repairInstructions: [],
-      },
-      finishReason: "stop",
-      usage: { inputTokens: 11, outputTokens: 7 },
-      modelDeployment: "mistral-document-ai-2512",
-      modelRevision: "mistral-document-ai-2512@test",
-      gatewayRelease: "mock",
+      outcome: "error",
+      errorClass: "schema_invalid",
+      message:
+        "structured-output content violates response schema: $.repairInstructions[0].path must be a string",
+      retryable: false,
       attempt,
     }),
   });
 
   const result = await runLogicJudge({
-    jobId: "logic-judge-schema-invalid",
+    jobId: "logic-judge-gateway-schema-invalid-repair",
     generatedAt: "2026-05-05T10:00:00Z",
     testDesignModel: SAMPLE_TEST_DESIGN_MODEL,
     coveragePlan: SAMPLE_COVERAGE_PLAN,
@@ -342,11 +422,15 @@ test("runLogicJudge converts a schema-invalid model response into a reject verdi
     client,
   });
 
-  assert.equal(result.verdict.verdict, "reject");
-  assert.equal(result.verdict.refusal?.code, "schema_invalid_response");
-  assert.match(
-    result.verdict.refusal?.message ?? "",
-    /verdict is invalid/u,
+  assert.equal(result.verdict.verdict, "repair");
+  assert.equal(result.verdict.refusal, undefined);
+  assert.equal(result.verdict.findings[0]?.code, "schema_invalid");
+  assert.equal(
+    result.verdict.repairInstructions[0]?.kind,
+    "schema_violation",
   );
-  assert.equal(result.verdict.findings[0]?.severity, "error");
+  assert.equal(
+    result.verdict.repairInstructions[0]?.path,
+    "$.repairInstructions[0].path",
+  );
 });

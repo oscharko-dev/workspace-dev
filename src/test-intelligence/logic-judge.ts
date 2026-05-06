@@ -38,6 +38,7 @@ const SYSTEM_PROMPT = [
   "If the case set is sound, emit verdict=accept with empty findings and repairInstructions.",
   "If the case set is fixable, emit verdict=repair with concrete findings and repairInstructions.",
   "If the case set is fundamentally unsound or the evidence is insufficient, emit verdict=reject.",
+  "Recoverable structured-output schema failures are never reject-worthy; return verdict=repair and include deterministic repairInstructions that point at the broken schema fields.",
 ].join(" ");
 
 export interface LogicJudgePromptArtifact {
@@ -152,38 +153,82 @@ export interface RunLogicJudgeResult {
 }
 
 export const buildLogicJudgeResponseSchema = (): Record<string, unknown> => ({
+  description:
+    "Strict logic-judge response envelope. Recoverable schema violations must be repaired with deterministic repairInstructions instead of being rejected.",
   type: "object",
   additionalProperties: false,
   required: ["verdict", "findings", "repairInstructions"],
   properties: {
-    verdict: { enum: [...ALLOWED_LOGIC_JUDGE_VERDICTS] },
+    verdict: {
+      description:
+        "Final judge verdict. Use repair for recoverable schema violations so the repair loop can retry deterministically.",
+      enum: [...ALLOWED_LOGIC_JUDGE_VERDICTS],
+    },
     findings: {
+      description:
+        "Structured findings anchored to generated test cases or $job. Emit an array even when empty.",
       type: "array",
       items: {
         type: "object",
         additionalProperties: false,
         required: ["testCaseId", "code", "severity", "message"],
         properties: {
-          testCaseId: { type: "string", minLength: 1 },
-          code: { type: "string", minLength: 1, maxLength: MAX_CODE_LENGTH },
-          severity: { enum: [...ALLOWED_LOGIC_JUDGE_FINDING_SEVERITIES] },
+          testCaseId: {
+            description: "Generated testCaseId or $job.",
+            type: "string",
+            minLength: 1,
+          },
+          code: {
+            description: "Short machine-readable finding code.",
+            type: "string",
+            minLength: 1,
+            maxLength: MAX_CODE_LENGTH,
+          },
+          severity: {
+            description: "warning or error.",
+            enum: [...ALLOWED_LOGIC_JUDGE_FINDING_SEVERITIES],
+          },
           message: { type: "string", minLength: 1, maxLength: MAX_MESSAGE_LENGTH },
         },
       },
     },
     repairInstructions: {
+      description:
+        "Deterministic repair hints. Include schema-field repairs when the response violates this schema; keep entries short and specific.",
       type: "array",
       items: {
         type: "object",
         additionalProperties: false,
         required: ["testCaseId", "path", "instruction"],
         properties: {
-          testCaseId: { type: "string", minLength: 1 },
-          path: { type: "string", minLength: 1, maxLength: MAX_PATH_LENGTH },
+          testCaseId: {
+            description: "Generated testCaseId or $job.",
+            type: "string",
+            minLength: 1,
+          },
+          path: {
+            description: "Path to the field that must be changed.",
+            type: "string",
+            minLength: 1,
+            maxLength: MAX_PATH_LENGTH,
+          },
           instruction: {
+            description: "Short imperative repair instruction.",
             type: "string",
             minLength: 1,
             maxLength: MAX_INSTRUCTION_LENGTH,
+          },
+          kind: {
+            description:
+              "Optional structured repair kind. Use schema_violation for deterministic wrapper-schema fixes.",
+            enum: ["schema_violation"],
+          },
+          message: {
+            description:
+              "Optional redacted schema-diagnostic paired with kind=schema_violation.",
+            type: "string",
+            minLength: 1,
+            maxLength: MAX_MESSAGE_LENGTH,
           },
         },
       },
@@ -349,6 +394,24 @@ export const runLogicJudge = async (
   }
 
   if (gatewayResult.outcome === "error") {
+    const recoverableSchemaRepair = buildRecoverableSchemaRepair({
+      generatedAt: input.generatedAt,
+      jobId: input.jobId,
+      cacheKeyDigest,
+      deployment: input.client.deployment,
+      modelRevision: input.client.modelRevision,
+      gatewayRelease: input.client.gatewayRelease,
+      code: gatewayResult.errorClass,
+      message: gatewayResult.message,
+    });
+    if (recoverableSchemaRepair !== undefined) {
+      return {
+        verdict: recoverableSchemaRepair,
+        cacheHit: false,
+        promptArtifact,
+        gatewayResult,
+      };
+    }
     return {
       verdict: buildLogicJudgeRefusal({
         generatedAt: input.generatedAt,
@@ -382,7 +445,7 @@ export const runLogicJudge = async (
         findings: validated.findings,
         repairInstructions: validated.repairInstructions,
       })
-    : buildLogicJudgeRefusal({
+    : buildLogicJudgeSchemaRepair({
         generatedAt: input.generatedAt,
         jobId: input.jobId,
         cacheKeyDigest,
@@ -391,6 +454,7 @@ export const runLogicJudge = async (
         gatewayRelease: input.client.gatewayRelease,
         code: "schema_invalid_response",
         message: validated.message,
+        repairInstructions: validated.repairInstructions,
       });
 
   if (input.cache !== undefined) {
@@ -425,80 +489,82 @@ const validateLogicJudgeResponse = (
       findings: readonly JudgeFinding[];
       repairInstructions: readonly RepairInstruction[];
     }
-  | { ok: false; message: string } => {
-  if (!isRecord(value)) {
-    return { ok: false, message: "logic judge response is not an object" };
-  }
-  const verdict = value["verdict"];
-  if (!isLogicJudgeVerdictLabel(verdict)) {
-    return { ok: false, message: "logic judge response verdict is invalid" };
-  }
-  const findingsRaw = value["findings"];
-  if (!Array.isArray(findingsRaw)) {
-    return { ok: false, message: "logic judge response findings is not an array" };
-  }
-  const findings: JudgeFinding[] = [];
-  for (const entry of findingsRaw) {
-    if (!isRecord(entry)) {
-      return { ok: false, message: "logic judge finding is not an object" };
-    }
-    const testCaseId = entry["testCaseId"];
-    const code = entry["code"];
-    const severity = entry["severity"];
-    const message = entry["message"];
-    if (typeof testCaseId !== "string" || testCaseId.length === 0) {
-      return { ok: false, message: "logic judge finding testCaseId is invalid" };
-    }
-    if (testCaseId !== "$job" && !testCaseIds.includes(testCaseId)) {
-      return { ok: false, message: `logic judge finding references unknown testCaseId "${testCaseId}"` };
-    }
-    if (typeof code !== "string" || code.length === 0 || code.length > MAX_CODE_LENGTH) {
-      return { ok: false, message: "logic judge finding code is invalid" };
-    }
-    if (!isLogicJudgeFindingSeverity(severity)) {
-      return { ok: false, message: "logic judge finding severity is invalid" };
-    }
-    if (typeof message !== "string" || message.length === 0 || message.length > MAX_MESSAGE_LENGTH) {
-      return { ok: false, message: "logic judge finding message is invalid" };
-    }
-    findings.push({ testCaseId, code, severity, message });
-  }
-
-  const repairInstructionsRaw = value["repairInstructions"];
-  if (!Array.isArray(repairInstructionsRaw)) {
+  | { ok: false; message: string; repairInstructions: readonly RepairInstruction[] } => {
+  const schemaViolation = validateJsonSchemaSubset(
+    value,
+    buildLogicJudgeResponseSchema(),
+  );
+  if (schemaViolation !== undefined) {
+    const message = `logic judge response schema violation: ${schemaViolation}`;
     return {
       ok: false,
-      message: "logic judge response repairInstructions is not an array",
+      message,
+      repairInstructions: [
+        buildSchemaViolationRepairInstruction({
+          path: extractSchemaViolationPath(schemaViolation),
+          message,
+        }),
+      ],
     };
   }
-  const repairInstructions: RepairInstruction[] = [];
-  for (const entry of repairInstructionsRaw) {
-    if (!isRecord(entry)) {
-      return { ok: false, message: "logic judge repair instruction is not an object" };
-    }
-    const testCaseId = entry["testCaseId"];
-    const path = entry["path"];
-    const instruction = entry["instruction"];
-    if (typeof testCaseId !== "string" || testCaseId.length === 0) {
-      return { ok: false, message: "logic judge repair instruction testCaseId is invalid" };
-    }
+  const record = value as Record<string, unknown>;
+  const verdict = record["verdict"] as LogicJudgeVerdictLabel;
+  const findingsRaw = record["findings"] as ReadonlyArray<Record<string, unknown>>;
+  const repairInstructionsRaw = record[
+    "repairInstructions"
+  ] as ReadonlyArray<Record<string, unknown>>;
+  const findings: JudgeFinding[] = [];
+  for (let index = 0; index < findingsRaw.length; index += 1) {
+    const entry = findingsRaw[index]!;
+    const testCaseId = entry["testCaseId"] as string;
     if (testCaseId !== "$job" && !testCaseIds.includes(testCaseId)) {
+      const path = `$.findings[${index}].testCaseId`;
+      const message = `logic judge response schema violation: ${path} references unknown testCaseId "${testCaseId}"`;
       return {
         ok: false,
-        message: `logic judge repair instruction references unknown testCaseId "${testCaseId}"`,
+        message,
+        repairInstructions: [
+          buildSchemaViolationRepairInstruction({
+            path,
+            message,
+          }),
+        ],
       };
     }
-    if (typeof path !== "string" || path.length === 0 || path.length > MAX_PATH_LENGTH) {
-      return { ok: false, message: "logic judge repair instruction path is invalid" };
+    findings.push({
+      testCaseId,
+      code: entry["code"] as string,
+      severity: entry["severity"] as LogicJudgeFindingSeverity,
+      message: entry["message"] as string,
+    });
+  }
+  const repairInstructions: RepairInstruction[] = [];
+  for (let index = 0; index < repairInstructionsRaw.length; index += 1) {
+    const entry = repairInstructionsRaw[index]!;
+    const testCaseId = entry["testCaseId"] as string;
+    if (testCaseId !== "$job" && !testCaseIds.includes(testCaseId)) {
+      const path = `$.repairInstructions[${index}].testCaseId`;
+      const message = `logic judge response schema violation: ${path} references unknown testCaseId "${testCaseId}"`;
+      return {
+        ok: false,
+        message,
+        repairInstructions: [
+          buildSchemaViolationRepairInstruction({
+            path,
+            message,
+          }),
+        ],
+      };
     }
-    if (
-      typeof instruction !== "string" ||
-      instruction.length === 0 ||
-      instruction.length > MAX_INSTRUCTION_LENGTH
-    ) {
-      return { ok: false, message: "logic judge repair instruction is invalid" };
-    }
-    repairInstructions.push({ testCaseId, path, instruction });
+    const kind = entry["kind"];
+    const message = entry["message"];
+    repairInstructions.push({
+      testCaseId,
+      path: entry["path"] as string,
+      instruction: entry["instruction"] as string,
+      ...(kind === "schema_violation" ? { kind } : {}),
+      ...(typeof message === "string" ? { message } : {}),
+    });
   }
   return { ok: true, verdict, findings, repairInstructions };
 };
@@ -565,6 +631,80 @@ const buildLogicJudgeRefusal = (input: {
   },
 });
 
+const buildLogicJudgeSchemaRepair = (input: {
+  generatedAt: string;
+  jobId: string;
+  cacheKeyDigest: string;
+  deployment: string;
+  modelRevision: string;
+  gatewayRelease: string;
+  code: string;
+  message: string;
+  repairInstructions: readonly RepairInstruction[];
+}): JudgeVerdict => ({
+  schemaVersion: LOGIC_JUDGE_VERDICT_SCHEMA_VERSION,
+  contractVersion: TEST_INTELLIGENCE_CONTRACT_VERSION,
+  promptTemplateVersion: LOGIC_JUDGE_PROMPT_TEMPLATE_VERSION,
+  generatedAt: input.generatedAt,
+  jobId: input.jobId,
+  cacheHit: false,
+  cacheKeyDigest: input.cacheKeyDigest,
+  modelDeployment: input.deployment,
+  modelRevision: input.modelRevision,
+  gatewayRelease: input.gatewayRelease,
+  verdict: "repair",
+  findings: [
+    {
+      testCaseId: "$job",
+      code: sanitizeShortCode(input.code),
+      severity: "error",
+      message: sanitizeShortMessage(input.message),
+    },
+  ],
+  repairInstructions: [...input.repairInstructions],
+});
+
+const buildRecoverableSchemaRepair = (input: {
+  generatedAt: string;
+  jobId: string;
+  cacheKeyDigest: string;
+  deployment: string;
+  modelRevision: string;
+  gatewayRelease: string;
+  code: string;
+  message: string;
+}): JudgeVerdict | undefined => {
+  if (
+    input.code !== "schema_invalid" ||
+    !input.message.startsWith("structured-output content ")
+  ) {
+    return undefined;
+  }
+  const rawSchemaMessage = input.message.startsWith(
+    "structured-output content violates response schema: ",
+  )
+    ? input.message.slice(
+        "structured-output content violates response schema: ".length,
+      )
+    : input.message;
+  return buildLogicJudgeSchemaRepair({
+    generatedAt: input.generatedAt,
+    jobId: input.jobId,
+    cacheKeyDigest: input.cacheKeyDigest,
+    deployment: input.deployment,
+    modelRevision: input.modelRevision,
+    gatewayRelease: input.gatewayRelease,
+    code: input.code,
+    message: sanitizeShortMessage(input.message),
+    repairInstructions: [
+      buildSchemaViolationRepairInstruction({
+        path: extractSchemaViolationPath(rawSchemaMessage),
+        message: sanitizeShortMessage(input.message),
+      }),
+    ],
+  });
+};
+
 const stampLogicJudgeVerdict = (
   verdict: JudgeVerdict,
   stamps: {
@@ -587,21 +727,6 @@ const stampLogicJudgeVerdict = (
   gatewayRelease: stamps.gatewayRelease,
 });
 
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === "object" && value !== null && !Array.isArray(value);
-
-const isLogicJudgeVerdictLabel = (
-  value: unknown,
-): value is LogicJudgeVerdictLabel =>
-  typeof value === "string" &&
-  (ALLOWED_LOGIC_JUDGE_VERDICTS as readonly string[]).includes(value);
-
-const isLogicJudgeFindingSeverity = (
-  value: unknown,
-): value is LogicJudgeFindingSeverity =>
-  typeof value === "string" &&
-  (ALLOWED_LOGIC_JUDGE_FINDING_SEVERITIES as readonly string[]).includes(value);
-
 const sanitizeShortCode = (value: string): string =>
   value.slice(0, MAX_CODE_LENGTH) || "judge_error";
 
@@ -609,6 +734,146 @@ const sanitizeShortMessage = (value: string): string =>
   value.length <= MAX_MESSAGE_LENGTH
     ? value
     : `${value.slice(0, MAX_MESSAGE_LENGTH)}...`;
+
+const buildSchemaViolationRepairInstruction = (input: {
+  path: string;
+  message: string;
+}): RepairInstruction => ({
+  testCaseId: "$job",
+  kind: "schema_violation",
+  path: truncate(input.path, MAX_PATH_LENGTH),
+  message: sanitizeShortMessage(input.message),
+  instruction: truncate(
+    `Regenerate the logic-judge response so ${input.path} satisfies the response schema: ${sanitizeShortMessage(
+      input.message,
+    )}`,
+    MAX_INSTRUCTION_LENGTH,
+  ),
+});
+
+const extractSchemaViolationPath = (message: string): string => {
+  const match = message.match(/^(\$[^\s]*)\s+/u);
+  return match?.[1] ?? "$";
+};
+
+const validateJsonSchemaSubset = (
+  value: unknown,
+  schema: Record<string, unknown>,
+  path: string = "$",
+): string | undefined => {
+  const constValue = schema["const"];
+  if (constValue !== undefined && !Object.is(value, constValue)) {
+    return `${path} must equal ${JSON.stringify(constValue)}`;
+  }
+  const enumValues = schema["enum"];
+  if (
+    Array.isArray(enumValues) &&
+    !enumValues.some((item) => Object.is(item, value))
+  ) {
+    return `${path} must be one of the allowed enum values`;
+  }
+  const type = schema["type"];
+  if (typeof type === "string") {
+    const typeError = validateJsonSchemaType(value, type, path);
+    if (typeError !== undefined) return typeError;
+  }
+  if (type === "object") {
+    const record =
+      typeof value === "object" && value !== null && !Array.isArray(value)
+        ? (value as Record<string, unknown>)
+        : undefined;
+    if (record === undefined) return `${path} must be an object`;
+    const required = schema["required"];
+    if (Array.isArray(required)) {
+      for (const key of required) {
+        if (typeof key === "string" && !(key in record)) {
+          return `${path}.${key} is required`;
+        }
+      }
+    }
+    const properties = schema["properties"];
+    if (
+      typeof properties === "object" &&
+      properties !== null &&
+      !Array.isArray(properties)
+    ) {
+      const propertySchemas = properties as Record<string, unknown>;
+      for (const [key, propertySchema] of Object.entries(propertySchemas)) {
+        if (
+          key in record &&
+          typeof propertySchema === "object" &&
+          propertySchema !== null &&
+          !Array.isArray(propertySchema)
+        ) {
+          const nested = validateJsonSchemaSubset(
+            record[key],
+            propertySchema as Record<string, unknown>,
+            `${path}.${key}`,
+          );
+          if (nested !== undefined) return nested;
+        }
+      }
+    }
+    if (schema["additionalProperties"] === false) {
+      const allowed = new Set(
+        typeof properties === "object" &&
+          properties !== null &&
+          !Array.isArray(properties)
+          ? Object.keys(properties)
+          : [],
+      );
+      for (const key of Object.keys(record)) {
+        if (!allowed.has(key)) return `${path}.${key} is not allowed`;
+      }
+    }
+  }
+  if (type === "array") {
+    if (!Array.isArray(value)) return `${path} must be an array`;
+    const items = schema["items"];
+    if (typeof items === "object" && items !== null && !Array.isArray(items)) {
+      for (let index = 0; index < value.length; index += 1) {
+        const nested = validateJsonSchemaSubset(
+          value[index],
+          items as Record<string, unknown>,
+          `${path}[${index}]`,
+        );
+        if (nested !== undefined) return nested;
+      }
+    }
+  }
+  if (typeof value === "string") {
+    const minLength = schema["minLength"];
+    if (typeof minLength === "number" && value.length < minLength) {
+      return `${path} must be at least ${minLength} characters`;
+    }
+    const maxLength = schema["maxLength"];
+    if (typeof maxLength === "number" && value.length > maxLength) {
+      return `${path} must be at most ${maxLength} characters`;
+    }
+  }
+  return undefined;
+};
+
+const validateJsonSchemaType = (
+  value: unknown,
+  type: string,
+  path: string,
+): string | undefined => {
+  switch (type) {
+    case "object":
+      return typeof value === "object" &&
+        value !== null &&
+        !Array.isArray(value)
+        ? undefined
+        : `${path} must be an object`;
+    case "array":
+      return Array.isArray(value) ? undefined : `${path} must be an array`;
+    case "string":
+      return typeof value === "string" ? undefined : `${path} must be a string`;
+    default:
+      return undefined;
+  }
+};
 
 const isNotFoundError = (error: unknown): boolean =>
   typeof error === "object" &&
