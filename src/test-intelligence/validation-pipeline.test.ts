@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import {
+  COVERAGE_PLAN_SCHEMA_VERSION,
   EU_BANKING_DEFAULT_POLICY_PROFILE_ID,
   GENERATED_TESTCASES_ARTIFACT_FILENAME,
   GENERATED_TEST_CASE_SCHEMA_VERSION,
@@ -14,6 +15,7 @@ import {
   TEST_INTELLIGENCE_PROMPT_TEMPLATE_VERSION,
   VISUAL_SIDECAR_VALIDATION_REPORT_ARTIFACT_FILENAME,
   type BusinessTestIntentIr,
+  type CoveragePlan,
   type GeneratedTestCase,
   type GeneratedTestCaseList,
   type VisualScreenDescription,
@@ -196,6 +198,24 @@ const richList = (): GeneratedTestCaseList => ({
   ],
 });
 
+const buildCoveragePlan = (
+  overrides: Partial<CoveragePlan> = {},
+): CoveragePlan => ({
+  schemaVersion: COVERAGE_PLAN_SCHEMA_VERSION,
+  jobId: "job-1",
+  perScreen: [
+    {
+      screenId: "s-payment",
+      techniqueQuotas: [{ technique: "boundary_value_analysis", minCount: 1 }],
+    },
+  ],
+  perElement: [],
+  minimumCases: [],
+  recommendedCases: [],
+  mutationKillRateTarget: 0.85,
+  ...overrides,
+});
+
 test("pipeline runs in-memory without filesystem touch", () => {
   const result = runValidationPipeline({
     jobId: "job-1",
@@ -227,6 +247,45 @@ test("blocking flows propagate end-to-end", () => {
   assert.equal(result.blocked, true);
   assert.equal(result.validation.blocked, true);
   assert.equal(result.policy.blocked, true);
+});
+
+test("Issue #1947: coverage-plan technique quota minimum flows through validation pipeline", () => {
+  const result = runValidationPipeline({
+    jobId: "job-1",
+    generatedAt: GENERATED_AT,
+    list: richList(),
+    intent: buildIntent(),
+    coveragePlan: buildCoveragePlan(),
+  });
+  assert.equal(result.policy.blocked, true);
+  assert.equal(
+    result.policy.jobLevelViolations.some(
+      (violation) => violation.rule === "policy:technique-coverage-minimum",
+    ),
+    true,
+  );
+});
+
+test("Issue #1947: policyOverrides downgrade technique quota minimum inside validation pipeline", () => {
+  const result = runValidationPipeline({
+    jobId: "job-1",
+    generatedAt: GENERATED_AT,
+    list: richList(),
+    intent: buildIntent(),
+    coveragePlan: buildCoveragePlan(),
+    policyOverrides: [
+      {
+        ruleId: "policy:technique-coverage-minimum",
+        severity: "warning",
+      },
+    ],
+  });
+  const violation = result.policy.jobLevelViolations.find(
+    (entry) => entry.rule === "policy:technique-coverage-minimum",
+  );
+  assert.equal(violation?.severity, "warning");
+  assert.equal(result.policy.blocked, false);
+  assert.equal(result.blocked, false);
 });
 
 test("semantic override clears effective pipeline block while preserving validation artifact", () => {

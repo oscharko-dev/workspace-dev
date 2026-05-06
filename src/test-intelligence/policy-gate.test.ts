@@ -1,10 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  COVERAGE_PLAN_SCHEMA_VERSION,
   EU_BANKING_DEFAULT_POLICY_PROFILE_ID,
   GENERATED_TEST_CASE_SCHEMA_VERSION,
   TEST_INTELLIGENCE_CONTRACT_VERSION,
   TEST_INTELLIGENCE_PROMPT_TEMPLATE_VERSION,
+  type CoveragePlan,
   type BusinessTestIntentIr,
   type GeneratedTestCase,
   type GeneratedTestCaseList,
@@ -87,6 +89,24 @@ const buildIntent = (
   openQuestions: [],
   piiIndicators: [],
   redactions: [],
+  ...overrides,
+});
+
+const buildCoveragePlan = (
+  overrides: Partial<CoveragePlan> = {},
+): CoveragePlan => ({
+  schemaVersion: COVERAGE_PLAN_SCHEMA_VERSION,
+  jobId: "job-1",
+  perScreen: [
+    {
+      screenId: "s-1",
+      techniqueQuotas: [{ technique: "boundary_value_analysis", minCount: 1 }],
+    },
+  ],
+  perElement: [],
+  minimumCases: [],
+  recommendedCases: [],
+  mutationKillRateTarget: 0.85,
   ...overrides,
 });
 
@@ -435,6 +455,54 @@ test("missing negative or validation coverage for a required field blocks the jo
       (v) => v.outcome === "missing_negative_or_validation_for_required_field",
     ),
   );
+});
+
+test("Issue #1947: unmet technique quotas block the job at the policy gate", () => {
+  const ctx = harness([buildCase({ id: "tc-use-case" })], buildIntent());
+  const report = evaluatePolicyGate({
+    jobId: "job-1",
+    generatedAt: GENERATED_AT,
+    list: ctx.list,
+    intent: ctx.intent,
+    profile: ctx.profile,
+    validation: ctx.validation,
+    coverage: ctx.coverage,
+    coveragePlan: buildCoveragePlan(),
+  });
+  const violation = report.jobLevelViolations.find(
+    (entry) => entry.rule === "policy:technique-coverage-minimum",
+  );
+  assert.ok(violation, "expected technique quota violation");
+  assert.equal(violation?.outcome, "technique_quota_breach");
+  assert.equal(violation?.severity, "error");
+  assert.match(violation?.reason ?? "", /boundary_value_analysis/);
+  assert.equal(report.blocked, true);
+});
+
+test("Issue #1947: policy override can downgrade technique coverage minimum to warning", () => {
+  const ctx = harness([buildCase({ id: "tc-use-case" })], buildIntent());
+  const report = evaluatePolicyGate({
+    jobId: "job-1",
+    generatedAt: GENERATED_AT,
+    list: ctx.list,
+    intent: ctx.intent,
+    profile: ctx.profile,
+    validation: ctx.validation,
+    coverage: ctx.coverage,
+    coveragePlan: buildCoveragePlan(),
+    policyOverrides: [
+      {
+        ruleId: "policy:technique-coverage-minimum",
+        severity: "warning",
+      },
+    ],
+  });
+  const violation = report.jobLevelViolations.find(
+    (entry) => entry.rule === "policy:technique-coverage-minimum",
+  );
+  assert.ok(violation, "expected technique quota violation");
+  assert.equal(violation?.severity, "warning");
+  assert.equal(report.blocked, false);
 });
 
 test("low confidence triggers needs_review", () => {
