@@ -145,13 +145,13 @@ test("schema: drift guard — the hash is stable for the current contract", () =
   // `contractVersion: { const: TEST_INTELLIGENCE_CONTRACT_VERSION }` so
   // the digest shifts in lockstep with the contract bump even though the
   // `GeneratedTestCaseList` shape itself is unchanged.
-  // Hash bumped again by Issue #1941: TEST_INTELLIGENCE_PROMPT_TEMPLATE_VERSION
-  // bumped 1.2.0 -> 1.3.0 (custom-context-markdown promoted to a dedicated
-  // `[5] CustomerDomainContext` prompt section). The schema pins
+  // Hash bumped again by Issue #1942: TEST_INTELLIGENCE_PROMPT_TEMPLATE_VERSION
+  // bumped 1.3.0 -> 1.4.0 (generator prompt now carries explicit
+  // `CoveragePlan.techniqueQuotas` guidance and serialization). The schema pins
   // `promptTemplateVersion: { const: TEST_INTELLIGENCE_PROMPT_TEMPLATE_VERSION }`
   // so the digest shifts in lockstep with the template bump.
   const expected =
-    "4c20c7421b7d6aa70ff048a1707b087e7c1d6bf3d66f35b5fd7bde3e23ef80af";
+    "e979dbc89274b9f94c5c727be927396d6f90c38f10154078584d6c13325d5f53";
   const actual = computeGeneratedTestCaseListSchemaHash();
   if (actual !== expected) {
     assert.fail(

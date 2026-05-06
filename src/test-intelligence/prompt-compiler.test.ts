@@ -8,6 +8,7 @@ import {
   REDACTION_POLICY_VERSION,
   TEST_INTELLIGENCE_CONTRACT_VERSION,
   TEST_INTELLIGENCE_PROMPT_TEMPLATE_VERSION,
+  type CoveragePlan,
   VISUAL_SIDECAR_SCHEMA_VERSION,
   type CompiledPromptCustomContext,
   type CompiledPromptModelBinding,
@@ -29,6 +30,7 @@ import {
   compilePrompt,
   type CompilePromptSuffixSection,
 } from "./prompt-compiler.js";
+import { GENERATOR_TECHNIQUE_QUOTA_RULE } from "./agent-role-profile.js";
 import { buildGeneratedTestCaseListJsonSchema } from "./generated-test-case-schema.js";
 import { reconcileSources } from "./reconciliation.js";
 
@@ -932,6 +934,67 @@ test("compiler: artifacts pin the contract and schema versions", async () => {
   assert.match(
     artifacts.userPrompt,
     /Generate structured test cases derived from the bounded JSON below/u,
+  );
+});
+
+test("compiler: surfaces explicit technique quota guidance and serialization for the generator", async () => {
+  const intent = await loadBaselineSimpleFormIntent();
+  const { request } = compilePrompt({
+    jobId: "job-technique-quotas",
+    intent,
+    modelBinding: sampleModelBinding,
+    visualBinding: sampleVisualBinding,
+    policyBundleVersion: "policy-2026-04-25",
+  });
+
+  assert.match(
+    request.userPrompt,
+    /Honour the technique quotas in \[4\] CoveragePlan\.techniqueQuotas so each technique with minCount > 0 MUST be represented at least minCount times in the output/u,
+  );
+  assert.match(request.userPrompt, /\[4\] CoveragePlan\nCoveragePlan\.techniqueQuotas\n/u);
+  assert.match(
+    request.userPrompt,
+    /"minCount":6,"screenId":"s-newsletter","technique":"equivalence_partitioning"/u,
+  );
+});
+
+test("compiler: serializes every flattened technique quota entry across screens", async () => {
+  const intent = await loadBaselineSimpleFormIntent();
+  const coveragePlan: CoveragePlan = {
+    jobId: "job-technique-quotas-multi-screen",
+    schemaVersion: "1.0.0",
+    mutationKillRateTarget: 0.85,
+    minimumCases: [],
+    recommendedCases: [],
+    perScreen: [
+      {
+        screenId: "screen-a",
+        techniqueQuotas: [
+          { technique: "boundary_value_analysis", minCount: 2 },
+          { technique: "decision_table", minCount: 0 },
+        ],
+      },
+      {
+        screenId: "screen-b",
+        techniqueQuotas: [{ technique: "state_transition", minCount: 1 }],
+      },
+    ],
+    perElement: [],
+    techniques: ["boundary_value", "decision_table", "state_transition"],
+  };
+
+  const { request } = compilePrompt({
+    jobId: "job-technique-quotas-multi-screen",
+    intent,
+    coveragePlan,
+    modelBinding: sampleModelBinding,
+    visualBinding: sampleVisualBinding,
+    policyBundleVersion: "policy-2026-04-25",
+  });
+
+  assert.match(
+    request.userPrompt,
+    /CoveragePlan\.techniqueQuotas\n\[\{"minCount":2,"screenId":"screen-a","technique":"boundary_value_analysis"\},\{"minCount":0,"screenId":"screen-a","technique":"decision_table"\},\{"minCount":1,"screenId":"screen-b","technique":"state_transition"\}\]/u,
   );
 });
 

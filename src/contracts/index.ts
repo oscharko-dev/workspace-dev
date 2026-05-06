@@ -184,7 +184,7 @@ export const GENERATED_TEST_CASE_SCHEMA_VERSION = "1.1.0" as const;
  * directive so the cache cannot serve a stale list that lacks an a11y case
  * for a form screen.
  */
-export const TEST_INTELLIGENCE_PROMPT_TEMPLATE_VERSION = "1.3.0" as const;
+export const TEST_INTELLIGENCE_PROMPT_TEMPLATE_VERSION = "1.4.0" as const;
 
 /** Visual sidecar schema version consumed by the prompt compiler (Issue #1386). */
 export const VISUAL_SIDECAR_SCHEMA_VERSION = "1.1.0" as const;
