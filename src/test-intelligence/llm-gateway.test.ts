@@ -184,9 +184,9 @@ test("isLlmGatewayErrorRetryable: only transient classes retry", () => {
   assert.equal(isLlmGatewayErrorRetryable("timeout"), true);
   assert.equal(isLlmGatewayErrorRetryable("transport"), true);
   assert.equal(isLlmGatewayErrorRetryable("rate_limited"), true);
+  assert.equal(isLlmGatewayErrorRetryable("incomplete"), true);
   assert.equal(isLlmGatewayErrorRetryable("refusal"), false);
   assert.equal(isLlmGatewayErrorRetryable("schema_invalid"), false);
-  assert.equal(isLlmGatewayErrorRetryable("incomplete"), false);
   assert.equal(isLlmGatewayErrorRetryable("image_payload_rejected"), false);
   assert.equal(isLlmGatewayErrorRetryable("input_budget_exceeded"), false);
   // Issue #1703: protocol failures are operator-actionable, never retryable.
@@ -936,7 +936,38 @@ test("length finish_reason maps to incomplete", async () => {
   assert.equal(result.outcome, "error");
   if (result.outcome === "error") {
     assert.equal(result.errorClass, "incomplete");
-    assert.equal(result.retryable, false);
+    assert.equal(result.retryable, true);
+  }
+});
+
+test("incomplete finish_reason triggers bounded output-token expansion and retries", async () => {
+  let attempts = 0;
+  const payloadLimits: Array<number | null> = [];
+  const client = createLlmGatewayClient(baseConfig, {
+    fetchImpl: async (_, init = {}) => {
+      attempts += 1;
+      const rawBody = init.body;
+      const bodyText =
+        typeof rawBody === "string" ? rawBody : JSON.stringify(rawBody);
+      const parsed = JSON.parse(bodyText) as { max_completion_tokens?: number };
+      payloadLimits.push(parsed.max_completion_tokens ?? null);
+
+      if (attempts === 1) {
+        return okJsonResponse(buildChoiceBody({ ack: "ok" }, "length"));
+      }
+      return okJsonResponse(buildChoiceBody({ ack: "ok" }));
+    },
+    apiKeyProvider: () => "k",
+    sleep: async () => undefined,
+    retryBackoffMs: [0, 0, 0],
+  });
+  const result = await client.generate(sampleRequest({ maxOutputTokens: 1_000 }));
+  assert.equal(attempts, 2);
+  assert.equal(payloadLimits.length, 2);
+  assert.deepEqual(payloadLimits, [1_000, 2_000]);
+  assert.equal(result.outcome, "success");
+  if (result.outcome === "success") {
+    assert.equal(result.attempt, 2);
   }
 });
 

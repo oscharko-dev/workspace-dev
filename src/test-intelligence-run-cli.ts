@@ -1800,7 +1800,6 @@ export const runTestIntelligenceCommand = async (
       ...(coveragePlannerClient !== undefined
         ? { coveragePlanner: coveragePlannerClient }
         : {}),
-      maxOutputTokens: 32_000,
       maxWallClockMs: 240_000,
     },
     ...(finopsBudget !== undefined ? { finopsBudget } : {}),

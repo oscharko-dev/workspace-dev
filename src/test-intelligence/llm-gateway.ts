@@ -161,6 +161,7 @@ const MAX_REDACTED_MESSAGE_LENGTH = 240;
  * `LlmGatewayClientConfig.maxResponseBytes` (Issue #1414).
  */
 const DEFAULT_MAX_RESPONSE_BYTES = 8 * 1024 * 1024;
+const INCOMPLETE_RETRY_OUTPUT_TOKEN_LIMIT = 64_000;
 
 const defaultSleep = (ms: number): Promise<void> =>
   new Promise((resolve) => setTimeout(resolve, Math.max(0, ms)));
@@ -255,6 +256,7 @@ export const createLlmGatewayClient = (
         : config.maxRetries;
     const maxAttempts = Math.max(1, effectiveRetries + 1);
     let lastFailure: LlmGenerationFailure | undefined;
+    let requestForAttempt: LlmGenerationRequest = request;
 
     for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
       const decision = breaker.beforeRequest();
@@ -273,7 +275,7 @@ export const createLlmGatewayClient = (
         result = await dispatchOnce({
           attempt,
           config,
-          request,
+          request: requestForAttempt,
           fetchImpl,
           apiKeyProvider: runtime.apiKeyProvider,
         });
@@ -321,6 +323,21 @@ export const createLlmGatewayClient = (
       }
 
       lastFailure = result;
+
+      if (
+        result.errorClass === "incomplete" &&
+        requestForAttempt.maxOutputTokens !== undefined
+      ) {
+        const expanded = expandMaxOutputTokensForRetry(
+          requestForAttempt.maxOutputTokens,
+        );
+        if (expanded > requestForAttempt.maxOutputTokens) {
+          requestForAttempt = {
+            ...requestForAttempt,
+            maxOutputTokens: expanded,
+          };
+        }
+      }
 
       if (!result.retryable || attempt >= maxAttempts) {
         return result;
@@ -577,8 +594,16 @@ const isTransientFailure = (errorClass: LlmGatewayErrorClass): boolean => {
   return (
     errorClass === "timeout" ||
     errorClass === "transport" ||
-    errorClass === "rate_limited"
+    errorClass === "rate_limited" ||
+    errorClass === "incomplete"
   );
+};
+
+const expandMaxOutputTokensForRetry = (current: number): number => {
+  if (!Number.isSafeInteger(current) || current <= 0) return current;
+  const doubled = current * 2;
+  if (!Number.isSafeInteger(doubled) || doubled <= current) return current;
+  return Math.min(doubled, INCOMPLETE_RETRY_OUTPUT_TOKEN_LIMIT);
 };
 
 const isAbortLikeError = (err: unknown): boolean =>
@@ -1089,7 +1114,7 @@ const parseOpenAiChatResponse = async ({
       outcome: "error",
       errorClass: "incomplete",
       message: "response truncated by length limit",
-      retryable: false,
+      retryable: true,
       attempt,
     };
   }
