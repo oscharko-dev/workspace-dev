@@ -975,3 +975,245 @@ test("Issue #1946: missing ictRegisterRef still fires when no profile ref is pre
   );
   assert.equal(report.blocked, true);
 });
+
+// ---------------------------------------------------------------------------
+// Issue #1948: hard-gate that every p0 risk-class IR element has a covering case
+// ---------------------------------------------------------------------------
+
+test("Issue #1948: uncovered p0 risk-class IR element blocks the job", () => {
+  const ctx = harness([buildCase({ id: "tc-pos" })], buildIntent());
+  const report = evaluatePolicyGate({
+    jobId: "job-1",
+    generatedAt: GENERATED_AT,
+    list: ctx.list,
+    intent: ctx.intent,
+    profile: ctx.profile,
+    validation: ctx.validation,
+    coverage: ctx.coverage,
+    coveragePlan: buildCoveragePlan({
+      perScreen: [
+        {
+          screenId: "s-1",
+          techniqueQuotas: [{ technique: "use_case", minCount: 1 }],
+        },
+      ],
+      perElement: [
+        {
+          screenId: "s-1",
+          elementId: "act-transfer",
+          mustHaveCase: true,
+          riskClass: "financial_transaction",
+        },
+      ],
+    }),
+  });
+  const violation = report.jobLevelViolations.find(
+    (entry) => entry.rule === "policy:p0-risk-element-uncovered",
+  );
+  assert.ok(violation, "expected p0 uncovered violation");
+  assert.equal(violation?.outcome, "p0_risk_element_uncovered");
+  assert.equal(violation?.severity, "error");
+  assert.match(violation?.reason ?? "", /financial_transaction/);
+  assert.match(violation?.reason ?? "", /act-transfer/);
+  assert.equal(report.blocked, true);
+});
+
+test("Issue #1948: live re-run scenario — Banking financial-transaction action uncovered → blocked", () => {
+  // Banking-form screen with a financial-transaction action that no case
+  // anchors via coveredActionIds. Replays the production runner pattern by
+  // pairing the coverage plan with a positive case that touches an unrelated
+  // field.
+  const intent = buildIntent({
+    detectedFields: [
+      {
+        id: "f-iban",
+        screenId: "s-payment",
+        trace: { nodeId: "n-iban" },
+        provenance: "figma_node",
+        confidence: 0.9,
+        label: "IBAN",
+        type: "text",
+      },
+    ],
+    detectedActions: [
+      {
+        id: "act-submit-payment",
+        screenId: "s-payment",
+        trace: { nodeId: "n-submit" },
+        provenance: "figma_node",
+        confidence: 0.9,
+        label: "Submit payment",
+        kind: "submit",
+      },
+    ],
+    screens: [
+      { screenId: "s-payment", screenName: "Payment", trace: { nodeId: "s-payment" } },
+    ],
+  });
+  const ctx = harness(
+    [
+      buildCase({
+        id: "tc-iban-only",
+        figmaTraceRefs: [{ screenId: "s-payment" }],
+        qualitySignals: {
+          coveredFieldIds: ["f-iban"],
+          coveredActionIds: [],
+          coveredValidationIds: [],
+          coveredNavigationIds: [],
+          confidence: 0.9,
+        },
+      }),
+    ],
+    intent,
+  );
+  const report = evaluatePolicyGate({
+    jobId: "job-1",
+    generatedAt: GENERATED_AT,
+    list: ctx.list,
+    intent: ctx.intent,
+    profile: ctx.profile,
+    validation: ctx.validation,
+    coverage: ctx.coverage,
+    coveragePlan: buildCoveragePlan({
+      perScreen: [
+        {
+          screenId: "s-payment",
+          techniqueQuotas: [{ technique: "use_case", minCount: 1 }],
+        },
+      ],
+      perElement: [
+        {
+          screenId: "s-payment",
+          elementId: "act-submit-payment",
+          mustHaveCase: true,
+          riskClass: "financial_transaction",
+        },
+      ],
+    }),
+  });
+  const violation = report.jobLevelViolations.find(
+    (entry) => entry.rule === "policy:p0-risk-element-uncovered",
+  );
+  assert.ok(violation, "expected p0 uncovered violation for unsubmitted payment");
+  assert.equal(report.blocked, true);
+});
+
+test("Issue #1948: covered p0 element produces no violation", () => {
+  const ctx = harness(
+    [
+      buildCase({
+        qualitySignals: {
+          coveredFieldIds: [],
+          coveredActionIds: ["act-transfer"],
+          coveredValidationIds: [],
+          coveredNavigationIds: [],
+          confidence: 0.9,
+        },
+      }),
+    ],
+    buildIntent(),
+  );
+  const report = evaluatePolicyGate({
+    jobId: "job-1",
+    generatedAt: GENERATED_AT,
+    list: ctx.list,
+    intent: ctx.intent,
+    profile: ctx.profile,
+    validation: ctx.validation,
+    coverage: ctx.coverage,
+    coveragePlan: buildCoveragePlan({
+      perScreen: [
+        {
+          screenId: "s-1",
+          techniqueQuotas: [{ technique: "use_case", minCount: 1 }],
+        },
+      ],
+      perElement: [
+        {
+          screenId: "s-1",
+          elementId: "act-transfer",
+          mustHaveCase: true,
+          riskClass: "financial_transaction",
+        },
+      ],
+    }),
+  });
+  const violation = report.jobLevelViolations.find(
+    (entry) => entry.rule === "policy:p0-risk-element-uncovered",
+  );
+  assert.equal(violation, undefined);
+});
+
+test("Issue #1948: no false positives on screens with zero p0 elements", () => {
+  const ctx = harness([buildCase({})], buildIntent());
+  const report = evaluatePolicyGate({
+    jobId: "job-1",
+    generatedAt: GENERATED_AT,
+    list: ctx.list,
+    intent: ctx.intent,
+    profile: ctx.profile,
+    validation: ctx.validation,
+    coverage: ctx.coverage,
+    coveragePlan: buildCoveragePlan({
+      perElement: [
+        {
+          screenId: "s-1",
+          elementId: "f-low-risk",
+          mustHaveCase: false,
+          riskClass: "medium",
+        },
+        {
+          screenId: "s-1",
+          elementId: "f-high-but-not-p0",
+          mustHaveCase: true,
+          riskClass: "high",
+        },
+      ],
+    }),
+  });
+  const violation = report.jobLevelViolations.find(
+    (entry) => entry.rule === "policy:p0-risk-element-uncovered",
+  );
+  assert.equal(violation, undefined);
+});
+
+test("Issue #1948: customerProfile policyOverride downgrades p0 uncovered to warning", () => {
+  const ctx = harness([buildCase({ id: "tc-pos" })], buildIntent());
+  const report = evaluatePolicyGate({
+    jobId: "job-1",
+    generatedAt: GENERATED_AT,
+    list: ctx.list,
+    intent: ctx.intent,
+    profile: ctx.profile,
+    validation: ctx.validation,
+    coverage: ctx.coverage,
+    coveragePlan: buildCoveragePlan({
+      perScreen: [
+        {
+          screenId: "s-1",
+          techniqueQuotas: [{ technique: "use_case", minCount: 1 }],
+        },
+      ],
+      perElement: [
+        {
+          screenId: "s-1",
+          elementId: "act-transfer",
+          mustHaveCase: true,
+          riskClass: "regulated_data",
+        },
+      ],
+    }),
+    policyOverrides: [
+      {
+        ruleId: "policy:p0-risk-element-uncovered",
+        severity: "warning",
+      },
+    ],
+  });
+  const violation = report.jobLevelViolations.find(
+    (entry) => entry.rule === "policy:p0-risk-element-uncovered",
+  );
+  assert.ok(violation, "expected p0 uncovered violation");
+  assert.equal(violation?.severity, "warning");
+  assert.equal(report.blocked, false);
+});
