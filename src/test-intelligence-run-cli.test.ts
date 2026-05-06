@@ -46,6 +46,7 @@ const baseOptions = (): TestIntelligenceRunOptions => ({
   output: "/tmp/dry-run-output",
   modelEndpoint: undefined,
   modelDeployment: "gpt-oss-120b",
+  logicJudgeDeployment: undefined,
   modelApiKey: undefined,
   figmaToken: "figd_xxx",
   policyProfile: undefined,
@@ -226,6 +227,68 @@ test("parseTestIntelligenceRunArgs: --enable-visual-sidecar conflicts with --no-
         {},
       ),
     /--enable-visual-sidecar and --no-visual-sidecar are mutually exclusive/u,
+  );
+});
+
+test("parseTestIntelligenceRunArgs: --logic-judge-deployment captures the cross-model judge deployment (Issue #1932)", () => {
+  const opts = parseTestIntelligenceRunArgs(
+    [
+      "--figma-url",
+      "https://figma.com/design/abc",
+      "--output",
+      "/tmp/x",
+      "--logic-judge-deployment",
+      "gpt-oss-120b",
+    ],
+    {},
+  );
+  assert.equal(opts.logicJudgeDeployment, "gpt-oss-120b");
+});
+
+test("parseTestIntelligenceRunArgs: WORKSPACE_TEST_SPACE_LOGIC_JUDGE_DEPLOYMENT env var hydrates the option (Issue #1932)", () => {
+  const opts = parseTestIntelligenceRunArgs(
+    ["--figma-url", "https://figma.com/design/abc", "--output", "/tmp/x"],
+    {
+      WORKSPACE_TEST_SPACE_TESTCASE_MODEL_DEPLOYMENT: "mistral-large-3",
+      WORKSPACE_TEST_SPACE_LOGIC_JUDGE_DEPLOYMENT: "gpt-oss-120b",
+    },
+  );
+  assert.equal(opts.modelDeployment, "mistral-large-3");
+  assert.equal(opts.logicJudgeDeployment, "gpt-oss-120b");
+});
+
+test("parseTestIntelligenceRunArgs: --logic-judge-deployment overrides the env default (Issue #1932)", () => {
+  const opts = parseTestIntelligenceRunArgs(
+    [
+      "--figma-url",
+      "https://figma.com/design/abc",
+      "--output",
+      "/tmp/x",
+      "--logic-judge-deployment",
+      "gpt-oss-120b",
+    ],
+    {
+      WORKSPACE_TEST_SPACE_LOGIC_JUDGE_DEPLOYMENT: "phi-4",
+    },
+  );
+  assert.equal(opts.logicJudgeDeployment, "gpt-oss-120b");
+});
+
+test("parseTestIntelligenceRunArgs: --logic-judge-deployment rejects empty value (Issue #1932)", () => {
+  assert.throws(
+    () =>
+      parseTestIntelligenceRunArgs(
+        [
+          "--figma-url",
+          "https://figma.com/design/abc",
+          "--output",
+          "/tmp/x",
+          "--logic-judge-deployment",
+          "   ",
+        ],
+        {},
+      ),
+    /--logic-judge-deployment requires a non-empty deployment name/u,
   );
 });
 
@@ -528,6 +591,7 @@ test("runTestIntelligenceCommand: deterministic_llm with injected runner returns
     output: "/tmp/det-output",
     modelEndpoint: "https://aoai.example/openai/v1",
     modelDeployment: "gpt-oss-120b",
+    logicJudgeDeployment: undefined,
     modelApiKey: "k-key",
     figmaToken: undefined,
     policyProfile: undefined,
@@ -637,6 +701,7 @@ test("runTestIntelligenceCommand: deterministic_llm blocked → exit 3", async (
     output: "/tmp/blocked-output",
     modelEndpoint: "https://aoai.example/openai/v1",
     modelDeployment: "gpt-oss-120b",
+    logicJudgeDeployment: undefined,
     modelApiKey: "k-key",
     figmaToken: undefined,
     policyProfile: undefined,
@@ -747,6 +812,7 @@ test("runTestIntelligenceCommand: deterministic_llm + harness-mode shadow_eval f
     output: "/tmp/harness-output",
     modelEndpoint: "https://aoai.example/openai/v1",
     modelDeployment: "gpt-oss-120b",
+    logicJudgeDeployment: undefined,
     modelApiKey: "k-key",
     figmaToken: undefined,
     policyProfile: undefined,
@@ -992,7 +1058,8 @@ test("runTestIntelligenceCommand: enable-visual-sidecar builds and forwards runn
   const exitCode = await runTestIntelligenceCommand(options, sink, {
     env: {
       ...GATE_ON,
-      WORKSPACE_TEST_SPACE_VISUAL_MODEL_ENDPOINT: "https://aoai.example/openai/vision",
+      WORKSPACE_TEST_SPACE_VISUAL_MODEL_ENDPOINT:
+        "https://aoai.example/openai/vision",
       WORKSPACE_TEST_SPACE_VISUAL_PRIMARY_DEPLOYMENT: "llama-4-maverick-vision",
       WORKSPACE_TEST_SPACE_VISUAL_FALLBACK_DEPLOYMENT: "phi-4-multimodal-poc",
     },
@@ -1059,7 +1126,10 @@ test("runTestIntelligenceCommand: enable-visual-sidecar fails closed when visual
   );
 
   assert.equal(exitCode, 1);
-  assert.match(stderr.join(""), /requires WORKSPACE_TEST_SPACE_VISUAL_MODEL_ENDPOINT, WORKSPACE_TEST_SPACE_VISUAL_PRIMARY_DEPLOYMENT, WORKSPACE_TEST_SPACE_VISUAL_FALLBACK_DEPLOYMENT/u);
+  assert.match(
+    stderr.join(""),
+    /requires WORKSPACE_TEST_SPACE_VISUAL_MODEL_ENDPOINT, WORKSPACE_TEST_SPACE_VISUAL_PRIMARY_DEPLOYMENT, WORKSPACE_TEST_SPACE_VISUAL_FALLBACK_DEPLOYMENT/u,
+  );
 });
 
 test("runTestIntelligenceCommand: dry_run output mentions harness mode line", async () => {
@@ -1198,6 +1268,7 @@ test("runTestIntelligenceCommand: deterministic_llm forwards customContextMarkdo
     output: "/tmp/cli-md-output",
     modelEndpoint: "https://aoai.example/openai/v1",
     modelDeployment: "gpt-oss-120b",
+    logicJudgeDeployment: undefined,
     modelApiKey: "k-key",
     figmaToken: undefined,
     policyProfile: undefined,

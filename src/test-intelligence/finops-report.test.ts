@@ -284,6 +284,59 @@ test("recorder: estimatedCost combines token rates + per-attempt fixed cost", ()
   }
 });
 
+test("buildFinOpsBudgetReport: bySource.judge_primary records the judge deployment, not the generator deployment, when they differ (Issue #1932)", () => {
+  const recorder = createFinOpsUsageRecorder();
+  // Generator attempt — same role bucket, different agent source.
+  recorder.recordAttempt({
+    role: "test_generation",
+    source: "generator",
+    deployment: "mistral-large-3",
+    durationMs: 5,
+    result: successResult(100, 50),
+  });
+  // Judge attempt — same role bucket, but different deployment (cross-model).
+  recorder.recordAttempt({
+    role: "test_generation",
+    source: "judge_primary",
+    deployment: "gpt-oss-120b",
+    durationMs: 7,
+    result: successResult(40, 20),
+  });
+  const report = buildFinOpsBudgetReport({
+    jobId: JOB_ID,
+    generatedAt: GENERATED_AT,
+    budget: permissive,
+    recorder,
+  });
+  assert.equal(report.bySource.generator.deployment, "mistral-large-3");
+  assert.equal(report.bySource.judge_primary.deployment, "gpt-oss-120b");
+  assert.notEqual(
+    report.bySource.judge_primary.deployment,
+    report.bySource.generator.deployment,
+    "cross-model attribution requires distinct judge deployment label",
+  );
+});
+
+test("buildFinOpsBudgetReport: bySource entries omit deployment when no source label was supplied (Issue #1932 — backwards compat)", () => {
+  const recorder = createFinOpsUsageRecorder();
+  recorder.recordAttempt({
+    role: "test_generation",
+    deployment: "gpt-oss-120b",
+    durationMs: 5,
+    result: successResult(100, 50),
+  });
+  const report = buildFinOpsBudgetReport({
+    jobId: JOB_ID,
+    generatedAt: GENERATED_AT,
+    budget: permissive,
+    recorder,
+  });
+  // No source on the attempt → no per-source accumulation, deployment field
+  // is absent from the canonical-JSON wire payload (preserves the legacy hash).
+  assert.equal(report.bySource.generator.deployment, undefined);
+  assert.equal(report.bySource.judge_primary.deployment, undefined);
+});
+
 test("buildFinOpsBudgetReport: includes deterministic bySource attribution", () => {
   const costRates: FinOpsCostRateMap = {
     currencyLabel: "USD",

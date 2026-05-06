@@ -238,37 +238,36 @@ const visualEvidenceHash = (input: {
     )
     .digest("hex");
 
-const okResponder = (
-  cases: ProductionRunnerLlmDraftCase[],
-  deployment = "gpt-oss-120b-mock",
-) => (request: LlmGenerationRequest, attempt: number) => {
-  if (request.responseSchemaName === "workspace-dev-logic-judge-v1") {
+const okResponder =
+  (cases: ProductionRunnerLlmDraftCase[], deployment = "gpt-oss-120b-mock") =>
+  (request: LlmGenerationRequest, attempt: number) => {
+    if (request.responseSchemaName === "workspace-dev-logic-judge-v1") {
+      return {
+        outcome: "success" as const,
+        content: {
+          verdict: "accept",
+          findings: [],
+          repairInstructions: [],
+        },
+        finishReason: "stop" as const,
+        usage: { inputTokens: 20, outputTokens: 10 },
+        modelDeployment: deployment,
+        modelRevision: "mock-1",
+        gatewayRelease: "mock",
+        attempt,
+      };
+    }
     return {
       outcome: "success" as const,
-      content: {
-        verdict: "accept",
-        findings: [],
-        repairInstructions: [],
-      },
+      content: { testCases: cases },
       finishReason: "stop" as const,
-      usage: { inputTokens: 20, outputTokens: 10 },
+      usage: { inputTokens: 100, outputTokens: 200 },
       modelDeployment: deployment,
       modelRevision: "mock-1",
       gatewayRelease: "mock",
       attempt,
     };
-  }
-  return {
-    outcome: "success" as const,
-    content: { testCases: cases },
-    finishReason: "stop" as const,
-    usage: { inputTokens: 100, outputTokens: 200 },
-    modelDeployment: deployment,
-    modelRevision: "mock-1",
-    gatewayRelease: "mock",
-    attempt,
   };
-};
 
 const refusalResponder = () => () => ({
   outcome: "error" as const,
@@ -324,9 +323,14 @@ test("runFigmaToQcTestCases happy path persists artifacts and renders customer M
       "utf8",
     );
     assert.match(normalizationReport, /"counts":/u);
-    const finopsReport = await readFile(result.artifactPaths.finopsReport, "utf8");
+    const finopsReport = await readFile(
+      result.artifactPaths.finopsReport,
+      "utf8",
+    );
     assert.match(finopsReport, /"bySource":/u);
-    assert.ok(result.artifactPaths.genealogy.endsWith(GENEALOGY_ARTIFACT_FILENAME));
+    assert.ok(
+      result.artifactPaths.genealogy.endsWith(GENEALOGY_ARTIFACT_FILENAME),
+    );
     const genealogy = await readFile(result.artifactPaths.genealogy, "utf8");
     assert.match(genealogy, /agent-role-runs\/test_generation\.json/u);
     // Customer markdown was written.
@@ -353,8 +357,7 @@ test("runFigmaToQcTestCases loads reviewer-approved agent lessons from memdir in
       type: "project",
       policyProfileScope: [EU_BANKING_DEFAULT_POLICY_PROFILE_ID],
       approvedBy: ["reviewer@workspace-dev"],
-      body:
-        "Always include a malformed Investitionssumme negative case.\nHighlight Bedarfsermittlung-specific validation expectations.\n",
+      body: "Always include a malformed Investitionssumme negative case.\nHighlight Bedarfsermittlung-specific validation expectations.\n",
       nowMs: Date.parse("2026-05-04T00:00:00.000Z"),
     });
     assert.equal(lessonResult.ok, true);
@@ -374,7 +377,10 @@ test("runFigmaToQcTestCases loads reviewer-approved agent lessons from memdir in
       llm: { client },
     });
 
-    const compiledPrompt = await readFile(result.artifactPaths.compiledPrompt, "utf8");
+    const compiledPrompt = await readFile(
+      result.artifactPaths.compiledPrompt,
+      "utf8",
+    );
     assert.match(compiledPrompt, /investitionssumme-guardrail/u);
     assert.match(
       compiledPrompt,
@@ -551,7 +557,8 @@ test("Issue #1792: verifyJobEvidence fails closed when production-runner evidenc
       verify.body.failures.some(
         (failure) =>
           failure.code === "manifest_metadata_invalid" &&
-          failure.reference === PRODUCTION_RUNNER_EVIDENCE_SEAL_ARTIFACT_FILENAME,
+          failure.reference ===
+            PRODUCTION_RUNNER_EVIDENCE_SEAL_ARTIFACT_FILENAME,
       ),
       JSON.stringify(verify.body.failures, null, 2),
     );
@@ -623,8 +630,9 @@ test("runFigmaToQcTestCases escalates critical untrusted-content findings to nee
 
     assert.equal(result.policy.needsReviewCount > 0, true);
     assert.equal(
-      result.policy.jobLevelViolations.some((violation) =>
-        violation.rule === "policy:untrusted-content-normalization",
+      result.policy.jobLevelViolations.some(
+        (violation) =>
+          violation.rule === "policy:untrusted-content-normalization",
       ),
       true,
     );
@@ -1065,8 +1073,7 @@ test("runFigmaToQcTestCases wires Figma URL screenshots through the visual sidec
           // Dispatch on schema name so the faithfulness-judge surface
           // gets a clean `accept`.
           if (
-            request.responseSchemaName ===
-            "workspace-dev-faithfulness-judge-v1"
+            request.responseSchemaName === "workspace-dev-faithfulness-judge-v1"
           ) {
             return {
               outcome: "success" as const,
@@ -1117,7 +1124,8 @@ test("runFigmaToQcTestCases wires Figma URL screenshots through the visual sidec
         );
       }
       if (
-        url === "https://api.figma.com/v1/images/ABC?ids=1%3A1&format=png&scale=2"
+        url ===
+        "https://api.figma.com/v1/images/ABC?ids=1%3A1&format=png&scale=2"
       ) {
         return new Response(
           JSON.stringify({
@@ -1205,7 +1213,10 @@ test("runFigmaToQcTestCases wires Figma URL screenshots through the visual sidec
     assert.equal(requestHeaders[2]?.get("x-figma-token"), null);
     const manifest = JSON.parse(
       await readFile(
-        path.join(result.artifactDir, "wave1-validation-evidence-manifest.json"),
+        path.join(
+          result.artifactDir,
+          "wave1-validation-evidence-manifest.json",
+        ),
         "utf8",
       ),
     ) as {
@@ -1283,8 +1294,7 @@ test("runFigmaToQcTestCases runs both judges, persists their artifacts, and keep
         declaredCapabilities: VISUAL_CAPS,
         responder: (request, attempt) => {
           if (
-            request.responseSchemaName ===
-            "workspace-dev-faithfulness-judge-v1"
+            request.responseSchemaName === "workspace-dev-faithfulness-judge-v1"
           ) {
             return {
               outcome: "success" as const,
@@ -1330,7 +1340,8 @@ test("runFigmaToQcTestCases runs both judges, persists their artifacts, and keep
         );
       }
       if (
-        url === "https://api.figma.com/v1/images/ABC?ids=1%3A1&format=png&scale=2"
+        url ===
+        "https://api.figma.com/v1/images/ABC?ids=1%3A1&format=png&scale=2"
       ) {
         return new Response(
           JSON.stringify({
@@ -1384,10 +1395,7 @@ test("runFigmaToQcTestCases runs both judges, persists their artifacts, and keep
       new RegExp(`${FAITHFULNESS_VERDICT_ARTIFACT_FILENAME}$`, "u"),
     );
     assert.equal(client.callCount(), 2);
-    assert.equal(
-      (bundle.visualPrimary as MockLlmGatewayClient).callCount(),
-      2,
-    );
+    assert.equal((bundle.visualPrimary as MockLlmGatewayClient).callCount(), 2);
   } finally {
     globalThis.fetch = originalFetch;
     await rm(tempRoot, { recursive: true, force: true });
@@ -1614,7 +1622,10 @@ test("Issue #1772: both_sidecars_failed routes to needs_review with documented r
       gatewayRelease: "mock",
       responder: okResponder([SAMPLE_DRAFT]),
     });
-    const failingResponder = (_request: LlmGenerationRequest, attempt: number): LlmGenerationResult => ({
+    const failingResponder = (
+      _request: LlmGenerationRequest,
+      attempt: number,
+    ): LlmGenerationResult => ({
       outcome: "error",
       errorClass: "transport",
       message: "gateway boom",
@@ -1694,13 +1705,18 @@ test("Issue #1772: both_sidecars_failed routes to needs_review with documented r
       events: (event) =>
         observedEvents.push({
           phase: event.phase,
-          ...(event.details !== undefined ? { details: { ...event.details } } : {}),
+          ...(event.details !== undefined
+            ? { details: { ...event.details } }
+            : {}),
         }),
     });
 
     // Runner does NOT throw — it produces a complete artifact set.
     assert.equal(result.visualSidecar?.result.outcome, "failure");
-    assert.equal(result.visualSidecar?.refusal?.failureClass, "both_sidecars_failed");
+    assert.equal(
+      result.visualSidecar?.refusal?.failureClass,
+      "both_sidecars_failed",
+    );
     assert.match(
       result.visualSidecar?.refusal?.failureMessage ?? "",
       /both_sidecars_failed/,
@@ -2862,10 +2878,7 @@ test("Issue #1894: omitting customContextMarkdown leaves seal byte-shape unchang
     const sealRaw = await readFile(result.artifactPaths.evidenceSeal, "utf8");
     const seal = JSON.parse(sealRaw) as Record<string, unknown>;
     assert.equal(
-      Object.prototype.hasOwnProperty.call(
-        seal,
-        "customContextMarkdownHashes",
-      ),
+      Object.prototype.hasOwnProperty.call(seal, "customContextMarkdownHashes"),
       false,
     );
   } finally {
@@ -2879,4 +2892,80 @@ test("Issue #1894: PRODUCTION_RUNNER_FAILURE_CLASSES exposes CUSTOM_CONTEXT_MARK
       "CUSTOM_CONTEXT_MARKDOWN_INVALID",
     ),
   );
+});
+
+test("Issue #1932: cross-model logic judge dispatches to llm.logicJudge and FinOps records the judge deployment", async () => {
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ti-runner-1932-"));
+  try {
+    const generatorDeployment = "mistral-large-3-mock";
+    const judgeDeployment = "gpt-oss-120b-mock";
+    const generator = createMockLlmGatewayClient({
+      role: "test_generation",
+      deployment: generatorDeployment,
+      modelRevision: "mistral-large-3@mock",
+      gatewayRelease: "mock",
+      // The mock generator uses okResponder so it serves both the
+      // generator schema AND the logic-judge schema. We bind it to
+      // the **generator** deployment so any judge dispatch that
+      // accidentally lands here would surface that deployment in the
+      // recorded modelDeployment — making the cross-model assertion
+      // below catch the regression.
+      responder: okResponder([SAMPLE_DRAFT], generatorDeployment),
+    });
+    const judge = createMockLlmGatewayClient({
+      role: "logic_judge",
+      deployment: judgeDeployment,
+      modelRevision: "gpt-oss-120b@mock",
+      gatewayRelease: "mock",
+      responder: okResponder([SAMPLE_DRAFT], judgeDeployment),
+    });
+    const result = await runFigmaToQcTestCases({
+      jobId: "job-1932-cross-model",
+      generatedAt: "2026-05-06T10:00:00Z",
+      source: { kind: "figma_paste_normalized", file: SAMPLE_FILE },
+      outputRoot: tempRoot,
+      llm: { client: generator, logicJudge: judge },
+      // Cap the repair-loop at zero iterations so the test asserts
+      // exactly one judge dispatch on the initial pass — the
+      // cross-model wiring is what we're verifying, not the repair
+      // loop's own behaviour.
+      harness: { mode: "off", maxRepairIterations: 0 },
+    });
+
+    // The deterministic coverage hard-gate may downgrade the LLM-side
+    // verdict to "repair" (Issue #1901) on the SAMPLE_DRAFT fixture; we
+    // care about cross-model attribution, not the hard-gate outcome.
+    // What MUST hold is that the modelDeployment echoed on the verdict
+    // identifies the **judge** deployment, not the generator.
+    assert.equal(
+      result.logicJudge?.verdict.modelDeployment,
+      judgeDeployment,
+      "logic-judge verdict must echo the judge deployment, not the generator",
+    );
+    // Generator dispatched once for the test-case payload; the judge
+    // received the dedicated logic-judge call. Two distinct gateways
+    // mean call counts are 1 + 1, not 2 + 0 (legacy single-model).
+    assert.equal(generator.callCount(), 1);
+    assert.equal(judge.callCount(), 1);
+
+    const finopsReportRaw = await readFile(
+      result.artifactPaths.finopsReport,
+      "utf8",
+    );
+    const finopsReport = JSON.parse(finopsReportRaw) as {
+      bySource: Record<string, { deployment?: string; callCount: number }>;
+    };
+    assert.equal(
+      finopsReport.bySource.judge_primary.callCount,
+      1,
+      "judge_primary attribution should count exactly the judge call",
+    );
+    assert.equal(
+      finopsReport.bySource.judge_primary.deployment,
+      judgeDeployment,
+      "bySource.judge_primary must record the judge deployment, not the generator",
+    );
+  } finally {
+    await rm(tempRoot, { recursive: true, force: true });
+  }
 });

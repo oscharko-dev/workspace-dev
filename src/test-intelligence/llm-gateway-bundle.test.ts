@@ -109,6 +109,116 @@ test("bundle: rejects swapped or under-capable role clients", () => {
   );
 });
 
+test("bundle: optional logicJudge slot accepts a logic_judge client and rejects miswired roles (Issue #1932)", () => {
+  const bundle = createMockLlmGatewayClientBundle({
+    testGeneration: {
+      role: "test_generation",
+      deployment: "mistral-large-3",
+      modelRevision: "rev",
+      gatewayRelease: "rel",
+      declaredCapabilities: testGenerationCapabilities,
+    },
+    visualPrimary: {
+      role: "visual_primary",
+      deployment: "llama-4-maverick-vision",
+      modelRevision: "rev",
+      gatewayRelease: "rel",
+      declaredCapabilities: visualCapabilities,
+    },
+    visualFallback: {
+      role: "visual_fallback",
+      deployment: "phi-4-multimodal-poc",
+      modelRevision: "rev",
+      gatewayRelease: "rel",
+      declaredCapabilities: visualCapabilities,
+    },
+    logicJudge: {
+      role: "logic_judge",
+      deployment: "gpt-oss-120b",
+      modelRevision: "rev",
+      gatewayRelease: "rel",
+      declaredCapabilities: testGenerationCapabilities,
+    },
+  });
+  assert.equal(bundle.logicJudge?.role, "logic_judge");
+  assert.equal(bundle.logicJudge?.deployment, "gpt-oss-120b");
+  assert.notEqual(
+    bundle.logicJudge?.deployment,
+    bundle.testGeneration.deployment,
+    "cross-model topology requires distinct judge deployment",
+  );
+
+  assert.throws(
+    () =>
+      createMockLlmGatewayClientBundle({
+        testGeneration: {
+          role: "test_generation",
+          deployment: "mistral-large-3",
+          modelRevision: "rev",
+          gatewayRelease: "rel",
+          declaredCapabilities: testGenerationCapabilities,
+        },
+        visualPrimary: {
+          role: "visual_primary",
+          deployment: "llama-4-maverick-vision",
+          modelRevision: "rev",
+          gatewayRelease: "rel",
+          declaredCapabilities: visualCapabilities,
+        },
+        visualFallback: {
+          role: "visual_fallback",
+          deployment: "phi-4-multimodal-poc",
+          modelRevision: "rev",
+          gatewayRelease: "rel",
+          declaredCapabilities: visualCapabilities,
+        },
+        logicJudge: {
+          role: "test_generation",
+          deployment: "gpt-oss-120b",
+          modelRevision: "rev",
+          gatewayRelease: "rel",
+          declaredCapabilities: testGenerationCapabilities,
+        },
+      }),
+    /logicJudge must use role logic_judge/,
+  );
+
+  assert.throws(
+    () =>
+      createMockLlmGatewayClientBundle({
+        testGeneration: {
+          role: "test_generation",
+          deployment: "mistral-large-3",
+          modelRevision: "rev",
+          gatewayRelease: "rel",
+          declaredCapabilities: testGenerationCapabilities,
+        },
+        visualPrimary: {
+          role: "visual_primary",
+          deployment: "llama-4-maverick-vision",
+          modelRevision: "rev",
+          gatewayRelease: "rel",
+          declaredCapabilities: visualCapabilities,
+        },
+        visualFallback: {
+          role: "visual_fallback",
+          deployment: "phi-4-multimodal-poc",
+          modelRevision: "rev",
+          gatewayRelease: "rel",
+          declaredCapabilities: visualCapabilities,
+        },
+        logicJudge: {
+          role: "logic_judge",
+          deployment: "gpt-oss-120b",
+          modelRevision: "rev",
+          gatewayRelease: "rel",
+          declaredCapabilities: visualCapabilities,
+        },
+      }),
+    /logicJudge must not declare image input support/,
+  );
+});
+
 test("bundle: probes all roles and persists per-role capability evidence", async () => {
   const dir = await mkdtemp(path.join(tmpdir(), "llm-bundle-"));
   try {
@@ -122,6 +232,7 @@ test("bundle: probes all roles and persists per-role capability evidence", async
     assert.deepEqual(
       result.artifacts.map((artifact) => artifact.role),
       ["test_generation", "visual_primary", "visual_fallback"],
+      "default bundle (no logicJudge slot) probes only the three required roles",
     );
 
     for (const entry of result.artifacts) {
@@ -146,6 +257,60 @@ test("bundle: probes all roles and persists per-role capability evidence", async
         true,
       );
     }
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("bundle: probes the logic_judge slot when wired (Issue #1932)", async () => {
+  const dir = await mkdtemp(path.join(tmpdir(), "llm-bundle-judge-"));
+  try {
+    const bundle = createMockLlmGatewayClientBundle({
+      testGeneration: {
+        role: "test_generation",
+        deployment: "mistral-large-3",
+        modelRevision: "mistral-large-3@2026-04-25",
+        gatewayRelease: "mock@2026.04",
+        declaredCapabilities: testGenerationCapabilities,
+      },
+      visualPrimary: {
+        role: "visual_primary",
+        deployment: "llama-4-maverick-vision",
+        modelRevision: "llama-4-maverick-vision@2026-04-25",
+        gatewayRelease: "mock@2026.04",
+        declaredCapabilities: visualCapabilities,
+      },
+      visualFallback: {
+        role: "visual_fallback",
+        deployment: "phi-4-multimodal-poc",
+        modelRevision: "phi-4-multimodal-poc@2026-04-25",
+        gatewayRelease: "mock@2026.04",
+        declaredCapabilities: visualCapabilities,
+      },
+      logicJudge: {
+        role: "logic_judge",
+        deployment: "gpt-oss-120b",
+        modelRevision: "gpt-oss-120b@2026-04-25",
+        gatewayRelease: "mock@2026.04",
+        declaredCapabilities: testGenerationCapabilities,
+      },
+    });
+    const result = await probeLlmGatewayClientBundle({
+      bundle,
+      jobId: "job-bundle-judge",
+      generatedAt: "2026-04-25T00:00:00Z",
+      destinationDir: dir,
+    });
+    assert.deepEqual(
+      result.artifacts.map((artifact) => artifact.role),
+      ["test_generation", "visual_primary", "visual_fallback", "logic_judge"],
+      "cross-model bundle probes the dedicated logic_judge slot",
+    );
+    const judgeArtifact = result.artifacts.find(
+      (artifact) => artifact.role === "logic_judge",
+    );
+    assert.ok(judgeArtifact !== undefined);
+    assert.equal(judgeArtifact.artifact.deployment, "gpt-oss-120b");
   } finally {
     await rm(dir, { recursive: true, force: true });
   }

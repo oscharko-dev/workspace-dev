@@ -111,6 +111,20 @@ export interface TestIntelligenceRunOptions {
   output: string | undefined;
   modelEndpoint: string | undefined;
   modelDeployment: string;
+  /**
+   * Optional dedicated deployment for the cross-model logic judge
+   * (Issue #1932). When set, the production runner sends logic-judge
+   * prompts to this deployment so a self-consistency bias from the
+   * generator cannot be amplified by reusing the same model on the
+   * judge. When `undefined`, the runner falls back to
+   * `modelDeployment` (legacy single-model behaviour).
+   *
+   * Default source order:
+   *   1. `--logic-judge-deployment <name>` flag.
+   *   2. `WORKSPACE_TEST_SPACE_LOGIC_JUDGE_DEPLOYMENT` env var.
+   *   3. `undefined` (judge reuses the generator deployment).
+   */
+  logicJudgeDeployment: string | undefined;
   modelApiKey: string | undefined;
   figmaToken: string | undefined;
   policyProfile: string | undefined;
@@ -177,6 +191,8 @@ export const parseTestIntelligenceRunArgs = (
   let modelDeployment: string =
     env.WORKSPACE_TEST_SPACE_TESTCASE_MODEL_DEPLOYMENT?.trim() ||
     PRODUCTION_RUNNER_TEST_GENERATION_DEPLOYMENT;
+  let logicJudgeDeployment: string | undefined =
+    env.WORKSPACE_TEST_SPACE_LOGIC_JUDGE_DEPLOYMENT?.trim() || undefined;
   let modelApiKey: string | undefined =
     env.WORKSPACE_TEST_SPACE_MODEL_API_KEY?.trim() || undefined;
   let figmaToken: string | undefined =
@@ -254,6 +270,18 @@ export const parseTestIntelligenceRunArgs = (
         );
       }
       modelDeployment = value;
+      index += 1;
+      continue;
+    }
+
+    if (arg === "--logic-judge-deployment") {
+      const value = next?.trim();
+      if (!value) {
+        throw new TestIntelligenceRunOperatorError(
+          "--logic-judge-deployment requires a non-empty deployment name",
+        );
+      }
+      logicJudgeDeployment = value;
       index += 1;
       continue;
     }
@@ -426,6 +454,7 @@ export const parseTestIntelligenceRunArgs = (
     output,
     modelEndpoint,
     modelDeployment,
+    logicJudgeDeployment,
     modelApiKey,
     figmaToken,
     policyProfile,
@@ -470,6 +499,15 @@ export interface TestIntelligenceRunRuntime {
    */
   buildLlmClient?: (options: TestIntelligenceRunOptions) => LlmGatewayClient;
   /**
+   * Override the logic-judge gateway-client builder (Issue #1932).
+   * When omitted, the live Azure-bound `buildLiveLogicJudgeClient`
+   * path is used; it returns `undefined` when no logic-judge
+   * deployment is configured.
+   */
+  buildLogicJudgeClient?: (
+    options: TestIntelligenceRunOptions,
+  ) => LlmGatewayClient | undefined;
+  /**
    * Override the visual-sidecar bundle builder. When omitted, the live
    * Azure-bound `createLlmGatewayClientBundle` path is used when
    * `enableVisualSidecar === true`.
@@ -511,6 +549,75 @@ export interface TestIntelligenceRunRuntime {
    */
   env?: NodeJS.ProcessEnv;
 }
+
+/**
+ * Build the live Azure-bound logic-judge gateway client (Issue #1932).
+ * Returns `undefined` when no logic-judge deployment is configured so
+ * the runner falls back to the generator deployment (legacy
+ * single-model behaviour, preserved for callers that have not
+ * migrated to the cross-model topology).
+ *
+ * The judge is bound to the same endpoint and api key as the
+ * generator so operators only need to configure a single Azure AI
+ * Foundry resource — the role separation is enforced via the
+ * gateway's role tag, not via separate credentials.
+ */
+export const buildLiveLogicJudgeClient = (
+  options: TestIntelligenceRunOptions,
+): LlmGatewayClient | undefined => {
+  if (
+    options.logicJudgeDeployment === undefined ||
+    options.logicJudgeDeployment === options.modelDeployment
+  ) {
+    return undefined;
+  }
+  if (!options.modelEndpoint) {
+    throw new TestIntelligenceRunOperatorError(
+      "--model-endpoint or WORKSPACE_TEST_SPACE_MODEL_ENDPOINT is required for mode=deterministic_llm",
+    );
+  }
+  if (!options.modelApiKey) {
+    throw new TestIntelligenceRunOperatorError(
+      "--model-api-key or WORKSPACE_TEST_SPACE_MODEL_API_KEY is required for mode=deterministic_llm",
+    );
+  }
+  const apiKey = options.modelApiKey;
+  const deployment = options.logicJudgeDeployment;
+  return createLlmGatewayClient(
+    {
+      role: "logic_judge",
+      compatibilityMode: "openai_chat",
+      baseUrl: options.modelEndpoint,
+      deployment,
+      modelRevision: `${deployment}@cli-test-intelligence-run`,
+      gatewayRelease: "azure-ai-foundry-cli-test-intelligence-run",
+      authMode: "api_key",
+      declaredCapabilities: {
+        structuredOutputs: true,
+        seedSupport: false,
+        reasoningEffortSupport: false,
+        maxOutputTokensSupport: true,
+        streamingSupport: false,
+        imageInputSupport: false,
+      },
+      timeoutMs: 240_000,
+      maxRetries: 1,
+      circuitBreaker: { failureThreshold: 2, resetTimeoutMs: 30_000 },
+      // Azure AI Foundry's `gpt-oss-120b` returns empty content for any
+      // wire `response_format` value; suppress the wire field while
+      // keeping the in-process JSON-parse + schema validation path.
+      // Mirrors the generator's setting because both share the same
+      // upstream (see #1733/#1734); judges that point at a different
+      // family inherit the safer "none" mode by default — operators
+      // tune this via a follow-up flag if their judge supports
+      // json_schema natively.
+      wireStructuredOutputMode: "none",
+    },
+    {
+      apiKeyProvider: () => apiKey,
+    },
+  );
+};
 
 /**
  * Build the live Azure-bound LLM gateway client identical to the production
@@ -1009,9 +1116,8 @@ export const runTestIntelligenceCommand = async (
   if (options.customContextMarkdownPath !== undefined) {
     const absolutePath = resolve(options.customContextMarkdownPath);
     try {
-      customContextMarkdownBody = await loadCustomContextMarkdownFile(
-        absolutePath,
-      );
+      customContextMarkdownBody =
+        await loadCustomContextMarkdownFile(absolutePath);
     } catch (err) {
       if (err instanceof TestIntelligenceRunOperatorError) {
         sink.stderr(`error: ${err.message}\n`);
@@ -1053,6 +1159,7 @@ export const runTestIntelligenceCommand = async (
         `  output dir    : ${outputDir}`,
         `  source kind   : ${resolved.source.kind}`,
         `  deployment    : ${options.modelDeployment}`,
+        `  judge deploy  : ${options.logicJudgeDeployment ?? "(reuses generator deployment)"}`,
         `  policy profile: ${options.policyProfile ?? "(default)"}`,
         `  visual sidecar: ${
           options.noVisualSidecar
@@ -1072,6 +1179,7 @@ export const runTestIntelligenceCommand = async (
 
   let llmClient: LlmGatewayClient;
   let llmBundle: LlmGatewayClientBundle | undefined;
+  let logicJudgeClient: LlmGatewayClient | undefined;
   try {
     if (options.enableVisualSidecar) {
       llmBundle =
@@ -1082,6 +1190,15 @@ export const runTestIntelligenceCommand = async (
       llmClient =
         runtime.buildLlmClient?.(options) ?? buildLiveLlmGatewayClient(options);
     }
+    // Issue #1932: build a dedicated logic-judge client when the
+    // operator pinned a different deployment than the generator.
+    // Returns `undefined` when no logic-judge deployment is set, so
+    // the runner falls back to the generator client (legacy
+    // single-model behaviour).
+    logicJudgeClient =
+      runtime.buildLogicJudgeClient !== undefined
+        ? runtime.buildLogicJudgeClient(options)
+        : buildLiveLogicJudgeClient(options);
   } catch (err) {
     if (err instanceof TestIntelligenceRunOperatorError) {
       sink.stderr(`error: ${err.message}\n`);
@@ -1121,6 +1238,9 @@ export const runTestIntelligenceCommand = async (
     llm: {
       client: llmClient,
       ...(llmBundle !== undefined ? { bundle: llmBundle } : {}),
+      ...(logicJudgeClient !== undefined
+        ? { logicJudge: logicJudgeClient }
+        : {}),
       maxOutputTokens: 32_000,
       maxWallClockMs: 240_000,
     },
@@ -1213,6 +1333,18 @@ LLM (defaults from environment):
   --model-endpoint <url>     default: env WORKSPACE_TEST_SPACE_MODEL_ENDPOINT
   --model-deployment <name>  default: env WORKSPACE_TEST_SPACE_TESTCASE_MODEL_DEPLOYMENT
                              (falls back to "gpt-oss-120b")
+  --logic-judge-deployment <name>
+                             Optional dedicated deployment for the
+                             cross-model logic judge (Issue #1932).
+                             Default: env WORKSPACE_TEST_SPACE_LOGIC_JUDGE_DEPLOYMENT
+                             (falls back to the generator deployment
+                             for legacy single-model runs).
+                             Recommended: pin a different model
+                             family from the generator
+                             (e.g. mistral-large-3 generator with
+                             gpt-oss-120b judge) so a self-consistency
+                             bias from the generator is not amplified
+                             by reusing the same model on the judge.
   --model-api-key <key>      default: env WORKSPACE_TEST_SPACE_MODEL_API_KEY
                              (never logged, never echoed)
 

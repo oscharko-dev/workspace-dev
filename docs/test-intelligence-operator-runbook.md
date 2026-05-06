@@ -28,24 +28,24 @@ which deployment under that account is used for which agent role.
 
 #### 1a. Endpoint and credential variables
 
-| Variable                                       | Required              | Purpose                                                                                                    |
-| ---------------------------------------------- | --------------------- | ---------------------------------------------------------------------------------------------------------- |
-| `WORKSPACE_TEST_SPACE_MODEL_ENDPOINT`          | yes                   | Base URL of the Azure AI Foundry account that hosts the chat-completion deployments. Includes `/openai/v1`. |
-| `WORKSPACE_TEST_SPACE_MODEL_API_KEY`           | yes                   | Bearer token for the gateway. Stored in your secrets manager — never committed.                            |
-| `WORKSPACE_TEST_SPACE_VISUAL_MODEL_ENDPOINT`   | yes                   | Base URL for the visual-sidecar deployments. May equal `WORKSPACE_TEST_SPACE_MODEL_ENDPOINT`.              |
-| `FIGMA_ACCESS_TOKEN`                           | yes for URL ingestion | Bearer for the Figma REST API. Token-scoped, server-side only.                                             |
+| Variable                                     | Required              | Purpose                                                                                                     |
+| -------------------------------------------- | --------------------- | ----------------------------------------------------------------------------------------------------------- |
+| `WORKSPACE_TEST_SPACE_MODEL_ENDPOINT`        | yes                   | Base URL of the Azure AI Foundry account that hosts the chat-completion deployments. Includes `/openai/v1`. |
+| `WORKSPACE_TEST_SPACE_MODEL_API_KEY`         | yes                   | Bearer token for the gateway. Stored in your secrets manager — never committed.                             |
+| `WORKSPACE_TEST_SPACE_VISUAL_MODEL_ENDPOINT` | yes                   | Base URL for the visual-sidecar deployments. May equal `WORKSPACE_TEST_SPACE_MODEL_ENDPOINT`.               |
+| `FIGMA_ACCESS_TOKEN`                         | yes for URL ingestion | Bearer for the Figma REST API. Token-scoped, server-side only.                                              |
 
 #### 1b. Role-to-deployment matrix
 
-| Variable                                              | Wave | Required              | Role and recommended deployment                                                                                                                                                                                                                       |
-| ----------------------------------------------------- | :--: | --------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `WORKSPACE_TEST_SPACE_TESTCASE_MODEL_DEPLOYMENT`      |  —   | yes                   | Generator. Recommended: `mistral-large-3` (cross-vendor against `gpt-oss-120b` Logic-Judge). Backwards-compatible default: `gpt-oss-120b`.                                                                                                            |
-| `WORKSPACE_TEST_SPACE_VISUAL_PRIMARY_DEPLOYMENT`      |  —   | yes                   | Visual-Sidecar primary describer. Recommended: `llama-4-maverick-vision` (Stable, multimodal chat). The previous `mistral-document-ai-2512` value is invalid for chat-completion paths and must not be used here.                                       |
-| `WORKSPACE_TEST_SPACE_VISUAL_FALLBACK_DEPLOYMENT`     |  —   | yes                   | Visual-Sidecar fallback. Recommended: `phi-4-multimodal-instruct` (cross-vendor diversity, Microsoft, Stable, multimodal).                                                                                                                            |
-| `WORKSPACE_TEST_SPACE_LOGIC_JUDGE_DEPLOYMENT`         |  1   | optional              | Logic-Judge. Falls back to `WORKSPACE_TEST_SPACE_TESTCASE_MODEL_DEPLOYMENT` when unset. Recommended: `gpt-oss-120b` when the generator is `mistral-large-3` (cross-model voting). Activated by issue #1932.                                            |
-| `WORKSPACE_TEST_SPACE_COVERAGE_PLANNER_DEPLOYMENT`    |  2   | optional              | Coverage-Planner LLM augmentation. Deterministic-only when unset. Recommended: `phi-4-mini-instruct`. Activated by issue #1934.                                                                                                                       |
-| `WORKSPACE_TEST_SPACE_RISK_RANKER_DEPLOYMENT`         |  2   | optional              | Risk-Ranker LLM augmentation. Deterministic-only when unset. Recommended: `phi-4`. Activated by issue #1935.                                                                                                                                          |
-| `WORKSPACE_TEST_SPACE_A11Y_JUDGE_DEPLOYMENT`          |  2   | optional              | LLM-augmented A11y-Judge. Deterministic eval still runs when unset. Recommended: `phi-4-multimodal-instruct` (may share the deployment with `WORKSPACE_TEST_SPACE_VISUAL_FALLBACK_DEPLOYMENT`). Activated by issue #1940.                              |
+| Variable                                           | Wave | Required | Role and recommended deployment                                                                                                                                                                                           |
+| -------------------------------------------------- | :--: | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `WORKSPACE_TEST_SPACE_TESTCASE_MODEL_DEPLOYMENT`   |  —   | yes      | Generator. Recommended: `mistral-large-3` (cross-vendor against `gpt-oss-120b` Logic-Judge). Backwards-compatible default: `gpt-oss-120b`.                                                                                |
+| `WORKSPACE_TEST_SPACE_VISUAL_PRIMARY_DEPLOYMENT`   |  —   | yes      | Visual-Sidecar primary describer. Recommended: `llama-4-maverick-vision` (Stable, multimodal chat). The previous `mistral-document-ai-2512` value is invalid for chat-completion paths and must not be used here.         |
+| `WORKSPACE_TEST_SPACE_VISUAL_FALLBACK_DEPLOYMENT`  |  —   | yes      | Visual-Sidecar fallback. Recommended: `phi-4-multimodal-instruct` (cross-vendor diversity, Microsoft, Stable, multimodal).                                                                                                |
+| `WORKSPACE_TEST_SPACE_LOGIC_JUDGE_DEPLOYMENT`      |  1   | optional | Logic-Judge. Falls back to `WORKSPACE_TEST_SPACE_TESTCASE_MODEL_DEPLOYMENT` when unset. Recommended: `gpt-oss-120b` when the generator is `mistral-large-3` (cross-model voting). Activated by issue #1932.               |
+| `WORKSPACE_TEST_SPACE_COVERAGE_PLANNER_DEPLOYMENT` |  2   | optional | Coverage-Planner LLM augmentation. Deterministic-only when unset. Recommended: `phi-4-mini-instruct`. Activated by issue #1934.                                                                                           |
+| `WORKSPACE_TEST_SPACE_RISK_RANKER_DEPLOYMENT`      |  2   | optional | Risk-Ranker LLM augmentation. Deterministic-only when unset. Recommended: `phi-4`. Activated by issue #1935.                                                                                                              |
+| `WORKSPACE_TEST_SPACE_A11Y_JUDGE_DEPLOYMENT`       |  2   | optional | LLM-augmented A11y-Judge. Deterministic eval still runs when unset. Recommended: `phi-4-multimodal-instruct` (may share the deployment with `WORKSPACE_TEST_SPACE_VISUAL_FALLBACK_DEPLOYMENT`). Activated by issue #1940. |
 
 Verification: `pnpm exec node scripts/check-live-smoke-env.mjs` exits 0
 when the endpoint and credential variables are complete. The role-to-deployment
@@ -59,16 +59,16 @@ models that the multi-agent topology was validated against. Each row maps a
 role to the catalog model name, the deployment name we recommend, and the
 SKU configuration we exercised.
 
-| Role                                  | Catalog model                              | Deployment name (recommended)   | SKU              | Capacity |
-| ------------------------------------- | ------------------------------------------ | ------------------------------- | ---------------- | -------- |
-| Generator (cross-vendor primary)      | `Mistral-Large-3` (Mistral AI, v1)         | `mistral-large-3`               | `GlobalStandard` | ≥ 10     |
-| Generator (legacy)                    | `gpt-oss-120b` (OpenAI-OSS, v1)            | `gpt-oss-120b`                  | `GlobalStandard` | ≥ 10     |
-| Logic-Judge (cross-model)             | `gpt-oss-120b` (OpenAI-OSS, v1)            | `gpt-oss-120b`                  | `GlobalStandard` | shared   |
-| Visual-Primary                        | `Llama-4-Maverick-17B-128E-Instruct-FP8`   | `llama-4-maverick-vision`       | `GlobalStandard` | ≥ 10     |
-| Visual-Fallback                       | `Phi-4-multimodal-instruct` (Microsoft, v1)| `phi-4-multimodal-instruct`     | `GlobalStandard` | ≥ 1      |
-| Coverage-Planner (LLM augmentation)   | `Phi-4-mini-instruct` (Microsoft, v1)      | `phi-4-mini-instruct`           | `GlobalStandard` | ≥ 1      |
-| Risk-Ranker (LLM augmentation)        | `Phi-4` (Microsoft, v7)                    | `phi-4`                         | `GlobalStandard` | ≥ 1      |
-| A11y-Judge (LLM augmentation)         | `Phi-4-multimodal-instruct` (Microsoft, v1)| `phi-4-multimodal-instruct`     | `GlobalStandard` | shared   |
+| Role                                | Catalog model                               | Deployment name (recommended) | SKU              | Capacity |
+| ----------------------------------- | ------------------------------------------- | ----------------------------- | ---------------- | -------- |
+| Generator (cross-vendor primary)    | `Mistral-Large-3` (Mistral AI, v1)          | `mistral-large-3`             | `GlobalStandard` | ≥ 10     |
+| Generator (legacy)                  | `gpt-oss-120b` (OpenAI-OSS, v1)             | `gpt-oss-120b`                | `GlobalStandard` | ≥ 10     |
+| Logic-Judge (cross-model)           | `gpt-oss-120b` (OpenAI-OSS, v1)             | `gpt-oss-120b`                | `GlobalStandard` | shared   |
+| Visual-Primary                      | `Llama-4-Maverick-17B-128E-Instruct-FP8`    | `llama-4-maverick-vision`     | `GlobalStandard` | ≥ 10     |
+| Visual-Fallback                     | `Phi-4-multimodal-instruct` (Microsoft, v1) | `phi-4-multimodal-instruct`   | `GlobalStandard` | ≥ 1      |
+| Coverage-Planner (LLM augmentation) | `Phi-4-mini-instruct` (Microsoft, v1)       | `phi-4-mini-instruct`         | `GlobalStandard` | ≥ 1      |
+| Risk-Ranker (LLM augmentation)      | `Phi-4` (Microsoft, v7)                     | `phi-4`                       | `GlobalStandard` | ≥ 1      |
+| A11y-Judge (LLM augmentation)       | `Phi-4-multimodal-instruct` (Microsoft, v1) | `phi-4-multimodal-instruct`   | `GlobalStandard` | shared   |
 
 Notes on substitutions made versus the original Wave-0 plan (issue #1927):
 
@@ -90,6 +90,53 @@ Notes on substitutions made versus the original Wave-0 plan (issue #1927):
 - `mistral-document-ai-2512` stays deployed but exposes
   `chatCompletion: false` and is not used in any chat-completion path. It
   is reserved for the Wave-3 OCR-sidecar discussion (separate issue).
+
+#### 1d. Cross-model logic judge (Issue #1932)
+
+The multi-agent harness's voting property only works when the
+Generator and the Logic-Judge run on **different model families**.
+When both roles share a deployment, a self-consistency bias from the
+Generator is amplified rather than caught by the Judge — the
+"two-LLM" topology collapses into a single LLM rated against itself.
+
+Activate the dedicated Logic-Judge deployment by setting:
+
+```bash
+# Generator — picks the cross-vendor model deployed in Wave 0.
+export WORKSPACE_TEST_SPACE_TESTCASE_MODEL_DEPLOYMENT="mistral-large-3"
+
+# Logic-Judge — different family from the generator. The runbook
+# recommendation is gpt-oss-120b so the judge dissents on the
+# generator's blind spots instead of voting in chorus.
+export WORKSPACE_TEST_SPACE_LOGIC_JUDGE_DEPLOYMENT="gpt-oss-120b"
+```
+
+The CLI mirrors the env var:
+
+```bash
+workspace-dev test-intelligence run \
+  --figma-url <url> \
+  --model-deployment mistral-large-3 \
+  --logic-judge-deployment gpt-oss-120b \
+  --mode deterministic_llm
+```
+
+When `WORKSPACE_TEST_SPACE_LOGIC_JUDGE_DEPLOYMENT` is unset (or its
+value matches the generator deployment), the runner falls back to the
+generator client and the topology degrades to the legacy single-model
+behaviour. This is preserved on purpose so existing operator
+configurations keep working unchanged during the rollout.
+
+FinOps attribution: per-source counters under
+`bySource.judge_primary` record the **judge** deployment label so
+cross-model topology shows up in the per-job report. The same
+attempt is also rolled into the `byRole.test_generation` counters —
+both judge and generator share the `test_generation` FinOps role
+because they consume the same role-level budget envelope.
+
+Faithfulness-judge swap is out of scope here: the faithfulness path
+is already model-distinct via `bundle.visualPrimary` /
+`bundle.visualFallback`.
 
 ### 2. Enable the runner
 
