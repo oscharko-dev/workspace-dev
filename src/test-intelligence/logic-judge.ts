@@ -102,6 +102,11 @@ export const LOGIC_JUDGE_COVERAGE_HARD_GATE_FINDING_CODES = {
    * accessibility instruction.
    */
   missingFormScreenA11yCase: "missing_form_screen_a11y_case",
+  /**
+   * Issue #1942 — fired when the generated case list fails to satisfy one
+   * of the per-screen `CoveragePlan.techniqueQuotas` minimums.
+   */
+  techniqueQuotaBreach: "technique_quota_breach",
 } as const;
 
 /**
@@ -883,6 +888,7 @@ const isNotFoundError = (error: unknown): boolean =>
 interface CoverageHardGateInput {
   testDesignModel: TestDesignModel;
   generatedTestCases: GeneratedTestCaseList;
+  coveragePlan?: CoveragePlan;
   knownNavigationIds?: readonly string[];
   coverageThresholds?: LogicJudgeCoverageThresholds;
 }
@@ -1146,6 +1152,62 @@ const evaluateMissingFormScreenA11yCase = (
   }
 };
 
+const evaluateTechniqueQuotaMinimums = (
+  acc: HardGateAccumulator,
+  cases: ReadonlyArray<GeneratedTestCase>,
+  coveragePlan: CoveragePlan | undefined,
+): void => {
+  if (coveragePlan === undefined) return;
+  for (const screen of [...safeArray(coveragePlan.perScreen)].sort((left, right) =>
+    left.screenId.localeCompare(right.screenId),
+  )) {
+    const quotas = [...safeArray(screen.techniqueQuotas)]
+      .filter((quota) => quota.minCount > 0)
+      .sort(
+        (left, right) =>
+          left.technique.localeCompare(right.technique) ||
+          left.minCount - right.minCount,
+      );
+    if (quotas.length === 0) continue;
+
+    const counts = new Map<string, number>();
+    for (const testCase of cases) {
+      if (
+        !safeArray(testCase.figmaTraceRefs).some(
+          (traceRef) => traceRef.screenId === screen.screenId,
+        )
+      ) {
+        continue;
+      }
+      counts.set(testCase.technique, (counts.get(testCase.technique) ?? 0) + 1);
+    }
+
+    for (const quota of quotas) {
+      const actual = counts.get(quota.technique) ?? 0;
+      if (actual >= quota.minCount) continue;
+      const missing = quota.minCount - actual;
+      pushFinding(
+        acc,
+        {
+          testCaseId: "$job",
+          code: LOGIC_JUDGE_COVERAGE_HARD_GATE_FINDING_CODES.techniqueQuotaBreach,
+          severity: "error",
+          message:
+            `screen "${screen.screenId}" requires at least ${quota.minCount} ` +
+            `"${quota.technique}" case(s) but only ${actual} are anchored to that screen`,
+        },
+        {
+          testCaseId: "$job",
+          path: "testCases",
+          instruction:
+            `Add ${missing} more "${quota.technique}" case(s) anchored to screen ` +
+            `${screen.screenId} so CoveragePlan.techniqueQuotas is satisfied.`,
+        },
+      );
+    }
+  }
+};
+
 const evaluateInsufficientBreadth = (
   acc: HardGateAccumulator,
   cases: ReadonlyArray<GeneratedTestCase>,
@@ -1200,6 +1262,8 @@ const evaluateInsufficientBreadth = (
  * - `insufficient_coverage_breadth` (severity: error) — job-level ratios below policy
  * - `missing_form_screen_a11y_case` (severity: error, Issue #1905) — a screen
  *   carries input elements but the list has no anchored accessibility case
+ * - `technique_quota_breach` (severity: error, Issue #1942) — the case list
+ *   fails a per-screen `CoveragePlan.techniqueQuotas` minimum
  * - `weak_trace` (severity: warning) — figmaTraceRefs entry without nodeId
  *
  * Error-severity findings upgrade an `accept` verdict to `repair` so the
@@ -1256,6 +1320,7 @@ export const applyCoverageHardGate = (
     input.coverageThresholds ?? {},
   );
   evaluateMissingFormScreenA11yCase(acc, cases, input.testDesignModel);
+  evaluateTechniqueQuotaMinimums(acc, cases, input.coveragePlan);
 
   if (acc.findings.length === 0) {
     return verdict;
