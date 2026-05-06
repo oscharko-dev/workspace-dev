@@ -628,6 +628,7 @@ export {
 export {
   createMockLlmGatewayClient,
   createMockLlmGatewayClientFromConfig,
+  isMockLlmGatewayClient,
   type CreateMockLlmGatewayClientInput,
   type MockLlmGatewayClient,
   type MockResponder,

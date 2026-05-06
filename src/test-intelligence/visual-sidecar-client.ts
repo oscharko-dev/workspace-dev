@@ -43,6 +43,7 @@ import { dirname } from "node:path";
 import {
   ALLOWED_VISUAL_SIDECAR_INPUT_MIME_TYPES,
   MAX_VISUAL_SIDECAR_INPUT_BYTES,
+  SIDECAR_DEPLOYMENT_MAX_LENGTH,
   TEST_INTELLIGENCE_CONTRACT_VERSION,
   VISUAL_SIDECAR_RESULT_SCHEMA_VERSION,
   VISUAL_SIDECAR_SCHEMA_VERSION,
@@ -50,6 +51,7 @@ import {
   type LlmGatewayErrorClass,
   type LlmGenerationRequest,
   type LlmGenerationResult,
+  type SidecarDeployment,
   type VisualScreenDescription,
   type VisualSidecarAttempt,
   type VisualSidecarCaptureIdentity,
@@ -66,6 +68,7 @@ import { redactHighRiskSecrets } from "../secret-redaction.js";
 import { canonicalJson } from "./content-hash.js";
 import type { LlmGatewayClient } from "./llm-gateway.js";
 import type { LlmGatewayClientBundle } from "./llm-gateway-bundle.js";
+import { isMockLlmGatewayClient } from "./llm-mock-gateway.js";
 import { validateVisualSidecar } from "./visual-sidecar-validation.js";
 
 /** Stable schema name for the visual sidecar response envelope. */
@@ -153,13 +156,14 @@ export const buildVisualSidecarResponseSchema = (): Record<string, unknown> => {
     properties: {
       screenId: { type: "string", minLength: 1 },
       sidecarDeployment: {
+        // Issue #1959: open the deployment surface. The wire schema no
+        // longer hardcodes a closed set of deployment literals — the
+        // operator picks the gateway deployment in `.env`. Validity is
+        // enforced at the gateway boundary; this layer only checks the
+        // value is a non-empty string of reasonable length.
         type: "string",
-        enum: [
-          "llama-4-maverick-vision",
-          "phi-4-multimodal-poc",
-          "mistral-document-ai-2512",
-          "mock",
-        ],
+        minLength: 1,
+        maxLength: SIDECAR_DEPLOYMENT_MAX_LENGTH,
       },
       regions: { type: "array", items: region },
       confidenceSummary: {
@@ -779,24 +783,16 @@ const aggregateConfidenceSummary = (
   return { min, max, mean };
 };
 
+// Issue #1959: deployment provenance is the verbatim operator-supplied
+// deployment id, not a closed-set tag. Mock unit tests still report
+// `"mock"` regardless of the configured `client.deployment`, so that
+// fixture-driven artefacts stay decoupled from any specific historical
+// literal. The `MockLlmGatewayClient` sentinel is the only branch that
+// special-cases the label.
 const clientDeploymentLabel = (
   client: LlmGatewayClient,
-):
-  | "llama-4-maverick-vision"
-  | "phi-4-multimodal-poc"
-  | "mistral-document-ai-2512"
-  | "mock" => {
-  switch (client.deployment) {
-    case "llama-4-maverick-vision":
-      return "llama-4-maverick-vision";
-    case "phi-4-multimodal-poc":
-      return "phi-4-multimodal-poc";
-    case "mistral-document-ai-2512":
-      return "mistral-document-ai-2512";
-    default:
-      return "mock";
-  }
-};
+): SidecarDeployment =>
+  isMockLlmGatewayClient(client) ? "mock" : client.deployment;
 
 const assertGeneratorRoleHasNoImageSupport = (
   bundle: LlmGatewayClientBundle,

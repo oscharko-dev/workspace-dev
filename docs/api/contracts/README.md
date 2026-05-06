@@ -132,7 +132,7 @@ Retry policy applied to this node.
 
 ##### role
 
-> `readonly` **role**: `"generator"` \| `"repair_planner"` \| `"adversarial_gap_finder"` \| `"final_verifier"` \| `"semantic_judge"` \| `"visual_sidecar"`
+> `readonly` **role**: `"logic_judge"` \| `"generator"` \| `"repair_planner"` \| `"adversarial_gap_finder"` \| `"final_verifier"` \| `"semantic_judge"` \| `"visual_sidecar"`
 
 Role this step is bound to.
 
@@ -208,7 +208,7 @@ Persisted, canonical-JSON, per-job repair-iteration log.
 
 ##### contractVersion
 
-> `readonly` **contractVersion**: `"1.9.0"`
+> `readonly` **contractVersion**: `"1.12.0"`
 
 ##### generatedAt
 
@@ -333,7 +333,7 @@ deterministic services that do not compile a prompt.
 
 ##### role
 
-> `readonly` **role**: `"generator"` \| `"repair_planner"` \| `"adversarial_gap_finder"` \| `"final_verifier"` \| `"semantic_judge"` \| `"visual_sidecar"`
+> `readonly` **role**: `"logic_judge"` \| `"generator"` \| `"repair_planner"` \| `"adversarial_gap_finder"` \| `"final_verifier"` \| `"semantic_judge"` \| `"visual_sidecar"`
 
 Role identifier this profile binds to.
 
@@ -383,7 +383,7 @@ Minimal persisted metadata for one compiled role-step prompt run.
 
 ##### promptTemplateVersion
 
-> **promptTemplateVersion**: `"1.1.0"`
+> **promptTemplateVersion**: `"1.2.0"`
 
 ##### rawPromptsIncluded
 
@@ -567,7 +567,7 @@ Terminal outcome from the harness state machine.
 
 ##### role
 
-> `readonly` **role**: `"generator"` \| `"repair_planner"` \| `"adversarial_gap_finder"` \| `"final_verifier"` \| `"semantic_judge"` \| `"visual_sidecar"`
+> `readonly` **role**: `"logic_judge"` \| `"generator"` \| `"repair_planner"` \| `"adversarial_gap_finder"` \| `"final_verifier"` \| `"semantic_judge"` \| `"visual_sidecar"`
 
 Role that produced the step.
 
@@ -753,7 +753,7 @@ input set is byte-identical and the entries are sorted before write.
 
 ##### contractVersion
 
-> `readonly` **contractVersion**: `"1.9.0"`
+> `readonly` **contractVersion**: `"1.12.0"`
 
 ##### diffArtifactBasename?
 
@@ -814,7 +814,7 @@ Total bytes of cleared tool result blocks at the boundary.
 
 ##### contractVersion
 
-> `readonly` **contractVersion**: `"1.9.0"`
+> `readonly` **contractVersion**: `"1.12.0"`
 
 ##### jobId
 
@@ -858,7 +858,7 @@ Persisted, fully-redacted artifact form of a compiled prompt.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.9.0"`
+> **contractVersion**: `"1.12.0"`
 
 ##### hashes
 
@@ -928,7 +928,7 @@ Redacted JSON payload that the model will reason over.
 
 ##### promptTemplateVersion
 
-> **promptTemplateVersion**: `"1.1.0"`
+> **promptTemplateVersion**: `"1.2.0"`
 
 ##### redactionPolicyVersion
 
@@ -1136,7 +1136,7 @@ Number of screens covered by the visual binding.
 
 ##### selectedDeployment
 
-> **selectedDeployment**: `"llama-4-maverick-vision"` \| `"phi-4-multimodal-poc"` \| `"mistral-document-ai-2512"` \| `"mock"`
+> **selectedDeployment**: [`SidecarDeployment`](#sidecardeployment-1)
 
 ***
 
@@ -1577,6 +1577,22 @@ Wave 4 (Issue #1431) adds the optional `sourceRefs` array; see
 
 > **label**: `string`
 
+##### labelConfidence?
+
+> `optional` **labelConfidence?**: `number`
+
+Confidence in the synthesised label (Issue #1902). Optional, additive.
+`0` signals a generic component-instance label (e.g. `<Button>`) that
+could not be paired with a sibling TEXT node — downstream judges may
+surface this as a `weak_label` finding.
+
+##### labelSource?
+
+> `optional` **labelSource?**: [`LabelSource`](#labelsource-2)
+
+How the visible label was derived (Issue #1902). Optional, additive.
+See [DetectedField.labelSource](#labelsource-1) for semantics.
+
 ##### provenance
 
 > **provenance**: [`IntentProvenance`](#intentprovenance)
@@ -1612,6 +1628,14 @@ working unchanged for single-source jobs.
 
 > `optional` **ambiguity?**: [`IntentAmbiguity`](#intentambiguity)
 
+##### clusterId?
+
+> `optional` **clusterId?**: `string`
+
+Spatial cluster id (Issue #1902). Optional, additive. Fields whose bboxes
+sit close together (label/value pairs, summary blocks) share the same
+cluster id so the generator can write coherent cases.
+
 ##### confidence
 
 > **confidence**: `number`
@@ -1627,6 +1651,23 @@ working unchanged for single-source jobs.
 ##### label
 
 > **label**: `string`
+
+##### labelConfidence?
+
+> `optional` **labelConfidence?**: `number`
+
+Confidence in the synthesised label (Issue #1902). Optional, additive.
+`0` signals a generic/weak label that downstream judges may treat as a
+`weak_label` finding. Omitted for trivially derived labels.
+
+##### labelSource?
+
+> `optional` **labelSource?**: [`LabelSource`](#labelsource-2)
+
+How the visible label was derived (Issue #1902). Optional, additive.
+- `node_text`: TEXT node `characters` (default).
+- `node_name`: fallback to the Figma node name.
+- `sibling_text`: synthesised from a spatially-paired TEXT node.
 
 ##### provenance
 
@@ -1962,7 +2003,7 @@ Aggregate dry-run report artifact.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.9.0"`
+> **contractVersion**: `"1.12.0"`
 
 ##### credentialsIncluded
 
@@ -2315,7 +2356,7 @@ Sorted by filename for deterministic emission.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.9.0"`
+> **contractVersion**: `"1.12.0"`
 
 ##### exportedTestCaseCount
 
@@ -2341,11 +2382,11 @@ Identity of the deployments behind the run.
 
 ###### visualFallback?
 
-> `optional` **visualFallback?**: `"llama-4-maverick-vision"` \| `"phi-4-multimodal-poc"` \| `"mistral-document-ai-2512"` \| `"mock"` \| `"none"`
+> `optional` **visualFallback?**: [`SidecarDeployment`](#sidecardeployment-1) \| `"none"`
 
 ###### visualPrimary?
 
-> `optional` **visualPrimary?**: `"llama-4-maverick-vision"` \| `"phi-4-multimodal-poc"` \| `"mistral-document-ai-2512"` \| `"mock"` \| `"none"`
+> `optional` **visualPrimary?**: [`SidecarDeployment`](#sidecardeployment-1) \| `"none"`
 
 ##### profileId
 
@@ -2380,6 +2421,90 @@ True when the pipeline refused to emit any non-report artifact.
 > **visualEvidenceHashes**: `string`[]
 
 Sorted, de-duplicated.
+
+***
+
+### FaithfulnessVerdict
+
+Persisted screenshot-vs-cases faithfulness verdict artifact.
+
+#### Properties
+
+##### cacheHit
+
+> `readonly` **cacheHit**: `boolean`
+
+##### cacheKeyDigest
+
+> `readonly` **cacheKeyDigest**: `string`
+
+##### contractVersion
+
+> `readonly` **contractVersion**: `"1.12.0"`
+
+##### fallbackReason
+
+> `readonly` **fallbackReason**: [`VisualSidecarFallbackReason`](#visualsidecarfallbackreason)
+
+##### gatewayRelease
+
+> `readonly` **gatewayRelease**: `string`
+
+##### generatedAt
+
+> `readonly` **generatedAt**: `string`
+
+##### hallucinations
+
+> `readonly` **hallucinations**: readonly [`HallucinationFinding`](#hallucinationfinding)[]
+
+##### jobId
+
+> `readonly` **jobId**: `string`
+
+##### mismatches
+
+> `readonly` **mismatches**: readonly [`VisualMismatch`](#visualmismatch)[]
+
+##### modelDeployment
+
+> `readonly` **modelDeployment**: `string`
+
+##### modelRevision
+
+> `readonly` **modelRevision**: `string`
+
+##### promptTemplateVersion
+
+> `readonly` **promptTemplateVersion**: `"faithfulness-judge.v1"`
+
+##### refusal?
+
+> `readonly` `optional` **refusal?**: [`FaithfulnessVerdictRefusal`](#faithfulnessverdictrefusal-1)
+
+##### schemaVersion
+
+> `readonly` **schemaVersion**: `"1.0.0"`
+
+##### verdict
+
+> `readonly` **verdict**: `"repair"` \| `"accept"` \| `"reject"`
+
+***
+
+### FaithfulnessVerdictRefusal
+
+Optional refusal attached to a faithfulness-judge verdict.
+
+#### Properties
+
+##### code
+
+> `readonly` **code**: `string`
+
+##### message
+
+> `readonly` **message**: `string`
 
 ***
 
@@ -2547,7 +2672,7 @@ Verbatim copy of the budget envelope applied to this job.
 
 ##### bySource
 
-> **bySource**: `Readonly`\<`Record`\<[`AgentSourceLabel`](#agentsourcelabel), \{ `callCount`: `number`; `costMinorUnits`: `number`; `idempotentReplayHits`: `number`; `inFlightDedupHits`: `number`; `tokensIn`: `number`; `tokensOut`: `number`; \}\>\>
+> **bySource**: `Readonly`\<`Record`\<[`AgentSourceLabel`](#agentsourcelabel), \{ `callCount`: `number`; `costMinorUnits`: `number`; `deployment?`: `string`; `idempotentReplayHits`: `number`; `inFlightDedupHits`: `number`; `tokensIn`: `number`; `tokensOut`: `number`; \}\>\>
 
 Deterministic per-agent-source attribution sealed in attestation.
 
@@ -2573,7 +2698,7 @@ Aggregate counters across the `bySource` map.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.9.0"`
+> **contractVersion**: `"1.12.0"`
 
 ##### currencyLabel?
 
@@ -3211,7 +3336,7 @@ Single generated test case.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.9.0"`
+> **contractVersion**: `"1.12.0"`
 
 ##### expectedResults
 
@@ -3247,7 +3372,7 @@ Single generated test case.
 
 ##### promptTemplateVersion
 
-> **promptTemplateVersion**: `"1.1.0"`
+> **promptTemplateVersion**: `"1.2.0"`
 
 ##### qcMappingPreview
 
@@ -3322,7 +3447,7 @@ Whether the artifact came from a replay-cache hit.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.9.0"`
+> **contractVersion**: `"1.12.0"`
 
 ##### generatedAt
 
@@ -3342,7 +3467,7 @@ Whether the artifact came from a replay-cache hit.
 
 ##### promptTemplateVersion
 
-> **promptTemplateVersion**: `"1.1.0"`
+> **promptTemplateVersion**: `"1.2.0"`
 
 ##### redactionPolicyVersion
 
@@ -3498,6 +3623,26 @@ Single ordered step inside a generated test case.
 
 ***
 
+### HallucinationFinding
+
+Hallucination reported by the screenshot-based judge.
+
+#### Properties
+
+##### message
+
+> `readonly` **message**: `string`
+
+##### stepIndex?
+
+> `readonly` `optional` **stepIndex?**: `number`
+
+##### testCaseId
+
+> `readonly` **testCaseId**: `string`
+
+***
+
 ### HarnessArtifactManifest
 
 Per-job manifest of canonical-JSON harness artifacts. Persisted as
@@ -3511,7 +3656,7 @@ referenced files and recomputing each row.
 
 ##### contractVersion
 
-> `readonly` **contractVersion**: `"1.9.0"`
+> `readonly` **contractVersion**: `"1.12.0"`
 
 ##### digest
 
@@ -3686,7 +3831,7 @@ Hard-invariant intent-delta report artifact (Issue #1373).
 
 ##### contractVersion
 
-> **contractVersion**: `"1.9.0"`
+> **contractVersion**: `"1.12.0"`
 
 ##### currentIntentHash
 
@@ -3797,6 +3942,15 @@ The legacy `nodeId` / `nodeName` / `nodePath` fields keep working for
 single-source Figma traces.
 
 #### Properties
+
+##### componentName?
+
+> `optional` **componentName?**: `string`
+
+Original Figma component name for an instance/component-shaped node
+whose visible label was synthesised from a descendant TEXT node
+(Issue #1902). Provenance-only — preserved so a downstream judge can
+always recover the raw component identity.
 
 ##### nodeId?
 
@@ -3991,7 +4145,7 @@ Aggregate `jira-created-subtasks.json` artifact (Issue #1482).
 
 ##### contractVersion
 
-> **contractVersion**: `"1.9.0"`
+> **contractVersion**: `"1.12.0"`
 
 ##### credentialsIncluded
 
@@ -4627,7 +4781,7 @@ Audit metadata for the run.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.9.0"`
+> **contractVersion**: `"1.12.0"`
 
 ##### createdCount
 
@@ -4698,6 +4852,30 @@ Number of records whose outcome is `skipped_duplicate`.
 > **totalCases**: `number`
 
 Total number of approved test cases supplied to the pipeline.
+
+***
+
+### JudgeFinding
+
+One logic-judge finding anchored to a generated test case.
+
+#### Properties
+
+##### code
+
+> `readonly` **code**: `string`
+
+##### message
+
+> `readonly` **message**: `string`
+
+##### severity
+
+> `readonly` **severity**: `"error"` \| `"warning"`
+
+##### testCaseId
+
+> `readonly` **testCaseId**: `string`
 
 ***
 
@@ -4814,6 +4992,86 @@ Pinned schema version literal.
 > `readonly` **testCaseId**: `string`
 
 Test-case identifier the verdict applies to.
+
+***
+
+### JudgeVerdict
+
+Persisted logic-judge verdict artifact.
+
+#### Properties
+
+##### cacheHit
+
+> `readonly` **cacheHit**: `boolean`
+
+##### cacheKeyDigest
+
+> `readonly` **cacheKeyDigest**: `string`
+
+##### contractVersion
+
+> `readonly` **contractVersion**: `"1.12.0"`
+
+##### findings
+
+> `readonly` **findings**: readonly [`JudgeFinding`](#judgefinding)[]
+
+##### gatewayRelease
+
+> `readonly` **gatewayRelease**: `string`
+
+##### generatedAt
+
+> `readonly` **generatedAt**: `string`
+
+##### jobId
+
+> `readonly` **jobId**: `string`
+
+##### modelDeployment
+
+> `readonly` **modelDeployment**: `string`
+
+##### modelRevision
+
+> `readonly` **modelRevision**: `string`
+
+##### promptTemplateVersion
+
+> `readonly` **promptTemplateVersion**: `"logic-judge.v1"`
+
+##### refusal?
+
+> `readonly` `optional` **refusal?**: [`JudgeVerdictRefusal`](#judgeverdictrefusal-1)
+
+##### repairInstructions
+
+> `readonly` **repairInstructions**: readonly [`RepairInstruction`](#repairinstruction)[]
+
+##### schemaVersion
+
+> `readonly` **schemaVersion**: `"1.0.0"`
+
+##### verdict
+
+> `readonly` **verdict**: `"repair"` \| `"accept"` \| `"reject"`
+
+***
+
+### JudgeVerdictRefusal
+
+Optional refusal attached to a logic-judge verdict.
+
+#### Properties
+
+##### code
+
+> `readonly` **code**: `string`
+
+##### message
+
+> `readonly` **message**: `string`
 
 ***
 
@@ -5250,7 +5508,7 @@ Per-release primitive-map status report.
 
 ##### contractVersion
 
-> `readonly` **contractVersion**: `"1.9.0"`
+> `readonly` **contractVersion**: `"1.12.0"`
 
 ##### counts
 
@@ -5406,7 +5664,7 @@ reasoning traces.
 
 ##### role
 
-> **role**: `"test_generation"` \| `"visual_primary"` \| `"visual_fallback"`
+> **role**: `"test_generation"` \| `"visual_primary"` \| `"visual_fallback"` \| `"logic_judge"`
 
 ##### schemaVersion
 
@@ -5532,6 +5790,19 @@ is held only for the duration of that request.
 
 Optional operator-configured ICT register reference for this deployment.
 
+##### imageTokenStrategy?
+
+> `optional` **imageTokenStrategy?**: `"openai_tiles"` \| `"llama_tiles"` \| `"raw_bytes"`
+
+Per-modality token-estimation strategy used by the client-side input
+budget guard (Issue #1930). Defaults to
+[DEFAULT\_LLM\_IMAGE\_TOKEN\_STRATEGY](#default_llm_image_token_strategy) (`"openai_tiles"`) when omitted.
+The wire payload is unaffected: the strategy only changes how the gateway
+estimates `imageInputs` against
+[LlmGenerationRequest.maxInputTokens](#maxinputtokens-2), so a Visual-Sidecar request
+carrying a 119 KiB / 1280×720 PNG no longer pre-flight-rejects under the
+production-default `visual_primary.maxInputTokensPerRequest = 40_000`.
+
 ##### maxResponseBytes?
 
 > `optional` **maxResponseBytes?**: `number`
@@ -5562,7 +5833,7 @@ this field.
 
 ##### role
 
-> **role**: `"test_generation"` \| `"visual_primary"` \| `"visual_fallback"`
+> **role**: `"test_generation"` \| `"visual_primary"` \| `"visual_fallback"` \| `"logic_judge"`
 
 ##### timeoutMs
 
@@ -5789,9 +6060,25 @@ Image payload accepted by visual sidecars. Rejected for `test_generation`.
 
 > **base64Data**: `string`
 
+##### heightPx?
+
+> `optional` **heightPx?**: `number`
+
+Decoded pixel height. Paired with [LlmImageInput.widthPx](#widthpx).
+
 ##### mimeType
 
 > **mimeType**: `string`
+
+##### widthPx?
+
+> `optional` **widthPx?**: `number`
+
+Decoded pixel width of the image. When present together with
+[LlmImageInput.heightPx](#heightpx) the prompt-size estimator can use a
+tile-based formula (Issue #1930) instead of charging the raw base64
+byte length against the token budget. The base64 string remains the
+canonical wire payload; these fields only inform the estimator.
 
 ***
 
@@ -6215,7 +6502,7 @@ Aggregate `qc-created-entities.json` artifact (Issue #1372).
 
 ##### contractVersion
 
-> **contractVersion**: `"1.9.0"`
+> **contractVersion**: `"1.12.0"`
 
 ##### entities
 
@@ -6305,7 +6592,7 @@ Aggregate QC mapping preview artifact.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.9.0"`
+> **contractVersion**: `"1.12.0"`
 
 ##### entries
 
@@ -6555,7 +6842,7 @@ Visual provenance attached to a QC mapping preview entry (Issue #1386).
 
 ##### deployment
 
-> **deployment**: `"llama-4-maverick-vision"` \| `"phi-4-multimodal-poc"` \| `"mistral-document-ai-2512"` \| `"mock"` \| `"none"`
+> **deployment**: [`SidecarDeployment`](#sidecardeployment-1) \| `"none"`
 
 ##### evidenceHash
 
@@ -6975,7 +7262,7 @@ Gate 9 — context budget regression (Issue #1802).
 
 ##### contractVersion
 
-> `readonly` **contractVersion**: `"1.9.0"`
+> `readonly` **contractVersion**: `"1.12.0"`
 
 ##### libraryCoverageStatusCompleteness
 
@@ -7066,7 +7353,7 @@ The release pipeline fails when any verdict has `passed === false`.
 
 ##### contractVersion
 
-> `readonly` **contractVersion**: `"1.9.0"`
+> `readonly` **contractVersion**: `"1.12.0"`
 
 ##### mutationKillRate
 
@@ -7220,7 +7507,7 @@ gate passed.
 
 ##### contractVersion
 
-> `readonly` **contractVersion**: `"1.9.0"`
+> `readonly` **contractVersion**: `"1.12.0"`
 
 ##### gates
 
@@ -7241,6 +7528,47 @@ gate passed.
 ##### schemaVersion
 
 > `readonly` **schemaVersion**: `"1.0.0"`
+
+***
+
+### RepairInstruction
+
+One structured repair hint emitted by the logic judge.
+
+Paths point at the field that must change. Schema-failure repairs use the
+same shape so downstream repair consolidators can treat recoverable
+structured-output violations the same way as semantic repairs.
+
+#### Properties
+
+##### instruction
+
+> `readonly` **instruction**: `string`
+
+##### kind?
+
+> `readonly` `optional` **kind?**: `"schema_violation"`
+
+Optional structured hint kind. Issue #1931 uses `schema_violation`
+for deterministic repair-loop guidance when the judge response
+wrapper fails structured-output validation.
+
+##### message?
+
+> `readonly` `optional` **message?**: `string`
+
+Optional redacted diagnostic paired with [kind](#kind-9). Kept
+alongside the legacy `instruction` field so existing repair-loop
+plumbing remains compatible while downstream prompts can consume
+machine-readable schema-violation metadata.
+
+##### path
+
+> `readonly` **path**: `string`
+
+##### testCaseId
+
+> `readonly` **testCaseId**: `string`
 
 ***
 
@@ -7304,7 +7632,7 @@ Replay-cache key — the only deterministic-bit-identical replay anchor.
 
 ##### promptTemplateVersion
 
-> **promptTemplateVersion**: `"1.1.0"`
+> **promptTemplateVersion**: `"1.2.0"`
 
 ##### redactionPolicyVersion
 
@@ -7328,7 +7656,7 @@ Replay-cache key — the only deterministic-bit-identical replay anchor.
 
 ##### visualSelectedDeployment
 
-> **visualSelectedDeployment**: `"llama-4-maverick-vision"` \| `"phi-4-multimodal-poc"` \| `"mistral-document-ai-2512"` \| `"mock"`
+> **visualSelectedDeployment**: [`SidecarDeployment`](#sidecardeployment-1)
 
 ##### visualSidecarSchemaVersion
 
@@ -7356,7 +7684,7 @@ ISO-8601 UTC timestamp at the moment of persistence.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.9.0"`
+> **contractVersion**: `"1.12.0"`
 
 ##### fromState?
 
@@ -7424,7 +7752,7 @@ Number of cases currently in `approved` (or `exported`/`transferred`) state.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.9.0"`
+> **contractVersion**: `"1.12.0"`
 
 ##### fourEyesPolicy?
 
@@ -7798,7 +8126,7 @@ Sorted by `testCaseId` for byte stability. Empty when `refusal` is set.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.9.0"`
+> **contractVersion**: `"1.12.0"`
 
 ##### gatewayRelease
 
@@ -7891,7 +8219,7 @@ Changelog-approved signed migration bundle for banking-profile runs.
 
 ##### contractVersion
 
-> `readonly` **contractVersion**: `"4.43.0"`
+> `readonly` **contractVersion**: `"4.50.0"`
 
 ##### entries
 
@@ -8167,7 +8495,7 @@ Avg assumptions per case.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.9.0"`
+> **contractVersion**: `"1.12.0"`
 
 ##### duplicatePairs
 
@@ -8261,7 +8589,7 @@ Aggregate dedupe report artifact (Issue #1373).
 
 ##### contractVersion
 
-> **contractVersion**: `"1.9.0"`
+> **contractVersion**: `"1.12.0"`
 
 ##### embeddingProvider
 
@@ -8371,7 +8699,7 @@ Aggregate test-case delta report (always paired with `IntentDeltaReport`).
 
 ##### contractVersion
 
-> **contractVersion**: `"1.9.0"`
+> **contractVersion**: `"1.12.0"`
 
 ##### generatedAt
 
@@ -8533,6 +8861,19 @@ Tunable knobs of a policy profile (defaults shown for `eu-banking-default`).
 
 #### Properties
 
+##### actionCoverageRatioMin?
+
+> `optional` **actionCoverageRatioMin?**: `number`
+
+Minimum job-level action-coverage ratio required by the logic-judge
+coverage hard-gate (Issue #1901). Computed as
+`actionCoverage.covered / actionCoverage.total` across the generated
+test case list. Below this threshold the judge emits the
+`insufficient_coverage_breadth` finding (severity: error) and the
+repair-loop is triggered. Tunable per profile; the secure default for
+`eu-banking-default` is `0.5`. Optional for backward compatibility:
+when omitted the hard-gate skips the breadth check.
+
 ##### duplicateSimilarityThreshold
 
 > **duplicateSimilarityThreshold**: `number`
@@ -8554,6 +8895,19 @@ job-level. The case is escalated to `needs_review` (defense-in-depth
 against an out-of-band caller submitting forged low-risk tags).
 
 Optional for backward compatibility. Treat `undefined` as `true`.
+
+##### fieldCoverageRatioMin?
+
+> `optional` **fieldCoverageRatioMin?**: `number`
+
+Minimum job-level field-coverage ratio required by the logic-judge
+coverage hard-gate (Issue #1901). Computed as
+`actionCoverage.covered / actionCoverage.total` across the generated
+test case list. Below this threshold the judge emits the
+`insufficient_coverage_breadth` finding (severity: error) and the
+repair-loop is triggered. Tunable per profile; the secure default for
+`eu-banking-default` is `0.4`. Optional for backward compatibility:
+when omitted the hard-gate skips the breadth check.
 
 ##### maxAssumptionsPerCase
 
@@ -8627,7 +8981,7 @@ Whether ANY case was blocked (downstream export gate).
 
 ##### contractVersion
 
-> **contractVersion**: `"1.9.0"`
+> **contractVersion**: `"1.12.0"`
 
 ##### decisions
 
@@ -8766,7 +9120,7 @@ Whether the report blocks downstream review/export (any error => true).
 
 ##### contractVersion
 
-> **contractVersion**: `"1.9.0"`
+> **contractVersion**: `"1.12.0"`
 
 ##### errorCount
 
@@ -9198,7 +9552,7 @@ Aggregate traceability-matrix artifact (Issue #1373).
 
 ##### contractVersion
 
-> **contractVersion**: `"1.9.0"`
+> **contractVersion**: `"1.12.0"`
 
 ##### exportProfile?
 
@@ -9504,7 +9858,7 @@ Single per-screen visual observation row inside the matrix.
 
 ##### deployment
 
-> **deployment**: `"llama-4-maverick-vision"` \| `"phi-4-multimodal-poc"` \| `"mistral-document-ai-2512"` \| `"mock"`
+> **deployment**: [`SidecarDeployment`](#sidecardeployment-1)
 
 ##### meanConfidence
 
@@ -9692,7 +10046,7 @@ Audit metadata for the run.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.9.0"`
+> **contractVersion**: `"1.12.0"`
 
 ##### createdCount
 
@@ -9788,6 +10142,34 @@ Hard invariant: never carries the resolved transfer URL.
 
 ***
 
+### VisualMismatch
+
+Label mismatch reported by the screenshot-based judge.
+
+#### Properties
+
+##### expectedLabel
+
+> `readonly` **expectedLabel**: `string`
+
+##### message
+
+> `readonly` **message**: `string`
+
+##### stepIndex?
+
+> `readonly` `optional` **stepIndex?**: `number`
+
+##### testCaseId
+
+> `readonly` **testCaseId**: `string`
+
+##### visibleLabel
+
+> `readonly` **visibleLabel**: `string`
+
+***
+
 ### VisualScreenDescription
 
 Visual-sidecar description produced by a multimodal vision model (Issue #1386).
@@ -9876,7 +10258,7 @@ Visual-sidecar description produced by a multimodal vision model (Issue #1386).
 
 ##### sidecarDeployment
 
-> **sidecarDeployment**: `"llama-4-maverick-vision"` \| `"phi-4-multimodal-poc"` \| `"mistral-document-ai-2512"` \| `"mock"`
+> **sidecarDeployment**: [`SidecarDeployment`](#sidecardeployment-1)
 
 ***
 
@@ -9896,7 +10278,7 @@ Sequence index, 1-based across both primary and fallback attempts.
 
 ##### deployment
 
-> **deployment**: `"llama-4-maverick-vision"` \| `"phi-4-multimodal-poc"` \| `"mistral-document-ai-2512"` \| `"mock"`
+> **deployment**: [`SidecarDeployment`](#sidecardeployment-1)
 
 Sidecar deployment that was attempted.
 
@@ -9962,6 +10344,10 @@ Base64-encoded image bytes. Decoded length must be <= the byte bound.
 
 Optional ISO-8601 capture timestamp (sourced from a screenshot pipeline).
 
+##### heightPx?
+
+> `optional` **heightPx?**: `number`
+
 ##### mimeType
 
 > **mimeType**: `"image/png"` \| `"image/jpeg"` \| `"image/webp"` \| `"image/gif"`
@@ -9979,6 +10365,15 @@ Stable identifier matching a `BusinessTestIntentScreen.screenId`.
 > `optional` **screenName?**: `string`
 
 Optional human-readable label.
+
+##### widthPx?
+
+> `optional` **widthPx?**: `number`
+
+Optional decoded pixel dimensions. When present they are forwarded into
+[LlmImageInput.widthPx](#widthpx)/[LlmImageInput.heightPx](#heightpx) so the
+gateway's input-budget guard can apply tile-based token estimation
+(Issue #1930) instead of charging the raw base64 byte length.
 
 ***
 
@@ -10025,7 +10420,7 @@ screenshot bytes.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.9.0"`
+> **contractVersion**: `"1.12.0"`
 
 ##### generatedAt
 
@@ -10122,7 +10517,7 @@ Aggregated confidence summary across every screen description.
 
 ##### selectedDeployment
 
-> **selectedDeployment**: `"llama-4-maverick-vision"` \| `"phi-4-multimodal-poc"` \| `"mistral-document-ai-2512"` \| `"mock"`
+> **selectedDeployment**: [`SidecarDeployment`](#sidecardeployment-1)
 
 Deployment that produced the descriptions.
 
@@ -10149,7 +10544,7 @@ Single per-screen visual-sidecar validation row.
 
 ##### deployment
 
-> **deployment**: `"llama-4-maverick-vision"` \| `"phi-4-multimodal-poc"` \| `"mistral-document-ai-2512"` \| `"mock"`
+> **deployment**: [`SidecarDeployment`](#sidecardeployment-1)
 
 ##### issues
 
@@ -10187,7 +10582,7 @@ Whether any record carries a non-`ok`/non-`fallback_used` outcome that blocks ge
 
 ##### contractVersion
 
-> **contractVersion**: `"1.9.0"`
+> **contractVersion**: `"1.12.0"`
 
 ##### generatedAt
 
@@ -10404,11 +10799,11 @@ Identity of every model role active during the run.
 
 ###### visualFallback?
 
-> `optional` **visualFallback?**: `"llama-4-maverick-vision"` \| `"phi-4-multimodal-poc"` \| `"mistral-document-ai-2512"` \| `"mock"` \| `"none"`
+> `optional` **visualFallback?**: [`SidecarDeployment`](#sidecardeployment-1) \| `"none"`
 
 ###### visualPrimary?
 
-> `optional` **visualPrimary?**: `"llama-4-maverick-vision"` \| `"phi-4-multimodal-poc"` \| `"mistral-document-ai-2512"` \| `"mock"` \| `"none"`
+> `optional` **visualPrimary?**: [`SidecarDeployment`](#sidecardeployment-1) \| `"none"`
 
 ##### policyProfileId
 
@@ -10428,7 +10823,7 @@ Replay-cache identity hashes.
 
 ##### promptTemplateVersion
 
-> **promptTemplateVersion**: `"1.1.0"`
+> **promptTemplateVersion**: `"1.2.0"`
 
 Versions stamped by the harness at run time.
 
@@ -10464,7 +10859,7 @@ Active signing mode; mirrored from the run input for auditability.
 
 ##### testIntelligenceContractVersion
 
-> **testIntelligenceContractVersion**: `"1.9.0"`
+> **testIntelligenceContractVersion**: `"1.12.0"`
 
 ##### visualSidecar?
 
@@ -10703,15 +11098,15 @@ evidence manifest but pinned to the predicate version.
 
 ##### selectedDeployment
 
-> **selectedDeployment**: `"llama-4-maverick-vision"` \| `"phi-4-multimodal-poc"` \| `"mistral-document-ai-2512"` \| `"mock"`
+> **selectedDeployment**: [`SidecarDeployment`](#sidecardeployment-1)
 
 ##### visualFallback?
 
-> `optional` **visualFallback?**: `"llama-4-maverick-vision"` \| `"phi-4-multimodal-poc"` \| `"mistral-document-ai-2512"` \| `"mock"` \| `"none"`
+> `optional` **visualFallback?**: [`SidecarDeployment`](#sidecardeployment-1) \| `"none"`
 
 ##### visualPrimary?
 
-> `optional` **visualPrimary?**: `"llama-4-maverick-vision"` \| `"phi-4-multimodal-poc"` \| `"mistral-document-ai-2512"` \| `"mock"` \| `"none"`
+> `optional` **visualPrimary?**: [`SidecarDeployment`](#sidecardeployment-1) \| `"none"`
 
 ***
 
@@ -10893,7 +11288,7 @@ and timestamps are caller-provided.
 
 ##### testIntelligenceContractVersion
 
-> **testIntelligenceContractVersion**: `"1.9.0"`
+> **testIntelligenceContractVersion**: `"1.12.0"`
 
 ##### thresholds
 
@@ -11116,11 +11511,11 @@ Identities of the deployments behind the run.
 
 ###### visualFallback?
 
-> `optional` **visualFallback?**: `"llama-4-maverick-vision"` \| `"phi-4-multimodal-poc"` \| `"mistral-document-ai-2512"` \| `"mock"` \| `"none"`
+> `optional` **visualFallback?**: [`SidecarDeployment`](#sidecardeployment-1) \| `"none"`
 
 ###### visualPrimary?
 
-> `optional` **visualPrimary?**: `"llama-4-maverick-vision"` \| `"phi-4-multimodal-poc"` \| `"mistral-document-ai-2512"` \| `"mock"` \| `"none"`
+> `optional` **visualPrimary?**: [`SidecarDeployment`](#sidecardeployment-1) \| `"none"`
 
 ##### multiSourceEnabled?
 
@@ -11146,7 +11541,7 @@ Replay-cache identity hashes for the run (mirrors compiled prompt).
 
 ##### promptTemplateVersion
 
-> **promptTemplateVersion**: `"1.1.0"`
+> **promptTemplateVersion**: `"1.2.0"`
 
 Versions used to compile the prompt and validate the output.
 
@@ -11192,7 +11587,7 @@ raw paste bytes, or PII.
 
 ##### testIntelligenceContractVersion
 
-> **testIntelligenceContractVersion**: `"1.9.0"`
+> **testIntelligenceContractVersion**: `"1.12.0"`
 
 Test-intelligence subsurface contract version.
 
@@ -11338,7 +11733,7 @@ SHA-256 hex of the persisted `visual-sidecar-result.json` artifact.
 
 ##### selectedDeployment
 
-> **selectedDeployment**: `"llama-4-maverick-vision"` \| `"phi-4-multimodal-poc"` \| `"mistral-document-ai-2512"` \| `"mock"`
+> **selectedDeployment**: [`SidecarDeployment`](#sidecardeployment-1)
 
 ***
 
@@ -12257,7 +12652,7 @@ Submit response for accepted jobs.
 
 ###### Inherited from
 
-[`WorkspaceSubmitAccepted`](#workspacesubmitaccepted).[`jobId`](#jobid-54)
+[`WorkspaceSubmitAccepted`](#workspacesubmitaccepted).[`jobId`](#jobid-56)
 
 ##### pasteDeltaSummary?
 
@@ -15809,6 +16204,8 @@ machine.
 
 - `visual_sidecar` — deterministic screenshot/spec-check service.
 - `generator` — LLM that produces structured test cases.
+- `logic_judge` — LLM that validates generator output against the
+  deterministic design and coverage artifacts.
 - `semantic_judge` — LLM judge panel that scores generated cases.
 - `adversarial_gap_finder` — LLM that surfaces missing coverage.
 - `repair_planner` — LLM that proposes a structured repair plan
@@ -15995,6 +16392,14 @@ applicable so a single auditor can route on a unified vocabulary.
 
 ***
 
+### FaithfulnessVerdictLabel
+
+> **FaithfulnessVerdictLabel** = *typeof* [`ALLOWED_FAITHFULNESS_VERDICTS`](#allowed_faithfulness_verdicts)\[`number`\]
+
+Discriminant of an allowed faithfulness-judge terminal verdict.
+
+***
+
 ### FinOpsBudgetBreachReason
 
 > **FinOpsBudgetBreachReason** = *typeof* [`ALLOWED_FINOPS_BUDGET_BREACH_REASONS`](#allowed_finops_budget_breach_reasons)\[`number`\]
@@ -16165,6 +16570,15 @@ Discriminated alias for [JUDGE\_PANEL\_RESOLVED\_SEVERITIES](#judge_panel_resolv
 
 ***
 
+### LabelSource
+
+> **LabelSource** = `"node_text"` \| `"node_name"` \| `"sibling_text"`
+
+Origin of the visible label for a detected element (Issue #1902).
+Closed enum so judge code can pattern-match safely without sniffing strings.
+
+***
+
 ### LbomDataKind
 
 > **LbomDataKind** = `"few_shot_bundle"` \| `"policy_profile"`
@@ -16259,11 +16673,33 @@ Discriminated union returned by `LlmGatewayClient.generate`.
 
 ***
 
+### LlmImageTokenStrategy
+
+> **LlmImageTokenStrategy** = *typeof* [`ALLOWED_LLM_IMAGE_TOKEN_STRATEGIES`](#allowed_llm_image_token_strategies)\[`number`\]
+
+***
+
 ### LlmReasoningEffort
 
 > **LlmReasoningEffort** = `"low"` \| `"medium"` \| `"high"`
 
 Reasoning-effort hint forwarded only when `reasoningEffortSupport` is true.
+
+***
+
+### LogicJudgeFindingSeverity
+
+> **LogicJudgeFindingSeverity** = *typeof* [`ALLOWED_LOGIC_JUDGE_FINDING_SEVERITIES`](#allowed_logic_judge_finding_severities)\[`number`\]
+
+Discriminant of an allowed logic-judge finding severity.
+
+***
+
+### LogicJudgeVerdictLabel
+
+> **LogicJudgeVerdictLabel** = *typeof* [`ALLOWED_LOGIC_JUDGE_VERDICTS`](#allowed_logic_judge_verdicts)\[`number`\]
+
+Discriminant of an allowed logic-judge terminal verdict.
 
 ***
 
@@ -16449,6 +16885,33 @@ Cache lookup outcome consumed by the rubric pass orchestration layer.
 > **SelfVerifyRubricVisualSubscoreKind** = *typeof* [`ALLOWED_SELF_VERIFY_RUBRIC_VISUAL_SUBSCORES`](#allowed_self_verify_rubric_visual_subscores)\[`number`\]
 
 Single multimodal visual subscore kind.
+
+***
+
+### SidecarDeployment
+
+> **SidecarDeployment** = `string` & `object`
+
+Operator-supplied multimodal-sidecar deployment name (Issue #1959).
+
+The runner does not gate on a hard-coded list — the deployment name is
+the verbatim Azure-AI-Foundry / gateway deployment id chosen by the
+operator in `.env`. Validity is enforced at the gateway boundary
+(HTTP 404 surfaces back to the policy gate); this type's contract is
+limited to "non-empty string of reasonable length". Length is bounded
+by the JSON-Schema validator at the visual-sidecar wire surface
+(`{ minLength: 1, maxLength: 128 }`).
+
+The optional brand symbol documents intent without forcing a public
+type-import migration on callers that pass plain string literals
+(e.g., the historical four — `llama-4-maverick-vision`,
+`phi-4-multimodal-poc`, `mistral-document-ai-2512`, `mock`).
+
+#### Type Declaration
+
+##### \_\_brand?
+
+> `readonly` `optional` **\_\_brand?**: `"sidecar_deployment"`
 
 ***
 
@@ -17102,7 +17565,7 @@ resumed from the most recent checkpoint, or terminal.
 
 ### AGENT\_HARNESS\_ROLES
 
-> `const` **AGENT\_HARNESS\_ROLES**: readonly \[`"adversarial_gap_finder"`, `"final_verifier"`, `"generator"`, `"repair_planner"`, `"semantic_judge"`, `"visual_sidecar"`\]
+> `const` **AGENT\_HARNESS\_ROLES**: readonly \[`"adversarial_gap_finder"`, `"final_verifier"`, `"generator"`, `"logic_judge"`, `"repair_planner"`, `"semantic_judge"`, `"visual_sidecar"`\]
 
 Closed runtime list of agent harness roles tracked by the Production
 Runner state machine. The order is alphabetical for stable
@@ -17416,6 +17879,14 @@ Allowed reasons the export pipeline may refuse to emit QC artifacts.
 
 ***
 
+### ALLOWED\_FAITHFULNESS\_VERDICTS
+
+> `const` **ALLOWED\_FAITHFULNESS\_VERDICTS**: readonly \[`"accept"`, `"repair"`, `"reject"`\]
+
+Closed runtime list of faithfulness-judge terminal verdicts.
+
+***
+
 ### ALLOWED\_FIGMA\_SOURCE\_MODES
 
 > `const` **ALLOWED\_FIGMA\_SOURCE\_MODES**: readonly \[`"rest"`, `"hybrid"`, `"local_json"`, `"figma_paste"`, `"figma_plugin"`\]
@@ -17666,11 +18137,14 @@ retryable; transport, timeout, and rate-limit failures are.
 
 ### ALLOWED\_LLM\_GATEWAY\_ROLES
 
-> `const` **ALLOWED\_LLM\_GATEWAY\_ROLES**: readonly \[`"test_generation"`, `"visual_primary"`, `"visual_fallback"`\]
+> `const` **ALLOWED\_LLM\_GATEWAY\_ROLES**: readonly \[`"test_generation"`, `"visual_primary"`, `"visual_fallback"`, `"logic_judge"`\]
 
 Allowed gateway roles. Each role is bound to a single deployment to keep the
 structured test-case generator (`gpt-oss-120b`) strictly separated from the
-multimodal visual sidecars (`mistral-document-ai-2512`, `llama-4-maverick-vision`, `phi-4-multimodal-poc`).
+multimodal visual sidecars (`mistral-document-ai-2512`, `llama-4-maverick-vision`, `phi-4-multimodal-poc`),
+and from the cross-model logic judge (Issue #1932) which reuses the structured-output
+surface but is intentionally bound to a different deployment so a self-consistency
+bias from the generator cannot be amplified by reusing the same model on the judge.
 
 ***
 
@@ -17698,6 +18172,43 @@ validates it against `responseSchema` when present) from the on-the-wire
   JSON when the prompt instructs it to). The gateway still parses and
   schema-validates the content in-process so the contract guarantee
   ("structured-output success returns parsed JSON") is unchanged.
+
+***
+
+### ALLOWED\_LLM\_IMAGE\_TOKEN\_STRATEGIES
+
+> `const` **ALLOWED\_LLM\_IMAGE\_TOKEN\_STRATEGIES**: readonly \[`"openai_tiles"`, `"llama_tiles"`, `"raw_bytes"`\]
+
+Per-modality token-estimation strategy for image inputs (Issue #1930).
+
+- `openai_tiles`: OpenAI Chat-Vision aligned default. Charges
+  `ceil(widthPx*heightPx / {@link LLM_IMAGE_OPENAI_TILE_SIZE_PX}^2) *
+  {@link LLM_IMAGE_OPENAI_TOKENS_PER_TILE} +
+  {@link LLM_IMAGE_OPENAI_BASE_TOKENS}` tokens per image.
+- `llama_tiles`: Llama-Vision aligned default. Charges
+  `ceil(widthPx*heightPx / {@link LLM_IMAGE_LLAMA_TILE_SIZE_PX}^2) *
+  {@link LLM_IMAGE_LLAMA_TOKENS_PER_TILE} +
+  {@link LLM_IMAGE_LLAMA_BASE_TOKENS}` tokens per image.
+- `raw_bytes`: legacy behaviour — charges `ceil(base64.length / 4)` tokens.
+  Retained as an explicit override for providers whose multimodal billing
+  actually scales with payload size, and as the fallback for any image
+  whose pixel dimensions are not supplied.
+
+***
+
+### ALLOWED\_LOGIC\_JUDGE\_FINDING\_SEVERITIES
+
+> `const` **ALLOWED\_LOGIC\_JUDGE\_FINDING\_SEVERITIES**: readonly \[`"warning"`, `"error"`\]
+
+Closed runtime list of logic-judge finding severities.
+
+***
+
+### ALLOWED\_LOGIC\_JUDGE\_VERDICTS
+
+> `const` **ALLOWED\_LOGIC\_JUDGE\_VERDICTS**: readonly \[`"accept"`, `"repair"`, `"reject"`\]
+
+Closed runtime list of logic-judge terminal verdicts.
 
 ***
 
@@ -18310,7 +18821,7 @@ Schema version for persisted context-budget analyzer reports.
 
 ### CONTRACT\_VERSION
 
-> `const` **CONTRACT\_VERSION**: `"4.43.0"`
+> `const` **CONTRACT\_VERSION**: `"4.50.0"`
 
 Current contract version constant.
 Must be bumped according to CONTRACT_CHANGELOG.md rules.
@@ -18422,6 +18933,18 @@ configuration.
 
 ***
 
+### DEFAULT\_LLM\_IMAGE\_TOKEN\_STRATEGY
+
+> `const` **DEFAULT\_LLM\_IMAGE\_TOKEN\_STRATEGY**: [`LlmImageTokenStrategy`](#llmimagetokenstrategy) = `"openai_tiles"`
+
+Default per-modality strategy used when a gateway client does not pin
+`imageTokenStrategy` in its `LlmGatewayClientConfig`. OpenAI-aligned tiles
+keep the FinOps envelope realistic for the most common deployments and
+remain a safe upper bound for providers whose actual multimodal token cost
+is lower than tile + base.
+
+***
+
 ### DEFAULT\_MUTATION\_KILL\_RATE\_TARGET
 
 > `const` **DEFAULT\_MUTATION\_KILL\_RATE\_TARGET**: `0.85`
@@ -18519,6 +19042,38 @@ Canonical filename for the persisted JSON export of approved test cases.
 > `const` **EXPORT\_TESTCASES\_XLSX\_ARTIFACT\_FILENAME**: `"testcases.xlsx"`
 
 Canonical filename for the optional persisted XLSX export of approved test cases.
+
+***
+
+### FAITHFULNESS\_JUDGE\_COMPILED\_PROMPT\_ARTIFACT\_FILENAME
+
+> `const` **FAITHFULNESS\_JUDGE\_COMPILED\_PROMPT\_ARTIFACT\_FILENAME**: `"compiled-prompt-faithfulness-judge.json"`
+
+Canonical filename for the persisted faithfulness-judge prompt artifact.
+
+***
+
+### FAITHFULNESS\_JUDGE\_PROMPT\_TEMPLATE\_VERSION
+
+> `const` **FAITHFULNESS\_JUDGE\_PROMPT\_TEMPLATE\_VERSION**: `"faithfulness-judge.v1"`
+
+Prompt-template version pinned onto faithfulness-judge verdict artifacts.
+
+***
+
+### FAITHFULNESS\_VERDICT\_ARTIFACT\_FILENAME
+
+> `const` **FAITHFULNESS\_VERDICT\_ARTIFACT\_FILENAME**: `"faithfulness_judge.json"`
+
+Canonical filename for the persisted faithfulness-judge verdict artifact.
+
+***
+
+### FAITHFULNESS\_VERDICT\_SCHEMA\_VERSION
+
+> `const` **FAITHFULNESS\_VERDICT\_SCHEMA\_VERSION**: `"1.0.0"`
+
+Schema version for persisted cross-modal faithfulness-judge verdicts.
 
 ***
 
@@ -18838,6 +19393,96 @@ Schema version for the persisted `llm-capabilities.json` evidence artifact.
 > `const` **LLM\_GATEWAY\_CONTRACT\_VERSION**: `"1.0.0"`
 
 Version stamp for persisted role-separated LLM gateway evidence artifacts.
+
+***
+
+### LLM\_IMAGE\_LLAMA\_BASE\_TOKENS
+
+> `const` **LLM\_IMAGE\_LLAMA\_BASE\_TOKENS**: `1`
+
+Constant base tokens added once per Llama-Vision image.
+
+***
+
+### LLM\_IMAGE\_LLAMA\_TILE\_SIZE\_PX
+
+> `const` **LLM\_IMAGE\_LLAMA\_TILE\_SIZE\_PX**: `560`
+
+Tile edge length (px) for the Llama-Vision token estimate.
+
+***
+
+### LLM\_IMAGE\_LLAMA\_TOKENS\_PER\_TILE
+
+> `const` **LLM\_IMAGE\_LLAMA\_TOKENS\_PER\_TILE**: `1601`
+
+Tokens charged per Llama-Vision tile. Tracks the published
+Llama-3.2-Vision / Llama-4-Maverick-Vision tile encoding (CLS + 1600
+patches per tile at 14 px patch size).
+
+***
+
+### LLM\_IMAGE\_OPENAI\_BASE\_TOKENS
+
+> `const` **LLM\_IMAGE\_OPENAI\_BASE\_TOKENS**: `85`
+
+Constant base tokens added once per OpenAI Chat-Vision image.
+
+***
+
+### LLM\_IMAGE\_OPENAI\_TILE\_SIZE\_PX
+
+> `const` **LLM\_IMAGE\_OPENAI\_TILE\_SIZE\_PX**: `512`
+
+Tile edge length (px) for the OpenAI Chat-Vision token estimate.
+
+***
+
+### LLM\_IMAGE\_OPENAI\_TOKENS\_PER\_TILE
+
+> `const` **LLM\_IMAGE\_OPENAI\_TOKENS\_PER\_TILE**: `85`
+
+Tokens charged per OpenAI Chat-Vision tile (high-detail).
+
+***
+
+### LOGIC\_JUDGE\_COMPILED\_PROMPT\_ARTIFACT\_FILENAME
+
+> `const` **LOGIC\_JUDGE\_COMPILED\_PROMPT\_ARTIFACT\_FILENAME**: `"compiled-prompt-logic-judge.json"`
+
+Canonical filename for the persisted logic-judge prompt artifact.
+
+***
+
+### LOGIC\_JUDGE\_OUTPUT\_SCHEMA\_NAME
+
+> `const` **LOGIC\_JUDGE\_OUTPUT\_SCHEMA\_NAME**: `"workspace-dev-logic-judge-v1"`
+
+Structured-output schema name used by the logic-judge LLM call.
+
+***
+
+### LOGIC\_JUDGE\_PROMPT\_TEMPLATE\_VERSION
+
+> `const` **LOGIC\_JUDGE\_PROMPT\_TEMPLATE\_VERSION**: `"logic-judge.v1"`
+
+Prompt-template version pinned onto logic-judge verdict artifacts.
+
+***
+
+### LOGIC\_JUDGE\_VERDICT\_ARTIFACT\_FILENAME
+
+> `const` **LOGIC\_JUDGE\_VERDICT\_ARTIFACT\_FILENAME**: `"logic_judge.json"`
+
+Canonical filename for the persisted logic-judge verdict artifact.
+
+***
+
+### LOGIC\_JUDGE\_VERDICT\_SCHEMA\_VERSION
+
+> `const` **LOGIC\_JUDGE\_VERDICT\_SCHEMA\_VERSION**: `"1.0.0"`
+
+Schema version for persisted logic-judge verdict artifacts.
 
 ***
 
@@ -19271,6 +19916,16 @@ Stable JSON schema name attached to the structured rubric response.
 
 ***
 
+### SIDECAR\_DEPLOYMENT\_MAX\_LENGTH
+
+> `const` **SIDECAR\_DEPLOYMENT\_MAX\_LENGTH**: `128`
+
+Maximum byte length accepted for an operator-supplied sidecar
+deployment id at the wire-validation boundary. Mirrors Azure AI
+Foundry's deployment-name length constraints.
+
+***
+
 ### SOURCE\_MIX\_PLAN\_ARTIFACT\_FILENAME
 
 > `const` **SOURCE\_MIX\_PLAN\_ARTIFACT\_FILENAME**: `"source-mix-plan.json"`
@@ -19390,7 +20045,7 @@ Schema version for persisted `TestDesignModel` projection artifacts.
 
 ### TEST\_INTELLIGENCE\_CONTRACT\_VERSION
 
-> `const` **TEST\_INTELLIGENCE\_CONTRACT\_VERSION**: `"1.9.0"`
+> `const` **TEST\_INTELLIGENCE\_CONTRACT\_VERSION**: `"1.12.0"`
 
 Contract version for the opt-in test-intelligence surface.
 
@@ -19417,9 +20072,15 @@ before a job may compose more than one test-design source.
 
 ### TEST\_INTELLIGENCE\_PROMPT\_TEMPLATE\_VERSION
 
-> `const` **TEST\_INTELLIGENCE\_PROMPT\_TEMPLATE\_VERSION**: `"1.1.0"`
+> `const` **TEST\_INTELLIGENCE\_PROMPT\_TEMPLATE\_VERSION**: `"1.2.0"`
 
 Prompt template version for the test-intelligence prompt family.
+
+1.2.0 — Issue #1905: explicit form-screen accessibility directive added
+to the generator system prompt and user-prompt preamble. Bump forces a
+replay-cache miss for cached generator outputs that pre-date the new
+directive so the cache cannot serve a stale list that lacks an a11y case
+for a form screen.
 
 ***
 

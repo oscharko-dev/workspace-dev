@@ -238,10 +238,14 @@ test("primary success: visualPrimary wins, fallback is never called, fallbackRea
   assert.equal(primaryCalls, 1);
   assert.equal(fallbackCalls, 0);
   assert.equal(result.fallbackReason, "none");
-  assert.equal(result.selectedDeployment, PRIMARY_DEPLOYMENT);
+  // Issue #1959: mock clients report `"mock"` provenance regardless of
+  // the configured `client.deployment`, via the `MockLlmGatewayClient`
+  // sentinel. Live clients flow their operator-supplied id through
+  // verbatim — that path is exercised by the live-E2E lane.
+  assert.equal(result.selectedDeployment, "mock");
   assert.equal(result.visual.length, 2);
   assert.equal(result.attempts.length, 1);
-  assert.equal(result.attempts[0]?.deployment, PRIMARY_DEPLOYMENT);
+  assert.equal(result.attempts[0]?.deployment, "mock");
   assert.equal(result.validationReport.blocked, false);
 });
 
@@ -281,10 +285,11 @@ test("fallback success on primary timeout: fallbackReason=primary_unavailable", 
   assert.equal(result.outcome, "success");
   if (result.outcome !== "success") return;
   assert.equal(result.fallbackReason, "primary_unavailable");
-  assert.equal(result.selectedDeployment, FALLBACK_DEPLOYMENT);
+  // Issue #1959: mock-client provenance label, see "primary success" test.
+  assert.equal(result.selectedDeployment, "mock");
   assert.equal(result.attempts.length, 2);
   assert.equal(result.attempts[0]?.errorClass, "timeout");
-  assert.equal(result.attempts[1]?.deployment, FALLBACK_DEPLOYMENT);
+  assert.equal(result.attempts[1]?.deployment, "mock");
 });
 
 test("fallback on primary rate_limited: fallbackReason=primary_quota_exceeded", async () => {
@@ -822,5 +827,6 @@ test("policy_downgrade: forceFallback skips primary entirely", async () => {
   assert.equal(result.outcome, "success");
   if (result.outcome !== "success") return;
   assert.equal(result.fallbackReason, "policy_downgrade");
-  assert.equal(result.selectedDeployment, FALLBACK_DEPLOYMENT);
+  // Issue #1959: mock-client provenance label, see "primary success" test.
+  assert.equal(result.selectedDeployment, "mock");
 });

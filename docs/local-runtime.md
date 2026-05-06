@@ -55,8 +55,14 @@ Expected role bindings are:
 | Role                            | Deployment                    |
 | ------------------------------- | ----------------------------- |
 | Structured test-case generation | `gpt-oss-120b`                |
-| Primary visual sidecar          | `mistral-document-ai-2512`    |
-| Fallback visual sidecar         | `llama-4-maverick-vision`     |
+| Primary visual sidecar          | `llama-4-maverick-vision`     |
+| Fallback visual sidecar         | `phi-4-multimodal-instruct`   |
+
+The `mistral-document-ai-2512` deployment exposes `chatCompletion: false`
+on Azure AI Foundry and is **not** a valid value for either visual-sidecar
+slot. It is reserved for the future OCR-sidecar role. See operator
+runbook §1b/§1c for the full Stable-deployment matrix and the Wave-0
+substitution rationale.
 
 The default CI path uses deterministic mocks and fixture captures instead of
 live network calls. Evidence artifacts store deployment names, schema versions,

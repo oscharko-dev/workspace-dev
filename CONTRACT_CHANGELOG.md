@@ -31,6 +31,118 @@ All changes to the public contract surface of `workspace-dev` are documented her
 
 ---
 
+## [4.50.0] - 2026-05-06
+
+### Changed (Issue #1959 — open `sidecarDeployment` enum + drop `mistral-document-ai-2512` from chat-completion paths)
+
+The visual-sidecar wire surface previously hardcoded a closed set of
+deployment-name literals — `llama-4-maverick-vision`,
+`phi-4-multimodal-poc`, `mistral-document-ai-2512`, and `mock`. The
+closed set was a Welle-2/3 carry-over: when the test-intelligence
+contract was first shaped, the live deployments were not yet
+finalised, so the four candidates were promoted to the canonical
+contract. Wave-0 of the production-hardening epic (PR #1953)
+provisioned `phi-4-multimodal-instruct` as the cross-vendor Stable
+Visual-Fallback, and #1933 promoted `llama-4-maverick-vision` to
+Visual-Primary — but neither operator-supplied id was assignable to
+the wire schema. The deployment-name-to-tag mapper at
+`src/test-intelligence/visual-sidecar-client.ts` would also fall into
+its `default`/`mock` branch for any new id and lose provenance.
+
+Additionally, `mistral-document-ai-2512` was type-blessed as a valid
+chat-completion sidecar — it is not. The Document-AI deployment
+exposes `chatCompletion: false` on the Azure account; chat-completion
+requests return HTTP 404. Operators who copied the value from the
+type union into their `.env` ended up in the silent fallback path
+documented as a footgun in the operator runbook §1c.
+
+This release broadens the sidecar deployment surface to a brand-typed
+`string`. Deployment-name validity is now the responsibility of the
+gateway (HTTP 404 surfaces back to the policy gate), not the runner's
+wire schema or contract type union.
+
+Public-contract changes:
+
+- New exported type alias `SidecarDeployment = string & { readonly
+__brand?: "sidecar_deployment" }` documents the contract surface
+without forcing a public type-import migration on callers that
+pass plain string literals (the historical four literals continue
+to be assignable).
+- New exported runtime constant `SIDECAR_DEPLOYMENT_MAX_LENGTH = 128`
+mirrors the wire-validation length cap.
+- `VisualSidecarValidationRecord.deployment`,
+`VisualScreenDescription.sidecarDeployment`,
+`VisualSidecarAttempt.deployment`,
+`VisualSidecarSuccess.selectedDeployment`,
+`CompiledPromptVisualBinding.selectedDeployment`,
+`QcMappingVisualProvenance.deployment`,
+`Wave1ValidationEvidenceVisualSidecarSummary.selectedDeployment`,
+`Wave1ValidationAttestationVisualSidecarIdentity.selectedDeployment`,
+and the `modelDeployments.visualPrimary` / `visualFallback` slots
+on the validation/export/attestation manifests broaden from the
+four-literal closed enum (plus `"none"`) to `SidecarDeployment`
+(plus `"none"`).
+- Visual-sidecar JSON-Schema validator drops the closed `enum` on
+`sidecarDeployment` in favour of `{ type: "string", minLength: 1,
+maxLength: SIDECAR_DEPLOYMENT_MAX_LENGTH }`. Operator-supplied
+deployment names now flow through verbatim and are surfaced as the
+provenance tag in the artefact.
+- The mock-client provenance label `"mock"` is preserved for unit
+tests via a new `__isMock: true` sentinel on `MockLlmGatewayClient`
+and a re-exported `isMockLlmGatewayClient` type guard. The
+`clientDeploymentLabel` helper now returns `"mock"` for sentinel
+clients and the verbatim `client.deployment` for everyone else,
+removing the historical four-literal switch.
+- The internal `roleFromVisualDeployment` helper in the validation
+harness drops its three deployment-name branches
+(`mistral-document-ai-2512` → primary,
+`phi-4-multimodal-poc`/`llama-4-maverick-vision` → fallback) in
+favour of the existing `isFirstAttempt` orchestration signal.
+The sidecar client always invokes the primary client first and
+the fallback (if any) second, so the index is the actual semantic
+signal and the deployment-name switch was both brittle and
+mis-attributed live calls after the #1933 visual-primary swap.
+- The evidence-manifest validator's `VISUAL_DEPLOYMENTS` Set is
+removed; `modelDeployments.visualPrimary` / `visualFallback` /
+`visualSidecar.selectedDeployment` are validated against
+non-empty-string + ≤128-char shape (plus the literal `"none"`
+sentinel for the `modelDeployments` slots).
+
+Documentation:
+
+- `docs/local-runtime.md` row "Primary visual sidecar" updated from
+the deprecated `mistral-document-ai-2512` to the Wave-0 Stable
+substitution `llama-4-maverick-vision`. The fallback row updates
+from the deprecated `phi-4-multimodal-poc` to the cross-vendor
+Stable substitution `phi-4-multimodal-instruct`. This brings the
+local-runtime quick-reference into alignment with operator runbook
+§1b/§1c (already updated by PR #1953).
+
+Contract version bumps:
+
+- `CONTRACT_VERSION` bumps from `4.49.0` to `4.50.0` (additive minor
+bump; the broadened union types are supersets of the previous
+closed enums, so existing callers passing one of the historical
+four literals continue to typecheck without code changes; new
+runtime exports `SIDECAR_DEPLOYMENT_MAX_LENGTH` and the
+`isMockLlmGatewayClient` type guard).
+- `TEST_INTELLIGENCE_CONTRACT_VERSION` is unchanged at `1.12.0`
+because no schema-versioned artefact shape changes; only the
+type surface and wire-validation regex broaden.
+
+Out of scope (separate issues):
+
+- Document-AI as an OCR sidecar — Wave-3 candidate. When that lands,
+it will live on a different gateway client and a different role,
+not via the chat-completion path that #1959 removed.
+- Deployment-shape regex validation beyond non-empty + length cap —
+the operator runbook is the source of truth for valid names.
+
+No removals of public exports. No new migrations are registered; the
+`migrationHash:` registry from 4.42.0 carries over unchanged.
+
+---
+
 ## [4.49.0] - 2026-05-06
 
 ### Added (Issue #1932 — cross-model logic-judge wired via dedicated deployment env var)
