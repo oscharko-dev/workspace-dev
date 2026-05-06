@@ -729,6 +729,31 @@ export {
   type EvaluatePolicyGateInput,
 } from "./policy-gate.js";
 export {
+  augmentPolicyReportWithCoverageDrift,
+  buildCoverageBaselineRecord,
+  buildCoverageDriftPolicyViolation,
+  COVERAGE_BASELINE_AXES,
+  COVERAGE_BASELINE_DRIFT_RULE_ID,
+  COVERAGE_BASELINE_DRIFT_THRESHOLD,
+  COVERAGE_BASELINE_SCHEMA_VERSION,
+  COVERAGE_BASELINES_DIRNAME,
+  coverageBaselinePath,
+  DEFAULT_COVERAGE_BASELINE_SYNC_MODE,
+  evaluateCoverageBaselineDrift,
+  extractCoverageRatiosFromReport,
+  loadCoverageBaseline,
+  syncCoverageBaselineForJob,
+  writeCoverageBaseline,
+  type CoverageBaselineAxis,
+  type CoverageBaselineDriftEvaluation,
+  type CoverageBaselineDriftFinding,
+  type CoverageBaselineRatios,
+  type CoverageBaselineRecord,
+  type CoverageBaselineSyncMode,
+  type SyncCoverageBaselineForJobInput,
+  type SyncCoverageBaselineForJobResult,
+} from "./coverage-baseline-drift.js";
+export {
   validateVisualSidecar,
   type ValidateVisualSidecarInput,
 } from "./visual-sidecar-validation.js";

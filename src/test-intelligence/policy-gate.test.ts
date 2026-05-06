@@ -1319,3 +1319,96 @@ test("Issue #1948: customerProfile policyOverride downgrades p0 uncovered to war
   assert.equal(violation?.severity, "warning");
   assert.equal(report.blocked, false);
 });
+
+test("Issue #1950: coverage-baseline drift > 10% emits a warning-severity job-level violation (needs_review, not blocking)", () => {
+  const ctx = harness([buildCase({})], buildIntent());
+  const report = evaluatePolicyGate({
+    jobId: "job-1",
+    generatedAt: GENERATED_AT,
+    list: ctx.list,
+    intent: ctx.intent,
+    profile: ctx.profile,
+    validation: ctx.validation,
+    coverage: ctx.coverage,
+    coverageBaselineDrift: {
+      tenantId: "tenant-1",
+      archetype: "customer-self-service",
+      policyProfileId: ctx.profile.id,
+      threshold: 0.1,
+      seeded: false,
+      exceeded: true,
+      findings: [
+        {
+          axis: "fieldCoverage",
+          baseline: 0.8,
+          candidate: 0.5,
+          absoluteDelta: -0.3,
+          relativeDelta: 0.375,
+          threshold: 0.1,
+        },
+      ],
+    },
+  });
+  const violation = report.jobLevelViolations.find(
+    (entry) => entry.rule === "policy:coverage-drift-exceeded",
+  );
+  assert.ok(violation, "expected coverage-drift-exceeded violation");
+  assert.equal(violation?.outcome, "coverage_drift_exceeded");
+  assert.equal(violation?.severity, "warning");
+  assert.match(violation?.reason ?? "", /coverage drift exceeded/);
+  assert.match(violation?.reason ?? "", /fieldCoverage/);
+  // Decision class is needs_review — warning severity does not block.
+  assert.equal(report.blocked, false);
+});
+
+test("Issue #1950: seeded baseline (first run) does not emit a coverage-drift violation", () => {
+  const ctx = harness([buildCase({})], buildIntent());
+  const report = evaluatePolicyGate({
+    jobId: "job-1",
+    generatedAt: GENERATED_AT,
+    list: ctx.list,
+    intent: ctx.intent,
+    profile: ctx.profile,
+    validation: ctx.validation,
+    coverage: ctx.coverage,
+    coverageBaselineDrift: {
+      tenantId: "tenant-1",
+      archetype: "customer-self-service",
+      policyProfileId: ctx.profile.id,
+      threshold: 0.1,
+      seeded: true,
+      exceeded: false,
+      findings: [],
+    },
+  });
+  const violation = report.jobLevelViolations.find(
+    (entry) => entry.rule === "policy:coverage-drift-exceeded",
+  );
+  assert.equal(violation, undefined);
+});
+
+test("Issue #1950: in-tolerance candidate does not emit a coverage-drift violation", () => {
+  const ctx = harness([buildCase({})], buildIntent());
+  const report = evaluatePolicyGate({
+    jobId: "job-1",
+    generatedAt: GENERATED_AT,
+    list: ctx.list,
+    intent: ctx.intent,
+    profile: ctx.profile,
+    validation: ctx.validation,
+    coverage: ctx.coverage,
+    coverageBaselineDrift: {
+      tenantId: "tenant-1",
+      archetype: "customer-self-service",
+      policyProfileId: ctx.profile.id,
+      threshold: 0.1,
+      seeded: false,
+      exceeded: false,
+      findings: [],
+    },
+  });
+  const violation = report.jobLevelViolations.find(
+    (entry) => entry.rule === "policy:coverage-drift-exceeded",
+  );
+  assert.equal(violation, undefined);
+});

@@ -26,7 +26,16 @@
  *   4  budget exceeded (mapped from gateway `budget_exceeded` outcome)
  */
 
-import { mkdir, copyFile, readdir, readFile, stat } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
+import {
+  mkdir,
+  copyFile,
+  readdir,
+  readFile,
+  rename,
+  stat,
+  writeFile,
+} from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 
 /**
@@ -43,7 +52,10 @@ import {
   DEFAULT_OUTPUT_ROOT,
   resolveTestIntelligenceEnabled,
 } from "./server/constants.js";
-import type { FinOpsBudgetEnvelope } from "./contracts/index.js";
+import type {
+  FinOpsBudgetEnvelope,
+  TestCasePolicyReport,
+} from "./contracts/index.js";
 import {
   MAX_CUSTOMER_PROFILE_BYTES,
   PRODUCTION_RUNNER_HARNESS_MODES,
@@ -61,6 +73,15 @@ import {
   type RunFigmaToQcTestCasesInput,
   type RunFigmaToQcTestCasesResult,
 } from "./test-intelligence/index.js";
+import {
+  augmentPolicyReportWithCoverageDrift,
+  COVERAGE_BASELINE_DRIFT_THRESHOLD,
+  COVERAGE_BASELINES_DIRNAME,
+  extractCoverageRatiosFromReport,
+  syncCoverageBaselineForJob,
+  type SyncCoverageBaselineForJobResult,
+} from "./test-intelligence/coverage-baseline-drift.js";
+import { canonicalJson } from "./test-intelligence/content-hash.js";
 import {
   createLlmGatewayClientBundle,
   type LlmGatewayClientBundle,
@@ -196,6 +217,31 @@ export interface TestIntelligenceRunOptions {
    * panel produces a `repair` verdict.
    */
   harnessMaxRepairIterations: number | undefined;
+  /**
+   * Coverage-baseline drift configuration (Issue #1950).
+   *
+   * When `archetype` is set, the post-run helper compares the candidate
+   * coverage ratios against the per-tenant runtime baseline at
+   * `<runtimeRoot>/coverage-baselines/<tenantId>/<archetype>.json`.
+   *   - `mode === "check"` (default): seeds the baseline on first run
+   *     and reports drift on subsequent runs without modifying the pin.
+   *   - `mode === "update"` (set by `--coverage-baseline-update`):
+   *     atomically rewrites the baseline with the candidate ratios so
+   *     operators can manually re-baseline after an intentional change.
+   *
+   * `archetype` is `undefined` when no baseline-related flag was passed,
+   * which preserves the legacy behaviour (no runtime baseline check).
+   * The whole field is optional so call-sites that construct
+   * `TestIntelligenceRunOptions` manually (test fixtures pre-dating
+   * Issue #1950) compile without churn — `runTestIntelligenceCommand`
+   * treats an absent `coverageBaseline` as "feature disabled".
+   */
+  coverageBaseline?: {
+    archetype: string | undefined;
+    tenantId: string;
+    runtimeRoot: string | undefined;
+    mode: "check" | "update";
+  };
 }
 
 /**
@@ -237,6 +283,11 @@ export const parseTestIntelligenceRunArgs = (
   let customContextMarkdownPath: string | undefined;
   let customerProfilePath: string | undefined;
   let diversityPasses: 1 | 2 = 1;
+  let coverageBaselineArchetype: string | undefined;
+  let coverageBaselineTenantId: string =
+    env.WORKSPACE_TEST_SPACE_TENANT_ID?.trim() || "default";
+  let coverageBaselineRuntimeRoot: string | undefined;
+  let coverageBaselineMode: "check" | "update" = "check";
 
   for (let index = 0; index < args.length; index += 1) {
     const arg = args[index];
@@ -484,6 +535,57 @@ export const parseTestIntelligenceRunArgs = (
       continue;
     }
 
+    if (arg === "--coverage-baseline-archetype") {
+      const value = next?.trim();
+      if (!value) {
+        throw new TestIntelligenceRunOperatorError(
+          "--coverage-baseline-archetype requires a non-empty id",
+        );
+      }
+      if (!/^[A-Za-z0-9._-]+$/u.test(value)) {
+        throw new TestIntelligenceRunOperatorError(
+          `--coverage-baseline-archetype must match [A-Za-z0-9._-]+; got "${value}"`,
+        );
+      }
+      coverageBaselineArchetype = value;
+      index += 1;
+      continue;
+    }
+
+    if (arg === "--coverage-baseline-tenant") {
+      const value = next?.trim();
+      if (!value) {
+        throw new TestIntelligenceRunOperatorError(
+          "--coverage-baseline-tenant requires a non-empty id",
+        );
+      }
+      if (!/^[A-Za-z0-9._-]+$/u.test(value)) {
+        throw new TestIntelligenceRunOperatorError(
+          `--coverage-baseline-tenant must match [A-Za-z0-9._-]+; got "${value}"`,
+        );
+      }
+      coverageBaselineTenantId = value;
+      index += 1;
+      continue;
+    }
+
+    if (arg === "--coverage-baseline-runtime-root") {
+      const value = next?.trim();
+      if (!value) {
+        throw new TestIntelligenceRunOperatorError(
+          "--coverage-baseline-runtime-root requires a non-empty path",
+        );
+      }
+      coverageBaselineRuntimeRoot = value;
+      index += 1;
+      continue;
+    }
+
+    if (arg === "--coverage-baseline-update") {
+      coverageBaselineMode = "update";
+      continue;
+    }
+
     if (arg === "--diversity-passes") {
       const value = next?.trim();
       if (value !== "1" && value !== "2") {
@@ -516,6 +618,14 @@ export const parseTestIntelligenceRunArgs = (
       "--enable-visual-sidecar and --no-visual-sidecar are mutually exclusive",
     );
   }
+  if (
+    coverageBaselineMode === "update" &&
+    coverageBaselineArchetype === undefined
+  ) {
+    throw new TestIntelligenceRunOperatorError(
+      "--coverage-baseline-update requires --coverage-baseline-archetype <id>",
+    );
+  }
 
   return {
     figmaUrl,
@@ -539,6 +649,12 @@ export const parseTestIntelligenceRunArgs = (
     customContextMarkdownPath,
     customerProfilePath,
     diversityPasses,
+    coverageBaseline: {
+      archetype: coverageBaselineArchetype,
+      tenantId: coverageBaselineTenantId,
+      runtimeRoot: coverageBaselineRuntimeRoot,
+      mode: coverageBaselineMode,
+    },
   };
 };
 
@@ -1244,6 +1360,95 @@ const safeReadEvidenceDigest = async (
   }
 };
 
+interface RunCoverageBaselineSyncInput {
+  readonly result: RunFigmaToQcTestCasesResult;
+  readonly coverageBaseline: {
+    readonly archetype: string;
+    readonly tenantId: string;
+    readonly mode: "check" | "update";
+    readonly runtimeRoot: string;
+  };
+}
+
+/**
+ * Runs the post-run coverage-baseline sync (Issue #1950). Seeds the
+ * baseline on first run, evaluates drift on subsequent runs, or
+ * re-baselines when {@link RunCoverageBaselineSyncInput.coverageBaseline.mode}
+ * is `"update"`. When drift trips the gate, the persisted policy report
+ * is augmented atomically with a `policy:coverage-drift-exceeded`
+ * job-level violation. Returns a summary line for the operator log.
+ */
+const runCoverageBaselineSync = async (
+  input: RunCoverageBaselineSyncInput,
+): Promise<string> => {
+  const { result, coverageBaseline } = input;
+  const candidateRatios = extractCoverageRatiosFromReport({
+    coverage: result.coverage,
+  });
+  const sync: SyncCoverageBaselineForJobResult =
+    await syncCoverageBaselineForJob({
+      runtimeRoot: coverageBaseline.runtimeRoot,
+      tenantId: coverageBaseline.tenantId,
+      archetype: coverageBaseline.archetype,
+      policyProfileId: result.policy.policyProfileId,
+      generatedAt: result.generatedAt,
+      candidateRatios,
+      mode: coverageBaseline.mode,
+    });
+
+  if (sync.evaluation.exceeded) {
+    const augmented = augmentPolicyReportWithCoverageDrift(
+      result.policy,
+      sync.evaluation,
+    );
+    await rewritePolicyReportArtifact(
+      result.artifactPaths.policyReport,
+      augmented,
+    );
+  }
+
+  return formatCoverageBaselineSummaryLine(coverageBaseline, sync);
+};
+
+const rewritePolicyReportArtifact = async (
+  policyReportPath: string,
+  policy: TestCasePolicyReport,
+): Promise<void> => {
+  const tempPath = `${policyReportPath}.${process.pid}.${randomUUID()}.tmp`;
+  await writeFile(tempPath, `${canonicalJson(policy)}\n`, "utf8");
+  await rename(tempPath, policyReportPath);
+};
+
+const formatCoverageBaselineSummaryLine = (
+  config: RunCoverageBaselineSyncInput["coverageBaseline"],
+  sync: SyncCoverageBaselineForJobResult,
+): string => {
+  const baselineFile = join(
+    config.runtimeRoot,
+    COVERAGE_BASELINES_DIRNAME,
+    config.tenantId,
+    `${config.archetype}.json`,
+  );
+  if (config.mode === "update") {
+    return `  coverage baseline    : updated (${baselineFile})`;
+  }
+  if (sync.evaluation.seeded) {
+    return `  coverage baseline    : seeded (first run; ${baselineFile})`;
+  }
+  if (sync.evaluation.exceeded) {
+    const axes = sync.evaluation.findings.map((f) => f.axis).sort().join(", ");
+    return (
+      `  coverage baseline    : drift exceeded ` +
+      `${(sync.evaluation.threshold * 100).toFixed(0)}% on [${axes}] ` +
+      `(needs_review; ${baselineFile})`
+    );
+  }
+  return (
+    `  coverage baseline    : within tolerance ` +
+    `(±${(COVERAGE_BASELINE_DRIFT_THRESHOLD * 100).toFixed(0)}%; ${baselineFile})`
+  );
+};
+
 /**
  * Public entry point used by `cli.ts` and by the contract tests. Accepts a
  * parsed options object and an optional runtime injection seam. Returns the
@@ -1542,6 +1747,34 @@ export const runTestIntelligenceCommand = async (
     return exitCodeForRunnerError(err);
   }
 
+  // Coverage-baseline drift gate (Issue #1950): seeds the per-tenant
+  // baseline on first run, evaluates drift on subsequent runs, and
+  // re-baselines when `--coverage-baseline-update` is passed. The
+  // augmented policy report is rewritten atomically when drift trips
+  // the gate so downstream consumers see the
+  // `policy:coverage-drift-exceeded` job-level violation.
+  let coverageBaselineSummary: string | undefined;
+  if (options.coverageBaseline?.archetype !== undefined) {
+    try {
+      coverageBaselineSummary = await runCoverageBaselineSync({
+        result,
+        coverageBaseline: {
+          archetype: options.coverageBaseline.archetype,
+          tenantId: options.coverageBaseline.tenantId,
+          mode: options.coverageBaseline.mode,
+          runtimeRoot:
+            options.coverageBaseline.runtimeRoot ??
+            join(runnerOutputRoot, "test-intelligence"),
+        },
+      });
+    } catch (err) {
+      sink.stderr(
+        `error: coverage-baseline sync failed: ${sanitizeErrorMessage({ error: err, fallback: "filesystem failure" })}\n`,
+      );
+      return 2;
+    }
+  }
+
   const customerMarkdownDir = dirname(result.customerMarkdownPaths.combined);
   let copiedFileCount: number;
   try {
@@ -1582,6 +1815,9 @@ export const runTestIntelligenceCommand = async (
   ];
   if (finopsTotalsLine) summaryLines.push(finopsTotalsLine);
   if (evidenceDigestLine) summaryLines.push(evidenceDigestLine);
+  if (coverageBaselineSummary !== undefined) {
+    summaryLines.push(coverageBaselineSummary);
+  }
   if (result.harness !== undefined) {
     const h = result.harness;
     summaryLines.push(
@@ -1685,6 +1921,30 @@ Multi-agent harness (Issue #1791):
                              the per-step artifact. Defaults to the runner's
                              built-in id; only set this when wrapping multiple
                              harness steps inside the same job.
+
+Coverage-baseline drift (Issue #1950):
+  --coverage-baseline-archetype <id>
+                             Stable identifier for the coverage-baseline
+                             group. When set, the post-run helper compares
+                             the candidate coverage ratios against the
+                             persisted baseline at
+                             <runtime-root>/coverage-baselines/<tenant>/<archetype>.json.
+                             First run per archetype seeds the baseline.
+                             Drift > 10 % on any of fieldCoverage,
+                             actionCoverage, validationCoverage, or
+                             navigationCoverage emits a
+                             policy:coverage-drift-exceeded job-level
+                             violation (warning severity → needs_review).
+  --coverage-baseline-tenant <id>
+                             Tenant scope segment (default: env
+                             WORKSPACE_TEST_SPACE_TENANT_ID, then "default").
+  --coverage-baseline-runtime-root <path>
+                             Override the baseline runtime root (default:
+                             <output-root>/test-intelligence).
+  --coverage-baseline-update Operator re-baseline. Atomically rewrites the
+                             baseline with the candidate ratios; drift
+                             evaluation is skipped this run. Requires
+                             --coverage-baseline-archetype.
 
 Feature gate:
   FIGMAPIPE_WORKSPACE_TEST_INTELLIGENCE=1 must be set.

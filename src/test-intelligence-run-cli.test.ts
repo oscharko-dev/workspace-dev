@@ -1710,3 +1710,92 @@ test("runTestIntelligenceCommand: deterministic_llm forwards customerProfile to 
   const profile = capturedProfile as { ictRegisterRef?: string };
   assert.equal(profile.ictRegisterRef, "ICT-CLI-FWDED-01");
 });
+
+// -----------------------------------------------------------------------
+// Issue #1950 — coverage-baseline drift CLI flags
+// -----------------------------------------------------------------------
+
+test("parseTestIntelligenceRunArgs: coverageBaseline defaults to mode=check, undefined archetype, tenantId=default", () => {
+  const opts = parseTestIntelligenceRunArgs(
+    ["--figma-json-file", "/tmp/x.json"],
+    {},
+  );
+  assert.equal(opts.coverageBaseline.archetype, undefined);
+  assert.equal(opts.coverageBaseline.tenantId, "default");
+  assert.equal(opts.coverageBaseline.runtimeRoot, undefined);
+  assert.equal(opts.coverageBaseline.mode, "check");
+});
+
+test("parseTestIntelligenceRunArgs: --coverage-baseline-archetype + tenant + runtime-root capture all knobs", () => {
+  const opts = parseTestIntelligenceRunArgs(
+    [
+      "--figma-json-file",
+      "/tmp/x.json",
+      "--coverage-baseline-archetype",
+      "customer-self-service",
+      "--coverage-baseline-tenant",
+      "tenant-acme",
+      "--coverage-baseline-runtime-root",
+      "/var/lib/workspace-dev",
+    ],
+    {},
+  );
+  assert.equal(opts.coverageBaseline.archetype, "customer-self-service");
+  assert.equal(opts.coverageBaseline.tenantId, "tenant-acme");
+  assert.equal(opts.coverageBaseline.runtimeRoot, "/var/lib/workspace-dev");
+  assert.equal(opts.coverageBaseline.mode, "check");
+});
+
+test("parseTestIntelligenceRunArgs: --coverage-baseline-update flips mode to update", () => {
+  const opts = parseTestIntelligenceRunArgs(
+    [
+      "--figma-json-file",
+      "/tmp/x.json",
+      "--coverage-baseline-archetype",
+      "customer-self-service",
+      "--coverage-baseline-update",
+    ],
+    {},
+  );
+  assert.equal(opts.coverageBaseline.mode, "update");
+  assert.equal(opts.coverageBaseline.archetype, "customer-self-service");
+});
+
+test("parseTestIntelligenceRunArgs: --coverage-baseline-update without --coverage-baseline-archetype is rejected", () => {
+  assert.throws(
+    () =>
+      parseTestIntelligenceRunArgs(
+        [
+          "--figma-json-file",
+          "/tmp/x.json",
+          "--coverage-baseline-update",
+        ],
+        {},
+      ),
+    /requires --coverage-baseline-archetype/,
+  );
+});
+
+test("parseTestIntelligenceRunArgs: --coverage-baseline-archetype rejects path-traversal segments", () => {
+  assert.throws(
+    () =>
+      parseTestIntelligenceRunArgs(
+        [
+          "--figma-json-file",
+          "/tmp/x.json",
+          "--coverage-baseline-archetype",
+          "../escape",
+        ],
+        {},
+      ),
+    /must match/,
+  );
+});
+
+test("parseTestIntelligenceRunArgs: WORKSPACE_TEST_SPACE_TENANT_ID env hydrates the default tenant", () => {
+  const opts = parseTestIntelligenceRunArgs(
+    ["--figma-json-file", "/tmp/x.json"],
+    { WORKSPACE_TEST_SPACE_TENANT_ID: "tenant-from-env" },
+  );
+  assert.equal(opts.coverageBaseline.tenantId, "tenant-from-env");
+});
