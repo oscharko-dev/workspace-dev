@@ -33,11 +33,6 @@ export const mergeGeneratedTestCaseLists = (
       "mergeGeneratedTestCaseLists: lists must share the same jobId",
     );
   }
-  if (primary.schemaVersion !== secondary.schemaVersion) {
-    throw new RangeError(
-      "mergeGeneratedTestCaseLists: lists must share the same schemaVersion",
-    );
-  }
 
   const seen = new Set<string>();
   const merged: GeneratedTestCase[] = [];

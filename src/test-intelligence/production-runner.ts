@@ -642,9 +642,10 @@ export interface RunFigmaToQcTestCasesInput {
    * generator path byte-for-byte. `diversityPasses: 2` enables two
    * deterministic generator passes that run in parallel with distinct bias
    * hints and seeds before their outputs are merged downstream.
+   * Values other than `1` or `2` are rejected at runtime.
    */
   generation?: {
-    readonly diversityPasses?: 1 | 2;
+    readonly diversityPasses?: number;
   };
 }
 
@@ -3697,7 +3698,7 @@ const buildPromptSuffixSections = (
   intent: BusinessTestIntentIr,
   policyProfileId: string,
   hasCustomContextMarkdown: boolean = false,
-  diversityBias: string | undefined = undefined,
+  diversityBias?: string,
 ): CompilePromptSuffixSection[] => {
   const screenSummary = intent.screens.map((screen) => ({
     screenId: screen.screenId,
