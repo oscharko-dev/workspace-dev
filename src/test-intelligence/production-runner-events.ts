@@ -17,6 +17,13 @@
  * The closed set of phase identifiers a runner emits. Adding a new phase
  * is a contract change — bump CONTRACT_VERSION.
  */
+import type {
+  Attributes,
+  AttributeValue,
+  Meter,
+  Tracer,
+} from "@opentelemetry/api";
+
 export const PRODUCTION_RUNNER_EVENT_PHASES = [
   "intent_derivation_started",
   "intent_derivation_complete",
@@ -79,6 +86,249 @@ export interface ProductionRunnerEvent {
  * errors (the runner should not be liable for sink misbehaviour).
  */
 export type ProductionRunnerEventSink = (event: ProductionRunnerEvent) => void;
+
+export interface ProductionRunnerOpenTelemetrySinkOptions {
+  tracer?: Tracer;
+  meter?: Meter;
+}
+
+export const PRODUCTION_RUNNER_OTEL_SPAN_NAME_PREFIX =
+  "workspace.test_intelligence.production_runner";
+export const PRODUCTION_RUNNER_OTEL_PHASE_COUNTER_NAME =
+  "workspace.test_intelligence.production_runner.phase_total";
+
+type ProductionRunnerOtelSeverity = "info" | "warn" | "error";
+type ProductionRunnerOtelAgentRole =
+  | "pipeline"
+  | "test_generation"
+  | "visual_generation"
+  | "repair_loop";
+
+interface ProductionRunnerOtelContext {
+  readonly modelDeployment: string;
+  readonly promptHash: string;
+  readonly verdict: string;
+  readonly attemptNo: number;
+}
+
+const DEFAULT_OTEL_CONTEXT: ProductionRunnerOtelContext = {
+  modelDeployment: "none",
+  promptHash: "none",
+  verdict: "pending",
+  attemptNo: 1,
+};
+
+const primitiveToAttribute = (
+  value: ProductionRunnerEventDetailValue,
+): AttributeValue | undefined => {
+  if (value === null || value === undefined) return undefined;
+  if (
+    typeof value === "string" ||
+    typeof value === "number" ||
+    typeof value === "boolean"
+  ) {
+    return value;
+  }
+  if (Array.isArray(value)) {
+    const serialized = value.flatMap((entry) => {
+      if (
+        typeof entry === "string" ||
+        typeof entry === "number" ||
+        typeof entry === "boolean"
+      ) {
+        return [String(entry)];
+      }
+      return [];
+    });
+    return serialized.length > 0 ? serialized : undefined;
+  }
+  return undefined;
+};
+
+const toAttemptNo = (
+  value: ProductionRunnerEventDetailValue | undefined,
+): number | undefined => {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return Math.max(1, Math.trunc(value));
+  }
+  if (value === "a") return 1;
+  if (value === "b") return 2;
+  return undefined;
+};
+
+const toVerdict = (
+  value: ProductionRunnerEventDetailValue | undefined,
+): string | undefined => {
+  if (typeof value === "string" && value.length > 0) {
+    return value;
+  }
+  if (typeof value === "boolean") {
+    return value ? "accepted" : "blocked";
+  }
+  return undefined;
+};
+
+const resolveAgentRole = (
+  phase: ProductionRunnerEventPhase,
+): ProductionRunnerOtelAgentRole => {
+  if (
+    phase === "visual_sidecar_started" ||
+    phase === "visual_sidecar_complete" ||
+    phase === "visual_sidecar_skipped"
+  ) {
+    return "visual_generation";
+  }
+  if (phase === "repair_loop_iteration") {
+    return "repair_loop";
+  }
+  if (
+    phase === "prompt_compiled" ||
+    phase === "llm_gateway_request" ||
+    phase === "llm_gateway_response" ||
+    phase === "replay_cache_hit" ||
+    phase === "cancelled" ||
+    phase === "validation_started" ||
+    phase === "validation_complete" ||
+    phase === "policy_decision" ||
+    phase === "export_started" ||
+    phase === "export_complete" ||
+    phase === "evidence_sealed" ||
+    phase === "finops_recorded"
+  ) {
+    return "test_generation";
+  }
+  return "pipeline";
+};
+
+const resolveSeverity = (
+  event: ProductionRunnerEvent,
+): ProductionRunnerOtelSeverity => {
+  if (event.phase === "cancelled") return "warn";
+  if (
+    event.phase === "visual_sidecar_complete" &&
+    event.details?.outcome === "refusal"
+  ) {
+    return "warn";
+  }
+  if (
+    event.phase === "llm_gateway_response" &&
+    typeof event.details?.outcome === "string" &&
+    event.details.outcome !== "success"
+  ) {
+    return "error";
+  }
+  if (
+    (event.phase === "validation_complete" || event.phase === "policy_decision") &&
+    event.details?.blocked === true
+  ) {
+    return "warn";
+  }
+  if (event.phase === "repair_loop_iteration") return "warn";
+  return "info";
+};
+
+const nextOtelContext = (
+  previous: ProductionRunnerOtelContext,
+  event: ProductionRunnerEvent,
+): ProductionRunnerOtelContext => {
+  const promptHash =
+    typeof event.details?.promptHash === "string"
+      ? event.details.promptHash
+      : previous.promptHash;
+  const modelDeployment =
+    (typeof event.details?.selectedDeployment === "string"
+      ? event.details.selectedDeployment
+      : undefined) ??
+    (typeof event.details?.deployment === "string"
+      ? event.details.deployment
+      : undefined) ??
+    previous.modelDeployment;
+  const verdict =
+    toVerdict(event.details?.verdict) ??
+    (event.phase === "policy_decision"
+      ? event.details?.blocked === true
+        ? "blocked"
+        : event.details?.blocked === false
+          ? "accepted"
+          : undefined
+      : undefined) ??
+    (event.phase === "visual_sidecar_complete"
+      ? toVerdict(event.details?.outcome)
+      : undefined) ??
+    (event.phase === "llm_gateway_response"
+      ? toVerdict(event.details?.outcome)
+      : undefined) ??
+    previous.verdict;
+  const attemptNo =
+    toAttemptNo(event.details?.attemptNo) ??
+    toAttemptNo(event.details?.iteration) ??
+    toAttemptNo(event.details?.passId) ??
+    previous.attemptNo;
+  return {
+    modelDeployment,
+    promptHash,
+    verdict,
+    attemptNo,
+  };
+};
+
+export const createProductionRunnerOpenTelemetrySink = (
+  options: ProductionRunnerOpenTelemetrySinkOptions,
+): ProductionRunnerEventSink | undefined => {
+  if (options.tracer === undefined && options.meter === undefined) {
+    return undefined;
+  }
+  const phaseCounter =
+    options.meter?.createCounter(PRODUCTION_RUNNER_OTEL_PHASE_COUNTER_NAME, {
+      description:
+        "Count of emitted test-intelligence production-runner pipeline phase events.",
+      unit: "{event}",
+    }) ?? undefined;
+  let context = DEFAULT_OTEL_CONTEXT;
+  return (event) => {
+    context = nextOtelContext(context, event);
+    const attributes: Attributes = {
+      "workspace.test_intelligence.phase": event.phase,
+      "workspace.test_intelligence.severity": resolveSeverity(event),
+      "workspace.test_intelligence.agent_role": resolveAgentRole(event.phase),
+      "workspace.test_intelligence.model_deployment": context.modelDeployment,
+      "workspace.test_intelligence.prompt_hash": context.promptHash,
+      "workspace.test_intelligence.verdict": context.verdict,
+      "workspace.test_intelligence.attempt_no": context.attemptNo,
+    };
+    for (const [key, value] of Object.entries(event.details ?? {})) {
+      const attributeValue = primitiveToAttribute(value);
+      if (attributeValue === undefined) continue;
+      attributes[`workspace.test_intelligence.event.${key}`] = attributeValue;
+    }
+
+    if (options.tracer !== undefined) {
+      const span = options.tracer.startSpan(
+        `${PRODUCTION_RUNNER_OTEL_SPAN_NAME_PREFIX}.${event.phase}`,
+        {
+          attributes,
+          startTime: event.timestamp,
+        },
+      );
+      span.end(event.timestamp);
+    }
+    phaseCounter?.add(1, attributes);
+  };
+};
+
+export const composeProductionRunnerEventSinks = (
+  ...sinks: Array<ProductionRunnerEventSink | undefined>
+): ProductionRunnerEventSink | undefined => {
+  const activeSinks = sinks.filter(
+    (sink): sink is ProductionRunnerEventSink => sink !== undefined,
+  );
+  if (activeSinks.length === 0) return undefined;
+  return (event) => {
+    for (const sink of activeSinks) {
+      sink(event);
+    }
+  };
+};
 
 /**
  * Serialize an event to a JSON string suitable for an SSE `data:` line.

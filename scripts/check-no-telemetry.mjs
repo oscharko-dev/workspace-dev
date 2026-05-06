@@ -113,8 +113,14 @@ const ALLOWED_FILES = new Set([
   // The destination is supplied by the operator via `VITE_PERF_ENDPOINT`;
   // no vendor SDK is bundled and the stub no-ops when unset.
   "template/react-mui-app/src/performance/report-web-vitals.ts",
+  // Issue #1945: operator-supplied OpenTelemetry sink. The runner only emits
+  // spans/counters when the caller injects a tracer or meter; no exporter,
+  // provider, or network transport is created automatically.
+  "src/test-intelligence/production-runner-events.ts",
   "scripts/check-no-telemetry.mjs", // Guard itself; must not be scanned
 ]);
+
+const isTelemetryAllowlistedFile = (relativePath) => ALLOWED_FILES.has(relativePath);
 
 const hasTestSuffix = (fileName) => {
   return TEST_FILE_SUFFIXES.some((suffix) => fileName.endsWith(suffix));
@@ -274,7 +280,7 @@ const main = async () => {
 
   for (const filePath of files) {
     const relativePath = toRelativePosix(filePath);
-    if (ALLOWED_FILES.has(relativePath)) {
+    if (isTelemetryAllowlistedFile(relativePath)) {
       continue;
     }
     const content = await readFile(filePath, "utf8");
@@ -316,6 +322,7 @@ export {
   hasTestSuffix,
   hasIncludedExtension,
   isSafeDestination,
+  isTelemetryAllowlistedFile,
   resolveScanRoots,
   parseArgs as parseNoTelemetryArgs,
 };

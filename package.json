@@ -164,9 +164,13 @@
     "prepublishOnly": "pnpm run release:quality-gates:publish-lifecycle"
   },
   "peerDependencies": {
+    "@opentelemetry/api": "^1.9.0",
     "typescript": ">=5.0.0"
   },
   "peerDependenciesMeta": {
+    "@opentelemetry/api": {
+      "optional": true
+    },
     "typescript": {
       "optional": true
     }
@@ -179,6 +183,7 @@
     "@eslint/js": "^9.39.1",
     "@figma/plugin-typings": "1.124.0",
     "@hookform/resolvers": "^5.2.2",
+    "@opentelemetry/api": "^1.9.1",
     "@playwright/test": "^1.59.1",
     "@size-limit/file": "^12.1.0",
     "@stryker-mutator/core": "^9.6.1",

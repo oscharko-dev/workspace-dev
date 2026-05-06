@@ -944,6 +944,9 @@ UI alone.
 The package keeps its zero-telemetry posture: no test-intelligence code path
 emits analytics, usage metrics, behavioral telemetry, or unsolicited diagnostic
 beacons. See [ZERO_TELEMETRY.md](../ZERO_TELEMETRY.md).
+When an operator explicitly supplies an OpenTelemetry tracer or meter to the
+production runner, the emitted span and counter contract is documented in
+[docs/test-intelligence-observability.md](./test-intelligence-observability.md).
 
 ## 11. Secret handling
 

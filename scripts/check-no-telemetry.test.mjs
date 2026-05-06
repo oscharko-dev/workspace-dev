@@ -5,6 +5,7 @@ import {
   hasTestSuffix,
   hasIncludedExtension,
   isSafeDestination,
+  isTelemetryAllowlistedFile,
   resolveScanRoots,
   parseNoTelemetryArgs,
 } from "./check-no-telemetry.mjs";
@@ -58,6 +59,17 @@ test("resolveScanRoots: selects template roots for the requested profile", () =>
   assert.ok(!defaultRoots.includes("template/react-mui-app"));
   assert.ok(rocketRoots.includes("template/react-mui-app"));
   assert.ok(!rocketRoots.includes("template/react-tailwind-app"));
+});
+
+test("isTelemetryAllowlistedFile: only exempts audited operator-supplied telemetry seams", () => {
+  assert.strictEqual(
+    isTelemetryAllowlistedFile("src/test-intelligence/production-runner-events.ts"),
+    true,
+  );
+  assert.strictEqual(
+    isTelemetryAllowlistedFile("src/test-intelligence/production-runner.ts"),
+    false,
+  );
 });
 
 test("parseNoTelemetryArgs: defaults to all build profiles and normalizes aliases", () => {

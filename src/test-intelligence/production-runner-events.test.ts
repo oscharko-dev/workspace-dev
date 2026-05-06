@@ -7,7 +7,11 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  composeProductionRunnerEventSinks,
+  createProductionRunnerOpenTelemetrySink,
   PRODUCTION_RUNNER_EVENT_PHASES,
+  PRODUCTION_RUNNER_OTEL_PHASE_COUNTER_NAME,
+  PRODUCTION_RUNNER_OTEL_SPAN_NAME_PREFIX,
   RUNNER_EVENT_BUS_BUFFER_LIMIT,
   createRunnerEventBus,
   serializeRunnerEvent,
@@ -22,6 +26,54 @@ const sampleEvent = (
   timestamp: 1000,
   ...overrides,
 });
+
+const createFakeTracer = () => {
+  const spans: Array<{
+    name: string;
+    attributes?: Record<string, unknown>;
+    startTime?: number;
+    endTime?: number;
+  }> = [];
+  return {
+    spans,
+    tracer: {
+      startSpan(name: string, options?: { attributes?: Record<string, unknown>; startTime?: number }) {
+        const span = {
+          name,
+          attributes: options?.attributes,
+          startTime: options?.startTime,
+          endTime: undefined as number | undefined,
+        };
+        spans.push(span);
+        return {
+          end(endTime?: number) {
+            span.endTime = endTime;
+          },
+        };
+      },
+    },
+  };
+};
+
+const createFakeMeter = () => {
+  const counters: Array<{
+    name: string;
+    value: number;
+    attributes?: Record<string, unknown>;
+  }> = [];
+  return {
+    counters,
+    meter: {
+      createCounter(name: string) {
+        return {
+          add(value: number, attributes?: Record<string, unknown>) {
+            counters.push({ name, value, attributes });
+          },
+        };
+      },
+    },
+  };
+};
 
 test("event phases form a stable, non-empty enumeration", () => {
   assert.ok(PRODUCTION_RUNNER_EVENT_PHASES.length > 0);
@@ -160,4 +212,75 @@ test("createRunnerEventBus isolates listener errors", () => {
   bus.subscribe("job-iso", (e) => observed.push(e));
   bus.publish("job-iso", sampleEvent());
   assert.equal(observed.length, 1);
+});
+
+test("createProductionRunnerOpenTelemetrySink returns undefined when no sink is supplied", () => {
+  assert.equal(createProductionRunnerOpenTelemetrySink({}), undefined);
+});
+
+test("createProductionRunnerOpenTelemetrySink emits stable span and counter attributes", () => {
+  const { spans, tracer } = createFakeTracer();
+  const { counters, meter } = createFakeMeter();
+  const sink = createProductionRunnerOpenTelemetrySink({ tracer, meter });
+  assert.ok(sink);
+  sink!(
+    sampleEvent({
+      phase: "prompt_compiled",
+      details: { promptHash: "prompt-123", maxOutputTokens: 4000 },
+    }),
+  );
+  sink!(
+    sampleEvent({
+      phase: "policy_decision",
+      timestamp: 1010,
+      details: { blocked: true, approved: 0, blockedCount: 1 },
+    }),
+  );
+
+  assert.equal(spans.length, 2);
+  assert.equal(
+    spans[0]?.name,
+    `${PRODUCTION_RUNNER_OTEL_SPAN_NAME_PREFIX}.prompt_compiled`,
+  );
+  assert.equal(
+    spans[1]?.name,
+    `${PRODUCTION_RUNNER_OTEL_SPAN_NAME_PREFIX}.policy_decision`,
+  );
+  assert.equal(
+    spans[0]?.attributes?.["workspace.test_intelligence.prompt_hash"],
+    "prompt-123",
+  );
+  assert.equal(
+    spans[1]?.attributes?.["workspace.test_intelligence.prompt_hash"],
+    "prompt-123",
+  );
+  assert.equal(
+    spans[1]?.attributes?.["workspace.test_intelligence.verdict"],
+    "blocked",
+  );
+  assert.equal(
+    spans[1]?.attributes?.["workspace.test_intelligence.severity"],
+    "warn",
+  );
+  assert.equal(spans[0]?.startTime, 1000);
+  assert.equal(spans[1]?.endTime, 1010);
+
+  assert.equal(counters.length, 2);
+  assert.equal(counters[0]?.name, PRODUCTION_RUNNER_OTEL_PHASE_COUNTER_NAME);
+  assert.equal(
+    counters[1]?.attributes?.["workspace.test_intelligence.phase"],
+    "policy_decision",
+  );
+});
+
+test("composeProductionRunnerEventSinks fans out to each active sink", () => {
+  const observed: string[] = [];
+  const sink = composeProductionRunnerEventSinks(
+    (event) => observed.push(`a:${event.phase}`),
+    undefined,
+    (event) => observed.push(`b:${event.phase}`),
+  );
+  assert.ok(sink);
+  sink!(sampleEvent({ phase: "validation_started" }));
+  assert.deepEqual(observed, ["a:validation_started", "b:validation_started"]);
 });

@@ -936,14 +936,19 @@ export {
   type FinOpsResolvedRequestLimits,
 } from "./finops-budget.js";
 export {
+  composeProductionRunnerEventSinks,
+  createProductionRunnerOpenTelemetrySink,
   createRunnerEventBus,
   PRODUCTION_RUNNER_EVENT_PHASES,
+  PRODUCTION_RUNNER_OTEL_PHASE_COUNTER_NAME,
+  PRODUCTION_RUNNER_OTEL_SPAN_NAME_PREFIX,
   RUNNER_EVENT_BUS_BUFFER_LIMIT,
   serializeRunnerEvent,
   type ProductionRunnerEvent,
   type ProductionRunnerEventDetailValue,
   type ProductionRunnerEventPhase,
   type ProductionRunnerEventSink,
+  type ProductionRunnerOpenTelemetrySinkOptions,
   type RunnerEventBus,
 } from "./production-runner-events.js";
 export {

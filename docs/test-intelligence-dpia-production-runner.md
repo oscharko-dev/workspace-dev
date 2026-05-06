@@ -24,6 +24,9 @@ non-test-intelligence features (covered by the existing DPIA bundle).
 Cross-references: operational procedures, refusal codes, and break-glass
 switches are in
 [`docs/test-intelligence-operator-runbook.md`](./test-intelligence-operator-runbook.md).
+The optional customer-observability contract for operator-supplied
+OpenTelemetry tracers and meters is documented in
+[`docs/test-intelligence-observability.md`](./test-intelligence-observability.md).
 The closing-gate policy for production-wired claims is in
 [`docs/test-intelligence-live-e2e.md`](./test-intelligence-live-e2e.md).
 Contract changes that touch any field documented here follow the
