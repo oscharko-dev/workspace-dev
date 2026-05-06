@@ -12,6 +12,7 @@ import {
   type HallucinationFinding,
   type LlmGenerationRequest,
   type LlmGenerationResult,
+  type TenantScope,
   type VisualMismatch,
   type VisualSidecarCaptureInput,
   type VisualSidecarFallbackReason,
@@ -19,6 +20,7 @@ import {
 import { sanitizeErrorMessage } from "../error-sanitization.js";
 import { canonicalJson, sha256Hex } from "./content-hash.js";
 import type { LlmGatewayClientBundle } from "./llm-gateway-bundle.js";
+import { resolveTenantScopeSegments } from "./replay-cache.js";
 
 const RESPONSE_SCHEMA_NAME = "workspace-dev-faithfulness-judge-v1" as const;
 const MAX_MESSAGE_LENGTH = 240;
@@ -177,38 +179,57 @@ export const createMemoryFaithfulnessJudgeCache =
     };
   };
 
+/**
+ * Filesystem Faithfulness-Judge cache (Issue #1944, tenant-scoped).
+ *
+ * Files are stored under
+ * `<rootDir>/<tenantId>/<environmentId>/<projectId>/<sha256-digest>.faithfulness-judge.json`.
+ * The cache instance is bound to exactly one `tenantScope` at construction
+ * time; cross-tenant reads are denied at the loader level.
+ */
 export const createFileSystemFaithfulnessJudgeCache = (
   rootDir: string,
-): FaithfulnessJudgeReplayCache => ({
-  async lookup(key) {
-    const digest = sha256Hex(key);
-    const path = join(rootDir, `${digest}.faithfulness-judge.json`);
-    let raw: string;
-    try {
-      raw = await readFile(path, "utf8");
-    } catch (error) {
-      if (isNotFoundError(error)) return { hit: false, key: digest };
-      throw error;
-    }
-    return { hit: true, entry: JSON.parse(raw) as FaithfulnessJudgeCacheEntry };
-  },
-  async store(key, verdict) {
-    const digest = sha256Hex(key);
-    const path = join(rootDir, `${digest}.faithfulness-judge.json`);
-    const tmpPath = `${path}.${process.pid}.tmp`;
-    await mkdir(dirname(path), { recursive: true });
-    await writeFile(
-      tmpPath,
-      canonicalJson({
-        key: digest,
-        storedAt: new Date(0).toISOString(),
-        verdict,
-      } satisfies FaithfulnessJudgeCacheEntry),
-      "utf8",
-    );
-    await rename(tmpPath, path);
-  },
-});
+  options: { tenantScope: TenantScope },
+): FaithfulnessJudgeReplayCache => {
+  const segments = resolveTenantScopeSegments(options.tenantScope);
+  const scopeDir = join(rootDir, ...segments);
+  const fileFor = (digest: string): string =>
+    join(scopeDir, `${digest}.faithfulness-judge.json`);
+
+  return {
+    async lookup(key) {
+      const digest = sha256Hex(key);
+      const path = fileFor(digest);
+      let raw: string;
+      try {
+        raw = await readFile(path, "utf8");
+      } catch (error) {
+        if (isNotFoundError(error)) return { hit: false, key: digest };
+        throw error;
+      }
+      return {
+        hit: true,
+        entry: JSON.parse(raw) as FaithfulnessJudgeCacheEntry,
+      };
+    },
+    async store(key, verdict) {
+      const digest = sha256Hex(key);
+      const path = fileFor(digest);
+      const tmpPath = `${path}.${process.pid}.tmp`;
+      await mkdir(dirname(path), { recursive: true });
+      await writeFile(
+        tmpPath,
+        canonicalJson({
+          key: digest,
+          storedAt: new Date(0).toISOString(),
+          verdict,
+        } satisfies FaithfulnessJudgeCacheEntry),
+        "utf8",
+      );
+      await rename(tmpPath, path);
+    },
+  };
+};
 
 export const runFaithfulnessJudge = async (
   input: RunFaithfulnessJudgeInput,

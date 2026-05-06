@@ -83,6 +83,7 @@ import {
   type RegulatoryRelevance,
   type RegulatoryRelevanceDomain,
   type JudgeVerdict,
+  type TenantScope,
   type TestCaseLevel,
   type TestCasePolicyReport,
   type TestCasePriority,
@@ -93,6 +94,7 @@ import {
   type TestCaseCoverageReport,
   type VisualSidecarFailureClass,
   type VisualSidecarResult,
+  DEFAULT_TENANT_SCOPE,
   RISK_RANKING_ARTIFACT_FILENAME,
 } from "../contracts/index.js";
 import { sanitizeErrorMessage } from "../error-sanitization.js";
@@ -655,20 +657,24 @@ export interface RunFigmaToQcTestCasesInput {
   harness?: ProductionRunnerHarnessConfig;
   /**
    * Optional replay cache (Issue #1739). When omitted the runner creates a
-   * disk-backed, token-scoped, LRU-bounded cache under
-   * `<outputRoot>/test-intelligence/replay-cache/<replayCacheTokenScope>/`.
+   * disk-backed, tenant-scoped, LRU-bounded cache under
+   * `<outputRoot>/test-intelligence/replay-cache/<tenantId>/<environmentId>/<projectId>/`.
    * Pass an explicit cache (e.g. `createMemoryReplayCache()`) to override the
    * default — useful in tests and dry-run pipelines.
    */
   replayCache?: ReplayCache;
   /**
-   * Token scope key for the default disk-backed replay cache (Issue #1739).
-   * Should be a non-reversible identifier derived from the operator's auth
-   * credential, e.g. `sha256(apiToken).slice(0, 16)`.  Defaults to
-   * `"default"` when omitted.  Has no effect when `replayCache` is supplied
+   * Tenant scope (Issue #1944) for the default disk-backed replay cache and
+   * for all judge filesystem caches. Cross-tenant cache reads are denied at
+   * the loader level: each cache is bound to exactly this scope at
+   * construction time and exposes no API to address paths outside its
+   * `<tenantId>/<environmentId>/<projectId>/…` directory. Defaults to
+   * {@link DEFAULT_TENANT_SCOPE} (`tenantId: "default"`) when omitted, which
+   * preserves single-tenant behaviour for callers that have not yet adopted
+   * the structured scope. Has no effect when `replayCache` is supplied
    * explicitly.
    */
-  replayCacheTokenScope?: string;
+  replayCacheTenantScope?: TenantScope;
   /**
    * Optional Markdown supporting-context body (Issue #1894). When supplied
    * the runner canonicalizes the Markdown via
@@ -1265,13 +1271,17 @@ export const runFigmaToQcTestCases = async (
     finopsLimits.maxWallClockMs ?? input.llm.maxWallClockMs;
   const effectiveMaxRetries = finopsLimits.maxRetries;
 
-  // 5.5. Replay cache (Issue #1739). Check before any LLM dispatch. On a hit
-  // the generate callback is never invoked and tokens are saved entirely.
+  // 5.5. Replay cache (Issues #1739, #1944). Check before any LLM dispatch.
+  // On a hit the generate callback is never invoked and tokens are saved
+  // entirely. The tenant scope partitions the cache directory so two
+  // tenants cannot share entries even with identical key digests.
+  const tenantScope: TenantScope =
+    input.replayCacheTenantScope ?? DEFAULT_TENANT_SCOPE;
   const replayCache: ReplayCache =
     input.replayCache ??
     createPersistentReplayCache(
       join(input.outputRoot, "test-intelligence", "replay-cache"),
-      { tokenScope: input.replayCacheTokenScope ?? "default" },
+      { tenantScope },
     );
   // Declared here so the generate callback can set them via closure on the
   // cache-miss path; all remain undefined on cache hits (same as mode="off").
@@ -1623,13 +1633,8 @@ export const runFigmaToQcTestCases = async (
           generationExecutions[1]!.cacheExecResult.testCases,
         ]);
   const logicJudgeCache = createFileSystemLogicJudgeCache(
-    join(
-      input.outputRoot,
-      "test-intelligence",
-      "replay-cache",
-      input.replayCacheTokenScope ?? "default",
-      "logic-judge",
-    ),
+    join(input.outputRoot, "test-intelligence", "replay-cache", "logic-judge"),
+    { tenantScope },
   );
   const logicJudgeKnownNavigationIds = wireIntent.detectedNavigation.map(
     (navigation) => navigation.id,
@@ -1739,13 +1744,8 @@ export const runFigmaToQcTestCases = async (
   }
 
   const a11yJudgeCache = createFileSystemA11yJudgeCache(
-    join(
-      input.outputRoot,
-      "test-intelligence",
-      "replay-cache",
-      input.replayCacheTokenScope ?? "default",
-      "a11y-judge",
-    ),
+    join(input.outputRoot, "test-intelligence", "replay-cache", "a11y-judge"),
+    { tenantScope },
   );
   let a11yJudgeResult: RunA11yJudgeResult | undefined =
     visualCaptures !== undefined && input.llm.bundle?.a11yJudge !== undefined
@@ -1805,9 +1805,9 @@ export const runFigmaToQcTestCases = async (
       input.outputRoot,
       "test-intelligence",
       "replay-cache",
-      input.replayCacheTokenScope ?? "default",
       "faithfulness-judge",
     ),
+    { tenantScope },
   );
   let faithfulnessJudgeResult: RunFaithfulnessJudgeResult | undefined =
     visualCaptures !== undefined && input.llm.bundle !== undefined

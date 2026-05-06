@@ -15,6 +15,7 @@ import {
   type LogicJudgeFindingSeverity,
   type LogicJudgeVerdictLabel,
   type RepairInstruction,
+  type TenantScope,
   type TestDesignModel,
   type LlmGenerationRequest,
   type LlmGenerationResult,
@@ -23,6 +24,7 @@ import { sanitizeErrorMessage } from "../error-sanitization.js";
 import { GENERATOR_FORM_SCREEN_A11Y_REPAIR_INSTRUCTION } from "./agent-role-profile.js";
 import { canonicalJson, sha256Hex } from "./content-hash.js";
 import type { LlmGatewayClient } from "./llm-gateway.js";
+import { resolveTenantScopeSegments } from "./replay-cache.js";
 
 const RESPONSE_SCHEMA_NAME = "workspace-dev-logic-judge-v1" as const;
 const MAX_MESSAGE_LENGTH = 240;
@@ -261,39 +263,56 @@ export const createMemoryLogicJudgeCache = (): LogicJudgeReplayCache => {
   };
 };
 
+/**
+ * Filesystem Logic-Judge cache (Issue #1944, tenant-scoped).
+ *
+ * Files are stored under
+ * `<rootDir>/<tenantId>/<environmentId>/<projectId>/<sha256-digest>.logic-judge.json`.
+ * The cache instance is bound to exactly one `tenantScope` at construction
+ * time; cross-tenant reads are denied at the loader level because the cache
+ * exposes no API to address paths outside its scope directory.
+ */
 export const createFileSystemLogicJudgeCache = (
   rootDir: string,
-): LogicJudgeReplayCache => ({
-  async lookup(key) {
-    const digest = sha256Hex(key);
-    const path = join(rootDir, `${digest}.logic-judge.json`);
-    let raw: string;
-    try {
-      raw = await readFile(path, "utf8");
-    } catch (error) {
-      if (isNotFoundError(error)) return { hit: false, key: digest };
-      throw error;
-    }
-    const parsed = JSON.parse(raw) as LogicJudgeCacheEntry;
-    return { hit: true, entry: parsed };
-  },
-  async store(key, verdict) {
-    const digest = sha256Hex(key);
-    const path = join(rootDir, `${digest}.logic-judge.json`);
-    const tmpPath = `${path}.${process.pid}.tmp`;
-    await mkdir(dirname(path), { recursive: true });
-    await writeFile(
-      tmpPath,
-      canonicalJson({
-        key: digest,
-        storedAt: new Date(0).toISOString(),
-        verdict,
-      } satisfies LogicJudgeCacheEntry),
-      "utf8",
-    );
-    await rename(tmpPath, path);
-  },
-});
+  options: { tenantScope: TenantScope },
+): LogicJudgeReplayCache => {
+  const segments = resolveTenantScopeSegments(options.tenantScope);
+  const scopeDir = join(rootDir, ...segments);
+  const fileFor = (digest: string): string =>
+    join(scopeDir, `${digest}.logic-judge.json`);
+
+  return {
+    async lookup(key) {
+      const digest = sha256Hex(key);
+      const path = fileFor(digest);
+      let raw: string;
+      try {
+        raw = await readFile(path, "utf8");
+      } catch (error) {
+        if (isNotFoundError(error)) return { hit: false, key: digest };
+        throw error;
+      }
+      const parsed = JSON.parse(raw) as LogicJudgeCacheEntry;
+      return { hit: true, entry: parsed };
+    },
+    async store(key, verdict) {
+      const digest = sha256Hex(key);
+      const path = fileFor(digest);
+      const tmpPath = `${path}.${process.pid}.tmp`;
+      await mkdir(dirname(path), { recursive: true });
+      await writeFile(
+        tmpPath,
+        canonicalJson({
+          key: digest,
+          storedAt: new Date(0).toISOString(),
+          verdict,
+        } satisfies LogicJudgeCacheEntry),
+        "utf8",
+      );
+      await rename(tmpPath, path);
+    },
+  };
+};
 
 export const runLogicJudge = async (
   input: RunLogicJudgeInput,

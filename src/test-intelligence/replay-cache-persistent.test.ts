@@ -160,35 +160,60 @@ test("persistent cache: constants have expected values", () => {
   );
 });
 
-test("persistent cache: throws on empty tokenScope", () => {
+test("persistent cache: throws on empty tenant scope segment", () => {
   assert.throws(
-    () => createPersistentReplayCache("/tmp/does-not-matter", { tokenScope: "" }),
+    () =>
+      createPersistentReplayCache("/tmp/does-not-matter", {
+        tenantScope: { tenantId: "", environmentId: "default" },
+      }),
     RangeError,
   );
+});
+
+test("persistent cache: rejects path-traversal tenant scope segments", () => {
+  for (const bad of ["..", ".", "a/b", "a\\b", "a\0b"]) {
+    assert.throws(
+      () =>
+        createPersistentReplayCache("/tmp/does-not-matter", {
+          tenantScope: { tenantId: bad, environmentId: "default" },
+        }),
+      RangeError,
+      `expected RangeError for tenantId=${JSON.stringify(bad)}`,
+    );
+  }
 });
 
 test("persistent cache: hit/miss correctness across simulated process restart", async () => {
   const root = await mkdtemp(join(tmpdir(), "wsd-persistent-cache-"));
   try {
-    const tokenScope = "scope-restart-test";
+    const tenantScope = {
+      tenantId: "tenant-restart",
+      environmentId: "prod",
+    } as const;
     const { cacheKey, cacheKeyDigest } = compileForFixture("job-restart");
     const list = buildList("job-restart");
 
     // First process: write to cache.
-    const cacheA = createPersistentReplayCache(root, { tokenScope });
+    const cacheA = createPersistentReplayCache(root, { tenantScope });
     const miss = await cacheA.lookup(cacheKey);
     assert.equal(miss.hit, false, "initial lookup must be a miss");
     await cacheA.store(cacheKey, list);
 
-    // Verify file exists on disk.
-    const filePath = join(root, tokenScope, `${cacheKeyDigest}.json`);
+    // Verify file exists on disk under <tenantId>/<envId>/<projectId>/.
+    const filePath = join(
+      root,
+      tenantScope.tenantId,
+      tenantScope.environmentId,
+      "default",
+      `${cacheKeyDigest}.json`,
+    );
     const raw = await readFile(filePath, "utf8");
     const parsed = JSON.parse(raw) as Record<string, unknown>;
     assert.equal(parsed["key"], cacheKeyDigest, "on-disk key matches digest");
 
     // Second process (simulated): create a fresh cache instance pointing to
     // the same rootDir — models a process restart where in-memory state is lost.
-    const cacheB = createPersistentReplayCache(root, { tokenScope });
+    const cacheB = createPersistentReplayCache(root, { tenantScope });
     const hit = await cacheB.lookup(cacheKey);
     assert.equal(hit.hit, true, "fresh instance must hit the persisted entry");
     if (hit.hit) {
@@ -202,11 +227,14 @@ test("persistent cache: hit/miss correctness across simulated process restart", 
 test("persistent cache: concurrent writes for the same key do not corrupt the entry", async () => {
   const root = await mkdtemp(join(tmpdir(), "wsd-persistent-cache-concurrent-"));
   try {
-    const tokenScope = "scope-concurrent";
+    const tenantScope = {
+      tenantId: "tenant-concurrent",
+      environmentId: "prod",
+    } as const;
     const { cacheKey } = compileForFixture("job-concurrent");
     const list = buildList("job-concurrent");
 
-    const cache = createPersistentReplayCache(root, { tokenScope });
+    const cache = createPersistentReplayCache(root, { tenantScope });
     // Two concurrent store calls — last rename wins; since content is
     // deterministic, both produce the same valid entry.
     await Promise.all([
@@ -225,36 +253,52 @@ test("persistent cache: concurrent writes for the same key do not corrupt the en
   }
 });
 
-test("persistent cache: token-scope isolation — two scopes cannot share entries", async () => {
+test("persistent cache: tenant-scope isolation — two scopes cannot share entries", async () => {
   const root = await mkdtemp(join(tmpdir(), "wsd-persistent-cache-scope-"));
   try {
     const { cacheKey } = compileForFixture("job-scope");
     const list = buildList("job-scope");
 
-    const cacheA = createPersistentReplayCache(root, { tokenScope: "scope-a" });
-    const cacheB = createPersistentReplayCache(root, { tokenScope: "scope-b" });
+    const cacheA = createPersistentReplayCache(root, {
+      tenantScope: { tenantId: "tenant-a", environmentId: "prod" },
+    });
+    const cacheB = createPersistentReplayCache(root, {
+      tenantScope: { tenantId: "tenant-b", environmentId: "prod" },
+    });
 
-    // Store in scope-a only.
+    // Store in tenant-a only.
     await cacheA.store(cacheKey, list);
 
-    // scope-a hits.
+    // tenant-a hits.
     const hitA = await cacheA.lookup(cacheKey);
-    assert.equal(hitA.hit, true, "scope-a must hit its own entry");
+    assert.equal(hitA.hit, true, "tenant-a must hit its own entry");
 
-    // scope-b misses — no cross-token bleed.
+    // tenant-b misses — no cross-tenant bleed.
     const missB = await cacheB.lookup(cacheKey);
     assert.equal(
       missB.hit,
       false,
-      "scope-b must not access scope-a's cache entry",
+      "tenant-b must not access tenant-a's cache entry",
     );
 
     // Verify separate on-disk directories.
     const digestA = computeReplayCacheKeyDigest(cacheKey);
-    const fileA = join(root, "scope-a", `${digestA}.json`);
-    const fileB = join(root, "scope-b", `${digestA}.json`);
-    await assert.doesNotReject(stat(fileA), "scope-a file must exist");
-    await assert.rejects(stat(fileB), "scope-b file must not exist");
+    const fileA = join(
+      root,
+      "tenant-a",
+      "prod",
+      "default",
+      `${digestA}.json`,
+    );
+    const fileB = join(
+      root,
+      "tenant-b",
+      "prod",
+      "default",
+      `${digestA}.json`,
+    );
+    await assert.doesNotReject(stat(fileA), "tenant-a file must exist");
+    await assert.rejects(stat(fileB), "tenant-b file must not exist");
   } finally {
     await rm(root, { recursive: true, force: true });
   }
@@ -263,11 +307,14 @@ test("persistent cache: token-scope isolation — two scopes cannot share entrie
 test("persistent cache: LRU eviction respects the byte budget", async () => {
   const root = await mkdtemp(join(tmpdir(), "wsd-persistent-cache-evict-"));
   try {
-    const tokenScope = "scope-evict";
+    const tenantScope = {
+      tenantId: "tenant-evict",
+      environmentId: "prod",
+    } as const;
 
     // Use a very small byteBudget (1 byte) so every store triggers eviction.
     const tinyBudgetCache = createPersistentReplayCache(root, {
-      tokenScope,
+      tenantScope,
       byteBudget: 1,
     });
 
@@ -306,7 +353,12 @@ test("persistent cache: LRU eviction respects the byte budget", async () => {
     // Either B is present (eviction removed A) or nothing is (B was also
     // removed, which is allowed when B > budget).
     // What must NOT happen: both A and B are present with combined size > 1.
-    const scopeDir = join(root, tokenScope);
+    const scopeDir = join(
+      root,
+      tenantScope.tenantId,
+      tenantScope.environmentId,
+      "default",
+    );
     const { readdir, stat: statFn } = await import("node:fs/promises");
     const entries = await readdir(scopeDir).catch(() => [] as string[]);
     const jsonFiles = entries.filter((e) => e.endsWith(".json"));
@@ -332,13 +384,21 @@ test("persistent cache: LRU eviction respects the byte budget", async () => {
 test("persistent cache: stale .tmp files are cleaned before a new write", async () => {
   const root = await mkdtemp(join(tmpdir(), "wsd-persistent-cache-stale-"));
   try {
-    const tokenScope = "scope-stale";
+    const tenantScope = {
+      tenantId: "tenant-stale",
+      environmentId: "prod",
+    } as const;
     const { cacheKey, cacheKeyDigest } = compileForFixture("job-stale");
     const list = buildList("job-stale");
     const { mkdir } = await import("node:fs/promises");
 
     // Create a fake stale .tmp file with a past mtime.
-    const scopeDir = join(root, tokenScope);
+    const scopeDir = join(
+      root,
+      tenantScope.tenantId,
+      tenantScope.environmentId,
+      "default",
+    );
     await mkdir(scopeDir, { recursive: true });
     const staleTmpPath = join(scopeDir, `${cacheKeyDigest}.99999.tmp`);
     await writeFile(staleTmpPath, "stale-content", "utf8");
@@ -349,7 +409,7 @@ test("persistent cache: stale .tmp files are cleaned before a new write", async 
 
     // Perform a store — the stale .tmp must be cleaned up.
     const cache = createPersistentReplayCache(root, {
-      tokenScope,
+      tenantScope,
       staleThresholdMs: 5 * 60 * 1000, // 5-minute threshold
     });
     await cache.store(cacheKey, list);
