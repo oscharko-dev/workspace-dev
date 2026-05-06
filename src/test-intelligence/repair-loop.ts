@@ -61,8 +61,7 @@ export const REPAIR_LOOP_DEFAULT_MAX_ITERATIONS = 3 as const;
 export const REPAIR_LOOP_MAX_ITERATIONS_HARD_CAP = 5 as const;
 
 /** Filename prefix for the repair planner per-iteration artifact. */
-export const REPAIR_PLANNER_ARTIFACT_PREFIX =
-  "repair_planner_iter_" as const;
+export const REPAIR_PLANNER_ARTIFACT_PREFIX = "repair_planner_iter_" as const;
 
 /** Filename prefix for the test_generation repair per-iteration artifact. */
 export const TEST_GENERATION_REPAIR_ARTIFACT_PREFIX =
@@ -404,9 +403,7 @@ const judgePanelRejected = (
   logic.verdict === "reject" ||
   (faithfulness !== undefined && faithfulness.verdict === "reject");
 
-const resolveMaxRepairIterations = (
-  requested: number | undefined,
-): number => {
+const resolveMaxRepairIterations = (requested: number | undefined): number => {
   const value = requested ?? REPAIR_LOOP_DEFAULT_MAX_ITERATIONS;
   if (!Number.isInteger(value) || value < 0) {
     throw new RangeError(
@@ -434,8 +431,7 @@ export const runRepairLoop = async (
   const initialIteration: RepairLoopIterationRecord = {
     iteration: 0,
     logicVerdict: input.initialLogicVerdict.verdict,
-    faithfulnessVerdict:
-      input.initialFaithfulnessVerdict?.verdict ?? "skipped",
+    faithfulnessVerdict: input.initialFaithfulnessVerdict?.verdict ?? "skipped",
     inputTokens: 0,
     outputTokens: 0,
     generatedCaseCount: input.initialList.testCases.length,
@@ -622,13 +618,22 @@ export const runRepairLoop = async (
       };
     }
 
-    // Issue #1939: convergence detection. When iteration K's verdict
-    // signature is identical to K-1's, the LLM is reproducing the same
-    // class of error and additional iterations would only burn tokens.
-    // Persist the trace for operator audit and short-circuit the loop.
+    // Issue #1939: convergence detection. When two consecutive *repair*
+    // iterations produce the same verdict signature, the LLM is
+    // reproducing the same class of error and additional iterations
+    // would only burn tokens. The detector requires at least two real
+    // repair attempts before declaring stall: comparing the first
+    // repair iteration (k=1) to the pre-repair initial state (iter 0)
+    // would fire whenever the initial-pass findings persist after a
+    // single regeneration, denying the LLM any honest opportunity to
+    // incorporate repair instructions. Stall therefore fires earliest
+    // at k=2, comparing iter[k] against iter[k-1] when both are
+    // post-repair entries.
     const previousIteration = iterations[iterations.length - 2];
     if (
+      k >= 2 &&
       previousIteration !== undefined &&
+      previousIteration.iteration >= 1 &&
       previousIteration.verdictSignature === iterationSignature
     ) {
       const trace: RepairLoopTraceArtifact = {

@@ -127,6 +127,28 @@ const isTruthyFlag = (value: string | undefined): boolean => {
   );
 };
 
+/**
+ * Parse a positive-safe-integer environment variable. Returns
+ * `undefined` when the variable is unset or empty so the runner falls
+ * back to its built-in default; throws
+ * {@link TestIntelligenceRunOperatorError} on a malformed value so the
+ * CLI emits a clean operator-facing error and exits 1.
+ */
+const parsePositiveIntegerEnv = (
+  value: string | undefined,
+): number | undefined => {
+  if (value === undefined) return undefined;
+  const trimmed = value.trim();
+  if (trimmed.length === 0) return undefined;
+  const parsed = Number(trimmed);
+  if (!Number.isSafeInteger(parsed) || parsed <= 0) {
+    throw new TestIntelligenceRunOperatorError(
+      `expected positive integer; got "${value}"`,
+    );
+  }
+  return parsed;
+};
+
 /** Parsed, validated flags for the test-intelligence run command. */
 export interface TestIntelligenceRunOptions {
   figmaUrl: string | undefined;
@@ -218,6 +240,15 @@ export interface TestIntelligenceRunOptions {
    */
   harnessMaxRepairIterations: number | undefined;
   /**
+   * Optional override for the Figma REST payload cap (bytes) consumed by
+   * the production runner. `undefined` → runner default (10 MiB). Operators
+   * working against real Banking-scale design files (~28 MiB JSON for a
+   * single fully-expanded frame) supply a higher value here on a per-job
+   * basis. Validated as a positive safe integer; out-of-range values are
+   * rejected before any network IO.
+   */
+  maxFigmaPayloadBytes: number | undefined;
+  /**
    * Coverage-baseline drift configuration (Issue #1950).
    *
    * When `archetype` is set, the post-run helper compares the candidate
@@ -280,6 +311,9 @@ export const parseTestIntelligenceRunArgs = (
   let harnessTestDepth: AgentHarnessTestDepth = "standard";
   let harnessRoleStepId: string | undefined;
   let harnessMaxRepairIterations: number | undefined;
+  let maxFigmaPayloadBytes: number | undefined = parsePositiveIntegerEnv(
+    env.WORKSPACE_TEST_SPACE_MAX_FIGMA_PAYLOAD_BYTES,
+  );
   let customContextMarkdownPath: string | undefined;
   let customerProfilePath: string | undefined;
   let diversityPasses: 1 | 2 = 1;
@@ -501,6 +535,24 @@ export const parseTestIntelligenceRunArgs = (
       continue;
     }
 
+    if (arg === "--max-figma-payload-bytes") {
+      const value = next?.trim();
+      if (!value) {
+        throw new TestIntelligenceRunOperatorError(
+          "--max-figma-payload-bytes requires a positive integer (bytes)",
+        );
+      }
+      const parsed = Number(value);
+      if (!Number.isSafeInteger(parsed) || parsed <= 0) {
+        throw new TestIntelligenceRunOperatorError(
+          `--max-figma-payload-bytes must be a positive integer; got ${value}`,
+        );
+      }
+      maxFigmaPayloadBytes = parsed;
+      index += 1;
+      continue;
+    }
+
     if (arg === "--custom-context-markdown") {
       const value = next?.trim();
       if (!value) {
@@ -646,6 +698,7 @@ export const parseTestIntelligenceRunArgs = (
     harnessTestDepth,
     harnessRoleStepId,
     harnessMaxRepairIterations,
+    maxFigmaPayloadBytes,
     customContextMarkdownPath,
     customerProfilePath,
     diversityPasses,
@@ -1436,7 +1489,10 @@ const formatCoverageBaselineSummaryLine = (
     return `  coverage baseline    : seeded (first run; ${baselineFile})`;
   }
   if (sync.evaluation.exceeded) {
-    const axes = sync.evaluation.findings.map((f) => f.axis).sort().join(", ");
+    const axes = sync.evaluation.findings
+      .map((f) => f.axis)
+      .sort()
+      .join(", ");
     return (
       `  coverage baseline    : drift exceeded ` +
       `${(sync.evaluation.threshold * 100).toFixed(0)}% on [${axes}] ` +
@@ -1720,6 +1776,9 @@ export const runTestIntelligenceCommand = async (
       maxWallClockMs: 240_000,
     },
     ...(finopsBudget !== undefined ? { finopsBudget } : {}),
+    ...(options.maxFigmaPayloadBytes !== undefined
+      ? { maxFigmaPayloadBytes: options.maxFigmaPayloadBytes }
+      : {}),
     ...(options.policyProfile !== undefined
       ? { policyProfileId: options.policyProfile }
       : {}),

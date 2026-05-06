@@ -619,6 +619,18 @@ export interface RunFigmaToQcTestCasesInput {
   outputRoot: string;
   llm: ProductionRunnerLlmConfig;
   /**
+   * Optional override for the maximum Figma REST payload accepted by the
+   * runner. Defaults to {@link MAX_FIGMA_PAYLOAD_BYTES} (10 MiB) which is
+   * defensive enough for synthetic fixtures and the live-E2E lane but too
+   * tight for real Banking-scale design files (the customer's Test-View-03
+   * frame ships ~28 MiB of REST JSON on its own). Operators with vetted
+   * private files can opt up to a higher ceiling on a per-job basis. The
+   * operator-supplied value is validated as a positive safe integer; an
+   * invalid value fails the job fast with `FIGMA_URL_REJECTED` before any
+   * network IO happens.
+   */
+  maxFigmaPayloadBytes?: number;
+  /**
    * Optional FinOps budget envelope (Issue #1740). When omitted the runner
    * uses {@link PRODUCTION_FINOPS_BUDGET_ENVELOPE}. When supplied the
    * operator value wins outright — the runner does NOT merge with the
@@ -907,8 +919,9 @@ export const runFigmaToQcTestCases = async (
     timestamp: monotonicMs(),
     details: { source: input.source.kind },
   });
-  const figmaFile = await resolveFigmaSource(input.source);
-  assertFigmaPayloadWithinLimit(figmaFile);
+  const figmaPayloadCap = resolveFigmaPayloadCap(input.maxFigmaPayloadBytes);
+  const figmaFile = await resolveFigmaSource(input.source, figmaPayloadCap);
+  assertFigmaPayloadWithinLimit(figmaFile, figmaPayloadCap);
   await mkdir(artifactDir, { recursive: true });
   const normalizedUntrusted = normalizeUntrustedContent({
     figma: { document: figmaFile.document },
@@ -1182,10 +1195,12 @@ export const runFigmaToQcTestCases = async (
         figmaSourceContentHash,
         markdownContentHash:
           customContextMarkdown?.markdownContentHash ??
-          (canonicalCustomerProfile?.contentHash ?? figmaSourceContentHash),
+          canonicalCustomerProfile?.contentHash ??
+          figmaSourceContentHash,
         plainContentHash:
           customContextMarkdown?.plainContentHash ??
-          (canonicalCustomerProfile?.contentHash ?? figmaSourceContentHash),
+          canonicalCustomerProfile?.contentHash ??
+          figmaSourceContentHash,
       })
     : undefined;
   const testDesignModel = buildTestDesignModel({
@@ -1259,8 +1274,7 @@ export const runFigmaToQcTestCases = async (
       result: coveragePlanResult.gatewayResult,
     });
   }
-  const riskRankerClient =
-    input.llm.bundle?.riskRanker ?? input.llm.riskRanker;
+  const riskRankerClient = input.llm.bundle?.riskRanker ?? input.llm.riskRanker;
   const riskRankerStartedAt =
     riskRankerClient === undefined ? undefined : Date.now();
   const riskRankingResult = await buildRiskRankingWithAugmentation({
@@ -1945,7 +1959,11 @@ export const runFigmaToQcTestCases = async (
           ? [buildA11yJudgeConsensusEntry(a11yJudgeResult.verdict)]
           : []),
         ...(faithfulnessJudgeResult !== undefined
-          ? [buildFaithfulnessJudgeConsensusEntry(faithfulnessJudgeResult.verdict)]
+          ? [
+              buildFaithfulnessJudgeConsensusEntry(
+                faithfulnessJudgeResult.verdict,
+              ),
+            ]
           : []),
       ],
     });
@@ -2030,17 +2048,17 @@ export const runFigmaToQcTestCases = async (
             if (llmResult.outcome !== "success") {
               throw new ProductionRunnerError({
                 failureClass: "LLM_GATEWAY_FAILED",
-                message:
-                  `Repair iteration ${iteration} generator failed: ${llmResult.errorClass}`,
+                message: `Repair iteration ${iteration} generator failed: ${llmResult.errorClass}`,
                 retryable: false,
               });
             }
-            const repairValidation = validateLlmDraftResponse(llmResult.content);
+            const repairValidation = validateLlmDraftResponse(
+              llmResult.content,
+            );
             if (!repairValidation.ok) {
               throw new ProductionRunnerError({
                 failureClass: "LLM_RESPONSE_INVALID",
-                message:
-                  `Repair iteration ${iteration} returned an invalid payload: ${repairValidation.message}`,
+                message: `Repair iteration ${iteration} returned an invalid payload: ${repairValidation.message}`,
                 retryable: false,
               });
             }
@@ -2071,7 +2089,9 @@ export const runFigmaToQcTestCases = async (
                     : {}),
                 }),
             );
-            repairCases.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+            repairCases.sort((a, b) =>
+              a.id < b.id ? -1 : a.id > b.id ? 1 : 0,
+            );
             const repairList: GeneratedTestCaseList = {
               schemaVersion: GENERATED_TEST_CASE_SCHEMA_VERSION,
               jobId: input.jobId,
@@ -2189,21 +2209,24 @@ export const runFigmaToQcTestCases = async (
                   ?.maxInputTokensPerRequest !== undefined
                   ? {
                       maxInputTokens:
-                        finopsBudget.roles.visual_primary.maxInputTokensPerRequest,
+                        finopsBudget.roles.visual_primary
+                          .maxInputTokensPerRequest,
                     }
                   : {}),
                 ...(finopsBudget.roles.visual_primary
                   ?.maxOutputTokensPerRequest !== undefined
                   ? {
                       maxOutputTokens:
-                        finopsBudget.roles.visual_primary.maxOutputTokensPerRequest,
+                        finopsBudget.roles.visual_primary
+                          .maxOutputTokensPerRequest,
                     }
                   : {}),
                 ...(finopsBudget.roles.visual_primary
                   ?.maxWallClockMsPerRequest !== undefined
                   ? {
                       maxWallClockMs:
-                        finopsBudget.roles.visual_primary.maxWallClockMsPerRequest,
+                        finopsBudget.roles.visual_primary
+                          .maxWallClockMsPerRequest,
                     }
                   : {}),
                 ...(finopsBudget.roles.visual_primary?.maxRetriesPerRequest !==
@@ -2245,7 +2268,8 @@ export const runFigmaToQcTestCases = async (
               : undefined,
           ),
           inputTokens: (usage.inputTokens ?? 0) + (a11yUsage.inputTokens ?? 0),
-          outputTokens: (usage.outputTokens ?? 0) + (a11yUsage.outputTokens ?? 0),
+          outputTokens:
+            (usage.outputTokens ?? 0) + (a11yUsage.outputTokens ?? 0),
         };
       },
       ...(faithfulnessSnapshot !== undefined &&
@@ -2402,8 +2426,7 @@ export const runFigmaToQcTestCases = async (
     // generic `judge_rejection` so operators can distinguish "the
     // judges keep rejecting" from "the LLM is stuck on the same error
     // class".
-    const stalled =
-      repairLoopResult?.outcome === "convergence_stalled";
+    const stalled = repairLoopResult?.outcome === "convergence_stalled";
     const harnessAttemptResult = buildHarnessAttemptResult({
       hashes: compiled.request.hashes,
       judgeAccepted,
@@ -2447,7 +2470,9 @@ export const runFigmaToQcTestCases = async (
     )
       ? {
           policyOverrides: canonicalCustomerProfile.policyOverrides.filter(
-            (override): override is {
+            (
+              override,
+            ): override is {
               ruleId: string;
               severity: "error" | "warning";
               threshold?: number;
@@ -2528,7 +2553,11 @@ export const runFigmaToQcTestCases = async (
   const a11yJudgeVerdictPath =
     a11yJudgeResult === undefined
       ? undefined
-      : join(artifactDir, "agent-role-runs", A11Y_JUDGE_VERDICT_ARTIFACT_FILENAME);
+      : join(
+          artifactDir,
+          "agent-role-runs",
+          A11Y_JUDGE_VERDICT_ARTIFACT_FILENAME,
+        );
   const generatedPath = join(
     artifactDir,
     GENERATED_TESTCASES_ARTIFACT_FILENAME,
@@ -2667,7 +2696,8 @@ export const runFigmaToQcTestCases = async (
               faithfulnessJudgeVerdictBytes,
             ),
           ]),
-      ...(a11yJudgeVerdictPath === undefined || a11yJudgeVerdictBytes === undefined
+      ...(a11yJudgeVerdictPath === undefined ||
+      a11yJudgeVerdictBytes === undefined
         ? []
         : [writeAtomicBytes(a11yJudgeVerdictPath, a11yJudgeVerdictBytes)]),
       ...(contextBudgetReportPath === undefined ||
@@ -3280,8 +3310,23 @@ export const runFigmaToQcTestCases = async (
   };
 };
 
+const resolveFigmaPayloadCap = (override: number | undefined): number => {
+  if (override === undefined) {
+    return MAX_FIGMA_PAYLOAD_BYTES;
+  }
+  if (!Number.isSafeInteger(override) || override <= 0) {
+    throw new ProductionRunnerError({
+      failureClass: "FIGMA_URL_REJECTED",
+      message: `maxFigmaPayloadBytes must be a positive safe integer; got ${override}`,
+      retryable: false,
+    });
+  }
+  return override;
+};
+
 const resolveFigmaSource = async (
   source: ProductionRunnerSource,
+  maxPayloadBytes: number,
 ): Promise<FigmaRestFileSnapshot> => {
   if (source.kind === "figma_paste_normalized") {
     return source.file;
@@ -3308,7 +3353,7 @@ const resolveFigmaSource = async (
     return await fetchFigmaFileForTestIntelligence({
       fileKey: parsed.fileKey,
       accessToken: source.accessToken,
-      maxResponseBytes: MAX_FIGMA_PAYLOAD_BYTES,
+      maxResponseBytes: maxPayloadBytes,
       ...(parsed.nodeId !== undefined ? { nodeId: parsed.nodeId } : {}),
     });
   } catch (err) {
@@ -3319,7 +3364,7 @@ const resolveFigmaSource = async (
     ) {
       throw new ProductionRunnerError({
         failureClass: "FIGMA_PAYLOAD_TOO_LARGE",
-        message: `Figma payload exceeds ${MAX_FIGMA_PAYLOAD_BYTES} bytes limit.`,
+        message: `Figma payload exceeds ${maxPayloadBytes} bytes limit.`,
         retryable: false,
         cause: err,
       });
@@ -3336,14 +3381,17 @@ const resolveFigmaSource = async (
   }
 };
 
-const assertFigmaPayloadWithinLimit = (file: FigmaRestFileSnapshot): void => {
+const assertFigmaPayloadWithinLimit = (
+  file: FigmaRestFileSnapshot,
+  maxPayloadBytes: number,
+): void => {
   const payloadBytes = Buffer.byteLength(JSON.stringify(file), "utf8");
-  if (payloadBytes <= MAX_FIGMA_PAYLOAD_BYTES) {
+  if (payloadBytes <= maxPayloadBytes) {
     return;
   }
   throw new ProductionRunnerError({
     failureClass: "FIGMA_PAYLOAD_TOO_LARGE",
-    message: `Figma payload exceeds ${MAX_FIGMA_PAYLOAD_BYTES} bytes limit.`,
+    message: `Figma payload exceeds ${maxPayloadBytes} bytes limit.`,
     retryable: false,
   });
 };
@@ -3512,8 +3560,13 @@ const isSmokeTaggedGatewayRelease = (
 const classifyLlmAttempt = (
   input: ClassifyLlmAttemptInput,
 ): LlmAttemptOutcome => {
-  const { llmResult, gatewayRelease, finopsRecorder, llmDurationMs, attemptId } =
-    input;
+  const {
+    llmResult,
+    gatewayRelease,
+    finopsRecorder,
+    llmDurationMs,
+    attemptId,
+  } = input;
   if (llmResult.outcome !== "success") {
     if (llmResult.errorClass === "refusal") {
       return {
@@ -4478,7 +4531,6 @@ const resolveCustomContextMarkdown = (
   };
 };
 
-
 /**
  * Build the merged `CompiledPromptCustomContext` from an optional Markdown
  * body and an optional canonical customer profile. Either or both may be
@@ -4573,11 +4625,12 @@ const renderCustomerProfileAsMarkdown = (
   }
 
   const bodyMarkdown = lines.join("\n").trimEnd() + "\n";
-  const bodyPlain = bodyMarkdown
-    .replace(/^#{1,6}\s+/gmu, "")
-    .replace(/\*\*([^*]+)\*\*/gu, "$1")
-    .replace(/\n{2,}/gu, "\n")
-    .trim() + "\n";
+  const bodyPlain =
+    bodyMarkdown
+      .replace(/^#{1,6}\s+/gmu, "")
+      .replace(/\*\*([^*]+)\*\*/gu, "$1")
+      .replace(/\n{2,}/gu, "\n")
+      .trim() + "\n";
   const markdownContentHash = createHash("sha256")
     .update(
       canonicalJson({ kind: "customer_profile_section", bodyMarkdown }),
@@ -4585,7 +4638,10 @@ const renderCustomerProfileAsMarkdown = (
     )
     .digest("hex");
   const plainContentHash = createHash("sha256")
-    .update(canonicalJson({ kind: "customer_profile_plain", bodyPlain }), "utf8")
+    .update(
+      canonicalJson({ kind: "customer_profile_plain", bodyPlain }),
+      "utf8",
+    )
     .digest("hex");
 
   return {
@@ -4608,10 +4664,7 @@ const applyCustomerProfileIctRef = (
   bindings: readonly ActiveModelBinding[],
   profile: CanonicalCustomerProfile | undefined,
 ): readonly ActiveModelBinding[] => {
-  if (
-    profile === undefined ||
-    profile.ictRegisterRef === undefined
-  ) {
+  if (profile === undefined || profile.ictRegisterRef === undefined) {
     return bindings;
   }
   const fallback = profile.ictRegisterRef;

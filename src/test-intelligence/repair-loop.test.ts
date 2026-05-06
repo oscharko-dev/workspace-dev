@@ -221,7 +221,9 @@ const readPlannerArtifact = async (
     "agent-role-runs",
     `${REPAIR_PLANNER_ARTIFACT_PREFIX}${iteration}.json`,
   );
-  return JSON.parse(await readFile(filePath, "utf8")) as RepairPlannerIterationArtifact;
+  return JSON.parse(
+    await readFile(filePath, "utf8"),
+  ) as RepairPlannerIterationArtifact;
 };
 
 const readGeneratorArtifact = async (
@@ -313,9 +315,8 @@ test("Issue #1929: repair loop preserves all 9 initial logic/faithfulness verdic
           maxRepairIterations: 0,
           initialList: buildList(["tc-1"]),
           initialLogicVerdict: buildLogicVerdict(logicVerdict),
-          initialFaithfulnessVerdict: buildFaithfulnessVerdict(
-            faithfulnessVerdict,
-          ),
+          initialFaithfulnessVerdict:
+            buildFaithfulnessVerdict(faithfulnessVerdict),
           regenerate: okRegenerate(buildList(["tc-1"])),
           runLogicJudge: sequencedLogicJudge([buildLogicVerdict("accept")]),
           runFaithfulnessJudge: sequencedFaithfulnessJudge([
@@ -374,10 +375,7 @@ test("repair loop runs one repair iteration when logic-judge initially asks for 
     const planner = await readPlannerArtifact(runDir, 1);
     assert.equal(planner.iteration, 1);
     assert.equal(planner.outputs.repairInstructionCount, 1);
-    assert.equal(
-      planner.outputs.repairInstructions[0]!.testCaseId,
-      "tc-1",
-    );
+    assert.equal(planner.outputs.repairInstructions[0]!.testCaseId, "tc-1");
     const generatorArtifact = await readGeneratorArtifact(runDir, 1);
     assert.equal(generatorArtifact.iteration, 1);
     assert.equal(generatorArtifact.outputs.testCaseCount, 2);
@@ -673,10 +671,7 @@ test("repair loop drives a faithfulness-only repair cycle to acceptance", async 
     assert.equal(result.repairIterationCount, 1);
     const planner = await readPlannerArtifact(runDir, 1);
     assert.equal(planner.outputs.repairInstructionCount, 1);
-    assert.equal(
-      planner.outputs.repairInstructions[0]!.path,
-      "steps[0]",
-    );
+    assert.equal(planner.outputs.repairInstructions[0]!.path, "steps[0]");
   });
 });
 
@@ -718,7 +713,10 @@ test("repair loop clamps maxRepairIterations to the documented hard cap", async 
       regenerate: okRegenerate(buildList(["tc-1"])),
       runLogicJudge: sequencedLogicJudge([buildLogicVerdict("accept")]),
     });
-    assert.equal(result.maxRepairIterations, REPAIR_LOOP_MAX_ITERATIONS_HARD_CAP);
+    assert.equal(
+      result.maxRepairIterations,
+      REPAIR_LOOP_MAX_ITERATIONS_HARD_CAP,
+    );
   });
 });
 
@@ -797,7 +795,7 @@ test("consolidateRepairInstructions deduplicates and sorts deterministically", (
 // ---------------------------------------------------------------------------
 // Issue #1939: convergence-stall detection + trace artifact
 // ---------------------------------------------------------------------------
-test("repair loop aborts with convergence_stalled when consecutive verdict signatures match", async () => {
+test("repair loop aborts with convergence_stalled when consecutive repair iterations match", async () => {
   await withTempDir(async (runDir) => {
     const stuckRi: RepairInstruction[] = [
       {
@@ -814,6 +812,12 @@ test("repair loop aborts with convergence_stalled when consecutive verdict signa
         message: "expected missing",
       },
     ];
+    // Stall fires earliest at k=2 — the detector requires two
+    // post-repair iterations with matching signatures, so the LLM has
+    // had at least one honest opportunity to incorporate repair
+    // instructions before we declare it stuck. Two sequenced
+    // logic-judge verdicts here yield iterations [0, 1, 2] where the
+    // signatures of iter 1 and iter 2 match.
     const result = await runRepairLoop({
       jobId: "job-stall",
       runDir,
@@ -823,14 +827,15 @@ test("repair loop aborts with convergence_stalled when consecutive verdict signa
       regenerate: okRegenerate(buildList(["tc-1"])),
       runLogicJudge: sequencedLogicJudge([
         buildLogicVerdict("repair", stuckRi, stuckFindings),
+        buildLogicVerdict("repair", stuckRi, stuckFindings),
       ]),
     });
     assert.equal(result.outcome, "convergence_stalled");
-    assert.equal(result.repairIterationCount, 1);
-    assert.equal(result.iterations.length, 2);
+    assert.equal(result.repairIterationCount, 2);
+    assert.equal(result.iterations.length, 3);
     assert.equal(
-      result.iterations[0]!.verdictSignature,
       result.iterations[1]!.verdictSignature,
+      result.iterations[2]!.verdictSignature,
     );
 
     const tracePath = path.join(runDir, REPAIR_LOOP_TRACE_ARTIFACT_FILENAME);
@@ -839,12 +844,56 @@ test("repair loop aborts with convergence_stalled when consecutive verdict signa
     ) as RepairLoopTraceArtifact;
     assert.equal(trace.outcome, "convergence_stalled");
     assert.equal(trace.jobId, "job-stall");
-    assert.equal(trace.stallDetectedAtIteration, 1);
-    assert.equal(trace.stallSignature, result.iterations[1]!.verdictSignature);
-    assert.equal(trace.iterations.length, 2);
+    assert.equal(trace.stallDetectedAtIteration, 2);
+    assert.equal(trace.stallSignature, result.iterations[2]!.verdictSignature);
+    assert.equal(trace.iterations.length, 3);
     assert.deepEqual(
       trace.iterations.map((entry) => entry.iteration),
-      [0, 1],
+      [0, 1, 2],
+    );
+  });
+});
+
+test("repair loop does not stall on the first repair iteration even when its signature matches the initial state", async () => {
+  await withTempDir(async (runDir) => {
+    // Regression guard: before the k>=2 fix, the detector compared
+    // iter 1 against iter 0 (the pre-repair initial state) and
+    // declared stall whenever the LLM regenerated cases that fell
+    // back to the same finding pattern after a single repair attempt.
+    // The corrected semantics require two consecutive *post-repair*
+    // iterations with matching signatures, so a recovery on iter 2
+    // must be reachable.
+    const stuckRi: RepairInstruction[] = [
+      {
+        testCaseId: "tc-1",
+        path: "expectedResults",
+        instruction: "Add expected.",
+      },
+    ];
+    const stuckFindings: JudgeVerdict["findings"] = [
+      {
+        testCaseId: "tc-1",
+        code: "missing_expected",
+        severity: "error",
+        message: "expected missing",
+      },
+    ];
+    const result = await runRepairLoop({
+      jobId: "job-no-early-stall",
+      runDir,
+      maxRepairIterations: 3,
+      initialList: buildList(["tc-1"]),
+      initialLogicVerdict: buildLogicVerdict("repair", stuckRi, stuckFindings),
+      regenerate: okRegenerate(buildList(["tc-1"])),
+      runLogicJudge: sequencedLogicJudge([
+        buildLogicVerdict("repair", stuckRi, stuckFindings),
+        buildLogicVerdict("accept"),
+      ]),
+    });
+    assert.equal(result.outcome, "accepted");
+    assert.equal(result.repairIterationCount, 2);
+    await assert.rejects(
+      stat(path.join(runDir, REPAIR_LOOP_TRACE_ARTIFACT_FILENAME)),
     );
   });
 });
@@ -875,9 +924,7 @@ test("repair loop does not stall when verdict signatures differ across iteration
         ],
       ),
       regenerate: okRegenerate(buildList(["tc-1"])),
-      runLogicJudge: sequencedLogicJudge([
-        buildLogicVerdict("accept"),
-      ]),
+      runLogicJudge: sequencedLogicJudge([buildLogicVerdict("accept")]),
     });
     assert.equal(result.outcome, "accepted");
     await assert.rejects(
