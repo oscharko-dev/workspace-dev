@@ -50,9 +50,11 @@ import {
   FAITHFULNESS_VERDICT_ARTIFACT_FILENAME,
   GENERATED_TESTCASES_ARTIFACT_FILENAME,
   GENERATED_TEST_CASE_SCHEMA_VERSION,
+  JUDGE_CONSENSUS_ARTIFACT_FILENAME,
   LOGIC_JUDGE_COMPILED_PROMPT_ARTIFACT_FILENAME,
   LOGIC_JUDGE_PROMPT_TEMPLATE_VERSION,
   LOGIC_JUDGE_VERDICT_ARTIFACT_FILENAME,
+  type JudgeConsensusVerdict,
   LOGIC_JUDGE_VERDICT_SCHEMA_VERSION,
   REDACTION_POLICY_VERSION,
   TEST_INTELLIGENCE_CONTRACT_VERSION,
@@ -210,6 +212,12 @@ import {
   buildRiskRankingWithAugmentation,
   writeRiskRankingArtifact,
 } from "./risk-ranker.js";
+import {
+  buildFaithfulnessJudgeConsensusEntry,
+  buildJudgeConsensus,
+  buildLogicJudgeConsensusEntry,
+  writeJudgeConsensusArtifact,
+} from "./judge-consensus.js";
 import {
   REPAIR_LOOP_DEFAULT_MAX_ITERATIONS,
   REPAIR_PLANNER_ARTIFACT_PREFIX,
@@ -674,6 +682,7 @@ export interface RunFigmaToQcTestCasesResult {
     visualSidecarResult?: string;
     visualSidecarValidationReport?: string;
     agentRoleRun: string;
+    judgeConsensus: string;
     logicJudgeVerdict?: string;
     faithfulnessJudgeVerdict?: string;
     genealogy: string;
@@ -711,6 +720,10 @@ export interface RunFigmaToQcTestCasesResult {
     verdict: JudgeVerdict;
     artifactPath: string;
     compiledPromptPath: string;
+  };
+  judgeConsensus: {
+    verdict: JudgeConsensusVerdict;
+    artifactPath: string;
   };
   faithfulnessJudge?: {
     verdict: FaithfulnessVerdict;
@@ -1730,6 +1743,18 @@ export const runFigmaToQcTestCases = async (
       result: attempt.result,
     });
   }
+  const buildCurrentJudgeConsensus = (): JudgeConsensusVerdict =>
+    buildJudgeConsensus({
+      jobId: input.jobId,
+      generatedAt: input.generatedAt,
+      panel: [
+        buildLogicJudgeConsensusEntry(logicJudgeResult.verdict),
+        ...(faithfulnessJudgeResult !== undefined
+          ? [buildFaithfulnessJudgeConsensusEntry(faithfulnessJudgeResult.verdict)]
+          : []),
+      ],
+    });
+  let judgeConsensusResult = buildCurrentJudgeConsensus();
   // 7b. Repair loop (Issue #1900, Issue #1928). When the judge panel did
   //     not unanimously accept the initial output — including the case
   //     where a judge returned `reject` — consolidate the union of
@@ -1750,10 +1775,7 @@ export const runFigmaToQcTestCases = async (
   //     by the loop driver. Token spend is attributed to FinOps role
   //     `test_generation` (source `generator`) for the regenerator and
   //     `judge_primary` / `judge_secondary` for the re-runs.
-  const initialJudgeAccepted =
-    logicJudgeResult.verdict.verdict === "accept" &&
-    (faithfulnessJudgeResult === undefined ||
-      faithfulnessJudgeResult.verdict.verdict === "accept");
+  const initialJudgeAccepted = judgeConsensusResult.verdict === "accept";
   let repairLoopResult: RepairLoopResult | undefined;
   if (!initialJudgeAccepted) {
     const maxRepairIterations =
@@ -2064,12 +2086,10 @@ export const runFigmaToQcTestCases = async (
         verdict: repairLoopResult.finalFaithfulnessVerdict,
       };
     }
+    judgeConsensusResult = buildCurrentJudgeConsensus();
   }
 
-  const judgeAccepted =
-    logicJudgeResult.verdict.verdict === "accept" &&
-    (faithfulnessJudgeResult === undefined ||
-      faithfulnessJudgeResult.verdict.verdict === "accept");
+  const judgeAccepted = judgeConsensusResult.verdict === "accept";
 
   if (harnessMode !== "off" && judgeAccepted && harnessSummary === undefined) {
     const harnessAttemptResult = buildHarnessAttemptResult({
@@ -2185,6 +2205,10 @@ export const runFigmaToQcTestCases = async (
     "agent-role-runs",
     LOGIC_JUDGE_VERDICT_ARTIFACT_FILENAME,
   );
+  const judgeConsensusPath = join(
+    artifactDir,
+    JUDGE_CONSENSUS_ARTIFACT_FILENAME,
+  );
   const faithfulnessJudgeCompiledPromptPath =
     faithfulnessJudgeResult === undefined
       ? undefined
@@ -2242,6 +2266,7 @@ export const runFigmaToQcTestCases = async (
     logicJudgeResult.promptArtifact,
   );
   const logicJudgeVerdictBytes = encodeCanonicalJson(logicJudgeResult.verdict);
+  const judgeConsensusBytes = encodeCanonicalJson(judgeConsensusResult);
   const faithfulnessJudgeCompiledPromptBytes =
     faithfulnessJudgeResult === undefined
       ? undefined
@@ -2288,6 +2313,10 @@ export const runFigmaToQcTestCases = async (
     compiled.contextBudgetReport === undefined
       ? undefined
       : encodeCanonicalJson(compiled.contextBudgetReport);
+  const judgeConsensusWritePromise = writeJudgeConsensusArtifact({
+    runDir: artifactDir,
+    artifact: judgeConsensusResult,
+  });
   try {
     const coveragePlanWritePromise = writeCoveragePlanArtifact({
       plan: coveragePlanResult.plan,
@@ -2305,6 +2334,7 @@ export const runFigmaToQcTestCases = async (
         logicJudgeCompiledPromptBytes,
       ),
       writeAtomicBytes(logicJudgeVerdictPath, logicJudgeVerdictBytes),
+      judgeConsensusWritePromise,
       agentRoleRunPromise,
       ...generatorPassRunPromises,
       ...(faithfulnessJudgeCompiledPromptPath === undefined ||
@@ -2356,6 +2386,7 @@ export const runFigmaToQcTestCases = async (
     });
   }
   const agentRoleRunArtifact = await agentRoleRunPromise;
+  const judgeConsensusArtifact = await judgeConsensusWritePromise;
   const generatorPassRunArtifacts = await Promise.all(generatorPassRunPromises);
   const genealogyArtifact = await writeGenealogyArtifact({
     runDir: artifactDir,
@@ -2377,6 +2408,12 @@ export const runFigmaToQcTestCases = async (
         jobId: input.jobId,
         roleStepId: "logic_judge",
         artifactFilename: `agent-role-runs/${LOGIC_JUDGE_VERDICT_ARTIFACT_FILENAME}`,
+        roleLineageDepth: 0,
+      },
+      {
+        jobId: input.jobId,
+        roleStepId: "judge_consensus",
+        artifactFilename: JUDGE_CONSENSUS_ARTIFACT_FILENAME,
         roleLineageDepth: 0,
       },
       ...(faithfulnessJudgeResult === undefined
@@ -2486,6 +2523,7 @@ export const runFigmaToQcTestCases = async (
             (artifact) => `agent-role-runs/${artifact.artifact.roleRunId}.json`,
           ),
           `agent-role-runs/${LOGIC_JUDGE_VERDICT_ARTIFACT_FILENAME}`,
+          JUDGE_CONSENSUS_ARTIFACT_FILENAME,
           ...(faithfulnessJudgeResult === undefined
             ? []
             : [`agent-role-runs/${FAITHFULNESS_VERDICT_ARTIFACT_FILENAME}`]),
@@ -2582,6 +2620,11 @@ export const runFigmaToQcTestCases = async (
       {
         filename: `agent-role-runs/${LOGIC_JUDGE_VERDICT_ARTIFACT_FILENAME}`,
         bytes: logicJudgeVerdictBytes,
+        category: "manifest",
+      },
+      {
+        filename: JUDGE_CONSENSUS_ARTIFACT_FILENAME,
+        bytes: judgeConsensusBytes,
         category: "manifest",
       },
       ...(faithfulnessJudgeCompiledPromptBytes === undefined
@@ -2798,6 +2841,10 @@ export const runFigmaToQcTestCases = async (
       artifactPath: logicJudgeVerdictPath,
       compiledPromptPath: logicJudgeCompiledPromptPath,
     },
+    judgeConsensus: {
+      verdict: judgeConsensusResult,
+      artifactPath: judgeConsensusPath,
+    },
     ...(faithfulnessJudgeResult !== undefined &&
     faithfulnessJudgeVerdictPath !== undefined &&
     faithfulnessJudgeCompiledPromptPath !== undefined
@@ -2846,6 +2893,7 @@ export const runFigmaToQcTestCases = async (
         ? { visualSidecarResult: visualSidecarArtifactPath }
         : {}),
       agentRoleRun: agentRoleRunArtifact.artifactPath,
+      judgeConsensus: judgeConsensusArtifact.path,
       logicJudgeVerdict: logicJudgeVerdictPath,
       ...(faithfulnessJudgeVerdictPath !== undefined
         ? { faithfulnessJudgeVerdict: faithfulnessJudgeVerdictPath }

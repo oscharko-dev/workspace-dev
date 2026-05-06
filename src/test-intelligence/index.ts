@@ -746,6 +746,14 @@ export {
   type WriteVisualSidecarResultArtifactInput,
 } from "./visual-sidecar-client.js";
 export {
+  buildFaithfulnessJudgeConsensusEntry,
+  buildJudgeConsensus,
+  buildLogicJudgeConsensusEntry,
+  writeJudgeConsensusArtifact,
+  type BuildJudgeConsensusInput,
+  type WriteJudgeConsensusArtifactInput,
+} from "./judge-consensus.js";
+export {
   runValidationPipeline,
   runAndPersistValidationPipeline,
   runValidationPipelineWithSelfVerify,
