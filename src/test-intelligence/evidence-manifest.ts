@@ -54,12 +54,16 @@ import {
 import { canonicalJson } from "./content-hash.js";
 
 const HEX64 = /^[0-9a-f]{64}$/;
-const VISUAL_DEPLOYMENTS = new Set([
-  "llama-4-maverick-vision",
-  "phi-4-multimodal-poc",
-  "mock",
-  "none",
-]);
+// Issue #1959: visual-sidecar deployment surface is now operator-driven —
+// the manifest validator only checks shape (non-empty string of bounded
+// length), not membership in a closed list. The historical literal
+// "none" remains accepted for `modelDeployments.visualPrimary` /
+// `visualFallback` to denote "no visual sidecar bound".
+const SIDECAR_DEPLOYMENT_MAX = 128;
+const isAcceptableDeploymentName = (value: unknown): value is string =>
+  typeof value === "string" &&
+  value.length > 0 &&
+  value.length <= SIDECAR_DEPLOYMENT_MAX;
 const TEST_GENERATION_DEPLOYMENTS = new Set([
   "gpt-oss-120b",
   "gpt-oss-120b-mock",
@@ -683,9 +687,12 @@ export const validateWave1ValidationEvidenceManifestMetadata = (
       const deployment = deployments[key];
       if (
         deployment !== undefined &&
-        (typeof deployment !== "string" || !VISUAL_DEPLOYMENTS.has(deployment))
+        deployment !== "none" &&
+        !isAcceptableDeploymentName(deployment)
       ) {
-        issues.push(`modelDeployments.${key} has an unknown deployment`);
+        issues.push(
+          `modelDeployments.${key} must be a non-empty string (≤${SIDECAR_DEPLOYMENT_MAX.toString()} chars) or "none"`,
+        );
       }
     }
   }
@@ -705,8 +712,10 @@ export const validateWave1ValidationEvidenceManifestMetadata = (
       );
     }
     const deployment = visualSidecar["selectedDeployment"];
-    if (typeof deployment !== "string" || !VISUAL_DEPLOYMENTS.has(deployment)) {
-      issues.push("visualSidecar.selectedDeployment has an unknown deployment");
+    if (!isAcceptableDeploymentName(deployment)) {
+      issues.push(
+        `visualSidecar.selectedDeployment must be a non-empty string (≤${SIDECAR_DEPLOYMENT_MAX.toString()} chars)`,
+      );
     }
   }
 

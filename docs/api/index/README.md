@@ -1014,6 +1014,34 @@ https://v8.dev/docs/stack-trace-api#customizing-stack-traces
 
 ***
 
+### LlmTokenEstimationOptions
+
+Shared, allocation-light token estimator for prompt-size budgeting.
+
+Text bytes are counted with the legacy `bytes / 4` heuristic. Image inputs
+are estimated per a configurable strategy (Issue #1930): the OpenAI- and
+Llama-aligned tile defaults preserve the production FinOps envelope for
+realistic Visual-Sidecar screenshots, and a `raw_bytes` fallback is kept
+for callers that cannot supply pixel dimensions.
+
+The mock gateway, real gateway, and context-budget analyzer all route
+through these helpers so the budget checks stay aligned across call sites.
+
+#### Properties
+
+##### imageTokenStrategy?
+
+> `optional` **imageTokenStrategy?**: `"openai_tiles"` \| `"llama_tiles"` \| `"raw_bytes"`
+
+Per-modality strategy applied to [LlmGenerationRequest.imageInputs](../contracts/README.md#imageinputs).
+Defaults to [DEFAULT\_LLM\_IMAGE\_TOKEN\_STRATEGY](../contracts/README.md#default_llm_image_token_strategy). Any image whose
+`widthPx`/`heightPx` is missing or non-positive falls back to the
+`raw_bytes` formula for that single image, regardless of the selected
+strategy — this preserves back-compat for callers that have not yet
+plumbed pixel dimensions through.
+
+***
+
 ### Migration
 
 #### Properties
@@ -2054,21 +2082,41 @@ A promise that resolves once the instance is ready and listening.
 
 ***
 
+### estimateImageInputTokens()
+
+> **estimateImageInputTokens**(`image`, `strategy?`): `number`
+
+Tokens charged for a single image under [strategy](#estimateimageinputtokens-2). Falls back to
+the `raw_bytes` formula when the image lacks usable pixel dimensions.
+
+#### Parameters
+
+##### image
+
+[`LlmImageInput`](../contracts/README.md#llmimageinput)
+
+##### strategy?
+
+`"openai_tiles"` \| `"llama_tiles"` \| `"raw_bytes"`
+
+#### Returns
+
+`number`
+
+***
+
 ### estimateLlmInputBytes()
 
 > **estimateLlmInputBytes**(`request`): `number`
 
-Shared, allocation-light token estimator for prompt-size budgeting.
-
-The estimator intentionally mirrors the same byte-counting heuristic used
-by the gateway and mock gateway so the budget checks stay aligned across
-all call sites.
+Text-only payload size in UTF-8 bytes. Image inputs are NOT included —
+use [estimateLlmInputTokens](#estimatellminputtokens) for the full token estimate.
 
 #### Parameters
 
 ##### request
 
-`Pick`\<[`LlmGenerationRequest`](../contracts/README.md#llmgenerationrequest), `"systemPrompt"` \| `"userPrompt"` \| `"responseSchema"` \| `"imageInputs"`\>
+`Pick`\<[`LlmGenerationRequest`](../contracts/README.md#llmgenerationrequest), `"systemPrompt"` \| `"userPrompt"` \| `"responseSchema"`\>
 
 #### Returns
 
@@ -2078,15 +2126,22 @@ all call sites.
 
 ### estimateLlmInputTokens()
 
-> **estimateLlmInputTokens**(`request`): `number`
+> **estimateLlmInputTokens**(`request`, `options?`): `number`
 
-Estimate the total prompt size in tokens using the shared heuristic.
+Estimate the total prompt size in tokens. Text payload uses the shared
+`bytes / 4` heuristic; image inputs use [estimateImageInputTokens](#estimateimageinputtokens)
+under [LlmTokenEstimationOptions.imageTokenStrategy](#imagetokenstrategy) (default
+[DEFAULT\_LLM\_IMAGE\_TOKEN\_STRATEGY](../contracts/README.md#default_llm_image_token_strategy)).
 
 #### Parameters
 
 ##### request
 
 `Pick`\<[`LlmGenerationRequest`](../contracts/README.md#llmgenerationrequest), `"systemPrompt"` \| `"userPrompt"` \| `"responseSchema"` \| `"imageInputs"`\>
+
+##### options?
+
+[`LlmTokenEstimationOptions`](#llmtokenestimationoptions) = `{}`
 
 #### Returns
 

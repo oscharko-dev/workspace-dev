@@ -1987,15 +1987,13 @@ const recordVisualSidecarAttempts = (input: {
   );
   for (let i = 0; i < input.attempts.length; i += 1) {
     const attempt = input.attempts[i] as VisualSidecarAttempt;
-    // Role assignment is driven by the deployment label rather than the
-    // attempt index — Wave 1 convention pins llama-4 to primary and phi-4
-    // to fallback. Mock deployments inherit the role from the index
-    // (first attempt → primary, subsequent → fallback) which mirrors the
-    // way `describeVisualScreens` orchestrates the two stages.
-    const role: FinOpsRole = roleFromVisualDeployment(
-      attempt.deployment,
-      i === 0,
-    );
+    // Issue #1959: role is derived from the orchestration order — the
+    // primary client is always called first, the fallback (if any)
+    // second. The previous implementation gated on hardcoded deployment
+    // literals (`mistral-document-ai-2512`, `phi-4-multimodal-poc`,
+    // `llama-4-maverick-vision`); after the visual-primary swap to an
+    // operator-supplied id, that mapping mis-attributed live calls.
+    const role: FinOpsRole = roleFromVisualDeployment(i === 0);
     const succeeded = attempt.errorClass === undefined;
     const result: LlmGenerationResult = succeeded
       ? {
@@ -2031,15 +2029,8 @@ const recordVisualSidecarAttempts = (input: {
   }
 };
 
-const roleFromVisualDeployment = (
-  deployment: VisualSidecarAttempt["deployment"],
-  isFirstAttempt: boolean,
-): FinOpsRole => {
-  if (deployment === "mistral-document-ai-2512") return "visual_primary";
-  if (deployment === "phi-4-multimodal-poc") return "visual_fallback";
-  if (deployment === "llama-4-maverick-vision") return "visual_fallback";
-  return isFirstAttempt ? "visual_primary" : "visual_fallback";
-};
+const roleFromVisualDeployment = (isFirstAttempt: boolean): FinOpsRole =>
+  isFirstAttempt ? "visual_primary" : "visual_fallback";
 
 /**
  * Map validation/export pipeline outcomes onto FinOps job-outcome literals.

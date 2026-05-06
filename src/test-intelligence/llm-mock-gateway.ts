@@ -75,11 +75,32 @@ export interface CreateMockLlmGatewayClientInput {
 }
 
 export interface MockLlmGatewayClient extends LlmGatewayClient {
+  /**
+   * Issue #1959 sentinel: marks a client constructed by
+   * {@link createMockLlmGatewayClient} so visual-sidecar provenance
+   * tagging can preserve the historical `"mock"` deployment label
+   * without inspecting the (now operator-supplied) `client.deployment`
+   * value. Real `LlmGatewayClient` instances do not carry this brand.
+   */
+  readonly __isMock: true;
   readonly callCount: () => number;
   readonly recordedRequests: () => ReadonlyArray<LlmGenerationRequest>;
   /** Reset the recorded calls and the circuit breaker. */
   readonly reset: () => void;
 }
+
+/**
+ * Type-guard for the {@link MockLlmGatewayClient} sentinel.
+ *
+ * Used by visual-sidecar provenance tagging (Issue #1959) so the
+ * operator-supplied gateway-client deployment id flows through verbatim
+ * for live calls while mock-driven unit tests still produce the
+ * canonical `"mock"` provenance tag.
+ */
+export const isMockLlmGatewayClient = (
+  client: LlmGatewayClient,
+): client is MockLlmGatewayClient =>
+  (client as Partial<MockLlmGatewayClient>).__isMock === true;
 
 const DEFAULT_CAPABILITIES: LlmGatewayCapabilities = {
   structuredOutputs: true,
@@ -400,6 +421,7 @@ export const createMockLlmGatewayClient = (
   };
 
   return {
+    __isMock: true,
     role: input.role,
     compatibilityMode,
     deployment: input.deployment,

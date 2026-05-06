@@ -283,7 +283,10 @@ test("validation-harness visualCaptures: happy path — primary succeeds, artifa
     assert.ok(result.visualSidecar !== undefined);
     assert.equal(result.visualSidecar.outcome, "success");
     if (result.visualSidecar.outcome !== "success") return;
-    assert.equal(result.visualSidecar.selectedDeployment, PRIMARY_DEPLOYMENT);
+    // Issue #1959: mock clients carry the canonical `"mock"` provenance
+    // tag via the `MockLlmGatewayClient` sentinel; live calls flow the
+    // operator-supplied deployment id through verbatim.
+    assert.equal(result.visualSidecar.selectedDeployment, "mock");
     assert.equal(result.visualSidecar.fallbackReason, "none");
 
     // --- manifest invariants ---
@@ -344,7 +347,8 @@ test("validation-harness visualCaptures: happy path — primary succeeds, artifa
       manifestEntry.sha256,
     );
     assert.deepEqual(result.manifest.visualSidecar, {
-      selectedDeployment: PRIMARY_DEPLOYMENT,
+      // Issue #1959: mock-client provenance label.
+      selectedDeployment: "mock",
       fallbackReason: "none",
       confidenceSummary: result.visualSidecar.confidenceSummary,
       resultArtifactSha256: manifestEntry.sha256,
@@ -462,7 +466,8 @@ test("validation-harness visualCaptures: fallback path — primary timeout, fall
     assert.equal(result.visualSidecar.outcome, "success");
     if (result.visualSidecar.outcome !== "success") return;
     assert.equal(result.visualSidecar.fallbackReason, "primary_unavailable");
-    assert.equal(result.visualSidecar.selectedDeployment, FALLBACK_DEPLOYMENT);
+    // Issue #1959: see comment in the happy-path block above.
+    assert.equal(result.visualSidecar.selectedDeployment, "mock");
     assert.equal(
       result.manifest.modelDeployments.visualPrimary,
       PRIMARY_DEPLOYMENT,
@@ -471,10 +476,8 @@ test("validation-harness visualCaptures: fallback path — primary timeout, fall
       result.manifest.modelDeployments.visualFallback,
       FALLBACK_DEPLOYMENT,
     );
-    assert.equal(
-      result.manifest.visualSidecar?.selectedDeployment,
-      FALLBACK_DEPLOYMENT,
-    );
+    // Issue #1959: mock-client provenance label.
+    assert.equal(result.manifest.visualSidecar?.selectedDeployment, "mock");
     assert.equal(
       result.manifest.visualSidecar?.fallbackReason,
       "primary_unavailable",
