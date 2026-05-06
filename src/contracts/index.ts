@@ -163,7 +163,7 @@ export interface TestIntelligenceTransferPrincipal {
 }
 
 /** Contract version for the opt-in test-intelligence surface. */
-export const TEST_INTELLIGENCE_CONTRACT_VERSION = "1.11.0" as const;
+export const TEST_INTELLIGENCE_CONTRACT_VERSION = "1.12.0" as const;
 
 /**
  * Schema version for generated test case payloads.
@@ -911,12 +911,16 @@ export interface VisualSidecarValidationReport {
 /**
  * Allowed gateway roles. Each role is bound to a single deployment to keep the
  * structured test-case generator (`gpt-oss-120b`) strictly separated from the
- * multimodal visual sidecars (`mistral-document-ai-2512`, `llama-4-maverick-vision`, `phi-4-multimodal-poc`).
+ * multimodal visual sidecars (`mistral-document-ai-2512`, `llama-4-maverick-vision`, `phi-4-multimodal-poc`),
+ * and from the cross-model logic judge (Issue #1932) which reuses the structured-output
+ * surface but is intentionally bound to a different deployment so a self-consistency
+ * bias from the generator cannot be amplified by reusing the same model on the judge.
  */
 export const ALLOWED_LLM_GATEWAY_ROLES = [
   "test_generation",
   "visual_primary",
   "visual_fallback",
+  "logic_judge",
 ] as const;
 export type LlmGatewayRole = (typeof ALLOWED_LLM_GATEWAY_ROLES)[number];
 
@@ -8107,6 +8111,17 @@ export interface FinOpsBudgetReport {
         callCount: number;
         inFlightDedupHits: number;
         idempotentReplayHits: number;
+        /**
+         * Optional deployment label this source ran against (Issue
+         * #1932). Surfaces the **judge** deployment for
+         * `judge_primary` / `judge_secondary` when the operator wired
+         * a cross-model bundle so FinOps attribution distinguishes
+         * the judge family from the generator family. Omitted from
+         * the canonical-JSON wire payload when the source recorded
+         * no deployment, so the `bySource` hash stays stable for
+         * legacy single-model runs.
+         */
+        deployment?: string;
       }
     >
   >;
@@ -9701,7 +9716,7 @@ export interface ReleaseQualityGatesReport {
  * Must be bumped according to CONTRACT_CHANGELOG.md rules.
  * Package version alignment is documented in VERSIONING.md.
  */
-export const CONTRACT_VERSION = "4.48.0" as const;
+export const CONTRACT_VERSION = "4.49.0" as const;
 
 // ---------------------------------------------------------------------------
 // Issue #1774 — UntrustedContentNormalizer (2025-vintage injection carriers).

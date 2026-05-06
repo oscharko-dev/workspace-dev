@@ -132,10 +132,7 @@ import { normalizeFigmaFileToIntentInput } from "./figma-payload-normalizer.js";
 import { deriveBusinessTestIntentIr } from "./intent-derivation.js";
 import type { LlmGatewayClient } from "./llm-gateway.js";
 import type { LlmGatewayClientBundle } from "./llm-gateway-bundle.js";
-import {
-  scanLessons,
-  selectRelevantLessons,
-} from "./agent-lessons-memdir.js";
+import { scanLessons, selectRelevantLessons } from "./agent-lessons-memdir.js";
 import {
   compilePrompt,
   type CompilePromptSuffixSection,
@@ -183,9 +180,7 @@ import {
   describeVisualScreens,
   writeVisualSidecarResultArtifact,
 } from "./visual-sidecar-client.js";
-import {
-  createPersistentReplayCache,
-} from "./replay-cache-persistent.js";
+import { createPersistentReplayCache } from "./replay-cache-persistent.js";
 import {
   executeWithReplayCache,
   type ReplayCache,
@@ -374,6 +369,18 @@ export interface ProductionRunnerLlmConfig {
   client: LlmGatewayClient;
   /** Optional multimodal bundle used to resolve visual sidecar screenshots. */
   bundle?: LlmGatewayClientBundle;
+  /**
+   * Optional dedicated logic-judge client (Issue #1932). When supplied
+   * directly, the production runner sends logic-judge prompts here
+   * instead of reusing {@link client}. `bundle.logicJudge` (when set)
+   * takes precedence over this field; if both are absent the judge
+   * falls back to `client` so the multi-agent harness keeps working
+   * for callers that have not migrated to the cross-model topology.
+   *
+   * Use this seam when you want a different deployment for the judge
+   * but do NOT want to construct a full visual-sidecar bundle.
+   */
+  logicJudge?: LlmGatewayClient;
   /** Optional per-request token budget. */
   maxOutputTokens?: number;
   /** Optional per-request wall-clock budget (ms). */
@@ -582,9 +589,9 @@ export interface RunFigmaToQcTestCasesInput {
    * {@link canonicalizeCustomContextMarkdown} (PII redaction, prompt-injection
    * tagging, link/HTML/MDX/image refusal, byte-cap enforcement) and surfaces
    * it as a dedicated `custom_context_markdown` source-mix section in the
-  * compiled prompt. Failures fail the job fast with
-  * `CUSTOM_CONTEXT_MARKDOWN_INVALID` before any LLM call is dispatched.
-  */
+   * compiled prompt. Failures fail the job fast with
+   * `CUSTOM_CONTEXT_MARKDOWN_INVALID` before any LLM call is dispatched.
+   */
   customContextMarkdown?: string;
   /**
    * Logic-Judge integration (Issue #1898). Defaults to **enabled** —
@@ -775,7 +782,9 @@ export const runFigmaToQcTestCases = async (
   let visualSidecarRefusal:
     | { failureClass: VisualSidecarFailureClass; failureMessage: string }
     | undefined;
-  let promptVisualBinding: Parameters<typeof compilePrompt>[0]["visualBinding"] = {
+  let promptVisualBinding: Parameters<
+    typeof compilePrompt
+  >[0]["visualBinding"] = {
     schemaVersion: VISUAL_SIDECAR_SCHEMA_VERSION,
     selectedDeployment: "llama-4-maverick-vision",
     fallbackReason: "none",
@@ -815,7 +824,9 @@ export const runFigmaToQcTestCases = async (
       generatedAt: input.generatedAt,
       intent,
       requestLimits: {
-        visualPrimary: resolveFinOpsRequestLimits(finopsBudget.roles.visual_primary),
+        visualPrimary: resolveFinOpsRequestLimits(
+          finopsBudget.roles.visual_primary,
+        ),
         visualFallback: resolveFinOpsRequestLimits(
           finopsBudget.roles.visual_fallback,
         ),
@@ -1105,8 +1116,7 @@ export const runFigmaToQcTestCases = async (
   let harnessArtifactPath: string | undefined;
   let capturedLlmResult: LlmGenerationResult | undefined;
   let capturedLlmDurationMs = 0;
-  const harnessMode: ProductionRunnerHarnessMode =
-    input.harness?.mode ?? "off";
+  const harnessMode: ProductionRunnerHarnessMode = input.harness?.mode ?? "off";
   const harnessRoleStepId =
     input.harness?.roleStepId ?? PRODUCTION_RUNNER_HARNESS_ROLE_STEP_ID;
   const harnessTestDepth: AgentHarnessTestDepth =
@@ -1114,10 +1124,19 @@ export const runFigmaToQcTestCases = async (
   // Issue #1898: Logic-Judge defaults to ON. Callers that need the
   // legacy single-pass behaviour (deterministic generator-only
   // classification) must pass `logicJudge: { enabled: false }`
-  // explicitly. The judge dispatches a second LLM call against the
-  // same gateway client and is attributed to FinOps source
-  // `judge_primary`.
+  // explicitly. The judge dispatches a second LLM call and is
+  // attributed to FinOps source `judge_primary`.
+  //
+  // Issue #1932 — cross-model voting: when the operator wires a
+  // `bundle.logicJudge` slot the judge runs on a dedicated gateway
+  // (typically a different model family from the generator) so a
+  // self-consistency bias from the generator cannot be amplified by
+  // reusing the same model on the judge. When the slot is absent the
+  // judge falls back to `input.llm.client` so existing operator
+  // configurations keep working unchanged.
   const logicJudgeEnabled = input.logicJudge?.enabled !== false;
+  const logicJudgeClient: LlmGatewayClient =
+    input.llm.bundle?.logicJudge ?? input.llm.logicJudge ?? input.llm.client;
 
   let cacheExecResult: Awaited<ReturnType<typeof executeWithReplayCache>>;
   try {
@@ -1215,36 +1234,36 @@ export const runFigmaToQcTestCases = async (
         }
         const drafts = attemptOutcome.drafts;
 
-      // 7. Stamp full GeneratedTestCase records.
-      const audit: GeneratedTestCaseAuditMetadata = {
-        jobId: input.jobId,
-        generatedAt: input.generatedAt,
-        contractVersion: TEST_INTELLIGENCE_CONTRACT_VERSION,
-        schemaVersion: GENERATED_TEST_CASE_SCHEMA_VERSION,
-        promptTemplateVersion: TEST_INTELLIGENCE_PROMPT_TEMPLATE_VERSION,
-        redactionPolicyVersion: REDACTION_POLICY_VERSION,
-        visualSidecarSchemaVersion: VISUAL_SIDECAR_SCHEMA_VERSION,
-        cacheHit: false,
-        cacheKey: compiled.request.hashes.cacheKey,
-        inputHash: compiled.request.hashes.inputHash,
-        promptHash: compiled.request.hashes.promptHash,
-        schemaHash: compiled.request.hashes.schemaHash,
-      };
-      const testCases = drafts.map((draft, index) =>
-        stampGeneratedTestCase({
-          draft,
+        // 7. Stamp full GeneratedTestCase records.
+        const audit: GeneratedTestCaseAuditMetadata = {
           jobId: input.jobId,
-          index,
-          audit,
-          intent,
-        }),
-      );
-      testCases.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
-      return {
-        schemaVersion: GENERATED_TEST_CASE_SCHEMA_VERSION,
-        jobId: input.jobId,
-        testCases,
-      };
+          generatedAt: input.generatedAt,
+          contractVersion: TEST_INTELLIGENCE_CONTRACT_VERSION,
+          schemaVersion: GENERATED_TEST_CASE_SCHEMA_VERSION,
+          promptTemplateVersion: TEST_INTELLIGENCE_PROMPT_TEMPLATE_VERSION,
+          redactionPolicyVersion: REDACTION_POLICY_VERSION,
+          visualSidecarSchemaVersion: VISUAL_SIDECAR_SCHEMA_VERSION,
+          cacheHit: false,
+          cacheKey: compiled.request.hashes.cacheKey,
+          inputHash: compiled.request.hashes.inputHash,
+          promptHash: compiled.request.hashes.promptHash,
+          schemaHash: compiled.request.hashes.schemaHash,
+        };
+        const testCases = drafts.map((draft, index) =>
+          stampGeneratedTestCase({
+            draft,
+            jobId: input.jobId,
+            index,
+            audit,
+            intent,
+          }),
+        );
+        testCases.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+        return {
+          schemaVersion: GENERATED_TEST_CASE_SCHEMA_VERSION,
+          jobId: input.jobId,
+          testCases,
+        };
       },
     });
   } catch (err) {
@@ -1300,7 +1319,7 @@ export const runFigmaToQcTestCases = async (
         testDesignModel: compiled.artifacts.payload.testDesignModel!,
         coveragePlan: compiled.artifacts.payload.coveragePlan!,
         generatedTestCases: generatedList,
-        client: input.llm.client,
+        client: logicJudgeClient,
         cache: logicJudgeCache,
         knownNavigationIds: logicJudgeKnownNavigationIds,
         coverageThresholds: logicJudgeCoverageThresholds,
@@ -1348,9 +1367,9 @@ export const runFigmaToQcTestCases = async (
             cacheKeyDigest: "logic-judge-disabled",
           },
           modelBinding: {
-            deployment: input.llm.client.deployment,
-            modelRevision: input.llm.client.modelRevision,
-            gatewayRelease: input.llm.client.gatewayRelease,
+            deployment: logicJudgeClient.deployment,
+            modelRevision: logicJudgeClient.modelRevision,
+            gatewayRelease: logicJudgeClient.gatewayRelease,
           },
         },
         verdict: {
@@ -1361,9 +1380,9 @@ export const runFigmaToQcTestCases = async (
           jobId: input.jobId,
           cacheHit: false,
           cacheKeyDigest: "logic-judge-disabled",
-          modelDeployment: input.llm.client.deployment,
-          modelRevision: input.llm.client.modelRevision,
-          gatewayRelease: input.llm.client.gatewayRelease,
+          modelDeployment: logicJudgeClient.deployment,
+          modelRevision: logicJudgeClient.modelRevision,
+          gatewayRelease: logicJudgeClient.gatewayRelease,
           verdict: "accept" as const,
           findings: [],
           repairInstructions: [],
@@ -1373,10 +1392,15 @@ export const runFigmaToQcTestCases = async (
     finopsRecorder.recordAttempt({
       role: "test_generation",
       source: "judge_primary",
+      // Issue #1932: report the **judge** deployment for FinOps
+      // attribution. On success the gateway echoes the deployment it
+      // ran against; on failure we still attribute the attempt to the
+      // judge client so cross-model attribution stays correct even
+      // when the judge errored before the gateway echoed identity.
       deployment:
         logicJudgeResult.gatewayResult.outcome === "success"
           ? logicJudgeResult.gatewayResult.modelDeployment
-          : input.llm.client.deployment,
+          : logicJudgeClient.deployment,
       durationMs: 0,
       result: logicJudgeResult.gatewayResult,
     });
@@ -1392,8 +1416,7 @@ export const runFigmaToQcTestCases = async (
     ),
   );
   let faithfulnessJudgeResult: RunFaithfulnessJudgeResult | undefined =
-    visualCaptures !== undefined &&
-    input.llm.bundle !== undefined
+    visualCaptures !== undefined && input.llm.bundle !== undefined
       ? await runFaithfulnessJudge({
           jobId: input.jobId,
           generatedAt: input.generatedAt,
@@ -1472,8 +1495,7 @@ export const runFigmaToQcTestCases = async (
   let repairLoopResult: RepairLoopResult | undefined;
   if (!initialJudgeAccepted) {
     const maxRepairIterations =
-      input.harness?.maxRepairIterations ??
-      REPAIR_LOOP_DEFAULT_MAX_ITERATIONS;
+      input.harness?.maxRepairIterations ?? REPAIR_LOOP_DEFAULT_MAX_ITERATIONS;
     const faithfulnessSnapshot = faithfulnessJudgeResult;
     repairLoopResult = await runRepairLoop({
       jobId: input.jobId,
@@ -1488,7 +1510,9 @@ export const runFigmaToQcTestCases = async (
         const repairCompiled = compilePrompt({
           jobId: input.jobId,
           intent: wireIntent,
-          ...(promptVisualBatch !== undefined ? { visual: promptVisualBatch } : {}),
+          ...(promptVisualBatch !== undefined
+            ? { visual: promptVisualBatch }
+            : {}),
           ...(activeAgentLessons.length > 0
             ? { agentLessons: activeAgentLessons }
             : {}),
@@ -1500,8 +1524,7 @@ export const runFigmaToQcTestCases = async (
           roleStepId: "test_generation",
           customerRubric,
           responseSchema: draftSchema,
-          responseSchemaName:
-            "workspace-dev-production-runner-draft-list-v1",
+          responseSchemaName: "workspace-dev-production-runner-draft-list-v1",
           outputSchemaHintLabel: "ProductionRunnerDraftResponse",
           suffixSections: [
             ...buildPromptSuffixSections(
@@ -1541,8 +1564,7 @@ export const runFigmaToQcTestCases = async (
           systemPrompt: repairCompiled.request.systemPrompt,
           userPrompt: repairCompiled.request.userPrompt,
           responseSchema: draftSchema,
-          responseSchemaName:
-            "workspace-dev-production-runner-draft-list-v1",
+          responseSchemaName: "workspace-dev-production-runner-draft-list-v1",
           ...(effectiveMaxInputTokens !== undefined
             ? { maxInputTokens: effectiveMaxInputTokens }
             : {}),
@@ -1611,9 +1633,7 @@ export const runFigmaToQcTestCases = async (
               intent,
             }),
         );
-        repairCases.sort((a, b) =>
-          a.id < b.id ? -1 : a.id > b.id ? 1 : 0,
-        );
+        repairCases.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
         const repairList: GeneratedTestCaseList = {
           schemaVersion: GENERATED_TEST_CASE_SCHEMA_VERSION,
           jobId: input.jobId,
@@ -1640,7 +1660,7 @@ export const runFigmaToQcTestCases = async (
           testDesignModel: compiled.artifacts.payload.testDesignModel!,
           coveragePlan: compiled.artifacts.payload.coveragePlan!,
           generatedTestCases: list,
-          client: input.llm.client,
+          client: logicJudgeClient,
           // Per-iteration regen produces a unique input hash; bypass the
           // disk-backed cache and use a fresh in-memory cache so deterministic
           // repeat-iteration mocks (test fixtures) can still hit byte-stable
@@ -1652,24 +1672,21 @@ export const runFigmaToQcTestCases = async (
           undefined
             ? {
                 maxInputTokens:
-                  finopsBudget.roles.test_generation
-                    .maxInputTokensPerRequest,
+                  finopsBudget.roles.test_generation.maxInputTokensPerRequest,
               }
             : {}),
           ...(finopsBudget.roles.test_generation?.maxOutputTokensPerRequest !==
           undefined
             ? {
                 maxOutputTokens:
-                  finopsBudget.roles.test_generation
-                    .maxOutputTokensPerRequest,
+                  finopsBudget.roles.test_generation.maxOutputTokensPerRequest,
               }
             : {}),
           ...(finopsBudget.roles.test_generation?.maxWallClockMsPerRequest !==
           undefined
             ? {
                 maxWallClockMs:
-                  finopsBudget.roles.test_generation
-                    .maxWallClockMsPerRequest,
+                  finopsBudget.roles.test_generation.maxWallClockMsPerRequest,
               }
             : {}),
           ...(finopsBudget.roles.test_generation?.maxRetriesPerRequest !==
@@ -1684,10 +1701,12 @@ export const runFigmaToQcTestCases = async (
           finopsRecorder.recordAttempt({
             role: "test_generation",
             source: "judge_primary",
+            // Issue #1932: cross-model judge attribution — see the
+            // initial-pass call site above.
             deployment:
               repairLogicResult.gatewayResult.outcome === "success"
                 ? repairLogicResult.gatewayResult.modelDeployment
-                : input.llm.client.deployment,
+                : logicJudgeClient.deployment,
             durationMs: 0,
             result: repairLogicResult.gatewayResult,
           });
@@ -1738,12 +1757,11 @@ export const runFigmaToQcTestCases = async (
                           .maxWallClockMsPerRequest,
                     }
                   : {}),
-                ...(finopsBudget.roles.visual_primary
-                  ?.maxRetriesPerRequest !== undefined
+                ...(finopsBudget.roles.visual_primary?.maxRetriesPerRequest !==
+                undefined
                   ? {
                       maxRetries:
-                        finopsBudget.roles.visual_primary
-                          .maxRetriesPerRequest,
+                        finopsBudget.roles.visual_primary.maxRetriesPerRequest,
                     }
                   : {}),
               });
@@ -1764,10 +1782,8 @@ export const runFigmaToQcTestCases = async (
               const totalUsage = repairFaithResult.attempts.reduce(
                 (acc, attempt) => {
                   if (attempt.result.outcome === "success") {
-                    acc.inputTokens +=
-                      attempt.result.usage.inputTokens ?? 0;
-                    acc.outputTokens +=
-                      attempt.result.usage.outputTokens ?? 0;
+                    acc.inputTokens += attempt.result.usage.inputTokens ?? 0;
+                    acc.outputTokens += attempt.result.usage.outputTokens ?? 0;
                   }
                   return acc;
                 },
@@ -1866,9 +1882,7 @@ export const runFigmaToQcTestCases = async (
           primaryVisualDeployment: "llama-4-maverick-vision" as const,
         }
       : {}),
-    ...(visualSidecarRefusal !== undefined
-      ? { visualSidecarRefusal }
-      : {}),
+    ...(visualSidecarRefusal !== undefined ? { visualSidecarRefusal } : {}),
     untrustedContentReport: normalizedUntrusted.report,
     activeModelBindings,
   });
@@ -1912,10 +1926,7 @@ export const runFigmaToQcTestCases = async (
   const faithfulnessJudgeCompiledPromptPath =
     faithfulnessJudgeResult === undefined
       ? undefined
-      : join(
-          artifactDir,
-          FAITHFULNESS_JUDGE_COMPILED_PROMPT_ARTIFACT_FILENAME,
-        );
+      : join(artifactDir, FAITHFULNESS_JUDGE_COMPILED_PROMPT_ARTIFACT_FILENAME);
   const faithfulnessJudgeVerdictPath =
     faithfulnessJudgeResult === undefined
       ? undefined
@@ -1935,10 +1946,7 @@ export const runFigmaToQcTestCases = async (
   const visualSidecarValidationPath =
     validation.visual === undefined
       ? undefined
-      : join(
-          artifactDir,
-          VISUAL_SIDECAR_VALIDATION_REPORT_ARTIFACT_FILENAME,
-        );
+      : join(artifactDir, VISUAL_SIDECAR_VALIDATION_REPORT_ARTIFACT_FILENAME);
   const policyPath = join(
     artifactDir,
     TEST_CASE_POLICY_REPORT_ARTIFACT_FILENAME,
@@ -2027,11 +2035,18 @@ export const runFigmaToQcTestCases = async (
       ...(faithfulnessJudgeVerdictPath === undefined ||
       faithfulnessJudgeVerdictBytes === undefined
         ? []
-        : [writeAtomicBytes(faithfulnessJudgeVerdictPath, faithfulnessJudgeVerdictBytes)]),
+        : [
+            writeAtomicBytes(
+              faithfulnessJudgeVerdictPath,
+              faithfulnessJudgeVerdictBytes,
+            ),
+          ]),
       ...(contextBudgetReportPath === undefined ||
       contextBudgetReportBytes === undefined
         ? []
-        : [writeAtomicBytes(contextBudgetReportPath, contextBudgetReportBytes)]),
+        : [
+            writeAtomicBytes(contextBudgetReportPath, contextBudgetReportBytes),
+          ]),
       writeAtomicBytes(generatedPath, generatedBytes),
       writeAtomicBytes(validationPath, validationBytes),
       ...(visualSidecarValidationPath === undefined ||
@@ -2227,7 +2242,9 @@ export const runFigmaToQcTestCases = async (
           ),
         }
       : {}),
-  } satisfies Parameters<typeof buildWave1ValidationEvidenceManifest>[0]["modelDeployments"];
+  } satisfies Parameters<
+    typeof buildWave1ValidationEvidenceManifest
+  >[0]["modelDeployments"];
   const evidenceManifest = buildWave1ValidationEvidenceManifest({
     fixtureId: `production-runner-${input.source.kind}`,
     jobId: input.jobId,
@@ -2247,8 +2264,7 @@ export const runFigmaToQcTestCases = async (
       : {}),
     ...(visualSidecarResult !== undefined
       ? {
-          visualSidecarCaptureIdentities:
-            visualSidecarResult.captureIdentities,
+          visualSidecarCaptureIdentities: visualSidecarResult.captureIdentities,
         }
       : {}),
     artifacts: [
@@ -2392,9 +2408,12 @@ export const runFigmaToQcTestCases = async (
       cause: err,
     });
   }
-  const manifestVerification = await verifyWave1ValidationEvidenceFromDisk(artifactDir, {
-    rejectUnexpected: false,
-  });
+  const manifestVerification = await verifyWave1ValidationEvidenceFromDisk(
+    artifactDir,
+    {
+      rejectUnexpected: false,
+    },
+  );
   if (!manifestVerification.result.ok) {
     throw new ProductionRunnerError({
       failureClass: "PERSIST_FAILED",
@@ -2512,7 +2531,10 @@ export const runFigmaToQcTestCases = async (
       compiledPrompt: compiledPromptPath,
       logicJudgeCompiledPrompt: logicJudgeCompiledPromptPath,
       ...(faithfulnessJudgeCompiledPromptPath !== undefined
-        ? { faithfulnessJudgeCompiledPrompt: faithfulnessJudgeCompiledPromptPath }
+        ? {
+            faithfulnessJudgeCompiledPrompt:
+              faithfulnessJudgeCompiledPromptPath,
+          }
         : {}),
       untrustedContentNormalizationReport:
         untrustedContentNormalizationReportPath,
@@ -2615,9 +2637,7 @@ const resolveFigmaSource = async (
   }
 };
 
-const assertFigmaPayloadWithinLimit = (
-  file: FigmaRestFileSnapshot,
-): void => {
+const assertFigmaPayloadWithinLimit = (file: FigmaRestFileSnapshot): void => {
   const payloadBytes = Buffer.byteLength(JSON.stringify(file), "utf8");
   if (payloadBytes <= MAX_FIGMA_PAYLOAD_BYTES) {
     return;
@@ -2775,10 +2795,7 @@ interface ClassifyLlmAttemptInput {
   readonly llmDurationMs: number;
 }
 
-const LIVE_SMOKE_GATEWAY_RELEASE_MARKERS = [
-  "live-smoke",
-  "live-e2e",
-] as const;
+const LIVE_SMOKE_GATEWAY_RELEASE_MARKERS = ["live-smoke", "live-e2e"] as const;
 
 const isSmokeTaggedGatewayRelease = (
   gatewayRelease: string | undefined,
@@ -3193,7 +3210,8 @@ const parseDraftQualitySignals = (
   if (raw === undefined || raw === null) return undefined;
   if (typeof raw !== "object" || Array.isArray(raw)) return undefined;
   const r = raw as Record<string, unknown>;
-  const result: NonNullable<ProductionRunnerLlmDraftCase["qualitySignals"]> = {};
+  const result: NonNullable<ProductionRunnerLlmDraftCase["qualitySignals"]> =
+    {};
   const stringArray = (value: unknown): ReadonlyArray<string> | undefined =>
     Array.isArray(value) && value.every(isString) ? value : undefined;
   const fieldIds = stringArray(r.coveredFieldIds);
@@ -3391,7 +3409,7 @@ const escapePromptBlockText = (value: string): string =>
         return "&lt;";
       case ">":
         return "&gt;";
-      case "\"":
+      case '"':
         return "&quot;";
       case "'":
         return "&apos;";
@@ -3468,7 +3486,7 @@ const buildPromptSuffixSections = (
       body: [
         "Die Sektion `custom_context_markdown` ist eigenständige Evidenzquelle.",
         "Sobald ein Testfall fachlich auf eine Anforderung aus `custom_context_markdown` zurückgeht, MUSS er im Output eine identifizierende Quellen-Referenz tragen, die diese Markdown-Sektion benennt.",
-        "Trage diese Referenz entweder als zusätzlichen Eintrag in `figmaTraceRefs` mit `screenId = \"custom_context_markdown\"` und einer kurzen `nodeName`-Beschreibung des zitierten Abschnitts oder als Eintrag in `assumptions`/`openQuestions` mit dem Präfix `custom_context_markdown:`. Mindestens ein Testfall pro Lauf muss eine solche Referenz enthalten, wenn der Markdown-Inhalt für die Generierung relevant war.",
+        'Trage diese Referenz entweder als zusätzlichen Eintrag in `figmaTraceRefs` mit `screenId = "custom_context_markdown"` und einer kurzen `nodeName`-Beschreibung des zitierten Abschnitts oder als Eintrag in `assumptions`/`openQuestions` mit dem Präfix `custom_context_markdown:`. Mindestens ein Testfall pro Lauf muss eine solche Referenz enthalten, wenn der Markdown-Inhalt für die Generierung relevant war.',
       ].join("\n"),
     });
   }
@@ -3683,9 +3701,7 @@ const formatCustomContextMarkdownIssues = (
 ): string =>
   issues
     .map((issue) =>
-      issue.detail !== undefined
-        ? `${issue.code}:${issue.detail}`
-        : issue.code,
+      issue.detail !== undefined ? `${issue.code}:${issue.detail}` : issue.code,
     )
     .join(",");
 

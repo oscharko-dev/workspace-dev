@@ -171,7 +171,10 @@ export interface FinOpsUsageRecorder {
   recordIngestBytes(role: FinOpsRole, bytes: number): void;
   /** Snapshot of every role accumulator (immutable copies). */
   snapshot(): FinOpsRoleUsage[];
-  sourceSnapshot(jobId: string, sealedAt: string): FinOpsBudgetReport["bySource"];
+  sourceSnapshot(
+    jobId: string,
+    sealedAt: string,
+  ): FinOpsBudgetReport["bySource"];
   sourceTotals(
     jobId: string,
     sealedAt: string,
@@ -201,7 +204,10 @@ export const createFinOpsUsageRecorder = (
   costRates?: FinOpsCostRateMap,
 ): FinOpsUsageRecorder => {
   const explicitBreaches: FinOpsBudgetBreach[] = [];
-  const sourceAccumulators = new Map<AgentSourceLabel, MutablePerSourceCostEntry>();
+  const sourceAccumulators = new Map<
+    AgentSourceLabel,
+    MutablePerSourceCostEntry
+  >();
   const accumulators: Record<FinOpsRole, RoleAccumulator> = {
     test_generation: createRoleAccumulator("test_generation"),
     visual_primary: createRoleAccumulator("visual_primary"),
@@ -274,6 +280,14 @@ export const createFinOpsUsageRecorder = (
               inputTokens: observation.result.usage.inputTokens,
               outputTokens: observation.result.usage.outputTokens,
             }
+          : {}),
+        // Issue #1932: stamp the deployment on the per-source
+        // accumulator so `bySource.judge_primary` surfaces the
+        // **judge** deployment (when the operator wired a
+        // cross-model bundle) rather than the generator's.
+        ...(typeof observation.deployment === "string" &&
+        observation.deployment.length > 0
+          ? { deployment: observation.deployment }
           : {}),
       });
     }
@@ -466,7 +480,10 @@ export const buildFinOpsBudgetReport = (
   );
 
   const totals = aggregateTotals(sortedUsages);
-  const bySource = input.recorder.sourceSnapshot(input.jobId, input.generatedAt);
+  const bySource = input.recorder.sourceSnapshot(
+    input.jobId,
+    input.generatedAt,
+  );
   const bySourceTotal = input.recorder.sourceTotals(
     input.jobId,
     input.generatedAt,
@@ -553,9 +570,7 @@ const aggregateTotals = (
     replayCacheHitRate: round6(Math.min(1, Math.max(0, replayCacheHitRate))),
     replayCacheMissRate: round6(Math.min(1, Math.max(0, replayCacheMissRate))),
     promptCacheHitRate: round6(Math.min(1, Math.max(0, replayCacheHitRate))),
-    promptCacheMissRate: round6(
-      Math.min(1, Math.max(0, replayCacheMissRate)),
-    ),
+    promptCacheMissRate: round6(Math.min(1, Math.max(0, replayCacheMissRate))),
   };
 };
 

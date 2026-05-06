@@ -17,7 +17,8 @@ export const STATIC_AGENT_SOURCE_LABELS = [
   "ir_mutation_oracle",
 ] as const;
 
-export type StaticAgentSourceLabel = (typeof STATIC_AGENT_SOURCE_LABELS)[number];
+export type StaticAgentSourceLabel =
+  (typeof STATIC_AGENT_SOURCE_LABELS)[number];
 
 export type AgentSourceLabel = StaticAgentSourceLabel | `hook:${string}`;
 
@@ -28,6 +29,15 @@ export interface PerSourceCostEntry {
   readonly callCount: number;
   readonly inFlightDedupHits: number;
   readonly idempotentReplayHits: number;
+  /**
+   * Optional deployment label this source ran against (Issue #1932).
+   * Surfaces the **judge** deployment for `judge_primary` /
+   * `judge_secondary` when the operator wired a cross-model bundle so
+   * FinOps attribution distinguishes the judge family from the
+   * generator family. Omitted (canonical-JSON-stable: not present in
+   * the wire payload) when the source recorded no deployment.
+   */
+  readonly deployment?: string;
 }
 
 export interface PerSourceCostBreakdown {
@@ -48,6 +58,14 @@ export interface MutablePerSourceCostEntry {
   callCount: number;
   inFlightDedupHits: number;
   idempotentReplayHits: number;
+  /**
+   * Last deployment label observed for this source (Issue #1932).
+   * `undefined` until the first attempt records one. The accumulator
+   * is per-source (not per-deployment), so cross-deployment runs on
+   * the same source label collapse to the most recently observed
+   * deployment — which is the meaningful one for FinOps attribution.
+   */
+  deployment?: string;
 }
 
 export const isAgentSourceLabel = (
@@ -106,6 +124,14 @@ export const recordPerSourceAttempt = (input: {
   rate?: FinOpsCostRate;
   inputTokens?: number;
   outputTokens?: number;
+  /**
+   * Optional deployment label associated with this attempt (Issue
+   * #1932). When supplied, it is stamped on the accumulator so the
+   * finalised entry surfaces the deployment that ran. Empty strings
+   * are ignored so the accumulator never advertises a blank
+   * deployment label.
+   */
+  deployment?: string;
 }): void => {
   input.accumulator.callCount += 1;
   input.accumulator.tokensIn += safeIntPositiveOrZero(input.inputTokens);
@@ -116,6 +142,9 @@ export const recordPerSourceAttempt = (input: {
     callCount: input.accumulator.callCount,
     ...(input.rate !== undefined ? { rate: input.rate } : {}),
   });
+  if (typeof input.deployment === "string" && input.deployment.length > 0) {
+    input.accumulator.deployment = input.deployment;
+  }
 };
 
 export const recordPerSourceReplayHit = (
@@ -159,6 +188,9 @@ export const finalizePerSourceCostBreakdown = (input: {
           callCount: entry.callCount,
           inFlightDedupHits: entry.inFlightDedupHits,
           idempotentReplayHits: entry.idempotentReplayHits,
+          ...(entry.deployment !== undefined && entry.deployment.length > 0
+            ? { deployment: entry.deployment }
+            : {}),
         } satisfies PerSourceCostEntry,
       ];
     }),

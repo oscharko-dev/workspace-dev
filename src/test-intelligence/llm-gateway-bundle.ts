@@ -23,18 +23,32 @@ export interface LlmGatewayClientBundle {
   testGeneration: LlmGatewayClient;
   visualPrimary: LlmGatewayClient;
   visualFallback: LlmGatewayClient;
+  /**
+   * Optional dedicated client for the cross-model logic judge (Issue #1932).
+   * When set, the production runner sends logic-judge prompts here instead of
+   * reusing `testGeneration`, which restores the multi-agent harness's
+   * cross-model voting property. The client must declare role
+   * `"logic_judge"` and must NOT advertise image-input support — the logic
+   * judge consumes structured JSON only.
+   *
+   * When undefined (the default), callers fall back to `testGeneration` so
+   * existing operator configurations keep working unchanged.
+   */
+  logicJudge?: LlmGatewayClient;
 }
 
 export interface LlmGatewayClientBundleConfigs {
   testGeneration: LlmGatewayClientConfig;
   visualPrimary: LlmGatewayClientConfig;
   visualFallback: LlmGatewayClientConfig;
+  logicJudge?: LlmGatewayClientConfig;
 }
 
 export interface MockLlmGatewayClientBundleInputs {
   testGeneration: CreateMockLlmGatewayClientInput;
   visualPrimary: CreateMockLlmGatewayClientInput;
   visualFallback: CreateMockLlmGatewayClientInput;
+  logicJudge?: CreateMockLlmGatewayClientInput;
 }
 
 export interface LlmGatewayBundleProbeArtifact {
@@ -51,6 +65,7 @@ const ROLE_ORDER = [
   "test_generation",
   "visual_primary",
   "visual_fallback",
+  "logic_judge",
 ] as const;
 
 const assertRole = ({
@@ -100,6 +115,18 @@ const assertBundle = (bundle: LlmGatewayClientBundle): void => {
       "LlmGatewayClientBundle: visualFallback must declare image input support",
     );
   }
+  if (bundle.logicJudge !== undefined) {
+    assertRole({
+      actual: bundle.logicJudge.role,
+      expected: "logic_judge",
+      label: "logicJudge",
+    });
+    if (bundle.logicJudge.declaredCapabilities.imageInputSupport) {
+      throw new RangeError(
+        "LlmGatewayClientBundle: logicJudge must not declare image input support",
+      );
+    }
+  }
 };
 
 export const createLlmGatewayClientBundle = (
@@ -110,6 +137,9 @@ export const createLlmGatewayClientBundle = (
     testGeneration: createLlmGatewayClient(configs.testGeneration, runtime),
     visualPrimary: createLlmGatewayClient(configs.visualPrimary, runtime),
     visualFallback: createLlmGatewayClient(configs.visualFallback, runtime),
+    ...(configs.logicJudge !== undefined
+      ? { logicJudge: createLlmGatewayClient(configs.logicJudge, runtime) }
+      : {}),
   };
   assertBundle(bundle);
   return bundle;
@@ -122,6 +152,9 @@ export const createMockLlmGatewayClientBundle = (
     testGeneration: createMockLlmGatewayClient(inputs.testGeneration),
     visualPrimary: createMockLlmGatewayClient(inputs.visualPrimary),
     visualFallback: createMockLlmGatewayClient(inputs.visualFallback),
+    ...(inputs.logicJudge !== undefined
+      ? { logicJudge: createMockLlmGatewayClient(inputs.logicJudge) }
+      : {}),
   };
   assertBundle(bundle);
   return bundle;
@@ -139,14 +172,18 @@ export const probeLlmGatewayClientBundle = async ({
   destinationDir?: string;
 }): Promise<LlmGatewayBundleProbeResult> => {
   assertBundle(bundle);
-  const byRole: Record<LlmGatewayRole, LlmGatewayClient> = {
+  const byRole: Partial<Record<LlmGatewayRole, LlmGatewayClient>> = {
     test_generation: bundle.testGeneration,
     visual_primary: bundle.visualPrimary,
     visual_fallback: bundle.visualFallback,
+    ...(bundle.logicJudge !== undefined
+      ? { logic_judge: bundle.logicJudge }
+      : {}),
   };
   const artifacts: LlmGatewayBundleProbeArtifact[] = [];
   for (const role of ROLE_ORDER) {
     const client = byRole[role];
+    if (client === undefined) continue;
     const { artifact } = await probeLlmCapabilities({
       client,
       jobId,

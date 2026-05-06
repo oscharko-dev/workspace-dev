@@ -31,6 +31,92 @@ All changes to the public contract surface of `workspace-dev` are documented her
 
 ---
 
+## [4.49.0] - 2026-05-06
+
+### Added (Issue #1932 — cross-model logic-judge wired via dedicated deployment env var)
+
+`src/test-intelligence/production-runner.ts` previously routed the
+Logic-Judge LLM call through `input.llm.client` — the same gateway
+client that produced the test cases. The multi-agent harness lost its
+cross-model voting property: a self-consistency bias from the
+generator was amplified rather than caught by the judge. Wave 0 of
+the test-intelligence production hardening deployed
+`mistral-large-3` alongside `gpt-oss-120b`, but the runner had no
+seam to dispatch the judge to a different deployment.
+
+The runner now resolves the logic-judge client via:
+`input.llm.bundle?.logicJudge ?? input.llm.logicJudge ?? input.llm.client`
+so the operator can pin the judge to a different deployment without
+touching the generator wiring. When neither slot is populated, the
+runner falls back to the generator client and behaviour is identical
+to the legacy single-model topology.
+
+Additive public-contract changes:
+
+- `LlmGatewayClientBundle` gains an optional `logicJudge?:
+LlmGatewayClient` slot. The slot, when populated, must declare role
+  `"logic_judge"` and must NOT advertise image-input support; the
+  bundle assert refuses misconfigured clients at construction time.
+- `LlmGatewayClientBundleConfigs` and
+  `MockLlmGatewayClientBundleInputs` gain a matching optional
+  `logicJudge?` field so factory callers compose the slot like any
+  other bundle role.
+- `ALLOWED_LLM_GATEWAY_ROLES` gains the `"logic_judge"` value (new
+  optional gateway role; additive, does not affect existing
+  `test_generation` / `visual_primary` / `visual_fallback`
+  configurations).
+- `ProductionRunnerLlmConfig` gains an optional `logicJudge?:
+LlmGatewayClient` field. Use this seam when a cross-model judge is
+  required without a full visual-sidecar bundle. `bundle.logicJudge`
+  takes precedence when both are set.
+- `FinOpsBudgetReport.bySource` entries gain an optional
+  `deployment?: string` field. Surfaces the **judge** deployment for
+  `judge_primary` / `judge_secondary` when the operator wired a
+  cross-model topology so FinOps attribution distinguishes the judge
+  family from the generator family. The field is omitted from
+  canonical-JSON when no deployment was recorded, so the `bySource`
+  hash remains byte-stable for legacy single-model runs.
+- `PerSourceCostEntry` mirrors the optional `deployment?` field for
+  the per-source cost breakdown helper.
+- `recordPerSourceAttempt` accepts an optional `deployment` argument
+  used to stamp the per-source accumulator.
+
+CLI changes:
+
+- `workspace-dev test-intelligence run` adds
+  `--logic-judge-deployment <name>` (default sourced from the
+  `WORKSPACE_TEST_SPACE_LOGIC_JUDGE_DEPLOYMENT` env var; falls back to
+  the generator deployment for legacy single-model runs).
+- `TestIntelligenceRunOptions` gains a `logicJudgeDeployment?:
+string` field; `TestIntelligenceRunRuntime` gains a
+  `buildLogicJudgeClient` injection seam that mirrors
+  `buildLlmClient`.
+- New exported helper `buildLiveLogicJudgeClient` in
+  `src/test-intelligence-run-cli.ts` constructs the dedicated
+  Azure-bound logic-judge client (returns `undefined` when no
+  separate deployment is configured).
+
+Operator runbook update:
+
+- `docs/test-intelligence-operator-runbook.md` gains a "Cross-model
+  logic judge" section documenting the
+  `mistral-large-3` generator ↔ `gpt-oss-120b` judge recommendation
+  and the env-var matrix the operator must configure.
+
+Contract version bumps:
+
+- `CONTRACT_VERSION` bumps from `4.48.0` to `4.49.0` (additive minor
+  bump; new optional fields, new runtime exports, no removals).
+- `TEST_INTELLIGENCE_CONTRACT_VERSION` bumps from `1.11.0` to
+  `1.12.0` because the test-intelligence FinOps wire artifact
+  (`bySource[*].deployment`) and gateway role enum
+  (`logic_judge`) are extended in this release.
+
+No removals or renames. No new migrations are registered; the
+`migrationHash:` registry from 4.42.0 carries over unchanged.
+
+---
+
 ## [4.48.0] - 2026-05-06
 
 ### Added (Issue #1930 — multimodal token estimator counts image tiles, not base64 bytes)
@@ -221,24 +307,24 @@ Additive public-contract changes:
   migration registration entry required.
 - New runtime constants exported from `src/contracts/index.ts` and the
   package root:
-  - `LOGIC_JUDGE_VERDICT_SCHEMA_VERSION = "1.0.0"`
-  - `LOGIC_JUDGE_PROMPT_TEMPLATE_VERSION = "logic-judge.v1"`
-  - `LOGIC_JUDGE_COMPILED_PROMPT_ARTIFACT_FILENAME = "compiled-prompt-logic-judge.json"`
-  - `LOGIC_JUDGE_VERDICT_ARTIFACT_FILENAME = "logic_judge.json"`
-  - `ALLOWED_LOGIC_JUDGE_VERDICTS = ["accept", "repair", "reject"]`
-  - `ALLOWED_LOGIC_JUDGE_FINDING_SEVERITIES = ["warning", "error"]`
-  - `FAITHFULNESS_VERDICT_SCHEMA_VERSION = "1.0.0"`
-  - `FAITHFULNESS_JUDGE_PROMPT_TEMPLATE_VERSION = "faithfulness-judge.v1"`
-  - `FAITHFULNESS_JUDGE_COMPILED_PROMPT_ARTIFACT_FILENAME = "compiled-prompt-faithfulness-judge.json"`
-  - `FAITHFULNESS_VERDICT_ARTIFACT_FILENAME = "faithfulness_judge.json"`
-  - `ALLOWED_FAITHFULNESS_VERDICTS = ["accept", "repair", "reject"]`
+    - `LOGIC_JUDGE_VERDICT_SCHEMA_VERSION = "1.0.0"`
+    - `LOGIC_JUDGE_PROMPT_TEMPLATE_VERSION = "logic-judge.v1"`
+    - `LOGIC_JUDGE_COMPILED_PROMPT_ARTIFACT_FILENAME = "compiled-prompt-logic-judge.json"`
+    - `LOGIC_JUDGE_VERDICT_ARTIFACT_FILENAME = "logic_judge.json"`
+    - `ALLOWED_LOGIC_JUDGE_VERDICTS = ["accept", "repair", "reject"]`
+    - `ALLOWED_LOGIC_JUDGE_FINDING_SEVERITIES = ["warning", "error"]`
+    - `FAITHFULNESS_VERDICT_SCHEMA_VERSION = "1.0.0"`
+    - `FAITHFULNESS_JUDGE_PROMPT_TEMPLATE_VERSION = "faithfulness-judge.v1"`
+    - `FAITHFULNESS_JUDGE_COMPILED_PROMPT_ARTIFACT_FILENAME = "compiled-prompt-faithfulness-judge.json"`
+    - `FAITHFULNESS_VERDICT_ARTIFACT_FILENAME = "faithfulness_judge.json"`
+    - `ALLOWED_FAITHFULNESS_VERDICTS = ["accept", "repair", "reject"]`
 - New exported types:
-  - `JudgeFinding`, `RepairInstruction`, `JudgeVerdictRefusal`,
-    `JudgeVerdict`, `LogicJudgeVerdictLabel`,
-    `LogicJudgeFindingSeverity`
-  - `HallucinationFinding`, `VisualMismatch`,
-    `FaithfulnessVerdictRefusal`, `FaithfulnessVerdict`,
-    `FaithfulnessVerdictLabel`
+    - `JudgeFinding`, `RepairInstruction`, `JudgeVerdictRefusal`,
+      `JudgeVerdict`, `LogicJudgeVerdictLabel`,
+      `LogicJudgeFindingSeverity`
+    - `HallucinationFinding`, `VisualMismatch`,
+      `FaithfulnessVerdictRefusal`, `FaithfulnessVerdict`,
+      `FaithfulnessVerdictLabel`
 
 This is an additive minor bump. No existing field or discriminant is
 removed or renamed.
@@ -322,16 +408,16 @@ Additive public-contract changes:
 
 - New runtime constants exported from `src/contracts/index.ts` and the
   package root:
-  - `RELEASE_READINESS_REPORT_ARTIFACT_FILENAME = "release-readiness-report.json"`
-  - `RELEASE_READINESS_ARTIFACT_DIRECTORY = "evidence/release-readiness"`
-  - `RELEASE_READINESS_REPORT_SCHEMA_VERSION = "1.0.0"`
-  - `ALLOWED_RELEASE_READINESS_GATE_IDS` — closed, ordered list of the
-    twelve canonical gates: `typecheck`, `test`, `test_ti_eval`,
-    `test_ti_live_e2e`, `lint_no_telemetry`, `lint_secrets_all`,
-    `lint_agent_boundaries`, `lint_ts_style`, `build`,
-    `release_ml_bom_emit`, `release_merkle_roundtrip`,
-    `release_library_coverage_report`.
-  - `ALLOWED_RELEASE_READINESS_GATE_STATUSES = ["passed", "failed", "skipped"]`.
+    - `RELEASE_READINESS_REPORT_ARTIFACT_FILENAME = "release-readiness-report.json"`
+    - `RELEASE_READINESS_ARTIFACT_DIRECTORY = "evidence/release-readiness"`
+    - `RELEASE_READINESS_REPORT_SCHEMA_VERSION = "1.0.0"`
+    - `ALLOWED_RELEASE_READINESS_GATE_IDS` — closed, ordered list of the
+      twelve canonical gates: `typecheck`, `test`, `test_ti_eval`,
+      `test_ti_live_e2e`, `lint_no_telemetry`, `lint_secrets_all`,
+      `lint_agent_boundaries`, `lint_ts_style`, `build`,
+      `release_ml_bom_emit`, `release_merkle_roundtrip`,
+      `release_library_coverage_report`.
+    - `ALLOWED_RELEASE_READINESS_GATE_STATUSES = ["passed", "failed", "skipped"]`.
 - New contract types: `ReleaseReadinessGateId`,
   `ReleaseReadinessGateStatus`, `ReleaseReadinessGateResult`,
   `ReleaseReadinessReport`.
@@ -406,7 +492,7 @@ Gate semantics:
   scanned files; `scannedFileCount >= 1`. The CLI runner auto-derives this
   from `analyzeAgentBoundaries` — the fixture value is overwritten at runtime.
 - **Gate 9** (`context_budget_regression`): `harness.meanInputTokens /
-  baseline.meanInputTokens <= maxBloatRatio (default 1.20)` OR
+baseline.meanInputTokens <= maxBloatRatio (default 1.20)` OR
   `qualityDeltaScore >= 0.05`. Both sample counts must be `>= 5`.
 
 This is an additive minor bump. No removals or renames. No new

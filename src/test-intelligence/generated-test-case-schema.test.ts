@@ -139,8 +139,14 @@ test("schema: drift guard — the hash is stable for the current contract", () =
   // in this PR (the multimodal token estimator only touches
   // `LlmImageInput`/`LlmGatewayClientConfig`/`VisualSidecarCaptureInput`,
   // none of which feed `GeneratedTestCaseList`).
+  // Hash bumped by Issue #1932: TEST_INTELLIGENCE_CONTRACT_VERSION bumped
+  // 1.11.0 -> 1.12.0 (additive `bySource[*].deployment` field on the
+  // FinOps report and `logic_judge` gateway role). The schema pins
+  // `contractVersion: { const: TEST_INTELLIGENCE_CONTRACT_VERSION }` so
+  // the digest shifts in lockstep with the contract bump even though the
+  // `GeneratedTestCaseList` shape itself is unchanged.
   const expected =
-    "04dda2910d3188ab257f8548db515846089ac3473114a97d0ab786728aaafd36";
+    "f85c6f265afe2eedd8848143fc2571b0d2b81ad182ffc7937015779381c04901";
   const actual = computeGeneratedTestCaseListSchemaHash();
   if (actual !== expected) {
     assert.fail(
