@@ -14,12 +14,14 @@ import type {
   GeneratedTestCaseList,
   ReplayCacheEntry,
   ReplayCacheKey,
+  TenantScope,
 } from "../contracts/index.js";
 import { canonicalJson } from "./content-hash.js";
 import { validateGeneratedTestCaseList } from "./generated-test-case-schema.js";
 import {
   computeReplayCacheKeyDigest,
   ReplayCacheValidationError,
+  resolveTenantScopeSegments,
   type ReplayCache,
 } from "./replay-cache.js";
 
@@ -37,13 +39,13 @@ export const DEFAULT_PERSISTENT_REPLAY_CACHE_STALE_THRESHOLD_MS: number =
 
 export interface PersistentReplayCacheOptions {
   /**
-   * A short, non-reversible token identifier (e.g. `sha256(apiToken).slice(0, 16)`)
-   * used to partition the cache into per-token subdirectories.  Two callers
-   * with different `tokenScope` values cannot share cache entries even when
-   * the deterministic key digest is identical (issue #1739 / analogous to
-   * #1669).
+   * Multi-tenant scope (Issue #1944) that partitions the cache directory.
+   * The cache is bound to exactly this scope at construction time: paths
+   * outside `<rootDir>/<tenantId>/<environmentId>/<projectId>/…` are
+   * unaddressable, so cross-tenant reads are denied at the loader level.
+   * Single-tenant callers should pass `DEFAULT_TENANT_SCOPE`.
    */
-  tokenScope: string;
+  tenantScope: TenantScope;
   /**
    * Maximum total byte size of `.json` cache files allowed on disk before
    * LRU eviction kicks in.  Defaults to
@@ -60,9 +62,10 @@ export interface PersistentReplayCacheOptions {
 }
 
 /**
- * Disk-backed, token-scoped, LRU-bounded replay cache (Issue #1739).
+ * Disk-backed, tenant-scoped, LRU-bounded replay cache (Issues #1739, #1944).
  *
- * Files are stored under `<rootDir>/<tokenScope>/<sha256-digest>.json`.
+ * Files are stored under
+ * `<rootDir>/<tenantId>/<environmentId>/<projectId>/<sha256-digest>.json`.
  * Writes are atomic (temp-file rename); concurrent writers for the same key
  * produce identical, deterministic content so the last rename always wins
  * without corruption.  After each write the LRU eviction pass removes the
@@ -75,16 +78,13 @@ export const createPersistentReplayCache = (
   options: PersistentReplayCacheOptions,
 ): ReplayCache => {
   const {
-    tokenScope,
+    tenantScope,
     byteBudget = DEFAULT_PERSISTENT_REPLAY_CACHE_BYTE_BUDGET,
     staleThresholdMs = DEFAULT_PERSISTENT_REPLAY_CACHE_STALE_THRESHOLD_MS,
   } = options;
 
-  if (tokenScope.length === 0) {
-    throw new RangeError("PersistentReplayCacheOptions.tokenScope must not be empty");
-  }
-
-  const scopeDir = join(rootDir, tokenScope);
+  const segments = resolveTenantScopeSegments(tenantScope);
+  const scopeDir = join(rootDir, ...segments);
   const fileFor = (digest: string): string => join(scopeDir, `${digest}.json`);
   // Include process.pid AND a per-call random suffix so concurrent in-process
   // stores for the same key don't collide on the same temp file.

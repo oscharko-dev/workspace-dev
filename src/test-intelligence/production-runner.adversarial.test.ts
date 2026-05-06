@@ -395,7 +395,7 @@ test("production runner adversarial: corrupted persistent replay-cache entries a
       responder: okResponder([SAMPLE_DRAFT]),
     });
     const replayCache = createPersistentReplayCache(cacheRoot, {
-      tokenScope: "scope-a",
+      tenantScope: { tenantId: "tenant-a", environmentId: "prod" },
     });
     await runFigmaToQcTestCases({
       jobId: "job-cache-poison",

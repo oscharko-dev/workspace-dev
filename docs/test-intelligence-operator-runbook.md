@@ -219,6 +219,86 @@ test-intelligence redaction surface. Results land under
 `<runDir>/agent-online-eval-report.json` as canonical JSON; no external
 service is contacted by the default evaluator.
 
+### 7. Tenant-scoped replay cache (Issue #1944)
+
+Multi-tenant deployments must isolate replay-cache and judge-cache
+entries per tenant so that one customer's prompt fragments cannot
+leak into another customer's run result, even at the cache-hit
+level.
+
+The runner accepts a structured `TenantScope` on
+`RunFigmaToQcTestCasesInput.replayCacheTenantScope`:
+
+```ts
+import type { TenantScope } from "workspace-dev/contracts";
+
+const tenantScope: TenantScope = {
+  tenantId: "acme-corp",
+  environmentId: "prod",
+  projectId: "checkout",   // optional; omit to use "default"
+};
+
+await runFigmaToQcTestCases({ /* … */, replayCacheTenantScope: tenantScope });
+```
+
+When omitted, the runner falls back to `DEFAULT_TENANT_SCOPE`
+(`tenantId: "default"`, `environmentId: "default"`,
+`projectId: "default"`) — preserving single-tenant behaviour for
+callers that have not yet adopted the structured scope.
+
+**On-disk layout.** The replay cache and every judge cache write to
+a strict three-segment partition:
+
+```
+<outputRoot>/test-intelligence/replay-cache/
+  <tenantId>/<environmentId>/<projectId>/<sha256>.json
+<outputRoot>/test-intelligence/replay-cache/logic-judge/
+  <tenantId>/<environmentId>/<projectId>/<sha256>.logic-judge.json
+<outputRoot>/test-intelligence/replay-cache/a11y-judge/
+  <tenantId>/<environmentId>/<projectId>/<sha256>.a11y-judge.json
+<outputRoot>/test-intelligence/replay-cache/faithfulness-judge/
+  <tenantId>/<environmentId>/<projectId>/<sha256>.faithfulness-judge.json
+```
+
+Each cache loader is bound to exactly one `tenantScope` at
+construction time; cross-tenant reads are denied at the loader
+level because the cache exposes no API to address paths outside
+its scope directory. The deterministic key digest stays
+tenant-agnostic, so two tenants with identical inputs share the
+key but never share entries.
+
+**Segment validation.** `tenantId`, `environmentId`, and
+`projectId` are each treated as a single path component. Empty
+values, the traversal tokens `.` / `..`, path separators (`/`,
+`\`), and NUL bytes are rejected with a `RangeError` at cache
+construction time. Use stable, non-PII identifiers (e.g. customer
+org id), not raw API tokens.
+
+**Migration from `replayCacheTokenScope`.**
+The flat string field `replayCacheTokenScope` was replaced by the
+structured `replayCacheTenantScope` in Issue #1944. Map existing
+values as follows:
+
+| Before                                 | After                                                                                  |
+| -------------------------------------- | -------------------------------------------------------------------------------------- |
+| `replayCacheTokenScope` omitted        | omit `replayCacheTenantScope`, or pass `DEFAULT_TENANT_SCOPE`                          |
+| `replayCacheTokenScope: "default"`     | `replayCacheTenantScope: { tenantId: "default", environmentId: "default" }`            |
+| `replayCacheTokenScope: "<sha-token>"` | `replayCacheTenantScope: { tenantId: "<tenant-id>", environmentId: "<env-id>" }`       |
+
+Existing on-disk cache entries written under the old single-segment
+layout (`<rootDir>/<tokenScope>/...`) are not auto-migrated.
+Operators that need to preserve cache hits across the migration
+must move existing files into the new layout, e.g.:
+
+```
+mv <outputRoot>/test-intelligence/replay-cache/<oldScope> \
+   <outputRoot>/test-intelligence/replay-cache/<tenantId>/<envId>/default
+```
+
+If preserving hits is not required (the more common case), simply
+delete the old `<oldScope>` directory and let the cache repopulate
+on the next run.
+
 ---
 
 ## Day-2 operations

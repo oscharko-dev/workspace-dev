@@ -6039,6 +6039,46 @@ export interface CompiledPromptRequest {
   hashes: CompiledPromptHashes;
 }
 
+/**
+ * Multi-tenant scope (Issue #1944).
+ *
+ * Identifies the tenant + environment + (optional) project that owns a cache
+ * partition. Filesystem caches under
+ * `<root>/replay-cache/<tenantId>/<environmentId>/<projectId>/…` are bound to
+ * exactly one `TenantScope` at construction time; cross-tenant reads are
+ * impossible because the loader has no API to address paths outside its
+ * scope. Existing single-tenant deployments map to {@link DEFAULT_TENANT_SCOPE}.
+ *
+ * Each segment is treated as a single path component. The runtime rejects
+ * empty values and any segment containing a path separator (`/`, `\`) or the
+ * `..` traversal token — see `resolveTenantScopeSegments` in
+ * `src/test-intelligence/replay-cache.ts`.
+ */
+export interface TenantScope {
+  /** Stable, non-PII tenant identifier (e.g. customer org id). */
+  readonly tenantId: string;
+  /** Environment identifier (e.g. `prod`, `staging`, `dev`). */
+  readonly environmentId: string;
+  /**
+   * Optional project identifier within the tenant. When omitted the loader
+   * substitutes `"default"` so the on-disk path is always three segments
+   * deep — preventing accidental collision when a project id is later added.
+   */
+  readonly projectId?: string;
+}
+
+/**
+ * Sentinel `TenantScope` used by single-tenant callers that have not yet
+ * adopted the structured scope (Issue #1944). Keeps the on-disk layout
+ * `<root>/default/default/default/…` so an unscoped caller's cache is
+ * isolated from any scoped caller's cache by directory boundary.
+ */
+export const DEFAULT_TENANT_SCOPE: TenantScope = {
+  tenantId: "default",
+  environmentId: "default",
+  projectId: "default",
+};
+
 /** Replay-cache key — the only deterministic-bit-identical replay anchor. */
 export interface ReplayCacheKey {
   inputHash: string;

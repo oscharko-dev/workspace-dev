@@ -19,6 +19,7 @@ import {
   type LlmGenerationRequest,
   type LlmGenerationResult,
   type RepairInstruction,
+  type TenantScope,
   type VisualSidecarCaptureInput,
 } from "../contracts/index.js";
 import { sanitizeErrorMessage } from "../error-sanitization.js";
@@ -28,6 +29,7 @@ import {
   type A11yWcag22AaPillarId,
 } from "./a11y-coverage-eval.js";
 import { canonicalJson, sha256Hex } from "./content-hash.js";
+import { resolveTenantScopeSegments } from "./replay-cache.js";
 import type { LlmGatewayClientBundle } from "./llm-gateway-bundle.js";
 
 const MAX_MESSAGE_LENGTH = 240;
@@ -146,38 +148,54 @@ export const createMemoryA11yJudgeCache = (): A11yJudgeReplayCache => {
   };
 };
 
+/**
+ * Filesystem A11y-Judge cache (Issue #1944, tenant-scoped).
+ *
+ * Files are stored under
+ * `<rootDir>/<tenantId>/<environmentId>/<projectId>/<sha256-digest>.a11y-judge.json`.
+ * The cache instance is bound to exactly one `tenantScope` at construction
+ * time; cross-tenant reads are denied at the loader level.
+ */
 export const createFileSystemA11yJudgeCache = (
   rootDir: string,
-): A11yJudgeReplayCache => ({
-  async lookup(key) {
-    const digest = sha256Hex(key);
-    const path = join(rootDir, `${digest}.a11y-judge.json`);
-    let raw: string;
-    try {
-      raw = await readFile(path, "utf8");
-    } catch (error) {
-      if (isNotFoundError(error)) return { hit: false, key: digest };
-      throw error;
-    }
-    return { hit: true, entry: JSON.parse(raw) as A11yJudgeCacheEntry };
-  },
-  async store(key, verdict) {
-    const digest = sha256Hex(key);
-    const path = join(rootDir, `${digest}.a11y-judge.json`);
-    const tmpPath = `${path}.${process.pid}.tmp`;
-    await mkdir(dirname(path), { recursive: true });
-    await writeFile(
-      tmpPath,
-      canonicalJson({
-        key: digest,
-        storedAt: new Date(0).toISOString(),
-        verdict,
-      } satisfies A11yJudgeCacheEntry),
-      "utf8",
-    );
-    await rename(tmpPath, path);
-  },
-});
+  options: { tenantScope: TenantScope },
+): A11yJudgeReplayCache => {
+  const segments = resolveTenantScopeSegments(options.tenantScope);
+  const scopeDir = join(rootDir, ...segments);
+  const fileFor = (digest: string): string =>
+    join(scopeDir, `${digest}.a11y-judge.json`);
+
+  return {
+    async lookup(key) {
+      const digest = sha256Hex(key);
+      const path = fileFor(digest);
+      let raw: string;
+      try {
+        raw = await readFile(path, "utf8");
+      } catch (error) {
+        if (isNotFoundError(error)) return { hit: false, key: digest };
+        throw error;
+      }
+      return { hit: true, entry: JSON.parse(raw) as A11yJudgeCacheEntry };
+    },
+    async store(key, verdict) {
+      const digest = sha256Hex(key);
+      const path = fileFor(digest);
+      const tmpPath = `${path}.${process.pid}.tmp`;
+      await mkdir(dirname(path), { recursive: true });
+      await writeFile(
+        tmpPath,
+        canonicalJson({
+          key: digest,
+          storedAt: new Date(0).toISOString(),
+          verdict,
+        } satisfies A11yJudgeCacheEntry),
+        "utf8",
+      );
+      await rename(tmpPath, path);
+    },
+  };
+};
 
 export const buildA11yJudgeCriteria = (input: {
   readonly intent: BusinessTestIntentIr;
