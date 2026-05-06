@@ -260,41 +260,45 @@ test("runFigmaToQcTestCases harness mode enforced succeeds on a happy path", asy
 test("runFigmaToQcTestCases harness mode enforced blocks when the logic judge rejects the generated cases", async () => {
   const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ti-runner-harness-"));
   try {
-    let callIndex = 0;
     const client = createMockLlmGatewayClient({
       role: "test_generation",
       deployment: "gpt-oss-120b-mock",
       modelRevision: "mock-1",
       gatewayRelease: "mock",
-      responder: (_request, attempt) => {
-        callIndex += 1;
-        if (callIndex === 1) {
-          return okResponder([SAMPLE_DRAFT])(
-            { responseSchemaName: "workspace-dev-production-runner-draft-list-v1" },
+      // Issue #1928: a Logic-Judge `reject` now triggers the bounded
+      // repair loop (instead of short-circuiting). The mock therefore
+      // dispatches by responseSchemaName so the regenerator keeps
+      // returning a well-formed test_generation payload across repair
+      // iterations while the logic-judge persists in `reject` and the
+      // loop ultimately terminates with the panel still rejecting —
+      // which the harness then maps to `judge_rejection` /
+      // `failed_permanent`, exactly as before this issue.
+      responder: (request, attempt) => {
+        if (request.responseSchemaName === "workspace-dev-logic-judge-v1") {
+          return {
+            outcome: "success" as const,
+            content: {
+              verdict: "reject",
+              findings: [
+                {
+                  testCaseId: "tc-1",
+                  code: "traceability_missing",
+                  severity: "error",
+                  message:
+                    "The generated cases do not cover the expected path.",
+                },
+              ],
+              repairInstructions: [],
+            },
+            finishReason: "stop" as const,
+            usage: { inputTokens: 12, outputTokens: 6 },
+            modelDeployment: "gpt-oss-120b-mock",
+            modelRevision: "mock-1",
+            gatewayRelease: "mock",
             attempt,
-          );
+          };
         }
-        return {
-          outcome: "success" as const,
-          content: {
-            verdict: "reject",
-            findings: [
-              {
-                testCaseId: "tc-1",
-                code: "traceability_missing",
-                severity: "error",
-                message: "The generated cases do not cover the expected path.",
-              },
-            ],
-            repairInstructions: [],
-          },
-          finishReason: "stop" as const,
-          usage: { inputTokens: 12, outputTokens: 6 },
-          modelDeployment: "gpt-oss-120b-mock",
-          modelRevision: "mock-1",
-          gatewayRelease: "mock",
-          attempt,
-        };
+        return okResponder([SAMPLE_DRAFT])(request, attempt);
       },
     });
     let capturedError: unknown;
@@ -610,6 +614,150 @@ test("runFigmaToQcTestCases skips the repair loop entirely on a clean accept ver
         ),
       ),
     );
+  } finally {
+    await rm(tempRoot, { recursive: true, force: true });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Issue #1928: Logic-Judge `reject` must drive the repair loop instead of
+// short-circuiting the runner. Live runs showed `reject` is the dominant
+// verdict on recoverable structured-output schema violations; gating the
+// loop on `repair`-only verdicts silently disabled recovery.
+// ---------------------------------------------------------------------------
+
+test("runFigmaToQcTestCases drives the repair loop when the initial Logic-Judge verdict is reject and recovers post-repair (Issue #1928)", async () => {
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ti-runner-repair-"));
+  try {
+    // Issue #1905 form-screen a11y hard-gate requires an accessibility
+    // case anchored to every form screen; include one so the post-LLM
+    // hard-gate does not upgrade the LLM `accept` verdict back to
+    // `repair` and confound the assertion that the runner converges.
+    const SAMPLE_A11Y_DRAFT: ProductionRunnerLlmDraftCase = {
+      ...SAMPLE_DRAFT,
+      title: "Bedarfsermittlung — Tastatur- und Screenreader-A11y",
+      objective:
+        "Bestätigen, dass die Maske Bedarfsermittlung Tastatur- und Screenreader-Zugriff unterstützt.",
+      type: "accessibility",
+    };
+    let logicCallIndex = 0;
+    let generatorCallIndex = 0;
+    const client = createMockLlmGatewayClient({
+      role: "test_generation",
+      deployment: "gpt-oss-120b-mock",
+      modelRevision: "mock-1",
+      gatewayRelease: "mock",
+      responder: (request, attempt) => {
+        if (request.responseSchemaName === "workspace-dev-logic-judge-v1") {
+          logicCallIndex += 1;
+          // Initial pass → reject (e.g. recoverable schema violation).
+          // Repair iteration → accept once the regenerator re-runs.
+          if (logicCallIndex === 1) {
+            return {
+              outcome: "success" as const,
+              content: {
+                verdict: "reject",
+                findings: [
+                  {
+                    testCaseId: "$job",
+                    code: "schema_violation",
+                    severity: "error",
+                    message:
+                      "qualitySignals.coveredFieldIds emitted as object instead of array.",
+                  },
+                ],
+                repairInstructions: [
+                  {
+                    testCaseId: "$job",
+                    path: "qualitySignals.coveredFieldIds",
+                    instruction:
+                      "Emit coveredFieldIds as an array of cited IR ids.",
+                  },
+                ],
+              },
+              finishReason: "stop" as const,
+              usage: { inputTokens: 20, outputTokens: 10 },
+              modelDeployment: "gpt-oss-120b-mock",
+              modelRevision: "mock-1",
+              gatewayRelease: "mock",
+              attempt,
+            };
+          }
+          return {
+            outcome: "success" as const,
+            content: {
+              verdict: "accept",
+              findings: [],
+              repairInstructions: [],
+            },
+            finishReason: "stop" as const,
+            usage: { inputTokens: 20, outputTokens: 10 },
+            modelDeployment: "gpt-oss-120b-mock",
+            modelRevision: "mock-1",
+            gatewayRelease: "mock",
+            attempt,
+          };
+        }
+        generatorCallIndex += 1;
+        return {
+          outcome: "success" as const,
+          content: { testCases: [SAMPLE_DRAFT, SAMPLE_A11Y_DRAFT] },
+          finishReason: "stop" as const,
+          usage: { inputTokens: 100, outputTokens: 200 },
+          modelDeployment: "gpt-oss-120b-mock",
+          modelRevision: "mock-1",
+          gatewayRelease: "mock",
+          attempt,
+        };
+      },
+    });
+    const result = await runFigmaToQcTestCases({
+      jobId: "job-repair-loop-on-reject",
+      generatedAt: "2026-05-06T10:00:00Z",
+      source: { kind: "figma_paste_normalized", file: SAMPLE_FILE },
+      outputRoot: tempRoot,
+      llm: { client },
+      harness: { mode: "shadow_eval", maxRepairIterations: 2 },
+    });
+    assert.ok(
+      result.repairLoop,
+      "expected repair-loop summary even when initial verdict was reject",
+    );
+    assert.equal(result.repairLoop.outcome, "accepted");
+    assert.equal(result.repairLoop.repairIterationCount, 1);
+    assert.equal(result.repairLoop.iterations.length, 2);
+    assert.equal(result.repairLoop.iterations[0]!.logicVerdict, "reject");
+    assert.equal(result.repairLoop.iterations[1]!.logicVerdict, "accept");
+    assert.equal(
+      result.logicJudge.verdict.verdict,
+      "accept",
+      "final logicJudge verdict must reflect post-repair state",
+    );
+    assert.equal(
+      generatorCallIndex,
+      2,
+      "expected the regenerator to run once after the initial reject",
+    );
+    assert.equal(logicCallIndex, 2);
+    assert.equal(result.blocked, false);
+    const plannerArtifact = path.join(
+      result.artifactDir,
+      "agent-role-runs",
+      "repair_planner_iter_1.json",
+    );
+    const generatorArtifact = path.join(
+      result.artifactDir,
+      "agent-role-runs",
+      "test_generation_repair_iter_1.json",
+    );
+    const plannerPayload = JSON.parse(await readFile(plannerArtifact, "utf8"));
+    assert.equal(plannerPayload.iteration, 1);
+    assert.equal(plannerPayload.outputs.repairInstructionCount, 1);
+    const generatorPayload = JSON.parse(
+      await readFile(generatorArtifact, "utf8"),
+    );
+    assert.equal(generatorPayload.iteration, 1);
+    assert.equal(generatorPayload.llmGateway.outcome, "success");
   } finally {
     await rm(tempRoot, { recursive: true, force: true });
   }

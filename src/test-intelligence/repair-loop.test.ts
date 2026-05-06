@@ -422,32 +422,36 @@ test("repair loop terminates with needs_review when the iteration cap is exhaust
 });
 
 // ---------------------------------------------------------------------------
-// Scenario 5: logic-reject is terminal — no repair attempted
+// Scenario 5 (Issue #1928): initial logic-reject now drives the repair loop
+// instead of short-circuiting; recoverable schema violations get a chance to
+// converge through the iteration cycle.
 // ---------------------------------------------------------------------------
-test("repair loop returns rejected immediately when the initial logic-judge verdict is reject", async () => {
+test("repair loop runs an iteration when the initial logic-judge verdict is reject and converges on accept", async () => {
   await withTempDir(async (runDir) => {
-    let regenCalled = false;
+    let regenCalls = 0;
     const result = await runRepairLoop({
       jobId: "job-fixture",
       runDir,
       initialList: buildList(["tc-1"]),
       initialLogicVerdict: buildLogicVerdict("reject"),
       regenerate: async (...args) => {
-        regenCalled = true;
+        regenCalls += 1;
         return okRegenerate(buildList(["tc-1"]))(...args);
       },
       runLogicJudge: sequencedLogicJudge([buildLogicVerdict("accept")]),
     });
-    assert.equal(result.outcome, "rejected");
-    assert.equal(result.repairIterationCount, 0);
-    assert.equal(regenCalled, false);
+    assert.equal(result.outcome, "accepted");
+    assert.equal(result.repairIterationCount, 1);
+    assert.equal(regenCalls, 1);
+    const planner = await readPlannerArtifact(runDir, 1);
+    assert.equal(planner.iteration, 1);
   });
 });
 
 // ---------------------------------------------------------------------------
-// Scenario 6: faithfulness-reject is terminal even when logic accepts
+// Scenario 6 (Issue #1928): initial faithfulness-reject also runs the loop.
 // ---------------------------------------------------------------------------
-test("repair loop returns rejected when only faithfulness-judge issues reject on the initial pass", async () => {
+test("repair loop runs an iteration when only faithfulness-judge issues reject on the initial pass", async () => {
   await withTempDir(async (runDir) => {
     const result = await runRepairLoop({
       jobId: "job-fixture",
@@ -461,15 +465,16 @@ test("repair loop returns rejected when only faithfulness-judge issues reject on
         buildFaithfulnessVerdict("accept"),
       ]),
     });
-    assert.equal(result.outcome, "rejected");
-    assert.equal(result.repairIterationCount, 0);
+    assert.equal(result.outcome, "accepted");
+    assert.equal(result.repairIterationCount, 1);
   });
 });
 
 // ---------------------------------------------------------------------------
-// Scenario 7: both judges reject — terminal rejection
+// Scenario 7 (Issue #1928): even when both judges reject on the initial pass
+// the loop attempts the bounded repair cycle before terminating.
 // ---------------------------------------------------------------------------
-test("repair loop returns rejected when both judges reject on the initial pass", async () => {
+test("repair loop runs an iteration even when both judges reject on the initial pass", async () => {
   await withTempDir(async (runDir) => {
     const result = await runRepairLoop({
       jobId: "job-fixture",
@@ -483,8 +488,27 @@ test("repair loop returns rejected when both judges reject on the initial pass",
         buildFaithfulnessVerdict("accept"),
       ]),
     });
+    assert.equal(result.outcome, "accepted");
+    assert.equal(result.repairIterationCount, 1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Scenario 7b (Issue #1928): if the post-repair logic-judge still rejects,
+// the loop terminates with `rejected` after recording the iteration.
+// ---------------------------------------------------------------------------
+test("repair loop returns rejected when the post-repair logic-judge still rejects", async () => {
+  await withTempDir(async (runDir) => {
+    const result = await runRepairLoop({
+      jobId: "job-fixture",
+      runDir,
+      initialList: buildList(["tc-1"]),
+      initialLogicVerdict: buildLogicVerdict("reject"),
+      regenerate: okRegenerate(buildList(["tc-1"])),
+      runLogicJudge: sequencedLogicJudge([buildLogicVerdict("reject")]),
+    });
     assert.equal(result.outcome, "rejected");
-    assert.equal(result.repairIterationCount, 0);
+    assert.equal(result.repairIterationCount, 1);
   });
 });
 
