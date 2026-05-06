@@ -761,7 +761,9 @@ const evaluateJobLevel = (
     }
   }
 
-  violations.push(...evaluateA11yJudgeVerdict(formScreenIds, a11yVerdict));
+  if (profile.rules.requireAccessibilityCaseWhenFormPresent) {
+    violations.push(...evaluateA11yJudgeVerdict(formScreenIds, a11yVerdict));
+  }
 
   // Duplicate fingerprint — coverage reports the pairs; the gate downgrades.
   for (const pair of coverage.duplicatePairs) {

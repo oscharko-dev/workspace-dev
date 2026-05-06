@@ -560,6 +560,9 @@ export const runValidationPipelineWithSelfVerify = async (
     ...(input.a11yVerdict !== undefined
       ? { a11yVerdict: input.a11yVerdict }
       : {}),
+    ...(input.policyOverrides !== undefined
+      ? { policyOverrides: input.policyOverrides }
+      : {}),
     ...(visualReport !== undefined ? { visual: visualReport } : {}),
     ...(semanticContentOverrides !== undefined
       ? { semanticContentOverrides }

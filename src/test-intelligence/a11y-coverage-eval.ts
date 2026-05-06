@@ -65,7 +65,7 @@ import { GENERATOR_FORM_SCREEN_A11Y_REPAIR_INSTRUCTION } from "./agent-role-prof
 import { synthesizeGeneratedTestCases } from "./validation-harness.js";
 
 /** Schema version pinned on every persisted a11y-coverage eval artifact. */
-export const A11Y_COVERAGE_EVAL_SCHEMA_VERSION = "1.0.0" as const;
+export const A11Y_COVERAGE_EVAL_SCHEMA_VERSION = "1.1.0" as const;
 
 /** Stable profile id used by the eval suite. */
 export const A11Y_COVERAGE_EVAL_PROFILE_ID = "wcag-2.2-aa-form-screen" as const;

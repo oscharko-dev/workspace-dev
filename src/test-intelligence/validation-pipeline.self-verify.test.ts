@@ -4,6 +4,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import {
+  A11Y_JUDGE_PROMPT_TEMPLATE_VERSION,
+  A11Y_VERDICT_SCHEMA_VERSION,
   ALLOWED_SELF_VERIFY_RUBRIC_DIMENSIONS,
   ALLOWED_SELF_VERIFY_RUBRIC_VISUAL_SUBSCORES,
   GENERATED_TEST_CASE_SCHEMA_VERSION,
@@ -12,6 +14,7 @@ import {
   SELF_VERIFY_RUBRIC_RESPONSE_SCHEMA_NAME,
   TEST_INTELLIGENCE_CONTRACT_VERSION,
   TEST_INTELLIGENCE_PROMPT_TEMPLATE_VERSION,
+  type A11yVerdict,
   type BusinessTestIntentIr,
   type GeneratedTestCase,
   type GeneratedTestCaseList,
@@ -77,6 +80,40 @@ const buildCase = (
   },
   ...overrides,
 });
+
+const buildAccessibilityCase = (
+  overrides: Partial<GeneratedTestCase> = {},
+): GeneratedTestCase =>
+  buildCase({
+    type: "accessibility",
+    title: "Keyboard navigation, focus order, and screen-reader announcements are covered",
+    objective:
+      "Confirm keyboard navigation, focus order, and screen-reader announcements for the form.",
+    steps: [
+      {
+        index: 1,
+        action: "Tab through every control using only the keyboard",
+        expected: "Keyboard navigation reaches every control in a logical order",
+      },
+      {
+        index: 2,
+        action: "Verify focus order and visible focus indicator while tabbing",
+        expected: "Focus order stays logical and every control shows a visible focus indicator",
+      },
+      {
+        index: 3,
+        action: "Trigger validation errors with a screen reader enabled",
+        expected:
+          "Validation messages are announced via aria-live and each control announces a meaningful label",
+      },
+    ],
+    expectedResults: [
+      "Keyboard navigation reaches every control in a logical order",
+      "Focus order stays logical and every control shows a visible focus indicator",
+      "Validation messages are announced via aria-live and each control announces a meaningful label",
+    ],
+    ...overrides,
+  });
 
 const buildList = (
   cases: ReadonlyArray<GeneratedTestCase>,
@@ -178,6 +215,26 @@ const buildVisual = (
   ...overrides,
 });
 
+const buildA11yVerdict = (
+  overrides: Partial<A11yVerdict> = {},
+): A11yVerdict => ({
+  schemaVersion: A11Y_VERDICT_SCHEMA_VERSION,
+  contractVersion: TEST_INTELLIGENCE_CONTRACT_VERSION,
+  promptTemplateVersion: A11Y_JUDGE_PROMPT_TEMPLATE_VERSION,
+  generatedAt: GENERATED_AT,
+  jobId: "job-1",
+  cacheHit: false,
+  cacheKeyDigest: ZERO,
+  modelDeployment: "phi-4-multimodal-instruct",
+  modelRevision: "phi-4-multimodal-instruct@test",
+  gatewayRelease: "mock",
+  verdict: "accept",
+  criteria: [],
+  findings: [],
+  repairInstructions: [],
+  ...overrides,
+});
+
 const RUBRIC_BINDING = {
   deployment: "gpt-oss-120b-mock",
   modelRevision: "rev-1",
@@ -263,6 +320,62 @@ test("enabled rubric pipeline propagates a valid low score into coverage", async
   assert.equal(artifacts.rubric?.caseEvaluations[0]?.rubricScore, 0.25);
   assert.equal(artifacts.rubric?.aggregate.jobLevelRubricScore, 0.25);
   assert.equal(artifacts.coverage.rubricScore, 0.25);
+});
+
+test("Issue #1951: self-verify pipeline honors policyOverrides for a11y hard-gate downgrades", async () => {
+  const list = buildList([buildAccessibilityCase({ id: "tc-a11y" })]);
+  const intent: BusinessTestIntentIr = {
+    ...buildIntent(),
+    detectedFields: [
+      {
+        id: "f-1",
+        screenId: "s-1",
+        trace: { nodeId: "n1" },
+        provenance: "figma_node",
+        confidence: 0.9,
+        label: "Email",
+        type: "text",
+      },
+    ],
+  };
+  const artifacts = await runValidationPipelineWithSelfVerify({
+    jobId: "job-1",
+    generatedAt: GENERATED_AT,
+    list,
+    intent,
+    a11yVerdict: buildA11yVerdict({
+      verdict: "repair",
+      criteria: [
+        {
+          criterionId: "s-1::error-announcements",
+          screenId: "s-1",
+          screenName: "Form",
+          pillarId: "error-announcements",
+          successCriterion: "WCAG 4.1.3 Status Messages",
+          verdict: "not_covered",
+          rationale: "No case verifies screen-reader announcements for validation changes.",
+        },
+      ],
+    }),
+    policyOverrides: [
+      {
+        ruleId: "policy:form-screen-needs-accessibility-case",
+        severity: "warning",
+      },
+    ],
+    selfVerify: {
+      enabled: true,
+      client: buildPerfectMockClient(),
+      modelBinding: RUBRIC_BINDING,
+      policyBundleVersion: "wave1",
+    },
+  });
+  const violation = artifacts.policy.jobLevelViolations.find(
+    (entry) => entry.outcome === "a11y_criterion_not_covered",
+  );
+  assert.equal(violation?.severity, "warning");
+  assert.equal(artifacts.policy.blocked, false);
+  assert.equal(artifacts.blocked, false);
 });
 
 test("enabled rubric pipeline scores validated visual subscores end-to-end", async () => {

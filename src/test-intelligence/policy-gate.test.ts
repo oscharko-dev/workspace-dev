@@ -1557,6 +1557,54 @@ test("Issue #1951: a11y_judge not_covered verdict blocks the job", () => {
   assert.equal(report.blocked, true);
 });
 
+test("Issue #1951: disabled form-screen accessibility rule suppresses a11y_judge gating", () => {
+  const intent = buildIntent({
+    detectedFields: [
+      {
+        id: "f-1",
+        screenId: "s-1",
+        trace: { nodeId: "n1" },
+        provenance: "figma_node",
+        confidence: 0.9,
+        label: "Email",
+        type: "text",
+      },
+    ],
+  });
+  const ctx = harness([buildAccessibilityCase({ id: "tc-a11y" })], intent);
+  ctx.profile.rules.requireAccessibilityCaseWhenFormPresent = false;
+  const report = evaluatePolicyGate({
+    jobId: "job-1",
+    generatedAt: GENERATED_AT,
+    list: ctx.list,
+    intent: ctx.intent,
+    profile: ctx.profile,
+    validation: ctx.validation,
+    coverage: ctx.coverage,
+    a11yVerdict: buildA11yVerdict({
+      verdict: "repair",
+      criteria: [
+        {
+          criterionId: "s-1::error-announcements",
+          screenId: "s-1",
+          screenName: "Form",
+          pillarId: "error-announcements",
+          successCriterion: "WCAG 4.1.3 Status Messages",
+          verdict: "not_covered",
+          rationale: "No existing case verifies screen-reader announcements.",
+        },
+      ],
+    }),
+  });
+  assert.equal(
+    report.jobLevelViolations.some(
+      (entry) => entry.outcome === "a11y_criterion_not_covered",
+    ),
+    false,
+  );
+  assert.equal(report.blocked, false);
+});
+
 test("Issue #1950: coverage-baseline drift > 10% emits a warning-severity job-level violation (needs_review, not blocking)", () => {
   const ctx = harness([buildCase({})], buildIntent());
   const report = evaluatePolicyGate({
