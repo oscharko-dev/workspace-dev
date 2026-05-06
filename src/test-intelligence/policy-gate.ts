@@ -48,6 +48,10 @@ import {
   type VisualSidecarValidationReport,
 } from "../contracts/index.js";
 import {
+  buildCoverageDriftPolicyViolation,
+  type CoverageBaselineDriftEvaluation,
+} from "./coverage-baseline-drift.js";
+import {
   filterSemanticContentOverridesForValidation,
   type SemanticContentOverrideMap,
 } from "./semantic-content-sanitization.js";
@@ -109,6 +113,17 @@ export interface EvaluatePolicyGateInput {
    * operator-managed `ictRegisterRef`.
    */
   activeModelBindings?: readonly ActiveModelBinding[];
+  /**
+   * Optional runtime coverage-baseline drift evaluation (Issue #1950).
+   * When the evaluation reports `exceeded === true`, the gate emits a
+   * job-level `policy:coverage-drift-exceeded` violation at warning
+   * severity. The decision class is `needs_review` — operator-actionable
+   * but not auto-blocking, so a single bad day cannot brick production.
+   *
+   * The runtime store and `--coverage-baseline-update` CLI flag are
+   * documented in `docs/runbooks/coverage-baseline-rebaseline.md`.
+   */
+  coverageBaselineDrift?: CoverageBaselineDriftEvaluation;
 }
 
 const CROSS_MODAL_FAITHFULNESS_RULE =
@@ -603,8 +618,17 @@ const evaluateJobLevel = (
   visualSidecarRefusal?: EvaluatePolicyGateInput["visualSidecarRefusal"],
   untrustedContentReport?: UntrustedContentNormalizationReport,
   activeModelBindings?: readonly ActiveModelBinding[],
+  coverageBaselineDrift?: CoverageBaselineDriftEvaluation,
 ): TestCasePolicyViolation[] => {
   const violations = evaluateActiveModelBindings(profile, activeModelBindings);
+
+  const coverageDriftViolation =
+    coverageBaselineDrift === undefined
+      ? undefined
+      : buildCoverageDriftPolicyViolation(coverageBaselineDrift);
+  if (coverageDriftViolation !== undefined) {
+    violations.push(coverageDriftViolation);
+  }
 
   for (const deficit of collectTechniqueQuotaDeficits(
     list.testCases,
@@ -976,6 +1000,7 @@ export const evaluatePolicyGate = (
         input.visualSidecarRefusal,
         input.untrustedContentReport,
         input.activeModelBindings,
+        input.coverageBaselineDrift,
       ),
       ...(faithfulnessViolation !== undefined ? [faithfulnessViolation] : []),
     ],

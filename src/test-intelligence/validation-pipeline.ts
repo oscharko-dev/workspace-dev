@@ -47,6 +47,7 @@ import {
   type VisualSidecarValidationReport,
 } from "../contracts/index.js";
 import { canonicalJson } from "./content-hash.js";
+import type { CoverageBaselineDriftEvaluation } from "./coverage-baseline-drift.js";
 import { evaluatePolicyGate } from "./policy-gate.js";
 import { cloneEuBankingDefaultProfile } from "./policy-profile.js";
 import {
@@ -110,6 +111,13 @@ export interface RunValidationPipelineInput {
   untrustedContentReport?: UntrustedContentNormalizationReport;
   /** Optional summary of active model bindings used by the job. */
   activeModelBindings?: readonly ActiveModelBinding[];
+  /**
+   * Optional runtime coverage-baseline drift evaluation (Issue #1950).
+   * Computed by the runner before the pipeline runs; passed through to
+   * the policy gate so a `policy:coverage-drift-exceeded` job-level
+   * violation can fire when drift exceeds 10 % on any tracked axis.
+   */
+  coverageBaselineDrift?: CoverageBaselineDriftEvaluation;
 }
 
 export interface ValidationPipelineArtifacts {
@@ -248,6 +256,9 @@ export const runValidationPipeline = (
       : {}),
     ...(input.activeModelBindings !== undefined
       ? { activeModelBindings: input.activeModelBindings }
+      : {}),
+    ...(input.coverageBaselineDrift !== undefined
+      ? { coverageBaselineDrift: input.coverageBaselineDrift }
       : {}),
   });
 
@@ -550,6 +561,9 @@ export const runValidationPipelineWithSelfVerify = async (
       : {}),
     ...(input.activeModelBindings !== undefined
       ? { activeModelBindings: input.activeModelBindings }
+      : {}),
+    ...(input.coverageBaselineDrift !== undefined
+      ? { coverageBaselineDrift: input.coverageBaselineDrift }
       : {}),
   });
 

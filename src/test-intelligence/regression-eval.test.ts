@@ -361,3 +361,125 @@ test("regression-eval: tampered snapshot file fails the drift gate even when JSO
   });
   assert.equal(diff.hasDrift, true);
 });
+
+// -----------------------------------------------------------------------
+// Issue #1950 — runtime coverage-baseline drift gate.
+//
+// These scenarios exercise the runtime baseline store layered alongside
+// the fixture-based regression-eval mechanism: first-run seed, drift
+// detection, and operator-driven re-baseline.
+// -----------------------------------------------------------------------
+
+import { mkdtemp as mkdtempBaseline } from "node:fs/promises";
+import { tmpdir as tmpdirBaseline } from "node:os";
+import { join as joinBaseline } from "node:path";
+import {
+  COVERAGE_BASELINE_DRIFT_THRESHOLD,
+  syncCoverageBaselineForJob,
+  loadCoverageBaseline,
+} from "./coverage-baseline-drift.js";
+
+const RUNTIME_BASELINE_GENERATED_AT = "2026-05-06T10:00:00.000Z";
+const RUNTIME_BASELINE_TENANT = "tenant-acme";
+const RUNTIME_BASELINE_ARCHETYPE = "baseline-customer-self-service";
+const RUNTIME_BASELINE_PROFILE = "eu-banking-default";
+
+const seedBaselineRatios = (override: Partial<{
+  fieldCoverage: number;
+  actionCoverage: number;
+  validationCoverage: number;
+  navigationCoverage: number;
+}> = {}) => ({
+  fieldCoverage: 0.8,
+  actionCoverage: 0.7,
+  validationCoverage: 0.6,
+  navigationCoverage: 0.5,
+  ...override,
+});
+
+test("regression-eval (#1950): runtime coverage-baseline seeds on the first run per archetype", async () => {
+  const runtimeRoot = await mkdtempBaseline(
+    joinBaseline(tmpdirBaseline(), "runtime-baseline-seed-"),
+  );
+  const result = await syncCoverageBaselineForJob({
+    runtimeRoot,
+    tenantId: RUNTIME_BASELINE_TENANT,
+    archetype: RUNTIME_BASELINE_ARCHETYPE,
+    policyProfileId: RUNTIME_BASELINE_PROFILE,
+    generatedAt: RUNTIME_BASELINE_GENERATED_AT,
+    candidateRatios: seedBaselineRatios(),
+  });
+  assert.equal(result.evaluation.seeded, true);
+  assert.equal(result.evaluation.exceeded, false);
+  assert.notEqual(result.persistedPath, undefined);
+  const persisted = await loadCoverageBaseline({
+    runtimeRoot,
+    tenantId: RUNTIME_BASELINE_TENANT,
+    archetype: RUNTIME_BASELINE_ARCHETYPE,
+    policyProfileId: RUNTIME_BASELINE_PROFILE,
+  });
+  assert.notEqual(persisted, undefined);
+  assert.deepEqual(persisted?.ratios, seedBaselineRatios());
+});
+
+test("regression-eval (#1950): drift > 10% on any tracked axis trips the runtime gate", async () => {
+  const runtimeRoot = await mkdtempBaseline(
+    joinBaseline(tmpdirBaseline(), "runtime-baseline-drift-"),
+  );
+  await syncCoverageBaselineForJob({
+    runtimeRoot,
+    tenantId: RUNTIME_BASELINE_TENANT,
+    archetype: RUNTIME_BASELINE_ARCHETYPE,
+    policyProfileId: RUNTIME_BASELINE_PROFILE,
+    generatedAt: RUNTIME_BASELINE_GENERATED_AT,
+    candidateRatios: seedBaselineRatios(),
+  });
+  const drifted = await syncCoverageBaselineForJob({
+    runtimeRoot,
+    tenantId: RUNTIME_BASELINE_TENANT,
+    archetype: RUNTIME_BASELINE_ARCHETYPE,
+    policyProfileId: RUNTIME_BASELINE_PROFILE,
+    generatedAt: RUNTIME_BASELINE_GENERATED_AT,
+    // Drop fieldCoverage by 0.3 — far past the 0.10 threshold.
+    candidateRatios: seedBaselineRatios({ fieldCoverage: 0.5 }),
+  });
+  assert.equal(drifted.evaluation.exceeded, true);
+  assert.equal(drifted.evaluation.threshold, COVERAGE_BASELINE_DRIFT_THRESHOLD);
+  assert.equal(
+    drifted.evaluation.findings.some((f) => f.axis === "fieldCoverage"),
+    true,
+  );
+});
+
+test("regression-eval (#1950): operator-driven update mode rebases the runtime baseline", async () => {
+  const runtimeRoot = await mkdtempBaseline(
+    joinBaseline(tmpdirBaseline(), "runtime-baseline-rebaseline-"),
+  );
+  await syncCoverageBaselineForJob({
+    runtimeRoot,
+    tenantId: RUNTIME_BASELINE_TENANT,
+    archetype: RUNTIME_BASELINE_ARCHETYPE,
+    policyProfileId: RUNTIME_BASELINE_PROFILE,
+    generatedAt: RUNTIME_BASELINE_GENERATED_AT,
+    candidateRatios: seedBaselineRatios({ fieldCoverage: 0.3 }),
+  });
+  const rebaseline = await syncCoverageBaselineForJob({
+    runtimeRoot,
+    tenantId: RUNTIME_BASELINE_TENANT,
+    archetype: RUNTIME_BASELINE_ARCHETYPE,
+    policyProfileId: RUNTIME_BASELINE_PROFILE,
+    generatedAt: RUNTIME_BASELINE_GENERATED_AT,
+    candidateRatios: seedBaselineRatios({ fieldCoverage: 0.95 }),
+    mode: "update",
+  });
+  // Update mode skips drift evaluation by design.
+  assert.equal(rebaseline.evaluation.exceeded, false);
+  assert.equal(rebaseline.evaluation.seeded, true);
+  const refreshed = await loadCoverageBaseline({
+    runtimeRoot,
+    tenantId: RUNTIME_BASELINE_TENANT,
+    archetype: RUNTIME_BASELINE_ARCHETYPE,
+    policyProfileId: RUNTIME_BASELINE_PROFILE,
+  });
+  assert.equal(refreshed?.ratios.fieldCoverage, 0.95);
+});

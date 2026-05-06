@@ -541,6 +541,7 @@ export const ALLOWED_TEST_CASE_POLICY_OUTCOMES = [
   "risk_tag_downgrade_detected",
   "custom_context_risk_escalation",
   "multi_source_conflict_present",
+  "coverage_drift_exceeded",
 ] as const;
 export type TestCasePolicyOutcome =
   (typeof ALLOWED_TEST_CASE_POLICY_OUTCOMES)[number];
