@@ -2440,6 +2440,21 @@ export const runFigmaToQcTestCases = async (
     generatedAt: input.generatedAt,
     list: generatedList,
     intent,
+    coveragePlan: coveragePlanResult.plan,
+    ...(canonicalCustomerProfile?.policyOverrides !== undefined &&
+    canonicalCustomerProfile.policyOverrides.some(
+      (override) => override.severity !== "info",
+    )
+      ? {
+          policyOverrides: canonicalCustomerProfile.policyOverrides.filter(
+            (override): override is {
+              ruleId: string;
+              severity: "error" | "warning";
+            } => override.severity !== "info",
+          ),
+        }
+      : {}),
+    ...("rules" in customerRubric ? { profile: customerRubric } : {}),
     ...(promptVisualBatch !== undefined ? { visual: promptVisualBatch } : {}),
     ...(promptVisualBatch !== undefined
       ? {

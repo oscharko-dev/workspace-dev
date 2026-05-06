@@ -25,6 +25,7 @@ import { GENERATOR_FORM_SCREEN_A11Y_REPAIR_INSTRUCTION } from "./agent-role-prof
 import { canonicalJson, sha256Hex } from "./content-hash.js";
 import type { LlmGatewayClient } from "./llm-gateway.js";
 import { resolveTenantScopeSegments } from "./replay-cache.js";
+import { collectTechniqueQuotaDeficits } from "./technique-quota.js";
 
 const RESPONSE_SCHEMA_NAME = "workspace-dev-logic-judge-v1" as const;
 const MAX_MESSAGE_LENGTH = 240;
@@ -1176,54 +1177,25 @@ const evaluateTechniqueQuotaMinimums = (
   cases: ReadonlyArray<GeneratedTestCase>,
   coveragePlan: CoveragePlan | undefined,
 ): void => {
-  if (coveragePlan === undefined) return;
-  for (const screen of [...safeArray(coveragePlan.perScreen)].sort((left, right) =>
-    left.screenId.localeCompare(right.screenId),
-  )) {
-    const quotas = [...safeArray(screen.techniqueQuotas)]
-      .filter((quota) => quota.minCount > 0)
-      .sort(
-        (left, right) =>
-          left.technique.localeCompare(right.technique) ||
-          left.minCount - right.minCount,
-      );
-    if (quotas.length === 0) continue;
-
-    const counts = new Map<string, number>();
-    for (const testCase of cases) {
-      if (
-        !safeArray(testCase.figmaTraceRefs).some(
-          (traceRef) => traceRef.screenId === screen.screenId,
-        )
-      ) {
-        continue;
-      }
-      counts.set(testCase.technique, (counts.get(testCase.technique) ?? 0) + 1);
-    }
-
-    for (const quota of quotas) {
-      const actual = counts.get(quota.technique) ?? 0;
-      if (actual >= quota.minCount) continue;
-      const missing = quota.minCount - actual;
-      pushFinding(
-        acc,
-        {
-          testCaseId: "$job",
-          code: LOGIC_JUDGE_COVERAGE_HARD_GATE_FINDING_CODES.techniqueQuotaBreach,
-          severity: "error",
-          message:
-            `screen "${screen.screenId}" requires at least ${quota.minCount} ` +
-            `"${quota.technique}" case(s) but only ${actual} are anchored to that screen`,
-        },
-        {
-          testCaseId: "$job",
-          path: "testCases",
-          instruction:
-            `Add ${missing} more "${quota.technique}" case(s) anchored to screen ` +
-            `${screen.screenId} so CoveragePlan.techniqueQuotas is satisfied.`,
-        },
-      );
-    }
+  for (const deficit of collectTechniqueQuotaDeficits(cases, coveragePlan)) {
+    pushFinding(
+      acc,
+      {
+        testCaseId: "$job",
+        code: LOGIC_JUDGE_COVERAGE_HARD_GATE_FINDING_CODES.techniqueQuotaBreach,
+        severity: "error",
+        message:
+          `screen "${deficit.screenId}" requires at least ${deficit.minCount} ` +
+          `"${deficit.technique}" case(s) but only ${deficit.actual} are anchored to that screen`,
+      },
+      {
+        testCaseId: "$job",
+        path: "testCases",
+        instruction:
+          `Add ${deficit.missing} more "${deficit.technique}" case(s) anchored to screen ` +
+          `${deficit.screenId} so CoveragePlan.techniqueQuotas is satisfied.`,
+      },
+    );
   }
 };
 

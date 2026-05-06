@@ -33,6 +33,7 @@ import {
   VISUAL_SIDECAR_VALIDATION_REPORT_ARTIFACT_FILENAME,
   type ActiveModelBinding,
   type BusinessTestIntentIr,
+  type CoveragePlan,
   type GeneratedTestCaseList,
   type SelfVerifyRubricReport,
   type TestCaseCoverageReport,
@@ -69,8 +70,15 @@ export interface RunValidationPipelineInput {
   intent: BusinessTestIntentIr;
   /** Optional visual sidecar payload; when absent the visual gate is skipped. */
   visual?: ReadonlyArray<VisualScreenDescription>;
+  /** Optional coverage plan used for quota-aware hard-gates. */
+  coveragePlan?: CoveragePlan;
   /** Override the default `eu-banking-default` policy profile. */
   profile?: TestCasePolicyProfile;
+  /** Optional rule-severity overrides keyed by policy rule id. */
+  policyOverrides?: ReadonlyArray<{
+    ruleId: string;
+    severity: "error" | "warning";
+  }>;
   /** Optional rubric score (0..1) from a downstream rater. */
   rubricScore?: number;
   /** Optional primary visual deployment, used for fallback detection. */
@@ -216,7 +224,13 @@ export const runValidationPipeline = (
     profile,
     validation,
     coverage,
+    ...(input.coveragePlan !== undefined
+      ? { coveragePlan: input.coveragePlan }
+      : {}),
     ...(visualReport !== undefined ? { visual: visualReport } : {}),
+    ...(input.policyOverrides !== undefined
+      ? { policyOverrides: input.policyOverrides }
+      : {}),
     ...(semanticContentOverrides !== undefined
       ? { semanticContentOverrides }
       : {}),

@@ -28,6 +28,7 @@ import {
   TEST_INTELLIGENCE_CONTRACT_VERSION,
   type ActiveModelBinding,
   type BusinessTestIntentIr,
+  type CoveragePlan,
   type CustomContextPolicySignal,
   type GeneratedTestCase,
   type GeneratedTestCaseList,
@@ -49,6 +50,7 @@ import {
   filterSemanticContentOverridesForValidation,
   type SemanticContentOverrideMap,
 } from "./semantic-content-sanitization.js";
+import { collectTechniqueQuotaDeficits } from "./technique-quota.js";
 import type { UntrustedContentNormalizationReport } from "./untrusted-content-normalizer.js";
 
 export interface EvaluatePolicyGateInput {
@@ -59,7 +61,12 @@ export interface EvaluatePolicyGateInput {
   profile: TestCasePolicyProfile;
   validation: TestCaseValidationReport;
   coverage: TestCaseCoverageReport;
+  coveragePlan?: CoveragePlan;
   visual?: VisualSidecarValidationReport;
+  policyOverrides?: ReadonlyArray<{
+    ruleId: string;
+    severity: "error" | "warning";
+  }>;
   /**
    * Active reviewer overrides for `semantic_suspicious_content` findings,
    * keyed by `testCaseId → set of validation issue paths`. When a finding's
@@ -117,6 +124,17 @@ const escalate = (
   candidate: TestCasePolicyDecision,
 ): TestCasePolicyDecision => {
   return decisionRank[candidate] > decisionRank[current] ? candidate : current;
+};
+
+const severityToDecision = (
+  severity: "error" | "warning",
+): TestCasePolicyDecision => {
+  switch (severity) {
+    case "error":
+      return "blocked";
+    case "warning":
+      return "needs_review";
+  }
 };
 
 const parseMultiSourceConflictIds = (
@@ -561,6 +579,7 @@ const evaluateJobLevel = (
   intent: BusinessTestIntentIr,
   coverage: TestCaseCoverageReport,
   profile: TestCasePolicyProfile,
+  coveragePlan?: CoveragePlan,
   visual?: VisualSidecarValidationReport,
   customContextPolicySignals: readonly CustomContextPolicySignal[] = [],
   visualSidecarRefusal?: EvaluatePolicyGateInput["visualSidecarRefusal"],
@@ -568,6 +587,20 @@ const evaluateJobLevel = (
   activeModelBindings?: readonly ActiveModelBinding[],
 ): TestCasePolicyViolation[] => {
   const violations = evaluateActiveModelBindings(profile, activeModelBindings);
+
+  for (const deficit of collectTechniqueQuotaDeficits(
+    list.testCases,
+    coveragePlan,
+  )) {
+    violations.push({
+      rule: "policy:technique-coverage-minimum",
+      outcome: "technique_quota_breach",
+      severity: "error",
+      reason:
+        `screen "${deficit.screenId}" requires at least ${deficit.minCount} ` +
+        `"${deficit.technique}" case(s) but only ${deficit.actual} are anchored to that screen`,
+    });
+  }
 
   if (visualSidecarRefusal !== undefined) {
     violations.push({
@@ -742,6 +775,36 @@ const evaluateJobLevel = (
   return violations;
 };
 
+const buildPolicyOverrideMap = (
+  policyOverrides: EvaluatePolicyGateInput["policyOverrides"],
+): ReadonlyMap<string, "error" | "warning"> =>
+  new Map(
+    policyOverrides?.map((override) => [override.ruleId, override.severity]) ??
+      [],
+  );
+
+const applyPolicyOverrideViolations = (
+  violations: readonly TestCasePolicyViolation[],
+  overrideMap: ReadonlyMap<string, "error" | "warning">,
+): TestCasePolicyViolation[] =>
+  violations.map((violation) => {
+    const severity = overrideMap.get(violation.rule);
+    if (severity === undefined || severity === violation.severity) {
+      return violation;
+    }
+    return { ...violation, severity };
+  });
+
+const decisionFromViolations = (
+  violations: readonly TestCasePolicyViolation[],
+): TestCasePolicyDecision => {
+  let decision: TestCasePolicyDecision = "approved";
+  for (const violation of violations) {
+    decision = escalate(decision, severityToDecision(violation.severity));
+  }
+  return decision;
+};
+
 const summarizeUntrustedContentNeedsReview = (
   report: UntrustedContentNormalizationReport,
 ): string => {
@@ -817,22 +880,39 @@ export const evaluatePolicyGate = (
     );
   }
 
-  const jobLevelViolations = evaluateJobLevel(
-    input.list,
-    input.intent,
-    input.coverage,
-    input.profile,
-    input.visual,
-    input.customContextPolicySignals ?? [],
-    input.visualSidecarRefusal,
-    input.untrustedContentReport,
-    input.activeModelBindings,
+  const overrideMap = buildPolicyOverrideMap(input.policyOverrides);
+  const jobLevelViolations = applyPolicyOverrideViolations(
+    evaluateJobLevel(
+      input.list,
+      input.intent,
+      input.coverage,
+      input.profile,
+      input.coveragePlan,
+      input.visual,
+      input.customContextPolicySignals ?? [],
+      input.visualSidecarRefusal,
+      input.untrustedContentReport,
+      input.activeModelBindings,
+    ),
+    overrideMap,
   );
+
+  const overriddenDecisions = decisions.map((decision) => {
+    const violations = applyPolicyOverrideViolations(
+      decision.violations,
+      overrideMap,
+    );
+    return {
+      ...decision,
+      decision: decisionFromViolations(violations),
+      violations,
+    };
+  });
 
   // Job-level violations of error severity propagate as job-level
   // blocking; per-case decisions remain unchanged so review tooling can
   // see the per-case story.
-  let jobBlocked = decisions.some((d) => d.decision === "blocked");
+  let jobBlocked = overriddenDecisions.some((d) => d.decision === "blocked");
   if (!jobBlocked) {
     jobBlocked = jobLevelViolations.some((v) => v.severity === "error");
   }
@@ -840,7 +920,7 @@ export const evaluatePolicyGate = (
   let approved = 0;
   let blocked = 0;
   let needsReview = 0;
-  for (const d of decisions) {
+  for (const d of overriddenDecisions) {
     if (d.decision === "approved") approved += 1;
     else if (d.decision === "blocked") blocked += 1;
     else needsReview += 1;
@@ -858,7 +938,7 @@ export const evaluatePolicyGate = (
     blockedCount: blocked,
     needsReviewCount: needsReview,
     blocked: jobBlocked,
-    decisions,
+    decisions: overriddenDecisions,
     jobLevelViolations,
   };
 };
@@ -911,10 +991,7 @@ export const pruneResolvedMultiSourceConflictViolations = (
     const violations = rewriteViolations(decision.violations, "case");
     let nextDecision: TestCasePolicyDecision = "approved";
     for (const violation of violations) {
-      nextDecision = escalate(
-        nextDecision,
-        violation.severity === "error" ? "blocked" : "needs_review",
-      );
+      nextDecision = escalate(nextDecision, severityToDecision(violation.severity));
     }
     decisions.push({
       ...decision,

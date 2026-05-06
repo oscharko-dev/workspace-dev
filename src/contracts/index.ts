@@ -519,6 +519,7 @@ export const ALLOWED_TEST_CASE_POLICY_OUTCOMES = [
   "missing_expected_results",
   "pii_in_test_data",
   "ict_register_ref_required",
+  "technique_quota_breach",
   "missing_negative_or_validation_for_required_field",
   "missing_accessibility_case",
   "missing_boundary_case",
