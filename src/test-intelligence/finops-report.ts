@@ -89,6 +89,8 @@ export interface FinOpsAttemptObservation {
   role: FinOpsRole;
   /** Optional agent-source label for per-source attribution. */
   source?: AgentSourceLabel;
+  /** Optional stable identifier for one logical attempt on that source. */
+  attemptId?: string;
   /** Deployment label observed (e.g. `gpt-oss-120b-mock`). */
   deployment: string;
   /** Wall-clock duration of the attempt in milliseconds. */
@@ -280,6 +282,9 @@ export const createFinOpsUsageRecorder = (
               inputTokens: observation.result.usage.inputTokens,
               outputTokens: observation.result.usage.outputTokens,
             }
+          : {}),
+        ...(observation.attemptId !== undefined
+          ? { attemptId: observation.attemptId }
           : {}),
         // Issue #1932: stamp the deployment on the per-source
         // accumulator so `bySource.judge_primary` surfaces the

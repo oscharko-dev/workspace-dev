@@ -153,6 +153,11 @@ export interface TestIntelligenceRunOptions {
    */
   customContextMarkdownPath: string | undefined;
   /**
+   * Generator diversity pass count (Issue #1936). `1` preserves the legacy
+   * single-pass flow; `2` enables deterministic dual-pass generation.
+   */
+  diversityPasses: 1 | 2;
+  /**
    * Multi-agent harness routing mode (Issue #1791). Defaults to `"off"`,
    * which preserves the legacy single-pass LLM behavior. `"shadow_eval"` runs
    * the harness alongside the call and emits a per-step harness artifact for
@@ -218,6 +223,7 @@ export const parseTestIntelligenceRunArgs = (
   let harnessRoleStepId: string | undefined;
   let harnessMaxRepairIterations: number | undefined;
   let customContextMarkdownPath: string | undefined;
+  let diversityPasses: 1 | 2 = 1;
 
   for (let index = 0; index < args.length; index += 1) {
     const arg = args[index];
@@ -448,6 +454,18 @@ export const parseTestIntelligenceRunArgs = (
       continue;
     }
 
+    if (arg === "--diversity-passes") {
+      const value = next?.trim();
+      if (value !== "1" && value !== "2") {
+        throw new TestIntelligenceRunOperatorError(
+          "--diversity-passes must be 1 or 2",
+        );
+      }
+      diversityPasses = value === "2" ? 2 : 1;
+      index += 1;
+      continue;
+    }
+
     throw new TestIntelligenceRunOperatorError(
       `Unknown flag for "test-intelligence run": ${arg}`,
     );
@@ -489,6 +507,7 @@ export const parseTestIntelligenceRunArgs = (
     harnessRoleStepId,
     harnessMaxRepairIterations,
     customContextMarkdownPath,
+    diversityPasses,
   };
 };
 
@@ -1362,6 +1381,13 @@ export const runTestIntelligenceCommand = async (
     ...(harnessConfig !== undefined ? { harness: harnessConfig } : {}),
     ...(customContextMarkdownBody !== undefined
       ? { customContextMarkdown: customContextMarkdownBody }
+      : {}),
+    ...(options.diversityPasses === 2
+      ? {
+          generation: {
+            diversityPasses: 2 as const,
+          },
+        }
       : {}),
   };
 

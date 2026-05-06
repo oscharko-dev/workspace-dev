@@ -13,12 +13,14 @@ import {
 import {
   AGENT_ROLE_PROFILE_REGISTRY,
   LLM_ROLE_FORBIDDEN_CAPABILITIES,
+  GENERATOR_DIVERSITY_PASS_PROFILES,
   assertAgentRoleProfileInvariants,
   getAgentRoleProfile,
   isAgentHarnessRole,
   isAgentRoleCapability,
   isAgentRoleFinOpsGroup,
   isAgentRoleKind,
+  listGeneratorDiversityPassProfiles,
   listAgentRoleProfiles,
   serializeAgentRoleProfile,
 } from "./agent-role-profile.js";
@@ -152,6 +154,22 @@ test("getAgentRoleProfile: returns the same frozen instance for every call", () 
   const a = getAgentRoleProfile("generator");
   const b = getAgentRoleProfile("generator");
   assert.equal(a, b);
+});
+
+test("generator diversity profiles: dual-pass mode returns two frozen, distinct pass profiles", () => {
+  const profiles = listGeneratorDiversityPassProfiles(2);
+  assert.equal(profiles.length, 2);
+  assert.equal(profiles, GENERATOR_DIVERSITY_PASS_PROFILES);
+  assert.equal(Object.isFrozen(profiles), true);
+  assert.equal(Object.isFrozen(profiles[0]!), true);
+  assert.equal(Object.isFrozen(profiles[1]!), true);
+  assert.notEqual(profiles[0]!.seed, profiles[1]!.seed);
+  assert.notEqual(profiles[0]!.bias, profiles[1]!.bias);
+  assert.notEqual(profiles[0]!.roleRunId, profiles[1]!.roleRunId);
+});
+
+test("generator diversity profiles: single-pass mode returns no diversity overrides", () => {
+  assert.deepEqual(listGeneratorDiversityPassProfiles(1), []);
 });
 
 test("invariants: rejects llm_role with propose_changes", () => {

@@ -247,6 +247,42 @@ const GENERATOR_PROFILE: AgentRoleProfile = freezeProfile({
   finOpsGroup: "generation",
 });
 
+export interface GeneratorDiversityPassProfile {
+  readonly passId: "a" | "b";
+  readonly roleRunId: "generator-run-a" | "generator-run-b";
+  readonly seed: number;
+  readonly bias: string;
+}
+
+const GENERATOR_DIVERSITY_PASS_A_PROFILE: GeneratorDiversityPassProfile =
+  Object.freeze({
+    passId: "a",
+    roleRunId: "generator-run-a",
+    seed: 11,
+    bias:
+      "Bias this pass toward positive flows, successful completions, happy paths, and boundary values that confirm valid business behaviour.",
+  });
+
+const GENERATOR_DIVERSITY_PASS_B_PROFILE: GeneratorDiversityPassProfile =
+  Object.freeze({
+    passId: "b",
+    roleRunId: "generator-run-b",
+    seed: 29,
+    bias:
+      "Bias this pass toward negative flows, state transitions, invalid actions, and recovery/error-handling coverage that challenges the workflow.",
+  });
+
+export const GENERATOR_DIVERSITY_PASS_PROFILES: readonly GeneratorDiversityPassProfile[] =
+  Object.freeze([
+    GENERATOR_DIVERSITY_PASS_A_PROFILE,
+    GENERATOR_DIVERSITY_PASS_B_PROFILE,
+  ]);
+
+export const listGeneratorDiversityPassProfiles = (
+  diversityPasses: 1 | 2,
+): readonly GeneratorDiversityPassProfile[] =>
+  diversityPasses === 2 ? GENERATOR_DIVERSITY_PASS_PROFILES : [];
+
 /**
  * Issue #1905 — explicit, hard-coded directive that every form screen must
  * carry at least one accessibility test case. The string is mirrored in
