@@ -224,6 +224,12 @@ test("runA11yJudge returns mixed covered/weak/not-covered verdicts across at lea
     1,
   );
   assert.equal(result.verdict.findings.length, 2);
+  assert.ok(
+    result.verdict.findings.every((finding) =>
+      finding.code.includes(finding.criterionId),
+    ),
+    "a11y findings should carry criterion-specific codes for repair-loop convergence",
+  );
   assert.equal(result.verdict.repairInstructions.length, 2);
   assert.match(
     result.verdict.repairInstructions[0]?.instruction ?? "",

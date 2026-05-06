@@ -564,7 +564,9 @@ const buildA11yVerdict = (input: {
     findings.push({
       criterionId: criterion.criterionId,
       testCaseId: "$job",
-      code: weak ? "criterion_covered_weakly" : "criterion_not_covered",
+      code: weak
+        ? `criterion_covered_weakly:${criterion.criterionId}`
+        : `criterion_not_covered:${criterion.criterionId}`,
       severity: weak ? "warning" : "error",
       message: sanitizeShortMessage(
         `${criterion.screenName}: ${criterion.title} is ${weak ? "only weakly covered" : "not covered"} - ${row.rationale}`,

@@ -221,7 +221,7 @@ test("buildA11yJudgeConsensusEntry projects structured a11y findings into the co
         {
           criterionId: "1:1::focus-indicator",
           testCaseId: "$job",
-          code: "criterion_covered_weakly",
+          code: "criterion_covered_weakly:1:1::focus-indicator",
           severity: "warning",
           message: "Focus indication is only weakly covered.",
         },
