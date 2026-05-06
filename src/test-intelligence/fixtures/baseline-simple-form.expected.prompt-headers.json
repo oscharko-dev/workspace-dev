@@ -3,9 +3,9 @@
   "[2] AgentRoleProfile",
   "[3] TestDesignModel",
   "[4] CoveragePlan",
-  "[5] Customer Rubric",
-  "[6] AgentLessons",
-  "[7] Findings / RepairInstructions / Iteration Inputs",
-  "[8] Output Schema-Hint",
-  "[9] RiskPriorities"
+  "[6] Customer Rubric",
+  "[7] AgentLessons",
+  "[8] Findings / RepairInstructions / Iteration Inputs",
+  "[9] Output Schema-Hint",
+  "[10] RiskPriorities"
 ]

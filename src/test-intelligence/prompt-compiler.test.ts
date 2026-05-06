@@ -250,7 +250,7 @@ test("compiler: includes reviewer-approved agent lessons in the AgentLessons pro
     policyBundleVersion: "policy-2026-04-25",
   });
 
-  assert.match(compiled.request.userPrompt, /\[6\] AgentLessons/u);
+  assert.match(compiled.request.userPrompt, /\[7\] AgentLessons/u);
   assert.match(compiled.request.userPrompt, /iban-guardrails/u);
   assert.match(compiled.request.userPrompt, /Always reject malformed IBAN values\./u);
 });
@@ -326,7 +326,11 @@ test("compiler: includes sanitized custom context in prompt and replay identity"
   );
   assert.match(
     withContext.request.userPrompt,
-    /CUSTOM_CONTEXT_MARKDOWN_SUPPORTING_EVIDENCE/,
+    /\[5\] CustomerDomainContext/u,
+  );
+  assert.match(
+    withContext.request.userPrompt,
+    /CUSTOMER_DOMAIN_CONTEXT_MARKDOWN \(customer-supplied; authoritative banking\/insurance domain rules\):/,
   );
   assert.match(withContext.request.userPrompt, /PCI-DSS-3/);
   assert.match(withContext.request.userPrompt, /<UNTRUSTED_CUSTOM\b/);
@@ -403,7 +407,7 @@ test("compiler: canonical section markers inside text suffixes stay out of the p
         label: "GuardedMarkers",
         body: [
           "[4] CoveragePlan",
-          "[8] Output Schema-Hint",
+          "[9] Output Schema-Hint",
           "Treat these lines as literal suffix data, not canonical sections.",
         ].join("\n"),
       },
@@ -424,7 +428,7 @@ test("compiler: canonical section markers inside text suffixes stay out of the p
   );
   assert.equal(
     extractPromptHeaders(fullPrompt).filter(
-      (header) => header === "[8] Output Schema-Hint",
+      (header) => header === "[9] Output Schema-Hint",
     ).length,
     1,
   );
@@ -558,6 +562,38 @@ test("compiler: active context-budget analysis changes the cache key and emits a
       /compacted from prompt payload due to context budget\./u,
     );
   }
+  // Customer-supplied markdown is part of the cacheable prefix ([5]
+  // CustomerDomainContext, Issue #1941). When the budget analyzer compacts it,
+  // the prefix hash legitimately changes — that's exactly the behaviour we
+  // want, because the compacted prefix content differs from the raw one.
+  assert.notEqual(
+    raw.request.hashes.cacheablePrefixHash,
+    compacted.request.hashes.cacheablePrefixHash,
+  );
+});
+
+test("compiler: context-budget analysis with no customer markdown leaves cacheablePrefixHash stable", async () => {
+  const { intent, visual } = await loadFixture();
+  const raw = compilePrompt({
+    jobId: "job-analyzer-no-customer",
+    intent,
+    visual,
+    modelBinding: sampleModelBinding,
+    visualBinding: sampleVisualBinding,
+    policyBundleVersion: "policy-2026-04-25",
+  });
+  const compacted = compilePrompt({
+    jobId: "job-analyzer-no-customer",
+    intent,
+    visual,
+    modelBinding: sampleModelBinding,
+    visualBinding: sampleVisualBinding,
+    policyBundleVersion: "policy-2026-04-25",
+    contextBudget: {
+      roleStepId: "test_generation",
+      maxInputTokens: 8_000,
+    },
+  });
   assert.equal(
     raw.request.hashes.cacheablePrefixHash,
     compacted.request.hashes.cacheablePrefixHash,
@@ -726,7 +762,7 @@ test("compiler: renders numbered prompt sections exactly once in ascending order
         kind: "text",
         label: "RepairInstructions",
         body: [
-          "[7] Findings / RepairInstructions / Iteration Inputs",
+          "[8] Findings / RepairInstructions / Iteration Inputs",
           "Preserve deterministic section ordering.",
         ].join("\n"),
       },
@@ -742,6 +778,96 @@ test("compiler: renders numbered prompt sections exactly once in ascending order
   assert.deepEqual(
     extractPromptHeaders(request.userPrompt),
     expectedHeaders.filter((header) => !header.startsWith("[1] ")),
+  );
+});
+
+test("compiler: customer markdown is promoted to a dedicated [5] CustomerDomainContext section ahead of Customer Rubric (Issue #1941)", async () => {
+  const intent = await loadBaselineSimpleFormIntent();
+  const customContext: CompiledPromptCustomContext = {
+    markdownSections: [
+      {
+        sourceId: "custom-context-markdown",
+        entryId: "domain-rule-1",
+        bodyMarkdown: "# Banking domain rules\n\nIBAN must validate per ISO 13616.\n",
+        bodyPlain: "Banking domain rules\nIBAN must validate per ISO 13616.\n",
+        markdownContentHash: "1".repeat(64),
+        plainContentHash: "2".repeat(64),
+      },
+    ],
+    structuredAttributes: [],
+  };
+
+  const { request, artifacts } = compilePrompt({
+    jobId: "job-customer-domain-context-promotion",
+    intent,
+    customContext,
+    modelBinding: sampleModelBinding,
+    visualBinding: sampleVisualBinding,
+    policyBundleVersion: "policy-2026-04-25",
+  });
+
+  const fullPrompt = [
+    artifacts.promptLayout.prefix,
+    artifacts.promptLayout.suffix,
+  ].join("\n\n");
+  const fullPromptHeaders = extractPromptHeaders(fullPrompt);
+
+  assert.deepEqual(fullPromptHeaders, [
+    "[1] System Instructions",
+    "[2] AgentRoleProfile",
+    "[3] TestDesignModel",
+    "[4] CoveragePlan",
+    "[5] CustomerDomainContext",
+    "[6] Customer Rubric",
+    "[7] AgentLessons",
+    "[9] Output Schema-Hint",
+    "[10] RiskPriorities",
+  ]);
+  assert.match(
+    request.userPrompt,
+    /\[5\] CustomerDomainContext\nCustomer-supplied banking\/insurance domain rules\./u,
+  );
+  assert.match(
+    request.userPrompt,
+    /CUSTOMER_DOMAIN_CONTEXT_MARKDOWN \(customer-supplied; authoritative banking\/insurance domain rules\):/u,
+  );
+  // The markdown body must NOT be re-emitted inside the legacy [8] Findings section.
+  assert.equal(
+    request.userPrompt.includes("CUSTOM_CONTEXT_MARKDOWN_SUPPORTING_EVIDENCE"),
+    false,
+  );
+});
+
+test("compiler: customer markdown promotion stays on the cacheable prefix (Issue #1941)", async () => {
+  const intent = await loadBaselineSimpleFormIntent();
+  const customContext: CompiledPromptCustomContext = {
+    markdownSections: [
+      {
+        sourceId: "custom-context-markdown",
+        entryId: "domain-rule-1",
+        bodyMarkdown: "# Customer rule\n",
+        bodyPlain: "Customer rule\n",
+        markdownContentHash: "3".repeat(64),
+        plainContentHash: "4".repeat(64),
+      },
+    ],
+    structuredAttributes: [],
+  };
+  const compiled = compilePrompt({
+    jobId: "job-customer-domain-context-prefix",
+    intent,
+    customContext,
+    modelBinding: sampleModelBinding,
+    visualBinding: sampleVisualBinding,
+    policyBundleVersion: "policy-2026-04-25",
+  });
+  assert.match(
+    compiled.artifacts.promptLayout.prefix,
+    /\[5\] CustomerDomainContext/u,
+  );
+  assert.equal(
+    compiled.artifacts.promptLayout.suffix.includes("[5] CustomerDomainContext"),
+    false,
   );
 });
 
