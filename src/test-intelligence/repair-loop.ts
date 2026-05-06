@@ -74,6 +74,9 @@ const MAX_INSTRUCTION_LENGTH = 240 as const;
 /** Maximum length of a single RepairInstruction.path field. Mirrors logic-judge contract. */
 const MAX_PATH_LENGTH = 160 as const;
 
+/** Maximum length of structured RepairInstruction.message fields. */
+const MAX_MESSAGE_LENGTH = 240 as const;
+
 /** Terminal outcomes of the repair loop. */
 export type RepairLoopOutcome = "accepted" | "rejected" | "needs_review";
 
@@ -230,6 +233,8 @@ const compareInstruction = (
   left: RepairInstruction,
   right: RepairInstruction,
 ): number =>
+  (left.kind ?? "").localeCompare(right.kind ?? "") ||
+  (left.message ?? "").localeCompare(right.message ?? "") ||
   left.testCaseId.localeCompare(right.testCaseId) ||
   left.path.localeCompare(right.path) ||
   left.instruction.localeCompare(right.instruction);
@@ -250,6 +255,10 @@ export const consolidateRepairInstructions = (input: {
       testCaseId: ri.testCaseId,
       path: truncate(ri.path, MAX_PATH_LENGTH),
       instruction: truncate(ri.instruction, MAX_INSTRUCTION_LENGTH),
+      ...(ri.kind !== undefined ? { kind: ri.kind } : {}),
+      ...(ri.message !== undefined
+        ? { message: truncate(ri.message, MAX_MESSAGE_LENGTH) }
+        : {}),
     });
   }
   if (input.faithfulness !== undefined) {
@@ -284,7 +293,13 @@ export const consolidateRepairInstructions = (input: {
   }
   const dedup = new Map<string, RepairInstruction>();
   for (const entry of collected) {
-    const key = `${entry.testCaseId}\0${entry.path}\0${entry.instruction}`;
+    const key = [
+      entry.kind ?? "",
+      entry.message ?? "",
+      entry.testCaseId,
+      entry.path,
+      entry.instruction,
+    ].join("\0");
     if (!dedup.has(key)) {
       dedup.set(key, entry);
     }

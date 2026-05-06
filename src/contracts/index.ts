@@ -3577,11 +3577,30 @@ export interface JudgeFinding {
   readonly message: string;
 }
 
-/** One structured repair hint emitted by the logic judge. */
+/**
+ * One structured repair hint emitted by the logic judge.
+ *
+ * Paths point at the field that must change. Schema-failure repairs use the
+ * same shape so downstream repair consolidators can treat recoverable
+ * structured-output violations the same way as semantic repairs.
+ */
 export interface RepairInstruction {
   readonly testCaseId: string;
   readonly path: string;
   readonly instruction: string;
+  /**
+   * Optional structured hint kind. Issue #1931 uses `schema_violation`
+   * for deterministic repair-loop guidance when the judge response
+   * wrapper fails structured-output validation.
+   */
+  readonly kind?: "schema_violation";
+  /**
+   * Optional redacted diagnostic paired with {@link kind}. Kept
+   * alongside the legacy `instruction` field so existing repair-loop
+   * plumbing remains compatible while downstream prompts can consume
+   * machine-readable schema-violation metadata.
+   */
+  readonly message?: string;
 }
 
 /** Optional refusal attached to a logic-judge verdict. */
