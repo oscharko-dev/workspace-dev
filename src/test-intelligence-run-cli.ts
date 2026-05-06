@@ -45,12 +45,15 @@ import {
 } from "./server/constants.js";
 import type { FinOpsBudgetEnvelope } from "./contracts/index.js";
 import {
+  MAX_CUSTOMER_PROFILE_BYTES,
   PRODUCTION_RUNNER_HARNESS_MODES,
   PRODUCTION_RUNNER_TEST_GENERATION_DEPLOYMENT,
   ProductionRunnerError,
+  parseAndCanonicalizeCustomerProfile,
   runFigmaToQcTestCases,
   validateFinOpsBudgetEnvelope,
   type AgentHarnessTestDepth,
+  type CustomerProfileInput,
   type FigmaRestNode,
   type ProductionRunnerHarnessConfig,
   type ProductionRunnerHarnessMode,
@@ -153,6 +156,15 @@ export interface TestIntelligenceRunOptions {
    */
   customContextMarkdownPath: string | undefined;
   /**
+   * Path to an optional JSON file (Issue #1946) conforming to the
+   * {@link CustomerProfileInput} schema. The CLI enforces a hard 256 KiB
+   * size cap and rejects the file with exit code 1 if the JSON is invalid
+   * or the schema fails validation. The runner applies PII redaction +
+   * prompt-injection scrub on all free-text fields before the profile
+   * reaches the LLM gateway.
+   */
+  customerProfilePath: string | undefined;
+  /**
    * Generator diversity pass count (Issue #1936). `1` preserves the legacy
    * single-pass flow; `2` enables deterministic dual-pass generation.
    */
@@ -223,6 +235,7 @@ export const parseTestIntelligenceRunArgs = (
   let harnessRoleStepId: string | undefined;
   let harnessMaxRepairIterations: number | undefined;
   let customContextMarkdownPath: string | undefined;
+  let customerProfilePath: string | undefined;
   let diversityPasses: 1 | 2 = 1;
 
   for (let index = 0; index < args.length; index += 1) {
@@ -454,6 +467,23 @@ export const parseTestIntelligenceRunArgs = (
       continue;
     }
 
+    if (arg === "--customer-profile") {
+      const value = next?.trim();
+      if (!value) {
+        throw new TestIntelligenceRunOperatorError(
+          "--customer-profile requires a non-empty file path",
+        );
+      }
+      if (customerProfilePath !== undefined) {
+        throw new TestIntelligenceRunOperatorError(
+          "--customer-profile may be specified at most once",
+        );
+      }
+      customerProfilePath = value;
+      index += 1;
+      continue;
+    }
+
     if (arg === "--diversity-passes") {
       const value = next?.trim();
       if (value !== "1" && value !== "2") {
@@ -507,6 +537,7 @@ export const parseTestIntelligenceRunArgs = (
     harnessRoleStepId,
     harnessMaxRepairIterations,
     customContextMarkdownPath,
+    customerProfilePath,
     diversityPasses,
   };
 };
@@ -586,6 +617,13 @@ export interface TestIntelligenceRunRuntime {
    * inject a deterministic loader to avoid touching the disk.
    */
   loadCustomContextMarkdownFile?: (filePath: string) => Promise<string>;
+  /**
+   * Override the loader for `--customer-profile` files (Issue #1946).
+   * Default uses `stat` + `readFile` against the local filesystem and
+   * enforces the 256 KiB hard cap before the body is returned. Tests
+   * inject a deterministic loader to avoid touching the disk.
+   */
+  loadCustomerProfileFile?: (filePath: string) => Promise<string>;
   /** Wall-clock provider for deterministic job ids in tests. */
   now?: () => number;
   /**
@@ -979,6 +1017,45 @@ const defaultLoadCustomContextMarkdownFile = async (
   return readFile(filePath, "utf8");
 };
 
+/**
+ * Default `--customer-profile` loader. Stats the file before reading to
+ * enforce the {@link MAX_CUSTOMER_PROFILE_BYTES} hard cap so an oversize file
+ * never lands in the Node Buffer pool. Throws
+ * {@link TestIntelligenceRunOperatorError} on the documented failure modes
+ * (missing file, oversize file) so the caller can emit a clean
+ * operator-facing message and exit 1.
+ */
+const defaultLoadCustomerProfileFile = async (
+  filePath: string,
+): Promise<string> => {
+  let stats: Awaited<ReturnType<typeof stat>>;
+  try {
+    stats = await stat(filePath);
+  } catch (err) {
+    if (
+      typeof err === "object" &&
+      err !== null &&
+      (err as { code?: string }).code === "ENOENT"
+    ) {
+      throw new TestIntelligenceRunOperatorError(
+        `--customer-profile file not found: ${filePath}`,
+      );
+    }
+    throw err;
+  }
+  if (!stats.isFile()) {
+    throw new TestIntelligenceRunOperatorError(
+      `--customer-profile path is not a regular file: ${filePath}`,
+    );
+  }
+  if (stats.size > MAX_CUSTOMER_PROFILE_BYTES) {
+    throw new TestIntelligenceRunOperatorError(
+      `--customer-profile file exceeds ${MAX_CUSTOMER_PROFILE_BYTES} bytes (got ${stats.size}); shrink the file`,
+    );
+  }
+  return readFile(filePath, "utf8");
+};
+
 const defaultCopyArtifactsToOutput = async (
   customerMarkdownDir: string,
   outputDir: string,
@@ -1195,6 +1272,8 @@ export const runTestIntelligenceCommand = async (
   const loadCustomContextMarkdownFile =
     runtime.loadCustomContextMarkdownFile ??
     defaultLoadCustomContextMarkdownFile;
+  const loadCustomerProfileFile =
+    runtime.loadCustomerProfileFile ?? defaultLoadCustomerProfileFile;
 
   const jobId = `ti-cli-${now()}`;
   const generatedAt = new Date(now()).toISOString();
@@ -1277,6 +1356,40 @@ export const runTestIntelligenceCommand = async (
     }
   }
 
+  // Load `--customer-profile` (Issue #1946). Same discipline as
+  // `--custom-context-markdown`: 256 KiB hard cap enforced before read,
+  // JSON parsed immediately, schema validated, operator error on any failure.
+  let customerProfileInput: CustomerProfileInput | undefined;
+  let customerProfileRawBytes = 0;
+  if (options.customerProfilePath !== undefined) {
+    const absolutePath = resolve(options.customerProfilePath);
+    let rawJson: string;
+    try {
+      rawJson = await loadCustomerProfileFile(absolutePath);
+    } catch (err) {
+      if (err instanceof TestIntelligenceRunOperatorError) {
+        sink.stderr(`error: ${err.message}\n`);
+        return 1;
+      }
+      sink.stderr(
+        `error: failed to read --customer-profile file: ${sanitizeErrorMessage({ error: err, fallback: "filesystem failure" })}\n`,
+      );
+      return 1;
+    }
+    customerProfileRawBytes = Buffer.byteLength(rawJson, "utf8");
+    const parseResult = parseAndCanonicalizeCustomerProfile(rawJson);
+    if (!parseResult.ok) {
+      const msgs = parseResult.issues
+        .map((i) => `${i.path}: ${i.message}`)
+        .join("; ");
+      sink.stderr(`error: --customer-profile file is invalid: ${msgs}\n`);
+      return 1;
+    }
+    // Store the raw parsed JSON object (not the canonical form) so the
+    // runner can re-canonicalize through its own pipeline consistently.
+    customerProfileInput = JSON.parse(rawJson) as CustomerProfileInput;
+  }
+
   if (options.mode === "offline_eval") {
     sink.stderr(
       "error: --mode offline_eval is not implemented in the CLI yet (#1737 tracks the eval-harness wiring)\n",
@@ -1319,6 +1432,7 @@ export const runTestIntelligenceCommand = async (
         `  finops budget : ${options.finopsBudgetPath ?? "(production default)"}`,
         `  harness mode  : off (dry_run never reaches the harness)`,
         `  custom md ctx : ${customContextMarkdownBody !== undefined ? `loaded (${Buffer.byteLength(customContextMarkdownBody, "utf8")} bytes)` : "(none)"}`,
+        `  customer prof : ${customerProfileInput !== undefined ? `loaded (${customerProfileRawBytes} bytes)` : "(none)"}`,
         "",
       ].join("\n"),
     );
@@ -1407,6 +1521,9 @@ export const runTestIntelligenceCommand = async (
     ...(harnessConfig !== undefined ? { harness: harnessConfig } : {}),
     ...(customContextMarkdownBody !== undefined
       ? { customContextMarkdown: customContextMarkdownBody }
+      : {}),
+    ...(customerProfileInput !== undefined
+      ? { customerProfile: customerProfileInput }
       : {}),
     ...(options.diversityPasses === 2
       ? {

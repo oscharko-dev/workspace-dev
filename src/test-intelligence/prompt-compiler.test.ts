@@ -1065,3 +1065,159 @@ test("compiler: request schema matches generated test case JSON schema", async (
     buildGeneratedTestCaseListJsonSchema(),
   );
 });
+
+// ---------------------------------------------------------------------------
+// Issue #1946: customer profile rendering in [5] CustomerDomainContext
+// ---------------------------------------------------------------------------
+
+test("Issue #1946: customer profile glossary rendered in [5] CustomerDomainContext", async () => {
+  const { intent } = await loadFixture();
+  const customContext: CompiledPromptCustomContext = {
+    markdownSections: [
+      {
+        sourceId: "customer-profile",
+        entryId: "profile-hash-" + "a".repeat(44),
+        bodyMarkdown: "## Glossary\n- **IBAN**: Bank account number\n- **BIC**: Routing code\n",
+        bodyPlain: "Glossary\nIBAN: Bank account number\nBIC: Routing code\n",
+        markdownContentHash: "d".repeat(64),
+        plainContentHash: "e".repeat(64),
+      },
+    ],
+    structuredAttributes: [],
+  };
+  const result = compilePrompt({
+    jobId: "job-profile-1",
+    intent,
+    customContext,
+    modelBinding: sampleModelBinding,
+    visualBinding: sampleVisualBinding,
+    policyBundleVersion: "policy-2026-04-25",
+  });
+  assert.match(
+    result.request.userPrompt,
+    /\[5\] CustomerDomainContext/u,
+    "must render [5] CustomerDomainContext section",
+  );
+  assert.match(
+    result.request.userPrompt,
+    /Glossary/u,
+    "must include glossary in prompt",
+  );
+  assert.match(
+    result.request.userPrompt,
+    /IBAN/u,
+    "must include IBAN term in prompt",
+  );
+});
+
+test("Issue #1946: customer profile few-shot examples rendered in [5] CustomerDomainContext", async () => {
+  const { intent } = await loadFixture();
+  const customContext: CompiledPromptCustomContext = {
+    markdownSections: [
+      {
+        sourceId: "customer-profile",
+        entryId: "profile-fewshot-" + "a".repeat(40),
+        bodyMarkdown:
+          "## Few-Shot Examples\n- **Submit valid IBAN** (use_case): User submits valid account\n",
+        bodyPlain:
+          "Few-Shot Examples\nSubmit valid IBAN (use_case): User submits valid account\n",
+        markdownContentHash: "f".repeat(64),
+        plainContentHash: "0".repeat(64),
+      },
+    ],
+    structuredAttributes: [],
+  };
+  const result = compilePrompt({
+    jobId: "job-profile-2",
+    intent,
+    customContext,
+    modelBinding: sampleModelBinding,
+    visualBinding: sampleVisualBinding,
+    policyBundleVersion: "policy-2026-04-25",
+  });
+  assert.match(
+    result.request.userPrompt,
+    /Few-Shot Examples/u,
+    "must include few-shot examples in prompt",
+  );
+  assert.match(
+    result.request.userPrompt,
+    /Submit valid IBAN/u,
+    "must include example case title",
+  );
+});
+
+test("Issue #1946: identical customer profile sections produce identical cache key", async () => {
+  const { intent } = await loadFixture();
+  const mkCtx = (): CompiledPromptCustomContext => ({
+    markdownSections: [
+      {
+        sourceId: "customer-profile",
+        entryId: "stable-profile-hash",
+        bodyMarkdown: "## Glossary\n- **IBAN**: Account number\n",
+        bodyPlain: "Glossary\nIBAN: Account number\n",
+        markdownContentHash: "1".repeat(64),
+        plainContentHash: "2".repeat(64),
+      },
+    ],
+    structuredAttributes: [],
+  });
+  const r1 = compilePrompt({
+    jobId: "job-cache-1",
+    intent,
+    customContext: mkCtx(),
+    modelBinding: sampleModelBinding,
+    visualBinding: sampleVisualBinding,
+    policyBundleVersion: "policy-2026-04-25",
+  });
+  const r2 = compilePrompt({
+    jobId: "job-cache-1",
+    intent,
+    customContext: mkCtx(),
+    modelBinding: sampleModelBinding,
+    visualBinding: sampleVisualBinding,
+    policyBundleVersion: "policy-2026-04-25",
+  });
+  assert.equal(
+    r1.request.hashes.cacheKey,
+    r2.request.hashes.cacheKey,
+    "identical profile inputs must produce identical cache key",
+  );
+});
+
+test("Issue #1946: risk taxonomy and policy overrides rendered in [5] CustomerDomainContext", async () => {
+  const { intent } = await loadFixture();
+  const customContext: CompiledPromptCustomContext = {
+    markdownSections: [
+      {
+        sourceId: "customer-profile",
+        entryId: "profile-overrides",
+        bodyMarkdown:
+          "## Risk Taxonomy Overrides\n- credit: weight 0.9\n\n## Policy Overrides\n- policy:ict-register-ref-required: warning\n",
+        bodyPlain:
+          "Risk Taxonomy Overrides\ncredit: weight 0.9\nPolicy Overrides\npolicy:ict-register-ref-required: warning\n",
+        markdownContentHash: "3".repeat(64),
+        plainContentHash: "4".repeat(64),
+      },
+    ],
+    structuredAttributes: [],
+  };
+  const result = compilePrompt({
+    jobId: "job-overrides",
+    intent,
+    customContext,
+    modelBinding: sampleModelBinding,
+    visualBinding: sampleVisualBinding,
+    policyBundleVersion: "policy-2026-04-25",
+  });
+  assert.match(
+    result.request.userPrompt,
+    /Risk Taxonomy Overrides/u,
+    "must include risk taxonomy overrides",
+  );
+  assert.match(
+    result.request.userPrompt,
+    /Policy Overrides/u,
+    "must include policy overrides",
+  );
+});

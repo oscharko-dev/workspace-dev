@@ -1300,6 +1300,14 @@ export {
   type RunFigmaToQcTestCasesResult,
 } from "./production-runner.js";
 export {
+  MAX_CUSTOMER_PROFILE_BYTES,
+  parseAndCanonicalizeCustomerProfile,
+  type CanonicalCustomerProfile,
+  type CustomerProfileInput,
+  type CustomerProfileIssue,
+  type ParseAndCanonicalizeCustomerProfileResult,
+} from "./customer-profile-input.js";
+export {
   evaluateReleaseQualityGates,
   isReleaseQualityGatesInput,
   parseReleaseQualityGatesReport,

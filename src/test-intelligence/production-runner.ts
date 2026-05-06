@@ -154,6 +154,12 @@ import {
   canonicalizeCustomContextMarkdown,
   type CustomContextMarkdownIssue,
 } from "./custom-context-markdown.js";
+import {
+  parseAndCanonicalizeCustomerProfile,
+  type CanonicalCustomerProfile,
+  type CustomerProfileInput,
+  type CustomerProfileIssue,
+} from "./customer-profile-input.js";
 import { computeSourceMixPlanHash } from "./source-mix-planner.js";
 import {
   CUSTOM_CONTEXT_MARKDOWN_SOURCE_ID,
@@ -290,6 +296,7 @@ export const PRODUCTION_RUNNER_FAILURE_CLASSES = [
   "PERSIST_FAILED",
   "FINOPS_BUDGET_INVALID",
   "CUSTOM_CONTEXT_MARKDOWN_INVALID",
+  "CUSTOMER_PROFILE_INVALID",
 ] as const;
 
 export type ProductionRunnerFailureClass =
@@ -732,6 +739,21 @@ export interface RunFigmaToQcTestCasesInput {
   generation?: {
     readonly diversityPasses?: number;
   };
+  /**
+   * Optional customer profile (Issue #1946). When supplied the runner:
+   *  - Applies `ictRegisterRef` fallback to any active model binding that
+   *    lacks its own `ictRegisterRef`, so `policy:ict-register-ref-required`
+   *    is satisfied (DORA Art. 9 compliance).
+   *  - Threads `glossary` and `fewShotExamples` into the `[5]
+   *    CustomerDomainContext` section of the compiled prompt alongside
+   *    `riskTaxonomyOverrides` and `policyOverrides`.
+   *
+   * The profile is parsed and canonicalized (PII redaction, prompt-injection
+   * scrub, deterministic sort) before any LLM call is dispatched. A malformed
+   * or policy-violating profile fails the job fast with
+   * `CUSTOMER_PROFILE_INVALID`.
+   */
+  customerProfile?: CustomerProfileInput;
 }
 
 export interface RunFigmaToQcTestCasesResult {
@@ -870,6 +892,13 @@ export const runFigmaToQcTestCases = async (
   //     reaches the LLM gateway, the prompt artifact, or the seal.
   const customContextMarkdown = resolveCustomContextMarkdown(
     input.customContextMarkdown,
+  );
+
+  // 0c. Parse + canonicalize the optional customer profile (Issue #1946).
+  //     Fails fast before any IO when the profile JSON is malformed or
+  //     contains schema/PII/injection violations.
+  const canonicalCustomerProfile = resolveCustomerProfile(
+    input.customerProfile,
   );
 
   // 1. Resolve Figma source.
@@ -1093,10 +1122,13 @@ export const runFigmaToQcTestCases = async (
   const finopsLimits = resolveFinOpsRequestLimits(
     finopsBudget.roles.test_generation,
   );
-  const activeModelBindings = buildActiveModelBindings({
-    client: input.llm.client,
-    ...(input.llm.bundle !== undefined ? { bundle: input.llm.bundle } : {}),
-  });
+  const activeModelBindings = applyCustomerProfileIctRef(
+    buildActiveModelBindings({
+      client: input.llm.client,
+      ...(input.llm.bundle !== undefined ? { bundle: input.llm.bundle } : {}),
+    }),
+    canonicalCustomerProfile,
+  );
 
   const draftSchema = buildDraftResponseSchema();
   const policyProfileId =
@@ -1131,17 +1163,31 @@ export const runFigmaToQcTestCases = async (
   const figmaSourceContentHash = createHash("sha256")
     .update(canonicalJson({ figma: intentInput }), "utf8")
     .digest("hex");
-  const compiledCustomContext = customContextMarkdown
-    ? buildCompiledCustomContextMarkdown(customContextMarkdown)
+  const compiledCustomContext = buildCompiledCustomContext(
+    customContextMarkdown,
+    canonicalCustomerProfile,
+  );
+  // Build a source-mix plan whenever we have either custom markdown context or
+  // a customer profile with glossary / few-shot content, so the [5]
+  // CustomerDomainContext section is included in the compiled prompt.
+  const hasCustomDomainContext =
+    customContextMarkdown !== undefined ||
+    (canonicalCustomerProfile !== undefined &&
+      (canonicalCustomerProfile.glossary.length > 0 ||
+        canonicalCustomerProfile.fewShotExamples.length > 0 ||
+        canonicalCustomerProfile.riskTaxonomyOverrides.length > 0 ||
+        canonicalCustomerProfile.policyOverrides.length > 0));
+  const compiledSourceMixPlan = hasCustomDomainContext
+    ? buildFigmaWithCustomMarkdownSourceMixPlan({
+        figmaSourceContentHash,
+        markdownContentHash:
+          customContextMarkdown?.markdownContentHash ??
+          (canonicalCustomerProfile?.contentHash ?? figmaSourceContentHash),
+        plainContentHash:
+          customContextMarkdown?.plainContentHash ??
+          (canonicalCustomerProfile?.contentHash ?? figmaSourceContentHash),
+      })
     : undefined;
-  const compiledSourceMixPlan =
-    customContextMarkdown !== undefined
-      ? buildFigmaWithCustomMarkdownSourceMixPlan({
-          figmaSourceContentHash,
-          markdownContentHash: customContextMarkdown.markdownContentHash,
-          plainContentHash: customContextMarkdown.plainContentHash,
-        })
-      : undefined;
   const testDesignModel = buildTestDesignModel({
     jobId: input.jobId,
     intent: wireIntent,
@@ -1369,7 +1415,7 @@ export const runFigmaToQcTestCases = async (
         ...buildPromptSuffixSections(
           wireIntent,
           policyProfileId,
-          customContextMarkdown !== undefined,
+          hasCustomDomainContext,
           pass.diversityBias,
         ),
         ...extraSuffixSections,
@@ -4410,21 +4456,168 @@ const resolveCustomContextMarkdown = (
   };
 };
 
-const buildCompiledCustomContextMarkdown = (
-  resolved: ResolvedCustomContextMarkdown,
-): CompiledPromptCustomContext => ({
-  markdownSections: [
-    {
+
+/**
+ * Build the merged `CompiledPromptCustomContext` from an optional Markdown
+ * body and an optional canonical customer profile. Either or both may be
+ * present. Returns `undefined` only when both are absent.
+ *
+ * The customer-profile sections are rendered as deterministic Markdown and
+ * appended to the markdown sections list so `buildCustomerDomainContextPayload`
+ * in the prompt compiler surfaces them in the `[5] CustomerDomainContext` block.
+ */
+const buildCompiledCustomContext = (
+  markdown: ResolvedCustomContextMarkdown | undefined,
+  profile: CanonicalCustomerProfile | undefined,
+): CompiledPromptCustomContext | undefined => {
+  const markdownSections: CompiledPromptCustomContext["markdownSections"] = [];
+
+  if (markdown !== undefined) {
+    markdownSections.push({
       sourceId: CUSTOM_CONTEXT_MARKDOWN_SOURCE_ID,
-      entryId: resolved.markdownContentHash,
-      bodyMarkdown: resolved.bodyMarkdown,
-      bodyPlain: resolved.bodyPlain,
-      markdownContentHash: resolved.markdownContentHash,
-      plainContentHash: resolved.plainContentHash,
-    },
-  ],
-  structuredAttributes: [],
-});
+      entryId: markdown.markdownContentHash,
+      bodyMarkdown: markdown.bodyMarkdown,
+      bodyPlain: markdown.bodyPlain,
+      markdownContentHash: markdown.markdownContentHash,
+      plainContentHash: markdown.plainContentHash,
+    });
+  }
+
+  if (profile !== undefined) {
+    const profileMarkdown = renderCustomerProfileAsMarkdown(profile);
+    if (profileMarkdown !== undefined) {
+      markdownSections.push(profileMarkdown);
+    }
+  }
+
+  if (markdownSections.length === 0) {
+    return undefined;
+  }
+  return { markdownSections, structuredAttributes: [] };
+};
+
+const CUSTOMER_PROFILE_SOURCE_ID = "customer-profile" as const;
+
+/**
+ * Render the non-empty parts of a canonical customer profile as a Markdown
+ * section suitable for the `[5] CustomerDomainContext` prompt block.
+ * Returns `undefined` when the profile has no renderable domain context.
+ */
+const renderCustomerProfileAsMarkdown = (
+  profile: CanonicalCustomerProfile,
+): CompiledPromptCustomContext["markdownSections"][number] | undefined => {
+  const lines: string[] = [];
+
+  if (profile.glossary.length > 0) {
+    lines.push("## Glossary");
+    for (const entry of profile.glossary) {
+      lines.push(`- **${entry.term}**: ${entry.definition}`);
+    }
+    lines.push("");
+  }
+
+  if (profile.riskTaxonomyOverrides.length > 0) {
+    lines.push("## Risk Taxonomy Overrides");
+    for (const override of profile.riskTaxonomyOverrides) {
+      lines.push(`- ${override.class}: weight ${override.weight}`);
+    }
+    lines.push("");
+  }
+
+  if (profile.policyOverrides.length > 0) {
+    lines.push("## Policy Overrides");
+    for (const override of profile.policyOverrides) {
+      lines.push(`- ${override.ruleId}: ${override.severity}`);
+    }
+    lines.push("");
+  }
+
+  if (profile.fewShotExamples.length > 0) {
+    lines.push("## Few-Shot Examples");
+    for (const example of profile.fewShotExamples) {
+      lines.push(
+        `- **${example.caseTitle}** (${example.technique}): ${example.description}`,
+      );
+    }
+    lines.push("");
+  }
+
+  if (lines.length === 0) {
+    return undefined;
+  }
+
+  const bodyMarkdown = lines.join("\n").trimEnd() + "\n";
+  const bodyPlain = bodyMarkdown
+    .replace(/^#{1,6}\s+/gmu, "")
+    .replace(/\*\*([^*]+)\*\*/gu, "$1")
+    .replace(/\n{2,}/gu, "\n")
+    .trim() + "\n";
+  const markdownContentHash = createHash("sha256")
+    .update(
+      canonicalJson({ kind: "customer_profile_section", bodyMarkdown }),
+      "utf8",
+    )
+    .digest("hex");
+  const plainContentHash = createHash("sha256")
+    .update(canonicalJson({ kind: "customer_profile_plain", bodyPlain }), "utf8")
+    .digest("hex");
+
+  return {
+    sourceId: CUSTOMER_PROFILE_SOURCE_ID,
+    entryId: profile.contentHash,
+    bodyMarkdown,
+    bodyPlain,
+    markdownContentHash,
+    plainContentHash,
+  };
+};
+
+/**
+ * Apply `ictRegisterRef` inheritance from a canonical customer profile.
+ * Each binding that lacks its own `ictRegisterRef` inherits the profile-level
+ * value so `policy:ict-register-ref-required` is satisfied. Bindings that
+ * already carry their own ref are left untouched. Input is never mutated.
+ */
+const applyCustomerProfileIctRef = (
+  bindings: readonly ActiveModelBinding[],
+  profile: CanonicalCustomerProfile | undefined,
+): readonly ActiveModelBinding[] => {
+  if (
+    profile === undefined ||
+    profile.ictRegisterRef === undefined
+  ) {
+    return bindings;
+  }
+  const fallback = profile.ictRegisterRef;
+  return bindings.map((binding) =>
+    binding.ictRegisterRef !== undefined
+      ? binding
+      : { ...binding, ictRegisterRef: fallback },
+  );
+};
+
+/**
+ * Parse and canonicalize the optional customer profile input (Issue #1946).
+ * Throws {@link ProductionRunnerError} with `CUSTOMER_PROFILE_INVALID` on
+ * any validation or canonicalization failure.
+ */
+const resolveCustomerProfile = (
+  raw: CustomerProfileInput | undefined,
+): CanonicalCustomerProfile | undefined => {
+  if (raw === undefined) return undefined;
+  const result = parseAndCanonicalizeCustomerProfile(JSON.stringify(raw));
+  if (!result.ok) {
+    const msgs = result.issues
+      .map((i: CustomerProfileIssue) => `${i.path}: ${i.message}`)
+      .join("; ");
+    throw new ProductionRunnerError({
+      failureClass: "CUSTOMER_PROFILE_INVALID",
+      message: `customerProfile rejected: ${msgs}`,
+      retryable: false,
+    });
+  }
+  return result.profile;
+};
 
 const PRODUCTION_RUNNER_FIGMA_PRIMARY_SOURCE_ID =
   "production-runner-figma-primary" as const;
