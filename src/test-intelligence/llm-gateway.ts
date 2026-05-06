@@ -30,6 +30,7 @@ import {
   ALLOWED_LLM_GATEWAY_ERROR_CLASSES,
   ALLOWED_LLM_GATEWAY_ROLES,
   ALLOWED_LLM_GATEWAY_WIRE_STRUCTURED_OUTPUT_MODES,
+  ALLOWED_LLM_IMAGE_TOKEN_STRATEGIES,
   type AgentSourceLabel,
   type GatewayIdempotencyKey,
   type GatewayInFlightDedupInputs,
@@ -201,7 +202,7 @@ export const createLlmGatewayClient = (
   ): Promise<LlmGenerationResult> => {
     const guardError = guardImagePayload(config.role, request);
     if (guardError !== undefined) return guardError;
-    const budgetError = guardInputBudget(request);
+    const budgetError = guardInputBudget(request, config);
     if (budgetError !== undefined) return budgetError;
     const wallClockError = guardWallClockBudget(request);
     if (wallClockError !== undefined) return wallClockError;
@@ -463,6 +464,7 @@ const guardImagePayload = (
 
 const guardInputBudget = (
   request: LlmGenerationRequest,
+  config: LlmGatewayClientConfig,
 ): LlmGenerationFailure | undefined => {
   if (request.maxInputTokens === undefined) return undefined;
   if (
@@ -477,7 +479,12 @@ const guardInputBudget = (
       attempt: 0,
     };
   }
-  const estimatedTokens = estimateLlmInputTokens(request);
+  const estimatedTokens = estimateLlmInputTokens(
+    request,
+    config.imageTokenStrategy !== undefined
+      ? { imageTokenStrategy: config.imageTokenStrategy }
+      : {},
+  );
   if (estimatedTokens > request.maxInputTokens) {
     return {
       outcome: "error",
@@ -1498,6 +1505,14 @@ const validateConfig = (config: LlmGatewayClientConfig): void => {
   ) {
     throw new RangeError(
       `LlmGatewayClient: invalid wireStructuredOutputMode "${config.wireStructuredOutputMode}"`,
+    );
+  }
+  if (
+    config.imageTokenStrategy !== undefined &&
+    !ALLOWED_LLM_IMAGE_TOKEN_STRATEGIES.includes(config.imageTokenStrategy)
+  ) {
+    throw new RangeError(
+      `LlmGatewayClient: invalid imageTokenStrategy "${config.imageTokenStrategy}"`,
     );
   }
 };

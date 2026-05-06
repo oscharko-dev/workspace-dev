@@ -570,9 +570,11 @@ export {
   type ContextBudgetCategoryInput,
 } from "./context-budget-analyzer.js";
 export {
+  estimateImageInputTokens,
   estimateLlmInputBytes,
   estimateLlmInputTokens,
   estimateTextTokens,
+  type LlmTokenEstimationOptions,
 } from "./llm-token-estimator.js";
 export {
   executeWithReplayCache,

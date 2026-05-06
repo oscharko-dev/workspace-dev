@@ -530,6 +530,12 @@ export const describeVisualScreens = async (
       imageInputs: input.captures.map((capture) => ({
         mimeType: capture.mimeType,
         base64Data: capture.base64Data,
+        ...(capture.widthPx !== undefined
+          ? { widthPx: capture.widthPx }
+          : {}),
+        ...(capture.heightPx !== undefined
+          ? { heightPx: capture.heightPx }
+          : {}),
       })),
       ...(requestLimits ?? {}),
       ...(input.abortSignal !== undefined
