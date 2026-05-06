@@ -105,6 +105,32 @@ const SAMPLE_DRAFT: ProductionRunnerLlmDraftCase = {
   },
 };
 
+const SAMPLE_ACCESSIBILITY_DRAFT: ProductionRunnerLlmDraftCase = {
+  ...SAMPLE_DRAFT,
+  title: "Formular ist per Tastatur bedienbar",
+  objective:
+    "Bestätigen, dass die Bedarfsermittlung ohne Maus vollständig bedienbar ist.",
+  type: "accessibility",
+  technique: "exploratory",
+  testData: [],
+  steps: [
+    {
+      index: 1,
+      action: "Navigiere ausschließlich per Tastatur durch die Maske",
+      expected: "Alle interaktiven Elemente erhalten einen sichtbaren Fokus",
+    },
+    {
+      index: 2,
+      action: "Aktiviere die Schaltfläche Weiter per Tastatur",
+      expected: "Die Folgemaske wird ohne Maus geöffnet",
+    },
+  ],
+  expectedResults: [
+    "Die Formularfelder sind in sinnvoller Reihenfolge erreichbar",
+    "Weiter ist per Tastatur auslösbar",
+  ],
+};
+
 const okResponder =
   (cases: ProductionRunnerLlmDraftCase[]) =>
   (request: { responseSchemaName?: string }, attempt: number) => {
@@ -540,7 +566,9 @@ test("runFigmaToQcTestCases drives the repair loop when the logic-judge initiall
         generatorCallIndex += 1;
         return {
           outcome: "success" as const,
-          content: { testCases: [SAMPLE_DRAFT] },
+          content: {
+            testCases: [SAMPLE_DRAFT, SAMPLE_ACCESSIBILITY_DRAFT],
+          },
           finishReason: "stop" as const,
           usage: { inputTokens: 100, outputTokens: 200 },
           modelDeployment: "gpt-oss-120b-mock",
@@ -594,7 +622,7 @@ test("runFigmaToQcTestCases skips the repair loop entirely on a clean accept ver
       deployment: "gpt-oss-120b-mock",
       modelRevision: "mock-1",
       gatewayRelease: "mock",
-      responder: okResponder([SAMPLE_DRAFT]),
+      responder: okResponder([SAMPLE_DRAFT, SAMPLE_ACCESSIBILITY_DRAFT]),
     });
     const result = await runFigmaToQcTestCases({
       jobId: "job-no-repair",

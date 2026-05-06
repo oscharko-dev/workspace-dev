@@ -1392,7 +1392,6 @@ export const runFigmaToQcTestCases = async (
     ),
   );
   let faithfulnessJudgeResult: RunFaithfulnessJudgeResult | undefined =
-    logicJudgeResult.verdict.verdict === "accept" &&
     visualCaptures !== undefined &&
     input.llm.bundle !== undefined
       ? await runFaithfulnessJudge({
