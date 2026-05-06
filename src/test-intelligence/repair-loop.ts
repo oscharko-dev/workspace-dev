@@ -24,9 +24,11 @@
  *           via the caller-supplied `regenerate` callback.
  *        d. Persists `agent-role-runs/test_generation_repair_iter_K.json`.
  *        e. Re-runs both judges on the new list.
- *        f. Terminates with `accepted` (any judge accepts and none
- *           reject), `rejected` (the post-iteration panel reaches a
- *           terminal `reject`), or continues.
+ *        f. Terminates with `accepted` when the logic-judge accepts
+ *           and the faithfulness-judge either accepts or was not run
+ *           for this iteration; `rejected` when the logic-judge
+ *           rejects, or the faithfulness-judge rejects when it was
+ *           run; otherwise continues.
  *      When the cap is exhausted the outcome is `"needs_review"`.
  *
  * The repair_planner is a deterministic consolidator: it does NOT

@@ -1455,8 +1455,12 @@ export const runFigmaToQcTestCases = async (
   //     `reject` for recoverable structured-output schema violations from
   //     the generator LLM; gating repair on `repair`-only verdicts
   //     silently disabled the recovery mechanism. The repair driver
-  //     terminates as soon as the panel reaches `accept` or every judge
-  //     in a single iteration agrees on `reject`.
+  //     terminates as soon as the panel reaches `accept` (logic-judge
+  //     accepts and the faithfulness-judge either accepts or is not
+  //     run for that iteration) or any judge in a post-iteration
+  //     verdict round returns `reject` (logic-judge `reject` always
+  //     terminates; faithfulness-judge `reject` terminates when it is
+  //     run).
   //     Per-iteration artifacts (`agent-role-runs/repair_planner_iter_K.json`
   //     and `agent-role-runs/test_generation_repair_iter_K.json`) are written
   //     by the loop driver. Token spend is attributed to FinOps role
