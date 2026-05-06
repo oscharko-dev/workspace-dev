@@ -68,6 +68,14 @@ export const REPAIR_PLANNER_ARTIFACT_PREFIX =
 export const TEST_GENERATION_REPAIR_ARTIFACT_PREFIX =
   "test_generation_repair_iter_" as const;
 
+/**
+ * Filename for the convergence-trace artifact written when the repair
+ * loop aborts because two consecutive iterations produced the same
+ * verdict signature (Issue #1939).
+ */
+export const REPAIR_LOOP_TRACE_ARTIFACT_FILENAME =
+  "repair-loop-trace.json" as const;
+
 /** Maximum length of a single RepairInstruction.instruction field. Mirrors logic-judge contract. */
 const MAX_INSTRUCTION_LENGTH = 240 as const;
 
@@ -77,8 +85,20 @@ const MAX_PATH_LENGTH = 160 as const;
 /** Maximum length of structured RepairInstruction.message fields. */
 const MAX_MESSAGE_LENGTH = 240 as const;
 
-/** Terminal outcomes of the repair loop. */
-export type RepairLoopOutcome = "accepted" | "rejected" | "needs_review";
+/**
+ * Terminal outcomes of the repair loop.
+ *
+ * `convergence_stalled` (Issue #1939) is emitted when the verdict signature
+ * of iteration K is identical to iteration K-1 — i.e., the LLM is producing
+ * the same class of error across iterations and burning tokens with no
+ * forward progress. The runner treats this as a soft outcome (the latest
+ * best-effort case set is still handed to the policy gate).
+ */
+export type RepairLoopOutcome =
+  | "accepted"
+  | "rejected"
+  | "needs_review"
+  | "convergence_stalled";
 
 /** Per-iteration record exposed via the loop result for downstream observability. */
 export interface RepairLoopIterationRecord {
@@ -92,6 +112,11 @@ export interface RepairLoopIterationRecord {
   readonly generatedCaseCount: number;
   /** sha256 of the canonical-JSON `GeneratedTestCaseList` for this iteration. */
   readonly outputHash: string;
+  /**
+   * Stable hash of (logic verdict, sorted finding codes, sorted repair
+   * instruction kinds) used by the convergence detector (Issue #1939).
+   */
+  readonly verdictSignature: string;
 }
 
 /** Final result returned by {@link runRepairLoop}. */
@@ -194,6 +219,30 @@ export interface RepairPlannerIterationArtifact {
     readonly repairInstructions: readonly RepairInstruction[];
     readonly repairInstructionCount: number;
   };
+}
+
+/**
+ * Persisted shape of the convergence-trace artifact (Issue #1939).
+ *
+ * Written exactly once per loop, only when the loop terminates with
+ * `convergence_stalled`. Captures the full per-iteration verdict-signature
+ * history so operators can audit which class of error the LLM was unable
+ * to make progress against.
+ */
+export interface RepairLoopTraceArtifact {
+  readonly schemaVersion: typeof REPAIR_LOOP_SCHEMA_VERSION;
+  readonly jobId: string;
+  readonly outcome: "convergence_stalled";
+  /** Iteration K at which `signature[K] == signature[K-1]` was detected. */
+  readonly stallDetectedAtIteration: number;
+  /** Hash that was stable across iterations K-1 and K. */
+  readonly stallSignature: string;
+  readonly iterations: readonly {
+    readonly iteration: number;
+    readonly logicVerdict: JudgeVerdict["verdict"];
+    readonly faithfulnessVerdict: FaithfulnessVerdict["verdict"] | "skipped";
+    readonly verdictSignature: string;
+  }[];
 }
 
 /** Persisted shape of the test_generation_repair_iter_K artifact. */
@@ -307,6 +356,29 @@ export const consolidateRepairInstructions = (input: {
   return [...dedup.values()].sort(compareInstruction);
 };
 
+/**
+ * Stable hash of (logic verdict, sorted finding codes, sorted repair
+ * instruction kinds) used by the convergence detector (Issue #1939).
+ *
+ * The signature deliberately ignores free-form fields like `message` and
+ * `instruction` so that two iterations whose LLM output differs only
+ * cosmetically are still classified as the same error class. The faithfulness
+ * verdict is intentionally excluded: the detector targets the dominant
+ * source of futile iterations (logic-judge findings repeating with no
+ * structural change).
+ */
+export const computeVerdictSignature = (logic: JudgeVerdict): string => {
+  const findingCodes = logic.findings.map((f) => f.code).sort();
+  const repairInstructionKinds = logic.repairInstructions
+    .map((ri) => ri.kind ?? "")
+    .sort();
+  return sha256Hex({
+    verdict: logic.verdict,
+    findingCodes,
+    repairInstructionKinds,
+  });
+};
+
 const writeAtomicJson = async (
   filePath: string,
   payload: unknown,
@@ -368,6 +440,7 @@ export const runRepairLoop = async (
     outputTokens: 0,
     generatedCaseCount: input.initialList.testCases.length,
     outputHash: sha256Hex(input.initialList),
+    verdictSignature: computeVerdictSignature(input.initialLogicVerdict),
   };
   const iterations: RepairLoopIterationRecord[] = [initialIteration];
   input.onIterationComplete?.(initialIteration);
@@ -503,6 +576,7 @@ export const runRepairLoop = async (
       currentFaith = undefined;
     }
 
+    const iterationSignature = computeVerdictSignature(currentLogic);
     const iterationRecord: RepairLoopIterationRecord = {
       iteration: k,
       logicVerdict: currentLogic.verdict,
@@ -513,10 +587,27 @@ export const runRepairLoop = async (
         regen.outputTokens + logicResult.outputTokens + faithOutputTokens,
       generatedCaseCount: currentList.testCases.length,
       outputHash: newListHash,
+      verdictSignature: iterationSignature,
     };
     iterations.push(iterationRecord);
     input.onIterationComplete?.(iterationRecord);
 
+    // Terminal-verdict checks win over convergence detection: an
+    // accept/reject from the panel is unambiguous regardless of whether
+    // the signature happens to be stable across iterations.
+    if (judgePanelAccepted(currentLogic, currentFaith)) {
+      return {
+        outcome: "accepted",
+        finalList: currentList,
+        finalLogicVerdict: currentLogic,
+        ...(currentFaith !== undefined
+          ? { finalFaithfulnessVerdict: currentFaith }
+          : {}),
+        iterations,
+        repairIterationCount: k,
+        maxRepairIterations: max,
+      };
+    }
     if (judgePanelRejected(currentLogic, currentFaith)) {
       return {
         outcome: "rejected",
@@ -530,9 +621,35 @@ export const runRepairLoop = async (
         maxRepairIterations: max,
       };
     }
-    if (judgePanelAccepted(currentLogic, currentFaith)) {
+
+    // Issue #1939: convergence detection. When iteration K's verdict
+    // signature is identical to K-1's, the LLM is reproducing the same
+    // class of error and additional iterations would only burn tokens.
+    // Persist the trace for operator audit and short-circuit the loop.
+    const previousIteration = iterations[iterations.length - 2];
+    if (
+      previousIteration !== undefined &&
+      previousIteration.verdictSignature === iterationSignature
+    ) {
+      const trace: RepairLoopTraceArtifact = {
+        schemaVersion: REPAIR_LOOP_SCHEMA_VERSION,
+        jobId: input.jobId,
+        outcome: "convergence_stalled",
+        stallDetectedAtIteration: k,
+        stallSignature: iterationSignature,
+        iterations: iterations.map((entry) => ({
+          iteration: entry.iteration,
+          logicVerdict: entry.logicVerdict,
+          faithfulnessVerdict: entry.faithfulnessVerdict,
+          verdictSignature: entry.verdictSignature,
+        })),
+      };
+      await writeAtomicJson(
+        join(input.runDir, REPAIR_LOOP_TRACE_ARTIFACT_FILENAME),
+        trace,
+      );
       return {
-        outcome: "accepted",
+        outcome: "convergence_stalled",
         finalList: currentList,
         finalLogicVerdict: currentLogic,
         ...(currentFaith !== undefined
