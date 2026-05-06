@@ -8,6 +8,154 @@
 
 ## Interfaces
 
+### A11yCriterionVerdict
+
+One per-criterion verdict emitted by the multimodal accessibility judge.
+
+#### Properties
+
+##### criterionId
+
+> `readonly` **criterionId**: `string`
+
+##### pillarId
+
+> `readonly` **pillarId**: `string`
+
+##### rationale
+
+> `readonly` **rationale**: `string`
+
+##### screenId
+
+> `readonly` **screenId**: `string`
+
+##### screenName
+
+> `readonly` **screenName**: `string`
+
+##### successCriterion
+
+> `readonly` **successCriterion**: `string`
+
+##### verdict
+
+> `readonly` **verdict**: `"covered_passes"` \| `"covered_weakly"` \| `"not_covered"`
+
+***
+
+### A11yFinding
+
+One accessibility-gap finding anchored to a criterion id.
+
+#### Properties
+
+##### code
+
+> `readonly` **code**: `string`
+
+##### criterionId
+
+> `readonly` **criterionId**: `string`
+
+##### message
+
+> `readonly` **message**: `string`
+
+##### severity
+
+> `readonly` **severity**: `"error"` \| `"warning"`
+
+##### testCaseId
+
+> `readonly` **testCaseId**: `string`
+
+***
+
+### A11yVerdict
+
+Persisted multimodal accessibility-judge verdict artifact.
+
+#### Properties
+
+##### cacheHit
+
+> `readonly` **cacheHit**: `boolean`
+
+##### cacheKeyDigest
+
+> `readonly` **cacheKeyDigest**: `string`
+
+##### contractVersion
+
+> `readonly` **contractVersion**: `"1.12.0"`
+
+##### criteria
+
+> `readonly` **criteria**: readonly [`A11yCriterionVerdict`](#a11ycriterionverdict)[]
+
+##### findings
+
+> `readonly` **findings**: readonly [`A11yFinding`](#a11yfinding)[]
+
+##### gatewayRelease
+
+> `readonly` **gatewayRelease**: `string`
+
+##### generatedAt
+
+> `readonly` **generatedAt**: `string`
+
+##### jobId
+
+> `readonly` **jobId**: `string`
+
+##### modelDeployment
+
+> `readonly` **modelDeployment**: `string`
+
+##### modelRevision
+
+> `readonly` **modelRevision**: `string`
+
+##### promptTemplateVersion
+
+> `readonly` **promptTemplateVersion**: `"a11y-judge.v1"`
+
+##### refusal?
+
+> `readonly` `optional` **refusal?**: [`A11yVerdictRefusal`](#a11yverdictrefusal-1)
+
+##### repairInstructions
+
+> `readonly` **repairInstructions**: readonly [`RepairInstruction`](#repairinstruction)[]
+
+##### schemaVersion
+
+> `readonly` **schemaVersion**: `"1.0.0"`
+
+##### verdict
+
+> `readonly` **verdict**: `"repair"` \| `"accept"`
+
+***
+
+### A11yVerdictRefusal
+
+Optional refusal attached to an accessibility-judge verdict.
+
+#### Properties
+
+##### code
+
+> `readonly` **code**: `string`
+
+##### message
+
+> `readonly` **message**: `string`
+
+***
+
 ### ActiveModelBinding
 
 Runtime summary of an active model binding used by a job. The optional
@@ -383,7 +531,7 @@ Minimal persisted metadata for one compiled role-step prompt run.
 
 ##### promptTemplateVersion
 
-> **promptTemplateVersion**: `"1.2.0"`
+> **promptTemplateVersion**: `"1.4.0"`
 
 ##### rawPromptsIncluded
 
@@ -797,6 +945,132 @@ ISO-8601 timestamp at which the break was observed.
 
 ***
 
+### CaseMergerReport
+
+Persisted case-merger artifact (Issue #1937).
+
+#### Properties
+
+##### contractVersion
+
+> `readonly` **contractVersion**: `"1.12.0"`
+
+##### entries
+
+> `readonly` **entries**: readonly [`CaseMergerReportEntry`](#casemergerreportentry)[]
+
+##### generatedAt
+
+> `readonly` **generatedAt**: `string`
+
+##### jobId
+
+> `readonly` **jobId**: `string`
+
+##### schemaVersion
+
+> `readonly` **schemaVersion**: `"1.0.0"`
+
+##### totals
+
+> `readonly` **totals**: `object`
+
+###### conflictsResolvedByPositiveBias
+
+> `readonly` **conflictsResolvedByPositiveBias**: `number`
+
+###### conflictsResolvedByRepair
+
+> `readonly` **conflictsResolvedByRepair**: `number`
+
+###### inBoth
+
+> `readonly` **inBoth**: `number`
+
+###### mergedCount
+
+> `readonly` **mergedCount**: `number`
+
+###### onlyInRunA
+
+> `readonly` **onlyInRunA**: `number`
+
+###### onlyInRunB
+
+> `readonly` **onlyInRunB**: `number`
+
+###### runACount
+
+> `readonly` **runACount**: `number`
+
+###### runBCount
+
+> `readonly` **runBCount**: `number`
+
+***
+
+### CaseMergerReportEntry
+
+One row of the case-merger report. Each entry corresponds to a single
+merged test case. `signature` is the dedup key
+`(screenId, sorted(coveredFieldIds), sorted(coveredActionIds), technique)`
+canonical-JSON-serialised so two entries with identical signatures are
+guaranteed to have been merged (or, equivalently, the report has at most
+one entry per signature).
+
+#### Properties
+
+##### conflictResolution
+
+> `readonly` **conflictResolution**: `"no_conflict"` \| `"prefer_unrepaired"` \| `"positive_bias_run_a"`
+
+##### coveredActionIds
+
+> `readonly` **coveredActionIds**: readonly `string`[]
+
+##### coveredFieldIds
+
+> `readonly` **coveredFieldIds**: readonly `string`[]
+
+##### droppedTestCaseId?
+
+> `readonly` `optional` **droppedTestCaseId?**: `string`
+
+The id of the test case that lost the conflict (only populated when
+`provenance === "both"`). The losing case's `qualitySignals` are merged
+into the winning entry's coverage sets — see
+`qualitySignalsCoverageMerged`.
+
+##### provenance
+
+> `readonly` **provenance**: `"runA"` \| `"runB"` \| `"both"`
+
+##### qualitySignalsCoverageMerged
+
+> `readonly` **qualitySignalsCoverageMerged**: `boolean`
+
+Whether the winning case absorbed coverage ids from the losing pass's
+counterpart. When `true`, the merged test case carries a strict superset
+of either side's `coveredFieldIds` / `coveredActionIds`.
+
+##### screenId
+
+> `readonly` **screenId**: `string`
+
+##### signature
+
+> `readonly` **signature**: `string`
+
+##### technique
+
+> `readonly` **technique**: [`TestCaseTechnique29119`](#testcasetechnique29119)
+
+##### testCaseId
+
+> `readonly` **testCaseId**: `string`
+
+***
+
 ### CompactBoundaryLogEntry
 
 One persisted line in `compact-boundary-log.jsonl`. Carries only
@@ -894,6 +1168,10 @@ Redacted JSON payload that the model will reason over.
 
 > **intent**: [`BusinessTestIntentIr`](#businesstestintentir)
 
+###### riskRanking?
+
+> `optional` **riskRanking?**: [`RiskRanking`](#riskranking)
+
 ###### sourceMixPlan?
 
 > `optional` **sourceMixPlan?**: [`SourceMixPlan`](#sourcemixplan-1)
@@ -928,7 +1206,7 @@ Redacted JSON payload that the model will reason over.
 
 ##### promptTemplateVersion
 
-> **promptTemplateVersion**: `"1.2.0"`
+> **promptTemplateVersion**: `"1.4.0"`
 
 ##### redactionPolicyVersion
 
@@ -1156,7 +1434,7 @@ Reported metadata for one analyzed category.
 
 ##### kind
 
-> `readonly` **kind**: `"system_instructions"` \| `"business_intent_ir"` \| `"visual_binding"` \| `"source_context"` \| `"coverage_plan"` \| `"generated_cases"` \| `"validation_findings"` \| `"judge_findings"` \| `"repair_history"`
+> `readonly` **kind**: `"system_instructions"` \| `"business_intent_ir"` \| `"visual_binding"` \| `"source_context"` \| `"coverage_plan"` \| `"risk_priorities"` \| `"generated_cases"` \| `"validation_findings"` \| `"judge_findings"` \| `"repair_history"`
 
 ##### priority
 
@@ -1242,6 +1520,14 @@ an override; callers may only provide values in the closed interval `[0, 1]`.
 
 > `readonly` **mutationKillRateTarget**: `number`
 
+##### perElement
+
+> `readonly` **perElement**: readonly [`CoveragePlanPerElement`](#coverageplanperelement-1)[]
+
+##### perScreen
+
+> `readonly` **perScreen**: readonly [`CoveragePlanPerScreen`](#coverageplanperscreen-1)[]
+
 ##### recommendedCases
 
 > `readonly` **recommendedCases**: readonly [`CoverageRequirement`](#coveragerequirement)[]
@@ -1253,6 +1539,63 @@ an override; callers may only provide values in the closed interval `[0, 1]`.
 ##### techniques
 
 > `readonly` **techniques**: readonly (`"equivalence_partitioning"` \| `"decision_table"` \| `"state_transition"` \| `"error_guessing"` \| `"initial_state"` \| `"boundary_value"` \| `"pairwise"`)[]
+
+***
+
+### CoveragePlanPerElement
+
+Per-element coverage target emitted by the coverage planner.
+
+#### Properties
+
+##### elementId
+
+> `readonly` **elementId**: `string`
+
+##### mustHaveCase
+
+> `readonly` **mustHaveCase**: `boolean`
+
+##### riskClass
+
+> `readonly` **riskClass**: [`TestCaseRiskCategory`](#testcaseriskcategory)
+
+##### screenId
+
+> `readonly` **screenId**: `string`
+
+***
+
+### CoveragePlanPerScreen
+
+Screen-scoped quota bundle emitted by the coverage planner. Each screen lists
+only the techniques that must appear at least `minCount` times.
+
+#### Properties
+
+##### screenId
+
+> `readonly` **screenId**: `string`
+
+##### techniqueQuotas
+
+> `readonly` **techniqueQuotas**: readonly [`CoveragePlanTechniqueQuota`](#coverageplantechniquequota)[]
+
+***
+
+### CoveragePlanTechniqueQuota
+
+Per-screen minimum quota for one planning technique.
+
+#### Properties
+
+##### minCount
+
+> `readonly` **minCount**: `number`
+
+##### technique
+
+> `readonly` **technique**: [`TestCaseTechnique29119`](#testcasetechnique29119)
 
 ***
 
@@ -2672,7 +3015,7 @@ Verbatim copy of the budget envelope applied to this job.
 
 ##### bySource
 
-> **bySource**: `Readonly`\<`Record`\<[`AgentSourceLabel`](#agentsourcelabel), \{ `callCount`: `number`; `costMinorUnits`: `number`; `deployment?`: `string`; `idempotentReplayHits`: `number`; `inFlightDedupHits`: `number`; `tokensIn`: `number`; `tokensOut`: `number`; \}\>\>
+> **bySource**: `Readonly`\<`Record`\<[`AgentSourceLabel`](#agentsourcelabel), \{ `attemptIds?`: readonly `string`[]; `callCount`: `number`; `costMinorUnits`: `number`; `deployment?`: `string`; `idempotentReplayHits`: `number`; `inFlightDedupHits`: `number`; `tokensIn`: `number`; `tokensOut`: `number`; \}\>\>
 
 Deterministic per-agent-source attribution sealed in attestation.
 
@@ -3372,7 +3715,7 @@ Single generated test case.
 
 ##### promptTemplateVersion
 
-> **promptTemplateVersion**: `"1.2.0"`
+> **promptTemplateVersion**: `"1.4.0"`
 
 ##### qcMappingPreview
 
@@ -3467,7 +3810,7 @@ Whether the artifact came from a replay-cache hit.
 
 ##### promptTemplateVersion
 
-> **promptTemplateVersion**: `"1.2.0"`
+> **promptTemplateVersion**: `"1.4.0"`
 
 ##### redactionPolicyVersion
 
@@ -3686,7 +4029,7 @@ Entries sorted by `filename` ascending.
 
 ### HarnessArtifactManifestEntry
 
-One row of [HarnessArtifactManifest.entries](#entries).
+One row of [HarnessArtifactManifest.entries](#entries-1).
 
 #### Properties
 
@@ -4855,6 +5198,122 @@ Total number of approved test cases supplied to the pipeline.
 
 ***
 
+### JudgeConsensusFinding
+
+One normalized finding consumed by the production-runner consensus module.
+
+#### Properties
+
+##### category
+
+> `readonly` **category**: `"other"` \| `"schema_class"` \| `"cross_modal_mismatch"` \| `"ir_allowlist_violation"` \| `"hallucination"` \| `"a11y_gap"` \| `"coverage_gap"`
+
+##### code
+
+> `readonly` **code**: `string`
+
+##### message
+
+> `readonly` **message**: `string`
+
+##### severity?
+
+> `readonly` `optional` **severity?**: `"error"` \| `"warning"`
+
+##### testCaseId
+
+> `readonly` **testCaseId**: `string`
+
+***
+
+### JudgeConsensusPanelEntry
+
+One normalized judge entry consumed by the consensus module.
+
+#### Properties
+
+##### findings
+
+> `readonly` **findings**: readonly [`JudgeConsensusFinding`](#judgeconsensusfinding)[]
+
+##### judgeId
+
+> `readonly` **judgeId**: `string`
+
+##### repairInstructions
+
+> `readonly` **repairInstructions**: readonly [`RepairInstruction`](#repairinstruction)[]
+
+##### verdict
+
+> `readonly` **verdict**: `"repair"` \| `"accept"` \| `"reject"`
+
+##### weight
+
+> `readonly` **weight**: `number`
+
+***
+
+### JudgeConsensusVerdict
+
+Persisted production-runner judge-consensus artifact.
+
+#### Properties
+
+##### contractVersion
+
+> `readonly` **contractVersion**: `"1.12.0"`
+
+##### generatedAt
+
+> `readonly` **generatedAt**: `string`
+
+##### jobId
+
+> `readonly` **jobId**: `string`
+
+##### panel
+
+> `readonly` **panel**: readonly [`JudgeConsensusPanelEntry`](#judgeconsensuspanelentry)[]
+
+##### repairInstructions
+
+> `readonly` **repairInstructions**: readonly [`RepairInstruction`](#repairinstruction)[]
+
+##### schemaVersion
+
+> `readonly` **schemaVersion**: `"1.0.0"`
+
+##### verdict
+
+> `readonly` **verdict**: `"repair"` \| `"accept"` \| `"reject"`
+
+##### vetoBy?
+
+> `readonly` `optional` **vetoBy?**: [`JudgeConsensusVeto`](#judgeconsensusveto)
+
+***
+
+### JudgeConsensusVeto
+
+Primary veto attribution surfaced by the consensus artifact.
+
+#### Properties
+
+##### findingCodes
+
+> `readonly` **findingCodes**: readonly `string`[]
+
+##### judgeId
+
+> `readonly` **judgeId**: `string`
+
+##### verdict
+
+> `readonly` **verdict**: `"repair"` \| `"accept"` \| `"reject"`
+
+***
+
 ### JudgeFinding
 
 One logic-judge finding anchored to a generated test case.
@@ -5664,7 +6123,7 @@ reasoning traces.
 
 ##### role
 
-> **role**: `"test_generation"` \| `"visual_primary"` \| `"visual_fallback"` \| `"logic_judge"`
+> **role**: `"test_generation"` \| `"visual_primary"` \| `"visual_fallback"` \| `"logic_judge"` \| `"a11y_judge"` \| `"coverage_planner"` \| `"risk_ranker"`
 
 ##### schemaVersion
 
@@ -5833,7 +6292,7 @@ this field.
 
 ##### role
 
-> **role**: `"test_generation"` \| `"visual_primary"` \| `"visual_fallback"` \| `"logic_judge"`
+> **role**: `"test_generation"` \| `"visual_primary"` \| `"visual_fallback"` \| `"logic_judge"` \| `"a11y_judge"` \| `"coverage_planner"` \| `"risk_ranker"`
 
 ##### timeoutMs
 
@@ -7632,7 +8091,7 @@ Replay-cache key — the only deterministic-bit-identical replay anchor.
 
 ##### promptTemplateVersion
 
-> **promptTemplateVersion**: `"1.2.0"`
+> **promptTemplateVersion**: `"1.4.0"`
 
 ##### redactionPolicyVersion
 
@@ -7891,6 +8350,66 @@ case transitions from `pending_secondary_approval` to `approved`.
 ##### testCaseId
 
 > **testCaseId**: `string`
+
+***
+
+### RiskRanking
+
+Deterministic risk ranking emitted by `risk-ranker.ts` (Issue #1935).
+
+The ranking augments `CoveragePlan` with a sorted priority list so the
+generator prompt can require explicit coverage of the top-K elements. The
+artifact is persisted as `risk-ranking.json` for downstream auditing.
+
+`topKElementIds` is the prefix of `rankedElements` whose `(screenId,
+elementId)` pairs the generator MUST cover with at least one case each.
+
+#### Properties
+
+##### jobId
+
+> `readonly` **jobId**: `string`
+
+##### rankedElements
+
+> `readonly` **rankedElements**: readonly [`RiskRankingElement`](#riskrankingelement)[]
+
+##### schemaVersion
+
+> `readonly` **schemaVersion**: `"1.0.0"`
+
+##### topKElementIds
+
+> `readonly` **topKElementIds**: readonly `string`[]
+
+***
+
+### RiskRankingElement
+
+One ranked IR element. Each entry refers back to the same
+`(screenId, elementId)` pair surfaced by `CoveragePlanPerElement` so the
+ranking can be cross-referenced against the deterministic coverage plan.
+
+`riskScore` lies in the closed interval `[0, 1]`. Higher scores mean the
+element should attract more cases in the generator output.
+
+#### Properties
+
+##### elementId
+
+> `readonly` **elementId**: `string`
+
+##### rationale
+
+> `readonly` **rationale**: `"regulated_data"` \| `"financial_transaction"` \| `"policy_strict"` \| `"high_risk_signal"` \| `"must_have_case"` \| `"medium_risk_signal"` \| `"baseline"`
+
+##### riskScore
+
+> `readonly` **riskScore**: `number`
+
+##### screenId
+
+> `readonly` **screenId**: `string`
 
 ***
 
@@ -10823,7 +11342,7 @@ Replay-cache identity hashes.
 
 ##### promptTemplateVersion
 
-> **promptTemplateVersion**: `"1.2.0"`
+> **promptTemplateVersion**: `"1.4.0"`
 
 Versions stamped by the harness at run time.
 
@@ -11541,7 +12060,7 @@ Replay-cache identity hashes for the run (mirrors compiled prompt).
 
 ##### promptTemplateVersion
 
-> **promptTemplateVersion**: `"1.2.0"`
+> **promptTemplateVersion**: `"1.4.0"`
 
 Versions used to compile the prompt and validate the output.
 
@@ -12652,7 +13171,7 @@ Submit response for accepted jobs.
 
 ###### Inherited from
 
-[`WorkspaceSubmitAccepted`](#workspacesubmitaccepted).[`jobId`](#jobid-56)
+[`WorkspaceSubmitAccepted`](#workspacesubmitaccepted).[`jobId`](#jobid-60)
 
 ##### pasteDeltaSummary?
 
@@ -16187,6 +16706,22 @@ Scoring weights for the visual quality composite score.
 
 ## Type Aliases
 
+### A11yCriterionVerdictLabel
+
+> **A11yCriterionVerdictLabel** = *typeof* [`ALLOWED_A11Y_CRITERION_VERDICTS`](#allowed_a11y_criterion_verdicts)\[`number`\]
+
+Discriminant of an accessibility-criterion coverage verdict.
+
+***
+
+### A11yJudgeVerdictLabel
+
+> **A11yJudgeVerdictLabel** = *typeof* [`ALLOWED_A11Y_VERDICTS`](#allowed_a11y_verdicts)\[`number`\]
+
+Discriminant of an allowed accessibility-judge terminal verdict.
+
+***
+
 ### AgentHarnessGraphRetryPolicy
 
 > **AgentHarnessGraphRetryPolicy** = *typeof* [`AGENT_HARNESS_GRAPH_RETRY_POLICIES`](#agent_harness_graph_retry_policies)\[`number`\]
@@ -16282,6 +16817,18 @@ Discriminated alias for [ALLOWED\_CACHE\_BREAK\_SUPPRESSION\_REASONS](#allowed_c
 
 ***
 
+### CaseMergerConflictResolution
+
+> **CaseMergerConflictResolution** = *typeof* [`ALLOWED_CASE_MERGER_CONFLICT_RESOLUTIONS`](#allowed_case_merger_conflict_resolutions)\[`number`\]
+
+***
+
+### CaseMergerProvenance
+
+> **CaseMergerProvenance** = *typeof* [`ALLOWED_CASE_MERGER_PROVENANCES`](#allowed_case_merger_provenances)\[`number`\]
+
+***
+
 ### CompactBoundaryLogTier
 
 > **CompactBoundaryLogTier** = *typeof* [`ALLOWED_COMPACT_BOUNDARY_LOG_TIERS`](#allowed_compact_boundary_log_tiers)\[`number`\]
@@ -16319,6 +16866,14 @@ Conflict-resolution policy alias.
 ### ContextBudgetPriority
 
 > **ContextBudgetPriority** = *typeof* [`ALLOWED_CONTEXT_BUDGET_PRIORITIES`](#allowed_context_budget_priorities)\[`number`\]
+
+***
+
+### CoveragePlanElementRiskClass
+
+> **CoveragePlanElementRiskClass** = [`TestCaseRiskCategory`](#testcaseriskcategory)
+
+Per-element risk classes reuse the generator's risk-category taxonomy.
 
 ***
 
@@ -16530,6 +17085,14 @@ Discriminated alias for [ALLOWED\_JIRA\_ISSUE\_TYPES](#allowed_jira_issue_types)
 
 ***
 
+### JudgeConsensusFindingCategory
+
+> **JudgeConsensusFindingCategory** = *typeof* [`JUDGE_CONSENSUS_FINDING_CATEGORIES`](#judge_consensus_finding_categories)\[`number`\]
+
+Category tag used by the consensus module for veto / repair routing.
+
+***
+
 ### JudgePanelAgreement
 
 > **JudgePanelAgreement** = *typeof* [`JUDGE_PANEL_AGREEMENT_LABELS`](#judge_panel_agreement_labels)\[`number`\]
@@ -16567,6 +17130,14 @@ Discriminated alias for [JUDGE\_PANEL\_PER\_JUDGE\_VERDICTS](#judge_panel_per_ju
 > **JudgePanelResolvedSeverity** = *typeof* [`JUDGE_PANEL_RESOLVED_SEVERITIES`](#judge_panel_resolved_severities)\[`number`\]
 
 Discriminated alias for [JUDGE\_PANEL\_RESOLVED\_SEVERITIES](#judge_panel_resolved_severities).
+
+***
+
+### KnownJudgeConsensusJudgeId
+
+> **KnownJudgeConsensusJudgeId** = *typeof* [`KNOWN_JUDGE_CONSENSUS_JUDGE_IDS`](#known_judge_consensus_judge_ids)\[`number`\]
+
+Known judge ids surfaced in the production-runner consensus panel.
 
 ***
 
@@ -16853,6 +17424,14 @@ Cache lookup outcome consumed by the orchestration layer.
 ### ReviewState
 
 > **ReviewState** = *typeof* [`ALLOWED_REVIEW_STATES`](#allowed_review_states)\[`number`\]
+
+***
+
+### RiskRankingRationale
+
+> **RiskRankingRationale** = *typeof* [`ALLOWED_RISK_RANKING_RATIONALES`](#allowed_risk_ranking_rationales)\[`number`\]
+
+Discriminated union of allowed rationale tokens.
 
 ***
 
@@ -17542,6 +18121,38 @@ Supported visual quality reference sources.
 
 ## Variables
 
+### A11Y\_JUDGE\_OUTPUT\_SCHEMA\_NAME
+
+> `const` **A11Y\_JUDGE\_OUTPUT\_SCHEMA\_NAME**: `"workspace-dev-a11y-judge-v1"`
+
+Structured-output schema name used by the accessibility-judge LLM call.
+
+***
+
+### A11Y\_JUDGE\_PROMPT\_TEMPLATE\_VERSION
+
+> `const` **A11Y\_JUDGE\_PROMPT\_TEMPLATE\_VERSION**: `"a11y-judge.v1"`
+
+Prompt-template version pinned onto accessibility-judge verdict artifacts.
+
+***
+
+### A11Y\_JUDGE\_VERDICT\_ARTIFACT\_FILENAME
+
+> `const` **A11Y\_JUDGE\_VERDICT\_ARTIFACT\_FILENAME**: `"a11y_judge.json"`
+
+Canonical filename for the persisted accessibility-judge verdict artifact.
+
+***
+
+### A11Y\_VERDICT\_SCHEMA\_VERSION
+
+> `const` **A11Y\_VERDICT\_SCHEMA\_VERSION**: `"1.0.0"`
+
+Schema version for persisted multimodal accessibility-judge verdicts.
+
+***
+
 ### AGENT\_HARNESS\_EXECUTION\_GRAPH\_SCHEMA\_VERSION
 
 > `const` **AGENT\_HARNESS\_EXECUTION\_GRAPH\_SCHEMA\_VERSION**: `"1.0.0"`
@@ -17697,6 +18308,22 @@ Schema version literal pinned on `agent-team-results.json`.
 
 ***
 
+### ALLOWED\_A11Y\_CRITERION\_VERDICTS
+
+> `const` **ALLOWED\_A11Y\_CRITERION\_VERDICTS**: readonly \[`"covered_passes"`, `"covered_weakly"`, `"not_covered"`\]
+
+Closed runtime list of per-criterion accessibility coverage verdicts.
+
+***
+
+### ALLOWED\_A11Y\_VERDICTS
+
+> `const` **ALLOWED\_A11Y\_VERDICTS**: readonly \[`"accept"`, `"repair"`\]
+
+Closed runtime list of global accessibility-judge verdicts.
+
+***
+
 ### ALLOWED\_AGENT\_ITERATION\_OUTCOMES
 
 > `const` **ALLOWED\_AGENT\_ITERATION\_OUTCOMES**: readonly \[`"exhausted"`, `"halted"`, `"needs_repair"`, `"passed"`\]
@@ -17707,7 +18334,7 @@ Closed runtime list of repair-iteration outcome literals.
 
 ### ALLOWED\_AGENT\_SOURCE\_LABELS
 
-> `const` **ALLOWED\_AGENT\_SOURCE\_LABELS**: readonly \[`"manager"`, `"judge_primary"`, `"judge_secondary"`, `"visual_primary"`, `"visual_fallback"`, `"generator"`, `"gap_finder"`, `"repair_planner"`, `"ir_mutation_oracle"`\]
+> `const` **ALLOWED\_AGENT\_SOURCE\_LABELS**: readonly \[`"manager"`, `"judge_primary"`, `"judge_secondary"`, `"visual_primary"`, `"visual_fallback"`, `"generator"`, `"coverage_planner"`, `"risk_ranker"`, `"gap_finder"`, `"repair_planner"`, `"ir_mutation_oracle"`\]
 
 Static source labels tracked inside the per-source FinOps breakdown.
 
@@ -17730,6 +18357,29 @@ artifact does not introduce a second outcome surface.
 Closed set of suppression reasons recognised by
 `notifyCompaction` / `notifyCacheDeletion`. Stable, locale-independent
 strings safe to ship to automation.
+
+***
+
+### ALLOWED\_CASE\_MERGER\_CONFLICT\_RESOLUTIONS
+
+> `const` **ALLOWED\_CASE\_MERGER\_CONFLICT\_RESOLUTIONS**: readonly \[`"no_conflict"`, `"prefer_unrepaired"`, `"positive_bias_run_a"`\]
+
+Reason a merged entry was selected over its conflicting counterpart.
+
+- `no_conflict` — the case existed in only one pass (no choice required).
+- `prefer_unrepaired` — both passes produced the case; one pass had
+  non-empty `repairInstructions` for it and the other did not, so the
+  un-repaired side won (Issue #1937 conflict-resolution rule 1).
+- `positive_bias_run_a` — both passes produced the case with comparable
+  repair-state, so pass A wins (Issue #1937 conflict-resolution rule 2).
+
+***
+
+### ALLOWED\_CASE\_MERGER\_PROVENANCES
+
+> `const` **ALLOWED\_CASE\_MERGER\_PROVENANCES**: readonly \[`"runA"`, `"runB"`, `"both"`\]
+
+Provenance of a merged test case relative to the two input passes.
 
 ***
 
@@ -17766,7 +18416,7 @@ Deterministic breach actions surfaced by the context-budget analyzer.
 
 ### ALLOWED\_CONTEXT\_BUDGET\_CATEGORY\_KINDS
 
-> `const` **ALLOWED\_CONTEXT\_BUDGET\_CATEGORY\_KINDS**: readonly \[`"system_instructions"`, `"business_intent_ir"`, `"visual_binding"`, `"source_context"`, `"coverage_plan"`, `"generated_cases"`, `"validation_findings"`, `"judge_findings"`, `"repair_history"`\]
+> `const` **ALLOWED\_CONTEXT\_BUDGET\_CATEGORY\_KINDS**: readonly \[`"system_instructions"`, `"business_intent_ir"`, `"visual_binding"`, `"source_context"`, `"coverage_plan"`, `"risk_priorities"`, `"generated_cases"`, `"validation_findings"`, `"judge_findings"`, `"repair_history"`\]
 
 Stable category kinds consumed by the context-budget analyzer.
 
@@ -18137,7 +18787,7 @@ retryable; transport, timeout, and rate-limit failures are.
 
 ### ALLOWED\_LLM\_GATEWAY\_ROLES
 
-> `const` **ALLOWED\_LLM\_GATEWAY\_ROLES**: readonly \[`"test_generation"`, `"visual_primary"`, `"visual_fallback"`, `"logic_judge"`\]
+> `const` **ALLOWED\_LLM\_GATEWAY\_ROLES**: readonly \[`"test_generation"`, `"visual_primary"`, `"visual_fallback"`, `"logic_judge"`, `"a11y_judge"`, `"coverage_planner"`, `"risk_ranker"`\]
 
 Allowed gateway roles. Each role is bound to a single deployment to keep the
 structured test-case generator (`gpt-oss-120b`) strictly separated from the
@@ -18392,6 +19042,19 @@ Allowed lifecycle states for a generated test case under review.
 state a four-eyes-enforced case occupies after the first approval and
 before the second distinct approval. Cases not subject to four-eyes
 skip this state entirely.
+
+***
+
+### ALLOWED\_RISK\_RANKING\_RATIONALES
+
+> `const` **ALLOWED\_RISK\_RANKING\_RATIONALES**: readonly \[`"policy_strict"`, `"regulated_data"`, `"financial_transaction"`, `"high_risk_signal"`, `"must_have_case"`, `"medium_risk_signal"`, `"baseline"`\]
+
+Stable rationale tokens for a `RiskRankingElement` (Issue #1935).
+
+The deterministic baseline emits one of these tokens; LLM augmentation may
+only re-order or raise scores within the same closed taxonomy. Tokens are
+machine-readable so downstream consumers (generator prompt, judges) can
+reason about rank reasons without parsing prose.
 
 ***
 
@@ -18776,6 +19439,26 @@ Heuristic threshold: when the observed `cacheReadTokens` is below this
 fraction of the expected baseline AND the new `cacheCreationTokens`
 exceeds [CACHE\_BREAK\_MIN\_CREATION\_TOKENS](#cache_break_min_creation_tokens), the detector flags
 the call as a cache break.
+
+***
+
+### CASE\_MERGER\_REPORT\_ARTIFACT\_FILENAME
+
+> `const` **CASE\_MERGER\_REPORT\_ARTIFACT\_FILENAME**: `"case-merger-report.json"`
+
+Canonical filename for the persisted case-merger artifact.
+
+***
+
+### CASE\_MERGER\_REPORT\_SCHEMA\_VERSION
+
+> `const` **CASE\_MERGER\_REPORT\_SCHEMA\_VERSION**: `"1.0.0"`
+
+Schema version for the persisted parallel-pass case-merger artifact
+(Issue #1937). The case-merger consumes two `GeneratedTestCaseList`s
+emitted by parallel diversity passes (Issue #1936) and emits a single
+deterministic merged list plus a per-case provenance/conflict log so
+downstream auditors can reconstruct which pass contributed each case.
 
 ***
 
@@ -19248,6 +19931,30 @@ Schema version for the persisted Jira write report artifact (Issue #1482).
 
 ***
 
+### JUDGE\_CONSENSUS\_ARTIFACT\_FILENAME
+
+> `const` **JUDGE\_CONSENSUS\_ARTIFACT\_FILENAME**: `"judge-consensus.json"`
+
+Canonical filename for the persisted judge-consensus artifact.
+
+***
+
+### JUDGE\_CONSENSUS\_FINDING\_CATEGORIES
+
+> `const` **JUDGE\_CONSENSUS\_FINDING\_CATEGORIES**: readonly \[`"schema_class"`, `"cross_modal_mismatch"`, `"ir_allowlist_violation"`, `"hallucination"`, `"a11y_gap"`, `"coverage_gap"`, `"other"`\]
+
+Closed runtime list of consensus finding categories.
+
+***
+
+### JUDGE\_CONSENSUS\_SCHEMA\_VERSION
+
+> `const` **JUDGE\_CONSENSUS\_SCHEMA\_VERSION**: `"1.0.0"`
+
+Schema version for persisted production-runner judge-consensus artifacts.
+
+***
+
 ### JUDGE\_PANEL\_AGREEMENT\_LABELS
 
 > `const` **JUDGE\_PANEL\_AGREEMENT\_LABELS**: readonly \[`"both_fail"`, `"both_pass"`, `"disagree"`\]
@@ -19321,6 +20028,14 @@ verdict artifact. The harness writes
 `<runDir>/judge-panel-verdicts.json` once per `semantic_judge`
 step; the file carries the per-judge raw verdicts the AT-022 audit
 requires for disagreement reproduction.
+
+***
+
+### KNOWN\_JUDGE\_CONSENSUS\_JUDGE\_IDS
+
+> `const` **KNOWN\_JUDGE\_CONSENSUS\_JUDGE\_IDS**: readonly \[`"logic_judge"`, `"faithfulness_judge"`, `"hallucination_judge"`, `"a11y_judge"`, `"coverage_judge"`\]
+
+Closed runtime list of known production-runner judge ids.
 
 ***
 
@@ -19865,6 +20580,22 @@ Canonical filename for the persisted review-gate snapshot.
 
 ***
 
+### RISK\_RANKING\_ARTIFACT\_FILENAME
+
+> `const` **RISK\_RANKING\_ARTIFACT\_FILENAME**: `"risk-ranking.json"`
+
+Canonical filename for the deterministic risk-ranking artifact.
+
+***
+
+### RISK\_RANKING\_SCHEMA\_VERSION
+
+> `const` **RISK\_RANKING\_SCHEMA\_VERSION**: `"1.0.0"`
+
+Schema version for persisted `risk-ranking.json` artifacts (Issue #1935).
+
+***
+
 ### SELF\_VERIFY\_RUBRIC\_ARTIFACT\_DIRECTORY
 
 > `const` **SELF\_VERIFY\_RUBRIC\_ARTIFACT\_DIRECTORY**: `"testcases"`
@@ -20072,7 +20803,7 @@ before a job may compose more than one test-design source.
 
 ### TEST\_INTELLIGENCE\_PROMPT\_TEMPLATE\_VERSION
 
-> `const` **TEST\_INTELLIGENCE\_PROMPT\_TEMPLATE\_VERSION**: `"1.2.0"`
+> `const` **TEST\_INTELLIGENCE\_PROMPT\_TEMPLATE\_VERSION**: `"1.4.0"`
 
 Prompt template version for the test-intelligence prompt family.
 
