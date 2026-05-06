@@ -12,6 +12,7 @@ export const STATIC_AGENT_SOURCE_LABELS = [
   "visual_primary",
   "visual_fallback",
   "generator",
+  "coverage_planner",
   "gap_finder",
   "repair_planner",
   "ir_mutation_oracle",

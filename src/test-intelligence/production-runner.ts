@@ -200,6 +200,10 @@ import {
   type RunLogicJudgeResult,
 } from "./logic-judge.js";
 import {
+  buildCoveragePlanWithAugmentation,
+  writeCoveragePlanArtifact,
+} from "./coverage-planner.js";
+import {
   REPAIR_LOOP_DEFAULT_MAX_ITERATIONS,
   REPAIR_PLANNER_ARTIFACT_PREFIX,
   TEST_GENERATION_REPAIR_ARTIFACT_PREFIX,
@@ -207,6 +211,7 @@ import {
   type RepairLoopIterationRecord,
   type RepairLoopResult,
 } from "./repair-loop.js";
+import { buildTestDesignModel } from "./test-design-model.js";
 
 /**
  * Default test-generation deployment label. Exported so callers building
@@ -381,6 +386,13 @@ export interface ProductionRunnerLlmConfig {
    * but do NOT want to construct a full visual-sidecar bundle.
    */
   logicJudge?: LlmGatewayClient;
+  /**
+   * Optional dedicated coverage-planner client (Issue #1934). When supplied
+   * directly, the production runner can request a soft augmentation layer for
+   * the deterministic coverage plan without requiring a full bundle. When both
+   * this field and `bundle.coveragePlanner` are present, the bundle slot wins.
+   */
+  coveragePlanner?: LlmGatewayClient;
   /** Optional per-request token budget. */
   maxOutputTokens?: number;
   /** Optional per-request wall-clock budget (ms). */
@@ -628,6 +640,7 @@ export interface RunFigmaToQcTestCasesResult {
   artifactPaths: {
     intent: string;
     compiledPrompt: string;
+    coveragePlan: string;
     logicJudgeCompiledPrompt?: string;
     faithfulnessJudgeCompiledPrompt?: string;
     untrustedContentNormalizationReport: string;
@@ -1000,6 +1013,77 @@ export const runFigmaToQcTestCases = async (
           plainContentHash: customContextMarkdown.plainContentHash,
         })
       : undefined;
+  const testDesignModel = buildTestDesignModel({
+    jobId: input.jobId,
+    intent: wireIntent,
+    ...(promptVisualBatch !== undefined ? { visual: promptVisualBatch } : {}),
+    ...(wireIntent.sourceEnvelope !== undefined
+      ? { sourceEnvelope: wireIntent.sourceEnvelope }
+      : {}),
+  });
+  const coveragePlannerClient =
+    input.llm.bundle?.coveragePlanner ?? input.llm.coveragePlanner;
+  const coveragePlannerStartedAt =
+    coveragePlannerClient === undefined ? undefined : Date.now();
+  const coveragePlanResult = await buildCoveragePlanWithAugmentation({
+    model: testDesignModel,
+    ...(compiledSourceMixPlan !== undefined
+      ? { sourceMixPlan: compiledSourceMixPlan }
+      : {}),
+    policyProfile: customerRubric as Record<string, unknown>,
+    ...(coveragePlannerClient !== undefined
+      ? {
+          plannerClient: coveragePlannerClient,
+          ...(finopsBudget.roles.test_generation?.maxInputTokensPerRequest !==
+          undefined
+            ? {
+                maxInputTokens:
+                  finopsBudget.roles.test_generation.maxInputTokensPerRequest,
+              }
+            : {}),
+          ...(finopsBudget.roles.test_generation?.maxOutputTokensPerRequest !==
+          undefined
+            ? {
+                maxOutputTokens:
+                  finopsBudget.roles.test_generation.maxOutputTokensPerRequest,
+              }
+            : {}),
+          ...(finopsBudget.roles.test_generation?.maxWallClockMsPerRequest !==
+          undefined
+            ? {
+                maxWallClockMs:
+                  finopsBudget.roles.test_generation.maxWallClockMsPerRequest,
+              }
+            : {}),
+          ...(finopsBudget.roles.test_generation?.maxRetriesPerRequest !==
+          undefined
+            ? {
+                maxRetries:
+                  finopsBudget.roles.test_generation.maxRetriesPerRequest,
+              }
+            : {}),
+          ...(input.llm.abortSignal !== undefined
+            ? { abortSignal: input.llm.abortSignal }
+            : {}),
+        }
+      : {}),
+  });
+  if (
+    coveragePlannerClient !== undefined &&
+    coveragePlannerStartedAt !== undefined &&
+    coveragePlanResult.gatewayResult !== undefined
+  ) {
+    finopsRecorder.recordAttempt({
+      role: "test_generation",
+      source: "coverage_planner",
+      deployment:
+        coveragePlanResult.gatewayResult.outcome === "success"
+          ? coveragePlanResult.gatewayResult.modelDeployment
+          : coveragePlannerClient.deployment,
+      durationMs: Date.now() - coveragePlannerStartedAt,
+      result: coveragePlanResult.gatewayResult,
+    });
+  }
   const compiled = compilePrompt({
     jobId: input.jobId,
     intent: wireIntent,
@@ -1014,6 +1098,8 @@ export const runFigmaToQcTestCases = async (
     policyBundleVersion: POLICY_BUNDLE_VERSION,
     roleStepId: "test_generation",
     customerRubric,
+    testDesignModel,
+    coveragePlan: coveragePlanResult.plan,
     responseSchema: draftSchema,
     responseSchemaName: "workspace-dev-production-runner-draft-list-v1",
     outputSchemaHintLabel: "ProductionRunnerDraftResponse",
@@ -1523,6 +1609,8 @@ export const runFigmaToQcTestCases = async (
           policyBundleVersion: POLICY_BUNDLE_VERSION,
           roleStepId: "test_generation",
           customerRubric,
+          testDesignModel,
+          coveragePlan: coveragePlanResult.plan,
           responseSchema: draftSchema,
           responseSchemaName: "workspace-dev-production-runner-draft-list-v1",
           outputSchemaHintLabel: "ProductionRunnerDraftResponse",
@@ -1951,6 +2039,7 @@ export const runFigmaToQcTestCases = async (
     artifactDir,
     TEST_CASE_POLICY_REPORT_ARTIFACT_FILENAME,
   );
+  const coveragePlanPath = join(artifactDir, "coverage-plan.json");
   const coveragePath = join(
     artifactDir,
     TEST_CASE_COVERAGE_REPORT_ARTIFACT_FILENAME,
@@ -2014,6 +2103,10 @@ export const runFigmaToQcTestCases = async (
       ? undefined
       : encodeCanonicalJson(compiled.contextBudgetReport);
   try {
+    const coveragePlanWritePromise = writeCoveragePlanArtifact({
+      plan: coveragePlanResult.plan,
+      runDir: artifactDir,
+    });
     await Promise.all([
       writeAtomicBytes(intentPath, intentBytes),
       writeAtomicBytes(compiledPromptPath, compiledPromptBytes),
@@ -2060,6 +2153,7 @@ export const runFigmaToQcTestCases = async (
           ]),
       writeAtomicBytes(policyPath, policyBytes),
       writeAtomicBytes(coveragePath, coverageBytes),
+      coveragePlanWritePromise,
     ]);
   } catch (err) {
     throw new ProductionRunnerError({
@@ -2529,6 +2623,7 @@ export const runFigmaToQcTestCases = async (
     artifactPaths: {
       intent: intentPath,
       compiledPrompt: compiledPromptPath,
+      coveragePlan: coveragePlanPath,
       logicJudgeCompiledPrompt: logicJudgeCompiledPromptPath,
       ...(faithfulnessJudgeCompiledPromptPath !== undefined
         ? {

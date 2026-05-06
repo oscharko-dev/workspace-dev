@@ -7,22 +7,45 @@ import {
   COVERAGE_PLAN_SCHEMA_VERSION,
   DEFAULT_MUTATION_KILL_RATE_TARGET,
   type CoveragePlan,
+  type CoveragePlanElementRiskClass,
+  type CoveragePlanPerElement,
+  type CoveragePlanPerScreen,
   type CoveragePlanTechnique,
   type CoverageRequirement,
   type CoverageRequirementReasonCode,
+  type LlmGenerationResult,
   type SourceMixPlan,
+  type TestCaseTechnique29119,
   type TestDesignModel,
   type TestDesignRiskSignal,
   type TestDesignRule,
   type TestDesignScreen,
 } from "../contracts/index.js";
 import { canonicalJson, sha256Hex } from "./content-hash.js";
+import type { LlmGatewayClient } from "./llm-gateway.js";
 import { selectTestDesignHeuristics } from "./test-design-heuristics.js";
 
 export interface BuildCoveragePlanInput {
   model: TestDesignModel;
   sourceMixPlan?: SourceMixPlan;
   mutationKillRateTarget?: number;
+  policyProfile?: Record<string, unknown>;
+}
+
+export interface BuildCoveragePlanWithAugmentationInput
+  extends BuildCoveragePlanInput {
+  plannerClient?: LlmGatewayClient;
+  maxInputTokens?: number;
+  maxOutputTokens?: number;
+  maxWallClockMs?: number;
+  maxRetries?: number;
+  abortSignal?: AbortSignal;
+}
+
+export interface CoveragePlanBuildResult {
+  plan: CoveragePlan;
+  usedAugmentation: boolean;
+  gatewayResult?: LlmGenerationResult;
 }
 
 const TECHNIQUE_ORDER: readonly CoveragePlanTechnique[] = [
@@ -41,6 +64,28 @@ const DECISION_SIGNAL_PATTERN =
   /\b(if|when|unless|otherwise|depends|only if|required when|either|one of|all of)\b|\band\/or\b/i;
 const NUMERIC_KIND_PATTERN =
   /\b(number|amount|currency|percentage|percent|rate|integer|decimal|float)\b/i;
+const INPUT_KIND_PATTERN =
+  /\b(number|text|email|password|phone|date|select|dropdown|checkbox|radio|textarea|currency|percentage|percent|rate|integer|decimal|float)\b/i;
+const COVERAGE_PLANNER_RESPONSE_SCHEMA_NAME =
+  "workspace-dev-coverage-planner-v1" as const;
+const RISK_CLASS_ORDER: readonly CoveragePlanElementRiskClass[] = [
+  "low",
+  "medium",
+  "high",
+  "financial_transaction",
+  "regulated_data",
+] as const;
+const GENERATED_TECHNIQUE_ORDER: readonly TestCaseTechnique29119[] = [
+  "use_case",
+  "equivalence_partitioning",
+  "boundary_value_analysis",
+  "decision_table",
+  "state_transition",
+  "exploratory",
+  "error_guessing",
+  "syntax_testing",
+  "classification_tree",
+] as const;
 
 const uniqueSorted = (values: Iterable<string>): string[] =>
   [...new Set(values)].sort((left, right) => left.localeCompare(right));
@@ -168,6 +213,316 @@ const pushRiskRequirement = ({
       visualRefs: screen?.visualRefs ?? [],
     }),
   );
+};
+
+const riskClassRank = (riskClass: CoveragePlanElementRiskClass): number =>
+  RISK_CLASS_ORDER.indexOf(riskClass);
+
+const generatedTechniqueRank = (technique: TestCaseTechnique29119): number =>
+  GENERATED_TECHNIQUE_ORDER.indexOf(technique);
+
+const compareTechniqueQuotas = (
+  left: { technique: TestCaseTechnique29119; minCount: number },
+  right: { technique: TestCaseTechnique29119; minCount: number },
+): number =>
+  generatedTechniqueRank(left.technique) -
+    generatedTechniqueRank(right.technique) ||
+  left.minCount - right.minCount;
+
+const comparePerScreen = (
+  left: CoveragePlanPerScreen,
+  right: CoveragePlanPerScreen,
+): number => left.screenId.localeCompare(right.screenId);
+
+const comparePerElement = (
+  left: CoveragePlanPerElement,
+  right: CoveragePlanPerElement,
+): number => left.elementId.localeCompare(right.elementId);
+
+const buildPerScreenPlan = (input: {
+  model: TestDesignModel;
+  minimumCases: readonly CoverageRequirement[];
+  recommendedCases: readonly CoverageRequirement[];
+}): CoveragePlan["perScreen"] => {
+  const countsByScreen = new Map<
+    string,
+    Map<TestCaseTechnique29119, number>
+  >();
+  const toGeneratedTechnique = (
+    technique: CoveragePlanTechnique,
+  ): TestCaseTechnique29119 | undefined => {
+    switch (technique) {
+      case "initial_state":
+        return "use_case";
+      case "equivalence_partitioning":
+        return "equivalence_partitioning";
+      case "boundary_value":
+        return "boundary_value_analysis";
+      case "decision_table":
+        return "decision_table";
+      case "state_transition":
+        return "state_transition";
+      case "error_guessing":
+        return "error_guessing";
+      case "pairwise":
+        return undefined;
+    }
+  };
+  for (const requirement of [
+    ...input.minimumCases,
+    ...input.recommendedCases,
+  ]) {
+    if (requirement.screenId === undefined) {
+      continue;
+    }
+    const generatedTechnique = toGeneratedTechnique(requirement.technique);
+    if (generatedTechnique === undefined) {
+      continue;
+    }
+    const screenCounts =
+      countsByScreen.get(requirement.screenId) ??
+      new Map<TestCaseTechnique29119, number>();
+    screenCounts.set(
+      generatedTechnique,
+      (screenCounts.get(generatedTechnique) ?? 0) + 1,
+    );
+    countsByScreen.set(requirement.screenId, screenCounts);
+  }
+  return input.model.screens
+    .map((screen) => {
+      const screenCounts = countsByScreen.get(screen.screenId);
+      const techniqueQuotas =
+        screenCounts === undefined
+          ? []
+          : [...screenCounts.entries()]
+              .map(([technique, minCount]) => ({ technique, minCount }))
+              .sort(compareTechniqueQuotas);
+      return {
+        screenId: screen.screenId,
+        techniqueQuotas,
+      };
+    })
+    .sort(comparePerScreen);
+};
+
+const buildPerElementPlan = (input: {
+  model: TestDesignModel;
+}): CoveragePlan["perElement"] => {
+  const validationTargets = new Set(
+    input.model.screens.flatMap((screen) =>
+      screen.validations.map((validation) => validation.targetElementId),
+    ),
+  );
+  const calculationInputs = new Set(
+    input.model.screens.flatMap((screen) =>
+      screen.calculations.flatMap((calculation) => calculation.inputElementIds),
+    ),
+  );
+  const screenRuleKinds = new Map<
+    string,
+    { hasBoundary: boolean; hasDecision: boolean; hasRiskSignal: boolean }
+  >();
+  for (const screen of input.model.screens) {
+    screenRuleKinds.set(screen.screenId, {
+      hasBoundary: false,
+      hasDecision: false,
+      hasRiskSignal: false,
+    });
+  }
+  for (const rule of input.model.businessRules) {
+    if (rule.screenId === undefined) {
+      continue;
+    }
+    const existing = screenRuleKinds.get(rule.screenId);
+    if (existing === undefined) {
+      continue;
+    }
+    existing.hasBoundary ||= isBoundaryRule(rule);
+    existing.hasDecision ||= isDecisionRule(rule);
+  }
+  for (const signal of input.model.riskSignals) {
+    if (signal.screenId === undefined) {
+      continue;
+    }
+    const existing = screenRuleKinds.get(signal.screenId);
+    if (existing !== undefined) {
+      existing.hasRiskSignal = true;
+    }
+  }
+  const piiElementPattern =
+    /\b(iban|account|routing|swift|bic|tax|ssn|social security|passport|national id)\b/i;
+  const financialElementPattern =
+    /\b(amount|loan|payment|principal|interest|rate|term|currency|price|balance)\b/i;
+  return input.model.screens
+    .flatMap((screen) => {
+      const screenSignals = screenRuleKinds.get(screen.screenId);
+      return screen.elements.map((element) => {
+        let riskClass: CoveragePlanElementRiskClass = "low";
+        const elementText = `${element.label} ${element.kind}`;
+        if (piiElementPattern.test(elementText)) {
+          riskClass = "regulated_data";
+        } else if (
+          financialElementPattern.test(elementText) ||
+          NUMERIC_KIND_PATTERN.test(element.kind)
+        ) {
+          riskClass = "financial_transaction";
+        } else if (
+          validationTargets.has(element.elementId) ||
+          calculationInputs.has(element.elementId) ||
+          screenSignals?.hasRiskSignal === true
+        ) {
+          riskClass = "high";
+        } else if (
+          INPUT_KIND_PATTERN.test(element.kind) ||
+          screenSignals?.hasBoundary === true ||
+          screenSignals?.hasDecision === true
+        ) {
+          riskClass = "medium";
+        }
+        return {
+          screenId: screen.screenId,
+          elementId: element.elementId,
+          mustHaveCase: true,
+          riskClass,
+        };
+      });
+    })
+    .sort(comparePerElement);
+};
+
+const buildCoveragePlanResponseSchema = (): Record<string, unknown> => ({
+  type: "object",
+  additionalProperties: false,
+  required: ["perScreen", "perElement"],
+  properties: {
+    perScreen: {
+      type: "array",
+      items: {
+        type: "object",
+        additionalProperties: false,
+        required: ["screenId", "techniqueQuotas"],
+        properties: {
+          screenId: { type: "string", minLength: 1 },
+          techniqueQuotas: {
+            type: "object",
+            additionalProperties: false,
+            properties: Object.fromEntries(
+              GENERATED_TECHNIQUE_ORDER.map((technique) => [
+                technique,
+                { type: "integer", minimum: 0 },
+              ]),
+            ),
+          },
+        },
+      },
+    },
+    perElement: {
+      type: "array",
+      items: {
+        type: "object",
+        additionalProperties: false,
+        required: ["screenId", "elementId", "mustHaveCase", "riskClass"],
+        properties: {
+          screenId: { type: "string", minLength: 1 },
+          elementId: { type: "string", minLength: 1 },
+          mustHaveCase: { type: "boolean" },
+          riskClass: { enum: [...RISK_CLASS_ORDER] },
+        },
+      },
+    },
+  },
+});
+
+const normalizeTechniqueQuotaRecord = (
+  value: unknown,
+): ReadonlyMap<TestCaseTechnique29119, number> => {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return new Map();
+  }
+  const record = value as Record<string, unknown>;
+  const quotas = new Map<TestCaseTechnique29119, number>();
+  for (const technique of GENERATED_TECHNIQUE_ORDER) {
+    const quota = record[technique];
+    if (
+      typeof quota === "number" &&
+      Number.isSafeInteger(quota) &&
+      quota >= 0
+    ) {
+      quotas.set(technique, quota);
+    }
+  }
+  return quotas;
+};
+
+const mergeCoveragePlanAugmentation = (input: {
+  plan: CoveragePlan;
+  augmentation: unknown;
+}): CoveragePlan => {
+  if (typeof input.augmentation !== "object" || input.augmentation === null) {
+    return input.plan;
+  }
+  const augmentation = input.augmentation as Record<string, unknown>;
+  const perScreenRaw = Array.isArray(augmentation.perScreen)
+    ? augmentation.perScreen
+    : [];
+  const perElementRaw = Array.isArray(augmentation.perElement)
+    ? augmentation.perElement
+    : [];
+  const mergedPerScreen = input.plan.perScreen.map((screen) => {
+    const override = perScreenRaw.find(
+      (candidate) =>
+        typeof candidate === "object" &&
+        candidate !== null &&
+        (candidate as Record<string, unknown>).screenId === screen.screenId,
+    ) as Record<string, unknown> | undefined;
+    const nextCounts = new Map<TestCaseTechnique29119, number>(
+      screen.techniqueQuotas.map((quota) => [quota.technique, quota.minCount]),
+    );
+    for (const [technique, minCount] of normalizeTechniqueQuotaRecord(
+      override?.techniqueQuotas,
+    )) {
+      nextCounts.set(technique, Math.max(nextCounts.get(technique) ?? 0, minCount));
+    }
+    return {
+      screenId: screen.screenId,
+      techniqueQuotas: [...nextCounts.entries()]
+        .map(([technique, minCount]) => ({ technique, minCount }))
+        .filter((quota) => quota.minCount > 0)
+        .sort(compareTechniqueQuotas),
+    };
+  });
+  const mergedPerElement = input.plan.perElement.map((element) => {
+    const override = perElementRaw.find(
+      (candidate) =>
+        typeof candidate === "object" &&
+        candidate !== null &&
+        (candidate as Record<string, unknown>).screenId === element.screenId &&
+        (candidate as Record<string, unknown>).elementId === element.elementId,
+    ) as Record<string, unknown> | undefined;
+    const mustHaveCase =
+      typeof override?.mustHaveCase === "boolean"
+        ? element.mustHaveCase || override.mustHaveCase
+        : element.mustHaveCase;
+    const riskClassCandidate = override?.riskClass;
+    const riskClass =
+      typeof riskClassCandidate === "string" &&
+      RISK_CLASS_ORDER.includes(riskClassCandidate as CoveragePlanElementRiskClass) &&
+      riskClassRank(riskClassCandidate as CoveragePlanElementRiskClass) >
+        riskClassRank(element.riskClass)
+        ? (riskClassCandidate as CoveragePlanElementRiskClass)
+        : element.riskClass;
+    return {
+      screenId: element.screenId,
+      elementId: element.elementId,
+      mustHaveCase,
+      riskClass,
+    };
+  });
+  return {
+    ...input.plan,
+    perScreen: mergedPerScreen,
+    perElement: mergedPerElement,
+  };
 };
 
 export const buildCoveragePlan = (input: BuildCoveragePlanInput): CoveragePlan => {
@@ -352,10 +707,71 @@ export const buildCoveragePlan = (input: BuildCoveragePlanInput): CoveragePlan =
   return {
     schemaVersion: COVERAGE_PLAN_SCHEMA_VERSION,
     jobId: model.jobId,
+    perScreen: buildPerScreenPlan({
+      model,
+      minimumCases: minimumCasesSorted,
+      recommendedCases: recommendedCasesSorted,
+    }),
+    perElement: buildPerElementPlan({ model }),
     minimumCases: minimumCasesSorted,
     recommendedCases: recommendedCasesSorted,
     techniques,
     mutationKillRateTarget,
+  };
+};
+
+export const buildCoveragePlanWithAugmentation = async (
+  input: BuildCoveragePlanWithAugmentationInput,
+): Promise<CoveragePlanBuildResult> => {
+  const plan = buildCoveragePlan(input);
+  if (input.plannerClient === undefined) {
+    return { plan, usedAugmentation: false };
+  }
+  const request = {
+    jobId: input.model.jobId,
+    systemPrompt: [
+      "You are the optional Coverage-Planner augmentation model for workspace-dev.",
+      "You receive a deterministic TestDesignModel, CoveragePlan baseline, optional SourceMixPlan, and optional policy profile as JSON.",
+      "Return JSON only. You may only strengthen the baseline by raising per-screen technique quotas, setting mustHaveCase=true, or elevating riskClass.",
+      "Never lower a quota, never set mustHaveCase=false, and never reduce a risk class.",
+    ].join(" "),
+    userPrompt: [
+      "[1] TestDesignModel",
+      canonicalJson(input.model),
+      "[2] CoveragePlanBaseline",
+      canonicalJson(plan),
+      ...(input.sourceMixPlan === undefined
+        ? []
+        : ["[3] SourceMixPlan", canonicalJson(input.sourceMixPlan)]),
+      ...(input.policyProfile === undefined
+        ? []
+        : ["[4] PolicyProfile", canonicalJson(input.policyProfile)]),
+    ].join("\n"),
+    responseSchema: buildCoveragePlanResponseSchema(),
+    responseSchemaName: COVERAGE_PLANNER_RESPONSE_SCHEMA_NAME,
+    ...(input.maxInputTokens !== undefined
+      ? { maxInputTokens: input.maxInputTokens }
+      : {}),
+    ...(input.maxOutputTokens !== undefined
+      ? { maxOutputTokens: input.maxOutputTokens }
+      : {}),
+    ...(input.maxWallClockMs !== undefined
+      ? { maxWallClockMs: input.maxWallClockMs }
+      : {}),
+    ...(input.maxRetries !== undefined ? { maxRetries: input.maxRetries } : {}),
+    ...(input.abortSignal !== undefined ? { abortSignal: input.abortSignal } : {}),
+  };
+  const gatewayResult = await input.plannerClient.generate(request);
+  if (gatewayResult.outcome !== "success") {
+    return { plan, usedAugmentation: false, gatewayResult };
+  }
+  return {
+    plan: mergeCoveragePlanAugmentation({
+      plan,
+      augmentation: gatewayResult.content,
+    }),
+    usedAugmentation: true,
+    gatewayResult,
   };
 };
 

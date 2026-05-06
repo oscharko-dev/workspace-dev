@@ -395,6 +395,8 @@ const isCoveragePlan = (value: unknown): value is CoveragePlan => {
   return (
     value["schemaVersion"] === "1.0.0" &&
     typeof value["jobId"] === "string" &&
+    Array.isArray(value["perScreen"]) &&
+    Array.isArray(value["perElement"]) &&
     Array.isArray(value["minimumCases"]) &&
     Array.isArray(value["recommendedCases"]) &&
     Array.isArray(value["techniques"]) &&

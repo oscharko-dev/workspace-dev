@@ -47,6 +47,7 @@ const baseOptions = (): TestIntelligenceRunOptions => ({
   modelEndpoint: undefined,
   modelDeployment: "gpt-oss-120b",
   logicJudgeDeployment: undefined,
+  coveragePlannerDeployment: undefined,
   modelApiKey: undefined,
   figmaToken: "figd_xxx",
   policyProfile: undefined,
@@ -290,6 +291,33 @@ test("parseTestIntelligenceRunArgs: --logic-judge-deployment rejects empty value
       ),
     /--logic-judge-deployment requires a non-empty deployment name/u,
   );
+});
+
+test("parseTestIntelligenceRunArgs: WORKSPACE_TEST_SPACE_COVERAGE_PLANNER_DEPLOYMENT env var hydrates the option (Issue #1934)", () => {
+  const opts = parseTestIntelligenceRunArgs(
+    ["--figma-url", "https://figma.com/design/abc", "--output", "/tmp/x"],
+    {
+      WORKSPACE_TEST_SPACE_COVERAGE_PLANNER_DEPLOYMENT: "phi-4-mini-instruct",
+    },
+  );
+  assert.equal(opts.coveragePlannerDeployment, "phi-4-mini-instruct");
+});
+
+test("parseTestIntelligenceRunArgs: --coverage-planner-deployment overrides the env default (Issue #1934)", () => {
+  const opts = parseTestIntelligenceRunArgs(
+    [
+      "--figma-url",
+      "https://figma.com/design/abc",
+      "--output",
+      "/tmp/x",
+      "--coverage-planner-deployment",
+      "phi-4-mini-instruct",
+    ],
+    {
+      WORKSPACE_TEST_SPACE_COVERAGE_PLANNER_DEPLOYMENT: "gpt-oss-120b",
+    },
+  );
+  assert.equal(opts.coveragePlannerDeployment, "phi-4-mini-instruct");
 });
 
 test("parseTestIntelligenceRunArgs: --finops-budget captures path", () => {

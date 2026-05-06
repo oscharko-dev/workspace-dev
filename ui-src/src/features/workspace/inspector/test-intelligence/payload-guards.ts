@@ -100,6 +100,13 @@ const VISUAL_SIDECAR_DEPLOYMENTS = new Set([
   "phi-4-multimodal-poc",
   "mock",
 ]);
+const COVERAGE_PLAN_RISK_CLASSES = new Set([
+  "low",
+  "medium",
+  "high",
+  "regulated_data",
+  "financial_transaction",
+]);
 
 const isReviewSnapshotEntry = (
   value: unknown,
@@ -439,13 +446,90 @@ const isExportReport = (value: unknown): value is ExportReport => {
   );
 };
 
-const isCoveragePlan = (value: unknown): boolean =>
+const isCoverageRequirement = (value: unknown): boolean =>
   isRecord(value) &&
-  typeof value["jobId"] === "string" &&
-  Array.isArray(value["minimumCases"]) &&
-  Array.isArray(value["recommendedCases"]) &&
-  Array.isArray(value["techniques"]) &&
-  typeof value["mutationKillRateTarget"] === "number";
+  typeof value["requirementId"] === "string" &&
+  typeof value["technique"] === "string" &&
+  typeof value["reasonCode"] === "string" &&
+  (value["screenId"] === undefined || typeof value["screenId"] === "string") &&
+  isStringArray(value["targetIds"]) &&
+  isStringArray(value["sourceRefs"]) &&
+  isStringArray(value["visualRefs"]);
+
+const isCoveragePlanTechniqueQuota = (value: unknown): boolean =>
+  isRecord(value) &&
+  typeof value["technique"] === "string" &&
+  typeof value["minCount"] === "number" &&
+  Number.isInteger(value["minCount"]) &&
+  value["minCount"] >= 0;
+
+const isCoveragePlanPerScreen = (value: unknown): boolean =>
+  isRecord(value) &&
+  typeof value["screenId"] === "string" &&
+  Array.isArray(value["techniqueQuotas"]) &&
+  value["techniqueQuotas"].every(isCoveragePlanTechniqueQuota);
+
+const isCoveragePlanPerElement = (value: unknown): boolean =>
+  isRecord(value) &&
+  typeof value["screenId"] === "string" &&
+  typeof value["elementId"] === "string" &&
+  typeof value["mustHaveCase"] === "boolean" &&
+  typeof value["riskClass"] === "string" &&
+  COVERAGE_PLAN_RISK_CLASSES.has(value["riskClass"]);
+
+const isCoveragePlan = (value: unknown): boolean => {
+  if (!isRecord(value)) return false;
+  if (
+    typeof value["jobId"] !== "string" ||
+    typeof value["mutationKillRateTarget"] !== "number" ||
+    !Array.isArray(value["techniques"])
+  ) {
+    return false;
+  }
+
+  const hasStructuredCoverage =
+    value["perScreen"] !== undefined || value["perElement"] !== undefined;
+  const hasLegacyCoverage =
+    value["minimumCases"] !== undefined || value["recommendedCases"] !== undefined;
+
+  if (!hasStructuredCoverage && !hasLegacyCoverage) {
+    return false;
+  }
+
+  if (
+    value["perScreen"] !== undefined &&
+    (!Array.isArray(value["perScreen"]) ||
+      !value["perScreen"].every(isCoveragePlanPerScreen))
+  ) {
+    return false;
+  }
+
+  if (
+    value["perElement"] !== undefined &&
+    (!Array.isArray(value["perElement"]) ||
+      !value["perElement"].every(isCoveragePlanPerElement))
+  ) {
+    return false;
+  }
+
+  if (
+    value["minimumCases"] !== undefined &&
+    (!Array.isArray(value["minimumCases"]) ||
+      !value["minimumCases"].every(isCoverageRequirement))
+  ) {
+    return false;
+  }
+
+  if (
+    value["recommendedCases"] !== undefined &&
+    (!Array.isArray(value["recommendedCases"]) ||
+      !value["recommendedCases"].every(isCoverageRequirement))
+  ) {
+    return false;
+  }
+
+  return true;
+};
 
 const isJudgePanelVerdict = (value: unknown): boolean =>
   isRecord(value) &&

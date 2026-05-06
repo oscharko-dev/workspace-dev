@@ -216,11 +216,30 @@ export interface CoverageRequirement {
   visualRefs: string[];
 }
 
+export interface CoveragePlanTechniqueQuota {
+  technique: string;
+  minCount: number;
+}
+
+export interface CoveragePlanPerScreen {
+  screenId: string;
+  techniqueQuotas: CoveragePlanTechniqueQuota[];
+}
+
+export interface CoveragePlanPerElement {
+  screenId: string;
+  elementId: string;
+  mustHaveCase: boolean;
+  riskClass: TestCaseRiskCategory;
+}
+
 export interface CoveragePlan {
   schemaVersion: string;
   jobId: string;
-  minimumCases: CoverageRequirement[];
-  recommendedCases: CoverageRequirement[];
+  perScreen?: CoveragePlanPerScreen[];
+  perElement?: CoveragePlanPerElement[];
+  minimumCases?: CoverageRequirement[];
+  recommendedCases?: CoverageRequirement[];
   techniques: string[];
   mutationKillRateTarget: number;
 }
