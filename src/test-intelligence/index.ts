@@ -746,6 +746,18 @@ export {
   type WriteVisualSidecarResultArtifactInput,
 } from "./visual-sidecar-client.js";
 export {
+  buildA11yJudgeCriteria,
+  buildA11yJudgeResponseSchema,
+  createFileSystemA11yJudgeCache,
+  createMemoryA11yJudgeCache,
+  runA11yJudge,
+  type A11yJudgePromptArtifact,
+  type A11yJudgeReplayCache,
+  type RunA11yJudgeInput,
+  type RunA11yJudgeResult,
+} from "./a11y-judge.js";
+export {
+  buildA11yJudgeConsensusEntry,
   buildFaithfulnessJudgeConsensusEntry,
   buildJudgeConsensus,
   buildLogicJudgeConsensusEntry,

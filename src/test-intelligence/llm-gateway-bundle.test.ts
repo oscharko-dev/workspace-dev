@@ -219,6 +219,111 @@ test("bundle: optional logicJudge slot accepts a logic_judge client and rejects 
   );
 });
 
+test("bundle: optional a11yJudge slot accepts an image-capable a11y_judge client and rejects non-visual configs (Issue #1940)", () => {
+  const bundle = createMockLlmGatewayClientBundle({
+    testGeneration: {
+      role: "test_generation",
+      deployment: "mistral-large-3",
+      modelRevision: "rev",
+      gatewayRelease: "rel",
+      declaredCapabilities: testGenerationCapabilities,
+    },
+    visualPrimary: {
+      role: "visual_primary",
+      deployment: "llama-4-maverick-vision",
+      modelRevision: "rev",
+      gatewayRelease: "rel",
+      declaredCapabilities: visualCapabilities,
+    },
+    visualFallback: {
+      role: "visual_fallback",
+      deployment: "phi-4-multimodal-poc",
+      modelRevision: "rev",
+      gatewayRelease: "rel",
+      declaredCapabilities: visualCapabilities,
+    },
+    a11yJudge: {
+      role: "a11y_judge",
+      deployment: "phi-4-multimodal-instruct",
+      modelRevision: "rev",
+      gatewayRelease: "rel",
+      declaredCapabilities: visualCapabilities,
+    },
+  });
+  assert.equal(bundle.a11yJudge?.role, "a11y_judge");
+  assert.equal(bundle.a11yJudge?.deployment, "phi-4-multimodal-instruct");
+
+  assert.throws(
+    () =>
+      createMockLlmGatewayClientBundle({
+        testGeneration: {
+          role: "test_generation",
+          deployment: "mistral-large-3",
+          modelRevision: "rev",
+          gatewayRelease: "rel",
+          declaredCapabilities: testGenerationCapabilities,
+        },
+        visualPrimary: {
+          role: "visual_primary",
+          deployment: "llama-4-maverick-vision",
+          modelRevision: "rev",
+          gatewayRelease: "rel",
+          declaredCapabilities: visualCapabilities,
+        },
+        visualFallback: {
+          role: "visual_fallback",
+          deployment: "phi-4-multimodal-poc",
+          modelRevision: "rev",
+          gatewayRelease: "rel",
+          declaredCapabilities: visualCapabilities,
+        },
+        a11yJudge: {
+          role: "logic_judge",
+          deployment: "phi-4-multimodal-instruct",
+          modelRevision: "rev",
+          gatewayRelease: "rel",
+          declaredCapabilities: visualCapabilities,
+        },
+      }),
+    /a11yJudge must use role a11y_judge/,
+  );
+
+  assert.throws(
+    () =>
+      createMockLlmGatewayClientBundle({
+        testGeneration: {
+          role: "test_generation",
+          deployment: "mistral-large-3",
+          modelRevision: "rev",
+          gatewayRelease: "rel",
+          declaredCapabilities: testGenerationCapabilities,
+        },
+        visualPrimary: {
+          role: "visual_primary",
+          deployment: "llama-4-maverick-vision",
+          modelRevision: "rev",
+          gatewayRelease: "rel",
+          declaredCapabilities: visualCapabilities,
+        },
+        visualFallback: {
+          role: "visual_fallback",
+          deployment: "phi-4-multimodal-poc",
+          modelRevision: "rev",
+          gatewayRelease: "rel",
+          declaredCapabilities: visualCapabilities,
+        },
+        a11yJudge: {
+          role: "a11y_judge",
+          deployment: "phi-4-multimodal-instruct",
+          modelRevision: "rev",
+          gatewayRelease: "rel",
+          declaredCapabilities: testGenerationCapabilities,
+        },
+      }),
+    /a11yJudge must declare image input support/,
+  );
+});
+
 test("bundle: optional coveragePlanner slot accepts a coverage_planner client and rejects image-capable planners (Issue #1934)", () => {
   const bundle = createMockLlmGatewayClientBundle({
     testGeneration: {
@@ -381,6 +486,59 @@ test("bundle: probes the logic_judge slot when wired (Issue #1932)", async () =>
     );
     assert.ok(judgeArtifact !== undefined);
     assert.equal(judgeArtifact.artifact.deployment, "gpt-oss-120b");
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("bundle: probes the a11y_judge slot when wired (Issue #1940)", async () => {
+  const dir = await mkdtemp(path.join(tmpdir(), "llm-bundle-a11y-"));
+  try {
+    const bundle = createMockLlmGatewayClientBundle({
+      testGeneration: {
+        role: "test_generation",
+        deployment: "mistral-large-3",
+        modelRevision: "mistral-large-3@2026-04-25",
+        gatewayRelease: "mock@2026.04",
+        declaredCapabilities: testGenerationCapabilities,
+      },
+      visualPrimary: {
+        role: "visual_primary",
+        deployment: "llama-4-maverick-vision",
+        modelRevision: "llama-4-maverick-vision@2026-04-25",
+        gatewayRelease: "mock@2026.04",
+        declaredCapabilities: visualCapabilities,
+      },
+      visualFallback: {
+        role: "visual_fallback",
+        deployment: "phi-4-multimodal-poc",
+        modelRevision: "phi-4-multimodal-poc@2026-04-25",
+        gatewayRelease: "mock@2026.04",
+        declaredCapabilities: visualCapabilities,
+      },
+      a11yJudge: {
+        role: "a11y_judge",
+        deployment: "phi-4-multimodal-instruct",
+        modelRevision: "phi-4-multimodal-instruct@2026-04-25",
+        gatewayRelease: "mock@2026.04",
+        declaredCapabilities: visualCapabilities,
+      },
+    });
+    const result = await probeLlmGatewayClientBundle({
+      bundle,
+      jobId: "job-bundle-a11y",
+      generatedAt: "2026-04-25T00:00:00Z",
+      destinationDir: dir,
+    });
+    assert.deepEqual(
+      result.artifacts.map((artifact) => artifact.role),
+      ["test_generation", "visual_primary", "visual_fallback", "a11y_judge"],
+    );
+    const judgeArtifact = result.artifacts.find(
+      (artifact) => artifact.role === "a11y_judge",
+    );
+    assert.ok(judgeArtifact !== undefined);
+    assert.equal(judgeArtifact.artifact.deployment, "phi-4-multimodal-instruct");
   } finally {
     await rm(dir, { recursive: true, force: true });
   }

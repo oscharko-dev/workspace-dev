@@ -62,6 +62,7 @@ export interface ResolvedLlmConfig {
   visualEndpoint: string;
   visualPrimaryDeployment: string;
   visualFallbackDeployment: string;
+  a11yJudgeDeployment?: string;
   coveragePlannerDeployment?: string;
   riskRankerDeployment?: string;
   apiKey: string;
@@ -117,6 +118,10 @@ export const resolveLlmConfigFromEnv = (
   const visualFallbackDeployment =
     readTrimmed(env, "WORKSPACE_TEST_SPACE_VISUAL_FALLBACK_DEPLOYMENT") ??
     visualPrimaryDeployment;
+  const a11yJudgeDeployment = readTrimmed(
+    env,
+    "WORKSPACE_TEST_SPACE_A11Y_JUDGE_DEPLOYMENT",
+  );
   const coveragePlannerDeployment = readTrimmed(
     env,
     "WORKSPACE_TEST_SPACE_COVERAGE_PLANNER_DEPLOYMENT",
@@ -131,6 +136,7 @@ export const resolveLlmConfigFromEnv = (
     visualEndpoint,
     visualPrimaryDeployment,
     visualFallbackDeployment,
+    ...(a11yJudgeDeployment !== undefined ? { a11yJudgeDeployment } : {}),
     ...(coveragePlannerDeployment !== undefined
       ? { coveragePlannerDeployment }
       : {}),
@@ -209,6 +215,30 @@ const defaultBuildLlmBundle = (
         maxRetries: 1,
         circuitBreaker: { failureThreshold: 2, resetTimeoutMs: 30_000 },
       },
+      ...(config.a11yJudgeDeployment !== undefined
+        ? {
+            a11yJudge: {
+              role: "a11y_judge" as const,
+              compatibilityMode: "openai_chat" as const,
+              baseUrl: config.visualEndpoint,
+              deployment: config.a11yJudgeDeployment,
+              modelRevision: `${config.a11yJudgeDeployment}@server-auto-wire`,
+              gatewayRelease: "azure-ai-foundry-server-auto-wire",
+              authMode: "api_key" as const,
+              declaredCapabilities: {
+                structuredOutputs: true,
+                seedSupport: false,
+                reasoningEffortSupport: false,
+                maxOutputTokensSupport: true,
+                streamingSupport: false,
+                imageInputSupport: true,
+              },
+              timeoutMs: 60_000,
+              maxRetries: 1,
+              circuitBreaker: { failureThreshold: 2, resetTimeoutMs: 30_000 },
+            },
+          }
+        : {}),
       ...(config.coveragePlannerDeployment !== undefined
         ? {
             coveragePlanner: {

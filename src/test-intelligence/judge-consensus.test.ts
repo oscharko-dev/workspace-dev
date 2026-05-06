@@ -2,11 +2,14 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  A11Y_JUDGE_PROMPT_TEMPLATE_VERSION,
+  A11Y_VERDICT_SCHEMA_VERSION,
   FAITHFULNESS_JUDGE_PROMPT_TEMPLATE_VERSION,
   FAITHFULNESS_VERDICT_SCHEMA_VERSION,
   LOGIC_JUDGE_PROMPT_TEMPLATE_VERSION,
   LOGIC_JUDGE_VERDICT_SCHEMA_VERSION,
   TEST_INTELLIGENCE_CONTRACT_VERSION,
+  type A11yVerdict,
   type FaithfulnessVerdict,
   type FaithfulnessVerdictLabel,
   type JudgeVerdict,
@@ -14,6 +17,7 @@ import {
   type RepairInstruction,
 } from "../contracts/index.js";
 import {
+  buildA11yJudgeConsensusEntry,
   buildFaithfulnessJudgeConsensusEntry,
   buildJudgeConsensus,
   buildLogicJudgeConsensusEntry,
@@ -61,6 +65,26 @@ const buildFaithfulnessVerdict = (
   verdict,
   hallucinations: options?.hallucinations ?? [],
   mismatches: options?.mismatches ?? [],
+});
+
+const buildA11yVerdict = (
+  verdict: A11yVerdict["verdict"],
+  options?: Partial<Pick<A11yVerdict, "findings" | "repairInstructions">>,
+): A11yVerdict => ({
+  schemaVersion: A11Y_VERDICT_SCHEMA_VERSION,
+  contractVersion: TEST_INTELLIGENCE_CONTRACT_VERSION,
+  promptTemplateVersion: A11Y_JUDGE_PROMPT_TEMPLATE_VERSION,
+  generatedAt: "2026-05-06T00:00:00.000Z",
+  jobId: "job-consensus",
+  cacheHit: false,
+  cacheKeyDigest: "a".repeat(64),
+  modelDeployment: "phi-4-multimodal-instruct-mock",
+  modelRevision: "mock-1",
+  gatewayRelease: "mock",
+  verdict,
+  criteria: [],
+  findings: options?.findings ?? [],
+  repairInstructions: options?.repairInstructions ?? [],
 });
 
 test("buildJudgeConsensus accepts a single accept judge unchanged", () => {
@@ -188,4 +212,32 @@ test("buildJudgeConsensus normalizes a11y and coverage rejects down to repair", 
 
   assert.equal(consensus.verdict, "repair");
   assert.equal(consensus.panel[0]?.verdict, "repair");
+});
+
+test("buildA11yJudgeConsensusEntry projects structured a11y findings into the consensus panel", () => {
+  const entry = buildA11yJudgeConsensusEntry(
+    buildA11yVerdict("repair", {
+      findings: [
+        {
+          criterionId: "1:1::focus-indicator",
+          testCaseId: "$job",
+          code: "criterion_covered_weakly",
+          severity: "warning",
+          message: "Focus indication is only weakly covered.",
+        },
+      ],
+      repairInstructions: [
+        {
+          testCaseId: "$job",
+          path: "$job.a11yCoverage[1:1::focus-indicator]",
+          instruction: "Add an explicit focus-visible assertion for each tab stop.",
+        },
+      ],
+    }),
+  );
+
+  assert.equal(entry.judgeId, "a11y_judge");
+  assert.equal(entry.verdict, "repair");
+  assert.equal(entry.findings[0]?.category, "a11y_gap");
+  assert.equal(entry.repairInstructions.length, 1);
 });

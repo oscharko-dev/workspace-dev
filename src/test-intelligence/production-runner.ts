@@ -42,6 +42,8 @@ import { dirname, join } from "node:path";
 import { createHash, randomUUID } from "node:crypto";
 
 import {
+  A11Y_JUDGE_VERDICT_ARTIFACT_FILENAME,
+  type A11yVerdict,
   ALLOWED_REGULATORY_RELEVANCE_DOMAINS,
   BANKING_INSURANCE_SEMANTIC_KEYWORDS,
   CONTEXT_BUDGET_ARTIFACT_DIRECTORY,
@@ -192,6 +194,12 @@ import {
   ReplayCacheValidationError,
 } from "./replay-cache.js";
 import {
+  createFileSystemA11yJudgeCache,
+  createMemoryA11yJudgeCache,
+  runA11yJudge,
+  type RunA11yJudgeResult,
+} from "./a11y-judge.js";
+import {
   createFileSystemFaithfulnessJudgeCache,
   createMemoryFaithfulnessJudgeCache,
   runFaithfulnessJudge,
@@ -213,6 +221,7 @@ import {
   writeRiskRankingArtifact,
 } from "./risk-ranker.js";
 import {
+  buildA11yJudgeConsensusEntry,
   buildFaithfulnessJudgeConsensusEntry,
   buildJudgeConsensus,
   buildLogicJudgeConsensusEntry,
@@ -537,9 +546,52 @@ const buildActiveModelBindings = (input: {
           ? { ictRegisterRef: input.bundle.visualFallback.ictRegisterRef }
           : {}),
       },
+      ...(input.bundle.a11yJudge === undefined
+        ? []
+        : [
+            {
+              providerId: "llm-gateway" as const,
+              modelId: input.bundle.a11yJudge.modelRevision,
+              inferenceProfileId: input.bundle.a11yJudge.deployment,
+              ...(input.bundle.a11yJudge.ictRegisterRef !== undefined
+                ? { ictRegisterRef: input.bundle.a11yJudge.ictRegisterRef }
+                : {}),
+            },
+          ]),
     );
   }
   return bindings;
+};
+
+const isA11yJudgeAvailableForConsensus = (
+  result: RunA11yJudgeResult | undefined,
+): result is RunA11yJudgeResult =>
+  result !== undefined && result.verdict.refusal === undefined;
+
+const mergeA11yIntoLogicVerdict = (
+  logicVerdict: JudgeVerdict,
+  a11yVerdict: A11yVerdict | undefined,
+): JudgeVerdict => {
+  if (a11yVerdict === undefined || a11yVerdict.verdict !== "repair") {
+    return logicVerdict;
+  }
+  return {
+    ...logicVerdict,
+    verdict: logicVerdict.verdict === "reject" ? "reject" : "repair",
+    findings: [
+      ...logicVerdict.findings,
+      ...a11yVerdict.findings.map((finding) => ({
+        testCaseId: finding.testCaseId,
+        code: finding.code,
+        severity: finding.severity,
+        message: finding.message,
+      })),
+    ],
+    repairInstructions: [
+      ...logicVerdict.repairInstructions,
+      ...a11yVerdict.repairInstructions,
+    ],
+  };
 };
 
 export interface RunFigmaToQcTestCasesInput {
@@ -677,6 +729,7 @@ export interface RunFigmaToQcTestCasesResult {
     riskRanking: string;
     logicJudgeCompiledPrompt?: string;
     faithfulnessJudgeCompiledPrompt?: string;
+    a11yJudgeVerdict?: string;
     untrustedContentNormalizationReport: string;
     evidenceSeal: string;
     visualSidecarResult?: string;
@@ -720,6 +773,10 @@ export interface RunFigmaToQcTestCasesResult {
     verdict: JudgeVerdict;
     artifactPath: string;
     compiledPromptPath: string;
+  };
+  a11yJudge?: {
+    verdict: A11yVerdict;
+    artifactPath: string;
   };
   judgeConsensus: {
     verdict: JudgeConsensusVerdict;
@@ -1681,6 +1738,68 @@ export const runFigmaToQcTestCases = async (
     });
   }
 
+  const a11yJudgeCache = createFileSystemA11yJudgeCache(
+    join(
+      input.outputRoot,
+      "test-intelligence",
+      "replay-cache",
+      input.replayCacheTokenScope ?? "default",
+      "a11y-judge",
+    ),
+  );
+  let a11yJudgeResult: RunA11yJudgeResult | undefined =
+    visualCaptures !== undefined && input.llm.bundle?.a11yJudge !== undefined
+      ? await runA11yJudge({
+          jobId: input.jobId,
+          generatedAt: input.generatedAt,
+          intent,
+          captures: visualCaptures,
+          generatedTestCases: generatedList,
+          bundle: input.llm.bundle,
+          cache: a11yJudgeCache,
+          ...(finopsBudget.roles.visual_primary?.maxInputTokensPerRequest !==
+          undefined
+            ? {
+                maxInputTokens:
+                  finopsBudget.roles.visual_primary.maxInputTokensPerRequest,
+              }
+            : {}),
+          ...(finopsBudget.roles.visual_primary?.maxOutputTokensPerRequest !==
+          undefined
+            ? {
+                maxOutputTokens:
+                  finopsBudget.roles.visual_primary.maxOutputTokensPerRequest,
+              }
+            : {}),
+          ...(finopsBudget.roles.visual_primary?.maxWallClockMsPerRequest !==
+          undefined
+            ? {
+                maxWallClockMs:
+                  finopsBudget.roles.visual_primary.maxWallClockMsPerRequest,
+              }
+            : {}),
+          ...(finopsBudget.roles.visual_primary?.maxRetriesPerRequest !==
+          undefined
+            ? {
+                maxRetries:
+                  finopsBudget.roles.visual_primary.maxRetriesPerRequest,
+              }
+            : {}),
+        })
+      : undefined;
+  if (a11yJudgeResult?.gatewayResult !== undefined) {
+    finopsRecorder.recordAttempt({
+      role: "visual_primary",
+      source: "judge_secondary",
+      deployment:
+        a11yJudgeResult.gatewayResult.outcome === "success"
+          ? a11yJudgeResult.gatewayResult.modelDeployment
+          : input.llm.bundle!.a11yJudge!.deployment,
+      durationMs: 0,
+      result: a11yJudgeResult.gatewayResult,
+    });
+  }
+
   const faithfulnessJudgeCache = createFileSystemFaithfulnessJudgeCache(
     join(
       input.outputRoot,
@@ -1749,6 +1868,9 @@ export const runFigmaToQcTestCases = async (
       generatedAt: input.generatedAt,
       panel: [
         buildLogicJudgeConsensusEntry(logicJudgeResult.verdict),
+        ...(isA11yJudgeAvailableForConsensus(a11yJudgeResult)
+          ? [buildA11yJudgeConsensusEntry(a11yJudgeResult.verdict)]
+          : []),
         ...(faithfulnessJudgeResult !== undefined
           ? [buildFaithfulnessJudgeConsensusEntry(faithfulnessJudgeResult.verdict)]
           : []),
@@ -1781,11 +1903,19 @@ export const runFigmaToQcTestCases = async (
     const maxRepairIterations =
       input.harness?.maxRepairIterations ?? REPAIR_LOOP_DEFAULT_MAX_ITERATIONS;
     const faithfulnessSnapshot = faithfulnessJudgeResult;
+    const a11ySnapshot = a11yJudgeResult;
+    let latestRepairLogicJudgeResult: RunLogicJudgeResult | undefined;
+    let latestRepairA11yJudgeResult: RunA11yJudgeResult | undefined;
     repairLoopResult = await runRepairLoop({
       jobId: input.jobId,
       runDir: artifactDir,
       initialList: generatedList,
-      initialLogicVerdict: logicJudgeResult.verdict,
+      initialLogicVerdict: mergeA11yIntoLogicVerdict(
+        logicJudgeResult.verdict,
+        isA11yJudgeAvailableForConsensus(a11ySnapshot)
+          ? a11ySnapshot.verdict
+          : undefined,
+      ),
       ...(faithfulnessSnapshot !== undefined
         ? { initialFaithfulnessVerdict: faithfulnessSnapshot.verdict }
         : {}),
@@ -1971,14 +2101,78 @@ export const runFigmaToQcTestCases = async (
             result: repairLogicResult.gatewayResult,
           });
         }
+        const repairA11yResult =
+          visualCaptures !== undefined &&
+          input.llm.bundle?.a11yJudge !== undefined
+            ? await runA11yJudge({
+                jobId: input.jobId,
+                generatedAt: input.generatedAt,
+                intent,
+                captures: visualCaptures,
+                generatedTestCases: list,
+                bundle: input.llm.bundle,
+                cache: createMemoryA11yJudgeCache(),
+                ...(finopsBudget.roles.visual_primary
+                  ?.maxInputTokensPerRequest !== undefined
+                  ? {
+                      maxInputTokens:
+                        finopsBudget.roles.visual_primary.maxInputTokensPerRequest,
+                    }
+                  : {}),
+                ...(finopsBudget.roles.visual_primary
+                  ?.maxOutputTokensPerRequest !== undefined
+                  ? {
+                      maxOutputTokens:
+                        finopsBudget.roles.visual_primary.maxOutputTokensPerRequest,
+                    }
+                  : {}),
+                ...(finopsBudget.roles.visual_primary
+                  ?.maxWallClockMsPerRequest !== undefined
+                  ? {
+                      maxWallClockMs:
+                        finopsBudget.roles.visual_primary.maxWallClockMsPerRequest,
+                    }
+                  : {}),
+                ...(finopsBudget.roles.visual_primary?.maxRetriesPerRequest !==
+                undefined
+                  ? {
+                      maxRetries:
+                        finopsBudget.roles.visual_primary.maxRetriesPerRequest,
+                    }
+                  : {}),
+              })
+            : undefined;
+        if (repairA11yResult?.gatewayResult !== undefined) {
+          finopsRecorder.recordAttempt({
+            role: "visual_primary",
+            source: "judge_secondary",
+            deployment:
+              repairA11yResult.gatewayResult.outcome === "success"
+                ? repairA11yResult.gatewayResult.modelDeployment
+                : input.llm.bundle!.a11yJudge!.deployment,
+            durationMs: 0,
+            result: repairA11yResult.gatewayResult,
+          });
+        }
+        latestRepairLogicJudgeResult = repairLogicResult;
+        latestRepairA11yJudgeResult = repairA11yResult;
         const usage =
           repairLogicResult.gatewayResult?.outcome === "success"
             ? repairLogicResult.gatewayResult.usage
             : { inputTokens: 0, outputTokens: 0 };
+        const a11yUsage =
+          repairA11yResult?.gatewayResult?.outcome === "success"
+            ? repairA11yResult.gatewayResult.usage
+            : { inputTokens: 0, outputTokens: 0 };
         return {
-          verdict: repairLogicResult.verdict,
-          inputTokens: usage.inputTokens ?? 0,
-          outputTokens: usage.outputTokens ?? 0,
+          verdict: mergeA11yIntoLogicVerdict(
+            repairLogicResult.verdict,
+            isA11yJudgeAvailableForConsensus(repairA11yResult)
+              ? repairA11yResult.verdict
+              : undefined,
+          ),
+          inputTokens: (usage.inputTokens ?? 0) + (a11yUsage.inputTokens ?? 0),
+          outputTokens: (usage.outputTokens ?? 0) + (a11yUsage.outputTokens ?? 0),
         };
       },
       ...(faithfulnessSnapshot !== undefined &&
@@ -2073,10 +2267,14 @@ export const runFigmaToQcTestCases = async (
       },
     });
     generatedList = repairLoopResult.finalList;
-    logicJudgeResult = {
-      ...logicJudgeResult,
-      verdict: repairLoopResult.finalLogicVerdict,
-    };
+    if (latestRepairLogicJudgeResult !== undefined) {
+      logicJudgeResult = latestRepairLogicJudgeResult;
+    } else {
+      logicJudgeResult = {
+        ...logicJudgeResult,
+        verdict: repairLoopResult.finalLogicVerdict,
+      };
+    }
     if (
       repairLoopResult.finalFaithfulnessVerdict !== undefined &&
       faithfulnessJudgeResult !== undefined
@@ -2085,6 +2283,9 @@ export const runFigmaToQcTestCases = async (
         ...faithfulnessJudgeResult,
         verdict: repairLoopResult.finalFaithfulnessVerdict,
       };
+    }
+    if (latestRepairA11yJudgeResult !== undefined) {
+      a11yJudgeResult = latestRepairA11yJudgeResult;
     }
     judgeConsensusResult = buildCurrentJudgeConsensus();
   }
@@ -2229,6 +2430,10 @@ export const runFigmaToQcTestCases = async (
           "agent-role-runs",
           FAITHFULNESS_VERDICT_ARTIFACT_FILENAME,
         );
+  const a11yJudgeVerdictPath =
+    a11yJudgeResult === undefined
+      ? undefined
+      : join(artifactDir, "agent-role-runs", A11Y_JUDGE_VERDICT_ARTIFACT_FILENAME);
   const generatedPath = join(
     artifactDir,
     GENERATED_TESTCASES_ARTIFACT_FILENAME,
@@ -2283,6 +2488,10 @@ export const runFigmaToQcTestCases = async (
     faithfulnessJudgeResult === undefined
       ? undefined
       : encodeCanonicalJson(faithfulnessJudgeResult.verdict);
+  const a11yJudgeVerdictBytes =
+    a11yJudgeResult === undefined
+      ? undefined
+      : encodeCanonicalJson(a11yJudgeResult.verdict);
   const generatedBytes = encodeCanonicalJson(validation.generatedTestCases);
   const validationBytes = encodeCanonicalJson(validation.validation);
   const visualSidecarValidationBytes =
@@ -2363,6 +2572,9 @@ export const runFigmaToQcTestCases = async (
               faithfulnessJudgeVerdictBytes,
             ),
           ]),
+      ...(a11yJudgeVerdictPath === undefined || a11yJudgeVerdictBytes === undefined
+        ? []
+        : [writeAtomicBytes(a11yJudgeVerdictPath, a11yJudgeVerdictBytes)]),
       ...(contextBudgetReportPath === undefined ||
       contextBudgetReportBytes === undefined
         ? []
@@ -2418,6 +2630,16 @@ export const runFigmaToQcTestCases = async (
         artifactFilename: `agent-role-runs/${LOGIC_JUDGE_VERDICT_ARTIFACT_FILENAME}`,
         roleLineageDepth: 0,
       },
+      ...(a11yJudgeResult === undefined
+        ? []
+        : [
+            {
+              jobId: input.jobId,
+              roleStepId: "a11y_judge",
+              artifactFilename: `agent-role-runs/${A11Y_JUDGE_VERDICT_ARTIFACT_FILENAME}`,
+              roleLineageDepth: 0,
+            },
+          ]),
       {
         jobId: input.jobId,
         roleStepId: "judge_consensus",
@@ -2531,6 +2753,9 @@ export const runFigmaToQcTestCases = async (
             (artifact) => `agent-role-runs/${artifact.artifact.roleRunId}.json`,
           ),
           `agent-role-runs/${LOGIC_JUDGE_VERDICT_ARTIFACT_FILENAME}`,
+          ...(a11yJudgeResult === undefined
+            ? []
+            : [`agent-role-runs/${A11Y_JUDGE_VERDICT_ARTIFACT_FILENAME}`]),
           JUDGE_CONSENSUS_ARTIFACT_FILENAME,
           ...(faithfulnessJudgeResult === undefined
             ? []
@@ -2650,6 +2875,15 @@ export const runFigmaToQcTestCases = async (
             {
               filename: `agent-role-runs/${FAITHFULNESS_VERDICT_ARTIFACT_FILENAME}`,
               bytes: faithfulnessJudgeVerdictBytes,
+              category: "manifest" as const,
+            },
+          ]),
+      ...(a11yJudgeVerdictBytes === undefined
+        ? []
+        : [
+            {
+              filename: `agent-role-runs/${A11Y_JUDGE_VERDICT_ARTIFACT_FILENAME}`,
+              bytes: a11yJudgeVerdictBytes,
               category: "manifest" as const,
             },
           ]),
@@ -2849,6 +3083,14 @@ export const runFigmaToQcTestCases = async (
       artifactPath: logicJudgeVerdictPath,
       compiledPromptPath: logicJudgeCompiledPromptPath,
     },
+    ...(a11yJudgeResult !== undefined && a11yJudgeVerdictPath !== undefined
+      ? {
+          a11yJudge: {
+            verdict: a11yJudgeResult.verdict,
+            artifactPath: a11yJudgeVerdictPath,
+          },
+        }
+      : {}),
     judgeConsensus: {
       verdict: judgeConsensusResult,
       artifactPath: judgeConsensusPath,
@@ -2893,6 +3135,9 @@ export const runFigmaToQcTestCases = async (
             faithfulnessJudgeCompiledPrompt:
               faithfulnessJudgeCompiledPromptPath,
           }
+        : {}),
+      ...(a11yJudgeVerdictPath !== undefined
+        ? { a11yJudgeVerdict: a11yJudgeVerdictPath }
         : {}),
       untrustedContentNormalizationReport:
         untrustedContentNormalizationReportPath,
