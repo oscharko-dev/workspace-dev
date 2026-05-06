@@ -148,6 +148,9 @@ jobs:
       - name: Enforce TypeScript style
         run: pnpm run lint:ts-style
 
+      - name: Enforce prompt-template-version contract
+        run: pnpm run verify:prompt-template-version
+
       - name: Enforce UI lint rules
         run: pnpm run ui:lint
 

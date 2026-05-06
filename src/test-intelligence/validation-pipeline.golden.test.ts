@@ -165,6 +165,18 @@ const updateOrAssert = async (path: string, actual: string): Promise<void> => {
   assert.equal(actual, expected, `golden mismatch at ${path}`);
 };
 
+// Issue #1943: explicit literal snapshot of the prompt-template version.
+// The constant import above already pins the value, but a literal `assert.equal`
+// makes a forgotten bump appear in the PR diff alongside the constant change
+// rather than only failing in the regenerated golden fixture.
+test("golden: TEST_INTELLIGENCE_PROMPT_TEMPLATE_VERSION snapshot", () => {
+  assert.equal(
+    TEST_INTELLIGENCE_PROMPT_TEMPLATE_VERSION,
+    "1.4.0",
+    "Prompt template version changed — bump the literal in this snapshot, update docs/test-intelligence-prompt-template-version.lock.json, and add a docs/test-intelligence-prompt-template-changelog.md entry.",
+  );
+});
+
 test("golden: pipeline produces stable validation/policy/coverage/visual reports", async () => {
   const intent = JSON.parse(
     await readFile(INTENT_PATH, "utf8"),

@@ -234,6 +234,18 @@ const ARTIFACTS = [
   },
 ];
 
+// Issue #1943: explicit literal snapshot of the prompt-template version.
+// Forces a forgotten bump to surface in the PR diff next to the constant
+// change, in addition to the testcases.json fixture which already encodes
+// the version literally.
+test("golden: TEST_INTELLIGENCE_PROMPT_TEMPLATE_VERSION snapshot", () => {
+  assert.equal(
+    TEST_INTELLIGENCE_PROMPT_TEMPLATE_VERSION,
+    "1.4.0",
+    "Prompt template version changed — bump the literal in this snapshot, update docs/test-intelligence-prompt-template-version.lock.json, and add a docs/test-intelligence-prompt-template-changelog.md entry.",
+  );
+});
+
 test("golden: export pipeline emits byte-identical artifacts", async () => {
   const result = runExportPipeline({
     jobId: "job-1365-golden",
