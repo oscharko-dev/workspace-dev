@@ -32,6 +32,7 @@ import {
   TEST_INTELLIGENCE_CONTRACT_VERSION,
   VISUAL_SIDECAR_VALIDATION_REPORT_ARTIFACT_FILENAME,
   type ActiveModelBinding,
+  type A11yVerdict,
   type BusinessTestIntentIr,
   type CoveragePlan,
   type FaithfulnessVerdict,
@@ -82,6 +83,7 @@ export interface RunValidationPipelineInput {
     severity: "error" | "warning";
     threshold?: number;
   }>;
+  a11yVerdict?: A11yVerdict;
   faithfulnessVerdict?: FaithfulnessVerdict;
   /** Optional rubric score (0..1) from a downstream rater. */
   rubricScore?: number;
@@ -241,6 +243,9 @@ export const runValidationPipeline = (
     ...(visualReport !== undefined ? { visual: visualReport } : {}),
     ...(input.policyOverrides !== undefined
       ? { policyOverrides: input.policyOverrides }
+      : {}),
+    ...(input.a11yVerdict !== undefined
+      ? { a11yVerdict: input.a11yVerdict }
       : {}),
     ...(input.faithfulnessVerdict !== undefined
       ? { faithfulnessVerdict: input.faithfulnessVerdict }
@@ -552,6 +557,9 @@ export const runValidationPipelineWithSelfVerify = async (
     profile,
     validation,
     coverage,
+    ...(input.a11yVerdict !== undefined
+      ? { a11yVerdict: input.a11yVerdict }
+      : {}),
     ...(visualReport !== undefined ? { visual: visualReport } : {}),
     ...(semanticContentOverrides !== undefined
       ? { semanticContentOverrides }

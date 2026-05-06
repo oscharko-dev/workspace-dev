@@ -4,6 +4,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import {
+  A11Y_JUDGE_PROMPT_TEMPLATE_VERSION,
+  A11Y_VERDICT_SCHEMA_VERSION,
   COVERAGE_PLAN_SCHEMA_VERSION,
   EU_BANKING_DEFAULT_POLICY_PROFILE_ID,
   FAITHFULNESS_JUDGE_PROMPT_TEMPLATE_VERSION,
@@ -16,6 +18,7 @@ import {
   TEST_INTELLIGENCE_CONTRACT_VERSION,
   TEST_INTELLIGENCE_PROMPT_TEMPLATE_VERSION,
   VISUAL_SIDECAR_VALIDATION_REPORT_ARTIFACT_FILENAME,
+  type A11yVerdict,
   type BusinessTestIntentIr,
   type CoveragePlan,
   type FaithfulnessVerdict,
@@ -136,6 +139,40 @@ const buildCase = (
   ...overrides,
 });
 
+const buildAccessibilityCase = (
+  overrides: Partial<GeneratedTestCase> = {},
+): GeneratedTestCase =>
+  buildCase({
+    type: "accessibility",
+    title: "Keyboard navigation, focus order, and screen-reader announcements are covered",
+    objective:
+      "Confirm keyboard navigation, focus order, and screen-reader announcements for the payment form.",
+    steps: [
+      {
+        index: 1,
+        action: "Tab through every control using only the keyboard",
+        expected: "Keyboard navigation reaches every control in a logical order",
+      },
+      {
+        index: 2,
+        action: "Verify focus order and visible focus indicator while tabbing",
+        expected: "Focus order stays logical and every control shows a visible focus indicator",
+      },
+      {
+        index: 3,
+        action: "Trigger validation errors with a screen reader enabled",
+        expected:
+          "Validation messages are announced via aria-live and each control announces a meaningful label",
+      },
+    ],
+    expectedResults: [
+      "Keyboard navigation reaches every control in a logical order",
+      "Focus order stays logical and every control shows a visible focus indicator",
+      "Validation messages are announced via aria-live and each control announces a meaningful label",
+    ],
+    ...overrides,
+  });
+
 const richList = (): GeneratedTestCaseList => ({
   schemaVersion: GENERATED_TEST_CASE_SCHEMA_VERSION,
   jobId: "job-1",
@@ -193,10 +230,8 @@ const richList = (): GeneratedTestCaseList => ({
       type: "navigation",
       title: "Navigate from payment to receipt",
     }),
-    buildCase({
+    buildAccessibilityCase({
       id: "tc-a11y",
-      type: "accessibility",
-      title: "Form is keyboard accessible",
     }),
   ],
 });
@@ -237,6 +272,26 @@ const buildFaithfulnessVerdict = (
   verdict: "accept",
   hallucinations: [],
   mismatches: [],
+  ...overrides,
+});
+
+const buildA11yVerdict = (
+  overrides: Partial<A11yVerdict> = {},
+): A11yVerdict => ({
+  schemaVersion: A11Y_VERDICT_SCHEMA_VERSION,
+  contractVersion: TEST_INTELLIGENCE_CONTRACT_VERSION,
+  promptTemplateVersion: A11Y_JUDGE_PROMPT_TEMPLATE_VERSION,
+  generatedAt: GENERATED_AT,
+  jobId: "job-1",
+  cacheHit: false,
+  cacheKeyDigest: ZERO,
+  modelDeployment: "phi-4-multimodal-instruct",
+  modelRevision: "phi-4-multimodal-instruct@test",
+  gatewayRelease: "mock",
+  verdict: "accept",
+  criteria: [],
+  findings: [],
+  repairInstructions: [],
   ...overrides,
 });
 
@@ -339,6 +394,37 @@ test("Issue #1949: cross-modal faithfulness threshold override flows through val
   );
   assert.equal(result.policy.blocked, false);
   assert.equal(result.blocked, false);
+});
+
+test("Issue #1951: a11y_judge verdict flows through validation pipeline and blocks uncovered form-screen criteria", () => {
+  const result = runValidationPipeline({
+    jobId: "job-1",
+    generatedAt: GENERATED_AT,
+    list: richList(),
+    intent: buildIntent(),
+    a11yVerdict: buildA11yVerdict({
+      verdict: "repair",
+      criteria: [
+        {
+          criterionId: "s-payment::error-announcements",
+          screenId: "s-payment",
+          screenName: "Payment Details",
+          pillarId: "error-announcements",
+          successCriterion: "WCAG 4.1.3 Status Messages",
+          verdict: "not_covered",
+          rationale: "No case verifies screen-reader announcements for validation changes.",
+        },
+      ],
+    }),
+  });
+  assert.equal(result.policy.blocked, true);
+  assert.equal(
+    result.policy.jobLevelViolations.some(
+      (violation) => violation.outcome === "a11y_criterion_not_covered",
+    ),
+    true,
+  );
+  assert.equal(result.blocked, true);
 });
 
 test("semantic override clears effective pipeline block while preserving validation artifact", () => {

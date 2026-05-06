@@ -2458,6 +2458,9 @@ export const runFigmaToQcTestCases = async (
     ...(faithfulnessJudgeResult !== undefined
       ? { faithfulnessVerdict: faithfulnessJudgeResult.verdict }
       : {}),
+    ...(a11yJudgeResult !== undefined
+      ? { a11yVerdict: a11yJudgeResult.verdict }
+      : {}),
     ...("rules" in customerRubric ? { profile: customerRubric } : {}),
     ...(promptVisualBatch !== undefined ? { visual: promptVisualBatch } : {}),
     ...(promptVisualBatch !== undefined

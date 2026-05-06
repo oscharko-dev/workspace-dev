@@ -40,6 +40,7 @@ import {
   A11Y_COVERAGE_EVAL_REPORT_DIRNAME,
   A11Y_COVERAGE_EVAL_SCHEMA_VERSION,
   A11Y_COVERAGE_PRODUCTION_BASELINE_THRESHOLDS,
+  FORM_SCREEN_A11Y_REQUIRED_CRITERIA,
   A11Y_WCAG_22_AA_PILLAR_IDS,
   A11Y_WCAG_22_AA_PILLARS,
   a11yCoverageEvalReportFilename,
@@ -49,6 +50,7 @@ import {
   buildAllBaselineA11yCoverageEvalArtifacts,
   computeA11yCoverage,
   isFormScreenA11yCase,
+  listCoveredFormScreenA11yCriteria,
   readA11yCoverageEvalArtifact,
   writeA11yCoverageEvalArtifact,
 } from "./a11y-coverage-eval.js";
@@ -82,6 +84,10 @@ const buildCase = (input: {
   type: GeneratedTestCase["type"];
   screenId: string;
   fieldIds?: readonly string[];
+  title?: string;
+  objective?: string;
+  steps?: GeneratedTestCase["steps"];
+  expectedResults?: readonly string[];
 }): GeneratedTestCase =>
   ({
     id: input.id,
@@ -89,8 +95,8 @@ const buildCase = (input: {
     contractVersion: TEST_INTELLIGENCE_CONTRACT_VERSION,
     schemaVersion: GENERATED_TEST_CASE_SCHEMA_VERSION,
     promptTemplateVersion: TEST_INTELLIGENCE_PROMPT_TEMPLATE_VERSION,
-    title: input.id,
-    objective: input.id,
+    title: input.title ?? input.id,
+    objective: input.objective ?? input.id,
     level: "system",
     type: input.type,
     priority: "p2",
@@ -98,8 +104,8 @@ const buildCase = (input: {
     technique: "exploratory",
     preconditions: [],
     testData: [],
-    steps: [{ index: 1, action: "noop" }],
-    expectedResults: ["noop"],
+    steps: input.steps ?? [{ index: 1, action: "noop" }],
+    expectedResults: [...(input.expectedResults ?? ["noop"])],
     figmaTraceRefs: [{ screenId: input.screenId }],
     assumptions: [],
     openQuestions: [],
@@ -182,6 +188,48 @@ test("hard gate trips when the candidate list has no a11y case anchored to a for
   assert.match(instruction.instruction, new RegExp(screenId));
 });
 
+test("Issue #1951: hard gate trips when the anchored accessibility case omits screen-reader announcements", async () => {
+  const fixture = await loadFigma("baseline-simple-form");
+  const intent = deriveBusinessTestIntentIr({ figma: fixture });
+  const screenId = intent.detectedFields[0]?.screenId;
+  assert.ok(screenId, "fixture must carry at least one detected field");
+  const list = buildList([
+    buildCase({
+      id: "tc-a11y-partial",
+      type: "accessibility",
+      screenId,
+      fieldIds: intent.detectedFields.map((f) => f.id),
+      title: "Keyboard navigation and focus order are covered",
+      objective: "Confirm keyboard navigation and focus order on the form.",
+      steps: [
+        {
+          index: 1,
+          action: "Tab through every control using only the keyboard",
+          expected: "Keyboard navigation reaches every control in a logical order",
+        },
+        {
+          index: 2,
+          action: "Verify focus order and visible focus indicator while tabbing",
+          expected: "Focus order stays logical and every control shows a visible focus indicator",
+        },
+      ],
+      expectedResults: [
+        "Keyboard navigation reaches every control in a logical order",
+        "Focus order stays logical and every control shows a visible focus indicator",
+      ],
+    }),
+  ]);
+  const result = computeA11yCoverage({ intent, generatedList: list });
+  const failure = result.verdict.failures.find(
+    (entry) =>
+      entry.reason === "form_screen_missing_accessibility_criterion",
+  );
+  assert.ok(failure, "expected criterion-level hard-gate failure");
+  assert.equal(failure.severity, "error");
+  assert.deepEqual(result.perScreen[0]?.missingCriteria, ["screen-reader"]);
+  assert.equal(result.verdict.passed, false);
+});
+
 test("hard gate passes for the deterministic synthesiser output of baseline-simple-form", async () => {
   const artifact = await buildA11yCoverageEvalArtifactForBaseline({
     archetypeId: "baseline-simple-form",
@@ -212,6 +260,11 @@ test("hard gate passes for the deterministic synthesiser output of baseline-simp
   }
   for (const screen of artifact.perScreen) {
     assert.equal(screen.hardGatePassed, true);
+    assert.deepEqual(screen.missingCriteria, []);
+    assert.deepEqual(
+      screen.coveredCriteria,
+      [...FORM_SCREEN_A11Y_REQUIRED_CRITERIA],
+    );
     assert.equal(screen.expectedPillars.length, A11Y_WCAG_22_AA_PILLAR_IDS.length);
   }
 });
@@ -273,6 +326,44 @@ test("isFormScreenA11yCase only matches anchored accessibility cases", () => {
   assert.equal(isFormScreenA11yCase(a11yAnchored, screenId), true);
   assert.equal(isFormScreenA11yCase(a11yElsewhere, screenId), false);
   assert.equal(isFormScreenA11yCase(functionalAnchored, screenId), false);
+});
+
+test("Issue #1951: listCoveredFormScreenA11yCriteria detects the three required sub-criteria", () => {
+  const criteria = listCoveredFormScreenA11yCriteria(
+    buildCase({
+      id: "tc-a11y-full",
+      type: "accessibility",
+      screenId: "s-form",
+      fieldIds: ["f-1"],
+      title: "Keyboard navigation, focus order, and screen-reader announcements are covered",
+      objective:
+        "Confirm keyboard navigation, focus order, and screen-reader announcements for the form.",
+      steps: [
+        {
+          index: 1,
+          action: "Tab through every control using only the keyboard",
+          expected: "Keyboard navigation reaches every control in a logical order",
+        },
+        {
+          index: 2,
+          action: "Verify focus order and visible focus indicator while tabbing",
+          expected: "Focus order stays logical and every control shows a visible focus indicator",
+        },
+        {
+          index: 3,
+          action: "Trigger validation errors with a screen reader enabled",
+          expected:
+            "Validation messages are announced via aria-live and each control announces a meaningful label",
+        },
+      ],
+      expectedResults: [
+        "Keyboard navigation reaches every control in a logical order",
+        "Focus order stays logical and every control shows a visible focus indicator",
+        "Validation messages are announced via aria-live and each control announces a meaningful label",
+      ],
+    }),
+  );
+  assert.deepEqual(criteria, [...FORM_SCREEN_A11Y_REQUIRED_CRITERIA]);
 });
 
 test("buildA11yCoverageRepairInstruction renders the canonical template", () => {

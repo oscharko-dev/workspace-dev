@@ -728,13 +728,20 @@ export const synthesizeGeneratedTestCases = (input: {
           },
           {
             index: 3,
+            action: "Verify focus order and visible focus indicator while tabbing",
+            expected: "Focus order stays logical and every control shows a visible focus state",
+          },
+          {
+            index: 4,
             action: "Inspect labels and ARIA attributes with a screen reader",
-            expected: "Each control announces a meaningful label",
+            expected:
+              "Each control announces a meaningful label and validation updates are announced via aria-live",
           },
         ],
         expectedResults: [
           "All controls reachable via keyboard",
-          "Each control announces a meaningful label",
+          "Focus order stays logical with visible focus indicators",
+          "Each control announces a meaningful label and validation updates are announced via aria-live",
         ],
         ...stampAudit(input),
       }),
