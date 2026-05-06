@@ -8,6 +8,7 @@ import {
   JUDGE_CONSENSUS_SCHEMA_VERSION,
   LOGIC_JUDGE_VERDICT_SCHEMA_VERSION,
   TEST_INTELLIGENCE_CONTRACT_VERSION,
+  type A11yVerdict,
   type FaithfulnessVerdict,
   type JudgeConsensusFinding,
   type JudgeConsensusPanelEntry,
@@ -255,6 +256,25 @@ export const buildFaithfulnessJudgeConsensusEntry = (
     ),
   ],
   repairInstructions: buildFaithfulnessRepairInstructions(verdict),
+});
+
+export const buildA11yJudgeConsensusEntry = (
+  verdict: A11yVerdict,
+  weight = 1,
+): JudgeConsensusPanelEntry => ({
+  judgeId: "a11y_judge",
+  verdict: verdict.verdict,
+  weight: normalizeWeight(weight),
+  findings: verdict.findings.map(
+    (finding): JudgeConsensusFinding => ({
+      testCaseId: finding.testCaseId,
+      code: finding.code,
+      message: finding.message,
+      severity: finding.severity,
+      category: "a11y_gap",
+    }),
+  ),
+  repairInstructions: verdict.repairInstructions,
 });
 
 export const buildJudgeConsensus = (

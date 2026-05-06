@@ -808,6 +808,8 @@ export const buildLiveVisualSidecarBundle = (
     env,
     "WORKSPACE_TEST_SPACE_VISUAL_FALLBACK_DEPLOYMENT",
   );
+  const a11yJudgeDeployment =
+    env.WORKSPACE_TEST_SPACE_A11Y_JUDGE_DEPLOYMENT?.trim() || undefined;
 
   const bundle = createLlmGatewayClientBundle(
     {
@@ -872,6 +874,30 @@ export const buildLiveVisualSidecarBundle = (
         maxRetries: 1,
         circuitBreaker: { failureThreshold: 2, resetTimeoutMs: 30_000 },
       },
+      ...(a11yJudgeDeployment !== undefined
+        ? {
+            a11yJudge: {
+              role: "a11y_judge" as const,
+              compatibilityMode: "openai_chat" as const,
+              baseUrl: visualEndpoint,
+              deployment: a11yJudgeDeployment,
+              modelRevision: `${a11yJudgeDeployment}@cli-test-intelligence-run`,
+              gatewayRelease: "azure-ai-foundry-cli-test-intelligence-run",
+              authMode: "api_key" as const,
+              declaredCapabilities: {
+                structuredOutputs: true,
+                seedSupport: false,
+                reasoningEffortSupport: false,
+                maxOutputTokensSupport: true,
+                streamingSupport: false,
+                imageInputSupport: true,
+              },
+              timeoutMs: 60_000,
+              maxRetries: 1,
+              circuitBreaker: { failureThreshold: 2, resetTimeoutMs: 30_000 },
+            },
+          }
+        : {}),
       ...(options.coveragePlannerDeployment !== undefined
         ? {
             coveragePlanner: {

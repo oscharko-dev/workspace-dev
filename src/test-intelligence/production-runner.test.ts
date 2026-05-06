@@ -6,6 +6,7 @@ import path from "node:path";
 import test from "node:test";
 
 import type {
+  A11yVerdict,
   FaithfulnessVerdict,
   FinOpsBudgetReport,
   JudgeConsensusVerdict,
@@ -39,6 +40,7 @@ import {
 } from "./production-runner.js";
 import type { FigmaRestNode } from "./figma-rest-adapter.js";
 import {
+  A11Y_JUDGE_VERDICT_ARTIFACT_FILENAME,
   BUSINESS_TEST_INTENT_IR_SCHEMA_VERSION,
   EU_BANKING_DEFAULT_POLICY_PROFILE_ID,
   FAITHFULNESS_VERDICT_ARTIFACT_FILENAME,
@@ -1630,6 +1632,174 @@ test("runFigmaToQcTestCases runs both judges, persists their artifacts, and keep
     );
     assert.equal(client.callCount(), 2);
     assert.equal((bundle.visualPrimary as MockLlmGatewayClient).callCount(), 2);
+  } finally {
+    globalThis.fetch = originalFetch;
+    await rm(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("Issue #1940: runFigmaToQcTestCases dispatches the optional a11yJudge slot and persists agent-role-runs/a11y_judge.json", async () => {
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ti-runner-1940-"));
+  const originalFetch = globalThis.fetch;
+  try {
+    const bundle = createMockLlmGatewayClientBundle({
+      testGeneration: {
+        role: "test_generation",
+        deployment: "gpt-oss-120b",
+        modelRevision: "gpt-oss-120b@test",
+        gatewayRelease: "mock",
+        declaredCapabilities: TEST_GENERATION_CAPS,
+        responder: okResponder([SAMPLE_DRAFT, SAMPLE_ACCESSIBILITY_DRAFT]),
+      },
+      visualPrimary: {
+        role: "visual_primary",
+        deployment: "llama-4-maverick-vision",
+        modelRevision: "llama-4-maverick-vision@test",
+        gatewayRelease: "mock",
+        declaredCapabilities: VISUAL_CAPS,
+        responder: (request, attempt) => {
+          if (
+            request.responseSchemaName === "workspace-dev-faithfulness-judge-v1"
+          ) {
+            return {
+              outcome: "success" as const,
+              content: {
+                verdict: "accept",
+                hallucinations: [],
+                mismatches: [],
+              },
+              finishReason: "stop" as const,
+              usage: { inputTokens: 12, outputTokens: 8 },
+              modelDeployment: "llama-4-maverick-vision",
+              modelRevision: "llama-4-maverick-vision@test",
+              gatewayRelease: "mock",
+              attempt,
+            };
+          }
+          return buildVisualSuccess(request, attempt, "1:1");
+        },
+      },
+      visualFallback: {
+        role: "visual_fallback",
+        deployment: "phi-4-multimodal-poc",
+        modelRevision: "phi-4-multimodal-poc@test",
+        gatewayRelease: "mock",
+        declaredCapabilities: VISUAL_CAPS,
+      },
+      a11yJudge: {
+        role: "a11y_judge",
+        deployment: "phi-4-multimodal-instruct",
+        modelRevision: "phi-4-multimodal-instruct@test",
+        gatewayRelease: "mock",
+        declaredCapabilities: VISUAL_CAPS,
+        responder: (_request, attempt) => ({
+          outcome: "success",
+          content: {
+            criteria: [
+              {
+                criterionId: "1:1::tab-order",
+                verdict: "covered_passes",
+                rationale: "The accessibility case explicitly verifies keyboard traversal.",
+              },
+              {
+                criterionId: "1:1::focus-indicator",
+                verdict: "covered_passes",
+                rationale: "The accessibility case asserts visible focus states.",
+              },
+              {
+                criterionId: "1:1::label-for-input",
+                verdict: "covered_passes",
+                rationale: "Labels are asserted in the existing accessibility case.",
+              },
+              {
+                criterionId: "1:1::error-announcements",
+                verdict: "covered_passes",
+                rationale: "Validation announcements are covered explicitly.",
+              },
+              {
+                criterionId: "1:1::color-contrast",
+                verdict: "covered_passes",
+                rationale: "Contrast checks are covered explicitly.",
+              },
+              {
+                criterionId: "1:1::keyboard-trap-freedom",
+                verdict: "covered_passes",
+                rationale: "No keyboard trap remains once the case passes.",
+              },
+            ],
+          },
+          finishReason: "stop",
+          usage: { inputTokens: 10, outputTokens: 7 },
+          modelDeployment: "phi-4-multimodal-instruct",
+          modelRevision: "phi-4-multimodal-instruct@test",
+          gatewayRelease: "mock",
+          attempt,
+        }),
+      },
+    });
+    globalThis.fetch = (async (url: string) => {
+      if (url.includes("/v1/files/ABC/nodes?ids=1%3A1")) {
+        return new Response(
+          JSON.stringify({
+            name: "Test View 03",
+            nodes: {
+              "1:1": {
+                document: SAMPLE_FILE.document.children?.[0]?.children?.[0],
+              },
+            },
+          }),
+          {
+            status: 200,
+            headers: { "content-type": "application/json" },
+          },
+        );
+      }
+      if (
+        url ===
+        "https://api.figma.com/v1/images/ABC?ids=1%3A1&format=png&scale=2"
+      ) {
+        return new Response(
+          JSON.stringify({
+            images: {
+              "1:1":
+                "https://figma-alpha-api.s3.us-west-2.amazonaws.com/1_1.png",
+            },
+          }),
+          {
+            status: 200,
+            headers: { "content-type": "application/json" },
+          },
+        );
+      }
+      return new Response(PNG_BYTES, {
+        status: 200,
+        headers: { "content-type": "image/png" },
+      });
+    }) as typeof fetch;
+
+    const result = await runFigmaToQcTestCases({
+      jobId: "job-1940-a11y-runner",
+      generatedAt: "2026-05-06T10:00:00Z",
+      source: {
+        kind: "figma_url",
+        figmaUrl: "https://www.figma.com/design/ABC/Test-View-03?node-id=1-1",
+        accessToken: "figd_test",
+      },
+      outputRoot: tempRoot,
+      llm: { client: bundle.testGeneration, bundle },
+    });
+
+    assert.equal(result.a11yJudge?.verdict.verdict, "accept");
+    assert.ok(result.artifactPaths.a11yJudgeVerdict);
+    const a11yJudgeOnDisk = JSON.parse(
+      await readFile(result.artifactPaths.a11yJudgeVerdict!, "utf8"),
+    ) as A11yVerdict;
+    assert.equal(a11yJudgeOnDisk.verdict, "accept");
+    assert.match(
+      result.artifactPaths.a11yJudgeVerdict ?? "",
+      new RegExp(`${A11Y_JUDGE_VERDICT_ARTIFACT_FILENAME}$`, "u"),
+    );
+    assert.equal((bundle.a11yJudge as MockLlmGatewayClient).callCount(), 1);
   } finally {
     globalThis.fetch = originalFetch;
     await rm(tempRoot, { recursive: true, force: true });

@@ -24,6 +24,14 @@ export interface LlmGatewayClientBundle {
   visualPrimary: LlmGatewayClient;
   visualFallback: LlmGatewayClient;
   /**
+   * Optional dedicated multimodal accessibility judge (Issue #1940). When
+   * set, the production runner may ask this client to compare screenshots and
+   * generated accessibility cases against the WCAG criterion list and emit a
+   * repair-only verdict. The client must declare role `"a11y_judge"` and MUST
+   * advertise image-input support.
+   */
+  a11yJudge?: LlmGatewayClient;
+  /**
    * Optional dedicated client for the cross-model logic judge (Issue #1932).
    * When set, the production runner sends logic-judge prompts here instead of
    * reusing `testGeneration`, which restores the multi-agent harness's
@@ -61,6 +69,7 @@ export interface LlmGatewayClientBundleConfigs {
   testGeneration: LlmGatewayClientConfig;
   visualPrimary: LlmGatewayClientConfig;
   visualFallback: LlmGatewayClientConfig;
+  a11yJudge?: LlmGatewayClientConfig;
   logicJudge?: LlmGatewayClientConfig;
   coveragePlanner?: LlmGatewayClientConfig;
   riskRanker?: LlmGatewayClientConfig;
@@ -70,6 +79,7 @@ export interface MockLlmGatewayClientBundleInputs {
   testGeneration: CreateMockLlmGatewayClientInput;
   visualPrimary: CreateMockLlmGatewayClientInput;
   visualFallback: CreateMockLlmGatewayClientInput;
+  a11yJudge?: CreateMockLlmGatewayClientInput;
   logicJudge?: CreateMockLlmGatewayClientInput;
   coveragePlanner?: CreateMockLlmGatewayClientInput;
   riskRanker?: CreateMockLlmGatewayClientInput;
@@ -89,6 +99,7 @@ const ROLE_ORDER = [
   "test_generation",
   "visual_primary",
   "visual_fallback",
+  "a11y_judge",
   "logic_judge",
   "coverage_planner",
   "risk_ranker",
@@ -141,6 +152,18 @@ const assertBundle = (bundle: LlmGatewayClientBundle): void => {
       "LlmGatewayClientBundle: visualFallback must declare image input support",
     );
   }
+  if (bundle.a11yJudge !== undefined) {
+    assertRole({
+      actual: bundle.a11yJudge.role,
+      expected: "a11y_judge",
+      label: "a11yJudge",
+    });
+    if (!bundle.a11yJudge.declaredCapabilities.imageInputSupport) {
+      throw new RangeError(
+        "LlmGatewayClientBundle: a11yJudge must declare image input support",
+      );
+    }
+  }
   if (bundle.logicJudge !== undefined) {
     assertRole({
       actual: bundle.logicJudge.role,
@@ -187,6 +210,9 @@ export const createLlmGatewayClientBundle = (
     testGeneration: createLlmGatewayClient(configs.testGeneration, runtime),
     visualPrimary: createLlmGatewayClient(configs.visualPrimary, runtime),
     visualFallback: createLlmGatewayClient(configs.visualFallback, runtime),
+    ...(configs.a11yJudge !== undefined
+      ? { a11yJudge: createLlmGatewayClient(configs.a11yJudge, runtime) }
+      : {}),
     ...(configs.logicJudge !== undefined
       ? { logicJudge: createLlmGatewayClient(configs.logicJudge, runtime) }
       : {}),
@@ -215,6 +241,9 @@ export const createMockLlmGatewayClientBundle = (
     testGeneration: createMockLlmGatewayClient(inputs.testGeneration),
     visualPrimary: createMockLlmGatewayClient(inputs.visualPrimary),
     visualFallback: createMockLlmGatewayClient(inputs.visualFallback),
+    ...(inputs.a11yJudge !== undefined
+      ? { a11yJudge: createMockLlmGatewayClient(inputs.a11yJudge) }
+      : {}),
     ...(inputs.logicJudge !== undefined
       ? { logicJudge: createMockLlmGatewayClient(inputs.logicJudge) }
       : {}),
@@ -245,6 +274,7 @@ export const probeLlmGatewayClientBundle = async ({
     test_generation: bundle.testGeneration,
     visual_primary: bundle.visualPrimary,
     visual_fallback: bundle.visualFallback,
+    ...(bundle.a11yJudge !== undefined ? { a11y_judge: bundle.a11yJudge } : {}),
     ...(bundle.logicJudge !== undefined
       ? { logic_judge: bundle.logicJudge }
       : {}),

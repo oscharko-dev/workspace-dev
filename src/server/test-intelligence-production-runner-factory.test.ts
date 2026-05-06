@@ -97,6 +97,14 @@ test("resolveLlmConfigFromEnv: hydrates optional coverage-planner deployment", (
   assert.equal(config.coveragePlannerDeployment, "phi-4-mini-instruct");
 });
 
+test("resolveLlmConfigFromEnv: hydrates optional a11y-judge deployment", () => {
+  const config = resolveLlmConfigFromEnv({
+    ...ENV_OK,
+    WORKSPACE_TEST_SPACE_A11Y_JUDGE_DEPLOYMENT: "phi-4-multimodal-instruct",
+  });
+  assert.equal(config.a11yJudgeDeployment, "phi-4-multimodal-instruct");
+});
+
 test("resolveTestIntelligenceProductionRunner: factory builds bundle lazily and forwards to runner", async () => {
   let buildCalls = 0;
   let runnerCalls = 0;

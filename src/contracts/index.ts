@@ -945,6 +945,7 @@ export const ALLOWED_LLM_GATEWAY_ROLES = [
   "visual_primary",
   "visual_fallback",
   "logic_judge",
+  "a11y_judge",
   "coverage_planner",
   "risk_ranker",
 ] as const;
@@ -3723,6 +3724,82 @@ export interface FaithfulnessVerdict {
   readonly hallucinations: readonly HallucinationFinding[];
   readonly mismatches: readonly VisualMismatch[];
   readonly refusal?: FaithfulnessVerdictRefusal;
+}
+
+/** Schema version for persisted multimodal accessibility-judge verdicts. */
+export const A11Y_VERDICT_SCHEMA_VERSION = "1.0.0" as const;
+
+/** Prompt-template version pinned onto accessibility-judge verdict artifacts. */
+export const A11Y_JUDGE_PROMPT_TEMPLATE_VERSION = "a11y-judge.v1" as const;
+
+/** Structured-output schema name used by the accessibility-judge LLM call. */
+export const A11Y_JUDGE_OUTPUT_SCHEMA_NAME =
+  "workspace-dev-a11y-judge-v1" as const;
+
+/** Canonical filename for the persisted accessibility-judge verdict artifact. */
+export const A11Y_JUDGE_VERDICT_ARTIFACT_FILENAME =
+  "a11y_judge.json" as const;
+
+/** Closed runtime list of global accessibility-judge verdicts. */
+export const ALLOWED_A11Y_VERDICTS = ["accept", "repair"] as const;
+
+/** Discriminant of an allowed accessibility-judge terminal verdict. */
+export type A11yJudgeVerdictLabel = (typeof ALLOWED_A11Y_VERDICTS)[number];
+
+/** Closed runtime list of per-criterion accessibility coverage verdicts. */
+export const ALLOWED_A11Y_CRITERION_VERDICTS = [
+  "covered_passes",
+  "covered_weakly",
+  "not_covered",
+] as const;
+
+/** Discriminant of an accessibility-criterion coverage verdict. */
+export type A11yCriterionVerdictLabel =
+  (typeof ALLOWED_A11Y_CRITERION_VERDICTS)[number];
+
+/** One per-criterion verdict emitted by the multimodal accessibility judge. */
+export interface A11yCriterionVerdict {
+  readonly criterionId: string;
+  readonly screenId: string;
+  readonly screenName: string;
+  readonly pillarId: string;
+  readonly successCriterion: string;
+  readonly verdict: A11yCriterionVerdictLabel;
+  readonly rationale: string;
+}
+
+/** One accessibility-gap finding anchored to a criterion id. */
+export interface A11yFinding {
+  readonly criterionId: string;
+  readonly testCaseId: string;
+  readonly code: string;
+  readonly severity: LogicJudgeFindingSeverity;
+  readonly message: string;
+}
+
+/** Optional refusal attached to an accessibility-judge verdict. */
+export interface A11yVerdictRefusal {
+  readonly code: string;
+  readonly message: string;
+}
+
+/** Persisted multimodal accessibility-judge verdict artifact. */
+export interface A11yVerdict {
+  readonly schemaVersion: typeof A11Y_VERDICT_SCHEMA_VERSION;
+  readonly contractVersion: typeof TEST_INTELLIGENCE_CONTRACT_VERSION;
+  readonly promptTemplateVersion: typeof A11Y_JUDGE_PROMPT_TEMPLATE_VERSION;
+  readonly generatedAt: string;
+  readonly jobId: string;
+  readonly cacheHit: boolean;
+  readonly cacheKeyDigest: string;
+  readonly modelDeployment: string;
+  readonly modelRevision: string;
+  readonly gatewayRelease: string;
+  readonly verdict: A11yJudgeVerdictLabel;
+  readonly criteria: readonly A11yCriterionVerdict[];
+  readonly findings: readonly A11yFinding[];
+  readonly repairInstructions: readonly RepairInstruction[];
+  readonly refusal?: A11yVerdictRefusal;
 }
 
 /** Schema version for persisted production-runner judge-consensus artifacts. */
