@@ -50,6 +50,7 @@ jobs:
           pnpm run lint:no-telemetry
           pnpm run lint:secrets:all
           pnpm run lint:ts-style
+          pnpm run verify:prompt-template-version
 
       - name: Typecheck
         run: pnpm run typecheck

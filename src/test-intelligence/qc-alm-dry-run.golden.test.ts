@@ -173,6 +173,17 @@ const buildVisual = (): VisualSidecarValidationReport => ({
   ],
 });
 
+// Issue #1943: explicit literal snapshot of the prompt-template version.
+// Pins the value next to the dry-run-report fixture so a forgotten bump
+// shows up in the PR diff alongside the constant change.
+test("golden: TEST_INTELLIGENCE_PROMPT_TEMPLATE_VERSION snapshot", () => {
+  assert.equal(
+    TEST_INTELLIGENCE_PROMPT_TEMPLATE_VERSION,
+    "1.4.0",
+    "Prompt template version changed — bump the literal in this snapshot, update docs/test-intelligence-prompt-template-version.lock.json, and add a docs/test-intelligence-prompt-template-changelog.md entry.",
+  );
+});
+
 test("golden: dry-run adapter emits byte-identical dry-run-report.json", async () => {
   const adapter = createOpenTextAlmDryRunAdapter();
   const visual = buildVisual();

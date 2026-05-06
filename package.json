@@ -125,6 +125,7 @@
     "verify:workflow-persist-credentials": "node scripts/check-workflow-persist-credentials.mjs",
     "verify:npmrc-freshness": "node scripts/check-npmrc-freshness-policy.mjs",
     "verify:docs-template-stack": "node scripts/check-doc-template-stack.mjs",
+    "verify:prompt-template-version": "node scripts/check-prompt-template-version.mjs",
     "docs:api": "node scripts/generate-api-docs.mjs",
     "docs:api:check": "node scripts/check-api-docs.mjs",
     "docs:check": "pnpm run docs:api:check && pnpm exec tsx --test src/docs-alignment.test.ts",

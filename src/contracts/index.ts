@@ -178,11 +178,39 @@ export const GENERATED_TEST_CASE_SCHEMA_VERSION = "1.1.0" as const;
 /**
  * Prompt template version for the test-intelligence prompt family.
  *
+ * Semver semantics (Issue #1943):
+ * - PATCH — wording fixes that preserve token-byte-equivalence on the
+ *   baseline-fixture set (typo fixes, comment-only changes inside the
+ *   compiled prompt body, equivalent-byte rewordings).
+ * - MINOR — additive sections, additional instructions, or new optional
+ *   directives that remain backwards-compatible with prior generator
+ *   outputs (the existing covered* arrays, figmaTraceRefs schema, and
+ *   evidence shape are unchanged).
+ * - MAJOR — breaking section reordering, evidence-schema changes, or any
+ *   change that retires a directive contract previously relied on by a
+ *   downstream judge (Logic-Judge, Faithfulness-Judge, A11y-Judge).
+ *
+ * Every non-PATCH bump MUST be recorded in
+ * `docs/test-intelligence-prompt-template-changelog.md` with scope,
+ * motivation, and expected verdict-deltas on the baseline-fixture set.
+ * The CI guard `scripts/check-prompt-template-version.mjs` (wired into
+ * `pr-quality-gate.yml`) fails the build when `prompt-compiler.ts`
+ * content changes but this constant is not bumped.
+ *
+ * History:
+ *
  * 1.2.0 — Issue #1905: explicit form-screen accessibility directive added
  * to the generator system prompt and user-prompt preamble. Bump forces a
  * replay-cache miss for cached generator outputs that pre-date the new
  * directive so the cache cannot serve a stale list that lacks an a11y case
  * for a form screen.
+ *
+ * 1.3.0 — Issue #1941: dedicated `[5] CustomerDomainContext` section
+ * promoted from custom-context-markdown so customer-supplied banking and
+ * insurance rules become a first-class evidence source.
+ *
+ * 1.4.0 — Issue #1942: hard-gated technique-quota enforcement on the
+ * generator user-prompt preamble (`GENERATOR_TECHNIQUE_QUOTA_RULE`).
  */
 export const TEST_INTELLIGENCE_PROMPT_TEMPLATE_VERSION = "1.4.0" as const;
 
