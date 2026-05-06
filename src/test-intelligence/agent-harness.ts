@@ -116,6 +116,7 @@ export const isAgentHarnessOutcome = (
  */
 export const AGENT_HARNESS_ERROR_CLASSES = [
   "budget_exhausted",
+  "convergence_stalled",
   "gateway_error",
   "internal_error",
   "iteration_exhausted",

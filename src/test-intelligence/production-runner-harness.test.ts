@@ -333,14 +333,18 @@ test("runFigmaToQcTestCases harness mode enforced blocks when the logic judge re
       deployment: "gpt-oss-120b-mock",
       modelRevision: "mock-1",
       gatewayRelease: "mock",
-      // Issue #1928: a Logic-Judge `reject` now triggers the bounded
-      // repair loop (instead of short-circuiting). The mock therefore
-      // dispatches by responseSchemaName so the regenerator keeps
-      // returning a well-formed test_generation payload across repair
-      // iterations while the logic-judge persists in `reject` and the
-      // loop ultimately terminates with the panel still rejecting —
-      // which the harness then maps to `judge_rejection` /
-      // `failed_permanent`, exactly as before this issue.
+      // Issue #1928: a Logic-Judge `reject` triggers the bounded
+      // repair loop. Issue #1939: when the post-repair logic-judge
+      // verdict signature is identical to the initial pass, the loop
+      // aborts early with `convergence_stalled` (instead of running
+      // out the iteration cap) and the harness records that
+      // explicitly via the new `convergence_stalled` errorClass. The
+      // mock here returns a `reject` envelope whose finding refers to
+      // a `tc-1` id that the production-runner never stamps, so the
+      // logic-judge schema validator deterministically falls back to
+      // a schema-repair `repair` verdict on every pass — yielding
+      // identical signatures across iterations and exercising the
+      // stall path end-to-end.
       responder: (request, attempt) => {
         if (request.responseSchemaName === "workspace-dev-logic-judge-v1") {
           return {
@@ -395,8 +399,35 @@ test("runFigmaToQcTestCases harness mode enforced blocks when the logic judge re
     const onDisk = await readFile(expected, "utf8");
     const parsed = JSON.parse(onDisk);
     assert.equal(parsed.outcome, "failed_permanent");
-    assert.equal(parsed.errorClass, "judge_rejection");
+    // Issue #1939: identical signatures across iterations now surface
+    // as `convergence_stalled` instead of the generic
+    // `judge_rejection`.
+    assert.equal(parsed.errorClass, "convergence_stalled");
     assert.equal(parsed.attempts.length, 1);
+
+    // Issue #1939: a stall must produce a top-level
+    // `repair-loop-trace.json` artifact for operator audit.
+    const tracePath = path.join(
+      tempRoot,
+      "jobs",
+      "job-enforced-judge-reject",
+      "test-intelligence",
+      "repair-loop-trace.json",
+    );
+    const trace = JSON.parse(await readFile(tracePath, "utf8")) as {
+      outcome: string;
+      stallDetectedAtIteration: number;
+      iterations: ReadonlyArray<{
+        readonly iteration: number;
+        readonly verdictSignature: string;
+      }>;
+    };
+    assert.equal(trace.outcome, "convergence_stalled");
+    assert.equal(trace.stallDetectedAtIteration, 1);
+    assert.equal(
+      trace.iterations[0]!.verdictSignature,
+      trace.iterations[1]!.verdictSignature,
+    );
   } finally {
     await rm(tempRoot, { recursive: true, force: true });
   }

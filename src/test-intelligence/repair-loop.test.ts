@@ -32,14 +32,17 @@ import {
 import {
   REPAIR_LOOP_DEFAULT_MAX_ITERATIONS,
   REPAIR_LOOP_MAX_ITERATIONS_HARD_CAP,
+  REPAIR_LOOP_TRACE_ARTIFACT_FILENAME,
   REPAIR_PLANNER_ARTIFACT_PREFIX,
   TEST_GENERATION_REPAIR_ARTIFACT_PREFIX,
+  computeVerdictSignature,
   consolidateRepairInstructions,
   runRepairLoop,
   type RepairLoopFaithfulnessJudgeRunner,
   type RepairLoopLogicJudgeRunner,
   type RepairLoopRegenerator,
   type RepairLoopResult,
+  type RepairLoopTraceArtifact,
   type RepairPlannerIterationArtifact,
   type TestGenerationRepairIterationArtifact,
 } from "./repair-loop.js";
@@ -112,6 +115,7 @@ const buildList = (caseIds: readonly string[]): GeneratedTestCaseList => ({
 const buildLogicVerdict = (
   verdict: LogicJudgeVerdictLabel,
   repairInstructions: readonly RepairInstruction[] = [],
+  findings: JudgeVerdict["findings"] = [],
 ): JudgeVerdict => ({
   schemaVersion: LOGIC_JUDGE_VERDICT_SCHEMA_VERSION,
   contractVersion: TEST_INTELLIGENCE_CONTRACT_VERSION,
@@ -124,7 +128,7 @@ const buildLogicVerdict = (
   modelRevision: "mock-1",
   gatewayRelease: "mock",
   verdict,
-  findings: [],
+  findings,
   repairInstructions,
 });
 
@@ -390,22 +394,44 @@ test("repair loop runs two repair iterations before the panel finally accepts", 
       jobId: "job-fixture",
       runDir,
       initialList: buildList(["tc-1"]),
-      initialLogicVerdict: buildLogicVerdict("repair", [
-        {
-          testCaseId: "tc-1",
-          path: "expectedResults",
-          instruction: "Expand the expected results.",
-        },
-      ]),
-      regenerate: okRegenerate(buildList(["tc-1", "tc-2"])),
-      runLogicJudge: sequencedLogicJudge([
-        buildLogicVerdict("repair", [
+      initialLogicVerdict: buildLogicVerdict(
+        "repair",
+        [
           {
             testCaseId: "tc-1",
-            path: "steps[0]",
-            instruction: "Add a missing step.",
+            path: "expectedResults",
+            instruction: "Expand the expected results.",
           },
-        ]),
+        ],
+        [
+          {
+            testCaseId: "tc-1",
+            code: "missing_expected",
+            severity: "error",
+            message: "expected results missing",
+          },
+        ],
+      ),
+      regenerate: okRegenerate(buildList(["tc-1", "tc-2"])),
+      runLogicJudge: sequencedLogicJudge([
+        buildLogicVerdict(
+          "repair",
+          [
+            {
+              testCaseId: "tc-1",
+              path: "steps[0]",
+              instruction: "Add a missing step.",
+            },
+          ],
+          [
+            {
+              testCaseId: "tc-1",
+              code: "missing_step",
+              severity: "error",
+              message: "step missing",
+            },
+          ],
+        ),
         buildLogicVerdict("accept"),
       ]),
     });
@@ -444,7 +470,9 @@ test("repair loop runs two repair iterations before the panel finally accepts", 
 });
 
 // ---------------------------------------------------------------------------
-// Scenario 4: max-out (every iteration still requests repair)
+// Scenario 4: max-out (every iteration still requests repair, but the LLM
+// makes *some* progress each time so the convergence detector does not
+// short-circuit the cap — Issue #1939).
 // ---------------------------------------------------------------------------
 test("repair loop terminates with needs_review when the iteration cap is exhausted", async () => {
   await withTempDir(async (runDir) => {
@@ -460,11 +488,32 @@ test("repair loop terminates with needs_review when the iteration cap is exhaust
       runDir,
       maxRepairIterations: 2,
       initialList: buildList(["tc-1"]),
-      initialLogicVerdict: buildLogicVerdict("repair", repairOnly),
+      initialLogicVerdict: buildLogicVerdict("repair", repairOnly, [
+        {
+          testCaseId: "tc-1",
+          code: "missing_expected",
+          severity: "error",
+          message: "expected results missing",
+        },
+      ]),
       regenerate: okRegenerate(buildList(["tc-1"])),
       runLogicJudge: sequencedLogicJudge([
-        buildLogicVerdict("repair", repairOnly),
-        buildLogicVerdict("repair", repairOnly),
+        buildLogicVerdict("repair", repairOnly, [
+          {
+            testCaseId: "tc-1",
+            code: "missing_precondition",
+            severity: "error",
+            message: "precondition missing",
+          },
+        ]),
+        buildLogicVerdict("repair", repairOnly, [
+          {
+            testCaseId: "tc-1",
+            code: "missing_step",
+            severity: "error",
+            message: "step missing",
+          },
+        ]),
       ]),
     });
     assert.equal(result.outcome, "needs_review");
@@ -744,6 +793,219 @@ test("consolidateRepairInstructions deduplicates and sorts deterministically", (
 // ---------------------------------------------------------------------------
 // Sanity: per-iteration callback fires for every iteration
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// Issue #1939: convergence-stall detection + trace artifact
+// ---------------------------------------------------------------------------
+test("repair loop aborts with convergence_stalled when consecutive verdict signatures match", async () => {
+  await withTempDir(async (runDir) => {
+    const stuckRi: RepairInstruction[] = [
+      {
+        testCaseId: "tc-1",
+        path: "expectedResults",
+        instruction: "Add expected.",
+      },
+    ];
+    const stuckFindings: JudgeVerdict["findings"] = [
+      {
+        testCaseId: "tc-1",
+        code: "missing_expected",
+        severity: "error",
+        message: "expected missing",
+      },
+    ];
+    const result = await runRepairLoop({
+      jobId: "job-stall",
+      runDir,
+      maxRepairIterations: 3,
+      initialList: buildList(["tc-1"]),
+      initialLogicVerdict: buildLogicVerdict("repair", stuckRi, stuckFindings),
+      regenerate: okRegenerate(buildList(["tc-1"])),
+      runLogicJudge: sequencedLogicJudge([
+        buildLogicVerdict("repair", stuckRi, stuckFindings),
+      ]),
+    });
+    assert.equal(result.outcome, "convergence_stalled");
+    assert.equal(result.repairIterationCount, 1);
+    assert.equal(result.iterations.length, 2);
+    assert.equal(
+      result.iterations[0]!.verdictSignature,
+      result.iterations[1]!.verdictSignature,
+    );
+
+    const tracePath = path.join(runDir, REPAIR_LOOP_TRACE_ARTIFACT_FILENAME);
+    const trace = JSON.parse(
+      await readFile(tracePath, "utf8"),
+    ) as RepairLoopTraceArtifact;
+    assert.equal(trace.outcome, "convergence_stalled");
+    assert.equal(trace.jobId, "job-stall");
+    assert.equal(trace.stallDetectedAtIteration, 1);
+    assert.equal(trace.stallSignature, result.iterations[1]!.verdictSignature);
+    assert.equal(trace.iterations.length, 2);
+    assert.deepEqual(
+      trace.iterations.map((entry) => entry.iteration),
+      [0, 1],
+    );
+  });
+});
+
+test("repair loop does not stall when verdict signatures differ across iterations", async () => {
+  await withTempDir(async (runDir) => {
+    const result = await runRepairLoop({
+      jobId: "job-progress",
+      runDir,
+      maxRepairIterations: 3,
+      initialList: buildList(["tc-1"]),
+      initialLogicVerdict: buildLogicVerdict(
+        "repair",
+        [
+          {
+            testCaseId: "tc-1",
+            path: "expectedResults",
+            instruction: "Add expected.",
+          },
+        ],
+        [
+          {
+            testCaseId: "tc-1",
+            code: "missing_expected",
+            severity: "error",
+            message: "expected missing",
+          },
+        ],
+      ),
+      regenerate: okRegenerate(buildList(["tc-1"])),
+      runLogicJudge: sequencedLogicJudge([
+        buildLogicVerdict("accept"),
+      ]),
+    });
+    assert.equal(result.outcome, "accepted");
+    await assert.rejects(
+      stat(path.join(runDir, REPAIR_LOOP_TRACE_ARTIFACT_FILENAME)),
+    );
+  });
+});
+
+test("repair loop trace is not written when the loop ends in needs_review without a stall", async () => {
+  await withTempDir(async (runDir) => {
+    const baseRi: RepairInstruction[] = [
+      {
+        testCaseId: "tc-1",
+        path: "expectedResults",
+        instruction: "Still missing.",
+      },
+    ];
+    const result = await runRepairLoop({
+      jobId: "job-cap",
+      runDir,
+      maxRepairIterations: 2,
+      initialList: buildList(["tc-1"]),
+      initialLogicVerdict: buildLogicVerdict("repair", baseRi, [
+        {
+          testCaseId: "tc-1",
+          code: "missing_a",
+          severity: "error",
+          message: "a missing",
+        },
+      ]),
+      regenerate: okRegenerate(buildList(["tc-1"])),
+      runLogicJudge: sequencedLogicJudge([
+        buildLogicVerdict("repair", baseRi, [
+          {
+            testCaseId: "tc-1",
+            code: "missing_b",
+            severity: "error",
+            message: "b missing",
+          },
+        ]),
+        buildLogicVerdict("repair", baseRi, [
+          {
+            testCaseId: "tc-1",
+            code: "missing_c",
+            severity: "error",
+            message: "c missing",
+          },
+        ]),
+      ]),
+    });
+    assert.equal(result.outcome, "needs_review");
+    await assert.rejects(
+      stat(path.join(runDir, REPAIR_LOOP_TRACE_ARTIFACT_FILENAME)),
+    );
+  });
+});
+
+test("computeVerdictSignature is invariant to finding-code order and instruction text", () => {
+  const a = buildLogicVerdict(
+    "repair",
+    [
+      {
+        testCaseId: "tc-1",
+        path: "p1",
+        instruction: "instruction one",
+      },
+    ],
+    [
+      {
+        testCaseId: "tc-1",
+        code: "alpha",
+        severity: "error",
+        message: "msg alpha",
+      },
+      {
+        testCaseId: "tc-1",
+        code: "beta",
+        severity: "error",
+        message: "msg beta",
+      },
+    ],
+  );
+  const b = buildLogicVerdict(
+    "repair",
+    [
+      {
+        testCaseId: "tc-1",
+        path: "p1",
+        instruction: "completely different wording",
+      },
+    ],
+    [
+      {
+        testCaseId: "tc-1",
+        code: "beta",
+        severity: "error",
+        message: "different msg",
+      },
+      {
+        testCaseId: "tc-1",
+        code: "alpha",
+        severity: "error",
+        message: "different msg",
+      },
+    ],
+  );
+  assert.equal(computeVerdictSignature(a), computeVerdictSignature(b));
+
+  const c = buildLogicVerdict(
+    "repair",
+    [],
+    [
+      {
+        testCaseId: "tc-1",
+        code: "alpha",
+        severity: "error",
+        message: "msg",
+      },
+      {
+        testCaseId: "tc-1",
+        code: "gamma",
+        severity: "error",
+        message: "msg",
+      },
+    ],
+  );
+  assert.notEqual(computeVerdictSignature(a), computeVerdictSignature(c));
+});
+
 test("onIterationComplete fires once per iteration including iteration 0", async () => {
   await withTempDir(async (runDir) => {
     const records: number[] = [];

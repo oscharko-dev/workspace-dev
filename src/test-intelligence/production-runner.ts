@@ -2122,10 +2122,18 @@ export const runFigmaToQcTestCases = async (
   }
 
   if (harnessMode !== "off" && !judgeAccepted) {
+    // Issue #1939: when the repair loop aborts because two consecutive
+    // iterations produced the same verdict signature, surface that as
+    // `convergence_stalled` on the harness summary instead of the
+    // generic `judge_rejection` so operators can distinguish "the
+    // judges keep rejecting" from "the LLM is stuck on the same error
+    // class".
+    const stalled =
+      repairLoopResult?.outcome === "convergence_stalled";
     const harnessAttemptResult = buildHarnessAttemptResult({
       hashes: compiled.request.hashes,
       judgeAccepted,
-      errorClass: "judge_rejection",
+      errorClass: stalled ? "convergence_stalled" : "judge_rejection",
       llmDurationMs: capturedLlmDurationMs,
       llmInputTokens: capturedLlmInputTokens,
       llmOutputTokens: capturedLlmOutputTokens,
