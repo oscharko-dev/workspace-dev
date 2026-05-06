@@ -50,6 +50,7 @@ import {
   filterSemanticContentOverridesForValidation,
   type SemanticContentOverrideMap,
 } from "./semantic-content-sanitization.js";
+import { collectUncoveredP0Elements } from "./p0-risk-coverage.js";
 import { collectTechniqueQuotaDeficits } from "./technique-quota.js";
 import type { UntrustedContentNormalizationReport } from "./untrusted-content-normalizer.js";
 
@@ -599,6 +600,21 @@ const evaluateJobLevel = (
       reason:
         `screen "${deficit.screenId}" requires at least ${deficit.minCount} ` +
         `"${deficit.technique}" case(s) but only ${deficit.actual} are anchored to that screen`,
+    });
+  }
+
+  for (const uncovered of collectUncoveredP0Elements(
+    list.testCases,
+    coveragePlan,
+  )) {
+    violations.push({
+      rule: "policy:p0-risk-element-uncovered",
+      outcome: "p0_risk_element_uncovered",
+      severity: "error",
+      reason:
+        `p0 risk-class element "${uncovered.elementId}" (riskClass ` +
+        `"${uncovered.riskClass}") on screen "${uncovered.screenId}" has no ` +
+        `covering test case in qualitySignals.coveredFieldIds or coveredActionIds`,
     });
   }
 
