@@ -948,7 +948,7 @@ https://v8.dev/docs/stack-trace-api#customizing-stack-traces
 
 ##### kind
 
-> **kind**: `"system_instructions"` \| `"business_intent_ir"` \| `"visual_binding"` \| `"source_context"` \| `"coverage_plan"` \| `"generated_cases"` \| `"validation_findings"` \| `"judge_findings"` \| `"repair_history"`
+> **kind**: `"system_instructions"` \| `"business_intent_ir"` \| `"visual_binding"` \| `"source_context"` \| `"coverage_plan"` \| `"risk_priorities"` \| `"generated_cases"` \| `"validation_findings"` \| `"judge_findings"` \| `"repair_history"`
 
 ##### priority
 

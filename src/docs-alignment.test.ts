@@ -22,6 +22,7 @@ import {
   MULTI_SOURCE_RECONCILIATION_REPORT_SCHEMA_VERSION,
   MULTI_SOURCE_TEST_INTENT_ENVELOPE_SCHEMA_VERSION,
   TEST_INTELLIGENCE_CONTRACT_VERSION,
+  TEST_INTELLIGENCE_PROMPT_TEMPLATE_VERSION,
   TEST_INTELLIGENCE_MULTISOURCE_ENV,
 } from "./contracts/index.js";
 import * as publicApi from "./index.js";
@@ -1312,6 +1313,14 @@ test("docs: Wave 4 multi-source API reference documents key exported contracts",
     new RegExp(
       escapeRegExp(
         `| \`TEST_INTELLIGENCE_CONTRACT_VERSION\`        | \`"${TEST_INTELLIGENCE_CONTRACT_VERSION}"\``,
+      ),
+    ),
+  );
+  assert.match(
+    testIntelligenceDoc,
+    new RegExp(
+      escapeRegExp(
+        `| \`TEST_INTELLIGENCE_PROMPT_TEMPLATE_VERSION\` | \`"${TEST_INTELLIGENCE_PROMPT_TEMPLATE_VERSION}"\``,
       ),
     ),
   );
