@@ -150,7 +150,7 @@ const SAMPLE_ACCESSIBILITY_DRAFT: ProductionRunnerLlmDraftCase = {
   ...SAMPLE_DRAFT,
   title: "Formular ist per Tastatur bedienbar",
   objective:
-    "Bestätigen, dass die Bedarfsermittlung ohne Maus vollständig bedienbar ist.",
+    "Bestätigen, dass die Bedarfsermittlung ohne Maus vollständig bedienbar ist und der Bildschirmleser die Beschriftungen korrekt ansagt.",
   type: "accessibility",
   technique: "exploratory",
   testData: [],
@@ -165,10 +165,17 @@ const SAMPLE_ACCESSIBILITY_DRAFT: ProductionRunnerLlmDraftCase = {
       action: "Aktiviere die Schaltfläche Weiter per Tastatur",
       expected: "Die Folgemaske wird ohne Maus geöffnet",
     },
+    {
+      index: 3,
+      action: "Prüfe die ARIA-Attribute mit einem Bildschirmleser",
+      expected:
+        "Jedes Eingabefeld wird mit einer aussagekräftigen Beschriftung angesagt",
+    },
   ],
   expectedResults: [
-    "Die Formularfelder sind in sinnvoller Reihenfolge erreichbar",
+    "Die Formularfelder sind in sinnvoller Reihenfolge per Fokus erreichbar",
     "Weiter ist per Tastatur auslösbar",
+    "Der Bildschirmleser kündigt jedes Feld mit einer aussagekräftigen Beschriftung an",
   ],
 };
 

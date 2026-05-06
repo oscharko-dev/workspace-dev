@@ -2468,6 +2468,9 @@ export const runFigmaToQcTestCases = async (
     ...(visualSidecarRefusal !== undefined ? { visualSidecarRefusal } : {}),
     untrustedContentReport: normalizedUntrusted.report,
     activeModelBindings,
+    ...(a11yJudgeResult?.verdict !== undefined
+      ? { a11yVerdict: a11yJudgeResult.verdict }
+      : {}),
   });
   const blocked = validation.blocked || !judgeAccepted;
   emit({

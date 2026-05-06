@@ -163,7 +163,7 @@ export interface TestIntelligenceTransferPrincipal {
 }
 
 /** Contract version for the opt-in test-intelligence surface. */
-export const TEST_INTELLIGENCE_CONTRACT_VERSION = "1.12.0" as const;
+export const TEST_INTELLIGENCE_CONTRACT_VERSION = "1.13.0" as const;
 
 /**
  * Schema version for generated test case payloads.
@@ -523,6 +523,11 @@ export const ALLOWED_TEST_CASE_POLICY_OUTCOMES = [
   "p0_risk_element_uncovered",
   "missing_negative_or_validation_for_required_field",
   "missing_accessibility_case",
+  "missing_keyboard_nav_accessibility_case",
+  "missing_focus_order_accessibility_case",
+  "missing_screen_reader_accessibility_case",
+  "a11y_criterion_covered_weakly",
+  "a11y_criterion_not_covered",
   "missing_boundary_case",
   "schema_invalid",
   "duplicate_test_case",
@@ -10108,7 +10113,7 @@ export interface ReleaseQualityGatesReport {
  * Must be bumped according to CONTRACT_CHANGELOG.md rules.
  * Package version alignment is documented in VERSIONING.md.
  */
-export const CONTRACT_VERSION = "4.50.0" as const;
+export const CONTRACT_VERSION = "4.51.0" as const;
 
 // ---------------------------------------------------------------------------
 // Issue #1774 — UntrustedContentNormalizer (2025-vintage injection carriers).

@@ -150,8 +150,14 @@ test("schema: drift guard — the hash is stable for the current contract", () =
   // `CoveragePlan.techniqueQuotas` guidance and serialization). The schema pins
   // `promptTemplateVersion: { const: TEST_INTELLIGENCE_PROMPT_TEMPLATE_VERSION }`
   // so the digest shifts in lockstep with the template bump.
+  // Hash bumped by Issue #1951: TEST_INTELLIGENCE_CONTRACT_VERSION bumped
+  // 1.12.0 -> 1.13.0 (additive policy-outcome literals for the WCAG 2.2 AA
+  // form-screen hard-gate). The schema pins
+  // `contractVersion: { const: TEST_INTELLIGENCE_CONTRACT_VERSION }` so the
+  // digest shifts in lockstep with the contract bump even though the
+  // `GeneratedTestCaseList` shape itself is unchanged.
   const expected =
-    "e979dbc89274b9f94c5c727be927396d6f90c38f10154078584d6c13325d5f53";
+    "310fd91814b5b656abae553d0f69b4344f12b18097d5858d47737ed468c9cf00";
   const actual = computeGeneratedTestCaseListSchemaHash();
   if (actual !== expected) {
     assert.fail(

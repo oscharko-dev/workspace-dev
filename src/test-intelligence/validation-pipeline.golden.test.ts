@@ -152,6 +152,26 @@ const buildList = (): GeneratedTestCaseList => ({
       id: "tc-a11y",
       type: "accessibility",
       title: "Form is keyboard accessible",
+      objective:
+        "Confirm keyboard navigation, focus order, and screen-reader accessibility on s-payment.",
+      steps: [
+        { index: 1, action: "Open the Payment Details screen" },
+        {
+          index: 2,
+          action: "Tab through every focusable control",
+          expected: "Focus order matches the visual layout and every control is reachable via keyboard",
+        },
+        {
+          index: 3,
+          action: "Inspect ARIA labels and announcements with a screen reader",
+          expected: "Each control announces a meaningful accessible name",
+        },
+      ],
+      expectedResults: [
+        "All controls reachable via keyboard",
+        "Focus order matches the visual layout",
+        "Each control announces a meaningful accessible name",
+      ],
     }),
   ],
 });

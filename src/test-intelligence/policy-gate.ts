@@ -26,6 +26,7 @@ import {
   EU_BANKING_DEFAULT_POLICY_PROFILE_ID,
   TEST_CASE_POLICY_REPORT_SCHEMA_VERSION,
   TEST_INTELLIGENCE_CONTRACT_VERSION,
+  type A11yVerdict,
   type ActiveModelBinding,
   type BusinessTestIntentIr,
   type CoveragePlan,
@@ -124,12 +125,79 @@ export interface EvaluatePolicyGateInput {
    * documented in `docs/runbooks/coverage-baseline-rebaseline.md`.
    */
   coverageBaselineDrift?: CoverageBaselineDriftEvaluation;
+  /**
+   * Optional accessibility-judge verdict (Issue #1951). When supplied
+   * and the verdict is not a refusal, each per-criterion entry
+   * augments the policy gate:
+   *
+   *   - `covered_weakly` → warning severity →
+   *     `policy:form-screen-a11y-judge:covered-weakly` (decision
+   *     class `needs_review`).
+   *   - `not_covered` → error severity →
+   *     `policy:form-screen-a11y-judge:not-covered` (decision class
+   *     `blocked`).
+   *
+   * Refusals do not contribute to the gate; they are surfaced via the
+   * judge-consensus artifact instead.
+   */
+  a11yVerdict?: A11yVerdict;
 }
 
 const CROSS_MODAL_FAITHFULNESS_RULE =
   "policy:cross-modal-faithfulness-score" as const;
 const DEFAULT_CROSS_MODAL_FAITHFULNESS_THRESHOLD = 0.8;
 const CROSS_MODAL_FAITHFULNESS_GRAY_ZONE = 0.05;
+
+/**
+ * Form-screen accessibility sub-criteria enforced by the Issue #1951
+ * hard-gate. Each entry pairs a WCAG 2.2 AA pillar group with a textual
+ * matcher — the matcher fires against the union of an accessibility
+ * case's `objective`, step actions/expected results, and
+ * `expectedResults`. Matchers are bilingual (English / German) because
+ * the EU-banking generator emits localized prose; both wordings count
+ * the same. Synthesiser output already exercises all three matchers
+ * (Tab through… focusable…, screen reader, ARIA), so the deterministic
+ * baseline keeps the hard-gate green; live LLM output is cross-validated
+ * against the same regex set so a reviewer can tell at a glance which
+ * WCAG pillar is missing.
+ */
+const A11Y_FORM_SCREEN_SUB_CRITERIA: ReadonlyArray<{
+  readonly ruleId: string;
+  readonly outcome: TestCasePolicyOutcome;
+  readonly label: string;
+  readonly successCriterion: string;
+  readonly matcher: RegExp;
+}> = [
+  {
+    ruleId: "policy:form-screen-needs-keyboard-nav-case",
+    outcome: "missing_keyboard_nav_accessibility_case",
+    label: "keyboard navigation",
+    successCriterion: "2.1.1 / 2.1.2",
+    matcher:
+      /\bkeyboard\b|\btab(?:s|bing|bed| through| navigation| key)?\b|\bkey (?:press|down|up)\b|\btastatur\b|\btastatur(?:bedien|navigation|eingabe)\w*\b/iu,
+  },
+  {
+    ruleId: "policy:form-screen-needs-focus-order-case",
+    outcome: "missing_focus_order_accessibility_case",
+    label: "focus order / visible focus",
+    successCriterion: "2.4.3 / 2.4.7",
+    matcher:
+      /\bfocus(?:able| order| ring| state| visible| indicator|ed)?\b|\btab[ -]?index\b|\btab order\b|\bfokus(?:[a-zäöüß]+)?\b|\bfokussiert\b/iu,
+  },
+  {
+    ruleId: "policy:form-screen-needs-screen-reader-case",
+    outcome: "missing_screen_reader_accessibility_case",
+    label: "screen-reader announcements",
+    successCriterion: "1.3.1 / 4.1.2 / 4.1.3",
+    matcher:
+      /\bscreen[ -]?reader\b|\baria(?:[-_][a-z]+)?\b|\baria-attribut\w*\b|\bannounce(?:s|d|ment|ments)?\b|\b(?:accessible|programmatic|machine)\s*name\b|\bbildschirmleser\b|\bsprachausgabe\b|\bansage(?:n|t)?\b/iu,
+  },
+] as const;
+
+const A11Y_JUDGE_COVERED_WEAKLY_RULE =
+  "policy:form-screen-a11y-judge:covered-weakly" as const;
+const A11Y_JUDGE_NOT_COVERED_RULE =
+  "policy:form-screen-a11y-judge:not-covered" as const;
 
 /** Maximum strength among per-case decisions: blocked > needs_review > approved. */
 const decisionRank: Record<TestCasePolicyDecision, number> = {
@@ -178,6 +246,63 @@ const parseMultiSourceConflictIds = (
 
 const sortedUnique = <T extends string>(values: readonly T[]): T[] =>
   Array.from(new Set(values)).sort();
+
+/**
+ * Concatenate the human-readable text fields of a single accessibility
+ * test case so the form-screen sub-criteria matchers can scan all
+ * relevant prose without committing to a particular field. The order
+ * is stable so that the joined string is deterministic regardless of
+ * how the case was constructed.
+ */
+const collectAccessibilityCaseText = (testCase: GeneratedTestCase): string => {
+  const parts: string[] = [testCase.title, testCase.objective];
+  for (const step of testCase.steps) {
+    parts.push(step.action);
+    if (step.expected !== undefined) {
+      parts.push(step.expected);
+    }
+  }
+  for (const expected of testCase.expectedResults) {
+    parts.push(expected);
+  }
+  return parts.join("\n");
+};
+
+/**
+ * Build the optional A11y-Judge job-level violations for Issue #1951.
+ *
+ * Refusal verdicts (gateway error, schema-invalid response, judge not
+ * configured for the run) are intentionally ignored — they are surfaced
+ * via the judge-consensus artifact instead so the policy gate stays
+ * deterministic when the optional LLM judge is unavailable. When the
+ * judge produced verdicts, every `covered_weakly` criterion adds a
+ * warning-severity violation (decision class `needs_review`) and every
+ * `not_covered` criterion adds an error-severity violation (decision
+ * class `blocked`). Sorting by criterion id keeps the persisted
+ * artifact byte-stable.
+ */
+const buildA11yJudgeJobLevelViolations = (
+  verdict: A11yVerdict | undefined,
+): TestCasePolicyViolation[] => {
+  if (verdict === undefined || verdict.refusal !== undefined) return [];
+  const out: TestCasePolicyViolation[] = [];
+  const sortedCriteria = [...verdict.criteria].sort((left, right) =>
+    left.criterionId.localeCompare(right.criterionId),
+  );
+  for (const criterion of sortedCriteria) {
+    if (criterion.verdict === "covered_passes") continue;
+    const weak = criterion.verdict === "covered_weakly";
+    out.push({
+      rule: weak ? A11Y_JUDGE_COVERED_WEAKLY_RULE : A11Y_JUDGE_NOT_COVERED_RULE,
+      outcome: weak ? "a11y_criterion_covered_weakly" : "a11y_criterion_not_covered",
+      severity: weak ? "warning" : "error",
+      reason:
+        `screen "${criterion.screenId}" criterion "${criterion.pillarId}" ` +
+        `(${criterion.successCriterion}) is ${weak ? "weakly covered" : "not covered"}: ${criterion.rationale}`,
+    });
+  }
+  return out;
+};
 
 const formatModelBindingIdentity = (binding: ActiveModelBinding): string => {
   const deployment =
@@ -619,6 +744,7 @@ const evaluateJobLevel = (
   untrustedContentReport?: UntrustedContentNormalizationReport,
   activeModelBindings?: readonly ActiveModelBinding[],
   coverageBaselineDrift?: CoverageBaselineDriftEvaluation,
+  a11yVerdict?: A11yVerdict,
 ): TestCasePolicyViolation[] => {
   const violations = evaluateActiveModelBindings(profile, activeModelBindings);
 
@@ -722,25 +848,61 @@ const evaluateJobLevel = (
   }
 
   // Accessibility coverage when form fields are present.
+  //
+  // Issue #1951 elevated this rule into a tiered hard-gate:
+  //   1. Each form screen MUST have at least one anchored accessibility case
+  //      (`policy:form-screen-needs-accessibility-case`, error).
+  //   2. Each form screen MUST cover three sub-criteria — keyboard navigation,
+  //      focus order, and screen-reader announcements — across its anchored
+  //      accessibility cases. A missing sub-criterion fires a separate
+  //      sub-rule violation (also error) so reviewers see exactly which
+  //      WCAG 2.2 AA pillar the case set fails to address.
+  //   3. The optional `a11yVerdict` LLM output (when present and not
+  //      refused) is wired into the gate via the per-criterion verdicts
+  //      below — see the dedicated block.
   if (profile.rules.requireAccessibilityCaseWhenFormPresent) {
-    const screensWithFields = new Set(
+    const screensWithFields = sortedUnique(
       intent.detectedFields.map((f) => f.screenId),
     );
     for (const screenId of screensWithFields) {
-      const hasA11yCase = list.testCases.some(
+      const a11yCasesForScreen = list.testCases.filter(
         (tc) =>
           tc.type === "accessibility" &&
           tc.figmaTraceRefs.some((r) => r.screenId === screenId),
       );
-      if (!hasA11yCase) {
+      if (a11yCasesForScreen.length === 0) {
         violations.push({
           rule: "policy:form-screen-needs-accessibility-case",
           outcome: "missing_accessibility_case",
           severity: "error",
           reason: `screen "${screenId}" carries form fields but has no covering accessibility test case`,
         });
+        continue;
+      }
+      for (const subCriterion of A11Y_FORM_SCREEN_SUB_CRITERIA) {
+        const covered = a11yCasesForScreen.some((tc) =>
+          subCriterion.matcher.test(collectAccessibilityCaseText(tc)),
+        );
+        if (!covered) {
+          violations.push({
+            rule: subCriterion.ruleId,
+            outcome: subCriterion.outcome,
+            severity: "error",
+            reason:
+              `screen "${screenId}" form-screen accessibility case set does not ` +
+              `cover ${subCriterion.label} (WCAG 2.2 AA ${subCriterion.successCriterion})`,
+          });
+        }
       }
     }
+  }
+
+  // A11y-Judge LLM verdict integration (Issue #1951). Adds per-criterion
+  // violations on top of the deterministic sub-criteria check above so a
+  // weakly-covered criterion lands at `needs_review` and a not-covered
+  // criterion blocks export.
+  for (const violation of buildA11yJudgeJobLevelViolations(a11yVerdict)) {
+    violations.push(violation);
   }
 
   // Duplicate fingerprint — coverage reports the pairs; the gate downgrades.
@@ -1001,6 +1163,7 @@ export const evaluatePolicyGate = (
         input.untrustedContentReport,
         input.activeModelBindings,
         input.coverageBaselineDrift,
+        input.a11yVerdict,
       ),
       ...(faithfulnessViolation !== undefined ? [faithfulnessViolation] : []),
     ],

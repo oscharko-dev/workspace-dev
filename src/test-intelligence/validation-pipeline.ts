@@ -31,6 +31,7 @@ import {
   TEST_CASE_VALIDATION_REPORT_ARTIFACT_FILENAME,
   TEST_INTELLIGENCE_CONTRACT_VERSION,
   VISUAL_SIDECAR_VALIDATION_REPORT_ARTIFACT_FILENAME,
+  type A11yVerdict,
   type ActiveModelBinding,
   type BusinessTestIntentIr,
   type CoveragePlan,
@@ -118,6 +119,14 @@ export interface RunValidationPipelineInput {
    * violation can fire when drift exceeds 10 % on any tracked axis.
    */
   coverageBaselineDrift?: CoverageBaselineDriftEvaluation;
+  /**
+   * Optional accessibility-judge verdict (Issue #1951). Forwarded to the
+   * policy gate so per-criterion `covered_weakly` verdicts surface as
+   * `needs_review` and `not_covered` verdicts surface as `blocked`
+   * (decision class follows severity). Refusals are ignored — they are
+   * surfaced via the judge-consensus artifact.
+   */
+  a11yVerdict?: A11yVerdict;
 }
 
 export interface ValidationPipelineArtifacts {
@@ -259,6 +268,9 @@ export const runValidationPipeline = (
       : {}),
     ...(input.coverageBaselineDrift !== undefined
       ? { coverageBaselineDrift: input.coverageBaselineDrift }
+      : {}),
+    ...(input.a11yVerdict !== undefined
+      ? { a11yVerdict: input.a11yVerdict }
       : {}),
   });
 
@@ -564,6 +576,9 @@ export const runValidationPipelineWithSelfVerify = async (
       : {}),
     ...(input.coverageBaselineDrift !== undefined
       ? { coverageBaselineDrift: input.coverageBaselineDrift }
+      : {}),
+    ...(input.a11yVerdict !== undefined
+      ? { a11yVerdict: input.a11yVerdict }
       : {}),
   });
 

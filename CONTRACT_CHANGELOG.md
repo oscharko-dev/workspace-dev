@@ -31,6 +31,94 @@ All changes to the public contract surface of `workspace-dev` are documented her
 
 ---
 
+## [4.51.0] - 2026-05-06
+
+### Added (Issue #1951 — hard-gate WCAG 2.2 AA mandatory cases for every form screen)
+
+The `policy:form-screen-needs-accessibility-case` rule previously
+fired a single error when a form screen carried no anchored
+accessibility test case. Wave-2 elevated the eval into a mandatory
+hard-gate, but the policy gate did not yet enforce the three
+WCAG 2.2 AA sub-criteria the Coverage-Planner directives require:
+
+- keyboard navigation,
+- focus order / visible focus, and
+- screen-reader announcements.
+
+A composite case that satisfied the deterministic synthesiser was
+therefore allowed to ship even when one of the three pillars was
+missing — a regulated banking deployment then landed an
+incomplete WCAG record in production.
+
+This release elevates the rule into a tiered hard-gate: the umbrella
+"at least one anchored accessibility case" check stays at error
+severity, and three new sub-rules — one per pillar — fire at error
+severity when the screen's accessibility cases do not collectively
+cover that pillar. The check matches text in `objective`, step
+`action`/`expected`, and `expectedResults` so reviewers see exactly
+which WCAG pillar the case set fails to address. Reviewers may opt
+the rule down via `customerProfile.policyOverrides` (the existing
+override mechanism extends verbatim to the three new rule ids).
+
+The optional accessibility-judge LLM verdict
+(`ti-prod-w2-a11y-llm-judge`, Issue #1940) is also wired into the
+gate. Each per-criterion verdict augments the deterministic check:
+
+- `covered_weakly` → warning severity →
+`policy:form-screen-a11y-judge:covered-weakly` (decision class
+`needs_review`).
+- `not_covered` → error severity →
+`policy:form-screen-a11y-judge:not-covered` (decision class
+`blocked`).
+- `covered_passes` → no violation.
+
+Refusal verdicts (judge unconfigured / gateway error /
+schema-invalid response) are intentionally ignored by the gate so
+the deterministic baseline still ships when the optional LLM judge
+is unavailable; the refusal is surfaced via the judge-consensus
+artifact instead.
+
+Public-contract changes:
+
+- `ALLOWED_TEST_CASE_POLICY_OUTCOMES` gains five additive variants
+backing the three deterministic sub-criteria checks plus the two
+LLM-judge integration outcomes:
+  - `missing_keyboard_nav_accessibility_case`
+  - `missing_focus_order_accessibility_case`
+  - `missing_screen_reader_accessibility_case`
+  - `a11y_criterion_covered_weakly`
+  - `a11y_criterion_not_covered`
+- `EvaluatePolicyGateInput` gains an optional
+`a11yVerdict?: A11yVerdict` field. The runner forwards
+`a11yJudgeResult.verdict` whenever the optional judge produced a
+non-refused verdict.
+- `RunValidationPipelineInput` gains the same optional
+`a11yVerdict?: A11yVerdict` field for callers that drive the
+pipeline directly.
+
+The deterministic synthesiser already exercises all three
+sub-criteria (its single composite case mentions
+"Tab through every focusable control" — keyboard nav + focus
+order — and "Inspect labels and ARIA attributes with a screen
+reader" — screen-reader), so the baseline-archetype eval lanes
+remain green without fixture changes.
+
+Contract version bumps:
+
+- `CONTRACT_VERSION` bumps from `4.50.0` to `4.51.0` (additive minor
+bump; new outcome literals on a closed-runtime list, new optional
+field on `EvaluatePolicyGateInput` / `RunValidationPipelineInput`,
+no removals).
+- `TEST_INTELLIGENCE_CONTRACT_VERSION` bumps from `1.12.0` to
+`1.13.0` because the persisted `TestCasePolicyReport` artifact
+gains new outcome strings on the `ALLOWED_TEST_CASE_POLICY_OUTCOMES`
+runtime enum.
+
+No removals or renames. No new migrations are registered; the
+`migrationHash:` registry from 4.42.0 carries over unchanged.
+
+---
+
 ## [4.50.0] - 2026-05-06
 
 ### Changed (Issue #1959 — open `sidecarDeployment` enum + drop `mistral-document-ai-2512` from chat-completion paths)

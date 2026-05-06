@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  A11Y_JUDGE_PROMPT_TEMPLATE_VERSION,
+  A11Y_VERDICT_SCHEMA_VERSION,
   COVERAGE_PLAN_SCHEMA_VERSION,
   EU_BANKING_DEFAULT_POLICY_PROFILE_ID,
   FAITHFULNESS_JUDGE_PROMPT_TEMPLATE_VERSION,
@@ -8,6 +10,7 @@ import {
   GENERATED_TEST_CASE_SCHEMA_VERSION,
   TEST_INTELLIGENCE_CONTRACT_VERSION,
   TEST_INTELLIGENCE_PROMPT_TEMPLATE_VERSION,
+  type A11yVerdict,
   type CoveragePlan,
   type BusinessTestIntentIr,
   type FaithfulnessVerdict,
@@ -1411,4 +1414,388 @@ test("Issue #1950: in-tolerance candidate does not emit a coverage-drift violati
     (entry) => entry.rule === "policy:coverage-drift-exceeded",
   );
   assert.equal(violation, undefined);
+});
+
+// ---------------------------------------------------------------------------
+// Issue #1951 — WCAG 2.2 AA hard-gate for every form screen.
+// ---------------------------------------------------------------------------
+
+const buildA11yCase = (overrides: Partial<GeneratedTestCase> = {}): GeneratedTestCase =>
+  buildCase({
+    id: "tc-a11y",
+    type: "accessibility",
+    title: "Accessibility check for screen s-1",
+    objective: "Confirm keyboard and screen-reader accessibility on s-1.",
+    figmaTraceRefs: [{ screenId: "s-1" }],
+    steps: [
+      { index: 1, action: "Open the s-1 screen" },
+      {
+        index: 2,
+        action: "Tab through every focusable control",
+        expected: "Every control is reachable via keyboard",
+      },
+      {
+        index: 3,
+        action: "Inspect labels and ARIA attributes with a screen reader",
+        expected: "Each control announces a meaningful label",
+      },
+    ],
+    expectedResults: [
+      "All controls reachable via keyboard",
+      "Each control announces a meaningful label",
+    ],
+    ...overrides,
+  });
+
+const buildFormScreenIntent = (): BusinessTestIntentIr =>
+  buildIntent({
+    detectedFields: [
+      {
+        id: "f-1",
+        screenId: "s-1",
+        trace: { nodeId: "n1" },
+        provenance: "figma_node",
+        confidence: 0.9,
+        label: "Email",
+        type: "text",
+      },
+    ],
+  });
+
+test("Issue #1951: composite synthesiser-shaped case satisfies all three a11y sub-criteria", () => {
+  const intent = buildFormScreenIntent();
+  const ctx = harness([buildA11yCase()], intent);
+  const report = evaluatePolicyGate({
+    jobId: "job-1",
+    generatedAt: GENERATED_AT,
+    list: ctx.list,
+    intent: ctx.intent,
+    profile: ctx.profile,
+    validation: ctx.validation,
+    coverage: ctx.coverage,
+  });
+  const subCriterionRules = [
+    "policy:form-screen-needs-keyboard-nav-case",
+    "policy:form-screen-needs-focus-order-case",
+    "policy:form-screen-needs-screen-reader-case",
+  ];
+  for (const rule of subCriterionRules) {
+    assert.equal(
+      report.jobLevelViolations.some((v) => v.rule === rule),
+      false,
+      `expected no violation for ${rule}`,
+    );
+  }
+  assert.equal(
+    report.jobLevelViolations.some(
+      (v) => v.outcome === "missing_accessibility_case",
+    ),
+    false,
+  );
+  assert.equal(report.blocked, false);
+});
+
+test("Issue #1951: a11y case missing screen-reader coverage blocks with sub-rule", () => {
+  const intent = buildFormScreenIntent();
+  const noScreenReader = buildA11yCase({
+    objective: "Confirm keyboard accessibility on s-1.",
+    steps: [
+      { index: 1, action: "Open the s-1 screen" },
+      {
+        index: 2,
+        action: "Tab through every focusable control",
+        expected: "Every control is reachable via keyboard",
+      },
+    ],
+    expectedResults: ["All controls reachable via keyboard"],
+  });
+  const ctx = harness([noScreenReader], intent);
+  const report = evaluatePolicyGate({
+    jobId: "job-1",
+    generatedAt: GENERATED_AT,
+    list: ctx.list,
+    intent: ctx.intent,
+    profile: ctx.profile,
+    validation: ctx.validation,
+    coverage: ctx.coverage,
+  });
+  const violation = report.jobLevelViolations.find(
+    (v) => v.rule === "policy:form-screen-needs-screen-reader-case",
+  );
+  assert.ok(violation, "screen-reader sub-rule must fire");
+  assert.equal(violation?.severity, "error");
+  assert.equal(violation?.outcome, "missing_screen_reader_accessibility_case");
+  assert.match(violation?.reason ?? "", /screen-reader announcements/);
+  assert.equal(report.blocked, true);
+});
+
+test("Issue #1951: a11y case missing keyboard-nav coverage blocks with sub-rule", () => {
+  const intent = buildFormScreenIntent();
+  const noKeyboardNav = buildA11yCase({
+    objective: "Confirm screen-reader accessibility on s-1.",
+    steps: [
+      { index: 1, action: "Open the s-1 screen" },
+      {
+        index: 2,
+        action: "Inspect aria-label values with a screen reader",
+        expected: "Each control announces a meaningful name",
+      },
+    ],
+    expectedResults: ["Each control announces a meaningful label"],
+  });
+  const ctx = harness([noKeyboardNav], intent);
+  const report = evaluatePolicyGate({
+    jobId: "job-1",
+    generatedAt: GENERATED_AT,
+    list: ctx.list,
+    intent: ctx.intent,
+    profile: ctx.profile,
+    validation: ctx.validation,
+    coverage: ctx.coverage,
+  });
+  const violation = report.jobLevelViolations.find(
+    (v) => v.rule === "policy:form-screen-needs-keyboard-nav-case",
+  );
+  assert.ok(violation, "keyboard-nav sub-rule must fire");
+  assert.equal(violation?.severity, "error");
+  assert.equal(violation?.outcome, "missing_keyboard_nav_accessibility_case");
+  assert.equal(report.blocked, true);
+});
+
+test("Issue #1951: missing focus-order coverage fires its dedicated sub-rule", () => {
+  const intent = buildFormScreenIntent();
+  const noFocusOrder = buildA11yCase({
+    objective: "Confirm keyboard operability and screen-reader output on s-1.",
+    steps: [
+      { index: 1, action: "Open the s-1 screen" },
+      {
+        index: 2,
+        action: "Operate every control by keyboard alone",
+        expected: "Every control is reachable via keyboard",
+      },
+      {
+        index: 3,
+        action: "Inspect ARIA attributes with a screen reader",
+        expected: "Each control announces a meaningful name",
+      },
+    ],
+    expectedResults: [
+      "All controls reachable via keyboard",
+      "Each control announces a meaningful name",
+    ],
+  });
+  const ctx = harness([noFocusOrder], intent);
+  const report = evaluatePolicyGate({
+    jobId: "job-1",
+    generatedAt: GENERATED_AT,
+    list: ctx.list,
+    intent: ctx.intent,
+    profile: ctx.profile,
+    validation: ctx.validation,
+    coverage: ctx.coverage,
+  });
+  const violation = report.jobLevelViolations.find(
+    (v) => v.rule === "policy:form-screen-needs-focus-order-case",
+  );
+  assert.ok(violation, "focus-order sub-rule must fire");
+  assert.equal(violation?.severity, "error");
+  assert.equal(violation?.outcome, "missing_focus_order_accessibility_case");
+  assert.equal(report.blocked, true);
+});
+
+test("Issue #1951: customerProfile policyOverrides can downgrade the umbrella rule", () => {
+  const intent = buildFormScreenIntent();
+  const ctx = harness([buildCase({})], intent);
+  const report = evaluatePolicyGate({
+    jobId: "job-1",
+    generatedAt: GENERATED_AT,
+    list: ctx.list,
+    intent: ctx.intent,
+    profile: ctx.profile,
+    validation: ctx.validation,
+    coverage: ctx.coverage,
+    policyOverrides: [
+      {
+        ruleId: "policy:form-screen-needs-accessibility-case",
+        severity: "warning",
+      },
+    ],
+  });
+  const violation = report.jobLevelViolations.find(
+    (v) => v.rule === "policy:form-screen-needs-accessibility-case",
+  );
+  assert.ok(violation, "umbrella rule still fires (override only changes severity)");
+  assert.equal(violation?.severity, "warning");
+  assert.equal(report.blocked, false);
+});
+
+const buildA11yJudgeVerdict = (
+  overrides: Partial<A11yVerdict> = {},
+): A11yVerdict => ({
+  schemaVersion: A11Y_VERDICT_SCHEMA_VERSION,
+  contractVersion: TEST_INTELLIGENCE_CONTRACT_VERSION,
+  promptTemplateVersion: A11Y_JUDGE_PROMPT_TEMPLATE_VERSION,
+  generatedAt: GENERATED_AT,
+  jobId: "job-1",
+  cacheHit: false,
+  cacheKeyDigest: ZERO,
+  modelDeployment: "phi-4-multimodal-instruct",
+  modelRevision: "phi-4-multimodal-instruct@test",
+  gatewayRelease: "mock",
+  verdict: "accept",
+  criteria: [],
+  findings: [],
+  repairInstructions: [],
+  ...overrides,
+});
+
+test("Issue #1951: a11y judge `not_covered` verdict blocks the job", () => {
+  const intent = buildFormScreenIntent();
+  const ctx = harness([buildA11yCase()], intent);
+  const report = evaluatePolicyGate({
+    jobId: "job-1",
+    generatedAt: GENERATED_AT,
+    list: ctx.list,
+    intent: ctx.intent,
+    profile: ctx.profile,
+    validation: ctx.validation,
+    coverage: ctx.coverage,
+    a11yVerdict: buildA11yJudgeVerdict({
+      verdict: "repair",
+      criteria: [
+        {
+          criterionId: "s-1::error-announcements",
+          screenId: "s-1",
+          screenName: "Form",
+          pillarId: "error-announcements",
+          successCriterion: "WCAG 3.3.1 / 4.1.3",
+          verdict: "not_covered",
+          rationale: "no aria-live region exercised",
+        },
+      ],
+    }),
+  });
+  const violation = report.jobLevelViolations.find(
+    (v) => v.rule === "policy:form-screen-a11y-judge:not-covered",
+  );
+  assert.ok(violation, "a11y-judge not_covered violation must fire");
+  assert.equal(violation?.severity, "error");
+  assert.equal(violation?.outcome, "a11y_criterion_not_covered");
+  assert.match(violation?.reason ?? "", /not covered/);
+  assert.equal(report.blocked, true);
+});
+
+test("Issue #1951: a11y judge `covered_weakly` verdict downgrades to needs_review", () => {
+  const intent = buildFormScreenIntent();
+  const ctx = harness([buildA11yCase()], intent);
+  const report = evaluatePolicyGate({
+    jobId: "job-1",
+    generatedAt: GENERATED_AT,
+    list: ctx.list,
+    intent: ctx.intent,
+    profile: ctx.profile,
+    validation: ctx.validation,
+    coverage: ctx.coverage,
+    a11yVerdict: buildA11yJudgeVerdict({
+      verdict: "repair",
+      criteria: [
+        {
+          criterionId: "s-1::tab-order",
+          screenId: "s-1",
+          screenName: "Form",
+          pillarId: "tab-order",
+          successCriterion: "WCAG 2.4.3",
+          verdict: "covered_weakly",
+          rationale: "case mentions tab key but not explicit order",
+        },
+      ],
+    }),
+  });
+  const violation = report.jobLevelViolations.find(
+    (v) => v.rule === "policy:form-screen-a11y-judge:covered-weakly",
+  );
+  assert.ok(violation, "a11y-judge covered_weakly violation must fire");
+  assert.equal(violation?.severity, "warning");
+  assert.equal(violation?.outcome, "a11y_criterion_covered_weakly");
+  assert.equal(report.blocked, false);
+});
+
+test("Issue #1951: a11y judge `covered_passes` verdict adds no violations", () => {
+  const intent = buildFormScreenIntent();
+  const ctx = harness([buildA11yCase()], intent);
+  const report = evaluatePolicyGate({
+    jobId: "job-1",
+    generatedAt: GENERATED_AT,
+    list: ctx.list,
+    intent: ctx.intent,
+    profile: ctx.profile,
+    validation: ctx.validation,
+    coverage: ctx.coverage,
+    a11yVerdict: buildA11yJudgeVerdict({
+      verdict: "accept",
+      criteria: [
+        {
+          criterionId: "s-1::tab-order",
+          screenId: "s-1",
+          screenName: "Form",
+          pillarId: "tab-order",
+          successCriterion: "WCAG 2.4.3",
+          verdict: "covered_passes",
+          rationale: "tab order explicitly verified",
+        },
+      ],
+    }),
+  });
+  for (const rule of [
+    "policy:form-screen-a11y-judge:covered-weakly",
+    "policy:form-screen-a11y-judge:not-covered",
+  ]) {
+    assert.equal(
+      report.jobLevelViolations.some((v) => v.rule === rule),
+      false,
+      `judge violation ${rule} must not fire on covered_passes`,
+    );
+  }
+});
+
+test("Issue #1951: a11y judge refusals are ignored by the policy gate", () => {
+  const intent = buildFormScreenIntent();
+  const ctx = harness([buildA11yCase()], intent);
+  const report = evaluatePolicyGate({
+    jobId: "job-1",
+    generatedAt: GENERATED_AT,
+    list: ctx.list,
+    intent: ctx.intent,
+    profile: ctx.profile,
+    validation: ctx.validation,
+    coverage: ctx.coverage,
+    a11yVerdict: buildA11yJudgeVerdict({
+      verdict: "accept",
+      refusal: {
+        code: "a11y_judge_unconfigured",
+        message: "Accessibility judge deployment is not configured",
+      },
+      criteria: [
+        {
+          criterionId: "s-1::tab-order",
+          screenId: "s-1",
+          screenName: "Form",
+          pillarId: "tab-order",
+          successCriterion: "WCAG 2.4.3",
+          verdict: "not_covered",
+          rationale: "judge refused — should be ignored",
+        },
+      ],
+    }),
+  });
+  for (const rule of [
+    "policy:form-screen-a11y-judge:covered-weakly",
+    "policy:form-screen-a11y-judge:not-covered",
+  ]) {
+    assert.equal(
+      report.jobLevelViolations.some((v) => v.rule === rule),
+      false,
+      `refusal must suppress ${rule}`,
+    );
+  }
 });

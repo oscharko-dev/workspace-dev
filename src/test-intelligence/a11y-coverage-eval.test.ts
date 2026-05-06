@@ -370,3 +370,39 @@ test("report directory constant is the documented eval-reports path", () => {
     "storybook-static/eval-reports",
   );
 });
+
+// ---------------------------------------------------------------------------
+// Issue #1951 — confirm the documented hard-gate severity stays at error so a
+// downgrade requires a deliberate `customerProfile.policyOverrides` entry,
+// not a silent default change in this module.
+// ---------------------------------------------------------------------------
+
+test("Issue #1951: hard-gate failure severity is `error` for production thresholds", async () => {
+  const fixture = await loadFigma("baseline-simple-form");
+  const intent = deriveBusinessTestIntentIr({ figma: fixture });
+  const screenId = intent.detectedFields[0]?.screenId;
+  assert.ok(screenId, "fixture must carry at least one detected field");
+  const list = buildList([
+    buildCase({
+      id: "tc-functional-only",
+      type: "functional",
+      screenId,
+      fieldIds: intent.detectedFields.map((f) => f.id),
+    }),
+  ]);
+  const result = computeA11yCoverage({ intent, generatedList: list });
+  const failure = result.verdict.failures.find(
+    (f) => f.reason === "form_screen_missing_accessibility_case",
+  );
+  assert.ok(failure, "expected hard-gate failure");
+  assert.equal(
+    failure.severity,
+    "error",
+    "Issue #1951 requires the form-screen accessibility hard-gate to remain at error severity by default",
+  );
+  assert.equal(
+    result.verdict.passed,
+    false,
+    "verdict.passed must reflect the error-severity failure",
+  );
+});
