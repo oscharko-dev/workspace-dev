@@ -35,6 +35,16 @@ export interface LlmGatewayClientBundle {
    * existing operator configurations keep working unchanged.
    */
   logicJudge?: LlmGatewayClient;
+  /**
+   * Optional dedicated client for the Coverage-Planner augmentation
+   * (Issue #1934). When set, the production runner may ask this smaller model
+   * to raise per-screen technique quotas or elevate per-element risk classes
+   * on top of the deterministic baseline plan.
+   *
+   * The client must declare role `"coverage_planner"` and must NOT advertise
+   * image-input support because the planner consumes structured JSON only.
+   */
+  coveragePlanner?: LlmGatewayClient;
 }
 
 export interface LlmGatewayClientBundleConfigs {
@@ -42,6 +52,7 @@ export interface LlmGatewayClientBundleConfigs {
   visualPrimary: LlmGatewayClientConfig;
   visualFallback: LlmGatewayClientConfig;
   logicJudge?: LlmGatewayClientConfig;
+  coveragePlanner?: LlmGatewayClientConfig;
 }
 
 export interface MockLlmGatewayClientBundleInputs {
@@ -49,6 +60,7 @@ export interface MockLlmGatewayClientBundleInputs {
   visualPrimary: CreateMockLlmGatewayClientInput;
   visualFallback: CreateMockLlmGatewayClientInput;
   logicJudge?: CreateMockLlmGatewayClientInput;
+  coveragePlanner?: CreateMockLlmGatewayClientInput;
 }
 
 export interface LlmGatewayBundleProbeArtifact {
@@ -66,6 +78,7 @@ const ROLE_ORDER = [
   "visual_primary",
   "visual_fallback",
   "logic_judge",
+  "coverage_planner",
 ] as const;
 
 const assertRole = ({
@@ -127,6 +140,18 @@ const assertBundle = (bundle: LlmGatewayClientBundle): void => {
       );
     }
   }
+  if (bundle.coveragePlanner !== undefined) {
+    assertRole({
+      actual: bundle.coveragePlanner.role,
+      expected: "coverage_planner",
+      label: "coveragePlanner",
+    });
+    if (bundle.coveragePlanner.declaredCapabilities.imageInputSupport) {
+      throw new RangeError(
+        "LlmGatewayClientBundle: coveragePlanner must not declare image input support",
+      );
+    }
+  }
 };
 
 export const createLlmGatewayClientBundle = (
@@ -139,6 +164,14 @@ export const createLlmGatewayClientBundle = (
     visualFallback: createLlmGatewayClient(configs.visualFallback, runtime),
     ...(configs.logicJudge !== undefined
       ? { logicJudge: createLlmGatewayClient(configs.logicJudge, runtime) }
+      : {}),
+    ...(configs.coveragePlanner !== undefined
+      ? {
+          coveragePlanner: createLlmGatewayClient(
+            configs.coveragePlanner,
+            runtime,
+          ),
+        }
       : {}),
   };
   assertBundle(bundle);
@@ -154,6 +187,9 @@ export const createMockLlmGatewayClientBundle = (
     visualFallback: createMockLlmGatewayClient(inputs.visualFallback),
     ...(inputs.logicJudge !== undefined
       ? { logicJudge: createMockLlmGatewayClient(inputs.logicJudge) }
+      : {}),
+    ...(inputs.coveragePlanner !== undefined
+      ? { coveragePlanner: createMockLlmGatewayClient(inputs.coveragePlanner) }
       : {}),
   };
   assertBundle(bundle);
@@ -178,6 +214,9 @@ export const probeLlmGatewayClientBundle = async ({
     visual_fallback: bundle.visualFallback,
     ...(bundle.logicJudge !== undefined
       ? { logic_judge: bundle.logicJudge }
+      : {}),
+    ...(bundle.coveragePlanner !== undefined
+      ? { coverage_planner: bundle.coveragePlanner }
       : {}),
   };
   const artifacts: LlmGatewayBundleProbeArtifact[] = [];

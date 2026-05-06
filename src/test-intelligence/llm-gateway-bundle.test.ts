@@ -219,6 +219,76 @@ test("bundle: optional logicJudge slot accepts a logic_judge client and rejects 
   );
 });
 
+test("bundle: optional coveragePlanner slot accepts a coverage_planner client and rejects image-capable planners (Issue #1934)", () => {
+  const bundle = createMockLlmGatewayClientBundle({
+    testGeneration: {
+      role: "test_generation",
+      deployment: "mistral-large-3",
+      modelRevision: "rev",
+      gatewayRelease: "rel",
+      declaredCapabilities: testGenerationCapabilities,
+    },
+    visualPrimary: {
+      role: "visual_primary",
+      deployment: "llama-4-maverick-vision",
+      modelRevision: "rev",
+      gatewayRelease: "rel",
+      declaredCapabilities: visualCapabilities,
+    },
+    visualFallback: {
+      role: "visual_fallback",
+      deployment: "phi-4-multimodal-poc",
+      modelRevision: "rev",
+      gatewayRelease: "rel",
+      declaredCapabilities: visualCapabilities,
+    },
+    coveragePlanner: {
+      role: "coverage_planner",
+      deployment: "phi-4-mini-instruct",
+      modelRevision: "rev",
+      gatewayRelease: "rel",
+      declaredCapabilities: testGenerationCapabilities,
+    },
+  });
+  assert.equal(bundle.coveragePlanner?.role, "coverage_planner");
+  assert.equal(bundle.coveragePlanner?.deployment, "phi-4-mini-instruct");
+
+  assert.throws(
+    () =>
+      createMockLlmGatewayClientBundle({
+        testGeneration: {
+          role: "test_generation",
+          deployment: "mistral-large-3",
+          modelRevision: "rev",
+          gatewayRelease: "rel",
+          declaredCapabilities: testGenerationCapabilities,
+        },
+        visualPrimary: {
+          role: "visual_primary",
+          deployment: "llama-4-maverick-vision",
+          modelRevision: "rev",
+          gatewayRelease: "rel",
+          declaredCapabilities: visualCapabilities,
+        },
+        visualFallback: {
+          role: "visual_fallback",
+          deployment: "phi-4-multimodal-poc",
+          modelRevision: "rev",
+          gatewayRelease: "rel",
+          declaredCapabilities: visualCapabilities,
+        },
+        coveragePlanner: {
+          role: "coverage_planner",
+          deployment: "phi-4-mini-instruct",
+          modelRevision: "rev",
+          gatewayRelease: "rel",
+          declaredCapabilities: visualCapabilities,
+        },
+      }),
+    /coveragePlanner must not declare image input support/,
+  );
+});
+
 test("bundle: probes all roles and persists per-role capability evidence", async () => {
   const dir = await mkdtemp(path.join(tmpdir(), "llm-bundle-"));
   try {

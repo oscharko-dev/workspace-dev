@@ -1402,6 +1402,115 @@ test("runFigmaToQcTestCases runs both judges, persists their artifacts, and keep
   }
 });
 
+test("Issue #1934: runFigmaToQcTestCases persists coverage-plan.json and uses the optional coveragePlanner slot when wired", async () => {
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ti-runner-"));
+  try {
+    const bundle = createMockLlmGatewayClientBundle({
+      testGeneration: {
+        role: "test_generation",
+        deployment: "gpt-oss-120b",
+        modelRevision: "gpt-oss-120b@test",
+        gatewayRelease: "mock",
+        declaredCapabilities: TEST_GENERATION_CAPS,
+        responder: okResponder([SAMPLE_DRAFT, SAMPLE_ACCESSIBILITY_DRAFT]),
+      },
+      visualPrimary: {
+        role: "visual_primary",
+        deployment: "llama-4-maverick-vision",
+        modelRevision: "llama-4-maverick-vision@test",
+        gatewayRelease: "mock",
+        declaredCapabilities: VISUAL_CAPS,
+      },
+      visualFallback: {
+        role: "visual_fallback",
+        deployment: "phi-4-multimodal-poc",
+        modelRevision: "phi-4-multimodal-poc@test",
+        gatewayRelease: "mock",
+        declaredCapabilities: VISUAL_CAPS,
+      },
+      coveragePlanner: {
+        role: "coverage_planner",
+        deployment: "phi-4-mini-instruct",
+        modelRevision: "phi-4-mini-instruct@test",
+        gatewayRelease: "mock",
+        declaredCapabilities: TEST_GENERATION_CAPS,
+        responder: (_request, attempt) => ({
+          outcome: "success",
+          content: {
+            perScreen: [
+              {
+                screenId: "1:1",
+                techniqueQuotas: { use_case: 2, error_guessing: 1 },
+              },
+            ],
+            perElement: [],
+          },
+          finishReason: "stop",
+          usage: { inputTokens: 9, outputTokens: 7 },
+          modelDeployment: "phi-4-mini-instruct",
+          modelRevision: "phi-4-mini-instruct@test",
+          gatewayRelease: "mock",
+          attempt,
+        }),
+      },
+    });
+
+    const result = await runFigmaToQcTestCases({
+      jobId: "issue-1934-coverage-plan",
+      generatedAt: "2026-05-06T10:00:00.000Z",
+      source: { kind: "figma_paste_normalized", file: SAMPLE_FILE },
+      outputRoot: tempRoot,
+      llm: {
+        client: bundle.testGeneration,
+        bundle,
+      },
+    });
+
+    assert.equal(
+      (bundle.coveragePlanner as MockLlmGatewayClient).callCount(),
+      1,
+    );
+    assert.equal(
+      (bundle.coveragePlanner as MockLlmGatewayClient).recordedRequests()[0]
+        ?.responseSchemaName,
+      "workspace-dev-coverage-planner-v1",
+    );
+    const coveragePlan = JSON.parse(
+      await readFile(result.artifactPaths.coveragePlan, "utf8"),
+    ) as {
+      perScreen?: Array<{ screenId: string; techniqueQuotas: Array<{ technique: string; minCount: number }> }>;
+      perElement?: unknown[];
+    };
+    assert.equal(Array.isArray(coveragePlan.perScreen), true);
+    assert.equal(Array.isArray(coveragePlan.perElement), true);
+    assert.equal(
+      coveragePlan.perScreen?.some(
+        (screen) =>
+          screen.screenId === "1:1" &&
+          screen.techniqueQuotas.some(
+            (quota) => quota.technique === "use_case" && quota.minCount === 2,
+          ),
+      ),
+      true,
+    );
+    const compiledPrompt = JSON.parse(
+      await readFile(result.artifactPaths.compiledPrompt, "utf8"),
+    ) as {
+      payload?: { coveragePlan?: { perScreen?: unknown[]; perElement?: unknown[] } };
+    };
+    assert.equal(
+      Array.isArray(compiledPrompt.payload?.coveragePlan?.perScreen),
+      true,
+    );
+    assert.equal(
+      Array.isArray(compiledPrompt.payload?.coveragePlan?.perElement),
+      true,
+    );
+  } finally {
+    await rm(tempRoot, { recursive: true, force: true });
+  }
+});
+
 test("Issue #1929: runFigmaToQcTestCases preserves all 9 initial logic/faithfulness verdict combinations when visual captures exist", async () => {
   const logicVerdicts = ["accept", "repair", "reject"] as const;
   const faithfulnessVerdicts = ["accept", "repair", "reject"] as const;

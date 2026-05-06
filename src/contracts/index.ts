@@ -945,6 +945,7 @@ export const ALLOWED_LLM_GATEWAY_ROLES = [
   "visual_primary",
   "visual_fallback",
   "logic_judge",
+  "coverage_planner",
 ] as const;
 export type LlmGatewayRole = (typeof ALLOWED_LLM_GATEWAY_ROLES)[number];
 
@@ -7825,6 +7826,7 @@ export const ALLOWED_AGENT_SOURCE_LABELS = [
   "visual_primary",
   "visual_fallback",
   "generator",
+  "coverage_planner",
   "gap_finder",
   "repair_planner",
   "ir_mutation_oracle",
@@ -9361,6 +9363,32 @@ export interface CoverageRequirement {
   readonly visualRefs: readonly string[];
 }
 
+/** Per-element risk classes reuse the generator's risk-category taxonomy. */
+export type CoveragePlanElementRiskClass = TestCaseRiskCategory;
+
+/** Per-screen minimum quota for one planning technique. */
+export interface CoveragePlanTechniqueQuota {
+  readonly technique: TestCaseTechnique29119;
+  readonly minCount: number;
+}
+
+/**
+ * Screen-scoped quota bundle emitted by the coverage planner. Each screen lists
+ * only the techniques that must appear at least `minCount` times.
+ */
+export interface CoveragePlanPerScreen {
+  readonly screenId: string;
+  readonly techniqueQuotas: readonly CoveragePlanTechniqueQuota[];
+}
+
+/** Per-element coverage target emitted by the coverage planner. */
+export interface CoveragePlanPerElement {
+  readonly screenId: string;
+  readonly elementId: string;
+  readonly mustHaveCase: boolean;
+  readonly riskClass: CoveragePlanElementRiskClass;
+}
+
 /**
  * Deterministic pre-generation coverage plan derived from `TestDesignModel`
  * plus optional source-mix context.
@@ -9371,6 +9399,8 @@ export interface CoverageRequirement {
 export interface CoveragePlan {
   readonly schemaVersion: typeof COVERAGE_PLAN_SCHEMA_VERSION;
   readonly jobId: string;
+  readonly perScreen: readonly CoveragePlanPerScreen[];
+  readonly perElement: readonly CoveragePlanPerElement[];
   readonly minimumCases: readonly CoverageRequirement[];
   readonly recommendedCases: readonly CoverageRequirement[];
   readonly techniques: readonly CoveragePlanTechnique[];

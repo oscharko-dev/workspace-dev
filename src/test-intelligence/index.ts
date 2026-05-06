@@ -164,9 +164,12 @@ export {
 } from "./test-design-model.js";
 export {
   buildCoveragePlan,
+  buildCoveragePlanWithAugmentation,
   hasBoundaryEvidence,
   writeCoveragePlanArtifact,
   type BuildCoveragePlanInput,
+  type BuildCoveragePlanWithAugmentationInput,
+  type CoveragePlanBuildResult,
 } from "./coverage-planner.js";
 export {
   ADVERSARIAL_GAP_FINDINGS_ARTIFACT_FILENAME,

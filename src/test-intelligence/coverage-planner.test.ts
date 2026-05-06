@@ -20,8 +20,10 @@ import {
 import { canonicalJson, sha256Hex } from "./content-hash.js";
 import {
   buildCoveragePlan,
+  buildCoveragePlanWithAugmentation,
   writeCoveragePlanArtifact,
 } from "./coverage-planner.js";
+import { createMockLlmGatewayClient } from "./llm-mock-gateway.js";
 import { planSourceMix } from "./source-mix-planner.js";
 
 const ISO = "2026-05-03T09:00:00.000Z";
@@ -328,4 +330,93 @@ test("property: source-mix supporting context changes the recommended plan", () 
     }),
     { numRuns: 50 },
   );
+});
+
+test("buildCoveragePlan exposes structured per-screen quotas and per-element targets", () => {
+  const plan = buildCoveragePlan({
+    model: buildModel(),
+  });
+
+  const loanScreen = plan.perScreen.find((screen) => screen.screenId === "loan");
+  assert.ok(loanScreen);
+  assert.equal(
+    loanScreen.techniqueQuotas.some(
+      (quota) =>
+        quota.technique === "boundary_value_analysis" && quota.minCount >= 1,
+    ),
+    true,
+  );
+  assert.equal(
+    loanScreen.techniqueQuotas.some(
+      (quota) => quota.technique === "state_transition" && quota.minCount >= 1,
+    ),
+    true,
+  );
+
+  const principal = plan.perElement.find(
+    (element) => element.elementId === "principal",
+  );
+  assert.deepEqual(principal, {
+    screenId: "loan",
+    elementId: "principal",
+    mustHaveCase: true,
+    riskClass: "financial_transaction",
+  });
+});
+
+test("buildCoveragePlanWithAugmentation raises quotas and risk classes from an optional planner client", async () => {
+  const planner = createMockLlmGatewayClient({
+    role: "coverage_planner",
+    deployment: "phi-4-mini-instruct",
+    modelRevision: "phi-4-mini-instruct@test",
+    gatewayRelease: "mock",
+    responder: (_request, attempt) => ({
+      outcome: "success",
+      content: {
+        perScreen: [
+          {
+            screenId: "loan",
+            techniqueQuotas: {
+              boundary_value_analysis: 3,
+              error_guessing: 2,
+            },
+          },
+        ],
+        perElement: [
+          {
+            screenId: "loan",
+            elementId: "term",
+            mustHaveCase: true,
+            riskClass: "regulated_data",
+          },
+        ],
+      },
+      finishReason: "stop",
+      usage: { inputTokens: 21, outputTokens: 13 },
+      modelDeployment: "phi-4-mini-instruct",
+      modelRevision: "phi-4-mini-instruct@test",
+      gatewayRelease: "mock",
+      attempt,
+    }),
+  });
+
+  const result = await buildCoveragePlanWithAugmentation({
+    model: buildModel(),
+    plannerClient: planner,
+  });
+
+  assert.equal(result.usedAugmentation, true);
+  const loanScreen = result.plan.perScreen.find(
+    (screen) => screen.screenId === "loan",
+  );
+  assert.equal(
+    loanScreen?.techniqueQuotas.some(
+      (quota) =>
+        quota.technique === "boundary_value_analysis" && quota.minCount === 3,
+    ),
+    true,
+  );
+  const term = result.plan.perElement.find((element) => element.elementId === "term");
+  assert.equal(term?.riskClass, "regulated_data");
+  assert.equal(planner.callCount(), 1);
 });

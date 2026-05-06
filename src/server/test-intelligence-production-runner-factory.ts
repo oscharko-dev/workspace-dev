@@ -62,6 +62,7 @@ export interface ResolvedLlmConfig {
   visualEndpoint: string;
   visualPrimaryDeployment: string;
   visualFallbackDeployment: string;
+  coveragePlannerDeployment?: string;
   apiKey: string;
 }
 
@@ -115,12 +116,19 @@ export const resolveLlmConfigFromEnv = (
   const visualFallbackDeployment =
     readTrimmed(env, "WORKSPACE_TEST_SPACE_VISUAL_FALLBACK_DEPLOYMENT") ??
     visualPrimaryDeployment;
+  const coveragePlannerDeployment = readTrimmed(
+    env,
+    "WORKSPACE_TEST_SPACE_COVERAGE_PLANNER_DEPLOYMENT",
+  );
   return {
     endpoint,
     deployment,
     visualEndpoint,
     visualPrimaryDeployment,
     visualFallbackDeployment,
+    ...(coveragePlannerDeployment !== undefined
+      ? { coveragePlannerDeployment }
+      : {}),
     apiKey,
   };
 };
@@ -195,6 +203,31 @@ const defaultBuildLlmBundle = (
         maxRetries: 1,
         circuitBreaker: { failureThreshold: 2, resetTimeoutMs: 30_000 },
       },
+      ...(config.coveragePlannerDeployment !== undefined
+        ? {
+            coveragePlanner: {
+              role: "coverage_planner" as const,
+              compatibilityMode: "openai_chat" as const,
+              baseUrl: config.endpoint,
+              deployment: config.coveragePlannerDeployment,
+              modelRevision: `${config.coveragePlannerDeployment}@server-auto-wire`,
+              gatewayRelease: "azure-ai-foundry-server-auto-wire",
+              authMode: "api_key" as const,
+              declaredCapabilities: {
+                structuredOutputs: true,
+                seedSupport: false,
+                reasoningEffortSupport: false,
+                maxOutputTokensSupport: true,
+                streamingSupport: false,
+                imageInputSupport: false,
+              },
+              timeoutMs: 60_000,
+              maxRetries: 1,
+              circuitBreaker: { failureThreshold: 2, resetTimeoutMs: 30_000 },
+              wireStructuredOutputMode: "none" as const,
+            },
+          }
+        : {}),
     },
     {
       apiKeyProvider: () => config.apiKey,
@@ -235,7 +268,7 @@ export const resolveTestIntelligenceProductionRunner = (
       input.logger?.log({
         level: "info",
         event: "test_intelligence_runner_wired",
-        message: `Test-intelligence production runner LLM bundle built (deployment=${config.deployment}, visualPrimary=${config.visualPrimaryDeployment}, visualFallback=${config.visualFallbackDeployment})`,
+        message: `Test-intelligence production runner LLM bundle built (deployment=${config.deployment}, visualPrimary=${config.visualPrimaryDeployment}, visualFallback=${config.visualFallbackDeployment}${config.coveragePlannerDeployment !== undefined ? `, coveragePlanner=${config.coveragePlannerDeployment}` : ""})`,
       });
     }
     return runner({

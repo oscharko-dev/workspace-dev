@@ -125,6 +125,13 @@ export interface TestIntelligenceRunOptions {
    *   3. `undefined` (judge reuses the generator deployment).
    */
   logicJudgeDeployment: string | undefined;
+  /**
+   * Optional dedicated deployment for the Coverage-Planner augmentation
+   * (Issue #1934). When set, the runner may ask this model to strengthen the
+   * deterministic coverage plan before prompt compilation. When `undefined`,
+   * planning stays deterministic-only.
+   */
+  coveragePlannerDeployment: string | undefined;
   modelApiKey: string | undefined;
   figmaToken: string | undefined;
   policyProfile: string | undefined;
@@ -193,6 +200,8 @@ export const parseTestIntelligenceRunArgs = (
     PRODUCTION_RUNNER_TEST_GENERATION_DEPLOYMENT;
   let logicJudgeDeployment: string | undefined =
     env.WORKSPACE_TEST_SPACE_LOGIC_JUDGE_DEPLOYMENT?.trim() || undefined;
+  let coveragePlannerDeployment: string | undefined =
+    env.WORKSPACE_TEST_SPACE_COVERAGE_PLANNER_DEPLOYMENT?.trim() || undefined;
   let modelApiKey: string | undefined =
     env.WORKSPACE_TEST_SPACE_MODEL_API_KEY?.trim() || undefined;
   let figmaToken: string | undefined =
@@ -282,6 +291,18 @@ export const parseTestIntelligenceRunArgs = (
         );
       }
       logicJudgeDeployment = value;
+      index += 1;
+      continue;
+    }
+
+    if (arg === "--coverage-planner-deployment") {
+      const value = next?.trim();
+      if (!value) {
+        throw new TestIntelligenceRunOperatorError(
+          "--coverage-planner-deployment requires a non-empty deployment name",
+        );
+      }
+      coveragePlannerDeployment = value;
       index += 1;
       continue;
     }
@@ -455,6 +476,7 @@ export const parseTestIntelligenceRunArgs = (
     modelEndpoint,
     modelDeployment,
     logicJudgeDeployment,
+    coveragePlannerDeployment,
     modelApiKey,
     figmaToken,
     policyProfile,
@@ -505,6 +527,10 @@ export interface TestIntelligenceRunRuntime {
    * deployment is configured.
    */
   buildLogicJudgeClient?: (
+    options: TestIntelligenceRunOptions,
+  ) => LlmGatewayClient | undefined;
+  /** Override the coverage-planner client builder (Issue #1934). */
+  buildCoveragePlannerClient?: (
     options: TestIntelligenceRunOptions,
   ) => LlmGatewayClient | undefined;
   /**
@@ -611,6 +637,57 @@ export const buildLiveLogicJudgeClient = (
       // family inherit the safer "none" mode by default — operators
       // tune this via a follow-up flag if their judge supports
       // json_schema natively.
+      wireStructuredOutputMode: "none",
+    },
+    {
+      apiKeyProvider: () => apiKey,
+    },
+  );
+};
+
+/**
+ * Build the optional live Coverage-Planner gateway client (Issue #1934).
+ * Returns `undefined` when no planner deployment is configured so the runner
+ * stays deterministic-only.
+ */
+export const buildLiveCoveragePlannerClient = (
+  options: TestIntelligenceRunOptions,
+): LlmGatewayClient | undefined => {
+  if (options.coveragePlannerDeployment === undefined) {
+    return undefined;
+  }
+  if (!options.modelEndpoint) {
+    throw new TestIntelligenceRunOperatorError(
+      "--model-endpoint or WORKSPACE_TEST_SPACE_MODEL_ENDPOINT is required for mode=deterministic_llm",
+    );
+  }
+  if (!options.modelApiKey) {
+    throw new TestIntelligenceRunOperatorError(
+      "--model-api-key or WORKSPACE_TEST_SPACE_MODEL_API_KEY is required for mode=deterministic_llm",
+    );
+  }
+  const apiKey = options.modelApiKey;
+  const deployment = options.coveragePlannerDeployment;
+  return createLlmGatewayClient(
+    {
+      role: "coverage_planner",
+      compatibilityMode: "openai_chat",
+      baseUrl: options.modelEndpoint,
+      deployment,
+      modelRevision: `${deployment}@cli-test-intelligence-run`,
+      gatewayRelease: "azure-ai-foundry-cli-test-intelligence-run",
+      authMode: "api_key",
+      declaredCapabilities: {
+        structuredOutputs: true,
+        seedSupport: false,
+        reasoningEffortSupport: false,
+        maxOutputTokensSupport: true,
+        streamingSupport: false,
+        imageInputSupport: false,
+      },
+      timeoutMs: 60_000,
+      maxRetries: 1,
+      circuitBreaker: { failureThreshold: 2, resetTimeoutMs: 30_000 },
       wireStructuredOutputMode: "none",
     },
     {
@@ -776,6 +853,31 @@ export const buildLiveVisualSidecarBundle = (
         maxRetries: 1,
         circuitBreaker: { failureThreshold: 2, resetTimeoutMs: 30_000 },
       },
+      ...(options.coveragePlannerDeployment !== undefined
+        ? {
+            coveragePlanner: {
+              role: "coverage_planner" as const,
+              compatibilityMode: "openai_chat" as const,
+              baseUrl: options.modelEndpoint,
+              deployment: options.coveragePlannerDeployment,
+              modelRevision: `${options.coveragePlannerDeployment}@cli-test-intelligence-run`,
+              gatewayRelease: "azure-ai-foundry-cli-test-intelligence-run",
+              authMode: "api_key" as const,
+              declaredCapabilities: {
+                structuredOutputs: true,
+                seedSupport: false,
+                reasoningEffortSupport: false,
+                maxOutputTokensSupport: true,
+                streamingSupport: false,
+                imageInputSupport: false,
+              },
+              timeoutMs: 60_000,
+              maxRetries: 1,
+              circuitBreaker: { failureThreshold: 2, resetTimeoutMs: 30_000 },
+              wireStructuredOutputMode: "none" as const,
+            },
+          }
+        : {}),
     },
     {
       apiKeyProvider: () => apiKey,
@@ -1160,6 +1262,7 @@ export const runTestIntelligenceCommand = async (
         `  source kind   : ${resolved.source.kind}`,
         `  deployment    : ${options.modelDeployment}`,
         `  judge deploy  : ${options.logicJudgeDeployment ?? "(reuses generator deployment)"}`,
+        `  planner deploy: ${options.coveragePlannerDeployment ?? "(disabled; deterministic-only)"}`,
         `  policy profile: ${options.policyProfile ?? "(default)"}`,
         `  visual sidecar: ${
           options.noVisualSidecar
@@ -1180,6 +1283,7 @@ export const runTestIntelligenceCommand = async (
   let llmClient: LlmGatewayClient;
   let llmBundle: LlmGatewayClientBundle | undefined;
   let logicJudgeClient: LlmGatewayClient | undefined;
+  let coveragePlannerClient: LlmGatewayClient | undefined;
   try {
     if (options.enableVisualSidecar) {
       llmBundle =
@@ -1199,6 +1303,10 @@ export const runTestIntelligenceCommand = async (
       runtime.buildLogicJudgeClient !== undefined
         ? runtime.buildLogicJudgeClient(options)
         : buildLiveLogicJudgeClient(options);
+    coveragePlannerClient =
+      runtime.buildCoveragePlannerClient !== undefined
+        ? runtime.buildCoveragePlannerClient(options)
+        : buildLiveCoveragePlannerClient(options);
   } catch (err) {
     if (err instanceof TestIntelligenceRunOperatorError) {
       sink.stderr(`error: ${err.message}\n`);
@@ -1240,6 +1348,9 @@ export const runTestIntelligenceCommand = async (
       ...(llmBundle !== undefined ? { bundle: llmBundle } : {}),
       ...(logicJudgeClient !== undefined
         ? { logicJudge: logicJudgeClient }
+        : {}),
+      ...(coveragePlannerClient !== undefined
+        ? { coveragePlanner: coveragePlannerClient }
         : {}),
       maxOutputTokens: 32_000,
       maxWallClockMs: 240_000,
@@ -1345,6 +1456,13 @@ LLM (defaults from environment):
                              gpt-oss-120b judge) so a self-consistency
                              bias from the generator is not amplified
                              by reusing the same model on the judge.
+  --coverage-planner-deployment <name>
+                             Optional dedicated deployment for the
+                             Coverage-Planner augmentation (Issue #1934).
+                             Default: env
+                             WORKSPACE_TEST_SPACE_COVERAGE_PLANNER_DEPLOYMENT
+                             (falls back to deterministic-only planning
+                             when unset).
   --model-api-key <key>      default: env WORKSPACE_TEST_SPACE_MODEL_API_KEY
                              (never logged, never echoed)
 

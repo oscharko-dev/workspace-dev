@@ -198,6 +198,22 @@ const sampleExportReport = (jobId: string): unknown => ({
 const sampleCoveragePlan = (jobId: string): unknown => ({
   schemaVersion: "1.0.0",
   jobId,
+  perScreen: [
+    {
+      screenId: "screen-login",
+      techniqueQuotas: [
+        { technique: "boundary_value_analysis", minCount: 1 },
+      ],
+    },
+  ],
+  perElement: [
+    {
+      screenId: "screen-login",
+      elementId: "field-password",
+      mustHaveCase: true,
+      riskClass: "high",
+    },
+  ],
   minimumCases: [
     {
       requirementId: "req-1",

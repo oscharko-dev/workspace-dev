@@ -86,6 +86,15 @@ test("resolveLlmConfigFromEnv: defaults deployment when not set", () => {
   assert.equal(config.visualEndpoint, "https://aoai.example/openai/v1");
   assert.equal(config.visualPrimaryDeployment, config.deployment);
   assert.equal(config.visualFallbackDeployment, config.deployment);
+  assert.equal(config.coveragePlannerDeployment, undefined);
+});
+
+test("resolveLlmConfigFromEnv: hydrates optional coverage-planner deployment", () => {
+  const config = resolveLlmConfigFromEnv({
+    ...ENV_OK,
+    WORKSPACE_TEST_SPACE_COVERAGE_PLANNER_DEPLOYMENT: "phi-4-mini-instruct",
+  });
+  assert.equal(config.coveragePlannerDeployment, "phi-4-mini-instruct");
 });
 
 test("resolveTestIntelligenceProductionRunner: factory builds bundle lazily and forwards to runner", async () => {
