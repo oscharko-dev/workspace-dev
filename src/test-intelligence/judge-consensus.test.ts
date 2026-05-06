@@ -62,6 +62,7 @@ const buildFaithfulnessVerdict = (
   modelRevision: "mock-1",
   gatewayRelease: "mock",
   fallbackReason: "none",
+  score: 1,
   verdict,
   hallucinations: options?.hallucinations ?? [],
   mismatches: options?.mismatches ?? [],

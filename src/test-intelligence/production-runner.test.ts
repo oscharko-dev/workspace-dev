@@ -2165,6 +2165,17 @@ test("Issue #1929: runFigmaToQcTestCases preserves all 9 initial logic/faithfuln
             "faithfulness_judge.json",
           ),
         );
+        const faithfulnessArtifact = JSON.parse(
+          await readFile(
+            path.join(
+              result.artifactDir,
+              "agent-role-runs",
+              "faithfulness_judge.json",
+            ),
+            "utf8",
+          ),
+        ) as { score?: unknown };
+        assert.equal(typeof faithfulnessArtifact.score, "number");
         assert.equal(client.callCount(), 2);
         assert.equal(
           (bundle.visualPrimary as MockLlmGatewayClient).callCount(),

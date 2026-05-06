@@ -146,6 +146,7 @@ const buildFaithfulnessVerdict = (
   modelRevision: "mock-1",
   gatewayRelease: "mock",
   fallbackReason: "none",
+  score: verdict === "accept" ? 1 : 0,
   verdict,
   hallucinations: [],
   mismatches: [],

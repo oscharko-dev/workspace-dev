@@ -3,11 +3,14 @@ import test from "node:test";
 import {
   COVERAGE_PLAN_SCHEMA_VERSION,
   EU_BANKING_DEFAULT_POLICY_PROFILE_ID,
+  FAITHFULNESS_JUDGE_PROMPT_TEMPLATE_VERSION,
+  FAITHFULNESS_VERDICT_SCHEMA_VERSION,
   GENERATED_TEST_CASE_SCHEMA_VERSION,
   TEST_INTELLIGENCE_CONTRACT_VERSION,
   TEST_INTELLIGENCE_PROMPT_TEMPLATE_VERSION,
   type CoveragePlan,
   type BusinessTestIntentIr,
+  type FaithfulnessVerdict,
   type GeneratedTestCase,
   type GeneratedTestCaseList,
 } from "../contracts/index.js";
@@ -133,6 +136,27 @@ const harness = (cases: GeneratedTestCase[], intent: BusinessTestIntentIr) => {
   });
   return { list, intent, profile, validation, coverage };
 };
+
+const buildFaithfulnessVerdict = (
+  overrides: Partial<FaithfulnessVerdict> = {},
+): FaithfulnessVerdict => ({
+  schemaVersion: FAITHFULNESS_VERDICT_SCHEMA_VERSION,
+  contractVersion: TEST_INTELLIGENCE_CONTRACT_VERSION,
+  promptTemplateVersion: FAITHFULNESS_JUDGE_PROMPT_TEMPLATE_VERSION,
+  generatedAt: GENERATED_AT,
+  jobId: "job-1",
+  cacheHit: false,
+  cacheKeyDigest: ZERO,
+  modelDeployment: "llama-4-maverick-vision",
+  modelRevision: "llama-4-maverick-vision@test",
+  gatewayRelease: "mock",
+  fallbackReason: "none",
+  score: 1,
+  verdict: "accept",
+  hallucinations: [],
+  mismatches: [],
+  ...overrides,
+});
 
 test("regulated risk category triggers needs_review", () => {
   const tc = buildCase({ riskCategory: "regulated_data" });
@@ -502,6 +526,84 @@ test("Issue #1947: policy override can downgrade technique coverage minimum to w
   );
   assert.ok(violation, "expected technique quota violation");
   assert.equal(violation?.severity, "warning");
+  assert.equal(report.blocked, false);
+});
+
+test("Issue #1949: cross-modal faithfulness score below the gray-zone floor blocks every case", () => {
+  const ctx = harness([buildCase({})], buildIntent());
+  const report = evaluatePolicyGate({
+    jobId: "job-1",
+    generatedAt: GENERATED_AT,
+    list: ctx.list,
+    intent: ctx.intent,
+    profile: ctx.profile,
+    validation: ctx.validation,
+    coverage: ctx.coverage,
+    faithfulnessVerdict: buildFaithfulnessVerdict({
+      score: 0.74,
+      verdict: "repair",
+    }),
+  });
+  const violation = report.jobLevelViolations.find(
+    (entry) => entry.rule === "policy:cross-modal-faithfulness-score",
+  );
+  assert.equal(violation?.severity, "error");
+  assert.equal(report.decisions[0]?.decision, "blocked");
+  assert.equal(report.blocked, true);
+});
+
+test("Issue #1949: cross-modal faithfulness score in the gray zone routes to needs_review", () => {
+  const ctx = harness([buildCase({})], buildIntent());
+  const report = evaluatePolicyGate({
+    jobId: "job-1",
+    generatedAt: GENERATED_AT,
+    list: ctx.list,
+    intent: ctx.intent,
+    profile: ctx.profile,
+    validation: ctx.validation,
+    coverage: ctx.coverage,
+    faithfulnessVerdict: buildFaithfulnessVerdict({
+      score: 0.76,
+      verdict: "repair",
+    }),
+  });
+  const violation = report.jobLevelViolations.find(
+    (entry) => entry.rule === "policy:cross-modal-faithfulness-score",
+  );
+  assert.equal(violation?.severity, "warning");
+  assert.equal(report.decisions[0]?.decision, "needs_review");
+  assert.equal(report.blocked, false);
+});
+
+test("Issue #1949: policy override threshold can relax the cross-modal faithfulness gate", () => {
+  const ctx = harness([buildCase({})], buildIntent());
+  const report = evaluatePolicyGate({
+    jobId: "job-1",
+    generatedAt: GENERATED_AT,
+    list: ctx.list,
+    intent: ctx.intent,
+    profile: ctx.profile,
+    validation: ctx.validation,
+    coverage: ctx.coverage,
+    faithfulnessVerdict: buildFaithfulnessVerdict({
+      score: 0.74,
+      verdict: "repair",
+    }),
+    policyOverrides: [
+      {
+        ruleId: "policy:cross-modal-faithfulness-score",
+        severity: "warning",
+        threshold: 0.7,
+      },
+    ],
+  });
+  assert.equal(
+    report.jobLevelViolations.some(
+      (entry) => entry.rule === "policy:cross-modal-faithfulness-score",
+    ),
+    false,
+  );
+  assert.equal(report.decisions[0]?.decision, "approved");
   assert.equal(report.blocked, false);
 });
 

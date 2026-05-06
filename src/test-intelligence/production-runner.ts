@@ -2450,9 +2450,13 @@ export const runFigmaToQcTestCases = async (
             (override): override is {
               ruleId: string;
               severity: "error" | "warning";
+              threshold?: number;
             } => override.severity !== "info",
           ),
         }
+      : {}),
+    ...(faithfulnessJudgeResult !== undefined
+      ? { faithfulnessVerdict: faithfulnessJudgeResult.verdict }
       : {}),
     ...("rules" in customerRubric ? { profile: customerRubric } : {}),
     ...(promptVisualBatch !== undefined ? { visual: promptVisualBatch } : {}),
@@ -4542,7 +4546,11 @@ const renderCustomerProfileAsMarkdown = (
   if (profile.policyOverrides.length > 0) {
     lines.push("## Policy Overrides");
     for (const override of profile.policyOverrides) {
-      lines.push(`- ${override.ruleId}: ${override.severity}`);
+      const threshold =
+        override.threshold !== undefined
+          ? `, threshold ${override.threshold}`
+          : "";
+      lines.push(`- ${override.ruleId}: ${override.severity}${threshold}`);
     }
     lines.push("");
   }

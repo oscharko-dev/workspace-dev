@@ -33,6 +33,7 @@ export interface CustomerProfileRiskTaxonomyOverride {
 export interface CustomerProfilePolicyOverride {
   ruleId: string;
   severity: "error" | "warning" | "info";
+  threshold?: number;
 }
 
 export interface CustomerProfileFewShotExample {
@@ -252,9 +253,26 @@ export const parseAndCanonicalizeCustomerProfile = (
           });
           continue;
         }
+        let threshold: number | undefined;
+        if (e.threshold !== undefined) {
+          if (
+            typeof e.threshold !== "number" ||
+            !Number.isFinite(e.threshold) ||
+            e.threshold < 0 ||
+            e.threshold > 1
+          ) {
+            issues.push({
+              path: `${path}.threshold`,
+              message: "threshold must be a finite number in [0, 1]",
+            });
+            continue;
+          }
+          threshold = e.threshold;
+        }
         policyOverrides.push({
           ruleId: e.ruleId.trim(),
           severity: e.severity as "error" | "warning" | "info",
+          ...(threshold !== undefined ? { threshold } : {}),
         });
       }
     }
