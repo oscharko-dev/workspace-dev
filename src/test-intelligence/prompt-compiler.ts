@@ -6,6 +6,7 @@ import {
   VISUAL_SIDECAR_SCHEMA_VERSION,
   type BusinessTestIntentIr,
   type CoveragePlan,
+  type CoveragePlanPerScreen,
   type CompiledPromptArtifacts,
   type CompiledPromptCustomContext,
   type CompiledPromptHashes,
@@ -22,7 +23,10 @@ import {
   type VisualScreenDescription,
   type VisualSidecarFallbackReason,
 } from "../contracts/index.js";
-import { GENERATOR_FORM_SCREEN_A11Y_RULE } from "./agent-role-profile.js";
+import {
+  GENERATOR_FORM_SCREEN_A11Y_RULE,
+  GENERATOR_TECHNIQUE_QUOTA_RULE,
+} from "./agent-role-profile.js";
 import {
   analyzeContextBudget,
   type ContextBudgetCategoryInput,
@@ -70,6 +74,7 @@ const USER_PROMPT_PREAMBLE = [
   "Generate structured test cases derived from the bounded JSON below.",
   "Cover the detected fields, actions, validations, and navigation edges of every screen.",
   "Use the ISO/IEC/IEEE 29119-4 technique that best fits each case.",
+  GENERATOR_TECHNIQUE_QUOTA_RULE,
   "Populate qualitySignals.coveredFieldIds, coveredActionIds, coveredValidationIds, coveredNavigationIds with the matching IR ids.",
   "An empty coveredFieldIds array (qualitySignals.coveredFieldIds: []) is a schema violation — every non-trivial case must cite at least one IR id across the four covered* arrays.",
   "Every id you cite in coveredFieldIds, coveredActionIds, coveredValidationIds, or coveredNavigationIds must already exist in the TestDesignModel below; fabricated ids are rejected.",
@@ -520,7 +525,28 @@ const buildStablePrefixSection = (input: {
   ].join("\n");
 
 const buildCoveragePlanSection = (coveragePlan: CoveragePlan): string =>
-  ["[4] CoveragePlan", canonicalJson(coveragePlan)].join("\n");
+  [
+    "[4] CoveragePlan",
+    "CoveragePlan.techniqueQuotas",
+    canonicalJson(flattenCoveragePlanTechniqueQuotas(coveragePlan.perScreen)),
+    "CoveragePlan.full",
+    canonicalJson(coveragePlan),
+  ].join("\n");
+
+const flattenCoveragePlanTechniqueQuotas = (
+  perScreen: readonly CoveragePlanPerScreen[],
+): ReadonlyArray<{
+  screenId: string;
+  technique: string;
+  minCount: number;
+}> =>
+  perScreen.flatMap((screen) =>
+    screen.techniqueQuotas.map((quota) => ({
+      screenId: screen.screenId,
+      technique: quota.technique,
+      minCount: quota.minCount,
+    })),
+  );
 
 const RISK_PRIORITIES_INSTRUCTION =
   "Every (screenId, elementId) listed below in `topKElementIds` MUST be covered by at least one generated test case. The list is sorted by descending risk score; do not lower the priority order. Use the `rationale` token only for ranking context; never copy it into the test case body.";

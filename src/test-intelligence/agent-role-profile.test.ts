@@ -14,6 +14,7 @@ import {
   AGENT_ROLE_PROFILE_REGISTRY,
   LLM_ROLE_FORBIDDEN_CAPABILITIES,
   GENERATOR_DIVERSITY_PASS_PROFILES,
+  GENERATOR_TECHNIQUE_QUOTA_RULE,
   assertAgentRoleProfileInvariants,
   getAgentRoleProfile,
   isAgentHarnessRole,
@@ -170,6 +171,14 @@ test("generator diversity profiles: dual-pass mode returns two frozen, distinct 
 
 test("generator diversity profiles: single-pass mode returns no diversity overrides", () => {
   assert.deepEqual(listGeneratorDiversityPassProfiles(1), []);
+});
+
+test("generator guidance: technique quota rule is a hard requirement", () => {
+  assert.match(
+    GENERATOR_TECHNIQUE_QUOTA_RULE,
+    /^Honour the technique quotas in \[4\] CoveragePlan\.techniqueQuotas so/u,
+  );
+  assert.match(GENERATOR_TECHNIQUE_QUOTA_RULE, /minCount > 0 MUST be represented/u);
 });
 
 test("invariants: rejects llm_role with propose_changes", () => {

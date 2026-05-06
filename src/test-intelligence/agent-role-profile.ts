@@ -284,6 +284,13 @@ export const listGeneratorDiversityPassProfiles = (
   diversityPasses === 2 ? GENERATOR_DIVERSITY_PASS_PROFILES : [];
 
 /**
+ * Issue #1942 — explicit hard requirement that the generator must satisfy the
+ * per-screen technique quotas surfaced by the deterministic CoveragePlan.
+ */
+export const GENERATOR_TECHNIQUE_QUOTA_RULE =
+  "Honour the technique quotas in [4] CoveragePlan.techniqueQuotas so each technique with minCount > 0 MUST be represented at least minCount times in the output." as const;
+
+/**
  * Issue #1905 — explicit, hard-coded directive that every form screen must
  * carry at least one accessibility test case. The string is mirrored in
  * `prompt-compiler.ts` (SYSTEM_PROMPT) so the live LLM receives it; this

@@ -65,7 +65,9 @@ Out of scope:
 - Deterministic coverage planning is additive: `coverage-plan.json` can be
   derived from `TestDesignModel` plus source-mix context before case
   generation. The plan's `mutationKillRateTarget` defaults to `0.85` when the
-  caller does not supply an override.
+  caller does not supply an override. The prompt-facing coverage-plan contract,
+  including `CoveragePlan.techniqueQuotas`, is documented in
+  [test-intelligence-coverage-plan.md](test-intelligence-coverage-plan.md).
 
 ## 1. Enable the subsurface
 
