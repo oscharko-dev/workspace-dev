@@ -81,7 +81,7 @@ const splitStatements = (value: string): string[] => {
       // to the rest of the sentence.
       const tokenBeforePeriod = left
         .replace(/[\s.!?]+$/u, "")
-        .split(/[\s,;:()/\\\\]/u)
+        .split(/[\s,;:()/\\]/u)
         .pop()
         ?.toLowerCase();
       if (
