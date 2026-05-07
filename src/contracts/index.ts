@@ -4553,6 +4553,7 @@ export interface TestDesignModel {
   sourceHash: string;
   screens: TestDesignScreen[];
   businessRules: TestDesignRule[];
+  calculationConstraints: TestDesignCalculationConstraint[];
   assumptions: TestDesignAssumption[];
   openQuestions: TestDesignOpenQuestion[];
   riskSignals: TestDesignRiskSignal[];
@@ -4597,7 +4598,17 @@ export interface TestDesignCalculation {
   calculationId: string;
   name: string;
   inputElementIds: string[];
+  resultElementId?: string;
   ambiguity?: string;
+}
+
+export interface TestDesignCalculationConstraint {
+  constraintId: string;
+  kind: "exclude_component" | "include_component";
+  subject: "financing_need";
+  component: "vat";
+  evidenceText: string;
+  screenId?: string;
 }
 
 export interface TestDesignRule {

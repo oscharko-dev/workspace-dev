@@ -195,6 +195,7 @@ import {
   normalizeUntrustedContent,
   writeUntrustedContentNormalizationReport,
 } from "./untrusted-content-normalizer.js";
+import { buildSourceScopedCalculationAssumptions } from "./calculation-constraints.js";
 import { buildSourceScopedValidationOpenQuestions } from "./unresolved-validation-rules.js";
 import { runValidationPipeline } from "./validation-pipeline.js";
 import {
@@ -1159,6 +1160,13 @@ export const runFigmaToQcTestCases = async (
   if (customContextMarkdown !== undefined) {
     intent = {
       ...intent,
+      assumptions: [
+        ...intent.assumptions,
+        ...buildSourceScopedCalculationAssumptions({
+          sourceLabel: "custom_context_markdown",
+          text: customContextMarkdown.bodyPlain,
+        }),
+      ].sort((left, right) => left.localeCompare(right)),
       openQuestions: [
         ...intent.openQuestions,
         ...buildSourceScopedValidationOpenQuestions({

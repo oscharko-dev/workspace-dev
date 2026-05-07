@@ -86,6 +86,7 @@ const buildTestDesignModel = (): TestDesignModel => ({
     },
   ],
   businessRules: [],
+  calculationConstraints: [],
   assumptions: [],
   openQuestions: [],
   riskSignals: [],
@@ -298,6 +299,95 @@ test("hard-gate rejects exact validation details when the source marks validatio
       instruction.path === "expectedResults[0]",
   );
   assert.ok(repair);
+  assert.equal(augmented.verdict, "repair");
+});
+
+test("hard-gate rejects VAT-inclusive financing need expectations when VAT is excluded", () => {
+  const model = buildTestDesignModel();
+  model.screens[0] = {
+    screenId: "financing",
+    name: "Financing Need",
+    elements: [
+      {
+        elementId: "fld-net",
+        label: "Net purchase price",
+        kind: "text",
+        defaultValue: "1000.00 EUR",
+      },
+      {
+        elementId: "fld-vat",
+        label: "VAT rate",
+        kind: "text",
+        defaultValue: "19.00 %",
+      },
+      {
+        elementId: "fld-costs",
+        label: "Additional costs",
+        kind: "text",
+        defaultValue: "200.00 EUR",
+      },
+      {
+        elementId: "fld-financing",
+        label: "Financing need",
+        kind: "text",
+        defaultValue: "<computed>",
+      },
+    ],
+    actions: [],
+    validations: [],
+    calculations: [
+      {
+        calculationId: "calc-financing",
+        name: "Financing need",
+        inputElementIds: ["fld-costs", "fld-net", "fld-vat"],
+        resultElementId: "fld-financing",
+      },
+    ],
+    visualRefs: [],
+    sourceRefs: [],
+  };
+  model.calculationConstraints = [
+    {
+      constraintId: "calc-constraint-1",
+      kind: "exclude_component",
+      subject: "financing_need",
+      component: "vat",
+      evidenceText: "custom_context_markdown: The VAT is not part of the financing need.",
+    },
+  ];
+
+  const list = buildList([
+    buildTestCase("tc-financing-vat", {
+      qualitySignals: {
+        coveredFieldIds: ["fld-net", "fld-costs", "fld-vat", "fld-financing"],
+      },
+      figmaTraceRefs: [{ screenId: "financing", nodeId: "node-financing" }],
+    }),
+  ]);
+  list.testCases[0]!.expectedResults = [
+    "The financing need is displayed as 1,380.00 EUR (1000 + 19% VAT + 200).",
+  ];
+
+  const augmented = applyCoverageHardGate(buildLlmVerdict("accept"), {
+    testDesignModel: model,
+    generatedTestCases: list,
+  });
+
+  const finding = augmented.findings.find(
+    (candidate) =>
+      candidate.code ===
+      LOGIC_JUDGE_COVERAGE_HARD_GATE_FINDING_CODES.financialCalculationConstraintBreach,
+  );
+  assert.ok(finding);
+  assert.equal(finding?.testCaseId, "tc-financing-vat");
+  assert.match(finding?.message ?? "", /VAT is not part of the financing need/u);
+  const repair = augmented.repairInstructions.find(
+    (instruction) =>
+      instruction.testCaseId === "tc-financing-vat" &&
+      instruction.path === "expectedResults[0]",
+  );
+  assert.ok(repair);
+  assert.match(repair?.instruction ?? "", /Remove VAT from the financing-need formula\/result/u);
   assert.equal(augmented.verdict, "repair");
 });
 
@@ -577,6 +667,7 @@ test("hard-gate emits no findings when the IR is empty (vacuous job)", () => {
     sourceHash: "0".repeat(64),
     screens: [],
     businessRules: [],
+    calculationConstraints: [],
     assumptions: [],
     openQuestions: [],
     riskSignals: [],

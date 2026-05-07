@@ -130,6 +130,7 @@ const buildModel = (): TestDesignModel => ({
       sourceRefs: ["jira-42"],
     },
   ],
+  calculationConstraints: [],
   assumptions: [],
   openQuestions: [
     {

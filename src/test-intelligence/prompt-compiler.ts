@@ -79,6 +79,7 @@ const USER_PROMPT_PREAMBLE = [
   "An empty coveredFieldIds array (qualitySignals.coveredFieldIds: []) is a schema violation — every non-trivial case must cite at least one IR id across the four covered* arrays.",
   "Every id you cite in coveredFieldIds, coveredActionIds, coveredValidationIds, or coveredNavigationIds must already exist in the TestDesignModel below; fabricated ids are rejected.",
   "Reference the source Figma trace for every produced case via figmaTraceRefs and populate figmaTraceRefs[].nodeId — a screenId-only trace is a weak trace.",
+  "Honor TestDesignModel.calculationConstraints exactly. If a constraint excludes a component such as VAT from a financial result, do not include it in the numeric expectation. If the bounded inputs do not support one exact arithmetic result, keep the result generic and surface the gap in openQuestions.",
   "Cite ambiguity or open questions when the IR is incomplete; do not fabricate behavior.",
   "When the source marks validation behavior as unresolved, unspecified, TBD, or still to be defined, do NOT invent exact error text, numeric thresholds, min/max boundaries, or blocked-submit behavior. Keep expected outcomes generic, add the unresolved statement to openQuestions, and use wording such as 'A validation response is shown according to the specified validation concept.'",
   // Issue #1905: per-screen accessibility coverage requirement enforced by
@@ -1484,6 +1485,19 @@ const serializePromptTestDesignModel = (
           sourceRefs: rule.sourceRefs,
           resolveDescriptor,
         }) ?? rule.description,
+    })),
+    calculationConstraints: model.calculationConstraints.map((constraint) => ({
+      ...constraint,
+      evidenceText:
+        wrapPromptValue(constraint.evidenceText, {
+          id: `${constraint.constraintId}:evidenceText`,
+          sourceRefs:
+            constraint.screenId !== undefined
+              ? model.screens.find((screen) => screen.screenId === constraint.screenId)
+                  ?.sourceRefs
+              : undefined,
+          resolveDescriptor,
+        }) ?? constraint.evidenceText,
     })),
     assumptions: model.assumptions.map((assumption) => ({
       ...assumption,

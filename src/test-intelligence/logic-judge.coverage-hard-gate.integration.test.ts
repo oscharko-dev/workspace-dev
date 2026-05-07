@@ -87,6 +87,7 @@ const buildTestDesignModel = (): TestDesignModel => ({
     },
   ],
   businessRules: [],
+  calculationConstraints: [],
   assumptions: [],
   openQuestions: [],
   riskSignals: [],
