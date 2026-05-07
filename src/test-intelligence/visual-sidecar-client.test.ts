@@ -369,32 +369,103 @@ test("both fail: VisualSidecarFailure with both_sidecars_failed and union of att
   assert.match(result.failureMessage, /both_sidecars_failed/);
 });
 
-test("invalid sidecar JSON: schema_invalid on primary triggers fallback; both bad → schema_invalid_response", async () => {
+test("invalid sidecar JSON: schema_invalid on primary is safely recovered by fallback success", async () => {
   const captures = [captureFor("s-1")];
-  const primaryResponder: MockResponder = (request, attempt) =>
-    buildSuccess(
-      request,
-      attempt,
-      // missing required fields -> envelope validation fails
-      { screens: [{ screenId: "s-1" }] },
-      {
-        deployment: PRIMARY_DEPLOYMENT,
-        modelRevision: `${PRIMARY_DEPLOYMENT}@test`,
-        gatewayRelease: "mock",
-      },
-    );
+  const primaryResponder: MockResponder = (_request, attempt) => ({
+    outcome: "error",
+    errorClass: "schema_invalid_response",
+    message: "malformed sidecar envelope",
+    retryable: false,
+    attempt,
+  });
   const fallbackResponder: MockResponder = (request, attempt) =>
     buildSuccess(
       request,
       attempt,
-      // also bad: not even an envelope shape
-      { unexpected: true },
+      buildEnvelope(captures, FALLBACK_DEPLOYMENT),
       {
         deployment: FALLBACK_DEPLOYMENT,
         modelRevision: `${FALLBACK_DEPLOYMENT}@test`,
         gatewayRelease: "mock",
       },
     );
+  const bundle = buildBundle({
+    primary: { responder: primaryResponder },
+    fallback: { responder: fallbackResponder },
+  });
+  const result = await describeVisualScreens({
+    bundle,
+    captures,
+    jobId: "job-5",
+    generatedAt: "2026-04-25T00:00:00.000Z",
+    intent: buildIntent(["s-1"]),
+    primaryDeployment: PRIMARY_DEPLOYMENT,
+    clock: monotonicClock(),
+  });
+  assert.equal(result.outcome, "success");
+  if (result.outcome !== "success") return;
+  assert.equal(result.fallbackReason, "primary_unavailable");
+  assert.equal(result.attempts.length, 2);
+  assert.equal(result.attempts[0]?.errorClass, "schema_invalid_response");
+  assert.equal(result.visual[0]?.sidecarDeployment, FALLBACK_DEPLOYMENT);
+  assert.ok(
+    result.validationReport.records[0]?.outcomes.includes("fallback_used"),
+  );
+});
+
+test("repair path coerces schema-near sidecar JSON into a valid result", async () => {
+  const captures = [captureFor("s-1")];
+  const primaryResponder: MockResponder = (request, attempt) =>
+    buildSuccess(
+      request,
+      attempt,
+      "```json\n{\"screens\":[{\"screenId\":\"s-1\",\"regions\":[{\"confidence\":0.9,\"label\":\"field-1\"}]}]}\n```",
+      {
+        deployment: PRIMARY_DEPLOYMENT,
+        modelRevision: `${PRIMARY_DEPLOYMENT}@test`,
+        gatewayRelease: "mock",
+      },
+    );
+  const bundle = buildBundle({
+    primary: { responder: primaryResponder },
+  });
+  const result = await describeVisualScreens({
+    bundle,
+    captures,
+    jobId: "job-5-repair",
+    generatedAt: "2026-04-25T00:00:00.000Z",
+    intent: buildIntent(["s-1"]),
+    primaryDeployment: PRIMARY_DEPLOYMENT,
+    clock: monotonicClock(),
+  });
+  assert.equal(result.outcome, "success");
+  if (result.outcome !== "success") return;
+  assert.equal(result.fallbackReason, "none");
+  assert.equal(result.visual[0]?.sidecarDeployment, PRIMARY_DEPLOYMENT);
+  assert.equal(result.visual[0]?.regions[0]?.regionId, "s-1-region-1");
+  assert.deepEqual(result.visual[0]?.confidenceSummary, {
+    min: 0.9,
+    max: 0.9,
+    mean: 0.9,
+  });
+});
+
+test("invalid sidecar JSON: schema_invalid on both attempts hard-fails with schema_invalid_response", async () => {
+  const captures = [captureFor("s-1")];
+  const primaryResponder: MockResponder = (_request, attempt) => ({
+    outcome: "error",
+    errorClass: "schema_invalid_response",
+    message: "malformed sidecar envelope",
+    retryable: false,
+    attempt,
+  });
+  const fallbackResponder: MockResponder = (_request, attempt) => ({
+    outcome: "error",
+    errorClass: "schema_invalid_response",
+    message: "malformed fallback sidecar envelope",
+    retryable: false,
+    attempt,
+  });
   const bundle = buildBundle({
     primary: { responder: primaryResponder },
     fallback: { responder: fallbackResponder },

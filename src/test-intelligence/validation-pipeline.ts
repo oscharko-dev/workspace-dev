@@ -100,15 +100,16 @@ export interface RunValidationPipelineInput {
   semanticContentOverrides?: SemanticContentOverrideMap;
   /**
    * Documented visual-sidecar refusal forwarded to the policy gate
-   * (Issue #1772). When set, every per-case decision is escalated to
-   * `needs_review` with a `policy:visual-sidecar-refused` violation that
-   * carries the documented `VisualSidecarFailureClass` so reviewers can
-   * adjudicate without the visual context.
+   * (Issue #1772). The policy gate preserves job-level warning evidence
+   * for the refusal, and only escalates per-case decisions when
+   * `visualVerificationRequired` is also set for the run.
    */
   visualSidecarRefusal?: {
     failureClass: VisualSidecarFailureClass;
     failureMessage: string;
   };
+  /** When true, a visual-sidecar refusal escalates each case to needs_review. */
+  visualVerificationRequired?: boolean;
   /** Optional pre-LLM untrusted-content routing summary. */
   untrustedContentReport?: UntrustedContentNormalizationReport;
   /** Optional summary of active model bindings used by the job. */
@@ -255,6 +256,9 @@ export const runValidationPipeline = (
       : {}),
     ...(input.visualSidecarRefusal !== undefined
       ? { visualSidecarRefusal: input.visualSidecarRefusal }
+      : {}),
+    ...(input.visualVerificationRequired !== undefined
+      ? { visualVerificationRequired: input.visualVerificationRequired }
       : {}),
     ...(input.untrustedContentReport !== undefined
       ? { untrustedContentReport: input.untrustedContentReport }
@@ -569,6 +573,9 @@ export const runValidationPipelineWithSelfVerify = async (
       : {}),
     ...(input.visualSidecarRefusal !== undefined
       ? { visualSidecarRefusal: input.visualSidecarRefusal }
+      : {}),
+    ...(input.visualVerificationRequired !== undefined
+      ? { visualVerificationRequired: input.visualVerificationRequired }
       : {}),
     ...(input.activeModelBindings !== undefined
       ? { activeModelBindings: input.activeModelBindings }
