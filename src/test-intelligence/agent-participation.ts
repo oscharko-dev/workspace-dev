@@ -20,6 +20,8 @@ export const AGENT_PARTICIPATION_ROLES = [
   "visual_primary",
   "visual_fallback",
   "a11y_judge",
+  "repair_planner",
+  "test_generation_repair",
 ] as const;
 
 export type AgentParticipationRole =
