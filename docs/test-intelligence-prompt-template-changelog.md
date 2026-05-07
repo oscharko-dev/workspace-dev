@@ -47,6 +47,27 @@ those steps are skipped.
 
 ---
 
+## 1.5.0 — PR #1984 — Customer-context trace hygiene
+
+**Bump type:** MINOR.
+
+**Scope:** Generator system prompt and `[5] CustomerDomainContext`
+section header. Custom Markdown / customer-domain context remains an
+authoritative evidence source, but the prompt now explicitly forbids
+placing that provenance into `figmaTraceRefs`.
+
+**Motivation:** `figmaTraceRefs` are consumed as real Figma screen/node
+trace anchors by coverage and customer-facing evidence. Citing
+`custom_context_markdown` there polluted Figma coverage signals and made
+non-Figma evidence look like a Figma node. The generator must instead
+record customer-context influence through `assumptions` or
+`openQuestions` entries prefixed with `custom_context_markdown:`.
+
+**Expected verdict-deltas on baseline:** No schema regression expected.
+Traceability becomes stricter: Figma coverage should only reflect real
+Figma screens/nodes, while customer-context provenance remains visible
+through assumptions/open questions.
+
 ## 1.4.0 — Issue #1942 — Hard-gated technique-quota enforcement
 
 **Bump type:** MINOR.
