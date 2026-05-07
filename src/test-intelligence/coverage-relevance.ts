@@ -46,6 +46,8 @@ const FIGMA_NODE_ID_PATTERN =
 
 const VALUE_ONLY_PATTERN =
   /^[+-]?\d{1,3}(?:[.\s]\d{3})*(?:,\d+)?(?:\s*(?:eur|€|%))?$/iu;
+const DECORATIVE_KIND_PATTERN =
+  /\b(icon|svg|vector|chevron|arrow|decorative|separator|divider)\b/iu;
 
 export const normalizeCoverageText = (value: string | undefined): string =>
   (value ?? "")
@@ -58,6 +60,9 @@ const isDecorativeCoverageLabel = (label: string): boolean =>
   FIGMA_NODE_ID_PATTERN.test(label) ||
   VALUE_ONLY_PATTERN.test(label);
 
+const isDecorativeCoverageKind = (kind: string): boolean =>
+  DECORATIVE_KIND_PATTERN.test(kind) || kind === "decorative";
+
 export const isCoverageRelevantElementLike = (
   element: CoverageElementLike,
 ): boolean => {
@@ -67,7 +72,7 @@ export const isCoverageRelevantElementLike = (
   }
 
   const kind = normalizeCoverageText(element.kind ?? element.type);
-  if (kind === "icon" || kind === "svg" || kind === "vector") {
+  if (isDecorativeCoverageKind(kind)) {
     return false;
   }
 
@@ -82,6 +87,10 @@ export const isCoverageRelevantActionLike = (
     return false;
   }
   if (label === "chevron" || label === "arrow" || label === "dropdown icon") {
+    return false;
+  }
+  const kind = normalizeCoverageText(action.kind);
+  if (isDecorativeCoverageKind(kind)) {
     return false;
   }
   if (

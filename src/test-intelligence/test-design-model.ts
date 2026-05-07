@@ -104,6 +104,19 @@ const PROMPT_INJECTION_PATTERNS: readonly RegExp[] = [
 ] as const;
 const CALCULATION_RULE_PATTERN =
   /\b(computed|calculate(?:d)?|formula|rounded?|rounding|derived?)\b|=/i;
+const RESULT_DISPLAY_HINT_PATTERN =
+  /\b(result|summary|status|total|balance|output|confirmation|receipt|preview|overview|message|ergebnis|anzeige)\b/i;
+const SELECTABLE_OPTION_HINT_PATTERN =
+  /\b(select|selectable|dropdown|combobox|radio|checkbox|option|choice|picker|segmented|chip|pill|auswahl)\b/i;
+const INFORMATIVE_LABEL_HINT_PATTERN =
+  /\b(info(?:rmative)?|hint|helper|copy|title|heading|question|alert|hinweis|beschreibung|ueberschrift|überschrift)\b/i;
+const SEMANTIC_EVIDENCE_KIND_LABELS = new Map<string, string>([
+  ["jira_rest", "acceptance criteria"],
+  ["jira_paste", "acceptance criteria"],
+  ["custom_markdown", "custom markdown"],
+  ["custom_text", "custom context"],
+  ["custom_structured", "custom context"],
+]);
 
 export interface BuildTestDesignModelInput {
   jobId: string;
@@ -138,6 +151,168 @@ const stableId = (prefix: string, seed: unknown): string =>
 
 const toVisualRef = (screenId: string, regionId: string): string =>
   `visual:${screenId}:${regionId}`;
+
+const isResultDisplayElementLike = (
+  element: TestDesignElement,
+): boolean =>
+  RESULT_DISPLAY_HINT_PATTERN.test(normalizeText(`${element.label} ${element.kind}`));
+
+const isSelectableOptionElementLike = (
+  element: TestDesignElement,
+): boolean =>
+  SELECTABLE_OPTION_HINT_PATTERN.test(
+    normalizeText(`${element.label} ${element.kind}`),
+  );
+
+const isInformativeLabelElementLike = (
+  element: TestDesignElement,
+): boolean =>
+  INFORMATIVE_LABEL_HINT_PATTERN.test(
+    normalizeText(`${element.label} ${element.kind}`),
+  );
+
+const collectSemanticEvidenceLabels = (
+  sourceEnvelope: MultiSourceTestIntentEnvelope | undefined,
+): string[] => {
+  if (sourceEnvelope === undefined) return [];
+  const labels = new Set<string>();
+  for (const source of sourceEnvelope.sources) {
+    const label = SEMANTIC_EVIDENCE_KIND_LABELS.get(source.kind);
+    if (label !== undefined) {
+      labels.add(label);
+    }
+  }
+  return uniqueSorted(labels);
+};
+
+const collectSemanticEvidenceSourceRefs = (
+  sourceEnvelope: MultiSourceTestIntentEnvelope | undefined,
+): string[] => {
+  if (sourceEnvelope === undefined) return [];
+  return uniqueSorted(
+    sourceEnvelope.sources
+      .filter((source) => SEMANTIC_EVIDENCE_KIND_LABELS.has(source.kind))
+      .map((source) => source.sourceId),
+  );
+};
+
+const buildSemanticCoverageRulesForScreen = (input: {
+  screen: TestDesignScreen;
+  sourceEnvelope: MultiSourceTestIntentEnvelope | undefined;
+}): TestDesignRule[] => {
+  const semanticEvidenceLabels = collectSemanticEvidenceLabels(
+    input.sourceEnvelope,
+  );
+  const semanticEvidenceSourceRefs = collectSemanticEvidenceSourceRefs(
+    input.sourceEnvelope,
+  );
+  const sourceRefs = uniqueSorted([
+    ...input.screen.sourceRefs,
+    ...semanticEvidenceSourceRefs,
+  ]);
+  const rules: TestDesignRule[] = [];
+  if (
+    input.screen.elements.some((element) => isResultDisplayElementLike(element)) ||
+    input.screen.calculations.some(
+      (calculation) => calculation.resultElementId !== undefined,
+    )
+  ) {
+    rules.push({
+      ruleId: stableId("semantic-rule", {
+        screenId: input.screen.screenId,
+        category: "result display",
+        sourceRefs,
+      }),
+      description: buildBusinessRuleDescription({
+        label: undefined,
+        screenName: input.screen.name,
+        rule:
+          `Semantic category: result display` +
+          (semanticEvidenceLabels.length > 0
+            ? ` (evidence: ${semanticEvidenceLabels.join(", ")})`
+            : ""),
+      }),
+      ...(input.screen.screenId.length > 0
+        ? { screenId: input.screen.screenId }
+        : {}),
+      sourceRefs,
+    });
+  }
+  if (
+    input.screen.elements.some((element) => isSelectableOptionElementLike(element))
+  ) {
+    rules.push({
+      ruleId: stableId("semantic-rule", {
+        screenId: input.screen.screenId,
+        category: "selectable option",
+        sourceRefs,
+      }),
+      description: buildBusinessRuleDescription({
+        label: undefined,
+        screenName: input.screen.name,
+        rule:
+          `Semantic category: selectable option` +
+          (semanticEvidenceLabels.length > 0
+            ? ` (evidence: ${semanticEvidenceLabels.join(", ")})`
+            : ""),
+      }),
+      ...(input.screen.screenId.length > 0
+        ? { screenId: input.screen.screenId }
+        : {}),
+      sourceRefs,
+    });
+  }
+  if (
+    input.screen.elements.some((element) => isInformativeLabelElementLike(element))
+  ) {
+    rules.push({
+      ruleId: stableId("semantic-rule", {
+        screenId: input.screen.screenId,
+        category: "informative label",
+        sourceRefs,
+      }),
+      description: buildBusinessRuleDescription({
+        label: undefined,
+        screenName: input.screen.name,
+        rule:
+          `Semantic category: informative label` +
+          (semanticEvidenceLabels.length > 0
+            ? ` (evidence: ${semanticEvidenceLabels.join(", ")})`
+            : ""),
+      }),
+      ...(input.screen.screenId.length > 0
+        ? { screenId: input.screen.screenId }
+        : {}),
+      sourceRefs,
+    });
+  }
+  return rules;
+};
+
+const buildSelectableOptionOpenQuestions = (input: {
+  screen: TestDesignScreen;
+  sourceEnvelope: MultiSourceTestIntentEnvelope | undefined;
+}): string[] => {
+  const optionLabels = input.screen.elements
+    .filter((element) => isSelectableOptionElementLike(element))
+    .map((element) => normalizeText(element.label));
+  const hasNetOption = optionLabels.some(
+    (label) => label === "netto" || label === "net",
+  );
+  const hasGrossOption = optionLabels.some(
+    (label) => label === "brutto" || label === "gross",
+  );
+  if (!hasNetOption || !hasGrossOption) {
+    return [];
+  }
+  const sourceRefs = collectSemanticEvidenceSourceRefs(input.sourceEnvelope);
+  const prefix = sourceRefs.includes("custom-context-markdown")
+    ? "custom_context_markdown: "
+    : "";
+  return [
+    `${prefix}Die Auswirkungen der Optionen "Netto" und "Brutto" auf Feldbezeichnungen, Berechnung und Vorbelegung sind nicht vollständig spezifiziert. Soll ein eigener Gross-/Brutto-Pfad mit abweichenden Erwartungen geprüft werden?`,
+  ];
+};
 
 const normalizeText = (value: string): string =>
   value
@@ -527,6 +702,14 @@ export const buildTestDesignModel = (
         ]),
       };
     });
+  businessRules.push(
+    ...screens.flatMap((screen) =>
+      buildSemanticCoverageRulesForScreen({
+        screen,
+        sourceEnvelope,
+      }),
+    ),
+  );
 
   const assumptions: TestDesignAssumption[] = uniqueSorted(input.intent.assumptions).map(
     (text) => ({
@@ -614,6 +797,12 @@ export const buildTestDesignModel = (
           (calculation) =>
             `Calculation "${calculation.name}" on screen "${screen.name}" (${screen.screenId}) is ambiguous: ${calculation.ambiguity}. What should test coverage assume?`,
         ),
+    ),
+    ...screens.flatMap((screen) =>
+      buildSelectableOptionOpenQuestions({
+        screen,
+        sourceEnvelope,
+      }),
     ),
   ]).map((text) => ({
     openQuestionId: stableId("open-question", text),

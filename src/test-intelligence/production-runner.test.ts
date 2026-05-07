@@ -3721,6 +3721,90 @@ test("Issue #1894: customContextMarkdown is canonicalized and surfaces in compil
   }
 });
 
+test("Issue #1988: customContextMarkdown upgrades semantic coverage rules for selectable options", async () => {
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ti-runner-semantic-md-"));
+  try {
+    const semanticFile = {
+      ...SAMPLE_FILE,
+      document: node({
+        id: "0:0",
+        type: "DOCUMENT",
+        children: [
+          node({
+            id: "0:1",
+            name: "Page 1",
+            type: "CANVAS",
+            children: [
+              node({
+                id: "1:1",
+                name: "Financing Need",
+                type: "FRAME",
+                absoluteBoundingBox: { x: 0, y: 0, width: 600, height: 800 },
+                children: [
+                  node({
+                    id: "2:1",
+                    name: "Wie soll der Kaufpreis erfasst werden?",
+                    type: "TEXT",
+                    characters: "Wie soll der Kaufpreis erfasst werden?",
+                  }),
+                  node({
+                    id: "2:2",
+                    name: "Netto",
+                    type: "TEXT",
+                    characters: "Netto",
+                  }),
+                  node({
+                    id: "2:3",
+                    name: "Brutto",
+                    type: "TEXT",
+                    characters: "Brutto",
+                  }),
+                  node({
+                    id: "2:4",
+                    name: "Finanzierungsbedarf des Investitionsobjekts",
+                    type: "TEXT",
+                    characters: "Finanzierungsbedarf des Investitionsobjekts",
+                  }),
+                ],
+              }),
+            ],
+          }),
+        ],
+      }),
+    };
+    const client = createMockLlmGatewayClient({
+      role: "test_generation",
+      deployment: "gpt-oss-120b-mock",
+      modelRevision: "mock-1",
+      gatewayRelease: "mock",
+      responder: okResponder([SAMPLE_DRAFT]),
+    });
+    const result = await runFigmaToQcTestCases({
+      jobId: "job-semantic-md",
+      generatedAt: "2026-05-05T10:00:00Z",
+      source: { kind: "figma_paste_normalized", file: semanticFile },
+      outputRoot: tempRoot,
+      llm: { client },
+      customContextMarkdown:
+        "# Akzeptanzkriterien\n\n- Die Nutzer:innen können zwischen Netto und Brutto auswählen.\n- Der Finanzierungsbedarf wird als Gesamtwert angezeigt.\n",
+      logicJudge: { enabled: false },
+    });
+
+    const coveragePlan = JSON.parse(
+      await readFile(result.artifactPaths.coveragePlan, "utf8"),
+    ) as { minimumCases: Array<{ reasonCode: string; sourceRefs: string[] }> };
+    assert.ok(
+      coveragePlan.minimumCases.some(
+        (requirement) =>
+          requirement.reasonCode === "rule_partition" &&
+          requirement.sourceRefs.includes("custom-context-markdown"),
+      ),
+    );
+  } finally {
+    await rm(tempRoot, { recursive: true, force: true });
+  }
+});
+
 test("Issue #1986: VAT-excluded financing need forces a repair iteration and removes the VAT-inclusive expectation", async () => {
   const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ti-runner-financing-vat-"));
   try {

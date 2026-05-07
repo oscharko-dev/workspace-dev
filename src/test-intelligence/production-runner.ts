@@ -59,6 +59,7 @@ import {
   LOGIC_JUDGE_VERDICT_ARTIFACT_FILENAME,
   type JudgeConsensusVerdict,
   LOGIC_JUDGE_VERDICT_SCHEMA_VERSION,
+  MULTI_SOURCE_TEST_INTENT_ENVELOPE_SCHEMA_VERSION,
   REDACTION_POLICY_VERSION,
   TEST_INTELLIGENCE_CONTRACT_VERSION,
   TEST_INTELLIGENCE_PROMPT_TEMPLATE_VERSION,
@@ -81,10 +82,12 @@ import {
   type LlmGenerationResult,
   type FinOpsJobOutcome,
   type FaithfulnessVerdict,
+  type MultiSourceTestIntentEnvelope,
   type RegulatoryRelevance,
   type RegulatoryRelevanceDomain,
   type JudgeVerdict,
   type TenantScope,
+  type TestIntentSourceRef,
   type TestCaseLevel,
   type TestCasePolicyReport,
   type TestCasePriority,
@@ -99,7 +102,7 @@ import {
   RISK_RANKING_ARTIFACT_FILENAME,
 } from "../contracts/index.js";
 import { sanitizeErrorMessage } from "../error-sanitization.js";
-import { canonicalJson } from "./content-hash.js";
+import { canonicalJson, sha256Hex } from "./content-hash.js";
 import {
   buildWave1ValidationEvidenceManifest,
   verifyWave1ValidationEvidenceFromDisk,
@@ -1270,12 +1273,18 @@ export const runFigmaToQcTestCases = async (
           figmaSourceContentHash,
       })
     : undefined;
+  const semanticEvidenceSourceEnvelope = buildSemanticEvidenceSourceEnvelope({
+    baseEnvelope: wireIntent.sourceEnvelope,
+    figmaSourceContentHash,
+    customContextMarkdown,
+    generatedAt: input.generatedAt,
+  });
   const testDesignModel = buildTestDesignModel({
     jobId: input.jobId,
     intent: wireIntent,
     ...(promptVisualBatch !== undefined ? { visual: promptVisualBatch } : {}),
-    ...(wireIntent.sourceEnvelope !== undefined
-      ? { sourceEnvelope: wireIntent.sourceEnvelope }
+    ...(semanticEvidenceSourceEnvelope !== undefined
+      ? { sourceEnvelope: semanticEvidenceSourceEnvelope }
       : {}),
   });
   const coveragePlannerClient =
@@ -5332,6 +5341,67 @@ const resolveCustomerProfile = (
 
 const PRODUCTION_RUNNER_FIGMA_PRIMARY_SOURCE_ID =
   "production-runner-figma-primary" as const;
+
+const buildSemanticEvidenceSourceEnvelope = (input: {
+  baseEnvelope: MultiSourceTestIntentEnvelope | undefined;
+  figmaSourceContentHash: string;
+  customContextMarkdown:
+    | ReturnType<typeof resolveCustomContextMarkdown>
+    | undefined;
+  generatedAt: string;
+}): MultiSourceTestIntentEnvelope | undefined => {
+  if (input.customContextMarkdown === undefined) {
+    return input.baseEnvelope;
+  }
+  const sources: TestIntentSourceRef[] =
+    input.baseEnvelope !== undefined && input.baseEnvelope.sources.length > 0
+      ? [...input.baseEnvelope.sources]
+      : [
+          {
+            sourceId: PRODUCTION_RUNNER_FIGMA_PRIMARY_SOURCE_ID,
+            kind: "figma_rest",
+            contentHash: input.figmaSourceContentHash,
+            capturedAt: input.generatedAt,
+          },
+        ];
+  if (!sources.some((source) => source.kind === "custom_markdown")) {
+    sources.push({
+      sourceId: CUSTOM_CONTEXT_MARKDOWN_SOURCE_ID,
+      kind: "custom_markdown",
+      contentHash: input.customContextMarkdown.markdownContentHash,
+      capturedAt: input.generatedAt,
+      authorHandle: "reviewer",
+      noteEntryId: input.customContextMarkdown.markdownContentHash,
+      redactedMarkdownHash: input.customContextMarkdown.markdownContentHash,
+      plainTextDerivativeHash: input.customContextMarkdown.plainContentHash,
+    });
+  }
+  return {
+    version: MULTI_SOURCE_TEST_INTENT_ENVELOPE_SCHEMA_VERSION,
+    sources,
+    aggregateContentHash: sha256Hex(
+      sources
+        .map((source) => ({
+          sourceId: source.sourceId,
+          kind: source.kind,
+          contentHash: source.contentHash,
+        }))
+        .sort((left, right) =>
+          left.sourceId.localeCompare(right.sourceId) ||
+          left.kind.localeCompare(right.kind) ||
+          left.contentHash.localeCompare(right.contentHash),
+        ),
+    ),
+    conflictResolutionPolicy:
+      input.baseEnvelope?.conflictResolutionPolicy ?? "reviewer_decides",
+    ...(input.baseEnvelope?.priorityOrder !== undefined
+      ? { priorityOrder: [...input.baseEnvelope.priorityOrder] }
+      : {}),
+    ...(input.baseEnvelope?.sourceMixPlan !== undefined
+      ? { sourceMixPlan: input.baseEnvelope.sourceMixPlan }
+      : {}),
+  };
+};
 
 const buildFigmaWithCustomMarkdownSourceMixPlan = (input: {
   figmaSourceContentHash: string;
