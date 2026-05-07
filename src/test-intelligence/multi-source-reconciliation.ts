@@ -27,6 +27,7 @@ import { canonicalJson, sha256Hex } from "./content-hash.js";
 import { legacySourceFromMultiSourceEnvelope } from "./multi-source-envelope.js";
 import { deriveCustomContextPolicySignals } from "./custom-context-policy.js";
 import { buildSourceScopedValidationOpenQuestions } from "./unresolved-validation-rules.js";
+import { buildSourceScopedCalculationAssumptions } from "./calculation-constraints.js";
 
 export interface ReconcileMultiSourceIntentInput {
   envelope: MultiSourceTestIntentEnvelope;
@@ -1105,6 +1106,17 @@ export const reconcileMultiSourceIntent = (
       (candidate) => candidate.contentHash === issue.contentHash,
     );
     if (ref === undefined) continue;
+    baseIntent.assumptions = sortedUnique([
+      ...baseIntent.assumptions,
+      ...buildSourceScopedCalculationAssumptions({
+        sourceLabel: ref.sourceId,
+        text: [
+          issue.summary,
+          issue.descriptionPlain,
+          ...issue.acceptanceCriteria.map(extractAcceptanceText),
+        ].join("\n"),
+      }),
+    ]);
     baseIntent.openQuestions = sortedUnique([
       ...baseIntent.openQuestions,
       ...buildSourceScopedValidationOpenQuestions({

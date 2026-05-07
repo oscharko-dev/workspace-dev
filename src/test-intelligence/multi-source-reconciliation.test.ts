@@ -322,6 +322,44 @@ test("jira statements about unspecified validation rules propagate into open que
   );
 });
 
+test("jira financing-rule statements propagate VAT-exclusion assumptions", () => {
+  const issue = jiraIssue(
+    "jira-financing-vat",
+    "The VAT is not part of the financing need.",
+  );
+  const envelope = buildMultiSourceTestIntentEnvelope({
+    sources: [
+      {
+        sourceId: "figma.0",
+        kind: "figma_local_json",
+        contentHash: sha256Hex("figma"),
+        capturedAt: ISO,
+      },
+      {
+        sourceId: "jira.0",
+        kind: "jira_rest",
+        contentHash: issue.contentHash,
+        capturedAt: ISO,
+        canonicalIssueKey: issue.issueKey,
+      },
+    ],
+    conflictResolutionPolicy: "priority",
+    priorityOrder: ["jira_rest", "figma_local_json"],
+  });
+
+  const result = reconcileMultiSourceIntent({
+    envelope,
+    figmaIntent: figmaIntent(),
+    jiraIssues: [issue],
+  });
+
+  assert.ok(
+    result.mergedIntent.assumptions.includes(
+      "jira.0: The VAT is not part of the financing need.",
+    ),
+  );
+});
+
 test("non-priority reconciliation is stable under source reordering", () => {
   const issue = jiraIssue(
     "jira-stable",

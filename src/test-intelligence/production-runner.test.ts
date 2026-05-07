@@ -3721,6 +3721,197 @@ test("Issue #1894: customContextMarkdown is canonicalized and surfaces in compil
   }
 });
 
+test("Issue #1986: VAT-excluded financing need forces a repair iteration and removes the VAT-inclusive expectation", async () => {
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ti-runner-financing-vat-"));
+  try {
+    const financingFile = {
+      ...SAMPLE_FILE,
+      document: node({
+        id: "0:0",
+        type: "DOCUMENT",
+        children: [
+          node({
+            id: "0:1",
+            name: "Page 1",
+            type: "CANVAS",
+            children: [
+              node({
+                id: "1:1",
+                name: "Financing Need",
+                type: "FRAME",
+                absoluteBoundingBox: { x: 0, y: 0, width: 600, height: 800 },
+                children: [
+                  node({
+                    id: "2:1",
+                    name: "Net purchase price",
+                    type: "TEXT",
+                    characters: "Net purchase price",
+                  }),
+                  node({
+                    id: "2:2",
+                    name: "VAT rate",
+                    type: "TEXT",
+                    characters: "VAT rate",
+                  }),
+                  node({
+                    id: "2:3",
+                    name: "Additional costs",
+                    type: "TEXT",
+                    characters: "Additional costs",
+                  }),
+                  node({
+                    id: "2:4",
+                    name: "Financing need",
+                    type: "TEXT",
+                    characters: "Financing need",
+                  }),
+                  node({
+                    id: "2:5",
+                    name: "Continue",
+                    type: "INSTANCE",
+                    characters: "Continue",
+                  }),
+                ],
+              }),
+            ],
+          }),
+        ],
+      }),
+    };
+
+    const badDraft: ProductionRunnerLlmDraftCase = {
+      ...SAMPLE_DRAFT,
+      title: "TC07 Positive end-to-end flow",
+      objective: "Confirm the financing need is calculated correctly.",
+      testData: [
+        "Net purchase price: 1,000.00 EUR",
+        "VAT rate: 19.00 %",
+        "Additional costs: 200.00 EUR",
+      ],
+      steps: [
+        {
+          index: 1,
+          action: "Open the financing-need screen",
+          expected: "The financing fields are visible",
+        },
+        {
+          index: 2,
+          action: "Enter net purchase price, VAT rate, and additional costs",
+          expected: "The financing need is recalculated",
+        },
+      ],
+      expectedResults: [
+        "The financing need is displayed as 1,380.00 EUR (1000 + 19% VAT + 200).",
+      ],
+      figmaTraceRefs: [{ screenId: "1:1", nodeId: "2:4", nodeName: "Financing need" }],
+      qualitySignals: {
+        coveredFieldIds: [
+          "1:1::field::2:1",
+          "1:1::field::2:2",
+          "1:1::field::2:3",
+          "1:1::field::2:4",
+        ],
+        coveredActionIds: ["1:1::action::2:5"],
+        coveredValidationIds: [],
+        coveredNavigationIds: [],
+        confidence: 0.9,
+      },
+    };
+
+    const repairedDraft: ProductionRunnerLlmDraftCase = {
+      ...badDraft,
+      expectedResults: [
+        "The financing need is shown according to the specified financing rule.",
+      ],
+      openQuestions: [
+        "custom_context_markdown: Confirm whether any product-specific exception may include VAT in the financing need.",
+      ],
+    };
+    const financingA11yDraft: ProductionRunnerLlmDraftCase = {
+      ...SAMPLE_ACCESSIBILITY_DRAFT,
+      title: "Accessibility check for financing need",
+      objective: "Confirm keyboard and screen-reader accessibility on the financing-need screen.",
+      figmaTraceRefs: [{ screenId: "1:1", nodeId: "2:1", nodeName: "Net purchase price" }],
+      qualitySignals: {
+        coveredFieldIds: [
+          "1:1::field::2:1",
+          "1:1::field::2:2",
+          "1:1::field::2:3",
+          "1:1::field::2:4",
+        ],
+        coveredActionIds: ["1:1::action::2:5"],
+        coveredValidationIds: [],
+        coveredNavigationIds: [],
+        confidence: 0.9,
+      },
+    };
+
+    let generationCalls = 0;
+    const client = createMockLlmGatewayClient({
+      role: "test_generation",
+      deployment: "gpt-oss-120b-mock",
+      modelRevision: "mock-1",
+      gatewayRelease: "mock",
+      responder: (request, attempt) => {
+        if (request.responseSchemaName === "workspace-dev-logic-judge-v1") {
+          return {
+            outcome: "success" as const,
+            content: { verdict: "accept", findings: [], repairInstructions: [] },
+            finishReason: "stop" as const,
+            usage: { inputTokens: 20, outputTokens: 10 },
+            modelDeployment: "gpt-oss-120b-mock",
+            modelRevision: "mock-1",
+            gatewayRelease: "mock",
+            attempt,
+          };
+        }
+        generationCalls += 1;
+        return {
+          outcome: "success" as const,
+          content: {
+            testCases:
+              generationCalls === 1
+                ? [badDraft, financingA11yDraft]
+                : [repairedDraft, financingA11yDraft],
+          },
+          finishReason: "stop" as const,
+          usage: { inputTokens: 100, outputTokens: 200 },
+          modelDeployment: "gpt-oss-120b-mock",
+          modelRevision: "mock-1",
+          gatewayRelease: "mock",
+          attempt,
+        };
+      },
+    });
+
+    const result = await runFigmaToQcTestCases({
+      jobId: "job-financing-vat",
+      generatedAt: "2026-05-07T10:00:00Z",
+      source: { kind: "figma_paste_normalized", file: financingFile },
+      outputRoot: tempRoot,
+      llm: { client },
+      customContextMarkdown:
+        "# Financing rule\n\n- The VAT is not part of the financing need.\n",
+    });
+
+    assert.equal(result.repairLoop?.iterations[0]?.logicVerdict, "repair");
+    assert.ok(generationCalls >= 2);
+    assert.doesNotMatch(
+      JSON.stringify(result.generatedTestCases.testCases),
+      /1,380\.00 EUR|19% VAT/u,
+    );
+    assert.ok(
+      result.generatedTestCases.testCases.some((testCase) =>
+        testCase.openQuestions.some((question) =>
+          question.includes("custom_context_markdown"),
+        ),
+      ),
+    );
+  } finally {
+    await rm(tempRoot, { recursive: true, force: true });
+  }
+});
+
 test("customerEvalMarkdown surfaces as its own prompt rubric and artifact", async () => {
   const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ti-runner-eval-"));
   try {

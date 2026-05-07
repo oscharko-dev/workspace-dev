@@ -22,6 +22,9 @@ import {
   type VisualScreenDescription,
 } from "../contracts/index.js";
 import { canonicalJson, sha256Hex } from "./content-hash.js";
+import {
+  extractCalculationConstraints,
+} from "./calculation-constraints.js";
 
 const HEX64_RE = /^[0-9a-f]{64}$/;
 const ROOT_KEYS = [
@@ -30,6 +33,7 @@ const ROOT_KEYS = [
   "sourceHash",
   "screens",
   "businessRules",
+  "calculationConstraints",
   "assumptions",
   "openQuestions",
   "riskSignals",
@@ -69,7 +73,16 @@ const CALCULATION_KEYS = [
   "calculationId",
   "name",
   "inputElementIds",
+  "resultElementId",
   "ambiguity",
+] as const;
+const CALCULATION_CONSTRAINT_KEYS = [
+  "constraintId",
+  "kind",
+  "subject",
+  "component",
+  "evidenceText",
+  "screenId",
 ] as const;
 const RULE_KEYS = ["ruleId", "description", "screenId", "sourceRefs"] as const;
 const ASSUMPTION_KEYS = ["assumptionId", "text"] as const;
@@ -323,6 +336,9 @@ const buildCalculationsForScreen = ({
         }),
         name: targetLabel ?? `Calculation on ${screenId}`,
         inputElementIds,
+        ...(validation.targetElementId !== undefined
+          ? { resultElementId: validation.targetElementId }
+          : {}),
         ...(validation.ambiguity !== undefined
           ? { ambiguity: validation.ambiguity }
           : !validation.rule.includes("=") && inputElementIds.length > 0
@@ -694,12 +710,25 @@ export const buildTestDesignModel = (
         riskSignal.riskSignalId !== list[index - 1]?.riskSignalId,
     );
 
+  const calculationConstraints = extractCalculationConstraints({
+    schemaVersion: TEST_DESIGN_MODEL_SCHEMA_VERSION,
+    jobId: input.jobId,
+    sourceHash: buildSourceHash({ intent: input.intent, visual, sourceEnvelope }),
+    screens,
+    businessRules,
+    calculationConstraints: [],
+    assumptions,
+    openQuestions,
+    riskSignals: [],
+  });
+
   return {
     schemaVersion: TEST_DESIGN_MODEL_SCHEMA_VERSION,
     jobId: input.jobId,
     sourceHash: buildSourceHash({ intent: input.intent, visual, sourceEnvelope }),
     screens,
     businessRules,
+    calculationConstraints,
     assumptions,
     openQuestions,
     riskSignals,
@@ -715,6 +744,7 @@ export const computeTestDesignModelSchemaHash = (): string =>
     actionKeys: ACTION_KEYS,
     validationKeys: VALIDATION_KEYS,
     calculationKeys: CALCULATION_KEYS,
+    calculationConstraintKeys: CALCULATION_CONSTRAINT_KEYS,
     ruleKeys: RULE_KEYS,
     assumptionKeys: ASSUMPTION_KEYS,
     openQuestionKeys: OPEN_QUESTION_KEYS,
@@ -891,6 +921,70 @@ export const validateTestDesignModel = (
               message: "expected string",
             });
           }
+        });
+      }
+    });
+  }
+
+  const calculationConstraints = candidate["calculationConstraints"];
+  if (!Array.isArray(calculationConstraints)) {
+    errors.push({ path: "$.calculationConstraints", message: "expected array" });
+  } else {
+    calculationConstraints.forEach((constraint, constraintIndex) => {
+      const nestedPath = `$.calculationConstraints[${constraintIndex}]`;
+      if (!isRecord(constraint)) {
+        errors.push({ path: nestedPath, message: "expected object" });
+        return;
+      }
+      if (!hasOnlyKeys(constraint, CALCULATION_CONSTRAINT_KEYS)) {
+        errors.push({ path: nestedPath, message: "unexpected property" });
+      }
+      if (
+        typeof constraint["constraintId"] !== "string" ||
+        constraint["constraintId"].length === 0
+      ) {
+        errors.push({
+          path: `${nestedPath}.constraintId`,
+          message: "expected non-empty string",
+        });
+      }
+      if (
+        constraint["kind"] !== "exclude_component" &&
+        constraint["kind"] !== "include_component"
+      ) {
+        errors.push({
+          path: `${nestedPath}.kind`,
+          message: "expected supported calculation-constraint kind",
+        });
+      }
+      if (constraint["subject"] !== "financing_need") {
+        errors.push({
+          path: `${nestedPath}.subject`,
+          message: "expected supported calculation-constraint subject",
+        });
+      }
+      if (constraint["component"] !== "vat") {
+        errors.push({
+          path: `${nestedPath}.component`,
+          message: "expected supported calculation-constraint component",
+        });
+      }
+      if (
+        typeof constraint["evidenceText"] !== "string" ||
+        constraint["evidenceText"].length === 0
+      ) {
+        errors.push({
+          path: `${nestedPath}.evidenceText`,
+          message: "expected non-empty string",
+        });
+      }
+      if (
+        constraint["screenId"] !== undefined &&
+        typeof constraint["screenId"] !== "string"
+      ) {
+        errors.push({
+          path: `${nestedPath}.screenId`,
+          message: "expected string",
         });
       }
     });

@@ -27,6 +27,7 @@ import type { LlmGatewayClient } from "./llm-gateway.js";
 import { resolveTenantScopeSegments } from "./replay-cache.js";
 import { collectTechniqueQuotaDeficits } from "./technique-quota.js";
 import { detectUnsupportedExactValidationClaim } from "./unresolved-validation-rules.js";
+import { detectCalculationConstraintViolation } from "./calculation-constraints.js";
 
 const RESPONSE_SCHEMA_NAME = "workspace-dev-logic-judge-v1" as const;
 const MAX_MESSAGE_LENGTH = 240;
@@ -117,6 +118,13 @@ export const LOGIC_JUDGE_COVERAGE_HARD_GATE_FINDING_CODES = {
    */
   unsupportedUnresolvedValidationDetail:
     "unsupported_unresolved_validation_detail",
+  /**
+   * Issue #1986 — fired when a generated financial result contradicts a
+   * structured calculation constraint, such as "VAT is not part of the
+   * financing need".
+   */
+  financialCalculationConstraintBreach:
+    "financial_calculation_constraint_breach",
 } as const;
 
 /**
@@ -1268,6 +1276,35 @@ const evaluateUnsupportedUnresolvedValidationDetails = (
   }
 };
 
+const evaluateCalculationConstraints = (
+  acc: HardGateAccumulator,
+  cases: ReadonlyArray<GeneratedTestCase>,
+  testDesignModel: TestDesignModel,
+): void => {
+  for (const testCase of cases) {
+    const violation = detectCalculationConstraintViolation({
+      model: testDesignModel,
+      testCase,
+    });
+    if (violation === undefined) continue;
+    pushFinding(
+      acc,
+      {
+        testCaseId: testCase.id,
+        code:
+          LOGIC_JUDGE_COVERAGE_HARD_GATE_FINDING_CODES.financialCalculationConstraintBreach,
+        severity: "error",
+        message: violation.message,
+      },
+      {
+        testCaseId: testCase.id,
+        path: violation.path,
+        instruction: violation.instruction,
+      },
+    );
+  }
+};
+
 const evaluateInsufficientBreadth = (
   acc: HardGateAccumulator,
   cases: ReadonlyArray<GeneratedTestCase>,
@@ -1324,6 +1361,9 @@ const evaluateInsufficientBreadth = (
  *   carries input elements but the list has no anchored accessibility case
  * - `technique_quota_breach` (severity: error, Issue #1942) — the case list
  *   fails a per-screen `CoveragePlan.techniqueQuotas` minimum
+ * - `financial_calculation_constraint_breach` (severity: error, Issue #1986)
+ *   — a generated financing result contradicts bounded arithmetic/domain
+ *   constraints such as VAT exclusions
  * - `weak_trace` (severity: warning) — figmaTraceRefs entry without nodeId
  *
  * Error-severity findings upgrade an `accept` verdict to `repair` so the
@@ -1386,6 +1426,7 @@ export const applyCoverageHardGate = (
     cases,
     input.testDesignModel,
   );
+  evaluateCalculationConstraints(acc, cases, input.testDesignModel);
 
   if (acc.findings.length === 0) {
     return verdict;
