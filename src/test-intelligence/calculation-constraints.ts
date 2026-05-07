@@ -76,7 +76,7 @@ const parseLocalizedNumber = (value: string): number | undefined => {
 const parseMoneyAmount = (value: string): number | undefined => {
   const match = value.match(MONEY_AMOUNT_RE);
   if (match === null || match.length === 0) return undefined;
-  return parseLocalizedNumber(match[0] ?? "");
+  return parseLocalizedNumber(match[0]);
 };
 
 const collectConstraintEvidence = (
@@ -254,33 +254,29 @@ export const detectCalculationConstraintViolation = (input: {
   model: TestDesignModel;
   testCase: GeneratedTestCase;
 }): CalculationConstraintViolation | undefined => {
+  const seenConstraintKeys = new Set<string>();
   const constraints = [
     ...input.model.calculationConstraints,
     ...extractCalculationConstraints(input.model),
-  ].filter(
-    (constraint, index, list) =>
-      list.findIndex(
-        (candidate) =>
-          candidate.kind === constraint.kind &&
-          candidate.subject === constraint.subject &&
-          candidate.component === constraint.component &&
-          candidate.evidenceText === constraint.evidenceText &&
-          candidate.screenId === constraint.screenId,
-      ) === index,
-  );
+  ].filter((constraint) => {
+    const key = JSON.stringify([
+      constraint.kind,
+      constraint.evidenceText,
+      constraint.screenId ?? "",
+    ]);
+    if (seenConstraintKeys.has(key)) {
+      return false;
+    }
+    seenConstraintKeys.add(key);
+    return true;
+  });
   const financingVatExclusions = constraints.filter(
-    (constraint) =>
-      constraint.subject === "financing_need" &&
-      constraint.component === "vat" &&
-      constraint.kind === "exclude_component",
+    (constraint) => constraint.kind === "exclude_component",
   );
   if (financingVatExclusions.length === 0) return undefined;
 
   const financingVatInclusions = constraints.filter(
-    (constraint) =>
-      constraint.subject === "financing_need" &&
-      constraint.component === "vat" &&
-      constraint.kind === "include_component",
+    (constraint) => constraint.kind === "include_component",
   );
 
   if (financingVatInclusions.length > 0) {
