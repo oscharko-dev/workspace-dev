@@ -5,8 +5,8 @@
  * official package CLI surface. Parses kebab-case flags, validates required
  * inputs and env vars, builds the same Azure-bound LLM gateway client the
  * production runner already uses, executes the figma_to_qc_test_cases
- * pipeline end-to-end, and writes the customer-format German Markdown to
- * the operator-supplied output directory.
+ * pipeline end-to-end, and writes all run artifacts, including the
+ * customer-format German Markdown, to the operator-supplied output directory.
  *
  * Modes:
  *   - `deterministic_llm` (default): real LLM gateway client; writes Markdown.
@@ -30,14 +30,12 @@
 import { randomUUID } from "node:crypto";
 import {
   mkdir,
-  copyFile,
-  readdir,
   readFile,
   rename,
   stat,
   writeFile,
 } from "node:fs/promises";
-import { dirname, join, resolve } from "node:path";
+import { join, resolve } from "node:path";
 
 /**
  * CLI-side hard cap on the raw `--custom-context-markdown` file size
@@ -1143,14 +1141,6 @@ export interface TestIntelligenceRunRuntime {
    * post-run artifact reads. Default: `readFile` + `JSON.parse`.
    */
   loadJsonFile?: (filePath: string) => Promise<unknown>;
-  /**
-   * Override the file-system mkdir/copy step (tests). Default uses
-   * `node:fs/promises`.
-   */
-  copyArtifactsToOutput?: (
-    runnerCustomerMarkdownDir: string,
-    outputDir: string,
-  ) => Promise<number>;
   /**
    * Override the loader for `--custom-context-markdown` files (Issue #1894).
    * Default uses `stat` + `readFile` against the local filesystem and
@@ -2439,20 +2429,6 @@ const defaultLoadCustomerProfileFile = async (
   return readFile(filePath, "utf8");
 };
 
-const defaultCopyArtifactsToOutput = async (
-  customerMarkdownDir: string,
-  outputDir: string,
-): Promise<number> => {
-  await mkdir(outputDir, { recursive: true });
-  const entries = await readdir(customerMarkdownDir);
-  let copied = 0;
-  for (const name of entries) {
-    await copyFile(join(customerMarkdownDir, name), join(outputDir, name));
-    copied += 1;
-  }
-  return copied;
-};
-
 interface ResolvedSource {
   source: ProductionRunnerSource;
   customerLabel?: string;
@@ -2766,8 +2742,6 @@ export const runTestIntelligenceCommand = async (
   const loadFigmaJsonFile =
     runtime.loadFigmaJsonFile ?? defaultLoadFigmaJsonFile;
   const loadJsonFile = runtime.loadJsonFile ?? defaultLoadJsonFile;
-  const copyArtifactsToOutput =
-    runtime.copyArtifactsToOutput ?? defaultCopyArtifactsToOutput;
   const loadCustomContextMarkdownFile =
     runtime.loadCustomContextMarkdownFile ??
     defaultLoadCustomContextMarkdownFile;
@@ -3089,6 +3063,7 @@ export const runTestIntelligenceCommand = async (
     generatedAt,
     source: resolved.source,
     outputRoot: runOutputDir,
+    artifactDir: runOutputDir,
     llm: {
       client: llmClient,
       ...(llmBundle !== undefined ? { bundle: llmBundle } : {}),
@@ -3163,20 +3138,8 @@ export const runTestIntelligenceCommand = async (
     }
   }
 
-  const customerMarkdownDir = dirname(result.customerMarkdownPaths.combined);
-  const customerOutputDir = runOutputDir;
-  let copiedFileCount: number;
-  try {
-    copiedFileCount = await copyArtifactsToOutput(
-      customerMarkdownDir,
-      customerOutputDir,
-    );
-  } catch (err) {
-    sink.stderr(
-      `error: failed to copy customer Markdown to output dir: ${sanitizeErrorMessage({ error: err, fallback: "filesystem failure" })}\n`,
-    );
-    return 2;
-  }
+  const customerMarkdownFileCount =
+    1 + result.customerMarkdownPaths.perCase.length;
 
   const finopsTotalsLine = await safeReadFinopsTotals(
     result.artifactPaths.finopsReport,
@@ -3190,11 +3153,11 @@ export const runTestIntelligenceCommand = async (
   const summaryLines = [
     "test-intelligence run completed",
     `  job id              : ${result.jobId}`,
-    `  output dir          : ${customerOutputDir}`,
+    `  output dir          : ${runOutputDir}`,
     `  artifact dir        : ${result.artifactDir}`,
     `  test cases generated: ${result.generatedTestCases.testCases.length}`,
-    `  customer files      : ${copiedFileCount}`,
-    `  combined markdown   : ${join(customerOutputDir, "testfaelle.md")}`,
+    `  customer md files   : ${customerMarkdownFileCount}`,
+    `  combined markdown   : ${result.customerMarkdownPaths.combined}`,
   ];
   if (result.blocked) {
     const blockedMessage = `warning: test cases blocked by policy gate (job ${result.jobId}); see ${result.artifactPaths.policyReport}\n`;

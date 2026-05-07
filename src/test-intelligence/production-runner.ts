@@ -621,6 +621,13 @@ export interface RunFigmaToQcTestCasesInput {
    * is created.
    */
   outputRoot: string;
+  /**
+   * Optional exact artifact directory. CLI timestamp runs use this to keep
+   * every run artifact directly under the timestamp folder instead of adding
+   * another `jobs/<jobId>/test-intelligence` nesting layer. Omit it to keep
+   * the legacy job-engine layout.
+   */
+  artifactDir?: string;
   llm: ProductionRunnerLlmConfig;
   /**
    * Optional override for the maximum Figma REST payload accepted by the
@@ -900,12 +907,9 @@ export const runFigmaToQcTestCases = async (
     ),
   );
   const finopsRecorder = createFinOpsUsageRecorder();
-  const artifactDir = join(
-    input.outputRoot,
-    "jobs",
-    input.jobId,
-    "test-intelligence",
-  );
+  const artifactDir =
+    input.artifactDir ??
+    join(input.outputRoot, "jobs", input.jobId, "test-intelligence");
 
   // 0. Resolve + validate FinOps envelope. Operator override wins outright;
   //    no merging with the production default. Invalid envelopes fail
