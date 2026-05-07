@@ -915,6 +915,8 @@ runbook for the exact envelope.
 **Local trigger.**
 
 ```sh
+pnpm run ti:doctor
+
 WORKSPACE_TEST_SPACE_LIVE_E2E=1 \
 WORKSPACE_TEST_SPACE_MODEL_ENDPOINT=https://<resource>.cognitiveservices.azure.com \
 WORKSPACE_TEST_SPACE_TESTCASE_MODEL_DEPLOYMENT=<deployment-id> \

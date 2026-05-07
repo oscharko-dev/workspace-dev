@@ -91,7 +91,28 @@ Notes on substitutions made versus the original Wave-0 plan (issue #1927):
   `chatCompletion: false` and is not used in any chat-completion path. It
   is reserved for the Wave-3 OCR-sidecar discussion (separate issue).
 
-#### 1d. Cross-model logic judge (Issue #1932)
+#### 1d. Topology doctor
+
+Before a live run, inspect the resolved local role matrix and compare it
+against the runbook recommendations:
+
+```bash
+pnpm run ti:doctor
+```
+
+Direct CLI equivalent:
+
+```bash
+pnpm exec tsx src/cli.ts test-intelligence doctor
+```
+
+The doctor reads the same `WORKSPACE_TEST_SPACE_*` deployment variables as the
+CLI run path, prints a sanitized role-to-deployment matrix, never prints
+endpoints or secrets, and returns exit code `1` when it detects an invalid
+role contract such as a document model wired into a chat-completion role.
+Resolve any `warning` or `error` entries here before starting a live run.
+
+#### 1e. Cross-model logic judge (Issue #1932)
 
 The multi-agent harness's voting property only works when the
 Generator and the Logic-Judge run on **different model families**.
@@ -114,6 +135,8 @@ export WORKSPACE_TEST_SPACE_LOGIC_JUDGE_DEPLOYMENT="gpt-oss-120b"
 The CLI mirrors the env var:
 
 ```bash
+pnpm run ti:doctor
+
 workspace-dev test-intelligence run \
   --figma-url <url> \
   --model-deployment mistral-large-3 \

@@ -32,8 +32,12 @@ import { DEFAULT_PIPELINE_DIAGNOSTIC_LIMITS } from "./job-engine/errors.js";
 import { parseVisualBrowserList } from "./job-engine/visual-browser-matrix.js";
 import { createWorkspaceServer } from "./server.js";
 import {
+  parseTestIntelligenceDoctorArgs,
   parseTestIntelligenceRunArgs,
+  runTestIntelligenceDoctorCommand,
   runTestIntelligenceCommand,
+  TEST_INTELLIGENCE_DOCTOR_HELP,
+  TEST_INTELLIGENCE_HELP,
   TEST_INTELLIGENCE_RUN_HELP,
   TestIntelligenceRunOperatorError,
 } from "./test-intelligence-run-cli.js";
@@ -1136,9 +1140,10 @@ Usage:
   workspace-dev start [options]
   workspace-dev scan-design-system [options]
   workspace-dev test-intelligence run [options]
+  workspace-dev test-intelligence doctor [options]
   workspace-dev --help
 
-Run "workspace-dev test-intelligence --help" for the test-intelligence run flag list.
+Run "workspace-dev test-intelligence --help" for the test-intelligence subcommands.
 
 Options:
   Start command:
@@ -1311,17 +1316,43 @@ const runTestIntelligenceSubCommand = async (
 ): Promise<never> => {
   const subCommand = args[0];
   if (subCommand === "--help" || subCommand === "help") {
-    process.stdout.write(`${TEST_INTELLIGENCE_RUN_HELP}\n`);
+    process.stdout.write(`${TEST_INTELLIGENCE_HELP}\n`);
     process.exit(0);
+  }
+  if (subCommand === "doctor") {
+    if (args[1] === "--help" || args[1] === "help") {
+      process.stdout.write(`${TEST_INTELLIGENCE_DOCTOR_HELP}\n`);
+      process.exit(0);
+    }
+    let parsed;
+    try {
+      parsed = parseTestIntelligenceDoctorArgs(args.slice(1));
+    } catch (err) {
+      if (err instanceof TestIntelligenceRunOperatorError) {
+        process.stderr.write(`error: ${err.message}\n`);
+        process.exit(1);
+      }
+      throw err;
+    }
+
+    const exitCode = await runTestIntelligenceDoctorCommand(parsed, {
+      stdout: (message) => process.stdout.write(message),
+      stderr: (message) => process.stderr.write(message),
+    });
+    process.exit(exitCode);
   }
   if (subCommand !== "run") {
     process.stderr.write(
       `error: unknown sub-command for "test-intelligence": ${subCommand ?? "(none)"}\n`,
     );
     process.stderr.write(
-      "usage: workspace-dev test-intelligence run [options]\n",
+      "usage: workspace-dev test-intelligence <run|doctor> [options]\n",
     );
     process.exit(1);
+  }
+  if (args[1] === "--help" || args[1] === "help") {
+    process.stdout.write(`${TEST_INTELLIGENCE_RUN_HELP}\n`);
+    process.exit(0);
   }
 
   let parsed;
@@ -1425,6 +1456,11 @@ const main = async (): Promise<void> => {
       level: "error",
       message:
         'Use "workspace-dev test-intelligence run" to drive the figma_to_qc_test_cases pipeline from the CLI.',
+    });
+    logger.log({
+      level: "error",
+      message:
+        'Use "workspace-dev test-intelligence doctor" to inspect the local Test Intelligence deployment topology.',
     });
     logger.log({
       level: "error",

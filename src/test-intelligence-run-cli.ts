@@ -98,6 +98,20 @@ const TEST_INTELLIGENCE_RUN_MODES = [
   "dry_run",
 ] as const;
 
+const TEST_INTELLIGENCE_GENERATOR_RECOMMENDED_DEPLOYMENT =
+  "mistral-large-3";
+const TEST_INTELLIGENCE_GENERATOR_LEGACY_DEPLOYMENT = "gpt-oss-120b";
+const TEST_INTELLIGENCE_LOGIC_JUDGE_RECOMMENDED_DEPLOYMENT = "gpt-oss-120b";
+const TEST_INTELLIGENCE_VISUAL_PRIMARY_RECOMMENDED_DEPLOYMENT =
+  "llama-4-maverick-vision";
+const TEST_INTELLIGENCE_VISUAL_FALLBACK_RECOMMENDED_DEPLOYMENT =
+  "phi-4-multimodal-instruct";
+const TEST_INTELLIGENCE_COVERAGE_PLANNER_RECOMMENDED_DEPLOYMENT =
+  "phi-4-mini-instruct";
+const TEST_INTELLIGENCE_RISK_RANKER_RECOMMENDED_DEPLOYMENT = "phi-4";
+const TEST_INTELLIGENCE_A11Y_JUDGE_RECOMMENDED_DEPLOYMENT =
+  "phi-4-multimodal-instruct";
+
 const TOPOLOGY_PREFLIGHT_REPORT_FILENAME = "topology-preflight-report.json";
 const INCOMPATIBLE_OPENAI_CHAT_DEPLOYMENTS = new Set([
   "mistral-document-ai-2512",
@@ -110,7 +124,7 @@ type TopologyInputSource = "cli" | "env" | "default";
 
 type TopologyRoleStatus = "configured" | "disabled" | "skipped";
 
-interface TopologyInputSources {
+export interface TopologyInputSources {
   modelDeployment: TopologyInputSource;
   logicJudgeDeployment: TopologyInputSource;
   coveragePlannerDeployment: TopologyInputSource;
@@ -139,6 +153,30 @@ interface TopologyPreflightReport {
   strictModeEnabled: boolean;
   visualSidecarEnabled: boolean;
   roles: ReadonlyArray<TopologyRoleReportEntry>;
+}
+
+type DoctorRoleStatus = "ok" | "warning" | "error";
+
+export interface TestIntelligenceDoctorOptions {
+  modelDeployment: string;
+  logicJudgeDeployment: string | undefined;
+  coveragePlannerDeployment: string | undefined;
+  riskRankerDeployment: string | undefined;
+  topologyInputSources: TopologyInputSources;
+}
+
+interface DoctorRoleReportEntry {
+  role: TopologyRoleReportEntry["role"];
+  deployment: string | null;
+  source: TopologyInputSource;
+  status: DoctorRoleStatus;
+  summary: string;
+  fix?: string;
+}
+
+interface TestIntelligenceDoctorReport {
+  overallStatus: DoctorRoleStatus;
+  roles: ReadonlyArray<DoctorRoleReportEntry>;
 }
 
 const isRunMode = (value: string): value is TestIntelligenceRunMode =>
@@ -846,6 +884,119 @@ export const parseTestIntelligenceRunArgs = (
   };
 };
 
+/**
+ * Pure parser for `workspace-dev test-intelligence doctor`. Mirrors the
+ * deployment/env resolution from the live run path while intentionally
+ * ignoring endpoints and credentials so the output remains safe to paste.
+ */
+export const parseTestIntelligenceDoctorArgs = (
+  args: ReadonlyArray<string>,
+  env: NodeJS.ProcessEnv = process.env,
+): TestIntelligenceDoctorOptions => {
+  let modelDeployment: string =
+    env.WORKSPACE_TEST_SPACE_TESTCASE_MODEL_DEPLOYMENT?.trim() ||
+    PRODUCTION_RUNNER_TEST_GENERATION_DEPLOYMENT;
+  let logicJudgeDeployment: string | undefined =
+    env.WORKSPACE_TEST_SPACE_LOGIC_JUDGE_DEPLOYMENT?.trim() || undefined;
+  let coveragePlannerDeployment: string | undefined =
+    env.WORKSPACE_TEST_SPACE_COVERAGE_PLANNER_DEPLOYMENT?.trim() || undefined;
+  let riskRankerDeployment: string | undefined =
+    env.WORKSPACE_TEST_SPACE_RISK_RANKER_DEPLOYMENT?.trim() || undefined;
+  const topologyInputSources: TopologyInputSources = {
+    modelDeployment:
+      readTrimmedEnv(env, "WORKSPACE_TEST_SPACE_TESTCASE_MODEL_DEPLOYMENT") !==
+      undefined
+        ? "env"
+        : "default",
+    logicJudgeDeployment:
+      readTrimmedEnv(env, "WORKSPACE_TEST_SPACE_LOGIC_JUDGE_DEPLOYMENT") !==
+      undefined
+        ? "env"
+        : "default",
+    coveragePlannerDeployment:
+      readTrimmedEnv(
+        env,
+        "WORKSPACE_TEST_SPACE_COVERAGE_PLANNER_DEPLOYMENT",
+      ) !== undefined
+        ? "env"
+        : "default",
+    riskRankerDeployment:
+      readTrimmedEnv(env, "WORKSPACE_TEST_SPACE_RISK_RANKER_DEPLOYMENT") !==
+      undefined
+        ? "env"
+        : "default",
+  };
+
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index];
+    const next = args[index + 1];
+
+    if (arg === "--model-deployment") {
+      const value = next?.trim();
+      if (!value) {
+        throw new TestIntelligenceRunOperatorError(
+          "--model-deployment requires a non-empty deployment name",
+        );
+      }
+      modelDeployment = value;
+      topologyInputSources.modelDeployment = "cli";
+      index += 1;
+      continue;
+    }
+
+    if (arg === "--logic-judge-deployment") {
+      const value = next?.trim();
+      if (!value) {
+        throw new TestIntelligenceRunOperatorError(
+          "--logic-judge-deployment requires a non-empty deployment name",
+        );
+      }
+      logicJudgeDeployment = value;
+      topologyInputSources.logicJudgeDeployment = "cli";
+      index += 1;
+      continue;
+    }
+
+    if (arg === "--coverage-planner-deployment") {
+      const value = next?.trim();
+      if (!value) {
+        throw new TestIntelligenceRunOperatorError(
+          "--coverage-planner-deployment requires a non-empty deployment name",
+        );
+      }
+      coveragePlannerDeployment = value;
+      topologyInputSources.coveragePlannerDeployment = "cli";
+      index += 1;
+      continue;
+    }
+
+    if (arg === "--risk-ranker-deployment") {
+      const value = next?.trim();
+      if (!value) {
+        throw new TestIntelligenceRunOperatorError(
+          "--risk-ranker-deployment requires a non-empty deployment name",
+        );
+      }
+      riskRankerDeployment = value;
+      topologyInputSources.riskRankerDeployment = "cli";
+      index += 1;
+      continue;
+    }
+
+    throw new TestIntelligenceRunOperatorError(
+      `Unknown flag for "test-intelligence doctor": ${arg}`,
+    );
+  }
+
+  return {
+    modelDeployment,
+    logicJudgeDeployment,
+    coveragePlannerDeployment,
+    riskRankerDeployment,
+    topologyInputSources,
+  };
+};
+
 /** Stable operator-config error surfaced as exit code 1. */
 export class TestIntelligenceRunOperatorError extends Error {
   constructor(message: string) {
@@ -1394,6 +1545,27 @@ const formatTopologyRoleLine = (entry: TopologyRoleReportEntry): string => {
   return `  ${formatTopologyRoleName(entry.role)}: ${entry.status} (${entry.skipReason ?? deployment})`;
 };
 
+const formatDoctorRoleLine = (entry: DoctorRoleReportEntry): string => {
+  const deployment =
+    entry.deployment !== null
+      ? `${entry.deployment} [${entry.source}]`
+      : `${entry.source} (none)`;
+  const lines = [
+    `  ${formatTopologyRoleName(entry.role)}: ${entry.status} - ${deployment}`,
+    `    summary: ${entry.summary}`,
+  ];
+  if (entry.fix) {
+    lines.push(`    fix: ${entry.fix}`);
+  }
+  return lines.join("\n");
+};
+
+const doctorStatusRank = (status: DoctorRoleStatus): number =>
+  status === "error" ? 2 : status === "warning" ? 1 : 0;
+
+const joinFixes = (envFix: string, cliFix?: string): string =>
+  cliFix ? `${envFix} or ${cliFix}` : envFix;
+
 const buildTopologyPreflightReport = ({
   options,
   env,
@@ -1673,6 +1845,378 @@ const writeTopologyPreflightReport = async (
   const tempPath = `${reportPath}.${process.pid}.${randomUUID()}.tmp`;
   await writeFile(tempPath, `${canonicalJson(report)}\n`, "utf8");
   await rename(tempPath, reportPath);
+};
+
+const buildDoctorReport = (
+  options: TestIntelligenceDoctorOptions,
+  env: NodeJS.ProcessEnv,
+): TestIntelligenceDoctorReport => {
+  const roles: DoctorRoleReportEntry[] = [];
+  const pushRole = (entry: DoctorRoleReportEntry): void => {
+    roles.push(entry);
+  };
+
+  if (INCOMPATIBLE_OPENAI_CHAT_DEPLOYMENTS.has(options.modelDeployment)) {
+    pushRole({
+      role: "generator",
+      deployment: options.modelDeployment,
+      source: options.topologyInputSources.modelDeployment,
+      status: "error",
+      summary: `deployment "${options.modelDeployment}" is incompatible with the openai_chat generator role contract`,
+      fix: joinFixes(
+        `set WORKSPACE_TEST_SPACE_TESTCASE_MODEL_DEPLOYMENT=${TEST_INTELLIGENCE_GENERATOR_RECOMMENDED_DEPLOYMENT}`,
+        `pass --model-deployment ${TEST_INTELLIGENCE_GENERATOR_RECOMMENDED_DEPLOYMENT}`,
+      ),
+    });
+  } else if (
+    options.modelDeployment === TEST_INTELLIGENCE_GENERATOR_RECOMMENDED_DEPLOYMENT
+  ) {
+    pushRole({
+      role: "generator",
+      deployment: options.modelDeployment,
+      source: options.topologyInputSources.modelDeployment,
+      status: "ok",
+      summary: "matches the runbook recommendation for the generator role",
+    });
+  } else if (
+    options.modelDeployment === TEST_INTELLIGENCE_GENERATOR_LEGACY_DEPLOYMENT
+  ) {
+    pushRole({
+      role: "generator",
+      deployment: options.modelDeployment,
+      source: options.topologyInputSources.modelDeployment,
+      status: "warning",
+      summary:
+        "uses the legacy generator deployment; the runbook recommends mistral-large-3 for the production topology",
+      fix: joinFixes(
+        `set WORKSPACE_TEST_SPACE_TESTCASE_MODEL_DEPLOYMENT=${TEST_INTELLIGENCE_GENERATOR_RECOMMENDED_DEPLOYMENT}`,
+        `pass --model-deployment ${TEST_INTELLIGENCE_GENERATOR_RECOMMENDED_DEPLOYMENT}`,
+      ),
+    });
+  } else {
+    pushRole({
+      role: "generator",
+      deployment: options.modelDeployment,
+      source: options.topologyInputSources.modelDeployment,
+      status: "warning",
+      summary: `deployment "${options.modelDeployment}" is valid but differs from the runbook recommendation ${TEST_INTELLIGENCE_GENERATOR_RECOMMENDED_DEPLOYMENT}`,
+      fix: joinFixes(
+        `set WORKSPACE_TEST_SPACE_TESTCASE_MODEL_DEPLOYMENT=${TEST_INTELLIGENCE_GENERATOR_RECOMMENDED_DEPLOYMENT}`,
+        `pass --model-deployment ${TEST_INTELLIGENCE_GENERATOR_RECOMMENDED_DEPLOYMENT}`,
+      ),
+    });
+  }
+
+  if (options.logicJudgeDeployment === undefined) {
+    pushRole({
+      role: "logic_judge",
+      deployment: null,
+      source: options.topologyInputSources.logicJudgeDeployment,
+      status: "warning",
+      summary:
+        "unset; the live run falls back to the generator deployment and loses cross-model voting",
+      fix: joinFixes(
+        `set WORKSPACE_TEST_SPACE_LOGIC_JUDGE_DEPLOYMENT=${TEST_INTELLIGENCE_LOGIC_JUDGE_RECOMMENDED_DEPLOYMENT}`,
+        `pass --logic-judge-deployment ${TEST_INTELLIGENCE_LOGIC_JUDGE_RECOMMENDED_DEPLOYMENT}`,
+      ),
+    });
+  } else if (
+    INCOMPATIBLE_OPENAI_CHAT_DEPLOYMENTS.has(options.logicJudgeDeployment)
+  ) {
+    pushRole({
+      role: "logic_judge",
+      deployment: options.logicJudgeDeployment,
+      source: options.topologyInputSources.logicJudgeDeployment,
+      status: "error",
+      summary: `deployment "${options.logicJudgeDeployment}" is incompatible with the openai_chat logic-judge role contract`,
+      fix: joinFixes(
+        `set WORKSPACE_TEST_SPACE_LOGIC_JUDGE_DEPLOYMENT=${TEST_INTELLIGENCE_LOGIC_JUDGE_RECOMMENDED_DEPLOYMENT}`,
+        `pass --logic-judge-deployment ${TEST_INTELLIGENCE_LOGIC_JUDGE_RECOMMENDED_DEPLOYMENT}`,
+      ),
+    });
+  } else if (options.logicJudgeDeployment === options.modelDeployment) {
+    pushRole({
+      role: "logic_judge",
+      deployment: options.logicJudgeDeployment,
+      source: options.topologyInputSources.logicJudgeDeployment,
+      status: "warning",
+      summary:
+        "matches the generator deployment; the topology collapses to a single model",
+      fix: joinFixes(
+        `set WORKSPACE_TEST_SPACE_LOGIC_JUDGE_DEPLOYMENT=${TEST_INTELLIGENCE_LOGIC_JUDGE_RECOMMENDED_DEPLOYMENT}`,
+        `pass --logic-judge-deployment ${TEST_INTELLIGENCE_LOGIC_JUDGE_RECOMMENDED_DEPLOYMENT}`,
+      ),
+    });
+  } else if (
+    options.logicJudgeDeployment ===
+    TEST_INTELLIGENCE_LOGIC_JUDGE_RECOMMENDED_DEPLOYMENT
+  ) {
+    pushRole({
+      role: "logic_judge",
+      deployment: options.logicJudgeDeployment,
+      source: options.topologyInputSources.logicJudgeDeployment,
+      status: "ok",
+      summary: "matches the runbook recommendation for cross-model judging",
+    });
+  } else {
+    pushRole({
+      role: "logic_judge",
+      deployment: options.logicJudgeDeployment,
+      source: options.topologyInputSources.logicJudgeDeployment,
+      status: "warning",
+      summary: `deployment "${options.logicJudgeDeployment}" is valid but differs from the runbook recommendation ${TEST_INTELLIGENCE_LOGIC_JUDGE_RECOMMENDED_DEPLOYMENT}`,
+      fix: joinFixes(
+        `set WORKSPACE_TEST_SPACE_LOGIC_JUDGE_DEPLOYMENT=${TEST_INTELLIGENCE_LOGIC_JUDGE_RECOMMENDED_DEPLOYMENT}`,
+        `pass --logic-judge-deployment ${TEST_INTELLIGENCE_LOGIC_JUDGE_RECOMMENDED_DEPLOYMENT}`,
+      ),
+    });
+  }
+
+  const pushOptionalTextDoctorRole = ({
+    role,
+    deployment,
+    source,
+    recommendedDeployment,
+    envVar,
+    cliFlag,
+    unsetSummary,
+  }: {
+    role: "coverage_planner" | "risk_ranker";
+    deployment: string | undefined;
+    source: TopologyInputSource;
+    recommendedDeployment: string;
+    envVar: string;
+    cliFlag: string;
+    unsetSummary: string;
+  }): void => {
+    if (deployment === undefined) {
+      pushRole({
+        role,
+        deployment: null,
+        source,
+        status: "warning",
+        summary: unsetSummary,
+        fix: joinFixes(
+          `set ${envVar}=${recommendedDeployment}`,
+          `pass ${cliFlag} ${recommendedDeployment}`,
+        ),
+      });
+      return;
+    }
+    if (INCOMPATIBLE_OPENAI_CHAT_DEPLOYMENTS.has(deployment)) {
+      pushRole({
+        role,
+        deployment,
+        source,
+        status: "error",
+        summary: `deployment "${deployment}" is incompatible with the openai_chat ${formatTopologyRoleName(role)} role contract`,
+        fix: joinFixes(
+          `set ${envVar}=${recommendedDeployment}`,
+          `pass ${cliFlag} ${recommendedDeployment}`,
+        ),
+      });
+      return;
+    }
+    if (deployment === recommendedDeployment) {
+      pushRole({
+        role,
+        deployment,
+        source,
+        status: "ok",
+        summary: `matches the runbook recommendation for ${formatTopologyRoleName(role)}`,
+      });
+      return;
+    }
+    pushRole({
+      role,
+      deployment,
+      source,
+      status: "warning",
+      summary: `deployment "${deployment}" is valid but differs from the runbook recommendation ${recommendedDeployment}`,
+      fix: joinFixes(
+        `set ${envVar}=${recommendedDeployment}`,
+        `pass ${cliFlag} ${recommendedDeployment}`,
+      ),
+    });
+  };
+
+  pushOptionalTextDoctorRole({
+    role: "coverage_planner",
+    deployment: options.coveragePlannerDeployment,
+    source: options.topologyInputSources.coveragePlannerDeployment,
+    recommendedDeployment:
+      TEST_INTELLIGENCE_COVERAGE_PLANNER_RECOMMENDED_DEPLOYMENT,
+    envVar: "WORKSPACE_TEST_SPACE_COVERAGE_PLANNER_DEPLOYMENT",
+    cliFlag: "--coverage-planner-deployment",
+    unsetSummary:
+      "unset; coverage planning stays deterministic-only instead of using the recommended LLM augmentation",
+  });
+  pushOptionalTextDoctorRole({
+    role: "risk_ranker",
+    deployment: options.riskRankerDeployment,
+    source: options.topologyInputSources.riskRankerDeployment,
+    recommendedDeployment: TEST_INTELLIGENCE_RISK_RANKER_RECOMMENDED_DEPLOYMENT,
+    envVar: "WORKSPACE_TEST_SPACE_RISK_RANKER_DEPLOYMENT",
+    cliFlag: "--risk-ranker-deployment",
+    unsetSummary:
+      "unset; risk ranking stays deterministic-only instead of using the recommended LLM augmentation",
+  });
+
+  const visualPrimaryDeployment = readTrimmedEnv(
+    env,
+    "WORKSPACE_TEST_SPACE_VISUAL_PRIMARY_DEPLOYMENT",
+  );
+  const visualFallbackDeployment = readTrimmedEnv(
+    env,
+    "WORKSPACE_TEST_SPACE_VISUAL_FALLBACK_DEPLOYMENT",
+  );
+  const a11yJudgeDeployment = readTrimmedEnv(
+    env,
+    "WORKSPACE_TEST_SPACE_A11Y_JUDGE_DEPLOYMENT",
+  );
+  const visualPrimarySource = deploymentSourceFromEnv(
+    env,
+    "WORKSPACE_TEST_SPACE_VISUAL_PRIMARY_DEPLOYMENT",
+  );
+  const visualFallbackSource = deploymentSourceFromEnv(
+    env,
+    "WORKSPACE_TEST_SPACE_VISUAL_FALLBACK_DEPLOYMENT",
+  );
+  const a11ySource = deploymentSourceFromEnv(
+    env,
+    "WORKSPACE_TEST_SPACE_A11Y_JUDGE_DEPLOYMENT",
+  );
+
+  const pushVisualRole = ({
+    role,
+    deployment,
+    source,
+    recommendedDeployment,
+    envVar,
+    unsetSummary,
+  }: {
+    role: "visual_primary" | "visual_fallback" | "a11y_judge";
+    deployment: string | undefined;
+    source: TopologyInputSource;
+    recommendedDeployment: string;
+    envVar: string;
+    unsetSummary: string;
+  }): void => {
+    if (deployment === undefined) {
+      pushRole({
+        role,
+        deployment: null,
+        source,
+        status: role === "a11y_judge" ? "warning" : "error",
+        summary: unsetSummary,
+        fix: `set ${envVar}=${recommendedDeployment}`,
+      });
+      return;
+    }
+    if (INCOMPATIBLE_OPENAI_CHAT_DEPLOYMENTS.has(deployment)) {
+      pushRole({
+        role,
+        deployment,
+        source,
+        status: "error",
+        summary: `deployment "${deployment}" is incompatible with the chat-completion ${formatTopologyRoleName(role)} role contract`,
+        fix: `set ${envVar}=${recommendedDeployment}`,
+      });
+      return;
+    }
+    if (deployment === recommendedDeployment) {
+      pushRole({
+        role,
+        deployment,
+        source,
+        status: "ok",
+        summary: `matches the runbook recommendation for ${formatTopologyRoleName(role)}`,
+      });
+      return;
+    }
+    pushRole({
+      role,
+      deployment,
+      source,
+      status: "warning",
+      summary: `deployment "${deployment}" is valid but differs from the runbook recommendation ${recommendedDeployment}`,
+      fix: `set ${envVar}=${recommendedDeployment}`,
+    });
+  };
+
+  pushVisualRole({
+    role: "visual_primary",
+    deployment: visualPrimaryDeployment,
+    source: visualPrimarySource,
+    recommendedDeployment: TEST_INTELLIGENCE_VISUAL_PRIMARY_RECOMMENDED_DEPLOYMENT,
+    envVar: "WORKSPACE_TEST_SPACE_VISUAL_PRIMARY_DEPLOYMENT",
+    unsetSummary:
+      "unset; the visual-sidecar primary role is required by the runbook",
+  });
+  pushVisualRole({
+    role: "visual_fallback",
+    deployment: visualFallbackDeployment,
+    source: visualFallbackSource,
+    recommendedDeployment:
+      TEST_INTELLIGENCE_VISUAL_FALLBACK_RECOMMENDED_DEPLOYMENT,
+    envVar: "WORKSPACE_TEST_SPACE_VISUAL_FALLBACK_DEPLOYMENT",
+    unsetSummary:
+      "unset; the visual-sidecar fallback role is required by the runbook",
+  });
+  pushVisualRole({
+    role: "a11y_judge",
+    deployment: a11yJudgeDeployment,
+    source: a11ySource,
+    recommendedDeployment: TEST_INTELLIGENCE_A11Y_JUDGE_RECOMMENDED_DEPLOYMENT,
+    envVar: "WORKSPACE_TEST_SPACE_A11Y_JUDGE_DEPLOYMENT",
+    unsetSummary:
+      "unset; deterministic accessibility evaluation remains active instead of the recommended LLM-augmented a11y judge",
+  });
+
+  if (
+    visualPrimaryDeployment !== undefined &&
+    visualFallbackDeployment !== undefined &&
+    visualPrimaryDeployment === visualFallbackDeployment
+  ) {
+    const fallbackRole = roles.find((role) => role.role === "visual_fallback");
+    if (fallbackRole && doctorStatusRank(fallbackRole.status) < 2) {
+      fallbackRole.status = "warning";
+      fallbackRole.summary =
+        "matches the visual-primary deployment; the runbook recommends a different fallback deployment for diversity";
+      fallbackRole.fix = `set WORKSPACE_TEST_SPACE_VISUAL_FALLBACK_DEPLOYMENT=${TEST_INTELLIGENCE_VISUAL_FALLBACK_RECOMMENDED_DEPLOYMENT}`;
+    }
+  }
+
+  const overallStatus: DoctorRoleStatus = roles.some(
+    (role) => role.status === "error",
+  )
+    ? "error"
+    : roles.some((role) => role.status === "warning")
+      ? "warning"
+      : "ok";
+
+  return {
+    overallStatus,
+    roles,
+  };
+};
+
+export const runTestIntelligenceDoctorCommand = async (
+  options: TestIntelligenceDoctorOptions,
+  sink: TestIntelligenceRunSink,
+  runtime: { env?: NodeJS.ProcessEnv } = {},
+): Promise<number> => {
+  const env = runtime.env ?? process.env;
+  const report = buildDoctorReport(options, env);
+  sink.stdout(
+    [
+      "test-intelligence topology doctor",
+      `overall status: ${report.overallStatus}`,
+      ...report.roles.map(formatDoctorRoleLine),
+      "",
+    ].join("\n"),
+  );
+  return report.overallStatus === "error" ? 1 : 0;
 };
 
 /**
@@ -2616,4 +3160,39 @@ Exit codes:
   2  runner error (includes enforced-harness refusal mapped via runner)
   3  policy refusal / blocked (set --allow-policy-blocked to continue on blocked jobs)
   4  budget exceeded
+`;
+
+export const TEST_INTELLIGENCE_DOCTOR_HELP: string = `
+workspace-dev test-intelligence doctor - inspect the local Test Intelligence topology
+
+Usage:
+  workspace-dev test-intelligence doctor [options]
+
+Deployments (defaults from environment):
+  --model-deployment <name>             default: env WORKSPACE_TEST_SPACE_TESTCASE_MODEL_DEPLOYMENT
+  --logic-judge-deployment <name>       default: env WORKSPACE_TEST_SPACE_LOGIC_JUDGE_DEPLOYMENT
+  --coverage-planner-deployment <name>  default: env WORKSPACE_TEST_SPACE_COVERAGE_PLANNER_DEPLOYMENT
+  --risk-ranker-deployment <name>       default: env WORKSPACE_TEST_SPACE_RISK_RANKER_DEPLOYMENT
+
+Always read from environment:
+  WORKSPACE_TEST_SPACE_VISUAL_PRIMARY_DEPLOYMENT
+  WORKSPACE_TEST_SPACE_VISUAL_FALLBACK_DEPLOYMENT
+  WORKSPACE_TEST_SPACE_A11Y_JUDGE_DEPLOYMENT
+
+Behavior:
+  - Prints a deterministic, sanitized role-to-deployment matrix.
+  - Never prints endpoints, API keys, or tokens.
+  - Returns exit code 1 when the resolved topology contains an invalid role contract.
+  - Returns exit code 0 for ok or warning-only topologies.
+`;
+
+export const TEST_INTELLIGENCE_HELP: string = `
+workspace-dev test-intelligence
+
+Usage:
+  workspace-dev test-intelligence run [options]
+  workspace-dev test-intelligence doctor [options]
+
+Run "workspace-dev test-intelligence run --help" for the live-run flags.
+Run "workspace-dev test-intelligence doctor --help" for the topology doctor flags.
 `;
