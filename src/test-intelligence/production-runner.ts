@@ -38,7 +38,7 @@
  */
 
 import { mkdir, rename, writeFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { dirname, join, relative } from "node:path";
 import { createHash, randomUUID } from "node:crypto";
 import type { Meter, Tracer } from "@opentelemetry/api";
 
@@ -127,6 +127,16 @@ import {
   writeFinOpsBudgetReport,
 } from "./finops-report.js";
 import { computePerSourceCostBreakdownHashFromReport } from "./per-source-cost.js";
+import {
+  AGENT_PARTICIPATION_ARTIFACT_FILENAME,
+  buildAgentParticipationArtifact,
+  writeAgentParticipationArtifact,
+  type AgentParticipationConfigurationSource,
+  type AgentParticipationCostAttribution,
+  type AgentParticipationEntry,
+  type AgentParticipationRole,
+  type AgentParticipationStatus,
+} from "./agent-participation.js";
 import {
   composeProductionRunnerEventSinks,
   createProductionRunnerOpenTelemetrySink,
@@ -795,6 +805,15 @@ export interface RunFigmaToQcTestCasesInput {
    * `CUSTOMER_PROFILE_INVALID`.
    */
   customerProfile?: CustomerProfileInput;
+  /**
+   * Optional provenance for role deployment resolution. The runner uses
+   * this when building `agent-participation.json` so summaries can
+   * distinguish CLI overrides, env defaults, built-in defaults, and
+   * intentionally disabled roles without re-parsing the invocation layer.
+   */
+  roleConfigurationSources?: Partial<
+    Record<AgentParticipationRole, AgentParticipationConfigurationSource>
+  >;
 }
 
 export interface RunFigmaToQcTestCasesResult {
@@ -825,6 +844,7 @@ export interface RunFigmaToQcTestCasesResult {
     visualCaptureManifest?: string;
     visualCaptureDirectory?: string;
     visualSidecarValidationReport?: string;
+    agentParticipation: string;
     agentRoleRun: string;
     judgeConsensus: string;
     runQuality: string;
@@ -907,6 +927,387 @@ const getBySourceCallCount = (
   report: FinOpsBudgetReport,
   source: AgentSourceLabel,
 ): number => report.bySource[source]?.callCount ?? 0;
+
+const toArtifactReference = (artifactDir: string, artifactPath: string): string =>
+  relative(artifactDir, artifactPath).replaceAll("\\", "/");
+
+const roleConfigurationSource = (
+  input: RunFigmaToQcTestCasesInput,
+  role: AgentParticipationRole,
+): AgentParticipationConfigurationSource =>
+  input.roleConfigurationSources?.[role] ?? "default";
+
+const buildRoleCostAttribution = (input: {
+  report: FinOpsBudgetReport;
+  source: AgentSourceLabel;
+}): AgentParticipationCostAttribution | undefined => {
+  const entry = input.report.bySource[input.source];
+  if (entry === undefined) return undefined;
+  return {
+    sourceLabel: input.source,
+    ...(entry.deployment !== undefined ? { deployment: entry.deployment } : {}),
+    callCount: entry.callCount,
+    inputTokens: entry.tokensIn,
+    outputTokens: entry.tokensOut,
+    imageBytes: 0,
+    durationMs: 0,
+    estimatedCost: entry.costMinorUnits,
+  };
+};
+
+const buildVisualRoleCostAttribution = (input: {
+  report: FinOpsBudgetReport;
+  role: "visual_primary" | "visual_fallback";
+}): AgentParticipationCostAttribution | undefined => {
+  const entry = input.report.roles.find((candidate) => candidate.role === input.role);
+  if (entry === undefined) return undefined;
+  return {
+    ...(entry.deployment.length > 0 ? { deployment: entry.deployment } : {}),
+    callCount: entry.attempts,
+    inputTokens: entry.inputTokens,
+    outputTokens: entry.outputTokens,
+    imageBytes: entry.imageBytes,
+    durationMs: entry.durationMs,
+    estimatedCost: entry.estimatedCost,
+  };
+};
+
+const buildAgentParticipationEntries = (input: {
+  request: RunFigmaToQcTestCasesInput;
+  artifactDir: string;
+  finopsReport: FinOpsBudgetReport;
+  generationCacheHit: boolean;
+  logicJudgeEnabled: boolean;
+  logicJudgeGatewayResult: LlmGenerationResult | undefined;
+  coveragePlannerGatewayResult: LlmGenerationResult | undefined;
+  riskRankerGatewayResult: LlmGenerationResult | undefined;
+  visualSidecarResult: VisualSidecarResult | undefined;
+  visualSidecarSkippedReason:
+    | "non_figma_url_source"
+    | "visual_sidecar_bundle_not_configured"
+    | undefined;
+  a11yJudgeResult:
+    | {
+        gatewayResult?: LlmGenerationResult;
+      }
+    | undefined;
+  visualSidecarRefusal:
+    | {
+        failureClass: VisualSidecarFailureClass;
+      }
+    | undefined;
+  artifactPaths: {
+    coveragePlan: string;
+    riskRanking: string;
+    logicJudgeVerdict: string;
+    visualSidecarResult?: string;
+    a11yJudgeVerdict?: string;
+    agentRoleRun: string;
+  };
+}): readonly AgentParticipationEntry[] => {
+  const refs = input.artifactPaths;
+  const entries: AgentParticipationEntry[] = [];
+  const visualAttempts = input.visualSidecarResult?.attempts ?? [];
+  const primaryAttempt = visualAttempts[0];
+  const fallbackAttempt = visualAttempts[1];
+  const visualBundleConfigured = input.request.llm.bundle !== undefined;
+  const logicJudgeClient =
+    input.request.llm.bundle?.logicJudge ??
+    input.request.llm.logicJudge ??
+    input.request.llm.client;
+  const logicJudgeDeployment =
+    input.logicJudgeEnabled || roleConfigurationSource(input.request, "logic_judge") !== "disabled"
+      ? logicJudgeClient.deployment
+      : undefined;
+  const coveragePlannerClient =
+    input.request.llm.bundle?.coveragePlanner ?? input.request.llm.coveragePlanner;
+  const riskRankerClient =
+    input.request.llm.bundle?.riskRanker ?? input.request.llm.riskRanker;
+  const a11yJudgeClient = input.request.llm.bundle?.a11yJudge;
+
+  entries.push({
+    role: "generator",
+    deployment: input.request.llm.client.deployment,
+    configurationSource: roleConfigurationSource(input.request, "generator"),
+    status: input.generationCacheHit ? "skipped" : "succeeded",
+    attemptCount: getBySourceCallCount(input.finopsReport, "generator"),
+    ...(input.generationCacheHit
+      ? { remediation: "Replay cache satisfied generation; no gateway attempt was required." }
+      : {}),
+    artifactReferences: [toArtifactReference(input.artifactDir, refs.agentRoleRun)],
+    ...(buildRoleCostAttribution({
+      report: input.finopsReport,
+      source: "generator",
+    }) !== undefined
+      ? {
+          costAttribution: buildRoleCostAttribution({
+            report: input.finopsReport,
+            source: "generator",
+          })!,
+        }
+      : {}),
+  });
+
+  const logicJudgeStatus: AgentParticipationStatus = !input.logicJudgeEnabled
+    ? "skipped"
+    : input.logicJudgeGatewayResult?.outcome === "error"
+      ? "failed"
+      : "succeeded";
+  entries.push({
+    role: "logic_judge",
+    ...(logicJudgeDeployment !== undefined ? { deployment: logicJudgeDeployment } : {}),
+    configurationSource: roleConfigurationSource(input.request, "logic_judge"),
+    status: logicJudgeStatus,
+    attemptCount: getBySourceCallCount(input.finopsReport, "judge_primary"),
+    ...(logicJudgeStatus === "skipped"
+      ? { remediation: "Logic Judge was disabled for this run." }
+      : {}),
+    ...(logicJudgeStatus === "failed" &&
+    input.logicJudgeGatewayResult?.outcome === "error"
+      ? {
+          failureClass: input.logicJudgeGatewayResult.errorClass,
+          remediation:
+            "Inspect the logic-judge verdict artifact and gateway logs; fix the dedicated judge deployment or fall back to a healthy deployment.",
+        }
+      : {}),
+    artifactReferences: [toArtifactReference(input.artifactDir, refs.logicJudgeVerdict)],
+    ...(buildRoleCostAttribution({
+      report: input.finopsReport,
+      source: "judge_primary",
+    }) !== undefined
+      ? {
+          costAttribution: buildRoleCostAttribution({
+            report: input.finopsReport,
+            source: "judge_primary",
+          })!,
+        }
+      : {}),
+  });
+
+  const buildOptionalTextRole = (inputRole: {
+    role: "coverage_planner" | "risk_ranker";
+    clientDeployment: string | undefined;
+    gatewayResult: LlmGenerationResult | undefined;
+    source: AgentSourceLabel;
+    artifactPath: string;
+  }): AgentParticipationEntry => {
+    const status: AgentParticipationStatus =
+      inputRole.clientDeployment === undefined
+        ? "not_configured"
+        : inputRole.gatewayResult?.outcome === "error"
+          ? "failed"
+          : "succeeded";
+    const costAttribution = buildRoleCostAttribution({
+      report: input.finopsReport,
+      source: inputRole.source,
+    });
+    return {
+      role: inputRole.role,
+      ...(inputRole.clientDeployment !== undefined
+        ? { deployment: inputRole.clientDeployment }
+        : {}),
+      configurationSource: roleConfigurationSource(input.request, inputRole.role),
+      status,
+      attemptCount: getBySourceCallCount(input.finopsReport, inputRole.source),
+      ...(status === "not_configured"
+        ? {
+            remediation:
+              inputRole.role === "coverage_planner"
+                ? "Configure a dedicated coverage-planner deployment to augment the deterministic coverage plan."
+                : "Configure a dedicated risk-ranker deployment to augment deterministic risk ordering.",
+          }
+        : {}),
+      ...(status === "failed" && inputRole.gatewayResult?.outcome === "error"
+        ? {
+            failureClass: inputRole.gatewayResult.errorClass,
+            remediation:
+              inputRole.role === "coverage_planner"
+                ? "Inspect the coverage-plan artifact and planner deployment health before re-running."
+                : "Inspect the risk-ranking artifact and ranker deployment health before re-running.",
+          }
+        : {}),
+      artifactReferences: [toArtifactReference(input.artifactDir, inputRole.artifactPath)],
+      ...(costAttribution !== undefined ? { costAttribution } : {}),
+    };
+  };
+
+  entries.push(
+    buildOptionalTextRole({
+      role: "coverage_planner",
+      clientDeployment: coveragePlannerClient?.deployment,
+      gatewayResult: input.coveragePlannerGatewayResult,
+      source: "coverage_planner",
+      artifactPath: refs.coveragePlan,
+    }),
+  );
+  entries.push(
+    buildOptionalTextRole({
+      role: "risk_ranker",
+      clientDeployment: riskRankerClient?.deployment,
+      gatewayResult: input.riskRankerGatewayResult,
+      source: "risk_ranker",
+      artifactPath: refs.riskRanking,
+    }),
+  );
+
+  const visualPrimarySource = roleConfigurationSource(input.request, "visual_primary");
+  const visualFallbackSource = roleConfigurationSource(input.request, "visual_fallback");
+  const visualPrimaryDeployment = input.request.llm.bundle?.visualPrimary.deployment;
+  const visualFallbackDeployment = input.request.llm.bundle?.visualFallback.deployment;
+  const visualPrimaryStatus: AgentParticipationStatus =
+    !visualBundleConfigured && visualPrimarySource !== "disabled"
+      ? "not_configured"
+      : !visualBundleConfigured
+        ? "skipped"
+        : input.visualSidecarSkippedReason !== undefined
+          ? "skipped"
+          : primaryAttempt === undefined
+            ? "skipped"
+            : primaryAttempt.errorClass !== undefined
+              ? "failed"
+              : "succeeded";
+  const visualPrimaryCost = buildVisualRoleCostAttribution({
+    report: input.finopsReport,
+    role: "visual_primary",
+  });
+  entries.push({
+    role: "visual_primary",
+    ...(visualPrimaryDeployment !== undefined ? { deployment: visualPrimaryDeployment } : {}),
+    configurationSource: visualPrimarySource,
+    status: visualPrimaryStatus,
+    attemptCount: primaryAttempt !== undefined ? 1 : 0,
+    ...(visualPrimaryStatus === "not_configured"
+      ? {
+          remediation:
+            "Configure a visual-primary deployment before enabling the visual sidecar path.",
+        }
+      : visualPrimaryStatus === "skipped"
+        ? {
+            remediation:
+              input.visualSidecarSkippedReason === "non_figma_url_source"
+                ? "Visual sidecar only runs for figma_url sources."
+                : "Visual sidecar was disabled or not requested for this run.",
+          }
+        : {}),
+    ...(visualPrimaryStatus === "failed" && primaryAttempt?.errorClass !== undefined
+      ? {
+          failureClass: primaryAttempt.errorClass,
+          remediation:
+            "Inspect visual-sidecar-result.json to confirm whether fallback recovered the run or both visual deployments failed.",
+        }
+      : {}),
+    artifactReferences:
+      refs.visualSidecarResult !== undefined
+        ? [toArtifactReference(input.artifactDir, refs.visualSidecarResult)]
+        : [],
+    ...(visualPrimaryCost !== undefined ? { costAttribution: visualPrimaryCost } : {}),
+  });
+
+  const visualFallbackStatus: AgentParticipationStatus =
+    !visualBundleConfigured && visualFallbackSource !== "disabled"
+      ? "not_configured"
+      : !visualBundleConfigured
+        ? "skipped"
+        : input.visualSidecarSkippedReason !== undefined
+          ? "skipped"
+          : fallbackAttempt === undefined
+            ? "skipped"
+            : fallbackAttempt.errorClass !== undefined
+              ? "failed"
+              : "succeeded";
+  const visualFallbackCost = buildVisualRoleCostAttribution({
+    report: input.finopsReport,
+    role: "visual_fallback",
+  });
+  entries.push({
+    role: "visual_fallback",
+    ...(visualFallbackDeployment !== undefined
+      ? { deployment: visualFallbackDeployment }
+      : {}),
+    configurationSource: visualFallbackSource,
+    status: visualFallbackStatus,
+    attemptCount: fallbackAttempt !== undefined ? 1 : 0,
+    ...(visualFallbackStatus === "not_configured"
+      ? {
+          remediation:
+            "Configure a distinct visual-fallback deployment before enabling fallback recovery.",
+        }
+      : visualFallbackStatus === "skipped"
+        ? {
+            remediation:
+              input.visualSidecarSkippedReason === "non_figma_url_source"
+                ? "Visual sidecar only runs for figma_url sources."
+                : "Fallback was configured but was not needed for this run.",
+          }
+        : {}),
+    ...(visualFallbackStatus === "failed" && fallbackAttempt?.errorClass !== undefined
+      ? {
+          failureClass: fallbackAttempt.errorClass,
+          remediation:
+            "Inspect visual-sidecar-result.json and the visual deployment health; both sidecars were exhausted.",
+        }
+      : {}),
+    artifactReferences:
+      refs.visualSidecarResult !== undefined
+        ? [toArtifactReference(input.artifactDir, refs.visualSidecarResult)]
+        : [],
+    ...(visualFallbackCost !== undefined ? { costAttribution: visualFallbackCost } : {}),
+  });
+
+  const a11yJudgeSource = roleConfigurationSource(input.request, "a11y_judge");
+  const a11yJudgeStatus: AgentParticipationStatus =
+    a11yJudgeClient === undefined && a11yJudgeSource !== "disabled"
+      ? "not_configured"
+      : a11yJudgeClient === undefined
+        ? "skipped"
+        : input.visualSidecarSkippedReason !== undefined ||
+            input.visualSidecarRefusal !== undefined
+          ? "skipped"
+          : input.a11yJudgeResult?.gatewayResult?.outcome === "error"
+            ? "failed"
+            : input.a11yJudgeResult !== undefined
+              ? "succeeded"
+              : "skipped";
+  entries.push({
+    role: "a11y_judge",
+    ...(a11yJudgeClient?.deployment !== undefined
+      ? { deployment: a11yJudgeClient.deployment }
+      : {}),
+    configurationSource: a11yJudgeSource,
+    status: a11yJudgeStatus,
+    attemptCount:
+      input.a11yJudgeResult?.gatewayResult !== undefined || refs.a11yJudgeVerdict !== undefined
+        ? 1
+        : 0,
+    ...(a11yJudgeStatus === "not_configured"
+      ? {
+          remediation:
+            "Configure an a11y-judge deployment to add multimodal accessibility review coverage.",
+        }
+      : a11yJudgeStatus === "skipped"
+        ? {
+            remediation:
+              input.visualSidecarRefusal !== undefined
+                ? `Visual sidecar refused before the accessibility judge could run (${input.visualSidecarRefusal.failureClass}).`
+                : "Accessibility judge was not needed or visual evidence was unavailable for this run.",
+          }
+        : {}),
+    ...(a11yJudgeStatus === "failed" &&
+    input.a11yJudgeResult?.gatewayResult?.outcome === "error"
+      ? {
+          failureClass: input.a11yJudgeResult.gatewayResult.errorClass,
+          remediation:
+            "Inspect the a11y-judge verdict artifact and image-capable judge deployment health before re-running.",
+        }
+      : {}),
+    artifactReferences:
+      refs.a11yJudgeVerdict !== undefined
+        ? [toArtifactReference(input.artifactDir, refs.a11yJudgeVerdict)]
+        : [],
+  });
+
+  return entries;
+};
 
 const buildRunQualityArtifact = (input: {
   jobId: string;
@@ -1150,6 +1551,10 @@ export const runFigmaToQcTestCases = async (
   let visualSidecarRefusal:
     | { failureClass: VisualSidecarFailureClass; failureMessage: string }
     | undefined;
+  let visualSidecarSkippedReason:
+    | "non_figma_url_source"
+    | "visual_sidecar_bundle_not_configured"
+    | undefined;
   let promptVisualBinding: Parameters<
     typeof compilePrompt
   >[0]["visualBinding"] = {
@@ -1308,14 +1713,15 @@ export const runFigmaToQcTestCases = async (
       });
     }
   } else {
+    visualSidecarSkippedReason =
+      input.source.kind !== "figma_url"
+        ? "non_figma_url_source"
+        : "visual_sidecar_bundle_not_configured";
     emit({
       phase: "visual_sidecar_skipped",
       timestamp: monotonicMs(),
       details: {
-        reason:
-          input.source.kind !== "figma_url"
-            ? "non_figma_url_source"
-            : "visual_sidecar_bundle_not_configured",
+        reason: visualSidecarSkippedReason,
       },
     });
   }
@@ -2866,6 +3272,40 @@ export const runFigmaToQcTestCases = async (
     runDir: artifactDir,
     report: finopsReport,
   });
+  const agentParticipationArtifact = buildAgentParticipationArtifact({
+    jobId: input.jobId,
+    generatedAt: input.generatedAt,
+    roles: buildAgentParticipationEntries({
+      request: input,
+      artifactDir,
+      finopsReport,
+      generationCacheHit,
+      logicJudgeEnabled,
+      logicJudgeGatewayResult: logicJudgeResult.gatewayResult,
+      coveragePlannerGatewayResult: coveragePlanResult.gatewayResult,
+      riskRankerGatewayResult: riskRankingResult.gatewayResult,
+      visualSidecarResult,
+      visualSidecarSkippedReason,
+      a11yJudgeResult,
+      visualSidecarRefusal,
+      artifactPaths: {
+        coveragePlan: coveragePlanPath,
+        riskRanking: riskRankingPath,
+        logicJudgeVerdict: logicJudgeVerdictPath,
+        ...(visualSidecarArtifactPath !== undefined
+          ? { visualSidecarResult: visualSidecarArtifactPath }
+          : {}),
+        ...(a11yJudgeVerdictPath !== undefined
+          ? { a11yJudgeVerdict: a11yJudgeVerdictPath }
+          : {}),
+        agentRoleRun: join(artifactDir, "agent-role-runs", "test_generation.json"),
+      },
+    }),
+  });
+  const agentParticipationWritePromise = writeAgentParticipationArtifact({
+    artifact: agentParticipationArtifact,
+    destinationDir: artifactDir,
+  });
   const intentBytes = encodeCanonicalJson(intent);
   const compiledPromptBytes = encodeCanonicalJson(compiled.artifacts);
   const customerEvalRubricBytes =
@@ -2964,6 +3404,7 @@ export const runFigmaToQcTestCases = async (
       writeAtomicBytes(logicJudgeVerdictPath, logicJudgeVerdictBytes),
       judgeConsensusWritePromise,
       writeAtomicBytes(runQualityPath, runQualityBytes),
+      agentParticipationWritePromise,
       agentRoleRunPromise,
       ...generatorPassRunPromises,
       ...(faithfulnessJudgeCompiledPromptPath === undefined ||
@@ -3018,6 +3459,7 @@ export const runFigmaToQcTestCases = async (
       cause: err,
     });
   }
+  const agentParticipationWritten = await agentParticipationWritePromise;
   const agentRoleRunArtifact = await agentRoleRunPromise;
   const judgeConsensusArtifact = await judgeConsensusWritePromise;
   const generatorPassRunArtifacts = await Promise.all(generatorPassRunPromises);
@@ -3161,6 +3603,7 @@ export const runFigmaToQcTestCases = async (
         jobId: input.jobId,
         generatedAt: input.generatedAt,
         harnessArtifactFilenames: [
+          AGENT_PARTICIPATION_ARTIFACT_FILENAME,
           "agent-role-runs/test_generation.json",
           ...generatorPassRunArtifacts.map(
             (artifact) => `agent-role-runs/${artifact.artifact.roleRunId}.json`,
@@ -3285,6 +3728,11 @@ export const runFigmaToQcTestCases = async (
       {
         filename: RUN_QUALITY_ARTIFACT_FILENAME,
         bytes: runQualityBytes,
+        category: "manifest",
+      },
+      {
+        filename: AGENT_PARTICIPATION_ARTIFACT_FILENAME,
+        bytes: agentParticipationWritten.bytes,
         category: "manifest",
       },
       ...(faithfulnessJudgeCompiledPromptBytes === undefined
@@ -3599,6 +4047,7 @@ export const runFigmaToQcTestCases = async (
             visualCaptureDirectory: visualCaptureArtifacts.directory,
           }
         : {}),
+      agentParticipation: agentParticipationWritten.artifactPath,
       agentRoleRun: agentRoleRunArtifact.artifactPath,
       judgeConsensus: judgeConsensusArtifact.path,
       runQuality: runQualityPath,

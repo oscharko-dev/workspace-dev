@@ -1965,6 +1965,9 @@ test("runTestIntelligenceCommand: strict preflight writes sanitized topology rep
   );
   const { sink, stderr, stdout } = collectingSink();
   let capturedRiskRanker: unknown;
+  let capturedRoleConfigurationSources:
+    | Record<string, string>
+    | undefined;
   const exitCode = await runTestIntelligenceCommand(
     {
       ...baseOptions(),
@@ -1995,6 +1998,11 @@ test("runTestIntelligenceCommand: strict preflight writes sanitized topology rep
         capturedRiskRanker = (
           input as unknown as { llm: { riskRanker?: unknown } }
         ).llm.riskRanker;
+        capturedRoleConfigurationSources = (
+          input as unknown as {
+            roleConfigurationSources?: Record<string, string>;
+          }
+        ).roleConfigurationSources;
         return {
           jobId: "ti-cli-topology",
           generatedAt: "2026-05-07T12:00:00.000Z",
@@ -2016,6 +2024,7 @@ test("runTestIntelligenceCommand: strict preflight writes sanitized topology rep
             compiledPrompt: "/tmp/compiled-prompt.json",
             untrustedContentNormalizationReport: "/tmp/ucnr.json",
             evidenceSeal: "/tmp/evidence-seal.json",
+            agentParticipation: "/tmp/agent-participation.json",
             agentRoleRun: "/tmp/agent-role-run.json",
             genealogy: "/tmp/genealogy.json",
             generatedTestCases: "/tmp/generated.json",
@@ -2046,6 +2055,15 @@ test("runTestIntelligenceCommand: strict preflight writes sanitized topology rep
 
   assert.equal(exitCode, 0, stderr.join(""));
   assert.deepEqual(capturedRiskRanker, { kind: "ranker" });
+  assert.deepEqual(capturedRoleConfigurationSources, {
+    generator: "cli",
+    logic_judge: "cli",
+    coverage_planner: "default",
+    risk_ranker: "cli",
+    visual_primary: "disabled",
+    visual_fallback: "disabled",
+    a11y_judge: "disabled",
+  });
   assert.match(stdout.join(""), /topology preflight passed/u);
 
   const reportPath = path.join(tmpDir, "topology-preflight-report.json");
