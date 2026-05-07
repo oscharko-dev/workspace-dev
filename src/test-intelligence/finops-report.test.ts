@@ -916,3 +916,164 @@ test("buildFinOpsBudgetReport: cache-hit job exposes zero LLM call usage and out
   assert.equal(report.totals.promptCacheHitRate, 1);
   assert.equal(report.totals.promptCacheMissRate, 0);
 });
+
+// ---------------------------------------------------------------------------
+// Issue #2016: attributionMode = "audit" decouples judge / planner traffic
+// from the role's primary attempt + token counters.
+// ---------------------------------------------------------------------------
+
+test("Issue #2016: attributionMode='audit' attempts do not count toward role-level attempts/tokens", () => {
+  const recorder = createFinOpsUsageRecorder();
+  // Primary generator attempt — this is the role's actual work.
+  recorder.recordAttempt({
+    role: "test_generation",
+    source: "generator",
+    deployment: "gpt-oss-120b",
+    durationMs: 10,
+    result: successResult(7000, 5000),
+  });
+  // Audit-mode judge attempts on the same FinOps lane — they share the
+  // budget envelope but are not part of the role's primary work and so
+  // must not bump role-level counters.
+  recorder.recordAttempt({
+    role: "test_generation",
+    source: "judge_primary",
+    deployment: "gpt-oss-120b",
+    durationMs: 5,
+    result: successResult(2000, 800),
+    attributionMode: "audit",
+  });
+  recorder.recordAttempt({
+    role: "test_generation",
+    source: "coverage_planner",
+    deployment: "gpt-oss-120b",
+    durationMs: 6,
+    result: successResult(900, 400),
+    attributionMode: "audit",
+  });
+  const report = buildFinOpsBudgetReport({
+    jobId: JOB_ID,
+    generatedAt: GENERATED_AT,
+    budget: permissive,
+    recorder,
+  });
+  const tg = report.roles.find((r) => r.role === "test_generation");
+  assert.ok(tg !== undefined);
+  // Role-level: only the primary attempt counts.
+  assert.equal(tg.attempts, 1);
+  assert.equal(tg.successes, 1);
+  assert.equal(tg.inputTokens, 7000);
+  assert.equal(tg.outputTokens, 5000);
+  assert.equal(tg.durationMs, 10);
+  // Per-source still records every observation independently.
+  assert.equal(report.bySource.generator.callCount, 1);
+  assert.equal(report.bySource.judge_primary.callCount, 1);
+  assert.equal(report.bySource.coverage_planner.callCount, 1);
+  assert.equal(report.bySource.judge_primary.tokensOut, 800);
+  assert.equal(report.bySource.coverage_planner.tokensOut, 400);
+});
+
+test("Issue #2016: attributionMode='audit' alone produces no role-level attempts even with success result", () => {
+  const recorder = createFinOpsUsageRecorder();
+  recorder.recordAttempt({
+    role: "test_generation",
+    source: "judge_primary",
+    deployment: "gpt-oss-120b",
+    durationMs: 5,
+    result: successResult(1000, 400),
+    attributionMode: "audit",
+  });
+  const report = buildFinOpsBudgetReport({
+    jobId: JOB_ID,
+    generatedAt: GENERATED_AT,
+    budget: permissive,
+    recorder,
+  });
+  const tg = report.roles.find((r) => r.role === "test_generation");
+  assert.ok(tg !== undefined);
+  assert.equal(tg.attempts, 0);
+  assert.equal(tg.successes, 0);
+  assert.equal(tg.inputTokens, 0);
+  assert.equal(tg.outputTokens, 0);
+  // The deployment label still propagates so reports surface the active
+  // judge model even when no primary work happened.
+  assert.equal(tg.deployment, "gpt-oss-120b");
+  assert.equal(report.bySource.judge_primary.callCount, 1);
+});
+
+test("Issue #2016: attributionMode='audit' does not inflate max_attempts / max_total_output_tokens breaches", () => {
+  const recorder = createFinOpsUsageRecorder();
+  // 1 primary generator attempt at 5000 tokens, then 5 audit judge
+  // attempts at 1000 tokens each. With the old (count-everything)
+  // semantics the role would show 6 attempts and 10000 tokens, which
+  // would breach a 3-attempt / 8000-token cap. With audit mode the
+  // role shows 1 attempt and 5000 tokens — within budget.
+  recorder.recordAttempt({
+    role: "test_generation",
+    source: "generator",
+    deployment: "gpt-oss-120b",
+    durationMs: 10,
+    result: successResult(8000, 5000),
+  });
+  for (let i = 0; i < 5; i += 1) {
+    recorder.recordAttempt({
+      role: "test_generation",
+      source: "judge_primary",
+      deployment: "gpt-oss-120b",
+      durationMs: 5,
+      result: successResult(2000, 1000),
+      attributionMode: "audit",
+    });
+  }
+  const budget: FinOpsBudgetEnvelope = {
+    budgetId: "tight",
+    budgetVersion: "v1",
+    roles: {
+      test_generation: {
+        maxAttempts: 3,
+        maxTotalInputTokens: 80_000,
+        maxTotalOutputTokens: 8_000,
+      },
+    },
+  };
+  const report = buildFinOpsBudgetReport({
+    jobId: JOB_ID,
+    generatedAt: GENERATED_AT,
+    budget,
+    recorder,
+  });
+  assert.deepEqual(report.breaches, [], JSON.stringify(report.breaches));
+});
+
+test("Issue #2016: attributionMode default of 'primary' preserves legacy accounting (backwards compat)", () => {
+  const recorder = createFinOpsUsageRecorder();
+  // No `attributionMode` field — must behave exactly as before Issue
+  // #2016, i.e. judge calls under role test_generation count toward
+  // the role-level attempts and token counters.
+  recorder.recordAttempt({
+    role: "test_generation",
+    source: "generator",
+    deployment: "gpt-oss-120b",
+    durationMs: 10,
+    result: successResult(100, 50),
+  });
+  recorder.recordAttempt({
+    role: "test_generation",
+    source: "judge_primary",
+    deployment: "gpt-oss-120b",
+    durationMs: 5,
+    result: successResult(40, 20),
+  });
+  const report = buildFinOpsBudgetReport({
+    jobId: JOB_ID,
+    generatedAt: GENERATED_AT,
+    budget: permissive,
+    recorder,
+  });
+  const tg = report.roles.find((r) => r.role === "test_generation");
+  assert.ok(tg !== undefined);
+  assert.equal(tg.attempts, 2);
+  assert.equal(tg.inputTokens, 140);
+  assert.equal(tg.outputTokens, 70);
+});
+

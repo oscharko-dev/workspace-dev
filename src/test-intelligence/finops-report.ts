@@ -84,6 +84,29 @@ const sanitizeBudgetEnvelope = (
   };
 };
 
+/**
+ * Attribution mode for an attempt observation (Issue #2016).
+ *
+ * - `"primary"` (default): the attempt represents the role's primary work
+ *   (e.g. a `test_generation` generator regeneration, a `visual_primary`
+ *   capture). Counts toward role-level `attempts`, `successes`, `failures`,
+ *   `inputTokens`, `outputTokens`, `imageBytes`, `liveSmokeCalls`,
+ *   `fallbackAttempts` AND per-source breakdown.
+ * - `"audit"`: the attempt is an auxiliary call charged to the role's
+ *   FinOps lane but NOT part of the role's primary work — typically a
+ *   judge or planner call routed to the same deployment family
+ *   (`source: "judge_primary"`, `"judge_secondary"`, `"risk_ranker"`,
+ *   `"coverage_planner"`, `"repair_planner"`, …). Counts toward per-source
+ *   breakdown only; role-level counters (and therefore `max_attempts` /
+ *   `max_total_input_tokens` / `max_total_output_tokens` breach checks)
+ *   are not bumped. Operators reading `roles.test_generation.attempts`
+ *   then see the count of generation calls, not the judge audit traffic.
+ *
+ * Pre-existing call sites that did not pass `attributionMode` are treated
+ * as `"primary"` for byte-stable backwards compatibility.
+ */
+export type FinOpsAttributionMode = "primary" | "audit";
+
 /** Single attempt observation handed to the recorder. */
 export interface FinOpsAttemptObservation {
   role: FinOpsRole;
@@ -103,6 +126,13 @@ export interface FinOpsAttemptObservation {
   fallback?: boolean;
   /** The gateway result (success or failure) for this attempt. */
   result: LlmGenerationResult;
+  /**
+   * How this attempt should be attributed against the role's FinOps
+   * counters. Defaults to `"primary"`. Use `"audit"` for judge / planner
+   * calls that share a budget envelope with the role but are not part of
+   * the role's primary work; see {@link FinOpsAttributionMode}.
+   */
+  attributionMode?: FinOpsAttributionMode;
 }
 
 /** Optional cache-hit observation. Skips gateway counters. */
@@ -241,30 +271,37 @@ export const createFinOpsUsageRecorder = (
       throw new RangeError(`recordAttempt: unknown role "${observation.role}"`);
     }
     const acc = accumulators[observation.role];
-    acc.attempts += 1;
+    const attribution: FinOpsAttributionMode =
+      observation.attributionMode ?? "primary";
     if (
       typeof observation.deployment === "string" &&
       observation.deployment.length > 0
     ) {
+      // Deployment label is informational and applies to both attribution
+      // modes — the role's representative deployment is whichever ran most
+      // recently regardless of whether it was primary or audit traffic.
       acc.deployment = sanitizeReportString(observation.deployment);
     }
-    acc.durationMs += positiveOrZero(observation.durationMs);
-    acc.imageBytes += safeIntPositiveOrZero(observation.imageBytes);
-    if (observation.fallback === true) acc.fallbackAttempts += 1;
-    if (observation.liveSmoke === true) acc.liveSmokeCalls += 1;
+    if (attribution === "primary") {
+      acc.attempts += 1;
+      acc.durationMs += positiveOrZero(observation.durationMs);
+      acc.imageBytes += safeIntPositiveOrZero(observation.imageBytes);
+      if (observation.fallback === true) acc.fallbackAttempts += 1;
+      if (observation.liveSmoke === true) acc.liveSmokeCalls += 1;
 
-    if (observation.result.outcome === "success") {
-      acc.successes += 1;
-      acc.inputTokens += safeIntPositiveOrZero(
-        observation.result.usage.inputTokens,
-      );
-      acc.outputTokens += safeIntPositiveOrZero(
-        observation.result.usage.outputTokens,
-      );
-      acc.lastFinishReason = observation.result.finishReason;
-    } else {
-      acc.failures += 1;
-      acc.lastErrorClass = observation.result.errorClass;
+      if (observation.result.outcome === "success") {
+        acc.successes += 1;
+        acc.inputTokens += safeIntPositiveOrZero(
+          observation.result.usage.inputTokens,
+        );
+        acc.outputTokens += safeIntPositiveOrZero(
+          observation.result.usage.outputTokens,
+        );
+        acc.lastFinishReason = observation.result.finishReason;
+      } else {
+        acc.failures += 1;
+        acc.lastErrorClass = observation.result.errorClass;
+      }
     }
     if (observation.source !== undefined) {
       if (!isAgentSourceLabel(observation.source)) {

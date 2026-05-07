@@ -75,6 +75,14 @@ export const TEST_GENERATION_REPAIR_ARTIFACT_PREFIX =
 export const REPAIR_LOOP_TRACE_ARTIFACT_FILENAME =
   "repair-loop-trace.json" as const;
 
+/**
+ * Filename for the budget-trace artifact written when the repair loop
+ * aborts because the next regeneration would have exceeded the
+ * generator's FinOps token / attempt budget (Issue #2016).
+ */
+export const REPAIR_LOOP_BUDGET_TRACE_ARTIFACT_FILENAME =
+  "repair-loop-budget-trace.json" as const;
+
 /** Maximum length of a single RepairInstruction.instruction field. Mirrors logic-judge contract. */
 const MAX_INSTRUCTION_LENGTH = 240 as const;
 
@@ -87,17 +95,28 @@ const MAX_MESSAGE_LENGTH = 240 as const;
 /**
  * Terminal outcomes of the repair loop.
  *
- * `convergence_stalled` (Issue #1939) is emitted when the verdict signature
- * of iteration K is identical to iteration K-1 — i.e., the LLM is producing
- * the same class of error across iterations and burning tokens with no
- * forward progress. The runner treats this as a soft outcome (the latest
- * best-effort case set is still handed to the policy gate).
+ * `convergence_stalled` (Issue #1939, sharpened by Issue #2016) is emitted
+ * when the verdict signature of iteration K is identical to iteration K-1
+ * — i.e., the LLM is producing the same class of error across iterations
+ * and burning tokens with no forward progress. The runner treats this as
+ * a soft outcome (the latest best-effort case set is still handed to the
+ * policy gate).
+ *
+ * `budget_exhausted` (Issue #2016) is emitted when the loop has caller-
+ * supplied generator-attempt or generator-output-token guards configured,
+ * and a further regeneration would either exceed `maxGeneratorAttempts`
+ * or push the cumulative output beyond `maxGeneratorOutputTokens` (using
+ * `expectedNextOutputTokens` as the worst-case projection). The loop
+ * stops *before* producing the breaching call so the FinOps report can
+ * remain breach-free; the latest best-effort list is still returned for
+ * downstream gates.
  */
 export type RepairLoopOutcome =
   | "accepted"
   | "rejected"
   | "needs_review"
-  | "convergence_stalled";
+  | "convergence_stalled"
+  | "budget_exhausted";
 
 /** Per-iteration record exposed via the loop result for downstream observability. */
 export interface RepairLoopIterationRecord {
@@ -186,6 +205,44 @@ export type RepairLoopFaithfulnessJudgeRunner = (
   input: RepairLoopJudgeRunnerInput,
 ) => Promise<RepairLoopFaithfulnessJudgeResult>;
 
+/**
+ * Generator-side budget guard inputs (Issue #2016).
+ *
+ * The repair loop accumulates generator-only output tokens and attempts as
+ * iterations execute. When this guard is supplied, the loop refuses to start
+ * the next regeneration if doing so would push the *projected* cumulative
+ * over either limit, returning `budget_exhausted` instead. The point of
+ * stopping early — versus running and recording a FinOps breach — is to
+ * keep `finops.breaches=[]` for runs that were merely going to exhaust
+ * the loop budget by design.
+ *
+ * `initialGeneratorOutputTokens` and `initialGeneratorAttempts` describe
+ * the spend booked by the *initial* (pre-loop) generator pass; the loop
+ * adds its own per-iteration generator spend on top.
+ */
+export interface RepairLoopBudgetGuard {
+  /** Output tokens already produced by the initial-pass generator. */
+  readonly initialGeneratorOutputTokens?: number;
+  /**
+   * Maximum total generator output tokens permitted across the initial
+   * pass plus all repair iterations. Inclusive — equality is allowed.
+   */
+  readonly maxGeneratorOutputTokens?: number;
+  /**
+   * Worst-case projected output tokens for the next regeneration call.
+   * Defaults to `maxGeneratorOutputTokens / 2` when unset, falling back
+   * to a conservative `4096` if neither is supplied.
+   */
+  readonly expectedNextOutputTokens?: number;
+  /** Generator attempts already counted from the initial pass (typically 1). */
+  readonly initialGeneratorAttempts?: number;
+  /**
+   * Maximum total generator attempts permitted across the initial pass plus
+   * all repair iterations. Inclusive.
+   */
+  readonly maxGeneratorAttempts?: number;
+}
+
 /** Inputs to {@link runRepairLoop}. */
 export interface RunRepairLoopInput {
   readonly jobId: string;
@@ -206,6 +263,13 @@ export interface RunRepairLoopInput {
   readonly softFailOnIterationError?: boolean;
   /** Notification fired once per iteration record (including iteration 0). */
   readonly onIterationComplete?: (record: RepairLoopIterationRecord) => void;
+  /**
+   * Optional FinOps-side budget guard (Issue #2016). When supplied, the
+   * loop refuses to start the next regeneration if doing so would breach
+   * the cumulative generator-output-token or attempt budget. See
+   * {@link RepairLoopBudgetGuard}.
+   */
+  readonly budget?: RepairLoopBudgetGuard;
 }
 
 /** Persisted shape of the repair_planner_iter_K artifact. */
@@ -247,6 +311,33 @@ export interface RepairLoopTraceArtifact {
     readonly faithfulnessVerdict: FaithfulnessVerdict["verdict"] | "skipped";
     readonly verdictSignature: string;
   }[];
+}
+
+/**
+ * Persisted shape of the budget-trace artifact (Issue #2016).
+ *
+ * Written exactly once per loop, only when the loop terminates with
+ * `budget_exhausted`. Captures the cumulative generator spend (output
+ * tokens and attempts) at the moment the guard fired plus the operator-
+ * configured limits, so an operator can audit whether the budget was
+ * sized correctly for the dataset.
+ */
+export interface RepairLoopBudgetTraceArtifact {
+  readonly schemaVersion: typeof REPAIR_LOOP_SCHEMA_VERSION;
+  readonly jobId: string;
+  readonly outcome: "budget_exhausted";
+  /**
+   * Iteration K *that would have been started* when the guard fired. K=1
+   * means the guard tripped before any repair iteration ran; K=N+1 means
+   * the guard tripped after iteration N completed successfully.
+   */
+  readonly stoppedBeforeIteration: number;
+  readonly trigger: "max_generator_output_tokens" | "max_generator_attempts";
+  readonly cumulativeGeneratorOutputTokens: number;
+  readonly cumulativeGeneratorAttempts: number;
+  readonly maxGeneratorOutputTokens?: number;
+  readonly maxGeneratorAttempts?: number;
+  readonly expectedNextOutputTokens: number;
 }
 
 /** Persisted shape of the test_generation_repair_iter_K artifact. */
@@ -473,6 +564,105 @@ export const runRepairLoop = async (
   let currentFaith: FaithfulnessVerdict | undefined =
     input.initialFaithfulnessVerdict;
 
+  // Issue #2016: track cumulative generator-only spend for the budget
+  // guard. The initial pass is booked outside the loop; the caller hands
+  // its accounting in via `input.budget.initialGeneratorOutputTokens` /
+  // `initialGeneratorAttempts`.
+  const guard = input.budget;
+  const sanitizeGuardCount = (value: number | undefined): number =>
+    Number.isFinite(value) && (value as number) >= 0
+      ? Math.floor(value as number)
+      : 0;
+  let cumulativeGeneratorOutputTokens = sanitizeGuardCount(
+    guard?.initialGeneratorOutputTokens,
+  );
+  let cumulativeGeneratorAttempts = sanitizeGuardCount(
+    guard?.initialGeneratorAttempts,
+  );
+  const expectedNextOutputTokens = ((): number => {
+    if (
+      guard?.expectedNextOutputTokens !== undefined &&
+      Number.isFinite(guard.expectedNextOutputTokens) &&
+      guard.expectedNextOutputTokens > 0
+    ) {
+      return Math.floor(guard.expectedNextOutputTokens);
+    }
+    if (
+      guard?.maxGeneratorOutputTokens !== undefined &&
+      Number.isFinite(guard.maxGeneratorOutputTokens) &&
+      guard.maxGeneratorOutputTokens > 0
+    ) {
+      return Math.max(1, Math.floor(guard.maxGeneratorOutputTokens / 2));
+    }
+    return 4096;
+  })();
+
+  const writeBudgetTrace = async (
+    stoppedBeforeIteration: number,
+    trigger: RepairLoopBudgetTraceArtifact["trigger"],
+  ): Promise<void> => {
+    if (guard === undefined) return;
+    const trace: RepairLoopBudgetTraceArtifact = {
+      schemaVersion: REPAIR_LOOP_SCHEMA_VERSION,
+      jobId: input.jobId,
+      outcome: "budget_exhausted",
+      stoppedBeforeIteration,
+      trigger,
+      cumulativeGeneratorOutputTokens,
+      cumulativeGeneratorAttempts,
+      ...(guard.maxGeneratorOutputTokens !== undefined
+        ? { maxGeneratorOutputTokens: guard.maxGeneratorOutputTokens }
+        : {}),
+      ...(guard.maxGeneratorAttempts !== undefined
+        ? { maxGeneratorAttempts: guard.maxGeneratorAttempts }
+        : {}),
+      expectedNextOutputTokens,
+    };
+    await writeAtomicJson(
+      join(input.runDir, REPAIR_LOOP_BUDGET_TRACE_ARTIFACT_FILENAME),
+      trace,
+    );
+  };
+
+  /**
+   * Returns the trigger reason if starting another regeneration would
+   * push the cumulative generator spend past the configured guard, else
+   * `undefined`. The check is *projective* — it uses the guard's
+   * `expectedNextOutputTokens` as a worst-case estimate so the loop
+   * never books an attempt that turns into a FinOps breach.
+   */
+  const projectedBudgetTrigger = ():
+    | RepairLoopBudgetTraceArtifact["trigger"]
+    | undefined => {
+    if (guard === undefined) return undefined;
+    if (guard.maxGeneratorAttempts !== undefined) {
+      const projectedAttempts = cumulativeGeneratorAttempts + 1;
+      if (projectedAttempts > guard.maxGeneratorAttempts) {
+        return "max_generator_attempts";
+      }
+    }
+    if (guard.maxGeneratorOutputTokens !== undefined) {
+      const projectedOutput =
+        cumulativeGeneratorOutputTokens + expectedNextOutputTokens;
+      if (projectedOutput > guard.maxGeneratorOutputTokens) {
+        return "max_generator_output_tokens";
+      }
+    }
+    return undefined;
+  };
+
+  const buildBudgetExhaustedResult = (): RepairLoopResult => ({
+    outcome: "budget_exhausted",
+    finalList: currentList,
+    finalLogicVerdict: currentLogic,
+    ...(currentFaith !== undefined
+      ? { finalFaithfulnessVerdict: currentFaith }
+      : {}),
+    iterations,
+    repairIterationCount: iterations.length - 1,
+    maxRepairIterations: max,
+  });
+
   const softFailIfEnabled = (
     iteration: number,
     error: unknown,
@@ -499,6 +689,16 @@ export const runRepairLoop = async (
   };
 
   for (let k = 1; k <= max; k++) {
+    // Issue #2016: refuse to start the next regeneration when the
+    // generator-side budget guard projects a breach. The check happens
+    // before any planner / generator artifact is written so a stopped
+    // run leaves no spurious iteration trace on disk.
+    const trigger = projectedBudgetTrigger();
+    if (trigger !== undefined) {
+      await writeBudgetTrace(k, trigger);
+      return buildBudgetExhaustedResult();
+    }
+
     const repairInstructions = consolidateRepairInstructions({
       logic: currentLogic,
       ...(currentFaith !== undefined ? { faithfulness: currentFaith } : {}),
@@ -541,6 +741,8 @@ export const runRepairLoop = async (
     } catch (error) {
       return softFailIfEnabled(k, error, `regenerate iteration ${k}`);
     }
+    cumulativeGeneratorOutputTokens += sanitizeGuardCount(regen.outputTokens);
+    cumulativeGeneratorAttempts += 1;
 
     const newListHash = sha256Hex(regen.list);
     const generatorArtifact: TestGenerationRepairIterationArtifact = {
@@ -663,22 +865,30 @@ export const runRepairLoop = async (
       };
     }
 
-    // Issue #1939: convergence detection. When two consecutive *repair*
-    // iterations produce the same verdict signature, the LLM is
-    // reproducing the same class of error and additional iterations
-    // would only burn tokens. The detector requires at least two real
-    // repair attempts before declaring stall: comparing the first
-    // repair iteration (k=1) to the pre-repair initial state (iter 0)
-    // would fire whenever the initial-pass findings persist after a
-    // single regeneration, denying the LLM any honest opportunity to
-    // incorporate repair instructions. Stall therefore fires earliest
-    // at k=2, comparing iter[k] against iter[k-1] when both are
-    // post-repair entries.
+    // Issue #1939 + Issue #2016: convergence detection. When two
+    // consecutive iterations produce the same verdict signature the LLM
+    // is reproducing the same class of finding and additional iterations
+    // only burn tokens.
+    //
+    // Issue #1939 originally required the comparison window to live
+    // entirely inside the repair phase (stall fires earliest at k=2,
+    // comparing iter[2] to iter[1]) on the rationale that the LLM
+    // deserved one honest chance to incorporate repair instructions
+    // before being declared stalled.
+    //
+    // Issue #2016 sharpens this: when iter[1] arrives with a verdict
+    // signature byte-identical to iter[0], the first regeneration
+    // already had access to the consolidated repair instructions and
+    // failed to change *any* finding code. Continuing into iter[2]
+    // costs a full additional generator response (~one
+    // `maxOutputTokensPerRequest` worth) for no expected progress. The
+    // updated detector therefore fires at k=1 as well, comparing
+    // iter[1] to iter[0], so a no-progress repair stops the loop one
+    // iteration sooner.
     const previousIteration = iterations[iterations.length - 2];
     if (
-      k >= 2 &&
+      k >= 1 &&
       previousIteration !== undefined &&
-      previousIteration.iteration >= 1 &&
       previousIteration.verdictSignature === iterationSignature
     ) {
       const trace: RepairLoopTraceArtifact = {
