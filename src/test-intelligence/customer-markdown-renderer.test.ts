@@ -115,6 +115,41 @@ test("renderCustomerMarkdown renders steps with Beschreibung + Erwartetes Ergebn
   assert.match(body, /Login-Maske ist sichtbar/u);
 });
 
+test("renderCustomerMarkdown does not expose technical Figma ids in customer-visible refs", () => {
+  const list: GeneratedTestCaseList = {
+    schemaVersion: GENERATED_TEST_CASE_SCHEMA_VERSION,
+    jobId: "job-1",
+    testCases: [
+      buildCase({
+        figmaTraceRefs: [
+          {
+            screenId: "1:11309",
+            nodeId: "1:11309::field::4:22888",
+            nodeName: "Höhe des Kaufpreises",
+          },
+          {
+            screenId: "1:11309",
+            nodeId: "1:11309::field::4:22889",
+            nodeName: "Typography",
+          },
+        ],
+      }),
+    ],
+  };
+  const result = renderCustomerMarkdown({
+    list,
+    fileName: "x",
+    sourceLabel: "x",
+    generatedAt: "2026-05-02T10:00:00Z",
+  });
+  const body = result.combinedMarkdown;
+  assert.match(body, /Fachlicher Bezug:.*Höhe des Kaufpreises/u);
+  assert.doesNotMatch(body, /Figma-Bezug/u);
+  assert.doesNotMatch(body, /1:11309/u);
+  assert.doesNotMatch(body, /4:22888/u);
+  assert.doesNotMatch(body, /Typography/u);
+});
+
 test("renderCustomerMarkdown produces filename-safe slugs", () => {
   const list: GeneratedTestCaseList = {
     schemaVersion: GENERATED_TEST_CASE_SCHEMA_VERSION,

@@ -1719,6 +1719,65 @@ test("runFigmaToQcTestCases runs both judges, persists their artifacts, and keep
   }
 });
 
+test("runFigmaToQcTestCases records logic-judge schema failures without regenerating or blocking policy-green output", async () => {
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ti-runner-judge-schema-"));
+  try {
+    const client = createMockLlmGatewayClient({
+      role: "test_generation",
+      deployment: "gpt-oss-120b-mock",
+      modelRevision: "mock-1",
+      gatewayRelease: "mock",
+      responder: (request, attempt) => {
+        if (
+          request.responseSchemaName === "workspace-dev-logic-judge-v1"
+        ) {
+          return {
+            outcome: "success" as const,
+            content: {
+              verdict: "repair",
+              findings: [],
+              repairInstructions: {},
+            },
+            finishReason: "stop" as const,
+            usage: { inputTokens: 20, outputTokens: 10 },
+            modelDeployment: "gpt-oss-120b-mock",
+            modelRevision: "mock-1",
+            gatewayRelease: "mock",
+            attempt,
+          };
+        }
+        return {
+          outcome: "success" as const,
+          content: { testCases: SAMPLE_HARD_GATE_GREEN_DRAFTS },
+          finishReason: "stop" as const,
+          usage: { inputTokens: 100, outputTokens: 200 },
+          modelDeployment: "gpt-oss-120b-mock",
+          modelRevision: "mock-1",
+          gatewayRelease: "mock",
+          attempt,
+        };
+      },
+    });
+
+    const result = await runFigmaToQcTestCases({
+      jobId: "job-judge-schema-soft",
+      generatedAt: "2026-05-07T10:00:00Z",
+      source: { kind: "figma_paste_normalized", file: SAMPLE_FILE },
+      outputRoot: tempRoot,
+      llm: { client },
+    });
+
+    assert.equal(result.policy.blocked, false);
+    assert.equal(result.blocked, false);
+    assert.equal(result.judgeConsensus.verdict.verdict, "repair");
+    assert.equal(result.judgeConsensus.verdict.panel[0]?.findings[0]?.category, "schema_class");
+    assert.equal(result.repairLoop, undefined);
+    assert.equal(client.callCount(), 2);
+  } finally {
+    await rm(tempRoot, { recursive: true, force: true });
+  }
+});
+
 test("Issue #1940: runFigmaToQcTestCases dispatches the optional a11yJudge slot and persists agent-role-runs/a11y_judge.json", async () => {
   const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ti-runner-1940-"));
   const originalFetch = globalThis.fetch;
@@ -2941,6 +3000,11 @@ test("runFigmaToQcTestCases (eu-banking-default profile) augments user prompt wi
     // (a) The user prompt was augmented with the banking compliance rules.
     assert.match(observedUserPrompt, /POLICY-PROFIL: eu-banking-default/u);
     assert.match(observedUserPrompt, /IBAN/u);
+    assert.match(observedUserPrompt, /NUR, wenn solche Felder/u);
+    assert.doesNotMatch(
+      observedUserPrompt,
+      /Erzeuge mindestens EINEN Negativfall, der ungültige IBAN/u,
+    );
     assert.match(observedUserPrompt, /Vier-Augen-Prinzip/u);
     assert.match(observedUserPrompt, /Banking\/Versicherungs-Bildschirme/u);
     assert.match(observedUserPrompt, /<UNTRUSTED_FIGMA_TEXT\b/u);
@@ -3583,6 +3647,324 @@ test("Issue #1894: customContextMarkdown is canonicalized and surfaces in compil
       seal.customContextMarkdownHashes?.[0]?.plainContentHash ?? "",
       /^[0-9a-f]{64}$/u,
     );
+  } finally {
+    await rm(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("customerEvalMarkdown surfaces as its own prompt rubric and artifact", async () => {
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ti-runner-eval-"));
+  try {
+    let observedUserPrompt = "";
+    const client = createMockLlmGatewayClient({
+      role: "test_generation",
+      deployment: "gpt-oss-120b-mock",
+      modelRevision: "mock-1",
+      gatewayRelease: "mock",
+      responder: (request, attempt) => {
+        if (
+          request.responseSchemaName ===
+          "workspace-dev-production-runner-draft-list-v1"
+        ) {
+          observedUserPrompt = request.userPrompt;
+        }
+        return okResponder([SAMPLE_DRAFT])(request, attempt);
+      },
+    });
+    const result = await runFigmaToQcTestCases({
+      jobId: "job-customer-eval",
+      generatedAt: "2026-05-05T10:00:00Z",
+      source: { kind: "figma_paste_normalized", file: SAMPLE_FILE },
+      outputRoot: tempRoot,
+      llm: { client },
+      customerEvalMarkdown:
+        "# Testfall eines Anwendungstests\n\n- Titel\n- Beschreibung\n- Fortlaufende Steps\n",
+      logicJudge: { enabled: false },
+    });
+
+    assert.match(observedUserPrompt, /CUSTOMER_TEST_DESIGN_RUBRIC/u);
+    assert.match(observedUserPrompt, /eigene Rubrik/u);
+    assert.match(observedUserPrompt, /Fortlaufende Steps/u);
+    assert.ok(result.artifactPaths.customerEvalRubric);
+    const rubric = JSON.parse(
+      await readFile(result.artifactPaths.customerEvalRubric ?? "", "utf8"),
+    ) as {
+      schemaVersion: string;
+      bodyPlain: string;
+      markdownContentHash: string;
+    };
+    assert.equal(rubric.schemaVersion, "1.0.0");
+    assert.match(rubric.bodyPlain, /Testfall eines Anwendungstests/u);
+    assert.match(rubric.markdownContentHash, /^[0-9a-f]{64}$/u);
+  } finally {
+    await rm(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("runFigmaToQcTestCases derives qualitySignals from figmaTraceRefs when the draft omits them", async () => {
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ti-runner-trace-"));
+  try {
+    const draftWithoutSignals: ProductionRunnerLlmDraftCase = {
+      ...SAMPLE_DRAFT,
+    };
+    delete draftWithoutSignals.qualitySignals;
+    const client = createMockLlmGatewayClient({
+      role: "test_generation",
+      deployment: "gpt-oss-120b-mock",
+      modelRevision: "mock-1",
+      gatewayRelease: "mock",
+      responder: okResponder([
+        {
+          ...draftWithoutSignals,
+          figmaTraceRefs: [
+            { screenId: "1:1", nodeId: "2:1", nodeName: "Investitionssumme" },
+            { screenId: "1:1", nodeId: "2:2", nodeName: "Weiter" },
+          ],
+        },
+      ]),
+    });
+    const result = await runFigmaToQcTestCases({
+      jobId: "job-trace-quality",
+      generatedAt: "2026-05-05T10:00:00Z",
+      source: { kind: "figma_paste_normalized", file: SAMPLE_FILE },
+      outputRoot: tempRoot,
+      llm: { client },
+      logicJudge: { enabled: false },
+    });
+
+    const generated = result.generatedTestCases.testCases[0];
+    assert.ok(
+      generated?.qualitySignals.coveredFieldIds.includes("1:1::field::2:1"),
+    );
+    assert.ok(
+      generated?.qualitySignals.coveredActionIds.includes("1:1::action::2:2"),
+    );
+  } finally {
+    await rm(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("runFigmaToQcTestCases strips non-Figma custom markdown trace refs before validation", async () => {
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ti-runner-trace-"));
+  try {
+    const client = createMockLlmGatewayClient({
+      role: "test_generation",
+      deployment: "gpt-oss-120b-mock",
+      modelRevision: "mock-1",
+      gatewayRelease: "mock",
+      responder: okResponder([
+        {
+          ...SAMPLE_DRAFT,
+          figmaTraceRefs: [
+            { screenId: "1:1", nodeId: "2:1", nodeName: "Investitionssumme" },
+            {
+              screenId: "custom_context_markdown",
+              nodeName: "Jira Story: fachliche Vorgaben",
+            },
+          ],
+        },
+      ]),
+    });
+    const result = await runFigmaToQcTestCases({
+      jobId: "job-strip-custom-trace",
+      generatedAt: "2026-05-05T10:00:00Z",
+      source: { kind: "figma_paste_normalized", file: SAMPLE_FILE },
+      outputRoot: tempRoot,
+      llm: { client },
+      customContextMarkdown: "# Fachliche Vorgaben\n\n- Teste die Maske.",
+      logicJudge: { enabled: false },
+    });
+
+    const generated = result.generatedTestCases.testCases[0];
+    assert.ok(generated);
+    assert.deepEqual(
+      generated.figmaTraceRefs.map((ref) => ref.screenId),
+      ["1:1"],
+    );
+    const validation = JSON.parse(
+      await readFile(result.artifactPaths.validationReport, "utf8"),
+    ) as { errorCount: number };
+    assert.equal(validation.errorCount, 0);
+  } finally {
+    await rm(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("runFigmaToQcTestCases removes button/action hallucinations when the IR has no actions", async () => {
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ti-runner-no-action-"));
+  try {
+    const noActionFile = {
+      ...SAMPLE_FILE,
+      document: node({
+        id: "0:0",
+        type: "DOCUMENT",
+        children: [
+          node({
+            id: "0:1",
+            name: "Page 1",
+            type: "CANVAS",
+            children: [
+              node({
+                id: "1:1",
+                name: "Bedarfsermittlung",
+                type: "FRAME",
+                absoluteBoundingBox: { x: 0, y: 0, width: 600, height: 800 },
+                children: [
+                  node({
+                    id: "2:1",
+                    name: "Kaufpreis",
+                    type: "TEXT",
+                    characters: "Höhe des Kaufpreises",
+                  }),
+                  node({
+                    id: "2:2",
+                    name: "<Icon>",
+                    type: "INSTANCE",
+                  }),
+                ],
+              }),
+            ],
+          }),
+        ],
+      }),
+    };
+    const draft: ProductionRunnerLlmDraftCase = {
+      ...SAMPLE_ACCESSIBILITY_DRAFT,
+      riskCategory: "regulated_data",
+      steps: [
+        {
+          index: 1,
+          action: "Tab-Taste drücken, um zum Feld Kaufpreis zu wechseln.",
+          expected: "Der Fokus ist sichtbar.",
+        },
+        {
+          index: 2,
+          action: "Tab-Taste drücken zum Bestätigungs-Button.",
+          expected: "Der Button erhält Fokus.",
+        },
+      ],
+      expectedResults: [
+        "Alle Felder und Aktionen sind in logischer Reihenfolge fokussierbar.",
+      ],
+      figmaTraceRefs: [{ screenId: "1:1", nodeId: "2:1" }],
+      qualitySignals: {
+        coveredFieldIds: ["1:1::field::2:1"],
+        coveredActionIds: [],
+        coveredValidationIds: [],
+        coveredNavigationIds: [],
+        confidence: 0.9,
+      },
+    };
+    const client = createMockLlmGatewayClient({
+      role: "test_generation",
+      deployment: "gpt-oss-120b-mock",
+      modelRevision: "mock-1",
+      gatewayRelease: "mock",
+      responder: okResponder([draft]),
+    });
+    const result = await runFigmaToQcTestCases({
+      jobId: "job-no-action-sanitize",
+      generatedAt: "2026-05-05T10:00:00Z",
+      source: { kind: "figma_paste_normalized", file: noActionFile },
+      outputRoot: tempRoot,
+      llm: { client },
+      logicJudge: { enabled: false },
+    });
+
+    const generated = result.generatedTestCases.testCases[0];
+    assert.ok(generated);
+    assert.equal(generated.steps.length, 1);
+    assert.equal(generated.riskCategory, "medium");
+    assert.doesNotMatch(JSON.stringify(generated), /Button|Aktionen/u);
+    assert.match(JSON.stringify(generated.expectedResults), /focus-order/u);
+    assert.match(JSON.stringify(generated.expectedResults), /keyboard-nav/u);
+    assert.match(JSON.stringify(generated.expectedResults), /screen-reader/u);
+  } finally {
+    await rm(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("runFigmaToQcTestCases rewrites currency hallucinations on Netto/Brutto option targets", async () => {
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ti-runner-radio-"));
+  try {
+    const radioFile = {
+      ...SAMPLE_FILE,
+      document: node({
+        id: "0:0",
+        type: "DOCUMENT",
+        children: [
+          node({
+            id: "0:1",
+            name: "Page 1",
+            type: "CANVAS",
+            children: [
+              node({
+                id: "1:1",
+                name: "Bedarfsermittlung",
+                type: "FRAME",
+                absoluteBoundingBox: { x: 0, y: 0, width: 600, height: 800 },
+                children: [
+                  node({
+                    id: "2:1",
+                    name: "Netto",
+                    type: "TEXT",
+                    characters: "Netto",
+                  }),
+                  node({
+                    id: "2:2",
+                    name: "Brutto",
+                    type: "TEXT",
+                    characters: "Brutto",
+                  }),
+                ],
+              }),
+            ],
+          }),
+        ],
+      }),
+    };
+    const draft: ProductionRunnerLlmDraftCase = {
+      ...SAMPLE_DRAFT,
+      title: "TC8: Äquivalenzpartitionierung Währungseinheiten",
+      objective: "Prüft die EUR-Einheiten.",
+      steps: [
+        {
+          index: 1,
+          action: "Verifiziere, dass EUR sichtbar ist.",
+          expected: "Die Einheit EUR wird angezeigt.",
+        },
+      ],
+      expectedResults: ["Die Währungseinheiten sind korrekt."],
+      figmaTraceRefs: [{ screenId: "1:1", nodeId: "2:1" }],
+      qualitySignals: {
+        coveredFieldIds: ["1:1::field::2:1", "1:1::field::2:2"],
+        coveredActionIds: [],
+        coveredValidationIds: [],
+        coveredNavigationIds: [],
+        confidence: 0.9,
+      },
+    };
+    const client = createMockLlmGatewayClient({
+      role: "test_generation",
+      deployment: "gpt-oss-120b-mock",
+      modelRevision: "mock-1",
+      gatewayRelease: "mock",
+      responder: okResponder([draft]),
+    });
+    const result = await runFigmaToQcTestCases({
+      jobId: "job-radio-currency-sanitize",
+      generatedAt: "2026-05-05T10:00:00Z",
+      source: { kind: "figma_paste_normalized", file: radioFile },
+      outputRoot: tempRoot,
+      llm: { client },
+      logicJudge: { enabled: false },
+    });
+
+    const generated = result.generatedTestCases.testCases[0];
+    assert.ok(generated);
+    assert.match(generated.title, /Netto\/Brutto auswählen/u);
+    assert.doesNotMatch(JSON.stringify(generated), /Währung|EUR|Einheit/u);
+    assert.match(JSON.stringify(generated.steps), /Wähle die Option/u);
   } finally {
     await rm(tempRoot, { recursive: true, force: true });
   }

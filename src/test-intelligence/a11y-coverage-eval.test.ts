@@ -366,6 +366,40 @@ test("Issue #1951: listCoveredFormScreenA11yCriteria detects the three required 
   assert.deepEqual(criteria, [...FORM_SCREEN_A11Y_REQUIRED_CRITERIA]);
 });
 
+test("Issue #1951: Unicode hyphen in Screen-Reader still satisfies screen-reader criterion", () => {
+  const criteria = listCoveredFormScreenA11yCriteria(
+    buildCase({
+      id: "tc-a11y-unicode-hyphen",
+      type: "accessibility",
+      screenId: "s-form",
+      title: "Tastatur, Fokusreihenfolge und Screen‑Reader werden geprüft",
+      objective:
+        "Bestätigen, dass Keyboard Navigation, Focus-Order und Screen‑Reader-Ansagen funktionieren.",
+      steps: [
+        {
+          index: 1,
+          action: "Tabbe durch die Maske",
+          expected: "Keyboard Navigation erreicht jedes Feld",
+        },
+        {
+          index: 2,
+          action: "Prüfe Focus-Order",
+          expected: "Focus-Order bleibt logisch",
+        },
+        {
+          index: 3,
+          action: "Prüfe Screen‑Reader-Ansagen",
+          expected: "Screen‑Reader kündigt Feldbezeichnungen an",
+        },
+      ],
+      expectedResults: [
+        "Keyboard Navigation, Focus-Order und Screen‑Reader sind abgedeckt",
+      ],
+    }),
+  );
+  assert.deepEqual(criteria, [...FORM_SCREEN_A11Y_REQUIRED_CRITERIA]);
+});
+
 test("buildA11yCoverageRepairInstruction renders the canonical template", () => {
   const ri = buildA11yCoverageRepairInstruction({ screenId: "s-loan" });
   assert.equal(ri.testCaseId, "$job");

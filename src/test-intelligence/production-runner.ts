@@ -234,6 +234,7 @@ import {
   buildRiskRankingWithAugmentation,
   writeRiskRankingArtifact,
 } from "./risk-ranker.js";
+import { isCoverageRelevantActionLike } from "./coverage-relevance.js";
 import {
   buildA11yJudgeConsensusEntry,
   buildFaithfulnessJudgeConsensusEntry,
@@ -532,48 +533,47 @@ const toEvidenceVisualDeployment = (
 const buildActiveModelBindings = (input: {
   client: LlmGatewayClient;
   bundle?: LlmGatewayClientBundle;
+  logicJudge?: LlmGatewayClient;
+  coveragePlanner?: LlmGatewayClient;
 }): readonly ActiveModelBinding[] => {
-  const bindings: ActiveModelBinding[] = [
-    {
+  const bindings: ActiveModelBinding[] = [];
+  const pushBinding = (client: LlmGatewayClient): void => {
+    const binding: ActiveModelBinding = {
       providerId: "llm-gateway",
-      modelId: input.client.modelRevision,
-      inferenceProfileId: input.client.deployment,
-      ...(input.client.ictRegisterRef !== undefined
-        ? { ictRegisterRef: input.client.ictRegisterRef }
+      modelId: client.modelRevision,
+      inferenceProfileId: client.deployment,
+      ...(client.ictRegisterRef !== undefined
+        ? { ictRegisterRef: client.ictRegisterRef }
         : {}),
-    },
-  ];
+    };
+    if (
+      bindings.some(
+        (existing) =>
+          existing.modelId === binding.modelId &&
+          existing.inferenceProfileId === binding.inferenceProfileId,
+      )
+    ) {
+      return;
+    }
+    bindings.push(binding);
+  };
+
+  pushBinding(input.client);
+  if (input.logicJudge !== undefined) {
+    pushBinding(input.logicJudge);
+  }
+  if (input.coveragePlanner !== undefined) {
+    pushBinding(input.coveragePlanner);
+  }
   if (input.bundle !== undefined) {
-    bindings.push(
-      {
-        providerId: "llm-gateway",
-        modelId: input.bundle.visualPrimary.modelRevision,
-        inferenceProfileId: input.bundle.visualPrimary.deployment,
-        ...(input.bundle.visualPrimary.ictRegisterRef !== undefined
-          ? { ictRegisterRef: input.bundle.visualPrimary.ictRegisterRef }
-          : {}),
-      },
-      {
-        providerId: "llm-gateway",
-        modelId: input.bundle.visualFallback.modelRevision,
-        inferenceProfileId: input.bundle.visualFallback.deployment,
-        ...(input.bundle.visualFallback.ictRegisterRef !== undefined
-          ? { ictRegisterRef: input.bundle.visualFallback.ictRegisterRef }
-          : {}),
-      },
-      ...(input.bundle.a11yJudge === undefined
-        ? []
-        : [
-            {
-              providerId: "llm-gateway" as const,
-              modelId: input.bundle.a11yJudge.modelRevision,
-              inferenceProfileId: input.bundle.a11yJudge.deployment,
-              ...(input.bundle.a11yJudge.ictRegisterRef !== undefined
-                ? { ictRegisterRef: input.bundle.a11yJudge.ictRegisterRef }
-                : {}),
-            },
-          ]),
-    );
+    pushBinding(input.bundle.visualPrimary);
+    pushBinding(input.bundle.visualFallback);
+    if (input.bundle.a11yJudge !== undefined) {
+      pushBinding(input.bundle.a11yJudge);
+    }
+    if (input.bundle.coveragePlanner !== undefined) {
+      pushBinding(input.bundle.coveragePlanner);
+    }
   }
   return bindings;
 };
@@ -725,6 +725,13 @@ export interface RunFigmaToQcTestCasesInput {
    */
   customContextMarkdown?: string;
   /**
+   * Optional explicit customer evaluation rubric. Unlike
+   * `customContextMarkdown`, this is not treated as a business evidence source;
+   * it controls customer-facing test-case format, granularity and quality
+   * expectations.
+   */
+  customerEvalMarkdown?: string;
+  /**
    * Logic-Judge integration (Issue #1898). Defaults to **enabled** —
    * when the generator step succeeds the runner dispatches a second
    * LLM roundtrip against the same gateway client (attributed to
@@ -788,6 +795,7 @@ export interface RunFigmaToQcTestCasesResult {
     coveragePlan: string;
     riskRanking: string;
     logicJudgeCompiledPrompt?: string;
+    customerEvalRubric?: string;
     faithfulnessJudgeCompiledPrompt?: string;
     a11yJudgeVerdict?: string;
     untrustedContentNormalizationReport: string;
@@ -905,6 +913,9 @@ export const runFigmaToQcTestCases = async (
   //     reaches the LLM gateway, the prompt artifact, or the seal.
   const customContextMarkdown = resolveCustomContextMarkdown(
     input.customContextMarkdown,
+  );
+  const customerEvalRubric = resolveCustomerEvalRubric(
+    input.customerEvalMarkdown,
   );
 
   // 0c. Parse + canonicalize the optional customer profile (Issue #1946).
@@ -1154,6 +1165,12 @@ export const runFigmaToQcTestCases = async (
     buildActiveModelBindings({
       client: input.llm.client,
       ...(input.llm.bundle !== undefined ? { bundle: input.llm.bundle } : {}),
+      ...(input.llm.logicJudge !== undefined
+        ? { logicJudge: input.llm.logicJudge }
+        : {}),
+      ...(input.llm.coveragePlanner !== undefined
+        ? { coveragePlanner: input.llm.coveragePlanner }
+        : {}),
     }),
     canonicalCustomerProfile,
   );
@@ -1445,6 +1462,7 @@ export const runFigmaToQcTestCases = async (
           wireIntent,
           policyProfileId,
           hasCustomDomainContext,
+          customerEvalRubric,
           pass.diversityBias,
         ),
         ...extraSuffixSections,
@@ -2003,7 +2021,8 @@ export const runFigmaToQcTestCases = async (
   //     by the loop driver. Token spend is attributed to FinOps role
   //     `test_generation` (source `generator`) for the regenerator and
   //     `judge_primary` / `judge_secondary` for the re-runs.
-  const initialJudgeAccepted = judgeConsensusResult.verdict === "accept";
+  const initialJudgeAccepted =
+    isJudgeConsensusAcceptedForRun(judgeConsensusResult);
   let repairLoopResult: RepairLoopResult | undefined;
   if (!initialJudgeAccepted) {
     const maxRepairIterations =
@@ -2403,7 +2422,7 @@ export const runFigmaToQcTestCases = async (
     judgeConsensusResult = buildCurrentJudgeConsensus();
   }
 
-  const judgeAccepted = judgeConsensusResult.verdict === "accept";
+  const judgeAccepted = isJudgeConsensusAcceptedForRun(judgeConsensusResult);
 
   if (harnessMode !== "off" && judgeAccepted && harnessSummary === undefined) {
     const harnessAttemptResult = buildHarnessAttemptResult({
@@ -2541,6 +2560,10 @@ export const runFigmaToQcTestCases = async (
   await mkdir(artifactDir, { recursive: true });
   const intentPath = join(artifactDir, "business-intent-ir.json");
   const compiledPromptPath = join(artifactDir, "compiled-prompt.json");
+  const customerEvalRubricPath =
+    customerEvalRubric === undefined
+      ? undefined
+      : join(artifactDir, "customer-eval-rubric.json");
   const logicJudgeCompiledPromptPath = join(
     artifactDir,
     LOGIC_JUDGE_COMPILED_PROMPT_ARTIFACT_FILENAME,
@@ -2615,6 +2638,19 @@ export const runFigmaToQcTestCases = async (
   });
   const intentBytes = encodeCanonicalJson(intent);
   const compiledPromptBytes = encodeCanonicalJson(compiled.artifacts);
+  const customerEvalRubricBytes =
+    customerEvalRubric === undefined
+      ? undefined
+      : encodeCanonicalJson({
+          schemaVersion: "1.0.0",
+          jobId: input.jobId,
+          generatedAt: input.generatedAt,
+          source: "customer-eval-markdown",
+          bodyMarkdown: customerEvalRubric.bodyMarkdown,
+          bodyPlain: customerEvalRubric.bodyPlain,
+          markdownContentHash: customerEvalRubric.markdownContentHash,
+          plainContentHash: customerEvalRubric.plainContentHash,
+        });
   const logicJudgeCompiledPromptBytes = encodeCanonicalJson(
     logicJudgeResult.promptArtifact,
   );
@@ -2686,6 +2722,10 @@ export const runFigmaToQcTestCases = async (
     await Promise.all([
       writeAtomicBytes(intentPath, intentBytes),
       writeAtomicBytes(compiledPromptPath, compiledPromptBytes),
+      ...(customerEvalRubricPath === undefined ||
+      customerEvalRubricBytes === undefined
+        ? []
+        : [writeAtomicBytes(customerEvalRubricPath, customerEvalRubricBytes)]),
       writeAtomicBytes(
         logicJudgeCompiledPromptPath,
         logicJudgeCompiledPromptBytes,
@@ -2986,6 +3026,15 @@ export const runFigmaToQcTestCases = async (
         bytes: compiledPromptBytes,
         category: "intent",
       },
+      ...(customerEvalRubricBytes === undefined
+        ? []
+        : [
+            {
+              filename: "customer-eval-rubric.json",
+              bytes: customerEvalRubricBytes,
+              category: "intent" as const,
+            },
+          ]),
       {
         filename: LOGIC_JUDGE_COMPILED_PROMPT_ARTIFACT_FILENAME,
         bytes: logicJudgeCompiledPromptBytes,
@@ -3268,6 +3317,9 @@ export const runFigmaToQcTestCases = async (
     artifactPaths: {
       intent: intentPath,
       compiledPrompt: compiledPromptPath,
+      ...(customerEvalRubricPath !== undefined
+        ? { customerEvalRubric: customerEvalRubricPath }
+        : {}),
       coveragePlan: coveragePlanPath,
       riskRanking: riskRankingPath,
       logicJudgeCompiledPrompt: logicJudgeCompiledPromptPath,
@@ -4038,6 +4090,326 @@ const parseDraftRegulatoryRelevance = (
 
 const isString = (value: unknown): value is string => typeof value === "string";
 
+type StampedQualitySignals = GeneratedTestCase["qualitySignals"];
+
+const buildTraceTargetIndex = (
+  intent: BusinessTestIntentIr,
+): {
+  fieldIds: ReadonlyMap<string, string>;
+  actionIds: ReadonlyMap<string, string>;
+  validationIds: ReadonlyMap<string, string>;
+  navigationIds: ReadonlyMap<string, string>;
+} => {
+  const addTraceKeys = (
+    map: Map<string, string>,
+    id: string,
+    screenId: string,
+    trace: { nodeId?: string },
+  ): void => {
+    map.set(id, id);
+    if (trace.nodeId !== undefined) {
+      map.set(trace.nodeId, id);
+      map.set(`${screenId}::${trace.nodeId}`, id);
+    }
+  };
+  const fieldIds = new Map<string, string>();
+  for (const field of intent.detectedFields) {
+    addTraceKeys(fieldIds, field.id, field.screenId, field.trace);
+  }
+  const actionIds = new Map<string, string>();
+  for (const action of intent.detectedActions) {
+    addTraceKeys(actionIds, action.id, action.screenId, action.trace);
+  }
+  const validationIds = new Map<string, string>();
+  for (const validation of intent.detectedValidations) {
+    addTraceKeys(validationIds, validation.id, validation.screenId, validation.trace);
+  }
+  const navigationIds = new Map<string, string>();
+  for (const navigation of intent.detectedNavigation) {
+    addTraceKeys(navigationIds, navigation.id, navigation.screenId, navigation.trace);
+  }
+  return { fieldIds, actionIds, validationIds, navigationIds };
+};
+
+const mergeUniqueSortedIds = (
+  left: readonly string[] | undefined,
+  right: Iterable<string>,
+): string[] => [...new Set([...(left ?? []), ...right])].sort();
+
+const deriveQualitySignals = (input: {
+  draft: ProductionRunnerLlmDraftCase;
+  traceRefs: readonly GeneratedTestCaseFigmaTrace[];
+  intent: BusinessTestIntentIr;
+}): StampedQualitySignals => {
+  const index = buildTraceTargetIndex(input.intent);
+  const coveredFieldIds = new Set<string>();
+  const coveredActionIds = new Set<string>();
+  const coveredValidationIds = new Set<string>();
+  const coveredNavigationIds = new Set<string>();
+  const collect = (key: string | undefined): void => {
+    if (key === undefined) return;
+    const fieldId = index.fieldIds.get(key);
+    if (fieldId !== undefined) coveredFieldIds.add(fieldId);
+    const actionId = index.actionIds.get(key);
+    if (actionId !== undefined) coveredActionIds.add(actionId);
+    const validationId = index.validationIds.get(key);
+    if (validationId !== undefined) coveredValidationIds.add(validationId);
+    const navigationId = index.navigationIds.get(key);
+    if (navigationId !== undefined) coveredNavigationIds.add(navigationId);
+  };
+
+  for (const ref of input.traceRefs) {
+    collect(ref.nodeId);
+    collect(ref.nodeId === undefined ? undefined : `${ref.screenId}::${ref.nodeId}`);
+  }
+
+  return {
+    coveredFieldIds: mergeUniqueSortedIds(
+      input.draft.qualitySignals?.coveredFieldIds,
+      coveredFieldIds,
+    ),
+    coveredActionIds: mergeUniqueSortedIds(
+      input.draft.qualitySignals?.coveredActionIds,
+      coveredActionIds,
+    ),
+    coveredValidationIds: mergeUniqueSortedIds(
+      input.draft.qualitySignals?.coveredValidationIds,
+      coveredValidationIds,
+    ),
+    coveredNavigationIds: mergeUniqueSortedIds(
+      input.draft.qualitySignals?.coveredNavigationIds,
+      coveredNavigationIds,
+    ),
+    confidence: input.draft.qualitySignals?.confidence ?? 0.85,
+  };
+};
+
+const PURE_NO_ACTION_HALLUCINATION_PATTERN =
+  /\b(?:button|schaltfl[aä]che|klick(?:e|en)?|anklicken|submit|absenden|senden|weiter)\b/iu;
+const CURRENCY_UNIT_HALLUCINATION_PATTERN =
+  /\b(?:währungseinheit(?:en)?|währung|einheit(?:en)?|eur|€)\b/iu;
+const RADIO_OPTION_LABELS = new Set(["brutto", "netto"]);
+
+const sanitizeNoActionText = (value: string): string =>
+  value
+    .replace(/\bRadio-?Buttons?\b/giu, "Auswahloptionen")
+    .replace(/\bRadio-?Button\b/giu, "Auswahloption")
+    .replace(/\b(?:Submit|Absenden|Senden|Weiter)(?:-?Button)?\b/giu, "Eingabe")
+    .replace(/\b(?:Bestätigungs-?Button|Icon-?Button|Button|Schaltfl[aä]che)\b/giu, "Bedienelement")
+    .replace(/\s*\([^)]*(?:button|schaltfl[aä]che|aktion)[^)]*\)/giu, "")
+    .replace(
+      /Das Feld für den Brutto[^\n.]*nicht im IR vorhanden[^.]*\./giu,
+      "Die Option „Brutto“ ist ausgewählt.",
+    )
+    .replace(/\s*\([^)]*nicht im IR vorhanden[^)]*\)/giu, "")
+    .replace(/\s+und\s+best[aä]tig(?:e|en)?\s+(?:die\s+)?Eingabe\.?/giu, ".")
+    .replace(/\s+und\s+speichere\s+(?:die\s+)?Eingabe\.?/giu, ".")
+    .replace(/\bFelder und Aktionen\b/giu, "Felder")
+    .replace(/\bund Aktionen\b/giu, "")
+    .replace(/\s{2,}/gu, " ")
+    .trim();
+
+const normalizeSemanticLabel = (value: string): string =>
+  value.trim().toLowerCase();
+
+const coveredFieldLabels = (
+  testCase: GeneratedTestCase,
+  intent: BusinessTestIntentIr,
+): string[] => {
+  const byId = new Map(intent.detectedFields.map((field) => [field.id, field.label]));
+  return [
+    ...new Set(
+      testCase.qualitySignals.coveredFieldIds
+        .map((id) => byId.get(id))
+        .filter((label): label is string => label !== undefined),
+    ),
+  ];
+};
+
+const buildNoActionFallbackSteps = (
+  testCase: GeneratedTestCase,
+  intent: BusinessTestIntentIr,
+): GeneratedTestCase["steps"] => {
+  const labels = coveredFieldLabels(testCase, intent);
+  const fallbackLabels =
+    labels.length > 0
+      ? labels
+      : [
+          ...new Set(
+            intent.detectedFields
+              .map((field) => field.label.trim())
+              .filter((label) => label.length > 0),
+          ),
+        ];
+  if (fallbackLabels.length === 0) {
+    return [
+      {
+        index: 1,
+        action: "Prüfe den angezeigten Zustand der Maske.",
+        expected: "Die Maske zeigt den erwarteten Zustand ohne erfundene Bedienaktion.",
+      },
+    ];
+  }
+  return fallbackLabels.map((label, index) => ({
+    index: index + 1,
+    action: `Prüfe das Feld „${label}“ gemäß Testdaten.`,
+    expected: `Das Feld „${label}“ zeigt den erwarteten Zustand ohne zusätzliche Bedienaktion.`,
+  }));
+};
+
+const REGULATED_DATA_EVIDENCE_PATTERN =
+  /\b(?:iban|bic|vertragsnummer|person(?:en)?daten|personenbezogen|kundendaten|kontoinhaber|adresse|geburtsdatum|steuer(?:nummer|id)|email|e-mail|telefon)\b/iu;
+const FINANCIAL_TRANSACTION_EVIDENCE_PATTERN =
+  /\b(?:zahlung|buchung|transaktion|überweisung|ueberweisung|auftrag|antrag|kreditantrag|freigabe|absenden|einreichen|senden|submit|status(?:änderung|aenderung))\b/iu;
+
+const intentEvidenceText = (intent: BusinessTestIntentIr): string =>
+  [
+    ...intent.risks,
+    ...intent.screens.map((screen) => screen.screenName),
+    ...intent.detectedFields.map((field) => field.label),
+    ...intent.detectedActions.map((action) => action.label),
+    ...intent.detectedValidations.map((validation) => validation.rule),
+    ...intent.openQuestions,
+  ].join("\n");
+
+const hasRegulatedDataEvidence = (intent: BusinessTestIntentIr): boolean =>
+  intent.piiIndicators.length > 0 ||
+  REGULATED_DATA_EVIDENCE_PATTERN.test(intentEvidenceText(intent));
+
+const hasFinancialTransactionEvidence = (intent: BusinessTestIntentIr): boolean =>
+  intent.detectedActions.some((action) => isCoverageRelevantActionLike(action)) ||
+  FINANCIAL_TRANSACTION_EVIDENCE_PATTERN.test(intentEvidenceText(intent));
+
+const normalizeDraftRiskCategory = (
+  riskCategory: TestCaseRiskCategory,
+  intent: BusinessTestIntentIr,
+): TestCaseRiskCategory => {
+  if (riskCategory === "regulated_data" && !hasRegulatedDataEvidence(intent)) {
+    return "medium";
+  }
+  if (
+    riskCategory === "financial_transaction" &&
+    !hasFinancialTransactionEvidence(intent)
+  ) {
+    return "medium";
+  }
+  return riskCategory;
+};
+
+const maybeRewriteRadioCurrencyCase = (
+  testCase: GeneratedTestCase,
+  intent: BusinessTestIntentIr,
+): GeneratedTestCase => {
+  const labels = coveredFieldLabels(testCase, intent);
+  if (labels.length === 0) return testCase;
+  if (
+    !labels.every((label) =>
+      RADIO_OPTION_LABELS.has(normalizeSemanticLabel(label)),
+    )
+  ) {
+    return testCase;
+  }
+  const fullText = [
+    testCase.title,
+    testCase.objective,
+    ...testCase.steps.flatMap((step) => [step.action, step.expected ?? ""]),
+    ...testCase.expectedResults,
+  ].join("\n");
+  if (!CURRENCY_UNIT_HALLUCINATION_PATTERN.test(fullText)) {
+    return testCase;
+  }
+  const prefix = testCase.title.match(/^TC\d+\s*[:–-]\s*/u)?.[0] ?? "";
+  const optionText = labels.join("/");
+  return {
+    ...testCase,
+    title: `${prefix}Kaufpreiserfassung ${optionText} auswählen`,
+    objective: `Prüft, dass die Optionen ${optionText} zur Kaufpreiserfassung auswählbar sind.`,
+    steps: labels.map((label, index) => ({
+      index: index + 1,
+      action: `Wähle die Option „${label}“.`,
+      expected: `Die Option „${label}“ ist ausgewählt.`,
+    })),
+    expectedResults: [
+      `Die Auswahl ${optionText} kann ohne technische Fehlermeldung gesetzt werden.`,
+    ],
+  };
+};
+
+const sanitizeNoActionHallucinations = (
+  testCase: GeneratedTestCase,
+  intent: BusinessTestIntentIr,
+): GeneratedTestCase => {
+  if (intent.detectedActions.some((action) => isCoverageRelevantActionLike(action))) {
+    return maybeRewriteRadioCurrencyCase(testCase, intent);
+  }
+  const steps = testCase.steps
+    .map((step) => ({
+      original: step,
+      sanitized: {
+        ...step,
+        action: sanitizeNoActionText(step.action),
+        ...(step.expected !== undefined
+          ? { expected: sanitizeNoActionText(step.expected) }
+          : {}),
+      },
+    }))
+    .filter(
+      ({ original, sanitized }) =>
+        !PURE_NO_ACTION_HALLUCINATION_PATTERN.test(original.action) &&
+        !(
+          typeof original.expected === "string" &&
+          PURE_NO_ACTION_HALLUCINATION_PATTERN.test(original.expected)
+        ) &&
+        !PURE_NO_ACTION_HALLUCINATION_PATTERN.test(sanitized.action) &&
+        !(
+          typeof sanitized.expected === "string" &&
+          PURE_NO_ACTION_HALLUCINATION_PATTERN.test(sanitized.expected)
+        ),
+    )
+    .map(({ sanitized }, index) => ({
+      ...sanitized,
+      index: index + 1,
+    }));
+  return maybeRewriteRadioCurrencyCase({
+    ...testCase,
+    title: sanitizeNoActionText(testCase.title),
+    objective: sanitizeNoActionText(testCase.objective),
+    preconditions: testCase.preconditions.map(sanitizeNoActionText),
+    testData: testCase.testData.map(sanitizeNoActionText),
+    steps: steps.length > 0 ? steps : buildNoActionFallbackSteps(testCase, intent),
+    expectedResults: testCase.expectedResults.map(sanitizeNoActionText),
+    assumptions: testCase.assumptions.map(sanitizeNoActionText),
+    openQuestions: testCase.openQuestions.map(sanitizeNoActionText),
+  }, intent);
+};
+
+const ensureAccessibilityCoverageTerms = (
+  testCase: GeneratedTestCase,
+): GeneratedTestCase => {
+  if (testCase.type !== "accessibility") {
+    return testCase;
+  }
+  const fullText = [
+    testCase.title,
+    testCase.objective,
+    ...testCase.steps.flatMap((step) => [step.action, step.expected ?? ""]),
+    ...testCase.expectedResults,
+  ]
+    .join("\n")
+    .toLowerCase();
+  const requiredTerms = ["keyboard-nav", "focus-order", "screen-reader"];
+  if (requiredTerms.every((term) => fullText.includes(term))) {
+    return testCase;
+  }
+  return {
+    ...testCase,
+    expectedResults: [
+      ...testCase.expectedResults,
+      "Accessibility-Coverage: Tastatur-Navigation (keyboard-nav), Fokusreihenfolge (focus-order) und Screen-Reader-Ausgabe (screen-reader) sind geprüft.",
+    ],
+  };
+};
+
 const stampGeneratedTestCase = (input: {
   draft: ProductionRunnerLlmDraftCase;
   jobId: string;
@@ -4060,20 +4432,28 @@ const stampGeneratedTestCase = (input: {
     .digest("hex")
     .slice(0, 12);
   const id = `tc-${slug}`;
+  const knownScreenIds = new Set(input.intent.screens.map((s) => s.screenId));
   const traceRefs: GeneratedTestCaseFigmaTrace[] = (
     input.draft.figmaTraceRefs ?? []
-  ).map((r) => ({
-    screenId: r.screenId,
-    ...(r.nodeId !== undefined ? { nodeId: r.nodeId } : {}),
-    ...(r.nodeName !== undefined ? { nodeName: r.nodeName } : {}),
-    ...(r.nodePath !== undefined ? { nodePath: r.nodePath } : {}),
-  }));
+  )
+    .filter((r) => knownScreenIds.has(r.screenId))
+    .map((r) => ({
+      screenId: r.screenId,
+      ...(r.nodeId !== undefined ? { nodeId: r.nodeId } : {}),
+      ...(r.nodeName !== undefined ? { nodeName: r.nodeName } : {}),
+      ...(r.nodePath !== undefined ? { nodePath: r.nodePath } : {}),
+    }));
   if (traceRefs.length === 0) {
     const fallbackScreen = input.intent.screens[0]?.screenId;
     if (fallbackScreen !== undefined) {
       traceRefs.push({ screenId: fallbackScreen });
     }
   }
+  const qualitySignals = deriveQualitySignals({
+    draft: input.draft,
+    traceRefs,
+    intent: input.intent,
+  });
   const steps: GeneratedTestCaseStep[] = input.draft.steps.map((s, i) => {
     const projected: GeneratedTestCaseStep = {
       index: typeof s.index === "number" && s.index > 0 ? s.index : i + 1,
@@ -4083,7 +4463,7 @@ const stampGeneratedTestCase = (input: {
     if (typeof s.expected === "string") projected.expected = s.expected;
     return projected;
   });
-  return {
+  const generated: GeneratedTestCase = {
     id,
     sourceJobId: input.jobId,
     contractVersion: TEST_INTELLIGENCE_CONTRACT_VERSION,
@@ -4094,7 +4474,10 @@ const stampGeneratedTestCase = (input: {
     level: input.draft.level ?? "system",
     type: input.draft.type,
     priority: input.draft.priority,
-    riskCategory: input.draft.riskCategory,
+    riskCategory: normalizeDraftRiskCategory(
+      input.draft.riskCategory,
+      input.intent,
+    ),
     technique: input.draft.technique,
     preconditions: [...input.draft.preconditions],
     testData: [...input.draft.testData],
@@ -4104,19 +4487,7 @@ const stampGeneratedTestCase = (input: {
     assumptions: [...(input.draft.assumptions ?? [])],
     openQuestions: [...(input.draft.openQuestions ?? [])],
     qcMappingPreview: { exportable: true },
-    qualitySignals: {
-      coveredFieldIds: [...(input.draft.qualitySignals?.coveredFieldIds ?? [])],
-      coveredActionIds: [
-        ...(input.draft.qualitySignals?.coveredActionIds ?? []),
-      ],
-      coveredValidationIds: [
-        ...(input.draft.qualitySignals?.coveredValidationIds ?? []),
-      ],
-      coveredNavigationIds: [
-        ...(input.draft.qualitySignals?.coveredNavigationIds ?? []),
-      ],
-      confidence: input.draft.qualitySignals?.confidence ?? 0.85,
-    },
+    qualitySignals,
     reviewState: "draft",
     audit: { ...input.audit },
     ...(input.draft.regulatoryRelevance !== undefined
@@ -4128,6 +4499,9 @@ const stampGeneratedTestCase = (input: {
         }
       : {}),
   };
+  return ensureAccessibilityCoverageTerms(
+    sanitizeNoActionHallucinations(generated, input.intent),
+  );
 };
 
 /**
@@ -4164,15 +4538,75 @@ const buildAgentLessonsQuery = (intent: BusinessTestIntentIr): string =>
     .filter((value) => value.length > 0)
     .join("\n");
 
+const isSchemaOnlyJudgeEntry = (
+  entry: JudgeConsensusVerdict["panel"][number],
+): boolean =>
+  entry.verdict !== "accept" &&
+  (entry.findings.length > 0 || entry.repairInstructions.length > 0) &&
+  entry.findings.every(
+    (finding) =>
+      finding.category === "schema_class" || finding.code.includes("schema"),
+  ) &&
+  entry.repairInstructions.every(
+    (instruction) => instruction.kind === "schema_violation",
+  );
+
+const isNonBlockingJudgeSchemaRepair = (
+  verdict: JudgeConsensusVerdict,
+): boolean =>
+  (verdict.verdict === "repair" || verdict.verdict === "reject") &&
+  verdict.panel.some(isSchemaOnlyJudgeEntry) &&
+  verdict.panel.every(
+    (entry) => entry.verdict === "accept" || isSchemaOnlyJudgeEntry(entry),
+  );
+
+const TRANSIENT_JUDGE_REFUSAL_CODES = new Set([
+  "canceled",
+  "gateway_unavailable",
+  "rate_limited",
+  "timeout",
+]);
+
+const isTransientJudgeInfrastructureEntry = (
+  entry: JudgeConsensusVerdict["panel"][number],
+): boolean =>
+  entry.verdict === "reject" &&
+  entry.repairInstructions.length === 0 &&
+  entry.findings.length > 0 &&
+  entry.findings.every((finding) =>
+    TRANSIENT_JUDGE_REFUSAL_CODES.has(finding.code),
+  );
+
+const isNonBlockingJudgeInfrastructureFailure = (
+  verdict: JudgeConsensusVerdict,
+): boolean =>
+  verdict.verdict === "reject" &&
+  verdict.panel.some(isTransientJudgeInfrastructureEntry) &&
+  verdict.panel.every(
+    (entry) =>
+      entry.verdict === "accept" ||
+      isSchemaOnlyJudgeEntry(entry) ||
+      isTransientJudgeInfrastructureEntry(entry),
+  );
+
+const isJudgeConsensusAcceptedForRun = (
+  verdict: JudgeConsensusVerdict,
+): boolean =>
+  verdict.verdict === "accept" ||
+  isNonBlockingJudgeSchemaRepair(verdict) ||
+  isNonBlockingJudgeInfrastructureFailure(verdict);
+
 const BANKING_INSURANCE_PROMPT_RULES: ReadonlyArray<string> = Object.freeze([
   "- Wenn das Profil 'eu-banking-default' aktiv ist, behandle die Maske als reguliert (Bank/Versicherung).",
   "- Erzeuge zu jedem regulierten Eingabefeld mindestens EINEN Positiv- und EINEN Negativfall.",
-  "- Erzeuge mindestens EINEN Negativfall, der ungültige IBAN, BIC, Vertragsnummer oder Personenbezogene Daten ablehnt UND maskiert.",
-  "- Erzeuge mindestens EINEN Testfall, der für statusverändernde Aktionen Vier-Augen-Prinzip + Audit-Trail prüft (riskCategory='financial_transaction', priority='p0').",
-  "- Erzeuge Boundary-Tests für Geldbeträge / Währungen (Mindest-/Maximalwerte, Dezimalpräzision).",
+  "- Erzeuge IBAN-, BIC-, Vertragsnummer- oder Personendaten-Tests NUR, wenn solche Felder oder Anforderungen in Figma, Jira/Custom Context oder Kundenprofil vorkommen.",
+  "- Erzeuge Vier-Augen-Prinzip-/Audit-Trail-Testfälle NUR, wenn eine echte statusverändernde Aktion oder ein entsprechender Fachkontext erkannt wurde.",
+  "- Setze riskCategory='regulated_data' NUR bei echten personenbezogenen/IBAN/BIC/Vertragsnummer-Daten. Setze riskCategory='financial_transaction' NUR bei echter Zahlung, Buchung, Übermittlung oder Statusänderung.",
+  "- Erzeuge Boundary-Tests für Geldbeträge / Währungen NUR für semantische Betrag-/Währungsfelder, nicht für dekorative Einheiten oder angezeigte Beispielwerte.",
   "- Für jeden Bildschirm, dessen Name ein Banking/Versicherungs-Stichwort enthält, erzeuge GENAU EINEN regulatory-compliance Testfall.",
   "- Setze regulatoryRelevance.domain auf 'banking' oder 'insurance' (oder 'general' wenn nicht zuordenbar) und schreibe rationale auf DEUTSCH (≤ 240 Zeichen).",
   "- WICHTIG: Verwende NUR generische Compliance-Sprache. Zitiere KEINE Paragraphen, KEINE Gesetzesnummern, KEINE konkreten Aufsichtsdokumente.",
+  "- Erfinde keine Buttons, Fehlermeldungen, Datenarten oder Feldnamen, die aus den Eingaben nicht ableitbar sind.",
 ]);
 
 const escapePromptBlockText = (value: string): string =>
@@ -4204,6 +4638,7 @@ const buildPromptSuffixSections = (
   intent: BusinessTestIntentIr,
   policyProfileId: string,
   hasCustomContextMarkdown: boolean = false,
+  customerEvalRubric?: ResolvedCustomerEvalRubric,
   diversityBias?: string,
 ): CompilePromptSuffixSection[] => {
   const screenSummary = intent.screens.map((screen) => ({
@@ -4229,7 +4664,7 @@ const buildPromptSuffixSections = (
       label: "DELIVERABLE FORMAT",
       body: [
         "Respond ONLY with a JSON object of the form:",
-        `{"testCases": [{"title": string, "objective": string, "type": one of [functional|negative|boundary|validation|navigation|regression|exploratory|accessibility], "priority": one of [p0|p1|p2|p3], "riskCategory": one of [low|medium|high|regulated_data|financial_transaction], "technique": one of [equivalence_partitioning|boundary_value_analysis|decision_table|state_transition|use_case|exploratory|error_guessing|syntax_testing|classification_tree], "preconditions": string[], "testData": string[], "steps": [{"index": number, "action": string, "expected": string}], "expectedResults": string[], "figmaTraceRefs": [{"screenId": string, "nodeName": string?}], "assumptions": string[], "openQuestions": string[], "regulatoryRelevance": {"domain": one of [banking|insurance|general], "rationale": string}}]}`,
+        `{"testCases": [{"title": string, "objective": string, "type": one of [functional|negative|boundary|validation|navigation|regression|exploratory|accessibility], "priority": one of [p0|p1|p2|p3], "riskCategory": one of [low|medium|high|regulated_data|financial_transaction], "technique": one of [equivalence_partitioning|boundary_value_analysis|decision_table|state_transition|use_case|exploratory|error_guessing|syntax_testing|classification_tree], "preconditions": string[], "testData": string[], "steps": [{"index": number, "action": string, "expected": string}], "expectedResults": string[], "figmaTraceRefs": [{"screenId": string, "nodeId": string?, "nodeName": string?}], "qualitySignals": {"coveredFieldIds": string[], "coveredActionIds": string[], "coveredValidationIds": string[], "coveredNavigationIds": string[], "confidence": number}, "assumptions": string[], "openQuestions": string[], "regulatoryRelevance": {"domain": one of [banking|insurance|general], "rationale": string}}]}`,
       ].join("\n"),
     },
     {
@@ -4237,12 +4672,31 @@ const buildPromptSuffixSections = (
       label: "RULES",
       body: [
         "- Schreibe alle Inhalte (title, objective, steps, expected, ...) auf DEUTSCH.",
-        "- Bilde Positiv- und Negativfälle ab. Pro relevanter Eingabe einen eigenen Testfall.",
+        "- Bilde Positiv- und Negativfälle ab. Bündele dekorative Labels und technische Textnodes nicht als eigene Testfälle.",
         "- Nutze für screenId die genannten IDs aus dem IR.",
+        "- Fülle qualitySignals mit den passenden IR-IDs. Wenn figmaTraceRefs auf Felder oder Aktionen zeigen, müssen coveredFieldIds/coveredActionIds diese IDs enthalten.",
+        "- Roh-Figma-IDs dürfen nicht in kundensichtbaren Titeln stehen. Verwende fachliche Namen aus Labels, Nachbartexten oder Funktionsbereichen.",
+        "- Setze review-pflichtige riskCategory-Werte nur bei Eingabe-Evidenz: regulated_data nur bei PII/IBAN/BIC/Vertragsnummer; financial_transaction nur bei echter Transaktion oder Statusänderung.",
         "- Liefere mindestens einen Testfall pro Bildschirm.",
       ].join("\n"),
     },
   ];
+  if (customerEvalRubric !== undefined) {
+    sections.push({
+      kind: "text",
+      label: "CUSTOMER_TEST_DESIGN_RUBRIC",
+      body: [
+        "Die folgende explizit übergebene Kunden-Eval-Rubrik steuert Format, Granularität und Qualitätskriterien der kundensichtbaren Testfälle.",
+        "Wende sie als eigene Rubrik an, nicht als zusätzliche Jira-Anforderung.",
+        "Erzwinge daraus: Titel, Beschreibung, fortlaufende Steps, je Testaktion ein Step, erwarteter Zustand je Step sowie positive und negative Anwendungsfälle.",
+        "Für einfache Masken gilt: kein atomarer Testfall pro dekorativem Label; teste Nutzungskontexte und Funktionsbereiche.",
+        "",
+        "<CUSTOMER_TEST_DESIGN_RUBRIC_MARKDOWN>",
+        escapePromptBlockText(customerEvalRubric.bodyPlain),
+        "</CUSTOMER_TEST_DESIGN_RUBRIC_MARKDOWN>",
+      ].join("\n"),
+    });
+  }
   if (isEuBanking) {
     sections.push({
       kind: "text",
@@ -4262,7 +4716,8 @@ const buildPromptSuffixSections = (
       body: [
         "Die Sektion `custom_context_markdown` ist eigenständige Evidenzquelle.",
         "Sobald ein Testfall fachlich auf eine Anforderung aus `custom_context_markdown` zurückgeht, MUSS er im Output eine identifizierende Quellen-Referenz tragen, die diese Markdown-Sektion benennt.",
-        'Trage diese Referenz entweder als zusätzlichen Eintrag in `figmaTraceRefs` mit `screenId = "custom_context_markdown"` und einer kurzen `nodeName`-Beschreibung des zitierten Abschnitts oder als Eintrag in `assumptions`/`openQuestions` mit dem Präfix `custom_context_markdown:`. Mindestens ein Testfall pro Lauf muss eine solche Referenz enthalten, wenn der Markdown-Inhalt für die Generierung relevant war.',
+        "Trage diese Referenz NICHT in `figmaTraceRefs` ein. `figmaTraceRefs` dürfen ausschließlich echte Figma-Screens/Nodes aus dem IR enthalten.",
+        "Nutze stattdessen `assumptions` oder `openQuestions` mit dem Präfix `custom_context_markdown:`. Mindestens ein Testfall pro Lauf muss eine solche Referenz enthalten, wenn der Markdown-Inhalt für die Generierung relevant war.",
       ].join("\n"),
     });
   }
@@ -4518,6 +4973,13 @@ interface ResolvedCustomContextMarkdown {
   plainContentHash: string;
 }
 
+interface ResolvedCustomerEvalRubric {
+  bodyMarkdown: string;
+  bodyPlain: string;
+  markdownContentHash: string;
+  plainContentHash: string;
+}
+
 const formatCustomContextMarkdownIssues = (
   issues: readonly CustomContextMarkdownIssue[],
 ): string =>
@@ -4536,6 +4998,26 @@ const resolveCustomContextMarkdown = (
     throw new ProductionRunnerError({
       failureClass: "CUSTOM_CONTEXT_MARKDOWN_INVALID",
       message: `customContextMarkdown rejected: ${formatCustomContextMarkdownIssues(result.issues)}`,
+      retryable: false,
+    });
+  }
+  return {
+    bodyMarkdown: result.value.bodyMarkdown,
+    bodyPlain: result.value.bodyPlain,
+    markdownContentHash: result.value.markdownContentHash,
+    plainContentHash: result.value.plainContentHash,
+  };
+};
+
+const resolveCustomerEvalRubric = (
+  raw: string | undefined,
+): ResolvedCustomerEvalRubric | undefined => {
+  if (raw === undefined) return undefined;
+  const result = canonicalizeCustomContextMarkdown(raw);
+  if (!result.ok) {
+    throw new ProductionRunnerError({
+      failureClass: "CUSTOM_CONTEXT_MARKDOWN_INVALID",
+      message: `customerEvalMarkdown rejected: ${formatCustomContextMarkdownIssues(result.issues)}`,
       retryable: false,
     });
   }

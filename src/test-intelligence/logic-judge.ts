@@ -522,8 +522,9 @@ const validateLogicJudgeResponse = (
       repairInstructions: readonly RepairInstruction[];
     }
   | { ok: false; message: string; repairInstructions: readonly RepairInstruction[] } => {
+  const normalizedValue = normalizeMissingJobLevelTestCaseIds(value);
   const schemaViolation = validateJsonSchemaSubset(
-    value,
+    normalizedValue,
     buildLogicJudgeResponseSchema(),
   );
   if (schemaViolation !== undefined) {
@@ -539,7 +540,7 @@ const validateLogicJudgeResponse = (
       ],
     };
   }
-  const record = value as Record<string, unknown>;
+  const record = normalizedValue as Record<string, unknown>;
   const verdict = record["verdict"] as LogicJudgeVerdictLabel;
   const findingsRaw = record["findings"] as ReadonlyArray<Record<string, unknown>>;
   const repairInstructionsRaw = record[
@@ -599,6 +600,37 @@ const validateLogicJudgeResponse = (
     });
   }
   return { ok: true, verdict, findings, repairInstructions };
+};
+
+const normalizeMissingJobLevelTestCaseIds = (value: unknown): unknown => {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return value;
+  }
+  const record = value as Record<string, unknown>;
+  const normalizeEntry = (entry: unknown): unknown =>
+    typeof entry === "object" &&
+    entry !== null &&
+    !Array.isArray(entry) &&
+    (entry as Record<string, unknown>)["testCaseId"] === undefined
+      ? { ...(entry as Record<string, unknown>), testCaseId: "$job" }
+      : entry;
+  return {
+    ...record,
+    ...(Array.isArray(record["findings"])
+      ? {
+          findings: (record["findings"] as readonly unknown[]).map(
+            normalizeEntry,
+          ),
+        }
+      : {}),
+    ...(Array.isArray(record["repairInstructions"])
+      ? {
+          repairInstructions: (
+            record["repairInstructions"] as readonly unknown[]
+          ).map(normalizeEntry),
+        }
+      : {}),
+  };
 };
 
 const buildLogicJudgeVerdict = (input: {

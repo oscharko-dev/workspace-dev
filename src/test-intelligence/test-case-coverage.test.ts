@@ -181,6 +181,107 @@ test("uncovered ids are sorted deterministically", () => {
   assert.equal(report.fieldCoverage.ratio, 0);
 });
 
+test("decorative Figma fields and icon actions are excluded from mandatory coverage totals", () => {
+  const intent: BusinessTestIntentIr = {
+    ...buildIntent(),
+    detectedFields: [
+      ...buildIntent().detectedFields,
+      {
+        id: "f-decor-textfield",
+        screenId: "s-1",
+        trace: { nodeId: "n-textfield" },
+        provenance: "figma_node",
+        confidence: 0.5,
+        label: "<TextField>",
+        type: "text",
+      },
+      {
+        id: "f-decor-select",
+        screenId: "s-1",
+        trace: { nodeId: "n-select" },
+        provenance: "figma_node",
+        confidence: 0.5,
+        label: "<Select>",
+        type: "text",
+      },
+      {
+        id: "f-decor-text",
+        screenId: "s-1",
+        trace: { nodeId: "n-text" },
+        provenance: "figma_node",
+        confidence: 0.5,
+        label: "Text",
+        type: "text",
+      },
+      {
+        id: "f-decor-currency",
+        screenId: "s-1",
+        trace: { nodeId: "n-eur" },
+        provenance: "figma_node",
+        confidence: 0.5,
+        label: "EUR",
+        type: "text",
+      },
+      {
+        id: "f-decor-value",
+        screenId: "s-1",
+        trace: { nodeId: "n-value" },
+        provenance: "figma_node",
+        confidence: 0.5,
+        label: "45.000,00 €",
+        type: "text",
+      },
+      {
+        id: "f-decor-helper",
+        screenId: "s-1",
+        trace: { nodeId: "n-helper" },
+        provenance: "figma_node",
+        confidence: 0.5,
+        label: "Die MwSt. ist nicht Teil des Finanzierungsbedarfs.",
+        type: "text",
+      },
+      {
+        id: "f-decor-heading",
+        screenId: "s-1",
+        trace: { nodeId: "n-heading" },
+        provenance: "figma_node",
+        confidence: 0.5,
+        label: "Ermittlung des Finanzierungsbedarfs",
+        type: "text",
+      },
+    ],
+    detectedActions: [
+      ...buildIntent().detectedActions,
+      {
+        id: "a-decor-icon",
+        screenId: "s-1",
+        trace: { nodeId: "n-icon" },
+        provenance: "figma_node",
+        confidence: 0.2,
+        label: "<Icon>",
+        kind: "icon",
+        labelConfidence: 0,
+      },
+    ],
+  };
+  const report = computeCoverageReport({
+    jobId: "job-1",
+    generatedAt: "2026-04-25T10:00:00.000Z",
+    policyProfileId: EU_BANKING_DEFAULT_POLICY_PROFILE_ID,
+    list: {
+      schemaVersion: GENERATED_TEST_CASE_SCHEMA_VERSION,
+      jobId: "job-1",
+      testCases: [],
+    },
+    intent,
+    duplicateSimilarityThreshold: 0.92,
+  });
+  assert.equal(report.fieldCoverage.total, 2);
+  assert.deepEqual(report.fieldCoverage.uncoveredIds, ["f-1", "f-2"]);
+  assert.equal(report.actionCoverage.total, 1);
+  assert.deepEqual(report.actionCoverage.uncoveredIds, ["a-1"]);
+});
+
 test("rubric score is rounded and clamped", () => {
   const report = computeCoverageReport({
     jobId: "job-1",

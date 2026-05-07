@@ -287,6 +287,7 @@ const FORM_SCREEN_A11Y_CRITERION_PATTERNS: Readonly<
   "screen-reader": Object.freeze([
     /\bscreen reader\b/u,
     /\bscreen-reader\b/u,
+    /\bscreen\s*-\s*reader\b/u,
     /\bbildschirmleser\b/u,
     /\baria-live\b/u,
     /\bannounce(?:ment|ments|s|d)?\b/u,
@@ -295,17 +296,21 @@ const FORM_SCREEN_A11Y_CRITERION_PATTERNS: Readonly<
   ]),
 });
 
+const normalizeA11yCaseText = (value: string): string =>
+  value
+    .normalize("NFKC")
+    .replace(/\p{Dash_Punctuation}/gu, "-")
+    .toLowerCase();
+
 const summarizeA11yCaseText = (testCase: GeneratedTestCase): string =>
-  [
+  normalizeA11yCaseText([
     testCase.title,
     testCase.objective,
     ...testCase.expectedResults,
     ...testCase.steps.flatMap((step) =>
       step.expected === undefined ? [step.action] : [step.action, step.expected],
     ),
-  ]
-    .join("\n")
-    .toLowerCase();
+  ].join("\n"));
 
 export const listCoveredFormScreenA11yCriteria = (
   testCase: GeneratedTestCase,
