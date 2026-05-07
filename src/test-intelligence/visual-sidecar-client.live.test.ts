@@ -154,7 +154,7 @@ test("live visual sidecar smoke: fixture capture describes through role-separate
     },
   );
 
-  const result = await describeVisualScreens({
+  const { result } = await describeVisualScreens({
     bundle,
     captures,
     jobId: "job-live-visual-sidecar-smoke",

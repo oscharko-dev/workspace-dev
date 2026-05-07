@@ -230,6 +230,7 @@ import { runValidationPipeline } from "./validation-pipeline.js";
 import {
   describeVisualScreens,
   writeVisualSidecarResultArtifact,
+  type DescribeVisualScreensDiagnostic,
 } from "./visual-sidecar-client.js";
 import { createPersistentReplayCache } from "./replay-cache-persistent.js";
 import {
@@ -941,8 +942,10 @@ const getBySourceCallCount = (
   source: AgentSourceLabel,
 ): number => report.bySource[source]?.callCount ?? 0;
 
-const toArtifactReference = (artifactDir: string, artifactPath: string): string =>
-  relative(artifactDir, artifactPath).replaceAll("\\", "/");
+const toArtifactReference = (
+  artifactDir: string,
+  artifactPath: string,
+): string => relative(artifactDir, artifactPath).replaceAll("\\", "/");
 
 const roleConfigurationSource = (
   input: RunFigmaToQcTestCasesInput,
@@ -972,7 +975,9 @@ const buildVisualRoleCostAttribution = (input: {
   report: FinOpsBudgetReport;
   role: "visual_primary" | "visual_fallback";
 }): AgentParticipationCostAttribution | undefined => {
-  const entry = input.report.roles.find((candidate) => candidate.role === input.role);
+  const entry = input.report.roles.find(
+    (candidate) => candidate.role === input.role,
+  );
   if (entry === undefined) return undefined;
   return {
     ...(entry.deployment.length > 0 ? { deployment: entry.deployment } : {}),
@@ -1029,11 +1034,13 @@ const buildAgentParticipationEntries = (input: {
     input.request.llm.logicJudge ??
     input.request.llm.client;
   const logicJudgeDeployment =
-    input.logicJudgeEnabled || roleConfigurationSource(input.request, "logic_judge") !== "disabled"
+    input.logicJudgeEnabled ||
+    roleConfigurationSource(input.request, "logic_judge") !== "disabled"
       ? logicJudgeClient.deployment
       : undefined;
   const coveragePlannerClient =
-    input.request.llm.bundle?.coveragePlanner ?? input.request.llm.coveragePlanner;
+    input.request.llm.bundle?.coveragePlanner ??
+    input.request.llm.coveragePlanner;
   const riskRankerClient =
     input.request.llm.bundle?.riskRanker ?? input.request.llm.riskRanker;
   const a11yJudgeClient = input.request.llm.bundle?.a11yJudge;
@@ -1045,9 +1052,14 @@ const buildAgentParticipationEntries = (input: {
     status: input.generationCacheHit ? "skipped" : "succeeded",
     attemptCount: getBySourceCallCount(input.finopsReport, "generator"),
     ...(input.generationCacheHit
-      ? { remediation: "Replay cache satisfied generation; no gateway attempt was required." }
+      ? {
+          remediation:
+            "Replay cache satisfied generation; no gateway attempt was required.",
+        }
       : {}),
-    artifactReferences: [toArtifactReference(input.artifactDir, refs.agentRoleRun)],
+    artifactReferences: [
+      toArtifactReference(input.artifactDir, refs.agentRoleRun),
+    ],
     ...(buildRoleCostAttribution({
       report: input.finopsReport,
       source: "generator",
@@ -1068,7 +1080,9 @@ const buildAgentParticipationEntries = (input: {
       : "succeeded";
   entries.push({
     role: "logic_judge",
-    ...(logicJudgeDeployment !== undefined ? { deployment: logicJudgeDeployment } : {}),
+    ...(logicJudgeDeployment !== undefined
+      ? { deployment: logicJudgeDeployment }
+      : {}),
     configurationSource: roleConfigurationSource(input.request, "logic_judge"),
     status: logicJudgeStatus,
     attemptCount: getBySourceCallCount(input.finopsReport, "judge_primary"),
@@ -1083,7 +1097,9 @@ const buildAgentParticipationEntries = (input: {
             "Inspect the logic-judge verdict artifact and gateway logs; fix the dedicated judge deployment or fall back to a healthy deployment.",
         }
       : {}),
-    artifactReferences: [toArtifactReference(input.artifactDir, refs.logicJudgeVerdict)],
+    artifactReferences: [
+      toArtifactReference(input.artifactDir, refs.logicJudgeVerdict),
+    ],
     ...(buildRoleCostAttribution({
       report: input.finopsReport,
       source: "judge_primary",
@@ -1119,7 +1135,10 @@ const buildAgentParticipationEntries = (input: {
       ...(inputRole.clientDeployment !== undefined
         ? { deployment: inputRole.clientDeployment }
         : {}),
-      configurationSource: roleConfigurationSource(input.request, inputRole.role),
+      configurationSource: roleConfigurationSource(
+        input.request,
+        inputRole.role,
+      ),
       status,
       attemptCount: getBySourceCallCount(input.finopsReport, inputRole.source),
       ...(status === "not_configured"
@@ -1139,7 +1158,9 @@ const buildAgentParticipationEntries = (input: {
                 : "Inspect the risk-ranking artifact and ranker deployment health before re-running.",
           }
         : {}),
-      artifactReferences: [toArtifactReference(input.artifactDir, inputRole.artifactPath)],
+      artifactReferences: [
+        toArtifactReference(input.artifactDir, inputRole.artifactPath),
+      ],
       ...(costAttribution !== undefined ? { costAttribution } : {}),
     };
   };
@@ -1163,10 +1184,18 @@ const buildAgentParticipationEntries = (input: {
     }),
   );
 
-  const visualPrimarySource = roleConfigurationSource(input.request, "visual_primary");
-  const visualFallbackSource = roleConfigurationSource(input.request, "visual_fallback");
-  const visualPrimaryDeployment = input.request.llm.bundle?.visualPrimary.deployment;
-  const visualFallbackDeployment = input.request.llm.bundle?.visualFallback.deployment;
+  const visualPrimarySource = roleConfigurationSource(
+    input.request,
+    "visual_primary",
+  );
+  const visualFallbackSource = roleConfigurationSource(
+    input.request,
+    "visual_fallback",
+  );
+  const visualPrimaryDeployment =
+    input.request.llm.bundle?.visualPrimary.deployment;
+  const visualFallbackDeployment =
+    input.request.llm.bundle?.visualFallback.deployment;
   const visualPrimaryStatus: AgentParticipationStatus =
     !visualBundleConfigured && visualPrimarySource !== "disabled"
       ? "not_configured"
@@ -1185,7 +1214,9 @@ const buildAgentParticipationEntries = (input: {
   });
   entries.push({
     role: "visual_primary",
-    ...(visualPrimaryDeployment !== undefined ? { deployment: visualPrimaryDeployment } : {}),
+    ...(visualPrimaryDeployment !== undefined
+      ? { deployment: visualPrimaryDeployment }
+      : {}),
     configurationSource: visualPrimarySource,
     status: visualPrimaryStatus,
     attemptCount: primaryAttempt !== undefined ? 1 : 0,
@@ -1202,7 +1233,8 @@ const buildAgentParticipationEntries = (input: {
                 : "Visual sidecar was disabled or not requested for this run.",
           }
         : {}),
-    ...(visualPrimaryStatus === "failed" && primaryAttempt?.errorClass !== undefined
+    ...(visualPrimaryStatus === "failed" &&
+    primaryAttempt?.errorClass !== undefined
       ? {
           failureClass: primaryAttempt.errorClass,
           remediation:
@@ -1213,7 +1245,9 @@ const buildAgentParticipationEntries = (input: {
       refs.visualSidecarResult !== undefined
         ? [toArtifactReference(input.artifactDir, refs.visualSidecarResult)]
         : [],
-    ...(visualPrimaryCost !== undefined ? { costAttribution: visualPrimaryCost } : {}),
+    ...(visualPrimaryCost !== undefined
+      ? { costAttribution: visualPrimaryCost }
+      : {}),
   });
 
   const visualFallbackStatus: AgentParticipationStatus =
@@ -1253,7 +1287,8 @@ const buildAgentParticipationEntries = (input: {
                 : "Fallback was configured but was not needed for this run.",
           }
         : {}),
-    ...(visualFallbackStatus === "failed" && fallbackAttempt?.errorClass !== undefined
+    ...(visualFallbackStatus === "failed" &&
+    fallbackAttempt?.errorClass !== undefined
       ? {
           failureClass: fallbackAttempt.errorClass,
           remediation:
@@ -1264,7 +1299,9 @@ const buildAgentParticipationEntries = (input: {
       refs.visualSidecarResult !== undefined
         ? [toArtifactReference(input.artifactDir, refs.visualSidecarResult)]
         : [],
-    ...(visualFallbackCost !== undefined ? { costAttribution: visualFallbackCost } : {}),
+    ...(visualFallbackCost !== undefined
+      ? { costAttribution: visualFallbackCost }
+      : {}),
   });
 
   const a11yJudgeSource = roleConfigurationSource(input.request, "a11y_judge");
@@ -1289,7 +1326,8 @@ const buildAgentParticipationEntries = (input: {
     configurationSource: a11yJudgeSource,
     status: a11yJudgeStatus,
     attemptCount:
-      input.a11yJudgeResult?.gatewayResult !== undefined || refs.a11yJudgeVerdict !== undefined
+      input.a11yJudgeResult?.gatewayResult !== undefined ||
+      refs.a11yJudgeVerdict !== undefined
         ? 1
         : 0,
     ...(a11yJudgeStatus === "not_configured"
@@ -1350,11 +1388,10 @@ const buildRunQualityArtifact = (input: {
   const visualFallbackUsed =
     input.visualSidecarResult?.outcome === "success" &&
     input.visualSidecarResult.fallbackReason !== "none";
-  const latestVisualAttemptError =
-    input.visualSidecarResult?.attempts
-      .slice()
-      .reverse()
-      .find((attempt) => attempt.errorClass !== undefined)?.errorClass;
+  const latestVisualAttemptError = input.visualSidecarResult?.attempts
+    .slice()
+    .reverse()
+    .find((attempt) => attempt.errorClass !== undefined)?.errorClass;
   const attemptSummaries: RunQualityAttemptSummary[] = [
     {
       stage: "generator",
@@ -1431,8 +1468,7 @@ const buildRunQualityArtifact = (input: {
       degradedReasons.add("repair_budget_exhausted");
     }
     if (
-      input.judgeConsensus.repairHistory.finalOutcome ===
-      "convergence_stalled"
+      input.judgeConsensus.repairHistory.finalOutcome === "convergence_stalled"
     ) {
       degradedReasons.add("repair_convergence_stalled");
     }
@@ -1578,6 +1614,8 @@ export const runFigmaToQcTestCases = async (
     | "non_figma_url_source"
     | "visual_sidecar_bundle_not_configured"
     | undefined;
+  let visualSidecarDiagnostics: ReadonlyArray<DescribeVisualScreensDiagnostic> =
+    [];
   let promptVisualBinding: Parameters<
     typeof compilePrompt
   >[0]["visualBinding"] = {
@@ -1628,7 +1666,7 @@ export const runFigmaToQcTestCases = async (
         cause: err,
       });
     }
-    const sidecarResult = await describeVisualScreens({
+    const sidecarRun = await describeVisualScreens({
       bundle: input.llm.bundle,
       captures,
       jobId: input.jobId,
@@ -1662,6 +1700,8 @@ export const runFigmaToQcTestCases = async (
         ? { abortSignal: input.llm.abortSignal }
         : {}),
     });
+    const sidecarResult = sidecarRun.result;
+    visualSidecarDiagnostics = sidecarRun.diagnostics;
     visualSidecarArtifactPath = join(
       artifactDir,
       VISUAL_SIDECAR_RESULT_ARTIFACT_FILENAME,
@@ -1675,6 +1715,19 @@ export const runFigmaToQcTestCases = async (
     });
     visualSidecarArtifact = sidecarArtifact.artifact;
     visualSidecarArtifactBytes = sidecarArtifact.bytes;
+    // Issue #2017: persist per-attempt raw-response diagnostics atomically
+    // alongside the visual sidecar result. The relative path for each file
+    // already lives on `sidecarResult.attempts[i].rawResponseArtifactPath`.
+    if (visualSidecarDiagnostics.length > 0) {
+      await Promise.all(
+        visualSidecarDiagnostics.map((diagnostic) =>
+          writeAtomicBytes(
+            join(artifactDir, diagnostic.filename),
+            diagnostic.bytes,
+          ),
+        ),
+      );
+    }
     recordVisualSidecarAttempts({
       recorder: finopsRecorder,
       result: sidecarResult,
@@ -2723,8 +2776,7 @@ export const runFigmaToQcTestCases = async (
             ...(testGenerationRoleBudget.maxAttempts !== undefined
               ? { maxGeneratorAttempts: testGenerationRoleBudget.maxAttempts }
               : {}),
-            ...(testGenerationRoleBudget.maxOutputTokensPerRequest !==
-            undefined
+            ...(testGenerationRoleBudget.maxOutputTokensPerRequest !== undefined
               ? {
                   expectedNextOutputTokens:
                     testGenerationRoleBudget.maxOutputTokensPerRequest,
@@ -3421,7 +3473,11 @@ export const runFigmaToQcTestCases = async (
         ...(a11yJudgeVerdictPath !== undefined
           ? { a11yJudgeVerdict: a11yJudgeVerdictPath }
           : {}),
-        agentRoleRun: join(artifactDir, "agent-role-runs", "test_generation.json"),
+        agentRoleRun: join(
+          artifactDir,
+          "agent-role-runs",
+          "test_generation.json",
+        ),
       },
     }),
   });
@@ -3970,6 +4026,12 @@ export const runFigmaToQcTestCases = async (
               category: "visual_sidecar" as const,
             },
           ]),
+      // Issue #2017: per-attempt raw-response diagnostics, when present.
+      ...visualSidecarDiagnostics.map((diagnostic) => ({
+        filename: diagnostic.filename,
+        bytes: diagnostic.bytes,
+        category: "visual_sidecar" as const,
+      })),
       ...(visualCaptureArtifacts === undefined
         ? []
         : [
@@ -4985,11 +5047,21 @@ const buildTraceTargetIndex = (
   }
   const validationIds = new Map<string, string>();
   for (const validation of intent.detectedValidations) {
-    addTraceKeys(validationIds, validation.id, validation.screenId, validation.trace);
+    addTraceKeys(
+      validationIds,
+      validation.id,
+      validation.screenId,
+      validation.trace,
+    );
   }
   const navigationIds = new Map<string, string>();
   for (const navigation of intent.detectedNavigation) {
-    addTraceKeys(navigationIds, navigation.id, navigation.screenId, navigation.trace);
+    addTraceKeys(
+      navigationIds,
+      navigation.id,
+      navigation.screenId,
+      navigation.trace,
+    );
   }
   return { fieldIds, actionIds, validationIds, navigationIds };
 };
@@ -5023,7 +5095,9 @@ const deriveQualitySignals = (input: {
 
   for (const ref of input.traceRefs) {
     collect(ref.nodeId);
-    collect(ref.nodeId === undefined ? undefined : `${ref.screenId}::${ref.nodeId}`);
+    collect(
+      ref.nodeId === undefined ? undefined : `${ref.screenId}::${ref.nodeId}`,
+    );
   }
 
   return {
@@ -5058,7 +5132,10 @@ const sanitizeNoActionText = (value: string): string =>
     .replace(/\bRadio-?Buttons?\b/giu, "Auswahloptionen")
     .replace(/\bRadio-?Button\b/giu, "Auswahloption")
     .replace(/\b(?:Submit|Absenden|Senden|Weiter)(?:-?Button)?\b/giu, "Eingabe")
-    .replace(/\b(?:Bestätigungs-?Button|Icon-?Button|Button|Schaltfl[aä]che)\b/giu, "Bedienelement")
+    .replace(
+      /\b(?:Bestätigungs-?Button|Icon-?Button|Button|Schaltfl[aä]che)\b/giu,
+      "Bedienelement",
+    )
     .replace(/\s*\([^)]*(?:button|schaltfl[aä]che|aktion)[^)]*\)/giu, "")
     .replace(
       /Das Feld für den Brutto[^\n.]*nicht im IR vorhanden[^.]*\./giu,
@@ -5079,7 +5156,9 @@ const coveredFieldLabels = (
   testCase: GeneratedTestCase,
   intent: BusinessTestIntentIr,
 ): string[] => {
-  const byId = new Map(intent.detectedFields.map((field) => [field.id, field.label]));
+  const byId = new Map(
+    intent.detectedFields.map((field) => [field.id, field.label]),
+  );
   return [
     ...new Set(
       testCase.qualitySignals.coveredFieldIds
@@ -5109,7 +5188,8 @@ const buildNoActionFallbackSteps = (
       {
         index: 1,
         action: "Prüfe den angezeigten Zustand der Maske.",
-        expected: "Die Maske zeigt den erwarteten Zustand ohne erfundene Bedienaktion.",
+        expected:
+          "Die Maske zeigt den erwarteten Zustand ohne erfundene Bedienaktion.",
       },
     ];
   }
@@ -5139,9 +5219,12 @@ const hasRegulatedDataEvidence = (intent: BusinessTestIntentIr): boolean =>
   intent.piiIndicators.length > 0 ||
   REGULATED_DATA_EVIDENCE_PATTERN.test(intentEvidenceText(intent));
 
-const hasFinancialTransactionEvidence = (intent: BusinessTestIntentIr): boolean =>
-  intent.detectedActions.some((action) => isCoverageRelevantActionLike(action)) ||
-  FINANCIAL_TRANSACTION_EVIDENCE_PATTERN.test(intentEvidenceText(intent));
+const hasFinancialTransactionEvidence = (
+  intent: BusinessTestIntentIr,
+): boolean =>
+  intent.detectedActions.some((action) =>
+    isCoverageRelevantActionLike(action),
+  ) || FINANCIAL_TRANSACTION_EVIDENCE_PATTERN.test(intentEvidenceText(intent));
 
 const normalizeDraftRiskCategory = (
   riskCategory: TestCaseRiskCategory,
@@ -5202,7 +5285,11 @@ const sanitizeNoActionHallucinations = (
   testCase: GeneratedTestCase,
   intent: BusinessTestIntentIr,
 ): GeneratedTestCase => {
-  if (intent.detectedActions.some((action) => isCoverageRelevantActionLike(action))) {
+  if (
+    intent.detectedActions.some((action) =>
+      isCoverageRelevantActionLike(action),
+    )
+  ) {
     return maybeRewriteRadioCurrencyCase(testCase, intent);
   }
   const steps = testCase.steps
@@ -5233,17 +5320,21 @@ const sanitizeNoActionHallucinations = (
       ...sanitized,
       index: index + 1,
     }));
-  return maybeRewriteRadioCurrencyCase({
-    ...testCase,
-    title: sanitizeNoActionText(testCase.title),
-    objective: sanitizeNoActionText(testCase.objective),
-    preconditions: testCase.preconditions.map(sanitizeNoActionText),
-    testData: testCase.testData.map(sanitizeNoActionText),
-    steps: steps.length > 0 ? steps : buildNoActionFallbackSteps(testCase, intent),
-    expectedResults: testCase.expectedResults.map(sanitizeNoActionText),
-    assumptions: testCase.assumptions.map(sanitizeNoActionText),
-    openQuestions: testCase.openQuestions.map(sanitizeNoActionText),
-  }, intent);
+  return maybeRewriteRadioCurrencyCase(
+    {
+      ...testCase,
+      title: sanitizeNoActionText(testCase.title),
+      objective: sanitizeNoActionText(testCase.objective),
+      preconditions: testCase.preconditions.map(sanitizeNoActionText),
+      testData: testCase.testData.map(sanitizeNoActionText),
+      steps:
+        steps.length > 0 ? steps : buildNoActionFallbackSteps(testCase, intent),
+      expectedResults: testCase.expectedResults.map(sanitizeNoActionText),
+      assumptions: testCase.assumptions.map(sanitizeNoActionText),
+      openQuestions: testCase.openQuestions.map(sanitizeNoActionText),
+    },
+    intent,
+  );
 };
 
 const ensureAccessibilityCoverageTerms = (
@@ -5293,7 +5384,9 @@ const testCaseTouchesUnresolvedConstraint = (
   }
   if (
     constraint.screenId !== undefined &&
-    testCase.figmaTraceRefs.some((traceRef) => traceRef.screenId === constraint.screenId)
+    testCase.figmaTraceRefs.some(
+      (traceRef) => traceRef.screenId === constraint.screenId,
+    )
   ) {
     return true;
   }
@@ -5304,7 +5397,9 @@ const propagateUnresolvedCoverageContext = (input: {
   testCase: GeneratedTestCase;
   model: TestDesignModel;
 }): GeneratedTestCase => {
-  const unresolvedConstraints = deriveUnresolvedValidationConstraints(input.model)
+  const unresolvedConstraints = deriveUnresolvedValidationConstraints(
+    input.model,
+  )
     .filter((constraint) =>
       testCaseTouchesUnresolvedConstraint(input.testCase, constraint),
     )
@@ -5315,10 +5410,7 @@ const propagateUnresolvedCoverageContext = (input: {
   return {
     ...input.testCase,
     openQuestions: [
-      ...new Set([
-        ...input.testCase.openQuestions,
-        ...unresolvedConstraints,
-      ]),
+      ...new Set([...input.testCase.openQuestions, ...unresolvedConstraints]),
     ].sort((left, right) => left.localeCompare(right)),
     expectedResults:
       input.testCase.type === "negative" || input.testCase.type === "validation"
@@ -5384,8 +5476,7 @@ const buildAmbiguityProbeCase = (input: {
     openQuestions: [firstConstraint.evidenceText],
     qualitySignals: {
       ...seedCase.qualitySignals,
-      coveredFieldIds:
-        firstFieldId === undefined ? [] : [firstFieldId],
+      coveredFieldIds: firstFieldId === undefined ? [] : [firstFieldId],
       coveredActionIds: [],
       coveredValidationIds: [],
       coveredNavigationIds: [],
@@ -5408,8 +5499,8 @@ const stabilizeGeneratedListForAcceptance = (input: {
   // spezifizieren" note still produces a customer-visible probe case.
   const probeConstraints =
     deriveUnresolvedValidationConstraintsWithScreenFallback(input.model);
-  const hasSourceScopedOpenQuestion = input.model.openQuestions.some((question) =>
-    /^[a-z0-9_-]+:/iu.test(question.text),
+  const hasSourceScopedOpenQuestion = input.model.openQuestions.some(
+    (question) => /^[a-z0-9_-]+:/iu.test(question.text),
   );
   const propagated = input.list.testCases.map((testCase) =>
     propagateUnresolvedCoverageContext({
@@ -5417,7 +5508,9 @@ const stabilizeGeneratedListForAcceptance = (input: {
       model: input.model,
     }),
   );
-  const hasNegative = propagated.some((testCase) => testCase.type === "negative");
+  const hasNegative = propagated.some(
+    (testCase) => testCase.type === "negative",
+  );
   const hasOpenQuestion = propagated.some(
     (testCase) => testCase.openQuestions.length > 0,
   );
@@ -5602,7 +5695,8 @@ const isNonBlockingJudgeInfrastructureFailure = (
 const isJudgeConsensusAcceptedForRun = (
   verdict: JudgeConsensusVerdict,
 ): boolean =>
-  verdict.verdict === "accept" || isNonBlockingJudgeInfrastructureFailure(verdict);
+  verdict.verdict === "accept" ||
+  isNonBlockingJudgeInfrastructureFailure(verdict);
 
 const BANKING_INSURANCE_PROMPT_RULES: ReadonlyArray<string> = Object.freeze([
   "- Wenn das Profil 'eu-banking-default' aktiv ist, behandle die Maske als reguliert (Bank/Versicherung).",
@@ -5986,9 +6080,7 @@ const persistVisualCaptureArtifacts = async (input: {
       sha256,
       filename,
       ...(capture.widthPx !== undefined ? { widthPx: capture.widthPx } : {}),
-      ...(capture.heightPx !== undefined
-        ? { heightPx: capture.heightPx }
-        : {}),
+      ...(capture.heightPx !== undefined ? { heightPx: capture.heightPx } : {}),
     });
   }
   const manifest = {
@@ -6401,10 +6493,11 @@ const buildSemanticEvidenceSourceEnvelope = (input: {
           kind: source.kind,
           contentHash: source.contentHash,
         }))
-        .sort((left, right) =>
-          left.sourceId.localeCompare(right.sourceId) ||
-          left.kind.localeCompare(right.kind) ||
-          left.contentHash.localeCompare(right.contentHash),
+        .sort(
+          (left, right) =>
+            left.sourceId.localeCompare(right.sourceId) ||
+            left.kind.localeCompare(right.kind) ||
+            left.contentHash.localeCompare(right.contentHash),
         ),
     ),
     conflictResolutionPolicy:

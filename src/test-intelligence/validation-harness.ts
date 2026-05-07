@@ -135,6 +135,7 @@ import {
   assertNoImagePayloadToTestGeneration,
   describeVisualScreens,
   writeVisualSidecarResultArtifact,
+  type DescribeVisualScreensDiagnostic,
 } from "./visual-sidecar-client.js";
 import { cloneOpenTextAlmReferenceProfile } from "./qc-mapping.js";
 import { compilePrompt } from "./prompt-compiler.js";
@@ -273,7 +274,7 @@ export interface RunWave1ValidationInput {
   fourEyesPolicy?: FourEyesPolicy;
   /**
    * Optional signing mode for the in-toto v1 attestation (Issue #1377).
-  * Defaults to `"unsigned"` so the air-gapped fixture-only path remains
+   * Defaults to `"unsigned"` so the air-gapped fixture-only path remains
    * byte-stable and never invokes a signer. When set to `"sigstore"`,
    * `attestationSigner` MUST be supplied.
    */
@@ -292,8 +293,8 @@ export interface RunWave1ValidationInput {
    * `{ enabled: true }`, the harness threads the rubric pass through
    * the validation pipeline (between `testcase.validate` and
    * `testcase.policy`) and persists `<runDir>/testcases/self-verify-rubric.json`.
-  * The deterministic validation default uses a synthesized perfect-score mock
-  * responder so fixture replays remain byte-stable.
+   * The deterministic validation default uses a synthesized perfect-score mock
+   * responder so fixture replays remain byte-stable.
    */
   selfVerifyRubric?: Wave1ValidationSelfVerifyRubricInput;
 }
@@ -323,8 +324,8 @@ export interface Wave1ValidationSelfVerifyRubricInput {
   /**
    * Optional override for the rubric-mock responder. When omitted the
    * harness uses `synthesizePerfectRubricResponse` (every dimension and
-  * visual subscore returns 1.0) so the deterministic validation fixture
-  * replays remain byte-stable.
+   * visual subscore returns 1.0) so the deterministic validation fixture
+   * replays remain byte-stable.
    */
   mockResponder?: (
     request: LlmGenerationRequest,
@@ -773,8 +774,10 @@ export const synthesizeGeneratedTestCases = (input: {
           },
           {
             index: 3,
-            action: "Verify focus order and visible focus indicator while tabbing",
-            expected: "Focus order stays logical and every control shows a visible focus state",
+            action:
+              "Verify focus order and visible focus indicator while tabbing",
+            expected:
+              "Focus order stays logical and every control shows a visible focus state",
           },
           {
             index: 4,
@@ -1087,6 +1090,7 @@ export const runWave1Validation = async (
   let sidecarVisual: VisualScreenDescription[] | undefined;
   let sidecarResult: VisualSidecarResult | undefined;
   let sidecarArtifactBytes: Uint8Array | undefined;
+  let sidecarDiagnostics: ReadonlyArray<DescribeVisualScreensDiagnostic> = [];
   if (input.visualCaptures !== undefined && input.visualCaptures.length > 0) {
     if (input.bundle === undefined) {
       throw new RangeError(
@@ -1104,7 +1108,7 @@ export const runWave1Validation = async (
     const intentForSidecar = deriveBusinessTestIntentIr({
       figma: fixture.figma,
     });
-    sidecarResult = await describeVisualScreens({
+    const sidecarRun = await describeVisualScreens({
       bundle: input.bundle,
       captures: input.visualCaptures,
       jobId: input.jobId,
@@ -1136,6 +1140,8 @@ export const runWave1Validation = async (
           : {}),
       },
     });
+    sidecarResult = sidecarRun.result;
+    sidecarDiagnostics = sidecarRun.diagnostics;
     const sidecarArtifactPath = join(
       input.runDir,
       VISUAL_SIDECAR_RESULT_ARTIFACT_FILENAME,
@@ -1147,6 +1153,14 @@ export const runWave1Validation = async (
       generatedAt: input.generatedAt,
     });
     sidecarArtifactBytes = written.bytes;
+    // Issue #2017: persist per-attempt raw-response diagnostics next to
+    // the visual sidecar result so the harness's evidence manifest can
+    // reference them by relative filename.
+    for (const diagnostic of sidecarDiagnostics) {
+      const diagnosticPath = join(input.runDir, diagnostic.filename);
+      await mkdir(dirname(diagnosticPath), { recursive: true });
+      await writeAtomic(diagnosticPath, diagnostic.bytes);
+    }
     recordVisualSidecarAttempts({
       recorder: finopsRecorder,
       attempts: sidecarResult.attempts,
@@ -1195,6 +1209,7 @@ export const runWave1Validation = async (
         intent: intentForSidecar,
         sidecarResult,
         sidecarArtifactBytes,
+        sidecarDiagnostics,
         finopsReportBytes: finopsFailureWritten.bytes,
         policyProfile: input.policyProfile ?? cloneEuBankingDefaultProfile(),
       });
@@ -1902,6 +1917,12 @@ export const runWave1Validation = async (
             },
           ]
         : []),
+      // Issue #2017: per-attempt raw-response diagnostics, when present.
+      ...sidecarDiagnostics.map((diagnostic) => ({
+        filename: diagnostic.filename,
+        bytes: diagnostic.bytes,
+        category: "visual_sidecar" as const,
+      })),
       {
         filename: REVIEW_EVENTS_ARTIFACT_FILENAME,
         bytes: reviewEventsBytes,
@@ -2413,7 +2434,8 @@ const buildActiveModelBindings = (
 ): readonly [ActiveModelBinding, ActiveModelBinding, ActiveModelBinding] => [
   {
     providerId: "llm-gateway",
-    modelId: bundle?.testGeneration.modelRevision ?? TEST_GENERATION_MODEL_REVISION,
+    modelId:
+      bundle?.testGeneration.modelRevision ?? TEST_GENERATION_MODEL_REVISION,
     inferenceProfileId:
       bundle?.testGeneration.deployment ?? TEST_GENERATION_DEPLOYMENT,
     ictRegisterRef:
@@ -2452,6 +2474,8 @@ const writeVisualSidecarFailureEvidenceManifest = async (input: {
   intent: BusinessTestIntentIr;
   sidecarResult: VisualSidecarFailure;
   sidecarArtifactBytes: Uint8Array;
+  /** Issue #2017: per-attempt raw-response diagnostics to weave into the manifest. */
+  sidecarDiagnostics: ReadonlyArray<DescribeVisualScreensDiagnostic>;
   finopsReportBytes: Uint8Array;
   policyProfile: TestCasePolicyProfile;
 }): Promise<void> => {
@@ -2585,6 +2609,12 @@ const writeVisualSidecarFailureEvidenceManifest = async (input: {
         bytes: input.sidecarArtifactBytes,
         category: "visual_sidecar",
       },
+      // Issue #2017: per-attempt raw-response diagnostics, when present.
+      ...input.sidecarDiagnostics.map((diagnostic) => ({
+        filename: diagnostic.filename,
+        bytes: diagnostic.bytes,
+        category: "visual_sidecar" as const,
+      })),
       {
         filename: `${FINOPS_ARTIFACT_DIRECTORY}/${FINOPS_BUDGET_REPORT_ARTIFACT_FILENAME}`,
         bytes: input.finopsReportBytes,
@@ -2837,12 +2867,15 @@ const buildDeterministicReviewBundle = (input: {
               sequence,
               fromState: currentState,
               toState: secondaryTransition.to,
-            actor: VALIDATION_SECONDARY_REVIEWER,
+              actor: VALIDATION_SECONDARY_REVIEWER,
             });
             currentState = secondaryTransition.to;
             lastEventId = secondaryEventId;
             sequence += 1;
-            approvers = [VALIDATION_PRIMARY_REVIEWER, VALIDATION_SECONDARY_REVIEWER].sort();
+            approvers = [
+              VALIDATION_PRIMARY_REVIEWER,
+              VALIDATION_SECONDARY_REVIEWER,
+            ].sort();
             secondaryReviewer = VALIDATION_SECONDARY_REVIEWER;
             secondaryApprovalAt = input.generatedAt;
           }

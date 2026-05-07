@@ -224,7 +224,7 @@ test("primary success: visualPrimary wins, fallback is never called, fallbackRea
     primary: { responder: primaryResponder },
     fallback: { responder: fallbackResponder },
   });
-  const result = await describeVisualScreens({
+  const { result } = await describeVisualScreens({
     bundle,
     captures,
     jobId: "job-1",
@@ -273,7 +273,7 @@ test("fallback success on primary timeout: fallbackReason=primary_unavailable", 
     primary: { responder: primaryResponder },
     fallback: { responder: fallbackResponder },
   });
-  const result = await describeVisualScreens({
+  const { result } = await describeVisualScreens({
     bundle,
     captures,
     jobId: "job-2",
@@ -316,7 +316,7 @@ test("fallback on primary rate_limited: fallbackReason=primary_quota_exceeded", 
     primary: { responder: primaryResponder },
     fallback: { responder: fallbackResponder },
   });
-  const result = await describeVisualScreens({
+  const { result } = await describeVisualScreens({
     bundle,
     captures,
     jobId: "job-3",
@@ -350,7 +350,7 @@ test("both fail: VisualSidecarFailure with both_sidecars_failed and union of att
     primary: { responder: primaryResponder },
     fallback: { responder: fallbackResponder },
   });
-  const result = await describeVisualScreens({
+  const { result } = await describeVisualScreens({
     bundle,
     captures,
     jobId: "job-4",
@@ -393,7 +393,7 @@ test("invalid sidecar JSON: schema_invalid on primary is safely recovered by fal
     primary: { responder: primaryResponder },
     fallback: { responder: fallbackResponder },
   });
-  const result = await describeVisualScreens({
+  const { result } = await describeVisualScreens({
     bundle,
     captures,
     jobId: "job-5",
@@ -429,7 +429,7 @@ test("repair path coerces schema-near sidecar JSON into a valid result", async (
   const bundle = buildBundle({
     primary: { responder: primaryResponder },
   });
-  const result = await describeVisualScreens({
+  const { result } = await describeVisualScreens({
     bundle,
     captures,
     jobId: "job-5-repair",
@@ -470,7 +470,7 @@ test("invalid sidecar JSON: schema_invalid on both attempts hard-fails with sche
     primary: { responder: primaryResponder },
     fallback: { responder: fallbackResponder },
   });
-  const result = await describeVisualScreens({
+  const { result } = await describeVisualScreens({
     bundle,
     captures,
     jobId: "job-5",
@@ -509,7 +509,7 @@ test("preflight: image too large → image_payload_too_large; no gateway call", 
       },
     },
   });
-  const result = await describeVisualScreens({
+  const { result } = await describeVisualScreens({
     bundle,
     captures,
     jobId: "job-6",
@@ -540,7 +540,7 @@ test("finops preflight: image budget applies to the whole outbound request", asy
       },
     },
   });
-  const result = await describeVisualScreens({
+  const { result } = await describeVisualScreens({
     bundle,
     captures,
     jobId: "job-6b",
@@ -674,7 +674,7 @@ test("validation gate integration: PII-containing visibleText still surfaces suc
       },
     );
   const bundle = buildBundle({ primary: { responder: primaryResponder } });
-  const result = await describeVisualScreens({
+  const { result } = await describeVisualScreens({
     bundle,
     captures,
     jobId: "job-8",
@@ -701,7 +701,7 @@ test("capture identity hashing: SHA-256 matches the decoded bytes; no base64 in 
       gatewayRelease: "mock",
     });
   const bundle = buildBundle({ primary: { responder: primaryResponder } });
-  const result = await describeVisualScreens({
+  const { result } = await describeVisualScreens({
     bundle,
     captures,
     jobId: "job-9",
@@ -735,7 +735,7 @@ test("determinism: identical inputs produce byte-identical artifacts (canonical 
     const bundle = buildBundle({
       primary: { responder: buildResponder(PRIMARY_DEPLOYMENT) },
     });
-    const result = await describeVisualScreens({
+    const { result } = await describeVisualScreens({
       bundle,
       captures,
       jobId,
@@ -808,7 +808,7 @@ test("determinism: identical inputs produce byte-identical artifacts (canonical 
 
 test("write artifact: filename matches contract and lands at the requested path", async () => {
   const captures = [captureFor("s-1")];
-  const result = await describeVisualScreens({
+  const { result } = await describeVisualScreens({
     bundle: buildBundle({
       primary: {
         responder: (request, attempt) =>
@@ -885,7 +885,7 @@ test("policy_downgrade: forceFallback skips primary entirely", async () => {
     primary: { responder: primaryResponder },
     fallback: { responder: fallbackResponder },
   });
-  const result = await describeVisualScreens({
+  const { result } = await describeVisualScreens({
     bundle,
     captures,
     jobId: "job-force",

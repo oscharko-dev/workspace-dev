@@ -336,7 +336,7 @@ test("visual sidecar failure: failureMessage is sanitized before persisting", as
   });
 
   // Act
-  const result = await describeVisualScreens({
+  const { result } = await describeVisualScreens({
     bundle,
     captures: [captureFor("s-1")],
     jobId: "job-sidecar-leak",

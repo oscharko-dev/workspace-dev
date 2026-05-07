@@ -956,8 +956,7 @@ export type VisualSidecarValidationOutcome =
 /** Single per-screen visual-sidecar validation row. */
 export interface VisualSidecarValidationRecord {
   screenId: string;
-  deployment:
-    | SidecarDeployment;
+  deployment: SidecarDeployment;
   outcomes: VisualSidecarValidationOutcome[];
   /** Issues found while structurally validating the description. */
   issues: TestCaseValidationIssue[];
@@ -3786,8 +3785,7 @@ export const A11Y_JUDGE_OUTPUT_SCHEMA_NAME =
   "workspace-dev-a11y-judge-v1" as const;
 
 /** Canonical filename for the persisted accessibility-judge verdict artifact. */
-export const A11Y_JUDGE_VERDICT_ARTIFACT_FILENAME =
-  "a11y_judge.json" as const;
+export const A11Y_JUDGE_VERDICT_ARTIFACT_FILENAME = "a11y_judge.json" as const;
 
 /** Closed runtime list of global accessibility-judge verdicts. */
 export const ALLOWED_A11Y_VERDICTS = ["accept", "repair"] as const;
@@ -3999,7 +3997,12 @@ export interface RunQualityAttemptSummary {
   readonly attempts: number;
   readonly successes: number;
   readonly failures: number;
-  readonly finalOutcome: "not_run" | "clean" | "recovered" | "degraded" | "blocked";
+  readonly finalOutcome:
+    | "not_run"
+    | "clean"
+    | "recovered"
+    | "degraded"
+    | "blocked";
   readonly lastErrorClass?: string;
 }
 
@@ -5616,8 +5619,7 @@ export interface JiraIssueIr {
 /** Visual-sidecar description produced by a multimodal vision model (Issue #1386). */
 export interface VisualScreenDescription {
   screenId: string;
-  sidecarDeployment:
-    | SidecarDeployment;
+  sidecarDeployment: SidecarDeployment;
   regions: Array<{
     regionId: string;
     confidence: number;
@@ -5905,6 +5907,64 @@ export const VISUAL_SIDECAR_RESULT_ARTIFACT_FILENAME =
   "visual-sidecar-result.json" as const;
 
 /**
+ * Canonical directory for per-attempt visual sidecar diagnostic artifacts
+ * (Issue #2017). Each failed attempt writes a single JSON file under this
+ * directory with the raw normalized response shape, redacted gateway
+ * message, and structured parser error so a reviewer can debug the model
+ * response after the fact without re-running the live LLM call.
+ */
+export const VISUAL_SIDECAR_DIAGNOSTICS_ARTIFACT_DIRECTORY =
+  "visual-sidecar-diagnostics" as const;
+
+/** Stable schema version for the persisted visual sidecar diagnostic artifact. */
+export const VISUAL_SIDECAR_DIAGNOSTIC_ARTIFACT_SCHEMA_VERSION =
+  "1.0.0" as const;
+
+/**
+ * Persisted form of a single visual sidecar attempt diagnostic. Carries
+ * sanitized, bounded fragments of the gateway response so the failure
+ * can be debugged from the artifact alone.
+ */
+export interface VisualSidecarDiagnosticArtifact {
+  schemaVersion: typeof VISUAL_SIDECAR_DIAGNOSTIC_ARTIFACT_SCHEMA_VERSION;
+  contractVersion: typeof TEST_INTELLIGENCE_CONTRACT_VERSION;
+  visualSidecarSchemaVersion: typeof VISUAL_SIDECAR_SCHEMA_VERSION;
+  jobId: string;
+  generatedAt: string;
+  /** 1-based attempt index across primary + fallback. Matches `VisualSidecarAttempt.attempt`. */
+  attempt: number;
+  /** Deployment that produced the response. */
+  deployment: SidecarDeployment;
+  /** Wall-clock duration of the attempt in milliseconds. */
+  durationMs: number;
+  /** Error class for the attempt. */
+  errorClass: LlmGatewayErrorClass | "schema_invalid_response";
+  /** Bounded, sanitized parser-error description (matches `VisualSidecarAttempt.normalizedParserError`). */
+  normalizedParserError?: string;
+  /** Bounded, sanitized gateway error message captured from the failed `LlmGenerationFailure`. */
+  gatewayMessage?: string;
+  /** Coarse shape classification of the response payload. `null` when the gateway never returned content. */
+  responseShape: "string" | "object" | "array" | "null" | "missing";
+  /**
+   * Bounded, redacted slice of the gateway response. Capped at
+   * `VISUAL_SIDECAR_DIAGNOSTIC_RAW_TEXT_BYTE_LIMIT` bytes (UTF-8). Absent
+   * when the gateway did not produce string content (transport / canceled
+   * failures).
+   */
+  rawTextContent?: string;
+  /** Hard invariant — image bytes are never embedded in this artifact. */
+  rawScreenshotsIncluded: false;
+}
+
+/**
+ * UTF-8 byte cap on `rawTextContent` of a diagnostic artifact. Five
+ * kilobytes is enough to fit a typical malformed sidecar envelope plus
+ * the surrounding chatter, while small enough to keep the artifact
+ * well below filesystem and review-tool friction thresholds.
+ */
+export const VISUAL_SIDECAR_DIAGNOSTIC_RAW_TEXT_BYTE_LIMIT = 5_120 as const;
+
+/**
  * Allowed failure classes for the visual sidecar client. The classes are
  * disjoint and policy-readable: a downstream policy gate can refuse a job
  * by inspecting the failure class without reading sanitized free-form
@@ -5995,14 +6055,30 @@ export interface VisualSidecarCaptureIdentity {
  */
 export interface VisualSidecarAttempt {
   /** Sidecar deployment that was attempted. */
-  deployment:
-    | SidecarDeployment;
+  deployment: SidecarDeployment;
   /** Sequence index, 1-based across both primary and fallback attempts. */
   attempt: number;
   /** Wall-clock duration of the attempt in milliseconds. */
   durationMs: number;
   /** Error class when the attempt failed. Absent on a success. */
   errorClass?: LlmGatewayErrorClass | "schema_invalid_response";
+  /**
+   * Issue #2017: bounded, sanitized parser-error description for failed
+   * attempts. Populated whenever the sidecar response could be obtained
+   * but failed structural normalization (e.g. missing `screens`, wrong
+   * length, schema-invalid record). Always passes through
+   * `redactHighRiskSecrets` and is capped to a small byte budget so the
+   * field is safe to surface in artifacts and dashboards.
+   */
+  normalizedParserError?: string;
+  /**
+   * Issue #2017: relative path (within the run directory) of the
+   * persisted raw-response diagnostic artifact for a failed attempt.
+   * Always points to a JSON file under
+   * `visual-sidecar-diagnostics/`. Absent on success and on pre-flight
+   * failures where no gateway round-trip occurred.
+   */
+  rawResponseArtifactPath?: string;
 }
 
 /**
@@ -6014,8 +6090,7 @@ export interface VisualSidecarAttempt {
 export interface VisualSidecarSuccess {
   outcome: "success";
   /** Deployment that produced the descriptions. */
-  selectedDeployment:
-    | SidecarDeployment;
+  selectedDeployment: SidecarDeployment;
   fallbackReason: VisualSidecarFallbackReason;
   visual: VisualScreenDescription[];
   captureIdentities: VisualSidecarCaptureIdentity[];
@@ -6084,8 +6159,7 @@ export interface VisualSidecarResultArtifact {
  */
 export interface CompiledPromptVisualBinding {
   schemaVersion: typeof VISUAL_SIDECAR_SCHEMA_VERSION;
-  selectedDeployment:
-    | SidecarDeployment;
+  selectedDeployment: SidecarDeployment;
   fallbackReason: VisualSidecarFallbackReason;
   /** Hex digest of the screenshot/fixture used for visual analysis, if any. */
   fixtureImageHash?: string;
@@ -6537,9 +6611,7 @@ export interface ReviewGateSnapshot {
 
 /** Visual provenance attached to a QC mapping preview entry (Issue #1386). */
 export interface QcMappingVisualProvenance {
-  deployment:
-    | SidecarDeployment
-    | "none";
+  deployment: SidecarDeployment | "none";
   fallbackReason: VisualSidecarFallbackReason;
   confidenceMean: number;
   ambiguityCount: number;
@@ -6631,12 +6703,8 @@ export interface ExportReportArtifact {
   /** Identity of the deployments behind the run. */
   modelDeployments: {
     testGeneration: string;
-    visualPrimary?:
-      | SidecarDeployment
-      | "none";
-    visualFallback?:
-      | SidecarDeployment
-      | "none";
+    visualPrimary?: SidecarDeployment | "none";
+    visualFallback?: SidecarDeployment | "none";
   };
   exportedTestCaseCount: number;
   /**
@@ -6780,8 +6848,7 @@ export interface Wave1ValidationEvidenceManifestIntegrityVerification {
 
 /** Visual-sidecar summary duplicated into the Wave 1 evidence manifest. */
 export interface Wave1ValidationEvidenceVisualSidecarSummary {
-  selectedDeployment:
-    | SidecarDeployment;
+  selectedDeployment: SidecarDeployment;
   fallbackReason: VisualSidecarFallbackReason;
   confidenceSummary: { min: number; max: number; mean: number };
   /** SHA-256 hex of the persisted `visual-sidecar-result.json` artifact. */
@@ -6830,12 +6897,8 @@ export interface Wave1ValidationEvidenceManifest {
   /** Identities of the deployments behind the run. */
   modelDeployments: {
     testGeneration: string;
-    visualPrimary?:
-      | SidecarDeployment
-      | "none";
-    visualFallback?:
-      | SidecarDeployment
-      | "none";
+    visualPrimary?: SidecarDeployment | "none";
+    visualFallback?: SidecarDeployment | "none";
   };
   /**
    * Active model-binding summary attested for the run. Under banking
@@ -7094,15 +7157,10 @@ export interface Wave1ValidationAttestationSubject {
  * evidence manifest but pinned to the predicate version.
  */
 export interface Wave1ValidationAttestationVisualSidecarIdentity {
-  selectedDeployment:
-    | SidecarDeployment;
+  selectedDeployment: SidecarDeployment;
   fallbackReason: VisualSidecarFallbackReason;
-  visualPrimary?:
-    | SidecarDeployment
-    | "none";
-  visualFallback?:
-    | SidecarDeployment
-    | "none";
+  visualPrimary?: SidecarDeployment | "none";
+  visualFallback?: SidecarDeployment | "none";
   resultArtifactSha256: string;
 }
 
@@ -7140,12 +7198,8 @@ export interface Wave1ValidationAttestationPredicate {
   /** Identity of every model role active during the run. */
   modelDeployments: {
     testGeneration: string;
-    visualPrimary?:
-      | SidecarDeployment
-      | "none";
-    visualFallback?:
-      | SidecarDeployment
-      | "none";
+    visualPrimary?: SidecarDeployment | "none";
+    visualFallback?: SidecarDeployment | "none";
   };
   /** Visual-sidecar chain-of-custody identity (when present). */
   visualSidecar?: Wave1ValidationAttestationVisualSidecarIdentity;
@@ -9377,8 +9431,7 @@ export interface TraceabilityStepRow {
 /** Single per-screen visual observation row inside the matrix. */
 export interface TraceabilityVisualObservation {
   screenId: string;
-  deployment:
-    | SidecarDeployment;
+  deployment: SidecarDeployment;
   /** Sorted, deduplicated outcome codes that fired on the screen. */
   outcomes: VisualSidecarValidationOutcome[];
   meanConfidence: number;
