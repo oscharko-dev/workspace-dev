@@ -80,6 +80,7 @@ const USER_PROMPT_PREAMBLE = [
   "Every id you cite in coveredFieldIds, coveredActionIds, coveredValidationIds, or coveredNavigationIds must already exist in the TestDesignModel below; fabricated ids are rejected.",
   "Reference the source Figma trace for every produced case via figmaTraceRefs and populate figmaTraceRefs[].nodeId — a screenId-only trace is a weak trace.",
   "Cite ambiguity or open questions when the IR is incomplete; do not fabricate behavior.",
+  "When the source marks validation behavior as unresolved, unspecified, TBD, or still to be defined, do NOT invent exact error text, numeric thresholds, min/max boundaries, or blocked-submit behavior. Keep expected outcomes generic, add the unresolved statement to openQuestions, and use wording such as 'A validation response is shown according to the specified validation concept.'",
   // Issue #1905: per-screen accessibility coverage requirement enforced by
   // policy-gate (`policy:form-screen-needs-accessibility-case`) and by the
   // a11y-coverage eval (`src/test-intelligence/a11y-coverage-eval.ts`).

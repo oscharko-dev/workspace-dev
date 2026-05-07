@@ -388,6 +388,48 @@ test("ambiguity with auto_approved review state is rejected", () => {
   );
 });
 
+test("exact validation details are rejected when the source marks the rule unresolved", () => {
+  const intent = buildIntent();
+  intent.detectedFields[0] = {
+    ...intent.detectedFields[0]!,
+    label: "VAT rate",
+  };
+  intent.detectedValidations[0] = {
+    ...intent.detectedValidations[0]!,
+    rule: "Validation rules for amount fields and VAT selection still need to be specified.",
+    targetFieldId: "s-payment::field::n-iban",
+  };
+  intent.openQuestions = [
+    "Validation rules for amount fields and VAT selection still need to be specified.",
+  ];
+  const tc = buildCase({
+    title: "Reject invalid VAT rate",
+    objective: "Reject values greater than 0%",
+    expectedResults: ["VAT rate is required"],
+    qualitySignals: {
+      coveredFieldIds: ["s-payment::field::n-iban"],
+      coveredActionIds: [],
+      coveredValidationIds: ["s-payment::validation::n-iban::Required"],
+      coveredNavigationIds: [],
+      confidence: 0.85,
+    },
+  });
+  const report = validateGeneratedTestCases({
+    jobId: "job-1",
+    generatedAt: GENERATED_AT,
+    list: buildList([tc]),
+    intent,
+  });
+  assert.equal(report.blocked, true);
+  assert.ok(
+    report.issues.some(
+      (issue) =>
+        issue.code === "unsupported_unresolved_validation_detail" &&
+        issue.path === "$.testCases[0].objective",
+    ),
+  );
+});
+
 test("duplicate test case ids surface as errors", () => {
   const a = buildCase({ id: "tc-1" });
   const b = buildCase({ id: "tc-1" });

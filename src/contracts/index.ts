@@ -462,6 +462,7 @@ export const ALLOWED_TEST_CASE_VALIDATION_ISSUE_CODES = [
   "assumptions_excessive",
   "open_questions_excessive",
   "ambiguity_without_review_state",
+  "unsupported_unresolved_validation_detail",
   "semantic_suspicious_content",
 ] as const;
 

@@ -250,6 +250,57 @@ test("hard-gate emits hallucinated_id with the fabricated id in repair instructi
   assert.equal(augmented.verdict, "repair");
 });
 
+test("hard-gate rejects exact validation details when the source marks validation behavior unresolved", () => {
+  const model = buildTestDesignModel();
+  model.screens[0]!.elements[0] = {
+    elementId: "fld-a",
+    label: "VAT rate",
+    kind: "text",
+  };
+  model.screens[0]!.validations[0] = {
+    validationId: "val-1",
+    rule: "Validation rules for amount fields and VAT selection still need to be specified.",
+    targetElementId: "fld-a",
+  };
+  model.openQuestions.push({
+    openQuestionId: "oq-1",
+    text: "Validation rules for amount fields and VAT selection still need to be specified.",
+  });
+
+  const list = buildList([
+    buildTestCase("tc-unresolved-validation", {
+      qualitySignals: {
+        coveredFieldIds: ["fld-a"],
+        coveredValidationIds: ["val-1"],
+      },
+    }),
+  ]);
+  list.testCases[0]!.expectedResults = ["VAT rate is required"];
+
+  const augmented = applyCoverageHardGate(buildLlmVerdict("accept"), {
+    testDesignModel: model,
+    generatedTestCases: list,
+    knownNavigationIds: [...NAVIGATION_IDS],
+  });
+
+  const finding = augmented.findings.find(
+    (candidate) =>
+      candidate.code ===
+      LOGIC_JUDGE_COVERAGE_HARD_GATE_FINDING_CODES.unsupportedUnresolvedValidationDetail,
+  );
+  assert.ok(finding);
+  assert.equal(finding?.testCaseId, "tc-unresolved-validation");
+  assert.equal(finding?.severity, "error");
+  assert.match(finding?.message ?? "", /unresolved/u);
+  const repair = augmented.repairInstructions.find(
+    (instruction) =>
+      instruction.testCaseId === "tc-unresolved-validation" &&
+      instruction.path === "expectedResults[0]",
+  );
+  assert.ok(repair);
+  assert.equal(augmented.verdict, "repair");
+});
+
 test("hard-gate emits insufficient_coverage_breadth at $job when below thresholds", () => {
   // IR has 3 fields and 2 actions. Cover 1 field (ratio 0.333 < 0.4) and
   // 1 action (ratio 0.5 == 0.5, NOT below). Expect a single breach with

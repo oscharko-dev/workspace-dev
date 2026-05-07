@@ -241,6 +241,7 @@ const VALIDATION_ISSUE_TO_OUTCOME: Partial<
   open_questions_excessive: "open_questions_review_required",
   assumptions_excessive: "open_questions_review_required",
   semantic_suspicious_content: "semantic_suspicious_content",
+  unsupported_unresolved_validation_detail: "open_questions_review_required",
 };
 
 const indexValidationByTestCase = (

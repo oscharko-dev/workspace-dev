@@ -26,6 +26,7 @@ import {
 import { canonicalJson, sha256Hex } from "./content-hash.js";
 import { legacySourceFromMultiSourceEnvelope } from "./multi-source-envelope.js";
 import { deriveCustomContextPolicySignals } from "./custom-context-policy.js";
+import { buildSourceScopedValidationOpenQuestions } from "./unresolved-validation-rules.js";
 
 export interface ReconcileMultiSourceIntentInput {
   envelope: MultiSourceTestIntentEnvelope;
@@ -1097,6 +1098,23 @@ export const reconcileMultiSourceIntent = (
         detail: `Duplicate acceptance criterion detected: "${text}"`,
       }),
     );
+  }
+
+  for (const issue of jiraIssues) {
+    const ref = jiraSourceRefs.find(
+      (candidate) => candidate.contentHash === issue.contentHash,
+    );
+    if (ref === undefined) continue;
+    baseIntent.openQuestions = sortedUnique([
+      ...baseIntent.openQuestions,
+      ...buildSourceScopedValidationOpenQuestions({
+        sourceLabel: ref.sourceId,
+        text: [
+          issue.descriptionPlain,
+          ...issue.acceptanceCriteria.map(extractAcceptanceText),
+        ].join("\n"),
+      }),
+    ]);
   }
 
   const jiraKeys = new Map<string, string[]>();

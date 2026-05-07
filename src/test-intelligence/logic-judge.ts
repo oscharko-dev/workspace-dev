@@ -26,6 +26,7 @@ import { canonicalJson, sha256Hex } from "./content-hash.js";
 import type { LlmGatewayClient } from "./llm-gateway.js";
 import { resolveTenantScopeSegments } from "./replay-cache.js";
 import { collectTechniqueQuotaDeficits } from "./technique-quota.js";
+import { detectUnsupportedExactValidationClaim } from "./unresolved-validation-rules.js";
 
 const RESPONSE_SCHEMA_NAME = "workspace-dev-logic-judge-v1" as const;
 const MAX_MESSAGE_LENGTH = 240;
@@ -110,6 +111,12 @@ export const LOGIC_JUDGE_COVERAGE_HARD_GATE_FINDING_CODES = {
    * of the per-screen `CoveragePlan.techniqueQuotas` minimums.
    */
   techniqueQuotaBreach: "technique_quota_breach",
+  /**
+   * Issue #1987 — fired when a generated case materialises exact validation
+   * details even though the source marks the validation behavior as unresolved.
+   */
+  unsupportedUnresolvedValidationDetail:
+    "unsupported_unresolved_validation_detail",
 } as const;
 
 /**
@@ -1199,6 +1206,36 @@ const evaluateTechniqueQuotaMinimums = (
   }
 };
 
+const evaluateUnsupportedUnresolvedValidationDetails = (
+  acc: HardGateAccumulator,
+  cases: ReadonlyArray<GeneratedTestCase>,
+  testDesignModel: TestDesignModel,
+): void => {
+  for (const testCase of cases) {
+    const claim = detectUnsupportedExactValidationClaim({
+      testCase,
+      model: testDesignModel,
+    });
+    if (claim === undefined) continue;
+    pushFinding(
+      acc,
+      {
+        testCaseId: testCase.id,
+        code:
+          LOGIC_JUDGE_COVERAGE_HARD_GATE_FINDING_CODES.unsupportedUnresolvedValidationDetail,
+        severity: "error",
+        message: claim.message,
+      },
+      {
+        testCaseId: testCase.id,
+        path: claim.path,
+        instruction:
+          "Remove exact validation text, thresholds, and boundary assumptions; keep the expected result generic and preserve the gap in openQuestions.",
+      },
+    );
+  }
+};
+
 const evaluateInsufficientBreadth = (
   acc: HardGateAccumulator,
   cases: ReadonlyArray<GeneratedTestCase>,
@@ -1312,6 +1349,11 @@ export const applyCoverageHardGate = (
   );
   evaluateMissingFormScreenA11yCase(acc, cases, input.testDesignModel);
   evaluateTechniqueQuotaMinimums(acc, cases, input.coveragePlan);
+  evaluateUnsupportedUnresolvedValidationDetails(
+    acc,
+    cases,
+    input.testDesignModel,
+  );
 
   if (acc.findings.length === 0) {
     return verdict;

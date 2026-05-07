@@ -152,6 +152,10 @@ import {
   runValidationPipeline,
   runValidationPipelineWithSelfVerify,
 } from "./validation-pipeline.js";
+import {
+  GENERIC_VALIDATION_EXPECTED_RESULT,
+  isUnresolvedValidationText,
+} from "./unresolved-validation-rules.js";
 import { type SelfVerifyRubricReplayCache } from "./self-verify-rubric.js";
 import { executeWithReplayCache, type ReplayCache } from "./replay-cache.js";
 import {
@@ -517,6 +521,16 @@ export const synthesizeGeneratedTestCases = (input: {
 
     const validationIds = validationsByField.get(field.id) ?? [];
     if (validationIds.length > 0) {
+      const validationRules = input.intent.detectedValidations
+        .filter((validation) => validation.targetFieldId === field.id)
+        .map((validation) => validation.rule);
+      const unresolvedValidationQuestions =
+        buildUnresolvedValidationQuestionsForField({
+          fieldLabel: field.label,
+          validationRules,
+        });
+      const hasUnresolvedValidationRules =
+        unresolvedValidationQuestions.length > 0;
       cases.push(
         buildSyntheticCase({
           idSuffix: `field-negative-${stableSlug(field.id)}`,
@@ -543,13 +557,20 @@ export const synthesizeGeneratedTestCases = (input: {
             {
               index: 3,
               action: "Submit the form",
-              expected: "An inline validation error is shown",
+              expected: hasUnresolvedValidationRules
+                ? GENERIC_VALIDATION_EXPECTED_RESULT
+                : "An inline validation error is shown",
             },
           ],
-          expectedResults: [
-            `${field.label} is required`,
-            "Submit is blocked until the rule is satisfied",
-          ],
+          expectedResults: hasUnresolvedValidationRules
+            ? [GENERIC_VALIDATION_EXPECTED_RESULT]
+            : [
+                `${field.label} is required`,
+                "Submit is blocked until the rule is satisfied",
+              ],
+          ...(hasUnresolvedValidationRules
+            ? { openQuestions: unresolvedValidationQuestions }
+            : {}),
           ...stampAudit(input),
         }),
       );
@@ -557,7 +578,9 @@ export const synthesizeGeneratedTestCases = (input: {
         buildSyntheticCase({
           idSuffix: `field-validation-${stableSlug(field.id)}`,
           title: `Validate ${field.label} rules on ${field.screenId}`,
-          objective: `Confirm validation messages for ${field.label}.`,
+          objective: hasUnresolvedValidationRules
+            ? `Capture generic validation behavior for ${field.label} without inventing exact messages or thresholds.`
+            : `Confirm validation messages for ${field.label}.`,
           type: "validation",
           priority: "p1",
           riskCategory: deriveRiskCategoryForLabel(field.label),
@@ -578,54 +601,61 @@ export const synthesizeGeneratedTestCases = (input: {
             {
               index: 2,
               action: `Provide an invalid ${field.label} value`,
-              expected: "Inline validation error displayed",
+              expected: hasUnresolvedValidationRules
+                ? GENERIC_VALIDATION_EXPECTED_RESULT
+                : "Inline validation error displayed",
             },
           ],
-          expectedResults: [
-            "Each validation rule is mapped to a clear message",
-          ],
+          expectedResults: hasUnresolvedValidationRules
+            ? [GENERIC_VALIDATION_EXPECTED_RESULT]
+            : ["Each validation rule is mapped to a clear message"],
+          ...(hasUnresolvedValidationRules
+            ? { openQuestions: unresolvedValidationQuestions }
+            : {}),
           ...stampAudit(input),
         }),
       );
-      cases.push(
-        buildSyntheticCase({
-          idSuffix: `field-boundary-${stableSlug(field.id)}`,
-          title: `Boundary lengths for ${field.label} on ${field.screenId}`,
-          objective: `Probe the boundary lengths of the ${field.label} field.`,
-          type: "boundary",
-          priority: "p2",
-          riskCategory: deriveRiskCategoryForLabel(field.label),
-          technique: "boundary_value_analysis",
-          coveredFieldIds: [field.id],
-          coveredActionIds: [],
-          coveredValidationIds: [],
-          coveredNavigationIds: [],
-          screenId: field.screenId,
-          ...(field.trace.nodeId !== undefined
-            ? { traceNodeId: field.trace.nodeId }
-            : {}),
-          ...(field.trace.nodeName !== undefined
-            ? { traceNodeName: field.trace.nodeName }
-            : {}),
-          steps: [
-            { index: 1, action: `Open the ${field.screenId} screen` },
-            {
-              index: 2,
-              action: `Enter the minimum boundary value into ${field.label}`,
-              expected: "Field accepts the minimum boundary value",
-            },
-            {
-              index: 3,
-              action: `Enter the maximum boundary value into ${field.label}`,
-              expected: "Field accepts the maximum boundary value",
-            },
-          ],
-          expectedResults: [
-            "Min/max boundaries behave consistently with the validation rules",
-          ],
-          ...stampAudit(input),
-        }),
-      );
+      if (!hasUnresolvedValidationRules) {
+        cases.push(
+          buildSyntheticCase({
+            idSuffix: `field-boundary-${stableSlug(field.id)}`,
+            title: `Boundary lengths for ${field.label} on ${field.screenId}`,
+            objective: `Probe the boundary lengths of the ${field.label} field.`,
+            type: "boundary",
+            priority: "p2",
+            riskCategory: deriveRiskCategoryForLabel(field.label),
+            technique: "boundary_value_analysis",
+            coveredFieldIds: [field.id],
+            coveredActionIds: [],
+            coveredValidationIds: [],
+            coveredNavigationIds: [],
+            screenId: field.screenId,
+            ...(field.trace.nodeId !== undefined
+              ? { traceNodeId: field.trace.nodeId }
+              : {}),
+            ...(field.trace.nodeName !== undefined
+              ? { traceNodeName: field.trace.nodeName }
+              : {}),
+            steps: [
+              { index: 1, action: `Open the ${field.screenId} screen` },
+              {
+                index: 2,
+                action: `Enter the minimum boundary value into ${field.label}`,
+                expected: "Field accepts the minimum boundary value",
+              },
+              {
+                index: 3,
+                action: `Enter the maximum boundary value into ${field.label}`,
+                expected: "Field accepts the maximum boundary value",
+              },
+            ],
+            expectedResults: [
+              "Min/max boundaries behave consistently with the validation rules",
+            ],
+            ...stampAudit(input),
+          }),
+        );
+      }
     }
   }
 
@@ -920,6 +950,7 @@ interface BuildSyntheticCaseInput {
   traceNodeName?: string;
   steps: GeneratedTestCase["steps"];
   expectedResults: string[];
+  openQuestions?: string[];
   audit: GeneratedTestCaseAuditMetadata;
 }
 
@@ -956,7 +987,7 @@ const buildSyntheticCase = (
     expectedResults: input.expectedResults,
     figmaTraceRefs,
     assumptions: [],
-    openQuestions: [],
+    openQuestions: input.openQuestions?.slice() ?? [],
     qcMappingPreview: { exportable: true },
     qualitySignals: {
       coveredFieldIds: input.coveredFieldIds.slice().sort(),
@@ -991,6 +1022,20 @@ const buildAuditMetadata = (input: {
   promptHash: input.promptHash,
   schemaHash: input.schemaHash,
 });
+
+const buildUnresolvedValidationQuestionsForField = (input: {
+  fieldLabel: string;
+  validationRules: readonly string[];
+}): string[] => {
+  const unresolvedRules = input.validationRules.filter((rule) =>
+    isUnresolvedValidationText(rule),
+  );
+  if (unresolvedRules.length === 0) return [];
+  return [
+    `Validation rules for "${input.fieldLabel}" are unresolved in the source and must be clarified before exact error text, thresholds, or boundary behavior can be asserted.`,
+    ...unresolvedRules.map((rule) => `Source statement: ${rule}`),
+  ];
+};
 
 /** Run a single Wave 1 Validation fixture end-to-end. */
 export const runWave1Validation = async (
