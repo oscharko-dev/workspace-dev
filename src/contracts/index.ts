@@ -3911,6 +3911,39 @@ export interface JudgeConsensusVeto {
   readonly findingCodes: readonly string[];
 }
 
+/** Repair-state labels surfaced by the persisted judge-consensus artifact. */
+export const JUDGE_CONSENSUS_REPAIR_STATES = [
+  "none",
+  "repair_required",
+  "repaired",
+] as const;
+
+/** Repair-state labels surfaced by the persisted judge-consensus artifact. */
+export type JudgeConsensusRepairState =
+  (typeof JUDGE_CONSENSUS_REPAIR_STATES)[number];
+
+/** Final repair-loop outcomes persisted alongside judge-consensus history. */
+export const JUDGE_CONSENSUS_REPAIR_OUTCOMES = [
+  "not_needed",
+  "accepted",
+  "rejected",
+  "needs_review",
+  "convergence_stalled",
+] as const;
+
+/** Final repair-loop outcomes persisted alongside judge-consensus history. */
+export type JudgeConsensusRepairOutcome =
+  (typeof JUDGE_CONSENSUS_REPAIR_OUTCOMES)[number];
+
+/** Historical repair metadata persisted alongside the final consensus state. */
+export interface JudgeConsensusRepairHistory {
+  readonly attempted: boolean;
+  readonly repairIterationCount: number;
+  readonly finalOutcome: JudgeConsensusRepairOutcome;
+  readonly historicalFindings: readonly JudgeConsensusFinding[];
+  readonly historicalRepairInstructions: readonly RepairInstruction[];
+}
+
 /** Persisted production-runner judge-consensus artifact. */
 export interface JudgeConsensusVerdict {
   readonly schemaVersion: typeof JUDGE_CONSENSUS_SCHEMA_VERSION;
@@ -3918,9 +3951,68 @@ export interface JudgeConsensusVerdict {
   readonly generatedAt: string;
   readonly jobId: string;
   readonly verdict: LogicJudgeVerdictLabel;
+  readonly repairState: JudgeConsensusRepairState;
+  readonly activeFindings: readonly JudgeConsensusFinding[];
   readonly repairInstructions: readonly RepairInstruction[];
+  readonly repairHistory: JudgeConsensusRepairHistory;
   readonly vetoBy?: JudgeConsensusVeto;
   readonly panel: readonly JudgeConsensusPanelEntry[];
+}
+
+/** Schema version for persisted production-runner run-quality artifacts. */
+export const RUN_QUALITY_SCHEMA_VERSION = "1.0.0" as const;
+
+/** Canonical filename for the persisted run-quality artifact. */
+export const RUN_QUALITY_ARTIFACT_FILENAME = "run-quality.json" as const;
+
+/** Top-level run-quality states for the production-runner artifact bundle. */
+export const RUN_QUALITY_STATUSES = [
+  "clean_success",
+  "repaired_success",
+  "degraded_success",
+  "blocked_failure",
+] as const;
+
+/** Top-level run-quality states for the production-runner artifact bundle. */
+export type RunQualityStatus = (typeof RUN_QUALITY_STATUSES)[number];
+
+/** Stage identifiers surfaced in the run-quality attempt summaries. */
+export const RUN_QUALITY_STAGE_IDS = [
+  "generator",
+  "judge",
+  "visual_sidecar",
+  "policy_gate",
+] as const;
+
+/** Stage identifiers surfaced in the run-quality attempt summaries. */
+export type RunQualityStageId = (typeof RUN_QUALITY_STAGE_IDS)[number];
+
+/** Stage-level attempt summary persisted in the run-quality artifact. */
+export interface RunQualityAttemptSummary {
+  readonly stage: RunQualityStageId;
+  readonly attempts: number;
+  readonly successes: number;
+  readonly failures: number;
+  readonly finalOutcome: "not_run" | "clean" | "recovered" | "degraded" | "blocked";
+  readonly lastErrorClass?: string;
+}
+
+/** Persisted production-runner run-quality artifact. */
+export interface RunQualityArtifact {
+  readonly schemaVersion: typeof RUN_QUALITY_SCHEMA_VERSION;
+  readonly contractVersion: typeof TEST_INTELLIGENCE_CONTRACT_VERSION;
+  readonly generatedAt: string;
+  readonly jobId: string;
+  readonly status: RunQualityStatus;
+  readonly blocked: boolean;
+  readonly usable: boolean;
+  readonly finalJudgeVerdict: LogicJudgeVerdictLabel;
+  readonly repairState: JudgeConsensusRepairState;
+  readonly repairHistory: JudgeConsensusRepairHistory;
+  readonly activeFindings: readonly JudgeConsensusFinding[];
+  readonly activeFindingCount: number;
+  readonly attemptSummaries: readonly RunQualityAttemptSummary[];
+  readonly degradedReasons: readonly string[];
 }
 
 /** Canonical filename for per-run genealogy DAG artifacts. */

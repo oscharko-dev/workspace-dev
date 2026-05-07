@@ -96,8 +96,17 @@ test("buildJudgeConsensus accepts a single accept judge unchanged", () => {
   });
 
   assert.equal(consensus.verdict, "accept");
+  assert.equal(consensus.repairState, "none");
   assert.equal(consensus.vetoBy, undefined);
+  assert.deepEqual(consensus.activeFindings, []);
   assert.deepEqual(consensus.repairInstructions, []);
+  assert.deepEqual(consensus.repairHistory, {
+    attempted: false,
+    repairIterationCount: 0,
+    finalOutcome: "not_needed",
+    historicalFindings: [],
+    historicalRepairInstructions: [],
+  });
   assert.equal(consensus.panel.length, 1);
 });
 
@@ -124,11 +133,13 @@ test("buildJudgeConsensus preserves a logic schema-class veto as repair and surf
   });
 
   assert.equal(consensus.verdict, "repair");
+  assert.equal(consensus.repairState, "repair_required");
   assert.deepEqual(consensus.vetoBy, {
     judgeId: "logic_judge",
     verdict: "repair",
     findingCodes: [],
   });
+  assert.deepEqual(consensus.activeFindings, []);
   assert.equal(consensus.repairInstructions.length, 1);
 });
 
@@ -155,11 +166,13 @@ test("buildJudgeConsensus preserves a faithfulness mismatch veto and unions repa
   });
 
   assert.equal(consensus.verdict, "repair");
+  assert.equal(consensus.repairState, "repair_required");
   assert.deepEqual(consensus.vetoBy, {
     judgeId: "faithfulness_judge",
     verdict: "repair",
     findingCodes: ["cross_modal_mismatch"],
   });
+  assert.equal(consensus.activeFindings.length, 1);
   assert.equal(consensus.repairInstructions.length, 1);
   assert.match(
     consensus.repairInstructions[0]?.instruction ?? "",
@@ -179,6 +192,46 @@ test("buildJudgeConsensus resolves an accept versus reject tie to repair", () =>
 
   assert.equal(consensus.verdict, "repair");
   assert.equal(consensus.vetoBy, undefined);
+});
+
+test("buildJudgeConsensus records repaired-success history separately from active findings", () => {
+  const historicalFinding = {
+    testCaseId: "tc-old",
+    code: "schema_class:missing_field",
+    message: "The initial run was missing a required field.",
+    severity: "error" as const,
+    category: "schema_class" as const,
+  };
+
+  const consensus = buildJudgeConsensus({
+    jobId: "job-consensus",
+    generatedAt: "2026-05-06T00:00:00.000Z",
+    panel: [buildLogicJudgeConsensusEntry(buildLogicVerdict("accept"))],
+    repairHistory: {
+      attempted: true,
+      repairIterationCount: 1,
+      finalOutcome: "accepted",
+      historicalFindings: [historicalFinding],
+      historicalRepairInstructions: [
+        {
+          testCaseId: "tc-old",
+          path: "steps[0].action",
+          instruction: "Add the missing field to the generated payload.",
+        },
+      ],
+    },
+  });
+
+  assert.equal(consensus.repairState, "repaired");
+  assert.equal(consensus.verdict, "accept");
+  assert.deepEqual(consensus.activeFindings, []);
+  assert.equal(consensus.repairHistory.attempted, true);
+  assert.equal(consensus.repairHistory.repairIterationCount, 1);
+  assert.equal(consensus.repairHistory.finalOutcome, "accepted");
+  assert.deepEqual(consensus.repairHistory.historicalFindings, [
+    historicalFinding,
+  ]);
+  assert.equal(consensus.repairHistory.historicalRepairInstructions.length, 1);
 });
 
 test("buildJudgeConsensus normalizes a11y and coverage rejects down to repair", () => {
@@ -212,7 +265,55 @@ test("buildJudgeConsensus normalizes a11y and coverage rejects down to repair", 
   });
 
   assert.equal(consensus.verdict, "repair");
+  assert.equal(consensus.repairState, "repair_required");
   assert.equal(consensus.panel[0]?.verdict, "repair");
+  assert.equal(consensus.activeFindings.length, 1);
+});
+
+test("buildJudgeConsensus marks repaired history separately from active findings", () => {
+  const consensus = buildJudgeConsensus({
+    jobId: "job-consensus",
+    generatedAt: "2026-05-06T00:00:00.000Z",
+    panel: [buildLogicJudgeConsensusEntry(buildLogicVerdict("accept"))],
+    repairHistory: {
+      attempted: true,
+      repairIterationCount: 2,
+      finalOutcome: "accepted",
+      historicalFindings: [
+        {
+          testCaseId: "$job",
+          code: "schema_violation",
+          message: "qualitySignals.coveredFieldIds was emitted as an object.",
+          category: "schema_class",
+          severity: "error",
+        },
+      ],
+      historicalRepairInstructions: [
+        {
+          testCaseId: "$job",
+          path: "$.qualitySignals.coveredFieldIds",
+          instruction: "Emit coveredFieldIds as an array of cited IR ids.",
+          kind: "schema_violation",
+        },
+      ],
+    },
+  });
+
+  assert.equal(consensus.verdict, "accept");
+  assert.equal(consensus.repairState, "repaired");
+  assert.deepEqual(consensus.activeFindings, []);
+  assert.equal(consensus.repairHistory.attempted, true);
+  assert.equal(consensus.repairHistory.repairIterationCount, 2);
+  assert.equal(consensus.repairHistory.finalOutcome, "accepted");
+  assert.equal(consensus.repairHistory.historicalFindings.length, 1);
+  assert.equal(
+    consensus.repairHistory.historicalFindings[0]?.code,
+    "schema_violation",
+  );
+  assert.equal(
+    consensus.repairHistory.historicalRepairInstructions.length,
+    1,
+  );
 });
 
 test("buildA11yJudgeConsensusEntry projects structured a11y findings into the consensus panel", () => {

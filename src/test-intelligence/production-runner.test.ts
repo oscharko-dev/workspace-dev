@@ -14,6 +14,7 @@ import type {
   LlmGatewayCapabilities,
   LlmGenerationRequest,
   LlmGenerationResult,
+  RunQualityArtifact,
   VisualScreenDescription,
 } from "../contracts/index.js";
 import { createLlmGatewayClient } from "./llm-gateway.js";
@@ -47,6 +48,7 @@ import {
   GENEALOGY_ARTIFACT_FILENAME,
   JUDGE_CONSENSUS_ARTIFACT_FILENAME,
   LOGIC_JUDGE_VERDICT_ARTIFACT_FILENAME,
+  RUN_QUALITY_ARTIFACT_FILENAME,
   WAVE1_VALIDATION_EVIDENCE_MANIFEST_ARTIFACT_FILENAME,
   type BusinessTestIntentIr,
   type DetectedAction,
@@ -416,6 +418,18 @@ test("runFigmaToQcTestCases happy path persists artifacts and renders customer M
       "utf8",
     );
     assert.match(finopsReport, /"bySource":/u);
+    assert.equal(result.runQuality.artifactPath, result.artifactPaths.runQuality);
+    assert.ok(
+      result.runQuality.artifactPath.endsWith(RUN_QUALITY_ARTIFACT_FILENAME),
+    );
+    assert.equal(result.runQuality.artifact.status, "clean_success");
+    const runQuality = JSON.parse(
+      await readFile(result.artifactPaths.runQuality, "utf8"),
+    ) as RunQualityArtifact;
+    assert.equal(runQuality.status, "clean_success");
+    assert.equal(runQuality.blocked, false);
+    assert.equal(runQuality.repairState, "none");
+    assert.equal(runQuality.activeFindingCount, 0);
     assert.ok(
       result.artifactPaths.genealogy.endsWith(GENEALOGY_ARTIFACT_FILENAME),
     );
@@ -502,6 +516,16 @@ test("Issue #1794: banking profile blocks when the active deployment is missing 
     });
 
     assert.equal(result.blocked, true);
+    assert.equal(result.runQuality.artifact.status, "blocked_failure");
+    assert.equal(result.runQuality.artifact.blocked, true);
+    assert.equal(result.runQuality.artifact.usable, false);
+    assert.equal(result.runQuality.artifactPath, result.artifactPaths.runQuality);
+    const runQuality = JSON.parse(
+      await readFile(result.artifactPaths.runQuality, "utf8"),
+    ) as RunQualityArtifact;
+    assert.equal(runQuality.status, "blocked_failure");
+    assert.equal(runQuality.blocked, true);
+    assert.equal(runQuality.usable, false);
     const violation = result.policy.jobLevelViolations.find(
       (entry) => entry.outcome === "ict_register_ref_required",
     );
@@ -540,6 +564,142 @@ test("Issue #1794: banking profile blocks when the active deployment is missing 
     assert.equal(finopsReport.outcome, "policy_blocked");
     assert.deepEqual(finopsReport.breaches, []);
   } finally {
+    await rm(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("Issue #1992: runFigmaToQcTestCases records degraded_success when the visual sidecar falls back", async () => {
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ti-runner-"));
+  const originalFetch = globalThis.fetch;
+  try {
+    const bundle = createMockLlmGatewayClientBundle({
+      testGeneration: {
+        role: "test_generation",
+        deployment: "gpt-oss-120b",
+        modelRevision: "gpt-oss-120b@test",
+        gatewayRelease: "mock",
+        declaredCapabilities: TEST_GENERATION_CAPS,
+        responder: okResponder(SAMPLE_VISUAL_HARD_GATE_GREEN_DRAFTS),
+      },
+      visualPrimary: {
+        role: "visual_primary",
+        deployment: "llama-4-maverick-vision",
+        modelRevision: "llama-4-maverick-vision@test",
+        gatewayRelease: "mock",
+        declaredCapabilities: VISUAL_CAPS,
+        responder: (request, attempt) => {
+          if (
+            request.responseSchemaName === "workspace-dev-faithfulness-judge-v1"
+          ) {
+            return {
+              outcome: "success" as const,
+              content: {
+                verdict: "accept",
+                hallucinations: [],
+                mismatches: [],
+              },
+              finishReason: "stop" as const,
+              usage: { inputTokens: 12, outputTokens: 8 },
+              modelDeployment: "llama-4-maverick-vision",
+              modelRevision: "llama-4-maverick-vision@test",
+              gatewayRelease: "mock",
+              attempt,
+            };
+          }
+          return {
+            outcome: "error" as const,
+            errorClass: "timeout" as const,
+            message: "request timed out",
+            retryable: true,
+            attempt,
+          };
+        },
+      },
+      visualFallback: {
+        role: "visual_fallback",
+        deployment: "phi-4-multimodal-poc",
+        modelRevision: "phi-4-multimodal-poc@test",
+        gatewayRelease: "mock",
+        declaredCapabilities: VISUAL_CAPS,
+        responder: (request, attempt) =>
+          buildVisualSuccess(request, attempt, "1:1"),
+      },
+    });
+
+    globalThis.fetch = (async (url: string) => {
+      if (url.includes("/v1/files/ABC/nodes?ids=1%3A1")) {
+        return new Response(
+          JSON.stringify({
+            name: "Test View 03",
+            nodes: {
+              "1:1": {
+                document: SAMPLE_FILE.document.children?.[0]?.children?.[0],
+              },
+            },
+          }),
+          {
+            status: 200,
+            headers: { "content-type": "application/json" },
+          },
+        );
+      }
+      if (
+        url ===
+        "https://api.figma.com/v1/images/ABC?ids=1%3A1&format=png&scale=2"
+      ) {
+        return new Response(
+          JSON.stringify({
+            images: {
+              "1:1":
+                "https://figma-alpha-api.s3.us-west-2.amazonaws.com/1_1.png",
+            },
+          }),
+          {
+            status: 200,
+            headers: { "content-type": "application/json" },
+          },
+        );
+      }
+      return new Response(PNG_BYTES, {
+        status: 200,
+        headers: { "content-type": "image/png" },
+      });
+    }) as typeof fetch;
+
+    const result = await runFigmaToQcTestCases({
+      jobId: "job-1992-degraded-success",
+      generatedAt: "2026-05-07T10:05:00Z",
+      source: {
+        kind: "figma_url",
+        figmaUrl: "https://www.figma.com/design/ABC/Test-View-03?node-id=1-1",
+        accessToken: "figd_test",
+      },
+      outputRoot: tempRoot,
+      llm: { client: bundle.testGeneration, bundle },
+    });
+
+    assert.equal(result.blocked, false);
+    assert.equal(result.runQuality.artifact.status, "degraded_success");
+    assert.equal(result.runQuality.artifact.repairState, "none");
+    assert.ok(result.runQuality.artifact.degradedReasons.includes("visual_sidecar_degraded"));
+    const runQuality = JSON.parse(
+      await readFile(result.artifactPaths.runQuality, "utf8"),
+    ) as RunQualityArtifact;
+    assert.equal(runQuality.status, "degraded_success");
+    assert.equal(
+      runQuality.attemptSummaries.find(
+        (entry) => entry.stage === "visual_sidecar",
+      )?.finalOutcome,
+      "degraded",
+    );
+    assert.equal(
+      runQuality.attemptSummaries.find(
+        (entry) => entry.stage === "visual_sidecar",
+      )?.lastErrorClass,
+      "timeout",
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
     await rm(tempRoot, { recursive: true, force: true });
   }
 });
@@ -1767,9 +1927,20 @@ test("runFigmaToQcTestCases runs both judges, persists their artifacts, and keep
     const faithfulnessJudgeOnDisk = JSON.parse(
       await readFile(result.artifactPaths.faithfulnessJudgeVerdict!, "utf8"),
     ) as FaithfulnessVerdict;
+    const runQualityOnDisk = JSON.parse(
+      await readFile(result.artifactPaths.runQuality, "utf8"),
+    ) as RunQualityArtifact;
     assert.equal(judgeConsensusOnDisk.verdict, "accept");
     assert.equal(logicJudgeOnDisk.verdict, "accept");
     assert.equal(faithfulnessJudgeOnDisk.verdict, "accept");
+    assert.equal(result.runQuality.artifact.status, "clean_success");
+    assert.equal(runQualityOnDisk.status, "clean_success");
+    assert.equal(runQualityOnDisk.repairState, "none");
+    assert.equal(runQualityOnDisk.activeFindingCount, 0);
+    assert.equal(
+      path.basename(result.artifactPaths.runQuality),
+      RUN_QUALITY_ARTIFACT_FILENAME,
+    );
     assert.match(
       result.artifactPaths.judgeConsensus,
       new RegExp(`${JUDGE_CONSENSUS_ARTIFACT_FILENAME}$`, "u"),
@@ -1844,8 +2015,249 @@ test("runFigmaToQcTestCases blocks policy-green output when the logic judge stay
     assert.equal(result.judgeConsensus.verdict.panel[0]?.findings[0]?.category, "schema_class");
     assert.notEqual(result.repairLoop, undefined);
     assert.equal(result.repairLoop?.outcome, "convergence_stalled");
+    assert.equal(result.runQuality.artifact.status, "blocked_failure");
+    assert.equal(result.runQuality.artifact.repairState, "repair_required");
+    assert.ok(
+      result.runQuality.artifact.degradedReasons.includes(
+        "judge_consensus_not_accepted",
+      ),
+    );
     assert.ok(client.callCount() > 2);
   } finally {
+    await rm(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("Issue #1992: repaired runs surface repaired_success with historical judge findings separated from the final consensus", async () => {
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ti-runner-1992-repaired-"));
+  try {
+    let logicCallIndex = 0;
+    const client = createMockLlmGatewayClient({
+      role: "test_generation",
+      deployment: "gpt-oss-120b-mock",
+      modelRevision: "mock-1",
+      gatewayRelease: "mock",
+      responder: (request, attempt) => {
+        if (request.responseSchemaName === "workspace-dev-logic-judge-v1") {
+          logicCallIndex += 1;
+          if (logicCallIndex === 1) {
+            return {
+              outcome: "success" as const,
+              content: {
+                verdict: "repair",
+                findings: [
+                  {
+                    testCaseId: "$job",
+                    code: "schema_violation",
+                    severity: "error",
+                    message:
+                      "qualitySignals.coveredFieldIds emitted as object instead of array.",
+                  },
+                ],
+                repairInstructions: [
+                  {
+                    testCaseId: "$job",
+                    path: "$.qualitySignals.coveredFieldIds",
+                    instruction:
+                      "Emit coveredFieldIds as an array of cited IR ids.",
+                    kind: "schema_violation",
+                  },
+                ],
+              },
+              finishReason: "stop" as const,
+              usage: { inputTokens: 20, outputTokens: 10 },
+              modelDeployment: "gpt-oss-120b-mock",
+              modelRevision: "mock-1",
+              gatewayRelease: "mock",
+              attempt,
+            };
+          }
+          return {
+            outcome: "success" as const,
+            content: {
+              verdict: "accept",
+              findings: [],
+              repairInstructions: [],
+            },
+            finishReason: "stop" as const,
+            usage: { inputTokens: 20, outputTokens: 10 },
+            modelDeployment: "gpt-oss-120b-mock",
+            modelRevision: "mock-1",
+            gatewayRelease: "mock",
+            attempt,
+          };
+        }
+        return {
+          outcome: "success" as const,
+          content: {
+            testCases: SAMPLE_HARD_GATE_GREEN_DRAFTS,
+          },
+          finishReason: "stop" as const,
+          usage: { inputTokens: 100, outputTokens: 200 },
+          modelDeployment: "gpt-oss-120b-mock",
+          modelRevision: "mock-1",
+          gatewayRelease: "mock",
+          attempt,
+        };
+      },
+    });
+
+    const result = await runFigmaToQcTestCases({
+      jobId: "job-1992-repaired",
+      generatedAt: "2026-05-07T12:00:00Z",
+      source: { kind: "figma_paste_normalized", file: SAMPLE_FILE },
+      outputRoot: tempRoot,
+      llm: { client },
+    });
+
+    const runQualityOnDisk = JSON.parse(
+      await readFile(result.artifactPaths.runQuality, "utf8"),
+    ) as RunQualityArtifact;
+    assert.equal(result.blocked, false);
+    assert.equal(result.judgeConsensus.verdict.verdict, "accept");
+    assert.equal(result.judgeConsensus.verdict.repairState, "repaired");
+    assert.deepEqual(result.judgeConsensus.verdict.activeFindings, []);
+    assert.equal(
+      result.judgeConsensus.verdict.repairHistory.historicalFindings[0]?.code,
+      "schema_violation",
+    );
+    assert.equal(result.runQuality.artifact.status, "repaired_success");
+    assert.equal(runQualityOnDisk.status, "repaired_success");
+    assert.equal(runQualityOnDisk.repairHistory.repairIterationCount, 1);
+    assert.equal(runQualityOnDisk.activeFindingCount, 0);
+  } finally {
+    await rm(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("Issue #1992: fallback-recovered visual sidecar runs surface degraded_success without blocking output", async () => {
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ti-runner-1992-degraded-"));
+  const originalFetch = globalThis.fetch;
+  try {
+    const client = createMockLlmGatewayClient({
+      role: "test_generation",
+      deployment: "gpt-oss-120b-mock",
+      modelRevision: "mock-1",
+      gatewayRelease: "mock",
+      responder: okResponder(SAMPLE_VISUAL_HARD_GATE_GREEN_DRAFTS),
+    });
+    const bundle = createMockLlmGatewayClientBundle({
+      testGeneration: {
+        role: "test_generation",
+        deployment: "gpt-oss-120b",
+        modelRevision: "gpt-oss-120b@test",
+        gatewayRelease: "mock",
+        declaredCapabilities: TEST_GENERATION_CAPS,
+      },
+      visualPrimary: {
+        role: "visual_primary",
+        deployment: "llama-4-maverick-vision",
+        modelRevision: "llama-4-maverick-vision@test",
+        gatewayRelease: "mock",
+        declaredCapabilities: VISUAL_CAPS,
+        responder: (request, attempt) => {
+          if (
+            request.responseSchemaName === "workspace-dev-faithfulness-judge-v1"
+          ) {
+            return {
+              outcome: "success" as const,
+              content: {
+                verdict: "accept",
+                hallucinations: [],
+                mismatches: [],
+              },
+              finishReason: "stop" as const,
+              usage: { inputTokens: 12, outputTokens: 8 },
+              modelDeployment: "llama-4-maverick-vision",
+              modelRevision: "llama-4-maverick-vision@test",
+              gatewayRelease: "mock",
+              attempt,
+            };
+          }
+          return {
+            outcome: "error" as const,
+            errorClass: "timeout" as const,
+            message: "visual sidecar timed out",
+            retryable: true,
+            attempt,
+          };
+        },
+      },
+      visualFallback: {
+        role: "visual_fallback",
+        deployment: "phi-4-multimodal-poc",
+        modelRevision: "phi-4-multimodal-poc@test",
+        gatewayRelease: "mock",
+        declaredCapabilities: VISUAL_CAPS,
+        responder: (request, attempt) => buildVisualSuccess(request, attempt, "1:1"),
+      },
+    });
+    globalThis.fetch = (async (url: string) => {
+      if (url.includes("/v1/files/ABC/nodes?ids=1%3A1")) {
+        return new Response(
+          JSON.stringify({
+            name: "Test View 03",
+            nodes: {
+              "1:1": {
+                document: SAMPLE_FILE.document.children?.[0]?.children?.[0],
+              },
+            },
+          }),
+          {
+            status: 200,
+            headers: { "content-type": "application/json" },
+          },
+        );
+      }
+      if (
+        url ===
+        "https://api.figma.com/v1/images/ABC?ids=1%3A1&format=png&scale=2"
+      ) {
+        return new Response(
+          JSON.stringify({
+            images: {
+              "1:1":
+                "https://figma-alpha-api.s3.us-west-2.amazonaws.com/1_1.png",
+            },
+          }),
+          {
+            status: 200,
+            headers: { "content-type": "application/json" },
+          },
+        );
+      }
+      return new Response(PNG_BYTES, {
+        status: 200,
+        headers: { "content-type": "image/png" },
+      });
+    }) as typeof fetch;
+
+    const result = await runFigmaToQcTestCases({
+      jobId: "job-1992-degraded",
+      generatedAt: "2026-05-07T12:30:00Z",
+      source: {
+        kind: "figma_url",
+        figmaUrl: "https://www.figma.com/design/ABC/Test-View-03?node-id=1-1",
+        accessToken: "figd_test",
+      },
+      outputRoot: tempRoot,
+      llm: { client, bundle },
+    });
+
+    const visualSummary = result.runQuality.artifact.attemptSummaries.find(
+      (summary) => summary.stage === "visual_sidecar",
+    );
+    assert.equal(result.blocked, false);
+    assert.equal(result.runQuality.artifact.status, "degraded_success");
+    assert.equal(visualSummary?.finalOutcome, "degraded");
+    assert.equal(visualSummary?.attempts, 2);
+    assert.ok(
+      result.runQuality.artifact.degradedReasons.includes(
+        "visual_sidecar_degraded",
+      ),
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
     await rm(tempRoot, { recursive: true, force: true });
   }
 });
