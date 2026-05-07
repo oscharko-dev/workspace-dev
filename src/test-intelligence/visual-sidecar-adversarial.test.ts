@@ -293,7 +293,7 @@ test("phi-4 fallback: adversarially-injected visibleText triggers prompt_injecti
   });
 
   // Act
-  const result = await describeVisualScreens({
+  const { result } = await describeVisualScreens({
     bundle,
     captures: [captureFor("s-adv")],
     jobId: "job-phi-adv",
@@ -368,7 +368,7 @@ test("fallback-after-primary-refusal: result has fallbackReason=primary_unavaila
   });
 
   // Act
-  const result = await describeVisualScreens({
+  const { result } = await describeVisualScreens({
     bundle,
     captures: [captureFor("s-clean")],
     jobId: "job-fallback",

@@ -368,7 +368,7 @@ test("resource-budget: preflight rejects before any gateway call (gateway invoca
     screenName: "s-1",
   };
 
-  const result = await describeVisualScreens({
+  const { result } = await describeVisualScreens({
     bundle,
     captures: [capture],
     jobId: "job-1",
@@ -540,7 +540,7 @@ test("resource-budget: empty captures short-circuit before gateway — zero invo
     fallback: { responder: countingResponder },
   });
 
-  const result = await describeVisualScreens({
+  const { result } = await describeVisualScreens({
     bundle,
     captures: [], // empty
     jobId: "job-1",
@@ -577,7 +577,7 @@ test("resource-budget: duplicate screenIds short-circuit before gateway — zero
     fallback: { responder: countingResponder },
   });
 
-  const result = await describeVisualScreens({
+  const { result } = await describeVisualScreens({
     bundle,
     captures: [captureFor("s-dup"), captureFor("s-dup")], // duplicate screenId
     jobId: "job-1",

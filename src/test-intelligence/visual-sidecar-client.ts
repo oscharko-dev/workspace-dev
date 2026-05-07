@@ -45,10 +45,14 @@ import {
   MAX_VISUAL_SIDECAR_INPUT_BYTES,
   SIDECAR_DEPLOYMENT_MAX_LENGTH,
   TEST_INTELLIGENCE_CONTRACT_VERSION,
+  VISUAL_SIDECAR_DIAGNOSTIC_ARTIFACT_SCHEMA_VERSION,
+  VISUAL_SIDECAR_DIAGNOSTIC_RAW_TEXT_BYTE_LIMIT,
+  VISUAL_SIDECAR_DIAGNOSTICS_ARTIFACT_DIRECTORY,
   VISUAL_SIDECAR_RESULT_SCHEMA_VERSION,
   VISUAL_SIDECAR_SCHEMA_VERSION,
   type BusinessTestIntentIr,
   type LlmGatewayErrorClass,
+  type LlmGenerationFailure,
   type LlmGenerationRequest,
   type LlmGenerationResult,
   type SidecarDeployment,
@@ -56,6 +60,7 @@ import {
   type VisualSidecarAttempt,
   type VisualSidecarCaptureIdentity,
   type VisualSidecarCaptureInput,
+  type VisualSidecarDiagnosticArtifact,
   type VisualSidecarFailure,
   type VisualSidecarFailureClass,
   type VisualSidecarFallbackReason,
@@ -486,19 +491,54 @@ export interface DescribeVisualScreensInput {
 
 const defaultClock = (): number => Date.now();
 
+/**
+ * Persisted diagnostic artifact bytes for a single failed attempt
+ * (Issue #2017). Returned alongside the structured `VisualSidecarResult`
+ * so callers can write the bytes atomically into the run directory and
+ * thread them through the evidence manifest.
+ */
+export interface DescribeVisualScreensDiagnostic {
+  /**
+   * Run-relative path of the diagnostic file (always under
+   * {@link VISUAL_SIDECAR_DIAGNOSTICS_ARTIFACT_DIRECTORY}). Matches the
+   * `rawResponseArtifactPath` recorded on the corresponding
+   * `VisualSidecarAttempt`.
+   */
+  filename: string;
+  /** Canonical-JSON-encoded {@link VisualSidecarDiagnosticArtifact}. */
+  bytes: Uint8Array;
+  /** SHA-256 hex digest over `bytes`. */
+  sha256: string;
+  /** Decoded artifact payload (ready to be re-serialized for tests). */
+  artifact: VisualSidecarDiagnosticArtifact;
+}
+
+/** Result of `describeVisualScreens`. */
+export interface DescribeVisualScreensResult {
+  result: VisualSidecarResult;
+  /**
+   * Issue #2017: raw-response diagnostic bytes for every failed gateway
+   * attempt. Empty when the run succeeded on the primary attempt or when
+   * the failure was detected by the local pre-flight before any gateway
+   * round-trip.
+   */
+  diagnostics: ReadonlyArray<DescribeVisualScreensDiagnostic>;
+}
+
 /** Run the visual sidecar pipeline end-to-end. */
 export const describeVisualScreens = async (
   input: DescribeVisualScreensInput,
-): Promise<VisualSidecarResult> => {
+): Promise<DescribeVisualScreensResult> => {
   assertGeneratorRoleHasNoImageSupport(input.bundle);
 
   const preflight = preflightCaptures(input.captures);
-  if (!preflight.ok) return preflight.failure;
+  if (!preflight.ok) return { result: preflight.failure, diagnostics: [] };
 
   const clock = input.clock ?? defaultClock;
   const responseSchema = buildVisualSidecarResponseSchema();
   const userPrompt = buildVisualSidecarUserPrompt(input.captures);
   const attempts: VisualSidecarAttempt[] = [];
+  const diagnostics: DescribeVisualScreensDiagnostic[] = [];
 
   const orchestration = orchestrateAttempts({
     forceFallback: input.forceFallback === true,
@@ -508,7 +548,9 @@ export const describeVisualScreens = async (
     stages: orchestration.stages,
     maxImageBytesPerRequest: input.maxImageBytesPerRequest,
   });
-  if (imageBudgetFailure !== undefined) return imageBudgetFailure;
+  if (imageBudgetFailure !== undefined) {
+    return { result: imageBudgetFailure, diagnostics: [] };
+  }
 
   let primaryFailureCause: PrimaryFailureCause | undefined;
   for (const stage of orchestration.stages) {
@@ -530,9 +572,7 @@ export const describeVisualScreens = async (
       imageInputs: input.captures.map((capture) => ({
         mimeType: capture.mimeType,
         base64Data: capture.base64Data,
-        ...(capture.widthPx !== undefined
-          ? { widthPx: capture.widthPx }
-          : {}),
+        ...(capture.widthPx !== undefined ? { widthPx: capture.widthPx } : {}),
         ...(capture.heightPx !== undefined
           ? { heightPx: capture.heightPx }
           : {}),
@@ -555,14 +595,41 @@ export const describeVisualScreens = async (
         : {}),
     });
 
+    const attemptIndex = attempts.length + 1;
+    const deploymentLabel = clientDeploymentLabel(client);
     const attempt: VisualSidecarAttempt = {
-      deployment: clientDeploymentLabel(client),
-      attempt: attempts.length + 1,
+      deployment: deploymentLabel,
+      attempt: attemptIndex,
       durationMs,
       ...(evaluation.kind === "ok"
         ? {}
         : { errorClass: evaluation.errorClass }),
     };
+    if (evaluation.kind === "failure") {
+      const diagnostic = buildAttemptDiagnostic({
+        attempt: attemptIndex,
+        deployment: deploymentLabel,
+        durationMs,
+        errorClass: evaluation.errorClass,
+        gatewayResult: result,
+        normalizedParserError: evaluation.normalizedParserError,
+        jobId: input.jobId,
+        generatedAt: input.generatedAt,
+      });
+      attempt.rawResponseArtifactPath = diagnostic.filename;
+      const inferredParserError =
+        evaluation.normalizedParserError ??
+        (result.outcome === "error" &&
+        typeof result.message === "string" &&
+        result.message.length > 0
+          ? result.message
+          : undefined);
+      if (inferredParserError !== undefined) {
+        attempt.normalizedParserError =
+          redactBoundedFailureMessage(inferredParserError);
+      }
+      diagnostics.push(diagnostic);
+    }
     attempts.push(attempt);
 
     if (evaluation.kind === "ok") {
@@ -582,7 +649,7 @@ export const describeVisualScreens = async (
         confidenceSummary: aggregateConfidenceSummary(evaluation.visual),
         validationReport: evaluation.validationReport,
       };
-      return success;
+      return { result: success, diagnostics };
     }
 
     if (stage === "primary") {
@@ -600,7 +667,7 @@ export const describeVisualScreens = async (
     ),
     attemptsCount: attempts.length,
   });
-  return {
+  const failure: VisualSidecarFailure = {
     outcome: "failure",
     failureClass,
     failureMessage: redactBoundedFailureMessage(
@@ -609,6 +676,7 @@ export const describeVisualScreens = async (
     attempts,
     captureIdentities: preflight.identities,
   };
+  return { result: failure, diagnostics };
 };
 
 const guardFinOpsImageBudgets = (input: {
@@ -727,11 +795,13 @@ const computeVisualEvidenceHash = (
 
 const buildVisualEvidenceRefs = (
   result: VisualSidecarResult,
-): {
-  screenId: string;
-  modelDeployment: string;
-  evidenceHash: string;
-}[] | undefined => {
+):
+  | {
+      screenId: string;
+      modelDeployment: string;
+      evidenceHash: string;
+    }[]
+  | undefined => {
   if (result.outcome !== "success") return undefined;
   return result.validationReport.records
     .map((record) => ({
@@ -785,9 +855,7 @@ const aggregateConfidenceSummary = (
 // fixture-driven artefacts stay decoupled from any specific historical
 // literal. The `MockLlmGatewayClient` sentinel is the only branch that
 // special-cases the label.
-const clientDeploymentLabel = (
-  client: LlmGatewayClient,
-): SidecarDeployment =>
+const clientDeploymentLabel = (client: LlmGatewayClient): SidecarDeployment =>
   isMockLlmGatewayClient(client) ? "mock" : client.deployment;
 
 const assertGeneratorRoleHasNoImageSupport = (
@@ -809,6 +877,14 @@ interface AttemptOk {
 interface AttemptFailure {
   kind: "failure";
   errorClass: LlmGatewayErrorClass | "schema_invalid_response";
+  /**
+   * Issue #2017: structured parser-error description when a `success`
+   * gateway response failed structural normalization (envelope shape,
+   * screens count mismatch, per-record `schema_invalid` outcomes). The
+   * field is derived locally — `LlmGenerationFailure` already carries
+   * its own gateway message and is not duplicated here.
+   */
+  normalizedParserError?: string;
 }
 
 type AttemptEvaluation = AttemptOk | AttemptFailure;
@@ -880,6 +956,198 @@ const describeFailure = (input: {
   return `${input.failureClass}: ${summarised || "no attempts"}`;
 };
 
+/**
+ * Issue #2017: build a deterministic summary string from the visual
+ * validation report when at least one record reports `schema_invalid`.
+ * The summary lists the offending screen ids plus the first issue path
+ * so a reviewer can locate the failing field without re-running the
+ * model. Always passes through the secret redactor before being
+ * persisted — schema issue messages can theoretically contain a
+ * model-supplied snippet.
+ */
+const summarizeSchemaInvalidValidation = (
+  report: ReturnType<typeof validateVisualSidecar>,
+): string => {
+  const offending = report.records.filter((r) =>
+    r.outcomes.includes("schema_invalid"),
+  );
+  if (offending.length === 0) {
+    return "schema_invalid_response";
+  }
+  const heads = offending.slice(0, 3).map((record) => {
+    const firstIssuePath =
+      record.issues.find((issue) => issue.code === "schema_invalid")?.path ??
+      "$";
+    const screenId =
+      record.screenId.length > 0 ? record.screenId : "<unknown screen>";
+    return `${screenId}@${firstIssuePath}`;
+  });
+  const suffix =
+    offending.length > heads.length
+      ? `, +${String(offending.length - heads.length)} more`
+      : "";
+  return `schema_invalid_response: ${heads.join("; ")}${suffix}`;
+};
+
+/**
+ * Issue #2017: classify the gateway response payload so the diagnostic
+ * artifact can record the shape without leaking image bytes (none
+ * reach this layer anyway — captures stay base64-encoded in the
+ * request) or unbounded model output.
+ */
+const classifyResponseShape = (
+  result: LlmGenerationResult,
+): VisualSidecarDiagnosticArtifact["responseShape"] => {
+  if (result.outcome !== "success") return "missing";
+  const content = result.content;
+  if (content === null || content === undefined) return "null";
+  if (typeof content === "string") return "string";
+  if (Array.isArray(content)) return "array";
+  if (typeof content === "object") return "object";
+  return "missing";
+};
+
+/**
+ * UTF-8-safe truncation with byte budget. Walks code points so we never
+ * cut a multibyte character in half. Marks truncations with an ellipsis.
+ */
+const truncateUtf8 = (input: string, byteLimit: number): string => {
+  if (Buffer.byteLength(input, "utf8") <= byteLimit) return input;
+  const ELLIPSIS = "…";
+  const ellipsisBytes = Buffer.byteLength(ELLIPSIS, "utf8");
+  if (byteLimit <= ellipsisBytes) return ELLIPSIS;
+  let acc = "";
+  for (const ch of input) {
+    const next = `${acc}${ch}${ELLIPSIS}`;
+    if (Buffer.byteLength(next, "utf8") > byteLimit) break;
+    acc += ch;
+  }
+  return `${acc}${ELLIPSIS}`;
+};
+
+/**
+ * Issue #2017: bounded PII patterns used as a defence-in-depth filter
+ * before a model response is persisted into a diagnostic artifact. The
+ * sidecar system prompt already forbids the model from reproducing
+ * customer PII, but a misbehaving deployment could still echo IBAN /
+ * PAN / email / tax-id values from the screenshot back into its error
+ * payload. Always run AFTER the secret redactor so credentials get
+ * stripped first, then PII gets stripped second.
+ */
+const RAW_RESPONSE_PII_PATTERNS: ReadonlyArray<RegExp> = [
+  // IBAN — country prefix + 2 check digits + 11..30 alphanumeric.
+  /\b[A-Z]{2}\d{2}(?:[\s-]?[A-Z0-9]){11,30}\b/gu,
+  // PAN — 13..19 digit run, optionally with spaces / dashes.
+  /\b(?:\d[\s-]?){12,18}\d\b/gu,
+  // Email.
+  /\b[\w.!#$%&'*+/=?^`{|}~-]+@[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)+\b/gu,
+  // German Steuer-ID (11 digits) and US SSN.
+  /\b\d{3}-\d{2}-\d{4}\b/gu,
+  /\b\d{11}\b/gu,
+];
+
+const redactRawResponsePii = (input: string): string =>
+  RAW_RESPONSE_PII_PATTERNS.reduce(
+    (acc, pattern) => acc.replace(pattern, "[REDACTED]"),
+    input,
+  );
+
+/**
+ * Issue #2017: extract a bounded, redacted slice of the gateway
+ * response. The diagnostic captures the model's reply verbatim where
+ * possible (it's the only way a reviewer can see what shape it sent),
+ * but bounded to keep artifacts small and run through the secret
+ * redactor + PII redactor so a stray IBAN/PAN/JWT never lands on disk.
+ */
+const extractRawTextContent = (
+  result: LlmGenerationResult,
+): string | undefined => {
+  if (result.outcome !== "success") return undefined;
+  const candidate = result.rawTextContent ?? result.content;
+  let serialized: string;
+  if (candidate === undefined || candidate === null) {
+    return undefined;
+  }
+  if (typeof candidate === "string") {
+    serialized = candidate;
+  } else {
+    try {
+      serialized = JSON.stringify(candidate);
+    } catch {
+      return undefined;
+    }
+  }
+  if (serialized.length === 0) return undefined;
+  const secretsRedacted = redactHighRiskSecrets(serialized, "[REDACTED]");
+  const piiRedacted = redactRawResponsePii(secretsRedacted);
+  return truncateUtf8(
+    piiRedacted,
+    VISUAL_SIDECAR_DIAGNOSTIC_RAW_TEXT_BYTE_LIMIT,
+  );
+};
+
+const sanitizeDeploymentForFilename = (deployment: string): string => {
+  const cleaned = deployment.replace(/[^A-Za-z0-9._-]+/gu, "-");
+  const trimmed = cleaned.replace(/^-+|-+$/gu, "");
+  return trimmed.length > 0 ? trimmed.slice(0, 64) : "deployment";
+};
+
+/**
+ * Issue #2017: assemble the in-memory bytes for one failed attempt's
+ * diagnostic artifact. Returns the deterministic relative filename
+ * (used for `VisualSidecarAttempt.rawResponseArtifactPath`), the canonical
+ * JSON bytes, and the SHA-256 over those bytes.
+ */
+const buildAttemptDiagnostic = (input: {
+  attempt: number;
+  deployment: SidecarDeployment;
+  durationMs: number;
+  errorClass: LlmGatewayErrorClass | "schema_invalid_response";
+  gatewayResult: LlmGenerationResult;
+  normalizedParserError: string | undefined;
+  jobId: string;
+  generatedAt: string;
+}): DescribeVisualScreensDiagnostic => {
+  const filename = `${VISUAL_SIDECAR_DIAGNOSTICS_ARTIFACT_DIRECTORY}/attempt-${String(input.attempt).padStart(2, "0")}-${sanitizeDeploymentForFilename(input.deployment)}-${input.errorClass}.json`;
+  const responseShape = classifyResponseShape(input.gatewayResult);
+  const rawTextContent = extractRawTextContent(input.gatewayResult);
+  const gatewayMessage =
+    input.gatewayResult.outcome === "error" &&
+    typeof (input.gatewayResult as LlmGenerationFailure).message === "string"
+      ? redactBoundedFailureMessage(
+          (input.gatewayResult as LlmGenerationFailure).message,
+        )
+      : undefined;
+  const normalizedParserError =
+    input.normalizedParserError !== undefined
+      ? redactBoundedFailureMessage(input.normalizedParserError)
+      : undefined;
+  const artifact: VisualSidecarDiagnosticArtifact = {
+    schemaVersion: VISUAL_SIDECAR_DIAGNOSTIC_ARTIFACT_SCHEMA_VERSION,
+    contractVersion: TEST_INTELLIGENCE_CONTRACT_VERSION,
+    visualSidecarSchemaVersion: VISUAL_SIDECAR_SCHEMA_VERSION,
+    jobId: input.jobId,
+    generatedAt: input.generatedAt,
+    attempt: input.attempt,
+    deployment: input.deployment,
+    durationMs: input.durationMs,
+    errorClass: input.errorClass,
+    responseShape,
+    rawScreenshotsIncluded: false,
+    ...(normalizedParserError !== undefined ? { normalizedParserError } : {}),
+    ...(gatewayMessage !== undefined ? { gatewayMessage } : {}),
+    ...(rawTextContent !== undefined ? { rawTextContent } : {}),
+  };
+  const serialized = canonicalJson(artifact);
+  const bytes = new TextEncoder().encode(serialized);
+  return {
+    filename,
+    bytes,
+    sha256: sha256OfBytes(bytes),
+    artifact,
+  };
+};
+
 const evaluateAttempt = (input: {
   result: LlmGenerationResult;
   capturesCount: number;
@@ -901,6 +1169,7 @@ const evaluateAttempt = (input: {
     return {
       kind: "failure",
       errorClass: "schema_invalid_response",
+      normalizedParserError: envelope.message,
     };
   }
 
@@ -908,6 +1177,7 @@ const evaluateAttempt = (input: {
     return {
       kind: "failure",
       errorClass: "schema_invalid_response",
+      normalizedParserError: `sidecar returned ${String(envelope.screens.length)} screen description(s) but ${String(input.capturesCount)} capture(s) were submitted`,
     };
   }
 
@@ -926,6 +1196,7 @@ const evaluateAttempt = (input: {
     return {
       kind: "failure",
       errorClass: "schema_invalid_response",
+      normalizedParserError: summarizeSchemaInvalidValidation(validationReport),
     };
   }
 
@@ -989,7 +1260,11 @@ const normalizeEnvelope = (
 const parseLooseJsonObject = (
   content: unknown,
 ): Record<string, unknown> | null => {
-  if (typeof content === "object" && content !== null && !Array.isArray(content)) {
+  if (
+    typeof content === "object" &&
+    content !== null &&
+    !Array.isArray(content)
+  ) {
     return content as Record<string, unknown>;
   }
   if (typeof content !== "string") return null;
@@ -1118,11 +1393,7 @@ const normalizeConfidenceSummary = (
   value: unknown,
   regions: VisualScreenDescription["regions"],
 ): VisualScreenDescription["confidenceSummary"] | null => {
-  if (
-    typeof value === "object" &&
-    value !== null &&
-    !Array.isArray(value)
-  ) {
+  if (typeof value === "object" && value !== null && !Array.isArray(value)) {
     const record = value as Record<string, unknown>;
     const min = readConfidence(record["min"]);
     const max = readConfidence(record["max"]);
@@ -1172,12 +1443,18 @@ const normalizePiiFlags = (
     const regionId = readNonEmptyString(record["regionId"]);
     const kind = readNonEmptyString(record["kind"]);
     const confidence = readConfidence(record["confidence"]);
-    if (regionId === undefined || kind === undefined || confidence === undefined) {
+    if (
+      regionId === undefined ||
+      kind === undefined ||
+      confidence === undefined
+    ) {
       return null;
     }
     flags.push({
       regionId,
-      kind: kind as NonNullable<VisualScreenDescription["piiFlags"]>[number]["kind"],
+      kind: kind as NonNullable<
+        VisualScreenDescription["piiFlags"]
+      >[number]["kind"],
       confidence,
     });
   }
@@ -1186,12 +1463,17 @@ const normalizePiiFlags = (
 
 const normalizeAmbiguity = (
   value: unknown,
-): VisualScreenDescription["regions"][number]["ambiguity"] | null | undefined => {
+):
+  | VisualScreenDescription["regions"][number]["ambiguity"]
+  | null
+  | undefined => {
   if (value === undefined) return undefined;
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
     return null;
   }
-  const reason = readNonEmptyString((value as Record<string, unknown>)["reason"]);
+  const reason = readNonEmptyString(
+    (value as Record<string, unknown>)["reason"],
+  );
   if (reason === undefined) return null;
   return { reason };
 };
