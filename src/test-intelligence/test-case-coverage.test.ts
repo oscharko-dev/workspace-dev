@@ -181,7 +181,7 @@ test("uncovered ids are sorted deterministically", () => {
   assert.equal(report.fieldCoverage.ratio, 0);
 });
 
-test("decorative Figma fields and icon actions are excluded from mandatory coverage totals", () => {
+test("decorative technical labels and icon actions are excluded from mandatory coverage totals", () => {
   const intent: BusinessTestIntentIr = {
     ...buildIntent(),
     detectedFields: [
@@ -276,10 +276,61 @@ test("decorative Figma fields and icon actions are excluded from mandatory cover
     intent,
     duplicateSimilarityThreshold: 0.92,
   });
-  assert.equal(report.fieldCoverage.total, 2);
-  assert.deepEqual(report.fieldCoverage.uncoveredIds, ["f-1", "f-2"]);
+  assert.equal(report.fieldCoverage.total, 4);
+  assert.deepEqual(report.fieldCoverage.uncoveredIds, [
+    "f-1",
+    "f-2",
+    "f-decor-heading",
+    "f-decor-helper",
+  ]);
   assert.equal(report.actionCoverage.total, 1);
   assert.deepEqual(report.actionCoverage.uncoveredIds, ["a-1"]);
+});
+
+test("semantic helper copy and headings remain in mandatory coverage totals", () => {
+  const report = computeCoverageReport({
+    jobId: "job-1",
+    generatedAt: "2026-04-25T10:00:00.000Z",
+    policyProfileId: EU_BANKING_DEFAULT_POLICY_PROFILE_ID,
+    list: {
+      schemaVersion: GENERATED_TEST_CASE_SCHEMA_VERSION,
+      jobId: "job-1",
+      testCases: [],
+    },
+    intent: {
+      ...buildIntent(),
+      detectedFields: [
+        ...buildIntent().detectedFields,
+        {
+          id: "f-helper-copy",
+          screenId: "s-1",
+          trace: { nodeId: "n-helper-copy" },
+          provenance: "figma_node",
+          confidence: 0.7,
+          label: "Die Angabe muss mit den Vertragsdaten uebereinstimmen.",
+          type: "text",
+        },
+        {
+          id: "f-page-heading",
+          screenId: "s-1",
+          trace: { nodeId: "n-page-heading" },
+          provenance: "figma_node",
+          confidence: 0.7,
+          label: "Ermittlung des Finanzierungsbedarfs",
+          type: "text",
+        },
+      ],
+    },
+    duplicateSimilarityThreshold: 0.92,
+  });
+
+  assert.equal(report.fieldCoverage.total, 4);
+  assert.deepEqual(report.fieldCoverage.uncoveredIds, [
+    "f-1",
+    "f-2",
+    "f-helper-copy",
+    "f-page-heading",
+  ]);
 });
 
 test("rubric score is rounded and clamped", () => {

@@ -228,6 +228,53 @@ test("buildCoveragePlan selects deterministic techniques from model evidence", (
   );
 });
 
+test("buildCoveragePlan keeps semantic helper copy and headings as coverage targets", () => {
+  const plan = buildCoveragePlan({
+    model: {
+      ...buildModel(),
+      screens: [
+        {
+          ...buildModel().screens[0]!,
+          elements: [
+            ...buildModel().screens[0]!.elements,
+            {
+              elementId: "helper-copy",
+              label: "Die Angabe muss mit den Vertragsdaten uebereinstimmen.",
+              kind: "text",
+            },
+            {
+              elementId: "page-heading",
+              label: "Ermittlung des Finanzierungsbedarfs",
+              kind: "text",
+            },
+          ],
+        },
+        ...buildModel().screens.slice(1),
+      ],
+    },
+  });
+
+  const loanElementIds = plan.perElement
+    .filter((element) => element.screenId === "loan")
+    .map((element) => element.elementId);
+  assert.ok(loanElementIds.includes("helper-copy"));
+  assert.ok(loanElementIds.includes("page-heading"));
+  assert.ok(
+    plan.minimumCases.some(
+      (requirement) =>
+        requirement.reasonCode === "element_partition" &&
+        requirement.targetIds.includes("helper-copy"),
+    ),
+  );
+  assert.ok(
+    plan.minimumCases.some(
+      (requirement) =>
+        requirement.reasonCode === "element_partition" &&
+        requirement.targetIds.includes("page-heading"),
+    ),
+  );
+});
+
 test("buildCoveragePlan is canonical-json stable and persists exact bytes", async () => {
   const sourceMixResult = planSourceMix(
     buildSourceEnvelope([figmaRef("figma-primary"), jiraRef("jira-42")]),

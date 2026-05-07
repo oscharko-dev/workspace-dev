@@ -1773,7 +1773,7 @@ test("runFigmaToQcTestCases runs both judges, persists their artifacts, and keep
   }
 });
 
-test("runFigmaToQcTestCases records logic-judge schema failures without regenerating or blocking policy-green output", async () => {
+test("runFigmaToQcTestCases blocks policy-green output when the logic judge stays schema-invalid", async () => {
   const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ti-runner-judge-schema-"));
   try {
     const client = createMockLlmGatewayClient({
@@ -1822,11 +1822,12 @@ test("runFigmaToQcTestCases records logic-judge schema failures without regenera
     });
 
     assert.equal(result.policy.blocked, false);
-    assert.equal(result.blocked, false);
+    assert.equal(result.blocked, true);
     assert.equal(result.judgeConsensus.verdict.verdict, "repair");
     assert.equal(result.judgeConsensus.verdict.panel[0]?.findings[0]?.category, "schema_class");
-    assert.equal(result.repairLoop, undefined);
-    assert.equal(client.callCount(), 2);
+    assert.notEqual(result.repairLoop, undefined);
+    assert.equal(result.repairLoop?.outcome, "convergence_stalled");
+    assert.ok(client.callCount() > 2);
   } finally {
     await rm(tempRoot, { recursive: true, force: true });
   }
