@@ -223,6 +223,7 @@ import { buildSourceScopedCalculationAssumptions } from "./calculation-constrain
 import {
   buildSourceScopedValidationOpenQuestions,
   deriveUnresolvedValidationConstraints,
+  deriveUnresolvedValidationConstraintsWithScreenFallback,
   GENERIC_VALIDATION_EXPECTED_RESULT,
 } from "./unresolved-validation-rules.js";
 import { runValidationPipeline } from "./validation-pipeline.js";
@@ -5320,7 +5321,14 @@ const stabilizeGeneratedListForAcceptance = (input: {
   model: TestDesignModel;
   jobId: string;
 }): GeneratedTestCaseList => {
-  const unresolvedConstraints = deriveUnresolvedValidationConstraints(input.model);
+  // Issue #2013 — `propagateUnresolvedCoverageContext` keeps using the strict
+  // (scoped) constraint set so unrelated specified validations are not
+  // contaminated. Probe injection only needs *somewhere* on the mask to
+  // anchor a clarification negative case, so it consults the screen-fallback
+  // variant. That way a generic "Validierungsregeln sind noch zu
+  // spezifizieren" note still produces a customer-visible probe case.
+  const probeConstraints =
+    deriveUnresolvedValidationConstraintsWithScreenFallback(input.model);
   const hasSourceScopedOpenQuestion = input.model.openQuestions.some((question) =>
     /^[a-z0-9_-]+:/iu.test(question.text),
   );
@@ -5335,12 +5343,12 @@ const stabilizeGeneratedListForAcceptance = (input: {
     (testCase) => testCase.openQuestions.length > 0,
   );
   const probeCase =
-    unresolvedConstraints.length > 0 &&
+    probeConstraints.length > 0 &&
     hasSourceScopedOpenQuestion &&
     (!hasNegative || !hasOpenQuestion)
       ? buildAmbiguityProbeCase({
           ...input,
-          unresolvedConstraints,
+          unresolvedConstraints: probeConstraints,
         })
       : undefined;
   return {
