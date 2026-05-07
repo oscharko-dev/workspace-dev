@@ -5943,13 +5943,23 @@ export interface VisualSidecarDiagnosticArtifact {
   normalizedParserError?: string;
   /** Bounded, sanitized gateway error message captured from the failed `LlmGenerationFailure`. */
   gatewayMessage?: string;
-  /** Coarse shape classification of the response payload. `null` when the gateway never returned content. */
+  /**
+   * Coarse shape classification of the response payload:
+   *   - `"string"` — gateway returned a string (e.g. raw JSON text).
+   *   - `"object"` — gateway returned a JSON object payload.
+   *   - `"array"` — gateway returned a JSON array payload.
+   *   - `"null"` — gateway returned an explicit JSON `null` payload.
+   *   - `"missing"` — the attempt failed before any content was produced
+   *     (transport, timeout, canceled, refusal, etc.).
+   */
   responseShape: "string" | "object" | "array" | "null" | "missing";
   /**
    * Bounded, redacted slice of the gateway response. Capped at
-   * `VISUAL_SIDECAR_DIAGNOSTIC_RAW_TEXT_BYTE_LIMIT` bytes (UTF-8). Absent
-   * when the gateway did not produce string content (transport / canceled
-   * failures).
+   * `VISUAL_SIDECAR_DIAGNOSTIC_RAW_TEXT_BYTE_LIMIT` bytes (UTF-8). String
+   * payloads are persisted verbatim; object/array payloads are
+   * canonical-JSON-stringified first. Absent when no content is
+   * available (transport / canceled / refusal failures, or when
+   * serialization fails).
    */
   rawTextContent?: string;
   /** Hard invariant — image bytes are never embedded in this artifact. */

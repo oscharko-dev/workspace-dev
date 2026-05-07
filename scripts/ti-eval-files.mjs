@@ -116,6 +116,7 @@ export const TI_EVAL_FILES = Object.freeze([
   "src/test-intelligence/validation-pipeline.self-verify.test.ts",
   "src/test-intelligence/visual-sidecar-adversarial.test.ts",
   "src/test-intelligence/visual-sidecar-client.test.ts",
+  "src/test-intelligence/visual-sidecar-diagnostics.test.ts",
   "src/test-intelligence/visual-sidecar-validation.test.ts",
   "src/test-intelligence/wave4-adversarial-edge-coverage.test.ts",
 ]);
