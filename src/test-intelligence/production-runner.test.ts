@@ -27,6 +27,7 @@ import { writeAgentLesson } from "./agent-lessons-memdir.js";
 import { cloneEuBankingDefaultFinOpsBudget } from "./finops-budget.js";
 import { verifyJobEvidence } from "./evidence-verify.js";
 import { PRODUCTION_RUNNER_EVIDENCE_SEAL_ARTIFACT_FILENAME } from "./production-runner-evidence.js";
+import { AGENT_PARTICIPATION_ARTIFACT_FILENAME } from "./agent-participation.js";
 import {
   PROMPT_MAX_ACTIONS_PER_SCREEN,
   PROMPT_MAX_FIELDS_PER_SCREEN,
@@ -426,6 +427,40 @@ test("runFigmaToQcTestCases happy path persists artifacts and renders customer M
       result.runQuality.artifact.status,
       result.blocked ? "blocked_failure" : result.runQuality.artifact.status,
     );
+    assert.ok(
+      result.artifactPaths.agentParticipation.endsWith(
+        AGENT_PARTICIPATION_ARTIFACT_FILENAME,
+      ),
+    );
+    const participation = JSON.parse(
+      await readFile(result.artifactPaths.agentParticipation, "utf8"),
+    ) as {
+      roles: Array<{
+        role: string;
+        deployment?: string;
+        configurationSource: string;
+        status: string;
+        attemptCount: number;
+      }>;
+    };
+    const generatorRole = participation.roles.find(
+      (entry) => entry.role === "generator",
+    );
+    const logicJudgeRole = participation.roles.find(
+      (entry) => entry.role === "logic_judge",
+    );
+    const coveragePlannerRole = participation.roles.find(
+      (entry) => entry.role === "coverage_planner",
+    );
+    assert.equal(generatorRole?.deployment, "gpt-oss-120b-mock");
+    assert.equal(generatorRole?.configurationSource, "default");
+    assert.equal(generatorRole?.status, "succeeded");
+    assert.ok((generatorRole?.attemptCount ?? 0) >= 1);
+    assert.equal(logicJudgeRole?.deployment, "gpt-oss-120b-mock");
+    assert.equal(logicJudgeRole?.configurationSource, "default");
+    assert.equal(logicJudgeRole?.status, "succeeded");
+    assert.ok((logicJudgeRole?.attemptCount ?? 0) >= 1);
+    assert.equal(coveragePlannerRole?.status, "not_configured");
     const runQuality = JSON.parse(
       await readFile(result.artifactPaths.runQuality, "utf8"),
     ) as RunQualityArtifact;
@@ -753,6 +788,7 @@ test("Issue #1792: runFigmaToQcTestCases seals production-runner evidence and em
     assert.match(evidenceSeal.bySourceHash, /^[0-9a-f]{64}$/u);
     assert.match(evidenceSeal.genealogyDagHash, /^[0-9a-f]{64}$/u);
     assert.deepEqual(evidenceSeal.harnessArtifactFilenames, [
+      "agent-participation.json",
       "agent-role-runs/logic_judge.json",
       "agent-role-runs/test_generation.json",
       "context-budget/test_generation.json",
@@ -2604,6 +2640,275 @@ test("Issue #1951: runFigmaToQcTestCases blocks when a11y_judge reports screen-r
   }
 });
 
+test("Issue #1998: runFigmaToQcTestCases persists agent participation with runtime outcomes and source provenance", async () => {
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ti-runner-1998-"));
+  const originalFetch = globalThis.fetch;
+  try {
+    const bundle = createMockLlmGatewayClientBundle({
+      testGeneration: {
+        role: "test_generation",
+        deployment: "mistral-large-3",
+        modelRevision: "mistral-large-3@test",
+        gatewayRelease: "mock",
+        declaredCapabilities: TEST_GENERATION_CAPS,
+        responder: okResponder(
+          [SAMPLE_DRAFT, SAMPLE_ACCESSIBILITY_DRAFT],
+          "mistral-large-3",
+        ),
+      },
+      visualPrimary: {
+        role: "visual_primary",
+        deployment: "llama-4-maverick-vision",
+        modelRevision: "llama-4-maverick-vision@test",
+        gatewayRelease: "mock",
+        declaredCapabilities: VISUAL_CAPS,
+        responder: (request, attempt) => {
+          if (
+            request.responseSchemaName === "workspace-dev-faithfulness-judge-v1"
+          ) {
+            return {
+              outcome: "success" as const,
+              content: {
+                verdict: "accept",
+                hallucinations: [],
+                mismatches: [],
+              },
+              finishReason: "stop" as const,
+              usage: { inputTokens: 12, outputTokens: 8 },
+              modelDeployment: "llama-4-maverick-vision",
+              modelRevision: "llama-4-maverick-vision@test",
+              gatewayRelease: "mock",
+              attempt,
+            };
+          }
+          return buildVisualSuccess(request, attempt, "1:1");
+        },
+      },
+      visualFallback: {
+        role: "visual_fallback",
+        deployment: "phi-4-multimodal-poc",
+        modelRevision: "phi-4-multimodal-poc@test",
+        gatewayRelease: "mock",
+        declaredCapabilities: VISUAL_CAPS,
+      },
+      logicJudge: {
+        role: "logic_judge",
+        deployment: "gpt-oss-120b",
+        modelRevision: "gpt-oss-120b@test",
+        gatewayRelease: "mock",
+        declaredCapabilities: TEST_GENERATION_CAPS,
+        responder: okResponder([SAMPLE_DRAFT], "gpt-oss-120b"),
+      },
+      coveragePlanner: {
+        role: "coverage_planner",
+        deployment: "phi-4-mini-instruct",
+        modelRevision: "phi-4-mini-instruct@test",
+        gatewayRelease: "mock",
+        declaredCapabilities: TEST_GENERATION_CAPS,
+        responder: (_request, attempt) => ({
+          outcome: "success",
+          content: {
+            perScreen: [
+              {
+                screenId: "1:1",
+                techniqueQuotas: { use_case: 2, error_guessing: 1 },
+              },
+            ],
+            perElement: [],
+          },
+          finishReason: "stop",
+          usage: { inputTokens: 9, outputTokens: 7 },
+          modelDeployment: "phi-4-mini-instruct",
+          modelRevision: "phi-4-mini-instruct@test",
+          gatewayRelease: "mock",
+          attempt,
+        }),
+      },
+      riskRanker: {
+        role: "risk_ranker",
+        deployment: "phi-4",
+        modelRevision: "phi-4@test",
+        gatewayRelease: "mock",
+        declaredCapabilities: TEST_GENERATION_CAPS,
+        responder: (_request, attempt) => ({
+          outcome: "success",
+          content: {
+            rankedElements: [
+              {
+                screenId: "1:1",
+                elementId: "1:1::field::2:1",
+                riskScore: 0.95,
+                rationale: "policy_strict",
+              },
+            ],
+          },
+          finishReason: "stop",
+          usage: { inputTokens: 7, outputTokens: 6 },
+          modelDeployment: "phi-4",
+          modelRevision: "phi-4@test",
+          gatewayRelease: "mock",
+          attempt,
+        }),
+      },
+      a11yJudge: {
+        role: "a11y_judge",
+        deployment: "phi-4-multimodal-instruct",
+        modelRevision: "phi-4-multimodal-instruct@test",
+        gatewayRelease: "mock",
+        declaredCapabilities: VISUAL_CAPS,
+        responder: (_request, attempt) => ({
+          outcome: "success",
+          content: {
+            criteria: [
+              {
+                criterionId: "1:1::tab-order",
+                verdict: "covered_passes",
+                rationale: "Keyboard traversal is explicit.",
+              },
+              {
+                criterionId: "1:1::focus-indicator",
+                verdict: "covered_passes",
+                rationale: "Visible focus is explicit.",
+              },
+              {
+                criterionId: "1:1::label-for-input",
+                verdict: "covered_passes",
+                rationale: "Labels are explicit.",
+              },
+              {
+                criterionId: "1:1::error-announcements",
+                verdict: "covered_passes",
+                rationale: "Error announcements are explicit.",
+              },
+              {
+                criterionId: "1:1::color-contrast",
+                verdict: "covered_passes",
+                rationale: "Contrast is explicit.",
+              },
+              {
+                criterionId: "1:1::keyboard-trap-freedom",
+                verdict: "covered_passes",
+                rationale: "No keyboard trap remains.",
+              },
+            ],
+          },
+          finishReason: "stop",
+          usage: { inputTokens: 10, outputTokens: 7 },
+          modelDeployment: "phi-4-multimodal-instruct",
+          modelRevision: "phi-4-multimodal-instruct@test",
+          gatewayRelease: "mock",
+          attempt,
+        }),
+      },
+    });
+    globalThis.fetch = (async (url: string) => {
+      if (url.includes("/v1/files/ABC/nodes?ids=1%3A1")) {
+        return new Response(
+          JSON.stringify({
+            name: "Test View 03",
+            nodes: {
+              "1:1": {
+                document: SAMPLE_FILE.document.children?.[0]?.children?.[0],
+              },
+            },
+          }),
+          {
+            status: 200,
+            headers: { "content-type": "application/json" },
+          },
+        );
+      }
+      if (
+        url ===
+        "https://api.figma.com/v1/images/ABC?ids=1%3A1&format=png&scale=2"
+      ) {
+        return new Response(
+          JSON.stringify({
+            images: {
+              "1:1":
+                "https://figma-alpha-api.s3.us-west-2.amazonaws.com/1_1.png",
+            },
+          }),
+          {
+            status: 200,
+            headers: { "content-type": "application/json" },
+          },
+        );
+      }
+      return new Response(PNG_BYTES, {
+        status: 200,
+        headers: { "content-type": "image/png" },
+      });
+    }) as typeof fetch;
+
+    const result = await runFigmaToQcTestCases({
+      jobId: "job-1998-participation-success",
+      generatedAt: "2026-05-07T10:00:00Z",
+      source: {
+        kind: "figma_url",
+        figmaUrl: "https://www.figma.com/design/ABC/Test-View-03?node-id=1-1",
+        accessToken: "figd_test",
+      },
+      outputRoot: tempRoot,
+      llm: { client: bundle.testGeneration, bundle },
+      roleConfigurationSources: {
+        generator: "cli",
+        logic_judge: "env",
+        coverage_planner: "default",
+        risk_ranker: "env",
+        visual_primary: "env",
+        visual_fallback: "env",
+        a11y_judge: "cli",
+      },
+    });
+
+    const participation = JSON.parse(
+      await readFile(result.artifactPaths.agentParticipation, "utf8"),
+    ) as {
+      roles: Array<{
+        role: string;
+        configurationSource: string;
+        status: string;
+        attemptCount: number;
+        artifactReferences: string[];
+      }>;
+    };
+    const role = (name: string) =>
+      participation.roles.find((entry) => entry.role === name);
+
+    assert.equal(role("generator")?.configurationSource, "cli");
+    assert.equal(role("generator")?.status, "succeeded");
+    assert.equal(role("generator")?.attemptCount, 1);
+    assert.equal(role("logic_judge")?.configurationSource, "env");
+    assert.equal(role("logic_judge")?.status, "succeeded");
+    assert.equal(role("logic_judge")?.attemptCount, 1);
+    assert.equal(role("coverage_planner")?.configurationSource, "default");
+    assert.equal(role("coverage_planner")?.status, "succeeded");
+    assert.equal(role("coverage_planner")?.attemptCount, 1);
+    assert.equal(role("risk_ranker")?.configurationSource, "env");
+    assert.equal(role("risk_ranker")?.status, "succeeded");
+    assert.equal(role("risk_ranker")?.attemptCount, 1);
+    assert.equal(role("visual_primary")?.configurationSource, "env");
+    assert.equal(role("visual_primary")?.status, "succeeded");
+    assert.equal(role("visual_primary")?.attemptCount, 1);
+    assert.equal(role("visual_fallback")?.configurationSource, "env");
+    assert.equal(role("visual_fallback")?.status, "skipped");
+    assert.equal(role("visual_fallback")?.attemptCount, 0);
+    assert.equal(role("a11y_judge")?.configurationSource, "cli");
+    assert.equal(role("a11y_judge")?.status, "succeeded");
+    assert.equal(role("a11y_judge")?.attemptCount, 1);
+    assert.equal(
+      role("visual_primary")?.artifactReferences.includes(
+        "visual-sidecar-result.json",
+      ),
+      true,
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
+    await rm(tempRoot, { recursive: true, force: true });
+  }
+});
+
 test("Issue #1934: runFigmaToQcTestCases persists coverage-plan.json and uses the optional coveragePlanner slot when wired", async () => {
   const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ti-runner-"));
   try {
@@ -3095,6 +3400,28 @@ test("Issue #1772: both_sidecars_failed routes to needs_review with documented r
     ) as { result: { outcome: string; failureClass?: string } };
     assert.equal(sidecarArtifact.result.outcome, "failure");
     assert.equal(sidecarArtifact.result.failureClass, "both_sidecars_failed");
+    const participation = JSON.parse(
+      await readFile(result.artifactPaths.agentParticipation, "utf8"),
+    ) as {
+      roles: Array<{
+        role: string;
+        status: string;
+        attemptCount: number;
+        failureClass?: string;
+      }>;
+    };
+    const visualPrimaryParticipation = participation.roles.find(
+      (entry) => entry.role === "visual_primary",
+    );
+    const visualFallbackParticipation = participation.roles.find(
+      (entry) => entry.role === "visual_fallback",
+    );
+    assert.equal(visualPrimaryParticipation?.status, "failed");
+    assert.equal(visualPrimaryParticipation?.attemptCount, 1);
+    assert.equal(visualPrimaryParticipation?.failureClass, "transport");
+    assert.equal(visualFallbackParticipation?.status, "failed");
+    assert.equal(visualFallbackParticipation?.attemptCount, 1);
+    assert.equal(visualFallbackParticipation?.failureClass, "transport");
     const finopsReport = JSON.parse(
       await readFile(result.artifactPaths.finopsReport, "utf8"),
     ) as FinOpsBudgetReport;

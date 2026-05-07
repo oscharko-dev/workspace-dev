@@ -3233,6 +3233,10 @@ export const runTestIntelligenceCommand = async (
             ? { maxRepairIterations: options.harnessMaxRepairIterations }
             : {}),
         };
+  const visualParticipationSource =
+    options.enableVisualSidecar && !options.noVisualSidecar
+      ? undefined
+      : ("disabled" as const);
 
   const runInput: RunFigmaToQcTestCasesInput = {
     jobId,
@@ -3276,6 +3280,27 @@ export const runTestIntelligenceCommand = async (
           },
         }
       : {}),
+    roleConfigurationSources: {
+      generator: options.topologyInputSources?.modelDeployment ?? "default",
+      logic_judge:
+        options.topologyInputSources?.logicJudgeDeployment ?? "default",
+      coverage_planner:
+        options.topologyInputSources?.coveragePlannerDeployment ?? "default",
+      risk_ranker:
+        options.topologyInputSources?.riskRankerDeployment ?? "default",
+      visual_primary:
+        visualParticipationSource ??
+        options.topologyInputSources?.visualPrimaryDeployment ??
+        "default",
+      visual_fallback:
+        visualParticipationSource ??
+        options.topologyInputSources?.visualFallbackDeployment ??
+        "default",
+      a11y_judge:
+        visualParticipationSource ??
+        options.topologyInputSources?.a11yJudgeDeployment ??
+        "default",
+    },
   };
 
   let result: RunFigmaToQcTestCasesResult;
