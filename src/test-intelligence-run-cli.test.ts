@@ -179,38 +179,44 @@ const buildIssue1993RunResult = (
 const emptyRunnerResult = (input: {
   jobId: string;
   outputRoot: string;
-}): RunFigmaToQcTestCasesResult => ({
-  jobId: input.jobId,
-  generatedAt: "2026-05-06T12:00:00.000Z",
-  fileKey: "abc",
-  generatedTestCases: {
-    testCases: [],
-  } as unknown as RunFigmaToQcTestCasesResult["generatedTestCases"],
-  intent: {} as unknown as RunFigmaToQcTestCasesResult["intent"],
-  validation: {} as unknown as RunFigmaToQcTestCasesResult["validation"],
-  policy: {} as unknown as RunFigmaToQcTestCasesResult["policy"],
-  coverage: {} as unknown as RunFigmaToQcTestCasesResult["coverage"],
-  blocked: false,
-  finopsBudget: {} as unknown as RunFigmaToQcTestCasesResult["finopsBudget"],
-  artifactDir: `${input.outputRoot}/jobs/${input.jobId}/test-intelligence`,
-  artifactPaths: {
-    intent: "/tmp/intent.json",
-    compiledPrompt: "/tmp/compiled-prompt.json",
-    untrustedContentNormalizationReport: "/tmp/ucnr.json",
-    evidenceSeal: "/tmp/evidence-seal.json",
-    agentRoleRun: "/tmp/agent-role-run.json",
-    genealogy: "/tmp/genealogy.json",
-    generatedTestCases: "/tmp/generated.json",
-    validationReport: "/tmp/validation.json",
-    policyReport: "/tmp/policy.json",
-    coverageReport: "/tmp/coverage.json",
-    finopsReport: "/tmp/finops.json",
-  },
-  customerMarkdownPaths: {
-    combined: "/tmp/customer-markdown/testfaelle.md",
-    perCase: [],
-  },
-});
+  artifactDir?: string;
+}): RunFigmaToQcTestCasesResult => {
+  const artifactDir =
+    input.artifactDir ??
+    `${input.outputRoot}/jobs/${input.jobId}/test-intelligence`;
+  return {
+    jobId: input.jobId,
+    generatedAt: "2026-05-06T12:00:00.000Z",
+    fileKey: "abc",
+    generatedTestCases: {
+      testCases: [],
+    } as unknown as RunFigmaToQcTestCasesResult["generatedTestCases"],
+    intent: {} as unknown as RunFigmaToQcTestCasesResult["intent"],
+    validation: {} as unknown as RunFigmaToQcTestCasesResult["validation"],
+    policy: {} as unknown as RunFigmaToQcTestCasesResult["policy"],
+    coverage: {} as unknown as RunFigmaToQcTestCasesResult["coverage"],
+    blocked: false,
+    finopsBudget: {} as unknown as RunFigmaToQcTestCasesResult["finopsBudget"],
+    artifactDir,
+    artifactPaths: {
+      intent: "/tmp/intent.json",
+      compiledPrompt: "/tmp/compiled-prompt.json",
+      untrustedContentNormalizationReport: "/tmp/ucnr.json",
+      evidenceSeal: "/tmp/evidence-seal.json",
+      agentRoleRun: "/tmp/agent-role-run.json",
+      genealogy: "/tmp/genealogy.json",
+      generatedTestCases: "/tmp/generated.json",
+      validationReport: "/tmp/validation.json",
+      policyReport: "/tmp/policy.json",
+      coverageReport: "/tmp/coverage.json",
+      finopsReport: "/tmp/finops.json",
+    },
+    customerMarkdownPaths: {
+      combined: `${artifactDir}/customer-markdown/testfaelle.md`,
+      perCase: [],
+    },
+  };
+};
 // ---------------------------------------------------------------------------
 // parseTestIntelligenceRunArgs
 // ---------------------------------------------------------------------------
@@ -978,7 +984,6 @@ test("runTestIntelligenceCommand: offline_eval routes to deterministic_llm", asy
         document: { id: "0:0", type: "DOCUMENT" },
       }),
       loadJsonFile: async () => ({}),
-      copyArtifactsToOutput: async () => 0,
     },
   );
   assert.equal(exitCode, 0);
@@ -1026,7 +1031,7 @@ test("runTestIntelligenceCommand: finops-budget file read error → exit 1", asy
 // runTestIntelligenceCommand — deterministic_llm with injected runner
 // ---------------------------------------------------------------------------
 
-test("runTestIntelligenceCommand: deterministic_llm with injected runner returns 0 and writes Markdown via injected copier", async () => {
+test("runTestIntelligenceCommand: deterministic_llm with injected runner returns 0 and reports runner Markdown path", async () => {
   const { sink, stdout, stderr } = collectingSink();
   const options: TestIntelligenceRunOptions = {
     figmaUrl: undefined,
@@ -1088,7 +1093,6 @@ test("runTestIntelligenceCommand: deterministic_llm with injected runner returns
     },
   });
 
-  let copyCalls = 0;
   const exitCode = await runTestIntelligenceCommand(options, sink, {
     env: GATE_ON,
     runner,
@@ -1123,16 +1127,13 @@ test("runTestIntelligenceCommand: deterministic_llm with injected runner returns
       }
       return {};
     },
-    copyArtifactsToOutput: async () => {
-      copyCalls += 1;
-      return 2;
-    },
     now: () => 1700000000000,
   });
   assert.equal(exitCode, 0, stderr.join(""));
-  assert.equal(copyCalls, 1);
   const out = stdout.join("");
   assert.match(out, /completed/u);
+  assert.match(out, /customer md files\s*:\s*2/u);
+  assert.match(out, /\/tmp\/customer-markdown\/testfaelle\.md/u);
   assert.match(out, /finops tokens in\/out/u);
   assert.match(out, /evidence manifest digest/u);
 });
@@ -1210,7 +1211,6 @@ test("runTestIntelligenceCommand: deterministic_llm blocked + allowPolicyBlocked
       document: { id: "0:0", type: "DOCUMENT" },
     }),
     loadJsonFile: async () => ({}),
-    copyArtifactsToOutput: async () => 0,
     now: () => 1700000000000,
   });
 
@@ -1291,7 +1291,6 @@ test("runTestIntelligenceCommand: deterministic_llm blocked + --allow-policy-blo
       document: { id: "0:0", type: "DOCUMENT" },
     }),
     loadJsonFile: async () => ({}),
-    copyArtifactsToOutput: async () => 0,
     now: () => 1700000000000,
   });
 
@@ -1424,7 +1423,6 @@ test("runTestIntelligenceCommand: deterministic_llm + harness-mode shadow_eval f
       document: { id: "0:0", type: "DOCUMENT" },
     }),
     loadJsonFile: async () => ({}),
-    copyArtifactsToOutput: async () => 0,
     now: () => 1700000000000,
   });
 
@@ -1513,7 +1511,6 @@ test("runTestIntelligenceCommand: deterministic_llm + harness-mode off omits har
       document: { id: "0:0", type: "DOCUMENT" },
     }),
     loadJsonFile: async () => ({}),
-    copyArtifactsToOutput: async () => 0,
     now: () => 1700000000000,
   });
 
@@ -1614,7 +1611,6 @@ test("runTestIntelligenceCommand: enable-visual-sidecar builds and forwards runn
       document: { id: "0:0", type: "DOCUMENT" },
     }),
     loadJsonFile: async () => ({}),
-    copyArtifactsToOutput: async () => 0,
     now: () => 1700000000000,
   });
 
@@ -2331,7 +2327,6 @@ test("runTestIntelligenceCommand: deterministic_llm forwards customContextMarkdo
       document: { id: "0:0", type: "DOCUMENT" },
     }),
     loadJsonFile: async () => ({}),
-    copyArtifactsToOutput: async () => 0,
     loadCustomContextMarkdownFile: async () =>
       "# Risk Profile\n- Limit: 10000 EUR.",
     now: () => 1700000000000,
@@ -2354,7 +2349,7 @@ test("runTestIntelligenceCommand: forwards customerEvalMarkdown and writes expli
   };
   let capturedEval: string | undefined;
   let capturedOutputRoot: string | undefined;
-  let copiedOutputDir: string | undefined;
+  let capturedArtifactDir: string | undefined;
   const runner = async (
     input: Parameters<
       Required<Parameters<typeof runTestIntelligenceCommand>[2]>["runner"]
@@ -2363,9 +2358,13 @@ test("runTestIntelligenceCommand: forwards customerEvalMarkdown and writes expli
     capturedEval = (input as unknown as { customerEvalMarkdown?: string })
       .customerEvalMarkdown;
     capturedOutputRoot = input.outputRoot;
+    capturedArtifactDir = input.artifactDir;
     return emptyRunnerResult({
       jobId: input.jobId,
       outputRoot: input.outputRoot,
+      ...(input.artifactDir !== undefined
+        ? { artifactDir: input.artifactDir }
+        : {}),
     });
   };
   const exitCode = await runTestIntelligenceCommand(options, sink, {
@@ -2383,10 +2382,6 @@ test("runTestIntelligenceCommand: forwards customerEvalMarkdown and writes expli
       document: { id: "0:0", type: "DOCUMENT" },
     }),
     loadJsonFile: async () => ({}),
-    copyArtifactsToOutput: async (_from, to) => {
-      copiedOutputDir = to;
-      return 1;
-    },
     loadCustomerEvalMarkdownFile: async () => "# Kunden-Eval\n- Format.",
     now: () => 1700000000000,
   });
@@ -2394,7 +2389,7 @@ test("runTestIntelligenceCommand: forwards customerEvalMarkdown and writes expli
   assert.equal(capturedEval, "# Kunden-Eval\n- Format.");
   const expectedRunDir = "/tmp/cli-eval-output/2023-11-14T22-13-20-000Z";
   assert.equal(capturedOutputRoot, expectedRunDir);
-  assert.equal(copiedOutputDir, expectedRunDir);
+  assert.equal(capturedArtifactDir, expectedRunDir);
 });
 
 test("runTestIntelligenceCommand: deterministic_llm forwards diversityPasses to runner input", async () => {
@@ -2470,7 +2465,6 @@ test("runTestIntelligenceCommand: deterministic_llm forwards diversityPasses to 
       document: { id: "0:0", type: "DOCUMENT" },
     }),
     loadJsonFile: async () => ({}),
-    copyArtifactsToOutput: async () => 0,
     now: () => 1700000000000,
   });
   assert.equal(exitCode, 0, stderr.join(""));
@@ -2680,7 +2674,6 @@ test("runTestIntelligenceCommand: deterministic_llm forwards customerProfile to 
       document: { id: "0:0", type: "DOCUMENT" },
     }),
     loadJsonFile: async () => ({}),
-    copyArtifactsToOutput: async () => 0,
     loadCustomerProfileFile: async () => profileJson,
     now: () => 1700000000000,
   });
