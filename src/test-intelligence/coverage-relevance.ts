@@ -53,6 +53,14 @@ const TECHNICAL_PLACEHOLDER_PATTERN =
 const DECORATIVE_KIND_PATTERN =
   /\b(icon|svg|vector|chevron|arrow|decorative|separator|divider)\b/iu;
 
+/**
+ * Matches angle-bracket placeholder tokens such as `<Radio>`, `<TextField>`,
+ * `<Stack>`. Figma REST exports often surface the React component name as the
+ * raw text node when no human-authored label exists; those nodes must never
+ * become customer-facing test obligations.
+ */
+const STRUCTURAL_PLACEHOLDER_PATTERN = /<[^<>\s][^<>]*>/u;
+
 export const normalizeCoverageText = (value: string | undefined): string =>
   (value ?? "")
     .trim()
@@ -63,7 +71,8 @@ const isDecorativeCoverageLabel = (label: string): boolean =>
   DECORATIVE_LABELS.has(label) ||
   TECHNICAL_PLACEHOLDER_PATTERN.test(label) ||
   FIGMA_NODE_ID_PATTERN.test(label) ||
-  VALUE_ONLY_PATTERN.test(label);
+  VALUE_ONLY_PATTERN.test(label) ||
+  STRUCTURAL_PLACEHOLDER_PATTERN.test(label);
 
 const isDecorativeCoverageKind = (kind: string): boolean =>
   DECORATIVE_KIND_PATTERN.test(kind) || kind === "decorative";

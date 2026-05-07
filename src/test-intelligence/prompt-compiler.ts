@@ -33,6 +33,10 @@ import {
 } from "./context-budget-analyzer.js";
 import { canonicalJson, sha256Hex } from "./content-hash.js";
 import {
+  isCoverageRelevantActionLike,
+  isCoverageRelevantElementLike,
+} from "./coverage-relevance.js";
+import {
   assertAgentLessonFrontmatterInvariants,
   type AgentLessonRecord,
 } from "./agent-lessons-memdir.js";
@@ -1378,7 +1382,14 @@ const serializePromptTestDesignModel = (
                 }) ?? screen.purpose,
             }
           : {}),
-        elements: screen.elements.map((element) => {
+        elements: screen.elements
+          .filter((element) =>
+            isCoverageRelevantElementLike({
+              label: element.label,
+              kind: element.kind,
+            }),
+          )
+          .map((element) => {
           const sourceRefs =
             fieldSourceRefsById.get(element.elementId) ?? screenSourceRefs;
           return {
@@ -1411,7 +1422,17 @@ const serializePromptTestDesignModel = (
               : {}),
           };
         }),
-        actions: screen.actions.map((action) => {
+        actions: screen.actions
+          .filter((action) =>
+            isCoverageRelevantActionLike({
+              label: action.label,
+              kind: action.kind,
+              ...(action.targetScreenId !== undefined
+                ? { targetScreenId: action.targetScreenId }
+                : {}),
+            }),
+          )
+          .map((action) => {
           const sourceRefs =
             actionSourceRefsById.get(action.actionId) ?? screenSourceRefs;
           return {
