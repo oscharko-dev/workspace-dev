@@ -25,7 +25,7 @@
       "provenance": "reconciled",
       "confidence": 0.9,
       "label": "Email",
-      "type": "text",
+      "type": "text_input",
       "defaultValue": "[REDACTED:EMAIL]"
     },
     {
@@ -38,7 +38,7 @@
       "provenance": "reconciled",
       "confidence": 0.9,
       "label": "IBAN",
-      "type": "text",
+      "type": "text_input",
       "defaultValue": "[REDACTED:IBAN]"
     },
     {
@@ -51,7 +51,7 @@
       "provenance": "reconciled",
       "confidence": 0.9,
       "label": "Cardholder Name",
-      "type": "text",
+      "type": "text_input",
       "defaultValue": "[REDACTED:FULL_NAME]"
     },
     {
@@ -64,7 +64,7 @@
       "provenance": "reconciled",
       "confidence": 0.9,
       "label": "Card Number",
-      "type": "text",
+      "type": "text_input",
       "defaultValue": "[REDACTED:PAN]"
     },
     {
@@ -77,7 +77,7 @@
       "provenance": "reconciled",
       "confidence": 0.9,
       "label": "Phone",
-      "type": "text",
+      "type": "text_input",
       "defaultValue": "[REDACTED:PHONE]"
     },
     {
@@ -90,7 +90,7 @@
       "provenance": "reconciled",
       "confidence": 0.9,
       "label": "Tax ID",
-      "type": "text",
+      "type": "text_input",
       "defaultValue": "[REDACTED:TAX_ID]"
     }
   ],
