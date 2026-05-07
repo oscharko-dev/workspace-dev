@@ -486,17 +486,18 @@ test("runFigmaToQcTestCases harness mode enforced blocks when the logic judge re
       }>;
     };
     assert.equal(trace.outcome, "convergence_stalled");
-    // Issue #1939 (k>=2 correctness): stall fires earliest at the
-    // second post-repair iteration so the LLM has had at least one
-    // honest chance to incorporate repair instructions before being
-    // declared stuck. The mock here keeps returning the same `reject`
-    // verdict, so iter 1 and iter 2 share a signature and the
-    // detector trips at k=2.
-    assert.equal(trace.stallDetectedAtIteration, 2);
-    assert.equal(trace.iterations.length, 3);
+    // Issue #2016 sharpens convergence detection: stall now fires at
+    // k=1 when iter[1] has the same verdict signature as iter[0]. The
+    // mock returns the same `reject` verdict on every call, so iter 0
+    // and iter 1 share a signature and the detector trips at k=1
+    // (saving the second post-repair regeneration's tokens). See the
+    // detector block in src/test-intelligence/repair-loop.ts for the
+    // full rationale.
+    assert.equal(trace.stallDetectedAtIteration, 1);
+    assert.equal(trace.iterations.length, 2);
     assert.equal(
+      trace.iterations[0]!.verdictSignature,
       trace.iterations[1]!.verdictSignature,
-      trace.iterations[2]!.verdictSignature,
     );
   } finally {
     await rm(tempRoot, { recursive: true, force: true });

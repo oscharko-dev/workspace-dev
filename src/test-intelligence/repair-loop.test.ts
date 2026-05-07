@@ -30,6 +30,7 @@ import {
   type RepairInstruction,
 } from "../contracts/index.js";
 import {
+  REPAIR_LOOP_BUDGET_TRACE_ARTIFACT_FILENAME,
   REPAIR_LOOP_DEFAULT_MAX_ITERATIONS,
   REPAIR_LOOP_MAX_ITERATIONS_HARD_CAP,
   REPAIR_LOOP_TRACE_ARTIFACT_FILENAME,
@@ -38,6 +39,7 @@ import {
   computeVerdictSignature,
   consolidateRepairInstructions,
   runRepairLoop,
+  type RepairLoopBudgetTraceArtifact,
   type RepairLoopFaithfulnessJudgeRunner,
   type RepairLoopLogicJudgeRunner,
   type RepairLoopRegenerator,
@@ -795,7 +797,7 @@ test("consolidateRepairInstructions deduplicates and sorts deterministically", (
 // ---------------------------------------------------------------------------
 // Issue #1939: convergence-stall detection + trace artifact
 // ---------------------------------------------------------------------------
-test("repair loop aborts with convergence_stalled when consecutive repair iterations match", async () => {
+test("repair loop aborts with convergence_stalled at iteration 2 when consecutive repair iterations match", async () => {
   await withTempDir(async (runDir) => {
     const stuckRi: RepairInstruction[] = [
       {
@@ -812,18 +814,31 @@ test("repair loop aborts with convergence_stalled when consecutive repair iterat
         message: "expected missing",
       },
     ];
-    // Stall fires earliest at k=2 — the detector requires two
-    // post-repair iterations with matching signatures, so the LLM has
-    // had at least one honest opportunity to incorporate repair
-    // instructions before we declare it stuck. Two sequenced
-    // logic-judge verdicts here yield iterations [0, 1, 2] where the
-    // signatures of iter 1 and iter 2 match.
+    // The detector now compares iter[k] to iter[k-1] starting at k=1
+    // (Issue #2016 — see the convergence-detection comment block in
+    // repair-loop.ts for the full rationale). To exercise the
+    // iter[2]==iter[1] arm specifically — i.e. *post-repair* stall
+    // detection — start from a `reject` verdict on iter 0 (so its
+    // signature differs from the post-repair iterations) and have the
+    // re-judges emit two matching `repair` verdicts.
+    const initialFindings: JudgeVerdict["findings"] = [
+      {
+        testCaseId: "tc-1",
+        code: "schema_invalid",
+        severity: "error",
+        message: "schema invalid on initial pass",
+      },
+    ];
     const result = await runRepairLoop({
       jobId: "job-stall",
       runDir,
       maxRepairIterations: 3,
       initialList: buildList(["tc-1"]),
-      initialLogicVerdict: buildLogicVerdict("repair", stuckRi, stuckFindings),
+      initialLogicVerdict: buildLogicVerdict(
+        "reject",
+        stuckRi,
+        initialFindings,
+      ),
       regenerate: okRegenerate(buildList(["tc-1"])),
       runLogicJudge: sequencedLogicJudge([
         buildLogicVerdict("repair", stuckRi, stuckFindings),
@@ -854,15 +869,14 @@ test("repair loop aborts with convergence_stalled when consecutive repair iterat
   });
 });
 
-test("repair loop does not stall on the first repair iteration even when its signature matches the initial state", async () => {
+test("repair loop aborts with convergence_stalled at iteration 1 when the first repair fails to change the verdict signature (Issue #2016)", async () => {
   await withTempDir(async (runDir) => {
-    // Regression guard: before the k>=2 fix, the detector compared
-    // iter 1 against iter 0 (the pre-repair initial state) and
-    // declared stall whenever the LLM regenerated cases that fell
-    // back to the same finding pattern after a single repair attempt.
-    // The corrected semantics require two consecutive *post-repair*
-    // iterations with matching signatures, so a recovery on iter 2
-    // must be reachable.
+    // Issue #2016 sharpened the convergence detector: when the first
+    // regeneration produces a verdict signature byte-identical to the
+    // initial pass, the LLM has had access to consolidated repair
+    // instructions and failed to change *any* finding code. The loop
+    // must stop at k=1 instead of paying for another generator
+    // response that has no expected progress.
     const stuckRi: RepairInstruction[] = [
       {
         testCaseId: "tc-1",
@@ -879,22 +893,29 @@ test("repair loop does not stall on the first repair iteration even when its sig
       },
     ];
     const result = await runRepairLoop({
-      jobId: "job-no-early-stall",
+      jobId: "job-stall-iter1",
       runDir,
       maxRepairIterations: 3,
       initialList: buildList(["tc-1"]),
       initialLogicVerdict: buildLogicVerdict("repair", stuckRi, stuckFindings),
       regenerate: okRegenerate(buildList(["tc-1"])),
       runLogicJudge: sequencedLogicJudge([
+        // Same verdict signature as the initial pass.
         buildLogicVerdict("repair", stuckRi, stuckFindings),
-        buildLogicVerdict("accept"),
       ]),
     });
-    assert.equal(result.outcome, "accepted");
-    assert.equal(result.repairIterationCount, 2);
-    await assert.rejects(
-      stat(path.join(runDir, REPAIR_LOOP_TRACE_ARTIFACT_FILENAME)),
+    assert.equal(result.outcome, "convergence_stalled");
+    assert.equal(result.repairIterationCount, 1);
+    assert.equal(result.iterations.length, 2);
+    assert.equal(
+      result.iterations[0]!.verdictSignature,
+      result.iterations[1]!.verdictSignature,
     );
+    const tracePath = path.join(runDir, REPAIR_LOOP_TRACE_ARTIFACT_FILENAME);
+    const trace = JSON.parse(
+      await readFile(tracePath, "utf8"),
+    ) as RepairLoopTraceArtifact;
+    assert.equal(trace.stallDetectedAtIteration, 1);
   });
 });
 
@@ -1096,6 +1117,297 @@ test("computeVerdictSignature distinguishes a11y findings for different unresolv
     computeVerdictSignature(focusCriterion),
     computeVerdictSignature(errorCriterion),
   );
+});
+
+// ---------------------------------------------------------------------------
+// Issue #2016: generator-side budget guard + budget-trace artifact
+// ---------------------------------------------------------------------------
+
+const sizedRegenerate =
+  (newList: GeneratedTestCaseList, outputTokens: number): RepairLoopRegenerator =>
+  async () => ({
+    list: newList,
+    llmResult: {
+      outcome: "success",
+      content: { testCases: [] },
+      finishReason: "stop",
+      usage: { inputTokens: 100, outputTokens },
+      modelDeployment: "gpt-oss-120b-mock",
+      modelRevision: "mock-1",
+      gatewayRelease: "mock",
+      attempt: 1,
+    },
+    llmDurationMs: 17,
+    inputTokens: 100,
+    outputTokens,
+    hashes: HASHES,
+  });
+
+test("Issue #2016: budget guard refuses to start an iteration that would exceed maxGeneratorOutputTokens", async () => {
+  await withTempDir(async (runDir) => {
+    const stuckRi: RepairInstruction[] = [
+      {
+        testCaseId: "tc-1",
+        path: "expectedResults",
+        instruction: "Add expected.",
+      },
+    ];
+    const stuckFindings: JudgeVerdict["findings"] = [
+      {
+        testCaseId: "tc-1",
+        code: "missing_expected",
+        severity: "error",
+        message: "expected missing",
+      },
+    ];
+    // Initial pass already booked 7000 generator output tokens; budget
+    // ceiling is 8000 with a per-call expectation of 7000 — running a
+    // single repair iteration would project 14000 > 8000 and breach.
+    const result = await runRepairLoop({
+      jobId: "job-budget-output-cap",
+      runDir,
+      maxRepairIterations: 3,
+      initialList: buildList(["tc-1"]),
+      initialLogicVerdict: buildLogicVerdict("repair", stuckRi, stuckFindings),
+      regenerate: sizedRegenerate(buildList(["tc-1"]), 7000),
+      runLogicJudge: sequencedLogicJudge([buildLogicVerdict("accept")]),
+      budget: {
+        initialGeneratorOutputTokens: 7000,
+        initialGeneratorAttempts: 1,
+        maxGeneratorOutputTokens: 8000,
+        maxGeneratorAttempts: 3,
+        expectedNextOutputTokens: 7000,
+      },
+    });
+    assert.equal(result.outcome, "budget_exhausted");
+    assert.equal(result.repairIterationCount, 0);
+    assert.equal(result.iterations.length, 1, "no repair iterations executed");
+
+    const tracePath = path.join(
+      runDir,
+      REPAIR_LOOP_BUDGET_TRACE_ARTIFACT_FILENAME,
+    );
+    const trace = JSON.parse(
+      await readFile(tracePath, "utf8"),
+    ) as RepairLoopBudgetTraceArtifact;
+    assert.equal(trace.outcome, "budget_exhausted");
+    assert.equal(trace.trigger, "max_generator_output_tokens");
+    assert.equal(trace.stoppedBeforeIteration, 1);
+    assert.equal(trace.cumulativeGeneratorOutputTokens, 7000);
+    assert.equal(trace.cumulativeGeneratorAttempts, 1);
+    assert.equal(trace.maxGeneratorOutputTokens, 8000);
+    assert.equal(trace.expectedNextOutputTokens, 7000);
+
+    // No planner / generator iteration artifact should have been written
+    // for the iteration the loop refused to start.
+    await assert.rejects(
+      stat(
+        path.join(
+          runDir,
+          "agent-role-runs",
+          `${REPAIR_PLANNER_ARTIFACT_PREFIX}1.json`,
+        ),
+      ),
+    );
+  });
+});
+
+test("Issue #2016: budget guard refuses to start an iteration that would exceed maxGeneratorAttempts", async () => {
+  await withTempDir(async (runDir) => {
+    const stuckRi: RepairInstruction[] = [
+      {
+        testCaseId: "tc-1",
+        path: "expectedResults",
+        instruction: "Add expected.",
+      },
+    ];
+    const stuckFindings: JudgeVerdict["findings"] = [
+      {
+        testCaseId: "tc-1",
+        code: "missing_expected",
+        severity: "error",
+        message: "expected missing",
+      },
+    ];
+    // Initial pass already booked the entire attempt budget — the loop
+    // must refuse to start any repair iteration.
+    const result = await runRepairLoop({
+      jobId: "job-budget-attempts-cap",
+      runDir,
+      maxRepairIterations: 3,
+      initialList: buildList(["tc-1"]),
+      initialLogicVerdict: buildLogicVerdict("repair", stuckRi, stuckFindings),
+      regenerate: sizedRegenerate(buildList(["tc-1"]), 100),
+      runLogicJudge: sequencedLogicJudge([buildLogicVerdict("accept")]),
+      budget: {
+        initialGeneratorOutputTokens: 100,
+        initialGeneratorAttempts: 3,
+        maxGeneratorOutputTokens: 100_000,
+        maxGeneratorAttempts: 3,
+        expectedNextOutputTokens: 100,
+      },
+    });
+    assert.equal(result.outcome, "budget_exhausted");
+    assert.equal(result.repairIterationCount, 0);
+
+    const trace = JSON.parse(
+      await readFile(
+        path.join(runDir, REPAIR_LOOP_BUDGET_TRACE_ARTIFACT_FILENAME),
+        "utf8",
+      ),
+    ) as RepairLoopBudgetTraceArtifact;
+    assert.equal(trace.trigger, "max_generator_attempts");
+    assert.equal(trace.cumulativeGeneratorAttempts, 3);
+    assert.equal(trace.maxGeneratorAttempts, 3);
+  });
+});
+
+test("Issue #2016: budget guard allows the loop to run when the next iteration fits the budget and still breaks on accept", async () => {
+  await withTempDir(async (runDir) => {
+    const stuckRi: RepairInstruction[] = [
+      {
+        testCaseId: "tc-1",
+        path: "expectedResults",
+        instruction: "Add expected.",
+      },
+    ];
+    const stuckFindings: JudgeVerdict["findings"] = [
+      {
+        testCaseId: "tc-1",
+        code: "missing_expected",
+        severity: "error",
+        message: "expected missing",
+      },
+    ];
+    // 7000 already booked, ceiling 16000, expected next 7000 → projection
+    // 14000 ≤ 16000, so iteration 1 may run; after it the next projection
+    // would be 21000 > 16000, but the panel accepts so the loop returns
+    // `accepted` rather than `budget_exhausted`.
+    const result = await runRepairLoop({
+      jobId: "job-budget-headroom",
+      runDir,
+      maxRepairIterations: 3,
+      initialList: buildList(["tc-1"]),
+      initialLogicVerdict: buildLogicVerdict("repair", stuckRi, stuckFindings),
+      regenerate: sizedRegenerate(buildList(["tc-1"]), 7000),
+      runLogicJudge: sequencedLogicJudge([buildLogicVerdict("accept")]),
+      budget: {
+        initialGeneratorOutputTokens: 7000,
+        initialGeneratorAttempts: 1,
+        maxGeneratorOutputTokens: 16_000,
+        maxGeneratorAttempts: 3,
+        expectedNextOutputTokens: 7000,
+      },
+    });
+    assert.equal(result.outcome, "accepted");
+    assert.equal(result.repairIterationCount, 1);
+    await assert.rejects(
+      stat(path.join(runDir, REPAIR_LOOP_BUDGET_TRACE_ARTIFACT_FILENAME)),
+    );
+  });
+});
+
+test("Issue #2016: budget guard tracks cumulative generator output tokens across iterations and stops before the breaching iteration", async () => {
+  await withTempDir(async (runDir) => {
+    const stuckRi: RepairInstruction[] = [
+      {
+        testCaseId: "tc-1",
+        path: "expectedResults",
+        instruction: "Add expected.",
+      },
+    ];
+    const findingsA: JudgeVerdict["findings"] = [
+      {
+        testCaseId: "tc-1",
+        code: "missing_a",
+        severity: "error",
+        message: "a missing",
+      },
+    ];
+    const findingsB: JudgeVerdict["findings"] = [
+      {
+        testCaseId: "tc-1",
+        code: "missing_b",
+        severity: "error",
+        message: "b missing",
+      },
+    ];
+    // Each generator call adds 5000 tokens; ceiling 16000; initial 5000.
+    // After iter 1 cumulative = 10000; projection for iter 2 = 15000
+    // ≤ 16000 → iter 2 runs. After iter 2 cumulative = 15000;
+    // projection for iter 3 = 20000 > 16000 → stop with budget_exhausted
+    // before iter 3.
+    const result = await runRepairLoop({
+      jobId: "job-budget-cumulative",
+      runDir,
+      maxRepairIterations: 3,
+      initialList: buildList(["tc-1"]),
+      initialLogicVerdict: buildLogicVerdict("repair", stuckRi, findingsA),
+      regenerate: sizedRegenerate(buildList(["tc-1"]), 5000),
+      // Different finding codes per iteration so the convergence_stalled
+      // detector does not fire and we exercise the budget arm in
+      // isolation.
+      runLogicJudge: sequencedLogicJudge([
+        buildLogicVerdict("repair", stuckRi, findingsB),
+        buildLogicVerdict("repair", stuckRi, findingsA),
+        buildLogicVerdict("repair", stuckRi, findingsB),
+      ]),
+      budget: {
+        initialGeneratorOutputTokens: 5000,
+        initialGeneratorAttempts: 1,
+        maxGeneratorOutputTokens: 16_000,
+        maxGeneratorAttempts: 5,
+        expectedNextOutputTokens: 5000,
+      },
+    });
+    assert.equal(result.outcome, "budget_exhausted");
+    assert.equal(result.repairIterationCount, 2);
+    const trace = JSON.parse(
+      await readFile(
+        path.join(runDir, REPAIR_LOOP_BUDGET_TRACE_ARTIFACT_FILENAME),
+        "utf8",
+      ),
+    ) as RepairLoopBudgetTraceArtifact;
+    assert.equal(trace.trigger, "max_generator_output_tokens");
+    assert.equal(trace.stoppedBeforeIteration, 3);
+    assert.equal(trace.cumulativeGeneratorOutputTokens, 15_000);
+    assert.equal(trace.cumulativeGeneratorAttempts, 3);
+  });
+});
+
+test("Issue #2016: no budget-trace artifact when the budget guard is unset", async () => {
+  await withTempDir(async (runDir) => {
+    const result = await runRepairLoop({
+      jobId: "job-no-budget-guard",
+      runDir,
+      maxRepairIterations: 1,
+      initialList: buildList(["tc-1"]),
+      initialLogicVerdict: buildLogicVerdict(
+        "repair",
+        [
+          {
+            testCaseId: "tc-1",
+            path: "expectedResults",
+            instruction: "Add expected.",
+          },
+        ],
+        [
+          {
+            testCaseId: "tc-1",
+            code: "missing_expected",
+            severity: "error",
+            message: "expected missing",
+          },
+        ],
+      ),
+      regenerate: okRegenerate(buildList(["tc-1"])),
+      runLogicJudge: sequencedLogicJudge([buildLogicVerdict("accept")]),
+    });
+    assert.equal(result.outcome, "accepted");
+    await assert.rejects(
+      stat(path.join(runDir, REPAIR_LOOP_BUDGET_TRACE_ARTIFACT_FILENAME)),
+    );
+  });
 });
 
 test("onIterationComplete fires once per iteration including iteration 0", async () => {

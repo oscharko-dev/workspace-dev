@@ -3929,6 +3929,12 @@ export const JUDGE_CONSENSUS_REPAIR_OUTCOMES = [
   "rejected",
   "needs_review",
   "convergence_stalled",
+  // Issue #2016: budget_exhausted is a soft outcome — the repair loop
+  // refused to start the next regeneration because doing so would have
+  // pushed the cumulative generator output tokens or attempts past the
+  // FinOps `test_generation` envelope. The latest best-effort case list
+  // is still handed downstream so the policy gate can make a final call.
+  "budget_exhausted",
 ] as const;
 
 /** Final repair-loop outcomes persisted alongside judge-consensus history. */

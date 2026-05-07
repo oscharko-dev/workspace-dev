@@ -280,6 +280,7 @@ import {
   REPAIR_PLANNER_ARTIFACT_PREFIX,
   TEST_GENERATION_REPAIR_ARTIFACT_PREFIX,
   runRepairLoop,
+  type RepairLoopBudgetGuard,
   type RepairLoopIterationRecord,
   type RepairLoopResult,
 } from "./repair-loop.js";
@@ -1420,6 +1421,16 @@ const buildRunQualityArtifact = (input: {
       degradedReasons.add("repair_budget_exhausted");
     }
     if (
+      input.judgeConsensus.repairHistory.finalOutcome === "budget_exhausted"
+    ) {
+      // Issue #2016: the loop refused to start the next regeneration
+      // because the FinOps generator-side budget would have been
+      // breached. The latest best-effort list is still handed downstream;
+      // surface the cause so operators don't conflate this with the
+      // signature-stall outcome.
+      degradedReasons.add("repair_budget_exhausted");
+    }
+    if (
       input.judgeConsensus.repairHistory.finalOutcome ===
       "convergence_stalled"
     ) {
@@ -1923,6 +1934,12 @@ export const runFigmaToQcTestCases = async (
     finopsRecorder.recordAttempt({
       role: "test_generation",
       source: "coverage_planner",
+      // Issue #2016: planner traffic shares the test_generation FinOps
+      // lane but is not part of the role's primary work. Recording it
+      // as `audit` keeps the per-source breakdown intact while leaving
+      // the role-level `attempts` / `outputTokens` counters reserved
+      // for actual generator regenerations.
+      attributionMode: "audit",
       deployment:
         coveragePlanResult.gatewayResult.outcome === "success"
           ? coveragePlanResult.gatewayResult.modelDeployment
@@ -1983,6 +2000,8 @@ export const runFigmaToQcTestCases = async (
     finopsRecorder.recordAttempt({
       role: "test_generation",
       source: "risk_ranker",
+      // Issue #2016: ranker is auxiliary; see coverage_planner site.
+      attributionMode: "audit",
       deployment:
         riskRankingResult.gatewayResult.outcome === "success"
           ? riskRankingResult.gatewayResult.modelDeployment
@@ -2484,6 +2503,10 @@ export const runFigmaToQcTestCases = async (
       // ran against; on failure we still attribute the attempt to the
       // judge client so cross-model attribution stays correct even
       // when the judge errored before the gateway echoed identity.
+      // Issue #2016: judge traffic is `audit` against the
+      // test_generation lane — it shares the budget envelope but does
+      // not consume the role's primary attempt / token counters.
+      attributionMode: "audit",
       deployment:
         logicJudgeResult.gatewayResult.outcome === "success"
           ? logicJudgeResult.gatewayResult.modelDeployment
@@ -2543,6 +2566,10 @@ export const runFigmaToQcTestCases = async (
     finopsRecorder.recordAttempt({
       role: "visual_primary",
       source: "judge_secondary",
+      // Issue #2016: a11y judge is audit traffic against the
+      // visual_primary lane — keep role-level counters reserved for the
+      // visual capture work itself.
+      attributionMode: "audit",
       deployment:
         a11yJudgeResult.gatewayResult.outcome === "success"
           ? a11yJudgeResult.gatewayResult.modelDeployment
@@ -2606,6 +2633,8 @@ export const runFigmaToQcTestCases = async (
     finopsRecorder.recordAttempt({
       role: attempt.role,
       source: "judge_secondary",
+      // Issue #2016: faithfulness judge is audit traffic.
+      attributionMode: "audit",
       deployment:
         attempt.result.outcome === "success"
           ? attempt.result.modelDeployment
@@ -2669,6 +2698,40 @@ export const runFigmaToQcTestCases = async (
     const a11ySnapshot = a11yJudgeResult;
     let latestRepairLogicJudgeResult: RunLogicJudgeResult | undefined;
     let latestRepairA11yJudgeResult: RunA11yJudgeResult | undefined;
+    // Issue #2016: hand the FinOps generator-side budget to the repair
+    // loop so it can stop *before* the next regeneration would breach
+    // `maxTotalOutputTokens` or `maxAttempts` on the test_generation
+    // role. The initial generator pass has already been recorded by
+    // this point; we hand its cumulative output / attempt count in as
+    // `initialGenerator*` so the guard's projection is honest about
+    // pre-loop spend.
+    const testGenerationRoleBudget = finopsBudget.roles.test_generation;
+    const initialGeneratorAttempts = generationPasses.length;
+    const repairLoopBudgetGuard: RepairLoopBudgetGuard | undefined =
+      testGenerationRoleBudget !== undefined &&
+      (testGenerationRoleBudget.maxTotalOutputTokens !== undefined ||
+        testGenerationRoleBudget.maxAttempts !== undefined)
+        ? {
+            initialGeneratorOutputTokens: capturedLlmOutputTokens,
+            initialGeneratorAttempts,
+            ...(testGenerationRoleBudget.maxTotalOutputTokens !== undefined
+              ? {
+                  maxGeneratorOutputTokens:
+                    testGenerationRoleBudget.maxTotalOutputTokens,
+                }
+              : {}),
+            ...(testGenerationRoleBudget.maxAttempts !== undefined
+              ? { maxGeneratorAttempts: testGenerationRoleBudget.maxAttempts }
+              : {}),
+            ...(testGenerationRoleBudget.maxOutputTokensPerRequest !==
+            undefined
+              ? {
+                  expectedNextOutputTokens:
+                    testGenerationRoleBudget.maxOutputTokensPerRequest,
+                }
+              : {}),
+          }
+        : undefined;
     repairLoopResult = await runRepairLoop({
       jobId: input.jobId,
       runDir: artifactDir,
@@ -2684,6 +2747,9 @@ export const runFigmaToQcTestCases = async (
         : {}),
       maxRepairIterations,
       softFailOnIterationError: true,
+      ...(repairLoopBudgetGuard !== undefined
+        ? { budget: repairLoopBudgetGuard }
+        : {}),
       regenerate: async ({ previousList, repairInstructions, iteration }) => {
         const targetedCaseIds = [
           ...new Set(
@@ -2883,6 +2949,9 @@ export const runFigmaToQcTestCases = async (
             source: "judge_primary",
             // Issue #1932: cross-model judge attribution — see the
             // initial-pass call site above.
+            // Issue #2016: judge traffic is audit-mode against the
+            // test_generation lane.
+            attributionMode: "audit",
             deployment:
               repairLogicResult.gatewayResult.outcome === "success"
                 ? repairLogicResult.gatewayResult.modelDeployment
@@ -2939,6 +3008,8 @@ export const runFigmaToQcTestCases = async (
           finopsRecorder.recordAttempt({
             role: "visual_primary",
             source: "judge_secondary",
+            // Issue #2016: a11y judge is audit traffic.
+            attributionMode: "audit",
             deployment:
               repairA11yResult.gatewayResult.outcome === "success"
                 ? repairA11yResult.gatewayResult.modelDeployment
@@ -3017,6 +3088,8 @@ export const runFigmaToQcTestCases = async (
                 finopsRecorder.recordAttempt({
                   role: attempt.role,
                   source: "judge_secondary",
+                  // Issue #2016: faithfulness judge is audit traffic.
+                  attributionMode: "audit",
                   deployment:
                     attempt.result.outcome === "success"
                       ? attempt.result.modelDeployment
@@ -3130,7 +3203,13 @@ export const runFigmaToQcTestCases = async (
     // generic `judge_rejection` so operators can distinguish "the
     // judges keep rejecting" from "the LLM is stuck on the same error
     // class".
-    const stalled = repairLoopResult?.outcome === "convergence_stalled";
+    // Issue #2016: budget_exhausted is also a "stop without judge accept"
+    // outcome — surface it as the same convergence_stalled errorClass on
+    // the harness summary so the harness state machine recognises the
+    // stop-condition lane and does not treat it as a generic rejection.
+    const stalled =
+      repairLoopResult?.outcome === "convergence_stalled" ||
+      repairLoopResult?.outcome === "budget_exhausted";
     const harnessAttemptResult = buildHarnessAttemptResult({
       hashes: compiled.request.hashes,
       judgeAccepted,
