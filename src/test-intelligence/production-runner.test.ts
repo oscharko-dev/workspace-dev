@@ -2629,19 +2629,18 @@ test("Issue #1772: both_sidecars_failed routes to needs_review with documented r
     assert.ok(refusalEvent, "expected visual_sidecar_complete refusal event");
     assert.equal(refusalEvent?.details?.refusalCode, "both_sidecars_failed");
 
-    // Every test case escalated to needs_review with the documented violation.
+    // The refusal is now job-level only by default: cases remain approved
+    // unless the run explicitly requires visual verification.
     assert.ok(result.policy.totalTestCases > 0, "expected at least one case");
-    assert.equal(result.policy.needsReviewCount, result.policy.totalTestCases);
+    assert.equal(result.policy.needsReviewCount, 0);
     assert.equal(result.policy.blockedCount, 0);
-    assert.equal(result.policy.approvedCount, 0);
+    assert.equal(result.policy.approvedCount, result.policy.totalTestCases);
     for (const decision of result.policy.decisions) {
-      assert.equal(decision.decision, "needs_review");
+      assert.equal(decision.decision, "approved");
       const refused = decision.violations.find(
         (v) => v.rule === "policy:visual-sidecar-refused",
       );
-      assert.ok(refused, "expected per-case refusal violation");
-      assert.equal(refused?.outcome, "visual_sidecar_failure");
-      assert.equal(refused?.severity, "warning");
+      assert.equal(refused, undefined);
     }
 
     // Job-level violation also surfaces the refusal code.

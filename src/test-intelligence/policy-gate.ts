@@ -98,10 +98,10 @@ export interface EvaluatePolicyGateInput {
    * Documented visual-sidecar refusal (Issue #1772). When the visual sidecar
    * dispatch exhausts both primary and fallback deployments (or otherwise
    * refuses to produce screen descriptions), the production runner records
-   * the `VisualSidecarFailureClass` here. The gate then emits a per-case
-   * `policy:visual-sidecar-refused` violation at warning severity, escalating
-   * every test case to `needs_review` with a documented refusal code so
-   * reviewers can adjudicate without the visual context.
+   * the `VisualSidecarFailureClass` here. The gate always preserves a
+   * job-level `policy:visual-sidecar-refused` warning for evidence, and it
+   * only escalates per-case decisions when the run explicitly marks visual
+   * verification as required.
    *
    * Pre-flight failure classes (caller errors such as `image_payload_too_large`
    * or `empty_screen_capture_set`) are NOT routed here — those still fail
@@ -111,6 +111,8 @@ export interface EvaluatePolicyGateInput {
     failureClass: VisualSidecarFailureClass;
     failureMessage: string;
   };
+  /** When true, visual-sidecar refusal escalates each case to needs_review. */
+  visualVerificationRequired?: boolean;
   /** Optional pre-LLM untrusted-content normalization outcome. */
   untrustedContentReport?: UntrustedContentNormalizationReport;
   /**
@@ -301,13 +303,14 @@ const evaluateCase = (
   overrides: SemanticContentOverrideMap | undefined,
   customContextPolicySignals: readonly CustomContextPolicySignal[],
   visualSidecarRefusal: EvaluatePolicyGateInput["visualSidecarRefusal"],
+  visualVerificationRequired: boolean,
   untrustedContentReport: UntrustedContentNormalizationReport | undefined,
   faithfulnessViolation: TestCasePolicyViolation | undefined,
 ): TestCasePolicyDecisionRecord => {
   let decision: TestCasePolicyDecision = "approved";
   const violations: TestCasePolicyViolation[] = [];
 
-  if (visualSidecarRefusal !== undefined) {
+  if (visualSidecarRefusal !== undefined && visualVerificationRequired) {
     violations.push({
       rule: "policy:visual-sidecar-refused",
       outcome: "visual_sidecar_failure",
@@ -1057,6 +1060,7 @@ export const evaluatePolicyGate = (
         semanticContentOverrides,
         input.customContextPolicySignals ?? [],
         input.visualSidecarRefusal,
+        input.visualVerificationRequired ?? false,
         input.untrustedContentReport,
         faithfulnessViolation,
       ),

@@ -96,10 +96,6 @@ const MAX_FAILURE_MESSAGE_LENGTH = 240;
 const MAX_BASE64_OVERHEAD_FACTOR = 1.4; // safety margin for base64 length checks
 const VISUAL_CONFIDENCE_PRECISION = 10_000;
 
-interface ScreenDescriptionEnvelope {
-  screens: ReadonlyArray<unknown>;
-}
-
 /**
  * Hand-rolled JSON Schema for the multimodal sidecar response envelope.
  * Mirrors the structural rules enforced by `validateVisualSidecar` but
@@ -900,7 +896,7 @@ const evaluateAttempt = (input: {
     };
   }
 
-  const envelope = parseEnvelope(result.content);
+  const envelope = parseEnvelope(result.content, result.modelDeployment);
   if (envelope.kind === "failure") {
     return {
       kind: "failure",
@@ -956,30 +952,279 @@ interface ParsedEnvelopeFail {
 
 const parseEnvelope = (
   content: unknown,
+  modelDeployment: string,
 ): ParsedEnvelopeOk | ParsedEnvelopeFail => {
-  if (
-    typeof content !== "object" ||
-    content === null ||
-    Array.isArray(content)
-  ) {
-    return {
-      kind: "failure",
-      message: "sidecar response is not a JSON object",
-    };
-  }
-  const record = content as Record<string, unknown>;
-  const screens = record["screens"];
-  if (!Array.isArray(screens)) {
+  const normalized = normalizeEnvelope(content, modelDeployment);
+  if (normalized === null) {
     return {
       kind: "failure",
       message: "sidecar response missing screens array",
     };
   }
-  const envelope = content as unknown as ScreenDescriptionEnvelope;
   return {
     kind: "ok",
-    screens: envelope.screens as ReadonlyArray<VisualScreenDescription>,
+    screens: normalized,
   };
+};
+
+const normalizeEnvelope = (
+  content: unknown,
+  modelDeployment: string,
+): VisualScreenDescription[] | null => {
+  const parsed = parseLooseJsonObject(content);
+  if (parsed === null) return null;
+
+  const screens = parsed["screens"];
+  if (!Array.isArray(screens)) return null;
+
+  const normalized: VisualScreenDescription[] = [];
+  for (const candidate of screens) {
+    const screen = normalizeScreenDescription(candidate, modelDeployment);
+    if (screen === null) return null;
+    normalized.push(screen);
+  }
+  return normalized;
+};
+
+const parseLooseJsonObject = (
+  content: unknown,
+): Record<string, unknown> | null => {
+  if (typeof content === "object" && content !== null && !Array.isArray(content)) {
+    return content as Record<string, unknown>;
+  }
+  if (typeof content !== "string") return null;
+
+  const trimmed = stripMarkdownCodeFence(content.trim());
+  if (trimmed.length === 0) return null;
+  try {
+    const parsed = JSON.parse(trimmed) as unknown;
+    if (
+      typeof parsed === "object" &&
+      parsed !== null &&
+      !Array.isArray(parsed)
+    ) {
+      return parsed as Record<string, unknown>;
+    }
+  } catch {
+    return null;
+  }
+  return null;
+};
+
+const stripMarkdownCodeFence = (value: string): string => {
+  const match = value.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/u);
+  return match?.[1]?.trim() ?? value;
+};
+
+const normalizeScreenDescription = (
+  value: unknown,
+  modelDeployment: string,
+): VisualScreenDescription | null => {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return null;
+  }
+  const record = value as Record<string, unknown>;
+  const screenId = readNonEmptyString(record["screenId"]);
+  if (screenId === undefined) return null;
+
+  const regions = normalizeRegions(record["regions"], screenId);
+  if (regions === null) return null;
+
+  const confidenceSummary = normalizeConfidenceSummary(
+    record["confidenceSummary"],
+    regions,
+  );
+  if (confidenceSummary === null) return null;
+
+  const sidecarDeployment =
+    readNonEmptyString(record["sidecarDeployment"]) ?? modelDeployment;
+  const normalized: VisualScreenDescription = {
+    screenId,
+    sidecarDeployment,
+    regions,
+    confidenceSummary,
+  };
+
+  const screenName = readNonEmptyString(record["screenName"]);
+  if (screenName !== undefined) normalized.screenName = screenName;
+
+  const capturedAt = readNonEmptyString(record["capturedAt"]);
+  if (capturedAt !== undefined) normalized.capturedAt = capturedAt;
+
+  const piiFlags = normalizePiiFlags(record["piiFlags"]);
+  if (piiFlags === null) return null;
+  if (piiFlags.length > 0) normalized.piiFlags = piiFlags;
+
+  return normalized;
+};
+
+const normalizeRegions = (
+  value: unknown,
+  screenId: string,
+): VisualScreenDescription["regions"] | null => {
+  if (value === undefined) return [];
+  if (!Array.isArray(value)) return null;
+
+  const candidates = value as readonly unknown[];
+  const regions: VisualScreenDescription["regions"] = [];
+  for (let i = 0; i < candidates.length; i += 1) {
+    const candidate = candidates[i];
+    if (
+      typeof candidate !== "object" ||
+      candidate === null ||
+      Array.isArray(candidate)
+    ) {
+      return null;
+    }
+    const record = candidate as Record<string, unknown>;
+    const confidence = readConfidence(record["confidence"]);
+    if (confidence === undefined) return null;
+
+    const region: VisualScreenDescription["regions"][number] = {
+      regionId:
+        readNonEmptyString(record["regionId"]) ?? `${screenId}-region-${i + 1}`,
+      confidence,
+    };
+    const label = readOptionalString(record["label"]);
+    if (label === null) return null;
+    if (label !== undefined) region.label = label;
+
+    const controlType = readOptionalString(record["controlType"]);
+    if (controlType === null) return null;
+    if (controlType !== undefined) region.controlType = controlType;
+
+    const visibleText = readOptionalString(record["visibleText"]);
+    if (visibleText === null) return null;
+    if (visibleText !== undefined) region.visibleText = visibleText;
+
+    const stateHints = readOptionalStringArray(record["stateHints"]);
+    if (stateHints === null) return null;
+    if (stateHints !== undefined) region.stateHints = stateHints;
+
+    const validationHints = readOptionalStringArray(record["validationHints"]);
+    if (validationHints === null) return null;
+    if (validationHints !== undefined) region.validationHints = validationHints;
+
+    const ambiguity = normalizeAmbiguity(record["ambiguity"]);
+    if (ambiguity === null) return null;
+    if (ambiguity !== undefined) region.ambiguity = ambiguity;
+
+    regions.push(region);
+  }
+  return regions;
+};
+
+const normalizeConfidenceSummary = (
+  value: unknown,
+  regions: VisualScreenDescription["regions"],
+): VisualScreenDescription["confidenceSummary"] | null => {
+  if (
+    typeof value === "object" &&
+    value !== null &&
+    !Array.isArray(value)
+  ) {
+    const record = value as Record<string, unknown>;
+    const min = readConfidence(record["min"]);
+    const max = readConfidence(record["max"]);
+    const mean = readConfidence(record["mean"]);
+    if (
+      min !== undefined &&
+      max !== undefined &&
+      mean !== undefined &&
+      min <= mean &&
+      mean <= max
+    ) {
+      return { min, max, mean };
+    }
+  }
+
+  if (regions.length === 0) {
+    return { min: 0, max: 0, mean: 0 };
+  }
+  let min = Number.POSITIVE_INFINITY;
+  let max = Number.NEGATIVE_INFINITY;
+  let sum = 0;
+  for (const region of regions) {
+    if (region.confidence < min) min = region.confidence;
+    if (region.confidence > max) max = region.confidence;
+    sum += region.confidence;
+  }
+  return { min, max, mean: sum / regions.length };
+};
+
+const normalizePiiFlags = (
+  value: unknown,
+): NonNullable<VisualScreenDescription["piiFlags"]> | null => {
+  if (value === undefined) return [];
+  if (!Array.isArray(value)) return null;
+
+  const candidates = value as readonly unknown[];
+  const flags: NonNullable<VisualScreenDescription["piiFlags"]> = [];
+  for (const candidate of candidates) {
+    if (
+      typeof candidate !== "object" ||
+      candidate === null ||
+      Array.isArray(candidate)
+    ) {
+      return null;
+    }
+    const record = candidate as Record<string, unknown>;
+    const regionId = readNonEmptyString(record["regionId"]);
+    const kind = readNonEmptyString(record["kind"]);
+    const confidence = readConfidence(record["confidence"]);
+    if (regionId === undefined || kind === undefined || confidence === undefined) {
+      return null;
+    }
+    flags.push({
+      regionId,
+      kind: kind as NonNullable<VisualScreenDescription["piiFlags"]>[number]["kind"],
+      confidence,
+    });
+  }
+  return flags;
+};
+
+const normalizeAmbiguity = (
+  value: unknown,
+): VisualScreenDescription["regions"][number]["ambiguity"] | null | undefined => {
+  if (value === undefined) return undefined;
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return null;
+  }
+  const reason = readNonEmptyString((value as Record<string, unknown>)["reason"]);
+  if (reason === undefined) return null;
+  return { reason };
+};
+
+const readNonEmptyString = (value: unknown): string | undefined => {
+  return typeof value === "string" && value.trim().length > 0
+    ? value.trim()
+    : undefined;
+};
+
+const readOptionalString = (value: unknown): string | undefined | null => {
+  if (value === undefined) return undefined;
+  if (typeof value !== "string") return null;
+  return value;
+};
+
+const readOptionalStringArray = (
+  value: unknown,
+): string[] | undefined | null => {
+  if (value === undefined) return undefined;
+  if (!Array.isArray(value)) return null;
+  const output: string[] = [];
+  for (const entry of value) {
+    if (typeof entry !== "string") return null;
+    output.push(entry);
+  }
+  return output;
+};
+
+const readConfidence = (value: unknown): number | undefined => {
+  if (typeof value !== "number" || !Number.isFinite(value)) return undefined;
+  if (value < 0 || value > 1) return undefined;
+  return value;
 };
 
 const anyRecordSchemaInvalid = (
