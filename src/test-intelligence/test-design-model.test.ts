@@ -253,6 +253,7 @@ test("buildTestDesignModel projects attributed risk signals and explicit open qu
   ]);
   assert.deepEqual(model.screens[0]?.sourceRefs, ["figma-primary"]);
   assert.equal(model.businessRules[0]?.description, "IBAN: required");
+  assert.deepEqual(model.calculationConstraints, []);
 
   assert.ok(
     model.openQuestions.some((question) =>
@@ -305,6 +306,10 @@ test("buildTestDesignModel derives calculations from explicit computed rules", (
     "loan::field::principal",
     "loan::field::term-years",
   ]);
+  assert.equal(
+    model.screens[0]?.calculations[0]?.resultElementId,
+    "loan::field::monthly-payment",
+  );
 });
 
 test("buildTestDesignModel surfaces inferred calculation ambiguity as an open question", () => {
@@ -327,6 +332,82 @@ test("buildTestDesignModel surfaces inferred calculation ambiguity as an open qu
     model.openQuestions.some((question) =>
       question.text.includes("Calculation \"Monthly Payment\" on screen \"Loan Quote\""),
     ),
+  );
+});
+
+test("buildTestDesignModel derives VAT-exclusion calculation constraints from assumptions", () => {
+  const intent = buildCalculationIntent();
+  intent.screens = [
+    { screenId: "financing", screenName: "Financing Need", trace: {} },
+  ];
+  intent.detectedFields = [
+    {
+      id: "financing::field::net-purchase-price",
+      screenId: "financing",
+      trace: {},
+      provenance: "figma_node",
+      confidence: 0.9,
+      label: "Net purchase price",
+      type: "text",
+      defaultValue: "1000.00 EUR",
+    },
+    {
+      id: "financing::field::vat-rate",
+      screenId: "financing",
+      trace: {},
+      provenance: "figma_node",
+      confidence: 0.9,
+      label: "VAT rate",
+      type: "text",
+      defaultValue: "19.00 %",
+    },
+    {
+      id: "financing::field::additional-costs",
+      screenId: "financing",
+      trace: {},
+      provenance: "figma_node",
+      confidence: 0.9,
+      label: "Additional costs",
+      type: "text",
+      defaultValue: "200.00 EUR",
+    },
+    {
+      id: "financing::field::financing-need",
+      screenId: "financing",
+      trace: {},
+      provenance: "figma_node",
+      confidence: 0.9,
+      label: "Financing need",
+      type: "text",
+      defaultValue: "<computed>",
+    },
+  ];
+  intent.detectedActions = [];
+  intent.detectedValidations = [
+    {
+      id: "financing::validation::financing-need-computed",
+      screenId: "financing",
+      trace: {},
+      provenance: "figma_node",
+      confidence: 0.9,
+      rule: "Computed from net purchase price, VAT rate, and additional costs",
+      targetFieldId: "financing::field::financing-need",
+    },
+  ];
+  intent.assumptions = ["custom_context_markdown: The VAT is not part of the financing need."];
+
+  const model = buildTestDesignModel({
+    jobId: "job-financing-vat",
+    intent,
+  });
+
+  assert.equal(model.calculationConstraints.length, 1);
+  assert.equal(model.calculationConstraints[0]?.kind, "exclude_component");
+  assert.equal(model.calculationConstraints[0]?.subject, "financing_need");
+  assert.equal(model.calculationConstraints[0]?.component, "vat");
+  assert.equal(
+    model.calculationConstraints[0]?.evidenceText,
+    "custom_context_markdown: The VAT is not part of the financing need.",
   );
 });
 
@@ -428,6 +509,41 @@ test("validateTestDesignModel rejects malformed optional string fields", () => {
       (error) =>
         error.path === "$.screens[0].calculations[0].inputElementIds" &&
         error.message === "expected string[]",
+    ),
+  );
+});
+
+test("validateTestDesignModel rejects malformed calculation constraints", () => {
+  const candidate = buildTestDesignModel({
+    jobId: "job-1766",
+    intent: buildIntent(),
+    visual: buildVisual(),
+    sourceEnvelope: buildEnvelope(),
+  }) as Record<string, unknown>;
+  candidate["calculationConstraints"] = [
+    {
+      constraintId: "",
+      kind: "bad",
+      subject: "other",
+      component: "other",
+      evidenceText: 12,
+    },
+  ];
+
+  const result = validateTestDesignModel(candidate);
+  assert.equal(result.valid, false);
+  assert.ok(
+    result.errors.some(
+      (error) =>
+        error.path === "$.calculationConstraints[0].kind" &&
+        error.message === "expected supported calculation-constraint kind",
+    ),
+  );
+  assert.ok(
+    result.errors.some(
+      (error) =>
+        error.path === "$.calculationConstraints[0].evidenceText" &&
+        error.message === "expected non-empty string",
     ),
   );
 });

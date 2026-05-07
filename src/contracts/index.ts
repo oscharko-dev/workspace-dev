@@ -219,8 +219,12 @@ export const GENERATED_TEST_CASE_SCHEMA_VERSION = "1.1.0" as const;
  * 1.4.2 — Issue #1984: narrowed decorative-label filtering and hardened
  * logic-judge schema handling after prompt-compiler changes in the live-run
  * quality hardening flow.
+ *
+ * 1.4.3 — Issue #1986: financing-need domain-faithfulness rules now
+ * instruct the generator to honor VAT-exclusion constraints and fall back
+ * to open questions when exact arithmetic remains underspecified.
  */
-export const TEST_INTELLIGENCE_PROMPT_TEMPLATE_VERSION = "1.4.2" as const;
+export const TEST_INTELLIGENCE_PROMPT_TEMPLATE_VERSION = "1.4.3" as const;
 
 /** Visual sidecar schema version consumed by the prompt compiler (Issue #1386). */
 export const VISUAL_SIDECAR_SCHEMA_VERSION = "1.1.0" as const;
@@ -4553,6 +4557,7 @@ export interface TestDesignModel {
   sourceHash: string;
   screens: TestDesignScreen[];
   businessRules: TestDesignRule[];
+  calculationConstraints: TestDesignCalculationConstraint[];
   assumptions: TestDesignAssumption[];
   openQuestions: TestDesignOpenQuestion[];
   riskSignals: TestDesignRiskSignal[];
@@ -4597,7 +4602,17 @@ export interface TestDesignCalculation {
   calculationId: string;
   name: string;
   inputElementIds: string[];
+  resultElementId?: string;
   ambiguity?: string;
+}
+
+export interface TestDesignCalculationConstraint {
+  constraintId: string;
+  kind: "exclude_component" | "include_component";
+  subject: "financing_need";
+  component: "vat";
+  evidenceText: string;
+  screenId?: string;
 }
 
 export interface TestDesignRule {
