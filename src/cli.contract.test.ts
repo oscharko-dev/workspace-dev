@@ -1073,6 +1073,9 @@ test("cli contract: test-intelligence run --help prints all required flags", asy
   assert.match(result.stdout, /--output/i);
   assert.match(result.stdout, /--mode/i);
   assert.match(result.stdout, /--enable-visual-sidecar/i);
+  assert.match(result.stdout, /--visual-primary-deployment/i);
+  assert.match(result.stdout, /--visual-fallback-deployment/i);
+  assert.match(result.stdout, /--a11y-judge-deployment/i);
   assert.match(result.stdout, /--no-visual-sidecar/i);
   assert.match(result.stdout, /--require-multi-agent-topology/i);
   assert.match(result.stdout, /--risk-ranker-deployment/i);
@@ -1090,7 +1093,8 @@ test("cli contract: test-intelligence doctor --help prints doctor flags", async 
   assert.equal(result.exitCode, 0, result.stderr);
   assert.match(result.stdout, /--model-deployment/i);
   assert.match(result.stdout, /--logic-judge-deployment/i);
-  assert.match(result.stdout, /WORKSPACE_TEST_SPACE_VISUAL_PRIMARY_DEPLOYMENT/i);
+  assert.match(result.stdout, /--visual-primary-deployment/i);
+  assert.match(result.stdout, /--a11y-judge-deployment/i);
 });
 
 test("cli contract: test-intelligence run --enable-visual-sidecar fails closed when visual envs are missing", async () => {

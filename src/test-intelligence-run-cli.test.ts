@@ -14,6 +14,7 @@ import path from "node:path";
 import test from "node:test";
 
 import {
+  buildLiveVisualSidecarBundle,
   parseTestIntelligenceDoctorArgs,
   parseTestIntelligenceRunArgs,
   runTestIntelligenceDoctorCommand,
@@ -54,6 +55,9 @@ const baseOptions = (): TestIntelligenceRunOptions => ({
   modelDeployment: "gpt-oss-120b",
   logicJudgeDeployment: undefined,
   coveragePlannerDeployment: undefined,
+  riskRankerDeployment: undefined,
+  visualPrimaryDeployment: undefined,
+  visualFallbackDeployment: undefined,
   modelApiKey: undefined,
   figmaToken: "figd_xxx",
   policyProfile: undefined,
@@ -67,6 +71,7 @@ const baseOptions = (): TestIntelligenceRunOptions => ({
   harnessMaxRepairIterations: undefined,
   customContextMarkdownPath: undefined,
   customerProfilePath: undefined,
+  a11yJudgeDeployment: undefined,
   diversityPasses: 1,
 });
 
@@ -75,11 +80,17 @@ const baseDoctorOptions = (): TestIntelligenceDoctorOptions => ({
   logicJudgeDeployment: "gpt-oss-120b",
   coveragePlannerDeployment: "phi-4-mini-instruct",
   riskRankerDeployment: "phi-4",
+  visualPrimaryDeployment: "llama-4-maverick-vision",
+  visualFallbackDeployment: "phi-4-multimodal-instruct",
+  a11yJudgeDeployment: "phi-4-multimodal-instruct",
   topologyInputSources: {
     modelDeployment: "env",
     logicJudgeDeployment: "env",
     coveragePlannerDeployment: "env",
     riskRankerDeployment: "env",
+    visualPrimaryDeployment: "env",
+    visualFallbackDeployment: "env",
+    a11yJudgeDeployment: "env",
   },
 });
 
@@ -517,6 +528,35 @@ test("parseTestIntelligenceRunArgs: --coverage-planner-deployment overrides the 
   assert.equal(opts.coveragePlannerDeployment, "phi-4-mini-instruct");
 });
 
+test("parseTestIntelligenceRunArgs: visual and a11y deployment flags override env defaults (Issue #1996)", () => {
+  const opts = parseTestIntelligenceRunArgs(
+    [
+      "--figma-url",
+      "https://figma.com/design/abc",
+      "--output",
+      "/tmp/x",
+      "--visual-primary-deployment",
+      "llama-4-maverick-vision",
+      "--visual-fallback-deployment",
+      "phi-4-multimodal-instruct",
+      "--a11y-judge-deployment",
+      "phi-4-multimodal-instruct",
+    ],
+    {
+      WORKSPACE_TEST_SPACE_VISUAL_PRIMARY_DEPLOYMENT: "stale-primary",
+      WORKSPACE_TEST_SPACE_VISUAL_FALLBACK_DEPLOYMENT: "stale-fallback",
+      WORKSPACE_TEST_SPACE_A11Y_JUDGE_DEPLOYMENT: "stale-a11y",
+    },
+  );
+
+  assert.equal(opts.visualPrimaryDeployment, "llama-4-maverick-vision");
+  assert.equal(opts.visualFallbackDeployment, "phi-4-multimodal-instruct");
+  assert.equal(opts.a11yJudgeDeployment, "phi-4-multimodal-instruct");
+  assert.equal(opts.topologyInputSources.visualPrimaryDeployment, "cli");
+  assert.equal(opts.topologyInputSources.visualFallbackDeployment, "cli");
+  assert.equal(opts.topologyInputSources.a11yJudgeDeployment, "cli");
+});
+
 // ---------------------------------------------------------------------------
 // parseTestIntelligenceRunArgs — topology preflight wiring (Issue #1993)
 // ---------------------------------------------------------------------------
@@ -603,11 +643,20 @@ test("parseTestIntelligenceDoctorArgs: env defaults flow into doctor options", (
     WORKSPACE_TEST_SPACE_LOGIC_JUDGE_DEPLOYMENT: "gpt-oss-120b",
     WORKSPACE_TEST_SPACE_COVERAGE_PLANNER_DEPLOYMENT: "phi-4-mini-instruct",
     WORKSPACE_TEST_SPACE_RISK_RANKER_DEPLOYMENT: "phi-4",
+    WORKSPACE_TEST_SPACE_VISUAL_PRIMARY_DEPLOYMENT:
+      "llama-4-maverick-vision",
+    WORKSPACE_TEST_SPACE_VISUAL_FALLBACK_DEPLOYMENT:
+      "phi-4-multimodal-instruct",
+    WORKSPACE_TEST_SPACE_A11Y_JUDGE_DEPLOYMENT:
+      "phi-4-multimodal-instruct",
   });
   assert.equal(options.modelDeployment, "mistral-large-3");
   assert.equal(options.logicJudgeDeployment, "gpt-oss-120b");
   assert.equal(options.coveragePlannerDeployment, "phi-4-mini-instruct");
   assert.equal(options.riskRankerDeployment, "phi-4");
+  assert.equal(options.visualPrimaryDeployment, "llama-4-maverick-vision");
+  assert.equal(options.visualFallbackDeployment, "phi-4-multimodal-instruct");
+  assert.equal(options.a11yJudgeDeployment, "phi-4-multimodal-instruct");
   assert.equal(options.topologyInputSources.modelDeployment, "env");
 });
 
@@ -622,20 +671,33 @@ test("parseTestIntelligenceDoctorArgs: CLI overrides doctor deployment defaults"
       "phi-4-mini-instruct",
       "--risk-ranker-deployment",
       "phi-4",
+      "--visual-primary-deployment",
+      "llama-4-maverick-vision",
+      "--visual-fallback-deployment",
+      "phi-4-multimodal-instruct",
+      "--a11y-judge-deployment",
+      "phi-4-multimodal-instruct",
     ],
     {
       WORKSPACE_TEST_SPACE_TESTCASE_MODEL_DEPLOYMENT: "gpt-oss-120b",
       WORKSPACE_TEST_SPACE_LOGIC_JUDGE_DEPLOYMENT: "phi-4",
       WORKSPACE_TEST_SPACE_COVERAGE_PLANNER_DEPLOYMENT: "gpt-oss-120b",
       WORKSPACE_TEST_SPACE_RISK_RANKER_DEPLOYMENT: "gpt-oss-120b",
+      WORKSPACE_TEST_SPACE_VISUAL_PRIMARY_DEPLOYMENT: "stale-primary",
+      WORKSPACE_TEST_SPACE_VISUAL_FALLBACK_DEPLOYMENT: "stale-fallback",
+      WORKSPACE_TEST_SPACE_A11Y_JUDGE_DEPLOYMENT: "stale-a11y",
     },
   );
   assert.equal(options.modelDeployment, "mistral-large-3");
   assert.equal(options.logicJudgeDeployment, "gpt-oss-120b");
   assert.equal(options.coveragePlannerDeployment, "phi-4-mini-instruct");
   assert.equal(options.riskRankerDeployment, "phi-4");
+  assert.equal(options.visualPrimaryDeployment, "llama-4-maverick-vision");
+  assert.equal(options.visualFallbackDeployment, "phi-4-multimodal-instruct");
+  assert.equal(options.a11yJudgeDeployment, "phi-4-multimodal-instruct");
   assert.equal(options.topologyInputSources.modelDeployment, "cli");
   assert.equal(options.topologyInputSources.logicJudgeDeployment, "cli");
+  assert.equal(options.topologyInputSources.visualPrimaryDeployment, "cli");
 });
 
 test("runTestIntelligenceDoctorCommand: intended topology exits 0 with only ok statuses", async () => {
@@ -668,22 +730,21 @@ test("runTestIntelligenceDoctorCommand: bad topology flags all affected roles an
       logicJudgeDeployment: undefined,
       coveragePlannerDeployment: undefined,
       riskRankerDeployment: undefined,
+      visualPrimaryDeployment: "mistral-document-ai-2512",
+      visualFallbackDeployment: "llama-4-maverick-vision",
+      a11yJudgeDeployment: undefined,
       topologyInputSources: {
         modelDeployment: "env",
         logicJudgeDeployment: "default",
         coveragePlannerDeployment: "default",
         riskRankerDeployment: "default",
+        visualPrimaryDeployment: "env",
+        visualFallbackDeployment: "env",
+        a11yJudgeDeployment: "default",
       },
     },
     sink,
-    {
-      env: {
-        WORKSPACE_TEST_SPACE_VISUAL_PRIMARY_DEPLOYMENT:
-          "mistral-document-ai-2512",
-        WORKSPACE_TEST_SPACE_VISUAL_FALLBACK_DEPLOYMENT:
-          "llama-4-maverick-vision",
-      },
-    },
+    {},
   );
 
   const output = stdout.join("");
@@ -907,6 +968,57 @@ test("runTestIntelligenceCommand: dry_run output includes visual sidecar note", 
     { env: GATE_ON, now: () => 1700000000000 },
   );
   assert.match(stdout.join(""), /--no-visual-sidecar/u);
+});
+
+test("runTestIntelligenceCommand: dry_run prints the resolved role matrix for every role (Issue #1996)", async () => {
+  const { sink, stdout, stderr } = collectingSink();
+  const exitCode = await runTestIntelligenceCommand(
+    {
+      ...baseOptions(),
+      enableVisualSidecar: true,
+      visualPrimaryDeployment: "llama-4-maverick-vision",
+      visualFallbackDeployment: "phi-4-multimodal-instruct",
+      a11yJudgeDeployment: "phi-4-multimodal-instruct",
+      topologyInputSources: {
+        modelDeployment: "default",
+        logicJudgeDeployment: "default",
+        coveragePlannerDeployment: "default",
+        riskRankerDeployment: "default",
+        visualPrimaryDeployment: "cli",
+        visualFallbackDeployment: "cli",
+        a11yJudgeDeployment: "cli",
+      },
+    },
+    sink,
+    {
+      env: {
+        ...GATE_ON,
+        WORKSPACE_TEST_SPACE_VISUAL_MODEL_ENDPOINT:
+          "https://aoai.example/openai/vision",
+        WORKSPACE_TEST_SPACE_VISUAL_PRIMARY_DEPLOYMENT: "stale-primary",
+        WORKSPACE_TEST_SPACE_VISUAL_FALLBACK_DEPLOYMENT: "stale-fallback",
+        WORKSPACE_TEST_SPACE_A11Y_JUDGE_DEPLOYMENT: "stale-a11y",
+      },
+      now: () => 1700000000000,
+    },
+  );
+
+  assert.equal(exitCode, 0, stderr.join(""));
+  const output = stdout.join("");
+  for (const role of [
+    "generator",
+    "logic-judge",
+    "coverage-planner",
+    "risk-ranker",
+    "visual-primary",
+    "visual-fallback",
+    "a11y-judge",
+  ]) {
+    assert.match(output, new RegExp(`${role}:`, "u"));
+  }
+  assert.match(output, /visual-primary: llama-4-maverick-vision \[cli\]/u);
+  assert.match(output, /visual-fallback: phi-4-multimodal-instruct \[cli\]/u);
+  assert.match(output, /a11y-judge: phi-4-multimodal-instruct \[cli\]/u);
 });
 
 test("runTestIntelligenceCommand: dry_run output includes finops budget note when path given", async () => {
@@ -1619,6 +1731,35 @@ test("runTestIntelligenceCommand: enable-visual-sidecar builds and forwards runn
   assert.strictEqual(capturedBundle, bundle);
 });
 
+test("buildLiveVisualSidecarBundle: CLI deployment overrides beat env defaults (Issue #1996)", () => {
+  const bundle = buildLiveVisualSidecarBundle(
+    {
+      ...baseOptions(),
+      modelEndpoint: "https://aoai.example/openai/v1",
+      modelApiKey: "k-key",
+      mode: "deterministic_llm",
+      enableVisualSidecar: true,
+      visualPrimaryDeployment: "llama-4-maverick-vision",
+      visualFallbackDeployment: "phi-4-multimodal-instruct",
+      a11yJudgeDeployment: "phi-4-multimodal-instruct",
+    },
+    {
+      WORKSPACE_TEST_SPACE_VISUAL_MODEL_ENDPOINT:
+        "https://aoai.example/openai/vision",
+      WORKSPACE_TEST_SPACE_VISUAL_PRIMARY_DEPLOYMENT: "stale-primary",
+      WORKSPACE_TEST_SPACE_VISUAL_FALLBACK_DEPLOYMENT: "stale-fallback",
+      WORKSPACE_TEST_SPACE_A11Y_JUDGE_DEPLOYMENT: "stale-a11y",
+    },
+  );
+
+  assert.equal(bundle.visualPrimary.deployment, "llama-4-maverick-vision");
+  assert.equal(
+    bundle.visualFallback.deployment,
+    "phi-4-multimodal-instruct",
+  );
+  assert.equal(bundle.a11yJudge?.deployment, "phi-4-multimodal-instruct");
+});
+
 test("runTestIntelligenceCommand: strict preflight fails before runner when logic judge would reuse generator (Issue #1993)", async () => {
   const { sink, stderr, stdout } = collectingSink();
   let runnerCalled = false;
@@ -1672,6 +1813,17 @@ test("runTestIntelligenceCommand: strict preflight rejects mistral-document-ai-2
       enableVisualSidecar: true,
       requireMultiAgentTopology: true,
       logicJudgeDeployment: "gpt-oss-120b",
+      visualPrimaryDeployment: "mistral-document-ai-2512",
+      visualFallbackDeployment: "phi-4-multimodal-instruct",
+      topologyInputSources: {
+        modelDeployment: "default",
+        logicJudgeDeployment: "default",
+        coveragePlannerDeployment: "default",
+        riskRankerDeployment: "default",
+        visualPrimaryDeployment: "env",
+        visualFallbackDeployment: "env",
+        a11yJudgeDeployment: "default",
+      },
     },
     sink,
     {
@@ -1831,6 +1983,9 @@ test("runTestIntelligenceCommand: strict preflight writes sanitized topology rep
         logicJudgeDeployment: "cli",
         coveragePlannerDeployment: "default",
         riskRankerDeployment: "cli",
+        visualPrimaryDeployment: "default",
+        visualFallbackDeployment: "default",
+        a11yJudgeDeployment: "default",
       },
     },
     sink,
