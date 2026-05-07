@@ -185,7 +185,7 @@ interface TestIntelligenceDoctorReport {
 const isRunMode = (value: string): value is TestIntelligenceRunMode =>
   (TEST_INTELLIGENCE_RUN_MODES as ReadonlyArray<string>).includes(value);
 
-export type TestIntelligenceOutputRunSubdirMode = "job-id";
+export type TestIntelligenceOutputRunSubdirMode = "timestamp" | "job-id";
 
 /**
  * CLI-side enumeration of {@link AgentHarnessTestDepth}. Mirrors the type
@@ -245,9 +245,13 @@ const parsePositiveIntegerEnv = (
 export interface TestIntelligenceRunOptions {
   figmaUrl: string | undefined;
   figmaJsonFile: string | undefined;
-  /** Output directory for customer Markdown. `undefined` → default derived from job id. */
+  /** Output directory for run artifacts. `undefined` → default derived from job id. */
   output: string | undefined;
-  /** Optional customer-output subdirectory mode. `job-id` keeps each run isolated. */
+  /**
+   * Optional run-output subdirectory mode. When `--output` is supplied and this
+   * is omitted, the CLI defaults to `timestamp` so repeated local runs never
+   * overwrite one another.
+   */
   outputRunSubdir?: TestIntelligenceOutputRunSubdirMode;
   modelEndpoint: string | undefined;
   modelDeployment: string;
@@ -529,9 +533,9 @@ export const parseTestIntelligenceRunArgs = (
 
     if (arg === "--output-run-subdir") {
       const value = next?.trim();
-      if (value !== "job-id") {
+      if (value !== "job-id" && value !== "timestamp") {
         throw new TestIntelligenceRunOperatorError(
-          '--output-run-subdir must be "job-id"',
+          '--output-run-subdir must be "timestamp" or "job-id"',
         );
       }
       if (outputRunSubdir !== undefined) {
@@ -2715,6 +2719,30 @@ const formatCoverageBaselineSummaryLine = (
   );
 };
 
+const formatTimestampForRunSubdir = (generatedAt: string): string =>
+  generatedAt.replaceAll(":", "-").replaceAll(".", "-");
+
+const resolveOutputRunSubdirMode = (
+  options: TestIntelligenceRunOptions,
+): TestIntelligenceOutputRunSubdirMode | undefined =>
+  options.outputRunSubdir ??
+  (options.output !== undefined ? "timestamp" : undefined);
+
+const resolveRunOutputDir = (input: {
+  readonly outputDir: string;
+  readonly mode: TestIntelligenceOutputRunSubdirMode | undefined;
+  readonly jobId: string;
+  readonly generatedAt: string;
+}): string => {
+  if (input.mode === "job-id") {
+    return join(input.outputDir, input.jobId);
+  }
+  if (input.mode === "timestamp") {
+    return join(input.outputDir, formatTimestampForRunSubdir(input.generatedAt));
+  }
+  return input.outputDir;
+};
+
 /**
  * Public entry point used by `cli.ts` and by the contract tests. Accepts a
  * parsed options object and an optional runtime injection seam. Returns the
@@ -2749,15 +2777,23 @@ export const runTestIntelligenceCommand = async (
   const loadCustomerProfileFile =
     runtime.loadCustomerProfileFile ?? defaultLoadCustomerProfileFile;
 
-  const jobId = `ti-cli-${now()}`;
-  const generatedAt = new Date(now()).toISOString();
+  const nowMs = now();
+  const jobId = `ti-cli-${nowMs}`;
+  const generatedAt = new Date(nowMs).toISOString();
 
   const outputDir =
     options.output !== undefined
       ? resolve(options.output)
       : resolve(join(DEFAULT_OUTPUT_ROOT, "jobs", jobId, "test-intelligence"));
+  const outputRunSubdirMode = resolveOutputRunSubdirMode(options);
+  const runOutputDir = resolveRunOutputDir({
+    outputDir,
+    mode: outputRunSubdirMode,
+    jobId,
+    generatedAt,
+  });
 
-  await mkdir(outputDir, { recursive: true });
+  await mkdir(runOutputDir, { recursive: true });
 
   // Load and validate the operator-supplied FinOps budget, if any.
   let finopsBudget: FinOpsBudgetEnvelope | undefined;
@@ -2950,15 +2986,15 @@ export const runTestIntelligenceCommand = async (
     return 1;
   }
 
-  const runnerOutputRoot = join(outputDir, "_runner-output");
-  await mkdir(runnerOutputRoot, { recursive: true });
-
   if (runtimeMode === "dry_run") {
     sink.stdout(
       [
         "test-intelligence run (dry_run) — no LLM call dispatched",
         `  job id        : ${jobId}`,
-        `  output dir    : ${outputDir}`,
+        `  output dir    : ${runOutputDir}`,
+        ...(runOutputDir === outputDir
+          ? []
+          : [`  output base   : ${outputDir}`]),
         `  source kind   : ${resolved.source.kind}`,
         `  deployment    : ${options.modelDeployment}`,
         `  judge deploy  : ${options.logicJudgeDeployment ?? "(reuses generator deployment)"}`,
@@ -2974,7 +3010,7 @@ export const runTestIntelligenceCommand = async (
         }`,
         `  finops budget : ${options.finopsBudgetPath ?? "(production default)"}`,
         `  ict ref       : ${options.ictRegisterRef ?? "(none)"}`,
-        `  output subdir : ${options.outputRunSubdir ?? "(none)"}`,
+        `  output subdir : ${outputRunSubdirMode ?? "(none)"}`,
         `  harness mode  : off (dry_run never reaches the harness)`,
         `  custom md ctx : ${customContextMarkdownBody !== undefined ? `loaded (${Buffer.byteLength(customContextMarkdownBody, "utf8")} bytes)` : "(none)"}`,
         `  customer eval : ${customerEvalMarkdownBody !== undefined ? `loaded (${Buffer.byteLength(customerEvalMarkdownBody, "utf8")} bytes)` : "(none)"}`,
@@ -3052,7 +3088,7 @@ export const runTestIntelligenceCommand = async (
     jobId,
     generatedAt,
     source: resolved.source,
-    outputRoot: runnerOutputRoot,
+    outputRoot: runOutputDir,
     llm: {
       client: llmClient,
       ...(llmBundle !== undefined ? { bundle: llmBundle } : {}),
@@ -3116,7 +3152,7 @@ export const runTestIntelligenceCommand = async (
           mode: options.coverageBaseline.mode,
           runtimeRoot:
             options.coverageBaseline.runtimeRoot ??
-            join(runnerOutputRoot, "test-intelligence"),
+            join(runOutputDir, "test-intelligence"),
         },
       });
     } catch (err) {
@@ -3128,8 +3164,7 @@ export const runTestIntelligenceCommand = async (
   }
 
   const customerMarkdownDir = dirname(result.customerMarkdownPaths.combined);
-  const customerOutputDir =
-    options.outputRunSubdir === "job-id" ? join(outputDir, result.jobId) : outputDir;
+  const customerOutputDir = runOutputDir;
   let copiedFileCount: number;
   try {
     copiedFileCount = await copyArtifactsToOutput(
@@ -3156,6 +3191,7 @@ export const runTestIntelligenceCommand = async (
     "test-intelligence run completed",
     `  job id              : ${result.jobId}`,
     `  output dir          : ${customerOutputDir}`,
+    `  artifact dir        : ${result.artifactDir}`,
     `  test cases generated: ${result.generatedTestCases.testCases.length}`,
     `  customer files      : ${copiedFileCount}`,
     `  combined markdown   : ${join(customerOutputDir, "testfaelle.md")}`,
@@ -3197,10 +3233,15 @@ Source (exactly one required):
   --figma-json-file <path>   Local Figma REST JSON (FigmaRestFileSnapshot shape)
 
 Output:
-  --output <dir>             Customer-format Markdown destination.
+  --output <dir>             Run-artifact destination.
                              Default: ${DEFAULT_OUTPUT_ROOT}/jobs/<jobId>/test-intelligence
-  --output-run-subdir job-id  Copy customer files into <output>/<jobId>/ so
-                             repeated runs do not overwrite top-level output.
+                             When supplied explicitly, the CLI writes each run
+                             into <output>/<timestamp>/ by default.
+  --output-run-subdir timestamp|job-id
+                             Write all run artifacts into <output>/<timestamp>/
+                             or <output>/<jobId>/ so repeated runs do not
+                             overwrite previous output. Default for explicit
+                             --output: timestamp.
 
 LLM (defaults from environment):
   --model-endpoint <url>     default: env WORKSPACE_TEST_SPACE_MODEL_ENDPOINT

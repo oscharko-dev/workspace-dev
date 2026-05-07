@@ -259,6 +259,9 @@ import { buildTestDesignModel } from "./test-design-model.js";
  */
 export const PRODUCTION_RUNNER_TEST_GENERATION_DEPLOYMENT =
   "gpt-oss-120b" as const;
+
+const VISUAL_CAPTURE_ARTIFACT_DIRECTORY = "visual-captures" as const;
+const VISUAL_CAPTURE_MANIFEST_FILENAME = "manifest.json" as const;
 const TEST_GENERATION_MODEL_REVISION = "gpt-oss-120b" as const;
 const TEST_GENERATION_GATEWAY_RELEASE = "production-runner-1.0" as const;
 const POLICY_BUNDLE_VERSION = "production-runner-eu-banking-default" as const;
@@ -801,6 +804,8 @@ export interface RunFigmaToQcTestCasesResult {
     untrustedContentNormalizationReport: string;
     evidenceSeal: string;
     visualSidecarResult?: string;
+    visualCaptureManifest?: string;
+    visualCaptureDirectory?: string;
     visualSidecarValidationReport?: string;
     agentRoleRun: string;
     judgeConsensus: string;
@@ -971,6 +976,9 @@ export const runFigmaToQcTestCases = async (
   let visualCaptures:
     | Awaited<ReturnType<typeof fetchFigmaScreenCapturesForTestIntelligence>>
     | undefined;
+  let visualCaptureArtifacts:
+    | Awaited<ReturnType<typeof persistVisualCaptureArtifacts>>
+    | undefined;
   let visualSidecarArtifactBytes: Uint8Array | undefined;
   let visualSidecarArtifact:
     | Awaited<ReturnType<typeof writeVisualSidecarResultArtifact>>["artifact"]
@@ -1013,6 +1021,21 @@ export const runFigmaToQcTestCases = async (
       })),
     });
     visualCaptures = captures;
+    try {
+      visualCaptureArtifacts = await persistVisualCaptureArtifacts({
+        artifactDir,
+        captures,
+        jobId: input.jobId,
+        generatedAt: input.generatedAt,
+      });
+    } catch (err) {
+      throw new ProductionRunnerError({
+        failureClass: "PERSIST_FAILED",
+        message: `Could not persist visual capture artifacts: ${sanitizeErrorMessage({ error: err, fallback: "filesystem failure" })}`,
+        retryable: false,
+        cause: err,
+      });
+    }
     const sidecarResult = await describeVisualScreens({
       bundle: input.llm.bundle,
       captures,
@@ -1868,7 +1891,9 @@ export const runFigmaToQcTestCases = async (
     { tenantScope },
   );
   let a11yJudgeResult: RunA11yJudgeResult | undefined =
-    visualCaptures !== undefined && input.llm.bundle?.a11yJudge !== undefined
+    visualCaptures !== undefined &&
+    visualSidecarRefusal === undefined &&
+    input.llm.bundle?.a11yJudge !== undefined
       ? await runA11yJudge({
           jobId: input.jobId,
           generatedAt: input.generatedAt,
@@ -1930,7 +1955,9 @@ export const runFigmaToQcTestCases = async (
     { tenantScope },
   );
   let faithfulnessJudgeResult: RunFaithfulnessJudgeResult | undefined =
-    visualCaptures !== undefined && input.llm.bundle !== undefined
+    visualCaptures !== undefined &&
+    visualSidecarRefusal === undefined &&
+    input.llm.bundle !== undefined
       ? await runFaithfulnessJudge({
           jobId: input.jobId,
           generatedAt: input.generatedAt,
@@ -3155,6 +3182,20 @@ export const runFigmaToQcTestCases = async (
               category: "visual_sidecar" as const,
             },
           ]),
+      ...(visualCaptureArtifacts === undefined
+        ? []
+        : [
+            {
+              filename: visualCaptureArtifacts.manifestFilename,
+              bytes: visualCaptureArtifacts.manifestBytes,
+              category: "visual_sidecar" as const,
+            },
+            ...visualCaptureArtifacts.files.map((file) => ({
+              filename: file.filename,
+              bytes: file.bytes,
+              category: "visual_sidecar" as const,
+            })),
+          ]),
       {
         filename: "customer-markdown/testfaelle.md",
         bytes: combinedMarkdownBytes,
@@ -3337,6 +3378,12 @@ export const runFigmaToQcTestCases = async (
       evidenceSeal: productionRunnerEvidenceSealPath,
       ...(visualSidecarArtifactPath !== undefined
         ? { visualSidecarResult: visualSidecarArtifactPath }
+        : {}),
+      ...(visualCaptureArtifacts !== undefined
+        ? {
+            visualCaptureManifest: visualCaptureArtifacts.manifestPath,
+            visualCaptureDirectory: visualCaptureArtifacts.directory,
+          }
         : {}),
       agentRoleRun: agentRoleRunArtifact.artifactPath,
       judgeConsensus: judgeConsensusArtifact.path,
@@ -4917,6 +4964,107 @@ const writeAtomicBytes = async (
 
 const sha256OfBytes = (bytes: Uint8Array): string =>
   createHash("sha256").update(bytes).digest("hex");
+
+interface PersistedVisualCaptureFile {
+  readonly screenId: string;
+  readonly filename: string;
+  readonly path: string;
+  readonly mimeType: string;
+  readonly byteLength: number;
+  readonly sha256: string;
+  readonly bytes: Buffer;
+}
+
+interface PersistedVisualCaptureArtifacts {
+  readonly directory: string;
+  readonly manifestPath: string;
+  readonly manifestFilename: string;
+  readonly manifestBytes: Uint8Array;
+  readonly files: ReadonlyArray<PersistedVisualCaptureFile>;
+}
+
+const persistVisualCaptureArtifacts = async (input: {
+  readonly artifactDir: string;
+  readonly captures: Awaited<
+    ReturnType<typeof fetchFigmaScreenCapturesForTestIntelligence>
+  >;
+  readonly jobId: string;
+  readonly generatedAt: string;
+}): Promise<PersistedVisualCaptureArtifacts> => {
+  const directory = join(input.artifactDir, VISUAL_CAPTURE_ARTIFACT_DIRECTORY);
+  await mkdir(directory, { recursive: true });
+  const files: PersistedVisualCaptureFile[] = [];
+  const manifestEntries: Array<Record<string, unknown>> = [];
+  for (const [index, capture] of input.captures.entries()) {
+    const bytes = Buffer.from(capture.base64Data, "base64");
+    const filename = [
+      `${String(index + 1).padStart(2, "0")}-`,
+      sanitizeVisualCaptureFileSegment(capture.screenId),
+      ".",
+      visualCaptureExtensionForMimeType(capture.mimeType),
+    ].join("");
+    const destinationPath = join(directory, filename);
+    await writeAtomicBytes(destinationPath, bytes);
+    const sha256 = sha256OfBytes(bytes);
+    files.push({
+      screenId: capture.screenId,
+      filename: `${VISUAL_CAPTURE_ARTIFACT_DIRECTORY}/${filename}`,
+      path: destinationPath,
+      mimeType: capture.mimeType,
+      byteLength: bytes.byteLength,
+      sha256,
+      bytes,
+    });
+    manifestEntries.push({
+      screenId: capture.screenId,
+      ...(capture.screenName !== undefined
+        ? { screenName: capture.screenName }
+        : {}),
+      mimeType: capture.mimeType,
+      byteLength: bytes.byteLength,
+      sha256,
+      filename,
+      ...(capture.widthPx !== undefined ? { widthPx: capture.widthPx } : {}),
+      ...(capture.heightPx !== undefined
+        ? { heightPx: capture.heightPx }
+        : {}),
+    });
+  }
+  const manifest = {
+    schemaVersion: "1.0.0",
+    contractVersion: TEST_INTELLIGENCE_CONTRACT_VERSION,
+    jobId: input.jobId,
+    generatedAt: input.generatedAt,
+    rawScreenshotsIncluded: true,
+    captures: manifestEntries,
+  };
+  const manifestPath = join(directory, VISUAL_CAPTURE_MANIFEST_FILENAME);
+  const manifestBytes = encodeCanonicalJson(manifest);
+  await writeAtomicBytes(manifestPath, manifestBytes);
+  return {
+    directory,
+    manifestPath,
+    manifestFilename: `${VISUAL_CAPTURE_ARTIFACT_DIRECTORY}/${VISUAL_CAPTURE_MANIFEST_FILENAME}`,
+    manifestBytes,
+    files,
+  };
+};
+
+const sanitizeVisualCaptureFileSegment = (value: string): string => {
+  const segment = value
+    .trim()
+    .replace(/[^A-Za-z0-9._-]+/gu, "-")
+    .replace(/^-+|-+$/gu, "")
+    .slice(0, 96);
+  return segment.length > 0 ? segment : "screen";
+};
+
+const visualCaptureExtensionForMimeType = (mimeType: string): string => {
+  if (mimeType === "image/png") return "png";
+  if (mimeType === "image/jpeg") return "jpg";
+  if (mimeType === "image/webp") return "webp";
+  return "bin";
+};
 
 /**
  * Resolve and validate the FinOps envelope. Operator override wins
