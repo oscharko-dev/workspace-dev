@@ -32,6 +32,8 @@ import {
 import { validateGeneratedTestCaseList } from "./generated-test-case-schema.js";
 import { detectPii } from "./pii-detection.js";
 import { detectSuspiciousContent } from "./semantic-content-sanitization.js";
+import { buildTestDesignModel } from "./test-design-model.js";
+import { detectUnsupportedExactValidationClaim } from "./unresolved-validation-rules.js";
 
 const TITLE_MAX_LENGTH = 200;
 const OBJECTIVE_MAX_LENGTH = 1000;
@@ -109,6 +111,7 @@ const validateCase = (
   testCase: GeneratedTestCase,
   index: number,
   intentIds: ReturnType<typeof collectIntentIds>,
+  model: ReturnType<typeof buildTestDesignModel>,
   issues: TestCaseValidationIssue[],
 ): void => {
   const basePath = `$.testCases[${index}]`;
@@ -158,6 +161,7 @@ const validateCase = (
   validateSemanticSuspiciousContent(testCase, basePath, issues);
   validateAssumptionsAndQuestions(testCase, basePath, issues);
   validateAmbiguityReviewState(testCase, basePath, issues);
+  validateUnsupportedUnresolvedValidationDetails(testCase, basePath, model, issues);
 };
 
 const validateSemanticSuspiciousContent = (
@@ -548,6 +552,26 @@ const validateAmbiguityReviewState = (
   }
 };
 
+const validateUnsupportedUnresolvedValidationDetails = (
+  testCase: GeneratedTestCase,
+  basePath: string,
+  model: ReturnType<typeof buildTestDesignModel>,
+  issues: TestCaseValidationIssue[],
+): void => {
+  const claim = detectUnsupportedExactValidationClaim({
+    testCase,
+    model,
+  });
+  if (claim === undefined) return;
+  pushIssue(issues, {
+    testCaseId: testCase.id,
+    path: `${basePath}.${claim.path}`,
+    code: "unsupported_unresolved_validation_detail",
+    severity: "error",
+    message: claim.message,
+  });
+};
+
 /**
  * Validate a generated test case list against schema, semantics, and the
  * intent IR. Always resolves; the report carries `blocked=true` when any
@@ -557,6 +581,10 @@ export const validateGeneratedTestCases = (
   input: ValidateGeneratedTestCasesInput,
 ): TestCaseValidationReport => {
   const issues: TestCaseValidationIssue[] = [];
+  const model = buildTestDesignModel({
+    jobId: input.jobId,
+    intent: input.intent,
+  });
 
   if (!validateStructural(input.list, issues)) {
     return finalizeReport({
@@ -585,7 +613,7 @@ export const validateGeneratedTestCases = (
     } else {
       seenIds.set(tc.id, i);
     }
-    validateCase(tc, i, intentIds, issues);
+    validateCase(tc, i, intentIds, model, issues);
   }
 
   return finalizeReport({

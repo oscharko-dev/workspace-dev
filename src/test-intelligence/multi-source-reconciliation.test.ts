@@ -282,6 +282,46 @@ test("reviewer_decides conflicts escalate the downstream policy gate to needs_re
   );
 });
 
+test("jira statements about unspecified validation rules propagate into open questions", () => {
+  const issue = jiraIssue(
+    "jira-unresolved-validation",
+    "Validation rules for amount fields and VAT selection still need to be specified.",
+  );
+  const envelope = buildMultiSourceTestIntentEnvelope({
+    sources: [
+      {
+        sourceId: "figma.0",
+        kind: "figma_local_json",
+        contentHash: sha256Hex("figma"),
+        capturedAt: ISO,
+      },
+      {
+        sourceId: "jira.0",
+        kind: "jira_rest",
+        contentHash: issue.contentHash,
+        capturedAt: ISO,
+        canonicalIssueKey: issue.issueKey,
+      },
+    ],
+    conflictResolutionPolicy: "priority",
+    priorityOrder: ["jira_rest", "figma_local_json"],
+  });
+
+  const result = reconcileMultiSourceIntent({
+    envelope,
+    figmaIntent: figmaIntent(),
+    jiraIssues: [issue],
+  });
+
+  assert.ok(
+    result.mergedIntent.openQuestions.some((question) =>
+      question.includes(
+        "jira.0: Validation rules for amount fields and VAT selection still need to be specified.",
+      ),
+    ),
+  );
+});
+
 test("non-priority reconciliation is stable under source reordering", () => {
   const issue = jiraIssue(
     "jira-stable",

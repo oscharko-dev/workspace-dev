@@ -195,6 +195,7 @@ import {
   normalizeUntrustedContent,
   writeUntrustedContentNormalizationReport,
 } from "./untrusted-content-normalizer.js";
+import { buildSourceScopedValidationOpenQuestions } from "./unresolved-validation-rules.js";
 import { runValidationPipeline } from "./validation-pipeline.js";
 import {
   describeVisualScreens,
@@ -1116,6 +1117,20 @@ export const runFigmaToQcTestCases = async (
       },
     });
   }
+
+  if (customContextMarkdown !== undefined) {
+    intent = {
+      ...intent,
+      openQuestions: [
+        ...intent.openQuestions,
+        ...buildSourceScopedValidationOpenQuestions({
+          sourceLabel: "custom_context_markdown",
+          text: customContextMarkdown.bodyPlain,
+        }),
+      ].sort((left, right) => left.localeCompare(right)),
+    };
+  }
+
   // 4. Bound the IR for the LLM prompt. Real-world Figma files (e.g. the
   //    customer's "Investitionsfinanzierung — Bedarfsermittlung" screen with
   //    5600 nodes) blow the prompt past every gateway's body cap. The full

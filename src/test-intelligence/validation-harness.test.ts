@@ -242,6 +242,110 @@ test("validation-harness: synthetic test generation covers risk labels, actions,
   );
 });
 
+test("validation-harness: unresolved validation rules stay generic and surface open questions", () => {
+  const intent: BusinessTestIntentIr = {
+    version: BUSINESS_TEST_INTENT_IR_SCHEMA_VERSION,
+    source: { kind: "figma_local_json", contentHash: "2".repeat(64) },
+    screens: [
+      { screenId: "vat", screenName: "VAT Form", trace: { nodeId: "screen.vat" } },
+    ],
+    detectedFields: [
+      {
+        id: "field.vat-rate",
+        screenId: "vat",
+        trace: { nodeId: "node.vat-rate", nodeName: "VAT rate" },
+        provenance: "figma_node",
+        confidence: 0.9,
+        label: "VAT rate",
+        type: "text",
+      },
+    ],
+    detectedActions: [],
+    detectedValidations: [
+      {
+        id: "validation.vat-rate",
+        screenId: "vat",
+        trace: { nodeId: "node.vat-rate" },
+        provenance: "figma_node",
+        confidence: 0.8,
+        rule: "Validation rules for amount fields and VAT selection still need to be specified.",
+        targetFieldId: "field.vat-rate",
+      },
+    ],
+    detectedNavigation: [],
+    inferredBusinessObjects: [],
+    risks: [],
+    assumptions: [],
+    openQuestions: [],
+    piiIndicators: [],
+    redactions: [],
+  };
+
+  const list = synthesizeGeneratedTestCases({
+    jobId: "job-unresolved-validation",
+    generatedAt: GENERATED_AT,
+    intent,
+    audit,
+  });
+
+  const negativeCase = list.testCases.find((testCase) =>
+    testCase.id.includes("field-negative-field-vat-rate"),
+  );
+  const validationCase = list.testCases.find((testCase) =>
+    testCase.id.includes("field-validation-field-vat-rate"),
+  );
+  const boundaryCase = list.testCases.find((testCase) =>
+    testCase.id.includes("field-boundary-field-vat-rate"),
+  );
+
+  assert.equal(boundaryCase, undefined);
+  assert.ok(negativeCase);
+  assert.ok(validationCase);
+  assert.deepEqual(negativeCase?.expectedResults, [
+    "A validation response is shown according to the specified validation concept.",
+  ]);
+  assert.deepEqual(validationCase?.expectedResults, [
+    "A validation response is shown according to the specified validation concept.",
+  ]);
+  assert.equal(
+    negativeCase?.title,
+    "Capture unresolved validation behavior for VAT rate on vat",
+  );
+  assert.equal(
+    negativeCase?.objective,
+    "Document the validation behavior for VAT rate once the final validation scenario is specified.",
+  );
+  assert.equal(
+    negativeCase?.steps[1]?.action,
+    "Exercise the VAT rate validation scenario defined by the finalized specification",
+  );
+  assert.equal(
+    validationCase?.title,
+    "Capture unresolved validation rules for VAT rate on vat",
+  );
+  assert.equal(
+    validationCase?.steps[1]?.action,
+    "Exercise the VAT rate validation path using the finalized specification",
+  );
+  assert.ok(
+    negativeCase?.openQuestions.some((question) =>
+      question.includes("still need to be specified"),
+    ),
+  );
+  assert.ok(
+    validationCase?.openQuestions.some((question) =>
+      question.includes('Validation rules for "VAT rate" are unresolved'),
+    ),
+  );
+  assert.equal(
+    [negativeCase, validationCase].every(
+      (testCase) =>
+        !JSON.stringify(testCase).match(/\b(empty|invalid|required)\b/i),
+    ),
+    true,
+  );
+});
+
 for (const fixtureId of WAVE1_VALIDATION_FIXTURE_IDS) {
   test(`validation-harness: ${fixtureId} runs end-to-end without external network`, async () => {
     const runDir = await newRunDir();

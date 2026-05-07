@@ -211,8 +211,12 @@ export const GENERATED_TEST_CASE_SCHEMA_VERSION = "1.1.0" as const;
  *
  * 1.4.0 — Issue #1942: hard-gated technique-quota enforcement on the
  * generator user-prompt preamble (`GENERATOR_TECHNIQUE_QUOTA_RULE`).
+ *
+ * 1.4.1 — Issue #1987: unresolved validation rules now explicitly forbid
+ * fabricated exact validation text, thresholds, min/max boundaries, and
+ * blocked-submit behavior in the generator prompt preamble.
  */
-export const TEST_INTELLIGENCE_PROMPT_TEMPLATE_VERSION = "1.4.0" as const;
+export const TEST_INTELLIGENCE_PROMPT_TEMPLATE_VERSION = "1.4.1" as const;
 
 /** Visual sidecar schema version consumed by the prompt compiler (Issue #1386). */
 export const VISUAL_SIDECAR_SCHEMA_VERSION = "1.1.0" as const;
@@ -462,6 +466,7 @@ export const ALLOWED_TEST_CASE_VALIDATION_ISSUE_CODES = [
   "assumptions_excessive",
   "open_questions_excessive",
   "ambiguity_without_review_state",
+  "unsupported_unresolved_validation_detail",
   "semantic_suspicious_content",
 ] as const;
 

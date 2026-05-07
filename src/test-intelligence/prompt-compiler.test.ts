@@ -239,6 +239,17 @@ test("compiler: hash differs when fixture image hash changes", async () => {
   assert.notEqual(a.request.hashes.cacheKey, b.request.hashes.cacheKey);
 });
 
+test("compiler: includes the unresolved-validation anti-fabrication rule in the prompt preamble", () => {
+  assert.match(
+    COMPILED_USER_PROMPT_PREAMBLE,
+    /do NOT invent exact error text, numeric thresholds, min\/max boundaries, or blocked-submit behavior/i,
+  );
+  assert.match(
+    COMPILED_USER_PROMPT_PREAMBLE,
+    /A validation response is shown according to the specified validation concept\./u,
+  );
+});
+
 test("compiler: includes reviewer-approved agent lessons in the AgentLessons prompt section", async () => {
   const { intent, visual } = await loadFixture();
   const lesson = await buildApprovedLesson();

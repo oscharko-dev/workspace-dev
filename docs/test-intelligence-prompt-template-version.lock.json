@@ -1,6 +1,6 @@
 {
   "$schema": "./test-intelligence-prompt-template-version.lock.schema.json",
   "description": "Pin of TEST_INTELLIGENCE_PROMPT_TEMPLATE_VERSION to the SHA-256 of src/test-intelligence/prompt-compiler.ts. Enforced by scripts/check-prompt-template-version.mjs (see docs/test-intelligence-prompt-template-changelog.md for the operator workflow).",
-  "version": "1.4.0",
-  "promptCompilerSha256": "5c1bdf9d500df52022a662e042d6880003858939055c575803599fdd106a28cc"
+  "version": "1.4.1",
+  "promptCompilerSha256": "07615e99025afd8e3fa97dcc5e101c4e464a1fb8b17f9230ed9445e1791fc896"
 }
