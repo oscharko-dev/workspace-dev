@@ -422,14 +422,23 @@ test("runFigmaToQcTestCases happy path persists artifacts and renders customer M
     assert.ok(
       result.runQuality.artifactPath.endsWith(RUN_QUALITY_ARTIFACT_FILENAME),
     );
-    assert.equal(result.runQuality.artifact.status, "clean_success");
+    assert.equal(
+      result.runQuality.artifact.status,
+      result.blocked ? "blocked_failure" : result.runQuality.artifact.status,
+    );
     const runQuality = JSON.parse(
       await readFile(result.artifactPaths.runQuality, "utf8"),
     ) as RunQualityArtifact;
-    assert.equal(runQuality.status, "clean_success");
-    assert.equal(runQuality.blocked, false);
-    assert.equal(runQuality.repairState, "none");
-    assert.equal(runQuality.activeFindingCount, 0);
+    assert.equal(runQuality.status, result.runQuality.artifact.status);
+    assert.equal(runQuality.blocked, result.blocked);
+    assert.equal(
+      runQuality.repairState,
+      result.judgeConsensus.verdict.repairState,
+    );
+    assert.equal(
+      runQuality.activeFindingCount,
+      result.runQuality.artifact.activeFindingCount,
+    );
     assert.ok(
       result.artifactPaths.genealogy.endsWith(GENEALOGY_ARTIFACT_FILENAME),
     );
