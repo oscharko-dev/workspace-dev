@@ -113,6 +113,8 @@ test("renderCustomerMarkdown renders steps with Beschreibung + Erwartetes Ergebn
   assert.match(body, /Erwartetes Ergebnis/u);
   assert.match(body, /Öffne die Login-Seite/u);
   assert.match(body, /Login-Maske ist sichtbar/u);
+  assert.match(body, /AC-\/Coverage-Zuordnung/u);
+  assert.match(body, /Abgedeckte Semantik/u);
 });
 
 test("renderCustomerMarkdown does not expose technical Figma ids in customer-visible refs", () => {
@@ -186,6 +188,7 @@ test("renderCustomerMarkdown gracefully handles an empty test-case list", () => 
   });
   assert.equal(result.perCaseFiles.length, 0);
   assert.match(result.combinedMarkdown, /Testfälle/u);
+  assert.match(result.combinedMarkdown, /AC-\/Coverage-Zuordnung/u);
 });
 
 test("renderCustomerMarkdown filenames are deterministic for stable input", () => {

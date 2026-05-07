@@ -58,7 +58,34 @@ const TEXT_NODE_TYPES = new Set<string>(["TEXT"]);
 const INPUT_HINT_RE =
   /\b(input|field|email|password|search|phone|otp|amount|iban|bic|account|name|date|select|dropdown|combo|textfield|textinput|investition|kredit|laufzeit|zinssatz|tilgung)\b/iu;
 const BUTTON_HINT_RE =
-  /\b(button|cta|submit|next|weiter|speichern|save|ok|bestätigen|confirm|abbrechen|cancel|zurück|back|navigate|link|icon|chip)\b/iu;
+  /\b(button|cta|submit|next|weiter|speichern|save|ok|bestätigen|confirm|abbrechen|cancel|zurück|back|navigate|link)\b/iu;
+const RADIO_HINT_RE =
+  /\b(radio|option|brutto|netto|einmalig|monatlich|jährlich|ja|nein)\b/iu;
+const SELECT_HINT_RE =
+  /\b(select|dropdown|combo|auswahl|auswahlfeld|picker)\b/iu;
+const RESULT_HINT_RE =
+  /\b(result|ergebnis|gesamt|summe|betrag|rate|finanzierungsbedarf|auszahl|saldo|kreditbetrag)\b/iu;
+const LABEL_HINT_RE =
+  /\b(label|hinweis|help|helper|info|information|beschreibung|text)\b/iu;
+const DECORATIVE_HINT_RE =
+  /\b(icon|chevron|arrow|vector|svg|glyph|decorative|separator|divider)\b/iu;
+const FIELD_CLUSTER_NODE_TYPES = new Set([
+  "TEXT",
+  "TEXT_INPUT",
+  "RADIO_OPTION",
+  "SELECT_FIELD",
+  "RESULT_DISPLAY",
+  "INFORMATIVE_LABEL",
+]);
+
+type SemanticNodeKind =
+  | "button"
+  | "text_input"
+  | "radio_option"
+  | "select_field"
+  | "result_display"
+  | "informative_label"
+  | "decorative";
 
 interface VisitFrame {
   node: FigmaRestNode;
@@ -70,7 +97,15 @@ interface RawProjection {
   nodeId: string;
   nodeName: string;
   /** Resolved node-type label as it would appear in the IR. */
-  nodeType: "TEXT" | "TEXT_INPUT" | "BUTTON";
+  nodeType:
+    | "TEXT"
+    | "TEXT_INPUT"
+    | "BUTTON"
+    | "RADIO_OPTION"
+    | "SELECT_FIELD"
+    | "RESULT_DISPLAY"
+    | "INFORMATIVE_LABEL"
+    | "DECORATIVE";
   /** Underlying Figma type (`TEXT`, `INSTANCE`, `COMPONENT`, `RECTANGLE`). */
   figmaType: string;
   text: string;
@@ -89,6 +124,8 @@ interface RawProjection {
   instanceAncestorIds: string[];
   /** True if the projection itself is a button-shaped INSTANCE/COMPONENT. */
   isButtonInstance: boolean;
+  /** Semantic classification retained for downstream consumers. */
+  semanticKind?: SemanticNodeKind;
 }
 
 /**
@@ -228,23 +265,56 @@ const projectScreenNodes = (
 const isInstanceLike = (node: FigmaRestNode): boolean =>
   node.type === "INSTANCE" || node.type === "COMPONENT";
 
+const classifySemanticKind = (
+  node: FigmaRestNode,
+): SemanticNodeKind | undefined => {
+  const name = (node.name ?? "").trim();
+  const text = typeof node.characters === "string" ? node.characters.trim() : "";
+  const combined = `${name} ${text}`.trim();
+  if (combined.length === 0) return undefined;
+  if (DECORATIVE_HINT_RE.test(combined)) return "decorative";
+  if (BUTTON_HINT_RE.test(combined)) return "button";
+  if (SELECT_HINT_RE.test(combined)) return "select_field";
+  if (RADIO_HINT_RE.test(combined)) return "radio_option";
+  if (RESULT_HINT_RE.test(combined)) return "result_display";
+  if (LABEL_HINT_RE.test(combined)) return "informative_label";
+  if (INPUT_HINT_RE.test(combined)) return "text_input";
+  return undefined;
+};
+
 const projectNode = (
   node: FigmaRestNode,
   instanceAncestorIds: string[],
 ): RawProjection | undefined => {
   const name = node.name ?? "";
   const bbox = readBbox(node);
+  const semanticKind = classifySemanticKind(node);
+  if (semanticKind === "decorative") return undefined;
   if (TEXT_NODE_TYPES.has(node.type)) {
     const text = typeof node.characters === "string" ? node.characters : name;
     const projection: RawProjection = {
       nodeId: node.id,
       nodeName: name,
-      nodeType: INPUT_HINT_RE.test(name) ? "TEXT_INPUT" : "TEXT",
+      nodeType:
+        semanticKind === "text_input"
+          ? "TEXT_INPUT"
+          : semanticKind === "radio_option"
+            ? "RADIO_OPTION"
+            : semanticKind === "select_field"
+              ? "SELECT_FIELD"
+              : semanticKind === "result_display"
+                ? "RESULT_DISPLAY"
+                : semanticKind === "informative_label"
+                  ? "INFORMATIVE_LABEL"
+                  : INPUT_HINT_RE.test(name)
+                    ? "TEXT_INPUT"
+                    : "TEXT",
       figmaType: node.type,
       text,
       instanceAncestorIds: [...instanceAncestorIds],
       isButtonInstance: false,
     };
+    if (semanticKind !== undefined) projection.semanticKind = semanticKind;
     if (bbox !== undefined) projection.bbox = bbox;
     return projection;
   }
@@ -253,7 +323,7 @@ const projectNode = (
     node.type === "COMPONENT" ||
     node.type === "RECTANGLE"
   ) {
-    if (BUTTON_HINT_RE.test(name)) {
+    if (semanticKind === "button" || BUTTON_HINT_RE.test(name)) {
       const hasOwnText =
         typeof node.characters === "string" && node.characters.length > 0;
       const projection: RawProjection = {
@@ -265,7 +335,33 @@ const projectNode = (
         componentName: name,
         instanceAncestorIds: [...instanceAncestorIds],
         isButtonInstance: isInstanceLike(node),
+        semanticKind: "button",
       };
+      if (bbox !== undefined) projection.bbox = bbox;
+      return projection;
+    }
+    if (semanticKind !== undefined) {
+      const hasOwnText =
+        typeof node.characters === "string" && node.characters.length > 0;
+      const projection: RawProjection = {
+        nodeId: node.id,
+        nodeName: name,
+        nodeType:
+          semanticKind === "text_input"
+            ? "TEXT_INPUT"
+            : semanticKind === "radio_option"
+              ? "RADIO_OPTION"
+              : semanticKind === "select_field"
+                ? "SELECT_FIELD"
+                : semanticKind === "result_display"
+                  ? "RESULT_DISPLAY"
+                  : "INFORMATIVE_LABEL",
+        figmaType: node.type,
+        text: hasOwnText ? (node.characters as string) : name,
+        instanceAncestorIds: [...instanceAncestorIds],
+        isButtonInstance: false,
+      };
+      if (semanticKind !== undefined) projection.semanticKind = semanticKind;
       if (bbox !== undefined) projection.bbox = bbox;
       return projection;
     }
@@ -280,6 +376,7 @@ const projectNode = (
         text: hasOwnText ? (node.characters as string) : name,
         instanceAncestorIds: [...instanceAncestorIds],
         isButtonInstance: false,
+        semanticKind: "text_input",
       };
       if (bbox !== undefined) projection.bbox = bbox;
       return projection;
@@ -396,6 +493,7 @@ const finalizeProjections = (
         nodeType: entry.nodeType,
         text: adoption !== undefined ? adoption.text : entry.text,
       };
+    if (entry.semanticKind !== undefined) node.semanticKind = entry.semanticKind;
     if (entry.componentName !== undefined) {
       node.componentName = entry.componentName;
     }
@@ -422,11 +520,18 @@ const computeLabelSource = (
   adoption:
     | { donorId: string; text: string; donorBbox?: RawProjection["bbox"] }
     | undefined,
-):
+): 
   | IntentDerivationFigmaInput["screens"][number]["nodes"][number]["labelSource"]
   | undefined => {
   if (adoption !== undefined) return "sibling_text";
   if (entry.figmaType === "TEXT") return "node_text";
+  if (
+    entry.semanticKind !== undefined &&
+    entry.semanticKind !== "button" &&
+    entry.semanticKind !== "decorative"
+  ) {
+    return "node_text";
+  }
   if (entry.isButtonInstance || entry.componentName !== undefined) {
     return "node_name";
   }
@@ -440,6 +545,13 @@ const computeLabelConfidence = (
     | undefined,
 ): number | undefined => {
   if (adoption !== undefined) return 0.85;
+  if (
+    entry.semanticKind !== undefined &&
+    entry.semanticKind !== "button" &&
+    entry.semanticKind !== "decorative"
+  ) {
+    return 0.9;
+  }
   if (!entry.isButtonInstance) return undefined;
   // Button instance with no donor and no real own characters → weak label.
   // Treat the visible label as the component name, mark confidence as 0 so
@@ -477,8 +589,7 @@ const applyFieldClusters = (
     .map((node, index) => ({ node, index }))
     .filter(
       (entry) =>
-        (entry.node.nodeType === "TEXT" ||
-          entry.node.nodeType === "TEXT_INPUT") &&
+        FIELD_CLUSTER_NODE_TYPES.has(entry.node.nodeType) &&
         entry.node.bbox !== undefined,
     );
   if (indexed.length < 2) return;

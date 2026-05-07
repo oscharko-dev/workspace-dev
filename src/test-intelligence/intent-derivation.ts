@@ -42,6 +42,12 @@ export interface IntentDerivationNodeInput {
   navigationTarget?: string;
   childNodeIds?: string[];
   /**
+   * Semantic kind preserved from the Figma normalizer so downstream passes
+   * can distinguish radio options, select fields, result displays, and
+   * informative labels from generic text.
+   */
+  semanticKind?: string;
+  /**
    * Original Figma component-instance name for actions/fields whose visible
    * label was synthesised from a sibling TEXT node (Issue #1902). Surfaced
    * onto the trace so judges can recover the raw component identity.
@@ -75,12 +81,38 @@ const INPUT_TEXT_FIELD_TYPES = new Set([
   "INPUT",
   "TEXT_FIELD",
   "TEXTFIELD",
+  "RADIO_OPTION",
+  "SELECT_FIELD",
+  "RESULT_DISPLAY",
+  "INFORMATIVE_LABEL",
   "TEXT",
 ]);
 const ACTION_NODE_TYPES = new Set(["BUTTON", "CTA", "LINK"]);
 
 const byId = <T extends { id: string }>(a: T, b: T): number =>
   a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
+
+const resolveFieldType = (node: IntentDerivationNodeInput): string => {
+  const semanticKind = node.semanticKind?.trim().toLowerCase();
+  if (semanticKind && semanticKind !== "button" && semanticKind !== "decorative") {
+    return semanticKind;
+  }
+  const nodeType = node.nodeType.trim().toUpperCase();
+  switch (nodeType) {
+    case "TEXT_INPUT":
+      return "text_input";
+    case "RADIO_OPTION":
+      return "radio_option";
+    case "SELECT_FIELD":
+      return "select_field";
+    case "RESULT_DISPLAY":
+      return "result_display";
+    case "INFORMATIVE_LABEL":
+      return "informative_label";
+    default:
+      return nodeType.toLowerCase();
+  }
+};
 
 /**
  * Pure derivation from a normalized Figma input (and optional visual sidecar)
@@ -230,7 +262,7 @@ const deriveFields = (
           piiIndicators,
           redactions,
         ),
-        type: "text",
+        type: resolveFieldType(node),
       };
       if (node.defaultValue !== undefined) {
         field.defaultValue = maybeRedact(
@@ -291,7 +323,9 @@ const deriveActions = (
           piiIndicators,
           redactions,
         ),
-        kind: node.nodeType.toLowerCase(),
+        kind:
+          node.semanticKind?.trim().toLowerCase() ??
+          node.nodeType.toLowerCase(),
       };
       if (node.labelSource !== undefined) {
         action.labelSource = node.labelSource;

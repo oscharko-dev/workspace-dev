@@ -35,6 +35,10 @@ export interface RenderedCustomerMarkdown {
 // eslint-disable-next-line no-control-regex
 const FORBIDDEN_FILENAME_CHARS = /[\\/:*?"<>|\x00-\x1f]/gu;
 const COLLAPSE_WHITESPACE = /\s+/gu;
+const KEYWORD_SELECTABLE_HINT_PATTERN =
+  /\b(select|dropdown|checkbox|radio|option|auswahl|choice|picker)\b/i;
+const KEYWORD_RESULT_HINT_PATTERN =
+  /\b(result|summary|status|total|balance|output|confirmation|receipt|preview|overview|message|ergebnis)\b/i;
 
 export const renderCustomerMarkdown = (
   input: RenderCustomerMarkdownInput,
@@ -54,6 +58,9 @@ const renderCombined = (input: RenderCustomerMarkdownInput): string => {
   lines.push(`Quelle: ${input.sourceLabel}`);
   lines.push(`Generiert am: ${input.generatedAt}`);
   lines.push(`Anzahl Testfälle: ${input.list.testCases.length}`);
+  lines.push(
+    "Hinweis: Die AC-/Coverage-Zuordnung wird aus Zielen, Schritten und erwarteten Ergebnissen abgeleitet, weil im aktuellen Codebase kein separates lesbares Artefakt dafür vorliegt.",
+  );
   lines.push("");
   lines.push("---");
   lines.push("");
@@ -127,6 +134,14 @@ const renderSingleCase = (tc: GeneratedTestCase): string => {
     }
     lines.push("");
   }
+  const coverageMapping = buildCoverageMapping(tc);
+  if (coverageMapping.length > 0) {
+    lines.push("**AC-/Coverage-Zuordnung:**");
+    for (const entry of coverageMapping) {
+      lines.push(`- ${entry}`);
+    }
+    lines.push("");
+  }
   if (tc.assumptions.length > 0) {
     lines.push("**Annahmen:**");
     for (const a of tc.assumptions) {
@@ -163,6 +178,77 @@ const renderSingleCase = (tc: GeneratedTestCase): string => {
   lines.push(`*Test-ID:* \`${tc.id}\``);
   return lines.join("\n");
 };
+
+const buildCoverageMapping = (tc: GeneratedTestCase): string[] => {
+  const objective = tc.objective.trim();
+  const expected =
+    tc.expectedResults.length > 0
+      ? tc.expectedResults.join("; ")
+      : objective.length > 0
+        ? objective
+        : "Nicht angegeben";
+  const evidenceParts: string[] = [];
+  if (tc.preconditions.length > 0) {
+    evidenceParts.push(`Vorbedingungen: ${tc.preconditions.join("; ")}`);
+  }
+  if (tc.testData.length > 0) {
+    evidenceParts.push(`Testdaten: ${tc.testData.join("; ")}`);
+  }
+  if (tc.steps.length > 0) {
+    evidenceParts.push(
+      `Schritte: ${tc.steps.map((step) => step.action).join(" -> ")}`,
+    );
+  }
+  const theme = inferCoverageTheme(tc);
+  const coverage: string[] = [`Akzeptanzkriterium: ${expected}`];
+  coverage.push(`Abgedeckte Semantik: ${theme}`);
+  if (evidenceParts.length > 0) {
+    coverage.push(`Evidenz: ${evidenceParts.join(" · ")}`);
+  }
+  return coverage;
+};
+
+const inferCoverageTheme = (tc: GeneratedTestCase): string => {
+  const combinedText = normalizeText(
+    [
+      tc.title,
+      tc.objective,
+      ...tc.preconditions,
+      ...tc.testData,
+      ...tc.steps.flatMap((step) => [step.action, step.expected ?? "", step.data ?? ""]),
+      ...tc.expectedResults,
+    ].join(" "),
+  );
+  if (
+    tc.type === "boundary" ||
+    tc.technique === "boundary_value_analysis"
+  ) {
+    return "Grenzwerte";
+  }
+  if (tc.type === "validation" || tc.technique === "decision_table") {
+    return "Validierung / Regelprüfung";
+  }
+  if (tc.type === "navigation" || tc.technique === "state_transition") {
+    return "Navigation / Zustandswechsel";
+  }
+  if (KEYWORD_SELECTABLE_HINT_PATTERN.test(combinedText)) {
+    return "Auswahloptionen";
+  }
+  if (KEYWORD_RESULT_HINT_PATTERN.test(combinedText)) {
+    return "Ergebnisanzeige";
+  }
+  if (tc.type === "negative" || tc.priority === "p0") {
+    return "Negativ- bzw. Fehlerpfad";
+  }
+  return "Standardfluss";
+};
+
+const normalizeText = (value: string): string =>
+  value
+    .toLowerCase()
+    .replace(/[\p{P}\p{S}]+/gu, " ")
+    .replace(/\s+/gu, " ")
+    .trim();
 
 const CUSTOMER_UNSAFE_TRACE_LABELS = new Set([
   "content",

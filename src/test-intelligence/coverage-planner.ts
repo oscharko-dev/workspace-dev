@@ -22,7 +22,10 @@ import {
   type TestDesignScreen,
 } from "../contracts/index.js";
 import { canonicalJson, sha256Hex } from "./content-hash.js";
-import { isCoverageRelevantElementLike } from "./coverage-relevance.js";
+import {
+  isCoverageRelevantElementLike,
+  normalizeCoverageText,
+} from "./coverage-relevance.js";
 import type { LlmGatewayClient } from "./llm-gateway.js";
 import { selectTestDesignHeuristics } from "./test-design-heuristics.js";
 
@@ -67,6 +70,10 @@ const NUMERIC_KIND_PATTERN =
   /\b(number|amount|currency|percentage|percent|rate|integer|decimal|float)\b/i;
 const INPUT_KIND_PATTERN =
   /\b(number|text|email|password|phone|date|select|dropdown|checkbox|radio|textarea|currency|percentage|percent|rate|integer|decimal|float)\b/i;
+const RESULT_DISPLAY_HINT_PATTERN =
+  /\b(result|summary|status|total|balance|output|confirmation|receipt|preview|overview|message|ergebnis|anzeige)\b/i;
+const SELECTABLE_OPTION_HINT_PATTERN =
+  /\b(select|selectable|dropdown|combobox|radio|checkbox|option|choice|picker|segmented|chip|pill|auswahl)\b/i;
 const COVERAGE_PLANNER_RESPONSE_SCHEMA_NAME =
   "workspace-dev-coverage-planner-v1" as const;
 const RISK_CLASS_ORDER: readonly CoveragePlanElementRiskClass[] = [
@@ -90,6 +97,18 @@ const GENERATED_TECHNIQUE_ORDER: readonly TestCaseTechnique29119[] = [
 
 const uniqueSorted = (values: Iterable<string>): string[] =>
   [...new Set(values)].sort((left, right) => left.localeCompare(right));
+
+const semanticCoverageText = (
+  element: { label?: string; kind?: string },
+): string => normalizeCoverageText(`${element.label ?? ""} ${element.kind ?? ""}`);
+
+const isResultDisplayElementLike = (
+  element: { label?: string; kind?: string },
+): boolean => RESULT_DISPLAY_HINT_PATTERN.test(semanticCoverageText(element));
+
+const isSelectableOptionElementLike = (
+  element: { label?: string; kind?: string },
+): boolean => SELECTABLE_OPTION_HINT_PATTERN.test(semanticCoverageText(element));
 
 const techniqueRank = (technique: CoveragePlanTechnique): number =>
   TECHNIQUE_ORDER.indexOf(technique);
@@ -144,6 +163,11 @@ const isBoundaryRule = (rule: TestDesignRule): boolean =>
 const isDecisionRule = (rule: TestDesignRule): boolean =>
   DECISION_SIGNAL_PATTERN.test(rule.description);
 
+const isSemanticCoverageRule = (rule: TestDesignRule): boolean =>
+  /^Semantic category:\s*(result display|selectable option|informative label)\b/i.test(
+    rule.description,
+  );
+
 const screenById = (
   model: TestDesignModel,
 ): ReadonlyMap<string, TestDesignScreen> =>
@@ -160,6 +184,9 @@ const allModelVisualRefs = (model: TestDesignModel): string[] =>
   uniqueSorted(model.screens.flatMap((screen) => screen.visualRefs));
 
 const selectRuleTechnique = (rule: TestDesignRule): CoveragePlanTechnique => {
+  if (isSemanticCoverageRule(rule)) {
+    return "equivalence_partitioning";
+  }
   if (isBoundaryRule(rule)) {
     return "boundary_value";
   }
@@ -370,6 +397,10 @@ const buildPerElementPlan = (input: {
           NUMERIC_KIND_PATTERN.test(element.kind)
         ) {
           riskClass = "financial_transaction";
+        } else if (isResultDisplayElementLike(element)) {
+          riskClass = "medium";
+        } else if (isSelectableOptionElementLike(element)) {
+          riskClass = "medium";
         } else if (
           validationTargets.has(element.elementId) ||
           calculationInputs.has(element.elementId) ||

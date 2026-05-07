@@ -35,6 +35,15 @@ const JIRA_REF = {
   capturedAt: "2026-05-03T00:00:00.000Z",
 };
 
+const CUSTOM_MARKDOWN_REF = {
+  sourceId: "custom-context-markdown",
+  kind: "custom_markdown" as const,
+  contentHash: "d".repeat(64),
+  capturedAt: "2026-05-03T00:00:00.000Z",
+  redactedMarkdownHash: "e".repeat(64),
+  plainTextDerivativeHash: "f".repeat(64),
+};
+
 const buildEnvelope = (): MultiSourceTestIntentEnvelope => ({
   version: MULTI_SOURCE_TEST_INTENT_ENVELOPE_SCHEMA_VERSION,
   sources: [FIGMA_REF, JIRA_REF],
@@ -291,6 +300,98 @@ test("buildTestDesignModel projects attributed risk signals and explicit open qu
     risk.text.includes("IBAN requirement differs across sources"),
   );
   assert.deepEqual(conflictRisk?.sourceRefs, ["figma-primary", "jira-42"]);
+});
+
+test("buildTestDesignModel adds semantic coverage rules and a Gross-path open question", () => {
+  const model = buildTestDesignModel({
+    jobId: "job-semantic-options",
+    intent: {
+      version: BUSINESS_TEST_INTENT_IR_SCHEMA_VERSION,
+      source: { kind: "figma_local_json", contentHash: "1".repeat(64) },
+      screens: [{ screenId: "screen-financing", screenName: "Financing", trace: {} }],
+      detectedFields: [
+        {
+          id: "screen-financing::field::question",
+          screenId: "screen-financing",
+          trace: {},
+          provenance: "figma_node",
+          confidence: 0.9,
+          label: "Wie soll der Kaufpreis erfasst werden?",
+          type: "informative_label",
+        },
+        {
+          id: "screen-financing::field::net-option",
+          screenId: "screen-financing",
+          trace: {},
+          provenance: "figma_node",
+          confidence: 0.9,
+          label: "Netto",
+          type: "radio_option",
+        },
+        {
+          id: "screen-financing::field::gross-option",
+          screenId: "screen-financing",
+          trace: {},
+          provenance: "figma_node",
+          confidence: 0.9,
+          label: "Brutto",
+          type: "radio_option",
+        },
+        {
+          id: "screen-financing::field::result",
+          screenId: "screen-financing",
+          trace: {},
+          provenance: "figma_node",
+          confidence: 0.9,
+          label: "Finanzierungsbedarf des Investitionsobjekts",
+          type: "result_display",
+          defaultValue: "0,00 €",
+        },
+      ],
+      detectedActions: [],
+      detectedValidations: [],
+      detectedNavigation: [],
+      inferredBusinessObjects: [],
+      risks: [],
+      assumptions: [],
+      openQuestions: [],
+      piiIndicators: [],
+      redactions: [],
+    },
+    sourceEnvelope: {
+      version: MULTI_SOURCE_TEST_INTENT_ENVELOPE_SCHEMA_VERSION,
+      sources: [FIGMA_REF, CUSTOM_MARKDOWN_REF],
+      aggregateContentHash: "9".repeat(64),
+      conflictResolutionPolicy: "reviewer_decides",
+    },
+  });
+
+  assert.ok(
+    model.businessRules.some((rule) =>
+      rule.description.includes("Semantic category: selectable option"),
+    ),
+  );
+  assert.ok(
+    model.businessRules.some((rule) =>
+      rule.description.includes("Semantic category: result display"),
+    ),
+  );
+  assert.ok(
+    model.businessRules.some((rule) =>
+      rule.description.includes("Semantic category: informative label"),
+    ),
+  );
+  assert.ok(
+    model.businessRules.some((rule) =>
+      rule.description.includes("custom markdown"),
+    ),
+  );
+  assert.ok(
+    model.openQuestions.some((question) =>
+      question.text.includes("custom_context_markdown:") &&
+      question.text.includes("Gross-/Brutto-Pfad"),
+    ),
+  );
 });
 
 test("buildTestDesignModel derives calculations from explicit computed rules", () => {
