@@ -1014,6 +1014,7 @@ const buildAgentParticipationEntries = (input: {
         failureClass: VisualSidecarFailureClass;
       }
     | undefined;
+  repairLoopResult: RepairLoopResult | undefined;
   artifactPaths: {
     coveragePlan: string;
     riskRanking: string;
@@ -1355,6 +1356,147 @@ const buildAgentParticipationEntries = (input: {
       refs.a11yJudgeVerdict !== undefined
         ? [toArtifactReference(input.artifactDir, refs.a11yJudgeVerdict)]
         : [],
+  });
+
+  // Issue #2014: surface every active repair-loop role so operators can audit
+  // which deployment regenerated each iteration. The repair planner is
+  // deterministic and writes a per-iteration artifact even when no LLM is
+  // dispatched; the per-iteration generator regen runs on the same generator
+  // deployment as the initial pass and reports through `bySource.generator`
+  // in FinOps.
+  const repairLoopResult = input.repairLoopResult;
+  const repairIterationCount = repairLoopResult?.repairIterationCount ?? 0;
+  const repairCompletedIterations = repairLoopResult?.iterations.filter(
+    (record) => record.iteration >= 1,
+  ) ?? [];
+  const repairPlannerArtifactRefs = Array.from(
+    { length: repairIterationCount },
+    (_unused, index) =>
+      toArtifactReference(
+        input.artifactDir,
+        join(
+          input.artifactDir,
+          "agent-role-runs",
+          `${REPAIR_PLANNER_ARTIFACT_PREFIX}${index + 1}.json`,
+        ),
+      ),
+  );
+  const repairPlannerCost = buildRoleCostAttribution({
+    report: input.finopsReport,
+    source: "repair_planner",
+  });
+  const repairPlannerStatus: AgentParticipationStatus =
+    repairLoopResult === undefined
+      ? "skipped"
+      : repairIterationCount === 0
+        ? "skipped"
+        : "succeeded";
+  entries.push({
+    role: "repair_planner",
+    configurationSource: roleConfigurationSource(input.request, "repair_planner"),
+    status: repairPlannerStatus,
+    attemptCount: repairIterationCount,
+    ...(repairPlannerStatus === "skipped"
+      ? {
+          remediation:
+            "Initial judge panel accepted the output; the repair loop did not run.",
+        }
+      : {
+          remediation:
+            "Repair planner is a deterministic consolidator (no LLM call); each iteration's repair instructions are persisted under agent-role-runs/.",
+        }),
+    artifactReferences: repairPlannerArtifactRefs,
+    ...(repairPlannerCost !== undefined
+      ? { costAttribution: repairPlannerCost }
+      : {}),
+  });
+
+  const testGenerationRepairArtifactRefs = repairCompletedIterations.map(
+    (record) =>
+      toArtifactReference(
+        input.artifactDir,
+        join(
+          input.artifactDir,
+          "agent-role-runs",
+          `${TEST_GENERATION_REPAIR_ARTIFACT_PREFIX}${record.iteration}.json`,
+        ),
+      ),
+  );
+  const generatorClientDeployment = input.request.llm.client.deployment;
+  const repairGeneratorDeployment =
+    repairCompletedIterations.length > 0
+      ? generatorClientDeployment
+      : undefined;
+  const repairGeneratorOutcome = repairLoopResult?.outcome;
+  const repairGeneratorStatus: AgentParticipationStatus =
+    repairLoopResult === undefined
+      ? "skipped"
+      : repairCompletedIterations.length === 0
+        ? repairGeneratorOutcome === "needs_review"
+          ? "failed"
+          : "skipped"
+        : "succeeded";
+  const repairGeneratorRemediation: string | undefined =
+    repairGeneratorStatus === "skipped"
+      ? "Initial generator output was accepted; the repair generator did not run."
+      : repairGeneratorStatus === "failed"
+        ? "Repair-loop iterations exited before any test_generation_repair artifact was written; inspect repair-loop traces and gateway logs."
+        : repairGeneratorOutcome === "needs_review"
+          ? "Repair iterations completed but the bounded loop exhausted its iteration cap without judge acceptance; inspect the latest test_generation_repair artifact and judge-consensus."
+          : repairGeneratorOutcome === "convergence_stalled"
+            ? "Repair iterations stalled (two consecutive iterations produced the same verdict signature); inspect repair-loop-trace.json."
+            : repairGeneratorOutcome === "budget_exhausted"
+              ? "Repair loop stopped before the next regeneration to keep the FinOps generator-side budget breach-free; inspect repair-loop-budget-trace.json."
+              : repairGeneratorOutcome === "rejected"
+                ? "Final judge panel rejected the repaired output; inspect the latest test_generation_repair artifact and logic-judge verdict."
+                : undefined;
+  const repairGeneratorIterationOutputTokens =
+    repairCompletedIterations.reduce(
+      (sum, record) => sum + record.outputTokens,
+      0,
+    );
+  const repairGeneratorIterationInputTokens =
+    repairCompletedIterations.reduce(
+      (sum, record) => sum + record.inputTokens,
+      0,
+    );
+  entries.push({
+    role: "test_generation_repair",
+    ...(repairGeneratorDeployment !== undefined
+      ? { deployment: repairGeneratorDeployment }
+      : {}),
+    configurationSource: roleConfigurationSource(
+      input.request,
+      "test_generation_repair",
+    ),
+    status: repairGeneratorStatus,
+    attemptCount: repairCompletedIterations.length,
+    ...(repairGeneratorOutcome === "needs_review" ||
+    repairGeneratorOutcome === "convergence_stalled" ||
+    repairGeneratorOutcome === "budget_exhausted" ||
+    repairGeneratorOutcome === "rejected"
+      ? { failureClass: repairGeneratorOutcome }
+      : {}),
+    ...(repairGeneratorRemediation !== undefined
+      ? { remediation: repairGeneratorRemediation }
+      : {}),
+    artifactReferences: testGenerationRepairArtifactRefs,
+    ...(repairCompletedIterations.length > 0
+      ? {
+          costAttribution: {
+            sourceLabel: "generator",
+            ...(repairGeneratorDeployment !== undefined
+              ? { deployment: repairGeneratorDeployment }
+              : {}),
+            callCount: repairCompletedIterations.length,
+            inputTokens: repairGeneratorIterationInputTokens,
+            outputTokens: repairGeneratorIterationOutputTokens,
+            imageBytes: 0,
+            durationMs: 0,
+            estimatedCost: 0,
+          },
+        }
+      : {}),
   });
 
   return entries;
@@ -3463,6 +3605,7 @@ export const runFigmaToQcTestCases = async (
       visualSidecarSkippedReason,
       a11yJudgeResult,
       visualSidecarRefusal,
+      repairLoopResult,
       artifactPaths: {
         coveragePlan: coveragePlanPath,
         riskRanking: riskRankingPath,
