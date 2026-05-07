@@ -4501,6 +4501,42 @@ test("Issue #1894: customContextMarkdown is canonicalized and surfaces in compil
   }
 });
 
+test("Issue #1991: customer markdown includes the acceptance summary and hides internal ids", async () => {
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ti-runner-md-summary-"));
+  try {
+    const client = createMockLlmGatewayClient({
+      role: "test_generation",
+      deployment: "gpt-oss-120b-mock",
+      modelRevision: "mock-1",
+      gatewayRelease: "mock",
+      responder: okResponder([SAMPLE_DRAFT]),
+    });
+    const result = await runFigmaToQcTestCases({
+      jobId: "job-md-summary",
+      generatedAt: "2026-05-05T10:00:00Z",
+      source: { kind: "figma_paste_normalized", file: SAMPLE_FILE },
+      outputRoot: tempRoot,
+      llm: { client },
+      customContextMarkdown: [
+        "# Fachliche Leitplanken",
+        "",
+        "## Akzeptanzkriterien",
+        "1. Eine gültige Investitionssumme wird akzeptiert.",
+        "2. Nach Klick auf Weiter wird die Folgemaske angezeigt.",
+      ].join("\n"),
+    });
+    const markdown = await readFile(result.customerMarkdownPaths.combined, "utf8");
+    assert.match(markdown, /## Überblick/u);
+    assert.match(markdown, /## Akzeptanzkriterien/u);
+    assert.match(markdown, /\| AC01 \| Eine gültige Investitionssumme wird akzeptiert\. \| TC01 \|/u);
+    assert.match(markdown, /## TC01 — Eingabe einer gültigen Investitionssumme/u);
+    assert.doesNotMatch(markdown, /Test-ID/u);
+    assert.doesNotMatch(markdown, /job-md-summary/u);
+  } finally {
+    await rm(tempRoot, { recursive: true, force: true });
+  }
+});
+
 test("Issue #1988: customContextMarkdown upgrades semantic coverage rules for selectable options", async () => {
   const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ti-runner-semantic-md-"));
   try {

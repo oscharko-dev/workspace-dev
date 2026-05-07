@@ -151,7 +151,10 @@ export type {
   ProductionRunnerEventPhase,
   ProductionRunnerEventSink,
 } from "./production-runner-events.js";
-import { renderCustomerMarkdown } from "./customer-markdown-renderer.js";
+import {
+  extractAcceptanceCriteriaFromMarkdown,
+  renderCustomerMarkdown,
+} from "./customer-markdown-renderer.js";
 import {
   fetchFigmaFileForTestIntelligence,
   fetchFigmaScreenCapturesForTestIntelligence,
@@ -3560,11 +3563,18 @@ export const runFigmaToQcTestCases = async (
   // 10. Customer Markdown.
   const customerLabel = resolveCustomerLabel(input, figmaFile);
   const sourceLabel = resolveSourceLabel(input.source);
+  const acceptanceCriteria =
+    customContextMarkdown === undefined
+      ? undefined
+      : extractAcceptanceCriteriaFromMarkdown(
+          customContextMarkdown.bodyMarkdown,
+        );
   const rendered = renderCustomerMarkdown({
     list: validation.generatedTestCases,
     fileName: customerLabel,
     sourceLabel,
     generatedAt: input.generatedAt,
+    ...(acceptanceCriteria !== undefined ? { acceptanceCriteria } : {}),
   });
   const markdownDir = join(artifactDir, "customer-markdown");
   await mkdir(markdownDir, { recursive: true });

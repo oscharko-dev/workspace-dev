@@ -10,7 +10,10 @@ import {
   type GeneratedTestCase,
   type GeneratedTestCaseList,
 } from "../contracts/index.js";
-import { renderCustomerMarkdown } from "./customer-markdown-renderer.js";
+import {
+  extractAcceptanceCriteriaFromMarkdown,
+  renderCustomerMarkdown,
+} from "./customer-markdown-renderer.js";
 
 const buildCase = (
   overrides: Partial<GeneratedTestCase> = {},
@@ -77,8 +80,8 @@ test("renderCustomerMarkdown emits a German-format combined document with one he
     schemaVersion: GENERATED_TEST_CASE_SCHEMA_VERSION,
     jobId: "job-1",
     testCases: [
-      buildCase({ id: "tc-a", title: "Login mit gültigen Daten" }),
-      buildCase({ id: "tc-b", title: "Login mit leerem Passwort" }),
+      buildCase({ id: "tc-a", title: "TC02 Login mit gültigen Daten" }),
+      buildCase({ id: "tc-b", title: "TC01 Login mit leerem Passwort" }),
     ],
   };
   const result = renderCustomerMarkdown({
@@ -88,11 +91,22 @@ test("renderCustomerMarkdown emits a German-format combined document with one he
     generatedAt: "2026-05-02T10:00:00Z",
   });
   assert.match(result.combinedMarkdown, /^# Testfälle/u);
-  assert.match(result.combinedMarkdown, /Login mit gültigen Daten/u);
-  assert.match(result.combinedMarkdown, /Login mit leerem Passwort/u);
+  assert.match(result.combinedMarkdown, /## Überblick/u);
+  assert.match(result.combinedMarkdown, /## TC01 — Login mit leerem Passwort/u);
+  assert.match(result.combinedMarkdown, /## TC02 — Login mit gültigen Daten/u);
+  assert.ok(
+    result.combinedMarkdown.indexOf("## TC01 — Login mit leerem Passwort") <
+      result.combinedMarkdown.indexOf("## TC02 — Login mit gültigen Daten"),
+  );
   // Each case has its own per-case file.
   assert.equal(result.perCaseFiles.length, 2);
-  assert.ok(result.perCaseFiles[0]?.filename.endsWith(".md"));
+  assert.deepEqual(
+    result.perCaseFiles.map((file) => file.filename),
+    [
+      "tc01-login-mit-leerem-passwort.md",
+      "tc02-login-mit-gueltigen-daten.md",
+    ],
+  );
 });
 
 test("renderCustomerMarkdown renders steps with Beschreibung + Erwartetes Ergebnis", () => {
@@ -113,11 +127,11 @@ test("renderCustomerMarkdown renders steps with Beschreibung + Erwartetes Ergebn
   assert.match(body, /Erwartetes Ergebnis/u);
   assert.match(body, /Öffne die Login-Seite/u);
   assert.match(body, /Login-Maske ist sichtbar/u);
-  assert.match(body, /AC-\/Coverage-Zuordnung/u);
+  assert.match(body, /Abdeckung & Nachvollziehbarkeit/u);
   assert.match(body, /Abgedeckte Semantik/u);
 });
 
-test("renderCustomerMarkdown does not expose technical Figma ids in customer-visible refs", () => {
+test("renderCustomerMarkdown customer mode hides internal ids and surfaces caveats prominently", () => {
   const list: GeneratedTestCaseList = {
     schemaVersion: GENERATED_TEST_CASE_SCHEMA_VERSION,
     jobId: "job-1",
@@ -135,6 +149,8 @@ test("renderCustomerMarkdown does not expose technical Figma ids in customer-vis
             nodeName: "Typography",
           },
         ],
+        assumptions: ["Die Validierungsregel für den Kaufpreis stammt aus dem Fachkonzept."],
+        openQuestions: ["Muss der Kaufpreis brutto oder netto eingegeben werden?"],
       }),
     ],
   };
@@ -145,8 +161,14 @@ test("renderCustomerMarkdown does not expose technical Figma ids in customer-vis
     generatedAt: "2026-05-02T10:00:00Z",
   });
   const body = result.combinedMarkdown;
-  assert.match(body, /Fachlicher Bezug:.*Höhe des Kaufpreises/u);
-  assert.doesNotMatch(body, /Figma-Bezug/u);
+  const perCaseBody = result.perCaseFiles[0]?.body ?? "";
+  assert.match(body, /## Überblick/u);
+  assert.match(perCaseBody, /Klärbedarf vor Freigabe/u);
+  assert.match(perCaseBody, /Offene Frage: Muss der Kaufpreis brutto oder netto eingegeben werden\?/u);
+  assert.match(body, /Höhe des Kaufpreises/u);
+  assert.doesNotMatch(body, /Test-ID/u);
+  assert.doesNotMatch(body, /job-1/u);
+  assert.doesNotMatch(body, /tc-default/u);
   assert.doesNotMatch(body, /1:11309/u);
   assert.doesNotMatch(body, /4:22888/u);
   assert.doesNotMatch(body, /Typography/u);
@@ -172,6 +194,7 @@ test("renderCustomerMarkdown produces filename-safe slugs", () => {
   const filename = result.perCaseFiles[0]?.filename ?? "";
   assert.doesNotMatch(filename, /[/\\:*?"<>|]/u);
   assert.doesNotMatch(filename, /\s\s+/u);
+  assert.match(filename, /^tc01-/u);
 });
 
 test("renderCustomerMarkdown gracefully handles an empty test-case list", () => {
@@ -188,7 +211,7 @@ test("renderCustomerMarkdown gracefully handles an empty test-case list", () => 
   });
   assert.equal(result.perCaseFiles.length, 0);
   assert.match(result.combinedMarkdown, /Testfälle/u);
-  assert.match(result.combinedMarkdown, /AC-\/Coverage-Zuordnung/u);
+  assert.doesNotMatch(result.combinedMarkdown, /Testfall \| Zweck/u);
 });
 
 test("renderCustomerMarkdown filenames are deterministic for stable input", () => {
@@ -255,4 +278,128 @@ test("renderCustomerMarkdown surfaces regulatoryRelevance domain + rationale whe
     result.combinedMarkdown,
     /Regulatorische Relevanz:\*\* banking/u,
   );
+});
+
+test("renderCustomerMarkdown maps enumerated acceptance criteria into the summary and case traceability", () => {
+  const list: GeneratedTestCaseList = {
+    schemaVersion: GENERATED_TEST_CASE_SCHEMA_VERSION,
+    jobId: "job-1",
+    testCases: [
+      buildCase({
+        id: "tc-ac-2",
+        title: "TC02 Formular erfolgreich absenden",
+        objective: "Bestätigen, dass der Antrag nach erfolgreicher Validierung abgesendet wird.",
+        expectedResults: ["Der Antrag wird erfolgreich abgesendet und bestätigt."],
+        steps: [
+          {
+            index: 1,
+            action: "Fülle alle Pflichtfelder korrekt aus",
+            expected: "Alle Felder sind valide",
+          },
+          {
+            index: 2,
+            action: "Sende den Antrag ab",
+            expected: "Der Antrag wird bestätigt",
+          },
+        ],
+      }),
+      buildCase({
+        id: "tc-ac-1",
+        title: "TC01 Pflichtfelder validieren",
+        objective: "Prüfen, dass fehlende Pflichtfelder eine verständliche Fehlermeldung anzeigen.",
+        expectedResults: ["Eine verständliche Fehlermeldung wird angezeigt."],
+        steps: [
+          {
+            index: 1,
+            action: "Sende das Formular ohne Pflichtfelder ab",
+            expected: "Eine verständliche Fehlermeldung wird angezeigt",
+          },
+        ],
+      }),
+    ],
+  };
+  const result = renderCustomerMarkdown({
+    list,
+    fileName: "x",
+    sourceLabel: "x",
+    generatedAt: "2026-05-02T10:00:00Z",
+    acceptanceCriteria: [
+      "Pflichtfelder zeigen verständliche Fehlermeldungen.",
+      "Ein Antrag kann nach erfolgreicher Validierung abgesendet werden.",
+    ],
+  });
+  assert.match(result.combinedMarkdown, /## Akzeptanzkriterien/u);
+  assert.match(
+    result.combinedMarkdown,
+    /\| AC01 \| Pflichtfelder zeigen verständliche Fehlermeldungen\. \| TC01 \|/u,
+  );
+  assert.match(
+    result.combinedMarkdown,
+    /\| AC02 \| Ein Antrag kann nach erfolgreicher Validierung abgesendet werden\. \| TC02 \|/u,
+  );
+  assert.match(
+    result.perCaseFiles[0]?.body ?? "",
+    /Akzeptanzkriterien: AC01: Pflichtfelder zeigen verständliche Fehlermeldungen\./u,
+  );
+  assert.match(
+    result.perCaseFiles[1]?.body ?? "",
+    /Akzeptanzkriterien: AC02: Ein Antrag kann nach erfolgreicher Validierung abgesendet werden\./u,
+  );
+});
+
+test("renderCustomerMarkdown technical mode preserves internal traceability on request", () => {
+  const list: GeneratedTestCaseList = {
+    schemaVersion: GENERATED_TEST_CASE_SCHEMA_VERSION,
+    jobId: "job-1",
+    testCases: [
+      buildCase({
+        id: "tc-4711",
+        title: "TC01 Kaufpreis prüfen",
+        figmaTraceRefs: [
+          {
+            screenId: "1:11309",
+            nodeId: "1:11309::field::4:22888",
+            nodeName: "Höhe des Kaufpreises",
+            nodePath: "Frame/Test View 03/Kaufpreis",
+          },
+        ],
+      }),
+    ],
+  };
+  const result = renderCustomerMarkdown({
+    list,
+    fileName: "x",
+    sourceLabel: "x",
+    generatedAt: "2026-05-02T10:00:00Z",
+    mode: "technical",
+  });
+  const body = result.perCaseFiles[0]?.body ?? "";
+  assert.match(body, /Test-ID/u);
+  assert.match(body, /tc-4711/u);
+  assert.match(body, /1:11309/u);
+  assert.match(body, /4:22888/u);
+  assert.equal(
+    result.perCaseFiles[0]?.filename,
+    "tc01-tc-4711-kaufpreis-pruefen.md",
+  );
+});
+
+test("extractAcceptanceCriteriaFromMarkdown reads enumerated markdown sections", () => {
+  const markdown = [
+    "# Kontext",
+    "",
+    "## Akzeptanzkriterien",
+    "1. Pflichtfelder werden validiert",
+    "2. Erfolgreiche Eingaben koennen abgesendet werden",
+    "",
+    "## Offene Fragen",
+    "- Nachgelagerte Freigabe?",
+    "",
+    "AC3: Fehler werden inline angezeigt",
+  ].join("\n");
+  assert.deepEqual(extractAcceptanceCriteriaFromMarkdown(markdown), [
+    "Pflichtfelder werden validiert",
+    "Erfolgreiche Eingaben koennen abgesendet werden",
+    "Fehler werden inline angezeigt",
+  ]);
 });
