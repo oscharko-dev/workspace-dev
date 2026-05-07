@@ -52,7 +52,6 @@ import {
   VISUAL_SIDECAR_SCHEMA_VERSION,
   type BusinessTestIntentIr,
   type LlmGatewayErrorClass,
-  type LlmGenerationFailure,
   type LlmGenerationRequest,
   type LlmGenerationResult,
   type SidecarDeployment,
@@ -1113,10 +1112,8 @@ const buildAttemptDiagnostic = (input: {
   const rawTextContent = extractRawTextContent(input.gatewayResult);
   const gatewayMessage =
     input.gatewayResult.outcome === "error" &&
-    typeof (input.gatewayResult as LlmGenerationFailure).message === "string"
-      ? redactBoundedFailureMessage(
-          (input.gatewayResult as LlmGenerationFailure).message,
-        )
+    typeof input.gatewayResult.message === "string"
+      ? redactBoundedFailureMessage(input.gatewayResult.message)
       : undefined;
   const normalizedParserError =
     input.normalizedParserError !== undefined
