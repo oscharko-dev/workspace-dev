@@ -162,6 +162,36 @@ test("recorder: aggregates success and failure observations per role", () => {
   }
 });
 
+test("recorder: failed visual sidecar attempts are counted in FinOps totals", () => {
+  const recorder = createFinOpsUsageRecorder();
+  recorder.recordAttempt({
+    role: "visual_primary",
+    deployment: "llama-4-maverick-vision",
+    durationMs: 17,
+    result: failureResult(),
+  });
+
+  const snapshot = recorder.snapshot();
+  const visualPrimary = snapshot.find((u) => u.role === "visual_primary");
+  assert.ok(visualPrimary);
+  if (visualPrimary) {
+    assert.equal(visualPrimary.attempts, 1);
+    assert.equal(visualPrimary.failures, 1);
+    assert.equal(visualPrimary.successes, 0);
+    assert.equal(visualPrimary.deployment, "llama-4-maverick-vision");
+  }
+
+  const report = buildFinOpsBudgetReport({
+    jobId: JOB_ID,
+    generatedAt: GENERATED_AT,
+    budget: permissive,
+    recorder,
+  });
+  assert.equal(report.outcome, "completed");
+  assert.equal(report.totals.attempts, 1);
+  assert.equal(report.rawScreenshotsIncluded, false);
+});
+
 test("recorder: rejects unknown roles", () => {
   const recorder = createFinOpsUsageRecorder();
   assert.throws(() => {

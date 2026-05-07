@@ -78,6 +78,7 @@ import {
   type GeneratedTestCaseFigmaTrace,
   type GeneratedTestCaseList,
   type GeneratedTestCaseStep,
+  type LlmGatewayErrorClass,
   type LlmGenerationRequest,
   type LlmGenerationResult,
   type FinOpsJobOutcome,
@@ -1091,6 +1092,10 @@ export const runFigmaToQcTestCases = async (
     });
     visualSidecarArtifact = sidecarArtifact.artifact;
     visualSidecarArtifactBytes = sidecarArtifact.bytes;
+    recordVisualSidecarAttempts({
+      recorder: finopsRecorder,
+      result: sidecarResult,
+    });
     if (sidecarResult.outcome !== "success") {
       // Issue #1772 AC #4: pre-flight failures are caller bugs and still fail
       // the runner fast. Model-side refusals (both_sidecars_failed and
@@ -4554,7 +4559,10 @@ const stampGeneratedTestCase = (input: {
     figmaTraceRefs: traceRefs,
     assumptions: [...(input.draft.assumptions ?? [])],
     openQuestions: [...(input.draft.openQuestions ?? [])],
-    qcMappingPreview: { exportable: true },
+    qcMappingPreview: {
+      decisionBasis: "mapping_preview_only",
+      exportable: true,
+    },
     qualitySignals,
     reviewState: "draft",
     audit: { ...input.audit },
@@ -5030,7 +5038,14 @@ const persistVisualCaptureArtifacts = async (input: {
     contractVersion: TEST_INTELLIGENCE_CONTRACT_VERSION,
     jobId: input.jobId,
     generatedAt: input.generatedAt,
-    rawScreenshotsIncluded: true,
+    // The capture manifest attests screenshot files via hashes + paths;
+    // it does not inline raw screenshot bytes in the JSON payload.
+    rawScreenshotsIncluded: false,
+    rawScreenshotFilesPersisted: true,
+    persistedScreenshotBytes: files.reduce(
+      (sum, file) => sum + file.byteLength,
+      0,
+    ),
     captures: manifestEntries,
   };
   const manifestPath = join(directory, VISUAL_CAPTURE_MANIFEST_FILENAME);
@@ -5043,6 +5058,48 @@ const persistVisualCaptureArtifacts = async (input: {
     manifestBytes,
     files,
   };
+};
+
+const recordVisualSidecarAttempts = (input: {
+  recorder: ReturnType<typeof createFinOpsUsageRecorder>;
+  result: VisualSidecarResult;
+}): void => {
+  const imageBytes = input.result.captureIdentities.reduce(
+    (sum, identity) => sum + identity.byteLength,
+    0,
+  );
+  for (const [index, attempt] of input.result.attempts.entries()) {
+    const role = index === 0 ? "visual_primary" : "visual_fallback";
+    const succeeded = attempt.errorClass === undefined;
+    const result: LlmGenerationResult = succeeded
+      ? {
+          outcome: "success",
+          content: null,
+          finishReason: "stop",
+          usage: { inputTokens: 0, outputTokens: 0 },
+          modelDeployment: attempt.deployment,
+          modelRevision: attempt.deployment,
+          gatewayRelease: attempt.deployment,
+          attempt: attempt.attempt,
+        }
+      : {
+          outcome: "error",
+          errorClass: attempt.errorClass as LlmGatewayErrorClass,
+          message: "visual sidecar attempt failure (redacted by client)",
+          retryable: false,
+          attempt: attempt.attempt,
+        };
+    input.recorder.recordAttempt({
+      role,
+      source: role,
+      deployment: attempt.deployment,
+      durationMs: attempt.durationMs,
+      imageBytes,
+      result,
+      fallback: role === "visual_fallback",
+      liveSmoke: attempt.deployment !== "mock",
+    });
+  }
 };
 
 const sanitizeVisualCaptureFileSegment = (value: string): string => {

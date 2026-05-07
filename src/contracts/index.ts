@@ -5620,6 +5620,11 @@ export interface GeneratedTestCaseQcMapping {
   folderHint?: string;
   /** Canonical mapping profile id this preview was rendered for. */
   mappingProfileId?: string;
+  /**
+   * Optional hardening stamp clarifying that `exportable` is only a
+   * mapping-preview signal and NOT the final policy/review export decision.
+   */
+  decisionBasis?: "mapping_preview_only";
   /** Whether the case is exportable as-is under the mapping profile. */
   exportable: boolean;
   /** Human-readable reasons when exportable=false. */
@@ -6465,6 +6470,8 @@ export interface QcMappingPreviewEntry {
   expectedResults: string[];
   /** Subset of figmaTraceRefs sufficient for round-trip provenance. */
   sourceTraceRefs: GeneratedTestCaseFigmaTrace[];
+  /** Clarifies that `exportable` is mapping-preview-only, not final export approval. */
+  decisionBasis?: "mapping_preview_only";
   exportable: boolean;
   blockingReasons: string[];
   visualProvenance?: QcMappingVisualProvenance;
@@ -6534,6 +6541,11 @@ export interface ExportReportArtifact {
       | "none";
   };
   exportedTestCaseCount: number;
+  /**
+   * Explicit final export decision derived from validation, policy, visual,
+   * and review-gate outcomes rather than from per-case mapping preview flags.
+   */
+  finalExportDecision: "approved_for_export" | "refused";
   /** True when the pipeline refused to emit any non-report artifact. */
   refused: boolean;
   refusalCodes: ExportRefusalCode[];

@@ -663,11 +663,12 @@ function VisualObservations({
               QC export preview
             </span>
             <span
+              title="Mapping preview only; final export approval is decided by policy and review state."
               className={
                 qcMappingEntry.exportable ? "text-emerald-200" : "text-rose-200"
               }
             >
-              {qcMappingEntry.exportable ? "Exportable" : "Blocked"}
+              {qcMappingEntry.exportable ? "Mapping OK" : "Mapping blocked"}
             </span>
             <span className="font-mono text-white/55">
               {qcMappingEntry.targetFolderPath}

@@ -251,6 +251,14 @@ test("export-pipeline: refuses when no test cases are approved", () => {
   assert.equal(result.refused, true);
   assert.ok(result.refusalCodes.includes("no_approved_test_cases"));
   assert.ok(result.refusalCodes.includes("unapproved_test_cases_present"));
+  assert.equal(result.exportedTestCases.length, 0);
+  assert.equal(result.reviewSnapshot.perTestCase[0]?.state, "needs_review");
+  assert.equal(
+    result.reviewSnapshot.perTestCase[0]?.policyDecision,
+    "needs_review",
+  );
+  assert.equal(result.report.finalExportDecision, "refused");
+  assert.equal(result.report.rawScreenshotsIncluded, false);
 });
 
 test("export-pipeline: ACCEPTANCE — unapproved test cases cannot be exported (regression)", () => {
