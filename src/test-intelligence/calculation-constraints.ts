@@ -65,10 +65,14 @@ const GERMAN_ABBREVIATIONS: readonly string[] = [
 const sentenceBoundaryRe = /(?<=[.!?])\s+(?=\S)/gu;
 
 const splitStatements = (value: string): string[] => {
-  const normalized = normalizeWhitespace(value);
+  // Issue #2013 — split on newlines first so multi-line bullet/markdown
+  // evidence still produces one block per statement. `normalizeWhitespace`
+  // collapses every whitespace run (including \n) into a single space and
+  // would otherwise eliminate the line breaks before the split.
   const statements: string[] = [];
-  for (const block of normalized.split(/\n+/u)) {
-    const trimmedBlock = block.trim();
+  for (const rawBlock of value.split(/\n+/u)) {
+    const block = normalizeWhitespace(rawBlock);
+    const trimmedBlock = block;
     if (trimmedBlock.length === 0) continue;
     let cursor = 0;
     sentenceBoundaryRe.lastIndex = 0;
