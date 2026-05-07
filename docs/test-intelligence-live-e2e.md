@@ -51,6 +51,8 @@ The lane entrypoint is defined in `package.json` as:
 ```sh
 WORKSPACE_TEST_SPACE_LIVE_E2E=1 \
 node scripts/check-live-smoke-env.mjs && \
+WORKSPACE_TEST_SPACE_LIVE_SMOKE=1 \
+tsx --test src/test-intelligence/live-role-contract.live.test.ts && \
 WORKSPACE_TEST_SPACE_LIVE_E2E=1 \
 tsx --test src/test-intelligence/production-runner.live-e2e.test.ts
 ```
@@ -60,14 +62,10 @@ At minimum, the command requires:
 - `WORKSPACE_TEST_SPACE_LIVE_E2E=1`
 - `WORKSPACE_TEST_SPACE_MODEL_ENDPOINT`
 - `WORKSPACE_TEST_SPACE_TESTCASE_MODEL_DEPLOYMENT`
-- `WORKSPACE_TEST_SPACE_API_KEY` or `WORKSPACE_TEST_SPACE_MODEL_API_KEY`
-
-The env checker also validates the visual-sidecar variables so the same operator
-environment can exercise the full production shape:
-
 - `WORKSPACE_TEST_SPACE_VISUAL_MODEL_ENDPOINT`
 - `WORKSPACE_TEST_SPACE_VISUAL_PRIMARY_DEPLOYMENT`
 - `WORKSPACE_TEST_SPACE_VISUAL_FALLBACK_DEPLOYMENT`
+- `WORKSPACE_TEST_SPACE_API_KEY` or `WORKSPACE_TEST_SPACE_MODEL_API_KEY`
 
 Redacted example using loopback placeholders:
 
@@ -117,10 +115,10 @@ to provider-side throttling.
 - The workflow is `workflow_dispatch` + nightly only. It is not part of the
   normal `pull_request` path.
 
-If the repository secret `WORKSPACE_TEST_SPACE_MODEL_API_KEY` is absent, the
-workflow writes `live-E2E skipped` to the job summary instead of failing red.
-That skip is acceptable for the workflow itself, but not for a release that
-claims production wiring unless the PR carries an explicit waiver.
+If any required Azure Foundry secret is absent, the workflow writes
+`live-E2E skipped` to the job summary instead of failing red. That skip is
+acceptable for the workflow itself, but not for a release that claims
+production wiring unless the PR carries an explicit waiver.
 
 ---
 

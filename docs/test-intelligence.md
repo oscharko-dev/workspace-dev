@@ -880,8 +880,23 @@ The bundled CI gate (`pnpm run test:ti-eval`) uses the deterministic mock and
 the fixture captures. It performs no outbound network calls. The optional live
 smoke (`pnpm run test:ti-live-smoke`) is gated by
 `WORKSPACE_TEST_SPACE_LIVE_SMOKE=1` plus the role-specific endpoint, deployment,
-and API key environment variables. It is intended for operator-controlled
-integration verification, never for default CI.
+and API key environment variables. The command now runs two live checks:
+the per-role contract smoke (`src/test-intelligence/live-role-contract.live.test.ts`)
+and the visual-sidecar smoke
+(`src/test-intelligence/visual-sidecar-client.live.test.ts`). Optional
+multi-agent roles are probed when their deployment env vars are set:
+
+- `WORKSPACE_TEST_SPACE_LOGIC_JUDGE_DEPLOYMENT`
+- `WORKSPACE_TEST_SPACE_COVERAGE_PLANNER_DEPLOYMENT`
+- `WORKSPACE_TEST_SPACE_RISK_RANKER_DEPLOYMENT`
+- `WORKSPACE_TEST_SPACE_A11Y_JUDGE_DEPLOYMENT`
+
+Failures are emitted with exact role, deployment, failure class, and a
+remediation hint so document/OCR-only or schema-invalid deployments fail
+before a longer live run. The live smoke stores no raw screenshots; it sends
+an in-memory 1x1 PNG fixture only to the multimodal role probes. The lane is
+intended for operator-controlled integration verification, never for default
+CI.
 
 ## Live end-to-end smoke (production runner)
 
@@ -920,6 +935,9 @@ pnpm run ti:doctor
 WORKSPACE_TEST_SPACE_LIVE_E2E=1 \
 WORKSPACE_TEST_SPACE_MODEL_ENDPOINT=https://<resource>.cognitiveservices.azure.com \
 WORKSPACE_TEST_SPACE_TESTCASE_MODEL_DEPLOYMENT=<deployment-id> \
+WORKSPACE_TEST_SPACE_VISUAL_MODEL_ENDPOINT=https://<resource>.cognitiveservices.azure.com \
+WORKSPACE_TEST_SPACE_VISUAL_PRIMARY_DEPLOYMENT=<visual-primary-deployment-id> \
+WORKSPACE_TEST_SPACE_VISUAL_FALLBACK_DEPLOYMENT=<visual-fallback-deployment-id> \
 WORKSPACE_TEST_SPACE_API_KEY=<non-prod-key> \
 pnpm run test:ti-live-e2e
 ```
@@ -929,15 +947,17 @@ Without `WORKSPACE_TEST_SPACE_LIVE_E2E=1` the test self-skips with a single
 `scripts/check-live-smoke-env.mjs` (extended in this lane to recognise both
 `WORKSPACE_TEST_SPACE_LIVE_SMOKE` and `WORKSPACE_TEST_SPACE_LIVE_E2E`) so a
 missing endpoint or API key fails fast with a friendly listing rather than a
-mid-run network error.
+mid-run network error. Before the production-runner orchestration test starts,
+the command also runs the live role-contract smoke so each configured agent
+role proves its own runtime contract against the current Foundry deployments.
 
 **CI lane.** `.github/workflows/test-intelligence-live-e2e.yml` runs the same
 command on `workflow_dispatch` and on a nightly cron at 03:00 Europe/Berlin.
 It is **not** wired into the PR pipeline (live secrets are unavailable to fork
 PRs and the per-run cost must not be paid on every PR). The job is gated on
-the repo-level secret `WORKSPACE_TEST_SPACE_MODEL_API_KEY`; if absent the
-workflow short-circuits with a `skipped: secret not configured` job summary
-instead of failing red. The lane preserves emitted artifacts under
+the full repo-level Azure Foundry secret set; if any required secret is absent
+the workflow short-circuits with a `skipped: secret not configured` job
+summary instead of failing red. The lane preserves emitted artifacts under
 `artifacts/testing/ti-live-e2e/jobs/<jobId>/test-intelligence/` and uploads
 that tree as `ti-live-e2e-rundir-<run_id>` for 14 days so both successful gate
 evidence and failed Azure responses remain debuggable from the GitHub Actions
