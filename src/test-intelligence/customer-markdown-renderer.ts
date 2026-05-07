@@ -142,16 +142,17 @@ const renderSingleCase = (tc: GeneratedTestCase): string => {
     lines.push("");
   }
   if (tc.figmaTraceRefs.length > 0) {
-    const refs = tc.figmaTraceRefs
-      .map((r) => {
-        const parts: string[] = [r.screenId];
-        if (r.nodeName !== undefined) parts.push(r.nodeName);
-        if (r.nodeId !== undefined) parts.push(`(${r.nodeId})`);
-        return parts.join(" — ");
-      })
-      .join("; ");
-    lines.push(`**Figma-Bezug:** ${refs}`);
-    lines.push("");
+    const refs = Array.from(
+      new Set(
+        tc.figmaTraceRefs
+          .map((r) => r.nodeName)
+          .filter((name): name is string => isCustomerSafeTraceLabel(name)),
+      ),
+    );
+    if (refs.length > 0) {
+      lines.push(`**Fachlicher Bezug:** ${refs.join("; ")}`);
+      lines.push("");
+    }
   }
   if (tc.regulatoryRelevance !== undefined) {
     lines.push(
@@ -161,6 +162,26 @@ const renderSingleCase = (tc: GeneratedTestCase): string => {
   }
   lines.push(`*Test-ID:* \`${tc.id}\``);
   return lines.join("\n");
+};
+
+const CUSTOMER_UNSAFE_TRACE_LABELS = new Set([
+  "content",
+  "label",
+  "typography",
+  "value",
+]);
+const FIGMA_ID_FRAGMENT_PATTERN = /\b\d+:\d+\b/u;
+
+const isCustomerSafeTraceLabel = (
+  value: string | undefined,
+): value is string => {
+  if (value === undefined) return false;
+  const trimmed = value.trim();
+  if (trimmed.length === 0) return false;
+  if (FIGMA_ID_FRAGMENT_PATTERN.test(trimmed)) return false;
+  if (/^<[^>]+>$/u.test(trimmed)) return false;
+  if (CUSTOMER_UNSAFE_TRACE_LABELS.has(trimmed.toLowerCase())) return false;
+  return true;
 };
 
 const buildFilename = (tc: GeneratedTestCase): string => {

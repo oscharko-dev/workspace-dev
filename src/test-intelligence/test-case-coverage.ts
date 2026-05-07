@@ -25,6 +25,10 @@ import {
   type TestCaseCoverageReport,
   type TestCaseDuplicatePair,
 } from "../contracts/index.js";
+import {
+  isCoverageRelevantActionLike,
+  isCoverageRelevantElementLike,
+} from "./coverage-relevance.js";
 import { detectDuplicateTestCases } from "./test-case-duplicate.js";
 
 export interface ComputeCoverageReportInput {
@@ -42,13 +46,22 @@ export const computeCoverageReport = (
   input: ComputeCoverageReportInput,
 ): TestCaseCoverageReport => {
   const cases = input.list.testCases;
+  const relevantFields = input.intent.detectedFields.filter((field) =>
+    isCoverageRelevantElementLike({
+      label: field.label,
+      kind: field.type,
+    }),
+  );
+  const relevantActions = input.intent.detectedActions.filter((action) =>
+    isCoverageRelevantActionLike(action),
+  );
 
   const fieldCoverage = computeBucket(
-    input.intent.detectedFields.map((f) => f.id),
+    relevantFields.map((f) => f.id),
     collectCovered(cases, (c) => c.qualitySignals.coveredFieldIds),
   );
   const actionCoverage = computeBucket(
-    input.intent.detectedActions.map((a) => a.id),
+    relevantActions.map((a) => a.id),
     collectCovered(cases, (c) => c.qualitySignals.coveredActionIds),
   );
   const validationCoverage = computeBucket(

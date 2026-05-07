@@ -48,6 +48,9 @@ import { dirname, join, resolve } from "node:path";
  */
 export const MAX_CUSTOM_CONTEXT_MARKDOWN_FILE_BYTES: number = 256 * 1024;
 
+/** Same operator-side cap for the explicit customer eval rubric Markdown. */
+export const MAX_CUSTOMER_EVAL_MARKDOWN_FILE_BYTES: number = 256 * 1024;
+
 import { sanitizeErrorMessage } from "./error-sanitization.js";
 import {
   DEFAULT_OUTPUT_ROOT,
@@ -182,6 +185,8 @@ interface TestIntelligenceDoctorReport {
 const isRunMode = (value: string): value is TestIntelligenceRunMode =>
   (TEST_INTELLIGENCE_RUN_MODES as ReadonlyArray<string>).includes(value);
 
+export type TestIntelligenceOutputRunSubdirMode = "job-id";
+
 /**
  * CLI-side enumeration of {@link AgentHarnessTestDepth}. Mirrors the type
  * declared in `agent-harness.ts`; kept local because the contract module does
@@ -242,6 +247,8 @@ export interface TestIntelligenceRunOptions {
   figmaJsonFile: string | undefined;
   /** Output directory for customer Markdown. `undefined` → default derived from job id. */
   output: string | undefined;
+  /** Optional customer-output subdirectory mode. `job-id` keeps each run isolated. */
+  outputRunSubdir?: TestIntelligenceOutputRunSubdirMode;
   modelEndpoint: string | undefined;
   modelDeployment: string;
   /**
@@ -298,6 +305,13 @@ export interface TestIntelligenceRunOptions {
    */
   customContextMarkdownPath: string | undefined;
   /**
+   * Explicit customer-provided evaluation rubric Markdown. This is loaded and
+   * forwarded separately from custom Jira/domain context so the runner can use
+   * it as format/granularity guidance instead of treating it as another
+   * business requirement source.
+   */
+  customerEvalMarkdownPath?: string;
+  /**
    * Path to an optional JSON file (Issue #1946) conforming to the
    * {@link CustomerProfileInput} schema. The CLI enforces a hard 256 KiB
    * size cap and rejects the file with exit code 1 if the JSON is invalid
@@ -306,6 +320,8 @@ export interface TestIntelligenceRunOptions {
    * reaches the LLM gateway.
    */
   customerProfilePath: string | undefined;
+  /** Optional ICT register reference forwarded to all CLI-created model clients. */
+  ictRegisterRef?: string;
   /**
    * Generator diversity pass count (Issue #1936). `1` preserves the legacy
    * single-pass flow; `2` enables deterministic dual-pass generation.
@@ -397,6 +413,7 @@ export const parseTestIntelligenceRunArgs = (
   let figmaUrl: string | undefined;
   let figmaJsonFile: string | undefined;
   let output: string | undefined;
+  let outputRunSubdir: TestIntelligenceOutputRunSubdirMode | undefined;
   let modelEndpoint: string | undefined =
     env.WORKSPACE_TEST_SPACE_MODEL_ENDPOINT?.trim() || undefined;
   let modelDeployment: string =
@@ -412,6 +429,9 @@ export const parseTestIntelligenceRunArgs = (
     env.WORKSPACE_TEST_SPACE_MODEL_API_KEY?.trim() || undefined;
   let figmaToken: string | undefined =
     env.FIGMA_ACCESS_TOKEN?.trim() || undefined;
+  let ictRegisterRef: string | undefined =
+    env.WORKSPACE_TEST_SPACE_ICT_REGISTER_REF?.trim() || undefined;
+  let ictRegisterRefFromFlag = false;
   let policyProfile: string | undefined;
   let mode: TestIntelligenceRunMode = "deterministic_llm";
   let enableVisualSidecar = isTruthyFlag(
@@ -434,6 +454,7 @@ export const parseTestIntelligenceRunArgs = (
     true,
   );
   let customContextMarkdownPath: string | undefined;
+  let customerEvalMarkdownPath: string | undefined;
   let customerProfilePath: string | undefined;
   let diversityPasses: 1 | 2 = 1;
   let coverageBaselineArchetype: string | undefined;
@@ -502,6 +523,23 @@ export const parseTestIntelligenceRunArgs = (
         );
       }
       output = value;
+      index += 1;
+      continue;
+    }
+
+    if (arg === "--output-run-subdir") {
+      const value = next?.trim();
+      if (value !== "job-id") {
+        throw new TestIntelligenceRunOperatorError(
+          '--output-run-subdir must be "job-id"',
+        );
+      }
+      if (outputRunSubdir !== undefined) {
+        throw new TestIntelligenceRunOperatorError(
+          "--output-run-subdir may be specified at most once",
+        );
+      }
+      outputRunSubdir = value;
       index += 1;
       continue;
     }
@@ -590,6 +628,24 @@ export const parseTestIntelligenceRunArgs = (
         );
       }
       figmaToken = value;
+      index += 1;
+      continue;
+    }
+
+    if (arg === "--ict-register-ref") {
+      const value = next?.trim();
+      if (!value) {
+        throw new TestIntelligenceRunOperatorError(
+          "--ict-register-ref requires a non-empty reference",
+        );
+      }
+      if (ictRegisterRefFromFlag) {
+        throw new TestIntelligenceRunOperatorError(
+          "--ict-register-ref may be specified at most once",
+        );
+      }
+      ictRegisterRef = value;
+      ictRegisterRefFromFlag = true;
       index += 1;
       continue;
     }
@@ -739,6 +795,23 @@ export const parseTestIntelligenceRunArgs = (
       continue;
     }
 
+    if (arg === "--customer-eval-markdown") {
+      const value = next?.trim();
+      if (!value) {
+        throw new TestIntelligenceRunOperatorError(
+          "--customer-eval-markdown requires a non-empty file path",
+        );
+      }
+      if (customerEvalMarkdownPath !== undefined) {
+        throw new TestIntelligenceRunOperatorError(
+          "--customer-eval-markdown may be specified at most once",
+        );
+      }
+      customerEvalMarkdownPath = value;
+      index += 1;
+      continue;
+    }
+
     if (arg === "--customer-profile") {
       const value = next?.trim();
       if (!value) {
@@ -852,6 +925,7 @@ export const parseTestIntelligenceRunArgs = (
     figmaUrl,
     figmaJsonFile,
     output,
+    ...(outputRunSubdir !== undefined ? { outputRunSubdir } : {}),
     modelEndpoint,
     modelDeployment,
     logicJudgeDeployment,
@@ -859,6 +933,7 @@ export const parseTestIntelligenceRunArgs = (
     riskRankerDeployment,
     modelApiKey,
     figmaToken,
+    ...(ictRegisterRef !== undefined ? { ictRegisterRef } : {}),
     policyProfile,
     mode,
     enableVisualSidecar,
@@ -872,6 +947,9 @@ export const parseTestIntelligenceRunArgs = (
     maxFigmaPayloadBytes,
     allowPolicyBlocked,
     customContextMarkdownPath,
+    ...(customerEvalMarkdownPath !== undefined
+      ? { customerEvalMarkdownPath }
+      : {}),
     customerProfilePath,
     diversityPasses,
     coverageBaseline: {
@@ -1077,6 +1155,12 @@ export interface TestIntelligenceRunRuntime {
    */
   loadCustomContextMarkdownFile?: (filePath: string) => Promise<string>;
   /**
+   * Override the loader for `--customer-eval-markdown` files. Same I/O
+   * discipline as custom context, but forwarded to the runner as rubric
+   * guidance rather than business evidence.
+   */
+  loadCustomerEvalMarkdownFile?: (filePath: string) => Promise<string>;
+  /**
    * Override the loader for `--customer-profile` files (Issue #1946).
    * Default uses `stat` + `readFile` against the local filesystem and
    * enforces the 256 KiB hard cap before the body is returned. Tests
@@ -1134,6 +1218,9 @@ export const buildLiveLogicJudgeClient = (
       modelRevision: `${deployment}@cli-test-intelligence-run`,
       gatewayRelease: "azure-ai-foundry-cli-test-intelligence-run",
       authMode: "api_key",
+      ...(options.ictRegisterRef !== undefined
+        ? { ictRegisterRef: options.ictRegisterRef }
+        : {}),
       declaredCapabilities: {
         structuredOutputs: true,
         seedSupport: false,
@@ -1193,6 +1280,9 @@ export const buildLiveCoveragePlannerClient = (
       modelRevision: `${deployment}@cli-test-intelligence-run`,
       gatewayRelease: "azure-ai-foundry-cli-test-intelligence-run",
       authMode: "api_key",
+      ...(options.ictRegisterRef !== undefined
+        ? { ictRegisterRef: options.ictRegisterRef }
+        : {}),
       declaredCapabilities: {
         structuredOutputs: true,
         seedSupport: false,
@@ -1303,6 +1393,9 @@ export const buildLiveLlmGatewayClient = (
       modelRevision: `${options.modelDeployment}@cli-test-intelligence-run`,
       gatewayRelease: "azure-ai-foundry-cli-test-intelligence-run",
       authMode: "api_key",
+      ...(options.ictRegisterRef !== undefined
+        ? { ictRegisterRef: options.ictRegisterRef }
+        : {}),
       declaredCapabilities: {
         structuredOutputs: true,
         seedSupport: false,
@@ -1380,6 +1473,9 @@ export const buildLiveVisualSidecarBundle = (
         modelRevision: `${options.modelDeployment}@cli-test-intelligence-run`,
         gatewayRelease: "azure-ai-foundry-cli-test-intelligence-run",
         authMode: "api_key",
+        ...(options.ictRegisterRef !== undefined
+          ? { ictRegisterRef: options.ictRegisterRef }
+          : {}),
         declaredCapabilities: {
           structuredOutputs: true,
           seedSupport: false,
@@ -1401,6 +1497,9 @@ export const buildLiveVisualSidecarBundle = (
         modelRevision: `${visualPrimaryDeployment}@cli-test-intelligence-run`,
         gatewayRelease: "azure-ai-foundry-cli-test-intelligence-run",
         authMode: "api_key",
+        ...(options.ictRegisterRef !== undefined
+          ? { ictRegisterRef: options.ictRegisterRef }
+          : {}),
         declaredCapabilities: {
           structuredOutputs: true,
           seedSupport: false,
@@ -1421,6 +1520,9 @@ export const buildLiveVisualSidecarBundle = (
         modelRevision: `${visualFallbackDeployment}@cli-test-intelligence-run`,
         gatewayRelease: "azure-ai-foundry-cli-test-intelligence-run",
         authMode: "api_key",
+        ...(options.ictRegisterRef !== undefined
+          ? { ictRegisterRef: options.ictRegisterRef }
+          : {}),
         declaredCapabilities: {
           structuredOutputs: true,
           seedSupport: false,
@@ -1443,6 +1545,9 @@ export const buildLiveVisualSidecarBundle = (
               modelRevision: `${a11yJudgeDeployment}@cli-test-intelligence-run`,
               gatewayRelease: "azure-ai-foundry-cli-test-intelligence-run",
               authMode: "api_key" as const,
+              ...(options.ictRegisterRef !== undefined
+                ? { ictRegisterRef: options.ictRegisterRef }
+                : {}),
               declaredCapabilities: {
                 structuredOutputs: true,
                 seedSupport: false,
@@ -1467,6 +1572,9 @@ export const buildLiveVisualSidecarBundle = (
               modelRevision: `${options.coveragePlannerDeployment}@cli-test-intelligence-run`,
               gatewayRelease: "azure-ai-foundry-cli-test-intelligence-run",
               authMode: "api_key" as const,
+              ...(options.ictRegisterRef !== undefined
+                ? { ictRegisterRef: options.ictRegisterRef }
+                : {}),
               declaredCapabilities: {
                 structuredOutputs: true,
                 seedSupport: false,
@@ -2257,6 +2365,37 @@ const defaultLoadCustomContextMarkdownFile = async (
   return readFile(filePath, "utf8");
 };
 
+const defaultLoadCustomerEvalMarkdownFile = async (
+  filePath: string,
+): Promise<string> => {
+  let stats: Awaited<ReturnType<typeof stat>>;
+  try {
+    stats = await stat(filePath);
+  } catch (err) {
+    if (
+      typeof err === "object" &&
+      err !== null &&
+      (err as { code?: string }).code === "ENOENT"
+    ) {
+      throw new TestIntelligenceRunOperatorError(
+        `--customer-eval-markdown file not found: ${filePath}`,
+      );
+    }
+    throw err;
+  }
+  if (!stats.isFile()) {
+    throw new TestIntelligenceRunOperatorError(
+      `--customer-eval-markdown path is not a regular file: ${filePath}`,
+    );
+  }
+  if (stats.size > MAX_CUSTOMER_EVAL_MARKDOWN_FILE_BYTES) {
+    throw new TestIntelligenceRunOperatorError(
+      `--customer-eval-markdown file exceeds ${MAX_CUSTOMER_EVAL_MARKDOWN_FILE_BYTES} bytes (got ${stats.size}); shrink the source or split it across runs`,
+    );
+  }
+  return readFile(filePath, "utf8");
+};
+
 /**
  * Default `--customer-profile` loader. Stats the file before reading to
  * enforce the {@link MAX_CUSTOMER_PROFILE_BYTES} hard cap so an oversize file
@@ -2604,6 +2743,9 @@ export const runTestIntelligenceCommand = async (
   const loadCustomContextMarkdownFile =
     runtime.loadCustomContextMarkdownFile ??
     defaultLoadCustomContextMarkdownFile;
+  const loadCustomerEvalMarkdownFile =
+    runtime.loadCustomerEvalMarkdownFile ??
+    defaultLoadCustomerEvalMarkdownFile;
   const loadCustomerProfileFile =
     runtime.loadCustomerProfileFile ?? defaultLoadCustomerProfileFile;
 
@@ -2735,6 +2877,24 @@ export const runTestIntelligenceCommand = async (
     }
   }
 
+  let customerEvalMarkdownBody: string | undefined;
+  if (options.customerEvalMarkdownPath !== undefined) {
+    const absolutePath = resolve(options.customerEvalMarkdownPath);
+    try {
+      customerEvalMarkdownBody =
+        await loadCustomerEvalMarkdownFile(absolutePath);
+    } catch (err) {
+      if (err instanceof TestIntelligenceRunOperatorError) {
+        sink.stderr(`error: ${err.message}\n`);
+        return 1;
+      }
+      sink.stderr(
+        `error: failed to read --customer-eval-markdown file: ${sanitizeErrorMessage({ error: err, fallback: "filesystem failure" })}\n`,
+      );
+      return 1;
+    }
+  }
+
   // Load `--customer-profile` (Issue #1946). Same discipline as
   // `--custom-context-markdown`: 256 KiB hard cap enforced before read,
   // JSON parsed immediately, schema validated, operator error on any failure.
@@ -2813,8 +2973,11 @@ export const runTestIntelligenceCommand = async (
               : "disabled (default; set --enable-visual-sidecar or FIGMAPIPE_WORKSPACE_TI_ENABLE_VISUAL_SIDECAR=1)"
         }`,
         `  finops budget : ${options.finopsBudgetPath ?? "(production default)"}`,
+        `  ict ref       : ${options.ictRegisterRef ?? "(none)"}`,
+        `  output subdir : ${options.outputRunSubdir ?? "(none)"}`,
         `  harness mode  : off (dry_run never reaches the harness)`,
         `  custom md ctx : ${customContextMarkdownBody !== undefined ? `loaded (${Buffer.byteLength(customContextMarkdownBody, "utf8")} bytes)` : "(none)"}`,
+        `  customer eval : ${customerEvalMarkdownBody !== undefined ? `loaded (${Buffer.byteLength(customerEvalMarkdownBody, "utf8")} bytes)` : "(none)"}`,
         `  customer prof : ${customerProfileInput !== undefined ? `loaded (${customerProfileRawBytes} bytes)` : "(none)"}`,
         "",
       ].join("\n"),
@@ -2913,6 +3076,9 @@ export const runTestIntelligenceCommand = async (
     ...(customContextMarkdownBody !== undefined
       ? { customContextMarkdown: customContextMarkdownBody }
       : {}),
+    ...(customerEvalMarkdownBody !== undefined
+      ? { customerEvalMarkdown: customerEvalMarkdownBody }
+      : {}),
     ...(customerProfileInput !== undefined
       ? { customerProfile: customerProfileInput }
       : {}),
@@ -2962,11 +3128,13 @@ export const runTestIntelligenceCommand = async (
   }
 
   const customerMarkdownDir = dirname(result.customerMarkdownPaths.combined);
+  const customerOutputDir =
+    options.outputRunSubdir === "job-id" ? join(outputDir, result.jobId) : outputDir;
   let copiedFileCount: number;
   try {
     copiedFileCount = await copyArtifactsToOutput(
       customerMarkdownDir,
-      outputDir,
+      customerOutputDir,
     );
   } catch (err) {
     sink.stderr(
@@ -2987,10 +3155,10 @@ export const runTestIntelligenceCommand = async (
   const summaryLines = [
     "test-intelligence run completed",
     `  job id              : ${result.jobId}`,
-    `  output dir          : ${outputDir}`,
+    `  output dir          : ${customerOutputDir}`,
     `  test cases generated: ${result.generatedTestCases.testCases.length}`,
     `  customer files      : ${copiedFileCount}`,
-    `  combined markdown   : ${join(outputDir, "testfaelle.md")}`,
+    `  combined markdown   : ${join(customerOutputDir, "testfaelle.md")}`,
   ];
   if (result.blocked) {
     const blockedMessage = `warning: test cases blocked by policy gate (job ${result.jobId}); see ${result.artifactPaths.policyReport}\n`;
@@ -3031,6 +3199,8 @@ Source (exactly one required):
 Output:
   --output <dir>             Customer-format Markdown destination.
                              Default: ${DEFAULT_OUTPUT_ROOT}/jobs/<jobId>/test-intelligence
+  --output-run-subdir job-id  Copy customer files into <output>/<jobId>/ so
+                             repeated runs do not overwrite top-level output.
 
 LLM (defaults from environment):
   --model-endpoint <url>     default: env WORKSPACE_TEST_SPACE_MODEL_ENDPOINT
@@ -3064,6 +3234,9 @@ LLM (defaults from environment):
                              when unset).
   --model-api-key <key>      default: env WORKSPACE_TEST_SPACE_MODEL_API_KEY
                              (never logged, never echoed)
+  --ict-register-ref <ref>   ICT register reference forwarded to all CLI-created
+                             model bindings. Default: env
+                             WORKSPACE_TEST_SPACE_ICT_REGISTER_REF
 
 Figma (URL mode only):
   --figma-token <token>      default: env FIGMA_ACCESS_TOKEN
@@ -3088,6 +3261,10 @@ Custom supporting context (Issue #1894):
                              image refusal) before any LLM call. Oversize
                              files exit 1; missing files exit 1; canonical
                              rejection exits 2 with CUSTOM_CONTEXT_MARKDOWN_INVALID.
+  --customer-eval-markdown <path>
+                             UTF-8 Markdown file (max 256 KiB) carrying the
+                             customer's test-case evaluation rubric. Loaded as
+                             rubric/format guidance, not as Jira context.
 
 Visual sidecar:
   --enable-visual-sidecar    Build and attach the visual-sidecar bundle

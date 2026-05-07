@@ -220,6 +220,49 @@ test("runLogicJudge surfaces a repair verdict with findings and repair instructi
   assert.equal(client.callCount(), 1);
 });
 
+test("runLogicJudge normalizes missing finding testCaseId to $job", async () => {
+  const client = createMockLlmGatewayClient({
+    role: "test_generation",
+    deployment: "mistral-document-ai-2512",
+    modelRevision: "mistral-document-ai-2512@test",
+    gatewayRelease: "mock",
+    responder: (_request, attempt) => ({
+      outcome: "success",
+      content: {
+        verdict: "repair",
+        findings: [
+          {
+            code: "job_level_schema_gap",
+            severity: "warning",
+            message: "Job-level coverage warning without a case anchor.",
+          },
+        ],
+        repairInstructions: [],
+      },
+      finishReason: "stop",
+      usage: { inputTokens: 20, outputTokens: 10 },
+      modelDeployment: "mistral-document-ai-2512",
+      modelRevision: "mistral-document-ai-2512@test",
+      gatewayRelease: "mock",
+      attempt,
+    }),
+  });
+
+  const result = await runLogicJudge({
+    jobId: "logic-judge-missing-finding-anchor",
+    generatedAt: "2026-05-05T10:00:00Z",
+    testDesignModel: SAMPLE_TEST_DESIGN_MODEL,
+    coveragePlan: SAMPLE_COVERAGE_PLAN,
+    generatedTestCases: SAMPLE_GENERATED_TEST_CASES,
+    client,
+  });
+
+  assert.equal(result.verdict.verdict, "repair");
+  assert.equal(result.verdict.findings[0]?.testCaseId, "$job");
+  assert.equal(result.verdict.findings[0]?.code, "job_level_schema_gap");
+  assert.equal(result.verdict.refusal, undefined);
+});
+
 test("runLogicJudge passes through a semantic reject verdict from the model", async () => {
   const client = createMockLlmGatewayClient({
     role: "test_generation",

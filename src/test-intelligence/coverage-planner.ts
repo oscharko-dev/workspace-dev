@@ -22,6 +22,7 @@ import {
   type TestDesignScreen,
 } from "../contracts/index.js";
 import { canonicalJson, sha256Hex } from "./content-hash.js";
+import { isCoverageRelevantElementLike } from "./coverage-relevance.js";
 import type { LlmGatewayClient } from "./llm-gateway.js";
 import { selectTestDesignHeuristics } from "./test-design-heuristics.js";
 
@@ -181,7 +182,8 @@ const selectRuleReasonCode = (
 };
 
 const hasPairwiseEvidence = (screen: TestDesignScreen): boolean =>
-  screen.elements.length >= 3;
+  screen.elements.filter((element) => isCoverageRelevantElementLike(element))
+    .length >= 3;
 
 const hasSupportingContextSection = (sourceMixPlan: SourceMixPlan | undefined): boolean =>
   sourceMixPlan?.promptSections.some(
@@ -356,7 +358,9 @@ const buildPerElementPlan = (input: {
   return input.model.screens
     .flatMap((screen) => {
       const screenSignals = screenRuleKinds.get(screen.screenId);
-      return screen.elements.map((element) => {
+      return screen.elements
+        .filter((element) => isCoverageRelevantElementLike(element))
+        .map((element) => {
         let riskClass: CoveragePlanElementRiskClass = "low";
         const elementText = `${element.label} ${element.kind}`;
         if (piiElementPattern.test(elementText)) {
@@ -550,6 +554,9 @@ export const buildCoveragePlan = (input: BuildCoveragePlanInput): CoveragePlan =
   const allVisualRefs = allModelVisualRefs(model);
 
   for (const screen of model.screens) {
+    const coverageRelevantElements = screen.elements.filter((element) =>
+      isCoverageRelevantElementLike(element),
+    );
     minimumCases.push(
       buildRequirement({
         technique: "initial_state",
@@ -561,7 +568,7 @@ export const buildCoveragePlan = (input: BuildCoveragePlanInput): CoveragePlan =
       }),
     );
 
-    for (const element of screen.elements) {
+    for (const element of coverageRelevantElements) {
       minimumCases.push(
         buildRequirement({
           technique: "equivalence_partitioning",
@@ -608,7 +615,9 @@ export const buildCoveragePlan = (input: BuildCoveragePlanInput): CoveragePlan =
           technique: "pairwise",
           reasonCode: "screen_pairwise",
           screenId: screen.screenId,
-          targetIds: screen.elements.map((element) => element.elementId),
+          targetIds: coverageRelevantElements.map(
+            (element) => element.elementId,
+          ),
           sourceRefs: screen.sourceRefs,
           visualRefs: screen.visualRefs,
         }),

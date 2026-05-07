@@ -176,6 +176,41 @@ const buildIssue1993RunResult = (
     ...extras,
   }) as RunFigmaToQcTestCasesResult;
 
+const emptyRunnerResult = (input: {
+  jobId: string;
+  outputRoot: string;
+}): RunFigmaToQcTestCasesResult => ({
+  jobId: input.jobId,
+  generatedAt: "2026-05-06T12:00:00.000Z",
+  fileKey: "abc",
+  generatedTestCases: {
+    testCases: [],
+  } as unknown as RunFigmaToQcTestCasesResult["generatedTestCases"],
+  intent: {} as unknown as RunFigmaToQcTestCasesResult["intent"],
+  validation: {} as unknown as RunFigmaToQcTestCasesResult["validation"],
+  policy: {} as unknown as RunFigmaToQcTestCasesResult["policy"],
+  coverage: {} as unknown as RunFigmaToQcTestCasesResult["coverage"],
+  blocked: false,
+  finopsBudget: {} as unknown as RunFigmaToQcTestCasesResult["finopsBudget"],
+  artifactDir: `${input.outputRoot}/jobs/${input.jobId}/test-intelligence`,
+  artifactPaths: {
+    intent: "/tmp/intent.json",
+    compiledPrompt: "/tmp/compiled-prompt.json",
+    untrustedContentNormalizationReport: "/tmp/ucnr.json",
+    evidenceSeal: "/tmp/evidence-seal.json",
+    agentRoleRun: "/tmp/agent-role-run.json",
+    genealogy: "/tmp/genealogy.json",
+    generatedTestCases: "/tmp/generated.json",
+    validationReport: "/tmp/validation.json",
+    policyReport: "/tmp/policy.json",
+    coverageReport: "/tmp/coverage.json",
+    finopsReport: "/tmp/finops.json",
+  },
+  customerMarkdownPaths: {
+    combined: "/tmp/customer-markdown/testfaelle.md",
+    perCase: [],
+  },
+});
 // ---------------------------------------------------------------------------
 // parseTestIntelligenceRunArgs
 // ---------------------------------------------------------------------------
@@ -2031,6 +2066,62 @@ test("parseTestIntelligenceRunArgs: --custom-context-markdown rejects duplicate 
   );
 });
 
+test("parseTestIntelligenceRunArgs: captures customer eval, ICT ref, and job-id output subdir", () => {
+  const opts = parseTestIntelligenceRunArgs(
+    [
+      "--figma-url",
+      "https://figma.com/design/abc/foo",
+      "--customer-eval-markdown",
+      "./eval.md",
+      "--ict-register-ref",
+      "workspace-dev-local-test-intelligence",
+      "--output-run-subdir",
+      "job-id",
+    ],
+    {},
+  );
+  assert.equal(opts.customerEvalMarkdownPath, "./eval.md");
+  assert.equal(opts.ictRegisterRef, "workspace-dev-local-test-intelligence");
+  assert.equal(opts.outputRunSubdir, "job-id");
+});
+
+test("parseTestIntelligenceRunArgs: customer eval and output subdir reject invalid values", () => {
+  assert.throws(
+    () =>
+      parseTestIntelligenceRunArgs(
+        [
+          "--figma-url",
+          "https://figma.com/design/abc/foo",
+          "--customer-eval-markdown",
+          "",
+        ],
+        {},
+      ),
+    /--customer-eval-markdown requires a non-empty file path/u,
+  );
+  assert.throws(
+    () =>
+      parseTestIntelligenceRunArgs(
+        [
+          "--figma-url",
+          "https://figma.com/design/abc/foo",
+          "--output-run-subdir",
+          "timestamp",
+        ],
+        {},
+      ),
+    /--output-run-subdir must be "job-id"/u,
+  );
+});
+
+test("parseTestIntelligenceRunArgs: WORKSPACE_TEST_SPACE_ICT_REGISTER_REF hydrates default", () => {
+  const opts = parseTestIntelligenceRunArgs(
+    ["--figma-url", "https://figma.com/design/abc/foo"],
+    { WORKSPACE_TEST_SPACE_ICT_REGISTER_REF: " env-ref " },
+  );
+  assert.equal(opts.ictRegisterRef, "env-ref");
+});
+
 test("parseTestIntelligenceRunArgs: --diversity-passes accepts 1 and 2", () => {
   for (const value of ["1", "2"] as const) {
     const opts = parseTestIntelligenceRunArgs(
@@ -2085,6 +2176,34 @@ test("runTestIntelligenceCommand: dry_run with --custom-context-markdown reports
   assert.equal(exitCode, 0, stderr.join(""));
   assert.match(observedPath ?? "", /context\.md$/u);
   assert.match(stdout.join(""), /custom md ctx\s*: loaded \(\d+ bytes\)/u);
+});
+
+test("runTestIntelligenceCommand: dry_run with --customer-eval-markdown reports loaded byte count", async () => {
+  const { sink, stdout, stderr } = collectingSink();
+  let observedPath: string | undefined;
+  const exitCode = await runTestIntelligenceCommand(
+    {
+      ...baseOptions(),
+      customerEvalMarkdownPath: "/operator/eval.md",
+      ictRegisterRef: "workspace-dev-local-test-intelligence",
+      outputRunSubdir: "job-id",
+    },
+    sink,
+    {
+      env: GATE_ON,
+      now: () => 1700000000000,
+      loadCustomerEvalMarkdownFile: async (path) => {
+        observedPath = path;
+        return "# Testfall eines Anwendungstests\n- Schritte fortlaufend.";
+      },
+    },
+  );
+  assert.equal(exitCode, 0, stderr.join(""));
+  assert.match(observedPath ?? "", /eval\.md$/u);
+  const out = stdout.join("");
+  assert.match(out, /customer eval\s*: loaded \(\d+ bytes\)/u);
+  assert.match(out, /ict ref\s*: workspace-dev-local-test-intelligence/u);
+  assert.match(out, /output subdir\s*: job-id/u);
 });
 
 test("runTestIntelligenceCommand: --custom-context-markdown loader failure surfaces operator error and exits 1", async () => {
@@ -2219,6 +2338,60 @@ test("runTestIntelligenceCommand: deterministic_llm forwards customContextMarkdo
   });
   assert.equal(exitCode, 0, stderr.join(""));
   assert.equal(capturedMarkdown, "# Risk Profile\n- Limit: 10000 EUR.");
+});
+
+test("runTestIntelligenceCommand: forwards customerEvalMarkdown and copies into job-id output subdir", async () => {
+  const { sink, stderr } = collectingSink();
+  const options: TestIntelligenceRunOptions = {
+    ...baseOptions(),
+    figmaUrl: undefined,
+    figmaJsonFile: "/tmp/figma.json",
+    output: "/tmp/cli-eval-output",
+    outputRunSubdir: "job-id",
+    modelEndpoint: "https://aoai.example/openai/v1",
+    modelApiKey: "k-key",
+    mode: "deterministic_llm",
+    customerEvalMarkdownPath: "/operator/eval.md",
+  };
+  let capturedEval: string | undefined;
+  let copiedOutputDir: string | undefined;
+  const runner = async (
+    input: Parameters<
+      Required<Parameters<typeof runTestIntelligenceCommand>[2]>["runner"]
+    >[0],
+  ): Promise<RunFigmaToQcTestCasesResult> => {
+    capturedEval = (input as unknown as { customerEvalMarkdown?: string })
+      .customerEvalMarkdown;
+    return emptyRunnerResult({
+      jobId: "ti-cli-eval",
+      outputRoot: "/tmp/cli-eval-output/_runner-output",
+    });
+  };
+  const exitCode = await runTestIntelligenceCommand(options, sink, {
+    env: GATE_ON,
+    runner,
+    buildLlmClient: () =>
+      ({}) as unknown as ReturnType<
+        Required<
+          Parameters<typeof runTestIntelligenceCommand>[2]
+        >["buildLlmClient"]
+      >,
+    loadFigmaJsonFile: async () => ({
+      fileKey: "abc",
+      name: "Foo",
+      document: { id: "0:0", type: "DOCUMENT" },
+    }),
+    loadJsonFile: async () => ({}),
+    copyArtifactsToOutput: async (_from, to) => {
+      copiedOutputDir = to;
+      return 1;
+    },
+    loadCustomerEvalMarkdownFile: async () => "# Kunden-Eval\n- Format.",
+    now: () => 1700000000000,
+  });
+  assert.equal(exitCode, 0, stderr.join(""));
+  assert.equal(capturedEval, "# Kunden-Eval\n- Format.");
+  assert.equal(copiedOutputDir, "/tmp/cli-eval-output/ti-cli-eval");
 });
 
 test("runTestIntelligenceCommand: deterministic_llm forwards diversityPasses to runner input", async () => {
