@@ -25,6 +25,8 @@ const DECORATIVE_LABELS = new Set([
   "",
   "(optional)",
   "<icon>",
+  "<radio>",
+  "<button>",
   "<select>",
   "<svg>",
   "<text>",
@@ -46,6 +48,8 @@ const FIGMA_NODE_ID_PATTERN =
 
 const VALUE_ONLY_PATTERN =
   /^[+-]?\d{1,3}(?:[.\s]\d{3})*(?:,\d+)?(?:\s*(?:eur|€|%))?$/iu;
+const TECHNICAL_PLACEHOLDER_PATTERN =
+  /^<(?:radio|button|text|textfield|select|vector|icon)>$/iu;
 const DECORATIVE_KIND_PATTERN =
   /\b(icon|svg|vector|chevron|arrow|decorative|separator|divider)\b/iu;
 
@@ -57,6 +61,7 @@ export const normalizeCoverageText = (value: string | undefined): string =>
 
 const isDecorativeCoverageLabel = (label: string): boolean =>
   DECORATIVE_LABELS.has(label) ||
+  TECHNICAL_PLACEHOLDER_PATTERN.test(label) ||
   FIGMA_NODE_ID_PATTERN.test(label) ||
   VALUE_ONLY_PATTERN.test(label);
 
@@ -91,13 +96,6 @@ export const isCoverageRelevantActionLike = (
   }
   const kind = normalizeCoverageText(action.kind);
   if (isDecorativeCoverageKind(kind)) {
-    return false;
-  }
-  if (
-    typeof action.labelConfidence === "number" &&
-    action.labelConfidence <= 0 &&
-    action.targetScreenId === undefined
-  ) {
     return false;
   }
   return true;

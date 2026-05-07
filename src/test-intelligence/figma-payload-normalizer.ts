@@ -28,6 +28,7 @@
  */
 
 import type { IntentDerivationFigmaInput } from "./intent-derivation.js";
+import { isCoverageRelevantElementLike } from "./coverage-relevance.js";
 import type { FigmaRestNode } from "./figma-rest-adapter.js";
 
 /** Public input to the normalizer. */
@@ -292,23 +293,34 @@ const projectNode = (
   if (semanticKind === "decorative") return undefined;
   if (TEXT_NODE_TYPES.has(node.type)) {
     const text = typeof node.characters === "string" ? node.characters : name;
+    const nodeType =
+      semanticKind === "text_input"
+        ? "TEXT_INPUT"
+        : semanticKind === "radio_option"
+          ? "RADIO_OPTION"
+          : semanticKind === "select_field"
+            ? "SELECT_FIELD"
+            : semanticKind === "result_display"
+              ? "RESULT_DISPLAY"
+              : semanticKind === "informative_label"
+                ? "INFORMATIVE_LABEL"
+                : INPUT_HINT_RE.test(name)
+                  ? "TEXT_INPUT"
+                  : "TEXT";
+    if (
+      !isCoverageRelevantElementLike({
+        label: text,
+        kind: nodeType,
+      }) &&
+      nodeType !== "TEXT_INPUT" &&
+      nodeType !== "RESULT_DISPLAY"
+    ) {
+      return undefined;
+    }
     const projection: RawProjection = {
       nodeId: node.id,
       nodeName: name,
-      nodeType:
-        semanticKind === "text_input"
-          ? "TEXT_INPUT"
-          : semanticKind === "radio_option"
-            ? "RADIO_OPTION"
-            : semanticKind === "select_field"
-              ? "SELECT_FIELD"
-              : semanticKind === "result_display"
-                ? "RESULT_DISPLAY"
-                : semanticKind === "informative_label"
-                  ? "INFORMATIVE_LABEL"
-                  : INPUT_HINT_RE.test(name)
-                    ? "TEXT_INPUT"
-                    : "TEXT",
+      nodeType,
       figmaType: node.type,
       text,
       instanceAncestorIds: [...instanceAncestorIds],
@@ -343,21 +355,33 @@ const projectNode = (
     if (semanticKind !== undefined) {
       const hasOwnText =
         typeof node.characters === "string" && node.characters.length > 0;
+      const text = hasOwnText ? (node.characters as string) : name;
+      const nodeType =
+        semanticKind === "text_input"
+          ? "TEXT_INPUT"
+          : semanticKind === "radio_option"
+            ? "RADIO_OPTION"
+            : semanticKind === "select_field"
+              ? "SELECT_FIELD"
+              : semanticKind === "result_display"
+                ? "RESULT_DISPLAY"
+                : "INFORMATIVE_LABEL";
+      if (
+        !isCoverageRelevantElementLike({
+          label: text,
+          kind: nodeType,
+        }) &&
+        semanticKind !== "text_input" &&
+        semanticKind !== "result_display"
+      ) {
+        return undefined;
+      }
       const projection: RawProjection = {
         nodeId: node.id,
         nodeName: name,
-        nodeType:
-          semanticKind === "text_input"
-            ? "TEXT_INPUT"
-            : semanticKind === "radio_option"
-              ? "RADIO_OPTION"
-              : semanticKind === "select_field"
-                ? "SELECT_FIELD"
-                : semanticKind === "result_display"
-                  ? "RESULT_DISPLAY"
-                  : "INFORMATIVE_LABEL",
+        nodeType,
         figmaType: node.type,
-        text: hasOwnText ? (node.characters as string) : name,
+        text,
         instanceAncestorIds: [...instanceAncestorIds],
         isButtonInstance: false,
         semanticKind,
