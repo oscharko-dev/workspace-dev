@@ -209,6 +209,47 @@ test("PRODUCTION_RUNNER_HARNESS_MODES exposes the closed mode set", () => {
   ]);
 });
 
+test("runFigmaToQcTestCases injects an ambiguity probe when unresolved rules would otherwise yield no negative case", async () => {
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ti-runner-harness-"));
+  try {
+    const client = createMockLlmGatewayClient({
+      role: "test_generation",
+      deployment: "gpt-oss-120b-mock",
+      modelRevision: "mock-1",
+      gatewayRelease: "mock",
+      responder: okResponder([SAMPLE_DRAFT]),
+    });
+    const result = await runFigmaToQcTestCases({
+      jobId: "job-ambiguity-probe",
+      generatedAt: "2026-05-04T10:00:00Z",
+      source: { kind: "figma_paste_normalized", file: SAMPLE_FILE },
+      outputRoot: tempRoot,
+      llm: { client },
+      harness: { mode: "off" },
+      logicJudge: { enabled: false },
+      customContextMarkdown:
+        "Validation rules for Investitionssumme still need to be specified.",
+    });
+    assert.ok(result.coverage.negativeCaseCount >= 1);
+    assert.ok(
+      result.generatedTestCases.testCases.some(
+        (testCase) => testCase.openQuestions.length > 0,
+      ),
+    );
+    assert.ok(
+      result.generatedTestCases.testCases.some(
+        (testCase) =>
+          testCase.type === "negative" &&
+          testCase.expectedResults.includes(
+            "A validation response is shown according to the specified validation concept.",
+          ),
+      ),
+    );
+  } finally {
+    await rm(tempRoot, { recursive: true, force: true });
+  }
+});
+
 test("runFigmaToQcTestCases harness mode off writes no harness step artifact", async () => {
   const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ti-runner-harness-"));
   try {

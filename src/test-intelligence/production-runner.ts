@@ -100,6 +100,7 @@ import {
   type TestCasePriority,
   type TestCaseRiskCategory,
   type TestCaseTechnique29119,
+  type TestDesignModel,
   type TestCaseType,
   type TestCaseValidationReport,
   type TestCaseCoverageReport,
@@ -219,7 +220,11 @@ import {
   writeUntrustedContentNormalizationReport,
 } from "./untrusted-content-normalizer.js";
 import { buildSourceScopedCalculationAssumptions } from "./calculation-constraints.js";
-import { buildSourceScopedValidationOpenQuestions } from "./unresolved-validation-rules.js";
+import {
+  buildSourceScopedValidationOpenQuestions,
+  deriveUnresolvedValidationConstraints,
+  GENERIC_VALIDATION_EXPECTED_RESULT,
+} from "./unresolved-validation-rules.js";
 import { runValidationPipeline } from "./validation-pipeline.js";
 import {
   describeVisualScreens,
@@ -258,7 +263,10 @@ import {
   buildRiskRankingWithAugmentation,
   writeRiskRankingArtifact,
 } from "./risk-ranker.js";
-import { isCoverageRelevantActionLike } from "./coverage-relevance.js";
+import {
+  isCoverageRelevantActionLike,
+  isCoverageRelevantElementLike,
+} from "./coverage-relevance.js";
 import {
   buildA11yJudgeConsensusEntry,
   buildFaithfulnessJudgeConsensusEntry,
@@ -1730,17 +1738,20 @@ export const runFigmaToQcTestCases = async (
   }
 
   if (customContextMarkdown !== undefined) {
+    const customContextCalculationStatements =
+      buildSourceScopedCalculationAssumptions({
+        sourceLabel: "custom_context_markdown",
+        text: customContextMarkdown.bodyPlain,
+      });
     intent = {
       ...intent,
       assumptions: [
         ...intent.assumptions,
-        ...buildSourceScopedCalculationAssumptions({
-          sourceLabel: "custom_context_markdown",
-          text: customContextMarkdown.bodyPlain,
-        }),
+        ...customContextCalculationStatements,
       ].sort((left, right) => left.localeCompare(right)),
       openQuestions: [
         ...intent.openQuestions,
+        ...customContextCalculationStatements,
         ...buildSourceScopedValidationOpenQuestions({
           sourceLabel: "custom_context_markdown",
           text: customContextMarkdown.bodyPlain,
@@ -2365,6 +2376,11 @@ export const runFigmaToQcTestCases = async (
           generationExecutions[0]!.cacheExecResult.testCases,
           generationExecutions[1]!.cacheExecResult.testCases,
         ]);
+  generatedList = stabilizeGeneratedListForAcceptance({
+    list: generatedList,
+    model: compiled.artifacts.payload.testDesignModel!,
+    jobId: input.jobId,
+  });
   const logicJudgeCache = createFileSystemLogicJudgeCache(
     join(input.outputRoot, "test-intelligence", "replay-cache", "logic-judge"),
     { tenantScope },
@@ -2668,6 +2684,25 @@ export const runFigmaToQcTestCases = async (
       maxRepairIterations,
       softFailOnIterationError: true,
       regenerate: async ({ previousList, repairInstructions, iteration }) => {
+        const targetedCaseIds = [
+          ...new Set(
+            repairInstructions
+              .map((instruction) => instruction.testCaseId)
+              .filter((testCaseId) => testCaseId !== "$job"),
+          ),
+        ].sort((left, right) => left.localeCompare(right));
+        const repairContextList =
+          targetedCaseIds.length === 0
+            ? {
+                ...previousList,
+                testCases: previousList.testCases.slice(0, 3),
+              }
+            : {
+                ...previousList,
+                testCases: previousList.testCases.filter((testCase) =>
+                  targetedCaseIds.includes(testCase.id),
+                ),
+              };
         const repairSuffixSections: readonly CompilePromptSuffixSection[] = [
           {
             kind: "repair_instructions",
@@ -2676,8 +2711,8 @@ export const runFigmaToQcTestCases = async (
           },
           {
             kind: "json",
-            label: `PreviousGeneratedTestCases (iteration ${iteration})`,
-            jsonPayload: previousList,
+            label: `PreviousGeneratedTestCasesNeedingRepair (iteration ${iteration})`,
+            jsonPayload: repairContextList,
           },
         ];
         const repairPassResults = await Promise.all(
@@ -2687,6 +2722,7 @@ export const runFigmaToQcTestCases = async (
               repairSuffixSections,
             );
             const repairRequest = buildGenerationRequest(repairCompiled);
+            repairRequest.maxRetries = 0;
             const startedAtRepair = Date.now();
             const llmResult = await input.llm.client.generate(repairRequest);
             const llmDurationMs = Date.now() - startedAtRepair;
@@ -2754,7 +2790,11 @@ export const runFigmaToQcTestCases = async (
               testCases: repairCases,
             };
             return {
-              list: repairList,
+              list: stabilizeGeneratedListForAcceptance({
+                list: repairList,
+                model: compiled.artifacts.payload.testDesignModel!,
+                jobId: input.jobId,
+              }),
               llmResult,
               llmDurationMs,
               inputTokens: llmResult.usage.inputTokens ?? 0,
@@ -4237,6 +4277,21 @@ export const boundIntentForLlm = (
   caps: BoundIntentForLlmCaps,
 ): BusinessTestIntentIr => {
   const truncationNotes: string[] = [];
+  const relevantFieldIds = new Set(
+    intent.detectedFields
+      .filter((field) =>
+        isCoverageRelevantElementLike({
+          label: field.label,
+          kind: field.type,
+        }),
+      )
+      .map((field) => field.id),
+  );
+  const relevantScreenIds = new Set(
+    intent.detectedFields
+      .filter((field) => relevantFieldIds.has(field.id))
+      .map((field) => field.screenId),
+  );
 
   const cap = <T extends { screenId: string }>(
     rows: ReadonlyArray<T>,
@@ -4271,17 +4326,24 @@ export const boundIntentForLlm = (
   };
 
   const boundedFields = cap(
-    intent.detectedFields,
+    intent.detectedFields.filter((field) => relevantFieldIds.has(field.id)),
     caps.maxFieldsPerScreen,
     "Fields",
   );
   const boundedActions = cap(
-    intent.detectedActions,
+    intent.detectedActions.filter((action) =>
+      isCoverageRelevantActionLike(action),
+    ),
     caps.maxActionsPerScreen,
     "Actions",
   );
   const boundedValidations = cap(
-    intent.detectedValidations,
+    intent.detectedValidations.filter(
+      (validation) =>
+        validation.targetFieldId === undefined ||
+        relevantFieldIds.has(validation.targetFieldId) ||
+        relevantScreenIds.has(validation.screenId),
+    ),
     caps.maxValidationsPerScreen,
     "Validations",
   );
@@ -5128,6 +5190,167 @@ const ensureAccessibilityCoverageTerms = (
       ...testCase.expectedResults,
       "Accessibility-Coverage: Tastatur-Navigation (keyboard-nav), Fokusreihenfolge (focus-order) und Screen-Reader-Ausgabe (screen-reader) sind geprüft.",
     ],
+  };
+};
+
+const testCaseTouchesUnresolvedConstraint = (
+  testCase: GeneratedTestCase,
+  constraint: ReturnType<typeof deriveUnresolvedValidationConstraints>[number],
+): boolean => {
+  if (
+    constraint.fieldIds.some((fieldId) =>
+      testCase.qualitySignals.coveredFieldIds.includes(fieldId),
+    )
+  ) {
+    return true;
+  }
+  if (
+    constraint.validationIds.some((validationId) =>
+      testCase.qualitySignals.coveredValidationIds.includes(validationId),
+    )
+  ) {
+    return true;
+  }
+  if (
+    constraint.screenId !== undefined &&
+    testCase.figmaTraceRefs.some((traceRef) => traceRef.screenId === constraint.screenId)
+  ) {
+    return true;
+  }
+  return false;
+};
+
+const propagateUnresolvedCoverageContext = (input: {
+  testCase: GeneratedTestCase;
+  model: TestDesignModel;
+}): GeneratedTestCase => {
+  const unresolvedConstraints = deriveUnresolvedValidationConstraints(input.model)
+    .filter((constraint) =>
+      testCaseTouchesUnresolvedConstraint(input.testCase, constraint),
+    )
+    .map((constraint) => constraint.evidenceText);
+  if (unresolvedConstraints.length === 0) {
+    return input.testCase;
+  }
+  return {
+    ...input.testCase,
+    openQuestions: [
+      ...new Set([
+        ...input.testCase.openQuestions,
+        ...unresolvedConstraints,
+      ]),
+    ].sort((left, right) => left.localeCompare(right)),
+    expectedResults:
+      input.testCase.type === "negative" || input.testCase.type === "validation"
+        ? [GENERIC_VALIDATION_EXPECTED_RESULT]
+        : input.testCase.expectedResults,
+  };
+};
+
+const buildAmbiguityProbeCase = (input: {
+  list: GeneratedTestCaseList;
+  model: TestDesignModel;
+  jobId: string;
+  unresolvedConstraints: ReadonlyArray<
+    ReturnType<typeof deriveUnresolvedValidationConstraints>[number]
+  >;
+}): GeneratedTestCase | undefined => {
+  if (
+    input.list.testCases.length === 0 ||
+    input.unresolvedConstraints.length === 0
+  ) {
+    return undefined;
+  }
+  const seedCase = input.list.testCases[0]!;
+  const firstConstraint = input.unresolvedConstraints[0]!;
+  const firstScreen = input.model.screens[0];
+  if (firstScreen === undefined) {
+    return undefined;
+  }
+  const firstFieldId =
+    firstConstraint.fieldIds[0] ?? firstScreen.elements[0]?.elementId;
+  const firstScreenId = firstConstraint.screenId ?? firstScreen.screenId;
+  const id = `tc-${createHash("sha256")
+    .update(
+      canonicalJson({
+        jobId: input.jobId,
+        unresolvedConstraint: firstConstraint.evidenceText,
+        kind: "ambiguity-probe",
+      }),
+    )
+    .digest("hex")
+    .slice(0, 12)}`;
+  return {
+    ...seedCase,
+    id,
+    title: `Unklare Fachregel auf ${firstScreen.name} absichern`,
+    objective:
+      "Dokumentiert ungeklärtes Verhalten als negativer Prüfpfad, statt fachliche Regeln zu erfinden.",
+    type: "negative",
+    technique: "error_guessing",
+    priority: "p1",
+    preconditions: [`Maske „${firstScreen.name}“ ist geöffnet`],
+    testData: [],
+    steps: [
+      {
+        index: 1,
+        action: `Übe den ungeklärten Pfad auf „${firstScreen.name}“ gemäß offener Fachfrage aus.`,
+        expected: GENERIC_VALIDATION_EXPECTED_RESULT,
+      },
+    ],
+    expectedResults: [GENERIC_VALIDATION_EXPECTED_RESULT],
+    figmaTraceRefs: [{ screenId: firstScreenId }],
+    assumptions: [...seedCase.assumptions],
+    openQuestions: [firstConstraint.evidenceText],
+    qualitySignals: {
+      ...seedCase.qualitySignals,
+      coveredFieldIds:
+        firstFieldId === undefined ? [] : [firstFieldId],
+      coveredActionIds: [],
+      coveredValidationIds: [],
+      coveredNavigationIds: [],
+      confidence: Math.min(seedCase.qualitySignals.confidence, 0.8),
+    },
+    reviewState: "draft",
+  };
+};
+
+const stabilizeGeneratedListForAcceptance = (input: {
+  list: GeneratedTestCaseList;
+  model: TestDesignModel;
+  jobId: string;
+}): GeneratedTestCaseList => {
+  const unresolvedConstraints = deriveUnresolvedValidationConstraints(input.model);
+  const hasSourceScopedOpenQuestion = input.model.openQuestions.some((question) =>
+    /^[a-z0-9_-]+:/iu.test(question.text),
+  );
+  const propagated = input.list.testCases.map((testCase) =>
+    propagateUnresolvedCoverageContext({
+      testCase,
+      model: input.model,
+    }),
+  );
+  const hasNegative = propagated.some((testCase) => testCase.type === "negative");
+  const hasOpenQuestion = propagated.some(
+    (testCase) => testCase.openQuestions.length > 0,
+  );
+  const probeCase =
+    unresolvedConstraints.length > 0 &&
+    hasSourceScopedOpenQuestion &&
+    (!hasNegative || !hasOpenQuestion)
+      ? buildAmbiguityProbeCase({
+          ...input,
+          unresolvedConstraints,
+        })
+      : undefined;
+  return {
+    ...input.list,
+    testCases:
+      probeCase === undefined
+        ? propagated
+        : [...propagated, probeCase].sort((left, right) =>
+            left.id.localeCompare(right.id),
+          ),
   };
 };
 

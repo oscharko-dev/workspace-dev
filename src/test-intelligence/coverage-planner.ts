@@ -299,7 +299,6 @@ const buildPerScreenPlan = (input: {
   };
   for (const requirement of [
     ...input.minimumCases,
-    ...input.recommendedCases,
   ]) {
     if (requirement.screenId === undefined) {
       continue;

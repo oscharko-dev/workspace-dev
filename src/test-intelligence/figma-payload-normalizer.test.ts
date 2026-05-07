@@ -140,6 +140,58 @@ test("normalizeFigmaFileToIntentInput pulls text and button nodes inside a scree
   assert.equal(screen.nodes[1]?.nodeId, "2:2");
 });
 
+test("normalizeFigmaFileToIntentInput suppresses decorative units and technical placeholders", () => {
+  const input: NormalizeFigmaInput = {
+    fileKey: "ABC",
+    document: node({
+      id: "0:0",
+      type: "DOCUMENT",
+      children: [
+        node({
+          id: "0:1",
+          name: "Page 1",
+          type: "CANVAS",
+          children: [
+            node({
+              id: "1:1",
+              name: "Financing",
+              type: "FRAME",
+              absoluteBoundingBox: { x: 0, y: 0, width: 400, height: 600 },
+              children: [
+                node({
+                  id: "2:1",
+                  name: "Amount",
+                  type: "TEXT",
+                  characters: "Amount",
+                }),
+                node({
+                  id: "2:2",
+                  name: "Typography",
+                  type: "TEXT",
+                  characters: "EUR",
+                }),
+                node({
+                  id: "2:3",
+                  name: "<Radio>",
+                  type: "TEXT",
+                  characters: "<Radio>",
+                }),
+              ],
+            }),
+          ],
+        }),
+      ],
+    }),
+  };
+  const result = normalizeFigmaFileToIntentInput(input);
+  const screen = result.screens[0];
+  assert.ok(screen);
+  assert.deepEqual(
+    screen.nodes.map((entry) => entry.text),
+    ["Amount"],
+  );
+});
+
 test("normalizeFigmaFileToIntentInput emits no screens for an empty document", () => {
   const input: NormalizeFigmaInput = {
     fileKey: "ABC",

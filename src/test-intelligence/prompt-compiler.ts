@@ -86,6 +86,8 @@ const USER_PROMPT_PREAMBLE = [
   "Honor TestDesignModel.calculationConstraints exactly. If a constraint excludes a component such as VAT from a financial result, do not include it in the numeric expectation. If the bounded inputs do not support one exact arithmetic result, keep the result generic and surface the gap in openQuestions.",
   "Cite ambiguity or open questions when the IR is incomplete; do not fabricate behavior.",
   "When the source marks validation behavior as unresolved, unspecified, TBD, or still to be defined, do NOT invent exact error text, numeric thresholds, min/max boundaries, or blocked-submit behavior. Keep expected outcomes generic, add the unresolved statement to openQuestions, and use wording such as 'A validation response is shown according to the specified validation concept.'",
+  "If TestDesignModel.openQuestions is non-empty, at least one generated case must carry the relevant openQuestions entry verbatim and at least one case must probe the unresolved behavior as type=negative or type=validation.",
+  "Do not emit low-value cases for decorative helper text, currency units, placeholder labels such as <Radio>, or raw value-only typography nodes unless the TestDesignModel explicitly marks them as semantic targets.",
   // Issue #1905: per-screen accessibility coverage requirement enforced by
   // policy-gate (`policy:form-screen-needs-accessibility-case`) and by the
   // a11y-coverage eval (`src/test-intelligence/a11y-coverage-eval.ts`).

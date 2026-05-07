@@ -276,6 +276,22 @@ test("buildCoveragePlan keeps semantic helper copy and headings as coverage targ
   );
 });
 
+test("buildCoveragePlan excludes recommended-only techniques from hard per-screen quotas", () => {
+  const plan = buildCoveragePlan({
+    model: buildModel(),
+  });
+
+  const loanScreen = plan.perScreen.find((screen) => screen.screenId === "loan");
+  assert.ok(loanScreen);
+  assert.equal(
+    loanScreen.techniqueQuotas.some(
+      (quota) =>
+        quota.technique === "pairwise" || quota.technique === "error_guessing",
+    ),
+    false,
+  );
+});
+
 test("buildCoveragePlan is canonical-json stable and persists exact bytes", async () => {
   const sourceMixResult = planSourceMix(
     buildSourceEnvelope([figmaRef("figma-primary"), jiraRef("jira-42")]),
