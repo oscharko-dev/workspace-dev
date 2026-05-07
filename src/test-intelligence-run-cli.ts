@@ -98,8 +98,48 @@ const TEST_INTELLIGENCE_RUN_MODES = [
   "dry_run",
 ] as const;
 
+const TOPOLOGY_PREFLIGHT_REPORT_FILENAME = "topology-preflight-report.json";
+const INCOMPATIBLE_OPENAI_CHAT_DEPLOYMENTS = new Set([
+  "mistral-document-ai-2512",
+]);
+
 export type TestIntelligenceRunMode =
   (typeof TEST_INTELLIGENCE_RUN_MODES)[number];
+
+type TopologyInputSource = "cli" | "env" | "default";
+
+type TopologyRoleStatus = "configured" | "disabled" | "skipped";
+
+interface TopologyInputSources {
+  modelDeployment: TopologyInputSource;
+  logicJudgeDeployment: TopologyInputSource;
+  coveragePlannerDeployment: TopologyInputSource;
+  riskRankerDeployment: TopologyInputSource;
+}
+
+interface TopologyRoleReportEntry {
+  role:
+    | "generator"
+    | "logic_judge"
+    | "visual_primary"
+    | "visual_fallback"
+    | "coverage_planner"
+    | "risk_ranker"
+    | "a11y_judge";
+  deployment: string | null;
+  source: TopologyInputSource;
+  status: TopologyRoleStatus;
+  skipReason?: string;
+}
+
+interface TopologyPreflightReport {
+  schemaVersion: "topology-preflight-report.v1";
+  jobId: string;
+  generatedAt: string;
+  strictModeEnabled: boolean;
+  visualSidecarEnabled: boolean;
+  roles: ReadonlyArray<TopologyRoleReportEntry>;
+}
 
 const isRunMode = (value: string): value is TestIntelligenceRunMode =>
   (TEST_INTELLIGENCE_RUN_MODES as ReadonlyArray<string>).includes(value);
@@ -187,6 +227,13 @@ export interface TestIntelligenceRunOptions {
    * planning stays deterministic-only.
    */
   coveragePlannerDeployment: string | undefined;
+  /**
+   * Optional dedicated deployment for the Risk-Ranker augmentation
+   * (Issue #1935). When set, the runner may ask this model to refine the
+   * deterministic risk ordering before prompt compilation. When `undefined`,
+   * ranking stays deterministic-only.
+   */
+  riskRankerDeployment?: string | undefined;
   modelApiKey: string | undefined;
   figmaToken: string | undefined;
   policyProfile: string | undefined;
@@ -197,6 +244,11 @@ export interface TestIntelligenceRunOptions {
   noVisualSidecar: boolean;
   /** Path to a JSON FinOps budget envelope to apply. `undefined` → production default. */
   finopsBudgetPath: string | undefined;
+  /**
+   * When true, the CLI validates the resolved role matrix before dispatching
+   * any expensive LLM call and refuses known topology degradations.
+   */
+  requireMultiAgentTopology?: boolean;
   /**
    * Path to an optional UTF-8 Markdown file (Issue #1894) that supplies
    * custom supporting context to the production runner. The CLI loads the
@@ -288,6 +340,11 @@ export interface TestIntelligenceRunOptions {
     runtimeRoot: string | undefined;
     mode: "check" | "update";
   };
+  /**
+   * Internal provenance for deployment sources so topology-preflight
+   * reporting can distinguish CLI overrides from env defaults.
+   */
+  topologyInputSources?: TopologyInputSources;
 }
 
 /**
@@ -311,6 +368,8 @@ export const parseTestIntelligenceRunArgs = (
     env.WORKSPACE_TEST_SPACE_LOGIC_JUDGE_DEPLOYMENT?.trim() || undefined;
   let coveragePlannerDeployment: string | undefined =
     env.WORKSPACE_TEST_SPACE_COVERAGE_PLANNER_DEPLOYMENT?.trim() || undefined;
+  let riskRankerDeployment: string | undefined =
+    env.WORKSPACE_TEST_SPACE_RISK_RANKER_DEPLOYMENT?.trim() || undefined;
   let modelApiKey: string | undefined =
     env.WORKSPACE_TEST_SPACE_MODEL_API_KEY?.trim() || undefined;
   let figmaToken: string | undefined =
@@ -322,6 +381,9 @@ export const parseTestIntelligenceRunArgs = (
   );
   let noVisualSidecar = false;
   let finopsBudgetPath: string | undefined;
+  let requireMultiAgentTopology = isTruthyFlag(
+    env.WORKSPACE_TEST_SPACE_REQUIRE_MULTI_AGENT_TOPOLOGY,
+  );
   let harnessMode: ProductionRunnerHarnessMode = "off";
   let harnessTestDepth: AgentHarnessTestDepth = "standard";
   let harnessRoleStepId: string | undefined;
@@ -341,6 +403,30 @@ export const parseTestIntelligenceRunArgs = (
     env.WORKSPACE_TEST_SPACE_TENANT_ID?.trim() || "default";
   let coverageBaselineRuntimeRoot: string | undefined;
   let coverageBaselineMode: "check" | "update" = "check";
+  const topologyInputSources: TopologyInputSources = {
+    modelDeployment:
+      readTrimmedEnv(env, "WORKSPACE_TEST_SPACE_TESTCASE_MODEL_DEPLOYMENT") !==
+      undefined
+        ? "env"
+        : "default",
+    logicJudgeDeployment:
+      readTrimmedEnv(env, "WORKSPACE_TEST_SPACE_LOGIC_JUDGE_DEPLOYMENT") !==
+      undefined
+        ? "env"
+        : "default",
+    coveragePlannerDeployment:
+      readTrimmedEnv(
+        env,
+        "WORKSPACE_TEST_SPACE_COVERAGE_PLANNER_DEPLOYMENT",
+      ) !== undefined
+        ? "env"
+        : "default",
+    riskRankerDeployment:
+      readTrimmedEnv(env, "WORKSPACE_TEST_SPACE_RISK_RANKER_DEPLOYMENT") !==
+      undefined
+        ? "env"
+        : "default",
+  };
 
   for (let index = 0; index < args.length; index += 1) {
     const arg = args[index];
@@ -402,6 +488,7 @@ export const parseTestIntelligenceRunArgs = (
         );
       }
       modelDeployment = value;
+      topologyInputSources.modelDeployment = "cli";
       index += 1;
       continue;
     }
@@ -414,6 +501,7 @@ export const parseTestIntelligenceRunArgs = (
         );
       }
       logicJudgeDeployment = value;
+      topologyInputSources.logicJudgeDeployment = "cli";
       index += 1;
       continue;
     }
@@ -426,6 +514,20 @@ export const parseTestIntelligenceRunArgs = (
         );
       }
       coveragePlannerDeployment = value;
+      topologyInputSources.coveragePlannerDeployment = "cli";
+      index += 1;
+      continue;
+    }
+
+    if (arg === "--risk-ranker-deployment") {
+      const value = next?.trim();
+      if (!value) {
+        throw new TestIntelligenceRunOperatorError(
+          "--risk-ranker-deployment requires a non-empty deployment name",
+        );
+      }
+      riskRankerDeployment = value;
+      topologyInputSources.riskRankerDeployment = "cli";
       index += 1;
       continue;
     }
@@ -497,6 +599,11 @@ export const parseTestIntelligenceRunArgs = (
       }
       finopsBudgetPath = value;
       index += 1;
+      continue;
+    }
+
+    if (arg === "--require-multi-agent-topology") {
+      requireMultiAgentTopology = true;
       continue;
     }
 
@@ -711,6 +818,7 @@ export const parseTestIntelligenceRunArgs = (
     modelDeployment,
     logicJudgeDeployment,
     coveragePlannerDeployment,
+    riskRankerDeployment,
     modelApiKey,
     figmaToken,
     policyProfile,
@@ -718,6 +826,7 @@ export const parseTestIntelligenceRunArgs = (
     enableVisualSidecar,
     noVisualSidecar,
     finopsBudgetPath,
+    requireMultiAgentTopology,
     harnessMode,
     harnessTestDepth,
     harnessRoleStepId,
@@ -733,6 +842,7 @@ export const parseTestIntelligenceRunArgs = (
       runtimeRoot: coverageBaselineRuntimeRoot,
       mode: coverageBaselineMode,
     },
+    topologyInputSources,
   };
 };
 
@@ -775,6 +885,10 @@ export interface TestIntelligenceRunRuntime {
   ) => LlmGatewayClient | undefined;
   /** Override the coverage-planner client builder (Issue #1934). */
   buildCoveragePlannerClient?: (
+    options: TestIntelligenceRunOptions,
+  ) => LlmGatewayClient | undefined;
+  /** Override the risk-ranker client builder (Issue #1935). */
+  buildRiskRankerClient?: (
     options: TestIntelligenceRunOptions,
   ) => LlmGatewayClient | undefined;
   /**
@@ -948,6 +1062,67 @@ export const buildLiveCoveragePlannerClient = (
 };
 
 /**
+ * Build the optional live Risk-Ranker gateway client (Issue #1935).
+ * Returns `undefined` when no ranker deployment is configured so the runner
+ * keeps deterministic-only ranking.
+ */
+export const buildLiveRiskRankerClient = (
+  options: TestIntelligenceRunOptions,
+): LlmGatewayClient | undefined => {
+  if (options.riskRankerDeployment === undefined) {
+    return undefined;
+  }
+  if (!options.modelEndpoint) {
+    throw new TestIntelligenceRunOperatorError(
+      "--model-endpoint or WORKSPACE_TEST_SPACE_MODEL_ENDPOINT is required for mode=deterministic_llm",
+    );
+  }
+  if (!options.modelApiKey) {
+    throw new TestIntelligenceRunOperatorError(
+      "--model-api-key or WORKSPACE_TEST_SPACE_MODEL_API_KEY is required for mode=deterministic_llm",
+    );
+  }
+  const apiKey = options.modelApiKey;
+  const deployment = options.riskRankerDeployment;
+  return createLlmGatewayClient(
+    {
+      role: "risk_ranker",
+      compatibilityMode: "openai_chat",
+      baseUrl: options.modelEndpoint,
+      deployment,
+      modelRevision: `${deployment}@cli-test-intelligence-run`,
+      gatewayRelease: "azure-ai-foundry-cli-test-intelligence-run",
+      authMode: "api_key",
+      declaredCapabilities: {
+        structuredOutputs: true,
+        seedSupport: false,
+        reasoningEffortSupport: false,
+        maxOutputTokensSupport: true,
+        streamingSupport: false,
+        imageInputSupport: false,
+      },
+      timeoutMs: 60_000,
+      maxRetries: 1,
+      circuitBreaker: { failureThreshold: 2, resetTimeoutMs: 30_000 },
+      wireStructuredOutputMode: "none",
+    },
+    {
+      apiKeyProvider: () => apiKey,
+    },
+  );
+};
+
+const readTrimmedEnv = (
+  env: NodeJS.ProcessEnv,
+  key: string,
+): string | undefined => {
+  const value = env[key];
+  if (typeof value !== "string") return undefined;
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
+};
+
+/**
  * Build the live Azure-bound LLM gateway client identical to the production
  * runner. Centralised here so the CLI does not introduce a second
  * implementation. Throws `TestIntelligenceRunOperatorError` when required
@@ -1041,7 +1216,8 @@ export const buildLiveVisualSidecarBundle = (
     "WORKSPACE_TEST_SPACE_VISUAL_FALLBACK_DEPLOYMENT",
   );
   const a11yJudgeDeployment =
-    env.WORKSPACE_TEST_SPACE_A11Y_JUDGE_DEPLOYMENT?.trim() || undefined;
+    readTrimmedEnv(env, "WORKSPACE_TEST_SPACE_A11Y_JUDGE_DEPLOYMENT");
+  const riskRankerDeployment = options.riskRankerDeployment;
 
   const bundle = createLlmGatewayClientBundle(
     {
@@ -1155,6 +1331,31 @@ export const buildLiveVisualSidecarBundle = (
             },
           }
         : {}),
+      ...(riskRankerDeployment !== undefined
+        ? {
+            riskRanker: {
+              role: "risk_ranker" as const,
+              compatibilityMode: "openai_chat" as const,
+              baseUrl: options.modelEndpoint,
+              deployment: riskRankerDeployment,
+              modelRevision: `${riskRankerDeployment}@cli-test-intelligence-run`,
+              gatewayRelease: "azure-ai-foundry-cli-test-intelligence-run",
+              authMode: "api_key" as const,
+              declaredCapabilities: {
+                structuredOutputs: true,
+                seedSupport: false,
+                reasoningEffortSupport: false,
+                maxOutputTokensSupport: true,
+                streamingSupport: false,
+                imageInputSupport: false,
+              },
+              timeoutMs: 60_000,
+              maxRetries: 1,
+              circuitBreaker: { failureThreshold: 2, resetTimeoutMs: 30_000 },
+              wireStructuredOutputMode: "none" as const,
+            },
+          }
+        : {}),
     },
     {
       apiKeyProvider: () => apiKey,
@@ -1171,6 +1372,307 @@ const defaultLoadFigmaJsonFile = async (filePath: string): Promise<unknown> => {
 const defaultLoadJsonFile = async (filePath: string): Promise<unknown> => {
   const text = await readFile(filePath, "utf8");
   return JSON.parse(text) as unknown;
+};
+
+const deploymentSourceFromEnv = (
+  env: NodeJS.ProcessEnv,
+  key: string,
+): TopologyInputSource =>
+  readTrimmedEnv(env, key) !== undefined ? "env" : "default";
+
+const formatTopologyRoleName = (role: TopologyRoleReportEntry["role"]): string =>
+  role.replaceAll("_", "-");
+
+const formatTopologyRoleLine = (entry: TopologyRoleReportEntry): string => {
+  const deployment =
+    entry.deployment !== null
+      ? `${entry.deployment} [${entry.source}]`
+      : `${entry.source} (none)`;
+  if (entry.status === "configured") {
+    return `  ${formatTopologyRoleName(entry.role)}: ${deployment}`;
+  }
+  return `  ${formatTopologyRoleName(entry.role)}: ${entry.status} (${entry.skipReason ?? deployment})`;
+};
+
+const buildTopologyPreflightReport = ({
+  options,
+  env,
+  jobId,
+  generatedAt,
+}: {
+  options: TestIntelligenceRunOptions;
+  env: NodeJS.ProcessEnv;
+  jobId: string;
+  generatedAt: string;
+}): {
+  report: TopologyPreflightReport;
+  errors: string[];
+} => {
+  const visualSidecarEnabled = options.enableVisualSidecar && !options.noVisualSidecar;
+  const roles: TopologyRoleReportEntry[] = [];
+  const errors: string[] = [];
+  const strictModeEnabled =
+    options.requireMultiAgentTopology === true ||
+    isTruthyFlag(env.WORKSPACE_TEST_SPACE_REQUIRE_MULTI_AGENT_TOPOLOGY);
+  const optionSources = options.topologyInputSources;
+
+  roles.push({
+    role: "generator",
+    deployment: options.modelDeployment,
+    source: optionSources?.modelDeployment ?? "default",
+    status: "configured",
+  });
+  if (options.modelDeployment.trim().length === 0) {
+    errors.push("generator deployment must be non-empty");
+  }
+  if (INCOMPATIBLE_OPENAI_CHAT_DEPLOYMENTS.has(options.modelDeployment)) {
+    errors.push(
+      `generator deployment "${options.modelDeployment}" is incompatible with the openai_chat role contract`,
+    );
+  }
+
+  if (options.logicJudgeDeployment === undefined) {
+    roles.push({
+      role: "logic_judge",
+      deployment: null,
+      source: optionSources?.logicJudgeDeployment ?? "default",
+      status: "disabled",
+      skipReason: "not configured; legacy fallback reuses generator deployment",
+    });
+    if (strictModeEnabled) {
+      errors.push(
+        "logic-judge deployment must be configured and differ from the generator when strict multi-agent topology is required",
+      );
+    }
+  } else if (options.logicJudgeDeployment === options.modelDeployment) {
+    roles.push({
+      role: "logic_judge",
+      deployment: options.logicJudgeDeployment,
+      source: optionSources?.logicJudgeDeployment ?? "default",
+      status: "disabled",
+      skipReason: "matches generator deployment; legacy fallback collapses to a single model",
+    });
+    if (strictModeEnabled) {
+      errors.push(
+        "logic-judge deployment must differ from the generator when strict multi-agent topology is required",
+      );
+    }
+  } else {
+    roles.push({
+      role: "logic_judge",
+      deployment: options.logicJudgeDeployment,
+      source: optionSources?.logicJudgeDeployment ?? "default",
+      status: "configured",
+    });
+    if (INCOMPATIBLE_OPENAI_CHAT_DEPLOYMENTS.has(options.logicJudgeDeployment)) {
+      errors.push(
+        `logic-judge deployment "${options.logicJudgeDeployment}" is incompatible with the openai_chat role contract`,
+      );
+    }
+  }
+
+  const pushOptionalTextRole = ({
+    role,
+    deployment,
+    source,
+    disabledReason,
+  }: {
+    role: "coverage_planner" | "risk_ranker";
+    deployment: string | undefined;
+    source: TopologyInputSource;
+    disabledReason: string;
+  }): void => {
+    if (deployment === undefined) {
+      roles.push({
+        role,
+        deployment: null,
+        source,
+        status: "disabled",
+        skipReason: disabledReason,
+      });
+      return;
+    }
+    roles.push({
+      role,
+      deployment,
+      source,
+      status: "configured",
+    });
+    if (INCOMPATIBLE_OPENAI_CHAT_DEPLOYMENTS.has(deployment)) {
+      errors.push(
+        `${formatTopologyRoleName(role)} deployment "${deployment}" is incompatible with the openai_chat role contract`,
+      );
+    }
+  };
+
+  pushOptionalTextRole({
+    role: "coverage_planner",
+    deployment: options.coveragePlannerDeployment,
+    source: optionSources?.coveragePlannerDeployment ?? "default",
+    disabledReason: "not configured; deterministic-only coverage planning remains active",
+  });
+  pushOptionalTextRole({
+    role: "risk_ranker",
+    deployment: options.riskRankerDeployment,
+    source: optionSources?.riskRankerDeployment ?? "default",
+    disabledReason: "not configured; deterministic-only risk ranking remains active",
+  });
+
+  const visualPrimaryDeployment = readTrimmedEnv(
+    env,
+    "WORKSPACE_TEST_SPACE_VISUAL_PRIMARY_DEPLOYMENT",
+  );
+  const visualFallbackDeployment = readTrimmedEnv(
+    env,
+    "WORKSPACE_TEST_SPACE_VISUAL_FALLBACK_DEPLOYMENT",
+  );
+  const a11yJudgeDeployment = readTrimmedEnv(
+    env,
+    "WORKSPACE_TEST_SPACE_A11Y_JUDGE_DEPLOYMENT",
+  );
+  const visualPrimarySource = deploymentSourceFromEnv(
+    env,
+    "WORKSPACE_TEST_SPACE_VISUAL_PRIMARY_DEPLOYMENT",
+  );
+  const visualFallbackSource = deploymentSourceFromEnv(
+    env,
+    "WORKSPACE_TEST_SPACE_VISUAL_FALLBACK_DEPLOYMENT",
+  );
+  const a11ySource = deploymentSourceFromEnv(
+    env,
+    "WORKSPACE_TEST_SPACE_A11Y_JUDGE_DEPLOYMENT",
+  );
+
+  if (!visualSidecarEnabled) {
+    roles.push({
+      role: "visual_primary",
+      deployment: visualPrimaryDeployment ?? null,
+      source: visualPrimarySource,
+      status: "skipped",
+      skipReason: "visual sidecar disabled",
+    });
+    roles.push({
+      role: "visual_fallback",
+      deployment: visualFallbackDeployment ?? null,
+      source: visualFallbackSource,
+      status: "skipped",
+      skipReason: "visual sidecar disabled",
+    });
+    roles.push({
+      role: "a11y_judge",
+      deployment: a11yJudgeDeployment ?? null,
+      source: a11ySource,
+      status: "skipped",
+      skipReason: "visual sidecar disabled",
+    });
+  } else {
+    if (visualPrimaryDeployment === undefined) {
+      roles.push({
+        role: "visual_primary",
+        deployment: null,
+        source: visualPrimarySource,
+        status: "disabled",
+        skipReason: "WORKSPACE_TEST_SPACE_VISUAL_PRIMARY_DEPLOYMENT is unset",
+      });
+      errors.push(
+        "visual-primary deployment must be configured when visual sidecar is enabled",
+      );
+    } else {
+      roles.push({
+        role: "visual_primary",
+        deployment: visualPrimaryDeployment,
+        source: visualPrimarySource,
+        status: "configured",
+      });
+      if (
+        INCOMPATIBLE_OPENAI_CHAT_DEPLOYMENTS.has(visualPrimaryDeployment)
+      ) {
+        errors.push(
+          `visual-primary deployment "${visualPrimaryDeployment}" is incompatible with the chat-completion visual sidecar role contract`,
+        );
+      }
+    }
+
+    if (visualFallbackDeployment === undefined) {
+      roles.push({
+        role: "visual_fallback",
+        deployment: null,
+        source: visualFallbackSource,
+        status: "disabled",
+        skipReason: "WORKSPACE_TEST_SPACE_VISUAL_FALLBACK_DEPLOYMENT is unset",
+      });
+      errors.push(
+        "visual-fallback deployment must be configured when visual sidecar is enabled",
+      );
+    } else {
+      roles.push({
+        role: "visual_fallback",
+        deployment: visualFallbackDeployment,
+        source: visualFallbackSource,
+        status: "configured",
+      });
+      if (
+        INCOMPATIBLE_OPENAI_CHAT_DEPLOYMENTS.has(visualFallbackDeployment)
+      ) {
+        errors.push(
+          `visual-fallback deployment "${visualFallbackDeployment}" is incompatible with the chat-completion visual sidecar role contract`,
+        );
+      }
+    }
+
+    if (
+      visualPrimaryDeployment !== undefined &&
+      visualFallbackDeployment !== undefined &&
+      visualPrimaryDeployment === visualFallbackDeployment
+    ) {
+      errors.push(
+        "visual-primary and visual-fallback deployments must differ when visual sidecar is enabled",
+      );
+    }
+
+    if (a11yJudgeDeployment === undefined) {
+      roles.push({
+        role: "a11y_judge",
+        deployment: null,
+        source: a11ySource,
+        status: "disabled",
+        skipReason: "not configured; deterministic accessibility evaluation remains active",
+      });
+    } else {
+      roles.push({
+        role: "a11y_judge",
+        deployment: a11yJudgeDeployment,
+        source: a11ySource,
+        status: "configured",
+      });
+      if (INCOMPATIBLE_OPENAI_CHAT_DEPLOYMENTS.has(a11yJudgeDeployment)) {
+        errors.push(
+          `a11y-judge deployment "${a11yJudgeDeployment}" is incompatible with the chat-completion visual sidecar role contract`,
+        );
+      }
+    }
+  }
+
+  return {
+    report: {
+      schemaVersion: "topology-preflight-report.v1",
+      jobId,
+      generatedAt,
+      strictModeEnabled,
+      visualSidecarEnabled,
+      roles,
+    },
+    errors,
+  };
+};
+
+const writeTopologyPreflightReport = async (
+  reportPath: string,
+  report: TopologyPreflightReport,
+): Promise<void> => {
+  const tempPath = `${reportPath}.${process.pid}.${randomUUID()}.tmp`;
+  await writeFile(tempPath, `${canonicalJson(report)}\n`, "utf8");
+  await rename(tempPath, reportPath);
 };
 
 /**
@@ -1619,6 +2121,53 @@ export const runTestIntelligenceCommand = async (
     return 1;
   }
 
+  const { report: topologyPreflightReport, errors: topologyPreflightErrors } =
+    buildTopologyPreflightReport({
+      options,
+      env,
+      jobId,
+      generatedAt,
+    });
+  const topologyPreflightEnabled =
+    options.requireMultiAgentTopology === true ||
+    isTruthyFlag(env.WORKSPACE_TEST_SPACE_REQUIRE_MULTI_AGENT_TOPOLOGY);
+  const topologyPreflightPath = join(
+    outputDir,
+    TOPOLOGY_PREFLIGHT_REPORT_FILENAME,
+  );
+  if (topologyPreflightEnabled && topologyPreflightErrors.length > 0) {
+    sink.stderr(
+      [
+        "error: strict multi-agent topology preflight failed:",
+        ...topologyPreflightErrors.map((message) => `  - ${message}`),
+        `  report path: ${topologyPreflightPath}`,
+        "",
+      ].join("\n"),
+    );
+    return 1;
+  }
+  if (topologyPreflightEnabled) {
+    try {
+      await writeTopologyPreflightReport(
+        topologyPreflightPath,
+        topologyPreflightReport,
+      );
+    } catch (err) {
+      sink.stderr(
+        `error: failed to write topology preflight artifact: ${sanitizeErrorMessage({ error: err, fallback: "filesystem failure" })}\n`,
+      );
+      return 2;
+    }
+    sink.stdout(
+      [
+        "topology preflight passed",
+        `  report path: ${topologyPreflightPath}`,
+        ...topologyPreflightReport.roles.map(formatTopologyRoleLine),
+        "",
+      ].join("\n"),
+    );
+  }
+
   // Load `--custom-context-markdown` (Issue #1894). The CLI enforces the
   // 256 KiB hard cap and rejects missing files with exit code 1 before any
   // network IO. The runner re-validates the canonical Markdown body and
@@ -1710,6 +2259,7 @@ export const runTestIntelligenceCommand = async (
         `  deployment    : ${options.modelDeployment}`,
         `  judge deploy  : ${options.logicJudgeDeployment ?? "(reuses generator deployment)"}`,
         `  planner deploy: ${options.coveragePlannerDeployment ?? "(disabled; deterministic-only)"}`,
+        `  ranker deploy : ${options.riskRankerDeployment ?? "(disabled; deterministic-only)"}`,
         `  policy profile: ${options.policyProfile ?? "(default)"}`,
         `  visual sidecar: ${
           options.noVisualSidecar
@@ -1732,6 +2282,7 @@ export const runTestIntelligenceCommand = async (
   let llmBundle: LlmGatewayClientBundle | undefined;
   let logicJudgeClient: LlmGatewayClient | undefined;
   let coveragePlannerClient: LlmGatewayClient | undefined;
+  let riskRankerClient: LlmGatewayClient | undefined;
   try {
     if (options.enableVisualSidecar) {
       llmBundle =
@@ -1755,6 +2306,10 @@ export const runTestIntelligenceCommand = async (
       runtime.buildCoveragePlannerClient !== undefined
         ? runtime.buildCoveragePlannerClient(options)
         : buildLiveCoveragePlannerClient(options);
+    riskRankerClient =
+      runtime.buildRiskRankerClient !== undefined
+        ? runtime.buildRiskRankerClient(options)
+        : buildLiveRiskRankerClient(options);
   } catch (err) {
     if (err instanceof TestIntelligenceRunOperatorError) {
       sink.stderr(`error: ${err.message}\n`);
@@ -1800,6 +2355,7 @@ export const runTestIntelligenceCommand = async (
       ...(coveragePlannerClient !== undefined
         ? { coveragePlanner: coveragePlannerClient }
         : {}),
+      ...(riskRankerClient !== undefined ? { riskRanker: riskRankerClient } : {}),
       maxWallClockMs: 240_000,
     },
     ...(finopsBudget !== undefined ? { finopsBudget } : {}),
@@ -1955,6 +2511,13 @@ LLM (defaults from environment):
                              WORKSPACE_TEST_SPACE_COVERAGE_PLANNER_DEPLOYMENT
                              (falls back to deterministic-only planning
                              when unset).
+  --risk-ranker-deployment <name>
+                             Optional dedicated deployment for the
+                             Risk-Ranker augmentation (Issue #1935).
+                             Default: env
+                             WORKSPACE_TEST_SPACE_RISK_RANKER_DEPLOYMENT
+                             (falls back to deterministic-only ranking
+                             when unset).
   --model-api-key <key>      default: env WORKSPACE_TEST_SPACE_MODEL_API_KEY
                              (never logged, never echoed)
 
@@ -1964,6 +2527,13 @@ Figma (URL mode only):
 FinOps:
   --finops-budget <path>     Path to a JSON FinOps budget envelope.
                              Default: production envelope
+
+Topology preflight:
+  --require-multi-agent-topology
+                             Fail closed when the resolved role matrix
+                             degrades into a legacy single-model
+                             topology. Also enabled by env
+                             WORKSPACE_TEST_SPACE_REQUIRE_MULTI_AGENT_TOPOLOGY=1.
 
 Custom supporting context (Issue #1894):
   --custom-context-markdown <path>
