@@ -1498,6 +1498,11 @@ test("runFigmaToQcTestCases wires Figma URL screenshots through the visual sidec
       }>;
     };
     assert.equal(sidecarArtifact.result.outcome, "success");
+    assert.equal(
+      (sidecarArtifact as { rawScreenshotsIncluded?: boolean })
+        .rawScreenshotsIncluded,
+      false,
+    );
     assert.deepEqual(sidecarArtifact.visualEvidenceRefs, [
       {
         screenId: "1:1",
@@ -1510,6 +1515,45 @@ test("runFigmaToQcTestCases wires Figma URL screenshots through the visual sidec
         }),
       },
     ]);
+    assert.ok(result.artifactPaths.visualCaptureManifest);
+    assert.ok(result.artifactPaths.visualCaptureDirectory);
+    const captureManifest = JSON.parse(
+      await readFile(result.artifactPaths.visualCaptureManifest!, "utf8"),
+    ) as {
+      rawScreenshotsIncluded: boolean;
+      captures: Array<{
+        screenId: string;
+        screenName?: string;
+        mimeType: string;
+        byteLength: number;
+        sha256: string;
+        filename: string;
+        widthPx?: number;
+        heightPx?: number;
+      }>;
+    };
+    assert.equal(captureManifest.rawScreenshotsIncluded, true);
+    assert.deepEqual(captureManifest.captures, [
+      {
+        screenId: "1:1",
+        screenName: "Bedarfsermittlung",
+        mimeType: "image/png",
+        byteLength: PNG_BYTES.byteLength,
+        sha256: createHash("sha256").update(PNG_BYTES).digest("hex"),
+        filename: "01-1-1.png",
+        widthPx: 1,
+        heightPx: 1,
+      },
+    ]);
+    assert.deepEqual(
+      await readFile(
+        path.join(
+          result.artifactPaths.visualCaptureDirectory!,
+          captureManifest.captures[0]!.filename,
+        ),
+      ),
+      PNG_BYTES,
+    );
     assert.deepEqual(requestedUrls, [
       "https://api.figma.com/v1/files/ABC/nodes?ids=1%3A1",
       "https://api.figma.com/v1/images/ABC?ids=1%3A1&format=png&scale=2",
@@ -1538,6 +1582,16 @@ test("runFigmaToQcTestCases wires Figma URL screenshots through the visual sidec
     assert.ok(
       manifest.artifacts.some(
         (artifact) => artifact.filename === "visual-sidecar-result.json",
+      ),
+    );
+    assert.ok(
+      manifest.artifacts.some(
+        (artifact) => artifact.filename === "visual-captures/manifest.json",
+      ),
+    );
+    assert.ok(
+      manifest.artifacts.some(
+        (artifact) => artifact.filename === "visual-captures/01-1-1.png",
       ),
     );
     assert.deepEqual(manifest.visualSidecarCaptureIdentities, [
@@ -2451,16 +2505,24 @@ test("Issue #1772: both_sidecars_failed routes to needs_review with documented r
       gatewayRelease: "mock",
       responder: okResponder([SAMPLE_DRAFT]),
     });
+    let faithfulnessCallsAfterSidecarRefusal = 0;
     const failingResponder = (
-      _request: LlmGenerationRequest,
+      request: LlmGenerationRequest,
       attempt: number,
-    ): LlmGenerationResult => ({
-      outcome: "error",
-      errorClass: "transport",
-      message: "gateway boom",
-      retryable: true,
-      attempt,
-    });
+    ): LlmGenerationResult => {
+      if (
+        request.responseSchemaName === "workspace-dev-faithfulness-judge-v1"
+      ) {
+        faithfulnessCallsAfterSidecarRefusal += 1;
+      }
+      return {
+        outcome: "error",
+        errorClass: "transport",
+        message: "gateway boom",
+        retryable: true,
+        attempt,
+      };
+    };
     const bundle = createMockLlmGatewayClientBundle({
       testGeneration: {
         role: "test_generation",
@@ -2546,6 +2608,12 @@ test("Issue #1772: both_sidecars_failed routes to needs_review with documented r
       result.visualSidecar?.refusal?.failureClass,
       "both_sidecars_failed",
     );
+    assert.equal(
+      faithfulnessCallsAfterSidecarRefusal,
+      0,
+      "faithfulness judge must not run after visual sidecar refusal",
+    );
+    assert.equal(result.artifactPaths.faithfulnessJudgeVerdict, undefined);
     assert.match(
       result.visualSidecar?.refusal?.failureMessage ?? "",
       /both_sidecars_failed/,
