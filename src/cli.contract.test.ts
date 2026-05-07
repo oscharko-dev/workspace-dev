@@ -1065,6 +1065,8 @@ test("cli contract: test-intelligence run --help prints all required flags", asy
   assert.match(result.stdout, /--mode/i);
   assert.match(result.stdout, /--enable-visual-sidecar/i);
   assert.match(result.stdout, /--no-visual-sidecar/i);
+  assert.match(result.stdout, /--require-multi-agent-topology/i);
+  assert.match(result.stdout, /--risk-ranker-deployment/i);
   assert.match(result.stdout, /--finops-budget/i);
   assert.match(result.stdout, /--policy-profile/i);
   assert.match(result.stdout, /FIGMAPIPE_WORKSPACE_TEST_INTELLIGENCE/i);

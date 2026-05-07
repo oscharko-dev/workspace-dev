@@ -8,6 +8,9 @@
  */
 
 import assert from "node:assert/strict";
+import { mkdtemp, readFile } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import test from "node:test";
 
 import {
@@ -63,6 +66,99 @@ const baseOptions = (): TestIntelligenceRunOptions => ({
   customerProfilePath: undefined,
   diversityPasses: 1,
 });
+
+type Issue1993TopologyRunOptions = TestIntelligenceRunOptions & {
+  requireMultiAgentTopology?: boolean;
+  riskRankerDeployment?: string | undefined;
+  topologyReportPath?: string | undefined;
+};
+
+const parseIssue1993TopologyRunArgs = (
+  args: ReadonlyArray<string>,
+  env: NodeJS.ProcessEnv = {},
+): Issue1993TopologyRunOptions =>
+  parseTestIntelligenceRunArgs(args, env) as Issue1993TopologyRunOptions;
+
+const issue1993TopologyPreflightSupported = (() => {
+  try {
+    const opts = parseIssue1993TopologyRunArgs(
+      [
+        "--figma-url",
+        "https://figma.com/design/abc/foo",
+        "--output",
+        "/tmp/x",
+        "--require-multi-agent-topology",
+      ],
+      {
+        WORKSPACE_TEST_SPACE_REQUIRE_MULTI_AGENT_TOPOLOGY: "1",
+      },
+    );
+    return opts.requireMultiAgentTopology === true;
+  } catch {
+    return false;
+  }
+})();
+
+const issue1993RiskRankerPlumbingSupported = (() => {
+  try {
+    const opts = parseIssue1993TopologyRunArgs(
+      [
+        "--figma-url",
+        "https://figma.com/design/abc/foo",
+        "--output",
+        "/tmp/x",
+        "--risk-ranker-deployment",
+        "phi-4-mini-instruct",
+      ],
+      {
+        WORKSPACE_TEST_SPACE_RISK_RANKER_DEPLOYMENT: "mistral-large-3",
+      },
+    );
+    return opts.riskRankerDeployment === "phi-4-mini-instruct";
+  } catch {
+    return false;
+  }
+})();
+
+const buildIssue1993RunResult = (
+  artifactDir: string,
+  artifactPaths: Record<string, string> = {},
+  extras: Partial<RunFigmaToQcTestCasesResult> = {},
+): RunFigmaToQcTestCasesResult =>
+  ({
+    jobId: "ti-cli-topology",
+    generatedAt: "2026-05-02T12:00:00.000Z",
+    fileKey: "abc",
+    generatedTestCases: {
+      testCases: [],
+    } as unknown as RunFigmaToQcTestCasesResult["generatedTestCases"],
+    intent: {} as unknown as RunFigmaToQcTestCasesResult["intent"],
+    validation: {} as unknown as RunFigmaToQcTestCasesResult["validation"],
+    policy: {} as unknown as RunFigmaToQcTestCasesResult["policy"],
+    coverage: {} as unknown as RunFigmaToQcTestCasesResult["coverage"],
+    blocked: false,
+    finopsBudget: {} as unknown as RunFigmaToQcTestCasesResult["finopsBudget"],
+    artifactDir,
+    artifactPaths: {
+      intent: "/tmp/intent.json",
+      compiledPrompt: "/tmp/compiled-prompt.json",
+      untrustedContentNormalizationReport: "/tmp/ucnr.json",
+      evidenceSeal: "/tmp/evidence-seal.json",
+      agentRoleRun: "/tmp/agent-role-run.json",
+      genealogy: "/tmp/genealogy.json",
+      generatedTestCases: "/tmp/generated.json",
+      validationReport: "/tmp/validation.json",
+      policyReport: "/tmp/policy.json",
+      coverageReport: "/tmp/coverage.json",
+      finopsReport: "/tmp/finops.json",
+      ...artifactPaths,
+    } as RunFigmaToQcTestCasesResult["artifactPaths"],
+    customerMarkdownPaths: {
+      combined: "/tmp/customer-markdown/testfaelle.md",
+      perCase: [],
+    },
+    ...extras,
+  }) as RunFigmaToQcTestCasesResult;
 
 // ---------------------------------------------------------------------------
 // parseTestIntelligenceRunArgs
@@ -362,6 +458,67 @@ test("parseTestIntelligenceRunArgs: --coverage-planner-deployment overrides the 
     },
   );
   assert.equal(opts.coveragePlannerDeployment, "phi-4-mini-instruct");
+});
+
+// ---------------------------------------------------------------------------
+// parseTestIntelligenceRunArgs — topology preflight wiring (Issue #1993)
+// ---------------------------------------------------------------------------
+
+test("parseTestIntelligenceRunArgs: --require-multi-agent-topology and env WORKSPACE_TEST_SPACE_REQUIRE_MULTI_AGENT_TOPOLOGY=1 hydrate strict mode (Issue #1993)", (t) => {
+  if (!issue1993TopologyPreflightSupported) {
+    t.skip("Issue #1993 topology strict-mode support is not present in this CLI");
+    return;
+  }
+
+  const fromEnv = parseIssue1993TopologyRunArgs(
+    ["--figma-url", "https://figma.com/design/abc", "--output", "/tmp/x"],
+    {
+      WORKSPACE_TEST_SPACE_REQUIRE_MULTI_AGENT_TOPOLOGY: "1",
+    },
+  );
+  assert.equal(fromEnv.requireMultiAgentTopology, true);
+
+  const fromFlag = parseIssue1993TopologyRunArgs(
+    [
+      "--figma-url",
+      "https://figma.com/design/abc",
+      "--output",
+      "/tmp/x",
+      "--require-multi-agent-topology",
+    ],
+    {},
+  );
+  assert.equal(fromFlag.requireMultiAgentTopology, true);
+});
+
+test("parseTestIntelligenceRunArgs: risk-ranker env and flag hydrate topology planning when present (Issue #1993)", (t) => {
+  if (!issue1993RiskRankerPlumbingSupported) {
+    t.skip("Issue #1993 risk-ranker plumbing is not present in this CLI");
+    return;
+  }
+
+  const fromEnv = parseIssue1993TopologyRunArgs(
+    ["--figma-url", "https://figma.com/design/abc", "--output", "/tmp/x"],
+    {
+      WORKSPACE_TEST_SPACE_RISK_RANKER_DEPLOYMENT: "phi-4",
+    },
+  );
+  assert.equal(fromEnv.riskRankerDeployment, "phi-4");
+
+  const fromFlag = parseIssue1993TopologyRunArgs(
+    [
+      "--figma-url",
+      "https://figma.com/design/abc",
+      "--output",
+      "/tmp/x",
+      "--risk-ranker-deployment",
+      "phi-4-mini-instruct",
+    ],
+    {
+      WORKSPACE_TEST_SPACE_RISK_RANKER_DEPLOYMENT: "gpt-oss-120b",
+    },
+  );
+  assert.equal(fromFlag.riskRankerDeployment, "phi-4-mini-instruct");
 });
 
 test("parseTestIntelligenceRunArgs: --finops-budget captures path", () => {
@@ -1301,6 +1458,92 @@ test("runTestIntelligenceCommand: enable-visual-sidecar builds and forwards runn
   assert.strictEqual(capturedBundle, bundle);
 });
 
+test("runTestIntelligenceCommand: strict preflight fails before runner when logic judge would reuse generator (Issue #1993)", async () => {
+  const { sink, stderr, stdout } = collectingSink();
+  let runnerCalled = false;
+  const exitCode = await runTestIntelligenceCommand(
+    {
+      ...baseOptions(),
+      figmaUrl: undefined,
+      figmaJsonFile: "/tmp/figma.json",
+      mode: "deterministic_llm",
+      modelEndpoint: "https://aoai.example/openai/v1",
+      modelApiKey: "k-key",
+      modelDeployment: "mistral-large-3",
+      requireMultiAgentTopology: true,
+    },
+    sink,
+    {
+      env: GATE_ON,
+      runner: async () => {
+        runnerCalled = true;
+        throw new Error("runner should not be reached");
+      },
+      loadFigmaJsonFile: async () => ({
+        fileKey: "abc",
+        name: "Foo",
+        document: { id: "0:0", type: "DOCUMENT" },
+      }),
+      now: () => 1700000000000,
+    },
+  );
+
+  assert.equal(exitCode, 1);
+  assert.equal(runnerCalled, false);
+  assert.match(
+    stderr.join(""),
+    /logic-judge deployment must be configured and differ from the generator/u,
+  );
+  assert.doesNotMatch(stdout.join(""), /topology preflight passed/u);
+});
+
+test("runTestIntelligenceCommand: strict preflight rejects mistral-document-ai-2512 for visual primary (Issue #1993)", async () => {
+  const { sink, stderr } = collectingSink();
+  let runnerCalled = false;
+  const exitCode = await runTestIntelligenceCommand(
+    {
+      ...baseOptions(),
+      figmaUrl: undefined,
+      figmaJsonFile: "/tmp/figma.json",
+      mode: "deterministic_llm",
+      modelEndpoint: "https://aoai.example/openai/v1",
+      modelApiKey: "k-key",
+      enableVisualSidecar: true,
+      requireMultiAgentTopology: true,
+      logicJudgeDeployment: "gpt-oss-120b",
+    },
+    sink,
+    {
+      env: {
+        ...GATE_ON,
+        WORKSPACE_TEST_SPACE_VISUAL_MODEL_ENDPOINT:
+          "https://aoai.example/openai/vision",
+        WORKSPACE_TEST_SPACE_VISUAL_PRIMARY_DEPLOYMENT:
+          "mistral-document-ai-2512",
+        WORKSPACE_TEST_SPACE_VISUAL_FALLBACK_DEPLOYMENT:
+          "phi-4-multimodal-instruct",
+      },
+      runner: async () => {
+        runnerCalled = true;
+        throw new Error("runner should not be reached");
+      },
+      loadFigmaJsonFile: async () => ({
+        fileKey: "abc",
+        name: "Foo",
+        document: { id: "0:0", type: "DOCUMENT" },
+      }),
+      now: () => 1700000000000,
+    },
+  );
+
+  assert.equal(exitCode, 1);
+  assert.equal(runnerCalled, false);
+  assert.match(
+    stderr.join(""),
+    /visual-primary deployment "mistral-document-ai-2512" is incompatible/u,
+  );
+});
+
 test("runTestIntelligenceCommand: enable-visual-sidecar fails closed when visual envs are missing", async () => {
   const { sink, stderr } = collectingSink();
   const exitCode = await runTestIntelligenceCommand(
@@ -1340,6 +1583,60 @@ test("runTestIntelligenceCommand: enable-visual-sidecar fails closed when visual
   );
 });
 
+test("runTestIntelligenceCommand: legacy behavior stays unchanged when strict topology mode is absent (Issue #1993)", async () => {
+  const { sink, stdout, stderr } = collectingSink();
+  let runnerInput: unknown;
+  const exitCode = await runTestIntelligenceCommand(
+    {
+      ...baseOptions(),
+      figmaUrl: undefined,
+      figmaJsonFile: "/tmp/figma.json",
+      figmaToken: undefined,
+      modelEndpoint: "https://aoai.example/openai/v1",
+      modelDeployment: "mistral-large-3",
+      modelApiKey: "k-key",
+      mode: "deterministic_llm",
+      requireMultiAgentTopology: false,
+      logicJudgeDeployment: undefined,
+      enableVisualSidecar: false,
+    } as Issue1993TopologyRunOptions,
+    sink,
+    {
+      env: GATE_ON,
+      runner: async (input) => {
+        runnerInput = input;
+        return buildIssue1993RunResult("/tmp/legacy-output/_runner-output");
+      },
+      buildLlmClient: () =>
+        ({}) as unknown as ReturnType<
+          Required<Parameters<typeof runTestIntelligenceCommand>[2]>["buildLlmClient"]
+        >,
+      loadFigmaJsonFile: async () => ({
+        fileKey: "abc",
+        name: "Foo",
+        document: { id: "0:0", type: "DOCUMENT" },
+      }),
+      loadJsonFile: async () => ({}),
+      copyArtifactsToOutput: async () => 0,
+      now: () => 1700000000000,
+    },
+  );
+
+  assert.equal(exitCode, 0, stderr.join(""));
+  assert.ok(runnerInput);
+  assert.equal(
+    (runnerInput as { topology?: unknown; topologyReport?: unknown }).topology,
+    undefined,
+  );
+  assert.equal(
+    (runnerInput as { topology?: unknown; topologyReport?: unknown })
+      .topologyReport,
+    undefined,
+  );
+  assert.match(stdout.join(""), /completed/u);
+  assert.doesNotMatch(stdout.join(""), /topology report/u);
+});
+
 test("runTestIntelligenceCommand: dry_run output mentions harness mode line", async () => {
   const { sink, stdout } = collectingSink();
   await runTestIntelligenceCommand(baseOptions(), sink, {
@@ -1347,6 +1644,210 @@ test("runTestIntelligenceCommand: dry_run output mentions harness mode line", as
     now: () => 1700000000000,
   });
   assert.match(stdout.join(""), /harness mode/u);
+});
+
+test("runTestIntelligenceCommand: strict preflight writes sanitized topology report and forwards risk ranker (Issue #1993)", async () => {
+  const tmpDir = await mkdtemp(
+    path.join(os.tmpdir(), "workspace-dev-ti-topology-"),
+  );
+  const { sink, stderr, stdout } = collectingSink();
+  let capturedRiskRanker: unknown;
+  const exitCode = await runTestIntelligenceCommand(
+    {
+      ...baseOptions(),
+      output: tmpDir,
+      figmaUrl: undefined,
+      figmaJsonFile: "/tmp/figma.json",
+      mode: "deterministic_llm",
+      modelEndpoint: "https://aoai.example/openai/v1",
+      modelApiKey: "k-key",
+      modelDeployment: "mistral-large-3",
+      logicJudgeDeployment: "gpt-oss-120b",
+      riskRankerDeployment: "phi-4",
+      requireMultiAgentTopology: true,
+      topologyInputSources: {
+        modelDeployment: "cli",
+        logicJudgeDeployment: "cli",
+        coveragePlannerDeployment: "default",
+        riskRankerDeployment: "cli",
+      },
+    },
+    sink,
+    {
+      env: GATE_ON,
+      runner: async (input) => {
+        capturedRiskRanker = (
+          input as unknown as { llm: { riskRanker?: unknown } }
+        ).llm.riskRanker;
+        return {
+          jobId: "ti-cli-topology",
+          generatedAt: "2026-05-07T12:00:00.000Z",
+          fileKey: "abc",
+          generatedTestCases: {
+            testCases: [],
+          } as unknown as RunFigmaToQcTestCasesResult["generatedTestCases"],
+          intent: {} as unknown as RunFigmaToQcTestCasesResult["intent"],
+          validation:
+            {} as unknown as RunFigmaToQcTestCasesResult["validation"],
+          policy: {} as unknown as RunFigmaToQcTestCasesResult["policy"],
+          coverage: {} as unknown as RunFigmaToQcTestCasesResult["coverage"],
+          blocked: false,
+          finopsBudget:
+            {} as unknown as RunFigmaToQcTestCasesResult["finopsBudget"],
+          artifactDir: "/tmp/ti-cli-topology",
+          artifactPaths: {
+            intent: "/tmp/intent.json",
+            compiledPrompt: "/tmp/compiled-prompt.json",
+            untrustedContentNormalizationReport: "/tmp/ucnr.json",
+            evidenceSeal: "/tmp/evidence-seal.json",
+            agentRoleRun: "/tmp/agent-role-run.json",
+            genealogy: "/tmp/genealogy.json",
+            generatedTestCases: "/tmp/generated.json",
+            validationReport: "/tmp/validation.json",
+            policyReport: "/tmp/policy.json",
+            coverageReport: "/tmp/coverage.json",
+            finopsReport: "/tmp/finops.json",
+          },
+          customerMarkdownPaths: {
+            combined: "/tmp/customer-markdown/testfaelle.md",
+            perCase: [],
+          },
+        } as unknown as RunFigmaToQcTestCasesResult;
+      },
+      buildLlmClient: () => ({}) as never,
+      buildLogicJudgeClient: () => ({ kind: "judge" }) as never,
+      buildRiskRankerClient: () => ({ kind: "ranker" }) as never,
+      loadFigmaJsonFile: async () => ({
+        fileKey: "abc",
+        name: "Foo",
+        document: { id: "0:0", type: "DOCUMENT" },
+      }),
+      loadJsonFile: async () => ({}),
+      copyArtifactsToOutput: async () => 0,
+      now: () => 1700000000000,
+    },
+  );
+
+  assert.equal(exitCode, 0, stderr.join(""));
+  assert.deepEqual(capturedRiskRanker, { kind: "ranker" });
+  assert.match(stdout.join(""), /topology preflight passed/u);
+
+  const reportPath = path.join(tmpDir, "topology-preflight-report.json");
+  const report = JSON.parse(await readFile(reportPath, "utf8")) as {
+    roles: Array<{
+      role: string;
+      deployment?: string;
+      source: string;
+      status: string;
+      skipReason?: string;
+    }>;
+  };
+  assert.ok(Array.isArray(report.roles));
+  assert.ok(
+    report.roles.some(
+      (role) =>
+        role.role === "generator" &&
+        role.deployment === "mistral-large-3" &&
+        role.source === "cli" &&
+        role.status === "configured",
+    ),
+  );
+  assert.ok(
+    report.roles.some(
+      (role) =>
+        role.role === "logic_judge" &&
+        role.deployment === "gpt-oss-120b" &&
+        role.source === "cli" &&
+        role.status === "configured",
+    ),
+  );
+  assert.ok(
+    report.roles.some(
+      (role) =>
+        role.role === "coverage_planner" &&
+        role.status === "disabled" &&
+        /deterministic-only coverage planning/u.test(role.skipReason ?? ""),
+    ),
+  );
+  assert.ok(
+    report.roles.some(
+      (role) =>
+        role.role === "visual_primary" &&
+        role.status === "skipped" &&
+        role.skipReason === "visual sidecar disabled",
+    ),
+  );
+  assert.equal(JSON.stringify(report).includes("https://aoai.example"), false);
+  assert.equal(JSON.stringify(report).includes("k-key"), false);
+});
+
+test("runTestIntelligenceCommand: legacy topology remains allowed when strict mode is absent", async () => {
+  const { sink, stderr } = collectingSink();
+  let runnerCalled = false;
+  const exitCode = await runTestIntelligenceCommand(
+    {
+      ...baseOptions(),
+      figmaUrl: undefined,
+      figmaJsonFile: "/tmp/figma.json",
+      mode: "deterministic_llm",
+      modelEndpoint: "https://aoai.example/openai/v1",
+      modelApiKey: "k-key",
+      modelDeployment: "mistral-large-3",
+    },
+    sink,
+    {
+      env: GATE_ON,
+      runner: async () => {
+        runnerCalled = true;
+        return {
+          jobId: "ti-cli-legacy",
+          generatedAt: "2026-05-07T12:00:00.000Z",
+          fileKey: "abc",
+          generatedTestCases: {
+            testCases: [],
+          } as unknown as RunFigmaToQcTestCasesResult["generatedTestCases"],
+          intent: {} as unknown as RunFigmaToQcTestCasesResult["intent"],
+          validation:
+            {} as unknown as RunFigmaToQcTestCasesResult["validation"],
+          policy: {} as unknown as RunFigmaToQcTestCasesResult["policy"],
+          coverage: {} as unknown as RunFigmaToQcTestCasesResult["coverage"],
+          blocked: false,
+          finopsBudget:
+            {} as unknown as RunFigmaToQcTestCasesResult["finopsBudget"],
+          artifactDir: "/tmp/ti-cli-legacy",
+          artifactPaths: {
+            intent: "/tmp/intent.json",
+            compiledPrompt: "/tmp/compiled-prompt.json",
+            untrustedContentNormalizationReport: "/tmp/ucnr.json",
+            evidenceSeal: "/tmp/evidence-seal.json",
+            agentRoleRun: "/tmp/agent-role-run.json",
+            genealogy: "/tmp/genealogy.json",
+            generatedTestCases: "/tmp/generated.json",
+            validationReport: "/tmp/validation.json",
+            policyReport: "/tmp/policy.json",
+            coverageReport: "/tmp/coverage.json",
+            finopsReport: "/tmp/finops.json",
+          },
+          customerMarkdownPaths: {
+            combined: "/tmp/customer-markdown/testfaelle.md",
+            perCase: [],
+          },
+        } as unknown as RunFigmaToQcTestCasesResult;
+      },
+      buildLlmClient: () => ({}) as never,
+      loadFigmaJsonFile: async () => ({
+        fileKey: "abc",
+        name: "Foo",
+        document: { id: "0:0", type: "DOCUMENT" },
+      }),
+      loadJsonFile: async () => ({}),
+      copyArtifactsToOutput: async () => 0,
+      now: () => 1700000000000,
+    },
+  );
+
+  assert.equal(exitCode, 0, stderr.join(""));
+  assert.equal(runnerCalled, true);
 });
 
 // ---------------------------------------------------------------------------
