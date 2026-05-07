@@ -46,8 +46,6 @@ const FIGMA_NODE_ID_PATTERN =
 
 const VALUE_ONLY_PATTERN =
   /^[+-]?\d{1,3}(?:[.\s]\d{3})*(?:,\d+)?(?:\s*(?:eur|€|%))?$/iu;
-const HELPER_SENTENCE_PATTERN = /^(?:die|der|das|ein|eine)\s+.+[.!]$/iu;
-const PAGE_TITLE_PATTERN = /^ermittlung\s+des\s+/iu;
 
 export const normalizeCoverageText = (value: string | undefined): string =>
   (value ?? "")
@@ -58,9 +56,7 @@ export const normalizeCoverageText = (value: string | undefined): string =>
 const isDecorativeCoverageLabel = (label: string): boolean =>
   DECORATIVE_LABELS.has(label) ||
   FIGMA_NODE_ID_PATTERN.test(label) ||
-  VALUE_ONLY_PATTERN.test(label) ||
-  HELPER_SENTENCE_PATTERN.test(label) ||
-  PAGE_TITLE_PATTERN.test(label);
+  VALUE_ONLY_PATTERN.test(label);
 
 export const isCoverageRelevantElementLike = (
   element: CoverageElementLike,

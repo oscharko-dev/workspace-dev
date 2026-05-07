@@ -4589,28 +4589,6 @@ const buildAgentLessonsQuery = (intent: BusinessTestIntentIr): string =>
     .filter((value) => value.length > 0)
     .join("\n");
 
-const isSchemaOnlyJudgeEntry = (
-  entry: JudgeConsensusVerdict["panel"][number],
-): boolean =>
-  entry.verdict !== "accept" &&
-  (entry.findings.length > 0 || entry.repairInstructions.length > 0) &&
-  entry.findings.every(
-    (finding) =>
-      finding.category === "schema_class" || finding.code.includes("schema"),
-  ) &&
-  entry.repairInstructions.every(
-    (instruction) => instruction.kind === "schema_violation",
-  );
-
-const isNonBlockingJudgeSchemaRepair = (
-  verdict: JudgeConsensusVerdict,
-): boolean =>
-  (verdict.verdict === "repair" || verdict.verdict === "reject") &&
-  verdict.panel.some(isSchemaOnlyJudgeEntry) &&
-  verdict.panel.every(
-    (entry) => entry.verdict === "accept" || isSchemaOnlyJudgeEntry(entry),
-  );
-
 const TRANSIENT_JUDGE_REFUSAL_CODES = new Set([
   "canceled",
   "gateway_unavailable",
@@ -4635,17 +4613,13 @@ const isNonBlockingJudgeInfrastructureFailure = (
   verdict.panel.some(isTransientJudgeInfrastructureEntry) &&
   verdict.panel.every(
     (entry) =>
-      entry.verdict === "accept" ||
-      isSchemaOnlyJudgeEntry(entry) ||
-      isTransientJudgeInfrastructureEntry(entry),
+      entry.verdict === "accept" || isTransientJudgeInfrastructureEntry(entry),
   );
 
 const isJudgeConsensusAcceptedForRun = (
   verdict: JudgeConsensusVerdict,
 ): boolean =>
-  verdict.verdict === "accept" ||
-  isNonBlockingJudgeSchemaRepair(verdict) ||
-  isNonBlockingJudgeInfrastructureFailure(verdict);
+  verdict.verdict === "accept" || isNonBlockingJudgeInfrastructureFailure(verdict);
 
 const BANKING_INSURANCE_PROMPT_RULES: ReadonlyArray<string> = Object.freeze([
   "- Wenn das Profil 'eu-banking-default' aktiv ist, behandle die Maske als reguliert (Bank/Versicherung).",
