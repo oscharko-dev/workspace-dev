@@ -47,6 +47,31 @@ those steps are skipped.
 
 ---
 
+## 1.6.0 — Issue #2015 — Filter decorative UI nodes from generator input
+
+**Bump type:** MINOR.
+
+**Scope:** Generator user-prompt `[2] TestDesignModel` payload — the
+`screen.elements` and `screen.actions` arrays are now filtered through
+`isCoverageRelevantElementLike` / `isCoverageRelevantActionLike` before
+being emitted, so decorative Figma text nodes (`<Radio>`, `<TextField>`,
+`<Stack> FormControlLabel | Radio`, standalone `EUR`, `Text`,
+`(optional)`, value-only labels) never reach the model.
+
+**Motivation:** Issue #2015 — benchmark dataset
+`T7l7m8T8501lxLZZFQrwJC` was blocked by `technique_quota_breach`
+because decorative React component placeholders surfaced as Figma text
+nodes drove the per-screen technique quotas and produced standalone
+customer test cases for `<Radio>`, `Text`, and `EUR`. The generator
+must be fed only meaningful business/UI targets so coverage and quotas
+align with what a customer would actually test.
+
+**Expected verdict-deltas on baseline:** No regression on meaningful
+screens; per-screen technique quotas decrease on Figma-rich fixtures
+because decorative text nodes no longer become required equivalence
+partitions; customer markdown stops emitting standalone test cases for
+placeholder labels.
+
 ## 1.5.0 — PR #1984 — Customer-context trace hygiene
 
 **Bump type:** MINOR.
