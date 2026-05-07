@@ -130,6 +130,9 @@ export interface TopologyInputSources {
   logicJudgeDeployment: TopologyInputSource;
   coveragePlannerDeployment: TopologyInputSource;
   riskRankerDeployment: TopologyInputSource;
+  visualPrimaryDeployment: TopologyInputSource;
+  visualFallbackDeployment: TopologyInputSource;
+  a11yJudgeDeployment: TopologyInputSource;
 }
 
 interface TopologyRoleReportEntry {
@@ -163,6 +166,9 @@ export interface TestIntelligenceDoctorOptions {
   logicJudgeDeployment: string | undefined;
   coveragePlannerDeployment: string | undefined;
   riskRankerDeployment: string | undefined;
+  visualPrimaryDeployment: string | undefined;
+  visualFallbackDeployment: string | undefined;
+  a11yJudgeDeployment: string | undefined;
   topologyInputSources: TopologyInputSources;
 }
 
@@ -281,6 +287,18 @@ export interface TestIntelligenceRunOptions {
    * ranking stays deterministic-only.
    */
   riskRankerDeployment?: string | undefined;
+  /**
+   * Optional dedicated deployment for the visual-primary role (Issue #1996).
+   * When set, the visual sidecar uses this deployment instead of consulting
+   * only the environment.
+   */
+  visualPrimaryDeployment?: string | undefined;
+  /**
+   * Optional dedicated deployment for the visual-fallback role (Issue #1996).
+   * When set, the visual sidecar uses this deployment instead of consulting
+   * only the environment.
+   */
+  visualFallbackDeployment?: string | undefined;
   modelApiKey: string | undefined;
   figmaToken: string | undefined;
   policyProfile: string | undefined;
@@ -322,6 +340,12 @@ export interface TestIntelligenceRunOptions {
    * reaches the LLM gateway.
    */
   customerProfilePath: string | undefined;
+  /**
+   * Optional dedicated deployment for the accessibility-judge role
+   * (Issue #1996). When unset, the runner keeps the deterministic-only
+   * accessibility path unless an env default is present.
+   */
+  a11yJudgeDeployment?: string | undefined;
   /** Optional ICT register reference forwarded to all CLI-created model clients. */
   ictRegisterRef?: string;
   /**
@@ -427,6 +451,12 @@ export const parseTestIntelligenceRunArgs = (
     env.WORKSPACE_TEST_SPACE_COVERAGE_PLANNER_DEPLOYMENT?.trim() || undefined;
   let riskRankerDeployment: string | undefined =
     env.WORKSPACE_TEST_SPACE_RISK_RANKER_DEPLOYMENT?.trim() || undefined;
+  let visualPrimaryDeployment: string | undefined =
+    env.WORKSPACE_TEST_SPACE_VISUAL_PRIMARY_DEPLOYMENT?.trim() || undefined;
+  let visualFallbackDeployment: string | undefined =
+    env.WORKSPACE_TEST_SPACE_VISUAL_FALLBACK_DEPLOYMENT?.trim() || undefined;
+  let a11yJudgeDeployment: string | undefined =
+    env.WORKSPACE_TEST_SPACE_A11Y_JUDGE_DEPLOYMENT?.trim() || undefined;
   let modelApiKey: string | undefined =
     env.WORKSPACE_TEST_SPACE_MODEL_API_KEY?.trim() || undefined;
   let figmaToken: string | undefined =
@@ -484,6 +514,21 @@ export const parseTestIntelligenceRunArgs = (
         : "default",
     riskRankerDeployment:
       readTrimmedEnv(env, "WORKSPACE_TEST_SPACE_RISK_RANKER_DEPLOYMENT") !==
+      undefined
+        ? "env"
+        : "default",
+    visualPrimaryDeployment:
+      readTrimmedEnv(env, "WORKSPACE_TEST_SPACE_VISUAL_PRIMARY_DEPLOYMENT") !==
+      undefined
+        ? "env"
+        : "default",
+    visualFallbackDeployment:
+      readTrimmedEnv(env, "WORKSPACE_TEST_SPACE_VISUAL_FALLBACK_DEPLOYMENT") !==
+      undefined
+        ? "env"
+        : "default",
+    a11yJudgeDeployment:
+      readTrimmedEnv(env, "WORKSPACE_TEST_SPACE_A11Y_JUDGE_DEPLOYMENT") !==
       undefined
         ? "env"
         : "default",
@@ -606,6 +651,45 @@ export const parseTestIntelligenceRunArgs = (
       }
       riskRankerDeployment = value;
       topologyInputSources.riskRankerDeployment = "cli";
+      index += 1;
+      continue;
+    }
+
+    if (arg === "--visual-primary-deployment") {
+      const value = next?.trim();
+      if (!value) {
+        throw new TestIntelligenceRunOperatorError(
+          "--visual-primary-deployment requires a non-empty deployment name",
+        );
+      }
+      visualPrimaryDeployment = value;
+      topologyInputSources.visualPrimaryDeployment = "cli";
+      index += 1;
+      continue;
+    }
+
+    if (arg === "--visual-fallback-deployment") {
+      const value = next?.trim();
+      if (!value) {
+        throw new TestIntelligenceRunOperatorError(
+          "--visual-fallback-deployment requires a non-empty deployment name",
+        );
+      }
+      visualFallbackDeployment = value;
+      topologyInputSources.visualFallbackDeployment = "cli";
+      index += 1;
+      continue;
+    }
+
+    if (arg === "--a11y-judge-deployment") {
+      const value = next?.trim();
+      if (!value) {
+        throw new TestIntelligenceRunOperatorError(
+          "--a11y-judge-deployment requires a non-empty deployment name",
+        );
+      }
+      a11yJudgeDeployment = value;
+      topologyInputSources.a11yJudgeDeployment = "cli";
       index += 1;
       continue;
     }
@@ -933,6 +1017,8 @@ export const parseTestIntelligenceRunArgs = (
     logicJudgeDeployment,
     coveragePlannerDeployment,
     riskRankerDeployment,
+    visualPrimaryDeployment,
+    visualFallbackDeployment,
     modelApiKey,
     figmaToken,
     ...(ictRegisterRef !== undefined ? { ictRegisterRef } : {}),
@@ -953,6 +1039,7 @@ export const parseTestIntelligenceRunArgs = (
       ? { customerEvalMarkdownPath }
       : {}),
     customerProfilePath,
+    a11yJudgeDeployment,
     diversityPasses,
     coverageBaseline: {
       archetype: coverageBaselineArchetype,
@@ -982,6 +1069,12 @@ export const parseTestIntelligenceDoctorArgs = (
     env.WORKSPACE_TEST_SPACE_COVERAGE_PLANNER_DEPLOYMENT?.trim() || undefined;
   let riskRankerDeployment: string | undefined =
     env.WORKSPACE_TEST_SPACE_RISK_RANKER_DEPLOYMENT?.trim() || undefined;
+  let visualPrimaryDeployment: string | undefined =
+    env.WORKSPACE_TEST_SPACE_VISUAL_PRIMARY_DEPLOYMENT?.trim() || undefined;
+  let visualFallbackDeployment: string | undefined =
+    env.WORKSPACE_TEST_SPACE_VISUAL_FALLBACK_DEPLOYMENT?.trim() || undefined;
+  let a11yJudgeDeployment: string | undefined =
+    env.WORKSPACE_TEST_SPACE_A11Y_JUDGE_DEPLOYMENT?.trim() || undefined;
   const topologyInputSources: TopologyInputSources = {
     modelDeployment:
       readTrimmedEnv(env, "WORKSPACE_TEST_SPACE_TESTCASE_MODEL_DEPLOYMENT") !==
@@ -1002,6 +1095,21 @@ export const parseTestIntelligenceDoctorArgs = (
         : "default",
     riskRankerDeployment:
       readTrimmedEnv(env, "WORKSPACE_TEST_SPACE_RISK_RANKER_DEPLOYMENT") !==
+      undefined
+        ? "env"
+        : "default",
+    visualPrimaryDeployment:
+      readTrimmedEnv(env, "WORKSPACE_TEST_SPACE_VISUAL_PRIMARY_DEPLOYMENT") !==
+      undefined
+        ? "env"
+        : "default",
+    visualFallbackDeployment:
+      readTrimmedEnv(env, "WORKSPACE_TEST_SPACE_VISUAL_FALLBACK_DEPLOYMENT") !==
+      undefined
+        ? "env"
+        : "default",
+    a11yJudgeDeployment:
+      readTrimmedEnv(env, "WORKSPACE_TEST_SPACE_A11Y_JUDGE_DEPLOYMENT") !==
       undefined
         ? "env"
         : "default",
@@ -1063,6 +1171,45 @@ export const parseTestIntelligenceDoctorArgs = (
       continue;
     }
 
+    if (arg === "--visual-primary-deployment") {
+      const value = next?.trim();
+      if (!value) {
+        throw new TestIntelligenceRunOperatorError(
+          "--visual-primary-deployment requires a non-empty deployment name",
+        );
+      }
+      visualPrimaryDeployment = value;
+      topologyInputSources.visualPrimaryDeployment = "cli";
+      index += 1;
+      continue;
+    }
+
+    if (arg === "--visual-fallback-deployment") {
+      const value = next?.trim();
+      if (!value) {
+        throw new TestIntelligenceRunOperatorError(
+          "--visual-fallback-deployment requires a non-empty deployment name",
+        );
+      }
+      visualFallbackDeployment = value;
+      topologyInputSources.visualFallbackDeployment = "cli";
+      index += 1;
+      continue;
+    }
+
+    if (arg === "--a11y-judge-deployment") {
+      const value = next?.trim();
+      if (!value) {
+        throw new TestIntelligenceRunOperatorError(
+          "--a11y-judge-deployment requires a non-empty deployment name",
+        );
+      }
+      a11yJudgeDeployment = value;
+      topologyInputSources.a11yJudgeDeployment = "cli";
+      index += 1;
+      continue;
+    }
+
     throw new TestIntelligenceRunOperatorError(
       `Unknown flag for "test-intelligence doctor": ${arg}`,
     );
@@ -1073,6 +1220,9 @@ export const parseTestIntelligenceDoctorArgs = (
     logicJudgeDeployment,
     coveragePlannerDeployment,
     riskRankerDeployment,
+    visualPrimaryDeployment,
+    visualFallbackDeployment,
+    a11yJudgeDeployment,
     topologyInputSources,
   };
 };
@@ -1426,6 +1576,50 @@ const requireVisualSidecarEnv = (
   );
 };
 
+const requireVisualSidecarDeployments = (
+  options: Pick<
+    TestIntelligenceRunOptions,
+    | "visualPrimaryDeployment"
+    | "visualFallbackDeployment"
+    | "a11yJudgeDeployment"
+  >,
+  env: NodeJS.ProcessEnv,
+): {
+  visualPrimaryDeployment: string;
+  visualFallbackDeployment: string;
+  a11yJudgeDeployment: string | undefined;
+} => {
+  const visualPrimaryDeployment = options.visualPrimaryDeployment;
+  const visualFallbackDeployment = options.visualFallbackDeployment;
+  const missing: string[] = [];
+  if (
+    readTrimmedEnv(env, "WORKSPACE_TEST_SPACE_VISUAL_MODEL_ENDPOINT") ===
+    undefined
+  ) {
+    missing.push("WORKSPACE_TEST_SPACE_VISUAL_MODEL_ENDPOINT");
+  }
+  if (visualPrimaryDeployment === undefined) {
+    missing.push(
+      "--visual-primary-deployment or WORKSPACE_TEST_SPACE_VISUAL_PRIMARY_DEPLOYMENT",
+    );
+  }
+  if (visualFallbackDeployment === undefined) {
+    missing.push(
+      "--visual-fallback-deployment or WORKSPACE_TEST_SPACE_VISUAL_FALLBACK_DEPLOYMENT",
+    );
+  }
+  if (missing.length > 0) {
+    throw new TestIntelligenceRunOperatorError(
+      `--enable-visual-sidecar requires ${missing.join(", ")}`,
+    );
+  }
+  return {
+    visualPrimaryDeployment: visualPrimaryDeployment as string,
+    visualFallbackDeployment: visualFallbackDeployment as string,
+    a11yJudgeDeployment: options.a11yJudgeDeployment,
+  };
+};
+
 export const buildLiveVisualSidecarBundle = (
   options: TestIntelligenceRunOptions,
   env: NodeJS.ProcessEnv = process.env,
@@ -1445,16 +1639,11 @@ export const buildLiveVisualSidecarBundle = (
     env,
     "WORKSPACE_TEST_SPACE_VISUAL_MODEL_ENDPOINT",
   );
-  const visualPrimaryDeployment = requireVisualSidecarEnv(
-    env,
-    "WORKSPACE_TEST_SPACE_VISUAL_PRIMARY_DEPLOYMENT",
-  );
-  const visualFallbackDeployment = requireVisualSidecarEnv(
-    env,
-    "WORKSPACE_TEST_SPACE_VISUAL_FALLBACK_DEPLOYMENT",
-  );
-  const a11yJudgeDeployment =
-    readTrimmedEnv(env, "WORKSPACE_TEST_SPACE_A11Y_JUDGE_DEPLOYMENT");
+  const {
+    visualPrimaryDeployment,
+    visualFallbackDeployment,
+    a11yJudgeDeployment,
+  } = requireVisualSidecarDeployments(options, env);
   const riskRankerDeployment = options.riskRankerDeployment;
 
   const bundle = createLlmGatewayClientBundle(
@@ -1792,30 +1981,24 @@ const buildTopologyPreflightReport = ({
     disabledReason: "not configured; deterministic-only risk ranking remains active",
   });
 
-  const visualPrimaryDeployment = readTrimmedEnv(
-    env,
-    "WORKSPACE_TEST_SPACE_VISUAL_PRIMARY_DEPLOYMENT",
-  );
-  const visualFallbackDeployment = readTrimmedEnv(
-    env,
-    "WORKSPACE_TEST_SPACE_VISUAL_FALLBACK_DEPLOYMENT",
-  );
-  const a11yJudgeDeployment = readTrimmedEnv(
-    env,
-    "WORKSPACE_TEST_SPACE_A11Y_JUDGE_DEPLOYMENT",
-  );
-  const visualPrimarySource = deploymentSourceFromEnv(
-    env,
-    "WORKSPACE_TEST_SPACE_VISUAL_PRIMARY_DEPLOYMENT",
-  );
-  const visualFallbackSource = deploymentSourceFromEnv(
-    env,
-    "WORKSPACE_TEST_SPACE_VISUAL_FALLBACK_DEPLOYMENT",
-  );
-  const a11ySource = deploymentSourceFromEnv(
-    env,
-    "WORKSPACE_TEST_SPACE_A11Y_JUDGE_DEPLOYMENT",
-  );
+  const visualPrimaryDeployment = options.visualPrimaryDeployment;
+  const visualFallbackDeployment = options.visualFallbackDeployment;
+  const a11yJudgeDeployment = options.a11yJudgeDeployment;
+  const visualPrimarySource =
+    optionSources?.visualPrimaryDeployment ??
+    deploymentSourceFromEnv(
+      env,
+      "WORKSPACE_TEST_SPACE_VISUAL_PRIMARY_DEPLOYMENT",
+    );
+  const visualFallbackSource =
+    optionSources?.visualFallbackDeployment ??
+    deploymentSourceFromEnv(
+      env,
+      "WORKSPACE_TEST_SPACE_VISUAL_FALLBACK_DEPLOYMENT",
+    );
+  const a11ySource =
+    optionSources?.a11yJudgeDeployment ??
+    deploymentSourceFromEnv(env, "WORKSPACE_TEST_SPACE_A11Y_JUDGE_DEPLOYMENT");
 
   if (!visualSidecarEnabled) {
     roles.push({
@@ -1951,7 +2134,6 @@ const writeTopologyPreflightReport = async (
 
 const buildDoctorReport = (
   options: TestIntelligenceDoctorOptions,
-  env: NodeJS.ProcessEnv,
 ): TestIntelligenceDoctorReport => {
   const roles: DoctorRoleReportEntry[] = [];
   const pushRole = (entry: DoctorRoleReportEntry): void => {
@@ -2164,30 +2346,13 @@ const buildDoctorReport = (
       "unset; risk ranking stays deterministic-only instead of using the recommended LLM augmentation",
   });
 
-  const visualPrimaryDeployment = readTrimmedEnv(
-    env,
-    "WORKSPACE_TEST_SPACE_VISUAL_PRIMARY_DEPLOYMENT",
-  );
-  const visualFallbackDeployment = readTrimmedEnv(
-    env,
-    "WORKSPACE_TEST_SPACE_VISUAL_FALLBACK_DEPLOYMENT",
-  );
-  const a11yJudgeDeployment = readTrimmedEnv(
-    env,
-    "WORKSPACE_TEST_SPACE_A11Y_JUDGE_DEPLOYMENT",
-  );
-  const visualPrimarySource = deploymentSourceFromEnv(
-    env,
-    "WORKSPACE_TEST_SPACE_VISUAL_PRIMARY_DEPLOYMENT",
-  );
-  const visualFallbackSource = deploymentSourceFromEnv(
-    env,
-    "WORKSPACE_TEST_SPACE_VISUAL_FALLBACK_DEPLOYMENT",
-  );
-  const a11ySource = deploymentSourceFromEnv(
-    env,
-    "WORKSPACE_TEST_SPACE_A11Y_JUDGE_DEPLOYMENT",
-  );
+  const visualPrimaryDeployment = options.visualPrimaryDeployment;
+  const visualFallbackDeployment = options.visualFallbackDeployment;
+  const a11yJudgeDeployment = options.a11yJudgeDeployment;
+  const visualPrimarySource = options.topologyInputSources.visualPrimaryDeployment;
+  const visualFallbackSource =
+    options.topologyInputSources.visualFallbackDeployment;
+  const a11ySource = options.topologyInputSources.a11yJudgeDeployment;
 
   const pushVisualRole = ({
     role,
@@ -2211,7 +2376,10 @@ const buildDoctorReport = (
         source,
         status: role === "a11y_judge" ? "warning" : "error",
         summary: unsetSummary,
-        fix: `set ${envVar}=${recommendedDeployment}`,
+        fix: joinFixes(
+          `set ${envVar}=${recommendedDeployment}`,
+          `pass ${role === "visual_primary" ? "--visual-primary-deployment" : role === "visual_fallback" ? "--visual-fallback-deployment" : "--a11y-judge-deployment"} ${recommendedDeployment}`,
+        ),
       });
       return;
     }
@@ -2222,7 +2390,10 @@ const buildDoctorReport = (
         source,
         status: "error",
         summary: `deployment "${deployment}" is incompatible with the chat-completion ${formatTopologyRoleName(role)} role contract`,
-        fix: `set ${envVar}=${recommendedDeployment}`,
+        fix: joinFixes(
+          `set ${envVar}=${recommendedDeployment}`,
+          `pass ${role === "visual_primary" ? "--visual-primary-deployment" : role === "visual_fallback" ? "--visual-fallback-deployment" : "--a11y-judge-deployment"} ${recommendedDeployment}`,
+        ),
       });
       return;
     }
@@ -2242,7 +2413,10 @@ const buildDoctorReport = (
       source,
       status: "warning",
       summary: `deployment "${deployment}" is valid but differs from the runbook recommendation ${recommendedDeployment}`,
-      fix: `set ${envVar}=${recommendedDeployment}`,
+      fix: joinFixes(
+        `set ${envVar}=${recommendedDeployment}`,
+        `pass ${role === "visual_primary" ? "--visual-primary-deployment" : role === "visual_fallback" ? "--visual-fallback-deployment" : "--a11y-judge-deployment"} ${recommendedDeployment}`,
+      ),
     });
   };
 
@@ -2308,8 +2482,8 @@ export const runTestIntelligenceDoctorCommand = async (
   sink: TestIntelligenceRunSink,
   runtime: { env?: NodeJS.ProcessEnv } = {},
 ): Promise<number> => {
-  const env = runtime.env ?? process.env;
-  const report = buildDoctorReport(options, env);
+  void runtime;
+  const report = buildDoctorReport(options);
   sink.stdout(
     [
       "test-intelligence topology doctor",
@@ -2982,6 +3156,8 @@ export const runTestIntelligenceCommand = async (
               ? "enabled (--enable-visual-sidecar)"
               : "disabled (default; set --enable-visual-sidecar or FIGMAPIPE_WORKSPACE_TI_ENABLE_VISUAL_SIDECAR=1)"
         }`,
+        "  resolved roles:",
+        ...topologyPreflightReport.roles.map(formatTopologyRoleLine),
         `  finops budget : ${options.finopsBudgetPath ?? "(production default)"}`,
         `  ict ref       : ${options.ictRegisterRef ?? "(none)"}`,
         `  output subdir : ${outputRunSubdirMode ?? "(none)"}`,
@@ -3276,8 +3452,27 @@ Visual sidecar:
                              FIGMAPIPE_WORKSPACE_TI_ENABLE_VISUAL_SIDECAR=1)
                              Requires:
                              WORKSPACE_TEST_SPACE_VISUAL_MODEL_ENDPOINT
+                             and resolved primary/fallback deployments.
+  --visual-primary-deployment <name>
+                             Optional dedicated deployment for the
+                             visual-primary role (Issue #1996).
+                             Default: env
                              WORKSPACE_TEST_SPACE_VISUAL_PRIMARY_DEPLOYMENT
+                             (falls back to disabled when unset).
+  --visual-fallback-deployment <name>
+                             Optional dedicated deployment for the
+                             visual-fallback role (Issue #1996).
+                             Default: env
                              WORKSPACE_TEST_SPACE_VISUAL_FALLBACK_DEPLOYMENT
+                             (falls back to disabled when unset).
+  --a11y-judge-deployment <name>
+                             Optional dedicated deployment for the
+                             LLM-augmented accessibility judge
+                             (Issue #1996).
+                             Default: env
+                             WORKSPACE_TEST_SPACE_A11Y_JUDGE_DEPLOYMENT
+                             (falls back to deterministic-only a11y
+                             evaluation when unset).
   --no-visual-sidecar        Skip the visual sidecar pass even when a
                              bundle is configured.
                              Mutually exclusive with
@@ -3354,11 +3549,9 @@ Deployments (defaults from environment):
   --logic-judge-deployment <name>       default: env WORKSPACE_TEST_SPACE_LOGIC_JUDGE_DEPLOYMENT
   --coverage-planner-deployment <name>  default: env WORKSPACE_TEST_SPACE_COVERAGE_PLANNER_DEPLOYMENT
   --risk-ranker-deployment <name>       default: env WORKSPACE_TEST_SPACE_RISK_RANKER_DEPLOYMENT
-
-Always read from environment:
-  WORKSPACE_TEST_SPACE_VISUAL_PRIMARY_DEPLOYMENT
-  WORKSPACE_TEST_SPACE_VISUAL_FALLBACK_DEPLOYMENT
-  WORKSPACE_TEST_SPACE_A11Y_JUDGE_DEPLOYMENT
+  --visual-primary-deployment <name>    default: env WORKSPACE_TEST_SPACE_VISUAL_PRIMARY_DEPLOYMENT
+  --visual-fallback-deployment <name>   default: env WORKSPACE_TEST_SPACE_VISUAL_FALLBACK_DEPLOYMENT
+  --a11y-judge-deployment <name>        default: env WORKSPACE_TEST_SPACE_A11Y_JUDGE_DEPLOYMENT
 
 Behavior:
   - Prints a deterministic, sanitized role-to-deployment matrix.
