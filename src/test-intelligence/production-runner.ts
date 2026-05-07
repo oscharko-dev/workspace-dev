@@ -54,13 +54,18 @@ import {
   GENERATED_TESTCASES_ARTIFACT_FILENAME,
   GENERATED_TEST_CASE_SCHEMA_VERSION,
   JUDGE_CONSENSUS_ARTIFACT_FILENAME,
+  RUN_QUALITY_ARTIFACT_FILENAME,
+  RUN_QUALITY_SCHEMA_VERSION,
   LOGIC_JUDGE_COMPILED_PROMPT_ARTIFACT_FILENAME,
   LOGIC_JUDGE_PROMPT_TEMPLATE_VERSION,
   LOGIC_JUDGE_VERDICT_ARTIFACT_FILENAME,
   type JudgeConsensusVerdict,
+  type JudgeConsensusRepairHistory,
   LOGIC_JUDGE_VERDICT_SCHEMA_VERSION,
   MULTI_SOURCE_TEST_INTENT_ENVELOPE_SCHEMA_VERSION,
   REDACTION_POLICY_VERSION,
+  type RunQualityArtifact,
+  type RunQualityAttemptSummary,
   TEST_INTELLIGENCE_CONTRACT_VERSION,
   TEST_INTELLIGENCE_PROMPT_TEMPLATE_VERSION,
   TEST_CASE_COVERAGE_REPORT_ARTIFACT_FILENAME,
@@ -73,6 +78,7 @@ import {
   type AgentSourceLabel,
   type BusinessTestIntentIr,
   type FinOpsBudgetEnvelope,
+  type FinOpsBudgetReport,
   type GeneratedTestCase,
   type GeneratedTestCaseAuditMetadata,
   type GeneratedTestCaseFigmaTrace,
@@ -821,6 +827,7 @@ export interface RunFigmaToQcTestCasesResult {
     visualSidecarValidationReport?: string;
     agentRoleRun: string;
     judgeConsensus: string;
+    runQuality: string;
     logicJudgeVerdict?: string;
     faithfulnessJudgeVerdict?: string;
     genealogy: string;
@@ -867,6 +874,10 @@ export interface RunFigmaToQcTestCasesResult {
     verdict: JudgeConsensusVerdict;
     artifactPath: string;
   };
+  runQuality: {
+    artifact: RunQualityArtifact;
+    artifactPath: string;
+  };
   faithfulnessJudge?: {
     verdict: FaithfulnessVerdict;
     artifactPath: string;
@@ -891,6 +902,150 @@ export interface RunFigmaToQcTestCasesResult {
     perCase: ReadonlyArray<string>;
   };
 }
+
+const getBySourceCallCount = (
+  report: FinOpsBudgetReport,
+  source: AgentSourceLabel,
+): number => report.bySource[source]?.callCount ?? 0;
+
+const buildRunQualityArtifact = (input: {
+  jobId: string;
+  generatedAt: string;
+  blocked: boolean;
+  judgeAccepted: boolean;
+  validation: {
+    policy: TestCasePolicyReport;
+  };
+  judgeConsensus: JudgeConsensusVerdict;
+  finopsReport: FinOpsBudgetReport;
+  visualSidecarResult?: VisualSidecarResult;
+}): RunQualityArtifact => {
+  const generatorAttempts = getBySourceCallCount(
+    input.finopsReport,
+    "generator",
+  );
+  const judgeAttempts =
+    getBySourceCallCount(input.finopsReport, "judge_primary") +
+    getBySourceCallCount(input.finopsReport, "judge_secondary");
+  const visualAttempts = input.visualSidecarResult?.attempts.length ?? 0;
+  const visualFailures =
+    input.visualSidecarResult?.attempts.filter(
+      (attempt) => attempt.errorClass !== undefined,
+    ).length ?? 0;
+  const visualSuccesses = Math.max(visualAttempts - visualFailures, 0);
+  const visualFallbackUsed =
+    input.visualSidecarResult?.outcome === "success" &&
+    input.visualSidecarResult.fallbackReason !== "none";
+  const latestVisualAttemptError =
+    input.visualSidecarResult?.attempts
+      .slice()
+      .reverse()
+      .find((attempt) => attempt.errorClass !== undefined)?.errorClass;
+  const attemptSummaries: RunQualityAttemptSummary[] = [
+    {
+      stage: "generator",
+      attempts: generatorAttempts,
+      successes: generatorAttempts,
+      failures: 0,
+      finalOutcome:
+        input.judgeConsensus.repairState === "repaired"
+          ? "recovered"
+          : input.blocked
+            ? "blocked"
+            : "clean",
+    },
+    {
+      stage: "judge",
+      attempts: judgeAttempts,
+      successes: judgeAttempts,
+      failures: 0,
+      finalOutcome:
+        input.judgeConsensus.repairState === "repaired"
+          ? "recovered"
+          : input.judgeAccepted
+            ? "clean"
+            : "blocked",
+    },
+    {
+      stage: "visual_sidecar",
+      attempts: visualAttempts,
+      successes: visualSuccesses,
+      failures: visualFailures,
+      finalOutcome:
+        visualAttempts === 0
+          ? "not_run"
+          : input.visualSidecarResult?.outcome === "failure"
+            ? input.blocked
+              ? "blocked"
+              : "degraded"
+            : visualFailures > 0 || visualFallbackUsed
+              ? "degraded"
+              : "clean",
+      ...(input.visualSidecarResult?.outcome === "failure"
+        ? { lastErrorClass: input.visualSidecarResult.failureClass }
+        : visualFailures > 0 && latestVisualAttemptError !== undefined
+          ? { lastErrorClass: latestVisualAttemptError }
+          : {}),
+    },
+    {
+      stage: "policy_gate",
+      attempts: 1,
+      successes: 1,
+      failures: 0,
+      finalOutcome: input.blocked ? "blocked" : "clean",
+    },
+  ];
+  const degradedReasons = new Set<string>();
+  if (input.blocked) {
+    if (input.validation.policy.blockedCount > 0) {
+      degradedReasons.add("policy_blocked");
+    }
+    if (!input.judgeAccepted) {
+      degradedReasons.add("judge_consensus_not_accepted");
+    }
+    if (input.judgeConsensus.repairHistory.finalOutcome === "needs_review") {
+      degradedReasons.add("repair_budget_exhausted");
+    }
+    if (
+      input.judgeConsensus.repairHistory.finalOutcome ===
+      "convergence_stalled"
+    ) {
+      degradedReasons.add("repair_convergence_stalled");
+    }
+    if (input.judgeConsensus.repairHistory.finalOutcome === "rejected") {
+      degradedReasons.add("repair_rejected_post_iteration");
+    }
+  } else {
+    if (attemptSummaries[2]!.finalOutcome === "degraded") {
+      degradedReasons.add("visual_sidecar_degraded");
+    }
+  }
+  const status = input.blocked
+    ? "blocked_failure"
+    : input.judgeConsensus.repairState === "repaired"
+      ? "repaired_success"
+      : degradedReasons.size > 0
+        ? "degraded_success"
+        : "clean_success";
+  return {
+    schemaVersion: RUN_QUALITY_SCHEMA_VERSION,
+    contractVersion: TEST_INTELLIGENCE_CONTRACT_VERSION,
+    generatedAt: input.generatedAt,
+    jobId: input.jobId,
+    status,
+    blocked: input.blocked,
+    usable: !input.blocked,
+    finalJudgeVerdict: input.judgeConsensus.verdict,
+    repairState: input.judgeConsensus.repairState,
+    repairHistory: input.judgeConsensus.repairHistory,
+    activeFindings: input.judgeConsensus.activeFindings,
+    activeFindingCount: input.judgeConsensus.activeFindings.length,
+    attemptSummaries,
+    degradedReasons: [...degradedReasons].sort((left, right) =>
+      left.localeCompare(right),
+    ),
+  };
+};
 
 /**
  * Run the production figma_to_qc_test_cases pipeline end-to-end. The LLM
@@ -2035,7 +2190,9 @@ export const runFigmaToQcTestCases = async (
       result: attempt.result,
     });
   }
-  const buildCurrentJudgeConsensus = (): JudgeConsensusVerdict =>
+  const buildCurrentJudgeConsensus = (
+    repairHistory?: Partial<JudgeConsensusRepairHistory>,
+  ): JudgeConsensusVerdict =>
     buildJudgeConsensus({
       jobId: input.jobId,
       generatedAt: input.generatedAt,
@@ -2052,8 +2209,10 @@ export const runFigmaToQcTestCases = async (
             ]
           : []),
       ],
+      ...(repairHistory !== undefined ? { repairHistory } : {}),
     });
   let judgeConsensusResult = buildCurrentJudgeConsensus();
+  const initialJudgeConsensusResult = judgeConsensusResult;
   // 7b. Repair loop (Issue #1900, Issue #1928). When the judge panel did
   //     not unanimously accept the initial output — including the case
   //     where a judge returned `reject` — consolidate the union of
@@ -2472,7 +2631,14 @@ export const runFigmaToQcTestCases = async (
     if (latestRepairA11yJudgeResult !== undefined) {
       a11yJudgeResult = latestRepairA11yJudgeResult;
     }
-    judgeConsensusResult = buildCurrentJudgeConsensus();
+    judgeConsensusResult = buildCurrentJudgeConsensus({
+      attempted: true,
+      repairIterationCount: repairLoopResult.repairIterationCount,
+      finalOutcome: repairLoopResult.outcome,
+      historicalFindings: initialJudgeConsensusResult.activeFindings,
+      historicalRepairInstructions:
+        initialJudgeConsensusResult.repairInstructions,
+    });
   }
 
   const judgeAccepted = isJudgeConsensusAcceptedForRun(judgeConsensusResult);
@@ -2630,6 +2796,7 @@ export const runFigmaToQcTestCases = async (
     artifactDir,
     JUDGE_CONSENSUS_ARTIFACT_FILENAME,
   );
+  const runQualityPath = join(artifactDir, RUN_QUALITY_ARTIFACT_FILENAME);
   const faithfulnessJudgeCompiledPromptPath =
     faithfulnessJudgeResult === undefined
       ? undefined
@@ -2685,6 +2852,16 @@ export const runFigmaToQcTestCases = async (
       ? { outcomeOverride: finopsOutcomeOverride }
       : {}),
   });
+  const runQualityArtifact = buildRunQualityArtifact({
+    jobId: input.jobId,
+    generatedAt: input.generatedAt,
+    blocked,
+    judgeAccepted,
+    validation,
+    judgeConsensus: judgeConsensusResult,
+    finopsReport,
+    ...(visualSidecarResult !== undefined ? { visualSidecarResult } : {}),
+  });
   const finopsWritten = await writeFinOpsBudgetReport({
     runDir: artifactDir,
     report: finopsReport,
@@ -2709,6 +2886,7 @@ export const runFigmaToQcTestCases = async (
   );
   const logicJudgeVerdictBytes = encodeCanonicalJson(logicJudgeResult.verdict);
   const judgeConsensusBytes = encodeCanonicalJson(judgeConsensusResult);
+  const runQualityBytes = encodeCanonicalJson(runQualityArtifact);
   const faithfulnessJudgeCompiledPromptBytes =
     faithfulnessJudgeResult === undefined
       ? undefined
@@ -2785,6 +2963,7 @@ export const runFigmaToQcTestCases = async (
       ),
       writeAtomicBytes(logicJudgeVerdictPath, logicJudgeVerdictBytes),
       judgeConsensusWritePromise,
+      writeAtomicBytes(runQualityPath, runQualityBytes),
       agentRoleRunPromise,
       ...generatorPassRunPromises,
       ...(faithfulnessJudgeCompiledPromptPath === undefined ||
@@ -3103,6 +3282,11 @@ export const runFigmaToQcTestCases = async (
         bytes: judgeConsensusBytes,
         category: "manifest",
       },
+      {
+        filename: RUN_QUALITY_ARTIFACT_FILENAME,
+        bytes: runQualityBytes,
+        category: "manifest",
+      },
       ...(faithfulnessJudgeCompiledPromptBytes === undefined
         ? []
         : [
@@ -3352,6 +3536,10 @@ export const runFigmaToQcTestCases = async (
       verdict: judgeConsensusResult,
       artifactPath: judgeConsensusPath,
     },
+    runQuality: {
+      artifact: runQualityArtifact,
+      artifactPath: runQualityPath,
+    },
     ...(faithfulnessJudgeResult !== undefined &&
     faithfulnessJudgeVerdictPath !== undefined &&
     faithfulnessJudgeCompiledPromptPath !== undefined
@@ -3413,6 +3601,7 @@ export const runFigmaToQcTestCases = async (
         : {}),
       agentRoleRun: agentRoleRunArtifact.artifactPath,
       judgeConsensus: judgeConsensusArtifact.path,
+      runQuality: runQualityPath,
       logicJudgeVerdict: logicJudgeVerdictPath,
       ...(faithfulnessJudgeVerdictPath !== undefined
         ? { faithfulnessJudgeVerdict: faithfulnessJudgeVerdictPath }

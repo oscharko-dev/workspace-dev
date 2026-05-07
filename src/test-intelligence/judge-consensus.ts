@@ -5,6 +5,7 @@ import { dirname, join } from "node:path";
 import {
   FAITHFULNESS_VERDICT_SCHEMA_VERSION,
   JUDGE_CONSENSUS_ARTIFACT_FILENAME,
+  JUDGE_CONSENSUS_REPAIR_OUTCOMES,
   JUDGE_CONSENSUS_SCHEMA_VERSION,
   LOGIC_JUDGE_VERDICT_SCHEMA_VERSION,
   TEST_INTELLIGENCE_CONTRACT_VERSION,
@@ -12,6 +13,8 @@ import {
   type FaithfulnessVerdict,
   type JudgeConsensusFinding,
   type JudgeConsensusPanelEntry,
+  type JudgeConsensusRepairHistory,
+  type JudgeConsensusRepairOutcome,
   type JudgeConsensusVerdict,
   type JudgeVerdict,
   type RepairInstruction,
@@ -143,6 +146,46 @@ const dedupeRepairInstructions = (
   return [...dedup.values()].sort(compareInstruction);
 };
 
+const compareFinding = (
+  left: JudgeConsensusFinding,
+  right: JudgeConsensusFinding,
+): number =>
+  left.testCaseId.localeCompare(right.testCaseId) ||
+  left.category.localeCompare(right.category) ||
+  left.code.localeCompare(right.code) ||
+  (left.severity ?? "").localeCompare(right.severity ?? "") ||
+  left.message.localeCompare(right.message);
+
+const dedupeFindings = (
+  panel: readonly JudgeConsensusPanelEntry[],
+): readonly JudgeConsensusFinding[] => {
+  const dedup = new Map<string, JudgeConsensusFinding>();
+  for (const entry of panel) {
+    for (const finding of entry.findings) {
+      const normalized: JudgeConsensusFinding = {
+        testCaseId: finding.testCaseId,
+        code: finding.code,
+        message: truncate(finding.message, MAX_MESSAGE_LENGTH),
+        category: finding.category,
+        ...(finding.severity !== undefined
+          ? { severity: finding.severity }
+          : {}),
+      };
+      const key = [
+        normalized.testCaseId,
+        normalized.category,
+        normalized.code,
+        normalized.severity ?? "",
+        normalized.message,
+      ].join("\0");
+      if (!dedup.has(key)) {
+        dedup.set(key, normalized);
+      }
+    }
+  }
+  return [...dedup.values()].sort(compareFinding);
+};
+
 const resolveWeightedVerdict = (
   panel: readonly JudgeConsensusPanelEntry[],
 ): ConsensusVerdictLabel => {
@@ -176,6 +219,7 @@ export interface BuildJudgeConsensusInput {
   readonly jobId: string;
   readonly generatedAt: string;
   readonly panel: readonly JudgeConsensusPanelEntry[];
+  readonly repairHistory?: Partial<JudgeConsensusRepairHistory>;
 }
 
 export const buildLogicJudgeConsensusEntry = (
@@ -292,6 +336,7 @@ export const buildJudgeConsensus = (
   if (panel.length === 0) {
     throw new RangeError("buildJudgeConsensus: panel must contain at least one judge");
   }
+  const activeFindings = dedupeFindings(panel);
   const repairInstructions = dedupeRepairInstructions(panel);
   const vetoCandidate = panel.filter(hasVeto).reduce<JudgeConsensusPanelEntry | undefined>(
     (selected, entry) =>
@@ -300,13 +345,45 @@ export const buildJudgeConsensus = (
   );
   const verdict =
     vetoCandidate?.verdict ?? resolveWeightedVerdict(panel);
+  const repairOutcome = (
+    input.repairHistory?.finalOutcome ?? "not_needed"
+  ) satisfies JudgeConsensusRepairOutcome;
+  const historicalFindings = [
+    ...(input.repairHistory?.historicalFindings ?? []),
+  ].sort(compareFinding);
+  const historicalRepairInstructions = [
+    ...(input.repairHistory?.historicalRepairInstructions ?? []),
+  ].sort(compareInstruction);
+  const repairIterationCount = Math.max(
+    input.repairHistory?.repairIterationCount ?? 0,
+    0,
+  );
+  const attempted =
+    input.repairHistory?.attempted === true || repairIterationCount > 0;
+  const repairState =
+    attempted && verdict === "accept"
+      ? "repaired"
+      : verdict === "repair"
+        ? "repair_required"
+        : "none";
   return {
     schemaVersion: JUDGE_CONSENSUS_SCHEMA_VERSION,
     contractVersion: TEST_INTELLIGENCE_CONTRACT_VERSION,
     generatedAt: input.generatedAt,
     jobId: input.jobId,
     verdict,
+    repairState,
+    activeFindings,
     repairInstructions,
+    repairHistory: {
+      attempted,
+      repairIterationCount,
+      finalOutcome: JUDGE_CONSENSUS_REPAIR_OUTCOMES.includes(repairOutcome)
+        ? repairOutcome
+        : "not_needed",
+      historicalFindings,
+      historicalRepairInstructions,
+    },
     ...(vetoCandidate !== undefined
       ? {
           vetoBy: {
