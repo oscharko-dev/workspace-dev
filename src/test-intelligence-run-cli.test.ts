@@ -14,9 +14,12 @@ import path from "node:path";
 import test from "node:test";
 
 import {
+  parseTestIntelligenceDoctorArgs,
   parseTestIntelligenceRunArgs,
+  runTestIntelligenceDoctorCommand,
   runTestIntelligenceCommand,
   TestIntelligenceRunOperatorError,
+  type TestIntelligenceDoctorOptions,
   type TestIntelligenceRunOptions,
   type TestIntelligenceRunSink,
 } from "./test-intelligence-run-cli.js";
@@ -65,6 +68,19 @@ const baseOptions = (): TestIntelligenceRunOptions => ({
   customContextMarkdownPath: undefined,
   customerProfilePath: undefined,
   diversityPasses: 1,
+});
+
+const baseDoctorOptions = (): TestIntelligenceDoctorOptions => ({
+  modelDeployment: "mistral-large-3",
+  logicJudgeDeployment: "gpt-oss-120b",
+  coveragePlannerDeployment: "phi-4-mini-instruct",
+  riskRankerDeployment: "phi-4",
+  topologyInputSources: {
+    modelDeployment: "env",
+    logicJudgeDeployment: "env",
+    coveragePlannerDeployment: "env",
+    riskRankerDeployment: "env",
+  },
 });
 
 type Issue1993TopologyRunOptions = TestIntelligenceRunOptions & {
@@ -534,6 +550,120 @@ test("parseTestIntelligenceRunArgs: --finops-budget captures path", () => {
     {},
   );
   assert.equal(opts.finopsBudgetPath, "/tmp/budget.json");
+});
+
+// ---------------------------------------------------------------------------
+// parseTestIntelligenceDoctorArgs / runTestIntelligenceDoctorCommand
+// ---------------------------------------------------------------------------
+
+test("parseTestIntelligenceDoctorArgs: env defaults flow into doctor options", () => {
+  const options = parseTestIntelligenceDoctorArgs([], {
+    WORKSPACE_TEST_SPACE_TESTCASE_MODEL_DEPLOYMENT: "mistral-large-3",
+    WORKSPACE_TEST_SPACE_LOGIC_JUDGE_DEPLOYMENT: "gpt-oss-120b",
+    WORKSPACE_TEST_SPACE_COVERAGE_PLANNER_DEPLOYMENT: "phi-4-mini-instruct",
+    WORKSPACE_TEST_SPACE_RISK_RANKER_DEPLOYMENT: "phi-4",
+  });
+  assert.equal(options.modelDeployment, "mistral-large-3");
+  assert.equal(options.logicJudgeDeployment, "gpt-oss-120b");
+  assert.equal(options.coveragePlannerDeployment, "phi-4-mini-instruct");
+  assert.equal(options.riskRankerDeployment, "phi-4");
+  assert.equal(options.topologyInputSources.modelDeployment, "env");
+});
+
+test("parseTestIntelligenceDoctorArgs: CLI overrides doctor deployment defaults", () => {
+  const options = parseTestIntelligenceDoctorArgs(
+    [
+      "--model-deployment",
+      "mistral-large-3",
+      "--logic-judge-deployment",
+      "gpt-oss-120b",
+      "--coverage-planner-deployment",
+      "phi-4-mini-instruct",
+      "--risk-ranker-deployment",
+      "phi-4",
+    ],
+    {
+      WORKSPACE_TEST_SPACE_TESTCASE_MODEL_DEPLOYMENT: "gpt-oss-120b",
+      WORKSPACE_TEST_SPACE_LOGIC_JUDGE_DEPLOYMENT: "phi-4",
+      WORKSPACE_TEST_SPACE_COVERAGE_PLANNER_DEPLOYMENT: "gpt-oss-120b",
+      WORKSPACE_TEST_SPACE_RISK_RANKER_DEPLOYMENT: "gpt-oss-120b",
+    },
+  );
+  assert.equal(options.modelDeployment, "mistral-large-3");
+  assert.equal(options.logicJudgeDeployment, "gpt-oss-120b");
+  assert.equal(options.coveragePlannerDeployment, "phi-4-mini-instruct");
+  assert.equal(options.riskRankerDeployment, "phi-4");
+  assert.equal(options.topologyInputSources.modelDeployment, "cli");
+  assert.equal(options.topologyInputSources.logicJudgeDeployment, "cli");
+});
+
+test("runTestIntelligenceDoctorCommand: intended topology exits 0 with only ok statuses", async () => {
+  const { sink, stdout, stderr } = collectingSink();
+  const exitCode = await runTestIntelligenceDoctorCommand(baseDoctorOptions(), sink, {
+    env: {
+      WORKSPACE_TEST_SPACE_VISUAL_PRIMARY_DEPLOYMENT:
+        "llama-4-maverick-vision",
+      WORKSPACE_TEST_SPACE_VISUAL_FALLBACK_DEPLOYMENT:
+        "phi-4-multimodal-instruct",
+      WORKSPACE_TEST_SPACE_A11Y_JUDGE_DEPLOYMENT:
+        "phi-4-multimodal-instruct",
+      WORKSPACE_TEST_SPACE_MODEL_ENDPOINT: "https://aoai.example/openai/v1",
+      WORKSPACE_TEST_SPACE_MODEL_API_KEY: "secret-key",
+    },
+  });
+
+  assert.equal(exitCode, 0);
+  assert.equal(stderr.join(""), "");
+  assert.match(stdout.join(""), /overall status: ok/u);
+  assert.doesNotMatch(stdout.join(""), /https:\/\/aoai\.example/u);
+  assert.doesNotMatch(stdout.join(""), /secret-key/u);
+});
+
+test("runTestIntelligenceDoctorCommand: bad topology flags all affected roles and exits non-zero on invalid contracts", async () => {
+  const { sink, stdout } = collectingSink();
+  const exitCode = await runTestIntelligenceDoctorCommand(
+    {
+      modelDeployment: "gpt-oss-120b",
+      logicJudgeDeployment: undefined,
+      coveragePlannerDeployment: undefined,
+      riskRankerDeployment: undefined,
+      topologyInputSources: {
+        modelDeployment: "env",
+        logicJudgeDeployment: "default",
+        coveragePlannerDeployment: "default",
+        riskRankerDeployment: "default",
+      },
+    },
+    sink,
+    {
+      env: {
+        WORKSPACE_TEST_SPACE_VISUAL_PRIMARY_DEPLOYMENT:
+          "mistral-document-ai-2512",
+        WORKSPACE_TEST_SPACE_VISUAL_FALLBACK_DEPLOYMENT:
+          "llama-4-maverick-vision",
+      },
+    },
+  );
+
+  const output = stdout.join("");
+  assert.equal(exitCode, 1);
+  assert.match(output, /overall status: error/u);
+  for (const role of [
+    "generator",
+    "logic-judge",
+    "visual-primary",
+    "visual-fallback",
+    "coverage-planner",
+    "risk-ranker",
+    "a11y-judge",
+  ]) {
+    assert.match(output, new RegExp(`${role}:`, "u"));
+  }
+  assert.match(output, /visual-primary: error/u);
+  assert.match(
+    output,
+    /WORKSPACE_TEST_SPACE_VISUAL_PRIMARY_DEPLOYMENT=llama-4-maverick-vision/u,
+  );
 });
 
 // ---------------------------------------------------------------------------

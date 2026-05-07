@@ -1056,8 +1056,17 @@ test("cli contract: published binaries and quickstart command are in sync", asyn
 // test-intelligence run sub-command (Issue #1736)
 // ---------------------------------------------------------------------------
 
-test("cli contract: test-intelligence run --help prints all required flags", async () => {
+test("cli contract: test-intelligence --help prints the available subcommands", async () => {
   const result = await runCliToExit({ args: ["test-intelligence", "--help"] });
+  assert.equal(result.exitCode, 0, result.stderr);
+  assert.match(result.stdout, /test-intelligence run/i);
+  assert.match(result.stdout, /test-intelligence doctor/i);
+});
+
+test("cli contract: test-intelligence run --help prints all required flags", async () => {
+  const result = await runCliToExit({
+    args: ["test-intelligence", "run", "--help"],
+  });
   assert.equal(result.exitCode, 0, result.stderr);
   assert.match(result.stdout, /--figma-url/i);
   assert.match(result.stdout, /--figma-json-file/i);
@@ -1072,6 +1081,16 @@ test("cli contract: test-intelligence run --help prints all required flags", asy
   assert.match(result.stdout, /FIGMAPIPE_WORKSPACE_TEST_INTELLIGENCE/i);
   assert.match(result.stdout, /FIGMAPIPE_WORKSPACE_TI_ENABLE_VISUAL_SIDECAR/i);
   assert.match(result.stdout, /dry_run/i);
+});
+
+test("cli contract: test-intelligence doctor --help prints doctor flags", async () => {
+  const result = await runCliToExit({
+    args: ["test-intelligence", "doctor", "--help"],
+  });
+  assert.equal(result.exitCode, 0, result.stderr);
+  assert.match(result.stdout, /--model-deployment/i);
+  assert.match(result.stdout, /--logic-judge-deployment/i);
+  assert.match(result.stdout, /WORKSPACE_TEST_SPACE_VISUAL_PRIMARY_DEPLOYMENT/i);
 });
 
 test("cli contract: test-intelligence run --enable-visual-sidecar fails closed when visual envs are missing", async () => {
@@ -1181,6 +1200,37 @@ test("cli contract: test-intelligence run without source → exit 1", async () =
   });
   assert.equal(result.exitCode, 1);
   assert.match(result.stderr, /--figma-url|--figma-json-file/i);
+});
+
+test("cli contract: test-intelligence doctor works without the feature gate", async () => {
+  const result = await runCliToExit({
+    args: [
+      "test-intelligence",
+      "doctor",
+      "--model-deployment",
+      "mistral-large-3",
+      "--logic-judge-deployment",
+      "gpt-oss-120b",
+      "--coverage-planner-deployment",
+      "phi-4-mini-instruct",
+      "--risk-ranker-deployment",
+      "phi-4",
+    ],
+    env: {
+      WORKSPACE_TEST_SPACE_VISUAL_PRIMARY_DEPLOYMENT:
+        "llama-4-maverick-vision",
+      WORKSPACE_TEST_SPACE_VISUAL_FALLBACK_DEPLOYMENT:
+        "phi-4-multimodal-instruct",
+      WORKSPACE_TEST_SPACE_A11Y_JUDGE_DEPLOYMENT:
+        "phi-4-multimodal-instruct",
+      WORKSPACE_TEST_SPACE_MODEL_ENDPOINT: "https://aoai.example/openai/v1",
+      WORKSPACE_TEST_SPACE_MODEL_API_KEY: "secret-key",
+    },
+  });
+  assert.equal(result.exitCode, 0, result.stderr);
+  assert.match(result.stdout, /overall status: ok/i);
+  assert.doesNotMatch(result.stdout, /https:\/\/aoai\.example/i);
+  assert.doesNotMatch(result.stdout, /secret-key/i);
 });
 
 test("cli contract: test-intelligence run unknown sub-command → exit 1", async () => {
