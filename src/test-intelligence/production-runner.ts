@@ -100,6 +100,7 @@ import {
   type TestCasePriority,
   type TestCaseRiskCategory,
   type TestCaseTechnique29119,
+  type TestDesignModel,
   type TestCaseType,
   type TestCaseValidationReport,
   type TestCaseCoverageReport,
