@@ -360,8 +360,8 @@ const projectNode = (
         text: hasOwnText ? (node.characters as string) : name,
         instanceAncestorIds: [...instanceAncestorIds],
         isButtonInstance: false,
+        semanticKind,
       };
-      if (semanticKind !== undefined) projection.semanticKind = semanticKind;
       if (bbox !== undefined) projection.bbox = bbox;
       return projection;
     }
