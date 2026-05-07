@@ -106,6 +106,7 @@ const FIGMA_TRACE_REF_KEYS = [
 const QC_MAPPING_KEYS = [
   "folderHint",
   "mappingProfileId",
+  "decisionBasis",
   "exportable",
   "blockingReasons",
 ] as const;
@@ -195,6 +196,7 @@ export const buildGeneratedTestCaseListJsonSchema = (): Record<
     properties: {
       folderHint: { type: "string" },
       mappingProfileId: { type: "string" },
+      decisionBasis: { const: "mapping_preview_only" },
       exportable: { type: "boolean" },
       blockingReasons: {
         type: "array",
@@ -639,6 +641,14 @@ const expectQcMapping = (
   }
   if (value["mappingProfileId"] !== undefined) {
     expectString(value["mappingProfileId"], `${path}.mappingProfileId`, errors);
+  }
+  if (value["decisionBasis"] !== undefined) {
+    expectConst(
+      value["decisionBasis"],
+      "mapping_preview_only",
+      `${path}.decisionBasis`,
+      errors,
+    );
   }
   if (value["blockingReasons"] !== undefined) {
     expectStringArray(

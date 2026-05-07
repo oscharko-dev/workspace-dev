@@ -10,13 +10,14 @@
     "visualPrimary": "llama-4-maverick-vision"
   },
   "exportedTestCaseCount": 2,
+  "finalExportDecision": "approved_for_export",
   "refused": false,
   "refusalCodes": [],
   "artifacts": [
     {
       "filename": "qc-mapping-preview.json",
-      "sha256": "5c17c501a5b411370e48cad435b6253b2c911aac1637516318cf92db87217122",
-      "bytes": 1743,
+      "sha256": "27588b6941b7cc1e1a8fc53acb14045e78469d6d507e2f4498e32dd75f1a7087",
+      "bytes": 1821,
       "contentType": "application/json"
     },
     {

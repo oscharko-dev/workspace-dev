@@ -1003,7 +1003,10 @@ const buildSyntheticCase = (
     figmaTraceRefs,
     assumptions: [],
     openQuestions: input.openQuestions?.slice() ?? [],
-    qcMappingPreview: { exportable: true },
+    qcMappingPreview: {
+      decisionBasis: "mapping_preview_only",
+      exportable: true,
+    },
     qualitySignals: {
       coveredFieldIds: input.coveredFieldIds.slice().sort(),
       coveredActionIds: input.coveredActionIds.slice().sort(),

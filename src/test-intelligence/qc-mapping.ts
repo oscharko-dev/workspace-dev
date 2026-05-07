@@ -235,6 +235,7 @@ const buildEntry = (input: {
           `${b.screenId}|${b.nodeId ?? ""}`,
         ),
       ),
+    decisionBasis: "mapping_preview_only",
     exportable,
     blockingReasons,
   };

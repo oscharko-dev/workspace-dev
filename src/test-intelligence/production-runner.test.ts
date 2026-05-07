@@ -1521,6 +1521,8 @@ test("runFigmaToQcTestCases wires Figma URL screenshots through the visual sidec
       await readFile(result.artifactPaths.visualCaptureManifest!, "utf8"),
     ) as {
       rawScreenshotsIncluded: boolean;
+      rawScreenshotFilesPersisted: boolean;
+      persistedScreenshotBytes: number;
       captures: Array<{
         screenId: string;
         screenName?: string;
@@ -1532,7 +1534,12 @@ test("runFigmaToQcTestCases wires Figma URL screenshots through the visual sidec
         heightPx?: number;
       }>;
     };
-    assert.equal(captureManifest.rawScreenshotsIncluded, true);
+    assert.equal(captureManifest.rawScreenshotsIncluded, false);
+    assert.equal(captureManifest.rawScreenshotFilesPersisted, true);
+    assert.equal(
+      captureManifest.persistedScreenshotBytes,
+      PNG_BYTES.byteLength,
+    );
     assert.deepEqual(captureManifest.captures, [
       {
         screenId: "1:1",
@@ -1562,6 +1569,16 @@ test("runFigmaToQcTestCases wires Figma URL screenshots through the visual sidec
     assert.equal(requestHeaders[0]?.get("x-figma-token"), "figd_test");
     assert.equal(requestHeaders[1]?.get("x-figma-token"), "figd_test");
     assert.equal(requestHeaders[2]?.get("x-figma-token"), null);
+    const finopsReport = JSON.parse(
+      await readFile(result.artifactPaths.finopsReport, "utf8"),
+    ) as FinOpsBudgetReport & {
+      bySource: Record<
+        string,
+        { callCount: number; deployment?: string }
+      >;
+    };
+    assert.equal(finopsReport.bySource.visual_primary.callCount, 1);
+    assert.equal(finopsReport.totals.imageBytes, PNG_BYTES.byteLength);
     const manifest = JSON.parse(
       await readFile(
         path.join(
@@ -2657,6 +2674,22 @@ test("Issue #1772: both_sidecars_failed routes to needs_review with documented r
     ) as { result: { outcome: string; failureClass?: string } };
     assert.equal(sidecarArtifact.result.outcome, "failure");
     assert.equal(sidecarArtifact.result.failureClass, "both_sidecars_failed");
+    const finopsReport = JSON.parse(
+      await readFile(result.artifactPaths.finopsReport, "utf8"),
+    ) as FinOpsBudgetReport;
+    const visualPrimary = finopsReport.roles.find(
+      (entry) => entry.role === "visual_primary",
+    );
+    const visualFallback = finopsReport.roles.find(
+      (entry) => entry.role === "visual_fallback",
+    );
+    assert.ok(visualPrimary);
+    assert.ok(visualFallback);
+    assert.equal(visualPrimary?.attempts, 1);
+    assert.equal(visualPrimary?.failures, 1);
+    assert.equal(visualFallback?.attempts, 1);
+    assert.equal(visualFallback?.failures, 1);
+    assert.ok(finopsReport.totals.imageBytes > 0);
 
     // Customer Markdown still renders so reviewers can adjudicate.
     const combinedMarkdown = await readFile(
