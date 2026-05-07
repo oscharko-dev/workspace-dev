@@ -534,8 +534,12 @@ export const synthesizeGeneratedTestCases = (input: {
       cases.push(
         buildSyntheticCase({
           idSuffix: `field-negative-${stableSlug(field.id)}`,
-          title: `Reject empty ${field.label} on ${field.screenId}`,
-          objective: `Confirm the form rejects an empty ${field.label}.`,
+          title: hasUnresolvedValidationRules
+            ? `Capture unresolved validation behavior for ${field.label} on ${field.screenId}`
+            : `Reject empty ${field.label} on ${field.screenId}`,
+          objective: hasUnresolvedValidationRules
+            ? `Document the validation behavior for ${field.label} once the final validation scenario is specified.`
+            : `Confirm the form rejects an empty ${field.label}.`,
           type: "negative",
           priority: "p1",
           riskCategory: deriveRiskCategoryForLabel(field.label),
@@ -553,10 +557,17 @@ export const synthesizeGeneratedTestCases = (input: {
             : {}),
           steps: [
             { index: 1, action: `Open the ${field.screenId} screen` },
-            { index: 2, action: `Leave ${field.label} empty` },
+            {
+              index: 2,
+              action: hasUnresolvedValidationRules
+                ? `Exercise the ${field.label} validation scenario defined by the finalized specification`
+                : `Leave ${field.label} empty`,
+            },
             {
               index: 3,
-              action: "Submit the form",
+              action: hasUnresolvedValidationRules
+                ? "Observe the resulting validation behavior"
+                : "Submit the form",
               expected: hasUnresolvedValidationRules
                 ? GENERIC_VALIDATION_EXPECTED_RESULT
                 : "An inline validation error is shown",
@@ -577,7 +588,9 @@ export const synthesizeGeneratedTestCases = (input: {
       cases.push(
         buildSyntheticCase({
           idSuffix: `field-validation-${stableSlug(field.id)}`,
-          title: `Validate ${field.label} rules on ${field.screenId}`,
+          title: hasUnresolvedValidationRules
+            ? `Capture unresolved validation rules for ${field.label} on ${field.screenId}`
+            : `Validate ${field.label} rules on ${field.screenId}`,
           objective: hasUnresolvedValidationRules
             ? `Capture generic validation behavior for ${field.label} without inventing exact messages or thresholds.`
             : `Confirm validation messages for ${field.label}.`,
@@ -600,7 +613,9 @@ export const synthesizeGeneratedTestCases = (input: {
             { index: 1, action: `Open the ${field.screenId} screen` },
             {
               index: 2,
-              action: `Provide an invalid ${field.label} value`,
+              action: hasUnresolvedValidationRules
+                ? `Exercise the ${field.label} validation path using the finalized specification`
+                : `Provide an invalid ${field.label} value`,
               expected: hasUnresolvedValidationRules
                 ? GENERIC_VALIDATION_EXPECTED_RESULT
                 : "Inline validation error displayed",

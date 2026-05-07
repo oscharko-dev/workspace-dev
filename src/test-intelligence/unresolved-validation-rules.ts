@@ -53,6 +53,18 @@ const EXACT_VALIDATION_DETAIL_PATTERNS: readonly {
     reason: "exact validation-surface expectation",
   },
   {
+    pattern: /\brejects? an empty\b/i,
+    reason: "exact empty-input validation expectation",
+  },
+  {
+    pattern: /\bleave .+ empty\b/i,
+    reason: "exact empty-input validation expectation",
+  },
+  {
+    pattern: /\bprovide an invalid\b/i,
+    reason: "exact invalid-input validation expectation",
+  },
+  {
     pattern: /\bclear message\b/i,
     reason: "exact message-quality expectation",
   },
@@ -200,6 +212,13 @@ export const deriveUnresolvedValidationConstraints = (
   for (const question of model.openQuestions) {
     if (!isUnresolvedValidationText(question.text)) continue;
     const scope = collectFieldIdsForText(question.text, model);
+    if (
+      scope.screenId === undefined &&
+      scope.fieldIds.length === 0 &&
+      scope.validationIds.length === 0
+    ) {
+      continue;
+    }
     constraints.push({
       ...(scope.screenId !== undefined ? { screenId: scope.screenId } : {}),
       fieldIds: scope.fieldIds,
@@ -237,7 +256,7 @@ const testCaseTouchesConstraint = (
   ) {
     return true;
   }
-  return constraint.fieldIds.length === 0 && constraint.validationIds.length === 0;
+  return false;
 };
 
 const findExactValidationReason = (text: string): string | undefined => {

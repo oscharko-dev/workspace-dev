@@ -217,7 +217,7 @@ production-runner and CLI integrations:
 | `WorkspaceJobInput.testIntelligenceMode`    | `"deterministic_llm"` \| `"offline_eval"` \| `"dry_run"`             |
 | `ALLOWED_TEST_INTELLIGENCE_MODES`           | `["deterministic_llm", "offline_eval", "dry_run"]`                   |
 | `TEST_INTELLIGENCE_CONTRACT_VERSION`        | `"1.12.0"`                                                           |
-| `TEST_INTELLIGENCE_PROMPT_TEMPLATE_VERSION` | `"1.4.0"`                                                            |
+| `TEST_INTELLIGENCE_PROMPT_TEMPLATE_VERSION` | `"1.4.1"`                                                            |
 | `TEST_INTELLIGENCE_ENV`                     | `"FIGMAPIPE_WORKSPACE_TEST_INTELLIGENCE"`                            |
 
 The submit route accepts `jobType: "figma_to_qc_test_cases"` and, when the dual

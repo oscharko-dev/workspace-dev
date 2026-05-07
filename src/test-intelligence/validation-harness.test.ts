@@ -307,6 +307,26 @@ test("validation-harness: unresolved validation rules stay generic and surface o
   assert.deepEqual(validationCase?.expectedResults, [
     "A validation response is shown according to the specified validation concept.",
   ]);
+  assert.equal(
+    negativeCase?.title,
+    "Capture unresolved validation behavior for VAT rate on vat",
+  );
+  assert.equal(
+    negativeCase?.objective,
+    "Document the validation behavior for VAT rate once the final validation scenario is specified.",
+  );
+  assert.equal(
+    negativeCase?.steps[1]?.action,
+    "Exercise the VAT rate validation scenario defined by the finalized specification",
+  );
+  assert.equal(
+    validationCase?.title,
+    "Capture unresolved validation rules for VAT rate on vat",
+  );
+  assert.equal(
+    validationCase?.steps[1]?.action,
+    "Exercise the VAT rate validation path using the finalized specification",
+  );
   assert.ok(
     negativeCase?.openQuestions.some((question) =>
       question.includes("still need to be specified"),
@@ -316,6 +336,13 @@ test("validation-harness: unresolved validation rules stay generic and surface o
     validationCase?.openQuestions.some((question) =>
       question.includes('Validation rules for "VAT rate" are unresolved'),
     ),
+  );
+  assert.equal(
+    [negativeCase, validationCase].every(
+      (testCase) =>
+        !JSON.stringify(testCase).match(/\b(empty|invalid|required)\b/i),
+    ),
+    true,
   );
 });
 
