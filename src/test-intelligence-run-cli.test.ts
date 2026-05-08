@@ -8,23 +8,29 @@
  */
 
 import assert from "node:assert/strict";
-import { mkdtemp, readFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 
 import {
+  parseTestIntelligenceVerifyProvenanceArgs,
   buildLiveVisualSidecarBundle,
   parseTestIntelligenceDoctorArgs,
   parseTestIntelligenceRunArgs,
   runTestIntelligenceDoctorCommand,
   runTestIntelligenceCommand,
+  runTestIntelligenceVerifyProvenanceCommand,
   TestIntelligenceRunOperatorError,
   type TestIntelligenceDoctorOptions,
   type TestIntelligenceRunOptions,
   type TestIntelligenceRunSink,
 } from "./test-intelligence-run-cli.js";
-import type { RunFigmaToQcTestCasesResult } from "./test-intelligence/index.js";
+import {
+  canonicalJson,
+  computeProvenanceMerkleSeal,
+  type RunFigmaToQcTestCasesResult,
+} from "./test-intelligence/index.js";
 
 const collectingSink = (): {
   sink: TestIntelligenceRunSink;
@@ -177,6 +183,7 @@ const buildIssue1993RunResult = (
       validationReport: "/tmp/validation.json",
       policyReport: "/tmp/policy.json",
       coverageReport: "/tmp/coverage.json",
+      provenance: "/tmp/provenance.jsonld",
       finopsReport: "/tmp/finops.json",
       ...artifactPaths,
     } as RunFigmaToQcTestCasesResult["artifactPaths"],
@@ -1077,6 +1084,7 @@ test("runTestIntelligenceCommand: offline_eval routes to deterministic_llm", asy
           validationReport: "/tmp/validation.json",
           policyReport: "/tmp/policy.json",
           coverageReport: "/tmp/coverage.json",
+          provenance: "/tmp/provenance.jsonld",
           finopsReport: "/tmp/finops.json",
         },
         customerMarkdownPaths: {
@@ -1501,6 +1509,7 @@ test("runTestIntelligenceCommand: deterministic_llm + harness-mode shadow_eval f
         validationReport: "/tmp/validation.json",
         policyReport: "/tmp/policy.json",
         coverageReport: "/tmp/coverage.json",
+        provenance: "/tmp/provenance.jsonld",
         finopsReport: "/tmp/finops.json",
         harnessStep: "/tmp/harness-step.json",
       },
@@ -2947,4 +2956,189 @@ test("parseTestIntelligenceRunArgs: WORKSPACE_TEST_SPACE_TENANT_ID env hydrates 
     { WORKSPACE_TEST_SPACE_TENANT_ID: "tenant-from-env" },
   );
   assert.equal(opts.coverageBaseline.tenantId, "tenant-from-env");
+});
+
+test("parseTestIntelligenceVerifyProvenanceArgs: accepts explicit flag form", () => {
+  const parsed = parseTestIntelligenceVerifyProvenanceArgs([
+    "--verify-provenance",
+    "/tmp/run-dir",
+  ]);
+  assert.equal(parsed.runDir, "/tmp/run-dir");
+});
+
+test("runTestIntelligenceVerifyProvenanceCommand: returns 0 for a valid provenance bundle", async () => {
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ti-prov-cli-ok-"));
+  const { sink, stdout, stderr } = collectingSink();
+  try {
+    const seal = computeProvenanceMerkleSeal([]);
+    await writeFile(
+      path.join(tempRoot, "provenance.jsonld"),
+      `${canonicalJson({
+        "@context": ["https://www.w3.org/ns/prov.jsonld", {}],
+        "@id": "urn:test:bundle",
+        "@type": "prov:Bundle",
+        "ti:schemaVersion": "1.0.0",
+        "ti:jobId": "job-prov-cli",
+        "ti:generatedAt": "2026-05-08T12:00:00.000Z",
+        "ti:sourceKind": "figma_paste_normalized",
+        "ti:merkleSeal": seal,
+        "@graph": [],
+      })}\n`,
+      "utf8",
+    );
+    await writeFile(
+      path.join(tempRoot, "policy-report.json"),
+      `${canonicalJson({
+        schemaVersion: "1.0.0",
+        contractVersion: "1.12.0",
+        generatedAt: "2026-05-08T12:00:00.000Z",
+        jobId: "job-prov-cli",
+        policyProfileId: "eu-banking-default",
+        policyProfileVersion: "1.0.0",
+        totalTestCases: 0,
+        approvedCount: 0,
+        blockedCount: 0,
+        needsReviewCount: 0,
+        blocked: false,
+        decisions: [],
+        jobLevelViolations: [],
+        provenance: {
+          artifactFilename: "provenance.jsonld",
+          merkleAlgorithm: "sha256_merkle_v1",
+          merkleRoot: seal.root,
+          leafCount: seal.leafCount,
+        },
+      })}\n`,
+      "utf8",
+    );
+    const exitCode = await runTestIntelligenceVerifyProvenanceCommand(
+      { runDir: tempRoot },
+      sink,
+    );
+    assert.equal(exitCode, 0, stderr.join(""));
+    assert.match(stdout.join(""), /provenance verified/u);
+  } finally {
+    await rm(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("runTestIntelligenceVerifyProvenanceCommand: returns non-zero on merkle mismatch", async () => {
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ti-prov-cli-bad-"));
+  const { sink, stdout, stderr } = collectingSink();
+  try {
+    const seal = computeProvenanceMerkleSeal([]);
+    await writeFile(
+      path.join(tempRoot, "provenance.jsonld"),
+      `${canonicalJson({
+        "@context": ["https://www.w3.org/ns/prov.jsonld", {}],
+        "@id": "urn:test:bundle",
+        "@type": "prov:Bundle",
+        "ti:schemaVersion": "1.0.0",
+        "ti:jobId": "job-prov-cli-bad",
+        "ti:generatedAt": "2026-05-08T12:00:00.000Z",
+        "ti:sourceKind": "figma_paste_normalized",
+        "ti:merkleSeal": { ...seal, root: "0".repeat(64) },
+        "@graph": [],
+      })}\n`,
+      "utf8",
+    );
+    await writeFile(
+      path.join(tempRoot, "policy-report.json"),
+      `${canonicalJson({
+        schemaVersion: "1.0.0",
+        contractVersion: "1.12.0",
+        generatedAt: "2026-05-08T12:00:00.000Z",
+        jobId: "job-prov-cli-bad",
+        policyProfileId: "eu-banking-default",
+        policyProfileVersion: "1.0.0",
+        totalTestCases: 0,
+        approvedCount: 0,
+        blockedCount: 0,
+        needsReviewCount: 0,
+        blocked: false,
+        decisions: [],
+        jobLevelViolations: [],
+        provenance: {
+          artifactFilename: "provenance.jsonld",
+          merkleAlgorithm: "sha256_merkle_v1",
+          merkleRoot: seal.root,
+          leafCount: seal.leafCount,
+        },
+      })}\n`,
+      "utf8",
+    );
+    const exitCode = await runTestIntelligenceVerifyProvenanceCommand(
+      { runDir: tempRoot },
+      sink,
+    );
+    assert.equal(exitCode, 2);
+    assert.equal(stdout.join(""), "");
+    assert.match(stderr.join(""), /merkle/i);
+  } finally {
+    await rm(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("runTestIntelligenceVerifyProvenanceCommand: rejects artifact paths that escape the run directory", async () => {
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ti-prov-cli-escape-"));
+  const { sink, stderr } = collectingSink();
+  try {
+    const graph = [
+      {
+        "@id": "urn:test:artifact:escape",
+        "@type": "prov:Entity",
+        "ti:artifactPath": "../outside.json",
+        "ti:sha256": "0".repeat(64),
+      },
+    ];
+    const seal = computeProvenanceMerkleSeal(graph);
+    await writeFile(
+      path.join(tempRoot, "provenance.jsonld"),
+      `${canonicalJson({
+        "@context": ["https://www.w3.org/ns/prov.jsonld", {}],
+        "@id": "urn:test:bundle",
+        "@type": "prov:Bundle",
+        "ti:schemaVersion": "1.0.0",
+        "ti:jobId": "job-prov-cli-escape",
+        "ti:generatedAt": "2026-05-08T12:00:00.000Z",
+        "ti:sourceKind": "figma_paste_normalized",
+        "ti:merkleSeal": seal,
+        "@graph": graph,
+      })}\n`,
+      "utf8",
+    );
+    await writeFile(
+      path.join(tempRoot, "policy-report.json"),
+      `${canonicalJson({
+        schemaVersion: "1.0.0",
+        contractVersion: "1.12.0",
+        generatedAt: "2026-05-08T12:00:00.000Z",
+        jobId: "job-prov-cli-escape",
+        policyProfileId: "eu-banking-default",
+        policyProfileVersion: "1.0.0",
+        totalTestCases: 0,
+        approvedCount: 0,
+        blockedCount: 0,
+        needsReviewCount: 0,
+        blocked: false,
+        decisions: [],
+        jobLevelViolations: [],
+        provenance: {
+          artifactFilename: "provenance.jsonld",
+          merkleAlgorithm: "sha256_merkle_v1",
+          merkleRoot: seal.root,
+          leafCount: seal.leafCount,
+        },
+      })}\n`,
+      "utf8",
+    );
+    const exitCode = await runTestIntelligenceVerifyProvenanceCommand(
+      { runDir: tempRoot },
+      sink,
+    );
+    assert.equal(exitCode, 2);
+    assert.match(stderr.join(""), /run directory/u);
+  } finally {
+    await rm(tempRoot, { recursive: true, force: true });
+  }
 });

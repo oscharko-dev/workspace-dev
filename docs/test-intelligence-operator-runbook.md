@@ -420,6 +420,44 @@ The script recomputes every artifact hash and the chain head and exits
 non-zero on any mismatch. Auditors can run it without read access to the
 source.
 
+### Verify provenance
+
+Issue #2037 adds a provenance graph at
+`<runDir>/test-intelligence/provenance.jsonld`. Use it to confirm that the run
+linked the expected inputs and outputs without exposing raw prompts,
+screenshots, or PII.
+
+Verification steps against an existing run dir:
+
+1. Confirm the artifact exists.
+
+```bash
+test -f "<runDir>/test-intelligence/provenance.jsonld"
+```
+
+2. Inspect the top-level graph metadata and the hash-bearing references.
+
+```bash
+jq '{@context, @id, @type, jobId, generatedAt, artifactRoot, inputs, outputs}' \
+  "<runDir>/test-intelligence/provenance.jsonld"
+```
+
+3. Compare the provenance references against the sibling artifacts in the same
+   run dir. The graph should point at the same job-scoped files that already
+   exist under `<runDir>/test-intelligence/`, and any digest fields should match
+   the corresponding artifact bytes on disk.
+
+4. Re-run the evidence manifest verifier if you need a full integrity check of
+   the same bundle:
+
+```bash
+pnpm exec tsx scripts/verify-evidence-manifest.ts \
+  --job-dir <artifactRoot>/<jobId>
+```
+
+That verifier does not validate the JSON-LD vocabulary itself, but it does
+confirm the on-disk artifacts the provenance graph is expected to reference.
+
 ### Four-eyes approvals
 
 For test cases flagged with `fourEyesEnforced=true`, two distinct

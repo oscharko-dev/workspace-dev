@@ -595,6 +595,21 @@ export interface TestCasePolicyReport {
   decisions: TestCasePolicyDecisionRecord[];
   /** Job-level policy violations (e.g., job-wide duplicate fingerprint). */
   jobLevelViolations: TestCasePolicyViolation[];
+  /**
+   * Optional provenance seal summary for runs that persisted
+   * `provenance.jsonld` (Issue #2037). Carries only the Merkle root and
+   * artifact identity so auditors can correlate `policy-report.json` with the
+   * provenance bundle without embedding the full graph here.
+   */
+  provenance?: TestCasePolicyProvenanceSummary;
+}
+
+/** Additive provenance summary duplicated into `policy-report.json`. */
+export interface TestCasePolicyProvenanceSummary {
+  readonly artifactFilename: string;
+  readonly merkleAlgorithm: "sha256_merkle_v1";
+  readonly merkleRoot: string;
+  readonly leafCount: number;
 }
 
 /**
@@ -6876,6 +6891,13 @@ export const WAVE1_VALIDATION_EVIDENCE_MANIFEST_SCHEMA_VERSION =
 /** Filename used for the Wave 1 Validation evidence manifest artifact. */
 export const WAVE1_VALIDATION_EVIDENCE_MANIFEST_ARTIFACT_FILENAME =
   "wave1-validation-evidence-manifest.json";
+
+/** Filename used for the persisted per-run W3C PROV JSON-LD graph. */
+export const PROVENANCE_ARTIFACT_FILENAME = "provenance.jsonld" as const;
+
+/** Schema version for the persisted test-intelligence provenance artifact. */
+export const TEST_INTELLIGENCE_PROVENANCE_SCHEMA_VERSION =
+  "1.0.0" as const;
 
 /** Filename used for the Wave 1 Validation evidence manifest digest witness. */
 export const WAVE1_VALIDATION_EVIDENCE_MANIFEST_DIGEST_FILENAME =

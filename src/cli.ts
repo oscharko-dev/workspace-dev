@@ -34,11 +34,14 @@ import { createWorkspaceServer } from "./server.js";
 import {
   parseTestIntelligenceDoctorArgs,
   parseTestIntelligenceRunArgs,
+  parseTestIntelligenceVerifyProvenanceArgs,
   runTestIntelligenceDoctorCommand,
   runTestIntelligenceCommand,
+  runTestIntelligenceVerifyProvenanceCommand,
   TEST_INTELLIGENCE_DOCTOR_HELP,
   TEST_INTELLIGENCE_HELP,
   TEST_INTELLIGENCE_RUN_HELP,
+  TEST_INTELLIGENCE_VERIFY_PROVENANCE_HELP,
   TestIntelligenceRunOperatorError,
 } from "./test-intelligence-run-cli.js";
 import path from "node:path";
@@ -1141,6 +1144,7 @@ Usage:
   workspace-dev scan-design-system [options]
   workspace-dev test-intelligence run [options]
   workspace-dev test-intelligence doctor [options]
+  workspace-dev test-intelligence verify-provenance <run-dir>
   workspace-dev --help
 
 Run "workspace-dev test-intelligence --help" for the test-intelligence subcommands.
@@ -1341,12 +1345,37 @@ const runTestIntelligenceSubCommand = async (
     });
     process.exit(exitCode);
   }
+  if (subCommand === "verify-provenance" || subCommand === "--verify-provenance") {
+    if (args[1] === "--help" || args[1] === "help") {
+      process.stdout.write(`${TEST_INTELLIGENCE_VERIFY_PROVENANCE_HELP}\n`);
+      process.exit(0);
+    }
+    let parsed;
+    try {
+      parsed =
+        subCommand === "--verify-provenance"
+          ? parseTestIntelligenceVerifyProvenanceArgs(args)
+          : parseTestIntelligenceVerifyProvenanceArgs(args.slice(1));
+    } catch (err) {
+      if (err instanceof TestIntelligenceRunOperatorError) {
+        process.stderr.write(`error: ${err.message}\n`);
+        process.exit(1);
+      }
+      throw err;
+    }
+
+    const exitCode = await runTestIntelligenceVerifyProvenanceCommand(parsed, {
+      stdout: (message) => process.stdout.write(message),
+      stderr: (message) => process.stderr.write(message),
+    });
+    process.exit(exitCode);
+  }
   if (subCommand !== "run") {
     process.stderr.write(
       `error: unknown sub-command for "test-intelligence": ${subCommand ?? "(none)"}\n`,
     );
     process.stderr.write(
-      "usage: workspace-dev test-intelligence <run|doctor> [options]\n",
+      "usage: workspace-dev test-intelligence <run|doctor|verify-provenance> [options]\n",
     );
     process.exit(1);
   }
@@ -1461,6 +1490,11 @@ const main = async (): Promise<void> => {
       level: "error",
       message:
         'Use "workspace-dev test-intelligence doctor" to inspect the local Test Intelligence deployment topology.',
+    });
+    logger.log({
+      level: "error",
+      message:
+        'Use "workspace-dev test-intelligence verify-provenance" to verify a persisted provenance graph.',
     });
     logger.log({
       level: "error",

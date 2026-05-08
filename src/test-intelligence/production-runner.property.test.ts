@@ -143,7 +143,10 @@ const sha256File = async (filePath: string): Promise<string> =>
     .update(await readFile(filePath))
     .digest("hex");
 
-test("production runner property: random valid Figma payloads finish within the FinOps wall-clock cap", async () => {
+test(
+  "production runner property: random valid Figma payloads finish within the FinOps wall-clock cap",
+  { concurrency: false },
+  async () => {
   await fc.assert(
     fc.asyncProperty(fileModelArb, async (model) => {
       const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ti-runner-prop-"));
@@ -192,9 +195,13 @@ test("production runner property: random valid Figma payloads finish within the 
     }),
     { numRuns: 12 },
   );
-});
+  },
+);
 
-test("production runner property: replay hits produce byte-identical artifact hashes for the same input and cache state", async () => {
+test(
+  "production runner property: replay hits produce byte-identical artifact hashes for the same input and cache state",
+  { concurrency: false },
+  async () => {
   await fc.assert(
     fc.asyncProperty(fileModelArb, async (model) => {
       const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ti-runner-prop-"));
@@ -229,27 +236,40 @@ test("production runner property: replay hits produce byte-identical artifact ha
 
         await run();
         const second = await run();
-        const secondHashes = await Promise.all([
-          sha256File(second.artifactPaths.compiledPrompt),
-          sha256File(second.artifactPaths.generatedTestCases),
-          sha256File(second.artifactPaths.validationReport),
-          sha256File(second.artifactPaths.policyReport),
-          sha256File(second.artifactPaths.coverageReport),
-        ]);
+        const secondHashes = {
+          compiledPrompt: await sha256File(second.artifactPaths.compiledPrompt),
+          generatedTestCases: await sha256File(
+            second.artifactPaths.generatedTestCases,
+          ),
+          validationReport: await sha256File(
+            second.artifactPaths.validationReport,
+          ),
+          policyReport: await sha256File(second.artifactPaths.policyReport),
+          coverageReport: await sha256File(second.artifactPaths.coverageReport),
+        };
         const third = await run();
-        const thirdHashes = await Promise.all([
-          sha256File(third.artifactPaths.compiledPrompt),
-          sha256File(third.artifactPaths.generatedTestCases),
-          sha256File(third.artifactPaths.validationReport),
-          sha256File(third.artifactPaths.policyReport),
-          sha256File(third.artifactPaths.coverageReport),
-        ]);
+        const thirdHashes = {
+          compiledPrompt: await sha256File(third.artifactPaths.compiledPrompt),
+          generatedTestCases: await sha256File(
+            third.artifactPaths.generatedTestCases,
+          ),
+          validationReport: await sha256File(
+            third.artifactPaths.validationReport,
+          ),
+          policyReport: await sha256File(third.artifactPaths.policyReport),
+          coverageReport: await sha256File(third.artifactPaths.coverageReport),
+        };
 
-        assert.deepEqual(secondHashes, thirdHashes);
+        if (JSON.stringify(secondHashes) !== JSON.stringify(thirdHashes)) {
+          throw new Error(
+            `replay artifact hashes diverged: ${JSON.stringify({ secondHashes, thirdHashes })}`,
+          );
+        }
       } finally {
         await rm(tempRoot, { recursive: true, force: true });
       }
     }),
     { numRuns: 10 },
   );
-});
+  },
+);

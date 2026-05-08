@@ -280,7 +280,7 @@ Retry policy applied to this node.
 
 ##### role
 
-> `readonly` **role**: `"logic_judge"` \| `"generator"` \| `"repair_planner"` \| `"adversarial_gap_finder"` \| `"final_verifier"` \| `"semantic_judge"` \| `"visual_sidecar"`
+> `readonly` **role**: `"logic_judge"` \| `"generator"` \| `"repair_planner"` \| `"action_topology"` \| `"adversarial_gap_finder"` \| `"final_verifier"` \| `"semantic_judge"` \| `"visual_sidecar"`
 
 Role this step is bound to.
 
@@ -481,7 +481,7 @@ deterministic services that do not compile a prompt.
 
 ##### role
 
-> `readonly` **role**: `"logic_judge"` \| `"generator"` \| `"repair_planner"` \| `"adversarial_gap_finder"` \| `"final_verifier"` \| `"semantic_judge"` \| `"visual_sidecar"`
+> `readonly` **role**: `"logic_judge"` \| `"generator"` \| `"repair_planner"` \| `"action_topology"` \| `"adversarial_gap_finder"` \| `"final_verifier"` \| `"semantic_judge"` \| `"visual_sidecar"`
 
 Role identifier this profile binds to.
 
@@ -531,7 +531,7 @@ Minimal persisted metadata for one compiled role-step prompt run.
 
 ##### promptTemplateVersion
 
-> **promptTemplateVersion**: `"1.4.0"`
+> **promptTemplateVersion**: `"1.6.2"`
 
 ##### rawPromptsIncluded
 
@@ -715,7 +715,7 @@ Terminal outcome from the harness state machine.
 
 ##### role
 
-> `readonly` **role**: `"logic_judge"` \| `"generator"` \| `"repair_planner"` \| `"adversarial_gap_finder"` \| `"final_verifier"` \| `"semantic_judge"` \| `"visual_sidecar"`
+> `readonly` **role**: `"logic_judge"` \| `"generator"` \| `"repair_planner"` \| `"action_topology"` \| `"adversarial_gap_finder"` \| `"final_verifier"` \| `"semantic_judge"` \| `"visual_sidecar"`
 
 Role that produced the step.
 
@@ -1184,6 +1184,10 @@ Redacted JSON payload that the model will reason over.
 
 > **visual**: [`VisualScreenDescription`](#visualscreendescription)[]
 
+###### workflowTopology?
+
+> `optional` **workflowTopology?**: [`WorkflowTopology`](#workflowtopology)
+
 ##### policyBundleVersion
 
 > **policyBundleVersion**: `string`
@@ -1206,7 +1210,7 @@ Redacted JSON payload that the model will reason over.
 
 ##### promptTemplateVersion
 
-> **promptTemplateVersion**: `"1.4.0"`
+> **promptTemplateVersion**: `"1.6.2"`
 
 ##### redactionPolicyVersion
 
@@ -2153,7 +2157,7 @@ Free-form, redacted evidence string supplied by the resolver (e.g.
 
 ##### state
 
-> **state**: `"resolved"` \| `"missing"` \| `"simulated"` \| `"invalid_path"`
+> **state**: `"missing"` \| `"resolved"` \| `"simulated"` \| `"invalid_path"`
 
 ***
 
@@ -2705,6 +2709,13 @@ Sorted by filename for deterministic emission.
 
 > **exportedTestCaseCount**: `number`
 
+##### finalExportDecision
+
+> **finalExportDecision**: `"approved_for_export"` \| `"refused"`
+
+Explicit final export decision derived from validation, policy, visual,
+and review-gate outcomes rather than from per-case mapping preview flags.
+
 ##### generatedAt
 
 > **generatedAt**: `string`
@@ -2828,6 +2839,12 @@ Persisted screenshot-vs-cases faithfulness verdict artifact.
 ##### schemaVersion
 
 > `readonly` **schemaVersion**: `"1.0.0"`
+
+##### score
+
+> `readonly` **score**: `number`
+
+Aggregate cross-modal faithfulness score in `[0, 1]`.
 
 ##### verdict
 
@@ -3015,7 +3032,7 @@ Verbatim copy of the budget envelope applied to this job.
 
 ##### bySource
 
-> **bySource**: `Readonly`\<`Record`\<[`AgentSourceLabel`](#agentsourcelabel), \{ `attemptIds?`: readonly `string`[]; `callCount`: `number`; `costMinorUnits`: `number`; `deployment?`: `string`; `idempotentReplayHits`: `number`; `inFlightDedupHits`: `number`; `tokensIn`: `number`; `tokensOut`: `number`; \}\>\>
+> **bySource**: `Readonly`\<`Record`\<[`AgentSourceLabel`](#agentsourcelabel), \{ `attemptIds?`: readonly `string`[]; `callCount`: `number`; `constrainedDecoding?`: \{ `activeCallCount`: `number`; `adapterId`: [`LlmConstrainedDecodingAdapterId`](#llmconstraineddecodingadapterid); `adapterVersion?`: `string`; `enforcement`: [`LlmConstrainedDecodingEnforcement`](#llmconstraineddecodingenforcement); `fallbackCallCount`: `number`; `fallbackReasons?`: readonly `string`[]; \}; `costMinorUnits`: `number`; `deployment?`: `string`; `idempotentReplayHits`: `number`; `inFlightDedupHits`: `number`; `tokensIn`: `number`; `tokensOut`: `number`; \}\>\>
 
 Deterministic per-agent-source attribution sealed in attestation.
 
@@ -3715,7 +3732,7 @@ Single generated test case.
 
 ##### promptTemplateVersion
 
-> **promptTemplateVersion**: `"1.4.0"`
+> **promptTemplateVersion**: `"1.6.2"`
 
 ##### qcMappingPreview
 
@@ -3810,7 +3827,7 @@ Whether the artifact came from a replay-cache hit.
 
 ##### promptTemplateVersion
 
-> **promptTemplateVersion**: `"1.4.0"`
+> **promptTemplateVersion**: `"1.6.2"`
 
 ##### redactionPolicyVersion
 
@@ -3885,6 +3902,13 @@ QC/ALM mapping preview emitted alongside the test case.
 > `optional` **blockingReasons?**: `string`[]
 
 Human-readable reasons when exportable=false.
+
+##### decisionBasis?
+
+> `optional` **decisionBasis?**: `"mapping_preview_only"`
+
+Optional hardening stamp clarifying that `exportable` is only a
+mapping-preview signal and NOT the final policy/review export decision.
 
 ##### exportable
 
@@ -4035,7 +4059,7 @@ One row of [HarnessArtifactManifest.entries](#entries-1).
 
 ##### filename
 
-> `readonly` **filename**: `"self-verify-rubric.json"` \| `"test-design-model.json"` \| `"judge-panel-verdicts.json"` \| `"genealogy.json"` \| `"agent-iterations.json"` \| `"cache-break-events.jsonl"` \| `"compact-boundary-log.jsonl"` \| `"migrations.log.jsonl"` \| `"library-coverage-report.json"` \| `"agent-findings.json"` \| `"coverage-plan.json"` \| `"ir-mutation-coverage-strength.json"`
+> `readonly` **filename**: `"self-verify-rubric.json"` \| `"test-design-model.json"` \| `"judge-panel-verdicts.json"` \| `"genealogy.json"` \| `"agent-iterations.json"` \| `"cache-break-events.jsonl"` \| `"compact-boundary-log.jsonl"` \| `"migrations.log.jsonl"` \| `"library-coverage-report.json"` \| `"agent-findings.json"` \| `"coverage-plan.json"` \| `"ir-mutation-coverage-strength.json"` \| `"workflow-topology.json"`
 
 Basename of the artifact, relative to the per-job runDir.
 
@@ -5254,11 +5278,43 @@ One normalized judge entry consumed by the consensus module.
 
 ***
 
+### JudgeConsensusRepairHistory
+
+Historical repair metadata persisted alongside the final consensus state.
+
+#### Properties
+
+##### attempted
+
+> `readonly` **attempted**: `boolean`
+
+##### finalOutcome
+
+> `readonly` **finalOutcome**: `"needs_review"` \| `"rejected"` \| `"accepted"` \| `"not_needed"` \| `"convergence_stalled"` \| `"budget_exhausted"`
+
+##### historicalFindings
+
+> `readonly` **historicalFindings**: readonly [`JudgeConsensusFinding`](#judgeconsensusfinding)[]
+
+##### historicalRepairInstructions
+
+> `readonly` **historicalRepairInstructions**: readonly [`RepairInstruction`](#repairinstruction)[]
+
+##### repairIterationCount
+
+> `readonly` **repairIterationCount**: `number`
+
+***
+
 ### JudgeConsensusVerdict
 
 Persisted production-runner judge-consensus artifact.
 
 #### Properties
+
+##### activeFindings
+
+> `readonly` **activeFindings**: readonly [`JudgeConsensusFinding`](#judgeconsensusfinding)[]
 
 ##### contractVersion
 
@@ -5276,9 +5332,17 @@ Persisted production-runner judge-consensus artifact.
 
 > `readonly` **panel**: readonly [`JudgeConsensusPanelEntry`](#judgeconsensuspanelentry)[]
 
+##### repairHistory
+
+> `readonly` **repairHistory**: [`JudgeConsensusRepairHistory`](#judgeconsensusrepairhistory)
+
 ##### repairInstructions
 
 > `readonly` **repairInstructions**: readonly [`RepairInstruction`](#repairinstruction)[]
+
+##### repairState
+
+> `readonly` **repairState**: `"none"` \| `"repair_required"` \| `"repaired"`
 
 ##### schemaVersion
 
@@ -5366,7 +5430,7 @@ Judge identifier within the panel.
 
 Stable model identifier this judge was bound to at the time of
 scoring. Echoed verbatim from the [AgentModelBinding](#agentmodelbinding)'s
-`modelId` (e.g., `"gpt-oss-120b"`, `"phi-4-multimodal-poc"`).
+`modelId` (e.g., `"gpt-oss-120b"`, `"phi-4-multimodal-instruct"`).
 
 ##### reason
 
@@ -6155,6 +6219,89 @@ One probe row in `llm-capabilities.json`.
 
 ***
 
+### LlmConstrainedDecodingConfig
+
+Operator-configured constrained-decoding preference. The gateway resolves
+this preference into an actual adapter per request and may explicitly fall
+back when the compatibility mode or deployment cannot honor it.
+
+#### Properties
+
+##### adapterVersion?
+
+> `optional` **adapterVersion?**: `string`
+
+Optional adapter-version pin surfaced in artifacts and FinOps so operators
+can correlate cost/quality shifts with constrained-decoding rollout.
+
+##### fallbackAdapter?
+
+> `optional` **fallbackAdapter?**: `"openai_json_schema"` \| `"openai_json_object"` \| `"prompt_only"` \| `"outlines"` \| `"llguidance"`
+
+Optional explicit fallback adapter. Defaults to `prompt_only` when
+omitted; callers should keep this narrow so a single request never fan-outs
+across multiple extra network attempts unexpectedly.
+
+##### preferredAdapter
+
+> **preferredAdapter**: `"openai_json_schema"` \| `"openai_json_object"` \| `"prompt_only"` \| `"outlines"` \| `"llguidance"`
+
+Preferred adapter for schema-carrying requests.
+
+***
+
+### LlmConstrainedDecodingMetadata
+
+Resolved constrained-decoding metadata for one request attempt. This is
+attached to gateway results and propagated into FinOps/agent-participation
+artifacts so fallback behavior is auditable.
+
+#### Properties
+
+##### adapterId
+
+> **adapterId**: `"openai_json_schema"` \| `"openai_json_object"` \| `"prompt_only"` \| `"outlines"` \| `"llguidance"`
+
+Adapter actually selected for this attempt.
+
+##### adapterVersion?
+
+> `optional` **adapterVersion?**: `string`
+
+Optional adapter-version pin from operator config.
+
+##### enforcement
+
+> **enforcement**: `"prompt_only"` \| `"provider"` \| `"sampler"`
+
+Enforcement class of the selected adapter.
+
+##### fallback
+
+> **fallback**: `boolean`
+
+True when the preferred adapter could not be used and a fallback ran.
+
+##### fallbackReason?
+
+> `optional` **fallbackReason?**: `string`
+
+Redacted reason for fallback, when applicable.
+
+##### requested
+
+> **requested**: `boolean`
+
+True when the caller supplied a response schema on the request.
+
+##### wireMode
+
+> **wireMode**: `"none"` \| `"json_schema"` \| `"json_object"`
+
+Wire-mode emitted to the upstream compatibility layer.
+
+***
+
 ### LlmGatewayCapabilities
 
 Capability flags declared by the gateway operator and verified at probe
@@ -6230,6 +6377,15 @@ is held only for the duration of that request.
 ##### compatibilityMode
 
 > **compatibilityMode**: `"openai_chat"`
+
+##### constrainedDecoding?
+
+> `optional` **constrainedDecoding?**: [`LlmConstrainedDecodingConfig`](#llmconstraineddecodingconfig)
+
+Optional internal constrained-decoding preference. When omitted, the
+gateway derives a backward-compatible adapter from
+`wireStructuredOutputMode` (`json_schema` -> `openai_json_schema`,
+`json_object` -> `openai_json_object`, `none` -> `prompt_only`).
 
 ##### declaredCapabilities
 
@@ -6323,6 +6479,10 @@ Failure outcome with a redacted message and an explicit retryable flag.
 ##### attempt
 
 > **attempt**: `number`
+
+##### constrainedDecoding?
+
+> `optional` **constrainedDecoding?**: [`LlmConstrainedDecodingMetadata`](#llmconstraineddecodingmetadata)
 
 ##### errorClass
 
@@ -6466,6 +6626,10 @@ Success outcome — never includes reasoning/CoT traces.
 ##### attempt
 
 > **attempt**: `number`
+
+##### constrainedDecoding?
+
+> `optional` **constrainedDecoding?**: [`LlmConstrainedDecodingMetadata`](#llmconstraineddecodingmetadata)
 
 ##### content
 
@@ -7090,6 +7254,12 @@ Single per-test-case mapping preview row consumed by QC/ALM operators.
 ##### blockingReasons
 
 > **blockingReasons**: `string`[]
+
+##### decisionBasis?
+
+> `optional` **decisionBasis?**: `"mapping_preview_only"`
+
+Clarifies that `exportable` is mapping-preview-only, not final export approval.
 
 ##### designSteps
 
@@ -8061,6 +8231,18 @@ Replay-cache key — the only deterministic-bit-identical replay anchor.
 
 > **cacheablePrefixHash**: `string`
 
+##### constrainedDecodingAdapterId?
+
+> `optional` **constrainedDecodingAdapterId?**: `"openai_json_schema"` \| `"openai_json_object"` \| `"prompt_only"` \| `"outlines"` \| `"llguidance"`
+
+##### constrainedDecodingAdapterVersion?
+
+> `optional` **constrainedDecodingAdapterVersion?**: `string`
+
+##### constrainedDecodingFallbackReason?
+
+> `optional` **constrainedDecodingFallbackReason?**: `string`
+
 ##### contextBudgetHash?
 
 > `optional` **contextBudgetHash?**: `string`
@@ -8091,7 +8273,7 @@ Replay-cache key — the only deterministic-bit-identical replay anchor.
 
 ##### promptTemplateVersion
 
-> **promptTemplateVersion**: `"1.4.0"`
+> **promptTemplateVersion**: `"1.6.2"`
 
 ##### redactionPolicyVersion
 
@@ -8410,6 +8592,102 @@ element should attract more cases in the generator output.
 ##### screenId
 
 > `readonly` **screenId**: `string`
+
+***
+
+### RunQualityArtifact
+
+Persisted production-runner run-quality artifact.
+
+#### Properties
+
+##### activeFindingCount
+
+> `readonly` **activeFindingCount**: `number`
+
+##### activeFindings
+
+> `readonly` **activeFindings**: readonly [`JudgeConsensusFinding`](#judgeconsensusfinding)[]
+
+##### attemptSummaries
+
+> `readonly` **attemptSummaries**: readonly [`RunQualityAttemptSummary`](#runqualityattemptsummary)[]
+
+##### blocked
+
+> `readonly` **blocked**: `boolean`
+
+##### contractVersion
+
+> `readonly` **contractVersion**: `"1.12.0"`
+
+##### degradedReasons
+
+> `readonly` **degradedReasons**: readonly `string`[]
+
+##### finalJudgeVerdict
+
+> `readonly` **finalJudgeVerdict**: `"repair"` \| `"accept"` \| `"reject"`
+
+##### generatedAt
+
+> `readonly` **generatedAt**: `string`
+
+##### jobId
+
+> `readonly` **jobId**: `string`
+
+##### repairHistory
+
+> `readonly` **repairHistory**: [`JudgeConsensusRepairHistory`](#judgeconsensusrepairhistory)
+
+##### repairState
+
+> `readonly` **repairState**: `"none"` \| `"repair_required"` \| `"repaired"`
+
+##### schemaVersion
+
+> `readonly` **schemaVersion**: `"1.0.0"`
+
+##### status
+
+> `readonly` **status**: `"clean_success"` \| `"repaired_success"` \| `"degraded_success"` \| `"blocked_failure"`
+
+##### usable
+
+> `readonly` **usable**: `boolean`
+
+***
+
+### RunQualityAttemptSummary
+
+Stage-level attempt summary persisted in the run-quality artifact.
+
+#### Properties
+
+##### attempts
+
+> `readonly` **attempts**: `number`
+
+##### failures
+
+> `readonly` **failures**: `number`
+
+##### finalOutcome
+
+> `readonly` **finalOutcome**: `"blocked"` \| `"not_run"` \| `"clean"` \| `"recovered"` \| `"degraded"`
+
+##### lastErrorClass?
+
+> `readonly` `optional` **lastErrorClass?**: `string`
+
+##### stage
+
+> `readonly` **stage**: `"generator"` \| `"visual_sidecar"` \| `"judge"` \| `"policy_gate"`
+
+##### successes
+
+> `readonly` **successes**: `number`
 
 ***
 
@@ -8956,6 +9234,46 @@ Recognized custom attribute and its intended downstream consumer.
 
 ***
 
+### TenantScope
+
+Multi-tenant scope (Issue #1944).
+
+Identifies the tenant + environment + (optional) project that owns a cache
+partition. Filesystem caches under
+`<root>/replay-cache/<tenantId>/<environmentId>/<projectId>/…` are bound to
+exactly one `TenantScope` at construction time; cross-tenant reads are
+impossible because the loader has no API to address paths outside its
+scope. Existing single-tenant deployments map to [DEFAULT\_TENANT\_SCOPE](#default_tenant_scope).
+
+Each segment is treated as a single path component. The runtime rejects
+empty values and any segment containing a path separator (`/`, `\`) or the
+`..` traversal token — see `resolveTenantScopeSegments` in
+`src/test-intelligence/replay-cache.ts`.
+
+#### Properties
+
+##### environmentId
+
+> `readonly` **environmentId**: `string`
+
+Environment identifier (e.g. `prod`, `staging`, `dev`).
+
+##### projectId?
+
+> `readonly` `optional` **projectId?**: `string`
+
+Optional project identifier within the tenant. When omitted the loader
+substitutes `"default"` so the on-disk path is always three segments
+deep — preventing accidental collision when a project id is later added.
+
+##### tenantId
+
+> `readonly` **tenantId**: `string`
+
+Stable, non-PII tenant identifier (e.g. customer org id).
+
+***
+
 ### TestCaseCoverageBucket
 
 Per-element coverage breakdown.
@@ -9478,6 +9796,30 @@ Risk categories that block export when missing trace/expected/PII checks fail.
 
 ***
 
+### TestCasePolicyProvenanceSummary
+
+Additive provenance summary duplicated into `policy-report.json`.
+
+#### Properties
+
+##### artifactFilename
+
+> `readonly` **artifactFilename**: `string`
+
+##### leafCount
+
+> `readonly` **leafCount**: `number`
+
+##### merkleAlgorithm
+
+> `readonly` **merkleAlgorithm**: `"sha256_merkle_v1"`
+
+##### merkleRoot
+
+> `readonly` **merkleRoot**: `string`
+
+***
+
 ### TestCasePolicyReport
 
 Aggregate policy report across one job's generated test cases.
@@ -9532,6 +9874,15 @@ Job-level policy violations (e.g., job-wide duplicate fingerprint).
 
 > **policyProfileVersion**: `string`
 
+##### provenance?
+
+> `optional` **provenance?**: [`TestCasePolicyProvenanceSummary`](#testcasepolicyprovenancesummary)
+
+Optional provenance seal summary for runs that persisted
+`provenance.jsonld` (Issue #2037). Carries only the Merkle root and
+artifact identity so auditors can correlate `policy-report.json` with the
+provenance bundle without embedding the full graph here.
+
 ##### schemaVersion
 
 > **schemaVersion**: `"1.0.0"`
@@ -9550,7 +9901,7 @@ Single policy-rule violation surfaced for a generated test case.
 
 ##### outcome
 
-> **outcome**: `"schema_invalid"` \| `"missing_trace"` \| `"missing_expected_results"` \| `"semantic_suspicious_content"` \| `"pii_in_test_data"` \| `"ict_register_ref_required"` \| `"missing_negative_or_validation_for_required_field"` \| `"missing_accessibility_case"` \| `"missing_boundary_case"` \| `"duplicate_test_case"` \| `"regulated_risk_review_required"` \| `"ambiguity_review_required"` \| `"qc_mapping_not_exportable"` \| `"low_confidence_review_required"` \| `"open_questions_review_required"` \| `"visual_sidecar_failure"` \| `"visual_sidecar_fallback_used"` \| `"visual_sidecar_low_confidence"` \| `"visual_sidecar_possible_pii"` \| `"visual_sidecar_prompt_injection_text"` \| `"risk_tag_downgrade_detected"` \| `"custom_context_risk_escalation"` \| `"multi_source_conflict_present"`
+> **outcome**: `"schema_invalid"` \| `"missing_trace"` \| `"missing_expected_results"` \| `"semantic_suspicious_content"` \| `"pii_in_test_data"` \| `"ict_register_ref_required"` \| `"technique_quota_breach"` \| `"p0_risk_element_uncovered"` \| `"missing_negative_or_validation_for_required_field"` \| `"missing_accessibility_case"` \| `"missing_boundary_case"` \| `"duplicate_test_case"` \| `"regulated_risk_review_required"` \| `"ambiguity_review_required"` \| `"qc_mapping_not_exportable"` \| `"low_confidence_review_required"` \| `"open_questions_review_required"` \| `"visual_sidecar_failure"` \| `"visual_sidecar_fallback_used"` \| `"visual_sidecar_low_confidence"` \| `"visual_sidecar_possible_pii"` \| `"visual_sidecar_prompt_injection_text"` \| `"cross_modal_faithfulness_score_below_threshold"` \| `"risk_tag_downgrade_detected"` \| `"custom_context_risk_escalation"` \| `"multi_source_conflict_present"` \| `"coverage_drift_exceeded"` \| `"a11y_criterion_covered_weakly"` \| `"a11y_criterion_not_covered"`
 
 ##### path?
 
@@ -9605,7 +9956,7 @@ Single semantic / structural validation issue.
 
 ##### code
 
-> **code**: `"schema_invalid"` \| `"missing_trace"` \| `"trace_screen_unknown"` \| `"missing_expected_results"` \| `"steps_unordered"` \| `"steps_indices_non_sequential"` \| `"step_action_empty"` \| `"step_action_too_long"` \| `"duplicate_step_index"` \| `"duplicate_test_case_id"` \| `"title_empty"` \| `"objective_empty"` \| `"risk_category_invalid_for_intent"` \| `"qc_mapping_blocking_reasons_missing"` \| `"qc_mapping_exportable_inconsistent"` \| `"quality_signals_confidence_out_of_range"` \| `"quality_signals_coverage_unknown_id"` \| `"test_data_pii_detected"` \| `"test_data_unredacted_value"` \| `"preconditions_pii_detected"` \| `"expected_results_pii_detected"` \| `"assumptions_excessive"` \| `"open_questions_excessive"` \| `"ambiguity_without_review_state"` \| `"semantic_suspicious_content"`
+> **code**: `"schema_invalid"` \| `"missing_trace"` \| `"trace_screen_unknown"` \| `"missing_expected_results"` \| `"steps_unordered"` \| `"steps_indices_non_sequential"` \| `"step_action_empty"` \| `"step_action_too_long"` \| `"duplicate_step_index"` \| `"duplicate_test_case_id"` \| `"title_empty"` \| `"objective_empty"` \| `"risk_category_invalid_for_intent"` \| `"qc_mapping_blocking_reasons_missing"` \| `"qc_mapping_exportable_inconsistent"` \| `"quality_signals_confidence_out_of_range"` \| `"quality_signals_coverage_unknown_id"` \| `"test_data_pii_detected"` \| `"test_data_unredacted_value"` \| `"preconditions_pii_detected"` \| `"expected_results_pii_detected"` \| `"assumptions_excessive"` \| `"open_questions_excessive"` \| `"ambiguity_without_review_state"` \| `"unsupported_unresolved_validation_detail"` \| `"semantic_suspicious_content"`
 
 ##### message
 
@@ -9731,6 +10082,40 @@ Whether the report blocks downstream review/export (any error => true).
 
 > **name**: `string`
 
+##### resultElementId?
+
+> `optional` **resultElementId?**: `string`
+
+***
+
+### TestDesignCalculationConstraint
+
+#### Properties
+
+##### component
+
+> **component**: `"vat"`
+
+##### constraintId
+
+> **constraintId**: `string`
+
+##### evidenceText
+
+> **evidenceText**: `string`
+
+##### kind
+
+> **kind**: `"exclude_component"` \| `"include_component"`
+
+##### screenId?
+
+> `optional` **screenId?**: `string`
+
+##### subject
+
+> **subject**: `"financing_need"`
+
 ***
 
 ### TestDesignElement
@@ -9775,6 +10160,10 @@ source IR.
 ##### businessRules
 
 > **businessRules**: [`TestDesignRule`](#testdesignrule)[]
+
+##### calculationConstraints
+
+> **calculationConstraints**: [`TestDesignCalculationConstraint`](#testdesigncalculationconstraint)[]
 
 ##### jobId
 
@@ -10211,7 +10600,7 @@ Per-case policy decision (mirrors `TestCasePolicyDecisionRecord.decision`).
 
 ##### policyOutcomes
 
-> **policyOutcomes**: (`"schema_invalid"` \| `"missing_trace"` \| `"missing_expected_results"` \| `"semantic_suspicious_content"` \| `"pii_in_test_data"` \| `"ict_register_ref_required"` \| `"missing_negative_or_validation_for_required_field"` \| `"missing_accessibility_case"` \| `"missing_boundary_case"` \| `"duplicate_test_case"` \| `"regulated_risk_review_required"` \| `"ambiguity_review_required"` \| `"qc_mapping_not_exportable"` \| `"low_confidence_review_required"` \| `"open_questions_review_required"` \| `"visual_sidecar_failure"` \| `"visual_sidecar_fallback_used"` \| `"visual_sidecar_low_confidence"` \| `"visual_sidecar_possible_pii"` \| `"visual_sidecar_prompt_injection_text"` \| `"risk_tag_downgrade_detected"` \| `"custom_context_risk_escalation"` \| `"multi_source_conflict_present"`)[]
+> **policyOutcomes**: (`"schema_invalid"` \| `"missing_trace"` \| `"missing_expected_results"` \| `"semantic_suspicious_content"` \| `"pii_in_test_data"` \| `"ict_register_ref_required"` \| `"technique_quota_breach"` \| `"p0_risk_element_uncovered"` \| `"missing_negative_or_validation_for_required_field"` \| `"missing_accessibility_case"` \| `"missing_boundary_case"` \| `"duplicate_test_case"` \| `"regulated_risk_review_required"` \| `"ambiguity_review_required"` \| `"qc_mapping_not_exportable"` \| `"low_confidence_review_required"` \| `"open_questions_review_required"` \| `"visual_sidecar_failure"` \| `"visual_sidecar_fallback_used"` \| `"visual_sidecar_low_confidence"` \| `"visual_sidecar_possible_pii"` \| `"visual_sidecar_prompt_injection_text"` \| `"cross_modal_faithfulness_score_below_threshold"` \| `"risk_tag_downgrade_detected"` \| `"custom_context_risk_escalation"` \| `"multi_source_conflict_present"` \| `"coverage_drift_exceeded"` \| `"a11y_criterion_covered_weakly"` \| `"a11y_criterion_not_covered"`)[]
 
 Per-case sorted, deduplicated policy outcome codes that fired.
 
@@ -10257,7 +10646,7 @@ Title at the moment the matrix was built.
 
 ##### transferOutcome?
 
-> `optional` **transferOutcome?**: `"failed"` \| `"created"` \| `"skipped_duplicate"` \| `"refused"`
+> `optional` **transferOutcome?**: `"failed"` \| `"refused"` \| `"created"` \| `"skipped_duplicate"`
 
 Outcome of the transfer pipeline for this case, when known.
 
@@ -10341,7 +10730,7 @@ Per-case policy decision at the time this step row was built.
 
 ##### policyOutcomes
 
-> **policyOutcomes**: (`"schema_invalid"` \| `"missing_trace"` \| `"missing_expected_results"` \| `"semantic_suspicious_content"` \| `"pii_in_test_data"` \| `"ict_register_ref_required"` \| `"missing_negative_or_validation_for_required_field"` \| `"missing_accessibility_case"` \| `"missing_boundary_case"` \| `"duplicate_test_case"` \| `"regulated_risk_review_required"` \| `"ambiguity_review_required"` \| `"qc_mapping_not_exportable"` \| `"low_confidence_review_required"` \| `"open_questions_review_required"` \| `"visual_sidecar_failure"` \| `"visual_sidecar_fallback_used"` \| `"visual_sidecar_low_confidence"` \| `"visual_sidecar_possible_pii"` \| `"visual_sidecar_prompt_injection_text"` \| `"risk_tag_downgrade_detected"` \| `"custom_context_risk_escalation"` \| `"multi_source_conflict_present"`)[]
+> **policyOutcomes**: (`"schema_invalid"` \| `"missing_trace"` \| `"missing_expected_results"` \| `"semantic_suspicious_content"` \| `"pii_in_test_data"` \| `"ict_register_ref_required"` \| `"technique_quota_breach"` \| `"p0_risk_element_uncovered"` \| `"missing_negative_or_validation_for_required_field"` \| `"missing_accessibility_case"` \| `"missing_boundary_case"` \| `"duplicate_test_case"` \| `"regulated_risk_review_required"` \| `"ambiguity_review_required"` \| `"qc_mapping_not_exportable"` \| `"low_confidence_review_required"` \| `"open_questions_review_required"` \| `"visual_sidecar_failure"` \| `"visual_sidecar_fallback_used"` \| `"visual_sidecar_low_confidence"` \| `"visual_sidecar_possible_pii"` \| `"visual_sidecar_prompt_injection_text"` \| `"cross_modal_faithfulness_score_below_threshold"` \| `"risk_tag_downgrade_detected"` \| `"custom_context_risk_escalation"` \| `"multi_source_conflict_present"` \| `"coverage_drift_exceeded"` \| `"a11y_criterion_covered_weakly"` \| `"a11y_criterion_not_covered"`)[]
 
 Per-case sorted, deduplicated policy outcomes at the time this step row was built.
 
@@ -10470,7 +10859,7 @@ Sanitised, length-bounded failure detail; never carries URLs/tokens.
 
 ##### outcome
 
-> **outcome**: `"failed"` \| `"created"` \| `"skipped_duplicate"` \| `"refused"`
+> **outcome**: `"failed"` \| `"refused"` \| `"created"` \| `"skipped_duplicate"`
 
 ##### qcEntityId
 
@@ -10813,6 +11202,27 @@ Wall-clock duration of the attempt in milliseconds.
 
 Error class when the attempt failed. Absent on a success.
 
+##### normalizedParserError?
+
+> `optional` **normalizedParserError?**: `string`
+
+Issue #2017: bounded, sanitized parser-error description for failed
+attempts. Populated whenever the sidecar response could be obtained
+but failed structural normalization (e.g. missing `screens`, wrong
+length, schema-invalid record). Always passes through
+`redactHighRiskSecrets` and is capped to a small byte budget so the
+field is safe to surface in artifacts and dashboards.
+
+##### rawResponseArtifactPath?
+
+> `optional` **rawResponseArtifactPath?**: `string`
+
+Issue #2017: relative path (within the run directory) of the
+persisted raw-response diagnostic artifact for a failed attempt.
+Always points to a JSON file under
+`visual-sidecar-diagnostics/`. Absent on success and on pre-flight
+failures where no gateway round-trip occurred.
+
 ***
 
 ### VisualSidecarCaptureIdentity
@@ -10893,6 +11303,101 @@ Optional decoded pixel dimensions. When present they are forwarded into
 [LlmImageInput.widthPx](#widthpx)/[LlmImageInput.heightPx](#heightpx) so the
 gateway's input-budget guard can apply tile-based token estimation
 (Issue #1930) instead of charging the raw base64 byte length.
+
+***
+
+### VisualSidecarDiagnosticArtifact
+
+Persisted form of a single visual sidecar attempt diagnostic. Carries
+sanitized, bounded fragments of the gateway response so the failure
+can be debugged from the artifact alone.
+
+#### Properties
+
+##### attempt
+
+> **attempt**: `number`
+
+1-based attempt index across primary + fallback. Matches `VisualSidecarAttempt.attempt`.
+
+##### contractVersion
+
+> **contractVersion**: `"1.12.0"`
+
+##### deployment
+
+> **deployment**: [`SidecarDeployment`](#sidecardeployment-1)
+
+Deployment that produced the response.
+
+##### durationMs
+
+> **durationMs**: `number`
+
+Wall-clock duration of the attempt in milliseconds.
+
+##### errorClass
+
+> **errorClass**: `"schema_invalid"` \| `"schema_invalid_response"` \| `"refusal"` \| `"incomplete"` \| `"timeout"` \| `"rate_limited"` \| `"transport"` \| `"image_payload_rejected"` \| `"input_budget_exceeded"` \| `"response_too_large"` \| `"protocol"` \| `"canceled"`
+
+Error class for the attempt.
+
+##### gatewayMessage?
+
+> `optional` **gatewayMessage?**: `string`
+
+Bounded, sanitized gateway error message captured from the failed `LlmGenerationFailure`.
+
+##### generatedAt
+
+> **generatedAt**: `string`
+
+##### jobId
+
+> **jobId**: `string`
+
+##### normalizedParserError?
+
+> `optional` **normalizedParserError?**: `string`
+
+Bounded, sanitized parser-error description (matches `VisualSidecarAttempt.normalizedParserError`).
+
+##### rawScreenshotsIncluded
+
+> **rawScreenshotsIncluded**: `false`
+
+Hard invariant — image bytes are never embedded in this artifact.
+
+##### rawTextContent?
+
+> `optional` **rawTextContent?**: `string`
+
+Bounded, redacted slice of the gateway response. Capped at
+`VISUAL_SIDECAR_DIAGNOSTIC_RAW_TEXT_BYTE_LIMIT` bytes (UTF-8). String
+payloads are persisted verbatim; object/array payloads are
+canonical-JSON-stringified first. Absent when no content is
+available (transport / canceled / refusal failures, or when
+serialization fails).
+
+##### responseShape
+
+> **responseShape**: `"string"` \| `"object"` \| `"array"` \| `"null"` \| `"missing"`
+
+Coarse shape classification of the response payload:
+  - `"string"` — gateway returned a string (e.g. raw JSON text).
+  - `"object"` — gateway returned a JSON object payload.
+  - `"array"` — gateway returned a JSON array payload.
+  - `"null"` — gateway returned an explicit JSON `null` payload.
+  - `"missing"` — the attempt failed before any content was produced
+    (transport, timeout, canceled, refusal, etc.).
+
+##### schemaVersion
+
+> **schemaVersion**: `"1.0.0"`
+
+##### visualSidecarSchemaVersion
+
+> **visualSidecarSchemaVersion**: `"1.1.0"`
 
 ***
 
@@ -11342,7 +11847,7 @@ Replay-cache identity hashes.
 
 ##### promptTemplateVersion
 
-> **promptTemplateVersion**: `"1.4.0"`
+> **promptTemplateVersion**: `"1.6.2"`
 
 Versions stamped by the harness at run time.
 
@@ -12060,7 +12565,7 @@ Replay-cache identity hashes for the run (mirrors compiled prompt).
 
 ##### promptTemplateVersion
 
-> **promptTemplateVersion**: `"1.4.0"`
+> **promptTemplateVersion**: `"1.6.2"`
 
 Versions used to compile the prompt and validate the output.
 
@@ -12500,6 +13005,126 @@ Provenance coverage ratio (0–1).
 > **testCaseAttributionCoverage**: `number`
 
 Source-attribution coverage ratio across test cases (0–1).
+
+***
+
+### WorkflowTopology
+
+Deterministic workflow topology derived from the test-design model.
+
+#### Properties
+
+##### actions
+
+> `readonly` **actions**: readonly [`WorkflowTopologyAction`](#workflowtopologyaction)[]
+
+##### entryStates
+
+> `readonly` **entryStates**: readonly `string`[]
+
+##### exitStates
+
+> `readonly` **exitStates**: readonly `string`[]
+
+##### jobId
+
+> `readonly` **jobId**: `string`
+
+##### schemaVersion
+
+> `readonly` **schemaVersion**: `"1.0.0"`
+
+##### states
+
+> `readonly` **states**: readonly [`WorkflowTopologyState`](#workflowtopologystate)[]
+
+##### transitions
+
+> `readonly` **transitions**: readonly [`WorkflowTopologyTransition`](#workflowtopologytransition)[]
+
+***
+
+### WorkflowTopologyAction
+
+One stable workflow action emitted by the action-topology agent.
+
+#### Properties
+
+##### actionId
+
+> `readonly` **actionId**: `string`
+
+##### kind
+
+> `readonly` **kind**: `"enter_value"` \| `"select_option"` \| `"review_result"` \| `"review_copy"` \| `"confirm_state"`
+
+##### label
+
+> `readonly` **label**: `string`
+
+##### screenId
+
+> `readonly` **screenId**: `string`
+
+##### sourceRefs
+
+> `readonly` **sourceRefs**: readonly `string`[]
+
+##### targetIds
+
+> `readonly` **targetIds**: readonly `string`[]
+
+***
+
+### WorkflowTopologyState
+
+One stable workflow state emitted by the action-topology agent.
+
+#### Properties
+
+##### label
+
+> `readonly` **label**: `string`
+
+##### screenId
+
+> `readonly` **screenId**: `string`
+
+##### sourceRefs
+
+> `readonly` **sourceRefs**: readonly `string`[]
+
+##### stateId
+
+> `readonly` **stateId**: `string`
+
+***
+
+### WorkflowTopologyTransition
+
+One workflow transition between stable states.
+
+#### Properties
+
+##### actions
+
+> `readonly` **actions**: readonly `string`[]
+
+##### from
+
+> `readonly` **from**: `string`
+
+##### guard
+
+> `readonly` **guard**: `string`
+
+##### to
+
+> `readonly` **to**: `string`
+
+##### transitionId
+
+> `readonly` **transitionId**: `string`
 
 ***
 
@@ -13171,7 +13796,7 @@ Submit response for accepted jobs.
 
 ###### Inherited from
 
-[`WorkspaceSubmitAccepted`](#workspacesubmitaccepted).[`jobId`](#jobid-60)
+[`WorkspaceSubmitAccepted`](#workspacesubmitaccepted).[`jobId`](#jobid-63)
 
 ##### pasteDeltaSummary?
 
@@ -13214,7 +13839,7 @@ Present only when `figmaSourceMode === "figma_paste" | "figma_plugin"` and diff 
 
 ###### Inherited from
 
-[`WorkspaceSubmitAccepted`](#workspacesubmitaccepted).[`status`](#status-20)
+[`WorkspaceSubmitAccepted`](#workspacesubmitaccepted).[`status`](#status-21)
 
 ***
 
@@ -17093,6 +17718,22 @@ Category tag used by the consensus module for veto / repair routing.
 
 ***
 
+### JudgeConsensusRepairOutcome
+
+> **JudgeConsensusRepairOutcome** = *typeof* [`JUDGE_CONSENSUS_REPAIR_OUTCOMES`](#judge_consensus_repair_outcomes)\[`number`\]
+
+Final repair-loop outcomes persisted alongside judge-consensus history.
+
+***
+
+### JudgeConsensusRepairState
+
+> **JudgeConsensusRepairState** = *typeof* [`JUDGE_CONSENSUS_REPAIR_STATES`](#judge_consensus_repair_states)\[`number`\]
+
+Repair-state labels surfaced by the persisted judge-consensus artifact.
+
+***
+
 ### JudgePanelAgreement
 
 > **JudgePanelAgreement** = *typeof* [`JUDGE_PANEL_AGREEMENT_LABELS`](#judge_panel_agreement_labels)\[`number`\]
@@ -17195,6 +17836,18 @@ Probe rows can cover declared capability flags plus the mandatory text-chat base
 > **LlmCapabilityProbeOutcome** = `"supported"` \| `"unsupported"` \| `"untested"` \| `"probe_failed"`
 
 Per-capability probe verdict carried in the persisted artifact.
+
+***
+
+### LlmConstrainedDecodingAdapterId
+
+> **LlmConstrainedDecodingAdapterId** = *typeof* [`ALLOWED_LLM_CONSTRAINED_DECODING_ADAPTER_IDS`](#allowed_llm_constrained_decoding_adapter_ids)\[`number`\]
+
+***
+
+### LlmConstrainedDecodingEnforcement
+
+> **LlmConstrainedDecodingEnforcement** = *typeof* [`ALLOWED_LLM_CONSTRAINED_DECODING_ENFORCEMENTS`](#allowed_llm_constrained_decoding_enforcements)\[`number`\]
 
 ***
 
@@ -17435,6 +18088,22 @@ Discriminated union of allowed rationale tokens.
 
 ***
 
+### RunQualityStageId
+
+> **RunQualityStageId** = *typeof* [`RUN_QUALITY_STAGE_IDS`](#run_quality_stage_ids)\[`number`\]
+
+Stage identifiers surfaced in the run-quality attempt summaries.
+
+***
+
+### RunQualityStatus
+
+> **RunQualityStatus** = *typeof* [`RUN_QUALITY_STATUSES`](#run_quality_statuses)\[`number`\]
+
+Top-level run-quality states for the production-runner artifact bundle.
+
+***
+
 ### SelfVerifyRubricDimension
 
 > **SelfVerifyRubricDimension** = *typeof* [`ALLOWED_SELF_VERIFY_RUBRIC_DIMENSIONS`](#allowed_self_verify_rubric_dimensions)\[`number`\]
@@ -17483,8 +18152,8 @@ by the JSON-Schema validator at the visual-sidecar wire surface
 
 The optional brand symbol documents intent without forcing a public
 type-import migration on callers that pass plain string literals
-(e.g., the historical four — `llama-4-maverick-vision`,
-`phi-4-multimodal-poc`, `mistral-document-ai-2512`, `mock`).
+(e.g., `llama-4-maverick-vision`,
+`phi-4-multimodal-instruct`, `mistral-document-ai-2512`, `mock`).
 
 #### Type Declaration
 
@@ -18176,7 +18845,7 @@ resumed from the most recent checkpoint, or terminal.
 
 ### AGENT\_HARNESS\_ROLES
 
-> `const` **AGENT\_HARNESS\_ROLES**: readonly \[`"adversarial_gap_finder"`, `"final_verifier"`, `"generator"`, `"logic_judge"`, `"repair_planner"`, `"semantic_judge"`, `"visual_sidecar"`\]
+> `const` **AGENT\_HARNESS\_ROLES**: readonly \[`"action_topology"`, `"adversarial_gap_finder"`, `"final_verifier"`, `"generator"`, `"logic_judge"`, `"repair_planner"`, `"semantic_judge"`, `"visual_sidecar"`\]
 
 Closed runtime list of agent harness roles tracked by the Production
 Runner state machine. The order is alphabetical for stable
@@ -18588,7 +19257,7 @@ sorted on the `ReviewSnapshot.fourEyesReasons` field.
 
 ### ALLOWED\_HARNESS\_ARTIFACT\_FILENAMES
 
-> `const` **ALLOWED\_HARNESS\_ARTIFACT\_FILENAMES**: readonly \[`"agent-findings.json"`, `"agent-iterations.json"`, `"cache-break-events.jsonl"`, `"compact-boundary-log.jsonl"`, `"coverage-plan.json"`, `"genealogy.json"`, `"ir-mutation-coverage-strength.json"`, `"judge-panel-verdicts.json"`, `"library-coverage-report.json"`, `"migrations.log.jsonl"`, `"self-verify-rubric.json"`, `"test-design-model.json"`\]
+> `const` **ALLOWED\_HARNESS\_ARTIFACT\_FILENAMES**: readonly \[`"agent-findings.json"`, `"agent-iterations.json"`, `"cache-break-events.jsonl"`, `"compact-boundary-log.jsonl"`, `"coverage-plan.json"`, `"genealogy.json"`, `"ir-mutation-coverage-strength.json"`, `"judge-panel-verdicts.json"`, `"library-coverage-report.json"`, `"migrations.log.jsonl"`, `"self-verify-rubric.json"`, `"test-design-model.json"`, `"workflow-topology.json"`\]
 
 Closed runtime list of canonical-JSON harness artifact filenames the
 manifest may reference. Adding a member is an additive minor bump.
@@ -18757,6 +19426,24 @@ runtime agree.
 
 ***
 
+### ALLOWED\_LLM\_CONSTRAINED\_DECODING\_ADAPTER\_IDS
+
+> `const` **ALLOWED\_LLM\_CONSTRAINED\_DECODING\_ADAPTER\_IDS**: readonly \[`"openai_json_schema"`, `"openai_json_object"`, `"prompt_only"`, `"outlines"`, `"llguidance"`\]
+
+Internal constrained-decoding adapters. These are more expressive than the
+wire-mode enum because multiple provider integrations can implement the same
+logical schema-constrained contract.
+
+***
+
+### ALLOWED\_LLM\_CONSTRAINED\_DECODING\_ENFORCEMENTS
+
+> `const` **ALLOWED\_LLM\_CONSTRAINED\_DECODING\_ENFORCEMENTS**: readonly \[`"provider"`, `"sampler"`, `"prompt_only"`\]
+
+How strongly the selected constrained-decoding adapter enforces shape.
+
+***
+
 ### ALLOWED\_LLM\_GATEWAY\_AUTH\_MODES
 
 > `const` **ALLOWED\_LLM\_GATEWAY\_AUTH\_MODES**: readonly \[`"api_key"`, `"bearer_token"`, `"none"`\]
@@ -18791,7 +19478,7 @@ retryable; transport, timeout, and rate-limit failures are.
 
 Allowed gateway roles. Each role is bound to a single deployment to keep the
 structured test-case generator (`gpt-oss-120b`) strictly separated from the
-multimodal visual sidecars (`mistral-document-ai-2512`, `llama-4-maverick-vision`, `phi-4-multimodal-poc`),
+multimodal visual sidecars (`llama-4-maverick-vision`, `phi-4-multimodal-instruct`),
 and from the cross-model logic judge (Issue #1932) which reuses the structured-output
 surface but is intentionally bound to a different deployment so a self-consistency
 bias from the generator cannot be amplified by reusing the same model on the judge.
@@ -19148,7 +19835,7 @@ Allowed policy-gate decisions (Issue #1364).
 
 ### ALLOWED\_TEST\_CASE\_POLICY\_OUTCOMES
 
-> `const` **ALLOWED\_TEST\_CASE\_POLICY\_OUTCOMES**: readonly \[`"missing_trace"`, `"missing_expected_results"`, `"pii_in_test_data"`, `"ict_register_ref_required"`, `"missing_negative_or_validation_for_required_field"`, `"missing_accessibility_case"`, `"missing_boundary_case"`, `"schema_invalid"`, `"duplicate_test_case"`, `"regulated_risk_review_required"`, `"ambiguity_review_required"`, `"qc_mapping_not_exportable"`, `"low_confidence_review_required"`, `"open_questions_review_required"`, `"visual_sidecar_failure"`, `"visual_sidecar_fallback_used"`, `"visual_sidecar_low_confidence"`, `"visual_sidecar_possible_pii"`, `"visual_sidecar_prompt_injection_text"`, `"semantic_suspicious_content"`, `"risk_tag_downgrade_detected"`, `"custom_context_risk_escalation"`, `"multi_source_conflict_present"`\]
+> `const` **ALLOWED\_TEST\_CASE\_POLICY\_OUTCOMES**: readonly \[`"missing_trace"`, `"missing_expected_results"`, `"pii_in_test_data"`, `"ict_register_ref_required"`, `"technique_quota_breach"`, `"p0_risk_element_uncovered"`, `"missing_negative_or_validation_for_required_field"`, `"missing_accessibility_case"`, `"missing_boundary_case"`, `"schema_invalid"`, `"duplicate_test_case"`, `"regulated_risk_review_required"`, `"ambiguity_review_required"`, `"qc_mapping_not_exportable"`, `"low_confidence_review_required"`, `"open_questions_review_required"`, `"visual_sidecar_failure"`, `"visual_sidecar_fallback_used"`, `"visual_sidecar_low_confidence"`, `"visual_sidecar_possible_pii"`, `"visual_sidecar_prompt_injection_text"`, `"semantic_suspicious_content"`, `"cross_modal_faithfulness_score_below_threshold"`, `"risk_tag_downgrade_detected"`, `"custom_context_risk_escalation"`, `"multi_source_conflict_present"`, `"coverage_drift_exceeded"`, `"a11y_criterion_covered_weakly"`, `"a11y_criterion_not_covered"`\]
 
 Allowed policy outcome codes attached to a single decision row.
 Visual-sidecar codes (`visual_*`) come from the multimodal sidecar
@@ -19158,7 +19845,7 @@ gating per the Issue #1364 / #1386 update.
 
 ### ALLOWED\_TEST\_CASE\_VALIDATION\_ISSUE\_CODES
 
-> `const` **ALLOWED\_TEST\_CASE\_VALIDATION\_ISSUE\_CODES**: readonly \[`"schema_invalid"`, `"missing_trace"`, `"trace_screen_unknown"`, `"missing_expected_results"`, `"steps_unordered"`, `"steps_indices_non_sequential"`, `"step_action_empty"`, `"step_action_too_long"`, `"duplicate_step_index"`, `"duplicate_test_case_id"`, `"title_empty"`, `"objective_empty"`, `"risk_category_invalid_for_intent"`, `"qc_mapping_blocking_reasons_missing"`, `"qc_mapping_exportable_inconsistent"`, `"quality_signals_confidence_out_of_range"`, `"quality_signals_coverage_unknown_id"`, `"test_data_pii_detected"`, `"test_data_unredacted_value"`, `"preconditions_pii_detected"`, `"expected_results_pii_detected"`, `"assumptions_excessive"`, `"open_questions_excessive"`, `"ambiguity_without_review_state"`, `"semantic_suspicious_content"`\]
+> `const` **ALLOWED\_TEST\_CASE\_VALIDATION\_ISSUE\_CODES**: readonly \[`"schema_invalid"`, `"missing_trace"`, `"trace_screen_unknown"`, `"missing_expected_results"`, `"steps_unordered"`, `"steps_indices_non_sequential"`, `"step_action_empty"`, `"step_action_too_long"`, `"duplicate_step_index"`, `"duplicate_test_case_id"`, `"title_empty"`, `"objective_empty"`, `"risk_category_invalid_for_intent"`, `"qc_mapping_blocking_reasons_missing"`, `"qc_mapping_exportable_inconsistent"`, `"quality_signals_confidence_out_of_range"`, `"quality_signals_coverage_unknown_id"`, `"test_data_pii_detected"`, `"test_data_unredacted_value"`, `"preconditions_pii_detected"`, `"expected_results_pii_detected"`, `"assumptions_excessive"`, `"open_questions_excessive"`, `"ambiguity_without_review_state"`, `"unsupported_unresolved_validation_detail"`, `"semantic_suspicious_content"`\]
 
 Allowed test-case validation issue codes (Issue #1364).
 The list is the runtime source of truth; new codes plug in here without
@@ -19636,6 +20323,17 @@ Default mutation kill-rate target for deterministic coverage planning.
 
 ***
 
+### DEFAULT\_TENANT\_SCOPE
+
+> `const` **DEFAULT\_TENANT\_SCOPE**: [`TenantScope`](#tenantscope)
+
+Sentinel `TenantScope` used by single-tenant callers that have not yet
+adopted the structured scope (Issue #1944). Keeps the on-disk layout
+`<root>/default/default/default/…` so an unscoped caller's cache is
+isolated from any scoped caller's cache by directory boundary.
+
+***
+
 ### DRY\_RUN\_REPORT\_ARTIFACT\_FILENAME
 
 > `const` **DRY\_RUN\_REPORT\_ARTIFACT\_FILENAME**: `"dry-run-report.json"`
@@ -19944,6 +20642,22 @@ Canonical filename for the persisted judge-consensus artifact.
 > `const` **JUDGE\_CONSENSUS\_FINDING\_CATEGORIES**: readonly \[`"schema_class"`, `"cross_modal_mismatch"`, `"ir_allowlist_violation"`, `"hallucination"`, `"a11y_gap"`, `"coverage_gap"`, `"other"`\]
 
 Closed runtime list of consensus finding categories.
+
+***
+
+### JUDGE\_CONSENSUS\_REPAIR\_OUTCOMES
+
+> `const` **JUDGE\_CONSENSUS\_REPAIR\_OUTCOMES**: readonly \[`"not_needed"`, `"accepted"`, `"rejected"`, `"needs_review"`, `"convergence_stalled"`, `"budget_exhausted"`\]
+
+Final repair-loop outcomes persisted alongside judge-consensus history.
+
+***
+
+### JUDGE\_CONSENSUS\_REPAIR\_STATES
+
+> `const` **JUDGE\_CONSENSUS\_REPAIR\_STATES**: readonly \[`"none"`, `"repair_required"`, `"repaired"`\]
+
+Repair-state labels surfaced by the persisted judge-consensus artifact.
 
 ***
 
@@ -20420,6 +21134,14 @@ envelope. A custom-only envelope must fail validation with
 
 ***
 
+### PROVENANCE\_ARTIFACT\_FILENAME
+
+> `const` **PROVENANCE\_ARTIFACT\_FILENAME**: `"provenance.jsonld"`
+
+Filename used for the persisted per-run W3C PROV JSON-LD graph.
+
+***
+
 ### QC\_CREATED\_ENTITIES\_ARTIFACT\_FILENAME
 
 > `const` **QC\_CREATED\_ENTITIES\_ARTIFACT\_FILENAME**: `"qc-created-entities.json"`
@@ -20593,6 +21315,38 @@ Canonical filename for the deterministic risk-ranking artifact.
 > `const` **RISK\_RANKING\_SCHEMA\_VERSION**: `"1.0.0"`
 
 Schema version for persisted `risk-ranking.json` artifacts (Issue #1935).
+
+***
+
+### RUN\_QUALITY\_ARTIFACT\_FILENAME
+
+> `const` **RUN\_QUALITY\_ARTIFACT\_FILENAME**: `"run-quality.json"`
+
+Canonical filename for the persisted run-quality artifact.
+
+***
+
+### RUN\_QUALITY\_SCHEMA\_VERSION
+
+> `const` **RUN\_QUALITY\_SCHEMA\_VERSION**: `"1.0.0"`
+
+Schema version for persisted production-runner run-quality artifacts.
+
+***
+
+### RUN\_QUALITY\_STAGE\_IDS
+
+> `const` **RUN\_QUALITY\_STAGE\_IDS**: readonly \[`"generator"`, `"judge"`, `"visual_sidecar"`, `"policy_gate"`\]
+
+Stage identifiers surfaced in the run-quality attempt summaries.
+
+***
+
+### RUN\_QUALITY\_STATUSES
+
+> `const` **RUN\_QUALITY\_STATUSES**: readonly \[`"clean_success"`, `"repaired_success"`, `"degraded_success"`, `"blocked_failure"`\]
+
+Top-level run-quality states for the production-runner artifact bundle.
 
 ***
 
@@ -20803,15 +21557,63 @@ before a job may compose more than one test-design source.
 
 ### TEST\_INTELLIGENCE\_PROMPT\_TEMPLATE\_VERSION
 
-> `const` **TEST\_INTELLIGENCE\_PROMPT\_TEMPLATE\_VERSION**: `"1.4.0"`
+> `const` **TEST\_INTELLIGENCE\_PROMPT\_TEMPLATE\_VERSION**: `"1.6.2"`
 
 Prompt template version for the test-intelligence prompt family.
+
+Semver semantics (Issue #1943):
+- PATCH — wording fixes that preserve token-byte-equivalence on the
+  baseline-fixture set (typo fixes, comment-only changes inside the
+  compiled prompt body, equivalent-byte rewordings).
+- MINOR — additive sections, additional instructions, or new optional
+  directives that remain backwards-compatible with prior generator
+  outputs (the existing covered* arrays, figmaTraceRefs schema, and
+  evidence shape are unchanged).
+- MAJOR — breaking section reordering, evidence-schema changes, or any
+  change that retires a directive contract previously relied on by a
+  downstream judge (Logic-Judge, Faithfulness-Judge, A11y-Judge).
+
+Every non-PATCH bump MUST be recorded in
+`docs/test-intelligence-prompt-template-changelog.md` with scope,
+motivation, and expected verdict-deltas on the baseline-fixture set.
+The CI guard `scripts/check-prompt-template-version.mjs` (wired into
+`pr-quality-gate.yml`) fails the build when `prompt-compiler.ts`
+content changes but this constant is not bumped.
+
+History:
 
 1.2.0 — Issue #1905: explicit form-screen accessibility directive added
 to the generator system prompt and user-prompt preamble. Bump forces a
 replay-cache miss for cached generator outputs that pre-date the new
 directive so the cache cannot serve a stale list that lacks an a11y case
 for a form screen.
+
+1.3.0 — Issue #1941: dedicated `[5] CustomerDomainContext` section
+promoted from custom-context-markdown so customer-supplied banking and
+insurance rules become a first-class evidence source.
+
+1.4.0 — Issue #1942: hard-gated technique-quota enforcement on the
+generator user-prompt preamble (`GENERATOR_TECHNIQUE_QUOTA_RULE`).
+
+1.4.1 — Issue #1987: unresolved validation rules now explicitly forbid
+fabricated exact validation text, thresholds, min/max boundaries, and
+blocked-submit behavior in the generator prompt preamble.
+
+1.4.2 — Issue #1984: narrowed decorative-label filtering and hardened
+logic-judge schema handling after prompt-compiler changes in the live-run
+quality hardening flow.
+
+1.4.3 — Issue #1986: financing-need domain-faithfulness rules now
+instruct the generator to honor VAT-exclusion constraints and fall back
+to open questions when exact arithmetic remains underspecified.
+
+***
+
+### TEST\_INTELLIGENCE\_PROVENANCE\_SCHEMA\_VERSION
+
+> `const` **TEST\_INTELLIGENCE\_PROVENANCE\_SCHEMA\_VERSION**: `"1.0.0"`
+
+Schema version for the persisted test-intelligence provenance artifact.
 
 ***
 
@@ -20862,6 +21664,37 @@ untrusted-content normalizer at `<runDir>/`. The report carries
 > `const` **UNTRUSTED\_CONTENT\_NORMALIZATION\_REPORT\_SCHEMA\_VERSION**: `"1.0.0"`
 
 Schema version for the untrusted-content-normalization report.
+
+***
+
+### VISUAL\_SIDECAR\_DIAGNOSTIC\_ARTIFACT\_SCHEMA\_VERSION
+
+> `const` **VISUAL\_SIDECAR\_DIAGNOSTIC\_ARTIFACT\_SCHEMA\_VERSION**: `"1.0.0"`
+
+Stable schema version for the persisted visual sidecar diagnostic artifact.
+
+***
+
+### VISUAL\_SIDECAR\_DIAGNOSTIC\_RAW\_TEXT\_BYTE\_LIMIT
+
+> `const` **VISUAL\_SIDECAR\_DIAGNOSTIC\_RAW\_TEXT\_BYTE\_LIMIT**: `5120`
+
+UTF-8 byte cap on `rawTextContent` of a diagnostic artifact. Five
+kilobytes is enough to fit a typical malformed sidecar envelope plus
+the surrounding chatter, while small enough to keep the artifact
+well below filesystem and review-tool friction thresholds.
+
+***
+
+### VISUAL\_SIDECAR\_DIAGNOSTICS\_ARTIFACT\_DIRECTORY
+
+> `const` **VISUAL\_SIDECAR\_DIAGNOSTICS\_ARTIFACT\_DIRECTORY**: `"visual-sidecar-diagnostics"`
+
+Canonical directory for per-attempt visual sidecar diagnostic artifacts
+(Issue #2017). Each failed attempt writes a single JSON file under this
+directory with the raw normalized response shape, redacted gateway
+message, and structured parser error so a reviewer can debug the model
+response after the fact without re-running the live LLM call.
 
 ***
 
@@ -21055,6 +21888,22 @@ On-disk filename for `Wave4ProductionReadinessEvalReport`.
 > `const` **WAVE4\_PRODUCTION\_READINESS\_EVAL\_REPORT\_SCHEMA\_VERSION**: `"1.0.0"`
 
 Schema version for `Wave4ProductionReadinessEvalReport`.
+
+***
+
+### WORKFLOW\_TOPOLOGY\_ARTIFACT\_FILENAME
+
+> `const` **WORKFLOW\_TOPOLOGY\_ARTIFACT\_FILENAME**: `"workflow-topology.json"`
+
+Canonical filename for the deterministic workflow-topology artifact.
+
+***
+
+### WORKFLOW\_TOPOLOGY\_SCHEMA\_VERSION
+
+> `const` **WORKFLOW\_TOPOLOGY\_SCHEMA\_VERSION**: `"1.0.0"`
+
+Schema version for persisted `workflow-topology.json` artifacts.
 
 ## Functions
 

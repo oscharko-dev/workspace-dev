@@ -26,6 +26,7 @@ import { createMockLlmGatewayClientBundle } from "./llm-gateway-bundle.js";
 import { writeAgentLesson } from "./agent-lessons-memdir.js";
 import { cloneEuBankingDefaultFinOpsBudget } from "./finops-budget.js";
 import { verifyJobEvidence } from "./evidence-verify.js";
+import { verifyProvenanceFromDisk } from "./provenance-verify.js";
 import { PRODUCTION_RUNNER_EVIDENCE_SEAL_ARTIFACT_FILENAME } from "./production-runner-evidence.js";
 import { AGENT_PARTICIPATION_ARTIFACT_FILENAME } from "./agent-participation.js";
 import {
@@ -5495,6 +5496,90 @@ test("Issue #1932: cross-model logic judge dispatches to llm.logicJudge and FinO
       finopsReport.bySource.judge_primary.deployment,
       judgeDeployment,
       "bySource.judge_primary must record the judge deployment, not the generator",
+    );
+  } finally {
+    await rm(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("Issue #2037: production runner writes provenance.jsonld and policy report carries the Merkle root", async () => {
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ti-runner-prov-"));
+  try {
+    const client = createMockLlmGatewayClient({
+      role: "test_generation",
+      deployment: "gpt-oss-120b-mock",
+      modelRevision: "mock-1",
+      gatewayRelease: "mock",
+      responder: okResponder([SAMPLE_DRAFT]),
+    });
+    const result = await runFigmaToQcTestCases({
+      jobId: "job-2037-prov",
+      generatedAt: "2026-05-08T10:00:00Z",
+      source: { kind: "figma_paste_normalized", file: SAMPLE_FILE },
+      outputRoot: tempRoot,
+      llm: { client },
+      harness: { mode: "off", maxRepairIterations: 0 },
+    });
+
+    const provenanceRaw = await readFile(result.artifactPaths.provenance, "utf8");
+    const provenance = JSON.parse(provenanceRaw) as Record<string, unknown>;
+    assert.ok(Array.isArray(provenance["@graph"]));
+    assert.deepEqual(provenance["@context"], [
+      "https://www.w3.org/ns/prov.jsonld",
+      {
+        ti: "https://workspace-dev.local/ns/test-intelligence#",
+        label: "http://www.w3.org/2000/01/rdf-schema#label",
+      },
+    ]);
+
+    const policyRaw = await readFile(result.artifactPaths.policyReport, "utf8");
+    const policy = JSON.parse(policyRaw) as {
+      provenance?: { merkleRoot?: string; artifactFilename?: string };
+    };
+    assert.equal(policy.provenance?.artifactFilename, "provenance.jsonld");
+    assert.equal(
+      policy.provenance?.merkleRoot,
+      (provenance["ti:merkleSeal"] as { root?: string }).root,
+    );
+    assert.ok(!provenanceRaw.includes("systemPrompt"));
+
+    const verification = await verifyProvenanceFromDisk(result.artifactDir);
+    assert.equal(
+      verification.ok,
+      true,
+      JSON.stringify(verification.failures, null, 2),
+    );
+  } finally {
+    await rm(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("Issue #2037: provenance verification fails closed when an attested artifact is mutated", async () => {
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ti-runner-prov-bad-"));
+  try {
+    const client = createMockLlmGatewayClient({
+      role: "test_generation",
+      deployment: "gpt-oss-120b-mock",
+      modelRevision: "mock-1",
+      gatewayRelease: "mock",
+      responder: okResponder([SAMPLE_DRAFT]),
+    });
+    const result = await runFigmaToQcTestCases({
+      jobId: "job-2037-prov-bad",
+      generatedAt: "2026-05-08T10:30:00Z",
+      source: { kind: "figma_paste_normalized", file: SAMPLE_FILE },
+      outputRoot: tempRoot,
+      llm: { client },
+      harness: { mode: "off", maxRepairIterations: 0 },
+    });
+    await writeFile(result.artifactPaths.generatedTestCases, '{"mutated":true}\n', "utf8");
+    const verification = await verifyProvenanceFromDisk(result.artifactDir);
+    assert.equal(verification.ok, false);
+    assert.ok(
+      verification.failures.some(
+        (failure) => failure.code === "artifact_hash_mismatch",
+      ),
+      JSON.stringify(verification.failures, null, 2),
     );
   } finally {
     await rm(tempRoot, { recursive: true, force: true });
