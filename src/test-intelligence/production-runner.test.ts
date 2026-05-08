@@ -51,6 +51,7 @@ import {
   JUDGE_CONSENSUS_ARTIFACT_FILENAME,
   LOGIC_JUDGE_VERDICT_ARTIFACT_FILENAME,
   RUN_QUALITY_ARTIFACT_FILENAME,
+  SELF_CONSISTENCY_REPORT_ARTIFACT_FILENAME,
   WAVE1_VALIDATION_EVIDENCE_MANIFEST_ARTIFACT_FILENAME,
   type BusinessTestIntentIr,
   type DetectedAction,
@@ -563,6 +564,7 @@ test("Issue #1794: banking profile blocks when the active deployment is missing 
       source: { kind: "figma_paste_normalized", file: SAMPLE_FILE },
       outputRoot: tempRoot,
       llm: { client },
+      generation: { diversityPasses: 1 },
     });
 
     assert.equal(result.blocked, true);
@@ -729,6 +731,7 @@ test("Issue #1992: runFigmaToQcTestCases records degraded_success when the visua
       },
       outputRoot: tempRoot,
       llm: { client: bundle.testGeneration, bundle },
+      generation: { diversityPasses: 1 },
     });
 
     assert.equal(result.blocked, false);
@@ -781,6 +784,7 @@ test("Issue #1792: runFigmaToQcTestCases seals production-runner evidence and em
       source: { kind: "figma_paste_normalized", file: SAMPLE_FILE },
       outputRoot: tempRoot,
       llm: { client },
+      generation: { diversityPasses: 1 },
       events: (event) => observedEvents.push(event),
     });
     const evidenceSeal = JSON.parse(
@@ -953,15 +957,7 @@ test("Issue #1936: diversityPasses=1 preserves the legacy single-pass request sh
       ...TEST_GENERATION_CAPS,
       seedSupport: true,
     };
-    const firstClient = createMockLlmGatewayClient({
-      role: "test_generation",
-      deployment: "gpt-oss-120b-mock",
-      modelRevision: "mock-1",
-      gatewayRelease: "mock",
-      declaredCapabilities,
-      responder: okResponder([SAMPLE_DRAFT]),
-    });
-    const secondClient = createMockLlmGatewayClient({
+    const client = createMockLlmGatewayClient({
       role: "test_generation",
       deployment: "gpt-oss-120b-mock",
       modelRevision: "mock-1",
@@ -970,23 +966,17 @@ test("Issue #1936: diversityPasses=1 preserves the legacy single-pass request sh
       responder: okResponder([SAMPLE_DRAFT]),
     });
 
-    const withoutGeneration = await runFigmaToQcTestCases({
-      jobId: "job-1936-default-a",
-      generatedAt: "2026-05-06T10:00:00.000Z",
-      source: { kind: "figma_paste_normalized", file: SAMPLE_FILE },
-      outputRoot: tempRoot,
-      llm: { client: firstClient },
-    });
     const withSinglePass = await runFigmaToQcTestCases({
       jobId: "job-1936-default-b",
       generatedAt: "2026-05-06T10:00:00.000Z",
       source: { kind: "figma_paste_normalized", file: SAMPLE_FILE },
       outputRoot: tempRoot,
-      llm: { client: secondClient },
+      llm: { client },
       generation: { diversityPasses: 1 },
+      logicJudge: { enabled: false },
     });
 
-    const firstGeneratorRequests = firstClient
+    const generatorRequests = client
       .recordedRequests()
       .filter(
         (request) =>
@@ -994,25 +984,444 @@ test("Issue #1936: diversityPasses=1 preserves the legacy single-pass request sh
             "workspace-dev-production-runner-draft-list-v1" &&
           request.seed === undefined,
       );
-    const secondGeneratorRequests = secondClient
+    assert.equal(generatorRequests.length, 1);
+    assert.equal(withSinglePass.generatedTestCases.testCases.length, 1);
+    assert.equal(withSinglePass.artifactPaths.selfConsistencyReport, undefined);
+  } finally {
+    await rm(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("Issue #2070: default eu-banking profile dispatches three seeded generator samples and persists self-consistency evidence", async () => {
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ti-runner-"));
+  try {
+    const declaredCapabilities: LlmGatewayCapabilities = {
+      ...TEST_GENERATION_CAPS,
+      seedSupport: true,
+    };
+    const stableCoverage = {
+      coveredFieldIds: ["field-1"],
+      coveredActionIds: ["action-1"],
+      coveredValidationIds: [],
+      coveredNavigationIds: [],
+      confidence: 0.92,
+    };
+    const disagreementCoverage = {
+      coveredFieldIds: ["field-2"],
+      coveredActionIds: ["action-2"],
+      coveredValidationIds: [],
+      coveredNavigationIds: [],
+      confidence: 0.88,
+    };
+    const stableCase = (expected: string): ProductionRunnerLlmDraftCase => ({
+      ...SAMPLE_DRAFT,
+      title: "Finanzierungsbedarf wird berechnet",
+      objective: "Mehrheitlich korrekter Erwartungswert wird uebernommen.",
+      qualitySignals: stableCoverage,
+      steps: [
+        {
+          index: 1,
+          action: "Kaufpreis und Nebenkosten eingeben",
+          expected,
+        },
+      ],
+      expectedResults: [expected],
+    });
+    const disagreementCase = (
+      type: ProductionRunnerLlmDraftCase["type"],
+    ): ProductionRunnerLlmDraftCase => ({
+      ...SAMPLE_DRAFT,
+      title: "Regelunklarheit bleibt sichtbar",
+      objective: "Uneinige Typzuordnung triggert menschliche Pruefung.",
+      type,
+      qualitySignals: disagreementCoverage,
+      steps: [
+        {
+          index: 1,
+          action: "Ungeklaerte Regel pruefen",
+          expected: "Die Regel bleibt ohne erfundene Konkretion sichtbar.",
+        },
+      ],
+      expectedResults: [
+        "Die Regel bleibt ohne erfundene Konkretion sichtbar.",
+      ],
+    });
+    const responder = (
+      request: LlmGenerationRequest,
+      attempt: number,
+    ): LlmGenerationResult => {
+      if (request.responseSchemaName === "workspace-dev-logic-judge-v1") {
+        return {
+          outcome: "success",
+          content: {
+            verdict: "accept",
+            findings: [],
+            repairInstructions: [],
+          },
+          finishReason: "stop",
+          usage: { inputTokens: 20, outputTokens: 10 },
+          modelDeployment: "gpt-oss-120b-mock",
+          modelRevision: "mock-1",
+          gatewayRelease: "mock",
+          attempt,
+        };
+      }
+      const testCases =
+        request.seed === 11
+          ? [stableCase("Falscher Zwischenwert"), disagreementCase("functional")]
+          : request.seed === 29
+            ? [stableCase("Der Finanzierungsbedarf wird korrekt angezeigt."), disagreementCase("negative")]
+            : [stableCase("Der Finanzierungsbedarf wird korrekt angezeigt."), disagreementCase("validation")];
+      return {
+        outcome: "success",
+        content: { testCases },
+        finishReason: "stop",
+        usage: { inputTokens: 40, outputTokens: 20 },
+        modelDeployment: "gpt-oss-120b-mock",
+        modelRevision: "mock-1",
+        gatewayRelease: "mock",
+        attempt,
+      };
+    };
+    const client = createMockLlmGatewayClient({
+      role: "test_generation",
+      deployment: "gpt-oss-120b-mock",
+      modelRevision: "mock-1",
+      gatewayRelease: "mock",
+      declaredCapabilities,
+      responder,
+    });
+
+    const result = await runFigmaToQcTestCases({
+      jobId: "job-2070-default-self-consistency",
+      generatedAt: "2026-05-09T10:00:00.000Z",
+      source: { kind: "figma_paste_normalized", file: SAMPLE_FILE },
+      outputRoot: tempRoot,
+      llm: { client },
+      logicJudge: { enabled: false },
+      harness: { mode: "off", maxRepairIterations: 0 },
+    });
+
+    const generatorRequests = client
       .recordedRequests()
       .filter(
         (request) =>
           request.responseSchemaName ===
-            "workspace-dev-production-runner-draft-list-v1" &&
-          request.seed === undefined,
+          "workspace-dev-production-runner-draft-list-v1",
       );
-    assert.ok(firstGeneratorRequests.length >= 1);
-    assert.ok(secondGeneratorRequests.length >= 1);
     assert.deepEqual(
-      withoutGeneration.generatedTestCases.testCases.map((testCase) => ({
-        title: testCase.title,
-        promptHash: testCase.audit.promptHash,
+      Array.from(new Set(generatorRequests.map((request) => request.seed))).sort(),
+      [11, 29, 47],
+    );
+    assert.equal(result.generatedTestCases.testCases.length, 2);
+
+    const stableGenerated = result.generatedTestCases.testCases.find(
+      (testCase) => testCase.title === "Finanzierungsbedarf wird berechnet",
+    );
+    assert.ok(stableGenerated !== undefined);
+    assert.equal(
+      stableGenerated?.qualitySignals.confidence,
+      stableCoverage.confidence,
+    );
+    assert.notEqual(stableGenerated?.reviewState, "needs_review");
+
+    const disagreementGenerated = result.generatedTestCases.testCases.find(
+      (testCase) => testCase.title === "Regelunklarheit bleibt sichtbar",
+    );
+    assert.ok(disagreementGenerated !== undefined);
+    assert.equal(disagreementGenerated?.reviewState, "needs_review");
+    assert.equal(
+      disagreementGenerated?.openQuestions.some((entry) =>
+        entry.startsWith("self_consistency_disagreement:"),
+      ),
+      true,
+    );
+
+    assert.ok(
+      result.artifactPaths.selfConsistencyReport?.endsWith(
+        SELF_CONSISTENCY_REPORT_ARTIFACT_FILENAME,
+      ),
+    );
+    const report = JSON.parse(
+      await readFile(result.artifactPaths.selfConsistencyReport!, "utf8"),
+    ) as {
+      sampleCount: number;
+      selfConsistencyAgreement: number;
+      targets: Array<{ disagreement: boolean; disagreementRoute?: string }>;
+    };
+    assert.equal(report.sampleCount, 3);
+    assert.equal(report.targets.length, 2);
+    assert.equal(
+      report.targets.some(
+        (target) =>
+          target.disagreement && target.disagreementRoute === "human_review",
+      ),
+      true,
+    );
+
+    const runQuality = JSON.parse(
+      await readFile(result.artifactPaths.runQuality, "utf8"),
+    ) as RunQualityArtifact;
+    assert.ok(
+      runQuality.selfConsistencyAgreement !== undefined &&
+        runQuality.selfConsistencyAgreement < 1,
+    );
+  } finally {
+    await rm(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("Issue #2070: non-banking profiles stay single-pass unless diversityPasses is explicitly overridden", async () => {
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ti-runner-"));
+  try {
+    const declaredCapabilities: LlmGatewayCapabilities = {
+      ...TEST_GENERATION_CAPS,
+      seedSupport: true,
+    };
+    const client = createMockLlmGatewayClient({
+      role: "test_generation",
+      deployment: "gpt-oss-120b-mock",
+      modelRevision: "mock-1",
+      gatewayRelease: "mock",
+      declaredCapabilities,
+      responder: okResponder([SAMPLE_DRAFT]),
+    });
+
+    const result = await runFigmaToQcTestCases({
+      jobId: "job-2070-non-banking-single-pass",
+      generatedAt: "2026-05-09T11:00:00.000Z",
+      source: { kind: "figma_paste_normalized", file: SAMPLE_FILE },
+      outputRoot: tempRoot,
+      llm: { client },
+      policyProfileId: "non-banking-test-profile",
+      logicJudge: { enabled: false },
+    });
+
+    const generatorRequests = client
+      .recordedRequests()
+      .filter(
+        (request) =>
+          request.responseSchemaName ===
+          "workspace-dev-production-runner-draft-list-v1",
+      );
+    assert.equal(generatorRequests.length, 1);
+    assert.equal(generatorRequests[0]?.seed, undefined);
+    assert.equal(result.artifactPaths.selfConsistencyReport, undefined);
+  } finally {
+    await rm(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("Issue #2070: banking default silently downgrades to single-pass when the generator lacks seed support", async () => {
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ti-runner-"));
+  try {
+    const client = createMockLlmGatewayClient({
+      role: "test_generation",
+      deployment: "gpt-oss-120b-mock",
+      modelRevision: "mock-1",
+      gatewayRelease: "mock",
+      declaredCapabilities: TEST_GENERATION_CAPS,
+      responder: okResponder([SAMPLE_DRAFT]),
+    });
+
+    const result = await runFigmaToQcTestCases({
+      jobId: "job-2070-banking-seedless-downgrade",
+      generatedAt: "2026-05-09T11:15:00.000Z",
+      source: { kind: "figma_paste_normalized", file: SAMPLE_FILE },
+      outputRoot: tempRoot,
+      llm: { client },
+      logicJudge: { enabled: false },
+    });
+
+    const generatorRequests = client
+      .recordedRequests()
+      .filter(
+        (request) =>
+          request.responseSchemaName ===
+          "workspace-dev-production-runner-draft-list-v1",
+      );
+    assert.equal(generatorRequests.length, 1);
+    assert.equal(generatorRequests[0]?.seed, undefined);
+    assert.equal(result.artifactPaths.selfConsistencyReport, undefined);
+  } finally {
+    await rm(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("Issue #2070: repair-loop three-sample voting refreshes the final self-consistency artifact", async () => {
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ti-runner-"));
+  try {
+    const declaredCapabilities: LlmGatewayCapabilities = {
+      ...TEST_GENERATION_CAPS,
+      seedSupport: true,
+    };
+    let logicJudgeCallCount = 0;
+    let generationCallCount = 0;
+    const votedTitle = "Repair-voted expectation";
+    const votedDraftBase: ProductionRunnerLlmDraftCase = {
+      ...SAMPLE_DRAFT,
+      title: votedTitle,
+      objective: "Repair-loop vote should keep the majority expectation.",
+      qualitySignals: {
+        coveredFieldIds: ["repair-vote::field"],
+        coveredActionIds: ["repair-vote::action"],
+        coveredValidationIds: ["repair-vote::validation"],
+        coveredNavigationIds: [],
+        confidence: 0.91,
+      },
+    };
+    const rewriteSuite = (expected: string): ProductionRunnerLlmDraftCase[] => [
+      {
+        ...votedDraftBase,
+        steps: votedDraftBase.steps.map((step, index) =>
+          index === 0 ? { ...step, expected } : { ...step },
+        ),
+        expectedResults: [expected],
+      },
+      ...SAMPLE_HARD_GATE_GREEN_DRAFTS.slice(1).map((draft) => ({
+        ...draft,
       })),
-      withSinglePass.generatedTestCases.testCases.map((testCase) => ({
-        title: testCase.title,
-        promptHash: testCase.audit.promptHash,
-      })),
+    ];
+    const client = createMockLlmGatewayClient({
+      role: "test_generation",
+      deployment: "gpt-oss-120b-mock",
+      modelRevision: "mock-1",
+      gatewayRelease: "mock",
+      declaredCapabilities,
+      responder: (request, attempt) => {
+        if (request.responseSchemaName === "workspace-dev-logic-judge-v1") {
+          logicJudgeCallCount += 1;
+          if (logicJudgeCallCount === 1) {
+            return {
+              outcome: "success" as const,
+              content: {
+                verdict: "repair",
+                findings: [
+                  {
+                    testCaseId: "$job",
+                    code: "schema_violation",
+                    severity: "error",
+                    message: "Force one repair iteration for self-consistency refresh.",
+                  },
+                ],
+                repairInstructions: [
+                  {
+                    testCaseId: "$job",
+                    path: "$.testCases[0].expectedResults[0]",
+                    instruction:
+                      "Regenerate the first case and keep the majority-supported expectation.",
+                    kind: "schema_violation",
+                  },
+                ],
+              },
+              finishReason: "stop" as const,
+              usage: { inputTokens: 20, outputTokens: 10 },
+              modelDeployment: "gpt-oss-120b-mock",
+              modelRevision: "mock-1",
+              gatewayRelease: "mock",
+              attempt,
+            };
+          }
+          return {
+            outcome: "success" as const,
+            content: {
+              verdict: "accept",
+              findings: [],
+              repairInstructions: [],
+            },
+            finishReason: "stop" as const,
+            usage: { inputTokens: 20, outputTokens: 10 },
+            modelDeployment: "gpt-oss-120b-mock",
+            modelRevision: "mock-1",
+            gatewayRelease: "mock",
+            attempt,
+          };
+        }
+        if (
+          request.responseSchemaName ===
+          "workspace-dev-adversarial-critic-v1"
+        ) {
+          return {
+            outcome: "success" as const,
+            content: { findings: [] },
+            finishReason: "stop" as const,
+            usage: { inputTokens: 10, outputTokens: 5 },
+            modelDeployment: "gpt-oss-120b-mock",
+            modelRevision: "mock-1",
+            gatewayRelease: "mock",
+            attempt,
+          };
+        }
+        generationCallCount += 1;
+        const repairRound = generationCallCount > 3;
+        const expected =
+          !repairRound ? "INIT" : request.seed === 11 ? "A" : "B";
+        return {
+          outcome: "success" as const,
+          content: { testCases: rewriteSuite(expected) },
+          finishReason: "stop" as const,
+          usage: { inputTokens: 80, outputTokens: 40 },
+          modelDeployment: "gpt-oss-120b-mock",
+          modelRevision: "mock-1",
+          gatewayRelease: "mock",
+          attempt,
+        };
+      },
+    });
+
+    const result = await runFigmaToQcTestCases({
+      jobId: "job-2070-repair-refresh",
+      generatedAt: "2026-05-09T12:00:00.000Z",
+      source: { kind: "figma_paste_normalized", file: SAMPLE_FILE },
+      outputRoot: tempRoot,
+      llm: { client },
+      generation: { diversityPasses: 3 },
+      harness: { mode: "off", maxRepairIterations: 1 },
+    });
+
+    const generatorRequests = client
+      .recordedRequests()
+      .filter(
+        (request) =>
+          request.responseSchemaName ===
+          "workspace-dev-production-runner-draft-list-v1",
+      );
+    assert.deepEqual(
+      generatorRequests.map((request) => request.seed),
+      [11, 29, 47, 11, 29, 47],
+    );
+    const report = JSON.parse(
+      await readFile(result.artifactPaths.selfConsistencyReport!, "utf8"),
+    ) as {
+      selfConsistencyAgreement: number;
+      targets: Array<{
+        votes: Array<{
+          field: string;
+          majorityCount: number;
+          majorityValue?: string;
+          stepIndex?: number;
+        }>;
+      }>;
+    };
+    const runQuality = JSON.parse(
+      await readFile(result.artifactPaths.runQuality, "utf8"),
+    ) as RunQualityArtifact;
+    const repairVote = report.targets
+      .flatMap((target) => target.votes)
+      .find(
+        (vote) =>
+          vote.field === "step_expected" &&
+          vote.stepIndex === 0 &&
+          vote.majorityCount === 2,
+      );
+    assert.ok(
+      repairVote,
+      "expected a non-unanimous repair-round step_expected vote",
+    );
+    assert.ok(report.selfConsistencyAgreement < 1);
+    assert.equal(
+      runQuality.selfConsistencyAgreement,
+      report.selfConsistencyAgreement,
     );
   } finally {
     await rm(tempRoot, { recursive: true, force: true });
@@ -1198,6 +1607,7 @@ test("runFigmaToQcTestCases forwards maxInputTokens from the resolved FinOps bud
       outputRoot: tempRoot,
       llm: { client },
       finopsBudget,
+      generation: { diversityPasses: 1 },
       // Narrow assertion on the generator dispatch only — opt out of
       // the second Logic-Judge call so `recorded.length === 1`.
       logicJudge: { enabled: false },
@@ -1693,6 +2103,7 @@ test("runFigmaToQcTestCases wires Figma URL screenshots through the visual sidec
       },
       outputRoot: tempRoot,
       llm: { client, bundle },
+      generation: { diversityPasses: 1 },
       events: (event) => observedEvents.push(event.phase),
     });
     assert.deepEqual(observedEvents, [
@@ -1977,6 +2388,7 @@ test("runFigmaToQcTestCases runs both judges, persists their artifacts, and keep
       },
       outputRoot: tempRoot,
       llm: { client, bundle },
+      generation: { diversityPasses: 1 },
     });
 
     assert.equal(result.logicJudge?.verdict.verdict, "accept");
@@ -2074,6 +2486,8 @@ test("runFigmaToQcTestCases blocks policy-green output when the logic judge stay
       source: { kind: "figma_paste_normalized", file: SAMPLE_FILE },
       outputRoot: tempRoot,
       llm: { client },
+      generation: { diversityPasses: 1 },
+      policyProfileId: "non-banking-test-profile",
     });
 
     assert.equal(result.policy.blocked, false);
@@ -2180,6 +2594,7 @@ test("Issue #1992: repaired runs surface repaired_success with historical judge 
       source: { kind: "figma_paste_normalized", file: SAMPLE_FILE },
       outputRoot: tempRoot,
       llm: { client },
+      generation: { diversityPasses: 1 },
     });
 
     const runQualityOnDisk = JSON.parse(
@@ -2452,6 +2867,7 @@ test("Issue #1992: fallback-recovered visual sidecar runs surface degraded_succe
       },
       outputRoot: tempRoot,
       llm: { client, bundle },
+      generation: { diversityPasses: 1 },
     });
 
     const visualSummary = result.runQuality.artifact.attemptSummaries.find(
@@ -3353,6 +3769,7 @@ test("Issue #1929: runFigmaToQcTestCases preserves all 9 initial logic/faithfuln
           },
           outputRoot: tempRoot,
           llm: { client, bundle },
+          generation: { diversityPasses: 1 },
           harness: { mode: "shadow_eval", maxRepairIterations: 0 },
         });
 
@@ -4193,6 +4610,7 @@ test("runFigmaToQcTestCases (eu-banking-default profile) augments user prompt wi
       source: { kind: "figma_paste_normalized", file: BANKING_FILE },
       outputRoot: tempRoot,
       llm: { client },
+      generation: { diversityPasses: 1 },
       // Default policyProfileId is eu-banking-default — explicit here for clarity.
       policyProfileId: EU_BANKING_DEFAULT_POLICY_PROFILE_ID,
       // Test asserts on the generator's user prompt only; opt out of
@@ -4400,6 +4818,7 @@ test("runFigmaToQcTestCases treats CLI live deployments as regular live runs, no
       source: { kind: "figma_paste_normalized", file: SAMPLE_FILE },
       outputRoot: tempRoot,
       llm: { client },
+      generation: { diversityPasses: 1 },
       policyProfileId: "non-banking-test-profile",
       // Asserts on the generator's `attempts === 1`; opt out of the
       // Logic-Judge second call so the count stays at 1.
@@ -4440,6 +4859,7 @@ test("runFigmaToQcTestCases still counts smoke-tagged live lanes against maxLive
       source: { kind: "figma_paste_normalized", file: SAMPLE_FILE },
       outputRoot: tempRoot,
       llm: { client },
+      generation: { diversityPasses: 1 },
       policyProfileId: "non-banking-test-profile",
     });
 
@@ -4522,6 +4942,7 @@ test("runFigmaToQcTestCases preserves policy_blocked as the FinOps outcome even 
       source: { kind: "figma_paste_normalized", file: SAMPLE_FILE },
       outputRoot: tempRoot,
       llm: { client },
+      generation: { diversityPasses: 1 },
       finopsBudget: {
         budgetId: "tight-max-attempts",
         budgetVersion: "1.0.0",
@@ -4646,6 +5067,7 @@ test("runFigmaToQcTestCases emits progress events in expected order", async () =
       source: { kind: "figma_paste_normalized", file: SAMPLE_FILE },
       outputRoot: tempRoot,
       llm: { client },
+      generation: { diversityPasses: 1 },
       events: (event) => observed.push(event.phase),
     });
     // Order matters for the UI timeline.
@@ -5172,6 +5594,7 @@ test("Issue #1986: VAT-excluded financing need forces a repair iteration and rem
       source: { kind: "figma_paste_normalized", file: financingFile },
       outputRoot: tempRoot,
       llm: { client },
+      generation: { diversityPasses: 1 },
       customContextMarkdown:
         "# Financing rule\n\n- The VAT is not part of the financing need.\n",
     });
@@ -5712,6 +6135,7 @@ test("Issue #1932: cross-model logic judge dispatches to llm.logicJudge and FinO
       source: { kind: "figma_paste_normalized", file: SAMPLE_FILE },
       outputRoot: tempRoot,
       llm: { client: generator, logicJudge: judge },
+      generation: { diversityPasses: 1 },
       // Cap the repair-loop at zero iterations so the test asserts
       // exactly one judge dispatch on the initial pass — the
       // cross-model wiring is what we're verifying, not the repair
@@ -5812,6 +6236,7 @@ test("Issue #2039: schema-invalid adversarial critic payload is reported as a fa
       source: { kind: "figma_paste_normalized", file: SAMPLE_FILE },
       outputRoot: tempRoot,
       llm: { client: generator, logicJudge: judge },
+      generation: { diversityPasses: 1 },
       harness: { mode: "off", maxRepairIterations: 0 },
     });
 
@@ -5952,6 +6377,7 @@ test("Issue #2039: adversarial critic regeneration owns the final provenance art
       source: { kind: "figma_paste_normalized", file: SAMPLE_FILE },
       outputRoot: tempRoot,
       llm: { client: generator, logicJudge: judge },
+      generation: { diversityPasses: 1 },
       harness: { mode: "off", maxRepairIterations: 0 },
     });
 
@@ -6098,6 +6524,7 @@ test("Issue #2053: G-NEG-CASE passes when adversarial critic adds a valid negati
       source: { kind: "figma_paste_normalized", file: SAMPLE_FILE },
       outputRoot: tempRoot,
       llm: { client: generator, logicJudge: judge },
+      generation: { diversityPasses: 1 },
       harness: { mode: "off", maxRepairIterations: 0 },
     });
 

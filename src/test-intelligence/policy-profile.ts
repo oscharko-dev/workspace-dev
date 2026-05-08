@@ -71,6 +71,13 @@ export const EU_BANKING_DEFAULT_TECHNIQUE_COVERAGE_MINIMUM:
     mode: "tier-elastic",
   });
 
+/**
+ * Issue #2070 — secure default self-consistency sample count for the
+ * built-in EU banking profile. Three independently seeded samples permit a
+ * structural majority vote while keeping runtime bounded.
+ */
+export const EU_BANKING_DEFAULT_SELF_CONSISTENCY_SAMPLE_COUNT = 3 as const;
+
 const EU_BANKING_DEFAULT_RULES: TestCasePolicyProfileRules = {
   reviewOnlyRiskCategories: ["regulated_data", "financial_transaction"],
   strictRiskCategories: ["regulated_data", "financial_transaction", "high"],
@@ -89,6 +96,9 @@ const EU_BANKING_DEFAULT_RULES: TestCasePolicyProfileRules = {
     thresholdRatio: EU_BANKING_DEFAULT_NEGATIVE_CASE_LIFT_THRESHOLD_RATIO,
   },
   techniqueCoverageMinimum: EU_BANKING_DEFAULT_TECHNIQUE_COVERAGE_MINIMUM,
+  selfConsistency: {
+    sampleCount: EU_BANKING_DEFAULT_SELF_CONSISTENCY_SAMPLE_COUNT,
+  },
 };
 
 /** Default `eu-banking-default` policy profile (deep-frozen). */
@@ -111,6 +121,9 @@ export const EU_BANKING_DEFAULT_POLICY_PROFILE: Readonly<TestCasePolicyProfile> 
         thresholdRatio: EU_BANKING_DEFAULT_NEGATIVE_CASE_LIFT_THRESHOLD_RATIO,
       }),
       techniqueCoverageMinimum: EU_BANKING_DEFAULT_TECHNIQUE_COVERAGE_MINIMUM,
+      selfConsistency: Object.freeze({
+        sampleCount: EU_BANKING_DEFAULT_SELF_CONSISTENCY_SAMPLE_COUNT,
+      }),
     }),
   });
 
@@ -175,6 +188,12 @@ export const cloneEuBankingDefaultProfile = (): TestCasePolicyProfile => {
   if (techniqueCoverageMinimum !== undefined) {
     rules.techniqueCoverageMinimum = {
       mode: techniqueCoverageMinimum.mode,
+    };
+  }
+  const selfConsistency = EU_BANKING_DEFAULT_POLICY_PROFILE.rules.selfConsistency;
+  if (selfConsistency !== undefined) {
+    rules.selfConsistency = {
+      sampleCount: selfConsistency.sampleCount,
     };
   }
   return {

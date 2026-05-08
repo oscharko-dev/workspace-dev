@@ -405,6 +405,7 @@ test("production runner adversarial: corrupted persistent replay-cache entries a
       outputRoot: tempRoot,
       llm: { client },
       replayCache,
+      generation: { diversityPasses: 1 },
       // Persistent replay-cache adversarial test — opt out of the
       // second Logic-Judge LLM call so `client.callCount()` remains
       // 1 (the generator dispatch).
@@ -422,6 +423,7 @@ test("production runner adversarial: corrupted persistent replay-cache entries a
         outputRoot: tempRoot,
         llm: { client },
         replayCache,
+        generation: { diversityPasses: 1 },
         logicJudge: { enabled: false },
       }),
       (err) => {
