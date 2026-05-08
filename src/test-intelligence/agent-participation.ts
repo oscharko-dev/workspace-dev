@@ -13,6 +13,7 @@ export const AGENT_PARTICIPATION_ARTIFACT_FILENAME =
 export const AGENT_PARTICIPATION_SCHEMA_VERSION = "1.0.0" as const;
 
 export const AGENT_PARTICIPATION_ROLES = [
+  "action_topology",
   "generator",
   "logic_judge",
   "coverage_planner",

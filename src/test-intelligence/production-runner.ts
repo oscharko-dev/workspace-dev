@@ -106,11 +106,19 @@ import {
   type TestCaseCoverageReport,
   type VisualSidecarFailureClass,
   type VisualSidecarResult,
+  type WorkflowTopology,
   DEFAULT_TENANT_SCOPE,
   RISK_RANKING_ARTIFACT_FILENAME,
+  WORKFLOW_TOPOLOGY_ARTIFACT_FILENAME,
 } from "../contracts/index.js";
 import { sanitizeErrorMessage } from "../error-sanitization.js";
 import { canonicalJson, sha256Hex } from "./content-hash.js";
+import {
+  buildWorkflowTopology,
+  workflowActionAnchorText,
+  workflowActionIdsForTargets,
+  writeWorkflowTopologyArtifact,
+} from "./action-topology-agent.js";
 import {
   buildWave1ValidationEvidenceManifest,
   verifyWave1ValidationEvidenceFromDisk,
@@ -838,6 +846,7 @@ export interface RunFigmaToQcTestCasesResult {
     intent: string;
     compiledPrompt: string;
     coveragePlan: string;
+    workflowTopology: string;
     riskRanking: string;
     logicJudgeCompiledPrompt?: string;
     customerEvalRubric?: string;
@@ -1008,6 +1017,7 @@ const buildAgentParticipationEntries = (input: {
   repairLoopResult: RepairLoopResult | undefined;
   artifactPaths: {
     coveragePlan: string;
+    workflowTopology: string;
     riskRanking: string;
     logicJudgeVerdict: string;
     visualSidecarResult?: string;
@@ -1036,6 +1046,18 @@ const buildAgentParticipationEntries = (input: {
   const riskRankerClient =
     input.request.llm.bundle?.riskRanker ?? input.request.llm.riskRanker;
   const a11yJudgeClient = input.request.llm.bundle?.a11yJudge;
+
+  entries.push({
+    role: "action_topology",
+    configurationSource: roleConfigurationSource(input.request, "action_topology"),
+    status: "succeeded",
+    attemptCount: 1,
+    remediation:
+      "Deterministic workflow topology derived from the test-design model and customer context.",
+    artifactReferences: [
+      toArtifactReference(input.artifactDir, refs.workflowTopology),
+    ],
+  });
 
   entries.push({
     role: "generator",
@@ -2065,12 +2087,19 @@ export const runFigmaToQcTestCases = async (
       ? { sourceEnvelope: semanticEvidenceSourceEnvelope }
       : {}),
   });
+  const workflowTopology = buildWorkflowTopology({
+    model: testDesignModel,
+    ...(customContextMarkdown?.bodyPlain !== undefined
+      ? { customContextMarkdown: customContextMarkdown.bodyPlain }
+      : {}),
+  });
   const coveragePlannerClient =
     input.llm.bundle?.coveragePlanner ?? input.llm.coveragePlanner;
   const coveragePlannerStartedAt =
     coveragePlannerClient === undefined ? undefined : Date.now();
   const coveragePlanResult = await buildCoveragePlanWithAugmentation({
     model: testDesignModel,
+    workflowTopology,
     ...(compiledSourceMixPlan !== undefined
       ? { sourceMixPlan: compiledSourceMixPlan }
       : {}),
@@ -2282,6 +2311,7 @@ export const runFigmaToQcTestCases = async (
       roleStepId: "test_generation",
       customerRubric,
       testDesignModel,
+      workflowTopology,
       coveragePlan: coveragePlanResult.plan,
       riskRanking: riskRankingResult.ranking,
       responseSchema: draftSchema,
@@ -2587,6 +2617,15 @@ export const runFigmaToQcTestCases = async (
     model: compiled.artifacts.payload.testDesignModel!,
     jobId: input.jobId,
   });
+  generatedList = {
+    ...generatedList,
+    testCases: generatedList.testCases.map((testCase) =>
+      enrichWorkflowTopologyCoverage({
+        testCase,
+        workflowTopology,
+      }),
+    ),
+  };
   const logicJudgeCache = createFileSystemLogicJudgeCache(
     join(input.outputRoot, "test-intelligence", "replay-cache", "logic-judge"),
     { tenantScope },
@@ -3432,6 +3471,7 @@ export const runFigmaToQcTestCases = async (
     list: generatedList,
     intent,
     coveragePlan: coveragePlanResult.plan,
+    workflowTopology,
     ...(canonicalCustomerProfile?.policyOverrides !== undefined &&
     canonicalCustomerProfile.policyOverrides.some(
       (override) => override.severity !== "info",
@@ -3547,6 +3587,10 @@ export const runFigmaToQcTestCases = async (
     artifactDir,
     TEST_CASE_POLICY_REPORT_ARTIFACT_FILENAME,
   );
+  const workflowTopologyPath = join(
+    artifactDir,
+    WORKFLOW_TOPOLOGY_ARTIFACT_FILENAME,
+  );
   const coveragePlanPath = join(artifactDir, "coverage-plan.json");
   const riskRankingPath = join(artifactDir, RISK_RANKING_ARTIFACT_FILENAME);
   const coveragePath = join(
@@ -3599,6 +3643,7 @@ export const runFigmaToQcTestCases = async (
       repairLoopResult,
       artifactPaths: {
         coveragePlan: coveragePlanPath,
+        workflowTopology: workflowTopologyPath,
         riskRanking: riskRankingPath,
         logicJudgeVerdict: logicJudgeVerdictPath,
         ...(visualSidecarArtifactPath !== undefined
@@ -3699,6 +3744,10 @@ export const runFigmaToQcTestCases = async (
       plan: coveragePlanResult.plan,
       runDir: artifactDir,
     });
+    const workflowTopologyWritePromise = writeWorkflowTopologyArtifact({
+      topology: workflowTopology,
+      runDir: artifactDir,
+    });
     const riskRankingWritePromise = writeRiskRankingArtifact({
       ranking: riskRankingResult.ranking,
       runDir: artifactDir,
@@ -3760,6 +3809,7 @@ export const runFigmaToQcTestCases = async (
             ),
           ]),
       writeAtomicBytes(policyPath, policyBytes),
+      workflowTopologyWritePromise,
       writeAtomicBytes(coveragePath, coverageBytes),
       coveragePlanWritePromise,
       riskRankingWritePromise,
@@ -3924,6 +3974,7 @@ export const runFigmaToQcTestCases = async (
         generatedAt: input.generatedAt,
         harnessArtifactFilenames: [
           AGENT_PARTICIPATION_ARTIFACT_FILENAME,
+          WORKFLOW_TOPOLOGY_ARTIFACT_FILENAME,
           "agent-role-runs/test_generation.json",
           ...generatorPassRunArtifacts.map(
             (artifact) => `agent-role-runs/${artifact.artifact.roleRunId}.json`,
@@ -4107,6 +4158,11 @@ export const runFigmaToQcTestCases = async (
               category: "manifest" as const,
             },
           ]),
+      {
+        filename: WORKFLOW_TOPOLOGY_ARTIFACT_FILENAME,
+        bytes: Buffer.from(canonicalJson(workflowTopology), "utf8"),
+        category: "intent",
+      },
       {
         filename: GENERATED_TESTCASES_ARTIFACT_FILENAME,
         bytes: generatedBytes,
@@ -4350,6 +4406,7 @@ export const runFigmaToQcTestCases = async (
         ? { customerEvalRubric: customerEvalRubricPath }
         : {}),
       coveragePlan: coveragePlanPath,
+      workflowTopology: workflowTopologyPath,
       riskRanking: riskRankingPath,
       logicJudgeCompiledPrompt: logicJudgeCompiledPromptPath,
       ...(faithfulnessJudgeCompiledPromptPath !== undefined
@@ -5204,6 +5261,61 @@ const mergeUniqueSortedIds = (
   left: readonly string[] | undefined,
   right: Iterable<string>,
 ): string[] => [...new Set([...(left ?? []), ...right])].sort();
+
+const enrichWorkflowTopologyCoverage = (input: {
+  testCase: GeneratedTestCase;
+  workflowTopology: WorkflowTopology;
+}): GeneratedTestCase => {
+  if (input.workflowTopology.actions.length === 0) {
+    return input.testCase;
+  }
+  const screenIds = [
+    ...new Set(input.testCase.figmaTraceRefs.map((traceRef) => traceRef.screenId)),
+  ];
+  if (screenIds.length === 0) {
+    return input.testCase;
+  }
+  const matchedActionIds = workflowActionIdsForTargets({
+    topology: input.workflowTopology,
+    coveredFieldIds: input.testCase.qualitySignals.coveredFieldIds,
+    screenIds,
+    text: [
+      input.testCase.title,
+      input.testCase.objective,
+      ...input.testCase.steps.flatMap((step) => [
+        step.action,
+        step.expected ?? "",
+      ]),
+      ...input.testCase.expectedResults,
+    ].join("\n"),
+  });
+  const coveredActionIds = mergeUniqueSortedIds(
+    input.testCase.qualitySignals.coveredActionIds,
+    matchedActionIds,
+  );
+  const anchor = workflowActionAnchorText(coveredActionIds);
+  const alreadyAnnotated = input.testCase.steps.some((step) =>
+    /\bACT-\d{3}\b/u.test(step.action),
+  );
+  return {
+    ...input.testCase,
+    steps:
+      anchor === undefined || alreadyAnnotated || input.testCase.steps.length === 0
+        ? input.testCase.steps
+        : input.testCase.steps.map((step, index) =>
+            index === 0
+              ? {
+                  ...step,
+                  action: `${anchor} ${step.action}`,
+                }
+              : step,
+          ),
+    qualitySignals: {
+      ...input.testCase.qualitySignals,
+      coveredActionIds,
+    },
+  };
+};
 
 const deriveQualitySignals = (input: {
   draft: ProductionRunnerLlmDraftCase;

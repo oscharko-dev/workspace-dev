@@ -217,7 +217,7 @@ production-runner and CLI integrations:
 | `WorkspaceJobInput.testIntelligenceMode`    | `"deterministic_llm"` \| `"offline_eval"` \| `"dry_run"`             |
 | `ALLOWED_TEST_INTELLIGENCE_MODES`           | `["deterministic_llm", "offline_eval", "dry_run"]`                   |
 | `TEST_INTELLIGENCE_CONTRACT_VERSION`        | `"1.12.0"`                                                           |
-| `TEST_INTELLIGENCE_PROMPT_TEMPLATE_VERSION` | `"1.4.3"`                                                            |
+| `TEST_INTELLIGENCE_PROMPT_TEMPLATE_VERSION` | `"1.6.2"`                                                            |
 | `TEST_INTELLIGENCE_ENV`                     | `"FIGMAPIPE_WORKSPACE_TEST_INTELLIGENCE"`                            |
 
 The submit route accepts `jobType: "figma_to_qc_test_cases"` and, when the dual
@@ -225,7 +225,9 @@ gate is enabled plus a production runner is configured at startup, executes the
 runner and returns `{ jobId, summary }` with the persisted artifact location,
 generated-at timestamp, file key, case count, blocked flag, and customer
 Markdown counts. The Inspector test-intelligence routes remain the read/review
-surface for the emitted artifacts.
+surface for the emitted artifacts. The workflow-action topology that backs
+`coverage-report.json.actionCoverage` and stable `ACT-*` ids is documented in
+[docs/test-intelligence/action-topology.md](test-intelligence/action-topology.md).
 
 ## 4. Artifact tree
 
@@ -1228,6 +1230,9 @@ configuration.
 - [docs/api/contracts/README.md](api/contracts/README.md) — auto-generated
   contract API reference, regenerated from `src/contracts/index.ts` via
   `pnpm run docs:api`. The freshness gate is `pnpm run docs:api:check`.
+- [docs/test-intelligence/action-topology.md](test-intelligence/action-topology.md)
+  — deterministic workflow-action topology, `workflow-topology.json`, and
+  stable `ACT-*` coverage ids.
 - [VERSIONING.md](../VERSIONING.md) — package-versus-contract versioning
   policy.
 - [docs/migration-guide.md](migration-guide.md) — contract migration checklist.
@@ -1251,3 +1256,6 @@ described by the existing contract entries above.
   install, signature verification, smoke run.
 - [docs/figma-import.md](figma-import.md) — Figma import paths used to feed
   the test-intelligence subsurface.
+- [docs/test-intelligence/action-topology.md](test-intelligence/action-topology.md)
+  — workflow topology artifact, action coverage, and benchmark notes for
+  Issue #2035.

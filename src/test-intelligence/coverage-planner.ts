@@ -20,6 +20,7 @@ import {
   type TestDesignRiskSignal,
   type TestDesignRule,
   type TestDesignScreen,
+  type WorkflowTopology,
 } from "../contracts/index.js";
 import { canonicalJson, sha256Hex } from "./content-hash.js";
 import {
@@ -31,6 +32,7 @@ import { selectTestDesignHeuristics } from "./test-design-heuristics.js";
 
 export interface BuildCoveragePlanInput {
   model: TestDesignModel;
+  workflowTopology?: WorkflowTopology;
   sourceMixPlan?: SourceMixPlan;
   mutationKillRateTarget?: number;
   policyProfile?: Record<string, unknown>;
@@ -582,6 +584,20 @@ export const buildCoveragePlan = (input: BuildCoveragePlanInput): CoveragePlan =
   const recommendedCases: CoverageRequirement[] = [];
   const allSourceRefs = allModelSourceRefs(model);
   const allVisualRefs = allModelVisualRefs(model);
+
+  for (const action of input.workflowTopology?.actions ?? []) {
+    recommendedCases.push(
+      buildRequirement({
+        technique: "state_transition",
+        reasonCode: "action_transition",
+        screenId: action.screenId,
+        targetIds: [action.actionId, ...action.targetIds],
+        sourceRefs: action.sourceRefs,
+        visualRefs:
+          screens.get(action.screenId)?.visualRefs ?? [],
+      }),
+    );
+  }
 
   for (const screen of model.screens) {
     const coverageRelevantElements = screen.elements.filter((element) =>

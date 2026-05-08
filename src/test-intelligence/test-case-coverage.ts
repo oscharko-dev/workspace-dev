@@ -24,6 +24,7 @@ import {
   type TestCaseCoverageBucket,
   type TestCaseCoverageReport,
   type TestCaseDuplicatePair,
+  type WorkflowTopology,
 } from "../contracts/index.js";
 import {
   isCoverageRelevantActionLike,
@@ -37,6 +38,7 @@ export interface ComputeCoverageReportInput {
   policyProfileId: string;
   list: GeneratedTestCaseList;
   intent: BusinessTestIntentIr;
+  workflowTopology?: WorkflowTopology;
   duplicateSimilarityThreshold: number;
   /** Optional 0..1 rubric score from a downstream rater. */
   rubricScore?: number;
@@ -55,13 +57,16 @@ export const computeCoverageReport = (
   const relevantActions = input.intent.detectedActions.filter((action) =>
     isCoverageRelevantActionLike(action),
   );
+  const actionTargetIds =
+    input.workflowTopology?.actions.map((action) => action.actionId) ??
+    relevantActions.map((a) => a.id);
 
   const fieldCoverage = computeBucket(
     relevantFields.map((f) => f.id),
     collectCovered(cases, (c) => c.qualitySignals.coveredFieldIds),
   );
   const actionCoverage = computeBucket(
-    relevantActions.map((a) => a.id),
+    actionTargetIds,
     collectCovered(cases, (c) => c.qualitySignals.coveredActionIds),
   );
   const validationCoverage = computeBucket(

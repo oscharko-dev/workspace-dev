@@ -46,6 +46,7 @@ import {
   type VisualScreenDescription,
   type VisualSidecarFailureClass,
   type VisualSidecarValidationReport,
+  type WorkflowTopology,
 } from "../contracts/index.js";
 import { canonicalJson } from "./content-hash.js";
 import type { CoverageBaselineDriftEvaluation } from "./coverage-baseline-drift.js";
@@ -75,6 +76,7 @@ export interface RunValidationPipelineInput {
   visual?: ReadonlyArray<VisualScreenDescription>;
   /** Optional coverage plan used for quota-aware hard-gates. */
   coveragePlan?: CoveragePlan;
+  workflowTopology?: WorkflowTopology;
   /** Override the default `eu-banking-default` policy profile. */
   profile?: TestCasePolicyProfile;
   /** Optional rule-severity overrides keyed by policy rule id. */
@@ -162,6 +164,9 @@ export const runValidationPipeline = (
     generatedAt: input.generatedAt,
     list: input.list,
     intent: input.intent,
+    ...(input.workflowTopology !== undefined
+      ? { workflowTopology: input.workflowTopology }
+      : {}),
   });
 
   if (hasStructuralErrors(validation)) {
@@ -176,6 +181,9 @@ export const runValidationPipeline = (
       policyProfileId: profile.id,
       list: emptyList,
       intent: input.intent,
+      ...(input.workflowTopology !== undefined
+        ? { workflowTopology: input.workflowTopology }
+        : {}),
       duplicateSimilarityThreshold: profile.rules.duplicateSimilarityThreshold,
       ...(input.rubricScore !== undefined
         ? { rubricScore: input.rubricScore }
@@ -203,6 +211,9 @@ export const runValidationPipeline = (
     policyProfileId: profile.id,
     list: input.list,
     intent: input.intent,
+    ...(input.workflowTopology !== undefined
+      ? { workflowTopology: input.workflowTopology }
+      : {}),
     duplicateSimilarityThreshold: profile.rules.duplicateSimilarityThreshold,
     ...(input.rubricScore !== undefined
       ? { rubricScore: input.rubricScore }

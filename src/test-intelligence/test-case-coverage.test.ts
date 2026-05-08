@@ -5,8 +5,10 @@ import {
   GENERATED_TEST_CASE_SCHEMA_VERSION,
   TEST_INTELLIGENCE_CONTRACT_VERSION,
   TEST_INTELLIGENCE_PROMPT_TEMPLATE_VERSION,
+  WORKFLOW_TOPOLOGY_SCHEMA_VERSION,
   type BusinessTestIntentIr,
   type GeneratedTestCase,
+  type WorkflowTopology,
 } from "../contracts/index.js";
 import { computeCoverageReport } from "./test-case-coverage.js";
 
@@ -115,6 +117,44 @@ const buildIntent = (): BusinessTestIntentIr => ({
   redactions: [],
 });
 
+const buildWorkflowTopology = (): WorkflowTopology => ({
+  schemaVersion: WORKFLOW_TOPOLOGY_SCHEMA_VERSION,
+  jobId: "job-1",
+  actions: [
+    {
+      actionId: "ACT-001",
+      screenId: "s-1",
+      label: "Eingeben Email",
+      kind: "enter_value",
+      targetIds: ["f-1"],
+      sourceRefs: [],
+    },
+    {
+      actionId: "ACT-002",
+      screenId: "s-1",
+      label: "Eingeben IBAN",
+      kind: "enter_value",
+      targetIds: ["f-2"],
+      sourceRefs: [],
+    },
+  ],
+  states: [
+    { stateId: "STATE-001", screenId: "s-1", label: "Start", sourceRefs: [] },
+    { stateId: "STATE-002", screenId: "s-1", label: "Done", sourceRefs: [] },
+  ],
+  transitions: [
+    {
+      transitionId: "TRANS-001",
+      from: "STATE-001",
+      to: "STATE-002",
+      guard: "when the workflow continues on the same screen",
+      actions: ["ACT-001", "ACT-002"],
+    },
+  ],
+  entryStates: ["STATE-001"],
+  exitStates: ["STATE-002"],
+});
+
 test("coverage buckets reflect intent ids covered by accepted cases", () => {
   const cases = [
     buildCase({
@@ -179,6 +219,40 @@ test("uncovered ids are sorted deterministically", () => {
   });
   assert.deepEqual(report.fieldCoverage.uncoveredIds, ["f-1", "f-2"]);
   assert.equal(report.fieldCoverage.ratio, 0);
+});
+
+test("workflow topology overrides the action universe for action coverage", () => {
+  const report = computeCoverageReport({
+    jobId: "job-1",
+    generatedAt: "2026-04-25T10:00:00.000Z",
+    policyProfileId: EU_BANKING_DEFAULT_POLICY_PROFILE_ID,
+    list: {
+      schemaVersion: GENERATED_TEST_CASE_SCHEMA_VERSION,
+      jobId: "job-1",
+      testCases: [
+        buildCase({
+          qualitySignals: {
+            coveredFieldIds: ["f-1"],
+            coveredActionIds: ["ACT-001"],
+            coveredValidationIds: [],
+            coveredNavigationIds: [],
+            confidence: 0.9,
+          },
+        }),
+      ],
+    },
+    intent: {
+      ...buildIntent(),
+      detectedActions: [],
+    },
+    workflowTopology: buildWorkflowTopology(),
+    duplicateSimilarityThreshold: 0.92,
+  });
+
+  assert.equal(report.actionCoverage.total, 2);
+  assert.equal(report.actionCoverage.covered, 1);
+  assert.equal(report.actionCoverage.ratio, 0.5);
+  assert.deepEqual(report.actionCoverage.uncoveredIds, ["ACT-002"]);
 });
 
 test("decorative technical labels and icon actions are excluded from mandatory coverage totals", () => {

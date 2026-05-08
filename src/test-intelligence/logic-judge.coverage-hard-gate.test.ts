@@ -57,6 +57,7 @@ const FIELD_IDS = ["fld-a", "fld-b", "fld-c"] as const;
 const ACTION_IDS = ["act-x", "act-y"] as const;
 const VALIDATION_IDS = ["val-1", "val-2"] as const;
 const NAVIGATION_IDS = ["nav-1"] as const;
+const WORKFLOW_ACTION_ID = "ACT-001";
 
 const buildTestDesignModel = (): TestDesignModel => ({
   schemaVersion: TEST_DESIGN_MODEL_SCHEMA_VERSION,
@@ -248,6 +249,103 @@ test("hard-gate emits hallucinated_id with the fabricated id in repair instructi
   );
   assert.ok(repair);
   assert.match(repair.instruction, /fld-NOT-IN-IR/u);
+  assert.equal(augmented.verdict, "repair");
+});
+
+test("hard-gate accepts workflow ACT ids that are declared via coverage-plan targets", () => {
+  const list = buildList([
+    buildTestCase("tc-workflow-action", {
+      qualitySignals: {
+        coveredFieldIds: ["fld-a"],
+        coveredActionIds: [WORKFLOW_ACTION_ID],
+      },
+    }),
+  ]);
+  const augmented = applyCoverageHardGate(buildLlmVerdict("accept"), {
+    testDesignModel: buildTestDesignModel(),
+    coveragePlan: {
+      schemaVersion: "1.0.0",
+      jobId: "job-1901",
+      perScreen: [],
+      perElement: [],
+      minimumCases: [],
+      recommendedCases: [
+        {
+          requirementId: "rec-workflow-transition",
+          technique: "state_transition",
+          reasonCode: "action_transition",
+          screenId: SCREEN_ID,
+          targetIds: [WORKFLOW_ACTION_ID, ACTION_IDS[0]],
+          sourceRefs: ["workflow-topology"],
+          visualRefs: [],
+        },
+      ],
+      techniques: [],
+      mutationKillRateTarget: 0.85,
+    },
+    generatedTestCases: list,
+    knownNavigationIds: [...NAVIGATION_IDS],
+  });
+
+  assert.ok(
+    augmented.findings.every(
+      (finding) =>
+        !(
+          finding.code ===
+          LOGIC_JUDGE_COVERAGE_HARD_GATE_FINDING_CODES.hallucinatedId
+        ),
+    ),
+  );
+  assert.ok(
+    augmented.repairInstructions.every(
+      (instruction) => instruction.path !== "qualitySignals.coveredActionIds",
+    ),
+  );
+});
+
+test("hard-gate rejects workflow ACT ids that are not declared via coverage-plan targets", () => {
+  const list = buildList([
+    buildTestCase("tc-workflow-action-invalid", {
+      qualitySignals: {
+        coveredFieldIds: ["fld-a"],
+        coveredActionIds: ["ACT-999"],
+      },
+    }),
+  ]);
+  const augmented = applyCoverageHardGate(buildLlmVerdict("accept"), {
+    testDesignModel: buildTestDesignModel(),
+    coveragePlan: {
+      schemaVersion: "1.0.0",
+      jobId: "job-1901",
+      perScreen: [],
+      perElement: [],
+      minimumCases: [],
+      recommendedCases: [
+        {
+          requirementId: "rec-workflow-transition",
+          technique: "state_transition",
+          reasonCode: "action_transition",
+          screenId: SCREEN_ID,
+          targetIds: [WORKFLOW_ACTION_ID, ACTION_IDS[0]],
+          sourceRefs: ["workflow-topology"],
+          visualRefs: [],
+        },
+      ],
+      techniques: [],
+      mutationKillRateTarget: 0.85,
+    },
+    generatedTestCases: list,
+    knownNavigationIds: [...NAVIGATION_IDS],
+    coverageThresholds: STRICT_THRESHOLDS,
+  });
+
+  const finding = augmented.findings.find(
+    (candidate) =>
+      candidate.code ===
+      LOGIC_JUDGE_COVERAGE_HARD_GATE_FINDING_CODES.hallucinatedId,
+  );
+  assert.ok(finding, "expected hallucinated_id finding for undeclared ACT id");
+  assert.equal(finding.testCaseId, "tc-workflow-action-invalid");
   assert.equal(augmented.verdict, "repair");
 });
 

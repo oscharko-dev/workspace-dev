@@ -172,7 +172,7 @@ const updateOrAssert = async (path: string, actual: string): Promise<void> => {
 test("golden: TEST_INTELLIGENCE_PROMPT_TEMPLATE_VERSION snapshot", () => {
   assert.equal(
     TEST_INTELLIGENCE_PROMPT_TEMPLATE_VERSION,
-    "1.6.1",
+    "1.6.2",
     "Prompt template version changed — bump the literal in this snapshot, update docs/test-intelligence-prompt-template-version.lock.json, and add a docs/test-intelligence-prompt-template-changelog.md entry.",
   );
 });

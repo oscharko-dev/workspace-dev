@@ -967,6 +967,8 @@ interface IrIdSets {
   navigationIds: ReadonlySet<string>;
 }
 
+const WORKFLOW_ACTION_ID_PATTERN = /^ACT-\d{3}$/u;
+
 // Defensive read for test-only stub fixtures (e.g. SAMPLE_TEST_DESIGN_MODEL
 // in logic-judge.test.ts) that cast to `TestDesignModel` while omitting
 // sub-arrays. The contract guarantees the array is present on production
@@ -977,6 +979,7 @@ const safeArray = <T>(value: ReadonlyArray<T> | undefined): ReadonlyArray<T> =>
 
 const collectIrIdSets = (
   testDesignModel: TestDesignModel,
+  coveragePlan: CoveragePlan | undefined,
   knownNavigationIds: readonly string[] | undefined,
 ): IrIdSets => {
   const fieldIds = new Set<string>();
@@ -991,6 +994,20 @@ const collectIrIdSets = (
     }
     for (const validation of safeArray(screen.validations)) {
       validationIds.add(validation.validationId);
+    }
+  }
+  for (const requirement of coveragePlan?.minimumCases ?? []) {
+    for (const targetId of requirement.targetIds) {
+      if (WORKFLOW_ACTION_ID_PATTERN.test(targetId)) {
+        actionIds.add(targetId);
+      }
+    }
+  }
+  for (const requirement of coveragePlan?.recommendedCases ?? []) {
+    for (const targetId of requirement.targetIds) {
+      if (WORKFLOW_ACTION_ID_PATTERN.test(targetId)) {
+        actionIds.add(targetId);
+      }
     }
   }
   return {
@@ -1382,7 +1399,11 @@ export const applyCoverageHardGate = (
   if (verdict.refusal !== undefined) {
     return verdict;
   }
-  const ir = collectIrIdSets(input.testDesignModel, input.knownNavigationIds);
+  const ir = collectIrIdSets(
+    input.testDesignModel,
+    input.coveragePlan,
+    input.knownNavigationIds,
+  );
   const irHasAnyCoverable =
     ir.fieldIds.size > 0 ||
     ir.actionIds.size > 0 ||
