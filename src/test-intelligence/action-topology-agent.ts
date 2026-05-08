@@ -155,11 +155,6 @@ export const isWorkflowActionId = (value: string): boolean =>
 export const assertWorkflowTopologyInvariants = (
   topology: WorkflowTopology,
 ): void => {
-  if (topology.schemaVersion !== WORKFLOW_TOPOLOGY_SCHEMA_VERSION) {
-    throw new TypeError(
-      `WorkflowTopology: schemaVersion must be "${WORKFLOW_TOPOLOGY_SCHEMA_VERSION}"`,
-    );
-  }
   const stateIds = new Set<string>();
   for (const state of topology.states) {
     if (state.stateId.length === 0) {
