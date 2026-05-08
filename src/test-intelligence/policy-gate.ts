@@ -31,6 +31,7 @@ import {
   type BusinessTestIntentIr,
   type CoveragePlan,
   type CustomContextPolicySignal,
+  type FaithfulnessTierReport,
   type FaithfulnessVerdict,
   type GeneratedTestCase,
   type GeneratedTestCaseList,
@@ -48,6 +49,7 @@ import {
   type VisualSidecarFailureClass,
   type VisualSidecarValidationReport,
 } from "../contracts/index.js";
+import { buildFaithfulnessTierReport } from "./faithfulness-tier-report.js";
 import {
   FORM_SCREEN_A11Y_REQUIRED_CRITERIA,
   listCoveredFormScreenA11yCriteria,
@@ -134,10 +136,44 @@ export interface EvaluatePolicyGateInput {
   coverageBaselineDrift?: CoverageBaselineDriftEvaluation;
 }
 
-const CROSS_MODAL_FAITHFULNESS_RULE =
+export const CROSS_MODAL_FAITHFULNESS_RULE =
   "policy:cross-modal-faithfulness-score" as const;
-const DEFAULT_CROSS_MODAL_FAITHFULNESS_THRESHOLD = 0.8;
+export const DEFAULT_CROSS_MODAL_FAITHFULNESS_THRESHOLD = 0.8;
 const CROSS_MODAL_FAITHFULNESS_GRAY_ZONE = 0.05;
+
+/**
+ * Resolve the per-run {@link FaithfulnessTierReport} that the
+ * cross-modal-faithfulness gate consulted (Issue #2066). Returns
+ * `undefined` when the verdict is missing, refused, or carries no
+ * `stepVerdicts` (legacy schema 1.0.0 — the gate falls back to the
+ * verdict's case-level `score`).
+ *
+ * Pure: callers persist the artifact via `writeFaithfulnessTierReport`.
+ */
+export const resolveFaithfulnessTierReport = (
+  verdict: FaithfulnessVerdict | undefined,
+  list: GeneratedTestCaseList,
+  policyOverrides: EvaluatePolicyGateInput["policyOverrides"],
+): FaithfulnessTierReport | undefined => {
+  if (verdict === undefined || verdict.refusal !== undefined) {
+    return undefined;
+  }
+  if (verdict.stepVerdicts === undefined || verdict.stepVerdicts.length === 0) {
+    return undefined;
+  }
+  const threshold =
+    resolvePolicyThresholdOverride(
+      policyOverrides,
+      CROSS_MODAL_FAITHFULNESS_RULE,
+    ) ?? DEFAULT_CROSS_MODAL_FAITHFULNESS_THRESHOLD;
+  return buildFaithfulnessTierReport({
+    generatedAt: verdict.generatedAt,
+    jobId: verdict.jobId,
+    verdict,
+    list,
+    aggregateThreshold: threshold,
+  });
+};
 
 /** Maximum strength among per-case decisions: blocked > needs_review > approved. */
 const decisionRank: Record<TestCasePolicyDecision, number> = {
@@ -942,30 +978,65 @@ const mapVisualOutcome = (
   }
 };
 
+const resolveFaithfulnessGateScore = (
+  verdict: FaithfulnessVerdict,
+  list: GeneratedTestCaseList,
+  threshold: number,
+): { score: number; tierReport: FaithfulnessTierReport | undefined } => {
+  if (
+    verdict.stepVerdicts === undefined ||
+    verdict.stepVerdicts.length === 0
+  ) {
+    return { score: verdict.score, tierReport: undefined };
+  }
+  const tierReport = buildFaithfulnessTierReport({
+    generatedAt: verdict.generatedAt,
+    jobId: verdict.jobId,
+    verdict,
+    list,
+    aggregateThreshold: threshold,
+  });
+  return { score: tierReport.aggregateScore, tierReport };
+};
+
 const buildFaithfulnessScoreViolation = (
   verdict: FaithfulnessVerdict | undefined,
+  list: GeneratedTestCaseList,
   threshold: number,
-): TestCasePolicyViolation | undefined => {
-  if (verdict === undefined) return undefined;
-  if (verdict.refusal !== undefined) return undefined;
+): {
+  violation: TestCasePolicyViolation | undefined;
+  tierReport: FaithfulnessTierReport | undefined;
+} => {
+  if (verdict === undefined) return { violation: undefined, tierReport: undefined };
+  if (verdict.refusal !== undefined) {
+    return { violation: undefined, tierReport: undefined };
+  }
+  const { score, tierReport } = resolveFaithfulnessGateScore(
+    verdict,
+    list,
+    threshold,
+  );
   const grayZoneFloor = Math.max(
     0,
     threshold - CROSS_MODAL_FAITHFULNESS_GRAY_ZONE,
   );
-  if (verdict.score >= threshold) return undefined;
+  if (score >= threshold) return { violation: undefined, tierReport };
   const severity: "error" | "warning" =
-    verdict.score >= grayZoneFloor ? "warning" : "error";
+    score >= grayZoneFloor ? "warning" : "error";
   const band =
     severity === "warning"
       ? `gray zone [${grayZoneFloor.toFixed(2)}, ${threshold.toFixed(2)})`
       : `below gray-zone floor ${grayZoneFloor.toFixed(2)}`;
   return {
-    rule: CROSS_MODAL_FAITHFULNESS_RULE,
-    outcome: "cross_modal_faithfulness_score_below_threshold",
-    severity,
-    reason:
-      `cross-modal faithfulness score ${verdict.score.toFixed(6)} is below ` +
-      `threshold ${threshold.toFixed(2)} (${band})`,
+    violation: {
+      rule: CROSS_MODAL_FAITHFULNESS_RULE,
+      outcome: "cross_modal_faithfulness_score_below_threshold",
+      severity,
+      reason:
+        `cross-modal faithfulness score ${score.toFixed(6)} is below ` +
+        `threshold ${threshold.toFixed(2)} (${band})`,
+    },
+    tierReport,
   };
 };
 
@@ -1044,10 +1115,12 @@ export const evaluatePolicyGate = (
       input.policyOverrides,
       CROSS_MODAL_FAITHFULNESS_RULE,
     ) ?? DEFAULT_CROSS_MODAL_FAITHFULNESS_THRESHOLD;
-  const faithfulnessViolation = buildFaithfulnessScoreViolation(
+  const faithfulness = buildFaithfulnessScoreViolation(
     input.faithfulnessVerdict,
+    input.list,
     faithfulnessThreshold,
   );
+  const faithfulnessViolation = faithfulness.violation;
 
   for (const tc of input.list.testCases) {
     const issues = validationByCase.get(tc.id) ?? [];

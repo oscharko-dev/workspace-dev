@@ -439,6 +439,86 @@ test("runFaithfulnessJudge derives score from the share of cases without cross-m
   assert.equal(result.verdict.score, 0.5);
 });
 
+test("Issue #2066: runFaithfulnessJudge propagates evidence_partial step verdicts and lifts the score above the legacy 0.5 cliff", async () => {
+  const bundle = createMockLlmGatewayClientBundle({
+    testGeneration: {
+      role: "test_generation",
+      deployment: "gpt-oss-120b",
+      modelRevision: "gpt-oss-120b@test",
+      gatewayRelease: "mock",
+    },
+    visualPrimary: {
+      role: "visual_primary",
+      deployment: "mistral-document-ai-2512",
+      modelRevision: "mistral-document-ai-2512@test",
+      gatewayRelease: "mock",
+      declaredCapabilities: VISUAL_CAPS,
+      responder: (_request, attempt) => ({
+        outcome: "success",
+        content: {
+          verdict: "accept",
+          hallucinations: [],
+          mismatches: [],
+          stepVerdicts: [
+            {
+              testCaseId: "tc-1",
+              stepIndex: 1,
+              verdict: "match",
+              message: "form heading visible in capture",
+            },
+            {
+              testCaseId: "tc-1",
+              stepIndex: 2,
+              verdict: "evidence_partial",
+              message:
+                "label visible; full description below the fold (no contradiction)",
+            },
+            {
+              testCaseId: "tc-2",
+              stepIndex: 1,
+              verdict: "evidence_partial",
+              message: "heading consistent; supporting copy not in capture",
+            },
+          ],
+        },
+        finishReason: "stop",
+        usage: { inputTokens: 11, outputTokens: 7 },
+        modelDeployment: "mistral-document-ai-2512",
+        modelRevision: "mistral-document-ai-2512@test",
+        gatewayRelease: "mock",
+        attempt,
+      }),
+    },
+    visualFallback: {
+      role: "visual_fallback",
+      deployment: "llama-4-maverick-vision",
+      modelRevision: "llama-4-maverick-vision@test",
+      gatewayRelease: "mock",
+      declaredCapabilities: VISUAL_CAPS,
+    },
+  });
+
+  const result = await runFaithfulnessJudge({
+    jobId: "faithfulness-evidence-partial",
+    generatedAt: "2026-05-08T10:00:00Z",
+    captures: SAMPLE_CAPTURES,
+    generatedTestCases: TWO_CASE_SET,
+    bundle,
+  });
+
+  assert.equal(result.verdict.verdict, "accept");
+  assert.deepEqual(result.verdict.hallucinations, []);
+  assert.deepEqual(result.verdict.mismatches, []);
+  assert.equal(result.verdict.stepVerdicts?.length, 3);
+  // case `tc-1`: avg(match=1, evidence_partial=0.85) = 0.925
+  // case `tc-2`: evidence_partial = 0.85
+  // average = (0.925 + 0.85) / 2 = 0.8875
+  assert.ok(
+    result.verdict.score >= 0.8,
+    `score ${result.verdict.score} should clear 0.80 with the v2 rubric`,
+  );
+});
+
 test("runFaithfulnessJudge emits a refusal when both gateways reject the image payload", async () => {
   const bundle = createMockLlmGatewayClientBundle({
     testGeneration: {

@@ -716,6 +716,112 @@ test("Issue #1949: cross-modal faithfulness score in the gray zone routes to nee
   assert.equal(report.blocked, false);
 });
 
+test("Issue #2066: stepVerdicts override the case-level score so all-evidence_partial label-only steps clear the 0.80 floor", () => {
+  const ctx = harness(
+    [
+      buildCase({
+        steps: [
+          { index: 1, action: "Open the loan form" },
+          { index: 2, action: "See the introductory paragraph" },
+          { index: 3, action: "Confirm the disclosure copy is displayed" },
+        ],
+      }),
+    ],
+    buildIntent(),
+  );
+  const report = evaluatePolicyGate({
+    jobId: "job-1",
+    generatedAt: GENERATED_AT,
+    list: ctx.list,
+    intent: ctx.intent,
+    profile: ctx.profile,
+    validation: ctx.validation,
+    coverage: ctx.coverage,
+    // Legacy score wired below the floor — would have blocked under v1.
+    faithfulnessVerdict: buildFaithfulnessVerdict({
+      score: 0.5,
+      verdict: "accept",
+      stepVerdicts: [
+        {
+          testCaseId: "tc",
+          stepIndex: 1,
+          verdict: "evidence_partial",
+          message: "label visible; full description below the fold",
+        },
+        {
+          testCaseId: "tc",
+          stepIndex: 2,
+          verdict: "evidence_partial",
+          message: "heading consistent; supporting copy not in capture",
+        },
+        {
+          testCaseId: "tc",
+          stepIndex: 3,
+          verdict: "evidence_partial",
+          message: "disclosure marker visible; long-form copy in linked PDF",
+        },
+      ],
+    }),
+  });
+  // Under the v2 rubric the tier-aware aggregate is 0.85 → above the
+  // 0.80 floor, so the gate must NOT emit a faithfulness violation.
+  assert.equal(
+    report.jobLevelViolations.some(
+      (entry) => entry.rule === "policy:cross-modal-faithfulness-score",
+    ),
+    false,
+  );
+  assert.equal(report.decisions[0]?.decision, "approved");
+  assert.equal(report.blocked, false);
+});
+
+test("Issue #2066: a positive step mismatch still blocks even when the legacy score is high", () => {
+  const ctx = harness(
+    [
+      buildCase({
+        steps: [
+          { index: 1, action: "Enter amount", data: "100", expected: "Field accepts" },
+          { index: 2, action: "See receipt" },
+        ],
+      }),
+    ],
+    buildIntent(),
+  );
+  const report = evaluatePolicyGate({
+    jobId: "job-1",
+    generatedAt: GENERATED_AT,
+    list: ctx.list,
+    intent: ctx.intent,
+    profile: ctx.profile,
+    validation: ctx.validation,
+    coverage: ctx.coverage,
+    faithfulnessVerdict: buildFaithfulnessVerdict({
+      score: 1,
+      verdict: "repair",
+      stepVerdicts: [
+        {
+          testCaseId: "tc",
+          stepIndex: 1,
+          verdict: "mismatch",
+          message: "amount field rendered red instead of accepted",
+        },
+        {
+          testCaseId: "tc",
+          stepIndex: 2,
+          verdict: "match",
+          message: "receipt heading visible",
+        },
+      ],
+    }),
+  });
+  // Tier-aware aggregate: (0 + 1)/2 = 0.5 → below 0.75 floor → error.
+  const violation = report.jobLevelViolations.find(
+    (entry) => entry.rule === "policy:cross-modal-faithfulness-score",
+  );
+  assert.equal(violation?.severity, "error");
+  assert.equal(report.blocked, true);
+});
+
 test("Issue #1949: policy override threshold can relax the cross-modal faithfulness gate", () => {
   const ctx = harness([buildCase({})], buildIntent());
   const report = evaluatePolicyGate({
