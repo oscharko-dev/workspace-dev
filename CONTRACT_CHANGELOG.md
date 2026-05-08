@@ -52,9 +52,12 @@ Public-contract changes (additive — no removals, no renames):
 - `TestCasePolicyProfileRules` gains an optional
   `negativeCaseLift?: { gateMode, thresholdRatio }` block. The
   `eu-banking-default` profile sets the secure default
-  `{ gateMode: "enforce", thresholdRatio: 0.30 }`. Operators who want a
-  record-only behaviour for fast iterative local runs override the
-  field to `{ gateMode: "advisory" }` on a derived profile.
+  `{ gateMode: "enforce", thresholdRatio: 0.30 }`. A derived profile
+  that wants to override the gate must specify both fields (e.g.
+  `{ gateMode: "advisory", thresholdRatio: 0.30 }`); the
+  `RunFigmaToQcTestCasesInput.qualityGates.negativeCaseLift` escape
+  hatch (below) is the one-line shortcut that lets operators flip a
+  single field while inheriting the rest from the profile.
 - `TestCasePolicyReport` gains an optional `gateResults?:
 TestCasePolicyGateResult[]` field. Today the array carries the single
   `G-NEG-CASE` entry; future gates extend the same array without a
@@ -74,6 +77,11 @@ TestCasePolicyGateResult[]` field. Today the array carries the single
   `qualityGates?.negativeCaseLift?` override. This is the documented
   CLI escape hatch so operators can flip the gate to `advisory` or
   `off` for a single run without authoring a derived policy profile.
+  Both `gateMode` and `thresholdRatio` are themselves optional on the
+  override — fields left undefined inherit per-field from the policy
+  profile, which itself falls back to the documented secure default.
+  `{ gateMode: "advisory" }` is therefore a valid one-line escape
+  hatch.
 
 Operational behavior introduced by the additive runtime surface:
 

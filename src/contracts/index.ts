@@ -630,16 +630,21 @@ export type TestCasePolicyGateId =
   (typeof ALLOWED_TEST_CASE_POLICY_GATE_IDS)[number];
 
 /**
- * Closed set of statuses a quality-gate evaluation may report.
+ * Closed set of statuses a quality-gate evaluation may report. The
+ * status surfaced for a below-threshold observation depends on the
+ * gate's configured `gateMode`: `enforce` produces `failed` and the
+ * runner exits with a non-zero failure class; `advisory` produces
+ * `advisory` and the run completes successfully. `failed` and
+ * `advisory` are therefore mutually exclusive — they never both appear
+ * for the same evaluation.
  *
  * - `passed`: the gate's threshold was met.
- * - `failed`: the gate's threshold was not met. When the gate runs in
- *   `enforce` mode the production runner exits with a non-zero failure
- *   class; in `advisory` mode the same status is recorded but the run
+ * - `failed`: the gate's threshold was not met and `gateMode ===
+ *   "enforce"`. The production runner exits with a non-zero failure
+ *   class so CI marks the build red.
+ * - `advisory`: the gate's threshold was not met but `gateMode ===
+ *   "advisory"`. The result is recorded for audit and the run
  *   completes successfully.
- * - `advisory`: the gate's threshold was not met but the gate was
- *   configured to record-only (`gateMode === "advisory"`); the run is
- *   not blocked.
  * - `skipped`: the gate could not be evaluated (the upstream signal it
  *   depends on did not run, or the gate was explicitly disabled). Skip
  *   is an explicit, audit-visible status — it is never silently a

@@ -861,16 +861,20 @@ export interface RunFigmaToQcTestCasesInput {
    * policy profile. Used as the documented CLI escape hatch so operators
    * can flip the adversarial-critic negative-case-lift gate to
    * `"advisory"` for fast iterative local runs without authoring a
-   * derived policy profile. Each override replaces the corresponding
-   * profile-level config entry by value (no field-level merge); fields
-   * left undefined fall back to the policy profile, which itself falls
-   * back to the documented secure default of
-   * `{ gateMode: "enforce", thresholdRatio: 0.30 }`.
+   * derived policy profile.
+   *
+   * Per-field merge: each field that is set on the override replaces
+   * the corresponding profile-level field; fields that are left
+   * undefined fall back to the policy profile, which itself falls back
+   * to the documented secure default of
+   * `{ gateMode: "enforce", thresholdRatio: 0.30 }`. This means
+   * `{ gateMode: "advisory" }` is a valid one-line escape hatch — the
+   * threshold inherits from the profile.
    */
   qualityGates?: {
     readonly negativeCaseLift?: {
-      readonly gateMode: "enforce" | "advisory" | "off";
-      readonly thresholdRatio: number;
+      readonly gateMode?: "enforce" | "advisory" | "off";
+      readonly thresholdRatio?: number;
     };
   };
 }
@@ -1800,17 +1804,19 @@ const ADVERSARIAL_NEGATIVE_CASE_LIFT_RULE_REF =
 
 /**
  * Issue #2053 — resolve the effective `G-NEG-CASE` configuration for a
- * run. The runner-level input override (CLI escape hatch) takes
- * precedence over the policy-profile entry, which itself falls back to
- * the documented secure defaults so legacy profiles without an explicit
- * `negativeCaseLift` block still see the gate enforced at `0.30`.
+ * run. The lookup is per-field: each field that is set on the
+ * runner-level override replaces the corresponding profile field;
+ * fields left undefined fall back to the profile, which itself falls
+ * back to the documented secure defaults. This makes
+ * `{ gateMode: "advisory" }` a valid one-line escape hatch on top of
+ * any profile.
  */
 const resolveNegativeCaseLiftConfig = (input: {
   readonly profileRules: TestCasePolicyProfileRules | undefined;
   readonly override:
     | {
-        readonly gateMode: "enforce" | "advisory" | "off";
-        readonly thresholdRatio: number;
+        readonly gateMode?: "enforce" | "advisory" | "off";
+        readonly thresholdRatio?: number;
       }
     | undefined;
 }): {
@@ -1819,21 +1825,15 @@ const resolveNegativeCaseLiftConfig = (input: {
 } => {
   const fromProfile = input.profileRules?.negativeCaseLift;
   const fromOverride = input.override;
-  if (fromOverride !== undefined) {
-    return {
-      gateMode: fromOverride.gateMode,
-      thresholdRatio: fromOverride.thresholdRatio,
-    };
-  }
-  if (fromProfile !== undefined) {
-    return {
-      gateMode: fromProfile.gateMode,
-      thresholdRatio: fromProfile.thresholdRatio,
-    };
-  }
   return {
-    gateMode: EU_BANKING_DEFAULT_NEGATIVE_CASE_LIFT_GATE_MODE,
-    thresholdRatio: EU_BANKING_DEFAULT_NEGATIVE_CASE_LIFT_THRESHOLD_RATIO,
+    gateMode:
+      fromOverride?.gateMode ??
+      fromProfile?.gateMode ??
+      EU_BANKING_DEFAULT_NEGATIVE_CASE_LIFT_GATE_MODE,
+    thresholdRatio:
+      fromOverride?.thresholdRatio ??
+      fromProfile?.thresholdRatio ??
+      EU_BANKING_DEFAULT_NEGATIVE_CASE_LIFT_THRESHOLD_RATIO,
   };
 };
 
@@ -1863,7 +1863,7 @@ const evaluateNegativeCaseLiftGate = (input: {
       thresholdRatio: config.thresholdRatio,
       skipReason: "gate_disabled",
       message:
-        "G-NEG-CASE skipped: gateMode is \"off\"; no enforcement, no record.",
+        "G-NEG-CASE skipped: gateMode is \"off\"; recorded as skipped in policy-report so audit can distinguish a deliberate disable from a missing upstream signal.",
     };
   }
   if (!adversarialCriticEnabled || traceArtifact === undefined) {

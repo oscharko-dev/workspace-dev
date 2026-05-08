@@ -6216,7 +6216,7 @@ test("Issue #2053: G-NEG-CASE skips when adversarial critic loop did not run", a
   }
 });
 
-test("Issue #2053: G-NEG-CASE skips when gateMode override is \"off\"", async () => {
+test("Issue #2053: G-NEG-CASE skips when gateMode override is \"off\" (one-line per-field escape hatch)", async () => {
   const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ti-runner-2053-off-"));
   try {
     const client = createMockLlmGatewayClient({
@@ -6233,8 +6233,12 @@ test("Issue #2053: G-NEG-CASE skips when gateMode override is \"off\"", async ()
       outputRoot: tempRoot,
       llm: { client },
       harness: { mode: "off", maxRepairIterations: 0 },
+      // Per-field override: only `gateMode` is set, `thresholdRatio`
+      // inherits from the eu-banking-default profile (0.30). The
+      // resolved threshold must surface in the persisted gate result
+      // so audit can verify which threshold was in force at run time.
       qualityGates: {
-        negativeCaseLift: { gateMode: "off", thresholdRatio: 0.3 },
+        negativeCaseLift: { gateMode: "off" },
       },
     });
 
@@ -6245,6 +6249,7 @@ test("Issue #2053: G-NEG-CASE skips when gateMode override is \"off\"", async ()
         gateId: string;
         status: string;
         skipReason?: string;
+        thresholdRatio?: number;
       }>;
     };
     const negCaseGate = policy.gateResults?.find(
@@ -6253,6 +6258,11 @@ test("Issue #2053: G-NEG-CASE skips when gateMode override is \"off\"", async ()
     assert.ok(negCaseGate, "expected G-NEG-CASE entry in policy report");
     assert.equal(negCaseGate.status, "skipped");
     assert.equal(negCaseGate.skipReason, "gate_disabled");
+    assert.equal(
+      negCaseGate.thresholdRatio,
+      0.3,
+      "threshold should inherit from the policy profile when only gateMode is overridden",
+    );
   } finally {
     await rm(tempRoot, { recursive: true, force: true });
   }

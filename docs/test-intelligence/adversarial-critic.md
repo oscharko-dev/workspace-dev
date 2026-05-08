@@ -108,15 +108,20 @@ explicit, audit-visible status — it is never silently a pass.
 
 ### Configuration
 
-The gate threshold and mode are sourced from, in priority order:
+The gate threshold and mode are resolved **per field**, in priority
+order:
 
 1. `RunFigmaToQcTestCasesInput.qualityGates.negativeCaseLift` — the
-   per-run CLI escape hatch. Use this for fast iterative local runs.
+   per-run CLI escape hatch. Both `gateMode` and `thresholdRatio` are
+   individually optional; whichever is set wins for that field.
 2. `TestCasePolicyProfile.rules.negativeCaseLift` — the policy-profile
    default. The `eu-banking-default` profile sets the secure default
    `{ gateMode: "enforce", thresholdRatio: 0.30 }`.
 3. The documented fallback `{ gateMode: "enforce", thresholdRatio: 0.30 }`
-   when neither source provides a value.
+   when neither source provides a value for a given field.
+
+This means `{ gateMode: "advisory" }` is a valid one-line escape hatch
+on top of any profile — the threshold inherits without restating.
 
 ### Baseline source
 
