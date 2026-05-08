@@ -793,6 +793,7 @@ test("Issue #1792: runFigmaToQcTestCases seals production-runner evidence and em
       "agent-role-runs/test_generation.json",
       "context-budget/test_generation.json",
       "judge-consensus.json",
+      "workflow-topology.json",
     ]);
     const sealedEvent = observedEvents.find(
       (event) => event.phase === "evidence_sealed",
@@ -2265,6 +2266,7 @@ test("Issue #2014: agent-participation always lists repair roles so missing opti
     // from the issue.
     const presentRoles = new Set(participation.roles.map((entry) => entry.role));
     for (const expectedRole of [
+      "action_topology",
       "generator",
       "logic_judge",
       "coverage_planner",

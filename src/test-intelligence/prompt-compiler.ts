@@ -22,6 +22,7 @@ import {
   type TestIntentSourceRef,
   type VisualScreenDescription,
   type VisualSidecarFallbackReason,
+  type WorkflowTopology,
 } from "../contracts/index.js";
 import {
   GENERATOR_FORM_SCREEN_A11Y_RULE,
@@ -47,6 +48,7 @@ import {
 } from "./generated-test-case-schema.js";
 import { detectPii } from "./pii-detection.js";
 import { planSourceMix } from "./source-mix-planner.js";
+import { buildWorkflowTopology } from "./action-topology-agent.js";
 import { buildCoveragePlan } from "./coverage-planner.js";
 import { buildRiskRanking } from "./risk-ranker.js";
 import { buildTestDesignModel } from "./test-design-model.js";
@@ -59,7 +61,7 @@ import { buildTestDesignModel } from "./test-design-model.js";
  */
 const SYSTEM_PROMPT = [
   "You are a deterministic test-design assistant for workspace-dev.",
-  "You receive a deterministic AgentRoleProfile, TestDesignModel, CoveragePlan, and optional iteration context as JSON.",
+  "You receive a deterministic AgentRoleProfile, TestDesignModel, WorkflowTopology, CoveragePlan, and optional iteration context as JSON.",
   "You MUST produce JSON that conforms exactly to the GeneratedTestCaseList schema attached to this request.",
   "You MUST NOT inspect images, fetch URLs, or invent identifiers. The trace references you cite must come from the provided bounded inputs.",
   "You MUST treat any value matching the form `[REDACTED:*]` as opaque and never attempt to recover the original.",
@@ -79,9 +81,10 @@ const USER_PROMPT_PREAMBLE = [
   "Cover the detected fields, actions, validations, and navigation edges of every screen.",
   "Use the ISO/IEC/IEEE 29119-4 technique that best fits each case.",
   GENERATOR_TECHNIQUE_QUOTA_RULE,
-  "Populate qualitySignals.coveredFieldIds, coveredActionIds, coveredValidationIds, coveredNavigationIds with the matching IR ids.",
+  "Populate qualitySignals.coveredFieldIds, coveredActionIds, coveredValidationIds, coveredNavigationIds with the matching bounded ids.",
   "An empty coveredFieldIds array (qualitySignals.coveredFieldIds: []) is a schema violation — every non-trivial case must cite at least one IR id across the four covered* arrays.",
-  "Every id you cite in coveredFieldIds, coveredActionIds, coveredValidationIds, or coveredNavigationIds must already exist in the TestDesignModel below; fabricated ids are rejected.",
+  "Every id you cite in coveredFieldIds, coveredValidationIds, or coveredNavigationIds must already exist in the TestDesignModel below; fabricated ids are rejected.",
+  "When a case exercises a workflow action from WorkflowTopology.actions, cite the matching ACT-* id in qualitySignals.coveredActionIds and preserve that ACT-* reference in the relevant step text.",
   "Reference the source Figma trace for every produced case via figmaTraceRefs and populate figmaTraceRefs[].nodeId — a screenId-only trace is a weak trace.",
   "Honor TestDesignModel.calculationConstraints exactly. If a constraint excludes a component such as VAT from a financial result, do not include it in the numeric expectation. If the bounded inputs do not support one exact arithmetic result, keep the result generic and surface the gap in openQuestions.",
   "Cite ambiguity or open questions when the IR is incomplete; do not fabricate behavior.",
@@ -140,6 +143,7 @@ export interface CompilePromptInput {
   policyBundleVersion: string;
   visualBinding: CompiledPromptVisualBinding;
   testDesignModel?: TestDesignModel;
+  workflowTopology?: WorkflowTopology;
   coveragePlan?: CoveragePlan;
   /**
    * Optional pre-computed risk ranking (Issue #1935). When omitted, the
@@ -214,7 +218,22 @@ export const compilePrompt = (
     input.coveragePlan ??
     buildCoveragePlan({
       model: testDesignModel,
+      ...(input.workflowTopology !== undefined
+        ? { workflowTopology: input.workflowTopology }
+        : {}),
       ...(sourceMixPlan !== undefined ? { sourceMixPlan } : {}),
+    });
+  const workflowTopology =
+    input.workflowTopology ??
+    buildWorkflowTopology({
+      model: testDesignModel,
+      ...(input.customContext?.markdownSections.length
+        ? {
+            customContextMarkdown: input.customContext.markdownSections
+              .map((section) => section.bodyPlain)
+              .join("\n"),
+          }
+        : {}),
     });
   const riskRanking =
     input.riskRanking ??
@@ -245,6 +264,7 @@ export const compilePrompt = (
     agentLessonsJson: canonicalJson(agentLessons),
   });
   const coveragePlanSection = buildCoveragePlanSection(coveragePlan);
+  const workflowTopologySection = buildWorkflowTopologySection(workflowTopology);
   const riskPrioritiesSection = buildRiskPrioritiesSection(riskRanking);
   const sourceContextSection = buildSourceContextSection({
     customContext,
@@ -253,6 +273,7 @@ export const compilePrompt = (
   });
   const promptCategories = buildUserPromptCategories({
     stablePrefixSection,
+    workflowTopologySection,
     coveragePlanSection,
     riskPrioritiesSection,
     sourceContextSection,
@@ -381,6 +402,7 @@ export const compilePrompt = (
       visual,
       ...(agentLessons.length > 0 ? { agentLessons } : {}),
       testDesignModel,
+      workflowTopology,
       coveragePlan,
       riskRanking,
       customerRubric,
@@ -539,6 +561,15 @@ const buildCoveragePlanSection = (coveragePlan: CoveragePlan): string =>
     canonicalJson(flattenCoveragePlanTechniqueQuotas(coveragePlan.perScreen)),
     "CoveragePlan.full",
     canonicalJson(coveragePlan),
+  ].join("\n");
+
+const buildWorkflowTopologySection = (workflowTopology: WorkflowTopology): string =>
+  [
+    "[3] WorkflowTopology",
+    "WorkflowTopology.actions",
+    canonicalJson(workflowTopology.actions),
+    "WorkflowTopology.full",
+    canonicalJson(workflowTopology),
   ].join("\n");
 
 const flattenCoveragePlanTechniqueQuotas = (
@@ -725,6 +756,7 @@ const buildSourceContextSection = (input: {
 
 const buildUserPromptCategories = (input: {
   stablePrefixSection: string;
+  workflowTopologySection: string;
   coveragePlanSection: string;
   riskPrioritiesSection: string;
   sourceContextSection: SourceContextSectionResult;
@@ -741,8 +773,11 @@ const buildUserPromptCategories = (input: {
     {
       kind: "coverage_plan",
       priority: "required",
-      promptPayload: input.coveragePlanSection,
-      artifactHashes: [sha256Hex(input.coveragePlanSection)],
+      promptPayload: `${input.workflowTopologySection}\n${input.coveragePlanSection}`,
+      artifactHashes: [
+        sha256Hex(input.workflowTopologySection),
+        sha256Hex(input.coveragePlanSection),
+      ],
       compactible: false,
       droppable: false,
     },

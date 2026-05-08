@@ -49,6 +49,7 @@ const TEST_CASE_NUMBER_PATTERN =
   /\bTC[\s_-]*0*(\d{1,4})\b/iu;
 const LEADING_TEST_CASE_LABEL_PATTERN =
   /^\s*TC[\s_-]*0*\d{1,4}\s*(?:[:-]\s*)?/iu;
+const WORKFLOW_ACTION_ID_PATTERN = /\bACT-\d{3}\b/u;
 const STOP_WORDS = new Set([
   "aber",
   "ac",
@@ -252,6 +253,17 @@ const renderSingleCase = (
     `**Klasse:** ${entry.classification} · **Priorität:** ${tc.priority} · **Risiko:** ${tc.riskCategory} · **Technik:** ${tc.technique}`,
   );
   lines.push("");
+  const workflowRefs = [
+    ...new Set(
+      tc.qualitySignals.coveredActionIds.filter((id) =>
+        WORKFLOW_ACTION_ID_PATTERN.test(id),
+      ),
+    ),
+  ].sort((left, right) => left.localeCompare(right));
+  if (workflowRefs.length > 0) {
+    lines.push(`**Workflow-Aktionen:** ${workflowRefs.join(", ")}`);
+    lines.push("");
+  }
   if (tc.assumptions.length > 0 || tc.openQuestions.length > 0) {
     lines.push("> [!IMPORTANT]");
     lines.push("> **Klärbedarf vor Freigabe**");

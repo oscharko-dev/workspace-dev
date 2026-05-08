@@ -113,7 +113,17 @@ test("renderCustomerMarkdown renders steps with Beschreibung + Erwartetes Ergebn
   const list: GeneratedTestCaseList = {
     schemaVersion: GENERATED_TEST_CASE_SCHEMA_VERSION,
     jobId: "job-1",
-    testCases: [buildCase()],
+    testCases: [
+      buildCase({
+        qualitySignals: {
+          coveredFieldIds: [],
+          coveredActionIds: ["ACT-001"],
+          coveredValidationIds: [],
+          coveredNavigationIds: [],
+          confidence: 0.9,
+        },
+      }),
+    ],
   };
   const result = renderCustomerMarkdown({
     list,
@@ -127,6 +137,7 @@ test("renderCustomerMarkdown renders steps with Beschreibung + Erwartetes Ergebn
   assert.match(body, /Erwartetes Ergebnis/u);
   assert.match(body, /Öffne die Login-Seite/u);
   assert.match(body, /Login-Maske ist sichtbar/u);
+  assert.match(body, /\*\*Workflow-Aktionen:\*\* ACT-001/u);
   assert.match(body, /Abdeckung & Nachvollziehbarkeit/u);
   assert.match(body, /Abgedeckte Semantik/u);
 });

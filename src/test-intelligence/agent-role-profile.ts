@@ -230,6 +230,18 @@ const VISUAL_SIDECAR_PROFILE: AgentRoleProfile = freezeProfile({
   finOpsGroup: "visual",
 });
 
+const ACTION_TOPOLOGY_PROFILE: AgentRoleProfile = freezeProfile({
+  schemaVersion: AGENT_ROLE_PROFILE_SCHEMA_VERSION,
+  role: "action_topology",
+  roleKind: "deterministic_service",
+  outputSchema: "workflow-topology.v1",
+  maxAttempts: 1,
+  maxInputTokens: 0,
+  maxOutputTokens: 0,
+  capability: "read_artifacts",
+  finOpsGroup: "generation",
+});
+
 const GENERATOR_PROFILE: AgentRoleProfile = freezeProfile({
   schemaVersion: AGENT_ROLE_PROFILE_SCHEMA_VERSION,
   role: "generator",
@@ -389,6 +401,7 @@ const FINAL_VERIFIER_PROFILE: AgentRoleProfile = freezeProfile({
 });
 
 const REGISTRY_OBJECT: Record<AgentHarnessRole, AgentRoleProfile> = {
+  action_topology: ACTION_TOPOLOGY_PROFILE,
   adversarial_gap_finder: ADVERSARIAL_GAP_FINDER_PROFILE,
   final_verifier: FINAL_VERIFIER_PROFILE,
   generator: GENERATOR_PROFILE,
