@@ -400,6 +400,54 @@ test("hard-gate rejects exact validation details when the source marks validatio
   assert.equal(augmented.verdict, "repair");
 });
 
+test("hard-gate does not reject label-only unresolved validation checks", () => {
+  const model = buildTestDesignModel();
+  model.screens[0]!.elements[0] = {
+    elementId: "fld-a",
+    label: "Höhe des Kaufpreises (Netto)",
+    kind: "text",
+  };
+  model.openQuestions.push({
+    openQuestionId: "oq-2067",
+    text: "Es ist fachlich zu klären, wie sich die Auswahl Netto / Brutto auf Feldbezeichnungen und Berechnung auswirkt.",
+  });
+
+  const testCase = buildTestCase("tc-label-only", {
+    type: "accessibility",
+    qualitySignals: {
+      coveredFieldIds: ["fld-a"],
+      coveredActionIds: ["act-x"],
+      coveredValidationIds: [],
+    },
+  });
+  testCase.steps = [
+    {
+      index: 1,
+      action:
+        "Verifiziert, dass das Label \"Höhe des Kaufpreises (Netto)\" sichtbar ist.",
+      expected: "Das Label ist sichtbar.",
+    },
+  ];
+  testCase.expectedResults = ["Das Label ist sichtbar."];
+
+  const augmented = applyCoverageHardGate(buildLlmVerdict("accept"), {
+    testDesignModel: model,
+    generatedTestCases: buildList([testCase]),
+    knownNavigationIds: [...NAVIGATION_IDS],
+  });
+
+  assert.equal(
+    augmented.findings.some(
+      (candidate) =>
+        candidate.code ===
+        LOGIC_JUDGE_COVERAGE_HARD_GATE_FINDING_CODES
+          .unsupportedUnresolvedValidationDetail,
+    ),
+    false,
+  );
+  assert.equal(augmented.verdict, "accept");
+});
+
 test("hard-gate rejects VAT-inclusive financing need expectations when VAT is excluded", () => {
   const model = buildTestDesignModel();
   model.screens[0] = {

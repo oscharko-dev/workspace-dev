@@ -134,7 +134,8 @@ const EXACT_VALIDATION_DETAIL_PATTERNS: readonly {
   },
 ] as const;
 
-const NUMERIC_DETAIL_RE = /\b\d[\d.,]*(?:%|[A-Za-z]+)?\b/;
+const NUMERIC_DETAIL_RE =
+  /(?:\b[A-Z]{2}\d{2}[A-Z0-9]{11,30}\b|\b\d{1,3}(?:[ .]\d{3})+(?:[,.]\d+)?(?:\s?(?:€|eur|euro))?(?=\b|[.)])|\b\d+[,.]\d+(?:\s?(?:€|eur|euro|%|prozent|percent))?(?=\b|[.)])|\b\d+\s?(?:€|eur|euro|%|prozent|percent)(?=\b|[.)]))/iu;
 
 export const GENERIC_VALIDATION_EXPECTED_RESULT =
   "A validation response is shown according to the specified validation concept.";
@@ -150,6 +151,17 @@ export interface UnsupportedExactValidationClaim {
   path: string;
   message: string;
 }
+
+export interface OpenQuestionClarificationClaim {
+  path: string;
+  message: string;
+}
+
+export type ValidationDetailClassification =
+  | "concrete_numeric_data"
+  | "concrete_message_text"
+  | "label_only"
+  | "none";
 
 type ScreenModel = TestDesignModel["screens"][number];
 
@@ -441,6 +453,75 @@ const findExactValidationReason = (text: string): string | undefined => {
   return undefined;
 };
 
+const QUOTED_TEXT_RE = /["'“”„][^"'“”„]+["'“”„]/u;
+
+const QUOTED_VALIDATION_MESSAGE_RE =
+  /(?:\b(?:validation(?: response)?|error|message|inline validation|fehler(?:meldung)?|meldung|nachricht|validierungs(?:meldung|nachricht)?)\b[^.!?\n]*["'“”„][^"'“”„]+["'“”„]|["'“”„][^"'“”„]+["'“”„][^.!?\n]*\b(?:validation(?: response)?|error|message|fehler(?:meldung)?|meldung|nachricht)\b)/iu;
+
+const QUOTED_VALIDATION_COPY_RE =
+  /["'“”„][^"'“”„]*(?:required|invalid|must\b|must be|muss\b|darf nicht|ungültig|not allowed|blocked|leer|empty)[^"'“”„]*["'“”„]/iu;
+
+const LABEL_ONLY_CLAIM_RE =
+  /(?:\b(?:label|labels|field(?: name| label)?|option|radio(?: button)?|checkbox|hint(?: text)?|section title|caption|copy|sichtbar(?:keit)?|angezeigt|anzeigen|vorhanden|auswählbar|feldbezeichnung(?:en)?|beschriftung|hinweistext|abschnittstitel)\b|["'“”„][^"'“”„]+["'“”„])/iu;
+
+export const classifyUnresolvedValidationDetail = (
+  text: string,
+): {
+  classification: ValidationDetailClassification;
+  reason?: string;
+} => {
+  const normalized = normalizeText(text);
+  if (
+    normalized.length === 0 ||
+    !includesAny(normalized, VALIDATION_TOPIC_MARKERS)
+  ) {
+    return { classification: "none" };
+  }
+
+  const exactReason = findExactValidationReason(normalized);
+  if (exactReason !== undefined) {
+    if (
+      NUMERIC_DETAIL_RE.test(normalized) &&
+      exactReason === "invented numeric example or threshold"
+    ) {
+      return {
+        classification: "concrete_numeric_data",
+        reason: exactReason,
+      };
+    }
+    return {
+      classification: "concrete_message_text",
+      reason: exactReason,
+    };
+  }
+
+  if (
+    QUOTED_VALIDATION_MESSAGE_RE.test(normalized) ||
+    QUOTED_VALIDATION_COPY_RE.test(normalized)
+  ) {
+    return {
+      classification: "concrete_message_text",
+      reason: "explicit validation message expectation",
+    };
+  }
+
+  if (NUMERIC_DETAIL_RE.test(normalized)) {
+    return {
+      classification: "concrete_numeric_data",
+      reason: "invented numeric example or threshold",
+    };
+  }
+
+  if (LABEL_ONLY_CLAIM_RE.test(normalized) || QUOTED_TEXT_RE.test(normalized)) {
+    return {
+      classification: "label_only",
+      reason: "label-only expectation references unresolved validation scope",
+    };
+  }
+
+  return { classification: "none" };
+};
+
 const collectClaimTexts = (
   testCase: GeneratedTestCase,
 ): Array<{ path: string; text: string }> => {
@@ -477,6 +558,14 @@ const collectClaimTexts = (
   return claims;
 };
 
+const isClarificationCandidatePath = (path: string): boolean => {
+  return (
+    path === "objective" ||
+    path.startsWith("expectedResults[") ||
+    path.startsWith("steps[")
+  );
+};
+
 export const detectUnsupportedExactValidationClaim = (input: {
   testCase: GeneratedTestCase;
   model: TestDesignModel;
@@ -487,14 +576,45 @@ export const detectUnsupportedExactValidationClaim = (input: {
   if (constraints.length === 0) return undefined;
 
   for (const claim of collectClaimTexts(input.testCase)) {
-    const reason = findExactValidationReason(claim.text);
-    if (reason === undefined) continue;
+    const detail = classifyUnresolvedValidationDetail(claim.text);
+    if (
+      detail.classification !== "concrete_numeric_data" &&
+      detail.classification !== "concrete_message_text"
+    ) {
+      continue;
+    }
     const evidence =
       constraints[0]?.evidenceText ?? "unspecified validation rule";
     return {
       path: claim.path,
       message:
-        `${reason} is unsupported while the source marks validation behavior as unresolved: ` +
+        `${detail.reason ?? "exact validation detail"} is unsupported while the source marks validation behavior as unresolved: ` +
+        `"${truncateEvidence(evidence)}"`,
+    };
+  }
+
+  return undefined;
+};
+
+export const detectOpenQuestionClarificationClaim = (input: {
+  testCase: GeneratedTestCase;
+  model: TestDesignModel;
+}): OpenQuestionClarificationClaim | undefined => {
+  const constraints = deriveUnresolvedValidationConstraints(input.model).filter(
+    (constraint) => testCaseTouchesConstraint(input.testCase, constraint),
+  );
+  if (constraints.length === 0) return undefined;
+
+  for (const claim of collectClaimTexts(input.testCase)) {
+    if (!isClarificationCandidatePath(claim.path)) continue;
+    const detail = classifyUnresolvedValidationDetail(claim.text);
+    if (detail.classification !== "label_only") continue;
+    const evidence =
+      constraints[0]?.evidenceText ?? "unspecified validation rule";
+    return {
+      path: claim.path,
+      message:
+        `label-only expectation should stay an open-question clarification while the source marks validation behavior as unresolved: ` +
         `"${truncateEvidence(evidence)}"`,
     };
   }
