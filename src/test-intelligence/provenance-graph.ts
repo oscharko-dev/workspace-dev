@@ -130,8 +130,9 @@ const buildAgentNode = (input: {
   readonly deployment?: string;
 }): ProvenanceNode => ({
   "@id": makeNodeId(input.jobId, "agent", sanitizeIriToken(input.id)),
-  "@type": input.kind === "model" ? "prov:SoftwareAgent" : "prov:Agent",
+  "@type": "prov:SoftwareAgent",
   label: input.label,
+  "ti:agentKind": input.kind,
   ...(input.deployment !== undefined
     ? { "ti:modelDeployment": input.deployment }
     : {}),
@@ -190,7 +191,9 @@ const readArtifactDigest = async (
 };
 
 const computeMerkleRoot = (hashes: readonly string[]): ProvenanceMerkleSeal => {
-  const sorted = hashes.slice().sort((left, right) => left.localeCompare(right));
+  const sorted = hashes
+    .slice()
+    .sort((left, right) => left.localeCompare(right));
   if (sorted.length === 0) {
     return {
       algorithm: PROVENANCE_MERKLE_ALGORITHM,
@@ -322,7 +325,10 @@ export const buildRunProvenanceGraph = async (
     judgeConsensusDigest,
   ] = requiredArtifactDigests;
 
-  const sourcePreparationActivity = activityId(input.jobId, "source_preparation");
+  const sourcePreparationActivity = activityId(
+    input.jobId,
+    "source_preparation",
+  );
   upsertNode(
     nodes,
     buildActivityNode({
@@ -404,17 +410,16 @@ export const buildRunProvenanceGraph = async (
   upsertNode(nodes, finalGeneratedArtifactEntity);
 
   let previousListId = listEntityId(input.jobId, "initial");
-  upsertNode(
-    nodes,
-    {
-      "@id": previousListId,
-      "@type": "prov:Entity",
-      label: "Initial generated case list",
-      "ti:listHash": generatedTestCasesDigest.sha256,
-      "prov:wasGeneratedBy": toIriRef(initialGenerationActivity),
-      "prov:hadPrimarySource": toIriRef(finalGeneratedArtifactEntity["@id"] as string),
-    },
-  );
+  upsertNode(nodes, {
+    "@id": previousListId,
+    "@type": "prov:Entity",
+    label: "Initial generated case list",
+    "ti:listHash": generatedTestCasesDigest.sha256,
+    "prov:wasGeneratedBy": toIriRef(initialGenerationActivity),
+    "prov:hadPrimarySource": toIriRef(
+      finalGeneratedArtifactEntity["@id"] as string,
+    ),
+  });
 
   if (input.repairIterations !== undefined) {
     for (const iteration of input.repairIterations) {
@@ -466,17 +471,14 @@ export const buildRunProvenanceGraph = async (
         input.jobId,
         `repair-${iteration.iteration}`,
       );
-      upsertNode(
-        nodes,
-        {
-          "@id": nextListId,
-          "@type": "prov:Entity",
-          label: `Generated case list after repair iteration ${iteration.iteration}`,
-          "ti:listHash": iteration.outputHash,
-          "prov:wasGeneratedBy": toIriRef(repairActivityId),
-          "prov:wasRevisionOf": toIriRef(previousListId),
-        },
-      );
+      upsertNode(nodes, {
+        "@id": nextListId,
+        "@type": "prov:Entity",
+        label: `Generated case list after repair iteration ${iteration.iteration}`,
+        "ti:listHash": iteration.outputHash,
+        "prov:wasGeneratedBy": toIriRef(repairActivityId),
+        "prov:wasRevisionOf": toIriRef(previousListId),
+      });
       previousListId = nextListId;
     }
   }
@@ -490,22 +492,19 @@ export const buildRunProvenanceGraph = async (
       : initialGenerationActivity;
 
   for (const testCase of input.finalGeneratedTestCases.testCases) {
-    upsertNode(
-      nodes,
-      {
-        "@id": caseEntityId(input.jobId, testCase.id),
-        "@type": "prov:Entity",
-        label: testCase.title,
-        "ti:testCaseId": testCase.id,
-        "ti:riskCategory": testCase.riskCategory,
-        "ti:technique": testCase.technique,
-        "ti:promptHash": testCase.audit.promptHash,
-        "ti:schemaHash": testCase.audit.schemaHash,
-        "ti:inputHash": testCase.audit.inputHash,
-        "prov:wasGeneratedBy": toIriRef(finalGenerationActivity),
-        "prov:hadPrimarySource": toIriRef(previousListId),
-      },
-    );
+    upsertNode(nodes, {
+      "@id": caseEntityId(input.jobId, testCase.id),
+      "@type": "prov:Entity",
+      label: testCase.title,
+      "ti:testCaseId": testCase.id,
+      "ti:riskCategory": testCase.riskCategory,
+      "ti:technique": testCase.technique,
+      "ti:promptHash": testCase.audit.promptHash,
+      "ti:schemaHash": testCase.audit.schemaHash,
+      "ti:inputHash": testCase.audit.inputHash,
+      "prov:wasGeneratedBy": toIriRef(finalGenerationActivity),
+      "prov:hadPrimarySource": toIriRef(previousListId),
+    });
   }
 
   const logicJudgeEntity = buildArtifactNode({
@@ -536,26 +535,25 @@ export const buildRunProvenanceGraph = async (
     readonly judgeRole: string;
     readonly activityNodeId: string;
     readonly artifactNodeId: string;
+    readonly attributedAgentId: string;
     readonly testCaseIds: readonly string[];
     readonly extra?: Record<string, JsonValue>;
   }): void => {
     for (const testCaseId of inputVerdict.testCaseIds) {
-      upsertNode(
-        nodes,
-        {
-          "@id": verdictEntityId(input.jobId, inputVerdict.judgeRole, testCaseId),
-          "@type": "prov:Entity",
-          label: `${inputVerdict.judgeRole} verdict for ${testCaseId}`,
-          "ti:judgeRole": inputVerdict.judgeRole,
-          "ti:testCaseId": testCaseId,
-          "prov:wasGeneratedBy": toIriRef(inputVerdict.activityNodeId),
-          "prov:wasDerivedFrom": [
-            toIriRef(caseEntityId(input.jobId, testCaseId)),
-            toIriRef(inputVerdict.artifactNodeId),
-          ],
-          ...(inputVerdict.extra ?? {}),
-        },
-      );
+      upsertNode(nodes, {
+        "@id": verdictEntityId(input.jobId, inputVerdict.judgeRole, testCaseId),
+        "@type": "prov:Entity",
+        label: `${inputVerdict.judgeRole} verdict for ${testCaseId}`,
+        "ti:judgeRole": inputVerdict.judgeRole,
+        "ti:testCaseId": testCaseId,
+        "prov:wasGeneratedBy": toIriRef(inputVerdict.activityNodeId),
+        "prov:wasAttributedTo": toIriRef(inputVerdict.attributedAgentId),
+        "prov:wasDerivedFrom": [
+          toIriRef(caseEntityId(input.jobId, testCaseId)),
+          toIriRef(inputVerdict.artifactNodeId),
+        ],
+        ...(inputVerdict.extra ?? {}),
+      });
     }
   };
 
@@ -563,7 +561,12 @@ export const buildRunProvenanceGraph = async (
     judgeRole: "logic_judge",
     activityNodeId: logicJudgeActivity,
     artifactNodeId: logicJudgeEntity["@id"] as string,
-    testCaseIds: input.finalGeneratedTestCases.testCases.map((testCase) => testCase.id),
+    attributedAgentId: ensureModelAgent(
+      input.logicJudge.verdict.modelDeployment,
+    ),
+    testCaseIds: input.finalGeneratedTestCases.testCases.map(
+      (testCase) => testCase.id,
+    ),
     extra: {
       "ti:verdict": input.logicJudge.verdict.verdict,
     },
@@ -601,7 +604,12 @@ export const buildRunProvenanceGraph = async (
       judgeRole: "faithfulness_judge",
       activityNodeId: faithfulnessActivity,
       artifactNodeId: faithfulnessEntity["@id"] as string,
-      testCaseIds: input.finalGeneratedTestCases.testCases.map((testCase) => testCase.id),
+      attributedAgentId: ensureModelAgent(
+        input.faithfulnessJudge.verdict.modelDeployment,
+      ),
+      testCaseIds: input.finalGeneratedTestCases.testCases.map(
+        (testCase) => testCase.id,
+      ),
       extra: {
         "ti:verdict": input.faithfulnessJudge.verdict.verdict,
       },
@@ -640,7 +648,12 @@ export const buildRunProvenanceGraph = async (
       judgeRole: "a11y_judge",
       activityNodeId: a11yActivity,
       artifactNodeId: a11yEntity["@id"] as string,
-      testCaseIds: input.finalGeneratedTestCases.testCases.map((testCase) => testCase.id),
+      attributedAgentId: ensureModelAgent(
+        input.a11yJudge.verdict.modelDeployment,
+      ),
+      testCaseIds: input.finalGeneratedTestCases.testCases.map(
+        (testCase) => testCase.id,
+      ),
       extra: {
         "ti:verdict": input.a11yJudge.verdict.verdict,
       },
@@ -675,7 +688,10 @@ export const buildRunProvenanceGraph = async (
     judgeRole: "judge_consensus",
     activityNodeId: consensusActivity,
     artifactNodeId: consensusEntity["@id"] as string,
-    testCaseIds: input.finalGeneratedTestCases.testCases.map((testCase) => testCase.id),
+    attributedAgentId: workspaceAgent["@id"] as string,
+    testCaseIds: input.finalGeneratedTestCases.testCases.map(
+      (testCase) => testCase.id,
+    ),
     extra: {
       "ti:verdict": input.judgeConsensus.verdict.verdict,
     },
@@ -709,8 +725,9 @@ export const buildRunProvenanceGraph = async (
   };
 };
 
-export const serializeProvenanceGraph = (document: ProvenanceDocument): string =>
-  canonicalJson(document);
+export const serializeProvenanceGraph = (
+  document: ProvenanceDocument,
+): string => canonicalJson(document);
 
 export const writeProvenanceGraph = async (input: {
   readonly runDir: string;

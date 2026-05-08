@@ -167,12 +167,14 @@ const SAMPLE_ACCESSIBILITY_DRAFT: ProductionRunnerLlmDraftCase = {
     {
       index: 2,
       action: "Prüfe Fokusreihenfolge und sichtbaren Fokus beim Tabbing",
-      expected: "Die Fokusreihenfolge bleibt logisch und jedes Element zeigt einen sichtbaren Fokus",
+      expected:
+        "Die Fokusreihenfolge bleibt logisch und jedes Element zeigt einen sichtbaren Fokus",
     },
     {
       index: 3,
       action: "Prüfe Fehlermeldungen mit Screen Reader und aria-live",
-      expected: "Fehlermeldungen und Feldbezeichnungen werden per Screen Reader angekündigt",
+      expected:
+        "Fehlermeldungen und Feldbezeichnungen werden per Screen Reader angekündigt",
     },
     {
       index: 4,
@@ -420,7 +422,10 @@ test("runFigmaToQcTestCases happy path persists artifacts and renders customer M
       "utf8",
     );
     assert.match(finopsReport, /"bySource":/u);
-    assert.equal(result.runQuality.artifactPath, result.artifactPaths.runQuality);
+    assert.equal(
+      result.runQuality.artifactPath,
+      result.artifactPaths.runQuality,
+    );
     assert.ok(
       result.runQuality.artifactPath.endsWith(RUN_QUALITY_ARTIFACT_FILENAME),
     );
@@ -564,7 +569,10 @@ test("Issue #1794: banking profile blocks when the active deployment is missing 
     assert.equal(result.runQuality.artifact.status, "blocked_failure");
     assert.equal(result.runQuality.artifact.blocked, true);
     assert.equal(result.runQuality.artifact.usable, false);
-    assert.equal(result.runQuality.artifactPath, result.artifactPaths.runQuality);
+    assert.equal(
+      result.runQuality.artifactPath,
+      result.artifactPaths.runQuality,
+    );
     const runQuality = JSON.parse(
       await readFile(result.artifactPaths.runQuality, "utf8"),
     ) as RunQualityArtifact;
@@ -726,7 +734,11 @@ test("Issue #1992: runFigmaToQcTestCases records degraded_success when the visua
     assert.equal(result.blocked, false);
     assert.equal(result.runQuality.artifact.status, "degraded_success");
     assert.equal(result.runQuality.artifact.repairState, "none");
-    assert.ok(result.runQuality.artifact.degradedReasons.includes("visual_sidecar_degraded"));
+    assert.ok(
+      result.runQuality.artifact.degradedReasons.includes(
+        "visual_sidecar_degraded",
+      ),
+    );
     const runQuality = JSON.parse(
       await readFile(result.artifactPaths.runQuality, "utf8"),
     ) as RunQualityArtifact;
@@ -1093,12 +1105,16 @@ test("Issue #1936: diversityPasses=2 dispatches two seeded generator passes, mer
           (request.seed === 11 || request.seed === 29),
       );
     assert.deepEqual(
-      Array.from(new Set(generatorRequests.map((request) => request.seed))).sort(),
+      Array.from(
+        new Set(generatorRequests.map((request) => request.seed)),
+      ).sort(),
       [11, 29],
     );
     assert.equal(result.generatedTestCases.testCases.length, 2);
     assert.deepEqual(
-      result.generatedTestCases.testCases.map((testCase) => testCase.title).sort(),
+      result.generatedTestCases.testCases
+        .map((testCase) => testCase.title)
+        .sort(),
       ["Gemeinsamer Testfall", "Ungueltige Investitionssumme wird abgelehnt"],
     );
     assert.notEqual(
@@ -1115,8 +1131,12 @@ test("Issue #1936: diversityPasses=2 dispatches two seeded generator passes, mer
       "generator-run-b",
     ]);
 
-    await stat(path.join(result.artifactDir, "agent-role-runs", "generator-run-a.json"));
-    await stat(path.join(result.artifactDir, "agent-role-runs", "generator-run-b.json"));
+    await stat(
+      path.join(result.artifactDir, "agent-role-runs", "generator-run-a.json"),
+    );
+    await stat(
+      path.join(result.artifactDir, "agent-role-runs", "generator-run-b.json"),
+    );
   } finally {
     await rm(tempRoot, { recursive: true, force: true });
   }
@@ -1146,7 +1166,10 @@ test("Issue #1936: diversityPasses=2 fails closed when the generator gateway doe
       (error: unknown) => {
         assert.ok(error instanceof ProductionRunnerError);
         assert.equal(error.failureClass, "LLM_GATEWAY_FAILED");
-        assert.match(error.message, /requires a generator gateway client with seed support/u);
+        assert.match(
+          error.message,
+          /requires a generator gateway client with seed support/u,
+        );
         return true;
       },
     );
@@ -1779,10 +1802,7 @@ test("runFigmaToQcTestCases wires Figma URL screenshots through the visual sidec
     const finopsReport = JSON.parse(
       await readFile(result.artifactPaths.finopsReport, "utf8"),
     ) as FinOpsBudgetReport & {
-      bySource: Record<
-        string,
-        { callCount: number; deployment?: string }
-      >;
+      bySource: Record<string, { callCount: number; deployment?: string }>;
     };
     assert.equal(finopsReport.bySource.visual_primary.callCount, 1);
     assert.equal(finopsReport.totals.imageBytes, PNG_BYTES.byteLength);
@@ -2009,7 +2029,9 @@ test("runFigmaToQcTestCases runs both judges, persists their artifacts, and keep
 });
 
 test("runFigmaToQcTestCases blocks policy-green output when the logic judge stays schema-invalid", async () => {
-  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ti-runner-judge-schema-"));
+  const tempRoot = await mkdtemp(
+    path.join(os.tmpdir(), "ti-runner-judge-schema-"),
+  );
   try {
     const client = createMockLlmGatewayClient({
       role: "test_generation",
@@ -2017,9 +2039,7 @@ test("runFigmaToQcTestCases blocks policy-green output when the logic judge stay
       modelRevision: "mock-1",
       gatewayRelease: "mock",
       responder: (request, attempt) => {
-        if (
-          request.responseSchemaName === "workspace-dev-logic-judge-v1"
-        ) {
+        if (request.responseSchemaName === "workspace-dev-logic-judge-v1") {
           return {
             outcome: "success" as const,
             content: {
@@ -2059,7 +2079,10 @@ test("runFigmaToQcTestCases blocks policy-green output when the logic judge stay
     assert.equal(result.policy.blocked, false);
     assert.equal(result.blocked, true);
     assert.equal(result.judgeConsensus.verdict.verdict, "repair");
-    assert.equal(result.judgeConsensus.verdict.panel[0]?.findings[0]?.category, "schema_class");
+    assert.equal(
+      result.judgeConsensus.verdict.panel[0]?.findings[0]?.category,
+      "schema_class",
+    );
     assert.notEqual(result.repairLoop, undefined);
     assert.equal(result.repairLoop?.outcome, "convergence_stalled");
     assert.equal(result.runQuality.artifact.status, "blocked_failure");
@@ -2076,7 +2099,9 @@ test("runFigmaToQcTestCases blocks policy-green output when the logic judge stay
 });
 
 test("Issue #1992: repaired runs surface repaired_success with historical judge findings separated from the final consensus", async () => {
-  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ti-runner-1992-repaired-"));
+  const tempRoot = await mkdtemp(
+    path.join(os.tmpdir(), "ti-runner-1992-repaired-"),
+  );
   try {
     let logicCallIndex = 0;
     const client = createMockLlmGatewayClient({
@@ -2220,8 +2245,14 @@ test("Issue #1992: repaired runs surface repaired_success with historical judge 
     ]);
     assert.equal(repairGeneratorEntry.failureClass, undefined);
     assert.equal(repairGeneratorEntry.costAttribution?.callCount, 1);
-    assert.equal(repairGeneratorEntry.costAttribution?.deployment, "gpt-oss-120b-mock");
-    assert.equal(repairGeneratorEntry.costAttribution?.sourceLabel, "generator");
+    assert.equal(
+      repairGeneratorEntry.costAttribution?.deployment,
+      "gpt-oss-120b-mock",
+    );
+    assert.equal(
+      repairGeneratorEntry.costAttribution?.sourceLabel,
+      "generator",
+    );
     assert.ok(
       (repairGeneratorEntry.costAttribution?.outputTokens ?? 0) > 0,
       "expected non-zero repair generator output tokens",
@@ -2265,7 +2296,9 @@ test("Issue #2014: agent-participation always lists repair roles so missing opti
     // artifact, even when the role did not run. This is the "make missing
     // optional roles explicit instead of silently omitting them" criterion
     // from the issue.
-    const presentRoles = new Set(participation.roles.map((entry) => entry.role));
+    const presentRoles = new Set(
+      participation.roles.map((entry) => entry.role),
+    );
     for (const expectedRole of [
       "action_topology",
       "generator",
@@ -2305,7 +2338,9 @@ test("Issue #2014: agent-participation always lists repair roles so missing opti
 });
 
 test("Issue #1992: fallback-recovered visual sidecar runs surface degraded_success without blocking output", async () => {
-  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ti-runner-1992-degraded-"));
+  const tempRoot = await mkdtemp(
+    path.join(os.tmpdir(), "ti-runner-1992-degraded-"),
+  );
   const originalFetch = globalThis.fetch;
   try {
     const client = createMockLlmGatewayClient({
@@ -2363,7 +2398,8 @@ test("Issue #1992: fallback-recovered visual sidecar runs surface degraded_succe
         modelRevision: "phi-4-multimodal-poc@test",
         gatewayRelease: "mock",
         declaredCapabilities: VISUAL_CAPS,
-        responder: (request, attempt) => buildVisualSuccess(request, attempt, "1:1"),
+        responder: (request, attempt) =>
+          buildVisualSuccess(request, attempt, "1:1"),
       },
     });
     globalThis.fetch = (async (url: string) => {
@@ -2497,17 +2533,20 @@ test("Issue #1940: runFigmaToQcTestCases dispatches the optional a11yJudge slot 
               {
                 criterionId: "1:1::tab-order",
                 verdict: "covered_passes",
-                rationale: "The accessibility case explicitly verifies keyboard traversal.",
+                rationale:
+                  "The accessibility case explicitly verifies keyboard traversal.",
               },
               {
                 criterionId: "1:1::focus-indicator",
                 verdict: "covered_passes",
-                rationale: "The accessibility case asserts visible focus states.",
+                rationale:
+                  "The accessibility case asserts visible focus states.",
               },
               {
                 criterionId: "1:1::label-for-input",
                 verdict: "covered_passes",
-                rationale: "Labels are asserted in the existing accessibility case.",
+                rationale:
+                  "Labels are asserted in the existing accessibility case.",
               },
               {
                 criterionId: "1:1::error-announcements",
@@ -2680,7 +2719,8 @@ test("Issue #1951: runFigmaToQcTestCases blocks when a11y_judge reports screen-r
               {
                 criterionId: "1:1::error-announcements",
                 verdict: "not_covered",
-                rationale: "No case explicitly verifies screen-reader announcements for validation changes.",
+                rationale:
+                  "No case explicitly verifies screen-reader announcements for validation changes.",
               },
               {
                 criterionId: "1:1::color-contrast",
@@ -3114,7 +3154,10 @@ test("Issue #1934: runFigmaToQcTestCases persists coverage-plan.json and uses th
     const coveragePlan = JSON.parse(
       await readFile(result.artifactPaths.coveragePlan, "utf8"),
     ) as {
-      perScreen?: Array<{ screenId: string; techniqueQuotas: Array<{ technique: string; minCount: number }> }>;
+      perScreen?: Array<{
+        screenId: string;
+        techniqueQuotas: Array<{ technique: string; minCount: number }>;
+      }>;
       perElement?: unknown[];
     };
     assert.equal(Array.isArray(coveragePlan.perScreen), true);
@@ -3132,7 +3175,9 @@ test("Issue #1934: runFigmaToQcTestCases persists coverage-plan.json and uses th
     const compiledPrompt = JSON.parse(
       await readFile(result.artifactPaths.compiledPrompt, "utf8"),
     ) as {
-      payload?: { coveragePlan?: { perScreen?: unknown[]; perElement?: unknown[] } };
+      payload?: {
+        coveragePlan?: { perScreen?: unknown[]; perElement?: unknown[] };
+      };
     };
     assert.equal(
       Array.isArray(compiledPrompt.payload?.coveragePlan?.perScreen),
@@ -4372,7 +4417,10 @@ const createRunnerOtelRecorder = () => {
     spans,
     counters,
     tracer: {
-      startSpan(name: string, options?: { attributes?: Record<string, unknown> }) {
+      startSpan(
+        name: string,
+        options?: { attributes?: Record<string, unknown> },
+      ) {
         const span = {
           name,
           attributes: options?.attributes,
@@ -4631,7 +4679,9 @@ test("Issue #1894: customContextMarkdown is canonicalized and surfaces in compil
 });
 
 test("Issue #1991: customer markdown includes the acceptance summary and hides internal ids", async () => {
-  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ti-runner-md-summary-"));
+  const tempRoot = await mkdtemp(
+    path.join(os.tmpdir(), "ti-runner-md-summary-"),
+  );
   try {
     const client = createMockLlmGatewayClient({
       role: "test_generation",
@@ -4654,11 +4704,20 @@ test("Issue #1991: customer markdown includes the acceptance summary and hides i
         "2. Nach Klick auf Weiter wird die Folgemaske angezeigt.",
       ].join("\n"),
     });
-    const markdown = await readFile(result.customerMarkdownPaths.combined, "utf8");
+    const markdown = await readFile(
+      result.customerMarkdownPaths.combined,
+      "utf8",
+    );
     assert.match(markdown, /## Überblick/u);
     assert.match(markdown, /## Akzeptanzkriterien/u);
-    assert.match(markdown, /\| AC01 \| Eine gültige Investitionssumme wird akzeptiert\. \| TC01 \|/u);
-    assert.match(markdown, /## TC01 — Eingabe einer gültigen Investitionssumme/u);
+    assert.match(
+      markdown,
+      /\| AC01 \| Eine gültige Investitionssumme wird akzeptiert\. \| TC01 \|/u,
+    );
+    assert.match(
+      markdown,
+      /## TC01 — Eingabe einer gültigen Investitionssumme/u,
+    );
     assert.doesNotMatch(markdown, /Test-ID/u);
     assert.doesNotMatch(markdown, /job-md-summary/u);
   } finally {
@@ -4667,7 +4726,9 @@ test("Issue #1991: customer markdown includes the acceptance summary and hides i
 });
 
 test("Issue #1988: customContextMarkdown upgrades semantic coverage rules for selectable options", async () => {
-  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ti-runner-semantic-md-"));
+  const tempRoot = await mkdtemp(
+    path.join(os.tmpdir(), "ti-runner-semantic-md-"),
+  );
   try {
     const semanticFile = {
       ...SAMPLE_FILE,
@@ -4751,7 +4812,9 @@ test("Issue #1988: customContextMarkdown upgrades semantic coverage rules for se
 });
 
 test("Issue #1986: VAT-excluded financing need forces a repair iteration and removes the VAT-inclusive expectation", async () => {
-  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ti-runner-financing-vat-"));
+  const tempRoot = await mkdtemp(
+    path.join(os.tmpdir(), "ti-runner-financing-vat-"),
+  );
   try {
     const financingFile = {
       ...SAMPLE_FILE,
@@ -4832,7 +4895,9 @@ test("Issue #1986: VAT-excluded financing need forces a repair iteration and rem
       expectedResults: [
         "The financing need is displayed as 1,380.00 EUR (1000 + 19% VAT + 200).",
       ],
-      figmaTraceRefs: [{ screenId: "1:1", nodeId: "2:4", nodeName: "Financing need" }],
+      figmaTraceRefs: [
+        { screenId: "1:1", nodeId: "2:4", nodeName: "Financing need" },
+      ],
       qualitySignals: {
         coveredFieldIds: [
           "1:1::field::2:1",
@@ -4859,8 +4924,11 @@ test("Issue #1986: VAT-excluded financing need forces a repair iteration and rem
     const financingA11yDraft: ProductionRunnerLlmDraftCase = {
       ...SAMPLE_ACCESSIBILITY_DRAFT,
       title: "Accessibility check for financing need",
-      objective: "Confirm keyboard and screen-reader accessibility on the financing-need screen.",
-      figmaTraceRefs: [{ screenId: "1:1", nodeId: "2:1", nodeName: "Net purchase price" }],
+      objective:
+        "Confirm keyboard and screen-reader accessibility on the financing-need screen.",
+      figmaTraceRefs: [
+        { screenId: "1:1", nodeId: "2:1", nodeName: "Net purchase price" },
+      ],
       qualitySignals: {
         coveredFieldIds: [
           "1:1::field::2:1",
@@ -4885,7 +4953,11 @@ test("Issue #1986: VAT-excluded financing need forces a repair iteration and rem
         if (request.responseSchemaName === "workspace-dev-logic-judge-v1") {
           return {
             outcome: "success" as const,
-            content: { verdict: "accept", findings: [], repairInstructions: [] },
+            content: {
+              verdict: "accept",
+              findings: [],
+              repairInstructions: [],
+            },
             finishReason: "stop" as const,
             usage: { inputTokens: 20, outputTokens: 10 },
             modelDeployment: "gpt-oss-120b-mock",
@@ -5080,7 +5152,9 @@ test("runFigmaToQcTestCases strips non-Figma custom markdown trace refs before v
 });
 
 test("runFigmaToQcTestCases removes button/action hallucinations when the IR has no actions", async () => {
-  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ti-runner-no-action-"));
+  const tempRoot = await mkdtemp(
+    path.join(os.tmpdir(), "ti-runner-no-action-"),
+  );
   try {
     const noActionFile = {
       ...SAMPLE_FILE,
@@ -5521,7 +5595,10 @@ test("Issue #2037: production runner writes provenance.jsonld and policy report 
       harness: { mode: "off", maxRepairIterations: 0 },
     });
 
-    const provenanceRaw = await readFile(result.artifactPaths.provenance, "utf8");
+    const provenanceRaw = await readFile(
+      result.artifactPaths.provenance,
+      "utf8",
+    );
     const provenance = JSON.parse(provenanceRaw) as Record<string, unknown>;
     assert.ok(Array.isArray(provenance["@graph"]));
     assert.deepEqual(provenance["@context"], [
@@ -5542,6 +5619,63 @@ test("Issue #2037: production runner writes provenance.jsonld and policy report 
       (provenance["ti:merkleSeal"] as { root?: string }).root,
     );
     assert.ok(!provenanceRaw.includes("systemPrompt"));
+
+    const graph = provenance["@graph"] as ReadonlyArray<
+      Record<string, unknown>
+    >;
+    const agents = graph.filter(
+      (node) => node["@type"] === "prov:SoftwareAgent",
+    );
+    assert.ok(
+      agents.length >= 2,
+      "expected at least the workspace runner and one model agent",
+    );
+    assert.ok(
+      agents.every(
+        (agent) =>
+          agent["ti:agentKind"] === "software" ||
+          agent["ti:agentKind"] === "model",
+      ),
+      "every agent must declare ti:agentKind",
+    );
+    const modelAgents = agents.filter(
+      (agent) => agent["ti:agentKind"] === "model",
+    );
+    assert.ok(modelAgents.length >= 1, "expected at least one model agent");
+
+    const verdictsByJudge = new Map<string, Record<string, unknown>[]>();
+    for (const node of graph) {
+      const judgeRole = node["ti:judgeRole"];
+      if (typeof judgeRole !== "string") continue;
+      const bucket = verdictsByJudge.get(judgeRole) ?? [];
+      bucket.push(node);
+      verdictsByJudge.set(judgeRole, bucket);
+    }
+    assert.ok(
+      verdictsByJudge.size >= 2,
+      `expected logic_judge and judge_consensus verdicts, got ${[...verdictsByJudge.keys()].join(",")}`,
+    );
+
+    const agentIds = new Set(agents.map((agent) => String(agent["@id"])));
+    for (const [judgeRole, verdictNodes] of verdictsByJudge) {
+      assert.ok(
+        verdictNodes.length > 0,
+        `judge ${judgeRole} produced no verdicts`,
+      );
+      for (const verdict of verdictNodes) {
+        const attribution = verdict["prov:wasAttributedTo"] as
+          | { "@id"?: string }
+          | undefined;
+        assert.ok(
+          attribution !== undefined && typeof attribution["@id"] === "string",
+          `judge ${judgeRole} verdict missing prov:wasAttributedTo`,
+        );
+        assert.ok(
+          agentIds.has(attribution["@id"] as string),
+          `judge ${judgeRole} attribution must point at a declared agent`,
+        );
+      }
+    }
 
     const verification = await verifyProvenanceFromDisk(result.artifactDir);
     assert.equal(
@@ -5572,7 +5706,11 @@ test("Issue #2037: provenance verification fails closed when an attested artifac
       llm: { client },
       harness: { mode: "off", maxRepairIterations: 0 },
     });
-    await writeFile(result.artifactPaths.generatedTestCases, '{"mutated":true}\n', "utf8");
+    await writeFile(
+      result.artifactPaths.generatedTestCases,
+      '{"mutated":true}\n',
+      "utf8",
+    );
     const verification = await verifyProvenanceFromDisk(result.artifactDir);
     assert.equal(verification.ok, false);
     assert.ok(
