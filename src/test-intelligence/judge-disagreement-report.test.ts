@@ -136,6 +136,61 @@ test("writeJudgeDisagreementReport persists the canonical artifact atomically", 
   }
 });
 
+test("buildJudgeDisagreementReport refuses cost rollup with a family not in the run", () => {
+  assert.throws(
+    () =>
+      buildJudgeDisagreementReport({
+        jobId: "job-cost-mismatch",
+        generatedAt: "2026-05-08T12:00:00Z",
+        bindings: [
+          baseBinding("logic_judge", "anthropic", "accept"),
+          baseBinding("faithfulness_judge", "openai", "accept"),
+        ],
+        costByFamily: new Map([
+          ["google", { totalTokens: 100, costMicrounits: 5 }],
+        ]),
+      }),
+    /cost rollup carries family "google"/u,
+  );
+});
+
+test("assertJudgeDisagreementReportInvariants enforces matrix totals and ordering", () => {
+  const report = buildJudgeDisagreementReport({
+    jobId: "job-validate",
+    generatedAt: "2026-05-08T12:00:00Z",
+    bindings: [
+      baseBinding("logic_judge", "anthropic", "accept"),
+      baseBinding("faithfulness_judge", "openai", "accept"),
+    ],
+  });
+  assert.doesNotThrow(() =>
+    assertJudgeDisagreementReportInvariants(report),
+  );
+  // Tampered: agreements + dissents !== votes.
+  const tampered = JSON.parse(JSON.stringify(report));
+  tampered.perFamilyAgreement[0].dissents = 5;
+  assert.throws(
+    () => assertJudgeDisagreementReportInvariants(tampered),
+    /agreements \+ dissents === votes/u,
+  );
+});
+
+test("assertJudgeDisagreementReportInvariants refuses non-ISO generatedAt", () => {
+  const report = buildJudgeDisagreementReport({
+    jobId: "job-iso",
+    generatedAt: "2026-05-08T12:00:00Z",
+    bindings: [
+      baseBinding("logic_judge", "anthropic", "accept"),
+      baseBinding("faithfulness_judge", "openai", "accept"),
+    ],
+  });
+  const tampered = { ...report, generatedAt: "Tuesday" };
+  assert.throws(
+    () => assertJudgeDisagreementReportInvariants(tampered),
+    /generatedAt must be a strict ISO-8601 timestamp/u,
+  );
+});
+
 test("buildJudgeDisagreementReport refuses an unknown family", () => {
   assert.throws(
     () =>

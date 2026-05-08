@@ -229,3 +229,17 @@ test("assessCrossFamilyPanel refuses an empty panel", () => {
     /bindings must be a non-empty array/u,
   );
 });
+
+test("assessCrossFamilyPanel refuses an unknown mostTrustedFamily option", () => {
+  const panel = [
+    baseBinding("logic_judge", "anthropic", "accept"),
+    baseBinding("faithfulness_judge", "openai", "accept"),
+  ];
+  assert.throws(
+    () =>
+      assessCrossFamilyPanel(panel, {
+        mostTrustedFamily: "unknown" as never,
+      }),
+    /options.mostTrustedFamily.*not a known JudgeModelFamily/u,
+  );
+});

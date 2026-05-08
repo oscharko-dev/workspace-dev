@@ -429,6 +429,93 @@ test("buildJudgeConsensus refuses an unknown family marker on a panel entry", ()
   );
 });
 
+test("buildJudgeConsensus refuses a malformed humanReview decision", () => {
+  assert.throws(
+    () =>
+      buildJudgeConsensus({
+        jobId: "job-bad-human-review",
+        generatedAt: "2026-05-06T00:00:00.000Z",
+        panel: [buildLogicJudgeConsensusEntry(buildLogicVerdict("accept"))],
+        humanReview: {
+          schemaVersion: "1.0.0",
+          reviewerKind: "dry_run_marker",
+          principalHash: "not-hex",
+          verdict: "deferred",
+          rationale: "ok",
+          decidedAt: "2026-05-06T00:00:00.000Z",
+          triggeredBy: "split_decision",
+        },
+      }),
+    /principalHash must be 64 lowercase hex chars/u,
+  );
+});
+
+test("buildJudgeConsensus forwards crossFamilyOptions.mostTrustedFamily into the summary", () => {
+  const consensus = buildJudgeConsensus({
+    jobId: "job-most-trusted",
+    generatedAt: "2026-05-06T00:00:00.000Z",
+    panel: [
+      {
+        ...buildLogicJudgeConsensusEntry(buildLogicVerdict("reject")),
+        family: "anthropic",
+        region: "eu",
+      },
+      {
+        ...buildFaithfulnessJudgeConsensusEntry(
+          buildFaithfulnessVerdict("accept"),
+        ),
+        family: "openai",
+        region: "eu",
+      },
+      {
+        ...buildA11yJudgeConsensusEntry(buildA11yVerdict("accept")),
+        family: "google",
+        region: "eu",
+      },
+    ],
+    crossFamilyOptions: { mostTrustedFamily: "anthropic" },
+  });
+  assert.equal(consensus.crossFamily?.decision, "majority_decision");
+  assert.equal(consensus.crossFamily?.escalation, "human_review_required");
+});
+
+test("buildJudgeConsensus emits a crossFamily summary when only family is supplied", () => {
+  const consensus = buildJudgeConsensus({
+    jobId: "job-minimal-cross-family",
+    generatedAt: "2026-05-06T00:00:00.000Z",
+    panel: [
+      {
+        ...buildLogicJudgeConsensusEntry(buildLogicVerdict("accept")),
+        family: "anthropic",
+      },
+      {
+        ...buildA11yJudgeConsensusEntry(buildA11yVerdict("accept")),
+        family: "google",
+      },
+    ],
+  });
+  assert.notEqual(consensus.crossFamily, undefined);
+  assert.equal(consensus.crossFamily?.decision, "unanimous_accept");
+});
+
+test("buildJudgeConsensus refuses an empty modelId on a panel entry", () => {
+  assert.throws(
+    () =>
+      buildJudgeConsensus({
+        jobId: "job-empty-model-id",
+        generatedAt: "2026-05-06T00:00:00.000Z",
+        panel: [
+          {
+            ...buildLogicJudgeConsensusEntry(buildLogicVerdict("accept")),
+            family: "anthropic",
+            modelId: "",
+          },
+        ],
+      }),
+    /invalid modelId/u,
+  );
+});
+
 test("buildJudgeConsensus attaches a humanReview decision verbatim", () => {
   const consensus = buildJudgeConsensus({
     jobId: "job-with-human-review",
