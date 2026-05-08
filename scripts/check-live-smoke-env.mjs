@@ -16,11 +16,7 @@
  *   1  one or more required env vars are missing
  */
 
-// API-key alias precedence — see `visual-sidecar-client.live.test.ts`.
-const API_KEY_ALIASES = [
-  "WORKSPACE_TEST_SPACE_API_KEY",
-  "WORKSPACE_TEST_SPACE_MODEL_API_KEY",
-];
+const API_KEY_ENV = "WORKSPACE_TEST_SPACE_LLM_API_KEY";
 
 const NON_AUTH_REQUIRED = [
   "WORKSPACE_TEST_SPACE_MODEL_ENDPOINT",
@@ -30,9 +26,29 @@ const NON_AUTH_REQUIRED = [
   "WORKSPACE_TEST_SPACE_VISUAL_FALLBACK_DEPLOYMENT",
 ];
 
-const isSet = (name) => {
-  const v = process.env[name];
-  return typeof v === "string" && v.length > 0;
+const readNonEmpty = (env, name) => {
+  const value = env[name];
+  if (typeof value !== "string") return undefined;
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
+};
+
+const resolveApiKey = (env) => {
+  const apiKey = readNonEmpty(env, API_KEY_ENV);
+  if (apiKey !== undefined) {
+    return {
+      ok: true,
+      apiKeySet: true,
+      apiKeyConflict: false,
+      message: "",
+    };
+  }
+  return {
+    ok: false,
+    apiKeySet: false,
+    apiKeyConflict: false,
+    message: `${API_KEY_ENV} is required.`,
+  };
 };
 
 /**
@@ -44,16 +60,16 @@ export const analyzeEnv = (env) => {
   const missingNonAuth = NON_AUTH_REQUIRED.filter(
     (name) => typeof env[name] !== "string" || env[name].length === 0,
   );
-  const apiKeySet = API_KEY_ALIASES.some(
-    (name) => typeof env[name] === "string" && env[name].length > 0,
-  );
-  if (missingNonAuth.length === 0 && apiKeySet) {
+  const apiKey = resolveApiKey(env);
+  if (missingNonAuth.length === 0 && apiKey.ok) {
     return null;
   }
   return {
     missingNonAuth,
-    apiKeySet,
-    apiKeyAliases: API_KEY_ALIASES,
+    apiKeySet: apiKey.apiKeySet,
+    apiKeyConflict: apiKey.apiKeyConflict,
+    apiKeyAliases: [API_KEY_ENV],
+    apiKeyMessage: apiKey.message,
   };
 };
 
@@ -94,11 +110,14 @@ const run = () => {
   }
   if (!result.apiKeySet) {
     process.stderr.write(
-      `\n  API key not set. Set ONE of (precedence in this order):\n`,
+      `\n  API key not set. Set the preferred key name first; legacy is fallback:\n`,
     );
     for (const name of result.apiKeyAliases) {
       process.stderr.write(`    - ${name}\n`);
     }
+  }
+  if (result.apiKeyConflict) {
+    process.stderr.write(`\n  API key alias conflict:\n    - ${result.apiKeyMessage}\n`);
   }
   process.stderr.write(
     "\n  See docs/local-runtime.md and docs/test-intelligence.md for a full operator setup walkthrough.\n",

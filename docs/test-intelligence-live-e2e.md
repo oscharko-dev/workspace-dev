@@ -65,7 +65,7 @@ At minimum, the command requires:
 - `WORKSPACE_TEST_SPACE_VISUAL_MODEL_ENDPOINT`
 - `WORKSPACE_TEST_SPACE_VISUAL_PRIMARY_DEPLOYMENT`
 - `WORKSPACE_TEST_SPACE_VISUAL_FALLBACK_DEPLOYMENT`
-- `WORKSPACE_TEST_SPACE_API_KEY` or `WORKSPACE_TEST_SPACE_MODEL_API_KEY`
+- `WORKSPACE_TEST_SPACE_LLM_API_KEY`
 
 Redacted example using loopback placeholders:
 
@@ -76,7 +76,7 @@ export WORKSPACE_TEST_SPACE_TESTCASE_MODEL_DEPLOYMENT="redacted-test-generation"
 export WORKSPACE_TEST_SPACE_VISUAL_MODEL_ENDPOINT="https://127.0.0.1/redacted-azure-vision"
 export WORKSPACE_TEST_SPACE_VISUAL_PRIMARY_DEPLOYMENT="redacted-visual-primary"
 export WORKSPACE_TEST_SPACE_VISUAL_FALLBACK_DEPLOYMENT="redacted-visual-fallback"
-export WORKSPACE_TEST_SPACE_API_KEY="redacted-non-prod-key"
+export WORKSPACE_TEST_SPACE_LLM_API_KEY="redacted-non-prod-key"
 pnpm run test:ti-live-e2e
 ```
 
@@ -88,7 +88,7 @@ operator environment aligned with the runbook:
 
 | Surface | Required when the claim includes | Credential / env | Loopback-redacted example |
 | --- | --- | --- | --- |
-| Azure AI Foundry gateway | Any live-E2E run | `WORKSPACE_TEST_SPACE_MODEL_ENDPOINT`, `WORKSPACE_TEST_SPACE_API_KEY` or `WORKSPACE_TEST_SPACE_MODEL_API_KEY` | `https://127.0.0.1/redacted-azure-foundry`, `redacted-non-prod-key` |
+| Azure AI Foundry gateway | Any live-E2E run | `WORKSPACE_TEST_SPACE_MODEL_ENDPOINT`, `WORKSPACE_TEST_SPACE_LLM_API_KEY` | `https://127.0.0.1/redacted-azure-foundry`, `redacted-non-prod-key` |
 | Figma URL ingestion | Live URL ingestion, inspector submit flow, or server-side file fetch | `WORKSPACE_FIGMA_PERSONAL_ACCESS_TOKEN` | `redacted-figma-pat` |
 | Jira Cloud API token | Jira REST-backed source claim | `WORKSPACE_TI_JIRA_EMAIL`, `WORKSPACE_TI_JIRA_API_TOKEN` | `operator@example.invalid`, `redacted-jira-api-token` |
 | Jira OAuth 2.0 | Jira REST-backed source claim using 3LO | `JIRA_OAUTH_ACCESS_TOKEN` | `redacted-jira-oauth-token` |

@@ -72,7 +72,7 @@ test("human-review-calibration: bias controls are explicit and stable", () => {
     hardLengthNormalizationApplied: false,
     selfPreferenceMitigation: "cross_family_panel",
     conciseOutputCapChars: 240,
-    judgeModelBindings: ["gpt-oss-120b", "phi-4-multimodal-poc"],
+    judgeModelBindings: ["gpt-oss-120b", "phi-4-multimodal-instruct"],
   });
   assert.deepEqual(
     report.criterionErrors.map((entry) => entry.criterion),

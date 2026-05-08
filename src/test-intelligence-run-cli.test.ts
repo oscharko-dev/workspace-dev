@@ -268,7 +268,7 @@ test("parseTestIntelligenceRunArgs: env defaults flow into options when flags ab
     {
       WORKSPACE_TEST_SPACE_MODEL_ENDPOINT: "https://aoai.example/openai/v1",
       WORKSPACE_TEST_SPACE_TESTCASE_MODEL_DEPLOYMENT: "gpt-oss-120b",
-      WORKSPACE_TEST_SPACE_MODEL_API_KEY: "k-key",
+      WORKSPACE_TEST_SPACE_LLM_API_KEY: "k-key",
       FIGMA_ACCESS_TOKEN: "figd_xxx",
     },
   );
@@ -711,7 +711,7 @@ test("runTestIntelligenceDoctorCommand: intended topology exits 0 with only ok s
       WORKSPACE_TEST_SPACE_A11Y_JUDGE_DEPLOYMENT:
         "phi-4-multimodal-instruct",
       WORKSPACE_TEST_SPACE_MODEL_ENDPOINT: "https://aoai.example/openai/v1",
-      WORKSPACE_TEST_SPACE_MODEL_API_KEY: "secret-key",
+      WORKSPACE_TEST_SPACE_LLM_API_KEY: "secret-key",
     },
   });
 
@@ -1700,7 +1700,8 @@ test("runTestIntelligenceCommand: enable-visual-sidecar builds and forwards runn
       WORKSPACE_TEST_SPACE_VISUAL_MODEL_ENDPOINT:
         "https://aoai.example/openai/vision",
       WORKSPACE_TEST_SPACE_VISUAL_PRIMARY_DEPLOYMENT: "llama-4-maverick-vision",
-      WORKSPACE_TEST_SPACE_VISUAL_FALLBACK_DEPLOYMENT: "phi-4-multimodal-poc",
+      WORKSPACE_TEST_SPACE_VISUAL_FALLBACK_DEPLOYMENT:
+        "phi-4-multimodal-instruct",
     },
     runner,
     buildLlmClient: () =>

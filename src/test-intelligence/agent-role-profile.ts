@@ -361,7 +361,7 @@ const ADVERSARIAL_GAP_FINDER_PROFILE: AgentRoleProfile = freezeProfile({
   promptVersion: "gap-finder.v1",
   modelBinding: {
     providerId: "in-house",
-    modelId: "phi-4-multimodal-poc",
+    modelId: "phi-4",
   },
   outputSchema: "gap-finder-findings.v1",
   maxAttempts: 2,

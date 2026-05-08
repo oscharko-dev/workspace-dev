@@ -169,7 +169,10 @@ test("prompt-injection figma fixture: derivation treats injection text as node d
   // short-circuit due to the hostile content.
   assert.equal(intent.screens.length, 1);
   assert.ok(intent.detectedFields.length > 0);
-  assert.equal(intent.detectedActions.length, 1);
+  assert.ok(
+    intent.detectedActions.some((action) => action.label === "Login"),
+    "IR must preserve the real login action even when hostile text is present",
+  );
 
   // The IR is the "untrusted data" layer; piiIndicators are populated
   // for any matching PII, but the raw injection strings do not become

@@ -166,13 +166,13 @@
     {
       "type": "machine-learning-model",
       "bom-ref": "model:visual_fallback",
-      "name": "phi-4-multimodal-poc",
+      "name": "phi-4-multimodal-instruct",
       "version": "unknown",
       "description": "Fallback multimodal sidecar invoked when the primary deployment is unavailable, quota-throttled, or when an operator forces a policy downgrade.",
       "publisher": "workspace-dev",
       "group": "workspace-dev:test-intelligence",
       "properties": [
-        { "name": "workspace-dev:deployment", "value": "phi-4-multimodal-poc" },
+        { "name": "workspace-dev:deployment", "value": "phi-4-multimodal-instruct" },
         { "name": "workspace-dev:fallbackReason", "value": "none" },
         { "name": "workspace-dev:fallbackUsed", "value": "false" },
         { "name": "workspace-dev:format", "value": "unknown" },

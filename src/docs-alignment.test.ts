@@ -855,7 +855,7 @@ test("docs: live-E2E closing gate stays aligned across docs and PR checklist", a
   assert.match(liveE2eDoc, /`pnpm run test:ti-live-e2e`/);
   assert.match(
     liveE2eDoc,
-    /WORKSPACE_TEST_SPACE_MODEL_ENDPOINT[\s\S]*WORKSPACE_TEST_SPACE_API_KEY/,
+    /WORKSPACE_TEST_SPACE_MODEL_ENDPOINT[\s\S]*WORKSPACE_TEST_SPACE_LLM_API_KEY/,
   );
   assert.match(liveE2eDoc, /WORKSPACE_FIGMA_PERSONAL_ACCESS_TOKEN/);
   assert.match(liveE2eDoc, /WORKSPACE_TI_JIRA_API_TOKEN/);

@@ -178,7 +178,7 @@ const createHappyBundle = () =>
     },
     visualFallback: {
       role: "visual_fallback",
-      deployment: "phi-4-multimodal-poc",
+      deployment: "phi-4-multimodal-instruct",
       modelRevision: "rev",
       gatewayRelease: "rel",
       declaredCapabilities: visualCapabilities,
@@ -280,7 +280,7 @@ const createHappyBundle = () =>
     },
     a11yJudge: {
       role: "a11y_judge",
-      deployment: "phi-4-multimodal-poc",
+      deployment: "phi-4-multimodal-instruct",
       modelRevision: "rev",
       gatewayRelease: "rel",
       declaredCapabilities: visualCapabilities,
@@ -339,7 +339,7 @@ test("live role contract smoke classifies gateway failures with remediation hint
     },
     visualFallback: {
       role: "visual_fallback",
-      deployment: "phi-4-multimodal-poc",
+      deployment: "phi-4-multimodal-instruct",
       modelRevision: "rev",
       gatewayRelease: "rel",
       declaredCapabilities: visualCapabilities,
@@ -403,7 +403,7 @@ test("live role contract smoke reports protocol failures for incompatible visual
     },
     visualFallback: {
       role: "visual_fallback",
-      deployment: "phi-4-multimodal-poc",
+      deployment: "phi-4-multimodal-instruct",
       modelRevision: "rev",
       gatewayRelease: "rel",
       declaredCapabilities: visualCapabilities,
@@ -504,7 +504,7 @@ test("live role contract smoke classifies success payload drift as schema_invali
     },
     visualFallback: {
       role: "visual_fallback",
-      deployment: "phi-4-multimodal-poc",
+      deployment: "phi-4-multimodal-instruct",
       modelRevision: "rev",
       gatewayRelease: "rel",
       declaredCapabilities: visualCapabilities,

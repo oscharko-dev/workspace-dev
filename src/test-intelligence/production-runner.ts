@@ -565,16 +565,7 @@ export interface ProductionRunnerHarnessSummary {
 
 const toEvidenceVisualDeployment = (
   deployment: LlmGatewayClient["deployment"],
-): "llama-4-maverick-vision" | "phi-4-multimodal-poc" | "mock" => {
-  switch (deployment) {
-    case "llama-4-maverick-vision":
-      return "llama-4-maverick-vision";
-    case "phi-4-multimodal-poc":
-      return "phi-4-multimodal-poc";
-    default:
-      return "mock";
-  }
-};
+): string => (deployment.trim().length > 0 ? deployment : "mock");
 
 const buildActiveModelBindings = (input: {
   client: LlmGatewayClient;

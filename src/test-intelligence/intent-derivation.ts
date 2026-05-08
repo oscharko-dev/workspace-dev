@@ -88,6 +88,24 @@ const INPUT_TEXT_FIELD_TYPES = new Set([
   "TEXT",
 ]);
 const ACTION_NODE_TYPES = new Set(["BUTTON", "CTA", "LINK"]);
+const INTERACTION_ACTION_NODE_TYPES = new Set([
+  "TEXT_INPUT",
+  "INPUT",
+  "TEXT_FIELD",
+  "TEXTFIELD",
+  "RADIO_OPTION",
+  "SELECT_FIELD",
+]);
+const INTERACTION_ACTION_SEMANTIC_KINDS = new Set([
+  "text_input",
+  "input",
+  "text_field",
+  "textfield",
+  "radio_option",
+  "select_field",
+  "select",
+  "dropdown",
+]);
 
 const byId = <T extends { id: string }>(a: T, b: T): number =>
   a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
@@ -111,6 +129,32 @@ const resolveFieldType = (node: IntentDerivationNodeInput): string => {
       return "informative_label";
     default:
       return nodeType.toLowerCase();
+  }
+};
+
+const isInteractionActionNode = (node: IntentDerivationNodeInput): boolean => {
+  if (INTERACTION_ACTION_NODE_TYPES.has(node.nodeType.trim().toUpperCase())) {
+    return true;
+  }
+  const semanticKind = node.semanticKind?.trim().toLowerCase();
+  return (
+    semanticKind !== undefined &&
+    INTERACTION_ACTION_SEMANTIC_KINDS.has(semanticKind)
+  );
+};
+
+const resolveInteractionActionKind = (
+  node: IntentDerivationNodeInput,
+): string => {
+  switch (resolveFieldType(node)) {
+    case "radio_option":
+      return "select_radio_option";
+    case "select_field":
+    case "select":
+    case "dropdown":
+      return "change_select";
+    default:
+      return "change_input";
   }
 };
 
@@ -296,7 +340,8 @@ const deriveActions = (
   const actions: DetectedAction[] = [];
   for (const screen of screens) {
     for (const node of screen.nodes) {
-      if (!ACTION_NODE_TYPES.has(node.nodeType.toUpperCase())) continue;
+      const isPrimaryAction = ACTION_NODE_TYPES.has(node.nodeType.toUpperCase());
+      if (!isPrimaryAction && !isInteractionActionNode(node)) continue;
       const id = `${screen.screenId}::action::${node.nodeId}`;
       const trace = buildTrace(
         node,
@@ -324,8 +369,10 @@ const deriveActions = (
           redactions,
         ),
         kind:
-          node.semanticKind?.trim().toLowerCase() ??
-          node.nodeType.toLowerCase(),
+          isPrimaryAction
+            ? (node.semanticKind?.trim().toLowerCase() ??
+              node.nodeType.toLowerCase())
+            : resolveInteractionActionKind(node),
       };
       if (node.labelSource !== undefined) {
         action.labelSource = node.labelSource;

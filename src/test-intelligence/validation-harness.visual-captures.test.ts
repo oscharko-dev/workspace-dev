@@ -54,7 +54,7 @@ import {
 const GENERATED_AT = "2026-04-25T10:00:00.000Z";
 const FIXTURE_ID = "validation-onboarding" as const;
 const PRIMARY_DEPLOYMENT = "llama-4-maverick-vision" as const;
-const FALLBACK_DEPLOYMENT = "phi-4-multimodal-poc" as const;
+const FALLBACK_DEPLOYMENT = "phi-4-multimodal-instruct" as const;
 
 const TEST_GENERATION_CAPS = {
   structuredOutputs: true,

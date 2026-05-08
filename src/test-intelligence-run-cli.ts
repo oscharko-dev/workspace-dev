@@ -113,6 +113,13 @@ const TEST_INTELLIGENCE_RISK_RANKER_RECOMMENDED_DEPLOYMENT = "phi-4";
 const TEST_INTELLIGENCE_A11Y_JUDGE_RECOMMENDED_DEPLOYMENT =
   "phi-4-multimodal-instruct";
 
+const wireStructuredOutputOverrideForDeployment = (
+  deployment: string,
+): { wireStructuredOutputMode?: "none" } =>
+  deployment === TEST_INTELLIGENCE_GENERATOR_LEGACY_DEPLOYMENT
+    ? { wireStructuredOutputMode: "none" }
+    : {};
+
 const TOPOLOGY_PREFLIGHT_REPORT_FILENAME = "topology-preflight-report.json";
 const INCOMPATIBLE_OPENAI_CHAT_DEPLOYMENTS = new Set([
   "mistral-document-ai-2512",
@@ -457,8 +464,7 @@ export const parseTestIntelligenceRunArgs = (
     env.WORKSPACE_TEST_SPACE_VISUAL_FALLBACK_DEPLOYMENT?.trim() || undefined;
   let a11yJudgeDeployment: string | undefined =
     env.WORKSPACE_TEST_SPACE_A11Y_JUDGE_DEPLOYMENT?.trim() || undefined;
-  let modelApiKey: string | undefined =
-    env.WORKSPACE_TEST_SPACE_MODEL_API_KEY?.trim() || undefined;
+  let modelApiKey: string | undefined = resolveModelApiKeyFromEnv(env);
   let figmaToken: string | undefined =
     env.FIGMA_ACCESS_TOKEN?.trim() || undefined;
   let ictRegisterRef: string | undefined =
@@ -1348,7 +1354,7 @@ export const buildLiveLogicJudgeClient = (
   }
   if (!options.modelApiKey) {
     throw new TestIntelligenceRunOperatorError(
-      "--model-api-key or WORKSPACE_TEST_SPACE_MODEL_API_KEY is required for mode=deterministic_llm",
+      "--model-api-key or WORKSPACE_TEST_SPACE_LLM_API_KEY is required for mode=deterministic_llm",
     );
   }
   const apiKey = options.modelApiKey;
@@ -1376,15 +1382,9 @@ export const buildLiveLogicJudgeClient = (
       timeoutMs: 240_000,
       maxRetries: 1,
       circuitBreaker: { failureThreshold: 2, resetTimeoutMs: 30_000 },
-      // Azure AI Foundry's `gpt-oss-120b` returns empty content for any
-      // wire `response_format` value; suppress the wire field while
-      // keeping the in-process JSON-parse + schema validation path.
-      // Mirrors the generator's setting because both share the same
-      // upstream (see #1733/#1734); judges that point at a different
-      // family inherit the safer "none" mode by default — operators
-      // tune this via a follow-up flag if their judge supports
-      // json_schema natively.
-      wireStructuredOutputMode: "none",
+      // Azure AI Foundry's `gpt-oss-120b` returns empty content for wire
+      // response_format values; suppress only for that legacy deployment.
+      ...wireStructuredOutputOverrideForDeployment(deployment),
     },
     {
       apiKeyProvider: () => apiKey,
@@ -1410,7 +1410,7 @@ export const buildLiveCoveragePlannerClient = (
   }
   if (!options.modelApiKey) {
     throw new TestIntelligenceRunOperatorError(
-      "--model-api-key or WORKSPACE_TEST_SPACE_MODEL_API_KEY is required for mode=deterministic_llm",
+      "--model-api-key or WORKSPACE_TEST_SPACE_LLM_API_KEY is required for mode=deterministic_llm",
     );
   }
   const apiKey = options.modelApiKey;
@@ -1464,7 +1464,7 @@ export const buildLiveRiskRankerClient = (
   }
   if (!options.modelApiKey) {
     throw new TestIntelligenceRunOperatorError(
-      "--model-api-key or WORKSPACE_TEST_SPACE_MODEL_API_KEY is required for mode=deterministic_llm",
+      "--model-api-key or WORKSPACE_TEST_SPACE_LLM_API_KEY is required for mode=deterministic_llm",
     );
   }
   const apiKey = options.modelApiKey;
@@ -1507,6 +1507,12 @@ const readTrimmedEnv = (
   return trimmed.length > 0 ? trimmed : undefined;
 };
 
+const resolveModelApiKeyFromEnv = (
+  env: NodeJS.ProcessEnv,
+): string | undefined => {
+  return readTrimmedEnv(env, "WORKSPACE_TEST_SPACE_LLM_API_KEY");
+};
+
 /**
  * Build the live Azure-bound LLM gateway client identical to the production
  * runner. Centralised here so the CLI does not introduce a second
@@ -1523,7 +1529,7 @@ export const buildLiveLlmGatewayClient = (
   }
   if (!options.modelApiKey) {
     throw new TestIntelligenceRunOperatorError(
-      "--model-api-key or WORKSPACE_TEST_SPACE_MODEL_API_KEY is required for mode=deterministic_llm",
+      "--model-api-key or WORKSPACE_TEST_SPACE_LLM_API_KEY is required for mode=deterministic_llm",
     );
   }
 
@@ -1551,11 +1557,9 @@ export const buildLiveLlmGatewayClient = (
       timeoutMs: 240_000,
       maxRetries: 1,
       circuitBreaker: { failureThreshold: 2, resetTimeoutMs: 30_000 },
-      // Azure AI Foundry's `gpt-oss-120b` returns empty content for any
-      // wire `response_format` value; suppress the wire field while
-      // keeping the in-process JSON-parse + schema validation path
-      // (probed and recorded in #1733/#1734).
-      wireStructuredOutputMode: "none",
+      // Azure AI Foundry's `gpt-oss-120b` returns empty content for wire
+      // response_format values; suppress only for that legacy deployment.
+      ...wireStructuredOutputOverrideForDeployment(options.modelDeployment),
     },
     {
       apiKeyProvider: () => apiKey,
@@ -1632,7 +1636,7 @@ export const buildLiveVisualSidecarBundle = (
   const apiKey = options.modelApiKey;
   if (!apiKey) {
     throw new TestIntelligenceRunOperatorError(
-      "--model-api-key or WORKSPACE_TEST_SPACE_MODEL_API_KEY is required for mode=deterministic_llm",
+      "--model-api-key or WORKSPACE_TEST_SPACE_LLM_API_KEY is required for mode=deterministic_llm",
     );
   }
   const visualEndpoint = requireVisualSidecarEnv(
@@ -1670,7 +1674,7 @@ export const buildLiveVisualSidecarBundle = (
         timeoutMs: 240_000,
         maxRetries: 1,
         circuitBreaker: { failureThreshold: 2, resetTimeoutMs: 30_000 },
-        wireStructuredOutputMode: "none",
+        ...wireStructuredOutputOverrideForDeployment(options.modelDeployment),
       },
       visualPrimary: {
         role: "visual_primary",
@@ -1691,7 +1695,7 @@ export const buildLiveVisualSidecarBundle = (
           streamingSupport: false,
           imageInputSupport: true,
         },
-        timeoutMs: 60_000,
+        timeoutMs: 300_000,
         maxRetries: 1,
         circuitBreaker: { failureThreshold: 2, resetTimeoutMs: 30_000 },
       },
@@ -1714,7 +1718,7 @@ export const buildLiveVisualSidecarBundle = (
           streamingSupport: false,
           imageInputSupport: true,
         },
-        timeoutMs: 60_000,
+        timeoutMs: 300_000,
         maxRetries: 1,
         circuitBreaker: { failureThreshold: 2, resetTimeoutMs: 30_000 },
       },
@@ -1739,7 +1743,7 @@ export const buildLiveVisualSidecarBundle = (
                 streamingSupport: false,
                 imageInputSupport: true,
               },
-              timeoutMs: 60_000,
+              timeoutMs: 300_000,
               maxRetries: 1,
               circuitBreaker: { failureThreshold: 2, resetTimeoutMs: 30_000 },
             },
@@ -3437,7 +3441,7 @@ LLM (defaults from environment):
                              WORKSPACE_TEST_SPACE_RISK_RANKER_DEPLOYMENT
                              (falls back to deterministic-only ranking
                              when unset).
-  --model-api-key <key>      default: env WORKSPACE_TEST_SPACE_MODEL_API_KEY
+  --model-api-key <key>      default: env WORKSPACE_TEST_SPACE_LLM_API_KEY
                              (never logged, never echoed)
   --ict-register-ref <ref>   ICT register reference forwarded to all CLI-created
                              model bindings. Default: env

@@ -22,10 +22,10 @@ import {
 const ENV_OK = {
   WORKSPACE_TEST_SPACE_MODEL_ENDPOINT: "https://aoai.example/openai/v1",
   WORKSPACE_TEST_SPACE_TESTCASE_MODEL_DEPLOYMENT: "gpt-oss-120b",
-  WORKSPACE_TEST_SPACE_MODEL_API_KEY: "k-key-secret",
+  WORKSPACE_TEST_SPACE_LLM_API_KEY: "k-key-secret",
   WORKSPACE_TEST_SPACE_VISUAL_MODEL_ENDPOINT: "https://aoai.example/openai/vision",
   WORKSPACE_TEST_SPACE_VISUAL_PRIMARY_DEPLOYMENT: "llama-4-maverick-vision",
-  WORKSPACE_TEST_SPACE_VISUAL_FALLBACK_DEPLOYMENT: "phi-4-multimodal-poc",
+  WORKSPACE_TEST_SPACE_VISUAL_FALLBACK_DEPLOYMENT: "phi-4-multimodal-instruct",
 };
 
 test("resolveTestIntelligenceProductionRunner: undefined when startup gate off", () => {
@@ -50,14 +50,14 @@ test("resolveLlmConfigFromEnv: throws ProductionRunnerError when endpoint missin
   assert.throws(
     () =>
       resolveLlmConfigFromEnv({
-        WORKSPACE_TEST_SPACE_MODEL_API_KEY: "k",
+        WORKSPACE_TEST_SPACE_LLM_API_KEY: "k",
       }),
     ProductionRunnerError,
   );
   // Verify the error message names the missing env var, not the secret.
   try {
     resolveLlmConfigFromEnv({
-      WORKSPACE_TEST_SPACE_MODEL_API_KEY: "k-secret",
+      WORKSPACE_TEST_SPACE_LLM_API_KEY: "k-secret",
     });
     assert.fail("expected throw");
   } catch (err) {
@@ -80,7 +80,7 @@ test("resolveLlmConfigFromEnv: throws ProductionRunnerError when api-key missing
 test("resolveLlmConfigFromEnv: defaults deployment when not set", () => {
   const config = resolveLlmConfigFromEnv({
     WORKSPACE_TEST_SPACE_MODEL_ENDPOINT: "https://aoai.example/openai/v1",
-    WORKSPACE_TEST_SPACE_MODEL_API_KEY: "k",
+    WORKSPACE_TEST_SPACE_LLM_API_KEY: "k",
   });
   assert.ok(config.deployment.length > 0);
   assert.equal(config.visualEndpoint, "https://aoai.example/openai/v1");

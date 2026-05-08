@@ -446,9 +446,9 @@ export interface DescribeVisualScreensInput {
   /**
    * Override the deployment label that should be considered "primary"
    * by `validateVisualSidecar`. Defaults to the bundle's primary
-   * client deployment id when it matches a known sidecar.
+   * client deployment id.
    */
-  primaryDeployment?: "llama-4-maverick-vision" | "phi-4-multimodal-poc";
+  primaryDeployment?: string;
   /**
    * When true, the primary deployment is skipped entirely and the
    * fallback is used directly. This branch is reserved for explicit
@@ -1151,7 +1151,7 @@ const evaluateAttempt = (input: {
   generatedAt: string;
   jobId: string;
   intent: BusinessTestIntentIr;
-  primaryDeployment?: "llama-4-maverick-vision" | "phi-4-multimodal-poc";
+  primaryDeployment?: string;
 }): AttemptEvaluation => {
   const result = input.result;
   if (result.outcome !== "success") {
@@ -1308,8 +1308,14 @@ const normalizeScreenDescription = (
   );
   if (confidenceSummary === null) return null;
 
+  const emittedSidecarDeployment = readNonEmptyString(
+    record["sidecarDeployment"],
+  );
   const sidecarDeployment =
-    readNonEmptyString(record["sidecarDeployment"]) ?? modelDeployment;
+    emittedSidecarDeployment !== undefined &&
+    ["inline", "current"].includes(emittedSidecarDeployment.toLowerCase())
+      ? modelDeployment
+      : emittedSidecarDeployment ?? modelDeployment;
   const normalized: VisualScreenDescription = {
     screenId,
     sidecarDeployment,

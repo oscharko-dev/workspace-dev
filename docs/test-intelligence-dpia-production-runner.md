@@ -293,9 +293,9 @@ production-wired run are:
 
 | Role              | Provider      | Model id (example)                    | Inference profile (example)                             | ICT register reference                                                               |
 | ----------------- | ------------- | ------------------------------------- | ------------------------------------------------------- | ------------------------------------------------------------------------------------ |
-| `test_generation` | `llm-gateway` | `gpt-oss-120b` (or operator override) | `WORKSPACE_AZURE_AI_FOUNDRY_TEST_GENERATION_DEPLOYMENT` | Operator-managed, e.g. `ict://bank/registers/llm/azure-foundry/test-generation/<id>` |
+| `test_generation` | `llm-gateway` | `mistral-large-3` (or operator override) | `WORKSPACE_AZURE_AI_FOUNDRY_TEST_GENERATION_DEPLOYMENT` | Operator-managed, e.g. `ict://bank/registers/llm/azure-foundry/test-generation/<id>` |
 | `visual_primary`  | `llm-gateway` | `llama-4-maverick-vision`             | `WORKSPACE_AZURE_AI_FOUNDRY_VISUAL_PRIMARY_DEPLOYMENT`  | Operator-managed, e.g. `ict://bank/registers/llm/azure-foundry/visual-primary/<id>`  |
-| `visual_fallback` | `llm-gateway` | `phi-4-multimodal-poc` (or fallback)  | `WORKSPACE_AZURE_AI_FOUNDRY_VISUAL_FALLBACK_DEPLOYMENT` | Operator-managed, e.g. `ict://bank/registers/llm/azure-foundry/visual-fallback/<id>` |
+| `visual_fallback` | `llm-gateway` | `phi-4-multimodal-instruct` (or fallback)  | `WORKSPACE_AZURE_AI_FOUNDRY_VISUAL_FALLBACK_DEPLOYMENT` | Operator-managed, e.g. `ict://bank/registers/llm/azure-foundry/visual-fallback/<id>` |
 
 Under the `eu-banking-default` policy profile, every active binding
 **must** carry a non-empty `ictRegisterRef`. Missing references are

@@ -253,7 +253,7 @@ const buildRoleDescriptors = (
         systemPrompt:
           "You are a visual-primary role smoke probe. Return only JSON that matches the supplied schema.",
         userPrompt:
-          "Inspect the image and return exactly one screen with screenId screen-1, an empty regions array, and a numeric confidenceSummary.",
+          "Inspect the image and return exactly one screen with screenId screen-1, an empty regions array, and confidenceSummary {\"min\":1,\"max\":1,\"mean\":1}. Confidence values must be decimals from 0 to 1.",
         responseSchema: buildVisualSidecarResponseSchema(),
         responseSchemaName: VISUAL_SIDECAR_RESPONSE_SCHEMA_NAME,
         imageInputs: [{ mimeType: "image/png", base64Data: TINY_PNG_BASE64 }],
@@ -268,7 +268,7 @@ const buildRoleDescriptors = (
         systemPrompt:
           "You are a visual-fallback role smoke probe. Return only JSON that matches the supplied schema.",
         userPrompt:
-          "Inspect the image and return exactly one screen with screenId screen-1, an empty regions array, and a numeric confidenceSummary.",
+          "Inspect the image and return exactly one screen with screenId screen-1, an empty regions array, and confidenceSummary {\"min\":1,\"max\":1,\"mean\":1}. Confidence values must be decimals from 0 to 1.",
         responseSchema: buildVisualSidecarResponseSchema(),
         responseSchemaName: VISUAL_SIDECAR_RESPONSE_SCHEMA_NAME,
         imageInputs: [{ mimeType: "image/png", base64Data: TINY_PNG_BASE64 }],

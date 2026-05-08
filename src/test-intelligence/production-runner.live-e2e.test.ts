@@ -42,13 +42,9 @@ import {
   runFigmaToQcTestCases,
 } from "./production-runner.js";
 import type { FigmaRestFileSnapshot } from "./figma-rest-adapter.js";
+import { requireLiveSmokeApiKey } from "./visual-sidecar-client.live-env.js";
 
 const LIVE_E2E_FLAG = "WORKSPACE_TEST_SPACE_LIVE_E2E";
-
-const API_KEY_ALIASES = [
-  "WORKSPACE_TEST_SPACE_API_KEY",
-  "WORKSPACE_TEST_SPACE_MODEL_API_KEY",
-] as const;
 
 const NON_AUTH_REQUIRED_ENV = [
   "WORKSPACE_TEST_SPACE_MODEL_ENDPOINT",
@@ -74,16 +70,6 @@ const requireEnv = (name: (typeof NON_AUTH_REQUIRED_ENV)[number]): string => {
     throw new Error(`${name} is required for live-E2E smoke`);
   }
   return value;
-};
-
-const requireApiKey = (): string => {
-  for (const candidate of API_KEY_ALIASES) {
-    const value = process.env[candidate];
-    if (typeof value === "string" && value.length > 0) return value;
-  }
-  throw new Error(
-    `live-E2E smoke requires one of: ${API_KEY_ALIASES.join(", ")}`,
-  );
 };
 
 const testGenerationCapabilities: LlmGatewayCapabilities = {
@@ -116,9 +102,12 @@ const buildConfig = (input: {
   declaredCapabilities: input.imageInputSupport
     ? visualCapabilities
     : testGenerationCapabilities,
-  timeoutMs: 60_000,
+  timeoutMs: input.imageInputSupport ? 300_000 : 240_000,
   maxRetries: 1,
   circuitBreaker: { failureThreshold: 2, resetTimeoutMs: 30_000 },
+  ...(input.imageInputSupport || input.deployment !== "gpt-oss-120b"
+    ? {}
+    : { wireStructuredOutputMode: "none" as const }),
 });
 
 const loadFixture = async (): Promise<FigmaRestFileSnapshot> => {
@@ -183,7 +172,7 @@ test("live-E2E: production runner generates test cases against Azure for a synth
       }),
     },
     {
-      apiKeyProvider: () => requireApiKey(),
+      apiKeyProvider: () => requireLiveSmokeApiKey("live-E2E smoke"),
     },
   );
 

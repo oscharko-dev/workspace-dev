@@ -620,9 +620,9 @@ Three deployments participate, in customer-safe terms:
 
 | Role                              | Deployment name           | Image input |
 | --------------------------------- | ------------------------- | ----------- |
-| Structured test-case generation   | `gpt-oss-120b`            | Never       |
+| Structured test-case generation   | `mistral-large-3`         | Never       |
 | Primary multimodal sidecar        | `llama-4-maverick-vision` | Required    |
-| Fallback multimodal sidecar       | `phi-4-multimodal-poc`    | Required    |
+| Fallback multimodal sidecar       | `phi-4-multimodal-instruct` | Required  |
 
 Hard invariants on the role-separated client bundle:
 
@@ -794,8 +794,8 @@ absolute paths, `..`, empty path segments, backslashes, and control characters.
 
 Every completed Wave 1 Validation run emits a per-job LLM Bill of Materials in
 CycloneDX 1.6 ML-BOM format under `<runDir>/lbom/ai-bom.cdx.json`. The
-artifact inventories the model chain (`gpt-oss-120b` test generator,
-`llama-4-maverick-vision` visual primary, `phi-4-multimodal-poc` visual
+artifact inventories the model chain (`mistral-large-3` test generator,
+`llama-4-maverick-vision` visual primary, `phi-4-multimodal-instruct` visual
 fallback), the curated few-shot prompt bundle, and the active policy
 profile. The repository ships a reference template at
 [`docs/figma-to-test/lbom-template.cdx.json`](./figma-to-test/lbom-template.cdx.json)
@@ -860,9 +860,9 @@ nothing else:
 
 | Outbound                                                           | Trigger                                      |
 | ------------------------------------------------------------------ | -------------------------------------------- |
-| Operator-controlled gateway endpoint for `gpt-oss-120b`            | Live runs that bypass the deterministic mock |
+| Operator-controlled gateway endpoint for `mistral-large-3`         | Live runs that bypass the deterministic mock |
 | Operator-controlled gateway endpoint for `llama-4-maverick-vision` | Visual sidecar live runs                     |
-| Operator-controlled gateway endpoint for `phi-4-multimodal-poc`    | Visual sidecar fallback live runs            |
+| Operator-controlled gateway endpoint for `phi-4-multimodal-instruct` | Visual sidecar fallback live runs          |
 
 Endpoints, deployment names, and API keys are read from the role-specific
 environment variables documented in [docs/local-runtime.md](local-runtime.md):
@@ -872,9 +872,8 @@ environment variables documented in [docs/local-runtime.md](local-runtime.md):
 - `WORKSPACE_TEST_SPACE_VISUAL_MODEL_ENDPOINT`
 - `WORKSPACE_TEST_SPACE_VISUAL_PRIMARY_DEPLOYMENT`
 - `WORKSPACE_TEST_SPACE_VISUAL_FALLBACK_DEPLOYMENT`
-- `WORKSPACE_TEST_SPACE_API_KEY` _or_ `WORKSPACE_TEST_SPACE_MODEL_API_KEY`
-  (Issue #1660 alias; the live smoke accepts either, with
-  `WORKSPACE_TEST_SPACE_API_KEY` taking precedence when both are set).
+- `WORKSPACE_TEST_SPACE_LLM_API_KEY`. This is the only supported API-key
+  variable for the Test-Intelligence LLM gateway.
   `pnpm run test:ti-live-smoke` runs `scripts/check-live-smoke-env.mjs`
   first to fail-fast with a friendly listing of any missing variables.
 
@@ -940,7 +939,7 @@ WORKSPACE_TEST_SPACE_TESTCASE_MODEL_DEPLOYMENT=<deployment-id> \
 WORKSPACE_TEST_SPACE_VISUAL_MODEL_ENDPOINT=https://<resource>.cognitiveservices.azure.com \
 WORKSPACE_TEST_SPACE_VISUAL_PRIMARY_DEPLOYMENT=<visual-primary-deployment-id> \
 WORKSPACE_TEST_SPACE_VISUAL_FALLBACK_DEPLOYMENT=<visual-fallback-deployment-id> \
-WORKSPACE_TEST_SPACE_API_KEY=<non-prod-key> \
+WORKSPACE_TEST_SPACE_LLM_API_KEY=<non-prod-key> \
 pnpm run test:ti-live-e2e
 ```
 
@@ -1097,7 +1096,7 @@ responsible for:
   so operators record which auth and protocol shape was used per request.
 
 The visual sidecar deployments (`llama-4-maverick-vision`,
-`phi-4-multimodal-poc`) are subject to the same operator responsibilities; the
+`phi-4-multimodal-instruct`) are subject to the same operator responsibilities; the
 package additionally enforces the role-separation invariants described in
 Section 9.
 

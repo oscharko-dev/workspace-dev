@@ -195,7 +195,7 @@ const TEST_GENERATION_DEPLOYMENT = "gpt-oss-120b-mock";
 const TEST_GENERATION_MODEL_REVISION = "gpt-oss-120b-2026-04-25";
 const TEST_GENERATION_GATEWAY_RELEASE = "wave1-validation-mock";
 const VISUAL_PRIMARY_DEPLOYMENT = "llama-4-maverick-vision";
-const VISUAL_FALLBACK_DEPLOYMENT = "phi-4-multimodal-poc";
+const VISUAL_FALLBACK_DEPLOYMENT = "phi-4-multimodal-instruct";
 const POLICY_BUNDLE_VERSION = "wave1-validation";
 export const BUSINESS_INTENT_IR_ARTIFACT_FILENAME =
   "business-intent-ir.json" as const;
@@ -2081,7 +2081,7 @@ const recordVisualSidecarAttempts = (input: {
     // Issue #1959: role is derived from the orchestration order — the
     // primary client is always called first, the fallback (if any)
     // second. The previous implementation gated on hardcoded deployment
-    // literals (`mistral-document-ai-2512`, `phi-4-multimodal-poc`,
+    // literals (`mistral-document-ai-2512`, `phi-4-multimodal-instruct`,
     // `llama-4-maverick-vision`); after the visual-primary swap to an
     // operator-supplied id, that mapping mis-attributed live calls.
     const role: FinOpsRole = roleFromVisualDeployment(i === 0);
@@ -2413,7 +2413,8 @@ const buildMlBomModelBindings = (
     role: "visual_fallback",
     deployment: bundle?.visualFallback.deployment ?? VISUAL_FALLBACK_DEPLOYMENT,
     modelRevision:
-      bundle?.visualFallback.modelRevision ?? "phi-4-multimodal-poc-2026-04-25",
+      bundle?.visualFallback.modelRevision ??
+      "phi-4-multimodal-instruct-2026-04-25",
     gatewayRelease:
       bundle?.visualFallback.gatewayRelease ?? TEST_GENERATION_GATEWAY_RELEASE,
     operatorEndpointReference:
@@ -2456,7 +2457,8 @@ const buildActiveModelBindings = (
   {
     providerId: "llm-gateway",
     modelId:
-      bundle?.visualFallback.modelRevision ?? "phi-4-multimodal-poc-2026-04-25",
+      bundle?.visualFallback.modelRevision ??
+      "phi-4-multimodal-instruct-2026-04-25",
     inferenceProfileId:
       bundle?.visualFallback.deployment ?? VISUAL_FALLBACK_DEPLOYMENT,
     ictRegisterRef:
