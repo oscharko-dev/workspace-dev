@@ -131,9 +131,12 @@ Documentation:
   classes, the synthetic-SUT stub semantics, the KPI threshold
   precedence (CLI > runner default), and the wire-shape of
   `mutation-report.json` and `policy-report.json#mutationKillRate`.
-- `sandbox/benchmarks/test-intelligence/LOCAL_BENCHMARK_PROTOCOL.md`
-  is added (or extended) so the local benchmark scorecard surfaces
-  `mutationKillRate` alongside the existing `G-NEG-CASE` lift gate.
+- `docs/test-intelligence/local-benchmark-protocol.md` is added so the
+  local benchmark scorecard surfaces `mutationKillRate` alongside the
+  existing `G-NEG-CASE` lift gate. The protocol document was relocated
+  from the gitignored `sandbox/` tree referenced in the Issue #2038 and
+  #2053 changelog entries; the original references are preserved as
+  historical pointers in the new doc.
 
 Contract version impacts:
 

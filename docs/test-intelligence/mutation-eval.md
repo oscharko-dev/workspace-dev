@@ -196,5 +196,5 @@ the cap.
   #1947 (technique-coverage hard gate),
   #2040 (property-based domain-invariant registry).
 - Local benchmark protocol:
-  `sandbox/benchmarks/test-intelligence/LOCAL_BENCHMARK_PROTOCOL.md`.
+  [`local-benchmark-protocol.md`](./local-benchmark-protocol.md).
 - Standards: DORA Article 28, BaFin VAIT.

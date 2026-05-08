@@ -7,12 +7,20 @@ canonical scorecard that includes the production hard gates plus the
 new release-grade KPIs (`mutationKillRate`, negative-case lift, judge
 panel agreement).
 
-The scorecard is referenced by the
-[`docs/test-intelligence/cross-family-judges.md`](../../../docs/test-intelligence/cross-family-judges.md),
-[`docs/test-intelligence/adversarial-critic.md`](../../../docs/test-intelligence/adversarial-critic.md),
-and [`docs/test-intelligence/mutation-eval.md`](../../../docs/test-intelligence/mutation-eval.md)
-notes; all three modules expect benchmark runs to surface their KPIs in
-this file's "Scorecard" section.
+The scorecard is referenced by
+[`cross-family-judges.md`](./cross-family-judges.md),
+[`adversarial-critic.md`](./adversarial-critic.md), and
+[`mutation-eval.md`](./mutation-eval.md); all three modules expect
+benchmark runs to surface their KPIs in this file's "Scorecard" section.
+
+> Historical note: prior changelog entries (Issues #2038 and #2053)
+> reference the earlier path
+> `sandbox/benchmarks/test-intelligence/LOCAL_BENCHMARK_PROTOCOL.md`.
+> The protocol now lives in the docs tree because the `sandbox/`
+> directory is gitignored (and blocked by the repository's
+> tenant-metadata secret guard). Run output continues to land under
+> `sandbox/benchmarks/` locally; the protocol document itself is the
+> source of truth for the scorecard template.
 
 ## Input set
 
@@ -29,7 +37,7 @@ Benchmark runs use the operator's vetted deployment matrix
 (`workspace-dev test-intelligence doctor` confirms the resolved roles).
 A benchmark run that degrades into a single-model topology fails the
 gate before the LLM call dispatches; see
-[`docs/test-intelligence/cross-family-judges.md`](../../../docs/test-intelligence/cross-family-judges.md).
+[`cross-family-judges.md`](./cross-family-judges.md).
 
 ## Invocation
 
@@ -81,8 +89,7 @@ verification.
 ## Out-of-scope
 
 - Real-SUT mutation testing — the local benchmark uses the synthetic
-  SUT stub described in
-  [`docs/test-intelligence/mutation-eval.md`](../../../docs/test-intelligence/mutation-eval.md).
+  SUT stub described in [`mutation-eval.md`](./mutation-eval.md).
 - Higher-order mutations (combinations of catalog entries) — first-order
   only.
 - Cross-tenant baselines — the benchmark scorecard is per-tenant; the
@@ -91,11 +98,11 @@ verification.
 
 ## References
 
-- [`docs/test-intelligence/mutation-eval.md`](../../../docs/test-intelligence/mutation-eval.md)
-  — mutation-killing eval suite + `mutationKillRate` KPI (Issue #2041).
-- [`docs/test-intelligence/adversarial-critic.md`](../../../docs/test-intelligence/adversarial-critic.md)
-  — adversarial-critic loop + `G-NEG-CASE` hard gate (Issue #2053).
-- [`docs/test-intelligence/property-based-layer.md`](../../../docs/test-intelligence/property-based-layer.md)
-  — domain-invariant registry + `invariantCoverage` (Issue #2040).
-- [`docs/test-intelligence/cross-family-judges.md`](../../../docs/test-intelligence/cross-family-judges.md)
-  — judge ensemble + human review (Issue #2038).
+- [`mutation-eval.md`](./mutation-eval.md) — mutation-killing eval
+  suite + `mutationKillRate` KPI (Issue #2041).
+- [`adversarial-critic.md`](./adversarial-critic.md) — adversarial-critic
+  loop + `G-NEG-CASE` hard gate (Issue #2053).
+- [`property-based-layer.md`](./property-based-layer.md) —
+  domain-invariant registry + `invariantCoverage` (Issue #2040).
+- [`cross-family-judges.md`](./cross-family-judges.md) — judge ensemble
+  + human review (Issue #2038).
