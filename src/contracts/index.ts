@@ -163,7 +163,7 @@ export interface TestIntelligenceTransferPrincipal {
 }
 
 /** Contract version for the opt-in test-intelligence surface. */
-export const TEST_INTELLIGENCE_CONTRACT_VERSION = "1.16.0" as const;
+export const TEST_INTELLIGENCE_CONTRACT_VERSION = "1.17.0" as const;
 
 /**
  * Schema version for generated test case payloads.
@@ -557,6 +557,219 @@ export interface MutationReport {
    * audit reports and CI summaries.
    */
   readonly unkilledMutations: readonly string[];
+}
+
+/* ====================================================================== *
+ * Prompt-optimizer (Issue #2044, Wave 3 innovation roadmap).             *
+ *                                                                        *
+ * Replaces manual prompt curation with an offline, deterministic         *
+ * DSPy-style optimizer that mines bootstrapped few-shot exemplars from   *
+ * accepted runs, searches a constrained space of additive directive      *
+ * variants against a deterministic synthetic eval, and writes the best   *
+ * result as an *additive* lock-file entry. Standard runs are untouched: *
+ * the optimizer only runs when the runner is invoked with                *
+ * `optimizePrompts: true` (CLI: `--optimize-prompts`).                   *
+ * ====================================================================== */
+
+/** Optimizer module version. Bumped on breaking algorithmic changes. */
+export const PROMPT_OPTIMIZER_VERSION = "1.0.0" as const;
+
+/** Schema version for the persisted optimizer report artifact. */
+export const PROMPT_OPTIMIZER_REPORT_SCHEMA_VERSION = "1.0.0" as const;
+
+/** Canonical filename for the persisted optimizer report artifact. */
+export const PROMPT_OPTIMIZER_REPORT_ARTIFACT_FILENAME =
+  "prompt-optimization-report.json" as const;
+
+/**
+ * Default quality gate (out of 100) above which an accepted-run case may
+ * be promoted to a candidate few-shot exemplar. Tracks the issue spec.
+ */
+export const PROMPT_OPTIMIZER_DEFAULT_QUALITY_GATE = 90 as const;
+
+/**
+ * Default FinOps multiplier capping the optimizer's total token budget
+ * relative to a single benchmark run. Per Issue #2044 spec: 5x normal.
+ */
+export const PROMPT_OPTIMIZER_DEFAULT_BUDGET_MULTIPLIER = 5 as const;
+
+/**
+ * Default search budget (number of candidate variants the random search
+ * will evaluate per cycle). The cap stays small because the synthetic
+ * eval is deterministic and inexpensive — operators bumping this should
+ * also revisit {@link PROMPT_OPTIMIZER_DEFAULT_BUDGET_MULTIPLIER}.
+ */
+export const PROMPT_OPTIMIZER_DEFAULT_SEARCH_BUDGET = 16 as const;
+
+/** Default cap on how many bootstrapped exemplars a candidate may carry. */
+export const PROMPT_OPTIMIZER_DEFAULT_MAX_FEW_SHOTS = 3 as const;
+
+/**
+ * Closed set of additive optimizer directive ids the registry recognises.
+ * Adding a directive id is a MINOR contract bump; renaming or retiring
+ * one is MAJOR.
+ *
+ * - `prefer-figma-trace-screen-id` — every case must cite a screenId.
+ * - `prefer-figma-trace-node-id`   — every case must cite a nodeId.
+ * - `cite-open-questions-verbatim` — open questions reproduced verbatim.
+ * - `accessibility-name-required`  — a11y cases name the labelled control.
+ * - `boundary-coverage-explicit`   — boundary cases pin the boundary value.
+ * - `negative-flow-pin-error-text` — negative cases pin the error message.
+ */
+export const PROMPT_OPTIMIZER_DIRECTIVE_IDS = [
+  "prefer-figma-trace-screen-id",
+  "prefer-figma-trace-node-id",
+  "cite-open-questions-verbatim",
+  "accessibility-name-required",
+  "boundary-coverage-explicit",
+  "negative-flow-pin-error-text",
+] as const;
+
+export type PromptOptimizerDirectiveId =
+  (typeof PROMPT_OPTIMIZER_DIRECTIVE_IDS)[number];
+
+/**
+ * One candidate prompt variant under evaluation by the optimizer. The
+ * variant is fully described by its enabled directive ids and its
+ * exemplar selection — the *base* prompt template is shared across all
+ * candidates and remains the authoritative artifact (templates are
+ * never replaced by a learned model; the optimizer only rewrites the
+ * additive directive set on top of the pinned base).
+ */
+export interface PromptOptimizerCandidate {
+  readonly candidateId: string;
+  readonly directiveIds: readonly PromptOptimizerDirectiveId[];
+  readonly fewShotExemplarIds: readonly string[];
+  /**
+   * Synthetic token cost charged for evaluating this candidate. The
+   * optimizer refuses to dispatch any candidate whose cumulative cost
+   * would exceed `budgetMultiplier * baselineTokenCost`.
+   */
+  readonly tokenCost: number;
+}
+
+/** Score earned by a {@link PromptOptimizerCandidate} on the eval set. */
+export interface PromptOptimizerCandidateScore {
+  readonly candidateId: string;
+  /** Aggregate score (0-100) earned across the eval set. */
+  readonly score: number;
+  /** Per-directive points contributed (sums to {@link score}). */
+  readonly directiveBreakdown: readonly {
+    readonly directiveId: PromptOptimizerDirectiveId;
+    readonly points: number;
+  }[];
+  /** Number of eval-set cases that received credit. */
+  readonly passingCaseCount: number;
+  /** Total eval-set case count. */
+  readonly totalCaseCount: number;
+}
+
+/**
+ * Bootstrapped few-shot exemplar mined from an accepted run. Exemplars
+ * are content-addressed by `exemplarId` so optimizer outputs are
+ * byte-stable regardless of source ordering.
+ */
+export interface PromptOptimizerExemplar {
+  readonly exemplarId: string;
+  readonly sourceRunId: string;
+  readonly datasetId: string;
+  /**
+   * Quality score (0-100) carried over from the accepted run. Must be
+   * `>= qualityGate` for the exemplar to be retained.
+   */
+  readonly score: number;
+  /** Single accepted test case the exemplar represents. */
+  readonly exemplarCaseId: string;
+  /** SHA-256 of the exemplar payload (canonical-JSON over the case). */
+  readonly contentSha256: string;
+}
+
+/**
+ * Lock-file entry written *additively* to
+ * `docs/test-intelligence-prompt-template-version.lock.json` under the
+ * `optimizedTemplates` array. The base template's `promptCompilerSha256`
+ * pin is untouched so the prompt-template-version CI guard cannot drift.
+ */
+export interface PromptOptimizationLockEntry {
+  /** Stable identifier (`opt-<sha8>` of the report). */
+  readonly optimizedTemplateId: string;
+  /** Optimizer module version that produced the entry. */
+  readonly optimizerVersion: typeof PROMPT_OPTIMIZER_VERSION;
+  /** Base prompt template version this entry layers on top of. */
+  readonly basePromptTemplateVersion: string;
+  /** Dataset id the optimization cycle ran against. */
+  readonly datasetId: string;
+  /** Role-step id the candidate template targets. */
+  readonly roleStepId: string;
+  /** Random seed used by the search algorithm. */
+  readonly seed: number;
+  /** ISO-8601 timestamp captured at write time. */
+  readonly generatedAt: string;
+  /** Score the base template earned on the eval set (0-100). */
+  readonly baselineScore: number;
+  /** Score the optimized template earned on the eval set (0-100). */
+  readonly optimizedScore: number;
+  /** `optimizedScore - baselineScore`. */
+  readonly improvementPoints: number;
+  /** Directive ids enabled by the winning candidate. */
+  readonly directiveIds: readonly PromptOptimizerDirectiveId[];
+  /** Few-shot exemplar ids carried by the winning candidate. */
+  readonly fewShotExemplarIds: readonly string[];
+  /** SHA-256 of the canonical-JSON optimization report. */
+  readonly reportSha256: string;
+}
+
+/**
+ * Persisted optimizer report artifact. Byte-stable: arrays are sorted,
+ * floats are rounded, only set fields are emitted.
+ */
+export interface PromptOptimizationReport {
+  readonly schemaVersion: typeof PROMPT_OPTIMIZER_REPORT_SCHEMA_VERSION;
+  readonly contractVersion: typeof TEST_INTELLIGENCE_CONTRACT_VERSION;
+  readonly optimizerVersion: typeof PROMPT_OPTIMIZER_VERSION;
+  readonly basePromptTemplateVersion: string;
+  readonly generatedAt: string;
+  readonly jobId: string;
+  readonly datasetId: string;
+  readonly roleStepId: string;
+  readonly seed: number;
+  readonly searchBudget: number;
+  readonly qualityGate: number;
+  readonly maxFewShots: number;
+  readonly budgetMultiplier: number;
+  /** Token budget envelope the cycle was given. */
+  readonly tokenBudget: {
+    readonly baselineTokenCost: number;
+    readonly cap: number;
+    readonly consumed: number;
+    readonly withinCap: boolean;
+  };
+  /** Score of the unmodified base template on the eval set. */
+  readonly baselineScore: number;
+  /** Score of the winning candidate. */
+  readonly optimizedScore: number;
+  /** Additive lift the cycle delivered. */
+  readonly improvementPoints: number;
+  /** All exemplars considered after the quality gate. */
+  readonly exemplars: readonly PromptOptimizerExemplar[];
+  /** All candidates evaluated, ordered by descending score then id. */
+  readonly candidates: readonly PromptOptimizerCandidate[];
+  /** Per-candidate scores, ordered by descending score then id. */
+  readonly candidateScores: readonly PromptOptimizerCandidateScore[];
+  /** Optimized lock-file entry. */
+  readonly lockEntry: PromptOptimizationLockEntry;
+  /**
+   * PROV-DM provenance node (B.10) for this optimization activity, so
+   * downstream graph builders can attach it without re-deriving the
+   * shape. The node is informed by the base template version and
+   * generated by the optimizer module.
+   */
+  readonly provenance: {
+    readonly activityId: string;
+    readonly entityId: string;
+    readonly wasInformedBy: string;
+    readonly wasGeneratedAt: string;
+  };
 }
 
 /** Schema version for the deterministic pipeline quality passport artifact. */
@@ -11223,7 +11436,7 @@ export interface ReleaseQualityGatesReport {
  * Must be bumped according to CONTRACT_CHANGELOG.md rules.
  * Package version alignment is documented in VERSIONING.md.
  */
-export const CONTRACT_VERSION = "4.55.0" as const;
+export const CONTRACT_VERSION = "4.56.0" as const;
 
 // ---------------------------------------------------------------------------
 // Issue #1774 — UntrustedContentNormalizer (2025-vintage injection carriers).

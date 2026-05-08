@@ -31,6 +31,92 @@ All changes to the public contract surface of `workspace-dev` are documented her
 
 ---
 
+## [4.56.0] - 2026-05-08
+
+### Added (Issue #2044 — DSPy-style auto-prompt optimization with bootstrapped few-shot)
+
+Prompt curation has been hand-tuned and locked in
+`docs/test-intelligence-prompt-template-version.lock.json`. Each tweak
+was a manual experiment; eval feedback never drove the next iteration.
+This release adds an *offline-only*, deterministic DSPy/MIPRO-style
+optimizer that mines bootstrapped few-shot exemplars from accepted
+runs, evaluates a closed set of additive directive variants against a
+deterministic synthetic eval, and records the winning template as an
+*additive* lock-file entry. The base prompt template is never
+rewritten — the prompt-compiler SHA pin enforced by
+`scripts/check-prompt-template-version.mjs` remains the authoritative
+artifact.
+
+Public-contract changes (additive — no removals, no renames):
+
+- New exported runtime surface from
+  `test-intelligence/prompt-optimizer`: `bootstrapExemplars`,
+  `runPromptOptimizationCycle`, `writePromptOptimizationReportArtifact`,
+  `appendOptimizedTemplateToLockFile`,
+  `encodePromptOptimizationReportBytes`, plus the typed inputs
+  (`BootstrapExemplarInput`, `RunPromptOptimizationCycleInput`,
+  `PromptOptimizerAcceptedRun`).
+- New exported runtime constants:
+  `PROMPT_OPTIMIZER_VERSION` (`"1.0.0"`),
+  `PROMPT_OPTIMIZER_REPORT_SCHEMA_VERSION` (`"1.0.0"`),
+  `PROMPT_OPTIMIZER_REPORT_ARTIFACT_FILENAME`
+  (`"prompt-optimization-report.json"`),
+  `PROMPT_OPTIMIZER_DEFAULT_QUALITY_GATE` (`90`),
+  `PROMPT_OPTIMIZER_DEFAULT_BUDGET_MULTIPLIER` (`5`),
+  `PROMPT_OPTIMIZER_DEFAULT_SEARCH_BUDGET` (`16`),
+  `PROMPT_OPTIMIZER_DEFAULT_MAX_FEW_SHOTS` (`3`),
+  `PROMPT_OPTIMIZER_DIRECTIVE_IDS` (closed string-literal union of six
+  additive directive ids).
+- New exported types: `PromptOptimizerDirectiveId`,
+  `PromptOptimizerCandidate`, `PromptOptimizerCandidateScore`,
+  `PromptOptimizerExemplar`, `PromptOptimizationLockEntry`,
+  `PromptOptimizationReport`.
+- The lock file at
+  `docs/test-intelligence-prompt-template-version.lock.json` gains an
+  optional, additive top-level `optimizedTemplates: PromptOptimizationLockEntry[]`
+  array. Existing readers — including the
+  `scripts/check-prompt-template-version.mjs` CI guard — ignore it
+  because the guard only validates `version` and `promptCompilerSha256`.
+
+Operational behaviour introduced by the additive runtime surface:
+
+- The optimizer is offline-only. The standard production runner does
+  not invoke it; operators trigger it explicitly via
+  `pnpm tsx scripts/run-prompt-optimization.ts`.
+- The cycle is fully deterministic given fixed seeds: identical
+  inputs (eval set, exemplar pool, seed, search budget,
+  hyperparameters) produce byte-identical
+  `prompt-optimization-report.json` and lock-file entries.
+- The token-budget cap is a hard ceiling: a candidate whose cumulative
+  cost would exceed `budgetMultiplier × baselineTokenCost` (default
+  5x) is skipped, never throttled after the fact. The synthetic eval
+  is judge-free and never calls an LLM.
+- Each report carries a PROV-DM provenance node
+  (`provenance.activityId`, `provenance.entityId`, `wasInformedBy`,
+  `wasGeneratedAt`) so downstream graph builders can attach the
+  optimization activity to the existing test-case lineage without
+  re-deriving the shape.
+
+Documentation:
+
+- `docs/test-intelligence/prompt-optimization.md` documents the
+  bootstrap pipeline, search loop, FinOps caps, lock-file shape, and
+  operator runbook.
+
+Contract version impacts:
+
+- `CONTRACT_VERSION` bumps from `4.55.0` to `4.56.0` (additive minor
+  bump; new optional fields, new exported types, new runtime
+  constants, no removals or renames).
+- `TEST_INTELLIGENCE_CONTRACT_VERSION` bumps from `1.16.0` to `1.17.0`
+  because the test-intelligence surface gains the
+  `PromptOptimizationReport` and `PromptOptimizationLockEntry`
+  contract types and their schema version constant.
+- `PROMPT_OPTIMIZER_REPORT_SCHEMA_VERSION` is introduced at `"1.0.0"`.
+- `migrationHash:` registration is not required for this release. The
+  signed migration registry carries forward unchanged because no
+  migration id, hash, or rollback semantics changed.
+
 ## [4.55.0] - 2026-05-08
 
 ### Added (Issue #2041 — mutation-killing eval suite with `mutationKillRate` KPI)

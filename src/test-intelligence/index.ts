@@ -1435,3 +1435,29 @@ export {
   type MutationCatalog,
   type MutationContext,
 } from "./mutation-killing-eval.js";
+export {
+  appendOptimizedTemplateToLockFile,
+  bootstrapExemplars,
+  encodePromptOptimizationReportBytes,
+  PROMPT_OPTIMIZER_DEFAULT_BUDGET_MULTIPLIER,
+  PROMPT_OPTIMIZER_DEFAULT_MAX_FEW_SHOTS,
+  PROMPT_OPTIMIZER_DEFAULT_QUALITY_GATE,
+  PROMPT_OPTIMIZER_DEFAULT_SEARCH_BUDGET,
+  PROMPT_OPTIMIZER_DIRECTIVE_IDS,
+  PROMPT_OPTIMIZER_REPORT_ARTIFACT_FILENAME,
+  PROMPT_OPTIMIZER_REPORT_SCHEMA_VERSION,
+  PROMPT_OPTIMIZER_VERSION,
+  runPromptOptimizationCycle,
+  writePromptOptimizationReportArtifact,
+  type BootstrapExemplarInput,
+  type PromptOptimizerAcceptedRun,
+  type RunPromptOptimizationCycleInput,
+} from "./prompt-optimizer.js";
+export type {
+  PromptOptimizationLockEntry,
+  PromptOptimizationReport,
+  PromptOptimizerCandidate,
+  PromptOptimizerCandidateScore,
+  PromptOptimizerDirectiveId,
+  PromptOptimizerExemplar,
+} from "../contracts/index.js";
