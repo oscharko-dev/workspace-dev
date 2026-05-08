@@ -455,6 +455,12 @@ const findExactValidationReason = (text: string): string | undefined => {
 
 const QUOTED_TEXT_RE = /["'“”„][^"'“”„]+["'“”„]/u;
 
+const QUOTED_VALIDATION_MESSAGE_RE =
+  /(?:\b(?:validation(?: response)?|error|message|inline validation|fehler(?:meldung)?|meldung|nachricht|validierungs(?:meldung|nachricht)?)\b[^.!?\n]*["'“”„][^"'“”„]+["'“”„]|["'“”„][^"'“”„]+["'“”„][^.!?\n]*\b(?:validation(?: response)?|error|message|fehler(?:meldung)?|meldung|nachricht)\b)/iu;
+
+const QUOTED_VALIDATION_COPY_RE =
+  /["'“”„][^"'“”„]*(?:required|invalid|must\b|must be|muss\b|darf nicht|ungültig|not allowed|blocked|leer|empty)[^"'“”„]*["'“”„]/iu;
+
 const LABEL_ONLY_CLAIM_RE =
   /(?:\b(?:label|labels|field(?: name| label)?|option|radio(?: button)?|checkbox|hint(?: text)?|section title|caption|copy|sichtbar(?:keit)?|angezeigt|anzeigen|vorhanden|auswählbar|feldbezeichnung(?:en)?|beschriftung|hinweistext|abschnittstitel)\b|["'“”„][^"'“”„]+["'“”„])/iu;
 
@@ -486,6 +492,16 @@ export const classifyUnresolvedValidationDetail = (
     return {
       classification: "concrete_message_text",
       reason: exactReason,
+    };
+  }
+
+  if (
+    QUOTED_VALIDATION_MESSAGE_RE.test(normalized) ||
+    QUOTED_VALIDATION_COPY_RE.test(normalized)
+  ) {
+    return {
+      classification: "concrete_message_text",
+      reason: "explicit validation message expectation",
     };
   }
 

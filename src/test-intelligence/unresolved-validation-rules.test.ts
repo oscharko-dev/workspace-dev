@@ -391,3 +391,35 @@ test("detectUnsupportedExactValidationClaim ignores label-only unresolved checks
   assert.ok(warning);
   assert.equal(warning?.path, "steps[0].action");
 });
+
+test("detectUnsupportedExactValidationClaim blocks quoted validation messages even when the message text is custom", () => {
+  const model = buildModel({
+    openQuestions: [
+      {
+        openQuestionId: "open-question-issue-2067-custom-message",
+        text: "custom_context_markdown: Validierungsregeln für Betragsfelder und MwSt.-Auswahl sind noch zu spezifizieren.",
+      },
+    ],
+  });
+
+  const testCase = buildGeneratedCase({
+    objective: "Keep this unresolved validation generic.",
+    steps: [
+      {
+        index: 1,
+        action:
+          "Expected validation message: \"Bitte geben Sie einen Wert ein\".",
+        expected: "The custom validation message is shown.",
+      },
+    ],
+    expectedResults: ["The custom validation message is shown."],
+  });
+
+  const error = detectUnsupportedExactValidationClaim({ testCase, model });
+  assert.ok(error);
+  assert.equal(error?.path, "steps[0].action");
+  assert.equal(
+    detectOpenQuestionClarificationClaim({ testCase, model }),
+    undefined,
+  );
+});
