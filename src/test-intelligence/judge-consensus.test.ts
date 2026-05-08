@@ -343,3 +343,107 @@ test("buildA11yJudgeConsensusEntry projects structured a11y findings into the co
   assert.equal(entry.findings[0]?.category, "a11y_gap");
   assert.equal(entry.repairInstructions.length, 1);
 });
+
+// ---------------------------------------------------------------------------
+// Issue #2038 — cross-family ensemble integration into judge-consensus.
+// ---------------------------------------------------------------------------
+
+test("buildJudgeConsensus emits crossFamily summary when every judge declares a family", () => {
+  const consensus = buildJudgeConsensus({
+    jobId: "job-cross-family",
+    generatedAt: "2026-05-06T00:00:00.000Z",
+    panel: [
+      {
+        ...buildLogicJudgeConsensusEntry(buildLogicVerdict("accept")),
+        family: "anthropic",
+        region: "eu",
+        modelId: "claude-3.5-sonnet",
+        promptVersion: "logic-judge.v1",
+      },
+      {
+        ...buildFaithfulnessJudgeConsensusEntry(
+          buildFaithfulnessVerdict("accept"),
+        ),
+        family: "openai",
+        region: "eu",
+        modelId: "gpt-4o",
+        promptVersion: "faithfulness-judge.v1",
+      },
+      {
+        ...buildA11yJudgeConsensusEntry(buildA11yVerdict("accept")),
+        family: "google",
+        region: "eu",
+        modelId: "gemini-1.5-pro",
+        promptVersion: "a11y-judge.v1",
+      },
+    ],
+  });
+  assert.notEqual(consensus.crossFamily, undefined);
+  assert.equal(consensus.crossFamily?.decision, "unanimous_accept");
+  assert.equal(consensus.crossFamily?.escalation, "none");
+  assert.deepEqual([...(consensus.crossFamily?.families ?? [])].sort(), [
+    "anthropic",
+    "google",
+    "openai",
+  ]);
+});
+
+test("buildJudgeConsensus omits crossFamily summary when every judge shares the same family", () => {
+  const consensus = buildJudgeConsensus({
+    jobId: "job-single-family",
+    generatedAt: "2026-05-06T00:00:00.000Z",
+    panel: [
+      {
+        ...buildLogicJudgeConsensusEntry(buildLogicVerdict("accept")),
+        family: "in-house",
+        region: "eu",
+        modelId: "gpt-oss-120b",
+        promptVersion: "logic-judge.v1",
+      },
+      {
+        ...buildA11yJudgeConsensusEntry(buildA11yVerdict("accept")),
+        family: "in-house",
+        region: "eu",
+        modelId: "gpt-oss-120b",
+        promptVersion: "a11y-judge.v1",
+      },
+    ],
+  });
+  assert.equal(consensus.crossFamily, undefined);
+});
+
+test("buildJudgeConsensus refuses an unknown family marker on a panel entry", () => {
+  assert.throws(
+    () =>
+      buildJudgeConsensus({
+        jobId: "job-bad-family",
+        generatedAt: "2026-05-06T00:00:00.000Z",
+        panel: [
+          {
+            ...buildLogicJudgeConsensusEntry(buildLogicVerdict("accept")),
+            family: "unknown" as never,
+          },
+        ],
+      }),
+    /unknown family/u,
+  );
+});
+
+test("buildJudgeConsensus attaches a humanReview decision verbatim", () => {
+  const consensus = buildJudgeConsensus({
+    jobId: "job-with-human-review",
+    generatedAt: "2026-05-06T00:00:00.000Z",
+    panel: [buildLogicJudgeConsensusEntry(buildLogicVerdict("accept"))],
+    humanReview: {
+      schemaVersion: "1.0.0",
+      reviewerKind: "dry_run_marker",
+      principalHash: "a".repeat(64),
+      verdict: "deferred",
+      rationale: "Marker for offline analysis",
+      decidedAt: "2026-05-06T00:00:00.000Z",
+      triggeredBy: "split_decision",
+    },
+  });
+  assert.equal(consensus.humanReview?.reviewerKind, "dry_run_marker");
+  assert.equal(consensus.humanReview?.principalHash, "a".repeat(64));
+});

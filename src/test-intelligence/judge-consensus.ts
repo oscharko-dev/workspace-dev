@@ -11,15 +11,24 @@ import {
   TEST_INTELLIGENCE_CONTRACT_VERSION,
   type A11yVerdict,
   type FaithfulnessVerdict,
+  type HumanReviewDecision,
   type JudgeConsensusFinding,
   type JudgeConsensusPanelEntry,
   type JudgeConsensusRepairHistory,
   type JudgeConsensusRepairOutcome,
   type JudgeConsensusVerdict,
+  type JudgeCrossFamilySummary,
+  type JudgeModelFamily,
   type JudgeVerdict,
   type RepairInstruction,
 } from "../contracts/index.js";
 import { canonicalJson } from "./content-hash.js";
+import {
+  assessCrossFamilyPanel,
+  isJudgeModelFamily,
+  isJudgeModelRegion,
+  type JudgeFamilyBinding,
+} from "./cross-family-judge-policy.js";
 
 type ConsensusVerdictLabel = JudgeConsensusVerdict["verdict"];
 
@@ -53,6 +62,88 @@ const normalizeJudgeVerdict = (
     return { ...entry, verdict: "repair" };
   }
   return entry;
+};
+
+const normalizePanelEntry = (
+  entry: JudgeConsensusPanelEntry,
+): JudgeConsensusPanelEntry => {
+  const normalized = normalizeJudgeVerdict({
+    ...entry,
+    weight: normalizeWeight(entry.weight),
+  });
+  if (
+    normalized.family !== undefined &&
+    !isJudgeModelFamily(normalized.family)
+  ) {
+    throw new RangeError(
+      `judge-consensus: panel entry "${normalized.judgeId}" has unknown family "${String(normalized.family)}"`,
+    );
+  }
+  if (
+    normalized.region !== undefined &&
+    !isJudgeModelRegion(normalized.region)
+  ) {
+    throw new RangeError(
+      `judge-consensus: panel entry "${normalized.judgeId}" has unknown region "${String(normalized.region)}"`,
+    );
+  }
+  return Object.freeze({
+    judgeId: normalized.judgeId,
+    verdict: normalized.verdict,
+    weight: normalized.weight,
+    findings: normalized.findings,
+    repairInstructions: normalized.repairInstructions,
+    ...(normalized.family !== undefined ? { family: normalized.family } : {}),
+    ...(normalized.region !== undefined ? { region: normalized.region } : {}),
+    ...(normalized.modelId !== undefined ? { modelId: normalized.modelId } : {}),
+    ...(normalized.promptVersion !== undefined
+      ? { promptVersion: normalized.promptVersion }
+      : {}),
+  });
+};
+
+const buildCrossFamilySummary = (
+  panel: readonly JudgeConsensusPanelEntry[],
+): JudgeCrossFamilySummary | undefined => {
+  const bindings: JudgeFamilyBinding[] = [];
+  for (const entry of panel) {
+    if (
+      entry.family === undefined ||
+      entry.region === undefined ||
+      entry.modelId === undefined ||
+      entry.promptVersion === undefined
+    ) {
+      return undefined;
+    }
+    bindings.push({
+      judgeId: entry.judgeId,
+      family: entry.family,
+      region: entry.region,
+      modelId: entry.modelId,
+      promptVersion: entry.promptVersion,
+      verdict: entry.verdict,
+    });
+  }
+  if (bindings.length === 0) {
+    return undefined;
+  }
+  const familyCount = new Set(bindings.map((b) => b.family)).size;
+  if (familyCount < 2) {
+    // A panel sourced from a single family is not a cross-family
+    // ensemble; skip the summary so consumers can detect the case.
+    return undefined;
+  }
+  const result = assessCrossFamilyPanel(bindings, { allowSharedFamily: true });
+  const sortedFamilies: readonly JudgeModelFamily[] = Object.freeze(
+    [...result.families].sort(),
+  );
+  return Object.freeze({
+    decision: result.decision,
+    escalation: result.escalation,
+    families: sortedFamilies,
+    disagreementRate: result.disagreementRate,
+    escalationRate: result.escalationRate,
+  });
 };
 
 const toSeverityRank = (verdict: ConsensusVerdictLabel): number => {
@@ -220,6 +311,12 @@ export interface BuildJudgeConsensusInput {
   readonly generatedAt: string;
   readonly panel: readonly JudgeConsensusPanelEntry[];
   readonly repairHistory?: Partial<JudgeConsensusRepairHistory>;
+  /**
+   * Optional human-review decision (Issue #2038). Attached verbatim
+   * to the consensus artifact when the cross-family disagreement
+   * detector escalated the run.
+   */
+  readonly humanReview?: HumanReviewDecision;
 }
 
 export const buildLogicJudgeConsensusEntry = (
@@ -327,12 +424,7 @@ export const buildJudgeConsensus = (
   if (input.jobId.trim().length === 0) {
     throw new TypeError("buildJudgeConsensus: jobId must be non-empty");
   }
-  const panel = input.panel.map((entry) =>
-    normalizeJudgeVerdict({
-      ...entry,
-      weight: normalizeWeight(entry.weight),
-    }),
-  );
+  const panel = input.panel.map((entry) => normalizePanelEntry(entry));
   if (panel.length === 0) {
     throw new RangeError("buildJudgeConsensus: panel must contain at least one judge");
   }
@@ -366,6 +458,7 @@ export const buildJudgeConsensus = (
       : verdict === "repair"
         ? "repair_required"
         : "none";
+  const crossFamily = buildCrossFamilySummary(panel);
   return {
     schemaVersion: JUDGE_CONSENSUS_SCHEMA_VERSION,
     contractVersion: TEST_INTELLIGENCE_CONTRACT_VERSION,
@@ -394,6 +487,10 @@ export const buildJudgeConsensus = (
         }
       : {}),
     panel,
+    ...(input.humanReview !== undefined
+      ? { humanReview: input.humanReview }
+      : {}),
+    ...(crossFamily !== undefined ? { crossFamily } : {}),
   };
 };
 

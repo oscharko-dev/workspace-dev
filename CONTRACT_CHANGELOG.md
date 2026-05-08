@@ -31,6 +31,80 @@ All changes to the public contract surface of `workspace-dev` are documented her
 
 ---
 
+## [4.51.0] - 2026-05-08
+
+### Added (Issue #2038 — cross-family judge ensemble + disagreement-driven human review)
+
+The judge panel previously sourced every judge role (logic, faithfulness,
+accessibility) from a single in-house model family. Failure modes were
+therefore correlated — a single mis-classification was likely to be
+repeated by the rest of the panel, and the `logic_judge` schema-drift
+incident on the I0 baseline went undetected because all three judges
+agreed on the wrong shape.
+
+This release adds the cross-family judge ensemble (Issue #2038): every
+judge role may declare a model `family` and `region`; the new
+`cross-family-judge-policy.ts` module enforces that no two judge roles
+in the same run draw from the same family unless the operator opts in.
+Disagreements classified as `split_decision` (1:1:1) or
+`majority_decision` with the lone dissenter belonging to the
+most-trusted family for the case-class are escalated through the new
+`human_review` agent role, which emits a deterministic envelope
+recorded in `judge-consensus.json`. Per-run disagreement evidence —
+disagreement rate, escalation rate, per-family agreement matrix, and
+per-family cost rollup — is persisted into the new
+`judge-disagreement-report.json` artifact for offline trending.
+
+DORA Article 28 and BaFin VAIT (Versicherungsaufsichtliche IT)
+expectations are met by the EU-residency policy gate: under
+`eu-banking-default` the `requireEuRegion` flag refuses any judge
+binding whose `region` is not `"eu"`.
+
+Public-contract changes (additive — no removals, no renames):
+
+- New runtime exports:
+  - `JUDGE_MODEL_FAMILIES`, `JUDGE_MODEL_REGIONS`
+  - `JUDGE_DISAGREEMENT_DECISION_LABELS`,
+    `JUDGE_DISAGREEMENT_ESCALATION_ACTIONS`
+  - `JUDGE_DISAGREEMENT_REPORT_SCHEMA_VERSION`,
+    `JUDGE_DISAGREEMENT_REPORT_ARTIFACT_FILENAME`
+  - `HUMAN_REVIEW_DECISION_SCHEMA_VERSION`,
+    `HUMAN_REVIEW_REVIEWER_KINDS`, `HUMAN_REVIEW_VERDICT_LABELS`,
+    `HUMAN_REVIEW_RATIONALE_MAX_CHARS`
+- New exported types: `JudgeModelFamily`, `JudgeModelRegion`,
+  `JudgeDisagreementDecisionLabel`,
+  `JudgeDisagreementEscalationAction`,
+  `JudgeDisagreementJudgeEntry`, `JudgeDisagreementMatrixCell`,
+  `JudgeDisagreementCostByFamily`, `JudgeDisagreementReport`,
+  `HumanReviewReviewerKind`, `HumanReviewVerdictLabel`,
+  `HumanReviewDecision`, `JudgeCrossFamilySummary`.
+- `AgentModelBinding` gains optional `family` and `region` fields. Both
+  default to undefined; existing bindings are unaffected.
+- `JudgeConsensusPanelEntry` gains optional `family`, `region`,
+  `modelId`, and `promptVersion` markers. The harness fills them when
+  the judge is sourced from a known cross-family deployment; consumers
+  ignore them when absent.
+- `JudgeConsensusVerdict` gains optional `humanReview` and
+  `crossFamily` fields. Existing artifacts that omit these continue to
+  pass the contract guards.
+- `AGENT_HARNESS_ROLES` adds `"human_review"` (alphabetical insertion).
+  The new role is a deterministic service with capability
+  `"read_artifacts"` and FinOps group `"judge"`; it never calls the
+  gateway directly.
+
+Versioning impacts:
+
+- `CONTRACT_VERSION` bumps from `4.50.0` to `4.51.0`.
+- `TEST_INTELLIGENCE_CONTRACT_VERSION` bumps from `1.12.0` to `1.13.0`
+  to reflect the additive judge-consensus / disagreement-report
+  surfaces.
+
+Migration-hash registration: not required. The
+`migrationHash:` registry from 4.42.0 carries over unchanged because
+this release only adds optional fields, new exports, and a new
+deterministic agent role; no error-code rename, field rename, or type
+narrowing was introduced.
+
 ## [4.50.0] - 2026-05-06
 
 ### Changed (Issue #1959 — open `sidecarDeployment` enum + drop `mistral-document-ai-2512` from chat-completion paths)
