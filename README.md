@@ -39,6 +39,15 @@ Default runtime URL: `http://127.0.0.1:1983/workspace`
 - UI: `http://127.0.0.1:1983/workspace/ui`
 - Deep link by file key: `http://127.0.0.1:1983/workspace/<figmaFileKey>`
 
+## Repository branch flow
+
+- `dev` is the active development branch.
+- `dev-gate` is the protected quality gate branch.
+- `main` is the release branch.
+- See [GOVERNANCE.md](GOVERNANCE.md) for the full `dev -> dev-gate -> main`
+  promotion policy and [`THREAT_MODEL.md`](THREAT_MODEL.md) for the trust
+  boundaries that inform runtime and release controls.
+
 ## Frontend stack
 
 The workspace UI is implemented as a Vite + React + TypeScript + Tailwind app:
@@ -61,12 +70,16 @@ Useful scripts:
 `workspace-dev` enforces:
 
 - `figmaSourceMode=rest`
+- `figmaSourceMode=hybrid`
+- `figmaSourceMode=local_json`
+- `figmaSourceMode=figma_paste`
+- `figmaSourceMode=figma_plugin`
 - `llmCodegenMode=deterministic`
 
 Not available:
 
 - MCP (`figmaSourceMode=mcp`)
-- Hybrid modes
+- `figmaSourceMode=mcp` is blocked in the package runtime
 - `llm_strict`
 
 ## Required submit input
@@ -84,6 +97,75 @@ Optional Git/PR input:
 
 With `enableGitPr=false`, generation is local-only.
 
+## Public API entrypoints
+
+- Root runtime entrypoint: `workspace-dev`
+- Contract surface: `workspace-dev/contracts`
+- Generated API docs: [docs/api/README.md](docs/api/README.md)
+- Troubleshooting: [TROUBLESHOOTING.md](TROUBLESHOOTING.md)
+- Figma direct import:
+  [docs/figma-import.md - Quality and governance](docs/figma-import.md#quality-and-governance)
+- Default pipeline authoring:
+  [docs/default-pipeline/pipeline-authoring-and-migration.md](docs/default-pipeline/pipeline-authoring-and-migration.md)
+- Default demo guide:
+  [docs/default-pipeline/default-demo-guide.md](docs/default-pipeline/default-demo-guide.md)
+- Multi-source API:
+  [docs/api/test-intelligence-multi-source.md](docs/api/test-intelligence-multi-source.md)
+- Jira setup runbook:
+  [docs/runbooks/jira-source-setup.md](docs/runbooks/jira-source-setup.md)
+- Multi-source air-gap runbook:
+  [docs/runbooks/multi-source-air-gap.md](docs/runbooks/multi-source-air-gap.md)
+
+## Programmatic API
+
+TypeScript `>=5.0.0` for typed package consumption is required. The published dual ESM/CJS type surface is validated only for TypeScript 5+ consumers.
+
+```ts
+import { createWorkspaceServer } from "workspace-dev";
+import { validateModeLock } from "workspace-dev";
+import type { WorkspaceStartOptions } from "workspace-dev/contracts";
+import type { WorkspaceJobInput, WorkspaceFigmaSourceMode } from "workspace-dev/contracts";
+
+const options: WorkspaceStartOptions = {
+  host: "127.0.0.1",
+  port: 1983,
+  figmaSourceMode: "rest",
+  llmCodegenMode: "deterministic",
+};
+
+validateModeLock({
+  figmaSourceMode: "mcp",
+  llmCodegenMode: "deterministic",
+});
+
+await createWorkspaceServer(options);
+```
+
+Use `workspace-dev/contracts` for contract-typed request and artifact
+structures, including `type WorkspaceJobInput`, `type WorkspaceFigmaSourceMode`,
+and `CONTRACT_VERSION`.
+
+### Advanced isolation lifecycle API
+
+`ProjectInstance` is a stable advanced surface for embedders and orchestration
+hosts; it is not experimental or internal-only today.
+
+Per-project helpers:
+
+- `createProjectInstance`
+- `getProjectInstance`
+- `listProjectInstances`
+- `removeProjectInstance`
+- `removeAllInstances`
+
+Process-level lifecycle controls:
+
+- `registerIsolationProcessCleanup`
+- `unregisterIsolationProcessCleanup`
+
+Typical consumers should still prefer `createWorkspaceServer` unless they need
+fine-grained isolation orchestration.
+
 ## Runtime API
 
 - `GET /workspace` - runtime status
@@ -93,6 +175,7 @@ With `enableGitPr=false`, generation is local-only.
 - `GET /workspace/jobs/:id` - job polling (stages/logs/artifacts)
 - `GET /workspace/jobs/:id/result` - compact result payload
 - `GET /workspace/repros/:id/` - generated local preview
+- `GET /workspace/inspector-policy` - repo-backed inspector policy loader payload (`{ policy, validation, warning? }`)
 
 ## Output layout
 
@@ -141,6 +224,27 @@ Bundled template (`template/react-mui-app`) includes a baseline + assertion pipe
 Artifacts are written to `template/react-mui-app/artifacts/performance` by default.
 Budget policy is configured in `template/react-mui-app/perf-budget.json`.
 Detailed operating notes: `docs/react-web-performance.md`.
+
+## Operational Hardening
+
+- The default loopback bind (`127.0.0.1:1983`) is the recommended local
+  runtime posture.
+- `local_json` is the preferred air-gap and firewall-friendly source mode.
+- Repository-only verification fixtures, test suites, template `node_modules`, and template build output do not ship in the published package.
+
+## Versioning strategy
+
+- Pin the npm package version in your own `package.json`.
+- Use `CONTRACT_VERSION` for compatibility audits.
+- `CHANGELOG.md` tracks package release history.
+- `CONTRACT_CHANGELOG.md` tracks public contract history.
+- See `VERSIONING.md` for the package-versus-contract policy.
+
+## Migration
+
+See the [contract migration guide](docs/migration-guide.md).
+
+Legacy omitted-`pipelineId` requests with Rocket-specific inputs follow the deprecated compatibility fallback documented in the migration guide. The omitted-`pipelineId` Rocket auto-selection path is a temporary compatibility bridge and may be removed in a future package-major release.
 
 ## Example API flow
 
