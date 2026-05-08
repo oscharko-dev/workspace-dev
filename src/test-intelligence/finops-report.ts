@@ -195,6 +195,11 @@ const createRoleAccumulator = (role: FinOpsRole): RoleAccumulator => ({
  */
 export interface FinOpsUsageRecorder {
   recordAttempt(observation: FinOpsAttemptObservation): void;
+  recordCircuitBreakerDecision(observation: {
+    source: AgentSourceLabel;
+    circuitBreakerState: LlmCircuitState;
+    deployment?: string;
+  }): void;
   recordCacheHit(observation: FinOpsCacheHitObservation): void;
   recordCacheMiss(observation: FinOpsCacheMissObservation): void;
   recordInFlightDedupHit(source: AgentSourceLabel): void;
@@ -347,6 +352,29 @@ export const createFinOpsUsageRecorder = (
     }
   };
 
+  const recordCircuitBreakerDecision = (observation: {
+    source: AgentSourceLabel;
+    circuitBreakerState: LlmCircuitState;
+    deployment?: string;
+  }): void => {
+    if (!isAgentSourceLabel(observation.source)) {
+      throw new RangeError(
+        `recordCircuitBreakerDecision: unknown source "${observation.source}"`,
+      );
+    }
+    const accumulator = sourceAccumulatorFor(observation.source);
+    recordPerSourceAttempt({
+      accumulator,
+      circuitBreakerState: observation.circuitBreakerState,
+      ...(typeof observation.deployment === "string" &&
+      observation.deployment.length > 0
+        ? { deployment: observation.deployment }
+        : {}),
+    });
+    accumulator.callCount = 0;
+    accumulator.costMinorUnits = 0;
+  };
+
   const recordCacheHit = (observation: FinOpsCacheHitObservation): void => {
     if (!ALLOWED_FINOPS_ROLES.includes(observation.role)) {
       throw new RangeError(
@@ -424,6 +452,7 @@ export const createFinOpsUsageRecorder = (
 
   return {
     recordAttempt,
+    recordCircuitBreakerDecision,
     recordCacheHit,
     recordCacheMiss,
     recordInFlightDedupHit: (source) => {

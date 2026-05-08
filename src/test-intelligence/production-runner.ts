@@ -2267,6 +2267,16 @@ export const runFigmaToQcTestCases = async (
         ),
       },
     });
+    if (
+      persistedVisualPrimaryBreaker?.snapshot.state === "open" &&
+      splitVisualSidecarAttempts(sidecarResult).primaryAttempt === undefined
+    ) {
+      finopsRecorder.recordCircuitBreakerDecision({
+        source: "visual_primary",
+        circuitBreakerState: "open",
+        deployment: input.llm.bundle.visualPrimary.deployment,
+      });
+    }
     recordVisualSidecarAttempts({
       recorder: finopsRecorder,
       result: sidecarResult,

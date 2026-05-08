@@ -10131,7 +10131,7 @@ Changelog-approved signed migration bundle for banking-profile runs.
 
 ##### contractVersion
 
-> `readonly` **contractVersion**: `"4.59.0"`
+> `readonly` **contractVersion**: `"4.60.0"`
 
 ##### entries
 
@@ -21893,7 +21893,7 @@ Schema version for persisted context-budget analyzer reports.
 
 ### CONTRACT\_VERSION
 
-> `const` **CONTRACT\_VERSION**: `"4.59.0"`
+> `const` **CONTRACT\_VERSION**: `"4.60.0"`
 
 Current contract version constant.
 Must be bumped according to CONTRACT_CHANGELOG.md rules.

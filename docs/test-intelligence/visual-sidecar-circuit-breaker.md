@@ -36,7 +36,7 @@ State is stored at:
 Entries are keyed by:
 
 ```text
-<tenantId>/<environmentId>/<projectId>/visual_primary/<deployment>
+<tenantId>:<environmentId>:<projectId>:visual_primary:<deployment>
 ```
 
 Each entry stores:
@@ -52,8 +52,8 @@ avoided on the next job rather than rediscovered from scratch.
 
 ## Cooldown
 
-The default cooldown is `1h`, inherited from the primary deployment's configured
-LLM circuit-breaker reset timeout. When the persisted `openedAtMs +
+The default cooldown is `30s`, inherited from the primary deployment's
+configured LLM circuit-breaker reset timeout. When the persisted `openedAtMs +
 resetTimeoutMs` window expires, the next run may perform a half-open probe.
 
 ## Policy outcomes
@@ -73,9 +73,9 @@ job-level blocker while the per-case decisions stay unchanged.
 
 ## FinOps and artifacts
 
-Every visual-sidecar attempt now records the observed caller-side breaker state
-into FinOps `bySource[*].circuitBreakerStates`, preserving dispatch order. This
-lets operators distinguish:
+FinOps `bySource[*].circuitBreakerStates` now preserves the observed caller-side
+breaker state in dispatch-decision order, including cooldown skips that happen
+before any primary gateway request is sent. This lets operators distinguish:
 
 - normal primary usage (`closed`)
 - cooldown skips (`open`)
