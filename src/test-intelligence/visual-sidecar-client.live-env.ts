@@ -4,7 +4,9 @@ export const LIVE_SMOKE_SKIP_MESSAGE: string =
   `${LIVE_SMOKE_FLAG}=1 enables the operator-controlled live smoke test.`;
 
 export const LIVE_LLM_API_KEY_ENV = "WORKSPACE_TEST_SPACE_LLM_API_KEY";
-export const LIVE_API_KEY_ALIASES = [LIVE_LLM_API_KEY_ENV] as const;
+export const LIVE_API_KEY_ALIASES: readonly [typeof LIVE_LLM_API_KEY_ENV] = [
+  LIVE_LLM_API_KEY_ENV,
+];
 
 export const REQUIRED_LIVE_ENV = [
   "WORKSPACE_TEST_SPACE_MODEL_ENDPOINT",
