@@ -565,7 +565,7 @@ export interface ProductionRunnerHarnessSummary {
 
 const toEvidenceVisualDeployment = (
   deployment: LlmGatewayClient["deployment"],
-): string | "mock" => (deployment.trim().length > 0 ? deployment : "mock");
+): string => (deployment.trim().length > 0 ? deployment : "mock");
 
 const buildActiveModelBindings = (input: {
   client: LlmGatewayClient;
