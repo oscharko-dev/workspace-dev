@@ -88,7 +88,7 @@ Persisted multimodal accessibility-judge verdict artifact.
 
 ##### contractVersion
 
-> `readonly` **contractVersion**: `"1.13.0"`
+> `readonly` **contractVersion**: `"1.14.0"`
 
 ##### criteria
 
@@ -356,7 +356,7 @@ Persisted, canonical-JSON, per-job repair-iteration log.
 
 ##### contractVersion
 
-> `readonly` **contractVersion**: `"1.13.0"`
+> `readonly` **contractVersion**: `"1.14.0"`
 
 ##### generatedAt
 
@@ -721,7 +721,7 @@ Closed taxonomy error class recorded by the harness.
 
 ##### mappedJobStatus
 
-> `readonly` **mappedJobStatus**: `"partial"` \| `"completed"` \| `"failed"`
+> `readonly` **mappedJobStatus**: `"partial"` \| `"failed"` \| `"completed"`
 
 Job-runtime status onto which the outcome was mapped.
 
@@ -919,7 +919,7 @@ input set is byte-identical and the entries are sorted before write.
 
 ##### contractVersion
 
-> `readonly` **contractVersion**: `"1.13.0"`
+> `readonly` **contractVersion**: `"1.14.0"`
 
 ##### diffArtifactBasename?
 
@@ -971,7 +971,7 @@ Persisted case-merger artifact (Issue #1937).
 
 ##### contractVersion
 
-> `readonly` **contractVersion**: `"1.13.0"`
+> `readonly` **contractVersion**: `"1.14.0"`
 
 ##### entries
 
@@ -1106,7 +1106,7 @@ Total bytes of cleared tool result blocks at the boundary.
 
 ##### contractVersion
 
-> `readonly` **contractVersion**: `"1.13.0"`
+> `readonly` **contractVersion**: `"1.14.0"`
 
 ##### jobId
 
@@ -1150,7 +1150,7 @@ Persisted, fully-redacted artifact form of a compiled prompt.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.13.0"`
+> **contractVersion**: `"1.14.0"`
 
 ##### hashes
 
@@ -2368,7 +2368,7 @@ Aggregate dry-run report artifact.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.13.0"`
+> **contractVersion**: `"1.14.0"`
 
 ##### credentialsIncluded
 
@@ -2721,7 +2721,7 @@ Sorted by filename for deterministic emission.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.13.0"`
+> **contractVersion**: `"1.14.0"`
 
 ##### exportedTestCaseCount
 
@@ -2812,7 +2812,7 @@ Persisted screenshot-vs-cases faithfulness verdict artifact.
 
 ##### contractVersion
 
-> `readonly` **contractVersion**: `"1.13.0"`
+> `readonly` **contractVersion**: `"1.14.0"`
 
 ##### fallbackReason
 
@@ -3076,7 +3076,7 @@ Aggregate counters across the `bySource` map.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.13.0"`
+> **contractVersion**: `"1.14.0"`
 
 ##### currencyLabel?
 
@@ -3714,7 +3714,7 @@ Single generated test case.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.13.0"`
+> **contractVersion**: `"1.14.0"`
 
 ##### expectedResults
 
@@ -3825,7 +3825,7 @@ Whether the artifact came from a replay-cache hit.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.13.0"`
+> **contractVersion**: `"1.14.0"`
 
 ##### generatedAt
 
@@ -4041,7 +4041,7 @@ referenced files and recomputing each row.
 
 ##### contractVersion
 
-> `readonly` **contractVersion**: `"1.13.0"`
+> `readonly` **contractVersion**: `"1.14.0"`
 
 ##### digest
 
@@ -4267,7 +4267,7 @@ Hard-invariant intent-delta report artifact (Issue #1373).
 
 ##### contractVersion
 
-> **contractVersion**: `"1.13.0"`
+> **contractVersion**: `"1.14.0"`
 
 ##### currentIntentHash
 
@@ -4581,7 +4581,7 @@ Aggregate `jira-created-subtasks.json` artifact (Issue #1482).
 
 ##### contractVersion
 
-> **contractVersion**: `"1.13.0"`
+> **contractVersion**: `"1.14.0"`
 
 ##### credentialsIncluded
 
@@ -5217,7 +5217,7 @@ Audit metadata for the run.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.13.0"`
+> **contractVersion**: `"1.14.0"`
 
 ##### createdCount
 
@@ -5419,7 +5419,7 @@ Persisted production-runner judge-consensus artifact.
 
 ##### contractVersion
 
-> `readonly` **contractVersion**: `"1.13.0"`
+> `readonly` **contractVersion**: `"1.14.0"`
 
 ##### crossFamily?
 
@@ -5642,7 +5642,7 @@ the disagreement-rate trending consumes (B.10).
 
 ##### contractVersion
 
-> `readonly` **contractVersion**: `"1.13.0"`
+> `readonly` **contractVersion**: `"1.14.0"`
 
 ##### costByFamily
 
@@ -5862,7 +5862,7 @@ Persisted logic-judge verdict artifact.
 
 ##### contractVersion
 
-> `readonly` **contractVersion**: `"1.13.0"`
+> `readonly` **contractVersion**: `"1.14.0"`
 
 ##### findings
 
@@ -6359,7 +6359,7 @@ Per-release primitive-map status report.
 
 ##### contractVersion
 
-> `readonly` **contractVersion**: `"1.13.0"`
+> `readonly` **contractVersion**: `"1.14.0"`
 
 ##### counts
 
@@ -7453,7 +7453,7 @@ Aggregate `qc-created-entities.json` artifact (Issue #1372).
 
 ##### contractVersion
 
-> **contractVersion**: `"1.13.0"`
+> **contractVersion**: `"1.14.0"`
 
 ##### entities
 
@@ -7543,7 +7543,7 @@ Aggregate QC mapping preview artifact.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.13.0"`
+> **contractVersion**: `"1.14.0"`
 
 ##### entries
 
@@ -8219,7 +8219,7 @@ Gate 9 — context budget regression (Issue #1802).
 
 ##### contractVersion
 
-> `readonly` **contractVersion**: `"1.13.0"`
+> `readonly` **contractVersion**: `"1.14.0"`
 
 ##### libraryCoverageStatusCompleteness
 
@@ -8310,7 +8310,7 @@ The release pipeline fails when any verdict has `passed === false`.
 
 ##### contractVersion
 
-> `readonly` **contractVersion**: `"1.13.0"`
+> `readonly` **contractVersion**: `"1.14.0"`
 
 ##### mutationKillRate
 
@@ -8448,7 +8448,7 @@ Per-gate result row in the consolidated release-readiness report.
 
 ##### status
 
-> `readonly` **status**: `"failed"` \| `"skipped"` \| `"passed"`
+> `readonly` **status**: `"passed"` \| `"failed"` \| `"skipped"`
 
 ***
 
@@ -8464,7 +8464,7 @@ gate passed.
 
 ##### contractVersion
 
-> `readonly` **contractVersion**: `"1.13.0"`
+> `readonly` **contractVersion**: `"1.14.0"`
 
 ##### gates
 
@@ -8653,7 +8653,7 @@ ISO-8601 UTC timestamp at the moment of persistence.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.13.0"`
+> **contractVersion**: `"1.14.0"`
 
 ##### fromState?
 
@@ -8721,7 +8721,7 @@ Number of cases currently in `approved` (or `exported`/`transferred`) state.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.13.0"`
+> **contractVersion**: `"1.14.0"`
 
 ##### fourEyesPolicy?
 
@@ -8947,7 +8947,7 @@ Persisted production-runner run-quality artifact.
 
 ##### contractVersion
 
-> `readonly` **contractVersion**: `"1.13.0"`
+> `readonly` **contractVersion**: `"1.14.0"`
 
 ##### degradedReasons
 
@@ -9251,7 +9251,7 @@ Sorted by `testCaseId` for byte stability. Empty when `refusal` is set.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.13.0"`
+> **contractVersion**: `"1.14.0"`
 
 ##### gatewayRelease
 
@@ -9344,7 +9344,7 @@ Changelog-approved signed migration bundle for banking-profile runs.
 
 ##### contractVersion
 
-> `readonly` **contractVersion**: `"4.52.0"`
+> `readonly` **contractVersion**: `"4.53.0"`
 
 ##### entries
 
@@ -9660,7 +9660,7 @@ Avg assumptions per case.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.13.0"`
+> **contractVersion**: `"1.14.0"`
 
 ##### duplicatePairs
 
@@ -9754,7 +9754,7 @@ Aggregate dedupe report artifact (Issue #1373).
 
 ##### contractVersion
 
-> **contractVersion**: `"1.13.0"`
+> **contractVersion**: `"1.14.0"`
 
 ##### embeddingProvider
 
@@ -9864,7 +9864,7 @@ Aggregate test-case delta report (always paired with `IntentDeltaReport`).
 
 ##### contractVersion
 
-> **contractVersion**: `"1.13.0"`
+> **contractVersion**: `"1.14.0"`
 
 ##### generatedAt
 
@@ -9996,6 +9996,74 @@ Per-test-case policy decision row.
 
 ***
 
+### TestCasePolicyGateResult
+
+Per-gate evaluation record persisted in `policy-report.json` under
+`gateResults`. The shape is intentionally compact: callers correlate
+the record back to its source artifact via `ruleRef` (a stable
+pointer that names the artifact filename or the contract symbol the
+gate consulted) and use `observedRatio` / `thresholdRatio` for
+audit-grade comparison.
+
+Issue #2053 ships the `G-NEG-CASE` instance grounded in the
+`AdversarialCriticTraceArtifact.negativeCoverage` block. Future gates
+follow the same structure.
+
+#### Properties
+
+##### gateId
+
+> `readonly` **gateId**: `"G-NEG-CASE"`
+
+Stable gate identifier; see [ALLOWED\_TEST\_CASE\_POLICY\_GATE\_IDS](#allowed_test_case_policy_gate_ids).
+
+##### message
+
+> `readonly` **message**: `string`
+
+Human-readable explanation suitable for surfacing in CI logs and
+audit reports. Always present so consumers do not have to derive a
+message from the structured fields.
+
+##### observedRatio?
+
+> `readonly` `optional` **observedRatio?**: `number`
+
+Observed value the gate produced (e.g. relative ratio increase).
+Omitted when the gate was skipped before the value was computed.
+
+##### ruleRef
+
+> `readonly` **ruleRef**: `string`
+
+Stable rule reference — typically a `ti:`-prefixed contract symbol
+or an artifact filename — so auditors can resolve the gate's
+source evidence without the runner having to embed it.
+
+##### skipReason?
+
+> `readonly` `optional` **skipReason?**: `"adversarial_critic_disabled"` \| `"adversarial_critic_failed"` \| `"gate_disabled"`
+
+Skip reason when `status === "skipped"`; absent otherwise. See
+[ALLOWED\_TEST\_CASE\_POLICY\_GATE\_SKIP\_REASONS](#allowed_test_case_policy_gate_skip_reasons) for the closed
+set of values.
+
+##### status
+
+> `readonly` **status**: `"passed"` \| `"failed"` \| `"advisory"` \| `"skipped"`
+
+Evaluation outcome; see [ALLOWED\_TEST\_CASE\_POLICY\_GATE\_STATUSES](#allowed_test_case_policy_gate_statuses).
+
+##### thresholdRatio?
+
+> `readonly` `optional` **thresholdRatio?**: `number`
+
+Threshold the gate compared against, when the gate is
+threshold-shaped (e.g. ratio ≥ 0.30). Omitted for skip-only
+outcomes that did not consult a threshold.
+
+***
+
 ### TestCasePolicyProfile
 
 Built-in policy profile shape. Profiles are identified by `id`+`version`.
@@ -10092,6 +10160,48 @@ Max open-question count per case before review is required.
 
 Min generator-side confidence; below this threshold => needs_review.
 
+##### negativeCaseLift?
+
+> `optional` **negativeCaseLift?**: `object`
+
+Issue #2053 — adversarial-critic negative-case-lift hard gate
+(`G-NEG-CASE`). When the adversarial-critic loop runs for a job,
+the production runner compares the per-run baseline negative-case
+ratio against the post-critic final negative-case ratio. The
+relative ratio increase must meet `thresholdRatio` (default
+`0.30`).
+
+`gateMode` controls enforcement:
+
+- `"enforce"` (the secure default for `eu-banking-default`): a
+  below-threshold result fails the run with the
+  `NEGATIVE_CASE_LIFT_BELOW_THRESHOLD` failure class so CI marks
+  the build red.
+- `"advisory"`: the gate result is persisted in
+  `policy-report.json` but does not fail the run. Intended for
+  fast iterative local runs that should still record the metric.
+- `"off"`: the gate is not evaluated; the entry persisted in the
+  policy report records `status === "skipped"` with
+  `skipReason === "gate_disabled"` so audit can distinguish a
+  deliberate disable from a missing upstream signal.
+
+When the adversarial-critic loop did not run (no judge client
+wired) or exited with `stopReason === "critic_failed"`, the gate
+status is always `"skipped"` regardless of `gateMode` — skip is
+an explicit, audit-visible status and is never silently a pass.
+
+Optional for backward compatibility: when omitted the production
+runner falls back to the documented default of
+`{ gateMode: "enforce", thresholdRatio: 0.30 }`.
+
+###### gateMode
+
+> `readonly` **gateMode**: `"advisory"` \| `"enforce"` \| `"off"`
+
+###### thresholdRatio
+
+> `readonly` **thresholdRatio**: `number`
+
 ##### requireAccessibilityCaseWhenFormPresent
 
 > **requireAccessibilityCaseWhenFormPresent**: `boolean`
@@ -10170,11 +10280,22 @@ Whether ANY case was blocked (downstream export gate).
 
 ##### contractVersion
 
-> **contractVersion**: `"1.13.0"`
+> **contractVersion**: `"1.14.0"`
 
 ##### decisions
 
 > **decisions**: [`TestCasePolicyDecisionRecord`](#testcasepolicydecisionrecord)[]
+
+##### gateResults?
+
+> `optional` **gateResults?**: [`TestCasePolicyGateResult`](#testcasepolicygateresult)[]
+
+Optional structured quality-gate evaluations carried alongside the
+decision records (Issue #2053). Today this surfaces the
+`G-NEG-CASE` adversarial-critic negative-case-lift hard gate; future
+gates extend the same array. The field is omitted when no quality
+gates were evaluated for the run, so the byte-shape stays stable for
+legacy runs that pre-date the gate registry.
 
 ##### generatedAt
 
@@ -10318,7 +10439,7 @@ Whether the report blocks downstream review/export (any error => true).
 
 ##### contractVersion
 
-> **contractVersion**: `"1.13.0"`
+> **contractVersion**: `"1.14.0"`
 
 ##### errorCount
 
@@ -10788,7 +10909,7 @@ Aggregate traceability-matrix artifact (Issue #1373).
 
 ##### contractVersion
 
-> **contractVersion**: `"1.13.0"`
+> **contractVersion**: `"1.14.0"`
 
 ##### exportProfile?
 
@@ -11282,7 +11403,7 @@ Audit metadata for the run.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.13.0"`
+> **contractVersion**: `"1.14.0"`
 
 ##### createdCount
 
@@ -11650,7 +11771,7 @@ can be debugged from the artifact alone.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.13.0"`
+> **contractVersion**: `"1.14.0"`
 
 ##### deployment
 
@@ -11772,7 +11893,7 @@ screenshot bytes.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.13.0"`
+> **contractVersion**: `"1.14.0"`
 
 ##### generatedAt
 
@@ -11934,7 +12055,7 @@ Whether any record carries a non-`ok`/non-`fallback_used` outcome that blocks ge
 
 ##### contractVersion
 
-> **contractVersion**: `"1.13.0"`
+> **contractVersion**: `"1.14.0"`
 
 ##### generatedAt
 
@@ -12211,7 +12332,7 @@ Active signing mode; mirrored from the run input for auditability.
 
 ##### testIntelligenceContractVersion
 
-> **testIntelligenceContractVersion**: `"1.13.0"`
+> **testIntelligenceContractVersion**: `"1.14.0"`
 
 ##### visualSidecar?
 
@@ -12640,7 +12761,7 @@ and timestamps are caller-provided.
 
 ##### testIntelligenceContractVersion
 
-> **testIntelligenceContractVersion**: `"1.13.0"`
+> **testIntelligenceContractVersion**: `"1.14.0"`
 
 ##### thresholds
 
@@ -12939,7 +13060,7 @@ raw paste bytes, or PII.
 
 ##### testIntelligenceContractVersion
 
-> **testIntelligenceContractVersion**: `"1.13.0"`
+> **testIntelligenceContractVersion**: `"1.14.0"`
 
 Test-intelligence subsurface contract version.
 
@@ -13692,7 +13813,7 @@ Combined visual + performance quality report surfaced by validate.project.
 
 ##### status
 
-> **status**: `"completed"` \| `"failed"` \| `"not_requested"`
+> **status**: `"failed"` \| `"completed"` \| `"not_requested"`
 
 ##### visual?
 
@@ -14167,7 +14288,7 @@ Present only when `figmaSourceMode === "figma_paste" | "figma_plugin"` and diff 
 
 ###### Inherited from
 
-[`WorkspaceSubmitAccepted`](#workspacesubmitaccepted).[`status`](#status-21)
+[`WorkspaceSubmitAccepted`](#workspacesubmitaccepted).[`status`](#status-22)
 
 ***
 
@@ -14365,7 +14486,7 @@ Job-level confidence report produced by the scoring model.
 
 ##### status
 
-> **status**: `"completed"` \| `"failed"` \| `"not_requested"`
+> **status**: `"failed"` \| `"completed"` \| `"not_requested"`
 
 ***
 
@@ -17575,7 +17696,7 @@ Full visual quality report produced by the scoring system.
 
 ##### status
 
-> **status**: `"completed"` \| `"failed"` \| `"not_requested"`
+> **status**: `"failed"` \| `"completed"` \| `"not_requested"`
 
 ##### warnings?
 
@@ -18602,6 +18723,24 @@ Coarse-grain test level.
 ### TestCasePolicyDecision
 
 > **TestCasePolicyDecision** = *typeof* [`ALLOWED_TEST_CASE_POLICY_DECISIONS`](#allowed_test_case_policy_decisions)\[`number`\]
+
+***
+
+### TestCasePolicyGateId
+
+> **TestCasePolicyGateId** = *typeof* [`ALLOWED_TEST_CASE_POLICY_GATE_IDS`](#allowed_test_case_policy_gate_ids)\[`number`\]
+
+***
+
+### TestCasePolicyGateSkipReason
+
+> **TestCasePolicyGateSkipReason** = *typeof* [`ALLOWED_TEST_CASE_POLICY_GATE_SKIP_REASONS`](#allowed_test_case_policy_gate_skip_reasons)\[`number`\]
+
+***
+
+### TestCasePolicyGateStatus
+
+> **TestCasePolicyGateStatus** = *typeof* [`ALLOWED_TEST_CASE_POLICY_GATE_STATUSES`](#allowed_test_case_policy_gate_statuses)\[`number`\]
 
 ***
 
@@ -20209,6 +20348,64 @@ Allowed policy-gate decisions (Issue #1364).
 
 ***
 
+### ALLOWED\_TEST\_CASE\_POLICY\_GATE\_IDS
+
+> `const` **ALLOWED\_TEST\_CASE\_POLICY\_GATE\_IDS**: readonly \[`"G-NEG-CASE"`\]
+
+Closed set of quality-gate identifiers the production runner may
+evaluate. The set is intentionally small and append-only — every gate
+id documented here corresponds to an enforceable hard gate with
+persisted, auditable evaluation evidence.
+
+- `G-NEG-CASE` (Issue #2053): adversarial-critic negative-case-lift
+  hard gate. Compares the per-run baseline negative-case ratio
+  against the post-critic final negative-case ratio and asserts the
+  relative ratio increase meets the configured threshold (default
+  `0.30`).
+
+***
+
+### ALLOWED\_TEST\_CASE\_POLICY\_GATE\_SKIP\_REASONS
+
+> `const` **ALLOWED\_TEST\_CASE\_POLICY\_GATE\_SKIP\_REASONS**: readonly \[`"adversarial_critic_disabled"`, `"adversarial_critic_failed"`, `"gate_disabled"`\]
+
+Closed set of skip reasons recorded when a quality gate's status is
+`"skipped"`. Each reason documents *why* the gate could not be
+evaluated so the audit trail can distinguish a missing input from a
+deliberate disable.
+
+- `adversarial_critic_disabled`: the adversarial-critic loop did not
+  run (no `logicJudge` client wired or the loop was suppressed by an
+  upstream condition); the gate has no trace artifact to evaluate.
+- `adversarial_critic_failed`: the adversarial-critic loop ran but
+  exited with `stopReason === "critic_failed"`; the trace artifact
+  exists but the negative-coverage accounting cannot be trusted.
+- `gate_disabled`: the operator explicitly set
+  `negativeCaseLift.gateMode === "off"` for this run.
+
+***
+
+### ALLOWED\_TEST\_CASE\_POLICY\_GATE\_STATUSES
+
+> `const` **ALLOWED\_TEST\_CASE\_POLICY\_GATE\_STATUSES**: readonly \[`"passed"`, `"failed"`, `"advisory"`, `"skipped"`\]
+
+Closed set of statuses a quality-gate evaluation may report.
+
+- `passed`: the gate's threshold was met.
+- `failed`: the gate's threshold was not met. When the gate runs in
+  `enforce` mode the production runner exits with a non-zero failure
+  class; in `advisory` mode the same status is recorded but the run
+  completes successfully.
+- `advisory`: the gate's threshold was not met but the gate was
+  configured to record-only (`gateMode === "advisory"`); the run is
+  not blocked.
+- `skipped`: the gate could not be evaluated (the upstream signal it
+  depends on did not run, or the gate was explicitly disabled). Skip
+  is an explicit, audit-visible status — it is never silently a
+  pass.
+
+***
+
 ### ALLOWED\_TEST\_CASE\_POLICY\_OUTCOMES
 
 > `const` **ALLOWED\_TEST\_CASE\_POLICY\_OUTCOMES**: readonly \[`"missing_trace"`, `"missing_expected_results"`, `"pii_in_test_data"`, `"ict_register_ref_required"`, `"technique_quota_breach"`, `"p0_risk_element_uncovered"`, `"missing_negative_or_validation_for_required_field"`, `"missing_accessibility_case"`, `"missing_boundary_case"`, `"schema_invalid"`, `"duplicate_test_case"`, `"regulated_risk_review_required"`, `"ambiguity_review_required"`, `"qc_mapping_not_exportable"`, `"low_confidence_review_required"`, `"open_questions_review_required"`, `"visual_sidecar_failure"`, `"visual_sidecar_fallback_used"`, `"visual_sidecar_low_confidence"`, `"visual_sidecar_possible_pii"`, `"visual_sidecar_prompt_injection_text"`, `"semantic_suspicious_content"`, `"cross_modal_faithfulness_score_below_threshold"`, `"risk_tag_downgrade_detected"`, `"custom_context_risk_escalation"`, `"multi_source_conflict_present"`, `"coverage_drift_exceeded"`, `"a11y_criterion_covered_weakly"`, `"a11y_criterion_not_covered"`\]
@@ -20567,7 +20764,7 @@ Schema version for persisted context-budget analyzer reports.
 
 ### CONTRACT\_VERSION
 
-> `const` **CONTRACT\_VERSION**: `"4.52.0"`
+> `const` **CONTRACT\_VERSION**: `"4.53.0"`
 
 Current contract version constant.
 Must be bumped according to CONTRACT_CHANGELOG.md rules.
@@ -22011,7 +22208,7 @@ Schema version for persisted `TestDesignModel` projection artifacts.
 
 ### TEST\_INTELLIGENCE\_CONTRACT\_VERSION
 
-> `const` **TEST\_INTELLIGENCE\_CONTRACT\_VERSION**: `"1.13.0"`
+> `const` **TEST\_INTELLIGENCE\_CONTRACT\_VERSION**: `"1.14.0"`
 
 Contract version for the opt-in test-intelligence surface.
 

@@ -163,7 +163,7 @@ export interface TestIntelligenceTransferPrincipal {
 }
 
 /** Contract version for the opt-in test-intelligence surface. */
-export const TEST_INTELLIGENCE_CONTRACT_VERSION = "1.13.0" as const;
+export const TEST_INTELLIGENCE_CONTRACT_VERSION = "1.14.0" as const;
 
 /**
  * Schema version for generated test case payloads.
@@ -602,6 +602,127 @@ export interface TestCasePolicyReport {
    * provenance bundle without embedding the full graph here.
    */
   provenance?: TestCasePolicyProvenanceSummary;
+  /**
+   * Optional structured quality-gate evaluations carried alongside the
+   * decision records (Issue #2053). Today this surfaces the
+   * `G-NEG-CASE` adversarial-critic negative-case-lift hard gate; future
+   * gates extend the same array. The field is omitted when no quality
+   * gates were evaluated for the run, so the byte-shape stays stable for
+   * legacy runs that pre-date the gate registry.
+   */
+  gateResults?: TestCasePolicyGateResult[];
+}
+
+/**
+ * Closed set of quality-gate identifiers the production runner may
+ * evaluate. The set is intentionally small and append-only — every gate
+ * id documented here corresponds to an enforceable hard gate with
+ * persisted, auditable evaluation evidence.
+ *
+ * - `G-NEG-CASE` (Issue #2053): adversarial-critic negative-case-lift
+ *   hard gate. Compares the per-run baseline negative-case ratio
+ *   against the post-critic final negative-case ratio and asserts the
+ *   relative ratio increase meets the configured threshold (default
+ *   `0.30`).
+ */
+export const ALLOWED_TEST_CASE_POLICY_GATE_IDS = ["G-NEG-CASE"] as const;
+export type TestCasePolicyGateId =
+  (typeof ALLOWED_TEST_CASE_POLICY_GATE_IDS)[number];
+
+/**
+ * Closed set of statuses a quality-gate evaluation may report.
+ *
+ * - `passed`: the gate's threshold was met.
+ * - `failed`: the gate's threshold was not met. When the gate runs in
+ *   `enforce` mode the production runner exits with a non-zero failure
+ *   class; in `advisory` mode the same status is recorded but the run
+ *   completes successfully.
+ * - `advisory`: the gate's threshold was not met but the gate was
+ *   configured to record-only (`gateMode === "advisory"`); the run is
+ *   not blocked.
+ * - `skipped`: the gate could not be evaluated (the upstream signal it
+ *   depends on did not run, or the gate was explicitly disabled). Skip
+ *   is an explicit, audit-visible status — it is never silently a
+ *   pass.
+ */
+export const ALLOWED_TEST_CASE_POLICY_GATE_STATUSES = [
+  "passed",
+  "failed",
+  "advisory",
+  "skipped",
+] as const;
+export type TestCasePolicyGateStatus =
+  (typeof ALLOWED_TEST_CASE_POLICY_GATE_STATUSES)[number];
+
+/**
+ * Closed set of skip reasons recorded when a quality gate's status is
+ * `"skipped"`. Each reason documents *why* the gate could not be
+ * evaluated so the audit trail can distinguish a missing input from a
+ * deliberate disable.
+ *
+ * - `adversarial_critic_disabled`: the adversarial-critic loop did not
+ *   run (no `logicJudge` client wired or the loop was suppressed by an
+ *   upstream condition); the gate has no trace artifact to evaluate.
+ * - `adversarial_critic_failed`: the adversarial-critic loop ran but
+ *   exited with `stopReason === "critic_failed"`; the trace artifact
+ *   exists but the negative-coverage accounting cannot be trusted.
+ * - `gate_disabled`: the operator explicitly set
+ *   `negativeCaseLift.gateMode === "off"` for this run.
+ */
+export const ALLOWED_TEST_CASE_POLICY_GATE_SKIP_REASONS = [
+  "adversarial_critic_disabled",
+  "adversarial_critic_failed",
+  "gate_disabled",
+] as const;
+export type TestCasePolicyGateSkipReason =
+  (typeof ALLOWED_TEST_CASE_POLICY_GATE_SKIP_REASONS)[number];
+
+/**
+ * Per-gate evaluation record persisted in `policy-report.json` under
+ * `gateResults`. The shape is intentionally compact: callers correlate
+ * the record back to its source artifact via `ruleRef` (a stable
+ * pointer that names the artifact filename or the contract symbol the
+ * gate consulted) and use `observedRatio` / `thresholdRatio` for
+ * audit-grade comparison.
+ *
+ * Issue #2053 ships the `G-NEG-CASE` instance grounded in the
+ * `AdversarialCriticTraceArtifact.negativeCoverage` block. Future gates
+ * follow the same structure.
+ */
+export interface TestCasePolicyGateResult {
+  /** Stable gate identifier; see {@link ALLOWED_TEST_CASE_POLICY_GATE_IDS}. */
+  readonly gateId: TestCasePolicyGateId;
+  /** Evaluation outcome; see {@link ALLOWED_TEST_CASE_POLICY_GATE_STATUSES}. */
+  readonly status: TestCasePolicyGateStatus;
+  /**
+   * Stable rule reference — typically a `ti:`-prefixed contract symbol
+   * or an artifact filename — so auditors can resolve the gate's
+   * source evidence without the runner having to embed it.
+   */
+  readonly ruleRef: string;
+  /**
+   * Threshold the gate compared against, when the gate is
+   * threshold-shaped (e.g. ratio ≥ 0.30). Omitted for skip-only
+   * outcomes that did not consult a threshold.
+   */
+  readonly thresholdRatio?: number;
+  /**
+   * Observed value the gate produced (e.g. relative ratio increase).
+   * Omitted when the gate was skipped before the value was computed.
+   */
+  readonly observedRatio?: number;
+  /**
+   * Skip reason when `status === "skipped"`; absent otherwise. See
+   * {@link ALLOWED_TEST_CASE_POLICY_GATE_SKIP_REASONS} for the closed
+   * set of values.
+   */
+  readonly skipReason?: TestCasePolicyGateSkipReason;
+  /**
+   * Human-readable explanation suitable for surfacing in CI logs and
+   * audit reports. Always present so consumers do not have to derive a
+   * message from the structured fields.
+   */
+  readonly message: string;
 }
 
 /** Additive provenance summary duplicated into `policy-report.json`. */
@@ -690,6 +811,41 @@ export interface TestCasePolicyProfileRules {
    * when omitted the hard-gate skips the breadth check.
    */
   actionCoverageRatioMin?: number;
+  /**
+   * Issue #2053 — adversarial-critic negative-case-lift hard gate
+   * (`G-NEG-CASE`). When the adversarial-critic loop runs for a job,
+   * the production runner compares the per-run baseline negative-case
+   * ratio against the post-critic final negative-case ratio. The
+   * relative ratio increase must meet `thresholdRatio` (default
+   * `0.30`).
+   *
+   * `gateMode` controls enforcement:
+   *
+   * - `"enforce"` (the secure default for `eu-banking-default`): a
+   *   below-threshold result fails the run with the
+   *   `NEGATIVE_CASE_LIFT_BELOW_THRESHOLD` failure class so CI marks
+   *   the build red.
+   * - `"advisory"`: the gate result is persisted in
+   *   `policy-report.json` but does not fail the run. Intended for
+   *   fast iterative local runs that should still record the metric.
+   * - `"off"`: the gate is not evaluated; the entry persisted in the
+   *   policy report records `status === "skipped"` with
+   *   `skipReason === "gate_disabled"` so audit can distinguish a
+   *   deliberate disable from a missing upstream signal.
+   *
+   * When the adversarial-critic loop did not run (no judge client
+   * wired) or exited with `stopReason === "critic_failed"`, the gate
+   * status is always `"skipped"` regardless of `gateMode` — skip is
+   * an explicit, audit-visible status and is never silently a pass.
+   *
+   * Optional for backward compatibility: when omitted the production
+   * runner falls back to the documented default of
+   * `{ gateMode: "enforce", thresholdRatio: 0.30 }`.
+   */
+  negativeCaseLift?: {
+    readonly gateMode: "enforce" | "advisory" | "off";
+    readonly thresholdRatio: number;
+  };
 }
 
 /** Built-in policy profile shape. Profiles are identified by `id`+`version`. */
@@ -10760,7 +10916,7 @@ export interface ReleaseQualityGatesReport {
  * Must be bumped according to CONTRACT_CHANGELOG.md rules.
  * Package version alignment is documented in VERSIONING.md.
  */
-export const CONTRACT_VERSION = "4.52.0" as const;
+export const CONTRACT_VERSION = "4.53.0" as const;
 
 // ---------------------------------------------------------------------------
 // Issue #1774 — UntrustedContentNormalizer (2025-vintage injection carriers).

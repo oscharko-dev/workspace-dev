@@ -34,6 +34,27 @@ export const EU_BANKING_DEFAULT_FIELD_COVERAGE_RATIO_MIN = 0.4 as const;
  */
 export const EU_BANKING_DEFAULT_ACTION_COVERAGE_RATIO_MIN = 0.5 as const;
 
+/**
+ * Issue #2053 — relative negative-case-ratio improvement threshold the
+ * adversarial-critic `G-NEG-CASE` hard gate enforces by default. Mirrors
+ * the in-module `ADVERSARIAL_NEGATIVE_RATIO_IMPROVEMENT_THRESHOLD`
+ * constant in `adversarial-critic-agent.ts`; both values are kept in
+ * sync via `policy-profile.test.ts`.
+ */
+export const EU_BANKING_DEFAULT_NEGATIVE_CASE_LIFT_THRESHOLD_RATIO =
+  0.3 as const;
+
+/**
+ * Issue #2053 — default gate mode for `G-NEG-CASE` on the
+ * `eu-banking-default` profile. The secure default is `"enforce"` so
+ * audit-grade runs fail closed when the adversarial-critic loop fails
+ * to lift the negative-case ratio by the configured threshold.
+ * Operators who want a record-only behaviour for fast iterative local
+ * runs override this to `"advisory"` (or `"off"`) on a derived profile.
+ */
+export const EU_BANKING_DEFAULT_NEGATIVE_CASE_LIFT_GATE_MODE =
+  "enforce" as const;
+
 const EU_BANKING_DEFAULT_RULES: TestCasePolicyProfileRules = {
   reviewOnlyRiskCategories: ["regulated_data", "financial_transaction"],
   strictRiskCategories: ["regulated_data", "financial_transaction", "high"],
@@ -47,6 +68,10 @@ const EU_BANKING_DEFAULT_RULES: TestCasePolicyProfileRules = {
   enforceRiskTagDowngradeDetection: true,
   fieldCoverageRatioMin: EU_BANKING_DEFAULT_FIELD_COVERAGE_RATIO_MIN,
   actionCoverageRatioMin: EU_BANKING_DEFAULT_ACTION_COVERAGE_RATIO_MIN,
+  negativeCaseLift: {
+    gateMode: EU_BANKING_DEFAULT_NEGATIVE_CASE_LIFT_GATE_MODE,
+    thresholdRatio: EU_BANKING_DEFAULT_NEGATIVE_CASE_LIFT_THRESHOLD_RATIO,
+  },
 };
 
 /** Default `eu-banking-default` policy profile (deep-frozen). */
@@ -64,6 +89,10 @@ export const EU_BANKING_DEFAULT_POLICY_PROFILE: Readonly<TestCasePolicyProfile> 
       strictRiskCategories: Object.freeze([
         ...EU_BANKING_DEFAULT_RULES.strictRiskCategories,
       ]) as TestCasePolicyProfileRules["strictRiskCategories"],
+      negativeCaseLift: Object.freeze({
+        gateMode: EU_BANKING_DEFAULT_NEGATIVE_CASE_LIFT_GATE_MODE,
+        thresholdRatio: EU_BANKING_DEFAULT_NEGATIVE_CASE_LIFT_THRESHOLD_RATIO,
+      }),
     }),
   });
 
@@ -114,6 +143,14 @@ export const cloneEuBankingDefaultProfile = (): TestCasePolicyProfile => {
     EU_BANKING_DEFAULT_POLICY_PROFILE.rules.actionCoverageRatioMin;
   if (actionCoverageRatioMin !== undefined) {
     rules.actionCoverageRatioMin = actionCoverageRatioMin;
+  }
+  const negativeCaseLift =
+    EU_BANKING_DEFAULT_POLICY_PROFILE.rules.negativeCaseLift;
+  if (negativeCaseLift !== undefined) {
+    rules.negativeCaseLift = {
+      gateMode: negativeCaseLift.gateMode,
+      thresholdRatio: negativeCaseLift.thresholdRatio,
+    };
   }
   return {
     id: EU_BANKING_DEFAULT_POLICY_PROFILE.id,
