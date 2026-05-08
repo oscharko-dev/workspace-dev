@@ -22,6 +22,7 @@
 
 import {
   TEST_INTELLIGENCE_CONTRACT_VERSION,
+  SIDECAR_DEPLOYMENT_MAX_LENGTH,
   VISUAL_SIDECAR_SCHEMA_VERSION,
   VISUAL_SIDECAR_VALIDATION_REPORT_SCHEMA_VERSION,
   type BusinessTestIntentIr,
@@ -88,7 +89,7 @@ export interface ValidateVisualSidecarInput {
   generatedAt: string;
   visual: ReadonlyArray<unknown>;
   intent: BusinessTestIntentIr;
-  primaryDeployment?: "llama-4-maverick-vision" | "phi-4-multimodal-poc";
+  primaryDeployment?: string;
 }
 
 export const validateVisualSidecar = (
@@ -174,7 +175,7 @@ interface SingleInput {
     string,
     { fieldLabels: Map<string, string>; actionLabels: Map<string, string> }
   >;
-  primaryDeployment?: "llama-4-maverick-vision" | "phi-4-multimodal-poc";
+  primaryDeployment?: string;
 }
 
 const isObject = (value: unknown): value is Record<string, unknown> => {
@@ -267,17 +268,27 @@ const isPiiKind = (value: unknown): value is (typeof PII_KINDS)[number] => {
   );
 };
 
+const INLINE_DEPLOYMENT_ALIASES = new Set(["inline", "current"]);
+
 const asDeployment = (
   value: unknown,
-): "llama-4-maverick-vision" | "phi-4-multimodal-poc" | "mock" | undefined => {
+  primaryDeployment?: string,
+): string | undefined => {
+  if (typeof value !== "string") return undefined;
+  const trimmed = value.trim();
   if (
-    value === "llama-4-maverick-vision" ||
-    value === "phi-4-multimodal-poc" ||
-    value === "mock"
+    trimmed.length === 0 ||
+    trimmed.length > SIDECAR_DEPLOYMENT_MAX_LENGTH
   ) {
-    return value;
+    return undefined;
   }
-  return undefined;
+  if (
+    primaryDeployment !== undefined &&
+    INLINE_DEPLOYMENT_ALIASES.has(trimmed.toLowerCase())
+  ) {
+    return primaryDeployment;
+  }
+  return trimmed;
 };
 
 const validateSingle = (input: SingleInput): VisualSidecarValidationRecord => {
@@ -321,13 +332,20 @@ const validateSingle = (input: SingleInput): VisualSidecarValidationRecord => {
     outcomesSet.add("schema_invalid");
   }
 
-  const sidecarDeployment = asDeployment(description["sidecarDeployment"]);
+  const sidecarDeployment = asDeployment(
+    description["sidecarDeployment"],
+    input.primaryDeployment,
+  );
   if (sidecarDeployment === undefined) {
     issues.push({
       path: `${basePath}.sidecarDeployment`,
       code: "schema_invalid",
       severity: "error",
-      message: `unrecognised deployment "${String(description["sidecarDeployment"])}"`,
+      message:
+        `sidecarDeployment must be a non-empty string no longer than ${SIDECAR_DEPLOYMENT_MAX_LENGTH} characters` +
+        (input.primaryDeployment === undefined
+          ? "; aliases such as inline/current require primaryDeployment"
+          : ""),
     });
     outcomesSet.add("schema_invalid");
   }
@@ -607,8 +625,7 @@ const validateSingle = (input: SingleInput): VisualSidecarValidationRecord => {
       outcomesSet.add("fallback_used");
     } else if (
       sidecarDeployment !== undefined &&
-      sidecarDeployment !== input.primaryDeployment &&
-      sidecarDeployment === "phi-4-multimodal-poc"
+      sidecarDeployment !== input.primaryDeployment
     ) {
       outcomesSet.add("fallback_used");
     }

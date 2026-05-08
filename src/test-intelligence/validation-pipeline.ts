@@ -88,7 +88,7 @@ export interface RunValidationPipelineInput {
   /** Optional rubric score (0..1) from a downstream rater. */
   rubricScore?: number;
   /** Optional primary visual deployment, used for fallback detection. */
-  primaryVisualDeployment?: "llama-4-maverick-vision" | "phi-4-multimodal-poc";
+  primaryVisualDeployment?: string;
   /**
    * Optional reviewer overrides for `semantic_suspicious_content` findings
    * (Issue #1413). Forwarded into the policy gate; also applied when

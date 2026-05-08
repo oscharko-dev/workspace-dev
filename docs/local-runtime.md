@@ -39,9 +39,8 @@ the role-separated model setup for screenshot understanding:
 - `WORKSPACE_TEST_SPACE_VISUAL_MODEL_ENDPOINT`
 - `WORKSPACE_TEST_SPACE_VISUAL_PRIMARY_DEPLOYMENT`
 - `WORKSPACE_TEST_SPACE_VISUAL_FALLBACK_DEPLOYMENT`
-- `WORKSPACE_TEST_SPACE_API_KEY` _or_ `WORKSPACE_TEST_SPACE_MODEL_API_KEY`
-  (Issue #1660 alias; the live smoke accepts either, with
-  `WORKSPACE_TEST_SPACE_API_KEY` taking precedence when both are set)
+- `WORKSPACE_TEST_SPACE_LLM_API_KEY`. This is the only supported API-key
+  variable for the Test-Intelligence LLM gateway.
 
 Run the operator-controlled smoke only from an environment that already has the
 API key in process memory:
@@ -54,7 +53,7 @@ Expected role bindings are:
 
 | Role                            | Deployment                    |
 | ------------------------------- | ----------------------------- |
-| Structured test-case generation | `gpt-oss-120b`                |
+| Structured test-case generation | `mistral-large-3`             |
 | Primary visual sidecar          | `llama-4-maverick-vision`     |
 | Fallback visual sidecar         | `phi-4-multimodal-instruct`   |
 

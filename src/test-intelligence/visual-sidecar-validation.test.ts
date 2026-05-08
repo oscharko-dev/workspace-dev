@@ -327,19 +327,52 @@ test("mock deployment without primary set marks fallback", () => {
   assert.equal(report.blocked, false);
 });
 
-test("phi-4-multimodal-poc when primary is llama-4 is fallback", () => {
+test("current fallback deployment names are accepted and marked fallback", () => {
   const report = validateVisualSidecar({
     jobId: "job-1",
     generatedAt: GENERATED_AT,
     visual: [
       buildDescription({
-        sidecarDeployment: "phi-4-multimodal-poc",
+        sidecarDeployment: "phi-4-multimodal-instruct",
       }),
     ],
     intent: buildIntent(),
     primaryDeployment: "llama-4-maverick-vision",
   });
   assert.ok(report.records[0]?.outcomes.includes("fallback_used"));
+  assert.ok(!report.records[0]?.outcomes.includes("schema_invalid"));
+});
+
+test("inline sidecar deployment alias normalizes to primary deployment", () => {
+  const report = validateVisualSidecar({
+    jobId: "job-1",
+    generatedAt: GENERATED_AT,
+    visual: [
+      buildDescription({
+        sidecarDeployment: "inline",
+      }),
+    ],
+    intent: buildIntent(),
+    primaryDeployment: "llama-4-maverick-vision",
+  });
+  assert.equal(report.blocked, false);
+  assert.deepEqual(report.records[0]?.outcomes, ["ok"]);
+  assert.equal(report.records[0]?.deployment, "llama-4-maverick-vision");
+});
+
+test("oversized sidecar deployment labels are schema_invalid", () => {
+  const report = validateVisualSidecar({
+    jobId: "job-1",
+    generatedAt: GENERATED_AT,
+    visual: [
+      buildDescription({
+        sidecarDeployment: "x".repeat(129),
+      }),
+    ],
+    intent: buildIntent(),
+  });
+  assert.equal(report.blocked, true);
+  assert.ok(report.records[0]?.outcomes.includes("schema_invalid"));
 });
 
 test("records are sorted by screenId for stable serialization", () => {

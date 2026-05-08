@@ -242,8 +242,8 @@ export const VISUAL_SIDECAR_SCHEMA_VERSION = "1.1.0" as const;
  *
  * The optional brand symbol documents intent without forcing a public
  * type-import migration on callers that pass plain string literals
- * (e.g., the historical four — `llama-4-maverick-vision`,
- * `phi-4-multimodal-poc`, `mistral-document-ai-2512`, `mock`).
+ * (e.g., `llama-4-maverick-vision`,
+ * `phi-4-multimodal-instruct`, `mistral-document-ai-2512`, `mock`).
  */
 export type SidecarDeployment = string & {
   readonly __brand?: "sidecar_deployment";
@@ -981,7 +981,7 @@ export interface VisualSidecarValidationReport {
 /**
  * Allowed gateway roles. Each role is bound to a single deployment to keep the
  * structured test-case generator (`gpt-oss-120b`) strictly separated from the
- * multimodal visual sidecars (`mistral-document-ai-2512`, `llama-4-maverick-vision`, `phi-4-multimodal-poc`),
+ * multimodal visual sidecars (`llama-4-maverick-vision`, `phi-4-multimodal-instruct`),
  * and from the cross-model logic judge (Issue #1932) which reuses the structured-output
  * surface but is intentionally bound to a different deployment so a self-consistency
  * bias from the generator cannot be amplified by reusing the same model on the judge.
@@ -3551,7 +3551,7 @@ export interface JudgePanelPerJudgeVerdictRecord {
   /**
    * Stable model identifier this judge was bound to at the time of
    * scoring. Echoed verbatim from the {@link AgentModelBinding}'s
-   * `modelId` (e.g., `"gpt-oss-120b"`, `"phi-4-multimodal-poc"`).
+ * `modelId` (e.g., `"gpt-oss-120b"`, `"phi-4-multimodal-instruct"`).
    */
   readonly modelBinding: string;
   /** Raw 0..1 pointwise score before post-hoc calibration. */

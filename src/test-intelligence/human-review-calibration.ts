@@ -61,7 +61,7 @@ export interface HumanReviewPipelineCalibrationReport {
 const PRIMARY_JUDGE_ID: JudgePanelJudgeId = "judge_primary";
 const SECONDARY_JUDGE_ID: JudgePanelJudgeId = "judge_secondary";
 const PRIMARY_MODEL = "gpt-oss-120b";
-const SECONDARY_MODEL = "phi-4-multimodal-poc";
+const SECONDARY_MODEL = "phi-4-multimodal-instruct";
 
 const sortByCriterion = <
   T extends { criterion: string },

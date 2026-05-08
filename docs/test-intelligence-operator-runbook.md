@@ -31,7 +31,7 @@ which deployment under that account is used for which agent role.
 | Variable                                     | Required              | Purpose                                                                                                     |
 | -------------------------------------------- | --------------------- | ----------------------------------------------------------------------------------------------------------- |
 | `WORKSPACE_TEST_SPACE_MODEL_ENDPOINT`        | yes                   | Base URL of the Azure AI Foundry account that hosts the chat-completion deployments. Includes `/openai/v1`. |
-| `WORKSPACE_TEST_SPACE_MODEL_API_KEY`         | yes                   | Bearer token for the gateway. Stored in your secrets manager — never committed.                             |
+| `WORKSPACE_TEST_SPACE_LLM_API_KEY`           | yes                   | Shared bearer token for all configured LLM deployments. Stored in your secrets manager — never committed.   |
 | `WORKSPACE_TEST_SPACE_VISUAL_MODEL_ENDPOINT` | yes                   | Base URL for the visual-sidecar deployments. May equal `WORKSPACE_TEST_SPACE_MODEL_ENDPOINT`.               |
 | `FIGMA_ACCESS_TOKEN`                         | yes for URL ingestion | Bearer for the Figma REST API. Token-scoped, server-side only.                                              |
 
@@ -51,6 +51,10 @@ Verification: `pnpm exec node scripts/check-live-smoke-env.mjs` exits 0
 when the endpoint and credential variables are complete. The role-to-deployment
 variables marked **Wave 1+** are read by the corresponding follow-up issues
 once they ship; they are safe to set in advance.
+
+Credential handling is strict: set only `WORKSPACE_TEST_SPACE_LLM_API_KEY`.
+The older model-specific and generic API-key aliases are not supported by the
+Test-Intelligence production runner.
 
 #### 1c. Recommended Azure AI Foundry deployments
 
@@ -230,7 +234,22 @@ Bias controls enforced by the A/B lane:
 - Verbosity bias: concise output cap only; no hard length normalization in
   the score path.
 - Self-preference: cross-family panel (`gpt-oss-120b`,
-  `phi-4-multimodal-poc`).
+  `phi-4-multimodal-instruct`).
+
+### 6b. Agent role vocabularies
+
+Run reports intentionally expose two related role vocabularies:
+
+- Workflow/harness roles in `agent-role-run.json`: generator, logic judge,
+  semantic judge, adversarial gap finder, repair planner, and final verifier.
+- LLM sidecar participation in `agent-participation.json`: generator,
+  logic-judge, coverage-planner, risk-ranker, visual-primary, visual-fallback,
+  and a11y-judge.
+
+The split is expected: harness roles describe the deterministic orchestration
+steps, while sidecar roles describe concrete deployed model participation. When
+comparing benchmarks, use both artifacts so a run cannot look "multi-agent" if
+only the generator actually executed.
 
 For Issue #1804, `agent-eval-online-sampler.ts` runs an air-gapped online
 evaluator over a deterministic sample of redacted production traces. The
@@ -719,8 +738,7 @@ and is opt-in. The full policy is in
 - **Required env**: `WORKSPACE_TEST_SPACE_LIVE_E2E=1`,
   `WORKSPACE_TEST_SPACE_MODEL_ENDPOINT`,
   `WORKSPACE_TEST_SPACE_TESTCASE_MODEL_DEPLOYMENT`,
-  `WORKSPACE_TEST_SPACE_API_KEY` or
-  `WORKSPACE_TEST_SPACE_MODEL_API_KEY`. Visual + Jira variables are
+  `WORKSPACE_TEST_SPACE_LLM_API_KEY`. Visual + Jira variables are
   required only when the claim covers those surfaces. See the
   live-E2E doc §2 for the full matrix and redacted examples.
 - **Expected duration**: ≤ 5 minutes per run, capped by the production

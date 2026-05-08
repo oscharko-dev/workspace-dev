@@ -1228,7 +1228,7 @@ test("cli contract: test-intelligence doctor works without the feature gate", as
       WORKSPACE_TEST_SPACE_A11Y_JUDGE_DEPLOYMENT:
         "phi-4-multimodal-instruct",
       WORKSPACE_TEST_SPACE_MODEL_ENDPOINT: "https://aoai.example/openai/v1",
-      WORKSPACE_TEST_SPACE_MODEL_API_KEY: "secret-key",
+      WORKSPACE_TEST_SPACE_LLM_API_KEY: "secret-key",
     },
   });
   assert.equal(result.exitCode, 0, result.stderr);

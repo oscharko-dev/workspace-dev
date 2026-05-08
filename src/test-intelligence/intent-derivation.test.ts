@@ -30,19 +30,67 @@ const simpleForm: IntentDerivationFigmaInput = {
   ],
 };
 
-test("derivation emits one detected field and one action for a basic form", () => {
+test("derivation emits fields and first-class interactions for a basic form", () => {
   const ir = deriveBusinessTestIntentIr({ figma: simpleForm });
   assert.equal(ir.version, BUSINESS_TEST_INTENT_IR_SCHEMA_VERSION);
   assert.equal(ir.detectedFields.length, 1);
-  assert.equal(ir.detectedActions.length, 1);
+  assert.equal(ir.detectedActions.length, 2);
   const [field] = ir.detectedFields;
   const [action] = ir.detectedActions;
   assert.equal(field?.trace.nodeId, "node-username");
   assert.equal(field?.label, "Username");
   assert.equal(action?.trace.nodeId, "node-submit");
   assert.equal(action?.label, "Submit");
+  assert.ok(
+    ir.detectedActions.some(
+      (candidate) =>
+        candidate.trace.nodeId === "node-username" &&
+        candidate.kind === "change_input",
+    ),
+  );
   assert.equal(ir.piiIndicators.length, 0);
   assert.equal(ir.redactions.length, 0);
+});
+
+test("derivation models radio, select, and amount inputs as interactions", () => {
+  const figma: IntentDerivationFigmaInput = {
+    source: { kind: "figma_local_json" },
+    screens: [
+      {
+        screenId: "loan",
+        screenName: "Loan calculator",
+        nodes: [
+          {
+            nodeId: "netto",
+            nodeName: "Netto option",
+            nodeType: "RADIO_OPTION",
+            text: "Netto",
+          },
+          {
+            nodeId: "vat-rate",
+            nodeName: "VAT rate select",
+            nodeType: "SELECT_FIELD",
+            text: "MwSt.",
+          },
+          {
+            nodeId: "purchase-price",
+            nodeName: "Purchase price",
+            nodeType: "TEXT_INPUT",
+            text: "Kaufpreis",
+          },
+        ],
+      },
+    ],
+  };
+  const ir = deriveBusinessTestIntentIr({ figma });
+  assert.deepEqual(
+    ir.detectedActions.map((action) => [action.trace.nodeId, action.kind]),
+    [
+      ["netto", "select_radio_option"],
+      ["purchase-price", "change_input"],
+      ["vat-rate", "change_select"],
+    ],
+  );
 });
 
 test("derivation is deterministic across two runs with the same input", () => {

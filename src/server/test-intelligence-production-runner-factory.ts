@@ -37,7 +37,9 @@ import type {
 } from "./request-handler.js";
 
 const TEST_GENERATION_TIMEOUT_MS = 240_000;
+const VISUAL_ROLE_TIMEOUT_MS = 300_000;
 const TEST_GENERATION_MAX_OUTPUT_TOKENS = 32_000;
+const LEGACY_GPT_OSS_DEPLOYMENT = "gpt-oss-120b";
 
 export interface ResolveTestIntelligenceProductionRunnerInput {
   /** Resolved startup gate (`options.testIntelligence?.enabled === true`). */
@@ -78,6 +80,17 @@ const readTrimmed = (
   return trimmed.length > 0 ? trimmed : undefined;
 };
 
+const resolveApiKeyFromEnv = (env: NodeJS.ProcessEnv): string | undefined => {
+  return readTrimmed(env, "WORKSPACE_TEST_SPACE_LLM_API_KEY");
+};
+
+const wireStructuredOutputOverrideForDeployment = (
+  deployment: string,
+): { wireStructuredOutputMode?: "none" } =>
+  deployment === LEGACY_GPT_OSS_DEPLOYMENT
+    ? { wireStructuredOutputMode: "none" }
+    : {};
+
 /**
  * Read endpoint/deployment/api-key from env. Throws
  * `ProductionRunnerError(LLM_GATEWAY_FAILED)` (retryable=false) when any
@@ -96,14 +109,12 @@ export const resolveLlmConfigFromEnv = (
       retryable: false,
     });
   }
-  const apiKey =
-    readTrimmed(env, "WORKSPACE_TEST_SPACE_API_KEY") ??
-    readTrimmed(env, "WORKSPACE_TEST_SPACE_MODEL_API_KEY");
+  const apiKey = resolveApiKeyFromEnv(env);
   if (apiKey === undefined) {
     throw new ProductionRunnerError({
       failureClass: "LLM_GATEWAY_FAILED",
       message:
-        "WORKSPACE_TEST_SPACE_API_KEY or WORKSPACE_TEST_SPACE_MODEL_API_KEY must be set for test-intelligence runner.",
+        "WORKSPACE_TEST_SPACE_LLM_API_KEY must be set for test-intelligence runner.",
       retryable: false,
     });
   }
@@ -169,11 +180,9 @@ const defaultBuildLlmBundle = (
         timeoutMs: TEST_GENERATION_TIMEOUT_MS,
         maxRetries: 1,
         circuitBreaker: { failureThreshold: 2, resetTimeoutMs: 30_000 },
-        // Azure AI Foundry's `gpt-oss-120b` returns empty content for any
-        // wire `response_format` value; suppress the wire field while
-        // keeping the in-process JSON-parse + schema validation path
-        // (probed and recorded in #1733/#1734).
-        wireStructuredOutputMode: "none",
+        // Azure AI Foundry's `gpt-oss-120b` returns empty content for wire
+        // response_format values; suppress only for that legacy deployment.
+        ...wireStructuredOutputOverrideForDeployment(config.deployment),
       },
       visualPrimary: {
         role: "visual_primary",
@@ -191,7 +200,7 @@ const defaultBuildLlmBundle = (
           streamingSupport: false,
           imageInputSupport: true,
         },
-        timeoutMs: 60_000,
+        timeoutMs: VISUAL_ROLE_TIMEOUT_MS,
         maxRetries: 1,
         circuitBreaker: { failureThreshold: 2, resetTimeoutMs: 30_000 },
       },
@@ -211,7 +220,7 @@ const defaultBuildLlmBundle = (
           streamingSupport: false,
           imageInputSupport: true,
         },
-        timeoutMs: 60_000,
+        timeoutMs: VISUAL_ROLE_TIMEOUT_MS,
         maxRetries: 1,
         circuitBreaker: { failureThreshold: 2, resetTimeoutMs: 30_000 },
       },
@@ -233,7 +242,7 @@ const defaultBuildLlmBundle = (
                 streamingSupport: false,
                 imageInputSupport: true,
               },
-              timeoutMs: 60_000,
+              timeoutMs: VISUAL_ROLE_TIMEOUT_MS,
               maxRetries: 1,
               circuitBreaker: { failureThreshold: 2, resetTimeoutMs: 30_000 },
             },

@@ -6,7 +6,7 @@
  *
  *   - test-generation model component (`gpt-oss-120b` family)
  *   - visual primary model component (`llama-4-maverick-vision`)
- *   - visual fallback model component (`phi-4-multimodal-poc`)
+ *   - visual fallback model component (`phi-4-multimodal-instruct`)
  *   - data component for the curated few-shot bundle (hash = promptHash)
  *   - data component for the active policy profile (hash = canonical SHA-256)
  *
@@ -158,7 +158,7 @@ export interface BuildLbomDocumentInput {
 const CANONICAL_MODEL_NAMES: Record<LbomModelRole, string> = {
   test_generation: "gpt-oss-120b",
   visual_primary: "llama-4-maverick-vision",
-  visual_fallback: "phi-4-multimodal-poc",
+  visual_fallback: "phi-4-multimodal-instruct",
 };
 
 const MODEL_DESCRIPTIONS: Record<LbomModelRole, string> = {
@@ -616,7 +616,7 @@ export const buildLbomDocument = (
   const visualFallbackDeployment =
     input.modelDeployments.visualFallback === undefined ||
     input.modelDeployments.visualFallback.length === 0
-      ? "phi-4-multimodal-poc"
+      ? "phi-4-multimodal-instruct"
       : sanitizeLabel(input.modelDeployments.visualFallback);
   const visualFallbackReason: VisualSidecarFallbackReason =
     input.visualSidecar?.outcome === "success"
@@ -674,7 +674,8 @@ export const buildLbomDocument = (
       provider: input.visualModelBindings?.visual_fallback?.provider,
       licenseStatus: input.visualModelBindings?.visual_fallback?.licenseStatus,
       fallbackUsed:
-        fallbackUsed && fallbackSelectedDeployment === "phi-4-multimodal-poc",
+        fallbackUsed &&
+        fallbackSelectedDeployment === "phi-4-multimodal-instruct",
       fallbackReason: visualFallbackReason,
       imageInputSupport: true,
       ...(input.weightsSha256?.visual_fallback !== undefined
