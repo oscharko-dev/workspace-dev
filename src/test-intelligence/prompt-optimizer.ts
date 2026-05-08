@@ -708,7 +708,7 @@ export const appendOptimizedTemplateToLockFile = async (input: {
   }
 
   const existing = Array.isArray(parsed.optimizedTemplates)
-    ? (parsed.optimizedTemplates as PromptOptimizationLockEntry[])
+    ? (parsed.optimizedTemplates as readonly unknown[])
     : [];
   const idAlreadyPresent = existing.some(
     (item) =>
@@ -721,7 +721,10 @@ export const appendOptimizedTemplateToLockFile = async (input: {
     return { updated: false, entries: existing.length };
   }
 
-  const next = [...existing, input.entry].sort((left, right) =>
+  const next: PromptOptimizationLockEntry[] = [
+    ...(existing as readonly PromptOptimizationLockEntry[]),
+    input.entry,
+  ].sort((left, right) =>
     left.optimizedTemplateId.localeCompare(right.optimizedTemplateId),
   );
   const merged: Record<string, unknown> = {
