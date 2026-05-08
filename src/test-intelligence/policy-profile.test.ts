@@ -4,8 +4,11 @@ import {
   EU_BANKING_DEFAULT_POLICY_PROFILE_ID,
   EU_BANKING_DEFAULT_POLICY_PROFILE_VERSION,
 } from "../contracts/index.js";
+import { ADVERSARIAL_NEGATIVE_RATIO_IMPROVEMENT_THRESHOLD } from "./adversarial-critic-agent.js";
 import {
   cloneEuBankingDefaultProfile,
+  EU_BANKING_DEFAULT_NEGATIVE_CASE_LIFT_GATE_MODE,
+  EU_BANKING_DEFAULT_NEGATIVE_CASE_LIFT_THRESHOLD_RATIO,
   EU_BANKING_DEFAULT_POLICY_PROFILE,
 } from "./policy-profile.js";
 
@@ -58,4 +61,42 @@ test("default profile is deep-frozen", () => {
       EU_BANKING_DEFAULT_POLICY_PROFILE.rules.reviewOnlyRiskCategories,
     ),
   );
+});
+
+test("Issue #2053: default profile enforces G-NEG-CASE at 0.30 with deep-frozen config", () => {
+  const config = EU_BANKING_DEFAULT_POLICY_PROFILE.rules.negativeCaseLift;
+  assert.ok(config !== undefined, "expected default profile to expose the gate config");
+  assert.equal(config.gateMode, "enforce");
+  assert.equal(config.thresholdRatio, 0.3);
+  assert.ok(Object.isFrozen(config), "negativeCaseLift block must be deep-frozen");
+});
+
+test("Issue #2053: clone round-trips negativeCaseLift and isolates it from the frozen default", () => {
+  const a = cloneEuBankingDefaultProfile();
+  const b = cloneEuBankingDefaultProfile();
+  assert.deepEqual(a.rules.negativeCaseLift, {
+    gateMode: "enforce",
+    thresholdRatio: 0.3,
+  });
+  a.rules.negativeCaseLift = { gateMode: "advisory", thresholdRatio: 0.5 };
+  assert.deepEqual(b.rules.negativeCaseLift, {
+    gateMode: "enforce",
+    thresholdRatio: 0.3,
+  });
+  assert.deepEqual(EU_BANKING_DEFAULT_POLICY_PROFILE.rules.negativeCaseLift, {
+    gateMode: "enforce",
+    thresholdRatio: 0.3,
+  });
+});
+
+test("Issue #2053: default threshold matches the in-module agent constant", () => {
+  // The policy-profile constant and the adversarial-critic-agent
+  // constant document the same threshold from two angles. Drift between
+  // them would cause the gate's behaviour to silently diverge from the
+  // accounting metric persisted in the trace artifact.
+  assert.equal(
+    EU_BANKING_DEFAULT_NEGATIVE_CASE_LIFT_THRESHOLD_RATIO,
+    ADVERSARIAL_NEGATIVE_RATIO_IMPROVEMENT_THRESHOLD,
+  );
+  assert.equal(EU_BANKING_DEFAULT_NEGATIVE_CASE_LIFT_GATE_MODE, "enforce");
 });

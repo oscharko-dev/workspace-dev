@@ -97,6 +97,8 @@ import {
   type TenantScope,
   type TestIntentSourceRef,
   type TestCaseLevel,
+  type TestCasePolicyGateResult,
+  type TestCasePolicyProfileRules,
   type TestCasePolicyReport,
   type TestCasePriority,
   type TestCaseRiskCategory,
@@ -216,7 +218,11 @@ import {
   type CompiledPromptCustomContext,
   type SourceMixPlan,
 } from "../contracts/index.js";
-import { cloneEuBankingDefaultProfile } from "./policy-profile.js";
+import {
+  cloneEuBankingDefaultProfile,
+  EU_BANKING_DEFAULT_NEGATIVE_CASE_LIFT_GATE_MODE,
+  EU_BANKING_DEFAULT_NEGATIVE_CASE_LIFT_THRESHOLD_RATIO,
+} from "./policy-profile.js";
 import { writeAgentRoleRunArtifact } from "./agent-role-run-artifact.js";
 import { listGeneratorDiversityPassProfiles } from "./agent-role-profile.js";
 import {
@@ -367,6 +373,7 @@ export const PRODUCTION_RUNNER_FAILURE_CLASSES = [
   "FINOPS_BUDGET_INVALID",
   "CUSTOM_CONTEXT_MARKDOWN_INVALID",
   "CUSTOMER_PROFILE_INVALID",
+  "NEGATIVE_CASE_LIFT_BELOW_THRESHOLD",
 ] as const;
 
 export type ProductionRunnerFailureClass =
@@ -849,6 +856,27 @@ export interface RunFigmaToQcTestCasesInput {
   roleConfigurationSources?: Partial<
     Record<AgentParticipationRole, AgentParticipationConfigurationSource>
   >;
+  /**
+   * Issue #2053 — quality-gate overrides applied on top of the resolved
+   * policy profile. Used as the documented CLI escape hatch so operators
+   * can flip the adversarial-critic negative-case-lift gate to
+   * `"advisory"` for fast iterative local runs without authoring a
+   * derived policy profile.
+   *
+   * Per-field merge: each field that is set on the override replaces
+   * the corresponding profile-level field; fields that are left
+   * undefined fall back to the policy profile, which itself falls back
+   * to the documented secure default of
+   * `{ gateMode: "enforce", thresholdRatio: 0.30 }`. This means
+   * `{ gateMode: "advisory" }` is a valid one-line escape hatch — the
+   * threshold inherits from the profile.
+   */
+  qualityGates?: {
+    readonly negativeCaseLift?: {
+      readonly gateMode?: "enforce" | "advisory" | "off";
+      readonly thresholdRatio?: number;
+    };
+  };
 }
 
 export interface RunFigmaToQcTestCasesResult {
@@ -1762,6 +1790,132 @@ const buildRunQualityArtifact = (input: {
     degradedReasons: [...degradedReasons].sort((left, right) =>
       left.localeCompare(right),
     ),
+  };
+};
+
+/**
+ * Issue #2053 — `ti:rule:adversarial-critic-negative-case-lift` is the
+ * stable rule reference embedded in the persisted gate result so
+ * auditors can resolve the source evidence without the runner having to
+ * inline the full trace artifact in `policy-report.json`.
+ */
+const ADVERSARIAL_NEGATIVE_CASE_LIFT_RULE_REF =
+  "ti:rule:adversarial-critic-negative-case-lift" as const;
+
+/**
+ * Issue #2053 — resolve the effective `G-NEG-CASE` configuration for a
+ * run. The lookup is per-field: each field that is set on the
+ * runner-level override replaces the corresponding profile field;
+ * fields left undefined fall back to the profile, which itself falls
+ * back to the documented secure defaults. This makes
+ * `{ gateMode: "advisory" }` a valid one-line escape hatch on top of
+ * any profile.
+ */
+const resolveNegativeCaseLiftConfig = (input: {
+  readonly profileRules: TestCasePolicyProfileRules | undefined;
+  readonly override:
+    | {
+        readonly gateMode?: "enforce" | "advisory" | "off";
+        readonly thresholdRatio?: number;
+      }
+    | undefined;
+}): {
+  readonly gateMode: "enforce" | "advisory" | "off";
+  readonly thresholdRatio: number;
+} => {
+  const fromProfile = input.profileRules?.negativeCaseLift;
+  const fromOverride = input.override;
+  return {
+    gateMode:
+      fromOverride?.gateMode ??
+      fromProfile?.gateMode ??
+      EU_BANKING_DEFAULT_NEGATIVE_CASE_LIFT_GATE_MODE,
+    thresholdRatio:
+      fromOverride?.thresholdRatio ??
+      fromProfile?.thresholdRatio ??
+      EU_BANKING_DEFAULT_NEGATIVE_CASE_LIFT_THRESHOLD_RATIO,
+  };
+};
+
+/**
+ * Issue #2053 — evaluate the adversarial-critic `G-NEG-CASE` quality
+ * gate against the post-run trace artifact and resolved config. The
+ * function never throws; the runner inspects `status` and routes
+ * `"failed"` results to a {@link ProductionRunnerError} only when
+ * `gateMode === "enforce"`. `"advisory"` callers persist the same
+ * record but complete the run successfully; `"skipped"` records carry
+ * a `skipReason` that pinpoints why the gate could not be evaluated.
+ */
+const evaluateNegativeCaseLiftGate = (input: {
+  readonly config: {
+    readonly gateMode: "enforce" | "advisory" | "off";
+    readonly thresholdRatio: number;
+  };
+  readonly adversarialCriticEnabled: boolean;
+  readonly traceArtifact: AdversarialCriticTraceArtifact | undefined;
+}): TestCasePolicyGateResult => {
+  const { config, adversarialCriticEnabled, traceArtifact } = input;
+  if (config.gateMode === "off") {
+    return {
+      gateId: "G-NEG-CASE",
+      status: "skipped",
+      ruleRef: ADVERSARIAL_NEGATIVE_CASE_LIFT_RULE_REF,
+      thresholdRatio: config.thresholdRatio,
+      skipReason: "gate_disabled",
+      message:
+        "G-NEG-CASE skipped: gateMode is \"off\"; recorded as skipped in policy-report so audit can distinguish a deliberate disable from a missing upstream signal.",
+    };
+  }
+  if (!adversarialCriticEnabled || traceArtifact === undefined) {
+    return {
+      gateId: "G-NEG-CASE",
+      status: "skipped",
+      ruleRef: ADVERSARIAL_NEGATIVE_CASE_LIFT_RULE_REF,
+      thresholdRatio: config.thresholdRatio,
+      skipReason: "adversarial_critic_disabled",
+      message:
+        "G-NEG-CASE skipped: adversarial-critic loop did not run for this job.",
+    };
+  }
+  if (traceArtifact.stopReason === "critic_failed") {
+    return {
+      gateId: "G-NEG-CASE",
+      status: "skipped",
+      ruleRef: ADVERSARIAL_NEGATIVE_CASE_LIFT_RULE_REF,
+      thresholdRatio: config.thresholdRatio,
+      skipReason: "adversarial_critic_failed",
+      message:
+        "G-NEG-CASE skipped: adversarial-critic loop exited with stopReason=\"critic_failed\"; negative-coverage accounting cannot be trusted.",
+    };
+  }
+  const observed = traceArtifact.negativeCoverage.relativeRatioIncrease;
+  if (observed >= config.thresholdRatio) {
+    return {
+      gateId: "G-NEG-CASE",
+      status: "passed",
+      ruleRef: ADVERSARIAL_NEGATIVE_CASE_LIFT_RULE_REF,
+      thresholdRatio: config.thresholdRatio,
+      observedRatio: observed,
+      message: `G-NEG-CASE passed: relativeRatioIncrease=${observed} >= threshold=${config.thresholdRatio}.`,
+    };
+  }
+  if (config.gateMode === "advisory") {
+    return {
+      gateId: "G-NEG-CASE",
+      status: "advisory",
+      ruleRef: ADVERSARIAL_NEGATIVE_CASE_LIFT_RULE_REF,
+      thresholdRatio: config.thresholdRatio,
+      observedRatio: observed,
+      message: `G-NEG-CASE advisory: relativeRatioIncrease=${observed} < threshold=${config.thresholdRatio}; gateMode is "advisory" so the run is not blocked.`,
+    };
+  }
+  return {
+    gateId: "G-NEG-CASE",
+    status: "failed",
+    ruleRef: ADVERSARIAL_NEGATIVE_CASE_LIFT_RULE_REF,
+    thresholdRatio: config.thresholdRatio,
+    observedRatio: observed,
+    message: `G-NEG-CASE failed: relativeRatioIncrease=${observed} < threshold=${config.thresholdRatio}; gateMode is "enforce".`,
   };
 };
 
@@ -3063,6 +3217,22 @@ export const runFigmaToQcTestCases = async (
       artifact: adversarialCriticTraceArtifact,
     });
   }
+  // Issue #2053 — evaluate the `G-NEG-CASE` quality gate against the
+  // resolved policy-profile config (with the optional CLI override
+  // applied on top). The result is persisted into `policy-report.json`
+  // unconditionally so audit can distinguish skip from pass; enforcement
+  // is deferred until after every artifact is sealed so a failure still
+  // leaves a complete evidence bundle on disk.
+  const negativeCaseLiftConfig = resolveNegativeCaseLiftConfig({
+    profileRules:
+      "rules" in customerRubric ? customerRubric.rules : undefined,
+    override: input.qualityGates?.negativeCaseLift,
+  });
+  const negativeCaseLiftGateResult = evaluateNegativeCaseLiftGate({
+    config: negativeCaseLiftConfig,
+    adversarialCriticEnabled,
+    traceArtifact: adversarialCriticTraceArtifact,
+  });
   const logicJudgeCache = createFileSystemLogicJudgeCache(
     join(input.outputRoot, "test-intelligence", "replay-cache", "logic-judge"),
     { tenantScope },
@@ -4535,6 +4705,12 @@ export const runFigmaToQcTestCases = async (
       merkleRoot: provenanceDocument["ti:merkleSeal"].root,
       leafCount: provenanceDocument["ti:merkleSeal"].leafCount,
     },
+    // Issue #2053 — surface quality-gate results alongside the policy
+    // decisions. Today this carries the single `G-NEG-CASE` entry; the
+    // array shape leaves room for additional gates without a contract
+    // change. Always present once the runner reaches this point so
+    // consumers do not have to defend against the field being absent.
+    gateResults: [negativeCaseLiftGateResult],
   };
   const policyBytes = encodeCanonicalJson(policyReport);
   const modelDeployments = {
@@ -4886,6 +5062,19 @@ export const runFigmaToQcTestCases = async (
     harnessSummary.outcome !== "accepted"
   ) {
     throw mapHarnessOutcomeToProductionRunnerError(harnessSummary);
+  }
+  // Issue #2053 — enforce the `G-NEG-CASE` hard gate after every
+  // artifact (policy report, evidence seal, provenance) is sealed so a
+  // gate failure still leaves a complete, auditable evidence bundle on
+  // disk. Only the `enforce` mode reaches this branch — `advisory` and
+  // `skipped` outcomes were already recorded in the policy report and
+  // do not block the run.
+  if (negativeCaseLiftGateResult.status === "failed") {
+    throw new ProductionRunnerError({
+      failureClass: "NEGATIVE_CASE_LIFT_BELOW_THRESHOLD",
+      message: negativeCaseLiftGateResult.message,
+      retryable: false,
+    });
   }
 
   return {

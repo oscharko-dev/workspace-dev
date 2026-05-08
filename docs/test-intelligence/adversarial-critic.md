@@ -78,3 +78,86 @@ The trace artifact records baseline vs. final negative-case ratios and the
 relative ratio increase. The target from Issue #1753 is encoded as a
 `>= 30%` relative improvement threshold, while preserving overall suite
 size.
+
+## G-NEG-CASE Quality Gate (Issue #2053)
+
+The `>= 30 %` lift target is enforced as a release-grade hard gate
+(`G-NEG-CASE`) by the production runner. The gate consumes the per-run
+`AdversarialCriticTraceArtifact.negativeCoverage` block and persists its
+result in `policy-report.json` under `gateResults` for audit. Skip is an
+explicit, audit-visible status — it is never silently a pass.
+
+### Statuses
+
+- `passed` — `relativeRatioIncrease >= thresholdRatio`.
+- `failed` — `relativeRatioIncrease < thresholdRatio` and the gate is
+  configured to enforce. The runner exits with the
+  `NEGATIVE_CASE_LIFT_BELOW_THRESHOLD` failure class **after** every
+  artifact (policy report, evidence seal, provenance graph) is sealed, so
+  a failure still leaves a complete, auditable evidence bundle on disk.
+- `advisory` — same below-threshold observation as `failed`, but the
+  operator configured the gate as record-only. The run completes
+  successfully.
+- `skipped` — the gate could not be evaluated. Possible `skipReason`
+  values:
+  - `adversarial_critic_disabled`: no `logicJudge` client wired.
+  - `adversarial_critic_failed`: the critic loop exited with
+    `stopReason === "critic_failed"`; the negative-coverage accounting
+    cannot be trusted.
+  - `gate_disabled`: the operator set `gateMode: "off"`.
+
+### Configuration
+
+The gate threshold and mode are resolved **per field**, in priority
+order:
+
+1. `RunFigmaToQcTestCasesInput.qualityGates.negativeCaseLift` — the
+   per-run CLI escape hatch. Both `gateMode` and `thresholdRatio` are
+   individually optional; whichever is set wins for that field.
+2. `TestCasePolicyProfile.rules.negativeCaseLift` — the policy-profile
+   default. The `eu-banking-default` profile sets the secure default
+   `{ gateMode: "enforce", thresholdRatio: 0.30 }`.
+3. The documented fallback `{ gateMode: "enforce", thresholdRatio: 0.30 }`
+   when neither source provides a value for a given field.
+
+This means `{ gateMode: "advisory" }` is a valid one-line escape hatch
+on top of any profile — the threshold inherits without restating.
+
+### Baseline source
+
+The baseline used for the comparison is the per-run
+`baselineGeneratedList` snapshot taken right after the initial generation
+pass and before any critic round. This is deterministic per run and
+embedded into provenance via the regeneration activity, so the gate
+result and the baseline it compared against can always be replayed from
+the persisted artifact bundle.
+
+### Wire shape
+
+```json
+{
+  "gateResults": [
+    {
+      "gateId": "G-NEG-CASE",
+      "status": "passed",
+      "ruleRef": "ti:rule:adversarial-critic-negative-case-lift",
+      "thresholdRatio": 0.3,
+      "observedRatio": 0.5,
+      "message": "G-NEG-CASE passed: relativeRatioIncrease=0.5 >= threshold=0.3."
+    }
+  ]
+}
+```
+
+`skipped` entries omit `observedRatio` and add a `skipReason`:
+
+```json
+{
+  "gateId": "G-NEG-CASE",
+  "status": "skipped",
+  "ruleRef": "ti:rule:adversarial-critic-negative-case-lift",
+  "thresholdRatio": 0.3,
+  "skipReason": "adversarial_critic_disabled",
+  "message": "G-NEG-CASE skipped: adversarial-critic loop did not run for this job."
+}
+```

@@ -5685,15 +5685,25 @@ test("Issue #2039: adversarial critic regeneration owns the final provenance art
                 SAMPLE_DRAFT,
                 {
                   ...SAMPLE_DRAFT,
-                  id: "tc-critic-negative",
                   title: "Reject owner mismatch on payout account",
                   type: "negative" as const,
                   steps: [
-                    "Enter a payout IBAN owned by another person.",
-                    "Submit the payout details.",
+                    {
+                      index: 1,
+                      action: "Enter a payout IBAN owned by another person.",
+                      expected:
+                        "Owner-match validator surfaces a blocking error.",
+                    },
+                    {
+                      index: 2,
+                      action: "Submit the payout details.",
+                      expected:
+                        "Submission is rejected and the current step is preserved.",
+                    },
                   ],
-                  expectedResult:
+                  expectedResults: [
                     "The flow rejects the mismatch and preserves the current step.",
+                  ],
                 },
               ];
         return {
@@ -5800,6 +5810,470 @@ test("Issue #2039: adversarial critic regeneration owns the final provenance art
   } finally {
     await rm(tempRoot, { recursive: true, force: true });
   }
+});
+
+test("Issue #2053: G-NEG-CASE passes when adversarial critic adds a valid negative case", async () => {
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ti-runner-2053-pass-"));
+  try {
+    let generatorCallCount = 0;
+    const generator = createMockLlmGatewayClient({
+      role: "test_generation",
+      deployment: "mistral-large-3-mock",
+      modelRevision: "mistral-large-3@mock",
+      gatewayRelease: "mock",
+      responder: (request, attempt) => {
+        if (request.responseSchemaName === "workspace-dev-logic-judge-v1") {
+          throw new Error("generator should not receive logic-judge requests");
+        }
+        generatorCallCount += 1;
+        const cases =
+          generatorCallCount === 1
+            ? [SAMPLE_DRAFT]
+            : [
+                SAMPLE_DRAFT,
+                {
+                  ...SAMPLE_DRAFT,
+                  title: "Reject owner mismatch on payout account",
+                  type: "negative" as const,
+                  steps: [
+                    {
+                      index: 1,
+                      action: "Enter a payout IBAN owned by another person.",
+                      expected: "Owner-match validator surfaces a blocking error.",
+                    },
+                    {
+                      index: 2,
+                      action: "Submit the payout details.",
+                      expected:
+                        "Submission is rejected and the current step is preserved.",
+                    },
+                  ],
+                  expectedResults: [
+                    "The flow rejects the mismatch and preserves the current step.",
+                  ],
+                },
+              ];
+        return {
+          outcome: "success" as const,
+          content: { testCases: cases },
+          finishReason: "stop" as const,
+          usage: { inputTokens: 100, outputTokens: 200 },
+          modelDeployment: "mistral-large-3-mock",
+          modelRevision: "mock-1",
+          gatewayRelease: "mock",
+          attempt,
+        };
+      },
+    });
+    const judge = createMockLlmGatewayClient({
+      role: "logic_judge",
+      deployment: "gpt-oss-120b-mock",
+      modelRevision: "gpt-oss-120b@mock",
+      gatewayRelease: "mock",
+      responder: (request, attempt) => {
+        if (
+          request.responseSchemaName === "workspace-dev-adversarial-critic-v1"
+        ) {
+          return {
+            outcome: "success" as const,
+            content: {
+              findings: [
+                {
+                  category: "negative_path",
+                  title: "Owner mismatch on payout account is untested",
+                  rationale:
+                    "The suite never challenges the documented owner-match rule.",
+                  affectedFieldId: "field:payout_iban",
+                  sourceRefs: ["rule:payout-owner-match"],
+                  ruleRefs: ["policy:payout-owner-match"],
+                  minimumReproducibleTestData: [
+                    "iban=DE44500105175407324931",
+                    "owner_name=Other Person",
+                  ],
+                  suggestedTestType: "negative",
+                  repairInstruction:
+                    "Replace a low-value happy path with an owner-mismatch negative case.",
+                },
+              ],
+            },
+            finishReason: "stop" as const,
+            usage: { inputTokens: 20, outputTokens: 10 },
+            modelDeployment: "gpt-oss-120b-mock",
+            modelRevision: "mock-1",
+            gatewayRelease: "mock",
+            attempt,
+          };
+        }
+        return okResponder([SAMPLE_DRAFT], "gpt-oss-120b-mock")(
+          request,
+          attempt,
+        );
+      },
+    });
+
+    const result = await runFigmaToQcTestCases({
+      jobId: "job-2053-pass",
+      generatedAt: "2026-05-08T15:00:00Z",
+      source: { kind: "figma_paste_normalized", file: SAMPLE_FILE },
+      outputRoot: tempRoot,
+      llm: { client: generator, logicJudge: judge },
+      harness: { mode: "off", maxRepairIterations: 0 },
+    });
+
+    const policyRaw = await readFile(
+      result.artifactPaths.policyReport,
+      "utf8",
+    );
+    const policy = JSON.parse(policyRaw) as {
+      gateResults?: Array<{
+        gateId: string;
+        status: string;
+        ruleRef: string;
+        thresholdRatio?: number;
+        observedRatio?: number;
+        message: string;
+      }>;
+    };
+    assert.ok(Array.isArray(policy.gateResults));
+    const negCaseGate = policy.gateResults!.find(
+      (entry) => entry.gateId === "G-NEG-CASE",
+    );
+    assert.ok(negCaseGate, "expected G-NEG-CASE entry in policy report");
+    assert.equal(negCaseGate.status, "passed");
+    assert.equal(negCaseGate.thresholdRatio, 0.3);
+    assert.ok(
+      negCaseGate.observedRatio !== undefined &&
+        negCaseGate.observedRatio >= 0.3,
+      "expected observedRatio >= threshold",
+    );
+    assert.equal(
+      negCaseGate.ruleRef,
+      "ti:rule:adversarial-critic-negative-case-lift",
+    );
+  } finally {
+    await rm(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("Issue #2053: G-NEG-CASE fails closed under enforce when lift target is missed", async () => {
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ti-runner-2053-fail-"));
+  try {
+    const generator = createMockLlmGatewayClient({
+      role: "test_generation",
+      deployment: "mistral-large-3-mock",
+      modelRevision: "mistral-large-3@mock",
+      gatewayRelease: "mock",
+      // Generator returns a single negative case both for the initial pass
+      // and for the post-critic regeneration. Baseline negative ratio is
+      // therefore 1.0 and the post-critic ratio is 1.0 →
+      // relativeRatioIncrease=0 < threshold=0.3 → gate fails closed.
+      responder: okResponder(
+        [
+          {
+            ...SAMPLE_DRAFT,
+            title: "Reject empty Investitionssumme",
+            type: "negative" as const,
+            steps: [
+              {
+                index: 1,
+                action: "Leave the Investitionssumme field empty",
+                expected: "Required-field validator surfaces a blocking error.",
+              },
+            ],
+            expectedResults: [
+              "The empty submission is rejected and the form keeps focus.",
+            ],
+          },
+        ],
+        "mistral-large-3-mock",
+      ),
+    });
+    const judge = createMockLlmGatewayClient({
+      role: "logic_judge",
+      deployment: "gpt-oss-120b-mock",
+      modelRevision: "gpt-oss-120b@mock",
+      gatewayRelease: "mock",
+      responder: (request, attempt) => {
+        if (
+          request.responseSchemaName === "workspace-dev-adversarial-critic-v1"
+        ) {
+          return {
+            outcome: "success" as const,
+            content: {
+              findings: [
+                {
+                  category: "negative_path",
+                  title: "Critic surfaced finding that does not raise the ratio",
+                  rationale:
+                    "The synthetic finding does not introduce a new negative test type beyond what the suite already carries.",
+                  affectedFieldId: "field:investitionssumme",
+                  sourceRefs: ["rule:investitionssumme-required"],
+                  ruleRefs: ["policy:investitionssumme-required"],
+                  minimumReproducibleTestData: ["investitionssumme="],
+                  suggestedTestType: "negative",
+                  repairInstruction:
+                    "Reaffirm the empty-investitionssumme negative case.",
+                },
+              ],
+            },
+            finishReason: "stop" as const,
+            usage: { inputTokens: 20, outputTokens: 10 },
+            modelDeployment: "gpt-oss-120b-mock",
+            modelRevision: "mock-1",
+            gatewayRelease: "mock",
+            attempt,
+          };
+        }
+        return okResponder([SAMPLE_DRAFT], "gpt-oss-120b-mock")(
+          request,
+          attempt,
+        );
+      },
+    });
+
+    await assert.rejects(
+      runFigmaToQcTestCases({
+        jobId: "job-2053-fail",
+        generatedAt: "2026-05-08T15:05:00Z",
+        source: { kind: "figma_paste_normalized", file: SAMPLE_FILE },
+        outputRoot: tempRoot,
+        llm: { client: generator, logicJudge: judge },
+        harness: { mode: "off", maxRepairIterations: 0 },
+      }),
+      (err: unknown) => {
+        assert.ok(err instanceof Error);
+        assert.equal(
+          (err as { failureClass?: string }).failureClass,
+          "NEGATIVE_CASE_LIFT_BELOW_THRESHOLD",
+        );
+        assert.match(err.message, /G-NEG-CASE failed/u);
+        return true;
+      },
+    );
+  } finally {
+    await rm(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("Issue #2053: G-NEG-CASE records advisory when override flips gateMode and lift is below threshold", async () => {
+  const tempRoot = await mkdtemp(
+    path.join(os.tmpdir(), "ti-runner-2053-advisory-"),
+  );
+  try {
+    const generator = createMockLlmGatewayClient({
+      role: "test_generation",
+      deployment: "mistral-large-3-mock",
+      modelRevision: "mistral-large-3@mock",
+      gatewayRelease: "mock",
+      responder: okResponder(
+        [
+          {
+            ...SAMPLE_DRAFT,
+            title: "Reject empty Investitionssumme",
+            type: "negative" as const,
+            steps: [
+              {
+                index: 1,
+                action: "Leave the Investitionssumme field empty",
+                expected: "Required-field validator surfaces a blocking error.",
+              },
+            ],
+            expectedResults: [
+              "The empty submission is rejected and the form keeps focus.",
+            ],
+          },
+        ],
+        "mistral-large-3-mock",
+      ),
+    });
+    const judge = createMockLlmGatewayClient({
+      role: "logic_judge",
+      deployment: "gpt-oss-120b-mock",
+      modelRevision: "gpt-oss-120b@mock",
+      gatewayRelease: "mock",
+      responder: (request, attempt) => {
+        if (
+          request.responseSchemaName === "workspace-dev-adversarial-critic-v1"
+        ) {
+          return {
+            outcome: "success" as const,
+            content: {
+              findings: [
+                {
+                  category: "negative_path",
+                  title: "Reaffirms an existing negative without lifting ratio",
+                  rationale:
+                    "Synthetic finding designed to leave the ratio unchanged.",
+                  affectedFieldId: "field:investitionssumme",
+                  sourceRefs: ["rule:investitionssumme-required"],
+                  ruleRefs: ["policy:investitionssumme-required"],
+                  minimumReproducibleTestData: ["investitionssumme="],
+                  suggestedTestType: "negative",
+                  repairInstruction: "Reaffirm the empty-investitionssumme negative case.",
+                },
+              ],
+            },
+            finishReason: "stop" as const,
+            usage: { inputTokens: 20, outputTokens: 10 },
+            modelDeployment: "gpt-oss-120b-mock",
+            modelRevision: "mock-1",
+            gatewayRelease: "mock",
+            attempt,
+          };
+        }
+        return okResponder([SAMPLE_DRAFT], "gpt-oss-120b-mock")(
+          request,
+          attempt,
+        );
+      },
+    });
+
+    const result = await runFigmaToQcTestCases({
+      jobId: "job-2053-advisory",
+      generatedAt: "2026-05-08T15:10:00Z",
+      source: { kind: "figma_paste_normalized", file: SAMPLE_FILE },
+      outputRoot: tempRoot,
+      llm: { client: generator, logicJudge: judge },
+      harness: { mode: "off", maxRepairIterations: 0 },
+      qualityGates: {
+        negativeCaseLift: { gateMode: "advisory", thresholdRatio: 0.3 },
+      },
+    });
+
+    const policy = JSON.parse(
+      await readFile(result.artifactPaths.policyReport, "utf8"),
+    ) as {
+      gateResults?: Array<{
+        gateId: string;
+        status: string;
+        observedRatio?: number;
+        thresholdRatio?: number;
+        message: string;
+      }>;
+    };
+    const negCaseGate = policy.gateResults?.find(
+      (entry) => entry.gateId === "G-NEG-CASE",
+    );
+    assert.ok(negCaseGate, "expected G-NEG-CASE entry in policy report");
+    assert.equal(negCaseGate.status, "advisory");
+    assert.equal(negCaseGate.thresholdRatio, 0.3);
+    assert.ok(
+      negCaseGate.observedRatio !== undefined &&
+        negCaseGate.observedRatio < 0.3,
+      "advisory record should carry a below-threshold observedRatio",
+    );
+  } finally {
+    await rm(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("Issue #2053: G-NEG-CASE skips when adversarial critic loop did not run", async () => {
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ti-runner-2053-skip-"));
+  try {
+    // No `logicJudge` client is wired — adversarial-critic loop is
+    // disabled by construction, so the gate must record `skipped` with
+    // `skipReason === "adversarial_critic_disabled"` and the run must
+    // succeed (skip is never silently a pass — the entry is explicit).
+    const client = createMockLlmGatewayClient({
+      role: "test_generation",
+      deployment: "gpt-oss-120b-mock",
+      modelRevision: "mock-1",
+      gatewayRelease: "mock",
+      responder: okResponder([SAMPLE_DRAFT]),
+    });
+    const result = await runFigmaToQcTestCases({
+      jobId: "job-2053-skip",
+      generatedAt: "2026-05-08T15:15:00Z",
+      source: { kind: "figma_paste_normalized", file: SAMPLE_FILE },
+      outputRoot: tempRoot,
+      llm: { client },
+      harness: { mode: "off", maxRepairIterations: 0 },
+    });
+
+    const policy = JSON.parse(
+      await readFile(result.artifactPaths.policyReport, "utf8"),
+    ) as {
+      gateResults?: Array<{
+        gateId: string;
+        status: string;
+        skipReason?: string;
+        observedRatio?: number;
+      }>;
+    };
+    const negCaseGate = policy.gateResults?.find(
+      (entry) => entry.gateId === "G-NEG-CASE",
+    );
+    assert.ok(negCaseGate, "expected G-NEG-CASE entry in policy report");
+    assert.equal(negCaseGate.status, "skipped");
+    assert.equal(negCaseGate.skipReason, "adversarial_critic_disabled");
+    assert.equal(
+      negCaseGate.observedRatio,
+      undefined,
+      "skipped entries must not carry an observedRatio",
+    );
+  } finally {
+    await rm(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("Issue #2053: G-NEG-CASE skips when gateMode override is \"off\" (one-line per-field escape hatch)", async () => {
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ti-runner-2053-off-"));
+  try {
+    const client = createMockLlmGatewayClient({
+      role: "test_generation",
+      deployment: "gpt-oss-120b-mock",
+      modelRevision: "mock-1",
+      gatewayRelease: "mock",
+      responder: okResponder([SAMPLE_DRAFT]),
+    });
+    const result = await runFigmaToQcTestCases({
+      jobId: "job-2053-off",
+      generatedAt: "2026-05-08T15:20:00Z",
+      source: { kind: "figma_paste_normalized", file: SAMPLE_FILE },
+      outputRoot: tempRoot,
+      llm: { client },
+      harness: { mode: "off", maxRepairIterations: 0 },
+      // Per-field override: only `gateMode` is set, `thresholdRatio`
+      // inherits from the eu-banking-default profile (0.30). The
+      // resolved threshold must surface in the persisted gate result
+      // so audit can verify which threshold was in force at run time.
+      qualityGates: {
+        negativeCaseLift: { gateMode: "off" },
+      },
+    });
+
+    const policy = JSON.parse(
+      await readFile(result.artifactPaths.policyReport, "utf8"),
+    ) as {
+      gateResults?: Array<{
+        gateId: string;
+        status: string;
+        skipReason?: string;
+        thresholdRatio?: number;
+      }>;
+    };
+    const negCaseGate = policy.gateResults?.find(
+      (entry) => entry.gateId === "G-NEG-CASE",
+    );
+    assert.ok(negCaseGate, "expected G-NEG-CASE entry in policy report");
+    assert.equal(negCaseGate.status, "skipped");
+    assert.equal(negCaseGate.skipReason, "gate_disabled");
+    assert.equal(
+      negCaseGate.thresholdRatio,
+      0.3,
+      "threshold should inherit from the policy profile when only gateMode is overridden",
+    );
+  } finally {
+    await rm(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("Issue #2053: PRODUCTION_RUNNER_FAILURE_CLASSES exposes NEGATIVE_CASE_LIFT_BELOW_THRESHOLD", () => {
+  assert.ok(
+    (PRODUCTION_RUNNER_FAILURE_CLASSES as ReadonlyArray<string>).includes(
+      "NEGATIVE_CASE_LIFT_BELOW_THRESHOLD",
+    ),
+  );
 });
 
 test("Issue #2037: production runner writes provenance.jsonld and policy report carries the Merkle root", async () => {

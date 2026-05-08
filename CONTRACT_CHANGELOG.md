@@ -31,6 +31,106 @@ All changes to the public contract surface of `workspace-dev` are documented her
 
 ---
 
+## [4.53.0] - 2026-05-08
+
+### Added (Issue #2053 — `G-NEG-CASE` adversarial-critic negative-case-lift hard gate)
+
+Issue #2039 shipped the adversarial-critic self-play loop and the
+`AdversarialCriticTraceArtifact.negativeCoverage` accounting block, but
+the documented `≥ 30 %` negative-case lift target was enforced only by a
+single unit test on synthetic input. The production runner had no
+release-grade gate that failed closed when the active dataset missed the
+target, so a regression in the critic loop or a domain-shift in the
+playbooks would silently degrade negative-case coverage.
+
+This release promotes the lift target to a release-grade hard gate
+(`G-NEG-CASE`) evaluated by the production runner using the existing
+trace artifact and persisted in `policy-report.json` for audit.
+
+Public-contract changes (additive — no removals, no renames):
+
+- `TestCasePolicyProfileRules` gains an optional
+  `negativeCaseLift?: { gateMode, thresholdRatio }` block. The
+  `eu-banking-default` profile sets the secure default
+  `{ gateMode: "enforce", thresholdRatio: 0.30 }`. A derived profile
+  that wants to override the gate must specify both fields (e.g.
+  `{ gateMode: "advisory", thresholdRatio: 0.30 }`); the
+  `RunFigmaToQcTestCasesInput.qualityGates.negativeCaseLift` escape
+  hatch (below) is the one-line shortcut that lets operators flip a
+  single field while inheriting the rest from the profile.
+- `TestCasePolicyReport` gains an optional `gateResults?:
+TestCasePolicyGateResult[]` field. Today the array carries the single
+  `G-NEG-CASE` entry; future gates extend the same array without a
+  contract change.
+- New exported types: `TestCasePolicyGateResult`,
+  `TestCasePolicyGateId`, `TestCasePolicyGateStatus`,
+  `TestCasePolicyGateSkipReason`.
+- New exported runtime constants:
+  `ALLOWED_TEST_CASE_POLICY_GATE_IDS`,
+  `ALLOWED_TEST_CASE_POLICY_GATE_STATUSES`,
+  `ALLOWED_TEST_CASE_POLICY_GATE_SKIP_REASONS`.
+- `PRODUCTION_RUNNER_FAILURE_CLASSES` adds
+  `"NEGATIVE_CASE_LIFT_BELOW_THRESHOLD"` (alphabetical-tail
+  insertion). The runner emits this failure class when the gate runs
+  in `enforce` mode and the lift target is not met.
+- `RunFigmaToQcTestCasesInput` gains an optional
+  `qualityGates?.negativeCaseLift?` override. This is the documented
+  CLI escape hatch so operators can flip the gate to `advisory` or
+  `off` for a single run without authoring a derived policy profile.
+  Both `gateMode` and `thresholdRatio` are themselves optional on the
+  override — fields left undefined inherit per-field from the policy
+  profile, which itself falls back to the documented secure default.
+  `{ gateMode: "advisory" }` is therefore a valid one-line escape
+  hatch.
+
+Operational behavior introduced by the additive runtime surface:
+
+- After the adversarial-critic loop completes, the runner evaluates
+  `G-NEG-CASE` against the per-run baseline and final negative-case
+  ratios captured in
+  `AdversarialCriticTraceArtifact.negativeCoverage`. The result is
+  appended to `policy-report.json` under `gateResults` regardless of
+  outcome.
+- The gate fails closed when the lift target is not met and
+  `gateMode === "enforce"`: every artifact (policy report, evidence
+  seal, provenance graph) is sealed first so a failure still leaves a
+  complete, auditable evidence bundle on disk; the runner then throws
+  a `ProductionRunnerError` with
+  `failureClass === "NEGATIVE_CASE_LIFT_BELOW_THRESHOLD"`.
+- The gate is `"skipped"` (an explicit, audit-visible status — never
+  silently a pass) when the adversarial-critic loop did not run,
+  exited with `stopReason === "critic_failed"`, or the operator set
+  `gateMode === "off"`. Each skip carries a structured `skipReason`.
+- In `"advisory"` mode the same `failed` outcome is recorded as
+  `status === "advisory"` and the run completes successfully.
+
+Documentation:
+
+- `docs/test-intelligence/adversarial-critic.md` adds the
+  "G-NEG-CASE quality gate" section documenting threshold semantics,
+  override precedence (CLI > profile > documented default), skip
+  conditions, and the policy-report wire-shape.
+- `sandbox/benchmarks/test-intelligence/LOCAL_BENCHMARK_PROTOCOL.md`
+  references the new gate in the scorecard template so benchmark runs
+  surface the result alongside `mutationKillRate`.
+
+Contract version impacts:
+
+- `CONTRACT_VERSION` bumps from `4.52.0` to `4.53.0` (additive minor
+  bump; new optional fields, new exported types, new runtime
+  constants, no removals or renames).
+- `TEST_INTELLIGENCE_CONTRACT_VERSION` bumps from `1.13.0` to
+  `1.14.0` because the test-intelligence wire artifact
+  `policy-report.json` extends its top-level shape with the new
+  optional `gateResults` array.
+- `TEST_CASE_POLICY_REPORT_SCHEMA_VERSION` remains `1.0.0` — the
+  added field is optional and the existing required envelope keeps
+  its byte-shape for legacy producers and consumers.
+- `migrationHash:` registration is not required for this release. The
+  signed migration registry introduced in 4.42.0 carries forward
+  unchanged because no migration id, hash, or rollback semantics
+  changed.
+
 ## [4.52.0] - 2026-05-08
 
 ### Added (Issue #2039 — adversarial critic self-play loop for blind-spot discovery)
