@@ -91,6 +91,23 @@ const wireStructuredOutputOverrideForDeployment = (
     ? { wireStructuredOutputMode: "none" }
     : {};
 
+const constrainedDecodingConfigForDeployment = (deployment: string) =>
+  deployment === LEGACY_GPT_OSS_DEPLOYMENT
+    ? {
+        constrainedDecoding: {
+          preferredAdapter: "llguidance" as const,
+          fallbackAdapter: "prompt_only" as const,
+          adapterVersion: "1",
+        },
+      }
+    : {
+        constrainedDecoding: {
+          preferredAdapter: "outlines" as const,
+          fallbackAdapter: "prompt_only" as const,
+          adapterVersion: "1",
+        },
+      };
+
 /**
  * Read endpoint/deployment/api-key from env. Throws
  * `ProductionRunnerError(LLM_GATEWAY_FAILED)` (retryable=false) when any
@@ -180,6 +197,7 @@ const defaultBuildLlmBundle = (
         timeoutMs: TEST_GENERATION_TIMEOUT_MS,
         maxRetries: 1,
         circuitBreaker: { failureThreshold: 2, resetTimeoutMs: 30_000 },
+        ...constrainedDecodingConfigForDeployment(config.deployment),
         // Azure AI Foundry's `gpt-oss-120b` returns empty content for wire
         // response_format values; suppress only for that legacy deployment.
         ...wireStructuredOutputOverrideForDeployment(config.deployment),
@@ -269,6 +287,9 @@ const defaultBuildLlmBundle = (
               timeoutMs: 60_000,
               maxRetries: 1,
               circuitBreaker: { failureThreshold: 2, resetTimeoutMs: 30_000 },
+              ...constrainedDecodingConfigForDeployment(
+                config.coveragePlannerDeployment,
+              ),
               wireStructuredOutputMode: "none" as const,
             },
           }
@@ -294,6 +315,9 @@ const defaultBuildLlmBundle = (
               timeoutMs: 60_000,
               maxRetries: 1,
               circuitBreaker: { failureThreshold: 2, resetTimeoutMs: 30_000 },
+              ...constrainedDecodingConfigForDeployment(
+                config.riskRankerDeployment,
+              ),
               wireStructuredOutputMode: "none" as const,
             },
           }

@@ -15,6 +15,10 @@ import {
   type TestCaseType,
 } from "../contracts/index.js";
 import { sha256Hex } from "./content-hash.js";
+import {
+  buildGeneratedTestCaseListJsonSchemaFromZod,
+  GENERATED_TEST_CASE_LIST_SCHEMA_NAME,
+} from "./generated-test-case-zod-schema.js";
 
 const ISO_8601_PATTERN =
   "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?(?:Z|[+-]\\d{2}:\\d{2})$";
@@ -134,218 +138,20 @@ const AUDIT_KEYS = [
   "schemaHash",
 ] as const;
 
-/** Stable schema name shared with structured-output gateways. */
-// The runtime version stamp uses dotted semver (e.g. "1.0.0") which Azure's
-// `response_format.json_schema.name` grammar rejects. We embed only the major
-// version in the schema name so Azure accepts the literal while keeping the
-// name stable across patch/minor bumps.
-const SCHEMA_NAME_VERSION_MAJOR = GENERATED_TEST_CASE_SCHEMA_VERSION.split(
-  ".",
-)[0] as string;
-export const GENERATED_TEST_CASE_LIST_SCHEMA_NAME: string = `workspace-dev-generated-test-case-list-v${SCHEMA_NAME_VERSION_MAJOR}`;
+export { GENERATED_TEST_CASE_LIST_SCHEMA_NAME };
 
 /**
  * Build the JSON Schema for the structured test-case generator response.
  *
- * The schema is hand-derived from the TypeScript contract surface so it can
- * be enforced by structured-output gateways and replayed deterministically.
- * A drift test in `generated-test-case-schema.test.ts` keeps the schema in
- * lockstep with the TypeScript types.
+ * The schema is derived from the Zod source of truth so it can be enforced by
+ * structured-output gateways and replayed deterministically. A drift test in
+ * `generated-test-case-schema.test.ts` keeps the JSON-schema artifact in
+ * lockstep with the contract surface.
  */
 export const buildGeneratedTestCaseListJsonSchema = (): Record<
   string,
   unknown
-> => {
-  const figmaTraceRef = {
-    type: "object",
-    additionalProperties: false,
-    required: ["screenId"],
-    properties: {
-      screenId: { type: "string", minLength: 1 },
-      nodeId: { type: "string" },
-      nodeName: { type: "string" },
-      nodePath: { type: "string" },
-    },
-  } as const;
-
-  const ambiguity = {
-    type: "object",
-    additionalProperties: false,
-    required: ["reason"],
-    properties: {
-      reason: { type: "string", minLength: 1 },
-    },
-  } as const;
-
-  const step: Record<string, unknown> = {
-    type: "object",
-    additionalProperties: false,
-    required: ["index", "action"],
-    properties: {
-      index: { type: "integer", minimum: 1 },
-      action: { type: "string", minLength: 1 },
-      data: { type: "string" },
-      expected: { type: "string" },
-    },
-  };
-
-  const qcMapping: Record<string, unknown> = {
-    type: "object",
-    additionalProperties: false,
-    required: ["exportable"],
-    properties: {
-      folderHint: { type: "string" },
-      mappingProfileId: { type: "string" },
-      decisionBasis: { const: "mapping_preview_only" },
-      exportable: { type: "boolean" },
-      blockingReasons: {
-        type: "array",
-        items: { type: "string", minLength: 1 },
-      },
-    },
-  };
-
-  const qualitySignals: Record<string, unknown> = {
-    type: "object",
-    additionalProperties: false,
-    required: [
-      "coveredFieldIds",
-      "coveredActionIds",
-      "coveredValidationIds",
-      "coveredNavigationIds",
-      "confidence",
-    ],
-    properties: {
-      coveredFieldIds: { type: "array", items: { type: "string" } },
-      coveredActionIds: { type: "array", items: { type: "string" } },
-      coveredValidationIds: { type: "array", items: { type: "string" } },
-      coveredNavigationIds: { type: "array", items: { type: "string" } },
-      confidence: { type: "number", minimum: 0, maximum: 1 },
-      ambiguity,
-    },
-  };
-
-  const audit: Record<string, unknown> = {
-    type: "object",
-    additionalProperties: false,
-    required: [
-      "jobId",
-      "generatedAt",
-      "contractVersion",
-      "schemaVersion",
-      "promptTemplateVersion",
-      "redactionPolicyVersion",
-      "visualSidecarSchemaVersion",
-      "cacheHit",
-      "cacheKey",
-      "inputHash",
-      "promptHash",
-      "schemaHash",
-    ],
-    properties: {
-      jobId: { type: "string", minLength: 1 },
-      generatedAt: { type: "string", pattern: ISO_8601_PATTERN },
-      contractVersion: { const: TEST_INTELLIGENCE_CONTRACT_VERSION },
-      schemaVersion: { const: GENERATED_TEST_CASE_SCHEMA_VERSION },
-      promptTemplateVersion: {
-        const: TEST_INTELLIGENCE_PROMPT_TEMPLATE_VERSION,
-      },
-      redactionPolicyVersion: { type: "string", minLength: 1 },
-      visualSidecarSchemaVersion: { type: "string", minLength: 1 },
-      cacheHit: { type: "boolean" },
-      cacheKey: { type: "string", minLength: 1 },
-      inputHash: { type: "string", pattern: "^[a-f0-9]{64}$" },
-      promptHash: { type: "string", pattern: "^[a-f0-9]{64}$" },
-      schemaHash: { type: "string", pattern: "^[a-f0-9]{64}$" },
-    },
-  };
-
-  const regulatoryRelevance: Record<string, unknown> = {
-    type: "object",
-    additionalProperties: false,
-    required: ["domain", "rationale"],
-    properties: {
-      domain: { enum: [...ALLOWED_REGULATORY_RELEVANCE_DOMAINS] },
-      rationale: { type: "string", minLength: 1, maxLength: 240 },
-    },
-  };
-
-  const testCase: Record<string, unknown> = {
-    type: "object",
-    additionalProperties: false,
-    required: [
-      "id",
-      "sourceJobId",
-      "contractVersion",
-      "schemaVersion",
-      "promptTemplateVersion",
-      "title",
-      "objective",
-      "level",
-      "type",
-      "priority",
-      "riskCategory",
-      "technique",
-      "preconditions",
-      "testData",
-      "steps",
-      "expectedResults",
-      "figmaTraceRefs",
-      "assumptions",
-      "openQuestions",
-      "qcMappingPreview",
-      "qualitySignals",
-      "reviewState",
-      "audit",
-    ],
-    properties: {
-      id: { type: "string", minLength: 1 },
-      sourceJobId: { type: "string", minLength: 1 },
-      contractVersion: { const: TEST_INTELLIGENCE_CONTRACT_VERSION },
-      schemaVersion: { const: GENERATED_TEST_CASE_SCHEMA_VERSION },
-      promptTemplateVersion: {
-        const: TEST_INTELLIGENCE_PROMPT_TEMPLATE_VERSION,
-      },
-      title: { type: "string", minLength: 1, maxLength: 200 },
-      objective: { type: "string", minLength: 1, maxLength: 1000 },
-      level: { enum: [...LEVELS] },
-      type: { enum: [...TYPES] },
-      priority: { enum: [...PRIORITIES] },
-      riskCategory: { enum: [...RISK_CATEGORIES] },
-      technique: { enum: [...TECHNIQUES] },
-      preconditions: { type: "array", items: { type: "string" } },
-      testData: { type: "array", items: { type: "string" } },
-      steps: { type: "array", minItems: 1, items: step },
-      expectedResults: { type: "array", items: { type: "string" } },
-      figmaTraceRefs: { type: "array", items: figmaTraceRef },
-      assumptions: { type: "array", items: { type: "string" } },
-      openQuestions: { type: "array", items: { type: "string" } },
-      qcMappingPreview: qcMapping,
-      qualitySignals,
-      reviewState: { enum: [...REVIEW_STATES] },
-      audit,
-      // Optional, additive in contract 4.27.0 (Issue #1735).
-      regulatoryRelevance,
-    },
-  };
-
-  return {
-    $schema: "https://json-schema.org/draft/2020-12/schema",
-    $id: GENERATED_TEST_CASE_LIST_SCHEMA_NAME,
-    title: "GeneratedTestCaseList",
-    type: "object",
-    additionalProperties: false,
-    required: ["schemaVersion", "jobId", "testCases"],
-    properties: {
-      schemaVersion: { const: GENERATED_TEST_CASE_SCHEMA_VERSION },
-      jobId: { type: "string", minLength: 1 },
-      testCases: {
-        type: "array",
-        items: testCase,
-      },
-    },
-  };
-};
+> => buildGeneratedTestCaseListJsonSchemaFromZod();
 
 /** sha256 of the canonical JSON serialization of the schema. */
 export const computeGeneratedTestCaseListSchemaHash = (): string => {

@@ -498,6 +498,7 @@ test("production runner adversarial: cancellation releases the gateway slot and 
       throw new Error("not used in test");
     },
     getIdempotencyMetrics: () => undefined,
+    constrainedDecoding: undefined,
   };
 
   try {

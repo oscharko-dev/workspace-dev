@@ -120,6 +120,23 @@ const wireStructuredOutputOverrideForDeployment = (
     ? { wireStructuredOutputMode: "none" }
     : {};
 
+const constrainedDecodingConfigForDeployment = (deployment: string) =>
+  deployment === TEST_INTELLIGENCE_GENERATOR_LEGACY_DEPLOYMENT
+    ? {
+        constrainedDecoding: {
+          preferredAdapter: "llguidance" as const,
+          fallbackAdapter: "prompt_only" as const,
+          adapterVersion: "1",
+        },
+      }
+    : {
+        constrainedDecoding: {
+          preferredAdapter: "outlines" as const,
+          fallbackAdapter: "prompt_only" as const,
+          adapterVersion: "1",
+        },
+      };
+
 const TOPOLOGY_PREFLIGHT_REPORT_FILENAME = "topology-preflight-report.json";
 const INCOMPATIBLE_OPENAI_CHAT_DEPLOYMENTS = new Set([
   "mistral-document-ai-2512",
@@ -1382,6 +1399,7 @@ export const buildLiveLogicJudgeClient = (
       timeoutMs: 240_000,
       maxRetries: 1,
       circuitBreaker: { failureThreshold: 2, resetTimeoutMs: 30_000 },
+      ...constrainedDecodingConfigForDeployment(deployment),
       // Azure AI Foundry's `gpt-oss-120b` returns empty content for wire
       // response_format values; suppress only for that legacy deployment.
       ...wireStructuredOutputOverrideForDeployment(deployment),
@@ -1438,6 +1456,7 @@ export const buildLiveCoveragePlannerClient = (
       timeoutMs: 60_000,
       maxRetries: 1,
       circuitBreaker: { failureThreshold: 2, resetTimeoutMs: 30_000 },
+      ...constrainedDecodingConfigForDeployment(deployment),
       wireStructuredOutputMode: "none",
     },
     {
@@ -1489,6 +1508,7 @@ export const buildLiveRiskRankerClient = (
       timeoutMs: 60_000,
       maxRetries: 1,
       circuitBreaker: { failureThreshold: 2, resetTimeoutMs: 30_000 },
+      ...constrainedDecodingConfigForDeployment(deployment),
       wireStructuredOutputMode: "none",
     },
     {
@@ -1557,6 +1577,7 @@ export const buildLiveLlmGatewayClient = (
       timeoutMs: 240_000,
       maxRetries: 1,
       circuitBreaker: { failureThreshold: 2, resetTimeoutMs: 30_000 },
+      ...constrainedDecodingConfigForDeployment(options.modelDeployment),
       // Azure AI Foundry's `gpt-oss-120b` returns empty content for wire
       // response_format values; suppress only for that legacy deployment.
       ...wireStructuredOutputOverrideForDeployment(options.modelDeployment),
@@ -1674,6 +1695,7 @@ export const buildLiveVisualSidecarBundle = (
         timeoutMs: 240_000,
         maxRetries: 1,
         circuitBreaker: { failureThreshold: 2, resetTimeoutMs: 30_000 },
+        ...constrainedDecodingConfigForDeployment(options.modelDeployment),
         ...wireStructuredOutputOverrideForDeployment(options.modelDeployment),
       },
       visualPrimary: {
@@ -1773,6 +1795,9 @@ export const buildLiveVisualSidecarBundle = (
               timeoutMs: 60_000,
               maxRetries: 1,
               circuitBreaker: { failureThreshold: 2, resetTimeoutMs: 30_000 },
+              ...constrainedDecodingConfigForDeployment(
+                options.coveragePlannerDeployment,
+              ),
               wireStructuredOutputMode: "none" as const,
             },
           }
@@ -1798,6 +1823,9 @@ export const buildLiveVisualSidecarBundle = (
               timeoutMs: 60_000,
               maxRetries: 1,
               circuitBreaker: { failureThreshold: 2, resetTimeoutMs: 30_000 },
+              ...constrainedDecodingConfigForDeployment(
+                riskRankerDeployment,
+              ),
               wireStructuredOutputMode: "none" as const,
             },
           }

@@ -435,6 +435,7 @@ export const createMockLlmGatewayClient = (
       `mock://${input.deployment}/[redacted]`,
     modelWeightsSha256: input.modelWeightsSha256,
     declaredCapabilities: { ...declaredCapabilities },
+    constrainedDecoding: undefined,
     generate,
     getCircuitBreaker: () => breaker,
     getIdempotencyMetrics: () => undefined,
