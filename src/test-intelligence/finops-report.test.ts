@@ -222,6 +222,26 @@ test("recorder: per-source entries retain circuit-breaker states in call order",
   assert.equal(report.bySource.visual_fallback.circuitBreakerStates, undefined);
 });
 
+test("recorder: breaker-open skips preserve state without adding source calls", () => {
+  const recorder = createFinOpsUsageRecorder();
+  recorder.recordCircuitBreakerDecision({
+    source: "visual_primary",
+    circuitBreakerState: "open",
+    deployment: "llama-4-maverick-vision",
+  });
+  const report = buildFinOpsBudgetReport({
+    jobId: JOB_ID,
+    generatedAt: GENERATED_AT,
+    budget: permissive,
+    recorder,
+  });
+  assert.equal(report.bySource.visual_primary.callCount, 0);
+  assert.equal(report.bySource.visual_primary.costMinorUnits, 0);
+  assert.deepEqual(report.bySource.visual_primary.circuitBreakerStates, [
+    "open",
+  ]);
+});
+
 test("recorder: rejects unknown roles", () => {
   const recorder = createFinOpsUsageRecorder();
   assert.throws(() => {

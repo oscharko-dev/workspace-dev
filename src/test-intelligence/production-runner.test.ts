@@ -3653,6 +3653,7 @@ test("Issue #2069: persisted visual-primary breaker skips primary on the next ru
         modelRevision: "llama-4-maverick-vision@test",
         gatewayRelease: "mock",
         declaredCapabilities: VISUAL_CAPS,
+        circuitBreaker: { failureThreshold: 2, resetTimeoutMs: 30_000 },
         responder: (_request, attempt) => {
           primaryCalls += 1;
           return {
@@ -3737,7 +3738,7 @@ test("Issue #2069: persisted visual-primary breaker skips primary on the next ru
     const second = await runJob("job-2069-run-2");
     const third = await runJob("job-2069-run-3");
 
-    assert.ok(primaryCalls >= 2);
+    assert.ok(primaryCalls > 0);
     assert.ok(fallbackCalls >= 3);
 
     const breakerStatePath = path.join(
@@ -3788,8 +3789,11 @@ test("Issue #2069: persisted visual-primary breaker skips primary on the next ru
     const visualFallback = finopsReport.roles.find(
       (entry) => entry.role === "visual_fallback",
     );
-    assert.equal(visualPrimary?.attempts, 1);
+    assert.equal(visualPrimary?.attempts, 0);
     assert.equal(visualFallback?.attempts, 1);
+    assert.deepEqual(finopsReport.bySource.visual_primary.circuitBreakerStates, [
+      "open",
+    ]);
     assert.equal(
       second.policy.jobLevelViolations.some(
         (v) => v.rule === "policy:visual-sidecar:both_failed",

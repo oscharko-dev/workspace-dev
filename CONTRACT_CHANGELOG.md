@@ -59,7 +59,8 @@ Public-contract changes (additive — no removals, no renames):
 - `VisualSidecarAttempt.circuitBreakerState?` — optional breaker snapshot state
   observed before dispatch.
 - `FinOpsBudgetReport.bySource[*].circuitBreakerStates?` — ordered list of
-  caller-side breaker states recorded per attempt.
+  caller-side breaker states recorded per dispatch decision, including
+  breaker-open skips.
 
 Operational behaviour introduced by the additive surface:
 
@@ -67,7 +68,7 @@ Operational behaviour introduced by the additive surface:
   `<outputRoot>/replay-cache/circuit-breaker-state.json`, keyed by tenant scope
   plus primary deployment id.
 - The breaker opens after two consecutive protocol-class primary failures and
-  stays open for the configured cooldown window (default `1h` via the primary
+  stays open for the configured cooldown window (default `30s` via the primary
   role's LLM circuit-breaker reset timeout).
 - While open, the runner skips the primary and dispatches directly to the
   fallback. After cooldown expiry, the next run may probe the primary in
