@@ -89,6 +89,29 @@ test("Issue #2053: clone round-trips negativeCaseLift and isolates it from the f
   });
 });
 
+test("Issue #2068: default profile selects tier-elastic technique-coverage minimum", () => {
+  const config =
+    EU_BANKING_DEFAULT_POLICY_PROFILE.rules.techniqueCoverageMinimum;
+  assert.ok(config !== undefined, "expected the default profile to expose the knob");
+  assert.equal(config.mode, "tier-elastic");
+  assert.ok(
+    Object.isFrozen(config),
+    "techniqueCoverageMinimum block must be deep-frozen",
+  );
+});
+
+test("Issue #2068: clone round-trips techniqueCoverageMinimum and isolates the override", () => {
+  const a = cloneEuBankingDefaultProfile();
+  const b = cloneEuBankingDefaultProfile();
+  assert.deepEqual(a.rules.techniqueCoverageMinimum, { mode: "tier-elastic" });
+  a.rules.techniqueCoverageMinimum = { mode: "fixed" };
+  assert.deepEqual(b.rules.techniqueCoverageMinimum, { mode: "tier-elastic" });
+  assert.deepEqual(
+    EU_BANKING_DEFAULT_POLICY_PROFILE.rules.techniqueCoverageMinimum,
+    { mode: "tier-elastic" },
+  );
+});
+
 test("Issue #2053: default threshold matches the in-module agent constant", () => {
   // The policy-profile constant and the adversarial-critic-agent
   // constant document the same threshold from two angles. Drift between

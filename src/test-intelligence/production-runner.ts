@@ -51,6 +51,7 @@ import {
   EU_BANKING_DEFAULT_POLICY_PROFILE_ID,
   FAITHFULNESS_JUDGE_COMPILED_PROMPT_ARTIFACT_FILENAME,
   FAITHFULNESS_TIER_REPORT_ARTIFACT_FILENAME,
+  TECHNIQUE_QUOTA_REPORT_ARTIFACT_FILENAME,
   FAITHFULNESS_VERDICT_ARTIFACT_FILENAME,
   GENERATED_TESTCASES_ARTIFACT_FILENAME,
   GENERATED_TEST_CASE_SCHEMA_VERSION,
@@ -3286,6 +3287,8 @@ export const runFigmaToQcTestCases = async (
       ? { actionCoverageRatioMin: customerRubricRules.actionCoverageRatioMin }
       : {}),
   };
+  const logicJudgeTechniqueCoverageMinimum =
+    customerRubricRules?.techniqueCoverageMinimum;
   let logicJudgeResult: RunLogicJudgeResult = logicJudgeEnabled
     ? await runLogicJudge({
         jobId: input.jobId,
@@ -3297,6 +3300,9 @@ export const runFigmaToQcTestCases = async (
         cache: logicJudgeCache,
         knownNavigationIds: logicJudgeKnownNavigationIds,
         coverageThresholds: logicJudgeCoverageThresholds,
+        ...(logicJudgeTechniqueCoverageMinimum !== undefined
+          ? { techniqueCoverageMinimum: logicJudgeTechniqueCoverageMinimum }
+          : {}),
         ...(finopsBudget.roles.test_generation?.maxInputTokensPerRequest !==
         undefined
           ? {
@@ -3781,6 +3787,9 @@ export const runFigmaToQcTestCases = async (
           cache: createMemoryLogicJudgeCache(),
           knownNavigationIds: logicJudgeKnownNavigationIds,
           coverageThresholds: logicJudgeCoverageThresholds,
+          ...(logicJudgeTechniqueCoverageMinimum !== undefined
+            ? { techniqueCoverageMinimum: logicJudgeTechniqueCoverageMinimum }
+            : {}),
           ...(finopsBudget.roles.test_generation?.maxInputTokensPerRequest !==
           undefined
             ? {
@@ -4229,6 +4238,14 @@ export const runFigmaToQcTestCases = async (
     faithfulnessTierReportArtifact === undefined
       ? undefined
       : join(artifactDir, FAITHFULNESS_TIER_REPORT_ARTIFACT_FILENAME);
+  // Issue #2068 — per-run technique-quota report. Built upstream by the
+  // validation pipeline when a CoveragePlan is supplied so reviewers
+  // can audit the tier-elastic quota path even when the gate passes.
+  const techniqueQuotaReportArtifact = validation.techniqueQuota;
+  const techniqueQuotaReportPath =
+    techniqueQuotaReportArtifact === undefined
+      ? undefined
+      : join(artifactDir, TECHNIQUE_QUOTA_REPORT_ARTIFACT_FILENAME);
   const a11yJudgeVerdictPath =
     a11yJudgeResult === undefined
       ? undefined
@@ -4371,6 +4388,10 @@ export const runFigmaToQcTestCases = async (
     faithfulnessTierReportArtifact === undefined
       ? undefined
       : encodeCanonicalJson(faithfulnessTierReportArtifact);
+  const techniqueQuotaReportBytes =
+    techniqueQuotaReportArtifact === undefined
+      ? undefined
+      : encodeCanonicalJson(techniqueQuotaReportArtifact);
   const a11yJudgeVerdictBytes =
     a11yJudgeResult === undefined
       ? undefined
@@ -4471,6 +4492,15 @@ export const runFigmaToQcTestCases = async (
             writeAtomicBytes(
               faithfulnessTierReportPath,
               faithfulnessTierReportBytes,
+            ),
+          ]),
+      ...(techniqueQuotaReportPath === undefined ||
+      techniqueQuotaReportBytes === undefined
+        ? []
+        : [
+            writeAtomicBytes(
+              techniqueQuotaReportPath,
+              techniqueQuotaReportBytes,
             ),
           ]),
       ...(a11yJudgeVerdictPath === undefined ||

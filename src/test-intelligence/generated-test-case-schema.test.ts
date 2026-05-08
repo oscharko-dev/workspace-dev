@@ -163,8 +163,12 @@ test("schema: drift guard — the hash is stable for the current contract", () =
   // 1.18.0 -> 1.19.0 (additive — `FaithfulnessVerdict.stepVerdicts`,
   // tier-report contract, `FAITHFULNESS_TIER_*` runtime constants, no
   // `GeneratedTestCaseList` shape changes). Same lockstep rationale.
+  // Hash bumped by Issue #2068: TEST_INTELLIGENCE_CONTRACT_VERSION bumped
+  // 1.19.0 -> 1.20.0 (additive — tier-elastic technique-quota policy,
+  // `TechniqueQuotaReport` contract, `TECHNIQUE_*` runtime constants,
+  // no `GeneratedTestCaseList` shape changes). Same lockstep rationale.
   const expected =
-    "11282efa93e9a13f91a7de5aadb1cf0284d9033eff2946cb15c89dc58fb324c4";
+    "41803eae023c6b7ec2f51220c62a5b095021693f3bf524f2c2bbcbe74b5ccc6a";
   const actual = computeGeneratedTestCaseListSchemaHash();
   if (actual !== expected) {
     assert.fail(

@@ -644,6 +644,95 @@ test("Issue #1947: unmet technique quotas block the job at the policy gate", () 
   assert.equal(report.blocked, true);
 });
 
+test("Issue #2068: tier-elastic mode replaces a fixed 12-EP planner quota on a 9-field K0 screen with the field-count floor", () => {
+  const ctx = harness(
+    Array.from({ length: 10 }, (_, idx) =>
+      buildCase({
+        id: `tc-ep-${idx + 1}`,
+        technique: "equivalence_partitioning",
+      }),
+    ),
+    buildIntent(),
+  );
+  const coveragePlan = buildCoveragePlan({
+    perScreen: [
+      {
+        screenId: "s-1",
+        techniqueQuotas: [
+          { technique: "equivalence_partitioning", minCount: 12 },
+        ],
+      },
+    ],
+    perElement: Array.from({ length: 9 }, (_, idx) => ({
+      screenId: "s-1",
+      elementId: `s-1.field-${idx + 1}`,
+      mustHaveCase: true,
+      riskClass: "low" as const,
+    })),
+  });
+  const report = evaluatePolicyGate({
+    jobId: "job-1",
+    generatedAt: GENERATED_AT,
+    list: ctx.list,
+    intent: ctx.intent,
+    profile: ctx.profile,
+    validation: ctx.validation,
+    coverage: ctx.coverage,
+    coveragePlan,
+  });
+  assert.equal(
+    report.jobLevelViolations.find(
+      (entry) => entry.rule === "policy:technique-coverage-minimum",
+    ),
+    undefined,
+    "tier-elastic mode should clear the 12-EP quota on a 9-field screen",
+  );
+});
+
+test("Issue #2068: fixed override on a derived profile preserves the legacy 12-EP minimum", () => {
+  const ctx = harness(
+    Array.from({ length: 10 }, (_, idx) =>
+      buildCase({
+        id: `tc-ep-${idx + 1}`,
+        technique: "equivalence_partitioning",
+      }),
+    ),
+    buildIntent(),
+  );
+  ctx.profile.rules.techniqueCoverageMinimum = { mode: "fixed" };
+  const coveragePlan = buildCoveragePlan({
+    perScreen: [
+      {
+        screenId: "s-1",
+        techniqueQuotas: [
+          { technique: "equivalence_partitioning", minCount: 12 },
+        ],
+      },
+    ],
+    perElement: Array.from({ length: 9 }, (_, idx) => ({
+      screenId: "s-1",
+      elementId: `s-1.field-${idx + 1}`,
+      mustHaveCase: true,
+      riskClass: "low" as const,
+    })),
+  });
+  const report = evaluatePolicyGate({
+    jobId: "job-1",
+    generatedAt: GENERATED_AT,
+    list: ctx.list,
+    intent: ctx.intent,
+    profile: ctx.profile,
+    validation: ctx.validation,
+    coverage: ctx.coverage,
+    coveragePlan,
+  });
+  const violation = report.jobLevelViolations.find(
+    (entry) => entry.rule === "policy:technique-coverage-minimum",
+  );
+  assert.ok(violation, "fixed mode should still flag the 12-EP deficit");
+  assert.match(violation?.reason ?? "", /at least 12 "equivalence_partitioning"/);
+});
+
 test("Issue #1947: policy override can downgrade technique coverage minimum to warning", () => {
   const ctx = harness([buildCase({ id: "tc-use-case" })], buildIntent());
   const report = evaluatePolicyGate({

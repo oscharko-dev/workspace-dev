@@ -15,6 +15,7 @@
 import {
   EU_BANKING_DEFAULT_POLICY_PROFILE_ID,
   EU_BANKING_DEFAULT_POLICY_PROFILE_VERSION,
+  type TechniqueCoverageMinimumPolicy,
   type TestCasePolicyProfile,
   type TestCasePolicyProfileRules,
 } from "../contracts/index.js";
@@ -55,6 +56,21 @@ export const EU_BANKING_DEFAULT_NEGATIVE_CASE_LIFT_THRESHOLD_RATIO =
 export const EU_BANKING_DEFAULT_NEGATIVE_CASE_LIFT_GATE_MODE =
   "enforce" as const;
 
+/**
+ * Issue #2068 — default `policy:technique-coverage-minimum` resolution
+ * mode for `eu-banking-default`. The secure default is `"tier-elastic"`
+ * so the gate scales the equivalence-partitioning floor with the
+ * screen's coverage-relevant field count instead of trapping
+ * small-field screens (`<= 8` fields) at the legacy 12-EP minimum.
+ *
+ * Customers that contractually require a fixed floor opt into
+ * `{ mode: "fixed" }` on a derived profile.
+ */
+export const EU_BANKING_DEFAULT_TECHNIQUE_COVERAGE_MINIMUM:
+  Readonly<TechniqueCoverageMinimumPolicy> = Object.freeze({
+    mode: "tier-elastic",
+  });
+
 const EU_BANKING_DEFAULT_RULES: TestCasePolicyProfileRules = {
   reviewOnlyRiskCategories: ["regulated_data", "financial_transaction"],
   strictRiskCategories: ["regulated_data", "financial_transaction", "high"],
@@ -72,6 +88,7 @@ const EU_BANKING_DEFAULT_RULES: TestCasePolicyProfileRules = {
     gateMode: EU_BANKING_DEFAULT_NEGATIVE_CASE_LIFT_GATE_MODE,
     thresholdRatio: EU_BANKING_DEFAULT_NEGATIVE_CASE_LIFT_THRESHOLD_RATIO,
   },
+  techniqueCoverageMinimum: EU_BANKING_DEFAULT_TECHNIQUE_COVERAGE_MINIMUM,
 };
 
 /** Default `eu-banking-default` policy profile (deep-frozen). */
@@ -93,6 +110,7 @@ export const EU_BANKING_DEFAULT_POLICY_PROFILE: Readonly<TestCasePolicyProfile> 
         gateMode: EU_BANKING_DEFAULT_NEGATIVE_CASE_LIFT_GATE_MODE,
         thresholdRatio: EU_BANKING_DEFAULT_NEGATIVE_CASE_LIFT_THRESHOLD_RATIO,
       }),
+      techniqueCoverageMinimum: EU_BANKING_DEFAULT_TECHNIQUE_COVERAGE_MINIMUM,
     }),
   });
 
@@ -150,6 +168,13 @@ export const cloneEuBankingDefaultProfile = (): TestCasePolicyProfile => {
     rules.negativeCaseLift = {
       gateMode: negativeCaseLift.gateMode,
       thresholdRatio: negativeCaseLift.thresholdRatio,
+    };
+  }
+  const techniqueCoverageMinimum =
+    EU_BANKING_DEFAULT_POLICY_PROFILE.rules.techniqueCoverageMinimum;
+  if (techniqueCoverageMinimum !== undefined) {
+    rules.techniqueCoverageMinimum = {
+      mode: techniqueCoverageMinimum.mode,
     };
   }
   return {
