@@ -4,7 +4,6 @@ import {
   type LlmConstrainedDecodingEnforcement,
   type LlmConstrainedDecodingMetadata,
   type LlmGatewayClientConfig,
-  type LlmGatewayCompatibilityMode,
   type LlmGatewayWireStructuredOutputMode,
 } from "../contracts/index.js";
 
@@ -15,7 +14,6 @@ interface ConstrainedDecodingAdapter {
   readonly enforcement: LlmConstrainedDecodingEnforcement;
   readonly defaultWireMode: LlmGatewayWireStructuredOutputMode;
   supports(input: {
-    compatibilityMode: LlmGatewayCompatibilityMode;
     wireMode: LlmGatewayWireStructuredOutputMode;
   }): { ok: true } | { ok: false; reason: string };
 }
@@ -26,19 +24,19 @@ const ADAPTERS: Readonly<Record<LlmConstrainedDecodingAdapterId, ConstrainedDeco
       id: "openai_json_schema",
       enforcement: "provider",
       defaultWireMode: "json_schema",
-      supports: ({ compatibilityMode, wireMode }) =>
-        compatibilityMode === "openai_chat" && wireMode === "json_schema"
+      supports: ({ wireMode }) =>
+        wireMode === "json_schema"
           ? { ok: true }
-          : { ok: false, reason: "openai_json_schema requires openai_chat plus wire mode json_schema" },
+          : { ok: false, reason: "openai_json_schema requires wire mode json_schema" },
     },
     openai_json_object: {
       id: "openai_json_object",
       enforcement: "provider",
       defaultWireMode: "json_object",
-      supports: ({ compatibilityMode, wireMode }) =>
-        compatibilityMode === "openai_chat" && wireMode === "json_object"
+      supports: ({ wireMode }) =>
+        wireMode === "json_object"
           ? { ok: true }
-          : { ok: false, reason: "openai_json_object requires openai_chat plus wire mode json_object" },
+          : { ok: false, reason: "openai_json_object requires wire mode json_object" },
     },
     prompt_only: {
       id: "prompt_only",
@@ -50,10 +48,10 @@ const ADAPTERS: Readonly<Record<LlmConstrainedDecodingAdapterId, ConstrainedDeco
       id: "outlines",
       enforcement: "sampler",
       defaultWireMode: "json_schema",
-      supports: ({ compatibilityMode, wireMode }) =>
-        compatibilityMode === "openai_chat" && wireMode === "json_schema"
+      supports: ({ wireMode }) =>
+        wireMode === "json_schema"
           ? { ok: true }
-          : { ok: false, reason: "outlines adapter currently requires openai_chat plus wire mode json_schema" },
+          : { ok: false, reason: "outlines adapter currently requires wire mode json_schema" },
     },
     llguidance: {
       id: "llguidance",
@@ -113,7 +111,6 @@ export const resolveConstrainedDecodingMetadata = (input: {
   const resolved = resolveConfiguredConstrainedDecoding(input.config);
   const preferred = ADAPTERS[resolved.preferredAdapterId];
   const supported = preferred.supports({
-    compatibilityMode: input.config.compatibilityMode,
     wireMode: resolved.wireMode,
   });
   if (supported.ok) {
