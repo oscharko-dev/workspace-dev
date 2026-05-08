@@ -1397,3 +1397,23 @@ export {
   type WriteReleaseReadinessReportInput,
   type WriteReleaseReadinessReportResult,
 } from "./release-readiness-report.js";
+export {
+  buildActiveDatasetInvariantRegistry,
+  computeInvariantCoverageRatio,
+  createInvariantRegistry,
+  evaluateInvariants,
+  registerActiveDatasetInvariants,
+  type DomainInvariant,
+  type DomainInvariantCaseEvaluation,
+  type DomainInvariantContext,
+  type DomainInvariantEvaluation,
+  type DomainInvariantRegistry,
+  type DomainInvariantSeverity,
+  type DomainInvariantViolation,
+} from "./domain-invariant-registry.js";
+export {
+  findInvariantsMissingSamplerFactory,
+  sampleInvariantSeeds,
+  type InvariantSeedPair,
+  type InvariantSeedSet,
+} from "./property-sampler.js";

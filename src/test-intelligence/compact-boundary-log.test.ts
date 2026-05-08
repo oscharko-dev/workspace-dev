@@ -117,7 +117,7 @@ test("compact-boundary-log: golden line for the canonical example", () => {
     entries: [baseEntry()],
   });
   const golden =
-    '{"clearedToolResultBytes":4096,"contractVersion":"1.14.0","jobId":"job-1",' +
+    '{"clearedToolResultBytes":4096,"contractVersion":"1.15.0","jobId":"job-1",' +
     '"parentHash":"' +
     HASH_A +
     '","schemaVersion":"1.0.0","summarySha256":"' +

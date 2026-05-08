@@ -30,6 +30,11 @@ import {
   type TestCaseValidationSeverity,
   type WorkflowTopology,
 } from "../contracts/index.js";
+import {
+  evaluateInvariants,
+  type DomainInvariantEvaluation,
+  type DomainInvariantRegistry,
+} from "./domain-invariant-registry.js";
 import { validateGeneratedTestCaseList } from "./generated-test-case-schema.js";
 import { detectPii } from "./pii-detection.js";
 import { detectSuspiciousContent } from "./semantic-content-sanitization.js";
@@ -49,6 +54,21 @@ export interface ValidateGeneratedTestCasesInput {
   list: GeneratedTestCaseList;
   intent: BusinessTestIntentIr;
   workflowTopology?: WorkflowTopology;
+  /**
+   * Optional domain-invariant registry (Issue #2040). When supplied, every
+   * generated case is evaluated against the registry and `forall`-matched
+   * invariants that return `holds === false` produce
+   * `domain_invariant_violation` issues at the per-case path. The
+   * evaluation result is exposed through {@link InvariantValidationOutcome}
+   * so callers can thread it into the coverage report.
+   */
+  invariantRegistry?: DomainInvariantRegistry;
+}
+
+/** Combined validation report + invariant evaluation (Issue #2040). */
+export interface InvariantValidationOutcome {
+  report: TestCaseValidationReport;
+  invariantEvaluation?: DomainInvariantEvaluation;
 }
 
 /** Per-issue helper to keep deterministic insertion order. */
@@ -585,7 +605,19 @@ const validateUnsupportedUnresolvedValidationDetails = (
  */
 export const validateGeneratedTestCases = (
   input: ValidateGeneratedTestCasesInput,
-): TestCaseValidationReport => {
+): TestCaseValidationReport => validateGeneratedTestCasesWithInvariants(input).report;
+
+/**
+ * Variant of {@link validateGeneratedTestCases} that also returns the
+ * domain-invariant evaluation (Issue #2040). Use this when the caller
+ * needs the per-case `exercises` mapping or the job-level coverage ratio
+ * — e.g. the production validation pipeline that surfaces both the
+ * `domain_invariant_violation` issues and the `invariantCoverage` field
+ * on the coverage report.
+ */
+export const validateGeneratedTestCasesWithInvariants = (
+  input: ValidateGeneratedTestCasesInput,
+): InvariantValidationOutcome => {
   const issues: TestCaseValidationIssue[] = [];
   const model = buildTestDesignModel({
     jobId: input.jobId,
@@ -593,12 +625,14 @@ export const validateGeneratedTestCases = (
   });
 
   if (!validateStructural(input.list, issues)) {
-    return finalizeReport({
-      jobId: input.jobId,
-      generatedAt: input.generatedAt,
-      totalTestCases: 0,
-      issues,
-    });
+    return {
+      report: finalizeReport({
+        jobId: input.jobId,
+        generatedAt: input.generatedAt,
+        totalTestCases: 0,
+        issues,
+      }),
+    };
   }
 
   const intentIds = collectIntentIds(input.intent, input.workflowTopology);
@@ -622,12 +656,41 @@ export const validateGeneratedTestCases = (
     validateCase(tc, i, intentIds, model, issues);
   }
 
-  return finalizeReport({
-    jobId: input.jobId,
-    generatedAt: input.generatedAt,
-    totalTestCases: list.testCases.length,
-    issues,
-  });
+  let invariantEvaluation: DomainInvariantEvaluation | undefined;
+  if (input.invariantRegistry !== undefined) {
+    invariantEvaluation = evaluateInvariants({
+      registry: input.invariantRegistry,
+      testCases: list.testCases,
+      context: { intent: input.intent, model },
+    });
+    const indexById = new Map<string, number>();
+    for (let i = 0; i < list.testCases.length; i++) {
+      const tc = list.testCases[i];
+      if (tc === undefined) continue;
+      indexById.set(tc.id, i);
+    }
+    for (const violation of invariantEvaluation.violations) {
+      const idx = indexById.get(violation.testCaseId);
+      const basePath = idx === undefined ? "$" : `$.testCases[${idx}]`;
+      pushIssue(issues, {
+        testCaseId: violation.testCaseId,
+        path: `${basePath}.${violation.path}`,
+        code: "domain_invariant_violation",
+        severity: violation.severity,
+        message: `${violation.invariantId}: ${violation.message}`,
+      });
+    }
+  }
+
+  return {
+    report: finalizeReport({
+      jobId: input.jobId,
+      generatedAt: input.generatedAt,
+      totalTestCases: list.testCases.length,
+      issues,
+    }),
+    ...(invariantEvaluation !== undefined ? { invariantEvaluation } : {}),
+  };
 };
 
 const finalizeReport = (input: {

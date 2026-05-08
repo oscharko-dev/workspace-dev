@@ -163,7 +163,7 @@ test("agent-iterations: golden byte-identity for the canonical example", () => {
     ],
   });
   const golden =
-    '{"contractVersion":"1.14.0","generatedAt":"2026-05-04T08:05:00.000Z","iterations":[' +
+    '{"contractVersion":"1.15.0","generatedAt":"2026-05-04T08:05:00.000Z","iterations":[' +
     '{"completedAt":"2026-05-04T08:01:00.000Z","findingsCount":3,"iteration":0,"outcome":"needs_repair","parentHash":"' +
     HASH_A +
     '","roleStepId":"test_repair","startedAt":"2026-05-04T08:00:00.000Z"},' +
