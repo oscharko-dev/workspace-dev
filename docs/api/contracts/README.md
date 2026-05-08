@@ -88,7 +88,7 @@ Persisted multimodal accessibility-judge verdict artifact.
 
 ##### contractVersion
 
-> `readonly` **contractVersion**: `"1.12.0"`
+> `readonly` **contractVersion**: `"1.13.0"`
 
 ##### criteria
 
@@ -280,7 +280,7 @@ Retry policy applied to this node.
 
 ##### role
 
-> `readonly` **role**: `"logic_judge"` \| `"generator"` \| `"repair_planner"` \| `"action_topology"` \| `"adversarial_gap_finder"` \| `"final_verifier"` \| `"semantic_judge"` \| `"visual_sidecar"`
+> `readonly` **role**: `"logic_judge"` \| `"generator"` \| `"adversarial_critic"` \| `"repair_planner"` \| `"action_topology"` \| `"adversarial_gap_finder"` \| `"final_verifier"` \| `"human_review"` \| `"semantic_judge"` \| `"visual_sidecar"`
 
 Role this step is bound to.
 
@@ -356,7 +356,7 @@ Persisted, canonical-JSON, per-job repair-iteration log.
 
 ##### contractVersion
 
-> `readonly` **contractVersion**: `"1.12.0"`
+> `readonly` **contractVersion**: `"1.13.0"`
 
 ##### generatedAt
 
@@ -389,6 +389,15 @@ itself enforce the banking policy.
 
 #### Properties
 
+##### family?
+
+> `readonly` `optional` **family?**: `"anthropic"` \| `"azure-openai"` \| `"google"` \| `"in-house"` \| `"mistral"` \| `"openai"`
+
+Optional model-family marker (Issue #2038). Used by the
+cross-family judge ensemble to enforce that no two judge roles in
+the same run draw from the same model family. Must be one of
+[JUDGE\_MODEL\_FAMILIES](#judge_model_families) when present.
+
 ##### ictRegisterRef?
 
 > `readonly` `optional` **ictRegisterRef?**: `string`
@@ -416,6 +425,15 @@ Stable model identifier inside the provider namespace.
 
 Stable provider identifier (e.g., `"azure-openai"`, `"in-house"`).
 
+##### region?
+
+> `readonly` `optional` **region?**: `"eu"` \| `"global"` \| `"us"`
+
+Optional deployment-region marker (Issue #2038). Used by EU
+data-residency policies (e.g., `eu-banking-default`) to refuse
+non-EU endpoints during judge-binding validation. Must be one of
+[JUDGE\_MODEL\_REGIONS](#judge_model_regions) when present.
+
 ***
 
 ### AgentRoleProfile
@@ -435,7 +453,7 @@ Capability filter — what kinds of side effects the role may declare.
 
 ##### finOpsGroup
 
-> `readonly` **finOpsGroup**: `"visual"` \| `"generation"` \| `"judge"` \| `"repair"` \| `"verification"`
+> `readonly` **finOpsGroup**: `"visual"` \| `"adversarial"` \| `"generation"` \| `"judge"` \| `"repair"` \| `"verification"`
 
 FinOps attribution group used for cost rollups.
 
@@ -481,7 +499,7 @@ deterministic services that do not compile a prompt.
 
 ##### role
 
-> `readonly` **role**: `"logic_judge"` \| `"generator"` \| `"repair_planner"` \| `"action_topology"` \| `"adversarial_gap_finder"` \| `"final_verifier"` \| `"semantic_judge"` \| `"visual_sidecar"`
+> `readonly` **role**: `"logic_judge"` \| `"generator"` \| `"adversarial_critic"` \| `"repair_planner"` \| `"action_topology"` \| `"adversarial_gap_finder"` \| `"final_verifier"` \| `"human_review"` \| `"semantic_judge"` \| `"visual_sidecar"`
 
 Role identifier this profile binds to.
 
@@ -715,7 +733,7 @@ Terminal outcome from the harness state machine.
 
 ##### role
 
-> `readonly` **role**: `"logic_judge"` \| `"generator"` \| `"repair_planner"` \| `"action_topology"` \| `"adversarial_gap_finder"` \| `"final_verifier"` \| `"semantic_judge"` \| `"visual_sidecar"`
+> `readonly` **role**: `"logic_judge"` \| `"generator"` \| `"adversarial_critic"` \| `"repair_planner"` \| `"action_topology"` \| `"adversarial_gap_finder"` \| `"final_verifier"` \| `"human_review"` \| `"semantic_judge"` \| `"visual_sidecar"`
 
 Role that produced the step.
 
@@ -901,7 +919,7 @@ input set is byte-identical and the entries are sorted before write.
 
 ##### contractVersion
 
-> `readonly` **contractVersion**: `"1.12.0"`
+> `readonly` **contractVersion**: `"1.13.0"`
 
 ##### diffArtifactBasename?
 
@@ -953,7 +971,7 @@ Persisted case-merger artifact (Issue #1937).
 
 ##### contractVersion
 
-> `readonly` **contractVersion**: `"1.12.0"`
+> `readonly` **contractVersion**: `"1.13.0"`
 
 ##### entries
 
@@ -1088,7 +1106,7 @@ Total bytes of cleared tool result blocks at the boundary.
 
 ##### contractVersion
 
-> `readonly` **contractVersion**: `"1.12.0"`
+> `readonly` **contractVersion**: `"1.13.0"`
 
 ##### jobId
 
@@ -1132,7 +1150,7 @@ Persisted, fully-redacted artifact form of a compiled prompt.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.12.0"`
+> **contractVersion**: `"1.13.0"`
 
 ##### hashes
 
@@ -2350,7 +2368,7 @@ Aggregate dry-run report artifact.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.12.0"`
+> **contractVersion**: `"1.13.0"`
 
 ##### credentialsIncluded
 
@@ -2703,7 +2721,7 @@ Sorted by filename for deterministic emission.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.12.0"`
+> **contractVersion**: `"1.13.0"`
 
 ##### exportedTestCaseCount
 
@@ -2794,7 +2812,7 @@ Persisted screenshot-vs-cases faithfulness verdict artifact.
 
 ##### contractVersion
 
-> `readonly` **contractVersion**: `"1.12.0"`
+> `readonly` **contractVersion**: `"1.13.0"`
 
 ##### fallbackReason
 
@@ -3058,7 +3076,7 @@ Aggregate counters across the `bySource` map.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.12.0"`
+> **contractVersion**: `"1.13.0"`
 
 ##### currencyLabel?
 
@@ -3696,7 +3714,7 @@ Single generated test case.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.12.0"`
+> **contractVersion**: `"1.13.0"`
 
 ##### expectedResults
 
@@ -3807,7 +3825,7 @@ Whether the artifact came from a replay-cache hit.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.12.0"`
+> **contractVersion**: `"1.13.0"`
 
 ##### generatedAt
 
@@ -4023,7 +4041,7 @@ referenced files and recomputing each row.
 
 ##### contractVersion
 
-> `readonly` **contractVersion**: `"1.12.0"`
+> `readonly` **contractVersion**: `"1.13.0"`
 
 ##### digest
 
@@ -4080,6 +4098,57 @@ sha256-hex of the on-disk artifact bytes.
 > `readonly` **sizeBytes**: `number`
 
 Total byte length of the on-disk artifact.
+
+***
+
+### HumanReviewDecision
+
+Persisted human-review decision (Issue #2038). The reviewer is
+deterministically identified by a `principalHash` (sha256 hex of
+the reviewer's stable identifier) so the artifact carries a stable
+audit anchor without leaking reviewer PII.
+
+#### Properties
+
+##### decidedAt
+
+> `readonly` **decidedAt**: `string`
+
+ISO-8601 timestamp at which the decision was recorded.
+
+##### principalHash
+
+> `readonly` **principalHash**: `string`
+
+sha256 hex of the reviewer's stable identifier (64 lowercase hex chars).
+
+##### rationale
+
+> `readonly` **rationale**: `string`
+
+Length-capped, redacted rationale (no chain-of-thought, no PII).
+
+##### reviewerKind
+
+> `readonly` **reviewerKind**: `"dry_run_marker"` \| `"principal"`
+
+Reviewer kind — `dry_run_marker` for offline / unattended runs.
+
+##### schemaVersion
+
+> `readonly` **schemaVersion**: `"1.0.0"`
+
+##### triggeredBy
+
+> `readonly` **triggeredBy**: `"majority_decision"` \| `"split_decision"` \| `"unanimous_accept"` \| `"unanimous_reject"` \| `"unanimous_repair"`
+
+Disagreement decision label that triggered escalation.
+
+##### verdict
+
+> `readonly` **verdict**: `"repair"` \| `"accept"` \| `"reject"` \| `"deferred"`
+
+Final verdict the reviewer cast.
 
 ***
 
@@ -4198,7 +4267,7 @@ Hard-invariant intent-delta report artifact (Issue #1373).
 
 ##### contractVersion
 
-> **contractVersion**: `"1.12.0"`
+> **contractVersion**: `"1.13.0"`
 
 ##### currentIntentHash
 
@@ -4512,7 +4581,7 @@ Aggregate `jira-created-subtasks.json` artifact (Issue #1482).
 
 ##### contractVersion
 
-> **contractVersion**: `"1.12.0"`
+> **contractVersion**: `"1.13.0"`
 
 ##### credentialsIncluded
 
@@ -5148,7 +5217,7 @@ Audit metadata for the run.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.12.0"`
+> **contractVersion**: `"1.13.0"`
 
 ##### createdCount
 
@@ -5256,6 +5325,15 @@ One normalized judge entry consumed by the consensus module.
 
 #### Properties
 
+##### family?
+
+> `readonly` `optional` **family?**: `"anthropic"` \| `"azure-openai"` \| `"google"` \| `"in-house"` \| `"mistral"` \| `"openai"`
+
+Optional model-family marker (Issue #2038). Set by the harness
+when the judge is sourced from a known cross-family deployment.
+Persisted into `judge-consensus.json` so the per-family agreement
+matrix can be reconstructed offline.
+
 ##### findings
 
 > `readonly` **findings**: readonly [`JudgeConsensusFinding`](#judgeconsensusfinding)[]
@@ -5263,6 +5341,29 @@ One normalized judge entry consumed by the consensus module.
 ##### judgeId
 
 > `readonly` **judgeId**: `string`
+
+##### modelId?
+
+> `readonly` `optional` **modelId?**: `string`
+
+Optional stable model identifier (e.g., `"claude-3.5-sonnet-20240620"`)
+captured by the harness so the disagreement report can attribute
+each verdict to a specific model version.
+
+##### promptVersion?
+
+> `readonly` `optional` **promptVersion?**: `string`
+
+Optional prompt-template version pin captured by the harness so
+provenance graph edges (B.10) can record every judge family +
+version used in the run (Issue #2038).
+
+##### region?
+
+> `readonly` `optional` **region?**: `"eu"` \| `"global"` \| `"us"`
+
+Optional deployment-region marker (Issue #2038). Used by the
+EU-residency check on the judge-disagreement report.
 
 ##### repairInstructions
 
@@ -5318,11 +5419,30 @@ Persisted production-runner judge-consensus artifact.
 
 ##### contractVersion
 
-> `readonly` **contractVersion**: `"1.12.0"`
+> `readonly` **contractVersion**: `"1.13.0"`
+
+##### crossFamily?
+
+> `readonly` `optional` **crossFamily?**: [`JudgeCrossFamilySummary`](#judgecrossfamilysummary)
+
+Optional cross-family agreement summary (Issue #2038). Mirrors
+the totals in `judge-disagreement-report.json` but is inlined here
+so a single artifact carries both the legal verdict and the
+disagreement evidence.
 
 ##### generatedAt
 
 > `readonly` **generatedAt**: `string`
+
+##### humanReview?
+
+> `readonly` `optional` **humanReview?**: [`HumanReviewDecision`](#humanreviewdecision)
+
+Optional cross-family escalation summary (Issue #2038). Populated
+by `judge-consensus.ts` when the panel triggered a disagreement
+escalation; consumers (production runner, run-quality reporter)
+can detect human-review hand-off without re-deriving it from the
+disagreement-report artifact.
 
 ##### jobId
 
@@ -5375,6 +5495,214 @@ Primary veto attribution surfaced by the consensus artifact.
 ##### verdict
 
 > `readonly` **verdict**: `"repair"` \| `"accept"` \| `"reject"`
+
+***
+
+### JudgeCrossFamilySummary
+
+Inline cross-family summary attached to the consensus artifact when
+the panel was sourced from a cross-family ensemble (Issue #2038).
+
+#### Properties
+
+##### decision
+
+> `readonly` **decision**: `"majority_decision"` \| `"split_decision"` \| `"unanimous_accept"` \| `"unanimous_reject"` \| `"unanimous_repair"`
+
+##### disagreementRate
+
+> `readonly` **disagreementRate**: `number`
+
+##### escalation
+
+> `readonly` **escalation**: `"none"` \| `"human_review_required"`
+
+##### escalationRate
+
+> `readonly` **escalationRate**: `number`
+
+##### families
+
+> `readonly` **families**: readonly (`"anthropic"` \| `"azure-openai"` \| `"google"` \| `"in-house"` \| `"mistral"` \| `"openai"`)[]
+
+Distinct judge model families used in the run, sorted alphabetically.
+
+***
+
+### JudgeDisagreementCostByFamily
+
+Roll-up cost markers attributed per-family (Issue #2038).
+
+#### Properties
+
+##### costMicrounits
+
+> `readonly` **costMicrounits**: `number`
+
+Aggregate cost in micro-units (1e-6 USD); 0 when unknown.
+
+##### family
+
+> `readonly` **family**: `"anthropic"` \| `"azure-openai"` \| `"google"` \| `"in-house"` \| `"mistral"` \| `"openai"`
+
+##### totalTokens
+
+> `readonly` **totalTokens**: `number`
+
+Total tokens consumed by this family across judge calls.
+
+***
+
+### JudgeDisagreementJudgeEntry
+
+Per-judge entry recorded in the disagreement report.
+
+#### Properties
+
+##### family
+
+> `readonly` **family**: `"anthropic"` \| `"azure-openai"` \| `"google"` \| `"in-house"` \| `"mistral"` \| `"openai"`
+
+Judge model-family marker.
+
+##### judgeId
+
+> `readonly` **judgeId**: `string`
+
+Stable judge identifier (e.g., `"logic_judge"`).
+
+##### modelId
+
+> `readonly` **modelId**: `string`
+
+Stable model identifier (e.g., `"claude-3.5-sonnet"`).
+
+##### promptVersion
+
+> `readonly` **promptVersion**: `string`
+
+Pinned prompt-template version.
+
+##### region
+
+> `readonly` **region**: `"eu"` \| `"global"` \| `"us"`
+
+Deployment region marker (used by EU-residency policy).
+
+##### verdict
+
+> `readonly` **verdict**: `"repair"` \| `"accept"` \| `"reject"`
+
+Verdict cast by this judge in the run.
+
+***
+
+### JudgeDisagreementMatrixCell
+
+Per-family agreement-matrix cell (Issue #2038).
+
+#### Properties
+
+##### agreements
+
+> `readonly` **agreements**: `number`
+
+Number of votes from this family that matched the resolved verdict.
+
+##### dissents
+
+> `readonly` **dissents**: `number`
+
+Number of votes from this family that disagreed with the resolved
+verdict. Counts every dissenting vote — not just the
+lone-dissenter case — so a 1:1:1 split surfaces a `dissents: 1`
+cell on each minority family. The `agreements + dissents === votes`
+invariant holds per cell.
+
+##### family
+
+> `readonly` **family**: `"anthropic"` \| `"azure-openai"` \| `"google"` \| `"in-house"` \| `"mistral"` \| `"openai"`
+
+##### votes
+
+> `readonly` **votes**: `number`
+
+Total votes cast by this family across the run.
+
+***
+
+### JudgeDisagreementReport
+
+Persisted per-run disagreement evidence (Issue #2038). The
+Production Runner writes one of these per `judge_consensus` step,
+even when the panel is unanimous — the artifact is the audit anchor
+the disagreement-rate trending consumes (B.10).
+
+#### Properties
+
+##### contractVersion
+
+> `readonly` **contractVersion**: `"1.13.0"`
+
+##### costByFamily
+
+> `readonly` **costByFamily**: readonly [`JudgeDisagreementCostByFamily`](#judgedisagreementcostbyfamily)[]
+
+Per-family cost rollup (sorted alphabetically by `family`).
+
+##### decision
+
+> `readonly` **decision**: `"majority_decision"` \| `"split_decision"` \| `"unanimous_accept"` \| `"unanimous_reject"` \| `"unanimous_repair"`
+
+Cross-family decision label for this run.
+
+##### disagreementRate
+
+> `readonly` **disagreementRate**: `number`
+
+Disagreement rate in [0,1] = dissenting-judge-count / panel-size.
+
+##### escalation
+
+> `readonly` **escalation**: `"none"` \| `"human_review_required"`
+
+Escalation action emitted by the detector.
+
+##### escalationRate
+
+> `readonly` **escalationRate**: `number`
+
+Escalation rate in [0,1] = 1 if escalated, 0 otherwise.
+
+##### generatedAt
+
+> `readonly` **generatedAt**: `string`
+
+##### jobId
+
+> `readonly` **jobId**: `string`
+
+##### judges
+
+> `readonly` **judges**: readonly [`JudgeDisagreementJudgeEntry`](#judgedisagreementjudgeentry)[]
+
+Per-judge entries sorted alphabetically by `judgeId`.
+
+##### perFamilyAgreement
+
+> `readonly` **perFamilyAgreement**: readonly [`JudgeDisagreementMatrixCell`](#judgedisagreementmatrixcell)[]
+
+Per-family agreement matrix (sorted alphabetically by `family`).
+
+##### rawPromptsIncluded
+
+> `readonly` **rawPromptsIncluded**: `false`
+
+Hard guarantee that the artifact never carries a raw prompt.
+
+##### schemaVersion
+
+> `readonly` **schemaVersion**: `"1.0.0"`
 
 ***
 
@@ -5534,7 +5862,7 @@ Persisted logic-judge verdict artifact.
 
 ##### contractVersion
 
-> `readonly` **contractVersion**: `"1.12.0"`
+> `readonly` **contractVersion**: `"1.13.0"`
 
 ##### findings
 
@@ -6031,7 +6359,7 @@ Per-release primitive-map status report.
 
 ##### contractVersion
 
-> `readonly` **contractVersion**: `"1.12.0"`
+> `readonly` **contractVersion**: `"1.13.0"`
 
 ##### counts
 
@@ -7125,7 +7453,7 @@ Aggregate `qc-created-entities.json` artifact (Issue #1372).
 
 ##### contractVersion
 
-> **contractVersion**: `"1.12.0"`
+> **contractVersion**: `"1.13.0"`
 
 ##### entities
 
@@ -7215,7 +7543,7 @@ Aggregate QC mapping preview artifact.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.12.0"`
+> **contractVersion**: `"1.13.0"`
 
 ##### entries
 
@@ -7891,7 +8219,7 @@ Gate 9 — context budget regression (Issue #1802).
 
 ##### contractVersion
 
-> `readonly` **contractVersion**: `"1.12.0"`
+> `readonly` **contractVersion**: `"1.13.0"`
 
 ##### libraryCoverageStatusCompleteness
 
@@ -7982,7 +8310,7 @@ The release pipeline fails when any verdict has `passed === false`.
 
 ##### contractVersion
 
-> `readonly` **contractVersion**: `"1.12.0"`
+> `readonly` **contractVersion**: `"1.13.0"`
 
 ##### mutationKillRate
 
@@ -8136,7 +8464,7 @@ gate passed.
 
 ##### contractVersion
 
-> `readonly` **contractVersion**: `"1.12.0"`
+> `readonly` **contractVersion**: `"1.13.0"`
 
 ##### gates
 
@@ -8325,7 +8653,7 @@ ISO-8601 UTC timestamp at the moment of persistence.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.12.0"`
+> **contractVersion**: `"1.13.0"`
 
 ##### fromState?
 
@@ -8393,7 +8721,7 @@ Number of cases currently in `approved` (or `exported`/`transferred`) state.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.12.0"`
+> **contractVersion**: `"1.13.0"`
 
 ##### fourEyesPolicy?
 
@@ -8619,7 +8947,7 @@ Persisted production-runner run-quality artifact.
 
 ##### contractVersion
 
-> `readonly` **contractVersion**: `"1.12.0"`
+> `readonly` **contractVersion**: `"1.13.0"`
 
 ##### degradedReasons
 
@@ -8923,7 +9251,7 @@ Sorted by `testCaseId` for byte stability. Empty when `refusal` is set.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.12.0"`
+> **contractVersion**: `"1.13.0"`
 
 ##### gatewayRelease
 
@@ -9016,7 +9344,7 @@ Changelog-approved signed migration bundle for banking-profile runs.
 
 ##### contractVersion
 
-> `readonly` **contractVersion**: `"4.50.0"`
+> `readonly` **contractVersion**: `"4.52.0"`
 
 ##### entries
 
@@ -9332,7 +9660,7 @@ Avg assumptions per case.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.12.0"`
+> **contractVersion**: `"1.13.0"`
 
 ##### duplicatePairs
 
@@ -9426,7 +9754,7 @@ Aggregate dedupe report artifact (Issue #1373).
 
 ##### contractVersion
 
-> **contractVersion**: `"1.12.0"`
+> **contractVersion**: `"1.13.0"`
 
 ##### embeddingProvider
 
@@ -9536,7 +9864,7 @@ Aggregate test-case delta report (always paired with `IntentDeltaReport`).
 
 ##### contractVersion
 
-> **contractVersion**: `"1.12.0"`
+> **contractVersion**: `"1.13.0"`
 
 ##### generatedAt
 
@@ -9842,7 +10170,7 @@ Whether ANY case was blocked (downstream export gate).
 
 ##### contractVersion
 
-> **contractVersion**: `"1.12.0"`
+> **contractVersion**: `"1.13.0"`
 
 ##### decisions
 
@@ -9990,7 +10318,7 @@ Whether the report blocks downstream review/export (any error => true).
 
 ##### contractVersion
 
-> **contractVersion**: `"1.12.0"`
+> **contractVersion**: `"1.13.0"`
 
 ##### errorCount
 
@@ -10460,7 +10788,7 @@ Aggregate traceability-matrix artifact (Issue #1373).
 
 ##### contractVersion
 
-> **contractVersion**: `"1.12.0"`
+> **contractVersion**: `"1.13.0"`
 
 ##### exportProfile?
 
@@ -10954,7 +11282,7 @@ Audit metadata for the run.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.12.0"`
+> **contractVersion**: `"1.13.0"`
 
 ##### createdCount
 
@@ -11322,7 +11650,7 @@ can be debugged from the artifact alone.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.12.0"`
+> **contractVersion**: `"1.13.0"`
 
 ##### deployment
 
@@ -11444,7 +11772,7 @@ screenshot bytes.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.12.0"`
+> **contractVersion**: `"1.13.0"`
 
 ##### generatedAt
 
@@ -11606,7 +11934,7 @@ Whether any record carries a non-`ok`/non-`fallback_used` outcome that blocks ge
 
 ##### contractVersion
 
-> **contractVersion**: `"1.12.0"`
+> **contractVersion**: `"1.13.0"`
 
 ##### generatedAt
 
@@ -11883,7 +12211,7 @@ Active signing mode; mirrored from the run input for auditability.
 
 ##### testIntelligenceContractVersion
 
-> **testIntelligenceContractVersion**: `"1.12.0"`
+> **testIntelligenceContractVersion**: `"1.13.0"`
 
 ##### visualSidecar?
 
@@ -12312,7 +12640,7 @@ and timestamps are caller-provided.
 
 ##### testIntelligenceContractVersion
 
-> **testIntelligenceContractVersion**: `"1.12.0"`
+> **testIntelligenceContractVersion**: `"1.13.0"`
 
 ##### thresholds
 
@@ -12611,7 +12939,7 @@ raw paste bytes, or PII.
 
 ##### testIntelligenceContractVersion
 
-> **testIntelligenceContractVersion**: `"1.12.0"`
+> **testIntelligenceContractVersion**: `"1.13.0"`
 
 Test-intelligence subsurface contract version.
 
@@ -13796,7 +14124,7 @@ Submit response for accepted jobs.
 
 ###### Inherited from
 
-[`WorkspaceSubmitAccepted`](#workspacesubmitaccepted).[`jobId`](#jobid-63)
+[`WorkspaceSubmitAccepted`](#workspacesubmitaccepted).[`jobId`](#jobid-64)
 
 ##### pasteDeltaSummary?
 
@@ -17626,6 +17954,22 @@ Discriminated alias for [ALLOWED\_HARNESS\_ARTIFACT\_FILENAMES](#allowed_harness
 
 ***
 
+### HumanReviewReviewerKind
+
+> **HumanReviewReviewerKind** = *typeof* [`HUMAN_REVIEW_REVIEWER_KINDS`](#human_review_reviewer_kinds)\[`number`\]
+
+Discriminated alias for [HUMAN\_REVIEW\_REVIEWER\_KINDS](#human_review_reviewer_kinds).
+
+***
+
+### HumanReviewVerdictLabel
+
+> **HumanReviewVerdictLabel** = *typeof* [`HUMAN_REVIEW_VERDICT_LABELS`](#human_review_verdict_labels)\[`number`\]
+
+Discriminated alias for [HUMAN\_REVIEW\_VERDICT\_LABELS](#human_review_verdict_labels).
+
+***
+
 ### IntentDeltaChangeType
 
 > **IntentDeltaChangeType** = *typeof* [`ALLOWED_INTENT_DELTA_CHANGE_TYPES`](#allowed_intent_delta_change_types)\[`number`\]
@@ -17731,6 +18075,38 @@ Final repair-loop outcomes persisted alongside judge-consensus history.
 > **JudgeConsensusRepairState** = *typeof* [`JUDGE_CONSENSUS_REPAIR_STATES`](#judge_consensus_repair_states)\[`number`\]
 
 Repair-state labels surfaced by the persisted judge-consensus artifact.
+
+***
+
+### JudgeDisagreementDecisionLabel
+
+> **JudgeDisagreementDecisionLabel** = *typeof* [`JUDGE_DISAGREEMENT_DECISION_LABELS`](#judge_disagreement_decision_labels)\[`number`\]
+
+Discriminated alias for [JUDGE\_DISAGREEMENT\_DECISION\_LABELS](#judge_disagreement_decision_labels).
+
+***
+
+### JudgeDisagreementEscalationAction
+
+> **JudgeDisagreementEscalationAction** = *typeof* [`JUDGE_DISAGREEMENT_ESCALATION_ACTIONS`](#judge_disagreement_escalation_actions)\[`number`\]
+
+Discriminated alias for [JUDGE\_DISAGREEMENT\_ESCALATION\_ACTIONS](#judge_disagreement_escalation_actions).
+
+***
+
+### JudgeModelFamily
+
+> **JudgeModelFamily** = *typeof* [`JUDGE_MODEL_FAMILIES`](#judge_model_families)\[`number`\]
+
+Discriminated alias for [JUDGE\_MODEL\_FAMILIES](#judge_model_families).
+
+***
+
+### JudgeModelRegion
+
+> **JudgeModelRegion** = *typeof* [`JUDGE_MODEL_REGIONS`](#judge_model_regions)\[`number`\]
+
+Discriminated alias for [JUDGE\_MODEL\_REGIONS](#judge_model_regions).
 
 ***
 
@@ -18845,7 +19221,7 @@ resumed from the most recent checkpoint, or terminal.
 
 ### AGENT\_HARNESS\_ROLES
 
-> `const` **AGENT\_HARNESS\_ROLES**: readonly \[`"action_topology"`, `"adversarial_gap_finder"`, `"final_verifier"`, `"generator"`, `"logic_judge"`, `"repair_planner"`, `"semantic_judge"`, `"visual_sidecar"`\]
+> `const` **AGENT\_HARNESS\_ROLES**: readonly \[`"action_topology"`, `"adversarial_critic"`, `"adversarial_gap_finder"`, `"final_verifier"`, `"generator"`, `"human_review"`, `"logic_judge"`, `"repair_planner"`, `"semantic_judge"`, `"visual_sidecar"`\]
 
 Closed runtime list of agent harness roles tracked by the Production
 Runner state machine. The order is alphabetical for stable
@@ -18896,7 +19272,7 @@ Closed runtime list of agent-role capability filters.
 
 ### AGENT\_ROLE\_FINOPS\_GROUPS
 
-> `const` **AGENT\_ROLE\_FINOPS\_GROUPS**: readonly \[`"generation"`, `"judge"`, `"repair"`, `"verification"`, `"visual"`\]
+> `const` **AGENT\_ROLE\_FINOPS\_GROUPS**: readonly \[`"adversarial"`, `"generation"`, `"judge"`, `"repair"`, `"verification"`, `"visual"`\]
 
 Closed runtime list of FinOps attribution groups for agent-role runs.
 
@@ -19003,7 +19379,7 @@ Closed runtime list of repair-iteration outcome literals.
 
 ### ALLOWED\_AGENT\_SOURCE\_LABELS
 
-> `const` **ALLOWED\_AGENT\_SOURCE\_LABELS**: readonly \[`"manager"`, `"judge_primary"`, `"judge_secondary"`, `"visual_primary"`, `"visual_fallback"`, `"generator"`, `"coverage_planner"`, `"risk_ranker"`, `"gap_finder"`, `"repair_planner"`, `"ir_mutation_oracle"`\]
+> `const` **ALLOWED\_AGENT\_SOURCE\_LABELS**: readonly \[`"manager"`, `"judge_primary"`, `"judge_secondary"`, `"visual_primary"`, `"visual_fallback"`, `"generator"`, `"coverage_planner"`, `"risk_ranker"`, `"adversarial_critic"`, `"gap_finder"`, `"repair_planner"`, `"ir_mutation_oracle"`\]
 
 Static source labels tracked inside the per-source FinOps breakdown.
 
@@ -20191,7 +20567,7 @@ Schema version for persisted context-budget analyzer reports.
 
 ### CONTRACT\_VERSION
 
-> `const` **CONTRACT\_VERSION**: `"4.50.0"`
+> `const` **CONTRACT\_VERSION**: `"4.52.0"`
 
 Current contract version constant.
 Must be bumped according to CONTRACT_CHANGELOG.md rules.
@@ -20546,6 +20922,45 @@ Schema version for [HarnessArtifactManifest](#harnessartifactmanifest).
 
 ***
 
+### HUMAN\_REVIEW\_DECISION\_SCHEMA\_VERSION
+
+> `const` **HUMAN\_REVIEW\_DECISION\_SCHEMA\_VERSION**: `"1.0.0"`
+
+Schema version literal pinned on every persisted
+[HumanReviewDecision](#humanreviewdecision) envelope (Issue #2038).
+
+***
+
+### HUMAN\_REVIEW\_RATIONALE\_MAX\_CHARS
+
+> `const` **HUMAN\_REVIEW\_RATIONALE\_MAX\_CHARS**: `1024`
+
+Hard upper bound on the persisted `rationale` text emitted per
+human-review decision. Keeps the artifact bounded and prevents
+smuggling unbounded reviewer prose into the consensus surface.
+
+***
+
+### HUMAN\_REVIEW\_REVIEWER\_KINDS
+
+> `const` **HUMAN\_REVIEW\_REVIEWER\_KINDS**: readonly \[`"dry_run_marker"`, `"principal"`\]
+
+Closed runtime list of human-review reviewer kinds (Issue #2038).
+`dry_run_marker` is the default for offline runs; `principal` is
+reserved for future integration with the live human-review channel.
+
+***
+
+### HUMAN\_REVIEW\_VERDICT\_LABELS
+
+> `const` **HUMAN\_REVIEW\_VERDICT\_LABELS**: readonly \[`"accept"`, `"deferred"`, `"reject"`, `"repair"`\]
+
+Closed runtime list of human-review verdict labels (Issue #2038).
+The reviewer's verdict feeds back into `JudgeConsensusVerdict` and
+may override the panel's verdict.
+
+***
+
 ### INTENT\_DELTA\_REPORT\_ARTIFACT\_FILENAME
 
 > `const` **INTENT\_DELTA\_REPORT\_ARTIFACT\_FILENAME**: `"intent-delta-report.json"`
@@ -20666,6 +21081,72 @@ Repair-state labels surfaced by the persisted judge-consensus artifact.
 > `const` **JUDGE\_CONSENSUS\_SCHEMA\_VERSION**: `"1.0.0"`
 
 Schema version for persisted production-runner judge-consensus artifacts.
+
+***
+
+### JUDGE\_DISAGREEMENT\_DECISION\_LABELS
+
+> `const` **JUDGE\_DISAGREEMENT\_DECISION\_LABELS**: readonly \[`"majority_decision"`, `"split_decision"`, `"unanimous_accept"`, `"unanimous_reject"`, `"unanimous_repair"`\]
+
+Closed runtime list of cross-family decision shapes (Issue #2038).
+The vote outcome over the three judge roles maps to one of these
+labels; the disagreement report tallies them.
+
+***
+
+### JUDGE\_DISAGREEMENT\_ESCALATION\_ACTIONS
+
+> `const` **JUDGE\_DISAGREEMENT\_ESCALATION\_ACTIONS**: readonly \[`"human_review_required"`, `"none"`\]
+
+Closed runtime list of escalation actions that the cross-family
+disagreement detector may emit (Issue #2038). `none` is the
+no-op; `human_review_required` instructs the consensus builder to
+attach a deterministic `human_review` envelope to the consensus
+artifact.
+
+***
+
+### JUDGE\_DISAGREEMENT\_REPORT\_ARTIFACT\_FILENAME
+
+> `const` **JUDGE\_DISAGREEMENT\_REPORT\_ARTIFACT\_FILENAME**: `"judge-disagreement-report.json"`
+
+Canonical filename for the per-run disagreement-report artifact
+(Issue #2038). The harness writes
+`<runDir>/judge-disagreement-report.json` once per `judge_consensus`
+step. The artifact carries disagreement rate, escalation rate, and
+the per-family agreement matrix the AT-2038 audit requires.
+
+***
+
+### JUDGE\_DISAGREEMENT\_REPORT\_SCHEMA\_VERSION
+
+> `const` **JUDGE\_DISAGREEMENT\_REPORT\_SCHEMA\_VERSION**: `"1.0.0"`
+
+Schema version literal pinned on every persisted
+[JudgeDisagreementReport](#judgedisagreementreport) artifact (Issue #2038). Structural
+changes require a major bump and a `CONTRACT_CHANGELOG.md` entry.
+
+***
+
+### JUDGE\_MODEL\_FAMILIES
+
+> `const` **JUDGE\_MODEL\_FAMILIES**: readonly \[`"anthropic"`, `"azure-openai"`, `"google"`, `"in-house"`, `"mistral"`, `"openai"`\]
+
+Closed runtime list of model-family markers consumed by the
+cross-family judge ensemble (Issue #2038). The vocabulary is
+deliberately small: only families with judge-grade models are
+surfaced. Extending the list requires a contract bump.
+
+***
+
+### JUDGE\_MODEL\_REGIONS
+
+> `const` **JUDGE\_MODEL\_REGIONS**: readonly \[`"eu"`, `"global"`, `"us"`\]
+
+Closed runtime list of deployment-region markers consumed by the
+EU-residency policy gate (Issue #2038). `eu` is the only region
+accepted under `eu-banking-default`; `us` and `global` are accepted
+for non-EU profiles.
 
 ***
 
@@ -21530,7 +22011,7 @@ Schema version for persisted `TestDesignModel` projection artifacts.
 
 ### TEST\_INTELLIGENCE\_CONTRACT\_VERSION
 
-> `const` **TEST\_INTELLIGENCE\_CONTRACT\_VERSION**: `"1.12.0"`
+> `const` **TEST\_INTELLIGENCE\_CONTRACT\_VERSION**: `"1.13.0"`
 
 Contract version for the opt-in test-intelligence surface.
 

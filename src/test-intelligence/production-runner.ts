@@ -126,8 +126,24 @@ import {
   writeWave1ValidationEvidenceManifest,
 } from "./evidence-manifest.js";
 import {
+  ADVERSARIAL_CRITIC_MAX_ROUNDS,
+  ADVERSARIAL_CRITIC_ROUND_ARTIFACT_PREFIX,
+  ADVERSARIAL_CRITIC_TRACE_ARTIFACT_FILENAME,
+  buildAdversarialRepairInstructions,
+  computeAdversarialFindingDedupeKey,
+  computeNegativeCoverageAccounting,
+  dedupeAdversarialFindings,
+  runAdversarialCriticRound,
+  writeAdversarialCriticRoundArtifact,
+  writeAdversarialCriticTraceArtifact,
+  type AdversarialCriticFinding,
+  type AdversarialCriticRoundArtifact,
+  type AdversarialCriticTraceArtifact,
+} from "./adversarial-critic-agent.js";
+import {
   cloneFinOpsBudgetEnvelope,
   PRODUCTION_FINOPS_BUDGET_ENVELOPE,
+  resolveAdversarialCriticBudgetLimits,
   resolveFinOpsRequestLimits,
   validateFinOpsBudgetEnvelope,
 } from "./finops-budget.js";
@@ -854,6 +870,7 @@ export interface RunFigmaToQcTestCasesResult {
     coveragePlan: string;
     workflowTopology: string;
     riskRanking: string;
+    adversarialCriticTrace?: string;
     logicJudgeCompiledPrompt?: string;
     customerEvalRubric?: string;
     faithfulnessJudgeCompiledPrompt?: string;
@@ -1022,11 +1039,13 @@ const buildAgentParticipationEntries = (input: {
       }
     | undefined;
   repairLoopResult: RepairLoopResult | undefined;
+  adversarialCriticRounds: readonly AdversarialCriticRoundArtifact[];
   artifactPaths: {
     coveragePlan: string;
     workflowTopology: string;
     riskRanking: string;
     logicJudgeVerdict: string;
+    adversarialCriticTrace?: string;
     visualSidecarResult?: string;
     a11yJudgeVerdict?: string;
     agentRoleRun: string;
@@ -1221,6 +1240,66 @@ const buildAgentParticipationEntries = (input: {
       artifactPath: refs.riskRanking,
     }),
   );
+  const adversarialCriticCost = buildRoleCostAttribution({
+    report: input.finopsReport,
+    source: "adversarial_critic",
+  });
+  const adversarialCriticFailed = input.adversarialCriticRounds.some(
+    (artifact) => artifact.llmGateway.outcome === "error",
+  );
+  const adversarialCriticFailureClass = input.adversarialCriticRounds.find(
+    (artifact) => artifact.llmGateway.outcome === "error",
+  )?.llmGateway.errorClass;
+  entries.push({
+    role: "adversarial_critic",
+    deployment: logicJudgeClient.deployment,
+    configurationSource: roleConfigurationSource(
+      input.request,
+      "adversarial_critic",
+    ),
+    status:
+      input.adversarialCriticRounds.length === 0
+        ? "skipped"
+        : adversarialCriticFailed
+          ? "failed"
+          : "succeeded",
+    attemptCount: getBySourceCallCount(
+      input.finopsReport,
+      "adversarial_critic",
+    ),
+    ...(adversarialCriticFailed
+      ? {
+          failureClass: adversarialCriticFailureClass ?? "gateway_error",
+          remediation:
+            adversarialCriticFailureClass === "schema_validation"
+              ? "Inspect the adversarial-critic round artifacts and critic prompt/schema conformance before re-running."
+              : "Inspect the adversarial-critic round artifacts and judge deployment health before re-running.",
+        }
+      : {
+          remediation:
+            input.adversarialCriticRounds.length === 0
+        ? "Adversarial critic found no unique blind spots and exited without a regeneration."
+        : "Adversarial critic challenged the suite before judge review and persisted each bounded round under agent-role-runs/.",
+        }),
+    artifactReferences: [
+      ...(refs.adversarialCriticTrace !== undefined
+        ? [toArtifactReference(input.artifactDir, refs.adversarialCriticTrace)]
+        : []),
+      ...input.adversarialCriticRounds.map((artifact) =>
+        toArtifactReference(
+          input.artifactDir,
+          join(
+            input.artifactDir,
+            "agent-role-runs",
+            `${ADVERSARIAL_CRITIC_ROUND_ARTIFACT_PREFIX}${artifact.round}.json`,
+          ),
+        ),
+      ),
+    ],
+    ...(adversarialCriticCost !== undefined
+      ? { costAttribution: adversarialCriticCost }
+      : {}),
+  });
 
   const visualPrimarySource = roleConfigurationSource(
     input.request,
@@ -2314,6 +2393,10 @@ export const runFigmaToQcTestCases = async (
   const logicJudgeEnabled = input.logicJudge?.enabled !== false;
   const logicJudgeClient: LlmGatewayClient =
     input.llm.bundle?.logicJudge ?? input.llm.logicJudge ?? input.llm.client;
+  const adversarialCriticEnabled =
+    logicJudgeEnabled &&
+    (input.llm.bundle?.logicJudge !== undefined ||
+      input.llm.logicJudge !== undefined);
 
   const compileGenerationPass = (
     pass: GenerationPassConfig,
@@ -2638,6 +2721,131 @@ export const runFigmaToQcTestCases = async (
     return { compiled, cacheExecResult, pass: inputPass.pass };
   };
 
+  const regenerateWithSuffixSections = async (inputRegeneration: {
+    suffixSections: readonly CompilePromptSuffixSection[];
+  }): Promise<{
+    list: GeneratedTestCaseList;
+    llmResult: LlmGenerationResult;
+    llmDurationMs: number;
+    inputTokens: number;
+    outputTokens: number;
+    hashes: {
+      readonly inputHash: string;
+      readonly promptHash: string;
+      readonly schemaHash: string;
+      readonly cacheKey: string;
+    };
+  }> => {
+    const repairPassResults = await Promise.all(
+      generationPasses.map(async (pass) => {
+        const compiled = compileGenerationPass(
+          pass,
+          inputRegeneration.suffixSections,
+        );
+        const request = buildGenerationRequest(compiled);
+        request.maxRetries = 0;
+        const requestStartedAt = Date.now();
+        const llmResult = await input.llm.client.generate(request);
+        const llmDurationMs = Date.now() - requestStartedAt;
+        finopsRecorder.recordAttempt({
+          role: "test_generation",
+          source: "generator",
+          ...(diversityPasses === 2 ? { attemptId: pass.roleRunId } : {}),
+          deployment:
+            llmResult.outcome === "success"
+              ? llmResult.modelDeployment
+              : input.llm.client.deployment,
+          durationMs: llmDurationMs,
+          result: llmResult,
+        });
+        if (llmResult.outcome !== "success") {
+          throw new ProductionRunnerError({
+            failureClass: "LLM_GATEWAY_FAILED",
+            message: `Generator regeneration failed: ${llmResult.errorClass}`,
+            retryable: false,
+          });
+        }
+        const validation = validateLlmDraftResponse(llmResult.content);
+        if (!validation.ok) {
+          throw new ProductionRunnerError({
+            failureClass: "LLM_RESPONSE_INVALID",
+            message: `Generator regeneration returned an invalid payload: ${validation.message}`,
+            retryable: false,
+          });
+        }
+        const audit: GeneratedTestCaseAuditMetadata = {
+          jobId: input.jobId,
+          generatedAt: input.generatedAt,
+          contractVersion: TEST_INTELLIGENCE_CONTRACT_VERSION,
+          schemaVersion: GENERATED_TEST_CASE_SCHEMA_VERSION,
+          promptTemplateVersion: TEST_INTELLIGENCE_PROMPT_TEMPLATE_VERSION,
+          redactionPolicyVersion: REDACTION_POLICY_VERSION,
+          visualSidecarSchemaVersion: VISUAL_SIDECAR_SCHEMA_VERSION,
+          cacheHit: false,
+          cacheKey: compiled.request.hashes.cacheKey,
+          inputHash: compiled.request.hashes.inputHash,
+          promptHash: compiled.request.hashes.promptHash,
+          schemaHash: compiled.request.hashes.schemaHash,
+        };
+        const cases = validation.value.testCases.map((draft, index) =>
+          stampGeneratedTestCase({
+            draft,
+            jobId: input.jobId,
+            index,
+            audit,
+            intent,
+            ...(pass.identitySalt !== undefined
+              ? { identitySalt: pass.identitySalt }
+              : {}),
+          }),
+        );
+        cases.sort((left, right) =>
+          left.id < right.id ? -1 : left.id > right.id ? 1 : 0,
+        );
+        return {
+          list: {
+            schemaVersion: GENERATED_TEST_CASE_SCHEMA_VERSION,
+            jobId: input.jobId,
+            testCases: cases,
+          },
+          llmResult,
+          llmDurationMs,
+          inputTokens: llmResult.usage.inputTokens ?? 0,
+          outputTokens: llmResult.usage.outputTokens ?? 0,
+          hashes: {
+            inputHash: compiled.request.hashes.inputHash,
+            promptHash: compiled.request.hashes.promptHash,
+            schemaHash: compiled.request.hashes.schemaHash,
+            cacheKey: compiled.request.hashes.cacheKey,
+          },
+        };
+      }),
+    );
+    return {
+      list:
+        repairPassResults.length === 1
+          ? repairPassResults[0]!.list
+          : mergeGeneratedTestCaseLists([
+              repairPassResults[0]!.list,
+              repairPassResults[1]!.list,
+            ]),
+      llmResult: repairPassResults[0]!.llmResult,
+      llmDurationMs: repairPassResults.reduce(
+        (sum, pass) => sum + pass.llmDurationMs,
+        0,
+      ),
+      inputTokens: repairPassResults.reduce(
+        (sum, pass) => sum + pass.inputTokens,
+        0,
+      ),
+      outputTokens: repairPassResults.reduce(
+        (sum, pass) => sum + pass.outputTokens,
+        0,
+      ),
+      hashes: repairPassResults[0]!.hashes,
+    };
+  };
+
   const generationExecutions = await Promise.all(
     generationPasses.map((pass, index) =>
       executeGenerationPass({
@@ -2672,6 +2880,189 @@ export const runFigmaToQcTestCases = async (
       }),
     ),
   };
+  const baselineGeneratedList = generatedList;
+  const adversarialCriticRoundArtifacts: AdversarialCriticRoundArtifact[] = [];
+  const adversarialCriticProvenanceRounds: Array<{
+    round: number;
+    artifactFilename: string;
+    domain: string;
+    findings: readonly AdversarialCriticFinding[];
+    regeneratedListHash?: string;
+    generatedCaseCount?: number;
+  }> = [];
+  const adversarialCriticSeenKeys = new Set<string>();
+  const adversarialCriticDomain =
+    resolveAdversarialCriticDomainFromList(generatedList);
+  let adversarialCriticStopReason:
+    | "converged_no_new_findings"
+    | "critic_failed"
+    | "max_rounds_reached"
+    | "no_rounds_needed" = "no_rounds_needed";
+  let adversarialCriticTraceArtifact: AdversarialCriticTraceArtifact | undefined;
+  if (adversarialCriticEnabled) {
+    const adversarialCriticBudgetLimits = resolveAdversarialCriticBudgetLimits(
+      finopsBudget.roles.test_generation,
+    );
+    for (
+      let round = 1;
+      round <= ADVERSARIAL_CRITIC_MAX_ROUNDS;
+      round += 1
+    ) {
+      const criticRound = await runAdversarialCriticRound({
+        jobId: input.jobId,
+        round,
+        domain: adversarialCriticDomain,
+        client: logicJudgeClient,
+        intent,
+        generatedList,
+        coveragePlan: coveragePlanResult.plan,
+        riskRanking: riskRankingResult.ranking,
+        ...(adversarialCriticBudgetLimits.maxInputTokens !== undefined
+          ? {
+              maxInputTokens: adversarialCriticBudgetLimits.maxInputTokens,
+            }
+          : {}),
+        ...(adversarialCriticBudgetLimits.maxOutputTokens !== undefined
+          ? {
+              maxOutputTokens: adversarialCriticBudgetLimits.maxOutputTokens,
+            }
+          : {}),
+        ...(adversarialCriticBudgetLimits.maxWallClockMs !== undefined
+          ? {
+              maxWallClockMs: adversarialCriticBudgetLimits.maxWallClockMs,
+            }
+          : {}),
+        ...(adversarialCriticBudgetLimits.maxRetries !== undefined
+          ? {
+              maxRetries: adversarialCriticBudgetLimits.maxRetries,
+            }
+          : {}),
+        ...(input.llm.abortSignal !== undefined
+          ? { abortSignal: input.llm.abortSignal }
+          : {}),
+      });
+      finopsRecorder.recordAttempt({
+        role: "test_generation",
+        source: "adversarial_critic",
+        attributionMode: "audit",
+        deployment:
+          criticRound.gatewayResult.outcome === "success"
+            ? criticRound.gatewayResult.modelDeployment
+            : logicJudgeClient.deployment,
+        durationMs: criticRound.artifact.llmGateway.durationMs,
+        result: criticRound.gatewayResult,
+      });
+      const uniqueFindings = dedupeAdversarialFindings({
+        findings: criticRound.findings,
+        seenKeys: adversarialCriticSeenKeys,
+      });
+      const normalizedArtifact: AdversarialCriticRoundArtifact = {
+        ...criticRound.artifact,
+        outputs: {
+          findingCount: uniqueFindings.length,
+          dedupeKeys: uniqueFindings.map(computeAdversarialFindingDedupeKey),
+          findings: uniqueFindings,
+        },
+      };
+      const roundArtifactFilename = `agent-role-runs/${ADVERSARIAL_CRITIC_ROUND_ARTIFACT_PREFIX}${normalizedArtifact.round}.json`;
+      adversarialCriticRoundArtifacts.push(normalizedArtifact);
+      const provenanceRound: {
+        round: number;
+        artifactFilename: string;
+        domain: string;
+        findings: readonly AdversarialCriticFinding[];
+        regeneratedListHash?: string;
+        generatedCaseCount?: number;
+      } = {
+        round: normalizedArtifact.round,
+        artifactFilename: roundArtifactFilename,
+        domain: normalizedArtifact.domain,
+        findings: normalizedArtifact.outputs.findings,
+      };
+      adversarialCriticProvenanceRounds.push(provenanceRound);
+      await writeAdversarialCriticRoundArtifact({
+        runDir: artifactDir,
+        artifact: normalizedArtifact,
+      });
+      if (normalizedArtifact.llmGateway.outcome === "error") {
+        adversarialCriticStopReason = "critic_failed";
+        break;
+      }
+      if (uniqueFindings.length === 0) {
+        adversarialCriticStopReason = "converged_no_new_findings";
+        break;
+      }
+      for (const finding of uniqueFindings) {
+        adversarialCriticSeenKeys.add(
+          computeAdversarialFindingDedupeKey(finding),
+        );
+      }
+      const regeneration = await regenerateWithSuffixSections({
+        suffixSections: [
+          {
+            kind: "json",
+            label: `AdversarialFindings (round ${round})`,
+            jsonPayload: uniqueFindings,
+          },
+          {
+            kind: "repair_instructions",
+            label: `AdversarialRepairInstructions (round ${round})`,
+            jsonPayload: buildAdversarialRepairInstructions(uniqueFindings),
+          },
+          {
+            kind: "json",
+            label: `NegativeCoverageAccounting (round ${round})`,
+            jsonPayload: computeNegativeCoverageAccounting({
+              baselineList: baselineGeneratedList,
+              finalList: generatedList,
+            }),
+          },
+        ],
+      });
+      generatedList = stabilizeGeneratedListForAcceptance({
+        list: regenerateWithAdversarialCaseCountCeiling({
+          list: regeneration.list,
+          maxCaseCount: baselineGeneratedList.testCases.length,
+        }),
+        model: compiled.artifacts.payload.testDesignModel!,
+        jobId: input.jobId,
+      });
+      generatedList = {
+        ...generatedList,
+        testCases: generatedList.testCases.map((testCase) =>
+          enrichWorkflowTopologyCoverage({
+            testCase,
+            workflowTopology,
+          }),
+        ),
+      };
+      provenanceRound.regeneratedListHash = sha256Hex(generatedList);
+      provenanceRound.generatedCaseCount = generatedList.testCases.length;
+      if (round === ADVERSARIAL_CRITIC_MAX_ROUNDS) {
+        adversarialCriticStopReason = "max_rounds_reached";
+      }
+    }
+    adversarialCriticTraceArtifact = {
+      schemaVersion: "1.0.0",
+      jobId: input.jobId,
+      domain: adversarialCriticDomain,
+      roundsExecuted: adversarialCriticRoundArtifacts.length,
+      stopReason: adversarialCriticStopReason,
+      negativeCoverage: computeNegativeCoverageAccounting({
+        baselineList: baselineGeneratedList,
+        finalList: generatedList,
+      }),
+      rounds: adversarialCriticRoundArtifacts.map((artifact) => ({
+        round: artifact.round,
+        findingCount: artifact.outputs.findingCount,
+        dedupeKeys: artifact.outputs.dedupeKeys,
+      })),
+    };
+    await writeAdversarialCriticTraceArtifact({
+      runDir: artifactDir,
+      artifact: adversarialCriticTraceArtifact,
+    });
+  }
   const logicJudgeCache = createFileSystemLogicJudgeCache(
     join(input.outputRoot, "test-intelligence", "replay-cache", "logic-judge"),
     { tenantScope },
@@ -3639,6 +4030,10 @@ export const runFigmaToQcTestCases = async (
   );
   const coveragePlanPath = join(artifactDir, "coverage-plan.json");
   const riskRankingPath = join(artifactDir, RISK_RANKING_ARTIFACT_FILENAME);
+  const adversarialCriticTracePath = join(
+    artifactDir,
+    ADVERSARIAL_CRITIC_TRACE_ARTIFACT_FILENAME,
+  );
   const coveragePath = join(
     artifactDir,
     TEST_CASE_COVERAGE_REPORT_ARTIFACT_FILENAME,
@@ -3687,11 +4082,15 @@ export const runFigmaToQcTestCases = async (
       a11yJudgeResult,
       visualSidecarRefusal,
       repairLoopResult,
+      adversarialCriticRounds: adversarialCriticRoundArtifacts,
       artifactPaths: {
         coveragePlan: coveragePlanPath,
         workflowTopology: workflowTopologyPath,
         riskRanking: riskRankingPath,
         logicJudgeVerdict: logicJudgeVerdictPath,
+        ...(adversarialCriticTraceArtifact !== undefined
+          ? { adversarialCriticTrace: adversarialCriticTracePath }
+          : {}),
         ...(visualSidecarArtifactPath !== undefined
           ? { visualSidecarResult: visualSidecarArtifactPath }
           : {}),
@@ -3886,6 +4285,12 @@ export const runFigmaToQcTestCases = async (
         artifactFilename: `agent-role-runs/${artifact.artifact.roleRunId}.json`,
         roleLineageDepth: 0,
       })),
+      ...adversarialCriticRoundArtifacts.map((artifact) => ({
+        jobId: input.jobId,
+        roleStepId: `adversarial_critic_round_${artifact.round}`,
+        artifactFilename: `agent-role-runs/${ADVERSARIAL_CRITIC_ROUND_ARTIFACT_PREFIX}${artifact.round}.json`,
+        roleLineageDepth: artifact.round,
+      })),
       {
         jobId: input.jobId,
         roleStepId: "logic_judge",
@@ -4023,6 +4428,13 @@ export const runFigmaToQcTestCases = async (
           ...generatorPassRunArtifacts.map(
             (artifact) => `agent-role-runs/${artifact.artifact.roleRunId}.json`,
           ),
+          ...(adversarialCriticTraceArtifact !== undefined
+            ? [ADVERSARIAL_CRITIC_TRACE_ARTIFACT_FILENAME]
+            : []),
+          ...adversarialCriticRoundArtifacts.map(
+            (artifact) =>
+              `agent-role-runs/${ADVERSARIAL_CRITIC_ROUND_ARTIFACT_PREFIX}${artifact.round}.json`,
+          ),
           `agent-role-runs/${LOGIC_JUDGE_VERDICT_ARTIFACT_FILENAME}`,
           ...(a11yJudgeResult === undefined
             ? []
@@ -4083,6 +4495,11 @@ export const runFigmaToQcTestCases = async (
           repairIterations: repairLoopResult.iterations.filter(
             (iteration) => iteration.iteration > 0,
           ),
+        }
+      : {}),
+    ...(adversarialCriticRoundArtifacts.length > 0
+      ? {
+          adversarialCriticRounds: adversarialCriticProvenanceRounds,
         }
       : {}),
     logicJudge: {
@@ -4202,6 +4619,23 @@ export const runFigmaToQcTestCases = async (
         bytes: agentParticipationWritten.bytes,
         category: "manifest",
       },
+      ...(adversarialCriticTraceArtifact === undefined
+        ? []
+        : [
+            {
+              filename: ADVERSARIAL_CRITIC_TRACE_ARTIFACT_FILENAME,
+              bytes: Buffer.from(
+                `${canonicalJson(adversarialCriticTraceArtifact)}\n`,
+                "utf8",
+              ),
+              category: "manifest" as const,
+            },
+          ]),
+      ...adversarialCriticRoundArtifacts.map((artifact) => ({
+        filename: `agent-role-runs/${ADVERSARIAL_CRITIC_ROUND_ARTIFACT_PREFIX}${artifact.round}.json`,
+        bytes: Buffer.from(`${canonicalJson(artifact)}\n`, "utf8"),
+        category: "manifest" as const,
+      })),
       ...(faithfulnessJudgeCompiledPromptBytes === undefined
         ? []
         : [
@@ -4523,6 +4957,9 @@ export const runFigmaToQcTestCases = async (
       coveragePlan: coveragePlanPath,
       workflowTopology: workflowTopologyPath,
       riskRanking: riskRankingPath,
+      ...(adversarialCriticTraceArtifact !== undefined
+        ? { adversarialCriticTrace: adversarialCriticTracePath }
+        : {}),
       logicJudgeCompiledPrompt: logicJudgeCompiledPromptPath,
       ...(faithfulnessJudgeCompiledPromptPath !== undefined
         ? {
@@ -5845,6 +6282,73 @@ const buildAmbiguityProbeCase = (input: {
       confidence: Math.min(seedCase.qualitySignals.confidence, 0.8),
     },
     reviewState: "draft",
+  };
+};
+
+const resolveAdversarialCriticDomainFromList = (
+  list: GeneratedTestCaseList,
+): RegulatoryRelevanceDomain => {
+  let insuranceCount = 0;
+  let bankingCount = 0;
+  for (const testCase of list.testCases) {
+    switch (testCase.regulatoryRelevance?.domain) {
+      case "insurance":
+        insuranceCount += 1;
+        break;
+      case "banking":
+        bankingCount += 1;
+        break;
+    }
+  }
+  if (insuranceCount > bankingCount) {
+    return "insurance";
+  }
+  if (bankingCount > 0) {
+    return "banking";
+  }
+  return "general";
+};
+
+const regenerateWithAdversarialCaseCountCeiling = (input: {
+  list: GeneratedTestCaseList;
+  maxCaseCount: number;
+}): GeneratedTestCaseList => {
+  if (input.list.testCases.length <= input.maxCaseCount) {
+    return input.list;
+  }
+  const rank = (testCase: GeneratedTestCase): number => {
+    switch (testCase.type) {
+      case "negative":
+        return 0;
+      case "boundary":
+        return 1;
+      case "validation":
+        return 2;
+      case "accessibility":
+        return 3;
+      case "navigation":
+        return 4;
+      case "regression":
+        return 5;
+      case "exploratory":
+        return 6;
+      case "functional":
+        return 7;
+    }
+  };
+  const kept = input.list.testCases
+    .slice()
+    .sort(
+      (left, right) =>
+        rank(left) - rank(right) ||
+        right.qualitySignals.confidence - left.qualitySignals.confidence ||
+        left.id.localeCompare(right.id),
+    )
+    .slice(0, input.maxCaseCount)
+    .sort((left, right) => left.id.localeCompare(right.id));
+  return {
+    ...input.list,
+    testCases: kept,
   };
 };
 

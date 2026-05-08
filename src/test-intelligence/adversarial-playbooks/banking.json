@@ -1,0 +1,72 @@
+[
+  {
+    "id": "banking-boundary-interest-accrual",
+    "category": "boundary",
+    "title": "Interest accrual off-by-one around period boundaries",
+    "hint": "Challenge start/end-of-day, month-end, and inclusive/exclusive date handling.",
+    "testDataHints": ["value one day before cut-off", "value on cut-off", "value one day after cut-off"]
+  },
+  {
+    "id": "banking-rounding-currency-decimals",
+    "category": "rounding_exploit",
+    "title": "Currency rounding and decimal precision drift",
+    "hint": "Look for 0.01 differences, trailing zeros, and locale-specific separators.",
+    "testDataHints": ["0,01", "999999,99", "1.234,56"]
+  },
+  {
+    "id": "banking-state-double-submit",
+    "category": "state_violation",
+    "title": "Double-submit or repeated confirmation",
+    "hint": "Attack repeated primary actions, retries, and refresh/reopen behaviour.",
+    "testDataHints": ["repeat same confirmation", "back-forward navigation", "refresh after submit"]
+  },
+  {
+    "id": "banking-regulatory-missing-pii-redaction",
+    "category": "regulatory_evasion",
+    "title": "PII or regulated data displayed without masking",
+    "hint": "Challenge IBAN, tax id, birth date, and customer identifiers in visible outputs.",
+    "testDataHints": ["partial IBAN", "full tax identifier", "customer name with date of birth"]
+  },
+  {
+    "id": "banking-access-control-idor-display",
+    "category": "access_control",
+    "title": "Cross-record display or IDOR-style leakage",
+    "hint": "Challenge whether one customer context can reveal another record summary or account data.",
+    "testDataHints": ["customer A record id", "customer B record id"]
+  },
+  {
+    "id": "banking-workflow-bypass-required-step",
+    "category": "workflow_bypass",
+    "title": "Mandatory review or confirmation step bypass",
+    "hint": "Try to skip gating steps through direct navigation or state reuse.",
+    "testDataHints": ["open target screen directly", "reuse stale confirmation state"]
+  },
+  {
+    "id": "banking-negative-invalid-accounting-assumption",
+    "category": "negative_path",
+    "title": "Unsupported accounting assumption accepted as valid",
+    "hint": "Challenge hidden assumptions such as VAT inclusion/exclusion, financing totals, or derived values.",
+    "testDataHints": ["VAT included unexpectedly", "derived total inconsistent with visible operands"]
+  },
+  {
+    "id": "banking-validation-cross-field-inconsistency",
+    "category": "state_violation",
+    "title": "Cross-field inconsistency slips through validation",
+    "hint": "Use inconsistent field pairs that should be rejected together, not only individually.",
+    "testDataHints": ["amount without currency", "confirm amount differs from amount", "start date after end date"]
+  },
+  {
+    "id": "banking-cutoff-time-processing",
+    "category": "boundary",
+    "title": "Cut-off time or processing window boundary",
+    "hint": "Look for late submissions that should shift processing behaviour or warnings.",
+    "testDataHints": ["one minute before cutoff", "exact cutoff", "one minute after cutoff"]
+  },
+  {
+    "id": "banking-duplicate-reference-reuse",
+    "category": "negative_path",
+    "title": "Duplicate reference or replayed request",
+    "hint": "Challenge idempotency and replay handling with repeated identifiers.",
+    "testDataHints": ["same reference twice", "same payload resent"]
+  }
+]

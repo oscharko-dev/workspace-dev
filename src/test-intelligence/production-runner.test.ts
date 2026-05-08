@@ -5548,11 +5548,11 @@ test("Issue #1932: cross-model logic judge dispatches to llm.logicJudge and FinO
       judgeDeployment,
       "logic-judge verdict must echo the judge deployment, not the generator",
     );
-    // Generator dispatched once for the test-case payload; the judge
-    // received the dedicated logic-judge call. Two distinct gateways
-    // mean call counts are 1 + 1, not 2 + 0 (legacy single-model).
+    // Generator dispatched once for the test-case payload; the dedicated
+    // judge lane handled both the logic-judge verdict and the bounded
+    // adversarial-critic audit round.
     assert.equal(generator.callCount(), 1);
-    assert.equal(judge.callCount(), 1);
+    assert.equal(judge.callCount(), 2);
 
     const finopsReportRaw = await readFile(
       result.artifactPaths.finopsReport,
@@ -5570,6 +5570,232 @@ test("Issue #1932: cross-model logic judge dispatches to llm.logicJudge and FinO
       finopsReport.bySource.judge_primary.deployment,
       judgeDeployment,
       "bySource.judge_primary must record the judge deployment, not the generator",
+    );
+    assert.equal(
+      finopsReport.bySource.adversarial_critic.callCount,
+      1,
+      "adversarial_critic attribution should count the dedicated audit round",
+    );
+    assert.equal(
+      finopsReport.bySource.adversarial_critic.deployment,
+      judgeDeployment,
+      "bySource.adversarial_critic must record the judge deployment",
+    );
+    assert.ok(result.artifactPaths.adversarialCriticTrace);
+  } finally {
+    await rm(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("Issue #2039: schema-invalid adversarial critic payload is reported as a failed critic round", async () => {
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ti-runner-2039-"));
+  try {
+    const generator = createMockLlmGatewayClient({
+      role: "test_generation",
+      deployment: "mistral-large-3-mock",
+      modelRevision: "mistral-large-3@mock",
+      gatewayRelease: "mock",
+      responder: okResponder([SAMPLE_DRAFT], "mistral-large-3-mock"),
+    });
+    const judge = createMockLlmGatewayClient({
+      role: "logic_judge",
+      deployment: "gpt-oss-120b-mock",
+      modelRevision: "gpt-oss-120b@mock",
+      gatewayRelease: "mock",
+      responder: (request, attempt) => {
+        if (
+          request.responseSchemaName ===
+          "workspace-dev-adversarial-critic-v1"
+        ) {
+          return {
+            outcome: "success" as const,
+            content: { testCases: [{ id: "legacy-generator-payload" }] },
+            finishReason: "stop" as const,
+            usage: { inputTokens: 10, outputTokens: 5 },
+            modelDeployment: "gpt-oss-120b-mock",
+            modelRevision: "mock-1",
+            gatewayRelease: "mock",
+            attempt,
+          };
+        }
+        return okResponder([SAMPLE_DRAFT], "gpt-oss-120b-mock")(
+          request,
+          attempt,
+        );
+      },
+    });
+
+    const result = await runFigmaToQcTestCases({
+      jobId: "job-2039-schema-invalid-critic",
+      generatedAt: "2026-05-08T14:00:00Z",
+      source: { kind: "figma_paste_normalized", file: SAMPLE_FILE },
+      outputRoot: tempRoot,
+      llm: { client: generator, logicJudge: judge },
+      harness: { mode: "off", maxRepairIterations: 0 },
+    });
+
+    const participation = JSON.parse(
+      await readFile(result.artifactPaths.agentParticipation, "utf8"),
+    ) as {
+      roles: Array<{
+        role: string;
+        status: string;
+        attemptCount: number;
+        failureClass?: string;
+      }>;
+    };
+    const criticEntry = participation.roles.find(
+      (entry) => entry.role === "adversarial_critic",
+    );
+    assert.ok(criticEntry, "expected adversarial_critic entry");
+    assert.equal(criticEntry.status, "failed");
+    assert.equal(criticEntry.attemptCount, 1);
+    assert.equal(criticEntry.failureClass, "schema_validation");
+
+    const traceArtifact = JSON.parse(
+      await readFile(result.artifactPaths.adversarialCriticTrace!, "utf8"),
+    ) as { stopReason: string; roundsExecuted: number };
+    assert.equal(traceArtifact.stopReason, "critic_failed");
+    assert.equal(traceArtifact.roundsExecuted, 1);
+  } finally {
+    await rm(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("Issue #2039: adversarial critic regeneration owns the final provenance artifact chain", async () => {
+  const tempRoot = await mkdtemp(
+    path.join(os.tmpdir(), "ti-runner-2039-provenance-"),
+  );
+  try {
+    let generatorCallCount = 0;
+    const generator = createMockLlmGatewayClient({
+      role: "test_generation",
+      deployment: "mistral-large-3-mock",
+      modelRevision: "mistral-large-3@mock",
+      gatewayRelease: "mock",
+      responder: (request, attempt) => {
+        if (request.responseSchemaName === "workspace-dev-logic-judge-v1") {
+          throw new Error("generator should not receive logic-judge requests");
+        }
+        generatorCallCount += 1;
+        const cases =
+          generatorCallCount === 1
+            ? [SAMPLE_DRAFT]
+            : [
+                SAMPLE_DRAFT,
+                {
+                  ...SAMPLE_DRAFT,
+                  id: "tc-critic-negative",
+                  title: "Reject owner mismatch on payout account",
+                  type: "negative" as const,
+                  steps: [
+                    "Enter a payout IBAN owned by another person.",
+                    "Submit the payout details.",
+                  ],
+                  expectedResult:
+                    "The flow rejects the mismatch and preserves the current step.",
+                },
+              ];
+        return {
+          outcome: "success" as const,
+          content: { testCases: cases },
+          finishReason: "stop" as const,
+          usage: { inputTokens: 100, outputTokens: 200 },
+          modelDeployment: "mistral-large-3-mock",
+          modelRevision: "mock-1",
+          gatewayRelease: "mock",
+          attempt,
+        };
+      },
+    });
+    const judge = createMockLlmGatewayClient({
+      role: "logic_judge",
+      deployment: "gpt-oss-120b-mock",
+      modelRevision: "gpt-oss-120b@mock",
+      gatewayRelease: "mock",
+      responder: (request, attempt) => {
+        if (
+          request.responseSchemaName ===
+          "workspace-dev-adversarial-critic-v1"
+        ) {
+          return {
+            outcome: "success" as const,
+            content: {
+              findings: [
+                {
+                  category: "negative_path",
+                  title: "Owner mismatch on payout account is untested",
+                  rationale:
+                    "The suite never challenges the documented owner-match rule.",
+                  affectedFieldId: "field:payout_iban",
+                  sourceRefs: ["rule:payout-owner-match"],
+                  ruleRefs: ["policy:payout-owner-match"],
+                  minimumReproducibleTestData: [
+                    "iban=DE44500105175407324931",
+                    "owner_name=Other Person",
+                  ],
+                  suggestedTestType: "negative",
+                  repairInstruction:
+                    "Replace a low-value happy path with an owner-mismatch negative case.",
+                },
+              ],
+            },
+            finishReason: "stop" as const,
+            usage: { inputTokens: 20, outputTokens: 10 },
+            modelDeployment: "gpt-oss-120b-mock",
+            modelRevision: "mock-1",
+            gatewayRelease: "mock",
+            attempt,
+          };
+        }
+        return okResponder([SAMPLE_DRAFT], "gpt-oss-120b-mock")(
+          request,
+          attempt,
+        );
+      },
+    });
+
+    const result = await runFigmaToQcTestCases({
+      jobId: "job-2039-provenance-critic",
+      generatedAt: "2026-05-08T14:15:00Z",
+      source: { kind: "figma_paste_normalized", file: SAMPLE_FILE },
+      outputRoot: tempRoot,
+      llm: { client: generator, logicJudge: judge },
+      harness: { mode: "off", maxRepairIterations: 0 },
+    });
+
+    const provenance = JSON.parse(
+      await readFile(result.artifactPaths.provenance, "utf8"),
+    ) as {
+      "@graph": Array<Record<string, unknown>>;
+    };
+    const graph = provenance["@graph"];
+    const adversarialGenerationActivity = graph.find(
+      (node) =>
+        node["@type"] === "prov:Activity" &&
+        node["label"] === "Adversarial repair generation round 1",
+    );
+    assert.ok(
+      adversarialGenerationActivity,
+      "expected provenance activity for adversarial regeneration",
+    );
+    const finalArtifact = graph.find(
+      (node) => node["ti:artifactPath"] === "generated-testcases.json",
+    );
+    assert.ok(finalArtifact, "expected generated-testcases artifact node");
+    assert.deepEqual(
+      finalArtifact["prov:wasGeneratedBy"],
+      { "@id": adversarialGenerationActivity["@id"] },
+    );
+    const finalList = graph.find(
+      (node) =>
+        node["@type"] === "prov:Entity" &&
+        node["label"] === "Generated case list after adversarial critic round 1",
+    );
+    assert.ok(finalList, "expected final adversarial list node");
+    assert.deepEqual(
+      finalList["prov:hadPrimarySource"],
+      { "@id": finalArtifact["@id"] },
     );
   } finally {
     await rm(tempRoot, { recursive: true, force: true });

@@ -18,6 +18,7 @@ export const AGENT_PARTICIPATION_ROLES = [
   "logic_judge",
   "coverage_planner",
   "risk_ranker",
+  "adversarial_critic",
   "visual_primary",
   "visual_fallback",
   "a11y_judge",

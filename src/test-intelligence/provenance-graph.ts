@@ -10,6 +10,7 @@ import {
   type JudgeConsensusVerdict,
   type JudgeVerdict,
 } from "../contracts/index.js";
+import type { AdversarialCriticFinding } from "./adversarial-critic-agent.js";
 import type { RepairLoopIterationRecord } from "./repair-loop.js";
 import { canonicalJson } from "./content-hash.js";
 
@@ -40,6 +41,14 @@ export interface BuildRunProvenanceGraphInput {
   readonly sourceKind: string;
   readonly finalGeneratedTestCases: GeneratedTestCaseList;
   readonly initialGenerationDeployment: string;
+  readonly adversarialCriticRounds?: readonly {
+    readonly round: number;
+    readonly artifactFilename: string;
+    readonly domain: string;
+    readonly findings: readonly AdversarialCriticFinding[];
+    readonly regeneratedListHash?: string;
+    readonly generatedCaseCount?: number;
+  }[];
   readonly repairIterations?: readonly RepairLoopIterationRecord[];
   readonly logicJudge: BaseJudgeInput<JudgeVerdict>;
   readonly judgeConsensus: BaseJudgeInput<JudgeConsensusVerdict>;
@@ -401,14 +410,6 @@ export const buildRunProvenanceGraph = async (
     }),
   );
 
-  const finalGeneratedArtifactEntity = buildArtifactNode({
-    jobId: input.jobId,
-    digest: generatedTestCasesDigest,
-    label: "Generated test cases artifact",
-    generatedBy: initialGenerationActivity,
-  });
-  upsertNode(nodes, finalGeneratedArtifactEntity);
-
   let previousListId = listEntityId(input.jobId, "initial");
   upsertNode(nodes, {
     "@id": previousListId,
@@ -416,10 +417,117 @@ export const buildRunProvenanceGraph = async (
     label: "Initial generated case list",
     "ti:listHash": generatedTestCasesDigest.sha256,
     "prov:wasGeneratedBy": toIriRef(initialGenerationActivity),
-    "prov:hadPrimarySource": toIriRef(
-      finalGeneratedArtifactEntity["@id"] as string,
-    ),
   });
+  let previousGenerationActivityId = initialGenerationActivity;
+
+  if (input.adversarialCriticRounds !== undefined) {
+    for (const round of input.adversarialCriticRounds) {
+      const criticDigest = await readArtifactDigest(
+        input.runDir,
+        round.artifactFilename,
+      );
+      const criticArtifactEntity = buildArtifactNode({
+        jobId: input.jobId,
+        digest: criticDigest,
+        label: `Adversarial critic round ${round.round} artifact`,
+      });
+      upsertNode(nodes, criticArtifactEntity);
+      const criticActivityId = activityId(
+        input.jobId,
+        `adversarial_critic_round_${round.round}`,
+      );
+      upsertNode(
+        nodes,
+        buildActivityNode({
+          jobId: input.jobId,
+          id: `adversarial_critic_round_${round.round}`,
+          label: `Adversarial critic round ${round.round}`,
+          role: "adversarial_critic",
+          associatedWith: [
+            workspaceAgent["@id"] as string,
+            ensureModelAgent(input.logicJudge.verdict.modelDeployment),
+          ],
+          used: [
+            previousListId,
+            compiledPromptEntity["@id"] as string,
+            coveragePlanEntity["@id"] as string,
+            riskRankingEntity["@id"] as string,
+          ],
+          informedBy: [initialGenerationActivity],
+          generatedAt: input.generatedAt,
+          extra: {
+            "ti:iteration": round.round,
+            "ti:domain": round.domain,
+            "ti:findingCount": round.findings.length,
+          },
+        }),
+      );
+      const findingsEntityId = makeNodeId(
+        input.jobId,
+        "entity",
+        sanitizeIriToken(`adversarial-critic-findings-${round.round}`),
+      );
+      upsertNode(nodes, {
+        "@id": findingsEntityId,
+        "@type": "prov:Entity",
+        label: `Adversarial critic findings round ${round.round}`,
+        "ti:findingCount": round.findings.length,
+        "ti:categories": round.findings.map((finding) => finding.category).sort(),
+        "prov:wasGeneratedBy": toIriRef(criticActivityId),
+        "prov:hadPrimarySource": toIriRef(
+          criticArtifactEntity["@id"] as string,
+        ),
+        "prov:wasDerivedFrom": [
+          toIriRef(previousListId),
+          toIriRef(coveragePlanEntity["@id"] as string),
+          toIriRef(riskRankingEntity["@id"] as string),
+        ],
+      });
+      if (round.regeneratedListHash !== undefined) {
+        const adversarialGenerationActivityId = activityId(
+          input.jobId,
+          `test_generation_adversarial_round_${round.round}`,
+        );
+        upsertNode(
+          nodes,
+          buildActivityNode({
+            jobId: input.jobId,
+            id: `test_generation_adversarial_round_${round.round}`,
+            label: `Adversarial repair generation round ${round.round}`,
+            role: "generator",
+            associatedWith: [
+              workspaceAgent["@id"] as string,
+              ensureModelAgent(input.initialGenerationDeployment),
+            ],
+            used: [
+              compiledPromptEntity["@id"] as string,
+              previousListId,
+              findingsEntityId,
+            ],
+            informedBy: [criticActivityId],
+            generatedAt: input.generatedAt,
+            extra: {
+              "ti:iteration": round.round,
+              ...(round.generatedCaseCount !== undefined
+                ? { "ti:generatedCaseCount": round.generatedCaseCount }
+                : {}),
+            },
+          }),
+        );
+        const nextListId = listEntityId(input.jobId, `adversarial-${round.round}`);
+        upsertNode(nodes, {
+          "@id": nextListId,
+          "@type": "prov:Entity",
+          label: `Generated case list after adversarial critic round ${round.round}`,
+          "ti:listHash": round.regeneratedListHash,
+          "prov:wasGeneratedBy": toIriRef(adversarialGenerationActivityId),
+          "prov:wasRevisionOf": toIriRef(previousListId),
+        });
+        previousListId = nextListId;
+        previousGenerationActivityId = adversarialGenerationActivityId;
+      }
+    }
+  }
 
   if (input.repairIterations !== undefined) {
     for (const iteration of input.repairIterations) {
@@ -459,7 +567,7 @@ export const buildRunProvenanceGraph = async (
             ensureModelAgent(input.initialGenerationDeployment),
           ],
           used: [compiledPromptEntity["@id"] as string, previousListId],
-          informedBy: [plannerActivityId, initialGenerationActivity],
+          informedBy: [plannerActivityId, previousGenerationActivityId],
           generatedAt: input.generatedAt,
           extra: {
             "ti:iteration": iteration.iteration,
@@ -480,16 +588,28 @@ export const buildRunProvenanceGraph = async (
         "prov:wasRevisionOf": toIriRef(previousListId),
       });
       previousListId = nextListId;
+      previousGenerationActivityId = repairActivityId;
     }
   }
 
-  const finalGenerationActivity =
-    input.repairIterations !== undefined && input.repairIterations.length > 0
-      ? activityId(
-          input.jobId,
-          `test_generation_repair_iter_${input.repairIterations[input.repairIterations.length - 1]!.iteration}`,
-        )
-      : initialGenerationActivity;
+  const finalGenerationActivity = previousGenerationActivityId;
+  const finalGeneratedArtifactEntity = buildArtifactNode({
+    jobId: input.jobId,
+    digest: generatedTestCasesDigest,
+    label: "Generated test cases artifact",
+    generatedBy: finalGenerationActivity,
+    derivedFrom: [previousListId],
+  });
+  upsertNode(nodes, finalGeneratedArtifactEntity);
+  const finalListNode = nodes.get(previousListId);
+  if (finalListNode !== undefined) {
+    upsertNode(nodes, {
+      ...finalListNode,
+      "prov:hadPrimarySource": toIriRef(
+        finalGeneratedArtifactEntity["@id"] as string,
+      ),
+    });
+  }
 
   for (const testCase of input.finalGeneratedTestCases.testCases) {
     upsertNode(nodes, {
