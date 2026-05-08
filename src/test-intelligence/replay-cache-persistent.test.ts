@@ -26,6 +26,8 @@ import {
   createPersistentReplayCache,
   DEFAULT_PERSISTENT_REPLAY_CACHE_BYTE_BUDGET,
   DEFAULT_PERSISTENT_REPLAY_CACHE_STALE_THRESHOLD_MS,
+  loadPersistentCircuitBreakerState,
+  writePersistentCircuitBreakerState,
 } from "./replay-cache-persistent.js";
 
 // ── Fixtures ──────────────────────────────────────────────────────────────────
@@ -248,6 +250,39 @@ test("persistent cache: concurrent writes for the same key do not corrupt the en
       assert.equal(result.entry.testCases.jobId, "job-concurrent");
       assert.equal(result.entry.testCases.testCases.length, 1);
     }
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("persistent cache: circuit-breaker state is persisted atomically", async () => {
+  const root = await mkdtemp(join(tmpdir(), "wsd-circuit-breaker-state-"));
+  try {
+    const statePath = join(root, "sandbox", "replay-cache", "circuit-breaker-state.json");
+    await writePersistentCircuitBreakerState({
+      path: statePath,
+      key: "tenant:prod:default:visual_primary:llama-4-maverick-vision",
+      entry: {
+        updatedAt: "2026-05-08T12:00:00.000Z",
+        snapshot: {
+          state: "open",
+          consecutiveFailures: 2,
+          openedAtMs: 42,
+        },
+      },
+    });
+    const restored = await loadPersistentCircuitBreakerState({
+      path: statePath,
+      key: "tenant:prod:default:visual_primary:llama-4-maverick-vision",
+    });
+    assert.deepEqual(restored, {
+      updatedAt: "2026-05-08T12:00:00.000Z",
+      snapshot: {
+        state: "open",
+        consecutiveFailures: 2,
+        openedAtMs: 42,
+      },
+    });
   } finally {
     await rm(root, { recursive: true, force: true });
   }

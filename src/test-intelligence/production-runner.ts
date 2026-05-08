@@ -277,12 +277,21 @@ import {
   writeVisualSidecarResultArtifact,
   type DescribeVisualScreensDiagnostic,
 } from "./visual-sidecar-client.js";
-import { createPersistentReplayCache } from "./replay-cache-persistent.js";
+import {
+  createPersistentReplayCache,
+  loadPersistentCircuitBreakerState,
+  writePersistentCircuitBreakerState,
+} from "./replay-cache-persistent.js";
 import {
   executeWithReplayCache,
+  resolveTenantScopeSegments,
   type ReplayCache,
   ReplayCacheValidationError,
 } from "./replay-cache.js";
+import {
+  createLlmCircuitBreaker,
+  toLlmCircuitPersistentState,
+} from "./llm-circuit-breaker.js";
 import {
   createFileSystemA11yJudgeCache,
   createMemoryA11yJudgeCache,
@@ -393,8 +402,9 @@ export type ProductionRunnerFailureClass =
  * Visual-sidecar failure classes treated as caller-side pre-flight errors —
  * the runner fails fast on these because they indicate a programming/config
  * bug rather than a model-side refusal. The remaining failure classes are
- * routed to `needs_review` per Issue #1772 acceptance criterion #4 and
- * surfaced as a documented refusal code on the runner result.
+ * surfaced as documented refusal codes on the runner result and then
+ * classified by the policy gate (`both_sidecars_failed` blocks; recovered
+ * fallback remains informational) per Issue #2069.
  */
 const VISUAL_SIDECAR_PREFLIGHT_FAILURE_CLASSES: ReadonlySet<VisualSidecarFailureClass> =
   new Set<VisualSidecarFailureClass>([
@@ -407,6 +417,27 @@ const VISUAL_SIDECAR_PREFLIGHT_FAILURE_CLASSES: ReadonlySet<VisualSidecarFailure
 const isVisualSidecarRefusal = (
   failureClass: VisualSidecarFailureClass,
 ): boolean => !VISUAL_SIDECAR_PREFLIGHT_FAILURE_CLASSES.has(failureClass);
+
+const VISUAL_SIDECAR_CIRCUIT_BREAKER_STATE_PATH = [
+  "replay-cache",
+  "circuit-breaker-state.json",
+] as const;
+
+const buildVisualSidecarCircuitBreakerStateKey = (input: {
+  tenantScope: TenantScope;
+  deployment: string;
+}): string => {
+  const [tenantId, environmentId, projectId] = resolveTenantScopeSegments(
+    input.tenantScope,
+  );
+  return [
+    tenantId,
+    environmentId,
+    projectId,
+    "visual_primary",
+    input.deployment,
+  ].join(":");
+};
 
 /** Stable error class used by `runFigmaToQcTestCases`. */
 export class ProductionRunnerError extends Error {
@@ -1079,6 +1110,29 @@ const buildVisualRoleCostAttribution = (input: {
   };
 };
 
+const splitVisualSidecarAttempts = (
+  result: VisualSidecarResult | undefined,
+): {
+  primaryAttempt: VisualSidecarResult["attempts"][number] | undefined;
+  fallbackAttempt: VisualSidecarResult["attempts"][number] | undefined;
+} => {
+  const attempts = result?.attempts ?? [];
+  if (
+    result?.outcome === "success" &&
+    result.fallbackReason !== "none" &&
+    attempts.length === 1
+  ) {
+    return {
+      primaryAttempt: undefined,
+      fallbackAttempt: attempts[0],
+    };
+  }
+  return {
+    primaryAttempt: attempts[0],
+    fallbackAttempt: attempts[1],
+  };
+};
+
 const buildAgentParticipationEntries = (input: {
   request: RunFigmaToQcTestCasesInput;
   artifactDir: string;
@@ -1118,9 +1172,9 @@ const buildAgentParticipationEntries = (input: {
 }): readonly AgentParticipationEntry[] => {
   const refs = input.artifactPaths;
   const entries: AgentParticipationEntry[] = [];
-  const visualAttempts = input.visualSidecarResult?.attempts ?? [];
-  const primaryAttempt = visualAttempts[0];
-  const fallbackAttempt = visualAttempts[1];
+  const { primaryAttempt, fallbackAttempt } = splitVisualSidecarAttempts(
+    input.visualSidecarResult,
+  );
   const visualBundleConfigured = input.request.llm.bundle !== undefined;
   const logicJudgeClient =
     input.request.llm.bundle?.logicJudge ??
@@ -2085,6 +2139,8 @@ export const runFigmaToQcTestCases = async (
       detectedActions: intent.detectedActions.length,
     },
   });
+  const tenantScope: TenantScope =
+    input.replayCacheTenantScope ?? DEFAULT_TENANT_SCOPE;
   if (input.source.kind === "figma_url" && input.llm.bundle !== undefined) {
     emit({
       phase: "visual_sidecar_started",
@@ -2115,12 +2171,36 @@ export const runFigmaToQcTestCases = async (
         cause: err,
       });
     }
+    const persistedVisualPrimaryBreakerPath = join(
+      input.outputRoot,
+      ...VISUAL_SIDECAR_CIRCUIT_BREAKER_STATE_PATH,
+    );
+    const persistedVisualPrimaryBreakerKey =
+      buildVisualSidecarCircuitBreakerStateKey({
+        tenantScope,
+        deployment: input.llm.bundle.visualPrimary.deployment,
+      });
+    const visualPrimaryBreakerConfig =
+      input.llm.bundle.visualPrimary.getCircuitBreaker().getSnapshot();
+    const persistedVisualPrimaryBreaker =
+      await loadPersistentCircuitBreakerState({
+        path: persistedVisualPrimaryBreakerPath,
+        key: persistedVisualPrimaryBreakerKey,
+      });
+    const visualPrimaryCircuitBreaker = createLlmCircuitBreaker({
+      failureThreshold: visualPrimaryBreakerConfig.failureThreshold,
+      resetTimeoutMs: visualPrimaryBreakerConfig.resetTimeoutMs,
+      ...(persistedVisualPrimaryBreaker !== undefined
+        ? { initialState: persistedVisualPrimaryBreaker.snapshot }
+        : {}),
+    });
     const sidecarRun = await describeVisualScreens({
       bundle: input.llm.bundle,
       captures,
       jobId: input.jobId,
       generatedAt: input.generatedAt,
       intent,
+      primaryCircuitBreaker: visualPrimaryCircuitBreaker,
       requestLimits: {
         visualPrimary: resolveFinOpsRequestLimits(
           finopsBudget.roles.visual_primary,
@@ -2177,6 +2257,16 @@ export const runFigmaToQcTestCases = async (
         ),
       );
     }
+    await writePersistentCircuitBreakerState({
+      path: persistedVisualPrimaryBreakerPath,
+      key: persistedVisualPrimaryBreakerKey,
+      entry: {
+        updatedAt: input.generatedAt,
+        snapshot: toLlmCircuitPersistentState(
+          visualPrimaryCircuitBreaker.getSnapshot(),
+        ),
+      },
+    });
     recordVisualSidecarAttempts({
       recorder: finopsRecorder,
       result: sidecarResult,
@@ -2547,8 +2637,6 @@ export const runFigmaToQcTestCases = async (
   // On a hit the generate callback is never invoked and tokens are saved
   // entirely. The tenant scope partitions the cache directory so two
   // tenants cannot share entries even with identical key digests.
-  const tenantScope: TenantScope =
-    input.replayCacheTenantScope ?? DEFAULT_TENANT_SCOPE;
   const replayCache: ReplayCache =
     input.replayCache ??
     createPersistentReplayCache(
@@ -7325,8 +7413,13 @@ const recordVisualSidecarAttempts = (input: {
     (sum, identity) => sum + identity.byteLength,
     0,
   );
+  const fallbackOnlyAttempt =
+    input.result.outcome === "success" &&
+    input.result.fallbackReason !== "none" &&
+    input.result.attempts.length === 1;
   for (const [index, attempt] of input.result.attempts.entries()) {
-    const role = index === 0 ? "visual_primary" : "visual_fallback";
+    const role =
+      fallbackOnlyAttempt || index > 0 ? "visual_fallback" : "visual_primary";
     const succeeded = attempt.errorClass === undefined;
     const result: LlmGenerationResult = succeeded
       ? {
@@ -7355,6 +7448,9 @@ const recordVisualSidecarAttempts = (input: {
       result,
       fallback: role === "visual_fallback",
       liveSmoke: attempt.deployment !== "mock",
+      ...(attempt.circuitBreakerState !== undefined
+        ? { circuitBreakerState: attempt.circuitBreakerState }
+        : {}),
     });
   }
 };

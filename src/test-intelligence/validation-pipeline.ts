@@ -109,15 +109,17 @@ export interface RunValidationPipelineInput {
   semanticContentOverrides?: SemanticContentOverrideMap;
   /**
    * Documented visual-sidecar refusal forwarded to the policy gate
-   * (Issue #1772). The policy gate preserves job-level warning evidence
-   * for the refusal, and only escalates per-case decisions when
+   * (Issues #1772, #2069). The policy gate records a blocking
+   * `policy:visual-sidecar:both_failed` error when both sidecars are
+   * exhausted, while successful fallback recovery remains informational.
+   * Per-case decisions are only touched when
    * `visualVerificationRequired` is also set for the run.
    */
   visualSidecarRefusal?: {
     failureClass: VisualSidecarFailureClass;
     failureMessage: string;
   };
-  /** When true, a visual-sidecar refusal escalates each case to needs_review. */
+  /** When true, a visual-sidecar refusal is applied to each case decision. */
   visualVerificationRequired?: boolean;
   /** Optional pre-LLM untrusted-content routing summary. */
   untrustedContentReport?: UntrustedContentNormalizationReport;

@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   createLlmCircuitBreaker,
+  toLlmCircuitPersistentState,
   type LlmCircuitTransitionEvent,
 } from "./llm-circuit-breaker.js";
 
@@ -124,4 +125,30 @@ test("circuit-breaker: rejects invalid configuration", () => {
     () => createLlmCircuitBreaker({ failureThreshold: 1, resetTimeoutMs: -1 }),
     RangeError,
   );
+});
+
+test("circuit-breaker: restores an open breaker from persisted state", () => {
+  const firstClock = fakeClock();
+  const breaker = createLlmCircuitBreaker({
+    failureThreshold: 2,
+    resetTimeoutMs: 100,
+    clock: firstClock,
+  });
+  breaker.recordTransientFailure();
+  breaker.recordTransientFailure();
+  const persisted = toLlmCircuitPersistentState(breaker.getSnapshot());
+
+  const secondClock = fakeClock(50);
+  const restored = createLlmCircuitBreaker({
+    failureThreshold: 2,
+    resetTimeoutMs: 100,
+    clock: secondClock,
+    initialState: persisted,
+  });
+  assert.equal(restored.beforeRequest().allowRequest, false);
+
+  secondClock.advance(60);
+  const probe = restored.beforeRequest();
+  assert.equal(probe.allowRequest, true);
+  assert.equal(probe.snapshot.state, "half_open");
 });

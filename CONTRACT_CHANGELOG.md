@@ -31,6 +31,62 @@ All changes to the public contract surface of `workspace-dev` are documented her
 
 ---
 
+## [4.60.0] - 2026-05-08
+
+### Added (Issue #2069 — persisted visual-sidecar primary circuit breaker + policy split)
+
+Before #2069 the visual-sidecar runner always attempted the primary deployment
+first, even after repeated protocol-class failures that were known to be
+non-recovering for the active deployment. Each new run therefore paid for the
+same broken primary attempt again before falling through to the fallback. The
+policy surface also collapsed two materially different situations into one
+warning-style signal: a fallback-recovered success and a total both-sidecars
+failure.
+
+This release persists a caller-side circuit breaker for the visual primary
+deployment, skips the primary while the breaker is open, records the observed
+breaker state in FinOps, and splits the policy outcomes so recovered fallback is
+informational while total visual refusal is blocking.
+
+Public-contract changes (additive — no removals, no renames):
+
+- `TEST_INTELLIGENCE_CONTRACT_VERSION` bumps from `1.20.0` to `1.21.0`.
+- `TestCaseValidationSeverity` adds the new literal `info`.
+- `ALLOWED_TEST_CASE_POLICY_OUTCOMES` adds:
+  - `visual_sidecar_fallback_used_succeeded`
+  - `visual_sidecar_both_failed`
+- New exported type `LlmCircuitState = "closed" | "open" | "half_open"`.
+- `VisualSidecarAttempt.circuitBreakerState?` — optional breaker snapshot state
+  observed before dispatch.
+- `FinOpsBudgetReport.bySource[*].circuitBreakerStates?` — ordered list of
+  caller-side breaker states recorded per attempt.
+
+Operational behaviour introduced by the additive surface:
+
+- The production runner persists visual-primary breaker state at
+  `<outputRoot>/replay-cache/circuit-breaker-state.json`, keyed by tenant scope
+  plus primary deployment id.
+- The breaker opens after two consecutive protocol-class primary failures and
+  stays open for the configured cooldown window (default `1h` via the primary
+  role's LLM circuit-breaker reset timeout).
+- While open, the runner skips the primary and dispatches directly to the
+  fallback. After cooldown expiry, the next run may probe the primary in
+  `half_open`.
+- `policy:visual-sidecar:fallback_used` now emits
+  `outcome = visual_sidecar_fallback_used_succeeded` with `severity = info`
+  when the fallback succeeds after a primary failure or skip.
+- `policy:visual-sidecar:both_failed` emits
+  `outcome = visual_sidecar_both_failed` with `severity = error` when visual
+  evidence cannot be produced from either deployment.
+
+Breaking-change posture: additive on the wire, but consumers that hard-coded the
+old visual-sidecar warning outcome set must accept the new `info` severity and
+the two new policy outcome literals.
+
+migrationHash: 2026-05-08T00-00-00-000Z-issue-2069
+
+---
+
 ## [4.59.0] - 2026-05-08
 
 ### Added (Issue #2068 — tier-elastic `policy:technique-coverage-minimum` quota)

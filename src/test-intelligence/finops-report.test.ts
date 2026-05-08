@@ -192,6 +192,36 @@ test("recorder: failed visual sidecar attempts are counted in FinOps totals", ()
   assert.equal(report.rawScreenshotsIncluded, false);
 });
 
+test("recorder: per-source entries retain circuit-breaker states in call order", () => {
+  const recorder = createFinOpsUsageRecorder();
+  recorder.recordAttempt({
+    role: "visual_primary",
+    source: "visual_primary",
+    deployment: "llama-4-maverick-vision",
+    durationMs: 17,
+    circuitBreakerState: "closed",
+    result: failureResult(),
+  });
+  recorder.recordAttempt({
+    role: "visual_fallback",
+    source: "visual_fallback",
+    deployment: "phi-4-multimodal-poc",
+    durationMs: 19,
+    fallback: true,
+    result: successResult(0, 0),
+  });
+  const report = buildFinOpsBudgetReport({
+    jobId: JOB_ID,
+    generatedAt: GENERATED_AT,
+    budget: permissive,
+    recorder,
+  });
+  assert.deepEqual(report.bySource.visual_primary.circuitBreakerStates, [
+    "closed",
+  ]);
+  assert.equal(report.bySource.visual_fallback.circuitBreakerStates, undefined);
+});
+
 test("recorder: rejects unknown roles", () => {
   const recorder = createFinOpsUsageRecorder();
   assert.throws(() => {
@@ -1076,4 +1106,3 @@ test("Issue #2016: attributionMode default of 'primary' preserves legacy account
   assert.equal(tg.inputTokens, 140);
   assert.equal(tg.outputTokens, 70);
 });
-

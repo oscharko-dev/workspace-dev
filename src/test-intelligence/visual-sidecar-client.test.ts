@@ -24,6 +24,7 @@ import {
   createMockLlmGatewayClientBundle,
   type LlmGatewayClientBundle,
 } from "./llm-gateway-bundle.js";
+import { createLlmCircuitBreaker } from "./llm-circuit-breaker.js";
 import {
   type CreateMockLlmGatewayClientInput,
   type MockResponder,
@@ -367,6 +368,80 @@ test("both fail: VisualSidecarFailure with both_sidecars_failed and union of att
   assert.equal(result.attempts[1]?.errorClass, "transport");
   // No PII / tokens in the failureMessage.
   assert.match(result.failureMessage, /both_sidecars_failed/);
+});
+
+test("primary circuit breaker skips primary after two protocol failures", async () => {
+  const captures = [captureFor("s-1")];
+  let primaryCalls = 0;
+  let fallbackCalls = 0;
+  const breaker = createLlmCircuitBreaker({
+    failureThreshold: 2,
+    resetTimeoutMs: 60_000,
+  });
+  const bundle = buildBundle({
+    primary: {
+      responder: (_request, attempt) => {
+        primaryCalls += 1;
+        return {
+          outcome: "error",
+          errorClass: "protocol",
+          message: "404 NOT FOUND",
+          retryable: false,
+          attempt,
+        };
+      },
+    },
+    fallback: {
+      responder: (request, attempt) => {
+        fallbackCalls += 1;
+        return buildSuccess(
+          request,
+          attempt,
+          buildEnvelope(captures, FALLBACK_DEPLOYMENT),
+          {
+            deployment: FALLBACK_DEPLOYMENT,
+            modelRevision: `${FALLBACK_DEPLOYMENT}@test`,
+            gatewayRelease: "mock",
+          },
+        );
+      },
+    },
+  });
+
+  for (const jobId of ["job-breaker-1", "job-breaker-2"] as const) {
+    const { result } = await describeVisualScreens({
+      bundle,
+      captures,
+      jobId,
+      generatedAt: "2026-05-08T00:00:00.000Z",
+      intent: buildIntent(["s-1"]),
+      primaryDeployment: PRIMARY_DEPLOYMENT,
+      primaryCircuitBreaker: breaker,
+      clock: monotonicClock(),
+    });
+    assert.equal(result.outcome, "success");
+    if (result.outcome === "success") {
+      assert.equal(result.fallbackReason, "primary_unavailable");
+    }
+  }
+
+  const third = await describeVisualScreens({
+    bundle,
+    captures,
+    jobId: "job-breaker-3",
+    generatedAt: "2026-05-08T00:00:00.000Z",
+    intent: buildIntent(["s-1"]),
+    primaryDeployment: PRIMARY_DEPLOYMENT,
+    primaryCircuitBreaker: breaker,
+    clock: monotonicClock(),
+  });
+  assert.equal(third.result.outcome, "success");
+  if (third.result.outcome !== "success") return;
+  assert.equal(primaryCalls, 2);
+  assert.equal(fallbackCalls, 3);
+  assert.equal(third.result.attempts.length, 1);
+  assert.equal(third.result.attempts[0]?.circuitBreakerState, undefined);
+  assert.equal(third.result.fallbackReason, "primary_unavailable");
 });
 
 test("invalid sidecar JSON: schema_invalid on primary is safely recovered by fallback success", async () => {

@@ -4,6 +4,7 @@ import { canonicalJson } from "./content-hash.js";
 import type {
   FinOpsBudgetReport,
   FinOpsCostRate,
+  LlmCircuitState,
   LlmConstrainedDecodingAdapterId,
   LlmConstrainedDecodingEnforcement,
   LlmConstrainedDecodingMetadata,
@@ -43,6 +44,8 @@ export interface PerSourceCostEntry {
    * fan-outs into multiple generator attempts (Issue #1936).
    */
   readonly attemptIds?: readonly string[];
+  /** Optional circuit-breaker states captured in dispatch order. */
+  readonly circuitBreakerStates?: readonly LlmCircuitState[];
   /**
    * Optional deployment label this source ran against (Issue #1932).
    * Surfaces the **judge** deployment for `judge_primary` /
@@ -81,6 +84,7 @@ export interface MutablePerSourceCostEntry {
   inFlightDedupHits: number;
   idempotentReplayHits: number;
   attemptIds?: string[];
+  circuitBreakerStates?: LlmCircuitState[];
   /**
    * Last deployment label observed for this source (Issue #1932).
    * `undefined` until the first attempt records one. The accumulator
@@ -156,6 +160,7 @@ export const recordPerSourceAttempt = (input: {
   inputTokens?: number;
   outputTokens?: number;
   attemptId?: string;
+  circuitBreakerState?: LlmCircuitState;
   /**
    * Optional deployment label associated with this attempt (Issue
    * #1932). When supplied, it is stamped on the accumulator so the
@@ -182,6 +187,11 @@ export const recordPerSourceAttempt = (input: {
       ids.sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
     }
     input.accumulator.attemptIds = ids;
+  }
+  if (input.circuitBreakerState !== undefined) {
+    const states = input.accumulator.circuitBreakerStates ?? [];
+    states.push(input.circuitBreakerState);
+    input.accumulator.circuitBreakerStates = states;
   }
   if (typeof input.deployment === "string" && input.deployment.length > 0) {
     input.accumulator.deployment = input.deployment;
@@ -265,6 +275,10 @@ export const finalizePerSourceCostBreakdown = (input: {
           idempotentReplayHits: entry.idempotentReplayHits,
           ...(entry.attemptIds !== undefined && entry.attemptIds.length > 0
             ? { attemptIds: entry.attemptIds }
+            : {}),
+          ...(entry.circuitBreakerStates !== undefined &&
+          entry.circuitBreakerStates.length > 0
+            ? { circuitBreakerStates: entry.circuitBreakerStates }
             : {}),
           ...(entry.deployment !== undefined && entry.deployment.length > 0
             ? { deployment: entry.deployment }

@@ -163,7 +163,7 @@ export interface TestIntelligenceTransferPrincipal {
 }
 
 /** Contract version for the opt-in test-intelligence surface. */
-export const TEST_INTELLIGENCE_CONTRACT_VERSION = "1.20.0" as const;
+export const TEST_INTELLIGENCE_CONTRACT_VERSION = "1.21.0" as const;
 
 /**
  * Schema version for generated test case payloads.
@@ -917,7 +917,7 @@ export type TestCaseValidationIssueCode =
   (typeof ALLOWED_TEST_CASE_VALIDATION_ISSUE_CODES)[number];
 
 /** Severity surfaced for a single validation issue. */
-export type TestCaseValidationSeverity = "error" | "warning";
+export type TestCaseValidationSeverity = "error" | "warning" | "info";
 
 /** Single semantic / structural validation issue. */
 export interface TestCaseValidationIssue {
@@ -981,6 +981,8 @@ export const ALLOWED_TEST_CASE_POLICY_OUTCOMES = [
   "open_questions_review_required",
   "visual_sidecar_failure",
   "visual_sidecar_fallback_used",
+  "visual_sidecar_fallback_used_succeeded",
+  "visual_sidecar_both_failed",
   "visual_sidecar_low_confidence",
   "visual_sidecar_possible_pii",
   "visual_sidecar_prompt_injection_text",
@@ -1909,6 +1911,8 @@ export interface LlmGatewayCircuitBreakerConfig {
   failureThreshold: number;
   resetTimeoutMs: number;
 }
+
+export type LlmCircuitState = "closed" | "open" | "half_open";
 
 /**
  * Construction-time configuration for an LLM gateway client.
@@ -7308,6 +7312,11 @@ export interface VisualSidecarAttempt {
   attempt: number;
   /** Wall-clock duration of the attempt in milliseconds. */
   durationMs: number;
+  /**
+   * Circuit-breaker state observed immediately before this attempt was
+   * dispatched. Absent when the caller did not wire a caller-side breaker.
+   */
+  circuitBreakerState?: "closed" | "open" | "half_open";
   /** Error class when the attempt failed. Absent on a success. */
   errorClass?: LlmGatewayErrorClass | "schema_invalid_response";
   /**
@@ -9777,6 +9786,12 @@ export interface FinOpsBudgetReport {
          * unchanged unless the feature is enabled.
          */
         attemptIds?: readonly string[];
+        /**
+         * Optional circuit-breaker states recorded in dispatch order for this
+         * source. Present when callers surface per-attempt breaker decisions
+         * (Issue #2069) and omitted for sources that never supplied one.
+         */
+        circuitBreakerStates?: readonly ("closed" | "open" | "half_open")[];
         /**
          * Optional deployment label this source ran against (Issue
          * #1932). Surfaces the **judge** deployment for
