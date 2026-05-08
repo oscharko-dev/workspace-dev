@@ -31,6 +31,128 @@ All changes to the public contract surface of `workspace-dev` are documented her
 
 ---
 
+## [4.55.0] - 2026-05-08
+
+### Added (Issue #2041 — mutation-killing eval suite with `mutationKillRate` KPI)
+
+Coverage metrics (`fieldCoverage`, `traceCoverage`, `invariantCoverage`)
+describe what the generated suite *exercises*; they do not describe what
+it *detects*. Issue #1753 listed `mutationKillRate >= 0.85` as a primary
+success criterion for the multi-agent harness; until this release the
+KPI was undefined and never persisted, so DORA-grade audits that ask
+"how do you know your test generation is effective?" had no defensible
+answer beyond the coverage buckets.
+
+This release adds an in-process, fully deterministic mutation-killing
+evaluator that injects a curated catalog of synthetic SUT bugs into a
+synthetic SUT stub derived from the customer-eval rubric, runs every
+accepted test case against every mutated SUT, and surfaces the resulting
+`mutationKillRate` KPI alongside `policy-report.json`. A test case
+"kills" a mutation when its expected results are specific enough to
+distinguish the mutated SUT from the baseline; the KPI is the share of
+applicable mutations killed by at least one accepted case. The
+evaluator never calls the LLM gateway, so it consumes no token budget
+and stays well below the documented `0.20` cap on the generator
+budget (`MUTATION_EVAL_TOKEN_BUDGET_RATIO_CAP`).
+
+The catalog ships fifteen first-order mutations covering the classes
+called out in the issue spec (`field-required-flipped`,
+`vat-applied-to-netto`, `currency-rounding-off-by-one`,
+`boundary-off-by-one`, `state-transition-skipped`, `regex-relaxed`,
+`null-equals-empty`, `optional-cost-treated-required`,
+`currency-locale-confusion`, `error-message-suppressed`,
+`accessibility-name-removed`, `iban-checksum-skipped`,
+`pii-redaction-disabled`, `four-eyes-principle-skipped`,
+`audit-log-omitted`). Every mutation class declared in
+`ALLOWED_MUTATION_CLASSES` has at least one catalog entry, and every
+domain invariant registered by Issue #2040 has at least one mutation
+that violates it (the property-based safety predicates and the
+mutation-killing detection predicates form a dual under the same
+catalog of bug archetypes).
+
+Public-contract changes (additive — no removals, no renames):
+
+- New exported runtime surface from
+  `test-intelligence/mutation-killing-eval`:
+  `createMutationCatalog`, `buildDefaultMutationCatalog`,
+  `registerDefaultMutations`, `evaluateMutationKillingSuite`,
+  `buildMutationKillRateSummary`, `writeMutationReportArtifact`,
+  `encodeCanonicalReportBytes`, plus the typed DSL (`Mutation`,
+  `MutationCatalog`, `MutationContext`,
+  `EvaluateMutationKillingSuiteInput`).
+- New exported runtime constants:
+  `ALLOWED_MUTATION_CLASSES`, `ALLOWED_MUTATION_SEVERITIES`,
+  `MUTATION_REPORT_ARTIFACT_FILENAME` (`"mutation-report.json"`),
+  `MUTATION_REPORT_SCHEMA_VERSION` (`"1.0.0"`),
+  `MUTATION_KILL_RATE_DEFAULT_THRESHOLD` (`0.85`),
+  `MUTATION_EVAL_TOKEN_BUDGET_RATIO_CAP` (`0.20`).
+- New exported types: `MutationClass`, `MutationSeverity`,
+  `MutationEvaluation`, `MutationClassKillRate`, `MutationReport`,
+  `MutationKillRateSummary`.
+- `TestCasePolicyReport` gains an optional `mutationKillRate?:
+  MutationKillRateSummary` field. The block is omitted when the
+  evaluator was not run for this job (the default for fast iterative
+  runs), so the byte-shape stays stable for runs that pre-date the
+  evaluator.
+- `RunFigmaToQcTestCasesInput` gains an optional
+  `mutationEval?: { enabled, thresholdRatio }` block. The runner
+  defaults to off; benchmark runs opt in via `--enable-mutation-eval`.
+  When enabled the runner persists `mutation-report.json`, embeds the
+  summary into `policy-report.json#mutationKillRate`, and adds the
+  artifact to the Wave-1 evidence manifest under category `manifest`.
+- `RunFigmaToQcTestCasesResult.artifactPaths` gains the optional
+  `mutationReport?: string` field, present only when the evaluator
+  was opted into for the run.
+- `TestIntelligenceRunOptions` gains `enableMutationEval: boolean`.
+  The CLI exposes the matching `--enable-mutation-eval` and
+  `--no-mutation-eval` flags; the env override
+  `FIGMAPIPE_WORKSPACE_TI_ENABLE_MUTATION_EVAL=1` flips the default
+  for benchmark CI lanes.
+
+Operational behaviour introduced by the additive runtime surface:
+
+- The default catalog is fully deterministic and never calls an LLM,
+  so enabling the evaluator does not consume any token budget and
+  cannot interact with the `FinOpsBudgetReport` accounting.
+- The persisted `mutation-report.json` shape is byte-stable: arrays
+  are deterministically sorted (per-mutation rows by `mutationId`,
+  per-class rows by the closed `ALLOWED_MUTATION_CLASSES` order,
+  unkilled mutations alphabetically by id), ratios are rounded to six
+  digits, and only set fields are written.
+- The summary projection embedded in
+  `policy-report.json#mutationKillRate` is auditable on its own:
+  `killRate`, `threshold`, and `meetsThreshold` are recorded
+  deterministically at write time so downstream gates can reproduce
+  the pass/fail decision without re-running the evaluator.
+
+Documentation:
+
+- `docs/test-intelligence/mutation-eval.md` documents the catalog
+  classes, the synthetic-SUT stub semantics, the KPI threshold
+  precedence (CLI > runner default), and the wire-shape of
+  `mutation-report.json` and `policy-report.json#mutationKillRate`.
+- `docs/test-intelligence/local-benchmark-protocol.md` is added so the
+  local benchmark scorecard surfaces `mutationKillRate` alongside the
+  existing `G-NEG-CASE` lift gate. The protocol document was relocated
+  from the gitignored `sandbox/` tree referenced in the Issue #2038 and
+  #2053 changelog entries; the original references are preserved as
+  historical pointers in the new doc.
+
+Contract version impacts:
+
+- `CONTRACT_VERSION` bumps from `4.54.0` to `4.55.0` (additive minor
+  bump; new optional fields, new exported types, new runtime
+  constants, no removals or renames).
+- `TEST_INTELLIGENCE_CONTRACT_VERSION` bumps from `1.15.0` to `1.16.0`
+  because the test-intelligence wire artifact `policy-report.json`
+  extends its top-level shape with the new optional `mutationKillRate`
+  field, and the new persisted `mutation-report.json` artifact
+  shares the same `contractVersion` line.
+- `MUTATION_REPORT_SCHEMA_VERSION` is introduced at `"1.0.0"`.
+- `migrationHash:` registration is not required for this release. The
+  signed migration registry carries forward unchanged because no
+  migration id, hash, or rollback semantics changed.
+
 ## [4.54.0] - 2026-05-08
 
 ### Added (Issue #2040 — property-based test layer with domain-invariant registry)

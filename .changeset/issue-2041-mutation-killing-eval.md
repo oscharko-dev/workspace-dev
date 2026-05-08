@@ -1,0 +1,13 @@
+---
+"workspace-dev": minor
+---
+
+Add an in-process mutation-killing eval suite with the `mutationKillRate` KPI for Issue #2041.
+
+- New `src/test-intelligence/mutation-killing-eval` module exposes the typed DSL (`Mutation` with `{ id, mutationClass, description, source, severity, applies, kills }`) plus `createMutationCatalog`, `buildDefaultMutationCatalog`, `registerDefaultMutations`, `evaluateMutationKillingSuite`, `buildMutationKillRateSummary`, `writeMutationReportArtifact`, and `encodeCanonicalReportBytes`.
+- The default catalog ships fifteen first-order mutations covering every class declared in `ALLOWED_MUTATION_CLASSES`: `field-required-flipped`, `vat-applied-to-netto`, `currency-rounding-off-by-one`, `boundary-off-by-one`, `state-transition-skipped`, `regex-relaxed`, `null-equals-empty`, `optional-cost-treated-required`, `currency-locale-confusion`, `error-message-suppressed`, `accessibility-name-removed`, `iban-checksum-skipped`, `pii-redaction-disabled`, `four-eyes-principle-skipped`, `audit-log-omitted`. The synthetic SUT stub is implicit (no real SUT execution) and the evaluator never calls the LLM gateway, so the eval pass consumes no token budget and stays well below the documented `0.20` cap (`MUTATION_EVAL_TOKEN_BUDGET_RATIO_CAP`).
+- The production runner runs the eval after the validation pipeline when `mutationEval.enabled === true`, persists `mutation-report.json` with byte-stable canonical-JSON, embeds the summary into `policy-report.json#mutationKillRate`, and adds the artifact to the Wave-1 evidence manifest. The eval is opt-in (default off for fast iterative runs; on for benchmark runs).
+- New CLI flag `--enable-mutation-eval` (env override `FIGMAPIPE_WORKSPACE_TI_ENABLE_MUTATION_EVAL=1`) plus the inverse `--no-mutation-eval` so benchmark CI lanes can opt in or out without authoring a derived policy profile.
+- New runtime constants exposed: `MUTATION_REPORT_ARTIFACT_FILENAME` (`"mutation-report.json"`), `MUTATION_REPORT_SCHEMA_VERSION` (`"1.0.0"`), `MUTATION_KILL_RATE_DEFAULT_THRESHOLD` (`0.85`), `MUTATION_EVAL_TOKEN_BUDGET_RATIO_CAP` (`0.20`), `ALLOWED_MUTATION_CLASSES`, `ALLOWED_MUTATION_SEVERITIES`.
+- Contract version impacts: `CONTRACT_VERSION` 4.54.0 → 4.55.0; `TEST_INTELLIGENCE_CONTRACT_VERSION` 1.15.0 → 1.16.0; `MUTATION_REPORT_SCHEMA_VERSION` introduced at `"1.0.0"`. All additive — no removals, no renames, no migration-hash impact.
+- New unit tests (catalog DSL, deterministic ordering, kill-rate aggregation, byte-stable artifact, summary projection); new docs at `docs/test-intelligence/mutation-eval.md` and the local benchmark protocol at `docs/test-intelligence/local-benchmark-protocol.md` (relocated from the gitignored `sandbox/` tree referenced in earlier changelog entries).

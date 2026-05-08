@@ -264,6 +264,13 @@ import {
 } from "./unresolved-validation-rules.js";
 import { runValidationPipeline } from "./validation-pipeline.js";
 import {
+  buildMutationKillRateSummary,
+  encodeCanonicalReportBytes as encodeMutationReportBytes,
+  evaluateMutationKillingSuite,
+  MUTATION_KILL_RATE_DEFAULT_THRESHOLD,
+  MUTATION_REPORT_ARTIFACT_FILENAME,
+} from "./mutation-killing-eval.js";
+import {
   describeVisualScreens,
   writeVisualSidecarResultArtifact,
   type DescribeVisualScreensDiagnostic,
@@ -877,6 +884,28 @@ export interface RunFigmaToQcTestCasesInput {
       readonly thresholdRatio?: number;
     };
   };
+  /**
+   * Issue #2041 — opt into the mutation-killing-eval pass. When enabled
+   * the runner evaluates the curated mutation catalog against every
+   * accepted test case after the validation pipeline succeeds, persists
+   * `mutation-report.json`, and embeds the summary into
+   * `policy-report.json#mutationKillRate`. Defaults to **off** so fast
+   * iterative runs keep their byte-stable artifact set; benchmark runs
+   * pass `{ enabled: true }` (CLI flag `--enable-mutation-eval`) to
+   * surface the KPI.
+   *
+   * The evaluator is fully deterministic and never calls an LLM, so
+   * enabling it does not consume any token budget. The optional
+   * `thresholdRatio` overrides the documented default of
+   * {@link MUTATION_KILL_RATE_DEFAULT_THRESHOLD}; values must lie in
+   * `[0, 1]` and are persisted on the report rounded to six digits to
+   * match the canonical-JSON contract used by the rest of the
+   * test-intelligence wire surface.
+   */
+  mutationEval?: {
+    readonly enabled: boolean;
+    readonly thresholdRatio?: number;
+  };
 }
 
 export interface RunFigmaToQcTestCasesResult {
@@ -925,6 +954,11 @@ export interface RunFigmaToQcTestCasesResult {
     finopsReport: string;
     /** Path to the per-step harness artifact when `harness.mode !== "off"`. */
     harnessStep?: string;
+    /**
+     * Path to `mutation-report.json` (Issue #2041). Present only when the
+     * runner was invoked with `mutationEval.enabled === true`.
+     */
+    mutationReport?: string;
   };
   /**
    * Harness summary surfaced when the runner ran with
@@ -4697,6 +4731,30 @@ export const runFigmaToQcTestCases = async (
         }
       : {}),
   });
+  // Issue #2041 — mutation-killing-eval pass. Defaults to off; benchmark
+  // runs opt in via `--enable-mutation-eval`. The evaluator is fully
+  // deterministic and never calls an LLM, so enabling it does not consume
+  // any token budget. The persisted `mutation-report.json` and the
+  // embedded summary are byte-stable regenerations of the catalog state
+  // for the run.
+  const mutationEvalEnabled = input.mutationEval?.enabled === true;
+  const mutationReport = mutationEvalEnabled
+    ? evaluateMutationKillingSuite({
+        jobId: input.jobId,
+        generatedAt: input.generatedAt,
+        policyProfileId: validation.policy.policyProfileId,
+        testCases: validation.generatedTestCases.testCases,
+        intent,
+        ...(input.mutationEval?.thresholdRatio !== undefined
+          ? { threshold: input.mutationEval.thresholdRatio }
+          : { threshold: MUTATION_KILL_RATE_DEFAULT_THRESHOLD }),
+      })
+    : undefined;
+  const mutationKillRateSummary =
+    mutationReport === undefined
+      ? undefined
+      : buildMutationKillRateSummary(mutationReport);
+
   const policyReport: TestCasePolicyReport = {
     ...validation.policy,
     provenance: {
@@ -4711,8 +4769,19 @@ export const runFigmaToQcTestCases = async (
     // change. Always present once the runner reaches this point so
     // consumers do not have to defend against the field being absent.
     gateResults: [negativeCaseLiftGateResult],
+    ...(mutationKillRateSummary !== undefined
+      ? { mutationKillRate: mutationKillRateSummary }
+      : {}),
   };
   const policyBytes = encodeCanonicalJson(policyReport);
+  const mutationReportBytes =
+    mutationReport === undefined
+      ? undefined
+      : encodeMutationReportBytes(mutationReport);
+  const mutationReportPath =
+    mutationReport === undefined
+      ? undefined
+      : join(artifactDir, MUTATION_REPORT_ARTIFACT_FILENAME);
   const modelDeployments = {
     testGeneration: PRODUCTION_RUNNER_TEST_GENERATION_DEPLOYMENT,
     ...(input.llm.bundle !== undefined
@@ -4957,6 +5026,15 @@ export const runFigmaToQcTestCases = async (
         bytes: artifact.bytes,
         category: "export" as const,
       })),
+      ...(mutationReportBytes === undefined
+        ? []
+        : [
+            {
+              filename: MUTATION_REPORT_ARTIFACT_FILENAME,
+              bytes: mutationReportBytes,
+              category: "manifest" as const,
+            },
+          ]),
     ],
   });
   try {
@@ -4965,6 +5043,9 @@ export const runFigmaToQcTestCases = async (
       productionRunnerEvidenceSealBytes,
     );
     await writeAtomicBytes(policyPath, policyBytes);
+    if (mutationReportBytes !== undefined && mutationReportPath !== undefined) {
+      await writeAtomicBytes(mutationReportPath, mutationReportBytes);
+    }
     await writeProvenanceGraph({
       runDir: artifactDir,
       document: provenanceDocument,
@@ -5194,6 +5275,9 @@ export const runFigmaToQcTestCases = async (
       finopsReport: finopsWritten.artifactPath,
       ...(harnessArtifactPath !== undefined
         ? { harnessStep: harnessArtifactPath }
+        : {}),
+      ...(mutationReportPath !== undefined
+        ? { mutationReport: mutationReportPath }
         : {}),
     },
     customerMarkdownPaths: {

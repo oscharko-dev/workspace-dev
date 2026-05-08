@@ -163,7 +163,7 @@ export interface TestIntelligenceTransferPrincipal {
 }
 
 /** Contract version for the opt-in test-intelligence surface. */
-export const TEST_INTELLIGENCE_CONTRACT_VERSION = "1.15.0" as const;
+export const TEST_INTELLIGENCE_CONTRACT_VERSION = "1.16.0" as const;
 
 /**
  * Schema version for generated test case payloads.
@@ -338,6 +338,226 @@ export const TEST_CASE_COVERAGE_REPORT_ARTIFACT_FILENAME =
 /** Canonical filename for the persisted visual-sidecar validation artifact. */
 export const VISUAL_SIDECAR_VALIDATION_REPORT_ARTIFACT_FILENAME =
   "visual-sidecar-validation-report.json" as const;
+
+/**
+ * Schema version for the persisted mutation-killing-eval report artifact
+ * (Issue #2041). Bumped on any breaking change to the {@link MutationReport}
+ * shape, the catalog identifier set, or the kill-rate aggregation formula.
+ */
+export const MUTATION_REPORT_SCHEMA_VERSION = "1.0.0" as const;
+
+/**
+ * Canonical filename for the persisted mutation-killing-eval report
+ * artifact (Issue #2041). The runner writes one
+ * `mutation-report.json` per run when mutation evaluation is enabled and
+ * embeds the resulting summary into `policy-report.json#mutationKillRate`.
+ */
+export const MUTATION_REPORT_ARTIFACT_FILENAME =
+  "mutation-report.json" as const;
+
+/**
+ * Default kill-rate threshold (Issue #1753, #2041). Surfaced on the
+ * `mutationKillRate` summary so downstream consumers can reproduce the
+ * pass/fail decision deterministically without re-deriving the literal.
+ * Tracks {@link DEFAULT_MUTATION_KILL_RATE_TARGET} verbatim so the
+ * coverage-planner target and the runtime evaluator threshold cannot
+ * drift; the alias is exposed under the evaluator-namespaced name so
+ * call sites read self-explanatorily.
+ */
+export const MUTATION_KILL_RATE_DEFAULT_THRESHOLD = 0.85 as const;
+
+/**
+ * Default share of the generator token budget reserved for mutation
+ * evaluation (Issue #2041 FinOps cap). Surfaced as a constant so CI can
+ * assert the cap and the runner can refuse to dispatch eval work that
+ * would exceed it. The synthetic-SUT stub is fully deterministic and
+ * never calls an LLM, so under default operation the actual ratio is
+ * `0` — the cap is a hard ceiling, not a quota.
+ */
+export const MUTATION_EVAL_TOKEN_BUDGET_RATIO_CAP = 0.2 as const;
+
+/**
+ * Closed set of mutation classes registered in the
+ * mutation-killing-eval catalog (Issue #2041). The set is intentionally
+ * small and append-only — every class documented here corresponds to a
+ * known SUT-bug archetype the generated test suite is expected to
+ * detect. Adding a new class is a MINOR contract bump; renaming or
+ * retiring a class is MAJOR.
+ *
+ * - `field-required-flipped` — a previously-required input becomes
+ *   optional; cases asserting the required-input invariant kill it.
+ * - `vat-applied-to-netto` — VAT incorrectly added to a netto amount;
+ *   cases asserting the VAT-exclusion invariant kill it.
+ * - `currency-rounding-off-by-one` — final monetary totals drift by one
+ *   cent; cases asserting an exact two-decimal expected total kill it.
+ * - `boundary-off-by-one` — a `>=` becomes `>` (or vice versa) at a
+ *   numeric / length boundary; cases asserting the exact boundary
+ *   kill it.
+ * - `state-transition-skipped` — a workflow step is skipped (e.g. an
+ *   `auth` step is bypassed); workflow / navigation cases asserting
+ *   the transition kill it.
+ * - `regex-relaxed` — a validation pattern accepts inputs it should
+ *   reject; validation cases asserting the rejected-input behavior
+ *   kill it.
+ * - `null-equals-empty` — `null` is treated as an empty string
+ *   (or vice versa); cases asserting the null/empty distinction kill
+ *   it.
+ * - `optional-cost-treated-required` — an optional cost field is
+ *   treated as required; cases that exercise the optional-flow kill
+ *   it.
+ * - `currency-locale-confusion` — a euro amount is treated as a USD
+ *   amount in the calculation; cases that pin currency in the
+ *   expected total kill it.
+ * - `error-message-suppressed` — a required error message no longer
+ *   surfaces; negative-flow cases asserting the error message kill it.
+ * - `accessibility-name-removed` — a labelled element loses its
+ *   accessible name; a11y cases asserting the name kill it.
+ * - `iban-checksum-skipped` — IBAN checksum validation is bypassed;
+ *   negative-flow cases that present an invalid IBAN kill it.
+ * - `pii-redaction-disabled` — PII appears in a downstream artifact;
+ *   policy / compliance cases that assert redaction kill it.
+ * - `four-eyes-principle-skipped` — a state-changing action skips the
+ *   four-eyes / dual-control gate; workflow cases asserting it kill
+ *   it.
+ * - `audit-log-omitted` — a state-changing action no longer writes
+ *   the audit-log entry; cases asserting the audit row kill it.
+ */
+export const ALLOWED_MUTATION_CLASSES = [
+  "field-required-flipped",
+  "vat-applied-to-netto",
+  "currency-rounding-off-by-one",
+  "boundary-off-by-one",
+  "state-transition-skipped",
+  "regex-relaxed",
+  "null-equals-empty",
+  "optional-cost-treated-required",
+  "currency-locale-confusion",
+  "error-message-suppressed",
+  "accessibility-name-removed",
+  "iban-checksum-skipped",
+  "pii-redaction-disabled",
+  "four-eyes-principle-skipped",
+  "audit-log-omitted",
+] as const;
+export type MutationClass = (typeof ALLOWED_MUTATION_CLASSES)[number];
+
+/** Severity reported for a mutation that no test case kills. */
+export const ALLOWED_MUTATION_SEVERITIES = ["error", "warning"] as const;
+export type MutationSeverity = (typeof ALLOWED_MUTATION_SEVERITIES)[number];
+
+/** Per-mutation evaluation outcome (Issue #2041). */
+export interface MutationEvaluation {
+  /**
+   * Stable mutation id matching `^MUT-[A-Z0-9-]{1,60}$` (the same
+   * shape the catalog validator enforces). The default catalog uses
+   * the `MUT-<CLASS>-<NN>` convention but the contract only
+   * guarantees the regex shape so operator-registered mutations have
+   * room to encode their own provenance.
+   */
+  readonly mutationId: string;
+  /** Mutation class drawn from {@link ALLOWED_MUTATION_CLASSES}. */
+  readonly mutationClass: MutationClass;
+  /** Human-readable description of the synthetic bug being injected. */
+  readonly description: string;
+  /**
+   * Stable provenance string, typically `"Issue #2041 (registered)"`.
+   * Matches the convention used by the domain-invariant registry.
+   */
+  readonly source: string;
+  /** Severity of an unkilled mutation (`"error"` for default catalog rows). */
+  readonly severity: MutationSeverity;
+  /**
+   * Sorted, deduplicated test-case ids that are in scope for this
+   * mutation (`applies === true`).
+   */
+  readonly applicableTestCaseIds: readonly string[];
+  /**
+   * Sorted, deduplicated test-case ids that detect this mutation
+   * (`kills === true`).
+   */
+  readonly killingTestCaseIds: readonly string[];
+  /**
+   * `true` iff at least one accepted test case kills the mutation.
+   * `false` covers two cases: (a) no case is in scope (the catalog
+   * mutation does not apply to this run) and (b) every in-scope case
+   * fails to detect the mutation.
+   */
+  readonly killed: boolean;
+  /**
+   * `true` iff at least one accepted test case is in scope for the
+   * mutation. Drives the `applicableMutations` count surfaced in the
+   * summary.
+   */
+  readonly applicable: boolean;
+}
+
+/** Per-class kill-rate row inside {@link MutationReport.byClass}. */
+export interface MutationClassKillRate {
+  /** Mutation class from {@link ALLOWED_MUTATION_CLASSES}. */
+  readonly mutationClass: MutationClass;
+  /** Total catalog mutations registered for this class. */
+  readonly total: number;
+  /** Mutations of this class with at least one in-scope test case. */
+  readonly applicable: number;
+  /** Mutations of this class killed by at least one test case. */
+  readonly killed: number;
+  /**
+   * Kill rate for the class: `killed / applicable` rounded to six
+   * digits. `0` when `applicable === 0` (no in-scope cases). Auditors
+   * comparing per-class rates should consult `applicable` to decide
+   * whether the rate is meaningful.
+   */
+  readonly killRate: number;
+}
+
+/**
+ * Mutation-killing-eval report artifact (Issue #2041). Persisted as
+ * `mutation-report.json` alongside `policy-report.json`. The byte-shape
+ * is canonical: arrays are deterministically sorted, ratios are
+ * rounded to six digits, and only set fields are written.
+ */
+export interface MutationReport {
+  readonly schemaVersion: typeof MUTATION_REPORT_SCHEMA_VERSION;
+  readonly contractVersion: typeof TEST_INTELLIGENCE_CONTRACT_VERSION;
+  readonly generatedAt: string;
+  readonly jobId: string;
+  readonly policyProfileId: string;
+  /** Total accepted test cases evaluated against the catalog. */
+  readonly totalTestCases: number;
+  /** Total mutations registered in the catalog. */
+  readonly totalMutations: number;
+  /** Mutations with at least one in-scope test case. */
+  readonly applicableMutations: number;
+  /** Mutations killed by at least one accepted test case. */
+  readonly killedMutations: number;
+  /**
+   * Overall kill rate: `killedMutations / applicableMutations` rounded
+   * to six digits. `0` when `applicableMutations === 0`.
+   */
+  readonly killRate: number;
+  /** Configured kill-rate threshold (default: 0.85). */
+  readonly threshold: number;
+  /** Whether `killRate >= threshold`. */
+  readonly meetsThreshold: boolean;
+  /**
+   * Per-class kill-rate rows ordered by the closed
+   * {@link ALLOWED_MUTATION_CLASSES} insertion order so the byte-shape
+   * stays stable when new classes are appended to the union. Every
+   * catalog class appears exactly once.
+   */
+  readonly byClass: readonly MutationClassKillRate[];
+  /**
+   * Per-mutation evaluation rows ordered by `mutationId` ascending.
+   * Every catalog mutation appears exactly once.
+   */
+  readonly mutations: readonly MutationEvaluation[];
+  /**
+   * Mutations that were applicable but not killed by any test case,
+   * ordered by `mutationId` ascending. Surfaced as a convenience for
+   * audit reports and CI summaries.
+   */
+  readonly unkilledMutations: readonly string[];
+}
 
 /** Schema version for the deterministic pipeline quality passport artifact. */
 export const PIPELINE_QUALITY_PASSPORT_SCHEMA_VERSION = "1.0.0" as const;
@@ -612,6 +832,53 @@ export interface TestCasePolicyReport {
    * legacy runs that pre-date the gate registry.
    */
   gateResults?: TestCasePolicyGateResult[];
+  /**
+   * Optional mutation-killing-eval summary (Issue #2041). Surfaces the
+   * top-level `mutationKillRate` KPI alongside per-class kill rates so
+   * downstream auditors can answer "how effective is this generated test
+   * suite at detecting injected SUT bugs?" without re-running the
+   * evaluator. The block is omitted when the mutation evaluator was not
+   * run for this job (default for fast iterative runs), so the byte
+   * shape stays stable for runs that pre-date the evaluator.
+   */
+  mutationKillRate?: MutationKillRateSummary;
+}
+
+/**
+ * Compact mutation-killing-eval summary embedded into
+ * `policy-report.json#mutationKillRate` (Issue #2041). Each field is
+ * derived from the persisted `mutation-report.json` artifact and can be
+ * used as a hard-gate input by downstream CI without parsing the full
+ * report.
+ */
+export interface MutationKillRateSummary {
+  /** Stable artifact filename auditors should consult for the full report. */
+  readonly artifactFilename: typeof MUTATION_REPORT_ARTIFACT_FILENAME;
+  /**
+   * Overall fraction of registered mutations killed by at least one
+   * accepted test case, in [0, 1]. Rounded to six digits to match the
+   * canonical-JSON contract. `0` when the catalog is empty or no
+   * mutations were in scope for the run.
+   */
+  readonly killRate: number;
+  /** Total number of registered mutations in the catalog. */
+  readonly totalMutations: number;
+  /** Mutations that had at least one in-scope test case. */
+  readonly applicableMutations: number;
+  /** Mutations killed by at least one accepted test case. */
+  readonly killedMutations: number;
+  /**
+   * Configured KPI threshold (Issue #1753 set `>= 0.85`). Surfaced so
+   * downstream consumers can reproduce the pass/fail computation
+   * without consulting the runner config.
+   */
+  readonly threshold: number;
+  /**
+   * Whether the kill rate meets or exceeds the threshold. Recorded
+   * deterministically at write time so the gate decision survives
+   * re-reads of the report.
+   */
+  readonly meetsThreshold: boolean;
 }
 
 /**
@@ -10956,7 +11223,7 @@ export interface ReleaseQualityGatesReport {
  * Must be bumped according to CONTRACT_CHANGELOG.md rules.
  * Package version alignment is documented in VERSIONING.md.
  */
-export const CONTRACT_VERSION = "4.54.0" as const;
+export const CONTRACT_VERSION = "4.55.0" as const;
 
 // ---------------------------------------------------------------------------
 // Issue #1774 — UntrustedContentNormalizer (2025-vintage injection carriers).

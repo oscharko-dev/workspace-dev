@@ -82,6 +82,7 @@ export const TI_EVAL_FILES = Object.freeze([
   "src/test-intelligence/multi-source-prompt-injection.test.ts",
   "src/test-intelligence/multi-source-reconciliation.test.ts",
   "src/test-intelligence/multi-source-source-spoofing.test.ts",
+  "src/test-intelligence/mutation-killing-eval.test.ts",
   "src/test-intelligence/validation-eval.test.ts",
   "src/test-intelligence/validation-fixtures.test.ts",
   "src/test-intelligence/validation-harness.self-verify.test.ts",
