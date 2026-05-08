@@ -14,6 +14,8 @@ import {
   GENERATED_TEST_CASE_SCHEMA_VERSION,
   TEST_CASE_COVERAGE_REPORT_ARTIFACT_FILENAME,
   TEST_CASE_POLICY_REPORT_ARTIFACT_FILENAME,
+  TECHNIQUE_QUOTA_REPORT_ARTIFACT_FILENAME,
+  TECHNIQUE_QUOTA_REPORT_SCHEMA_VERSION,
   TEST_CASE_VALIDATION_REPORT_ARTIFACT_FILENAME,
   TEST_INTELLIGENCE_CONTRACT_VERSION,
   TEST_INTELLIGENCE_PROMPT_TEMPLATE_VERSION,
@@ -440,6 +442,47 @@ test("Issue #1947: coverage-plan technique quota minimum flows through validatio
     ),
     true,
   );
+});
+
+test("Issue #2068: technique-quota report is emitted in-memory and persisted next to policy-report", async () => {
+  const tmp = await mkdtemp(join(tmpdir(), "issue2068-"));
+  try {
+    const result = runValidationPipeline({
+      jobId: "job-1",
+      generatedAt: GENERATED_AT,
+      list: richList(),
+      intent: buildIntent(),
+      coveragePlan: buildCoveragePlan(),
+    });
+    assert.notEqual(result.techniqueQuota, undefined);
+    assert.equal(
+      result.techniqueQuota?.schemaVersion,
+      TECHNIQUE_QUOTA_REPORT_SCHEMA_VERSION,
+    );
+    assert.equal(result.techniqueQuota?.mode, "tier-elastic");
+    const paths = await writeValidationPipelineArtifacts({
+      artifacts: result,
+      destinationDir: tmp,
+    });
+    assert.equal(
+      paths.techniqueQuotaReportPath,
+      join(tmp, TECHNIQUE_QUOTA_REPORT_ARTIFACT_FILENAME),
+    );
+    const persistedBytes = await readFile(paths.techniqueQuotaReportPath!, "utf8");
+    assert.equal(persistedBytes, canonicalJson(result.techniqueQuota));
+  } finally {
+    await rm(tmp, { recursive: true, force: true });
+  }
+});
+
+test("Issue #2068: pipeline omits technique-quota artifact when no CoveragePlan is supplied", () => {
+  const result = runValidationPipeline({
+    jobId: "job-1",
+    generatedAt: GENERATED_AT,
+    list: richList(),
+    intent: buildIntent(),
+  });
+  assert.equal(result.techniqueQuota, undefined);
 });
 
 test("Issue #1947: policyOverrides downgrade technique quota minimum inside validation pipeline", () => {

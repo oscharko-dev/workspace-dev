@@ -100,10 +100,12 @@ export interface EvaluatePolicyGateInput {
    * Documented visual-sidecar refusal (Issue #1772). When the visual sidecar
    * dispatch exhausts both primary and fallback deployments (or otherwise
    * refuses to produce screen descriptions), the production runner records
-   * the `VisualSidecarFailureClass` here. The gate always preserves a
-   * job-level `policy:visual-sidecar-refused` warning for evidence, and it
-   * only escalates per-case decisions when the run explicitly marks visual
-   * verification as required.
+   * the `VisualSidecarFailureClass` here. Issue #2069 splits the outcomes:
+   * `both_sidecars_failed` now emits a blocking job-level
+   * `policy:visual-sidecar:both_failed` error, while successful fallback
+   * recovery remains informational under
+   * `policy:visual-sidecar:fallback_used`. The gate only escalates per-case
+   * decisions when the run explicitly marks visual verification as required.
    *
    * Pre-flight failure classes (caller errors such as `image_payload_too_large`
    * or `empty_screen_capture_set`) are NOT routed here — those still fail
@@ -113,7 +115,7 @@ export interface EvaluatePolicyGateInput {
     failureClass: VisualSidecarFailureClass;
     failureMessage: string;
   };
-  /** When true, visual-sidecar refusal escalates each case to needs_review. */
+  /** When true, visual-sidecar refusal is applied to each case decision. */
   visualVerificationRequired?: boolean;
   /** Optional pre-LLM untrusted-content normalization outcome. */
   untrustedContentReport?: UntrustedContentNormalizationReport;
@@ -195,14 +197,39 @@ const escalate = (
 };
 
 const severityToDecision = (
-  severity: "error" | "warning",
+  severity: "error" | "warning" | "info",
 ): TestCasePolicyDecision => {
   switch (severity) {
     case "error":
       return "blocked";
     case "warning":
       return "needs_review";
+    case "info":
+      return "approved";
   }
+};
+
+const resolveVisualSidecarRefusalViolation = (
+  visualSidecarRefusal: NonNullable<EvaluatePolicyGateInput["visualSidecarRefusal"]>,
+): TestCasePolicyViolation => {
+  if (visualSidecarRefusal.failureClass === "both_sidecars_failed") {
+    return {
+      rule: "policy:visual-sidecar:both_failed",
+      outcome: "visual_sidecar_both_failed",
+      severity: "error",
+      reason:
+        `visual sidecar refused: ${visualSidecarRefusal.failureClass}: ` +
+        visualSidecarRefusal.failureMessage,
+    };
+  }
+  return {
+    rule: "policy:visual-sidecar-refused",
+    outcome: "visual_sidecar_failure",
+    severity: "warning",
+    reason:
+      `visual sidecar refused: ${visualSidecarRefusal.failureClass}: ` +
+      visualSidecarRefusal.failureMessage,
+  };
 };
 
 const parseMultiSourceConflictIds = (
@@ -348,13 +375,10 @@ const evaluateCase = (
   const violations: TestCasePolicyViolation[] = [];
 
   if (visualSidecarRefusal !== undefined && visualVerificationRequired) {
-    violations.push({
-      rule: "policy:visual-sidecar-refused",
-      outcome: "visual_sidecar_failure",
-      severity: "warning",
-      reason: `visual sidecar refused: ${visualSidecarRefusal.failureClass}: ${visualSidecarRefusal.failureMessage}`,
-    });
-    decision = escalate(decision, "needs_review");
+    const violation =
+      resolveVisualSidecarRefusalViolation(visualSidecarRefusal);
+    violations.push(violation);
+    decision = escalate(decision, severityToDecision(violation.severity));
   }
 
   if (untrustedContentReport?.outcome === "needs_review") {
@@ -372,10 +396,7 @@ const evaluateCase = (
     const v = violationFromIssue(issue, overridden);
     if (v === null) continue;
     violations.push(v);
-    decision = escalate(
-      decision,
-      v.severity === "error" ? "blocked" : "needs_review",
-    );
+    decision = escalate(decision, severityToDecision(v.severity));
   }
 
   if (faithfulnessViolation !== undefined) {
@@ -682,6 +703,7 @@ const evaluateJobLevel = (
   for (const deficit of collectTechniqueQuotaDeficits(
     list.testCases,
     coveragePlan,
+    profile.rules.techniqueCoverageMinimum,
   )) {
     violations.push({
       rule: "policy:technique-coverage-minimum",
@@ -709,12 +731,7 @@ const evaluateJobLevel = (
   }
 
   if (visualSidecarRefusal !== undefined) {
-    violations.push({
-      rule: "policy:visual-sidecar-refused",
-      outcome: "visual_sidecar_failure",
-      severity: "warning",
-      reason: `visual sidecar refused: ${visualSidecarRefusal.failureClass}: ${visualSidecarRefusal.failureMessage}`,
-    });
+    violations.push(resolveVisualSidecarRefusalViolation(visualSidecarRefusal));
   }
 
   // Required-field coverage: each detected validation rule needs at least
@@ -957,7 +974,10 @@ const mapVisualOutcome = (
     | "prompt_injection_like_text"
     | "conflicts_with_figma_metadata"
     | "primary_unavailable",
-): { outcome: TestCasePolicyOutcome; severity: "error" | "warning" } | null => {
+): {
+  outcome: TestCasePolicyOutcome;
+  severity: "error" | "warning" | "info";
+} | null => {
   switch (outcome) {
     case "ok":
       return null;
@@ -966,7 +986,10 @@ const mapVisualOutcome = (
       return { outcome: "visual_sidecar_failure", severity: "error" };
     case "fallback_used":
     case "primary_unavailable":
-      return { outcome: "visual_sidecar_fallback_used", severity: "warning" };
+      return {
+        outcome: "visual_sidecar_fallback_used_succeeded",
+        severity: "info",
+      };
     case "low_confidence":
       return { outcome: "visual_sidecar_low_confidence", severity: "warning" };
     case "possible_pii":

@@ -389,7 +389,7 @@ test("Issue #1794: banking profile blocks when an active model binding is missin
   assert.equal(report.blocked, true);
 });
 
-test("Issue #1772: visualSidecarRefusal records a warning without escalating every case by default", () => {
+test("Issue #2069: both_sidecars_failed is a blocking job-level error by default", () => {
   const tc = buildCase({});
   const ctx = harness([tc], buildIntent());
   const report = evaluatePolicyGate({
@@ -414,24 +414,24 @@ test("Issue #1772: visualSidecarRefusal records a warning without escalating eve
   );
   assert.equal(caseViolation, undefined);
 
-  // Job-level: parallel violation surfaces the documented refusal code without
-  // marking the job as blocked (warning severity does not block).
+  // Job-level: the missing visual evidence blocks the job, even though the
+  // case-level decisions stay untouched unless visual verification is required.
   const jobViolation = report.jobLevelViolations.find(
-    (v) => v.rule === "policy:visual-sidecar-refused",
+    (v) => v.rule === "policy:visual-sidecar:both_failed",
   );
   assert.ok(jobViolation, "job-level refusal violation must be present");
-  assert.equal(jobViolation?.outcome, "visual_sidecar_failure");
-  assert.equal(jobViolation?.severity, "warning");
+  assert.equal(jobViolation?.outcome, "visual_sidecar_both_failed");
+  assert.equal(jobViolation?.severity, "error");
 
   // Counts stay on the approved path when the run does not require
   // visual verification.
   assert.equal(report.needsReviewCount, 0);
   assert.equal(report.blockedCount, 0);
   assert.equal(report.approvedCount, 1);
-  assert.equal(report.blocked, false);
+  assert.equal(report.blocked, true);
 });
 
-test("Issue #1772: visual verification required still escalates refusal to needs_review", () => {
+test("Issue #2069: visual verification required blocks the case when both sidecars fail", () => {
   const tc = buildCase({});
   const ctx = harness([tc], buildIntent());
   const report = evaluatePolicyGate({
@@ -450,18 +450,61 @@ test("Issue #1772: visual verification required still escalates refusal to needs
     visualVerificationRequired: true,
   });
 
-  assert.equal(report.decisions[0]?.decision, "needs_review");
+  assert.equal(report.decisions[0]?.decision, "blocked");
   const caseViolation = report.decisions[0]?.violations.find(
-    (v) => v.rule === "policy:visual-sidecar-refused",
+    (v) => v.rule === "policy:visual-sidecar:both_failed",
   );
   assert.ok(caseViolation, "per-case refusal violation must be present");
-  assert.equal(caseViolation?.outcome, "visual_sidecar_failure");
-  assert.equal(caseViolation?.severity, "warning");
+  assert.equal(caseViolation?.outcome, "visual_sidecar_both_failed");
+  assert.equal(caseViolation?.severity, "error");
   assert.match(caseViolation?.reason ?? "", /both_sidecars_failed/);
-  assert.equal(report.needsReviewCount, 1);
-  assert.equal(report.blockedCount, 0);
+  assert.equal(report.needsReviewCount, 0);
+  assert.equal(report.blockedCount, 1);
   assert.equal(report.approvedCount, 0);
+  assert.equal(report.blocked, true);
+});
+
+test("Issue #2069: fallback-recovered visual sidecar emits info-only policy evidence", () => {
+  const ctx = harness([buildCase({})], buildIntent());
+  const report = evaluatePolicyGate({
+    jobId: "job-1",
+    generatedAt: GENERATED_AT,
+    list: ctx.list,
+    intent: ctx.intent,
+    profile: ctx.profile,
+    validation: ctx.validation,
+    coverage: ctx.coverage,
+    visual: {
+      schemaVersion: "1.0.0",
+      contractVersion: TEST_INTELLIGENCE_CONTRACT_VERSION,
+      visualSidecarSchemaVersion: "1.0.0",
+      generatedAt: GENERATED_AT,
+      jobId: "job-1",
+      totalScreens: 1,
+      screensWithFindings: 1,
+      blocked: false,
+      records: [
+        {
+          screenId: "s-1",
+          deployment: "phi-4-multimodal-poc",
+          outcomes: ["fallback_used"],
+          issues: [],
+          meanConfidence: 0.95,
+        },
+      ],
+    },
+  });
+  const jobViolation = report.jobLevelViolations.find(
+    (v) => v.rule === "policy:visual-sidecar:fallback_used",
+  );
+  assert.ok(jobViolation);
+  assert.equal(
+    jobViolation?.outcome,
+    "visual_sidecar_fallback_used_succeeded",
+  );
+  assert.equal(jobViolation?.severity, "info");
   assert.equal(report.blocked, false);
+  assert.equal(report.approvedCount, 1);
 });
 
 test("resolved multi-source conflicts are pruned before policy blockers are counted", () => {
@@ -642,6 +685,95 @@ test("Issue #1947: unmet technique quotas block the job at the policy gate", () 
   assert.equal(violation?.severity, "error");
   assert.match(violation?.reason ?? "", /boundary_value_analysis/);
   assert.equal(report.blocked, true);
+});
+
+test("Issue #2068: tier-elastic mode replaces a fixed 12-EP planner quota on a 9-field K0 screen with the field-count floor", () => {
+  const ctx = harness(
+    Array.from({ length: 10 }, (_, idx) =>
+      buildCase({
+        id: `tc-ep-${idx + 1}`,
+        technique: "equivalence_partitioning",
+      }),
+    ),
+    buildIntent(),
+  );
+  const coveragePlan = buildCoveragePlan({
+    perScreen: [
+      {
+        screenId: "s-1",
+        techniqueQuotas: [
+          { technique: "equivalence_partitioning", minCount: 12 },
+        ],
+      },
+    ],
+    perElement: Array.from({ length: 9 }, (_, idx) => ({
+      screenId: "s-1",
+      elementId: `s-1.field-${idx + 1}`,
+      mustHaveCase: true,
+      riskClass: "low" as const,
+    })),
+  });
+  const report = evaluatePolicyGate({
+    jobId: "job-1",
+    generatedAt: GENERATED_AT,
+    list: ctx.list,
+    intent: ctx.intent,
+    profile: ctx.profile,
+    validation: ctx.validation,
+    coverage: ctx.coverage,
+    coveragePlan,
+  });
+  assert.equal(
+    report.jobLevelViolations.find(
+      (entry) => entry.rule === "policy:technique-coverage-minimum",
+    ),
+    undefined,
+    "tier-elastic mode should clear the 12-EP quota on a 9-field screen",
+  );
+});
+
+test("Issue #2068: fixed override on a derived profile preserves the legacy 12-EP minimum", () => {
+  const ctx = harness(
+    Array.from({ length: 10 }, (_, idx) =>
+      buildCase({
+        id: `tc-ep-${idx + 1}`,
+        technique: "equivalence_partitioning",
+      }),
+    ),
+    buildIntent(),
+  );
+  ctx.profile.rules.techniqueCoverageMinimum = { mode: "fixed" };
+  const coveragePlan = buildCoveragePlan({
+    perScreen: [
+      {
+        screenId: "s-1",
+        techniqueQuotas: [
+          { technique: "equivalence_partitioning", minCount: 12 },
+        ],
+      },
+    ],
+    perElement: Array.from({ length: 9 }, (_, idx) => ({
+      screenId: "s-1",
+      elementId: `s-1.field-${idx + 1}`,
+      mustHaveCase: true,
+      riskClass: "low" as const,
+    })),
+  });
+  const report = evaluatePolicyGate({
+    jobId: "job-1",
+    generatedAt: GENERATED_AT,
+    list: ctx.list,
+    intent: ctx.intent,
+    profile: ctx.profile,
+    validation: ctx.validation,
+    coverage: ctx.coverage,
+    coveragePlan,
+  });
+  const violation = report.jobLevelViolations.find(
+    (entry) => entry.rule === "policy:technique-coverage-minimum",
+  );
+  assert.ok(violation, "fixed mode should still flag the 12-EP deficit");
+  assert.match(violation?.reason ?? "", /at least 12 "equivalence_partitioning"/);
 });
 
 test("Issue #1947: policy override can downgrade technique coverage minimum to warning", () => {

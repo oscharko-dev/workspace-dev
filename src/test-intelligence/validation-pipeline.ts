@@ -25,6 +25,7 @@ import { join } from "node:path";
 import {
   GENERATED_TESTCASES_ARTIFACT_FILENAME,
   GENERATED_TEST_CASE_SCHEMA_VERSION,
+  TECHNIQUE_QUOTA_REPORT_ARTIFACT_FILENAME,
   TEST_CASE_COVERAGE_REPORT_ARTIFACT_FILENAME,
   TEST_CASE_POLICY_REPORT_SCHEMA_VERSION,
   TEST_CASE_POLICY_REPORT_ARTIFACT_FILENAME,
@@ -38,6 +39,7 @@ import {
   type FaithfulnessVerdict,
   type GeneratedTestCaseList,
   type SelfVerifyRubricReport,
+  type TechniqueQuotaReport,
   type TestCaseCoverageReport,
   type TestCasePolicyProfile,
   type TestCasePolicyReport,
@@ -69,6 +71,7 @@ import {
 } from "./self-verify-rubric.js";
 import { computeCoverageReport } from "./test-case-coverage.js";
 import { validateGeneratedTestCasesWithInvariants } from "./test-case-validation.js";
+import { buildTechniqueQuotaReport } from "./technique-quota.js";
 import { validateVisualSidecar } from "./visual-sidecar-validation.js";
 
 export interface RunValidationPipelineInput {
@@ -106,15 +109,17 @@ export interface RunValidationPipelineInput {
   semanticContentOverrides?: SemanticContentOverrideMap;
   /**
    * Documented visual-sidecar refusal forwarded to the policy gate
-   * (Issue #1772). The policy gate preserves job-level warning evidence
-   * for the refusal, and only escalates per-case decisions when
+   * (Issues #1772, #2069). The policy gate records a blocking
+   * `policy:visual-sidecar:both_failed` error when both sidecars are
+   * exhausted, while successful fallback recovery remains informational.
+   * Per-case decisions are only touched when
    * `visualVerificationRequired` is also set for the run.
    */
   visualSidecarRefusal?: {
     failureClass: VisualSidecarFailureClass;
     failureMessage: string;
   };
-  /** When true, a visual-sidecar refusal escalates each case to needs_review. */
+  /** When true, a visual-sidecar refusal is applied to each case decision. */
   visualVerificationRequired?: boolean;
   /** Optional pre-LLM untrusted-content routing summary. */
   untrustedContentReport?: UntrustedContentNormalizationReport;
@@ -150,6 +155,13 @@ export interface ValidationPipelineArtifacts {
    * artifacts remain byte-identical to the pre-#1379 baseline.
    */
   rubric?: SelfVerifyRubricReport;
+  /**
+   * Issue #2068 — per-run resolution path of the
+   * `policy:technique-coverage-minimum` gate. Populated whenever a
+   * `coveragePlan` is supplied. Persisted as
+   * `technique-quota-report.json` by
+   * {@link writeValidationPipelineArtifacts}. */
+  techniqueQuota?: TechniqueQuotaReport;
   /**
    * Final blocking decision. True when ANY of:
    *   - validation reported errors
@@ -317,6 +329,18 @@ export const runValidationPipeline = (
     blocked,
   };
   if (visualReport !== undefined) artifacts.visual = visualReport;
+  if (input.coveragePlan !== undefined) {
+    artifacts.techniqueQuota = buildTechniqueQuotaReport({
+      generatedAt: input.generatedAt,
+      jobId: input.jobId,
+      policyProfileId: profile.id,
+      cases: input.list.testCases,
+      coveragePlan: input.coveragePlan,
+      ...(profile.rules.techniqueCoverageMinimum !== undefined
+        ? { policy: profile.rules.techniqueCoverageMinimum }
+        : {}),
+    });
+  }
   return artifacts;
 };
 
@@ -383,6 +407,8 @@ export interface WriteValidationPipelineArtifactsResult {
   visualSidecarValidationReportPath?: string;
   /** Path of the persisted self-verify rubric report when present (Issue #1379). */
   selfVerifyRubricReportPath?: string;
+  /** Path of the persisted technique-quota report (Issue #2068). */
+  techniqueQuotaReportPath?: string;
 }
 
 /**
@@ -443,6 +469,15 @@ export const writeValidationPipelineArtifacts = async (
       runDir: input.destinationDir,
     });
     result.selfVerifyRubricReportPath = rubricPaths.artifactPath;
+  }
+
+  if (input.artifacts.techniqueQuota !== undefined) {
+    const techniqueQuotaPath = join(
+      input.destinationDir,
+      TECHNIQUE_QUOTA_REPORT_ARTIFACT_FILENAME,
+    );
+    await writeAtomicJson(techniqueQuotaPath, input.artifacts.techniqueQuota);
+    result.techniqueQuotaReportPath = techniqueQuotaPath;
   }
 
   return result;
@@ -651,6 +686,18 @@ export const runValidationPipelineWithSelfVerify = async (
     blocked,
   };
   if (visualReport !== undefined) artifacts.visual = visualReport;
+  if (input.coveragePlan !== undefined) {
+    artifacts.techniqueQuota = buildTechniqueQuotaReport({
+      generatedAt: input.generatedAt,
+      jobId: input.jobId,
+      policyProfileId: profile.id,
+      cases: input.list.testCases,
+      coveragePlan: input.coveragePlan,
+      ...(profile.rules.techniqueCoverageMinimum !== undefined
+        ? { policy: profile.rules.techniqueCoverageMinimum }
+        : {}),
+    });
+  }
   return artifacts;
 };
 

@@ -671,14 +671,23 @@ policy; the inspector does, on demand.
 ### Visual sidecar refusal
 
 When the visual sidecar exhausts both deployments or detects possible
-PII in a screen, the runner publishes a complete artifact set but routes
-every test case to `needs_review` via the policy gate. Common refusal
-codes you may see in the policy report:
+PII in a screen, the runner publishes a complete artifact set and records
+the refusal in the policy report. Under Issue #2069, successful fallback
+recovery is informational, while `both_sidecars_failed` is a job-level
+blocking error. Common refusal codes you may see in the policy report:
 
 - `both_sidecars_failed` — primary + fallback both exhausted.
 - `visual_possible_pii` — a screen carries PII-shaped content; reviewer
   must redact before export.
 - `schema_invalid_response` — a sidecar response failed schema validation.
+
+When the fallback succeeds after a primary failure or a persisted breaker-open
+skip, the policy report now emits
+`policy:visual-sidecar:fallback_used` with severity `info`; this is audit
+evidence, not a blocker. The primary-side breaker persists across runs in
+`replay-cache/circuit-breaker-state.json`. See
+`docs/test-intelligence/visual-sidecar-circuit-breaker.md` for state and
+cooldown details.
 
 Pre-flight failure classes (`image_payload_too_large`,
 `empty_screen_capture_set`, `duplicate_screen_id`,

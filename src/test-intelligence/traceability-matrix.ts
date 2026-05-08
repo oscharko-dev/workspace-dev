@@ -116,9 +116,10 @@ const buildValidationIndex = (
 
 const aggregateValidationVerdict = (
   previous: ValidationVerdict | undefined,
-  severity: "error" | "warning",
+  severity: "error" | "warning" | "info",
 ): ValidationVerdict => {
   if (severity === "error") return { outcome: "error" };
+  if (severity === "info") return previous ?? { outcome: "ok" };
   if (previous?.outcome === "error") return previous;
   return { outcome: "warning" };
 };

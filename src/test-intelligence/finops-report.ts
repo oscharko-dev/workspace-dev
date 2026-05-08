@@ -48,6 +48,7 @@ import {
   type FinOpsRole,
   type FinOpsRoleUsage,
   type LlmFinishReason,
+  type LlmCircuitState,
   type LlmGatewayErrorClass,
   type LlmGenerationResult,
 } from "../contracts/index.js";
@@ -124,6 +125,8 @@ export interface FinOpsAttemptObservation {
   liveSmoke?: boolean;
   /** True iff the attempt was a fallback selection. */
   fallback?: boolean;
+  /** Optional caller-side circuit-breaker state observed before dispatch. */
+  circuitBreakerState?: LlmCircuitState;
   /** The gateway result (success or failure) for this attempt. */
   result: LlmGenerationResult;
   /**
@@ -192,6 +195,11 @@ const createRoleAccumulator = (role: FinOpsRole): RoleAccumulator => ({
  */
 export interface FinOpsUsageRecorder {
   recordAttempt(observation: FinOpsAttemptObservation): void;
+  recordCircuitBreakerDecision(observation: {
+    source: AgentSourceLabel;
+    circuitBreakerState: LlmCircuitState;
+    deployment?: string;
+  }): void;
   recordCacheHit(observation: FinOpsCacheHitObservation): void;
   recordCacheMiss(observation: FinOpsCacheMissObservation): void;
   recordInFlightDedupHit(source: AgentSourceLabel): void;
@@ -323,6 +331,9 @@ export const createFinOpsUsageRecorder = (
         ...(observation.attemptId !== undefined
           ? { attemptId: observation.attemptId }
           : {}),
+        ...(observation.circuitBreakerState !== undefined
+          ? { circuitBreakerState: observation.circuitBreakerState }
+          : {}),
         // Issue #1932: stamp the deployment on the per-source
         // accumulator so `bySource.judge_primary` surfaces the
         // **judge** deployment (when the operator wired a
@@ -339,6 +350,29 @@ export const createFinOpsUsageRecorder = (
           : {}),
       });
     }
+  };
+
+  const recordCircuitBreakerDecision = (observation: {
+    source: AgentSourceLabel;
+    circuitBreakerState: LlmCircuitState;
+    deployment?: string;
+  }): void => {
+    if (!isAgentSourceLabel(observation.source)) {
+      throw new RangeError(
+        `recordCircuitBreakerDecision: unknown source "${observation.source}"`,
+      );
+    }
+    const accumulator = sourceAccumulatorFor(observation.source);
+    recordPerSourceAttempt({
+      accumulator,
+      circuitBreakerState: observation.circuitBreakerState,
+      ...(typeof observation.deployment === "string" &&
+      observation.deployment.length > 0
+        ? { deployment: observation.deployment }
+        : {}),
+    });
+    accumulator.callCount = 0;
+    accumulator.costMinorUnits = 0;
   };
 
   const recordCacheHit = (observation: FinOpsCacheHitObservation): void => {
@@ -418,6 +452,7 @@ export const createFinOpsUsageRecorder = (
 
   return {
     recordAttempt,
+    recordCircuitBreakerDecision,
     recordCacheHit,
     recordCacheMiss,
     recordInFlightDedupHit: (source) => {

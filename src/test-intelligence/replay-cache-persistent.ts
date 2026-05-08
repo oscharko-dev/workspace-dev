@@ -9,7 +9,7 @@ import {
   utimes,
   writeFile,
 } from "node:fs/promises";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import type {
   GeneratedTestCaseList,
   ReplayCacheEntry,
@@ -18,6 +18,7 @@ import type {
 } from "../contracts/index.js";
 import { canonicalJson } from "./content-hash.js";
 import { validateGeneratedTestCaseList } from "./generated-test-case-schema.js";
+import type { LlmCircuitPersistentState } from "./llm-circuit-breaker.js";
 import {
   computeReplayCacheKeyDigest,
   ReplayCacheValidationError,
@@ -59,6 +60,19 @@ export interface PersistentReplayCacheOptions {
    * (10 minutes).
    */
   staleThresholdMs?: number;
+}
+
+export const PERSISTENT_CIRCUIT_BREAKER_STATE_SCHEMA_VERSION =
+  "1.0.0" as const;
+
+export interface PersistentCircuitBreakerStateEntry {
+  updatedAt: string;
+  snapshot: LlmCircuitPersistentState;
+}
+
+interface PersistentCircuitBreakerStateFile {
+  schemaVersion: typeof PERSISTENT_CIRCUIT_BREAKER_STATE_SCHEMA_VERSION;
+  entries: Record<string, PersistentCircuitBreakerStateEntry>;
 }
 
 /**
@@ -173,6 +187,44 @@ export const createPersistentReplayCache = (
   };
 };
 
+export const loadPersistentCircuitBreakerState = async (input: {
+  path: string;
+  key: string;
+}): Promise<PersistentCircuitBreakerStateEntry | undefined> => {
+  let raw: string;
+  try {
+    raw = await readFile(input.path, "utf8");
+  } catch (err) {
+    if (isNotFoundError(err)) return undefined;
+    throw err;
+  }
+  const file = decodePersistentCircuitBreakerStateFile(
+    JSON.parse(raw) as unknown,
+  );
+  return file.entries[input.key];
+};
+
+export const writePersistentCircuitBreakerState = async (input: {
+  path: string;
+  key: string;
+  entry: PersistentCircuitBreakerStateEntry;
+}): Promise<void> => {
+  let file: PersistentCircuitBreakerStateFile = {
+    schemaVersion: PERSISTENT_CIRCUIT_BREAKER_STATE_SCHEMA_VERSION,
+    entries: {},
+  };
+  try {
+    const raw = await readFile(input.path, "utf8");
+    file = decodePersistentCircuitBreakerStateFile(JSON.parse(raw) as unknown);
+  } catch (err) {
+    if (!(err instanceof SyntaxError) && !isNotFoundError(err)) {
+      throw err;
+    }
+  }
+  file.entries[input.key] = input.entry;
+  await writeAtomicJson(input.path, file);
+};
+
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
 const decodeEntry = (digest: string, parsed: unknown): ReplayCacheEntry => {
@@ -211,6 +263,40 @@ const decodeEntry = (digest: string, parsed: unknown): ReplayCacheEntry => {
 const isNotFoundError = (err: unknown): boolean => {
   if (typeof err !== "object" || err === null) return false;
   return (err as { code?: unknown }).code === "ENOENT";
+};
+
+const decodePersistentCircuitBreakerStateFile = (
+  parsed: unknown,
+): PersistentCircuitBreakerStateFile => {
+  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+    throw new TypeError(
+      "persistent circuit breaker state file must be an object",
+    );
+  }
+  const candidate = parsed as Record<string, unknown>;
+  if (
+    typeof candidate["entries"] !== "object" ||
+    candidate["entries"] === null ||
+    Array.isArray(candidate["entries"])
+  ) {
+    throw new TypeError(
+      "persistent circuit breaker state file entries must be an object",
+    );
+  }
+  return {
+    schemaVersion: PERSISTENT_CIRCUIT_BREAKER_STATE_SCHEMA_VERSION,
+    entries: candidate["entries"] as Record<
+      string,
+      PersistentCircuitBreakerStateEntry
+    >,
+  };
+};
+
+const writeAtomicJson = async (path: string, value: unknown): Promise<void> => {
+  await mkdir(dirname(path), { recursive: true });
+  const tmpPath = `${path}.${process.pid}.${randomBytes(4).toString("hex")}.tmp`;
+  await writeFile(tmpPath, canonicalJson(value), "utf8");
+  await rename(tmpPath, path);
 };
 
 /**

@@ -88,7 +88,7 @@ Persisted multimodal accessibility-judge verdict artifact.
 
 ##### contractVersion
 
-> `readonly` **contractVersion**: `"1.18.0"`
+> `readonly` **contractVersion**: `"1.21.0"`
 
 ##### criteria
 
@@ -356,7 +356,7 @@ Persisted, canonical-JSON, per-job repair-iteration log.
 
 ##### contractVersion
 
-> `readonly` **contractVersion**: `"1.18.0"`
+> `readonly` **contractVersion**: `"1.21.0"`
 
 ##### generatedAt
 
@@ -919,7 +919,7 @@ input set is byte-identical and the entries are sorted before write.
 
 ##### contractVersion
 
-> `readonly` **contractVersion**: `"1.18.0"`
+> `readonly` **contractVersion**: `"1.21.0"`
 
 ##### diffArtifactBasename?
 
@@ -971,7 +971,7 @@ Persisted case-merger artifact (Issue #1937).
 
 ##### contractVersion
 
-> `readonly` **contractVersion**: `"1.18.0"`
+> `readonly` **contractVersion**: `"1.21.0"`
 
 ##### entries
 
@@ -1106,7 +1106,7 @@ Total bytes of cleared tool result blocks at the boundary.
 
 ##### contractVersion
 
-> `readonly` **contractVersion**: `"1.18.0"`
+> `readonly` **contractVersion**: `"1.21.0"`
 
 ##### jobId
 
@@ -1150,7 +1150,7 @@ Persisted, fully-redacted artifact form of a compiled prompt.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.18.0"`
+> **contractVersion**: `"1.21.0"`
 
 ##### hashes
 
@@ -2368,7 +2368,7 @@ Aggregate dry-run report artifact.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.18.0"`
+> **contractVersion**: `"1.21.0"`
 
 ##### credentialsIncluded
 
@@ -2721,7 +2721,7 @@ Sorted by filename for deterministic emission.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.18.0"`
+> **contractVersion**: `"1.21.0"`
 
 ##### exportedTestCaseCount
 
@@ -2796,6 +2796,161 @@ Sorted, de-duplicated.
 
 ***
 
+### FaithfulnessStepVerdict
+
+Per-step faithfulness verdict emitted by the cross-family judge.
+
+`stepIndex` mirrors `GeneratedTestCaseStep.index` (1-based). `message` is
+a short reviewer-readable rationale. The judge MAY omit step verdicts —
+older callers that only consume the legacy `hallucinations` / `mismatches`
+arrays continue to work.
+
+#### Properties
+
+##### message
+
+> `readonly` **message**: `string`
+
+##### stepIndex
+
+> `readonly` **stepIndex**: `number`
+
+##### testCaseId
+
+> `readonly` **testCaseId**: `string`
+
+##### verdict
+
+> `readonly` **verdict**: `"match"` \| `"evidence_partial"` \| `"mismatch"`
+
+***
+
+### FaithfulnessTierReport
+
+Persistable per-run report capturing the tier path that produced the
+cross-modal faithfulness score (Issue #2066).
+
+The report is emitted on every run that has a non-refused
+[FaithfulnessVerdict](#faithfulnessverdict), regardless of whether the gate passes. It
+lets reviewers audit why a label-only step that was visually only
+partially verified did NOT trigger a `mismatch`.
+
+#### Properties
+
+##### aggregatePasses
+
+> `readonly` **aggregatePasses**: `boolean`
+
+Whether the aggregate score clears the threshold.
+
+##### aggregateScore
+
+> `readonly` **aggregateScore**: `number`
+
+Aggregate cross-modal faithfulness score after tier weighting.
+
+##### aggregateThreshold
+
+> `readonly` **aggregateThreshold**: `number`
+
+Threshold the aggregate is compared against (profile-scoped).
+
+##### contractVersion
+
+> `readonly` **contractVersion**: `"1.21.0"`
+
+##### entries
+
+> `readonly` **entries**: readonly [`FaithfulnessTierReportEntry`](#faithfulnesstierreportentry)[]
+
+Per-step records, sorted by `(testCaseId, stepIndex)`.
+
+##### evidencePartialCount
+
+> `readonly` **evidencePartialCount**: `number`
+
+Steps where the tier-aware score is `0.85`.
+
+##### generatedAt
+
+> `readonly` **generatedAt**: `string`
+
+##### jobId
+
+> `readonly` **jobId**: `string`
+
+##### matchCount
+
+> `readonly` **matchCount**: `number`
+
+Steps where the tier-aware score is `1.0`.
+
+##### mismatchCount
+
+> `readonly` **mismatchCount**: `number`
+
+Steps where the tier-aware score is `0.0`.
+
+##### schemaVersion
+
+> `readonly` **schemaVersion**: `"1.0.0"`
+
+##### stepCount
+
+> `readonly` **stepCount**: `number`
+
+Total step count covered by the report.
+
+***
+
+### FaithfulnessTierReportEntry
+
+One per-step entry of the faithfulness-tier-report.
+
+#### Properties
+
+##### message?
+
+> `readonly` `optional` **message?**: `string`
+
+Optional reviewer-readable message attached by the judge.
+
+##### passesThreshold
+
+> `readonly` **passesThreshold**: `boolean`
+
+Whether the step's `(verdict, score)` clears its tier-aware threshold.
+
+##### score
+
+> `readonly` **score**: `number`
+
+Per-step score `{1.0 | 0.85 | 0.0}` derived from `verdict`.
+
+##### stepIndex
+
+> `readonly` **stepIndex**: `number`
+
+##### testCaseId
+
+> `readonly` **testCaseId**: `string`
+
+##### tier
+
+> `readonly` **tier**: `"concrete_data"` \| `"label_only"`
+
+##### tierReason
+
+> `readonly` **tierReason**: `string`
+
+Reviewer-readable indicator that explains the tier classification.
+
+##### verdict
+
+> `readonly` **verdict**: `"match"` \| `"evidence_partial"` \| `"mismatch"`
+
+***
+
 ### FaithfulnessVerdict
 
 Persisted screenshot-vs-cases faithfulness verdict artifact.
@@ -2812,7 +2967,7 @@ Persisted screenshot-vs-cases faithfulness verdict artifact.
 
 ##### contractVersion
 
-> `readonly` **contractVersion**: `"1.18.0"`
+> `readonly` **contractVersion**: `"1.21.0"`
 
 ##### fallbackReason
 
@@ -2848,7 +3003,7 @@ Persisted screenshot-vs-cases faithfulness verdict artifact.
 
 ##### promptTemplateVersion
 
-> `readonly` **promptTemplateVersion**: `"faithfulness-judge.v1"`
+> `readonly` **promptTemplateVersion**: `"faithfulness-judge.v2"`
 
 ##### refusal?
 
@@ -2856,13 +3011,22 @@ Persisted screenshot-vs-cases faithfulness verdict artifact.
 
 ##### schemaVersion
 
-> `readonly` **schemaVersion**: `"1.0.0"`
+> `readonly` **schemaVersion**: `"1.1.0"`
 
 ##### score
 
 > `readonly` **score**: `number`
 
 Aggregate cross-modal faithfulness score in `[0, 1]`.
+
+##### stepVerdicts?
+
+> `readonly` `optional` **stepVerdicts?**: readonly [`FaithfulnessStepVerdict`](#faithfulnessstepverdict)[]
+
+Per-step verdicts (Issue #2066). Optional for backwards compatibility
+with verdicts persisted under schema 1.0.0. When emitted, the policy
+gate uses the per-step labels to compute the tier-aware faithfulness
+score and the persisted `faithfulness-tier-report.json` artifact.
 
 ##### verdict
 
@@ -3050,7 +3214,7 @@ Verbatim copy of the budget envelope applied to this job.
 
 ##### bySource
 
-> **bySource**: `Readonly`\<`Record`\<[`AgentSourceLabel`](#agentsourcelabel), \{ `attemptIds?`: readonly `string`[]; `callCount`: `number`; `constrainedDecoding?`: \{ `activeCallCount`: `number`; `adapterId`: [`LlmConstrainedDecodingAdapterId`](#llmconstraineddecodingadapterid); `adapterVersion?`: `string`; `enforcement`: [`LlmConstrainedDecodingEnforcement`](#llmconstraineddecodingenforcement); `fallbackCallCount`: `number`; `fallbackReasons?`: readonly `string`[]; \}; `costMinorUnits`: `number`; `deployment?`: `string`; `idempotentReplayHits`: `number`; `inFlightDedupHits`: `number`; `tokensIn`: `number`; `tokensOut`: `number`; \}\>\>
+> **bySource**: `Readonly`\<`Record`\<[`AgentSourceLabel`](#agentsourcelabel), \{ `attemptIds?`: readonly `string`[]; `callCount`: `number`; `circuitBreakerStates?`: readonly (`"closed"` \| `"open"` \| `"half_open"`)[]; `constrainedDecoding?`: \{ `activeCallCount`: `number`; `adapterId`: [`LlmConstrainedDecodingAdapterId`](#llmconstraineddecodingadapterid); `adapterVersion?`: `string`; `enforcement`: [`LlmConstrainedDecodingEnforcement`](#llmconstraineddecodingenforcement); `fallbackCallCount`: `number`; `fallbackReasons?`: readonly `string`[]; \}; `costMinorUnits`: `number`; `deployment?`: `string`; `idempotentReplayHits`: `number`; `inFlightDedupHits`: `number`; `tokensIn`: `number`; `tokensOut`: `number`; \}\>\>
 
 Deterministic per-agent-source attribution sealed in attestation.
 
@@ -3076,7 +3240,7 @@ Aggregate counters across the `bySource` map.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.18.0"`
+> **contractVersion**: `"1.21.0"`
 
 ##### currencyLabel?
 
@@ -3714,7 +3878,7 @@ Single generated test case.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.18.0"`
+> **contractVersion**: `"1.21.0"`
 
 ##### expectedResults
 
@@ -3825,7 +3989,7 @@ Whether the artifact came from a replay-cache hit.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.18.0"`
+> **contractVersion**: `"1.21.0"`
 
 ##### generatedAt
 
@@ -4041,7 +4205,7 @@ referenced files and recomputing each row.
 
 ##### contractVersion
 
-> `readonly` **contractVersion**: `"1.18.0"`
+> `readonly` **contractVersion**: `"1.21.0"`
 
 ##### digest
 
@@ -4071,7 +4235,7 @@ Entries sorted by `filename` ascending.
 
 ### HarnessArtifactManifestEntry
 
-One row of [HarnessArtifactManifest.entries](#entries-1).
+One row of [HarnessArtifactManifest.entries](#entries-2).
 
 #### Properties
 
@@ -4267,7 +4431,7 @@ Hard-invariant intent-delta report artifact (Issue #1373).
 
 ##### contractVersion
 
-> **contractVersion**: `"1.18.0"`
+> **contractVersion**: `"1.21.0"`
 
 ##### currentIntentHash
 
@@ -4581,7 +4745,7 @@ Aggregate `jira-created-subtasks.json` artifact (Issue #1482).
 
 ##### contractVersion
 
-> **contractVersion**: `"1.18.0"`
+> **contractVersion**: `"1.21.0"`
 
 ##### credentialsIncluded
 
@@ -5217,7 +5381,7 @@ Audit metadata for the run.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.18.0"`
+> **contractVersion**: `"1.21.0"`
 
 ##### createdCount
 
@@ -5419,7 +5583,7 @@ Persisted production-runner judge-consensus artifact.
 
 ##### contractVersion
 
-> `readonly` **contractVersion**: `"1.18.0"`
+> `readonly` **contractVersion**: `"1.21.0"`
 
 ##### crossFamily?
 
@@ -5642,7 +5806,7 @@ the disagreement-rate trending consumes (B.10).
 
 ##### contractVersion
 
-> `readonly` **contractVersion**: `"1.18.0"`
+> `readonly` **contractVersion**: `"1.21.0"`
 
 ##### costByFamily
 
@@ -5862,7 +6026,7 @@ Persisted logic-judge verdict artifact.
 
 ##### contractVersion
 
-> `readonly` **contractVersion**: `"1.18.0"`
+> `readonly` **contractVersion**: `"1.21.0"`
 
 ##### findings
 
@@ -6359,7 +6523,7 @@ Per-release primitive-map status report.
 
 ##### contractVersion
 
-> `readonly` **contractVersion**: `"1.18.0"`
+> `readonly` **contractVersion**: `"1.21.0"`
 
 ##### counts
 
@@ -7574,7 +7738,7 @@ catalog class appears exactly once.
 
 ##### contractVersion
 
-> `readonly` **contractVersion**: `"1.18.0"`
+> `readonly` **contractVersion**: `"1.21.0"`
 
 ##### generatedAt
 
@@ -7843,7 +8007,7 @@ Per-candidate scores, ordered by descending score then id.
 
 ##### contractVersion
 
-> `readonly` **contractVersion**: `"1.18.0"`
+> `readonly` **contractVersion**: `"1.21.0"`
 
 ##### datasetId
 
@@ -8005,7 +8169,7 @@ Score earned by a [PromptOptimizerCandidate](#promptoptimizercandidate) on the e
 
 > `readonly` **directiveBreakdown**: readonly `object`[]
 
-Per-directive points contributed (sums to [score](#score-2)).
+Per-directive points contributed (sums to [score](#score-3)).
 
 ##### passingCaseCount
 
@@ -8076,7 +8240,7 @@ Aggregate `qc-created-entities.json` artifact (Issue #1372).
 
 ##### contractVersion
 
-> **contractVersion**: `"1.18.0"`
+> **contractVersion**: `"1.21.0"`
 
 ##### entities
 
@@ -8166,7 +8330,7 @@ Aggregate QC mapping preview artifact.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.18.0"`
+> **contractVersion**: `"1.21.0"`
 
 ##### entries
 
@@ -8842,7 +9006,7 @@ Gate 9 — context budget regression (Issue #1802).
 
 ##### contractVersion
 
-> `readonly` **contractVersion**: `"1.18.0"`
+> `readonly` **contractVersion**: `"1.21.0"`
 
 ##### libraryCoverageStatusCompleteness
 
@@ -8933,7 +9097,7 @@ The release pipeline fails when any verdict has `passed === false`.
 
 ##### contractVersion
 
-> `readonly` **contractVersion**: `"1.18.0"`
+> `readonly` **contractVersion**: `"1.21.0"`
 
 ##### mutationKillRate
 
@@ -9087,7 +9251,7 @@ gate passed.
 
 ##### contractVersion
 
-> `readonly` **contractVersion**: `"1.18.0"`
+> `readonly` **contractVersion**: `"1.21.0"`
 
 ##### gates
 
@@ -9276,7 +9440,7 @@ ISO-8601 UTC timestamp at the moment of persistence.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.18.0"`
+> **contractVersion**: `"1.21.0"`
 
 ##### fromState?
 
@@ -9344,7 +9508,7 @@ Number of cases currently in `approved` (or `exported`/`transferred`) state.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.18.0"`
+> **contractVersion**: `"1.21.0"`
 
 ##### fourEyesPolicy?
 
@@ -9570,7 +9734,7 @@ Persisted production-runner run-quality artifact.
 
 ##### contractVersion
 
-> `readonly` **contractVersion**: `"1.18.0"`
+> `readonly` **contractVersion**: `"1.21.0"`
 
 ##### degradedReasons
 
@@ -9874,7 +10038,7 @@ Sorted by `testCaseId` for byte stability. Empty when `refusal` is set.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.18.0"`
+> **contractVersion**: `"1.21.0"`
 
 ##### gatewayRelease
 
@@ -9967,7 +10131,7 @@ Changelog-approved signed migration bundle for banking-profile runs.
 
 ##### contractVersion
 
-> `readonly` **contractVersion**: `"4.57.0"`
+> `readonly` **contractVersion**: `"4.60.0"`
 
 ##### entries
 
@@ -10185,6 +10349,132 @@ Recognized custom attribute and its intended downstream consumer.
 
 ***
 
+### TechniqueCoverageMinimumPolicy
+
+Issue #2068 — policy-profile knob that drives the tier-elastic
+resolution of `policy:technique-coverage-minimum`. Optional for
+backwards compatibility; `undefined` is treated as
+`{ mode: "tier-elastic" }`.
+
+#### Properties
+
+##### mode
+
+> `readonly` **mode**: `"tier-elastic"` \| `"fixed"`
+
+***
+
+### TechniqueQuotaReport
+
+Persistable per-run report capturing the
+`policy:technique-coverage-minimum` resolution path (Issue #2068).
+
+The report is emitted on every run that has a `CoveragePlan`,
+regardless of whether the gate passes — operators rely on it to audit
+why a small-screen mask did NOT trigger a quota deficit even though
+the planner published a fixed `12` minCount. Entries are sorted by
+`(screenId, technique)`.
+
+#### Properties
+
+##### contractVersion
+
+> `readonly` **contractVersion**: `"1.21.0"`
+
+##### deficitCount
+
+> `readonly` **deficitCount**: `number`
+
+##### entries
+
+> `readonly` **entries**: readonly [`TechniqueQuotaReportEntry`](#techniquequotareportentry)[]
+
+##### entryCount
+
+> `readonly` **entryCount**: `number`
+
+##### generatedAt
+
+> `readonly` **generatedAt**: `string`
+
+##### jobId
+
+> `readonly` **jobId**: `string`
+
+##### mode
+
+> `readonly` **mode**: `"tier-elastic"` \| `"fixed"`
+
+##### passCount
+
+> `readonly` **passCount**: `number`
+
+##### policyProfileId
+
+> `readonly` **policyProfileId**: `string`
+
+##### schemaVersion
+
+> `readonly` **schemaVersion**: `"1.0.0"`
+
+##### screenCount
+
+> `readonly` **screenCount**: `number`
+
+***
+
+### TechniqueQuotaReportEntry
+
+One per-screen per-technique entry of `technique-quota-report.json`.
+
+#### Properties
+
+##### actualCount
+
+> `readonly` **actualCount**: `number`
+
+Cases anchored to the screen with this technique.
+
+##### fieldCount
+
+> `readonly` **fieldCount**: `number`
+
+Coverage-relevant field count for the screen, derived from
+`CoveragePlan.perElement`.
+
+##### formula
+
+> `readonly` **formula**: `string`
+
+Stable, machine-readable formula label that produced
+`requiredCount`. `tier-elastic:fields<=8:ceil(1.5*fields)` etc.
+
+##### mode
+
+> `readonly` **mode**: `"tier-elastic"` \| `"fixed"`
+
+Mode that was active when the report was built.
+
+##### requiredCount
+
+> `readonly` **requiredCount**: `number`
+
+Effective minimum the policy gate enforces this run.
+
+##### screenId
+
+> `readonly` **screenId**: `string`
+
+##### status
+
+> `readonly` **status**: `"pass"` \| `"deficit"`
+
+##### technique
+
+> `readonly` **technique**: [`TestCaseTechnique29119`](#testcasetechnique29119)
+
+***
+
 ### TenantScope
 
 Multi-tenant scope (Issue #1944).
@@ -10283,7 +10573,7 @@ Avg assumptions per case.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.18.0"`
+> **contractVersion**: `"1.21.0"`
 
 ##### duplicatePairs
 
@@ -10421,7 +10711,7 @@ Aggregate dedupe report artifact (Issue #1373).
 
 ##### contractVersion
 
-> **contractVersion**: `"1.18.0"`
+> **contractVersion**: `"1.21.0"`
 
 ##### embeddingProvider
 
@@ -10531,7 +10821,7 @@ Aggregate test-case delta report (always paired with `IntentDeltaReport`).
 
 ##### contractVersion
 
-> **contractVersion**: `"1.18.0"`
+> **contractVersion**: `"1.21.0"`
 
 ##### generatedAt
 
@@ -10917,6 +11207,23 @@ Risk categories that always require manual review.
 
 Risk categories that block export when missing trace/expected/PII checks fail.
 
+##### techniqueCoverageMinimum?
+
+> `optional` **techniqueCoverageMinimum?**: [`TechniqueCoverageMinimumPolicy`](#techniquecoverageminimumpolicy)
+
+Issue #2068 — `policy:technique-coverage-minimum` resolution mode.
+
+Drives whether the gate enforces the planner's fixed
+`CoveragePlan.perScreen[].techniqueQuotas` rows verbatim
+(`{ mode: "fixed" }`) or replaces the equivalence-partitioning
+quota with a tier-elastic formula that scales with the screen's
+coverage-relevant field count (`{ mode: "tier-elastic" }`).
+
+Optional for backwards compatibility: when omitted the gate falls
+back to `tier-elastic` so small-screen masks with `<= 8` fields
+stop tripping the closeout-blocking 12-EP floor that was the
+original closeout child #2026.
+
 ***
 
 ### TestCasePolicyProvenanceSummary
@@ -10965,7 +11272,7 @@ Whether ANY case was blocked (downstream export gate).
 
 ##### contractVersion
 
-> **contractVersion**: `"1.18.0"`
+> **contractVersion**: `"1.21.0"`
 
 ##### decisions
 
@@ -11047,7 +11354,7 @@ Single policy-rule violation surfaced for a generated test case.
 
 ##### outcome
 
-> **outcome**: `"schema_invalid"` \| `"missing_trace"` \| `"missing_expected_results"` \| `"semantic_suspicious_content"` \| `"pii_in_test_data"` \| `"ict_register_ref_required"` \| `"technique_quota_breach"` \| `"p0_risk_element_uncovered"` \| `"missing_negative_or_validation_for_required_field"` \| `"missing_accessibility_case"` \| `"missing_boundary_case"` \| `"duplicate_test_case"` \| `"regulated_risk_review_required"` \| `"ambiguity_review_required"` \| `"qc_mapping_not_exportable"` \| `"low_confidence_review_required"` \| `"open_questions_review_required"` \| `"visual_sidecar_failure"` \| `"visual_sidecar_fallback_used"` \| `"visual_sidecar_low_confidence"` \| `"visual_sidecar_possible_pii"` \| `"visual_sidecar_prompt_injection_text"` \| `"cross_modal_faithfulness_score_below_threshold"` \| `"risk_tag_downgrade_detected"` \| `"custom_context_risk_escalation"` \| `"multi_source_conflict_present"` \| `"coverage_drift_exceeded"` \| `"a11y_criterion_covered_weakly"` \| `"a11y_criterion_not_covered"`
+> **outcome**: `"schema_invalid"` \| `"missing_trace"` \| `"missing_expected_results"` \| `"semantic_suspicious_content"` \| `"pii_in_test_data"` \| `"ict_register_ref_required"` \| `"technique_quota_breach"` \| `"p0_risk_element_uncovered"` \| `"missing_negative_or_validation_for_required_field"` \| `"missing_accessibility_case"` \| `"missing_boundary_case"` \| `"duplicate_test_case"` \| `"regulated_risk_review_required"` \| `"ambiguity_review_required"` \| `"qc_mapping_not_exportable"` \| `"low_confidence_review_required"` \| `"open_questions_review_required"` \| `"visual_sidecar_failure"` \| `"visual_sidecar_fallback_used"` \| `"visual_sidecar_fallback_used_succeeded"` \| `"visual_sidecar_both_failed"` \| `"visual_sidecar_low_confidence"` \| `"visual_sidecar_possible_pii"` \| `"visual_sidecar_prompt_injection_text"` \| `"cross_modal_faithfulness_score_below_threshold"` \| `"risk_tag_downgrade_detected"` \| `"custom_context_risk_escalation"` \| `"multi_source_conflict_present"` \| `"coverage_drift_exceeded"` \| `"a11y_criterion_covered_weakly"` \| `"a11y_criterion_not_covered"`
 
 ##### path?
 
@@ -11102,7 +11409,7 @@ Single semantic / structural validation issue.
 
 ##### code
 
-> **code**: `"schema_invalid"` \| `"missing_trace"` \| `"trace_screen_unknown"` \| `"missing_expected_results"` \| `"steps_unordered"` \| `"steps_indices_non_sequential"` \| `"step_action_empty"` \| `"step_action_too_long"` \| `"duplicate_step_index"` \| `"duplicate_test_case_id"` \| `"title_empty"` \| `"objective_empty"` \| `"risk_category_invalid_for_intent"` \| `"qc_mapping_blocking_reasons_missing"` \| `"qc_mapping_exportable_inconsistent"` \| `"quality_signals_confidence_out_of_range"` \| `"quality_signals_coverage_unknown_id"` \| `"test_data_pii_detected"` \| `"test_data_unredacted_value"` \| `"preconditions_pii_detected"` \| `"expected_results_pii_detected"` \| `"assumptions_excessive"` \| `"open_questions_excessive"` \| `"ambiguity_without_review_state"` \| `"unsupported_unresolved_validation_detail"` \| `"semantic_suspicious_content"` \| `"domain_invariant_violation"`
+> **code**: `"schema_invalid"` \| `"missing_trace"` \| `"trace_screen_unknown"` \| `"missing_expected_results"` \| `"steps_unordered"` \| `"steps_indices_non_sequential"` \| `"step_action_empty"` \| `"step_action_too_long"` \| `"duplicate_step_index"` \| `"duplicate_test_case_id"` \| `"title_empty"` \| `"objective_empty"` \| `"risk_category_invalid_for_intent"` \| `"qc_mapping_blocking_reasons_missing"` \| `"qc_mapping_exportable_inconsistent"` \| `"quality_signals_confidence_out_of_range"` \| `"quality_signals_coverage_unknown_id"` \| `"test_data_pii_detected"` \| `"test_data_unredacted_value"` \| `"preconditions_pii_detected"` \| `"expected_results_pii_detected"` \| `"assumptions_excessive"` \| `"open_questions_excessive"` \| `"ambiguity_without_review_state"` \| `"unsupported_unresolved_validation_detail"` \| `"needs_open_question_clarification"` \| `"semantic_suspicious_content"` \| `"domain_invariant_violation"`
 
 ##### message
 
@@ -11136,7 +11443,7 @@ Whether the report blocks downstream review/export (any error => true).
 
 ##### contractVersion
 
-> **contractVersion**: `"1.18.0"`
+> **contractVersion**: `"1.21.0"`
 
 ##### errorCount
 
@@ -11606,7 +11913,7 @@ Aggregate traceability-matrix artifact (Issue #1373).
 
 ##### contractVersion
 
-> **contractVersion**: `"1.18.0"`
+> **contractVersion**: `"1.21.0"`
 
 ##### exportProfile?
 
@@ -11746,7 +12053,7 @@ Per-case policy decision (mirrors `TestCasePolicyDecisionRecord.decision`).
 
 ##### policyOutcomes
 
-> **policyOutcomes**: (`"schema_invalid"` \| `"missing_trace"` \| `"missing_expected_results"` \| `"semantic_suspicious_content"` \| `"pii_in_test_data"` \| `"ict_register_ref_required"` \| `"technique_quota_breach"` \| `"p0_risk_element_uncovered"` \| `"missing_negative_or_validation_for_required_field"` \| `"missing_accessibility_case"` \| `"missing_boundary_case"` \| `"duplicate_test_case"` \| `"regulated_risk_review_required"` \| `"ambiguity_review_required"` \| `"qc_mapping_not_exportable"` \| `"low_confidence_review_required"` \| `"open_questions_review_required"` \| `"visual_sidecar_failure"` \| `"visual_sidecar_fallback_used"` \| `"visual_sidecar_low_confidence"` \| `"visual_sidecar_possible_pii"` \| `"visual_sidecar_prompt_injection_text"` \| `"cross_modal_faithfulness_score_below_threshold"` \| `"risk_tag_downgrade_detected"` \| `"custom_context_risk_escalation"` \| `"multi_source_conflict_present"` \| `"coverage_drift_exceeded"` \| `"a11y_criterion_covered_weakly"` \| `"a11y_criterion_not_covered"`)[]
+> **policyOutcomes**: (`"schema_invalid"` \| `"missing_trace"` \| `"missing_expected_results"` \| `"semantic_suspicious_content"` \| `"pii_in_test_data"` \| `"ict_register_ref_required"` \| `"technique_quota_breach"` \| `"p0_risk_element_uncovered"` \| `"missing_negative_or_validation_for_required_field"` \| `"missing_accessibility_case"` \| `"missing_boundary_case"` \| `"duplicate_test_case"` \| `"regulated_risk_review_required"` \| `"ambiguity_review_required"` \| `"qc_mapping_not_exportable"` \| `"low_confidence_review_required"` \| `"open_questions_review_required"` \| `"visual_sidecar_failure"` \| `"visual_sidecar_fallback_used"` \| `"visual_sidecar_fallback_used_succeeded"` \| `"visual_sidecar_both_failed"` \| `"visual_sidecar_low_confidence"` \| `"visual_sidecar_possible_pii"` \| `"visual_sidecar_prompt_injection_text"` \| `"cross_modal_faithfulness_score_below_threshold"` \| `"risk_tag_downgrade_detected"` \| `"custom_context_risk_escalation"` \| `"multi_source_conflict_present"` \| `"coverage_drift_exceeded"` \| `"a11y_criterion_covered_weakly"` \| `"a11y_criterion_not_covered"`)[]
 
 Per-case sorted, deduplicated policy outcome codes that fired.
 
@@ -11876,7 +12183,7 @@ Per-case policy decision at the time this step row was built.
 
 ##### policyOutcomes
 
-> **policyOutcomes**: (`"schema_invalid"` \| `"missing_trace"` \| `"missing_expected_results"` \| `"semantic_suspicious_content"` \| `"pii_in_test_data"` \| `"ict_register_ref_required"` \| `"technique_quota_breach"` \| `"p0_risk_element_uncovered"` \| `"missing_negative_or_validation_for_required_field"` \| `"missing_accessibility_case"` \| `"missing_boundary_case"` \| `"duplicate_test_case"` \| `"regulated_risk_review_required"` \| `"ambiguity_review_required"` \| `"qc_mapping_not_exportable"` \| `"low_confidence_review_required"` \| `"open_questions_review_required"` \| `"visual_sidecar_failure"` \| `"visual_sidecar_fallback_used"` \| `"visual_sidecar_low_confidence"` \| `"visual_sidecar_possible_pii"` \| `"visual_sidecar_prompt_injection_text"` \| `"cross_modal_faithfulness_score_below_threshold"` \| `"risk_tag_downgrade_detected"` \| `"custom_context_risk_escalation"` \| `"multi_source_conflict_present"` \| `"coverage_drift_exceeded"` \| `"a11y_criterion_covered_weakly"` \| `"a11y_criterion_not_covered"`)[]
+> **policyOutcomes**: (`"schema_invalid"` \| `"missing_trace"` \| `"missing_expected_results"` \| `"semantic_suspicious_content"` \| `"pii_in_test_data"` \| `"ict_register_ref_required"` \| `"technique_quota_breach"` \| `"p0_risk_element_uncovered"` \| `"missing_negative_or_validation_for_required_field"` \| `"missing_accessibility_case"` \| `"missing_boundary_case"` \| `"duplicate_test_case"` \| `"regulated_risk_review_required"` \| `"ambiguity_review_required"` \| `"qc_mapping_not_exportable"` \| `"low_confidence_review_required"` \| `"open_questions_review_required"` \| `"visual_sidecar_failure"` \| `"visual_sidecar_fallback_used"` \| `"visual_sidecar_fallback_used_succeeded"` \| `"visual_sidecar_both_failed"` \| `"visual_sidecar_low_confidence"` \| `"visual_sidecar_possible_pii"` \| `"visual_sidecar_prompt_injection_text"` \| `"cross_modal_faithfulness_score_below_threshold"` \| `"risk_tag_downgrade_detected"` \| `"custom_context_risk_escalation"` \| `"multi_source_conflict_present"` \| `"coverage_drift_exceeded"` \| `"a11y_criterion_covered_weakly"` \| `"a11y_criterion_not_covered"`)[]
 
 Per-case sorted, deduplicated policy outcomes at the time this step row was built.
 
@@ -12100,7 +12407,7 @@ Audit metadata for the run.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.18.0"`
+> **contractVersion**: `"1.21.0"`
 
 ##### createdCount
 
@@ -12330,6 +12637,13 @@ own circuit-breaker telemetry without a translation layer.
 
 Sequence index, 1-based across both primary and fallback attempts.
 
+##### circuitBreakerState?
+
+> `optional` **circuitBreakerState?**: `"closed"` \| `"open"` \| `"half_open"`
+
+Circuit-breaker state observed immediately before this attempt was
+dispatched. Absent when the caller did not wire a caller-side breaker.
+
 ##### deployment
 
 > **deployment**: [`SidecarDeployment`](#sidecardeployment-1)
@@ -12468,7 +12782,7 @@ can be debugged from the artifact alone.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.18.0"`
+> **contractVersion**: `"1.21.0"`
 
 ##### deployment
 
@@ -12590,7 +12904,7 @@ screenshot bytes.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.18.0"`
+> **contractVersion**: `"1.21.0"`
 
 ##### generatedAt
 
@@ -12752,7 +13066,7 @@ Whether any record carries a non-`ok`/non-`fallback_used` outcome that blocks ge
 
 ##### contractVersion
 
-> **contractVersion**: `"1.18.0"`
+> **contractVersion**: `"1.21.0"`
 
 ##### generatedAt
 
@@ -13029,7 +13343,7 @@ Active signing mode; mirrored from the run input for auditability.
 
 ##### testIntelligenceContractVersion
 
-> **testIntelligenceContractVersion**: `"1.18.0"`
+> **testIntelligenceContractVersion**: `"1.21.0"`
 
 ##### visualSidecar?
 
@@ -13458,7 +13772,7 @@ and timestamps are caller-provided.
 
 ##### testIntelligenceContractVersion
 
-> **testIntelligenceContractVersion**: `"1.18.0"`
+> **testIntelligenceContractVersion**: `"1.21.0"`
 
 ##### thresholds
 
@@ -13757,7 +14071,7 @@ raw paste bytes, or PII.
 
 ##### testIntelligenceContractVersion
 
-> **testIntelligenceContractVersion**: `"1.18.0"`
+> **testIntelligenceContractVersion**: `"1.21.0"`
 
 Test-intelligence subsurface contract version.
 
@@ -14942,7 +15256,7 @@ Submit response for accepted jobs.
 
 ###### Inherited from
 
-[`WorkspaceSubmitAccepted`](#workspacesubmitaccepted).[`jobId`](#jobid-66)
+[`WorkspaceSubmitAccepted`](#workspacesubmitaccepted).[`jobId`](#jobid-68)
 
 ##### pasteDeltaSummary?
 
@@ -14985,7 +15299,7 @@ Present only when `figmaSourceMode === "figma_paste" | "figma_plugin"` and diff 
 
 ###### Inherited from
 
-[`WorkspaceSubmitAccepted`](#workspacesubmitaccepted).[`status`](#status-22)
+[`WorkspaceSubmitAccepted`](#workspacesubmitaccepted).[`status`](#status-23)
 
 ***
 
@@ -18718,6 +19032,22 @@ applicable so a single auditor can route on a unified vocabulary.
 
 ***
 
+### FaithfulnessStepVerdictLabel
+
+> **FaithfulnessStepVerdictLabel** = *typeof* [`FAITHFULNESS_STEP_VERDICT_LABELS`](#faithfulness_step_verdict_labels)\[`number`\]
+
+Discriminant of an allowed per-step faithfulness verdict.
+
+***
+
+### FaithfulnessTierLabel
+
+> **FaithfulnessTierLabel** = *typeof* [`FAITHFULNESS_TIER_LABELS`](#faithfulness_tier_labels)\[`number`\]
+
+Discriminant of a step-level faithfulness tier.
+
+***
+
 ### FaithfulnessVerdictLabel
 
 > **FaithfulnessVerdictLabel** = *typeof* [`ALLOWED_FAITHFULNESS_VERDICTS`](#allowed_faithfulness_verdicts)\[`number`\]
@@ -19030,6 +19360,12 @@ Probe rows can cover declared capability flags plus the mandatory text-chat base
 > **LlmCapabilityProbeOutcome** = `"supported"` \| `"unsupported"` \| `"untested"` \| `"probe_failed"`
 
 Per-capability probe verdict carried in the persisted artifact.
+
+***
+
+### LlmCircuitState
+
+> **LlmCircuitState** = `"closed"` \| `"open"` \| `"half_open"`
 
 ***
 
@@ -19415,6 +19751,20 @@ Subset alias for supporting source kinds.
 
 ***
 
+### TechniqueCoverageMinimumMode
+
+> **TechniqueCoverageMinimumMode** = *typeof* [`TECHNIQUE_COVERAGE_MINIMUM_MODES`](#technique_coverage_minimum_modes)\[`number`\]
+
+Discriminant of an allowed `policy:technique-coverage-minimum` mode.
+
+***
+
+### TechniqueQuotaReportStatus
+
+> **TechniqueQuotaReportStatus** = *typeof* [`TECHNIQUE_QUOTA_REPORT_STATUSES`](#technique_quota_report_statuses)\[`number`\]
+
+***
+
 ### TestCaseDeltaReason
 
 > **TestCaseDeltaReason** = *typeof* [`ALLOWED_TEST_CASE_DELTA_REASONS`](#allowed_test_case_delta_reasons)\[`number`\]
@@ -19505,7 +19855,7 @@ Coarse-grain test type.
 
 ### TestCaseValidationSeverity
 
-> **TestCaseValidationSeverity** = `"error"` \| `"warning"`
+> **TestCaseValidationSeverity** = `"error"` \| `"warning"` \| `"info"`
 
 Severity surfaced for a single validation issue.
 
@@ -21187,7 +21537,7 @@ for the same evaluation.
 
 ### ALLOWED\_TEST\_CASE\_POLICY\_OUTCOMES
 
-> `const` **ALLOWED\_TEST\_CASE\_POLICY\_OUTCOMES**: readonly \[`"missing_trace"`, `"missing_expected_results"`, `"pii_in_test_data"`, `"ict_register_ref_required"`, `"technique_quota_breach"`, `"p0_risk_element_uncovered"`, `"missing_negative_or_validation_for_required_field"`, `"missing_accessibility_case"`, `"missing_boundary_case"`, `"schema_invalid"`, `"duplicate_test_case"`, `"regulated_risk_review_required"`, `"ambiguity_review_required"`, `"qc_mapping_not_exportable"`, `"low_confidence_review_required"`, `"open_questions_review_required"`, `"visual_sidecar_failure"`, `"visual_sidecar_fallback_used"`, `"visual_sidecar_low_confidence"`, `"visual_sidecar_possible_pii"`, `"visual_sidecar_prompt_injection_text"`, `"semantic_suspicious_content"`, `"cross_modal_faithfulness_score_below_threshold"`, `"risk_tag_downgrade_detected"`, `"custom_context_risk_escalation"`, `"multi_source_conflict_present"`, `"coverage_drift_exceeded"`, `"a11y_criterion_covered_weakly"`, `"a11y_criterion_not_covered"`\]
+> `const` **ALLOWED\_TEST\_CASE\_POLICY\_OUTCOMES**: readonly \[`"missing_trace"`, `"missing_expected_results"`, `"pii_in_test_data"`, `"ict_register_ref_required"`, `"technique_quota_breach"`, `"p0_risk_element_uncovered"`, `"missing_negative_or_validation_for_required_field"`, `"missing_accessibility_case"`, `"missing_boundary_case"`, `"schema_invalid"`, `"duplicate_test_case"`, `"regulated_risk_review_required"`, `"ambiguity_review_required"`, `"qc_mapping_not_exportable"`, `"low_confidence_review_required"`, `"open_questions_review_required"`, `"visual_sidecar_failure"`, `"visual_sidecar_fallback_used"`, `"visual_sidecar_fallback_used_succeeded"`, `"visual_sidecar_both_failed"`, `"visual_sidecar_low_confidence"`, `"visual_sidecar_possible_pii"`, `"visual_sidecar_prompt_injection_text"`, `"semantic_suspicious_content"`, `"cross_modal_faithfulness_score_below_threshold"`, `"risk_tag_downgrade_detected"`, `"custom_context_risk_escalation"`, `"multi_source_conflict_present"`, `"coverage_drift_exceeded"`, `"a11y_criterion_covered_weakly"`, `"a11y_criterion_not_covered"`\]
 
 Allowed policy outcome codes attached to a single decision row.
 Visual-sidecar codes (`visual_*`) come from the multimodal sidecar
@@ -21197,7 +21547,7 @@ gating per the Issue #1364 / #1386 update.
 
 ### ALLOWED\_TEST\_CASE\_VALIDATION\_ISSUE\_CODES
 
-> `const` **ALLOWED\_TEST\_CASE\_VALIDATION\_ISSUE\_CODES**: readonly \[`"schema_invalid"`, `"missing_trace"`, `"trace_screen_unknown"`, `"missing_expected_results"`, `"steps_unordered"`, `"steps_indices_non_sequential"`, `"step_action_empty"`, `"step_action_too_long"`, `"duplicate_step_index"`, `"duplicate_test_case_id"`, `"title_empty"`, `"objective_empty"`, `"risk_category_invalid_for_intent"`, `"qc_mapping_blocking_reasons_missing"`, `"qc_mapping_exportable_inconsistent"`, `"quality_signals_confidence_out_of_range"`, `"quality_signals_coverage_unknown_id"`, `"test_data_pii_detected"`, `"test_data_unredacted_value"`, `"preconditions_pii_detected"`, `"expected_results_pii_detected"`, `"assumptions_excessive"`, `"open_questions_excessive"`, `"ambiguity_without_review_state"`, `"unsupported_unresolved_validation_detail"`, `"semantic_suspicious_content"`, `"domain_invariant_violation"`\]
+> `const` **ALLOWED\_TEST\_CASE\_VALIDATION\_ISSUE\_CODES**: readonly \[`"schema_invalid"`, `"missing_trace"`, `"trace_screen_unknown"`, `"missing_expected_results"`, `"steps_unordered"`, `"steps_indices_non_sequential"`, `"step_action_empty"`, `"step_action_too_long"`, `"duplicate_step_index"`, `"duplicate_test_case_id"`, `"title_empty"`, `"objective_empty"`, `"risk_category_invalid_for_intent"`, `"qc_mapping_blocking_reasons_missing"`, `"qc_mapping_exportable_inconsistent"`, `"quality_signals_confidence_out_of_range"`, `"quality_signals_coverage_unknown_id"`, `"test_data_pii_detected"`, `"test_data_unredacted_value"`, `"preconditions_pii_detected"`, `"expected_results_pii_detected"`, `"assumptions_excessive"`, `"open_questions_excessive"`, `"ambiguity_without_review_state"`, `"unsupported_unresolved_validation_detail"`, `"needs_open_question_clarification"`, `"semantic_suspicious_content"`, `"domain_invariant_violation"`\]
 
 Allowed test-case validation issue codes (Issue #1364).
 The list is the runtime source of truth; new codes plug in here without
@@ -21543,7 +21893,7 @@ Schema version for persisted context-budget analyzer reports.
 
 ### CONTRACT\_VERSION
 
-> `const` **CONTRACT\_VERSION**: `"4.57.0"`
+> `const` **CONTRACT\_VERSION**: `"4.60.0"`
 
 Current contract version constant.
 Must be bumped according to CONTRACT_CHANGELOG.md rules.
@@ -21788,9 +22138,63 @@ Canonical filename for the persisted faithfulness-judge prompt artifact.
 
 ### FAITHFULNESS\_JUDGE\_PROMPT\_TEMPLATE\_VERSION
 
-> `const` **FAITHFULNESS\_JUDGE\_PROMPT\_TEMPLATE\_VERSION**: `"faithfulness-judge.v1"`
+> `const` **FAITHFULNESS\_JUDGE\_PROMPT\_TEMPLATE\_VERSION**: `"faithfulness-judge.v2"`
 
 Prompt-template version pinned onto faithfulness-judge verdict artifacts.
+
+`faithfulness-judge.v2` — Issue #2066: prompt rubric distinguishes
+`match` / `evidence_partial` / `mismatch` per step so partial-evidence
+signals are no longer collapsed into mismatches.
+
+***
+
+### FAITHFULNESS\_STEP\_VERDICT\_LABELS
+
+> `const` **FAITHFULNESS\_STEP\_VERDICT\_LABELS**: readonly \[`"match"`, `"evidence_partial"`, `"mismatch"`\]
+
+Closed runtime list of per-step faithfulness verdict labels (Issue #2066).
+
+  - `match`             — positive visual evidence for the step.
+  - `evidence_partial`  — no contradiction, but the screenshot does not
+                          fully verify the step (e.g. label-only step
+                          where the description was truncated). Treated
+                          as a soft signal, not a mismatch.
+  - `mismatch`          — positive contradiction between the step and
+                          the screenshot.
+
+***
+
+### FAITHFULNESS\_TIER\_LABELS
+
+> `const` **FAITHFULNESS\_TIER\_LABELS**: readonly \[`"concrete_data"`, `"label_only"`\]
+
+Closed runtime list of step-level faithfulness tiers.
+
+  - `concrete_data` — the step carries observable input or expected data
+                      (numeric value, message text, identifier). Threshold
+                      defaults to the strict `0.80` cross-modal floor.
+  - `label_only`    — the step asserts label-only or layout-only intent
+                      (e.g. "open the form", "see the heading"). Partial
+                      visual evidence is sufficient (`evidence_partial`
+                      passes at `>= 0.80`); strict matches are only
+                      required when the score is `>= 0.95`.
+
+***
+
+### FAITHFULNESS\_TIER\_REPORT\_ARTIFACT\_FILENAME
+
+> `const` **FAITHFULNESS\_TIER\_REPORT\_ARTIFACT\_FILENAME**: `"faithfulness-tier-report.json"`
+
+Canonical filename for the per-run faithfulness-tier-report artifact
+(Issue #2066).
+
+***
+
+### FAITHFULNESS\_TIER\_REPORT\_SCHEMA\_VERSION
+
+> `const` **FAITHFULNESS\_TIER\_REPORT\_SCHEMA\_VERSION**: `"1.0.0"`
+
+Schema version for persisted faithfulness-tier-report artifacts.
 
 ***
 
@@ -21804,9 +22208,14 @@ Canonical filename for the persisted faithfulness-judge verdict artifact.
 
 ### FAITHFULNESS\_VERDICT\_SCHEMA\_VERSION
 
-> `const` **FAITHFULNESS\_VERDICT\_SCHEMA\_VERSION**: `"1.0.0"`
+> `const` **FAITHFULNESS\_VERDICT\_SCHEMA\_VERSION**: `"1.1.0"`
 
 Schema version for persisted cross-modal faithfulness-judge verdicts.
+
+1.1.0 — Issue #2066: optional additive field `stepVerdicts` on each
+verdict carrying per-step `match | evidence_partial | mismatch` labels.
+Backwards compatible: consumers built against 1.0.0 see the legacy
+`hallucinations` / `mismatches` arrays unchanged.
 
 ***
 
@@ -23030,6 +23439,49 @@ supporting source kind (Issue #1441); it always carries
 
 ***
 
+### TECHNIQUE\_COVERAGE\_MINIMUM\_MODES
+
+> `const` **TECHNIQUE\_COVERAGE\_MINIMUM\_MODES**: readonly \[`"tier-elastic"`, `"fixed"`\]
+
+Issue #2068 — closed runtime list of `policy:technique-coverage-minimum`
+resolution modes.
+
+  - `tier-elastic` (default) — equivalence-partitioning quotas scale with
+    the screen's coverage-relevant field count using the formula
+    [TIER\_ELASTIC\_EP\_TIERS](#tier_elastic_ep_tiers). Non-EP techniques keep their planner
+    quotas unchanged.
+  - `fixed`        — the planner quotas published in
+    `CoveragePlan.perScreen[].techniqueQuotas` are enforced verbatim.
+    Customers that contractually require a fixed minimum (e.g. a 12-EP
+    floor regardless of screen size) opt into this mode.
+
+***
+
+### TECHNIQUE\_QUOTA\_REPORT\_ARTIFACT\_FILENAME
+
+> `const` **TECHNIQUE\_QUOTA\_REPORT\_ARTIFACT\_FILENAME**: `"technique-quota-report.json"`
+
+Canonical filename for the per-run technique-quota-report artifact
+(Issue #2068).
+
+***
+
+### TECHNIQUE\_QUOTA\_REPORT\_SCHEMA\_VERSION
+
+> `const` **TECHNIQUE\_QUOTA\_REPORT\_SCHEMA\_VERSION**: `"1.0.0"`
+
+Schema version for persisted `technique-quota-report.json` artifacts.
+
+***
+
+### TECHNIQUE\_QUOTA\_REPORT\_STATUSES
+
+> `const` **TECHNIQUE\_QUOTA\_REPORT\_STATUSES**: readonly \[`"pass"`, `"deficit"`\]
+
+Per-run resolution status for one (screen, technique) quota row.
+
+***
+
 ### TEST\_CASE\_COVERAGE\_REPORT\_ARTIFACT\_FILENAME
 
 > `const` **TEST\_CASE\_COVERAGE\_REPORT\_ARTIFACT\_FILENAME**: `"coverage-report.json"`
@@ -23113,7 +23565,7 @@ Schema version for persisted `TestDesignModel` projection artifacts.
 
 ### TEST\_INTELLIGENCE\_CONTRACT\_VERSION
 
-> `const` **TEST\_INTELLIGENCE\_CONTRACT\_VERSION**: `"1.18.0"`
+> `const` **TEST\_INTELLIGENCE\_CONTRACT\_VERSION**: `"1.21.0"`
 
 Contract version for the opt-in test-intelligence surface.
 
@@ -23197,6 +23649,21 @@ to open questions when exact arithmetic remains underspecified.
 > `const` **TEST\_INTELLIGENCE\_PROVENANCE\_SCHEMA\_VERSION**: `"1.0.0"`
 
 Schema version for the persisted test-intelligence provenance artifact.
+
+***
+
+### TIER\_ELASTIC\_EP\_TIERS
+
+> `const` **TIER\_ELASTIC\_EP\_TIERS**: `ReadonlyArray`\<\{ `floor`: `number`; `label`: `string`; `maxFieldCount`: `number`; `multiplier`: `number`; \}\>
+
+Tier-elastic equivalence-partitioning quota tiers (Issue #2068).
+
+Every screen with a coverage-relevant field count `<= maxFieldCount`
+(sorted ascending; the catch-all tier uses `Number.POSITIVE_INFINITY`)
+resolves to `max(floor, ceil(multiplier * fieldCount))`. The tiers are
+intentionally a frozen, deterministic constant so that
+`policy-report.json` and `technique-quota-report.json` remain
+byte-stable across runs.
 
 ***
 

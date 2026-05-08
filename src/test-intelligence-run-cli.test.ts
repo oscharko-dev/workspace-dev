@@ -2990,7 +2990,7 @@ test("runTestIntelligenceVerifyProvenanceCommand: returns 0 for a valid provenan
       path.join(tempRoot, "policy-report.json"),
       `${canonicalJson({
         schemaVersion: "1.0.0",
-        contractVersion: "1.19.0",
+        contractVersion: "1.20.0",
         generatedAt: "2026-05-08T12:00:00.000Z",
         jobId: "job-prov-cli",
         policyProfileId: "eu-banking-default",
@@ -3046,7 +3046,7 @@ test("runTestIntelligenceVerifyProvenanceCommand: returns non-zero on merkle mis
       path.join(tempRoot, "policy-report.json"),
       `${canonicalJson({
         schemaVersion: "1.0.0",
-        contractVersion: "1.19.0",
+        contractVersion: "1.20.0",
         generatedAt: "2026-05-08T12:00:00.000Z",
         jobId: "job-prov-cli-bad",
         policyProfileId: "eu-banking-default",
@@ -3111,7 +3111,7 @@ test("runTestIntelligenceVerifyProvenanceCommand: rejects artifact paths that es
       path.join(tempRoot, "policy-report.json"),
       `${canonicalJson({
         schemaVersion: "1.0.0",
-        contractVersion: "1.19.0",
+        contractVersion: "1.20.0",
         generatedAt: "2026-05-08T12:00:00.000Z",
         jobId: "job-prov-cli-escape",
         policyProfileId: "eu-banking-default",

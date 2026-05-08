@@ -15,6 +15,7 @@ import {
   type LogicJudgeFindingSeverity,
   type LogicJudgeVerdictLabel,
   type RepairInstruction,
+  type TechniqueCoverageMinimumPolicy,
   type TenantScope,
   type TestDesignModel,
   type LlmGenerationRequest,
@@ -169,6 +170,14 @@ export interface RunLogicJudgeInput {
    * production runner; tests may pass an override directly.
    */
   coverageThresholds?: LogicJudgeCoverageThresholds;
+  /**
+   * Issue #2068 — `policy:technique-coverage-minimum` resolution mode.
+   * Pulled from the active policy profile in the production runner so
+   * the post-LLM hard-gate enforces the same tier-elastic floor that
+   * `policy-gate.ts` applies. When omitted the hard-gate falls back to
+   * the secure default (`tier-elastic`).
+   */
+  techniqueCoverageMinimum?: TechniqueCoverageMinimumPolicy;
 }
 
 export interface RunLogicJudgeResult {
@@ -979,6 +988,10 @@ interface CoverageHardGateInput {
   coveragePlan?: CoveragePlan;
   knownNavigationIds?: readonly string[];
   coverageThresholds?: LogicJudgeCoverageThresholds;
+  /** Issue #2068 — `policy:technique-coverage-minimum` resolution mode.
+   * Forwarded into the technique-quota deficit collector so the
+   * post-LLM hard gate stays in lockstep with the policy gate. */
+  techniqueCoverageMinimum?: TechniqueCoverageMinimumPolicy;
 }
 
 interface IrIdSets {
@@ -1261,8 +1274,13 @@ const evaluateTechniqueQuotaMinimums = (
   acc: HardGateAccumulator,
   cases: ReadonlyArray<GeneratedTestCase>,
   coveragePlan: CoveragePlan | undefined,
+  techniqueCoverageMinimum: TechniqueCoverageMinimumPolicy | undefined,
 ): void => {
-  for (const deficit of collectTechniqueQuotaDeficits(cases, coveragePlan)) {
+  for (const deficit of collectTechniqueQuotaDeficits(
+    cases,
+    coveragePlan,
+    techniqueCoverageMinimum,
+  )) {
     pushFinding(
       acc,
       {
@@ -1462,7 +1480,12 @@ export const applyCoverageHardGate = (
     input.coverageThresholds ?? {},
   );
   evaluateMissingFormScreenA11yCase(acc, cases, input.testDesignModel);
-  evaluateTechniqueQuotaMinimums(acc, cases, input.coveragePlan);
+  evaluateTechniqueQuotaMinimums(
+    acc,
+    cases,
+    input.coveragePlan,
+    input.techniqueCoverageMinimum,
+  );
   evaluateUnsupportedUnresolvedValidationDetails(
     acc,
     cases,
