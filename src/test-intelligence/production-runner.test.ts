@@ -5548,11 +5548,11 @@ test("Issue #1932: cross-model logic judge dispatches to llm.logicJudge and FinO
       judgeDeployment,
       "logic-judge verdict must echo the judge deployment, not the generator",
     );
-    // Generator dispatched once for the test-case payload; the judge
-    // received the dedicated logic-judge call. Two distinct gateways
-    // mean call counts are 1 + 1, not 2 + 0 (legacy single-model).
+    // Generator dispatched once for the test-case payload; the dedicated
+    // judge lane handled both the logic-judge verdict and the bounded
+    // adversarial-critic audit round.
     assert.equal(generator.callCount(), 1);
-    assert.equal(judge.callCount(), 1);
+    assert.equal(judge.callCount(), 2);
 
     const finopsReportRaw = await readFile(
       result.artifactPaths.finopsReport,
@@ -5571,6 +5571,17 @@ test("Issue #1932: cross-model logic judge dispatches to llm.logicJudge and FinO
       judgeDeployment,
       "bySource.judge_primary must record the judge deployment, not the generator",
     );
+    assert.equal(
+      finopsReport.bySource.adversarial_critic.callCount,
+      1,
+      "adversarial_critic attribution should count the dedicated audit round",
+    );
+    assert.equal(
+      finopsReport.bySource.adversarial_critic.deployment,
+      judgeDeployment,
+      "bySource.adversarial_critic must record the judge deployment",
+    );
+    assert.ok(result.artifactPaths.adversarialCriticTrace);
   } finally {
     await rm(tempRoot, { recursive: true, force: true });
   }

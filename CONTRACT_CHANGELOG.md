@@ -31,6 +31,59 @@ All changes to the public contract surface of `workspace-dev` are documented her
 
 ---
 
+## [4.52.0] - 2026-05-08
+
+### Added (Issue #2039 — adversarial critic self-play loop for blind-spot discovery)
+
+The production runner previously stopped after cooperative generation plus
+judge review: generator outputs were checked, but no role was tasked with
+actively attacking the suite to surface blind spots before finalisation.
+This release adds the bounded `adversarial_critic` lane for
+test-intelligence runs.
+
+Public-contract changes (additive — no removals, no renames):
+
+- `AGENT_HARNESS_ROLES` adds `"adversarial_critic"` (alphabetical
+  insertion).
+- `AGENT_ROLE_FINOPS_GROUPS` adds the dedicated group `"adversarial"`.
+- `ALLOWED_AGENT_SOURCE_LABELS` adds `"adversarial_critic"` so per-source
+  FinOps, evidence, and participation artifacts can attribute the new
+  lane explicitly.
+
+Operational behavior introduced by the additive runtime surface:
+
+- The new `src/test-intelligence/adversarial-critic-agent.ts` module runs a
+  bounded self-play loop of at most `2` rounds.
+- The critic prompt is parameterized by business domain and grounded in the
+  curated playbooks under
+  `src/test-intelligence/adversarial-playbooks/banking.json` and
+  `src/test-intelligence/adversarial-playbooks/insurance.json`.
+- Each round emits structured `AdversarialFinding[]` records with category,
+  reproducible test-data fragments, and repair instructions.
+- Round artifacts are persisted under
+  `agent-role-runs/adversarial_critic_round_K.json`; the aggregated trace is
+  persisted as `adversarial-critic-trace.json`, and
+  `provenance.jsonld` now records the critic rounds as first-class
+  activities.
+- FinOps budget attribution for the critic is capped at `25%` of the
+  generator budget envelope per round.
+
+Documentation:
+
+- New operator-facing guide:
+  `docs/test-intelligence/adversarial-critic.md`.
+
+Contract version impacts:
+
+- `CONTRACT_VERSION` bumps from `4.51.0` to `4.52.0`.
+- `TEST_INTELLIGENCE_CONTRACT_VERSION` remains `1.13.0` because the
+  schema-versioned artifact envelopes keep their existing shape; this
+  release adds enum members, runtime exports, and new additive artifacts
+  without changing existing required fields.
+- `migrationHash:` registration is not required for this release. The
+  signed migration registry introduced in 4.42.0 carries forward unchanged
+  because no migration id, hash, or rollback semantics changed.
+
 ## [4.51.0] - 2026-05-08
 
 ### Added (Issue #2038 — cross-family judge ensemble + disagreement-driven human review)

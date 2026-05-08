@@ -23,6 +23,15 @@ import {
   type FinOpsRoleBudget,
 } from "../contracts/index.js";
 
+export const ADVERSARIAL_CRITIC_BUDGET_FRACTION = 0.25 as const;
+
+export interface AdversarialCriticBudgetLimits {
+  readonly maxInputTokens?: number;
+  readonly maxOutputTokens?: number;
+  readonly maxWallClockMs?: number;
+  readonly maxRetries?: number;
+}
+
 /** Single validation issue, mirrors the project's hand-rolled validator shape. */
 export interface FinOpsBudgetValidationIssue {
   path: string;
@@ -156,6 +165,47 @@ const cloneRoleBudget = (input: FinOpsRoleBudget): FinOpsRoleBudget => {
   }
   return out;
 };
+
+const quarterBudget = (value: number | undefined): number | undefined => {
+  if (!Number.isFinite(value) || value === undefined || value <= 0) {
+    return undefined;
+  }
+  return Math.max(1, Math.floor(value * ADVERSARIAL_CRITIC_BUDGET_FRACTION));
+};
+
+export const resolveAdversarialCriticBudgetLimits = (
+  generatorBudget: FinOpsRoleBudget | undefined,
+): AdversarialCriticBudgetLimits => ({
+  ...(quarterBudget(generatorBudget?.maxInputTokensPerRequest) !== undefined
+    ? {
+        maxInputTokens: quarterBudget(
+          generatorBudget?.maxInputTokensPerRequest,
+        )!,
+      }
+    : {}),
+  ...(quarterBudget(generatorBudget?.maxOutputTokensPerRequest) !== undefined
+    ? {
+        maxOutputTokens: quarterBudget(
+          generatorBudget?.maxOutputTokensPerRequest,
+        )!,
+      }
+    : {}),
+  ...(quarterBudget(generatorBudget?.maxWallClockMsPerRequest) !== undefined
+    ? {
+        maxWallClockMs: quarterBudget(
+          generatorBudget?.maxWallClockMsPerRequest,
+        )!,
+      }
+    : {}),
+  ...(generatorBudget?.maxRetriesPerRequest !== undefined
+    ? {
+        maxRetries: Math.max(
+          0,
+          Math.min(1, generatorBudget.maxRetriesPerRequest),
+        ),
+      }
+    : {}),
+});
 
 /** Clone the built-in EU-banking budget so callers can mutate without aliasing. */
 export const cloneEuBankingDefaultFinOpsBudget = (): FinOpsBudgetEnvelope =>

@@ -262,6 +262,23 @@ const ACTION_TOPOLOGY_PROFILE: AgentRoleProfile = freezeProfile({
   finOpsGroup: "generation",
 });
 
+const ADVERSARIAL_CRITIC_PROFILE: AgentRoleProfile = freezeProfile({
+  schemaVersion: AGENT_ROLE_PROFILE_SCHEMA_VERSION,
+  role: "adversarial_critic",
+  roleKind: "llm_role",
+  promptVersion: "adversarial-critic.v1",
+  modelBinding: {
+    providerId: "in-house",
+    modelId: "phi-4",
+  },
+  outputSchema: "adversarial-critic-findings.v1",
+  maxAttempts: 2,
+  maxInputTokens: 8_000,
+  maxOutputTokens: 2_000,
+  capability: "read_artifacts",
+  finOpsGroup: "adversarial",
+});
+
 const GENERATOR_PROFILE: AgentRoleProfile = freezeProfile({
   schemaVersion: AGENT_ROLE_PROFILE_SCHEMA_VERSION,
   role: "generator",
@@ -438,6 +455,7 @@ const FINAL_VERIFIER_PROFILE: AgentRoleProfile = freezeProfile({
 
 const REGISTRY_OBJECT: Record<AgentHarnessRole, AgentRoleProfile> = {
   action_topology: ACTION_TOPOLOGY_PROFILE,
+  adversarial_critic: ADVERSARIAL_CRITIC_PROFILE,
   adversarial_gap_finder: ADVERSARIAL_GAP_FINDER_PROFILE,
   final_verifier: FINAL_VERIFIER_PROFILE,
   generator: GENERATOR_PROFILE,

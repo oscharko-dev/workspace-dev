@@ -3225,6 +3225,7 @@ export const AGENT_ROLE_PROFILE_SCHEMA_VERSION = "1.0.0" as const;
  */
 export const AGENT_HARNESS_ROLES = [
   "action_topology",
+  "adversarial_critic",
   "adversarial_gap_finder",
   "final_verifier",
   "generator",
@@ -3248,6 +3249,7 @@ export const AGENT_ROLE_KINDS = ["deterministic_service", "llm_role"] as const;
 
 /** Closed runtime list of FinOps attribution groups for agent-role runs. */
 export const AGENT_ROLE_FINOPS_GROUPS = [
+  "adversarial",
   "generation",
   "judge",
   "repair",
@@ -8691,6 +8693,7 @@ export const ALLOWED_AGENT_SOURCE_LABELS = [
   "generator",
   "coverage_planner",
   "risk_ranker",
+  "adversarial_critic",
   "gap_finder",
   "repair_planner",
   "ir_mutation_oracle",
@@ -10757,7 +10760,7 @@ export interface ReleaseQualityGatesReport {
  * Must be bumped according to CONTRACT_CHANGELOG.md rules.
  * Package version alignment is documented in VERSIONING.md.
  */
-export const CONTRACT_VERSION = "4.51.0" as const;
+export const CONTRACT_VERSION = "4.52.0" as const;
 
 // ---------------------------------------------------------------------------
 // Issue #1774 — UntrustedContentNormalizer (2025-vintage injection carriers).
