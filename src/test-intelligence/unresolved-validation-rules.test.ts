@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
+import { join } from "node:path";
 import test from "node:test";
 
 import {
@@ -7,11 +9,19 @@ import {
 } from "../contracts/index.js";
 import {
   buildSourceScopedValidationOpenQuestions,
+  classifyUnresolvedValidationDetail,
   deriveUnresolvedValidationConstraints,
   deriveUnresolvedValidationConstraintsWithScreenFallback,
+  detectOpenQuestionClarificationClaim,
+  detectUnsupportedExactValidationClaim,
   extractUnresolvedValidationStatements,
   isUnresolvedValidationText,
 } from "./unresolved-validation-rules.js";
+
+const FIXTURE_DIR = join(
+  process.cwd(),
+  "fixtures/test-intelligence/unresolved-validation-rules-fixtures",
+);
 
 const buildModel = (
   overrides: Partial<TestDesignModel> = {},
@@ -52,6 +62,58 @@ const buildModel = (
   assumptions: [],
   openQuestions: [],
   riskSignals: [],
+  ...overrides,
+});
+
+const buildGeneratedCase = (overrides: Record<string, unknown> = {}) => ({
+  id: "tc-unresolved",
+  sourceJobId: "job-2013",
+  contractVersion: "1.17.0",
+  schemaVersion: "1.1.0",
+  promptTemplateVersion: "1.6.2",
+  title: "Validate unresolved amount field",
+  objective: "Keep unresolved validation generic",
+  level: "system",
+  type: "functional",
+  priority: "p2",
+  riskCategory: "low",
+  technique: "equivalence_partitioning",
+  preconditions: [],
+  testData: [],
+  steps: [
+    {
+      index: 1,
+      action: "Check that the amount label is visible.",
+      expected: "The amount label is shown.",
+    },
+  ],
+  expectedResults: ["The amount label is shown."],
+  figmaTraceRefs: [{ screenId: "screen-financing", nodeId: "node-1" }],
+  assumptions: [],
+  openQuestions: [],
+  qcMappingPreview: { exportable: true },
+  qualitySignals: {
+    coveredFieldIds: ["screen-financing::field::kaufpreis"],
+    coveredActionIds: [],
+    coveredValidationIds: [],
+    coveredNavigationIds: [],
+    confidence: 0.9,
+  },
+  reviewState: "draft",
+  audit: {
+    jobId: "job-2013",
+    generatedAt: "2026-05-08T00:00:00.000Z",
+    contractVersion: "1.17.0",
+    schemaVersion: "1.1.0",
+    promptTemplateVersion: "1.6.2",
+    redactionPolicyVersion: "1.0.0",
+    visualSidecarSchemaVersion: "1.1.0",
+    cacheHit: false,
+    cacheKey: "k".repeat(64),
+    inputHash: "i".repeat(64),
+    promptHash: "p".repeat(64),
+    schemaHash: "s".repeat(64),
+  },
   ...overrides,
 });
 
@@ -267,4 +329,65 @@ test("deriveUnresolvedValidationConstraints emits constraints for unresolved val
   assert.deepEqual(constraints[0]?.validationIds, [
     "screen-financing::validation::amount-tbd",
   ]);
+});
+
+test("classifier fixture covers at least 12 unsupported and 12 label-only cases", async () => {
+  const raw = await readFile(join(FIXTURE_DIR, "claim-classifier.json"), "utf8");
+  const parsed = JSON.parse(raw) as {
+    cases: Array<{
+      id: string;
+      text: string;
+      classification:
+        | "concrete_numeric_data"
+        | "concrete_message_text"
+        | "label_only"
+        | "none";
+      unsupported: boolean;
+    }>;
+  };
+
+  const unsupported = parsed.cases.filter((entry) => entry.unsupported);
+  const labelOnly = parsed.cases.filter(
+    (entry) => entry.classification === "label_only",
+  );
+  assert.ok(unsupported.length >= 12);
+  assert.ok(labelOnly.length >= 12);
+
+  for (const entry of parsed.cases) {
+    const detail = classifyUnresolvedValidationDetail(entry.text);
+    assert.equal(detail.classification, entry.classification, entry.id);
+  }
+});
+
+test("detectUnsupportedExactValidationClaim ignores label-only unresolved checks and surfaces a clarification warning instead", () => {
+  const model = buildModel({
+    openQuestions: [
+      {
+        openQuestionId: "open-question-issue-2067",
+        text: "custom_context_markdown: Es ist fachlich zu klären, wie sich die Auswahl Netto / Brutto auf Feldbezeichnungen und Berechnung auswirkt.",
+      },
+    ],
+  });
+
+  const testCase = buildGeneratedCase({
+    title: "Unresolved check review",
+    objective: "Keep this check generic.",
+    steps: [
+      {
+        index: 1,
+        action:
+          "Verifiziert, dass das Label \"Höhe des Kaufpreises (Netto)\" sichtbar ist.",
+        expected: "Das Label ist sichtbar.",
+      },
+    ],
+    expectedResults: ["Das Label ist sichtbar."],
+  });
+
+  assert.equal(
+    detectUnsupportedExactValidationClaim({ testCase, model }),
+    undefined,
+  );
+  const warning = detectOpenQuestionClarificationClaim({ testCase, model });
+  assert.ok(warning);
+  assert.equal(warning?.path, "steps[0].action");
 });
