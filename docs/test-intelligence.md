@@ -25,6 +25,7 @@ In scope:
 - Controlled OpenText ALM API transfer kernel (Wave 3), gated by export,
   dry-run, review, policy, admin, bearer-token, and visual-sidecar checks.
 - Evidence manifest and operator-side verification.
+- Provenance graph artifact and hash-only verification.
 - Multimodal visual sidecar role separation.
 - Network boundary, secret handling, and zero-telemetry behavior.
 - DORA, GDPR, and EU AI Act considerations relevant to regulated operators.
@@ -252,6 +253,7 @@ Artifacts are persisted under
 | `testcases.alm.xml`                     | `ALM_EXPORT_SCHEMA_VERSION` + `ALM_EXPORT_XML_NAMESPACE`       | Export            |
 | `export-report.json`                    | `EXPORT_REPORT_SCHEMA_VERSION`                                 | Export            |
 | `dry-run-report.json`                   | `DRY_RUN_REPORT_SCHEMA_VERSION`                                | QC dry-run        |
+| `provenance.jsonld`                     | Issue #2037 provenance graph                                   | Provenance        |
 | `wave1-validation-evidence-manifest.json`      | `WAVE1_VALIDATION_EVIDENCE_MANIFEST_SCHEMA_VERSION`                   | Validation        |
 | `wave1-validation-evidence-manifest.sha256`    | `WAVE1_VALIDATION_EVIDENCE_MANIFEST_DIGEST_FILENAME`                  | Validation        |
 | `wave1-validation-eval-report.json`            | `WAVE1_VALIDATION_EVAL_REPORT_SCHEMA_VERSION`                         | Validation        |
@@ -277,6 +279,29 @@ Persistence guarantees:
   `imagePayloadSentToTestGeneration: false` at the type level; the sidecar
   client also walks recorded gateway requests at runtime to enforce the
   invariant.
+
+### Provenance graph artifact
+
+Issue #2037 adds a JSON-LD provenance graph at
+`<artifactRoot>/<jobId>/provenance.jsonld`. The artifact is the run-level
+provenance summary for a generated QC bundle.
+
+It is hash-only. The graph links to upstream inputs and downstream outputs
+through stable digests and opaque identifiers that already exist in the run
+artifacts. It does not embed raw prompt text, raw screenshots, bearer tokens,
+API keys, or PII. That keeps the artifact useful for audit replay without
+expanding the sensitive-data surface.
+
+The graph is meant to line up with the other persisted provenance sources in
+this package:
+
+- `contentHash` values identify source payloads and redacted IR fragments.
+- `evidenceHash` values identify visual-sidecar evidence.
+- per-artifact digests in `wave1-validation-evidence-manifest.json` identify
+  the exact files on disk.
+
+For a run-dir verification workflow, see
+[docs/test-intelligence/provenance.md](test-intelligence/provenance.md).
 
 ### Fixture-driven eval gates
 

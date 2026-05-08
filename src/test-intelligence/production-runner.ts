@@ -71,6 +71,7 @@ import {
   TEST_CASE_COVERAGE_REPORT_ARTIFACT_FILENAME,
   TEST_CASE_POLICY_REPORT_ARTIFACT_FILENAME,
   TEST_CASE_VALIDATION_REPORT_ARTIFACT_FILENAME,
+  PROVENANCE_ARTIFACT_FILENAME,
   VISUAL_SIDECAR_RESULT_ARTIFACT_FILENAME,
   VISUAL_SIDECAR_VALIDATION_REPORT_ARTIFACT_FILENAME,
   VISUAL_SIDECAR_SCHEMA_VERSION,
@@ -223,6 +224,11 @@ import {
   serializeProductionRunnerEvidenceSeal,
   verifyProductionRunnerEvidenceSealFromDisk,
 } from "./production-runner-evidence.js";
+import {
+  buildRunProvenanceGraph,
+  writeProvenanceGraph,
+} from "./provenance-graph.js";
+import { verifyProvenanceFromDisk } from "./provenance-verify.js";
 import {
   normalizeUntrustedContent,
   writeUntrustedContentNormalizationReport,
@@ -865,6 +871,7 @@ export interface RunFigmaToQcTestCasesResult {
     logicJudgeVerdict?: string;
     faithfulnessJudgeVerdict?: string;
     genealogy: string;
+    provenance: string;
     contextBudgetReport?: string;
     generatedTestCases: string;
     validationReport: string;
@@ -3742,7 +3749,6 @@ export const runFigmaToQcTestCases = async (
     validation.visual === undefined
       ? undefined
       : encodeCanonicalJson(validation.visual);
-  const policyBytes = encodeCanonicalJson(validation.policy);
   const coverageBytes = encodeCanonicalJson(validation.coverage);
   const agentRoleRunPromise = writeAgentRoleRunArtifact({
     runDir: artifactDir,
@@ -3847,7 +3853,6 @@ export const runFigmaToQcTestCases = async (
               visualSidecarValidationBytes,
             ),
           ]),
-      writeAtomicBytes(policyPath, policyBytes),
       workflowTopologyWritePromise,
       writeAtomicBytes(coveragePath, coverageBytes),
       coveragePlanWritePromise,
@@ -4063,6 +4068,59 @@ export const runFigmaToQcTestCases = async (
     ),
     "utf8",
   );
+  const provenanceDocument = await buildRunProvenanceGraph({
+    runDir: artifactDir,
+    jobId: input.jobId,
+    generatedAt: input.generatedAt,
+    sourceKind: input.source.kind,
+    finalGeneratedTestCases: validation.generatedTestCases,
+    agentParticipation: agentParticipationArtifact,
+    initialGenerationDeployment:
+      capturedLlmResult?.outcome === "success"
+        ? capturedLlmResult.modelDeployment
+        : PRODUCTION_RUNNER_TEST_GENERATION_DEPLOYMENT,
+    ...(repairLoopResult !== undefined
+      ? {
+          repairIterations: repairLoopResult.iterations.filter(
+            (iteration) => iteration.iteration > 0,
+          ),
+        }
+      : {}),
+    logicJudge: {
+      artifactFilename: `agent-role-runs/${LOGIC_JUDGE_VERDICT_ARTIFACT_FILENAME}`,
+      verdict: logicJudgeResult.verdict,
+    },
+    judgeConsensus: {
+      artifactFilename: JUDGE_CONSENSUS_ARTIFACT_FILENAME,
+      verdict: judgeConsensusResult,
+    },
+    ...(faithfulnessJudgeResult !== undefined
+      ? {
+          faithfulnessJudge: {
+            artifactFilename: `agent-role-runs/${FAITHFULNESS_VERDICT_ARTIFACT_FILENAME}`,
+            verdict: faithfulnessJudgeResult.verdict,
+          },
+        }
+      : {}),
+    ...(a11yJudgeResult !== undefined
+      ? {
+          a11yJudge: {
+            artifactFilename: `agent-role-runs/${A11Y_JUDGE_VERDICT_ARTIFACT_FILENAME}`,
+            verdict: a11yJudgeResult.verdict,
+          },
+        }
+      : {}),
+  });
+  const policyReport: TestCasePolicyReport = {
+    ...validation.policy,
+    provenance: {
+      artifactFilename: PROVENANCE_ARTIFACT_FILENAME,
+      merkleAlgorithm: "sha256_merkle_v1",
+      merkleRoot: provenanceDocument["ti:merkleSeal"].root,
+      leafCount: provenanceDocument["ti:merkleSeal"].leafCount,
+    },
+  };
+  const policyBytes = encodeCanonicalJson(policyReport);
   const modelDeployments = {
     testGeneration: PRODUCTION_RUNNER_TEST_GENERATION_DEPLOYMENT,
     ...(input.llm.bundle !== undefined
@@ -4083,8 +4141,8 @@ export const runFigmaToQcTestCases = async (
     jobId: input.jobId,
     generatedAt: input.generatedAt,
     modelDeployments,
-    policyProfileId: validation.policy.policyProfileId,
-    policyProfileVersion: validation.policy.policyProfileVersion,
+    policyProfileId: policyReport.policyProfileId,
+    policyProfileVersion: policyReport.policyProfileVersion,
     exportProfileId: "customer-markdown",
     exportProfileVersion: "1.0.0",
     activeModelBindings,
@@ -4227,6 +4285,11 @@ export const runFigmaToQcTestCases = async (
         category: "validation",
       },
       {
+        filename: PROVENANCE_ARTIFACT_FILENAME,
+        bytes: Buffer.from(`${canonicalJson(provenanceDocument)}\n`, "utf8"),
+        category: "manifest",
+      },
+      {
         filename: TEST_CASE_COVERAGE_REPORT_ARTIFACT_FILENAME,
         bytes: coverageBytes,
         category: "validation",
@@ -4292,6 +4355,11 @@ export const runFigmaToQcTestCases = async (
       productionRunnerEvidenceSealPath,
       productionRunnerEvidenceSealBytes,
     );
+    await writeAtomicBytes(policyPath, policyBytes);
+    await writeProvenanceGraph({
+      runDir: artifactDir,
+      document: provenanceDocument,
+    });
     await writeWave1ValidationEvidenceManifest({
       manifest: evidenceManifest,
       destinationDir: artifactDir,
@@ -4327,6 +4395,15 @@ export const runFigmaToQcTestCases = async (
       failureClass: "PERSIST_FAILED",
       message:
         "Production-runner evidence seal failed immediate post-write verification.",
+      retryable: false,
+    });
+  }
+  const provenanceVerification = await verifyProvenanceFromDisk(artifactDir);
+  if (!provenanceVerification.ok) {
+    throw new ProductionRunnerError({
+      failureClass: "PERSIST_FAILED",
+      message:
+        "Production-runner provenance graph failed immediate post-write verification.",
       retryable: false,
     });
   }
@@ -4385,7 +4462,7 @@ export const runFigmaToQcTestCases = async (
     generatedTestCases: validation.generatedTestCases,
     intent,
     validation: validation.validation,
-    policy: validation.policy,
+    policy: policyReport,
     coverage: validation.coverage,
     blocked,
     logicJudge: {
@@ -4478,6 +4555,7 @@ export const runFigmaToQcTestCases = async (
         ? { faithfulnessJudgeVerdict: faithfulnessJudgeVerdictPath }
         : {}),
       genealogy: genealogyArtifact.artifactPath,
+      provenance: join(artifactDir, PROVENANCE_ARTIFACT_FILENAME),
       ...(contextBudgetReportPath !== undefined
         ? { contextBudgetReport: contextBudgetReportPath }
         : {}),

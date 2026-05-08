@@ -143,6 +143,24 @@ export {
 } from "./multi-source-reconciliation.js";
 export { canonicalJson, sha256Hex } from "./content-hash.js";
 export {
+  PROVENANCE_MERKLE_ALGORITHM,
+  PROVENANCE_SCHEMA_VERSION,
+  PROV_JSONLD_CONTEXT_URL,
+  buildRunProvenanceGraph,
+  computeProvenanceMerkleSeal,
+  serializeProvenanceGraph,
+  writeProvenanceGraph,
+  type BuildRunProvenanceGraphInput,
+  type ProvenanceDocument,
+  type ProvenanceMerkleSeal,
+  type WriteProvenanceGraphResult,
+} from "./provenance-graph.js";
+export {
+  verifyProvenanceFromDisk,
+  type ProvenanceVerificationFailure,
+  type ProvenanceVerificationResult,
+} from "./provenance-verify.js";
+export {
   buildMigrationHash,
   parseMigrationAuditLog,
   runMigrations,

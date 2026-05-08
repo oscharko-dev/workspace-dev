@@ -66,6 +66,7 @@ import {
   parseAndCanonicalizeCustomerProfile,
   runFigmaToQcTestCases,
   validateFinOpsBudgetEnvelope,
+  verifyProvenanceFromDisk,
   type AgentHarnessTestDepth,
   type CustomerProfileInput,
   type FigmaRestNode,
@@ -194,6 +195,10 @@ export interface TestIntelligenceDoctorOptions {
   visualFallbackDeployment: string | undefined;
   a11yJudgeDeployment: string | undefined;
   topologyInputSources: TopologyInputSources;
+}
+
+export interface TestIntelligenceVerifyProvenanceOptions {
+  runDir: string;
 }
 
 interface DoctorRoleReportEntry {
@@ -1248,6 +1253,23 @@ export const parseTestIntelligenceDoctorArgs = (
     a11yJudgeDeployment,
     topologyInputSources,
   };
+};
+
+export const parseTestIntelligenceVerifyProvenanceArgs = (
+  argv: readonly string[],
+): TestIntelligenceVerifyProvenanceOptions => {
+  if (argv.length === 1 && !argv[0]!.startsWith("--")) {
+    return { runDir: argv[0]! };
+  }
+  if (argv.length === 2 && argv[0] === "--run-dir") {
+    return { runDir: argv[1]! };
+  }
+  if (argv.length === 2 && argv[0] === "--verify-provenance") {
+    return { runDir: argv[1]! };
+  }
+  throw new TestIntelligenceRunOperatorError(
+    'usage: workspace-dev test-intelligence verify-provenance <run-dir> or workspace-dev test-intelligence --verify-provenance <run-dir>',
+  );
 };
 
 /** Stable operator-config error surfaced as exit code 1. */
@@ -2527,6 +2549,36 @@ export const runTestIntelligenceDoctorCommand = async (
   return report.overallStatus === "error" ? 1 : 0;
 };
 
+export const runTestIntelligenceVerifyProvenanceCommand = async (
+  options: TestIntelligenceVerifyProvenanceOptions,
+  sink: TestIntelligenceRunSink,
+): Promise<number> => {
+  const result = await verifyProvenanceFromDisk(resolve(options.runDir));
+  if (!result.ok) {
+    sink.stderr(
+      [
+        `error: provenance verification failed for ${result.runDir}`,
+        ...result.failures.map(
+          (failure: { code: string; reference: string; message: string }) =>
+            `  - [${failure.code}] ${failure.reference}: ${failure.message}`,
+        ),
+        "",
+      ].join("\n"),
+    );
+    return 2;
+  }
+  sink.stdout(
+    [
+      "test-intelligence provenance verified",
+      `  run dir    : ${result.runDir}`,
+      `  merkle root: ${result.merkleRoot ?? ""}`,
+      `  leaf count : ${result.leafCount ?? 0}`,
+      "",
+    ].join("\n"),
+  );
+  return 0;
+};
+
 /**
  * Default `--custom-context-markdown` loader. Stats the file before reading
  * to enforce the 256 KiB hard cap so an oversize file never lands in the
@@ -3617,13 +3669,29 @@ Behavior:
   - Returns exit code 0 for ok or warning-only topologies.
 `;
 
+export const TEST_INTELLIGENCE_VERIFY_PROVENANCE_HELP: string = `
+workspace-dev test-intelligence verify-provenance - verify provenance.jsonld against a run directory
+
+Usage:
+  workspace-dev test-intelligence verify-provenance <run-dir>
+  workspace-dev test-intelligence --verify-provenance <run-dir>
+
+Behavior:
+  - Recomputes the provenance Merkle root from the on-disk JSON-LD graph.
+  - Verifies every attested artifact hash referenced by the graph.
+  - Confirms policy-report.json carries the same Merkle root summary.
+  - Returns exit code 0 on success, 1 on operator misuse, 2 on tamper/mismatch.
+`;
+
 export const TEST_INTELLIGENCE_HELP: string = `
 workspace-dev test-intelligence
 
 Usage:
   workspace-dev test-intelligence run [options]
   workspace-dev test-intelligence doctor [options]
+  workspace-dev test-intelligence verify-provenance <run-dir>
 
 Run "workspace-dev test-intelligence run --help" for the live-run flags.
 Run "workspace-dev test-intelligence doctor --help" for the topology doctor flags.
+Run "workspace-dev test-intelligence verify-provenance --help" for provenance verification.
 `;
