@@ -395,6 +395,67 @@ test("renderCustomerMarkdown technical mode preserves internal traceability on r
   );
 });
 
+test("renderCustomerMarkdown adds a Compliance coverage section when supplied (Issue #2042)", () => {
+  const list: GeneratedTestCaseList = {
+    schemaVersion: GENERATED_TEST_CASE_SCHEMA_VERSION,
+    jobId: "job-1",
+    testCases: [buildCase({ id: "tc-a" })],
+  };
+  const result = renderCustomerMarkdown({
+    list,
+    fileName: "Test View 03",
+    sourceLabel: "https://www.figma.com/design/M7FGS79qLfr3O4OXEYbxy0",
+    generatedAt: "2026-05-02T10:00:00Z",
+    complianceCoverage: {
+      schemaVersion: "1.0.0",
+      jobId: "job-1",
+      generatedAt: "2026-05-02T10:00:00Z",
+      activeFrameworks: ["PSD2"],
+      totalTestCases: 1,
+      annotatedTestCases: 1,
+      overallCoverageRatio: 0.5,
+      hasUncoveredErrorRule: false,
+      frameworks: [
+        {
+          framework: "PSD2",
+          title: "Payment Services Directive 2 (PSD2)",
+          citationRoot: "Directive (EU) 2015/2366",
+          totalRules: 2,
+          coveredRules: 1,
+          uncoveredRules: 1,
+          coverageRatio: 0.5,
+          hasUncoveredErrorRule: false,
+          rules: [
+            {
+              ruleId: "PSD2-SCA-Art-97",
+              citation: "PSD2 Article 97",
+              severity: "error",
+              mandatoryTestClasses: ["functional"],
+              applicableCases: 1,
+              satisfyingCases: 1,
+              covered: true,
+            },
+            {
+              ruleId: "PSD2-Risk-Analysis-Art-18-RTS",
+              citation: "EBA RTS Article 18",
+              severity: "warning",
+              mandatoryTestClasses: ["boundary"],
+              applicableCases: 0,
+              satisfyingCases: 0,
+              covered: false,
+            },
+          ],
+        },
+      ],
+    },
+  });
+  assert.match(result.combinedMarkdown, /## Compliance coverage/u);
+  assert.match(result.combinedMarkdown, /Aktive Regelwerke: PSD2/u);
+  assert.match(result.combinedMarkdown, /PSD2-SCA-Art-97/u);
+  assert.match(result.combinedMarkdown, /PSD2-Risk-Analysis-Art-18-RTS/u);
+  assert.match(result.combinedMarkdown, /Gesamtabdeckung: 50\.0%/u);
+});
+
 test("extractAcceptanceCriteriaFromMarkdown reads enumerated markdown sections", () => {
   const markdown = [
     "# Kontext",

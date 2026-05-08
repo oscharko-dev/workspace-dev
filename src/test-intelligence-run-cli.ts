@@ -86,6 +86,19 @@ import {
 } from "./test-intelligence/coverage-baseline-drift.js";
 import { canonicalJson } from "./test-intelligence/content-hash.js";
 import {
+  parseComplianceFrameworksFlag,
+  resolveActiveFrameworks,
+  type ComplianceFrameworkId,
+} from "./test-intelligence/compliance-rules.js";
+import {
+  annotateTestCases,
+  COMPLIANCE_ANNOTATION_ARTIFACT_FILENAME,
+} from "./test-intelligence/compliance-annotator-agent.js";
+import {
+  buildComplianceCoverageReport,
+  COMPLIANCE_COVERAGE_REPORT_ARTIFACT_FILENAME,
+} from "./test-intelligence/compliance-coverage-report.js";
+import {
   createLlmGatewayClientBundle,
   type LlmGatewayClientBundle,
 } from "./test-intelligence/llm-gateway-bundle.js";
@@ -432,6 +445,14 @@ export interface TestIntelligenceRunOptions {
    */
   allowPolicyBlocked?: boolean;
   /**
+   * Optional explicit list of compliance frameworks to evaluate
+   * (Issue #2042). When `undefined`, the active set is derived from
+   * the policy profile via
+   * {@link resolveActiveFrameworks}. The CLI parses
+   * `--compliance-frameworks <csv>` into this list.
+   */
+  complianceFrameworks?: readonly ComplianceFrameworkId[];
+  /**
    * Coverage-baseline drift configuration (Issue #1950).
    *
    * When `archetype` is set, the post-run helper compares the candidate
@@ -527,6 +548,7 @@ export const parseTestIntelligenceRunArgs = (
   let customerEvalMarkdownPath: string | undefined;
   let customerProfilePath: string | undefined;
   let diversityPasses: 1 | 2 = 1;
+  let complianceFrameworks: readonly ComplianceFrameworkId[] | undefined;
   let coverageBaselineArchetype: string | undefined;
   let coverageBaselineTenantId: string =
     env.WORKSPACE_TEST_SPACE_TENANT_ID?.trim() || "default";
@@ -782,6 +804,24 @@ export const parseTestIntelligenceRunArgs = (
         );
       }
       policyProfile = value;
+      index += 1;
+      continue;
+    }
+
+    if (arg === "--compliance-frameworks") {
+      const value = next?.trim();
+      if (!value) {
+        throw new TestIntelligenceRunOperatorError(
+          "--compliance-frameworks requires a comma-separated framework list",
+        );
+      }
+      try {
+        complianceFrameworks = parseComplianceFrameworksFlag(value);
+      } catch (err) {
+        throw new TestIntelligenceRunOperatorError(
+          err instanceof Error ? err.message : String(err),
+        );
+      }
       index += 1;
       continue;
     }
@@ -1096,6 +1136,7 @@ export const parseTestIntelligenceRunArgs = (
       runtimeRoot: coverageBaselineRuntimeRoot,
       mode: coverageBaselineMode,
     },
+    ...(complianceFrameworks !== undefined ? { complianceFrameworks } : {}),
     topologyInputSources,
   };
 };
@@ -2882,6 +2923,85 @@ const safeReadEvidenceDigest = async (
   }
 };
 
+const writeJsonArtifactAtomically = async (
+  destinationPath: string,
+  payload: unknown,
+): Promise<void> => {
+  const tempPath = `${destinationPath}.${process.pid}.${randomUUID()}.tmp`;
+  await writeFile(tempPath, `${canonicalJson(payload)}\n`, "utf8");
+  await rename(tempPath, destinationPath);
+};
+
+interface RunComplianceCoverageEvaluationInput {
+  readonly result: RunFigmaToQcTestCasesResult;
+  readonly policyProfileId: string;
+  readonly explicitFrameworks: readonly ComplianceFrameworkId[] | undefined;
+}
+
+/**
+ * Runs the deterministic compliance annotator + coverage report
+ * (Issue #2042) and persists the two artifacts next to the runner's
+ * other outputs. Returns a single-line summary suitable for the
+ * operator log.
+ */
+const runComplianceCoverageEvaluation = async (
+  input: RunComplianceCoverageEvaluationInput,
+): Promise<string> => {
+  const { result, policyProfileId, explicitFrameworks } = input;
+  const activeFrameworks = resolveActiveFrameworks(
+    explicitFrameworks,
+    policyProfileId,
+  );
+
+  const annotations = annotateTestCases({
+    jobId: result.jobId,
+    generatedAt: result.generatedAt,
+    testCases: result.generatedTestCases.testCases,
+    activeFrameworks,
+  });
+
+  const coverage = buildComplianceCoverageReport({
+    annotations,
+    totalTestCases: result.generatedTestCases.testCases.length,
+  });
+
+  const annotationsPath = join(
+    result.artifactDir,
+    COMPLIANCE_ANNOTATION_ARTIFACT_FILENAME,
+  );
+  const coveragePath = join(
+    result.artifactDir,
+    COMPLIANCE_COVERAGE_REPORT_ARTIFACT_FILENAME,
+  );
+
+  // The runner creates `artifactDir` for any real run. Some test
+  // injection paths supply a fictitious directory; in that case we
+  // emit a single-line note instead of failing the whole command —
+  // the compliance report is non-blocking by design.
+  try {
+    await writeJsonArtifactAtomically(annotationsPath, annotations);
+    await writeJsonArtifactAtomically(coveragePath, coverage);
+  } catch (err) {
+    if (isMissingDirectoryError(err)) {
+      return `  compliance coverage : skipped (artifact directory unavailable)`;
+    }
+    throw err;
+  }
+
+  const errorFlag = coverage.hasUncoveredErrorRule ? " [uncovered error]" : "";
+  return (
+    `  compliance coverage : ${activeFrameworks.length} frameworks · ` +
+    `${(coverage.overallCoverageRatio * 100).toFixed(1)}% covered ` +
+    `(${coveragePath})${errorFlag}`
+  );
+};
+
+const isMissingDirectoryError = (err: unknown): boolean => {
+  if (typeof err !== "object" || err === null) return false;
+  const code = (err as { code?: unknown }).code;
+  return code === "ENOENT" || code === "ENOTDIR";
+};
+
 interface RunCoverageBaselineSyncInput {
   readonly result: RunFigmaToQcTestCasesResult;
   readonly coverageBaseline: {
@@ -3419,6 +3539,26 @@ export const runTestIntelligenceCommand = async (
     return exitCodeForRunnerError(err);
   }
 
+  // Compliance coverage report (Issue #2042). Runs after the producer
+  // emits its `GeneratedTestCaseList` so the deterministic annotator
+  // can scan every case against the active rule pack. Persisted next
+  // to the run's other artifacts; failures here are treated as
+  // operator errors (exit code 2) so a malformed framework input
+  // surfaces immediately.
+  let complianceCoverageSummary: string;
+  try {
+    complianceCoverageSummary = await runComplianceCoverageEvaluation({
+      result,
+      policyProfileId: result.policy.policyProfileId,
+      explicitFrameworks: options.complianceFrameworks,
+    });
+  } catch (err) {
+    sink.stderr(
+      `error: compliance coverage evaluation failed: ${sanitizeErrorMessage({ error: err, fallback: "compliance pipeline failure" })}\n`,
+    );
+    return 2;
+  }
+
   // Coverage-baseline drift gate (Issue #1950): seeds the per-tenant
   // baseline on first run, evaluates drift on subsequent runs, and
   // re-baselines when `--coverage-baseline-update` is passed. The
@@ -3478,6 +3618,7 @@ export const runTestIntelligenceCommand = async (
   }
   if (finopsTotalsLine) summaryLines.push(finopsTotalsLine);
   if (evidenceDigestLine) summaryLines.push(evidenceDigestLine);
+  summaryLines.push(complianceCoverageSummary);
   if (coverageBaselineSummary !== undefined) {
     summaryLines.push(coverageBaselineSummary);
   }
@@ -3626,6 +3767,13 @@ Mutation-killing eval (Issue #2041):
 
 Other:
   --policy-profile <id>      Optional policy profile id (default: built-in EU banking)
+  --compliance-frameworks <csv>
+                             Optional comma-separated list of compliance
+                             frameworks evaluated by the deterministic
+                             compliance annotator (Issue #2042). Known
+                             values: PSD2,MIFID_II,IDD,SOLVENCY_II,DORA,
+                             EU_AI_ACT,GDPR. When omitted, the active set
+                             is derived from the policy profile.
   --allow-policy-blocked     Do not fail with exit code 3 when policy blocked.
                              Emits a warning and marks the summary for manual review.
   --mode <m>                 deterministic_llm | offline_eval | dry_run

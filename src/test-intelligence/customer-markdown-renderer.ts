@@ -16,6 +16,7 @@ import type {
   GeneratedTestCase,
   GeneratedTestCaseList,
 } from "../contracts/index.js";
+import type { ComplianceCoverageReport } from "./compliance-coverage-report.js";
 
 export interface RenderCustomerMarkdownInput {
   list: GeneratedTestCaseList;
@@ -29,6 +30,12 @@ export interface RenderCustomerMarkdownInput {
   acceptanceCriteria?: readonly string[];
   /** Customer-facing mode hides internal ids; technical preserves them. */
   mode?: "customer" | "technical";
+  /**
+   * Optional compliance-coverage report (Issue #2042). When supplied,
+   * the combined Markdown gains a "Compliance coverage" section listing
+   * coverage ratio per active framework and per-rule outcome.
+   */
+  complianceCoverage?: ComplianceCoverageReport;
 }
 
 export interface RenderedCustomerMarkdown {
@@ -223,6 +230,9 @@ const renderCombined = (
       );
     }
     lines.push("");
+  }
+  if (input.complianceCoverage !== undefined) {
+    appendComplianceCoverageSection(lines, input.complianceCoverage);
   }
   for (let i = 0; i < preparedCases.length; i += 1) {
     const entry = preparedCases[i];
@@ -663,6 +673,49 @@ const tokenizeForMatching = (value: string): string[] =>
 
 const escapeTableCell = (value: string): string =>
   value.replace(/\|/gu, "\\|").replace(/\n/gu, " ").trim() || "—";
+
+const formatCoverageRatioPercent = (ratio: number): string => {
+  const clamped = Math.max(0, Math.min(1, ratio));
+  return `${(clamped * 100).toFixed(1)}%`;
+};
+
+const appendComplianceCoverageSection = (
+  lines: string[],
+  report: ComplianceCoverageReport,
+): void => {
+  lines.push("## Compliance coverage");
+  lines.push("");
+  if (report.activeFrameworks.length === 0) {
+    lines.push(
+      "Keine aktiven Regelwerke konfiguriert (Issue #2042 — `--compliance-frameworks`).",
+    );
+    lines.push("");
+    return;
+  }
+  lines.push(
+    `Aktive Regelwerke: ${report.activeFrameworks.join(", ")} · Gesamtabdeckung: ${formatCoverageRatioPercent(report.overallCoverageRatio)}`,
+  );
+  lines.push("");
+  lines.push("| Regelwerk | Abdeckung | Erfüllt | Offen |");
+  lines.push("| --- | --- | --- | --- |");
+  for (const framework of report.frameworks) {
+    lines.push(
+      `| ${escapeTableCell(framework.title)} | ${formatCoverageRatioPercent(framework.coverageRatio)} | ${framework.coveredRules}/${framework.totalRules} | ${framework.uncoveredRules} |`,
+    );
+  }
+  lines.push("");
+  lines.push("| Artikel | Schweregrad | Abgedeckt |");
+  lines.push("| --- | --- | --- |");
+  for (const framework of report.frameworks) {
+    for (const rule of framework.rules) {
+      const coveredLabel = rule.covered ? "ja" : "nein";
+      lines.push(
+        `| ${escapeTableCell(rule.ruleId)} — ${escapeTableCell(rule.citation)} | ${rule.severity} | ${coveredLabel} |`,
+      );
+    }
+  }
+  lines.push("");
+};
 
 const slugify = (raw: string): string => {
   const lowered = raw.toLowerCase();
