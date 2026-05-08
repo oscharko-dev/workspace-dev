@@ -39,7 +39,10 @@ import { validateGeneratedTestCaseList } from "./generated-test-case-schema.js";
 import { detectPii } from "./pii-detection.js";
 import { detectSuspiciousContent } from "./semantic-content-sanitization.js";
 import { buildTestDesignModel } from "./test-design-model.js";
-import { detectUnsupportedExactValidationClaim } from "./unresolved-validation-rules.js";
+import {
+  detectOpenQuestionClarificationClaim,
+  detectUnsupportedExactValidationClaim,
+} from "./unresolved-validation-rules.js";
 
 const TITLE_MAX_LENGTH = 200;
 const OBJECTIVE_MAX_LENGTH = 1000;
@@ -188,6 +191,7 @@ const validateCase = (
   validateAssumptionsAndQuestions(testCase, basePath, issues);
   validateAmbiguityReviewState(testCase, basePath, issues);
   validateUnsupportedUnresolvedValidationDetails(testCase, basePath, model, issues);
+  validateNeedsOpenQuestionClarification(testCase, basePath, model, issues);
 };
 
 const validateSemanticSuspiciousContent = (
@@ -594,6 +598,34 @@ const validateUnsupportedUnresolvedValidationDetails = (
     path: `${basePath}.${claim.path}`,
     code: "unsupported_unresolved_validation_detail",
     severity: "error",
+    message: claim.message,
+  });
+};
+
+const validateNeedsOpenQuestionClarification = (
+  testCase: GeneratedTestCase,
+  basePath: string,
+  model: ReturnType<typeof buildTestDesignModel>,
+  issues: TestCaseValidationIssue[],
+): void => {
+  if (
+    detectUnsupportedExactValidationClaim({
+      testCase,
+      model,
+    }) !== undefined
+  ) {
+    return;
+  }
+  const claim = detectOpenQuestionClarificationClaim({
+    testCase,
+    model,
+  });
+  if (claim === undefined) return;
+  pushIssue(issues, {
+    testCaseId: testCase.id,
+    path: `${basePath}.${claim.path}`,
+    code: "needs_open_question_clarification",
+    severity: "warning",
     message: claim.message,
   });
 };

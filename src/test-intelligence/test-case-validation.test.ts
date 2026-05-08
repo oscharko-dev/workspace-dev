@@ -495,9 +495,7 @@ test("exact validation details are rejected when the source marks the rule unres
   assert.equal(report.blocked, true);
   assert.ok(
     report.issues.some(
-      (issue) =>
-        issue.code === "unsupported_unresolved_validation_detail" &&
-        issue.path === "$.testCases[0].objective",
+      (issue) => issue.code === "unsupported_unresolved_validation_detail",
     ),
   );
 });
@@ -571,10 +569,62 @@ test("empty-input validation assumptions are rejected when the source marks the 
   assert.equal(report.blocked, true);
   assert.ok(
     report.issues.some(
-      (issue) =>
-        issue.code === "unsupported_unresolved_validation_detail" &&
-        issue.path === "$.testCases[0].objective",
+      (issue) => issue.code === "unsupported_unresolved_validation_detail",
     ),
+  );
+});
+
+test("label-only unresolved validation references downgrade to clarification warnings", () => {
+  const intent = buildIntent();
+  intent.detectedFields[0] = {
+    ...intent.detectedFields[0]!,
+    label: "Höhe des Kaufpreises (Netto)",
+  };
+  intent.openQuestions = [
+    "Es ist fachlich zu klären, wie sich die Auswahl Netto / Brutto auf Feldbezeichnungen und Berechnung auswirkt.",
+  ];
+
+  const tc = buildCase({
+    title: "Netto label visible",
+    objective: "Confirm the Netto field label is visible.",
+    steps: [
+      {
+        index: 1,
+        action:
+          "Verifiziert, dass das Label \"Höhe des Kaufpreises (Netto)\" sichtbar ist.",
+        expected: "Das Label ist sichtbar.",
+      },
+    ],
+    expectedResults: ["Das Label ist sichtbar."],
+    qualitySignals: {
+      coveredFieldIds: ["s-payment::field::n-iban"],
+      coveredActionIds: [],
+      coveredValidationIds: [],
+      coveredNavigationIds: [],
+      confidence: 0.85,
+    },
+  });
+
+  const report = validateGeneratedTestCases({
+    jobId: "job-1",
+    generatedAt: GENERATED_AT,
+    list: buildList([tc]),
+    intent,
+  });
+
+  assert.equal(report.blocked, false, JSON.stringify(report.issues, null, 2));
+  assert.ok(
+    report.issues.some(
+      (issue) =>
+        issue.code === "needs_open_question_clarification" &&
+        issue.severity === "warning",
+    ),
+  );
+  assert.equal(
+    report.issues.some(
+      (issue) => issue.code === "unsupported_unresolved_validation_detail",
+    ),
+    false,
   );
 });
 

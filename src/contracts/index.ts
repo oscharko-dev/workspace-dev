@@ -908,6 +908,7 @@ export const ALLOWED_TEST_CASE_VALIDATION_ISSUE_CODES = [
   "open_questions_excessive",
   "ambiguity_without_review_state",
   "unsupported_unresolved_validation_detail",
+  "needs_open_question_clarification",
   "semantic_suspicious_content",
   "domain_invariant_violation",
 ] as const;

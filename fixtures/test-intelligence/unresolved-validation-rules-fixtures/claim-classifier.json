@@ -1,0 +1,148 @@
+{
+  "cases": [
+    {
+      "id": "numeric-01",
+      "text": "Erwartet: 50.000,00 EUR im Feld Kaufpreis Netto.",
+      "classification": "concrete_numeric_data",
+      "unsupported": true
+    },
+    {
+      "id": "numeric-02",
+      "text": "Verify the VAT amount shows 19.00 % after selection.",
+      "classification": "concrete_numeric_data",
+      "unsupported": true
+    },
+    {
+      "id": "numeric-03",
+      "text": "The amount field rejects 1.250,99 EUR for this unresolved rule.",
+      "classification": "concrete_numeric_data",
+      "unsupported": true
+    },
+    {
+      "id": "numeric-04",
+      "text": "The amount field validation accepts 12.345,67 EUR.",
+      "classification": "concrete_numeric_data",
+      "unsupported": true
+    },
+    {
+      "id": "message-01",
+      "text": "Expected validation message: \"VAT rate is required\".",
+      "classification": "concrete_message_text",
+      "unsupported": true
+    },
+    {
+      "id": "message-02",
+      "text": "Expected validation message: \"Amount field is required\".",
+      "classification": "concrete_message_text",
+      "unsupported": true
+    },
+    {
+      "id": "message-03",
+      "text": "Submit is blocked and an inline validation error is shown.",
+      "classification": "concrete_message_text",
+      "unsupported": true
+    },
+    {
+      "id": "message-04",
+      "text": "Provide an invalid VAT rate and expect a clear message.",
+      "classification": "concrete_message_text",
+      "unsupported": true
+    },
+    {
+      "id": "mixed-01",
+      "text": "Verify field label \"Netto\" and expect 45.000,00 EUR to be shown.",
+      "classification": "concrete_numeric_data",
+      "unsupported": true
+    },
+    {
+      "id": "mixed-02",
+      "text": "Check option \"Brutto\" and expect message \"Amount field is required\".",
+      "classification": "concrete_message_text",
+      "unsupported": true
+    },
+    {
+      "id": "mixed-03",
+      "text": "The MwSt. field displays 7,50 % and the message \"must be positive\".",
+      "classification": "concrete_numeric_data",
+      "unsupported": true
+    },
+    {
+      "id": "mixed-04",
+      "text": "The unresolved amount field shows 999.99 EUR after selecting Netto.",
+      "classification": "concrete_numeric_data",
+      "unsupported": true
+    },
+    {
+      "id": "label-01",
+      "text": "Verifiziert, dass das Label \"Höhe des Kaufpreises (Netto)\" sichtbar ist.",
+      "classification": "label_only",
+      "unsupported": false
+    },
+    {
+      "id": "label-02",
+      "text": "Confirm the VAT field label is visible.",
+      "classification": "label_only",
+      "unsupported": false
+    },
+    {
+      "id": "label-03",
+      "text": "Prüfe, dass die Option \"Brutto\" auswählbar ist.",
+      "classification": "label_only",
+      "unsupported": false
+    },
+    {
+      "id": "label-04",
+      "text": "The hint text for the amount field is displayed.",
+      "classification": "label_only",
+      "unsupported": false
+    },
+    {
+      "id": "label-05",
+      "text": "Check that the section title for Netto / Brutto is shown.",
+      "classification": "label_only",
+      "unsupported": false
+    },
+    {
+      "id": "label-06",
+      "text": "Sichtbarkeit der Feldbezeichnung \"MwSt.-Satz\" prüfen.",
+      "classification": "label_only",
+      "unsupported": false
+    },
+    {
+      "id": "label-07",
+      "text": "Ensure the radio option \"Netto\" is present.",
+      "classification": "label_only",
+      "unsupported": false
+    },
+    {
+      "id": "label-08",
+      "text": "Verify the caption for the amount field is shown.",
+      "classification": "label_only",
+      "unsupported": false
+    },
+    {
+      "id": "label-09",
+      "text": "Prüfe, dass der Hinweistext zur MwSt. vorhanden ist.",
+      "classification": "label_only",
+      "unsupported": false
+    },
+    {
+      "id": "label-10",
+      "text": "Confirm the copy for the Brutto selection is displayed.",
+      "classification": "label_only",
+      "unsupported": false
+    },
+    {
+      "id": "label-11",
+      "text": "The field name for VAT selection remains visible.",
+      "classification": "label_only",
+      "unsupported": false
+    },
+    {
+      "id": "label-12",
+      "text": "Abschnittstitel für die Netto / Brutto Kaufpreis-Erfassung ist sichtbar.",
+      "classification": "label_only",
+      "unsupported": false
+    }
+  ]
+}
