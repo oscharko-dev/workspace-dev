@@ -235,11 +235,15 @@ const upsertNode = (
   nodes: Map<string, ProvenanceNode>,
   node: ProvenanceNode,
 ): void => {
+  nodes.set(readNodeId(node), node);
+};
+
+const readNodeId = (node: ProvenanceNode): string => {
   const id = node["@id"];
   if (typeof id !== "string") {
     throw new TypeError("provenance node is missing @id");
   }
-  nodes.set(id, node);
+  return id;
 };
 
 const buildAggregateRoleActivityId = (role: string): string =>
@@ -781,7 +785,7 @@ export const buildRunProvenanceGraph = async (
   });
 
   const sortedNodes = [...nodes.values()].sort((left, right) =>
-    String(left["@id"]).localeCompare(String(right["@id"])),
+    readNodeId(left).localeCompare(readNodeId(right)),
   );
   const merkleSeal = computeProvenanceMerkleSeal(sortedNodes);
   const nodesWithLeafHashes = sortedNodes.map((node) => ({
