@@ -4211,9 +4211,15 @@ export interface JudgeDisagreementJudgeEntry {
 /** Per-family agreement-matrix cell (Issue #2038). */
 export interface JudgeDisagreementMatrixCell {
   readonly family: JudgeModelFamily;
-  /** Number of times this family agreed with the resolved verdict. */
+  /** Number of votes from this family that matched the resolved verdict. */
   readonly agreements: number;
-  /** Number of times this family was the lone dissenter. */
+  /**
+   * Number of votes from this family that disagreed with the resolved
+   * verdict. Counts every dissenting vote — not just the
+   * lone-dissenter case — so a 1:1:1 split surfaces a `dissents: 1`
+   * cell on each minority family. The `agreements + dissents === votes`
+   * invariant holds per cell.
+   */
   readonly dissents: number;
   /** Total votes cast by this family across the run. */
   readonly votes: number;

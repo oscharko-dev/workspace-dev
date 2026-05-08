@@ -99,6 +99,7 @@ const normaliseCostByFamily = (
   rollup: ReadonlyMap<JudgeModelFamily, { readonly totalTokens: number; readonly costMicrounits: number }> | undefined,
   families: readonly JudgeModelFamily[],
 ): readonly JudgeDisagreementCostByFamily[] => {
+  const familySet = new Set<JudgeModelFamily>(families);
   const seen = new Set<JudgeModelFamily>();
   const result: JudgeDisagreementCostByFamily[] = [];
   if (rollup !== undefined) {
@@ -106,6 +107,12 @@ const normaliseCostByFamily = (
       if (!isJudgeModelFamily(family)) {
         throw new RangeError(
           `judge-disagreement-report: cost rollup family "${String(family)}" is not a known JudgeModelFamily`,
+        );
+      }
+      if (!familySet.has(family)) {
+        throw new RangeError(
+          `judge-disagreement-report: cost rollup carries family "${family}" but no judge in the run binds that family. ` +
+            `Cost rollups must match the panel's judge bindings.`,
         );
       }
       if (
@@ -241,10 +248,31 @@ export const serializeJudgeDisagreementReport = (
   report: JudgeDisagreementReport,
 ): string => `${canonicalJson(report)}\n`;
 
+const ISO_8601 =
+  /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?(?:Z|[+-]\d{2}:\d{2})$/u;
+
+const assertNonNegativeInteger = (
+  value: number,
+  where: string,
+): void => {
+  if (
+    !Number.isFinite(value) ||
+    value < 0 ||
+    !Number.isInteger(value)
+  ) {
+    throw new RangeError(`${where}: must be a non-negative integer`);
+  }
+};
+
 /** Validate a reloaded report. Throws on any structural violation. */
 export const assertJudgeDisagreementReportInvariants = (
   report: JudgeDisagreementReport,
 ): void => {
+  if (typeof report.jobId !== "string" || report.jobId.length === 0) {
+    throw new TypeError(
+      "JudgeDisagreementReport: jobId must be a non-empty string",
+    );
+  }
   const where = `JudgeDisagreementReport[${report.jobId}]`;
   const schemaVersion: string = report.schemaVersion;
   if (schemaVersion !== JUDGE_DISAGREEMENT_REPORT_SCHEMA_VERSION) {
@@ -256,6 +284,14 @@ export const assertJudgeDisagreementReportInvariants = (
   if (contractVersion !== TEST_INTELLIGENCE_CONTRACT_VERSION) {
     throw new TypeError(
       `${where}: contractVersion must be "${TEST_INTELLIGENCE_CONTRACT_VERSION}", got "${contractVersion}"`,
+    );
+  }
+  if (
+    typeof report.generatedAt !== "string" ||
+    !ISO_8601.test(report.generatedAt)
+  ) {
+    throw new RangeError(
+      `${where}: generatedAt must be a strict ISO-8601 timestamp`,
     );
   }
   if (
@@ -297,12 +333,103 @@ export const assertJudgeDisagreementReportInvariants = (
   if (report.judges.length === 0) {
     throw new RangeError(`${where}: judges must be a non-empty array`);
   }
+  for (let i = 0; i < report.judges.length; i++) {
+    const judge = report.judges[i]!;
+    if (!isJudgeModelFamily(judge.family)) {
+      throw new RangeError(
+        `${where}: judges[${i}].family "${String(judge.family)}" is not a known JudgeModelFamily`,
+      );
+    }
+    if (!isJudgeModelRegion(judge.region)) {
+      throw new RangeError(
+        `${where}: judges[${i}].region "${String(judge.region)}" is not a known JudgeModelRegion`,
+      );
+    }
+    if (typeof judge.modelId !== "string" || judge.modelId.length === 0) {
+      throw new TypeError(
+        `${where}: judges[${i}].modelId must be a non-empty string`,
+      );
+    }
+    if (
+      typeof judge.promptVersion !== "string" ||
+      judge.promptVersion.length === 0
+    ) {
+      throw new TypeError(
+        `${where}: judges[${i}].promptVersion must be a non-empty string`,
+      );
+    }
+  }
   for (let i = 1; i < report.judges.length; i++) {
     const prev = report.judges[i - 1]!;
     const cur = report.judges[i]!;
     if (compareByJudgeId(prev, cur) >= 0) {
       throw new RangeError(
         `${where}: judges must be sorted alphabetically by judgeId`,
+      );
+    }
+  }
+  for (let i = 0; i < report.perFamilyAgreement.length; i++) {
+    const cell = report.perFamilyAgreement[i]!;
+    if (!isJudgeModelFamily(cell.family)) {
+      throw new RangeError(
+        `${where}: perFamilyAgreement[${i}].family "${String(cell.family)}" is not a known JudgeModelFamily`,
+      );
+    }
+    assertNonNegativeInteger(
+      cell.agreements,
+      `${where}: perFamilyAgreement[${i}].agreements`,
+    );
+    assertNonNegativeInteger(
+      cell.dissents,
+      `${where}: perFamilyAgreement[${i}].dissents`,
+    );
+    assertNonNegativeInteger(
+      cell.votes,
+      `${where}: perFamilyAgreement[${i}].votes`,
+    );
+    if (cell.agreements + cell.dissents !== cell.votes) {
+      throw new RangeError(
+        `${where}: perFamilyAgreement[${i}] for family "${cell.family}" must satisfy agreements + dissents === votes`,
+      );
+    }
+  }
+  for (let i = 1; i < report.perFamilyAgreement.length; i++) {
+    if (
+      compareByFamily(
+        report.perFamilyAgreement[i - 1]!,
+        report.perFamilyAgreement[i]!,
+      ) >= 0
+    ) {
+      throw new RangeError(
+        `${where}: perFamilyAgreement must be sorted alphabetically by family`,
+      );
+    }
+  }
+  for (let i = 0; i < report.costByFamily.length; i++) {
+    const cell = report.costByFamily[i]!;
+    if (!isJudgeModelFamily(cell.family)) {
+      throw new RangeError(
+        `${where}: costByFamily[${i}].family "${String(cell.family)}" is not a known JudgeModelFamily`,
+      );
+    }
+    assertNonNegativeInteger(
+      cell.totalTokens,
+      `${where}: costByFamily[${i}].totalTokens`,
+    );
+    assertNonNegativeInteger(
+      cell.costMicrounits,
+      `${where}: costByFamily[${i}].costMicrounits`,
+    );
+  }
+  for (let i = 1; i < report.costByFamily.length; i++) {
+    if (
+      compareByFamily(
+        report.costByFamily[i - 1]!,
+        report.costByFamily[i]!,
+      ) >= 0
+    ) {
+      throw new RangeError(
+        `${where}: costByFamily must be sorted alphabetically by family`,
       );
     }
   }

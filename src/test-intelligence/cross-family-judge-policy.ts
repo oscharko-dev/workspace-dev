@@ -368,6 +368,14 @@ export const assessCrossFamilyPanel = (
       "assessCrossFamilyPanel: bindings must be a non-empty array",
     );
   }
+  if (
+    options.mostTrustedFamily !== undefined &&
+    !isJudgeModelFamily(options.mostTrustedFamily)
+  ) {
+    throw new RangeError(
+      `assessCrossFamilyPanel: options.mostTrustedFamily "${String(options.mostTrustedFamily)}" is not a known JudgeModelFamily`,
+    );
+  }
   for (let i = 0; i < bindings.length; i++) {
     const binding = bindings[i];
     if (binding === undefined) {

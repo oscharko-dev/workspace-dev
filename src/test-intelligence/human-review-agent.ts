@@ -29,6 +29,7 @@ import {
   HUMAN_REVIEW_DECISION_SCHEMA_VERSION,
   HUMAN_REVIEW_RATIONALE_MAX_CHARS,
   HUMAN_REVIEW_VERDICT_LABELS,
+  JUDGE_DISAGREEMENT_DECISION_LABELS,
   type HumanReviewDecision,
   type HumanReviewReviewerKind,
   type HumanReviewVerdictLabel,
@@ -115,14 +116,6 @@ const assertReviewerKind = (
   }
 };
 
-const KNOWN_TRIGGER_LABELS: readonly string[] = [
-  "majority_decision",
-  "split_decision",
-  "unanimous_accept",
-  "unanimous_reject",
-  "unanimous_repair",
-];
-
 const assertTriggeredBy = (
   triggeredBy: JudgeDisagreementDecisionLabel,
   where: string,
@@ -133,7 +126,9 @@ const assertTriggeredBy = (
       `${where}: triggeredBy must be a non-empty JudgeDisagreementDecisionLabel`,
     );
   }
-  if (!KNOWN_TRIGGER_LABELS.includes(value)) {
+  if (
+    !(JUDGE_DISAGREEMENT_DECISION_LABELS as readonly string[]).includes(value)
+  ) {
     throw new RangeError(
       `${where}: triggeredBy "${value}" is not a known JudgeDisagreementDecisionLabel`,
     );

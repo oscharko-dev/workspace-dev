@@ -27,8 +27,10 @@ import {
   assessCrossFamilyPanel,
   isJudgeModelFamily,
   isJudgeModelRegion,
+  type CrossFamilyJudgePolicyOptions,
   type JudgeFamilyBinding,
 } from "./cross-family-judge-policy.js";
+import { assertHumanReviewDecisionInvariants } from "./human-review-agent.js";
 
 type ConsensusVerdictLabel = JudgeConsensusVerdict["verdict"];
 
@@ -64,6 +66,21 @@ const normalizeJudgeVerdict = (
   return entry;
 };
 
+const assertOptionalNonEmptyString = (
+  value: string | undefined,
+  judgeId: string,
+  field: string,
+): void => {
+  if (value === undefined) {
+    return;
+  }
+  if (typeof value !== "string" || value.length === 0) {
+    throw new TypeError(
+      `judge-consensus: panel entry "${judgeId}" has invalid ${field} (must be a non-empty string when present)`,
+    );
+  }
+};
+
 const normalizePanelEntry = (
   entry: JudgeConsensusPanelEntry,
 ): JudgeConsensusPanelEntry => {
@@ -87,6 +104,16 @@ const normalizePanelEntry = (
       `judge-consensus: panel entry "${normalized.judgeId}" has unknown region "${String(normalized.region)}"`,
     );
   }
+  assertOptionalNonEmptyString(
+    normalized.modelId,
+    normalized.judgeId,
+    "modelId",
+  );
+  assertOptionalNonEmptyString(
+    normalized.promptVersion,
+    normalized.judgeId,
+    "promptVersion",
+  );
   return Object.freeze({
     judgeId: normalized.judgeId,
     verdict: normalized.verdict,
@@ -104,23 +131,22 @@ const normalizePanelEntry = (
 
 const buildCrossFamilySummary = (
   panel: readonly JudgeConsensusPanelEntry[],
+  options: CrossFamilyJudgePolicyOptions | undefined,
 ): JudgeCrossFamilySummary | undefined => {
+  // Cross-family summary requires only `family` per entry — `modelId`
+  // and `promptVersion` are persisted on the panel entry but are not
+  // load-bearing for the agreement / escalation calculation.
   const bindings: JudgeFamilyBinding[] = [];
   for (const entry of panel) {
-    if (
-      entry.family === undefined ||
-      entry.region === undefined ||
-      entry.modelId === undefined ||
-      entry.promptVersion === undefined
-    ) {
+    if (entry.family === undefined) {
       return undefined;
     }
     bindings.push({
       judgeId: entry.judgeId,
       family: entry.family,
-      region: entry.region,
-      modelId: entry.modelId,
-      promptVersion: entry.promptVersion,
+      region: entry.region ?? "global",
+      modelId: entry.modelId ?? `${entry.family}-unspecified`,
+      promptVersion: entry.promptVersion ?? `${entry.judgeId}-unspecified`,
       verdict: entry.verdict,
     });
   }
@@ -133,7 +159,15 @@ const buildCrossFamilySummary = (
     // ensemble; skip the summary so consumers can detect the case.
     return undefined;
   }
-  const result = assessCrossFamilyPanel(bindings, { allowSharedFamily: true });
+  // Forward operator-supplied policy options (notably `mostTrustedFamily`)
+  // so the summary's `escalation` agrees with the policy that the
+  // production runner applied. `allowSharedFamily` is forced to `true`
+  // here because the consensus surface itself cannot enforce the
+  // cross-family invariant — that gate runs upstream of the panel.
+  const result = assessCrossFamilyPanel(bindings, {
+    ...(options ?? {}),
+    allowSharedFamily: true,
+  });
   const sortedFamilies: readonly JudgeModelFamily[] = Object.freeze(
     [...result.families].sort(),
   );
@@ -312,11 +346,21 @@ export interface BuildJudgeConsensusInput {
   readonly panel: readonly JudgeConsensusPanelEntry[];
   readonly repairHistory?: Partial<JudgeConsensusRepairHistory>;
   /**
-   * Optional human-review decision (Issue #2038). Attached verbatim
-   * to the consensus artifact when the cross-family disagreement
+   * Optional human-review decision (Issue #2038). Validated through
+   * `assertHumanReviewDecisionInvariants` and attached verbatim to
+   * the consensus artifact when the cross-family disagreement
    * detector escalated the run.
    */
   readonly humanReview?: HumanReviewDecision;
+  /**
+   * Optional cross-family policy options (Issue #2038). Forwarded
+   * into `assessCrossFamilyPanel` when computing the inline
+   * `crossFamily` summary so the persisted `escalation` matches the
+   * policy applied by the runner (notably `mostTrustedFamily`).
+   * `allowSharedFamily` is forced to `true` inside the summary path
+   * because the cross-family invariant is enforced upstream.
+   */
+  readonly crossFamilyOptions?: CrossFamilyJudgePolicyOptions;
 }
 
 export const buildLogicJudgeConsensusEntry = (
@@ -458,7 +502,10 @@ export const buildJudgeConsensus = (
       : verdict === "repair"
         ? "repair_required"
         : "none";
-  const crossFamily = buildCrossFamilySummary(panel);
+  const crossFamily = buildCrossFamilySummary(panel, input.crossFamilyOptions);
+  if (input.humanReview !== undefined) {
+    assertHumanReviewDecisionInvariants(input.humanReview);
+  }
   return {
     schemaVersion: JUDGE_CONSENSUS_SCHEMA_VERSION,
     contractVersion: TEST_INTELLIGENCE_CONTRACT_VERSION,
