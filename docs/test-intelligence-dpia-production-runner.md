@@ -291,11 +291,11 @@ evidence manifest. A binding is the tuple
 (`AgentModelBinding` in `src/contracts/`). The bindings used by a
 production-wired run are:
 
-| Role              | Provider      | Model id (example)                    | Inference profile (example)                             | ICT register reference                                                               |
-| ----------------- | ------------- | ------------------------------------- | ------------------------------------------------------- | ------------------------------------------------------------------------------------ |
-| `test_generation` | `llm-gateway` | `mistral-large-3` (or operator override) | `WORKSPACE_AZURE_AI_FOUNDRY_TEST_GENERATION_DEPLOYMENT` | Operator-managed, e.g. `ict://bank/registers/llm/azure-foundry/test-generation/<id>` |
-| `visual_primary`  | `llm-gateway` | `llama-4-maverick-vision`             | `WORKSPACE_AZURE_AI_FOUNDRY_VISUAL_PRIMARY_DEPLOYMENT`  | Operator-managed, e.g. `ict://bank/registers/llm/azure-foundry/visual-primary/<id>`  |
-| `visual_fallback` | `llm-gateway` | `phi-4-multimodal-instruct` (or fallback)  | `WORKSPACE_AZURE_AI_FOUNDRY_VISUAL_FALLBACK_DEPLOYMENT` | Operator-managed, e.g. `ict://bank/registers/llm/azure-foundry/visual-fallback/<id>` |
+| Role              | Provider      | Model id (example)                        | Inference profile (example)                             | ICT register reference                                                               |
+| ----------------- | ------------- | ----------------------------------------- | ------------------------------------------------------- | ------------------------------------------------------------------------------------ |
+| `test_generation` | `llm-gateway` | `mistral-large-3` (or operator override)  | `WORKSPACE_AZURE_AI_FOUNDRY_TEST_GENERATION_DEPLOYMENT` | Operator-managed, e.g. `ict://bank/registers/llm/azure-foundry/test-generation/<id>` |
+| `visual_primary`  | `llm-gateway` | `llama-4-maverick-vision`                 | `WORKSPACE_AZURE_AI_FOUNDRY_VISUAL_PRIMARY_DEPLOYMENT`  | Operator-managed, e.g. `ict://bank/registers/llm/azure-foundry/visual-primary/<id>`  |
+| `visual_fallback` | `llm-gateway` | `phi-4-multimodal-instruct` (or fallback) | `WORKSPACE_AZURE_AI_FOUNDRY_VISUAL_FALLBACK_DEPLOYMENT` | Operator-managed, e.g. `ict://bank/registers/llm/azure-foundry/visual-fallback/<id>` |
 
 Under the `eu-banking-default` policy profile, every active binding
 **must** carry a non-empty `ictRegisterRef`. Missing references are
@@ -307,6 +307,65 @@ operator's compliance register; the runner enforces only that the
 field is present and non-empty for banking deployments. Bindings are
 also referenced from the CycloneDX 1.7 ML-BOM (§3.5) so auditors can
 correlate the evidence chain with the operator's ICT register entry.
+
+#### 3.7.1 Multi-agent harness agent roles
+
+The multi-agent harness layered on top of the production runner pins
+every role to a static `AgentRoleProfile`
+(`src/test-intelligence/agent-role-profile.ts`) with a deterministic
+budget tier, capability filter, output schema, FinOps attribution
+group, and (for `llm_role` profiles) a prompt-template version + model
+binding. The `AgentRoleProfile` registry is the source of truth; the
+table below summarises the closed set as it stands at the close of the
+2026-Q3 Innovation Roadmap (Issue #2034). New roles or new fields
+require a contract bump and a `CONTRACT_CHANGELOG.md` entry; lowering
+any FinOps cap or capability filter triggers four-eyes review.
+
+| Agent role               | Kind                  | Capability       | FinOps group   | Provider / model (default)                                                   | Prompt version          | Output schema                    | ICT register reference                                                                  | Introduced by                                        |
+| ------------------------ | --------------------- | ---------------- | -------------- | ---------------------------------------------------------------------------- | ----------------------- | -------------------------------- | --------------------------------------------------------------------------------------- | ---------------------------------------------------- |
+| `visual_sidecar`         | deterministic_service | `read_artifacts` | `visual`       | n/a (delegates to `visual_primary` / `visual_fallback` model bindings above) | n/a                     | `visual-sidecar-result.v1`       | inherited from `visual_primary` / `visual_fallback` bindings                            | Wave MA-2 (#1756)                                    |
+| `generator`              | llm_role              | `read_artifacts` | `generation`   | `in-house` / `gpt-oss-120b`                                                  | `generator.v1`          | `generated-test-cases.v1`        | inherited from `test_generation` binding above                                          | Wave MA-3 (#1758)                                    |
+| `logic_judge`            | llm_role              | `score_only`     | `judge`        | `in-house` / `gpt-oss-120b` (`family=in-house`, `region=eu`)                 | `logic-judge.v1`        | `logic-judge-verdict.v1`         | Operator-managed, e.g. `ict://bank/registers/llm/azure-foundry/logic-judge/<id>`        | Wave MA-3 (#1758)                                    |
+| `semantic_judge`         | llm_role              | `score_only`     | `judge`        | `in-house` / `gpt-oss-120b` (`family=in-house`, `region=eu`)                 | `semantic-judge.v1`     | `judge-panel-verdict.v1`         | Operator-managed, e.g. `ict://bank/registers/llm/azure-foundry/semantic-judge/<id>`     | Wave MA-3 (#1758)                                    |
+| `adversarial_gap_finder` | llm_role              | `read_artifacts` | `judge`        | `in-house` / `phi-4`                                                         | `gap-finder.v1`         | `gap-finder-findings.v1`         | Operator-managed, e.g. `ict://bank/registers/llm/azure-foundry/gap-finder/<id>`         | Wave MA-3 (#1758)                                    |
+| `repair_planner`         | llm_role              | `read_artifacts` | `repair`       | `in-house` / `gpt-oss-120b`                                                  | `repair-planner.v1`     | `repair-plan.v1`                 | Operator-managed, e.g. `ict://bank/registers/llm/azure-foundry/repair-planner/<id>`     | Wave MA-3 (#1758)                                    |
+| `final_verifier`         | deterministic_service | `read_artifacts` | `verification` | n/a (no LLM call)                                                            | n/a                     | `final-verifier-report.v1`       | n/a (deterministic; no model binding to register)                                       | Wave MA-3 (#1758)                                    |
+| **`action_topology`**    | deterministic_service | `read_artifacts` | `generation`   | n/a (no LLM call)                                                            | n/a                     | `workflow-topology.v1`           | n/a (deterministic; no model binding to register)                                       | **Issue #2035 (Wave 1, Epic #2034)**                 |
+| **`adversarial_critic`** | llm_role              | `read_artifacts` | `adversarial`  | `in-house` / `phi-4`                                                         | `adversarial-critic.v1` | `adversarial-critic-findings.v1` | Operator-managed, e.g. `ict://bank/registers/llm/azure-foundry/adversarial-critic/<id>` | **Issue #2039 / #2052 / #2053 (Wave 2, Epic #2034)** |
+| **`human_review`**       | deterministic_service | `read_artifacts` | `judge`        | n/a (queue + four-eyes UI; no LLM call)                                      | n/a                     | `human-review-decision.v1`       | n/a (deterministic; no model binding to register)                                       | **Issue #2038 (Wave 2, Epic #2034)**                 |
+
+The capability invariant
+(`LLM_ROLE_FORBIDDEN_CAPABILITIES = ["propose_changes"]`) is enforced
+both at module load (`assertAgentRoleProfileInvariants` throws on
+violation) and as a boundary self-test in
+`agent-role-profile.test.ts`: no `llm_role` profile may declare
+`capability === "propose_changes"`. Filesystem, gateway, and
+review-store mutations are reserved for deterministic services gated
+by `RepairChangeGuard` (see §3.8). The three roles introduced under
+Epic #2034 honour the same invariant: `action_topology` and
+`human_review` are deterministic services with `read_artifacts`, and
+`adversarial_critic` is an LLM role with `read_artifacts` (its outputs
+feed the next generator pass via the negative-case lift gate
+`G-NEG-CASE` — never via direct mutation).
+
+For `llm_role` profiles, `ictRegisterRef` follows the same rule as the
+deployment-tier table above: under `eu-banking-default` it is
+mandatory and refusal code `ict_register_ref_required` is raised when
+absent; the runner enforces only that the field is present and
+non-empty, while the exact strings are operator-managed and live in
+the operator's compliance register. Deterministic services
+(`visual_sidecar`, `action_topology`, `human_review`,
+`final_verifier`) make no LLM gateway call and therefore have no
+binding to register; their FinOps cost lines remain visible in the
+`bySource` map under their `finOpsGroup` for completeness.
+
+The `judge_panel` aggregation (Issue #2038) sources its disagreement
+signal from the cross-family ensemble of `logic_judge` +
+`semantic_judge` + `adversarial_gap_finder`; routing decisions for the
+ensemble are recorded in `judge-consensus.json` alongside the
+`agreement` outcome consumed by the local benchmark scorecard
+(`docs/test-intelligence/cross-family-judges.md`,
+`docs/test-intelligence/local-benchmark-protocol.md`).
 
 ### 3.8 Hooks (signed-bundle policy)
 

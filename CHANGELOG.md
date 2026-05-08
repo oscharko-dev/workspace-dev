@@ -11,6 +11,31 @@ Contract-level surface changes remain tracked in `CONTRACT_CHANGELOG.md`.
 
 ### Added
 
+- Test Intelligence — 2026-Q3 Innovation Roadmap epic closure (#2034):
+    - Closure ADR (`docs/decisions/2026-05-08-issue-2034-ti-2026-q3-innovation-roadmap-closure.md`)
+      records the AC-traceability matrix for all eight epic acceptance
+      criteria and links the ten child issues (#2035–#2044) shipped
+      across Wave 1 (action topology, schema-first decoding, W3C PROV-DM
+      provenance), Wave 2 (cross-family judge ensemble + human review,
+      adversarial-critic self-play, property-based invariants,
+      mutation-killing eval), and Wave 3 (compliance-as-code rule packs,
+      cost-aware smart routing, DSPy-style prompt optimization).
+    - DPIA §3.7.1 (`docs/test-intelligence-dpia-production-runner.md`)
+      now documents the closed set of multi-agent harness agent roles,
+      including the three roles introduced by this epic
+      (`action_topology` from #2035, `human_review` from #2038, and
+      `adversarial_critic` from #2039 / #2052 / #2053). The new
+      sub-section restates the LLM-role capability invariant
+      (`LLM_ROLE_FORBIDDEN_CAPABILITIES = ["propose_changes"]`) and the
+      `ictRegisterRef` requirement under `eu-banking-default`.
+    - No `CONTRACT_VERSION` bump: every contract surface used by the
+      epic was bumped in the originating wave PRs and is reflected in
+      `CONTRACT_CHANGELOG.md` and `COMPATIBILITY.md`. KPI thresholds
+      (`mutationKillRate >= 0.85`, `actionCoverage.ratio >= 0.7`,
+      `G-NEG-CASE >= 0.30`) remain enforced by the contract constants
+      in `src/contracts/index.ts` and the `eu-banking-default` policy
+      profile.
+
 - OSS default demo and documentation story completion (#1532):
     - The default pipeline now has a synthetic, OSS-neutral financial demo
       fixture pack covering global banking dashboard, payment authorization
