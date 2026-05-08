@@ -155,8 +155,12 @@ test("schema: drift guard — the hash is stable for the current contract", () =
   // constants, no schema-shape changes). The schema pins
   // `contractVersion: { const: TEST_INTELLIGENCE_CONTRACT_VERSION }` so
   // the digest shifts in lockstep with the contract bump.
+  // Hash bumped by Issue #2065: TEST_INTELLIGENCE_CONTRACT_VERSION bumped
+  // 1.17.0 -> 1.18.0 (additive — new openai-chat constrained-decoding
+  // adapter module and `OPENAI_CHAT_*_ADAPTER_VERSION` runtime constants,
+  // no `GeneratedTestCaseList` shape changes). Same lockstep rationale.
   const expected =
-    "b7d51a4be5851ceb4c584851eca0c8c43229b6c42ae39d14ac51774457ed285c";
+    "8bdf83ec553cdc5934c49c3b3f477245d3924ec05728d5948462e24c1a13a150";
   const actual = computeGeneratedTestCaseListSchemaHash();
   if (actual !== expected) {
     assert.fail(

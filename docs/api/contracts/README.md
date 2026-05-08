@@ -88,7 +88,7 @@ Persisted multimodal accessibility-judge verdict artifact.
 
 ##### contractVersion
 
-> `readonly` **contractVersion**: `"1.17.0"`
+> `readonly` **contractVersion**: `"1.18.0"`
 
 ##### criteria
 
@@ -356,7 +356,7 @@ Persisted, canonical-JSON, per-job repair-iteration log.
 
 ##### contractVersion
 
-> `readonly` **contractVersion**: `"1.17.0"`
+> `readonly` **contractVersion**: `"1.18.0"`
 
 ##### generatedAt
 
@@ -919,7 +919,7 @@ input set is byte-identical and the entries are sorted before write.
 
 ##### contractVersion
 
-> `readonly` **contractVersion**: `"1.17.0"`
+> `readonly` **contractVersion**: `"1.18.0"`
 
 ##### diffArtifactBasename?
 
@@ -971,7 +971,7 @@ Persisted case-merger artifact (Issue #1937).
 
 ##### contractVersion
 
-> `readonly` **contractVersion**: `"1.17.0"`
+> `readonly` **contractVersion**: `"1.18.0"`
 
 ##### entries
 
@@ -1106,7 +1106,7 @@ Total bytes of cleared tool result blocks at the boundary.
 
 ##### contractVersion
 
-> `readonly` **contractVersion**: `"1.17.0"`
+> `readonly` **contractVersion**: `"1.18.0"`
 
 ##### jobId
 
@@ -1150,7 +1150,7 @@ Persisted, fully-redacted artifact form of a compiled prompt.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.17.0"`
+> **contractVersion**: `"1.18.0"`
 
 ##### hashes
 
@@ -2368,7 +2368,7 @@ Aggregate dry-run report artifact.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.17.0"`
+> **contractVersion**: `"1.18.0"`
 
 ##### credentialsIncluded
 
@@ -2721,7 +2721,7 @@ Sorted by filename for deterministic emission.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.17.0"`
+> **contractVersion**: `"1.18.0"`
 
 ##### exportedTestCaseCount
 
@@ -2812,7 +2812,7 @@ Persisted screenshot-vs-cases faithfulness verdict artifact.
 
 ##### contractVersion
 
-> `readonly` **contractVersion**: `"1.17.0"`
+> `readonly` **contractVersion**: `"1.18.0"`
 
 ##### fallbackReason
 
@@ -3076,7 +3076,7 @@ Aggregate counters across the `bySource` map.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.17.0"`
+> **contractVersion**: `"1.18.0"`
 
 ##### currencyLabel?
 
@@ -3714,7 +3714,7 @@ Single generated test case.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.17.0"`
+> **contractVersion**: `"1.18.0"`
 
 ##### expectedResults
 
@@ -3825,7 +3825,7 @@ Whether the artifact came from a replay-cache hit.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.17.0"`
+> **contractVersion**: `"1.18.0"`
 
 ##### generatedAt
 
@@ -4041,7 +4041,7 @@ referenced files and recomputing each row.
 
 ##### contractVersion
 
-> `readonly` **contractVersion**: `"1.17.0"`
+> `readonly` **contractVersion**: `"1.18.0"`
 
 ##### digest
 
@@ -4267,7 +4267,7 @@ Hard-invariant intent-delta report artifact (Issue #1373).
 
 ##### contractVersion
 
-> **contractVersion**: `"1.17.0"`
+> **contractVersion**: `"1.18.0"`
 
 ##### currentIntentHash
 
@@ -4581,7 +4581,7 @@ Aggregate `jira-created-subtasks.json` artifact (Issue #1482).
 
 ##### contractVersion
 
-> **contractVersion**: `"1.17.0"`
+> **contractVersion**: `"1.18.0"`
 
 ##### credentialsIncluded
 
@@ -5217,7 +5217,7 @@ Audit metadata for the run.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.17.0"`
+> **contractVersion**: `"1.18.0"`
 
 ##### createdCount
 
@@ -5419,7 +5419,7 @@ Persisted production-runner judge-consensus artifact.
 
 ##### contractVersion
 
-> `readonly` **contractVersion**: `"1.17.0"`
+> `readonly` **contractVersion**: `"1.18.0"`
 
 ##### crossFamily?
 
@@ -5642,7 +5642,7 @@ the disagreement-rate trending consumes (B.10).
 
 ##### contractVersion
 
-> `readonly` **contractVersion**: `"1.17.0"`
+> `readonly` **contractVersion**: `"1.18.0"`
 
 ##### costByFamily
 
@@ -5862,7 +5862,7 @@ Persisted logic-judge verdict artifact.
 
 ##### contractVersion
 
-> `readonly` **contractVersion**: `"1.17.0"`
+> `readonly` **contractVersion**: `"1.18.0"`
 
 ##### findings
 
@@ -6359,7 +6359,7 @@ Per-release primitive-map status report.
 
 ##### contractVersion
 
-> `readonly` **contractVersion**: `"1.17.0"`
+> `readonly` **contractVersion**: `"1.18.0"`
 
 ##### counts
 
@@ -7574,7 +7574,7 @@ catalog class appears exactly once.
 
 ##### contractVersion
 
-> `readonly` **contractVersion**: `"1.17.0"`
+> `readonly` **contractVersion**: `"1.18.0"`
 
 ##### generatedAt
 
@@ -7843,7 +7843,7 @@ Per-candidate scores, ordered by descending score then id.
 
 ##### contractVersion
 
-> `readonly` **contractVersion**: `"1.17.0"`
+> `readonly` **contractVersion**: `"1.18.0"`
 
 ##### datasetId
 
@@ -8076,7 +8076,7 @@ Aggregate `qc-created-entities.json` artifact (Issue #1372).
 
 ##### contractVersion
 
-> **contractVersion**: `"1.17.0"`
+> **contractVersion**: `"1.18.0"`
 
 ##### entities
 
@@ -8166,7 +8166,7 @@ Aggregate QC mapping preview artifact.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.17.0"`
+> **contractVersion**: `"1.18.0"`
 
 ##### entries
 
@@ -8842,7 +8842,7 @@ Gate 9 — context budget regression (Issue #1802).
 
 ##### contractVersion
 
-> `readonly` **contractVersion**: `"1.17.0"`
+> `readonly` **contractVersion**: `"1.18.0"`
 
 ##### libraryCoverageStatusCompleteness
 
@@ -8933,7 +8933,7 @@ The release pipeline fails when any verdict has `passed === false`.
 
 ##### contractVersion
 
-> `readonly` **contractVersion**: `"1.17.0"`
+> `readonly` **contractVersion**: `"1.18.0"`
 
 ##### mutationKillRate
 
@@ -9087,7 +9087,7 @@ gate passed.
 
 ##### contractVersion
 
-> `readonly` **contractVersion**: `"1.17.0"`
+> `readonly` **contractVersion**: `"1.18.0"`
 
 ##### gates
 
@@ -9276,7 +9276,7 @@ ISO-8601 UTC timestamp at the moment of persistence.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.17.0"`
+> **contractVersion**: `"1.18.0"`
 
 ##### fromState?
 
@@ -9344,7 +9344,7 @@ Number of cases currently in `approved` (or `exported`/`transferred`) state.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.17.0"`
+> **contractVersion**: `"1.18.0"`
 
 ##### fourEyesPolicy?
 
@@ -9570,7 +9570,7 @@ Persisted production-runner run-quality artifact.
 
 ##### contractVersion
 
-> `readonly` **contractVersion**: `"1.17.0"`
+> `readonly` **contractVersion**: `"1.18.0"`
 
 ##### degradedReasons
 
@@ -9874,7 +9874,7 @@ Sorted by `testCaseId` for byte stability. Empty when `refusal` is set.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.17.0"`
+> **contractVersion**: `"1.18.0"`
 
 ##### gatewayRelease
 
@@ -9967,7 +9967,7 @@ Changelog-approved signed migration bundle for banking-profile runs.
 
 ##### contractVersion
 
-> `readonly` **contractVersion**: `"4.56.0"`
+> `readonly` **contractVersion**: `"4.57.0"`
 
 ##### entries
 
@@ -10283,7 +10283,7 @@ Avg assumptions per case.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.17.0"`
+> **contractVersion**: `"1.18.0"`
 
 ##### duplicatePairs
 
@@ -10421,7 +10421,7 @@ Aggregate dedupe report artifact (Issue #1373).
 
 ##### contractVersion
 
-> **contractVersion**: `"1.17.0"`
+> **contractVersion**: `"1.18.0"`
 
 ##### embeddingProvider
 
@@ -10531,7 +10531,7 @@ Aggregate test-case delta report (always paired with `IntentDeltaReport`).
 
 ##### contractVersion
 
-> **contractVersion**: `"1.17.0"`
+> **contractVersion**: `"1.18.0"`
 
 ##### generatedAt
 
@@ -10965,7 +10965,7 @@ Whether ANY case was blocked (downstream export gate).
 
 ##### contractVersion
 
-> **contractVersion**: `"1.17.0"`
+> **contractVersion**: `"1.18.0"`
 
 ##### decisions
 
@@ -11136,7 +11136,7 @@ Whether the report blocks downstream review/export (any error => true).
 
 ##### contractVersion
 
-> **contractVersion**: `"1.17.0"`
+> **contractVersion**: `"1.18.0"`
 
 ##### errorCount
 
@@ -11606,7 +11606,7 @@ Aggregate traceability-matrix artifact (Issue #1373).
 
 ##### contractVersion
 
-> **contractVersion**: `"1.17.0"`
+> **contractVersion**: `"1.18.0"`
 
 ##### exportProfile?
 
@@ -12100,7 +12100,7 @@ Audit metadata for the run.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.17.0"`
+> **contractVersion**: `"1.18.0"`
 
 ##### createdCount
 
@@ -12468,7 +12468,7 @@ can be debugged from the artifact alone.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.17.0"`
+> **contractVersion**: `"1.18.0"`
 
 ##### deployment
 
@@ -12590,7 +12590,7 @@ screenshot bytes.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.17.0"`
+> **contractVersion**: `"1.18.0"`
 
 ##### generatedAt
 
@@ -12752,7 +12752,7 @@ Whether any record carries a non-`ok`/non-`fallback_used` outcome that blocks ge
 
 ##### contractVersion
 
-> **contractVersion**: `"1.17.0"`
+> **contractVersion**: `"1.18.0"`
 
 ##### generatedAt
 
@@ -13029,7 +13029,7 @@ Active signing mode; mirrored from the run input for auditability.
 
 ##### testIntelligenceContractVersion
 
-> **testIntelligenceContractVersion**: `"1.17.0"`
+> **testIntelligenceContractVersion**: `"1.18.0"`
 
 ##### visualSidecar?
 
@@ -13458,7 +13458,7 @@ and timestamps are caller-provided.
 
 ##### testIntelligenceContractVersion
 
-> **testIntelligenceContractVersion**: `"1.17.0"`
+> **testIntelligenceContractVersion**: `"1.18.0"`
 
 ##### thresholds
 
@@ -13757,7 +13757,7 @@ raw paste bytes, or PII.
 
 ##### testIntelligenceContractVersion
 
-> **testIntelligenceContractVersion**: `"1.17.0"`
+> **testIntelligenceContractVersion**: `"1.18.0"`
 
 Test-intelligence subsurface contract version.
 
@@ -21543,7 +21543,7 @@ Schema version for persisted context-budget analyzer reports.
 
 ### CONTRACT\_VERSION
 
-> `const` **CONTRACT\_VERSION**: `"4.56.0"`
+> `const` **CONTRACT\_VERSION**: `"4.57.0"`
 
 Current contract version constant.
 Must be bumped according to CONTRACT_CHANGELOG.md rules.
@@ -23113,7 +23113,7 @@ Schema version for persisted `TestDesignModel` projection artifacts.
 
 ### TEST\_INTELLIGENCE\_CONTRACT\_VERSION
 
-> `const` **TEST\_INTELLIGENCE\_CONTRACT\_VERSION**: `"1.17.0"`
+> `const` **TEST\_INTELLIGENCE\_CONTRACT\_VERSION**: `"1.18.0"`
 
 Contract version for the opt-in test-intelligence surface.
 
