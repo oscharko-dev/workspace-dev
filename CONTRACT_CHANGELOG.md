@@ -31,6 +31,86 @@ All changes to the public contract surface of `workspace-dev` are documented her
 
 ---
 
+## [4.57.0] - 2026-05-08
+
+### Added (Issue #2065 — llguidance constrained-decoding adapter for the openai_chat transport)
+
+Before #2065, the constrained-decoding registry returned a hard-coded
+`ok: false` for `preferredAdapter: "llguidance"` on every transport,
+which forced every generator and judge call through the prompt-only
+fallback. The K0 baseline therefore recorded
+`adapterId: "prompt_only"` / `enforcement: "prompt_only"` and left
+`polarity` / `category` `null` on the active dataset, blocking the
+property-invariant exercises declared by #2040 and the L6
+self-consistency multi-sample voting wave.
+
+This release introduces a transport-specific adapter for the
+`openai_chat` compatibility mode that delegates JSON-schema
+enforcement to the upstream provider via
+`response_format: { type: "json_schema", ... }` (and equivalently
+via tool-calling: a single `function` tool whose `parameters` carry
+the schema, with `tool_choice` pinned). Both Outlines-style
+(FSM-bound, schema reified into a token-level automaton inside a
+co-located runtime) and llguidance-style (provider-bound, schema
+forwarded verbatim and the upstream grammar engine enforces it)
+integrations sit behind the same internal adapter contract.
+
+Public-contract changes (additive — no removals, no renames):
+
+- New module surface
+  `test-intelligence/constrained-decoding/openai-chat-adapter`:
+  `buildOpenAiChatLlguidanceAdapter`,
+  `buildOpenAiChatOutlinesAdapter`, `getOpenAiChatAdapter`, and the
+  `ConstrainedDecodingAdapter` interface.
+- New exported runtime constants:
+  `OPENAI_CHAT_LLGUIDANCE_ADAPTER_VERSION` (`"1"`),
+  `OPENAI_CHAT_OUTLINES_ADAPTER_VERSION` (`"1"`).
+- `LlmConstrainedDecodingMetadata.adapterVersion` is now populated on
+  every resolved metadata record (success and fallback paths) so
+  downstream FinOps and provenance graphs always have a deterministic
+  version pin to correlate cost/quality shifts with adapter rollouts.
+  The field was already present on the type and was always populated
+  on the fallback path; this release closes the success-path gap.
+- The `ConstrainedDecodingAdapter.supports` adapter-internal contract
+  now takes both `wireMode` and `compatibilityMode` so transport-bound
+  adapters can fail closed when the deployment is not reachable via
+  their bound transport. This is an internal contract — no public
+  signature changes.
+
+Operational behaviour introduced by the additive runtime surface:
+
+- Adapter selection is automatic and deterministic: when the
+  deployment is reachable via `openai_chat` and the operator config
+  prefers `llguidance` or `outlines`, the new adapter resolves with
+  `enforcement: "provider"` and `wireMode: "json_schema"`. When the
+  preferred adapter has no transport-bound variant, the legacy
+  registry entry resolves (e.g. `openai_json_schema`).
+- The graceful fallback for transports that have no constrained mode
+  is preserved verbatim — the resolved metadata still carries
+  `fallback: true` and a redacted `fallbackReason`. FinOps and
+  provenance consumers see the same envelope shape.
+- The adapter is a pure value with no per-call state, so resolution
+  is byte-identical given fixed config and seed.
+
+Documentation:
+
+- `docs/test-intelligence/constrained-decoding.md` documents the
+  adapter selection table, the openai_chat tool-calling /
+  `response_format` posture, and the acceptance-criteria coverage map.
+
+Contract version impacts:
+
+- `CONTRACT_VERSION` bumps from `4.56.0` to `4.57.0` (additive minor
+  bump; new exported runtime constants and new module surface; no
+  removals, no renames).
+- `TEST_INTELLIGENCE_CONTRACT_VERSION` bumps from `1.17.0` to `1.18.0`
+  because the test-intelligence surface gains the new constrained-
+  decoding adapter module and the `OPENAI_CHAT_*_ADAPTER_VERSION`
+  runtime constants.
+- `migrationHash:` registration is not required for this release. The
+  signed migration registry carries forward unchanged because no
+  migration id, hash, or rollback semantics changed.
+
 ## [4.56.0] - 2026-05-08
 
 ### Added (Issue #2044 — DSPy-style auto-prompt optimization with bootstrapped few-shot)

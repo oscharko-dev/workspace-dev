@@ -11,6 +11,33 @@ Contract-level surface changes remain tracked in `CONTRACT_CHANGELOG.md`.
 
 ### Added
 
+- Test Intelligence — llguidance constrained-decoding adapter for the
+  `openai_chat` transport (#2065):
+    - New transport-specific adapter under
+      `src/test-intelligence/constrained-decoding/openai-chat-adapter.ts`
+      that implements the existing `ConstrainedDecodingAdapter` contract
+      using the `openai_chat` transport's tool-calling and
+      `response_format=json_schema` hooks. Both Outlines-style
+      (FSM-bound) and llguidance-style (provider-bound) integrations
+      sit behind the same internal contract and resolve with
+      `enforcement: "provider"`.
+    - Adapter selection is automatic and deterministic: when the
+      deployment is reachable via `openai_chat` and the operator config
+      prefers `llguidance` or `outlines`, the new adapter is used;
+      otherwise the legacy registry resolves (e.g.
+      `openai_json_schema`), and transports without a constrained mode
+      fall back gracefully with a redacted `fallbackReason`.
+    - `LlmConstrainedDecodingMetadata.adapterVersion` is now populated
+      on every resolved metadata record (success and fallback paths)
+      so FinOps and provenance graphs always have a deterministic
+      version pin to correlate cost/quality shifts with adapter
+      rollouts.
+    - `CONTRACT_VERSION` bumps from `4.56.0` to `4.57.0`;
+      `TEST_INTELLIGENCE_CONTRACT_VERSION` bumps from `1.17.0` to
+      `1.18.0` (additive — new exported module, new runtime constants,
+      no removals or renames).
+    - Documentation: `docs/test-intelligence/constrained-decoding.md`.
+
 - Test Intelligence — 2026-Q3 Innovation Roadmap epic closure (#2034):
     - Closure ADR (`docs/decisions/2026-05-08-issue-2034-ti-2026-q3-innovation-roadmap-closure.md`)
       records the AC-traceability matrix for all eight epic acceptance
