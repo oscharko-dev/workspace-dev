@@ -4,9 +4,11 @@ import {
   GENERATED_TEST_CASE_SCHEMA_VERSION,
   TEST_INTELLIGENCE_CONTRACT_VERSION,
   TEST_INTELLIGENCE_PROMPT_TEMPLATE_VERSION,
+  WORKFLOW_TOPOLOGY_SCHEMA_VERSION,
   type BusinessTestIntentIr,
   type GeneratedTestCase,
   type GeneratedTestCaseList,
+  type WorkflowTopology,
 } from "../contracts/index.js";
 import { validateGeneratedTestCases } from "./test-case-validation.js";
 
@@ -125,6 +127,46 @@ const buildList = (
   testCases: cases,
 });
 
+const buildWorkflowTopology = (): WorkflowTopology => ({
+  schemaVersion: WORKFLOW_TOPOLOGY_SCHEMA_VERSION,
+  jobId: "job-1",
+  actions: [
+    {
+      actionId: "ACT-001",
+      screenId: "s-payment",
+      label: "Submit form",
+      kind: "confirm_state",
+      targetIds: ["s-payment::action::n-submit"],
+      sourceRefs: ["figma-node:n-submit"],
+    },
+  ],
+  states: [
+    {
+      stateId: "STATE-001",
+      screenId: "s-payment",
+      label: "Payment form visible",
+      sourceRefs: ["figma-screen:s-payment"],
+    },
+    {
+      stateId: "STATE-002",
+      screenId: "s-payment",
+      label: "Payment submitted",
+      sourceRefs: ["figma-node:n-submit"],
+    },
+  ],
+  transitions: [
+    {
+      transitionId: "TRANS-001",
+      from: "STATE-001",
+      to: "STATE-002",
+      guard: "Submit is activated",
+      actions: ["ACT-001"],
+    },
+  ],
+  entryStates: ["STATE-001"],
+  exitStates: ["STATE-002"],
+});
+
 test("valid input produces a clean report", () => {
   const report = validateGeneratedTestCases({
     jobId: "job-1",
@@ -136,6 +178,36 @@ test("valid input produces a clean report", () => {
   assert.equal(report.warningCount, 0);
   assert.equal(report.blocked, false);
   assert.equal(report.totalTestCases, 1);
+});
+
+test("workflow topology ACT ids are accepted as coveredActionIds", () => {
+  const report = validateGeneratedTestCases({
+    jobId: "job-1",
+    generatedAt: GENERATED_AT,
+    list: buildList([
+      buildCase({
+        qualitySignals: {
+          coveredFieldIds: ["s-payment::field::n-iban"],
+          coveredActionIds: ["ACT-001"],
+          coveredValidationIds: [],
+          coveredNavigationIds: [],
+          confidence: 0.85,
+        },
+      }),
+    ]),
+    intent: buildIntent(),
+    workflowTopology: buildWorkflowTopology(),
+  });
+  assert.equal(report.blocked, false, JSON.stringify(report.issues, null, 2));
+  assert.ok(
+    report.issues.every(
+      (issue) =>
+        !(
+          issue.code === "quality_signals_coverage_unknown_id" &&
+          issue.path?.endsWith("coveredActionIds")
+        ),
+    ),
+  );
 });
 
 test("structural schema failures short-circuit semantic checks", () => {

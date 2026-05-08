@@ -28,6 +28,7 @@ import {
   type TestCaseValidationIssueCode,
   type TestCaseValidationReport,
   type TestCaseValidationSeverity,
+  type WorkflowTopology,
 } from "../contracts/index.js";
 import { validateGeneratedTestCaseList } from "./generated-test-case-schema.js";
 import { detectPii } from "./pii-detection.js";
@@ -47,6 +48,7 @@ export interface ValidateGeneratedTestCasesInput {
   generatedAt: string;
   list: GeneratedTestCaseList;
   intent: BusinessTestIntentIr;
+  workflowTopology?: WorkflowTopology;
 }
 
 /** Per-issue helper to keep deterministic insertion order. */
@@ -74,6 +76,7 @@ const pushIssue = (
 
 const collectIntentIds = (
   intent: BusinessTestIntentIr,
+  workflowTopology?: WorkflowTopology,
 ): {
   screens: Set<string>;
   fields: Set<string>;
@@ -84,7 +87,10 @@ const collectIntentIds = (
   return {
     screens: new Set(intent.screens.map((s) => s.screenId)),
     fields: new Set(intent.detectedFields.map((f) => f.id)),
-    actions: new Set(intent.detectedActions.map((a) => a.id)),
+    actions: new Set([
+      ...intent.detectedActions.map((a) => a.id),
+      ...(workflowTopology?.actions.map((action) => action.actionId) ?? []),
+    ]),
     validations: new Set(intent.detectedValidations.map((v) => v.id)),
     navigation: new Set(intent.detectedNavigation.map((n) => n.id)),
   };
@@ -595,7 +601,7 @@ export const validateGeneratedTestCases = (
     });
   }
 
-  const intentIds = collectIntentIds(input.intent);
+  const intentIds = collectIntentIds(input.intent, input.workflowTopology);
   const seenIds = new Map<string, number>();
   const list = input.list;
 

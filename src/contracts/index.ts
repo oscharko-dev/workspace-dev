@@ -3133,6 +3133,7 @@ export const AGENT_ROLE_PROFILE_SCHEMA_VERSION = "1.0.0" as const;
  * shape via the public-export snapshot.
  */
 export const AGENT_HARNESS_ROLES = [
+  "action_topology",
   "adversarial_gap_finder",
   "final_verifier",
   "generator",
@@ -4286,6 +4287,7 @@ export const ALLOWED_HARNESS_ARTIFACT_FILENAMES = [
   "migrations.log.jsonl",
   "self-verify-rubric.json",
   "test-design-model.json",
+  "workflow-topology.json",
 ] as const;
 
 /** Discriminated alias for {@link ALLOWED_HARNESS_ARTIFACT_FILENAMES}. */
@@ -5743,6 +5745,56 @@ export interface GeneratedTestCaseQualitySignals {
   ambiguity?: IntentAmbiguity;
 }
 
+/** Schema version for persisted `workflow-topology.json` artifacts. */
+export const WORKFLOW_TOPOLOGY_SCHEMA_VERSION = "1.0.0" as const;
+
+/** Canonical filename for the deterministic workflow-topology artifact. */
+export const WORKFLOW_TOPOLOGY_ARTIFACT_FILENAME =
+  "workflow-topology.json" as const;
+
+/** One stable workflow action emitted by the action-topology agent. */
+export interface WorkflowTopologyAction {
+  readonly actionId: string;
+  readonly screenId: string;
+  readonly label: string;
+  readonly kind:
+    | "enter_value"
+    | "select_option"
+    | "review_result"
+    | "review_copy"
+    | "confirm_state";
+  readonly targetIds: readonly string[];
+  readonly sourceRefs: readonly string[];
+}
+
+/** One stable workflow state emitted by the action-topology agent. */
+export interface WorkflowTopologyState {
+  readonly stateId: string;
+  readonly screenId: string;
+  readonly label: string;
+  readonly sourceRefs: readonly string[];
+}
+
+/** One workflow transition between stable states. */
+export interface WorkflowTopologyTransition {
+  readonly transitionId: string;
+  readonly from: string;
+  readonly to: string;
+  readonly guard: string;
+  readonly actions: readonly string[];
+}
+
+/** Deterministic workflow topology derived from the test-design model. */
+export interface WorkflowTopology {
+  readonly schemaVersion: typeof WORKFLOW_TOPOLOGY_SCHEMA_VERSION;
+  readonly jobId: string;
+  readonly actions: readonly WorkflowTopologyAction[];
+  readonly states: readonly WorkflowTopologyState[];
+  readonly transitions: readonly WorkflowTopologyTransition[];
+  readonly entryStates: readonly string[];
+  readonly exitStates: readonly string[];
+}
+
 /**
  * Per-test-case rubric quality signal emitted by the self-verify pass
  * (Issue #1379). The signal is reported via the `self-verify-rubric.json`
@@ -6229,6 +6281,7 @@ export interface CompiledPromptArtifacts {
     visual: VisualScreenDescription[];
     testDesignModel?: TestDesignModel;
     coveragePlan?: CoveragePlan;
+    workflowTopology?: WorkflowTopology;
     riskRanking?: RiskRanking;
     customerRubric?: Record<string, unknown>;
     customContext?: CompiledPromptCustomContext;

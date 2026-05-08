@@ -8,6 +8,7 @@ import {
   HARNESS_ARTIFACT_MANIFEST_ARTIFACT_FILENAME,
   HARNESS_ARTIFACT_MANIFEST_SCHEMA_VERSION,
   TEST_INTELLIGENCE_CONTRACT_VERSION,
+  WORKFLOW_TOPOLOGY_SCHEMA_VERSION,
 } from "../contracts/index.js";
 import {
   buildHarnessArtifactManifest,
@@ -74,6 +75,19 @@ const seedRunDir = async (): Promise<string> => {
       },
     ],
   });
+  await writeFile(
+    join(runDir, "workflow-topology.json"),
+    JSON.stringify({
+      schemaVersion: WORKFLOW_TOPOLOGY_SCHEMA_VERSION,
+      jobId: "job-1",
+      actions: [],
+      states: [],
+      transitions: [],
+      entryStates: [],
+      exitStates: [],
+    }),
+    "utf8",
+  );
   return runDir;
 };
 
@@ -99,6 +113,7 @@ test("buildHarnessArtifactManifest hashes every present artifact and skips missi
         "agent-iterations.json",
         "cache-break-events.jsonl",
         "library-coverage-report.json",
+        "workflow-topology.json",
       ],
     );
     for (const entry of built.manifest.entries) {

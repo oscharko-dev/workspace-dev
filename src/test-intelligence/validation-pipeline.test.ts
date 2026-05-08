@@ -18,6 +18,7 @@ import {
   TEST_INTELLIGENCE_CONTRACT_VERSION,
   TEST_INTELLIGENCE_PROMPT_TEMPLATE_VERSION,
   VISUAL_SIDECAR_VALIDATION_REPORT_ARTIFACT_FILENAME,
+  WORKFLOW_TOPOLOGY_SCHEMA_VERSION,
   type A11yVerdict,
   type BusinessTestIntentIr,
   type CoveragePlan,
@@ -25,6 +26,7 @@ import {
   type GeneratedTestCase,
   type GeneratedTestCaseList,
   type VisualScreenDescription,
+  type WorkflowTopology,
 } from "../contracts/index.js";
 import { canonicalJson } from "./content-hash.js";
 import {
@@ -254,6 +256,46 @@ const buildCoveragePlan = (
   ...overrides,
 });
 
+const buildWorkflowTopology = (): WorkflowTopology => ({
+  schemaVersion: WORKFLOW_TOPOLOGY_SCHEMA_VERSION,
+  jobId: "job-1",
+  actions: [
+    {
+      actionId: "ACT-001",
+      screenId: "s-payment",
+      label: "Submit payment",
+      kind: "confirm_state",
+      targetIds: ["s-payment::action::n-submit"],
+      sourceRefs: ["figma-node:n-submit"],
+    },
+  ],
+  states: [
+    {
+      stateId: "STATE-001",
+      screenId: "s-payment",
+      label: "Payment form visible",
+      sourceRefs: ["figma-screen:s-payment"],
+    },
+    {
+      stateId: "STATE-002",
+      screenId: "s-payment",
+      label: "Receipt visible",
+      sourceRefs: ["figma-node:n-submit"],
+    },
+  ],
+  transitions: [
+    {
+      transitionId: "TRANS-001",
+      from: "STATE-001",
+      to: "STATE-002",
+      guard: "Submit is activated",
+      actions: ["ACT-001"],
+    },
+  ],
+  entryStates: ["STATE-001"],
+  exitStates: ["STATE-002"],
+});
+
 const buildFaithfulnessVerdict = (
   overrides: Partial<FaithfulnessVerdict> = {},
 ): FaithfulnessVerdict => ({
@@ -309,6 +351,61 @@ test("pipeline runs in-memory without filesystem touch", () => {
   );
   assert.equal(result.coverage.totalTestCases, 6);
   assert.equal(result.blocked, false);
+});
+
+test("workflow topology ACT ids flow through the validation pipeline without unknown-id findings", () => {
+  const result = runValidationPipeline({
+    jobId: "job-1",
+    generatedAt: GENERATED_AT,
+    list: {
+      schemaVersion: GENERATED_TEST_CASE_SCHEMA_VERSION,
+      jobId: "job-1",
+      testCases: [
+        buildCase({
+          id: "tc-act",
+          qualitySignals: {
+            coveredFieldIds: ["s-payment::field::n-iban"],
+            coveredActionIds: ["ACT-001"],
+            coveredValidationIds: [],
+            coveredNavigationIds: [],
+            confidence: 0.9,
+          },
+        }),
+      ],
+    },
+    intent: buildIntent(),
+    coveragePlan: buildCoveragePlan({
+      recommendedCases: [
+        {
+          requirementId: "rec-action-transition",
+          technique: "state_transition",
+          reasonCode: "action_transition",
+          screenId: "s-payment",
+          targetIds: ["ACT-001", "s-payment::action::n-submit"],
+          sourceRefs: ["workflow-topology"],
+          visualRefs: [],
+        },
+      ],
+    }),
+    workflowTopology: buildWorkflowTopology(),
+  });
+
+  assert.equal(
+    result.validation.blocked,
+    false,
+    JSON.stringify(result.validation.issues, null, 2),
+  );
+  assert.ok(
+    result.validation.issues.every(
+      (issue) =>
+        !(
+          issue.code === "quality_signals_coverage_unknown_id" &&
+          issue.path?.endsWith("coveredActionIds")
+        ),
+    ),
+  );
+  assert.equal(result.coverage.actionCoverage.total, 1);
+  assert.equal(result.coverage.actionCoverage.covered, 1);
 });
 
 test("blocking flows propagate end-to-end", () => {
