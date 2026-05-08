@@ -1,6 +1,6 @@
 # Test-Intelligence Workflow Action Topology
 
-Status: production candidate (Issue #2035)
+Status: shipped (Issue #2035, PR #2045 merged into `dev`; live benchmark delta recorded 2026-05-08)
 
 This note describes the deterministic workflow-action topology that augments the
 test-intelligence pipeline with an explicit action universe. The goal is to make
@@ -132,31 +132,50 @@ Reference dataset:
 
 - `T7l7m8T8501lxLZZFQrwJC`
 
-Observed pre-topology baseline on disk:
+Authenticated benchmark delta for Issue #2035 (recorded 2026-05-08):
 
-- run dir:
-  `/Users/oscharko-dev/Projects/workspace-dev/sandbox/test-case/T7l7m8T8501lxLZZFQrwJC/2026-05-08T07-33-20-053Z`
-- `coverage-report.json.actionCoverage`:
-  `{ "covered": 0, "ratio": 0, "total": 0, "uncoveredIds": [] }`
-- `workflow-topology.json`: absent
-- `customer-markdown/testfaelle.md`: no `ACT-*` refs
+| Metric                          | B0 (pre-topology)        | C-2026-05-08 (post-topology) |
+|---------------------------------|--------------------------|------------------------------|
+| `coverage-report.actionCoverage`| `{ covered:0, total:0, ratio:0 }` | `{ covered:4, total:4, ratio:1.0 }` |
+| `workflow-topology.json`        | absent                   | present, 4 actions, 5 states, 4 transitions |
+| `customer-markdown` ACT refs    | none                     | 12 occurrences across cases  |
+| Stable IDs emitted              | none                     | `ACT-001`…`ACT-004`          |
 
-Fresh rerun status on 2026-05-08:
+Run folders:
 
-- the protocol's customer-eval path is stale in this checkout; the current
-  file is
-  `/Users/oscharko-dev/Projects/workspace-dev/sandbox/evals/Testfall-eines-Anwendungstests.md`
-- after correcting the path, the authenticated live rerun remained blocked
-  because neither `WORKSPACE_TEST_SPACE_API_KEY` nor
-  `WORKSPACE_TEST_SPACE_MODEL_API_KEY` was present after sourcing `.env`
+- B0: `sandbox/test-case/T7l7m8T8501lxLZZFQrwJC/2026-05-08T07-33-20-053Z`
+  (pre-topology snapshot, `actionCoverage = 0/0`).
+- C-current: `sandbox/test-case/T7l7m8T8501lxLZZFQrwJC/2026-05-08T11-43-40-060Z`
+  (post-topology, `actionCoverage = 4/4 = 1.0`).
 
-Result:
+Reproduction:
 
-- a new authenticated benchmark delta for Issue #2035 could not be produced in
-  this environment
-- the code-level verification for the topology handoff is covered by targeted
-  tests, but the live-dataset action-coverage improvement still requires a
-  fresh authenticated rerun
+```bash
+cd /Users/oscharko-dev/Projects/workspace-dev && \
+set -a && source .env && set +a && \
+FIGMAPIPE_WORKSPACE_TEST_INTELLIGENCE=1 \
+WORKSPACE_TEST_SPACE_ALLOW_POLICY_BLOCKED=1 \
+pnpm exec tsx src/cli.ts test-intelligence run \
+  --figma-url "https://www.figma.com/design/T7l7m8T8501lxLZZFQrwJC/TestForSimpleComponent?node-id=1-11309" \
+  --custom-context-markdown "sandbox/test-case/T7l7m8T8501lxLZZFQrwJC/Jira-Story.md" \
+  --customer-eval-markdown  "fixtures/test-intelligence/customer-evals/Testfall-eines-Anwendungstests.md" \
+  --output                  "sandbox/test-case/T7l7m8T8501lxLZZFQrwJC" \
+  --ict-register-ref        "workspace-dev-local-test-intelligence" \
+  --enable-visual-sidecar --allow-policy-blocked
+```
+
+Required environment (from `.env`):
+
+- `FIGMA_ACCESS_TOKEN`
+- `WORKSPACE_TEST_SPACE_LLM_API_KEY` (canonical key; see
+  [`visual-sidecar-client.live-env.ts`](../../src/test-intelligence/visual-sidecar-client.live-env.ts))
+
+Hard-gate observation in C-current: `G1`, `G2` pass. `G3`, `G4`, `G7` failures
+in this single live run trace back to unrelated Epics (LLM-side validation
+hallucinations under #1987, visual-sidecar fallback under #1989, and a
+test_generation wall-clock breach), not to the action-topology change. The
+deterministic hard-gate suite for topology-relevant logic
+(`logic-judge.coverage-hard-gate.test.ts`) remains 15/15 green on this commit.
 
 ## Verification Surfaces
 
