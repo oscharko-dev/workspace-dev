@@ -10,7 +10,6 @@ import {
   type JudgeConsensusVerdict,
   type JudgeVerdict,
 } from "../contracts/index.js";
-import type { AgentParticipationArtifact } from "./agent-participation.js";
 import type { RepairLoopIterationRecord } from "./repair-loop.js";
 import { canonicalJson } from "./content-hash.js";
 
@@ -40,7 +39,6 @@ export interface BuildRunProvenanceGraphInput {
   readonly generatedAt: string;
   readonly sourceKind: string;
   readonly finalGeneratedTestCases: GeneratedTestCaseList;
-  readonly agentParticipation: AgentParticipationArtifact;
   readonly initialGenerationDeployment: string;
   readonly repairIterations?: readonly RepairLoopIterationRecord[];
   readonly logicJudge: BaseJudgeInput<JudgeVerdict>;
@@ -85,9 +83,6 @@ const toUtf8Bytes = (value: string): Uint8Array =>
   new TextEncoder().encode(value);
 
 const toIriRef = (value: string): { "@id": string } => ({ "@id": value });
-
-const uniqueSorted = (values: readonly string[]): string[] =>
-  [...new Set(values)].sort((left, right) => left.localeCompare(right));
 
 const makeNodeId = (jobId: string, kind: string, value: string): string =>
   `urn:workspace-dev:test-intelligence:${jobId}:${kind}:${value}`;
@@ -246,40 +241,6 @@ const readNodeId = (node: ProvenanceNode): string => {
   return id;
 };
 
-const buildAggregateRoleActivityId = (role: string): string =>
-  `role_${role}_summary`;
-
-const buildRoleSummaryActivities = (
-  jobId: string,
-  generatedAt: string,
-  agentParticipation: AgentParticipationArtifact,
-  modelAgents: Map<string, string>,
-): ProvenanceNode[] =>
-  agentParticipation.roles.map((role): ProvenanceNode => {
-    const associatedWith = [
-      makeNodeId(jobId, "agent", "workspace-dev"),
-      ...(role.deployment !== undefined
-        ? [
-            modelAgents.get(role.deployment) ??
-              makeNodeId(jobId, "agent", sanitizeIriToken(`model-${role.deployment}`)),
-          ]
-        : []),
-    ];
-    return buildActivityNode({
-      jobId,
-      id: buildAggregateRoleActivityId(role.role),
-      label: `${role.role} participation summary`,
-      role: role.role,
-      associatedWith,
-      generatedAt,
-      extra: {
-        "ti:status": role.status,
-        "ti:attemptCount": role.attemptCount,
-        "ti:artifactReferences": uniqueSorted(role.artifactReferences),
-      },
-    });
-  });
-
 const verdictEntityId = (
   jobId: string,
   judgeRole: string,
@@ -330,11 +291,6 @@ export const buildRunProvenanceGraph = async (
     return nodeId;
   };
 
-  for (const role of input.agentParticipation.roles) {
-    if (role.deployment !== undefined) {
-      ensureModelAgent(role.deployment);
-    }
-  }
   ensureModelAgent(input.initialGenerationDeployment);
   ensureModelAgent(input.logicJudge.verdict.modelDeployment);
   if (input.faithfulnessJudge !== undefined) {
@@ -344,15 +300,6 @@ export const buildRunProvenanceGraph = async (
     ensureModelAgent(input.a11yJudge.verdict.modelDeployment);
   }
 
-  for (const node of buildRoleSummaryActivities(
-    input.jobId,
-    input.generatedAt,
-    input.agentParticipation,
-    modelAgents,
-  )) {
-    upsertNode(nodes, node);
-  }
-
   const requiredArtifactDigests = await Promise.all([
     readArtifactDigest(input.runDir, "business-intent-ir.json"),
     readArtifactDigest(input.runDir, "compiled-prompt.json"),
@@ -360,7 +307,6 @@ export const buildRunProvenanceGraph = async (
     readArtifactDigest(input.runDir, "workflow-topology.json"),
     readArtifactDigest(input.runDir, "risk-ranking.json"),
     readArtifactDigest(input.runDir, "generated-testcases.json"),
-    readArtifactDigest(input.runDir, "agent-role-runs/test_generation.json"),
     readArtifactDigest(input.runDir, input.logicJudge.artifactFilename),
     readArtifactDigest(input.runDir, input.judgeConsensus.artifactFilename),
   ]);
@@ -372,7 +318,6 @@ export const buildRunProvenanceGraph = async (
     workflowTopologyDigest,
     riskRankingDigest,
     generatedTestCasesDigest,
-    initialRoleRunDigest,
     logicJudgeDigest,
     judgeConsensusDigest,
   ] = requiredArtifactDigests;
@@ -419,13 +364,6 @@ export const buildRunProvenanceGraph = async (
   upsertNode(nodes, coveragePlanEntity);
   upsertNode(nodes, riskRankingEntity);
 
-  const initialRoleRunEntity = buildArtifactNode({
-    jobId: input.jobId,
-    digest: initialRoleRunDigest,
-    label: "Initial generator role-run metadata",
-  });
-  upsertNode(nodes, initialRoleRunEntity);
-
   const compiledPromptEntity = buildArtifactNode({
     jobId: input.jobId,
     digest: compiledPromptDigest,
@@ -451,10 +389,7 @@ export const buildRunProvenanceGraph = async (
         workspaceAgent["@id"] as string,
         ensureModelAgent(input.initialGenerationDeployment),
       ],
-      used: [
-        compiledPromptEntity["@id"] as string,
-        initialRoleRunEntity["@id"] as string,
-      ],
+      used: [compiledPromptEntity["@id"] as string],
       informedBy: [sourcePreparationActivity],
       generatedAt: input.generatedAt,
     }),
@@ -483,14 +418,6 @@ export const buildRunProvenanceGraph = async (
 
   if (input.repairIterations !== undefined) {
     for (const iteration of input.repairIterations) {
-      const plannerFilename = `agent-role-runs/repair_planner_iter_${iteration.iteration}.json`;
-      const plannerDigest = await readArtifactDigest(input.runDir, plannerFilename);
-      const plannerEntity = buildArtifactNode({
-        jobId: input.jobId,
-        digest: plannerDigest,
-        label: `Repair planner iteration ${iteration.iteration}`,
-      });
-      upsertNode(nodes, plannerEntity);
       const plannerActivityId = activityId(
         input.jobId,
         `repair_planner_iter_${iteration.iteration}`,
@@ -504,7 +431,6 @@ export const buildRunProvenanceGraph = async (
           role: "repair_planner",
           associatedWith: [workspaceAgent["@id"] as string],
           used: [previousListId],
-          informedBy: [activityId(input.jobId, buildAggregateRoleActivityId("repair_planner"))],
           generatedAt: input.generatedAt,
           extra: {
             "ti:iteration": iteration.iteration,
@@ -512,30 +438,6 @@ export const buildRunProvenanceGraph = async (
           },
         }),
       );
-      const generationFilename = `agent-role-runs/test_generation_repair_iter_${iteration.iteration}.json`;
-      const generationDigest = await readArtifactDigest(
-        input.runDir,
-        generationFilename,
-      );
-      const generationArtifact = JSON.parse(
-        await readFile(join(input.runDir, generationFilename), "utf8"),
-      ) as Record<string, unknown>;
-      const repairDeployment =
-        typeof generationArtifact["llmGateway"] === "object" &&
-        generationArtifact["llmGateway"] !== null &&
-        typeof (generationArtifact["llmGateway"] as Record<string, unknown>)[
-          "modelDeployment"
-        ] === "string"
-          ? ((generationArtifact["llmGateway"] as Record<string, unknown>)[
-              "modelDeployment"
-            ] as string)
-          : input.initialGenerationDeployment;
-      const generationEntity = buildArtifactNode({
-        jobId: input.jobId,
-        digest: generationDigest,
-        label: `Repair generation iteration ${iteration.iteration}`,
-      });
-      upsertNode(nodes, generationEntity);
       const repairActivityId = activityId(
         input.jobId,
         `test_generation_repair_iter_${iteration.iteration}`,
@@ -549,13 +451,9 @@ export const buildRunProvenanceGraph = async (
           role: "test_generation_repair",
           associatedWith: [
             workspaceAgent["@id"] as string,
-            ensureModelAgent(repairDeployment),
+            ensureModelAgent(input.initialGenerationDeployment),
           ],
-          used: [
-            compiledPromptEntity["@id"] as string,
-            plannerEntity["@id"] as string,
-            previousListId,
-          ],
+          used: [compiledPromptEntity["@id"] as string, previousListId],
           informedBy: [plannerActivityId, initialGenerationActivity],
           generatedAt: input.generatedAt,
           extra: {
@@ -577,7 +475,6 @@ export const buildRunProvenanceGraph = async (
           "ti:listHash": iteration.outputHash,
           "prov:wasGeneratedBy": toIriRef(repairActivityId),
           "prov:wasRevisionOf": toIriRef(previousListId),
-          "prov:hadPrimarySource": toIriRef(generationEntity["@id"] as string),
         },
       );
       previousListId = nextListId;

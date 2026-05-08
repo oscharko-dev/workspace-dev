@@ -4074,7 +4074,6 @@ export const runFigmaToQcTestCases = async (
     generatedAt: input.generatedAt,
     sourceKind: input.source.kind,
     finalGeneratedTestCases: validation.generatedTestCases,
-    agentParticipation: agentParticipationArtifact,
     initialGenerationDeployment:
       capturedLlmResult?.outcome === "success"
         ? capturedLlmResult.modelDeployment
