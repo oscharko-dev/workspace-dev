@@ -138,12 +138,16 @@ const parseMoneyAmount = (value: string): number | undefined => {
 const collectConstraintEvidence = (
   model: TestDesignModel,
 ): ConstraintEvidence[] => [
-  ...model.businessRules.map((rule) => ({
+  ...((model.businessRules ?? []).map((rule) => ({
     text: rule.description,
     ...(rule.screenId !== undefined ? { screenId: rule.screenId } : {}),
-  })),
-  ...model.assumptions.map((assumption) => ({ text: assumption.text })),
-  ...model.openQuestions.map((question) => ({ text: question.text })),
+  })) as ConstraintEvidence[]),
+  ...((model.assumptions ?? []).map((assumption) => ({
+    text: assumption.text,
+  })) as ConstraintEvidence[]),
+  ...((model.openQuestions ?? []).map((question) => ({
+    text: question.text,
+  })) as ConstraintEvidence[]),
 ];
 
 export const extractCalculationConstraints = (
@@ -240,7 +244,9 @@ const caseTouchesFinancingNeed = (
   for (const screenId of relevantScreenIds) {
     const screen = screenLookup.get(screenId);
     if (
-      screen?.elements.some((element) => FINANCING_NEED_RE.test(element.label))
+      screen?.elements?.some((element) =>
+        FINANCING_NEED_RE.test(element.label),
+      )
     ) {
       return true;
     }
@@ -263,26 +269,30 @@ const findFinancingNeedScreen = (
     const screen = screenLookup.get(trace.screenId);
     if (
       screen !== undefined &&
-      screen.elements.some((element) => FINANCING_NEED_RE.test(element.label))
+      (screen.elements ?? []).some((element) =>
+        FINANCING_NEED_RE.test(element.label),
+      )
     ) {
       return screen;
     }
   }
 
   return model.screens.find((screen) =>
-    screen.elements.some((element) => FINANCING_NEED_RE.test(element.label)),
+    (screen.elements ?? []).some((element) =>
+      FINANCING_NEED_RE.test(element.label),
+    ),
   );
 };
 
 const computeVatExcludedFinancingNeedAmount = (
   screen: TestDesignModel["screens"][number],
 ): number | undefined => {
-  const resultElement = screen.elements.find((element) =>
+  const resultElement = (screen.elements ?? []).find((element) =>
     FINANCING_NEED_RE.test(element.label),
   );
   if (resultElement === undefined) return undefined;
 
-  const calculation = screen.calculations.find(
+  const calculation = (screen.calculations ?? []).find(
     (candidate) =>
       candidate.resultElementId === resultElement.elementId ||
       FINANCING_NEED_RE.test(candidate.name),
@@ -292,7 +302,7 @@ const computeVatExcludedFinancingNeedAmount = (
   const includedAmounts: number[] = [];
   let excludedVatFieldSeen = false;
   for (const elementId of calculation.inputElementIds) {
-    const element = screen.elements.find(
+    const element = (screen.elements ?? []).find(
       (candidate) => candidate.elementId === elementId,
     );
     if (element === undefined) continue;
@@ -329,7 +339,7 @@ export const detectCalculationConstraintViolation = (input: {
 }): CalculationConstraintViolation | undefined => {
   const seenConstraintKeys = new Set<string>();
   const constraints = [
-    ...input.model.calculationConstraints,
+    ...(input.model.calculationConstraints ?? []),
     ...extractCalculationConstraints(input.model),
   ].filter((constraint) => {
     const key = JSON.stringify([

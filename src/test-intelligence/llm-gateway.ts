@@ -25,6 +25,7 @@ import * as net from "node:net";
 import { sanitizeErrorMessage } from "../error-sanitization.js";
 import { redactHighRiskSecrets } from "../secret-redaction.js";
 import {
+  ALLOWED_LLM_CONSTRAINED_DECODING_ADAPTER_IDS,
   ALLOWED_LLM_GATEWAY_AUTH_MODES,
   ALLOWED_LLM_GATEWAY_COMPATIBILITY_MODES,
   ALLOWED_LLM_GATEWAY_ERROR_CLASSES,
@@ -37,6 +38,7 @@ import {
   type LlmGatewayCapabilities,
   type LlmGatewayClientConfig,
   type LlmGatewayCompatibilityMode,
+  type LlmConstrainedDecodingMetadata,
   type LlmGatewayErrorClass,
   type LlmGatewayRole,
   type LlmGatewayWireStructuredOutputMode,
@@ -47,6 +49,7 @@ import {
   type LlmFinishReason,
 } from "../contracts/index.js";
 import { canonicalJson } from "./content-hash.js";
+import { resolveConstrainedDecodingMetadata } from "./constrained-decoding.js";
 import {
   createLlmCircuitBreaker,
   type LlmCircuitBreaker,
@@ -135,6 +138,9 @@ export interface LlmGatewayClient {
   readonly operatorEndpointReference: string;
   readonly modelWeightsSha256: string | undefined;
   readonly declaredCapabilities: Readonly<LlmGatewayCapabilities>;
+  readonly constrainedDecoding:
+    | Readonly<LlmConstrainedDecodingMetadata>
+    | undefined;
   generate(request: LlmGenerationRequest): Promise<LlmGenerationResult>;
   getCircuitBreaker(): LlmCircuitBreaker;
   /**
@@ -188,6 +194,10 @@ export const createLlmGatewayClient = (
   const fetchImpl = runtime.fetchImpl ?? globalThis.fetch.bind(globalThis);
   const sleep = runtime.sleep ?? defaultSleep;
   const backoff = runtime.retryBackoffMs ?? DEFAULT_BACKOFF_MS;
+  const defaultConstrainedDecoding = resolveConstrainedDecodingMetadata({
+    config,
+    requestHasSchema: true,
+  });
   const inFlightRequests = new Map<string, Promise<LlmGenerationResult>>();
   const breaker = createLlmCircuitBreaker({
     failureThreshold: config.circuitBreaker.failureThreshold,
@@ -417,6 +427,10 @@ export const createLlmGatewayClient = (
     operatorEndpointReference: redactGatewayEndpointReference(config.baseUrl),
     modelWeightsSha256: config.modelWeightsSha256,
     declaredCapabilities: { ...config.declaredCapabilities },
+    constrainedDecoding:
+      defaultConstrainedDecoding === undefined
+        ? undefined
+        : { ...defaultConstrainedDecoding },
     generate,
     getCircuitBreaker: () => breaker,
     getIdempotencyMetrics: () =>
@@ -646,6 +660,12 @@ const dispatchOnce = async ({
   fetchImpl: typeof fetch;
   apiKeyProvider: LlmGatewayApiKeyProvider | undefined;
 }): Promise<LlmGenerationResult> => {
+  const constrainedDecoding = resolveConstrainedDecodingMetadata({
+    config,
+    requestHasSchema:
+      request.responseSchema !== undefined &&
+      request.responseSchemaName !== undefined,
+  });
   // Compatibility mode is enforced eagerly in `validateConfig`; the type
   // system narrows it to the only currently-supported wire protocol here.
   const url = buildOpenAiChatUrl(config.baseUrl);
@@ -701,15 +721,21 @@ const dispatchOnce = async ({
           outcome: "error",
           errorClass: "canceled",
           message: "caller-supplied abortSignal aborted the request",
+          ...(constrainedDecoding !== undefined
+            ? { constrainedDecoding }
+            : {}),
           retryable: false,
           attempt,
         };
       }
-      return timeoutFailure({
+      const timeout = timeoutFailure({
         wallClockBudgetCausedTimeout,
         effectiveTimeoutMs,
         attempt,
       });
+      return constrainedDecoding === undefined
+        ? timeout
+        : { ...timeout, constrainedDecoding };
     }
     return {
       outcome: "error",
@@ -717,6 +743,7 @@ const dispatchOnce = async ({
       message: redactBoundedMessage(
         sanitizeErrorMessage({ error: err, fallback: "transport failure" }),
       ),
+      ...(constrainedDecoding !== undefined ? { constrainedDecoding } : {}),
       retryable: true,
       attempt,
     };
@@ -730,6 +757,7 @@ const dispatchOnce = async ({
       attempt,
       effectiveTimeoutMs,
       wallClockBudgetCausedTimeout,
+      ...(constrainedDecoding !== undefined ? { constrainedDecoding } : {}),
     });
   } finally {
     clearTimeout(timer);
@@ -797,12 +825,17 @@ const buildOpenAiChatBody = (
   };
   const responseSchema = request.responseSchema;
   const responseSchemaName = request.responseSchemaName;
+  const constrainedDecoding = resolveConstrainedDecodingMetadata({
+    config,
+    requestHasSchema:
+      responseSchema !== undefined && responseSchemaName !== undefined,
+  });
   if (
     config.declaredCapabilities.structuredOutputs &&
     responseSchema !== undefined &&
     responseSchemaName !== undefined
   ) {
-    const wireMode = resolveWireMode(config);
+    const wireMode = constrainedDecoding?.wireMode ?? resolveWireMode(config);
     if (wireMode === "json_schema") {
       body.response_format = {
         type: "json_schema",
@@ -900,6 +933,7 @@ const parseOpenAiChatResponse = async ({
   attempt,
   effectiveTimeoutMs,
   wallClockBudgetCausedTimeout,
+  constrainedDecoding,
 }: {
   response: Response;
   config: LlmGatewayClientConfig;
@@ -907,6 +941,7 @@ const parseOpenAiChatResponse = async ({
   attempt: number;
   effectiveTimeoutMs: number;
   wallClockBudgetCausedTimeout: boolean;
+  constrainedDecoding?: LlmConstrainedDecodingMetadata;
 }): Promise<LlmGenerationResult> => {
   const status = response.status;
   if (status === 429) {
@@ -915,6 +950,7 @@ const parseOpenAiChatResponse = async ({
       outcome: "error",
       errorClass: "rate_limited",
       message: `rate limited (status 429)`,
+      ...(constrainedDecoding !== undefined ? { constrainedDecoding } : {}),
       retryable: true,
       attempt,
     };
@@ -1134,6 +1170,7 @@ const parseOpenAiChatResponse = async ({
         outcome: "error",
         errorClass: "schema_invalid",
         message: "structured-output content is not valid JSON",
+        ...(constrainedDecoding !== undefined ? { constrainedDecoding } : {}),
         retryable: false,
         attempt,
       };
@@ -1147,6 +1184,7 @@ const parseOpenAiChatResponse = async ({
         outcome: "error",
         errorClass: "schema_invalid",
         message: `structured-output content violates response schema: ${schemaViolation}`,
+        ...(constrainedDecoding !== undefined ? { constrainedDecoding } : {}),
         retryable: false,
         attempt,
       };
@@ -1169,6 +1207,7 @@ const parseOpenAiChatResponse = async ({
         errorClass: "schema_invalid",
         message:
           "maxOutputTokens budget requires completion_tokens usage from the gateway",
+        ...(constrainedDecoding !== undefined ? { constrainedDecoding } : {}),
         retryable: false,
         attempt,
       };
@@ -1178,6 +1217,7 @@ const parseOpenAiChatResponse = async ({
         outcome: "error",
         errorClass: "schema_invalid",
         message: `reported output tokens ${outputTokens} exceeds maxOutputTokens ${request.maxOutputTokens}`,
+        ...(constrainedDecoding !== undefined ? { constrainedDecoding } : {}),
         retryable: false,
         attempt,
       };
@@ -1187,6 +1227,7 @@ const parseOpenAiChatResponse = async ({
   const success: LlmGenerationSuccess = {
     outcome: "success",
     content,
+    ...(constrainedDecoding !== undefined ? { constrainedDecoding } : {}),
     finishReason,
     usage: {
       ...(typeof usageRecord["prompt_tokens"] === "number"
@@ -1539,6 +1580,27 @@ const validateConfig = (config: LlmGatewayClientConfig): void => {
     throw new RangeError(
       `LlmGatewayClient: invalid imageTokenStrategy "${config.imageTokenStrategy}"`,
     );
+  }
+  if (config.constrainedDecoding !== undefined) {
+    if (
+      !ALLOWED_LLM_CONSTRAINED_DECODING_ADAPTER_IDS.includes(
+        config.constrainedDecoding.preferredAdapter,
+      )
+    ) {
+      throw new RangeError(
+        `LlmGatewayClient: invalid constrainedDecoding.preferredAdapter "${config.constrainedDecoding.preferredAdapter}"`,
+      );
+    }
+    if (
+      config.constrainedDecoding.fallbackAdapter !== undefined &&
+      !ALLOWED_LLM_CONSTRAINED_DECODING_ADAPTER_IDS.includes(
+        config.constrainedDecoding.fallbackAdapter,
+      )
+    ) {
+      throw new RangeError(
+        `LlmGatewayClient: invalid constrainedDecoding.fallbackAdapter "${config.constrainedDecoding.fallbackAdapter}"`,
+      );
+    }
   }
 };
 

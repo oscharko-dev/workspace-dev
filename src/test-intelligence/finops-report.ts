@@ -331,6 +331,12 @@ export const createFinOpsUsageRecorder = (
         observation.deployment.length > 0
           ? { deployment: observation.deployment }
           : {}),
+        ...(observation.result.constrainedDecoding !== undefined
+          ? {
+              constrainedDecoding:
+                observation.result.constrainedDecoding,
+            }
+          : {}),
       });
     }
   };

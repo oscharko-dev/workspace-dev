@@ -73,6 +73,9 @@ interface LogicJudgeCacheKey {
   modelDeployment: string;
   modelRevision: string;
   gatewayRelease: string;
+  constrainedDecodingAdapterId?: string;
+  constrainedDecodingAdapterVersion?: string;
+  constrainedDecodingFallbackReason?: string;
 }
 
 interface LogicJudgeCacheEntry {
@@ -354,6 +357,24 @@ export const runLogicJudge = async (
     modelDeployment: input.client.deployment,
     modelRevision: input.client.modelRevision,
     gatewayRelease: input.client.gatewayRelease,
+    ...(input.client.constrainedDecoding !== undefined
+      ? {
+          constrainedDecodingAdapterId:
+            input.client.constrainedDecoding.adapterId,
+        }
+      : {}),
+    ...(input.client.constrainedDecoding?.adapterVersion !== undefined
+      ? {
+          constrainedDecodingAdapterVersion:
+            input.client.constrainedDecoding.adapterVersion,
+        }
+      : {}),
+    ...(input.client.constrainedDecoding?.fallbackReason !== undefined
+      ? {
+          constrainedDecodingFallbackReason:
+            input.client.constrainedDecoding.fallbackReason,
+        }
+      : {}),
   };
   const cacheKeyDigest = sha256Hex(cacheKey);
   const promptArtifact: LogicJudgePromptArtifact = {

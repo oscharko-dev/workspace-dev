@@ -1046,6 +1046,10 @@ const buildAgentParticipationEntries = (input: {
   const riskRankerClient =
     input.request.llm.bundle?.riskRanker ?? input.request.llm.riskRanker;
   const a11yJudgeClient = input.request.llm.bundle?.a11yJudge;
+  const generatorConstrainedFallbackReason =
+    input.request.llm.client.constrainedDecoding?.fallbackReason;
+  const logicJudgeConstrainedFallbackReason =
+    logicJudgeClient.constrainedDecoding?.fallbackReason;
 
   entries.push({
     role: "action_topology",
@@ -1069,6 +1073,12 @@ const buildAgentParticipationEntries = (input: {
       ? {
           remediation:
             "Replay cache satisfied generation; no gateway attempt was required.",
+        }
+      : {}),
+    ...(generatorConstrainedFallbackReason !== undefined
+      ? {
+          remediation:
+            `Constrained decoding fell back for generator: ${generatorConstrainedFallbackReason}`,
         }
       : {}),
     artifactReferences: [
@@ -1102,6 +1112,13 @@ const buildAgentParticipationEntries = (input: {
     attemptCount: getBySourceCallCount(input.finopsReport, "judge_primary"),
     ...(logicJudgeStatus === "skipped"
       ? { remediation: "Logic Judge was disabled for this run." }
+      : {}),
+    ...(logicJudgeStatus !== "skipped" &&
+    logicJudgeConstrainedFallbackReason !== undefined
+      ? {
+          remediation:
+            `Constrained decoding fell back for logic judge: ${logicJudgeConstrainedFallbackReason}`,
+        }
       : {}),
     ...(logicJudgeStatus === "failed" &&
     input.logicJudgeGatewayResult?.outcome === "error"
@@ -2418,11 +2435,33 @@ export const runFigmaToQcTestCases = async (
       });
     }
     const generationRequest = buildGenerationRequest(compiled);
+    const generationCacheKey =
+      input.llm.client.constrainedDecoding === undefined
+        ? compiled.cacheKey
+        : {
+            ...compiled.cacheKey,
+            constrainedDecodingAdapterId:
+              input.llm.client.constrainedDecoding.adapterId,
+            ...(input.llm.client.constrainedDecoding.adapterVersion !==
+            undefined
+              ? {
+                  constrainedDecodingAdapterVersion:
+                    input.llm.client.constrainedDecoding.adapterVersion,
+                }
+              : {}),
+            ...(input.llm.client.constrainedDecoding.fallbackReason !==
+            undefined
+              ? {
+                  constrainedDecodingFallbackReason:
+                    input.llm.client.constrainedDecoding.fallbackReason,
+                }
+              : {}),
+          };
     let cacheExecResult: Awaited<ReturnType<typeof executeWithReplayCache>>;
     try {
       cacheExecResult = await executeWithReplayCache({
         cache: replayCache,
-        cacheKey: compiled.cacheKey,
+        cacheKey: generationCacheKey,
         generate: async () => {
           emit({
             phase: "llm_gateway_request",

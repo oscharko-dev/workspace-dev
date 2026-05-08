@@ -1,7 +1,13 @@
 import { createHash } from "node:crypto";
 
 import { canonicalJson } from "./content-hash.js";
-import type { FinOpsBudgetReport, FinOpsCostRate } from "../contracts/index.js";
+import type {
+  FinOpsBudgetReport,
+  FinOpsCostRate,
+  LlmConstrainedDecodingAdapterId,
+  LlmConstrainedDecodingEnforcement,
+  LlmConstrainedDecodingMetadata,
+} from "../contracts/index.js";
 
 export const PER_SOURCE_COST_BREAKDOWN_SCHEMA_VERSION = "1.0.0" as const;
 
@@ -45,6 +51,14 @@ export interface PerSourceCostEntry {
    * the wire payload) when the source recorded no deployment.
    */
   readonly deployment?: string;
+  readonly constrainedDecoding?: {
+    adapterId: LlmConstrainedDecodingAdapterId;
+    enforcement: LlmConstrainedDecodingEnforcement;
+    activeCallCount: number;
+    fallbackCallCount: number;
+    fallbackReasons?: readonly string[];
+    adapterVersion?: string;
+  };
 }
 
 export interface PerSourceCostBreakdown {
@@ -74,6 +88,14 @@ export interface MutablePerSourceCostEntry {
    * deployment — which is the meaningful one for FinOps attribution.
    */
   deployment?: string;
+  constrainedDecoding?: {
+    adapterId: LlmConstrainedDecodingAdapterId;
+    enforcement: LlmConstrainedDecodingEnforcement;
+    activeCallCount: number;
+    fallbackCallCount: number;
+    fallbackReasons?: string[];
+    adapterVersion?: string;
+  };
 }
 
 export const isAgentSourceLabel = (
@@ -141,6 +163,7 @@ export const recordPerSourceAttempt = (input: {
    * deployment label.
    */
   deployment?: string;
+  constrainedDecoding?: LlmConstrainedDecodingMetadata;
 }): void => {
   input.accumulator.callCount += 1;
   input.accumulator.tokensIn += safeIntPositiveOrZero(input.inputTokens);
@@ -161,6 +184,40 @@ export const recordPerSourceAttempt = (input: {
   }
   if (typeof input.deployment === "string" && input.deployment.length > 0) {
     input.accumulator.deployment = input.deployment;
+  }
+  if (input.constrainedDecoding !== undefined) {
+    const current =
+      input.accumulator.constrainedDecoding ?? {
+        adapterId: input.constrainedDecoding.adapterId,
+        enforcement: input.constrainedDecoding.enforcement,
+        activeCallCount: 0,
+        fallbackCallCount: 0,
+      };
+    current.adapterId = input.constrainedDecoding.adapterId;
+    current.enforcement = input.constrainedDecoding.enforcement;
+    if (input.constrainedDecoding.fallback) {
+      current.fallbackCallCount += 1;
+      if (
+        typeof input.constrainedDecoding.fallbackReason === "string" &&
+        input.constrainedDecoding.fallbackReason.length > 0
+      ) {
+        const reasons = current.fallbackReasons ?? [];
+        if (!reasons.includes(input.constrainedDecoding.fallbackReason)) {
+          reasons.push(input.constrainedDecoding.fallbackReason);
+          reasons.sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+        }
+        current.fallbackReasons = reasons;
+      }
+    } else {
+      current.activeCallCount += 1;
+    }
+    if (
+      typeof input.constrainedDecoding.adapterVersion === "string" &&
+      input.constrainedDecoding.adapterVersion.length > 0
+    ) {
+      current.adapterVersion = input.constrainedDecoding.adapterVersion;
+    }
+    input.accumulator.constrainedDecoding = current;
   }
 };
 
@@ -210,6 +267,31 @@ export const finalizePerSourceCostBreakdown = (input: {
             : {}),
           ...(entry.deployment !== undefined && entry.deployment.length > 0
             ? { deployment: entry.deployment }
+            : {}),
+          ...(entry.constrainedDecoding !== undefined
+            ? {
+                constrainedDecoding: {
+                  adapterId: entry.constrainedDecoding.adapterId,
+                  enforcement: entry.constrainedDecoding.enforcement,
+                  activeCallCount:
+                    entry.constrainedDecoding.activeCallCount,
+                  fallbackCallCount:
+                    entry.constrainedDecoding.fallbackCallCount,
+                  ...(entry.constrainedDecoding.fallbackReasons !== undefined &&
+                  entry.constrainedDecoding.fallbackReasons.length > 0
+                    ? {
+                        fallbackReasons:
+                          entry.constrainedDecoding.fallbackReasons,
+                      }
+                    : {}),
+                  ...(entry.constrainedDecoding.adapterVersion !== undefined
+                    ? {
+                        adapterVersion:
+                          entry.constrainedDecoding.adapterVersion,
+                      }
+                    : {}),
+                },
+              }
             : {}),
         } satisfies PerSourceCostEntry,
       ];

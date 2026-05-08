@@ -151,7 +151,7 @@ test("schema: drift guard — the hash is stable for the current contract", () =
   // `promptTemplateVersion: { const: TEST_INTELLIGENCE_PROMPT_TEMPLATE_VERSION }`
   // so the digest shifts in lockstep with the template bump.
   const expected =
-    "e979dbc89274b9f94c5c727be927396d6f90c38f10154078584d6c13325d5f53";
+    "8f38e0dbc0fde3af192bf515b443ad21407583c99bd0b7a23c26b5173ee50c21";
   const actual = computeGeneratedTestCaseListSchemaHash();
   if (actual !== expected) {
     assert.fail(

@@ -1046,6 +1046,73 @@ export type LlmGatewayWireStructuredOutputMode =
   (typeof ALLOWED_LLM_GATEWAY_WIRE_STRUCTURED_OUTPUT_MODES)[number];
 
 /**
+ * Internal constrained-decoding adapters. These are more expressive than the
+ * wire-mode enum because multiple provider integrations can implement the same
+ * logical schema-constrained contract.
+ */
+export const ALLOWED_LLM_CONSTRAINED_DECODING_ADAPTER_IDS = [
+  "openai_json_schema",
+  "openai_json_object",
+  "prompt_only",
+  "outlines",
+  "llguidance",
+] as const;
+export type LlmConstrainedDecodingAdapterId =
+  (typeof ALLOWED_LLM_CONSTRAINED_DECODING_ADAPTER_IDS)[number];
+
+/** How strongly the selected constrained-decoding adapter enforces shape. */
+export const ALLOWED_LLM_CONSTRAINED_DECODING_ENFORCEMENTS = [
+  "provider",
+  "sampler",
+  "prompt_only",
+] as const;
+export type LlmConstrainedDecodingEnforcement =
+  (typeof ALLOWED_LLM_CONSTRAINED_DECODING_ENFORCEMENTS)[number];
+
+/**
+ * Operator-configured constrained-decoding preference. The gateway resolves
+ * this preference into an actual adapter per request and may explicitly fall
+ * back when the compatibility mode or deployment cannot honor it.
+ */
+export interface LlmConstrainedDecodingConfig {
+  /** Preferred adapter for schema-carrying requests. */
+  preferredAdapter: LlmConstrainedDecodingAdapterId;
+  /**
+   * Optional explicit fallback adapter. Defaults to `prompt_only` when
+   * omitted; callers should keep this narrow so a single request never fan-outs
+   * across multiple extra network attempts unexpectedly.
+   */
+  fallbackAdapter?: LlmConstrainedDecodingAdapterId;
+  /**
+   * Optional adapter-version pin surfaced in artifacts and FinOps so operators
+   * can correlate cost/quality shifts with constrained-decoding rollout.
+   */
+  adapterVersion?: string;
+}
+
+/**
+ * Resolved constrained-decoding metadata for one request attempt. This is
+ * attached to gateway results and propagated into FinOps/agent-participation
+ * artifacts so fallback behavior is auditable.
+ */
+export interface LlmConstrainedDecodingMetadata {
+  /** True when the caller supplied a response schema on the request. */
+  requested: boolean;
+  /** Adapter actually selected for this attempt. */
+  adapterId: LlmConstrainedDecodingAdapterId;
+  /** Enforcement class of the selected adapter. */
+  enforcement: LlmConstrainedDecodingEnforcement;
+  /** Wire-mode emitted to the upstream compatibility layer. */
+  wireMode: LlmGatewayWireStructuredOutputMode;
+  /** True when the preferred adapter could not be used and a fallback ran. */
+  fallback: boolean;
+  /** Redacted reason for fallback, when applicable. */
+  fallbackReason?: string;
+  /** Optional adapter-version pin from operator config. */
+  adapterVersion?: string;
+}
+
+/**
  * Disjoint failure classes surfaced by `LlmGatewayClient.generate`. Refusals,
  * schema-invalid responses, and image-payload guard rejections are NOT
  * retryable; transport, timeout, and rate-limit failures are.
@@ -1184,6 +1251,13 @@ export interface LlmGatewayClientConfig {
    * callers is unchanged. See {@link LlmGatewayWireStructuredOutputMode}.
    */
   wireStructuredOutputMode?: LlmGatewayWireStructuredOutputMode;
+  /**
+   * Optional internal constrained-decoding preference. When omitted, the
+   * gateway derives a backward-compatible adapter from
+   * `wireStructuredOutputMode` (`json_schema` -> `openai_json_schema`,
+   * `json_object` -> `openai_json_object`, `none` -> `prompt_only`).
+   */
+  constrainedDecoding?: LlmConstrainedDecodingConfig;
   /**
    * Per-modality token-estimation strategy used by the client-side input
    * budget guard (Issue #1930). Defaults to
@@ -1518,6 +1592,7 @@ export interface LlmGenerationSuccess {
   outcome: "success";
   content: unknown;
   rawTextContent?: string;
+  constrainedDecoding?: LlmConstrainedDecodingMetadata;
   finishReason: LlmFinishReason;
   usage: { inputTokens?: number; outputTokens?: number };
   modelDeployment: string;
@@ -1531,6 +1606,7 @@ export interface LlmGenerationFailure {
   outcome: "error";
   errorClass: LlmGatewayErrorClass;
   message: string;
+  constrainedDecoding?: LlmConstrainedDecodingMetadata;
   retryable: boolean;
   attempt: number;
 }
@@ -6369,6 +6445,9 @@ export interface ReplayCacheKey {
   seed?: number;
   sourceMixPlanHash?: string;
   contextBudgetHash?: string;
+  constrainedDecodingAdapterId?: LlmConstrainedDecodingAdapterId;
+  constrainedDecodingAdapterVersion?: string;
+  constrainedDecodingFallbackReason?: string;
 }
 
 /** Minimal persisted metadata for one compiled role-step prompt run. */
@@ -8591,6 +8670,19 @@ export interface FinOpsBudgetReport {
          * legacy single-model runs.
          */
         deployment?: string;
+        /**
+         * Optional constrained-decoding attribution for this source. Present
+         * only when at least one attempt recorded schema-constrained decoding
+         * metadata, so legacy runs stay byte-stable.
+         */
+        constrainedDecoding?: {
+          adapterId: LlmConstrainedDecodingAdapterId;
+          enforcement: LlmConstrainedDecodingEnforcement;
+          activeCallCount: number;
+          fallbackCallCount: number;
+          fallbackReasons?: readonly string[];
+          adapterVersion?: string;
+        };
       }
     >
   >;
