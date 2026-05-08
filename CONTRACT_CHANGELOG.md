@@ -31,6 +31,76 @@ All changes to the public contract surface of `workspace-dev` are documented her
 
 ---
 
+## [4.59.0] - 2026-05-08
+
+### Added (Issue #2068 — tier-elastic `policy:technique-coverage-minimum` quota)
+
+Before #2068 the `policy:technique-coverage-minimum` gate enforced the
+planner-published `CoveragePlan.perScreen[].techniqueQuotas` minCount
+verbatim. On the K0 benchmark the planner emitted a fixed `minCount: 12`
+for `equivalence_partitioning` regardless of screen size, so the harness
+flagged a `technique_quota_breach` even though the screen had only 7–9
+fields and the generator already produced 10–11 EP cases. The same
+defect blocked G0/I0/J0 and now K0 — the policy quota was structurally
+mis-sized for small-field screens, forcing the harness to emit padding
+cases that lowered the semantic-coverage signal.
+
+This release replaces the fixed quota with a tier-elastic formula that
+scales with the screen's coverage-relevant field count. Customers that
+contractually require a fixed floor opt into `{ mode: "fixed" }` on a
+derived policy profile, which preserves the legacy behaviour byte-for-byte.
+
+Public-contract changes (additive — no removals, no renames):
+
+- New exported runtime constants:
+  - `TECHNIQUE_COVERAGE_MINIMUM_MODES`
+    (`["tier-elastic", "fixed"]` — frozen tuple),
+  - `TIER_ELASTIC_EP_TIERS` — frozen tier catalog
+    (`<= 4 fields → max(4, 2*fields)`,
+    `<= 8 fields → ceil(1.5*fields)`,
+    `>= 9 fields → fields`),
+  - `TECHNIQUE_QUOTA_REPORT_SCHEMA_VERSION` (`"1.0.0"`),
+  - `TECHNIQUE_QUOTA_REPORT_ARTIFACT_FILENAME`
+    (`"technique-quota-report.json"`),
+  - `TECHNIQUE_QUOTA_REPORT_STATUSES` (`["pass", "deficit"]`).
+- New exported types: `TechniqueCoverageMinimumMode`,
+  `TechniqueCoverageMinimumPolicy`, `TechniqueQuotaReport`,
+  `TechniqueQuotaReportEntry`, `TechniqueQuotaReportStatus`.
+- `TestCasePolicyProfileRules.techniqueCoverageMinimum` — new optional
+  field. The `eu-banking-default` profile defaults to
+  `{ mode: "tier-elastic" }`. Legacy profiles that omit the field
+  continue to work unchanged (the gate falls back to `tier-elastic`).
+- `TEST_INTELLIGENCE_CONTRACT_VERSION` bumps from `1.19.0` to `1.20.0`.
+
+Operational behaviour introduced by the additive surface:
+
+- The runner now persists `technique-quota-report.json` alongside
+  `policy-report.json` whenever a `CoveragePlan` is supplied. The
+  report lists, for every `(screenId, technique)` pair the gate
+  resolved this run, the screen's `fieldCount`, the effective
+  `requiredCount`, the `actualCount` of anchored cases, the
+  machine-readable `formula` label
+  (`tier-elastic:fields<=8:ceil(1.5*fields)` etc.) and the per-row
+  `status` (`pass | deficit`).
+- The `policy:technique-coverage-minimum` gate now consults the
+  active `techniqueCoverageMinimum` mode. In `tier-elastic` mode the
+  EP quota is replaced with the tier formula; non-EP rows keep their
+  planner-published minimums. In `fixed` mode every quota row is
+  enforced verbatim.
+- The post-LLM logic-judge hard-gate enforces the same tier-elastic
+  formula so `repair`-loop verdicts never disagree with the policy
+  gate.
+
+Breaking-change posture: none. Profiles that omit the new field, or
+that explicitly opt into `{ mode: "fixed" }`, continue to enforce the
+exact byte-stable quota the planner published. The artifact is
+additive — runs that do not pass a `CoveragePlan` skip the artifact
+entirely.
+
+migrationHash: 2026-05-08T00-00-00-000Z-issue-2068
+
+---
+
 ## [4.58.0] - 2026-05-08
 
 ### Added (Issue #2066 — tier the cross-modal faithfulness threshold + calibrate cross-family judges)

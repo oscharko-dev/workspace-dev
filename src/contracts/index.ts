@@ -163,7 +163,7 @@ export interface TestIntelligenceTransferPrincipal {
 }
 
 /** Contract version for the opt-in test-intelligence surface. */
-export const TEST_INTELLIGENCE_CONTRACT_VERSION = "1.19.0" as const;
+export const TEST_INTELLIGENCE_CONTRACT_VERSION = "1.20.0" as const;
 
 /**
  * Schema version for generated test case payloads.
@@ -1333,6 +1333,21 @@ export interface TestCasePolicyProfileRules {
     readonly gateMode: "enforce" | "advisory" | "off";
     readonly thresholdRatio: number;
   };
+  /**
+   * Issue #2068 — `policy:technique-coverage-minimum` resolution mode.
+   *
+   * Drives whether the gate enforces the planner's fixed
+   * `CoveragePlan.perScreen[].techniqueQuotas` rows verbatim
+   * (`{ mode: "fixed" }`) or replaces the equivalence-partitioning
+   * quota with a tier-elastic formula that scales with the screen's
+   * coverage-relevant field count (`{ mode: "tier-elastic" }`).
+   *
+   * Optional for backwards compatibility: when omitted the gate falls
+   * back to `tier-elastic` so small-screen masks with `<= 8` fields
+   * stop tripping the closeout-blocking 12-EP floor that was the
+   * original closeout child #2026.
+   */
+  techniqueCoverageMinimum?: TechniqueCoverageMinimumPolicy;
 }
 
 /** Built-in policy profile shape. Profiles are identified by `id`+`version`. */
@@ -11180,6 +11195,133 @@ export interface CoveragePlan {
   readonly mutationKillRateTarget: number;
 }
 
+/**
+ * Issue #2068 — closed runtime list of `policy:technique-coverage-minimum`
+ * resolution modes.
+ *
+ *   - `tier-elastic` (default) — equivalence-partitioning quotas scale with
+ *     the screen's coverage-relevant field count using the formula
+ *     {@link TIER_ELASTIC_EP_TIERS}. Non-EP techniques keep their planner
+ *     quotas unchanged.
+ *   - `fixed`        — the planner quotas published in
+ *     `CoveragePlan.perScreen[].techniqueQuotas` are enforced verbatim.
+ *     Customers that contractually require a fixed minimum (e.g. a 12-EP
+ *     floor regardless of screen size) opt into this mode.
+ */
+export const TECHNIQUE_COVERAGE_MINIMUM_MODES = [
+  "tier-elastic",
+  "fixed",
+] as const;
+
+/** Discriminant of an allowed `policy:technique-coverage-minimum` mode. */
+export type TechniqueCoverageMinimumMode =
+  (typeof TECHNIQUE_COVERAGE_MINIMUM_MODES)[number];
+
+/**
+ * Tier-elastic equivalence-partitioning quota tiers (Issue #2068).
+ *
+ * Every screen with a coverage-relevant field count `<= maxFieldCount`
+ * (sorted ascending; the catch-all tier uses `Number.POSITIVE_INFINITY`)
+ * resolves to `max(floor, ceil(multiplier * fieldCount))`. The tiers are
+ * intentionally a frozen, deterministic constant so that
+ * `policy-report.json` and `technique-quota-report.json` remain
+ * byte-stable across runs.
+ */
+export const TIER_ELASTIC_EP_TIERS: ReadonlyArray<{
+  readonly maxFieldCount: number;
+  readonly multiplier: number;
+  readonly floor: number;
+  readonly label: string;
+}> = Object.freeze([
+  Object.freeze({
+    maxFieldCount: 4,
+    multiplier: 2,
+    floor: 4,
+    label: "fields<=4: max(4, 2*fields)",
+  }),
+  Object.freeze({
+    maxFieldCount: 8,
+    multiplier: 1.5,
+    floor: 0,
+    label: "fields<=8: ceil(1.5*fields)",
+  }),
+  Object.freeze({
+    maxFieldCount: Number.POSITIVE_INFINITY,
+    multiplier: 1,
+    floor: 0,
+    label: "fields>=9: fields",
+  }),
+]);
+
+/**
+ * Issue #2068 — policy-profile knob that drives the tier-elastic
+ * resolution of `policy:technique-coverage-minimum`. Optional for
+ * backwards compatibility; `undefined` is treated as
+ * `{ mode: "tier-elastic" }`.
+ */
+export interface TechniqueCoverageMinimumPolicy {
+  readonly mode: TechniqueCoverageMinimumMode;
+}
+
+/** Schema version for persisted `technique-quota-report.json` artifacts. */
+export const TECHNIQUE_QUOTA_REPORT_SCHEMA_VERSION = "1.0.0" as const;
+
+/** Canonical filename for the per-run technique-quota-report artifact
+ * (Issue #2068). */
+export const TECHNIQUE_QUOTA_REPORT_ARTIFACT_FILENAME =
+  "technique-quota-report.json" as const;
+
+/** Per-run resolution status for one (screen, technique) quota row. */
+export const TECHNIQUE_QUOTA_REPORT_STATUSES = [
+  "pass",
+  "deficit",
+] as const;
+
+export type TechniqueQuotaReportStatus =
+  (typeof TECHNIQUE_QUOTA_REPORT_STATUSES)[number];
+
+/** One per-screen per-technique entry of `technique-quota-report.json`. */
+export interface TechniqueQuotaReportEntry {
+  readonly screenId: string;
+  readonly technique: TestCaseTechnique29119;
+  /** Coverage-relevant field count for the screen, derived from
+   * `CoveragePlan.perElement`. */
+  readonly fieldCount: number;
+  /** Effective minimum the policy gate enforces this run. */
+  readonly requiredCount: number;
+  /** Cases anchored to the screen with this technique. */
+  readonly actualCount: number;
+  /** Stable, machine-readable formula label that produced
+   * `requiredCount`. `tier-elastic:fields<=8:ceil(1.5*fields)` etc. */
+  readonly formula: string;
+  /** Mode that was active when the report was built. */
+  readonly mode: TechniqueCoverageMinimumMode;
+  readonly status: TechniqueQuotaReportStatus;
+}
+
+/**
+ * Persistable per-run report capturing the
+ * `policy:technique-coverage-minimum` resolution path (Issue #2068).
+ *
+ * The report is emitted on every run that has a `CoveragePlan`,
+ * regardless of whether the gate passes — operators rely on it to audit
+ * why a small-screen mask did NOT trigger a quota deficit even though
+ * the planner published a fixed `12` minCount. Entries are sorted by
+ * `(screenId, technique)`. */
+export interface TechniqueQuotaReport {
+  readonly schemaVersion: typeof TECHNIQUE_QUOTA_REPORT_SCHEMA_VERSION;
+  readonly contractVersion: typeof TEST_INTELLIGENCE_CONTRACT_VERSION;
+  readonly generatedAt: string;
+  readonly jobId: string;
+  readonly policyProfileId: string;
+  readonly mode: TechniqueCoverageMinimumMode;
+  readonly screenCount: number;
+  readonly entryCount: number;
+  readonly passCount: number;
+  readonly deficitCount: number;
+  readonly entries: readonly TechniqueQuotaReportEntry[];
+}
+
 /** Schema version for persisted `risk-ranking.json` artifacts (Issue #1935). */
 export const RISK_RANKING_SCHEMA_VERSION = "1.0.0" as const;
 
@@ -11555,7 +11697,7 @@ export interface ReleaseQualityGatesReport {
  * Must be bumped according to CONTRACT_CHANGELOG.md rules.
  * Package version alignment is documented in VERSIONING.md.
  */
-export const CONTRACT_VERSION = "4.58.0" as const;
+export const CONTRACT_VERSION = "4.59.0" as const;
 
 // ---------------------------------------------------------------------------
 // Issue #1774 — UntrustedContentNormalizer (2025-vintage injection carriers).

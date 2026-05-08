@@ -682,6 +682,7 @@ const evaluateJobLevel = (
   for (const deficit of collectTechniqueQuotaDeficits(
     list.testCases,
     coveragePlan,
+    profile.rules.techniqueCoverageMinimum,
   )) {
     violations.push({
       rule: "policy:technique-coverage-minimum",
