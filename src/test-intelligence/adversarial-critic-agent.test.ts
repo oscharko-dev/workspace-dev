@@ -18,7 +18,7 @@ import {
 
 const SAMPLE_INTENT = {
   schemaVersion: "1.0.0",
-  contractVersion: "1.14.0",
+  contractVersion: "1.15.0",
   jobId: "job-2039",
 } as BusinessTestIntentIr;
 

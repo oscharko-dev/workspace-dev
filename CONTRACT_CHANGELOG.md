@@ -31,6 +31,105 @@ All changes to the public contract surface of `workspace-dev` are documented her
 
 ---
 
+## [4.54.0] - 2026-05-08
+
+### Added (Issue #2040 — property-based test layer with domain-invariant registry)
+
+Until this release the active-dataset risk traps (G5 hard gate — VAT must
+not be applied to a Netto financing-need base, plus brutto/netto exclusivity,
+optional-cost-field semantics, and financing-need formula bounds) were
+enforced only by prose in the customer eval rubric. The rubric instructs
+the LLM but cannot reject a generated case that contradicts the rule —
+violations could only be caught downstream by the calculation-constraint
+detector, which fires after the case has been wrapped, persisted, and
+fed into the policy gate.
+
+This release introduces a typed property-based test layer that enforces
+those facts as code. Domain experts (or the prompt compiler) declare
+invariants such as "VAT is never applied to a Netto base" or
+"principal − down payment = financing need (VAT excluded)" via a small
+DSL; a property-based sampler derives concrete seed test data and
+mutation-killer candidates from each invariant; the validation pipeline
+evaluates each generated case against the registry and reports
+`domain_invariant_violation` issues for any case that matches an
+invariant's `forall` predicate but fails its `holds` predicate. The
+coverage report surfaces a job-level `invariantCoverage` ratio plus a
+per-case `invariantAnnotations` mapping (`exercises: ["INV-VAT-01", ...]`).
+
+Public-contract changes (additive — no removals, no renames):
+
+- New exported runtime surface from `test-intelligence/domain-invariant-registry`:
+  `createInvariantRegistry`, `buildActiveDatasetInvariantRegistry`,
+  `registerActiveDatasetInvariants`, `evaluateInvariants`,
+  `computeInvariantCoverageRatio`, plus the typed DSL
+  (`DomainInvariant`, `DomainInvariantContext`,
+  `DomainInvariantViolation`, `DomainInvariantCaseEvaluation`,
+  `DomainInvariantEvaluation`, `DomainInvariantRegistry`,
+  `DomainInvariantSeverity`).
+- New exported runtime surface from `test-intelligence/property-sampler`:
+  `sampleInvariantSeeds`, `findInvariantsMissingSamplerFactory`,
+  `InvariantSeedPair`, `InvariantSeedSet`. The sampler is deterministic
+  (fixed seed, bounded run count) so cache keys remain stable.
+- `ALLOWED_TEST_CASE_VALIDATION_ISSUE_CODES` gains
+  `"domain_invariant_violation"` (alphabetical-tail insertion). The
+  validation pipeline emits this code for every case where an invariant's
+  `forall` predicate matches but its `holds` predicate returns false.
+- `TestCaseCoverageReport` gains two optional additive fields:
+  - `invariantCoverage?: { total, exercised, ratio, registeredIds, exercisedIds }`
+    — job-level invariant coverage, with `total` = registered count,
+    `exercised` = invariants matched by `forall` for at least one case,
+    and `ratio` rounded to six digits.
+  - `invariantAnnotations?: TestCaseInvariantAnnotation[]` — per-case
+    sorted `exercises` mapping, surfaced only for cases that exercise at
+    least one invariant. The new exported type
+    `TestCaseInvariantAnnotation` carries `{ testCaseId, exercises }`.
+- `RunValidationPipelineInput` and the self-verify variant gain an
+  optional `invariantRegistry?: DomainInvariantRegistry | null` override.
+  The default is `buildActiveDatasetInvariantRegistry()`; setting the
+  field to `null` disables invariant evaluation entirely (no
+  `domain_invariant_violation` issues, no `invariantCoverage` field).
+- A new `validateGeneratedTestCasesWithInvariants` helper exposes the
+  combined report + invariant evaluation so callers that do not run the
+  full pipeline can still surface the same outputs.
+
+Operational behaviour introduced by the additive runtime surface:
+
+- The active-dataset registry ships four invariants:
+  `INV-VAT-01` (VAT exclusion on the financing-need calculation),
+  `INV-NETTO-BRUTTO-01` (brutto/netto exclusivity),
+  `INV-OPTIONAL-COST-01` (optional-cost-field semantics),
+  `INV-FINANCING-NEED-01` (financing-need formula bounds).
+- A test case that triggers an `error`-severity violation is rejected by
+  the validation pipeline (`validation-report.json#blocked = true`),
+  which propagates to the policy gate and the run-level `blocked` flag.
+- `INV-VAT-01` supplements the existing G5 hard gate (VAT-on-financing
+  contradiction): the rule is still steered by the eval rubric, and now
+  it is additionally enforced as a typed predicate that fails closed
+  before the policy gate runs.
+
+Documentation:
+
+- `docs/test-intelligence/property-based-layer.md` documents the DSL,
+  the active-dataset invariant set, the property-sampler contract, and
+  worked invariants for one banking and one insurance domain.
+
+Contract version impacts:
+
+- `CONTRACT_VERSION` bumps from `4.53.0` to `4.54.0` (additive minor
+  bump; new optional fields, new exported types, new runtime constants,
+  no removals or renames).
+- `TEST_INTELLIGENCE_CONTRACT_VERSION` bumps from `1.14.0` to `1.15.0`
+  because the test-intelligence wire artifact `coverage-report.json`
+  extends its top-level shape with the new optional `invariantCoverage`
+  and `invariantAnnotations` fields.
+- `TEST_CASE_COVERAGE_REPORT_SCHEMA_VERSION` and
+  `TEST_CASE_VALIDATION_REPORT_SCHEMA_VERSION` remain `1.0.0` — the
+  added fields are optional and the existing required envelope keeps
+  its byte-shape for legacy producers and consumers.
+- `migrationHash:` registration is not required for this release. The
+  signed migration registry carries forward unchanged because no
+  migration id, hash, or rollback semantics changed.
+
 ## [4.53.0] - 2026-05-08
 
 ### Added (Issue #2053 — `G-NEG-CASE` adversarial-critic negative-case-lift hard gate)

@@ -88,7 +88,7 @@ Persisted multimodal accessibility-judge verdict artifact.
 
 ##### contractVersion
 
-> `readonly` **contractVersion**: `"1.14.0"`
+> `readonly` **contractVersion**: `"1.15.0"`
 
 ##### criteria
 
@@ -356,7 +356,7 @@ Persisted, canonical-JSON, per-job repair-iteration log.
 
 ##### contractVersion
 
-> `readonly` **contractVersion**: `"1.14.0"`
+> `readonly` **contractVersion**: `"1.15.0"`
 
 ##### generatedAt
 
@@ -919,7 +919,7 @@ input set is byte-identical and the entries are sorted before write.
 
 ##### contractVersion
 
-> `readonly` **contractVersion**: `"1.14.0"`
+> `readonly` **contractVersion**: `"1.15.0"`
 
 ##### diffArtifactBasename?
 
@@ -971,7 +971,7 @@ Persisted case-merger artifact (Issue #1937).
 
 ##### contractVersion
 
-> `readonly` **contractVersion**: `"1.14.0"`
+> `readonly` **contractVersion**: `"1.15.0"`
 
 ##### entries
 
@@ -1106,7 +1106,7 @@ Total bytes of cleared tool result blocks at the boundary.
 
 ##### contractVersion
 
-> `readonly` **contractVersion**: `"1.14.0"`
+> `readonly` **contractVersion**: `"1.15.0"`
 
 ##### jobId
 
@@ -1150,7 +1150,7 @@ Persisted, fully-redacted artifact form of a compiled prompt.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.14.0"`
+> **contractVersion**: `"1.15.0"`
 
 ##### hashes
 
@@ -2368,7 +2368,7 @@ Aggregate dry-run report artifact.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.14.0"`
+> **contractVersion**: `"1.15.0"`
 
 ##### credentialsIncluded
 
@@ -2721,7 +2721,7 @@ Sorted by filename for deterministic emission.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.14.0"`
+> **contractVersion**: `"1.15.0"`
 
 ##### exportedTestCaseCount
 
@@ -2812,7 +2812,7 @@ Persisted screenshot-vs-cases faithfulness verdict artifact.
 
 ##### contractVersion
 
-> `readonly` **contractVersion**: `"1.14.0"`
+> `readonly` **contractVersion**: `"1.15.0"`
 
 ##### fallbackReason
 
@@ -3076,7 +3076,7 @@ Aggregate counters across the `bySource` map.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.14.0"`
+> **contractVersion**: `"1.15.0"`
 
 ##### currencyLabel?
 
@@ -3714,7 +3714,7 @@ Single generated test case.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.14.0"`
+> **contractVersion**: `"1.15.0"`
 
 ##### expectedResults
 
@@ -3825,7 +3825,7 @@ Whether the artifact came from a replay-cache hit.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.14.0"`
+> **contractVersion**: `"1.15.0"`
 
 ##### generatedAt
 
@@ -4041,7 +4041,7 @@ referenced files and recomputing each row.
 
 ##### contractVersion
 
-> `readonly` **contractVersion**: `"1.14.0"`
+> `readonly` **contractVersion**: `"1.15.0"`
 
 ##### digest
 
@@ -4267,7 +4267,7 @@ Hard-invariant intent-delta report artifact (Issue #1373).
 
 ##### contractVersion
 
-> **contractVersion**: `"1.14.0"`
+> **contractVersion**: `"1.15.0"`
 
 ##### currentIntentHash
 
@@ -4581,7 +4581,7 @@ Aggregate `jira-created-subtasks.json` artifact (Issue #1482).
 
 ##### contractVersion
 
-> **contractVersion**: `"1.14.0"`
+> **contractVersion**: `"1.15.0"`
 
 ##### credentialsIncluded
 
@@ -5217,7 +5217,7 @@ Audit metadata for the run.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.14.0"`
+> **contractVersion**: `"1.15.0"`
 
 ##### createdCount
 
@@ -5419,7 +5419,7 @@ Persisted production-runner judge-consensus artifact.
 
 ##### contractVersion
 
-> `readonly` **contractVersion**: `"1.14.0"`
+> `readonly` **contractVersion**: `"1.15.0"`
 
 ##### crossFamily?
 
@@ -5642,7 +5642,7 @@ the disagreement-rate trending consumes (B.10).
 
 ##### contractVersion
 
-> `readonly` **contractVersion**: `"1.14.0"`
+> `readonly` **contractVersion**: `"1.15.0"`
 
 ##### costByFamily
 
@@ -5862,7 +5862,7 @@ Persisted logic-judge verdict artifact.
 
 ##### contractVersion
 
-> `readonly` **contractVersion**: `"1.14.0"`
+> `readonly` **contractVersion**: `"1.15.0"`
 
 ##### findings
 
@@ -6359,7 +6359,7 @@ Per-release primitive-map status report.
 
 ##### contractVersion
 
-> `readonly` **contractVersion**: `"1.14.0"`
+> `readonly` **contractVersion**: `"1.15.0"`
 
 ##### counts
 
@@ -7453,7 +7453,7 @@ Aggregate `qc-created-entities.json` artifact (Issue #1372).
 
 ##### contractVersion
 
-> **contractVersion**: `"1.14.0"`
+> **contractVersion**: `"1.15.0"`
 
 ##### entities
 
@@ -7543,7 +7543,7 @@ Aggregate QC mapping preview artifact.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.14.0"`
+> **contractVersion**: `"1.15.0"`
 
 ##### entries
 
@@ -8219,7 +8219,7 @@ Gate 9 — context budget regression (Issue #1802).
 
 ##### contractVersion
 
-> `readonly` **contractVersion**: `"1.14.0"`
+> `readonly` **contractVersion**: `"1.15.0"`
 
 ##### libraryCoverageStatusCompleteness
 
@@ -8310,7 +8310,7 @@ The release pipeline fails when any verdict has `passed === false`.
 
 ##### contractVersion
 
-> `readonly` **contractVersion**: `"1.14.0"`
+> `readonly` **contractVersion**: `"1.15.0"`
 
 ##### mutationKillRate
 
@@ -8464,7 +8464,7 @@ gate passed.
 
 ##### contractVersion
 
-> `readonly` **contractVersion**: `"1.14.0"`
+> `readonly` **contractVersion**: `"1.15.0"`
 
 ##### gates
 
@@ -8653,7 +8653,7 @@ ISO-8601 UTC timestamp at the moment of persistence.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.14.0"`
+> **contractVersion**: `"1.15.0"`
 
 ##### fromState?
 
@@ -8721,7 +8721,7 @@ Number of cases currently in `approved` (or `exported`/`transferred`) state.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.14.0"`
+> **contractVersion**: `"1.15.0"`
 
 ##### fourEyesPolicy?
 
@@ -8947,7 +8947,7 @@ Persisted production-runner run-quality artifact.
 
 ##### contractVersion
 
-> `readonly` **contractVersion**: `"1.14.0"`
+> `readonly` **contractVersion**: `"1.15.0"`
 
 ##### degradedReasons
 
@@ -9251,7 +9251,7 @@ Sorted by `testCaseId` for byte stability. Empty when `refusal` is set.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.14.0"`
+> **contractVersion**: `"1.15.0"`
 
 ##### gatewayRelease
 
@@ -9344,7 +9344,7 @@ Changelog-approved signed migration bundle for banking-profile runs.
 
 ##### contractVersion
 
-> `readonly` **contractVersion**: `"4.53.0"`
+> `readonly` **contractVersion**: `"4.54.0"`
 
 ##### entries
 
@@ -9660,7 +9660,7 @@ Avg assumptions per case.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.14.0"`
+> **contractVersion**: `"1.15.0"`
 
 ##### duplicatePairs
 
@@ -9675,6 +9675,50 @@ Test-case pairs sharing >= duplicate threshold.
 ##### generatedAt
 
 > **generatedAt**: `string`
+
+##### invariantAnnotations?
+
+> `optional` **invariantAnnotations?**: [`TestCaseInvariantAnnotation`](#testcaseinvariantannotation)[]
+
+Per-case invariant exercise mapping (Issue #2040). Sorted alphabetically
+by `testCaseId`; only cases that exercise at least one invariant appear
+in the array. Surfaces the `exercises: ["INV-VAT-01", ...]` annotation
+the issue spec requires without altering the strict
+`GeneratedTestCase` schema.
+
+##### invariantCoverage?
+
+> `optional` **invariantCoverage?**: `object`
+
+Domain-invariant coverage (Issue #2040). Reports the share of
+registered invariants exercised by at least one accepted test case.
+`total` is the registered invariant count, `exercised` is the count
+matched by `forall` for at least one case, and `ratio` is
+`exercised / total` rounded to six digits (0 when `total === 0`).
+
+###### exercised
+
+> **exercised**: `number`
+
+###### exercisedIds
+
+> **exercisedIds**: `string`[]
+
+Sorted invariant ids exercised by at least one accepted case.
+
+###### ratio
+
+> **ratio**: `number`
+
+###### registeredIds
+
+> **registeredIds**: `string`[]
+
+Sorted invariant ids registered for the run.
+
+###### total
+
+> **total**: `number`
 
 ##### jobId
 
@@ -9754,7 +9798,7 @@ Aggregate dedupe report artifact (Issue #1373).
 
 ##### contractVersion
 
-> **contractVersion**: `"1.14.0"`
+> **contractVersion**: `"1.15.0"`
 
 ##### embeddingProvider
 
@@ -9864,7 +9908,7 @@ Aggregate test-case delta report (always paired with `IntentDeltaReport`).
 
 ##### contractVersion
 
-> **contractVersion**: `"1.14.0"`
+> **contractVersion**: `"1.15.0"`
 
 ##### generatedAt
 
@@ -9973,6 +10017,24 @@ Pair of generated test case ids exceeding the similarity threshold.
 ##### similarity
 
 > **similarity**: `number`
+
+***
+
+### TestCaseInvariantAnnotation
+
+Per-case invariant annotation row (Issue #2040). Each entry lists the
+invariant ids the test case is in scope for (i.e. `forall === true`),
+deduplicated and alphabetically sorted.
+
+#### Properties
+
+##### exercises
+
+> **exercises**: `string`[]
+
+##### testCaseId
+
+> **testCaseId**: `string`
 
 ***
 
@@ -10280,7 +10342,7 @@ Whether ANY case was blocked (downstream export gate).
 
 ##### contractVersion
 
-> **contractVersion**: `"1.14.0"`
+> **contractVersion**: `"1.15.0"`
 
 ##### decisions
 
@@ -10405,7 +10467,7 @@ Single semantic / structural validation issue.
 
 ##### code
 
-> **code**: `"schema_invalid"` \| `"missing_trace"` \| `"trace_screen_unknown"` \| `"missing_expected_results"` \| `"steps_unordered"` \| `"steps_indices_non_sequential"` \| `"step_action_empty"` \| `"step_action_too_long"` \| `"duplicate_step_index"` \| `"duplicate_test_case_id"` \| `"title_empty"` \| `"objective_empty"` \| `"risk_category_invalid_for_intent"` \| `"qc_mapping_blocking_reasons_missing"` \| `"qc_mapping_exportable_inconsistent"` \| `"quality_signals_confidence_out_of_range"` \| `"quality_signals_coverage_unknown_id"` \| `"test_data_pii_detected"` \| `"test_data_unredacted_value"` \| `"preconditions_pii_detected"` \| `"expected_results_pii_detected"` \| `"assumptions_excessive"` \| `"open_questions_excessive"` \| `"ambiguity_without_review_state"` \| `"unsupported_unresolved_validation_detail"` \| `"semantic_suspicious_content"`
+> **code**: `"schema_invalid"` \| `"missing_trace"` \| `"trace_screen_unknown"` \| `"missing_expected_results"` \| `"steps_unordered"` \| `"steps_indices_non_sequential"` \| `"step_action_empty"` \| `"step_action_too_long"` \| `"duplicate_step_index"` \| `"duplicate_test_case_id"` \| `"title_empty"` \| `"objective_empty"` \| `"risk_category_invalid_for_intent"` \| `"qc_mapping_blocking_reasons_missing"` \| `"qc_mapping_exportable_inconsistent"` \| `"quality_signals_confidence_out_of_range"` \| `"quality_signals_coverage_unknown_id"` \| `"test_data_pii_detected"` \| `"test_data_unredacted_value"` \| `"preconditions_pii_detected"` \| `"expected_results_pii_detected"` \| `"assumptions_excessive"` \| `"open_questions_excessive"` \| `"ambiguity_without_review_state"` \| `"unsupported_unresolved_validation_detail"` \| `"semantic_suspicious_content"` \| `"domain_invariant_violation"`
 
 ##### message
 
@@ -10439,7 +10501,7 @@ Whether the report blocks downstream review/export (any error => true).
 
 ##### contractVersion
 
-> **contractVersion**: `"1.14.0"`
+> **contractVersion**: `"1.15.0"`
 
 ##### errorCount
 
@@ -10909,7 +10971,7 @@ Aggregate traceability-matrix artifact (Issue #1373).
 
 ##### contractVersion
 
-> **contractVersion**: `"1.14.0"`
+> **contractVersion**: `"1.15.0"`
 
 ##### exportProfile?
 
@@ -11403,7 +11465,7 @@ Audit metadata for the run.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.14.0"`
+> **contractVersion**: `"1.15.0"`
 
 ##### createdCount
 
@@ -11771,7 +11833,7 @@ can be debugged from the artifact alone.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.14.0"`
+> **contractVersion**: `"1.15.0"`
 
 ##### deployment
 
@@ -11893,7 +11955,7 @@ screenshot bytes.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.14.0"`
+> **contractVersion**: `"1.15.0"`
 
 ##### generatedAt
 
@@ -12055,7 +12117,7 @@ Whether any record carries a non-`ok`/non-`fallback_used` outcome that blocks ge
 
 ##### contractVersion
 
-> **contractVersion**: `"1.14.0"`
+> **contractVersion**: `"1.15.0"`
 
 ##### generatedAt
 
@@ -12332,7 +12394,7 @@ Active signing mode; mirrored from the run input for auditability.
 
 ##### testIntelligenceContractVersion
 
-> **testIntelligenceContractVersion**: `"1.14.0"`
+> **testIntelligenceContractVersion**: `"1.15.0"`
 
 ##### visualSidecar?
 
@@ -12761,7 +12823,7 @@ and timestamps are caller-provided.
 
 ##### testIntelligenceContractVersion
 
-> **testIntelligenceContractVersion**: `"1.14.0"`
+> **testIntelligenceContractVersion**: `"1.15.0"`
 
 ##### thresholds
 
@@ -13060,7 +13122,7 @@ raw paste bytes, or PII.
 
 ##### testIntelligenceContractVersion
 
-> **testIntelligenceContractVersion**: `"1.14.0"`
+> **testIntelligenceContractVersion**: `"1.15.0"`
 
 Test-intelligence subsurface contract version.
 
@@ -20389,16 +20451,21 @@ deliberate disable.
 
 > `const` **ALLOWED\_TEST\_CASE\_POLICY\_GATE\_STATUSES**: readonly \[`"passed"`, `"failed"`, `"advisory"`, `"skipped"`\]
 
-Closed set of statuses a quality-gate evaluation may report.
+Closed set of statuses a quality-gate evaluation may report. The
+status surfaced for a below-threshold observation depends on the
+gate's configured `gateMode`: `enforce` produces `failed` and the
+runner exits with a non-zero failure class; `advisory` produces
+`advisory` and the run completes successfully. `failed` and
+`advisory` are therefore mutually exclusive — they never both appear
+for the same evaluation.
 
 - `passed`: the gate's threshold was met.
-- `failed`: the gate's threshold was not met. When the gate runs in
-  `enforce` mode the production runner exits with a non-zero failure
-  class; in `advisory` mode the same status is recorded but the run
+- `failed`: the gate's threshold was not met and `gateMode ===
+  "enforce"`. The production runner exits with a non-zero failure
+  class so CI marks the build red.
+- `advisory`: the gate's threshold was not met but `gateMode ===
+  "advisory"`. The result is recorded for audit and the run
   completes successfully.
-- `advisory`: the gate's threshold was not met but the gate was
-  configured to record-only (`gateMode === "advisory"`); the run is
-  not blocked.
 - `skipped`: the gate could not be evaluated (the upstream signal it
   depends on did not run, or the gate was explicitly disabled). Skip
   is an explicit, audit-visible status — it is never silently a
@@ -20418,7 +20485,7 @@ gating per the Issue #1364 / #1386 update.
 
 ### ALLOWED\_TEST\_CASE\_VALIDATION\_ISSUE\_CODES
 
-> `const` **ALLOWED\_TEST\_CASE\_VALIDATION\_ISSUE\_CODES**: readonly \[`"schema_invalid"`, `"missing_trace"`, `"trace_screen_unknown"`, `"missing_expected_results"`, `"steps_unordered"`, `"steps_indices_non_sequential"`, `"step_action_empty"`, `"step_action_too_long"`, `"duplicate_step_index"`, `"duplicate_test_case_id"`, `"title_empty"`, `"objective_empty"`, `"risk_category_invalid_for_intent"`, `"qc_mapping_blocking_reasons_missing"`, `"qc_mapping_exportable_inconsistent"`, `"quality_signals_confidence_out_of_range"`, `"quality_signals_coverage_unknown_id"`, `"test_data_pii_detected"`, `"test_data_unredacted_value"`, `"preconditions_pii_detected"`, `"expected_results_pii_detected"`, `"assumptions_excessive"`, `"open_questions_excessive"`, `"ambiguity_without_review_state"`, `"unsupported_unresolved_validation_detail"`, `"semantic_suspicious_content"`\]
+> `const` **ALLOWED\_TEST\_CASE\_VALIDATION\_ISSUE\_CODES**: readonly \[`"schema_invalid"`, `"missing_trace"`, `"trace_screen_unknown"`, `"missing_expected_results"`, `"steps_unordered"`, `"steps_indices_non_sequential"`, `"step_action_empty"`, `"step_action_too_long"`, `"duplicate_step_index"`, `"duplicate_test_case_id"`, `"title_empty"`, `"objective_empty"`, `"risk_category_invalid_for_intent"`, `"qc_mapping_blocking_reasons_missing"`, `"qc_mapping_exportable_inconsistent"`, `"quality_signals_confidence_out_of_range"`, `"quality_signals_coverage_unknown_id"`, `"test_data_pii_detected"`, `"test_data_unredacted_value"`, `"preconditions_pii_detected"`, `"expected_results_pii_detected"`, `"assumptions_excessive"`, `"open_questions_excessive"`, `"ambiguity_without_review_state"`, `"unsupported_unresolved_validation_detail"`, `"semantic_suspicious_content"`, `"domain_invariant_violation"`\]
 
 Allowed test-case validation issue codes (Issue #1364).
 The list is the runtime source of truth; new codes plug in here without
@@ -20764,7 +20831,7 @@ Schema version for persisted context-budget analyzer reports.
 
 ### CONTRACT\_VERSION
 
-> `const` **CONTRACT\_VERSION**: `"4.53.0"`
+> `const` **CONTRACT\_VERSION**: `"4.54.0"`
 
 Current contract version constant.
 Must be bumped according to CONTRACT_CHANGELOG.md rules.
@@ -22208,7 +22275,7 @@ Schema version for persisted `TestDesignModel` projection artifacts.
 
 ### TEST\_INTELLIGENCE\_CONTRACT\_VERSION
 
-> `const` **TEST\_INTELLIGENCE\_CONTRACT\_VERSION**: `"1.14.0"`
+> `const` **TEST\_INTELLIGENCE\_CONTRACT\_VERSION**: `"1.15.0"`
 
 Contract version for the opt-in test-intelligence surface.
 

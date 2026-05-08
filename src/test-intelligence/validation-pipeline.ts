@@ -50,6 +50,10 @@ import {
 } from "../contracts/index.js";
 import { canonicalJson } from "./content-hash.js";
 import type { CoverageBaselineDriftEvaluation } from "./coverage-baseline-drift.js";
+import {
+  buildActiveDatasetInvariantRegistry,
+  type DomainInvariantRegistry,
+} from "./domain-invariant-registry.js";
 import { evaluatePolicyGate } from "./policy-gate.js";
 import { cloneEuBankingDefaultProfile } from "./policy-profile.js";
 import {
@@ -64,7 +68,7 @@ import {
   type SelfVerifyRubricPipelineOptions,
 } from "./self-verify-rubric.js";
 import { computeCoverageReport } from "./test-case-coverage.js";
-import { validateGeneratedTestCases } from "./test-case-validation.js";
+import { validateGeneratedTestCasesWithInvariants } from "./test-case-validation.js";
 import { validateVisualSidecar } from "./visual-sidecar-validation.js";
 
 export interface RunValidationPipelineInput {
@@ -123,6 +127,13 @@ export interface RunValidationPipelineInput {
    * violation can fire when drift exceeds 10 % on any tracked axis.
    */
   coverageBaselineDrift?: CoverageBaselineDriftEvaluation;
+  /**
+   * Optional domain-invariant registry override (Issue #2040). Defaults
+   * to {@link buildActiveDatasetInvariantRegistry}. Set this to
+   * `null` to disable invariant evaluation entirely (no
+   * `domain_invariant_violation` issues, no `invariantCoverage` field).
+   */
+  invariantRegistry?: DomainInvariantRegistry | null;
 }
 
 export interface ValidationPipelineArtifacts {
@@ -158,8 +169,9 @@ export const runValidationPipeline = (
   input: RunValidationPipelineInput,
 ): ValidationPipelineArtifacts => {
   const profile = input.profile ?? cloneEuBankingDefaultProfile();
+  const invariantRegistry = resolveInvariantRegistry(input.invariantRegistry);
 
-  const validation = validateGeneratedTestCases({
+  const validationOutcome = validateGeneratedTestCasesWithInvariants({
     jobId: input.jobId,
     generatedAt: input.generatedAt,
     list: input.list,
@@ -167,7 +179,9 @@ export const runValidationPipeline = (
     ...(input.workflowTopology !== undefined
       ? { workflowTopology: input.workflowTopology }
       : {}),
+    ...(invariantRegistry !== undefined ? { invariantRegistry } : {}),
   });
+  const validation = validationOutcome.report;
 
   if (hasStructuralErrors(validation)) {
     const emptyList: GeneratedTestCaseList = {
@@ -217,6 +231,9 @@ export const runValidationPipeline = (
     duplicateSimilarityThreshold: profile.rules.duplicateSimilarityThreshold,
     ...(input.rubricScore !== undefined
       ? { rubricScore: input.rubricScore }
+      : {}),
+    ...(validationOutcome.invariantEvaluation !== undefined
+      ? { invariantEvaluation: validationOutcome.invariantEvaluation }
       : {}),
   });
 
@@ -305,6 +322,19 @@ export const runValidationPipeline = (
 
 const hasStructuralErrors = (report: TestCaseValidationReport): boolean =>
   report.issues.some((issue) => issue.code === "schema_invalid");
+
+/**
+ * Resolve the active domain-invariant registry for a pipeline run
+ * (Issue #2040). The default is the active-dataset registry; passing
+ * `null` disables invariant evaluation entirely.
+ */
+const resolveInvariantRegistry = (
+  override: DomainInvariantRegistry | null | undefined,
+): DomainInvariantRegistry | undefined => {
+  if (override === null) return undefined;
+  if (override !== undefined) return override;
+  return buildActiveDatasetInvariantRegistry();
+};
 
 const buildSchemaInvalidPolicyReport = (input: {
   jobId: string;
@@ -483,12 +513,15 @@ export const runValidationPipelineWithSelfVerify = async (
   input: RunValidationPipelineWithSelfVerifyInput,
 ): Promise<ValidationPipelineArtifacts> => {
   const profile = input.profile ?? cloneEuBankingDefaultProfile();
-  const validation = validateGeneratedTestCases({
+  const invariantRegistry = resolveInvariantRegistry(input.invariantRegistry);
+  const validationOutcome = validateGeneratedTestCasesWithInvariants({
     jobId: input.jobId,
     generatedAt: input.generatedAt,
     list: input.list,
     intent: input.intent,
+    ...(invariantRegistry !== undefined ? { invariantRegistry } : {}),
   });
+  const validation = validationOutcome.report;
 
   if (hasStructuralErrors(validation)) {
     return runValidationPipeline({ ...input, profile });
@@ -553,6 +586,9 @@ export const runValidationPipelineWithSelfVerify = async (
     duplicateSimilarityThreshold: profile.rules.duplicateSimilarityThreshold,
     ...(rubricScoreInput !== undefined
       ? { rubricScore: rubricScoreInput }
+      : {}),
+    ...(validationOutcome.invariantEvaluation !== undefined
+      ? { invariantEvaluation: validationOutcome.invariantEvaluation }
       : {}),
   });
 

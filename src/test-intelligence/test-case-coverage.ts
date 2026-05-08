@@ -24,8 +24,13 @@ import {
   type TestCaseCoverageBucket,
   type TestCaseCoverageReport,
   type TestCaseDuplicatePair,
+  type TestCaseInvariantAnnotation,
   type WorkflowTopology,
 } from "../contracts/index.js";
+import {
+  computeInvariantCoverageRatio,
+  type DomainInvariantEvaluation,
+} from "./domain-invariant-registry.js";
 import {
   isCoverageRelevantActionLike,
   isCoverageRelevantElementLike,
@@ -42,6 +47,13 @@ export interface ComputeCoverageReportInput {
   duplicateSimilarityThreshold: number;
   /** Optional 0..1 rubric score from a downstream rater. */
   rubricScore?: number;
+  /**
+   * Optional pre-computed domain-invariant evaluation (Issue #2040).
+   * When supplied, the coverage report carries the `invariantCoverage`
+   * ratio and the per-case `invariantAnnotations` mapping so downstream
+   * artifacts surface the `exercises: ["INV-VAT-01", ...]` annotation.
+   */
+  invariantEvaluation?: DomainInvariantEvaluation;
 }
 
 export const computeCoverageReport = (
@@ -130,6 +142,34 @@ export const computeCoverageReport = (
       throw new RangeError("rubricScore must be in [0, 1]");
     }
     report.rubricScore = roundTo(input.rubricScore, 6);
+  }
+  if (input.invariantEvaluation !== undefined) {
+    const ratio = computeInvariantCoverageRatio(input.invariantEvaluation);
+    report.invariantCoverage = {
+      total: ratio.total,
+      exercised: ratio.exercised,
+      ratio: ratio.ratio,
+      registeredIds: [...input.invariantEvaluation.registered].sort(
+        (left, right) => left.localeCompare(right),
+      ),
+      exercisedIds: [...input.invariantEvaluation.exercisedInvariants].sort(
+        (left, right) => left.localeCompare(right),
+      ),
+    };
+    const annotations: TestCaseInvariantAnnotation[] = [];
+    for (const caseEval of input.invariantEvaluation.cases) {
+      if (caseEval.exercises.length === 0) continue;
+      annotations.push({
+        testCaseId: caseEval.testCaseId,
+        exercises: [...caseEval.exercises],
+      });
+    }
+    annotations.sort((left, right) =>
+      left.testCaseId.localeCompare(right.testCaseId),
+    );
+    if (annotations.length > 0) {
+      report.invariantAnnotations = annotations;
+    }
   }
   return report;
 };

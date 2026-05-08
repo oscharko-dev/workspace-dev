@@ -163,7 +163,7 @@ export interface TestIntelligenceTransferPrincipal {
 }
 
 /** Contract version for the opt-in test-intelligence surface. */
-export const TEST_INTELLIGENCE_CONTRACT_VERSION = "1.14.0" as const;
+export const TEST_INTELLIGENCE_CONTRACT_VERSION = "1.15.0" as const;
 
 /**
  * Schema version for generated test case payloads.
@@ -476,6 +476,7 @@ export const ALLOWED_TEST_CASE_VALIDATION_ISSUE_CODES = [
   "ambiguity_without_review_state",
   "unsupported_unresolved_validation_detail",
   "semantic_suspicious_content",
+  "domain_invariant_violation",
 ] as const;
 
 export type TestCaseValidationIssueCode =
@@ -900,6 +901,40 @@ export interface TestCaseCoverageReport {
   duplicatePairs: TestCaseDuplicatePair[];
   /** Optional 0..1 rubric score from a downstream rater (Wave 2). */
   rubricScore?: number;
+  /**
+   * Domain-invariant coverage (Issue #2040). Reports the share of
+   * registered invariants exercised by at least one accepted test case.
+   * `total` is the registered invariant count, `exercised` is the count
+   * matched by `forall` for at least one case, and `ratio` is
+   * `exercised / total` rounded to six digits (0 when `total === 0`).
+   */
+  invariantCoverage?: {
+    total: number;
+    exercised: number;
+    ratio: number;
+    /** Sorted invariant ids registered for the run. */
+    registeredIds: string[];
+    /** Sorted invariant ids exercised by at least one accepted case. */
+    exercisedIds: string[];
+  };
+  /**
+   * Per-case invariant exercise mapping (Issue #2040). Sorted alphabetically
+   * by `testCaseId`; only cases that exercise at least one invariant appear
+   * in the array. Surfaces the `exercises: ["INV-VAT-01", ...]` annotation
+   * the issue spec requires without altering the strict
+   * `GeneratedTestCase` schema.
+   */
+  invariantAnnotations?: TestCaseInvariantAnnotation[];
+}
+
+/**
+ * Per-case invariant annotation row (Issue #2040). Each entry lists the
+ * invariant ids the test case is in scope for (i.e. `forall === true`),
+ * deduplicated and alphabetically sorted.
+ */
+export interface TestCaseInvariantAnnotation {
+  testCaseId: string;
+  exercises: string[];
 }
 
 /* ------------------------------------------------------------------ */
@@ -10921,7 +10956,7 @@ export interface ReleaseQualityGatesReport {
  * Must be bumped according to CONTRACT_CHANGELOG.md rules.
  * Package version alignment is documented in VERSIONING.md.
  */
-export const CONTRACT_VERSION = "4.53.0" as const;
+export const CONTRACT_VERSION = "4.54.0" as const;
 
 // ---------------------------------------------------------------------------
 // Issue #1774 — UntrustedContentNormalizer (2025-vintage injection carriers).
