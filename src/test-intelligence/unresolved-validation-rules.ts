@@ -151,8 +151,13 @@ export interface UnsupportedExactValidationClaim {
   message: string;
 }
 
+type ScreenModel = TestDesignModel["screens"][number];
+
 const normalizeText = (value: string): string =>
   value.normalize("NFKC").replace(/\s+/gu, " ").trim();
+
+const arrayFromPartial = <T>(value: readonly T[] | undefined): readonly T[] =>
+  value ?? [];
 
 const uniqueSorted = (values: Iterable<string>): string[] =>
   [...new Set(values)]
@@ -278,7 +283,9 @@ const collectFieldIdsForText = (
     ) {
       screenId = screen.screenId;
     }
-    for (const element of screen.elements ?? []) {
+    for (const element of arrayFromPartial(
+      (screen as Partial<ScreenModel>).elements,
+    )) {
       const labelLower = element.label.toLowerCase();
       const matched =
         (labelLower.length > 0 && normalized.includes(labelLower)) ||
@@ -288,7 +295,9 @@ const collectFieldIdsForText = (
         screenId ??= screen.screenId;
       }
     }
-    for (const validation of screen.validations ?? []) {
+    for (const validation of arrayFromPartial(
+      (screen as Partial<ScreenModel>).validations,
+    )) {
       if (normalized.includes(validation.rule.toLowerCase())) {
         validationIds.add(validation.validationId);
         screenId ??= screen.screenId;
@@ -309,7 +318,9 @@ export const deriveUnresolvedValidationConstraints = (
   const constraints: UnresolvedValidationConstraint[] = [];
 
   for (const screen of model.screens) {
-    for (const validation of screen.validations ?? []) {
+    for (const validation of arrayFromPartial(
+      (screen as Partial<ScreenModel>).validations,
+    )) {
       if (!isUnresolvedValidationText(validation.rule)) continue;
       constraints.push({
         screenId: screen.screenId,
@@ -323,7 +334,9 @@ export const deriveUnresolvedValidationConstraints = (
     }
   }
 
-  for (const question of model.openQuestions ?? []) {
+  for (const question of arrayFromPartial(
+    (model as Partial<TestDesignModel>).openQuestions,
+  )) {
     if (!isUnresolvedValidationText(question.text)) continue;
     const scope = collectFieldIdsForText(question.text, model);
     if (
@@ -365,7 +378,9 @@ export const deriveUnresolvedValidationConstraintsWithScreenFallback = (
 
   const seenEvidence = new Set(scoped.map((entry) => entry.evidenceText));
   const augmented: UnresolvedValidationConstraint[] = [...scoped];
-  for (const question of model.openQuestions ?? []) {
+  for (const question of arrayFromPartial(
+    (model as Partial<TestDesignModel>).openQuestions,
+  )) {
     if (!isUnresolvedValidationText(question.text)) continue;
     if (seenEvidence.has(question.text)) continue;
     augmented.push({

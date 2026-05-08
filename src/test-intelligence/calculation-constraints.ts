@@ -27,6 +27,8 @@ interface ConstraintEvidence {
   screenId?: string;
 }
 
+type ScreenModel = TestDesignModel["screens"][number];
+
 export interface CalculationConstraintViolation {
   path: string;
   message: string;
@@ -35,6 +37,9 @@ export interface CalculationConstraintViolation {
 
 const normalizeWhitespace = (value: string): string =>
   value.normalize("NFKC").replace(/\s+/gu, " ").trim();
+
+const arrayFromPartial = <T>(value: readonly T[] | undefined): readonly T[] =>
+  value ?? [];
 
 const stableId = (prefix: string, text: string): string => {
   let hash = 0;
@@ -138,16 +143,22 @@ const parseMoneyAmount = (value: string): number | undefined => {
 const collectConstraintEvidence = (
   model: TestDesignModel,
 ): ConstraintEvidence[] => [
-  ...((model.businessRules ?? []).map((rule) => ({
+  ...arrayFromPartial((model as Partial<TestDesignModel>).businessRules).map(
+    (rule) => ({
     text: rule.description,
     ...(rule.screenId !== undefined ? { screenId: rule.screenId } : {}),
-  })) as ConstraintEvidence[]),
-  ...((model.assumptions ?? []).map((assumption) => ({
+  }),
+  ),
+  ...arrayFromPartial((model as Partial<TestDesignModel>).assumptions).map(
+    (assumption) => ({
     text: assumption.text,
-  })) as ConstraintEvidence[]),
-  ...((model.openQuestions ?? []).map((question) => ({
+  }),
+  ),
+  ...arrayFromPartial((model as Partial<TestDesignModel>).openQuestions).map(
+    (question) => ({
     text: question.text,
-  })) as ConstraintEvidence[]),
+  }),
+  ),
 ];
 
 export const extractCalculationConstraints = (
@@ -244,7 +255,8 @@ const caseTouchesFinancingNeed = (
   for (const screenId of relevantScreenIds) {
     const screen = screenLookup.get(screenId);
     if (
-      screen?.elements?.some((element) =>
+      arrayFromPartial((screen as Partial<ScreenModel> | undefined)?.elements)
+        .some((element) =>
         FINANCING_NEED_RE.test(element.label),
       )
     ) {
@@ -269,7 +281,8 @@ const findFinancingNeedScreen = (
     const screen = screenLookup.get(trace.screenId);
     if (
       screen !== undefined &&
-      (screen.elements ?? []).some((element) =>
+      arrayFromPartial((screen as Partial<ScreenModel>).elements).some(
+        (element) =>
         FINANCING_NEED_RE.test(element.label),
       )
     ) {
@@ -278,21 +291,26 @@ const findFinancingNeedScreen = (
   }
 
   return model.screens.find((screen) =>
-    (screen.elements ?? []).some((element) =>
+    arrayFromPartial((screen as Partial<ScreenModel>).elements).some(
+      (element) =>
       FINANCING_NEED_RE.test(element.label),
     ),
   );
 };
 
 const computeVatExcludedFinancingNeedAmount = (
-  screen: TestDesignModel["screens"][number],
+  screen: ScreenModel,
 ): number | undefined => {
-  const resultElement = (screen.elements ?? []).find((element) =>
+  const resultElement = arrayFromPartial(
+    (screen as Partial<ScreenModel>).elements,
+  ).find((element) =>
     FINANCING_NEED_RE.test(element.label),
   );
   if (resultElement === undefined) return undefined;
 
-  const calculation = (screen.calculations ?? []).find(
+  const calculation = arrayFromPartial(
+    (screen as Partial<ScreenModel>).calculations,
+  ).find(
     (candidate) =>
       candidate.resultElementId === resultElement.elementId ||
       FINANCING_NEED_RE.test(candidate.name),
@@ -302,7 +320,9 @@ const computeVatExcludedFinancingNeedAmount = (
   const includedAmounts: number[] = [];
   let excludedVatFieldSeen = false;
   for (const elementId of calculation.inputElementIds) {
-    const element = (screen.elements ?? []).find(
+    const element = arrayFromPartial(
+      (screen as Partial<ScreenModel>).elements,
+    ).find(
       (candidate) => candidate.elementId === elementId,
     );
     if (element === undefined) continue;
@@ -339,7 +359,9 @@ export const detectCalculationConstraintViolation = (input: {
 }): CalculationConstraintViolation | undefined => {
   const seenConstraintKeys = new Set<string>();
   const constraints = [
-    ...(input.model.calculationConstraints ?? []),
+    ...arrayFromPartial(
+      (input.model as Partial<TestDesignModel>).calculationConstraints,
+    ),
     ...extractCalculationConstraints(input.model),
   ].filter((constraint) => {
     const key = JSON.stringify([
