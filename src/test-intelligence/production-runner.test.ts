@@ -2170,6 +2170,132 @@ test("Issue #1992: repaired runs surface repaired_success with historical judge 
     assert.equal(runQualityOnDisk.status, "repaired_success");
     assert.equal(runQualityOnDisk.repairHistory.repairIterationCount, 1);
     assert.equal(runQualityOnDisk.activeFindingCount, 0);
+
+    // Issue #2014: agent-participation must record every active repair-loop
+    // role for this run with the deployment that drove each iteration plus
+    // a link to the per-iteration role-runs artifact.
+    const participation = JSON.parse(
+      await readFile(result.artifactPaths.agentParticipation, "utf8"),
+    ) as {
+      roles: Array<{
+        role: string;
+        deployment?: string;
+        configurationSource: string;
+        status: string;
+        attemptCount: number;
+        artifactReferences: string[];
+        failureClass?: string;
+        costAttribution?: {
+          sourceLabel?: string;
+          deployment?: string;
+          callCount: number;
+          inputTokens: number;
+          outputTokens: number;
+        };
+      }>;
+    };
+    const repairPlannerEntry = participation.roles.find(
+      (entry) => entry.role === "repair_planner",
+    );
+    assert.ok(repairPlannerEntry, "expected repair_planner entry");
+    assert.equal(repairPlannerEntry.status, "succeeded");
+    assert.equal(repairPlannerEntry.attemptCount, 1);
+    assert.deepEqual(repairPlannerEntry.artifactReferences, [
+      "agent-role-runs/repair_planner_iter_1.json",
+    ]);
+    assert.equal(repairPlannerEntry.deployment, undefined);
+    assert.equal(repairPlannerEntry.failureClass, undefined);
+
+    const repairGeneratorEntry = participation.roles.find(
+      (entry) => entry.role === "test_generation_repair",
+    );
+    assert.ok(repairGeneratorEntry, "expected test_generation_repair entry");
+    assert.equal(repairGeneratorEntry.status, "succeeded");
+    assert.equal(repairGeneratorEntry.attemptCount, 1);
+    assert.equal(repairGeneratorEntry.deployment, "gpt-oss-120b-mock");
+    assert.deepEqual(repairGeneratorEntry.artifactReferences, [
+      "agent-role-runs/test_generation_repair_iter_1.json",
+    ]);
+    assert.equal(repairGeneratorEntry.failureClass, undefined);
+    assert.equal(repairGeneratorEntry.costAttribution?.callCount, 1);
+    assert.equal(repairGeneratorEntry.costAttribution?.deployment, "gpt-oss-120b-mock");
+    assert.equal(repairGeneratorEntry.costAttribution?.sourceLabel, "generator");
+    assert.ok(
+      (repairGeneratorEntry.costAttribution?.outputTokens ?? 0) > 0,
+      "expected non-zero repair generator output tokens",
+    );
+  } finally {
+    await rm(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("Issue #2014: agent-participation always lists repair roles so missing optional roles are explicit", async () => {
+  const tempRoot = await mkdtemp(
+    path.join(os.tmpdir(), "ti-runner-2014-explicit-"),
+  );
+  try {
+    const client = createMockLlmGatewayClient({
+      role: "test_generation",
+      deployment: "gpt-oss-120b-mock",
+      modelRevision: "mock-1",
+      gatewayRelease: "mock",
+      responder: okResponder([SAMPLE_DRAFT]),
+    });
+    const result = await runFigmaToQcTestCases({
+      jobId: "job-2014-explicit",
+      generatedAt: "2026-05-07T12:00:00Z",
+      source: { kind: "figma_paste_normalized", file: SAMPLE_FILE },
+      outputRoot: tempRoot,
+      llm: { client },
+    });
+    const participation = JSON.parse(
+      await readFile(result.artifactPaths.agentParticipation, "utf8"),
+    ) as {
+      roles: Array<{
+        role: string;
+        status: string;
+        attemptCount: number;
+        artifactReferences: string[];
+        deployment?: string;
+      }>;
+    };
+    // Every role in the static contract must be present in the participation
+    // artifact, even when the role did not run. This is the "make missing
+    // optional roles explicit instead of silently omitting them" criterion
+    // from the issue.
+    const presentRoles = new Set(participation.roles.map((entry) => entry.role));
+    for (const expectedRole of [
+      "generator",
+      "logic_judge",
+      "coverage_planner",
+      "risk_ranker",
+      "visual_primary",
+      "visual_fallback",
+      "a11y_judge",
+      "repair_planner",
+      "test_generation_repair",
+    ]) {
+      assert.ok(
+        presentRoles.has(expectedRole),
+        `expected role ${expectedRole} in agent-participation.json`,
+      );
+    }
+    // Every entry's recorded artifactReferences must match its attempt count
+    // so the artifact is consistent with the per-iteration role-runs files.
+    const repairPlannerEntry = participation.roles.find(
+      (entry) => entry.role === "repair_planner",
+    )!;
+    const repairGeneratorEntry = participation.roles.find(
+      (entry) => entry.role === "test_generation_repair",
+    )!;
+    assert.equal(
+      repairPlannerEntry.artifactReferences.length,
+      repairPlannerEntry.attemptCount,
+    );
+    assert.equal(
+      repairGeneratorEntry.artifactReferences.length,
+      repairGeneratorEntry.attemptCount,
+    );
   } finally {
     await rm(tempRoot, { recursive: true, force: true });
   }
