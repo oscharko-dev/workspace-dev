@@ -150,15 +150,13 @@ test("schema: drift guard — the hash is stable for the current contract", () =
   // `CoveragePlan.techniqueQuotas` guidance and serialization). The schema pins
   // `promptTemplateVersion: { const: TEST_INTELLIGENCE_PROMPT_TEMPLATE_VERSION }`
   // so the digest shifts in lockstep with the template bump.
-  // Hash bumped by Issue #2040: TEST_INTELLIGENCE_CONTRACT_VERSION bumped
-  // 1.14.0 -> 1.15.0 (additive new optional `invariantCoverage` and
-  // `invariantAnnotations` fields on the coverage report, new
-  // `domain_invariant_violation` validation issue code, new exported
-  // domain-invariant-registry surface). The schema pins
+  // Hash bumped by Issue #2044: TEST_INTELLIGENCE_CONTRACT_VERSION bumped
+  // 1.16.0 -> 1.17.0 (additive new exported prompt-optimizer types and
+  // constants, no schema-shape changes). The schema pins
   // `contractVersion: { const: TEST_INTELLIGENCE_CONTRACT_VERSION }` so
   // the digest shifts in lockstep with the contract bump.
   const expected =
-    "14607053997a867197303ca1ac2f5be7c2ab04c1419e48ca4d543536bfffaaa6";
+    "b7d51a4be5851ceb4c584851eca0c8c43229b6c42ae39d14ac51774457ed285c";
   const actual = computeGeneratedTestCaseListSchemaHash();
   if (actual !== expected) {
     assert.fail(
