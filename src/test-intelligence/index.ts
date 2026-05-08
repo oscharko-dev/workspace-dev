@@ -1417,3 +1417,21 @@ export {
   type InvariantSeedPair,
   type InvariantSeedSet,
 } from "./property-sampler.js";
+export {
+  ALLOWED_MUTATION_CLASSES,
+  buildDefaultMutationCatalog,
+  buildMutationKillRateSummary,
+  createMutationCatalog,
+  encodeCanonicalReportBytes,
+  evaluateMutationKillingSuite,
+  MUTATION_EVAL_TOKEN_BUDGET_RATIO_CAP,
+  MUTATION_KILL_RATE_DEFAULT_THRESHOLD,
+  MUTATION_REPORT_ARTIFACT_FILENAME,
+  MUTATION_REPORT_SCHEMA_VERSION,
+  registerDefaultMutations,
+  writeMutationReportArtifact,
+  type EvaluateMutationKillingSuiteInput,
+  type Mutation,
+  type MutationCatalog,
+  type MutationContext,
+} from "./mutation-killing-eval.js";

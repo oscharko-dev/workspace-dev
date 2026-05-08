@@ -158,7 +158,7 @@ test("schema: drift guard — the hash is stable for the current contract", () =
   // `contractVersion: { const: TEST_INTELLIGENCE_CONTRACT_VERSION }` so
   // the digest shifts in lockstep with the contract bump.
   const expected =
-    "f1ba3e249b68e173e5a4167aba3aadcf697bc631ff008cc64bca19a28d22ce96";
+    "14607053997a867197303ca1ac2f5be7c2ab04c1419e48ca4d543536bfffaaa6";
   const actual = computeGeneratedTestCaseListSchemaHash();
   if (actual !== expected) {
     assert.fail(

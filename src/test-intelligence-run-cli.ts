@@ -336,6 +336,13 @@ export interface TestIntelligenceRunOptions {
   enableVisualSidecar: boolean;
   /** When true, skip the visual sidecar pass even if a bundle is configured. */
   noVisualSidecar: boolean;
+  /**
+   * Issue #2041 — opt into the mutation-killing-eval pass. Defaults to off
+   * for fast iterative runs and on for benchmark runs (the operator
+   * passes `--enable-mutation-eval` or sets the env override). Forwarded
+   * to the runner as `mutationEval.enabled`.
+   */
+  enableMutationEval: boolean;
   /** Path to a JSON FinOps budget envelope to apply. `undefined` → production default. */
   finopsBudgetPath: string | undefined;
   /**
@@ -498,6 +505,9 @@ export const parseTestIntelligenceRunArgs = (
     env.FIGMAPIPE_WORKSPACE_TI_ENABLE_VISUAL_SIDECAR,
   );
   let noVisualSidecar = false;
+  let enableMutationEval = isTruthyFlag(
+    env.FIGMAPIPE_WORKSPACE_TI_ENABLE_MUTATION_EVAL,
+  );
   let finopsBudgetPath: string | undefined;
   let requireMultiAgentTopology = isTruthyFlag(
     env.WORKSPACE_TEST_SPACE_REQUIRE_MULTI_AGENT_TOPOLOGY,
@@ -798,6 +808,16 @@ export const parseTestIntelligenceRunArgs = (
       continue;
     }
 
+    if (arg === "--enable-mutation-eval") {
+      enableMutationEval = true;
+      continue;
+    }
+
+    if (arg === "--no-mutation-eval") {
+      enableMutationEval = false;
+      continue;
+    }
+
     if (arg === "--finops-budget") {
       const value = next?.trim();
       if (!value) {
@@ -1054,6 +1074,7 @@ export const parseTestIntelligenceRunArgs = (
     mode,
     enableVisualSidecar,
     noVisualSidecar,
+    enableMutationEval,
     finopsBudgetPath,
     requireMultiAgentTopology,
     harnessMode,
@@ -3364,6 +3385,9 @@ export const runTestIntelligenceCommand = async (
           },
         }
       : {}),
+    ...(options.enableMutationEval
+      ? { mutationEval: { enabled: true } }
+      : {}),
     roleConfigurationSources: {
       generator: options.topologyInputSources?.modelDeployment ?? "default",
       logic_judge:
@@ -3586,6 +3610,19 @@ Visual sidecar:
                              bundle is configured.
                              Mutually exclusive with
                              --enable-visual-sidecar.
+
+Mutation-killing eval (Issue #2041):
+  --enable-mutation-eval     Run the mutation-killing eval after the
+                             validation pipeline; persist
+                             mutation-report.json and embed the
+                             mutationKillRate summary in policy-report.json.
+                             Default: off (env override:
+                             FIGMAPIPE_WORKSPACE_TI_ENABLE_MUTATION_EVAL=1).
+                             The evaluator is fully deterministic and
+                             never calls the LLM gateway, so it consumes
+                             no token budget.
+  --no-mutation-eval         Force-disable mutation eval even when the
+                             environment override is set.
 
 Other:
   --policy-profile <id>      Optional policy profile id (default: built-in EU banking)
