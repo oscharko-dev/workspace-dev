@@ -48,7 +48,6 @@ import { randomUUID } from "node:crypto";
 
 import {
   ALLOWED_MUTATION_CLASSES,
-  MUTATION_EVAL_TOKEN_BUDGET_RATIO_CAP,
   MUTATION_KILL_RATE_DEFAULT_THRESHOLD,
   MUTATION_REPORT_ARTIFACT_FILENAME,
   MUTATION_REPORT_SCHEMA_VERSION,
@@ -499,7 +498,7 @@ const buildPiiRedactionMutation = (): Mutation => ({
   kills: (testCase) =>
     caseTextMatches(testCase, PII_RE) &&
     /\b(redact(?:ed|ion)?|maskier(?:t|ung)|masked|hidden|obscured)\b/i.test(
-      collectCaseStrings(testCase).join("  "),
+      collectCaseStrings(testCase).join("\n"),
     ),
 });
 
@@ -699,6 +698,11 @@ export const evaluateMutationKillingSuite = (
     .map((e) => e.mutationId)
     .sort((left, right) => left.localeCompare(right));
 
+  // Compare the rounded values that actually land on disk so a caller
+  // who passes a threshold with more than six decimal places sees a
+  // self-consistent report (`killRate >= threshold` always agrees with
+  // `meetsThreshold`).
+  const persistedThreshold = roundTo(threshold, 6);
   return {
     schemaVersion: MUTATION_REPORT_SCHEMA_VERSION,
     contractVersion: TEST_INTELLIGENCE_CONTRACT_VERSION,
@@ -710,8 +714,8 @@ export const evaluateMutationKillingSuite = (
     applicableMutations,
     killedMutations,
     killRate,
-    threshold: roundTo(threshold, 6),
-    meetsThreshold: killRate >= threshold,
+    threshold: persistedThreshold,
+    meetsThreshold: killRate >= persistedThreshold,
     byClass,
     mutations: evaluations,
     unkilledMutations,

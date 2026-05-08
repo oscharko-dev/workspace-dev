@@ -447,7 +447,13 @@ export type MutationSeverity = (typeof ALLOWED_MUTATION_SEVERITIES)[number];
 
 /** Per-mutation evaluation outcome (Issue #2041). */
 export interface MutationEvaluation {
-  /** Stable mutation id; matches `MUT-<CLASS>-<NN>` format. */
+  /**
+   * Stable mutation id matching `^MUT-[A-Z0-9-]{1,60}$` (the same
+   * shape the catalog validator enforces). The default catalog uses
+   * the `MUT-<CLASS>-<NN>` convention but the contract only
+   * guarantees the regex shape so operator-registered mutations have
+   * room to encode their own provenance.
+   */
   readonly mutationId: string;
   /** Mutation class drawn from {@link ALLOWED_MUTATION_CLASSES}. */
   readonly mutationClass: MutationClass;
@@ -534,8 +540,10 @@ export interface MutationReport {
   /** Whether `killRate >= threshold`. */
   readonly meetsThreshold: boolean;
   /**
-   * Per-class kill-rate rows ordered by `mutationClass` ascending.
-   * Every catalog class appears exactly once.
+   * Per-class kill-rate rows ordered by the closed
+   * {@link ALLOWED_MUTATION_CLASSES} insertion order so the byte-shape
+   * stays stable when new classes are appended to the union. Every
+   * catalog class appears exactly once.
    */
   readonly byClass: readonly MutationClassKillRate[];
   /**

@@ -898,7 +898,9 @@ export interface RunFigmaToQcTestCasesInput {
    * enabling it does not consume any token budget. The optional
    * `thresholdRatio` overrides the documented default of
    * {@link MUTATION_KILL_RATE_DEFAULT_THRESHOLD}; values must lie in
-   * `[0, 1]` and are surfaced verbatim on the report.
+   * `[0, 1]` and are persisted on the report rounded to six digits to
+   * match the canonical-JSON contract used by the rest of the
+   * test-intelligence wire surface.
    */
   mutationEval?: {
     readonly enabled: boolean;
