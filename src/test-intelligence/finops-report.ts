@@ -48,6 +48,7 @@ import {
   type FinOpsRole,
   type FinOpsRoleUsage,
   type LlmFinishReason,
+  type LlmCircuitState,
   type LlmGatewayErrorClass,
   type LlmGenerationResult,
 } from "../contracts/index.js";
@@ -124,6 +125,8 @@ export interface FinOpsAttemptObservation {
   liveSmoke?: boolean;
   /** True iff the attempt was a fallback selection. */
   fallback?: boolean;
+  /** Optional caller-side circuit-breaker state observed before dispatch. */
+  circuitBreakerState?: LlmCircuitState;
   /** The gateway result (success or failure) for this attempt. */
   result: LlmGenerationResult;
   /**
@@ -322,6 +325,9 @@ export const createFinOpsUsageRecorder = (
           : {}),
         ...(observation.attemptId !== undefined
           ? { attemptId: observation.attemptId }
+          : {}),
+        ...(observation.circuitBreakerState !== undefined
+          ? { circuitBreakerState: observation.circuitBreakerState }
           : {}),
         // Issue #1932: stamp the deployment on the per-source
         // accumulator so `bySource.judge_primary` surfaces the

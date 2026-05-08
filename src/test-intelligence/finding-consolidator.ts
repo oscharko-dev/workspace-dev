@@ -252,9 +252,12 @@ const compareFindings = (
   left.fingerprint.localeCompare(right.fingerprint);
 
 const mapValidationSeverity = (
-  severity: "error" | "warning",
+  severity: "error" | "warning" | "info",
   code: string,
 ): ConsolidatedFindingSeverity => {
+  if (severity === "info") {
+    return "minor";
+  }
   if (severity === "warning") {
     return "minor";
   }

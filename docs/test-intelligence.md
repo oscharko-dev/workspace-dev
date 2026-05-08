@@ -217,7 +217,7 @@ production-runner and CLI integrations:
 | `WorkspaceJobInput.jobType`                 | `"figma_to_code"` (default) \| `"figma_to_qc_test_cases"`             |
 | `WorkspaceJobInput.testIntelligenceMode`    | `"deterministic_llm"` \| `"offline_eval"` \| `"dry_run"`             |
 | `ALLOWED_TEST_INTELLIGENCE_MODES`           | `["deterministic_llm", "offline_eval", "dry_run"]`                   |
-| `TEST_INTELLIGENCE_CONTRACT_VERSION`        | `"1.18.0"`                                                           |
+| `TEST_INTELLIGENCE_CONTRACT_VERSION`        | `"1.21.0"`                                                           |
 | `TEST_INTELLIGENCE_PROMPT_TEMPLATE_VERSION` | `"1.6.2"`                                                            |
 | `TEST_INTELLIGENCE_ENV`                     | `"FIGMAPIPE_WORKSPACE_TEST_INTELLIGENCE"`                            |
 
@@ -675,6 +675,14 @@ When both the primary and the fallback sidecar fail, the harness throws
 `Wave1ValidationVisualSidecarFailureError` and writes no downstream artifacts. The
 visual sidecar result envelope is still persisted with the failure attribution
 so audit replay can see why generation refused to proceed.
+
+Issue #2069 also adds a persisted caller-side circuit breaker for the visual
+primary deployment. After two consecutive protocol-class failures, the runner
+marks the primary `open` for the rest of the cooldown window, persists the
+state under `replay-cache/circuit-breaker-state.json`, and dispatches directly
+to the fallback on subsequent runs that share the same tenant-scoped replay
+cache. Operator details live in
+`docs/test-intelligence/visual-sidecar-circuit-breaker.md`.
 
 ## 9a. FinOps budgets and operational controls (Issue #1371)
 
@@ -1251,7 +1259,7 @@ configuration.
 - [CONTRACT_CHANGELOG.md](../CONTRACT_CHANGELOG.md) — authoritative public
   contract surface, including every test-intelligence schema-version constant,
   artifact filename constant, and exported type. Versions `3.21.0` through
-  `3.28.0` cover the test-intelligence subsurface end-to-end.
+  `4.60.0` cover the test-intelligence subsurface end-to-end.
 - [docs/api/contracts/README.md](api/contracts/README.md) — auto-generated
   contract API reference, regenerated from `src/contracts/index.ts` via
   `pnpm run docs:api`. The freshness gate is `pnpm run docs:api:check`.

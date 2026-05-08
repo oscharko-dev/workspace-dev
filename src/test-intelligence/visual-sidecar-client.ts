@@ -70,6 +70,7 @@ import {
 } from "../contracts/index.js";
 import { redactHighRiskSecrets } from "../secret-redaction.js";
 import { canonicalJson } from "./content-hash.js";
+import type { LlmCircuitBreaker } from "./llm-circuit-breaker.js";
 import type { LlmGatewayClient } from "./llm-gateway.js";
 import type { LlmGatewayClientBundle } from "./llm-gateway-bundle.js";
 import { isMockLlmGatewayClient } from "./llm-mock-gateway.js";
@@ -456,6 +457,12 @@ export interface DescribeVisualScreensInput {
    * "policy_downgrade"`.
    */
   forceFallback?: boolean;
+  /**
+   * Optional caller-owned circuit breaker for the primary deployment. When it
+   * is open, the primary visual sidecar is skipped and the fallback is tried
+   * directly.
+   */
+  primaryCircuitBreaker?: LlmCircuitBreaker;
   /** Optional FinOps request limits applied to the primary/fallback gateway calls. */
   requestLimits?: {
     visualPrimary?: Pick<
@@ -553,6 +560,18 @@ export const describeVisualScreens = async (
 
   let primaryFailureCause: PrimaryFailureCause | undefined;
   for (const stage of orchestration.stages) {
+    const primaryCircuitDecision =
+      stage === "primary"
+        ? input.primaryCircuitBreaker?.beforeRequest()
+        : undefined;
+    if (
+      stage === "primary" &&
+      primaryCircuitDecision !== undefined &&
+      !primaryCircuitDecision.allowRequest
+    ) {
+      primaryFailureCause = { fallbackReason: "primary_unavailable" };
+      continue;
+    }
     const client =
       stage === "primary"
         ? input.bundle.visualPrimary
@@ -600,6 +619,9 @@ export const describeVisualScreens = async (
       deployment: deploymentLabel,
       attempt: attemptIndex,
       durationMs,
+      ...(primaryCircuitDecision !== undefined
+        ? { circuitBreakerState: primaryCircuitDecision.snapshot.state }
+        : {}),
       ...(evaluation.kind === "ok"
         ? {}
         : { errorClass: evaluation.errorClass }),
@@ -630,6 +652,16 @@ export const describeVisualScreens = async (
       diagnostics.push(diagnostic);
     }
     attempts.push(attempt);
+
+    if (stage === "primary" && input.primaryCircuitBreaker !== undefined) {
+      if (evaluation.kind === "ok") {
+        input.primaryCircuitBreaker.recordSuccess();
+      } else if (isPrimaryCircuitBreakerFailure(evaluation.errorClass)) {
+        input.primaryCircuitBreaker.recordTransientFailure();
+      } else {
+        input.primaryCircuitBreaker.recordNonTransientOutcome();
+      }
+    }
 
     if (evaluation.kind === "ok") {
       const fallbackReason: VisualSidecarFallbackReason =
@@ -745,6 +777,10 @@ export const assertNoImagePayloadToTestGeneration = (
     }
   }
 };
+
+const isPrimaryCircuitBreakerFailure = (
+  errorClass: LlmGatewayErrorClass | "schema_invalid_response",
+): boolean => errorClass === "protocol";
 
 /** Persist a `VisualSidecarResult` as the canonical result artifact. */
 export interface WriteVisualSidecarResultArtifactInput {

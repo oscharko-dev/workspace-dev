@@ -52,6 +52,12 @@ export interface LlmCircuitTransitionEvent {
   snapshot: LlmCircuitSnapshot;
 }
 
+export interface LlmCircuitPersistentState {
+  state: LlmCircuitState;
+  consecutiveFailures: number;
+  openedAtMs?: number;
+}
+
 export interface LlmCircuitBreaker {
   beforeRequest: () => LlmCircuitDecision;
   recordSuccess: () => LlmCircuitSnapshot;
@@ -82,11 +88,13 @@ export const createLlmCircuitBreaker = ({
   resetTimeoutMs,
   clock = DEFAULT_CLOCK,
   onStateTransition,
+  initialState,
 }: {
   failureThreshold: number;
   resetTimeoutMs: number;
   clock?: LlmCircuitClock;
   onStateTransition?: (event: LlmCircuitTransitionEvent) => void;
+  initialState?: LlmCircuitPersistentState;
 }): LlmCircuitBreaker => {
   if (!Number.isInteger(failureThreshold) || failureThreshold < 1) {
     throw new RangeError(
@@ -100,9 +108,9 @@ export const createLlmCircuitBreaker = ({
   }
 
   let current: InternalState = {
-    state: "closed",
-    consecutiveFailures: 0,
-    openedAt: undefined,
+    state: initialState?.state ?? "closed",
+    consecutiveFailures: Math.max(0, initialState?.consecutiveFailures ?? 0),
+    openedAt: initialState?.openedAtMs,
     probeInFlight: false,
     version: 0,
   };
@@ -297,3 +305,13 @@ export const createLlmCircuitBreaker = ({
     getSnapshot: (): LlmCircuitSnapshot => toSnapshot(),
   };
 };
+
+export const toLlmCircuitPersistentState = (
+  snapshot: LlmCircuitSnapshot,
+): LlmCircuitPersistentState => ({
+  state: snapshot.state,
+  consecutiveFailures: snapshot.consecutiveFailures,
+  ...(snapshot.nextProbeAt !== undefined
+    ? { openedAtMs: snapshot.nextProbeAt - snapshot.resetTimeoutMs }
+    : {}),
+});

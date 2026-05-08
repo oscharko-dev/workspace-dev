@@ -3408,7 +3408,7 @@ test("Issue #1929: runFigmaToQcTestCases preserves all 9 initial logic/faithfuln
   }
 });
 
-test("Issue #1772: both_sidecars_failed routes to needs_review with documented refusal code", async () => {
+test("Issue #2069: both_sidecars_failed emits a blocking job-level refusal with documented code", async () => {
   const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ti-runner-"));
   const originalFetch = globalThis.fetch;
   const observedEvents: Array<{
@@ -3562,10 +3562,11 @@ test("Issue #1772: both_sidecars_failed routes to needs_review with documented r
 
     // Job-level violation also surfaces the refusal code.
     const jobLevel = result.policy.jobLevelViolations.find(
-      (v) => v.rule === "policy:visual-sidecar-refused",
+      (v) => v.rule === "policy:visual-sidecar:both_failed",
     );
     assert.ok(jobLevel, "expected job-level refusal violation");
-    assert.equal(jobLevel?.severity, "warning");
+    assert.equal(jobLevel?.severity, "error");
+    assert.equal(jobLevel?.outcome, "visual_sidecar_both_failed");
 
     // The visual sidecar result artifact is still persisted (failure form).
     assert.ok(result.artifactPaths.visualSidecarResult);
@@ -3619,6 +3620,182 @@ test("Issue #1772: both_sidecars_failed routes to needs_review with documented r
       "utf8",
     );
     assert.ok(combinedMarkdown.length > 0);
+  } finally {
+    globalThis.fetch = originalFetch;
+    await rm(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("Issue #2069: persisted visual-primary breaker skips primary on the next run and fallback success is info-only", async () => {
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ti-runner-breaker-"));
+  const originalFetch = globalThis.fetch;
+  let primaryCalls = 0;
+  let fallbackCalls = 0;
+  try {
+    const client = createMockLlmGatewayClient({
+      role: "test_generation",
+      deployment: "gpt-oss-120b-mock",
+      modelRevision: "mock-1",
+      gatewayRelease: "mock",
+      responder: okResponder([SAMPLE_DRAFT]),
+    });
+    const bundle = createMockLlmGatewayClientBundle({
+      testGeneration: {
+        role: "test_generation",
+        deployment: "gpt-oss-120b",
+        modelRevision: "gpt-oss-120b@test",
+        gatewayRelease: "mock",
+        declaredCapabilities: TEST_GENERATION_CAPS,
+      },
+      visualPrimary: {
+        role: "visual_primary",
+        deployment: "llama-4-maverick-vision",
+        modelRevision: "llama-4-maverick-vision@test",
+        gatewayRelease: "mock",
+        declaredCapabilities: VISUAL_CAPS,
+        responder: (_request, attempt) => {
+          primaryCalls += 1;
+          return {
+            outcome: "error",
+            errorClass: "protocol",
+            message: "404 NOT FOUND",
+            retryable: false,
+            attempt,
+          };
+        },
+      },
+      visualFallback: {
+        role: "visual_fallback",
+        deployment: "phi-4-multimodal-poc",
+        modelRevision: "phi-4-multimodal-poc@test",
+        gatewayRelease: "mock",
+        declaredCapabilities: VISUAL_CAPS,
+        responder: (_request, attempt) => {
+          fallbackCalls += 1;
+          return {
+            outcome: "success",
+            content: buildVisualEnvelope("1:1", "phi-4-multimodal-poc"),
+            finishReason: "stop",
+            usage: { inputTokens: 0, outputTokens: 0 },
+            modelDeployment: "phi-4-multimodal-poc",
+            modelRevision: "phi-4-multimodal-poc@test",
+            gatewayRelease: "mock",
+            attempt,
+          };
+        },
+      },
+    });
+    globalThis.fetch = (async (url: string, init?: RequestInit) => {
+      void init;
+      if (url.includes("/v1/files/ABC/nodes?ids=1%3A1")) {
+        return new Response(
+          JSON.stringify({
+            name: "Test View 03",
+            nodes: {
+              "1:1": {
+                document: SAMPLE_FILE.document.children?.[0]?.children?.[0],
+              },
+            },
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        );
+      }
+      if (
+        url ===
+        "https://api.figma.com/v1/images/ABC?ids=1%3A1&format=png&scale=2"
+      ) {
+        return new Response(
+          JSON.stringify({
+            images: {
+              "1:1":
+                "https://figma-alpha-api.s3.us-west-2.amazonaws.com/1_1.png",
+            },
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        );
+      }
+      return new Response(PNG_BYTES, {
+        status: 200,
+        headers: { "content-type": "image/png" },
+      });
+    }) as typeof fetch;
+
+    const runJob = async (jobId: string) =>
+      runFigmaToQcTestCases({
+        jobId,
+        generatedAt: "2026-05-08T10:00:00Z",
+        source: {
+          kind: "figma_url",
+          figmaUrl: "https://www.figma.com/design/ABC/Test-View-03?node-id=1-1",
+          accessToken: "figd_test",
+        },
+        outputRoot: tempRoot,
+        llm: { client, bundle },
+      });
+
+    await runJob("job-2069-run-1");
+    const second = await runJob("job-2069-run-2");
+    const third = await runJob("job-2069-run-3");
+
+    assert.ok(primaryCalls >= 2);
+    assert.ok(fallbackCalls >= 3);
+
+    const breakerStatePath = path.join(
+      tempRoot,
+      "replay-cache",
+      "circuit-breaker-state.json",
+    );
+    const persistedBreakerState = JSON.parse(
+      await readFile(breakerStatePath, "utf8"),
+    ) as {
+      entries: Record<
+        string,
+        {
+          snapshot: { state: string; consecutiveFailures: number };
+        }
+      >;
+    };
+    const persistedEntry = Object.values(persistedBreakerState.entries)[0];
+    assert.ok(persistedEntry);
+    assert.equal(persistedEntry?.snapshot.state, "open");
+    assert.ok((persistedEntry?.snapshot.consecutiveFailures ?? 0) >= 2);
+
+    const jobViolation = third.policy.jobLevelViolations.find(
+      (v) => v.rule === "policy:visual-sidecar:fallback_used",
+    );
+    assert.ok(jobViolation);
+    assert.equal(
+      jobViolation?.outcome,
+      "visual_sidecar_fallback_used_succeeded",
+    );
+    assert.equal(jobViolation?.severity, "info");
+    assert.equal(
+      third.policy.jobLevelViolations.some(
+        (v) => v.rule === "policy:visual-sidecar:both_failed",
+      ),
+      false,
+    );
+    assert.equal(third.visualSidecar?.result.outcome, "success");
+    if (third.visualSidecar?.result.outcome === "success") {
+      assert.equal(third.visualSidecar.result.fallbackReason, "primary_unavailable");
+    }
+    const finopsReport = JSON.parse(
+      await readFile(third.artifactPaths.finopsReport, "utf8"),
+    ) as FinOpsBudgetReport;
+    const visualPrimary = finopsReport.roles.find(
+      (entry) => entry.role === "visual_primary",
+    );
+    const visualFallback = finopsReport.roles.find(
+      (entry) => entry.role === "visual_fallback",
+    );
+    assert.equal(visualPrimary?.attempts, 1);
+    assert.equal(visualFallback?.attempts, 1);
+    assert.equal(
+      second.policy.jobLevelViolations.some(
+        (v) => v.rule === "policy:visual-sidecar:both_failed",
+      ),
+      false,
+    );
   } finally {
     globalThis.fetch = originalFetch;
     await rm(tempRoot, { recursive: true, force: true });
