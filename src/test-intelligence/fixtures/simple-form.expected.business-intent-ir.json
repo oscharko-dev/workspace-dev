@@ -96,6 +96,66 @@
   ],
   "detectedActions": [
     {
+      "id": "s-payment::action::n-email",
+      "screenId": "s-payment",
+      "trace": {
+        "nodeId": "n-email",
+        "nodeName": "Email"
+      },
+      "provenance": "figma_node",
+      "confidence": 0.9,
+      "label": "Email",
+      "kind": "change_input"
+    },
+    {
+      "id": "s-payment::action::n-iban",
+      "screenId": "s-payment",
+      "trace": {
+        "nodeId": "n-iban",
+        "nodeName": "IBAN"
+      },
+      "provenance": "figma_node",
+      "confidence": 0.9,
+      "label": "IBAN",
+      "kind": "change_input"
+    },
+    {
+      "id": "s-payment::action::n-name",
+      "screenId": "s-payment",
+      "trace": {
+        "nodeId": "n-name",
+        "nodeName": "Cardholder Name"
+      },
+      "provenance": "figma_node",
+      "confidence": 0.9,
+      "label": "Cardholder Name",
+      "kind": "change_input"
+    },
+    {
+      "id": "s-payment::action::n-pan",
+      "screenId": "s-payment",
+      "trace": {
+        "nodeId": "n-pan",
+        "nodeName": "Card Number"
+      },
+      "provenance": "figma_node",
+      "confidence": 0.9,
+      "label": "Card Number",
+      "kind": "change_input"
+    },
+    {
+      "id": "s-payment::action::n-phone",
+      "screenId": "s-payment",
+      "trace": {
+        "nodeId": "n-phone",
+        "nodeName": "Phone"
+      },
+      "provenance": "figma_node",
+      "confidence": 0.9,
+      "label": "Phone",
+      "kind": "change_input"
+    },
+    {
       "id": "s-payment::action::n-submit",
       "screenId": "s-payment",
       "trace": {
@@ -106,6 +166,18 @@
       "confidence": 0.9,
       "label": "Pay",
       "kind": "button"
+    },
+    {
+      "id": "s-payment::action::n-tax",
+      "screenId": "s-payment",
+      "trace": {
+        "nodeId": "n-tax",
+        "nodeName": "Tax ID"
+      },
+      "provenance": "figma_node",
+      "confidence": 0.9,
+      "label": "Tax ID",
+      "kind": "change_input"
     }
   ],
   "detectedValidations": [

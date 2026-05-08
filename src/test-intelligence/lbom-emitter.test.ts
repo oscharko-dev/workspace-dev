@@ -268,7 +268,7 @@ test("buildLbomDocument: serialNumber differs when cacheKeyDigest changes", () =
 test("buildLbomDocument: visual sidecar success with fallback flips metadata + component flag", () => {
   const sidecar: VisualSidecarResult = {
     outcome: "success",
-    selectedDeployment: "phi-4-multimodal-poc",
+    selectedDeployment: "phi-4-multimodal-instruct",
     fallbackReason: "primary_unavailable",
     visual: [],
     captureIdentities: [],
@@ -293,7 +293,7 @@ test("buildLbomDocument: visual sidecar success with fallback flips metadata + c
   );
   assert.equal(
     props.get("workspace-dev:visualSelectedDeployment"),
-    "phi-4-multimodal-poc",
+    "phi-4-multimodal-instruct",
   );
   const fallback = findComponent(doc, "model:visual_fallback");
   if (fallback?.type === "machine-learning-model") {
