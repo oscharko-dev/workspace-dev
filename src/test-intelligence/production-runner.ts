@@ -98,7 +98,6 @@ import {
   type TestIntentSourceRef,
   type TestCaseLevel,
   type TestCasePolicyGateResult,
-  type TestCasePolicyProfile,
   type TestCasePolicyProfileRules,
   type TestCasePolicyReport,
   type TestCasePriority,
@@ -1907,7 +1906,7 @@ const evaluateNegativeCaseLiftGate = (input: {
       ruleRef: ADVERSARIAL_NEGATIVE_CASE_LIFT_RULE_REF,
       thresholdRatio: config.thresholdRatio,
       observedRatio: observed,
-      message: `G-NEG-CASE advisory: relativeRatioIncrease=${observed} < threshold=${config.thresholdRatio}; gateMode is \"advisory\" so the run is not blocked.`,
+      message: `G-NEG-CASE advisory: relativeRatioIncrease=${observed} < threshold=${config.thresholdRatio}; gateMode is "advisory" so the run is not blocked.`,
     };
   }
   return {
@@ -1916,7 +1915,7 @@ const evaluateNegativeCaseLiftGate = (input: {
     ruleRef: ADVERSARIAL_NEGATIVE_CASE_LIFT_RULE_REF,
     thresholdRatio: config.thresholdRatio,
     observedRatio: observed,
-    message: `G-NEG-CASE failed: relativeRatioIncrease=${observed} < threshold=${config.thresholdRatio}; gateMode is \"enforce\".`,
+    message: `G-NEG-CASE failed: relativeRatioIncrease=${observed} < threshold=${config.thresholdRatio}; gateMode is "enforce".`,
   };
 };
 
@@ -3226,9 +3225,7 @@ export const runFigmaToQcTestCases = async (
   // leaves a complete evidence bundle on disk.
   const negativeCaseLiftConfig = resolveNegativeCaseLiftConfig({
     profileRules:
-      "rules" in customerRubric
-        ? (customerRubric as TestCasePolicyProfile).rules
-        : undefined,
+      "rules" in customerRubric ? customerRubric.rules : undefined,
     override: input.qualityGates?.negativeCaseLift,
   });
   const negativeCaseLiftGateResult = evaluateNegativeCaseLiftGate({
