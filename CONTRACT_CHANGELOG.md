@@ -31,6 +31,73 @@ All changes to the public contract surface of `workspace-dev` are documented her
 
 ---
 
+## [4.58.0] - 2026-05-08
+
+### Added (Issue #2066 — tier the cross-modal faithfulness threshold + calibrate cross-family judges)
+
+Before #2066 the cross-family faithfulness judge (`llama-4-maverick-vision`,
+landed in #2038) collapsed `evidence_partial` step signals into the same
+penalty bucket as `mismatch`. Label-only steps where the judge's own
+diagnosis was *"the label matches the expectation but the step description
+is not fully visible in the screenshot"* therefore caused the case-level
+faithfulness score to land at 0.5 — well below the 0.80 cross-modal floor —
+even though every label assertion matched the visible Figma capture. This
+blocked **G3** on the K0 benchmark.
+
+This release introduces a per-step three-state rubric and a tier-aware
+score aggregation in the policy gate.
+
+Public-contract changes (additive — no removals, no renames):
+
+- New exported runtime constants:
+  - `FAITHFULNESS_STEP_VERDICT_LABELS`
+    (`["match", "evidence_partial", "mismatch"]` — frozen tuple),
+  - `FAITHFULNESS_TIER_LABELS`
+    (`["concrete_data", "label_only"]` — frozen tuple),
+  - `FAITHFULNESS_TIER_REPORT_SCHEMA_VERSION` (`"1.0.0"`),
+  - `FAITHFULNESS_TIER_REPORT_ARTIFACT_FILENAME`
+    (`"faithfulness-tier-report.json"`).
+- New exported types: `FaithfulnessStepVerdict`,
+  `FaithfulnessStepVerdictLabel`, `FaithfulnessTierLabel`,
+  `FaithfulnessTierReport`, `FaithfulnessTierReportEntry`.
+- `FaithfulnessVerdict.stepVerdicts` — new optional field carrying the
+  per-step verdict array. `FAITHFULNESS_VERDICT_SCHEMA_VERSION` bumps
+  from `1.0.0` to `1.1.0`. Old verdicts persisted under `1.0.0` parse
+  unchanged: the field is optional and the legacy
+  `hallucinations` / `mismatches` arrays continue to be emitted in
+  parallel.
+- `FAITHFULNESS_JUDGE_PROMPT_TEMPLATE_VERSION` bumps from
+  `faithfulness-judge.v1` to `faithfulness-judge.v2`. The new template
+  instructs the judge to emit the per-step verdict array alongside the
+  legacy fields, and clarifies that `evidence_partial` is a soft
+  signal, not a contradiction.
+- `TEST_INTELLIGENCE_CONTRACT_VERSION` bumps from `1.18.0` to `1.19.0`.
+
+Operational behaviour introduced by the additive surface:
+
+- The runner now persists `faithfulness-tier-report.json` alongside
+  `faithfulness_judge.json` whenever the judge produces a non-refused
+  verdict. The report lists, for every step, the inferred tier
+  (`concrete_data` if the step carries observable input or expected
+  data, otherwise `label_only`), the per-step verdict, the per-step
+  score (`{1.0 | 0.85 | 0.0}`), and whether the step clears its
+  tier-aware threshold.
+- The `policy:cross-modal-faithfulness-score` gate aggregates the
+  per-step tier-aware scores into the case-level faithfulness score
+  before comparing against the threshold. Concrete-data steps still
+  fail at `< 0.80`; label-only steps require `>= 0.95` for `match`
+  and `>= 0.80` for `evidence_partial`.
+- `eu-banking-default` keeps the strict thresholds; profile-scoped
+  overrides remain available via `policyOverrides`.
+
+Breaking-change posture: none. Old verdicts persisted under schema
+`1.0.0` are still accepted — the gate falls back to the existing
+case-level pass/fail aggregation when `stepVerdicts` is absent.
+
+migrationHash: 2026-05-08T00-00-00-000Z-issue-2066
+
+---
+
 ## [4.57.0] - 2026-05-08
 
 ### Added (Issue #2065 — llguidance constrained-decoding adapter for the openai_chat transport)
