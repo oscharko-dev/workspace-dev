@@ -126,7 +126,7 @@ test("adversarial critic: dedupe keeps only the first finding per category and a
   assert.deepEqual(deduped, [first]);
 });
 
-test("adversarial critic: malformed success payload degrades to an empty finding set", async () => {
+test("adversarial critic: malformed success payload is marked schema-invalid", async () => {
   const client = createMockLlmGatewayClient({
     role: "logic_judge",
     deployment: "gpt-oss-120b-mock",
@@ -158,6 +158,8 @@ test("adversarial critic: malformed success payload degrades to an empty finding
   assert.equal(result.gatewayResult.outcome, "success");
   assert.deepEqual(result.findings, []);
   assert.equal(result.artifact.outputs.findingCount, 0);
+  assert.equal(result.artifact.llmGateway.outcome, "error");
+  assert.equal(result.artifact.llmGateway.errorClass, "schema_validation");
 });
 
 test("adversarial critic: negative coverage accounting reports the >=30% ratio improvement threshold", () => {

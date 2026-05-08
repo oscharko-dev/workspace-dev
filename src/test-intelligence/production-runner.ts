@@ -136,6 +136,7 @@ import {
   runAdversarialCriticRound,
   writeAdversarialCriticRoundArtifact,
   writeAdversarialCriticTraceArtifact,
+  type AdversarialCriticFinding,
   type AdversarialCriticRoundArtifact,
   type AdversarialCriticTraceArtifact,
 } from "./adversarial-critic-agent.js";
@@ -1246,6 +1247,9 @@ const buildAgentParticipationEntries = (input: {
   const adversarialCriticFailed = input.adversarialCriticRounds.some(
     (artifact) => artifact.llmGateway.outcome === "error",
   );
+  const adversarialCriticFailureClass = input.adversarialCriticRounds.find(
+    (artifact) => artifact.llmGateway.outcome === "error",
+  )?.llmGateway.errorClass;
   entries.push({
     role: "adversarial_critic",
     deployment: logicJudgeClient.deployment,
@@ -1265,9 +1269,11 @@ const buildAgentParticipationEntries = (input: {
     ),
     ...(adversarialCriticFailed
       ? {
-          failureClass: "gateway_error",
+          failureClass: adversarialCriticFailureClass ?? "gateway_error",
           remediation:
-            "Inspect the adversarial-critic round artifacts and judge deployment health before re-running.",
+            adversarialCriticFailureClass === "schema_validation"
+              ? "Inspect the adversarial-critic round artifacts and critic prompt/schema conformance before re-running."
+              : "Inspect the adversarial-critic round artifacts and judge deployment health before re-running.",
         }
       : {
           remediation:
@@ -2876,11 +2882,20 @@ export const runFigmaToQcTestCases = async (
   };
   const baselineGeneratedList = generatedList;
   const adversarialCriticRoundArtifacts: AdversarialCriticRoundArtifact[] = [];
+  const adversarialCriticProvenanceRounds: Array<{
+    round: number;
+    artifactFilename: string;
+    domain: string;
+    findings: readonly AdversarialCriticFinding[];
+    regeneratedListHash?: string;
+    generatedCaseCount?: number;
+  }> = [];
   const adversarialCriticSeenKeys = new Set<string>();
   const adversarialCriticDomain =
     resolveAdversarialCriticDomainFromList(generatedList);
   let adversarialCriticStopReason:
     | "converged_no_new_findings"
+    | "critic_failed"
     | "max_rounds_reached"
     | "no_rounds_needed" = "no_rounds_needed";
   let adversarialCriticTraceArtifact: AdversarialCriticTraceArtifact | undefined;
@@ -2949,11 +2964,30 @@ export const runFigmaToQcTestCases = async (
           findings: uniqueFindings,
         },
       };
+      const roundArtifactFilename = `agent-role-runs/${ADVERSARIAL_CRITIC_ROUND_ARTIFACT_PREFIX}${normalizedArtifact.round}.json`;
       adversarialCriticRoundArtifacts.push(normalizedArtifact);
+      const provenanceRound: {
+        round: number;
+        artifactFilename: string;
+        domain: string;
+        findings: readonly AdversarialCriticFinding[];
+        regeneratedListHash?: string;
+        generatedCaseCount?: number;
+      } = {
+        round: normalizedArtifact.round,
+        artifactFilename: roundArtifactFilename,
+        domain: normalizedArtifact.domain,
+        findings: normalizedArtifact.outputs.findings,
+      };
+      adversarialCriticProvenanceRounds.push(provenanceRound);
       await writeAdversarialCriticRoundArtifact({
         runDir: artifactDir,
         artifact: normalizedArtifact,
       });
+      if (normalizedArtifact.llmGateway.outcome === "error") {
+        adversarialCriticStopReason = "critic_failed";
+        break;
+      }
       if (uniqueFindings.length === 0) {
         adversarialCriticStopReason = "converged_no_new_findings";
         break;
@@ -3002,6 +3036,8 @@ export const runFigmaToQcTestCases = async (
           }),
         ),
       };
+      provenanceRound.regeneratedListHash = sha256Hex(generatedList);
+      provenanceRound.generatedCaseCount = generatedList.testCases.length;
       if (round === ADVERSARIAL_CRITIC_MAX_ROUNDS) {
         adversarialCriticStopReason = "max_rounds_reached";
       }
@@ -4463,14 +4499,7 @@ export const runFigmaToQcTestCases = async (
       : {}),
     ...(adversarialCriticRoundArtifacts.length > 0
       ? {
-          adversarialCriticRounds: adversarialCriticRoundArtifacts.map(
-            (artifact) => ({
-              round: artifact.round,
-              artifactFilename: `agent-role-runs/${ADVERSARIAL_CRITIC_ROUND_ARTIFACT_PREFIX}${artifact.round}.json`,
-              domain: artifact.domain,
-              findings: artifact.outputs.findings,
-            }),
-          ),
+          adversarialCriticRounds: adversarialCriticProvenanceRounds,
         }
       : {}),
     logicJudge: {

@@ -1,7 +1,8 @@
 import { randomUUID } from "node:crypto";
-import { readFileSync } from "node:fs";
 import { mkdir, rename, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
+import bankingPlaybookData from "./adversarial-playbooks/banking.json" with { type: "json" };
+import insurancePlaybookData from "./adversarial-playbooks/insurance.json" with { type: "json" };
 
 import type {
   BusinessTestIntentIr,
@@ -114,6 +115,7 @@ export interface AdversarialCriticTraceArtifact {
   readonly roundsExecuted: number;
   readonly stopReason:
     | "converged_no_new_findings"
+    | "critic_failed"
     | "max_rounds_reached"
     | "no_rounds_needed";
   readonly negativeCoverage: NegativeCoverageAccounting;
@@ -208,18 +210,16 @@ const GENERAL_PLAYBOOK: readonly AdversarialCriticPlaybookEntry[] =
     },
   ]);
 
-const loadPlaybook = (
-  filename: string,
+const freezePlaybook = (
+  entries: readonly AdversarialCriticPlaybookEntry[],
 ): readonly AdversarialCriticPlaybookEntry[] =>
-  Object.freeze(
-    JSON.parse(
-      readFileSync(new URL(filename, import.meta.url), "utf8"),
-    ) as AdversarialCriticPlaybookEntry[],
-  );
+  Object.freeze(entries.map((entry) => Object.freeze({ ...entry })));
 
-const BANKING_PLAYBOOK = loadPlaybook("./adversarial-playbooks/banking.json");
-const INSURANCE_PLAYBOOK = loadPlaybook(
-  "./adversarial-playbooks/insurance.json",
+const BANKING_PLAYBOOK = freezePlaybook(
+  bankingPlaybookData as readonly AdversarialCriticPlaybookEntry[],
+);
+const INSURANCE_PLAYBOOK = freezePlaybook(
+  insurancePlaybookData as readonly AdversarialCriticPlaybookEntry[],
 );
 
 const isFindingCategory = (
@@ -500,14 +500,17 @@ export const validateAdversarialCriticResponse = (
 
 const parseAdversarialCriticResponse = (
   content: unknown,
-): readonly AdversarialCriticFinding[] => {
+): {
+  readonly findings: readonly AdversarialCriticFinding[];
+  readonly errorClass?: "schema_validation";
+} => {
   try {
-    return validateAdversarialCriticResponse(content);
+    return { findings: validateAdversarialCriticResponse(content) };
   } catch {
-    // Existing harness tests often reuse generator-shaped mock payloads for
-    // auxiliary model slots. Treat non-critic payloads as "no findings" so the
-    // bounded critic loop remains additive instead of breaking the run.
-    return Object.freeze([] as AdversarialCriticFinding[]);
+    return {
+      findings: Object.freeze([] as AdversarialCriticFinding[]),
+      errorClass: "schema_validation",
+    };
   }
 };
 
@@ -537,10 +540,11 @@ export const runAdversarialCriticRound = async (
       : {}),
   });
   const durationMs = Date.now() - startedAt;
-  const findings =
+  const parsedResponse =
     gatewayResult.outcome === "success"
       ? parseAdversarialCriticResponse(gatewayResult.content)
-      : Object.freeze([] as AdversarialCriticFinding[]);
+      : { findings: Object.freeze([] as AdversarialCriticFinding[]) };
+  const findings = parsedResponse.findings;
   const artifact: AdversarialCriticRoundArtifact = {
     schemaVersion: ADVERSARIAL_CRITIC_FINDING_SCHEMA_VERSION,
     jobId: input.jobId,
@@ -567,10 +571,19 @@ export const runAdversarialCriticRound = async (
       findings,
     },
     llmGateway: {
-      outcome: gatewayResult.outcome,
+      outcome:
+        gatewayResult.outcome === "error" ||
+        parsedResponse.errorClass !== undefined
+          ? "error"
+          : "success",
       ...(gatewayResult.outcome === "error"
         ? { errorClass: gatewayResult.errorClass, modelDeployment: "unknown" }
-        : { modelDeployment: gatewayResult.modelDeployment }),
+        : parsedResponse.errorClass !== undefined
+          ? {
+              errorClass: parsedResponse.errorClass,
+              modelDeployment: gatewayResult.modelDeployment,
+            }
+          : { modelDeployment: gatewayResult.modelDeployment }),
       inputTokens:
         gatewayResult.outcome === "success"
           ? gatewayResult.usage.inputTokens ?? 0
