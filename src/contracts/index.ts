@@ -163,7 +163,7 @@ export interface TestIntelligenceTransferPrincipal {
 }
 
 /** Contract version for the opt-in test-intelligence surface. */
-export const TEST_INTELLIGENCE_CONTRACT_VERSION = "1.18.0" as const;
+export const TEST_INTELLIGENCE_CONTRACT_VERSION = "1.19.0" as const;
 
 /**
  * Schema version for generated test case payloads.
@@ -4519,12 +4519,21 @@ export interface JudgeVerdict {
   readonly refusal?: JudgeVerdictRefusal;
 }
 
-/** Schema version for persisted cross-modal faithfulness-judge verdicts. */
-export const FAITHFULNESS_VERDICT_SCHEMA_VERSION = "1.0.0" as const;
+/** Schema version for persisted cross-modal faithfulness-judge verdicts.
+ *
+ * 1.1.0 — Issue #2066: optional additive field `stepVerdicts` on each
+ * verdict carrying per-step `match | evidence_partial | mismatch` labels.
+ * Backwards compatible: consumers built against 1.0.0 see the legacy
+ * `hallucinations` / `mismatches` arrays unchanged. */
+export const FAITHFULNESS_VERDICT_SCHEMA_VERSION = "1.1.0" as const;
 
-/** Prompt-template version pinned onto faithfulness-judge verdict artifacts. */
+/** Prompt-template version pinned onto faithfulness-judge verdict artifacts.
+ *
+ * `faithfulness-judge.v2` — Issue #2066: prompt rubric distinguishes
+ * `match` / `evidence_partial` / `mismatch` per step so partial-evidence
+ * signals are no longer collapsed into mismatches. */
 export const FAITHFULNESS_JUDGE_PROMPT_TEMPLATE_VERSION =
-  "faithfulness-judge.v1" as const;
+  "faithfulness-judge.v2" as const;
 
 /** Canonical filename for the persisted faithfulness-judge prompt artifact. */
 export const FAITHFULNESS_JUDGE_COMPILED_PROMPT_ARTIFACT_FILENAME =
@@ -4544,6 +4553,38 @@ export const ALLOWED_FAITHFULNESS_VERDICTS = [
 /** Discriminant of an allowed faithfulness-judge terminal verdict. */
 export type FaithfulnessVerdictLabel =
   (typeof ALLOWED_FAITHFULNESS_VERDICTS)[number];
+
+/** Closed runtime list of per-step faithfulness verdict labels (Issue #2066).
+ *
+ *   - `match`             — positive visual evidence for the step.
+ *   - `evidence_partial`  — no contradiction, but the screenshot does not
+ *                           fully verify the step (e.g. label-only step
+ *                           where the description was truncated). Treated
+ *                           as a soft signal, not a mismatch.
+ *   - `mismatch`          — positive contradiction between the step and
+ *                           the screenshot. */
+export const FAITHFULNESS_STEP_VERDICT_LABELS = [
+  "match",
+  "evidence_partial",
+  "mismatch",
+] as const;
+
+/** Discriminant of an allowed per-step faithfulness verdict. */
+export type FaithfulnessStepVerdictLabel =
+  (typeof FAITHFULNESS_STEP_VERDICT_LABELS)[number];
+
+/** Per-step faithfulness verdict emitted by the cross-family judge.
+ *
+ * `stepIndex` mirrors `GeneratedTestCaseStep.index` (1-based). `message` is
+ * a short reviewer-readable rationale. The judge MAY omit step verdicts —
+ * older callers that only consume the legacy `hallucinations` / `mismatches`
+ * arrays continue to work. */
+export interface FaithfulnessStepVerdict {
+  readonly testCaseId: string;
+  readonly stepIndex: number;
+  readonly verdict: FaithfulnessStepVerdictLabel;
+  readonly message: string;
+}
 
 /** Hallucination reported by the screenshot-based judge. */
 export interface HallucinationFinding {
@@ -4585,7 +4626,84 @@ export interface FaithfulnessVerdict {
   readonly verdict: FaithfulnessVerdictLabel;
   readonly hallucinations: readonly HallucinationFinding[];
   readonly mismatches: readonly VisualMismatch[];
+  /** Per-step verdicts (Issue #2066). Optional for backwards compatibility
+   * with verdicts persisted under schema 1.0.0. When emitted, the policy
+   * gate uses the per-step labels to compute the tier-aware faithfulness
+   * score and the persisted `faithfulness-tier-report.json` artifact. */
+  readonly stepVerdicts?: readonly FaithfulnessStepVerdict[];
   readonly refusal?: FaithfulnessVerdictRefusal;
+}
+
+/** Schema version for persisted faithfulness-tier-report artifacts. */
+export const FAITHFULNESS_TIER_REPORT_SCHEMA_VERSION = "1.0.0" as const;
+
+/** Canonical filename for the per-run faithfulness-tier-report artifact
+ * (Issue #2066). */
+export const FAITHFULNESS_TIER_REPORT_ARTIFACT_FILENAME =
+  "faithfulness-tier-report.json" as const;
+
+/** Closed runtime list of step-level faithfulness tiers.
+ *
+ *   - `concrete_data` — the step carries observable input or expected data
+ *                       (numeric value, message text, identifier). Threshold
+ *                       defaults to the strict `0.80` cross-modal floor.
+ *   - `label_only`    — the step asserts label-only or layout-only intent
+ *                       (e.g. "open the form", "see the heading"). Partial
+ *                       visual evidence is sufficient (`evidence_partial`
+ *                       passes at `>= 0.80`); strict matches are only
+ *                       required when the score is `>= 0.95`. */
+export const FAITHFULNESS_TIER_LABELS = [
+  "concrete_data",
+  "label_only",
+] as const;
+
+/** Discriminant of a step-level faithfulness tier. */
+export type FaithfulnessTierLabel = (typeof FAITHFULNESS_TIER_LABELS)[number];
+
+/** One per-step entry of the faithfulness-tier-report. */
+export interface FaithfulnessTierReportEntry {
+  readonly testCaseId: string;
+  readonly stepIndex: number;
+  readonly tier: FaithfulnessTierLabel;
+  /** Reviewer-readable indicator that explains the tier classification. */
+  readonly tierReason: string;
+  readonly verdict: FaithfulnessStepVerdictLabel;
+  /** Per-step score `{1.0 | 0.85 | 0.0}` derived from `verdict`. */
+  readonly score: number;
+  /** Whether the step's `(verdict, score)` clears its tier-aware threshold. */
+  readonly passesThreshold: boolean;
+  /** Optional reviewer-readable message attached by the judge. */
+  readonly message?: string;
+}
+
+/** Persistable per-run report capturing the tier path that produced the
+ * cross-modal faithfulness score (Issue #2066).
+ *
+ * The report is emitted on every run that has a non-refused
+ * {@link FaithfulnessVerdict}, regardless of whether the gate passes. It
+ * lets reviewers audit why a label-only step that was visually only
+ * partially verified did NOT trigger a `mismatch`. */
+export interface FaithfulnessTierReport {
+  readonly schemaVersion: typeof FAITHFULNESS_TIER_REPORT_SCHEMA_VERSION;
+  readonly contractVersion: typeof TEST_INTELLIGENCE_CONTRACT_VERSION;
+  readonly generatedAt: string;
+  readonly jobId: string;
+  /** Aggregate cross-modal faithfulness score after tier weighting. */
+  readonly aggregateScore: number;
+  /** Threshold the aggregate is compared against (profile-scoped). */
+  readonly aggregateThreshold: number;
+  /** Whether the aggregate score clears the threshold. */
+  readonly aggregatePasses: boolean;
+  /** Total step count covered by the report. */
+  readonly stepCount: number;
+  /** Steps where the tier-aware score is `1.0`. */
+  readonly matchCount: number;
+  /** Steps where the tier-aware score is `0.85`. */
+  readonly evidencePartialCount: number;
+  /** Steps where the tier-aware score is `0.0`. */
+  readonly mismatchCount: number;
+  /** Per-step records, sorted by `(testCaseId, stepIndex)`. */
+  readonly entries: readonly FaithfulnessTierReportEntry[];
 }
 
 /** Schema version for persisted multimodal accessibility-judge verdicts. */
@@ -11436,7 +11554,7 @@ export interface ReleaseQualityGatesReport {
  * Must be bumped according to CONTRACT_CHANGELOG.md rules.
  * Package version alignment is documented in VERSIONING.md.
  */
-export const CONTRACT_VERSION = "4.57.0" as const;
+export const CONTRACT_VERSION = "4.58.0" as const;
 
 // ---------------------------------------------------------------------------
 // Issue #1774 — UntrustedContentNormalizer (2025-vintage injection carriers).

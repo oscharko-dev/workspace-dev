@@ -50,6 +50,7 @@ import {
   CONTEXT_BUDGET_ARTIFACT_DIRECTORY,
   EU_BANKING_DEFAULT_POLICY_PROFILE_ID,
   FAITHFULNESS_JUDGE_COMPILED_PROMPT_ARTIFACT_FILENAME,
+  FAITHFULNESS_TIER_REPORT_ARTIFACT_FILENAME,
   FAITHFULNESS_VERDICT_ARTIFACT_FILENAME,
   GENERATED_TESTCASES_ARTIFACT_FILENAME,
   GENERATED_TEST_CASE_SCHEMA_VERSION,
@@ -293,6 +294,7 @@ import {
   runFaithfulnessJudge,
   type RunFaithfulnessJudgeResult,
 } from "./faithfulness-judge.js";
+import { resolveFaithfulnessTierReport } from "./policy-gate.js";
 import {
   createFileSystemLogicJudgeCache,
   createMemoryLogicJudgeCache,
@@ -4106,6 +4108,27 @@ export const runFigmaToQcTestCases = async (
 
   // 8. Validation pipeline.
   emit({ phase: "validation_started", timestamp: monotonicMs() });
+  const policyOverridesForValidation:
+    | ReadonlyArray<{
+        ruleId: string;
+        severity: "error" | "warning";
+        threshold?: number;
+      }>
+    | undefined =
+    canonicalCustomerProfile?.policyOverrides !== undefined &&
+    canonicalCustomerProfile.policyOverrides.some(
+      (override) => override.severity !== "info",
+    )
+      ? canonicalCustomerProfile.policyOverrides.filter(
+          (
+            override,
+          ): override is {
+            ruleId: string;
+            severity: "error" | "warning";
+            threshold?: number;
+          } => override.severity !== "info",
+        )
+      : undefined;
   const validation = runValidationPipeline({
     jobId: input.jobId,
     generatedAt: input.generatedAt,
@@ -4113,21 +4136,8 @@ export const runFigmaToQcTestCases = async (
     intent,
     coveragePlan: coveragePlanResult.plan,
     workflowTopology,
-    ...(canonicalCustomerProfile?.policyOverrides !== undefined &&
-    canonicalCustomerProfile.policyOverrides.some(
-      (override) => override.severity !== "info",
-    )
-      ? {
-          policyOverrides: canonicalCustomerProfile.policyOverrides.filter(
-            (
-              override,
-            ): override is {
-              ruleId: string;
-              severity: "error" | "warning";
-              threshold?: number;
-            } => override.severity !== "info",
-          ),
-        }
+    ...(policyOverridesForValidation !== undefined
+      ? { policyOverrides: policyOverridesForValidation }
       : {}),
     ...(faithfulnessJudgeResult !== undefined
       ? { faithfulnessVerdict: faithfulnessJudgeResult.verdict }
@@ -4204,6 +4214,21 @@ export const runFigmaToQcTestCases = async (
           "agent-role-runs",
           FAITHFULNESS_VERDICT_ARTIFACT_FILENAME,
         );
+  // Issue #2066 — per-run tier report. Computed only when the verdict
+  // carries `stepVerdicts`; legacy verdicts persisted under schema 1.0.0
+  // skip this artifact (the gate falls back to the case-level score).
+  const faithfulnessTierReportArtifact =
+    faithfulnessJudgeResult === undefined
+      ? undefined
+      : resolveFaithfulnessTierReport(
+          faithfulnessJudgeResult.verdict,
+          validation.generatedTestCases,
+          policyOverridesForValidation,
+        );
+  const faithfulnessTierReportPath =
+    faithfulnessTierReportArtifact === undefined
+      ? undefined
+      : join(artifactDir, FAITHFULNESS_TIER_REPORT_ARTIFACT_FILENAME);
   const a11yJudgeVerdictPath =
     a11yJudgeResult === undefined
       ? undefined
@@ -4342,6 +4367,10 @@ export const runFigmaToQcTestCases = async (
     faithfulnessJudgeResult === undefined
       ? undefined
       : encodeCanonicalJson(faithfulnessJudgeResult.verdict);
+  const faithfulnessTierReportBytes =
+    faithfulnessTierReportArtifact === undefined
+      ? undefined
+      : encodeCanonicalJson(faithfulnessTierReportArtifact);
   const a11yJudgeVerdictBytes =
     a11yJudgeResult === undefined
       ? undefined
@@ -4433,6 +4462,15 @@ export const runFigmaToQcTestCases = async (
             writeAtomicBytes(
               faithfulnessJudgeVerdictPath,
               faithfulnessJudgeVerdictBytes,
+            ),
+          ]),
+      ...(faithfulnessTierReportPath === undefined ||
+      faithfulnessTierReportBytes === undefined
+        ? []
+        : [
+            writeAtomicBytes(
+              faithfulnessTierReportPath,
+              faithfulnessTierReportBytes,
             ),
           ]),
       ...(a11yJudgeVerdictPath === undefined ||

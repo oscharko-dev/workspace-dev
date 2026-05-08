@@ -159,8 +159,12 @@ test("schema: drift guard — the hash is stable for the current contract", () =
   // 1.17.0 -> 1.18.0 (additive — new openai-chat constrained-decoding
   // adapter module and `OPENAI_CHAT_*_ADAPTER_VERSION` runtime constants,
   // no `GeneratedTestCaseList` shape changes). Same lockstep rationale.
+  // Hash bumped by Issue #2066: TEST_INTELLIGENCE_CONTRACT_VERSION bumped
+  // 1.18.0 -> 1.19.0 (additive — `FaithfulnessVerdict.stepVerdicts`,
+  // tier-report contract, `FAITHFULNESS_TIER_*` runtime constants, no
+  // `GeneratedTestCaseList` shape changes). Same lockstep rationale.
   const expected =
-    "8bdf83ec553cdc5934c49c3b3f477245d3924ec05728d5948462e24c1a13a150";
+    "11282efa93e9a13f91a7de5aadb1cf0284d9033eff2946cb15c89dc58fb324c4";
   const actual = computeGeneratedTestCaseListSchemaHash();
   if (actual !== expected) {
     assert.fail(

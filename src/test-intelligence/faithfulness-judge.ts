@@ -5,8 +5,11 @@ import { createHash } from "node:crypto";
 import {
   ALLOWED_FAITHFULNESS_VERDICTS,
   FAITHFULNESS_JUDGE_PROMPT_TEMPLATE_VERSION,
+  FAITHFULNESS_STEP_VERDICT_LABELS,
   FAITHFULNESS_VERDICT_SCHEMA_VERSION,
   TEST_INTELLIGENCE_CONTRACT_VERSION,
+  type FaithfulnessStepVerdict,
+  type FaithfulnessStepVerdictLabel,
   type FaithfulnessVerdict,
   type FaithfulnessVerdictLabel,
   type HallucinationFinding,
@@ -31,6 +34,11 @@ const SYSTEM_PROMPT = [
   "You receive generated test cases plus one or more rendered screenshots as image inputs.",
   "Judge whether each referenced action is visually plausible on the screenshots.",
   "Flag invented controls as hallucinations and label discrepancies as mismatches.",
+  "For every step in every test case, also emit a per-step verdict in `stepVerdicts`:",
+  "use `match` when the screenshot positively verifies the step,",
+  "`evidence_partial` when the step's label is consistent with the screenshot but the description",
+  "or data cannot be fully verified from the visible capture (do NOT flag as a mismatch in this case),",
+  "and `mismatch` only when the screenshot positively contradicts the step.",
   "Return only JSON matching the supplied schema.",
 ].join(" ");
 
@@ -117,6 +125,20 @@ export const buildFaithfulnessJudgeResponseSchema = (): Record<string, unknown> 
   required: ["verdict", "hallucinations", "mismatches"],
   properties: {
     verdict: { enum: [...ALLOWED_FAITHFULNESS_VERDICTS] },
+    stepVerdicts: {
+      type: "array",
+      items: {
+        type: "object",
+        additionalProperties: false,
+        required: ["testCaseId", "stepIndex", "verdict", "message"],
+        properties: {
+          testCaseId: { type: "string", minLength: 1 },
+          stepIndex: { type: "integer", minimum: 1 },
+          verdict: { enum: [...FAITHFULNESS_STEP_VERDICT_LABELS] },
+          message: { type: "string", minLength: 1, maxLength: MAX_MESSAGE_LENGTH },
+        },
+      },
+    },
     hallucinations: {
       type: "array",
       items: {
@@ -323,6 +345,7 @@ export const runFaithfulnessJudge = async (
         score: computeFaithfulnessScore(input.generatedTestCases, validated),
         hallucinations: validated.hallucinations,
         mismatches: validated.mismatches,
+        stepVerdicts: validated.stepVerdicts,
       });
       if (input.cache !== undefined) await input.cache.store(cacheKey, verdict);
       return { verdict, cacheHit: false, promptArtifact, attempts };
@@ -351,6 +374,7 @@ export const runFaithfulnessJudge = async (
         score: computeFaithfulnessScore(input.generatedTestCases, validated),
         hallucinations: validated.hallucinations,
         mismatches: validated.mismatches,
+        stepVerdicts: validated.stepVerdicts,
       });
       if (input.cache !== undefined) await input.cache.store(cacheKey, verdict);
       return { verdict, cacheHit: false, promptArtifact, attempts };
@@ -452,6 +476,7 @@ const validateFaithfulnessResponse = (
       verdict: FaithfulnessVerdictLabel;
       hallucinations: readonly HallucinationFinding[];
       mismatches: readonly VisualMismatch[];
+      stepVerdicts: readonly FaithfulnessStepVerdict[];
     }
   | { ok: false } => {
   if (!isRecord(value)) return { ok: false };
@@ -459,7 +484,11 @@ const validateFaithfulnessResponse = (
   if (!isFaithfulnessVerdictLabel(verdict)) return { ok: false };
   const hallucinationsRaw = value["hallucinations"];
   const mismatchesRaw = value["mismatches"];
+  const stepVerdictsRaw = value["stepVerdicts"];
   if (!Array.isArray(hallucinationsRaw) || !Array.isArray(mismatchesRaw)) {
+    return { ok: false };
+  }
+  if (stepVerdictsRaw !== undefined && !Array.isArray(stepVerdictsRaw)) {
     return { ok: false };
   }
   const hallucinations: HallucinationFinding[] = [];
@@ -536,7 +565,37 @@ const validateFaithfulnessResponse = (
       message,
     });
   }
-  return { ok: true, verdict, hallucinations, mismatches };
+  const stepVerdicts: FaithfulnessStepVerdict[] = [];
+  for (const entry of stepVerdictsRaw ?? []) {
+    if (!isRecord(entry)) return { ok: false };
+    const testCaseId = entry["testCaseId"];
+    const stepIndex = entry["stepIndex"];
+    const stepVerdict = entry["verdict"];
+    const message = entry["message"];
+    if (typeof testCaseId !== "string" || testCaseId.length === 0) {
+      return { ok: false };
+    }
+    if (!Number.isInteger(stepIndex) || (stepIndex as number) < 1) {
+      return { ok: false };
+    }
+    if (!isFaithfulnessStepVerdictLabel(stepVerdict)) {
+      return { ok: false };
+    }
+    if (
+      typeof message !== "string" ||
+      message.length === 0 ||
+      message.length > MAX_MESSAGE_LENGTH
+    ) {
+      return { ok: false };
+    }
+    stepVerdicts.push({
+      testCaseId,
+      stepIndex: stepIndex as number,
+      verdict: stepVerdict,
+      message,
+    });
+  }
+  return { ok: true, verdict, hallucinations, mismatches, stepVerdicts };
 };
 
 const buildFaithfulnessVerdict = (input: {
@@ -551,6 +610,7 @@ const buildFaithfulnessVerdict = (input: {
   score: number;
   hallucinations: readonly HallucinationFinding[];
   mismatches: readonly VisualMismatch[];
+  stepVerdicts: readonly FaithfulnessStepVerdict[];
 }): FaithfulnessVerdict => ({
   schemaVersion: FAITHFULNESS_VERDICT_SCHEMA_VERSION,
   contractVersion: TEST_INTELLIGENCE_CONTRACT_VERSION,
@@ -567,7 +627,19 @@ const buildFaithfulnessVerdict = (input: {
   verdict: input.verdict,
   hallucinations: [...input.hallucinations],
   mismatches: [...input.mismatches],
+  ...(input.stepVerdicts.length > 0
+    ? { stepVerdicts: sortStepVerdicts(input.stepVerdicts) }
+    : {}),
 });
+
+const sortStepVerdicts = (
+  values: readonly FaithfulnessStepVerdict[],
+): FaithfulnessStepVerdict[] =>
+  [...values].sort((a, b) => {
+    const idCompare = a.testCaseId.localeCompare(b.testCaseId, "en");
+    if (idCompare !== 0) return idCompare;
+    return a.stepIndex - b.stepIndex;
+  });
 
 const buildFaithfulnessRefusal = (input: {
   generatedAt: string;
@@ -640,15 +712,44 @@ const extractGeneratedTestCaseIds = (value: unknown): string[] => {
   return ids;
 };
 
+/** Per-step weight for `evidence_partial` (Issue #2066). Treated as a
+ * soft signal between `match` (1.0) and `mismatch` (0.0) so label-only
+ * steps that the judge cannot fully verify do not collapse the
+ * case-level faithfulness score to 0.5. */
+export const FAITHFULNESS_EVIDENCE_PARTIAL_WEIGHT = 0.85;
+
+/** Step-level score derived from the per-step verdict label. Returns
+ * `1.0` for `match`, `FAITHFULNESS_EVIDENCE_PARTIAL_WEIGHT` for
+ * `evidence_partial`, and `0` for `mismatch`. Pure. */
+export const scoreFaithfulnessStepVerdict = (
+  verdict: FaithfulnessStepVerdictLabel,
+): number => {
+  switch (verdict) {
+    case "match":
+      return 1;
+    case "evidence_partial":
+      return FAITHFULNESS_EVIDENCE_PARTIAL_WEIGHT;
+    case "mismatch":
+      return 0;
+  }
+};
+
 const computeFaithfulnessScore = (
   generatedTestCases: unknown,
   response: {
     hallucinations: readonly HallucinationFinding[];
     mismatches: readonly VisualMismatch[];
+    stepVerdicts: readonly FaithfulnessStepVerdict[];
   },
 ): number => {
   const caseIds = extractGeneratedTestCaseIds(generatedTestCases);
   if (caseIds.length === 0) return 0;
+  const stepsByCase = new Map<string, FaithfulnessStepVerdict[]>();
+  for (const step of response.stepVerdicts) {
+    const list = stepsByCase.get(step.testCaseId);
+    if (list === undefined) stepsByCase.set(step.testCaseId, [step]);
+    else list.push(step);
+  }
   const failedCaseIds = new Set<string>();
   for (const finding of response.hallucinations) {
     failedCaseIds.add(finding.testCaseId);
@@ -656,18 +757,42 @@ const computeFaithfulnessScore = (
   for (const mismatch of response.mismatches) {
     failedCaseIds.add(mismatch.testCaseId);
   }
-  let passingCases = 0;
+  let total = 0;
   for (const caseId of caseIds) {
-    if (!failedCaseIds.has(caseId)) passingCases += 1;
+    const steps = stepsByCase.get(caseId);
+    if (steps !== undefined && steps.length > 0) {
+      total += scoreCaseFromSteps(steps);
+      continue;
+    }
+    if (failedCaseIds.has(caseId)) continue;
+    total += 1;
   }
-  return roundFaithfulnessScore(passingCases / caseIds.length);
+  return roundFaithfulnessScore(total / caseIds.length);
 };
+
+const scoreCaseFromSteps = (
+  steps: readonly FaithfulnessStepVerdict[],
+): number => {
+  let sum = 0;
+  for (const step of steps) {
+    sum += scoreStep(step.verdict);
+  }
+  return sum / steps.length;
+};
+
+const scoreStep = scoreFaithfulnessStepVerdict;
 
 const isFaithfulnessVerdictLabel = (
   value: unknown,
 ): value is FaithfulnessVerdictLabel =>
   typeof value === "string" &&
   (ALLOWED_FAITHFULNESS_VERDICTS as readonly string[]).includes(value);
+
+const isFaithfulnessStepVerdictLabel = (
+  value: unknown,
+): value is FaithfulnessStepVerdictLabel =>
+  typeof value === "string" &&
+  (FAITHFULNESS_STEP_VERDICT_LABELS as readonly string[]).includes(value);
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
