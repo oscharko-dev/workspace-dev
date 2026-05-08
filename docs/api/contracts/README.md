@@ -88,7 +88,7 @@ Persisted multimodal accessibility-judge verdict artifact.
 
 ##### contractVersion
 
-> `readonly` **contractVersion**: `"1.16.0"`
+> `readonly` **contractVersion**: `"1.17.0"`
 
 ##### criteria
 
@@ -356,7 +356,7 @@ Persisted, canonical-JSON, per-job repair-iteration log.
 
 ##### contractVersion
 
-> `readonly` **contractVersion**: `"1.16.0"`
+> `readonly` **contractVersion**: `"1.17.0"`
 
 ##### generatedAt
 
@@ -919,7 +919,7 @@ input set is byte-identical and the entries are sorted before write.
 
 ##### contractVersion
 
-> `readonly` **contractVersion**: `"1.16.0"`
+> `readonly` **contractVersion**: `"1.17.0"`
 
 ##### diffArtifactBasename?
 
@@ -971,7 +971,7 @@ Persisted case-merger artifact (Issue #1937).
 
 ##### contractVersion
 
-> `readonly` **contractVersion**: `"1.16.0"`
+> `readonly` **contractVersion**: `"1.17.0"`
 
 ##### entries
 
@@ -1106,7 +1106,7 @@ Total bytes of cleared tool result blocks at the boundary.
 
 ##### contractVersion
 
-> `readonly` **contractVersion**: `"1.16.0"`
+> `readonly` **contractVersion**: `"1.17.0"`
 
 ##### jobId
 
@@ -1150,7 +1150,7 @@ Persisted, fully-redacted artifact form of a compiled prompt.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.16.0"`
+> **contractVersion**: `"1.17.0"`
 
 ##### hashes
 
@@ -2368,7 +2368,7 @@ Aggregate dry-run report artifact.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.16.0"`
+> **contractVersion**: `"1.17.0"`
 
 ##### credentialsIncluded
 
@@ -2721,7 +2721,7 @@ Sorted by filename for deterministic emission.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.16.0"`
+> **contractVersion**: `"1.17.0"`
 
 ##### exportedTestCaseCount
 
@@ -2812,7 +2812,7 @@ Persisted screenshot-vs-cases faithfulness verdict artifact.
 
 ##### contractVersion
 
-> `readonly` **contractVersion**: `"1.16.0"`
+> `readonly` **contractVersion**: `"1.17.0"`
 
 ##### fallbackReason
 
@@ -3076,7 +3076,7 @@ Aggregate counters across the `bySource` map.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.16.0"`
+> **contractVersion**: `"1.17.0"`
 
 ##### currencyLabel?
 
@@ -3714,7 +3714,7 @@ Single generated test case.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.16.0"`
+> **contractVersion**: `"1.17.0"`
 
 ##### expectedResults
 
@@ -3825,7 +3825,7 @@ Whether the artifact came from a replay-cache hit.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.16.0"`
+> **contractVersion**: `"1.17.0"`
 
 ##### generatedAt
 
@@ -4041,7 +4041,7 @@ referenced files and recomputing each row.
 
 ##### contractVersion
 
-> `readonly` **contractVersion**: `"1.16.0"`
+> `readonly` **contractVersion**: `"1.17.0"`
 
 ##### digest
 
@@ -4267,7 +4267,7 @@ Hard-invariant intent-delta report artifact (Issue #1373).
 
 ##### contractVersion
 
-> **contractVersion**: `"1.16.0"`
+> **contractVersion**: `"1.17.0"`
 
 ##### currentIntentHash
 
@@ -4581,7 +4581,7 @@ Aggregate `jira-created-subtasks.json` artifact (Issue #1482).
 
 ##### contractVersion
 
-> **contractVersion**: `"1.16.0"`
+> **contractVersion**: `"1.17.0"`
 
 ##### credentialsIncluded
 
@@ -5217,7 +5217,7 @@ Audit metadata for the run.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.16.0"`
+> **contractVersion**: `"1.17.0"`
 
 ##### createdCount
 
@@ -5419,7 +5419,7 @@ Persisted production-runner judge-consensus artifact.
 
 ##### contractVersion
 
-> `readonly` **contractVersion**: `"1.16.0"`
+> `readonly` **contractVersion**: `"1.17.0"`
 
 ##### crossFamily?
 
@@ -5642,7 +5642,7 @@ the disagreement-rate trending consumes (B.10).
 
 ##### contractVersion
 
-> `readonly` **contractVersion**: `"1.16.0"`
+> `readonly` **contractVersion**: `"1.17.0"`
 
 ##### costByFamily
 
@@ -5862,7 +5862,7 @@ Persisted logic-judge verdict artifact.
 
 ##### contractVersion
 
-> `readonly` **contractVersion**: `"1.16.0"`
+> `readonly` **contractVersion**: `"1.17.0"`
 
 ##### findings
 
@@ -6359,7 +6359,7 @@ Per-release primitive-map status report.
 
 ##### contractVersion
 
-> `readonly` **contractVersion**: `"1.16.0"`
+> `readonly` **contractVersion**: `"1.17.0"`
 
 ##### counts
 
@@ -7372,6 +7372,280 @@ Stable hash of the source-mix plan payload owned by Issue #1441.
 
 ***
 
+### MutationClassKillRate
+
+Per-class kill-rate row inside [MutationReport.byClass](#byclass).
+
+#### Properties
+
+##### applicable
+
+> `readonly` **applicable**: `number`
+
+Mutations of this class with at least one in-scope test case.
+
+##### killed
+
+> `readonly` **killed**: `number`
+
+Mutations of this class killed by at least one test case.
+
+##### killRate
+
+> `readonly` **killRate**: `number`
+
+Kill rate for the class: `killed / applicable` rounded to six
+digits. `0` when `applicable === 0` (no in-scope cases). Auditors
+comparing per-class rates should consult `applicable` to decide
+whether the rate is meaningful.
+
+##### mutationClass
+
+> `readonly` **mutationClass**: `"field-required-flipped"` \| `"vat-applied-to-netto"` \| `"currency-rounding-off-by-one"` \| `"boundary-off-by-one"` \| `"state-transition-skipped"` \| `"regex-relaxed"` \| `"null-equals-empty"` \| `"optional-cost-treated-required"` \| `"currency-locale-confusion"` \| `"error-message-suppressed"` \| `"accessibility-name-removed"` \| `"iban-checksum-skipped"` \| `"pii-redaction-disabled"` \| `"four-eyes-principle-skipped"` \| `"audit-log-omitted"`
+
+Mutation class from [ALLOWED\_MUTATION\_CLASSES](#allowed_mutation_classes).
+
+##### total
+
+> `readonly` **total**: `number`
+
+Total catalog mutations registered for this class.
+
+***
+
+### MutationEvaluation
+
+Per-mutation evaluation outcome (Issue #2041).
+
+#### Properties
+
+##### applicable
+
+> `readonly` **applicable**: `boolean`
+
+`true` iff at least one accepted test case is in scope for the
+mutation. Drives the `applicableMutations` count surfaced in the
+summary.
+
+##### applicableTestCaseIds
+
+> `readonly` **applicableTestCaseIds**: readonly `string`[]
+
+Sorted, deduplicated test-case ids that are in scope for this
+mutation (`applies === true`).
+
+##### description
+
+> `readonly` **description**: `string`
+
+Human-readable description of the synthetic bug being injected.
+
+##### killed
+
+> `readonly` **killed**: `boolean`
+
+`true` iff at least one accepted test case kills the mutation.
+`false` covers two cases: (a) no case is in scope (the catalog
+mutation does not apply to this run) and (b) every in-scope case
+fails to detect the mutation.
+
+##### killingTestCaseIds
+
+> `readonly` **killingTestCaseIds**: readonly `string`[]
+
+Sorted, deduplicated test-case ids that detect this mutation
+(`kills === true`).
+
+##### mutationClass
+
+> `readonly` **mutationClass**: `"field-required-flipped"` \| `"vat-applied-to-netto"` \| `"currency-rounding-off-by-one"` \| `"boundary-off-by-one"` \| `"state-transition-skipped"` \| `"regex-relaxed"` \| `"null-equals-empty"` \| `"optional-cost-treated-required"` \| `"currency-locale-confusion"` \| `"error-message-suppressed"` \| `"accessibility-name-removed"` \| `"iban-checksum-skipped"` \| `"pii-redaction-disabled"` \| `"four-eyes-principle-skipped"` \| `"audit-log-omitted"`
+
+Mutation class drawn from [ALLOWED\_MUTATION\_CLASSES](#allowed_mutation_classes).
+
+##### mutationId
+
+> `readonly` **mutationId**: `string`
+
+Stable mutation id matching `^MUT-[A-Z0-9-]{1,60}$` (the same
+shape the catalog validator enforces). The default catalog uses
+the `MUT-<CLASS>-<NN>` convention but the contract only
+guarantees the regex shape so operator-registered mutations have
+room to encode their own provenance.
+
+##### severity
+
+> `readonly` **severity**: `"error"` \| `"warning"`
+
+Severity of an unkilled mutation (`"error"` for default catalog rows).
+
+##### source
+
+> `readonly` **source**: `string`
+
+Stable provenance string, typically `"Issue #2041 (registered)"`.
+Matches the convention used by the domain-invariant registry.
+
+***
+
+### MutationKillRateSummary
+
+Compact mutation-killing-eval summary embedded into
+`policy-report.json#mutationKillRate` (Issue #2041). Each field is
+derived from the persisted `mutation-report.json` artifact and can be
+used as a hard-gate input by downstream CI without parsing the full
+report.
+
+#### Properties
+
+##### applicableMutations
+
+> `readonly` **applicableMutations**: `number`
+
+Mutations that had at least one in-scope test case.
+
+##### artifactFilename
+
+> `readonly` **artifactFilename**: `"mutation-report.json"`
+
+Stable artifact filename auditors should consult for the full report.
+
+##### killedMutations
+
+> `readonly` **killedMutations**: `number`
+
+Mutations killed by at least one accepted test case.
+
+##### killRate
+
+> `readonly` **killRate**: `number`
+
+Overall fraction of registered mutations killed by at least one
+accepted test case, in [0, 1]. Rounded to six digits to match the
+canonical-JSON contract. `0` when the catalog is empty or no
+mutations were in scope for the run.
+
+##### meetsThreshold
+
+> `readonly` **meetsThreshold**: `boolean`
+
+Whether the kill rate meets or exceeds the threshold. Recorded
+deterministically at write time so the gate decision survives
+re-reads of the report.
+
+##### threshold
+
+> `readonly` **threshold**: `number`
+
+Configured KPI threshold (Issue #1753 set `>= 0.85`). Surfaced so
+downstream consumers can reproduce the pass/fail computation
+without consulting the runner config.
+
+##### totalMutations
+
+> `readonly` **totalMutations**: `number`
+
+Total number of registered mutations in the catalog.
+
+***
+
+### MutationReport
+
+Mutation-killing-eval report artifact (Issue #2041). Persisted as
+`mutation-report.json` alongside `policy-report.json`. The byte-shape
+is canonical: arrays are deterministically sorted, ratios are
+rounded to six digits, and only set fields are written.
+
+#### Properties
+
+##### applicableMutations
+
+> `readonly` **applicableMutations**: `number`
+
+Mutations with at least one in-scope test case.
+
+##### byClass
+
+> `readonly` **byClass**: readonly [`MutationClassKillRate`](#mutationclasskillrate)[]
+
+Per-class kill-rate rows ordered by the closed
+[ALLOWED\_MUTATION\_CLASSES](#allowed_mutation_classes) insertion order so the byte-shape
+stays stable when new classes are appended to the union. Every
+catalog class appears exactly once.
+
+##### contractVersion
+
+> `readonly` **contractVersion**: `"1.17.0"`
+
+##### generatedAt
+
+> `readonly` **generatedAt**: `string`
+
+##### jobId
+
+> `readonly` **jobId**: `string`
+
+##### killedMutations
+
+> `readonly` **killedMutations**: `number`
+
+Mutations killed by at least one accepted test case.
+
+##### killRate
+
+> `readonly` **killRate**: `number`
+
+Overall kill rate: `killedMutations / applicableMutations` rounded
+to six digits. `0` when `applicableMutations === 0`.
+
+##### meetsThreshold
+
+> `readonly` **meetsThreshold**: `boolean`
+
+Whether `killRate >= threshold`.
+
+##### mutations
+
+> `readonly` **mutations**: readonly [`MutationEvaluation`](#mutationevaluation)[]
+
+Per-mutation evaluation rows ordered by `mutationId` ascending.
+Every catalog mutation appears exactly once.
+
+##### policyProfileId
+
+> `readonly` **policyProfileId**: `string`
+
+##### schemaVersion
+
+> `readonly` **schemaVersion**: `"1.0.0"`
+
+##### threshold
+
+> `readonly` **threshold**: `number`
+
+Configured kill-rate threshold (default: 0.85).
+
+##### totalMutations
+
+> `readonly` **totalMutations**: `number`
+
+Total mutations registered in the catalog.
+
+##### totalTestCases
+
+> `readonly` **totalTestCases**: `number`
+
+Total accepted test cases evaluated against the catalog.
+
+##### unkilledMutations
+
+> `readonly` **unkilledMutations**: readonly `string`[]
+
+Mutations that were applicable but not killed by any test case,
+ordered by `mutationId` ascending. Surfaced as a convenience for
+audit reports and CI summaries.
+
+***
+
 ### OpenTextAlmExportProfile
 
 Operator-tunable knobs of an OpenText ALM reference export profile.
@@ -7445,6 +7719,355 @@ PII indicator attached to a detected element. Original values are never persiste
 
 ***
 
+### PromptOptimizationLockEntry
+
+Lock-file entry written *additively* to
+`docs/test-intelligence-prompt-template-version.lock.json` under the
+`optimizedTemplates` array. The base template's `promptCompilerSha256`
+pin is untouched so the prompt-template-version CI guard cannot drift.
+
+#### Properties
+
+##### baselineScore
+
+> `readonly` **baselineScore**: `number`
+
+Score the base template earned on the eval set (0-100).
+
+##### basePromptTemplateVersion
+
+> `readonly` **basePromptTemplateVersion**: `string`
+
+Base prompt template version this entry layers on top of.
+
+##### datasetId
+
+> `readonly` **datasetId**: `string`
+
+Dataset id the optimization cycle ran against.
+
+##### directiveIds
+
+> `readonly` **directiveIds**: readonly (`"prefer-figma-trace-screen-id"` \| `"prefer-figma-trace-node-id"` \| `"cite-open-questions-verbatim"` \| `"accessibility-name-required"` \| `"boundary-coverage-explicit"` \| `"negative-flow-pin-error-text"`)[]
+
+Directive ids enabled by the winning candidate.
+
+##### fewShotExemplarIds
+
+> `readonly` **fewShotExemplarIds**: readonly `string`[]
+
+Few-shot exemplar ids carried by the winning candidate.
+
+##### generatedAt
+
+> `readonly` **generatedAt**: `string`
+
+ISO-8601 timestamp captured at write time.
+
+##### improvementPoints
+
+> `readonly` **improvementPoints**: `number`
+
+`optimizedScore - baselineScore`.
+
+##### optimizedScore
+
+> `readonly` **optimizedScore**: `number`
+
+Score the optimized template earned on the eval set (0-100).
+
+##### optimizedTemplateId
+
+> `readonly` **optimizedTemplateId**: `string`
+
+Stable identifier (`opt-<sha8>` of the report).
+
+##### optimizerVersion
+
+> `readonly` **optimizerVersion**: `"1.0.0"`
+
+Optimizer module version that produced the entry.
+
+##### reportSha256
+
+> `readonly` **reportSha256**: `string`
+
+SHA-256 of the canonical-JSON optimization report.
+
+##### roleStepId
+
+> `readonly` **roleStepId**: `string`
+
+Role-step id the candidate template targets.
+
+##### seed
+
+> `readonly` **seed**: `number`
+
+Random seed used by the search algorithm.
+
+***
+
+### PromptOptimizationReport
+
+Persisted optimizer report artifact. Byte-stable: arrays are sorted,
+floats are rounded, only set fields are emitted.
+
+#### Properties
+
+##### baselineScore
+
+> `readonly` **baselineScore**: `number`
+
+Score of the unmodified base template on the eval set.
+
+##### basePromptTemplateVersion
+
+> `readonly` **basePromptTemplateVersion**: `string`
+
+##### budgetMultiplier
+
+> `readonly` **budgetMultiplier**: `number`
+
+##### candidates
+
+> `readonly` **candidates**: readonly [`PromptOptimizerCandidate`](#promptoptimizercandidate)[]
+
+All candidates evaluated, ordered by descending score then id.
+
+##### candidateScores
+
+> `readonly` **candidateScores**: readonly [`PromptOptimizerCandidateScore`](#promptoptimizercandidatescore)[]
+
+Per-candidate scores, ordered by descending score then id.
+
+##### contractVersion
+
+> `readonly` **contractVersion**: `"1.17.0"`
+
+##### datasetId
+
+> `readonly` **datasetId**: `string`
+
+##### exemplars
+
+> `readonly` **exemplars**: readonly [`PromptOptimizerExemplar`](#promptoptimizerexemplar)[]
+
+All exemplars considered after the quality gate.
+
+##### generatedAt
+
+> `readonly` **generatedAt**: `string`
+
+##### improvementPoints
+
+> `readonly` **improvementPoints**: `number`
+
+Additive lift the cycle delivered.
+
+##### jobId
+
+> `readonly` **jobId**: `string`
+
+##### lockEntry
+
+> `readonly` **lockEntry**: [`PromptOptimizationLockEntry`](#promptoptimizationlockentry)
+
+Optimized lock-file entry.
+
+##### maxFewShots
+
+> `readonly` **maxFewShots**: `number`
+
+##### optimizedScore
+
+> `readonly` **optimizedScore**: `number`
+
+Score of the winning candidate.
+
+##### optimizerVersion
+
+> `readonly` **optimizerVersion**: `"1.0.0"`
+
+##### provenance
+
+> `readonly` **provenance**: `object`
+
+PROV-DM provenance node (B.10) for this optimization activity, so
+downstream graph builders can attach it without re-deriving the
+shape. The node is informed by the base template version and
+generated by the optimizer module.
+
+###### activityId
+
+> `readonly` **activityId**: `string`
+
+###### entityId
+
+> `readonly` **entityId**: `string`
+
+###### wasGeneratedAt
+
+> `readonly` **wasGeneratedAt**: `string`
+
+###### wasInformedBy
+
+> `readonly` **wasInformedBy**: `string`
+
+##### qualityGate
+
+> `readonly` **qualityGate**: `number`
+
+##### roleStepId
+
+> `readonly` **roleStepId**: `string`
+
+##### schemaVersion
+
+> `readonly` **schemaVersion**: `"1.0.0"`
+
+##### searchBudget
+
+> `readonly` **searchBudget**: `number`
+
+##### seed
+
+> `readonly` **seed**: `number`
+
+##### tokenBudget
+
+> `readonly` **tokenBudget**: `object`
+
+Token budget envelope the cycle was given.
+
+###### baselineTokenCost
+
+> `readonly` **baselineTokenCost**: `number`
+
+###### cap
+
+> `readonly` **cap**: `number`
+
+###### consumed
+
+> `readonly` **consumed**: `number`
+
+###### withinCap
+
+> `readonly` **withinCap**: `boolean`
+
+***
+
+### PromptOptimizerCandidate
+
+One candidate prompt variant under evaluation by the optimizer. The
+variant is fully described by its enabled directive ids and its
+exemplar selection — the *base* prompt template is shared across all
+candidates and remains the authoritative artifact (templates are
+never replaced by a learned model; the optimizer only rewrites the
+additive directive set on top of the pinned base).
+
+#### Properties
+
+##### candidateId
+
+> `readonly` **candidateId**: `string`
+
+##### directiveIds
+
+> `readonly` **directiveIds**: readonly (`"prefer-figma-trace-screen-id"` \| `"prefer-figma-trace-node-id"` \| `"cite-open-questions-verbatim"` \| `"accessibility-name-required"` \| `"boundary-coverage-explicit"` \| `"negative-flow-pin-error-text"`)[]
+
+##### fewShotExemplarIds
+
+> `readonly` **fewShotExemplarIds**: readonly `string`[]
+
+##### tokenCost
+
+> `readonly` **tokenCost**: `number`
+
+Synthetic token cost charged for evaluating this candidate. The
+optimizer refuses to dispatch any candidate whose cumulative cost
+would exceed `budgetMultiplier * baselineTokenCost`.
+
+***
+
+### PromptOptimizerCandidateScore
+
+Score earned by a [PromptOptimizerCandidate](#promptoptimizercandidate) on the eval set.
+
+#### Properties
+
+##### candidateId
+
+> `readonly` **candidateId**: `string`
+
+##### directiveBreakdown
+
+> `readonly` **directiveBreakdown**: readonly `object`[]
+
+Per-directive points contributed (sums to [score](#score-2)).
+
+##### passingCaseCount
+
+> `readonly` **passingCaseCount**: `number`
+
+Number of eval-set cases that received credit.
+
+##### score
+
+> `readonly` **score**: `number`
+
+Aggregate score (0-100) earned across the eval set.
+
+##### totalCaseCount
+
+> `readonly` **totalCaseCount**: `number`
+
+Total eval-set case count.
+
+***
+
+### PromptOptimizerExemplar
+
+Bootstrapped few-shot exemplar mined from an accepted run. Exemplars
+are content-addressed by `exemplarId` so optimizer outputs are
+byte-stable regardless of source ordering.
+
+#### Properties
+
+##### contentSha256
+
+> `readonly` **contentSha256**: `string`
+
+SHA-256 of the exemplar payload (canonical-JSON over the case).
+
+##### datasetId
+
+> `readonly` **datasetId**: `string`
+
+##### exemplarCaseId
+
+> `readonly` **exemplarCaseId**: `string`
+
+Single accepted test case the exemplar represents.
+
+##### exemplarId
+
+> `readonly` **exemplarId**: `string`
+
+##### score
+
+> `readonly` **score**: `number`
+
+Quality score (0-100) carried over from the accepted run. Must be
+`>= qualityGate` for the exemplar to be retained.
+
+##### sourceRunId
+
+> `readonly` **sourceRunId**: `string`
+
+***
+
 ### QcCreatedEntitiesArtifact
 
 Aggregate `qc-created-entities.json` artifact (Issue #1372).
@@ -7453,7 +8076,7 @@ Aggregate `qc-created-entities.json` artifact (Issue #1372).
 
 ##### contractVersion
 
-> **contractVersion**: `"1.16.0"`
+> **contractVersion**: `"1.17.0"`
 
 ##### entities
 
@@ -7543,7 +8166,7 @@ Aggregate QC mapping preview artifact.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.16.0"`
+> **contractVersion**: `"1.17.0"`
 
 ##### entries
 
@@ -8219,7 +8842,7 @@ Gate 9 — context budget regression (Issue #1802).
 
 ##### contractVersion
 
-> `readonly` **contractVersion**: `"1.16.0"`
+> `readonly` **contractVersion**: `"1.17.0"`
 
 ##### libraryCoverageStatusCompleteness
 
@@ -8310,7 +8933,7 @@ The release pipeline fails when any verdict has `passed === false`.
 
 ##### contractVersion
 
-> `readonly` **contractVersion**: `"1.16.0"`
+> `readonly` **contractVersion**: `"1.17.0"`
 
 ##### mutationKillRate
 
@@ -8464,7 +9087,7 @@ gate passed.
 
 ##### contractVersion
 
-> `readonly` **contractVersion**: `"1.16.0"`
+> `readonly` **contractVersion**: `"1.17.0"`
 
 ##### gates
 
@@ -8653,7 +9276,7 @@ ISO-8601 UTC timestamp at the moment of persistence.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.16.0"`
+> **contractVersion**: `"1.17.0"`
 
 ##### fromState?
 
@@ -8721,7 +9344,7 @@ Number of cases currently in `approved` (or `exported`/`transferred`) state.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.16.0"`
+> **contractVersion**: `"1.17.0"`
 
 ##### fourEyesPolicy?
 
@@ -8947,7 +9570,7 @@ Persisted production-runner run-quality artifact.
 
 ##### contractVersion
 
-> `readonly` **contractVersion**: `"1.16.0"`
+> `readonly` **contractVersion**: `"1.17.0"`
 
 ##### degradedReasons
 
@@ -9251,7 +9874,7 @@ Sorted by `testCaseId` for byte stability. Empty when `refusal` is set.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.16.0"`
+> **contractVersion**: `"1.17.0"`
 
 ##### gatewayRelease
 
@@ -9344,7 +9967,7 @@ Changelog-approved signed migration bundle for banking-profile runs.
 
 ##### contractVersion
 
-> `readonly` **contractVersion**: `"4.55.0"`
+> `readonly` **contractVersion**: `"4.56.0"`
 
 ##### entries
 
@@ -9660,7 +10283,7 @@ Avg assumptions per case.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.16.0"`
+> **contractVersion**: `"1.17.0"`
 
 ##### duplicatePairs
 
@@ -9798,7 +10421,7 @@ Aggregate dedupe report artifact (Issue #1373).
 
 ##### contractVersion
 
-> **contractVersion**: `"1.16.0"`
+> **contractVersion**: `"1.17.0"`
 
 ##### embeddingProvider
 
@@ -9908,7 +10531,7 @@ Aggregate test-case delta report (always paired with `IntentDeltaReport`).
 
 ##### contractVersion
 
-> **contractVersion**: `"1.16.0"`
+> **contractVersion**: `"1.17.0"`
 
 ##### generatedAt
 
@@ -10342,7 +10965,7 @@ Whether ANY case was blocked (downstream export gate).
 
 ##### contractVersion
 
-> **contractVersion**: `"1.16.0"`
+> **contractVersion**: `"1.17.0"`
 
 ##### decisions
 
@@ -10372,6 +10995,18 @@ legacy runs that pre-date the gate registry.
 > **jobLevelViolations**: [`TestCasePolicyViolation`](#testcasepolicyviolation)[]
 
 Job-level policy violations (e.g., job-wide duplicate fingerprint).
+
+##### mutationKillRate?
+
+> `optional` **mutationKillRate?**: [`MutationKillRateSummary`](#mutationkillratesummary)
+
+Optional mutation-killing-eval summary (Issue #2041). Surfaces the
+top-level `mutationKillRate` KPI alongside per-class kill rates so
+downstream auditors can answer "how effective is this generated test
+suite at detecting injected SUT bugs?" without re-running the
+evaluator. The block is omitted when the mutation evaluator was not
+run for this job (default for fast iterative runs), so the byte
+shape stays stable for runs that pre-date the evaluator.
 
 ##### needsReviewCount
 
@@ -10501,7 +11136,7 @@ Whether the report blocks downstream review/export (any error => true).
 
 ##### contractVersion
 
-> **contractVersion**: `"1.16.0"`
+> **contractVersion**: `"1.17.0"`
 
 ##### errorCount
 
@@ -10971,7 +11606,7 @@ Aggregate traceability-matrix artifact (Issue #1373).
 
 ##### contractVersion
 
-> **contractVersion**: `"1.16.0"`
+> **contractVersion**: `"1.17.0"`
 
 ##### exportProfile?
 
@@ -11465,7 +12100,7 @@ Audit metadata for the run.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.16.0"`
+> **contractVersion**: `"1.17.0"`
 
 ##### createdCount
 
@@ -11833,7 +12468,7 @@ can be debugged from the artifact alone.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.16.0"`
+> **contractVersion**: `"1.17.0"`
 
 ##### deployment
 
@@ -11955,7 +12590,7 @@ screenshot bytes.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.16.0"`
+> **contractVersion**: `"1.17.0"`
 
 ##### generatedAt
 
@@ -12117,7 +12752,7 @@ Whether any record carries a non-`ok`/non-`fallback_used` outcome that blocks ge
 
 ##### contractVersion
 
-> **contractVersion**: `"1.16.0"`
+> **contractVersion**: `"1.17.0"`
 
 ##### generatedAt
 
@@ -12394,7 +13029,7 @@ Active signing mode; mirrored from the run input for auditability.
 
 ##### testIntelligenceContractVersion
 
-> **testIntelligenceContractVersion**: `"1.16.0"`
+> **testIntelligenceContractVersion**: `"1.17.0"`
 
 ##### visualSidecar?
 
@@ -12823,7 +13458,7 @@ and timestamps are caller-provided.
 
 ##### testIntelligenceContractVersion
 
-> **testIntelligenceContractVersion**: `"1.16.0"`
+> **testIntelligenceContractVersion**: `"1.17.0"`
 
 ##### thresholds
 
@@ -13122,7 +13757,7 @@ raw paste bytes, or PII.
 
 ##### testIntelligenceContractVersion
 
-> **testIntelligenceContractVersion**: `"1.16.0"`
+> **testIntelligenceContractVersion**: `"1.17.0"`
 
 Test-intelligence subsurface contract version.
 
@@ -14307,7 +14942,7 @@ Submit response for accepted jobs.
 
 ###### Inherited from
 
-[`WorkspaceSubmitAccepted`](#workspacesubmitaccepted).[`jobId`](#jobid-64)
+[`WorkspaceSubmitAccepted`](#workspacesubmitaccepted).[`jobId`](#jobid-66)
 
 ##### pasteDeltaSummary?
 
@@ -18527,6 +19162,18 @@ Refusal-code alias for the multi-source mode gate.
 
 ***
 
+### MutationClass
+
+> **MutationClass** = *typeof* [`ALLOWED_MUTATION_CLASSES`](#allowed_mutation_classes)\[`number`\]
+
+***
+
+### MutationSeverity
+
+> **MutationSeverity** = *typeof* [`ALLOWED_MUTATION_SEVERITIES`](#allowed_mutation_severities)\[`number`\]
+
+***
+
 ### PiiKind
 
 > **PiiKind** = `"iban"` \| `"bic"` \| `"pan"` \| `"tax_id"` \| `"email"` \| `"phone"` \| `"full_name"` \| `"internal_hostname"` \| `"jira_mention"` \| `"customer_name_placeholder"` \| `"postal_address"` \| `"date_of_birth"` \| `"account_number"` \| `"national_id"` \| `"special_category"`
@@ -18562,6 +19209,12 @@ indicator back to the exact field it was sourced from.
 > **PrimaryTestIntentSourceKind** = *typeof* [`PRIMARY_TEST_INTENT_SOURCE_KINDS`](#primary_test_intent_source_kinds)\[`number`\]
 
 Subset alias for primary source kinds.
+
+***
+
+### PromptOptimizerDirectiveId
+
+> **PromptOptimizerDirectiveId** = *typeof* [`PROMPT_OPTIMIZER_DIRECTIVE_IDS`](#prompt_optimizer_directive_ids)\[`number`\]
 
 ***
 
@@ -20161,6 +20814,65 @@ structured diagnostic.
 
 ***
 
+### ALLOWED\_MUTATION\_CLASSES
+
+> `const` **ALLOWED\_MUTATION\_CLASSES**: readonly \[`"field-required-flipped"`, `"vat-applied-to-netto"`, `"currency-rounding-off-by-one"`, `"boundary-off-by-one"`, `"state-transition-skipped"`, `"regex-relaxed"`, `"null-equals-empty"`, `"optional-cost-treated-required"`, `"currency-locale-confusion"`, `"error-message-suppressed"`, `"accessibility-name-removed"`, `"iban-checksum-skipped"`, `"pii-redaction-disabled"`, `"four-eyes-principle-skipped"`, `"audit-log-omitted"`\]
+
+Closed set of mutation classes registered in the
+mutation-killing-eval catalog (Issue #2041). The set is intentionally
+small and append-only — every class documented here corresponds to a
+known SUT-bug archetype the generated test suite is expected to
+detect. Adding a new class is a MINOR contract bump; renaming or
+retiring a class is MAJOR.
+
+- `field-required-flipped` — a previously-required input becomes
+  optional; cases asserting the required-input invariant kill it.
+- `vat-applied-to-netto` — VAT incorrectly added to a netto amount;
+  cases asserting the VAT-exclusion invariant kill it.
+- `currency-rounding-off-by-one` — final monetary totals drift by one
+  cent; cases asserting an exact two-decimal expected total kill it.
+- `boundary-off-by-one` — a `>=` becomes `>` (or vice versa) at a
+  numeric / length boundary; cases asserting the exact boundary
+  kill it.
+- `state-transition-skipped` — a workflow step is skipped (e.g. an
+  `auth` step is bypassed); workflow / navigation cases asserting
+  the transition kill it.
+- `regex-relaxed` — a validation pattern accepts inputs it should
+  reject; validation cases asserting the rejected-input behavior
+  kill it.
+- `null-equals-empty` — `null` is treated as an empty string
+  (or vice versa); cases asserting the null/empty distinction kill
+  it.
+- `optional-cost-treated-required` — an optional cost field is
+  treated as required; cases that exercise the optional-flow kill
+  it.
+- `currency-locale-confusion` — a euro amount is treated as a USD
+  amount in the calculation; cases that pin currency in the
+  expected total kill it.
+- `error-message-suppressed` — a required error message no longer
+  surfaces; negative-flow cases asserting the error message kill it.
+- `accessibility-name-removed` — a labelled element loses its
+  accessible name; a11y cases asserting the name kill it.
+- `iban-checksum-skipped` — IBAN checksum validation is bypassed;
+  negative-flow cases that present an invalid IBAN kill it.
+- `pii-redaction-disabled` — PII appears in a downstream artifact;
+  policy / compliance cases that assert redaction kill it.
+- `four-eyes-principle-skipped` — a state-changing action skips the
+  four-eyes / dual-control gate; workflow cases asserting it kill
+  it.
+- `audit-log-omitted` — a state-changing action no longer writes
+  the audit-log entry; cases asserting the audit row kill it.
+
+***
+
+### ALLOWED\_MUTATION\_SEVERITIES
+
+> `const` **ALLOWED\_MUTATION\_SEVERITIES**: readonly \[`"error"`, `"warning"`\]
+
+Severity reported for a mutation that no test case kills.
+
+***
+
 ### ALLOWED\_PIPELINE\_REQUEST\_ERROR\_CODES
 
 > `const` **ALLOWED\_PIPELINE\_REQUEST\_ERROR\_CODES**: readonly \[`"INVALID_PIPELINE"`, `"PIPELINE_UNAVAILABLE"`, `"PIPELINE_INPUT_UNSUPPORTED"`, `"PIPELINE_SOURCE_MODE_UNSUPPORTED"`, `"PIPELINE_SCOPE_UNSUPPORTED"`\]
@@ -20831,7 +21543,7 @@ Schema version for persisted context-budget analyzer reports.
 
 ### CONTRACT\_VERSION
 
-> `const` **CONTRACT\_VERSION**: `"4.55.0"`
+> `const` **CONTRACT\_VERSION**: `"4.56.0"`
 
 Current contract version constant.
 Must be bumped according to CONTRACT_CHANGELOG.md rules.
@@ -21837,6 +22549,54 @@ source-ref shape, or the aggregate-hash construction.
 
 ***
 
+### MUTATION\_EVAL\_TOKEN\_BUDGET\_RATIO\_CAP
+
+> `const` **MUTATION\_EVAL\_TOKEN\_BUDGET\_RATIO\_CAP**: `0.2`
+
+Default share of the generator token budget reserved for mutation
+evaluation (Issue #2041 FinOps cap). Surfaced as a constant so CI can
+assert the cap and the runner can refuse to dispatch eval work that
+would exceed it. The synthetic-SUT stub is fully deterministic and
+never calls an LLM, so under default operation the actual ratio is
+`0` — the cap is a hard ceiling, not a quota.
+
+***
+
+### MUTATION\_KILL\_RATE\_DEFAULT\_THRESHOLD
+
+> `const` **MUTATION\_KILL\_RATE\_DEFAULT\_THRESHOLD**: `0.85`
+
+Default kill-rate threshold (Issue #1753, #2041). Surfaced on the
+`mutationKillRate` summary so downstream consumers can reproduce the
+pass/fail decision deterministically without re-deriving the literal.
+Tracks [DEFAULT\_MUTATION\_KILL\_RATE\_TARGET](#default_mutation_kill_rate_target) verbatim so the
+coverage-planner target and the runtime evaluator threshold cannot
+drift; the alias is exposed under the evaluator-namespaced name so
+call sites read self-explanatorily.
+
+***
+
+### MUTATION\_REPORT\_ARTIFACT\_FILENAME
+
+> `const` **MUTATION\_REPORT\_ARTIFACT\_FILENAME**: `"mutation-report.json"`
+
+Canonical filename for the persisted mutation-killing-eval report
+artifact (Issue #2041). The runner writes one
+`mutation-report.json` per run when mutation evaluation is enabled and
+embeds the resulting summary into `policy-report.json#mutationKillRate`.
+
+***
+
+### MUTATION\_REPORT\_SCHEMA\_VERSION
+
+> `const` **MUTATION\_REPORT\_SCHEMA\_VERSION**: `"1.0.0"`
+
+Schema version for the persisted mutation-killing-eval report artifact
+(Issue #2041). Bumped on any breaking change to the [MutationReport](#mutationreport)
+shape, the catalog identifier set, or the kill-rate aggregation formula.
+
+***
+
 ### OPENTEXT\_ALM\_REFERENCE\_PROFILE\_ID
 
 > `const` **OPENTEXT\_ALM\_REFERENCE\_PROFILE\_ID**: `"opentext-alm-default"`
@@ -21876,6 +22636,84 @@ Schema version for the deterministic pipeline quality passport artifact.
 Primary source kinds — at least one of these must be present in any
 envelope. A custom-only envelope must fail validation with
 `primary_source_required` (Issue #1431, source-mix hardening addendum).
+
+***
+
+### PROMPT\_OPTIMIZER\_DEFAULT\_BUDGET\_MULTIPLIER
+
+> `const` **PROMPT\_OPTIMIZER\_DEFAULT\_BUDGET\_MULTIPLIER**: `5`
+
+Default FinOps multiplier capping the optimizer's total token budget
+relative to a single benchmark run. Per Issue #2044 spec: 5x normal.
+
+***
+
+### PROMPT\_OPTIMIZER\_DEFAULT\_MAX\_FEW\_SHOTS
+
+> `const` **PROMPT\_OPTIMIZER\_DEFAULT\_MAX\_FEW\_SHOTS**: `3`
+
+Default cap on how many bootstrapped exemplars a candidate may carry.
+
+***
+
+### PROMPT\_OPTIMIZER\_DEFAULT\_QUALITY\_GATE
+
+> `const` **PROMPT\_OPTIMIZER\_DEFAULT\_QUALITY\_GATE**: `90`
+
+Default quality gate (out of 100) above which an accepted-run case may
+be promoted to a candidate few-shot exemplar. Tracks the issue spec.
+
+***
+
+### PROMPT\_OPTIMIZER\_DEFAULT\_SEARCH\_BUDGET
+
+> `const` **PROMPT\_OPTIMIZER\_DEFAULT\_SEARCH\_BUDGET**: `16`
+
+Default search budget (number of candidate variants the random search
+will evaluate per cycle). The cap stays small because the synthetic
+eval is deterministic and inexpensive — operators bumping this should
+also revisit [PROMPT\_OPTIMIZER\_DEFAULT\_BUDGET\_MULTIPLIER](#prompt_optimizer_default_budget_multiplier).
+
+***
+
+### PROMPT\_OPTIMIZER\_DIRECTIVE\_IDS
+
+> `const` **PROMPT\_OPTIMIZER\_DIRECTIVE\_IDS**: readonly \[`"prefer-figma-trace-screen-id"`, `"prefer-figma-trace-node-id"`, `"cite-open-questions-verbatim"`, `"accessibility-name-required"`, `"boundary-coverage-explicit"`, `"negative-flow-pin-error-text"`\]
+
+Closed set of additive optimizer directive ids the registry recognises.
+Adding a directive id is a MINOR contract bump; renaming or retiring
+one is MAJOR.
+
+- `prefer-figma-trace-screen-id` — every case must cite a screenId.
+- `prefer-figma-trace-node-id`   — every case must cite a nodeId.
+- `cite-open-questions-verbatim` — open questions reproduced verbatim.
+- `accessibility-name-required`  — a11y cases name the labelled control.
+- `boundary-coverage-explicit`   — boundary cases pin the boundary value.
+- `negative-flow-pin-error-text` — negative cases pin the error message.
+
+***
+
+### PROMPT\_OPTIMIZER\_REPORT\_ARTIFACT\_FILENAME
+
+> `const` **PROMPT\_OPTIMIZER\_REPORT\_ARTIFACT\_FILENAME**: `"prompt-optimization-report.json"`
+
+Canonical filename for the persisted optimizer report artifact.
+
+***
+
+### PROMPT\_OPTIMIZER\_REPORT\_SCHEMA\_VERSION
+
+> `const` **PROMPT\_OPTIMIZER\_REPORT\_SCHEMA\_VERSION**: `"1.0.0"`
+
+Schema version for the persisted optimizer report artifact.
+
+***
+
+### PROMPT\_OPTIMIZER\_VERSION
+
+> `const` **PROMPT\_OPTIMIZER\_VERSION**: `"1.0.0"`
+
+Optimizer module version. Bumped on breaking algorithmic changes.
 
 ***
 
@@ -22275,7 +23113,7 @@ Schema version for persisted `TestDesignModel` projection artifacts.
 
 ### TEST\_INTELLIGENCE\_CONTRACT\_VERSION
 
-> `const` **TEST\_INTELLIGENCE\_CONTRACT\_VERSION**: `"1.16.0"`
+> `const` **TEST\_INTELLIGENCE\_CONTRACT\_VERSION**: `"1.17.0"`
 
 Contract version for the opt-in test-intelligence surface.
 
