@@ -163,7 +163,7 @@ export interface TestIntelligenceTransferPrincipal {
 }
 
 /** Contract version for the opt-in test-intelligence surface. */
-export const TEST_INTELLIGENCE_CONTRACT_VERSION = "1.12.0" as const;
+export const TEST_INTELLIGENCE_CONTRACT_VERSION = "1.13.0" as const;
 
 /**
  * Schema version for generated test case payloads.
@@ -3228,6 +3228,7 @@ export const AGENT_HARNESS_ROLES = [
   "adversarial_gap_finder",
   "final_verifier",
   "generator",
+  "human_review",
   "logic_judge",
   "repair_planner",
   "semantic_judge",
@@ -3291,6 +3292,35 @@ export type AgentRoleKind = (typeof AGENT_ROLE_KINDS)[number];
 export type AgentRoleFinOpsGroup = (typeof AGENT_ROLE_FINOPS_GROUPS)[number];
 
 /**
+ * Closed runtime list of model-family markers consumed by the
+ * cross-family judge ensemble (Issue #2038). The vocabulary is
+ * deliberately small: only families with judge-grade models are
+ * surfaced. Extending the list requires a contract bump.
+ */
+export const JUDGE_MODEL_FAMILIES = [
+  "anthropic",
+  "azure-openai",
+  "google",
+  "in-house",
+  "mistral",
+  "openai",
+] as const;
+
+/** Discriminated alias for {@link JUDGE_MODEL_FAMILIES}. */
+export type JudgeModelFamily = (typeof JUDGE_MODEL_FAMILIES)[number];
+
+/**
+ * Closed runtime list of deployment-region markers consumed by the
+ * EU-residency policy gate (Issue #2038). `eu` is the only region
+ * accepted under `eu-banking-default`; `us` and `global` are accepted
+ * for non-EU profiles.
+ */
+export const JUDGE_MODEL_REGIONS = ["eu", "global", "us"] as const;
+
+/** Discriminated alias for {@link JUDGE_MODEL_REGIONS}. */
+export type JudgeModelRegion = (typeof JUDGE_MODEL_REGIONS)[number];
+
+/**
  * Static binding of an agent role to a model identity. The optional
  * `ictRegisterRef` is mandatory under `policyProfile = "banking"` and is
  * enforced by Wave MA-4; this contract defines the slot but does not
@@ -3312,6 +3342,20 @@ export interface AgentModelBinding {
    * back to a registered ICT asset.
    */
   readonly ictRegisterRef?: string;
+  /**
+   * Optional model-family marker (Issue #2038). Used by the
+   * cross-family judge ensemble to enforce that no two judge roles in
+   * the same run draw from the same model family. Must be one of
+   * {@link JUDGE_MODEL_FAMILIES} when present.
+   */
+  readonly family?: JudgeModelFamily;
+  /**
+   * Optional deployment-region marker (Issue #2038). Used by EU
+   * data-residency policies (e.g., `eu-banking-default`) to refuse
+   * non-EU endpoints during judge-binding validation. Must be one of
+   * {@link JUDGE_MODEL_REGIONS} when present.
+   */
+  readonly region?: JudgeModelRegion;
 }
 
 /**
@@ -3992,6 +4036,30 @@ export interface JudgeConsensusPanelEntry {
   readonly weight: number;
   readonly findings: readonly JudgeConsensusFinding[];
   readonly repairInstructions: readonly RepairInstruction[];
+  /**
+   * Optional model-family marker (Issue #2038). Set by the harness
+   * when the judge is sourced from a known cross-family deployment.
+   * Persisted into `judge-consensus.json` so the per-family agreement
+   * matrix can be reconstructed offline.
+   */
+  readonly family?: JudgeModelFamily;
+  /**
+   * Optional deployment-region marker (Issue #2038). Used by the
+   * EU-residency check on the judge-disagreement report.
+   */
+  readonly region?: JudgeModelRegion;
+  /**
+   * Optional stable model identifier (e.g., `"claude-3.5-sonnet-20240620"`)
+   * captured by the harness so the disagreement report can attribute
+   * each verdict to a specific model version.
+   */
+  readonly modelId?: string;
+  /**
+   * Optional prompt-template version pin captured by the harness so
+   * provenance graph edges (B.10) can record every judge family +
+   * version used in the run (Issue #2038).
+   */
+  readonly promptVersion?: string;
 }
 
 /** Primary veto attribution surfaced by the consensus artifact. */
@@ -4053,6 +4121,215 @@ export interface JudgeConsensusVerdict {
   readonly repairHistory: JudgeConsensusRepairHistory;
   readonly vetoBy?: JudgeConsensusVeto;
   readonly panel: readonly JudgeConsensusPanelEntry[];
+  /**
+   * Optional cross-family escalation summary (Issue #2038). Populated
+   * by `judge-consensus.ts` when the panel triggered a disagreement
+   * escalation; consumers (production runner, run-quality reporter)
+   * can detect human-review hand-off without re-deriving it from the
+   * disagreement-report artifact.
+   */
+  readonly humanReview?: HumanReviewDecision;
+  /**
+   * Optional cross-family agreement summary (Issue #2038). Mirrors
+   * the totals in `judge-disagreement-report.json` but is inlined here
+   * so a single artifact carries both the legal verdict and the
+   * disagreement evidence.
+   */
+  readonly crossFamily?: JudgeCrossFamilySummary;
+}
+
+// ---------------------------------------------------------------------------
+// Issue #2038 — Cross-family judge ensemble + human-review escalation.
+// ---------------------------------------------------------------------------
+
+/**
+ * Schema version literal pinned on every persisted
+ * {@link JudgeDisagreementReport} artifact (Issue #2038). Structural
+ * changes require a major bump and a `CONTRACT_CHANGELOG.md` entry.
+ */
+export const JUDGE_DISAGREEMENT_REPORT_SCHEMA_VERSION = "1.0.0" as const;
+
+/**
+ * Canonical filename for the per-run disagreement-report artifact
+ * (Issue #2038). The harness writes
+ * `<runDir>/judge-disagreement-report.json` once per `judge_consensus`
+ * step. The artifact carries disagreement rate, escalation rate, and
+ * the per-family agreement matrix the AT-2038 audit requires.
+ */
+export const JUDGE_DISAGREEMENT_REPORT_ARTIFACT_FILENAME =
+  "judge-disagreement-report.json" as const;
+
+/**
+ * Closed runtime list of cross-family decision shapes (Issue #2038).
+ * The vote outcome over the three judge roles maps to one of these
+ * labels; the disagreement report tallies them.
+ */
+export const JUDGE_DISAGREEMENT_DECISION_LABELS = [
+  "majority_decision",
+  "split_decision",
+  "unanimous_accept",
+  "unanimous_reject",
+  "unanimous_repair",
+] as const;
+
+/** Discriminated alias for {@link JUDGE_DISAGREEMENT_DECISION_LABELS}. */
+export type JudgeDisagreementDecisionLabel =
+  (typeof JUDGE_DISAGREEMENT_DECISION_LABELS)[number];
+
+/**
+ * Closed runtime list of escalation actions that the cross-family
+ * disagreement detector may emit (Issue #2038). `none` is the
+ * no-op; `human_review_required` instructs the consensus builder to
+ * attach a deterministic `human_review` envelope to the consensus
+ * artifact.
+ */
+export const JUDGE_DISAGREEMENT_ESCALATION_ACTIONS = [
+  "human_review_required",
+  "none",
+] as const;
+
+/** Discriminated alias for {@link JUDGE_DISAGREEMENT_ESCALATION_ACTIONS}. */
+export type JudgeDisagreementEscalationAction =
+  (typeof JUDGE_DISAGREEMENT_ESCALATION_ACTIONS)[number];
+
+/** Per-judge entry recorded in the disagreement report. */
+export interface JudgeDisagreementJudgeEntry {
+  /** Stable judge identifier (e.g., `"logic_judge"`). */
+  readonly judgeId: string;
+  /** Judge model-family marker. */
+  readonly family: JudgeModelFamily;
+  /** Stable model identifier (e.g., `"claude-3.5-sonnet"`). */
+  readonly modelId: string;
+  /** Pinned prompt-template version. */
+  readonly promptVersion: string;
+  /** Deployment region marker (used by EU-residency policy). */
+  readonly region: JudgeModelRegion;
+  /** Verdict cast by this judge in the run. */
+  readonly verdict: LogicJudgeVerdictLabel;
+}
+
+/** Per-family agreement-matrix cell (Issue #2038). */
+export interface JudgeDisagreementMatrixCell {
+  readonly family: JudgeModelFamily;
+  /** Number of times this family agreed with the resolved verdict. */
+  readonly agreements: number;
+  /** Number of times this family was the lone dissenter. */
+  readonly dissents: number;
+  /** Total votes cast by this family across the run. */
+  readonly votes: number;
+}
+
+/** Roll-up cost markers attributed per-family (Issue #2038). */
+export interface JudgeDisagreementCostByFamily {
+  readonly family: JudgeModelFamily;
+  /** Total tokens consumed by this family across judge calls. */
+  readonly totalTokens: number;
+  /** Aggregate cost in micro-units (1e-6 USD); 0 when unknown. */
+  readonly costMicrounits: number;
+}
+
+/**
+ * Persisted per-run disagreement evidence (Issue #2038). The
+ * Production Runner writes one of these per `judge_consensus` step,
+ * even when the panel is unanimous — the artifact is the audit anchor
+ * the disagreement-rate trending consumes (B.10).
+ */
+export interface JudgeDisagreementReport {
+  readonly schemaVersion: typeof JUDGE_DISAGREEMENT_REPORT_SCHEMA_VERSION;
+  readonly contractVersion: typeof TEST_INTELLIGENCE_CONTRACT_VERSION;
+  readonly generatedAt: string;
+  readonly jobId: string;
+  /** Cross-family decision label for this run. */
+  readonly decision: JudgeDisagreementDecisionLabel;
+  /** Escalation action emitted by the detector. */
+  readonly escalation: JudgeDisagreementEscalationAction;
+  /** Disagreement rate in [0,1] = dissenting-judge-count / panel-size. */
+  readonly disagreementRate: number;
+  /** Escalation rate in [0,1] = 1 if escalated, 0 otherwise. */
+  readonly escalationRate: number;
+  /** Per-judge entries sorted alphabetically by `judgeId`. */
+  readonly judges: readonly JudgeDisagreementJudgeEntry[];
+  /** Per-family agreement matrix (sorted alphabetically by `family`). */
+  readonly perFamilyAgreement: readonly JudgeDisagreementMatrixCell[];
+  /** Per-family cost rollup (sorted alphabetically by `family`). */
+  readonly costByFamily: readonly JudgeDisagreementCostByFamily[];
+  /** Hard guarantee that the artifact never carries a raw prompt. */
+  readonly rawPromptsIncluded: false;
+}
+
+/**
+ * Schema version literal pinned on every persisted
+ * {@link HumanReviewDecision} envelope (Issue #2038).
+ */
+export const HUMAN_REVIEW_DECISION_SCHEMA_VERSION = "1.0.0" as const;
+
+/**
+ * Closed runtime list of human-review reviewer kinds (Issue #2038).
+ * `dry_run_marker` is the default for offline runs; `principal` is
+ * reserved for future integration with the live human-review channel.
+ */
+export const HUMAN_REVIEW_REVIEWER_KINDS = ["dry_run_marker", "principal"] as const;
+
+/** Discriminated alias for {@link HUMAN_REVIEW_REVIEWER_KINDS}. */
+export type HumanReviewReviewerKind =
+  (typeof HUMAN_REVIEW_REVIEWER_KINDS)[number];
+
+/**
+ * Closed runtime list of human-review verdict labels (Issue #2038).
+ * The reviewer's verdict feeds back into `JudgeConsensusVerdict` and
+ * may override the panel's verdict.
+ */
+export const HUMAN_REVIEW_VERDICT_LABELS = [
+  "accept",
+  "deferred",
+  "reject",
+  "repair",
+] as const;
+
+/** Discriminated alias for {@link HUMAN_REVIEW_VERDICT_LABELS}. */
+export type HumanReviewVerdictLabel =
+  (typeof HUMAN_REVIEW_VERDICT_LABELS)[number];
+
+/**
+ * Hard upper bound on the persisted `rationale` text emitted per
+ * human-review decision. Keeps the artifact bounded and prevents
+ * smuggling unbounded reviewer prose into the consensus surface.
+ */
+export const HUMAN_REVIEW_RATIONALE_MAX_CHARS = 1024 as const;
+
+/**
+ * Persisted human-review decision (Issue #2038). The reviewer is
+ * deterministically identified by a `principalHash` (sha256 hex of
+ * the reviewer's stable identifier) so the artifact carries a stable
+ * audit anchor without leaking reviewer PII.
+ */
+export interface HumanReviewDecision {
+  readonly schemaVersion: typeof HUMAN_REVIEW_DECISION_SCHEMA_VERSION;
+  /** Reviewer kind — `dry_run_marker` for offline / unattended runs. */
+  readonly reviewerKind: HumanReviewReviewerKind;
+  /** sha256 hex of the reviewer's stable identifier (64 lowercase hex chars). */
+  readonly principalHash: string;
+  /** Final verdict the reviewer cast. */
+  readonly verdict: HumanReviewVerdictLabel;
+  /** Length-capped, redacted rationale (no chain-of-thought, no PII). */
+  readonly rationale: string;
+  /** ISO-8601 timestamp at which the decision was recorded. */
+  readonly decidedAt: string;
+  /** Disagreement decision label that triggered escalation. */
+  readonly triggeredBy: JudgeDisagreementDecisionLabel;
+}
+
+/**
+ * Inline cross-family summary attached to the consensus artifact when
+ * the panel was sourced from a cross-family ensemble (Issue #2038).
+ */
+export interface JudgeCrossFamilySummary {
+  readonly decision: JudgeDisagreementDecisionLabel;
+  readonly escalation: JudgeDisagreementEscalationAction;
+  /** Distinct judge model families used in the run, sorted alphabetically. */
+  readonly families: readonly JudgeModelFamily[];
+  readonly disagreementRate: number;
+  readonly escalationRate: number;
 }
 
 /** Schema version for persisted production-runner run-quality artifacts. */
@@ -10474,7 +10751,7 @@ export interface ReleaseQualityGatesReport {
  * Must be bumped according to CONTRACT_CHANGELOG.md rules.
  * Package version alignment is documented in VERSIONING.md.
  */
-export const CONTRACT_VERSION = "4.50.0" as const;
+export const CONTRACT_VERSION = "4.51.0" as const;
 
 // ---------------------------------------------------------------------------
 // Issue #1774 — UntrustedContentNormalizer (2025-vintage injection carriers).

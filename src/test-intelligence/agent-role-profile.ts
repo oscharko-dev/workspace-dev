@@ -27,6 +27,8 @@ import {
   AGENT_ROLE_KINDS,
   AGENT_ROLE_MAX_ATTEMPT_VALUES,
   AGENT_ROLE_PROFILE_SCHEMA_VERSION,
+  JUDGE_MODEL_FAMILIES,
+  JUDGE_MODEL_REGIONS,
   type AgentHarnessRole,
   type AgentModelBinding,
   type AgentRoleCapability,
@@ -182,6 +184,22 @@ const assertAgentModelBindingInvariants = (
       `${where}: modelBinding.ictRegisterRef, when present, must be a non-empty string`,
     );
   }
+  if (
+    binding.family !== undefined &&
+    !(JUDGE_MODEL_FAMILIES as readonly string[]).includes(binding.family)
+  ) {
+    throw new RangeError(
+      `${where}: modelBinding.family "${binding.family}" is not a known JudgeModelFamily`,
+    );
+  }
+  if (
+    binding.region !== undefined &&
+    !(JUDGE_MODEL_REGIONS as readonly string[]).includes(binding.region)
+  ) {
+    throw new RangeError(
+      `${where}: modelBinding.region "${binding.region}" is not a known JudgeModelRegion`,
+    );
+  }
 };
 
 const freezeBinding = (binding: AgentModelBinding): AgentModelBinding =>
@@ -194,6 +212,8 @@ const freezeBinding = (binding: AgentModelBinding): AgentModelBinding =>
     ...(binding.ictRegisterRef !== undefined
       ? { ictRegisterRef: binding.ictRegisterRef }
       : {}),
+    ...(binding.family !== undefined ? { family: binding.family } : {}),
+    ...(binding.region !== undefined ? { region: binding.region } : {}),
   });
 
 const freezeProfile = (profile: AgentRoleProfile): AgentRoleProfile => {
@@ -328,6 +348,8 @@ const LOGIC_JUDGE_PROFILE: AgentRoleProfile = freezeProfile({
   modelBinding: {
     providerId: "in-house",
     modelId: "gpt-oss-120b",
+    family: "in-house",
+    region: "eu",
   },
   outputSchema: "logic-judge-verdict.v1",
   maxAttempts: 2,
@@ -345,12 +367,26 @@ const SEMANTIC_JUDGE_PROFILE: AgentRoleProfile = freezeProfile({
   modelBinding: {
     providerId: "in-house",
     modelId: "gpt-oss-120b",
+    family: "in-house",
+    region: "eu",
   },
   outputSchema: "judge-panel-verdict.v1",
   maxAttempts: 2,
   maxInputTokens: 24_000,
   maxOutputTokens: 4_000,
   capability: "score_only",
+  finOpsGroup: "judge",
+});
+
+const HUMAN_REVIEW_PROFILE: AgentRoleProfile = freezeProfile({
+  schemaVersion: AGENT_ROLE_PROFILE_SCHEMA_VERSION,
+  role: "human_review",
+  roleKind: "deterministic_service",
+  outputSchema: "human-review-decision.v1",
+  maxAttempts: 1,
+  maxInputTokens: 0,
+  maxOutputTokens: 0,
+  capability: "read_artifacts",
   finOpsGroup: "judge",
 });
 
@@ -405,6 +441,7 @@ const REGISTRY_OBJECT: Record<AgentHarnessRole, AgentRoleProfile> = {
   adversarial_gap_finder: ADVERSARIAL_GAP_FINDER_PROFILE,
   final_verifier: FINAL_VERIFIER_PROFILE,
   generator: GENERATOR_PROFILE,
+  human_review: HUMAN_REVIEW_PROFILE,
   logic_judge: LOGIC_JUDGE_PROFILE,
   repair_planner: REPAIR_PLANNER_PROFILE,
   semantic_judge: SEMANTIC_JUDGE_PROFILE,
