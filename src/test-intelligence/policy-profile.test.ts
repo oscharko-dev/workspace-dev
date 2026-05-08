@@ -10,6 +10,7 @@ import {
   EU_BANKING_DEFAULT_NEGATIVE_CASE_LIFT_GATE_MODE,
   EU_BANKING_DEFAULT_NEGATIVE_CASE_LIFT_THRESHOLD_RATIO,
   EU_BANKING_DEFAULT_POLICY_PROFILE,
+  EU_BANKING_DEFAULT_SELF_CONSISTENCY_SAMPLE_COUNT,
 } from "./policy-profile.js";
 
 test("default profile carries the canonical id and version", () => {
@@ -122,4 +123,22 @@ test("Issue #2053: default threshold matches the in-module agent constant", () =
     ADVERSARIAL_NEGATIVE_RATIO_IMPROVEMENT_THRESHOLD,
   );
   assert.equal(EU_BANKING_DEFAULT_NEGATIVE_CASE_LIFT_GATE_MODE, "enforce");
+});
+
+test("Issue #2070: default profile enables 3-sample self-consistency voting", () => {
+  assert.deepEqual(EU_BANKING_DEFAULT_POLICY_PROFILE.rules.selfConsistency, {
+    sampleCount: 3,
+  });
+  assert.equal(EU_BANKING_DEFAULT_SELF_CONSISTENCY_SAMPLE_COUNT, 3);
+});
+
+test("Issue #2070: clone round-trips selfConsistency and isolates overrides", () => {
+  const a = cloneEuBankingDefaultProfile();
+  const b = cloneEuBankingDefaultProfile();
+  assert.deepEqual(a.rules.selfConsistency, { sampleCount: 3 });
+  a.rules.selfConsistency = { sampleCount: 1 };
+  assert.deepEqual(b.rules.selfConsistency, { sampleCount: 3 });
+  assert.deepEqual(EU_BANKING_DEFAULT_POLICY_PROFILE.rules.selfConsistency, {
+    sampleCount: 3,
+  });
 });

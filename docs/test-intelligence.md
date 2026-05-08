@@ -69,6 +69,10 @@ Out of scope:
   caller does not supply an override. The prompt-facing coverage-plan contract,
   including `CoveragePlan.techniqueQuotas`, is documented in
   [test-intelligence-coverage-plan.md](test-intelligence-coverage-plan.md).
+- The default EU-banking policy profile also enables generator-side
+  self-consistency voting. The seeds, vote contract, disagreement routing, and
+  `self-consistency-report.json` artifact are documented in
+  [test-intelligence/self-consistency-voting.md](test-intelligence/self-consistency-voting.md).
 
 ## 1. Enable the subsurface
 

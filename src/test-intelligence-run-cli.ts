@@ -398,10 +398,11 @@ export interface TestIntelligenceRunOptions {
   /** Optional ICT register reference forwarded to all CLI-created model clients. */
   ictRegisterRef?: string;
   /**
-   * Generator diversity pass count (Issue #1936). `1` preserves the legacy
-   * single-pass flow; `2` enables deterministic dual-pass generation.
+   * Generator pass count override (Issues #1936, #2070). `1` preserves the
+   * legacy single-pass flow; `2` keeps the dual-pass diversity merge; `3`
+   * enables structural self-consistency voting.
    */
-  diversityPasses: 1 | 2;
+  diversityPasses: 1 | 2 | 3;
   /**
    * Multi-agent harness routing mode (Issue #1791). Defaults to `"off"`,
    * which preserves the legacy single-pass LLM behavior. `"shadow_eval"` runs
@@ -547,7 +548,7 @@ export const parseTestIntelligenceRunArgs = (
   let customContextMarkdownPath: string | undefined;
   let customerEvalMarkdownPath: string | undefined;
   let customerProfilePath: string | undefined;
-  let diversityPasses: 1 | 2 = 1;
+  let diversityPasses: 1 | 2 | 3 = 1;
   let complianceFrameworks: readonly ComplianceFrameworkId[] | undefined;
   let coverageBaselineArchetype: string | undefined;
   let coverageBaselineTenantId: string =
@@ -1056,12 +1057,12 @@ export const parseTestIntelligenceRunArgs = (
 
     if (arg === "--diversity-passes") {
       const value = next?.trim();
-      if (value !== "1" && value !== "2") {
+      if (value !== "1" && value !== "2" && value !== "3") {
         throw new TestIntelligenceRunOperatorError(
-          "--diversity-passes must be 1 or 2",
+          "--diversity-passes must be 1, 2, or 3",
         );
       }
-      diversityPasses = value === "2" ? 2 : 1;
+      diversityPasses = value === "3" ? 3 : value === "2" ? 2 : 1;
       index += 1;
       continue;
     }
@@ -3498,10 +3499,10 @@ export const runTestIntelligenceCommand = async (
     ...(customerProfileInput !== undefined
       ? { customerProfile: customerProfileInput }
       : {}),
-    ...(options.diversityPasses === 2
+    ...(options.diversityPasses > 1
       ? {
           generation: {
-            diversityPasses: 2 as const,
+            diversityPasses: options.diversityPasses,
           },
         }
       : {}),
