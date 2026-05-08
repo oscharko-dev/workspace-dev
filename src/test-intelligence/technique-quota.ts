@@ -67,13 +67,8 @@ const safeArray = <T>(value: unknown): ReadonlyArray<T> =>
  */
 export const resolveTechniqueCoverageMinimumMode = (
   policy: TechniqueCoverageMinimumPolicy | undefined,
-): TechniqueCoverageMinimumMode => {
-  if (policy === undefined) return DEFAULT_TECHNIQUE_COVERAGE_MINIMUM_MODE;
-  if (policy.mode === "tier-elastic" || policy.mode === "fixed") {
-    return policy.mode;
-  }
-  return DEFAULT_TECHNIQUE_COVERAGE_MINIMUM_MODE;
-};
+): TechniqueCoverageMinimumMode =>
+  policy?.mode ?? DEFAULT_TECHNIQUE_COVERAGE_MINIMUM_MODE;
 
 /**
  * Tier-elastic equivalence-partitioning quota, derived from the screen's
