@@ -4,6 +4,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
+import { loadBaselineArchetypeFixture } from "./baseline-fixtures.js";
+import {
+  buildDriftCanaryFixtureSnapshot,
+  readDriftCanaryFixtureIntentOverride,
+} from "./drift-canary-fixture-snapshot.js";
 import {
   appendDriftBaselineRecord,
   classifyCrossFamilyCorrelatedDrift,
@@ -20,6 +25,7 @@ import {
   PROVIDER_FINGERPRINT_PROMPTS,
   writeDriftBaselineState,
 } from "./drift-canary.js";
+import { deriveBusinessTestIntentIr } from "./intent-derivation.js";
 
 test("drift-canary: computeBrierScore returns the mean squared error", () => {
   assert.equal(
@@ -62,6 +68,24 @@ test("drift-canary: provider fingerprint prompts remain five text-safe probes", 
     ),
     true,
   );
+});
+
+test("drift-canary: fixture snapshots preserve pinned holdout intent semantics", async () => {
+  for (const fixtureId of DRIFT_CANARY_HOLDOUT_FIXTURE_IDS) {
+    const fixture = await loadBaselineArchetypeFixture(fixtureId);
+    const snapshot = buildDriftCanaryFixtureSnapshot({
+      fixtureId,
+      fixture: fixture.figma,
+      name: fixture.summary.archetype,
+    });
+    const override = readDriftCanaryFixtureIntentOverride(snapshot);
+    assert.notEqual(override, undefined);
+    assert.deepEqual(override, fixture.figma);
+    assert.deepEqual(
+      deriveBusinessTestIntentIr({ figma: override! }),
+      deriveBusinessTestIntentIr({ figma: fixture.figma }),
+    );
+  }
 });
 
 test("drift-canary: metric drift alerts on >2σ changes and absolute Brier deltas", () => {

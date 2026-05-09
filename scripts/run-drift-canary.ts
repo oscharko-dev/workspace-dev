@@ -24,11 +24,7 @@ import {
   buildJudgeCalibrationEvalArtifact,
   loadAllJudgeCalibrationFixtures,
 } from "../src/test-intelligence/judge-calibration-eval.js";
-import type {
-  FigmaRestFileSnapshot,
-  FigmaRestNode,
-} from "../src/test-intelligence/figma-rest-adapter.js";
-import type { IntentDerivationFigmaInput } from "../src/test-intelligence/intent-derivation.js";
+import { buildDriftCanaryFixtureSnapshot } from "../src/test-intelligence/drift-canary-fixture-snapshot.js";
 import {
   buildProductionRoleClientConfig,
   createProductionRoleClient,
@@ -122,110 +118,6 @@ const inferFaithfulnessFindingCodes = (
   ].sort((left, right) => left.localeCompare(right));
 };
 
-const buildSyntheticScreenNode = (
-  screen: IntentDerivationFigmaInput["screens"][number],
-): FigmaRestNode => {
-  const children: FigmaRestNode[] = screen.nodes.map((node, index) => {
-    const y = 48 + index * 88;
-    const bbox = {
-      x: 40,
-      y,
-      width: 960,
-      height: node.nodeType === "BUTTON" ? 56 : 40,
-    };
-    const text = node.text?.trim() || node.nodeName;
-    switch (node.nodeType) {
-      case "BUTTON":
-        return {
-          id: node.nodeId,
-          name: `${text} button`,
-          type: "INSTANCE",
-          characters: text,
-          absoluteBoundingBox: bbox,
-          children: [],
-        };
-      case "TEXT_INPUT":
-        return {
-          id: node.nodeId,
-          name: `${text} input`,
-          type: "INSTANCE",
-          characters: text,
-          absoluteBoundingBox: bbox,
-          children: [],
-        };
-      case "RADIO_OPTION":
-        return {
-          id: node.nodeId,
-          name: `${text} radio option`,
-          type: "INSTANCE",
-          characters: text,
-          absoluteBoundingBox: bbox,
-          children: [],
-        };
-      case "SELECT_FIELD":
-        return {
-          id: node.nodeId,
-          name: `${text} select field`,
-          type: "INSTANCE",
-          characters: text,
-          absoluteBoundingBox: bbox,
-          children: [],
-        };
-      case "RESULT_DISPLAY":
-        return {
-          id: node.nodeId,
-          name: `${text} result`,
-          type: "TEXT",
-          characters: text,
-          absoluteBoundingBox: bbox,
-        };
-      case "INFORMATIVE_LABEL":
-        return {
-          id: node.nodeId,
-          name: `${text} label`,
-          type: "TEXT",
-          characters: text,
-          absoluteBoundingBox: bbox,
-        };
-      default:
-        return {
-          id: node.nodeId,
-          name: node.nodeName,
-          type: "TEXT",
-          characters: text,
-          absoluteBoundingBox: bbox,
-        };
-    }
-  });
-  return {
-    id: screen.screenId,
-    name: screen.screenName,
-    type: "FRAME",
-    absoluteBoundingBox: {
-      x: 0,
-      y: 0,
-      width: 1080,
-      height: Math.max(640, 120 + children.length * 88),
-    },
-    children,
-  };
-};
-
-const buildSyntheticRestSnapshot = (input: {
-  fixtureId: string;
-  fixture: IntentDerivationFigmaInput;
-  name: string;
-}): FigmaRestFileSnapshot => ({
-  name: input.name,
-  fileKey: input.fixtureId,
-  document: {
-    id: input.fixtureId,
-    name: input.name,
-    type: "DOCUMENT",
-    children: input.fixture.screens.map(buildSyntheticScreenNode),
-  },
-});
-
 const main = async (): Promise<void> => {
   const { outputRoot, runtimeRoot } = parseArgs(process.argv.slice(2));
   const generatedAt = new Date().toISOString();
@@ -287,7 +179,7 @@ const main = async (): Promise<void> => {
         outputRoot: runDir,
         source: {
           kind: "figma_rest_file",
-          file: buildSyntheticRestSnapshot({
+          file: buildDriftCanaryFixtureSnapshot({
             fixtureId,
             fixture: fixture.figma,
             name: fixture.summary.archetype,

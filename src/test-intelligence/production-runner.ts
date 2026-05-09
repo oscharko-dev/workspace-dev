@@ -202,8 +202,12 @@ import {
   type FigmaRestFileSnapshot,
   type FigmaRestNode,
 } from "./figma-rest-adapter.js";
+import { readDriftCanaryFixtureIntentOverride } from "./drift-canary-fixture-snapshot.js";
 import { normalizeFigmaFileToIntentInput } from "./figma-payload-normalizer.js";
-import { deriveBusinessTestIntentIr } from "./intent-derivation.js";
+import {
+  deriveBusinessTestIntentIr,
+  type IntentDerivationFigmaInput,
+} from "./intent-derivation.js";
 import type { LlmGatewayClient } from "./llm-gateway.js";
 import type { LlmGatewayClientBundle } from "./llm-gateway-bundle.js";
 import { scanLessons, selectRelevantLessons } from "./agent-lessons-memdir.js";
@@ -547,6 +551,13 @@ export type ProductionRunnerSource =
       kind: "figma_rest_file";
       file: FigmaRestFileSnapshot;
     };
+
+interface InternalFixtureBackedFigmaRestFileSnapshot
+  extends FigmaRestFileSnapshot {
+  readonly __workspaceDevDriftCanaryIntentOverride?:
+    | IntentDerivationFigmaInput
+    | undefined;
+}
 
 export interface ProductionRunnerLlmConfig {
   client: LlmGatewayClient;
@@ -2308,11 +2319,16 @@ export const runFigmaToQcTestCases = async (
   );
 
   // 2. Normalize REST file → IntentDerivationFigmaInput.
-  const intentInput = normalizeFigmaFileToIntentInput({
-    fileKey: figmaFile.fileKey,
-    document: (normalizedUntrusted.figma?.document ??
-      figmaFile.document) as FigmaRestNode,
-  });
+  const intentInputOverride = readDriftCanaryFixtureIntentOverride(
+    figmaFile as InternalFixtureBackedFigmaRestFileSnapshot,
+  );
+  const intentInput =
+    intentInputOverride ??
+    normalizeFigmaFileToIntentInput({
+      fileKey: figmaFile.fileKey,
+      document: (normalizedUntrusted.figma?.document ??
+        figmaFile.document) as FigmaRestNode,
+    });
   if (intentInput.screens.length === 0) {
     throw new ProductionRunnerError({
       failureClass: "EMPTY_FIGMA_INPUT",
