@@ -856,6 +856,32 @@ test("coverage ids that reference unknown intent ids surface as warnings", () =>
   assert.equal(report.issues[0]?.code, "quality_signals_coverage_unknown_id");
 });
 
+test("truncated repair instruction audit metadata surfaces as a warning", () => {
+  const baseAudit = buildCase().audit;
+  const report = validateGeneratedTestCases({
+    jobId: "job-1",
+    generatedAt: GENERATED_AT,
+    list: buildList([
+      buildCase({
+        audit: {
+          ...baseAudit,
+          truncatedInstructionCount: 2,
+        },
+      }),
+    ]),
+    intent: buildIntent(),
+  });
+  const warning = report.issues.find(
+    (issue) => issue.code === "truncated_repair_instruction",
+  );
+  assert.ok(warning);
+  assert.equal(warning.severity, "warning");
+  assert.equal(
+    warning.path,
+    "$.testCases[0].audit.truncatedInstructionCount",
+  );
+});
+
 test("report carries deterministic shape stamps", () => {
   const report = validateGeneratedTestCases({
     jobId: "job-1",

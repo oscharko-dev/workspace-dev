@@ -707,3 +707,41 @@ test("runLogicJudge converts gateway schema_invalid response-shape failures into
     "$.repairInstructions[0].path",
   );
 });
+
+test("runLogicJudge records truncatedInstructionCount when schema-repair guidance exceeds the shared limit", async () => {
+  const client = createMockLlmGatewayClient({
+    role: "test_generation",
+    deployment: "mistral-document-ai-2512",
+    modelRevision: "mistral-document-ai-2512@test",
+    gatewayRelease: "mock",
+    responder: (_request, attempt) => ({
+      outcome: "error",
+      errorClass: "schema_invalid",
+      message:
+        `structured-output content violates response schema: $.repairInstructions[0].path must be a string because ` +
+        "x".repeat(400),
+      retryable: false,
+      attempt,
+    }),
+  });
+
+  const result = await runLogicJudge({
+    jobId: "logic-judge-schema-repair-truncated",
+    generatedAt: "2026-05-05T10:00:00Z",
+    testDesignModel: SAMPLE_TEST_DESIGN_MODEL,
+    coveragePlan: SAMPLE_COVERAGE_PLAN,
+    generatedTestCases: SAMPLE_GENERATED_TEST_CASES,
+    client,
+  });
+
+  assert.equal(result.verdict.truncatedInstructionCount, 1);
+  assert.equal(
+    result.verdict.repairInstructions[0]?.instructionTruncated,
+    true,
+  );
+  assert.equal(
+    result.verdict.repairInstructions[0]?.instruction.length,
+    240,
+  );
+  assert.match(result.verdict.repairInstructions[0]?.instruction ?? "", /\.\.\.$/u);
+});

@@ -26,6 +26,12 @@ import {
 import { sanitizeErrorMessage } from "../error-sanitization.js";
 import { GENERATOR_FORM_SCREEN_A11Y_REPAIR_INSTRUCTION } from "./agent-role-profile.js";
 import { canonicalJson, sha256Hex } from "./content-hash.js";
+import {
+  INSTRUCTION_LENGTH_LIMITS,
+  countTruncatedInstructions,
+  truncateInstructionWithAudit,
+  truncateWithEllipsis,
+} from "./judge-limits.js";
 import type { LlmGatewayClient } from "./llm-gateway.js";
 import { resolveTenantScopeSegments } from "./replay-cache.js";
 import { collectTechniqueQuotaDeficits } from "./technique-quota.js";
@@ -33,10 +39,6 @@ import { detectUnsupportedExactValidationClaim } from "./unresolved-validation-r
 import { detectCalculationConstraintViolation } from "./calculation-constraints.js";
 
 const RESPONSE_SCHEMA_NAME = "workspace-dev-logic-judge-v1" as const;
-const MAX_MESSAGE_LENGTH = 240;
-const MAX_CODE_LENGTH = 64;
-const MAX_PATH_LENGTH = 160;
-const MAX_INSTRUCTION_LENGTH = 240;
 const SYSTEM_PROMPT = [
   "You are the production logic judge for workspace-dev test-intelligence.",
   "You receive a deterministic TestDesignModel, CoveragePlan, and GeneratedTestCaseList as JSON.",
@@ -234,7 +236,7 @@ export const buildLogicJudgeResponseSchema = (): Record<string, unknown> => ({
               "Severity label. The runner normalizes any non-empty value deterministically to warning or error downstream.",
             type: "string",
             minLength: 1,
-            maxLength: 32,
+            maxLength: INSTRUCTION_LENGTH_LIMITS.severityLabel,
           },
           message: { type: "string", minLength: 1 },
         },
@@ -817,6 +819,7 @@ const buildLogicJudgeVerdict = (input: {
   verdict: input.verdict,
   findings: [...input.findings],
   repairInstructions: [...input.repairInstructions],
+  truncatedInstructionCount: countTruncatedInstructions(input.repairInstructions),
 });
 
 const buildLogicJudgeRefusal = (input: {
@@ -850,6 +853,7 @@ const buildLogicJudgeRefusal = (input: {
     },
   ],
   repairInstructions: [],
+  truncatedInstructionCount: 0,
   refusal: {
     code: sanitizeShortCode(input.code),
     message: sanitizeShortMessage(input.message),
@@ -888,6 +892,7 @@ const buildLogicJudgeSchemaRepair = (input: {
     },
   ],
   repairInstructions: [...input.repairInstructions],
+  truncatedInstructionCount: countTruncatedInstructions(input.repairInstructions),
 });
 
 const buildRecoverableSchemaRepair = (input: {
@@ -951,31 +956,35 @@ const stampLogicJudgeVerdict = (
   modelDeployment: stamps.deployment,
   modelRevision: stamps.modelRevision,
   gatewayRelease: stamps.gatewayRelease,
+  truncatedInstructionCount:
+    verdict.truncatedInstructionCount ??
+    countTruncatedInstructions(verdict.repairInstructions),
 });
 
 const sanitizeShortCode = (value: string): string =>
-  value.slice(0, MAX_CODE_LENGTH) || "judge_error";
+  value.slice(0, INSTRUCTION_LENGTH_LIMITS.code) || "judge_error";
 
 const sanitizeShortMessage = (value: string): string =>
-  value.length <= MAX_MESSAGE_LENGTH
-    ? value
-    : `${value.slice(0, MAX_MESSAGE_LENGTH)}...`;
+  truncateMessage(value);
 
 const buildSchemaViolationRepairInstruction = (input: {
   path: string;
   message: string;
-}): RepairInstruction => ({
-  testCaseId: JOB_LEVEL_TEST_CASE_ID,
-  kind: "schema_violation",
-  path: truncate(input.path, MAX_PATH_LENGTH),
-  message: sanitizeShortMessage(input.message),
-  instruction: truncate(
+}): RepairInstruction => {
+  const instruction = truncateInstruction(
     `Regenerate the logic-judge response so ${input.path} satisfies the response schema: ${sanitizeShortMessage(
       input.message,
     )}`,
-    MAX_INSTRUCTION_LENGTH,
-  ),
-});
+  );
+  return {
+    testCaseId: JOB_LEVEL_TEST_CASE_ID,
+    kind: "schema_violation",
+    path: truncatePath(input.path),
+    message: sanitizeShortMessage(input.message),
+    instruction: instruction.value,
+    ...(instruction.truncated ? { instructionTruncated: true } : {}),
+  };
+};
 
 const extractSchemaViolationPath = (message: string): string => {
   const match = message.match(/^(\$[^\s]*)\s+/u);
@@ -1176,8 +1185,14 @@ const collectIrIdSets = (
   };
 };
 
-const truncate = (value: string, max: number): string =>
-  value.length <= max ? value : `${value.slice(0, Math.max(0, max - 3))}...`;
+const truncateMessage = (value: string): string =>
+  truncateWithEllipsis(value, INSTRUCTION_LENGTH_LIMITS.message).value;
+
+const truncatePath = (value: string): string =>
+  truncateWithEllipsis(value, INSTRUCTION_LENGTH_LIMITS.path).value;
+
+const truncateInstruction = (value: string) =>
+  truncateInstructionWithAudit(value);
 
 interface HardGateAccumulator {
   findings: JudgeFinding[];
@@ -1193,14 +1208,18 @@ const pushFinding = (
   acc.findings.push({
     scope: finding.scope,
     testCaseId: finding.testCaseId,
-    code: truncate(finding.code, MAX_CODE_LENGTH),
+    code: sanitizeShortCode(finding.code),
     severity: finding.severity,
-    message: truncate(finding.message, MAX_MESSAGE_LENGTH),
+    message: truncateMessage(finding.message),
   });
+  const instruction = truncateInstruction(repair.instruction);
   acc.repairInstructions.push({
     testCaseId: repair.testCaseId,
-    path: truncate(repair.path, MAX_PATH_LENGTH),
-    instruction: truncate(repair.instruction, MAX_INSTRUCTION_LENGTH),
+    path: truncatePath(repair.path),
+    instruction: instruction.value,
+    ...(repair.instructionTruncated === true || instruction.truncated
+      ? { instructionTruncated: true }
+      : {}),
   });
   if (finding.severity === "error") {
     acc.hasNewError = true;
@@ -1638,5 +1657,9 @@ export const applyCoverageHardGate = (
     verdict: upgradedVerdict,
     findings: [...verdict.findings, ...acc.findings],
     repairInstructions: [...verdict.repairInstructions, ...acc.repairInstructions],
+    truncatedInstructionCount: countTruncatedInstructions([
+      ...verdict.repairInstructions,
+      ...acc.repairInstructions,
+    ]),
   };
 };

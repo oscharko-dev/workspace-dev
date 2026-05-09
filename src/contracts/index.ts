@@ -172,8 +172,13 @@ export const TEST_INTELLIGENCE_CONTRACT_VERSION = "1.22.0" as const;
  * ({domain, rationale}) on each test case. Backwards compatible — the
  * validator accepts both 1.0.0-shaped lists (without the field) and
  * 1.1.0-shaped lists (with or without the field).
+ *
+ * 1.3.0 — Issue #2104: optional additive audit field
+ * `audit.truncatedInstructionCount` records how many upstream repair
+ * instructions were clipped before regeneration so validation can emit
+ * a non-blocking audit warning.
  */
-export const GENERATED_TEST_CASE_SCHEMA_VERSION = "1.2.0" as const;
+export const GENERATED_TEST_CASE_SCHEMA_VERSION = "1.3.0" as const;
 
 /** Persisted polarity labels for generated test cases (Issue #2030). */
 export const ALLOWED_GENERATED_TEST_CASE_POLARITIES = [
@@ -939,6 +944,7 @@ export const ALLOWED_TEST_CASE_VALIDATION_ISSUE_CODES = [
   "semantic_suspicious_content",
   "domain_invariant_violation",
   "test_data_oracle_violation",
+  "truncated_repair_instruction",
   "missing_field_lifecycle_transition",
   "unknown_field_lifecycle_transition",
   "uncovered_field_lifecycle_transition",
@@ -4724,6 +4730,8 @@ export interface RepairInstruction {
   readonly testCaseId: string;
   readonly path: string;
   readonly instruction: string;
+  /** True when `instruction` was clipped to the configured max length. */
+  readonly instructionTruncated?: boolean;
   /**
    * Optional structured hint kind. Issue #1931 uses `schema_violation`
    * for deterministic repair-loop guidance when the judge response
@@ -4760,6 +4768,7 @@ export interface JudgeVerdict {
   readonly verdict: LogicJudgeVerdictLabel;
   readonly findings: readonly JudgeFinding[];
   readonly repairInstructions: readonly RepairInstruction[];
+  readonly truncatedInstructionCount?: number;
   readonly refusal?: JudgeVerdictRefusal;
 }
 
@@ -5022,6 +5031,7 @@ export interface A11yVerdict {
   readonly criteria: readonly A11yCriterionVerdict[];
   readonly findings: readonly A11yFinding[];
   readonly repairInstructions: readonly RepairInstruction[];
+  readonly truncatedInstructionCount?: number;
   readonly refusal?: A11yVerdictRefusal;
 }
 
@@ -5083,6 +5093,7 @@ export interface JudgeConsensusPanelEntry {
   readonly confidence?: number;
   readonly findings: readonly JudgeConsensusFinding[];
   readonly repairInstructions: readonly RepairInstruction[];
+  readonly truncatedInstructionCount?: number;
   /**
    * Optional model-family marker (Issue #2038). Set by the harness
    * when the judge is sourced from a known cross-family deployment.
@@ -5165,6 +5176,7 @@ export interface JudgeConsensusRepairHistory {
   readonly finalOutcome: JudgeConsensusRepairOutcome;
   readonly historicalFindings: readonly JudgeConsensusFinding[];
   readonly historicalRepairInstructions: readonly RepairInstruction[];
+  readonly truncatedInstructionCount?: number;
 }
 
 /** Persisted production-runner judge-consensus artifact. */
@@ -5178,6 +5190,7 @@ export interface JudgeConsensusVerdict {
   readonly repairState: JudgeConsensusRepairState;
   readonly activeFindings: readonly JudgeConsensusFinding[];
   readonly repairInstructions: readonly RepairInstruction[];
+  readonly truncatedInstructionCount?: number;
   readonly repairHistory: JudgeConsensusRepairHistory;
   readonly vetoBy?: JudgeConsensusVeto;
   readonly panel: readonly JudgeConsensusPanelEntry[];
@@ -7446,6 +7459,8 @@ export interface GeneratedTestCaseAuditMetadata {
   inputHash: string;
   promptHash: string;
   schemaHash: string;
+  /** Number of upstream repair instructions clipped before regeneration. */
+  truncatedInstructionCount?: number;
 }
 
 /** Single generated test case. */

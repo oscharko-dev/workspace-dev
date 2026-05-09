@@ -3349,6 +3349,7 @@ export const runFigmaToQcTestCases = async (
             inputHash: compiled.request.hashes.inputHash,
             promptHash: compiled.request.hashes.promptHash,
             schemaHash: compiled.request.hashes.schemaHash,
+            truncatedInstructionCount: 0,
           };
           const testCases = attemptOutcome.drafts.map((draft, index) =>
             stampGeneratedTestCase({
@@ -3465,6 +3466,7 @@ export const runFigmaToQcTestCases = async (
           inputHash: compiled.request.hashes.inputHash,
           promptHash: compiled.request.hashes.promptHash,
           schemaHash: compiled.request.hashes.schemaHash,
+          truncatedInstructionCount: 0,
         };
         const cases = validation.value.testCases.map((draft, index) =>
           stampGeneratedTestCase({
@@ -4159,7 +4161,12 @@ export const runFigmaToQcTestCases = async (
       ...(repairLoopBudgetGuard !== undefined
         ? { budget: repairLoopBudgetGuard }
         : {}),
-      regenerate: async ({ previousList, repairInstructions, iteration }) => {
+      regenerate: async ({
+        previousList,
+        repairInstructions,
+        truncatedInstructionCount,
+        iteration,
+      }) => {
         const targetedCaseIds = [
           ...new Set(
             repairInstructions
@@ -4243,6 +4250,7 @@ export const runFigmaToQcTestCases = async (
               inputHash: repairCompiled.request.hashes.inputHash,
               promptHash: repairCompiled.request.hashes.promptHash,
               schemaHash: repairCompiled.request.hashes.schemaHash,
+              truncatedInstructionCount,
             };
             const repairCases = repairValidation.value.testCases.map(
               (draft, index) =>

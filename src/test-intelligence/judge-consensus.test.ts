@@ -106,6 +106,7 @@ test("buildJudgeConsensus accepts a single accept judge unchanged", () => {
     finalOutcome: "not_needed",
     historicalFindings: [],
     historicalRepairInstructions: [],
+    truncatedInstructionCount: 0,
   });
   assert.equal(consensus.panel.length, 1);
 });

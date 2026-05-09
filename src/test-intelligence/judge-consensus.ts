@@ -34,12 +34,15 @@ import {
   type JudgeFamilyBinding,
 } from "./cross-family-judge-policy.js";
 import { assertHumanReviewDecisionInvariants } from "./human-review-agent.js";
+import {
+  INSTRUCTION_LENGTH_LIMITS,
+  countTruncatedInstructions,
+  truncateInstructionWithAudit,
+  truncateWithEllipsis,
+} from "./judge-limits.js";
 
 type ConsensusVerdictLabel = JudgeConsensusVerdict["verdict"];
 
-const MAX_INSTRUCTION_LENGTH = 240 as const;
-const MAX_PATH_LENGTH = 160 as const;
-const MAX_MESSAGE_LENGTH = 240 as const;
 const TRANSIENT_JUDGE_REFUSAL_CODES = new Set([
   "canceled",
   "gateway_unavailable",
@@ -57,8 +60,14 @@ const compareInstruction = (
   left.path.localeCompare(right.path) ||
   left.instruction.localeCompare(right.instruction);
 
-const truncate = (value: string, maxLength: number): string =>
-  value.length <= maxLength ? value : `${value.slice(0, maxLength - 3)}...`;
+const truncateMessage = (value: string): string =>
+  truncateWithEllipsis(value, INSTRUCTION_LENGTH_LIMITS.message).value;
+
+const truncatePath = (value: string): string =>
+  truncateWithEllipsis(value, INSTRUCTION_LENGTH_LIMITS.path).value;
+
+const truncateInstruction = (value: string) =>
+  truncateInstructionWithAudit(value);
 
 const normalizeWeight = (weight: number): number =>
   Number.isFinite(weight) && weight > 0 ? weight : 1;
@@ -141,6 +150,9 @@ const normalizePanelEntry = (
       : {}),
     findings: normalized.findings.map(normalizeConsensusFinding),
     repairInstructions: normalized.repairInstructions,
+    truncatedInstructionCount:
+      normalized.truncatedInstructionCount ??
+      countTruncatedInstructions(normalized.repairInstructions),
     ...(normalized.family !== undefined ? { family: normalized.family } : {}),
     ...(normalized.region !== undefined ? { region: normalized.region } : {}),
     ...(normalized.modelId !== undefined ? { modelId: normalized.modelId } : {}),
@@ -285,13 +297,18 @@ const dedupeRepairInstructions = (
   const dedup = new Map<string, RepairInstruction>();
   for (const entry of panel) {
     for (const instruction of entry.repairInstructions) {
+      const truncatedInstruction = truncateInstruction(instruction.instruction);
       const normalized: RepairInstruction = {
         testCaseId: instruction.testCaseId,
-        path: truncate(instruction.path, MAX_PATH_LENGTH),
-        instruction: truncate(instruction.instruction, MAX_INSTRUCTION_LENGTH),
+        path: truncatePath(instruction.path),
+        instruction: truncatedInstruction.value,
+        ...(instruction.instructionTruncated === true ||
+        truncatedInstruction.truncated
+          ? { instructionTruncated: true }
+          : {}),
         ...(instruction.kind !== undefined ? { kind: instruction.kind } : {}),
         ...(instruction.message !== undefined
-          ? { message: truncate(instruction.message, MAX_MESSAGE_LENGTH) }
+          ? { message: truncateMessage(instruction.message) }
           : {}),
       };
       const key = [
@@ -343,7 +360,7 @@ const dedupeFindings = (
     for (const finding of entry.findings) {
       const normalized: JudgeConsensusFinding = {
         ...normalizeConsensusFinding(finding),
-        message: truncate(finding.message, MAX_MESSAGE_LENGTH),
+        message: truncateMessage(finding.message),
         ...(finding.severity !== undefined
           ? { severity: finding.severity }
           : {}),
@@ -477,6 +494,9 @@ export const buildLogicJudgeConsensusEntry = (
     }),
   ),
   repairInstructions: verdict.repairInstructions,
+  truncatedInstructionCount:
+    verdict.truncatedInstructionCount ??
+    countTruncatedInstructions(verdict.repairInstructions),
 });
 
 const buildFaithfulnessRepairInstructions = (
@@ -484,29 +504,31 @@ const buildFaithfulnessRepairInstructions = (
 ): readonly RepairInstruction[] => {
   const instructions: RepairInstruction[] = [];
   for (const hallucination of verdict.hallucinations) {
+    const instruction = truncateInstruction(
+      `Faithfulness hallucination: ${hallucination.message}`,
+    );
     instructions.push({
       testCaseId: hallucination.testCaseId,
       path:
         hallucination.stepIndex !== undefined
           ? `steps[${hallucination.stepIndex}]`
           : "$case",
-      instruction: truncate(
-        `Faithfulness hallucination: ${hallucination.message}`,
-        MAX_INSTRUCTION_LENGTH,
-      ),
+      instruction: instruction.value,
+      ...(instruction.truncated ? { instructionTruncated: true } : {}),
     });
   }
   for (const mismatch of verdict.mismatches) {
+    const instruction = truncateInstruction(
+      `Faithfulness mismatch (expected="${mismatch.expectedLabel}", visible="${mismatch.visibleLabel}"): ${mismatch.message}`,
+    );
     instructions.push({
       testCaseId: mismatch.testCaseId,
       path:
         mismatch.stepIndex !== undefined
           ? `steps[${mismatch.stepIndex}].expected`
           : "expectedResults",
-      instruction: truncate(
-        `Faithfulness mismatch (expected="${mismatch.expectedLabel}", visible="${mismatch.visibleLabel}"): ${mismatch.message}`,
-        MAX_INSTRUCTION_LENGTH,
-      ),
+      instruction: instruction.value,
+      ...(instruction.truncated ? { instructionTruncated: true } : {}),
     });
   }
   return instructions.sort(compareInstruction);
@@ -515,33 +537,37 @@ const buildFaithfulnessRepairInstructions = (
 export const buildFaithfulnessJudgeConsensusEntry = (
   verdict: FaithfulnessVerdict,
   weight = 1,
-): JudgeConsensusPanelEntry => ({
-  judgeId: "faithfulness_judge",
-  verdict: verdict.verdict,
-  weight: normalizeWeight(weight),
-  confidence: verdict.score,
-  findings: [
-    ...verdict.hallucinations.map(
-      (hallucination): JudgeConsensusFinding => ({
-        scope: inferFindingScope(hallucination.testCaseId),
-        testCaseId: hallucination.testCaseId,
-        code: "hallucination",
-        message: hallucination.message,
-        category: "hallucination",
-      }),
-    ),
-    ...verdict.mismatches.map(
-      (mismatch): JudgeConsensusFinding => ({
-        scope: inferFindingScope(mismatch.testCaseId),
-        testCaseId: mismatch.testCaseId,
-        code: "cross_modal_mismatch",
-        message: mismatch.message,
-        category: "cross_modal_mismatch",
-      }),
-    ),
-  ],
-  repairInstructions: buildFaithfulnessRepairInstructions(verdict),
-});
+): JudgeConsensusPanelEntry => {
+  const repairInstructions = buildFaithfulnessRepairInstructions(verdict);
+  return {
+    judgeId: "faithfulness_judge",
+    verdict: verdict.verdict,
+    weight: normalizeWeight(weight),
+    confidence: verdict.score,
+    findings: [
+      ...verdict.hallucinations.map(
+        (hallucination): JudgeConsensusFinding => ({
+          scope: inferFindingScope(hallucination.testCaseId),
+          testCaseId: hallucination.testCaseId,
+          code: "hallucination",
+          message: hallucination.message,
+          category: "hallucination",
+        }),
+      ),
+      ...verdict.mismatches.map(
+        (mismatch): JudgeConsensusFinding => ({
+          scope: inferFindingScope(mismatch.testCaseId),
+          testCaseId: mismatch.testCaseId,
+          code: "cross_modal_mismatch",
+          message: mismatch.message,
+          category: "cross_modal_mismatch",
+        }),
+      ),
+    ],
+    repairInstructions,
+    truncatedInstructionCount: countTruncatedInstructions(repairInstructions),
+  };
+};
 
 export const buildA11yJudgeConsensusEntry = (
   verdict: A11yVerdict,
@@ -562,6 +588,9 @@ export const buildA11yJudgeConsensusEntry = (
     }),
   ),
   repairInstructions: verdict.repairInstructions,
+  truncatedInstructionCount:
+    verdict.truncatedInstructionCount ??
+    countTruncatedInstructions(verdict.repairInstructions),
 });
 
 export const buildJudgeConsensus = (
@@ -576,6 +605,8 @@ export const buildJudgeConsensus = (
   }
   const activeFindings = dedupeFindings(panel);
   const repairInstructions = dedupeRepairInstructions(panel);
+  const truncatedInstructionCount =
+    countTruncatedInstructions(repairInstructions);
   const vetoCandidate = panel.filter(hasVeto).reduce<JudgeConsensusPanelEntry | undefined>(
     (selected, entry) =>
       selected === undefined ? entry : selectHigherSeverity(selected, entry),
@@ -622,6 +653,7 @@ export const buildJudgeConsensus = (
     repairState,
     activeFindings,
     repairInstructions,
+    truncatedInstructionCount,
     repairHistory: {
       attempted,
       repairIterationCount,
@@ -630,6 +662,8 @@ export const buildJudgeConsensus = (
         : "not_needed",
       historicalFindings,
       historicalRepairInstructions,
+      truncatedInstructionCount:
+        countTruncatedInstructions(historicalRepairInstructions),
     },
     ...(vetoCandidate !== undefined
       ? {

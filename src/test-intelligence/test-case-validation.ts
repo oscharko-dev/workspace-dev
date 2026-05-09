@@ -825,6 +825,16 @@ export const validateGeneratedTestCasesWithInvariants = (
       oracleContext,
       issues,
     );
+    if ((tc.audit.truncatedInstructionCount ?? 0) > 0) {
+      pushIssue(issues, {
+        testCaseId: tc.id,
+        path: `$.testCases[${i}].audit.truncatedInstructionCount`,
+        code: "truncated_repair_instruction",
+        severity: "warning",
+        message:
+          `repair instructions were truncated ${String(tc.audit.truncatedInstructionCount)} time(s) before regeneration; inspect judge artifacts if the fix intent looks incomplete`,
+      });
+    }
   }
   validateFieldLifecycleCoverage(list, input.workflowTopology, issues);
 
