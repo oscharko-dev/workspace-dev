@@ -186,6 +186,60 @@ test("Issue #2068: fixed mode preserves the planner's 12-EP minimum verbatim", (
   assert.equal(deficits[0]?.missing, 2);
 });
 
+test("Issue #2026: shared EP cases satisfy the quota when they cover every field target on the screen", () => {
+  const plan = buildPlan({
+    screenId: "s-shared",
+    fieldCount: 3,
+    plannerEpMin: 3,
+  });
+  const cases = [
+    buildCase({
+      id: "tc-ep-1",
+      technique: "equivalence_partitioning",
+      screenId: "s-shared",
+      qualitySignals: {
+        coveredFieldIds: ["s-shared.field-1", "s-shared.field-2"],
+        coveredActionIds: [],
+        coveredValidationIds: [],
+        coveredNavigationIds: [],
+        confidence: 0.9,
+      },
+    }),
+    buildCase({
+      id: "tc-ep-2",
+      technique: "equivalence_partitioning",
+      screenId: "s-shared",
+      qualitySignals: {
+        coveredFieldIds: ["s-shared.field-3"],
+        coveredActionIds: [],
+        coveredValidationIds: [],
+        coveredNavigationIds: [],
+        confidence: 0.9,
+      },
+    }),
+  ];
+
+  const deficits = collectTechniqueQuotaDeficits(cases, plan, {
+    mode: "tier-elastic",
+  });
+  assert.deepEqual(deficits, []);
+
+  const report = buildTechniqueQuotaReport({
+    generatedAt: GENERATED_AT,
+    jobId: "job-shared",
+    policyProfileId: "eu-banking-default",
+    cases,
+    coveragePlan: plan,
+    policy: { mode: "tier-elastic" },
+  });
+  const epEntry = report.entries.find(
+    (entry) => entry.technique === "equivalence_partitioning",
+  );
+  assert.equal(epEntry?.actualCount, 2);
+  assert.equal(epEntry?.requiredCount, 3);
+  assert.equal(epEntry?.status, "pass");
+});
+
 test("Issue #2068: tier-elastic mode never synthesises an EP row when the planner publishes none", () => {
   // Conservative scope (issue #2068): the formula replaces an existing
   // EP quota, it does not invent one. When the planner emits no EP row

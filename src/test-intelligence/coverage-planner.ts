@@ -270,6 +270,17 @@ const comparePerElement = (
   right: CoveragePlanPerElement,
 ): number => left.elementId.localeCompare(right.elementId);
 
+const buildCoverageRelevantFieldCounts = (
+  model: TestDesignModel,
+): ReadonlyMap<string, number> =>
+  new Map(
+    model.screens.map((screen) => [
+      screen.screenId,
+      screen.elements.filter((element) => isCoverageRelevantElementLike(element))
+        .length,
+    ]),
+  );
+
 const buildPerScreenPlan = (input: {
   model: TestDesignModel;
   minimumCases: readonly CoverageRequirement[];
@@ -318,6 +329,7 @@ const buildPerScreenPlan = (input: {
     );
     countsByScreen.set(requirement.screenId, screenCounts);
   }
+  const fieldCounts = buildCoverageRelevantFieldCounts(input.model);
   return input.model.screens
     .map((screen) => {
       const screenCounts = countsByScreen.get(screen.screenId);
@@ -325,7 +337,17 @@ const buildPerScreenPlan = (input: {
         screenCounts === undefined
           ? []
           : [...screenCounts.entries()]
-              .map(([technique, minCount]) => ({ technique, minCount }))
+              .map(([technique, minCount]) => ({
+                technique,
+                minCount:
+                  technique === "equivalence_partitioning"
+                    ? Math.min(
+                        minCount,
+                        fieldCounts.get(screen.screenId) ?? minCount,
+                      )
+                    : minCount,
+              }))
+              .filter((quota) => quota.minCount > 0)
               .sort(compareTechniqueQuotas);
       return {
         screenId: screen.screenId,
