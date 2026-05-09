@@ -264,8 +264,10 @@ test("loadCaseConfidenceCalibration fits a historical fallback curve and persist
   );
   const persisted = JSON.parse(await readFile(loaded.artifactPath, "utf8")) as {
     datasetId: string;
+    eceByRiskCategory: Record<string, number>;
   };
   assert.equal(persisted.datasetId, "dataset-1");
+  assert.equal(typeof persisted.eceByRiskCategory.regulated_data, "number");
 
   const candidateList = buildList([
     buildCase("tc-candidate-approved"),
@@ -302,4 +304,109 @@ test("loadCaseConfidenceCalibration fits a historical fallback curve and persist
   const summary = summarizeCaseConfidenceDistribution(calibrated);
   assert.notEqual(summary, undefined);
   assert.equal((summary?.confidenceP90 ?? 0) >= (summary?.confidenceP10 ?? 0), true);
+});
+
+test("loadCaseConfidenceCalibration persists held-out diagnostics once history reaches ten samples", async () => {
+  const root = await mkdtemp(join(tmpdir(), "case-confidence-heldout-"));
+  const datasetRoot = join(root, "sandbox", "test-case", "dataset-2");
+  const runDir = join(datasetRoot, "run-history");
+  const cases = Array.from({ length: 10 }, (_value, index) =>
+    buildCase(`tc-${index}`, {
+      title:
+        index % 2 === 0
+          ? `TC approved ${index} Finanzierung prüfen`
+          : `TC review ${index} Unklare Brutto-Logik`,
+      objective:
+        index % 2 === 0
+          ? "Prüft den Finanzierungsbedarf für das Investitionsobjekt."
+          : "Markiert ungeklärte Fachlogik zur manuellen Prüfung.",
+      qualitySignals: {
+        coveredFieldIds: [index % 2 === 0 ? "field-1" : "field-2"],
+        coveredActionIds: [],
+        coveredValidationIds: [],
+        coveredNavigationIds: [],
+        confidence: index % 2 === 0 ? 0.9 : 0.25,
+      },
+      riskCategory:
+        index % 2 === 0 ? "regulated_data" : "financial_transaction",
+      figmaTraceRefs: [
+        {
+          screenId: index % 2 === 0 ? "1:11309" : "1:11310",
+          nodeId: index % 2 === 0 ? "field-1" : "field-2",
+        },
+      ],
+      openQuestions: index % 2 === 0 ? [] : ["MwSt.-Regel unklar"],
+    }),
+  );
+
+  await mkdir(runDir, { recursive: true });
+  await writeJson(join(runDir, "generated-testcases.json"), buildList(cases));
+  await writeJson(join(runDir, "policy-report.json"), {
+    decisions: cases.map((testCase, index) => ({
+      testCaseId: testCase.id,
+      decision: index % 2 === 0 ? "approved" : "needs_review",
+    })),
+  });
+  await writeJson(join(runDir, "judge-consensus.json"), {
+    verdict: "accept",
+    repairState: "none",
+    activeFindings: [],
+    repairInstructions: [],
+    repairHistory: { iterations: [], finalOutcome: "accepted" },
+    panel: [],
+  });
+
+  const loaded = await loadCaseConfidenceCalibration({
+    datasetRoot,
+    generatedAt: "2026-05-09T12:00:00.000Z",
+  });
+
+  assert.equal(loaded.curve.calibrationSource, "historical_policy_fallback");
+  assert.equal(loaded.curve.sampleCount, 10);
+  assert.equal(loaded.curve.heldOutSampleCount, 2);
+  assert.equal(typeof loaded.curve.heldOutBrierScore, "number");
+  assert.equal(loaded.acceptedAnchors.length, 5);
+  assert.equal(loaded.curve.calibrationEvaluationSplit, "held_out");
+  assert.equal(loaded.curve.heldOutSampleCountByRiskCategory.regulated_data, 1);
+  assert.equal(
+    loaded.curve.heldOutSampleCountByRiskCategory.financial_transaction,
+    1,
+  );
+  assert.equal(typeof loaded.curve.eceByRiskCategory.regulated_data, "number");
+  assert.equal(
+    loaded.curve.minimumRiskCategorySampleFloor,
+    50,
+  );
+
+  const persisted = JSON.parse(await readFile(loaded.artifactPath, "utf8")) as {
+    calibrationSource: string;
+    heldOutBrierScore?: number;
+    heldOutSampleCount: number;
+    sampleCount: number;
+    eceByRiskCategory: Record<string, number>;
+  };
+  assert.equal(persisted.calibrationSource, "historical_policy_fallback");
+  assert.equal(persisted.sampleCount, 10);
+  assert.equal(persisted.heldOutSampleCount, 2);
+  assert.equal(typeof persisted.heldOutBrierScore, "number");
+  assert.equal(typeof persisted.eceByRiskCategory.regulated_data, "number");
+
+  const reliability = JSON.parse(
+    await readFile(
+      join(
+        dirname(loaded.artifactPath),
+        "case-confidence-reliability-regulated_data.json",
+      ),
+      "utf8",
+    ),
+  ) as {
+    riskCategory: string;
+    sampleCount: number;
+    debiasedEce: number;
+    minimumSampleFloor: number;
+  };
+  assert.equal(reliability.riskCategory, "regulated_data");
+  assert.equal(reliability.sampleCount, 1);
+  assert.equal(typeof reliability.debiasedEce, "number");
+  assert.equal(reliability.minimumSampleFloor, 50);
 });

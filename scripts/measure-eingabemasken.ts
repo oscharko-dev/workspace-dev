@@ -35,6 +35,7 @@ import {
   TEST_INTELLIGENCE_PROMPT_TEMPLATE_VERSION,
   VISUAL_SIDECAR_SCHEMA_VERSION,
   type GeneratedTestCaseAuditMetadata,
+  type TestCaseRiskCategory,
 } from "../src/contracts/index.js";
 
 const sha256Hex = (value: string): string =>
@@ -50,6 +51,12 @@ import type { ComplianceRiskOverride } from "../src/test-intelligence/policy-gat
 import { buildTraceabilityMatrix } from "../src/test-intelligence/traceability-matrix.js";
 import { runValidationPipeline } from "../src/test-intelligence/validation-pipeline.js";
 import { synthesizeGeneratedTestCases } from "../src/test-intelligence/validation-harness.js";
+import {
+  CALIBRATION_ECE_THRESHOLDS,
+  CALIBRATION_RISK_CATEGORIES,
+  buildRiskCalibrationDiagnostics,
+  computeBrierScore,
+} from "../src/test-intelligence/calibration-metrics.js";
 
 const REPO_ROOT = join(new URL("..", import.meta.url).pathname);
 const OUTPUT_DIR = join(
@@ -125,6 +132,35 @@ interface FixtureMeasurement {
     totalTestDataEntries: number;
     casesWithOracleOpenQuestion: number;
   };
+  calibration: {
+    byRiskCategory: Record<
+      TestCaseRiskCategory,
+      {
+        sampleCount: number;
+        brierScore: number;
+        ece: number;
+        threshold: number;
+        meetsThreshold: boolean;
+        reliabilityDiagram: {
+          sampleCount: number;
+          binCount: number;
+          pluginEce: number;
+          debiasedEce: number;
+          bins: Array<{
+            binIndex: number;
+            lowerBoundInclusive: number;
+            upperBoundInclusive: number;
+            sampleCount: number;
+            meanConfidence: number;
+            empiricalAccuracy: number;
+            calibrationGap: number;
+            absoluteCalibrationGap: number;
+            debiasedAbsoluteCalibrationGap: number;
+          }>;
+        };
+      }
+    >;
+  };
 }
 
 const buildAudit = (jobId: string): GeneratedTestCaseAuditMetadata => ({
@@ -141,6 +177,27 @@ const buildAudit = (jobId: string): GeneratedTestCaseAuditMetadata => ({
   promptHash: sha256Hex(`${jobId}::prompt`),
   schemaHash: sha256Hex(`${jobId}::schema`),
 });
+
+const emptyRiskCalibrationRecord = (): FixtureMeasurement["calibration"]["byRiskCategory"] =>
+  Object.fromEntries(
+    CALIBRATION_RISK_CATEGORIES.map((riskCategory) => [
+      riskCategory,
+      {
+        sampleCount: 0,
+        brierScore: 0,
+        ece: 0,
+        threshold: CALIBRATION_ECE_THRESHOLDS[riskCategory],
+        meetsThreshold: true,
+        reliabilityDiagram: {
+          sampleCount: 0,
+          binCount: 10,
+          pluginEce: 0,
+          debiasedEce: 0,
+          bins: [],
+        },
+      },
+    ]),
+  ) as FixtureMeasurement["calibration"]["byRiskCategory"];
 
 const measureFixture = async (
   archetypeId: (typeof EINGABEMASKEN_ARCHETYPE_FIXTURE_IDS)[number],
@@ -256,6 +313,48 @@ const measureFixture = async (
   }
   void ORACLE_PROVENANCE_RE;
 
+  const calibrationByRiskCategory = emptyRiskCalibrationRecord();
+  const decisionByTestCaseId = new Map(
+    pipeline.policy.decisions.map((decision) => [decision.testCaseId, decision.decision]),
+  );
+  for (const riskCategory of CALIBRATION_RISK_CATEGORIES) {
+    const samples = pipeline.generatedTestCases.testCases
+      .filter((testCase) => testCase.riskCategory === riskCategory)
+      .map((testCase) => ({
+        confidence:
+          typeof testCase.confidence === "number"
+            ? testCase.confidence
+            : typeof testCase.qualitySignals.confidence === "number"
+              ? testCase.qualitySignals.confidence
+              : 0,
+        label:
+          decisionByTestCaseId.get(testCase.id) === "approved" ? (1 as const) : (0 as const),
+      }));
+    const diagnostics = buildRiskCalibrationDiagnostics(
+      samples.map((sample) => ({
+        riskCategory,
+        confidence: sample.confidence,
+        label: sample.label,
+      })),
+    );
+    const diagram = diagnostics.byRiskCategory[riskCategory];
+    const threshold = CALIBRATION_ECE_THRESHOLDS[riskCategory];
+    calibrationByRiskCategory[riskCategory] = {
+      sampleCount: samples.length,
+      brierScore: computeBrierScore(samples),
+      ece: diagram.debiasedEce,
+      threshold,
+      meetsThreshold: samples.length === 0 ? true : diagram.debiasedEce <= threshold,
+      reliabilityDiagram: {
+        sampleCount: diagram.sampleCount,
+        binCount: diagram.binCount,
+        pluginEce: diagram.pluginEce,
+        debiasedEce: diagram.debiasedEce,
+        bins: diagram.bins,
+      },
+    };
+  }
+
   const measurement: FixtureMeasurement = {
     archetypeId,
     tier: EINGABEMASKEN_FIXTURE_TIERS[archetypeId],
@@ -308,6 +407,9 @@ const measureFixture = async (
       casesWithTestData,
       totalTestDataEntries,
       casesWithOracleOpenQuestion,
+    },
+    calibration: {
+      byRiskCategory: calibrationByRiskCategory,
     },
   };
 
@@ -479,6 +581,46 @@ const renderMarkdown = (
   for (const m of measurements) {
     lines.push(
       `| ${m.tier} | \`${m.archetypeId.replace("eingabemaske-", "")}\` | ${m.traceability.totalCases} | ${m.traceability.sourceRefPresenceRate.toFixed(3)} | ${m.traceability.intentRefPresenceRate.toFixed(3)} | ${m.traceability.visualRefPresenceRate.toFixed(3)} |`,
+    );
+  }
+
+  lines.push("");
+  lines.push("## Calibration diagnostics by risk category");
+  lines.push("");
+  lines.push("| Risk category | Samples | Brier | ECE | Threshold | Gate |");
+  lines.push("|---|---:|---:|---:|---:|---|");
+  for (const riskCategory of CALIBRATION_RISK_CATEGORIES) {
+    const samples = measurements.flatMap((measurement) => {
+      const summary = measurement.calibration.byRiskCategory[riskCategory];
+      return summary.sampleCount > 0
+        ? [
+            {
+              sampleCount: summary.sampleCount,
+              brierScore: summary.brierScore,
+              ece: summary.ece,
+              threshold: summary.threshold,
+            },
+          ]
+        : [];
+    });
+    const totalSamples = samples.reduce((sum, sample) => sum + sample.sampleCount, 0);
+    const weightedBrier =
+      totalSamples === 0
+        ? 0
+        : samples.reduce(
+            (sum, sample) => sum + sample.brierScore * sample.sampleCount,
+            0,
+          ) / totalSamples;
+    const weightedEce =
+      totalSamples === 0
+        ? 0
+        : samples.reduce((sum, sample) => sum + sample.ece * sample.sampleCount, 0) /
+          totalSamples;
+    const threshold = CALIBRATION_ECE_THRESHOLDS[riskCategory];
+    lines.push(
+      `| \`${riskCategory}\` | ${totalSamples} | ${weightedBrier.toFixed(3)} | ${weightedEce.toFixed(3)} | ${threshold.toFixed(3)} | ${
+        totalSamples === 0 || weightedEce <= threshold ? "pass" : "**FAIL**"
+      } |`,
     );
   }
 

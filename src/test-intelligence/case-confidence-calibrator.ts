@@ -16,23 +16,37 @@ import {
   type JudgeConsensusVerdict,
   type SelfConsistencyReport,
   type TestCasePolicyDecision,
+  type TestCaseRiskCategory,
 } from "../contracts/index.js";
 import type {
   TestDataOracleReport,
 } from "./test-data-oracle-governance.js";
 import { canonicalJson } from "./content-hash.js";
+import {
+  buildReliabilityDiagram,
+  CALIBRATION_ECE_THRESHOLDS,
+  CALIBRATION_MIN_SAMPLE_FLOOR,
+  CALIBRATION_RISK_CATEGORIES,
+  computeBrierScore,
+  type ReliabilityDiagramBin,
+} from "./calibration-metrics.js";
 
 export const CASE_CONFIDENCE_CURVE_SCHEMA_VERSION = "1.0.0" as const;
 export const CASE_CONFIDENCE_CURVE_ARTIFACT_FILENAME =
   "case-confidence-curve.json" as const;
 export const CASE_CONFIDENCE_LABEL_MANIFEST_FILENAME =
   "case-confidence-labels.json" as const;
+export const CASE_CONFIDENCE_RELIABILITY_DIAGRAM_SCHEMA_VERSION =
+  "1.0.0" as const;
 
 export type CaseConfidenceReviewLabel = "accepted" | "needs_review";
 export type CaseConfidenceCalibrationSource =
   | "manual_labels"
   | "historical_policy_fallback"
   | "default_fallback";
+export type CaseConfidenceCalibrationEvaluationSplit =
+  | "held_out"
+  | "all_samples_fallback";
 
 export interface CaseConfidenceCurveArtifact {
   readonly schemaVersion: typeof CASE_CONFIDENCE_CURVE_SCHEMA_VERSION;
@@ -47,7 +61,18 @@ export interface CaseConfidenceCurveArtifact {
   readonly trainingBrierScore: number;
   readonly heldOutSampleCount: number;
   readonly heldOutBrierScore?: number;
+  readonly calibrationEvaluationSplit: CaseConfidenceCalibrationEvaluationSplit;
+  readonly minimumRiskCategorySampleFloor: number;
+  readonly heldOutSampleCountByRiskCategory: Readonly<
+    Record<TestCaseRiskCategory, number>
+  >;
+  readonly eceByRiskCategory: Readonly<Record<TestCaseRiskCategory, number>>;
+  readonly eceThresholdByRiskCategory: Readonly<
+    Record<TestCaseRiskCategory, number>
+  >;
 }
+
+export type CalibrationReport = CaseConfidenceCurveArtifact;
 
 export interface CaseConfidenceDistributionSummary {
   readonly confidenceMean: number;
@@ -77,8 +102,23 @@ interface HistoricalRunSnapshot {
 interface HistoricalCalibrationSample {
   readonly runId: string;
   readonly testCaseId: string;
+  readonly riskCategory: TestCaseRiskCategory;
   readonly rawScore: number;
   readonly label: 0 | 1;
+}
+
+export interface CaseConfidenceReliabilityDiagramArtifact {
+  readonly schemaVersion: typeof CASE_CONFIDENCE_RELIABILITY_DIAGRAM_SCHEMA_VERSION;
+  readonly generatedAt: string;
+  readonly datasetId: string;
+  readonly riskCategory: TestCaseRiskCategory;
+  readonly evaluationSplit: CaseConfidenceCalibrationEvaluationSplit;
+  readonly minimumSampleFloor: number;
+  readonly threshold: number;
+  readonly sampleCount: number;
+  readonly pluginEce: number;
+  readonly debiasedEce: number;
+  readonly bins: ReadonlyArray<ReliabilityDiagramBin>;
 }
 
 interface LabelManifest {
@@ -96,6 +136,9 @@ export interface LoadedCaseConfidenceCalibration {
   readonly curve: CaseConfidenceCurveArtifact;
   readonly acceptedAnchors: readonly HistoricalAcceptedAnchor[];
   readonly artifactPath: string;
+  readonly reliabilityArtifactPaths: Readonly<
+    Record<TestCaseRiskCategory, string>
+  >;
 }
 
 const round6 = (value: number): number =>
@@ -125,6 +168,15 @@ const defaultCurve = (input: {
   slope: 5.5,
   trainingBrierScore: round6(0.0625),
   heldOutSampleCount: 0,
+  calibrationEvaluationSplit: "all_samples_fallback",
+  minimumRiskCategorySampleFloor: CALIBRATION_MIN_SAMPLE_FLOOR,
+  heldOutSampleCountByRiskCategory: Object.fromEntries(
+    CALIBRATION_RISK_CATEGORIES.map((riskCategory) => [riskCategory, 0]),
+  ) as Record<TestCaseRiskCategory, number>,
+  eceByRiskCategory: Object.fromEntries(
+    CALIBRATION_RISK_CATEGORIES.map((riskCategory) => [riskCategory, 0]),
+  ) as Record<TestCaseRiskCategory, number>,
+  eceThresholdByRiskCategory: CALIBRATION_ECE_THRESHOLDS,
 });
 
 const caseKey = (runId: string, testCaseId: string): string =>
@@ -342,18 +394,100 @@ const applyCurve = (
   curve: Pick<CaseConfidenceCurveArtifact, "intercept" | "slope">,
 ): number => clamp01(round6(sigmoid(curve.intercept + curve.slope * rawScore)));
 
-const brierScore = (
+const calibrateSamples = (
   samples: readonly HistoricalCalibrationSample[],
   curve: Pick<CaseConfidenceCurveArtifact, "intercept" | "slope">,
-): number => {
-  if (samples.length === 0) return 0;
-  let sum = 0;
-  for (const sample of samples) {
-    const probability = applyCurve(sample.rawScore, curve);
-    const delta = probability - sample.label;
-    sum += delta * delta;
-  }
-  return round6(sum / samples.length);
+): ReadonlyArray<{
+  riskCategory: TestCaseRiskCategory;
+  confidence: number;
+  label: 0 | 1;
+}> =>
+  samples.map((sample) => ({
+    riskCategory: sample.riskCategory,
+    confidence: applyCurve(sample.rawScore, curve),
+    label: sample.label,
+  }));
+
+const splitCalibrationSamples = (
+  samples: readonly HistoricalCalibrationSample[],
+): {
+  readonly sorted: readonly HistoricalCalibrationSample[];
+  readonly heldOut: readonly HistoricalCalibrationSample[];
+  readonly training: readonly HistoricalCalibrationSample[];
+} => {
+  const sorted = [...samples].sort((left, right) =>
+    caseKey(left.runId, left.testCaseId).localeCompare(
+      caseKey(right.runId, right.testCaseId),
+    ),
+  );
+  const heldOut =
+    sorted.length >= 10 ? sorted.filter((_sample, index) => index % 5 === 0) : [];
+  const training =
+    heldOut.length > 0
+      ? sorted.filter((_sample, index) => index % 5 !== 0)
+      : sorted;
+  return { sorted, heldOut, training };
+};
+
+const byRiskCategoryRecord = <T>(
+  buildValue: (riskCategory: TestCaseRiskCategory) => T,
+): Record<TestCaseRiskCategory, T> =>
+  Object.fromEntries(
+    CALIBRATION_RISK_CATEGORIES.map((riskCategory) => [
+      riskCategory,
+      buildValue(riskCategory),
+    ]),
+  ) as Record<TestCaseRiskCategory, T>;
+
+const buildReliabilityArtifacts = (input: {
+  datasetId: string;
+  generatedAt: string;
+  evaluationSplit: CaseConfidenceCalibrationEvaluationSplit;
+  evaluationSamples: ReadonlyArray<{
+    riskCategory: TestCaseRiskCategory;
+    confidence: number;
+    label: 0 | 1;
+  }>;
+}): {
+  readonly eceByRiskCategory: Readonly<Record<TestCaseRiskCategory, number>>;
+  readonly sampleCountByRiskCategory: Readonly<Record<TestCaseRiskCategory, number>>;
+  readonly diagrams: ReadonlyArray<CaseConfidenceReliabilityDiagramArtifact>;
+} => {
+  const diagrams = CALIBRATION_RISK_CATEGORIES.map((riskCategory) => {
+    const samples = input.evaluationSamples
+      .filter((sample) => sample.riskCategory === riskCategory)
+      .map((sample) => ({
+        confidence: sample.confidence,
+        label: sample.label,
+      }));
+    const reliability = buildReliabilityDiagram(samples);
+    return {
+      schemaVersion: CASE_CONFIDENCE_RELIABILITY_DIAGRAM_SCHEMA_VERSION,
+      generatedAt: input.generatedAt,
+      datasetId: input.datasetId,
+      riskCategory,
+      evaluationSplit: input.evaluationSplit,
+      minimumSampleFloor: CALIBRATION_MIN_SAMPLE_FLOOR,
+      threshold: CALIBRATION_ECE_THRESHOLDS[riskCategory],
+      sampleCount: reliability.sampleCount,
+      pluginEce: reliability.pluginEce,
+      debiasedEce: reliability.debiasedEce,
+      bins: reliability.bins,
+    };
+  });
+  return {
+    eceByRiskCategory: byRiskCategoryRecord(
+      (riskCategory) =>
+        diagrams.find((diagram) => diagram.riskCategory === riskCategory)
+          ?.debiasedEce ?? 0,
+    ),
+    sampleCountByRiskCategory: byRiskCategoryRecord(
+      (riskCategory) =>
+        diagrams.find((diagram) => diagram.riskCategory === riskCategory)
+          ?.sampleCount ?? 0,
+    ),
+    diagrams,
+  };
 };
 
 const fitPlattCurve = (input: {
@@ -365,17 +499,7 @@ const fitPlattCurve = (input: {
   >;
   readonly samples: readonly HistoricalCalibrationSample[];
 }): CaseConfidenceCurveArtifact => {
-  const sorted = [...input.samples].sort((left, right) =>
-    caseKey(left.runId, left.testCaseId).localeCompare(
-      caseKey(right.runId, right.testCaseId),
-    ),
-  );
-  const heldOut =
-    sorted.length >= 10 ? sorted.filter((_sample, index) => index % 5 === 0) : [];
-  const training =
-    heldOut.length > 0
-      ? sorted.filter((_sample, index) => index % 5 !== 0)
-      : sorted;
+  const { sorted, heldOut, training } = splitCalibrationSamples(input.samples);
   const trainingPositives = training.filter((sample) => sample.label === 1).length;
   const trainingNegatives = training.length - trainingPositives;
   if (trainingPositives === 0 || trainingNegatives === 0) {
@@ -411,6 +535,13 @@ const fitPlattCurve = (input: {
     intercept: round6(intercept),
     slope: round6(slope),
   };
+  const evaluationSplit = heldOut.length > 0 ? "held_out" : "all_samples_fallback";
+  const reliabilityArtifacts = buildReliabilityArtifacts({
+    datasetId: input.datasetId,
+    generatedAt: input.generatedAt,
+    evaluationSplit,
+    evaluationSamples: calibrateSamples(heldOut.length > 0 ? heldOut : sorted, curve),
+  });
   return {
     schemaVersion: CASE_CONFIDENCE_CURVE_SCHEMA_VERSION,
     generatedAt: input.generatedAt,
@@ -421,10 +552,15 @@ const fitPlattCurve = (input: {
     negativeCount: sorted.filter((sample) => sample.label === 0).length,
     intercept: curve.intercept,
     slope: curve.slope,
-    trainingBrierScore: brierScore(training, curve),
+    trainingBrierScore: computeBrierScore(calibrateSamples(training, curve)),
     heldOutSampleCount: heldOut.length,
+    calibrationEvaluationSplit: evaluationSplit,
+    minimumRiskCategorySampleFloor: CALIBRATION_MIN_SAMPLE_FLOOR,
+    heldOutSampleCountByRiskCategory: reliabilityArtifacts.sampleCountByRiskCategory,
+    eceByRiskCategory: reliabilityArtifacts.eceByRiskCategory,
+    eceThresholdByRiskCategory: CALIBRATION_ECE_THRESHOLDS,
     ...(heldOut.length > 0
-      ? { heldOutBrierScore: brierScore(heldOut, curve) }
+      ? { heldOutBrierScore: computeBrierScore(calibrateSamples(heldOut, curve)) }
       : {}),
   };
 };
@@ -584,6 +720,7 @@ const buildHistoricalCalibrationSamples = (input: {
       out.push({
         runId: snapshot.runId,
         testCaseId: testCase.id,
+        riskCategory: testCase.riskCategory,
         rawScore: components.rawScore,
         label: label === "accepted" ? 1 : 0,
       });
@@ -602,6 +739,26 @@ const writeCurveArtifact = async (
   await writeFile(tmpPath, `${canonicalJson(curve)}\n`, "utf8");
   await rename(tmpPath, artifactPath);
   return artifactPath;
+};
+
+const writeReliabilityDiagramArtifacts = async (
+  datasetRoot: string,
+  diagrams: readonly CaseConfidenceReliabilityDiagramArtifact[],
+): Promise<Readonly<Record<TestCaseRiskCategory, string>>> => {
+  const artifactDir = dirname(resolveCaseConfidenceCurveArtifactPath(datasetRoot));
+  await mkdir(artifactDir, { recursive: true });
+  const paths = {} as Record<TestCaseRiskCategory, string>;
+  for (const diagram of diagrams) {
+    const artifactPath = join(
+      artifactDir,
+      `case-confidence-reliability-${diagram.riskCategory}.json`,
+    );
+    const tmpPath = `${artifactPath}.${randomUUID()}.tmp`;
+    await writeFile(tmpPath, `${canonicalJson(diagram)}\n`, "utf8");
+    await rename(tmpPath, artifactPath);
+    paths[diagram.riskCategory] = artifactPath;
+  }
+  return paths;
 };
 
 const resolveCaseConfidenceCurveArtifactPath = (datasetRoot: string): string => {
@@ -656,11 +813,24 @@ export const loadCaseConfidenceCalibration = async (
           source: explicitLabels?.source ?? "historical_policy_fallback",
           samples,
         });
+  const { sorted, heldOut } = splitCalibrationSamples(samples);
+  const evaluationSplit = heldOut.length > 0 ? "held_out" : "all_samples_fallback";
+  const reliabilityArtifacts = buildReliabilityArtifacts({
+    datasetId,
+    generatedAt: input.generatedAt,
+    evaluationSplit,
+    evaluationSamples: calibrateSamples(heldOut.length > 0 ? heldOut : sorted, curve),
+  });
+  const reliabilityArtifactPaths = await writeReliabilityDiagramArtifacts(
+    datasetRoot,
+    reliabilityArtifacts.diagrams,
+  );
   const artifactPath = await writeCurveArtifact(datasetRoot, curve);
   return {
     curve,
     acceptedAnchors,
     artifactPath,
+    reliabilityArtifactPaths,
   };
 };
 

@@ -12,8 +12,6 @@ import {
 import {
   appendDriftBaselineRecord,
   classifyCrossFamilyCorrelatedDrift,
-  computeBrierScore,
-  computeExpectedCalibrationError,
   createFileDriftAlertSink,
   DRIFT_ALERTS_ARTIFACT_FILENAME,
   DRIFT_CANARY_BRIER_ABSOLUTE_THRESHOLD,
@@ -25,6 +23,11 @@ import {
   PROVIDER_FINGERPRINT_PROMPTS,
   writeDriftBaselineState,
 } from "./drift-canary.js";
+import {
+  computeBrierScore,
+  buildReliabilityDiagram,
+  computeExpectedCalibrationError,
+} from "./calibration-metrics.js";
 import { deriveBusinessTestIntentIr } from "./intent-derivation.js";
 
 test("drift-canary: computeBrierScore returns the mean squared error", () => {
@@ -48,6 +51,31 @@ test("drift-canary: computeExpectedCalibrationError bins confidence deltas", () 
     ]),
     0.15,
   );
+});
+
+test("drift-canary: computeExpectedCalibrationError applies debiasing within populated bins", () => {
+  const samples = [
+    { confidence: 0.05, label: 0 as const },
+    { confidence: 0.05, label: 1 as const },
+    { confidence: 0.15, label: 1 as const },
+  ];
+  const diagram = buildReliabilityDiagram(samples);
+
+  assert.equal(computeExpectedCalibrationError(samples), 0.560599);
+  assert.equal(diagram.pluginEce, 0.583333);
+  assert.equal(diagram.debiasedEce, 0.560599);
+  assert.equal(diagram.bins[0]?.sampleCount, 2);
+  assert.equal(diagram.bins[0]?.debiasedAbsoluteCalibrationGap, 0.415899);
+});
+
+test("drift-canary: computeExpectedCalibrationError stays decile-bucketed at a bin boundary", () => {
+  const samples = [
+    { confidence: 0.49, label: 0 as const },
+    { confidence: 0.51, label: 1 as const },
+  ];
+
+  assert.equal(computeExpectedCalibrationError(samples), 0.49);
+  assert.equal(computeExpectedCalibrationError(samples, 5), 0);
 });
 
 test("drift-canary: holdout fixture set is explicitly pinned", () => {
@@ -152,6 +180,127 @@ test("drift-canary: metric drift alerts on >2σ changes and absolute Brier delta
     ),
     true,
   );
+});
+
+test("drift-canary: absolute ECE threshold breaches fail the canary", () => {
+  const evaluation = evaluateDriftReport({
+    baseline: emptyBaselineState({
+      tenantId: "default",
+      policyProfileId: "eu-banking-default",
+      canarySetId: DRIFT_CANARY_CANARY_SET_ID,
+    }),
+    observations: [
+      {
+        deployment: "mistral-large-3",
+        family: "mistral",
+        metricName: "ece",
+        riskCategory: "regulated_data",
+        value: 0.051,
+      },
+    ],
+    providerFingerprints: [],
+  });
+
+  assert.equal(
+    evaluation.findings.some(
+      (finding) =>
+        finding.kind === "ece_absolute_threshold" &&
+        finding.riskCategory === "regulated_data" &&
+        finding.threshold === 0.05,
+    ),
+    true,
+  );
+});
+
+test("drift-canary: per-risk ECE findings stay risk-scoped and Brier keeps the absolute gate", () => {
+  const baseline = appendDriftBaselineRecord(
+    appendDriftBaselineRecord(
+      emptyBaselineState({
+        tenantId: "default",
+        policyProfileId: "eu-banking-default",
+        canarySetId: DRIFT_CANARY_CANARY_SET_ID,
+      }),
+      {
+        recordedAt: "2026-05-01T00:00:00.000Z",
+        observations: [
+          {
+            deployment: "mistral-large-3",
+            family: "mistral",
+            metricName: "ece",
+            riskCategory: "regulated_data",
+            value: 0.02,
+          },
+          {
+            deployment: "mistral-large-3",
+            family: "mistral",
+            metricName: "brier_score",
+            riskCategory: "regulated_data",
+            value: 0.11,
+          },
+        ],
+        providerFingerprints: [],
+      },
+    ),
+    {
+      recordedAt: "2026-05-02T00:00:00.000Z",
+      observations: [
+        {
+          deployment: "mistral-large-3",
+          family: "mistral",
+          metricName: "ece",
+          riskCategory: "regulated_data",
+          value: 0.03,
+        },
+        {
+          deployment: "mistral-large-3",
+          family: "mistral",
+          metricName: "brier_score",
+          riskCategory: "regulated_data",
+          value: 0.12,
+        },
+      ],
+      providerFingerprints: [],
+    },
+  );
+
+  const evaluation = evaluateDriftReport({
+    baseline,
+    observations: [
+      {
+        deployment: "mistral-large-3",
+        family: "mistral",
+        metricName: "ece",
+        riskCategory: "regulated_data",
+        value: 0.12,
+      },
+      {
+        deployment: "mistral-large-3",
+        family: "mistral",
+        metricName: "brier_score",
+        riskCategory: "regulated_data",
+        value: 0.2,
+      },
+    ],
+    providerFingerprints: [],
+  });
+
+  const eceFinding = evaluation.findings.find(
+    (finding) =>
+      finding.metricName === "ece" &&
+      finding.riskCategory === "regulated_data" &&
+      finding.kind === "metric_shift",
+  );
+  assert.notEqual(eceFinding, undefined);
+  assert.equal(eceFinding?.threshold !== undefined, true);
+
+  const brierFinding = evaluation.findings.find(
+    (finding) =>
+      finding.metricName === "brier_score" &&
+      finding.riskCategory === "regulated_data" &&
+      finding.kind === "brier_absolute_shift",
+  );
+  assert.notEqual(brierFinding, undefined);
+  assert.equal(brierFinding?.threshold, DRIFT_CANARY_BRIER_ABSOLUTE_THRESHOLD);
 });
 
 test("drift-canary: provider fingerprint drift alerts when hashes change under a stable revision", () => {
