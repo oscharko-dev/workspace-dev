@@ -31,6 +31,71 @@ All changes to the public contract surface of `workspace-dev` are documented her
 
 ---
 
+## [4.61.0] - 2026-05-09
+
+### Added (Issue #2100 — signed semantic-content overrides enforced inside policy-gate)
+
+Issue #2100 closes the remaining trust gap in semantic suspicious-content
+overrides. Before this change the test-intelligence submodule accepted a plain
+`semanticContentOverrides` membership map and let any matching `(testCaseId,
+path)` downgrade a blocking `semantic_suspicious_content` finding to
+`needs_review`. The review-event log captured override notes for forensics, but
+the policy gate itself did not require signed, attributable, non-expired
+entries before honoring the downgrade.
+
+Public surface changes in the additive `src/test-intelligence` submodule:
+
+- `createSignedSemanticContentOverrideEntry(...)` is now exported for callers
+  that need to construct signed override entries deterministically.
+- New exported types:
+  - `PrincipalRef`
+  - `ISO8601`
+  - `HmacBlock`
+  - `OverrideAuthoritySecretProvider`
+  - `OverrideAuthorityProvider`
+  - `SemanticContentOverrideEntry`
+  - `CreateSignedSemanticContentOverrideEntryInput`
+  - `InvalidSemanticContentOverride`
+  - `InvalidSemanticContentOverrideMap`
+- `SemanticContentOverrideMap` now carries signed entries keyed by
+  `testCaseId -> path` instead of accepting legacy raw path sets.
+- `EvaluatePolicyGateInput`, `RunValidationPipelineInput`, and
+  `RunExportPipelineInput` add the optional
+  `overrideAuthorityProvider?: OverrideAuthorityProvider` hook so the module can
+  verify signatures before an override affects blocking or export decisions.
+- New exported metadata keys used in `review-events.json` replay:
+  - `SEMANTIC_CONTENT_OVERRIDE_METADATA_SIGNED_AT_KEY`
+  - `SEMANTIC_CONTENT_OVERRIDE_METADATA_SIGNATURE_KEY`
+  - `SEMANTIC_CONTENT_OVERRIDE_METADATA_SIGNATURE_KEY_ID_KEY`
+  - `SEMANTIC_CONTENT_OVERRIDE_METADATA_EXPIRES_AT_KEY`
+  - `SEMANTIC_CONTENT_OVERRIDE_METADATA_VERIFIED_SIGNATURE_KEY`
+- New exported runtime constant:
+  `SEMANTIC_CONTENT_OVERRIDE_HMAC_ALGORITHM = "hmac-sha256"`.
+- `partitionSemanticContentOverridesForValidation(...)` is exported so callers
+  can derive the verified subset plus invalid-entry audit reasons using the same
+  fail-closed logic as `policy-gate`.
+
+Behavioral changes:
+
+- `evaluatePolicyGate(...)` now rejects semantic overrides that are unsigned,
+  malformed, unverifiable, expired, or supplied without an
+  `overrideAuthorityProvider`. Rejected entries emit the per-case
+  `policy:override_invalid` rule at `error` severity and do not downgrade the
+  original semantic blocking violation.
+- `runValidationPipeline(...)` and `runExportPipeline(...)` now recompute the
+  effective validation block using only the verified override subset, so the
+  policy/export path cannot bypass signature checks through a direct raw map.
+- `recordSemanticContentOverride(...)` now requires an authority provider and
+  persists signed replay metadata, including `verifiedSignature: true`, for
+  each recorded override note.
+
+Migration note:
+
+- Existing tests and fixtures that previously used
+  `Map<string, Set<string>>` semantic override inputs were regenerated to use
+  signed `SemanticContentOverrideEntry` values plus an
+  `overrideAuthorityProvider`.
+
 ## [4.60.0] - 2026-05-08
 
 ### Added (Issue #2069 — persisted visual-sidecar primary circuit breaker + policy split)

@@ -64,7 +64,8 @@ import {
 import { cloneEuBankingDefaultProfile } from "./policy-profile.js";
 import {
   effectiveSemanticContentBlock,
-  filterSemanticContentOverridesForValidation,
+  partitionSemanticContentOverridesForValidation,
+  type OverrideAuthorityProvider,
   type SemanticContentOverrideMap,
 } from "./semantic-content-sanitization.js";
 import type { UntrustedContentNormalizationReport } from "./untrusted-content-normalizer.js";
@@ -119,6 +120,11 @@ export interface RunValidationPipelineInput {
    * the original error finding.
    */
   semanticContentOverrides?: SemanticContentOverrideMap;
+  /**
+   * Caller-supplied authority provider used to verify signed semantic
+   * content overrides before they can affect policy or blocking state.
+   */
+  overrideAuthorityProvider?: OverrideAuthorityProvider;
   /**
    * Documented visual-sidecar refusal forwarded to the policy gate
    * (Issues #1772, #2069). The policy gate records a blocking
@@ -329,10 +335,11 @@ export const runValidationPipeline = (
   const semanticContentOverrides =
     input.semanticContentOverrides === undefined
       ? undefined
-      : filterSemanticContentOverridesForValidation(
+      : partitionSemanticContentOverridesForValidation(
           validation,
           input.semanticContentOverrides,
-        );
+          input.overrideAuthorityProvider,
+        ).valid;
 
   const policy = evaluatePolicyGate({
     jobId: input.jobId,
@@ -357,6 +364,9 @@ export const runValidationPipeline = (
       : {}),
     ...(semanticContentOverrides !== undefined
       ? { semanticContentOverrides }
+      : {}),
+    ...(input.overrideAuthorityProvider !== undefined
+      ? { overrideAuthorityProvider: input.overrideAuthorityProvider }
       : {}),
     ...(input.visualSidecarRefusal !== undefined
       ? { visualSidecarRefusal: input.visualSidecarRefusal }
@@ -736,10 +746,11 @@ export const runValidationPipelineWithSelfVerify = async (
   const semanticContentOverrides =
     input.semanticContentOverrides === undefined
       ? undefined
-      : filterSemanticContentOverridesForValidation(
+      : partitionSemanticContentOverridesForValidation(
           validation,
           input.semanticContentOverrides,
-        );
+          input.overrideAuthorityProvider,
+        ).valid;
 
   const policy = evaluatePolicyGate({
     jobId: input.jobId,
@@ -758,6 +769,9 @@ export const runValidationPipelineWithSelfVerify = async (
     ...(visualReport !== undefined ? { visual: visualReport } : {}),
     ...(semanticContentOverrides !== undefined
       ? { semanticContentOverrides }
+      : {}),
+    ...(input.overrideAuthorityProvider !== undefined
+      ? { overrideAuthorityProvider: input.overrideAuthorityProvider }
       : {}),
     ...(input.visualSidecarRefusal !== undefined
       ? { visualSidecarRefusal: input.visualSidecarRefusal }

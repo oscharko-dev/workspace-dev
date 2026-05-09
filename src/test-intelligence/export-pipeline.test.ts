@@ -36,9 +36,16 @@ import {
   runAndPersistExportPipeline,
   runExportPipeline,
 } from "./export-pipeline.js";
+import {
+  createSignedSemanticContentOverrideEntry,
+  type OverrideAuthorityProvider,
+} from "./semantic-content-sanitization.js";
 
 const ZERO = "0".repeat(64);
 const GENERATED_AT = "2026-04-25T10:00:00.000Z";
+const OVERRIDE_AUTHORITY: OverrideAuthorityProvider = {
+  hmacSecret: "export-pipeline-override-secret",
+};
 
 const buildIntent = (): BusinessTestIntentIr => ({
   version: "1.0.0",
@@ -326,6 +333,17 @@ test("export-pipeline: refuses when validation reports schema_invalid", () => {
 
 test("export-pipeline: semantic override permits export with audit-blocked validation report", () => {
   const overridePath = "$.testCases[0].steps[0].action";
+  const overrideEntry = createSignedSemanticContentOverrideEntry({
+    jobId: "job-1",
+    testCaseId: "tc-1",
+    path: overridePath,
+    category: "shell_metacharacters",
+    justification:
+      "intentional ops smoke test for destructive-command alerting; reviewed under change request CR-1413",
+    actor: "alice@bank.example",
+    signedAt: GENERATED_AT,
+    authority: OVERRIDE_AUTHORITY,
+  });
   const result = runExportPipeline({
     jobId: "job-1",
     generatedAt: GENERATED_AT,
@@ -364,7 +382,10 @@ test("export-pipeline: semantic override permits export with audit-blocked valid
     reviewSnapshot: buildSnapshot([
       snapshotEntry({ state: "approved", policyDecision: "needs_review" }),
     ]),
-    semanticContentOverrides: new Map([["tc-1", new Set([overridePath])]]),
+    semanticContentOverrides: new Map([
+      ["tc-1", new Map([[overridePath, overrideEntry]])],
+    ]),
+    overrideAuthorityProvider: OVERRIDE_AUTHORITY,
   });
   assert.equal(result.refused, false);
   assert.equal(result.refusalCodes.length, 0);

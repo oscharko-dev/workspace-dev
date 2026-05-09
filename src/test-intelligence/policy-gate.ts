@@ -59,7 +59,9 @@ import {
   type CoverageBaselineDriftEvaluation,
 } from "./coverage-baseline-drift.js";
 import {
-  filterSemanticContentOverridesForValidation,
+  partitionSemanticContentOverridesForValidation,
+  type InvalidSemanticContentOverrideMap,
+  type OverrideAuthorityProvider,
   type SemanticContentOverrideMap,
 } from "./semantic-content-sanitization.js";
 import { collectUncoveredP0Elements } from "./p0-risk-coverage.js";
@@ -94,6 +96,11 @@ export interface EvaluatePolicyGateInput {
    * the original finding.
    */
   semanticContentOverrides?: SemanticContentOverrideMap;
+  /**
+   * Caller-supplied authority provider used to verify signed semantic
+   * content overrides before the policy gate may honor them.
+   */
+  overrideAuthorityProvider?: OverrideAuthorityProvider;
   /** Recognized custom supporting-context attributes that escalate risk. */
   customContextPolicySignals?: readonly CustomContextPolicySignal[];
   /**
@@ -398,12 +405,23 @@ const isSemanticOverrideActive = (
   return paths.has(issue.path);
 };
 
+const invalidSemanticOverrideReason = (
+  issue: TestCaseValidationIssue,
+  invalidOverrides: InvalidSemanticContentOverrideMap | undefined,
+): string | undefined => {
+  if (issue.code !== "semantic_suspicious_content") return undefined;
+  const id = issue.testCaseId;
+  if (id === undefined) return undefined;
+  return invalidOverrides?.get(id)?.get(issue.path);
+};
+
 const evaluateCase = (
   testCase: GeneratedTestCase,
   intent: BusinessTestIntentIr,
   profile: TestCasePolicyProfile,
   caseIssues: TestCaseValidationIssue[],
   overrides: SemanticContentOverrideMap | undefined,
+  invalidOverrides: InvalidSemanticContentOverrideMap | undefined,
   customContextPolicySignals: readonly CustomContextPolicySignal[],
   visualSidecarRefusal: EvaluatePolicyGateInput["visualSidecarRefusal"],
   visualVerificationRequired: boolean,
@@ -432,6 +450,17 @@ const evaluateCase = (
   }
 
   for (const issue of caseIssues) {
+    const invalidOverride = invalidSemanticOverrideReason(issue, invalidOverrides);
+    if (invalidOverride !== undefined) {
+      violations.push({
+        rule: "policy:override_invalid",
+        outcome: "semantic_suspicious_content",
+        severity: "error",
+        reason: `semantic content override rejected: ${invalidOverride}`,
+        path: issue.path,
+      });
+      decision = escalate(decision, "blocked");
+    }
     const overridden = isSemanticOverrideActive(issue, overrides);
     const v = violationFromIssue(issue, overridden);
     if (v === null) continue;
@@ -1252,13 +1281,16 @@ const evaluateA11yJudgeVerdict = (
 export const evaluatePolicyGate = (
   input: EvaluatePolicyGateInput,
 ): TestCasePolicyReport => {
-  const semanticContentOverrides =
+  const overrideAssessment =
     input.semanticContentOverrides === undefined
       ? undefined
-      : filterSemanticContentOverridesForValidation(
+      : partitionSemanticContentOverridesForValidation(
           input.validation,
           input.semanticContentOverrides,
+          input.overrideAuthorityProvider,
         );
+  const semanticContentOverrides = overrideAssessment?.valid;
+  const invalidSemanticContentOverrides = overrideAssessment?.invalid;
   const validationByCase = indexValidationByTestCase(input.validation);
   const decisions: TestCasePolicyDecisionRecord[] = [];
   const faithfulnessThreshold =
@@ -1282,6 +1314,7 @@ export const evaluatePolicyGate = (
         input.profile,
         issues,
         semanticContentOverrides,
+        invalidSemanticContentOverrides,
         input.customContextPolicySignals ?? [],
         input.visualSidecarRefusal,
         input.visualVerificationRequired ?? false,

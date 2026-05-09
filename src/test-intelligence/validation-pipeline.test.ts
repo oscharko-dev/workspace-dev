@@ -33,6 +33,10 @@ import {
 } from "../contracts/index.js";
 import { canonicalJson } from "./content-hash.js";
 import {
+  createSignedSemanticContentOverrideEntry,
+  type OverrideAuthorityProvider,
+} from "./semantic-content-sanitization.js";
+import {
   runAndPersistValidationPipeline,
   runValidationPipeline,
   writeValidationPipelineArtifacts,
@@ -40,6 +44,9 @@ import {
 
 const ZERO = "0000000000000000000000000000000000000000000000000000000000000000";
 const GENERATED_AT = "2026-04-25T10:00:00.000Z";
+const OVERRIDE_AUTHORITY: OverrideAuthorityProvider = {
+  hmacSecret: "validation-pipeline-override-secret",
+};
 
 const buildIntent = (): BusinessTestIntentIr => ({
   version: "1.0.0",
@@ -792,14 +799,45 @@ test("semantic override clears effective pipeline block while preserving validat
     ],
   };
   const overridePath = "$.testCases[0].steps[0].action";
+  const overrideEntry = createSignedSemanticContentOverrideEntry({
+    jobId: "job-1",
+    testCaseId: "tc-pos",
+    path: overridePath,
+    category: "shell_metacharacters",
+    justification:
+      "intentional ops smoke test for destructive-command alerting; reviewed under change request CR-1413",
+    actor: "alice@bank.example",
+    signedAt: GENERATED_AT,
+    authority: OVERRIDE_AUTHORITY,
+  });
   const result = runValidationPipeline({
     jobId: "job-1",
     generatedAt: GENERATED_AT,
     list,
     intent: buildIntent(),
     semanticContentOverrides: new Map([
-      ["tc-pos", new Set([overridePath, "$.testCases[0].steps[0].data"])],
+      [
+        "tc-pos",
+        new Map([
+          [overridePath, overrideEntry],
+          [
+            "$.testCases[0].steps[0].data",
+            createSignedSemanticContentOverrideEntry({
+              jobId: "job-1",
+              testCaseId: "tc-pos",
+              path: "$.testCases[0].steps[0].data",
+              category: "shell_metacharacters",
+              justification:
+                "intentional ops smoke test for destructive-command alerting; reviewed under change request CR-1413",
+              actor: "alice@bank.example",
+              signedAt: GENERATED_AT,
+              authority: OVERRIDE_AUTHORITY,
+            }),
+          ],
+        ]),
+      ],
     ]),
+    overrideAuthorityProvider: OVERRIDE_AUTHORITY,
   });
   assert.equal(
     result.validation.blocked,
@@ -824,8 +862,27 @@ test("semantic override clears effective pipeline block while preserving validat
     list,
     intent: buildIntent(),
     semanticContentOverrides: new Map([
-      ["tc-pos", new Set(["$.testCases[0].expectedResults[0]"])],
+      [
+        "tc-pos",
+        new Map([
+          [
+            "$.testCases[0].expectedResults[0]",
+            createSignedSemanticContentOverrideEntry({
+              jobId: "job-1",
+              testCaseId: "tc-pos",
+              path: "$.testCases[0].expectedResults[0]",
+              category: "shell_metacharacters",
+              justification:
+                "intentional ops smoke test for destructive-command alerting; reviewed under change request CR-1413",
+              actor: "alice@bank.example",
+              signedAt: GENERATED_AT,
+              authority: OVERRIDE_AUTHORITY,
+            }),
+          ],
+        ]),
+      ],
     ]),
+    overrideAuthorityProvider: OVERRIDE_AUTHORITY,
   });
   assert.equal(staleOverride.blocked, true);
   assert.equal(staleOverride.policy.blocked, true);
