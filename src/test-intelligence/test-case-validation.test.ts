@@ -68,6 +68,32 @@ const buildIntent = (): BusinessTestIntentIr => ({
   redactions: [],
 });
 
+const buildOracleIntent = (): BusinessTestIntentIr => ({
+  ...buildIntent(),
+  detectedFields: [
+    {
+      id: "s-payment::field::n-amount",
+      screenId: "s-payment",
+      trace: { nodeId: "n-amount" },
+      provenance: "figma_node",
+      confidence: 0.9,
+      label: "Amount",
+      type: "number",
+    },
+  ],
+  detectedValidations: [
+    {
+      id: "s-payment::validation::n-amount::range",
+      screenId: "s-payment",
+      trace: { nodeId: "n-amount" },
+      provenance: "figma_node",
+      confidence: 0.85,
+      rule: "Numeric in range 1000..50000",
+      targetFieldId: "s-payment::field::n-amount",
+    },
+  ],
+});
+
 const buildCase = (
   overrides: Partial<GeneratedTestCase> = {},
 ): GeneratedTestCase => ({
@@ -165,6 +191,33 @@ const buildWorkflowTopology = (): WorkflowTopology => ({
   ],
   entryStates: ["STATE-001"],
   exitStates: ["STATE-002"],
+});
+
+test("Issue #2071: validator rejects oracle-governed testData that lacks deterministic provenance", () => {
+  const report = validateGeneratedTestCases({
+    jobId: "job-1",
+    generatedAt: GENERATED_AT,
+    intent: buildOracleIntent(),
+    list: buildList([
+      buildCase({
+        id: "tc-oracle-1",
+        title: "Submit valid amount",
+        objective: "Submit the form with a valid amount",
+        testData: ["Amount: 4242.00"],
+        qualitySignals: {
+          coveredFieldIds: ["s-payment::field::n-amount"],
+          coveredActionIds: [],
+          coveredValidationIds: [],
+          coveredNavigationIds: [],
+          confidence: 0.9,
+        },
+      }),
+    ]),
+  });
+  assert.equal(
+    report.issues.some((issue) => issue.code === "test_data_oracle_violation"),
+    true,
+  );
 });
 
 test("valid input produces a clean report", () => {

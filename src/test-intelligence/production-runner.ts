@@ -68,6 +68,7 @@ import {
   MULTI_SOURCE_TEST_INTENT_ENVELOPE_SCHEMA_VERSION,
   REDACTION_POLICY_VERSION,
   SELF_CONSISTENCY_REPORT_ARTIFACT_FILENAME,
+  TEST_DATA_ORACLE_REPORT_ARTIFACT_FILENAME,
   type RunQualityArtifact,
   type RunQualityAttemptSummary,
   type SelfConsistencyReport,
@@ -1013,6 +1014,8 @@ export interface RunFigmaToQcTestCasesResult {
      * runner was invoked with `mutationEval.enabled === true`.
      */
     mutationReport?: string;
+    /** Path to `test-data-oracle-report.json` (Issue #2071). */
+    testDataOracleReport?: string;
   };
   /**
    * Harness summary surfaced when the runner ran with
@@ -4471,6 +4474,10 @@ export const runFigmaToQcTestCases = async (
     artifactDir,
     TEST_CASE_VALIDATION_REPORT_ARTIFACT_FILENAME,
   );
+  const testDataOracleReportPath =
+    validation.testDataOracleReport === undefined
+      ? undefined
+      : join(artifactDir, TEST_DATA_ORACLE_REPORT_ARTIFACT_FILENAME);
   const visualSidecarValidationPath =
     validation.visual === undefined
       ? undefined
@@ -4609,6 +4616,10 @@ export const runFigmaToQcTestCases = async (
       : encodeCanonicalJson(a11yJudgeResult.verdict);
   const generatedBytes = encodeCanonicalJson(validation.generatedTestCases);
   const validationBytes = encodeCanonicalJson(validation.validation);
+  const testDataOracleReportBytes =
+    validation.testDataOracleReport === undefined
+      ? undefined
+      : encodeCanonicalJson(validation.testDataOracleReport);
   const visualSidecarValidationBytes =
     validation.visual === undefined
       ? undefined
@@ -4737,6 +4748,15 @@ export const runFigmaToQcTestCases = async (
           ]),
       writeAtomicBytes(generatedPath, generatedBytes),
       writeAtomicBytes(validationPath, validationBytes),
+      ...(testDataOracleReportPath === undefined ||
+      testDataOracleReportBytes === undefined
+        ? []
+        : [
+            writeAtomicBytes(
+              testDataOracleReportPath,
+              testDataOracleReportBytes,
+            ),
+          ]),
       ...(visualSidecarValidationPath === undefined ||
       visualSidecarValidationBytes === undefined
         ? []
@@ -5251,6 +5271,15 @@ export const runFigmaToQcTestCases = async (
         bytes: validationBytes,
         category: "validation",
       },
+      ...(testDataOracleReportBytes === undefined
+        ? []
+        : [
+            {
+              filename: TEST_DATA_ORACLE_REPORT_ARTIFACT_FILENAME,
+              bytes: testDataOracleReportBytes,
+              category: "validation" as const,
+            },
+          ]),
       ...(visualSidecarValidationBytes === undefined
         ? []
         : [
@@ -5573,6 +5602,9 @@ export const runFigmaToQcTestCases = async (
         : {}),
       generatedTestCases: generatedPath,
       validationReport: validationPath,
+      ...(testDataOracleReportPath !== undefined
+        ? { testDataOracleReport: testDataOracleReportPath }
+        : {}),
       ...(visualSidecarValidationPath !== undefined
         ? { visualSidecarValidationReport: visualSidecarValidationPath }
         : {}),

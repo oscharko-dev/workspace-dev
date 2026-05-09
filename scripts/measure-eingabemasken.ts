@@ -13,8 +13,9 @@
  *   - `sandbox/benchmarks/test-intelligence/scorecards/eingabemasken-K0.json`
  *
  * The pipeline is the same deterministic mock that the test suite uses;
- * it does NOT call a real LLM gateway, so cross-modal faithfulness and
- * concrete-data oracles are NOT exercised here. What IS exercised:
+ * it does NOT call a real LLM gateway, so cross-modal faithfulness is
+ * NOT exercised here. The deterministic test-data oracle IS exercised
+ * because this script enables it explicitly for every fixture. What IS exercised:
  *
  *   - IR derivation (intent-derivation.ts)
  *   - Deterministic test-case synthesis (validation-harness.ts)

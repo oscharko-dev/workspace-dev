@@ -57,6 +57,7 @@ import {
   SELF_VERIFY_RUBRIC_ARTIFACT_DIRECTORY,
   SELF_VERIFY_RUBRIC_REPORT_ARTIFACT_FILENAME,
   SELF_VERIFY_RUBRIC_RESPONSE_SCHEMA_NAME,
+  TEST_DATA_ORACLE_REPORT_ARTIFACT_FILENAME,
   TEST_CASE_COVERAGE_REPORT_ARTIFACT_FILENAME,
   TEST_CASE_POLICY_REPORT_ARTIFACT_FILENAME,
   TEST_CASE_VALIDATION_REPORT_ARTIFACT_FILENAME,
@@ -1983,6 +1984,10 @@ export const runWave1Validation = async (
   const validationReportBytes = utf8(canonicalJson(validation.validation));
   const policyReportBytes = utf8(canonicalJson(validation.policy));
   const coverageReportBytes = utf8(canonicalJson(validation.coverage));
+  const testDataOracleReportBytes =
+    validation.testDataOracleReport !== undefined
+      ? utf8(canonicalJson(validation.testDataOracleReport))
+      : undefined;
   const visualReportBytes =
     validation.visual !== undefined
       ? utf8(canonicalJson(validation.visual))
@@ -2016,6 +2021,14 @@ export const runWave1Validation = async (
       join(validationDir, TEST_CASE_COVERAGE_REPORT_ARTIFACT_FILENAME),
       coverageReportBytes,
     ),
+    ...(testDataOracleReportBytes !== undefined
+      ? [
+          writeAtomic(
+            join(validationDir, TEST_DATA_ORACLE_REPORT_ARTIFACT_FILENAME),
+            testDataOracleReportBytes,
+          ),
+        ]
+      : []),
     ...(visualReportBytes !== undefined
       ? [
           writeAtomic(
@@ -2335,6 +2348,15 @@ export const runWave1Validation = async (
         bytes: coverageReportBytes,
         category: "validation",
       },
+      ...(testDataOracleReportBytes !== undefined
+        ? [
+            {
+              filename: TEST_DATA_ORACLE_REPORT_ARTIFACT_FILENAME,
+              bytes: testDataOracleReportBytes,
+              category: "validation" as const,
+            },
+          ]
+        : []),
       ...(visualReportBytes !== undefined
         ? [
             {
