@@ -22,6 +22,8 @@ test("test-data-oracle: numeric range emits min/mid/max + below-min/above-max in
   const invalidValues = r.invalid.map((v) => v.value);
   assert.deepEqual(validValues, ["1000.00", "25500.00", "50000.00"]);
   assert.deepEqual(invalidValues, ["999.99", "50000.01"]);
+  assert.equal(r.valid.every((value) => value.synthetic === true), true);
+  assert.equal(r.invalid.every((value) => value.synthetic === true), true);
 });
 
 test("test-data-oracle: integer >= 1 boundary uses integer step (no decimals)", () => {
@@ -270,6 +272,7 @@ test("test-data-oracle: documentation-example test-data entries carry a redactio
     (v) => v.category === "documentation_example",
   );
   assert.ok(docExample !== undefined);
+  assert.equal(docExample?.synthetic, true);
   // Underlying value is unchanged.
   assert.equal(docExample?.value, "DE89370400440532013000");
   // Rendered entry carries the redaction-token sentinel.

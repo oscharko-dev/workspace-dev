@@ -8,8 +8,10 @@ import {
 import {
   formatOracleValueAsTestDataEntry,
   isDeterministicTestDataRule,
+  oracleValueNeedsLegacyRedactionMarker,
   resolveTestData,
   type OracleResolution,
+  SYNTHETIC_ORACLE_NOTE,
 } from "./test-data-oracle.js";
 
 const DEFAULT_ORACLE_ANCHOR = "2026-05-09T00:00:00.000Z" as const;
@@ -33,7 +35,19 @@ export interface TestDataOracleResolvedFieldReport {
   readonly fieldId: string;
   readonly fieldLabel: string;
   readonly testDataEntries: readonly string[];
+  readonly oracleProvenance?: readonly OracleSyntheticProvenanceEntry[];
   readonly provenance: readonly string[];
+}
+
+export interface OracleSyntheticProvenanceEntry {
+  readonly testDataEntry: string;
+  readonly synthetic: true;
+  readonly note: typeof SYNTHETIC_ORACLE_NOTE;
+  readonly legacyRedactionMarker: boolean;
+}
+
+export interface OracleProvenanceContext {
+  readonly byTestDataIndex: Readonly<Record<number, OracleSyntheticProvenanceEntry>>;
 }
 
 export interface TestDataOracleUnresolvedFieldReport {
@@ -46,6 +60,7 @@ export interface TestDataOracleCaseProjection {
   readonly testCaseId: string;
   readonly authoritativeTestData: readonly string[];
   readonly authoritativeOpenQuestions: readonly string[];
+  readonly oracleProvenanceContext?: OracleProvenanceContext;
   readonly oracleResolvedFields: readonly TestDataOracleResolvedFieldReport[];
   readonly oracleUnresolvedFields: readonly TestDataOracleUnresolvedFieldReport[];
   readonly provenance: readonly string[];
@@ -72,6 +87,19 @@ const uniqueStrings = (values: readonly string[]): string[] => {
     if (seen.has(value)) continue;
     seen.add(value);
     out.push(value);
+  }
+  return out;
+};
+
+const uniqueOracleProvenanceEntries = (
+  entries: readonly OracleSyntheticProvenanceEntry[],
+): OracleSyntheticProvenanceEntry[] => {
+  const seen = new Set<string>();
+  const out: OracleSyntheticProvenanceEntry[] = [];
+  for (const entry of entries) {
+    if (seen.has(entry.testDataEntry)) continue;
+    seen.add(entry.testDataEntry);
+    out.push(entry);
   }
   return out;
 };
@@ -111,9 +139,18 @@ const testDataEntriesFor = (
   testCase: GeneratedTestCase,
   fieldLabel: string,
   resolution: Extract<OracleResolution, { resolvable: true }>,
-): readonly string[] => {
-  const toEntry = (value: (typeof resolution.valid)[number]): string =>
-    formatOracleValueAsTestDataEntry(fieldLabel, value);
+): readonly OracleSyntheticProvenanceEntry[] => {
+  const toEntry = (
+    value: (typeof resolution.valid)[number],
+  ): OracleSyntheticProvenanceEntry => {
+    const testDataEntry = formatOracleValueAsTestDataEntry(fieldLabel, value);
+    return {
+      testDataEntry,
+      synthetic: value.synthetic,
+      note: SYNTHETIC_ORACLE_NOTE,
+      legacyRedactionMarker: oracleValueNeedsLegacyRedactionMarker(value),
+    };
+  };
   if (testCase.type === "negative" || testCase.type === "validation") {
     return resolution.invalid.map(toEntry);
   }
@@ -125,6 +162,38 @@ const testDataEntriesFor = (
 
 const governsEntryForField = (entry: string, fieldLabel: string): boolean =>
   entry.startsWith(`${fieldLabel}:`);
+
+const buildOracleProvenanceContext = (input: {
+  testData: readonly string[];
+  resolvedFields: readonly TestDataOracleResolvedFieldReport[];
+}): OracleProvenanceContext | undefined => {
+  const byTestDataIndex: Record<number, OracleSyntheticProvenanceEntry> = {};
+  for (const field of input.resolvedFields) {
+    const oracleProvenance = field.oracleProvenance ?? [];
+    if (oracleProvenance.length === 0) continue;
+    let occurrence = 0;
+    for (let index = 0; index < input.testData.length; index++) {
+      const entry = input.testData[index];
+      if (
+        entry === undefined ||
+        !governsEntryForField(entry, field.fieldLabel) ||
+        occurrence >= oracleProvenance.length
+      ) {
+        continue;
+      }
+      const provenanceEntry = oracleProvenance[occurrence];
+      if (provenanceEntry === undefined) continue;
+      byTestDataIndex[index] = {
+        ...provenanceEntry,
+        testDataEntry: entry,
+      };
+      occurrence += 1;
+    }
+  }
+  return Object.keys(byTestDataIndex).length === 0
+    ? undefined
+    : { byTestDataIndex: Object.freeze(byTestDataIndex) };
+};
 
 export const buildTestDataOracleGovernanceContext = (input: {
   intent: BusinessTestIntentIr;
@@ -166,7 +235,7 @@ export const projectTestDataOracleCase = (input: {
 }): TestDataOracleCaseProjection => {
   const resolvedFields: TestDataOracleResolvedFieldReport[] = [];
   const unresolvedFields: TestDataOracleUnresolvedFieldReport[] = [];
-  const authoritativeTestData: string[] = [];
+  const authoritativeEntries: OracleSyntheticProvenanceEntry[] = [];
   const authoritativeOpenQuestions: string[] = [];
   const provenance: string[] = [];
   const seenFieldIds = new Set<string>();
@@ -177,7 +246,7 @@ export const projectTestDataOracleCase = (input: {
     const fieldRecord = input.context.byFieldId.get(fieldId);
     if (fieldRecord === undefined || !fieldRecord.governed) continue;
     if (fieldRecord.resolution.resolvable) {
-      const testDataEntries = testDataEntriesFor(
+      const oracleProvenance = testDataEntriesFor(
         input.testCase,
         fieldRecord.fieldLabel,
         fieldRecord.resolution,
@@ -185,10 +254,11 @@ export const projectTestDataOracleCase = (input: {
       resolvedFields.push({
         fieldId,
         fieldLabel: fieldRecord.fieldLabel,
-        testDataEntries,
+        testDataEntries: oracleProvenance.map((entry) => entry.testDataEntry),
+        oracleProvenance,
         provenance: fieldRecord.resolution.provenance,
       });
-      authoritativeTestData.push(...testDataEntries);
+      authoritativeEntries.push(...oracleProvenance);
       provenance.push(...fieldRecord.resolution.provenance);
     }
     if (fieldRecord.resolution.resolvable && fieldRecord.unresolvedRules.length > 0) {
@@ -213,10 +283,24 @@ export const projectTestDataOracleCase = (input: {
     }
   }
 
+  const uniqueAuthoritativeEntries = uniqueOracleProvenanceEntries(
+    authoritativeEntries,
+  );
+  const authoritativeTestData = uniqueAuthoritativeEntries.map(
+    (entry) => entry.testDataEntry,
+  );
+  const oracleProvenanceContext = buildOracleProvenanceContext({
+    testData: input.testCase.testData,
+    resolvedFields,
+  });
+
   return {
     testCaseId: input.testCase.id,
-    authoritativeTestData: uniqueStrings(authoritativeTestData),
+    authoritativeTestData,
     authoritativeOpenQuestions: uniqueStrings(authoritativeOpenQuestions),
+    ...(oracleProvenanceContext !== undefined
+      ? { oracleProvenanceContext }
+      : {}),
     oracleResolvedFields: resolvedFields,
     oracleUnresolvedFields: unresolvedFields,
     provenance: uniqueStrings(provenance),
@@ -277,24 +361,35 @@ export const applyDeterministicTestDataOracle = (input: {
       projection.oracleResolvedFields.length > 0 ||
       projection.oracleUnresolvedFields.length > 0;
     if (governsCase) {
-      reportCases.push(projection);
+      // Report the provenance against the final emitted testData ordering,
+      // not the pre-reconciliation oracle-only ordering.
     }
     if (!governsCase) return testCase;
-    const preservedTestData = preserveNonOracleTestData(
-      testCase,
-      [
-        ...projection.oracleResolvedFields.map((field) => field.fieldLabel),
-        ...projection.oracleUnresolvedFields.map((field) => field.fieldLabel),
-      ],
-    );
-    return {
+    const governedLabels = [
+      ...projection.oracleResolvedFields.map((field) => field.fieldLabel),
+      ...projection.oracleUnresolvedFields.map((field) => field.fieldLabel),
+    ];
+    const preservedTestData = preserveNonOracleTestData(testCase, governedLabels);
+    const nextTestData = [...preservedTestData, ...projection.authoritativeTestData];
+    const governedTestCase = {
       ...testCase,
-      testData: [...preservedTestData, ...projection.authoritativeTestData],
+      testData: nextTestData,
       openQuestions: appendOracleOpenQuestions(
         testCase.openQuestions,
         projection.authoritativeOpenQuestions,
       ),
     };
+    const reportProvenanceContext = buildOracleProvenanceContext({
+      testData: nextTestData,
+      resolvedFields: projection.oracleResolvedFields,
+    });
+    reportCases.push({
+      ...projection,
+      ...(reportProvenanceContext !== undefined
+        ? { oracleProvenanceContext: reportProvenanceContext }
+        : {}),
+    });
+    return governedTestCase;
   });
 
   return {

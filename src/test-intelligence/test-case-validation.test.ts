@@ -94,6 +94,32 @@ const buildOracleIntent = (): BusinessTestIntentIr => ({
   ],
 });
 
+const buildOracleDobIntent = (): BusinessTestIntentIr => ({
+  ...buildIntent(),
+  detectedFields: [
+    {
+      id: "s-payment::field::n-dob",
+      screenId: "s-payment",
+      trace: { nodeId: "n-dob" },
+      provenance: "figma_node",
+      confidence: 0.9,
+      label: "Geburtsdatum",
+      type: "date",
+    },
+  ],
+  detectedValidations: [
+    {
+      id: "s-payment::validation::n-dob::iso-date",
+      screenId: "s-payment",
+      trace: { nodeId: "n-dob" },
+      provenance: "figma_node",
+      confidence: 0.85,
+      rule: "ISO date",
+      targetFieldId: "s-payment::field::n-dob",
+    },
+  ],
+});
+
 const buildCase = (
   overrides: Partial<GeneratedTestCase> = {},
 ): GeneratedTestCase => ({
@@ -264,6 +290,53 @@ test("Issue #2071: validator rejects oracle-governed testData that lacks determi
       }),
     ]),
   });
+  assert.equal(
+    report.issues.some((issue) => issue.code === "test_data_oracle_violation"),
+    true,
+  );
+});
+
+test("Issue #2106: validator keeps preserved entries scannable while skipping the oracle-governed synthetic slot", () => {
+  const report = validateGeneratedTestCases({
+    jobId: "job-1",
+    generatedAt: GENERATED_AT,
+    intent: buildOracleDobIntent(),
+    list: buildList([
+      buildCase({
+        id: "tc-oracle-dob-1",
+        title: "Submit valid date of birth",
+        objective: "Submit the form with a valid date of birth",
+        testData: [
+          "Comment: jane.doe@example.com",
+          'Geburtsdatum: 2026-04-25 (format_valid; from rule "ISO date")',
+        ],
+        qualitySignals: {
+          coveredFieldIds: ["s-payment::field::n-dob"],
+          coveredActionIds: [],
+          coveredValidationIds: [],
+          coveredNavigationIds: [],
+          confidence: 0.9,
+        },
+      }),
+    ]),
+  });
+  assert.equal(
+    report.issues.some(
+      (issue) =>
+        issue.code === "test_data_pii_detected" &&
+        issue.path === "$.testCases[0].testData[0]",
+    ),
+    true,
+    JSON.stringify(report.issues, null, 2),
+  );
+  assert.equal(
+    report.issues.some(
+      (issue) =>
+        issue.code === "test_data_pii_detected" &&
+        issue.path === "$.testCases[0].testData[1]",
+    ),
+    false,
+  );
   assert.equal(
     report.issues.some((issue) => issue.code === "test_data_oracle_violation"),
     true,
