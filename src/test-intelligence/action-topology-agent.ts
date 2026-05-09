@@ -3,10 +3,15 @@ import { mkdir, rename, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
 import {
+  ALLOWED_WORKFLOW_FIELD_LIFECYCLE_STATES,
+  ALLOWED_WORKFLOW_FIELD_LIFECYCLE_TRIGGERS,
   WORKFLOW_TOPOLOGY_ARTIFACT_FILENAME,
   WORKFLOW_TOPOLOGY_SCHEMA_VERSION,
   type TestDesignElement,
   type TestDesignModel,
+  type WorkflowFieldLifecycle,
+  type WorkflowFieldLifecycleState,
+  type WorkflowFieldLifecycleTransition,
   type WorkflowTopology,
   type WorkflowTopologyAction,
   type WorkflowTopologyState,
@@ -28,6 +33,16 @@ const HELPER_COPY_PATTERN =
   /\b(hinweis|helper|copy|note|mwst|vat|nicht teil|optional)\b/iu;
 const OPTIONAL_PATTERN = /\boptional\b/iu;
 const WORKFLOW_ACTION_ID_PATTERN = /^ACT-\d{3}$/u;
+const FIELD_LIFECYCLE_TRANSITION_ID_PATTERN = /^FLT-[a-f0-9]{10}$/u;
+const FIELD_LIFECYCLE_STATE_ORDER = new Map(
+  ALLOWED_WORKFLOW_FIELD_LIFECYCLE_STATES.map((state, index) => [state, index]),
+);
+const FIELD_LIFECYCLE_TRIGGER_ORDER = new Map(
+  ALLOWED_WORKFLOW_FIELD_LIFECYCLE_TRIGGERS.map((trigger, index) => [
+    trigger,
+    index,
+  ]),
+);
 
 export interface BuildWorkflowTopologyInput {
   model: TestDesignModel;
@@ -49,6 +64,11 @@ const compareStates = (
 ): number =>
   left.screenId.localeCompare(right.screenId) ||
   left.label.localeCompare(right.label);
+
+const compareFieldLifecycles = (
+  left: WorkflowFieldLifecycle,
+  right: WorkflowFieldLifecycle,
+): number => left.fieldId.localeCompare(right.fieldId);
 
 const inferActionKind = (
   element: TestDesignElement,
@@ -133,6 +153,26 @@ const stableUniqueActions = (
 const stableActionId = (index: number): string =>
   `ACT-${String(index + 1).padStart(3, "0")}`;
 
+const stableFieldLifecycleTransitionId = (input: {
+  fieldId: string;
+  from: WorkflowFieldLifecycleState;
+  to: WorkflowFieldLifecycleState;
+  trigger: WorkflowFieldLifecycleTransition["trigger"];
+}): string =>
+  `FLT-${sha256Hex(input).slice(0, 10)}`;
+
+const createFieldLifecycleTransition = (input: {
+  fieldId: string;
+  from: WorkflowFieldLifecycleState;
+  to: WorkflowFieldLifecycleState;
+  trigger: WorkflowFieldLifecycleTransition["trigger"];
+}): WorkflowFieldLifecycleTransition => ({
+  transitionId: stableFieldLifecycleTransitionId(input),
+  from: input.from,
+  to: input.to,
+  trigger: input.trigger,
+});
+
 const buildGuard = (action: WorkflowTopologyAction, markdown: string): string => {
   if (action.kind === "review_result") {
     return "after prerequisite values are available";
@@ -151,6 +191,9 @@ const buildGuard = (action: WorkflowTopologyAction, markdown: string): string =>
 
 export const isWorkflowActionId = (value: string): boolean =>
   WORKFLOW_ACTION_ID_PATTERN.test(value);
+
+const isFieldLifecycleTransitionId = (value: string): boolean =>
+  FIELD_LIFECYCLE_TRANSITION_ID_PATTERN.test(value);
 
 export const assertWorkflowTopologyInvariants = (
   topology: WorkflowTopology,
@@ -193,6 +236,117 @@ export const assertWorkflowTopologyInvariants = (
       }
     }
   }
+  const allowedStates = new Set<WorkflowFieldLifecycleState>(
+    ALLOWED_WORKFLOW_FIELD_LIFECYCLE_STATES,
+  );
+  const fieldIds = new Set<string>();
+  const fieldLifecycleTransitionIds = new Set<string>();
+  for (const lifecycle of topology.fieldLifecycles) {
+    if (lifecycle.fieldId.trim().length === 0) {
+      throw new TypeError("WorkflowTopology: field lifecycle fieldId must be non-empty");
+    }
+    if (fieldIds.has(lifecycle.fieldId)) {
+      throw new TypeError(
+        `WorkflowTopology: duplicate field lifecycle for "${lifecycle.fieldId}"`,
+      );
+    }
+    fieldIds.add(lifecycle.fieldId);
+    const lifecycleStates = new Set<WorkflowFieldLifecycleState>();
+    for (const state of lifecycle.states) {
+      if (!allowedStates.has(state)) {
+        throw new TypeError(
+          `WorkflowTopology: field lifecycle "${lifecycle.fieldId}" has unknown state "${state}"`,
+        );
+      }
+      lifecycleStates.add(state);
+    }
+    for (const requiredState of ALLOWED_WORKFLOW_FIELD_LIFECYCLE_STATES) {
+      if (!lifecycleStates.has(requiredState)) {
+        throw new TypeError(
+          `WorkflowTopology: field lifecycle "${lifecycle.fieldId}" is missing state "${requiredState}"`,
+        );
+      }
+    }
+    for (const transition of lifecycle.transitions) {
+      if (!isFieldLifecycleTransitionId(transition.transitionId)) {
+        throw new TypeError(
+          `WorkflowTopology: invalid field lifecycle transitionId "${transition.transitionId}"`,
+        );
+      }
+      if (
+        !lifecycleStates.has(transition.from) ||
+        !lifecycleStates.has(transition.to)
+      ) {
+        throw new TypeError(
+          `WorkflowTopology: field lifecycle transition "${transition.transitionId}" references an unknown state`,
+        );
+      }
+      if (fieldLifecycleTransitionIds.has(transition.transitionId)) {
+        throw new TypeError(
+          `WorkflowTopology: duplicate field lifecycle transitionId "${transition.transitionId}"`,
+        );
+      }
+      fieldLifecycleTransitionIds.add(transition.transitionId);
+    }
+  }
+};
+
+const buildFieldLifecycleForAction = (
+  action: WorkflowTopologyAction,
+): WorkflowFieldLifecycle | undefined => {
+  if (action.kind !== "enter_value" && action.kind !== "select_option") {
+    return undefined;
+  }
+  const fieldId = action.targetIds[0] ?? action.actionId;
+  const states: WorkflowFieldLifecycleState[] = [
+    ...ALLOWED_WORKFLOW_FIELD_LIFECYCLE_STATES,
+  ];
+  const transitions: WorkflowFieldLifecycleTransition[] = [
+    createFieldLifecycleTransition({
+      fieldId,
+      from: "initial",
+      to: "focused",
+      trigger: "user_focus",
+    }),
+    createFieldLifecycleTransition({
+      fieldId,
+      from: "focused",
+      to: "in_progress",
+      trigger: "user_input",
+    }),
+    createFieldLifecycleTransition({
+      fieldId,
+      from: "in_progress",
+      to: "validated",
+      trigger: "validation_pass",
+    }),
+    createFieldLifecycleTransition({
+      fieldId,
+      from: "in_progress",
+      to: "error",
+      trigger: "validation_fail",
+    }),
+    createFieldLifecycleTransition({
+      fieldId,
+      from: "validated",
+      to: "terminal",
+      trigger: "form_commit",
+    }),
+  ].sort(
+    (left, right) =>
+      (FIELD_LIFECYCLE_STATE_ORDER.get(left.from) ?? 0) -
+        (FIELD_LIFECYCLE_STATE_ORDER.get(right.from) ?? 0) ||
+      (FIELD_LIFECYCLE_STATE_ORDER.get(left.to) ?? 0) -
+        (FIELD_LIFECYCLE_STATE_ORDER.get(right.to) ?? 0) ||
+      (FIELD_LIFECYCLE_TRIGGER_ORDER.get(left.trigger) ?? 0) -
+        (FIELD_LIFECYCLE_TRIGGER_ORDER.get(right.trigger) ?? 0) ||
+      left.transitionId.localeCompare(right.transitionId),
+  );
+  return {
+    fieldId,
+    states,
+    transitions,
+  };
 };
 
 export const buildWorkflowTopology = (
@@ -218,6 +372,12 @@ export const buildWorkflowTopology = (
   }));
   const states: WorkflowTopologyState[] = [];
   const transitions: WorkflowTopologyTransition[] = [];
+  const fieldLifecycles = actions
+    .map((action) => buildFieldLifecycleForAction(action))
+    .filter(
+      (candidate): candidate is WorkflowFieldLifecycle => candidate !== undefined,
+    )
+    .sort(compareFieldLifecycles);
   const entryStates: string[] = [];
   const exitStates: string[] = [];
   let stateIndex = 0;
@@ -271,6 +431,7 @@ export const buildWorkflowTopology = (
     schemaVersion: WORKFLOW_TOPOLOGY_SCHEMA_VERSION,
     jobId: input.model.jobId,
     actions,
+    fieldLifecycles,
     states: states.sort(compareStates),
     transitions,
     entryStates: [...new Set(entryStates)].sort((left, right) =>
@@ -311,6 +472,31 @@ export const workflowActionAnchorText = (
   }
   return `[${normalized.join(", ")}]`;
 };
+
+export const workflowFieldLifecycleForField = (input: {
+  topology: WorkflowTopology;
+  fieldId: string;
+}): WorkflowFieldLifecycle | undefined =>
+  input.topology.fieldLifecycles.find(
+    (lifecycle) => lifecycle.fieldId === input.fieldId,
+  );
+
+export const workflowFieldLifecycleTransitionIdFor = (input: {
+  topology: WorkflowTopology;
+  fieldId: string;
+  from?: WorkflowFieldLifecycleState;
+  to?: WorkflowFieldLifecycleState;
+  trigger?: WorkflowFieldLifecycleTransition["trigger"];
+}): string | undefined =>
+  workflowFieldLifecycleForField({
+    topology: input.topology,
+    fieldId: input.fieldId,
+  })?.transitions.find(
+    (transition) =>
+      (input.from === undefined || transition.from === input.from) &&
+      (input.to === undefined || transition.to === input.to) &&
+      (input.trigger === undefined || transition.trigger === input.trigger),
+  )?.transitionId;
 
 export const workflowActionIdsForTargets = (input: {
   topology: WorkflowTopology;

@@ -113,6 +113,7 @@ export const generatedTestCaseListZodSchema: z.ZodType = z
               action: z.string().min(1),
               data: z.string().optional(),
               expected: z.string().optional(),
+              fieldLifecycleTransitionId: z.string().min(1).optional(),
             }),
           )
           .min(1),

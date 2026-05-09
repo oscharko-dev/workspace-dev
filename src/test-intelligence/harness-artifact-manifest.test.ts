@@ -81,6 +81,7 @@ const seedRunDir = async (): Promise<string> => {
       schemaVersion: WORKFLOW_TOPOLOGY_SCHEMA_VERSION,
       jobId: "job-1",
       actions: [],
+      fieldLifecycles: [],
       states: [],
       transitions: [],
       entryStates: [],

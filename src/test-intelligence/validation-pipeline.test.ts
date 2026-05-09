@@ -321,6 +321,7 @@ const buildWorkflowTopology = (): WorkflowTopology => ({
       actions: ["ACT-001"],
     },
   ],
+  fieldLifecycles: [],
   entryStates: ["STATE-001"],
   exitStates: ["STATE-002"],
 });

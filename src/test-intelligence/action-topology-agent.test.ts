@@ -64,12 +64,18 @@ test("buildWorkflowTopology derives stable ACT-* actions and transitions", () =>
 
   assert.equal(topology.schemaVersion, WORKFLOW_TOPOLOGY_SCHEMA_VERSION);
   assert.equal(topology.actions.length, 4);
+  assert.equal(topology.fieldLifecycles.length, 3);
   assert.deepEqual(
     topology.actions.map((action) => action.actionId),
     ["ACT-001", "ACT-002", "ACT-003", "ACT-004"],
   );
   assert.equal(topology.transitions.length, 4);
   assert.ok(topology.transitions.every((transition) => transition.actions.length > 0));
+  assert.ok(
+    topology.fieldLifecycles.every(
+      (lifecycle) => lifecycle.transitions.length === 5,
+    ),
+  );
   assert.ok(
     topology.actions.some((action) => action.label.includes("Kaufpreis")),
   );

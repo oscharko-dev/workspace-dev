@@ -189,6 +189,7 @@ const buildCoverage = (cases: GeneratedTestCase[]): TestCaseCoverageReport => ({
   totalTestCases: cases.length,
   fieldCoverage: { total: 0, covered: 0, ratio: 0, uncoveredIds: [] },
   actionCoverage: { total: 0, covered: 0, ratio: 0, uncoveredIds: [] },
+  fieldLifecycleCoverage: { total: 0, covered: 0, ratio: 0, uncoveredIds: [] },
   validationCoverage: { total: 0, covered: 0, ratio: 0, uncoveredIds: [] },
   navigationCoverage: { total: 0, covered: 0, ratio: 0, uncoveredIds: [] },
   traceCoverage: { total: cases.length, withTrace: cases.length, ratio: 1 },

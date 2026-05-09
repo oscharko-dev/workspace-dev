@@ -1633,7 +1633,7 @@ out of the contract so equivalent inputs remain byte-stable.
 
 ##### reasonCode
 
-> `readonly` **reasonCode**: `"screen_baseline"` \| `"element_partition"` \| `"rule_partition"` \| `"rule_boundary"` \| `"rule_decision"` \| `"action_transition"` \| `"calculation_rule"` \| `"screen_pairwise"` \| `"risk_regression"` \| `"open_question_probe"` \| `"source_reconciliation_probe"` \| `"supporting_context_probe"`
+> `readonly` **reasonCode**: `"screen_baseline"` \| `"element_partition"` \| `"rule_partition"` \| `"rule_boundary"` \| `"rule_decision"` \| `"action_transition"` \| `"field_lifecycle_transition"` \| `"field_lifecycle_error_transition"` \| `"calculation_rule"` \| `"screen_pairwise"` \| `"risk_regression"` \| `"open_question_probe"` \| `"source_reconciliation_probe"` \| `"supporting_context_probe"`
 
 ##### requirementId
 
@@ -4179,6 +4179,15 @@ Single ordered step inside a generated test case.
 ##### expected?
 
 > `optional` **expected?**: `string`
+
+##### fieldLifecycleTransitionId?
+
+> `optional` **fieldLifecycleTransitionId?**: `string`
+
+Stable workflow-topology field lifecycle transition id exercised by this
+step (Issue #2072). Every step must anchor to one deterministic
+field-level transition when a workflow topology with field lifecycles is
+available.
 
 ##### index
 
@@ -10713,6 +10722,10 @@ Test-case pairs sharing >= duplicate threshold.
 
 > **fieldCoverage**: [`TestCaseCoverageBucket`](#testcasecoveragebucket)
 
+##### fieldLifecycleCoverage
+
+> **fieldLifecycleCoverage**: [`TestCaseCoverageBucket`](#testcasecoveragebucket)
+
 ##### generatedAt
 
 > **generatedAt**: `string`
@@ -11555,7 +11568,7 @@ Single semantic / structural validation issue.
 
 ##### code
 
-> **code**: `"schema_invalid"` \| `"missing_trace"` \| `"trace_screen_unknown"` \| `"missing_expected_results"` \| `"steps_unordered"` \| `"steps_indices_non_sequential"` \| `"step_action_empty"` \| `"step_action_too_long"` \| `"duplicate_step_index"` \| `"duplicate_test_case_id"` \| `"title_empty"` \| `"objective_empty"` \| `"risk_category_invalid_for_intent"` \| `"qc_mapping_blocking_reasons_missing"` \| `"qc_mapping_exportable_inconsistent"` \| `"quality_signals_confidence_out_of_range"` \| `"quality_signals_coverage_unknown_id"` \| `"test_data_pii_detected"` \| `"test_data_unredacted_value"` \| `"preconditions_pii_detected"` \| `"expected_results_pii_detected"` \| `"assumptions_excessive"` \| `"open_questions_excessive"` \| `"ambiguity_without_review_state"` \| `"unsupported_unresolved_validation_detail"` \| `"needs_open_question_clarification"` \| `"semantic_suspicious_content"` \| `"domain_invariant_violation"`
+> **code**: `"schema_invalid"` \| `"missing_trace"` \| `"trace_screen_unknown"` \| `"missing_expected_results"` \| `"steps_unordered"` \| `"steps_indices_non_sequential"` \| `"step_action_empty"` \| `"step_action_too_long"` \| `"duplicate_step_index"` \| `"duplicate_test_case_id"` \| `"title_empty"` \| `"objective_empty"` \| `"risk_category_invalid_for_intent"` \| `"qc_mapping_blocking_reasons_missing"` \| `"qc_mapping_exportable_inconsistent"` \| `"quality_signals_confidence_out_of_range"` \| `"quality_signals_coverage_unknown_id"` \| `"test_data_pii_detected"` \| `"test_data_unredacted_value"` \| `"preconditions_pii_detected"` \| `"expected_results_pii_detected"` \| `"assumptions_excessive"` \| `"open_questions_excessive"` \| `"ambiguity_without_review_state"` \| `"unsupported_unresolved_validation_detail"` \| `"needs_open_question_clarification"` \| `"semantic_suspicious_content"` \| `"domain_invariant_violation"` \| `"test_data_oracle_violation"` \| `"missing_field_lifecycle_transition"` \| `"unknown_field_lifecycle_transition"` \| `"uncovered_field_lifecycle_transition"`
 
 ##### message
 
@@ -14614,6 +14627,50 @@ Source-attribution coverage ratio across test cases (0–1).
 
 ***
 
+### WorkflowFieldLifecycle
+
+One stable per-field lifecycle emitted by the action-topology agent.
+
+#### Properties
+
+##### fieldId
+
+> `readonly` **fieldId**: `string`
+
+##### states
+
+> `readonly` **states**: readonly (`"error"` \| `"initial"` \| `"focused"` \| `"in_progress"` \| `"validated"` \| `"terminal"`)[]
+
+##### transitions
+
+> `readonly` **transitions**: readonly [`WorkflowFieldLifecycleTransition`](#workflowfieldlifecycletransition)[]
+
+***
+
+### WorkflowFieldLifecycleTransition
+
+One per-field lifecycle transition emitted by the action-topology agent.
+
+#### Properties
+
+##### from
+
+> `readonly` **from**: `"error"` \| `"initial"` \| `"focused"` \| `"in_progress"` \| `"validated"` \| `"terminal"`
+
+##### to
+
+> `readonly` **to**: `"error"` \| `"initial"` \| `"focused"` \| `"in_progress"` \| `"validated"` \| `"terminal"`
+
+##### transitionId
+
+> `readonly` **transitionId**: `string`
+
+##### trigger
+
+> `readonly` **trigger**: `"user_focus"` \| `"user_input"` \| `"validation_pass"` \| `"validation_fail"` \| `"form_commit"`
+
+***
+
 ### WorkflowTopology
 
 Deterministic workflow topology derived from the test-design model.
@@ -14631,6 +14688,10 @@ Deterministic workflow topology derived from the test-design model.
 ##### exitStates
 
 > `readonly` **exitStates**: readonly `string`[]
+
+##### fieldLifecycles
+
+> `readonly` **fieldLifecycles**: readonly [`WorkflowFieldLifecycle`](#workflowfieldlifecycle)[]
 
 ##### jobId
 
@@ -20186,6 +20247,18 @@ Source-mix identifier. Each distinct combination of source kinds is one mix.
 
 ***
 
+### WorkflowFieldLifecycleState
+
+> **WorkflowFieldLifecycleState** = *typeof* [`ALLOWED_WORKFLOW_FIELD_LIFECYCLE_STATES`](#allowed_workflow_field_lifecycle_states)\[`number`\]
+
+***
+
+### WorkflowFieldLifecycleTrigger
+
+> **WorkflowFieldLifecycleTrigger** = *typeof* [`ALLOWED_WORKFLOW_FIELD_LIFECYCLE_TRIGGERS`](#allowed_workflow_field_lifecycle_triggers)\[`number`\]
+
+***
+
 ### WorkspaceBrandTheme
 
 > **WorkspaceBrandTheme** = `"derived"` \| `"sparkasse"`
@@ -20878,7 +20951,7 @@ These are plan-level test-design techniques, not the same enum as
 
 ### ALLOWED\_COVERAGE\_REQUIREMENT\_REASON\_CODES
 
-> `const` **ALLOWED\_COVERAGE\_REQUIREMENT\_REASON\_CODES**: readonly \[`"screen_baseline"`, `"element_partition"`, `"rule_partition"`, `"rule_boundary"`, `"rule_decision"`, `"action_transition"`, `"calculation_rule"`, `"screen_pairwise"`, `"risk_regression"`, `"open_question_probe"`, `"source_reconciliation_probe"`, `"supporting_context_probe"`\]
+> `const` **ALLOWED\_COVERAGE\_REQUIREMENT\_REASON\_CODES**: readonly \[`"screen_baseline"`, `"element_partition"`, `"rule_partition"`, `"rule_boundary"`, `"rule_decision"`, `"action_transition"`, `"field_lifecycle_transition"`, `"field_lifecycle_error_transition"`, `"calculation_rule"`, `"screen_pairwise"`, `"risk_regression"`, `"open_question_probe"`, `"source_reconciliation_probe"`, `"supporting_context_probe"`\]
 
 Stable reason codes explaining why a coverage requirement exists.
 These allow downstream generation and auditing to distinguish requirements
@@ -21741,7 +21814,7 @@ gating per the Issue #1364 / #1386 update.
 
 ### ALLOWED\_TEST\_CASE\_VALIDATION\_ISSUE\_CODES
 
-> `const` **ALLOWED\_TEST\_CASE\_VALIDATION\_ISSUE\_CODES**: readonly \[`"schema_invalid"`, `"missing_trace"`, `"trace_screen_unknown"`, `"missing_expected_results"`, `"steps_unordered"`, `"steps_indices_non_sequential"`, `"step_action_empty"`, `"step_action_too_long"`, `"duplicate_step_index"`, `"duplicate_test_case_id"`, `"title_empty"`, `"objective_empty"`, `"risk_category_invalid_for_intent"`, `"qc_mapping_blocking_reasons_missing"`, `"qc_mapping_exportable_inconsistent"`, `"quality_signals_confidence_out_of_range"`, `"quality_signals_coverage_unknown_id"`, `"test_data_pii_detected"`, `"test_data_unredacted_value"`, `"preconditions_pii_detected"`, `"expected_results_pii_detected"`, `"assumptions_excessive"`, `"open_questions_excessive"`, `"ambiguity_without_review_state"`, `"unsupported_unresolved_validation_detail"`, `"needs_open_question_clarification"`, `"semantic_suspicious_content"`, `"domain_invariant_violation"`\]
+> `const` **ALLOWED\_TEST\_CASE\_VALIDATION\_ISSUE\_CODES**: readonly \[`"schema_invalid"`, `"missing_trace"`, `"trace_screen_unknown"`, `"missing_expected_results"`, `"steps_unordered"`, `"steps_indices_non_sequential"`, `"step_action_empty"`, `"step_action_too_long"`, `"duplicate_step_index"`, `"duplicate_test_case_id"`, `"title_empty"`, `"objective_empty"`, `"risk_category_invalid_for_intent"`, `"qc_mapping_blocking_reasons_missing"`, `"qc_mapping_exportable_inconsistent"`, `"quality_signals_confidence_out_of_range"`, `"quality_signals_coverage_unknown_id"`, `"test_data_pii_detected"`, `"test_data_unredacted_value"`, `"preconditions_pii_detected"`, `"expected_results_pii_detected"`, `"assumptions_excessive"`, `"open_questions_excessive"`, `"ambiguity_without_review_state"`, `"unsupported_unresolved_validation_detail"`, `"needs_open_question_clarification"`, `"semantic_suspicious_content"`, `"domain_invariant_violation"`, `"test_data_oracle_violation"`, `"missing_field_lifecycle_transition"`, `"unknown_field_lifecycle_transition"`, `"uncovered_field_lifecycle_transition"`\]
 
 Allowed test-case validation issue codes (Issue #1364).
 The list is the runtime source of truth; new codes plug in here without
@@ -21908,6 +21981,22 @@ Allowed signing modes for the Wave 1 Validation attestation.
   tests and verifiers run without external network calls. A keyless
   flow (Fulcio + Rekor) plugs into the same signer interface but is
   never invoked by default.
+
+***
+
+### ALLOWED\_WORKFLOW\_FIELD\_LIFECYCLE\_STATES
+
+> `const` **ALLOWED\_WORKFLOW\_FIELD\_LIFECYCLE\_STATES**: readonly \[`"initial"`, `"focused"`, `"in_progress"`, `"validated"`, `"error"`, `"terminal"`\]
+
+Allowed per-field lifecycle states emitted in workflow topology.
+
+***
+
+### ALLOWED\_WORKFLOW\_FIELD\_LIFECYCLE\_TRIGGERS
+
+> `const` **ALLOWED\_WORKFLOW\_FIELD\_LIFECYCLE\_TRIGGERS**: readonly \[`"user_focus"`, `"user_input"`, `"validation_pass"`, `"validation_fail"`, `"form_commit"`\]
+
+Allowed per-field lifecycle triggers emitted in workflow topology.
 
 ***
 
@@ -23771,6 +23860,22 @@ Canonical filename for the persisted validation diagnostics artifact.
 
 Schema version for the persisted test-case validation report artifact (Issue #1364).
 Bumped when `TestCaseValidationReport` changes shape.
+
+***
+
+### TEST\_DATA\_ORACLE\_REPORT\_ARTIFACT\_FILENAME
+
+> `const` **TEST\_DATA\_ORACLE\_REPORT\_ARTIFACT\_FILENAME**: `"test-data-oracle-report.json"`
+
+Canonical filename for the persisted deterministic test-data oracle artifact.
+
+***
+
+### TEST\_DATA\_ORACLE\_REPORT\_SCHEMA\_VERSION
+
+> `const` **TEST\_DATA\_ORACLE\_REPORT\_SCHEMA\_VERSION**: `"1.0.0"`
+
+Schema version for the persisted deterministic test-data oracle artifact (Issue #2071).
 
 ***
 

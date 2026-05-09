@@ -7,13 +7,70 @@ import {
   TEST_INTELLIGENCE_CONTRACT_VERSION,
   TEST_INTELLIGENCE_PROMPT_TEMPLATE_VERSION,
   VISUAL_SIDECAR_SCHEMA_VERSION,
+  WORKFLOW_TOPOLOGY_SCHEMA_VERSION,
   type GeneratedTestCase,
   type GeneratedTestCaseList,
+  type WorkflowTopology,
 } from "../contracts/index.js";
 import {
   extractAcceptanceCriteriaFromMarkdown,
   renderCustomerMarkdown,
 } from "./customer-markdown-renderer.js";
+
+const buildWorkflowTopology = (): WorkflowTopology => ({
+  schemaVersion: WORKFLOW_TOPOLOGY_SCHEMA_VERSION,
+  jobId: "job-1",
+  actions: [],
+  states: [],
+  transitions: [],
+  fieldLifecycles: [
+    {
+      fieldId: "login::field::password",
+      states: [
+        "initial",
+        "focused",
+        "in_progress",
+        "validated",
+        "error",
+        "terminal",
+      ],
+      transitions: [
+        {
+          transitionId: "FLT-login0001",
+          from: "initial",
+          to: "focused",
+          trigger: "user_focus",
+        },
+        {
+          transitionId: "FLT-login0002",
+          from: "focused",
+          to: "in_progress",
+          trigger: "user_input",
+        },
+        {
+          transitionId: "FLT-login0003",
+          from: "in_progress",
+          to: "validated",
+          trigger: "validation_pass",
+        },
+        {
+          transitionId: "FLT-login0004",
+          from: "in_progress",
+          to: "error",
+          trigger: "validation_fail",
+        },
+        {
+          transitionId: "FLT-login0005",
+          from: "validated",
+          to: "terminal",
+          trigger: "form_commit",
+        },
+      ],
+    },
+  ],
+  entryStates: [],
+  exitStates: [],
+});
 
 const buildCase = (
   overrides: Partial<GeneratedTestCase> = {},
@@ -142,6 +199,41 @@ test("renderCustomerMarkdown renders steps with Beschreibung + Erwartetes Ergebn
   assert.match(body, /\*\*Workflow-Aktionen:\*\* ACT-001/u);
   assert.match(body, /Abdeckung & Nachvollziehbarkeit/u);
   assert.match(body, /Abgedeckte Semantik/u);
+});
+
+test("renderCustomerMarkdown renders explicit field lifecycle state transitions", () => {
+  const list: GeneratedTestCaseList = {
+    schemaVersion: GENERATED_TEST_CASE_SCHEMA_VERSION,
+    jobId: "job-1",
+    testCases: [
+      buildCase({
+        steps: [
+          {
+            index: 1,
+            action: "Fokussiere das Passwortfeld",
+            expected: "Passwortfeld ist aktiv",
+            fieldLifecycleTransitionId: "FLT-login0001",
+          },
+          {
+            index: 2,
+            action: "Lasse das Pflichtfeld leer und bestätige",
+            expected: "Fehlermeldung erscheint",
+            fieldLifecycleTransitionId: "FLT-login0004",
+          },
+        ],
+      }),
+    ],
+  };
+  const result = renderCustomerMarkdown({
+    list,
+    fileName: "x",
+    sourceLabel: "x",
+    generatedAt: "2026-05-02T10:00:00Z",
+    workflowTopology: buildWorkflowTopology(),
+  });
+  const body = result.perCaseFiles[0]?.body ?? "";
+  assert.match(body, /→ Feld erreicht Zustand "fokussiert"/u);
+  assert.match(body, /→ Feld erreicht Zustand "fehler"/u);
 });
 
 test("renderCustomerMarkdown uses persisted polarity when JSON classification is present", () => {

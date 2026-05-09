@@ -110,7 +110,13 @@ const TEST_CASE_KEYS = [
   "regulatoryRelevance",
 ] as const;
 const REGULATORY_RELEVANCE_KEYS = ["domain", "rationale"] as const;
-const STEP_KEYS = ["index", "action", "data", "expected"] as const;
+const STEP_KEYS = [
+  "index",
+  "action",
+  "data",
+  "expected",
+  "fieldLifecycleTransitionId",
+] as const;
 const FIGMA_TRACE_REF_KEYS = [
   "screenId",
   "nodeId",
@@ -412,6 +418,13 @@ const expectStepsArray = (
     }
     if (step["expected"] !== undefined) {
       expectString(step["expected"], `${path}[${i}].expected`, errors);
+    }
+    if (step["fieldLifecycleTransitionId"] !== undefined) {
+      expectString(
+        step["fieldLifecycleTransitionId"],
+        `${path}[${i}].fieldLifecycleTransitionId`,
+        errors,
+      );
     }
   }
 };

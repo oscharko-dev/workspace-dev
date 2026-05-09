@@ -939,6 +939,9 @@ export const ALLOWED_TEST_CASE_VALIDATION_ISSUE_CODES = [
   "semantic_suspicious_content",
   "domain_invariant_violation",
   "test_data_oracle_violation",
+  "missing_field_lifecycle_transition",
+  "unknown_field_lifecycle_transition",
+  "uncovered_field_lifecycle_transition",
 ] as const;
 
 export type TestCaseValidationIssueCode =
@@ -1424,6 +1427,7 @@ export interface TestCaseCoverageReport {
   totalTestCases: number;
   fieldCoverage: TestCaseCoverageBucket;
   actionCoverage: TestCaseCoverageBucket;
+  fieldLifecycleCoverage: TestCaseCoverageBucket;
   validationCoverage: TestCaseCoverageBucket;
   navigationCoverage: TestCaseCoverageBucket;
   traceCoverage: { total: number; withTrace: number; ratio: number };
@@ -7008,6 +7012,13 @@ export interface GeneratedTestCaseStep {
   action: string;
   data?: string;
   expected?: string;
+  /**
+   * Stable workflow-topology field lifecycle transition id exercised by this
+   * step (Issue #2072). Every step must anchor to one deterministic
+   * field-level transition when a workflow topology with field lifecycles is
+   * available.
+   */
+  fieldLifecycleTransitionId?: string;
 }
 
 /** Reference back to a Figma trace path that motivated a test case. */
@@ -7054,6 +7065,29 @@ export const WORKFLOW_TOPOLOGY_SCHEMA_VERSION = "1.0.0" as const;
 export const WORKFLOW_TOPOLOGY_ARTIFACT_FILENAME =
   "workflow-topology.json" as const;
 
+/** Allowed per-field lifecycle states emitted in workflow topology. */
+export const ALLOWED_WORKFLOW_FIELD_LIFECYCLE_STATES = [
+  "initial",
+  "focused",
+  "in_progress",
+  "validated",
+  "error",
+  "terminal",
+] as const;
+export type WorkflowFieldLifecycleState =
+  (typeof ALLOWED_WORKFLOW_FIELD_LIFECYCLE_STATES)[number];
+
+/** Allowed per-field lifecycle triggers emitted in workflow topology. */
+export const ALLOWED_WORKFLOW_FIELD_LIFECYCLE_TRIGGERS = [
+  "user_focus",
+  "user_input",
+  "validation_pass",
+  "validation_fail",
+  "form_commit",
+] as const;
+export type WorkflowFieldLifecycleTrigger =
+  (typeof ALLOWED_WORKFLOW_FIELD_LIFECYCLE_TRIGGERS)[number];
+
 /** One stable workflow action emitted by the action-topology agent. */
 export interface WorkflowTopologyAction {
   readonly actionId: string;
@@ -7086,6 +7120,21 @@ export interface WorkflowTopologyTransition {
   readonly actions: readonly string[];
 }
 
+/** One per-field lifecycle transition emitted by the action-topology agent. */
+export interface WorkflowFieldLifecycleTransition {
+  readonly transitionId: string;
+  readonly from: WorkflowFieldLifecycleState;
+  readonly to: WorkflowFieldLifecycleState;
+  readonly trigger: WorkflowFieldLifecycleTrigger;
+}
+
+/** One stable per-field lifecycle emitted by the action-topology agent. */
+export interface WorkflowFieldLifecycle {
+  readonly fieldId: string;
+  readonly states: readonly WorkflowFieldLifecycleState[];
+  readonly transitions: readonly WorkflowFieldLifecycleTransition[];
+}
+
 /** Deterministic workflow topology derived from the test-design model. */
 export interface WorkflowTopology {
   readonly schemaVersion: typeof WORKFLOW_TOPOLOGY_SCHEMA_VERSION;
@@ -7093,6 +7142,7 @@ export interface WorkflowTopology {
   readonly actions: readonly WorkflowTopologyAction[];
   readonly states: readonly WorkflowTopologyState[];
   readonly transitions: readonly WorkflowTopologyTransition[];
+  readonly fieldLifecycles: readonly WorkflowFieldLifecycle[];
   readonly entryStates: readonly string[];
   readonly exitStates: readonly string[];
 }
@@ -11259,6 +11309,8 @@ export const ALLOWED_COVERAGE_REQUIREMENT_REASON_CODES = [
   "rule_boundary",
   "rule_decision",
   "action_transition",
+  "field_lifecycle_transition",
+  "field_lifecycle_error_transition",
   "calculation_rule",
   "screen_pairwise",
   "risk_regression",

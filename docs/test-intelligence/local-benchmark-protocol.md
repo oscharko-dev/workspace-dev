@@ -69,6 +69,7 @@ For every run the protocol records the following deterministic outputs:
 | `G-NEG-CASE` adversarial-critic lift | `policy-report.json#gateResults[?gateId=="G-NEG-CASE"]` | `status === "passed"` and `observedRatio >= 0.30` |
 | `mutationKillRate` | `policy-report.json#mutationKillRate.killRate` and `mutation-report.json` | `>= 0.85` (the documented Issue #1753 KPI) |
 | `invariantCoverage` | `coverage-report.json#invariantCoverage.ratio` | `>= 0.75` (Wave-2 active-dataset target) |
+| `fieldLifecycleCoverage` | `coverage-report.json#fieldLifecycleCoverage.ratio` | `>= 0.80` (Issue #2072 active-dataset target) |
 | Judge-panel agreement | `judge-consensus.json#agreement` | `agree` for at least 80 % of cases |
 | `negativeCaseRatio` | `coverage-report.json#negativeCaseCount / totalTestCases` | `>= 0.30` after the adversarial-critic loop |
 

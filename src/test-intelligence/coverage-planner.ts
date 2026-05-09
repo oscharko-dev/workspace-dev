@@ -620,6 +620,30 @@ export const buildCoveragePlan = (input: BuildCoveragePlanInput): CoveragePlan =
       }),
     );
   }
+  for (const lifecycle of input.workflowTopology?.fieldLifecycles ?? []) {
+    for (const transition of lifecycle.transitions) {
+      recommendedCases.push(
+        buildRequirement({
+          technique: "state_transition",
+          reasonCode: "field_lifecycle_transition",
+          targetIds: [lifecycle.fieldId, transition.transitionId],
+          sourceRefs: allModelSourceRefs(model),
+          visualRefs: allModelVisualRefs(model),
+        }),
+      );
+      if (transition.to === "error") {
+        minimumCases.push(
+          buildRequirement({
+            technique: "error_guessing",
+            reasonCode: "field_lifecycle_error_transition",
+            targetIds: [lifecycle.fieldId, transition.transitionId],
+            sourceRefs: allModelSourceRefs(model),
+            visualRefs: allModelVisualRefs(model),
+          }),
+        );
+      }
+    }
+  }
 
   for (const screen of model.screens) {
     const coverageRelevantElements = screen.elements.filter((element) =>
