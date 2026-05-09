@@ -1,0 +1,122 @@
+{
+  "source": {
+    "kind": "figma_local_json"
+  },
+  "screens": [
+    {
+      "screenId": "s-instant",
+      "screenName": "SEPA Instant Ueberweisung",
+      "screenPath": "/banking/retail/payment/instant",
+      "nodes": [
+        {
+          "nodeId": "n-empfaenger",
+          "nodeName": "Empfaengername",
+          "nodeType": "TEXT_INPUT",
+          "nodePath": "payment/recipient-name",
+          "text": "Empfaengername",
+          "childNodeIds": [],
+          "defaultValue": "",
+          "validations": [
+            "Required",
+            "Max 70 characters"
+          ]
+        },
+        {
+          "nodeId": "n-iban-empfaenger",
+          "nodeName": "Empfaenger-IBAN",
+          "nodeType": "TEXT_INPUT",
+          "nodePath": "payment/recipient-iban",
+          "text": "Empfaenger-IBAN",
+          "childNodeIds": [],
+          "defaultValue": "",
+          "validations": [
+            "Required",
+            "IBAN format"
+          ]
+        },
+        {
+          "nodeId": "n-betrag",
+          "nodeName": "Betrag in EUR",
+          "nodeType": "TEXT_INPUT",
+          "nodePath": "payment/amount",
+          "text": "Betrag in EUR",
+          "childNodeIds": [],
+          "defaultValue": "",
+          "validations": [
+            "Required",
+            "Numeric",
+            "Min 0.01",
+            "Max 100000",
+            "Cumulative daily ceiling 100000"
+          ]
+        },
+        {
+          "nodeId": "n-verwendungszweck",
+          "nodeName": "Verwendungszweck",
+          "nodeType": "TEXT_INPUT",
+          "nodePath": "payment/purpose",
+          "text": "Verwendungszweck",
+          "childNodeIds": [],
+          "defaultValue": "",
+          "validations": [
+            "Max 140 characters"
+          ]
+        },
+        {
+          "nodeId": "n-recipient-new",
+          "nodeName": "Empfaenger ist neu",
+          "nodeType": "RADIO_OPTION",
+          "nodePath": "payment/recipient-is-new",
+          "text": "Empfaenger ist neu",
+          "childNodeIds": [],
+          "defaultValue": "No",
+          "validations": [
+            "Required"
+          ]
+        },
+        {
+          "nodeId": "n-cooloff-override",
+          "nodeName": "Cool-off Override Begruendung",
+          "nodeType": "TEXT_INPUT",
+          "nodePath": "payment/cooloff-override-reason",
+          "text": "Cool-off Override Begruendung",
+          "childNodeIds": [],
+          "defaultValue": "",
+          "validations": [
+            "Required if recipient-is-new is Yes and amount > 10000",
+            "Min 20 characters",
+            "Max 280 characters"
+          ]
+        },
+        {
+          "nodeId": "n-sca-confirm",
+          "nodeName": "SCA bestaetigt",
+          "nodeType": "RADIO_OPTION",
+          "nodePath": "auth/sca-confirmed",
+          "text": "SCA bestaetigt",
+          "childNodeIds": [],
+          "defaultValue": "No",
+          "validations": [
+            "Required"
+          ]
+        },
+        {
+          "nodeId": "n-cancel",
+          "nodeName": "Abbrechen",
+          "nodeType": "BUTTON",
+          "nodePath": "actions/cancel",
+          "text": "Abbrechen",
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-submit",
+          "nodeName": "Instant Ueberweisung ausloesen",
+          "nodeType": "BUTTON",
+          "nodePath": "actions/submit",
+          "text": "Instant Ueberweisung ausloesen",
+          "childNodeIds": []
+        }
+      ]
+    }
+  ]
+}

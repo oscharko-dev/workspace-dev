@@ -1,0 +1,129 @@
+{
+  "source": {
+    "kind": "figma_local_json"
+  },
+  "screens": [
+    {
+      "screenId": "s-export",
+      "screenName": "Bulk-Zahlung einreichen",
+      "screenPath": "/banking/corp/payments/bulk/submit",
+      "nodes": [
+        {
+          "nodeId": "n-pain-version",
+          "nodeName": "PAIN-Version",
+          "nodeType": "TEXT_INPUT",
+          "nodePath": "bulk/pain-version",
+          "text": "PAIN-Version",
+          "childNodeIds": [],
+          "defaultValue": "",
+          "validations": [
+            "Required",
+            "Pattern PAIN.001.001.0[3-9]"
+          ]
+        },
+        {
+          "nodeId": "n-file-id",
+          "nodeName": "Datei-ID",
+          "nodeType": "TEXT_INPUT",
+          "nodePath": "bulk/file-id",
+          "text": "Datei-ID",
+          "childNodeIds": [],
+          "defaultValue": "",
+          "validations": [
+            "Required",
+            "Length 16"
+          ]
+        },
+        {
+          "nodeId": "n-message-count",
+          "nodeName": "Anzahl Nachrichten",
+          "nodeType": "TEXT_INPUT",
+          "nodePath": "bulk/message-count",
+          "text": "Anzahl Nachrichten",
+          "childNodeIds": [],
+          "defaultValue": "",
+          "validations": [
+            "Required",
+            "Numeric",
+            "Min 1",
+            "Max 50000"
+          ]
+        },
+        {
+          "nodeId": "n-total-amount",
+          "nodeName": "Gesamtbetrag",
+          "nodeType": "TEXT_INPUT",
+          "nodePath": "bulk/total-amount",
+          "text": "Gesamtbetrag",
+          "childNodeIds": [],
+          "defaultValue": "",
+          "validations": [
+            "Required",
+            "Numeric",
+            "Min 0.01",
+            "Equals sum of message amounts"
+          ]
+        },
+        {
+          "nodeId": "n-first-recipient",
+          "nodeName": "Mindestens ein neuer Empfaenger",
+          "nodeType": "RADIO_OPTION",
+          "nodePath": "bulk/has-first-time-recipient",
+          "text": "Mindestens ein neuer Empfaenger",
+          "childNodeIds": [],
+          "defaultValue": "No",
+          "validations": [
+            "Required"
+          ]
+        },
+        {
+          "nodeId": "n-supervisor",
+          "nodeName": "Freigabe Supervisor",
+          "nodeType": "TEXT_INPUT",
+          "nodePath": "compliance/supervisor-id",
+          "text": "Freigabe Supervisor",
+          "childNodeIds": [],
+          "defaultValue": "",
+          "validations": [
+            "Required if total-amount > 500000 and has-first-time-recipient is Yes",
+            "Format SUP-####"
+          ]
+        },
+        {
+          "nodeId": "n-supervisor-otp",
+          "nodeName": "Supervisor OTP",
+          "nodeType": "TEXT_INPUT",
+          "nodePath": "compliance/supervisor-otp",
+          "text": "Supervisor OTP",
+          "childNodeIds": [],
+          "defaultValue": "",
+          "validations": [
+            "Required if total-amount > 500000 and has-first-time-recipient is Yes",
+            "Numeric",
+            "Length 6"
+          ]
+        },
+        {
+          "nodeId": "n-sanctions-clean",
+          "nodeName": "Sanktionspruefung clean",
+          "nodeType": "RADIO_OPTION",
+          "nodePath": "compliance/sanctions-clean",
+          "text": "Sanktionspruefung clean",
+          "childNodeIds": [],
+          "defaultValue": "No",
+          "validations": [
+            "Required"
+          ]
+        },
+        {
+          "nodeId": "n-submit",
+          "nodeName": "Datei einreichen",
+          "nodeType": "BUTTON",
+          "nodePath": "actions/submit",
+          "text": "Datei einreichen",
+          "childNodeIds": []
+        }
+      ]
+    }
+  ]
+}

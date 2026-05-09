@@ -1,0 +1,99 @@
+{
+  "source": {
+    "kind": "figma_local_json"
+  },
+  "screens": [
+    {
+      "screenId": "s-paydirekt",
+      "screenName": "Paydirekt aktivieren",
+      "screenPath": "/banking/retail/paydirekt/setup",
+      "nodes": [
+        {
+          "nodeId": "n-iban-link",
+          "nodeName": "Verknuepfte IBAN",
+          "nodeType": "TEXT_INPUT",
+          "nodePath": "paydirekt/source-iban",
+          "text": "Verknuepfte IBAN",
+          "childNodeIds": [],
+          "defaultValue": "",
+          "validations": [
+            "Required",
+            "IBAN format",
+            "IBAN is owned by applicant"
+          ]
+        },
+        {
+          "nodeId": "n-paydirekt-handle",
+          "nodeName": "Paydirekt-Benutzername",
+          "nodeType": "TEXT_INPUT",
+          "nodePath": "paydirekt/handle",
+          "text": "Paydirekt-Benutzername",
+          "childNodeIds": [],
+          "defaultValue": "",
+          "validations": [
+            "Required",
+            "Min 4 characters",
+            "Max 32 characters"
+          ]
+        },
+        {
+          "nodeId": "n-email",
+          "nodeName": "Bestaetigungs-E-Mail",
+          "nodeType": "TEXT_INPUT",
+          "nodePath": "paydirekt/email",
+          "text": "Bestaetigungs-E-Mail",
+          "childNodeIds": [],
+          "defaultValue": "",
+          "validations": [
+            "Required",
+            "Email format"
+          ]
+        },
+        {
+          "nodeId": "n-limit-tier",
+          "nodeName": "Tageslimit",
+          "nodeType": "SELECT_FIELD",
+          "nodePath": "paydirekt/daily-limit",
+          "text": "Tageslimit",
+          "childNodeIds": [],
+          "defaultValue": "1000",
+          "validations": [
+            "Required"
+          ]
+        },
+        {
+          "nodeId": "n-sca-confirm",
+          "nodeName": "SCA bestaetigt",
+          "nodeType": "RADIO_OPTION",
+          "nodePath": "auth/sca-confirmed",
+          "text": "SCA bestaetigt",
+          "childNodeIds": [],
+          "defaultValue": "No",
+          "validations": [
+            "Required"
+          ]
+        },
+        {
+          "nodeId": "n-tos",
+          "nodeName": "Nutzungsbedingungen akzeptiert",
+          "nodeType": "RADIO_OPTION",
+          "nodePath": "compliance/tos-accepted",
+          "text": "Nutzungsbedingungen akzeptiert",
+          "childNodeIds": [],
+          "defaultValue": "No",
+          "validations": [
+            "Required"
+          ]
+        },
+        {
+          "nodeId": "n-submit",
+          "nodeName": "Paydirekt aktivieren",
+          "nodeType": "BUTTON",
+          "nodePath": "actions/submit",
+          "text": "Paydirekt aktivieren",
+          "childNodeIds": []
+        }
+      ]
+    }
+  ]
+}

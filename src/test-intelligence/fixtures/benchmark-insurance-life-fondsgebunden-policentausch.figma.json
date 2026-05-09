@@ -1,0 +1,111 @@
+{
+  "source": {
+    "kind": "figma_local_json"
+  },
+  "screens": [
+    {
+      "screenId": "s-switch",
+      "screenName": "Policentausch / Fondswechsel",
+      "screenPath": "/insurance/life/policy/fund-switch",
+      "nodes": [
+        {
+          "nodeId": "n-policy-id",
+          "nodeName": "Policen-Nummer",
+          "nodeType": "TEXT_INPUT",
+          "nodePath": "policy/id",
+          "text": "Policen-Nummer",
+          "childNodeIds": [],
+          "defaultValue": "",
+          "validations": [
+            "Required",
+            "Format POL-########"
+          ]
+        },
+        {
+          "nodeId": "n-fonds-aktuell",
+          "nodeName": "Aktueller Fonds",
+          "nodeType": "SELECT_FIELD",
+          "nodePath": "policy/current-fund",
+          "text": "Aktueller Fonds",
+          "childNodeIds": [],
+          "defaultValue": "Equity-Eu-Core",
+          "validations": [
+            "Required"
+          ]
+        },
+        {
+          "nodeId": "n-fonds-neu",
+          "nodeName": "Neuer Fonds",
+          "nodeType": "SELECT_FIELD",
+          "nodePath": "policy/new-fund",
+          "text": "Neuer Fonds",
+          "childNodeIds": [],
+          "defaultValue": "Bond-Eu-Aggregate",
+          "validations": [
+            "Required",
+            "Differs from current-fund"
+          ]
+        },
+        {
+          "nodeId": "n-anteile",
+          "nodeName": "Anzahl Anteile",
+          "nodeType": "TEXT_INPUT",
+          "nodePath": "policy/units",
+          "text": "Anzahl Anteile",
+          "childNodeIds": [],
+          "defaultValue": "",
+          "validations": [
+            "Required",
+            "Numeric",
+            "Min 0.01"
+          ]
+        },
+        {
+          "nodeId": "n-suitab",
+          "nodeName": "MiFID-II Geeignetheit bestaetigt",
+          "nodeType": "RADIO_OPTION",
+          "nodePath": "compliance/mifid-suitable",
+          "text": "MiFID-II Geeignetheit bestaetigt",
+          "childNodeIds": [],
+          "defaultValue": "No",
+          "validations": [
+            "Required"
+          ]
+        },
+        {
+          "nodeId": "n-cost-disc",
+          "nodeName": "Kostentransparenz bestaetigt",
+          "nodeType": "RADIO_OPTION",
+          "nodePath": "compliance/mifid-costs",
+          "text": "Kostentransparenz bestaetigt",
+          "childNodeIds": [],
+          "defaultValue": "No",
+          "validations": [
+            "Required"
+          ]
+        },
+        {
+          "nodeId": "n-ter-result",
+          "nodeName": "Total Expense Ratio",
+          "nodeType": "RESULT_DISPLAY",
+          "nodePath": "policy/ter-disclosure",
+          "text": "Voraussichtliche TER nach Tausch",
+          "childNodeIds": [],
+          "defaultValue": "",
+          "validations": [
+            "Reflects target-fund TER table",
+            "Includes performance fees if applicable"
+          ]
+        },
+        {
+          "nodeId": "n-submit",
+          "nodeName": "Fondstausch beauftragen",
+          "nodeType": "BUTTON",
+          "nodePath": "actions/submit",
+          "text": "Fondstausch beauftragen",
+          "childNodeIds": []
+        }
+      ]
+    }
+  ]
+}

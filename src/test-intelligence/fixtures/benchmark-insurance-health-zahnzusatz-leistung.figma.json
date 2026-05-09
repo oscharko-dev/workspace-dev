@@ -1,0 +1,113 @@
+{
+  "source": {
+    "kind": "figma_local_json"
+  },
+  "screens": [
+    {
+      "screenId": "s-zz",
+      "screenName": "Zahnzusatz Leistung",
+      "screenPath": "/insurance/health/dental/claim",
+      "nodes": [
+        {
+          "nodeId": "n-policy-id",
+          "nodeName": "Policen-Nummer",
+          "nodeType": "TEXT_INPUT",
+          "nodePath": "policy/id",
+          "text": "Policen-Nummer",
+          "childNodeIds": [],
+          "defaultValue": "",
+          "validations": [
+            "Required",
+            "Format POL-########"
+          ]
+        },
+        {
+          "nodeId": "n-rechnung-ref",
+          "nodeName": "Rechnungsreferenz",
+          "nodeType": "TEXT_INPUT",
+          "nodePath": "claim/invoice-ref",
+          "text": "Rechnungsreferenz",
+          "childNodeIds": [],
+          "defaultValue": "",
+          "validations": [
+            "Required",
+            "Max 40 characters"
+          ]
+        },
+        {
+          "nodeId": "n-rechnung-datum",
+          "nodeName": "Rechnungsdatum",
+          "nodeType": "TEXT_INPUT",
+          "nodePath": "claim/invoice-date",
+          "text": "Rechnungsdatum",
+          "childNodeIds": [],
+          "defaultValue": "",
+          "validations": [
+            "Required",
+            "ISO date",
+            "Date <= today"
+          ]
+        },
+        {
+          "nodeId": "n-rechnung-betrag",
+          "nodeName": "Rechnungsbetrag (EUR)",
+          "nodeType": "TEXT_INPUT",
+          "nodePath": "claim/invoice-amount",
+          "text": "Rechnungsbetrag (EUR)",
+          "childNodeIds": [],
+          "defaultValue": "",
+          "validations": [
+            "Required",
+            "Numeric",
+            "Min 0.01"
+          ]
+        },
+        {
+          "nodeId": "n-behandlungsart",
+          "nodeName": "Behandlungsart",
+          "nodeType": "SELECT_FIELD",
+          "nodePath": "claim/treatment-class",
+          "text": "Behandlungsart",
+          "childNodeIds": [],
+          "defaultValue": "Inlay",
+          "validations": [
+            "Required"
+          ]
+        },
+        {
+          "nodeId": "n-goz-pos",
+          "nodeName": "GOZ-Positionen",
+          "nodeType": "TEXT_INPUT",
+          "nodePath": "claim/goz-positions",
+          "text": "GOZ-Positionen",
+          "childNodeIds": [],
+          "defaultValue": "",
+          "validations": [
+            "Required",
+            "Max 200 characters"
+          ]
+        },
+        {
+          "nodeId": "n-attestat",
+          "nodeName": "Bestaetigung GOZ-konforme Rechnung",
+          "nodeType": "RADIO_OPTION",
+          "nodePath": "claim/goz-conformity",
+          "text": "Bestaetigung GOZ-konforme Rechnung",
+          "childNodeIds": [],
+          "defaultValue": "No",
+          "validations": [
+            "Required"
+          ]
+        },
+        {
+          "nodeId": "n-submit",
+          "nodeName": "Leistung beantragen",
+          "nodeType": "BUTTON",
+          "nodePath": "actions/submit",
+          "text": "Leistung beantragen",
+          "childNodeIds": []
+        }
+      ]
+    }
+  ]
+}

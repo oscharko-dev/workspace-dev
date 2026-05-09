@@ -1,0 +1,140 @@
+{
+  "source": {
+    "kind": "figma_local_json"
+  },
+  "screens": [
+    {
+      "screenId": "s-mifid-cost",
+      "screenName": "MiFID-II Cout ex-ante",
+      "screenPath": "/regulatory/mifid/costs/ex-ante",
+      "nodes": [
+        {
+          "nodeId": "n-instrument",
+          "nodeName": "Instrument",
+          "nodeType": "TEXT_INPUT",
+          "nodePath": "instrument/name",
+          "text": "Instrument",
+          "childNodeIds": [],
+          "defaultValue": "",
+          "validations": [
+            "Required",
+            "Max 120 characters"
+          ]
+        },
+        {
+          "nodeId": "n-isin",
+          "nodeName": "ISIN",
+          "nodeType": "TEXT_INPUT",
+          "nodePath": "instrument/isin",
+          "text": "ISIN",
+          "childNodeIds": [],
+          "defaultValue": "",
+          "validations": [
+            "Required",
+            "Length 12",
+            "ISIN-checksum"
+          ]
+        },
+        {
+          "nodeId": "n-notional",
+          "nodeName": "Notional",
+          "nodeType": "TEXT_INPUT",
+          "nodePath": "instrument/notional",
+          "text": "Notional",
+          "childNodeIds": [],
+          "defaultValue": "",
+          "validations": [
+            "Required",
+            "Numeric",
+            "Min 0"
+          ]
+        },
+        {
+          "nodeId": "n-entry-fee-pct",
+          "nodeName": "Frais d'entree (%)",
+          "nodeType": "TEXT_INPUT",
+          "nodePath": "costs/entry-pct",
+          "text": "Frais d'entree (%)",
+          "childNodeIds": [],
+          "defaultValue": "",
+          "validations": [
+            "Required",
+            "Numeric",
+            "Min 0",
+            "Max 10"
+          ]
+        },
+        {
+          "nodeId": "n-ongoing-pct",
+          "nodeName": "Frais courants (%)",
+          "nodeType": "TEXT_INPUT",
+          "nodePath": "costs/ongoing-pct",
+          "text": "Frais courants (%)",
+          "childNodeIds": [],
+          "defaultValue": "",
+          "validations": [
+            "Required",
+            "Numeric",
+            "Min 0",
+            "Max 10"
+          ]
+        },
+        {
+          "nodeId": "n-perf-fee-pct",
+          "nodeName": "Frais de performance (%)",
+          "nodeType": "TEXT_INPUT",
+          "nodePath": "costs/perf-pct",
+          "text": "Frais de performance (%)",
+          "childNodeIds": [],
+          "defaultValue": "",
+          "validations": [
+            "Numeric",
+            "Min 0",
+            "Max 30"
+          ]
+        },
+        {
+          "nodeId": "n-total-result",
+          "nodeName": "Cout total ex-ante",
+          "nodeType": "RESULT_DISPLAY",
+          "nodePath": "costs/total-result",
+          "text": "Cout total ex-ante (EUR)",
+          "childNodeIds": [],
+          "defaultValue": "",
+          "validations": [
+            "Sums entry + ongoing x assumed-tenor + perf",
+            "Bound to instrument-notional and assumed-return"
+          ]
+        },
+        {
+          "nodeId": "n-a11y-summary",
+          "nodeName": "Resume accessible",
+          "nodeType": "INFORMATIVE_LABEL",
+          "nodePath": "a11y/summary-region",
+          "text": "Resume accessible",
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-disclosure",
+          "nodeName": "Disclosure ex-ante remise",
+          "nodeType": "RADIO_OPTION",
+          "nodePath": "compliance/mifid-cost-disclosure",
+          "text": "Disclosure ex-ante remise",
+          "childNodeIds": [],
+          "defaultValue": "No",
+          "validations": [
+            "Required"
+          ]
+        },
+        {
+          "nodeId": "n-submit",
+          "nodeName": "Confirmer",
+          "nodeType": "BUTTON",
+          "nodePath": "actions/submit",
+          "text": "Confirmer",
+          "childNodeIds": []
+        }
+      ]
+    }
+  ]
+}
