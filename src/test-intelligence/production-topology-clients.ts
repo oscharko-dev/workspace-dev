@@ -34,7 +34,8 @@ const withOptionalDeployment = <T extends object>(
   key: string,
   value: string | undefined,
   build: (deployment: string) => T,
-): T | {} => (value !== undefined ? { [key]: build(value) } : {});
+): Partial<Record<string, T>> =>
+  value !== undefined ? { [key]: build(value) } : {};
 
 const baseTextCapabilities = {
   structuredOutputs: true,
