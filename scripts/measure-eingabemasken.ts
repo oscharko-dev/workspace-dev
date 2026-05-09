@@ -45,6 +45,7 @@ import {
   loadEingabemaskenArchetypeFixture,
 } from "../src/test-intelligence/eingabemasken-fixtures.js";
 import { deriveBusinessTestIntentIr } from "../src/test-intelligence/intent-derivation.js";
+import type { ComplianceRiskOverride } from "../src/test-intelligence/policy-gate.js";
 import { buildTraceabilityMatrix } from "../src/test-intelligence/traceability-matrix.js";
 import { runValidationPipeline } from "../src/test-intelligence/validation-pipeline.js";
 import { synthesizeGeneratedTestCases } from "../src/test-intelligence/validation-harness.js";
@@ -132,17 +133,36 @@ const buildAudit = (jobId: string): GeneratedTestCaseAuditMetadata => ({
 
 const measureFixture = async (
   archetypeId: (typeof EINGABEMASKEN_ARCHETYPE_FIXTURE_IDS)[number],
+  options: { withComplianceOverrides: boolean },
 ): Promise<FixtureMeasurement> => {
   const fixture = await loadEingabemaskenArchetypeFixture(archetypeId);
   const intent = deriveBusinessTestIntentIr({ figma: fixture.figma });
 
   const jobId = `measure-${archetypeId}`;
   const audit = buildAudit(jobId);
+  // Issue #2030 follow-up: when enabled, derive a job-wide compliance
+  // override from the fixture's `compliance.json` sidecar. Forward to
+  // BOTH the synthesizer (so cases ship with the override-derived
+  // riskCategory upfront and the policy gate stops emitting downgrade
+  // warnings on label-less fields) and the policy gate (so the screen-
+  // intent classification falls back to the override when no PII /
+  // risks indicator fires).
+  const complianceOverrides: ComplianceRiskOverride[] | undefined = options
+    .withComplianceOverrides
+    ? [
+        {
+          riskCategory: fixture.compliance.regulatedRiskOverride,
+          rationale: `compliance sidecar (${fixture.compliance.complianceRulePackIds.join(", ")})`,
+        },
+      ]
+    : undefined;
+
   const generatedList = synthesizeGeneratedTestCases({
     jobId,
     generatedAt: GENERATED_AT,
     intent,
     audit,
+    ...(complianceOverrides !== undefined ? { complianceOverrides } : {}),
   });
 
   const pipeline = runValidationPipeline({
@@ -150,6 +170,7 @@ const measureFixture = async (
     generatedAt: GENERATED_AT,
     list: generatedList,
     intent,
+    ...(complianceOverrides !== undefined ? { complianceOverrides } : {}),
   });
 
   const traceability = buildTraceabilityMatrix({
@@ -412,22 +433,101 @@ const renderMarkdown = (
   return lines.join("\n");
 };
 
-const main = async (): Promise<void> => {
-  const measurements: FixtureMeasurement[] = [];
-  for (const id of EINGABEMASKEN_ARCHETYPE_FIXTURE_IDS) {
-    const m = await measureFixture(id);
-    measurements.push(m);
+const aggregateWarnings = (
+  measurements: ReadonlyArray<FixtureMeasurement>,
+): { regRisk: number; downgrade: number; duplicate: number } => {
+  let regRisk = 0;
+  let downgrade = 0;
+  let duplicate = 0;
+  for (const m of measurements) {
+    for (const v of m.policy.nonBlockingViolations) {
+      if (v === "policy:regulated-risk-requires-review") regRisk += 1;
+      else if (v === "policy:risk-tag-downgrade-detected") downgrade += 1;
+      else if (v === "policy:duplicate-test-case") duplicate += 1;
+    }
   }
-  const md = renderMarkdown(measurements);
+  return { regRisk, downgrade, duplicate };
+};
+
+const renderRunComparison = (
+  k0: ReadonlyArray<FixtureMeasurement>,
+  k1: ReadonlyArray<FixtureMeasurement>,
+): string => {
+  const k0Agg = aggregateWarnings(k0);
+  const k1Agg = aggregateWarnings(k1);
+  const lines: string[] = [];
+  lines.push("## K0 (no overrides) vs K1 (compliance-sidecar overrides) summary");
+  lines.push("");
+  lines.push("| Metric | K0 | K1 | Delta |");
+  lines.push("|---|---:|---:|---:|");
+  lines.push(`| policy:regulated-risk-requires-review (warnings) | ${k0Agg.regRisk} | ${k1Agg.regRisk} | ${k1Agg.regRisk - k0Agg.regRisk >= 0 ? "+" : ""}${k1Agg.regRisk - k0Agg.regRisk} |`);
+  lines.push(`| policy:risk-tag-downgrade-detected (warnings) | ${k0Agg.downgrade} | ${k1Agg.downgrade} | ${k1Agg.downgrade - k0Agg.downgrade >= 0 ? "+" : ""}${k1Agg.downgrade - k0Agg.downgrade} |`);
+  lines.push(`| policy:duplicate-test-case (warnings) | ${k0Agg.duplicate} | ${k1Agg.duplicate} | ${k1Agg.duplicate - k0Agg.duplicate >= 0 ? "+" : ""}${k1Agg.duplicate - k0Agg.duplicate} |`);
+
+  lines.push("");
+  lines.push("### Per-fixture reg-risk warnings (K0 -> K1)");
+  lines.push("");
+  lines.push("| Tier | Fixture | K0 reg-risk | K1 reg-risk | K0 downgrade | K1 downgrade |");
+  lines.push("|---:|---|---:|---:|---:|---:|");
+  for (let i = 0; i < k0.length; i += 1) {
+    const a = k0[i]!;
+    const b = k1[i]!;
+    const ar = a.policy.nonBlockingViolations.filter((v) => v === "policy:regulated-risk-requires-review").length;
+    const br = b.policy.nonBlockingViolations.filter((v) => v === "policy:regulated-risk-requires-review").length;
+    const ad = a.policy.nonBlockingViolations.filter((v) => v === "policy:risk-tag-downgrade-detected").length;
+    const bd = b.policy.nonBlockingViolations.filter((v) => v === "policy:risk-tag-downgrade-detected").length;
+    lines.push(
+      `| ${a.tier} | \`${a.archetypeId.replace("eingabemaske-", "")}\` | ${ar} | ${br} | ${ad} | ${bd} |`,
+    );
+  }
+  lines.push("");
+  return lines.join("\n");
+};
+
+const main = async (): Promise<void> => {
+  const k0Measurements: FixtureMeasurement[] = [];
+  for (const id of EINGABEMASKEN_ARCHETYPE_FIXTURE_IDS) {
+    k0Measurements.push(
+      await measureFixture(id, { withComplianceOverrides: false }),
+    );
+  }
+  const k1Measurements: FixtureMeasurement[] = [];
+  for (const id of EINGABEMASKEN_ARCHETYPE_FIXTURE_IDS) {
+    k1Measurements.push(
+      await measureFixture(id, { withComplianceOverrides: true }),
+    );
+  }
+
+  const k0Markdown = renderMarkdown(k0Measurements);
+  const k1Markdown = renderMarkdown(k1Measurements);
+  const comparison = renderRunComparison(k0Measurements, k1Measurements);
+
   await mkdir(OUTPUT_DIR, { recursive: true });
-  const mdPath = join(OUTPUT_DIR, "eingabemasken-K0.md");
-  const jsonPath = join(OUTPUT_DIR, "eingabemasken-K0.json");
-  await writeFile(mdPath, md, "utf8");
-  await writeFile(jsonPath, JSON.stringify(measurements, null, 2), "utf8");
+  const k0MdPath = join(OUTPUT_DIR, "eingabemasken-K0.md");
+  const k0JsonPath = join(OUTPUT_DIR, "eingabemasken-K0.json");
+  const k1MdPath = join(OUTPUT_DIR, "eingabemasken-K1.md");
+  const k1JsonPath = join(OUTPUT_DIR, "eingabemasken-K1.json");
+  const cmpPath = join(OUTPUT_DIR, "eingabemasken-K0-vs-K1.md");
+  await writeFile(k0MdPath, k0Markdown, "utf8");
+  await writeFile(
+    k0JsonPath,
+    JSON.stringify(k0Measurements, null, 2),
+    "utf8",
+  );
+  await writeFile(k1MdPath, k1Markdown, "utf8");
+  await writeFile(
+    k1JsonPath,
+    JSON.stringify(k1Measurements, null, 2),
+    "utf8",
+  );
+  await writeFile(cmpPath, comparison, "utf8");
+
   // eslint-disable-next-line no-console
-  console.log(md);
+  console.log(comparison);
   // eslint-disable-next-line no-console
-  console.log(`\n--- artifacts ---\n${mdPath}\n${jsonPath}`);
+  console.log(
+    `\n--- artifacts ---\n${k0MdPath}\n${k0JsonPath}\n${k1MdPath}\n${k1JsonPath}\n${cmpPath}`,
+  );
 };
 
 await main();

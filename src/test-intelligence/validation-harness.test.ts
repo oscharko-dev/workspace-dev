@@ -1038,3 +1038,398 @@ test("validation-harness: replay-cache hit skips generation and reports complete
   assert.equal(rawAudit.requestCount, 0);
   assert.deepEqual(rawAudit.imageInputCounts, []);
 });
+
+// ----------------------------------------------------------------------
+// Issue #2030 follow-up — synthesizer risk-tag calibration for the
+// banking and insurance regulatory vocabulary surfaced by the
+// Eingabemasken K1 measurement (see `scripts/measure-eingabemasken.ts`).
+// ----------------------------------------------------------------------
+
+test("validation-harness: synthesizer derives banking/insurance regulatory riskCategory from field labels (Issue #2030)", () => {
+  const intent: BusinessTestIntentIr = {
+    version: BUSINESS_TEST_INTENT_IR_SCHEMA_VERSION,
+    source: { kind: "figma_local_json", contentHash: "2".repeat(64) },
+    screens: [
+      { screenId: "s-2030", screenName: "Risk Calibration", trace: {} },
+    ],
+    detectedFields: [
+      // financial_transaction matches (PR-N+2 additions)
+      { id: "f-isin", screenId: "s-2030", trace: { nodeId: "n-isin" }, provenance: "figma_node", confidence: 0.9, label: "ISIN", type: "text" },
+      { id: "f-betrag", screenId: "s-2030", trace: { nodeId: "n-betrag" }, provenance: "figma_node", confidence: 0.9, label: "Betrag in EUR", type: "text" },
+      { id: "f-kreditbetrag", screenId: "s-2030", trace: { nodeId: "n-kb" }, provenance: "figma_node", confidence: 0.9, label: "Kreditbetrag", type: "text" },
+      { id: "f-effektivzins", screenId: "s-2030", trace: { nodeId: "n-eff" }, provenance: "figma_node", confidence: 0.9, label: "Effektivzins p.a.", type: "text" },
+      { id: "f-praemie", screenId: "s-2030", trace: { nodeId: "n-pr" }, provenance: "figma_node", confidence: 0.9, label: "Praemienprognose", type: "text" },
+      // regulated_data matches (PR-N+2 additions)
+      { id: "f-mifid", screenId: "s-2030", trace: { nodeId: "n-mifid" }, provenance: "figma_node", confidence: 0.9, label: "MiFID-Risikoklasse", type: "informative_label" },
+      { id: "f-schufa", screenId: "s-2030", trace: { nodeId: "n-schufa" }, provenance: "figma_node", confidence: 0.9, label: "SCHUFA-Einwilligung", type: "radio_option" },
+      { id: "f-pep", screenId: "s-2030", trace: { nodeId: "n-pep" }, provenance: "figma_node", confidence: 0.9, label: "PEP-Status", type: "radio_option" },
+      { id: "f-fatca", screenId: "s-2030", trace: { nodeId: "n-fatca" }, provenance: "figma_node", confidence: 0.9, label: "FATCA US-Person", type: "radio_option" },
+      { id: "f-vorerk", screenId: "s-2030", trace: { nodeId: "n-vorerk" }, provenance: "figma_node", confidence: 0.9, label: "Vorerkrankungen", type: "radio_option" },
+      { id: "f-isms", screenId: "s-2030", trace: { nodeId: "n-isms" }, provenance: "figma_node", confidence: 0.9, label: "ISMS implementiert", type: "radio_option" },
+      { id: "f-mfa", screenId: "s-2030", trace: { nodeId: "n-mfa" }, provenance: "figma_node", confidence: 0.9, label: "MFA fuer alle Mitarbeiter", type: "radio_option" },
+      { id: "f-edr", screenId: "s-2030", trace: { nodeId: "n-edr" }, provenance: "figma_node", confidence: 0.9, label: "EDR auf Endgeraeten", type: "radio_option" },
+      { id: "f-gwg", screenId: "s-2030", trace: { nodeId: "n-gwg" }, provenance: "figma_node", confidence: 0.9, label: "GwG Verdachtskategorie", type: "select_field" },
+      { id: "f-wcag", screenId: "s-2030", trace: { nodeId: "n-wcag" }, provenance: "figma_node", confidence: 0.9, label: "WCAG-2.2-AA Kontrast-Hinweis", type: "informative_label" },
+      // low default — must NOT trigger any keyword
+      { id: "f-control-low", screenId: "s-2030", trace: { nodeId: "n-c" }, provenance: "figma_node", confidence: 0.9, label: "Generic Reference Field", type: "text" },
+    ],
+    detectedActions: [],
+    detectedValidations: [],
+    detectedNavigation: [],
+    inferredBusinessObjects: [],
+    risks: [],
+    assumptions: [],
+    openQuestions: [],
+    piiIndicators: [],
+    redactions: [],
+  };
+
+  const list = synthesizeGeneratedTestCases({
+    jobId: audit.jobId,
+    generatedAt: GENERATED_AT,
+    intent,
+    audit,
+  });
+
+  // Every synthesized case ends up with a `riskCategory`. We anchor the
+  // assertion on the deterministic per-field functional case
+  // (`tc-field-functional-...`) since that is the one whose
+  // riskCategory is derived from `field.label` directly.
+  const findFunctionalCaseRisk = (fieldId: string): string | undefined => {
+    const tc = list.testCases.find(
+      (c) =>
+        c.id.startsWith("tc-field-functional-") &&
+        c.qualitySignals.coveredFieldIds.includes(fieldId),
+    );
+    return tc?.riskCategory;
+  };
+
+  // financial_transaction
+  for (const fid of [
+    "f-isin",
+    "f-betrag",
+    "f-kreditbetrag",
+    "f-effektivzins",
+    "f-praemie",
+  ]) {
+    assert.equal(
+      findFunctionalCaseRisk(fid),
+      "financial_transaction",
+      `field ${fid} must elevate to financial_transaction`,
+    );
+  }
+
+  // regulated_data
+  for (const fid of [
+    "f-mifid",
+    "f-schufa",
+    "f-pep",
+    "f-fatca",
+    "f-vorerk",
+    "f-isms",
+    "f-mfa",
+    "f-edr",
+    "f-gwg",
+    "f-wcag",
+  ]) {
+    assert.equal(
+      findFunctionalCaseRisk(fid),
+      "regulated_data",
+      `field ${fid} must elevate to regulated_data`,
+    );
+  }
+
+  // low control: a label that contains NONE of the keywords stays low.
+  assert.equal(
+    findFunctionalCaseRisk("f-control-low"),
+    "low",
+    "control field with no keyword match must stay low (no over-classification)",
+  );
+});
+
+test("validation-harness: synthesizer keyword list does NOT collide with MA-0 baseline labels (Issue #2030)", () => {
+  // Ground truth: every label in any MA-0 baseline-fixture must keep
+  // its pre-#2030 `riskCategory` derivation. This test pins the
+  // contract that the new keyword arrays do NOT change the seven
+  // checked-in eval-baseline snapshots.
+  const baselineLabelsAndExpectedRisk: ReadonlyArray<[string, string]> = [
+    // baseline-simple-form
+    ["Display Name", "regulated_data"],
+    ["Email", "regulated_data"],
+    ["Age", "low"],
+    // baseline-calculation
+    ["Principal", "low"],
+    ["Annual Rate %", "low"],
+    ["Term (Years)", "low"],
+    ["Monthly Payment", "low"],
+    // baseline-optional-fields
+    ["Mobile Phone", "regulated_data"],
+    ["Company (optional)", "low"],
+    ["Job Title", "low"],
+    ["Country", "low"],
+    // baseline-multi-context / baseline-complex-mask
+    ["Family Name", "regulated_data"],
+    ["Date of Birth", "low"],
+    ["Tax ID", "regulated_data"],
+    ["Postcode", "regulated_data"],
+    ["Passport Number (visible if Country is non-EU)", "low"],
+    ["Line Description (repeating)", "low"],
+    ["Quantity (repeating)", "low"],
+    ["Unit Price (repeating)", "low"],
+    ["Grand Total", "low"],
+    // baseline-ambiguous-rules
+    ["Policy Number", "low"],
+    ["Incident Date", "low"],
+    ["Loss Amount", "financial_transaction"],
+    ["Description", "low"],
+    // baseline-validation-heavy
+    ["IBAN", "financial_transaction"],
+    ["BIC", "financial_transaction"],
+    ["Amount", "financial_transaction"],
+    ["Confirm Amount", "financial_transaction"],
+    ["Reference", "low"],
+  ];
+
+  for (const [label, expected] of baselineLabelsAndExpectedRisk) {
+    const intent: BusinessTestIntentIr = {
+      version: BUSINESS_TEST_INTENT_IR_SCHEMA_VERSION,
+      source: { kind: "figma_local_json", contentHash: "3".repeat(64) },
+      screens: [{ screenId: "s-baseline", screenName: "Baseline", trace: {} }],
+      detectedFields: [
+        {
+          id: "f-baseline",
+          screenId: "s-baseline",
+          trace: { nodeId: "n-b" },
+          provenance: "figma_node",
+          confidence: 0.9,
+          label,
+          type: "text",
+        },
+      ],
+      detectedActions: [],
+      detectedValidations: [],
+      detectedNavigation: [],
+      inferredBusinessObjects: [],
+      risks: [],
+      assumptions: [],
+      openQuestions: [],
+      piiIndicators: [],
+      redactions: [],
+    };
+    const list = synthesizeGeneratedTestCases({
+      jobId: audit.jobId,
+      generatedAt: GENERATED_AT,
+      intent,
+      audit,
+    });
+    const tc = list.testCases.find((c) => c.id.startsWith("tc-field-functional-"));
+    assert.equal(
+      tc?.riskCategory,
+      expected,
+      `baseline label "${label}" must preserve riskCategory="${expected}"`,
+    );
+  }
+});
+
+// ----------------------------------------------------------------------
+// Issue #2030 follow-up — synthesizer compliance-sidecar fallback
+// (PR-N+3, K1-measurement-driven). When a `complianceOverrides` array
+// is supplied to `synthesizeGeneratedTestCases`, every per-case risk
+// derivation that would otherwise return `low` (label has no
+// regulatory keyword) instead returns the override category. Action,
+// navigation and accessibility cases — which historically hardcoded
+// `riskCategory: "low"` — also pick up the override but DO NOT consult
+// `deriveRiskCategoryForLabel` on the action label, so they stay at
+// `low` whenever no override applies (preserves baseline-eval snapshots).
+// ----------------------------------------------------------------------
+
+test("validation-harness: complianceOverrides elevate label-less fields to the sidecar category (Issue #2030)", () => {
+  const intent: BusinessTestIntentIr = {
+    version: BUSINESS_TEST_INTENT_IR_SCHEMA_VERSION,
+    source: { kind: "figma_local_json", contentHash: "5".repeat(64) },
+    screens: [{ screenId: "s-mifid", screenName: "MiFID", trace: {} }],
+    detectedFields: [
+      { id: "f-isin", screenId: "s-mifid", trace: { nodeId: "n-isin" }, provenance: "figma_node", confidence: 0.9, label: "ISIN", type: "text" },
+      // Label has NO regulatory keyword — would default to `low` without override.
+      { id: "f-termin", screenId: "s-mifid", trace: { nodeId: "n-termin" }, provenance: "figma_node", confidence: 0.9, label: "Wunschtermin", type: "text" },
+    ],
+    detectedActions: [],
+    detectedValidations: [],
+    detectedNavigation: [],
+    inferredBusinessObjects: [],
+    risks: [],
+    assumptions: [],
+    openQuestions: [],
+    piiIndicators: [],
+    redactions: [],
+  };
+
+  // Without overrides: label-less field defaults to `low`.
+  const withoutOverrides = synthesizeGeneratedTestCases({
+    jobId: audit.jobId,
+    generatedAt: GENERATED_AT,
+    intent,
+    audit,
+  });
+  const labelless1 = withoutOverrides.testCases.find(
+    (tc) =>
+      tc.id.startsWith("tc-field-functional-") &&
+      tc.qualitySignals.coveredFieldIds.includes("f-termin"),
+  );
+  assert.equal(
+    labelless1?.riskCategory,
+    "low",
+    "label-less field defaults to low when no override is supplied",
+  );
+
+  // With overrides: label-less field inherits the sidecar category.
+  const withOverrides = synthesizeGeneratedTestCases({
+    jobId: audit.jobId,
+    generatedAt: GENERATED_AT,
+    intent,
+    audit,
+    complianceOverrides: [
+      { riskCategory: "regulated_data", rationale: "MiFID II suitability" },
+    ],
+  });
+  const labelless2 = withOverrides.testCases.find(
+    (tc) =>
+      tc.id.startsWith("tc-field-functional-") &&
+      tc.qualitySignals.coveredFieldIds.includes("f-termin"),
+  );
+  assert.equal(
+    labelless2?.riskCategory,
+    "regulated_data",
+    "label-less field inherits the override category from the sidecar",
+  );
+
+  // Field with a regulatory keyword keeps its keyword-derived classification
+  // (override never weakens or replaces a strong label match).
+  const withKeyword = withOverrides.testCases.find(
+    (tc) =>
+      tc.id.startsWith("tc-field-functional-") &&
+      tc.qualitySignals.coveredFieldIds.includes("f-isin"),
+  );
+  assert.equal(
+    withKeyword?.riskCategory,
+    "financial_transaction",
+    "ISIN keeps financial_transaction even when override declares regulated_data",
+  );
+});
+
+test("validation-harness: complianceOverrides elevate action/nav/a11y cases on regulated screens (Issue #2030)", () => {
+  const intent: BusinessTestIntentIr = {
+    version: BUSINESS_TEST_INTENT_IR_SCHEMA_VERSION,
+    source: { kind: "figma_local_json", contentHash: "6".repeat(64) },
+    screens: [
+      { screenId: "s-mifid", screenName: "MiFID", trace: {} },
+      { screenId: "s-confirm", screenName: "Confirm", trace: {} },
+    ],
+    detectedFields: [
+      { id: "f-isin", screenId: "s-mifid", trace: {}, provenance: "figma_node", confidence: 0.9, label: "ISIN", type: "text" },
+    ],
+    detectedActions: [
+      { id: "a-submit", screenId: "s-mifid", trace: {}, provenance: "figma_node", confidence: 0.9, label: "Order pruefen", intent: "submit" },
+    ],
+    detectedValidations: [],
+    detectedNavigation: [
+      { id: "n-go", screenId: "s-mifid", targetScreenId: "s-confirm", trigger: "submit", trace: {}, confidence: 0.8 },
+    ],
+    inferredBusinessObjects: [],
+    risks: [],
+    assumptions: [],
+    openQuestions: [],
+    piiIndicators: [],
+    redactions: [],
+  };
+
+  const list = synthesizeGeneratedTestCases({
+    jobId: audit.jobId,
+    generatedAt: GENERATED_AT,
+    intent,
+    audit,
+    complianceOverrides: [
+      { riskCategory: "regulated_data", rationale: "MiFID II Order screen" },
+    ],
+  });
+
+  const actionCase = list.testCases.find((tc) => tc.id.startsWith("tc-action-"));
+  const navCase = list.testCases.find((tc) => tc.id.startsWith("tc-navigation-"));
+  const a11yCase = list.testCases.find((tc) => tc.id.startsWith("tc-a11y-"));
+
+  assert.equal(
+    actionCase?.riskCategory,
+    "regulated_data",
+    "action case inherits override category on regulated screens",
+  );
+  assert.equal(
+    navCase?.riskCategory,
+    "regulated_data",
+    "navigation case inherits override category on regulated screens",
+  );
+  assert.equal(
+    a11yCase?.riskCategory,
+    "regulated_data",
+    "accessibility case inherits override category on regulated screens",
+  );
+});
+
+test("validation-harness: complianceOverrides preserve hardcoded `low` when no override applies (Issue #2030 / baseline immunity)", () => {
+  // Empty overrides + no-keyword labels: every action/nav/a11y case
+  // must stay at `low` so the seven checked-in eval-baseline-*.json
+  // snapshots remain byte-stable. This is the regression test that
+  // pinned the bug in PR-N+3 round 1 (which routed action labels
+  // through deriveRiskCategoryForLabel and accidentally elevated
+  // `Loss Amount` -> financial_transaction in baseline-ambiguous-rules).
+  const intent: BusinessTestIntentIr = {
+    version: BUSINESS_TEST_INTENT_IR_SCHEMA_VERSION,
+    source: { kind: "figma_local_json", contentHash: "7".repeat(64) },
+    screens: [
+      { screenId: "s-claim", screenName: "Claim", trace: {} },
+      { screenId: "s-next", screenName: "Next", trace: {} },
+    ],
+    detectedFields: [
+      { id: "f-policy", screenId: "s-claim", trace: {}, provenance: "figma_node", confidence: 0.9, label: "Policy Number", type: "text" },
+    ],
+    detectedActions: [
+      { id: "a-loss", screenId: "s-claim", trace: {}, provenance: "figma_node", confidence: 0.9, label: "Submit Loss Amount", intent: "submit" },
+    ],
+    detectedValidations: [],
+    detectedNavigation: [
+      { id: "n-go", screenId: "s-claim", targetScreenId: "s-next", trigger: "submit", trace: {}, confidence: 0.8 },
+    ],
+    inferredBusinessObjects: [],
+    risks: [],
+    assumptions: [],
+    openQuestions: [],
+    piiIndicators: [],
+    redactions: [],
+  };
+
+  const list = synthesizeGeneratedTestCases({
+    jobId: audit.jobId,
+    generatedAt: GENERATED_AT,
+    intent,
+    audit,
+  });
+
+  const actionCase = list.testCases.find((tc) => tc.id.startsWith("tc-action-"));
+  const navCase = list.testCases.find((tc) => tc.id.startsWith("tc-navigation-"));
+  const a11yCase = list.testCases.find((tc) => tc.id.startsWith("tc-a11y-"));
+
+  assert.equal(
+    actionCase?.riskCategory,
+    "low",
+    "action case stays at low when no override applies, even with `Submit Loss Amount` keyword in label",
+  );
+  assert.equal(
+    navCase?.riskCategory,
+    "low",
+    "navigation case stays at low when no override applies",
+  );
+  assert.equal(
+    a11yCase?.riskCategory,
+    "low",
+    "accessibility case stays at low when no override applies",
+  );
+});

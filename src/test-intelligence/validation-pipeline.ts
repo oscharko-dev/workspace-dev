@@ -56,7 +56,10 @@ import {
   buildActiveDatasetInvariantRegistry,
   type DomainInvariantRegistry,
 } from "./domain-invariant-registry.js";
-import { evaluatePolicyGate } from "./policy-gate.js";
+import {
+  evaluatePolicyGate,
+  type ComplianceRiskOverride,
+} from "./policy-gate.js";
 import { cloneEuBankingDefaultProfile } from "./policy-profile.js";
 import {
   effectiveSemanticContentBlock,
@@ -139,6 +142,22 @@ export interface RunValidationPipelineInput {
    * `domain_invariant_violation` issues, no `invariantCoverage` field).
    */
   invariantRegistry?: DomainInvariantRegistry | null;
+  /**
+   * Optional fixture- or screen-scoped compliance overrides
+   * (Issue #2030 follow-up, K0-measurement-driven).
+   *
+   * Forwarded verbatim into the policy gate's
+   * {@link EvaluatePolicyGateInput#complianceOverrides} entry. When the
+   * intent IR carries no PII / risk indicators for a regulated mask
+   * (MiFID II, GwG, FATCA, EAA, DORA, …), the policy gate falls back
+   * to the override declared by the per-fixture compliance sidecar so
+   * `policy:regulated-risk-requires-review` and
+   * `policy:risk-tag-downgrade-detected` still fire. Overrides NEVER
+   * weaken an already-derived classification; they are a fallback floor.
+   *
+   * Documentation lives next to the type in `policy-gate.ts`.
+   */
+  complianceOverrides?: ReadonlyArray<ComplianceRiskOverride>;
 }
 
 export interface ValidationPipelineArtifacts {
@@ -308,6 +327,9 @@ export const runValidationPipeline = (
       : {}),
     ...(input.coverageBaselineDrift !== undefined
       ? { coverageBaselineDrift: input.coverageBaselineDrift }
+      : {}),
+    ...(input.complianceOverrides !== undefined
+      ? { complianceOverrides: input.complianceOverrides }
       : {}),
   });
 
@@ -664,6 +686,9 @@ export const runValidationPipelineWithSelfVerify = async (
       : {}),
     ...(input.coverageBaselineDrift !== undefined
       ? { coverageBaselineDrift: input.coverageBaselineDrift }
+      : {}),
+    ...(input.complianceOverrides !== undefined
+      ? { complianceOverrides: input.complianceOverrides }
       : {}),
   });
 
