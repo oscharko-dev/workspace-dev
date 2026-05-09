@@ -1560,7 +1560,7 @@ an override; callers may only provide values in the closed interval `[0, 1]`.
 
 ##### techniques
 
-> `readonly` **techniques**: readonly (`"equivalence_partitioning"` \| `"decision_table"` \| `"state_transition"` \| `"error_guessing"` \| `"initial_state"` \| `"boundary_value"` \| `"pairwise"`)[]
+> `readonly` **techniques**: readonly (`"boundary_value"` \| `"equivalence_partitioning"` \| `"decision_table"` \| `"state_transition"` \| `"error_guessing"` \| `"initial_state"` \| `"pairwise"`)[]
 
 ***
 
@@ -1653,7 +1653,7 @@ out of the contract so equivalent inputs remain byte-stable.
 
 ##### technique
 
-> `readonly` **technique**: `"equivalence_partitioning"` \| `"decision_table"` \| `"state_transition"` \| `"error_guessing"` \| `"initial_state"` \| `"boundary_value"` \| `"pairwise"`
+> `readonly` **technique**: `"boundary_value"` \| `"equivalence_partitioning"` \| `"decision_table"` \| `"state_transition"` \| `"error_guessing"` \| `"initial_state"` \| `"pairwise"`
 
 ##### visualRefs
 
@@ -3876,6 +3876,13 @@ Single generated test case.
 
 > **audit**: [`GeneratedTestCaseAuditMetadata`](#generatedtestcaseauditmetadata)
 
+##### category?
+
+> `optional` **category?**: `"accessibility"` \| `"positive_path"` \| `"negative_path"` \| `"boundary_value"` \| `"validation_rule"` \| `"navigation_flow"`
+
+Optional additive Issue #2030 field. New emissions always populate it;
+older artifacts may omit it and are classified on read-path fallback.
+
 ##### contractVersion
 
 > **contractVersion**: `"1.21.0"`
@@ -3903,6 +3910,13 @@ Single generated test case.
 ##### openQuestions
 
 > **openQuestions**: `string`[]
+
+##### polarity?
+
+> `optional` **polarity?**: `"positive"` \| `"negative"` \| `"boundary"` \| `"validation"` \| `"navigation"` \| `"accessibility"`
+
+Optional additive Issue #2030 field. New emissions always populate it;
+older artifacts may omit it and are classified on read-path fallback.
 
 ##### preconditions
 
@@ -19218,6 +19232,22 @@ Discriminant of an allowed FinOps role.
 
 ***
 
+### GeneratedTestCaseCategory
+
+> **GeneratedTestCaseCategory** = *typeof* [`ALLOWED_GENERATED_TEST_CASE_CATEGORIES`](#allowed_generated_test_case_categories)\[`number`\]
+
+Persisted customer-eval rubric category for downstream consumers.
+
+***
+
+### GeneratedTestCasePolarity
+
+> **GeneratedTestCasePolarity** = *typeof* [`ALLOWED_GENERATED_TEST_CASE_POLARITIES`](#allowed_generated_test_case_polarities)\[`number`\]
+
+Persisted polarity label consumed by downstream exports and evals.
+
+***
+
 ### GeneratedTestCaseReviewState
 
 > **GeneratedTestCaseReviewState** = `"draft"` \| `"auto_approved"` \| `"needs_review"` \| `"rejected"`
@@ -20980,6 +21010,22 @@ Reasons four-eyes review is enforced for a single test case (#1376).
 Multiple reasons may apply (e.g. a `regulated_data` case whose visual
 sidecar reported low confidence). Reasons are reported deterministic-
 sorted on the `ReviewSnapshot.fourEyesReasons` field.
+
+***
+
+### ALLOWED\_GENERATED\_TEST\_CASE\_CATEGORIES
+
+> `const` **ALLOWED\_GENERATED\_TEST\_CASE\_CATEGORIES**: readonly \[`"positive_path"`, `"negative_path"`, `"boundary_value"`, `"validation_rule"`, `"navigation_flow"`, `"accessibility"`\]
+
+Machine-readable customer-eval rubric buckets for generated cases.
+
+***
+
+### ALLOWED\_GENERATED\_TEST\_CASE\_POLARITIES
+
+> `const` **ALLOWED\_GENERATED\_TEST\_CASE\_POLARITIES**: readonly \[`"positive"`, `"negative"`, `"boundary"`, `"validation"`, `"navigation"`, `"accessibility"`\]
+
+Persisted polarity labels for generated test cases (Issue #2030).
 
 ***
 

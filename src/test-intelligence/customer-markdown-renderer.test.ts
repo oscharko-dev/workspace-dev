@@ -28,6 +28,8 @@ const buildCase = (
     "Bestätigen, dass der Login mit korrekten Zugangsdaten funktioniert.",
   level: "system",
   type: "functional",
+  polarity: "positive",
+  category: "positive_path",
   priority: "p1",
   riskCategory: "low",
   technique: "use_case",
@@ -140,6 +142,42 @@ test("renderCustomerMarkdown renders steps with Beschreibung + Erwartetes Ergebn
   assert.match(body, /\*\*Workflow-Aktionen:\*\* ACT-001/u);
   assert.match(body, /Abdeckung & Nachvollziehbarkeit/u);
   assert.match(body, /Abgedeckte Semantik/u);
+});
+
+test("renderCustomerMarkdown uses persisted polarity when JSON classification is present", () => {
+  const list: GeneratedTestCaseList = {
+    schemaVersion: GENERATED_TEST_CASE_SCHEMA_VERSION,
+    jobId: "job-1",
+    testCases: [
+      buildCase({
+        id: "tc-a11y-json",
+        title: "Generischer Feldtest ohne A11y-Schlagworte",
+        type: "functional",
+        polarity: "accessibility",
+        category: "accessibility",
+        objective: "Prüft einen unspezifischen UI-Zustand.",
+        expectedResults: ["Der Zustand ist korrekt sichtbar."],
+        steps: [
+          {
+            index: 1,
+            action: "Prüfe den sichtbaren UI-Zustand",
+            expected: "Der Zustand ist korrekt sichtbar",
+          },
+        ],
+      }),
+    ],
+  };
+  const result = renderCustomerMarkdown({
+    list,
+    fileName: "x",
+    sourceLabel: "x",
+    generatedAt: "2026-05-02T10:00:00Z",
+  });
+  assert.match(result.combinedMarkdown, /\| TC01 \| .* \| Barrierefreiheit \|/u);
+  assert.match(
+    result.perCaseFiles[0]?.body ?? "",
+    /\*\*Klasse:\*\* Barrierefreiheit · \*\*Priorität:\*\* p1/u,
+  );
 });
 
 test("renderCustomerMarkdown customer mode consolidates shared clarification questions and strips provenance prefixes", () => {

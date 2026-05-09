@@ -175,6 +175,26 @@ export const TEST_INTELLIGENCE_CONTRACT_VERSION = "1.21.0" as const;
  */
 export const GENERATED_TEST_CASE_SCHEMA_VERSION = "1.1.0" as const;
 
+/** Persisted polarity labels for generated test cases (Issue #2030). */
+export const ALLOWED_GENERATED_TEST_CASE_POLARITIES = [
+  "positive",
+  "negative",
+  "boundary",
+  "validation",
+  "navigation",
+  "accessibility",
+] as const;
+
+/** Machine-readable customer-eval rubric buckets for generated cases. */
+export const ALLOWED_GENERATED_TEST_CASE_CATEGORIES = [
+  "positive_path",
+  "negative_path",
+  "boundary_value",
+  "validation_rule",
+  "navigation_flow",
+  "accessibility",
+] as const;
+
 /**
  * Prompt template version for the test-intelligence prompt family.
  *
@@ -6959,6 +6979,14 @@ export type TestCaseRiskCategory =
 /** Priority band attached to a generated test case. */
 export type TestCasePriority = "p0" | "p1" | "p2" | "p3";
 
+/** Persisted polarity label consumed by downstream exports and evals. */
+export type GeneratedTestCasePolarity =
+  (typeof ALLOWED_GENERATED_TEST_CASE_POLARITIES)[number];
+
+/** Persisted customer-eval rubric category for downstream consumers. */
+export type GeneratedTestCaseCategory =
+  (typeof ALLOWED_GENERATED_TEST_CASE_CATEGORIES)[number];
+
 /** Review state at the moment the test case is emitted. */
 export type GeneratedTestCaseReviewState =
   | "draft"
@@ -7173,6 +7201,16 @@ export interface GeneratedTestCase {
   objective: string;
   level: TestCaseLevel;
   type: TestCaseType;
+  /**
+   * Optional additive Issue #2030 field. New emissions always populate it;
+   * older artifacts may omit it and are classified on read-path fallback.
+   */
+  polarity?: GeneratedTestCasePolarity;
+  /**
+   * Optional additive Issue #2030 field. New emissions always populate it;
+   * older artifacts may omit it and are classified on read-path fallback.
+   */
+  category?: GeneratedTestCaseCategory;
   priority: TestCasePriority;
   riskCategory: TestCaseRiskCategory;
   technique: TestCaseTechnique29119;

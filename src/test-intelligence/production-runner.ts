@@ -119,6 +119,7 @@ import {
   RISK_RANKING_ARTIFACT_FILENAME,
   WORKFLOW_TOPOLOGY_ARTIFACT_FILENAME,
 } from "../contracts/index.js";
+import { deriveGeneratedTestCaseClassification } from "./test-case-classification.js";
 import { sanitizeErrorMessage } from "../error-sanitization.js";
 import { canonicalJson, sha256Hex } from "./content-hash.js";
 import {
@@ -7031,6 +7032,13 @@ const stampGeneratedTestCase = (input: {
     if (typeof s.expected === "string") projected.expected = s.expected;
     return projected;
   });
+  const classification = deriveGeneratedTestCaseClassification({
+    type: input.draft.type,
+    title: input.draft.title,
+    objective: input.draft.objective,
+    expectedResults: [...input.draft.expectedResults],
+    steps,
+  });
   const generated: GeneratedTestCase = {
     id,
     sourceJobId: input.jobId,
@@ -7041,6 +7049,8 @@ const stampGeneratedTestCase = (input: {
     objective: input.draft.objective,
     level: input.draft.level ?? "system",
     type: input.draft.type,
+    polarity: classification.polarity,
+    category: classification.category,
     priority: input.draft.priority,
     riskCategory: normalizeDraftRiskCategory(
       input.draft.riskCategory,

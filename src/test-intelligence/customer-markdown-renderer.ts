@@ -17,6 +17,10 @@ import type {
   GeneratedTestCaseList,
 } from "../contracts/index.js";
 import type { ComplianceCoverageReport } from "./compliance-coverage-report.js";
+import {
+  deriveGeneratedTestCaseClassification,
+  renderGeneratedTestCasePolarityLabel,
+} from "./test-case-classification.js";
 
 export interface RenderCustomerMarkdownInput {
   list: GeneratedTestCaseList;
@@ -55,8 +59,6 @@ const KEYWORD_SELECTABLE_HINT_PATTERN =
   /\b(select|dropdown|checkbox|radio|option|auswahl|choice|picker)\b/i;
 const KEYWORD_RESULT_HINT_PATTERN =
   /\b(result|summary|status|total|balance|output|confirmation|receipt|preview|overview|message|ergebnis)\b/i;
-const A11Y_HINT_PATTERN =
-  /\b(a11y|accessibility|barriere|screen[\s-]?reader|focus|fokus|tab(?:-)?reihenfolge|tastatur)\b/i;
 const TEST_CASE_NUMBER_PATTERN =
   /\bTC[\s_-]*0*(\d{1,4})\b/iu;
 const LEADING_TEST_CASE_LABEL_PATTERN =
@@ -682,28 +684,10 @@ const buildCustomerTraceLabel = (tc: GeneratedTestCase): string => {
 };
 
 const classifyCustomerCase = (tc: GeneratedTestCase): string => {
-  const combined = [
-    tc.id,
-    tc.title,
-    tc.objective,
-    ...tc.expectedResults,
-    ...tc.steps.flatMap((step) => [step.action, step.expected ?? ""]),
-  ].join(" ");
-  if (A11Y_HINT_PATTERN.test(combined)) {
-    return "Barrierefreiheit";
-  }
-  switch (tc.type) {
-    case "negative":
-      return "Negativ";
-    case "validation":
-      return "Validierung";
-    case "boundary":
-      return "Grenzwert";
-    case "navigation":
-      return "Navigation";
-    default:
-      return "Positiv";
-  }
+  const polarity =
+    tc.polarity ??
+    deriveGeneratedTestCaseClassification(tc).polarity;
+  return renderGeneratedTestCasePolarityLabel(polarity);
 };
 
 const summarizeReviewNotes = (tc: GeneratedTestCase): string => {
