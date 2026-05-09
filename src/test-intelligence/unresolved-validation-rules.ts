@@ -409,6 +409,11 @@ export const deriveUnresolvedValidationConstraintsWithScreenFallback = (
   );
 };
 
+export const testCaseTouchesUnresolvedConstraint = (
+  testCase: GeneratedTestCase,
+  constraint: UnresolvedValidationConstraint,
+): boolean => testCaseTouchesConstraint(testCase, constraint);
+
 const testCaseTouchesConstraint = (
   testCase: GeneratedTestCase,
   constraint: UnresolvedValidationConstraint,
