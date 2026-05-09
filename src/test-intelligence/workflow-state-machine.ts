@@ -401,8 +401,8 @@ export const findShortestTransitionPath = (
       });
       if (transition.to === toState) {
         const path: string[] = [];
-        let cursor: string | undefined = toState;
-        while (cursor !== undefined && cursor !== fromState) {
+        let cursor: string = toState;
+        while (cursor !== fromState) {
           const previous = predecessor.get(cursor);
           if (previous === undefined) break;
           path.unshift(previous.transitionId);
