@@ -5,6 +5,7 @@ import { describe, test } from "node:test";
 
 import { canonicalJson } from "./content-hash.js";
 import {
+  EINGABEMASKEN_APPLICABLE_INVARIANTS,
   EINGABEMASKEN_ARCHETYPE_FIXTURE_IDS,
   EINGABEMASKEN_FIXTURE_DOMAINS,
   EINGABEMASKEN_FIXTURE_TIERS,
@@ -14,6 +15,7 @@ import {
   type EingabemaskenArchetypeSummary,
   type EingabemaskenComplianceAnnotation,
 } from "./eingabemasken-fixtures.js";
+import { buildActiveDatasetInvariantRegistry } from "./domain-invariant-registry.js";
 import { deriveBusinessTestIntentIr } from "./intent-derivation.js";
 
 const ALLOWED_AUDIT_CRITICALITIES: ReadonlySet<string> = new Set([
@@ -94,6 +96,44 @@ describe("eingabemasken-fixtures (banking and insurance UI input masks)", () => 
           domain === "insurance" ||
           domain === "compliance",
         `domain for ${id} must be banking, insurance, or compliance`,
+      );
+    }
+  });
+
+  test("Issue #2108: every fixture has an applicable-invariants entry, and every entry resolves to a registered invariant id", () => {
+    const registry = buildActiveDatasetInvariantRegistry();
+    const registeredIds = new Set(registry.ids());
+    for (const id of EINGABEMASKEN_ARCHETYPE_FIXTURE_IDS) {
+      assert.ok(
+        EINGABEMASKEN_APPLICABLE_INVARIANTS[id] !== undefined,
+        `fixture ${id} must declare applicable invariants (use empty array if none)`,
+      );
+      for (const invariantId of EINGABEMASKEN_APPLICABLE_INVARIANTS[id]) {
+        assert.ok(
+          registeredIds.has(invariantId),
+          `fixture ${id} references invariant ${invariantId} that is not registered in the active-dataset registry`,
+        );
+      }
+    }
+  });
+
+  test("Issue #2108: the Eingabemasken benchmark exercises every applicable invariant across all tiers", () => {
+    const registeredIds = new Set(
+      buildActiveDatasetInvariantRegistry().ids(),
+    );
+    const exercised = new Set<string>();
+    for (const id of EINGABEMASKEN_ARCHETYPE_FIXTURE_IDS) {
+      for (const invariantId of EINGABEMASKEN_APPLICABLE_INVARIANTS[id]) {
+        exercised.add(invariantId);
+      }
+    }
+    // Every Issue #2108 compliance invariant + every Wave-2 active-dataset
+    // invariant must surface in at least one Eingabemaske mapping. The
+    // benchmark would otherwise miss a regulatory framework entirely.
+    for (const registeredId of registeredIds) {
+      assert.ok(
+        exercised.has(registeredId),
+        `invariant ${registeredId} is registered but no Eingabemaske benchmark fixture exercises it`,
       );
     }
   });

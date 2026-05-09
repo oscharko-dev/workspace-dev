@@ -13,13 +13,36 @@ import {
   sampleInvariantSeeds,
 } from "./property-sampler.js";
 
-test("sampler: every active-dataset invariant has a registered factory", () => {
+/**
+ * Issue #2040 Wave-2 invariants are calculation-driven and ship a
+ * fast-check arbitrary so the sampler can anchor LLM prompts in concrete
+ * data. Issue #2108 compliance invariants are text/citation-driven and
+ * are evaluated against case content rather than numeric bounds; they
+ * intentionally skip the sampler. The contract this test pins is the
+ * subset of invariants that MUST have a factory — the Wave-2 active
+ * dataset.
+ */
+const ACTIVE_DATASET_INVARIANT_IDS_REQUIRING_SAMPLER = [
+  "INV-FINANCING-NEED-01",
+  "INV-NETTO-BRUTTO-01",
+  "INV-OPTIONAL-COST-01",
+  "INV-VAT-01",
+] as const;
+
+test("sampler: every Wave-2 active-dataset invariant has a registered factory", () => {
   const registry = buildActiveDatasetInvariantRegistry();
-  const missing = findInvariantsMissingSamplerFactory(registry.list());
+  const required = registry
+    .list()
+    .filter((invariant) =>
+      (
+        ACTIVE_DATASET_INVARIANT_IDS_REQUIRING_SAMPLER as readonly string[]
+      ).includes(invariant.id),
+    );
+  const missing = findInvariantsMissingSamplerFactory(required);
   assert.deepEqual(
     missing,
     [],
-    `every active-dataset invariant must have a sampler factory; missing: ${missing.join(", ")}`,
+    `every Wave-2 active-dataset invariant must have a sampler factory; missing: ${missing.join(", ")}`,
   );
 });
 
@@ -36,9 +59,11 @@ test("sampler: produces deterministic seeds for the active-dataset registry", ()
   }
 });
 
-test("sampler: seeds carry every active-dataset invariant id", () => {
+test("sampler: seeds carry every Wave-2 active-dataset invariant id", () => {
   const registry = buildActiveDatasetInvariantRegistry();
   const result = sampleInvariantSeeds({ registry });
+  // Issue #2108 compliance invariants are text-driven and have no sampler
+  // factory; the Wave-2 active-dataset subset must still all be exercised.
   assert.deepEqual(result.invariantIds, [
     "INV-FINANCING-NEED-01",
     "INV-NETTO-BRUTTO-01",

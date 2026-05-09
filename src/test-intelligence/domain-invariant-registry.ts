@@ -52,6 +52,26 @@ import {
 /** Severity surfaced for a single invariant violation. */
 export type DomainInvariantSeverity = "error" | "warning";
 
+/**
+ * Citation pointer to the legal source an invariant enforces (Issue #2108).
+ * Auditors require traceability from the predicate back to the regulation
+ * that justifies it; the field is optional because a handful of
+ * Issue #2040 active-dataset invariants are calculation-bound rather than
+ * regulation-bound.
+ */
+export interface DomainInvariantLegalSource {
+  /** Short framework identifier — `PSD2`, `MiFID II`, `GwG`, `GDPR`, `EAA`, … */
+  readonly framework: string;
+  /**
+   * Article + paragraph (or recital + section) the invariant cites, e.g.
+   * `Article 97(1)`, `RTS 2018/389 Article 4`, `Section 10 paragraph 1
+   * sentence 2`.
+   */
+  readonly citation: string;
+  /** Optional canonical URL pointing to the consolidated legal text. */
+  readonly url?: string;
+}
+
 /** Context passed to invariant predicates. */
 export interface DomainInvariantContext {
   readonly intent: BusinessTestIntentIr;
@@ -65,6 +85,10 @@ export interface DomainInvariantContext {
  * `violationMessage` factory is invoked when `holds` returns false to
  * produce a deterministic message + JSON path; a default fallback is used
  * when omitted.
+ *
+ * Issue #2108 added the optional `legalSource` field; regulation-bound
+ * invariants must populate it so auditors can trace the predicate back to
+ * the article + paragraph it enforces.
  */
 export interface DomainInvariant {
   readonly id: string;
@@ -72,6 +96,7 @@ export interface DomainInvariant {
   readonly description: string;
   readonly source: string;
   readonly severity: DomainInvariantSeverity;
+  readonly legalSource?: DomainInvariantLegalSource;
   readonly forall: (
     testCase: GeneratedTestCase,
     context: DomainInvariantContext,
@@ -431,8 +456,529 @@ export const registerActiveDatasetInvariants = (
   registry.register(buildFinancingNeedFormulaInvariant());
 };
 
+/* -------------------------------------------------------------------- */
+/*  EU banking + insurance compliance invariants (Issue #2108)           */
+/* -------------------------------------------------------------------- */
+
+/*
+ * The Issue #2108 catalog encodes regulatory cross-field rules drawn from
+ * the EU banking and insurance frameworks the eu-banking-default profile
+ * targets. Each invariant fires on text-level evidence in the generated
+ * test case (titles, objective, preconditions, steps, expected results)
+ * because the validation pipeline operates on case content rather than
+ * runtime telemetry. The legalSource field is mandatory for these
+ * invariants and points back to the article/section that justifies the
+ * predicate.
+ *
+ * Severity:
+ *   - "error"   — hard regulatory; a violation should block export.
+ *   - "warning" — soft / good practice; surfaces in coverage reports
+ *                 but does not block.
+ */
+
+const PAYMENT_CONTEXT_RE =
+  /\b(payment|payments|pay\b|transfer|überweis(?:ung|en)|sepa|wire transfer|remittance)\b/i;
+const HIGH_VALUE_PAYMENT_RE =
+  /\b(high[- ]value|hochbetrag|großbetrag|high amount|amount\s*(?:>|>=|greater than|over)\s*\d|exceeds?\s*(?:the\s*)?(?:threshold|limit))\b/i;
+const SCA_REQUIREMENT_RE =
+  /\b(sca|strong customer authentication|two[- ]factor|2fa|mfa|tan|smstan|chiptan|pushtan|otp\b|authenticator)\b/i;
+const DYNAMIC_LINKING_RE =
+  /\b(dynamic(?:ally)?\s*link(?:ed|ing)?|dynamische(?:s|n|r)?\s*verkn(?:ü|u)pf(?:ung|en)|amount\s*and\s*payee|betrag\s*und\s*empf(?:ä|a)nger)\b/i;
+const SUITABILITY_RE =
+  /\b(suitability|geeignetheit|geeignetheitspr(?:ü|u)fung|geeignetheitserkl(?:ä|a)rung)\b/i;
+const COMPLEX_PRODUCT_RE =
+  /\b(complex product|komplexes? produkt|cfd\b|warrant|certificate|zertifikat|leveraged|gehebelt|derivative|derivat)\b/i;
+const APPROPRIATENESS_WARNING_RE =
+  /\b(appropriateness|angemessenheitspr(?:ü|u)fung|warnung\s*(?:für|vor)|warnhinweis|complex[- ]product warning)\b/i;
+const MIFID_ORDER_RE =
+  /\b(securities order|wertpapierorder|wertpapier-order|order placement|order execution|trade order|isin|wkn)\b/i;
+const COSTS_DISCLOSURE_RE =
+  /\b(costs?\s*and\s*charges|kosten\s*und\s*(geb(?:ü|u)hren|nebenkosten)|ex[- ]ante (?:cost )?disclosure|kosteninformation|kostenausweis)\b/i;
+const PEP_RE =
+  /\b(pep\b|politically exposed person|politisch exponierte\s*person)\b/i;
+const HIGH_VALUE_TRANSFER_RE =
+  /\b(high[- ]value transfer|hochbetragsüberweisung|großbetrag(?:s)?überweisung|cash\s*deposit|bargeldeinzahlung|aml threshold|geldwäsche-?schwelle)\b/i;
+const ICT_THIRD_PARTY_RE =
+  /\b(ict[- ]third[- ]party|ikt[- ]drittpartei|outsourced|outsourcing|auslager(?:ung|n)|cloud provider|cloud-?anbieter)\b/i;
+const DORA_FLAG_RE =
+  /\b(dora|ict[- ]risk|ikt[- ]risiko|third[- ]party (?:flag|register)|drittpartei[- ]register)\b/i;
+const SPECIAL_CATEGORY_RE =
+  /\b(special[- ]category|besondere kategorie|sensitive personal data|sensible personenbezogene daten|health data|gesundheitsdaten|biometric data|biometrische daten|religion(?:szugeh(?:ö|o)rigkeit)?|sexual orientation|sexuelle orientierung)\b/i;
+const EXPLICIT_CONSENT_RE =
+  /\b(explicit consent|ausdrückliche einwilligung|opt[- ]in consent|written consent|schriftliche einwilligung)\b/i;
+const INSURANCE_CONTRACT_RE =
+  /\b(insurance contract|versicherungsvertrag|police\b|policy issuance|antrag (?:auf )?versicherung|versicherungsantrag)\b/i;
+const DEMANDS_NEEDS_RE =
+  /\b(demands\s*(?:and|&)\s*needs|wünsche\s*und\s*bed(?:ü|u)rfnisse|bedarfsanalyse|needs analysis|kundenwunschanalyse)\b/i;
+const LONG_TERM_CONTRACT_RE =
+  /\b(long[- ]term contract|langfristige(?:r|n)? vertrag|life insurance|lebensversicherung|riester|rürup|altersvorsorge)\b/i;
+const COOLING_OFF_RE =
+  /\b(cooling[- ]off|widerrufsrecht|widerrufsbelehrung|withdrawal period|right of withdrawal)\b/i;
+const FX_CONTEXT_RE =
+  /\b(fx|foreign exchange|currency conversion|w(?:ä|a)hrungsumrechnung|exchange rate|wechselkurs|cross[- ]currency)\b/i;
+const FX_MARKUP_RE =
+  /\b(markup|aufschlag|margin|marge|spread)\b/i;
+const FX_DISCLOSURE_RE =
+  /\b(fx[- ]?(?:margin|markup) disclosure|w(?:ä|a)hrungsaufschlag\s*(?:offen|ausweis)|exchange[- ]rate disclosure|wechselkurshinweis)\b/i;
+const SESSION_AGGREGATION_RE =
+  /\b(session aggregation|kumulativ(?:e|er)? betrag|cumulative amount|tageslimit|daily limit|aml aggregation)\b/i;
+/*
+ * KYC_CONTEXT_RE intentionally avoids generic markers like "onboarding"
+ * or "account screen" — those leak into synthesized field-level stubs
+ * (`Submit valid Email on s-onboarding-account`) and would force
+ * INV-GWG-PEP-01 / INV-KYC-AGE-01 to fire on every name/email/postcode
+ * field. The patterns below require an intentful KYC or CDD wizard.
+ */
+const KYC_CONTEXT_RE =
+  /\b(kyc\b|know your customer|customer due diligence|cdd\b|kyc[- ]?wizard|kyc[- ]?onboarding|kontoer(?:ö|o)ffnungs[- ]?wizard|account[- ]?opening wizard)\b/i;
+const AGE_GATE_RE =
+  /\b(under[- ]?18|minderj(?:ä|a)hrig|altersgrenze|age gate|age check|altersprüfung|geburtsdatum)\b/i;
+const A11Y_PAYMENT_CONTEXT_RE =
+  /\b(payment flow|payment journey|zahlung(?:s|en)?[- ]?(?:flow|journey|prozess))\b/i;
+const KEYBOARD_ONLY_RE =
+  /\b(keyboard[- ]only|tastatur[- ]?(?:nur|only)|nur (?:per )?tastatur|sole keyboard|keyboard navigation|tab[- ]?reihenfolge|focus order|fokusreihenfolge)\b/i;
+/*
+ * ACCOUNT_SCREEN_RE matches only intentful self-service portal phrases.
+ * The generic "account screen" / "account page" forms are excluded so
+ * that synthesized field-level cases on onboarding screens (which leak
+ * `s-onboarding-account` into the case text) do NOT pull
+ * INV-GDPR-ART15-01 into scope. Real account-overview / portal cases
+ * still match.
+ */
+const ACCOUNT_SCREEN_RE =
+  /\b(account overview|kontoübersicht|kontoeinstellungen|konto[- ]?detail(?:s|seite)?|self[- ]service portal|kundenportal|my account dashboard|account dashboard)\b/i;
+const AUSKUNFT_RE =
+  /\b(auskunftsrecht|right of access|datenauskunft|subject access request|sar\b|art(?:ikel)?\.?\s*1[5-9]|art(?:ikel)?\.?\s*2[0-2])\b/i;
+const ANLAGEVERMITTLUNG_RE =
+  /\b(anlagevermittlung|investment intermediation|anlageberatung|investment advice|wertpapierberatung)\b/i;
+const BERATUNGSPROTOKOLL_RE =
+  /\b(beratungsprotokoll|advisory protocol|geeignetheitserkl(?:ä|a)rung|advice record|protokoll der beratung)\b/i;
+
 /**
- * Build a fresh registry pre-populated with the active-dataset invariants.
+ * Verbs that distinguish an *intentful* transfer / KYC wizard step from
+ * an incidental form-field test (e.g. "submit valid postcode"). Used to
+ * AND-gate INV-GWG-PEP-01 so synthesized field-level stubs do not pull
+ * the PEP-screening invariant into scope.
+ */
+const TRANSFER_OR_KYC_VERB_RE =
+  /\b(initiate|execute|complete|onboard|conclude|approve)\s+(?:the\s+)?(?:high[- ]value\s+)?(?:transfer|payment|onboarding|kyc|cdd|customer due diligence|wizard|application)\b/i;
+
+const collectAllText = (testCase: GeneratedTestCase): string =>
+  collectCaseStrings(testCase).join("\n");
+
+const matchesAny = (text: string, patterns: readonly RegExp[]): boolean =>
+  patterns.some((pattern) => pattern.test(text));
+
+/**
+ * Risk categories that gate the Issue #2108 compliance invariants. The
+ * registry intentionally avoids firing on accidentally-name-matching low-
+ * risk stubs (e.g. an "Open Account" accessibility check synthesized by
+ * the harness) — only cases the policy gate considers regulated reach
+ * the compliance predicates.
+ */
+const REGULATED_RISK_CATEGORIES: ReadonlySet<string> = new Set([
+  "regulated_data",
+  "financial_transaction",
+  "high",
+]);
+
+interface ContentInvariantSpec {
+  readonly id: string;
+  readonly scope: string;
+  readonly description: string;
+  readonly severity: DomainInvariantSeverity;
+  readonly legalSource: DomainInvariantLegalSource;
+  /**
+   * Pattern groups that must ALL have at least one match for the case to
+   * be in scope. Each group is `any-of` internally; the outer array is
+   * `all-of`. Use multiple groups to AND-compose context anchors (e.g.
+   * "payment context" AND "high-value indicator" AND "SCA invocation").
+   */
+  readonly inScope: readonly (readonly RegExp[])[];
+  /**
+   * Patterns that must all be satisfied (any-match per pattern array)
+   * for `holds` to return `true`.
+   */
+  readonly mustEvidence: readonly (readonly RegExp[])[];
+  /** Auditor-facing violation message. */
+  readonly violationMessage: string;
+  /**
+   * When true (the default), cases whose `riskCategory` is not in
+   * {@link REGULATED_RISK_CATEGORIES} are skipped. Set to `false` for
+   * invariants that must fire regardless of policy-gate risk tagging
+   * (e.g. accessibility-only invariants whose risk floor is "low").
+   */
+  readonly requiresRegulatedRisk?: boolean;
+}
+
+const ALLOWED_RISK_CATEGORIES_FOR_A11Y: ReadonlySet<string> = new Set([
+  "regulated_data",
+  "financial_transaction",
+  "high",
+  "low",
+]);
+
+const buildContentInvariant = (spec: ContentInvariantSpec): DomainInvariant => {
+  const requiresRegulatedRisk = spec.requiresRegulatedRisk ?? true;
+  const allowedRisks = requiresRegulatedRisk
+    ? REGULATED_RISK_CATEGORIES
+    : ALLOWED_RISK_CATEGORIES_FOR_A11Y;
+  return {
+    id: spec.id,
+    scope: spec.scope,
+    description: spec.description,
+    source: "Issue #2108 (registered)",
+    severity: spec.severity,
+    legalSource: spec.legalSource,
+    forall: (testCase) => {
+      if (!allowedRisks.has(testCase.riskCategory)) return false;
+      const text = collectAllText(testCase);
+      return spec.inScope.every((group) => matchesAny(text, group));
+    },
+    holds: (testCase) => {
+      const text = collectAllText(testCase);
+      return spec.mustEvidence.every((group) => matchesAny(text, group));
+    },
+    violationMessage: () => ({
+      path: "expectedResults",
+      message: spec.violationMessage,
+    }),
+  };
+};
+
+const buildPsd2ScaInvariant = (): DomainInvariant =>
+  buildContentInvariant({
+    id: "INV-PSD2-SCA-01",
+    scope: "eu-banking.psd2.sca",
+    description:
+      "High-value or remote electronic payments must declare a strong-customer-authentication step (PSD2 Article 97 + RTS 2018/389).",
+    severity: "error",
+    legalSource: {
+      framework: "PSD2",
+      citation:
+        "Directive (EU) 2015/2366 Article 97 + Commission Delegated Regulation 2018/389 (RTS on SCA) Article 1, 4",
+      url: "https://eur-lex.europa.eu/eli/reg_del/2018/389/oj",
+    },
+    inScope: [[PAYMENT_CONTEXT_RE], [HIGH_VALUE_PAYMENT_RE]],
+    mustEvidence: [[SCA_REQUIREMENT_RE]],
+    violationMessage:
+      "High-value payment case is missing a strong-customer-authentication step; PSD2 Article 97 requires SCA before execution.",
+  });
+
+const buildPsd2DynamicLinkingInvariant = (): DomainInvariant =>
+  buildContentInvariant({
+    id: "INV-PSD2-DYNLINK-01",
+    scope: "eu-banking.psd2.dynamic-linking",
+    description:
+      "When SCA is invoked on a high-value payment, the authentication code must be dynamically linked to the amount AND the payee (RTS 2018/389 Article 5).",
+    severity: "error",
+    legalSource: {
+      framework: "PSD2",
+      citation: "Commission Delegated Regulation 2018/389 (RTS on SCA) Article 5",
+      url: "https://eur-lex.europa.eu/eli/reg_del/2018/389/oj",
+    },
+    inScope: [[PAYMENT_CONTEXT_RE], [SCA_REQUIREMENT_RE], [HIGH_VALUE_PAYMENT_RE]],
+    mustEvidence: [[DYNAMIC_LINKING_RE]],
+    violationMessage:
+      "High-value payment SCA case does not assert dynamic linking to amount AND payee; RTS 2018/389 Article 5 requires the authentication code to be bound to both.",
+  });
+
+const buildMifidSuitabilityInvariant = (): DomainInvariant =>
+  buildContentInvariant({
+    id: "INV-MIFID-SUITAB-01",
+    scope: "eu-banking.mifid.suitability",
+    description:
+      "Investment-advice and portfolio-management orders must complete the suitability assessment before execution (MiFID II Article 25(2)).",
+    severity: "error",
+    legalSource: {
+      framework: "MiFID II",
+      citation: "Directive 2014/65/EU Article 25(2) + Delegated Regulation 2017/565 Article 54",
+      url: "https://eur-lex.europa.eu/eli/dir/2014/65/oj",
+    },
+    inScope: [[MIFID_ORDER_RE]],
+    mustEvidence: [[SUITABILITY_RE]],
+    violationMessage:
+      "MiFID II securities-order case must include a completed suitability assessment in preconditions or steps before submission; Article 25(2) prohibits execution without it.",
+  });
+
+const buildMifidAppropriatenessInvariant = (): DomainInvariant =>
+  buildContentInvariant({
+    id: "INV-MIFID-APPROP-01",
+    scope: "eu-banking.mifid.appropriateness",
+    description:
+      "Execution-only orders on complex products must surface the appropriateness warning before submission (MiFID II Article 25(3)).",
+    severity: "error",
+    legalSource: {
+      framework: "MiFID II",
+      citation: "Directive 2014/65/EU Article 25(3)",
+      url: "https://eur-lex.europa.eu/eli/dir/2014/65/oj",
+    },
+    inScope: [[COMPLEX_PRODUCT_RE], [MIFID_ORDER_RE]],
+    mustEvidence: [[APPROPRIATENESS_WARNING_RE]],
+    violationMessage:
+      "Complex-product order case is missing the appropriateness warning step; MiFID II Article 25(3) requires the warning before execution-only orders.",
+  });
+
+const buildMifidCostsInvariant = (): DomainInvariant =>
+  buildContentInvariant({
+    id: "INV-MIFID-COSTS-01",
+    scope: "eu-banking.mifid.costs-and-charges",
+    description:
+      "Securities orders must disclose ex-ante costs and charges before execution (MiFID II Article 24(4) + Delegated Regulation 2017/565 Article 50).",
+    severity: "error",
+    legalSource: {
+      framework: "MiFID II",
+      citation: "Directive 2014/65/EU Article 24(4) + Delegated Regulation 2017/565 Article 50",
+      url: "https://eur-lex.europa.eu/eli/reg_del/2017/565/oj",
+    },
+    inScope: [[MIFID_ORDER_RE]],
+    mustEvidence: [[COSTS_DISCLOSURE_RE]],
+    violationMessage:
+      "Securities-order case does not surface the ex-ante costs-and-charges disclosure; MiFID II Article 24(4) requires it before execution.",
+  });
+
+const buildGwgPepInvariant = (): DomainInvariant =>
+  buildContentInvariant({
+    id: "INV-GWG-PEP-01",
+    scope: "eu-banking.gwg.pep-screening",
+    description:
+      "High-value transfers and onboarding must complete politically-exposed-person screening before execution (GwG §10/§15).",
+    severity: "error",
+    legalSource: {
+      framework: "GwG (Geldwäschegesetz)",
+      citation: "GwG §§ 10, 15 + 5th AML Directive (EU) 2018/843",
+      url: "https://www.gesetze-im-internet.de/gwg_2017/",
+    },
+    inScope: [[HIGH_VALUE_TRANSFER_RE, KYC_CONTEXT_RE], [TRANSFER_OR_KYC_VERB_RE]],
+    mustEvidence: [[PEP_RE]],
+    violationMessage:
+      "High-value transfer / KYC case must include PEP screening before execution; GwG §10 requires politically-exposed-person checks for enhanced due diligence.",
+  });
+
+const buildAmlAggregationInvariant = (): DomainInvariant =>
+  buildContentInvariant({
+    id: "INV-AML-CUMUL-01",
+    scope: "eu-banking.aml.cumulative-amount",
+    description:
+      "AML thresholds must be checked on cumulative session amounts, not single-transaction amounts (4th AML Directive Article 11(c)).",
+    severity: "warning",
+    legalSource: {
+      framework: "AMLD",
+      citation: "Directive (EU) 2015/849 Article 11(c) (linked transactions)",
+      url: "https://eur-lex.europa.eu/eli/dir/2015/849/oj",
+    },
+    inScope: [[HIGH_VALUE_TRANSFER_RE]],
+    mustEvidence: [[SESSION_AGGREGATION_RE]],
+    violationMessage:
+      "AML threshold case must aggregate cumulative session amounts; AMLD Article 11(c) requires linked-transaction aggregation, not single-transaction comparison.",
+  });
+
+const buildDoraIctInvariant = (): DomainInvariant =>
+  buildContentInvariant({
+    id: "INV-DORA-ICT-01",
+    scope: "eu-banking.dora.ict-third-party",
+    description:
+      "Workflows that depend on outsourced/cloud ICT services must declare an ICT-third-party flag for the DORA register of information (Regulation 2022/2554 Article 28).",
+    severity: "warning",
+    legalSource: {
+      framework: "DORA",
+      citation: "Regulation (EU) 2022/2554 Articles 28, 29 (register of information)",
+      url: "https://eur-lex.europa.eu/eli/reg/2022/2554/oj",
+    },
+    inScope: [[ICT_THIRD_PARTY_RE]],
+    mustEvidence: [[DORA_FLAG_RE]],
+    violationMessage:
+      "Outsourced / ICT third-party workflow lacks a DORA register flag; Regulation 2022/2554 Article 28 requires registration of ICT third-party arrangements.",
+  });
+
+const buildGdprArt9Invariant = (): DomainInvariant =>
+  buildContentInvariant({
+    id: "INV-GDPR-ART9-01",
+    scope: "eu-banking.gdpr.special-category",
+    description:
+      "Processing of special-category personal data must record explicit consent (GDPR Article 9(2)(a)).",
+    severity: "error",
+    legalSource: {
+      framework: "GDPR",
+      citation: "Regulation (EU) 2016/679 Article 9(2)(a)",
+      url: "https://eur-lex.europa.eu/eli/reg/2016/679/oj",
+    },
+    inScope: [[SPECIAL_CATEGORY_RE]],
+    mustEvidence: [[EXPLICIT_CONSENT_RE]],
+    violationMessage:
+      "Case touches special-category personal data without recording explicit consent; GDPR Article 9(2)(a) requires explicit opt-in consent.",
+  });
+
+const buildGdprAuskunftInvariant = (): DomainInvariant =>
+  buildContentInvariant({
+    id: "INV-GDPR-ART15-01",
+    scope: "eu-banking.gdpr.right-of-access",
+    description:
+      "Self-service account screens must surface the data-subject right of access (GDPR Articles 15-22 / DSGVO Art. 12-22).",
+    severity: "warning",
+    legalSource: {
+      framework: "GDPR",
+      citation: "Regulation (EU) 2016/679 Articles 12-22",
+      url: "https://eur-lex.europa.eu/eli/reg/2016/679/oj",
+    },
+    inScope: [[ACCOUNT_SCREEN_RE]],
+    mustEvidence: [[AUSKUNFT_RE]],
+    violationMessage:
+      "Account screen case does not surface a right-of-access (Auskunftsrecht) entry point; GDPR Articles 15-22 require an actionable channel.",
+  });
+
+const buildIddDemandsAndNeedsInvariant = (): DomainInvariant =>
+  buildContentInvariant({
+    id: "INV-IDD-DEMANDS-01",
+    scope: "eu-insurance.idd.demands-and-needs",
+    description:
+      "Insurance-contract distribution must record a demands-and-needs assessment before contract conclusion (IDD Article 20(1)).",
+    severity: "error",
+    legalSource: {
+      framework: "IDD",
+      citation: "Directive (EU) 2016/97 Article 20(1)",
+      url: "https://eur-lex.europa.eu/eli/dir/2016/97/oj",
+    },
+    inScope: [[INSURANCE_CONTRACT_RE]],
+    mustEvidence: [[DEMANDS_NEEDS_RE]],
+    violationMessage:
+      "Insurance-contract case is missing a demands-and-needs assessment; IDD Article 20(1) prohibits contract conclusion without it.",
+  });
+
+const buildSolvency2CoolingOffInvariant = (): DomainInvariant =>
+  buildContentInvariant({
+    id: "INV-SOLV2-COOLOFF-01",
+    scope: "eu-insurance.solvency2.cooling-off",
+    description:
+      "Long-term insurance and life-insurance contracts must surface the cooling-off / withdrawal period (Solvency II + Distance Marketing Directive 2002/65/EC Article 6).",
+    severity: "warning",
+    legalSource: {
+      framework: "Solvency II / DMD",
+      citation:
+        "Directive 2002/65/EC Article 6 (right of withdrawal) + Solvency II Directive 2009/138/EC Article 185",
+      url: "https://eur-lex.europa.eu/eli/dir/2002/65/oj",
+    },
+    inScope: [[LONG_TERM_CONTRACT_RE]],
+    mustEvidence: [[COOLING_OFF_RE]],
+    violationMessage:
+      "Long-term insurance / life-insurance case does not surface the cooling-off period; the right of withdrawal is mandatory before binding the customer.",
+  });
+
+const buildFxMarginInvariant = (): DomainInvariant =>
+  buildContentInvariant({
+    id: "INV-FX-MARGIN-01",
+    scope: "eu-banking.fx.margin-disclosure",
+    description:
+      "Cross-currency conversions with an FX markup must disclose the FX margin (Cross-Border Payments Regulation 2019/518 + PSD2 transparency).",
+    severity: "warning",
+    legalSource: {
+      framework: "Cross-Border Payments Regulation",
+      citation: "Regulation (EU) 2019/518 Article 3a + PSD2 Article 45",
+      url: "https://eur-lex.europa.eu/eli/reg/2019/518/oj",
+    },
+    inScope: [[FX_CONTEXT_RE], [FX_MARKUP_RE]],
+    mustEvidence: [[FX_DISCLOSURE_RE]],
+    violationMessage:
+      "FX conversion with markup is missing the FX-margin disclosure; Regulation 2019/518 Article 3a requires transparent currency-conversion charges.",
+  });
+
+const buildKycAgeGateInvariant = (): DomainInvariant =>
+  buildContentInvariant({
+    id: "INV-KYC-AGE-01",
+    scope: "eu-banking.kyc.age-gate",
+    description:
+      "Onboarding flows for age-restricted products must include an age-gate / under-18 path (Civil-law capacity + product-suitability rules).",
+    severity: "warning",
+    legalSource: {
+      framework: "BGB / MiFID II",
+      citation: "BGB §§ 104-113 (Geschäftsfähigkeit) + MiFID II Article 25 (suitability)",
+      url: "https://www.gesetze-im-internet.de/bgb/",
+    },
+    inScope: [[KYC_CONTEXT_RE]],
+    mustEvidence: [[AGE_GATE_RE]],
+    violationMessage:
+      "KYC onboarding case does not declare an age-gate / under-18 branch; minors cannot validly conclude account-opening or suitability-bound contracts without parental consent.",
+  });
+
+const buildEaaKeyboardInvariant = (): DomainInvariant =>
+  buildContentInvariant({
+    id: "INV-EAA-KBD-01",
+    scope: "eu-banking.eaa.keyboard-only",
+    description:
+      "Payment flows must be completable using the keyboard alone (European Accessibility Act + EN 301 549 / WCAG 2.1 SC 2.1.1).",
+    severity: "error",
+    legalSource: {
+      framework: "European Accessibility Act",
+      citation:
+        "Directive (EU) 2019/882 Annex I Section III + EN 301 549 v3.2.1 § 9.2.1.1 (WCAG 2.1 SC 2.1.1 Keyboard)",
+      url: "https://eur-lex.europa.eu/eli/dir/2019/882/oj",
+    },
+    inScope: [[A11Y_PAYMENT_CONTEXT_RE]],
+    mustEvidence: [[KEYBOARD_ONLY_RE]],
+    violationMessage:
+      "Payment-flow case is missing a keyboard-only completability assertion; EAA + WCAG 2.1 SC 2.1.1 require sole keyboard operation.",
+  });
+
+const buildVagBeratungsprotokollInvariant = (): DomainInvariant =>
+  buildContentInvariant({
+    id: "INV-VAG-BERATUNG-01",
+    scope: "eu-insurance.vag.beratungsprotokoll",
+    description:
+      "Anlagevermittlung / Anlageberatung sessions must hand the customer a Beratungsprotokoll (VAG / VVG §§ 6, 6a; WpHG § 64).",
+    severity: "warning",
+    legalSource: {
+      framework: "VAG / VVG / WpHG",
+      citation: "VVG § 6, § 6a + WpHG § 64 (Beratungsprotokoll)",
+      url: "https://www.gesetze-im-internet.de/vvg/",
+    },
+    inScope: [[ANLAGEVERMITTLUNG_RE]],
+    mustEvidence: [[BERATUNGSPROTOKOLL_RE]],
+    violationMessage:
+      "Anlagevermittlung / Anlageberatung case is missing a Beratungsprotokoll handout step; VVG § 6 + WpHG § 64 require the protocol before transaction confirmation.",
+  });
+
+const ALL_EU_BANKING_COMPLIANCE_INVARIANT_BUILDERS: ReadonlyArray<
+  () => DomainInvariant
+> = [
+  buildPsd2ScaInvariant,
+  buildPsd2DynamicLinkingInvariant,
+  buildMifidSuitabilityInvariant,
+  buildMifidAppropriatenessInvariant,
+  buildMifidCostsInvariant,
+  buildGwgPepInvariant,
+  buildAmlAggregationInvariant,
+  buildDoraIctInvariant,
+  buildGdprArt9Invariant,
+  buildGdprAuskunftInvariant,
+  buildIddDemandsAndNeedsInvariant,
+  buildSolvency2CoolingOffInvariant,
+  buildFxMarginInvariant,
+  buildKycAgeGateInvariant,
+  buildEaaKeyboardInvariant,
+  buildVagBeratungsprotokollInvariant,
+];
+
+/**
+ * Register the Issue #2108 EU banking + insurance compliance invariants on
+ * an existing registry. The catalog is the default-on extension that ships
+ * with the eu-banking-default profile; downstream callers may register
+ * additional jurisdiction-specific invariants on top.
+ */
+export const registerEuBankingComplianceInvariants = (
+  registry: DomainInvariantRegistry,
+): void => {
+  for (const build of ALL_EU_BANKING_COMPLIANCE_INVARIANT_BUILDERS) {
+    registry.register(build());
+  }
+};
+
+/**
+ * Build a fresh registry pre-populated with the active-dataset invariants
+ * (Issue #2040) and the EU banking + insurance compliance catalog
+ * (Issue #2108). The combined registry is the **default-on** registry for
+ * the `eu-banking-default` profile: passing nothing into
+ * {@link RunValidationPipelineInput#invariantRegistry} reuses it.
+ *
  * The returned registry is mutable; callers may register additional
  * invariants before evaluation.
  */
@@ -440,6 +986,7 @@ export const buildActiveDatasetInvariantRegistry =
   (): DomainInvariantRegistry => {
     const registry = createInvariantRegistry();
     registerActiveDatasetInvariants(registry);
+    registerEuBankingComplianceInvariants(registry);
     return registry;
   };
 

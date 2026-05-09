@@ -102,6 +102,59 @@ The invariant defers numeric verification to
 amount from the screen elements and rejects any expected total that
 strays by more than half a cent.
 
+## EU banking + insurance compliance invariants (Issue [#2108])
+
+[#2108]: https://github.com/oscharko/workspace-dev/issues/2108
+
+Issue [#2108] grew the catalog from the four Issue #2040 active-dataset
+invariants to **20 default-on invariants** covering the EU banking and
+insurance frameworks the `eu-banking-default` profile targets. Each new
+invariant carries a mandatory `legalSource` citation
+(`{ framework, citation, url? }`) so auditors can trace every predicate
+back to the article that justifies it. Registration is automatic —
+`buildActiveDatasetInvariantRegistry()` returns a registry pre-populated
+with both Wave-2 and Issue #2108 invariants, and the validation
+pipeline uses it by default for the `eu-banking-default` profile.
+
+Each Issue #2108 invariant ships at least one positive and one negative
+fixture in [`domain-invariant-registry.test.ts`](../../src/test-intelligence/domain-invariant-registry.test.ts);
+the [`eingabemasken-fixtures`](../../src/test-intelligence/eingabemasken-fixtures.ts)
+benchmark also pins the per-fixture invariant set so a regression that
+hides an invariant from a regulatory mask is caught before it ships.
+
+Severity is `error` for hard regulatory rules (PSD2 SCA, MiFID II
+suitability, GwG PEP screening, GDPR Art. 9 explicit consent, IDD
+demands-and-needs, EAA keyboard-only) and `warning` for soft / disclosure
+rules (AML cumulative aggregation, DORA register flag, GDPR Art. 15-22
+right-of-access surface, Solvency II cooling-off, FX-margin disclosure,
+KYC age-gate, VAG Beratungsprotokoll).
+
+To prevent false-positive firing on synthesized field-level stubs, the
+Issue #2108 invariants gate `forall` on the case's `riskCategory`: only
+cases the policy gate considers regulated (`regulated_data`,
+`financial_transaction`, `high`) reach the compliance predicate. The
+EAA accessibility invariant additionally accepts `low` so a11y cases on
+payment screens still surface keyboard-only gaps.
+
+| ID | Severity | Framework | Citation |
+| --- | --- | --- | --- |
+| `INV-PSD2-SCA-01` | error | PSD2 | Directive (EU) 2015/2366 Art. 97 + RTS 2018/389 Art. 1, 4 |
+| `INV-PSD2-DYNLINK-01` | error | PSD2 | Commission Delegated Regulation 2018/389 (RTS on SCA) Art. 5 |
+| `INV-MIFID-SUITAB-01` | error | MiFID II | Directive 2014/65/EU Art. 25(2) + Delegated Reg. 2017/565 Art. 54 |
+| `INV-MIFID-APPROP-01` | error | MiFID II | Directive 2014/65/EU Art. 25(3) |
+| `INV-MIFID-COSTS-01` | error | MiFID II | Directive 2014/65/EU Art. 24(4) + Delegated Reg. 2017/565 Art. 50 |
+| `INV-GWG-PEP-01` | error | GwG / 5AMLD | GwG §§ 10, 15 + Directive (EU) 2018/843 |
+| `INV-AML-CUMUL-01` | warning | AMLD | Directive (EU) 2015/849 Art. 11(c) |
+| `INV-DORA-ICT-01` | warning | DORA | Regulation (EU) 2022/2554 Art. 28, 29 |
+| `INV-GDPR-ART9-01` | error | GDPR | Regulation (EU) 2016/679 Art. 9(2)(a) |
+| `INV-GDPR-ART15-01` | warning | GDPR | Regulation (EU) 2016/679 Art. 12-22 |
+| `INV-IDD-DEMANDS-01` | error | IDD | Directive (EU) 2016/97 Art. 20(1) |
+| `INV-SOLV2-COOLOFF-01` | warning | Solvency II / DMD | Directive 2002/65/EC Art. 6 + 2009/138/EC Art. 185 |
+| `INV-FX-MARGIN-01` | warning | Cross-Border Payments Reg. | Regulation (EU) 2019/518 Art. 3a + PSD2 Art. 45 |
+| `INV-KYC-AGE-01` | warning | BGB / MiFID II | BGB §§ 104-113 + MiFID II Art. 25 |
+| `INV-EAA-KBD-01` | error | European Accessibility Act | Directive (EU) 2019/882 Annex I §III + EN 301 549 §9.2.1.1 |
+| `INV-VAG-BERATUNG-01` | warning | VVG / WpHG | VVG § 6, § 6a + WpHG § 64 |
+
 ## Property-based sampler
 
 The registry pairs with a deterministic sampler in
@@ -129,6 +182,10 @@ replay-cache key.
 
 Invariants without a registered factory are skipped — the registry-driven
 validation still applies; only the sampler-side enrichment is optional.
+The Issue #2108 EU banking + insurance compliance invariants are
+text- and citation-driven (rather than numeric) and intentionally skip
+the sampler: the predicate fires on case content, not on numeric
+boundary samples.
 
 ## Worked invariants — banking + insurance
 
