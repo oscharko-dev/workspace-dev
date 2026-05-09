@@ -24,6 +24,7 @@ import {
   writeDriftBaselineState,
 } from "./drift-canary.js";
 import {
+  CALIBRATION_MIN_SAMPLE_FLOOR,
   computeBrierScore,
   buildReliabilityDiagram,
   computeExpectedCalibrationError,
@@ -207,6 +208,64 @@ test("drift-canary: absolute ECE threshold breaches fail the canary", () => {
         finding.kind === "ece_absolute_threshold" &&
         finding.riskCategory === "regulated_data" &&
         finding.threshold === 0.05,
+    ),
+    true,
+  );
+});
+
+test("drift-canary: ECE absolute gate skips classes below the documented sample floor", () => {
+  const evaluation = evaluateDriftReport({
+    baseline: emptyBaselineState({
+      tenantId: "default",
+      policyProfileId: "eu-banking-default",
+      canarySetId: DRIFT_CANARY_CANARY_SET_ID,
+    }),
+    observations: [
+      {
+        deployment: "mistral-large-3",
+        family: "mistral",
+        metricName: "ece",
+        riskCategory: "regulated_data",
+        value: 0.5,
+        sampleCount: CALIBRATION_MIN_SAMPLE_FLOOR - 1,
+      },
+    ],
+    providerFingerprints: [],
+  });
+
+  assert.equal(
+    evaluation.findings.some(
+      (finding) => finding.kind === "ece_absolute_threshold",
+    ),
+    false,
+  );
+});
+
+test("drift-canary: ECE absolute gate still fires once the sample floor is reached", () => {
+  const evaluation = evaluateDriftReport({
+    baseline: emptyBaselineState({
+      tenantId: "default",
+      policyProfileId: "eu-banking-default",
+      canarySetId: DRIFT_CANARY_CANARY_SET_ID,
+    }),
+    observations: [
+      {
+        deployment: "mistral-large-3",
+        family: "mistral",
+        metricName: "ece",
+        riskCategory: "regulated_data",
+        value: 0.06,
+        sampleCount: CALIBRATION_MIN_SAMPLE_FLOOR,
+      },
+    ],
+    providerFingerprints: [],
+  });
+
+  assert.equal(
+    evaluation.findings.some(
+      (finding) =>
+        finding.kind === "ece_absolute_threshold" &&
+        finding.riskCategory === "regulated_data",
     ),
     true,
   );

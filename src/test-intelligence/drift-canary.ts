@@ -13,6 +13,7 @@ import { canonicalJson, sha256Hex } from "./content-hash.js";
 import {
   CALIBRATION_ECE_THRESHOLDS,
   CALIBRATION_HISTOGRAM_BIN_COUNT,
+  CALIBRATION_MIN_SAMPLE_FLOOR,
   computeBrierScore,
   computeExpectedCalibrationError,
 } from "./calibration-metrics.js";
@@ -69,6 +70,7 @@ export interface DriftMetricObservation {
   readonly value: number;
   readonly riskCategory?: TestCaseRiskCategory;
   readonly judge?: "logic" | "faithfulness";
+  readonly sampleCount?: number;
 }
 
 export interface DriftBaselineRecord {
@@ -312,6 +314,7 @@ export const computeDriftCanaryMetrics = (input: {
       metricName: "brier_score",
       value: computeBrierScore(samples),
       riskCategory,
+      sampleCount: samples.length,
     });
     observations.push({
       deployment: input.deployment,
@@ -322,6 +325,7 @@ export const computeDriftCanaryMetrics = (input: {
         CALIBRATION_HISTOGRAM_BIN_COUNT,
       ),
       riskCategory,
+      sampleCount: samples.length,
     });
   }
   const denominator = input.runs.length === 0 ? 1 : input.runs.length;
@@ -516,7 +520,10 @@ export const evaluateDriftReport = (input: {
   for (const observation of input.observations) {
     if (observation.metricName === "ece" && observation.riskCategory !== undefined) {
       const threshold = CALIBRATION_ECE_THRESHOLDS[observation.riskCategory];
-      if (observation.value > threshold) {
+      const belowSampleFloor =
+        observation.sampleCount !== undefined &&
+        observation.sampleCount < CALIBRATION_MIN_SAMPLE_FLOOR;
+      if (!belowSampleFloor && observation.value > threshold) {
         findings.push({
           kind: "ece_absolute_threshold",
           severity: "error",
