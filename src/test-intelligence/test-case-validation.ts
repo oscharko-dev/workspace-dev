@@ -40,6 +40,11 @@ import { detectPii } from "./pii-detection.js";
 import { detectSuspiciousContent } from "./semantic-content-sanitization.js";
 import { buildTestDesignModel } from "./test-design-model.js";
 import {
+  buildTestDataOracleGovernanceContext,
+  projectTestDataOracleCase,
+  type TestDataOracleGovernanceContext,
+} from "./test-data-oracle-governance.js";
+import {
   detectOpenQuestionClarificationClaim,
   detectUnsupportedExactValidationClaim,
 } from "./unresolved-validation-rules.js";
@@ -141,6 +146,7 @@ const validateCase = (
   index: number,
   intentIds: ReturnType<typeof collectIntentIds>,
   model: ReturnType<typeof buildTestDesignModel>,
+  oracleContext: TestDataOracleGovernanceContext,
   issues: TestCaseValidationIssue[],
 ): void => {
   const basePath = `$.testCases[${index}]`;
@@ -192,6 +198,12 @@ const validateCase = (
   validateAmbiguityReviewState(testCase, basePath, issues);
   validateUnsupportedUnresolvedValidationDetails(testCase, basePath, model, issues);
   validateNeedsOpenQuestionClarification(testCase, basePath, model, issues);
+  validateTestDataOracleGovernance(
+    testCase,
+    basePath,
+    oracleContext,
+    issues,
+  );
 };
 
 const validateSemanticSuspiciousContent = (
@@ -630,6 +642,49 @@ const validateNeedsOpenQuestionClarification = (
   });
 };
 
+const validateTestDataOracleGovernance = (
+  testCase: GeneratedTestCase,
+  basePath: string,
+  oracleContext: TestDataOracleGovernanceContext,
+  issues: TestCaseValidationIssue[],
+): void => {
+  const projection = projectTestDataOracleCase({
+    testCase,
+    context: oracleContext,
+  });
+  if (
+    projection.oracleResolvedFields.length === 0 &&
+    projection.oracleUnresolvedFields.length === 0
+  ) {
+    return;
+  }
+  const expectedTestData = [...projection.authoritativeTestData];
+  if (
+    expectedTestData.length !== testCase.testData.length ||
+    expectedTestData.some((entry, index) => entry !== testCase.testData[index])
+  ) {
+    pushIssue(issues, {
+      testCaseId: testCase.id,
+      path: `${basePath}.testData`,
+      code: "test_data_oracle_violation",
+      severity: "error",
+      message:
+        "testData for oracle-governed fields must exactly match the deterministic test-data oracle output",
+    });
+  }
+  for (const openQuestion of projection.authoritativeOpenQuestions) {
+    if (testCase.openQuestions.includes(openQuestion)) continue;
+    pushIssue(issues, {
+      testCaseId: testCase.id,
+      path: `${basePath}.openQuestions`,
+      code: "test_data_oracle_violation",
+      severity: "error",
+      message:
+        "oracle-unresolved fields must surface a deterministic open question instead of concrete test data",
+    });
+  }
+};
+
 /**
  * Validate a generated test case list against schema, semantics, and the
  * intent IR. Always resolves; the report carries `blocked=true` when any
@@ -668,6 +723,10 @@ export const validateGeneratedTestCasesWithInvariants = (
   }
 
   const intentIds = collectIntentIds(input.intent, input.workflowTopology);
+  const oracleContext = buildTestDataOracleGovernanceContext({
+    intent: input.intent,
+    generatedAt: input.generatedAt,
+  });
   const seenIds = new Map<string, number>();
   const list = input.list;
 
@@ -685,7 +744,7 @@ export const validateGeneratedTestCasesWithInvariants = (
     } else {
       seenIds.set(tc.id, i);
     }
-    validateCase(tc, i, intentIds, model, issues);
+    validateCase(tc, i, intentIds, model, oracleContext, issues);
   }
 
   let invariantEvaluation: DomainInvariantEvaluation | undefined;

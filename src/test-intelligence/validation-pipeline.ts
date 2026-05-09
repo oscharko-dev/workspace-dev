@@ -25,6 +25,7 @@ import { join } from "node:path";
 import {
   GENERATED_TESTCASES_ARTIFACT_FILENAME,
   GENERATED_TEST_CASE_SCHEMA_VERSION,
+  TEST_DATA_ORACLE_REPORT_ARTIFACT_FILENAME,
   TECHNIQUE_QUOTA_REPORT_ARTIFACT_FILENAME,
   TEST_CASE_COVERAGE_REPORT_ARTIFACT_FILENAME,
   TEST_CASE_POLICY_REPORT_SCHEMA_VERSION,
@@ -79,6 +80,10 @@ import {
   repairUnresolvedValidationDetails,
   type UnresolvedDetailRepairChange,
 } from "./unresolved-detail-repair.js";
+import {
+  applyDeterministicTestDataOracle,
+  type TestDataOracleReport,
+} from "./test-data-oracle-governance.js";
 import { validateVisualSidecar } from "./visual-sidecar-validation.js";
 
 export interface RunValidationPipelineInput {
@@ -193,6 +198,8 @@ export interface ValidationPipelineArtifacts {
    * or when no concrete detail had to be stripped.
    */
   unresolvedDetailRepairChanges: UnresolvedDetailRepairChange[];
+  /** Issue #2071 authoritative per-case oracle resolution report. */
+  testDataOracleReport?: TestDataOracleReport;
   /**
    * Final blocking decision. True when ANY of:
    *   - validation reported errors
@@ -213,6 +220,12 @@ export const runValidationPipeline = (
 ): ValidationPipelineArtifacts => {
   const profile = input.profile ?? cloneEuBankingDefaultProfile();
   const invariantRegistry = resolveInvariantRegistry(input.invariantRegistry);
+  const oracle = applyDeterministicTestDataOracle({
+    jobId: input.jobId,
+    generatedAt: input.generatedAt,
+    list: input.list,
+    intent: input.intent,
+  });
 
   // Issue #2032 — apply the deterministic unresolved-detail guard before
   // validation so concrete numeric thresholds, exact validation messages,
@@ -222,7 +235,7 @@ export const runValidationPipeline = (
   // constraint the input list is returned unchanged.
   const repair = repairUnresolvedValidationDetails({
     jobId: input.jobId,
-    list: input.list,
+    list: oracle.list,
     intent: input.intent,
     ...(input.workflowTopology !== undefined
       ? { workflowTopology: input.workflowTopology }
@@ -276,6 +289,7 @@ export const runValidationPipeline = (
       coverage,
       policy,
       unresolvedDetailRepairChanges: repairChanges,
+      testDataOracleReport: oracle.report,
       blocked: true,
     };
     return artifacts;
@@ -380,6 +394,7 @@ export const runValidationPipeline = (
     coverage,
     policy,
     unresolvedDetailRepairChanges: repairChanges,
+    testDataOracleReport: oracle.report,
     blocked,
   };
   if (visualReport !== undefined) artifacts.visual = visualReport;
@@ -463,6 +478,8 @@ export interface WriteValidationPipelineArtifactsResult {
   selfVerifyRubricReportPath?: string;
   /** Path of the persisted technique-quota report (Issue #2068). */
   techniqueQuotaReportPath?: string;
+  /** Path of the persisted deterministic test-data oracle report (Issue #2071). */
+  testDataOracleReportPath?: string;
 }
 
 /**
@@ -534,6 +551,18 @@ export const writeValidationPipelineArtifacts = async (
     result.techniqueQuotaReportPath = techniqueQuotaPath;
   }
 
+  if (input.artifacts.testDataOracleReport !== undefined) {
+    const testDataOracleReportPath = join(
+      input.destinationDir,
+      TEST_DATA_ORACLE_REPORT_ARTIFACT_FILENAME,
+    );
+    await writeAtomicJson(
+      testDataOracleReportPath,
+      input.artifacts.testDataOracleReport,
+    );
+    result.testDataOracleReportPath = testDataOracleReportPath;
+  }
+
   return result;
 };
 
@@ -603,6 +632,12 @@ export const runValidationPipelineWithSelfVerify = async (
 ): Promise<ValidationPipelineArtifacts> => {
   const profile = input.profile ?? cloneEuBankingDefaultProfile();
   const invariantRegistry = resolveInvariantRegistry(input.invariantRegistry);
+  const oracle = applyDeterministicTestDataOracle({
+    jobId: input.jobId,
+    generatedAt: input.generatedAt,
+    list: input.list,
+    intent: input.intent,
+  });
 
   // Issue #2032 — apply the deterministic unresolved-detail guard before
   // both validation and the self-verify rubric pass so the rubric judge
@@ -610,7 +645,7 @@ export const runValidationPipelineWithSelfVerify = async (
   // `validation:unsupported_unresolved_validation_detail` errors.
   const repair = repairUnresolvedValidationDetails({
     jobId: input.jobId,
-    list: input.list,
+    list: oracle.list,
     intent: input.intent,
     ...(input.workflowTopology !== undefined
       ? { workflowTopology: input.workflowTopology }
@@ -758,6 +793,7 @@ export const runValidationPipelineWithSelfVerify = async (
     policy,
     rubric: rubricReport,
     unresolvedDetailRepairChanges: repairChanges,
+    testDataOracleReport: oracle.report,
     blocked,
   };
   if (visualReport !== undefined) artifacts.visual = visualReport;

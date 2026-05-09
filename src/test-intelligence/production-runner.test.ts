@@ -52,6 +52,7 @@ import {
   LOGIC_JUDGE_VERDICT_ARTIFACT_FILENAME,
   RUN_QUALITY_ARTIFACT_FILENAME,
   SELF_CONSISTENCY_REPORT_ARTIFACT_FILENAME,
+  TEST_DATA_ORACLE_REPORT_ARTIFACT_FILENAME,
   WAVE1_VALIDATION_EVIDENCE_MANIFEST_ARTIFACT_FILENAME,
   type BusinessTestIntentIr,
   type DetectedAction,
@@ -413,6 +414,16 @@ test("runFigmaToQcTestCases happy path persists artifacts and renders customer M
       "utf8",
     );
     assert.match(generatedJson, /tc-/u);
+    assert.ok(
+      result.artifactPaths.testDataOracleReport?.endsWith(
+        TEST_DATA_ORACLE_REPORT_ARTIFACT_FILENAME,
+      ),
+    );
+    const testDataOracleReport = await readFile(
+      result.artifactPaths.testDataOracleReport ?? "",
+      "utf8",
+    );
+    assert.match(testDataOracleReport, /"oracleSeed":/u);
     const normalizationReport = await readFile(
       result.artifactPaths.untrustedContentNormalizationReport,
       "utf8",

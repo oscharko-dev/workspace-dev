@@ -359,6 +359,13 @@ export const TEST_CASE_COVERAGE_REPORT_ARTIFACT_FILENAME =
 export const VISUAL_SIDECAR_VALIDATION_REPORT_ARTIFACT_FILENAME =
   "visual-sidecar-validation-report.json" as const;
 
+/** Schema version for the persisted deterministic test-data oracle artifact (Issue #2071). */
+export const TEST_DATA_ORACLE_REPORT_SCHEMA_VERSION = "1.0.0" as const;
+
+/** Canonical filename for the persisted deterministic test-data oracle artifact. */
+export const TEST_DATA_ORACLE_REPORT_ARTIFACT_FILENAME =
+  "test-data-oracle-report.json" as const;
+
 /**
  * Schema version for the persisted mutation-killing-eval report artifact
  * (Issue #2041). Bumped on any breaking change to the {@link MutationReport}
@@ -931,6 +938,7 @@ export const ALLOWED_TEST_CASE_VALIDATION_ISSUE_CODES = [
   "needs_open_question_clarification",
   "semantic_suspicious_content",
   "domain_invariant_violation",
+  "test_data_oracle_violation",
 ] as const;
 
 export type TestCaseValidationIssueCode =

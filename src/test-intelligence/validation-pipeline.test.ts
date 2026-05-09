@@ -12,6 +12,7 @@ import {
   FAITHFULNESS_VERDICT_SCHEMA_VERSION,
   GENERATED_TESTCASES_ARTIFACT_FILENAME,
   GENERATED_TEST_CASE_SCHEMA_VERSION,
+  TEST_DATA_ORACLE_REPORT_ARTIFACT_FILENAME,
   TEST_CASE_COVERAGE_REPORT_ARTIFACT_FILENAME,
   TEST_CASE_POLICY_REPORT_ARTIFACT_FILENAME,
   TECHNIQUE_QUOTA_REPORT_ARTIFACT_FILENAME,
@@ -90,6 +91,32 @@ const buildIntent = (): BusinessTestIntentIr => ({
   openQuestions: [],
   piiIndicators: [],
   redactions: [],
+});
+
+const buildOracleIntent = (): BusinessTestIntentIr => ({
+  ...buildIntent(),
+  detectedFields: [
+    {
+      id: "s-payment::field::n-amount",
+      screenId: "s-payment",
+      trace: { nodeId: "n-amount" },
+      provenance: "figma_node",
+      confidence: 0.95,
+      label: "Amount",
+      type: "number",
+    },
+  ],
+  detectedValidations: [
+    {
+      id: "s-payment::validation::n-amount::range",
+      screenId: "s-payment",
+      trace: { nodeId: "n-amount" },
+      provenance: "figma_node",
+      confidence: 0.9,
+      rule: "Numeric in range 1000..50000",
+      targetFieldId: "s-payment::field::n-amount",
+    },
+  ],
 });
 
 const buildCase = (
@@ -470,6 +497,64 @@ test("Issue #2068: technique-quota report is emitted in-memory and persisted nex
     );
     const persistedBytes = await readFile(paths.techniqueQuotaReportPath!, "utf8");
     assert.equal(persistedBytes, canonicalJson(result.techniqueQuota));
+  } finally {
+    await rm(tmp, { recursive: true, force: true });
+  }
+});
+
+test("Issue #2071: pipeline reconciles oracle-governed testData and persists the oracle report", async () => {
+  const tmp = await mkdtemp(join(tmpdir(), "issue2071-"));
+  try {
+    const list: GeneratedTestCaseList = {
+      schemaVersion: GENERATED_TEST_CASE_SCHEMA_VERSION,
+      jobId: "job-1",
+      testCases: [
+        buildCase({
+          id: "tc-oracle-functional",
+          type: "functional",
+          title: "Submit valid amount",
+          testData: ["Amount: 4242.00"],
+          qualitySignals: {
+            coveredFieldIds: ["s-payment::field::n-amount"],
+            coveredActionIds: [],
+            coveredValidationIds: [],
+            coveredNavigationIds: [],
+            confidence: 0.95,
+          },
+        }),
+      ],
+    };
+    const result = runValidationPipeline({
+      jobId: "job-1",
+      generatedAt: GENERATED_AT,
+      list,
+      intent: buildOracleIntent(),
+    });
+    assert.notEqual(result.testDataOracleReport, undefined);
+    assert.deepEqual(
+      result.generatedTestCases.testCases[0]?.testData,
+      [
+        'Amount: 1000.00 (boundary_min; from rule "Numeric in range 1000..50000")',
+        'Amount: 25500.00 (midpoint; from rule "Numeric in range 1000..50000")',
+        'Amount: 50000.00 (boundary_max; from rule "Numeric in range 1000..50000")',
+      ],
+    );
+    assert.equal(
+      result.validation.issues.some(
+        (issue) => issue.code === "test_data_oracle_violation",
+      ),
+      false,
+    );
+    const paths = await writeValidationPipelineArtifacts({
+      artifacts: result,
+      destinationDir: tmp,
+    });
+    assert.equal(
+      paths.testDataOracleReportPath,
+      join(tmp, TEST_DATA_ORACLE_REPORT_ARTIFACT_FILENAME),
+    );
+    const persisted = await readFile(paths.testDataOracleReportPath!, "utf8");
+    assert.equal(persisted, canonicalJson(result.testDataOracleReport));
   } finally {
     await rm(tmp, { recursive: true, force: true });
   }
