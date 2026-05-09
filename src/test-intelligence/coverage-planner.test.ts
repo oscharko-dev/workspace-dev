@@ -292,6 +292,59 @@ test("buildCoveragePlan excludes recommended-only techniques from hard per-scree
   );
 });
 
+test("Issue #2026: semantic rule partitions do not inflate per-screen EP quotas beyond field targets", () => {
+  const plan = buildCoveragePlan({
+    model: {
+      ...buildModel(),
+      businessRules: [
+        ...buildModel().businessRules,
+        {
+          ruleId: "semantic-result",
+          description:
+            "Semantic category: result display required by custom markdown acceptance criteria",
+          screenId: "loan",
+          sourceRefs: ["jira-42"],
+        },
+        {
+          ruleId: "semantic-select",
+          description:
+            "Semantic category: selectable option required by custom markdown acceptance criteria",
+          screenId: "loan",
+          sourceRefs: ["jira-42"],
+        },
+        {
+          ruleId: "semantic-label",
+          description:
+            "Semantic category: informative label required by custom markdown acceptance criteria",
+          screenId: "loan",
+          sourceRefs: ["jira-42"],
+        },
+      ],
+    },
+  });
+
+  const loanScreen = plan.perScreen.find((screen) => screen.screenId === "loan");
+  const loanFieldCount = plan.perElement.filter(
+    (element) => element.screenId === "loan",
+  ).length;
+
+  assert.equal(
+    loanScreen?.techniqueQuotas.find(
+      (quota) => quota.technique === "equivalence_partitioning",
+    )?.minCount,
+    loanFieldCount,
+  );
+  assert.equal(
+    plan.minimumCases.filter(
+      (requirement) =>
+        requirement.screenId === "loan" &&
+        requirement.reasonCode === "rule_partition" &&
+        requirement.technique === "equivalence_partitioning",
+    ).length,
+    3,
+  );
+});
+
 test("buildCoveragePlan is canonical-json stable and persists exact bytes", async () => {
   const sourceMixResult = planSourceMix(
     buildSourceEnvelope([figmaRef("figma-primary"), jiraRef("jira-42")]),

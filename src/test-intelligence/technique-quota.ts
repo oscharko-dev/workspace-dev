@@ -132,6 +132,23 @@ export const buildPerScreenFieldCounts = (
   );
 };
 
+const buildPerScreenFieldTargets = (
+  coveragePlan: CoveragePlan | undefined,
+): ReadonlyMap<string, ReadonlySet<string>> => {
+  if (coveragePlan === undefined) return new Map();
+  const targets = new Map<string, Set<string>>();
+  for (const entry of safeArray<CoveragePlan["perElement"][number]>(
+    coveragePlan.perElement,
+  )) {
+    const screenId = entry.screenId;
+    if (typeof screenId !== "string" || screenId.length === 0) continue;
+    const seen = targets.get(screenId) ?? new Set<string>();
+    seen.add(entry.elementId);
+    targets.set(screenId, seen);
+  }
+  return new Map(targets);
+};
+
 interface ResolvedQuota {
   readonly screenId: string;
   readonly technique: TestCaseTechnique29119;
@@ -237,6 +254,30 @@ const countAnchored = (
   return total;
 };
 
+const countAnchoredCoveredFieldTargets = (
+  cases: ReadonlyArray<GeneratedTestCase>,
+  screenId: string,
+  technique: TestCaseTechnique29119,
+  targets: ReadonlySet<string>,
+): number => {
+  if (targets.size === 0) return 0;
+  const covered = new Set<string>();
+  for (const testCase of cases) {
+    if (testCase.technique !== technique) continue;
+    if (
+      !testCase.figmaTraceRefs.some(
+        (traceRef) => traceRef.screenId === screenId,
+      )
+    ) {
+      continue;
+    }
+    for (const fieldId of testCase.qualitySignals.coveredFieldIds) {
+      if (targets.has(fieldId)) covered.add(fieldId);
+    }
+  }
+  return covered.size;
+};
+
 /**
  * Compare generated cases to per-screen policy-resolved quotas.
  *
@@ -255,9 +296,21 @@ export const collectTechniqueQuotaDeficits = (
 ): TechniqueQuotaDeficit[] => {
   if (coveragePlan === undefined) return [];
   const deficits: TechniqueQuotaDeficit[] = [];
+  const fieldTargets = buildPerScreenFieldTargets(coveragePlan);
   for (const quota of resolveTechniqueQuotas(coveragePlan, policy)) {
     if (quota.requiredCount <= 0) continue;
     const actual = countAnchored(cases, quota.screenId, quota.technique);
+    if (quota.technique === "equivalence_partitioning") {
+      const coveredFieldCount = countAnchoredCoveredFieldTargets(
+        cases,
+        quota.screenId,
+        quota.technique,
+        fieldTargets.get(quota.screenId) ?? new Set<string>(),
+      );
+      if (coveredFieldCount >= quota.fieldCount && quota.fieldCount > 0) {
+        continue;
+      }
+    }
     if (actual >= quota.requiredCount) continue;
     deficits.push({
       screenId: quota.screenId,
@@ -292,6 +345,7 @@ export const buildTechniqueQuotaReport = (
 ): TechniqueQuotaReport => {
   const mode = resolveTechniqueCoverageMinimumMode(input.policy);
   const resolved = resolveTechniqueQuotas(input.coveragePlan, input.policy);
+  const fieldTargets = buildPerScreenFieldTargets(input.coveragePlan);
   const screens = new Set<string>();
   let passCount = 0;
   let deficitCount = 0;
@@ -303,8 +357,22 @@ export const buildTechniqueQuotaReport = (
       quota.screenId,
       quota.technique,
     );
+    const coveredFieldCount =
+      quota.technique === "equivalence_partitioning"
+        ? countAnchoredCoveredFieldTargets(
+            input.cases,
+            quota.screenId,
+            quota.technique,
+            fieldTargets.get(quota.screenId) ?? new Set<string>(),
+          )
+        : 0;
     const status: TechniqueQuotaReportEntry["status"] =
-      actualCount >= quota.requiredCount ? "pass" : "deficit";
+      actualCount >= quota.requiredCount ||
+      (quota.technique === "equivalence_partitioning" &&
+        quota.fieldCount > 0 &&
+        coveredFieldCount >= quota.fieldCount)
+        ? "pass"
+        : "deficit";
     if (status === "pass") passCount += 1;
     else deficitCount += 1;
     entries.push({

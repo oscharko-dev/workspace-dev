@@ -777,6 +777,113 @@ test("Issue #2068: fixed override on a derived profile preserves the legacy 12-E
   assert.match(violation?.reason ?? "", /at least 12 "equivalence_partitioning"/);
 });
 
+test("Issue #2026: full field coverage from shared EP cases clears the policy gate", () => {
+  const intent = buildIntent({
+    detectedFields: [
+      {
+        id: "s-1.field-1",
+        screenId: "s-1",
+        trace: {},
+        provenance: "figma_node",
+        confidence: 0.9,
+        label: "Principal",
+        type: "number",
+      },
+      {
+        id: "s-1.field-2",
+        screenId: "s-1",
+        trace: {},
+        provenance: "figma_node",
+        confidence: 0.9,
+        label: "Rate",
+        type: "number",
+      },
+      {
+        id: "s-1.field-3",
+        screenId: "s-1",
+        trace: {},
+        provenance: "figma_node",
+        confidence: 0.9,
+        label: "Term",
+        type: "number",
+      },
+    ],
+  });
+  const ctx = harness(
+    [
+      buildCase({
+        id: "tc-ep-1",
+        technique: "equivalence_partitioning",
+        qualitySignals: {
+          coveredFieldIds: ["s-1.field-1", "s-1.field-2"],
+          coveredActionIds: [],
+          coveredValidationIds: [],
+          coveredNavigationIds: [],
+          confidence: 0.9,
+        },
+      }),
+      buildCase({
+        id: "tc-ep-2",
+        technique: "equivalence_partitioning",
+        qualitySignals: {
+          coveredFieldIds: ["s-1.field-3"],
+          coveredActionIds: [],
+          coveredValidationIds: [],
+          coveredNavigationIds: [],
+          confidence: 0.9,
+        },
+      }),
+    ],
+    intent,
+  );
+  const report = evaluatePolicyGate({
+    jobId: "job-1",
+    generatedAt: GENERATED_AT,
+    list: ctx.list,
+    intent: ctx.intent,
+    profile: ctx.profile,
+    validation: ctx.validation,
+    coverage: ctx.coverage,
+    coveragePlan: buildCoveragePlan({
+      perScreen: [
+        {
+          screenId: "s-1",
+          techniqueQuotas: [
+            { technique: "equivalence_partitioning", minCount: 3 },
+          ],
+        },
+      ],
+      perElement: [
+        {
+          screenId: "s-1",
+          elementId: "s-1.field-1",
+          mustHaveCase: true,
+          riskClass: "low",
+        },
+        {
+          screenId: "s-1",
+          elementId: "s-1.field-2",
+          mustHaveCase: true,
+          riskClass: "low",
+        },
+        {
+          screenId: "s-1",
+          elementId: "s-1.field-3",
+          mustHaveCase: true,
+          riskClass: "low",
+        },
+      ],
+    }),
+  });
+
+  assert.equal(
+    report.jobLevelViolations.find(
+      (entry) => entry.rule === "policy:technique-coverage-minimum",
+    ),
+    undefined,
+  );
+});
+
 test("Issue #1947: policy override can downgrade technique coverage minimum to warning", () => {
   const ctx = harness([buildCase({ id: "tc-use-case" })], buildIntent());
   const report = evaluatePolicyGate({
