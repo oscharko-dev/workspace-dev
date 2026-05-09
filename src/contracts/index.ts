@@ -283,6 +283,19 @@ export const SIDECAR_DEPLOYMENT_MAX_LENGTH = 128 as const;
 /** Redaction policy bundle version applied before prompt compilation. */
 export const REDACTION_POLICY_VERSION = "1.0.0" as const;
 
+/**
+ * Version of the documented subprocessor register
+ * (`docs/dora/subprocessor-register.md`) and its paired cross-border transfer
+ * ADR (`docs/dpia/cross-border-transfer.md`). Stamped into every Wave 1
+ * Validation evidence manifest so a replay can verify which DORA Art. 28 /
+ * GDPR Ch. V documentation was active for the run (Issue #2113).
+ *
+ * Bump rules — every change to either document MUST bump this version in the
+ * same PR. The CODEOWNERS rule for both files keeps the human-review gate
+ * coupled; this constant keeps the runtime evidence coupled.
+ */
+export const SUBPROCESSOR_REGISTER_VERSION = "1.0.0" as const;
+
 /** Environment variable name that gates test-intelligence features at startup. */
 export const TEST_INTELLIGENCE_ENV =
   "FIGMAPIPE_WORKSPACE_TEST_INTELLIGENCE" as const;
@@ -8548,6 +8561,13 @@ export interface Wave1ValidationEvidenceManifest {
   generatedTestCaseSchemaVersion: typeof GENERATED_TEST_CASE_SCHEMA_VERSION;
   visualSidecarSchemaVersion: typeof VISUAL_SIDECAR_SCHEMA_VERSION;
   redactionPolicyVersion: typeof REDACTION_POLICY_VERSION;
+  /**
+   * Version of the subprocessor register + cross-border transfer ADR
+   * (`docs/dora/subprocessor-register.md`, `docs/dpia/cross-border-transfer.md`)
+   * active for the run. Carries DORA Art. 28 / GDPR Ch. V documentation
+   * identity into the replay artifact (Issue #2113).
+   */
+  subprocessorRegisterVersion: typeof SUBPROCESSOR_REGISTER_VERSION;
   /** Policy profile identity used by the validation pipeline. */
   policyProfileId: string;
   policyProfileVersion: string;

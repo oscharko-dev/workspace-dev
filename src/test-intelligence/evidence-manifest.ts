@@ -36,6 +36,7 @@ import {
   CONTRACT_VERSION,
   GENERATED_TEST_CASE_SCHEMA_VERSION,
   REDACTION_POLICY_VERSION,
+  SUBPROCESSOR_REGISTER_VERSION,
   TEST_INTELLIGENCE_CONTRACT_VERSION,
   TEST_INTELLIGENCE_PROMPT_TEMPLATE_VERSION,
   VISUAL_SIDECAR_SCHEMA_VERSION,
@@ -439,6 +440,7 @@ export const buildWave1ValidationEvidenceManifest = (
     generatedTestCaseSchemaVersion: GENERATED_TEST_CASE_SCHEMA_VERSION,
     visualSidecarSchemaVersion: VISUAL_SIDECAR_SCHEMA_VERSION,
     redactionPolicyVersion: REDACTION_POLICY_VERSION,
+    subprocessorRegisterVersion: SUBPROCESSOR_REGISTER_VERSION,
     policyProfileId: input.policyProfileId,
     policyProfileVersion: input.policyProfileVersion,
     exportProfileId: input.exportProfileId,
@@ -643,6 +645,11 @@ export const validateWave1ValidationEvidenceManifestMetadata = (
   }
   if (raw["imagePayloadSentToTestGeneration"] !== false) {
     issues.push("imagePayloadSentToTestGeneration must be false");
+  }
+  if (raw["subprocessorRegisterVersion"] !== SUBPROCESSOR_REGISTER_VERSION) {
+    issues.push(
+      `subprocessorRegisterVersion must equal ${SUBPROCESSOR_REGISTER_VERSION}`,
+    );
   }
   for (const hashField of [
     "promptHash",

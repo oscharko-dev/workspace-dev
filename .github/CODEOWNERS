@@ -8,3 +8,12 @@ pnpm-lock.yaml @oscharko-dev
 scripts/ @oscharko-dev
 .npmrc @oscharko-dev
 template/**/.npmrc @oscharko-dev
+
+# DORA Art. 28 + GDPR Ch. V coupling (Issue #2113).
+# The subprocessor register and the cross-border transfer ADR MUST be
+# updated together. Listing them under the same owner keeps the human-
+# review gate coupled with the runtime `SUBPROCESSOR_REGISTER_VERSION`
+# stamped into Wave 1 Validation evidence manifests. Reviewers MUST
+# refuse a PR that touches one file without the other.
+docs/dora/subprocessor-register.md @oscharko-dev
+docs/dpia/cross-border-transfer.md @oscharko-dev

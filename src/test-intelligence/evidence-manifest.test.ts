@@ -7,6 +7,7 @@ import test from "node:test";
 
 import {
   CONTRACT_VERSION,
+  SUBPROCESSOR_REGISTER_VERSION,
   TEST_INTELLIGENCE_CONTRACT_VERSION,
   WAVE1_VALIDATION_EVIDENCE_MANIFEST_ARTIFACT_FILENAME,
   WAVE1_VALIDATION_EVIDENCE_MANIFEST_DIGEST_FILENAME,
@@ -79,11 +80,36 @@ test("evidence-manifest: stamps schema/contract versions and hard invariants", (
   );
   assert.equal(manifest.rawScreenshotsIncluded, false);
   assert.equal(manifest.imagePayloadSentToTestGeneration, false);
+  assert.equal(
+    manifest.subprocessorRegisterVersion,
+    SUBPROCESSOR_REGISTER_VERSION,
+  );
   assert.deepEqual(manifest.manifestIntegrity?.algorithm, "sha256");
   assert.match(manifest.manifestIntegrity?.hash ?? "", /^[0-9a-f]{64}$/);
   assert.equal(
     manifest.manifestIntegrity?.hash,
     manifestIntegrityPayloadDigest(manifest),
+  );
+});
+
+test("evidence-manifest: rejects mutated subprocessorRegisterVersion in metadata validator (Issue #2113)", () => {
+  const manifest = buildWave1ValidationEvidenceManifest(
+    baseInput([
+      {
+        filename: "alpha.json",
+        bytes: utf8('{"a":1}'),
+        category: "validation",
+      },
+    ]),
+  );
+  const tampered = {
+    ...manifest,
+    subprocessorRegisterVersion: "0.0.0",
+  } as unknown as Wave1ValidationEvidenceManifest;
+  const issues = validateWave1ValidationEvidenceManifestMetadata(tampered);
+  assert.ok(
+    issues.some((issue) => issue.includes("subprocessorRegisterVersion")),
+    `expected subprocessorRegisterVersion issue, got ${JSON.stringify(issues)}`,
   );
 });
 
