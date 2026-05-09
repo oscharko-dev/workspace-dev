@@ -2,8 +2,9 @@ import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 
 import {
-  ALLOWED_LOGIC_JUDGE_FINDING_SEVERITIES,
   ALLOWED_LOGIC_JUDGE_VERDICTS,
+  JOB_LEVEL_TEST_CASE_ID,
+  JUDGE_FINDING_SCOPES,
   LOGIC_JUDGE_PROMPT_TEMPLATE_VERSION,
   LOGIC_JUDGE_VERDICT_SCHEMA_VERSION,
   TEST_INTELLIGENCE_CONTRACT_VERSION,
@@ -11,6 +12,7 @@ import {
   type GeneratedTestCase,
   type GeneratedTestCaseList,
   type JudgeFinding,
+  type JudgeFindingScope,
   type JudgeVerdict,
   type LogicJudgeFindingSeverity,
   type LogicJudgeVerdictLabel,
@@ -35,12 +37,15 @@ const MAX_MESSAGE_LENGTH = 240;
 const MAX_CODE_LENGTH = 64;
 const MAX_PATH_LENGTH = 160;
 const MAX_INSTRUCTION_LENGTH = 240;
-
 const SYSTEM_PROMPT = [
   "You are the production logic judge for workspace-dev test-intelligence.",
   "You receive a deterministic TestDesignModel, CoveragePlan, and GeneratedTestCaseList as JSON.",
   "Judge only semantic correctness and traceability. Do not rewrite the test cases.",
   "Return exactly one JSON object matching the supplied schema.",
+  "Every finding object must include code, severity, and message.",
+  "For job-level findings, set scope=job and either omit testCaseId or use the canonical $job placeholder.",
+  "For test-case findings, set scope=test_case and include one real generated testCaseId from the supplied list.",
+  "Every repair instruction must include path and instruction; use the same job/test_case anchoring rule for testCaseId.",
   "If the case set is sound, emit verdict=accept with empty findings and repairInstructions.",
   "If the case set is fixable, emit verdict=repair with concrete findings and repairInstructions.",
   "If the case set is fundamentally unsound or the evidence is insufficient, emit verdict=reject.",
@@ -201,15 +206,21 @@ export const buildLogicJudgeResponseSchema = (): Record<string, unknown> => ({
     },
     findings: {
       description:
-        "Structured findings anchored to generated test cases or $job. Emit an array even when empty.",
+        "Structured findings anchored to generated test cases. For job-level findings, either omit testCaseId or emit the canonical $job placeholder. Emit an array even when empty.",
       type: "array",
       items: {
         type: "object",
         additionalProperties: false,
-        required: ["testCaseId", "code", "severity", "message"],
+        required: ["code", "severity", "message"],
         properties: {
+          scope: {
+            description:
+              "Optional finding scope. Use job for job-level findings and test_case for findings anchored to one generated case.",
+            enum: [...JUDGE_FINDING_SCOPES],
+          },
           testCaseId: {
-            description: "Generated testCaseId or $job.",
+            description:
+              "Generated testCaseId. Omit for job-level findings or use the canonical $job placeholder.",
             type: "string",
             minLength: 1,
           },
@@ -217,27 +228,35 @@ export const buildLogicJudgeResponseSchema = (): Record<string, unknown> => ({
             description: "Short machine-readable finding code.",
             type: "string",
             minLength: 1,
-            maxLength: MAX_CODE_LENGTH,
           },
           severity: {
-            description: "warning or error.",
-            enum: [...ALLOWED_LOGIC_JUDGE_FINDING_SEVERITIES],
+            description:
+              "Severity label. The runner normalizes any non-empty value deterministically to warning or error downstream.",
+            type: "string",
+            minLength: 1,
+            maxLength: 32,
           },
-          message: { type: "string", minLength: 1, maxLength: MAX_MESSAGE_LENGTH },
+          message: { type: "string", minLength: 1 },
         },
       },
     },
     repairInstructions: {
       description:
-        "Deterministic repair hints. Include schema-field repairs when the response violates this schema; keep entries short and specific.",
+        "Deterministic repair hints. Include schema-field repairs when the response violates this schema; keep entries short and specific. For job-level repairs, either omit testCaseId or emit the canonical $job placeholder.",
       type: "array",
       items: {
         type: "object",
         additionalProperties: false,
-        required: ["testCaseId", "path", "instruction"],
+        required: ["path", "instruction"],
         properties: {
+          scope: {
+            description:
+              "Optional repair scope. Use job for job-level repairs and test_case for repairs anchored to one generated case.",
+            enum: [...JUDGE_FINDING_SCOPES],
+          },
           testCaseId: {
-            description: "Generated testCaseId or $job.",
+            description:
+              "Generated testCaseId. Omit for job-level repairs or use the canonical $job placeholder.",
             type: "string",
             minLength: 1,
           },
@@ -245,13 +264,11 @@ export const buildLogicJudgeResponseSchema = (): Record<string, unknown> => ({
             description: "Path to the field that must be changed.",
             type: "string",
             minLength: 1,
-            maxLength: MAX_PATH_LENGTH,
           },
           instruction: {
             description: "Short imperative repair instruction.",
             type: "string",
             minLength: 1,
-            maxLength: MAX_INSTRUCTION_LENGTH,
           },
           kind: {
             description:
@@ -263,7 +280,6 @@ export const buildLogicJudgeResponseSchema = (): Record<string, unknown> => ({
               "Optional redacted schema-diagnostic paired with kind=schema_violation.",
             type: "string",
             minLength: 1,
-            maxLength: MAX_MESSAGE_LENGTH,
           },
         },
       },
@@ -587,42 +603,51 @@ const validateLogicJudgeResponse = (
   const findings: JudgeFinding[] = [];
   for (let index = 0; index < findingsRaw.length; index += 1) {
     const entry = findingsRaw[index]!;
-    const testCaseId = entry["testCaseId"] as string;
-    if (testCaseId !== "$job" && !testCaseIds.includes(testCaseId)) {
-      const path = `$.findings[${index}].testCaseId`;
-      const message = `logic judge response schema violation: ${path} references unknown testCaseId "${testCaseId}"`;
+    const anchor = resolveJudgeFindingAnchor(
+      entry,
+      testCaseIds,
+      `$.findings[${index}]`,
+    );
+    if (!anchor.ok) {
       return {
         ok: false,
-        message,
+        message: anchor.message,
         repairInstructions: [
           buildSchemaViolationRepairInstruction({
-            path,
-            message,
+            path: anchor.path,
+            message: anchor.message,
           }),
         ],
       };
     }
     findings.push({
-      testCaseId,
+      scope: anchor.scope,
+      testCaseId: anchor.testCaseId,
       code: entry["code"] as string,
-      severity: entry["severity"] as LogicJudgeFindingSeverity,
+      severity: normalizeLogicJudgeFindingSeverity(entry["severity"]),
       message: entry["message"] as string,
     });
   }
   const repairInstructions: RepairInstruction[] = [];
   for (let index = 0; index < repairInstructionsRaw.length; index += 1) {
     const entry = repairInstructionsRaw[index]!;
-    const testCaseId = entry["testCaseId"] as string;
-    if (testCaseId !== "$job" && !testCaseIds.includes(testCaseId)) {
-      const path = `$.repairInstructions[${index}].testCaseId`;
-      const message = `logic judge response schema violation: ${path} references unknown testCaseId "${testCaseId}"`;
+    const anchor = resolveJudgeFindingAnchor(
+      entry,
+      testCaseIds,
+      `$.repairInstructions[${index}]`,
+      {
+        allowImplicitJobScope:
+          entry["path"] === "/testCases" && entry["testCaseId"] === undefined,
+      },
+    );
+    if (!anchor.ok) {
       return {
         ok: false,
-        message,
+        message: anchor.message,
         repairInstructions: [
           buildSchemaViolationRepairInstruction({
-            path,
-            message,
+            path: anchor.path,
+            message: anchor.message,
           }),
         ],
       };
@@ -630,7 +655,7 @@ const validateLogicJudgeResponse = (
     const kind = entry["kind"];
     const message = entry["message"];
     repairInstructions.push({
-      testCaseId,
+      testCaseId: anchor.testCaseId,
       path: entry["path"] as string,
       instruction: entry["instruction"] as string,
       ...(kind === "schema_violation" ? { kind } : {}),
@@ -641,34 +666,131 @@ const validateLogicJudgeResponse = (
 };
 
 const normalizeMissingJobLevelTestCaseIds = (value: unknown): unknown => {
-  if (typeof value !== "object" || value === null || Array.isArray(value)) {
-    return value;
+  return value;
+};
+
+const resolveJudgeFindingAnchor = (
+  entry: Record<string, unknown>,
+  testCaseIds: readonly string[],
+  basePath: string,
+  options?: {
+    allowImplicitJobScope?: boolean;
+  },
+):
+  | {
+      ok: true;
+      scope: JudgeFindingScope;
+      testCaseId: string;
+    }
+  | {
+      ok: false;
+      path: string;
+      message: string;
+    } => {
+  const rawScope = entry["scope"];
+  const scope =
+    rawScope === "job" || rawScope === "test_case" ? rawScope : undefined;
+  const rawTestCaseId = entry["testCaseId"];
+  const testCaseId =
+    typeof rawTestCaseId === "string" ? rawTestCaseId : undefined;
+
+  if (scope === "job") {
+    if (
+      testCaseId !== undefined &&
+      testCaseId !== JOB_LEVEL_TEST_CASE_ID
+    ) {
+      const path = `${basePath}.testCaseId`;
+      return {
+        ok: false,
+        path,
+        message: `logic judge response schema violation: ${path} must equal "${JOB_LEVEL_TEST_CASE_ID}" when scope is "job"`,
+      };
+    }
+    return {
+      ok: true,
+      scope,
+      testCaseId: JOB_LEVEL_TEST_CASE_ID,
+    };
   }
-  const record = value as Record<string, unknown>;
-  const normalizeEntry = (entry: unknown): unknown =>
-    typeof entry === "object" &&
-    entry !== null &&
-    !Array.isArray(entry) &&
-    (entry as Record<string, unknown>)["testCaseId"] === undefined
-      ? { ...(entry as Record<string, unknown>), testCaseId: "$job" }
-      : entry;
+
+  if (scope === "test_case") {
+    if (testCaseId === undefined) {
+      const path = `${basePath}.testCaseId`;
+      return {
+        ok: false,
+        path,
+        message: `logic judge response schema violation: ${path} is required when scope is "test_case"`,
+      };
+    }
+    if (testCaseId === JOB_LEVEL_TEST_CASE_ID || !testCaseIds.includes(testCaseId)) {
+      const path = `${basePath}.testCaseId`;
+      return {
+        ok: false,
+        path,
+        message: `logic judge response schema violation: ${path} references unknown testCaseId "${testCaseId}"`,
+      };
+    }
+    return {
+      ok: true,
+      scope,
+      testCaseId,
+    };
+  }
+
+  if (testCaseId === JOB_LEVEL_TEST_CASE_ID) {
+    return {
+      ok: true,
+      scope: "job",
+      testCaseId,
+    };
+  }
+
+  if (testCaseId === undefined && options?.allowImplicitJobScope === true) {
+    return {
+      ok: true,
+      scope: "job",
+      testCaseId: JOB_LEVEL_TEST_CASE_ID,
+    };
+  }
+
+  if (testCaseId !== undefined && testCaseIds.includes(testCaseId)) {
+    return {
+      ok: true,
+      scope: "test_case",
+      testCaseId,
+    };
+  }
+
+  const path = `${basePath}.testCaseId`;
+  if (testCaseId === undefined) {
+    return {
+      ok: false,
+      path,
+      message: `logic judge response schema violation: ${path} is required unless scope is "job"`,
+    };
+  }
   return {
-    ...record,
-    ...(Array.isArray(record["findings"])
-      ? {
-          findings: (record["findings"] as readonly unknown[]).map(
-            normalizeEntry,
-          ),
-        }
-      : {}),
-    ...(Array.isArray(record["repairInstructions"])
-      ? {
-          repairInstructions: (
-            record["repairInstructions"] as readonly unknown[]
-          ).map(normalizeEntry),
-        }
-      : {}),
+    ok: false,
+    path,
+    message: `logic judge response schema violation: ${path} references unknown testCaseId "${testCaseId}"`,
   };
+};
+
+const normalizeLogicJudgeFindingSeverity = (
+  value: unknown,
+): LogicJudgeFindingSeverity => {
+  switch (value) {
+    case "warning":
+    case "low":
+    case "medium":
+      return "warning";
+    case "error":
+    case "high":
+    case "critical":
+      return "error";
+    default:
+      return "error";
+  }
 };
 
 const buildLogicJudgeVerdict = (input: {
@@ -720,7 +842,8 @@ const buildLogicJudgeRefusal = (input: {
   verdict: "reject",
   findings: [
     {
-      testCaseId: "$job",
+      scope: "job",
+      testCaseId: JOB_LEVEL_TEST_CASE_ID,
       code: sanitizeShortCode(input.code),
       severity: "error",
       message: sanitizeShortMessage(input.message),
@@ -757,7 +880,8 @@ const buildLogicJudgeSchemaRepair = (input: {
   verdict: "repair",
   findings: [
     {
-      testCaseId: "$job",
+      scope: "job",
+      testCaseId: JOB_LEVEL_TEST_CASE_ID,
       code: sanitizeShortCode(input.code),
       severity: "error",
       message: sanitizeShortMessage(input.message),
@@ -841,7 +965,7 @@ const buildSchemaViolationRepairInstruction = (input: {
   path: string;
   message: string;
 }): RepairInstruction => ({
-  testCaseId: "$job",
+  testCaseId: JOB_LEVEL_TEST_CASE_ID,
   kind: "schema_violation",
   path: truncate(input.path, MAX_PATH_LENGTH),
   message: sanitizeShortMessage(input.message),
@@ -1067,6 +1191,7 @@ const pushFinding = (
   repair: RepairInstruction,
 ): void => {
   acc.findings.push({
+    scope: finding.scope,
     testCaseId: finding.testCaseId,
     code: truncate(finding.code, MAX_CODE_LENGTH),
     severity: finding.severity,
@@ -1098,6 +1223,7 @@ const evaluateEmptyCoverageSignals = (
   pushFinding(
     acc,
     {
+      scope: "test_case",
       testCaseId: testCase.id,
       code: LOGIC_JUDGE_COVERAGE_HARD_GATE_FINDING_CODES.emptyCoverageSignals,
       severity: "error",
@@ -1152,6 +1278,7 @@ const evaluateHallucinatedId = (
   pushFinding(
     acc,
     {
+      scope: "test_case",
       testCaseId: testCase.id,
       code: LOGIC_JUDGE_COVERAGE_HARD_GATE_FINDING_CODES.hallucinatedId,
       severity: "error",
@@ -1178,6 +1305,7 @@ const evaluateWeakTrace = (
   pushFinding(
     acc,
     {
+      scope: "test_case",
       testCaseId: testCase.id,
       code: LOGIC_JUDGE_COVERAGE_HARD_GATE_FINDING_CODES.weakTrace,
       severity: "warning",
@@ -1249,13 +1377,14 @@ const evaluateMissingFormScreenA11yCase = (
     pushFinding(
       acc,
       {
-        testCaseId: "$job",
+        scope: "job",
+        testCaseId: JOB_LEVEL_TEST_CASE_ID,
         code: LOGIC_JUDGE_COVERAGE_HARD_GATE_FINDING_CODES.missingFormScreenA11yCase,
         severity: "error",
         message: `screen "${screenId}" carries form fields but the list has no accessibility test case anchored to it`,
       },
       {
-        testCaseId: "$job",
+        testCaseId: JOB_LEVEL_TEST_CASE_ID,
         path: "qualitySignals.coveredScreenIds",
         // Render the canonical template from agent-role-profile.ts so the
         // logic-judge instruction stays byte-identical with the
@@ -1284,7 +1413,8 @@ const evaluateTechniqueQuotaMinimums = (
     pushFinding(
       acc,
       {
-        testCaseId: "$job",
+        scope: "job",
+        testCaseId: JOB_LEVEL_TEST_CASE_ID,
         code: LOGIC_JUDGE_COVERAGE_HARD_GATE_FINDING_CODES.techniqueQuotaBreach,
         severity: "error",
         message:
@@ -1292,7 +1422,7 @@ const evaluateTechniqueQuotaMinimums = (
           `"${deficit.technique}" case(s) but only ${deficit.actual} are anchored to that screen`,
       },
       {
-        testCaseId: "$job",
+        testCaseId: JOB_LEVEL_TEST_CASE_ID,
         path: "testCases",
         instruction:
           `Add ${deficit.missing} more "${deficit.technique}" case(s) anchored to screen ` +
@@ -1316,6 +1446,7 @@ const evaluateUnsupportedUnresolvedValidationDetails = (
     pushFinding(
       acc,
       {
+        scope: "test_case",
         testCaseId: testCase.id,
         code:
           LOGIC_JUDGE_COVERAGE_HARD_GATE_FINDING_CODES.unsupportedUnresolvedValidationDetail,
@@ -1346,6 +1477,7 @@ const evaluateCalculationConstraints = (
     pushFinding(
       acc,
       {
+        scope: "test_case",
         testCaseId: testCase.id,
         code:
           LOGIC_JUDGE_COVERAGE_HARD_GATE_FINDING_CODES.financialCalculationConstraintBreach,
@@ -1392,13 +1524,14 @@ const evaluateInsufficientBreadth = (
   pushFinding(
     acc,
     {
-      testCaseId: "$job",
+      scope: "job",
+      testCaseId: JOB_LEVEL_TEST_CASE_ID,
       code: LOGIC_JUDGE_COVERAGE_HARD_GATE_FINDING_CODES.insufficientCoverageBreadth,
       severity: "error",
       message: `Job-level coverage below policy thresholds: ${breaches.join(", ")}`,
     },
     {
-      testCaseId: "$job",
+      testCaseId: JOB_LEVEL_TEST_CASE_ID,
       path: "qualitySignals.coveredFieldIds",
       instruction:
         "Generate additional test cases that cover the unbedeckte critical IR fields/actions until policy thresholds are met.",

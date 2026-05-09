@@ -4495,8 +4495,21 @@ export const ALLOWED_LOGIC_JUDGE_FINDING_SEVERITIES = [
 export type LogicJudgeFindingSeverity =
   (typeof ALLOWED_LOGIC_JUDGE_FINDING_SEVERITIES)[number];
 
-/** One logic-judge finding anchored to a generated test case. */
+/**
+ * Canonical placeholder used when a finding or repair instruction is scoped to
+ * the overall job rather than a single generated test case.
+ */
+export const JOB_LEVEL_TEST_CASE_ID = "$job" as const;
+
+/** Closed runtime list of finding scopes used by judge and consensus artifacts. */
+export const JUDGE_FINDING_SCOPES = ["job", "test_case"] as const;
+
+/** One logic-judge finding anchored to a generated test case or the job. */
+export type JudgeFindingScope = (typeof JUDGE_FINDING_SCOPES)[number];
+
+/** One logic-judge finding anchored to a generated test case or the job. */
 export interface JudgeFinding {
+  readonly scope: JudgeFindingScope;
   readonly testCaseId: string;
   readonly code: string;
   readonly severity: LogicJudgeFindingSeverity;
@@ -4852,6 +4865,7 @@ export type JudgeConsensusFindingCategory =
 
 /** One normalized finding consumed by the production-runner consensus module. */
 export interface JudgeConsensusFinding {
+  readonly scope: JudgeFindingScope;
   readonly testCaseId: string;
   readonly code: string;
   readonly message: string;
