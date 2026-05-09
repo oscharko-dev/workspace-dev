@@ -5319,7 +5319,7 @@ test("Issue #1991: customer markdown includes the acceptance summary and hides i
     );
     assert.match(
       markdown,
-      /## TC01 — Eingabe einer gültigen Investitionssumme/u,
+      /## TC01 - Eingabe einer gültigen Investitionssumme/u,
     );
     assert.doesNotMatch(markdown, /Test-ID/u);
     assert.doesNotMatch(markdown, /job-md-summary/u);
