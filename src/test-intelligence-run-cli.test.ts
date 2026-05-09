@@ -1790,6 +1790,27 @@ test("buildLiveVisualSidecarBundle: CLI deployment overrides beat env defaults (
   assert.equal(bundle.a11yJudge?.deployment, "phi-4-multimodal-instruct");
 });
 
+test("buildLiveVisualSidecarBundle: configured logic judge is included in the live bundle", () => {
+  const bundle = buildLiveVisualSidecarBundle(
+    {
+      ...baseOptions(),
+      modelEndpoint: "https://aoai.example/openai/v1",
+      modelApiKey: "k-key",
+      mode: "deterministic_llm",
+      enableVisualSidecar: true,
+      logicJudgeDeployment: "gpt-oss-120b",
+      visualPrimaryDeployment: "llama-4-maverick-vision",
+      visualFallbackDeployment: "phi-4-multimodal-instruct",
+    },
+    {
+      WORKSPACE_TEST_SPACE_VISUAL_MODEL_ENDPOINT:
+        "https://aoai.example/openai/vision",
+    },
+  );
+
+  assert.equal(bundle.logicJudge?.deployment, "gpt-oss-120b");
+});
+
 test("runTestIntelligenceCommand: strict preflight fails before runner when logic judge would reuse generator (Issue #1993)", async () => {
   const { sink, stderr, stdout } = collectingSink();
   let runnerCalled = false;
@@ -1884,6 +1905,92 @@ test("runTestIntelligenceCommand: strict preflight rejects mistral-document-ai-2
   assert.match(
     stderr.join(""),
     /visual-primary deployment "mistral-document-ai-2512" is incompatible/u,
+  );
+});
+
+test("runTestIntelligenceCommand: strict preflight requires the full sidecar topology", async () => {
+  const { sink, stderr } = collectingSink();
+  const exitCode = await runTestIntelligenceCommand(
+    {
+      ...baseOptions(),
+      figmaUrl: undefined,
+      figmaJsonFile: "/tmp/figma.json",
+      mode: "deterministic_llm",
+      modelEndpoint: "https://aoai.example/openai/v1",
+      modelApiKey: "k-key",
+      modelDeployment: "mistral-large-3",
+      logicJudgeDeployment: "gpt-oss-120b",
+      requireMultiAgentTopology: true,
+      enableVisualSidecar: false,
+    },
+    sink,
+    {
+      env: GATE_ON,
+      loadFigmaJsonFile: async () => ({
+        fileKey: "abc",
+        name: "Foo",
+        document: { id: "0:0", type: "DOCUMENT" },
+      }),
+      now: () => 1700000000000,
+    },
+  );
+
+  assert.equal(exitCode, 1);
+  assert.match(
+    stderr.join(""),
+    /visual sidecar must be enabled when strict multi-agent topology is required/u,
+  );
+  assert.match(
+    stderr.join(""),
+    /coverage-planner deployment must be configured when strict multi-agent topology is required/u,
+  );
+  assert.match(
+    stderr.join(""),
+    /risk-ranker deployment must be configured when strict multi-agent topology is required/u,
+  );
+});
+
+test("runTestIntelligenceCommand: strict preflight rejects deprecated deployment env aliases", async () => {
+  const { sink, stderr } = collectingSink();
+  const exitCode = await runTestIntelligenceCommand(
+    {
+      ...baseOptions(),
+      figmaUrl: undefined,
+      figmaJsonFile: "/tmp/figma.json",
+      mode: "deterministic_llm",
+      modelEndpoint: "https://aoai.example/openai/v1",
+      modelApiKey: "k-key",
+      modelDeployment: "mistral-large-3",
+      logicJudgeDeployment: "gpt-oss-120b",
+      coveragePlannerDeployment: "phi-4-mini-instruct",
+      riskRankerDeployment: "phi-4",
+      enableVisualSidecar: true,
+      visualPrimaryDeployment: "llama-4-maverick-vision",
+      visualFallbackDeployment: "phi-4-multimodal-instruct",
+      a11yJudgeDeployment: "phi-4-multimodal-instruct",
+      requireMultiAgentTopology: true,
+    },
+    sink,
+    {
+      env: {
+        ...GATE_ON,
+        WORKSPACE_TEST_SPACE_VISUAL_MODEL_ENDPOINT:
+          "https://aoai.example/openai/vision",
+        WORKSPACE_AZURE_AI_FOUNDRY_VISUAL_PRIMARY_DEPLOYMENT: "legacy-primary",
+      },
+      loadFigmaJsonFile: async () => ({
+        fileKey: "abc",
+        name: "Foo",
+        document: { id: "0:0", type: "DOCUMENT" },
+      }),
+      now: () => 1700000000000,
+    },
+  );
+
+  assert.equal(exitCode, 1);
+  assert.match(
+    stderr.join(""),
+    /uses deprecated env alias WORKSPACE_AZURE_AI_FOUNDRY_VISUAL_PRIMARY_DEPLOYMENT/u,
   );
 });
 
@@ -2009,21 +2116,30 @@ test("runTestIntelligenceCommand: strict preflight writes sanitized topology rep
       modelApiKey: "k-key",
       modelDeployment: "mistral-large-3",
       logicJudgeDeployment: "gpt-oss-120b",
+      coveragePlannerDeployment: "phi-4-mini-instruct",
       riskRankerDeployment: "phi-4",
+      enableVisualSidecar: true,
+      visualPrimaryDeployment: "llama-4-maverick-vision",
+      visualFallbackDeployment: "phi-4-multimodal-instruct",
+      a11yJudgeDeployment: "phi-4-multimodal-instruct",
       requireMultiAgentTopology: true,
       topologyInputSources: {
         modelDeployment: "cli",
         logicJudgeDeployment: "cli",
-        coveragePlannerDeployment: "default",
+        coveragePlannerDeployment: "cli",
         riskRankerDeployment: "cli",
-        visualPrimaryDeployment: "default",
-        visualFallbackDeployment: "default",
-        a11yJudgeDeployment: "default",
+        visualPrimaryDeployment: "cli",
+        visualFallbackDeployment: "cli",
+        a11yJudgeDeployment: "cli",
       },
     },
     sink,
     {
-      env: GATE_ON,
+      env: {
+        ...GATE_ON,
+        WORKSPACE_TEST_SPACE_VISUAL_MODEL_ENDPOINT:
+          "https://aoai.example/openai/vision",
+      },
       runner: async (input) => {
         capturedRiskRanker = (
           input as unknown as { llm: { riskRanker?: unknown } }
@@ -2088,11 +2204,12 @@ test("runTestIntelligenceCommand: strict preflight writes sanitized topology rep
   assert.deepEqual(capturedRoleConfigurationSources, {
     generator: "cli",
     logic_judge: "cli",
-    coverage_planner: "default",
+    judge_secondary: "cli",
+    coverage_planner: "cli",
     risk_ranker: "cli",
-    visual_primary: "disabled",
-    visual_fallback: "disabled",
-    a11y_judge: "disabled",
+    visual_primary: "cli",
+    visual_fallback: "cli",
+    a11y_judge: "cli",
   });
   assert.match(stdout.join(""), /topology preflight passed/u);
 
@@ -2129,16 +2246,17 @@ test("runTestIntelligenceCommand: strict preflight writes sanitized topology rep
     report.roles.some(
       (role) =>
         role.role === "coverage_planner" &&
-        role.status === "disabled" &&
-        /deterministic-only coverage planning/u.test(role.skipReason ?? ""),
+        role.deployment === "phi-4-mini-instruct" &&
+        role.source === "cli" &&
+        role.status === "configured",
     ),
   );
   assert.ok(
     report.roles.some(
       (role) =>
         role.role === "visual_primary" &&
-        role.status === "skipped" &&
-        role.skipReason === "visual sidecar disabled",
+        role.deployment === "llama-4-maverick-vision" &&
+        role.status === "configured",
     ),
   );
   assert.equal(JSON.stringify(report).includes("https://aoai.example"), false);

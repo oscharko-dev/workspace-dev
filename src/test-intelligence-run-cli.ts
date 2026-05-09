@@ -99,13 +99,14 @@ import {
   COMPLIANCE_COVERAGE_REPORT_ARTIFACT_FILENAME,
 } from "./test-intelligence/compliance-coverage-report.js";
 import {
-  createLlmGatewayClientBundle,
   type LlmGatewayClientBundle,
 } from "./test-intelligence/llm-gateway-bundle.js";
+import { type LlmGatewayClient } from "./test-intelligence/llm-gateway.js";
 import {
-  createLlmGatewayClient,
-  type LlmGatewayClient,
-} from "./test-intelligence/llm-gateway.js";
+  buildProductionRoleClientConfig,
+  createProductionRoleClient,
+  createProductionTopologyClientBundle,
+} from "./test-intelligence/production-topology-clients.js";
 
 const TEST_INTELLIGENCE_RUN_MODES = [
   "deterministic_llm",
@@ -127,34 +128,27 @@ const TEST_INTELLIGENCE_RISK_RANKER_RECOMMENDED_DEPLOYMENT = "phi-4";
 const TEST_INTELLIGENCE_A11Y_JUDGE_RECOMMENDED_DEPLOYMENT =
   "phi-4-multimodal-instruct";
 
-const wireStructuredOutputOverrideForDeployment = (
-  deployment: string,
-): { wireStructuredOutputMode?: "none" } =>
-  deployment === TEST_INTELLIGENCE_GENERATOR_LEGACY_DEPLOYMENT
-    ? { wireStructuredOutputMode: "none" }
-    : {};
-
-const constrainedDecodingConfigForDeployment = (deployment: string) =>
-  deployment === TEST_INTELLIGENCE_GENERATOR_LEGACY_DEPLOYMENT
-    ? {
-        constrainedDecoding: {
-          preferredAdapter: "llguidance" as const,
-          fallbackAdapter: "prompt_only" as const,
-          adapterVersion: "1",
-        },
-      }
-    : {
-        constrainedDecoding: {
-          preferredAdapter: "outlines" as const,
-          fallbackAdapter: "prompt_only" as const,
-          adapterVersion: "1",
-        },
-      };
-
 const TOPOLOGY_PREFLIGHT_REPORT_FILENAME = "topology-preflight-report.json";
 const INCOMPATIBLE_OPENAI_CHAT_DEPLOYMENTS = new Set([
   "mistral-document-ai-2512",
 ]);
+const DEPRECATED_TOPOLOGY_DEPLOYMENT_ENV_ALIASES = [
+  {
+    role: "generator" as const,
+    canonicalEnv: "WORKSPACE_TEST_SPACE_TESTCASE_MODEL_DEPLOYMENT",
+    deprecatedEnv: "WORKSPACE_AZURE_AI_FOUNDRY_TEST_GENERATION_DEPLOYMENT",
+  },
+  {
+    role: "visual_primary" as const,
+    canonicalEnv: "WORKSPACE_TEST_SPACE_VISUAL_PRIMARY_DEPLOYMENT",
+    deprecatedEnv: "WORKSPACE_AZURE_AI_FOUNDRY_VISUAL_PRIMARY_DEPLOYMENT",
+  },
+  {
+    role: "visual_fallback" as const,
+    canonicalEnv: "WORKSPACE_TEST_SPACE_VISUAL_FALLBACK_DEPLOYMENT",
+    deprecatedEnv: "WORKSPACE_AZURE_AI_FOUNDRY_VISUAL_FALLBACK_DEPLOYMENT",
+  },
+] as const;
 
 export type TestIntelligenceRunMode =
   (typeof TEST_INTELLIGENCE_RUN_MODES)[number];
@@ -1465,34 +1459,17 @@ export const buildLiveLogicJudgeClient = (
   }
   const apiKey = options.modelApiKey;
   const deployment = options.logicJudgeDeployment;
-  return createLlmGatewayClient(
-    {
+  return createProductionRoleClient(
+    buildProductionRoleClientConfig({
       role: "logic_judge",
-      compatibilityMode: "openai_chat",
-      baseUrl: options.modelEndpoint,
+      endpoint: options.modelEndpoint,
       deployment,
-      modelRevision: `${deployment}@cli-test-intelligence-run`,
+      modelRevisionSuffix: "cli-test-intelligence-run",
       gatewayRelease: "azure-ai-foundry-cli-test-intelligence-run",
-      authMode: "api_key",
       ...(options.ictRegisterRef !== undefined
         ? { ictRegisterRef: options.ictRegisterRef }
         : {}),
-      declaredCapabilities: {
-        structuredOutputs: true,
-        seedSupport: false,
-        reasoningEffortSupport: false,
-        maxOutputTokensSupport: true,
-        streamingSupport: false,
-        imageInputSupport: false,
-      },
-      timeoutMs: 240_000,
-      maxRetries: 1,
-      circuitBreaker: { failureThreshold: 2, resetTimeoutMs: 30_000 },
-      ...constrainedDecodingConfigForDeployment(deployment),
-      // Azure AI Foundry's `gpt-oss-120b` returns empty content for wire
-      // response_format values; suppress only for that legacy deployment.
-      ...wireStructuredOutputOverrideForDeployment(deployment),
-    },
+    }),
     {
       apiKeyProvider: () => apiKey,
     },
@@ -1522,32 +1499,17 @@ export const buildLiveCoveragePlannerClient = (
   }
   const apiKey = options.modelApiKey;
   const deployment = options.coveragePlannerDeployment;
-  return createLlmGatewayClient(
-    {
+  return createProductionRoleClient(
+    buildProductionRoleClientConfig({
       role: "coverage_planner",
-      compatibilityMode: "openai_chat",
-      baseUrl: options.modelEndpoint,
+      endpoint: options.modelEndpoint,
       deployment,
-      modelRevision: `${deployment}@cli-test-intelligence-run`,
+      modelRevisionSuffix: "cli-test-intelligence-run",
       gatewayRelease: "azure-ai-foundry-cli-test-intelligence-run",
-      authMode: "api_key",
       ...(options.ictRegisterRef !== undefined
         ? { ictRegisterRef: options.ictRegisterRef }
         : {}),
-      declaredCapabilities: {
-        structuredOutputs: true,
-        seedSupport: false,
-        reasoningEffortSupport: false,
-        maxOutputTokensSupport: true,
-        streamingSupport: false,
-        imageInputSupport: false,
-      },
-      timeoutMs: 60_000,
-      maxRetries: 1,
-      circuitBreaker: { failureThreshold: 2, resetTimeoutMs: 30_000 },
-      ...constrainedDecodingConfigForDeployment(deployment),
-      wireStructuredOutputMode: "none",
-    },
+    }),
     {
       apiKeyProvider: () => apiKey,
     },
@@ -1577,29 +1539,17 @@ export const buildLiveRiskRankerClient = (
   }
   const apiKey = options.modelApiKey;
   const deployment = options.riskRankerDeployment;
-  return createLlmGatewayClient(
-    {
+  return createProductionRoleClient(
+    buildProductionRoleClientConfig({
       role: "risk_ranker",
-      compatibilityMode: "openai_chat",
-      baseUrl: options.modelEndpoint,
+      endpoint: options.modelEndpoint,
       deployment,
-      modelRevision: `${deployment}@cli-test-intelligence-run`,
+      modelRevisionSuffix: "cli-test-intelligence-run",
       gatewayRelease: "azure-ai-foundry-cli-test-intelligence-run",
-      authMode: "api_key",
-      declaredCapabilities: {
-        structuredOutputs: true,
-        seedSupport: false,
-        reasoningEffortSupport: false,
-        maxOutputTokensSupport: true,
-        streamingSupport: false,
-        imageInputSupport: false,
-      },
-      timeoutMs: 60_000,
-      maxRetries: 1,
-      circuitBreaker: { failureThreshold: 2, resetTimeoutMs: 30_000 },
-      ...constrainedDecodingConfigForDeployment(deployment),
-      wireStructuredOutputMode: "none",
-    },
+      ...(options.ictRegisterRef !== undefined
+        ? { ictRegisterRef: options.ictRegisterRef }
+        : {}),
+    }),
     {
       apiKeyProvider: () => apiKey,
     },
@@ -1643,34 +1593,17 @@ export const buildLiveLlmGatewayClient = (
   }
 
   const apiKey = options.modelApiKey;
-  return createLlmGatewayClient(
-    {
+  return createProductionRoleClient(
+    buildProductionRoleClientConfig({
       role: "test_generation",
-      compatibilityMode: "openai_chat",
-      baseUrl: options.modelEndpoint,
+      endpoint: options.modelEndpoint,
       deployment: options.modelDeployment,
-      modelRevision: `${options.modelDeployment}@cli-test-intelligence-run`,
+      modelRevisionSuffix: "cli-test-intelligence-run",
       gatewayRelease: "azure-ai-foundry-cli-test-intelligence-run",
-      authMode: "api_key",
       ...(options.ictRegisterRef !== undefined
         ? { ictRegisterRef: options.ictRegisterRef }
         : {}),
-      declaredCapabilities: {
-        structuredOutputs: true,
-        seedSupport: false,
-        reasoningEffortSupport: false,
-        maxOutputTokensSupport: true,
-        streamingSupport: false,
-        imageInputSupport: false,
-      },
-      timeoutMs: 240_000,
-      maxRetries: 1,
-      circuitBreaker: { failureThreshold: 2, resetTimeoutMs: 30_000 },
-      ...constrainedDecodingConfigForDeployment(options.modelDeployment),
-      // Azure AI Foundry's `gpt-oss-120b` returns empty content for wire
-      // response_format values; suppress only for that legacy deployment.
-      ...wireStructuredOutputOverrideForDeployment(options.modelDeployment),
-    },
+    }),
     {
       apiKeyProvider: () => apiKey,
     },
@@ -1758,167 +1691,28 @@ export const buildLiveVisualSidecarBundle = (
     visualFallbackDeployment,
     a11yJudgeDeployment,
   } = requireVisualSidecarDeployments(options, env);
-  const riskRankerDeployment = options.riskRankerDeployment;
-
-  const bundle = createLlmGatewayClientBundle(
+  const bundle = createProductionTopologyClientBundle(
     {
-      testGeneration: {
-        role: "test_generation",
-        compatibilityMode: "openai_chat",
-        baseUrl: options.modelEndpoint,
-        deployment: options.modelDeployment,
-        modelRevision: `${options.modelDeployment}@cli-test-intelligence-run`,
-        gatewayRelease: "azure-ai-foundry-cli-test-intelligence-run",
-        authMode: "api_key",
-        ...(options.ictRegisterRef !== undefined
-          ? { ictRegisterRef: options.ictRegisterRef }
-          : {}),
-        declaredCapabilities: {
-          structuredOutputs: true,
-          seedSupport: false,
-          reasoningEffortSupport: false,
-          maxOutputTokensSupport: true,
-          streamingSupport: false,
-          imageInputSupport: false,
-        },
-        timeoutMs: 240_000,
-        maxRetries: 1,
-        circuitBreaker: { failureThreshold: 2, resetTimeoutMs: 30_000 },
-        ...constrainedDecodingConfigForDeployment(options.modelDeployment),
-        ...wireStructuredOutputOverrideForDeployment(options.modelDeployment),
-      },
-      visualPrimary: {
-        role: "visual_primary",
-        compatibilityMode: "openai_chat",
-        baseUrl: visualEndpoint,
-        deployment: visualPrimaryDeployment,
-        modelRevision: `${visualPrimaryDeployment}@cli-test-intelligence-run`,
-        gatewayRelease: "azure-ai-foundry-cli-test-intelligence-run",
-        authMode: "api_key",
-        ...(options.ictRegisterRef !== undefined
-          ? { ictRegisterRef: options.ictRegisterRef }
-          : {}),
-        declaredCapabilities: {
-          structuredOutputs: true,
-          seedSupport: false,
-          reasoningEffortSupport: false,
-          maxOutputTokensSupport: true,
-          streamingSupport: false,
-          imageInputSupport: true,
-        },
-        timeoutMs: 300_000,
-        maxRetries: 1,
-        circuitBreaker: { failureThreshold: 2, resetTimeoutMs: 30_000 },
-      },
-      visualFallback: {
-        role: "visual_fallback",
-        compatibilityMode: "openai_chat",
-        baseUrl: visualEndpoint,
-        deployment: visualFallbackDeployment,
-        modelRevision: `${visualFallbackDeployment}@cli-test-intelligence-run`,
-        gatewayRelease: "azure-ai-foundry-cli-test-intelligence-run",
-        authMode: "api_key",
-        ...(options.ictRegisterRef !== undefined
-          ? { ictRegisterRef: options.ictRegisterRef }
-          : {}),
-        declaredCapabilities: {
-          structuredOutputs: true,
-          seedSupport: false,
-          reasoningEffortSupport: false,
-          maxOutputTokensSupport: true,
-          streamingSupport: false,
-          imageInputSupport: true,
-        },
-        timeoutMs: 300_000,
-        maxRetries: 1,
-        circuitBreaker: { failureThreshold: 2, resetTimeoutMs: 30_000 },
-      },
-      ...(a11yJudgeDeployment !== undefined
-        ? {
-            a11yJudge: {
-              role: "a11y_judge" as const,
-              compatibilityMode: "openai_chat" as const,
-              baseUrl: visualEndpoint,
-              deployment: a11yJudgeDeployment,
-              modelRevision: `${a11yJudgeDeployment}@cli-test-intelligence-run`,
-              gatewayRelease: "azure-ai-foundry-cli-test-intelligence-run",
-              authMode: "api_key" as const,
-              ...(options.ictRegisterRef !== undefined
-                ? { ictRegisterRef: options.ictRegisterRef }
-                : {}),
-              declaredCapabilities: {
-                structuredOutputs: true,
-                seedSupport: false,
-                reasoningEffortSupport: false,
-                maxOutputTokensSupport: true,
-                streamingSupport: false,
-                imageInputSupport: true,
-              },
-              timeoutMs: 300_000,
-              maxRetries: 1,
-              circuitBreaker: { failureThreshold: 2, resetTimeoutMs: 30_000 },
-            },
-          }
+      endpoint: options.modelEndpoint,
+      visualEndpoint,
+      deployment: options.modelDeployment,
+      visualPrimaryDeployment,
+      visualFallbackDeployment,
+      ...(options.logicJudgeDeployment !== undefined
+        ? { logicJudgeDeployment: options.logicJudgeDeployment }
         : {}),
+      ...(a11yJudgeDeployment !== undefined ? { a11yJudgeDeployment } : {}),
       ...(options.coveragePlannerDeployment !== undefined
-        ? {
-            coveragePlanner: {
-              role: "coverage_planner" as const,
-              compatibilityMode: "openai_chat" as const,
-              baseUrl: options.modelEndpoint,
-              deployment: options.coveragePlannerDeployment,
-              modelRevision: `${options.coveragePlannerDeployment}@cli-test-intelligence-run`,
-              gatewayRelease: "azure-ai-foundry-cli-test-intelligence-run",
-              authMode: "api_key" as const,
-              ...(options.ictRegisterRef !== undefined
-                ? { ictRegisterRef: options.ictRegisterRef }
-                : {}),
-              declaredCapabilities: {
-                structuredOutputs: true,
-                seedSupport: false,
-                reasoningEffortSupport: false,
-                maxOutputTokensSupport: true,
-                streamingSupport: false,
-                imageInputSupport: false,
-              },
-              timeoutMs: 60_000,
-              maxRetries: 1,
-              circuitBreaker: { failureThreshold: 2, resetTimeoutMs: 30_000 },
-              ...constrainedDecodingConfigForDeployment(
-                options.coveragePlannerDeployment,
-              ),
-              wireStructuredOutputMode: "none" as const,
-            },
-          }
+        ? { coveragePlannerDeployment: options.coveragePlannerDeployment }
         : {}),
-      ...(riskRankerDeployment !== undefined
-        ? {
-            riskRanker: {
-              role: "risk_ranker" as const,
-              compatibilityMode: "openai_chat" as const,
-              baseUrl: options.modelEndpoint,
-              deployment: riskRankerDeployment,
-              modelRevision: `${riskRankerDeployment}@cli-test-intelligence-run`,
-              gatewayRelease: "azure-ai-foundry-cli-test-intelligence-run",
-              authMode: "api_key" as const,
-              declaredCapabilities: {
-                structuredOutputs: true,
-                seedSupport: false,
-                reasoningEffortSupport: false,
-                maxOutputTokensSupport: true,
-                streamingSupport: false,
-                imageInputSupport: false,
-              },
-              timeoutMs: 60_000,
-              maxRetries: 1,
-              circuitBreaker: { failureThreshold: 2, resetTimeoutMs: 30_000 },
-              ...constrainedDecodingConfigForDeployment(
-                riskRankerDeployment,
-              ),
-              wireStructuredOutputMode: "none" as const,
-            },
-          }
+      ...(options.riskRankerDeployment !== undefined
+        ? { riskRankerDeployment: options.riskRankerDeployment }
         : {}),
+      ...(options.ictRegisterRef !== undefined
+        ? { ictRegisterRef: options.ictRegisterRef }
+        : {}),
+      modelRevisionSuffix: "cli-test-intelligence-run",
+      gatewayRelease: "azure-ai-foundry-cli-test-intelligence-run",
     },
     {
       apiKeyProvider: () => apiKey,
@@ -1942,6 +1736,29 @@ const deploymentSourceFromEnv = (
   key: string,
 ): TopologyInputSource =>
   readTrimmedEnv(env, key) !== undefined ? "env" : "default";
+
+const collectDeprecatedTopologyAliasErrors = (
+  env: NodeJS.ProcessEnv,
+): string[] => {
+  const errors: string[] = [];
+  for (const alias of DEPRECATED_TOPOLOGY_DEPLOYMENT_ENV_ALIASES) {
+    const deprecatedValue = readTrimmedEnv(env, alias.deprecatedEnv);
+    if (deprecatedValue === undefined) continue;
+    const canonicalValue = readTrimmedEnv(env, alias.canonicalEnv);
+    if (canonicalValue === undefined) {
+      errors.push(
+        `${formatTopologyRoleName(alias.role)} uses deprecated env alias ${alias.deprecatedEnv}; migrate to ${alias.canonicalEnv} before strict multi-agent runs`,
+      );
+      continue;
+    }
+    if (canonicalValue !== deprecatedValue) {
+      errors.push(
+        `${formatTopologyRoleName(alias.role)} has conflicting deployment env vars (${alias.canonicalEnv}=${canonicalValue}, ${alias.deprecatedEnv}=${deprecatedValue}); remove the deprecated alias before strict multi-agent runs`,
+      );
+    }
+  }
+  return errors;
+};
 
 const formatTopologyRoleName = (role: TopologyRoleReportEntry["role"]): string =>
   role.replaceAll("_", "-");
@@ -1999,6 +1816,14 @@ const buildTopologyPreflightReport = ({
     options.requireMultiAgentTopology === true ||
     isTruthyFlag(env.WORKSPACE_TEST_SPACE_REQUIRE_MULTI_AGENT_TOPOLOGY);
   const optionSources = options.topologyInputSources;
+  if (strictModeEnabled) {
+    errors.push(...collectDeprecatedTopologyAliasErrors(env));
+    if (!visualSidecarEnabled) {
+      errors.push(
+        "visual sidecar must be enabled when strict multi-agent topology is required",
+      );
+    }
+  }
 
   roles.push({
     role: "generator",
@@ -2074,6 +1899,11 @@ const buildTopologyPreflightReport = ({
         status: "disabled",
         skipReason: disabledReason,
       });
+      if (strictModeEnabled) {
+        errors.push(
+          `${formatTopologyRoleName(role)} deployment must be configured when strict multi-agent topology is required`,
+        );
+      }
       return;
     }
     roles.push({
@@ -2216,6 +2046,11 @@ const buildTopologyPreflightReport = ({
         status: "disabled",
         skipReason: "not configured; deterministic accessibility evaluation remains active",
       });
+      if (strictModeEnabled) {
+        errors.push(
+          "a11y-judge deployment must be configured when strict multi-agent topology is required",
+        );
+      }
     } else {
       roles.push({
         role: "a11y_judge",
@@ -3516,6 +3351,8 @@ export const runTestIntelligenceCommand = async (
     roleConfigurationSources: {
       generator: options.topologyInputSources?.modelDeployment ?? "default",
       logic_judge:
+        options.topologyInputSources?.logicJudgeDeployment ?? "default",
+      judge_secondary:
         options.topologyInputSources?.logicJudgeDeployment ?? "default",
       coverage_planner:
         options.topologyInputSources?.coveragePlannerDeployment ?? "default",

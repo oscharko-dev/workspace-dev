@@ -37,15 +37,15 @@ which deployment under that account is used for which agent role.
 
 #### 1b. Role-to-deployment matrix
 
-| Variable                                           | Wave | Required | Role and recommended deployment                                                                                                                                                                                           |
+| Variable                                           | Wave | Required | Role and deployment policy                                                                                                                                                                                                |
 | -------------------------------------------------- | :--: | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `WORKSPACE_TEST_SPACE_TESTCASE_MODEL_DEPLOYMENT`   |  —   | yes      | Generator. Recommended: `mistral-large-3` (cross-vendor against `gpt-oss-120b` Logic-Judge). Backwards-compatible default: `gpt-oss-120b`.                                                                                |
 | `WORKSPACE_TEST_SPACE_VISUAL_PRIMARY_DEPLOYMENT`   |  —   | yes      | Visual-Sidecar primary describer. Recommended: `llama-4-maverick-vision` (Stable, multimodal chat). The previous `mistral-document-ai-2512` value is invalid for chat-completion paths and must not be used here.         |
 | `WORKSPACE_TEST_SPACE_VISUAL_FALLBACK_DEPLOYMENT`  |  —   | yes      | Visual-Sidecar fallback. Recommended: `phi-4-multimodal-instruct` (cross-vendor diversity, Microsoft, Stable, multimodal).                                                                                                |
-| `WORKSPACE_TEST_SPACE_LOGIC_JUDGE_DEPLOYMENT`      |  1   | optional | Logic-Judge. Falls back to `WORKSPACE_TEST_SPACE_TESTCASE_MODEL_DEPLOYMENT` when unset. Recommended: `gpt-oss-120b` when the generator is `mistral-large-3` (cross-model voting). Activated by issue #1932.               |
-| `WORKSPACE_TEST_SPACE_COVERAGE_PLANNER_DEPLOYMENT` |  2   | optional | Coverage-Planner LLM augmentation. Deterministic-only when unset. Recommended: `phi-4-mini-instruct`. Activated by issue #1934.                                                                                           |
-| `WORKSPACE_TEST_SPACE_RISK_RANKER_DEPLOYMENT`      |  2   | optional | Risk-Ranker LLM augmentation. Deterministic-only when unset. Recommended: `phi-4`. Activated by issue #1935.                                                                                                              |
-| `WORKSPACE_TEST_SPACE_A11Y_JUDGE_DEPLOYMENT`       |  2   | optional | LLM-augmented A11y-Judge. Deterministic eval still runs when unset. Recommended: `phi-4-multimodal-instruct` (may share the deployment with `WORKSPACE_TEST_SPACE_VISUAL_FALLBACK_DEPLOYMENT`). Activated by issue #1940. |
+| `WORKSPACE_TEST_SPACE_LOGIC_JUDGE_DEPLOYMENT`      |  1   | optional | Logic-Judge. Falls back to `WORKSPACE_TEST_SPACE_TESTCASE_MODEL_DEPLOYMENT` when unset for legacy single-model runs. Strict multi-agent mode requires a dedicated deployment distinct from the generator.                  |
+| `WORKSPACE_TEST_SPACE_COVERAGE_PLANNER_DEPLOYMENT` |  2   | optional | Coverage-Planner LLM augmentation. Deterministic-only when unset for legacy runs. Strict multi-agent mode requires a configured deployment. Do not promote a default assignment until repeated live role-contract probes pass. |
+| `WORKSPACE_TEST_SPACE_RISK_RANKER_DEPLOYMENT`      |  2   | optional | Risk-Ranker LLM augmentation. Deterministic-only when unset for legacy runs. Strict multi-agent mode requires a configured deployment. Do not promote a default assignment until repeated live role-contract probes pass.    |
+| `WORKSPACE_TEST_SPACE_A11Y_JUDGE_DEPLOYMENT`       |  2   | optional | LLM-augmented A11y-Judge. Deterministic eval still runs when unset for legacy runs. Strict multi-agent mode requires a configured deployment when the visual sidecar is enabled.                                          |
 
 Verification: `pnpm exec node scripts/check-live-smoke-env.mjs` exits 0
 when the endpoint and credential variables are complete. The role-to-deployment
@@ -56,23 +56,30 @@ Credential handling is strict: set only `WORKSPACE_TEST_SPACE_LLM_API_KEY`.
 The older model-specific and generic API-key aliases are not supported by the
 Test-Intelligence production runner.
 
-#### 1c. Recommended Azure AI Foundry deployments
+Strict multi-agent runs also reject deprecated deployment env aliases such as
+`WORKSPACE_AZURE_AI_FOUNDRY_TEST_GENERATION_DEPLOYMENT`,
+`WORKSPACE_AZURE_AI_FOUNDRY_VISUAL_PRIMARY_DEPLOYMENT`, and
+`WORKSPACE_AZURE_AI_FOUNDRY_VISUAL_FALLBACK_DEPLOYMENT`. Migrate to the
+canonical `WORKSPACE_TEST_SPACE_*` names before enabling
+`--require-multi-agent-topology`.
 
-The deployments below are the production-ready, Stable Azure AI Foundry
-models that the multi-agent topology was validated against. Each row maps a
-role to the catalog model name, the deployment name we recommend, and the
-SKU configuration we exercised.
+#### 1c. Empirical Azure AI Foundry matrix
 
-| Role                                | Catalog model                               | Deployment name (recommended) | SKU              | Capacity |
-| ----------------------------------- | ------------------------------------------- | ----------------------------- | ---------------- | -------- |
-| Generator (cross-vendor primary)    | `Mistral-Large-3` (Mistral AI, v1)          | `mistral-large-3`             | `GlobalStandard` | ≥ 10     |
-| Generator (legacy)                  | `gpt-oss-120b` (OpenAI-OSS, v1)             | `gpt-oss-120b`                | `GlobalStandard` | ≥ 10     |
-| Logic-Judge (cross-model)           | `gpt-oss-120b` (OpenAI-OSS, v1)             | `gpt-oss-120b`                | `GlobalStandard` | shared   |
-| Visual-Primary                      | `Llama-4-Maverick-17B-128E-Instruct-FP8`    | `llama-4-maverick-vision`     | `GlobalStandard` | ≥ 10     |
-| Visual-Fallback                     | `Phi-4-multimodal-instruct` (Microsoft, v1) | `phi-4-multimodal-instruct`   | `GlobalStandard` | ≥ 1      |
-| Coverage-Planner (LLM augmentation) | `Phi-4-mini-instruct` (Microsoft, v1)       | `phi-4-mini-instruct`         | `GlobalStandard` | ≥ 1      |
-| Risk-Ranker (LLM augmentation)      | `Phi-4` (Microsoft, v7)                     | `phi-4`                       | `GlobalStandard` | ≥ 1      |
-| A11y-Judge (LLM augmentation)       | `Phi-4-multimodal-instruct` (Microsoft, v1) | `phi-4-multimodal-instruct`   | `GlobalStandard` | shared   |
+The deployments below separate empirically validated production roles from
+provisional optional assignments. Only the validated rows should be treated as
+promoted defaults. Optional sidecars remain opt-in until repeated live
+role-contract probes pass on the operator's target tenant.
+
+| Role                          | Catalog model                               | Deployment name | Status                                | SKU              | Capacity |
+| ----------------------------- | ------------------------------------------- | --------------- | ------------------------------------- | ---------------- | -------- |
+| Generator (cross-vendor)      | `Mistral-Large-3` (Mistral AI, v1)          | `mistral-large-3`           | Validated production default          | `GlobalStandard` | ≥ 10     |
+| Generator (legacy)            | `gpt-oss-120b` (OpenAI-OSS, v1)             | `gpt-oss-120b`              | Legacy compatibility only             | `GlobalStandard` | ≥ 10     |
+| Logic-Judge (cross-model)     | `gpt-oss-120b` (OpenAI-OSS, v1)             | `gpt-oss-120b`              | Validated production sidecar          | `GlobalStandard` | shared   |
+| Visual-Primary                | `Llama-4-Maverick-17B-128E-Instruct-FP8`    | `llama-4-maverick-vision`   | Validated production sidecar          | `GlobalStandard` | ≥ 10     |
+| Visual-Fallback               | `Phi-4-multimodal-instruct` (Microsoft, v1) | `phi-4-multimodal-instruct` | Validated production sidecar          | `GlobalStandard` | ≥ 1      |
+| Coverage-Planner candidate    | `Phi-4-mini-instruct` (Microsoft, v1)       | `phi-4-mini-instruct`       | Provisional: do not promote by default | `GlobalStandard` | ≥ 1      |
+| Risk-Ranker candidate         | `Phi-4` (Microsoft, v7)                     | `phi-4`                     | Provisional: probe before promotion    | `GlobalStandard` | ≥ 1      |
+| A11y-Judge candidate          | `Phi-4-multimodal-instruct` (Microsoft, v1) | `phi-4-multimodal-instruct` | Provisional: probe before promotion    | `GlobalStandard` | shared   |
 
 Notes on substitutions made versus the original Wave-0 plan (issue #1927):
 
@@ -242,9 +249,10 @@ Run reports intentionally expose two related role vocabularies:
 
 - Workflow/harness roles in `agent-role-run.json`: generator, logic judge,
   semantic judge, adversarial gap finder, repair planner, and final verifier.
-- LLM sidecar participation in `agent-participation.json`: generator,
-  logic-judge, coverage-planner, risk-ranker, visual-primary, visual-fallback,
-  and a11y-judge.
+- `agent-participation.json#roleViews.workflowRoles`: the complete workflow
+  role surface recorded for the run, including `judge_secondary`.
+- `agent-participation.json#roleViews.deployedLlmSidecars`: the subset that
+  represents concrete deployed LLM sidecars for the run.
 
 The split is expected: harness roles describe the deterministic orchestration
 steps, while sidecar roles describe concrete deployed model participation. When

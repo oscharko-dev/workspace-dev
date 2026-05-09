@@ -97,6 +97,14 @@ test("resolveLlmConfigFromEnv: hydrates optional coverage-planner deployment", (
   assert.equal(config.coveragePlannerDeployment, "phi-4-mini-instruct");
 });
 
+test("resolveLlmConfigFromEnv: hydrates optional logic-judge deployment", () => {
+  const config = resolveLlmConfigFromEnv({
+    ...ENV_OK,
+    WORKSPACE_TEST_SPACE_LOGIC_JUDGE_DEPLOYMENT: "gpt-oss-120b",
+  });
+  assert.equal(config.logicJudgeDeployment, "gpt-oss-120b");
+});
+
 test("resolveLlmConfigFromEnv: hydrates optional a11y-judge deployment", () => {
   const config = resolveLlmConfigFromEnv({
     ...ENV_OK,

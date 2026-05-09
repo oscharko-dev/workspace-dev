@@ -13,15 +13,17 @@ export const AGENT_PARTICIPATION_ARTIFACT_FILENAME =
   "agent-participation.json" as const;
 /**
  * Schema version of the participation artifact. Bumped from `1.0.0`
- * to `1.1.0` for Issue #2043 — the addition of the optional
- * `routingDecisions` block is additive and backwards compatible.
+ * to `1.2.0` for Issue #2028/#2043 — additive views now separate
+ * workflow roles from deployed LLM sidecars while preserving the
+ * canonical flat `roles` array.
  */
-export const AGENT_PARTICIPATION_SCHEMA_VERSION = "1.1.0" as const;
+export const AGENT_PARTICIPATION_SCHEMA_VERSION = "1.2.0" as const;
 
 export const AGENT_PARTICIPATION_ROLES = [
   "action_topology",
   "generator",
   "logic_judge",
+  "judge_secondary",
   "coverage_planner",
   "risk_ranker",
   "adversarial_critic",
@@ -103,6 +105,10 @@ export interface AgentParticipationArtifact {
   readonly jobId: string;
   readonly generatedAt: string;
   readonly roles: readonly AgentParticipationEntry[];
+  readonly roleViews: {
+    readonly workflowRoles: readonly AgentParticipationEntry[];
+    readonly deployedLlmSidecars: readonly AgentParticipationEntry[];
+  };
   /**
    * Optional routing decisions persisted for cost-aware routing
    * (Issue #2043). Omitted when the classifier did not run for this
@@ -125,6 +131,19 @@ export interface WriteAgentParticipationArtifactInput {
 
 const roleRank = (role: AgentParticipationRole): number =>
   AGENT_PARTICIPATION_ROLES.indexOf(role);
+
+const DEPLOYED_LLM_SIDECAR_ROLES = new Set<AgentParticipationRole>([
+  "generator",
+  "logic_judge",
+  "judge_secondary",
+  "coverage_planner",
+  "risk_ranker",
+  "visual_primary",
+  "visual_fallback",
+  "a11y_judge",
+  "adversarial_critic",
+  "test_generation_repair",
+]);
 
 const normalizeRoutingDecisions = (
   decisions: readonly TaskClassificationDecision[] | undefined,
@@ -149,15 +168,8 @@ const normalizeRoutingDecisions = (
 
 export const buildAgentParticipationArtifact = (
   input: BuildAgentParticipationArtifactInput,
-): AgentParticipationArtifact => ({
-  schemaVersion: AGENT_PARTICIPATION_SCHEMA_VERSION,
-  contractVersion: TEST_INTELLIGENCE_CONTRACT_VERSION,
-  jobId: input.jobId,
-  generatedAt: input.generatedAt,
-  ...(normalizeRoutingDecisions(input.routingDecisions) !== undefined
-    ? { routingDecisions: normalizeRoutingDecisions(input.routingDecisions)! }
-    : {}),
-  roles: [...input.roles]
+): AgentParticipationArtifact => {
+  const normalizedRoles = [...input.roles]
     .map((entry) => ({
       role: entry.role,
       ...(entry.deployment !== undefined ? { deployment: entry.deployment } : {}),
@@ -197,8 +209,25 @@ export const buildAgentParticipationArtifact = (
         roleRank(left.role) - roleRank(right.role) ||
         left.configurationSource.localeCompare(right.configurationSource) ||
         (left.deployment ?? "").localeCompare(right.deployment ?? ""),
-    ),
-});
+    );
+
+  return {
+    schemaVersion: AGENT_PARTICIPATION_SCHEMA_VERSION,
+    contractVersion: TEST_INTELLIGENCE_CONTRACT_VERSION,
+    jobId: input.jobId,
+    generatedAt: input.generatedAt,
+    ...(normalizeRoutingDecisions(input.routingDecisions) !== undefined
+      ? { routingDecisions: normalizeRoutingDecisions(input.routingDecisions)! }
+      : {}),
+    roles: normalizedRoles,
+    roleViews: {
+      workflowRoles: normalizedRoles,
+      deployedLlmSidecars: normalizedRoles.filter((entry) =>
+        DEPLOYED_LLM_SIDECAR_ROLES.has(entry.role),
+      ),
+    },
+  };
+};
 
 export const writeAgentParticipationArtifact = async (
   input: WriteAgentParticipationArtifactInput,
