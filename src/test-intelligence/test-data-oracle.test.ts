@@ -203,3 +203,155 @@ test("test-data-oracle: ISO datetime + Date >= today + 1 day combination resolve
   );
   assert.equal(boundaryMin?.value, "2026-05-10");
 });
+
+test("test-data-oracle: long Max-N-characters values are chunked so they cannot trip the base64 heuristic (issue #2087)", () => {
+  // The validation harness flags 64+ contiguous base64-alphabet characters
+  // as `encoded_payload_base64`. A naive `"x".repeat(500)` would be 500
+  // contiguous `x` chars and trip the detector. The oracle must emit
+  // chunked filler that breaks the contiguous run with non-base64 chars
+  // (whitespace) so legitimate long boundary samples are not mistaken for
+  // exfiltrated payloads.
+  const r = resolveTestData({
+    fieldLabel: "Schadenbeschreibung",
+    validations: ["Required", "Max 500 characters"],
+    now: ANCHOR,
+  });
+  assert.equal(r.resolvable, true);
+  if (r.resolvable !== true) return;
+  const boundaryMax = r.valid.find(
+    (v) => v.rule === "Max 500 characters" && v.category === "boundary_max",
+  );
+  assert.equal(boundaryMax?.value.length, 500);
+  // No 64+ contiguous run of base64-alphabet characters anywhere in the
+  // value — the chunked filler caps any single run at 16 (one trailing
+  // x is appended when the requested length is a multiple of 16).
+  assert.doesNotMatch(boundaryMax?.value ?? "", /[A-Za-z0-9+/]{64,}/u);
+  // The above-max invalid is also chunked so the invalidation sample
+  // itself does not silently get blocked by the same gate.
+  const aboveMax = r.invalid.find(
+    (v) => v.rule === "Max 500 characters" && v.category === "above_max_invalid",
+  );
+  assert.equal(aboveMax?.value.length, 501);
+  assert.doesNotMatch(aboveMax?.value ?? "", /[A-Za-z0-9+/]{64,}/u);
+});
+
+test("test-data-oracle: short fixed-length values stay as a contiguous run (no whitespace splice for len <= 16)", () => {
+  // For len <= 16 we MUST keep the legacy `"x".repeat(N)` form so
+  // length-N-character invariants (PLZ length 5, Steuer-ID length 11) are
+  // not silently broken by an embedded space. 16 is well below the
+  // base64-heuristic floor of 64, so contiguity is safe at this scale.
+  const r = resolveTestData({
+    fieldLabel: "Steuer-ID",
+    validations: ["Required", "Length 11"],
+    now: ANCHOR,
+  });
+  assert.equal(r.resolvable, true);
+  if (r.resolvable !== true) return;
+  const sample = r.valid.find((v) => v.rule === "Length 11");
+  assert.equal(sample?.value, "xxxxxxxxxxx");
+});
+
+test("test-data-oracle: documentation-example test-data entries carry a redaction-token sentinel so the PII validator skips them", () => {
+  // The Bundesbank Testbank IBAN is, syntactically, a well-formed IBAN
+  // (Mod-97 valid) — the strict PII detector flags it even though it is
+  // a public documentation placeholder. We tag the rendered test-data
+  // entry with `[REDACTED:DOC_EXAMPLE]` so `looksLikeRedactionToken` in
+  // `test-case-validation.ts` short-circuits the scan, keeping the
+  // underlying oracle value (`DE89370400440532013000`) intact for all
+  // cross-component redaction tests that assert on the literal.
+  const r = resolveTestData({
+    fieldLabel: "IBAN",
+    validations: ["Required", "IBAN format with Mod-97 checksum"],
+    now: ANCHOR,
+  });
+  assert.equal(r.resolvable, true);
+  if (r.resolvable !== true) return;
+  const docExample = r.valid.find(
+    (v) => v.category === "documentation_example",
+  );
+  assert.ok(docExample !== undefined);
+  // Underlying value is unchanged.
+  assert.equal(docExample?.value, "DE89370400440532013000");
+  // Rendered entry carries the redaction-token sentinel.
+  const entry = formatOracleValueAsTestDataEntry("IBAN", docExample!);
+  assert.match(entry, /\[REDACTED:DOC_EXAMPLE\]\s*$/u);
+  assert.ok(entry.includes("DE89370400440532013000"));
+  // Non-documentation entries do NOT receive the marker (this would be
+  // wrong: a real numeric range value is not a documentation placeholder).
+  const r2 = resolveTestData({
+    fieldLabel: "Kreditbetrag",
+    validations: ["Numeric in range 1000..50000"],
+    now: ANCHOR,
+  });
+  if (r2.resolvable !== true) {
+    assert.fail("expected resolvable");
+    return;
+  }
+  const entry2 = formatOracleValueAsTestDataEntry("Kreditbetrag", r2.valid[0]!);
+  assert.doesNotMatch(entry2, /\[REDACTED:DOC_EXAMPLE\]/u);
+});
+
+test("test-data-oracle: ISO-date / datetime entries carry the redaction-token sentinel so DOB-label collisions do not trip the PII validator", () => {
+  // The DOB detector in pii-detection.ts matches when a label keyword
+  // (Geburtsdatum / dob / geboren / ...) appears within ~32 chars of an
+  // ISO date. The oracle's anchor sample for "ISO date" is `today`,
+  // which combined with `Geburtsdatum:` flips the heuristic on a
+  // synthesized boundary value. The rendered entry must carry the
+  // redaction-token sentinel so the validator skips it.
+  const r = resolveTestData({
+    fieldLabel: "Geburtsdatum",
+    validations: ["Required", "ISO date", "Date implies age >= 18"],
+    now: ANCHOR,
+  });
+  assert.equal(r.resolvable, true);
+  if (r.resolvable !== true) return;
+  for (const v of r.valid) {
+    if (v.rule === "ISO date") {
+      const entry = formatOracleValueAsTestDataEntry("Geburtsdatum", v);
+      assert.match(
+        entry,
+        /\[REDACTED:DOC_EXAMPLE\]\s*$/u,
+        `format_valid ISO-date entry missing sentinel: ${entry}`,
+      );
+    }
+  }
+  for (const v of r.invalid) {
+    if (v.rule === "ISO date") {
+      const entry = formatOracleValueAsTestDataEntry("Geburtsdatum", v);
+      assert.match(
+        entry,
+        /\[REDACTED:DOC_EXAMPLE\]\s*$/u,
+        `format_invalid ISO-date entry missing sentinel: ${entry}`,
+      );
+    }
+  }
+  // ISO datetime carries the same sentinel.
+  const r2 = resolveTestData({
+    fieldLabel: "Termin-Slot",
+    validations: ["ISO datetime"],
+    now: ANCHOR,
+  });
+  if (r2.resolvable !== true) {
+    assert.fail("expected resolvable");
+    return;
+  }
+  const dt = r2.valid.find((v) => v.rule === "ISO datetime");
+  if (dt !== undefined) {
+    const entry = formatOracleValueAsTestDataEntry("Termin-Slot", dt);
+    assert.match(entry, /\[REDACTED:DOC_EXAMPLE\]\s*$/u);
+  }
+  // Date-bound rules (Date <= today, Date >= today + 1 day) likewise.
+  const r3 = resolveTestData({
+    fieldLabel: "Schadendatum",
+    validations: ["Date <= today"],
+    now: ANCHOR,
+  });
+  if (r3.resolvable !== true) {
+    assert.fail("expected resolvable");
+    return;
+  }
+  for (const v of r3.valid) {
+    const entry = formatOracleValueAsTestDataEntry("Schadendatum", v);
+    assert.match(entry, /\[REDACTED:DOC_EXAMPLE\]\s*$/u);
+  }
+});
