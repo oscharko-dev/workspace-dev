@@ -11,6 +11,13 @@ import type {
 } from "../contracts/index.js";
 import { canonicalJson, sha256Hex } from "./content-hash.js";
 import {
+  CALIBRATION_ECE_THRESHOLDS,
+  CALIBRATION_HISTOGRAM_BIN_COUNT,
+  computeBrierScore,
+  computeExpectedCalibrationError,
+} from "./calibration-metrics.js";
+export { computeBrierScore, computeExpectedCalibrationError } from "./calibration-metrics.js";
+import {
   type BaselineArchetypeFixtureId,
 } from "./baseline-fixtures.js";
 import type { IntentDerivationFigmaInput } from "./intent-derivation.js";
@@ -81,6 +88,7 @@ export interface DriftBaselineState {
 export type DriftFindingKind =
   | "metric_shift"
   | "brier_absolute_shift"
+  | "ece_absolute_threshold"
   | "provider_fingerprint_changed"
   | "provider_token_count_changed"
   | "cross_family_correlated_drift";
@@ -249,40 +257,6 @@ const confidenceForCase = (testCase: GeneratedTestCase): number =>
       ? testCase.qualitySignals.confidence
       : 0;
 
-export const computeBrierScore = (
-  samples: ReadonlyArray<{ confidence: number; label: 0 | 1 }>,
-): number => {
-  if (samples.length === 0) return 0;
-  let total = 0;
-  for (const sample of samples) {
-    const delta = sample.confidence - sample.label;
-    total += delta * delta;
-  }
-  return round6(total / samples.length);
-};
-
-export const computeExpectedCalibrationError = (
-  samples: ReadonlyArray<{ confidence: number; label: 0 | 1 }>,
-  bins = 10,
-): number => {
-  if (samples.length === 0) return 0;
-  let total = 0;
-  for (let index = 0; index < bins; index += 1) {
-    const lower = index / bins;
-    const upper = (index + 1) / bins;
-    const bucket = samples.filter((sample) =>
-      index === bins - 1
-        ? sample.confidence >= lower && sample.confidence <= upper
-        : sample.confidence >= lower && sample.confidence < upper,
-    );
-    if (bucket.length === 0) continue;
-    const bucketConfidence = mean(bucket.map((sample) => sample.confidence));
-    const bucketAccuracy = mean(bucket.map((sample) => sample.label));
-    total += Math.abs(bucketConfidence - bucketAccuracy) * bucket.length;
-  }
-  return round6(total / samples.length);
-};
-
 export const computeDriftCanaryMetrics = (input: {
   deployment: string;
   runs: ReadonlyArray<CanaryFixtureRun>;
@@ -343,7 +317,10 @@ export const computeDriftCanaryMetrics = (input: {
       deployment: input.deployment,
       family,
       metricName: "ece",
-      value: computeExpectedCalibrationError(samples),
+      value: computeExpectedCalibrationError(
+        samples,
+        CALIBRATION_HISTOGRAM_BIN_COUNT,
+      ),
       riskCategory,
     });
   }
@@ -537,6 +514,22 @@ export const evaluateDriftReport = (input: {
   }
   const findings: DriftFinding[] = [];
   for (const observation of input.observations) {
+    if (observation.metricName === "ece" && observation.riskCategory !== undefined) {
+      const threshold = CALIBRATION_ECE_THRESHOLDS[observation.riskCategory];
+      if (observation.value > threshold) {
+        findings.push({
+          kind: "ece_absolute_threshold",
+          severity: "error",
+          message: `ECE exceeded the hard threshold for ${observation.riskCategory}`,
+          deployment: observation.deployment,
+          family: observation.family,
+          metricName: observation.metricName,
+          riskCategory: observation.riskCategory,
+          currentValue: observation.value,
+          threshold,
+        });
+      }
+    }
     const priorValues = priorObservationMap.get(metricKey(observation)) ?? [];
     if (priorValues.length < 2) continue;
     const baselineMean = mean(priorValues);

@@ -30,6 +30,10 @@ The canary stores a rolling 30-day baseline under `.workspace-dev/drift-canaries
 
 - the current value moves more than `2σ` from the rolling mean
 - the Brier score moves by more than `0.05` in absolute terms
+- per-risk-category ECE breaches its hard ceiling:
+  - `regulated_data <= 0.05`
+  - `financial_transaction <= 0.05`
+  - all other categories `<= 0.10`
 
 Provider-fingerprint alerts are immediate. If the response hash or output-token count changes while `modelRevision` and `gatewayRelease` stay constant, the canary raises an alert because that is the signature of silent provider drift.
 

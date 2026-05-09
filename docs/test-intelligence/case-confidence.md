@@ -45,6 +45,8 @@ Runtime calibration is dataset-scoped and offline-fit:
    - `needs_review` / `blocked` -> negative label
 4. A Platt-scaling sigmoid is fit over the historical raw scores.
 5. The resulting curve is persisted to `sandbox/calibration/case-confidence-curve.json`.
+6. Per-risk reliability diagrams are persisted alongside it as
+   `sandbox/calibration/case-confidence-reliability-<riskCategory>.json`.
 
 The persisted artifact includes:
 
@@ -53,6 +55,31 @@ The persisted artifact includes:
 - sigmoid coefficients (`intercept`, `slope`)
 - training Brier score
 - held-out Brier score when enough historical samples exist
+- per-risk-category ECE (`eceByRiskCategory`) using the shared 10-bin
+  debiased estimator
+- per-risk-category threshold metadata (`regulated_data` and
+  `financial_transaction` at `0.05`, the remaining classes at `0.10`)
+
+Each reliability diagram records the bin edges, empirical accuracy,
+mean confidence, and both the plugin and debiased ECE values. The
+calibration layer also records the minimum recommended sample floor for
+each risk class (`50`) so sparse classes are easy to spot during review.
+- debiased 10-bin ECE per risk category
+- the per-class sample floor (`50`) used to interpret calibration stability
+
+Each run also persists one reliability-diagram JSON per risk category under
+`sandbox/calibration/`:
+
+- `case-confidence-reliability-low.json`
+- `case-confidence-reliability-medium.json`
+- `case-confidence-reliability-high.json`
+- `case-confidence-reliability-regulated_data.json`
+- `case-confidence-reliability-financial_transaction.json`
+
+These diagrams use the held-out split when one exists; otherwise they fall back
+to the full local sample set and stamp that fallback in the artifact so the
+operator can expand the calibration corpus before treating the number as
+release-grade evidence.
 
 If the local corpus does not contain enough positive and negative examples, the runner falls back to a documented default sigmoid and still emits non-null confidence for every case.
 
