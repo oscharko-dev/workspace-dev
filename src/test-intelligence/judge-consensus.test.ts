@@ -180,18 +180,160 @@ test("buildJudgeConsensus preserves a faithfulness mismatch veto and unions repa
   );
 });
 
-test("buildJudgeConsensus resolves an accept versus reject tie to repair", () => {
+test("buildJudgeConsensus keeps a low-confidence accept versus reject tie as a split", () => {
   const consensus = buildJudgeConsensus({
     jobId: "job-consensus",
     generatedAt: "2026-05-06T00:00:00.000Z",
     panel: [
-      buildLogicJudgeConsensusEntry(buildLogicVerdict("reject")),
+      {
+        ...buildLogicJudgeConsensusEntry(buildLogicVerdict("reject")),
+        confidence: 0.5,
+      },
       buildFaithfulnessJudgeConsensusEntry(buildFaithfulnessVerdict("accept")),
     ],
   });
 
   assert.equal(consensus.verdict, "repair");
+  assert.equal(consensus.agreementShape, "split");
   assert.equal(consensus.vetoBy, undefined);
+});
+
+test("Issue #2102: consensus voting protocol covers 30 handcrafted disagreement cases", () => {
+  const buildPanelEntry = (input: {
+    judgeId: string;
+    verdict: "accept" | "repair" | "reject";
+    confidence?: number;
+    findingCode?: string;
+  }) => ({
+    judgeId: input.judgeId,
+    verdict: input.verdict,
+    weight: 1,
+    ...(input.confidence !== undefined ? { confidence: input.confidence } : {}),
+    findings:
+      input.findingCode === undefined
+        ? []
+        : [
+            {
+              scope: "job" as const,
+              testCaseId: "$job",
+              code: input.findingCode,
+              message: input.findingCode,
+              category: "other" as const,
+            },
+          ],
+    repairInstructions: [],
+  });
+
+  const cases = [
+    { name: "unanimous accept", panel: ["accept", "accept", "accept"], verdict: "accept", agreementShape: "unanimous" },
+    { name: "unanimous repair", panel: ["repair", "repair", "repair"], verdict: "repair", agreementShape: "unanimous" },
+    { name: "majority repair", panel: ["repair", "repair", "accept"], verdict: "repair", agreementShape: "majority" },
+    { name: "majority accept no dissenting repair", panel: ["accept", "accept", "accept"], verdict: "accept", agreementShape: "unanimous" },
+    { name: "majority accept with one repair", panel: ["accept", "accept", "repair"], verdict: "repair", agreementShape: "majority" },
+    { name: "low confidence a11y reject becomes repair against accept majority", panel: ["accept", "accept", "reject"], verdict: "repair", agreementShape: "majority", confidenceByIndex: { 2: 0.4 } },
+    { name: "high confidence reject vetoes accept majority", panel: ["accept", "accept", "reject"], verdict: "reject", agreementShape: "vetoed", judgeIds: ["logic_judge", "faithfulness_judge", "logic_judge"] },
+    { name: "high confidence reject vetoes repair majority", panel: ["repair", "repair", "reject"], verdict: "reject", agreementShape: "vetoed", judgeIds: ["logic_judge", "faithfulness_judge", "logic_judge"] },
+    { name: "logic repair schema veto stays vetoed", panel: ["repair", "accept"], verdict: "repair", agreementShape: "vetoed", schemaRepairAt: 0 },
+    { name: "faithfulness mismatch veto stays vetoed", panel: ["accept", "repair"], verdict: "repair", agreementShape: "vetoed", mismatchAt: 1 },
+    { name: "accept repair low-confidence a11y reject resolves as majority repair", panel: ["accept", "repair", "reject"], verdict: "repair", agreementShape: "majority", confidenceByIndex: { 2: 0.5 } },
+    { name: "two-judge accept repair is split", panel: ["accept", "repair"], verdict: "repair", agreementShape: "split" },
+    { name: "two-judge accept reject low confidence is split", panel: ["accept", "reject"], verdict: "repair", agreementShape: "split", confidenceByIndex: { 1: 0.5 } },
+    { name: "two-judge accept reject high confidence vetoes", panel: ["accept", "reject"], verdict: "reject", agreementShape: "vetoed", judgeIds: ["logic_judge", "logic_judge"] },
+    { name: "a11y reject normalizes to repair", panel: ["accept", "accept", "reject"], verdict: "repair", agreementShape: "majority", confidenceByIndex: { 2: 0.5 }, judgeIds: ["logic_judge", "faithfulness_judge", "a11y_judge"] },
+    { name: "transient a11y reject does not veto but still normalizes to repair", panel: ["accept", "accept", "reject"], verdict: "repair", agreementShape: "majority", transientRejectAt: 2 },
+    { name: "transient two-judge reject splits", panel: ["accept", "reject"], verdict: "repair", agreementShape: "split", transientRejectAt: 1 },
+    { name: "weighted majority accept with repair still repairs", panel: ["accept", "accept", "repair"], verdict: "repair", agreementShape: "majority", weights: { 0: 2, 1: 2, 2: 1 } },
+    { name: "weighted majority repair stays repair", panel: ["repair", "accept", "repair"], verdict: "repair", agreementShape: "majority", weights: { 0: 2, 1: 1, 2: 2 } },
+    { name: "weighted split stays split", panel: ["accept", "repair"], verdict: "repair", agreementShape: "split", weights: { 0: 2, 1: 2 } },
+    { name: "single low confidence reject still splitless unanimous reject", panel: ["reject"], verdict: "reject", agreementShape: "unanimous", confidenceByIndex: { 0: 0.4 } },
+    { name: "single high confidence reject vetoes", panel: ["reject"], verdict: "reject", agreementShape: "vetoed" },
+    { name: "faithfulness reject high confidence vetoes", panel: ["accept", "reject"], verdict: "reject", agreementShape: "vetoed", judgeIds: ["logic_judge", "faithfulness_judge"] },
+    { name: "logic reject low confidence with repair panel can normalize to unanimous repair", panel: ["repair", "repair", "reject"], verdict: "repair", agreementShape: "unanimous", confidenceByIndex: { 2: 0.4 } },
+    { name: "logic reject low confidence with accept majority accepts", panel: ["accept", "accept", "reject"], verdict: "accept", agreementShape: "majority", confidenceByIndex: { 2: 0.4 }, judgeIds: ["faithfulness_judge", "a11y_judge", "logic_judge"] },
+    { name: "repair accept reject low confidence split", panel: ["repair", "accept", "reject"], verdict: "repair", agreementShape: "split", confidenceByIndex: { 2: 0.2 }, judgeIds: ["faithfulness_judge", "a11y_judge", "logic_judge"] },
+    { name: "accept accept repair no veto codes", panel: ["accept", "accept", "repair"], verdict: "repair", agreementShape: "majority", judgeIds: ["logic_judge", "a11y_judge", "faithfulness_judge"] },
+    { name: "repair accept accept with low confidence reject absent", panel: ["repair", "accept", "accept"], verdict: "repair", agreementShape: "majority" },
+    { name: "split with four judges and no strict majority", panel: ["accept", "accept", "repair", "repair"], verdict: "repair", agreementShape: "split" },
+    { name: "four-judge high confidence reject vetoes", panel: ["accept", "accept", "repair", "reject"], verdict: "reject", agreementShape: "vetoed", judgeIds: ["logic_judge", "faithfulness_judge", "a11y_judge", "logic_judge"] },
+  ] as const;
+
+  assert.equal(cases.length, 30);
+
+  for (const scenario of cases) {
+    const judgeIds =
+      scenario.judgeIds ??
+      scenario.panel.map((_, index) =>
+        index === 0
+          ? "logic_judge"
+          : index === 1
+            ? "faithfulness_judge"
+            : index === 2
+              ? "a11y_judge"
+              : `judge_${index + 1}`,
+      );
+    const panel = scenario.panel.map((verdict, index) => {
+      const repairInstruction =
+        scenario.schemaRepairAt === index
+          ? [
+              {
+                testCaseId: "$job",
+                path: "$.schema",
+                instruction: "Repair the schema mismatch.",
+                kind: "schema_violation" as const,
+              },
+            ]
+          : [];
+      const findingCode =
+        scenario.transientRejectAt === index
+          ? "gateway_unavailable"
+          : scenario.mismatchAt === index
+            ? "cross_modal_mismatch"
+            : undefined;
+      const entry = buildPanelEntry({
+        judgeId: judgeIds[index]!,
+        verdict,
+        confidence: scenario.confidenceByIndex?.[index],
+        findingCode,
+      });
+      return {
+        ...entry,
+        ...(scenario.weights?.[index] !== undefined
+          ? { weight: scenario.weights[index]! }
+          : {}),
+        ...(repairInstruction.length > 0
+          ? { repairInstructions: repairInstruction }
+          : {}),
+        ...(scenario.mismatchAt === index
+          ? {
+              findings: [
+                {
+                  scope: "test_case" as const,
+                  testCaseId: "tc-1",
+                  code: "cross_modal_mismatch",
+                  message: "Mismatch",
+                  category: "cross_modal_mismatch" as const,
+                },
+              ],
+            }
+          : {}),
+      };
+    });
+    const consensus = buildJudgeConsensus({
+      jobId: `job-${scenario.name.replace(/\s+/gu, "-")}`,
+      generatedAt: "2026-05-06T00:00:00.000Z",
+      panel,
+    });
+    assert.equal(
+      consensus.verdict,
+      scenario.verdict,
+      `${scenario.name}: verdict`,
+    );
+    assert.equal(
+      consensus.agreementShape,
+      scenario.agreementShape,
+      `${scenario.name}: agreementShape`,
+    );
+  }
 });
 
 test("buildJudgeConsensus records repaired-success history separately from active findings", () => {
