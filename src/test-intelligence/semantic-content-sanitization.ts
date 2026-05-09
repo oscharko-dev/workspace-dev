@@ -30,15 +30,18 @@
  * below so reviewers can audit changes by reading the source.
  */
 
+import { createHmac, timingSafeEqual } from "node:crypto";
+
+import type {
+  ReviewEvent,
+  TestCaseValidationReport,
+} from "../contracts/index.js";
+import { canonicalJson } from "./content-hash.js";
 import type {
   RecordTransitionInput,
   RecordTransitionResult,
   ReviewStore,
 } from "./review-store.js";
-import type {
-  ReviewEvent,
-  TestCaseValidationReport,
-} from "../contracts/index.js";
 
 /**
  * Stable category labels for matched suspicious content. Each label is also
@@ -333,19 +336,60 @@ export const SEMANTIC_CONTENT_OVERRIDE_KIND_VALUE =
 /** Maximum justification length accepted by `recordSemanticContentOverride`. */
 export const SEMANTIC_CONTENT_OVERRIDE_MAX_JUSTIFICATION_LENGTH = 512;
 
+export type PrincipalRef = string;
+export type ISO8601 = string;
+
+export const SEMANTIC_CONTENT_OVERRIDE_HMAC_ALGORITHM =
+  "hmac-sha256" as const;
+
+export interface HmacBlock {
+  algorithm: typeof SEMANTIC_CONTENT_OVERRIDE_HMAC_ALGORITHM;
+  digest: string;
+  keyId?: string;
+}
+
+export type OverrideAuthoritySecretProvider = string | (() => string);
+
+export interface OverrideAuthorityProvider {
+  /** Operator-managed verification secret. Never persisted. */
+  hmacSecret: OverrideAuthoritySecretProvider;
+  /** Optional key identifier stamped into signed entries. */
+  keyId?: string;
+  /** Optional deterministic clock for tests. Defaults to `Date.now`. */
+  now?: () => number;
+}
+
+export interface SemanticContentOverrideEntry {
+  category: SemanticSuspicionCategory;
+  justification: string;
+  actor: PrincipalRef;
+  signedAt: ISO8601;
+  signature: HmacBlock;
+  expiresAt?: ISO8601;
+  verifiedSignature: boolean;
+}
+
+export interface CreateSignedSemanticContentOverrideEntryInput {
+  jobId: string;
+  testCaseId: string;
+  path: string;
+  category: SemanticSuspicionCategory;
+  justification: string;
+  actor: PrincipalRef;
+  signedAt: ISO8601;
+  expiresAt?: ISO8601;
+  authority: OverrideAuthorityProvider;
+}
+
 /**
- * Active overrides for one job. Values may be a path set (for compatibility
- * with direct callers) or a path-to-category map (used by event-log replay).
+ * Active overrides for one job. Entries are keyed by `testCaseId → path`,
+ * with each value carrying the reviewer identity plus the signed audit data
+ * needed to verify the override before policy-gate may honor it.
  */
 export type SemanticContentOverrideMap = ReadonlyMap<
   string,
-  ReadonlySet<string> | ReadonlyMap<string, SemanticSuspicionCategory>
+  ReadonlyMap<string, SemanticContentOverrideEntry>
 >;
-
-const isCategoryOverrideMap = (
-  value: ReadonlySet<string> | ReadonlyMap<string, SemanticSuspicionCategory>,
-): value is ReadonlyMap<string, SemanticSuspicionCategory> =>
-  typeof (value as { get?: unknown }).get === "function";
 
 const categoryFromValidationMessage = (
   message: string,
@@ -363,12 +407,11 @@ const issueHasSemanticContentOverride = (
   if (issue.testCaseId === undefined) return false;
   const paths = overrides.get(issue.testCaseId);
   if (paths === undefined) return false;
-  if (!isCategoryOverrideMap(paths)) {
-    return paths.has(issue.path);
-  }
-  const overrideCategory = paths.get(issue.path);
-  if (overrideCategory === undefined) return false;
-  return overrideCategory === categoryFromValidationMessage(issue.message);
+  const entry = paths.get(issue.path);
+  if (entry === undefined) return false;
+  const category = categoryFromValidationMessage(issue.message);
+  if (category === undefined) return false;
+  return entry.category === category;
 };
 
 /**
@@ -380,8 +423,11 @@ export interface SemanticContentOverride {
   path: string;
   category: SemanticSuspicionCategory;
   justification: string;
-  actor: string;
-  at: string;
+  actor: PrincipalRef;
+  signedAt: ISO8601;
+  expiresAt?: ISO8601;
+  signature: HmacBlock;
+  verifiedSignature: boolean;
   eventId: string;
 }
 
@@ -394,11 +440,15 @@ export interface SemanticContentOverrideInput {
   /** Deny-list category being overridden — must match the original finding. */
   category: SemanticSuspicionCategory;
   /** Identity of the reviewer recording the override. */
-  actor: string;
+  actor: PrincipalRef;
   /** Non-empty rationale; persisted into `note` and `metadata`. */
   justification: string;
   /** ISO-8601 timestamp for the resulting review event. */
-  at: string;
+  at: ISO8601;
+  /** Optional override expiry. Expired entries are rejected fail-closed. */
+  expiresAt?: ISO8601;
+  /** Caller-supplied authority provider used to sign the entry. */
+  authority: OverrideAuthorityProvider;
 }
 
 /** Refusal codes raised by `recordSemanticContentOverride` BEFORE the store call. */
@@ -408,7 +458,34 @@ export type RecordSemanticContentOverrideRefusalCode =
   | "justification_too_long"
   | "path_required"
   | "test_case_id_required"
-  | "category_unknown";
+  | "category_unknown"
+  | "override_authority_required";
+
+export const SEMANTIC_CONTENT_OVERRIDE_METADATA_SIGNED_AT_KEY =
+  "overrideSignedAt" as const;
+
+export const SEMANTIC_CONTENT_OVERRIDE_METADATA_SIGNATURE_KEY =
+  "overrideSignature" as const;
+
+export const SEMANTIC_CONTENT_OVERRIDE_METADATA_SIGNATURE_KEY_ID_KEY =
+  "overrideSignatureKeyId" as const;
+
+export const SEMANTIC_CONTENT_OVERRIDE_METADATA_EXPIRES_AT_KEY =
+  "overrideExpiresAt" as const;
+
+export const SEMANTIC_CONTENT_OVERRIDE_METADATA_VERIFIED_SIGNATURE_KEY =
+  "verifiedSignature" as const;
+
+export interface InvalidSemanticContentOverride {
+  testCaseId: string;
+  path: string;
+  reason: string;
+}
+
+export type InvalidSemanticContentOverrideMap = ReadonlyMap<
+  string,
+  ReadonlyMap<string, string>
+>;
 
 const SEMANTIC_SUSPICION_CATEGORY_SET: ReadonlySet<SemanticSuspicionCategory> =
   new Set(SEMANTIC_SUSPICION_CATEGORIES);
@@ -418,6 +495,191 @@ const isSemanticSuspicionCategory = (
 ): value is SemanticSuspicionCategory =>
   typeof value === "string" &&
   SEMANTIC_SUSPICION_CATEGORY_SET.has(value as SemanticSuspicionCategory);
+
+const HMAC_DIGEST_RE = /^[0-9a-f]{64}$/u;
+
+const resolveOverrideAuthoritySecret = (
+  provider: OverrideAuthorityProvider,
+): string => {
+  const secret =
+    typeof provider.hmacSecret === "function"
+      ? provider.hmacSecret()
+      : provider.hmacSecret;
+  if (typeof secret !== "string" || secret.length === 0) {
+    throw new RangeError(
+      "semantic-content override authority must resolve to a non-empty string",
+    );
+  }
+  return secret;
+};
+
+const buildOverrideSignaturePayload = (input: {
+  jobId: string;
+  testCaseId: string;
+  path: string;
+  category: SemanticSuspicionCategory;
+  justification: string;
+  actor: PrincipalRef;
+  signedAt: ISO8601;
+  expiresAt?: ISO8601;
+}): string => {
+  return canonicalJson({
+    overrideKind: SEMANTIC_CONTENT_OVERRIDE_KIND_VALUE,
+    jobId: input.jobId,
+    testCaseId: input.testCaseId,
+    path: input.path,
+    category: input.category,
+    justification: input.justification,
+    actor: input.actor,
+    signedAt: input.signedAt,
+    expiresAt: input.expiresAt ?? null,
+  });
+};
+
+const signOverrideSignaturePayload = (
+  payload: string,
+  authority: OverrideAuthorityProvider,
+): HmacBlock => {
+  const secret = resolveOverrideAuthoritySecret(authority);
+  return {
+    algorithm: SEMANTIC_CONTENT_OVERRIDE_HMAC_ALGORITHM,
+    digest: createHmac("sha256", secret).update(payload).digest("hex"),
+    ...(authority.keyId !== undefined ? { keyId: authority.keyId } : {}),
+  };
+};
+
+const signaturesMatch = (expected: string, candidate: string): boolean => {
+  if (!HMAC_DIGEST_RE.test(expected) || !HMAC_DIGEST_RE.test(candidate)) {
+    return false;
+  }
+  return timingSafeEqual(
+    Buffer.from(expected, "hex"),
+    Buffer.from(candidate, "hex"),
+  );
+};
+
+const buildOverrideEntryReason = (
+  entry: SemanticContentOverrideEntry,
+): string | null => {
+  if (entry.actor.length === 0) {
+    return "override entry is missing actor";
+  }
+  if (entry.signedAt.length === 0) {
+    return "override entry is missing signedAt";
+  }
+  if (entry.justification.trim().length === 0) {
+    return "override entry is missing justification";
+  }
+  if (!isSemanticSuspicionCategory(entry.category)) {
+    return "override entry has unknown category";
+  }
+  if (!HMAC_DIGEST_RE.test(entry.signature.digest)) {
+    return "override entry is missing signature";
+  }
+  if (!entry.verifiedSignature) {
+    return "override entry is missing verifiedSignature audit stamp";
+  }
+  if (entry.expiresAt !== undefined) {
+    const expiresAtMs = Date.parse(entry.expiresAt);
+    if (!Number.isFinite(expiresAtMs)) {
+      return "override entry has invalid expiresAt";
+    }
+  }
+  return null;
+};
+
+const verifyOverrideEntry = (
+  input: {
+    jobId: string;
+    testCaseId: string;
+    path: string;
+    entry: SemanticContentOverrideEntry;
+  },
+  authority: OverrideAuthorityProvider | undefined,
+): string | null => {
+  const structuralReason = buildOverrideEntryReason(input.entry);
+  if (structuralReason !== null) {
+    return structuralReason;
+  }
+  if (authority === undefined) {
+    return "override authority provider missing";
+  }
+  if (input.entry.expiresAt !== undefined) {
+    const nowMs = (authority.now ?? Date.now)();
+    if (Date.parse(input.entry.expiresAt) <= nowMs) {
+      return "override entry has expired";
+    }
+  }
+  const payload = buildOverrideSignaturePayload({
+    jobId: input.jobId,
+    testCaseId: input.testCaseId,
+    path: input.path,
+    category: input.entry.category,
+    justification: input.entry.justification,
+    actor: input.entry.actor,
+    signedAt: input.entry.signedAt,
+    ...(input.entry.expiresAt !== undefined
+      ? { expiresAt: input.entry.expiresAt }
+      : {}),
+  });
+  const expected = signOverrideSignaturePayload(payload, authority);
+  return signaturesMatch(expected.digest, input.entry.signature.digest)
+    ? null
+    : "override signature failed verification";
+};
+
+const setOverrideEntry = (
+  target: Map<string, Map<string, SemanticContentOverrideEntry>>,
+  testCaseId: string,
+  path: string,
+  entry: SemanticContentOverrideEntry,
+): void => {
+  let paths = target.get(testCaseId);
+  if (paths === undefined) {
+    paths = new Map<string, SemanticContentOverrideEntry>();
+    target.set(testCaseId, paths);
+  }
+  paths.set(path, entry);
+};
+
+const setInvalidOverrideReason = (
+  target: Map<string, Map<string, string>>,
+  testCaseId: string,
+  path: string,
+  reason: string,
+): void => {
+  let paths = target.get(testCaseId);
+  if (paths === undefined) {
+    paths = new Map<string, string>();
+    target.set(testCaseId, paths);
+  }
+  paths.set(path, reason);
+};
+
+export const createSignedSemanticContentOverrideEntry = (
+  input: CreateSignedSemanticContentOverrideEntryInput,
+): SemanticContentOverrideEntry => {
+  const payload = buildOverrideSignaturePayload({
+    jobId: input.jobId,
+    testCaseId: input.testCaseId,
+    path: input.path,
+    category: input.category,
+    justification: input.justification,
+    actor: input.actor,
+    signedAt: input.signedAt,
+    ...(input.expiresAt !== undefined ? { expiresAt: input.expiresAt } : {}),
+  });
+  const signature = signOverrideSignaturePayload(payload, input.authority);
+  return {
+    category: input.category,
+    justification: input.justification,
+    actor: input.actor,
+    signedAt: input.signedAt,
+    signature,
+    ...(input.expiresAt !== undefined ? { expiresAt: input.expiresAt } : {}),
+    verifiedSignature: true,
+  };
+};
 
 /**
  * Record a structured semantic-content override note via the review store.
@@ -453,6 +715,17 @@ export const recordSemanticContentOverride = async (
   if (!SEMANTIC_SUSPICION_CATEGORY_SET.has(input.category)) {
     return { ok: false, code: "category_unknown" };
   }
+  const entry = createSignedSemanticContentOverrideEntry({
+    jobId: input.jobId,
+    testCaseId: input.testCaseId,
+    path: input.path,
+    category: input.category,
+    justification: input.justification,
+    actor: input.actor,
+    signedAt: input.at,
+    ...(input.expiresAt !== undefined ? { expiresAt: input.expiresAt } : {}),
+    authority: input.authority,
+  });
 
   const transition: RecordTransitionInput = {
     jobId: input.jobId,
@@ -465,9 +738,26 @@ export const recordSemanticContentOverride = async (
       [SEMANTIC_CONTENT_OVERRIDE_METADATA_KIND_KEY]:
         SEMANTIC_CONTENT_OVERRIDE_KIND_VALUE,
       [SEMANTIC_CONTENT_OVERRIDE_METADATA_PATH_KEY]: input.path,
-      [SEMANTIC_CONTENT_OVERRIDE_METADATA_CATEGORY_KEY]: input.category,
+      [SEMANTIC_CONTENT_OVERRIDE_METADATA_CATEGORY_KEY]: entry.category,
       [SEMANTIC_CONTENT_OVERRIDE_METADATA_JUSTIFICATION_KEY]:
-        input.justification,
+        entry.justification,
+      [SEMANTIC_CONTENT_OVERRIDE_METADATA_SIGNED_AT_KEY]: entry.signedAt,
+      [SEMANTIC_CONTENT_OVERRIDE_METADATA_SIGNATURE_KEY]:
+        entry.signature.digest,
+      [SEMANTIC_CONTENT_OVERRIDE_METADATA_VERIFIED_SIGNATURE_KEY]:
+        entry.verifiedSignature,
+      ...(entry.signature.keyId !== undefined
+        ? {
+            [SEMANTIC_CONTENT_OVERRIDE_METADATA_SIGNATURE_KEY_ID_KEY]:
+              entry.signature.keyId,
+          }
+        : {}),
+      ...(entry.expiresAt !== undefined
+        ? {
+            [SEMANTIC_CONTENT_OVERRIDE_METADATA_EXPIRES_AT_KEY]:
+              entry.expiresAt,
+          }
+        : {}),
     },
   };
   return store.recordTransition(transition);
@@ -475,24 +765,14 @@ export const recordSemanticContentOverride = async (
 
 const isSemanticContentOverrideEvent = (
   event: ReviewEvent,
-): event is ReviewEvent & { testCaseId: string; actor: string } => {
+): event is ReviewEvent & { testCaseId: string } => {
   if (event.kind !== "note") return false;
   if (typeof event.testCaseId !== "string") return false;
-  if (typeof event.actor !== "string") return false;
   if (event.metadata === undefined) return false;
   const kind = event.metadata[SEMANTIC_CONTENT_OVERRIDE_METADATA_KIND_KEY];
   if (kind !== SEMANTIC_CONTENT_OVERRIDE_KIND_VALUE) return false;
   const path = event.metadata[SEMANTIC_CONTENT_OVERRIDE_METADATA_PATH_KEY];
-  const category =
-    event.metadata[SEMANTIC_CONTENT_OVERRIDE_METADATA_CATEGORY_KEY];
-  const justification =
-    event.metadata[SEMANTIC_CONTENT_OVERRIDE_METADATA_JUSTIFICATION_KEY];
-  if (typeof path !== "string" || path.length === 0) return false;
-  if (!isSemanticSuspicionCategory(category)) return false;
-  if (typeof justification !== "string" || justification.trim().length === 0) {
-    return false;
-  }
-  return true;
+  return typeof path === "string" && path.length > 0;
 };
 
 /**
@@ -515,24 +795,47 @@ export const extractSemanticContentOverrides = (
     const path = event.metadata?.[
       SEMANTIC_CONTENT_OVERRIDE_METADATA_PATH_KEY
     ] as string;
-    const category = event.metadata?.[
+    const rawCategory = event.metadata?.[
       SEMANTIC_CONTENT_OVERRIDE_METADATA_CATEGORY_KEY
-    ] as SemanticSuspicionCategory;
-    const justification = event.metadata?.[
+    ];
+    if (!isSemanticSuspicionCategory(rawCategory)) continue;
+    const rawJustification = event.metadata?.[
       SEMANTIC_CONTENT_OVERRIDE_METADATA_JUSTIFICATION_KEY
-    ] as string;
-    const key = `${event.testCaseId} ${path}`;
+    ];
+    if (typeof rawJustification !== "string") continue;
+    const rawSignedAt =
+      event.metadata?.[SEMANTIC_CONTENT_OVERRIDE_METADATA_SIGNED_AT_KEY];
+    const rawSignature =
+      event.metadata?.[SEMANTIC_CONTENT_OVERRIDE_METADATA_SIGNATURE_KEY];
+    const rawKeyId =
+      event.metadata?.[
+        SEMANTIC_CONTENT_OVERRIDE_METADATA_SIGNATURE_KEY_ID_KEY
+      ];
+    const rawExpiresAt =
+      event.metadata?.[SEMANTIC_CONTENT_OVERRIDE_METADATA_EXPIRES_AT_KEY];
+    const rawVerified =
+      event.metadata?.[
+        SEMANTIC_CONTENT_OVERRIDE_METADATA_VERIFIED_SIGNATURE_KEY
+      ];
+    const key = `${event.testCaseId}\u0000${path}`;
     latestByKey.set(key, {
       testCaseId: event.testCaseId,
       path,
-      category,
-      justification,
-      actor: event.actor,
-      at: event.at,
+      category: rawCategory,
+      justification: rawJustification,
+      actor: typeof event.actor === "string" ? event.actor : "",
+      signedAt: typeof rawSignedAt === "string" ? rawSignedAt : "",
+      signature: {
+        algorithm: SEMANTIC_CONTENT_OVERRIDE_HMAC_ALGORITHM,
+        digest: typeof rawSignature === "string" ? rawSignature : "",
+        ...(typeof rawKeyId === "string" ? { keyId: rawKeyId } : {}),
+      },
+      ...(typeof rawExpiresAt === "string" ? { expiresAt: rawExpiresAt } : {}),
+      verifiedSignature: rawVerified === true,
       eventId: event.id,
     });
   }
-  const grouped = new Map<string, Map<string, SemanticSuspicionCategory>>();
+  const grouped = new Map<string, Map<string, SemanticContentOverrideEntry>>();
   const sorted = [...latestByKey.values()].sort((a, b) => {
     if (a.testCaseId !== b.testCaseId) {
       return a.testCaseId.localeCompare(b.testCaseId);
@@ -542,10 +845,20 @@ export const extractSemanticContentOverrides = (
   for (const override of sorted) {
     let paths = grouped.get(override.testCaseId);
     if (paths === undefined) {
-      paths = new Map<string, SemanticSuspicionCategory>();
+      paths = new Map<string, SemanticContentOverrideEntry>();
       grouped.set(override.testCaseId, paths);
     }
-    paths.set(override.path, override.category);
+    paths.set(override.path, {
+      category: override.category,
+      justification: override.justification,
+      actor: override.actor,
+      signedAt: override.signedAt,
+      signature: override.signature,
+      ...(override.expiresAt !== undefined
+        ? { expiresAt: override.expiresAt }
+        : {}),
+      verifiedSignature: override.verifiedSignature,
+    });
   }
   return grouped;
 };
@@ -563,20 +876,43 @@ export const listSemanticContentOverrides = (
     const path = event.metadata?.[
       SEMANTIC_CONTENT_OVERRIDE_METADATA_PATH_KEY
     ] as string;
-    const category = event.metadata?.[
+    const rawCategory = event.metadata?.[
       SEMANTIC_CONTENT_OVERRIDE_METADATA_CATEGORY_KEY
-    ] as SemanticSuspicionCategory;
-    const justification = event.metadata?.[
+    ];
+    if (!isSemanticSuspicionCategory(rawCategory)) continue;
+    const rawJustification = event.metadata?.[
       SEMANTIC_CONTENT_OVERRIDE_METADATA_JUSTIFICATION_KEY
-    ] as string;
-    const key = `${event.testCaseId} ${path}`;
+    ];
+    if (typeof rawJustification !== "string") continue;
+    const rawSignedAt =
+      event.metadata?.[SEMANTIC_CONTENT_OVERRIDE_METADATA_SIGNED_AT_KEY];
+    const rawSignature =
+      event.metadata?.[SEMANTIC_CONTENT_OVERRIDE_METADATA_SIGNATURE_KEY];
+    const rawKeyId =
+      event.metadata?.[
+        SEMANTIC_CONTENT_OVERRIDE_METADATA_SIGNATURE_KEY_ID_KEY
+      ];
+    const rawExpiresAt =
+      event.metadata?.[SEMANTIC_CONTENT_OVERRIDE_METADATA_EXPIRES_AT_KEY];
+    const rawVerified =
+      event.metadata?.[
+        SEMANTIC_CONTENT_OVERRIDE_METADATA_VERIFIED_SIGNATURE_KEY
+      ];
+    const key = `${event.testCaseId}\u0000${path}`;
     latestByKey.set(key, {
       testCaseId: event.testCaseId,
       path,
-      category,
-      justification,
-      actor: event.actor,
-      at: event.at,
+      category: rawCategory,
+      justification: rawJustification,
+      actor: typeof event.actor === "string" ? event.actor : "",
+      signedAt: typeof rawSignedAt === "string" ? rawSignedAt : "",
+      signature: {
+        algorithm: SEMANTIC_CONTENT_OVERRIDE_HMAC_ALGORITHM,
+        digest: typeof rawSignature === "string" ? rawSignature : "",
+        ...(typeof rawKeyId === "string" ? { keyId: rawKeyId } : {}),
+      },
+      ...(typeof rawExpiresAt === "string" ? { expiresAt: rawExpiresAt } : {}),
+      verifiedSignature: rawVerified === true,
       eventId: event.id,
     });
   }
@@ -621,31 +957,63 @@ export const filterSemanticContentOverridesForValidation = (
   validation: TestCaseValidationReport,
   overrides: SemanticContentOverrideMap,
 ): SemanticContentOverrideMap => {
-  const allowed = new Map<string, Map<string, SemanticSuspicionCategory>>();
+  return partitionSemanticContentOverridesForValidation(
+    validation,
+    overrides,
+    undefined,
+  ).valid;
+};
+
+export const partitionSemanticContentOverridesForValidation = (
+  validation: TestCaseValidationReport,
+  overrides: SemanticContentOverrideMap,
+  authority: OverrideAuthorityProvider | undefined,
+): {
+  valid: SemanticContentOverrideMap;
+  invalid: InvalidSemanticContentOverrideMap;
+} => {
+  const allowed = new Map<string, Map<string, SemanticContentOverrideEntry>>();
+  const invalid = new Map<string, Map<string, string>>();
+
   for (const issue of validation.issues) {
     if (issue.code !== "semantic_suspicious_content") continue;
-    if (!issueHasSemanticContentOverride(issue, overrides)) {
-      continue;
-    }
     const testCaseId = issue.testCaseId;
     if (testCaseId === undefined) continue;
+    const paths = overrides.get(testCaseId);
+    if (paths === undefined) continue;
+    const entry = paths.get(issue.path);
+    if (entry === undefined) continue;
     const category = categoryFromValidationMessage(issue.message);
-    if (category === undefined) continue;
-    let paths = allowed.get(testCaseId);
-    if (paths === undefined) {
-      paths = new Map<string, SemanticSuspicionCategory>();
-      allowed.set(testCaseId, paths);
+    if (category === undefined || entry.category !== category) {
+      continue;
     }
-    paths.set(issue.path, category);
+    const reason = verifyOverrideEntry(
+      {
+        jobId: validation.jobId,
+        testCaseId,
+        path: issue.path,
+        entry,
+      },
+      authority,
+    );
+    if (reason !== null) {
+      setInvalidOverrideReason(invalid, testCaseId, issue.path, reason);
+      continue;
+    }
+    setOverrideEntry(allowed, testCaseId, issue.path, entry);
   }
 
-  const sorted = [...allowed.entries()].sort(([a], [b]) => a.localeCompare(b));
-  return new Map(
-    sorted.map(([testCaseId, paths]) => [
-      testCaseId,
-      new Map(
-        [...paths.entries()].sort(([a], [b]) => a.localeCompare(b)),
-      ),
-    ]),
-  );
+  const sortPathMap = <T>(paths: Map<string, T>): Map<string, T> =>
+    new Map([...paths.entries()].sort(([a], [b]) => a.localeCompare(b)));
+  const sortOuterMap = <T>(value: Map<string, Map<string, T>>): Map<string, Map<string, T>> =>
+    new Map(
+      [...value.entries()]
+        .sort(([a], [b]) => a.localeCompare(b))
+        .map(([testCaseId, paths]) => [testCaseId, sortPathMap(paths)]),
+    );
+
+  return {
+    valid: sortOuterMap(allowed),
+    invalid: sortOuterMap(invalid),
+  };
 };

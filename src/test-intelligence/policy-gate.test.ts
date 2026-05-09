@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import fc from "fast-check";
 import {
   A11Y_JUDGE_PROMPT_TEMPLATE_VERSION,
   A11Y_VERDICT_SCHEMA_VERSION,
@@ -25,9 +26,17 @@ import {
 import { cloneEuBankingDefaultProfile } from "./policy-profile.js";
 import { computeCoverageReport } from "./test-case-coverage.js";
 import { validateGeneratedTestCases } from "./test-case-validation.js";
+import {
+  createSignedSemanticContentOverrideEntry,
+  type OverrideAuthorityProvider,
+} from "./semantic-content-sanitization.js";
 
 const ZERO = "0000000000000000000000000000000000000000000000000000000000000000";
 const GENERATED_AT = "2026-04-25T10:00:00.000Z";
+const OVERRIDE_PATH = "$.testCases[0].steps[0].action";
+const OVERRIDE_AUTHORITY: OverrideAuthorityProvider = {
+  hmacSecret: "policy-gate-override-secret",
+};
 
 const buildCase = (
   overrides: Partial<GeneratedTestCase>,
@@ -215,6 +224,39 @@ const buildA11yVerdict = (
   repairInstructions: [],
   ...overrides,
 });
+
+const buildSignedOverrideEntry = (
+  authority: OverrideAuthorityProvider = OVERRIDE_AUTHORITY,
+  expiresAt?: string,
+) =>
+  createSignedSemanticContentOverrideEntry({
+    jobId: "job-1",
+    testCaseId: "tc",
+    path: OVERRIDE_PATH,
+    category: "shell_metacharacters",
+    justification:
+      "intentional ops smoke test for destructive-command alerting; reviewed under change request CR-1413",
+    actor: "alice@bank.example",
+    signedAt: GENERATED_AT,
+    ...(expiresAt !== undefined ? { expiresAt } : {}),
+    authority,
+  });
+
+const semanticOverrideCtx = harness(
+  [
+    buildCase({
+      steps: [
+        {
+          index: 1,
+          action: "rm -rf /",
+          expected: "destructive-command detector fired",
+        },
+        { index: 2, action: "Submit", expected: "Receipt rendered" },
+      ],
+    }),
+  ],
+  buildIntent(),
+);
 
 test("regulated risk category triggers needs_review", () => {
   const tc = buildCase({ riskCategory: "regulated_data" });
@@ -506,6 +548,150 @@ test("Issue #2069: fallback-recovered visual sidecar emits info-only policy evid
   assert.equal(jobViolation?.severity, "info");
   assert.equal(report.blocked, false);
   assert.equal(report.approvedCount, 1);
+});
+
+test("Issue #2100: signed semantic override is accepted when the provider verifies it", () => {
+  const validEntry = buildSignedOverrideEntry();
+  const report = evaluatePolicyGate({
+    jobId: "job-1",
+    generatedAt: GENERATED_AT,
+    list: semanticOverrideCtx.list,
+    intent: semanticOverrideCtx.intent,
+    profile: semanticOverrideCtx.profile,
+    validation: semanticOverrideCtx.validation,
+    coverage: semanticOverrideCtx.coverage,
+    semanticContentOverrides: new Map([
+      ["tc", new Map([[OVERRIDE_PATH, validEntry]])],
+    ]),
+    overrideAuthorityProvider: OVERRIDE_AUTHORITY,
+  });
+
+  const decision = report.decisions[0];
+  assert.equal(decision?.decision, "needs_review");
+  assert.ok(
+    decision?.violations.some(
+      (v) =>
+        v.rule === "validation:semantic_suspicious_content:overridden" &&
+        v.severity === "warning",
+    ),
+  );
+  assert.equal(report.blocked, false);
+});
+
+test("Issue #2100: signed semantic override fails closed when the provider is missing", () => {
+  const validEntry = buildSignedOverrideEntry();
+  const report = evaluatePolicyGate({
+    jobId: "job-1",
+    generatedAt: GENERATED_AT,
+    list: semanticOverrideCtx.list,
+    intent: semanticOverrideCtx.intent,
+    profile: semanticOverrideCtx.profile,
+    validation: semanticOverrideCtx.validation,
+    coverage: semanticOverrideCtx.coverage,
+    semanticContentOverrides: new Map([
+      ["tc", new Map([[OVERRIDE_PATH, validEntry]])],
+    ]),
+  });
+
+  const decision = report.decisions[0];
+  assert.equal(decision?.decision, "blocked");
+  assert.ok(
+    decision?.violations.some(
+      (v) => v.rule === "policy:override_invalid" && v.severity === "error",
+    ),
+  );
+  assert.ok(
+    decision?.violations.some(
+      (v) =>
+        v.rule === "validation:semantic_suspicious_content" &&
+        v.severity === "error",
+    ),
+  );
+  assert.equal(report.blocked, true);
+});
+
+test("Issue #2100: expired signed semantic overrides are rejected", () => {
+  const expiredAuthority: OverrideAuthorityProvider = {
+    hmacSecret: OVERRIDE_AUTHORITY.hmacSecret,
+    now: () => Date.parse("2026-04-25T12:00:00.000Z"),
+  };
+  const expiredEntry = buildSignedOverrideEntry(
+    expiredAuthority,
+    "2026-04-25T11:00:00.000Z",
+  );
+  const report = evaluatePolicyGate({
+    jobId: "job-1",
+    generatedAt: GENERATED_AT,
+    list: semanticOverrideCtx.list,
+    intent: semanticOverrideCtx.intent,
+    profile: semanticOverrideCtx.profile,
+    validation: semanticOverrideCtx.validation,
+    coverage: semanticOverrideCtx.coverage,
+    semanticContentOverrides: new Map([
+      ["tc", new Map([[OVERRIDE_PATH, expiredEntry]])],
+    ]),
+    overrideAuthorityProvider: expiredAuthority,
+  });
+
+  const decision = report.decisions[0];
+  assert.equal(decision?.decision, "blocked");
+  assert.ok(
+    decision?.violations.some(
+      (v) => v.rule === "policy:override_invalid" && v.severity === "error",
+    ),
+  );
+  assert.equal(report.blocked, true);
+});
+
+test("Issue #2100: invalid signed semantic overrides are rejected at least 1000 times via evaluatePolicyGate (fast-check)", () => {
+  const validEntry = buildSignedOverrideEntry();
+  const validDigest = validEntry.signature.digest;
+
+  fc.assert(
+    fc.property(
+      fc
+        .string({ minLength: 1, maxLength: 80 })
+        .filter((digest) => digest !== validDigest),
+      (digest) => {
+        const invalidEntry = {
+          ...validEntry,
+          signature: { ...validEntry.signature, digest },
+        };
+        const report = evaluatePolicyGate({
+          jobId: "job-1",
+          generatedAt: GENERATED_AT,
+          list: semanticOverrideCtx.list,
+          intent: semanticOverrideCtx.intent,
+          profile: semanticOverrideCtx.profile,
+          validation: semanticOverrideCtx.validation,
+          coverage: semanticOverrideCtx.coverage,
+          semanticContentOverrides: new Map([
+            ["tc", new Map([[OVERRIDE_PATH, invalidEntry]])],
+          ]),
+          overrideAuthorityProvider: OVERRIDE_AUTHORITY,
+        });
+
+        const decision = report.decisions[0];
+        assert.equal(decision?.decision, "blocked");
+        assert.ok(
+          decision?.violations.some(
+            (v) =>
+              v.rule === "policy:override_invalid" &&
+              v.severity === "error",
+          ),
+        );
+        assert.ok(
+          decision?.violations.some(
+            (v) =>
+              v.rule === "validation:semantic_suspicious_content" &&
+              v.severity === "error",
+          ),
+        );
+        assert.equal(report.blocked, true);
+      },
+    ),
+    { numRuns: 1000 },
+  );
 });
 
 test("resolved multi-source conflicts are pruned before policy blockers are counted", () => {

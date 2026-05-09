@@ -56,7 +56,8 @@ import { renderQcCsv } from "./qc-csv-writer.js";
 import { renderQcXlsx } from "./qc-xlsx-writer.js";
 import {
   effectiveSemanticContentBlock,
-  filterSemanticContentOverridesForValidation,
+  partitionSemanticContentOverridesForValidation,
+  type OverrideAuthorityProvider,
   type SemanticContentOverrideMap,
 } from "./semantic-content-sanitization.js";
 import {
@@ -92,6 +93,8 @@ export interface RunExportPipelineInput {
    * to compute whether validation is still effectively blocking.
    */
   semanticContentOverrides?: SemanticContentOverrideMap;
+  /** Caller-supplied authority provider for signed semantic overrides. */
+  overrideAuthorityProvider?: OverrideAuthorityProvider;
 }
 
 export interface ExportPipelineArtifacts {
@@ -138,10 +141,11 @@ const detectRefusalCodes = (
       ? input.validation.blocked
       : effectiveSemanticContentBlock(
           input.validation,
-          filterSemanticContentOverridesForValidation(
+          partitionSemanticContentOverridesForValidation(
             input.validation,
             input.semanticContentOverrides,
-          ),
+            input.overrideAuthorityProvider,
+          ).valid,
         );
   if (validationBlocked) {
     codes.add("schema_invalid_cases_present");

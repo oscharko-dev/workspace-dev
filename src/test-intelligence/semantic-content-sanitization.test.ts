@@ -16,6 +16,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
+import fc from "fast-check";
 
 import {
   REVIEW_GATE_SCHEMA_VERSION,
@@ -32,22 +33,36 @@ import { evaluatePolicyGate } from "./policy-gate.js";
 import { cloneEuBankingDefaultProfile } from "./policy-profile.js";
 import { createFileSystemReviewStore } from "./review-store.js";
 import {
+  createSignedSemanticContentOverrideEntry,
   detectSuspiciousContent,
   effectiveSemanticContentBlock,
   extractSemanticContentOverrides,
-  filterSemanticContentOverridesForValidation,
   listSemanticContentOverrides,
+  partitionSemanticContentOverridesForValidation,
   recordSemanticContentOverride,
   SEMANTIC_CONTENT_OVERRIDE_KIND_VALUE,
   SEMANTIC_CONTENT_OVERRIDE_MAX_JUSTIFICATION_LENGTH,
   SEMANTIC_CONTENT_OVERRIDE_METADATA_CATEGORY_KEY,
+  SEMANTIC_CONTENT_OVERRIDE_METADATA_EXPIRES_AT_KEY,
   SEMANTIC_CONTENT_OVERRIDE_METADATA_JUSTIFICATION_KEY,
   SEMANTIC_CONTENT_OVERRIDE_METADATA_KIND_KEY,
   SEMANTIC_CONTENT_OVERRIDE_METADATA_PATH_KEY,
+  SEMANTIC_CONTENT_OVERRIDE_METADATA_SIGNATURE_KEY,
+  SEMANTIC_CONTENT_OVERRIDE_METADATA_SIGNATURE_KEY_ID_KEY,
+  SEMANTIC_CONTENT_OVERRIDE_METADATA_SIGNED_AT_KEY,
+  SEMANTIC_CONTENT_OVERRIDE_METADATA_VERIFIED_SIGNATURE_KEY,
   SEMANTIC_SUSPICION_CATEGORIES,
+  type OverrideAuthorityProvider,
+  type SemanticContentOverrideEntry,
 } from "./semantic-content-sanitization.js";
 
 const GENERATED_AT = "2026-04-26T10:00:00.000Z";
+const FUTURE_AT = "2026-04-27T10:00:00.000Z";
+const OVERRIDE_AUTHORITY: OverrideAuthorityProvider = {
+  hmacSecret: "override-secret-1",
+  now: () => Date.parse(GENERATED_AT),
+  keyId: "primary",
+};
 
 // ---------------------------------------------------------------------------
 // Detector unit tests
@@ -294,6 +309,60 @@ const buildEvent = (
   ...overrides,
 });
 
+const buildSignedOverrideEntry = (
+  overrides: Partial<SemanticContentOverrideEntry> & {
+    path?: string;
+    testCaseId?: string;
+  } = {},
+): SemanticContentOverrideEntry => {
+  const path = overrides.path ?? "$.testCases[0].steps[0].action";
+  const testCaseId = overrides.testCaseId ?? "tc-1";
+  const entry = createSignedSemanticContentOverrideEntry({
+    jobId: "job-1",
+    testCaseId,
+    path,
+    category: "shell_metacharacters",
+    justification: "reviewed and approved for adversarial smoke coverage",
+    actor: "alice",
+    signedAt: GENERATED_AT,
+    authority: OVERRIDE_AUTHORITY,
+  });
+  return { ...entry, ...overrides };
+};
+
+const buildOverrideMap = (
+  entry: SemanticContentOverrideEntry,
+  path = "$.testCases[0].steps[0].action",
+  testCaseId = "tc-1",
+) =>
+  new Map([[testCaseId, new Map([[path, entry]])]]);
+
+const buildOverrideMetadata = (
+  entry: SemanticContentOverrideEntry,
+  path = "$.testCases[0].steps[0].action",
+) => ({
+  [SEMANTIC_CONTENT_OVERRIDE_METADATA_KIND_KEY]:
+    SEMANTIC_CONTENT_OVERRIDE_KIND_VALUE,
+  [SEMANTIC_CONTENT_OVERRIDE_METADATA_PATH_KEY]: path,
+  [SEMANTIC_CONTENT_OVERRIDE_METADATA_CATEGORY_KEY]: entry.category,
+  [SEMANTIC_CONTENT_OVERRIDE_METADATA_JUSTIFICATION_KEY]: entry.justification,
+  [SEMANTIC_CONTENT_OVERRIDE_METADATA_SIGNED_AT_KEY]: entry.signedAt,
+  [SEMANTIC_CONTENT_OVERRIDE_METADATA_SIGNATURE_KEY]: entry.signature.digest,
+  [SEMANTIC_CONTENT_OVERRIDE_METADATA_VERIFIED_SIGNATURE_KEY]:
+    entry.verifiedSignature,
+  ...(entry.signature.keyId !== undefined
+    ? {
+        [SEMANTIC_CONTENT_OVERRIDE_METADATA_SIGNATURE_KEY_ID_KEY]:
+          entry.signature.keyId,
+      }
+    : {}),
+  ...(entry.expiresAt !== undefined
+    ? {
+        [SEMANTIC_CONTENT_OVERRIDE_METADATA_EXPIRES_AT_KEY]: entry.expiresAt,
+      }
+    : {}),
+});
+
 test("recordSemanticContentOverride: refuses empty actor / justification / path / testCaseId", async () => {
   const dir = await mkdtemp(join(tmpdir(), "sem-override-"));
   try {
@@ -306,6 +375,7 @@ test("recordSemanticContentOverride: refuses empty actor / justification / path 
       actor: "alice",
       justification: "intentional admin smoke-test step",
       at: GENERATED_AT,
+      authority: OVERRIDE_AUTHORITY,
     };
     assert.deepEqual(
       await recordSemanticContentOverride(store, {
@@ -347,20 +417,19 @@ test("recordSemanticContentOverride: refuses empty actor / justification / path 
 });
 
 test("extractSemanticContentOverrides: ignores non-override notes; later events supersede earlier ones", () => {
+  const earlierEntry = buildSignedOverrideEntry({ justification: "first" });
+  const laterEntry = buildSignedOverrideEntry({
+    actor: "bob",
+    justification: "second",
+    signedAt: FUTURE_AT,
+  });
   const earlier = buildEvent({
     id: "evt-a",
     sequence: 1,
     actor: "alice",
     at: "2026-04-26T10:00:00.000Z",
     testCaseId: "tc-1",
-    metadata: {
-      [SEMANTIC_CONTENT_OVERRIDE_METADATA_KIND_KEY]:
-        SEMANTIC_CONTENT_OVERRIDE_KIND_VALUE,
-      [SEMANTIC_CONTENT_OVERRIDE_METADATA_PATH_KEY]:
-        "$.testCases[0].steps[0].action",
-      [SEMANTIC_CONTENT_OVERRIDE_METADATA_CATEGORY_KEY]: "shell_metacharacters",
-      [SEMANTIC_CONTENT_OVERRIDE_METADATA_JUSTIFICATION_KEY]: "first",
-    },
+    metadata: buildOverrideMetadata(earlierEntry),
   });
   const later = buildEvent({
     id: "evt-b",
@@ -368,14 +437,7 @@ test("extractSemanticContentOverrides: ignores non-override notes; later events 
     actor: "bob",
     at: "2026-04-26T11:00:00.000Z",
     testCaseId: "tc-1",
-    metadata: {
-      [SEMANTIC_CONTENT_OVERRIDE_METADATA_KIND_KEY]:
-        SEMANTIC_CONTENT_OVERRIDE_KIND_VALUE,
-      [SEMANTIC_CONTENT_OVERRIDE_METADATA_PATH_KEY]:
-        "$.testCases[0].steps[0].action",
-      [SEMANTIC_CONTENT_OVERRIDE_METADATA_CATEGORY_KEY]: "shell_metacharacters",
-      [SEMANTIC_CONTENT_OVERRIDE_METADATA_JUSTIFICATION_KEY]: "second",
-    },
+    metadata: buildOverrideMetadata(laterEntry),
   });
   const irrelevantNote = buildEvent({
     id: "evt-c",
@@ -393,10 +455,8 @@ test("extractSemanticContentOverrides: ignores non-override notes; later events 
   assert.equal(paths.size, 1);
   assert.ok(paths.has("$.testCases[0].steps[0].action"));
   assert.equal(
-    paths instanceof Map
-      ? paths.get("$.testCases[0].steps[0].action")
-      : undefined,
-    "shell_metacharacters",
+    paths.get("$.testCases[0].steps[0].action")?.justification,
+    "second",
   );
 
   const list = listSemanticContentOverrides([earlier, later, irrelevantNote]);
@@ -405,7 +465,15 @@ test("extractSemanticContentOverrides: ignores non-override notes; later events 
   assert.equal(list[0]?.actor, "bob");
 });
 
-test("extractSemanticContentOverrides: rejects malformed metadata (missing path / category / justification)", () => {
+test("extractSemanticContentOverrides: keeps replayable signed events and drops malformed path/category metadata", () => {
+  const invalidEntry = buildSignedOverrideEntry({
+    actor: "",
+    signature: {
+      algorithm: "hmac-sha256",
+      digest: "",
+    },
+    verifiedSignature: false,
+  });
   const e1 = buildEvent({
     id: "evt-1",
     sequence: 1,
@@ -416,8 +484,7 @@ test("extractSemanticContentOverrides: rejects malformed metadata (missing path 
       [SEMANTIC_CONTENT_OVERRIDE_METADATA_KIND_KEY]:
         SEMANTIC_CONTENT_OVERRIDE_KIND_VALUE,
       [SEMANTIC_CONTENT_OVERRIDE_METADATA_PATH_KEY]: "",
-      [SEMANTIC_CONTENT_OVERRIDE_METADATA_CATEGORY_KEY]: "shell_metacharacters",
-      [SEMANTIC_CONTENT_OVERRIDE_METADATA_JUSTIFICATION_KEY]: "x",
+      ...buildOverrideMetadata(buildSignedOverrideEntry()),
     },
   });
   const e2 = buildEvent({
@@ -431,25 +498,20 @@ test("extractSemanticContentOverrides: rejects malformed metadata (missing path 
         SEMANTIC_CONTENT_OVERRIDE_KIND_VALUE,
       [SEMANTIC_CONTENT_OVERRIDE_METADATA_PATH_KEY]: "p",
       [SEMANTIC_CONTENT_OVERRIDE_METADATA_CATEGORY_KEY]: "not-a-category",
-      [SEMANTIC_CONTENT_OVERRIDE_METADATA_JUSTIFICATION_KEY]: "x",
     },
   });
   const e3 = buildEvent({
     id: "evt-3",
     sequence: 3,
-    actor: "alice",
+    actor: "",
     at: GENERATED_AT,
     testCaseId: "tc-1",
-    metadata: {
-      [SEMANTIC_CONTENT_OVERRIDE_METADATA_KIND_KEY]:
-        SEMANTIC_CONTENT_OVERRIDE_KIND_VALUE,
-      [SEMANTIC_CONTENT_OVERRIDE_METADATA_PATH_KEY]: "p",
-      [SEMANTIC_CONTENT_OVERRIDE_METADATA_CATEGORY_KEY]: "shell_metacharacters",
-      [SEMANTIC_CONTENT_OVERRIDE_METADATA_JUSTIFICATION_KEY]: "  ",
-    },
+    metadata: buildOverrideMetadata(invalidEntry, "p"),
   });
   const map = extractSemanticContentOverrides([e1, e2, e3]);
-  assert.equal(map.size, 0);
+  assert.equal(map.size, 1);
+  assert.equal(map.get("tc-1")?.get("p")?.verifiedSignature, false);
+  assert.equal(map.get("tc-1")?.get("p")?.actor, "");
 });
 
 // ---------------------------------------------------------------------------
@@ -483,9 +545,7 @@ test("effectiveSemanticContentBlock: covered semantic finding stops blocking", (
     semanticIssue("$.testCases[0].steps[0].action"),
   ]);
   assert.equal(report.blocked, true);
-  const map = new Map<string, Set<string>>([
-    ["tc-1", new Set(["$.testCases[0].steps[0].action"])],
-  ]);
+  const map = buildOverrideMap(buildSignedOverrideEntry());
   assert.equal(effectiveSemanticContentBlock(report, map), false);
 });
 
@@ -494,9 +554,7 @@ test("effectiveSemanticContentBlock: uncovered path keeps blocking", () => {
     semanticIssue("$.testCases[0].steps[0].action"),
     semanticIssue("$.testCases[0].expectedResults[0]"),
   ]);
-  const map = new Map<string, Set<string>>([
-    ["tc-1", new Set(["$.testCases[0].steps[0].action"])],
-  ]);
+  const map = buildOverrideMap(buildSignedOverrideEntry());
   assert.equal(effectiveSemanticContentBlock(report, map), true);
 });
 
@@ -510,13 +568,11 @@ test("effectiveSemanticContentBlock: non-semantic error always keeps blocking", 
       message: "step action must not be whitespace-only",
     },
   ]);
-  const map = new Map<string, Set<string>>([
-    ["tc-1", new Set(["$.testCases[0].steps[0].action"])],
-  ]);
+  const map = buildOverrideMap(buildSignedOverrideEntry());
   assert.equal(effectiveSemanticContentBlock(report, map), true);
 });
 
-test("filterSemanticContentOverridesForValidation: drops stale or non-semantic paths", () => {
+test("partitionSemanticContentOverridesForValidation: keeps only verified semantic matches", () => {
   const report = buildValidationReport([
     semanticIssue("$.testCases[0].steps[0].action"),
     {
@@ -527,18 +583,44 @@ test("filterSemanticContentOverridesForValidation: drops stale or non-semantic p
       message: "title must not be whitespace-only",
     },
   ]);
-  const stale = new Map<string, Set<string>>([
+  const stale = new Map([
     [
       "tc-1",
-      new Set([
-        "$.testCases[0].steps[0].action",
-        "$.testCases[0].title",
-        "$.testCases[0].expectedResults[0]",
+      new Map([
+        [
+          "$.testCases[0].steps[0].action",
+          buildSignedOverrideEntry(),
+        ],
+        [
+          "$.testCases[0].title",
+          buildSignedOverrideEntry({ path: "$.testCases[0].title" }),
+        ],
+        [
+          "$.testCases[0].expectedResults[0]",
+          buildSignedOverrideEntry({
+            path: "$.testCases[0].expectedResults[0]",
+          }),
+        ],
       ]),
     ],
-    ["tc-unknown", new Set(["$.testCases[9].steps[0].action"])],
+    [
+      "tc-unknown",
+      new Map([
+        [
+          "$.testCases[9].steps[0].action",
+          buildSignedOverrideEntry({
+            testCaseId: "tc-unknown",
+            path: "$.testCases[9].steps[0].action",
+          }),
+        ],
+      ]),
+    ],
   ]);
-  const filtered = filterSemanticContentOverridesForValidation(report, stale);
+  const filtered = partitionSemanticContentOverridesForValidation(
+    report,
+    stale,
+    OVERRIDE_AUTHORITY,
+  ).valid;
   assert.deepEqual(
     [...(filtered.get("tc-1")?.keys() ?? [])],
     ["$.testCases[0].steps[0].action"],
@@ -553,7 +635,12 @@ test("effectiveSemanticContentBlock: category-mismatched replay override stays b
   const categoryMismatch = new Map([
     [
       "tc-1",
-      new Map([["$.testCases[0].steps[0].action", "script_tag" as const]]),
+      new Map([
+        [
+          "$.testCases[0].steps[0].action",
+          buildSignedOverrideEntry({ category: "script_tag" }),
+        ],
+      ]),
     ],
   ]);
   assert.equal(effectiveSemanticContentBlock(report, categoryMismatch), true);
@@ -605,6 +692,18 @@ test("policy-gate: respects semanticContentOverrides — overridden case downgra
     semanticIssue("$.testCases[0].steps[0].action"),
   ]);
   const coverage = buildCoverage();
+  const overridePath = "$.testCases[0].steps[0].action";
+  const overrideEntry = createSignedSemanticContentOverrideEntry({
+    jobId: "job-1",
+    testCaseId: "tc-1",
+    path: overridePath,
+    category: "shell_metacharacters",
+    justification:
+      "intentional ops smoke test for destructive-command alerting; reviewed under change request CR-1413",
+    actor: "alice@bank.example",
+    signedAt: GENERATED_AT,
+    authority: OVERRIDE_AUTHORITY,
+  });
 
   const reportWithoutOverride = evaluatePolicyGate({
     jobId: "job-1",
@@ -629,8 +728,8 @@ test("policy-gate: respects semanticContentOverrides — overridden case downgra
     "without override the violation must be a blocking error",
   );
 
-  const overrides = new Map<string, Set<string>>([
-    ["tc-1", new Set(["$.testCases[0].steps[0].action"])],
+  const overrides = new Map<string, Map<string, ReturnType<typeof createSignedSemanticContentOverrideEntry>>>([
+    ["tc-1", new Map([[overridePath, overrideEntry]])],
   ]);
   const reportWithOverride = evaluatePolicyGate({
     jobId: "job-1",
@@ -641,6 +740,7 @@ test("policy-gate: respects semanticContentOverrides — overridden case downgra
     validation,
     coverage,
     semanticContentOverrides: overrides,
+    overrideAuthorityProvider: OVERRIDE_AUTHORITY,
   });
   const decisionWith = reportWithOverride.decisions.find(
     (d) => d.testCaseId === "tc-1",
@@ -684,8 +784,26 @@ test("policy-gate: override map without matching path leaves the case blocked", 
     semanticIssue("$.testCases[0].steps[0].action"),
   ]);
   const coverage = buildCoverage();
-  const overrides = new Map<string, Set<string>>([
-    ["tc-1", new Set(["$.testCases[0].expectedResults[0]"])],
+  const overrides = new Map<string, Map<string, ReturnType<typeof createSignedSemanticContentOverrideEntry>>>([
+    [
+      "tc-1",
+      new Map([
+        [
+          "$.testCases[0].expectedResults[0]",
+          createSignedSemanticContentOverrideEntry({
+            jobId: "job-1",
+            testCaseId: "tc-1",
+            path: "$.testCases[0].expectedResults[0]",
+            category: "shell_metacharacters",
+            justification:
+              "intentional ops smoke test for destructive-command alerting; reviewed under change request CR-1413",
+            actor: "alice@bank.example",
+            signedAt: GENERATED_AT,
+            authority: OVERRIDE_AUTHORITY,
+          }),
+        ],
+      ]),
+    ],
   ]);
   const result = evaluatePolicyGate({
     jobId: "job-1",
@@ -696,9 +814,144 @@ test("policy-gate: override map without matching path leaves the case blocked", 
     validation,
     coverage,
     semanticContentOverrides: overrides,
+    overrideAuthorityProvider: OVERRIDE_AUTHORITY,
   });
   const decision = result.decisions.find((d) => d.testCaseId === "tc-1");
   assert.equal(decision?.decision, "blocked");
+});
+
+test("policy-gate: missing authority provider rejects otherwise signed overrides fail-closed", () => {
+  const validation = buildValidationReport([
+    semanticIssue("$.testCases[0].steps[0].action"),
+  ]);
+  const result = evaluatePolicyGate({
+    jobId: "job-1",
+    generatedAt: GENERATED_AT,
+    list: buildListForOverride(),
+    intent: {
+      version: "1.0.0",
+      source: { kind: "figma_local_json", contentHash: "0".repeat(64) },
+      screens: [{ screenId: "s-1", screenName: "S", trace: { nodeId: "s-1" } }],
+      detectedFields: [],
+      detectedActions: [],
+      detectedValidations: [],
+      detectedNavigation: [],
+      inferredBusinessObjects: [],
+      risks: [],
+      assumptions: [],
+      openQuestions: [],
+      piiIndicators: [],
+      redactions: [],
+    },
+    profile: cloneEuBankingDefaultProfile(),
+    validation,
+    coverage: buildCoverage(),
+    semanticContentOverrides: buildOverrideMap(buildSignedOverrideEntry()),
+  });
+  const decision = result.decisions.find((d) => d.testCaseId === "tc-1");
+  assert.equal(decision?.decision, "blocked");
+  assert.ok(
+    decision?.violations.some(
+      (v) =>
+        v.rule === "policy:override_invalid" &&
+        v.severity === "error" &&
+        v.reason.includes("authority provider missing"),
+    ),
+  );
+});
+
+test("policy-gate: expired override entries are rejected fail-closed", () => {
+  const validation = buildValidationReport([
+    semanticIssue("$.testCases[0].steps[0].action"),
+  ]);
+  const result = evaluatePolicyGate({
+    jobId: "job-1",
+    generatedAt: GENERATED_AT,
+    list: buildListForOverride(),
+    intent: {
+      version: "1.0.0",
+      source: { kind: "figma_local_json", contentHash: "0".repeat(64) },
+      screens: [{ screenId: "s-1", screenName: "S", trace: { nodeId: "s-1" } }],
+      detectedFields: [],
+      detectedActions: [],
+      detectedValidations: [],
+      detectedNavigation: [],
+      inferredBusinessObjects: [],
+      risks: [],
+      assumptions: [],
+      openQuestions: [],
+      piiIndicators: [],
+      redactions: [],
+    },
+    profile: cloneEuBankingDefaultProfile(),
+    validation,
+    coverage: buildCoverage(),
+    semanticContentOverrides: buildOverrideMap(
+      buildSignedOverrideEntry({ expiresAt: "2026-04-25T09:59:59.000Z" }),
+    ),
+    overrideAuthorityProvider: OVERRIDE_AUTHORITY,
+  });
+  const decision = result.decisions.find((d) => d.testCaseId === "tc-1");
+  assert.equal(decision?.decision, "blocked");
+  assert.ok(
+    decision?.violations.some(
+      (v) =>
+        v.rule === "policy:override_invalid" &&
+        v.reason.includes("has expired"),
+    ),
+  );
+});
+
+test("policy-gate: property-based invalid signatures are all rejected", () => {
+  const validation = buildValidationReport([
+    semanticIssue("$.testCases[0].steps[0].action"),
+  ]);
+  const valid = buildSignedOverrideEntry();
+  fc.assert(
+    fc.property(fc.stringMatching(/^[0-9a-f]{64}$/u), (digest) => {
+      fc.pre(digest !== valid.signature.digest);
+      const result = evaluatePolicyGate({
+        jobId: "job-1",
+        generatedAt: GENERATED_AT,
+        list: buildListForOverride(),
+        intent: {
+          version: "1.0.0",
+          source: { kind: "figma_local_json", contentHash: "0".repeat(64) },
+          screens: [
+            { screenId: "s-1", screenName: "S", trace: { nodeId: "s-1" } },
+          ],
+          detectedFields: [],
+          detectedActions: [],
+          detectedValidations: [],
+          detectedNavigation: [],
+          inferredBusinessObjects: [],
+          risks: [],
+          assumptions: [],
+          openQuestions: [],
+          piiIndicators: [],
+          redactions: [],
+        },
+        profile: cloneEuBankingDefaultProfile(),
+        validation,
+        coverage: buildCoverage(),
+        semanticContentOverrides: buildOverrideMap({
+          ...valid,
+          signature: { ...valid.signature, digest },
+        }),
+        overrideAuthorityProvider: OVERRIDE_AUTHORITY,
+      });
+      const decision = result.decisions.find((d) => d.testCaseId === "tc-1");
+      return (
+        decision?.decision === "blocked" &&
+        decision.violations.some(
+          (v) =>
+            v.rule === "policy:override_invalid" &&
+            v.reason.includes("failed verification"),
+        )
+      );
+    }),
+    { numRuns: 1000 },
+  );
 });
 
 // ---------------------------------------------------------------------------
@@ -745,6 +998,7 @@ test("end-to-end: reviewer override note recorded via store flips effective bloc
       justification:
         "intentional ops smoke test for destructive-command alerting; reviewed under change request CR-1413",
       at: GENERATED_AT,
+      authority: OVERRIDE_AUTHORITY,
     });
     assert.equal(result.ok, true, JSON.stringify(result));
 
@@ -756,6 +1010,12 @@ test("end-to-end: reviewer override note recorded via store flips effective bloc
           SEMANTIC_CONTENT_OVERRIDE_KIND_VALUE,
     );
     assert.equal(overrideEvents.length, 1);
+    assert.equal(
+      overrideEvents[0]?.metadata?.[
+        SEMANTIC_CONTENT_OVERRIDE_METADATA_VERIFIED_SIGNATURE_KEY
+      ],
+      true,
+    );
 
     const overrides = extractSemanticContentOverrides(events);
     const validation = buildValidationReport([
