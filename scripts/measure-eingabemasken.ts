@@ -53,6 +53,7 @@ import { runValidationPipeline } from "../src/test-intelligence/validation-pipel
 import { synthesizeGeneratedTestCases } from "../src/test-intelligence/validation-harness.js";
 import {
   CALIBRATION_ECE_THRESHOLDS,
+  CALIBRATION_MIN_SAMPLE_FLOOR,
   CALIBRATION_RISK_CATEGORIES,
   buildRiskCalibrationDiagnostics,
   computeBrierScore,
@@ -344,7 +345,10 @@ const measureFixture = async (
       brierScore: computeBrierScore(samples),
       ece: diagram.debiasedEce,
       threshold,
-      meetsThreshold: samples.length === 0 ? true : diagram.debiasedEce <= threshold,
+      meetsThreshold:
+        samples.length < CALIBRATION_MIN_SAMPLE_FLOOR
+          ? true
+          : diagram.debiasedEce <= threshold,
       reliabilityDiagram: {
         sampleCount: diagram.sampleCount,
         binCount: diagram.binCount,
@@ -617,10 +621,14 @@ const renderMarkdown = (
         : samples.reduce((sum, sample) => sum + sample.ece * sample.sampleCount, 0) /
           totalSamples;
     const threshold = CALIBRATION_ECE_THRESHOLDS[riskCategory];
+    const belowFloor = totalSamples < CALIBRATION_MIN_SAMPLE_FLOOR;
+    const gate = belowFloor
+      ? `n/a (< ${CALIBRATION_MIN_SAMPLE_FLOOR} samples)`
+      : weightedEce <= threshold
+        ? "pass"
+        : "**FAIL**";
     lines.push(
-      `| \`${riskCategory}\` | ${totalSamples} | ${weightedBrier.toFixed(3)} | ${weightedEce.toFixed(3)} | ${threshold.toFixed(3)} | ${
-        totalSamples === 0 || weightedEce <= threshold ? "pass" : "**FAIL**"
-      } |`,
+      `| \`${riskCategory}\` | ${totalSamples} | ${weightedBrier.toFixed(3)} | ${weightedEce.toFixed(3)} | ${threshold.toFixed(3)} | ${gate} |`,
     );
   }
 
