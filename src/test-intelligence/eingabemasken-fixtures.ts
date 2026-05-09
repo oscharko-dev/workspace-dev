@@ -289,3 +289,73 @@ export const loadEingabemaskenArchetypeFixture = async (
     compliancePath,
   };
 };
+
+/**
+ * Issue #2108 — declarative mapping from each Eingabemaske fixture to the
+ * domain-invariant ids it MUST exercise when the validation pipeline runs
+ * a compliance-aware test set against it. The mapping is the contract
+ * the benchmark test enforces: a regression that hides an invariant from
+ * a regulatory mask (e.g. dropping the MiFID-II appropriateness rule for
+ * the securities-order Eingabemaske) is caught before it ships.
+ *
+ * Empty arrays are valid (e.g. accessibility-only fixtures); the test
+ * suite enforces that *all* applicable invariants for a fixture are at
+ * minimum registered in the active-dataset registry.
+ */
+export const EINGABEMASKEN_APPLICABLE_INVARIANTS: Readonly<
+  Record<EingabemaskenArchetypeFixtureId, readonly string[]>
+> = {
+  "eingabemaske-sepa-ueberweisung": [
+    "INV-PSD2-SCA-01",
+    "INV-PSD2-DYNLINK-01",
+    "INV-AML-CUMUL-01",
+  ],
+  "eingabemaske-online-banking-login": ["INV-PSD2-SCA-01", "INV-PSD2-DYNLINK-01"],
+  "eingabemaske-kfz-tarifrechner-step1": [
+    "INV-IDD-DEMANDS-01",
+    "INV-NETTO-BRUTTO-01",
+  ],
+  "eingabemaske-hausrat-schadenmeldung": ["INV-IDD-DEMANDS-01"],
+  "eingabemaske-mifid-wertpapier-order": [
+    "INV-MIFID-SUITAB-01",
+    "INV-MIFID-APPROP-01",
+    "INV-MIFID-COSTS-01",
+    "INV-VAG-BERATUNG-01",
+  ],
+  "eingabemaske-konsumentenkredit-antrag": [
+    "INV-VAT-01",
+    "INV-FINANCING-NEED-01",
+    "INV-NETTO-BRUTTO-01",
+    "INV-OPTIONAL-COST-01",
+    "INV-FX-MARGIN-01",
+  ],
+  "eingabemaske-konto-kyc": [
+    "INV-GWG-PEP-01",
+    "INV-KYC-AGE-01",
+    "INV-GDPR-ART9-01",
+    "INV-GDPR-ART15-01",
+  ],
+  "eingabemaske-bu-antrag": [
+    "INV-IDD-DEMANDS-01",
+    "INV-SOLV2-COOLOFF-01",
+    "INV-GDPR-ART9-01",
+  ],
+  "eingabemaske-kfz-vollkasko-schaden": ["INV-IDD-DEMANDS-01"],
+  "eingabemaske-lv-bezugsberechtigung": [
+    "INV-IDD-DEMANDS-01",
+    "INV-SOLV2-COOLOFF-01",
+  ],
+  "eingabemaske-anlegerprofil-wizard": [
+    "INV-MIFID-SUITAB-01",
+    "INV-MIFID-APPROP-01",
+    "INV-VAG-BERATUNG-01",
+  ],
+  "eingabemaske-gwg-verdachtsmeldung": [
+    "INV-GWG-PEP-01",
+    "INV-AML-CUMUL-01",
+    "INV-DORA-ICT-01",
+  ],
+  "eingabemaske-cyber-risiko-assessment": ["INV-IDD-DEMANDS-01", "INV-DORA-ICT-01"],
+  "eingabemaske-mehrsprachig-de-en": ["INV-EAA-KBD-01"],
+  "eingabemaske-a11y-high-contrast": ["INV-EAA-KBD-01"],
+};
