@@ -284,6 +284,13 @@ test("parseTestIntelligenceRunArgs: env defaults flow into options when flags ab
   assert.equal(options.modelApiKey, "k-key");
   assert.equal(options.figmaToken, "figd_xxx");
   assert.equal(options.mode, "deterministic_llm");
+  assert.equal(options.visualPrimaryDeployment, "llama-4-maverick-vision");
+  assert.equal(options.visualFallbackDeployment, "phi-4-multimodal-instruct");
+  assert.equal(options.topologyInputSources.visualPrimaryDeployment, "default");
+  assert.equal(
+    options.topologyInputSources.visualFallbackDeployment,
+    "default",
+  );
   assert.equal(options.noVisualSidecar, false);
   assert.equal(options.finopsBudgetPath, undefined);
 });
@@ -665,6 +672,19 @@ test("parseTestIntelligenceDoctorArgs: env defaults flow into doctor options", (
   assert.equal(options.visualFallbackDeployment, "phi-4-multimodal-instruct");
   assert.equal(options.a11yJudgeDeployment, "phi-4-multimodal-instruct");
   assert.equal(options.topologyInputSources.modelDeployment, "env");
+});
+
+test("parseTestIntelligenceDoctorArgs: visual sidecar defaults stay aligned with the production runner", () => {
+  const options = parseTestIntelligenceDoctorArgs([], {
+    WORKSPACE_TEST_SPACE_TESTCASE_MODEL_DEPLOYMENT: "mistral-large-3",
+  });
+  assert.equal(options.visualPrimaryDeployment, "llama-4-maverick-vision");
+  assert.equal(options.visualFallbackDeployment, "phi-4-multimodal-instruct");
+  assert.equal(options.topologyInputSources.visualPrimaryDeployment, "default");
+  assert.equal(
+    options.topologyInputSources.visualFallbackDeployment,
+    "default",
+  );
 });
 
 test("parseTestIntelligenceDoctorArgs: CLI overrides doctor deployment defaults", () => {
@@ -2301,8 +2321,8 @@ test("parseTestIntelligenceRunArgs: WORKSPACE_TEST_SPACE_ICT_REGISTER_REF hydrat
   assert.equal(opts.ictRegisterRef, "env-ref");
 });
 
-test("parseTestIntelligenceRunArgs: --diversity-passes accepts 1 and 2", () => {
-  for (const value of ["1", "2"] as const) {
+test("parseTestIntelligenceRunArgs: --diversity-passes accepts 1, 2, and 3", () => {
+  for (const value of ["1", "2", "3"] as const) {
     const opts = parseTestIntelligenceRunArgs(
       [
         "--figma-url",
@@ -2326,11 +2346,11 @@ test("parseTestIntelligenceRunArgs: --diversity-passes rejects unsupported value
           "--figma-url",
           "https://figma.com/design/abc/foo",
           "--diversity-passes",
-          "3",
+          "4",
         ],
         {},
       ),
-    /--diversity-passes must be 1 or 2/u,
+    /--diversity-passes must be 1, 2, or 3/u,
   );
 });
 

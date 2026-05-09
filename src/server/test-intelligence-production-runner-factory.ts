@@ -40,6 +40,8 @@ const TEST_GENERATION_TIMEOUT_MS = 240_000;
 const VISUAL_ROLE_TIMEOUT_MS = 300_000;
 const TEST_GENERATION_MAX_OUTPUT_TOKENS = 32_000;
 const LEGACY_GPT_OSS_DEPLOYMENT = "gpt-oss-120b";
+const DEFAULT_VISUAL_PRIMARY_DEPLOYMENT = "llama-4-maverick-vision";
+const DEFAULT_VISUAL_FALLBACK_DEPLOYMENT = "phi-4-multimodal-instruct";
 
 export interface ResolveTestIntelligenceProductionRunnerInput {
   /** Resolved startup gate (`options.testIntelligence?.enabled === true`). */
@@ -142,10 +144,10 @@ export const resolveLlmConfigFromEnv = (
     readTrimmed(env, "WORKSPACE_TEST_SPACE_VISUAL_MODEL_ENDPOINT") ?? endpoint;
   const visualPrimaryDeployment =
     readTrimmed(env, "WORKSPACE_TEST_SPACE_VISUAL_PRIMARY_DEPLOYMENT") ??
-    deployment;
+    DEFAULT_VISUAL_PRIMARY_DEPLOYMENT;
   const visualFallbackDeployment =
     readTrimmed(env, "WORKSPACE_TEST_SPACE_VISUAL_FALLBACK_DEPLOYMENT") ??
-    visualPrimaryDeployment;
+    DEFAULT_VISUAL_FALLBACK_DEPLOYMENT;
   const a11yJudgeDeployment = readTrimmed(
     env,
     "WORKSPACE_TEST_SPACE_A11Y_JUDGE_DEPLOYMENT",

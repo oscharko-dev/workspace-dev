@@ -543,6 +543,8 @@ export const describeVisualScreens = async (
   const clock = input.clock ?? defaultClock;
   const responseSchema = buildVisualSidecarResponseSchema();
   const userPrompt = buildVisualSidecarUserPrompt(input.captures);
+  const primaryDeployment =
+    input.primaryDeployment ?? input.bundle.visualPrimary.deployment;
   const attempts: VisualSidecarAttempt[] = [];
   const diagnostics: DescribeVisualScreensDiagnostic[] = [];
 
@@ -608,9 +610,7 @@ export const describeVisualScreens = async (
       generatedAt: input.generatedAt,
       jobId: input.jobId,
       intent: input.intent,
-      ...(input.primaryDeployment !== undefined
-        ? { primaryDeployment: input.primaryDeployment }
-        : {}),
+      primaryDeployment,
     });
 
     const attemptIndex = attempts.length + 1;
@@ -1347,14 +1347,17 @@ const normalizeScreenDescription = (
   const emittedSidecarDeployment = readNonEmptyString(
     record["sidecarDeployment"],
   );
-  const sidecarDeployment =
+  const normalizedDeployment =
     emittedSidecarDeployment !== undefined &&
     ["inline", "current"].includes(emittedSidecarDeployment.toLowerCase())
       ? modelDeployment
-      : emittedSidecarDeployment ?? modelDeployment;
+      : modelDeployment;
   const normalized: VisualScreenDescription = {
     screenId,
-    sidecarDeployment,
+    // Deployment provenance comes from the selected gateway lane, not from the
+    // model payload. This keeps persisted artifacts stable even when the model
+    // emits aliases like "inline"/"current" or stale hard-coded literals.
+    sidecarDeployment: normalizedDeployment,
     regions,
     confidenceSummary,
   };

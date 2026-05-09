@@ -84,8 +84,8 @@ test("resolveLlmConfigFromEnv: defaults deployment when not set", () => {
   });
   assert.ok(config.deployment.length > 0);
   assert.equal(config.visualEndpoint, "https://aoai.example/openai/v1");
-  assert.equal(config.visualPrimaryDeployment, config.deployment);
-  assert.equal(config.visualFallbackDeployment, config.deployment);
+  assert.equal(config.visualPrimaryDeployment, "llama-4-maverick-vision");
+  assert.equal(config.visualFallbackDeployment, "phi-4-multimodal-instruct");
   assert.equal(config.coveragePlannerDeployment, undefined);
 });
 

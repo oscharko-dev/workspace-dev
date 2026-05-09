@@ -510,9 +510,11 @@ export const parseTestIntelligenceRunArgs = (
   let riskRankerDeployment: string | undefined =
     env.WORKSPACE_TEST_SPACE_RISK_RANKER_DEPLOYMENT?.trim() || undefined;
   let visualPrimaryDeployment: string | undefined =
-    env.WORKSPACE_TEST_SPACE_VISUAL_PRIMARY_DEPLOYMENT?.trim() || undefined;
+    env.WORKSPACE_TEST_SPACE_VISUAL_PRIMARY_DEPLOYMENT?.trim() ||
+    TEST_INTELLIGENCE_VISUAL_PRIMARY_RECOMMENDED_DEPLOYMENT;
   let visualFallbackDeployment: string | undefined =
-    env.WORKSPACE_TEST_SPACE_VISUAL_FALLBACK_DEPLOYMENT?.trim() || undefined;
+    env.WORKSPACE_TEST_SPACE_VISUAL_FALLBACK_DEPLOYMENT?.trim() ||
+    TEST_INTELLIGENCE_VISUAL_FALLBACK_RECOMMENDED_DEPLOYMENT;
   let a11yJudgeDeployment: string | undefined =
     env.WORKSPACE_TEST_SPACE_A11Y_JUDGE_DEPLOYMENT?.trim() || undefined;
   let modelApiKey: string | undefined = resolveModelApiKeyFromEnv(env);
@@ -1161,9 +1163,11 @@ export const parseTestIntelligenceDoctorArgs = (
   let riskRankerDeployment: string | undefined =
     env.WORKSPACE_TEST_SPACE_RISK_RANKER_DEPLOYMENT?.trim() || undefined;
   let visualPrimaryDeployment: string | undefined =
-    env.WORKSPACE_TEST_SPACE_VISUAL_PRIMARY_DEPLOYMENT?.trim() || undefined;
+    env.WORKSPACE_TEST_SPACE_VISUAL_PRIMARY_DEPLOYMENT?.trim() ||
+    TEST_INTELLIGENCE_VISUAL_PRIMARY_RECOMMENDED_DEPLOYMENT;
   let visualFallbackDeployment: string | undefined =
-    env.WORKSPACE_TEST_SPACE_VISUAL_FALLBACK_DEPLOYMENT?.trim() || undefined;
+    env.WORKSPACE_TEST_SPACE_VISUAL_FALLBACK_DEPLOYMENT?.trim() ||
+    TEST_INTELLIGENCE_VISUAL_FALLBACK_RECOMMENDED_DEPLOYMENT;
   let a11yJudgeDeployment: string | undefined =
     env.WORKSPACE_TEST_SPACE_A11Y_JUDGE_DEPLOYMENT?.trim() || undefined;
   const topologyInputSources: TopologyInputSources = {
