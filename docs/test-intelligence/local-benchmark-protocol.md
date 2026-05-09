@@ -38,6 +38,10 @@ Benchmark runs use the operator's vetted deployment matrix
 A benchmark run that degrades into a single-model topology fails the
 gate before the LLM call dispatches; see
 [`cross-family-judges.md`](./cross-family-judges.md).
+When `--require-multi-agent-topology` is enabled, the preflight now requires
+the full production lane set: generator, dedicated logic judge,
+coverage planner, risk ranker, visual primary, visual fallback, and
+a11y judge. Deprecated deployment env aliases also fail the gate.
 
 ## Invocation
 

@@ -1177,6 +1177,7 @@ const buildAgentParticipationEntries = (input: {
     workflowTopology: string;
     riskRanking: string;
     logicJudgeVerdict: string;
+    judgeConsensus: string;
     adversarialCriticTrace?: string;
     visualSidecarResult?: string;
     a11yJudgeVerdict?: string;
@@ -1299,6 +1300,45 @@ const buildAgentParticipationEntries = (input: {
             source: "judge_primary",
           })!,
         }
+      : {}),
+  });
+
+  const judgeSecondaryAttempts = getBySourceCallCount(
+    input.finopsReport,
+    "judge_secondary",
+  );
+  const judgeSecondaryCost = buildRoleCostAttribution({
+    report: input.finopsReport,
+    source: "judge_secondary",
+  });
+  const judgeSecondaryStatus: AgentParticipationStatus = !input.logicJudgeEnabled
+    ? "skipped"
+    : judgeSecondaryAttempts === 0
+      ? "skipped"
+      : "succeeded";
+  entries.push({
+    role: "judge_secondary",
+    ...(logicJudgeDeployment !== undefined
+      ? { deployment: logicJudgeDeployment }
+      : {}),
+    configurationSource: roleConfigurationSource(
+      input.request,
+      "judge_secondary",
+    ),
+    status: judgeSecondaryStatus,
+    attemptCount: judgeSecondaryAttempts,
+    ...(judgeSecondaryStatus === "skipped"
+      ? {
+          remediation: input.logicJudgeEnabled
+            ? "Secondary judge did not emit an independent verdict for this run."
+            : "Secondary judge lane was disabled for this run.",
+        }
+      : {}),
+    artifactReferences: [
+      toArtifactReference(input.artifactDir, refs.judgeConsensus),
+    ],
+    ...(judgeSecondaryCost !== undefined
+      ? { costAttribution: judgeSecondaryCost }
       : {}),
   });
 
@@ -4497,6 +4537,7 @@ export const runFigmaToQcTestCases = async (
         workflowTopology: workflowTopologyPath,
         riskRanking: riskRankingPath,
         logicJudgeVerdict: logicJudgeVerdictPath,
+        judgeConsensus: judgeConsensusPath,
         ...(adversarialCriticTraceArtifact !== undefined
           ? { adversarialCriticTrace: adversarialCriticTracePath }
           : {}),

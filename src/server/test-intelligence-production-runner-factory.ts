@@ -26,10 +26,8 @@ import {
   runFigmaToQcTestCases,
   type RunFigmaToQcTestCasesResult,
 } from "../test-intelligence/index.js";
-import {
-  createLlmGatewayClientBundle,
-  type LlmGatewayClientBundle,
-} from "../test-intelligence/llm-gateway-bundle.js";
+import { type LlmGatewayClientBundle } from "../test-intelligence/llm-gateway-bundle.js";
+import { createProductionTopologyClientBundle } from "../test-intelligence/production-topology-clients.js";
 import type { WorkspaceRuntimeLogger } from "../logging.js";
 import type {
   TestIntelligenceProductionRunnerFactory,
@@ -37,9 +35,7 @@ import type {
 } from "./request-handler.js";
 
 const TEST_GENERATION_TIMEOUT_MS = 240_000;
-const VISUAL_ROLE_TIMEOUT_MS = 300_000;
 const TEST_GENERATION_MAX_OUTPUT_TOKENS = 32_000;
-const LEGACY_GPT_OSS_DEPLOYMENT = "gpt-oss-120b";
 const DEFAULT_VISUAL_PRIMARY_DEPLOYMENT = "llama-4-maverick-vision";
 const DEFAULT_VISUAL_FALLBACK_DEPLOYMENT = "phi-4-multimodal-instruct";
 
@@ -66,6 +62,7 @@ export interface ResolvedLlmConfig {
   visualEndpoint: string;
   visualPrimaryDeployment: string;
   visualFallbackDeployment: string;
+  logicJudgeDeployment?: string;
   a11yJudgeDeployment?: string;
   coveragePlannerDeployment?: string;
   riskRankerDeployment?: string;
@@ -85,30 +82,6 @@ const readTrimmed = (
 const resolveApiKeyFromEnv = (env: NodeJS.ProcessEnv): string | undefined => {
   return readTrimmed(env, "WORKSPACE_TEST_SPACE_LLM_API_KEY");
 };
-
-const wireStructuredOutputOverrideForDeployment = (
-  deployment: string,
-): { wireStructuredOutputMode?: "none" } =>
-  deployment === LEGACY_GPT_OSS_DEPLOYMENT
-    ? { wireStructuredOutputMode: "none" }
-    : {};
-
-const constrainedDecodingConfigForDeployment = (deployment: string) =>
-  deployment === LEGACY_GPT_OSS_DEPLOYMENT
-    ? {
-        constrainedDecoding: {
-          preferredAdapter: "llguidance" as const,
-          fallbackAdapter: "prompt_only" as const,
-          adapterVersion: "1",
-        },
-      }
-    : {
-        constrainedDecoding: {
-          preferredAdapter: "outlines" as const,
-          fallbackAdapter: "prompt_only" as const,
-          adapterVersion: "1",
-        },
-      };
 
 /**
  * Read endpoint/deployment/api-key from env. Throws
@@ -148,6 +121,10 @@ export const resolveLlmConfigFromEnv = (
   const visualFallbackDeployment =
     readTrimmed(env, "WORKSPACE_TEST_SPACE_VISUAL_FALLBACK_DEPLOYMENT") ??
     DEFAULT_VISUAL_FALLBACK_DEPLOYMENT;
+  const logicJudgeDeployment = readTrimmed(
+    env,
+    "WORKSPACE_TEST_SPACE_LOGIC_JUDGE_DEPLOYMENT",
+  );
   const a11yJudgeDeployment = readTrimmed(
     env,
     "WORKSPACE_TEST_SPACE_A11Y_JUDGE_DEPLOYMENT",
@@ -166,6 +143,7 @@ export const resolveLlmConfigFromEnv = (
     visualEndpoint,
     visualPrimaryDeployment,
     visualFallbackDeployment,
+    ...(logicJudgeDeployment !== undefined ? { logicJudgeDeployment } : {}),
     ...(a11yJudgeDeployment !== undefined ? { a11yJudgeDeployment } : {}),
     ...(coveragePlannerDeployment !== undefined
       ? { coveragePlannerDeployment }
@@ -178,152 +156,27 @@ export const resolveLlmConfigFromEnv = (
 const defaultBuildLlmBundle = (
   config: ResolvedLlmConfig,
 ): LlmGatewayClientBundle =>
-  createLlmGatewayClientBundle(
+  createProductionTopologyClientBundle(
     {
-      testGeneration: {
-        role: "test_generation",
-        compatibilityMode: "openai_chat",
-        baseUrl: config.endpoint,
-        deployment: config.deployment,
-        modelRevision: `${config.deployment}@server-auto-wire`,
-        gatewayRelease: "azure-ai-foundry-server-auto-wire",
-        authMode: "api_key",
-        declaredCapabilities: {
-          structuredOutputs: true,
-          seedSupport: false,
-          reasoningEffortSupport: false,
-          maxOutputTokensSupport: true,
-          streamingSupport: false,
-          imageInputSupport: false,
-        },
-        timeoutMs: TEST_GENERATION_TIMEOUT_MS,
-        maxRetries: 1,
-        circuitBreaker: { failureThreshold: 2, resetTimeoutMs: 30_000 },
-        ...constrainedDecodingConfigForDeployment(config.deployment),
-        // Azure AI Foundry's `gpt-oss-120b` returns empty content for wire
-        // response_format values; suppress only for that legacy deployment.
-        ...wireStructuredOutputOverrideForDeployment(config.deployment),
-      },
-      visualPrimary: {
-        role: "visual_primary",
-        compatibilityMode: "openai_chat",
-        baseUrl: config.visualEndpoint,
-        deployment: config.visualPrimaryDeployment,
-        modelRevision: `${config.visualPrimaryDeployment}@server-auto-wire`,
-        gatewayRelease: "azure-ai-foundry-server-auto-wire",
-        authMode: "api_key",
-        declaredCapabilities: {
-          structuredOutputs: true,
-          seedSupport: false,
-          reasoningEffortSupport: false,
-          maxOutputTokensSupport: true,
-          streamingSupport: false,
-          imageInputSupport: true,
-        },
-        timeoutMs: VISUAL_ROLE_TIMEOUT_MS,
-        maxRetries: 1,
-        circuitBreaker: { failureThreshold: 2, resetTimeoutMs: 30_000 },
-      },
-      visualFallback: {
-        role: "visual_fallback",
-        compatibilityMode: "openai_chat",
-        baseUrl: config.visualEndpoint,
-        deployment: config.visualFallbackDeployment,
-        modelRevision: `${config.visualFallbackDeployment}@server-auto-wire`,
-        gatewayRelease: "azure-ai-foundry-server-auto-wire",
-        authMode: "api_key",
-        declaredCapabilities: {
-          structuredOutputs: true,
-          seedSupport: false,
-          reasoningEffortSupport: false,
-          maxOutputTokensSupport: true,
-          streamingSupport: false,
-          imageInputSupport: true,
-        },
-        timeoutMs: VISUAL_ROLE_TIMEOUT_MS,
-        maxRetries: 1,
-        circuitBreaker: { failureThreshold: 2, resetTimeoutMs: 30_000 },
-      },
+      endpoint: config.endpoint,
+      visualEndpoint: config.visualEndpoint,
+      deployment: config.deployment,
+      visualPrimaryDeployment: config.visualPrimaryDeployment,
+      visualFallbackDeployment: config.visualFallbackDeployment,
+      ...(config.logicJudgeDeployment !== undefined
+        ? { logicJudgeDeployment: config.logicJudgeDeployment }
+        : {}),
       ...(config.a11yJudgeDeployment !== undefined
-        ? {
-            a11yJudge: {
-              role: "a11y_judge" as const,
-              compatibilityMode: "openai_chat" as const,
-              baseUrl: config.visualEndpoint,
-              deployment: config.a11yJudgeDeployment,
-              modelRevision: `${config.a11yJudgeDeployment}@server-auto-wire`,
-              gatewayRelease: "azure-ai-foundry-server-auto-wire",
-              authMode: "api_key" as const,
-              declaredCapabilities: {
-                structuredOutputs: true,
-                seedSupport: false,
-                reasoningEffortSupport: false,
-                maxOutputTokensSupport: true,
-                streamingSupport: false,
-                imageInputSupport: true,
-              },
-              timeoutMs: VISUAL_ROLE_TIMEOUT_MS,
-              maxRetries: 1,
-              circuitBreaker: { failureThreshold: 2, resetTimeoutMs: 30_000 },
-            },
-          }
+        ? { a11yJudgeDeployment: config.a11yJudgeDeployment }
         : {}),
       ...(config.coveragePlannerDeployment !== undefined
-        ? {
-            coveragePlanner: {
-              role: "coverage_planner" as const,
-              compatibilityMode: "openai_chat" as const,
-              baseUrl: config.endpoint,
-              deployment: config.coveragePlannerDeployment,
-              modelRevision: `${config.coveragePlannerDeployment}@server-auto-wire`,
-              gatewayRelease: "azure-ai-foundry-server-auto-wire",
-              authMode: "api_key" as const,
-              declaredCapabilities: {
-                structuredOutputs: true,
-                seedSupport: false,
-                reasoningEffortSupport: false,
-                maxOutputTokensSupport: true,
-                streamingSupport: false,
-                imageInputSupport: false,
-              },
-              timeoutMs: 60_000,
-              maxRetries: 1,
-              circuitBreaker: { failureThreshold: 2, resetTimeoutMs: 30_000 },
-              ...constrainedDecodingConfigForDeployment(
-                config.coveragePlannerDeployment,
-              ),
-              wireStructuredOutputMode: "none" as const,
-            },
-          }
+        ? { coveragePlannerDeployment: config.coveragePlannerDeployment }
         : {}),
       ...(config.riskRankerDeployment !== undefined
-        ? {
-            riskRanker: {
-              role: "risk_ranker" as const,
-              compatibilityMode: "openai_chat" as const,
-              baseUrl: config.endpoint,
-              deployment: config.riskRankerDeployment,
-              modelRevision: `${config.riskRankerDeployment}@server-auto-wire`,
-              gatewayRelease: "azure-ai-foundry-server-auto-wire",
-              authMode: "api_key" as const,
-              declaredCapabilities: {
-                structuredOutputs: true,
-                seedSupport: false,
-                reasoningEffortSupport: false,
-                maxOutputTokensSupport: true,
-                streamingSupport: false,
-                imageInputSupport: false,
-              },
-              timeoutMs: 60_000,
-              maxRetries: 1,
-              circuitBreaker: { failureThreshold: 2, resetTimeoutMs: 30_000 },
-              ...constrainedDecodingConfigForDeployment(
-                config.riskRankerDeployment,
-              ),
-              wireStructuredOutputMode: "none" as const,
-            },
-          }
+        ? { riskRankerDeployment: config.riskRankerDeployment }
         : {}),
+      modelRevisionSuffix: "server-auto-wire",
+      gatewayRelease: "azure-ai-foundry-server-auto-wire",
     },
     {
       apiKeyProvider: () => config.apiKey,

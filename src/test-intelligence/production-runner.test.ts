@@ -2718,6 +2718,7 @@ test("Issue #2014: agent-participation always lists repair roles so missing opti
       "action_topology",
       "generator",
       "logic_judge",
+      "judge_secondary",
       "coverage_planner",
       "risk_ranker",
       "visual_primary",
@@ -3439,6 +3440,7 @@ test("Issue #1998: runFigmaToQcTestCases persists agent participation with runti
       roleConfigurationSources: {
         generator: "cli",
         logic_judge: "env",
+        judge_secondary: "env",
         coverage_planner: "default",
         risk_ranker: "env",
         visual_primary: "env",
@@ -3467,6 +3469,9 @@ test("Issue #1998: runFigmaToQcTestCases persists agent participation with runti
     assert.equal(role("logic_judge")?.configurationSource, "env");
     assert.equal(role("logic_judge")?.status, "succeeded");
     assert.equal(role("logic_judge")?.attemptCount, 1);
+    assert.equal(role("judge_secondary")?.configurationSource, "env");
+    assert.equal(role("judge_secondary")?.status, "succeeded");
+    assert.ok((role("judge_secondary")?.attemptCount ?? 0) >= 1);
     assert.equal(role("coverage_planner")?.configurationSource, "default");
     assert.equal(role("coverage_planner")?.status, "succeeded");
     assert.equal(role("coverage_planner")?.attemptCount, 1);

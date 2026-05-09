@@ -15,8 +15,8 @@ import {
 } from "./agent-participation.js";
 import { classifyTaskBatch } from "./task-classifier-agent.js";
 
-test("schema: bumped to 1.1.0 for the routing-decisions field (#2043)", () => {
-  assert.equal(AGENT_PARTICIPATION_SCHEMA_VERSION, "1.1.0");
+test("schema: bumped to 1.2.0 for routing decisions plus explicit role views (#2028, #2043)", () => {
+  assert.equal(AGENT_PARTICIPATION_SCHEMA_VERSION, "1.2.0");
 });
 
 test("roles: task_classifier registered alongside the existing roles (#2043)", () => {
@@ -45,6 +45,40 @@ test("buildAgentParticipationArtifact: omits routingDecisions when absent (legac
   assert.equal(artifact.schemaVersion, AGENT_PARTICIPATION_SCHEMA_VERSION);
   assert.equal(artifact.contractVersion, TEST_INTELLIGENCE_CONTRACT_VERSION);
   assert.equal(artifact.routingDecisions, undefined);
+  assert.equal(artifact.roleViews.workflowRoles.length, 1);
+  assert.equal(artifact.roleViews.deployedLlmSidecars.length, 1);
+});
+
+test("buildAgentParticipationArtifact: role views separate workflow roles from deployed sidecars", () => {
+  const artifact = buildAgentParticipationArtifact({
+    jobId: "job-views",
+    generatedAt: "2026-05-08T00:00:00Z",
+    roles: [
+      {
+        role: "action_topology",
+        configurationSource: "default",
+        status: "succeeded",
+        attemptCount: 1,
+        artifactReferences: ["workflow-topology.json"],
+      },
+      {
+        role: "judge_secondary",
+        configurationSource: "env",
+        status: "succeeded",
+        attemptCount: 1,
+        artifactReferences: ["judge-consensus.json"],
+      },
+    ],
+  });
+
+  assert.deepEqual(
+    artifact.roleViews.workflowRoles.map((entry) => entry.role),
+    ["action_topology", "judge_secondary"],
+  );
+  assert.deepEqual(
+    artifact.roleViews.deployedLlmSidecars.map((entry) => entry.role),
+    ["judge_secondary"],
+  );
 });
 
 test("buildAgentParticipationArtifact: persists routing decisions sorted by taskId", () => {
@@ -132,9 +166,11 @@ test("writeAgentParticipationArtifact: persists with routing decisions", async (
     );
     const persisted = await readFile(result.artifactPath, "utf8");
     const parsed = JSON.parse(persisted);
-    assert.equal(parsed.schemaVersion, "1.1.0");
+    assert.equal(parsed.schemaVersion, "1.2.0");
     assert.equal(parsed.routingDecisions.length, 1);
     assert.equal(parsed.routingDecisions[0].taskId, "t-1");
+    assert.ok(Array.isArray(parsed.roleViews.workflowRoles));
+    assert.ok(Array.isArray(parsed.roleViews.deployedLlmSidecars));
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
