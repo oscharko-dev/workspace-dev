@@ -1,0 +1,165 @@
+{
+  "source": {
+    "kind": "figma_local_json"
+  },
+  "screens": [
+    {
+      "screenId": "s-kk-step1",
+      "screenName": "Kreditkarte Schritt 1: Einkommen",
+      "screenPath": "/banking/retail/cc/step-1-income",
+      "nodes": [
+        {
+          "nodeId": "n-anstellung",
+          "nodeName": "Anstellungsverhaeltnis",
+          "nodeType": "SELECT_FIELD",
+          "nodePath": "applicant/employment",
+          "text": "Anstellungsverhaeltnis",
+          "childNodeIds": [],
+          "defaultValue": "Angestellt",
+          "validations": [
+            "Required"
+          ]
+        },
+        {
+          "nodeId": "n-arbeitgeber",
+          "nodeName": "Arbeitgeber",
+          "nodeType": "TEXT_INPUT",
+          "nodePath": "applicant/employer",
+          "text": "Arbeitgeber",
+          "childNodeIds": [],
+          "defaultValue": "",
+          "validations": [
+            "Required if employment is Angestellt",
+            "Max 80 characters"
+          ]
+        },
+        {
+          "nodeId": "n-netto-einkommen",
+          "nodeName": "Netto-Monatseinkommen in EUR",
+          "nodeType": "TEXT_INPUT",
+          "nodePath": "applicant/income/net-monthly",
+          "text": "Netto-Monatseinkommen in EUR",
+          "childNodeIds": [],
+          "defaultValue": "",
+          "validations": [
+            "Required",
+            "Numeric",
+            "Min 0",
+            "Max 1000000"
+          ]
+        },
+        {
+          "nodeId": "n-kinder",
+          "nodeName": "Anzahl unterhaltsberechtigte Kinder",
+          "nodeType": "TEXT_INPUT",
+          "nodePath": "applicant/dependents-count",
+          "text": "Anzahl unterhaltsberechtigte Kinder",
+          "childNodeIds": [],
+          "defaultValue": "",
+          "validations": [
+            "Required",
+            "Numeric",
+            "Min 0",
+            "Max 10"
+          ]
+        },
+        {
+          "nodeId": "n-zweiteinkommen",
+          "nodeName": "Zweites Einkommen vorhanden",
+          "nodeType": "RADIO_OPTION",
+          "nodePath": "applicant/income/second",
+          "text": "Zweites Einkommen vorhanden",
+          "childNodeIds": [],
+          "defaultValue": "No",
+          "validations": [
+            "Required"
+          ]
+        },
+        {
+          "nodeId": "n-next-1",
+          "nodeName": "Weiter",
+          "nodeType": "BUTTON",
+          "nodePath": "actions/next",
+          "text": "Weiter",
+          "childNodeIds": [],
+          "navigationTarget": "s-kk-step2"
+        }
+      ]
+    },
+    {
+      "screenId": "s-kk-step2",
+      "screenName": "Kreditkarte Schritt 2: Produkt",
+      "screenPath": "/banking/retail/cc/step-2-product",
+      "nodes": [
+        {
+          "nodeId": "n-produkt",
+          "nodeName": "Kreditkartenprodukt",
+          "nodeType": "SELECT_FIELD",
+          "nodePath": "product/cc-tier",
+          "text": "Kreditkartenprodukt",
+          "childNodeIds": [],
+          "defaultValue": "Classic",
+          "validations": [
+            "Required"
+          ]
+        },
+        {
+          "nodeId": "n-wunschlimit",
+          "nodeName": "Wunschlimit in EUR",
+          "nodeType": "TEXT_INPUT",
+          "nodePath": "product/cc-limit",
+          "text": "Wunschlimit in EUR",
+          "childNodeIds": [],
+          "defaultValue": "",
+          "validations": [
+            "Required",
+            "Numeric",
+            "Min 500",
+            "Max 50000"
+          ]
+        },
+        {
+          "nodeId": "n-schufa",
+          "nodeName": "Einwilligung Schufa-Anfrage",
+          "nodeType": "RADIO_OPTION",
+          "nodePath": "compliance/schufa-consent",
+          "text": "Einwilligung Schufa-Anfrage",
+          "childNodeIds": [],
+          "defaultValue": "No",
+          "validations": [
+            "Required"
+          ]
+        },
+        {
+          "nodeId": "n-agb",
+          "nodeName": "AGB akzeptiert",
+          "nodeType": "RADIO_OPTION",
+          "nodePath": "compliance/agb-accepted",
+          "text": "AGB akzeptiert",
+          "childNodeIds": [],
+          "defaultValue": "No",
+          "validations": [
+            "Required"
+          ]
+        },
+        {
+          "nodeId": "n-back-2",
+          "nodeName": "Zurueck",
+          "nodeType": "BUTTON",
+          "nodePath": "actions/back",
+          "text": "Zurueck",
+          "childNodeIds": [],
+          "navigationTarget": "s-kk-step1"
+        },
+        {
+          "nodeId": "n-submit",
+          "nodeName": "Kreditkarte beantragen",
+          "nodeType": "BUTTON",
+          "nodePath": "actions/submit",
+          "text": "Kreditkarte beantragen",
+          "childNodeIds": []
+        }
+      ]
+    }
+  ]
+}

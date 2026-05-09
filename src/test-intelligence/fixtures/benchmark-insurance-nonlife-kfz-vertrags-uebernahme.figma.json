@@ -1,0 +1,126 @@
+{
+  "source": {
+    "kind": "figma_local_json"
+  },
+  "screens": [
+    {
+      "screenId": "s-kfz-transfer",
+      "screenName": "KFZ Vertragsuebernahme",
+      "screenPath": "/insurance/non-life/kfz/transfer",
+      "nodes": [
+        {
+          "nodeId": "n-policy-id",
+          "nodeName": "Policen-Nummer",
+          "nodeType": "TEXT_INPUT",
+          "nodePath": "policy/id",
+          "text": "Policen-Nummer",
+          "childNodeIds": [],
+          "defaultValue": "",
+          "validations": [
+            "Required",
+            "Format POL-########"
+          ]
+        },
+        {
+          "nodeId": "n-vin",
+          "nodeName": "Fahrgestellnummer (VIN)",
+          "nodeType": "TEXT_INPUT",
+          "nodePath": "vehicle/vin",
+          "text": "Fahrgestellnummer (VIN)",
+          "childNodeIds": [],
+          "defaultValue": "",
+          "validations": [
+            "Required",
+            "Length 17",
+            "VIN-checksum"
+          ]
+        },
+        {
+          "nodeId": "n-odometer",
+          "nodeName": "Kilometerstand",
+          "nodeType": "TEXT_INPUT",
+          "nodePath": "vehicle/odometer",
+          "text": "Kilometerstand",
+          "childNodeIds": [],
+          "defaultValue": "",
+          "validations": [
+            "Required",
+            "Numeric",
+            "Min 0",
+            "Max 1000000"
+          ]
+        },
+        {
+          "nodeId": "n-old-holder",
+          "nodeName": "Bisheriger Halter",
+          "nodeType": "TEXT_INPUT",
+          "nodePath": "transfer/from-name",
+          "text": "Bisheriger Halter",
+          "childNodeIds": [],
+          "defaultValue": "",
+          "validations": [
+            "Required",
+            "Max 80 characters"
+          ]
+        },
+        {
+          "nodeId": "n-new-holder",
+          "nodeName": "Neuer Halter",
+          "nodeType": "TEXT_INPUT",
+          "nodePath": "transfer/to-name",
+          "text": "Neuer Halter",
+          "childNodeIds": [],
+          "defaultValue": "",
+          "validations": [
+            "Required",
+            "Max 80 characters"
+          ]
+        },
+        {
+          "nodeId": "n-sf-klasse",
+          "nodeName": "SF-Klasse",
+          "nodeType": "SELECT_FIELD",
+          "nodePath": "transfer/sf-class",
+          "text": "SF-Klasse",
+          "childNodeIds": [],
+          "defaultValue": "SF-1",
+          "validations": [
+            "Required"
+          ]
+        },
+        {
+          "nodeId": "n-sf-konsens",
+          "nodeName": "Beidseitige Zustimmung SF-Uebertragung",
+          "nodeType": "RADIO_OPTION",
+          "nodePath": "transfer/sf-mutual-consent",
+          "text": "Beidseitige Zustimmung SF-Uebertragung",
+          "childNodeIds": [],
+          "defaultValue": "No",
+          "validations": [
+            "Required"
+          ]
+        },
+        {
+          "nodeId": "n-bedarfsanalyse",
+          "nodeName": "Bedarfsanalyse erfolgt",
+          "nodeType": "RADIO_OPTION",
+          "nodePath": "compliance/idd-demands",
+          "text": "Bedarfsanalyse erfolgt",
+          "childNodeIds": [],
+          "defaultValue": "No",
+          "validations": [
+            "Required"
+          ]
+        },
+        {
+          "nodeId": "n-submit",
+          "nodeName": "Uebernahme abschliessen",
+          "nodeType": "BUTTON",
+          "nodePath": "actions/submit",
+          "text": "Uebernahme abschliessen",
+          "childNodeIds": []
+        }
+      ]
+    }
+  ]
+}

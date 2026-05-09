@@ -1,0 +1,192 @@
+{
+  "source": {
+    "kind": "figma_local_json"
+  },
+  "screens": [
+    {
+      "screenId": "s-lc",
+      "screenName": "Akkreditiv eroeffnen",
+      "screenPath": "/banking/corp/trade-finance/lc/issue",
+      "nodes": [
+        {
+          "nodeId": "n-lc-number",
+          "nodeName": "LC-Nummer",
+          "nodeType": "TEXT_INPUT",
+          "nodePath": "lc/number",
+          "text": "LC-Nummer",
+          "childNodeIds": [],
+          "defaultValue": "",
+          "validations": [
+            "Required",
+            "Format LC-############"
+          ]
+        },
+        {
+          "nodeId": "n-applicant",
+          "nodeName": "Auftraggeber",
+          "nodeType": "TEXT_INPUT",
+          "nodePath": "lc/applicant",
+          "text": "Auftraggeber",
+          "childNodeIds": [],
+          "defaultValue": "",
+          "validations": [
+            "Required",
+            "Max 120 characters"
+          ]
+        },
+        {
+          "nodeId": "n-beneficiary",
+          "nodeName": "Beguenstigter",
+          "nodeType": "TEXT_INPUT",
+          "nodePath": "lc/beneficiary",
+          "text": "Beguenstigter",
+          "childNodeIds": [],
+          "defaultValue": "",
+          "validations": [
+            "Required",
+            "Max 120 characters"
+          ]
+        },
+        {
+          "nodeId": "n-amount",
+          "nodeName": "LC-Betrag",
+          "nodeType": "TEXT_INPUT",
+          "nodePath": "lc/amount",
+          "text": "LC-Betrag",
+          "childNodeIds": [],
+          "defaultValue": "",
+          "validations": [
+            "Required",
+            "Numeric",
+            "Min 1000",
+            "Max 100000000"
+          ]
+        },
+        {
+          "nodeId": "n-currency",
+          "nodeName": "Waehrung",
+          "nodeType": "SELECT_FIELD",
+          "nodePath": "lc/currency",
+          "text": "Waehrung",
+          "childNodeIds": [],
+          "defaultValue": "EUR",
+          "validations": [
+            "Required",
+            "ISO-4217"
+          ]
+        },
+        {
+          "nodeId": "n-incoterm",
+          "nodeName": "Incoterm",
+          "nodeType": "SELECT_FIELD",
+          "nodePath": "lc/incoterm",
+          "text": "Incoterm",
+          "childNodeIds": [],
+          "defaultValue": "FOB",
+          "validations": [
+            "Required"
+          ]
+        },
+        {
+          "nodeId": "n-shipment-mode",
+          "nodeName": "Versandart",
+          "nodeType": "SELECT_FIELD",
+          "nodePath": "lc/shipment-mode",
+          "text": "Versandart",
+          "childNodeIds": [],
+          "defaultValue": "Sea",
+          "validations": [
+            "Required"
+          ]
+        },
+        {
+          "nodeId": "n-loading-port",
+          "nodeName": "Verschiffungshafen",
+          "nodeType": "TEXT_INPUT",
+          "nodePath": "lc/loading-port",
+          "text": "Verschiffungshafen",
+          "childNodeIds": [],
+          "defaultValue": "",
+          "validations": [
+            "Required if shipment-mode is Sea",
+            "Required if shipment-mode is MultiModal",
+            "ISO-port-code"
+          ]
+        },
+        {
+          "nodeId": "n-airport",
+          "nodeName": "Verladeflughafen",
+          "nodeType": "TEXT_INPUT",
+          "nodePath": "lc/loading-airport",
+          "text": "Verladeflughafen",
+          "childNodeIds": [],
+          "defaultValue": "",
+          "validations": [
+            "Required if shipment-mode is Air",
+            "ISO-airport-code"
+          ]
+        },
+        {
+          "nodeId": "n-sanctions-screened",
+          "nodeName": "Sanktionspruefung durchgefuehrt",
+          "nodeType": "RADIO_OPTION",
+          "nodePath": "compliance/sanctions-screened",
+          "text": "Sanktionspruefung durchgefuehrt",
+          "childNodeIds": [],
+          "defaultValue": "No",
+          "validations": [
+            "Required"
+          ]
+        },
+        {
+          "nodeId": "n-sanctions-ref",
+          "nodeName": "Sanktions-Pruefreferenz",
+          "nodeType": "TEXT_INPUT",
+          "nodePath": "compliance/sanctions-ref",
+          "text": "Sanktions-Pruefreferenz",
+          "childNodeIds": [],
+          "defaultValue": "",
+          "validations": [
+            "Required if sanctions-screened is Yes",
+            "Format SANCT-############"
+          ]
+        },
+        {
+          "nodeId": "n-presentation-period",
+          "nodeName": "Vorlagefrist (Tage)",
+          "nodeType": "TEXT_INPUT",
+          "nodePath": "lc/presentation-period",
+          "text": "Vorlagefrist (Tage)",
+          "childNodeIds": [],
+          "defaultValue": "",
+          "validations": [
+            "Required",
+            "Numeric",
+            "Min 1",
+            "Max 21"
+          ]
+        },
+        {
+          "nodeId": "n-confirmation",
+          "nodeName": "Bestaetigtes Akkreditiv",
+          "nodeType": "RADIO_OPTION",
+          "nodePath": "lc/is-confirmed",
+          "text": "Bestaetigtes Akkreditiv",
+          "childNodeIds": [],
+          "defaultValue": "No",
+          "validations": [
+            "Required"
+          ]
+        },
+        {
+          "nodeId": "n-submit",
+          "nodeName": "Akkreditiv eroeffnen",
+          "nodeType": "BUTTON",
+          "nodePath": "actions/submit",
+          "text": "Akkreditiv eroeffnen",
+          "childNodeIds": []
+        }
+      ]
+    }
+  ]
+}

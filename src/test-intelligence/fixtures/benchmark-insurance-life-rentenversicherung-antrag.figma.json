@@ -1,0 +1,254 @@
+{
+  "source": {
+    "kind": "figma_local_json"
+  },
+  "screens": [
+    {
+      "screenId": "s-rv-1",
+      "screenName": "Rentenversicherung Schritt 1: Versicherte Person",
+      "screenPath": "/insurance/life/rv/step-1",
+      "nodes": [
+        {
+          "nodeId": "n-vorname",
+          "nodeName": "Vorname",
+          "nodeType": "TEXT_INPUT",
+          "nodePath": "insured/given-name",
+          "text": "Vorname",
+          "childNodeIds": [],
+          "defaultValue": "",
+          "validations": [
+            "Required",
+            "Max 60 characters"
+          ]
+        },
+        {
+          "nodeId": "n-nachname",
+          "nodeName": "Nachname",
+          "nodeType": "TEXT_INPUT",
+          "nodePath": "insured/family-name",
+          "text": "Nachname",
+          "childNodeIds": [],
+          "defaultValue": "",
+          "validations": [
+            "Required",
+            "Max 60 characters"
+          ]
+        },
+        {
+          "nodeId": "n-geburtsdatum",
+          "nodeName": "Geburtsdatum",
+          "nodeType": "TEXT_INPUT",
+          "nodePath": "insured/dob",
+          "text": "Geburtsdatum",
+          "childNodeIds": [],
+          "defaultValue": "",
+          "validations": [
+            "Required",
+            "ISO date",
+            "Date implies age >= 18",
+            "Date implies age <= 67"
+          ]
+        },
+        {
+          "nodeId": "n-geschlecht",
+          "nodeName": "Geschlecht (versicherungsmathematisch)",
+          "nodeType": "SELECT_FIELD",
+          "nodePath": "insured/sex",
+          "text": "Geschlecht (versicherungsmathematisch)",
+          "childNodeIds": [],
+          "defaultValue": "F",
+          "validations": [
+            "Required"
+          ]
+        },
+        {
+          "nodeId": "n-raucher",
+          "nodeName": "Raucher",
+          "nodeType": "RADIO_OPTION",
+          "nodePath": "insured/smoker",
+          "text": "Raucher",
+          "childNodeIds": [],
+          "defaultValue": "No",
+          "validations": [
+            "Required"
+          ]
+        },
+        {
+          "nodeId": "n-next-1",
+          "nodeName": "Weiter",
+          "nodeType": "BUTTON",
+          "nodePath": "actions/next",
+          "text": "Weiter",
+          "childNodeIds": [],
+          "navigationTarget": "s-rv-2"
+        }
+      ]
+    },
+    {
+      "screenId": "s-rv-2",
+      "screenName": "Rentenversicherung Schritt 2: Fonds",
+      "screenPath": "/insurance/life/rv/step-2",
+      "nodes": [
+        {
+          "nodeId": "n-tarif",
+          "nodeName": "Tarifvariante",
+          "nodeType": "SELECT_FIELD",
+          "nodePath": "product/tarif",
+          "text": "Tarifvariante",
+          "childNodeIds": [],
+          "defaultValue": "Klassisch",
+          "validations": [
+            "Required"
+          ]
+        },
+        {
+          "nodeId": "n-fondsgebunden",
+          "nodeName": "Fondsgebunden",
+          "nodeType": "RADIO_OPTION",
+          "nodePath": "product/fund-linked",
+          "text": "Fondsgebunden",
+          "childNodeIds": [],
+          "defaultValue": "No",
+          "validations": [
+            "Required"
+          ]
+        },
+        {
+          "nodeId": "n-fonds-anteil",
+          "nodeName": "Fondsanteil (%)",
+          "nodeType": "TEXT_INPUT",
+          "nodePath": "product/fund-share",
+          "text": "Fondsanteil (%)",
+          "childNodeIds": [],
+          "defaultValue": "",
+          "validations": [
+            "Required if fund-linked is Yes",
+            "Numeric",
+            "Min 0",
+            "Max 100"
+          ]
+        },
+        {
+          "nodeId": "n-monatsbeitrag",
+          "nodeName": "Monatsbeitrag in EUR",
+          "nodeType": "TEXT_INPUT",
+          "nodePath": "product/monthly-premium",
+          "text": "Monatsbeitrag in EUR",
+          "childNodeIds": [],
+          "defaultValue": "",
+          "validations": [
+            "Required",
+            "Numeric",
+            "Min 25",
+            "Max 100000"
+          ]
+        },
+        {
+          "nodeId": "n-laufzeit",
+          "nodeName": "Laufzeit (Jahre)",
+          "nodeType": "TEXT_INPUT",
+          "nodePath": "product/term-years",
+          "text": "Laufzeit (Jahre)",
+          "childNodeIds": [],
+          "defaultValue": "",
+          "validations": [
+            "Required",
+            "Numeric",
+            "Min 5",
+            "Max 60"
+          ]
+        },
+        {
+          "nodeId": "n-back-2",
+          "nodeName": "Zurueck",
+          "nodeType": "BUTTON",
+          "nodePath": "actions/back",
+          "text": "Zurueck",
+          "childNodeIds": [],
+          "navigationTarget": "s-rv-1"
+        },
+        {
+          "nodeId": "n-next-2",
+          "nodeName": "Weiter",
+          "nodeType": "BUTTON",
+          "nodePath": "actions/next",
+          "text": "Weiter",
+          "childNodeIds": [],
+          "navigationTarget": "s-rv-3"
+        }
+      ]
+    },
+    {
+      "screenId": "s-rv-3",
+      "screenName": "Rentenversicherung Schritt 3: Erklaerung",
+      "screenPath": "/insurance/life/rv/step-3",
+      "nodes": [
+        {
+          "nodeId": "n-bedarfsanalyse",
+          "nodeName": "Bedarfsanalyse durchgefuehrt",
+          "nodeType": "RADIO_OPTION",
+          "nodePath": "compliance/idd-demands",
+          "text": "Bedarfsanalyse durchgefuehrt",
+          "childNodeIds": [],
+          "defaultValue": "No",
+          "validations": [
+            "Required"
+          ]
+        },
+        {
+          "nodeId": "n-cooloff",
+          "nodeName": "Solvency-II Widerrufsbelehrung erhalten",
+          "nodeType": "RADIO_OPTION",
+          "nodePath": "compliance/solv2-cooloff",
+          "text": "Solvency-II Widerrufsbelehrung erhalten",
+          "childNodeIds": [],
+          "defaultValue": "No",
+          "validations": [
+            "Required"
+          ]
+        },
+        {
+          "nodeId": "n-gesundheitsdaten",
+          "nodeName": "Einwilligung Gesundheitsdaten",
+          "nodeType": "RADIO_OPTION",
+          "nodePath": "compliance/health-data-consent",
+          "text": "Einwilligung Gesundheitsdaten",
+          "childNodeIds": [],
+          "defaultValue": "No",
+          "validations": [
+            "Required"
+          ]
+        },
+        {
+          "nodeId": "n-vertrieb",
+          "nodeName": "Bedingungen Versicherungsvertrieb",
+          "nodeType": "RADIO_OPTION",
+          "nodePath": "compliance/idd-distribution-terms",
+          "text": "Bedingungen Versicherungsvertrieb",
+          "childNodeIds": [],
+          "defaultValue": "No",
+          "validations": [
+            "Required"
+          ]
+        },
+        {
+          "nodeId": "n-back-3",
+          "nodeName": "Zurueck",
+          "nodeType": "BUTTON",
+          "nodePath": "actions/back",
+          "text": "Zurueck",
+          "childNodeIds": [],
+          "navigationTarget": "s-rv-2"
+        },
+        {
+          "nodeId": "n-submit",
+          "nodeName": "Antrag einreichen",
+          "nodeType": "BUTTON",
+          "nodePath": "actions/submit",
+          "text": "Antrag einreichen",
+          "childNodeIds": []
+        }
+      ]
+    }
+  ]
+}

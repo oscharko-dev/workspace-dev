@@ -1,0 +1,150 @@
+{
+  "source": {
+    "kind": "figma_local_json"
+  },
+  "screens": [
+    {
+      "screenId": "s-dora",
+      "screenName": "DORA Initial Incident Notification",
+      "screenPath": "/regulatory/dora/incident/initial",
+      "nodes": [
+        {
+          "nodeId": "n-incident-id",
+          "nodeName": "Incident-ID",
+          "nodeType": "TEXT_INPUT",
+          "nodePath": "incident/id",
+          "text": "Incident-ID",
+          "childNodeIds": [],
+          "defaultValue": "",
+          "validations": [
+            "Required",
+            "Format INC-YYYYMMDD-####"
+          ]
+        },
+        {
+          "nodeId": "n-detected-at",
+          "nodeName": "Erkannt am",
+          "nodeType": "TEXT_INPUT",
+          "nodePath": "incident/detected-at",
+          "text": "Erkannt am",
+          "childNodeIds": [],
+          "defaultValue": "",
+          "validations": [
+            "Required",
+            "ISO datetime"
+          ]
+        },
+        {
+          "nodeId": "n-classification",
+          "nodeName": "Klassifikation",
+          "nodeType": "SELECT_FIELD",
+          "nodePath": "incident/classification",
+          "text": "Klassifikation",
+          "childNodeIds": [],
+          "defaultValue": "minor",
+          "validations": [
+            "Required"
+          ]
+        },
+        {
+          "nodeId": "n-affected-services",
+          "nodeName": "Betroffene Dienste",
+          "nodeType": "TEXT_INPUT",
+          "nodePath": "incident/affected-services",
+          "text": "Betroffene Dienste",
+          "childNodeIds": [],
+          "defaultValue": "",
+          "validations": [
+            "Required",
+            "Min 5 characters",
+            "Max 500 characters"
+          ]
+        },
+        {
+          "nodeId": "n-cross-border",
+          "nodeName": "Grenzueberschreitende Auswirkung",
+          "nodeType": "RADIO_OPTION",
+          "nodePath": "incident/cross-border-impact",
+          "text": "Grenzueberschreitende Auswirkung",
+          "childNodeIds": [],
+          "defaultValue": "No",
+          "validations": [
+            "Required"
+          ]
+        },
+        {
+          "nodeId": "n-eu-states",
+          "nodeName": "Betroffene EU-Mitgliedstaaten",
+          "nodeType": "TEXT_INPUT",
+          "nodePath": "incident/eu-states",
+          "text": "Betroffene EU-Mitgliedstaaten",
+          "childNodeIds": [],
+          "defaultValue": "",
+          "validations": [
+            "Required if classification is major",
+            "Pattern ISO-3166 alpha-2 list"
+          ]
+        },
+        {
+          "nodeId": "n-impact-clients",
+          "nodeName": "Betroffene Kunden",
+          "nodeType": "TEXT_INPUT",
+          "nodePath": "incident/impact-clients",
+          "text": "Betroffene Kunden",
+          "childNodeIds": [],
+          "defaultValue": "",
+          "validations": [
+            "Required if classification is major",
+            "Numeric",
+            "Min 0"
+          ]
+        },
+        {
+          "nodeId": "n-malicious",
+          "nodeName": "Boeswillige Ursache",
+          "nodeType": "RADIO_OPTION",
+          "nodePath": "incident/malicious",
+          "text": "Boeswillige Ursache",
+          "childNodeIds": [],
+          "defaultValue": "No",
+          "validations": [
+            "Required"
+          ]
+        },
+        {
+          "nodeId": "n-bcp-activated",
+          "nodeName": "BCP aktiviert",
+          "nodeType": "RADIO_OPTION",
+          "nodePath": "incident/bcp-activated",
+          "text": "BCP aktiviert",
+          "childNodeIds": [],
+          "defaultValue": "No",
+          "validations": [
+            "Required"
+          ]
+        },
+        {
+          "nodeId": "n-handler",
+          "nodeName": "Verantwortlicher Handler",
+          "nodeType": "TEXT_INPUT",
+          "nodePath": "incident/handler",
+          "text": "Verantwortlicher Handler",
+          "childNodeIds": [],
+          "defaultValue": "",
+          "validations": [
+            "Required",
+            "Format INC-HANDLER-####"
+          ]
+        },
+        {
+          "nodeId": "n-submit",
+          "nodeName": "Meldung absenden",
+          "nodeType": "BUTTON",
+          "nodePath": "actions/submit",
+          "text": "Meldung absenden",
+          "childNodeIds": []
+        }
+      ]
+    }
+  ]
+}
