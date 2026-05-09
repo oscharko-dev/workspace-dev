@@ -125,7 +125,6 @@ export type WorkspaceJobType = (typeof ALLOWED_WORKSPACE_JOB_TYPES)[number];
 export const ALLOWED_TEST_INTELLIGENCE_MODES = [
   "deterministic_llm",
   "offline_eval",
-  "dry_run",
 ] as const;
 
 /** Allowed test-intelligence modes. */

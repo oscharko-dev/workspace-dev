@@ -39,7 +39,6 @@ const LLM_CODEGEN_MODE_EXHAUSTIVE = {
 const TEST_INTELLIGENCE_MODE_EXHAUSTIVE = {
   deterministic_llm: true,
   offline_eval: true,
-  dry_run: true,
 } as const satisfies Record<WorkspaceTestIntelligenceMode, true>;
 
 const WORKSPACE_JOB_TYPE_EXHAUSTIVE = {
@@ -199,7 +198,7 @@ test("submit-mode parity: SubmitRequestSchema rejects testIntelligenceMode on fi
     figmaAccessToken: "figd_xxx",
     figmaSourceMode: "rest",
     jobType: "figma_to_code",
-    testIntelligenceMode: "dry_run",
+    testIntelligenceMode: "deterministic_llm",
   });
   assert.equal(result.success, false);
 });

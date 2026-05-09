@@ -15918,7 +15918,7 @@ Optional server-side generation scope. When present, only the selected IR nodes 
 
 ##### testIntelligenceMode?
 
-> `optional` **testIntelligenceMode?**: `"deterministic_llm"` \| `"offline_eval"` \| `"dry_run"`
+> `optional` **testIntelligenceMode?**: `"deterministic_llm"` \| `"offline_eval"`
 
 Optional test-intelligence mode namespace. Only relevant when
 `jobType="figma_to_qc_test_cases"`. Values are validated independently
@@ -21824,7 +21824,7 @@ altering call sites. Adding a new code is a minor (additive) bump.
 
 ### ALLOWED\_TEST\_INTELLIGENCE\_MODES
 
-> `const` **ALLOWED\_TEST\_INTELLIGENCE\_MODES**: readonly \[`"deterministic_llm"`, `"offline_eval"`, `"dry_run"`\]
+> `const` **ALLOWED\_TEST\_INTELLIGENCE\_MODES**: readonly \[`"deterministic_llm"`, `"offline_eval"`\]
 
 Runtime source-of-truth for allowed test-intelligence modes.
 

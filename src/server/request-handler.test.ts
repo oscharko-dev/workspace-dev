@@ -7300,7 +7300,7 @@ test("submit figma_to_qc_test_cases returns 503 LLM_GATEWAY_UNCONFIGURED when bo
           figmaFileKey: "file-key",
           figmaAccessToken: "token",
           jobType: "figma_to_qc_test_cases",
-          testIntelligenceMode: "dry_run",
+          testIntelligenceMode: "deterministic_llm",
         },
       });
       assert.equal(response.statusCode, 503);
@@ -7404,7 +7404,7 @@ test("submit figma_to_qc_test_cases returns 200 with summary when both gates on 
           figmaAccessToken: "token",
           figmaSourceMode: "hybrid",
           jobType: "figma_to_qc_test_cases",
-          testIntelligenceMode: "dry_run",
+          testIntelligenceMode: "deterministic_llm",
         },
       });
       assert.equal(response.statusCode, 200);
