@@ -1,0 +1,256 @@
+{
+  "source": {
+    "kind": "figma_local_json"
+  },
+  "screens": [
+    {
+      "screenId": "s-personal",
+      "screenName": "Kontoeroeffnung Schritt 1: Persoenliche Daten",
+      "screenPath": "/banking/onboarding/kyc/step-1-personal",
+      "nodes": [
+        {
+          "nodeId": "n-vorname",
+          "nodeName": "Vorname",
+          "nodeType": "TEXT_INPUT",
+          "nodePath": "applicant/given-name",
+          "text": "Vorname",
+          "defaultValue": "",
+          "validations": ["Required", "Max 60 characters"],
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-nachname",
+          "nodeName": "Nachname",
+          "nodeType": "TEXT_INPUT",
+          "nodePath": "applicant/family-name",
+          "text": "Nachname",
+          "defaultValue": "",
+          "validations": ["Required", "Max 60 characters"],
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-geburtsdatum",
+          "nodeName": "Geburtsdatum",
+          "nodeType": "TEXT_INPUT",
+          "nodePath": "applicant/dob",
+          "text": "Geburtsdatum",
+          "defaultValue": "",
+          "validations": ["Required", "ISO date", "Date implies age >= 18"],
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-geburtsort",
+          "nodeName": "Geburtsort",
+          "nodeType": "TEXT_INPUT",
+          "nodePath": "applicant/birthplace",
+          "text": "Geburtsort",
+          "defaultValue": "",
+          "validations": ["Required"],
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-staatsangehoerigkeit",
+          "nodeName": "Staatsangehoerigkeit",
+          "nodeType": "SELECT_FIELD",
+          "nodePath": "applicant/nationality",
+          "text": "Staatsangehoerigkeit",
+          "defaultValue": "DE",
+          "validations": ["Required"],
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-steuer-id",
+          "nodeName": "Steuer-Identifikationsnummer",
+          "nodeType": "TEXT_INPUT",
+          "nodePath": "applicant/tax-id",
+          "text": "Steuer-Identifikationsnummer",
+          "defaultValue": "",
+          "validations": ["Required", "Length 11", "Numeric"],
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-strasse",
+          "nodeName": "Strasse und Hausnummer",
+          "nodeType": "TEXT_INPUT",
+          "nodePath": "applicant/address/street",
+          "text": "Strasse und Hausnummer",
+          "defaultValue": "",
+          "validations": ["Required"],
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-plz",
+          "nodeName": "PLZ",
+          "nodeType": "TEXT_INPUT",
+          "nodePath": "applicant/address/postal-code",
+          "text": "PLZ",
+          "defaultValue": "",
+          "validations": ["Required", "Length 5", "Numeric"],
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-ort",
+          "nodeName": "Wohnort",
+          "nodeType": "TEXT_INPUT",
+          "nodePath": "applicant/address/city",
+          "text": "Wohnort",
+          "defaultValue": "",
+          "validations": ["Required"],
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-weiter-1",
+          "nodeName": "Weiter zur Identifikation",
+          "nodeType": "BUTTON",
+          "nodePath": "actions/next",
+          "text": "Weiter zur Identifikation",
+          "navigationTarget": "s-ident",
+          "childNodeIds": []
+        }
+      ]
+    },
+    {
+      "screenId": "s-ident",
+      "screenName": "Kontoeroeffnung Schritt 2: Identifikation",
+      "screenPath": "/banking/onboarding/kyc/step-2-ident",
+      "nodes": [
+        {
+          "nodeId": "n-ident-verfahren",
+          "nodeName": "Identifikationsverfahren",
+          "nodeType": "RADIO_OPTION",
+          "nodePath": "ident/method",
+          "text": "Identifikationsverfahren (VideoIdent, PostIdent)",
+          "defaultValue": "VideoIdent",
+          "validations": ["Required"],
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-termin-slot",
+          "nodeName": "Wunschtermin VideoIdent",
+          "nodeType": "TEXT_INPUT",
+          "nodePath": "ident/appointment",
+          "text": "Wunschtermin VideoIdent",
+          "defaultValue": "",
+          "validations": [
+            "Required if Verfahren is VideoIdent",
+            "ISO datetime",
+            "Date >= today + 1 day"
+          ],
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-bemerkung",
+          "nodeName": "Bemerkung",
+          "nodeType": "TEXT_INPUT",
+          "nodePath": "ident/note",
+          "text": "Bemerkung (optional)",
+          "defaultValue": "",
+          "validations": ["Max 200 characters"],
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-zurueck-2",
+          "nodeName": "Zurueck",
+          "nodeType": "BUTTON",
+          "nodePath": "actions/back",
+          "text": "Zurueck",
+          "navigationTarget": "s-personal",
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-weiter-2",
+          "nodeName": "Weiter zur Compliance-Pruefung",
+          "nodeType": "BUTTON",
+          "nodePath": "actions/next",
+          "text": "Weiter zur Compliance-Pruefung",
+          "navigationTarget": "s-compliance",
+          "childNodeIds": []
+        }
+      ]
+    },
+    {
+      "screenId": "s-compliance",
+      "screenName": "Kontoeroeffnung Schritt 3: Compliance-Pruefung",
+      "screenPath": "/banking/onboarding/kyc/step-3-compliance",
+      "nodes": [
+        {
+          "nodeId": "n-pep-status",
+          "nodeName": "PEP-Status",
+          "nodeType": "RADIO_OPTION",
+          "nodePath": "compliance/pep",
+          "text": "Sind Sie eine politisch exponierte Person (PEP) gemaess GwG",
+          "defaultValue": "No",
+          "validations": ["Required"],
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-fatca-us-person",
+          "nodeName": "FATCA US-Person",
+          "nodeType": "RADIO_OPTION",
+          "nodePath": "compliance/fatca-us-person",
+          "text": "US-Person nach FATCA",
+          "defaultValue": "No",
+          "validations": ["Required"],
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-beneficial-owner",
+          "nodeName": "Wirtschaftlich Berechtigter abweichend",
+          "nodeType": "RADIO_OPTION",
+          "nodePath": "compliance/beneficial-owner-different",
+          "text": "Wirtschaftlich Berechtigter ist eine andere Person als der Kontoinhaber",
+          "defaultValue": "No",
+          "validations": ["Required"],
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-beneficial-owner-name",
+          "nodeName": "Name wirtschaftlich Berechtigter",
+          "nodeType": "TEXT_INPUT",
+          "nodePath": "compliance/beneficial-owner-name",
+          "text": "Name wirtschaftlich Berechtigter",
+          "defaultValue": "",
+          "validations": ["Required if Wirtschaftlich Berechtigter abweichend is Yes"],
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-agb",
+          "nodeName": "AGB akzeptiert",
+          "nodeType": "RADIO_OPTION",
+          "nodePath": "compliance/terms-accepted",
+          "text": "AGB akzeptiert",
+          "defaultValue": "No",
+          "validations": ["Required"],
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-datenschutz-akzeptiert",
+          "nodeName": "Datenschutzhinweise akzeptiert",
+          "nodeType": "RADIO_OPTION",
+          "nodePath": "compliance/privacy-accepted",
+          "text": "Datenschutzhinweise akzeptiert",
+          "defaultValue": "No",
+          "validations": ["Required"],
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-zurueck-3",
+          "nodeName": "Zurueck",
+          "nodeType": "BUTTON",
+          "nodePath": "actions/back",
+          "text": "Zurueck",
+          "navigationTarget": "s-ident",
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-konto-eroeffnen",
+          "nodeName": "Konto eroeffnen",
+          "nodeType": "BUTTON",
+          "nodePath": "actions/submit",
+          "text": "Konto eroeffnen",
+          "childNodeIds": []
+        }
+      ]
+    }
+  ]
+}

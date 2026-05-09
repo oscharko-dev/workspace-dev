@@ -1,0 +1,105 @@
+{
+  "source": {
+    "kind": "figma_local_json"
+  },
+  "screens": [
+    {
+      "screenId": "s-fahrzeugdaten",
+      "screenName": "KFZ-Tarifrechner Schritt 1: Fahrzeugdaten",
+      "screenPath": "/insurance/kfz/tarif/step-1-fahrzeug",
+      "nodes": [
+        {
+          "nodeId": "n-hsn",
+          "nodeName": "HSN",
+          "nodeType": "TEXT_INPUT",
+          "nodePath": "vehicle/hsn",
+          "text": "HSN (Herstellerschluesselnummer)",
+          "defaultValue": "",
+          "validations": [
+            "Required",
+            "Length 4",
+            "Numeric"
+          ],
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-tsn",
+          "nodeName": "TSN",
+          "nodeType": "TEXT_INPUT",
+          "nodePath": "vehicle/tsn",
+          "text": "TSN (Typschluesselnummer)",
+          "defaultValue": "",
+          "validations": [
+            "Required",
+            "Length 3",
+            "Alphanumeric uppercase"
+          ],
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-erstzulassung",
+          "nodeName": "Erstzulassung",
+          "nodeType": "TEXT_INPUT",
+          "nodePath": "vehicle/first-registration",
+          "text": "Erstzulassung",
+          "defaultValue": "",
+          "validations": [
+            "Required",
+            "ISO date",
+            "Date <= today"
+          ],
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-halter-plz",
+          "nodeName": "Halter-PLZ",
+          "nodeType": "TEXT_INPUT",
+          "nodePath": "policyholder/postal-code",
+          "text": "Halter-PLZ",
+          "defaultValue": "",
+          "validations": [
+            "Required",
+            "Length 5",
+            "Numeric"
+          ],
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-fahrleistung",
+          "nodeName": "Jaehrliche Fahrleistung",
+          "nodeType": "TEXT_INPUT",
+          "nodePath": "vehicle/annual-mileage-km",
+          "text": "Jaehrliche Fahrleistung in Kilometern",
+          "defaultValue": "12000",
+          "validations": [
+            "Required",
+            "Numeric > 0",
+            "Numeric <= 100000"
+          ],
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-nutzerkreis",
+          "nodeName": "Nutzerkreis",
+          "nodeType": "SELECT_FIELD",
+          "nodePath": "vehicle/user-circle",
+          "text": "Nutzerkreis (Halter, Halter und Partner, Familie, Beliebige Fahrer ab 23)",
+          "defaultValue": "Halter",
+          "validations": [
+            "Required"
+          ],
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-weiter",
+          "nodeName": "Weiter zu Halterdaten",
+          "nodeType": "BUTTON",
+          "nodePath": "actions/next",
+          "text": "Weiter zu Halterdaten",
+          "navigationTarget": "s-halterdaten",
+          "childNodeIds": []
+        }
+      ]
+    }
+  ]
+}

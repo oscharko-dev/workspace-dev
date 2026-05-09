@@ -1,0 +1,88 @@
+{
+  "source": {
+    "kind": "figma_local_json"
+  },
+  "screens": [
+    {
+      "screenId": "s-login",
+      "screenName": "Anmeldung",
+      "screenPath": "/banking/auth/login",
+      "nodes": [
+        {
+          "nodeId": "n-username",
+          "nodeName": "Anmeldename",
+          "nodeType": "TEXT_INPUT",
+          "nodePath": "auth/credentials/username",
+          "text": "Anmeldename",
+          "defaultValue": "",
+          "validations": [
+            "Required"
+          ],
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-pin",
+          "nodeName": "Online-Banking-PIN",
+          "nodeType": "TEXT_INPUT",
+          "nodePath": "auth/credentials/pin",
+          "text": "Online-Banking-PIN",
+          "defaultValue": "",
+          "validations": [
+            "Required",
+            "Numeric",
+            "Length 5"
+          ],
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-login",
+          "nodeName": "Anmelden",
+          "nodeType": "BUTTON",
+          "nodePath": "actions/login",
+          "text": "Anmelden",
+          "navigationTarget": "s-2fa",
+          "childNodeIds": []
+        }
+      ]
+    },
+    {
+      "screenId": "s-2fa",
+      "screenName": "SCA-Bestaetigung (2FA)",
+      "screenPath": "/banking/auth/2fa",
+      "nodes": [
+        {
+          "nodeId": "n-otp",
+          "nodeName": "Bestaetigungscode",
+          "nodeType": "TEXT_INPUT",
+          "nodePath": "auth/sca/otp",
+          "text": "Bestaetigungscode aus der photoTAN- oder pushTAN-App",
+          "defaultValue": "",
+          "validations": [
+            "Required",
+            "Numeric",
+            "Length 6",
+            "Code expires after 60 seconds"
+          ],
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-confirm",
+          "nodeName": "Bestaetigen",
+          "nodeType": "BUTTON",
+          "nodePath": "actions/sca/confirm",
+          "text": "Bestaetigen",
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-cancel",
+          "nodeName": "Abbrechen",
+          "nodeType": "BUTTON",
+          "nodePath": "actions/sca/cancel",
+          "text": "Abbrechen",
+          "navigationTarget": "s-login",
+          "childNodeIds": []
+        }
+      ]
+    }
+  ]
+}

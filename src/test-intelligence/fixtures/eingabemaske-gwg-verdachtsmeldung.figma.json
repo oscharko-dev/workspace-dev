@@ -1,0 +1,239 @@
+{
+  "source": {
+    "kind": "figma_local_json"
+  },
+  "screens": [
+    {
+      "screenId": "s-gwg",
+      "screenName": "GwG Verdachtsmeldung (Paragraph 43)",
+      "screenPath": "/compliance/gwg/suspicious-activity-report",
+      "nodes": [
+        {
+          "nodeId": "n-meldepflichtiger",
+          "nodeName": "Meldepflichtiger",
+          "nodeType": "TEXT_INPUT",
+          "nodePath": "report/reporter",
+          "text": "Meldepflichtiger (Institut, Geschaeftsstelle, Sachbearbeiter)",
+          "defaultValue": "",
+          "validations": ["Required"],
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-meldekategorie",
+          "nodeName": "Verdachtskategorie",
+          "nodeType": "SELECT_FIELD",
+          "nodePath": "report/category",
+          "text": "Verdachtskategorie (Geldwaesche, Terrorismusfinanzierung, Auffaellige Bargeldtransaktion, Sonstiges)",
+          "defaultValue": "",
+          "validations": ["Required"],
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-sachverhalt-datum",
+          "nodeName": "Datum des Sachverhalts",
+          "nodeType": "TEXT_INPUT",
+          "nodePath": "report/incident-date",
+          "text": "Datum des Sachverhalts oder der ersten Auffaelligkeit",
+          "defaultValue": "",
+          "validations": ["Required", "ISO date", "Date <= today"],
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-sachverhalt-beschreibung",
+          "nodeName": "Sachverhalt",
+          "nodeType": "TEXT_INPUT",
+          "nodePath": "report/narrative",
+          "semanticKind": "textarea",
+          "text": "Sachverhalt (synthetisch oder maskiert; keine produktiven personenbezogenen Daten)",
+          "defaultValue": "",
+          "validations": ["Required", "Max 5000 characters"],
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-pers1-name",
+          "nodeName": "Beteiligte Person 1 Name",
+          "nodeType": "TEXT_INPUT",
+          "nodePath": "report/involved-persons[0]/name",
+          "text": "Beteiligte Person 1: Name (synthetisch oder maskiert)",
+          "defaultValue": "",
+          "validations": ["Required for first row", "Max 80 characters"],
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-pers1-rolle",
+          "nodeName": "Beteiligte Person 1 Rolle",
+          "nodeType": "SELECT_FIELD",
+          "nodePath": "report/involved-persons[0]/role",
+          "text": "Beteiligte Person 1: Rolle (Auftraggeber, Beguenstigter, Kontoinhaber, Bote, Vermittler)",
+          "defaultValue": "",
+          "validations": ["Required for first row"],
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-pers2-name",
+          "nodeName": "Beteiligte Person 2 Name",
+          "nodeType": "TEXT_INPUT",
+          "nodePath": "report/involved-persons[1]/name",
+          "text": "Beteiligte Person 2: Name",
+          "defaultValue": "",
+          "validations": ["Optional", "Max 80 characters"],
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-pers2-rolle",
+          "nodeName": "Beteiligte Person 2 Rolle",
+          "nodeType": "SELECT_FIELD",
+          "nodePath": "report/involved-persons[1]/role",
+          "text": "Beteiligte Person 2: Rolle",
+          "defaultValue": "",
+          "validations": ["Required if Person 2 Name is provided"],
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-pers3-name",
+          "nodeName": "Beteiligte Person 3 Name",
+          "nodeType": "TEXT_INPUT",
+          "nodePath": "report/involved-persons[2]/name",
+          "text": "Beteiligte Person 3: Name",
+          "defaultValue": "",
+          "validations": ["Optional"],
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-pers3-rolle",
+          "nodeName": "Beteiligte Person 3 Rolle",
+          "nodeType": "SELECT_FIELD",
+          "nodePath": "report/involved-persons[2]/role",
+          "text": "Beteiligte Person 3: Rolle",
+          "defaultValue": "",
+          "validations": ["Required if Person 3 Name is provided"],
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-tx1-datum",
+          "nodeName": "Transaktion 1 Datum",
+          "nodeType": "TEXT_INPUT",
+          "nodePath": "report/transactions[0]/date",
+          "text": "Transaktion 1: Datum",
+          "defaultValue": "",
+          "validations": ["Required for first row", "ISO date"],
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-tx1-betrag",
+          "nodeName": "Transaktion 1 Betrag",
+          "nodeType": "TEXT_INPUT",
+          "nodePath": "report/transactions[0]/amount",
+          "text": "Transaktion 1: Betrag in EUR",
+          "defaultValue": "",
+          "validations": ["Required for first row", "Numeric > 0", "Max 2 decimals"],
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-tx1-gegenseite",
+          "nodeName": "Transaktion 1 Gegenseite",
+          "nodeType": "TEXT_INPUT",
+          "nodePath": "report/transactions[0]/counterparty",
+          "text": "Transaktion 1: Gegenseite (synthetische Kontoreferenz)",
+          "defaultValue": "",
+          "validations": ["Required for first row"],
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-tx2-datum",
+          "nodeName": "Transaktion 2 Datum",
+          "nodeType": "TEXT_INPUT",
+          "nodePath": "report/transactions[1]/date",
+          "text": "Transaktion 2: Datum",
+          "defaultValue": "",
+          "validations": ["Optional"],
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-tx2-betrag",
+          "nodeName": "Transaktion 2 Betrag",
+          "nodeType": "TEXT_INPUT",
+          "nodePath": "report/transactions[1]/amount",
+          "text": "Transaktion 2: Betrag in EUR",
+          "defaultValue": "",
+          "validations": ["Optional", "Numeric > 0"],
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-tx2-gegenseite",
+          "nodeName": "Transaktion 2 Gegenseite",
+          "nodeType": "TEXT_INPUT",
+          "nodePath": "report/transactions[1]/counterparty",
+          "text": "Transaktion 2: Gegenseite",
+          "defaultValue": "",
+          "validations": ["Optional"],
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-tx3-datum",
+          "nodeName": "Transaktion 3 Datum",
+          "nodeType": "TEXT_INPUT",
+          "nodePath": "report/transactions[2]/date",
+          "text": "Transaktion 3: Datum",
+          "defaultValue": "",
+          "validations": ["Optional"],
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-tx3-betrag",
+          "nodeName": "Transaktion 3 Betrag",
+          "nodeType": "TEXT_INPUT",
+          "nodePath": "report/transactions[2]/amount",
+          "text": "Transaktion 3: Betrag in EUR",
+          "defaultValue": "",
+          "validations": ["Optional"],
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-tx3-gegenseite",
+          "nodeName": "Transaktion 3 Gegenseite",
+          "nodeType": "TEXT_INPUT",
+          "nodePath": "report/transactions[2]/counterparty",
+          "text": "Transaktion 3: Gegenseite",
+          "defaultValue": "",
+          "validations": ["Optional"],
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-sanctions-match",
+          "nodeName": "Sanktionslisten-Treffer",
+          "nodeType": "RESULT_DISPLAY",
+          "nodePath": "report/sanctions-match",
+          "text": "Treffer aus interner Sanktionslisten-Pruefung (informativ; entbindet nicht von Verdachtsmeldung)",
+          "defaultValue": "",
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-vertraulichkeit",
+          "nodeName": "Hinweis Vertraulichkeit",
+          "nodeType": "INFORMATIVE_LABEL",
+          "nodePath": "report/disclaimer/confidentiality",
+          "text": "Hinweis Vertraulichkeit: Diese Meldung ist auch innerhalb des Hauses nur dem berechtigten Personenkreis zugaenglich; das Tipping-Off-Verbot ist zu beachten",
+          "defaultValue": "",
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-uebermitteln",
+          "nodeName": "An FIU uebermitteln",
+          "nodeType": "BUTTON",
+          "nodePath": "actions/submit",
+          "text": "An FIU uebermitteln",
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-zwischenspeichern",
+          "nodeName": "Zwischenspeichern",
+          "nodeType": "BUTTON",
+          "nodePath": "actions/save-draft",
+          "text": "Zwischenspeichern (Entwurf)",
+          "childNodeIds": []
+        }
+      ]
+    }
+  ]
+}
