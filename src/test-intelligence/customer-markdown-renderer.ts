@@ -46,6 +46,11 @@ export interface RenderedCustomerMarkdown {
 // eslint-disable-next-line no-control-regex
 const FORBIDDEN_FILENAME_CHARS = /[\\/:*?"<>|\x00-\x1f]/gu;
 const COLLAPSE_WHITESPACE = /\s+/gu;
+const CUSTOMER_PROVENANCE_PREFIX_PATTERN =
+  /^(?:[a-z0-9]+(?:[_./-][a-z0-9]+)*:\s*)+/u;
+const CUSTOMER_CLARIFICATION_LABEL_PATTERN =
+  /^(?:(?:annahmen?\s*\/\s*)?klärungsbedarf|offene frage|open question|question)\s*[:.-]?\s*/iu;
+const NON_ASCII_HYPHEN_PATTERN = /[\u00ad\u2010-\u2015\u2212]/gu;
 const KEYWORD_SELECTABLE_HINT_PATTERN =
   /\b(select|dropdown|checkbox|radio|option|auswahl|choice|picker)\b/i;
 const KEYWORD_RESULT_HINT_PATTERN =
@@ -114,6 +119,16 @@ interface PreparedCustomerCase {
   matchedAcceptanceCriteria: string[];
 }
 
+interface ClarificationReference {
+  id: string;
+  text: string;
+}
+
+interface SuiteClarificationRegistry {
+  ordered: readonly ClarificationReference[];
+  byCaseId: ReadonlyMap<string, readonly ClarificationReference[]>;
+}
+
 export const renderCustomerMarkdown = (
   input: RenderCustomerMarkdownInput,
 ): RenderedCustomerMarkdown => {
@@ -124,15 +139,24 @@ export const renderCustomerMarkdown = (
     acceptanceCriteria,
     mode,
   );
+  const suiteClarifications =
+    mode === "customer"
+      ? buildSuiteClarificationRegistry(preparedCases)
+      : EMPTY_SUITE_CLARIFICATION_REGISTRY;
   const perCaseFiles = preparedCases.map((entry) => ({
     filename: entry.filename,
-    body: renderSingleCase(entry, mode),
+    body: renderSingleCase(
+      entry,
+      mode,
+      suiteClarifications.byCaseId.get(entry.tc.id) ?? [],
+    ),
   }));
   const combinedMarkdown = renderCombined(
     input,
     preparedCases,
     acceptanceCriteria,
     mode,
+    suiteClarifications,
   );
   return { combinedMarkdown, perCaseFiles };
 };
@@ -182,9 +206,10 @@ const renderCombined = (
   preparedCases: readonly PreparedCustomerCase[],
   acceptanceCriteria: readonly string[],
   mode: "customer" | "technical",
+  suiteClarifications: SuiteClarificationRegistry,
 ): string => {
   const lines: string[] = [];
-  lines.push(`# Testfälle: ${input.fileName}`);
+  lines.push(`# Testfälle: ${renderMarkdownText(input.fileName, mode)}`);
   lines.push("");
   lines.push(`Quelle: ${input.sourceLabel}`);
   lines.push(`Generiert am: ${input.generatedAt}`);
@@ -209,7 +234,7 @@ const renderCombined = (
   lines.push("| --- | --- | --- | --- | --- |");
   for (const entry of preparedCases) {
     lines.push(
-      `| ${entry.displayLabel} | ${escapeTableCell(entry.tc.objective)} | ${escapeTableCell(entry.classification)} | ${escapeTableCell(entry.customerTraceLabel)} | ${escapeTableCell(entry.reviewNotes)} |`,
+      `| ${entry.displayLabel} | ${escapeTableCell(renderMarkdownText(entry.tc.objective, mode))} | ${escapeTableCell(renderMarkdownText(entry.classification, mode))} | ${escapeTableCell(renderMarkdownText(entry.customerTraceLabel, mode))} | ${escapeTableCell(renderMarkdownText(entry.reviewNotes, mode))} |`,
     );
   }
   lines.push("");
@@ -226,7 +251,7 @@ const renderCombined = (
         )
         .map((entry) => entry.displayLabel);
       lines.push(
-        `| ${acLabel} | ${escapeTableCell(acceptanceCriteria[i] ?? "")} | ${matchedCases.length > 0 ? matchedCases.join(", ") : "—"} |`,
+        `| ${acLabel} | ${escapeTableCell(renderMarkdownText(acceptanceCriteria[i] ?? "", mode))} | ${matchedCases.length > 0 ? matchedCases.join(", ") : "—"} |`,
       );
     }
     lines.push("");
@@ -234,10 +259,19 @@ const renderCombined = (
   if (input.complianceCoverage !== undefined) {
     appendComplianceCoverageSection(lines, input.complianceCoverage);
   }
+  if (mode === "customer") {
+    appendSuiteClarificationsSection(lines, suiteClarifications);
+  }
   for (let i = 0; i < preparedCases.length; i += 1) {
     const entry = preparedCases[i];
     if (entry === undefined) continue;
-    lines.push(renderSingleCase(entry, mode));
+    lines.push(
+      renderSingleCase(
+        entry,
+        mode,
+        suiteClarifications.byCaseId.get(entry.tc.id) ?? [],
+      ),
+    );
     if (i < preparedCases.length - 1) {
       lines.push("");
       lines.push("---");
@@ -250,17 +284,20 @@ const renderCombined = (
 const renderSingleCase = (
   entry: PreparedCustomerCase,
   mode: "customer" | "technical",
+  customerClarifications: readonly ClarificationReference[],
 ): string => {
   const { tc } = entry;
   const lines: string[] = [];
-  lines.push(`## ${entry.displayLabel} — ${entry.customerTitle}`);
+  lines.push(
+    `## ${entry.displayLabel}${mode === "customer" ? " - " : " — "}${renderMarkdownText(entry.customerTitle, mode)}`,
+  );
   lines.push("");
   lines.push("**Beschreibung:**");
   lines.push("");
-  lines.push(tc.objective);
+  lines.push(renderMarkdownText(tc.objective, mode));
   lines.push("");
   lines.push(
-    `**Klasse:** ${entry.classification} · **Priorität:** ${tc.priority} · **Risiko:** ${tc.riskCategory} · **Technik:** ${tc.technique}`,
+    `**Klasse:** ${renderMarkdownText(entry.classification, mode)} · **Priorität:** ${tc.priority} · **Risiko:** ${tc.riskCategory} · **Technik:** ${tc.technique}`,
   );
   lines.push("");
   const workflowRefs = [
@@ -274,7 +311,23 @@ const renderSingleCase = (
     lines.push(`**Workflow-Aktionen:** ${workflowRefs.join(", ")}`);
     lines.push("");
   }
-  if (tc.assumptions.length > 0 || tc.openQuestions.length > 0) {
+  if (mode === "customer" && customerClarifications.length > 0) {
+    lines.push(
+      `**Klärbedarf:** ${customerClarifications.map((item) => item.id).join(", ")}`,
+    );
+    lines.push("");
+  }
+  const customerAssumptions = tc.assumptions
+    .map((value) => sanitizeCustomerVisibleText(value))
+    .filter((value) => value.length > 0);
+  if (mode === "customer" && customerAssumptions.length > 0) {
+    lines.push("**Annahmen:**");
+    for (const assumption of customerAssumptions) {
+      lines.push(`- ${renderMarkdownText(assumption, mode)}`);
+    }
+    lines.push("");
+  }
+  if (mode === "technical" && (tc.assumptions.length > 0 || tc.openQuestions.length > 0)) {
     lines.push("> [!IMPORTANT]");
     lines.push("> **Klärbedarf vor Freigabe**");
     for (const assumption of tc.assumptions) {
@@ -288,14 +341,14 @@ const renderSingleCase = (
   if (tc.preconditions.length > 0) {
     lines.push("**Vorbedingungen:**");
     for (const p of tc.preconditions) {
-      lines.push(`- ${p}`);
+      lines.push(`- ${renderMarkdownText(p, mode)}`);
     }
     lines.push("");
   }
   if (tc.testData.length > 0) {
     lines.push("**Testdaten:**");
     for (const d of tc.testData) {
-      lines.push(`- ${d}`);
+      lines.push(`- ${renderMarkdownText(d, mode)}`);
     }
     lines.push("");
   }
@@ -306,7 +359,7 @@ const renderSingleCase = (
     lines.push("");
     lines.push("**Beschreibung:**");
     lines.push("");
-    lines.push(step.action);
+    lines.push(renderMarkdownText(step.action, mode));
     lines.push("");
     const expected =
       typeof step.expected === "string" && step.expected.length > 0
@@ -314,27 +367,27 @@ const renderSingleCase = (
         : "—";
     lines.push("**Erwartetes Ergebnis:**");
     lines.push("");
-    lines.push(expected);
+    lines.push(renderMarkdownText(expected, mode));
     lines.push("");
   }
   if (tc.expectedResults.length > 0) {
     lines.push("**Gesamterwartung:**");
     for (const r of tc.expectedResults) {
-      lines.push(`- ${r}`);
+      lines.push(`- ${renderMarkdownText(r, mode)}`);
     }
     lines.push("");
   }
-  const coverageMapping = buildCoverageMapping(entry);
+  const coverageMapping = buildCoverageMapping(entry, mode);
   if (coverageMapping.length > 0) {
     lines.push("**Abdeckung & Nachvollziehbarkeit:**");
-    for (const entry of coverageMapping) {
-      lines.push(`- ${entry}`);
+    for (const coverageEntry of coverageMapping) {
+      lines.push(`- ${coverageEntry}`);
     }
     lines.push("");
   }
   if (tc.regulatoryRelevance !== undefined) {
     lines.push(
-      `**Regulatorische Relevanz:** ${tc.regulatoryRelevance.domain} — ${tc.regulatoryRelevance.rationale}`,
+      `**Regulatorische Relevanz:** ${renderMarkdownText(tc.regulatoryRelevance.domain, mode)}${mode === "customer" ? " - " : " — "}${renderMarkdownText(tc.regulatoryRelevance.rationale, mode)}`,
     );
     lines.push("");
   }
@@ -358,7 +411,10 @@ const renderSingleCase = (
   return lines.join("\n");
 };
 
-const buildCoverageMapping = (entry: PreparedCustomerCase): string[] => {
+const buildCoverageMapping = (
+  entry: PreparedCustomerCase,
+  mode: "customer" | "technical",
+): string[] => {
   const { tc } = entry;
   const objective = tc.objective.trim();
   const expected =
@@ -394,7 +450,7 @@ const buildCoverageMapping = (entry: PreparedCustomerCase): string[] => {
   if (evidenceParts.length > 0) {
     coverage.push(`Evidenz: ${evidenceParts.join(" · ")}`);
   }
-  return coverage;
+  return coverage.map((value) => renderMarkdownText(value, mode));
 };
 
 const inferCoverageTheme = (tc: GeneratedTestCase): string => {
@@ -435,9 +491,35 @@ const inferCoverageTheme = (tc: GeneratedTestCase): string => {
 const normalizeText = (value: string): string =>
   value
     .toLowerCase()
+    .replace(NON_ASCII_HYPHEN_PATTERN, "-")
     .replace(/[\p{P}\p{S}]+/gu, " ")
     .replace(/\s+/gu, " ")
     .trim();
+
+const sanitizeCustomerVisibleText = (value: string): string =>
+  value
+    .replace(CUSTOMER_PROVENANCE_PREFIX_PATTERN, "")
+    .replace(CUSTOMER_CLARIFICATION_LABEL_PATTERN, "")
+    .replace(NON_ASCII_HYPHEN_PATTERN, "-")
+    .replace(COLLAPSE_WHITESPACE, " ")
+    .trim();
+
+const normalizeCustomerMarkdownText = (value: string): string =>
+  value.replace(NON_ASCII_HYPHEN_PATTERN, "-");
+
+const renderMarkdownText = (
+  value: string,
+  mode: "customer" | "technical",
+): string => (mode === "customer" ? normalizeCustomerMarkdownText(value) : value);
+
+const buildClarificationFingerprint = (value: string): string => {
+  const sanitized = sanitizeCustomerVisibleText(value);
+  const tokens = tokenizeForMatching(sanitized).sort();
+  if (tokens.length > 0) {
+    return tokens.join("|");
+  }
+  return normalizeText(sanitized);
+};
 
 const CUSTOMER_UNSAFE_TRACE_LABELS = new Set([
   "content",
@@ -571,6 +653,9 @@ const stripLeadingCaseLabel = (value: string): string =>
 const formatTestCaseLabel = (index: number): string =>
   `TC${String(index).padStart(2, "0")}`;
 
+const formatClarificationLabel = (index: number): string =>
+  `FQ-${String(index).padStart(3, "0")}`;
+
 const formatAcceptanceCriterionLabel = (index: number): string =>
   `AC${String(index).padStart(2, "0")}`;
 
@@ -630,6 +715,59 @@ const summarizeReviewNotes = (tc: GeneratedTestCase): string => {
     notes.push(`Annahmen: ${tc.assumptions.length}`);
   }
   return notes.length > 0 ? notes.join(" · ") : "—";
+};
+
+const EMPTY_SUITE_CLARIFICATION_REGISTRY: SuiteClarificationRegistry = {
+  ordered: [],
+  byCaseId: new Map(),
+};
+
+const buildSuiteClarificationRegistry = (
+  preparedCases: readonly PreparedCustomerCase[],
+): SuiteClarificationRegistry => {
+  const ordered: ClarificationReference[] = [];
+  const byFingerprint = new Map<string, ClarificationReference>();
+  const byCaseId = new Map<string, readonly ClarificationReference[]>();
+  for (const entry of preparedCases) {
+    const caseReferences: ClarificationReference[] = [];
+    const seenFingerprints = new Set<string>();
+    for (const question of entry.tc.openQuestions) {
+      const text = sanitizeCustomerVisibleText(question);
+      if (text.length === 0) continue;
+      const fingerprint = buildClarificationFingerprint(text);
+      if (fingerprint.length === 0 || seenFingerprints.has(fingerprint)) {
+        continue;
+      }
+      seenFingerprints.add(fingerprint);
+      let reference = byFingerprint.get(fingerprint);
+      if (reference === undefined) {
+        reference = {
+          id: formatClarificationLabel(ordered.length + 1),
+          text,
+        };
+        byFingerprint.set(fingerprint, reference);
+        ordered.push(reference);
+      }
+      caseReferences.push(reference);
+    }
+    if (caseReferences.length > 0) {
+      byCaseId.set(entry.tc.id, caseReferences);
+    }
+  }
+  return { ordered, byCaseId };
+};
+
+const appendSuiteClarificationsSection = (
+  lines: string[],
+  registry: SuiteClarificationRegistry,
+): void => {
+  if (registry.ordered.length === 0) return;
+  lines.push("## Übergreifender Klärbedarf vor Freigabe");
+  lines.push("");
+  for (const clarification of registry.ordered) {
+    lines.push(`- ${clarification.id}: ${clarification.text}`);
+  }
+  lines.push("");
 };
 
 const matchAcceptanceCriteria = (
