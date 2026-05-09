@@ -179,7 +179,7 @@ const buildVisual = (): VisualSidecarValidationReport => ({
 test("golden: TEST_INTELLIGENCE_PROMPT_TEMPLATE_VERSION snapshot", () => {
   assert.equal(
     TEST_INTELLIGENCE_PROMPT_TEMPLATE_VERSION,
-    "1.6.2",
+    "1.7.0",
     "Prompt template version changed — bump the literal in this snapshot, update docs/test-intelligence-prompt-template-version.lock.json, and add a docs/test-intelligence-prompt-template-changelog.md entry.",
   );
 });

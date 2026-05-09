@@ -549,7 +549,7 @@ Minimal persisted metadata for one compiled role-step prompt run.
 
 ##### promptTemplateVersion
 
-> **promptTemplateVersion**: `"1.6.2"`
+> **promptTemplateVersion**: `"1.7.0"`
 
 ##### rawPromptsIncluded
 
@@ -1228,7 +1228,7 @@ Redacted JSON payload that the model will reason over.
 
 ##### promptTemplateVersion
 
-> **promptTemplateVersion**: `"1.6.2"`
+> **promptTemplateVersion**: `"1.7.0"`
 
 ##### redactionPolicyVersion
 
@@ -3928,7 +3928,7 @@ older artifacts may omit it and are classified on read-path fallback.
 
 ##### promptTemplateVersion
 
-> **promptTemplateVersion**: `"1.6.2"`
+> **promptTemplateVersion**: `"1.7.0"`
 
 ##### qcMappingPreview
 
@@ -4023,7 +4023,7 @@ Whether the artifact came from a replay-cache hit.
 
 ##### promptTemplateVersion
 
-> **promptTemplateVersion**: `"1.6.2"`
+> **promptTemplateVersion**: `"1.7.0"`
 
 ##### redactionPolicyVersion
 
@@ -9419,7 +9419,7 @@ Replay-cache key — the only deterministic-bit-identical replay anchor.
 
 ##### promptTemplateVersion
 
-> **promptTemplateVersion**: `"1.6.2"`
+> **promptTemplateVersion**: `"1.7.0"`
 
 ##### redactionPolicyVersion
 
@@ -13466,7 +13466,7 @@ Replay-cache identity hashes.
 
 ##### promptTemplateVersion
 
-> **promptTemplateVersion**: `"1.6.2"`
+> **promptTemplateVersion**: `"1.7.0"`
 
 Versions stamped by the harness at run time.
 
@@ -14184,7 +14184,7 @@ Replay-cache identity hashes for the run (mirrors compiled prompt).
 
 ##### promptTemplateVersion
 
-> **promptTemplateVersion**: `"1.6.2"`
+> **promptTemplateVersion**: `"1.7.0"`
 
 Versions used to compile the prompt and validate the output.
 
@@ -23924,7 +23924,7 @@ before a job may compose more than one test-design source.
 
 ### TEST\_INTELLIGENCE\_PROMPT\_TEMPLATE\_VERSION
 
-> `const` **TEST\_INTELLIGENCE\_PROMPT\_TEMPLATE\_VERSION**: `"1.6.2"`
+> `const` **TEST\_INTELLIGENCE\_PROMPT\_TEMPLATE\_VERSION**: `"1.7.0"`
 
 Prompt template version for the test-intelligence prompt family.
 
