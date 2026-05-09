@@ -446,6 +446,41 @@ export class Wave1ValidationFinOpsBudgetExceededError extends Error {
 }
 
 /**
+ * Maximum case-title length permitted by the test-case schema validator
+ * (`TITLE_MAX_LENGTH = 200` in `test-case-validation.ts`).
+ *
+ * The synthesizer composes titles from interpolated `field.label` /
+ * `action.label` strings. For most labels the result fits comfortably,
+ * but realistic banking and insurance designs carry long
+ * INFORMATIVE_LABEL disclaimers (Wartezeit-Hinweis, DSGVO-Hinweis,
+ * Tipping-Off-Hinweis, MiFID-Risiko-Aufklaerung) whose `text` is
+ * 140-180+ chars. Without this clamp the resulting `Submit valid …`
+ * title overflows the schema limit and the entire pipeline blocks on
+ * `validation:schema_invalid` even though the case payload is otherwise
+ * well-formed. Surfaced by the Eingabemasken K0 measurement run on
+ * `eingabemaske-bu-antrag` (Wartezeit-Hinweis = 175 chars).
+ */
+const SYNTHESIZED_TITLE_MAX_LENGTH = 200;
+const SYNTHESIZED_TITLE_ELLIPSIS = "...";
+
+/**
+ * Clamp a synthesized case title to {@link SYNTHESIZED_TITLE_MAX_LENGTH}
+ * with a trailing ellipsis when truncation occurred. The function never
+ * returns a string longer than the schema limit and never returns an
+ * empty string for non-empty input, so downstream `title_empty` /
+ * `schema_invalid` validation errors caused purely by length are
+ * eliminated.
+ */
+const clampSynthesizedTitle = (raw: string): string => {
+  if (raw.length <= SYNTHESIZED_TITLE_MAX_LENGTH) return raw;
+  const cut = raw.slice(
+    0,
+    SYNTHESIZED_TITLE_MAX_LENGTH - SYNTHESIZED_TITLE_ELLIPSIS.length,
+  );
+  return `${cut.trimEnd()}${SYNTHESIZED_TITLE_ELLIPSIS}`;
+};
+
+/**
  * Build a deterministic `GeneratedTestCaseList` from a Business Test
  * Intent IR. The function is the source of truth for what a "good"
  * Wave 1 mock-LLM response looks like for a given intent: it covers
@@ -480,7 +515,9 @@ export const synthesizeGeneratedTestCases = (input: {
     cases.push(
       buildSyntheticCase({
         idSuffix: `field-functional-${stableSlug(field.id)}`,
-        title: `Submit valid ${field.label} on ${field.screenId}`,
+        title: clampSynthesizedTitle(
+          `Submit valid ${field.label} on ${field.screenId}`,
+        ),
         objective: `Confirm the ${field.label} field accepts a valid value.`,
         type: "functional",
         priority: "p1",
@@ -535,9 +572,11 @@ export const synthesizeGeneratedTestCases = (input: {
       cases.push(
         buildSyntheticCase({
           idSuffix: `field-negative-${stableSlug(field.id)}`,
-          title: hasUnresolvedValidationRules
-            ? `Capture unresolved validation behavior for ${field.label} on ${field.screenId}`
-            : `Reject empty ${field.label} on ${field.screenId}`,
+          title: clampSynthesizedTitle(
+            hasUnresolvedValidationRules
+              ? `Capture unresolved validation behavior for ${field.label} on ${field.screenId}`
+              : `Reject empty ${field.label} on ${field.screenId}`,
+          ),
           objective: hasUnresolvedValidationRules
             ? `Document the validation behavior for ${field.label} once the final validation scenario is specified.`
             : `Confirm the form rejects an empty ${field.label}.`,
@@ -589,9 +628,11 @@ export const synthesizeGeneratedTestCases = (input: {
       cases.push(
         buildSyntheticCase({
           idSuffix: `field-validation-${stableSlug(field.id)}`,
-          title: hasUnresolvedValidationRules
-            ? `Capture unresolved validation rules for ${field.label} on ${field.screenId}`
-            : `Validate ${field.label} rules on ${field.screenId}`,
+          title: clampSynthesizedTitle(
+            hasUnresolvedValidationRules
+              ? `Capture unresolved validation rules for ${field.label} on ${field.screenId}`
+              : `Validate ${field.label} rules on ${field.screenId}`,
+          ),
           objective: hasUnresolvedValidationRules
             ? `Capture generic validation behavior for ${field.label} without inventing exact messages or thresholds.`
             : `Confirm validation messages for ${field.label}.`,
@@ -635,7 +676,9 @@ export const synthesizeGeneratedTestCases = (input: {
         cases.push(
           buildSyntheticCase({
             idSuffix: `field-boundary-${stableSlug(field.id)}`,
-            title: `Boundary lengths for ${field.label} on ${field.screenId}`,
+            title: clampSynthesizedTitle(
+              `Boundary lengths for ${field.label} on ${field.screenId}`,
+            ),
             objective: `Probe the boundary lengths of the ${field.label} field.`,
             type: "boundary",
             priority: "p2",
@@ -679,7 +722,9 @@ export const synthesizeGeneratedTestCases = (input: {
     cases.push(
       buildSyntheticCase({
         idSuffix: `action-${stableSlug(action.id)}`,
-        title: `Trigger ${action.label} on ${action.screenId}`,
+        title: clampSynthesizedTitle(
+          `Trigger ${action.label} on ${action.screenId}`,
+        ),
         objective: `Confirm the ${action.label} control performs its action.`,
         type: "functional",
         priority: "p1",
@@ -714,7 +759,9 @@ export const synthesizeGeneratedTestCases = (input: {
     cases.push(
       buildSyntheticCase({
         idSuffix: `navigation-${stableSlug(nav.id)}`,
-        title: `Navigate from ${nav.screenId} to ${nav.targetScreenId}`,
+        title: clampSynthesizedTitle(
+          `Navigate from ${nav.screenId} to ${nav.targetScreenId}`,
+        ),
         objective: `Confirm the navigation edge from ${nav.screenId} to ${nav.targetScreenId}.`,
         type: "navigation",
         priority: "p2",
@@ -753,7 +800,7 @@ export const synthesizeGeneratedTestCases = (input: {
     cases.push(
       buildSyntheticCase({
         idSuffix: `a11y-${stableSlug(screenId)}`,
-        title: `Accessibility check for ${screenId}`,
+        title: clampSynthesizedTitle(`Accessibility check for ${screenId}`),
         objective: `Confirm keyboard and screen-reader accessibility on ${screenId}.`,
         type: "accessibility",
         priority: "p2",

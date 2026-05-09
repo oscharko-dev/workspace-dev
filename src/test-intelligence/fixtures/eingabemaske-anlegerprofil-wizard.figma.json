@@ -1,0 +1,201 @@
+{
+  "source": {
+    "kind": "figma_local_json"
+  },
+  "screens": [
+    {
+      "screenId": "s-anlageziel",
+      "screenName": "Anlegerprofil Schritt 1: Anlageziel und Risikoprofil",
+      "screenPath": "/banking/securities/profile/step-1-goal",
+      "nodes": [
+        {
+          "nodeId": "n-anlageziel",
+          "nodeName": "Anlageziel",
+          "nodeType": "RADIO_OPTION",
+          "nodePath": "profile/goal",
+          "text": "Anlageziel (Vermoegensaufbau, Vorsorge, Vermoegenserhalt)",
+          "defaultValue": "Vermoegensaufbau",
+          "validations": ["Required"],
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-anlagedauer",
+          "nodeName": "Anlagedauer",
+          "nodeType": "SELECT_FIELD",
+          "nodePath": "profile/horizon",
+          "text": "Anlagedauer (kurz unter 3 Jahre, mittel 3 bis 7 Jahre, lang ueber 7 Jahre)",
+          "defaultValue": "lang",
+          "validations": ["Required"],
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-risikobereitschaft",
+          "nodeName": "Risikobereitschaft",
+          "nodeType": "RADIO_OPTION",
+          "nodePath": "profile/risk-appetite",
+          "text": "Risikobereitschaft (konservativ, ausgewogen, wachstumsorientiert, spekulativ)",
+          "defaultValue": "ausgewogen",
+          "validations": ["Required"],
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-betrag-frei-verfuegbar",
+          "nodeName": "Frei verfuegbarer Anlagebetrag",
+          "nodeType": "TEXT_INPUT",
+          "nodePath": "profile/free-capital",
+          "text": "Frei verfuegbarer Anlagebetrag in EUR",
+          "defaultValue": "",
+          "validations": ["Required", "Numeric > 0"],
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-weiter-1",
+          "nodeName": "Weiter",
+          "nodeType": "BUTTON",
+          "nodePath": "actions/next",
+          "text": "Weiter zur Erfahrung",
+          "navigationTarget": "s-erfahrung",
+          "childNodeIds": []
+        }
+      ]
+    },
+    {
+      "screenId": "s-erfahrung",
+      "screenName": "Anlegerprofil Schritt 2: Erfahrung und Verlusttragfaehigkeit",
+      "screenPath": "/banking/securities/profile/step-2-experience",
+      "nodes": [
+        {
+          "nodeId": "n-erfahrung-aktien",
+          "nodeName": "Erfahrung Aktien",
+          "nodeType": "RADIO_OPTION",
+          "nodePath": "profile/experience/equities",
+          "text": "Erfahrung Aktien (keine, Grundwissen, fortgeschritten, Experte)",
+          "defaultValue": "Grundwissen",
+          "validations": ["Required"],
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-erfahrung-anleihen",
+          "nodeName": "Erfahrung Anleihen",
+          "nodeType": "RADIO_OPTION",
+          "nodePath": "profile/experience/bonds",
+          "text": "Erfahrung Anleihen",
+          "defaultValue": "keine",
+          "validations": ["Required"],
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-erfahrung-fonds",
+          "nodeName": "Erfahrung Fonds und ETFs",
+          "nodeType": "RADIO_OPTION",
+          "nodePath": "profile/experience/funds",
+          "text": "Erfahrung Fonds und ETFs",
+          "defaultValue": "Grundwissen",
+          "validations": ["Required"],
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-erfahrung-derivate",
+          "nodeName": "Erfahrung Derivate",
+          "nodeType": "RADIO_OPTION",
+          "nodePath": "profile/experience/derivatives",
+          "text": "Erfahrung Derivate (Optionen, Zertifikate, Hebelprodukte)",
+          "defaultValue": "keine",
+          "validations": [
+            "Required if Risikobereitschaft is wachstumsorientiert or spekulativ"
+          ],
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-verlusttragfaehigkeit",
+          "nodeName": "Verlusttragfaehigkeit",
+          "nodeType": "SELECT_FIELD",
+          "nodePath": "profile/loss-tolerance",
+          "text": "Maximal akzeptabler Verlust pro Jahr (0 Prozent, bis 10 Prozent, bis 25 Prozent, bis 50 Prozent, ueber 50 Prozent)",
+          "defaultValue": "bis 10 Prozent",
+          "validations": ["Required"],
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-zurueck-2",
+          "nodeName": "Zurueck",
+          "nodeType": "BUTTON",
+          "nodePath": "actions/back",
+          "text": "Zurueck",
+          "navigationTarget": "s-anlageziel",
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-weiter-2",
+          "nodeName": "Weiter zur Empfehlung",
+          "nodeType": "BUTTON",
+          "nodePath": "actions/next",
+          "text": "Weiter zur Empfehlung",
+          "navigationTarget": "s-empfehlung",
+          "childNodeIds": []
+        }
+      ]
+    },
+    {
+      "screenId": "s-empfehlung",
+      "screenName": "Anlegerprofil Schritt 3: Empfehlung und Bestaetigung",
+      "screenPath": "/banking/securities/profile/step-3-recommendation",
+      "nodes": [
+        {
+          "nodeId": "n-empfohlene-risikoklasse",
+          "nodeName": "Empfohlene Risikoklasse",
+          "nodeType": "RESULT_DISPLAY",
+          "nodePath": "profile/recommended-class",
+          "text": "Empfohlene Risikoklasse abgeleitet aus Anlageziel, Erfahrung und Verlusttragfaehigkeit (eine von R1 sicherheitsorientiert bis R5 spekulativ)",
+          "defaultValue": "",
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-asset-allocation",
+          "nodeName": "Asset-Allokation",
+          "nodeType": "RESULT_DISPLAY",
+          "nodePath": "profile/asset-allocation",
+          "text": "Vorschlag Asset-Allokation (Aktien-, Anleihen-, Geldmarkt-Anteil) abgeleitet aus Risikoklasse und Anlagedauer",
+          "defaultValue": "",
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-warnung-spekulativ",
+          "nodeName": "Warnung Spekulative Risikoklassen",
+          "nodeType": "INFORMATIVE_LABEL",
+          "nodePath": "profile/warning/speculative",
+          "text": "Hinweis fuer spekulative Risikoklassen: Hebelprodukte koennen zum Totalverlust und (bei Margin) zu Nachschusspflicht fuehren; nur bei nachgewiesener Erfahrung empfohlen",
+          "defaultValue": "",
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-bestaetigung",
+          "nodeName": "Bestaetigung",
+          "nodeType": "RADIO_OPTION",
+          "nodePath": "compliance/profile-confirmation",
+          "text": "Ich bestaetige die Richtigkeit der Angaben fuer die MiFID-Geeignetheitspruefung",
+          "defaultValue": "No",
+          "validations": ["Required"],
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-zurueck-3",
+          "nodeName": "Zurueck",
+          "nodeType": "BUTTON",
+          "nodePath": "actions/back",
+          "text": "Zurueck",
+          "navigationTarget": "s-erfahrung",
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-speichern",
+          "nodeName": "Profil speichern",
+          "nodeType": "BUTTON",
+          "nodePath": "actions/save",
+          "text": "Profil speichern",
+          "childNodeIds": []
+        }
+      ]
+    }
+  ]
+}

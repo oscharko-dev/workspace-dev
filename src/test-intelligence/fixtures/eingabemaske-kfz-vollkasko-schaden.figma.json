@@ -1,0 +1,224 @@
+{
+  "source": {
+    "kind": "figma_local_json"
+  },
+  "screens": [
+    {
+      "screenId": "s-kfz-schaden",
+      "screenName": "KFZ Vollkasko Schadenmeldung",
+      "screenPath": "/insurance/kfz/schaden",
+      "nodes": [
+        {
+          "nodeId": "n-unfalldatum",
+          "nodeName": "Unfalldatum",
+          "nodeType": "TEXT_INPUT",
+          "nodePath": "claim/incident/date",
+          "text": "Unfalldatum",
+          "defaultValue": "",
+          "validations": ["Required", "ISO date", "Date <= today"],
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-unfallzeit",
+          "nodeName": "Unfallzeit",
+          "nodeType": "TEXT_INPUT",
+          "nodePath": "claim/incident/time",
+          "text": "Unfallzeit",
+          "defaultValue": "",
+          "validations": ["Required", "ISO time"],
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-unfallort",
+          "nodeName": "Unfallort",
+          "nodeType": "TEXT_INPUT",
+          "nodePath": "claim/incident/location",
+          "text": "Unfallort (Strasse, PLZ, Ort, Land)",
+          "defaultValue": "",
+          "validations": ["Required", "Max 200 characters"],
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-eigenes-kennzeichen",
+          "nodeName": "Eigenes Kennzeichen",
+          "nodeType": "TEXT_INPUT",
+          "nodePath": "claim/own-vehicle/license-plate",
+          "text": "Eigenes Kennzeichen",
+          "defaultValue": "",
+          "validations": ["Required", "German license plate format"],
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-schadenbeschreibung",
+          "nodeName": "Schadenbeschreibung",
+          "nodeType": "TEXT_INPUT",
+          "nodePath": "claim/description",
+          "semanticKind": "textarea",
+          "text": "Schadenbeschreibung (Hergang)",
+          "defaultValue": "",
+          "validations": ["Required", "Max 1000 characters"],
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-skizze-upload",
+          "nodeName": "Unfallskizze Upload",
+          "nodeType": "TEXT_INPUT",
+          "nodePath": "claim/evidence/sketch",
+          "semanticKind": "file_upload",
+          "text": "Unfallskizze (PNG, JPG oder PDF)",
+          "defaultValue": "",
+          "validations": ["Optional", "Max 10 MB"],
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-bet1-kennzeichen",
+          "nodeName": "Beteiligter 1: Kennzeichen",
+          "nodeType": "TEXT_INPUT",
+          "nodePath": "claim/involved-parties[0]/license-plate",
+          "text": "Beteiligter 1: Kennzeichen (repeating row, mindestens ein Beteiligter erforderlich)",
+          "defaultValue": "",
+          "validations": ["Required for first row", "Length 2 to 8"],
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-bet1-halter",
+          "nodeName": "Beteiligter 1: Halter",
+          "nodeType": "TEXT_INPUT",
+          "nodePath": "claim/involved-parties[0]/holder",
+          "text": "Beteiligter 1: Halter Vorname und Nachname",
+          "defaultValue": "",
+          "validations": ["Required for first row"],
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-bet1-versicherung",
+          "nodeName": "Beteiligter 1: Versicherung",
+          "nodeType": "TEXT_INPUT",
+          "nodePath": "claim/involved-parties[0]/insurer",
+          "text": "Beteiligter 1: Versicherer",
+          "defaultValue": "",
+          "validations": ["Required for first row"],
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-bet2-kennzeichen",
+          "nodeName": "Beteiligter 2: Kennzeichen",
+          "nodeType": "TEXT_INPUT",
+          "nodePath": "claim/involved-parties[1]/license-plate",
+          "text": "Beteiligter 2: Kennzeichen",
+          "defaultValue": "",
+          "validations": ["Length 2 to 8 when provided"],
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-bet2-halter",
+          "nodeName": "Beteiligter 2: Halter",
+          "nodeType": "TEXT_INPUT",
+          "nodePath": "claim/involved-parties[1]/holder",
+          "text": "Beteiligter 2: Halter",
+          "defaultValue": "",
+          "validations": ["Optional"],
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-bet2-versicherung",
+          "nodeName": "Beteiligter 2: Versicherung",
+          "nodeType": "TEXT_INPUT",
+          "nodePath": "claim/involved-parties[1]/insurer",
+          "text": "Beteiligter 2: Versicherer",
+          "defaultValue": "",
+          "validations": ["Optional"],
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-bet3-kennzeichen",
+          "nodeName": "Beteiligter 3: Kennzeichen",
+          "nodeType": "TEXT_INPUT",
+          "nodePath": "claim/involved-parties[2]/license-plate",
+          "text": "Beteiligter 3: Kennzeichen",
+          "defaultValue": "",
+          "validations": ["Length 2 to 8 when provided"],
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-bet3-halter",
+          "nodeName": "Beteiligter 3: Halter",
+          "nodeType": "TEXT_INPUT",
+          "nodePath": "claim/involved-parties[2]/holder",
+          "text": "Beteiligter 3: Halter",
+          "defaultValue": "",
+          "validations": ["Optional"],
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-bet3-versicherung",
+          "nodeName": "Beteiligter 3: Versicherung",
+          "nodeType": "TEXT_INPUT",
+          "nodePath": "claim/involved-parties[2]/insurer",
+          "text": "Beteiligter 3: Versicherer",
+          "defaultValue": "",
+          "validations": ["Optional"],
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-polizei-aufnahme",
+          "nodeName": "Polizei nahm den Unfall auf",
+          "nodeType": "RADIO_OPTION",
+          "nodePath": "claim/police/recorded",
+          "text": "Polizei nahm den Unfall auf",
+          "defaultValue": "No",
+          "validations": ["Required"],
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-polizei-aktenzeichen",
+          "nodeName": "Polizei-Aktenzeichen",
+          "nodeType": "TEXT_INPUT",
+          "nodePath": "claim/police/case-number",
+          "text": "Polizei-Aktenzeichen",
+          "defaultValue": "",
+          "validations": ["Required if Polizei-Aufnahme is Yes"],
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-verletzte",
+          "nodeName": "Verletzte beteiligt",
+          "nodeType": "RADIO_OPTION",
+          "nodePath": "claim/injured/present",
+          "text": "Verletzte beteiligt",
+          "defaultValue": "No",
+          "validations": ["Required"],
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-gutachter-slot",
+          "nodeName": "Gewuenschter Gutachtertermin",
+          "nodeType": "TEXT_INPUT",
+          "nodePath": "claim/appraiser-appointment",
+          "text": "Gewuenschter Gutachtertermin",
+          "defaultValue": "",
+          "validations": ["Optional", "ISO datetime", "Date >= today + 1 day"],
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-bestaetigung",
+          "nodeName": "Bestaetigung wahrheitsgemaesser Angabe",
+          "nodeType": "RADIO_OPTION",
+          "nodePath": "compliance/truthful-statement",
+          "text": "Ich bestaetige die wahrheitsgemaesse Schadenmeldung",
+          "defaultValue": "No",
+          "validations": ["Required"],
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-melden",
+          "nodeName": "Schaden melden",
+          "nodeType": "BUTTON",
+          "nodePath": "actions/submit",
+          "text": "Schaden melden",
+          "childNodeIds": []
+        }
+      ]
+    }
+  ]
+}
