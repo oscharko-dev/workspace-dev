@@ -5473,6 +5473,10 @@ One normalized finding consumed by the production-runner consensus module.
 
 > `readonly` **message**: `string`
 
+##### scope
+
+> `readonly` **scope**: `"job"` \| `"test_case"`
+
 ##### severity?
 
 > `readonly` `optional` **severity?**: `"error"` \| `"warning"`
@@ -5872,7 +5876,7 @@ Hard guarantee that the artifact never carries a raw prompt.
 
 ### JudgeFinding
 
-One logic-judge finding anchored to a generated test case.
+One logic-judge finding anchored to a generated test case or the job.
 
 #### Properties
 
@@ -5883,6 +5887,10 @@ One logic-judge finding anchored to a generated test case.
 ##### message
 
 > `readonly` **message**: `string`
+
+##### scope
+
+> `readonly` **scope**: `"job"` \| `"test_case"`
 
 ##### severity
 
@@ -9764,6 +9772,12 @@ Persisted production-runner run-quality artifact.
 
 > `readonly` **schemaVersion**: `"1.0.0"`
 
+##### selfConsistencyAgreement?
+
+> `readonly` `optional` **selfConsistencyAgreement?**: `number`
+
+Aggregate self-consistency agreement ratio in [0,1], when sampled.
+
 ##### status
 
 > `readonly` **status**: `"clean_success"` \| `"repaired_success"` \| `"degraded_success"` \| `"blocked_failure"`
@@ -9803,6 +9817,106 @@ Stage-level attempt summary persisted in the run-quality artifact.
 ##### successes
 
 > `readonly` **successes**: `number`
+
+***
+
+### SelfConsistencyFieldVote
+
+One field-level vote recorded for a single coverage target.
+
+#### Properties
+
+##### agreement
+
+> `readonly` **agreement**: `number`
+
+##### field
+
+> `readonly` **field**: `"type"` \| `"technique"` \| `"riskCategory"` \| `"step_action"` \| `"step_expected"`
+
+##### majorityCount
+
+> `readonly` **majorityCount**: `number`
+
+##### majorityValue?
+
+> `readonly` `optional` **majorityValue?**: `string`
+
+##### stepIndex?
+
+> `readonly` `optional` **stepIndex?**: `number`
+
+***
+
+### SelfConsistencyReport
+
+Persisted self-consistency voting artifact (Issue #2070).
+
+#### Properties
+
+##### contractVersion
+
+> `readonly` **contractVersion**: `"1.21.0"`
+
+##### generatedAt
+
+> `readonly` **generatedAt**: `string`
+
+##### jobId
+
+> `readonly` **jobId**: `string`
+
+##### sampleCount
+
+> `readonly` **sampleCount**: `number`
+
+##### schemaVersion
+
+> `readonly` **schemaVersion**: `"1.0.0"`
+
+##### selfConsistencyAgreement
+
+> `readonly` **selfConsistencyAgreement**: `number`
+
+##### targets
+
+> `readonly` **targets**: readonly [`SelfConsistencyTargetReportEntry`](#selfconsistencytargetreportentry)[]
+
+***
+
+### SelfConsistencyTargetReportEntry
+
+One per-target row in the persisted self-consistency report.
+
+#### Properties
+
+##### agreement
+
+> `readonly` **agreement**: `number`
+
+##### disagreement
+
+> `readonly` **disagreement**: `boolean`
+
+##### disagreementRoute?
+
+> `readonly` `optional` **disagreementRoute?**: `"human_review"`
+
+##### samplePresenceCount
+
+> `readonly` **samplePresenceCount**: `number`
+
+##### selectedTestCaseId
+
+> `readonly` **selectedTestCaseId**: `string`
+
+##### targetKey
+
+> `readonly` **targetKey**: `string`
+
+##### votes
+
+> `readonly` **votes**: readonly [`SelfConsistencyFieldVote`](#selfconsistencyfieldvote)[]
 
 ***
 
@@ -11200,6 +11314,24 @@ Whether each detected validation rule requires at least one negative/validation 
 > **reviewOnlyRiskCategories**: [`TestCaseRiskCategory`](#testcaseriskcategory)[]
 
 Risk categories that always require manual review.
+
+##### selfConsistency?
+
+> `optional` **selfConsistency?**: `object`
+
+Issue #2070 — generator self-consistency sampling policy. Controls the
+number of independently seeded generator samples emitted before the
+runner either performs structural majority voting (`3`) or preserves the
+legacy single-sample flow (`1`).
+
+Optional for backwards compatibility: when omitted the runner falls back
+to the secure default of `3` for `eu-banking-default`, but the runtime
+silently degrades to `1` when the active generator deployment does not
+declare seed support.
+
+###### sampleCount
+
+> `readonly` **sampleCount**: `1` \| `3`
 
 ##### strictRiskCategories
 
@@ -15256,7 +15388,7 @@ Submit response for accepted jobs.
 
 ###### Inherited from
 
-[`WorkspaceSubmitAccepted`](#workspacesubmitaccepted).[`jobId`](#jobid-68)
+[`WorkspaceSubmitAccepted`](#workspacesubmitaccepted).[`jobId`](#jobid-69)
 
 ##### pasteDeltaSummary?
 
@@ -19242,6 +19374,14 @@ Discriminated alias for [JUDGE\_DISAGREEMENT\_ESCALATION\_ACTIONS](#judge_disagr
 
 ***
 
+### JudgeFindingScope
+
+> **JudgeFindingScope** = *typeof* [`JUDGE_FINDING_SCOPES`](#judge_finding_scopes)\[`number`\]
+
+One logic-judge finding anchored to a generated test case or the job.
+
+***
+
 ### JudgeModelFamily
 
 > **JudgeModelFamily** = *typeof* [`JUDGE_MODEL_FAMILIES`](#judge_model_families)\[`number`\]
@@ -19649,6 +19789,14 @@ Stage identifiers surfaced in the run-quality attempt summaries.
 > **RunQualityStatus** = *typeof* [`RUN_QUALITY_STATUSES`](#run_quality_statuses)\[`number`\]
 
 Top-level run-quality states for the production-runner artifact bundle.
+
+***
+
+### SelfConsistencyDisagreementRoute
+
+> **SelfConsistencyDisagreementRoute** = `"human_review"`
+
+Stable route emitted for targets whose samples disagree structurally.
 
 ***
 
@@ -22429,6 +22577,15 @@ Schema version for the persisted Jira write report artifact (Issue #1482).
 
 ***
 
+### JOB\_LEVEL\_TEST\_CASE\_ID
+
+> `const` **JOB\_LEVEL\_TEST\_CASE\_ID**: `"$job"`
+
+Canonical placeholder used when a finding or repair instruction is scoped to
+the overall job rather than a single generated test case.
+
+***
+
 ### JUDGE\_CONSENSUS\_ARTIFACT\_FILENAME
 
 > `const` **JUDGE\_CONSENSUS\_ARTIFACT\_FILENAME**: `"judge-consensus.json"`
@@ -22510,6 +22667,14 @@ the per-family agreement matrix the AT-2038 audit requires.
 Schema version literal pinned on every persisted
 [JudgeDisagreementReport](#judgedisagreementreport) artifact (Issue #2038). Structural
 changes require a major bump and a `CONTRACT_CHANGELOG.md` entry.
+
+***
+
+### JUDGE\_FINDING\_SCOPES
+
+> `const` **JUDGE\_FINDING\_SCOPES**: readonly \[`"job"`, `"test_case"`\]
+
+Closed runtime list of finding scopes used by judge and consensus artifacts.
 
 ***
 
@@ -23339,6 +23504,22 @@ Stage identifiers surfaced in the run-quality attempt summaries.
 > `const` **RUN\_QUALITY\_STATUSES**: readonly \[`"clean_success"`, `"repaired_success"`, `"degraded_success"`, `"blocked_failure"`\]
 
 Top-level run-quality states for the production-runner artifact bundle.
+
+***
+
+### SELF\_CONSISTENCY\_REPORT\_ARTIFACT\_FILENAME
+
+> `const` **SELF\_CONSISTENCY\_REPORT\_ARTIFACT\_FILENAME**: `"self-consistency-report.json"`
+
+Canonical filename for the persisted self-consistency artifact.
+
+***
+
+### SELF\_CONSISTENCY\_REPORT\_SCHEMA\_VERSION
+
+> `const` **SELF\_CONSISTENCY\_REPORT\_SCHEMA\_VERSION**: `"1.0.0"`
+
+Schema version for per-run self-consistency voting artifacts.
 
 ***
 

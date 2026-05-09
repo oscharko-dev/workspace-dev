@@ -4,6 +4,7 @@ import { dirname, join } from "node:path";
 
 import {
   FAITHFULNESS_VERDICT_SCHEMA_VERSION,
+  JOB_LEVEL_TEST_CASE_ID,
   JUDGE_CONSENSUS_ARTIFACT_FILENAME,
   JUDGE_CONSENSUS_REPAIR_OUTCOMES,
   JUDGE_CONSENSUS_SCHEMA_VERSION,
@@ -118,7 +119,7 @@ const normalizePanelEntry = (
     judgeId: normalized.judgeId,
     verdict: normalized.verdict,
     weight: normalized.weight,
-    findings: normalized.findings,
+    findings: normalized.findings.map(normalizeConsensusFinding),
     repairInstructions: normalized.repairInstructions,
     ...(normalized.family !== undefined ? { family: normalized.family } : {}),
     ...(normalized.region !== undefined ? { region: normalized.region } : {}),
@@ -275,11 +276,22 @@ const compareFinding = (
   left: JudgeConsensusFinding,
   right: JudgeConsensusFinding,
 ): number =>
+  left.scope.localeCompare(right.scope) ||
   left.testCaseId.localeCompare(right.testCaseId) ||
   left.category.localeCompare(right.category) ||
   left.code.localeCompare(right.code) ||
   (left.severity ?? "").localeCompare(right.severity ?? "") ||
   left.message.localeCompare(right.message);
+
+const inferFindingScope = (testCaseId: string): JudgeConsensusFinding["scope"] =>
+  testCaseId === JOB_LEVEL_TEST_CASE_ID ? "job" : "test_case";
+
+const normalizeConsensusFinding = (
+  finding: JudgeConsensusFinding,
+): JudgeConsensusFinding => ({
+  ...finding,
+  scope: finding.scope ?? inferFindingScope(finding.testCaseId),
+});
 
 const dedupeFindings = (
   panel: readonly JudgeConsensusPanelEntry[],
@@ -288,15 +300,14 @@ const dedupeFindings = (
   for (const entry of panel) {
     for (const finding of entry.findings) {
       const normalized: JudgeConsensusFinding = {
-        testCaseId: finding.testCaseId,
-        code: finding.code,
+        ...normalizeConsensusFinding(finding),
         message: truncate(finding.message, MAX_MESSAGE_LENGTH),
-        category: finding.category,
         ...(finding.severity !== undefined
           ? { severity: finding.severity }
           : {}),
       };
       const key = [
+        normalized.scope,
         normalized.testCaseId,
         normalized.category,
         normalized.code,
@@ -372,6 +383,7 @@ export const buildLogicJudgeConsensusEntry = (
   weight: normalizeWeight(weight),
   findings: verdict.findings.map(
     (finding): JudgeConsensusFinding => ({
+      scope: finding.scope,
       testCaseId: finding.testCaseId,
       code: finding.code,
       message: finding.message,
@@ -425,6 +437,7 @@ export const buildFaithfulnessJudgeConsensusEntry = (
   findings: [
     ...verdict.hallucinations.map(
       (hallucination): JudgeConsensusFinding => ({
+        scope: inferFindingScope(hallucination.testCaseId),
         testCaseId: hallucination.testCaseId,
         code: "hallucination",
         message: hallucination.message,
@@ -433,6 +446,7 @@ export const buildFaithfulnessJudgeConsensusEntry = (
     ),
     ...verdict.mismatches.map(
       (mismatch): JudgeConsensusFinding => ({
+        scope: inferFindingScope(mismatch.testCaseId),
         testCaseId: mismatch.testCaseId,
         code: "cross_modal_mismatch",
         message: mismatch.message,
@@ -452,6 +466,7 @@ export const buildA11yJudgeConsensusEntry = (
   weight: normalizeWeight(weight),
   findings: verdict.findings.map(
     (finding): JudgeConsensusFinding => ({
+      scope: inferFindingScope(finding.testCaseId),
       testCaseId: finding.testCaseId,
       code: finding.code,
       message: finding.message,
@@ -485,7 +500,9 @@ export const buildJudgeConsensus = (
     input.repairHistory?.finalOutcome ?? "not_needed"
   ) satisfies JudgeConsensusRepairOutcome;
   const historicalFindings = [
-    ...(input.repairHistory?.historicalFindings ?? []),
+    ...(input.repairHistory?.historicalFindings ?? []).map(
+      normalizeConsensusFinding,
+    ),
   ].sort(compareFinding);
   const historicalRepairInstructions = [
     ...(input.repairHistory?.historicalRepairInstructions ?? []),

@@ -644,6 +644,7 @@ test("hard-gate passes through refusal verdicts untouched", () => {
     ...buildLlmVerdict("reject"),
     findings: [
       {
+        scope: "job",
         testCaseId: "$job",
         code: "gateway_failure",
         severity: "error",

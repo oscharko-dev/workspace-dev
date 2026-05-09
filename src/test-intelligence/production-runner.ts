@@ -55,6 +55,7 @@ import {
   FAITHFULNESS_VERDICT_ARTIFACT_FILENAME,
   GENERATED_TESTCASES_ARTIFACT_FILENAME,
   GENERATED_TEST_CASE_SCHEMA_VERSION,
+  JOB_LEVEL_TEST_CASE_ID,
   JUDGE_CONSENSUS_ARTIFACT_FILENAME,
   RUN_QUALITY_ARTIFACT_FILENAME,
   RUN_QUALITY_SCHEMA_VERSION,
@@ -708,12 +709,17 @@ const mergeA11yIntoLogicVerdict = (
     verdict: logicVerdict.verdict === "reject" ? "reject" : "repair",
     findings: [
       ...logicVerdict.findings,
-      ...a11yVerdict.findings.map((finding) => ({
-        testCaseId: finding.testCaseId,
-        code: finding.code,
-        severity: finding.severity,
-        message: finding.message,
-      })),
+      ...a11yVerdict.findings.map((finding) => {
+        const scope: JudgeVerdict["findings"][number]["scope"] =
+          finding.testCaseId === JOB_LEVEL_TEST_CASE_ID ? "job" : "test_case";
+        return {
+          scope,
+          testCaseId: finding.testCaseId,
+          code: finding.code,
+          severity: finding.severity,
+          message: finding.message,
+        };
+      }),
     ],
     repairInstructions: [
       ...logicVerdict.repairInstructions,

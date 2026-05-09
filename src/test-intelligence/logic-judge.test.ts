@@ -26,6 +26,7 @@ const SAMPLE_COVERAGE_PLAN = {
 const SAMPLE_GENERATED_TEST_CASES = {
   testCases: [
     {
+      id: "tc-1",
       testCaseId: "tc-1",
       title: "Submit a valid investment amount",
     },
@@ -220,7 +221,7 @@ test("runLogicJudge surfaces a repair verdict with findings and repair instructi
   assert.equal(client.callCount(), 1);
 });
 
-test("runLogicJudge normalizes missing finding testCaseId to $job", async () => {
+test("runLogicJudge accepts a job-scoped finding without testCaseId and canonicalizes it to $job", async () => {
   const client = createMockLlmGatewayClient({
     role: "test_generation",
     deployment: "mistral-document-ai-2512",
@@ -232,6 +233,7 @@ test("runLogicJudge normalizes missing finding testCaseId to $job", async () => 
         verdict: "repair",
         findings: [
           {
+            scope: "job",
             code: "job_level_schema_gap",
             severity: "warning",
             message: "Job-level coverage warning without a case anchor.",
@@ -258,9 +260,237 @@ test("runLogicJudge normalizes missing finding testCaseId to $job", async () => 
   });
 
   assert.equal(result.verdict.verdict, "repair");
+  assert.equal(result.verdict.findings[0]?.scope, "job");
   assert.equal(result.verdict.findings[0]?.testCaseId, "$job");
   assert.equal(result.verdict.findings[0]?.code, "job_level_schema_gap");
   assert.equal(result.verdict.refusal, undefined);
+});
+
+test("runLogicJudge accepts an implicit job-level /testCases repair instruction without scope or testCaseId", async () => {
+  const client = createMockLlmGatewayClient({
+    role: "test_generation",
+    deployment: "mistral-document-ai-2512",
+    modelRevision: "mistral-document-ai-2512@test",
+    gatewayRelease: "mock",
+    responder: (_request, attempt) => ({
+      outcome: "success",
+      content: {
+        verdict: "repair",
+        findings: [
+          {
+            scope: "job",
+            code: "insufficient_equivalence_partitioning_cases",
+            severity: "warning",
+            message: "Add more equivalence partitioning coverage.",
+          },
+        ],
+        repairInstructions: [
+          {
+            path: "/testCases",
+            instruction: "Add two more equivalence partitioning cases.",
+          },
+        ],
+      },
+      finishReason: "stop",
+      usage: { inputTokens: 20, outputTokens: 10 },
+      modelDeployment: "mistral-document-ai-2512",
+      modelRevision: "mistral-document-ai-2512@test",
+      gatewayRelease: "mock",
+      attempt,
+    }),
+  });
+
+  const result = await runLogicJudge({
+    jobId: "logic-judge-implicit-job-repair-anchor",
+    generatedAt: "2026-05-05T10:00:00Z",
+    testDesignModel: SAMPLE_TEST_DESIGN_MODEL,
+    coveragePlan: SAMPLE_COVERAGE_PLAN,
+    generatedTestCases: SAMPLE_GENERATED_TEST_CASES,
+    client,
+  });
+
+  assert.equal(result.verdict.verdict, "repair");
+  assert.equal(result.verdict.repairInstructions.length, 1);
+  assert.equal(result.verdict.repairInstructions[0]?.path, "/testCases");
+  assert.equal(result.verdict.repairInstructions[0]?.testCaseId, "$job");
+});
+
+test("runLogicJudge preserves the legacy $job placeholder finding and infers job scope", async () => {
+  const client = createMockLlmGatewayClient({
+    role: "test_generation",
+    deployment: "mistral-document-ai-2512",
+    modelRevision: "mistral-document-ai-2512@test",
+    gatewayRelease: "mock",
+    responder: (_request, attempt) => ({
+      outcome: "success",
+      content: {
+        verdict: "repair",
+        findings: [
+          {
+            testCaseId: "$job",
+            code: "job_level_schema_gap",
+            severity: "warning",
+            message: "Legacy job-level placeholder finding.",
+          },
+        ],
+        repairInstructions: [],
+      },
+      finishReason: "stop",
+      usage: { inputTokens: 20, outputTokens: 10 },
+      modelDeployment: "mistral-document-ai-2512",
+      modelRevision: "mistral-document-ai-2512@test",
+      gatewayRelease: "mock",
+      attempt,
+    }),
+  });
+
+  const result = await runLogicJudge({
+    jobId: "logic-judge-placeholder-finding-anchor",
+    generatedAt: "2026-05-05T10:00:00Z",
+    testDesignModel: SAMPLE_TEST_DESIGN_MODEL,
+    coveragePlan: SAMPLE_COVERAGE_PLAN,
+    generatedTestCases: SAMPLE_GENERATED_TEST_CASES,
+    client,
+  });
+
+  assert.equal(result.verdict.verdict, "repair");
+  assert.equal(result.verdict.findings[0]?.scope, "job");
+  assert.equal(result.verdict.findings[0]?.testCaseId, "$job");
+  assert.equal(result.verdict.refusal, undefined);
+});
+
+test("runLogicJudge accepts a test-case-scoped finding with a real testCaseId", async () => {
+  const client = createMockLlmGatewayClient({
+    role: "test_generation",
+    deployment: "mistral-document-ai-2512",
+    modelRevision: "mistral-document-ai-2512@test",
+    gatewayRelease: "mock",
+    responder: (_request, attempt) => ({
+      outcome: "success",
+      content: {
+        verdict: "repair",
+        findings: [
+          {
+            scope: "test_case",
+            testCaseId: "tc-1",
+            code: "missing_expected_result",
+            severity: "error",
+            message: "Expected result is not specific enough.",
+          },
+        ],
+        repairInstructions: [],
+      },
+      finishReason: "stop",
+      usage: { inputTokens: 20, outputTokens: 10 },
+      modelDeployment: "mistral-document-ai-2512",
+      modelRevision: "mistral-document-ai-2512@test",
+      gatewayRelease: "mock",
+      attempt,
+    }),
+  });
+
+  const result = await runLogicJudge({
+    jobId: "logic-judge-test-case-finding-anchor",
+    generatedAt: "2026-05-05T10:00:00Z",
+    testDesignModel: SAMPLE_TEST_DESIGN_MODEL,
+    coveragePlan: SAMPLE_COVERAGE_PLAN,
+    generatedTestCases: SAMPLE_GENERATED_TEST_CASES,
+    client,
+  });
+
+  assert.equal(result.verdict.verdict, "repair");
+  assert.equal(result.verdict.findings[0]?.scope, "test_case");
+  assert.equal(result.verdict.findings[0]?.testCaseId, "tc-1");
+  assert.equal(result.verdict.refusal, undefined);
+});
+
+test("runLogicJudge normalizes wire severity aliases to the internal severity contract", async () => {
+  const client = createMockLlmGatewayClient({
+    role: "test_generation",
+    deployment: "mistral-document-ai-2512",
+    modelRevision: "mistral-document-ai-2512@test",
+    gatewayRelease: "mock",
+    responder: (_request, attempt) => ({
+      outcome: "success",
+      content: {
+        verdict: "repair",
+        findings: [
+          {
+            scope: "job",
+            code: "job_level_schema_gap",
+            severity: "critical",
+            message: "Job-level coverage warning without a case anchor.",
+          },
+        ],
+        repairInstructions: [],
+      },
+      finishReason: "stop",
+      usage: { inputTokens: 20, outputTokens: 10 },
+      modelDeployment: "mistral-document-ai-2512",
+      modelRevision: "mistral-document-ai-2512@test",
+      gatewayRelease: "mock",
+      attempt,
+    }),
+  });
+
+  const result = await runLogicJudge({
+    jobId: "logic-judge-wire-severity-alias",
+    generatedAt: "2026-05-05T10:00:00Z",
+    testDesignModel: SAMPLE_TEST_DESIGN_MODEL,
+    coveragePlan: SAMPLE_COVERAGE_PLAN,
+    generatedTestCases: SAMPLE_GENERATED_TEST_CASES,
+    client,
+  });
+
+  assert.equal(result.verdict.verdict, "repair");
+  assert.equal(result.verdict.findings[0]?.severity, "error");
+  assert.equal(result.verdict.refusal, undefined);
+});
+
+test("runLogicJudge rejects a test-case-scoped finding without testCaseId", async () => {
+  const client = createMockLlmGatewayClient({
+    role: "test_generation",
+    deployment: "mistral-document-ai-2512",
+    modelRevision: "mistral-document-ai-2512@test",
+    gatewayRelease: "mock",
+    responder: (_request, attempt) => ({
+      outcome: "success",
+      content: {
+        verdict: "repair",
+        findings: [
+          {
+            scope: "test_case",
+            code: "missing_expected_result",
+            severity: "error",
+            message: "Expected result is not specific enough.",
+          },
+        ],
+        repairInstructions: [],
+      },
+      finishReason: "stop",
+      usage: { inputTokens: 20, outputTokens: 10 },
+      modelDeployment: "mistral-document-ai-2512",
+      modelRevision: "mistral-document-ai-2512@test",
+      gatewayRelease: "mock",
+      attempt,
+    }),
+  });
+
+  const result = await runLogicJudge({
+    jobId: "logic-judge-missing-test-case-anchor",
+    generatedAt: "2026-05-05T10:00:00Z",
+    testDesignModel: SAMPLE_TEST_DESIGN_MODEL,
+    coveragePlan: SAMPLE_COVERAGE_PLAN,
+    generatedTestCases: SAMPLE_GENERATED_TEST_CASES,
+    client,
+  });
+
+  assert.equal(result.verdict.verdict, "repair");
+  assert.equal(result.verdict.findings[0]?.code, "schema_invalid_response");
+  assert.equal(
+    result.verdict.repairInstructions[0]?.path,
+    "$.findings[0].testCaseId",
+  );
 });
 
 test("runLogicJudge passes through a semantic reject verdict from the model", async () => {

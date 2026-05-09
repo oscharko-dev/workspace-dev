@@ -196,6 +196,7 @@ test("buildJudgeConsensus resolves an accept versus reject tie to repair", () =>
 
 test("buildJudgeConsensus records repaired-success history separately from active findings", () => {
   const historicalFinding = {
+    scope: "test_case" as const,
     testCaseId: "tc-old",
     code: "schema_class:missing_field",
     message: "The initial run was missing a required field.",
@@ -245,6 +246,7 @@ test("buildJudgeConsensus normalizes a11y and coverage rejects down to repair", 
         weight: 1,
         findings: [
           {
+            scope: "job",
             testCaseId: "$job",
             code: "missing_form_screen_a11y_case",
             message: "Missing accessibility case for form screen 1:1.",
@@ -281,6 +283,7 @@ test("buildJudgeConsensus marks repaired history separately from active findings
       finalOutcome: "accepted",
       historicalFindings: [
         {
+          scope: "job",
           testCaseId: "$job",
           code: "schema_violation",
           message: "qualitySignals.coveredFieldIds was emitted as an object.",
