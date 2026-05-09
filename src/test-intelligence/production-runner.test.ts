@@ -5191,7 +5191,7 @@ test("Issue #1945: runFigmaToQcTestCases emits one OTel span per phase when oper
     );
     assert.equal(
       llmSpan?.attributes?.["workspace.test_intelligence.model_deployment"],
-      "gpt-oss-120b",
+      "gpt-oss-120b-mock",
     );
     assert.equal(
       typeof llmSpan?.attributes?.["workspace.test_intelligence.prompt_hash"],

@@ -96,6 +96,7 @@ import {
   type LlmGenerationResult,
   type FinOpsJobOutcome,
   type FaithfulnessVerdict,
+  type ModelRoutingPolicy,
   type MultiSourceTestIntentEnvelope,
   type RegulatoryRelevance,
   type RegulatoryRelevanceDomain,
@@ -235,6 +236,10 @@ import {
   EU_BANKING_DEFAULT_NEGATIVE_CASE_LIFT_GATE_MODE,
   EU_BANKING_DEFAULT_NEGATIVE_CASE_LIFT_THRESHOLD_RATIO,
 } from "./policy-profile.js";
+import {
+  buildRuntimeModelRoutingPolicy,
+  computeModelRoutingPolicyDigest,
+} from "./model-routing-policy.js";
 import { writeAgentRoleRunArtifact } from "./agent-role-run-artifact.js";
 import { listGeneratorDiversityPassProfiles } from "./agent-role-profile.js";
 import {
@@ -367,8 +372,6 @@ export const PRODUCTION_RUNNER_TEST_GENERATION_DEPLOYMENT =
 
 const VISUAL_CAPTURE_ARTIFACT_DIRECTORY = "visual-captures" as const;
 const VISUAL_CAPTURE_MANIFEST_FILENAME = "manifest.json" as const;
-const TEST_GENERATION_MODEL_REVISION = "gpt-oss-120b" as const;
-const TEST_GENERATION_GATEWAY_RELEASE = "production-runner-1.0" as const;
 const POLICY_BUNDLE_VERSION = "production-runner-eu-banking-default" as const;
 
 /**
@@ -701,6 +704,138 @@ const buildActiveModelBindings = (input: {
   return bindings;
 };
 
+const resolveActiveModelRoutingPolicy = (input: {
+  request: RunFigmaToQcTestCasesInput;
+  policyProfileId: string;
+}): ModelRoutingPolicy => {
+  if (input.request.modelRoutingPolicy !== undefined) {
+    return input.request.modelRoutingPolicy;
+  }
+  const roles: Array<{
+    role:
+      | "test_generation"
+      | "logic_judge"
+      | "coverage_planner"
+      | "risk_ranker"
+      | "visual_primary"
+      | "visual_fallback"
+      | "a11y_judge";
+    deployment: string;
+    modelRevision: string;
+    gatewayRelease: string;
+    ictRegisterRef?: string;
+  }> = [
+    {
+      role: "test_generation",
+      deployment: input.request.llm.client.deployment,
+      modelRevision: input.request.llm.client.modelRevision,
+      gatewayRelease: input.request.llm.client.gatewayRelease,
+      ...(input.request.llm.client.ictRegisterRef !== undefined
+        ? { ictRegisterRef: input.request.llm.client.ictRegisterRef }
+        : {}),
+    },
+  ];
+  const logicJudgeClient =
+    input.request.llm.bundle?.logicJudge ??
+    input.request.llm.logicJudge ??
+    input.request.llm.client;
+  if (
+    input.request.logicJudge?.enabled !== false ||
+    input.request.llm.bundle?.logicJudge !== undefined ||
+    input.request.llm.logicJudge !== undefined
+  ) {
+    roles.push({
+      role: "logic_judge",
+      deployment: logicJudgeClient.deployment,
+      modelRevision: logicJudgeClient.modelRevision,
+      gatewayRelease: logicJudgeClient.gatewayRelease,
+      ...(logicJudgeClient.ictRegisterRef !== undefined
+        ? { ictRegisterRef: logicJudgeClient.ictRegisterRef }
+        : {}),
+    });
+  }
+  if (input.request.llm.bundle?.coveragePlanner !== undefined) {
+    roles.push({
+      role: "coverage_planner",
+      deployment: input.request.llm.bundle.coveragePlanner.deployment,
+      modelRevision: input.request.llm.bundle.coveragePlanner.modelRevision,
+      gatewayRelease: input.request.llm.bundle.coveragePlanner.gatewayRelease,
+      ...(input.request.llm.bundle.coveragePlanner.ictRegisterRef !==
+      undefined
+        ? { ictRegisterRef: input.request.llm.bundle.coveragePlanner.ictRegisterRef }
+        : {}),
+    });
+  } else if (input.request.llm.coveragePlanner !== undefined) {
+    roles.push({
+      role: "coverage_planner",
+      deployment: input.request.llm.coveragePlanner.deployment,
+      modelRevision: input.request.llm.coveragePlanner.modelRevision,
+      gatewayRelease: input.request.llm.coveragePlanner.gatewayRelease,
+      ...(input.request.llm.coveragePlanner.ictRegisterRef !== undefined
+        ? { ictRegisterRef: input.request.llm.coveragePlanner.ictRegisterRef }
+        : {}),
+    });
+  }
+  if (input.request.llm.bundle?.riskRanker !== undefined) {
+    roles.push({
+      role: "risk_ranker",
+      deployment: input.request.llm.bundle.riskRanker.deployment,
+      modelRevision: input.request.llm.bundle.riskRanker.modelRevision,
+      gatewayRelease: input.request.llm.bundle.riskRanker.gatewayRelease,
+      ...(input.request.llm.bundle.riskRanker.ictRegisterRef !== undefined
+        ? { ictRegisterRef: input.request.llm.bundle.riskRanker.ictRegisterRef }
+        : {}),
+    });
+  } else if (input.request.llm.riskRanker !== undefined) {
+    roles.push({
+      role: "risk_ranker",
+      deployment: input.request.llm.riskRanker.deployment,
+      modelRevision: input.request.llm.riskRanker.modelRevision,
+      gatewayRelease: input.request.llm.riskRanker.gatewayRelease,
+      ...(input.request.llm.riskRanker.ictRegisterRef !== undefined
+        ? { ictRegisterRef: input.request.llm.riskRanker.ictRegisterRef }
+        : {}),
+    });
+  }
+  if (input.request.llm.bundle !== undefined) {
+    roles.push(
+      {
+        role: "visual_primary",
+        deployment: input.request.llm.bundle.visualPrimary.deployment,
+        modelRevision: input.request.llm.bundle.visualPrimary.modelRevision,
+        gatewayRelease: input.request.llm.bundle.visualPrimary.gatewayRelease,
+        ...(input.request.llm.bundle.visualPrimary.ictRegisterRef !== undefined
+          ? { ictRegisterRef: input.request.llm.bundle.visualPrimary.ictRegisterRef }
+          : {}),
+      },
+      {
+        role: "visual_fallback",
+        deployment: input.request.llm.bundle.visualFallback.deployment,
+        modelRevision: input.request.llm.bundle.visualFallback.modelRevision,
+        gatewayRelease: input.request.llm.bundle.visualFallback.gatewayRelease,
+        ...(input.request.llm.bundle.visualFallback.ictRegisterRef !== undefined
+          ? { ictRegisterRef: input.request.llm.bundle.visualFallback.ictRegisterRef }
+          : {}),
+      },
+    );
+    if (input.request.llm.bundle.a11yJudge !== undefined) {
+      roles.push({
+        role: "a11y_judge",
+        deployment: input.request.llm.bundle.a11yJudge.deployment,
+        modelRevision: input.request.llm.bundle.a11yJudge.modelRevision,
+        gatewayRelease: input.request.llm.bundle.a11yJudge.gatewayRelease,
+        ...(input.request.llm.bundle.a11yJudge.ictRegisterRef !== undefined
+          ? { ictRegisterRef: input.request.llm.bundle.a11yJudge.ictRegisterRef }
+          : {}),
+      });
+    }
+  }
+  return buildRuntimeModelRoutingPolicy({
+    policyProfileId: input.policyProfileId,
+    roles,
+  });
+};
+
 const isA11yJudgeAvailableForConsensus = (
   result: RunA11yJudgeResult | undefined,
 ): result is RunA11yJudgeResult =>
@@ -822,6 +957,13 @@ export interface RunFigmaToQcTestCasesInput {
    * {@link BANKING_INSURANCE_SEMANTIC_KEYWORDS} entry.
    */
   policyProfileId?: string;
+  /**
+   * Optional resolved model-routing policy (Issue #2099). When omitted the
+   * runner derives an active-policy snapshot from the concrete gateway clients
+   * it received so replay identity and FinOps can still attest the selected
+   * model path.
+   */
+  modelRoutingPolicy?: ModelRoutingPolicy;
   /**
    * Optional multi-agent harness routing (Issue #1791). Defaults to
    * {@link ProductionRunnerHarnessMode} `"off"` — the single-pass LLM call
@@ -2472,19 +2614,6 @@ export const runFigmaToQcTestCases = async (
   const finopsLimits = resolveFinOpsRequestLimits(
     finopsBudget.roles.test_generation,
   );
-  const activeModelBindings = applyCustomerProfileIctRef(
-    buildActiveModelBindings({
-      client: input.llm.client,
-      ...(input.llm.bundle !== undefined ? { bundle: input.llm.bundle } : {}),
-      ...(input.llm.logicJudge !== undefined
-        ? { logicJudge: input.llm.logicJudge }
-        : {}),
-      ...(input.llm.coveragePlanner !== undefined
-        ? { coveragePlanner: input.llm.coveragePlanner }
-        : {}),
-    }),
-    canonicalCustomerProfile,
-  );
 
   const draftSchema = buildDraftResponseSchema();
   const policyProfileId =
@@ -2505,6 +2634,153 @@ export const runFigmaToQcTestCases = async (
   const policyProfileHash = createHash("sha256")
     .update(canonicalJson(customerRubric), "utf8")
     .digest("hex");
+  const modelRoutingPolicy = resolveActiveModelRoutingPolicy({
+    request: input,
+    policyProfileId,
+  });
+  const routingPolicyDigest =
+    computeModelRoutingPolicyDigest(modelRoutingPolicy);
+  for (const route of modelRoutingPolicy.routes) {
+    switch (route.role) {
+      case "test_generation":
+        finopsRecorder.recordRoleMetadata({
+          role: "test_generation",
+          ...(route.modelBinding.inferenceProfileId !== undefined
+            ? { deployment: route.modelBinding.inferenceProfileId }
+            : {}),
+          ...(route.modelRevision !== undefined
+            ? { modelRevision: route.modelRevision }
+            : {}),
+          tierLabel: route.tierLabel,
+        });
+        finopsRecorder.recordSourceMetadata({
+          source: "generator",
+          ...(route.modelBinding.inferenceProfileId !== undefined
+            ? { deployment: route.modelBinding.inferenceProfileId }
+            : {}),
+          ...(route.modelRevision !== undefined
+            ? { modelRevision: route.modelRevision }
+            : {}),
+          tierLabel: route.tierLabel,
+        });
+        break;
+      case "logic_judge":
+        finopsRecorder.recordSourceMetadata({
+          source: "judge_primary",
+          ...(route.modelBinding.inferenceProfileId !== undefined
+            ? { deployment: route.modelBinding.inferenceProfileId }
+            : {}),
+          ...(route.modelRevision !== undefined
+            ? { modelRevision: route.modelRevision }
+            : {}),
+          tierLabel: route.tierLabel,
+        });
+        finopsRecorder.recordSourceMetadata({
+          source: "judge_secondary",
+          ...(route.modelBinding.inferenceProfileId !== undefined
+            ? { deployment: route.modelBinding.inferenceProfileId }
+            : {}),
+          ...(route.modelRevision !== undefined
+            ? { modelRevision: route.modelRevision }
+            : {}),
+          tierLabel: route.tierLabel,
+        });
+        finopsRecorder.recordSourceMetadata({
+          source: "adversarial_critic",
+          ...(route.modelBinding.inferenceProfileId !== undefined
+            ? { deployment: route.modelBinding.inferenceProfileId }
+            : {}),
+          ...(route.modelRevision !== undefined
+            ? { modelRevision: route.modelRevision }
+            : {}),
+          tierLabel: route.tierLabel,
+        });
+        break;
+      case "coverage_planner":
+        finopsRecorder.recordSourceMetadata({
+          source: "coverage_planner",
+          ...(route.modelBinding.inferenceProfileId !== undefined
+            ? { deployment: route.modelBinding.inferenceProfileId }
+            : {}),
+          ...(route.modelRevision !== undefined
+            ? { modelRevision: route.modelRevision }
+            : {}),
+          tierLabel: route.tierLabel,
+        });
+        break;
+      case "risk_ranker":
+        finopsRecorder.recordSourceMetadata({
+          source: "risk_ranker",
+          ...(route.modelBinding.inferenceProfileId !== undefined
+            ? { deployment: route.modelBinding.inferenceProfileId }
+            : {}),
+          ...(route.modelRevision !== undefined
+            ? { modelRevision: route.modelRevision }
+            : {}),
+          tierLabel: route.tierLabel,
+        });
+        break;
+      case "visual_primary":
+        finopsRecorder.recordRoleMetadata({
+          role: "visual_primary",
+          ...(route.modelBinding.inferenceProfileId !== undefined
+            ? { deployment: route.modelBinding.inferenceProfileId }
+            : {}),
+          ...(route.modelRevision !== undefined
+            ? { modelRevision: route.modelRevision }
+            : {}),
+          tierLabel: route.tierLabel,
+        });
+        finopsRecorder.recordSourceMetadata({
+          source: "visual_primary",
+          ...(route.modelBinding.inferenceProfileId !== undefined
+            ? { deployment: route.modelBinding.inferenceProfileId }
+            : {}),
+          ...(route.modelRevision !== undefined
+            ? { modelRevision: route.modelRevision }
+            : {}),
+          tierLabel: route.tierLabel,
+        });
+        break;
+      case "visual_fallback":
+        finopsRecorder.recordRoleMetadata({
+          role: "visual_fallback",
+          ...(route.modelBinding.inferenceProfileId !== undefined
+            ? { deployment: route.modelBinding.inferenceProfileId }
+            : {}),
+          ...(route.modelRevision !== undefined
+            ? { modelRevision: route.modelRevision }
+            : {}),
+          tierLabel: route.tierLabel,
+        });
+        finopsRecorder.recordSourceMetadata({
+          source: "visual_fallback",
+          ...(route.modelBinding.inferenceProfileId !== undefined
+            ? { deployment: route.modelBinding.inferenceProfileId }
+            : {}),
+          ...(route.modelRevision !== undefined
+            ? { modelRevision: route.modelRevision }
+            : {}),
+          tierLabel: route.tierLabel,
+        });
+        break;
+      default:
+        break;
+    }
+  }
+  const activeModelBindings = applyCustomerProfileIctRef(
+    buildActiveModelBindings({
+      client: input.llm.client,
+      ...(input.llm.bundle !== undefined ? { bundle: input.llm.bundle } : {}),
+      ...(input.llm.logicJudge !== undefined
+        ? { logicJudge: input.llm.logicJudge }
+        : {}),
+      ...(input.llm.coveragePlanner !== undefined
+        ? { coveragePlanner: input.llm.coveragePlanner }
+        : {}),
+    }),
+    canonicalCustomerProfile,
+  );
   const agentLessonsManifest = await scanLessons({
     runDir: artifactDir,
     nowMs: Date.parse(input.generatedAt),
@@ -2790,10 +3066,11 @@ export const runFigmaToQcTestCases = async (
         ? { agentLessons: activeAgentLessons }
         : {}),
       modelBinding: {
-        modelRevision: TEST_GENERATION_MODEL_REVISION,
-        gatewayRelease: TEST_GENERATION_GATEWAY_RELEASE,
+        modelRevision: input.llm.client.modelRevision,
+        gatewayRelease: input.llm.client.gatewayRelease,
         ...(pass.seed !== undefined ? { seed: pass.seed } : {}),
       },
+      routingPolicyDigest,
       policyBundleVersion: POLICY_BUNDLE_VERSION,
       roleStepId: "test_generation",
       customerRubric,
@@ -2938,7 +3215,7 @@ export const runFigmaToQcTestCases = async (
             timestamp: monotonicMs(),
             details: {
               role: "test_generation",
-              deployment: PRODUCTION_RUNNER_TEST_GENERATION_DEPLOYMENT,
+              deployment: input.llm.client.deployment,
               ...(inputPass.pass.passId !== undefined
                 ? { passId: inputPass.pass.passId }
                 : {}),
@@ -5040,7 +5317,7 @@ export const runFigmaToQcTestCases = async (
     initialGenerationDeployment:
       capturedLlmResult?.outcome === "success"
         ? capturedLlmResult.modelDeployment
-        : PRODUCTION_RUNNER_TEST_GENERATION_DEPLOYMENT,
+        : input.llm.client.deployment,
     ...(repairLoopResult !== undefined
       ? {
           repairIterations: repairLoopResult.iterations.filter(
@@ -5131,7 +5408,7 @@ export const runFigmaToQcTestCases = async (
       ? undefined
       : join(artifactDir, MUTATION_REPORT_ARTIFACT_FILENAME);
   const modelDeployments = {
-    testGeneration: PRODUCTION_RUNNER_TEST_GENERATION_DEPLOYMENT,
+    testGeneration: input.llm.client.deployment,
     ...(input.llm.bundle !== undefined
       ? {
           visualPrimary: toEvidenceVisualDeployment(

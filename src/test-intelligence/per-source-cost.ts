@@ -8,6 +8,7 @@ import type {
   LlmConstrainedDecodingAdapterId,
   LlmConstrainedDecodingEnforcement,
   LlmConstrainedDecodingMetadata,
+  ModelRoutingTierLabel,
 } from "../contracts/index.js";
 
 export const PER_SOURCE_COST_BREAKDOWN_SCHEMA_VERSION = "1.0.0" as const;
@@ -55,6 +56,8 @@ export interface PerSourceCostEntry {
    * the wire payload) when the source recorded no deployment.
    */
   readonly deployment?: string;
+  readonly modelRevision?: string;
+  readonly tierLabel?: ModelRoutingTierLabel;
   readonly constrainedDecoding?: {
     adapterId: LlmConstrainedDecodingAdapterId;
     enforcement: LlmConstrainedDecodingEnforcement;
@@ -93,6 +96,8 @@ export interface MutablePerSourceCostEntry {
    * deployment — which is the meaningful one for FinOps attribution.
    */
   deployment?: string;
+  modelRevision?: string;
+  tierLabel?: ModelRoutingTierLabel;
   constrainedDecoding?: {
     adapterId: LlmConstrainedDecodingAdapterId;
     enforcement: LlmConstrainedDecodingEnforcement;
@@ -169,6 +174,8 @@ export const recordPerSourceAttempt = (input: {
    * deployment label.
    */
   deployment?: string;
+  modelRevision?: string;
+  tierLabel?: ModelRoutingTierLabel;
   constrainedDecoding?: LlmConstrainedDecodingMetadata;
 }): void => {
   input.accumulator.callCount += 1;
@@ -195,6 +202,15 @@ export const recordPerSourceAttempt = (input: {
   }
   if (typeof input.deployment === "string" && input.deployment.length > 0) {
     input.accumulator.deployment = input.deployment;
+  }
+  if (
+    typeof input.modelRevision === "string" &&
+    input.modelRevision.length > 0
+  ) {
+    input.accumulator.modelRevision = input.modelRevision;
+  }
+  if (input.tierLabel !== undefined) {
+    input.accumulator.tierLabel = input.tierLabel;
   }
   if (input.constrainedDecoding !== undefined) {
     const current =
@@ -282,6 +298,13 @@ export const finalizePerSourceCostBreakdown = (input: {
             : {}),
           ...(entry.deployment !== undefined && entry.deployment.length > 0
             ? { deployment: entry.deployment }
+            : {}),
+          ...(entry.modelRevision !== undefined &&
+          entry.modelRevision.length > 0
+            ? { modelRevision: entry.modelRevision }
+            : {}),
+          ...(entry.tierLabel !== undefined
+            ? { tierLabel: entry.tierLabel }
             : {}),
           ...(entry.constrainedDecoding !== undefined
             ? {

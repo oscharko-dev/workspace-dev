@@ -965,7 +965,7 @@ test("compiler: surfaces explicit technique quota guidance and serialization for
   assert.match(request.userPrompt, /\[4\] CoveragePlan\nCoveragePlan\.techniqueQuotas\n/u);
   assert.match(
     request.userPrompt,
-    /"minCount":6,"screenId":"s-newsletter","technique":"equivalence_partitioning"/u,
+    /"minCount":3,"screenId":"s-newsletter","technique":"equivalence_partitioning"/u,
   );
 });
 

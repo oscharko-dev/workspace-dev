@@ -51,6 +51,7 @@ import {
   type LlmCircuitState,
   type LlmGatewayErrorClass,
   type LlmGenerationResult,
+  type ModelRoutingTierLabel,
 } from "../contracts/index.js";
 import { canonicalJson } from "./content-hash.js";
 import { cloneFinOpsBudgetEnvelope } from "./finops-budget.js";
@@ -127,6 +128,10 @@ export interface FinOpsAttemptObservation {
   fallback?: boolean;
   /** Optional caller-side circuit-breaker state observed before dispatch. */
   circuitBreakerState?: LlmCircuitState;
+  /** Optional model revision attached to this attempt's route. */
+  modelRevision?: string;
+  /** Optional routing tier label attached to this attempt's route. */
+  tierLabel?: ModelRoutingTierLabel;
   /** The gateway result (success or failure) for this attempt. */
   result: LlmGenerationResult;
   /**
@@ -156,6 +161,8 @@ export interface FinOpsCacheMissObservation {
 interface RoleAccumulator {
   role: FinOpsRole;
   deployment: string;
+  modelRevision?: string;
+  tierLabel?: ModelRoutingTierLabel;
   attempts: number;
   successes: number;
   failures: number;
@@ -203,6 +210,18 @@ export interface FinOpsUsageRecorder {
   recordCacheHit(observation: FinOpsCacheHitObservation): void;
   recordCacheMiss(observation: FinOpsCacheMissObservation): void;
   recordInFlightDedupHit(source: AgentSourceLabel): void;
+  recordRoleMetadata(observation: {
+    role: FinOpsRole;
+    deployment?: string;
+    modelRevision?: string;
+    tierLabel?: ModelRoutingTierLabel;
+  }): void;
+  recordSourceMetadata(observation: {
+    source: AgentSourceLabel;
+    deployment?: string;
+    modelRevision?: string;
+    tierLabel?: ModelRoutingTierLabel;
+  }): void;
   recordBudgetBreach(breach: FinOpsBudgetBreach): void;
   /**
    * Record bytes ingested by a non-LLM source-ingest role
@@ -290,6 +309,15 @@ export const createFinOpsUsageRecorder = (
       // recently regardless of whether it was primary or audit traffic.
       acc.deployment = sanitizeReportString(observation.deployment);
     }
+    if (
+      typeof observation.modelRevision === "string" &&
+      observation.modelRevision.length > 0
+    ) {
+      acc.modelRevision = sanitizeReportString(observation.modelRevision);
+    }
+    if (observation.tierLabel !== undefined) {
+      acc.tierLabel = observation.tierLabel;
+    }
     if (attribution === "primary") {
       acc.attempts += 1;
       acc.durationMs += positiveOrZero(observation.durationMs);
@@ -341,6 +369,13 @@ export const createFinOpsUsageRecorder = (
         ...(typeof observation.deployment === "string" &&
         observation.deployment.length > 0
           ? { deployment: observation.deployment }
+          : {}),
+        ...(typeof observation.modelRevision === "string" &&
+        observation.modelRevision.length > 0
+          ? { modelRevision: observation.modelRevision }
+          : {}),
+        ...(observation.tierLabel !== undefined
+          ? { tierLabel: observation.tierLabel }
           : {}),
         ...(observation.result.constrainedDecoding !== undefined
           ? {
@@ -450,6 +485,64 @@ export const createFinOpsUsageRecorder = (
   const budgetBreaches = (): FinOpsBudgetBreach[] =>
     explicitBreaches.map((breach) => ({ ...breach }));
 
+  const recordRoleMetadata = (observation: {
+    role: FinOpsRole;
+    deployment?: string;
+    modelRevision?: string;
+    tierLabel?: ModelRoutingTierLabel;
+  }): void => {
+    if (!ALLOWED_FINOPS_ROLES.includes(observation.role)) {
+      throw new RangeError(
+        `recordRoleMetadata: unknown role "${observation.role}"`,
+      );
+    }
+    const acc = accumulators[observation.role];
+    if (
+      typeof observation.deployment === "string" &&
+      observation.deployment.length > 0
+    ) {
+      acc.deployment = sanitizeReportString(observation.deployment);
+    }
+    if (
+      typeof observation.modelRevision === "string" &&
+      observation.modelRevision.length > 0
+    ) {
+      acc.modelRevision = sanitizeReportString(observation.modelRevision);
+    }
+    if (observation.tierLabel !== undefined) {
+      acc.tierLabel = observation.tierLabel;
+    }
+  };
+
+  const recordSourceMetadata = (observation: {
+    source: AgentSourceLabel;
+    deployment?: string;
+    modelRevision?: string;
+    tierLabel?: ModelRoutingTierLabel;
+  }): void => {
+    if (!isAgentSourceLabel(observation.source)) {
+      throw new RangeError(
+        `recordSourceMetadata: unknown source "${observation.source}"`,
+      );
+    }
+    const acc = sourceAccumulatorFor(observation.source);
+    if (
+      typeof observation.deployment === "string" &&
+      observation.deployment.length > 0
+    ) {
+      acc.deployment = sanitizeReportString(observation.deployment);
+    }
+    if (
+      typeof observation.modelRevision === "string" &&
+      observation.modelRevision.length > 0
+    ) {
+      acc.modelRevision = sanitizeReportString(observation.modelRevision);
+    }
+    if (observation.tierLabel !== undefined) {
+      acc.tierLabel = observation.tierLabel;
+    }
+  };
+
   return {
     recordAttempt,
     recordCircuitBreakerDecision,
@@ -463,6 +556,8 @@ export const createFinOpsUsageRecorder = (
       }
       recordPerSourceInFlightDedupHit(sourceAccumulatorFor(source));
     },
+    recordRoleMetadata,
+    recordSourceMetadata,
     recordBudgetBreach,
     recordIngestBytes,
     snapshot,
@@ -482,6 +577,10 @@ const finalizeAccumulator = (
   const usage: FinOpsRoleUsage = {
     role: acc.role,
     deployment: acc.deployment,
+    ...(acc.modelRevision !== undefined
+      ? { modelRevision: acc.modelRevision }
+      : {}),
+    ...(acc.tierLabel !== undefined ? { tierLabel: acc.tierLabel } : {}),
     attempts: acc.attempts,
     successes: acc.successes,
     failures: acc.failures,

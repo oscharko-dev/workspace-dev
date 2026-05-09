@@ -8,7 +8,14 @@ import {
   type LlmGatewayClientBundle,
   type LlmGatewayClientBundleConfigs,
 } from "./llm-gateway-bundle.js";
-import type { LlmGatewayClientConfig } from "../contracts/index.js";
+import {
+  EU_BANKING_DEFAULT_POLICY_PROFILE_ID,
+  type LlmGatewayClientConfig,
+  type ModelRoutingOverride,
+  type ModelRoutingPolicy,
+  type ModelRoutingRole,
+} from "../contracts/index.js";
+import { buildRuntimeModelRoutingPolicy } from "./model-routing-policy.js";
 
 const TEXT_ROLE_TIMEOUT_MS = 240_000;
 const AUX_TEXT_ROLE_TIMEOUT_MS = 60_000;
@@ -28,6 +35,8 @@ export interface BuildProductionTopologyClientConfigsInput {
   ictRegisterRef?: string;
   modelRevisionSuffix: string;
   gatewayRelease: string;
+  policyProfileId?: string;
+  modelRoutingOverride?: ModelRoutingOverride;
 }
 
 const withOptionalDeployment = <T extends object>(
@@ -151,98 +160,196 @@ export const buildProductionRoleClientConfig = (input: {
 
 export const buildProductionTopologyClientConfigs = (
   input: BuildProductionTopologyClientConfigsInput,
-): LlmGatewayClientBundleConfigs => ({
-  testGeneration: buildProductionRoleClientConfig({
-    role: "test_generation",
-    endpoint: input.endpoint,
-    deployment: input.deployment,
-    modelRevisionSuffix: input.modelRevisionSuffix,
-    gatewayRelease: input.gatewayRelease,
-    ...(input.ictRegisterRef !== undefined
-      ? { ictRegisterRef: input.ictRegisterRef }
-      : {}),
-  }),
-  visualPrimary: buildProductionRoleClientConfig({
-    role: "visual_primary",
-    endpoint: input.visualEndpoint,
-    deployment: input.visualPrimaryDeployment,
-    modelRevisionSuffix: input.modelRevisionSuffix,
-    gatewayRelease: input.gatewayRelease,
-    ...(input.ictRegisterRef !== undefined
-      ? { ictRegisterRef: input.ictRegisterRef }
-      : {}),
-  }),
-  visualFallback: buildProductionRoleClientConfig({
-    role: "visual_fallback",
-    endpoint: input.visualEndpoint,
-    deployment: input.visualFallbackDeployment,
-    modelRevisionSuffix: input.modelRevisionSuffix,
-    gatewayRelease: input.gatewayRelease,
-    ...(input.ictRegisterRef !== undefined
-      ? { ictRegisterRef: input.ictRegisterRef }
-      : {}),
-  }),
-  ...withOptionalDeployment(
-    "logicJudge",
-    input.logicJudgeDeployment,
-    (deployment) =>
+): LlmGatewayClientBundleConfigs => {
+  const policy = resolveProductionTopologyModelRoutingPolicy(input);
+  const deploymentFor = (role: ModelRoutingRole): string => {
+    const route = policy.routes.find(
+      (candidate) => candidate.role === role && candidate.slot === "primary",
+    ) ?? policy.routes.find((candidate) => candidate.role === role);
+    if (
+      route?.modelBinding.inferenceProfileId !== undefined &&
+      route.modelBinding.inferenceProfileId.length > 0
+    ) {
+      return route.modelBinding.inferenceProfileId;
+    }
+    return route?.modelBinding.modelId ?? input.deployment;
+  };
+  return {
+    testGeneration: buildProductionRoleClientConfig({
+      role: "test_generation",
+      endpoint: input.endpoint,
+      deployment: deploymentFor("test_generation"),
+      modelRevisionSuffix: input.modelRevisionSuffix,
+      gatewayRelease: input.gatewayRelease,
+      ...(input.ictRegisterRef !== undefined
+        ? { ictRegisterRef: input.ictRegisterRef }
+        : {}),
+    }),
+    visualPrimary: buildProductionRoleClientConfig({
+      role: "visual_primary",
+      endpoint: input.visualEndpoint,
+      deployment: deploymentFor("visual_primary"),
+      modelRevisionSuffix: input.modelRevisionSuffix,
+      gatewayRelease: input.gatewayRelease,
+      ...(input.ictRegisterRef !== undefined
+        ? { ictRegisterRef: input.ictRegisterRef }
+        : {}),
+    }),
+    visualFallback: buildProductionRoleClientConfig({
+      role: "visual_fallback",
+      endpoint: input.visualEndpoint,
+      deployment: deploymentFor("visual_fallback"),
+      modelRevisionSuffix: input.modelRevisionSuffix,
+      gatewayRelease: input.gatewayRelease,
+      ...(input.ictRegisterRef !== undefined
+        ? { ictRegisterRef: input.ictRegisterRef }
+        : {}),
+    }),
+    ...withOptionalDeployment("logicJudge", input.logicJudgeDeployment, () =>
       buildProductionRoleClientConfig({
-          role: "logic_judge",
-          endpoint: input.endpoint,
-          deployment,
-          modelRevisionSuffix: input.modelRevisionSuffix,
-          gatewayRelease: input.gatewayRelease,
-          ...(input.ictRegisterRef !== undefined
-            ? { ictRegisterRef: input.ictRegisterRef }
-            : {}),
+        role: "logic_judge",
+        endpoint: input.endpoint,
+        deployment: deploymentFor("logic_judge"),
+        modelRevisionSuffix: input.modelRevisionSuffix,
+        gatewayRelease: input.gatewayRelease,
+        ...(input.ictRegisterRef !== undefined
+          ? { ictRegisterRef: input.ictRegisterRef }
+          : {}),
       }),
-  ),
-  ...withOptionalDeployment(
-    "a11yJudge",
-    input.a11yJudgeDeployment,
-    (deployment) =>
+    ),
+    ...withOptionalDeployment("a11yJudge", input.a11yJudgeDeployment, () =>
       buildProductionRoleClientConfig({
-          role: "a11y_judge",
-          endpoint: input.visualEndpoint,
-          deployment,
-          modelRevisionSuffix: input.modelRevisionSuffix,
-          gatewayRelease: input.gatewayRelease,
-          ...(input.ictRegisterRef !== undefined
-            ? { ictRegisterRef: input.ictRegisterRef }
-            : {}),
+        role: "a11y_judge",
+        endpoint: input.visualEndpoint,
+        deployment: deploymentFor("a11y_judge"),
+        modelRevisionSuffix: input.modelRevisionSuffix,
+        gatewayRelease: input.gatewayRelease,
+        ...(input.ictRegisterRef !== undefined
+          ? { ictRegisterRef: input.ictRegisterRef }
+          : {}),
       }),
-  ),
-  ...withOptionalDeployment(
-    "coveragePlanner",
-    input.coveragePlannerDeployment,
-    (deployment) =>
-      buildProductionRoleClientConfig({
+    ),
+    ...withOptionalDeployment(
+      "coveragePlanner",
+      input.coveragePlannerDeployment,
+      () =>
+        buildProductionRoleClientConfig({
           role: "coverage_planner",
           endpoint: input.endpoint,
-          deployment,
+          deployment: deploymentFor("coverage_planner"),
           modelRevisionSuffix: input.modelRevisionSuffix,
           gatewayRelease: input.gatewayRelease,
           ...(input.ictRegisterRef !== undefined
             ? { ictRegisterRef: input.ictRegisterRef }
             : {}),
-      }),
-  ),
-  ...withOptionalDeployment(
-    "riskRanker",
-    input.riskRankerDeployment,
-    (deployment) =>
+        }),
+    ),
+    ...withOptionalDeployment("riskRanker", input.riskRankerDeployment, () =>
       buildProductionRoleClientConfig({
-          role: "risk_ranker",
-          endpoint: input.endpoint,
-          deployment,
-          modelRevisionSuffix: input.modelRevisionSuffix,
-          gatewayRelease: input.gatewayRelease,
-          ...(input.ictRegisterRef !== undefined
-            ? { ictRegisterRef: input.ictRegisterRef }
-            : {}),
+        role: "risk_ranker",
+        endpoint: input.endpoint,
+        deployment: deploymentFor("risk_ranker"),
+        modelRevisionSuffix: input.modelRevisionSuffix,
+        gatewayRelease: input.gatewayRelease,
+        ...(input.ictRegisterRef !== undefined
+          ? { ictRegisterRef: input.ictRegisterRef }
+          : {}),
       }),
-  ),
-});
+    ),
+  };
+};
+
+export const resolveProductionTopologyModelRoutingPolicy = (
+  input: BuildProductionTopologyClientConfigsInput,
+): ModelRoutingPolicy =>
+  buildRuntimeModelRoutingPolicy({
+    policyProfileId:
+      input.policyProfileId ?? EU_BANKING_DEFAULT_POLICY_PROFILE_ID,
+    roles: [
+      {
+        role: "test_generation",
+        deployment: input.deployment,
+        modelRevision: `${input.deployment}@${input.modelRevisionSuffix}`,
+        gatewayRelease: input.gatewayRelease,
+        ...(input.ictRegisterRef !== undefined
+          ? { ictRegisterRef: input.ictRegisterRef }
+          : {}),
+      },
+      {
+        role: "visual_primary",
+        deployment: input.visualPrimaryDeployment,
+        modelRevision: `${input.visualPrimaryDeployment}@${input.modelRevisionSuffix}`,
+        gatewayRelease: input.gatewayRelease,
+        ...(input.ictRegisterRef !== undefined
+          ? { ictRegisterRef: input.ictRegisterRef }
+          : {}),
+      },
+      {
+        role: "visual_fallback",
+        deployment: input.visualFallbackDeployment,
+        modelRevision: `${input.visualFallbackDeployment}@${input.modelRevisionSuffix}`,
+        gatewayRelease: input.gatewayRelease,
+        ...(input.ictRegisterRef !== undefined
+          ? { ictRegisterRef: input.ictRegisterRef }
+          : {}),
+      },
+      ...(input.logicJudgeDeployment !== undefined
+        ? [
+            {
+              role: "logic_judge" as const,
+              deployment: input.logicJudgeDeployment,
+              modelRevision: `${input.logicJudgeDeployment}@${input.modelRevisionSuffix}`,
+              gatewayRelease: input.gatewayRelease,
+              ...(input.ictRegisterRef !== undefined
+                ? { ictRegisterRef: input.ictRegisterRef }
+                : {}),
+            },
+          ]
+        : []),
+      ...(input.a11yJudgeDeployment !== undefined
+        ? [
+            {
+              role: "a11y_judge" as const,
+              deployment: input.a11yJudgeDeployment,
+              modelRevision: `${input.a11yJudgeDeployment}@${input.modelRevisionSuffix}`,
+              gatewayRelease: input.gatewayRelease,
+              ...(input.ictRegisterRef !== undefined
+                ? { ictRegisterRef: input.ictRegisterRef }
+                : {}),
+            },
+          ]
+        : []),
+      ...(input.coveragePlannerDeployment !== undefined
+        ? [
+            {
+              role: "coverage_planner" as const,
+              deployment: input.coveragePlannerDeployment,
+              modelRevision: `${input.coveragePlannerDeployment}@${input.modelRevisionSuffix}`,
+              gatewayRelease: input.gatewayRelease,
+              ...(input.ictRegisterRef !== undefined
+                ? { ictRegisterRef: input.ictRegisterRef }
+                : {}),
+            },
+          ]
+        : []),
+      ...(input.riskRankerDeployment !== undefined
+        ? [
+            {
+              role: "risk_ranker" as const,
+              deployment: input.riskRankerDeployment,
+              modelRevision: `${input.riskRankerDeployment}@${input.modelRevisionSuffix}`,
+              gatewayRelease: input.gatewayRelease,
+              ...(input.ictRegisterRef !== undefined
+                ? { ictRegisterRef: input.ictRegisterRef }
+                : {}),
+            },
+          ]
+        : []),
+    ],
+    ...(input.modelRoutingOverride !== undefined
+      ? { override: input.modelRoutingOverride }
+      : {}),
+  });
 
 export const createProductionTopologyClientBundle = (
   input: BuildProductionTopologyClientConfigsInput,
