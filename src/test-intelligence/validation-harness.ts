@@ -141,6 +141,11 @@ import { cloneOpenTextAlmReferenceProfile } from "./qc-mapping.js";
 import { compilePrompt } from "./prompt-compiler.js";
 import type { ComplianceRiskOverride } from "./policy-gate.js";
 import { cloneEuBankingDefaultProfile } from "./policy-profile.js";
+import {
+  formatOracleValueAsTestDataEntry,
+  resolveTestData,
+  type OracleResolution,
+} from "./test-data-oracle.js";
 import { writeAgentRoleRunArtifact } from "./agent-role-run-artifact.js";
 import {
   cloneFourEyesPolicy,
@@ -569,6 +574,24 @@ export const synthesizeGeneratedTestCases = (input: {
    * policy-gate classification agree.
    */
   complianceOverrides?: ReadonlyArray<ComplianceRiskOverride>;
+  /**
+   * Optional opt-in for the deterministic test-data oracle (#2071).
+   * When `true`, every per-field synthesized case ships with concrete
+   * boundary values resolved from `field.validations[*]` via
+   * {@link resolveTestData}; rules the oracle cannot resolve surface
+   * as case-level `openQuestions[*]` instead of inventing data. When
+   * omitted (default `false`), `testData` stays empty — the seven
+   * MA-0 baseline-eval snapshots and any other caller that does not
+   * pass this flag are byte-stable.
+   */
+  useTestDataOracle?: boolean;
+  /**
+   * Wall-clock anchor for time-relative oracle rules (`Date <= today`,
+   * `Date >= today + 1 day`). Defaults to the 2026-05-09 fixture
+   * anchor for deterministic snapshots; override per call to pin the
+   * oracle to the run's `generatedAt`.
+   */
+  oracleNow?: Date;
 }): GeneratedTestCaseList => {
   const cases: GeneratedTestCase[] = [];
 
@@ -576,12 +599,70 @@ export const synthesizeGeneratedTestCases = (input: {
     input.intent.detectedFields.map((f) => f.screenId),
   );
   const validationsByField = new Map<string, string[]>();
+  const ruleStringsByField = new Map<string, string[]>();
   for (const v of input.intent.detectedValidations) {
     if (v.targetFieldId === undefined) continue;
     const existing = validationsByField.get(v.targetFieldId) ?? [];
     existing.push(v.id);
     validationsByField.set(v.targetFieldId, existing);
+    const ruleList = ruleStringsByField.get(v.targetFieldId) ?? [];
+    ruleList.push(v.rule);
+    ruleStringsByField.set(v.targetFieldId, ruleList);
   }
+
+  // #2071 deterministic test-data oracle. The resolver is invoked
+  // per-field once and its `valid` / `invalid` partitions are reused
+  // across the four field-case types (functional / negative /
+  // validation / boundary). The oracle is opt-in via
+  // `input.useTestDataOracle`; when disabled the synthesizer ships
+  // `testData: []` for every case so pre-#2071 snapshots stay byte
+  // stable.
+  const ORACLE_DEFAULT_ANCHOR = new Date("2026-05-09T00:00:00.000Z");
+  const oracleNow = input.oracleNow ?? ORACLE_DEFAULT_ANCHOR;
+  const oracleByField = new Map<string, OracleResolution>();
+  if (input.useTestDataOracle === true) {
+    for (const field of input.intent.detectedFields) {
+      const rules = ruleStringsByField.get(field.id) ?? [];
+      oracleByField.set(
+        field.id,
+        resolveTestData({
+          fieldLabel: field.label,
+          validations: rules,
+          ...(field.defaultValue !== undefined
+            ? { defaultValue: field.defaultValue }
+            : {}),
+          now: oracleNow,
+        }),
+      );
+    }
+  }
+  const oracleValidTestData = (fieldId: string, fieldLabel: string): string[] => {
+    const r = oracleByField.get(fieldId);
+    if (r === undefined || !r.resolvable) return [];
+    return r.valid.map((v) => formatOracleValueAsTestDataEntry(fieldLabel, v));
+  };
+  const oracleInvalidTestData = (
+    fieldId: string,
+    fieldLabel: string,
+  ): string[] => {
+    const r = oracleByField.get(fieldId);
+    if (r === undefined || !r.resolvable) return [];
+    return r.invalid.map((v) =>
+      formatOracleValueAsTestDataEntry(fieldLabel, v),
+    );
+  };
+  const oracleAllTestData = (
+    fieldId: string,
+    fieldLabel: string,
+  ): string[] => [
+    ...oracleValidTestData(fieldId, fieldLabel),
+    ...oracleInvalidTestData(fieldId, fieldLabel),
+  ];
+  const oracleOpenQuestion = (fieldId: string): string | undefined => {
+    const r = oracleByField.get(fieldId);
+    if (r === undefined || r.resolvable) return undefined;
+    return r.openQuestion;
+  };
 
   for (const field of input.intent.detectedFields) {
     cases.push(
@@ -629,6 +710,14 @@ export const synthesizeGeneratedTestCases = (input: {
           `${field.label} is accepted`,
           "The next screen is reachable",
         ],
+        testData: oracleValidTestData(field.id, field.label),
+        ...(oracleOpenQuestion(field.id) !== undefined
+          ? {
+              openQuestions: [
+                oracleOpenQuestion(field.id) as string,
+              ],
+            }
+          : {}),
         ...stampAudit(input),
       }),
     );
@@ -702,6 +791,9 @@ export const synthesizeGeneratedTestCases = (input: {
           ...(hasUnresolvedValidationRules
             ? { openQuestions: unresolvedValidationQuestions }
             : {}),
+          testData: hasUnresolvedValidationRules
+            ? []
+            : oracleInvalidTestData(field.id, field.label),
           ...stampAudit(input),
         }),
       );
@@ -753,6 +845,9 @@ export const synthesizeGeneratedTestCases = (input: {
           ...(hasUnresolvedValidationRules
             ? { openQuestions: unresolvedValidationQuestions }
             : {}),
+          testData: hasUnresolvedValidationRules
+            ? []
+            : oracleInvalidTestData(field.id, field.label),
           ...stampAudit(input),
         }),
       );
@@ -799,6 +894,7 @@ export const synthesizeGeneratedTestCases = (input: {
             expectedResults: [
               "Min/max boundaries behave consistently with the validation rules",
             ],
+            testData: oracleAllTestData(field.id, field.label),
             ...stampAudit(input),
           }),
         );
@@ -1291,6 +1387,14 @@ interface BuildSyntheticCaseInput {
   steps: GeneratedTestCase["steps"];
   expectedResults: string[];
   openQuestions?: string[];
+  /**
+   * Optional test-data oracle output (#2071). When omitted, the case
+   * is built with `testData: []` (pre-#2071 behaviour). When provided,
+   * the synthesizer ships the oracle-resolved boundary values as
+   * `testData[*]` strings; provenance is encoded inline so reviewers
+   * see which validation rule each value derives from.
+   */
+  testData?: string[];
   audit: GeneratedTestCaseAuditMetadata;
 }
 
@@ -1322,7 +1426,7 @@ const buildSyntheticCase = (
     riskCategory: input.riskCategory,
     technique: input.technique,
     preconditions: [],
-    testData: [],
+    testData: input.testData?.slice() ?? [],
     steps: input.steps,
     expectedResults: input.expectedResults,
     figmaTraceRefs,
