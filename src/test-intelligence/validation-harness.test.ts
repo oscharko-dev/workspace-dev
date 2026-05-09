@@ -18,6 +18,7 @@ import {
   LBOM_CYCLONEDX_SPEC_VERSION,
   TEST_INTELLIGENCE_CONTRACT_VERSION,
   TEST_INTELLIGENCE_PROMPT_TEMPLATE_VERSION,
+  TEST_DATA_ORACLE_REPORT_ARTIFACT_FILENAME,
   WAVE1_VALIDATION_ATTESTATION_ARTIFACT_FILENAME,
   WAVE1_VALIDATION_ATTESTATION_BUNDLE_FILENAME,
   WAVE1_VALIDATION_ATTESTATIONS_DIRECTORY,
@@ -411,6 +412,7 @@ for (const fixtureId of WAVE1_VALIDATION_FIXTURE_IDS) {
     assert.ok(filenames.includes(BUSINESS_INTENT_IR_ARTIFACT_FILENAME));
     assert.ok(filenames.includes(COMPILED_PROMPT_ARTIFACT_FILENAME));
     assert.ok(filenames.includes(GATEWAY_REQUEST_AUDIT_ARTIFACT_FILENAME));
+    assert.ok(filenames.includes(TEST_DATA_ORACLE_REPORT_ARTIFACT_FILENAME));
     // Manifest invariants.
     assert.equal(result.manifest.rawScreenshotsIncluded, false);
     assert.equal(result.manifest.imagePayloadSentToTestGeneration, false);

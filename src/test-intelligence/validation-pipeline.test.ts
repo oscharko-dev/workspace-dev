@@ -560,6 +560,132 @@ test("Issue #2071: pipeline reconciles oracle-governed testData and persists the
   }
 });
 
+test("Issue #2071: oracle reconciliation preserves unrelated testData entries on multi-field cases", () => {
+  const list: GeneratedTestCaseList = {
+    schemaVersion: GENERATED_TEST_CASE_SCHEMA_VERSION,
+    jobId: "job-1",
+    testCases: [
+      buildCase({
+        id: "tc-oracle-mixed",
+        type: "functional",
+        title: "Submit amount with customer type",
+        testData: ["Customer Type: VIP", "Amount: 4242.00"],
+        qualitySignals: {
+          coveredFieldIds: ["s-payment::field::n-amount"],
+          coveredActionIds: [],
+          coveredValidationIds: [],
+          coveredNavigationIds: [],
+          confidence: 0.95,
+        },
+      }),
+    ],
+  };
+  const result = runValidationPipeline({
+    jobId: "job-1",
+    generatedAt: GENERATED_AT,
+    list,
+    intent: buildOracleIntent(),
+  });
+  assert.deepEqual(result.generatedTestCases.testCases[0]?.testData, [
+    "Customer Type: VIP",
+    'Amount: 1000.00 (boundary_min; from rule "Numeric in range 1000..50000")',
+    'Amount: 25500.00 (midpoint; from rule "Numeric in range 1000..50000")',
+    'Amount: 50000.00 (boundary_max; from rule "Numeric in range 1000..50000")',
+  ]);
+});
+
+test("Issue #2071: mixed resolved and unresolved rules preserve oracle data and add an open question", () => {
+  const intent = buildOracleIntent();
+  intent.detectedValidations.push({
+    id: "s-payment::validation::n-amount::computed",
+    screenId: "s-payment",
+    trace: { nodeId: "n-amount" },
+    provenance: "figma_node",
+    confidence: 0.7,
+    rule: "Computed = principal * rate",
+    targetFieldId: "s-payment::field::n-amount",
+  });
+  const result = runValidationPipeline({
+    jobId: "job-1",
+    generatedAt: GENERATED_AT,
+    list: {
+      schemaVersion: GENERATED_TEST_CASE_SCHEMA_VERSION,
+      jobId: "job-1",
+      testCases: [
+        buildCase({
+          id: "tc-oracle-partial",
+          type: "functional",
+          title: "Submit valid amount",
+          qualitySignals: {
+            coveredFieldIds: ["s-payment::field::n-amount"],
+            coveredActionIds: [],
+            coveredValidationIds: [],
+            coveredNavigationIds: [],
+            confidence: 0.95,
+          },
+        }),
+      ],
+    },
+    intent,
+  });
+  const openQuestions =
+    result.generatedTestCases.testCases[0]?.openQuestions ?? [];
+  assert.equal(
+    openQuestions.some((entry) => entry.startsWith("test-data oracle:")),
+    true,
+  );
+  assert.equal(
+    result.testDataOracleReport?.cases[0]?.oracleUnresolvedFields.length,
+    1,
+  );
+});
+
+test("Issue #2071: required oracle open questions survive the soft cap", () => {
+  const result = runValidationPipeline({
+    jobId: "job-1",
+    generatedAt: GENERATED_AT,
+    list: {
+      schemaVersion: GENERATED_TEST_CASE_SCHEMA_VERSION,
+      jobId: "job-1",
+      testCases: [
+        buildCase({
+          id: "tc-oracle-cap",
+          title: "Capture unresolved amount rule",
+          openQuestions: Array.from({ length: 25 }, (_, index) => `q-${index}`),
+          qualitySignals: {
+            coveredFieldIds: ["s-payment::field::n-amount"],
+            coveredActionIds: [],
+            coveredValidationIds: [],
+            coveredNavigationIds: [],
+            confidence: 0.95,
+          },
+        }),
+      ],
+    },
+    intent: {
+      ...buildOracleIntent(),
+      detectedValidations: [
+        {
+          id: "s-payment::validation::n-amount::conditional",
+          screenId: "s-payment",
+          trace: { nodeId: "n-amount" },
+          provenance: "figma_node",
+          confidence: 0.7,
+          rule: "Required if Customer Type is VIP",
+          targetFieldId: "s-payment::field::n-amount",
+        },
+      ],
+    },
+  });
+  const openQuestions =
+    result.generatedTestCases.testCases[0]?.openQuestions ?? [];
+  assert.equal(openQuestions.length, 25);
+  assert.equal(
+    openQuestions.some((entry) => entry.startsWith("test-data oracle:")),
+    true,
+  );
+});
+
 test("Issue #2068: pipeline omits technique-quota artifact when no CoveragePlan is supplied", () => {
   const result = runValidationPipeline({
     jobId: "job-1",

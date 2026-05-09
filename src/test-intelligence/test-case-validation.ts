@@ -658,10 +658,19 @@ const validateTestDataOracleGovernance = (
   ) {
     return;
   }
+  const governedLabels = [
+    ...projection.oracleResolvedFields.map((field) => field.fieldLabel),
+    ...projection.oracleUnresolvedFields.map((field) => field.fieldLabel),
+  ];
+  const actualGovernedTestData = testCase.testData.filter((entry) =>
+    governedLabels.some((label) => entry.startsWith(`${label}:`)),
+  );
   const expectedTestData = [...projection.authoritativeTestData];
   if (
-    expectedTestData.length !== testCase.testData.length ||
-    expectedTestData.some((entry, index) => entry !== testCase.testData[index])
+    expectedTestData.length !== actualGovernedTestData.length ||
+    expectedTestData.some(
+      (entry, index) => entry !== actualGovernedTestData[index],
+    )
   ) {
     pushIssue(issues, {
       testCaseId: testCase.id,

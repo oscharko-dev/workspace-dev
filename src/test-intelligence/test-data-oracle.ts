@@ -454,6 +454,11 @@ const matchRule = (
   );
 };
 
+export const isDeterministicTestDataRule = (input: {
+  rule: string;
+  now: Date;
+}): boolean => matchRule(input.rule, input.now) !== null;
+
 /**
  * Resolve concrete test data for one field from its validation rules.
  *

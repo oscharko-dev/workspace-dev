@@ -7,6 +7,7 @@ import {
 } from "../contracts/index.js";
 import {
   formatOracleValueAsTestDataEntry,
+  isDeterministicTestDataRule,
   resolveTestData,
   type OracleResolution,
 } from "./test-data-oracle.js";
@@ -19,6 +20,7 @@ interface OracleFieldRecord {
   readonly fieldId: string;
   readonly fieldLabel: string;
   readonly governed: boolean;
+  readonly unresolvedRules: readonly string[];
   readonly resolution: OracleResolution;
 }
 
@@ -121,6 +123,9 @@ const testDataEntriesFor = (
   return resolution.valid.map(toEntry);
 };
 
+const governsEntryForField = (entry: string, fieldLabel: string): boolean =>
+  entry.startsWith(`${fieldLabel}:`);
+
 export const buildTestDataOracleGovernanceContext = (input: {
   intent: BusinessTestIntentIr;
   generatedAt: string;
@@ -130,12 +135,18 @@ export const buildTestDataOracleGovernanceContext = (input: {
   const byFieldId = new Map<string, OracleFieldRecord>();
   for (const field of input.intent.detectedFields) {
     const validations = rulesByFieldId.get(field.id) ?? [];
-    const governed =
-      validations.filter((rule) => !isPresenceOnlyRule(rule)).length > 0;
+    const significantRules = validations.filter(
+      (rule) => !isPresenceOnlyRule(rule),
+    );
+    const governed = significantRules.length > 0;
+    const unresolvedRules = significantRules.filter(
+      (rule) => !isDeterministicTestDataRule({ rule, now }),
+    );
     byFieldId.set(field.id, {
       fieldId: field.id,
       fieldLabel: field.label,
       governed,
+      unresolvedRules,
       resolution: resolveTestData({
         fieldLabel: field.label,
         validations,
@@ -179,15 +190,27 @@ export const projectTestDataOracleCase = (input: {
       });
       authoritativeTestData.push(...testDataEntries);
       provenance.push(...fieldRecord.resolution.provenance);
+    }
+    if (fieldRecord.resolution.resolvable && fieldRecord.unresolvedRules.length > 0) {
+      const openQuestion =
+        `${OPEN_QUESTION_PREFIX}Field "${fieldRecord.fieldLabel}" has additional unresolved validation rules: ${fieldRecord.unresolvedRules.join("; ")}`;
+      unresolvedFields.push({
+        fieldId,
+        fieldLabel: fieldRecord.fieldLabel,
+        openQuestion,
+      });
+      authoritativeOpenQuestions.push(openQuestion);
       continue;
     }
-    const openQuestion = `${OPEN_QUESTION_PREFIX}${fieldRecord.resolution.openQuestion}`;
-    unresolvedFields.push({
-      fieldId,
-      fieldLabel: fieldRecord.fieldLabel,
-      openQuestion,
-    });
-    authoritativeOpenQuestions.push(openQuestion);
+    if (!fieldRecord.resolution.resolvable) {
+      const openQuestion = `${OPEN_QUESTION_PREFIX}${fieldRecord.resolution.openQuestion}`;
+      unresolvedFields.push({
+        fieldId,
+        fieldLabel: fieldRecord.fieldLabel,
+        openQuestion,
+      });
+      authoritativeOpenQuestions.push(openQuestion);
+    }
   }
 
   return {
@@ -203,7 +226,26 @@ export const projectTestDataOracleCase = (input: {
 const appendOracleOpenQuestions = (
   existing: readonly string[],
   required: readonly string[],
-): string[] => uniqueStrings([...existing, ...required]).slice(0, OPEN_QUESTION_LIMIT);
+): string[] => {
+  const requiredUnique = uniqueStrings(required);
+  const existingWithoutRequired = existing.filter(
+    (entry) => !requiredUnique.includes(entry),
+  );
+  const budget = Math.max(0, OPEN_QUESTION_LIMIT - requiredUnique.length);
+  return uniqueStrings([
+    ...existingWithoutRequired.slice(0, budget),
+    ...requiredUnique,
+  ]);
+};
+
+const preserveNonOracleTestData = (
+  testCase: GeneratedTestCase,
+  governedLabels: readonly string[],
+): string[] =>
+  testCase.testData.filter(
+    (entry) =>
+      !governedLabels.some((fieldLabel) => governsEntryForField(entry, fieldLabel)),
+  );
 
 export const applyDeterministicTestDataOracle = (input: {
   jobId: string;
@@ -238,9 +280,16 @@ export const applyDeterministicTestDataOracle = (input: {
       reportCases.push(projection);
     }
     if (!governsCase) return testCase;
+    const preservedTestData = preserveNonOracleTestData(
+      testCase,
+      [
+        ...projection.oracleResolvedFields.map((field) => field.fieldLabel),
+        ...projection.oracleUnresolvedFields.map((field) => field.fieldLabel),
+      ],
+    );
     return {
       ...testCase,
-      testData: [...projection.authoritativeTestData],
+      testData: [...preservedTestData, ...projection.authoritativeTestData],
       openQuestions: appendOracleOpenQuestions(
         testCase.openQuestions,
         projection.authoritativeOpenQuestions,
