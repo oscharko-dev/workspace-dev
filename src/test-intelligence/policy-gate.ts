@@ -136,6 +136,45 @@ export interface EvaluatePolicyGateInput {
    * documented in `docs/runbooks/coverage-baseline-rebaseline.md`.
    */
   coverageBaselineDrift?: CoverageBaselineDriftEvaluation;
+  /**
+   * Optional fixture- or screen-scoped compliance overrides
+   * (Issue #2030 follow-up, K0-measurement-driven).
+   *
+   * The Eingabemasken K0 measurement showed that the policy gate is
+   * blind to MiFID II / GwG-Section-43 / FATCA / EAA / DORA regulatory
+   * context unless the field-level PII detector picks it up by literal
+   * pattern (IBAN, tax-id, email, phone). Realistic banking masks like
+   * a MiFID-II securities order, a BU health questionnaire, or an
+   * EAA-A11y-variant carry no PII pattern at the field-label level
+   * even though they ARE regulated. Without this hook the gate emits
+   * zero `policy:regulated-risk-requires-review` warnings on those
+   * masks.
+   *
+   * Each override declares the regulated risk classification a fixture
+   * (or a specific screen within a fixture) should take when the
+   * intent-derived classification chain returns `undefined`. Overrides
+   * NEVER weaken an already-derived classification; they only act as a
+   * fallback floor when nothing else fires.
+   *
+   * The override values come from the per-fixture compliance sidecar
+   * (`<fixtureId>.compliance.json` `regulatedRiskOverride` field) and
+   * are surfaced on the violation's `reason` so auditors can trace the
+   * elevation back to the regulation pack.
+   */
+  complianceOverrides?: ReadonlyArray<ComplianceRiskOverride>;
+}
+
+/**
+ * Compliance-sidecar-derived screen-level risk override
+ * (Issue #2030 follow-up). When `screenId` is `undefined` the override
+ * applies job-wide; otherwise it applies only to test cases whose
+ * `figmaTraceRefs` cover the named screen.
+ */
+export interface ComplianceRiskOverride {
+  screenId?: string;
+  riskCategory: TestCaseRiskCategory;
+  /** Optional human-readable rationale; surfaced in policy reasons. */
+  rationale?: string;
 }
 
 export const CROSS_MODAL_FAITHFULNESS_RULE =
@@ -370,6 +409,7 @@ const evaluateCase = (
   visualVerificationRequired: boolean,
   untrustedContentReport: UntrustedContentNormalizationReport | undefined,
   faithfulnessViolation: TestCasePolicyViolation | undefined,
+  complianceOverrides: ReadonlyArray<ComplianceRiskOverride> | undefined,
 ): TestCasePolicyDecisionRecord => {
   let decision: TestCasePolicyDecision = "approved";
   const violations: TestCasePolicyViolation[] = [];
@@ -407,7 +447,11 @@ const evaluateCase = (
     );
   }
 
-  const intentReviewRisk = findIntentReviewRisk(intent, profile);
+  const intentReviewRisk = findIntentReviewRisk(
+    intent,
+    profile,
+    complianceOverrides,
+  );
   const customContextReviewRisk = findCustomContextReviewRisk(
     customContextPolicySignals,
     profile,
@@ -429,7 +473,7 @@ const evaluateCase = (
   const enforceDowngrade =
     profile.rules.enforceRiskTagDowngradeDetection ?? true;
   const screenIntentRisk = enforceDowngrade
-    ? deriveScreenIntentRisk(intent, testCase, profile)
+    ? deriveScreenIntentRisk(intent, testCase, profile, complianceOverrides)
     : undefined;
   if (
     enforceDowngrade &&
@@ -581,12 +625,78 @@ const deriveScreenIntentRisk = (
   intent: BusinessTestIntentIr,
   testCase: GeneratedTestCase,
   profile: TestCasePolicyProfile,
+  complianceOverrides?: ReadonlyArray<ComplianceRiskOverride>,
 ): TestCaseRiskCategory | undefined => {
   const caseScreenIds = collectCaseScreenIds(testCase);
-  return findIntentReviewRiskForIndicators(intent, profile, (indicator) => {
-    if (indicator.screenId === undefined) return true;
-    return caseScreenIds.has(indicator.screenId);
-  });
+  const intentRisk = findIntentReviewRiskForIndicators(
+    intent,
+    profile,
+    (indicator) => {
+      if (indicator.screenId === undefined) return true;
+      return caseScreenIds.has(indicator.screenId);
+    },
+  );
+  if (intentRisk !== undefined) return intentRisk;
+  // Issue #2030 follow-up: when no intent-derived classification fires,
+  // fall back to the compliance-sidecar override declared for any of the
+  // case's screens (or job-wide). The override never WEAKENS an
+  // already-derived classification.
+  return resolveComplianceRiskOverride(
+    caseScreenIds,
+    complianceOverrides,
+    profile,
+  );
+};
+
+/**
+ * Pick the strongest review-only compliance-override that applies to the
+ * given screens. Returns `undefined` when no override matches or none of
+ * the matching overrides carry a profile-recognized review-only category.
+ *
+ * Match rules:
+ *   - `override.screenId === undefined`            -> applies job-wide
+ *   - `override.screenId` ∈ `caseScreenIds`        -> applies to this case
+ *
+ * Strength rules: when multiple overrides match, the function returns the
+ * first override whose `riskCategory` appears in the profile's
+ * `reviewOnlyRiskCategories` list, in profile order. This keeps the
+ * resolution deterministic and aligned with `findIntentReviewRiskForIndicators`.
+ */
+const resolveComplianceRiskOverride = (
+  caseScreenIds: ReadonlySet<string>,
+  overrides: ReadonlyArray<ComplianceRiskOverride> | undefined,
+  profile: TestCasePolicyProfile,
+): TestCaseRiskCategory | undefined => {
+  if (overrides === undefined || overrides.length === 0) return undefined;
+  const matching = overrides.filter(
+    (o) =>
+      o.screenId === undefined ||
+      caseScreenIds.has(o.screenId),
+  );
+  if (matching.length === 0) return undefined;
+  const matchedCategories = new Set(matching.map((o) => o.riskCategory));
+  for (const category of profile.rules.reviewOnlyRiskCategories) {
+    if (matchedCategories.has(category)) return category;
+  }
+  return undefined;
+};
+
+/**
+ * Job-wide variant of {@link resolveComplianceRiskOverride}. Returns the
+ * strongest review-only category declared by ANY override (regardless of
+ * `screenId`), used by {@link findIntentReviewRisk} as a fallback when the
+ * intent IR carries no PII / risk indicators on the whole job.
+ */
+const resolveJobWideComplianceRiskOverride = (
+  overrides: ReadonlyArray<ComplianceRiskOverride> | undefined,
+  profile: TestCasePolicyProfile,
+): TestCaseRiskCategory | undefined => {
+  if (overrides === undefined || overrides.length === 0) return undefined;
+  const matchedCategories = new Set(overrides.map((o) => o.riskCategory));
+  for (const category of profile.rules.reviewOnlyRiskCategories) {
+    if (matchedCategories.has(category)) return category;
+  }
+  return undefined;
 };
 
 const findIntentReviewRiskForIndicators = (
@@ -629,8 +739,19 @@ const findIntentReviewRiskForIndicators = (
 const findIntentReviewRisk = (
   intent: BusinessTestIntentIr,
   profile: TestCasePolicyProfile,
+  complianceOverrides?: ReadonlyArray<ComplianceRiskOverride>,
 ): GeneratedTestCase["riskCategory"] | undefined => {
-  return findIntentReviewRiskForIndicators(intent, profile, () => true);
+  const intentRisk = findIntentReviewRiskForIndicators(
+    intent,
+    profile,
+    () => true,
+  );
+  if (intentRisk !== undefined) return intentRisk;
+  // Issue #2030 follow-up: fall back to the compliance-sidecar
+  // declarations for the whole job. This drives
+  // `policy:regulated-risk-requires-review` on regulated masks
+  // (MiFID II / GwG / FATCA / EAA) where no PII pattern fires.
+  return resolveJobWideComplianceRiskOverride(complianceOverrides, profile);
 };
 
 const findCustomContextReviewRisk = (
@@ -688,6 +809,7 @@ const evaluateJobLevel = (
   activeModelBindings?: readonly ActiveModelBinding[],
   coverageBaselineDrift?: CoverageBaselineDriftEvaluation,
   a11yVerdict?: A11yVerdict,
+  complianceOverrides?: ReadonlyArray<ComplianceRiskOverride>,
 ): TestCasePolicyViolation[] => {
   const violations = evaluateActiveModelBindings(profile, activeModelBindings);
   const formScreenIds = collectFormScreenIds(intent);
@@ -856,7 +978,12 @@ const evaluateJobLevel = (
     const reviewSet = new Set(profile.rules.reviewOnlyRiskCategories);
     const seen = new Set<string>();
     for (const tc of list.testCases) {
-      const intentRisk = deriveScreenIntentRisk(intent, tc, profile);
+      const intentRisk = deriveScreenIntentRisk(
+        intent,
+        tc,
+        profile,
+        complianceOverrides,
+      );
       if (intentRisk === undefined) continue;
       if (reviewSet.has(tc.riskCategory)) continue;
       const key = JSON.stringify([tc.id, intentRisk, tc.riskCategory]);
@@ -1160,6 +1287,7 @@ export const evaluatePolicyGate = (
         input.visualVerificationRequired ?? false,
         input.untrustedContentReport,
         faithfulnessViolation,
+        input.complianceOverrides,
       ),
     );
   }
@@ -1180,6 +1308,7 @@ export const evaluatePolicyGate = (
         input.activeModelBindings,
         input.coverageBaselineDrift,
         input.a11yVerdict,
+        input.complianceOverrides,
       ),
       ...(faithfulnessViolation !== undefined ? [faithfulnessViolation] : []),
     ],
