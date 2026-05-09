@@ -171,8 +171,12 @@ test("schema: drift guard — the hash is stable for the current contract", () =
   // 1.19.0 -> 1.20.0 (additive — tier-elastic technique-quota policy,
   // `TechniqueQuotaReport` contract, `TECHNIQUE_*` runtime constants,
   // no `GeneratedTestCaseList` shape changes). Same lockstep rationale.
+  // Hash bumped by Issue #2074: GENERATED_TEST_CASE_SCHEMA_VERSION bumped
+  // 1.1.0 -> 1.2.0 and the persisted test-case contract gained optional
+  // additive `confidence` + `confidenceComponents` fields for calibrated
+  // per-case uncertainty surfacing.
   const expected =
-    "ece4030075dd97f589df99ed03c2dcea4cbf2b65d245b0c578b565fadc45371a";
+    "4ae4be7b6079ec95e539723a47b82688fbbe9dfe62c353cbd7aa74e4905299f7";
   const actual = computeGeneratedTestCaseListSchemaHash();
   if (actual !== expected) {
     assert.fail(
@@ -185,6 +189,26 @@ test("schema: drift guard — the hash is stable for the current contract", () =
 
 test("validator: accepts a valid GeneratedTestCaseList", () => {
   const list = buildSampleList();
+  const result = validateGeneratedTestCaseList(list);
+  assert.equal(result.valid, true, JSON.stringify(result.errors));
+});
+
+test("validator: accepts optional calibrated confidence fields", () => {
+  const list = buildSampleList({
+    testCases: [
+      buildSampleTestCase({
+        confidence: 0.91,
+        confidenceComponents: {
+          judgePanelAgreement: 0.88,
+          faithfulnessScore: 0.95,
+          selfConsistencyAgreement: 0.9,
+          ragHitStrength: 0.72,
+          oracleResolved: true,
+          rawScore: 0.89,
+        },
+      }),
+    ],
+  });
   const result = validateGeneratedTestCaseList(list);
   assert.equal(result.valid, true, JSON.stringify(result.errors));
 });

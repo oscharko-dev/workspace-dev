@@ -2402,6 +2402,20 @@ test("parseTestIntelligenceRunArgs: captures customer eval, ICT ref, and timesta
   assert.equal(opts.outputRunSubdir, "timestamp");
 });
 
+test("parseTestIntelligenceRunArgs: --show-confidence enables customer markdown confidence output", () => {
+  const opts = parseTestIntelligenceRunArgs(
+    [
+      "--figma-json-file",
+      "./fixture.json",
+      "--output",
+      "./out",
+      "--show-confidence",
+    ],
+    {},
+  );
+  assert.equal(opts.showConfidence, true);
+});
+
 test("parseTestIntelligenceRunArgs: customer eval and output subdir reject invalid values", () => {
   assert.throws(
     () =>

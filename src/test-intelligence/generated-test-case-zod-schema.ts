@@ -146,6 +146,17 @@ export const generatedTestCaseListZodSchema: z.ZodType = z
             })
             .optional(),
         }),
+        confidence: z.number().min(0).max(1).optional(),
+        confidenceComponents: z
+          .strictObject({
+            judgePanelAgreement: z.number().min(0).max(1),
+            faithfulnessScore: z.number().min(0).max(1),
+            selfConsistencyAgreement: z.number().min(0).max(1),
+            ragHitStrength: z.number().min(0).max(1),
+            oracleResolved: z.boolean(),
+            rawScore: z.number().min(0).max(1),
+          })
+          .optional(),
         reviewState: z.enum(REVIEW_STATES),
         audit: z.strictObject({
           jobId: z.string().min(1),
