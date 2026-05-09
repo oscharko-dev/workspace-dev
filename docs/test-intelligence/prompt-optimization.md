@@ -164,13 +164,13 @@ are appended under a new top-level array:
 {
   "$schema": "./test-intelligence-prompt-template-version.lock.schema.json",
   "description": "Pin of TEST_INTELLIGENCE_PROMPT_TEMPLATE_VERSION ...",
-  "version": "1.7.0",
+  "version": "1.7.1",
   "promptCompilerSha256": "0f78...",
   "optimizedTemplates": [
     {
       "optimizedTemplateId": "opt-<sha8>",
       "optimizerVersion": "1.0.0",
-      "basePromptTemplateVersion": "1.7.0",
+      "basePromptTemplateVersion": "1.7.1",
       "datasetId": "active-dataset",
       "roleStepId": "test_generation",
       "seed": 12648430,
