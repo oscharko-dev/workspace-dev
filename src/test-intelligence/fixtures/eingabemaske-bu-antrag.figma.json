@@ -1,0 +1,158 @@
+{
+  "source": {
+    "kind": "figma_local_json"
+  },
+  "screens": [
+    {
+      "screenId": "s-bu-antrag",
+      "screenName": "Berufsunfaehigkeitsversicherung Antrag",
+      "screenPath": "/insurance/bu/application",
+      "nodes": [
+        {
+          "nodeId": "n-beruf",
+          "nodeName": "Beruf",
+          "nodeType": "TEXT_INPUT",
+          "nodePath": "applicant/occupation/title",
+          "text": "Beruf (offizielle Berufsbezeichnung)",
+          "defaultValue": "",
+          "validations": ["Required", "Max 80 characters"],
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-berufsdauer",
+          "nodeName": "Anzahl Jahre im Beruf",
+          "nodeType": "TEXT_INPUT",
+          "nodePath": "applicant/occupation/years",
+          "text": "Anzahl Jahre im aktuellen Beruf",
+          "defaultValue": "",
+          "validations": ["Required", "Integer >= 0", "Integer <= 60"],
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-jahres-brutto",
+          "nodeName": "Jahresbrutto",
+          "nodeType": "TEXT_INPUT",
+          "nodePath": "applicant/income/annual-gross",
+          "text": "Jahresbrutto in EUR",
+          "defaultValue": "",
+          "validations": ["Required", "Numeric > 0"],
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-bu-rente",
+          "nodeName": "Gewuenschte BU-Monatsrente",
+          "nodeType": "TEXT_INPUT",
+          "nodePath": "policy/desired-monthly-pension",
+          "text": "Gewuenschte BU-Monatsrente in EUR",
+          "defaultValue": "",
+          "validations": [
+            "Required",
+            "Numeric > 0",
+            "Annual equivalent (12 times) <= 60 percent of Jahresbrutto"
+          ],
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-vorerkrankungen",
+          "nodeName": "Vorerkrankungen",
+          "nodeType": "RADIO_OPTION",
+          "nodePath": "applicant/health/preconditions",
+          "text": "Sind aktuell oder in den letzten 5 Jahren chronische Erkrankungen oder regelmaessige Behandlungen bekannt",
+          "defaultValue": "No",
+          "validations": ["Required"],
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-vorerkrankung-details",
+          "nodeName": "Beschreibung der Vorerkrankungen",
+          "nodeType": "TEXT_INPUT",
+          "nodePath": "applicant/health/preconditions-details",
+          "semanticKind": "textarea",
+          "text": "Beschreibung der Vorerkrankungen (Diagnose, Zeitraum, Behandlung)",
+          "defaultValue": "",
+          "validations": [
+            "Required if Vorerkrankungen is Yes",
+            "Max 500 characters"
+          ],
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-aerztliche-behandlungen",
+          "nodeName": "Aerztliche Behandlungen letzte 5 Jahre",
+          "nodeType": "RADIO_OPTION",
+          "nodePath": "applicant/health/treatments-5y",
+          "text": "Aerztliche Behandlungen oder Krankenhausaufenthalte in den letzten 5 Jahren",
+          "defaultValue": "No",
+          "validations": ["Required"],
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-medikamente",
+          "nodeName": "Regelmaessig eingenommene Medikamente",
+          "nodeType": "TEXT_INPUT",
+          "nodePath": "applicant/health/medication",
+          "text": "Regelmaessig eingenommene Medikamente",
+          "defaultValue": "",
+          "validations": ["Optional", "Max 200 characters"],
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-hobbys-risiko",
+          "nodeName": "Risiko-Hobbys",
+          "nodeType": "RADIO_OPTION",
+          "nodePath": "applicant/lifestyle/high-risk-hobby",
+          "text": "Hobbys mit erhoehtem Risiko (Tauchen, Klettern, Motorsport)",
+          "defaultValue": "No",
+          "validations": ["Required"],
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-hobbys-details",
+          "nodeName": "Beschreibung Risiko-Hobbys",
+          "nodeType": "TEXT_INPUT",
+          "nodePath": "applicant/lifestyle/high-risk-hobby-details",
+          "text": "Beschreibung Risiko-Hobbys",
+          "defaultValue": "",
+          "validations": ["Required if Risiko-Hobbys is Yes"],
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-wartezeit-disclaimer",
+          "nodeName": "Wartezeit-Hinweis",
+          "nodeType": "INFORMATIVE_LABEL",
+          "nodePath": "policy/disclaimer/waiting-period",
+          "text": "Hinweis: Bei BU greift eine Wartezeit ab Versicherungsbeginn fuer Faelle, die erst nach Vertragsschluss eintreten. Die genaue Dauer entnehmen Sie den Versicherungsbedingungen.",
+          "defaultValue": "",
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-praemien-prognose",
+          "nodeName": "Vorlaeufige Praemienprognose",
+          "nodeType": "RESULT_DISPLAY",
+          "nodePath": "policy/quote/monthly-premium",
+          "text": "Vorlaeufige Praemienprognose in EUR pro Monat (auf Basis Alter, Beruf und gewuenschter Rente, vorbehaltlich Annahmebescheid)",
+          "defaultValue": "",
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-wahrheitsgemaess",
+          "nodeName": "Bestaetigung wahrheitsgemaesser Angaben",
+          "nodeType": "RADIO_OPTION",
+          "nodePath": "compliance/truthful-statement",
+          "text": "Ich bestaetige die wahrheitsgemaesse Beantwortung gemaess vorvertraglicher Anzeigepflicht",
+          "defaultValue": "No",
+          "validations": ["Required"],
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-pruefen-btn",
+          "nodeName": "Antrag pruefen",
+          "nodeType": "BUTTON",
+          "nodePath": "actions/preview",
+          "text": "Antrag pruefen",
+          "childNodeIds": []
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,336 @@
+{
+  "source": {
+    "kind": "figma_local_json"
+  },
+  "screens": [
+    {
+      "screenId": "s-cyber-assessment",
+      "screenName": "Cyber-Versicherung Risikoassessment",
+      "screenPath": "/insurance/cyber/risk-assessment",
+      "nodes": [
+        {
+          "nodeId": "n-branche",
+          "nodeName": "Branche",
+          "nodeType": "SELECT_FIELD",
+          "nodePath": "company/industry",
+          "text": "Branche (Finanzdienstleister, Industrie, Handel, Gesundheit, Sonstige)",
+          "defaultValue": "Sonstige",
+          "validations": ["Required"],
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-mitarbeiter",
+          "nodeName": "Anzahl Mitarbeiter",
+          "nodeType": "TEXT_INPUT",
+          "nodePath": "company/headcount",
+          "text": "Anzahl Mitarbeiter",
+          "defaultValue": "",
+          "validations": ["Required", "Integer >= 1"],
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-jahresumsatz",
+          "nodeName": "Jahresumsatz",
+          "nodeType": "TEXT_INPUT",
+          "nodePath": "company/annual-revenue",
+          "text": "Jahresumsatz in EUR",
+          "defaultValue": "",
+          "validations": ["Required", "Numeric > 0"],
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-it-budget",
+          "nodeName": "IT-Budget Anteil",
+          "nodeType": "TEXT_INPUT",
+          "nodePath": "company/it-budget-share",
+          "text": "Anteil IT-Budget am Umsatz in Prozent",
+          "defaultValue": "",
+          "validations": ["Optional", "Numeric in range 0..100"],
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-isms",
+          "nodeName": "ISMS implementiert",
+          "nodeType": "RADIO_OPTION",
+          "nodePath": "security/isms",
+          "text": "Information Security Management System nach ISO 27001 oder vergleichbar implementiert",
+          "defaultValue": "No",
+          "validations": ["Required"],
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-isms-zertifiziert",
+          "nodeName": "ISMS extern zertifiziert",
+          "nodeType": "RADIO_OPTION",
+          "nodePath": "security/isms-certified",
+          "text": "ISMS extern zertifiziert",
+          "defaultValue": "No",
+          "validations": ["Required if ISMS is Yes"],
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-backup-policy",
+          "nodeName": "Backup-Policy",
+          "nodeType": "RADIO_OPTION",
+          "nodePath": "security/backup/policy",
+          "text": "Schriftliche Backup-Policy implementiert",
+          "defaultValue": "No",
+          "validations": ["Required"],
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-backup-offsite",
+          "nodeName": "Offsite/Offline Backups",
+          "nodeType": "RADIO_OPTION",
+          "nodePath": "security/backup/offsite-or-offline",
+          "text": "Offsite- oder Offline-Backups vorhanden",
+          "defaultValue": "No",
+          "validations": ["Required"],
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-backup-restore-test",
+          "nodeName": "Letzter Restore-Test",
+          "nodeType": "SELECT_FIELD",
+          "nodePath": "security/backup/last-restore-test",
+          "text": "Letzter erfolgreicher Restore-Test (innerhalb 3 Monate, 6 Monate, 12 Monate, nie)",
+          "defaultValue": "12 Monate",
+          "validations": ["Required"],
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-mfa-mitarbeiter",
+          "nodeName": "MFA fuer alle Mitarbeiter",
+          "nodeType": "RADIO_OPTION",
+          "nodePath": "security/auth/mfa-all",
+          "text": "Multi-Faktor-Authentifizierung verpflichtend fuer alle Mitarbeiter",
+          "defaultValue": "No",
+          "validations": ["Required"],
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-mfa-admin",
+          "nodeName": "MFA fuer Admin",
+          "nodeType": "RADIO_OPTION",
+          "nodePath": "security/auth/mfa-admin",
+          "text": "Multi-Faktor-Authentifizierung verpflichtend fuer Admin-Konten",
+          "defaultValue": "No",
+          "validations": ["Required"],
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-passwort-policy",
+          "nodeName": "Passwort-Policy",
+          "nodeType": "RADIO_OPTION",
+          "nodePath": "security/auth/password-policy",
+          "text": "Passwort-Policy mindestens NIST-konform",
+          "defaultValue": "No",
+          "validations": ["Required"],
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-edr",
+          "nodeName": "EDR",
+          "nodeType": "RADIO_OPTION",
+          "nodePath": "security/endpoint/edr",
+          "text": "Endpoint Detection and Response (EDR) auf allen Mitarbeiter-Endgeraeten",
+          "defaultValue": "No",
+          "validations": ["Required"],
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-firewall-segmentierung",
+          "nodeName": "Netzwerksegmentierung",
+          "nodeType": "RADIO_OPTION",
+          "nodePath": "security/network/segmentation",
+          "text": "Netzwerksegmentierung zwischen Buero, Server und sensiblen Bereichen",
+          "defaultValue": "No",
+          "validations": ["Required"],
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-vpn",
+          "nodeName": "VPN mit MFA",
+          "nodeType": "RADIO_OPTION",
+          "nodePath": "security/network/vpn",
+          "text": "Externer Zugriff nur ueber VPN mit MFA",
+          "defaultValue": "No",
+          "validations": ["Required"],
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-awareness-trainings",
+          "nodeName": "Awareness-Trainings",
+          "nodeType": "SELECT_FIELD",
+          "nodePath": "security/awareness/trainings",
+          "text": "Awareness-Trainings (jaehrlich, halbjaehrlich, monatlich, nie)",
+          "defaultValue": "jaehrlich",
+          "validations": ["Required"],
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-phishing-simulations",
+          "nodeName": "Phishing-Simulationen",
+          "nodeType": "RADIO_OPTION",
+          "nodePath": "security/awareness/phishing-simulations",
+          "text": "Regelmaessige Phishing-Simulationen",
+          "defaultValue": "No",
+          "validations": ["Required"],
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-pentests",
+          "nodeName": "Pen-Tests",
+          "nodeType": "SELECT_FIELD",
+          "nodePath": "security/testing/pentests",
+          "text": "Externe Penetrationstests (jaehrlich, alle 2 Jahre, seltener, nie)",
+          "defaultValue": "alle 2 Jahre",
+          "validations": ["Required"],
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-soc",
+          "nodeName": "Security Operations Center",
+          "nodeType": "RADIO_OPTION",
+          "nodePath": "security/monitoring/soc",
+          "text": "Security Operations Center (intern oder extern als MSSP)",
+          "defaultValue": "No",
+          "validations": ["Required"],
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-incident-response-plan",
+          "nodeName": "Incident-Response-Plan",
+          "nodeType": "RADIO_OPTION",
+          "nodePath": "security/response/irp",
+          "text": "Schriftlicher Incident-Response-Plan",
+          "defaultValue": "No",
+          "validations": ["Required"],
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-bcp-drp",
+          "nodeName": "BCP/DRP",
+          "nodeType": "RADIO_OPTION",
+          "nodePath": "security/response/bcp-drp",
+          "text": "Business-Continuity- und Disaster-Recovery-Plan vorhanden und getestet",
+          "defaultValue": "No",
+          "validations": ["Required"],
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-datenklassifizierung",
+          "nodeName": "Datenklassifizierung",
+          "nodeType": "RADIO_OPTION",
+          "nodePath": "security/data/classification",
+          "text": "Datenklassifizierung implementiert (oeffentlich, intern, vertraulich, hochsensibel)",
+          "defaultValue": "No",
+          "validations": ["Required"],
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-dsfa-vorhanden",
+          "nodeName": "DSFA",
+          "nodeType": "RADIO_OPTION",
+          "nodePath": "security/data/dsfa",
+          "text": "Datenschutz-Folgenabschaetzung fuer kritische Verarbeitungstaetigkeiten dokumentiert",
+          "defaultValue": "No",
+          "validations": ["Required"],
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-auftragsverarbeiter",
+          "nodeName": "Anzahl Auftragsverarbeiter",
+          "nodeType": "TEXT_INPUT",
+          "nodePath": "security/data/processors-count",
+          "text": "Anzahl Auftragsverarbeiter mit Zugriff auf personenbezogene Daten",
+          "defaultValue": "",
+          "validations": ["Required", "Integer >= 0"],
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-deckungssumme",
+          "nodeName": "Gewuenschte Deckungssumme",
+          "nodeType": "SELECT_FIELD",
+          "nodePath": "policy/coverage-amount",
+          "text": "Gewuenschte Deckungssumme (1 Mio EUR, 5 Mio EUR, 10 Mio EUR, 25 Mio EUR, individuell)",
+          "defaultValue": "1 Mio EUR",
+          "validations": ["Required"],
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-selbstbehalt",
+          "nodeName": "Selbstbehalt",
+          "nodeType": "SELECT_FIELD",
+          "nodePath": "policy/deductible",
+          "text": "Gewuenschter Selbstbehalt je Schadenfall (5000 EUR, 10000 EUR, 25000 EUR, 50000 EUR)",
+          "defaultValue": "10000 EUR",
+          "validations": ["Required"],
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-tooltip-edr",
+          "nodeName": "Tooltip EDR",
+          "nodeType": "INFORMATIVE_LABEL",
+          "nodePath": "tooltips/edr",
+          "text": "Tooltip EDR: EDR sammelt und korreliert Endgeraete-Telemetrie und reagiert automatisch auf verdaechtige Aktivitaeten; klassische Antivirus-Loesungen genuegen nicht",
+          "defaultValue": "",
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-tooltip-soc",
+          "nodeName": "Tooltip SOC",
+          "nodeType": "INFORMATIVE_LABEL",
+          "nodePath": "tooltips/soc",
+          "text": "Tooltip SOC: Ein 24/7 ueberwachter SOC kann interner Bestandteil sein oder ausgelagert (MSSP); ohne aktive Ueberwachung gilt der SOC nicht als vorhanden",
+          "defaultValue": "",
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-risiko-score",
+          "nodeName": "Cyber-Risiko-Score",
+          "nodeType": "RESULT_DISPLAY",
+          "nodePath": "policy/quote/risk-score",
+          "text": "Vorlaeufiger Cyber-Risiko-Score abgeleitet aus den Antworten (Skala 1 sehr niedrig bis 5 sehr hoch); endgueltige Bewertung erfolgt durch Underwriter",
+          "defaultValue": "",
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-praemien-prognose",
+          "nodeName": "Praemienprognose",
+          "nodeType": "RESULT_DISPLAY",
+          "nodePath": "policy/quote/annual-premium",
+          "text": "Vorlaeufige Praemienprognose pro Jahr in EUR (vorbehaltlich Underwriting und Vorlage angeforderter Nachweise)",
+          "defaultValue": "",
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-vollstaendigkeit",
+          "nodeName": "Bestaetigung Vollstaendigkeit",
+          "nodeType": "RADIO_OPTION",
+          "nodePath": "compliance/completeness-statement",
+          "text": "Ich bestaetige die Vollstaendigkeit und Richtigkeit der Angaben gemaess vorvertraglicher Anzeigepflicht",
+          "defaultValue": "No",
+          "validations": ["Required"],
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-bewerten",
+          "nodeName": "Risiko bewerten",
+          "nodeType": "BUTTON",
+          "nodePath": "actions/evaluate",
+          "text": "Risiko bewerten",
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-zwischenspeichern",
+          "nodeName": "Zwischenspeichern",
+          "nodeType": "BUTTON",
+          "nodePath": "actions/save-draft",
+          "text": "Zwischenspeichern und spaeter weiter",
+          "childNodeIds": []
+        }
+      ]
+    }
+  ]
+}

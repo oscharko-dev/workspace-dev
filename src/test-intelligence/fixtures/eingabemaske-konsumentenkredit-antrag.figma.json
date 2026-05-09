@@ -1,0 +1,156 @@
+{
+  "source": {
+    "kind": "figma_local_json"
+  },
+  "screens": [
+    {
+      "screenId": "s-konsumentenkredit",
+      "screenName": "Konsumentenkredit-Antrag",
+      "screenPath": "/banking/credit/consumer/application",
+      "nodes": [
+        {
+          "nodeId": "n-kreditbetrag",
+          "nodeName": "Kreditbetrag",
+          "nodeType": "TEXT_INPUT",
+          "nodePath": "loan/principal",
+          "text": "Kreditbetrag in EUR",
+          "defaultValue": "10000",
+          "validations": [
+            "Required",
+            "Numeric in range 1000..50000",
+            "Max 2 decimals"
+          ],
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-laufzeit",
+          "nodeName": "Laufzeit",
+          "nodeType": "TEXT_INPUT",
+          "nodePath": "loan/term-months",
+          "text": "Laufzeit in Monaten",
+          "defaultValue": "36",
+          "validations": [
+            "Required",
+            "Integer in range 12..84"
+          ],
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-zweck",
+          "nodeName": "Verwendungszweck",
+          "nodeType": "SELECT_FIELD",
+          "nodePath": "loan/purpose",
+          "text": "Verwendungszweck (Auto, Renovierung, Umschuldung, Sonstiges)",
+          "defaultValue": "Auto",
+          "validations": [
+            "Required"
+          ],
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-nettoeinkommen",
+          "nodeName": "Monatliches Nettoeinkommen",
+          "nodeType": "TEXT_INPUT",
+          "nodePath": "applicant/income/monthly-net",
+          "text": "Monatliches Nettoeinkommen in EUR",
+          "defaultValue": "",
+          "validations": [
+            "Required",
+            "Numeric > 0"
+          ],
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-wohnkosten",
+          "nodeName": "Monatliche Wohnkosten",
+          "nodeType": "TEXT_INPUT",
+          "nodePath": "applicant/expenses/housing",
+          "text": "Monatliche Wohnkosten (Miete oder Annuitaet) in EUR",
+          "defaultValue": "",
+          "validations": [
+            "Required",
+            "Numeric >= 0"
+          ],
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-arbeitsverhaeltnis",
+          "nodeName": "Arbeitsverhaeltnis",
+          "nodeType": "SELECT_FIELD",
+          "nodePath": "applicant/employment/status",
+          "text": "Arbeitsverhaeltnis (Unbefristet, Befristet, Selbststaendig, Rente)",
+          "defaultValue": "Unbefristet",
+          "validations": [
+            "Required"
+          ],
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-schufa-einwilligung",
+          "nodeName": "SCHUFA-Einwilligung",
+          "nodeType": "RADIO_OPTION",
+          "nodePath": "compliance/schufa-consent",
+          "text": "Ich willige in die SCHUFA-Bonitaetsanfrage ein",
+          "defaultValue": "No",
+          "validations": [
+            "Required"
+          ],
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-monatliche-rate",
+          "nodeName": "Monatliche Rate",
+          "nodeType": "RESULT_DISPLAY",
+          "nodePath": "loan/quote/monthly-installment",
+          "text": "Monatliche Rate (vorlaeufig): Annuitaet aus Kreditbetrag, Laufzeit und Effektivzins",
+          "defaultValue": "",
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-effektivzins",
+          "nodeName": "Effektivzins",
+          "nodeType": "RESULT_DISPLAY",
+          "nodePath": "loan/quote/apr",
+          "text": "Effektivzins p.a. (vorlaeufig, bonitaetsabhaengig, vorbehaltlich SCHUFA)",
+          "defaultValue": "",
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-dti",
+          "nodeName": "Debt-to-Income-Quote",
+          "nodeType": "RESULT_DISPLAY",
+          "nodePath": "loan/quote/dti-ratio",
+          "text": "Debt-to-Income-Quote: Rate dividiert durch Nettoeinkommen",
+          "defaultValue": "",
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-datenschutz-hinweis",
+          "nodeName": "Datenschutzhinweis",
+          "nodeType": "INFORMATIVE_LABEL",
+          "nodePath": "compliance/privacy-notice",
+          "text": "Datenschutzhinweis: Die SCHUFA-Anfrage erfolgt zweckgebunden zur Bonitaetspruefung; eine Speicherung erfolgt im Einklang mit Art. 6 Abs. 1 lit. b DSGVO",
+          "defaultValue": "",
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-absenden",
+          "nodeName": "Antrag absenden",
+          "nodeType": "BUTTON",
+          "nodePath": "actions/submit",
+          "text": "Antrag absenden",
+          "navigationTarget": "s-kredit-bestaetigung",
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-speichern",
+          "nodeName": "Speichern und spaeter weiter",
+          "nodeType": "BUTTON",
+          "nodePath": "actions/save",
+          "text": "Speichern und spaeter weiter",
+          "childNodeIds": []
+        }
+      ]
+    }
+  ]
+}

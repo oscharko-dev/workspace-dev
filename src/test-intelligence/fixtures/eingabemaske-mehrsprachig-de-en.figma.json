@@ -1,0 +1,117 @@
+{
+  "source": {
+    "kind": "figma_local_json"
+  },
+  "screens": [
+    {
+      "screenId": "s-login-de",
+      "screenName": "Anmeldung (Deutsch)",
+      "screenPath": "/banking/auth/login/de",
+      "nodes": [
+        {
+          "nodeId": "n-username-de",
+          "nodeName": "Anmeldename",
+          "nodeType": "TEXT_INPUT",
+          "nodePath": "auth/de/username",
+          "text": "Anmeldename",
+          "defaultValue": "",
+          "validations": ["Pflichtfeld"],
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-pin-de",
+          "nodeName": "Geheime PIN",
+          "nodeType": "TEXT_INPUT",
+          "nodePath": "auth/de/pin",
+          "text": "Geheime PIN",
+          "defaultValue": "",
+          "validations": ["Pflichtfeld", "Numerisch", "Laenge 5"],
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-locale-de",
+          "nodeName": "Sprache",
+          "nodeType": "SELECT_FIELD",
+          "nodePath": "auth/de/locale",
+          "text": "Sprache (Deutsch, Englisch)",
+          "defaultValue": "Deutsch",
+          "validations": ["Pflichtfeld"],
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-anmelden-de",
+          "nodeName": "Anmelden",
+          "nodeType": "BUTTON",
+          "nodePath": "actions/de/login",
+          "text": "Anmelden",
+          "navigationTarget": "s-bestaetigung-de",
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-switch-en",
+          "nodeName": "Switch to English",
+          "nodeType": "BUTTON",
+          "nodePath": "actions/de/switch-locale",
+          "text": "Switch to English",
+          "navigationTarget": "s-login-en",
+          "childNodeIds": []
+        }
+      ]
+    },
+    {
+      "screenId": "s-login-en",
+      "screenName": "Sign-in (English)",
+      "screenPath": "/banking/auth/login/en",
+      "nodes": [
+        {
+          "nodeId": "n-username-en",
+          "nodeName": "User Name",
+          "nodeType": "TEXT_INPUT",
+          "nodePath": "auth/en/username",
+          "text": "User Name",
+          "defaultValue": "",
+          "validations": ["Required"],
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-pin-en",
+          "nodeName": "Secret PIN",
+          "nodeType": "TEXT_INPUT",
+          "nodePath": "auth/en/pin",
+          "text": "Secret PIN",
+          "defaultValue": "",
+          "validations": ["Required", "Numeric", "Length 5"],
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-locale-en",
+          "nodeName": "Language",
+          "nodeType": "SELECT_FIELD",
+          "nodePath": "auth/en/locale",
+          "text": "Language (German, English)",
+          "defaultValue": "English",
+          "validations": ["Required"],
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-signin-en",
+          "nodeName": "Sign in",
+          "nodeType": "BUTTON",
+          "nodePath": "actions/en/signin",
+          "text": "Sign in",
+          "navigationTarget": "s-confirm-en",
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-switch-de",
+          "nodeName": "Sprache wechseln zu Deutsch",
+          "nodeType": "BUTTON",
+          "nodePath": "actions/en/switch-locale",
+          "text": "Sprache wechseln zu Deutsch",
+          "navigationTarget": "s-login-de",
+          "childNodeIds": []
+        }
+      ]
+    }
+  ]
+}

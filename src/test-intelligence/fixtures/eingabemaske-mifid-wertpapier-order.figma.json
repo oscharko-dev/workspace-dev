@@ -1,0 +1,134 @@
+{
+  "source": {
+    "kind": "figma_local_json"
+  },
+  "screens": [
+    {
+      "screenId": "s-mifid-order",
+      "screenName": "Wertpapier-Order (MiFID II)",
+      "screenPath": "/banking/securities/order",
+      "nodes": [
+        {
+          "nodeId": "n-isin",
+          "nodeName": "ISIN",
+          "nodeType": "TEXT_INPUT",
+          "nodePath": "order/instrument/isin",
+          "text": "ISIN",
+          "defaultValue": "DE000BASF111",
+          "validations": [
+            "Required",
+            "ISIN format with check digit"
+          ],
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-order-typ",
+          "nodeName": "Order-Typ",
+          "nodeType": "RADIO_OPTION",
+          "nodePath": "order/type",
+          "text": "Order-Typ (Limit, Market, Stop)",
+          "defaultValue": "Limit",
+          "validations": [
+            "Required"
+          ],
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-limit-preis",
+          "nodeName": "Limit-Preis",
+          "nodeType": "TEXT_INPUT",
+          "nodePath": "order/limit-price",
+          "text": "Limit-Preis in EUR",
+          "defaultValue": "",
+          "validations": [
+            "Required if Order-Typ is Limit",
+            "Numeric > 0",
+            "Max 4 decimals"
+          ],
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-stueck",
+          "nodeName": "Stueck",
+          "nodeType": "TEXT_INPUT",
+          "nodePath": "order/quantity",
+          "text": "Stueck",
+          "defaultValue": "10",
+          "validations": [
+            "Required",
+            "Integer >= 1"
+          ],
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-gueltigkeit",
+          "nodeName": "Gueltigkeitsdauer",
+          "nodeType": "SELECT_FIELD",
+          "nodePath": "order/time-in-force",
+          "text": "Gueltigkeitsdauer (Tagesgueltig, GTC bis 90 Tage)",
+          "defaultValue": "Tagesgueltig",
+          "validations": [
+            "Required"
+          ],
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-risikoklasse",
+          "nodeName": "MiFID-Risikoklasse",
+          "nodeType": "INFORMATIVE_LABEL",
+          "nodePath": "compliance/risk-class",
+          "text": "MiFID-Risikoklasse aus Anlegerprofil: konservativ-wachstumsorientiert (KW)",
+          "defaultValue": "",
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-geeignetheit",
+          "nodeName": "MiFID-Geeignetheitspruefung",
+          "nodeType": "INFORMATIVE_LABEL",
+          "nodePath": "compliance/suitability",
+          "text": "MiFID-II-Geeignetheitspruefung: bestanden (Stand aus Anlegerprofil)",
+          "defaultValue": "",
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-kostenausweis",
+          "nodeName": "Ex-ante Kostenausweis",
+          "nodeType": "RESULT_DISPLAY",
+          "nodePath": "compliance/cost-disclosure",
+          "text": "Erwartete Gesamtkosten (Ein- und Ausstiegskosten, laufende Kosten): bezieht sich auf gewaehlte Stueckzahl und Limit-Preis (ex-ante Kostenausweis)",
+          "defaultValue": "",
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-aufklaerung",
+          "nodeName": "Bestaetigung Risiko- und Kostenhinweise",
+          "nodeType": "RADIO_OPTION",
+          "nodePath": "compliance/risk-acknowledgement",
+          "text": "Ich habe den Kostenausweis und die Risikohinweise zur Kenntnis genommen",
+          "defaultValue": "No",
+          "validations": [
+            "Required"
+          ],
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-order-pruefen",
+          "nodeName": "Order pruefen",
+          "nodeType": "BUTTON",
+          "nodePath": "actions/preview",
+          "text": "Order pruefen",
+          "navigationTarget": "s-order-bestaetigung",
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-abbrechen",
+          "nodeName": "Abbrechen",
+          "nodeType": "BUTTON",
+          "nodePath": "actions/cancel",
+          "text": "Abbrechen",
+          "childNodeIds": []
+        }
+      ]
+    }
+  ]
+}
