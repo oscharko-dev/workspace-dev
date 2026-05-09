@@ -970,7 +970,27 @@ export interface TestCaseValidationReport {
   warningCount: number;
   /** Whether the report blocks downstream review/export (any error => true). */
   blocked: boolean;
+  /**
+   * Availability state of the optional cross-family judges as observed by the
+   * validation pipeline. `skipped` means no verdict was supplied; `refused`
+   * means a verdict arrived with a refusal payload.
+   */
+  judgeAvailability?: JudgeAvailabilityReport;
   issues: TestCaseValidationIssue[];
+}
+
+export const ALLOWED_JUDGE_AVAILABILITY_STATES = [
+  "available",
+  "refused",
+  "skipped",
+] as const;
+
+export type JudgeAvailabilityState =
+  (typeof ALLOWED_JUDGE_AVAILABILITY_STATES)[number];
+
+export interface JudgeAvailabilityReport {
+  readonly faithfulness: JudgeAvailabilityState;
+  readonly a11y: JudgeAvailabilityState;
 }
 
 /**
@@ -1019,6 +1039,7 @@ export const ALLOWED_TEST_CASE_POLICY_OUTCOMES = [
   "visual_sidecar_prompt_injection_text",
   "semantic_suspicious_content",
   "cross_modal_faithfulness_score_below_threshold",
+  "judge_refused",
   "risk_tag_downgrade_detected",
   "custom_context_risk_escalation",
   "multi_source_conflict_present",
@@ -1304,6 +1325,12 @@ export interface TestCasePolicyProfileRules {
   /** Max assumption count per case before review is required. */
   maxAssumptionsPerCase: number;
   /**
+   * Operator-configurable handling when a cross-family judge refuses.
+   * Omitted values preserve the legacy availability-first posture
+   * (`fail_open`) for backwards compatibility.
+   */
+  judgeRefusalPolicy?: JudgeRefusalPolicyConfig;
+  /**
    * Whether the policy gate must cross-reference each generated test case's
    * declared `riskCategory` against the risk classification derivable from the
    * Business Test Intent IR for the screens referenced in the case's
@@ -1403,6 +1430,20 @@ export interface TestCasePolicyProfileRules {
   selfConsistency?: {
     readonly sampleCount: 1 | 3;
   };
+}
+
+export const ALLOWED_JUDGE_REFUSAL_POLICIES = [
+  "fail_open",
+  "fail_closed",
+  "needs_review",
+] as const;
+
+export type JudgeRefusalPolicy =
+  (typeof ALLOWED_JUDGE_REFUSAL_POLICIES)[number];
+
+export interface JudgeRefusalPolicyConfig {
+  faithfulness: JudgeRefusalPolicy;
+  a11y: JudgeRefusalPolicy;
 }
 
 /** Built-in policy profile shape. Profiles are identified by `id`+`version`. */

@@ -1280,6 +1280,65 @@ test("Issue #1949: policy override threshold can relax the cross-modal faithfuln
   assert.equal(report.blocked, false);
 });
 
+test("Issue #2101: faithfulness judge refusal stays auditable but fail_open keeps cases approved", () => {
+  const ctx = harness([buildCase({ id: "tc-pos" })], buildIntent());
+  ctx.profile.rules.judgeRefusalPolicy = {
+    faithfulness: "fail_open",
+    a11y: "needs_review",
+  };
+  const report = evaluatePolicyGate({
+    jobId: "job-1",
+    generatedAt: GENERATED_AT,
+    list: ctx.list,
+    intent: ctx.intent,
+    profile: ctx.profile,
+    validation: ctx.validation,
+    coverage: ctx.coverage,
+    faithfulnessVerdict: buildFaithfulnessVerdict({
+      refusal: {
+        code: "gateway_error",
+        message: "gateway refused the request",
+      },
+    }),
+  });
+  assert.equal(report.decisions[0]?.decision, "approved");
+  const violation = report.jobLevelViolations.find(
+    (entry) => entry.rule === "policy:judge_refused",
+  );
+  assert.equal(violation?.severity, "info");
+  assert.match(violation?.reason ?? "", /faithfulness judge refused/u);
+  assert.equal(report.blocked, false);
+});
+
+test("Issue #2101: faithfulness judge refusal fail_closed blocks the job", () => {
+  const ctx = harness([buildCase({ id: "tc-pos" })], buildIntent());
+  ctx.profile.rules.judgeRefusalPolicy = {
+    faithfulness: "fail_closed",
+    a11y: "needs_review",
+  };
+  const report = evaluatePolicyGate({
+    jobId: "job-1",
+    generatedAt: GENERATED_AT,
+    list: ctx.list,
+    intent: ctx.intent,
+    profile: ctx.profile,
+    validation: ctx.validation,
+    coverage: ctx.coverage,
+    faithfulnessVerdict: buildFaithfulnessVerdict({
+      refusal: {
+        code: "schema_invalid_response",
+        message: "judge emitted malformed JSON",
+      },
+    }),
+  });
+  assert.equal(report.decisions[0]?.decision, "approved");
+  const violation = report.jobLevelViolations.find(
+    (entry) => entry.rule === "policy:judge_refused",
+  );
+  assert.equal(violation?.severity, "error");
+  assert.equal(report.blocked, true);
+});
+
 test("low confidence triggers needs_review", () => {
   const tc = buildCase({
     qualitySignals: {
@@ -2165,6 +2224,51 @@ test("Issue #1951: disabled form-screen accessibility rule suppresses a11y_judge
     ),
     false,
   );
+  assert.equal(report.blocked, false);
+});
+
+test("Issue #2101: default profile routes a11y judge refusals to needs_review", () => {
+  const intent = buildIntent({
+    detectedFields: [
+      {
+        id: "f-1",
+        screenId: "s-1",
+        trace: { nodeId: "n1" },
+        provenance: "figma_node",
+        confidence: 0.9,
+        label: "Email",
+        type: "text",
+      },
+    ],
+  });
+  const ctx = harness(
+    [buildAccessibilityCase({ id: "tc-a11y", riskCategory: "regulated_data" })],
+    intent,
+  );
+  const report = evaluatePolicyGate({
+    jobId: "job-1",
+    generatedAt: GENERATED_AT,
+    list: ctx.list,
+    intent: ctx.intent,
+    profile: ctx.profile,
+    validation: ctx.validation,
+    coverage: ctx.coverage,
+    a11yVerdict: buildA11yVerdict({
+      refusal: {
+        code: "content_filter",
+        message: "judge response filtered",
+      },
+    }),
+  });
+  assert.equal(report.decisions[0]?.decision, "needs_review");
+  const caseViolation = report.decisions[0]?.violations.find(
+    (entry) => entry.rule === "policy:judge_refused",
+  );
+  assert.equal(caseViolation?.severity, "warning");
+  const jobViolation = report.jobLevelViolations.find(
+    (entry) => entry.rule === "policy:judge_refused",
+  );
+  assert.equal(jobViolation?.severity, "warning");
   assert.equal(report.blocked, false);
 });
 
