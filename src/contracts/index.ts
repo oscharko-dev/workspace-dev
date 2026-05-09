@@ -12374,3 +12374,84 @@ export interface ReleaseReadinessReport {
   readonly passed: boolean;
   readonly gates: readonly ReleaseReadinessGateResult[];
 }
+
+// ---------------------------------------------------------------------------
+// Incident-handling surface (Issue #2114, DORA Art. 10).
+// ---------------------------------------------------------------------------
+
+/** Schema version stamped on every persisted `incidents.json`. */
+export const INCIDENT_REPORT_SCHEMA_VERSION = "1.0.0" as const;
+
+/** Canonical filename for the per-job incident-handling artifact. */
+export const INCIDENT_REPORT_ARTIFACT_FILENAME = "incidents.json" as const;
+
+/** Severity bands recognized by the incident classifier. */
+export const ALLOWED_INCIDENT_SEVERITIES = [
+  "low",
+  "medium",
+  "high",
+  "critical",
+] as const;
+export type IncidentSeverity = (typeof ALLOWED_INCIDENT_SEVERITIES)[number];
+
+/**
+ * Closed enumeration of incident categories as defined by Issue #2114.
+ * Listed in canonical sort order; new categories require a contract bump.
+ */
+export const ALLOWED_INCIDENT_CATEGORIES = [
+  "compliance_rule_pack_violation",
+  "drift_alert",
+  "judge_disagreement_persistent",
+  "pii_leakage",
+  "policy_gate_bypass",
+  "replay_cache_miss_unexpected",
+  "subprocessor_outage",
+] as const;
+export type IncidentCategory = (typeof ALLOWED_INCIDENT_CATEGORIES)[number];
+
+/**
+ * Pipeline-level incident review state. When the classifier emits any
+ * `critical` event, the report stamps `incident_ack_required` and the
+ * pipeline pauses until an operator records a manual acknowledgement.
+ */
+export const ALLOWED_INCIDENT_REVIEW_STATES = [
+  "ok",
+  "incident_ack_required",
+] as const;
+export type IncidentReviewState =
+  (typeof ALLOWED_INCIDENT_REVIEW_STATES)[number];
+
+/**
+ * Reference to a persisted artifact backing an incident's evidence
+ * trail. Lets a sink cite an artifact without depending on the full
+ * Wave 1 evidence-manifest type.
+ */
+export interface ManifestRef {
+  readonly filename: string;
+  readonly sha256: string;
+}
+
+/** Single classified incident emitted to the operator's `IncidentSink`. */
+export interface IncidentEvent {
+  readonly id: string;
+  readonly severity: IncidentSeverity;
+  readonly category: IncidentCategory;
+  readonly observedAt: string;
+  readonly jobId: string;
+  readonly evidence: readonly ManifestRef[];
+  readonly rootCauseHypothesis: string;
+}
+
+/**
+ * Persisted incident-handling envelope written per job. The order of
+ * `events` is canonical: severity-rank descending, then category, then
+ * `id`, so byte-identical inputs always produce identical files.
+ */
+export interface IncidentReport {
+  readonly schemaVersion: typeof INCIDENT_REPORT_SCHEMA_VERSION;
+  readonly contractVersion: typeof TEST_INTELLIGENCE_CONTRACT_VERSION;
+  readonly jobId: string;
+  readonly generatedAt: string;
+  readonly reviewState: IncidentReviewState;
+  readonly events: readonly IncidentEvent[];
+}
