@@ -55,6 +55,13 @@ import {
 import { canonicalJson } from "./content-hash.js";
 import type { CoverageBaselineDriftEvaluation } from "./coverage-baseline-drift.js";
 import {
+  CROSS_FIELD_INVARIANT_COVERAGE_ARTIFACT_FILENAME,
+  evaluateCrossFieldInvariantCoverage,
+  type CrossFieldCaseClaim,
+  type CrossFieldInvariantCoverageReport,
+} from "./cross-field-invariant-gate.js";
+import type { CrossFieldInvariantRegistry } from "./cross-field-invariant-engine.js";
+import {
   buildActiveDatasetInvariantRegistry,
   type DomainInvariantRegistry,
 } from "./domain-invariant-registry.js";
@@ -159,6 +166,22 @@ export interface RunValidationPipelineInput {
    */
   invariantRegistry?: DomainInvariantRegistry | null;
   /**
+   * Optional cross-field invariant registry (Issue #2110). When supplied
+   * together with `crossFieldInvariantClaims`, the pipeline evaluates the
+   * cross-field coverage gate: every screen with at least one registered
+   * cross-field invariant must carry at least one positive AND one
+   * negative test-case claim. The gate is opt-in — passing nothing here
+   * leaves the resulting artifact bundle unchanged so existing fixtures
+   * see no new blocking issues.
+   */
+  crossFieldInvariantRegistry?: CrossFieldInvariantRegistry;
+  /**
+   * Caller-supplied claims describing which cross-field invariants each
+   * generated test case exercises and on which side (Issue #2110).
+   * Ignored when `crossFieldInvariantRegistry` is undefined.
+   */
+  crossFieldInvariantClaims?: ReadonlyArray<CrossFieldCaseClaim>;
+  /**
    * Optional fixture- or screen-scoped compliance overrides
    * (Issue #2030 follow-up, K0-measurement-driven).
    *
@@ -208,10 +231,17 @@ export interface ValidationPipelineArtifacts {
   /** Issue #2071 authoritative per-case oracle resolution report. */
   testDataOracleReport?: TestDataOracleReport;
   /**
+   * Issue #2110 — cross-field invariant coverage report. Emitted only
+   * when `crossFieldInvariantRegistry` was supplied. Job-level
+   * `blocked` is OR-folded with this report's `blocked` flag.
+   */
+  crossFieldInvariantCoverage?: CrossFieldInvariantCoverageReport;
+  /**
    * Final blocking decision. True when ANY of:
    *   - validation reported errors
    *   - policy gate marked the job blocked
    *   - visual sidecar gate marked itself blocked
+   *   - cross-field invariant coverage gate marked the job blocked
    */
   blocked: boolean;
 }
@@ -398,10 +428,21 @@ export const runValidationPipeline = (
       ? validation.blocked
       : effectiveSemanticContentBlock(validation, semanticContentOverrides);
 
+  const crossFieldCoverage =
+    input.crossFieldInvariantRegistry === undefined
+      ? undefined
+      : evaluateCrossFieldInvariantCoverage({
+          jobId: input.jobId,
+          generatedAt: input.generatedAt,
+          registry: input.crossFieldInvariantRegistry,
+          claims: input.crossFieldInvariantClaims ?? [],
+        });
+
   const blocked =
     validationBlockedAfterOverrides ||
     policy.blocked ||
-    (visualReport !== undefined && visualReport.blocked);
+    (visualReport !== undefined && visualReport.blocked) ||
+    (crossFieldCoverage !== undefined && crossFieldCoverage.blocked);
 
   const artifacts: ValidationPipelineArtifacts = {
     generatedTestCases: repairedList,
@@ -413,6 +454,9 @@ export const runValidationPipeline = (
     blocked,
   };
   if (visualReport !== undefined) artifacts.visual = visualReport;
+  if (crossFieldCoverage !== undefined) {
+    artifacts.crossFieldInvariantCoverage = crossFieldCoverage;
+  }
   if (input.coveragePlan !== undefined) {
     artifacts.techniqueQuota = buildTechniqueQuotaReport({
       generatedAt: input.generatedAt,
@@ -515,6 +559,8 @@ export interface WriteValidationPipelineArtifactsResult {
   techniqueQuotaReportPath?: string;
   /** Path of the persisted deterministic test-data oracle report (Issue #2071). */
   testDataOracleReportPath?: string;
+  /** Path of the persisted cross-field invariant coverage report (Issue #2110). */
+  crossFieldInvariantCoverageReportPath?: string;
 }
 
 /**
@@ -596,6 +642,19 @@ export const writeValidationPipelineArtifacts = async (
       input.artifacts.testDataOracleReport,
     );
     result.testDataOracleReportPath = testDataOracleReportPath;
+  }
+
+  if (input.artifacts.crossFieldInvariantCoverage !== undefined) {
+    const crossFieldInvariantCoverageReportPath = join(
+      input.destinationDir,
+      CROSS_FIELD_INVARIANT_COVERAGE_ARTIFACT_FILENAME,
+    );
+    await writeAtomicJson(
+      crossFieldInvariantCoverageReportPath,
+      input.artifacts.crossFieldInvariantCoverage,
+    );
+    result.crossFieldInvariantCoverageReportPath =
+      crossFieldInvariantCoverageReportPath;
   }
 
   return result;
@@ -824,10 +883,21 @@ export const runValidationPipelineWithSelfVerify = async (
       ? validation.blocked
       : effectiveSemanticContentBlock(validation, semanticContentOverrides);
 
+  const crossFieldCoverage =
+    input.crossFieldInvariantRegistry === undefined
+      ? undefined
+      : evaluateCrossFieldInvariantCoverage({
+          jobId: input.jobId,
+          generatedAt: input.generatedAt,
+          registry: input.crossFieldInvariantRegistry,
+          claims: input.crossFieldInvariantClaims ?? [],
+        });
+
   const blocked =
     validationBlockedAfterOverrides ||
     policy.blocked ||
-    (visualReport !== undefined && visualReport.blocked);
+    (visualReport !== undefined && visualReport.blocked) ||
+    (crossFieldCoverage !== undefined && crossFieldCoverage.blocked);
 
   const artifacts: ValidationPipelineArtifacts = {
     generatedTestCases: repairedList,
@@ -840,6 +910,9 @@ export const runValidationPipelineWithSelfVerify = async (
     blocked,
   };
   if (visualReport !== undefined) artifacts.visual = visualReport;
+  if (crossFieldCoverage !== undefined) {
+    artifacts.crossFieldInvariantCoverage = crossFieldCoverage;
+  }
   if (input.coveragePlan !== undefined) {
     artifacts.techniqueQuota = buildTechniqueQuotaReport({
       generatedAt: input.generatedAt,
