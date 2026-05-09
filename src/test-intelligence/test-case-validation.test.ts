@@ -296,7 +296,7 @@ test("Issue #2071: validator rejects oracle-governed testData that lacks determi
   );
 });
 
-test("Issue #2106: validator skips PII detection for synthetic oracle entries via provenance context even without the legacy marker", () => {
+test("Issue #2106: validator keeps preserved entries scannable while skipping the oracle-governed synthetic slot", () => {
   const report = validateGeneratedTestCases({
     jobId: "job-1",
     generatedAt: GENERATED_AT,
@@ -307,6 +307,7 @@ test("Issue #2106: validator skips PII detection for synthetic oracle entries vi
         title: "Submit valid date of birth",
         objective: "Submit the form with a valid date of birth",
         testData: [
+          "Comment: jane.doe@example.com",
           'Geburtsdatum: 2026-04-25 (format_valid; from rule "ISO date")',
         ],
         qualitySignals: {
@@ -320,9 +321,21 @@ test("Issue #2106: validator skips PII detection for synthetic oracle entries vi
     ]),
   });
   assert.equal(
-    report.issues.some((issue) => issue.code === "test_data_pii_detected"),
-    false,
+    report.issues.some(
+      (issue) =>
+        issue.code === "test_data_pii_detected" &&
+        issue.path === "$.testCases[0].testData[0]",
+    ),
+    true,
     JSON.stringify(report.issues, null, 2),
+  );
+  assert.equal(
+    report.issues.some(
+      (issue) =>
+        issue.code === "test_data_pii_detected" &&
+        issue.path === "$.testCases[0].testData[1]",
+    ),
+    false,
   );
   assert.equal(
     report.issues.some((issue) => issue.code === "test_data_oracle_violation"),
