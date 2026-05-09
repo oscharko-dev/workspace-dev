@@ -11,6 +11,25 @@ Contract-level surface changes remain tracked in `CONTRACT_CHANGELOG.md`.
 
 ### Added
 
+- Test Intelligence — explicit synthetic oracle provenance replaces
+  redaction-token-only semantics for deterministic test-data entries
+  (#2106):
+    - `OracleValue` now carries `synthetic: true` so deterministic
+      oracle emissions can be identified structurally instead of only via
+      the legacy `[REDACTED:DOC_EXAMPLE]` suffix.
+    - The oracle governance report now persists per-entry synthetic
+      provenance, including the migration note
+      `"synthesized by deterministic oracle"` and a test-data-index
+      context that the validator can consult explicitly.
+    - `validatePiiInTextFields` now skips PII detection for
+      oracle-governed synthetic entries via that provenance context
+      rather than relying solely on token-shape heuristics.
+    - The legacy `[REDACTED:DOC_EXAMPLE]` rendering remains dual-emitted
+      for one migration sprint for documentation examples and ISO
+      date/datetime oracle samples; downstream consumers should migrate
+      to the structural `synthetic` provenance signal before the suffix
+      is removed.
+
 - Test Intelligence — llguidance constrained-decoding adapter for the
   `openai_chat` transport (#2065):
     - New transport-specific adapter under

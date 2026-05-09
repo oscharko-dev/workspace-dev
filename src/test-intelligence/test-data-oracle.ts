@@ -41,6 +41,7 @@
 export interface OracleValue {
   readonly value: string;
   readonly rule: string;
+  readonly synthetic: true;
   readonly category:
     | "boundary_min"
     | "boundary_max"
@@ -85,6 +86,8 @@ interface MatcherResult {
   readonly invalid: ReadonlyArray<OracleValue>;
   readonly provenance: ReadonlyArray<string>;
 }
+
+type OracleValueInit = Omit<OracleValue, "synthetic">;
 
 const PRESENCE_ONLY_RULES: ReadonlySet<string> = new Set([
   "required",
@@ -145,6 +148,12 @@ const chunkedFiller = (len: number): string => {
   return out;
 };
 
+export const SYNTHETIC_ORACLE_NOTE = "synthesized by deterministic oracle";
+
+const asSyntheticOracleValues = (
+  values: ReadonlyArray<OracleValueInit>,
+): OracleValue[] => values.map((value) => ({ ...value, synthetic: true }));
+
 const tryNumericRange = (rule: string): MatcherResult | null => {
   // "Numeric in range 1000..50000"  OR  "Range 0..100"
   const m = rule.match(
@@ -162,12 +171,12 @@ const tryNumericRange = (rule: string): MatcherResult | null => {
   const eps = isInt ? 1 : 0.01;
   const mid = isInt ? Math.round(midpoint(min, max)) : midpoint(min, max);
   return {
-    valid: [
+    valid: asSyntheticOracleValues([
       { value: formatNumber(min, decimals), rule, category: "boundary_min" },
       { value: formatNumber(mid, decimals), rule, category: "midpoint" },
       { value: formatNumber(max, decimals), rule, category: "boundary_max" },
-    ],
-    invalid: [
+    ]),
+    invalid: asSyntheticOracleValues([
       {
         value: formatNumber(min - eps, decimals),
         rule,
@@ -178,7 +187,7 @@ const tryNumericRange = (rule: string): MatcherResult | null => {
         rule,
         category: "above_max_invalid",
       },
-    ],
+    ]),
     provenance: [`numeric-range[${min}..${max}] from rule "${rule}"`],
   };
 };
@@ -201,7 +210,7 @@ const tryNumericComparison = (rule: string): MatcherResult | null => {
     const minValid = op === ">=" ? bound : bound + eps;
     const oneInvalid = op === ">=" ? bound - eps : bound;
     return {
-      valid: [
+      valid: asSyntheticOracleValues([
         {
           value: formatNumber(minValid, decimals),
           rule,
@@ -212,14 +221,14 @@ const tryNumericComparison = (rule: string): MatcherResult | null => {
           rule,
           category: "midpoint",
         },
-      ],
-      invalid: [
+      ]),
+      invalid: asSyntheticOracleValues([
         {
           value: formatNumber(oneInvalid, decimals),
           rule,
           category: "below_min_invalid",
         },
-      ],
+      ]),
       provenance: [`numeric-${op}${bound} from rule "${rule}"`],
     };
   }
@@ -227,21 +236,21 @@ const tryNumericComparison = (rule: string): MatcherResult | null => {
     const maxValid = op === "<=" ? bound : bound - eps;
     const oneInvalid = op === "<=" ? bound + eps : bound;
     return {
-      valid: [
+      valid: asSyntheticOracleValues([
         { value: formatNumber(0, decimals), rule, category: "boundary_min" },
         {
           value: formatNumber(maxValid, decimals),
           rule,
           category: "boundary_max",
         },
-      ],
-      invalid: [
+      ]),
+      invalid: asSyntheticOracleValues([
         {
           value: formatNumber(oneInvalid, decimals),
           rule,
           category: "above_max_invalid",
         },
-      ],
+      ]),
       provenance: [`numeric-${op}${bound} from rule "${rule}"`],
     };
   }
@@ -255,13 +264,13 @@ const tryLength = (rule: string): MatcherResult | null => {
     const len = Number.parseInt(fixed[1] ?? "0", 10);
     if (len <= 0 || len > 4096) return null;
     return {
-      valid: [
+      valid: asSyntheticOracleValues([
         { value: chunkedFiller(len), rule, category: "boundary_max" },
-      ],
-      invalid: [
+      ]),
+      invalid: asSyntheticOracleValues([
         { value: chunkedFiller(len - 1), rule, category: "below_min_invalid" },
         { value: chunkedFiller(len + 1), rule, category: "above_max_invalid" },
-      ],
+      ]),
       provenance: [`fixed-length[${len}] from rule "${rule}"`],
     };
   }
@@ -273,18 +282,18 @@ const tryLength = (rule: string): MatcherResult | null => {
     const max = Number.parseInt(range[2] ?? "0", 10);
     if (min <= 0 || max <= 0 || min > max || max > 4096) return null;
     return {
-      valid: [
+      valid: asSyntheticOracleValues([
         { value: chunkedFiller(min), rule, category: "boundary_min" },
         { value: chunkedFiller(max), rule, category: "boundary_max" },
-      ],
-      invalid: [
+      ]),
+      invalid: asSyntheticOracleValues([
         {
           value: min === 1 ? "" : chunkedFiller(min - 1),
           rule,
           category: "below_min_invalid",
         },
         { value: chunkedFiller(max + 1), rule, category: "above_max_invalid" },
-      ],
+      ]),
       provenance: [`length-range[${min}..${max}] from rule "${rule}"`],
     };
   }
@@ -297,17 +306,17 @@ const tryMaxCharacters = (rule: string): MatcherResult | null => {
   const max = Number.parseInt(m[1] ?? "0", 10);
   if (max <= 0 || max > 100000) return null;
   return {
-    valid: [
+    valid: asSyntheticOracleValues([
       {
         value: chunkedFiller(Math.max(1, Math.min(max, 16))),
         rule,
         category: "boundary_min",
       },
       { value: chunkedFiller(max), rule, category: "boundary_max" },
-    ],
-    invalid: [
+    ]),
+    invalid: asSyntheticOracleValues([
       { value: chunkedFiller(max + 1), rule, category: "above_max_invalid" },
-    ],
+    ]),
     provenance: [`max-characters[${max}] from rule "${rule}"`],
   };
 };
@@ -325,13 +334,13 @@ const tryIsoDate = (rule: string, now: Date): MatcherResult | null => {
   // "ISO date" (no bound)
   if (/^iso\s+date$/i.test(rule)) {
     return {
-      valid: [
+      valid: asSyntheticOracleValues([
         { value: formatIsoDate(now), rule, category: "format_valid" },
-      ],
-      invalid: [
+      ]),
+      invalid: asSyntheticOracleValues([
         { value: formatIsoDate(now).replaceAll("-", "."), rule, category: "format_invalid" },
         { value: "2026-13-01", rule, category: "format_invalid" },
-      ],
+      ]),
       provenance: [`iso-date format from rule "${rule}"`],
     };
   }
@@ -346,26 +355,26 @@ const tryIsoDate = (rule: string, now: Date): MatcherResult | null => {
   if (op === "<=" || op === "<") {
     const maxValid = op === "<=" ? anchor : addDays(anchor, -1);
     return {
-      valid: [
+      valid: asSyntheticOracleValues([
         { value: formatIsoDate(addDays(maxValid, -365)), rule, category: "boundary_min" },
         { value: formatIsoDate(maxValid), rule, category: "boundary_max" },
-      ],
-      invalid: [
+      ]),
+      invalid: asSyntheticOracleValues([
         { value: formatIsoDate(addDays(anchor, 1)), rule, category: "above_max_invalid" },
-      ],
+      ]),
       provenance: [`date-${op}-today+${offset}d from rule "${rule}"`],
     };
   }
   // ">=" / ">"
   const minValid = op === ">=" ? anchor : addDays(anchor, 1);
   return {
-    valid: [
+    valid: asSyntheticOracleValues([
       { value: formatIsoDate(minValid), rule, category: "boundary_min" },
       { value: formatIsoDate(addDays(minValid, 30)), rule, category: "midpoint" },
-    ],
-    invalid: [
+    ]),
+    invalid: asSyntheticOracleValues([
       { value: formatIsoDate(addDays(anchor, -1)), rule, category: "below_min_invalid" },
-    ],
+    ]),
     provenance: [`date-${op}-today+${offset}d from rule "${rule}"`],
   };
 };
@@ -373,14 +382,14 @@ const tryIsoDate = (rule: string, now: Date): MatcherResult | null => {
 const tryIsoTime = (rule: string): MatcherResult | null => {
   if (!/^iso\s+time$/i.test(rule)) return null;
   return {
-    valid: [
+    valid: asSyntheticOracleValues([
       { value: "14:30:00", rule, category: "format_valid" },
       { value: "23:59:59", rule, category: "format_valid" },
-    ],
-    invalid: [
+    ]),
+    invalid: asSyntheticOracleValues([
       { value: "14:30", rule, category: "format_invalid" },
       { value: "25:00:00", rule, category: "format_invalid" },
-    ],
+    ]),
     provenance: [`iso-time format from rule "${rule}"`],
   };
 };
@@ -388,12 +397,12 @@ const tryIsoTime = (rule: string): MatcherResult | null => {
 const tryIsoDateTime = (rule: string, now: Date): MatcherResult | null => {
   if (/^iso\s+datetime$/i.test(rule)) {
     return {
-      valid: [
+      valid: asSyntheticOracleValues([
         { value: `${formatIsoDate(now)}T14:30:00Z`, rule, category: "format_valid" },
-      ],
-      invalid: [
+      ]),
+      invalid: asSyntheticOracleValues([
         { value: formatIsoDate(now), rule, category: "format_invalid" },
-      ],
+      ]),
       provenance: [`iso-datetime format from rule "${rule}"`],
     };
   }
@@ -404,79 +413,79 @@ const tryFormatPattern = (rule: string): MatcherResult | null => {
   // IBAN — known documentation IBAN (Bundesbank Testbank)
   if (/iban\s+format/i.test(rule)) {
     return {
-      valid: [
+      valid: asSyntheticOracleValues([
         {
           value: "DE89370400440532013000",
           rule,
           category: "documentation_example",
         },
-      ],
-      invalid: [
+      ]),
+      invalid: asSyntheticOracleValues([
         { value: "DE0", rule, category: "format_invalid" },
         { value: "INVALID-IBAN", rule, category: "format_invalid" },
-      ],
+      ]),
       provenance: [`IBAN format check from rule "${rule}" (uses public documentation IBAN)`],
     };
   }
   // BIC
   if (/bic\s+format/i.test(rule)) {
     return {
-      valid: [
+      valid: asSyntheticOracleValues([
         { value: "MARKDEFFXXX", rule, category: "documentation_example" },
         { value: "DEUTDEFF", rule, category: "documentation_example" },
-      ],
-      invalid: [
+      ]),
+      invalid: asSyntheticOracleValues([
         { value: "ABC", rule, category: "format_invalid" },
         { value: "12345", rule, category: "format_invalid" },
-      ],
+      ]),
       provenance: [`BIC format check from rule "${rule}"`],
     };
   }
   // ISIN
   if (/isin\s+format/i.test(rule)) {
     return {
-      valid: [
+      valid: asSyntheticOracleValues([
         { value: "DE000BASF111", rule, category: "documentation_example" },
-      ],
-      invalid: [
+      ]),
+      invalid: asSyntheticOracleValues([
         { value: "INVALID", rule, category: "format_invalid" },
-      ],
+      ]),
       provenance: [`ISIN format check from rule "${rule}"`],
     };
   }
   // German license plate
   if (/german\s+license\s+plate\s+format/i.test(rule)) {
     return {
-      valid: [
+      valid: asSyntheticOracleValues([
         { value: "B-AB 1234", rule, category: "documentation_example" },
-      ],
-      invalid: [
+      ]),
+      invalid: asSyntheticOracleValues([
         { value: "XYZ", rule, category: "format_invalid" },
-      ],
+      ]),
       provenance: [`German license plate format from rule "${rule}"`],
     };
   }
   // Numeric (no bound) — just digits
   if (/^numeric$/i.test(rule) || /^numerisch$/i.test(rule)) {
     return {
-      valid: [
+      valid: asSyntheticOracleValues([
         { value: "123", rule, category: "format_valid" },
-      ],
-      invalid: [
+      ]),
+      invalid: asSyntheticOracleValues([
         { value: "abc", rule, category: "format_invalid" },
-      ],
+      ]),
       provenance: [`numeric format from rule "${rule}"`],
     };
   }
   // Alphanumeric uppercase
   if (/^alphanumeric\s+uppercase$/i.test(rule)) {
     return {
-      valid: [
+      valid: asSyntheticOracleValues([
         { value: "ABC123", rule, category: "format_valid" },
-      ],
-      invalid: [
+      ]),
+      invalid: asSyntheticOracleValues([
         { value: "abc123", rule, category: "format_invalid" },
-      ],
+      ]),
       provenance: [`alphanumeric-uppercase format from rule "${rule}"`],
     };
   }
@@ -580,12 +589,11 @@ export const resolveTestData = (
  *      trips the heuristic — even though the value is a synthetic
  *      format-validity sample, not real birth data.
  *
- * Embedding the marker in the rendered entry — rather than mutating the
- * underlying value — preserves all assertions across the codebase that
- * check the literal documentation values for cross-component PII
- * redaction (production-runner, jira-issue-ir, prompt-compiler,
- * untrusted-content-normalizer, etc.) and keeps oracle values byte-stable
- * for snapshot tests.
+ * Issue #2106 adds an explicit `synthetic: true` flag to the underlying
+ * oracle value and to the downstream provenance context. The legacy
+ * marker remains in place for one migration sprint so downstream readers
+ * that still key off `[REDACTED:DOC_EXAMPLE]` remain compatible while
+ * they switch to the structural provenance signal.
  */
 const DOCUMENTATION_EXAMPLE_MARKER = " [REDACTED:DOC_EXAMPLE]";
 
@@ -600,6 +608,11 @@ const DOCUMENTATION_EXAMPLE_MARKER = " [REDACTED:DOC_EXAMPLE]";
  */
 const ORACLE_DATE_RULE_RE =
   /^\s*(?:iso\s+date(?:time)?|date\s*[<>]=?\s*today)\b/iu;
+
+export const oracleValueNeedsLegacyRedactionMarker = (
+  value: OracleValue,
+): boolean =>
+  value.category === "documentation_example" || ORACLE_DATE_RULE_RE.test(value.rule);
 
 /**
  * Render an {@link OracleValue} into the `testData[*]` string form
@@ -620,9 +633,7 @@ export const formatOracleValueAsTestDataEntry = (
   fieldLabel: string,
   value: OracleValue,
 ): string => {
-  const needsMarker =
-    value.category === "documentation_example" ||
-    ORACLE_DATE_RULE_RE.test(value.rule);
+  const needsMarker = oracleValueNeedsLegacyRedactionMarker(value);
   const marker = needsMarker ? DOCUMENTATION_EXAMPLE_MARKER : "";
   return `${fieldLabel}: ${value.value} (${value.category}; from rule "${value.rule}")${marker}`;
 };

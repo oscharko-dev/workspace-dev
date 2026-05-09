@@ -707,6 +707,10 @@ test("Issue #2071: mixed resolved and unresolved rules preserve oracle data and 
     result.testDataOracleReport?.cases[0]?.oracleUnresolvedFields.length,
     1,
   );
+  assert.equal(
+    result.testDataOracleReport?.cases[0]?.oracleResolvedFields[0]?.oracleProvenance?.[0]?.note,
+    "synthesized by deterministic oracle",
+  );
 });
 
 test("Issue #2071: required oracle open questions survive the soft cap", () => {

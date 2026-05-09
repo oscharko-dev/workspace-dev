@@ -42,6 +42,8 @@ import { buildTestDesignModel } from "./test-design-model.js";
 import {
   buildTestDataOracleGovernanceContext,
   projectTestDataOracleCase,
+  type OracleProvenanceContext,
+  type TestDataOracleCaseProjection,
   type TestDataOracleGovernanceContext,
 } from "./test-data-oracle-governance.js";
 import {
@@ -152,6 +154,10 @@ const validateCase = (
 ): void => {
   const basePath = `$.testCases[${index}]`;
   const id = testCase.id;
+  const oracleProjection = projectTestDataOracleCase({
+    testCase,
+    context: oracleContext,
+  });
 
   if (testCase.title.trim().length === 0) {
     pushIssue(issues, {
@@ -193,7 +199,12 @@ const validateCase = (
   validateTraceRefs(testCase, basePath, intentIds, issues);
   validateQcMapping(testCase, basePath, issues);
   validateQualitySignalsCoverage(testCase, basePath, intentIds, issues);
-  validatePiiInTextFields(testCase, basePath, issues);
+  validatePiiInTextFields(
+    testCase,
+    basePath,
+    issues,
+    oracleProjection.oracleProvenanceContext,
+  );
   validateSemanticSuspiciousContent(testCase, basePath, issues);
   validateAssumptionsAndQuestions(testCase, basePath, issues);
   validateAmbiguityReviewState(testCase, basePath, issues);
@@ -202,7 +213,7 @@ const validateCase = (
   validateTestDataOracleGovernance(
     testCase,
     basePath,
-    oracleContext,
+    oracleProjection,
     issues,
   );
 };
@@ -539,6 +550,7 @@ const validatePiiInTextFields = (
   testCase: GeneratedTestCase,
   basePath: string,
   issues: TestCaseValidationIssue[],
+  oracleProvenanceContext?: OracleProvenanceContext,
 ): void => {
   const id = testCase.id;
   const scan = (
@@ -546,10 +558,14 @@ const validatePiiInTextFields = (
     fieldPath: string,
     code: TestCaseValidationIssueCode,
     leakCode: TestCaseValidationIssueCode,
+    provenanceContext?: OracleProvenanceContext,
   ): void => {
     for (let i = 0; i < values.length; i++) {
       const value = values[i];
       if (value === undefined) continue;
+      if (provenanceContext?.byTestDataIndex[i]?.synthetic === true) {
+        continue;
+      }
       if (looksLikeRedactionToken(value)) {
         // Token like "[REDACTED:EMAIL]" — already redacted upstream; OK.
         continue;
@@ -585,6 +601,7 @@ const validatePiiInTextFields = (
     `${basePath}.testData`,
     "test_data_pii_detected",
     "test_data_unredacted_value",
+    oracleProvenanceContext,
   );
   scan(
     testCase.preconditions,
@@ -708,13 +725,9 @@ const validateNeedsOpenQuestionClarification = (
 const validateTestDataOracleGovernance = (
   testCase: GeneratedTestCase,
   basePath: string,
-  oracleContext: TestDataOracleGovernanceContext,
+  projection: TestDataOracleCaseProjection,
   issues: TestCaseValidationIssue[],
 ): void => {
-  const projection = projectTestDataOracleCase({
-    testCase,
-    context: oracleContext,
-  });
   if (
     projection.oracleResolvedFields.length === 0 &&
     projection.oracleUnresolvedFields.length === 0
