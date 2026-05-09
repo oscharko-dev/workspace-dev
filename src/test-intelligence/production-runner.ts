@@ -38,7 +38,7 @@
  */
 
 import { mkdir, rename, writeFile } from "node:fs/promises";
-import { dirname, join, relative } from "node:path";
+import { basename, dirname, join, relative } from "node:path";
 import { createHash, randomUUID } from "node:crypto";
 import type { Meter, Tracer } from "@opentelemetry/api";
 
@@ -314,6 +314,11 @@ import {
   runFaithfulnessJudge,
   type RunFaithfulnessJudgeResult,
 } from "./faithfulness-judge.js";
+import {
+  applyCaseConfidenceCalibration,
+  loadCaseConfidenceCalibration,
+  summarizeCaseConfidenceDistribution,
+} from "./case-confidence-calibrator.js";
 import { resolveFaithfulnessTierReport } from "./policy-gate.js";
 import {
   createFileSystemLogicJudgeCache,
@@ -802,6 +807,8 @@ export interface RunFigmaToQcTestCasesInput {
    * headers; defaults to `figmaFile.name` (or the file key if missing).
    */
   customerLabel?: string;
+  /** Render per-case calibrated confidence in customer markdown when true. */
+  showConfidence?: boolean;
   /**
    * Policy profile id used to drive prompt augmentation. Defaults to
    * `EU_BANKING_DEFAULT_POLICY_PROFILE_ID` (`"eu-banking-default"`),
@@ -4452,6 +4459,28 @@ export const runFigmaToQcTestCases = async (
     faithfulnessTierReportArtifact === undefined
       ? undefined
       : join(artifactDir, FAITHFULNESS_TIER_REPORT_ARTIFACT_FILENAME);
+  const confidenceCalibration = await loadCaseConfidenceCalibration({
+    datasetRoot: input.outputRoot,
+    generatedAt: input.generatedAt,
+    currentRunId: basename(artifactDir),
+  });
+  const calibratedGeneratedTestCases = applyCaseConfidenceCalibration({
+    list: validation.generatedTestCases,
+    curve: confidenceCalibration.curve,
+    judgeConsensus: judgeConsensusResult,
+    ...(selfConsistencyReport !== undefined ? { selfConsistencyReport } : {}),
+    ...(validation.testDataOracleReport !== undefined
+      ? { oracleReport: validation.testDataOracleReport }
+      : {}),
+    ...(faithfulnessTierReportArtifact !== undefined
+      ? { faithfulnessTierReport: faithfulnessTierReportArtifact }
+      : {}),
+    acceptedAnchors: confidenceCalibration.acceptedAnchors,
+    excludedRunId: basename(artifactDir),
+  });
+  const confidenceSummary = summarizeCaseConfidenceDistribution(
+    calibratedGeneratedTestCases,
+  );
   // Issue #2068 — per-run technique-quota report. Built upstream by the
   // validation pipeline when a CoveragePlan is supplied so reviewers
   // can audit the tier-elastic quota path even when the gate passes.
@@ -4616,7 +4645,7 @@ export const runFigmaToQcTestCases = async (
     a11yJudgeResult === undefined
       ? undefined
       : encodeCanonicalJson(a11yJudgeResult.verdict);
-  const generatedBytes = encodeCanonicalJson(validation.generatedTestCases);
+  const generatedBytes = encodeCanonicalJson(calibratedGeneratedTestCases);
   const validationBytes = encodeCanonicalJson(validation.validation);
   const testDataOracleReportBytes =
     validation.testDataOracleReport === undefined
@@ -4899,12 +4928,13 @@ export const runFigmaToQcTestCases = async (
           customContextMarkdown.bodyMarkdown,
         );
   const rendered = renderCustomerMarkdown({
-    list: validation.generatedTestCases,
+    list: calibratedGeneratedTestCases,
     fileName: customerLabel,
     sourceLabel,
     generatedAt: input.generatedAt,
     workflowTopology,
     ...(acceptanceCriteria !== undefined ? { acceptanceCriteria } : {}),
+    ...(input.showConfidence === true ? { showConfidence: true } : {}),
   });
   const markdownDir = join(artifactDir, "customer-markdown");
   await mkdir(markdownDir, { recursive: true });
@@ -5006,7 +5036,7 @@ export const runFigmaToQcTestCases = async (
     jobId: input.jobId,
     generatedAt: input.generatedAt,
     sourceKind: input.source.kind,
-    finalGeneratedTestCases: validation.generatedTestCases,
+    finalGeneratedTestCases: calibratedGeneratedTestCases,
     initialGenerationDeployment:
       capturedLlmResult?.outcome === "success"
         ? capturedLlmResult.modelDeployment
@@ -5060,7 +5090,7 @@ export const runFigmaToQcTestCases = async (
         jobId: input.jobId,
         generatedAt: input.generatedAt,
         policyProfileId: validation.policy.policyProfileId,
-        testCases: validation.generatedTestCases.testCases,
+        testCases: calibratedGeneratedTestCases.testCases,
         intent,
         ...(input.mutationEval?.thresholdRatio !== undefined
           ? { threshold: input.mutationEval.thresholdRatio }
@@ -5074,6 +5104,7 @@ export const runFigmaToQcTestCases = async (
 
   const policyReport: TestCasePolicyReport = {
     ...validation.policy,
+    ...(confidenceSummary !== undefined ? confidenceSummary : {}),
     provenance: {
       artifactFilename: PROVENANCE_ARTIFACT_FILENAME,
       merkleAlgorithm: "sha256_merkle_v1",
@@ -5497,7 +5528,7 @@ export const runFigmaToQcTestCases = async (
     jobId: input.jobId,
     generatedAt: input.generatedAt,
     fileKey: figmaFile.fileKey,
-    generatedTestCases: validation.generatedTestCases,
+    generatedTestCases: calibratedGeneratedTestCases,
     intent,
     validation: validation.validation,
     policy: policyReport,

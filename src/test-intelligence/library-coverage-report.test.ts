@@ -133,7 +133,7 @@ test("library-coverage-report: golden byte-identity for the canonical example", 
     primitives: [baseEntry()],
   });
   const golden =
-    '{"contractVersion":"1.21.0","counts":{"deprecated":0,"implemented":1,"stub":0,"total":1,"unimplemented":0},' +
+    '{"contractVersion":"1.22.0","counts":{"deprecated":0,"implemented":1,"stub":0,"total":1,"unimplemented":0},' +
     '"generatedAt":"2026-05-04T08:00:00.000Z","primitives":[' +
     '{"libraryName":"figma-ds","libraryVersion":"2026.05.0","primitiveId":"button.primary","status":"implemented","testCaseCount":4}' +
     '],"releaseId":"figma-ds@2026.05.0","schemaVersion":"1.0.0"}';

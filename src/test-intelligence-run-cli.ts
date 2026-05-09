@@ -374,6 +374,8 @@ export interface TestIntelligenceRunOptions {
    * business requirement source.
    */
   customerEvalMarkdownPath?: string;
+  /** Render calibrated per-case confidence in customer markdown. */
+  showConfidence?: boolean;
   /**
    * Path to an optional JSON file (Issue #1946) conforming to the
    * {@link CustomerProfileInput} schema. The CLI enforces a hard 256 KiB
@@ -543,6 +545,7 @@ export const parseTestIntelligenceRunArgs = (
   );
   let customContextMarkdownPath: string | undefined;
   let customerEvalMarkdownPath: string | undefined;
+  let showConfidence = false;
   let customerProfilePath: string | undefined;
   let diversityPasses: 1 | 2 | 3 = 1;
   let complianceFrameworks: readonly ComplianceFrameworkId[] | undefined;
@@ -983,6 +986,11 @@ export const parseTestIntelligenceRunArgs = (
       continue;
     }
 
+    if (arg === "--show-confidence") {
+      showConfidence = true;
+      continue;
+    }
+
     if (arg === "--customer-profile") {
       const value = next?.trim();
       if (!value) {
@@ -1124,6 +1132,7 @@ export const parseTestIntelligenceRunArgs = (
     ...(customerEvalMarkdownPath !== undefined
       ? { customerEvalMarkdownPath }
       : {}),
+    ...(showConfidence ? { showConfidence: true } : {}),
     customerProfilePath,
     a11yJudgeDeployment,
     diversityPasses,
@@ -3335,6 +3344,7 @@ export const runTestIntelligenceCommand = async (
     ...(customerEvalMarkdownBody !== undefined
       ? { customerEvalMarkdown: customerEvalMarkdownBody }
       : {}),
+    ...(options.showConfidence === true ? { showConfidence: true } : {}),
     ...(customerProfileInput !== undefined
       ? { customerProfile: customerProfileInput }
       : {}),
@@ -3618,6 +3628,9 @@ Other:
                              is derived from the policy profile.
   --allow-policy-blocked     Do not fail with exit code 3 when policy blocked.
                              Emits a warning and marks the summary for manual review.
+  --show-confidence          Render per-case calibrated confidence in
+                             customer-markdown/testfaelle.md. Default: off
+                             for customer view, on only for technical renderers.
   --mode <m>                 deterministic_llm | offline_eval | dry_run
                              (default: deterministic_llm; offline_eval is
                              currently routed via deterministic_llm)
