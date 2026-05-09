@@ -104,6 +104,8 @@ const TEST_CASE_KEYS = [
   "openQuestions",
   "qcMappingPreview",
   "qualitySignals",
+  "confidence",
+  "confidenceComponents",
   "reviewState",
   "audit",
   // Optional, additive in contract 4.27.0 (Issue #1735).
@@ -131,6 +133,14 @@ const QUALITY_SIGNAL_KEYS = [
   "coveredNavigationIds",
   "confidence",
   "ambiguity",
+] as const;
+const CONFIDENCE_COMPONENT_KEYS = [
+  "judgePanelAgreement",
+  "faithfulnessScore",
+  "selfConsistencyAgreement",
+  "ragHitStrength",
+  "oracleResolved",
+  "rawScore",
 ] as const;
 const AMBIGUITY_KEYS = ["reason"] as const;
 const AUDIT_KEYS = [
@@ -279,6 +289,19 @@ const validateTestCase = (
   expectStringArray(tc["openQuestions"], `${path}.openQuestions`, errors);
   expectQcMapping(tc["qcMappingPreview"], `${path}.qcMappingPreview`, errors);
   expectQualitySignals(tc["qualitySignals"], `${path}.qualitySignals`, errors);
+  if ("confidence" in tc && tc["confidence"] !== undefined) {
+    expectUnitIntervalNumber(tc["confidence"], `${path}.confidence`, errors);
+  }
+  if (
+    "confidenceComponents" in tc &&
+    tc["confidenceComponents"] !== undefined
+  ) {
+    expectConfidenceComponents(
+      tc["confidenceComponents"],
+      `${path}.confidenceComponents`,
+      errors,
+    );
+  }
   expectEnum(tc["reviewState"], REVIEW_STATES, `${path}.reviewState`, errors);
   expectAudit(tc["audit"], `${path}.audit`, errors);
   // Optional, additive in contract 4.27.0 (Issue #1735). When absent the
@@ -526,6 +549,45 @@ const expectQualitySignals = (
   }
 };
 
+const expectConfidenceComponents = (
+  value: unknown,
+  path: string,
+  errors: GeneratedTestCaseValidationError[],
+): void => {
+  if (!isObject(value)) {
+    errors.push({ path, message: "expected object" });
+    return;
+  }
+  expectExactKeys(value, CONFIDENCE_COMPONENT_KEYS, path, errors);
+  expectUnitIntervalNumber(
+    value["judgePanelAgreement"],
+    `${path}.judgePanelAgreement`,
+    errors,
+  );
+  expectUnitIntervalNumber(
+    value["faithfulnessScore"],
+    `${path}.faithfulnessScore`,
+    errors,
+  );
+  expectUnitIntervalNumber(
+    value["selfConsistencyAgreement"],
+    `${path}.selfConsistencyAgreement`,
+    errors,
+  );
+  expectUnitIntervalNumber(
+    value["ragHitStrength"],
+    `${path}.ragHitStrength`,
+    errors,
+  );
+  if (typeof value["oracleResolved"] !== "boolean") {
+    errors.push({
+      path: `${path}.oracleResolved`,
+      message: "expected boolean",
+    });
+  }
+  expectUnitIntervalNumber(value["rawScore"], `${path}.rawScore`, errors);
+};
+
 const expectAudit = (
   value: unknown,
   path: string,
@@ -590,6 +652,19 @@ const expectHash = (
 ): void => {
   if (typeof value !== "string" || !/^[a-f0-9]{64}$/.test(value)) {
     errors.push({ path, message: "expected sha256 hex digest" });
+  }
+};
+
+const expectUnitIntervalNumber = (
+  value: unknown,
+  path: string,
+  errors: GeneratedTestCaseValidationError[],
+): void => {
+  if (typeof value !== "number" || value < 0 || value > 1) {
+    errors.push({
+      path,
+      message: "expected number in [0, 1]",
+    });
   }
 };
 

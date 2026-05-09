@@ -163,7 +163,7 @@ export interface TestIntelligenceTransferPrincipal {
 }
 
 /** Contract version for the opt-in test-intelligence surface. */
-export const TEST_INTELLIGENCE_CONTRACT_VERSION = "1.21.0" as const;
+export const TEST_INTELLIGENCE_CONTRACT_VERSION = "1.22.0" as const;
 
 /**
  * Schema version for generated test case payloads.
@@ -173,7 +173,7 @@ export const TEST_INTELLIGENCE_CONTRACT_VERSION = "1.21.0" as const;
  * validator accepts both 1.0.0-shaped lists (without the field) and
  * 1.1.0-shaped lists (with or without the field).
  */
-export const GENERATED_TEST_CASE_SCHEMA_VERSION = "1.1.0" as const;
+export const GENERATED_TEST_CASE_SCHEMA_VERSION = "1.2.0" as const;
 
 /** Persisted polarity labels for generated test cases (Issue #2030). */
 export const ALLOWED_GENERATED_TEST_CASE_POLARITIES = [
@@ -1055,6 +1055,14 @@ export interface TestCasePolicyReport {
   approvedCount: number;
   blockedCount: number;
   needsReviewCount: number;
+  /** Mean calibrated per-case confidence across every generated case. */
+  confidenceMean?: number;
+  /** 10th percentile calibrated per-case confidence across every case. */
+  confidenceP10?: number;
+  /** 50th percentile calibrated per-case confidence across every case. */
+  confidenceP50?: number;
+  /** 90th percentile calibrated per-case confidence across every case. */
+  confidenceP90?: number;
   /** Whether ANY case was blocked (downstream export gate). */
   blocked: boolean;
   decisions: TestCasePolicyDecisionRecord[];
@@ -7047,6 +7055,22 @@ export interface GeneratedTestCaseQualitySignals {
   ambiguity?: IntentAmbiguity;
 }
 
+/** Auditable raw inputs that feed the per-case confidence calibration. */
+export interface GeneratedTestCaseConfidenceComponents {
+  /** Cross-judge agreement proxy in [0, 1]. */
+  judgePanelAgreement: number;
+  /** Per-case faithfulness score in [0, 1]. */
+  faithfulnessScore: number;
+  /** Per-case self-consistency agreement in [0, 1]. */
+  selfConsistencyAgreement: number;
+  /** Historical anchor strength in [0, 1]. */
+  ragHitStrength: number;
+  /** Whether deterministic test-data oracle evidence resolved at least one field. */
+  oracleResolved: boolean;
+  /** Weighted pre-calibration raw score in [0, 1]. */
+  rawScore: number;
+}
+
 /** Schema version for persisted `workflow-topology.json` artifacts. */
 export const WORKFLOW_TOPOLOGY_SCHEMA_VERSION = "1.0.0" as const;
 
@@ -7231,6 +7255,10 @@ export interface GeneratedTestCase {
   openQuestions: string[];
   qcMappingPreview: GeneratedTestCaseQcMapping;
   qualitySignals: GeneratedTestCaseQualitySignals;
+  /** Optional calibrated per-case acceptance probability (Issue #2074). */
+  confidence?: number;
+  /** Optional auditable raw inputs used to derive `confidence`. */
+  confidenceComponents?: GeneratedTestCaseConfidenceComponents;
   reviewState: GeneratedTestCaseReviewState;
   audit: GeneratedTestCaseAuditMetadata;
   /**

@@ -35,6 +35,11 @@ export interface RenderCustomerMarkdownInput {
   /** Customer-facing mode hides internal ids; technical preserves them. */
   mode?: "customer" | "technical";
   /**
+   * Render calibrated per-case confidence when enabled. Defaults to
+   * `false` for customer mode and `true` for technical mode.
+   */
+  showConfidence?: boolean;
+  /**
    * Optional compliance-coverage report (Issue #2042). When supplied,
    * the combined Markdown gains a "Compliance coverage" section listing
    * coverage ratio per active framework and per-rule outcome.
@@ -135,6 +140,7 @@ export const renderCustomerMarkdown = (
   input: RenderCustomerMarkdownInput,
 ): RenderedCustomerMarkdown => {
   const mode = input.mode ?? "customer";
+  const showConfidence = input.showConfidence ?? mode === "technical";
   const acceptanceCriteria = normalizeAcceptanceCriteria(input.acceptanceCriteria);
   const preparedCases = prepareCustomerCases(
     input.list.testCases,
@@ -151,6 +157,7 @@ export const renderCustomerMarkdown = (
       entry,
       mode,
       suiteClarifications.byCaseId.get(entry.tc.id) ?? [],
+      showConfidence,
     ),
   }));
   const combinedMarkdown = renderCombined(
@@ -159,6 +166,7 @@ export const renderCustomerMarkdown = (
     acceptanceCriteria,
     mode,
     suiteClarifications,
+    showConfidence,
   );
   return { combinedMarkdown, perCaseFiles };
 };
@@ -209,6 +217,7 @@ const renderCombined = (
   acceptanceCriteria: readonly string[],
   mode: "customer" | "technical",
   suiteClarifications: SuiteClarificationRegistry,
+  showConfidence: boolean,
 ): string => {
   const lines: string[] = [];
   lines.push(`# Testfälle: ${renderMarkdownText(input.fileName, mode)}`);
@@ -272,6 +281,7 @@ const renderCombined = (
         entry,
         mode,
         suiteClarifications.byCaseId.get(entry.tc.id) ?? [],
+        showConfidence,
       ),
     );
     if (i < preparedCases.length - 1) {
@@ -287,6 +297,7 @@ const renderSingleCase = (
   entry: PreparedCustomerCase,
   mode: "customer" | "technical",
   customerClarifications: readonly ClarificationReference[],
+  showConfidence: boolean,
 ): string => {
   const { tc } = entry;
   const lines: string[] = [];
@@ -302,6 +313,10 @@ const renderSingleCase = (
     `**Klasse:** ${renderMarkdownText(entry.classification, mode)} · **Priorität:** ${tc.priority} · **Risiko:** ${tc.riskCategory} · **Technik:** ${tc.technique}`,
   );
   lines.push("");
+  if (showConfidence && typeof tc.confidence === "number") {
+    lines.push(`**Konfidenz:** ${formatConfidence(tc.confidence)}`);
+    lines.push("");
+  }
   const workflowRefs = [
     ...new Set(
       tc.qualitySignals.coveredActionIds.filter((id) =>
@@ -411,6 +426,16 @@ const renderSingleCase = (
     }
   }
   return lines.join("\n");
+};
+
+const formatConfidence = (value: number): string =>
+  clampConfidence(value).toFixed(2);
+
+const clampConfidence = (value: number): number => {
+  if (!Number.isFinite(value)) return 0;
+  if (value <= 0) return 0;
+  if (value >= 1) return 1;
+  return value;
 };
 
 const buildCoverageMapping = (

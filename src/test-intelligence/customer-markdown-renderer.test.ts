@@ -180,6 +180,54 @@ test("renderCustomerMarkdown uses persisted polarity when JSON classification is
   );
 });
 
+test("renderCustomerMarkdown keeps confidence hidden in customer mode by default", () => {
+  const list: GeneratedTestCaseList = {
+    schemaVersion: GENERATED_TEST_CASE_SCHEMA_VERSION,
+    jobId: "job-1",
+    testCases: [
+      buildCase({
+        confidence: 0.9342,
+      }),
+    ],
+  };
+  const result = renderCustomerMarkdown({
+    list,
+    fileName: "x",
+    sourceLabel: "x",
+    generatedAt: "2026-05-02T10:00:00Z",
+  });
+  assert.doesNotMatch(result.combinedMarkdown, /Konfidenz:/u);
+  assert.doesNotMatch(result.perCaseFiles[0]?.body ?? "", /Konfidenz:/u);
+});
+
+test("renderCustomerMarkdown renders confidence when explicitly enabled or in technical mode", () => {
+  const list: GeneratedTestCaseList = {
+    schemaVersion: GENERATED_TEST_CASE_SCHEMA_VERSION,
+    jobId: "job-1",
+    testCases: [
+      buildCase({
+        confidence: 0.9342,
+      }),
+    ],
+  };
+  const customerMode = renderCustomerMarkdown({
+    list,
+    fileName: "x",
+    sourceLabel: "x",
+    generatedAt: "2026-05-02T10:00:00Z",
+    showConfidence: true,
+  });
+  const technicalMode = renderCustomerMarkdown({
+    list,
+    fileName: "x",
+    sourceLabel: "x",
+    generatedAt: "2026-05-02T10:00:00Z",
+    mode: "technical",
+  });
+  assert.match(customerMode.perCaseFiles[0]?.body ?? "", /\*\*Konfidenz:\*\* 0\.93/u);
+  assert.match(technicalMode.perCaseFiles[0]?.body ?? "", /\*\*Konfidenz:\*\* 0\.93/u);
+});
+
 test("renderCustomerMarkdown customer mode consolidates shared clarification questions and strips provenance prefixes", () => {
   const list: GeneratedTestCaseList = {
     schemaVersion: GENERATED_TEST_CASE_SCHEMA_VERSION,
