@@ -1,0 +1,11 @@
+---
+"workspace-dev": minor
+---
+
+Add the cross-field invariant engine for Issue #2110.
+
+- Introduce `CrossFieldInvariant`, `InvariantExpr` (typed AST: comparison, arithmetic, conditional/implies), `FieldAnchor`, and `InvariantCitation` types in `src/test-intelligence/cross-field-invariant-engine.ts`. The engine is fully deterministic: every node kind has its own discriminant, division-by-zero throws, and the registry validates that every BVA seed round-trips through the evaluator with a matching `expectedSatisfied` verdict and that at least one *non-vacuous* positive seed is present.
+- Ship a default-on banking + insurance catalog of 23 cross-field invariants (15 banking + 8 insurance) covering DTI, LTV, FATCA, CRS, PSD2 SCA threshold, MiFID II suitability + appropriateness + costs disclosure, daily-limit aggregation, overdraft cap, account-opening age gate, SEPA Instant ceiling, PEP enhanced due diligence, FX margin disclosure, IBAN/currency, IDD demands-and-needs, DMD/Solvency II cooling-off, BU sum-insured ratio, minor-beneficiary guardian gate, KFZ Vollkasko vehicle-age gating, life medical underwriting, and cyber minimum coverage. Every invariant carries a regulatory citation, field anchors for traceability, and BVA seeds (positive + negative).
+- Add the validation-pipeline gate `evaluateCrossFieldInvariantCoverage` (`src/test-intelligence/cross-field-invariant-gate.ts`) which enforces "every screen with ≥ 1 cross-field invariant has ≥ 1 positive AND ≥ 1 negative test-case claim". The gate emits `cross-field-invariant-coverage-report.json` (atomic write) and folds its `blocked` flag into `runValidationPipeline`'s job-level `blocked`.
+- Wire opt-in `crossFieldInvariantRegistry` + `crossFieldInvariantClaims` into `RunValidationPipelineInput`; both forms (`runValidationPipeline` and `runValidationPipelineWithSelfVerify`) pass the gate output through the artifact bundle. The hook is opt-in so existing fixtures stay byte-stable and produce no new blocking.
+- Add an Eingabemasken cross-field benchmark (`cross-field-invariant-benchmark.test.ts`) that synthesises the BVA seeds for every registered invariant, projects them into pipeline-gate claims, and asserts the gate is non-blocking with full per-invariant coverage.

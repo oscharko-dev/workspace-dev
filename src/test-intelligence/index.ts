@@ -1465,6 +1465,43 @@ export {
   type DomainInvariantViolation,
 } from "./domain-invariant-registry.js";
 export {
+  collectInvariantFieldRefs,
+  createCrossFieldInvariantRegistry,
+  evaluateInvariantExpression,
+  evaluateValuationAgainstInvariant,
+  synthesizeCrossFieldTestData,
+  type CrossFieldBoundaryAssignment,
+  type CrossFieldEvaluationResult,
+  type CrossFieldInvariant,
+  type CrossFieldInvariantRegistry,
+  type CrossFieldInvariantSeverity,
+  type CrossFieldInvariantViolation,
+  type CrossFieldOracleValue,
+  type CrossFieldValuation,
+  type FieldAnchor,
+  type InvariantBoolExpr,
+  type InvariantCitation,
+  type InvariantExpr,
+  type InvariantNumberExpr,
+  type InvariantStringExpr,
+} from "./cross-field-invariant-engine.js";
+export {
+  buildDefaultCrossFieldInvariantRegistry,
+  DEFAULT_BANKING_INVARIANT_COUNT,
+  DEFAULT_INSURANCE_INVARIANT_COUNT,
+  registerEuBankingCrossFieldInvariants,
+} from "./cross-field-invariant-registry.js";
+export {
+  CROSS_FIELD_INVARIANT_COVERAGE_ARTIFACT_FILENAME,
+  evaluateCrossFieldInvariantCoverage,
+  type CrossFieldCaseClaim,
+  type CrossFieldInvariantCoverageIssue,
+  type CrossFieldInvariantCoverageIssueCode,
+  type CrossFieldInvariantCoverageReport,
+  type CrossFieldInvariantCoverageRow,
+  type CrossFieldScreenCoverage,
+} from "./cross-field-invariant-gate.js";
+export {
   findInvariantsMissingSamplerFactory,
   sampleInvariantSeeds,
   type InvariantSeedPair,
