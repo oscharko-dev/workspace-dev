@@ -1350,6 +1350,20 @@ export interface TestCasePolicyProfileRules {
    * original closeout child #2026.
    */
   techniqueCoverageMinimum?: TechniqueCoverageMinimumPolicy;
+  /**
+   * Issue #2070 — generator self-consistency sampling policy. Controls the
+   * number of independently seeded generator samples emitted before the
+   * runner either performs structural majority voting (`3`) or preserves the
+   * legacy single-sample flow (`1`).
+   *
+   * Optional for backwards compatibility: when omitted the runner falls back
+   * to the secure default of `3` for `eu-banking-default`, but the runtime
+   * silently degrades to `1` when the active generator deployment does not
+   * declare seed support.
+   */
+  selfConsistency?: {
+    readonly sampleCount: 1 | 3;
+  };
 }
 
 /** Built-in policy profile shape. Profiles are identified by `id`+`version`. */
@@ -5213,6 +5227,54 @@ export interface RunQualityArtifact {
   readonly activeFindingCount: number;
   readonly attemptSummaries: readonly RunQualityAttemptSummary[];
   readonly degradedReasons: readonly string[];
+  /** Aggregate self-consistency agreement ratio in [0,1], when sampled. */
+  readonly selfConsistencyAgreement?: number;
+}
+
+/** Schema version for per-run self-consistency voting artifacts. */
+export const SELF_CONSISTENCY_REPORT_SCHEMA_VERSION = "1.0.0" as const;
+
+/** Canonical filename for the persisted self-consistency artifact. */
+export const SELF_CONSISTENCY_REPORT_ARTIFACT_FILENAME =
+  "self-consistency-report.json" as const;
+
+/** Stable route emitted for targets whose samples disagree structurally. */
+export type SelfConsistencyDisagreementRoute = "human_review";
+
+/** One field-level vote recorded for a single coverage target. */
+export interface SelfConsistencyFieldVote {
+  readonly field:
+    | "type"
+    | "technique"
+    | "riskCategory"
+    | "step_action"
+    | "step_expected";
+  readonly stepIndex?: number;
+  readonly agreement: number;
+  readonly majorityValue?: string;
+  readonly majorityCount: number;
+}
+
+/** One per-target row in the persisted self-consistency report. */
+export interface SelfConsistencyTargetReportEntry {
+  readonly targetKey: string;
+  readonly selectedTestCaseId: string;
+  readonly samplePresenceCount: number;
+  readonly agreement: number;
+  readonly disagreement: boolean;
+  readonly disagreementRoute?: SelfConsistencyDisagreementRoute;
+  readonly votes: readonly SelfConsistencyFieldVote[];
+}
+
+/** Persisted self-consistency voting artifact (Issue #2070). */
+export interface SelfConsistencyReport {
+  readonly schemaVersion: typeof SELF_CONSISTENCY_REPORT_SCHEMA_VERSION;
+  readonly contractVersion: typeof TEST_INTELLIGENCE_CONTRACT_VERSION;
+  readonly generatedAt: string;
+  readonly jobId: string;
+  readonly sampleCount: number;
+  readonly selfConsistencyAgreement: number;
+  readonly targets: readonly SelfConsistencyTargetReportEntry[];
 }
 
 /** Canonical filename for per-run genealogy DAG artifacts. */

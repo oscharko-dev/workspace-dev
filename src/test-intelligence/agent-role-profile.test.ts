@@ -157,16 +157,28 @@ test("getAgentRoleProfile: returns the same frozen instance for every call", () 
   assert.equal(a, b);
 });
 
-test("generator diversity profiles: dual-pass mode returns two frozen, distinct pass profiles", () => {
-  const profiles = listGeneratorDiversityPassProfiles(2);
-  assert.equal(profiles.length, 2);
-  assert.equal(profiles, GENERATOR_DIVERSITY_PASS_PROFILES);
+test("generator diversity profiles: multi-pass mode returns frozen, distinct pass profiles", () => {
+  const profiles = listGeneratorDiversityPassProfiles(3);
+  const dualPassProfiles = listGeneratorDiversityPassProfiles(2);
+  assert.equal(dualPassProfiles.length, 2);
+  assert.equal(profiles.length, 3);
+  assert.deepEqual(profiles, GENERATOR_DIVERSITY_PASS_PROFILES);
   assert.equal(Object.isFrozen(profiles), true);
   assert.equal(Object.isFrozen(profiles[0]!), true);
   assert.equal(Object.isFrozen(profiles[1]!), true);
-  assert.notEqual(profiles[0]!.seed, profiles[1]!.seed);
-  assert.notEqual(profiles[0]!.bias, profiles[1]!.bias);
-  assert.notEqual(profiles[0]!.roleRunId, profiles[1]!.roleRunId);
+  assert.equal(Object.isFrozen(profiles[2]!), true);
+  assert.deepEqual(
+    new Set(profiles.map((profile) => profile.seed)).size,
+    profiles.length,
+  );
+  assert.deepEqual(
+    new Set(profiles.map((profile) => profile.bias)).size,
+    profiles.length,
+  );
+  assert.deepEqual(
+    new Set(profiles.map((profile) => profile.roleRunId)).size,
+    profiles.length,
+  );
 });
 
 test("generator diversity profiles: single-pass mode returns no diversity overrides", () => {

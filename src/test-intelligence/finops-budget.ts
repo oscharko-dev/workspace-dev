@@ -248,34 +248,29 @@ export const PRODUCTION_FINOPS_BUDGET_ENVELOPE: FinOpsBudgetEnvelope =
         // banking/insurance prompt rules fits in ~40k; 80k leaves margin
         // for very wide flows.
         maxInputTokensPerRequest: 80_000,
-        maxTotalInputTokens: 80_000,
+        // Three initial self-consistency samples (Issue #2070) plus up to
+        // two single-pass repair iterations must fit inside the role-level
+        // envelope without disabling the repair path outright.
+        maxTotalInputTokens: 400_000,
         // 8k output tokens per request — empirical: 5/5 banking-form runs
         // produced 4–10 cases, ≈ 600 tokens each; 8k caps a runaway model
         // that tries to emit 30+ cases in a single response.
         maxOutputTokensPerRequest: 8_000,
-        // 24k cumulative output tokens across the initial generator pass
-        // plus up to two repair iterations (Issue #2016). The earlier
-        // 8k cap was sized for the initial pass only and made any repair
-        // iteration impossible without a max_total_output_tokens FinOps
-        // breach; that left the repair loop in a no-win state where
-        // either (a) the loop ran and breached the budget or (b) we
-        // would have to disable the loop entirely. The new cap is
-        // `maxOutputTokensPerRequest * maxAttempts`, sized so the
-        // worst-case fully exhausted loop still fits exactly inside
-        // the envelope. The Issue #2016 mid-loop budget guard plus the
-        // sharpened convergence_stalled detector keep the *typical*
-        // run well under this ceiling — 1 generator + 0–1 repair calls.
-        maxTotalOutputTokens: 24_000,
+        // 40k cumulative output tokens across the default 3-sample
+        // self-consistency fan-out (Issue #2070) plus up to two
+        // follow-up repair iterations. The usual path remains much lower;
+        // the larger cap prevents the repair loop from being disabled
+        // merely because the initial sample set already consumed the old
+        // single-pass envelope.
+        maxTotalOutputTokens: 40_000,
         // 2 retries — one network blip + one schema-rejection retry covers
         // the failure modes seen on Azure (transient 429 / partial-batch
         // schema drift).
         maxRetriesPerRequest: 2,
-        // 3 generator attempts — initial pass plus up to 2 repair
-        // iterations. With Issue #2016 the role-level `attempts`
-        // counter excludes audit-mode (judge / planner / ranker)
-        // traffic so this number is interpreted as generator regenerations
-        // only.
-        maxAttempts: 3,
+        // 5 generator attempts — default 3 self-consistency samples plus up
+        // to 2 repair iterations. Audit-mode traffic (judge / planner /
+        // ranker) is excluded from this counter.
+        maxAttempts: 5,
         // 120 s per request — gpt-oss-120b on Azure AI Foundry returned
         // in 8–25 s for the 5/5 batch; 120 s is 5x headroom.
         maxWallClockMsPerRequest: 120_000,

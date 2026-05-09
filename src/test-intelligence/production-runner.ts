@@ -66,8 +66,10 @@ import {
   LOGIC_JUDGE_VERDICT_SCHEMA_VERSION,
   MULTI_SOURCE_TEST_INTENT_ENVELOPE_SCHEMA_VERSION,
   REDACTION_POLICY_VERSION,
+  SELF_CONSISTENCY_REPORT_ARTIFACT_FILENAME,
   type RunQualityArtifact,
   type RunQualityAttemptSummary,
+  type SelfConsistencyReport,
   TEST_INTELLIGENCE_CONTRACT_VERSION,
   TEST_INTELLIGENCE_PROMPT_TEMPLATE_VERSION,
   TEST_CASE_COVERAGE_REPORT_ARTIFACT_FILENAME,
@@ -203,6 +205,10 @@ import {
   type CompilePromptSuffixSection,
 } from "./prompt-compiler.js";
 import { mergeGeneratedTestCaseLists } from "./case-merger.js";
+import {
+  voteGeneratedTestCaseSamples,
+  writeSelfConsistencyReport,
+} from "./self-consistency-voter.js";
 import {
   canonicalizeCustomContextMarkdown,
   type CustomContextMarkdownIssue,
@@ -863,12 +869,18 @@ export interface RunFigmaToQcTestCasesInput {
     readonly enabled: boolean;
   };
   /**
-   * Optional diversity-sampling configuration (Issue #1936). Omit this
-   * block or set `diversityPasses: 1` to preserve the legacy single-pass
-   * generator path byte-for-byte. `diversityPasses: 2` enables two
-   * deterministic generator passes that run in parallel with distinct bias
-   * hints and seeds before their outputs are merged downstream.
-   * Values other than `1` or `2` are rejected at runtime.
+   * Optional generator multi-sample configuration (Issues #1936, #2070).
+   *
+   * Omit this block to use the active policy profile's default sample
+   * count (`eu-banking-default` resolves to `3`, non-banking runtime profiles
+   * resolve to `1`). When the active generator deployment does not declare
+   * seed support, the banking-profile default silently degrades to `1` unless
+   * the operator explicitly overrides `diversityPasses`, in which case the
+   * runner fails closed. Explicit values retain the legacy override surface:
+   *
+   * - `1` preserves the single-sample path.
+   * - `2` preserves the legacy diversity-merge path from Issue #1936.
+   * - `3` enables structural self-consistency voting before validation.
    */
   generation?: {
     readonly diversityPasses?: number;
@@ -986,6 +998,7 @@ export interface RunFigmaToQcTestCasesResult {
     policyReport: string;
     coverageReport: string;
     finopsReport: string;
+    selfConsistencyReport?: string;
     /** Path to the per-step harness artifact when `harness.mode !== "off"`. */
     harnessStep?: string;
     /**
@@ -1747,6 +1760,7 @@ const buildRunQualityArtifact = (input: {
   };
   judgeConsensus: JudgeConsensusVerdict;
   finopsReport: FinOpsBudgetReport;
+  selfConsistencyReport?: SelfConsistencyReport;
   visualSidecarResult?: VisualSidecarResult;
 }): RunQualityArtifact => {
   const generatorAttempts = getBySourceCallCount(
@@ -1881,6 +1895,12 @@ const buildRunQualityArtifact = (input: {
     degradedReasons: [...degradedReasons].sort((left, right) =>
       left.localeCompare(right),
     ),
+    ...(input.selfConsistencyReport !== undefined
+      ? {
+          selfConsistencyAgreement:
+            input.selfConsistencyReport.selfConsistencyAgreement,
+        }
+      : {}),
   };
 };
 
@@ -2421,6 +2441,8 @@ export const runFigmaToQcTestCases = async (
           version: "runtime",
           description: `Policy profile ${policyProfileId}`,
         };
+  const policyProfileRules =
+    "rules" in customerRubric ? customerRubric.rules : undefined;
   const policyProfileHash = createHash("sha256")
     .update(canonicalJson(customerRubric), "utf8")
     .digest("hex");
@@ -2619,15 +2641,25 @@ export const runFigmaToQcTestCases = async (
       result: riskRankingResult.gatewayResult,
     });
   }
-  const diversityPasses = resolveDiversityPassCount(input.generation);
+  const requestedDiversityPasses = resolveDiversityPassCount({
+    generation: input.generation,
+    policyRules: policyProfileRules,
+  });
+  const diversityPasses =
+    requestedDiversityPasses > 1 &&
+    input.generation?.diversityPasses === undefined &&
+    !input.llm.client.declaredCapabilities.seedSupport
+      ? 1
+      : requestedDiversityPasses;
   if (
-    diversityPasses === 2 &&
+    requestedDiversityPasses > 1 &&
+    input.generation?.diversityPasses !== undefined &&
     !input.llm.client.declaredCapabilities.seedSupport
   ) {
     throw new ProductionRunnerError({
       failureClass: "LLM_GATEWAY_FAILED",
       message:
-        "runFigmaToQcTestCases: generation.diversityPasses=2 requires a generator gateway client with seed support.",
+        `runFigmaToQcTestCases: generation.diversityPasses=${String(requestedDiversityPasses)} requires a generator gateway client with seed support.`,
       retryable: false,
     });
   }
@@ -2890,7 +2922,7 @@ export const runFigmaToQcTestCases = async (
             gatewayRelease: input.llm.client.gatewayRelease,
             finopsRecorder,
             llmDurationMs,
-            ...(diversityPasses === 2
+            ...(diversityPasses > 1
               ? { attemptId: inputPass.pass.roleRunId }
               : {}),
           });
@@ -3014,6 +3046,7 @@ export const runFigmaToQcTestCases = async (
     suffixSections: readonly CompilePromptSuffixSection[];
   }): Promise<{
     list: GeneratedTestCaseList;
+    selfConsistencyReport?: SelfConsistencyReport;
     llmResult: LlmGenerationResult;
     llmDurationMs: number;
     inputTokens: number;
@@ -3039,7 +3072,7 @@ export const runFigmaToQcTestCases = async (
         finopsRecorder.recordAttempt({
           role: "test_generation",
           source: "generator",
-          ...(diversityPasses === 2 ? { attemptId: pass.roleRunId } : {}),
+          ...(diversityPasses > 1 ? { attemptId: pass.roleRunId } : {}),
           deployment:
             llmResult.outcome === "success"
               ? llmResult.modelDeployment
@@ -3110,14 +3143,14 @@ export const runFigmaToQcTestCases = async (
         };
       }),
     );
+    const merged = mergeGenerationPassLists(
+      repairPassResults.map((pass) => pass.list),
+    );
     return {
-      list:
-        repairPassResults.length === 1
-          ? repairPassResults[0]!.list
-          : mergeGeneratedTestCaseLists([
-              repairPassResults[0]!.list,
-              repairPassResults[1]!.list,
-            ]),
+      list: merged.list,
+      ...(merged.selfConsistencyReport !== undefined
+        ? { selfConsistencyReport: merged.selfConsistencyReport }
+        : {}),
       llmResult: repairPassResults[0]!.llmResult,
       llmDurationMs: repairPassResults.reduce(
         (sum, pass) => sum + pass.llmDurationMs,
@@ -3135,6 +3168,31 @@ export const runFigmaToQcTestCases = async (
     };
   };
 
+  const mergeGenerationPassLists = (
+    lists: readonly GeneratedTestCaseList[],
+  ): {
+    list: GeneratedTestCaseList;
+    selfConsistencyReport?: SelfConsistencyReport;
+  } => {
+    if (lists.length === 1) {
+      return { list: lists[0]! };
+    }
+    if (lists.length === 2) {
+      return {
+        list: mergeGeneratedTestCaseLists([lists[0]!, lists[1]!]),
+      };
+    }
+    const voted = voteGeneratedTestCaseSamples({
+      jobId: input.jobId,
+      generatedAt: input.generatedAt,
+      lists,
+    });
+    return {
+      list: voted.merged,
+      selfConsistencyReport: voted.report,
+    };
+  };
+
   const generationExecutions = await Promise.all(
     generationPasses.map((pass, index) =>
       executeGenerationPass({
@@ -3148,13 +3206,11 @@ export const runFigmaToQcTestCases = async (
   const generationCacheHit = generationExecutions.every(
     (execution) => execution.cacheExecResult.cacheHit,
   );
-  let generatedList: GeneratedTestCaseList =
-    generationExecutions.length === 1
-      ? generationExecutions[0]!.cacheExecResult.testCases
-      : mergeGeneratedTestCaseLists([
-          generationExecutions[0]!.cacheExecResult.testCases,
-          generationExecutions[1]!.cacheExecResult.testCases,
-        ]);
+  const initialGenerationMerge = mergeGenerationPassLists(
+    generationExecutions.map((execution) => execution.cacheExecResult.testCases),
+  );
+  let selfConsistencyReport = initialGenerationMerge.selfConsistencyReport;
+  let generatedList: GeneratedTestCaseList = initialGenerationMerge.list;
   generatedList = stabilizeGeneratedListForAcceptance({
     list: generatedList,
     model: compiled.artifacts.payload.testDesignModel!,
@@ -3316,6 +3372,9 @@ export const runFigmaToQcTestCases = async (
         model: compiled.artifacts.payload.testDesignModel!,
         jobId: input.jobId,
       });
+      if (regeneration.selfConsistencyReport !== undefined) {
+        selfConsistencyReport = regeneration.selfConsistencyReport;
+      }
       generatedList = {
         ...generatedList,
         testCases: generatedList.testCases.map((testCase) =>
@@ -3359,8 +3418,7 @@ export const runFigmaToQcTestCases = async (
   // is deferred until after every artifact is sealed so a failure still
   // leaves a complete evidence bundle on disk.
   const negativeCaseLiftConfig = resolveNegativeCaseLiftConfig({
-    profileRules:
-      "rules" in customerRubric ? customerRubric.rules : undefined,
+    profileRules: policyProfileRules,
     override: input.qualityGates?.negativeCaseLift,
   });
   const negativeCaseLiftGateResult = evaluateNegativeCaseLiftGate({
@@ -3767,7 +3825,7 @@ export const runFigmaToQcTestCases = async (
             finopsRecorder.recordAttempt({
               role: "test_generation",
               source: "generator",
-              ...(diversityPasses === 2 ? { attemptId: pass.roleRunId } : {}),
+              ...(diversityPasses > 1 ? { attemptId: pass.roleRunId } : {}),
               deployment:
                 llmResult.outcome === "success"
                   ? llmResult.modelDeployment
@@ -3847,13 +3905,15 @@ export const runFigmaToQcTestCases = async (
           }),
         );
         return {
-          list:
-            repairPassResults.length === 1
-              ? repairPassResults[0]!.list
-              : mergeGeneratedTestCaseLists([
-                  repairPassResults[0]!.list,
-                  repairPassResults[1]!.list,
-                ]),
+          list: (() => {
+            const merged = mergeGenerationPassLists(
+              repairPassResults.map((pass) => pass.list),
+            );
+            if (merged.selfConsistencyReport !== undefined) {
+              selfConsistencyReport = merged.selfConsistencyReport;
+            }
+            return merged.list;
+          })(),
           llmResult: repairPassResults[0]!.llmResult,
           llmDurationMs: repairPassResults.reduce(
             (sum, pass) => sum + pass.llmDurationMs,
@@ -4309,6 +4369,10 @@ export const runFigmaToQcTestCases = async (
     JUDGE_CONSENSUS_ARTIFACT_FILENAME,
   );
   const runQualityPath = join(artifactDir, RUN_QUALITY_ARTIFACT_FILENAME);
+  const selfConsistencyReportPath =
+    selfConsistencyReport === undefined
+      ? undefined
+      : join(artifactDir, SELF_CONSISTENCY_REPORT_ARTIFACT_FILENAME);
   const faithfulnessJudgeCompiledPromptPath =
     faithfulnessJudgeResult === undefined
       ? undefined
@@ -4403,6 +4467,7 @@ export const runFigmaToQcTestCases = async (
     validation,
     judgeConsensus: judgeConsensusResult,
     finopsReport,
+    ...(selfConsistencyReport !== undefined ? { selfConsistencyReport } : {}),
     ...(visualSidecarResult !== undefined ? { visualSidecarResult } : {}),
   });
   const finopsWritten = await writeFinOpsBudgetReport({
@@ -4535,6 +4600,13 @@ export const runFigmaToQcTestCases = async (
     runDir: artifactDir,
     artifact: judgeConsensusResult,
   });
+  const selfConsistencyWritePromise =
+    selfConsistencyReport === undefined
+      ? undefined
+      : writeSelfConsistencyReport({
+          runDir: artifactDir,
+          report: selfConsistencyReport,
+        });
   try {
     const coveragePlanWritePromise = writeCoveragePlanArtifact({
       plan: coveragePlanResult.plan,
@@ -4561,6 +4633,10 @@ export const runFigmaToQcTestCases = async (
       ),
       writeAtomicBytes(logicJudgeVerdictPath, logicJudgeVerdictBytes),
       judgeConsensusWritePromise,
+      ...(selfConsistencyReportPath === undefined ||
+      selfConsistencyWritePromise === undefined
+        ? []
+        : [selfConsistencyWritePromise]),
       writeAtomicBytes(runQualityPath, runQualityBytes),
       agentParticipationWritePromise,
       agentRoleRunPromise,
@@ -4638,6 +4714,10 @@ export const runFigmaToQcTestCases = async (
   const agentParticipationWritten = await agentParticipationWritePromise;
   const agentRoleRunArtifact = await agentRoleRunPromise;
   const judgeConsensusArtifact = await judgeConsensusWritePromise;
+  const selfConsistencyWritten =
+    selfConsistencyWritePromise === undefined
+      ? undefined
+      : await selfConsistencyWritePromise;
   const generatorPassRunArtifacts = await Promise.all(generatorPassRunPromises);
   const genealogyArtifact = await writeGenealogyArtifact({
     runDir: artifactDir,
@@ -5025,6 +5105,15 @@ export const runFigmaToQcTestCases = async (
         bytes: runQualityBytes,
         category: "manifest",
       },
+      ...(selfConsistencyWritten === undefined
+        ? []
+        : [
+            {
+              filename: SELF_CONSISTENCY_REPORT_ARTIFACT_FILENAME,
+              bytes: selfConsistencyWritten.bytes,
+              category: "manifest" as const,
+            },
+          ]),
       {
         filename: AGENT_PARTICIPATION_ARTIFACT_FILENAME,
         bytes: agentParticipationWritten.bytes,
@@ -5422,6 +5511,9 @@ export const runFigmaToQcTestCases = async (
       agentRoleRun: agentRoleRunArtifact.artifactPath,
       judgeConsensus: judgeConsensusArtifact.path,
       runQuality: runQualityPath,
+      ...(selfConsistencyReportPath !== undefined
+        ? { selfConsistencyReport: selfConsistencyReportPath }
+        : {}),
       logicJudgeVerdict: logicJudgeVerdictPath,
       ...(faithfulnessJudgeVerdictPath !== undefined
         ? { faithfulnessJudgeVerdict: faithfulnessJudgeVerdictPath }
@@ -7143,10 +7235,10 @@ const buildPromptSuffixSections = (
   return sections;
 };
 
-type ProductionRunnerDiversityPassCount = 1 | 2;
+type ProductionRunnerDiversityPassCount = 1 | 2 | 3;
 
 interface GenerationPassConfig {
-  readonly passId?: "a" | "b";
+  readonly passId?: "a" | "b" | "c";
   readonly roleRunId: string;
   readonly seed?: number;
   readonly diversityBias?: string;
@@ -7154,12 +7246,16 @@ interface GenerationPassConfig {
 }
 
 const resolveDiversityPassCount = (
-  generation: RunFigmaToQcTestCasesInput["generation"],
+  input: {
+    readonly generation: RunFigmaToQcTestCasesInput["generation"];
+    readonly policyRules: TestCasePolicyProfileRules | undefined;
+  },
 ): ProductionRunnerDiversityPassCount => {
-  const value = generation?.diversityPasses ?? 1;
-  if (value !== 1 && value !== 2) {
+  const fromPolicy = input.policyRules?.selfConsistency?.sampleCount ?? 1;
+  const value = input.generation?.diversityPasses ?? fromPolicy;
+  if (value !== 1 && value !== 2 && value !== 3) {
     throw new RangeError(
-      `runFigmaToQcTestCases: generation.diversityPasses must be 1 or 2, got ${String(
+      `runFigmaToQcTestCases: generation.diversityPasses must be 1, 2, or 3, got ${String(
         value,
       )}`,
     );
@@ -7173,7 +7269,7 @@ const resolveGenerationPasses = (
   if (diversityPasses === 1) {
     return [{ roleRunId: "test_generation" }];
   }
-  return listGeneratorDiversityPassProfiles(2).map((profile) => ({
+  return listGeneratorDiversityPassProfiles(diversityPasses).map((profile) => ({
     passId: profile.passId,
     roleRunId: profile.roleRunId,
     seed: profile.seed,

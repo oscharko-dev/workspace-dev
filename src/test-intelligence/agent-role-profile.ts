@@ -297,8 +297,11 @@ const GENERATOR_PROFILE: AgentRoleProfile = freezeProfile({
 });
 
 export interface GeneratorDiversityPassProfile {
-  readonly passId: "a" | "b";
-  readonly roleRunId: "generator-run-a" | "generator-run-b";
+  readonly passId: "a" | "b" | "c";
+  readonly roleRunId:
+    | "generator-run-a"
+    | "generator-run-b"
+    | "generator-run-c";
   readonly seed: number;
   readonly bias: string;
 }
@@ -321,16 +324,30 @@ const GENERATOR_DIVERSITY_PASS_B_PROFILE: GeneratorDiversityPassProfile =
       "Bias this pass toward negative flows, state transitions, invalid actions, and recovery/error-handling coverage that challenges the workflow.",
   });
 
+const GENERATOR_DIVERSITY_PASS_C_PROFILE: GeneratorDiversityPassProfile =
+  Object.freeze({
+    passId: "c",
+    roleRunId: "generator-run-c",
+    seed: 47,
+    bias:
+      "Bias this pass toward reviewer-sensitive ambiguity: unresolved rules, evidence gaps, accessibility edge cases, and cases that must stay generic until the source evidence becomes explicit.",
+  });
+
 export const GENERATOR_DIVERSITY_PASS_PROFILES: readonly GeneratorDiversityPassProfile[] =
   Object.freeze([
     GENERATOR_DIVERSITY_PASS_A_PROFILE,
     GENERATOR_DIVERSITY_PASS_B_PROFILE,
+    GENERATOR_DIVERSITY_PASS_C_PROFILE,
   ]);
 
 export const listGeneratorDiversityPassProfiles = (
-  diversityPasses: 1 | 2,
+  diversityPasses: 1 | 2 | 3,
 ): readonly GeneratorDiversityPassProfile[] =>
-  diversityPasses === 2 ? GENERATOR_DIVERSITY_PASS_PROFILES : [];
+  diversityPasses === 1
+    ? []
+    : Object.freeze(
+        GENERATOR_DIVERSITY_PASS_PROFILES.slice(0, diversityPasses),
+      );
 
 /**
  * Issue #1942 — explicit hard requirement that the generator must satisfy the
