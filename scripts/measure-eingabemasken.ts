@@ -114,6 +114,16 @@ interface FixtureMeasurement {
   pipeline: {
     blocked: boolean;
   };
+  /**
+   * Issue #2071 deterministic test-data oracle metrics. Tracks how many
+   * generated cases ship with concrete boundary values vs. label-only
+   * cases that surfaced an oracle openQuestion.
+   */
+  oracle: {
+    casesWithTestData: number;
+    totalTestDataEntries: number;
+    casesWithOracleOpenQuestion: number;
+  };
 }
 
 const buildAudit = (jobId: string): GeneratedTestCaseAuditMetadata => ({
@@ -163,6 +173,13 @@ const measureFixture = async (
     intent,
     audit,
     ...(complianceOverrides !== undefined ? { complianceOverrides } : {}),
+    // #2071 deterministic test-data oracle: enable always for the
+    // Eingabemasken benchmark so K0 / K1 metrics include the oracle
+    // resolution path. The oracle is opt-in for backwards compat;
+    // baseline-eval and other callers that omit the flag stay on
+    // pre-#2071 empty-testData semantics.
+    useTestDataOracle: true,
+    oracleNow: new Date(GENERATED_AT),
   });
 
   const pipeline = runValidationPipeline({
@@ -221,6 +238,23 @@ const measureFixture = async (
   const presenceRate = (n: number): number =>
     totalCases === 0 ? 0 : Math.round((n / totalCases) * 1_000_000) / 1_000_000;
 
+  let casesWithTestData = 0;
+  let totalTestDataEntries = 0;
+  let casesWithOracleOpenQuestion = 0;
+  const ORACLE_PROVENANCE_RE = /\(.*from rule "/u;
+  for (const tc of pipeline.generatedTestCases.testCases) {
+    if (tc.testData.length > 0) {
+      casesWithTestData += 1;
+      totalTestDataEntries += tc.testData.length;
+    }
+    if (
+      tc.openQuestions.some((q) => q.includes("test-data oracle"))
+    ) {
+      casesWithOracleOpenQuestion += 1;
+    }
+  }
+  void ORACLE_PROVENANCE_RE;
+
   const measurement: FixtureMeasurement = {
     archetypeId,
     tier: EINGABEMASKEN_FIXTURE_TIERS[archetypeId],
@@ -268,6 +302,11 @@ const measureFixture = async (
     },
     pipeline: {
       blocked: pipeline.blocked,
+    },
+    oracle: {
+      casesWithTestData,
+      totalTestDataEntries,
+      casesWithOracleOpenQuestion,
     },
   };
 
@@ -414,6 +453,19 @@ const renderMarkdown = (
         `| ${r.tier} | \`${r.archetypeId.replace("eingabemaske-", "")}\` | \`${r.screenId}\` | ${r.technique} | ${r.minCount} | ${r.actual} | ${r.missing} |`,
       );
     }
+  }
+
+  lines.push("");
+  lines.push("## Oracle resolution per fixture (#2071)");
+  lines.push("");
+  lines.push(
+    "| Tier | Fixture | Cases | Cases with testData | Total testData entries | Cases with oracle openQuestion |",
+  );
+  lines.push("|---:|---|---:|---:|---:|---:|");
+  for (const m of measurements) {
+    lines.push(
+      `| ${m.tier} | \`${m.archetypeId.replace("eingabemaske-", "")}\` | ${m.testCases.generated} | ${m.oracle.casesWithTestData} | ${m.oracle.totalTestDataEntries} | ${m.oracle.casesWithOracleOpenQuestion} |`,
+    );
   }
 
   lines.push("");
