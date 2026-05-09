@@ -92,11 +92,11 @@ test("renderCustomerMarkdown emits a German-format combined document with one he
   });
   assert.match(result.combinedMarkdown, /^# Testfälle/u);
   assert.match(result.combinedMarkdown, /## Überblick/u);
-  assert.match(result.combinedMarkdown, /## TC01 — Login mit leerem Passwort/u);
-  assert.match(result.combinedMarkdown, /## TC02 — Login mit gültigen Daten/u);
+  assert.match(result.combinedMarkdown, /## TC01 - Login mit leerem Passwort/u);
+  assert.match(result.combinedMarkdown, /## TC02 - Login mit gültigen Daten/u);
   assert.ok(
-    result.combinedMarkdown.indexOf("## TC01 — Login mit leerem Passwort") <
-      result.combinedMarkdown.indexOf("## TC02 — Login mit gültigen Daten"),
+    result.combinedMarkdown.indexOf("## TC01 - Login mit leerem Passwort") <
+      result.combinedMarkdown.indexOf("## TC02 - Login mit gültigen Daten"),
   );
   // Each case has its own per-case file.
   assert.equal(result.perCaseFiles.length, 2);
@@ -142,12 +142,14 @@ test("renderCustomerMarkdown renders steps with Beschreibung + Erwartetes Ergebn
   assert.match(body, /Abgedeckte Semantik/u);
 });
 
-test("renderCustomerMarkdown customer mode hides internal ids and surfaces caveats prominently", () => {
+test("renderCustomerMarkdown customer mode consolidates shared clarification questions and strips provenance prefixes", () => {
   const list: GeneratedTestCaseList = {
     schemaVersion: GENERATED_TEST_CASE_SCHEMA_VERSION,
     jobId: "job-1",
     testCases: [
       buildCase({
+        id: "tc-1",
+        title: "TC01 Kaufpreis mit Netto-Auswahl prüfen",
         figmaTraceRefs: [
           {
             screenId: "1:11309",
@@ -161,7 +163,68 @@ test("renderCustomerMarkdown customer mode hides internal ids and surfaces cavea
           },
         ],
         assumptions: ["Die Validierungsregel für den Kaufpreis stammt aus dem Fachkonzept."],
-        openQuestions: ["Muss der Kaufpreis brutto oder netto eingegeben werden?"],
+        openQuestions: [
+          "custom_context_markdown: Es ist fachlich zu klären, wie sich die Auswahl Netto ‑ Brutto konkret auf Feldbezeichnungen, Berechnung und Vorbelegung auswirkt.",
+        ],
+      }),
+      buildCase({
+        id: "tc-2",
+        title: "TC02 Finanzierungsbedarf mit Brutto-Auswahl prüfen",
+        openQuestions: [
+          "custom_context_markdown: Es ist fachlich zu klären, wie sich die Auswahl Netto - Brutto konkret auf Feldbezeichnungen, Berechnung und Vorbelegung auswirkt.",
+          "custom_context_markdown: Validierungsregeln für Betragsfelder und MwSt.-Auswahl sind noch zu spezifizieren.",
+        ],
+      }),
+    ],
+  };
+  const result = renderCustomerMarkdown({
+    list,
+    fileName: "x",
+    sourceLabel: "x",
+    generatedAt: "2026-05-02T10:00:00Z",
+  });
+  const body = result.combinedMarkdown;
+  const firstCaseBody = result.perCaseFiles[0]?.body ?? "";
+  const secondCaseBody = result.perCaseFiles[1]?.body ?? "";
+  assert.match(body, /## Überblick/u);
+  assert.match(body, /## Übergreifender Klärbedarf vor Freigabe/u);
+  assert.match(
+    body,
+    /FQ-001: Es ist fachlich zu klären, wie sich die Auswahl Netto - Brutto konkret auf Feldbezeichnungen, Berechnung und Vorbelegung auswirkt\./u,
+  );
+  assert.match(
+    body,
+    /FQ-002: Validierungsregeln für Betragsfelder und MwSt\.-Auswahl sind noch zu spezifizieren\./u,
+  );
+  assert.match(firstCaseBody, /\*\*Klärbedarf:\*\* FQ-001/u);
+  assert.match(secondCaseBody, /\*\*Klärbedarf:\*\* FQ-001, FQ-002/u);
+  assert.match(firstCaseBody, /\*\*Annahmen:\*\*/u);
+  assert.doesNotMatch(body, /custom_context_markdown:/u);
+  assert.doesNotMatch(firstCaseBody, /custom_context_markdown:/u);
+  assert.doesNotMatch(firstCaseBody, /\[!IMPORTANT\]/u);
+  assert.doesNotMatch(secondCaseBody, /\[!IMPORTANT\]/u);
+  assert.doesNotMatch(body, /Netto ‑ Brutto/u);
+  assert.match(body, /Höhe des Kaufpreises/u);
+  assert.doesNotMatch(body, /Test-ID/u);
+  assert.doesNotMatch(body, /job-1/u);
+  assert.doesNotMatch(body, /tc-1/u);
+  assert.doesNotMatch(body, /1:11309/u);
+  assert.doesNotMatch(body, /4:22888/u);
+  assert.doesNotMatch(body, /Typography/u);
+});
+
+test("renderCustomerMarkdown emits one clarification reference when a case repeats the same question", () => {
+  const list: GeneratedTestCaseList = {
+    schemaVersion: GENERATED_TEST_CASE_SCHEMA_VERSION,
+    jobId: "job-1",
+    testCases: [
+      buildCase({
+        id: "tc-1",
+        title: "TC01 Klärbedarf deduplizieren",
+        openQuestions: [
+          "custom_context_markdown: Validierungsregeln für Betragsfelder sind noch zu spezifizieren.",
+          "custom_context_markdown: Validierungsregeln für Betragsfelder sind noch zu spezifizieren.",
+        ],
       }),
     ],
   };
@@ -173,16 +236,13 @@ test("renderCustomerMarkdown customer mode hides internal ids and surfaces cavea
   });
   const body = result.combinedMarkdown;
   const perCaseBody = result.perCaseFiles[0]?.body ?? "";
-  assert.match(body, /## Überblick/u);
-  assert.match(perCaseBody, /Klärbedarf vor Freigabe/u);
-  assert.match(perCaseBody, /Offene Frage: Muss der Kaufpreis brutto oder netto eingegeben werden\?/u);
-  assert.match(body, /Höhe des Kaufpreises/u);
-  assert.doesNotMatch(body, /Test-ID/u);
-  assert.doesNotMatch(body, /job-1/u);
-  assert.doesNotMatch(body, /tc-default/u);
-  assert.doesNotMatch(body, /1:11309/u);
-  assert.doesNotMatch(body, /4:22888/u);
-  assert.doesNotMatch(body, /Typography/u);
+  assert.match(
+    body,
+    /FQ-001: Validierungsregeln für Betragsfelder sind noch zu spezifizieren\./u,
+  );
+  assert.equal(body.match(/FQ-001:/gu)?.length ?? 0, 1);
+  assert.match(perCaseBody, /\*\*Klärbedarf:\*\* FQ-001/u);
+  assert.doesNotMatch(perCaseBody, /FQ-001, FQ-001/u);
 });
 
 test("renderCustomerMarkdown produces filename-safe slugs", () => {
@@ -366,6 +426,9 @@ test("renderCustomerMarkdown technical mode preserves internal traceability on r
       buildCase({
         id: "tc-4711",
         title: "TC01 Kaufpreis prüfen",
+        openQuestions: [
+          "custom_context_markdown: Es ist fachlich zu klären, wie sich die Auswahl Netto ‑ Brutto konkret auf Feldbezeichnungen, Berechnung und Vorbelegung auswirkt.",
+        ],
         figmaTraceRefs: [
           {
             screenId: "1:11309",
@@ -389,6 +452,9 @@ test("renderCustomerMarkdown technical mode preserves internal traceability on r
   assert.match(body, /tc-4711/u);
   assert.match(body, /1:11309/u);
   assert.match(body, /4:22888/u);
+  assert.match(body, /custom_context_markdown:/u);
+  assert.match(body, /Netto ‑ Brutto/u);
+  assert.match(body, /\[!IMPORTANT\]/u);
   assert.equal(
     result.perCaseFiles[0]?.filename,
     "tc01-tc-4711-kaufpreis-pruefen.md",
