@@ -6,6 +6,7 @@ import {
 } from "../contracts/index.js";
 import { ADVERSARIAL_NEGATIVE_RATIO_IMPROVEMENT_THRESHOLD } from "./adversarial-critic-agent.js";
 import {
+  EU_BANKING_DEFAULT_JUDGE_REFUSAL_POLICY,
   cloneEuBankingDefaultProfile,
   EU_BANKING_DEFAULT_NEGATIVE_CASE_LIFT_GATE_MODE,
   EU_BANKING_DEFAULT_NEGATIVE_CASE_LIFT_THRESHOLD_RATIO,
@@ -130,6 +131,34 @@ test("Issue #2070: default profile enables 3-sample self-consistency voting", ()
     sampleCount: 3,
   });
   assert.equal(EU_BANKING_DEFAULT_SELF_CONSISTENCY_SAMPLE_COUNT, 3);
+});
+
+test("Issue #2101: default profile routes faithfulness and a11y judge refusals to needs_review", () => {
+  assert.deepEqual(
+    EU_BANKING_DEFAULT_POLICY_PROFILE.rules.judgeRefusalPolicy,
+    EU_BANKING_DEFAULT_JUDGE_REFUSAL_POLICY,
+  );
+});
+
+test("Issue #2101: clone round-trips judgeRefusalPolicy and isolates overrides", () => {
+  const a = cloneEuBankingDefaultProfile();
+  const b = cloneEuBankingDefaultProfile();
+  assert.deepEqual(a.rules.judgeRefusalPolicy, {
+    faithfulness: "needs_review",
+    a11y: "needs_review",
+  });
+  a.rules.judgeRefusalPolicy = {
+    faithfulness: "fail_closed",
+    a11y: "fail_open",
+  };
+  assert.deepEqual(b.rules.judgeRefusalPolicy, {
+    faithfulness: "needs_review",
+    a11y: "needs_review",
+  });
+  assert.deepEqual(EU_BANKING_DEFAULT_POLICY_PROFILE.rules.judgeRefusalPolicy, {
+    faithfulness: "needs_review",
+    a11y: "needs_review",
+  });
 });
 
 test("Issue #2070: clone round-trips selfConsistency and isolates overrides", () => {

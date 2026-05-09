@@ -35,6 +35,7 @@ import {
   type FaithfulnessVerdict,
   type GeneratedTestCase,
   type GeneratedTestCaseList,
+  type JudgeRefusalPolicy,
   type TestCaseCoverageReport,
   type TestCasePolicyDecision,
   type TestCasePolicyDecisionRecord,
@@ -278,6 +279,60 @@ const resolveVisualSidecarRefusalViolation = (
   };
 };
 
+const resolveJudgeRefusalPolicy = (
+  profile: TestCasePolicyProfile,
+  judge: "faithfulness" | "a11y",
+): JudgeRefusalPolicy =>
+  profile.rules.judgeRefusalPolicy?.[judge] ?? "fail_open";
+
+const judgeRefusalPolicyToSeverity = (
+  policy: JudgeRefusalPolicy,
+): "error" | "warning" | "info" => {
+  switch (policy) {
+    case "fail_closed":
+      return "error";
+    case "needs_review":
+      return "warning";
+    case "fail_open":
+      return "info";
+  }
+};
+
+const buildJudgeRefusalViolations = (
+  profile: TestCasePolicyProfile,
+  faithfulnessVerdict: FaithfulnessVerdict | undefined,
+  a11yVerdict: A11yVerdict | undefined,
+): {
+  jobLevel: TestCasePolicyViolation[];
+  caseLevel: TestCasePolicyViolation[];
+} => {
+  const jobLevel: TestCasePolicyViolation[] = [];
+  const caseLevel: TestCasePolicyViolation[] = [];
+  const judges = [
+    ["faithfulness", faithfulnessVerdict],
+    ["a11y", a11yVerdict],
+  ] as const;
+  for (const [judge, verdict] of judges) {
+    const refusal = verdict?.refusal;
+    if (refusal === undefined) continue;
+    const policy = resolveJudgeRefusalPolicy(profile, judge);
+    const violation: TestCasePolicyViolation = {
+      rule: "policy:judge_refused",
+      outcome: "judge_refused",
+      severity: judgeRefusalPolicyToSeverity(policy),
+      reason:
+        `${judge} judge refused under ${policy}: ` +
+        `${refusal.code}: ${refusal.message}`,
+      path: `$.${judge}Verdict.refusal`,
+    };
+    jobLevel.push(violation);
+    if (policy === "needs_review") {
+      caseLevel.push(violation);
+    }
+  }
+  return { jobLevel, caseLevel };
+};
+
 const parseMultiSourceConflictIds = (
   reason: string,
 ): string[] | undefined => {
@@ -426,6 +481,7 @@ const evaluateCase = (
   visualSidecarRefusal: EvaluatePolicyGateInput["visualSidecarRefusal"],
   visualVerificationRequired: boolean,
   untrustedContentReport: UntrustedContentNormalizationReport | undefined,
+  judgeRefusalViolations: readonly TestCasePolicyViolation[],
   faithfulnessViolation: TestCasePolicyViolation | undefined,
   complianceOverrides: ReadonlyArray<ComplianceRiskOverride> | undefined,
 ): TestCasePolicyDecisionRecord => {
@@ -447,6 +503,11 @@ const evaluateCase = (
       reason: summarizeUntrustedContentNeedsReview(untrustedContentReport),
     });
     decision = escalate(decision, "needs_review");
+  }
+
+  for (const violation of judgeRefusalViolations) {
+    violations.push(violation);
+    decision = escalate(decision, severityToDecision(violation.severity));
   }
 
   for (const issue of caseIssues) {
@@ -1093,6 +1154,9 @@ const applyPolicyOverrideViolations = (
   overrideMap: ReadonlyMap<string, "error" | "warning">,
 ): TestCasePolicyViolation[] =>
   violations.map((violation) => {
+    if (violation.rule === "policy:judge_refused") {
+      return violation;
+    }
     const severity = overrideMap.get(violation.rule);
     if (severity === undefined || severity === violation.severity) {
       return violation;
@@ -1304,6 +1368,11 @@ export const evaluatePolicyGate = (
     faithfulnessThreshold,
   );
   const faithfulnessViolation = faithfulness.violation;
+  const judgeRefusalViolations = buildJudgeRefusalViolations(
+    input.profile,
+    input.faithfulnessVerdict,
+    input.a11yVerdict,
+  );
 
   for (const tc of input.list.testCases) {
     const issues = validationByCase.get(tc.id) ?? [];
@@ -1319,6 +1388,7 @@ export const evaluatePolicyGate = (
         input.visualSidecarRefusal,
         input.visualVerificationRequired ?? false,
         input.untrustedContentReport,
+        judgeRefusalViolations.caseLevel,
         faithfulnessViolation,
         input.complianceOverrides,
       ),
@@ -1343,6 +1413,7 @@ export const evaluatePolicyGate = (
         input.a11yVerdict,
         input.complianceOverrides,
       ),
+      ...judgeRefusalViolations.jobLevel,
       ...(faithfulnessViolation !== undefined ? [faithfulnessViolation] : []),
     ],
     overrideMap,

@@ -15,6 +15,7 @@
 import {
   EU_BANKING_DEFAULT_POLICY_PROFILE_ID,
   EU_BANKING_DEFAULT_POLICY_PROFILE_VERSION,
+  type JudgeRefusalPolicyConfig,
   type TechniqueCoverageMinimumPolicy,
   type TestCasePolicyProfile,
   type TestCasePolicyProfileRules,
@@ -78,6 +79,12 @@ export const EU_BANKING_DEFAULT_TECHNIQUE_COVERAGE_MINIMUM:
  */
 export const EU_BANKING_DEFAULT_SELF_CONSISTENCY_SAMPLE_COUNT = 3 as const;
 
+export const EU_BANKING_DEFAULT_JUDGE_REFUSAL_POLICY:
+  Readonly<JudgeRefusalPolicyConfig> = Object.freeze({
+    faithfulness: "needs_review",
+    a11y: "needs_review",
+  });
+
 const EU_BANKING_DEFAULT_RULES: TestCasePolicyProfileRules = {
   reviewOnlyRiskCategories: ["regulated_data", "financial_transaction"],
   strictRiskCategories: ["regulated_data", "financial_transaction", "high"],
@@ -88,6 +95,7 @@ const EU_BANKING_DEFAULT_RULES: TestCasePolicyProfileRules = {
   duplicateSimilarityThreshold: 0.92,
   maxOpenQuestionsPerCase: 5,
   maxAssumptionsPerCase: 8,
+  judgeRefusalPolicy: EU_BANKING_DEFAULT_JUDGE_REFUSAL_POLICY,
   enforceRiskTagDowngradeDetection: true,
   fieldCoverageRatioMin: EU_BANKING_DEFAULT_FIELD_COVERAGE_RATIO_MIN,
   actionCoverageRatioMin: EU_BANKING_DEFAULT_ACTION_COVERAGE_RATIO_MIN,
@@ -121,6 +129,7 @@ export const EU_BANKING_DEFAULT_POLICY_PROFILE: Readonly<TestCasePolicyProfile> 
         thresholdRatio: EU_BANKING_DEFAULT_NEGATIVE_CASE_LIFT_THRESHOLD_RATIO,
       }),
       techniqueCoverageMinimum: EU_BANKING_DEFAULT_TECHNIQUE_COVERAGE_MINIMUM,
+      judgeRefusalPolicy: EU_BANKING_DEFAULT_JUDGE_REFUSAL_POLICY,
       selfConsistency: Object.freeze({
         sampleCount: EU_BANKING_DEFAULT_SELF_CONSISTENCY_SAMPLE_COUNT,
       }),
@@ -157,6 +166,14 @@ export const cloneEuBankingDefaultProfile = (): TestCasePolicyProfile => {
     maxAssumptionsPerCase:
       EU_BANKING_DEFAULT_POLICY_PROFILE.rules.maxAssumptionsPerCase,
   };
+  const judgeRefusalPolicy =
+    EU_BANKING_DEFAULT_POLICY_PROFILE.rules.judgeRefusalPolicy;
+  if (judgeRefusalPolicy !== undefined) {
+    rules.judgeRefusalPolicy = {
+      faithfulness: judgeRefusalPolicy.faithfulness,
+      a11y: judgeRefusalPolicy.a11y,
+    };
+  }
   // Preserve the optional flag only when the source has it set, so callers
   // that explicitly set `false` round-trip cleanly under
   // `exactOptionalPropertyTypes`.

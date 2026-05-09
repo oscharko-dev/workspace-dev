@@ -568,6 +568,67 @@ test("Issue #2071: pipeline reconciles oracle-governed testData and persists the
   }
 });
 
+test("Issue #2101: validation report records judgeAvailability and persists it canonically", async () => {
+  const tmp = await mkdtemp(join(tmpdir(), "issue2101-"));
+  try {
+    const result = runValidationPipeline({
+      jobId: "job-1",
+      generatedAt: GENERATED_AT,
+      list: richList(),
+      intent: buildIntent(),
+      faithfulnessVerdict: {
+        schemaVersion: FAITHFULNESS_VERDICT_SCHEMA_VERSION,
+        contractVersion: TEST_INTELLIGENCE_CONTRACT_VERSION,
+        promptTemplateVersion: FAITHFULNESS_JUDGE_PROMPT_TEMPLATE_VERSION,
+        generatedAt: GENERATED_AT,
+        jobId: "job-1",
+        cacheHit: false,
+        cacheKeyDigest: ZERO,
+        modelDeployment: "llama-4-maverick-vision",
+        modelRevision: "llama-4-maverick-vision@test",
+        gatewayRelease: "mock",
+        fallbackReason: "none",
+        score: 1,
+        verdict: "accept",
+        hallucinations: [],
+        mismatches: [],
+        refusal: {
+          code: "gateway_error",
+          message: "mock refusal",
+        },
+      },
+      a11yVerdict: {
+        schemaVersion: A11Y_VERDICT_SCHEMA_VERSION,
+        contractVersion: TEST_INTELLIGENCE_CONTRACT_VERSION,
+        promptTemplateVersion: A11Y_JUDGE_PROMPT_TEMPLATE_VERSION,
+        generatedAt: GENERATED_AT,
+        jobId: "job-1",
+        cacheHit: false,
+        cacheKeyDigest: ZERO,
+        modelDeployment: "phi-4-multimodal-instruct",
+        modelRevision: "phi-4-multimodal-instruct@test",
+        gatewayRelease: "mock",
+        verdict: "accept",
+        criteria: [],
+        findings: [],
+        repairInstructions: [],
+      },
+    });
+    assert.deepEqual(result.validation.judgeAvailability, {
+      faithfulness: "refused",
+      a11y: "available",
+    });
+    const paths = await writeValidationPipelineArtifacts({
+      artifacts: result,
+      destinationDir: tmp,
+    });
+    const validationBytes = await readFile(paths.validationReportPath, "utf8");
+    assert.equal(validationBytes, canonicalJson(result.validation));
+  } finally {
+    await rm(tmp, { recursive: true, force: true });
+  }
+});
+
 test("Issue #2071: oracle reconciliation preserves unrelated testData entries on multi-field cases", () => {
   const list: GeneratedTestCaseList = {
     schemaVersion: GENERATED_TEST_CASE_SCHEMA_VERSION,

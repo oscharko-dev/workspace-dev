@@ -39,6 +39,7 @@ import {
   type CoveragePlan,
   type FaithfulnessVerdict,
   type GeneratedTestCaseList,
+  type JudgeAvailabilityReport,
   type SelfVerifyRubricReport,
   type TechniqueQuotaReport,
   type TestCaseCoverageReport,
@@ -261,7 +262,11 @@ export const runValidationPipeline = (
       : {}),
     ...(invariantRegistry !== undefined ? { invariantRegistry } : {}),
   });
-  const validation = validationOutcome.report;
+  const validation = attachJudgeAvailability(
+    validationOutcome.report,
+    input.faithfulnessVerdict,
+    input.a11yVerdict,
+  );
 
   if (hasStructuralErrors(validation)) {
     const emptyList: GeneratedTestCaseList = {
@@ -438,6 +443,26 @@ const resolveInvariantRegistry = (
   if (override !== undefined) return override;
   return buildActiveDatasetInvariantRegistry();
 };
+
+const resolveJudgeAvailability = (
+  verdict: FaithfulnessVerdict | A11yVerdict | undefined,
+): JudgeAvailabilityReport["faithfulness"] => {
+  if (verdict === undefined) return "skipped";
+  if (verdict.refusal !== undefined) return "refused";
+  return "available";
+};
+
+const attachJudgeAvailability = (
+  report: TestCaseValidationReport,
+  faithfulnessVerdict: FaithfulnessVerdict | undefined,
+  a11yVerdict: A11yVerdict | undefined,
+): TestCaseValidationReport => ({
+  ...report,
+  judgeAvailability: {
+    faithfulness: resolveJudgeAvailability(faithfulnessVerdict),
+    a11y: resolveJudgeAvailability(a11yVerdict),
+  },
+});
 
 const buildSchemaInvalidPolicyReport = (input: {
   jobId: string;
@@ -672,7 +697,11 @@ export const runValidationPipelineWithSelfVerify = async (
     intent: input.intent,
     ...(invariantRegistry !== undefined ? { invariantRegistry } : {}),
   });
-  const validation = validationOutcome.report;
+  const validation = attachJudgeAvailability(
+    validationOutcome.report,
+    input.faithfulnessVerdict,
+    input.a11yVerdict,
+  );
 
   if (hasStructuralErrors(validation)) {
     return runValidationPipeline({ ...input, profile });
