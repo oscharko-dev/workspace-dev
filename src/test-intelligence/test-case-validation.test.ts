@@ -189,8 +189,58 @@ const buildWorkflowTopology = (): WorkflowTopology => ({
       actions: ["ACT-001"],
     },
   ],
+  fieldLifecycles: [],
   entryStates: ["STATE-001"],
   exitStates: ["STATE-002"],
+});
+
+const buildFieldLifecycleWorkflowTopology = (): WorkflowTopology => ({
+  ...buildWorkflowTopology(),
+  fieldLifecycles: [
+    {
+      fieldId: "s-payment::field::n-iban",
+      states: [
+        "initial",
+        "focused",
+        "in_progress",
+        "validated",
+        "error",
+        "terminal",
+      ],
+      transitions: [
+        {
+          transitionId: "FLT-iban0001",
+          from: "initial",
+          to: "focused",
+          trigger: "user_focus",
+        },
+        {
+          transitionId: "FLT-iban0002",
+          from: "focused",
+          to: "in_progress",
+          trigger: "user_input",
+        },
+        {
+          transitionId: "FLT-iban0003",
+          from: "in_progress",
+          to: "validated",
+          trigger: "validation_pass",
+        },
+        {
+          transitionId: "FLT-iban0004",
+          from: "in_progress",
+          to: "error",
+          trigger: "validation_fail",
+        },
+        {
+          transitionId: "FLT-iban0005",
+          from: "validated",
+          to: "terminal",
+          trigger: "form_commit",
+        },
+      ],
+    },
+  ],
 });
 
 test("Issue #2071: validator rejects oracle-governed testData that lacks deterministic provenance", () => {
@@ -261,6 +311,97 @@ test("workflow topology ACT ids are accepted as coveredActionIds", () => {
         ),
     ),
   );
+});
+
+test("field lifecycle transitions require step anchors and full transition coverage", () => {
+  const report = validateGeneratedTestCases({
+    jobId: "job-1",
+    generatedAt: GENERATED_AT,
+    list: buildList(),
+    intent: buildIntent(),
+    workflowTopology: buildFieldLifecycleWorkflowTopology(),
+  });
+  assert.equal(report.blocked, true);
+  assert.ok(
+    report.issues.some(
+      (issue) => issue.code === "missing_field_lifecycle_transition",
+    ),
+  );
+  assert.ok(
+    report.issues.some(
+      (issue) => issue.code === "uncovered_field_lifecycle_transition",
+    ),
+  );
+});
+
+test("field lifecycle transitions pass when every transition is covered by generated steps", () => {
+  const report = validateGeneratedTestCases({
+    jobId: "job-1",
+    generatedAt: GENERATED_AT,
+    list: buildList([
+      buildCase({
+        id: "tc-pos",
+        type: "functional",
+        steps: [
+          {
+            index: 1,
+            action: "Focus IBAN field",
+            fieldLifecycleTransitionId: "FLT-iban0001",
+          },
+          {
+            index: 2,
+            action: "Enter IBAN",
+            fieldLifecycleTransitionId: "FLT-iban0002",
+          },
+          {
+            index: 3,
+            action: "Validate IBAN",
+            expected: "Confirmation displayed",
+            fieldLifecycleTransitionId: "FLT-iban0003",
+          },
+          {
+            index: 4,
+            action: "Submit form",
+            expected: "Confirmation displayed",
+            fieldLifecycleTransitionId: "FLT-iban0005",
+          },
+        ],
+      }),
+      buildCase({
+        id: "tc-neg",
+        type: "negative",
+        qualitySignals: {
+          coveredFieldIds: ["s-payment::field::n-iban"],
+          coveredActionIds: [],
+          coveredValidationIds: ["s-payment::validation::n-iban::Required"],
+          coveredNavigationIds: [],
+          confidence: 0.85,
+        },
+        steps: [
+          {
+            index: 1,
+            action: "Focus IBAN field",
+            fieldLifecycleTransitionId: "FLT-iban0001",
+          },
+          {
+            index: 2,
+            action: "Leave IBAN empty",
+            fieldLifecycleTransitionId: "FLT-iban0002",
+          },
+          {
+            index: 3,
+            action: "Trigger validation",
+            expected: "Validation error displayed",
+            fieldLifecycleTransitionId: "FLT-iban0004",
+          },
+        ],
+        expectedResults: ["Validation error displayed"],
+      }),
+    ]),
+    intent: buildIntent(),
+    workflowTopology: buildFieldLifecycleWorkflowTopology(),
+  });
+  assert.equal(report.blocked, false, JSON.stringify(report.issues, null, 2));
 });
 
 test("structural schema failures short-circuit semantic checks", () => {

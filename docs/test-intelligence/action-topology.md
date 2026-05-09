@@ -113,6 +113,12 @@ The topology is consumed in five places:
    when available, so `actionCoverage.total` is meaningful even when the
    upstream intent IR has no detected actions.
 
+Issue #2072 builds on the same artifact by adding
+`workflowTopology.fieldLifecycles`. The per-field lifecycle envelope is
+documented in [`field-lifecycle-state-machine.md`](./field-lifecycle-state-machine.md)
+and reuses the same persistence, prompt-compilation, validation, coverage, and
+evidence-sealing path instead of introducing a parallel artifact family.
+
 ## Evidence And Manifests
 
 `workflow-topology.json` is part of the production evidence surface. A runner

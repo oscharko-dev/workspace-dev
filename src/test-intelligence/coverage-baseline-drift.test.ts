@@ -102,6 +102,7 @@ test("coverage-baseline-drift: extractCoverageRatiosFromReport pulls every track
     coverage: {
       fieldCoverage: { total: 5, covered: 4, ratio: 0.8, uncoveredIds: [] },
       actionCoverage: { total: 4, covered: 2, ratio: 0.5, uncoveredIds: [] },
+      fieldLifecycleCoverage: { total: 0, covered: 0, ratio: 0, uncoveredIds: [] },
       validationCoverage: {
         total: 2,
         covered: 1,

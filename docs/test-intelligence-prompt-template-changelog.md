@@ -47,6 +47,26 @@ those steps are skipped.
 
 ---
 
+## 1.7.0 — Issue #2072 — Field-lifecycle transition contract
+
+**Bump type:** MINOR.
+
+**Scope:** Generator system prompt and user-prompt topology contract. The
+prompt now requires every generated step to anchor a
+`fieldLifecycleTransitionId` from `WorkflowTopology.fieldLifecycles`, and it
+explicitly requires at least one negative or validation case for each
+error-state lifecycle transition.
+
+**Motivation:** Issue #2072 added lifecycle topology, lifecycle coverage, and
+hard validation for step-to-transition anchoring. Reusing cached outputs from
+the pre-lifecycle prompt would silently omit transition ids and under-cover the
+error paths the new validators now require.
+
+**Expected verdict-deltas on baseline:** Validation becomes stricter on form
+flows with typed/selectable fields. Generated cases now surface explicit
+lifecycle state transitions in customer markdown and should increase negative
+coverage for error transitions without changing the surrounding evidence schema.
+
 ## 1.6.0 — Issue #2015 — Filter decorative UI nodes from generator input
 
 **Bump type:** MINOR.

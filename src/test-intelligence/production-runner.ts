@@ -127,6 +127,7 @@ import {
   buildWorkflowTopology,
   workflowActionAnchorText,
   workflowActionIdsForTargets,
+  workflowFieldLifecycleTransitionIdFor,
   writeWorkflowTopologyArtifact,
 } from "./action-topology-agent.js";
 import {
@@ -489,6 +490,7 @@ export interface ProductionRunnerLlmDraftCase {
     action: string;
     data?: string;
     expected?: string;
+    fieldLifecycleTransitionId?: string;
   }>;
   expectedResults: ReadonlyArray<string>;
   figmaTraceRefs?: ReadonlyArray<{
@@ -4930,6 +4932,7 @@ export const runFigmaToQcTestCases = async (
     fileName: customerLabel,
     sourceLabel,
     generatedAt: input.generatedAt,
+    workflowTopology,
     ...(acceptanceCriteria !== undefined ? { acceptanceCriteria } : {}),
     ...(input.showConfidence === true ? { showConfidence: true } : {}),
   });
@@ -6256,6 +6259,9 @@ const validateDraftCase = (
     };
     if (typeof s.data === "string") projected.data = s.data;
     if (typeof s.expected === "string") projected.expected = s.expected;
+    if (typeof s.fieldLifecycleTransitionId === "string") {
+      projected.fieldLifecycleTransitionId = s.fieldLifecycleTransitionId;
+    }
     steps.push(projected);
   }
   if (!Array.isArray(c.expectedResults) || !c.expectedResults.every(isString)) {
@@ -6492,19 +6498,75 @@ const enrichWorkflowTopologyCoverage = (input: {
   const alreadyAnnotated = input.testCase.steps.some((step) =>
     /\bACT-\d{3}\b/u.test(step.action),
   );
+  const primaryFieldId = input.testCase.qualitySignals.coveredFieldIds[0];
+  const lifecycleSteps: GeneratedTestCase["steps"] =
+    primaryFieldId === undefined
+      ? input.testCase.steps
+      : input.testCase.steps.map((step, index, steps) => {
+          if (step.fieldLifecycleTransitionId !== undefined) {
+            return step;
+          }
+          const lastIndex = steps.length - 1;
+          const transitionId =
+            index === 0
+              ? workflowFieldLifecycleTransitionIdFor({
+                  topology: input.workflowTopology,
+                  fieldId: primaryFieldId,
+                  from: "initial",
+                  to: "focused",
+                })
+              : index === 1
+                ? workflowFieldLifecycleTransitionIdFor({
+                    topology: input.workflowTopology,
+                    fieldId: primaryFieldId,
+                    from: "focused",
+                    to: "in_progress",
+                  })
+                : input.testCase.type === "negative" ||
+                    input.testCase.type === "validation"
+                  ? workflowFieldLifecycleTransitionIdFor({
+                      topology: input.workflowTopology,
+                      fieldId: primaryFieldId,
+                      from: "in_progress",
+                      to: "error",
+                    })
+                  : index === lastIndex
+                    ? workflowFieldLifecycleTransitionIdFor({
+                        topology: input.workflowTopology,
+                        fieldId: primaryFieldId,
+                        from: "validated",
+                        to: "terminal",
+                      }) ??
+                      workflowFieldLifecycleTransitionIdFor({
+                        topology: input.workflowTopology,
+                        fieldId: primaryFieldId,
+                        from: "in_progress",
+                        to: "validated",
+                      })
+                    : workflowFieldLifecycleTransitionIdFor({
+                        topology: input.workflowTopology,
+                        fieldId: primaryFieldId,
+                        from: "in_progress",
+                        to: "validated",
+                      });
+          return transitionId === undefined
+            ? step
+            : { ...step, fieldLifecycleTransitionId: transitionId };
+        });
+  const steps: GeneratedTestCase["steps"] =
+    anchor === undefined || alreadyAnnotated || lifecycleSteps.length === 0
+      ? lifecycleSteps
+      : input.testCase.steps.map((step, index) =>
+          index === 0
+            ? {
+                ...lifecycleSteps[index]!,
+                action: `${anchor} ${step.action}`,
+              }
+            : lifecycleSteps[index] ?? step,
+        );
   return {
     ...input.testCase,
-    steps:
-      anchor === undefined || alreadyAnnotated || input.testCase.steps.length === 0
-        ? input.testCase.steps
-        : input.testCase.steps.map((step, index) =>
-            index === 0
-              ? {
-                  ...step,
-                  action: `${anchor} ${step.action}`,
-                }
-              : step,
-          ),
+    steps,
     qualitySignals: {
       ...input.testCase.qualitySignals,
       coveredActionIds,
@@ -7093,6 +7155,9 @@ const stampGeneratedTestCase = (input: {
     };
     if (typeof s.data === "string") projected.data = s.data;
     if (typeof s.expected === "string") projected.expected = s.expected;
+    if (typeof s.fieldLifecycleTransitionId === "string") {
+      projected.fieldLifecycleTransitionId = s.fieldLifecycleTransitionId;
+    }
     return projected;
   });
   const classification = deriveGeneratedTestCaseClassification({
@@ -7283,7 +7348,7 @@ const buildPromptSuffixSections = (
       label: "DELIVERABLE FORMAT",
       body: [
         "Respond ONLY with a JSON object of the form:",
-        `{"testCases": [{"title": string, "objective": string, "type": one of [functional|negative|boundary|validation|navigation|regression|exploratory|accessibility], "priority": one of [p0|p1|p2|p3], "riskCategory": one of [low|medium|high|regulated_data|financial_transaction], "technique": one of [equivalence_partitioning|boundary_value_analysis|decision_table|state_transition|use_case|exploratory|error_guessing|syntax_testing|classification_tree], "preconditions": string[], "testData": string[], "steps": [{"index": number, "action": string, "expected": string}], "expectedResults": string[], "figmaTraceRefs": [{"screenId": string, "nodeId": string?, "nodeName": string?}], "qualitySignals": {"coveredFieldIds": string[], "coveredActionIds": string[], "coveredValidationIds": string[], "coveredNavigationIds": string[], "confidence": number}, "assumptions": string[], "openQuestions": string[], "regulatoryRelevance": {"domain": one of [banking|insurance|general], "rationale": string}}]}`,
+        `{"testCases": [{"title": string, "objective": string, "type": one of [functional|negative|boundary|validation|navigation|regression|exploratory|accessibility], "priority": one of [p0|p1|p2|p3], "riskCategory": one of [low|medium|high|regulated_data|financial_transaction], "technique": one of [equivalence_partitioning|boundary_value_analysis|decision_table|state_transition|use_case|exploratory|error_guessing|syntax_testing|classification_tree], "preconditions": string[], "testData": string[], "steps": [{"index": number, "action": string, "expected": string, "fieldLifecycleTransitionId": string}], "expectedResults": string[], "figmaTraceRefs": [{"screenId": string, "nodeId": string?, "nodeName": string?}], "qualitySignals": {"coveredFieldIds": string[], "coveredActionIds": string[], "coveredValidationIds": string[], "coveredNavigationIds": string[], "confidence": number}, "assumptions": string[], "openQuestions": string[], "regulatoryRelevance": {"domain": one of [banking|insurance|general], "rationale": string}}]}`,
       ].join("\n"),
     },
     {
@@ -7452,6 +7517,10 @@ const buildDraftResponseSchema = (): Record<string, unknown> => ({
                 action: { type: "string", minLength: 1 },
                 data: { type: "string" },
                 expected: { type: "string" },
+                fieldLifecycleTransitionId: {
+                  type: "string",
+                  minLength: 1,
+                },
               },
             },
           },

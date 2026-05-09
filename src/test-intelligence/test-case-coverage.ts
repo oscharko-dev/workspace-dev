@@ -72,6 +72,10 @@ export const computeCoverageReport = (
   const actionTargetIds =
     input.workflowTopology?.actions.map((action) => action.actionId) ??
     relevantActions.map((a) => a.id);
+  const fieldLifecycleTransitionIds =
+    input.workflowTopology?.fieldLifecycles.flatMap((lifecycle) =>
+      lifecycle.transitions.map((transition) => transition.transitionId),
+    ) ?? [];
 
   const fieldCoverage = computeBucket(
     relevantFields.map((f) => f.id),
@@ -80,6 +84,16 @@ export const computeCoverageReport = (
   const actionCoverage = computeBucket(
     actionTargetIds,
     collectCovered(cases, (c) => c.qualitySignals.coveredActionIds),
+  );
+  const fieldLifecycleCoverage = computeBucket(
+    fieldLifecycleTransitionIds,
+    collectCovered(cases, (c) =>
+      c.steps.flatMap((step) =>
+        step.fieldLifecycleTransitionId === undefined
+          ? []
+          : [step.fieldLifecycleTransitionId],
+      ),
+    ),
   );
   const validationCoverage = computeBucket(
     input.intent.detectedValidations.map((v) => v.id),
@@ -124,6 +138,7 @@ export const computeCoverageReport = (
     totalTestCases: totalCases,
     fieldCoverage,
     actionCoverage,
+    fieldLifecycleCoverage,
     validationCoverage,
     navigationCoverage,
     traceCoverage,

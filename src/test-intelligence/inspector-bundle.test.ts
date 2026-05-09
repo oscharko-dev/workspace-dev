@@ -143,6 +143,7 @@ const sampleCoverageReport = (jobId: string): unknown => ({
   totalTestCases: 1,
   fieldCoverage: { total: 1, covered: 1, ratio: 1, uncoveredIds: [] },
   actionCoverage: { total: 1, covered: 1, ratio: 1, uncoveredIds: [] },
+  fieldLifecycleCoverage: { total: 0, covered: 0, ratio: 0, uncoveredIds: [] },
   validationCoverage: { total: 0, covered: 0, ratio: 0, uncoveredIds: [] },
   navigationCoverage: { total: 0, covered: 0, ratio: 0, uncoveredIds: [] },
   traceCoverage: { total: 1, withTrace: 1, ratio: 1 },

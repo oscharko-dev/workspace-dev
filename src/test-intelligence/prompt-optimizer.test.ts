@@ -429,7 +429,7 @@ test("lock-file: appends optimizedTemplates additively without touching the base
     const baselineLock = {
       $schema: "./test-intelligence-prompt-template-version.lock.schema.json",
       description: "fixture lock file",
-      version: "1.6.2",
+      version: "1.7.0",
       promptCompilerSha256: "a".repeat(64),
     };
     await writeFile(lockPath, JSON.stringify(baselineLock, null, 2));
@@ -452,7 +452,7 @@ test("lock-file: appends optimizedTemplates additively without touching the base
 
     const after = JSON.parse(await readFile(lockPath, "utf8"));
     // Base-template pin is preserved verbatim.
-    assert.equal(after.version, "1.6.2");
+    assert.equal(after.version, "1.7.0");
     assert.equal(after.promptCompilerSha256, "a".repeat(64));
     assert.equal(after.description, "fixture lock file");
     // Additive optimizedTemplates array appended.
@@ -460,7 +460,7 @@ test("lock-file: appends optimizedTemplates additively without touching the base
     assert.equal(after.optimizedTemplates.length, 1);
     const entry = after.optimizedTemplates[0] as PromptOptimizationLockEntry;
     assert.equal(entry.optimizedTemplateId, report.lockEntry.optimizedTemplateId);
-    assert.equal(entry.basePromptTemplateVersion, "1.6.2");
+    assert.equal(entry.basePromptTemplateVersion, "1.7.0");
 
     // Re-applying the same entry is idempotent.
     const second = await appendOptimizedTemplateToLockFile({

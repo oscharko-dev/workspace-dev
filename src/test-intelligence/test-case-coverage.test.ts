@@ -151,8 +151,58 @@ const buildWorkflowTopology = (): WorkflowTopology => ({
       actions: ["ACT-001", "ACT-002"],
     },
   ],
+  fieldLifecycles: [],
   entryStates: ["STATE-001"],
   exitStates: ["STATE-002"],
+});
+
+const buildFieldLifecycleWorkflowTopology = (): WorkflowTopology => ({
+  ...buildWorkflowTopology(),
+  fieldLifecycles: [
+    {
+      fieldId: "f-1",
+      states: [
+        "initial",
+        "focused",
+        "in_progress",
+        "validated",
+        "error",
+        "terminal",
+      ],
+      transitions: [
+        {
+          transitionId: "FLT-field0001",
+          from: "initial",
+          to: "focused",
+          trigger: "user_focus",
+        },
+        {
+          transitionId: "FLT-field0002",
+          from: "focused",
+          to: "in_progress",
+          trigger: "user_input",
+        },
+        {
+          transitionId: "FLT-field0003",
+          from: "in_progress",
+          to: "validated",
+          trigger: "validation_pass",
+        },
+        {
+          transitionId: "FLT-field0004",
+          from: "in_progress",
+          to: "error",
+          trigger: "validation_fail",
+        },
+        {
+          transitionId: "FLT-field0005",
+          from: "validated",
+          to: "terminal",
+          trigger: "form_commit",
+        },
+      ],
+    },
+  ],
 });
 
 test("coverage buckets reflect intent ids covered by accepted cases", () => {
@@ -253,6 +303,81 @@ test("workflow topology overrides the action universe for action coverage", () =
   assert.equal(report.actionCoverage.covered, 1);
   assert.equal(report.actionCoverage.ratio, 0.5);
   assert.deepEqual(report.actionCoverage.uncoveredIds, ["ACT-002"]);
+});
+
+test("workflow topology field lifecycles define the lifecycle coverage universe", () => {
+  const report = computeCoverageReport({
+    jobId: "job-1",
+    generatedAt: "2026-04-25T10:00:00.000Z",
+    policyProfileId: EU_BANKING_DEFAULT_POLICY_PROFILE_ID,
+    list: {
+      schemaVersion: GENERATED_TEST_CASE_SCHEMA_VERSION,
+      jobId: "job-1",
+      testCases: [
+        buildCase({
+          id: "tc-pos",
+          qualitySignals: {
+            coveredFieldIds: ["f-1"],
+            coveredActionIds: ["ACT-001"],
+            coveredValidationIds: [],
+            coveredNavigationIds: [],
+            confidence: 0.9,
+          },
+          steps: [
+            {
+              index: 1,
+              action: "Focus field",
+              fieldLifecycleTransitionId: "FLT-field0001",
+            },
+            {
+              index: 2,
+              action: "Enter field value",
+              fieldLifecycleTransitionId: "FLT-field0002",
+            },
+            {
+              index: 3,
+              action: "Validate field value",
+              fieldLifecycleTransitionId: "FLT-field0003",
+            },
+            {
+              index: 4,
+              action: "Submit form",
+              expected: "ok",
+              fieldLifecycleTransitionId: "FLT-field0005",
+            },
+          ],
+        }),
+        buildCase({
+          id: "tc-neg",
+          type: "negative",
+          qualitySignals: {
+            coveredFieldIds: ["f-1"],
+            coveredActionIds: [],
+            coveredValidationIds: ["v-1"],
+            coveredNavigationIds: [],
+            confidence: 0.9,
+          },
+          steps: [
+            {
+              index: 1,
+              action: "Trigger validation error",
+              expected: "Validation error",
+              fieldLifecycleTransitionId: "FLT-field0004",
+            },
+          ],
+          expectedResults: ["Validation error"],
+        }),
+      ],
+    },
+    intent: buildIntent(),
+    workflowTopology: buildFieldLifecycleWorkflowTopology(),
+    duplicateSimilarityThreshold: 0.92,
+  });
+
+  assert.equal(report.fieldLifecycleCoverage.total, 5);
+  assert.equal(report.fieldLifecycleCoverage.covered, 5);
+  assert.equal(report.fieldLifecycleCoverage.ratio, 1);
+  assert.deepEqual(report.fieldLifecycleCoverage.uncoveredIds, []);
 });
 
 test("decorative technical labels and icon actions are excluded from mandatory coverage totals", () => {

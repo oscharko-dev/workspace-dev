@@ -15,6 +15,8 @@
 import type {
   GeneratedTestCase,
   GeneratedTestCaseList,
+  WorkflowFieldLifecycleTransition,
+  WorkflowTopology,
 } from "../contracts/index.js";
 import type { ComplianceCoverageReport } from "./compliance-coverage-report.js";
 import {
@@ -45,6 +47,8 @@ export interface RenderCustomerMarkdownInput {
    * coverage ratio per active framework and per-rule outcome.
    */
   complianceCoverage?: ComplianceCoverageReport;
+  /** Optional workflow topology for field-lifecycle step rendering. */
+  workflowTopology?: WorkflowTopology;
 }
 
 export interface RenderedCustomerMarkdown {
@@ -151,12 +155,16 @@ export const renderCustomerMarkdown = (
     mode === "customer"
       ? buildSuiteClarificationRegistry(preparedCases)
       : EMPTY_SUITE_CLARIFICATION_REGISTRY;
+  const fieldLifecycleTransitions = buildFieldLifecycleTransitionLookup(
+    input.workflowTopology,
+  );
   const perCaseFiles = preparedCases.map((entry) => ({
     filename: entry.filename,
     body: renderSingleCase(
       entry,
       mode,
       suiteClarifications.byCaseId.get(entry.tc.id) ?? [],
+      fieldLifecycleTransitions,
       showConfidence,
     ),
   }));
@@ -166,6 +174,7 @@ export const renderCustomerMarkdown = (
     acceptanceCriteria,
     mode,
     suiteClarifications,
+    fieldLifecycleTransitions,
     showConfidence,
   );
   return { combinedMarkdown, perCaseFiles };
@@ -217,6 +226,7 @@ const renderCombined = (
   acceptanceCriteria: readonly string[],
   mode: "customer" | "technical",
   suiteClarifications: SuiteClarificationRegistry,
+  fieldLifecycleTransitions: ReadonlyMap<string, WorkflowFieldLifecycleTransition>,
   showConfidence: boolean,
 ): string => {
   const lines: string[] = [];
@@ -281,6 +291,7 @@ const renderCombined = (
         entry,
         mode,
         suiteClarifications.byCaseId.get(entry.tc.id) ?? [],
+        fieldLifecycleTransitions,
         showConfidence,
       ),
     );
@@ -297,6 +308,7 @@ const renderSingleCase = (
   entry: PreparedCustomerCase,
   mode: "customer" | "technical",
   customerClarifications: readonly ClarificationReference[],
+  fieldLifecycleTransitions: ReadonlyMap<string, WorkflowFieldLifecycleTransition>,
   showConfidence: boolean,
 ): string => {
   const { tc } = entry;
@@ -377,6 +389,19 @@ const renderSingleCase = (
     lines.push("**Beschreibung:**");
     lines.push("");
     lines.push(renderMarkdownText(step.action, mode));
+    const lifecycleTransition =
+      step.fieldLifecycleTransitionId === undefined
+        ? undefined
+        : fieldLifecycleTransitions.get(step.fieldLifecycleTransitionId);
+    if (lifecycleTransition !== undefined) {
+      lines.push("");
+      lines.push(
+        renderMarkdownText(
+          `→ Feld erreicht Zustand "${formatFieldLifecycleStateLabel(lifecycleTransition.to)}"`,
+          mode,
+        ),
+      );
+    }
     lines.push("");
     const expected =
       typeof step.expected === "string" && step.expected.length > 0
@@ -824,6 +849,37 @@ const escapeTableCell = (value: string): string =>
 const formatCoverageRatioPercent = (ratio: number): string => {
   const clamped = Math.max(0, Math.min(1, ratio));
   return `${(clamped * 100).toFixed(1)}%`;
+};
+
+const buildFieldLifecycleTransitionLookup = (
+  workflowTopology: WorkflowTopology | undefined,
+): ReadonlyMap<string, WorkflowFieldLifecycleTransition> =>
+  new Map(
+    workflowTopology?.fieldLifecycles.flatMap((lifecycle) =>
+      lifecycle.transitions.map((transition) => [
+        transition.transitionId,
+        transition,
+      ] as const),
+    ) ?? [],
+  );
+
+const formatFieldLifecycleStateLabel = (
+  state: WorkflowFieldLifecycleTransition["to"],
+): string => {
+  switch (state) {
+    case "initial":
+      return "initial";
+    case "focused":
+      return "fokussiert";
+    case "in_progress":
+      return "in Bearbeitung";
+    case "validated":
+      return "validiert";
+    case "error":
+      return "fehler";
+    case "terminal":
+      return "terminal";
+  }
 };
 
 const appendComplianceCoverageSection = (

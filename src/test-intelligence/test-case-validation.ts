@@ -145,6 +145,7 @@ const validateCase = (
   testCase: GeneratedTestCase,
   index: number,
   intentIds: ReturnType<typeof collectIntentIds>,
+  workflowTopology: WorkflowTopology | undefined,
   model: ReturnType<typeof buildTestDesignModel>,
   oracleContext: TestDataOracleGovernanceContext,
   issues: TestCaseValidationIssue[],
@@ -187,7 +188,7 @@ const validateCase = (
     });
   }
 
-  validateStepsSemantics(testCase, basePath, issues);
+  validateStepsSemantics(testCase, basePath, workflowTopology, issues);
   validateExpectedResults(testCase, basePath, issues);
   validateTraceRefs(testCase, basePath, intentIds, issues);
   validateQcMapping(testCase, basePath, issues);
@@ -248,10 +249,16 @@ const validateSemanticSuspiciousContent = (
 const validateStepsSemantics = (
   testCase: GeneratedTestCase,
   basePath: string,
+  workflowTopology: WorkflowTopology | undefined,
   issues: TestCaseValidationIssue[],
 ): void => {
   const id = testCase.id;
   const steps = testCase.steps;
+  const lifecycleTransitionIds = new Set(
+    workflowTopology?.fieldLifecycles.flatMap((lifecycle) =>
+      lifecycle.transitions.map((transition) => transition.transitionId),
+    ) ?? [],
+  );
   const indices: number[] = [];
   for (let i = 0; i < steps.length; i++) {
     const step = steps[i];
@@ -272,6 +279,29 @@ const validateStepsSemantics = (
         severity: "warning",
         message: `step action exceeds ${STEP_ACTION_MAX_LENGTH} characters`,
       });
+    }
+    if (lifecycleTransitionIds.size > 0) {
+      if (
+        typeof step.fieldLifecycleTransitionId !== "string" ||
+        step.fieldLifecycleTransitionId.trim().length === 0
+      ) {
+        pushIssue(issues, {
+          testCaseId: id,
+          path: `${basePath}.steps[${i}].fieldLifecycleTransitionId`,
+          code: "missing_field_lifecycle_transition",
+          severity: "error",
+          message:
+            "step must reference a workflow-topology field lifecycle transition id",
+        });
+      } else if (!lifecycleTransitionIds.has(step.fieldLifecycleTransitionId)) {
+        pushIssue(issues, {
+          testCaseId: id,
+          path: `${basePath}.steps[${i}].fieldLifecycleTransitionId`,
+          code: "unknown_field_lifecycle_transition",
+          severity: "error",
+          message: `fieldLifecycleTransitionId "${step.fieldLifecycleTransitionId}" does not exist in workflowTopology.fieldLifecycles`,
+        });
+      }
     }
     indices.push(step.index);
   }
@@ -320,6 +350,39 @@ const validateStepsSemantics = (
         break;
       }
     }
+  }
+};
+
+const validateFieldLifecycleCoverage = (
+  list: GeneratedTestCaseList,
+  workflowTopology: WorkflowTopology | undefined,
+  issues: TestCaseValidationIssue[],
+): void => {
+  const transitionIds =
+    workflowTopology?.fieldLifecycles.flatMap((lifecycle) =>
+      lifecycle.transitions.map((transition) => transition.transitionId),
+    ) ?? [];
+  if (transitionIds.length === 0) {
+    return;
+  }
+  const coveredTransitionIds = new Set<string>();
+  for (const testCase of list.testCases) {
+    for (const step of testCase.steps) {
+      if (typeof step.fieldLifecycleTransitionId === "string") {
+        coveredTransitionIds.add(step.fieldLifecycleTransitionId);
+      }
+    }
+  }
+  for (const transitionId of transitionIds) {
+    if (coveredTransitionIds.has(transitionId)) {
+      continue;
+    }
+    pushIssue(issues, {
+      path: "$.testCases",
+      code: "uncovered_field_lifecycle_transition",
+      severity: "error",
+      message: `workflowTopology.fieldLifecycles transition "${transitionId}" has no anchored test case step`,
+    });
   }
 };
 
@@ -753,8 +816,17 @@ export const validateGeneratedTestCasesWithInvariants = (
     } else {
       seenIds.set(tc.id, i);
     }
-    validateCase(tc, i, intentIds, model, oracleContext, issues);
+    validateCase(
+      tc,
+      i,
+      intentIds,
+      input.workflowTopology,
+      model,
+      oracleContext,
+      issues,
+    );
   }
+  validateFieldLifecycleCoverage(list, input.workflowTopology, issues);
 
   let invariantEvaluation: DomainInvariantEvaluation | undefined;
   if (input.invariantRegistry !== undefined) {
