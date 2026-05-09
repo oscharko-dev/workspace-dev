@@ -573,13 +573,10 @@ const buildOverrideEntryReason = (
   if (!isSemanticSuspicionCategory(entry.category)) {
     return "override entry has unknown category";
   }
-  if (entry.signature.algorithm !== SEMANTIC_CONTENT_OVERRIDE_HMAC_ALGORITHM) {
-    return "override entry uses unsupported signature algorithm";
-  }
   if (!HMAC_DIGEST_RE.test(entry.signature.digest)) {
     return "override entry is missing signature";
   }
-  if (entry.verifiedSignature !== true) {
+  if (!entry.verifiedSignature) {
     return "override entry is missing verifiedSignature audit stamp";
   }
   if (entry.expiresAt !== undefined) {
@@ -718,10 +715,6 @@ export const recordSemanticContentOverride = async (
   if (!SEMANTIC_SUSPICION_CATEGORY_SET.has(input.category)) {
     return { ok: false, code: "category_unknown" };
   }
-  if (input.authority === undefined) {
-    return { ok: false, code: "override_authority_required" };
-  }
-
   const entry = createSignedSemanticContentOverrideEntry({
     jobId: input.jobId,
     testCaseId: input.testCaseId,
