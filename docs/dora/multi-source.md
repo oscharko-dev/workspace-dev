@@ -50,12 +50,12 @@ management framework that identifies, classifies, and manages ICT risks.
 **Obligation:** Financial entities must classify ICT-related incidents according
 to their impact on operations, data integrity, and service continuity.
 
-| Control                        | Implementation                                                                                                                                                          | Evidence                                                                                                                       |
-| ------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
-| Structured refusal codes       | All validation failures are emitted as typed `refusalCode` values, not free-form error strings, so monitoring systems can classify incidents without string parsing     | `ALLOWED_MULTI_SOURCE_ENVELOPE_REFUSAL_CODES`, `ALLOWED_JIRA_IR_REFUSAL_CODES`, `ALLOWED_MULTI_SOURCE_MODE_GATE_REFUSAL_CODES` |
-| Fail-closed on every gate miss | Gate failures write no artifacts and return a deterministic code; callers cannot proceed past a gate failure                                                            | `enforceMultiSourceModeGate` throws `MultiSourceModeGateError`                                                                 |
-| Paste collision detection      | Duplicate `canonicalIssueKey` between a `jira_rest` and `jira_paste` source is detected and surfaced as `duplicate_jira_paste_collision` before any artifact is written | `validateMultiSourceTestIntentEnvelope`                                                                                        |
-| Evidence manifest              | Every job emits a `wave1-validation-evidence-manifest.json` (or Wave 4 equivalent) with SHA-256 hashes for every persisted artifact; tampering can be detected post-incident   | `verifyWave1ValidationEvidenceManifest`                                                                                               |
+| Control                        | Implementation                                                                                                                                                               | Evidence                                                                                                                       |
+| ------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| Structured refusal codes       | All validation failures are emitted as typed `refusalCode` values, not free-form error strings, so monitoring systems can classify incidents without string parsing          | `ALLOWED_MULTI_SOURCE_ENVELOPE_REFUSAL_CODES`, `ALLOWED_JIRA_IR_REFUSAL_CODES`, `ALLOWED_MULTI_SOURCE_MODE_GATE_REFUSAL_CODES` |
+| Fail-closed on every gate miss | Gate failures write no artifacts and return a deterministic code; callers cannot proceed past a gate failure                                                                 | `enforceMultiSourceModeGate` throws `MultiSourceModeGateError`                                                                 |
+| Paste collision detection      | Duplicate `canonicalIssueKey` between a `jira_rest` and `jira_paste` source is detected and surfaced as `duplicate_jira_paste_collision` before any artifact is written      | `validateMultiSourceTestIntentEnvelope`                                                                                        |
+| Evidence manifest              | Every job emits a `wave1-validation-evidence-manifest.json` (or Wave 4 equivalent) with SHA-256 hashes for every persisted artifact; tampering can be detected post-incident | `verifyWave1ValidationEvidenceManifest`                                                                                        |
 
 ---
 
@@ -132,7 +132,12 @@ SSRF guard:                  Host allow-list enforced by workspace-dev; no call 
 
 The multi-source surface does not add new LLM deployments. The
 operator-supplied LLM gateway (`gpt-oss-120b` for test-case generation) is
-already addressed in the baseline DORA mapping in `COMPLIANCE.md`.
+already addressed in the baseline DORA mapping in `COMPLIANCE.md`. The full
+register entry — including SLA floor, breach-notification SLO, data-
+classification scope, and exit plan — lives in
+[`docs/dora/subprocessor-register.md`](subprocessor-register.md) §2.1, with
+the cross-border transfer story in
+[`docs/dpia/cross-border-transfer.md`](../dpia/cross-border-transfer.md).
 
 ---
 
