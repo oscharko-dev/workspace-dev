@@ -140,17 +140,13 @@ const measureFixture = async (
 
   const jobId = `measure-${archetypeId}`;
   const audit = buildAudit(jobId);
-  const generatedList = synthesizeGeneratedTestCases({
-    jobId,
-    generatedAt: GENERATED_AT,
-    intent,
-    audit,
-  });
-
   // Issue #2030 follow-up: when enabled, derive a job-wide compliance
-  // override from the fixture's `compliance.json` sidecar so the policy
-  // gate elevates regulated masks (MiFID II, GwG, FATCA, EAA) that the
-  // PII detector cannot recognize from field-label patterns alone.
+  // override from the fixture's `compliance.json` sidecar. Forward to
+  // BOTH the synthesizer (so cases ship with the override-derived
+  // riskCategory upfront and the policy gate stops emitting downgrade
+  // warnings on label-less fields) and the policy gate (so the screen-
+  // intent classification falls back to the override when no PII /
+  // risks indicator fires).
   const complianceOverrides: ComplianceRiskOverride[] | undefined = options
     .withComplianceOverrides
     ? [
@@ -160,6 +156,14 @@ const measureFixture = async (
         },
       ]
     : undefined;
+
+  const generatedList = synthesizeGeneratedTestCases({
+    jobId,
+    generatedAt: GENERATED_AT,
+    intent,
+    audit,
+    ...(complianceOverrides !== undefined ? { complianceOverrides } : {}),
+  });
 
   const pipeline = runValidationPipeline({
     jobId,
