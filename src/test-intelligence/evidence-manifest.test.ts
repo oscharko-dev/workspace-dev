@@ -16,6 +16,7 @@ import {
 import {
   buildWave1ValidationEvidenceManifest,
   computeWave1ValidationEvidenceManifestDigest,
+  validateWave1ValidationEvidenceManifestMetadata,
   verifyWave1ValidationEvidenceFromDisk,
   verifyWave1ValidationEvidenceManifest,
   writeWave1ValidationEvidenceManifest,
@@ -84,6 +85,24 @@ test("evidence-manifest: stamps schema/contract versions and hard invariants", (
     manifest.manifestIntegrity?.hash,
     manifestIntegrityPayloadDigest(manifest),
   );
+});
+
+test("evidence-manifest: metadata accepts runtime test-generation deployments outside the legacy allowlist", () => {
+  const manifest = buildWave1ValidationEvidenceManifest({
+    ...baseInput([
+      {
+        filename: "alpha.json",
+        bytes: utf8('{"a":1}'),
+        category: "validation",
+      },
+    ]),
+    modelDeployments: {
+      testGeneration: "mock-1",
+      visualPrimary: "llama-4-maverick-vision",
+    },
+  });
+
+  assert.deepEqual(validateWave1ValidationEvidenceManifestMetadata(manifest), []);
 });
 
 test("evidence-manifest: records direct visual sidecar summary when supplied", () => {

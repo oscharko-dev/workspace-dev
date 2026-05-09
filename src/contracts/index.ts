@@ -4111,6 +4111,122 @@ export interface AgentModelBinding {
 }
 
 /**
+ * Stable tier labels used by the production multi-model routing policy
+ * (Issue #2099). The vocabulary is intentionally small and auditable:
+ * - `light` — cheap/fast text roles used for triage or low-risk helpers.
+ * - `heavy` — flagship reasoning roles.
+ * - `multimodal` — screenshot/document-aware roles.
+ */
+export const MODEL_ROUTING_TIER_LABELS = [
+  "light",
+  "heavy",
+  "multimodal",
+] as const;
+
+/** Discriminated alias for {@link MODEL_ROUTING_TIER_LABELS}. */
+export type ModelRoutingTierLabel =
+  (typeof MODEL_ROUTING_TIER_LABELS)[number];
+
+/**
+ * Routing slots within one role. Most active runtime roles expose one slot,
+ * but the contract permits explicit fallback / triage / diversity bindings
+ * without adding new top-level role ids.
+ */
+export const MODEL_ROUTING_ROUTE_SLOTS = [
+  "primary",
+  "secondary",
+  "fallback",
+  "triage",
+] as const;
+
+/** Discriminated alias for {@link MODEL_ROUTING_ROUTE_SLOTS}. */
+export type ModelRoutingRouteSlot =
+  (typeof MODEL_ROUTING_ROUTE_SLOTS)[number];
+
+/**
+ * Closed runtime list of roles that may participate in the typed
+ * multi-model routing policy. The list includes the production-runner roles
+ * in use today plus additive foundation-only roles from Issue #2099 whose
+ * runtime wiring may land in follow-up stories.
+ */
+export const MODEL_ROUTING_ROLES = [
+  "test_generation",
+  "logic_judge",
+  "coverage_planner",
+  "risk_ranker",
+  "visual_primary",
+  "visual_fallback",
+  "a11y_judge",
+  "faithfulness_judge",
+  "document_ingestion",
+  "adversarial_critic",
+  "calibration_holdout_generator",
+] as const;
+
+/** Discriminated alias for {@link MODEL_ROUTING_ROLES}. */
+export type ModelRoutingRole = (typeof MODEL_ROUTING_ROLES)[number];
+
+/** Schema version pinned on every persisted {@link ModelRoutingPolicy}. */
+export const MODEL_ROUTING_POLICY_SCHEMA_VERSION = "1.0.0" as const;
+
+/**
+ * One resolved route in the typed multi-model policy. The route carries the
+ * static model binding plus the concrete deployment/revision identity the
+ * current runtime selected so replay keys, FinOps, and evidence artifacts can
+ * attest the exact model path without re-reading environment variables.
+ */
+export interface ModelRoutingRoute {
+  /** Stable role identifier this route binds. */
+  readonly role: ModelRoutingRole;
+  /** Slot within the role (`primary`, `fallback`, `triage`, ...). */
+  readonly slot: ModelRoutingRouteSlot;
+  /** Cost/capability tier label for this route. */
+  readonly tierLabel: ModelRoutingTierLabel;
+  /** Stable provider/model/deployment binding. */
+  readonly modelBinding: AgentModelBinding;
+  /** Concrete model revision selected for this route, when known. */
+  readonly modelRevision?: string;
+  /** Concrete gateway release selected for this route, when known. */
+  readonly gatewayRelease?: string;
+}
+
+/**
+ * Typed, canonical model-routing policy for one job/profile. The policy is an
+ * auditable input into client construction and replay identity rather than a
+ * dynamic rule engine.
+ */
+export interface ModelRoutingPolicy {
+  readonly schemaVersion: typeof MODEL_ROUTING_POLICY_SCHEMA_VERSION;
+  /** Stable policy identifier, e.g. `eu-banking-default`. */
+  readonly policyId: string;
+  /** Stable version stamp of the policy definition. */
+  readonly policyVersion: string;
+  /** Policy profile that selected this routing policy. */
+  readonly policyProfileId: string;
+  /** Sorted, canonical list of active routes. */
+  readonly routes: readonly ModelRoutingRoute[];
+}
+
+/** Additive per-job override entry layered over a base routing policy. */
+export interface ModelRoutingOverrideRoute {
+  readonly role: ModelRoutingRole;
+  readonly slot?: ModelRoutingRouteSlot;
+  readonly tierLabel?: ModelRoutingTierLabel;
+  readonly modelBinding?: AgentModelBinding;
+  readonly modelRevision?: string;
+  readonly gatewayRelease?: string;
+}
+
+/**
+ * Optional per-job routing override supplied by operators. The override is
+ * additive and explicit: callers override individual routes rather than
+ * replacing the whole policy object.
+ */
+export interface ModelRoutingOverride {
+  readonly routes: readonly ModelRoutingOverrideRoute[];
+}
+
+/**
  * Static, hand-rolled profile that pins a role to a budget tier,
  * capability filter, output schema, and FinOps group. Profiles are
  * frozen at module load and serialise to canonical JSON for evidence
@@ -7751,6 +7867,8 @@ export interface ReplayCacheKey {
   inputHash: string;
   promptHash: string;
   schemaHash: string;
+  /** sha256 hex digest of the canonical resolved model-routing policy. */
+  routingPolicyDigest: string;
   modelRevision: string;
   gatewayRelease: string;
   policyBundleVersion: string;
@@ -9894,6 +10012,10 @@ export interface FinOpsRoleUsage {
   role: FinOpsRole;
   /** Deployment label observed (e.g. `gpt-oss-120b-mock`). Empty string when no attempt was made. */
   deployment: string;
+  /** Last model revision observed for this role. Omitted when unknown. */
+  modelRevision?: string;
+  /** Last routing tier label observed for this role. Omitted when unknown. */
+  tierLabel?: ModelRoutingTierLabel;
   /** Total LLM call attempts (success + failure). Cache hits do NOT increment. */
   attempts: number;
   /** Successful attempts. */
@@ -10003,6 +10125,10 @@ export interface FinOpsBudgetReport {
          * legacy single-model runs.
          */
         deployment?: string;
+        /** Optional model revision recorded for this source. */
+        modelRevision?: string;
+        /** Optional routing tier label recorded for this source. */
+        tierLabel?: ModelRoutingTierLabel;
         /**
          * Optional constrained-decoding attribution for this source. Present
          * only when at least one attempt recorded schema-constrained decoding

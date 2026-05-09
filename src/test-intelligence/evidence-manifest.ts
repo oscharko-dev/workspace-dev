@@ -64,12 +64,6 @@ const isAcceptableDeploymentName = (value: unknown): value is string =>
   typeof value === "string" &&
   value.length > 0 &&
   value.length <= SIDECAR_DEPLOYMENT_MAX;
-const TEST_GENERATION_DEPLOYMENTS = new Set([
-  "gpt-oss-120b",
-  "gpt-oss-120b-mock",
-  "mock",
-]);
-
 const HIGH_SURROGATE_START = 0xd800;
 const HIGH_SURROGATE_END = 0xdbff;
 const LOW_SURROGATE_START = 0xdc00;
@@ -673,15 +667,10 @@ export const validateWave1ValidationEvidenceManifestMetadata = (
     if (!hasOnlyKnownKeys(deployments, allowedKeys)) {
       issues.push("modelDeployments contains unknown keys");
     }
-    if (
-      typeof deployments["testGeneration"] !== "string" ||
-      deployments["testGeneration"].length === 0
-    ) {
-      issues.push("modelDeployments.testGeneration must be a non-empty string");
-    } else if (
-      !TEST_GENERATION_DEPLOYMENTS.has(deployments["testGeneration"])
-    ) {
-      issues.push("modelDeployments.testGeneration has an unknown deployment");
+    if (!isAcceptableDeploymentName(deployments["testGeneration"])) {
+      issues.push(
+        `modelDeployments.testGeneration must be a non-empty string (≤${SIDECAR_DEPLOYMENT_MAX.toString()} chars)`,
+      );
     }
     for (const key of ["visualPrimary", "visualFallback"] as const) {
       const deployment = deployments[key];

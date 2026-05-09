@@ -1722,6 +1722,9 @@ export const buildLiveVisualSidecarBundle = (
         : {}),
       modelRevisionSuffix: "cli-test-intelligence-run",
       gatewayRelease: "azure-ai-foundry-cli-test-intelligence-run",
+      ...(options.policyProfile !== undefined
+        ? { policyProfileId: options.policyProfile }
+        : {}),
     },
     {
       apiKeyProvider: () => apiKey,

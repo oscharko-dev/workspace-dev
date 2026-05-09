@@ -170,6 +170,12 @@ export interface CompilePromptInput {
    * drives role-tagged section ordering in the user prompt.
    */
   sourceMixPlan?: SourceMixPlan;
+  /**
+   * Canonical SHA-256 digest of the active model-routing policy (Issue #2099).
+   * When the resolved routing policy changes, the replay cache must miss even
+   * if the prompt text is otherwise byte-identical.
+   */
+  routingPolicyDigest?: string;
 }
 
 export interface CompilePromptResult {
@@ -337,6 +343,8 @@ export const compilePrompt = (
     inputHash,
     promptHash,
     schemaHash,
+    routingPolicyDigest:
+      input.routingPolicyDigest ?? sha256Hex("routing-policy:absent"),
     modelRevision: input.modelBinding.modelRevision,
     gatewayRelease: input.modelBinding.gatewayRelease,
     policyBundleVersion: input.policyBundleVersion,
