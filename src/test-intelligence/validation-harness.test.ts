@@ -224,6 +224,8 @@ test("validation-harness: synthetic test generation covers risk labels, actions,
     list.testCases.some(
       (tc) =>
         tc.type === "navigation" &&
+        tc.polarity === "navigation" &&
+        tc.category === "navigation_flow" &&
         tc.qualitySignals.coveredNavigationIds.includes("nav.checkout.profile"),
     ),
     true,
@@ -232,7 +234,45 @@ test("validation-harness: synthetic test generation covers risk labels, actions,
     list.testCases.some(
       (tc) =>
         tc.type === "accessibility" &&
+        tc.polarity === "accessibility" &&
+        tc.category === "accessibility" &&
         tc.qualitySignals.coveredFieldIds.includes("field.notes"),
+    ),
+    true,
+  );
+  assert.equal(
+    list.testCases.some(
+      (tc) =>
+        tc.type === "negative" &&
+        tc.polarity === "negative" &&
+        tc.category === "negative_path" &&
+        tc.qualitySignals.coveredFieldIds.includes("field.iban"),
+    ),
+    true,
+  );
+  assert.equal(
+    list.testCases.some(
+      (tc) =>
+        tc.type === "boundary" &&
+        tc.polarity === "boundary" &&
+        tc.category === "boundary_value" &&
+        tc.qualitySignals.coveredFieldIds.includes("field.iban"),
+    ),
+    true,
+  );
+  assert.equal(
+    list.testCases.some(
+      (tc) =>
+        tc.type === "validation" &&
+        tc.polarity === "validation" &&
+        tc.category === "validation_rule" &&
+        tc.qualitySignals.coveredFieldIds.includes("field.iban"),
+    ),
+    true,
+  );
+  assert.equal(
+    list.testCases.every(
+      (tc) => typeof tc.polarity === "string" && typeof tc.category === "string",
     ),
     true,
   );

@@ -1,10 +1,14 @@
 import * as z from "zod";
 
 import {
+  ALLOWED_GENERATED_TEST_CASE_CATEGORIES,
+  ALLOWED_GENERATED_TEST_CASE_POLARITIES,
   ALLOWED_REGULATORY_RELEVANCE_DOMAINS,
   GENERATED_TEST_CASE_SCHEMA_VERSION,
   TEST_INTELLIGENCE_CONTRACT_VERSION,
   TEST_INTELLIGENCE_PROMPT_TEMPLATE_VERSION,
+  type GeneratedTestCaseCategory,
+  type GeneratedTestCasePolarity,
   type GeneratedTestCaseReviewState,
   type RegulatoryRelevanceDomain,
   type TestCaseLevel,
@@ -50,6 +54,10 @@ const TYPES: readonly TestCaseType[] = [
 ];
 
 const PRIORITIES: readonly TestCasePriority[] = ["p0", "p1", "p2", "p3"];
+const POLARITIES: readonly GeneratedTestCasePolarity[] =
+  ALLOWED_GENERATED_TEST_CASE_POLARITIES;
+const CASE_CATEGORIES: readonly GeneratedTestCaseCategory[] =
+  ALLOWED_GENERATED_TEST_CASE_CATEGORIES;
 
 const RISK_CATEGORIES: readonly TestCaseRiskCategory[] = [
   "low",
@@ -91,6 +99,8 @@ export const generatedTestCaseListZodSchema: z.ZodType = z
         objective: z.string().min(1).max(1000),
         level: z.enum(LEVELS),
         type: z.enum(TYPES),
+        polarity: z.enum(POLARITIES).optional(),
+        category: z.enum(CASE_CATEGORIES).optional(),
         priority: z.enum(PRIORITIES),
         riskCategory: z.enum(RISK_CATEGORIES),
         technique: z.enum(TECHNIQUES),

@@ -108,6 +108,7 @@ import {
   type Wave1ValidationLbomDocument,
   type Wave1ValidationLbomSummary,
 } from "../contracts/index.js";
+import { deriveGeneratedTestCaseClassification } from "./test-case-classification.js";
 import type { ExportPipelineArtifacts } from "./export-pipeline.js";
 import type { ValidationPipelineArtifacts } from "./validation-pipeline.js";
 import { canonicalJson, sha256Hex } from "./content-hash.js";
@@ -1412,6 +1413,13 @@ const buildSyntheticCase = (
         : {}),
     },
   ];
+  const classification = deriveGeneratedTestCaseClassification({
+    type: input.type,
+    title: input.title,
+    objective: input.objective,
+    expectedResults: input.expectedResults,
+    steps: input.steps,
+  });
   return {
     id,
     sourceJobId: input.audit.jobId,
@@ -1422,6 +1430,8 @@ const buildSyntheticCase = (
     objective: input.objective,
     level,
     type: input.type,
+    polarity: classification.polarity,
+    category: classification.category,
     priority: input.priority,
     riskCategory: input.riskCategory,
     technique: input.technique,

@@ -1,8 +1,12 @@
 import {
+  ALLOWED_GENERATED_TEST_CASE_CATEGORIES,
+  ALLOWED_GENERATED_TEST_CASE_POLARITIES,
   ALLOWED_REGULATORY_RELEVANCE_DOMAINS,
   GENERATED_TEST_CASE_SCHEMA_VERSION,
   TEST_INTELLIGENCE_CONTRACT_VERSION,
   TEST_INTELLIGENCE_PROMPT_TEMPLATE_VERSION,
+  type GeneratedTestCaseCategory,
+  type GeneratedTestCasePolarity,
   type GeneratedTestCase,
   type GeneratedTestCaseList,
   type GeneratedTestCaseReviewState,
@@ -55,6 +59,10 @@ const TYPES: readonly TestCaseType[] = [
 ];
 
 const PRIORITIES: readonly TestCasePriority[] = ["p0", "p1", "p2", "p3"];
+const POLARITIES: readonly GeneratedTestCasePolarity[] =
+  ALLOWED_GENERATED_TEST_CASE_POLARITIES;
+const CASE_CATEGORIES: readonly GeneratedTestCaseCategory[] =
+  ALLOWED_GENERATED_TEST_CASE_CATEGORIES;
 
 const RISK_CATEGORIES: readonly TestCaseRiskCategory[] = [
   "low",
@@ -82,6 +90,8 @@ const TEST_CASE_KEYS = [
   "objective",
   "level",
   "type",
+  "polarity",
+  "category",
   "priority",
   "riskCategory",
   "technique",
@@ -246,6 +256,12 @@ const validateTestCase = (
   expectString(tc["objective"], `${path}.objective`, errors);
   expectEnum(tc["level"], LEVELS, `${path}.level`, errors);
   expectEnum(tc["type"], TYPES, `${path}.type`, errors);
+  if ("polarity" in tc && tc["polarity"] !== undefined) {
+    expectEnum(tc["polarity"], POLARITIES, `${path}.polarity`, errors);
+  }
+  if ("category" in tc && tc["category"] !== undefined) {
+    expectEnum(tc["category"], CASE_CATEGORIES, `${path}.category`, errors);
+  }
   expectEnum(tc["priority"], PRIORITIES, `${path}.priority`, errors);
   expectEnum(
     tc["riskCategory"],

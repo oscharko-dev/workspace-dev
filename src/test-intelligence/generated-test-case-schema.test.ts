@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  ALLOWED_GENERATED_TEST_CASE_CATEGORIES,
+  ALLOWED_GENERATED_TEST_CASE_POLARITIES,
   GENERATED_TEST_CASE_SCHEMA_VERSION,
   REDACTION_POLICY_VERSION,
   TEST_INTELLIGENCE_CONTRACT_VERSION,
@@ -29,6 +31,8 @@ const buildSampleTestCase = (
   objective: "Verify the form accepts a syntactically valid IBAN.",
   level: "system",
   type: "validation",
+  polarity: "validation",
+  category: "validation_rule",
   priority: "p1",
   riskCategory: "regulated_data",
   technique: "boundary_value_analysis",
@@ -168,7 +172,7 @@ test("schema: drift guard — the hash is stable for the current contract", () =
   // `TechniqueQuotaReport` contract, `TECHNIQUE_*` runtime constants,
   // no `GeneratedTestCaseList` shape changes). Same lockstep rationale.
   const expected =
-    "41803eae023c6b7ec2f51220c62a5b095021693f3bf524f2c2bbcbe74b5ccc6a";
+    "ece4030075dd97f589df99ed03c2dcea4cbf2b65d245b0c578b565fadc45371a";
   const actual = computeGeneratedTestCaseListSchemaHash();
   if (actual !== expected) {
     assert.fail(
@@ -226,6 +230,17 @@ test("validator: rejects an unknown technique", () => {
     result.errors.some((error) => error.path === "$.testCases[0].technique"),
     "expected technique error",
   );
+});
+
+test("schema: exposes the additive Issue #2030 polarity/category enums", () => {
+  const schema = buildGeneratedTestCaseListJsonSchema();
+  const serialized = JSON.stringify(schema);
+  for (const polarity of ALLOWED_GENERATED_TEST_CASE_POLARITIES) {
+    assert.match(serialized, new RegExp(`"${polarity}"`));
+  }
+  for (const category of ALLOWED_GENERATED_TEST_CASE_CATEGORIES) {
+    assert.match(serialized, new RegExp(`"${category}"`));
+  }
 });
 
 test("validator: rejects empty steps array", () => {
