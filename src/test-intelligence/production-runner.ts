@@ -203,7 +203,10 @@ import {
   type FigmaRestNode,
 } from "./figma-rest-adapter.js";
 import { normalizeFigmaFileToIntentInput } from "./figma-payload-normalizer.js";
-import { deriveBusinessTestIntentIr } from "./intent-derivation.js";
+import {
+  deriveBusinessTestIntentIr,
+  type IntentDerivationFigmaInput,
+} from "./intent-derivation.js";
 import type { LlmGatewayClient } from "./llm-gateway.js";
 import type { LlmGatewayClientBundle } from "./llm-gateway-bundle.js";
 import { scanLessons, selectRelevantLessons } from "./agent-lessons-memdir.js";
@@ -543,6 +546,12 @@ interface LlmDraftResponse {
 export type ProductionRunnerSource =
   | { kind: "figma_url"; figmaUrl: string; accessToken: string }
   | { kind: "figma_paste_normalized"; file: FigmaRestFileSnapshot }
+  | {
+      kind: "figma_local_json";
+      figma: IntentDerivationFigmaInput;
+      fileKey?: string;
+      name?: string;
+    }
   | {
       kind: "figma_rest_file";
       file: FigmaRestFileSnapshot;
@@ -2290,12 +2299,16 @@ export const runFigmaToQcTestCases = async (
     details: { source: input.source.kind },
   });
   const figmaPayloadCap = resolveFigmaPayloadCap(input.maxFigmaPayloadBytes);
-  const figmaFile = await resolveFigmaSource(input.source, figmaPayloadCap);
+  const resolvedFigmaSource = await resolveFigmaSource(
+    input.source,
+    figmaPayloadCap,
+  );
+  const figmaFile = resolvedFigmaSource.figmaFile;
   assertFigmaPayloadWithinLimit(figmaFile, figmaPayloadCap);
   await mkdir(artifactDir, { recursive: true });
-  const normalizedUntrusted = normalizeUntrustedContent({
-    figma: { document: figmaFile.document },
-  });
+  const normalizedUntrusted = normalizeUntrustedContent(
+    resolvedFigmaSource.untrustedContentInput,
+  );
   const untrustedContentNormalizationReportPath = (
     await writeUntrustedContentNormalizationReport(
       artifactDir,
@@ -2308,11 +2321,13 @@ export const runFigmaToQcTestCases = async (
   );
 
   // 2. Normalize REST file → IntentDerivationFigmaInput.
-  const intentInput = normalizeFigmaFileToIntentInput({
-    fileKey: figmaFile.fileKey,
-    document: (normalizedUntrusted.figma?.document ??
-      figmaFile.document) as FigmaRestNode,
-  });
+  const intentInput =
+    resolvedFigmaSource.intentInput ??
+    normalizeFigmaFileToIntentInput({
+      fileKey: figmaFile.fileKey,
+      document: (normalizedUntrusted.figma?.document ??
+        figmaFile.document) as FigmaRestNode,
+    });
   if (intentInput.screens.length === 0) {
     throw new ProductionRunnerError({
       failureClass: "EMPTY_FIGMA_INPUT",
@@ -6050,12 +6065,45 @@ const resolveFigmaPayloadCap = (override: number | undefined): number => {
 const resolveFigmaSource = async (
   source: ProductionRunnerSource,
   maxPayloadBytes: number,
-): Promise<FigmaRestFileSnapshot> => {
+): Promise<
+  | {
+      figmaFile: FigmaRestFileSnapshot;
+      intentInput?: undefined;
+      untrustedContentInput: { figma: { document: unknown } };
+    }
+  | {
+      figmaFile: FigmaRestFileSnapshot;
+      intentInput: IntentDerivationFigmaInput;
+      untrustedContentInput: Record<string, never>;
+    }
+> => {
+  if (source.kind === "figma_local_json") {
+    return {
+      figmaFile: {
+        name: source.name ?? source.fileKey ?? "local-fixture",
+        fileKey: source.fileKey ?? "local-fixture",
+        document: {
+          id: source.fileKey ?? "local-fixture",
+          name: source.name ?? source.fileKey ?? "local-fixture",
+          type: "DOCUMENT",
+          children: [],
+        },
+      },
+      intentInput: source.figma,
+      untrustedContentInput: {},
+    };
+  }
   if (source.kind === "figma_paste_normalized") {
-    return source.file;
+    return {
+      figmaFile: source.file,
+      untrustedContentInput: { figma: { document: source.file.document } },
+    };
   }
   if (source.kind === "figma_rest_file") {
-    return source.file;
+    return {
+      figmaFile: source.file,
+      untrustedContentInput: { figma: { document: source.file.document } },
+    };
   }
   // figma_url path.
   let parsed: ReturnType<typeof parseFigmaUrl>;
@@ -6073,12 +6121,16 @@ const resolveFigmaSource = async (
     throw err;
   }
   try {
-    return await fetchFigmaFileForTestIntelligence({
+    const figmaFile = await fetchFigmaFileForTestIntelligence({
       fileKey: parsed.fileKey,
       accessToken: source.accessToken,
       maxResponseBytes: maxPayloadBytes,
       ...(parsed.nodeId !== undefined ? { nodeId: parsed.nodeId } : {}),
     });
+    return {
+      figmaFile,
+      untrustedContentInput: { figma: { document: figmaFile.document } },
+    };
   } catch (err) {
     if (
       err instanceof FigmaRestFetchError &&
@@ -6143,6 +6195,9 @@ const resolveSourceLabel = (source: ProductionRunnerSource): string => {
     } catch {
       return "(figma_url)";
     }
+  }
+  if (source.kind === "figma_local_json") {
+    return source.name ?? source.fileKey ?? "(figma_local_json)";
   }
   return "(figma_paste)";
 };

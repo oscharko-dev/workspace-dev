@@ -1,0 +1,93 @@
+name: workspace-dev drift canary (test-intelligence)
+
+on:
+  schedule:
+    - cron: "15 2 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  drift-canary:
+    name: ti-drift-canary
+    timeout-minutes: 30
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: read
+    steps:
+      - name: Check for required secrets
+        id: check_secret
+        env:
+          API_KEY: ${{ secrets.WORKSPACE_TEST_SPACE_LLM_API_KEY }}
+          MODEL_ENDPOINT: ${{ secrets.WORKSPACE_TEST_SPACE_MODEL_ENDPOINT }}
+          TESTCASE_DEPLOYMENT: ${{ secrets.WORKSPACE_TEST_SPACE_TESTCASE_MODEL_DEPLOYMENT }}
+          VISUAL_ENDPOINT: ${{ secrets.WORKSPACE_TEST_SPACE_VISUAL_MODEL_ENDPOINT }}
+          VISUAL_PRIMARY: ${{ secrets.WORKSPACE_TEST_SPACE_VISUAL_PRIMARY_DEPLOYMENT }}
+          VISUAL_FALLBACK: ${{ secrets.WORKSPACE_TEST_SPACE_VISUAL_FALLBACK_DEPLOYMENT }}
+        run: |
+          missing=""
+          [ -n "$API_KEY" ] || missing="${missing}\n- WORKSPACE_TEST_SPACE_LLM_API_KEY"
+          [ -n "$MODEL_ENDPOINT" ] || missing="${missing}\n- WORKSPACE_TEST_SPACE_MODEL_ENDPOINT"
+          [ -n "$TESTCASE_DEPLOYMENT" ] || missing="${missing}\n- WORKSPACE_TEST_SPACE_TESTCASE_MODEL_DEPLOYMENT"
+          [ -n "$VISUAL_ENDPOINT" ] || missing="${missing}\n- WORKSPACE_TEST_SPACE_VISUAL_MODEL_ENDPOINT"
+          [ -n "$VISUAL_PRIMARY" ] || missing="${missing}\n- WORKSPACE_TEST_SPACE_VISUAL_PRIMARY_DEPLOYMENT"
+          [ -n "$VISUAL_FALLBACK" ] || missing="${missing}\n- WORKSPACE_TEST_SPACE_VISUAL_FALLBACK_DEPLOYMENT"
+          if [ -n "$missing" ]; then
+            echo "secret_present=false" >> "$GITHUB_OUTPUT"
+            {
+              echo "## drift-canary skipped"
+              echo
+              echo "The drift-canary lane requires the live Azure Foundry secret set."
+              echo "Missing secrets:"
+              printf '%b\n' "$missing"
+            } >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "secret_present=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        if: steps.check_secret.outputs.secret_present == 'true'
+        with:
+          persist-credentials: false
+
+      - uses: pnpm/action-setup@8912a9102ac27614460f54aedde9e1e7f9aec20d
+        if: steps.check_secret.outputs.secret_present == 'true'
+        with:
+          version: 10.33.0
+
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
+        if: steps.check_secret.outputs.secret_present == 'true'
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        if: steps.check_secret.outputs.secret_present == 'true'
+        run: pnpm install --frozen-lockfile --ignore-scripts
+
+      - name: Run drift canary
+        if: steps.check_secret.outputs.secret_present == 'true'
+        env:
+          WORKSPACE_TEST_SPACE_LLM_API_KEY: ${{ secrets.WORKSPACE_TEST_SPACE_LLM_API_KEY }}
+          WORKSPACE_TEST_SPACE_MODEL_ENDPOINT: ${{ secrets.WORKSPACE_TEST_SPACE_MODEL_ENDPOINT }}
+          WORKSPACE_TEST_SPACE_TESTCASE_MODEL_DEPLOYMENT: ${{ secrets.WORKSPACE_TEST_SPACE_TESTCASE_MODEL_DEPLOYMENT }}
+          WORKSPACE_TEST_SPACE_VISUAL_MODEL_ENDPOINT: ${{ secrets.WORKSPACE_TEST_SPACE_VISUAL_MODEL_ENDPOINT }}
+          WORKSPACE_TEST_SPACE_VISUAL_PRIMARY_DEPLOYMENT: ${{ secrets.WORKSPACE_TEST_SPACE_VISUAL_PRIMARY_DEPLOYMENT }}
+          WORKSPACE_TEST_SPACE_VISUAL_FALLBACK_DEPLOYMENT: ${{ secrets.WORKSPACE_TEST_SPACE_VISUAL_FALLBACK_DEPLOYMENT }}
+        run: pnpm run test:ti-drift-canary
+
+      - name: Upload drift-canary artifacts
+        if: always() && steps.check_secret.outputs.secret_present == 'true'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: ti-drift-canary-${{ github.run_id }}
+          path: |
+            artifacts/testing/drift-canary/**
+            .workspace-dev/drift-canaries/**
+          if-no-files-found: ignore
+          retention-days: 30
