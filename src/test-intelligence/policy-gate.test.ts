@@ -20,6 +20,7 @@ import {
 import {
   evaluatePolicyGate,
   pruneResolvedMultiSourceConflictViolations,
+  type ComplianceRiskOverride,
 } from "./policy-gate.js";
 import { cloneEuBankingDefaultProfile } from "./policy-profile.js";
 import { computeCoverageReport } from "./test-case-coverage.js";
@@ -1922,4 +1923,187 @@ test("Issue #1950: in-tolerance candidate does not emit a coverage-drift violati
     (entry) => entry.rule === "policy:coverage-drift-exceeded",
   );
   assert.equal(violation, undefined);
+});
+
+// ----------------------------------------------------------------------
+// Issue #2030 follow-up — compliance-sidecar regulatedRiskOverride wiring
+// (K0-measurement-driven; see PR for the K0 vs K1 numerical delta and
+// `scripts/measure-eingabemasken.ts` for the deterministic harness used
+// to pin the expected behavior.)
+// ----------------------------------------------------------------------
+
+test("Issue #2030: job-wide compliance override fires regulated-risk-requires-review when intent has no PII / risks", () => {
+  const intent = buildIntent(); // no risks, no PII indicators
+  const ctx = harness([buildCase({ riskCategory: "low" })], intent);
+  const overrides: ComplianceRiskOverride[] = [
+    { riskCategory: "regulated_data", rationale: "MiFID-II" },
+  ];
+
+  const report = evaluatePolicyGate({
+    jobId: "job-1",
+    generatedAt: GENERATED_AT,
+    list: ctx.list,
+    intent: ctx.intent,
+    profile: ctx.profile,
+    validation: ctx.validation,
+    coverage: ctx.coverage,
+    complianceOverrides: overrides,
+  });
+
+  const regRisk = report.decisions[0]?.violations.find(
+    (v) => v.rule === "policy:regulated-risk-requires-review",
+  );
+  assert.ok(
+    regRisk,
+    "compliance override must elevate regulated-risk-requires-review when no PII fires",
+  );
+  assert.equal(regRisk.severity, "warning");
+});
+
+test("Issue #2030: job-wide compliance override fires risk-tag-downgrade-detected on low-tagged cases", () => {
+  const intent = buildIntent();
+  const ctx = harness([buildCase({ riskCategory: "low" })], intent);
+  const overrides: ComplianceRiskOverride[] = [
+    { riskCategory: "regulated_data", rationale: "MiFID-II" },
+  ];
+
+  const report = evaluatePolicyGate({
+    jobId: "job-1",
+    generatedAt: GENERATED_AT,
+    list: ctx.list,
+    intent: ctx.intent,
+    profile: ctx.profile,
+    validation: ctx.validation,
+    coverage: ctx.coverage,
+    complianceOverrides: overrides,
+  });
+
+  const perCase = report.decisions[0]?.violations.find(
+    (v) => v.rule === "policy:risk-tag-downgrade-detected",
+  );
+  assert.ok(
+    perCase,
+    "downgrade detection must fire when override declares regulated_data and case is low",
+  );
+  const job = report.jobLevelViolations.find(
+    (v) => v.outcome === "risk_tag_downgrade_detected",
+  );
+  assert.ok(
+    job,
+    "job-level downgrade must mirror the per-case override-driven downgrade",
+  );
+});
+
+test("Issue #2030: compliance override does NOT weaken an already-derived classification", () => {
+  // Intent declares `regulated_data` directly — the override is `low`
+  // and must not downgrade the existing review-only classification.
+  const intent = buildIntent({ risks: ["regulated_data"] });
+  const ctx = harness([buildCase({ riskCategory: "regulated_data" })], intent);
+  const overrides: ComplianceRiskOverride[] = [
+    { riskCategory: "low", rationale: "intentionally weak override" },
+  ];
+
+  const report = evaluatePolicyGate({
+    jobId: "job-1",
+    generatedAt: GENERATED_AT,
+    list: ctx.list,
+    intent: ctx.intent,
+    profile: ctx.profile,
+    validation: ctx.validation,
+    coverage: ctx.coverage,
+    complianceOverrides: overrides,
+  });
+
+  const regRisk = report.decisions[0]?.violations.find(
+    (v) => v.rule === "policy:regulated-risk-requires-review",
+  );
+  assert.ok(
+    regRisk,
+    "regulated-risk warning persists when the case correctly declares the regulated category",
+  );
+  // Override of `low` is not a review-only category and must not
+  // appear as the resolved classification in the violation reason.
+  assert.equal(
+    regRisk.reason.includes('risk category "low"'),
+    false,
+    "override of low must not down-classify a regulated_data case",
+  );
+});
+
+test("Issue #2030: screen-scoped override only fires for cases on that screen", () => {
+  const intent = buildIntent({
+    screens: [
+      { screenId: "s-1", screenName: "MiFID Order", trace: { nodeId: "s-1" } },
+      { screenId: "s-2", screenName: "Generic Form", trace: { nodeId: "s-2" } },
+    ],
+  });
+  const onScreen1 = buildCase({
+    id: "tc-on-s1",
+    riskCategory: "low",
+    figmaTraceRefs: [{ screenId: "s-1" }],
+  });
+  const onScreen2 = buildCase({
+    id: "tc-on-s2",
+    riskCategory: "low",
+    figmaTraceRefs: [{ screenId: "s-2" }],
+  });
+  const ctx = harness([onScreen1, onScreen2], intent);
+  const overrides: ComplianceRiskOverride[] = [
+    {
+      screenId: "s-1",
+      riskCategory: "regulated_data",
+      rationale: "MiFID-II Order screen only",
+    },
+  ];
+
+  const report = evaluatePolicyGate({
+    jobId: "job-1",
+    generatedAt: GENERATED_AT,
+    list: ctx.list,
+    intent: ctx.intent,
+    profile: ctx.profile,
+    validation: ctx.validation,
+    coverage: ctx.coverage,
+    complianceOverrides: overrides,
+  });
+
+  const decisionForS1 = report.decisions.find((d) => d.testCaseId === "tc-on-s1");
+  const decisionForS2 = report.decisions.find((d) => d.testCaseId === "tc-on-s2");
+  const s1Has = decisionForS1?.violations.some(
+    (v) => v.rule === "policy:risk-tag-downgrade-detected",
+  );
+  const s2Has = decisionForS2?.violations.some(
+    (v) => v.rule === "policy:risk-tag-downgrade-detected",
+  );
+  assert.equal(s1Has, true, "screen-scoped override must elevate s-1");
+  assert.equal(s2Has, false, "screen-scoped override must NOT elevate s-2");
+});
+
+test("Issue #2030: override with non-review-only category is ignored", () => {
+  const intent = buildIntent();
+  const ctx = harness([buildCase({ riskCategory: "low" })], intent);
+  // `low` is NOT in `reviewOnlyRiskCategories`; treat as no-op.
+  const overrides: ComplianceRiskOverride[] = [
+    { riskCategory: "low", rationale: "non-regulated mass-market step" },
+  ];
+
+  const report = evaluatePolicyGate({
+    jobId: "job-1",
+    generatedAt: GENERATED_AT,
+    list: ctx.list,
+    intent: ctx.intent,
+    profile: ctx.profile,
+    validation: ctx.validation,
+    coverage: ctx.coverage,
+    complianceOverrides: overrides,
+  });
+
+  const regRisk = report.decisions[0]?.violations.find(
+    (v) => v.rule === "policy:regulated-risk-requires-review",
+  );
+  assert.equal(
+    regRisk,
+    undefined,
+    "override of `low` (not a review-only category) must not fire regulated-risk-requires-review",
+  );
 });
