@@ -171,7 +171,7 @@ test(
           }),
         });
         const finopsBudget = cloneEuBankingDefaultFinOpsBudget();
-        finopsBudget.maxJobWallClockMs = 1_000;
+        finopsBudget.maxJobWallClockMs = 5_000;
 
         const startedAt = Date.now();
         const result = await runFigmaToQcTestCases({

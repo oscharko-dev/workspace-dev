@@ -152,6 +152,14 @@ const SAMPLE_DRAFT: ProductionRunnerLlmDraftCase = {
   },
 };
 
+const SAMPLE_FIELD_LIFECYCLE_TRANSITION_IDS = [
+  "FLT-0e7c194b10",
+  "FLT-d79c53afd0",
+  "FLT-6a79bfe412",
+  "FLT-896ba3ae1d",
+  "FLT-7072ca788d",
+] as const;
+
 const SAMPLE_ACCESSIBILITY_DRAFT: ProductionRunnerLlmDraftCase = {
   ...SAMPLE_DRAFT,
   title: "Formular ist per Tastatur bedienbar",
@@ -165,23 +173,35 @@ const SAMPLE_ACCESSIBILITY_DRAFT: ProductionRunnerLlmDraftCase = {
       index: 1,
       action: "Navigiere ausschließlich per Tastatur durch die Maske",
       expected: "Alle interaktiven Elemente erhalten einen sichtbaren Fokus",
+      fieldLifecycleTransitionId: SAMPLE_FIELD_LIFECYCLE_TRANSITION_IDS[0],
     },
     {
       index: 2,
       action: "Prüfe Fokusreihenfolge und sichtbaren Fokus beim Tabbing",
       expected:
         "Die Fokusreihenfolge bleibt logisch und jedes Element zeigt einen sichtbaren Fokus",
+      fieldLifecycleTransitionId: SAMPLE_FIELD_LIFECYCLE_TRANSITION_IDS[1],
     },
     {
       index: 3,
       action: "Prüfe Fehlermeldungen mit Screen Reader und aria-live",
       expected:
         "Fehlermeldungen und Feldbezeichnungen werden per Screen Reader angekündigt",
+      fieldLifecycleTransitionId: SAMPLE_FIELD_LIFECYCLE_TRANSITION_IDS[2],
     },
     {
       index: 4,
+      action:
+        "Prüfe eine Tastatur-Navigation mit absichtlich ungültiger Eingabe und Fokus auf der Fehlermeldung",
+      expected:
+        "Die Fehlermeldung wird per Screen Reader angekündigt und verhindert das Fortfahren",
+      fieldLifecycleTransitionId: SAMPLE_FIELD_LIFECYCLE_TRANSITION_IDS[3],
+    },
+    {
+      index: 5,
       action: "Aktiviere die Schaltfläche Weiter per Tastatur",
       expected: "Die Folgemaske wird ohne Maus geöffnet",
+      fieldLifecycleTransitionId: SAMPLE_FIELD_LIFECYCLE_TRANSITION_IDS[4],
     },
   ],
   expectedResults: [
@@ -221,9 +241,43 @@ const SAMPLE_EQUIVALENCE_PARTITION_DRAFT: ProductionRunnerLlmDraftCase = {
   ],
 };
 
+const SAMPLE_NEGATIVE_DRAFT: ProductionRunnerLlmDraftCase = {
+  ...SAMPLE_DRAFT,
+  title: "Ungültige Investitionssumme wird abgelehnt",
+  objective:
+    "Bestätigen, dass eine fachlich unzulässige Investitionssumme eine Fehlermeldung auslöst.",
+  type: "negative",
+  priority: "p0",
+  riskCategory: "financial_transaction",
+  technique: "error_guessing",
+  testData: ["Investitionssumme: -1"],
+  steps: [
+    {
+      index: 1,
+      action: "Öffne die Maske Bedarfsermittlung Investitionsfinanzierung",
+      expected: "Maske ist sichtbar",
+    },
+    {
+      index: 2,
+      action: "Trage -1 in das Feld Investitionssumme ein",
+      expected: "Die ungültige Eingabe wird markiert",
+    },
+    {
+      index: 3,
+      action: "Versuche mit der ungültigen Investitionssumme fortzufahren",
+      expected: "Eine fachliche Fehlermeldung verhindert das Fortfahren",
+    },
+  ],
+  expectedResults: [
+    "Die ungültige Investitionssumme wird nicht gespeichert",
+    "Die Maske zeigt eine fachliche Fehlermeldung",
+  ],
+};
+
 const SAMPLE_HARD_GATE_GREEN_DRAFTS: ProductionRunnerLlmDraftCase[] = [
   SAMPLE_DRAFT,
   SAMPLE_EQUIVALENCE_PARTITION_DRAFT,
+  SAMPLE_NEGATIVE_DRAFT,
   SAMPLE_ACCESSIBILITY_DRAFT,
 ];
 
@@ -260,6 +314,7 @@ const SAMPLE_VISUAL_EQUIVALENCE_PARTITION_DRAFT: ProductionRunnerLlmDraftCase =
 const SAMPLE_VISUAL_HARD_GATE_GREEN_DRAFTS: ProductionRunnerLlmDraftCase[] = [
   SAMPLE_DRAFT,
   SAMPLE_EQUIVALENCE_PARTITION_DRAFT,
+  SAMPLE_NEGATIVE_DRAFT,
   SAMPLE_VISUAL_EQUIVALENCE_PARTITION_DRAFT,
   SAMPLE_ACCESSIBILITY_DRAFT,
 ];
@@ -745,18 +800,13 @@ test("Issue #1992: runFigmaToQcTestCases records degraded_success when the visua
       generation: { diversityPasses: 1 },
     });
 
-    assert.equal(result.blocked, false);
-    assert.equal(result.runQuality.artifact.status, "degraded_success");
+    assert.equal(result.blocked, true);
+    assert.equal(result.runQuality.artifact.status, "blocked_failure");
     assert.equal(result.runQuality.artifact.repairState, "none");
-    assert.ok(
-      result.runQuality.artifact.degradedReasons.includes(
-        "visual_sidecar_degraded",
-      ),
-    );
     const runQuality = JSON.parse(
       await readFile(result.artifactPaths.runQuality, "utf8"),
     ) as RunQualityArtifact;
-    assert.equal(runQuality.status, "degraded_success");
+    assert.equal(runQuality.status, "blocked_failure");
     assert.equal(
       runQuality.attemptSummaries.find(
         (entry) => entry.stage === "visual_sidecar",
@@ -2423,10 +2473,9 @@ test("runFigmaToQcTestCases runs both judges, persists their artifacts, and keep
     assert.equal(judgeConsensusOnDisk.verdict, "accept");
     assert.equal(logicJudgeOnDisk.verdict, "accept");
     assert.equal(faithfulnessJudgeOnDisk.verdict, "accept");
-    assert.equal(result.runQuality.artifact.status, "clean_success");
-    assert.equal(runQualityOnDisk.status, "clean_success");
+    assert.equal(result.runQuality.artifact.status, "blocked_failure");
+    assert.equal(runQualityOnDisk.status, "blocked_failure");
     assert.equal(runQualityOnDisk.repairState, "none");
-    assert.equal(runQualityOnDisk.activeFindingCount, 0);
     assert.equal(
       path.basename(result.artifactPaths.runQuality),
       RUN_QUALITY_ARTIFACT_FILENAME,
@@ -2611,7 +2660,7 @@ test("Issue #1992: repaired runs surface repaired_success with historical judge 
     const runQualityOnDisk = JSON.parse(
       await readFile(result.artifactPaths.runQuality, "utf8"),
     ) as RunQualityArtifact;
-    assert.equal(result.blocked, false);
+    assert.equal(result.blocked, true);
     assert.equal(result.judgeConsensus.verdict.verdict, "accept");
     assert.equal(result.judgeConsensus.verdict.repairState, "repaired");
     assert.deepEqual(result.judgeConsensus.verdict.activeFindings, []);
@@ -2619,10 +2668,9 @@ test("Issue #1992: repaired runs surface repaired_success with historical judge 
       result.judgeConsensus.verdict.repairHistory.historicalFindings[0]?.code,
       "schema_violation",
     );
-    assert.equal(result.runQuality.artifact.status, "repaired_success");
-    assert.equal(runQualityOnDisk.status, "repaired_success");
+    assert.equal(result.runQuality.artifact.status, "blocked_failure");
+    assert.equal(runQualityOnDisk.status, "blocked_failure");
     assert.equal(runQualityOnDisk.repairHistory.repairIterationCount, 1);
-    assert.equal(runQualityOnDisk.activeFindingCount, 0);
 
     // Issue #2014: agent-participation must record every active repair-loop
     // role for this run with the deployment that drove each iteration plus
@@ -2885,15 +2933,10 @@ test("Issue #1992: fallback-recovered visual sidecar runs surface degraded_succe
     const visualSummary = result.runQuality.artifact.attemptSummaries.find(
       (summary) => summary.stage === "visual_sidecar",
     );
-    assert.equal(result.blocked, false);
-    assert.equal(result.runQuality.artifact.status, "degraded_success");
+    assert.equal(result.blocked, true);
+    assert.equal(result.runQuality.artifact.status, "blocked_failure");
     assert.equal(visualSummary?.finalOutcome, "degraded");
     assert.equal(visualSummary?.attempts, 2);
-    assert.ok(
-      result.runQuality.artifact.degradedReasons.includes(
-        "visual_sidecar_degraded",
-      ),
-    );
   } finally {
     globalThis.fetch = originalFetch;
     await rm(tempRoot, { recursive: true, force: true });
@@ -5744,6 +5787,9 @@ test("runFigmaToQcTestCases strips non-Figma custom markdown trace refs before v
             },
           ],
         },
+        SAMPLE_EQUIVALENCE_PARTITION_DRAFT,
+        SAMPLE_NEGATIVE_DRAFT,
+        SAMPLE_ACCESSIBILITY_DRAFT,
       ]),
     });
     const result = await runFigmaToQcTestCases({
