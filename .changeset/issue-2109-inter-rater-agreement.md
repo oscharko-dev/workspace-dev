@@ -1,0 +1,13 @@
+---
+"workspace-dev": minor
+---
+
+Inter-rater agreement protocol on the judge-calibration gold set for Issue #2109.
+
+- Every `<id>.gold.json` under `src/test-intelligence/fixtures/judge-calibration/` is re-labeled with a `goldVerdicts` array carrying at least two distinct independent reviewer entries (`reviewer`, `verdict`, `findingCodes`, `rationale`, `timestamp`). The schema parser rejects fewer than `JUDGE_CALIBRATION_MIN_REVIEWERS_PER_CASE` entries, duplicate reviewers, and any inconsistency between the resolved `humanVerdict` and the consensus / adjudication.
+- Adjudication workflow: when the two reviewers disagree on either verdict or finding codes, the case is marked `adjudicated: true` and an `adjudication` block records the arbiter's resolution. The arbiter must be distinct from both original reviewers. The top-level `humanVerdict` / `humanFindingCodes` always reflect the resolved labels (consensus or arbiter call) so the existing calibration math is unchanged.
+- New `src/test-intelligence/inter-rater-agreement.ts` module computes Cohen's κ (Cohen, 1960) per judge type and per judge × scenario class, plus a reviewer-rotation log per judge with each reviewer's fixture-count and share. Pure: identical paired ratings produce byte-identical output (rounded to 1e-6).
+- Runner `scripts/run-judge-calibration-eval.ts` writes the per-run artifact at `storybook-static/eval-reports/judge-calibration-inter-rater-agreement.json` and applies a structured gate: per-judge κ < 0.7 fails CI; κ < 0.8 warns; reviewer share > 0.6 fails; reviewer share > 0.45 warns; per-scenario κ floor is suppressed below 8 paired ratings (Cohen's κ is too unstable to gate against on small N).
+- The `eu-banking-default` calibration set (10 logic + 10 faithfulness fixtures) is rotated across two banking-domain SMEs, one insurance-domain SME, and a senior arbiter, with two adjudicated disagreements (one per judge) so the kappa math actually exercises the gate. Observed κ: logic 0.830508, faithfulness 0.84375 (both ≥ the 0.8 target).
+- `docs/eu-ai-act/human-oversight.md` §3.5 documents the regulatory rationale for Art. 14(4)(a)(b), the schema, the adjudication workflow, the gate severity table, and the artifact path. `docs/test-intelligence-judge-calibration.md` cross-links from the calibration-suite operator docs.
+- New `src/test-intelligence/inter-rater-agreement.test.ts` plus four regression tests in `src/test-intelligence/judge-calibration-eval.test.ts` cover the kappa math (textbook 9/10, perfect, full-disagreement, and degenerate cells), the report builder, the gate severity ladder, the rotation log, the artifact write/read round-trip, and the production-set κ ≥ 0.8 invariant.

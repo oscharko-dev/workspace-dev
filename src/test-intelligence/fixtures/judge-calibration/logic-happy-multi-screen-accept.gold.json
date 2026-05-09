@@ -4,7 +4,24 @@
   "scenarioKind": "happy",
   "humanVerdict": "accept",
   "humanFindingCodes": [],
-  "rationale": "Two-screen transfer flow covers every plan-required action with trace anchors on both screens; reviewer accepted.",
+  "rationale": "Multi-screen coverage spans search and settings with explicit per-screen a11y assertions; reviewer accepted as production-ready.",
+  "goldVerdicts": [
+    {
+      "reviewer": "reviewer:banking-sme:alpha",
+      "verdict": "accept",
+      "findingCodes": [],
+      "rationale": "Banking-domain SME first-pass review: Multi-screen coverage spans search and settings with explicit per-screen a11y assertions; reviewer accepted as production-ready.",
+      "timestamp": "2026-04-29T10:00:00.000Z"
+    },
+    {
+      "reviewer": "reviewer:insurance-sme:gamma",
+      "verdict": "accept",
+      "findingCodes": [],
+      "rationale": "Independent second-reviewer pass: confirmed the first-pass verdict \u2014 Multi-screen coverage spans search and settings with explicit per-screen a11y assertions; reviewer accepted as production-ready.",
+      "timestamp": "2026-04-30T14:00:00.000Z"
+    }
+  ],
+  "adjudicated": false,
   "mockJudgeResponse": {
     "predictedVerdict": "accept",
     "predictedFindingCodes": []

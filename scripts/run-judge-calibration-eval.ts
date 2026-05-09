@@ -42,13 +42,22 @@ import {
   JUDGE_CALIBRATION_EVAL_FIXTURE_GENERATED_AT,
   JUDGE_CALIBRATION_JUDGE_IDS,
   appendJudgeCalibrationHistoryEntry,
+  buildArbiterAssignmentFromFixture,
   buildJudgeCalibrationEvalArtifact,
+  buildPairedRatingFromFixture,
   buildSampleFromFixture,
   loadAllJudgeCalibrationFixtures,
   partitionSamplesByJudge,
   writeJudgeCalibrationEvalArtifact,
   type JudgeCalibrationJudgeId,
 } from "../src/test-intelligence/judge-calibration-eval.js";
+import {
+  buildInterRaterAgreementArtifact,
+  buildInterRaterAgreementReport,
+  formatInterRaterFailure,
+  formatInterRaterWarning,
+  writeInterRaterAgreementArtifact,
+} from "../src/test-intelligence/inter-rater-agreement.js";
 
 interface CliOptions {
   outputDir: string;
@@ -154,12 +163,75 @@ const main = async (): Promise<void> => {
     }
   }
 
-  if (failures.length > 0) {
-    process.stderr.write(
-      `judge-calibration-eval gate failed for ${failures.length} judge(s):\n`,
+  // Inter-rater agreement gate (Issue #2109): Cohen's κ on the
+  // first-two-reviewer paired ratings + reviewer-rotation log.
+  const ratings = fixtures.map((fixture) =>
+    buildPairedRatingFromFixture(fixture),
+  );
+  const arbiters = fixtures
+    .map((fixture) => buildArbiterAssignmentFromFixture(fixture))
+    .filter(
+      (entry): entry is NonNullable<typeof entry> => entry !== null,
     );
-    for (const failure of failures) {
-      process.stderr.write(`  - ${failure}\n`);
+  const interRaterReport = buildInterRaterAgreementReport({
+    ratings,
+    arbiters,
+  });
+  const interRaterArtifact = buildInterRaterAgreementArtifact({
+    report: interRaterReport,
+    generatedAt: recordedAt,
+  });
+  const interRaterPath = await writeInterRaterAgreementArtifact({
+    artifact: interRaterArtifact,
+    outputDir,
+  });
+  process.stdout.write(`wrote ${interRaterPath}\n`);
+
+  for (const judge of JUDGE_CALIBRATION_JUDGE_IDS) {
+    const scope = interRaterReport.perJudge[judge];
+    process.stdout.write(
+      `inter-rater agreement (${judge}): ` +
+        `paired_ratings=${scope.metrics.sampleCount}, ` +
+        `cohens_kappa=${scope.metrics.cohensKappa}, ` +
+        `observed_agreement=${scope.metrics.observedAgreement}, ` +
+        `expected_agreement=${scope.metrics.expectedAgreement}, ` +
+        `adjudicated=${scope.adjudicatedFixtureIds.length}\n`,
+    );
+    const rotation = interRaterReport.rotation[judge];
+    process.stdout.write(
+      `reviewer-rotation (${judge}): ` +
+        `assignments=${rotation.totalAssignments}, ` +
+        `distinct_reviewers=${rotation.distinctReviewers}, ` +
+        `max_share=${rotation.maxShare}\n`,
+    );
+  }
+  for (const warning of interRaterReport.warnings) {
+    process.stdout.write(
+      `inter-rater agreement WARN: ${formatInterRaterWarning(warning)}\n`,
+    );
+  }
+
+  const interRaterFailureLines: string[] = interRaterReport.failures.map(
+    (failure) => formatInterRaterFailure(failure),
+  );
+
+  const totalFailureCount = failures.length + interRaterFailureLines.length;
+  if (totalFailureCount > 0) {
+    if (failures.length > 0) {
+      process.stderr.write(
+        `judge-calibration-eval gate failed for ${failures.length} judge(s):\n`,
+      );
+      for (const failure of failures) {
+        process.stderr.write(`  - ${failure}\n`);
+      }
+    }
+    if (interRaterFailureLines.length > 0) {
+      process.stderr.write(
+        `inter-rater agreement gate failed (Issue #2109) with ${interRaterFailureLines.length} violation(s):\n`,
+      );
+      for (const line of interRaterFailureLines) {
+        process.stderr.write(`  - ${line}\n`);
+      }
     }
     process.exit(1);
   }

@@ -123,6 +123,33 @@ export const JUDGE_CALIBRATION_HARD_THRESHOLDS = Object.freeze({
 export type JudgeCalibrationThresholds =
   typeof JUDGE_CALIBRATION_HARD_THRESHOLDS;
 
+/**
+ * One reviewer's verdict on a gold case. Issue #2109 lifts the gold-set
+ * from single-annotator labels (audit finding) to two independent
+ * reviewers per case, with a third reviewer (`adjudication.arbiter`)
+ * breaking ties when the two original reviewers disagree.
+ */
+export interface JudgeCalibrationGoldVerdict {
+  readonly reviewer: string;
+  readonly verdict: JudgeCalibrationVerdictLabel;
+  readonly findingCodes: ReadonlyArray<string>;
+  readonly rationale: string;
+  readonly timestamp: string;
+}
+
+/**
+ * Arbiter resolution applied when the two original reviewers disagreed
+ * on either verdict or finding-code set. The arbiter must be distinct
+ * from both original reviewers (see {@link parseGold}).
+ */
+export interface JudgeCalibrationAdjudication {
+  readonly arbiter: string;
+  readonly verdict: JudgeCalibrationVerdictLabel;
+  readonly findingCodes: ReadonlyArray<string>;
+  readonly rationale: string;
+  readonly timestamp: string;
+}
+
 /** One human-labeled gold verdict colocated with a fixture. */
 export interface JudgeCalibrationGold {
   readonly fixtureId: string;
@@ -131,6 +158,16 @@ export interface JudgeCalibrationGold {
   readonly humanVerdict: JudgeCalibrationVerdictLabel;
   readonly humanFindingCodes: ReadonlyArray<string>;
   readonly rationale: string;
+  /**
+   * Independent reviewer verdicts (Issue #2109). At least two distinct
+   * reviewers per case. When they disagree, {@link adjudicated} is
+   * `true` and {@link adjudication} carries the arbiter resolution; the
+   * top-level `humanVerdict` / `humanFindingCodes` always reflect the
+   * authoritative resolved labels (consensus or adjudicated).
+   */
+  readonly goldVerdicts: ReadonlyArray<JudgeCalibrationGoldVerdict>;
+  readonly adjudicated: boolean;
+  readonly adjudication?: JudgeCalibrationAdjudication;
   /**
    * Recorded judge prediction baseline used by the CI test. The live
    * runner overrides this with a real LLM call; the recorded baseline
@@ -142,6 +179,9 @@ export interface JudgeCalibrationGold {
     readonly predictedFindingCodes: ReadonlyArray<string>;
   };
 }
+
+/** Minimum number of independent reviewers per gold case (Issue #2109). */
+export const JUDGE_CALIBRATION_MIN_REVIEWERS_PER_CASE = 2 as const;
 
 /** A judge-shaped input replayed verbatim into a live runner. */
 export interface JudgeCalibrationInput {
@@ -486,6 +526,100 @@ const isScenarioKind = (
 const isStringArray = (value: unknown): value is ReadonlyArray<string> =>
   Array.isArray(value) && value.every((entry) => typeof entry === "string");
 
+const parseGoldVerdict = (
+  raw: unknown,
+  fixtureId: string,
+  index: number,
+): JudgeCalibrationGoldVerdict => {
+  if (typeof raw !== "object" || raw === null) {
+    throw new Error(
+      `gold ${fixtureId}: goldVerdicts[${index}] must be an object`,
+    );
+  }
+  const value = raw as Record<string, unknown>;
+  if (typeof value["reviewer"] !== "string" || value["reviewer"].length === 0) {
+    throw new Error(`gold ${fixtureId}: goldVerdicts[${index}].reviewer is required`);
+  }
+  if (!isVerdictLabel(value["verdict"])) {
+    throw new Error(`gold ${fixtureId}: goldVerdicts[${index}].verdict is invalid`);
+  }
+  if (!isStringArray(value["findingCodes"])) {
+    throw new Error(
+      `gold ${fixtureId}: goldVerdicts[${index}].findingCodes must be string[]`,
+    );
+  }
+  if (typeof value["rationale"] !== "string") {
+    throw new Error(
+      `gold ${fixtureId}: goldVerdicts[${index}].rationale must be a string`,
+    );
+  }
+  if (typeof value["timestamp"] !== "string" || value["timestamp"].length === 0) {
+    throw new Error(
+      `gold ${fixtureId}: goldVerdicts[${index}].timestamp must be a non-empty ISO-8601 string`,
+    );
+  }
+  return {
+    reviewer: value["reviewer"],
+    verdict: value["verdict"],
+    findingCodes: [...value["findingCodes"]],
+    rationale: value["rationale"],
+    timestamp: value["timestamp"],
+  };
+};
+
+const parseAdjudication = (
+  raw: unknown,
+  fixtureId: string,
+): JudgeCalibrationAdjudication => {
+  if (typeof raw !== "object" || raw === null) {
+    throw new Error(`gold ${fixtureId}: adjudication must be an object`);
+  }
+  const value = raw as Record<string, unknown>;
+  if (typeof value["arbiter"] !== "string" || value["arbiter"].length === 0) {
+    throw new Error(`gold ${fixtureId}: adjudication.arbiter is required`);
+  }
+  if (!isVerdictLabel(value["verdict"])) {
+    throw new Error(`gold ${fixtureId}: adjudication.verdict is invalid`);
+  }
+  if (!isStringArray(value["findingCodes"])) {
+    throw new Error(
+      `gold ${fixtureId}: adjudication.findingCodes must be string[]`,
+    );
+  }
+  if (typeof value["rationale"] !== "string") {
+    throw new Error(`gold ${fixtureId}: adjudication.rationale must be a string`);
+  }
+  if (typeof value["timestamp"] !== "string" || value["timestamp"].length === 0) {
+    throw new Error(
+      `gold ${fixtureId}: adjudication.timestamp must be a non-empty ISO-8601 string`,
+    );
+  }
+  return {
+    arbiter: value["arbiter"],
+    verdict: value["verdict"],
+    findingCodes: [...value["findingCodes"]],
+    rationale: value["rationale"],
+    timestamp: value["timestamp"],
+  };
+};
+
+const sortedFindingCodes = (codes: ReadonlyArray<string>): ReadonlyArray<string> =>
+  [...codes].sort();
+
+const goldVerdictsAgree = (
+  a: JudgeCalibrationGoldVerdict,
+  b: JudgeCalibrationGoldVerdict,
+): boolean => {
+  if (a.verdict !== b.verdict) return false;
+  const left = sortedFindingCodes(a.findingCodes);
+  const right = sortedFindingCodes(b.findingCodes);
+  if (left.length !== right.length) return false;
+  for (let i = 0; i < left.length; i += 1) {
+    if (left[i] !== right[i]) return false;
+  }
+  return true;
+};
+
 const parseGold = (raw: unknown, fixtureId: string): JudgeCalibrationGold => {
   if (typeof raw !== "object" || raw === null) {
     throw new Error(`gold ${fixtureId}: expected object, got ${typeof raw}`);
@@ -511,6 +645,90 @@ const parseGold = (raw: unknown, fixtureId: string): JudgeCalibrationGold => {
   if (typeof value["rationale"] !== "string") {
     throw new Error(`gold ${fixtureId}: invalid rationale`);
   }
+  const goldVerdictsRaw = value["goldVerdicts"];
+  if (!Array.isArray(goldVerdictsRaw)) {
+    throw new Error(
+      `gold ${fixtureId}: goldVerdicts is required and must be an array (Issue #2109)`,
+    );
+  }
+  if (goldVerdictsRaw.length < JUDGE_CALIBRATION_MIN_REVIEWERS_PER_CASE) {
+    throw new Error(
+      `gold ${fixtureId}: goldVerdicts must contain at least ${JUDGE_CALIBRATION_MIN_REVIEWERS_PER_CASE} reviewer entries (Issue #2109); got ${goldVerdictsRaw.length}`,
+    );
+  }
+  const goldVerdicts: JudgeCalibrationGoldVerdict[] = goldVerdictsRaw.map(
+    (entry, index) => parseGoldVerdict(entry, fixtureId, index),
+  );
+  const reviewers = new Set<string>();
+  for (const entry of goldVerdicts) {
+    if (reviewers.has(entry.reviewer)) {
+      throw new Error(
+        `gold ${fixtureId}: goldVerdicts must have distinct reviewers (duplicate ${entry.reviewer})`,
+      );
+    }
+    reviewers.add(entry.reviewer);
+  }
+  if (typeof value["adjudicated"] !== "boolean") {
+    throw new Error(`gold ${fixtureId}: adjudicated must be boolean`);
+  }
+  const adjudicated = value["adjudicated"];
+  let adjudication: JudgeCalibrationAdjudication | undefined;
+  if (value["adjudication"] !== undefined) {
+    adjudication = parseAdjudication(value["adjudication"], fixtureId);
+    if (reviewers.has(adjudication.arbiter)) {
+      throw new Error(
+        `gold ${fixtureId}: adjudication.arbiter must be distinct from goldVerdicts reviewers`,
+      );
+    }
+  }
+
+  // Cross-field consistency: reviewers either all agree (adjudicated=false) or
+  // disagreement triggers a recorded arbiter resolution (adjudicated=true).
+  const allAgree = goldVerdicts.every((entry) =>
+    goldVerdictsAgree(entry, goldVerdicts[0]!),
+  );
+  if (adjudicated && allAgree) {
+    throw new Error(
+      `gold ${fixtureId}: adjudicated=true but all reviewer verdicts agree`,
+    );
+  }
+  if (!adjudicated && !allAgree) {
+    throw new Error(
+      `gold ${fixtureId}: reviewers disagreed but adjudicated=false; an arbiter resolution is required (Issue #2109)`,
+    );
+  }
+  if (adjudicated && adjudication === undefined) {
+    throw new Error(
+      `gold ${fixtureId}: adjudicated=true requires an adjudication block`,
+    );
+  }
+  if (!adjudicated && adjudication !== undefined) {
+    throw new Error(
+      `gold ${fixtureId}: adjudication block present but adjudicated=false`,
+    );
+  }
+  // Authoritative human-verdict block must match either consensus or adjudication.
+  const expectedVerdict = adjudicated
+    ? adjudication!.verdict
+    : goldVerdicts[0]!.verdict;
+  const expectedFindingCodes = adjudicated
+    ? sortedFindingCodes(adjudication!.findingCodes)
+    : sortedFindingCodes(goldVerdicts[0]!.findingCodes);
+  if (value["humanVerdict"] !== expectedVerdict) {
+    throw new Error(
+      `gold ${fixtureId}: humanVerdict=${value["humanVerdict"]} disagrees with the resolved verdict=${expectedVerdict}`,
+    );
+  }
+  const observedFindingCodes = sortedFindingCodes(value["humanFindingCodes"]);
+  if (
+    observedFindingCodes.length !== expectedFindingCodes.length ||
+    observedFindingCodes.some((code, i) => code !== expectedFindingCodes[i])
+  ) {
+    throw new Error(
+      `gold ${fixtureId}: humanFindingCodes disagree with the resolved finding codes`,
+    );
+  }
+
   const mock = value["mockJudgeResponse"];
   if (typeof mock !== "object" || mock === null) {
     throw new Error(`gold ${fixtureId}: invalid mockJudgeResponse`);
@@ -531,6 +749,9 @@ const parseGold = (raw: unknown, fixtureId: string): JudgeCalibrationGold => {
     humanVerdict: value["humanVerdict"],
     humanFindingCodes: [...value["humanFindingCodes"]],
     rationale: value["rationale"],
+    goldVerdicts,
+    adjudicated,
+    ...(adjudication !== undefined ? { adjudication } : {}),
     mockJudgeResponse: {
       predictedVerdict: mockObj["predictedVerdict"],
       predictedFindingCodes: [...mockObj["predictedFindingCodes"]],
@@ -702,6 +923,57 @@ export const JUDGE_CALIBRATION_FIXTURE_INDEX: ReadonlyArray<{
     scenarioKind: "edge",
   },
 ]);
+
+/**
+ * Project a fixture into the paired rating consumed by the inter-rater
+ * agreement module (Issue #2109): the first two reviewer verdicts on
+ * the gold case, scoped to the fixture's judge × scenario.
+ */
+export const buildPairedRatingFromFixture = (
+  fixture: LoadedJudgeCalibrationFixture,
+): {
+  readonly fixtureId: string;
+  readonly judge: JudgeCalibrationJudgeId;
+  readonly scenarioKind: JudgeCalibrationScenarioKind;
+  readonly reviewerA: string;
+  readonly verdictA: JudgeCalibrationVerdictLabel;
+  readonly reviewerB: string;
+  readonly verdictB: JudgeCalibrationVerdictLabel;
+  readonly adjudicated: boolean;
+} => {
+  const [a, b] = fixture.gold.goldVerdicts;
+  if (a === undefined || b === undefined) {
+    throw new Error(
+      `judge-calibration ${fixture.id}: fewer than 2 gold verdicts after parse`,
+    );
+  }
+  return {
+    fixtureId: fixture.id,
+    judge: fixture.judge,
+    scenarioKind: fixture.gold.scenarioKind,
+    reviewerA: a.reviewer,
+    verdictA: a.verdict,
+    reviewerB: b.reviewer,
+    verdictB: b.verdict,
+    adjudicated: fixture.gold.adjudicated,
+  };
+};
+
+/** Extract the arbiter (judge-scoped) from an adjudicated fixture, if any. */
+export const buildArbiterAssignmentFromFixture = (
+  fixture: LoadedJudgeCalibrationFixture,
+): {
+  readonly judge: JudgeCalibrationJudgeId;
+  readonly arbiter: string;
+} | null => {
+  if (!fixture.gold.adjudicated || fixture.gold.adjudication === undefined) {
+    return null;
+  }
+  return {
+    judge: fixture.judge,
+    arbiter: fixture.gold.adjudication.arbiter,
+  };
+};
 
 /** Materialize a calibration sample from a loaded fixture (using the recorded mock). */
 export const buildSampleFromFixture = (

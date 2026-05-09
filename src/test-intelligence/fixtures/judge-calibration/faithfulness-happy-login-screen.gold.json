@@ -4,7 +4,24 @@
   "scenarioKind": "happy",
   "humanVerdict": "accept",
   "humanFindingCodes": [],
-  "rationale": "Every referenced control (Username, Password, Sign in) is visible in the capture; reviewer accepted as visually faithful.",
+  "rationale": "Login form fields and primary button are present and labeled correctly in the capture; reviewer accepted.",
+  "goldVerdicts": [
+    {
+      "reviewer": "reviewer:banking-sme:beta",
+      "verdict": "accept",
+      "findingCodes": [],
+      "rationale": "Banking-domain SME first-pass review: Login form fields and primary button are present and labeled correctly in the capture; reviewer accepted.",
+      "timestamp": "2026-04-29T10:00:00.000Z"
+    },
+    {
+      "reviewer": "reviewer:insurance-sme:gamma",
+      "verdict": "accept",
+      "findingCodes": [],
+      "rationale": "Independent second-reviewer pass: confirmed the first-pass verdict \u2014 Login form fields and primary button are present and labeled correctly in the capture; reviewer accepted.",
+      "timestamp": "2026-04-30T14:00:00.000Z"
+    }
+  ],
+  "adjudicated": false,
   "mockJudgeResponse": {
     "predictedVerdict": "accept",
     "predictedFindingCodes": []

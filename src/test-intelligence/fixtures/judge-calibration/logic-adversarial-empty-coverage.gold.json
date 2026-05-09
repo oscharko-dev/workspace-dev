@@ -3,10 +3,35 @@
   "judge": "logic",
   "scenarioKind": "adversarial",
   "humanVerdict": "reject",
-  "humanFindingCodes": ["empty_coverage_signals"],
+  "humanFindingCodes": [
+    "empty_coverage_signals"
+  ],
   "rationale": "All qualitySignals arrays are empty, so the case carries zero evidence; reviewer rejected as fundamentally unsound.",
+  "goldVerdicts": [
+    {
+      "reviewer": "reviewer:banking-sme:beta",
+      "verdict": "reject",
+      "findingCodes": [
+        "empty_coverage_signals"
+      ],
+      "rationale": "Banking-domain SME first-pass review: All qualitySignals arrays are empty, so the case carries zero evidence; reviewer rejected as fundamentally unsound.",
+      "timestamp": "2026-04-29T10:00:00.000Z"
+    },
+    {
+      "reviewer": "reviewer:insurance-sme:gamma",
+      "verdict": "reject",
+      "findingCodes": [
+        "empty_coverage_signals"
+      ],
+      "rationale": "Independent second-reviewer pass: confirmed the first-pass verdict \u2014 All qualitySignals arrays are empty, so the case carries zero evidence; reviewer rejected as fundamentally unsound.",
+      "timestamp": "2026-04-30T14:00:00.000Z"
+    }
+  ],
+  "adjudicated": false,
   "mockJudgeResponse": {
     "predictedVerdict": "reject",
-    "predictedFindingCodes": ["empty_coverage_signals"]
+    "predictedFindingCodes": [
+      "empty_coverage_signals"
+    ]
   }
 }

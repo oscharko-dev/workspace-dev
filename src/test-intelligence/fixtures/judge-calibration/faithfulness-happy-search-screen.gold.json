@@ -5,6 +5,23 @@
   "humanVerdict": "accept",
   "humanFindingCodes": [],
   "rationale": "Both controls (Search query, Search) are visible; reviewer accepted.",
+  "goldVerdicts": [
+    {
+      "reviewer": "reviewer:banking-sme:alpha",
+      "verdict": "accept",
+      "findingCodes": [],
+      "rationale": "Banking-domain SME first-pass review: Both controls (Search query, Search) are visible; reviewer accepted.",
+      "timestamp": "2026-04-29T10:00:00.000Z"
+    },
+    {
+      "reviewer": "reviewer:insurance-sme:gamma",
+      "verdict": "accept",
+      "findingCodes": [],
+      "rationale": "Independent second-reviewer pass: confirmed the first-pass verdict \u2014 Both controls (Search query, Search) are visible; reviewer accepted.",
+      "timestamp": "2026-04-30T14:00:00.000Z"
+    }
+  ],
+  "adjudicated": false,
   "mockJudgeResponse": {
     "predictedVerdict": "accept",
     "predictedFindingCodes": []
