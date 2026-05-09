@@ -286,8 +286,13 @@ const compareFinding = (
 const inferFindingScope = (testCaseId: string): JudgeConsensusFinding["scope"] =>
   testCaseId === JOB_LEVEL_TEST_CASE_ID ? "job" : "test_case";
 
+type ScopeOptionalJudgeConsensusFinding =
+  Omit<JudgeConsensusFinding, "scope"> & {
+    scope?: JudgeConsensusFinding["scope"];
+  };
+
 const normalizeConsensusFinding = (
-  finding: JudgeConsensusFinding,
+  finding: ScopeOptionalJudgeConsensusFinding,
 ): JudgeConsensusFinding => ({
   ...finding,
   scope: finding.scope ?? inferFindingScope(finding.testCaseId),
