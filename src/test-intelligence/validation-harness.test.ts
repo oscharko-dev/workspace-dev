@@ -1230,3 +1230,206 @@ test("validation-harness: synthesizer keyword list does NOT collide with MA-0 ba
     );
   }
 });
+
+// ----------------------------------------------------------------------
+// Issue #2030 follow-up — synthesizer compliance-sidecar fallback
+// (PR-N+3, K1-measurement-driven). When a `complianceOverrides` array
+// is supplied to `synthesizeGeneratedTestCases`, every per-case risk
+// derivation that would otherwise return `low` (label has no
+// regulatory keyword) instead returns the override category. Action,
+// navigation and accessibility cases — which historically hardcoded
+// `riskCategory: "low"` — also pick up the override but DO NOT consult
+// `deriveRiskCategoryForLabel` on the action label, so they stay at
+// `low` whenever no override applies (preserves baseline-eval snapshots).
+// ----------------------------------------------------------------------
+
+test("validation-harness: complianceOverrides elevate label-less fields to the sidecar category (Issue #2030)", () => {
+  const intent: BusinessTestIntentIr = {
+    version: BUSINESS_TEST_INTENT_IR_SCHEMA_VERSION,
+    source: { kind: "figma_local_json", contentHash: "5".repeat(64) },
+    screens: [{ screenId: "s-mifid", screenName: "MiFID", trace: {} }],
+    detectedFields: [
+      { id: "f-isin", screenId: "s-mifid", trace: { nodeId: "n-isin" }, provenance: "figma_node", confidence: 0.9, label: "ISIN", type: "text" },
+      // Label has NO regulatory keyword — would default to `low` without override.
+      { id: "f-termin", screenId: "s-mifid", trace: { nodeId: "n-termin" }, provenance: "figma_node", confidence: 0.9, label: "Wunschtermin", type: "text" },
+    ],
+    detectedActions: [],
+    detectedValidations: [],
+    detectedNavigation: [],
+    inferredBusinessObjects: [],
+    risks: [],
+    assumptions: [],
+    openQuestions: [],
+    piiIndicators: [],
+    redactions: [],
+  };
+
+  // Without overrides: label-less field defaults to `low`.
+  const withoutOverrides = synthesizeGeneratedTestCases({
+    jobId: audit.jobId,
+    generatedAt: GENERATED_AT,
+    intent,
+    audit,
+  });
+  const labelless1 = withoutOverrides.testCases.find(
+    (tc) =>
+      tc.id.startsWith("tc-field-functional-") &&
+      tc.qualitySignals.coveredFieldIds.includes("f-termin"),
+  );
+  assert.equal(
+    labelless1?.riskCategory,
+    "low",
+    "label-less field defaults to low when no override is supplied",
+  );
+
+  // With overrides: label-less field inherits the sidecar category.
+  const withOverrides = synthesizeGeneratedTestCases({
+    jobId: audit.jobId,
+    generatedAt: GENERATED_AT,
+    intent,
+    audit,
+    complianceOverrides: [
+      { riskCategory: "regulated_data", rationale: "MiFID II suitability" },
+    ],
+  });
+  const labelless2 = withOverrides.testCases.find(
+    (tc) =>
+      tc.id.startsWith("tc-field-functional-") &&
+      tc.qualitySignals.coveredFieldIds.includes("f-termin"),
+  );
+  assert.equal(
+    labelless2?.riskCategory,
+    "regulated_data",
+    "label-less field inherits the override category from the sidecar",
+  );
+
+  // Field with a regulatory keyword keeps its keyword-derived classification
+  // (override never weakens or replaces a strong label match).
+  const withKeyword = withOverrides.testCases.find(
+    (tc) =>
+      tc.id.startsWith("tc-field-functional-") &&
+      tc.qualitySignals.coveredFieldIds.includes("f-isin"),
+  );
+  assert.equal(
+    withKeyword?.riskCategory,
+    "financial_transaction",
+    "ISIN keeps financial_transaction even when override declares regulated_data",
+  );
+});
+
+test("validation-harness: complianceOverrides elevate action/nav/a11y cases on regulated screens (Issue #2030)", () => {
+  const intent: BusinessTestIntentIr = {
+    version: BUSINESS_TEST_INTENT_IR_SCHEMA_VERSION,
+    source: { kind: "figma_local_json", contentHash: "6".repeat(64) },
+    screens: [
+      { screenId: "s-mifid", screenName: "MiFID", trace: {} },
+      { screenId: "s-confirm", screenName: "Confirm", trace: {} },
+    ],
+    detectedFields: [
+      { id: "f-isin", screenId: "s-mifid", trace: {}, provenance: "figma_node", confidence: 0.9, label: "ISIN", type: "text" },
+    ],
+    detectedActions: [
+      { id: "a-submit", screenId: "s-mifid", trace: {}, provenance: "figma_node", confidence: 0.9, label: "Order pruefen", intent: "submit" },
+    ],
+    detectedValidations: [],
+    detectedNavigation: [
+      { id: "n-go", screenId: "s-mifid", targetScreenId: "s-confirm", trigger: "submit", trace: {}, confidence: 0.8 },
+    ],
+    inferredBusinessObjects: [],
+    risks: [],
+    assumptions: [],
+    openQuestions: [],
+    piiIndicators: [],
+    redactions: [],
+  };
+
+  const list = synthesizeGeneratedTestCases({
+    jobId: audit.jobId,
+    generatedAt: GENERATED_AT,
+    intent,
+    audit,
+    complianceOverrides: [
+      { riskCategory: "regulated_data", rationale: "MiFID II Order screen" },
+    ],
+  });
+
+  const actionCase = list.testCases.find((tc) => tc.id.startsWith("tc-action-"));
+  const navCase = list.testCases.find((tc) => tc.id.startsWith("tc-navigation-"));
+  const a11yCase = list.testCases.find((tc) => tc.id.startsWith("tc-a11y-"));
+
+  assert.equal(
+    actionCase?.riskCategory,
+    "regulated_data",
+    "action case inherits override category on regulated screens",
+  );
+  assert.equal(
+    navCase?.riskCategory,
+    "regulated_data",
+    "navigation case inherits override category on regulated screens",
+  );
+  assert.equal(
+    a11yCase?.riskCategory,
+    "regulated_data",
+    "accessibility case inherits override category on regulated screens",
+  );
+});
+
+test("validation-harness: complianceOverrides preserve hardcoded `low` when no override applies (Issue #2030 / baseline immunity)", () => {
+  // Empty overrides + no-keyword labels: every action/nav/a11y case
+  // must stay at `low` so the seven checked-in eval-baseline-*.json
+  // snapshots remain byte-stable. This is the regression test that
+  // pinned the bug in PR-N+3 round 1 (which routed action labels
+  // through deriveRiskCategoryForLabel and accidentally elevated
+  // `Loss Amount` -> financial_transaction in baseline-ambiguous-rules).
+  const intent: BusinessTestIntentIr = {
+    version: BUSINESS_TEST_INTENT_IR_SCHEMA_VERSION,
+    source: { kind: "figma_local_json", contentHash: "7".repeat(64) },
+    screens: [
+      { screenId: "s-claim", screenName: "Claim", trace: {} },
+      { screenId: "s-next", screenName: "Next", trace: {} },
+    ],
+    detectedFields: [
+      { id: "f-policy", screenId: "s-claim", trace: {}, provenance: "figma_node", confidence: 0.9, label: "Policy Number", type: "text" },
+    ],
+    detectedActions: [
+      { id: "a-loss", screenId: "s-claim", trace: {}, provenance: "figma_node", confidence: 0.9, label: "Submit Loss Amount", intent: "submit" },
+    ],
+    detectedValidations: [],
+    detectedNavigation: [
+      { id: "n-go", screenId: "s-claim", targetScreenId: "s-next", trigger: "submit", trace: {}, confidence: 0.8 },
+    ],
+    inferredBusinessObjects: [],
+    risks: [],
+    assumptions: [],
+    openQuestions: [],
+    piiIndicators: [],
+    redactions: [],
+  };
+
+  const list = synthesizeGeneratedTestCases({
+    jobId: audit.jobId,
+    generatedAt: GENERATED_AT,
+    intent,
+    audit,
+  });
+
+  const actionCase = list.testCases.find((tc) => tc.id.startsWith("tc-action-"));
+  const navCase = list.testCases.find((tc) => tc.id.startsWith("tc-navigation-"));
+  const a11yCase = list.testCases.find((tc) => tc.id.startsWith("tc-a11y-"));
+
+  assert.equal(
+    actionCase?.riskCategory,
+    "low",
+    "action case stays at low when no override applies, even with `Submit Loss Amount` keyword in label",
+  );
+  assert.equal(
+    navCase?.riskCategory,
+    "low",
+    "navigation case stays at low when no override applies",
+  );
+  assert.equal(
+    a11yCase?.riskCategory,
+    "low",
+    "accessibility case stays at low when no override applies",
+  );
+});

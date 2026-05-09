@@ -139,6 +139,7 @@ import {
 } from "./visual-sidecar-client.js";
 import { cloneOpenTextAlmReferenceProfile } from "./qc-mapping.js";
 import { compilePrompt } from "./prompt-compiler.js";
+import type { ComplianceRiskOverride } from "./policy-gate.js";
 import { cloneEuBankingDefaultProfile } from "./policy-profile.js";
 import { writeAgentRoleRunArtifact } from "./agent-role-run-artifact.js";
 import {
@@ -481,6 +482,67 @@ const clampSynthesizedTitle = (raw: string): string => {
 };
 
 /**
+ * Pick the strongest review-only category from compliance overrides
+ * applicable to a given screen, or `undefined` when no review-only
+ * override matches. Mirrors the policy-gate's
+ * `resolveComplianceRiskOverride` so the synthesizer's tag and the
+ * gate's screen-classification stay aligned (Issue #2030 follow-up,
+ * K1-measurement-driven).
+ */
+const SYNTHESIZED_RISK_OVERRIDE_PRIORITY: ReadonlyArray<TestCaseRiskCategory> = [
+  "regulated_data",
+  "financial_transaction",
+];
+const pickComplianceOverride = (
+  screenId: string,
+  overrides: ReadonlyArray<ComplianceRiskOverride> | undefined,
+): TestCaseRiskCategory | undefined => {
+  if (overrides === undefined || overrides.length === 0) return undefined;
+  const matching = overrides.filter(
+    (o) => o.screenId === undefined || o.screenId === screenId,
+  );
+  if (matching.length === 0) return undefined;
+  for (const category of SYNTHESIZED_RISK_OVERRIDE_PRIORITY) {
+    if (matching.some((o) => o.riskCategory === category)) return category;
+  }
+  return undefined;
+};
+
+/**
+ * Resolve the per-case riskCategory for a synthesized test case.
+ *
+ * Resolution order (mirrors the policy-gate's `findIntentReviewRisk`
+ * fallback chain so the case-tag agrees with the screen-level
+ * classification used in downgrade detection):
+ *
+ *   1. Strong signal from `field.label` / `action.label` keyword match
+ *      via {@link deriveRiskCategoryForLabel}. Returns immediately when
+ *      a review-only category is found.
+ *   2. Fallback to the compliance-sidecar override applicable to the
+ *      case's screen (job-wide if `screenId === undefined`).
+ *   3. Default to `"low"`.
+ *
+ * The override path is the K1-measurement-driven addition: fields whose
+ * labels do NOT carry a regulatory keyword still inherit the regulatory
+ * classification of the screen they live on, so they ship with the
+ * correct riskCategory upfront and the policy gate stops emitting
+ * `policy:risk-tag-downgrade-detected` warnings on them.
+ */
+const resolveSynthesizedRiskCategory = (
+  label: string | undefined,
+  screenId: string,
+  complianceOverrides: ReadonlyArray<ComplianceRiskOverride> | undefined,
+): TestCaseRiskCategory => {
+  if (label !== undefined) {
+    const fromLabel = deriveRiskCategoryForLabel(label);
+    if (fromLabel !== "low") return fromLabel;
+  }
+  const fromOverride = pickComplianceOverride(screenId, complianceOverrides);
+  if (fromOverride !== undefined) return fromOverride;
+  return "low";
+};
+
+/**
  * Build a deterministic `GeneratedTestCaseList` from a Business Test
  * Intent IR. The function is the source of truth for what a "good"
  * Wave 1 mock-LLM response looks like for a given intent: it covers
@@ -497,6 +559,16 @@ export const synthesizeGeneratedTestCases = (input: {
   generatedAt: string;
   intent: BusinessTestIntentIr;
   audit: GeneratedTestCaseAuditMetadata;
+  /**
+   * Optional compliance-sidecar overrides (Issue #2030 follow-up).
+   * Forwarded into the per-case riskCategory resolution so cases on
+   * regulated screens whose field labels do NOT carry a regulatory
+   * keyword still inherit the screen-level classification declared by
+   * the sidecar. The same overrides MUST be passed to
+   * {@link runValidationPipeline} so the synthesizer tag and the
+   * policy-gate classification agree.
+   */
+  complianceOverrides?: ReadonlyArray<ComplianceRiskOverride>;
 }): GeneratedTestCaseList => {
   const cases: GeneratedTestCase[] = [];
 
@@ -521,7 +593,11 @@ export const synthesizeGeneratedTestCases = (input: {
         objective: `Confirm the ${field.label} field accepts a valid value.`,
         type: "functional",
         priority: "p1",
-        riskCategory: deriveRiskCategoryForLabel(field.label),
+        riskCategory: resolveSynthesizedRiskCategory(
+          field.label,
+          field.screenId,
+          input.complianceOverrides,
+        ),
         technique: "use_case",
         coveredFieldIds: [field.id],
         coveredActionIds: actionIdsForScreen(input.intent, field.screenId),
@@ -582,7 +658,11 @@ export const synthesizeGeneratedTestCases = (input: {
             : `Confirm the form rejects an empty ${field.label}.`,
           type: "negative",
           priority: "p1",
-          riskCategory: deriveRiskCategoryForLabel(field.label),
+          riskCategory: resolveSynthesizedRiskCategory(
+          field.label,
+          field.screenId,
+          input.complianceOverrides,
+        ),
           technique: "equivalence_partitioning",
           coveredFieldIds: [field.id],
           coveredActionIds: actionIdsForScreen(input.intent, field.screenId),
@@ -638,7 +718,11 @@ export const synthesizeGeneratedTestCases = (input: {
             : `Confirm validation messages for ${field.label}.`,
           type: "validation",
           priority: "p1",
-          riskCategory: deriveRiskCategoryForLabel(field.label),
+          riskCategory: resolveSynthesizedRiskCategory(
+          field.label,
+          field.screenId,
+          input.complianceOverrides,
+        ),
           technique: "decision_table",
           coveredFieldIds: [field.id],
           coveredActionIds: [],
@@ -682,7 +766,11 @@ export const synthesizeGeneratedTestCases = (input: {
             objective: `Probe the boundary lengths of the ${field.label} field.`,
             type: "boundary",
             priority: "p2",
-            riskCategory: deriveRiskCategoryForLabel(field.label),
+            riskCategory: resolveSynthesizedRiskCategory(
+          field.label,
+          field.screenId,
+          input.complianceOverrides,
+        ),
             technique: "boundary_value_analysis",
             coveredFieldIds: [field.id],
             coveredActionIds: [],
@@ -728,7 +816,18 @@ export const synthesizeGeneratedTestCases = (input: {
         objective: `Confirm the ${action.label} control performs its action.`,
         type: "functional",
         priority: "p1",
-        riskCategory: "low",
+        // Action cases preserve the pre-#2030 default of `low` when no
+        // compliance override applies. Passing `undefined` for the
+        // label deliberately skips `deriveRiskCategoryForLabel` so an
+        // action label like "Submit Loss Amount" does NOT silently
+        // elevate baselines via the financial_transaction keyword
+        // path. The override path still elevates actions on regulated
+        // screens when the sidecar declares `regulatedRiskOverride`.
+        riskCategory: resolveSynthesizedRiskCategory(
+          undefined,
+          action.screenId,
+          input.complianceOverrides,
+        ),
         technique: "use_case",
         coveredFieldIds: [],
         coveredActionIds: [action.id],
@@ -765,7 +864,11 @@ export const synthesizeGeneratedTestCases = (input: {
         objective: `Confirm the navigation edge from ${nav.screenId} to ${nav.targetScreenId}.`,
         type: "navigation",
         priority: "p2",
-        riskCategory: "low",
+        riskCategory: resolveSynthesizedRiskCategory(
+          undefined,
+          nav.screenId,
+          input.complianceOverrides,
+        ),
         technique: "state_transition",
         coveredFieldIds: [],
         coveredActionIds: [],
@@ -804,7 +907,11 @@ export const synthesizeGeneratedTestCases = (input: {
         objective: `Confirm keyboard and screen-reader accessibility on ${screenId}.`,
         type: "accessibility",
         priority: "p2",
-        riskCategory: "low",
+        riskCategory: resolveSynthesizedRiskCategory(
+          undefined,
+          screenId,
+          input.complianceOverrides,
+        ),
         technique: "exploratory",
         coveredFieldIds: fieldIds,
         coveredActionIds: actionIdsForScreen(input.intent, screenId),
