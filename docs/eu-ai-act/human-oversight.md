@@ -9,7 +9,7 @@ QA-assistance system.
 **Regulation:** REGULATION (EU) 2024/1689 (EU AI Act), specifically
 Article 14 (Human oversight).
 
-**Last reviewed:** 2026-04-27
+**Last reviewed:** 2026-05-09
 
 ---
 
@@ -118,7 +118,93 @@ These blocks are non-circumventable from the export pipeline; the only way
 forward is human reviewer action. This satisfies Art. 14(4)(f) (interrupt
 the system).
 
-### 3.5 Semantic content sanitization (Art. 14(4)(b))
+### 3.5 Inter-rater agreement protocol on the calibration gold set (Art. 14(4)(a)(b))
+
+Issue #2109 lifts the judge-calibration gold set from single-annotator
+labels to an inter-rater agreement protocol. Without this lift, the
+calibration thresholds (`accuracy ≥ 0.85`, `FPR ≤ 0.10`) are calibrated
+against a single reviewer's labels — a methodological weakness for
+high-stakes regulated AI because Art. 14(4)(a)(b) implicitly requires
+that the human-in-the-loop produces consistent, monitorable decisions.
+
+**Two-reviewer rule.** Every gold case under
+`src/test-intelligence/fixtures/judge-calibration/<id>.gold.json`
+carries a `goldVerdicts` array with **at least two distinct reviewer
+entries**. Each entry records:
+
+- `reviewer` — stable principal label (e.g. `reviewer:banking-sme:alpha`).
+- `verdict` — one of `accept` / `repair` / `reject`.
+- `findingCodes` — the codes the reviewer would emit on the case.
+- `rationale` — free-text reviewer note.
+- `timestamp` — ISO-8601 instant the verdict was recorded.
+
+Schema enforcement: the gold-set parser
+([`src/test-intelligence/judge-calibration-eval.ts`](../../src/test-intelligence/judge-calibration-eval.ts))
+rejects fixtures with fewer than `JUDGE_CALIBRATION_MIN_REVIEWERS_PER_CASE`
+(currently `2`) reviewer entries, duplicate reviewers, or a top-level
+`humanVerdict` that disagrees with the consensus or adjudication
+resolution.
+
+**Adjudication workflow.** When the two reviewers disagree on either
+the verdict or the finding-code set:
+
+- The case is marked `adjudicated: true`.
+- A third reviewer (the **arbiter**, distinct from both original
+  reviewers) records an `adjudication` block with the same
+  `verdict` / `findingCodes` / `rationale` / `timestamp` shape.
+- The top-level `humanVerdict` / `humanFindingCodes` reflect the
+  **arbiter's** resolution and are the authoritative labels the
+  calibration math consumes.
+- Conversely, when the two reviewers agree, `adjudicated` is `false`
+  and no `adjudication` block is present; the parser rejects any
+  inconsistency between `adjudicated` and the actual
+  agreement/disagreement state.
+
+**Cohen's κ on the calibration set.**
+[`src/test-intelligence/inter-rater-agreement.ts`](../../src/test-intelligence/inter-rater-agreement.ts)
+computes Cohen's κ (Cohen, 1960) between the first two reviewer
+verdicts, both **per judge type** (logic / faithfulness) and **per
+judge × per scenario class** (`happy` / `adversarial` / `edge`). The
+artifact also persists:
+
+- The 3-class confusion matrix and observed/expected agreement.
+- The list of `disagreementFixtureIds` and `adjudicatedFixtureIds`.
+- A reviewer-rotation log per judge with each reviewer's
+  fixture-count and share so a single reviewer cannot dominate the
+  calibration set silently.
+
+**Gate severity.** The runner
+[`scripts/run-judge-calibration-eval.ts`](../../scripts/run-judge-calibration-eval.ts)
+applies the gate at:
+
+| Severity | Condition                                                     | Effect                                |
+| -------- | ------------------------------------------------------------- | ------------------------------------- |
+| `fail`   | Per-judge κ < `0.7` (`INTER_RATER_KAPPA_HARD_FLOOR`)           | Non-zero exit; CI red.                |
+| `warn`   | Per-judge κ < `0.8` (`INTER_RATER_KAPPA_WARN_FLOOR`)           | Logged to stdout; no exit-code change. |
+| `fail`   | Reviewer-share > `0.6` (`INTER_RATER_REVIEWER_SHARE_HARD_CAP`) | Non-zero exit.                        |
+| `warn`   | Reviewer-share > `0.45` (`INTER_RATER_REVIEWER_SHARE_WARN_CAP`)| Logged to stdout.                     |
+| `warn`   | Per-scenario κ below floor when paired-rating count < `8`     | Logged; the per-scenario hard-fail is suppressed below `INTER_RATER_PER_SCENARIO_GATE_MIN_PAIRS` because the κ point estimate is too unstable to gate against on small N. |
+
+The gate runs in every CI pipeline that already exercises
+`pnpm run test:ti-judge-calibration` (PR, dev-merge, release) — see
+[`docs/test-intelligence-judge-calibration.md`](../test-intelligence-judge-calibration.md).
+
+**Reviewer staffing (operator responsibility).** The package ships an
+example reviewer pool of two banking-domain SMEs, one insurance-domain
+SME, and one senior arbiter. Operators MUST configure their own pool
+of at least two banking-domain SMEs plus one senior arbiter for
+production use, rotating the secondary reviewer so no single SME
+exceeds the share thresholds above.
+
+**Evidence for Art. 14 audit.** The persisted artifact at
+`storybook-static/eval-reports/judge-calibration-inter-rater-agreement.json`
+documents per-judge κ, per-scenario κ, the rotation log, the
+adjudicated fixture ids, and the gate verdict. This artifact is the
+auditable record that the human-in-the-loop produces consistent
+decisions on the calibration set — the prerequisite for relying on
+human-overridden judge thresholds under Art. 14.
+
+### 3.6 Semantic content sanitization (Art. 14(4)(b))
 
 Wave 2 Issue #1413 introduced semantic content sanitization. The validator
 detects suspicious content categories (`shell_metacharacters`,
@@ -144,6 +230,7 @@ The following per-job artifacts provide evidence of human oversight controls:
 | `policy-report.json`                      | Per-case policy decisions, including four-eyes flags and conflict-triggered escalations                |
 | `wave1-validation-evidence-manifest.json`        | SHA-256 hashes for every artifact plus model deployment names and prompt template version              |
 | `validation-report.json`                  | Per-case AI output validation, including semantic-suspicious-content findings                          |
+| `judge-calibration-inter-rater-agreement.json` | Cohen's κ per judge / per scenario, reviewer-rotation log, and adjudicated-fixture ids; demonstrates that the human-in-the-loop produces consistent calibration labels (Issue #2109) |
 
 ---
 
@@ -196,3 +283,4 @@ operator is responsible for:
 - Issue #1376 — four-eyes review enforcement
 - Issue #1364 — policy gate
 - Issue #1413 — semantic content sanitization
+- Issue #2109 — inter-rater agreement protocol on the calibration gold set

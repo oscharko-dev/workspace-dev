@@ -3,10 +3,35 @@
   "judge": "logic",
   "scenarioKind": "edge",
   "humanVerdict": "repair",
-  "humanFindingCodes": ["insufficient_coverage_breadth"],
+  "humanFindingCodes": [
+    "insufficient_coverage_breadth"
+  ],
   "rationale": "Only 1 of 4 fields is covered (25% < 0.40 ratio); reviewer marked it as repairable to add missing field cases.",
+  "goldVerdicts": [
+    {
+      "reviewer": "reviewer:banking-sme:alpha",
+      "verdict": "repair",
+      "findingCodes": [
+        "insufficient_coverage_breadth"
+      ],
+      "rationale": "Banking-domain SME first-pass review: Only 1 of 4 fields is covered (25% < 0.40 ratio); reviewer marked it as repairable to add missing field cases.",
+      "timestamp": "2026-04-29T10:00:00.000Z"
+    },
+    {
+      "reviewer": "reviewer:insurance-sme:gamma",
+      "verdict": "repair",
+      "findingCodes": [
+        "insufficient_coverage_breadth"
+      ],
+      "rationale": "Independent second-reviewer pass: confirmed the first-pass verdict \u2014 Only 1 of 4 fields is covered (25% < 0.40 ratio); reviewer marked it as repairable to add missing field cases.",
+      "timestamp": "2026-04-30T14:00:00.000Z"
+    }
+  ],
+  "adjudicated": false,
   "mockJudgeResponse": {
     "predictedVerdict": "repair",
-    "predictedFindingCodes": ["insufficient_coverage_breadth"]
+    "predictedFindingCodes": [
+      "insufficient_coverage_breadth"
+    ]
   }
 }

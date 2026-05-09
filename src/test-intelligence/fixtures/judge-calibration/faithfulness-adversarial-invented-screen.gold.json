@@ -3,10 +3,35 @@
   "judge": "faithfulness",
   "scenarioKind": "adversarial",
   "humanVerdict": "reject",
-  "humanFindingCodes": ["hallucination_invented_screen"],
-  "rationale": "There is no Admin Console capture in the bundle — the case invented an entire screen; reviewer rejected.",
+  "humanFindingCodes": [
+    "hallucination_invented_screen"
+  ],
+  "rationale": "The case references a 'Reset Password' screen that has no Figma capture; reviewer rejected as a hallucinated screen reference.",
+  "goldVerdicts": [
+    {
+      "reviewer": "reviewer:banking-sme:alpha",
+      "verdict": "reject",
+      "findingCodes": [
+        "hallucination_invented_screen"
+      ],
+      "rationale": "Banking-domain SME first-pass review: The case references a 'Reset Password' screen that has no Figma capture; reviewer rejected as a hallucinated screen reference.",
+      "timestamp": "2026-04-29T10:00:00.000Z"
+    },
+    {
+      "reviewer": "reviewer:banking-sme:beta",
+      "verdict": "reject",
+      "findingCodes": [
+        "hallucination_invented_screen"
+      ],
+      "rationale": "Independent second-reviewer pass: confirmed the first-pass verdict \u2014 The case references a 'Reset Password' screen that has no Figma capture; reviewer rejected as a hallucinated screen reference.",
+      "timestamp": "2026-04-30T14:00:00.000Z"
+    }
+  ],
+  "adjudicated": false,
   "mockJudgeResponse": {
     "predictedVerdict": "reject",
-    "predictedFindingCodes": ["hallucination_invented_screen"]
+    "predictedFindingCodes": [
+      "hallucination_invented_screen"
+    ]
   }
 }

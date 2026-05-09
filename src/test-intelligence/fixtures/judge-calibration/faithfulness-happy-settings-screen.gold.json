@@ -4,7 +4,24 @@
   "scenarioKind": "happy",
   "humanVerdict": "accept",
   "humanFindingCodes": [],
-  "rationale": "Display name and Save changes both appear in the capture; reviewer accepted.",
+  "rationale": "Settings toggles are exhaustively covered and the labels match the capture verbatim; reviewer accepted.",
+  "goldVerdicts": [
+    {
+      "reviewer": "reviewer:banking-sme:alpha",
+      "verdict": "accept",
+      "findingCodes": [],
+      "rationale": "Banking-domain SME first-pass review: Settings toggles are exhaustively covered and the labels match the capture verbatim; reviewer accepted.",
+      "timestamp": "2026-04-29T10:00:00.000Z"
+    },
+    {
+      "reviewer": "reviewer:banking-sme:beta",
+      "verdict": "accept",
+      "findingCodes": [],
+      "rationale": "Independent second-reviewer pass: confirmed the first-pass verdict \u2014 Settings toggles are exhaustively covered and the labels match the capture verbatim; reviewer accepted.",
+      "timestamp": "2026-04-30T14:00:00.000Z"
+    }
+  ],
+  "adjudicated": false,
   "mockJudgeResponse": {
     "predictedVerdict": "accept",
     "predictedFindingCodes": []

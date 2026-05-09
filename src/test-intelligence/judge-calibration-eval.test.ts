@@ -272,6 +272,48 @@ test("loadJudgeCalibrationFixture round-trips a single fixture pair", async () =
   assert.equal(fixture.gold.scenarioKind, "happy");
   assert.equal(fixture.gold.humanVerdict, "accept");
   assert.equal(fixture.input.judge, "logic");
+  assert.ok(fixture.gold.goldVerdicts.length >= 2);
+});
+
+test("every loaded fixture carries at least 2 reviewer verdicts (Issue #2109)", async () => {
+  const fixtures = await loadAllJudgeCalibrationFixtures();
+  for (const fixture of fixtures) {
+    assert.ok(
+      fixture.gold.goldVerdicts.length >= 2,
+      `${fixture.id}: only ${fixture.gold.goldVerdicts.length} reviewer verdict(s)`,
+    );
+    const reviewers = new Set(
+      fixture.gold.goldVerdicts.map((entry) => entry.reviewer),
+    );
+    assert.equal(
+      reviewers.size,
+      fixture.gold.goldVerdicts.length,
+      `${fixture.id}: reviewers must be distinct`,
+    );
+    if (fixture.gold.adjudicated) {
+      assert.ok(
+        fixture.gold.adjudication !== undefined,
+        `${fixture.id}: adjudicated=true but no adjudication block`,
+      );
+      assert.ok(
+        !reviewers.has(fixture.gold.adjudication.arbiter),
+        `${fixture.id}: arbiter must be distinct from reviewers`,
+      );
+    }
+  }
+});
+
+test("exactly two fixtures across the calibration set are adjudicated (Issue #2109)", async () => {
+  const fixtures = await loadAllJudgeCalibrationFixtures();
+  const adjudicated = fixtures.filter((fixture) => fixture.gold.adjudicated);
+  assert.equal(adjudicated.length, 2);
+  for (const fixture of adjudicated) {
+    assert.equal(
+      fixture.gold.humanVerdict,
+      fixture.gold.adjudication?.verdict,
+      `${fixture.id}: humanVerdict must match adjudication.verdict`,
+    );
+  }
 });
 
 test("resolveJudgeCalibrationFixturePath produces stable paths for both kinds", () => {

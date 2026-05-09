@@ -149,6 +149,47 @@ scenario kind or distributed across the calibration set.
 The eval costs zero gateway calls in mock mode and no extra wall
 clock budget on top of the existing `test:ti-*` gate suite.
 
+## Inter-rater agreement (Issue #2109)
+
+Single-annotator gold labels are the largest methodological weakness in
+a regulated calibration suite. Issue #2109 layers an inter-rater
+protocol on top of the gold set:
+
+- Every `<id>.gold.json` carries a `goldVerdicts` array with at least
+  two distinct reviewer entries (`reviewer`, `verdict`, `findingCodes`,
+  `rationale`, `timestamp`).
+- When the two reviewers disagree on either verdict or finding codes,
+  `adjudicated: true` and an `adjudication` block records the arbiter's
+  resolution. The top-level `humanVerdict` / `humanFindingCodes` always
+  reflect the consensus (or the arbiter's call if adjudicated) and are
+  the authoritative labels the calibration math reads.
+- Cohen's κ (Cohen, 1960) is computed per judge type and per
+  judge × scenario class; the report also persists a reviewer-rotation
+  log so a single reviewer cannot silently dominate the gold set.
+
+The runner emits one row per judge to stdout with `cohens_kappa`,
+`observed_agreement`, `expected_agreement`, and the
+`adjudicated`-fixture count, plus a rotation row with `assignments`,
+`distinct_reviewers`, and `max_share`.
+
+The artifact lands at
+`storybook-static/eval-reports/judge-calibration-inter-rater-agreement.json`
+([`INTER_RATER_AGREEMENT_ARTIFACT_FILENAME`](../src/test-intelligence/inter-rater-agreement.ts)).
+
+| Severity | Condition                                              | Constant                                         |
+| -------- | ------------------------------------------------------ | ------------------------------------------------ |
+| fail     | per-judge κ < 0.7                                      | `INTER_RATER_KAPPA_HARD_FLOOR`                   |
+| warn     | per-judge κ < 0.8                                      | `INTER_RATER_KAPPA_WARN_FLOOR`                   |
+| fail     | reviewer share > 0.6                                   | `INTER_RATER_REVIEWER_SHARE_HARD_CAP`            |
+| warn     | reviewer share > 0.45                                  | `INTER_RATER_REVIEWER_SHARE_WARN_CAP`            |
+| warn     | per-scenario paired-rating count < 8 with κ < target   | `INTER_RATER_PER_SCENARIO_GATE_MIN_PAIRS`        |
+
+The per-scenario hard-fail is suppressed below the paired-rating floor
+because Cohen's κ is too unstable to gate against on N < 8.
+
+See [`docs/eu-ai-act/human-oversight.md`](./eu-ai-act/human-oversight.md)
+§3.5 for the regulatory rationale.
+
 ## Out of scope
 
 - **Automatic model auto-selection** based on calibration drift — left
