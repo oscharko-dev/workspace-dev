@@ -128,11 +128,35 @@ export const EU_BANKING_DEFAULT_MODEL_ROUTING_POLICY: ModelRoutingPolicy =
         }),
       },
       {
+        role: "test_generation",
+        slot: "secondary",
+        tierLabel: "heavy",
+        modelBinding: createAzurePortfolioBinding({
+          deployment: "gpt-oss-120b",
+        }),
+      },
+      {
         role: "logic_judge",
         slot: "primary",
         tierLabel: "heavy",
         modelBinding: createAzurePortfolioBinding({
           deployment: "gpt-oss-120b",
+        }),
+      },
+      {
+        role: "logic_judge",
+        slot: "secondary",
+        tierLabel: "heavy",
+        modelBinding: createAzurePortfolioBinding({
+          deployment: "mistral-large-3",
+        }),
+      },
+      {
+        role: "logic_judge",
+        slot: "triage",
+        tierLabel: "light",
+        modelBinding: createAzurePortfolioBinding({
+          deployment: "phi-4-mini-instruct",
         }),
       },
       {
@@ -184,6 +208,14 @@ export const EU_BANKING_DEFAULT_MODEL_ROUTING_POLICY: ModelRoutingPolicy =
         }),
       },
       {
+        role: "faithfulness_judge",
+        slot: "fallback",
+        tierLabel: "multimodal",
+        modelBinding: createAzurePortfolioBinding({
+          deployment: "llama-4-maverick-vision",
+        }),
+      },
+      {
         role: "document_ingestion",
         slot: "primary",
         tierLabel: "multimodal",
@@ -192,11 +224,27 @@ export const EU_BANKING_DEFAULT_MODEL_ROUTING_POLICY: ModelRoutingPolicy =
         }),
       },
       {
+        role: "document_ingestion",
+        slot: "fallback",
+        tierLabel: "heavy",
+        modelBinding: createAzurePortfolioBinding({
+          deployment: "mistral-large-3",
+        }),
+      },
+      {
         role: "adversarial_critic",
         slot: "primary",
         tierLabel: "light",
         modelBinding: createAzurePortfolioBinding({
           deployment: "phi-4",
+        }),
+      },
+      {
+        role: "adversarial_critic",
+        slot: "secondary",
+        tierLabel: "heavy",
+        modelBinding: createAzurePortfolioBinding({
+          deployment: "mistral-large-3",
         }),
       },
       {
