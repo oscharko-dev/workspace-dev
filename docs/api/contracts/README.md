@@ -88,7 +88,7 @@ Persisted multimodal accessibility-judge verdict artifact.
 
 ##### contractVersion
 
-> `readonly` **contractVersion**: `"1.21.0"`
+> `readonly` **contractVersion**: `"1.22.0"`
 
 ##### criteria
 
@@ -356,7 +356,7 @@ Persisted, canonical-JSON, per-job repair-iteration log.
 
 ##### contractVersion
 
-> `readonly` **contractVersion**: `"1.21.0"`
+> `readonly` **contractVersion**: `"1.22.0"`
 
 ##### generatedAt
 
@@ -549,7 +549,7 @@ Minimal persisted metadata for one compiled role-step prompt run.
 
 ##### promptTemplateVersion
 
-> **promptTemplateVersion**: `"1.7.0"`
+> **promptTemplateVersion**: `"1.7.1"`
 
 ##### rawPromptsIncluded
 
@@ -919,7 +919,7 @@ input set is byte-identical and the entries are sorted before write.
 
 ##### contractVersion
 
-> `readonly` **contractVersion**: `"1.21.0"`
+> `readonly` **contractVersion**: `"1.22.0"`
 
 ##### diffArtifactBasename?
 
@@ -971,7 +971,7 @@ Persisted case-merger artifact (Issue #1937).
 
 ##### contractVersion
 
-> `readonly` **contractVersion**: `"1.21.0"`
+> `readonly` **contractVersion**: `"1.22.0"`
 
 ##### entries
 
@@ -1106,7 +1106,7 @@ Total bytes of cleared tool result blocks at the boundary.
 
 ##### contractVersion
 
-> `readonly` **contractVersion**: `"1.21.0"`
+> `readonly` **contractVersion**: `"1.22.0"`
 
 ##### jobId
 
@@ -1150,7 +1150,7 @@ Persisted, fully-redacted artifact form of a compiled prompt.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.21.0"`
+> **contractVersion**: `"1.22.0"`
 
 ##### hashes
 
@@ -1228,7 +1228,7 @@ Redacted JSON payload that the model will reason over.
 
 ##### promptTemplateVersion
 
-> **promptTemplateVersion**: `"1.7.0"`
+> **promptTemplateVersion**: `"1.7.1"`
 
 ##### redactionPolicyVersion
 
@@ -2368,7 +2368,7 @@ Aggregate dry-run report artifact.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.21.0"`
+> **contractVersion**: `"1.22.0"`
 
 ##### credentialsIncluded
 
@@ -2721,7 +2721,7 @@ Sorted by filename for deterministic emission.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.21.0"`
+> **contractVersion**: `"1.22.0"`
 
 ##### exportedTestCaseCount
 
@@ -2857,7 +2857,7 @@ Threshold the aggregate is compared against (profile-scoped).
 
 ##### contractVersion
 
-> `readonly` **contractVersion**: `"1.21.0"`
+> `readonly` **contractVersion**: `"1.22.0"`
 
 ##### entries
 
@@ -2967,7 +2967,7 @@ Persisted screenshot-vs-cases faithfulness verdict artifact.
 
 ##### contractVersion
 
-> `readonly` **contractVersion**: `"1.21.0"`
+> `readonly` **contractVersion**: `"1.22.0"`
 
 ##### fallbackReason
 
@@ -3240,7 +3240,7 @@ Aggregate counters across the `bySource` map.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.21.0"`
+> **contractVersion**: `"1.22.0"`
 
 ##### currencyLabel?
 
@@ -3885,7 +3885,7 @@ older artifacts may omit it and are classified on read-path fallback.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.21.0"`
+> **contractVersion**: `"1.22.0"`
 
 ##### expectedResults
 
@@ -3928,7 +3928,7 @@ older artifacts may omit it and are classified on read-path fallback.
 
 ##### promptTemplateVersion
 
-> **promptTemplateVersion**: `"1.7.0"`
+> **promptTemplateVersion**: `"1.7.1"`
 
 ##### qcMappingPreview
 
@@ -4003,7 +4003,7 @@ Whether the artifact came from a replay-cache hit.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.21.0"`
+> **contractVersion**: `"1.22.0"`
 
 ##### generatedAt
 
@@ -4023,7 +4023,7 @@ Whether the artifact came from a replay-cache hit.
 
 ##### promptTemplateVersion
 
-> **promptTemplateVersion**: `"1.7.0"`
+> **promptTemplateVersion**: `"1.7.1"`
 
 ##### redactionPolicyVersion
 
@@ -4228,7 +4228,7 @@ referenced files and recomputing each row.
 
 ##### contractVersion
 
-> `readonly` **contractVersion**: `"1.21.0"`
+> `readonly` **contractVersion**: `"1.22.0"`
 
 ##### digest
 
@@ -4454,7 +4454,7 @@ Hard-invariant intent-delta report artifact (Issue #1373).
 
 ##### contractVersion
 
-> **contractVersion**: `"1.21.0"`
+> **contractVersion**: `"1.22.0"`
 
 ##### currentIntentHash
 
@@ -4768,7 +4768,7 @@ Aggregate `jira-created-subtasks.json` artifact (Issue #1482).
 
 ##### contractVersion
 
-> **contractVersion**: `"1.21.0"`
+> **contractVersion**: `"1.22.0"`
 
 ##### credentialsIncluded
 
@@ -5404,7 +5404,7 @@ Audit metadata for the run.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.21.0"`
+> **contractVersion**: `"1.22.0"`
 
 ##### createdCount
 
@@ -5610,7 +5610,7 @@ Persisted production-runner judge-consensus artifact.
 
 ##### contractVersion
 
-> `readonly` **contractVersion**: `"1.21.0"`
+> `readonly` **contractVersion**: `"1.22.0"`
 
 ##### crossFamily?
 
@@ -5833,7 +5833,7 @@ the disagreement-rate trending consumes (B.10).
 
 ##### contractVersion
 
-> `readonly` **contractVersion**: `"1.21.0"`
+> `readonly` **contractVersion**: `"1.22.0"`
 
 ##### costByFamily
 
@@ -6057,7 +6057,7 @@ Persisted logic-judge verdict artifact.
 
 ##### contractVersion
 
-> `readonly` **contractVersion**: `"1.21.0"`
+> `readonly` **contractVersion**: `"1.22.0"`
 
 ##### findings
 
@@ -6554,7 +6554,7 @@ Per-release primitive-map status report.
 
 ##### contractVersion
 
-> `readonly` **contractVersion**: `"1.21.0"`
+> `readonly` **contractVersion**: `"1.22.0"`
 
 ##### counts
 
@@ -7769,7 +7769,7 @@ catalog class appears exactly once.
 
 ##### contractVersion
 
-> `readonly` **contractVersion**: `"1.21.0"`
+> `readonly` **contractVersion**: `"1.22.0"`
 
 ##### generatedAt
 
@@ -8038,7 +8038,7 @@ Per-candidate scores, ordered by descending score then id.
 
 ##### contractVersion
 
-> `readonly` **contractVersion**: `"1.21.0"`
+> `readonly` **contractVersion**: `"1.22.0"`
 
 ##### datasetId
 
@@ -8271,7 +8271,7 @@ Aggregate `qc-created-entities.json` artifact (Issue #1372).
 
 ##### contractVersion
 
-> **contractVersion**: `"1.21.0"`
+> **contractVersion**: `"1.22.0"`
 
 ##### entities
 
@@ -8361,7 +8361,7 @@ Aggregate QC mapping preview artifact.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.21.0"`
+> **contractVersion**: `"1.22.0"`
 
 ##### entries
 
@@ -9037,7 +9037,7 @@ Gate 9 — context budget regression (Issue #1802).
 
 ##### contractVersion
 
-> `readonly` **contractVersion**: `"1.21.0"`
+> `readonly` **contractVersion**: `"1.22.0"`
 
 ##### libraryCoverageStatusCompleteness
 
@@ -9128,7 +9128,7 @@ The release pipeline fails when any verdict has `passed === false`.
 
 ##### contractVersion
 
-> `readonly` **contractVersion**: `"1.21.0"`
+> `readonly` **contractVersion**: `"1.22.0"`
 
 ##### mutationKillRate
 
@@ -9282,7 +9282,7 @@ gate passed.
 
 ##### contractVersion
 
-> `readonly` **contractVersion**: `"1.21.0"`
+> `readonly` **contractVersion**: `"1.22.0"`
 
 ##### gates
 
@@ -9419,7 +9419,7 @@ Replay-cache key — the only deterministic-bit-identical replay anchor.
 
 ##### promptTemplateVersion
 
-> **promptTemplateVersion**: `"1.7.0"`
+> **promptTemplateVersion**: `"1.7.1"`
 
 ##### redactionPolicyVersion
 
@@ -9471,7 +9471,7 @@ ISO-8601 UTC timestamp at the moment of persistence.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.21.0"`
+> **contractVersion**: `"1.22.0"`
 
 ##### fromState?
 
@@ -9539,7 +9539,7 @@ Number of cases currently in `approved` (or `exported`/`transferred`) state.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.21.0"`
+> **contractVersion**: `"1.22.0"`
 
 ##### fourEyesPolicy?
 
@@ -9765,7 +9765,7 @@ Persisted production-runner run-quality artifact.
 
 ##### contractVersion
 
-> `readonly` **contractVersion**: `"1.21.0"`
+> `readonly` **contractVersion**: `"1.22.0"`
 
 ##### degradedReasons
 
@@ -9879,7 +9879,7 @@ Persisted self-consistency voting artifact (Issue #2070).
 
 ##### contractVersion
 
-> `readonly` **contractVersion**: `"1.21.0"`
+> `readonly` **contractVersion**: `"1.22.0"`
 
 ##### generatedAt
 
@@ -10175,7 +10175,7 @@ Sorted by `testCaseId` for byte stability. Empty when `refusal` is set.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.21.0"`
+> **contractVersion**: `"1.22.0"`
 
 ##### gatewayRelease
 
@@ -10516,7 +10516,7 @@ the planner published a fixed `12` minCount. Entries are sorted by
 
 ##### contractVersion
 
-> `readonly` **contractVersion**: `"1.21.0"`
+> `readonly` **contractVersion**: `"1.22.0"`
 
 ##### deficitCount
 
@@ -10710,7 +10710,7 @@ Avg assumptions per case.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.21.0"`
+> **contractVersion**: `"1.22.0"`
 
 ##### duplicatePairs
 
@@ -10852,7 +10852,7 @@ Aggregate dedupe report artifact (Issue #1373).
 
 ##### contractVersion
 
-> **contractVersion**: `"1.21.0"`
+> **contractVersion**: `"1.22.0"`
 
 ##### embeddingProvider
 
@@ -10962,7 +10962,7 @@ Aggregate test-case delta report (always paired with `IntentDeltaReport`).
 
 ##### contractVersion
 
-> **contractVersion**: `"1.21.0"`
+> **contractVersion**: `"1.22.0"`
 
 ##### generatedAt
 
@@ -11431,7 +11431,7 @@ Whether ANY case was blocked (downstream export gate).
 
 ##### contractVersion
 
-> **contractVersion**: `"1.21.0"`
+> **contractVersion**: `"1.22.0"`
 
 ##### decisions
 
@@ -11602,7 +11602,7 @@ Whether the report blocks downstream review/export (any error => true).
 
 ##### contractVersion
 
-> **contractVersion**: `"1.21.0"`
+> **contractVersion**: `"1.22.0"`
 
 ##### errorCount
 
@@ -12072,7 +12072,7 @@ Aggregate traceability-matrix artifact (Issue #1373).
 
 ##### contractVersion
 
-> **contractVersion**: `"1.21.0"`
+> **contractVersion**: `"1.22.0"`
 
 ##### exportProfile?
 
@@ -12566,7 +12566,7 @@ Audit metadata for the run.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.21.0"`
+> **contractVersion**: `"1.22.0"`
 
 ##### createdCount
 
@@ -12941,7 +12941,7 @@ can be debugged from the artifact alone.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.21.0"`
+> **contractVersion**: `"1.22.0"`
 
 ##### deployment
 
@@ -13063,7 +13063,7 @@ screenshot bytes.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.21.0"`
+> **contractVersion**: `"1.22.0"`
 
 ##### generatedAt
 
@@ -13225,7 +13225,7 @@ Whether any record carries a non-`ok`/non-`fallback_used` outcome that blocks ge
 
 ##### contractVersion
 
-> **contractVersion**: `"1.21.0"`
+> **contractVersion**: `"1.22.0"`
 
 ##### generatedAt
 
@@ -13466,7 +13466,7 @@ Replay-cache identity hashes.
 
 ##### promptTemplateVersion
 
-> **promptTemplateVersion**: `"1.7.0"`
+> **promptTemplateVersion**: `"1.7.1"`
 
 Versions stamped by the harness at run time.
 
@@ -13502,7 +13502,7 @@ Active signing mode; mirrored from the run input for auditability.
 
 ##### testIntelligenceContractVersion
 
-> **testIntelligenceContractVersion**: `"1.21.0"`
+> **testIntelligenceContractVersion**: `"1.22.0"`
 
 ##### visualSidecar?
 
@@ -13931,7 +13931,7 @@ and timestamps are caller-provided.
 
 ##### testIntelligenceContractVersion
 
-> **testIntelligenceContractVersion**: `"1.21.0"`
+> **testIntelligenceContractVersion**: `"1.22.0"`
 
 ##### thresholds
 
@@ -14184,7 +14184,7 @@ Replay-cache identity hashes for the run (mirrors compiled prompt).
 
 ##### promptTemplateVersion
 
-> **promptTemplateVersion**: `"1.7.0"`
+> **promptTemplateVersion**: `"1.7.1"`
 
 Versions used to compile the prompt and validate the output.
 
@@ -14230,7 +14230,7 @@ raw paste bytes, or PII.
 
 ##### testIntelligenceContractVersion
 
-> **testIntelligenceContractVersion**: `"1.21.0"`
+> **testIntelligenceContractVersion**: `"1.22.0"`
 
 Test-intelligence subsurface contract version.
 
@@ -23897,7 +23897,7 @@ Schema version for persisted `TestDesignModel` projection artifacts.
 
 ### TEST\_INTELLIGENCE\_CONTRACT\_VERSION
 
-> `const` **TEST\_INTELLIGENCE\_CONTRACT\_VERSION**: `"1.21.0"`
+> `const` **TEST\_INTELLIGENCE\_CONTRACT\_VERSION**: `"1.22.0"`
 
 Contract version for the opt-in test-intelligence surface.
 
@@ -23924,7 +23924,7 @@ before a job may compose more than one test-design source.
 
 ### TEST\_INTELLIGENCE\_PROMPT\_TEMPLATE\_VERSION
 
-> `const` **TEST\_INTELLIGENCE\_PROMPT\_TEMPLATE\_VERSION**: `"1.7.0"`
+> `const` **TEST\_INTELLIGENCE\_PROMPT\_TEMPLATE\_VERSION**: `"1.7.1"`
 
 Prompt template version for the test-intelligence prompt family.
 
