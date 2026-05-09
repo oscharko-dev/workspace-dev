@@ -13,9 +13,11 @@ import {
   DRIFT_ALERTS_ARTIFACT_FILENAME,
   DRIFT_CANARY_BRIER_ABSOLUTE_THRESHOLD,
   DRIFT_CANARY_CANARY_SET_ID,
+  DRIFT_CANARY_HOLDOUT_FIXTURE_IDS,
   emptyBaselineState,
   evaluateDriftReport,
   loadDriftBaselineState,
+  PROVIDER_FINGERPRINT_PROMPTS,
   writeDriftBaselineState,
 } from "./drift-canary.js";
 
@@ -39,6 +41,26 @@ test("drift-canary: computeExpectedCalibrationError bins confidence deltas", () 
       { confidence: 0.8, label: 1 },
     ]),
     0.15,
+  );
+});
+
+test("drift-canary: holdout fixture set is explicitly pinned", () => {
+  assert.deepEqual(DRIFT_CANARY_HOLDOUT_FIXTURE_IDS, [
+    "baseline-simple-form",
+    "baseline-calculation",
+    "baseline-optional-fields",
+    "baseline-multi-context",
+    "baseline-ambiguous-rules",
+  ]);
+});
+
+test("drift-canary: provider fingerprint prompts remain five text-safe probes", () => {
+  assert.equal(PROVIDER_FINGERPRINT_PROMPTS.length, 5);
+  assert.equal(
+    PROVIDER_FINGERPRINT_PROMPTS.every(
+      (prompt) => prompt.expectsImageInput === false,
+    ),
+    true,
   );
 });
 

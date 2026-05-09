@@ -11,7 +11,6 @@ import type {
 } from "../contracts/index.js";
 import { canonicalJson, sha256Hex } from "./content-hash.js";
 import {
-  BASELINE_ARCHETYPE_FIXTURE_IDS,
   type BaselineArchetypeFixtureId,
 } from "./baseline-fixtures.js";
 import type { IntentDerivationFigmaInput } from "./intent-derivation.js";
@@ -37,9 +36,13 @@ export const DRIFT_CANARY_BRIER_ABSOLUTE_THRESHOLD = 0.05 as const;
 export const DRIFT_CANARY_EPSILON = 0.000001 as const;
 
 export const DRIFT_CANARY_HOLDOUT_FIXTURE_IDS: ReadonlyArray<BaselineArchetypeFixtureId> =
-  Object.freeze(
-  BASELINE_ARCHETYPE_FIXTURE_IDS.slice(0, 5),
-  );
+  Object.freeze([
+    "baseline-simple-form",
+    "baseline-calculation",
+    "baseline-optional-fields",
+    "baseline-multi-context",
+    "baseline-ambiguous-rules",
+  ] satisfies readonly BaselineArchetypeFixtureId[]);
 
 export type DriftCanaryMetricName =
   | "brier_score"
@@ -172,16 +175,16 @@ export const PROVIDER_FINGERPRINT_PROMPTS: ReadonlyArray<ProviderFingerprintProm
       expectsImageInput: false,
     },
     {
-      promptId: "stable-visual-4",
+      promptId: "stable-state-4",
       systemPrompt: "Return compact JSON only.",
       userPrompt: 'Return exactly {"answer":"VISIBLE"}',
-      expectsImageInput: true,
+      expectsImageInput: false,
     },
     {
-      promptId: "stable-visual-5",
+      promptId: "stable-state-5",
       systemPrompt: "Return compact JSON only.",
       userPrompt: 'Return exactly {"answer":"READY"}',
-      expectsImageInput: true,
+      expectsImageInput: false,
     },
   ]);
 
