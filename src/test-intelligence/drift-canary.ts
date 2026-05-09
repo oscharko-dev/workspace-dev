@@ -36,9 +36,10 @@ export const DRIFT_CANARY_SIGMA_THRESHOLD = 2 as const;
 export const DRIFT_CANARY_BRIER_ABSOLUTE_THRESHOLD = 0.05 as const;
 export const DRIFT_CANARY_EPSILON = 0.000001 as const;
 
-export const DRIFT_CANARY_HOLDOUT_FIXTURE_IDS = Object.freeze(
+export const DRIFT_CANARY_HOLDOUT_FIXTURE_IDS: ReadonlyArray<BaselineArchetypeFixtureId> =
+  Object.freeze(
   BASELINE_ARCHETYPE_FIXTURE_IDS.slice(0, 5),
-) as ReadonlyArray<BaselineArchetypeFixtureId>;
+  );
 
 export type DriftCanaryMetricName =
   | "brier_score"
@@ -137,7 +138,7 @@ export interface DriftAlert {
 }
 
 export interface DriftAlertSink {
-  publish(input: DriftAlert): Promise<string | void>;
+  publish(input: DriftAlert): Promise<string | undefined>;
 }
 
 export interface CanaryFixtureRun {
@@ -455,7 +456,8 @@ export const loadDriftBaselineState = async (input: {
   const path = driftBaselinePath(input);
   try {
     const raw = await readFile(path, "utf8");
-    const parsed = JSON.parse(raw) as DriftBaselineState;
+    const parsed = JSON.parse(raw) as Partial<DriftBaselineState> &
+      Record<string, unknown>;
     if (parsed.schemaVersion !== DRIFT_CANARY_SCHEMA_VERSION) {
       throw new Error(
         `drift-canary: baseline at ${path} has schemaVersion ${String(parsed.schemaVersion)}`,
@@ -470,7 +472,15 @@ export const loadDriftBaselineState = async (input: {
         `drift-canary: baseline identity mismatch at ${path}`,
       );
     }
-    return parsed;
+    return {
+      schemaVersion: DRIFT_CANARY_SCHEMA_VERSION,
+      tenantId: input.tenantId,
+      policyProfileId: input.policyProfileId,
+      canarySetId: input.canarySetId,
+      records: Array.isArray(parsed.records)
+        ? (parsed.records as DriftBaselineRecord[])
+        : [],
+    };
   } catch (error) {
     if (
       typeof error === "object" &&
