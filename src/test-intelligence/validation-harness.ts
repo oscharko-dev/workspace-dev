@@ -958,27 +958,195 @@ const synthesizePerfectWave1ValidationRubricResponse = (input: {
   };
 };
 
+/**
+ * Substring keywords that mark a synthesized field-case as
+ * `financial_transaction` for the policy gate's review-only set
+ * (Issue #2030 follow-up; calibrated against the Eingabemasken K1
+ * measurement; see `scripts/measure-eingabemasken.ts`).
+ *
+ * Each keyword is lowercased and matched as a `String.includes`
+ * substring against `field.label`. The list is conservatively curated
+ * to avoid collisions with the seven MA-0 baseline archetype labels —
+ * adding tokens like `principal`, `rate`, `term`, `payment`, `policy`,
+ * `incident`, `passport`, `price` or `total` would change baseline
+ * eval snapshots, so those tokens are deliberately excluded. If you add
+ * a keyword here, run `pnpm test` and update
+ * `src/test-intelligence/fixtures/eval-baseline-*.json` snapshots in
+ * the same commit.
+ */
+const FINANCIAL_TRANSACTION_KEYWORDS: ReadonlyArray<string> = [
+  // Pre-#2030: SEPA / payment (eu-banking-default baseline)
+  "iban",
+  "bic",
+  "amount",
+  "authoriz",
+  "authoris",
+  "authentication code",
+  // #2030 follow-up: SEPA + general EUR amount in German
+  "betrag",
+  "monatliche rate",
+  "monthly installment",
+  // #2030 follow-up: MiFID II securities order entry
+  "isin",
+  "limit-preis",
+  "limit price",
+  "stueck",
+  "order-typ",
+  "order type",
+  "gueltigkeitsdauer",
+  "time-in-force",
+  // #2030 follow-up: consumer credit (CCD / BDSG)
+  "kreditbetrag",
+  "effektivzins",
+  "annuit",
+  "debt-to-income",
+  "dti-quote",
+  // #2030 follow-up: insurance pricing / quote
+  "praemie",
+  "premium",
+  "deckungssumme",
+  "selbstbehalt",
+  // #2030 follow-up: income / cost flows
+  "jahresbrutto",
+  "annual gross",
+  "nettoeinkommen",
+  "net income",
+  "monthly net",
+  "wohnkosten",
+  "housing cost",
+  // #2030 follow-up: pension / annuity
+  "rente",
+  "monatsrente",
+  // #2030 follow-up: percentage / sum constraints (LV-Bezugsberechtigung)
+  "quote in prozent",
+  "quote-percent",
+];
+
+/**
+ * Substring keywords that mark a synthesized field-case as
+ * `regulated_data`. Same conventions and same baseline-collision
+ * exclusions as {@link FINANCIAL_TRANSACTION_KEYWORDS}.
+ */
+const REGULATED_DATA_KEYWORDS: ReadonlyArray<string> = [
+  // Pre-#2030: PII baseline
+  "tax id",
+  "email",
+  "phone",
+  "name",
+  "postcode",
+  "[redacted",
+  // #2030 follow-up: address / identity (German)
+  "plz",
+  "strasse",
+  "anschrift",
+  "geburts",
+  "staatsang",
+  "videoident",
+  "postident",
+  "ident-verfahren",
+  "identifikation",
+  // #2030 follow-up: KYC / GwG / FATCA compliance flags
+  "pep",
+  "fatca",
+  "us-person",
+  "beneficial owner",
+  "wirtschaftlich berechtigt",
+  "datenschutz",
+  "agb akzeptiert",
+  // #2030 follow-up: SCHUFA / creditworthiness
+  "schufa",
+  "bonität",
+  "bonita",
+  // #2030 follow-up: MiFID II compliance documentation
+  "mifid",
+  "kostenausweis",
+  "geeignetheit",
+  "anlegerprofil",
+  "anlageziel",
+  "anlagedauer",
+  "risikoklasse",
+  "risikobereitschaft",
+  "risikohinweis",
+  "verlusttragfaehig",
+  "asset-allokation",
+  "aufklaerung",
+  // #2030 follow-up: insurance underwriting / claim (VVG / IDD)
+  "schaden",
+  "unfall",
+  "kennzeichen",
+  "halter",
+  "versicher",
+  "polizei",
+  "aktenzeichen",
+  "verletzt",
+  "gutachter",
+  "skizze",
+  "schadenart",
+  // #2030 follow-up: life insurance / inheritance (VVG / ErbStG)
+  "bezugsart",
+  "beguenstigt",
+  "beneficiary",
+  "verhaeltnis",
+  // #2030 follow-up: BU / health (Art. 9 GDPR)
+  "vorerkrankung",
+  "behandlung",
+  "krankenhaus",
+  "medikament",
+  "gesundheit",
+  "diagnose",
+  "hobbys mit erhoehtem risiko",
+  "high-risk hobby",
+  "wartezeit",
+  "anzeigepflicht",
+  "vorvertraglich",
+  "wahrheitsgemaess",
+  // #2030 follow-up: AML / GwG-Section-43
+  "gwg",
+  "geldwaesche",
+  "verdacht",
+  "sachverhalt",
+  "sanktion",
+  "sanctions",
+  "tipping-off",
+  "fiu",
+  "meldepflicht",
+  "beteiligte",
+  // #2030 follow-up: cyber / DORA / NIS2
+  "isms",
+  "iso 27001",
+  "mfa",
+  "edr",
+  "vpn",
+  "pen-test",
+  "penetration",
+  "incident-response",
+  " irp",
+  " bcp",
+  " drp",
+  "dsfa",
+  "dpia",
+  "auftragsverarbeiter",
+  "datenklassifizierung",
+  "ict-risk",
+  "ict-budget",
+  "nis2",
+  "dora",
+  // #2030 follow-up: EAA / WCAG accessibility
+  "wcag",
+  "aria-",
+  "aria=",
+  "tab-index",
+  "screen-reader",
+  "focus-management",
+];
+
 const deriveRiskCategoryForLabel = (label: string): TestCaseRiskCategory => {
   const normalised = label.toLowerCase();
-  if (
-    normalised.includes("iban") ||
-    normalised.includes("bic") ||
-    normalised.includes("amount") ||
-    normalised.includes("authoriz") ||
-    normalised.includes("authoris") ||
-    normalised.includes("authentication code")
-  ) {
-    return "financial_transaction";
+  for (const keyword of FINANCIAL_TRANSACTION_KEYWORDS) {
+    if (normalised.includes(keyword)) return "financial_transaction";
   }
-  if (
-    normalised.includes("tax id") ||
-    normalised.includes("email") ||
-    normalised.includes("phone") ||
-    normalised.includes("name") ||
-    normalised.includes("postcode") ||
-    normalised.includes("[redacted")
-  ) {
-    return "regulated_data";
+  for (const keyword of REGULATED_DATA_KEYWORDS) {
+    if (normalised.includes(keyword)) return "regulated_data";
   }
   return "low";
 };
