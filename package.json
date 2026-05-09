@@ -131,6 +131,8 @@
     "docs:api": "node scripts/generate-api-docs.mjs",
     "docs:api:check": "node scripts/check-api-docs.mjs",
     "docs:check": "pnpm run docs:api:check && pnpm exec tsx --test src/docs-alignment.test.ts",
+    "model-card:generate": "pnpm exec tsx scripts/generate-model-card.ts",
+    "model-card:check": "pnpm exec tsx scripts/generate-model-card.ts --check",
     "verify:reproducible-build": "node scripts/verify-reproducible-build.mjs",
     "verify:airgap": "node scripts/verify-airgap-install.mjs",
     "verify:pack": "node scripts/build-profile.mjs --verify",

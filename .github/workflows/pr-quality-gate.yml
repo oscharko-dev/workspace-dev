@@ -51,6 +51,7 @@ jobs:
           pnpm run lint:secrets:all
           pnpm run lint:ts-style
           pnpm run verify:prompt-template-version
+          pnpm run model-card:check
 
       - name: Typecheck
         run: pnpm run typecheck
