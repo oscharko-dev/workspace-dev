@@ -151,6 +151,9 @@ jobs:
       - name: Enforce prompt-template-version contract
         run: pnpm run verify:prompt-template-version
 
+      - name: Enforce EU AI Act model-card freshness (Issue #2112)
+        run: pnpm run model-card:check
+
       - name: Enforce UI lint rules
         run: pnpm run ui:lint
 
