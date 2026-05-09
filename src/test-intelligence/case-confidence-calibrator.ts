@@ -1,5 +1,5 @@
 import { readdir, readFile, stat, writeFile, mkdir, rename } from "node:fs/promises";
-import { dirname, basename, join, resolve } from "node:path";
+import { dirname, basename, join, resolve, sep } from "node:path";
 import { randomUUID } from "node:crypto";
 
 import {
@@ -596,18 +596,32 @@ const writeCurveArtifact = async (
   datasetRoot: string,
   curve: CaseConfidenceCurveArtifact,
 ): Promise<string> => {
-  const artifactPath = resolve(
-    datasetRoot,
-    "..",
-    "..",
-    "calibration",
-    CASE_CONFIDENCE_CURVE_ARTIFACT_FILENAME,
-  );
+  const artifactPath = resolveCaseConfidenceCurveArtifactPath(datasetRoot);
   await mkdir(dirname(artifactPath), { recursive: true });
   const tmpPath = `${artifactPath}.${randomUUID()}.tmp`;
   await writeFile(tmpPath, `${canonicalJson(curve)}\n`, "utf8");
   await rename(tmpPath, artifactPath);
   return artifactPath;
+};
+
+const resolveCaseConfidenceCurveArtifactPath = (datasetRoot: string): string => {
+  const normalizedRoot = resolve(datasetRoot);
+  const sandboxMarker = `${sep}sandbox${sep}test-case${sep}`;
+  const sandboxIndex = normalizedRoot.lastIndexOf(sandboxMarker);
+  if (sandboxIndex >= 0) {
+    const workspaceRoot = normalizedRoot.slice(0, sandboxIndex);
+    return join(
+      workspaceRoot,
+      "sandbox",
+      "calibration",
+      CASE_CONFIDENCE_CURVE_ARTIFACT_FILENAME,
+    );
+  }
+  return join(
+    normalizedRoot,
+    ".calibration",
+    CASE_CONFIDENCE_CURVE_ARTIFACT_FILENAME,
+  );
 };
 
 export const loadCaseConfidenceCalibration = async (
