@@ -1038,3 +1038,195 @@ test("validation-harness: replay-cache hit skips generation and reports complete
   assert.equal(rawAudit.requestCount, 0);
   assert.deepEqual(rawAudit.imageInputCounts, []);
 });
+
+// ----------------------------------------------------------------------
+// Issue #2030 follow-up — synthesizer risk-tag calibration for the
+// banking and insurance regulatory vocabulary surfaced by the
+// Eingabemasken K1 measurement (see `scripts/measure-eingabemasken.ts`).
+// ----------------------------------------------------------------------
+
+test("validation-harness: synthesizer derives banking/insurance regulatory riskCategory from field labels (Issue #2030)", () => {
+  const intent: BusinessTestIntentIr = {
+    version: BUSINESS_TEST_INTENT_IR_SCHEMA_VERSION,
+    source: { kind: "figma_local_json", contentHash: "2".repeat(64) },
+    screens: [
+      { screenId: "s-2030", screenName: "Risk Calibration", trace: {} },
+    ],
+    detectedFields: [
+      // financial_transaction matches (PR-N+2 additions)
+      { id: "f-isin", screenId: "s-2030", trace: { nodeId: "n-isin" }, provenance: "figma_node", confidence: 0.9, label: "ISIN", type: "text" },
+      { id: "f-betrag", screenId: "s-2030", trace: { nodeId: "n-betrag" }, provenance: "figma_node", confidence: 0.9, label: "Betrag in EUR", type: "text" },
+      { id: "f-kreditbetrag", screenId: "s-2030", trace: { nodeId: "n-kb" }, provenance: "figma_node", confidence: 0.9, label: "Kreditbetrag", type: "text" },
+      { id: "f-effektivzins", screenId: "s-2030", trace: { nodeId: "n-eff" }, provenance: "figma_node", confidence: 0.9, label: "Effektivzins p.a.", type: "text" },
+      { id: "f-praemie", screenId: "s-2030", trace: { nodeId: "n-pr" }, provenance: "figma_node", confidence: 0.9, label: "Praemienprognose", type: "text" },
+      // regulated_data matches (PR-N+2 additions)
+      { id: "f-mifid", screenId: "s-2030", trace: { nodeId: "n-mifid" }, provenance: "figma_node", confidence: 0.9, label: "MiFID-Risikoklasse", type: "informative_label" },
+      { id: "f-schufa", screenId: "s-2030", trace: { nodeId: "n-schufa" }, provenance: "figma_node", confidence: 0.9, label: "SCHUFA-Einwilligung", type: "radio_option" },
+      { id: "f-pep", screenId: "s-2030", trace: { nodeId: "n-pep" }, provenance: "figma_node", confidence: 0.9, label: "PEP-Status", type: "radio_option" },
+      { id: "f-fatca", screenId: "s-2030", trace: { nodeId: "n-fatca" }, provenance: "figma_node", confidence: 0.9, label: "FATCA US-Person", type: "radio_option" },
+      { id: "f-vorerk", screenId: "s-2030", trace: { nodeId: "n-vorerk" }, provenance: "figma_node", confidence: 0.9, label: "Vorerkrankungen", type: "radio_option" },
+      { id: "f-isms", screenId: "s-2030", trace: { nodeId: "n-isms" }, provenance: "figma_node", confidence: 0.9, label: "ISMS implementiert", type: "radio_option" },
+      { id: "f-mfa", screenId: "s-2030", trace: { nodeId: "n-mfa" }, provenance: "figma_node", confidence: 0.9, label: "MFA fuer alle Mitarbeiter", type: "radio_option" },
+      { id: "f-edr", screenId: "s-2030", trace: { nodeId: "n-edr" }, provenance: "figma_node", confidence: 0.9, label: "EDR auf Endgeraeten", type: "radio_option" },
+      { id: "f-gwg", screenId: "s-2030", trace: { nodeId: "n-gwg" }, provenance: "figma_node", confidence: 0.9, label: "GwG Verdachtskategorie", type: "select_field" },
+      { id: "f-wcag", screenId: "s-2030", trace: { nodeId: "n-wcag" }, provenance: "figma_node", confidence: 0.9, label: "WCAG-2.2-AA Kontrast-Hinweis", type: "informative_label" },
+      // low default — must NOT trigger any keyword
+      { id: "f-control-low", screenId: "s-2030", trace: { nodeId: "n-c" }, provenance: "figma_node", confidence: 0.9, label: "Generic Reference Field", type: "text" },
+    ],
+    detectedActions: [],
+    detectedValidations: [],
+    detectedNavigation: [],
+    inferredBusinessObjects: [],
+    risks: [],
+    assumptions: [],
+    openQuestions: [],
+    piiIndicators: [],
+    redactions: [],
+  };
+
+  const list = synthesizeGeneratedTestCases({
+    jobId: audit.jobId,
+    generatedAt: GENERATED_AT,
+    intent,
+    audit,
+  });
+
+  // Every synthesized case ends up with a `riskCategory`. We anchor the
+  // assertion on the deterministic per-field functional case
+  // (`tc-field-functional-...`) since that is the one whose
+  // riskCategory is derived from `field.label` directly.
+  const findFunctionalCaseRisk = (fieldId: string): string | undefined => {
+    const tc = list.testCases.find(
+      (c) =>
+        c.id.startsWith("tc-field-functional-") &&
+        c.qualitySignals.coveredFieldIds.includes(fieldId),
+    );
+    return tc?.riskCategory;
+  };
+
+  // financial_transaction
+  for (const fid of [
+    "f-isin",
+    "f-betrag",
+    "f-kreditbetrag",
+    "f-effektivzins",
+    "f-praemie",
+  ]) {
+    assert.equal(
+      findFunctionalCaseRisk(fid),
+      "financial_transaction",
+      `field ${fid} must elevate to financial_transaction`,
+    );
+  }
+
+  // regulated_data
+  for (const fid of [
+    "f-mifid",
+    "f-schufa",
+    "f-pep",
+    "f-fatca",
+    "f-vorerk",
+    "f-isms",
+    "f-mfa",
+    "f-edr",
+    "f-gwg",
+    "f-wcag",
+  ]) {
+    assert.equal(
+      findFunctionalCaseRisk(fid),
+      "regulated_data",
+      `field ${fid} must elevate to regulated_data`,
+    );
+  }
+
+  // low control: a label that contains NONE of the keywords stays low.
+  assert.equal(
+    findFunctionalCaseRisk("f-control-low"),
+    "low",
+    "control field with no keyword match must stay low (no over-classification)",
+  );
+});
+
+test("validation-harness: synthesizer keyword list does NOT collide with MA-0 baseline labels (Issue #2030)", () => {
+  // Ground truth: every label in any MA-0 baseline-fixture must keep
+  // its pre-#2030 `riskCategory` derivation. This test pins the
+  // contract that the new keyword arrays do NOT change the seven
+  // checked-in eval-baseline snapshots.
+  const baselineLabelsAndExpectedRisk: ReadonlyArray<[string, string]> = [
+    // baseline-simple-form
+    ["Display Name", "regulated_data"],
+    ["Email", "regulated_data"],
+    ["Age", "low"],
+    // baseline-calculation
+    ["Principal", "low"],
+    ["Annual Rate %", "low"],
+    ["Term (Years)", "low"],
+    ["Monthly Payment", "low"],
+    // baseline-optional-fields
+    ["Mobile Phone", "regulated_data"],
+    ["Company (optional)", "low"],
+    ["Job Title", "low"],
+    ["Country", "low"],
+    // baseline-multi-context / baseline-complex-mask
+    ["Family Name", "regulated_data"],
+    ["Date of Birth", "low"],
+    ["Tax ID", "regulated_data"],
+    ["Postcode", "regulated_data"],
+    ["Passport Number (visible if Country is non-EU)", "low"],
+    ["Line Description (repeating)", "low"],
+    ["Quantity (repeating)", "low"],
+    ["Unit Price (repeating)", "low"],
+    ["Grand Total", "low"],
+    // baseline-ambiguous-rules
+    ["Policy Number", "low"],
+    ["Incident Date", "low"],
+    ["Loss Amount", "financial_transaction"],
+    ["Description", "low"],
+    // baseline-validation-heavy
+    ["IBAN", "financial_transaction"],
+    ["BIC", "financial_transaction"],
+    ["Amount", "financial_transaction"],
+    ["Confirm Amount", "financial_transaction"],
+    ["Reference", "low"],
+  ];
+
+  for (const [label, expected] of baselineLabelsAndExpectedRisk) {
+    const intent: BusinessTestIntentIr = {
+      version: BUSINESS_TEST_INTENT_IR_SCHEMA_VERSION,
+      source: { kind: "figma_local_json", contentHash: "3".repeat(64) },
+      screens: [{ screenId: "s-baseline", screenName: "Baseline", trace: {} }],
+      detectedFields: [
+        {
+          id: "f-baseline",
+          screenId: "s-baseline",
+          trace: { nodeId: "n-b" },
+          provenance: "figma_node",
+          confidence: 0.9,
+          label,
+          type: "text",
+        },
+      ],
+      detectedActions: [],
+      detectedValidations: [],
+      detectedNavigation: [],
+      inferredBusinessObjects: [],
+      risks: [],
+      assumptions: [],
+      openQuestions: [],
+      piiIndicators: [],
+      redactions: [],
+    };
+    const list = synthesizeGeneratedTestCases({
+      jobId: audit.jobId,
+      generatedAt: GENERATED_AT,
+      intent,
+      audit,
+    });
+    const tc = list.testCases.find((c) => c.id.startsWith("tc-field-functional-"));
+    assert.equal(
+      tc?.riskCategory,
+      expected,
+      `baseline label "${label}" must preserve riskCategory="${expected}"`,
+    );
+  }
+});
