@@ -67,6 +67,8 @@ import {
   LOGIC_JUDGE_VERDICT_SCHEMA_VERSION,
   MULTI_SOURCE_TEST_INTENT_ENVELOPE_SCHEMA_VERSION,
   REDACTION_POLICY_VERSION,
+  REVIEW_EVENTS_ARTIFACT_FILENAME,
+  REVIEW_STATE_ARTIFACT_FILENAME,
   SELF_CONSISTENCY_REPORT_ARTIFACT_FILENAME,
   TEST_DATA_ORACLE_REPORT_ARTIFACT_FILENAME,
   type RunQualityArtifact,
@@ -351,6 +353,7 @@ import {
   buildLogicJudgeConsensusEntry,
   writeJudgeConsensusArtifact,
 } from "./judge-consensus.js";
+import { createFileSystemReviewStore } from "./review-store.js";
 import {
   REPAIR_LOOP_DEFAULT_MAX_ITERATIONS,
   REPAIR_PLANNER_ARTIFACT_PREFIX,
@@ -1157,6 +1160,8 @@ export interface RunFigmaToQcTestCasesResult {
     policyReport: string;
     coverageReport: string;
     finopsReport: string;
+    reviewEvents?: string;
+    reviewState?: string;
     selfConsistencyReport?: string;
     /** Path to the per-step harness artifact when `harness.mode !== "off"`. */
     harnessStep?: string;
@@ -4034,6 +4039,11 @@ export const runFigmaToQcTestCases = async (
     });
   let judgeConsensusResult = buildCurrentJudgeConsensus();
   const initialJudgeConsensusResult = judgeConsensusResult;
+  let judgeConsensusDisposition = resolveJudgeConsensusDisposition({
+    verdict: judgeConsensusResult,
+    generatedTestCases: generatedList,
+    logicJudgeDeployment: logicJudgeClient.deployment,
+  });
   // 7b. Repair loop (Issue #1900, Issue #1928). When the judge panel did
   //     not unanimously accept the initial output — including the case
   //     where a judge returned `reject` — consolidate the union of
@@ -4054,10 +4064,28 @@ export const runFigmaToQcTestCases = async (
   //     by the loop driver. Token spend is attributed to FinOps role
   //     `test_generation` (source `generator`) for the regenerator and
   //     `judge_primary` / `judge_secondary` for the re-runs.
-  const initialJudgeAccepted =
-    isJudgeConsensusAcceptedForRun(judgeConsensusResult);
+  const initialJudgeAccepted = isJudgeConsensusAcceptedForRun(
+    judgeConsensusDisposition.disposition,
+  );
   let repairLoopResult: RepairLoopResult | undefined;
-  if (!initialJudgeAccepted) {
+  if (
+    !initialJudgeAccepted &&
+    judgeConsensusDisposition.disposition === "needs_review"
+  ) {
+    judgeConsensusResult = buildCurrentJudgeConsensus({
+      attempted: false,
+      repairIterationCount: 0,
+      finalOutcome: "needs_review",
+      historicalFindings: initialJudgeConsensusResult.activeFindings,
+      historicalRepairInstructions:
+        initialJudgeConsensusResult.repairInstructions,
+    });
+    judgeConsensusDisposition = resolveJudgeConsensusDisposition({
+      verdict: judgeConsensusResult,
+      generatedTestCases: generatedList,
+      logicJudgeDeployment: logicJudgeClient.deployment,
+    });
+  } else if (!initialJudgeAccepted) {
     const maxRepairIterations =
       input.harness?.maxRepairIterations ?? REPAIR_LOOP_DEFAULT_MAX_ITERATIONS;
     const faithfulnessSnapshot = faithfulnessJudgeResult;
@@ -4532,9 +4560,16 @@ export const runFigmaToQcTestCases = async (
       historicalRepairInstructions:
         initialJudgeConsensusResult.repairInstructions,
     });
+    judgeConsensusDisposition = resolveJudgeConsensusDisposition({
+      verdict: judgeConsensusResult,
+      generatedTestCases: generatedList,
+      logicJudgeDeployment: logicJudgeClient.deployment,
+    });
   }
 
-  const judgeAccepted = isJudgeConsensusAcceptedForRun(judgeConsensusResult);
+  const judgeAccepted = isJudgeConsensusAcceptedForRun(
+    judgeConsensusDisposition.disposition,
+  );
 
   if (harnessMode !== "off" && judgeAccepted && harnessSummary === undefined) {
     const harnessAttemptResult = buildHarnessAttemptResult({
@@ -5399,6 +5434,47 @@ export const runFigmaToQcTestCases = async (
       : {}),
   };
   const policyBytes = encodeCanonicalJson(policyReport);
+  const reviewStore = createFileSystemReviewStore({
+    destinationDir: artifactDir,
+  });
+  await reviewStore.seedSnapshot({
+    jobId: input.jobId,
+    generatedAt: input.generatedAt,
+    list: calibratedGeneratedTestCases,
+    policy: policyReport,
+  });
+  if (judgeConsensusResult.panel.length > 1) {
+    await reviewStore.recordTransition({
+      jobId: input.jobId,
+      kind: "note",
+      at: input.generatedAt,
+      note: "Multi-judge consensus recorded for audit.",
+      metadata: {
+        agreementShape: judgeConsensusResult.agreementShape,
+        voteAccept: judgeConsensusDisposition.voteCounts.accept,
+        voteRepair: judgeConsensusDisposition.voteCounts.repair,
+        voteReject: judgeConsensusDisposition.voteCounts.reject,
+        consensusVerdict: judgeConsensusResult.verdict,
+        reviewDisposition: judgeConsensusDisposition.disposition,
+        regulatedDisagreement: judgeConsensusDisposition.regulatedDisagreement,
+        ...(judgeConsensusResult.vetoBy !== undefined
+          ? { vetoJudgeId: judgeConsensusResult.vetoBy.judgeId }
+          : {}),
+        ...(judgeConsensusDisposition.tiebreakerDeployment !== undefined
+          ? {
+              tiebreakerDeployment:
+                judgeConsensusDisposition.tiebreakerDeployment,
+            }
+          : {}),
+        ...(judgeConsensusDisposition.tiebreakerVerdict !== undefined
+          ? {
+              tiebreakerVerdict:
+                judgeConsensusDisposition.tiebreakerVerdict,
+            }
+          : {}),
+      },
+    });
+  }
   const mutationReportBytes =
     mutationReport === undefined
       ? undefined
@@ -5922,6 +5998,16 @@ export const runFigmaToQcTestCases = async (
       policyReport: policyPath,
       coverageReport: coveragePath,
       finopsReport: finopsWritten.artifactPath,
+      reviewEvents: join(
+        artifactDir,
+        input.jobId,
+        REVIEW_EVENTS_ARTIFACT_FILENAME,
+      ),
+      reviewState: join(
+        artifactDir,
+        input.jobId,
+        REVIEW_STATE_ARTIFACT_FILENAME,
+      ),
       ...(harnessArtifactPath !== undefined
         ? { harnessStep: harnessArtifactPath }
         : {}),
@@ -7531,6 +7617,11 @@ const TRANSIENT_JUDGE_REFUSAL_CODES = new Set([
   "timeout",
 ]);
 
+const REGULATED_CONSENSUS_RISK_CATEGORIES = new Set<TestCaseRiskCategory>([
+  "financial_transaction",
+  "regulated_data",
+]);
+
 const isTransientJudgeInfrastructureEntry = (
   entry: JudgeConsensusVerdict["panel"][number],
 ): boolean =>
@@ -7551,11 +7642,119 @@ const isNonBlockingJudgeInfrastructureFailure = (
       entry.verdict === "accept" || isTransientJudgeInfrastructureEntry(entry),
   );
 
-const isJudgeConsensusAcceptedForRun = (
+const isGptOssDeployment = (deployment: string): boolean =>
+  deployment.trim().toLowerCase().startsWith("gpt-oss-120b");
+
+const countJudgeVotes = (
   verdict: JudgeConsensusVerdict,
-): boolean =>
-  verdict.verdict === "accept" ||
-  isNonBlockingJudgeInfrastructureFailure(verdict);
+): Record<"accept" | "repair" | "reject", number> => {
+  const totals = {
+    accept: 0,
+    repair: 0,
+    reject: 0,
+  };
+  for (const entry of verdict.panel) {
+    totals[entry.verdict] += 1;
+  }
+  return totals;
+};
+
+type JudgeConsensusDisposition = "accept" | "repair" | "needs_review";
+
+const resolveJudgeConsensusDisposition = (input: {
+  verdict: JudgeConsensusVerdict;
+  generatedTestCases: GeneratedTestCaseList;
+  logicJudgeDeployment: string;
+}): {
+  readonly disposition: JudgeConsensusDisposition;
+  readonly voteCounts: Record<"accept" | "repair" | "reject", number>;
+  readonly regulatedDisagreement: boolean;
+  readonly tiebreakerDeployment?: string;
+  readonly tiebreakerVerdict?: "accept" | "repair" | "reject";
+} => {
+  const voteCounts = countJudgeVotes(input.verdict);
+  const distinctVoteCount = Object.values(voteCounts).filter(
+    (count) => count > 0,
+  ).length;
+  const regulatedDisagreement =
+    input.verdict.panel.length > 1 &&
+    distinctVoteCount > 1 &&
+    input.generatedTestCases.testCases.some((testCase) =>
+      REGULATED_CONSENSUS_RISK_CATEGORIES.has(testCase.riskCategory),
+    );
+  if (isNonBlockingJudgeInfrastructureFailure(input.verdict)) {
+    return {
+      disposition: "accept",
+      voteCounts,
+      regulatedDisagreement: false,
+    };
+  }
+  if (regulatedDisagreement) {
+    return {
+      disposition: "needs_review",
+      voteCounts,
+      regulatedDisagreement,
+    };
+  }
+  if (input.verdict.agreementShape === "vetoed") {
+    return {
+      disposition:
+        input.verdict.verdict === "reject" ? "needs_review" : "repair",
+      voteCounts,
+      regulatedDisagreement,
+    };
+  }
+  if (input.verdict.agreementShape === "split") {
+    const logicJudgeVote = input.verdict.panel.find(
+      (entry) => entry.judgeId === "logic_judge",
+    )?.verdict;
+    if (
+      logicJudgeVote !== undefined &&
+      logicJudgeVote !== "reject" &&
+      isGptOssDeployment(input.logicJudgeDeployment)
+    ) {
+      return {
+        disposition: logicJudgeVote,
+        voteCounts,
+        regulatedDisagreement,
+        tiebreakerDeployment: input.logicJudgeDeployment,
+        tiebreakerVerdict: logicJudgeVote,
+      };
+    }
+    return {
+      disposition: "needs_review",
+      voteCounts,
+      regulatedDisagreement,
+      ...(isGptOssDeployment(input.logicJudgeDeployment)
+        ? { tiebreakerDeployment: input.logicJudgeDeployment }
+        : {}),
+      ...(logicJudgeVote !== undefined ? { tiebreakerVerdict: logicJudgeVote } : {}),
+    };
+  }
+  if (input.verdict.verdict === "accept") {
+    return {
+      disposition: "accept",
+      voteCounts,
+      regulatedDisagreement,
+    };
+  }
+  if (input.verdict.verdict === "repair") {
+    return {
+      disposition: "repair",
+      voteCounts,
+      regulatedDisagreement,
+    };
+  }
+  return {
+    disposition: "needs_review",
+    voteCounts,
+    regulatedDisagreement,
+  };
+};
+
+const isJudgeConsensusAcceptedForRun = (
+  disposition: JudgeConsensusDisposition,
+): boolean => disposition === "accept";
 
 const BANKING_INSURANCE_PROMPT_RULES: ReadonlyArray<string> = Object.freeze([
   "- Wenn das Profil 'eu-banking-default' aktiv ist, behandle die Maske als reguliert (Bank/Versicherung).",

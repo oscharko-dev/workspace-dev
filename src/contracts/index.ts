@@ -5026,7 +5026,7 @@ export interface A11yVerdict {
 }
 
 /** Schema version for persisted production-runner judge-consensus artifacts. */
-export const JUDGE_CONSENSUS_SCHEMA_VERSION = "1.0.0" as const;
+export const JUDGE_CONSENSUS_SCHEMA_VERSION = "1.1.0" as const;
 
 /** Canonical filename for the persisted judge-consensus artifact. */
 export const JUDGE_CONSENSUS_ARTIFACT_FILENAME =
@@ -5075,6 +5075,12 @@ export interface JudgeConsensusPanelEntry {
   readonly judgeId: string;
   readonly verdict: LogicJudgeVerdictLabel;
   readonly weight: number;
+  /**
+   * Optional normalized confidence in the judge verdict (`0..1`).
+   * When omitted, callers should treat the vote as fully trusted for
+   * backwards compatibility with pre-#2102 artifacts.
+   */
+  readonly confidence?: number;
   readonly findings: readonly JudgeConsensusFinding[];
   readonly repairInstructions: readonly RepairInstruction[];
   /**
@@ -5109,6 +5115,18 @@ export interface JudgeConsensusVeto {
   readonly verdict: LogicJudgeVerdictLabel;
   readonly findingCodes: readonly string[];
 }
+
+/** Vote-shape labels surfaced by the persisted judge-consensus artifact. */
+export const JUDGE_CONSENSUS_AGREEMENT_SHAPES = [
+  "unanimous",
+  "majority",
+  "split",
+  "vetoed",
+] as const;
+
+/** Vote-shape labels surfaced by the persisted judge-consensus artifact. */
+export type JudgeConsensusAgreementShape =
+  (typeof JUDGE_CONSENSUS_AGREEMENT_SHAPES)[number];
 
 /** Repair-state labels surfaced by the persisted judge-consensus artifact. */
 export const JUDGE_CONSENSUS_REPAIR_STATES = [
@@ -5156,6 +5174,7 @@ export interface JudgeConsensusVerdict {
   readonly generatedAt: string;
   readonly jobId: string;
   readonly verdict: LogicJudgeVerdictLabel;
+  readonly agreementShape: JudgeConsensusAgreementShape;
   readonly repairState: JudgeConsensusRepairState;
   readonly activeFindings: readonly JudgeConsensusFinding[];
   readonly repairInstructions: readonly RepairInstruction[];

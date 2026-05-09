@@ -6,6 +6,7 @@ import {
   FAITHFULNESS_VERDICT_SCHEMA_VERSION,
   JOB_LEVEL_TEST_CASE_ID,
   JUDGE_CONSENSUS_ARTIFACT_FILENAME,
+  JUDGE_CONSENSUS_AGREEMENT_SHAPES,
   JUDGE_CONSENSUS_REPAIR_OUTCOMES,
   JUDGE_CONSENSUS_SCHEMA_VERSION,
   LOGIC_JUDGE_VERDICT_SCHEMA_VERSION,
@@ -13,6 +14,7 @@ import {
   type A11yVerdict,
   type FaithfulnessVerdict,
   type HumanReviewDecision,
+  type JudgeConsensusAgreementShape,
   type JudgeConsensusFinding,
   type JudgeConsensusPanelEntry,
   type JudgeConsensusRepairHistory,
@@ -38,6 +40,12 @@ type ConsensusVerdictLabel = JudgeConsensusVerdict["verdict"];
 const MAX_INSTRUCTION_LENGTH = 240 as const;
 const MAX_PATH_LENGTH = 160 as const;
 const MAX_MESSAGE_LENGTH = 240 as const;
+const TRANSIENT_JUDGE_REFUSAL_CODES = new Set([
+  "canceled",
+  "gateway_unavailable",
+  "rate_limited",
+  "timeout",
+]);
 
 const compareInstruction = (
   left: RepairInstruction,
@@ -54,6 +62,14 @@ const truncate = (value: string, maxLength: number): string =>
 
 const normalizeWeight = (weight: number): number =>
   Number.isFinite(weight) && weight > 0 ? weight : 1;
+
+const normalizeConfidence = (confidence: number | undefined): number | undefined =>
+  typeof confidence === "number" &&
+  Number.isFinite(confidence) &&
+  confidence >= 0 &&
+  confidence <= 1
+    ? confidence
+    : undefined;
 
 const normalizeJudgeVerdict = (
   entry: JudgeConsensusPanelEntry,
@@ -89,6 +105,7 @@ const normalizePanelEntry = (
     ...entry,
     weight: normalizeWeight(entry.weight),
   });
+  const normalizedConfidence = normalizeConfidence(normalized.confidence);
   if (
     normalized.family !== undefined &&
     !isJudgeModelFamily(normalized.family)
@@ -119,6 +136,9 @@ const normalizePanelEntry = (
     judgeId: normalized.judgeId,
     verdict: normalized.verdict,
     weight: normalized.weight,
+    ...(normalizedConfidence !== undefined
+      ? { confidence: normalizedConfidence }
+      : {}),
     findings: normalized.findings.map(normalizeConsensusFinding),
     repairInstructions: normalized.repairInstructions,
     ...(normalized.family !== undefined ? { family: normalized.family } : {}),
@@ -229,7 +249,24 @@ const isIrAllowlistViolationFinding = (
       finding.code.startsWith("invented_"),
   );
 
+const isTransientInfrastructureReject = (
+  entry: JudgeConsensusPanelEntry,
+): boolean =>
+  entry.verdict === "reject" &&
+  entry.repairInstructions.length === 0 &&
+  entry.findings.length > 0 &&
+  entry.findings.every((finding) =>
+    TRANSIENT_JUDGE_REFUSAL_CODES.has(finding.code),
+  );
+
 const hasVeto = (entry: JudgeConsensusPanelEntry): boolean => {
+  if (
+    (entry.confidence ?? 1) >= 0.8 &&
+    entry.verdict === "reject" &&
+    !isTransientInfrastructureReject(entry)
+  ) {
+    return true;
+  }
   switch (entry.judgeId) {
     case "logic_judge":
       return isSchemaClassFinding(entry);
@@ -327,9 +364,40 @@ const dedupeFindings = (
   return [...dedup.values()].sort(compareFinding);
 };
 
-const resolveWeightedVerdict = (
+const classifyAgreementShape = (
   panel: readonly JudgeConsensusPanelEntry[],
+  vetoCandidate: JudgeConsensusPanelEntry | undefined,
+): JudgeConsensusAgreementShape => {
+  if (vetoCandidate !== undefined) {
+    return "vetoed";
+  }
+  const counts = {
+    accept: 0,
+    repair: 0,
+    reject: 0,
+  };
+  for (const entry of panel) {
+    counts[entry.verdict] += 1;
+  }
+  const distinctCount = Object.values(counts).filter((count) => count > 0).length;
+  if (distinctCount === 1) {
+    return "unanimous";
+  }
+  const maxCount = Math.max(counts.accept, counts.repair, counts.reject);
+  const winners = (
+    Object.entries(counts) as Array<[ConsensusVerdictLabel, number]>
+  ).filter(([, count]) => count === maxCount);
+  return winners.length === 1 ? "majority" : "split";
+};
+
+const resolveVotingVerdict = (
+  panel: readonly JudgeConsensusPanelEntry[],
+  agreementShape: JudgeConsensusAgreementShape,
+  vetoCandidate: JudgeConsensusPanelEntry | undefined,
 ): ConsensusVerdictLabel => {
+  if (agreementShape === "vetoed") {
+    return vetoCandidate?.verdict ?? "repair";
+  }
   const totals = {
     accept: 0,
     repair: 0,
@@ -338,22 +406,33 @@ const resolveWeightedVerdict = (
   for (const entry of panel) {
     totals[entry.verdict] += entry.weight;
   }
+  if (agreementShape === "unanimous") {
+    if (totals.accept > 0) {
+      return "accept";
+    }
+    if (totals.repair > 0) {
+      return "repair";
+    }
+    return "reject";
+  }
   const maxWeight = Math.max(totals.accept, totals.repair, totals.reject);
   const tied = (
     Object.entries(totals) as Array<[ConsensusVerdictLabel, number]>
   )
     .filter(([, weight]) => weight === maxWeight)
     .map(([verdict]) => verdict);
-  if (tied.length === 1) {
-    return tied[0]!;
+  if (agreementShape === "majority") {
+    const majorityVerdict = tied[0]!;
+    if (
+      majorityVerdict === "accept" &&
+      totals.repair > 0 &&
+      totals.reject === 0
+    ) {
+      return "repair";
+    }
+    return majorityVerdict;
   }
-  if (tied.includes("repair")) {
-    return "repair";
-  }
-  if (tied.includes("accept") && tied.includes("reject")) {
-    return "repair";
-  }
-  return tied.sort((left, right) => toSeverityRank(right) - toSeverityRank(left))[0]!;
+  return "repair";
 };
 
 export interface BuildJudgeConsensusInput {
@@ -386,6 +465,7 @@ export const buildLogicJudgeConsensusEntry = (
   judgeId: "logic_judge",
   verdict: verdict.verdict,
   weight: normalizeWeight(weight),
+  confidence: 1,
   findings: verdict.findings.map(
     (finding): JudgeConsensusFinding => ({
       scope: finding.scope,
@@ -439,6 +519,7 @@ export const buildFaithfulnessJudgeConsensusEntry = (
   judgeId: "faithfulness_judge",
   verdict: verdict.verdict,
   weight: normalizeWeight(weight),
+  confidence: verdict.score,
   findings: [
     ...verdict.hallucinations.map(
       (hallucination): JudgeConsensusFinding => ({
@@ -469,6 +550,7 @@ export const buildA11yJudgeConsensusEntry = (
   judgeId: "a11y_judge",
   verdict: verdict.verdict,
   weight: normalizeWeight(weight),
+  confidence: 1,
   findings: verdict.findings.map(
     (finding): JudgeConsensusFinding => ({
       scope: inferFindingScope(finding.testCaseId),
@@ -499,8 +581,8 @@ export const buildJudgeConsensus = (
       selected === undefined ? entry : selectHigherSeverity(selected, entry),
     undefined,
   );
-  const verdict =
-    vetoCandidate?.verdict ?? resolveWeightedVerdict(panel);
+  const agreementShape = classifyAgreementShape(panel, vetoCandidate);
+  const verdict = resolveVotingVerdict(panel, agreementShape, vetoCandidate);
   const repairOutcome = (
     input.repairHistory?.finalOutcome ?? "not_needed"
   ) satisfies JudgeConsensusRepairOutcome;
@@ -534,6 +616,9 @@ export const buildJudgeConsensus = (
     generatedAt: input.generatedAt,
     jobId: input.jobId,
     verdict,
+    agreementShape: JUDGE_CONSENSUS_AGREEMENT_SHAPES.includes(agreementShape)
+      ? agreementShape
+      : "split",
     repairState,
     activeFindings,
     repairInstructions,
