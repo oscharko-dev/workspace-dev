@@ -75,6 +75,10 @@ import {
 import { computeCoverageReport } from "./test-case-coverage.js";
 import { validateGeneratedTestCasesWithInvariants } from "./test-case-validation.js";
 import { buildTechniqueQuotaReport } from "./technique-quota.js";
+import {
+  repairUnresolvedValidationDetails,
+  type UnresolvedDetailRepairChange,
+} from "./unresolved-detail-repair.js";
 import { validateVisualSidecar } from "./visual-sidecar-validation.js";
 
 export interface RunValidationPipelineInput {
@@ -182,6 +186,14 @@ export interface ValidationPipelineArtifacts {
    * {@link writeValidationPipelineArtifacts}. */
   techniqueQuota?: TechniqueQuotaReport;
   /**
+   * Issue #2032 — ordered audit trail of deterministic repairs applied
+   * before validation when generated cases would have triggered
+   * `validation:unsupported_unresolved_validation_detail` errors. Empty
+   * array when no test case touched an unresolved validation constraint
+   * or when no concrete detail had to be stripped.
+   */
+  unresolvedDetailRepairChanges: UnresolvedDetailRepairChange[];
+  /**
    * Final blocking decision. True when ANY of:
    *   - validation reported errors
    *   - policy gate marked the job blocked
@@ -202,10 +214,28 @@ export const runValidationPipeline = (
   const profile = input.profile ?? cloneEuBankingDefaultProfile();
   const invariantRegistry = resolveInvariantRegistry(input.invariantRegistry);
 
+  // Issue #2032 — apply the deterministic unresolved-detail guard before
+  // validation so concrete numeric thresholds, exact validation messages,
+  // and confirm/submit acceptance assertions on cases touching unresolved
+  // source rules can never reach `validation-report.json` as errors. The
+  // repair is a pure transform; when no case touches an unresolved
+  // constraint the input list is returned unchanged.
+  const repair = repairUnresolvedValidationDetails({
+    jobId: input.jobId,
+    list: input.list,
+    intent: input.intent,
+    ...(input.workflowTopology !== undefined
+      ? { workflowTopology: input.workflowTopology }
+      : {}),
+    ...(input.visual !== undefined ? { visual: input.visual } : {}),
+  });
+  const repairedList = repair.list;
+  const repairChanges = repair.changes;
+
   const validationOutcome = validateGeneratedTestCasesWithInvariants({
     jobId: input.jobId,
     generatedAt: input.generatedAt,
-    list: input.list,
+    list: repairedList,
     intent: input.intent,
     ...(input.workflowTopology !== undefined
       ? { workflowTopology: input.workflowTopology }
@@ -245,6 +275,7 @@ export const runValidationPipeline = (
       validation,
       coverage,
       policy,
+      unresolvedDetailRepairChanges: repairChanges,
       blocked: true,
     };
     return artifacts;
@@ -254,7 +285,7 @@ export const runValidationPipeline = (
     jobId: input.jobId,
     generatedAt: input.generatedAt,
     policyProfileId: profile.id,
-    list: input.list,
+    list: repairedList,
     intent: input.intent,
     ...(input.workflowTopology !== undefined
       ? { workflowTopology: input.workflowTopology }
@@ -292,7 +323,7 @@ export const runValidationPipeline = (
   const policy = evaluatePolicyGate({
     jobId: input.jobId,
     generatedAt: input.generatedAt,
-    list: input.list,
+    list: repairedList,
     intent: input.intent,
     profile,
     validation,
@@ -344,10 +375,11 @@ export const runValidationPipeline = (
     (visualReport !== undefined && visualReport.blocked);
 
   const artifacts: ValidationPipelineArtifacts = {
-    generatedTestCases: input.list,
+    generatedTestCases: repairedList,
     validation,
     coverage,
     policy,
+    unresolvedDetailRepairChanges: repairChanges,
     blocked,
   };
   if (visualReport !== undefined) artifacts.visual = visualReport;
@@ -356,7 +388,7 @@ export const runValidationPipeline = (
       generatedAt: input.generatedAt,
       jobId: input.jobId,
       policyProfileId: profile.id,
-      cases: input.list.testCases,
+      cases: repairedList.testCases,
       coveragePlan: input.coveragePlan,
       ...(profile.rules.techniqueCoverageMinimum !== undefined
         ? { policy: profile.rules.techniqueCoverageMinimum }
@@ -571,10 +603,27 @@ export const runValidationPipelineWithSelfVerify = async (
 ): Promise<ValidationPipelineArtifacts> => {
   const profile = input.profile ?? cloneEuBankingDefaultProfile();
   const invariantRegistry = resolveInvariantRegistry(input.invariantRegistry);
+
+  // Issue #2032 — apply the deterministic unresolved-detail guard before
+  // both validation and the self-verify rubric pass so the rubric judge
+  // and policy gate never see concrete details that would have triggered
+  // `validation:unsupported_unresolved_validation_detail` errors.
+  const repair = repairUnresolvedValidationDetails({
+    jobId: input.jobId,
+    list: input.list,
+    intent: input.intent,
+    ...(input.workflowTopology !== undefined
+      ? { workflowTopology: input.workflowTopology }
+      : {}),
+    ...(input.visual !== undefined ? { visual: input.visual } : {}),
+  });
+  const repairedList = repair.list;
+  const repairChanges = repair.changes;
+
   const validationOutcome = validateGeneratedTestCasesWithInvariants({
     jobId: input.jobId,
     generatedAt: input.generatedAt,
-    list: input.list,
+    list: repairedList,
     intent: input.intent,
     ...(invariantRegistry !== undefined ? { invariantRegistry } : {}),
   });
@@ -605,7 +654,7 @@ export const runValidationPipelineWithSelfVerify = async (
   const rubricRun = await runSelfVerifyRubricPass({
     jobId: input.jobId,
     generatedAt: input.generatedAt,
-    list: input.list,
+    list: repairedList,
     intent: input.intent,
     ...(rubricVisual.length > 0 ? { visual: rubricVisual } : {}),
     policyProfileId: profile.id,
@@ -638,7 +687,7 @@ export const runValidationPipelineWithSelfVerify = async (
     jobId: input.jobId,
     generatedAt: input.generatedAt,
     policyProfileId: profile.id,
-    list: input.list,
+    list: repairedList,
     intent: input.intent,
     duplicateSimilarityThreshold: profile.rules.duplicateSimilarityThreshold,
     ...(rubricScoreInput !== undefined
@@ -660,7 +709,7 @@ export const runValidationPipelineWithSelfVerify = async (
   const policy = evaluatePolicyGate({
     jobId: input.jobId,
     generatedAt: input.generatedAt,
-    list: input.list,
+    list: repairedList,
     intent: input.intent,
     profile,
     validation,
@@ -703,11 +752,12 @@ export const runValidationPipelineWithSelfVerify = async (
     (visualReport !== undefined && visualReport.blocked);
 
   const artifacts: ValidationPipelineArtifacts = {
-    generatedTestCases: input.list,
+    generatedTestCases: repairedList,
     validation,
     coverage,
     policy,
     rubric: rubricReport,
+    unresolvedDetailRepairChanges: repairChanges,
     blocked,
   };
   if (visualReport !== undefined) artifacts.visual = visualReport;
@@ -716,7 +766,7 @@ export const runValidationPipelineWithSelfVerify = async (
       generatedAt: input.generatedAt,
       jobId: input.jobId,
       policyProfileId: profile.id,
-      cases: input.list.testCases,
+      cases: repairedList.testCases,
       coveragePlan: input.coveragePlan,
       ...(profile.rules.techniqueCoverageMinimum !== undefined
         ? { policy: profile.rules.techniqueCoverageMinimum }
