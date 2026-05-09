@@ -175,7 +175,7 @@ export const projectTestDataOracleCase = (input: {
     if (seenFieldIds.has(fieldId)) continue;
     seenFieldIds.add(fieldId);
     const fieldRecord = input.context.byFieldId.get(fieldId);
-    if (fieldRecord === undefined || fieldRecord.governed !== true) continue;
+    if (fieldRecord === undefined || !fieldRecord.governed) continue;
     if (fieldRecord.resolution.resolvable) {
       const testDataEntries = testDataEntriesFor(
         input.testCase,
