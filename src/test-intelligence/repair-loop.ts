@@ -50,6 +50,12 @@ import {
   type RepairInstruction,
 } from "../contracts/index.js";
 import { canonicalJson, sha256Hex } from "./content-hash.js";
+import {
+  INSTRUCTION_LENGTH_LIMITS,
+  countTruncatedInstructions,
+  truncateInstructionWithAudit,
+  truncateWithEllipsis,
+} from "./judge-limits.js";
 
 /** Schema version of the repair-loop per-iteration artifacts. */
 export const REPAIR_LOOP_SCHEMA_VERSION = "1.0.0" as const;
@@ -82,15 +88,6 @@ export const REPAIR_LOOP_TRACE_ARTIFACT_FILENAME =
  */
 export const REPAIR_LOOP_BUDGET_TRACE_ARTIFACT_FILENAME =
   "repair-loop-budget-trace.json" as const;
-
-/** Maximum length of a single RepairInstruction.instruction field. Mirrors logic-judge contract. */
-const MAX_INSTRUCTION_LENGTH = 240 as const;
-
-/** Maximum length of a single RepairInstruction.path field. Mirrors logic-judge contract. */
-const MAX_PATH_LENGTH = 160 as const;
-
-/** Maximum length of structured RepairInstruction.message fields. */
-const MAX_MESSAGE_LENGTH = 240 as const;
 
 /**
  * Terminal outcomes of the repair loop.
@@ -154,6 +151,7 @@ export interface RepairLoopResult {
 export interface RepairLoopRegenerateInput {
   readonly previousList: GeneratedTestCaseList;
   readonly repairInstructions: readonly RepairInstruction[];
+  readonly truncatedInstructionCount: number;
   /** 1-based iteration counter (always >= 1 for repair iterations). */
   readonly iteration: number;
 }
@@ -286,6 +284,7 @@ export interface RepairPlannerIterationArtifact {
   readonly outputs: {
     readonly repairInstructions: readonly RepairInstruction[];
     readonly repairInstructionCount: number;
+    readonly truncatedInstructionCount: number;
   };
 }
 
@@ -349,6 +348,7 @@ export interface TestGenerationRepairIterationArtifact {
     readonly previousListHash: string;
     readonly repairInstructionsHash: string;
     readonly repairInstructionCount: number;
+    readonly truncatedInstructionCount: number;
   };
   readonly outputs: {
     readonly listHash: string;
@@ -370,8 +370,14 @@ export interface TestGenerationRepairIterationArtifact {
   };
 }
 
-const truncate = (value: string, maxLength: number): string =>
-  value.length <= maxLength ? value : `${value.slice(0, maxLength - 3)}...`;
+const truncatePath = (value: string): string =>
+  truncateWithEllipsis(value, INSTRUCTION_LENGTH_LIMITS.path).value;
+
+const truncateMessage = (value: string): string =>
+  truncateWithEllipsis(value, INSTRUCTION_LENGTH_LIMITS.message).value;
+
+const truncateInstruction = (value: string) =>
+  truncateInstructionWithAudit(value);
 
 const compareInstruction = (
   left: RepairInstruction,
@@ -392,16 +398,23 @@ const compareInstruction = (
 export const consolidateRepairInstructions = (input: {
   readonly logic: JudgeVerdict;
   readonly faithfulness?: FaithfulnessVerdict;
-}): readonly RepairInstruction[] => {
+}): {
+  readonly repairInstructions: readonly RepairInstruction[];
+  readonly truncatedInstructionCount: number;
+} => {
   const collected: RepairInstruction[] = [];
   for (const ri of input.logic.repairInstructions) {
+    const instruction = truncateInstruction(ri.instruction);
     collected.push({
       testCaseId: ri.testCaseId,
-      path: truncate(ri.path, MAX_PATH_LENGTH),
-      instruction: truncate(ri.instruction, MAX_INSTRUCTION_LENGTH),
+      path: truncatePath(ri.path),
+      instruction: instruction.value,
+      ...(ri.instructionTruncated === true || instruction.truncated
+        ? { instructionTruncated: true }
+        : {}),
       ...(ri.kind !== undefined ? { kind: ri.kind } : {}),
       ...(ri.message !== undefined
-        ? { message: truncate(ri.message, MAX_MESSAGE_LENGTH) }
+        ? { message: truncateMessage(ri.message) }
         : {}),
     });
   }
@@ -411,13 +424,14 @@ export const consolidateRepairInstructions = (input: {
         hallucination.stepIndex !== undefined
           ? `steps[${hallucination.stepIndex}]`
           : "$case";
+      const instruction = truncateInstruction(
+        `Faithfulness hallucination: ${hallucination.message}`,
+      );
       collected.push({
         testCaseId: hallucination.testCaseId,
-        path: truncate(path, MAX_PATH_LENGTH),
-        instruction: truncate(
-          `Faithfulness hallucination: ${hallucination.message}`,
-          MAX_INSTRUCTION_LENGTH,
-        ),
+        path: truncatePath(path),
+        instruction: instruction.value,
+        ...(instruction.truncated ? { instructionTruncated: true } : {}),
       });
     }
     for (const mismatch of input.faithfulness.mismatches) {
@@ -425,13 +439,14 @@ export const consolidateRepairInstructions = (input: {
         mismatch.stepIndex !== undefined
           ? `steps[${mismatch.stepIndex}].expected`
           : "expectedResults";
+      const instruction = truncateInstruction(
+        `Faithfulness mismatch (expected="${mismatch.expectedLabel}", visible="${mismatch.visibleLabel}"): ${mismatch.message}`,
+      );
       collected.push({
         testCaseId: mismatch.testCaseId,
-        path: truncate(path, MAX_PATH_LENGTH),
-        instruction: truncate(
-          `Faithfulness mismatch (expected="${mismatch.expectedLabel}", visible="${mismatch.visibleLabel}"): ${mismatch.message}`,
-          MAX_INSTRUCTION_LENGTH,
-        ),
+        path: truncatePath(path),
+        instruction: instruction.value,
+        ...(instruction.truncated ? { instructionTruncated: true } : {}),
       });
     }
   }
@@ -448,7 +463,11 @@ export const consolidateRepairInstructions = (input: {
       dedup.set(key, entry);
     }
   }
-  return [...dedup.values()].sort(compareInstruction);
+  const repairInstructions = [...dedup.values()].sort(compareInstruction);
+  return {
+    repairInstructions,
+    truncatedInstructionCount: countTruncatedInstructions(repairInstructions),
+  };
 };
 
 /**
@@ -699,10 +718,11 @@ export const runRepairLoop = async (
       return buildBudgetExhaustedResult();
     }
 
-    const repairInstructions = consolidateRepairInstructions({
+    const repairPlan = consolidateRepairInstructions({
       logic: currentLogic,
       ...(currentFaith !== undefined ? { faithfulness: currentFaith } : {}),
     });
+    const repairInstructions = repairPlan.repairInstructions;
 
     const previousListHash = sha256Hex(currentList);
     const plannerArtifact: RepairPlannerIterationArtifact = {
@@ -720,6 +740,7 @@ export const runRepairLoop = async (
       outputs: {
         repairInstructions,
         repairInstructionCount: repairInstructions.length,
+        truncatedInstructionCount: repairPlan.truncatedInstructionCount,
       },
     };
     await writeAtomicJson(
@@ -736,6 +757,7 @@ export const runRepairLoop = async (
       regen = await input.regenerate({
         previousList: currentList,
         repairInstructions,
+        truncatedInstructionCount: repairPlan.truncatedInstructionCount,
         iteration: k,
       });
     } catch (error) {
@@ -753,6 +775,7 @@ export const runRepairLoop = async (
         previousListHash,
         repairInstructionsHash: sha256Hex(repairInstructions),
         repairInstructionCount: repairInstructions.length,
+        truncatedInstructionCount: repairPlan.truncatedInstructionCount,
       },
       outputs: {
         listHash: newListHash,

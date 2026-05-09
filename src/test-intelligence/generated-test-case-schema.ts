@@ -162,6 +162,7 @@ const AUDIT_KEYS = [
   "inputHash",
   "promptHash",
   "schemaHash",
+  "truncatedInstructionCount",
 ] as const;
 
 export { GENERATED_TEST_CASE_LIST_SCHEMA_NAME };
@@ -656,6 +657,16 @@ const expectAudit = (
   expectHash(value["inputHash"], `${path}.inputHash`, errors);
   expectHash(value["promptHash"], `${path}.promptHash`, errors);
   expectHash(value["schemaHash"], `${path}.schemaHash`, errors);
+  if (
+    value["truncatedInstructionCount"] !== undefined &&
+    (!Number.isInteger(value["truncatedInstructionCount"]) ||
+      (value["truncatedInstructionCount"] as number) < 0)
+  ) {
+    errors.push({
+      path: `${path}.truncatedInstructionCount`,
+      message: "expected non-negative integer when present",
+    });
+  }
 };
 
 const expectHash = (

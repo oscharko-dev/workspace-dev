@@ -779,9 +779,11 @@ test("consolidateRepairInstructions deduplicates and sorts deterministically", (
     ],
   };
   const consolidated = consolidateRepairInstructions({ logic, faithfulness });
-  assert.equal(consolidated.length, 4);
+  assert.equal(consolidated.repairInstructions.length, 4);
   assert.deepEqual(
-    consolidated.map((entry) => `${entry.testCaseId}::${entry.path}`),
+    consolidated.repairInstructions.map(
+      (entry) => `${entry.testCaseId}::${entry.path}`,
+    ),
     [
       "tc-1::steps[0]",
       "tc-1::steps[1]",
@@ -789,6 +791,59 @@ test("consolidateRepairInstructions deduplicates and sorts deterministically", (
       "tc-2::steps[0].expected",
     ],
   );
+});
+
+test("repair loop preserves truncated instruction audit through planner and regeneration artifacts", async () => {
+  await withTempDir(async (runDir) => {
+    const overlongInstruction = "A".repeat(300);
+    let regenerateAuditCount = -1;
+    const result = await runRepairLoop({
+      jobId: "job-truncated-instruction-audit",
+      runDir,
+      maxRepairIterations: 1,
+      initialList: buildList(["tc-1"]),
+      initialLogicVerdict: buildLogicVerdict("repair", [
+        {
+          testCaseId: "tc-1",
+          path: "steps[0]",
+          instruction: overlongInstruction,
+        },
+      ]),
+      regenerate: async (input) => {
+        regenerateAuditCount = input.truncatedInstructionCount;
+        return okRegenerate(buildList(["tc-1"]))(input);
+      },
+      runLogicJudge: sequencedLogicJudge([buildLogicVerdict("accept")]),
+    });
+    assert.equal(result.outcome, "accepted");
+    assert.equal(regenerateAuditCount, 1);
+
+    const plannerPath = path.join(
+      runDir,
+      "agent-role-runs",
+      `${REPAIR_PLANNER_ARTIFACT_PREFIX}1.json`,
+    );
+    const planner = JSON.parse(
+      await readFile(plannerPath, "utf8"),
+    ) as RepairPlannerIterationArtifact;
+    assert.equal(planner.outputs.repairInstructionCount, 1);
+    assert.equal(planner.outputs.truncatedInstructionCount, 1);
+    assert.equal(
+      planner.outputs.repairInstructions[0]?.instructionTruncated,
+      true,
+    );
+
+    const generationPath = path.join(
+      runDir,
+      "agent-role-runs",
+      `${TEST_GENERATION_REPAIR_ARTIFACT_PREFIX}1.json`,
+    );
+    const generation = JSON.parse(
+      await readFile(generationPath, "utf8"),
+    ) as TestGenerationRepairIterationArtifact;
+    assert.equal(generation.inputs.repairInstructionCount, 1);
+    assert.equal(generation.inputs.truncatedInstructionCount, 1);
+  });
 });
 
 // ---------------------------------------------------------------------------

@@ -175,8 +175,11 @@ test("schema: drift guard — the hash is stable for the current contract", () =
   // 1.1.0 -> 1.2.0 and the persisted test-case contract gained optional
   // additive `confidence` + `confidenceComponents` fields for calibrated
   // per-case uncertainty surfacing.
+  // Hash bumped by Issue #2104: GENERATED_TEST_CASE_SCHEMA_VERSION bumped
+  // 1.2.0 -> 1.3.0 and the persisted audit metadata gained optional
+  // additive `truncatedInstructionCount` for repair-instruction audit.
   const expected =
-    "4ae4be7b6079ec95e539723a47b82688fbbe9dfe62c353cbd7aa74e4905299f7";
+    "26a1a795b5c78e70f913f4b37ff5eba1fa0741e6c7fbb739a99555c2d2a5a95b";
   const actual = computeGeneratedTestCaseListSchemaHash();
   if (actual !== expected) {
     assert.fail(

@@ -29,12 +29,14 @@ import {
   type A11yWcag22AaPillarId,
 } from "./a11y-coverage-eval.js";
 import { canonicalJson, sha256Hex } from "./content-hash.js";
+import {
+  INSTRUCTION_LENGTH_LIMITS,
+  countTruncatedInstructions,
+  truncateInstructionWithAudit,
+  truncateWithEllipsis,
+} from "./judge-limits.js";
 import { resolveTenantScopeSegments } from "./replay-cache.js";
 import type { LlmGatewayClientBundle } from "./llm-gateway-bundle.js";
-
-const MAX_MESSAGE_LENGTH = 240;
-const MAX_PATH_LENGTH = 160;
-const MAX_INSTRUCTION_LENGTH = 240;
 
 const SYSTEM_PROMPT = [
   "You are the screenshot accessibility coverage judge for workspace-dev test-intelligence.",
@@ -240,12 +242,12 @@ export const buildA11yJudgeResponseSchema = (): Record<string, unknown> => ({
           rationale: {
             type: "string",
             minLength: 1,
-            maxLength: MAX_MESSAGE_LENGTH,
+            maxLength: INSTRUCTION_LENGTH_LIMITS.message,
           },
           repairInstruction: {
             type: "string",
             minLength: 1,
-            maxLength: MAX_INSTRUCTION_LENGTH,
+            maxLength: INSTRUCTION_LENGTH_LIMITS.instruction,
           },
         },
       },
@@ -592,15 +594,15 @@ const buildA11yVerdict = (input: {
     });
     repairInstructions.push({
       testCaseId: "$job",
-      path: truncate(`$job.a11yCoverage[${criterion.criterionId}]`, MAX_PATH_LENGTH),
-      instruction: weak
-        ? sanitizeShortInstruction(
+      path: truncatePath(`$job.a11yCoverage[${criterion.criterionId}]`),
+      ...(weak
+        ? buildTruncatedInstruction(
             row.repairInstruction ??
               `Strengthen the accessibility case(s) for "${criterion.screenName}" so they explicitly verify ${criterion.title} (${criterion.successCriterion}).`,
           )
-        : sanitizeShortInstruction(
+        : buildTruncatedInstruction(
             `Add or rewrite an accessibility case for "${criterion.screenName}" that explicitly verifies ${criterion.title} (${criterion.successCriterion}).`,
-          ),
+          )),
     });
   }
   criteria.sort((left, right) => left.criterionId.localeCompare(right.criterionId));
@@ -629,6 +631,7 @@ const buildA11yVerdict = (input: {
     criteria,
     findings,
     repairInstructions,
+    truncatedInstructionCount: countTruncatedInstructions(repairInstructions),
   };
 };
 
@@ -654,6 +657,7 @@ const buildSkippedVerdict = (input: {
   criteria: [],
   findings: [],
   repairInstructions: [],
+  truncatedInstructionCount: 0,
   refusal: {
     code: input.code,
     message: sanitizeShortMessage(input.message),
@@ -669,6 +673,9 @@ const stampCachedVerdict = (
   jobId: input.jobId,
   cacheHit: true,
   cacheKeyDigest: input.cacheKeyDigest,
+  truncatedInstructionCount:
+    verdict.truncatedInstructionCount ??
+    countTruncatedInstructions(verdict.repairInstructions),
 });
 
 const readNonEmptyString = (
@@ -693,13 +700,28 @@ const readOptionalNonEmptyString = (
 };
 
 const sanitizeShortMessage = (value: string): string =>
-  truncate(value.replace(/\s+/gu, " ").trim(), MAX_MESSAGE_LENGTH);
+  truncateWithEllipsis(
+    value.replace(/\s+/gu, " ").trim(),
+    INSTRUCTION_LENGTH_LIMITS.message,
+  ).value;
 
 const sanitizeShortInstruction = (value: string): string =>
-  truncate(value.replace(/\s+/gu, " ").trim(), MAX_INSTRUCTION_LENGTH);
+  truncateInstructionWithAudit(value.replace(/\s+/gu, " ").trim()).value;
 
-const truncate = (value: string, maxLength: number): string =>
-  value.length <= maxLength ? value : `${value.slice(0, maxLength - 3)}...`;
+const truncatePath = (value: string): string =>
+  truncateWithEllipsis(value, INSTRUCTION_LENGTH_LIMITS.path).value;
+
+const buildTruncatedInstruction = (
+  value: string,
+): Pick<RepairInstruction, "instruction" | "instructionTruncated"> => {
+  const truncated = truncateInstructionWithAudit(
+    value.replace(/\s+/gu, " ").trim(),
+  );
+  return {
+    instruction: truncated.value,
+    ...(truncated.truncated ? { instructionTruncated: true } : {}),
+  };
+};
 
 const isNotFoundError = (error: unknown): boolean =>
   typeof error === "object" &&

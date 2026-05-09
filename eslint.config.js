@@ -57,5 +57,26 @@ export default tseslint.config(
       ...strictTypeCheckedRules,
       "no-console": "error"
     }
+  },
+  {
+    files: [
+      "src/test-intelligence/a11y-judge.ts",
+      "src/test-intelligence/judge-consensus.ts",
+      "src/test-intelligence/logic-judge.ts",
+      "src/test-intelligence/repair-loop.ts"
+    ],
+    rules: {
+      "@typescript-eslint/no-magic-numbers": [
+        "error",
+        {
+          ignore: [0, 0.8, 1, 2, 2.2, 3, 5, 4096],
+          ignoreArrayIndexes: true,
+          ignoreEnums: true,
+          ignoreNumericLiteralTypes: true,
+          ignoreReadonlyClassProperties: true,
+          ignoreTypeIndexes: true
+        }
+      ]
+    }
   }
 );
