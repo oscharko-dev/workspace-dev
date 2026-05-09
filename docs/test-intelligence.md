@@ -50,9 +50,12 @@ Out of scope:
 - The deterministic Figma-to-code pipeline (`llmCodegenMode=deterministic`) is
   unchanged and runs without the feature flag.
 - Test-intelligence introduces a separate `WorkspaceTestIntelligenceMode`
-  namespace (`deterministic_llm`, `offline_eval`, `dry_run`). Changes to that
-  namespace never affect `ALLOWED_LLM_CODEGEN_MODES`. The two namespaces are
-  isolated by design.
+  namespace (`deterministic_llm`, `offline_eval`). Changes to that namespace
+  never affect `ALLOWED_LLM_CODEGEN_MODES`. The two namespaces are isolated by
+  design. The repository CLI still supports a local-only
+  `workspace-dev test-intelligence run --mode dry_run` validation path, but
+  that mode is not part of the submit API contract. The decision is recorded in
+  [ADR 2105](adr/2105-remove-workspace-test-intelligence-dry-run.md).
 - A new optional job type `figma_to_qc_test_cases` is available on
   `WorkspaceJobType`. When the dual test-intelligence gate is enabled and the
   workspace starts with a production-runner factory, `POST /workspace/submit`
@@ -219,8 +222,8 @@ production-runner and CLI integrations:
 | Symbol                                      | Value                                                                |
 | ------------------------------------------- | -------------------------------------------------------------------- |
 | `WorkspaceJobInput.jobType`                 | `"figma_to_code"` (default) \| `"figma_to_qc_test_cases"`             |
-| `WorkspaceJobInput.testIntelligenceMode`    | `"deterministic_llm"` \| `"offline_eval"` \| `"dry_run"`             |
-| `ALLOWED_TEST_INTELLIGENCE_MODES`           | `["deterministic_llm", "offline_eval", "dry_run"]`                   |
+| `WorkspaceJobInput.testIntelligenceMode`    | `"deterministic_llm"` \| `"offline_eval"`                            |
+| `ALLOWED_TEST_INTELLIGENCE_MODES`           | `["deterministic_llm", "offline_eval"]`                              |
 | `TEST_INTELLIGENCE_CONTRACT_VERSION`        | `"1.22.0"`                                                           |
 | `TEST_INTELLIGENCE_PROMPT_TEMPLATE_VERSION` | `"1.7.1"`                                                            |
 | `TEST_INTELLIGENCE_ENV`                     | `"FIGMAPIPE_WORKSPACE_TEST_INTELLIGENCE"`                            |
