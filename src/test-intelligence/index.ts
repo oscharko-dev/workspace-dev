@@ -1502,6 +1502,38 @@ export {
   type CrossFieldScreenCoverage,
 } from "./cross-field-invariant-gate.js";
 export {
+  buildStateMachineFromWorkflowTopology,
+  createWorkflowStateMachine,
+  createWorkflowStateMachineRegistry,
+  findShortestTransitionPath,
+  indexWorkflowStateMachine,
+  type WorkflowStateMachine,
+  type WorkflowStateMachineIndex,
+  type WorkflowStateMachineProvenance,
+  type WorkflowStateMachineRegistry,
+  type WorkflowStateMachineRegistryBuilder,
+  type WorkflowStateMachineState,
+  type WorkflowStateMachineTransition,
+} from "./workflow-state-machine.js";
+export {
+  buildDefaultWorkflowStateMachineRegistry,
+  DEFAULT_WORKFLOW_STATE_MACHINE_COUNT,
+  DEFAULT_WORKFLOW_STATE_MACHINE_IDS,
+} from "./workflow-state-machine-catalog.js";
+export {
+  evaluateWorkflowStateMachineGate,
+  validateStepSequenceAgainstStateMachine,
+  WORKFLOW_STATE_MACHINE_REPORT_ARTIFACT_FILENAME,
+  type WorkflowStateMachineCaseClaims,
+  type WorkflowStateMachineCaseRow,
+  type WorkflowStateMachineCoverageRow,
+  type WorkflowStateMachineIssue,
+  type WorkflowStateMachineIssueCode,
+  type WorkflowStateMachineReport,
+  type WorkflowStateMachineSeverity,
+  type WorkflowStateMachineStepClaim,
+} from "./workflow-state-machine-validator.js";
+export {
   findInvariantsMissingSamplerFactory,
   sampleInvariantSeeds,
   type InvariantSeedPair,

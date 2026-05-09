@@ -62,6 +62,13 @@ import {
 } from "./cross-field-invariant-gate.js";
 import type { CrossFieldInvariantRegistry } from "./cross-field-invariant-engine.js";
 import {
+  evaluateWorkflowStateMachineGate,
+  WORKFLOW_STATE_MACHINE_REPORT_ARTIFACT_FILENAME,
+  type WorkflowStateMachineCaseClaims,
+  type WorkflowStateMachineReport,
+} from "./workflow-state-machine-validator.js";
+import type { WorkflowStateMachineRegistry } from "./workflow-state-machine.js";
+import {
   buildActiveDatasetInvariantRegistry,
   type DomainInvariantRegistry,
 } from "./domain-invariant-registry.js";
@@ -182,6 +189,22 @@ export interface RunValidationPipelineInput {
    */
   crossFieldInvariantClaims?: ReadonlyArray<CrossFieldCaseClaim>;
   /**
+   * Optional workflow state-machine registry (Issue #2111). When supplied
+   * together with `workflowStateMachineCaseClaims`, the pipeline runs the
+   * step-sequence validator on each test case and emits a
+   * `workflow-state-machine-report.json` artifact. Job-level `blocked`
+   * is OR-folded with the gate's `blocked` flag. The hook is opt-in so
+   * existing fixtures stay byte-stable and produce no new blocking.
+   */
+  workflowStateMachineRegistry?: WorkflowStateMachineRegistry;
+  /**
+   * Caller-supplied per-case step claims describing which workflow
+   * state-machine the case targets and which transition each step
+   * exercises (Issue #2111). Ignored when
+   * `workflowStateMachineRegistry` is undefined.
+   */
+  workflowStateMachineCaseClaims?: ReadonlyArray<WorkflowStateMachineCaseClaims>;
+  /**
    * Optional fixture- or screen-scoped compliance overrides
    * (Issue #2030 follow-up, K0-measurement-driven).
    *
@@ -237,11 +260,18 @@ export interface ValidationPipelineArtifacts {
    */
   crossFieldInvariantCoverage?: CrossFieldInvariantCoverageReport;
   /**
+   * Issue #2111 — workflow state-machine step-sequence report. Emitted
+   * only when `workflowStateMachineRegistry` was supplied. Job-level
+   * `blocked` is OR-folded with this report's `blocked` flag.
+   */
+  workflowStateMachineReport?: WorkflowStateMachineReport;
+  /**
    * Final blocking decision. True when ANY of:
    *   - validation reported errors
    *   - policy gate marked the job blocked
    *   - visual sidecar gate marked itself blocked
    *   - cross-field invariant coverage gate marked the job blocked
+   *   - workflow state-machine gate marked the job blocked
    */
   blocked: boolean;
 }
@@ -438,11 +468,23 @@ export const runValidationPipeline = (
           claims: input.crossFieldInvariantClaims ?? [],
         });
 
+  const workflowStateMachineReport =
+    input.workflowStateMachineRegistry === undefined
+      ? undefined
+      : evaluateWorkflowStateMachineGate({
+          jobId: input.jobId,
+          generatedAt: input.generatedAt,
+          registry: input.workflowStateMachineRegistry,
+          caseClaims: input.workflowStateMachineCaseClaims ?? [],
+        });
+
   const blocked =
     validationBlockedAfterOverrides ||
     policy.blocked ||
     (visualReport !== undefined && visualReport.blocked) ||
-    (crossFieldCoverage !== undefined && crossFieldCoverage.blocked);
+    (crossFieldCoverage !== undefined && crossFieldCoverage.blocked) ||
+    (workflowStateMachineReport !== undefined &&
+      workflowStateMachineReport.blocked);
 
   const artifacts: ValidationPipelineArtifacts = {
     generatedTestCases: repairedList,
@@ -456,6 +498,9 @@ export const runValidationPipeline = (
   if (visualReport !== undefined) artifacts.visual = visualReport;
   if (crossFieldCoverage !== undefined) {
     artifacts.crossFieldInvariantCoverage = crossFieldCoverage;
+  }
+  if (workflowStateMachineReport !== undefined) {
+    artifacts.workflowStateMachineReport = workflowStateMachineReport;
   }
   if (input.coveragePlan !== undefined) {
     artifacts.techniqueQuota = buildTechniqueQuotaReport({
@@ -561,6 +606,8 @@ export interface WriteValidationPipelineArtifactsResult {
   testDataOracleReportPath?: string;
   /** Path of the persisted cross-field invariant coverage report (Issue #2110). */
   crossFieldInvariantCoverageReportPath?: string;
+  /** Path of the persisted workflow state-machine step-sequence report (Issue #2111). */
+  workflowStateMachineReportPath?: string;
 }
 
 /**
@@ -655,6 +702,18 @@ export const writeValidationPipelineArtifacts = async (
     );
     result.crossFieldInvariantCoverageReportPath =
       crossFieldInvariantCoverageReportPath;
+  }
+
+  if (input.artifacts.workflowStateMachineReport !== undefined) {
+    const workflowStateMachineReportPath = join(
+      input.destinationDir,
+      WORKFLOW_STATE_MACHINE_REPORT_ARTIFACT_FILENAME,
+    );
+    await writeAtomicJson(
+      workflowStateMachineReportPath,
+      input.artifacts.workflowStateMachineReport,
+    );
+    result.workflowStateMachineReportPath = workflowStateMachineReportPath;
   }
 
   return result;
@@ -893,11 +952,23 @@ export const runValidationPipelineWithSelfVerify = async (
           claims: input.crossFieldInvariantClaims ?? [],
         });
 
+  const workflowStateMachineReport =
+    input.workflowStateMachineRegistry === undefined
+      ? undefined
+      : evaluateWorkflowStateMachineGate({
+          jobId: input.jobId,
+          generatedAt: input.generatedAt,
+          registry: input.workflowStateMachineRegistry,
+          caseClaims: input.workflowStateMachineCaseClaims ?? [],
+        });
+
   const blocked =
     validationBlockedAfterOverrides ||
     policy.blocked ||
     (visualReport !== undefined && visualReport.blocked) ||
-    (crossFieldCoverage !== undefined && crossFieldCoverage.blocked);
+    (crossFieldCoverage !== undefined && crossFieldCoverage.blocked) ||
+    (workflowStateMachineReport !== undefined &&
+      workflowStateMachineReport.blocked);
 
   const artifacts: ValidationPipelineArtifacts = {
     generatedTestCases: repairedList,
@@ -912,6 +983,9 @@ export const runValidationPipelineWithSelfVerify = async (
   if (visualReport !== undefined) artifacts.visual = visualReport;
   if (crossFieldCoverage !== undefined) {
     artifacts.crossFieldInvariantCoverage = crossFieldCoverage;
+  }
+  if (workflowStateMachineReport !== undefined) {
+    artifacts.workflowStateMachineReport = workflowStateMachineReport;
   }
   if (input.coveragePlan !== undefined) {
     artifacts.techniqueQuota = buildTechniqueQuotaReport({
