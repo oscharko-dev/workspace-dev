@@ -525,6 +525,106 @@ test("repair path coerces schema-near sidecar JSON into a valid result", async (
   });
 });
 
+test("model-emitted deployment aliases normalize to the selected primary deployment before persistence", async () => {
+  const captures = [captureFor("s-1")];
+  const primaryResponder: MockResponder = (request, attempt) =>
+    buildSuccess(
+      request,
+      attempt,
+      {
+        screens: [
+          {
+            screenId: "s-1",
+            sidecarDeployment: "current",
+            regions: [
+              {
+                regionId: "s-1-r1",
+                confidence: 0.9,
+                label: "field-1",
+                controlType: "text_input",
+              },
+            ],
+            confidenceSummary: { min: 0.9, max: 0.9, mean: 0.9 },
+          },
+        ],
+      },
+      {
+        deployment: PRIMARY_DEPLOYMENT,
+        modelRevision: `${PRIMARY_DEPLOYMENT}@test`,
+        gatewayRelease: "mock",
+      },
+    );
+  const bundle = buildBundle({
+    primary: { responder: primaryResponder },
+  });
+  const { result } = await describeVisualScreens({
+    bundle,
+    captures,
+    jobId: "job-5-alias",
+    generatedAt: "2026-04-25T00:00:00.000Z",
+    intent: buildIntent(["s-1"]),
+    clock: monotonicClock(),
+  });
+  assert.equal(result.outcome, "success");
+  if (result.outcome !== "success") return;
+  assert.equal(result.visual[0]?.sidecarDeployment, PRIMARY_DEPLOYMENT);
+  assert.equal(
+    result.validationReport.records[0]?.deployment,
+    PRIMARY_DEPLOYMENT,
+  );
+  assert.deepEqual(result.validationReport.records[0]?.outcomes, ["ok"]);
+});
+
+test("stale model-emitted deployment literals normalize to the selected primary deployment before persistence", async () => {
+  const captures = [captureFor("s-1")];
+  const primaryResponder: MockResponder = (request, attempt) =>
+    buildSuccess(
+      request,
+      attempt,
+      {
+        screens: [
+          {
+            screenId: "s-1",
+            sidecarDeployment: "mistral-document-ai-2512",
+            regions: [
+              {
+                regionId: "s-1-r1",
+                confidence: 0.9,
+                label: "field-1",
+                controlType: "text_input",
+              },
+            ],
+            confidenceSummary: { min: 0.9, max: 0.9, mean: 0.9 },
+          },
+        ],
+      },
+      {
+        deployment: PRIMARY_DEPLOYMENT,
+        modelRevision: `${PRIMARY_DEPLOYMENT}@test`,
+        gatewayRelease: "mock",
+      },
+    );
+  const bundle = buildBundle({
+    primary: { responder: primaryResponder },
+  });
+  const { result } = await describeVisualScreens({
+    bundle,
+    captures,
+    jobId: "job-5-stale-deployment",
+    generatedAt: "2026-04-25T00:00:00.000Z",
+    intent: buildIntent(["s-1"]),
+    clock: monotonicClock(),
+  });
+  assert.equal(result.outcome, "success");
+  if (result.outcome !== "success") return;
+  assert.equal(result.visual[0]?.sidecarDeployment, PRIMARY_DEPLOYMENT);
+  assert.equal(
+    result.validationReport.records[0]?.deployment,
+    PRIMARY_DEPLOYMENT,
+  );
+  assert.deepEqual(result.validationReport.records[0]?.outcomes, ["ok"]);
+});
+
 test("invalid sidecar JSON: schema_invalid on both attempts hard-fails with schema_invalid_response", async () => {
   const captures = [captureFor("s-1")];
   const primaryResponder: MockResponder = (_request, attempt) => ({

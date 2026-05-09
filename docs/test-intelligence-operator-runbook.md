@@ -689,6 +689,12 @@ evidence, not a blocker. The primary-side breaker persists across runs in
 `docs/test-intelligence/visual-sidecar-circuit-breaker.md` for state and
 cooldown details.
 
+Every visual-sidecar gateway failure now persists a bounded diagnostic JSON
+under `visual-sidecar-diagnostics/attempt-*.json`, cross-linked from
+`visual-sidecar-result.json` via `attempts[].rawResponseArtifactPath`. Expect
+sanitized timeout, protocol, and schema-invalid-response details there; the
+artifact never includes raw screenshots or unbounded model output.
+
 Pre-flight failure classes (`image_payload_too_large`,
 `empty_screen_capture_set`, `duplicate_screen_id`,
 `image_mime_unsupported`, `non_figma_url_source`) are caller bugs and
