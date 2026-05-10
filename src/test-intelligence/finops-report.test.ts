@@ -846,8 +846,44 @@ test("writeFinOpsBudgetReport: persists under finops/ subdirectory", async () =>
     const report = buildFinOpsBudgetReport({
       jobId: JOB_ID,
       generatedAt: GENERATED_AT,
-      budget: permissive,
+      budget: {
+        ...permissive,
+        roles: {
+          test_generation: {
+            maxTotalWallClockMs: 123_456,
+          },
+        },
+      },
       recorder,
+      resolvedBudget: {
+        testGenerationWallClock: {
+          mode: "elastic",
+          role: "test_generation",
+          resolvedMs: 123_456,
+          formulaMs: 123_456,
+          caseCount: 9,
+          judgePanelSize: 2,
+          adversarialRounds: 2,
+          visualSidecarEnabled: true,
+          coefficients: {
+            baseMs: 90_000,
+            perCaseMs: 1_800,
+            perAdditionalJudgeMs: 12_000,
+            perAdversarialRoundMs: 18_000,
+            visualSidecarMs: 15_000,
+            hardCeilingMs: 360_000,
+          },
+          breakdown: {
+            baseMs: 90_000,
+            caseMs: 16_200,
+            additionalJudgeMs: 12_000,
+            adversarialRoundMs: 36_000,
+            visualSidecarMs: 15_000,
+            unclampedMs: 169_200,
+            hardCeilingMs: 360_000,
+          },
+        },
+      },
     });
     const written = await writeFinOpsBudgetReport({
       report,
@@ -864,6 +900,26 @@ test("writeFinOpsBudgetReport: persists under finops/ subdirectory", async () =>
     const onDisk = await readFile(written.artifactPath, "utf8");
     const parsed = JSON.parse(onDisk) as Record<string, unknown>;
     assert.equal(parsed["jobId"], JOB_ID);
+    assert.equal(
+      (
+        (
+          parsed["budget"] as {
+            roles?: { test_generation?: { maxTotalWallClockMs?: number } };
+          }
+        ).roles?.test_generation?.maxTotalWallClockMs
+      ),
+      123_456,
+    );
+    assert.equal(
+      (
+        (
+          parsed["resolvedBudget"] as {
+            testGenerationWallClock?: { resolvedMs?: number };
+          }
+        ).testGenerationWallClock?.resolvedMs
+      ),
+      123_456,
+    );
     assert.equal(parsed["secretsIncluded"], false);
     assert.equal(parsed["rawPromptsIncluded"], false);
     assert.equal(parsed["rawScreenshotsIncluded"], false);

@@ -26,10 +26,13 @@ import {
   cloneEuBankingDefaultFinOpsBudget,
   cloneFinOpsBudgetEnvelope,
   cloneProductionFinOpsBudgetEnvelope,
+  DEFAULT_FINOPS_WALL_CLOCK_BUDGET_POLICY,
   DEFAULT_FINOPS_BUDGET_ENVELOPE,
   EU_BANKING_DEFAULT_FINOPS_BUDGET,
   PRODUCTION_FINOPS_BUDGET_ENVELOPE,
   resolveFinOpsRequestLimits,
+  resolveTestGenerationWallClockBudget,
+  resolveWallClockBudget,
   validateFinOpsBudgetEnvelope,
 } from "./finops-budget.js";
 import { createLlmGatewayClient } from "./llm-gateway.js";
@@ -280,6 +283,51 @@ test("resolveFinOpsRequestLimits maps the four request fields", () => {
     maxWallClockMs: 1000,
     maxRetries: 1,
   });
+});
+
+test("resolveWallClockBudget applies the default elastic coefficients", () => {
+  const budget = resolveWallClockBudget({
+    caseCount: 9,
+    judgePanelSize: 2,
+    adversarialRounds: 2,
+    visualSidecarEnabled: true,
+  });
+  assert.equal(
+    budget,
+    90_000 + 9 * 1_800 + 12_000 + 2 * 18_000 + 15_000,
+  );
+});
+
+test("resolveWallClockBudget clamps to the configured hard ceiling", () => {
+  const budget = resolveWallClockBudget({
+    caseCount: 500,
+    judgePanelSize: 4,
+    adversarialRounds: 8,
+    visualSidecarEnabled: true,
+  });
+  assert.equal(budget, DEFAULT_FINOPS_WALL_CLOCK_BUDGET_POLICY.hardCeilingMs);
+});
+
+test("resolveTestGenerationWallClockBudget preserves explicit constant overrides", () => {
+  const resolved = resolveTestGenerationWallClockBudget({
+    explicitOverrideMs: 123_456,
+    caseCount: 32,
+    judgePanelSize: 3,
+    adversarialRounds: 2,
+    visualSidecarEnabled: true,
+  });
+  assert.equal(resolved.mode, "constant_override");
+  assert.equal(resolved.resolvedMs, 123_456);
+  assert.equal(resolved.overrideMs, 123_456);
+  assert.equal(
+    resolved.formulaMs,
+    resolveWallClockBudget({
+      caseCount: 32,
+      judgePanelSize: 3,
+      adversarialRounds: 2,
+      visualSidecarEnabled: true,
+    }),
+  );
 });
 
 // ---------------------------------------------------------------------------
@@ -562,9 +610,10 @@ test("PRODUCTION_FINOPS_BUDGET_ENVELOPE pins the calibrated production limits", 
   assert.equal(tg.maxTotalOutputTokens, 200_000);
   assert.equal(tg.maxRetriesPerRequest, 6);
   assert.equal(tg.maxAttempts, 12);
-  // 10 minutes per request (was 2 min); 30 minutes total wall-clock.
+  // 10 minutes per request (was 2 min); total role wall-clock resolves
+  // elastically at runtime from run shape instead of a static constant.
   assert.equal(tg.maxWallClockMsPerRequest, 600_000);
-  assert.equal(tg.maxTotalWallClockMs, 1_800_000);
+  assert.equal(tg.maxTotalWallClockMs, undefined);
   assert.equal(tg.maxLiveSmokeCalls, 0);
   const vp = PRODUCTION_FINOPS_BUDGET_ENVELOPE.roles.visual_primary;
   assert.ok(vp !== undefined);

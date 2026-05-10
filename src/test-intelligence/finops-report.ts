@@ -45,6 +45,7 @@ import {
   type FinOpsCostRate,
   type FinOpsCostRateMap,
   type FinOpsJobOutcome,
+  type FinOpsResolvedBudgetReport,
   type FinOpsRole,
   type FinOpsRoleUsage,
   type LlmFinishReason,
@@ -630,6 +631,7 @@ export interface BuildFinOpsBudgetReportInput {
   generatedAt: string;
   budget: FinOpsBudgetEnvelope;
   recorder: FinOpsUsageRecorder;
+  resolvedBudget?: FinOpsResolvedBudgetReport;
   /** Optional cost rate map. The currency label is stamped onto the report. */
   costRates?: FinOpsCostRateMap;
   /**
@@ -685,6 +687,9 @@ export const buildFinOpsBudgetReport = (
     jobId: input.jobId,
     generatedAt: input.generatedAt,
     budget: sanitizeBudgetEnvelope(input.budget),
+    ...(input.resolvedBudget !== undefined
+      ? { resolvedBudget: input.resolvedBudget }
+      : {}),
     ...(input.costRates !== undefined
       ? { currencyLabel: sanitizeReportString(input.costRates.currencyLabel) }
       : {}),
