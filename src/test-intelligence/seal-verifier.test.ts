@@ -483,6 +483,97 @@ test("DEFAULT_SEAL_VERIFY_KEY_LABEL is the documented sentinel", () => {
   assert.equal(DEFAULT_SEAL_VERIFY_KEY_LABEL, "workspace-dev:seal-verify:v1");
 });
 
+test("seal-verifier: rejects collapsing-traversal artifact path like 'a/../../escape.json'", async () => {
+  const fixture = await buildFixtureBundle();
+  try {
+    const sealPath = path.join(
+      fixture.runDir,
+      "production-runner-evidence-seal.json",
+    );
+    const seal = JSON.parse(
+      Buffer.from(await readFile(sealPath)).toString("utf8"),
+    );
+    seal.harnessArtifactFilenames = [
+      ...seal.harnessArtifactFilenames,
+      "a/../../escape.json",
+    ];
+    await writeFile(sealPath, canonicalJson(seal), "utf8");
+    const report = await verifySealBundle({ bundleDir: fixture.runDir });
+    assert.equal(report.ok, false);
+    assert.ok(
+      report.failures.some(
+        (f) =>
+          f.code === "artifact_tampered" &&
+          f.reference === "a/../../escape.json",
+      ),
+      `expected artifact_tampered failure for collapsing traversal: ${JSON.stringify(report.failures)}`,
+    );
+  } finally {
+    await fixture.cleanup();
+  }
+});
+
+test("seal-verifier: rejects unsafe finopsArtifactFilename in cross-checks", async () => {
+  const fixture = await buildFixtureBundle();
+  try {
+    const sealPath = path.join(
+      fixture.runDir,
+      "production-runner-evidence-seal.json",
+    );
+    const seal = JSON.parse(
+      Buffer.from(await readFile(sealPath)).toString("utf8"),
+    );
+    seal.finopsArtifactFilename = "../outside.json";
+    await writeFile(sealPath, canonicalJson(seal), "utf8");
+    const report = await verifySealBundle({ bundleDir: fixture.runDir });
+    assert.equal(report.ok, false);
+    const cc = report.crossChecks.find(
+      (c) => c.name === "finops_bySource_hash",
+    );
+    assert.equal(cc?.ok, false);
+    assert.match(
+      cc?.detail ?? "",
+      /unsafe FinOps path|refusing to read outside/i,
+    );
+  } finally {
+    await fixture.cleanup();
+  }
+});
+
+test("seal-verifier: visual sidecar with non-array visualEvidenceRefs fails closed", async () => {
+  const fixture = await buildFixtureBundle();
+  try {
+    const sealPath = path.join(
+      fixture.runDir,
+      "production-runner-evidence-seal.json",
+    );
+    const seal = JSON.parse(
+      Buffer.from(await readFile(sealPath)).toString("utf8"),
+    );
+    seal.visualEvidenceHashes = [
+      {
+        screenId: "screen-A",
+        modelDeployment: "m-1",
+        evidenceHash: "a".repeat(64),
+      },
+    ];
+    await writeFile(sealPath, canonicalJson(seal), "utf8");
+    await writeFile(
+      path.join(fixture.runDir, "visual-sidecar-result.json"),
+      `${canonicalJson({ visualEvidenceRefs: "not-an-array" })}\n`,
+      "utf8",
+    );
+    const report = await verifySealBundle({ bundleDir: fixture.runDir });
+    const cc = report.crossChecks.find(
+      (c) => c.name === "visual_sidecar_evidence",
+    );
+    assert.equal(cc?.ok, false);
+    assert.match(cc?.detail ?? "", /not an array/);
+  } finally {
+    await fixture.cleanup();
+  }
+});
+
 test("seal-verifier: rejects seal that names an artifact outside the run dir", async () => {
   const fixture = await buildFixtureBundle();
   try {

@@ -28,9 +28,12 @@
  */
 
 import { randomUUID } from "node:crypto";
+import type { Dirent } from "node:fs";
 import {
+  lstat,
   mkdir,
   mkdtemp,
+  readdir,
   readFile,
   rename,
   rm,
@@ -1673,6 +1676,76 @@ const enforceSafeArchiveEntries = async (
 };
 
 /**
+ * Reject archives that contain symlinks or hardlinks before
+ * extraction. POSIX `tar -tvf` (verbose listing) and `unzip -l` /
+ * `-Z` emit a leading mode column where `l` means symlink and `h`
+ * means hardlink. A malicious archive can chain `l`/`h` entries with
+ * relative-looking names to redirect a later entry's writes outside
+ * the destination directory ("zip slip via symlink"); pre-flight
+ * rejection is the primary defense.
+ */
+const enforceNoSymlinkOrHardlinkEntries = async (
+  command: string,
+  listArgs: readonly string[],
+  archive: string,
+): Promise<void> => {
+  const result = await runChild(command, listArgs, ".", { captureStdout: true });
+  if (result.code !== 0) {
+    throw new TestIntelligenceRunOperatorError(
+      `${command} failed to enumerate '${archive}' (exit ${String(result.code)}): ${result.stderr.trim() || "no stderr"}.`,
+    );
+  }
+  for (const line of result.stdout.split("\n")) {
+    const trimmed = line.trim();
+    if (trimmed.length === 0) continue;
+    const firstChar = trimmed.charAt(0);
+    if (firstChar === "l" || firstChar === "h") {
+      throw new TestIntelligenceRunOperatorError(
+        `Refusing to extract '${archive}': archive contains a symlink or hardlink entry. Repackage the bundle without link entries.`,
+      );
+    }
+  }
+};
+
+/**
+ * Walk the extracted bundle and reject any symlink the archiver may
+ * have created despite the pre-flight check (defense-in-depth against
+ * a verbose-listing format we did not anticipate). A symlink left in
+ * place could be followed by a later compromised process.
+ */
+const enforceNoSymlinksUnderDirectory = async (
+  root: string,
+): Promise<void> => {
+  const stack: string[] = [root];
+  while (stack.length > 0) {
+    const dir = stack.pop()!;
+    let entries: Dirent[];
+    try {
+      entries = await readdir(dir, { withFileTypes: true });
+    } catch (error) {
+      if (
+        typeof error === "object" &&
+        error !== null &&
+        (error as { code?: string }).code === "ENOENT"
+      ) {
+        continue;
+      }
+      throw error;
+    }
+    for (const entry of entries) {
+      const abs = join(dir, entry.name);
+      const info = await lstat(abs);
+      if (info.isSymbolicLink()) {
+        throw new TestIntelligenceRunOperatorError(
+          `Refusing to verify '${root}': symlink '${abs}' present after extraction.`,
+        );
+      }
+      if (info.isDirectory()) stack.push(abs);
+    }
+  }
+};
+
+/**
  * Extract a bundle archive into a fresh temp directory using the
  * universally available POSIX `tar` / `unzip` binaries. Keeps the
  * verifier zero-dependency for `bun build --compile` packaging while
@@ -1698,6 +1771,13 @@ export const extractSealBundleArchive = async (
         ["-Z1", absoluteBundle],
         absoluteBundle,
       );
+      // Long-format zip listing reveals the entry mode in column 1
+      // (`l` for symlink). `-Z` without `-1` emits the verbose form.
+      await enforceNoSymlinkOrHardlinkEntries(
+        "unzip",
+        ["-Z", absoluteBundle],
+        absoluteBundle,
+      );
       const result = await runChild(
         "unzip",
         ["-q", absoluteBundle, "-d", directory],
@@ -1714,6 +1794,17 @@ export const extractSealBundleArchive = async (
           ? ["-tf", absoluteBundle]
           : ["-tzf", absoluteBundle];
       await enforceSafeArchiveEntries("tar", listArgs, absoluteBundle);
+      // Verbose tar listing emits a Unix-style mode column where the
+      // first character is `l` for symlink and `h` for hardlink.
+      const verboseListArgs =
+        suffix === ".tar"
+          ? ["-tvf", absoluteBundle]
+          : ["-tvzf", absoluteBundle];
+      await enforceNoSymlinkOrHardlinkEntries(
+        "tar",
+        verboseListArgs,
+        absoluteBundle,
+      );
       const tarArgs =
         suffix === ".tar"
           ? ["-xf", absoluteBundle, "-C", directory]
@@ -1725,6 +1816,10 @@ export const extractSealBundleArchive = async (
         );
       }
     }
+    // Defense-in-depth: walk the extracted tree and refuse any
+    // symlink that slipped past pre-flight (e.g. a verbose listing
+    // format we didn't anticipate).
+    await enforceNoSymlinksUnderDirectory(directory);
     return {
       directory,
       cleanup: async () => {
