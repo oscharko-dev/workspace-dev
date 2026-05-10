@@ -1111,9 +1111,7 @@ test("Issue #2070: default eu-banking profile dispatches three seeded generator 
           expected: "Die Regel bleibt ohne erfundene Konkretion sichtbar.",
         },
       ],
-      expectedResults: [
-        "Die Regel bleibt ohne erfundene Konkretion sichtbar.",
-      ],
+      expectedResults: ["Die Regel bleibt ohne erfundene Konkretion sichtbar."],
     });
     const responder = (
       request: LlmGenerationRequest,
@@ -1137,10 +1135,19 @@ test("Issue #2070: default eu-banking profile dispatches three seeded generator 
       }
       const testCases =
         request.seed === 11
-          ? [stableCase("Falscher Zwischenwert"), disagreementCase("functional")]
+          ? [
+              stableCase("Falscher Zwischenwert"),
+              disagreementCase("functional"),
+            ]
           : request.seed === 29
-            ? [stableCase("Der Finanzierungsbedarf wird korrekt angezeigt."), disagreementCase("negative")]
-            : [stableCase("Der Finanzierungsbedarf wird korrekt angezeigt."), disagreementCase("validation")];
+            ? [
+                stableCase("Der Finanzierungsbedarf wird korrekt angezeigt."),
+                disagreementCase("negative"),
+              ]
+            : [
+                stableCase("Der Finanzierungsbedarf wird korrekt angezeigt."),
+                disagreementCase("validation"),
+              ];
       return {
         outcome: "success",
         content: { testCases },
@@ -1179,7 +1186,9 @@ test("Issue #2070: default eu-banking profile dispatches three seeded generator 
           "workspace-dev-production-runner-draft-list-v1",
       );
     assert.deepEqual(
-      Array.from(new Set(generatorRequests.map((request) => request.seed))).sort(),
+      Array.from(
+        new Set(generatorRequests.map((request) => request.seed)),
+      ).sort(),
       [11, 29, 47],
     );
     assert.equal(result.generatedTestCases.testCases.length, 2);
@@ -1370,7 +1379,8 @@ test("Issue #2070: repair-loop three-sample voting refreshes the final self-cons
                     testCaseId: "$job",
                     code: "schema_violation",
                     severity: "error",
-                    message: "Force one repair iteration for self-consistency refresh.",
+                    message:
+                      "Force one repair iteration for self-consistency refresh.",
                   },
                 ],
                 repairInstructions: [
@@ -1407,8 +1417,7 @@ test("Issue #2070: repair-loop three-sample voting refreshes the final self-cons
           };
         }
         if (
-          request.responseSchemaName ===
-          "workspace-dev-adversarial-critic-v1"
+          request.responseSchemaName === "workspace-dev-adversarial-critic-v1"
         ) {
           return {
             outcome: "success" as const,
@@ -1423,8 +1432,11 @@ test("Issue #2070: repair-loop three-sample voting refreshes the final self-cons
         }
         generationCallCount += 1;
         const repairRound = generationCallCount > 3;
-        const expected =
-          !repairRound ? "INIT" : request.seed === 11 ? "A" : "B";
+        const expected = !repairRound
+          ? "INIT"
+          : request.seed === 11
+            ? "A"
+            : "B";
         return {
           outcome: "success" as const,
           content: { testCases: rewriteSuite(expected) },
@@ -1492,6 +1504,162 @@ test("Issue #2070: repair-loop three-sample voting refreshes the final self-cons
       runQuality.selfConsistencyAgreement,
       report.selfConsistencyAgreement,
     );
+  } finally {
+    await rm(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("Issue #2125: weak 2/1 self-consistency splits trigger a cross-family 4th generator vote", async () => {
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ti-runner-"));
+  try {
+    const declaredCapabilities: LlmGatewayCapabilities = {
+      ...TEST_GENERATION_CAPS,
+      seedSupport: true,
+    };
+    const makeDraft = (expected: string): ProductionRunnerLlmDraftCase => ({
+      ...SAMPLE_DRAFT,
+      title:
+        "Cross-family arbitration keeps the majority-supported expectation",
+      objective: "The secondary generator should cast the fourth vote.",
+      steps: SAMPLE_DRAFT.steps.map((step, index) =>
+        index === 0 ? { ...step, expected } : { ...step },
+      ),
+      expectedResults: [expected],
+      qualitySignals: {
+        coveredFieldIds: ["arbiter::field"],
+        coveredActionIds: ["arbiter::action"],
+        coveredValidationIds: ["arbiter::validation"],
+        coveredNavigationIds: [],
+        confidence: 0.93,
+      },
+    });
+    const bundle = createMockLlmGatewayClientBundle({
+      testGeneration: {
+        role: "test_generation",
+        deployment: "mistral-large-3-mock",
+        modelRevision: "mistral-large-3@mock",
+        gatewayRelease: "mock",
+        declaredCapabilities,
+        responder: (request, attempt) => ({
+          outcome: "success",
+          content: {
+            testCases: [
+              makeDraft(request.seed === 11 ? "A" : "B"),
+              ...SAMPLE_HARD_GATE_GREEN_DRAFTS.slice(1).map((draft) => ({
+                ...draft,
+              })),
+            ],
+          },
+          finishReason: "stop",
+          usage: { inputTokens: 80, outputTokens: 40 },
+          modelDeployment: "mistral-large-3-mock",
+          modelRevision: "mistral-large-3@mock",
+          gatewayRelease: "mock",
+          attempt,
+        }),
+      },
+      testGenerationSecondary: {
+        role: "test_generation",
+        deployment: "gpt-oss-120b-mock",
+        modelRevision: "gpt-oss-120b@mock",
+        gatewayRelease: "mock",
+        declaredCapabilities: TEST_GENERATION_CAPS,
+        responder: (request, attempt) => ({
+          outcome: "success",
+          content: {
+            testCases: [
+              makeDraft("B"),
+              ...SAMPLE_HARD_GATE_GREEN_DRAFTS.slice(1).map((draft) => ({
+                ...draft,
+              })),
+            ],
+          },
+          finishReason: "stop",
+          usage: { inputTokens: 70, outputTokens: 35 },
+          modelDeployment: "gpt-oss-120b-mock",
+          modelRevision: "gpt-oss-120b@mock",
+          gatewayRelease: "mock",
+          attempt,
+        }),
+      },
+      visualPrimary: {
+        role: "visual_primary",
+        deployment: "llama-4-maverick-vision-mock",
+        modelRevision: "llama-4-maverick-vision@mock",
+        gatewayRelease: "mock",
+        declaredCapabilities: {
+          ...declaredCapabilities,
+          imageInputSupport: true,
+        },
+      },
+      visualFallback: {
+        role: "visual_fallback",
+        deployment: "phi-4-multimodal-instruct-mock",
+        modelRevision: "phi-4-multimodal-instruct@mock",
+        gatewayRelease: "mock",
+        declaredCapabilities: {
+          ...declaredCapabilities,
+          imageInputSupport: true,
+        },
+      },
+    });
+
+    const result = await runFigmaToQcTestCases({
+      jobId: "job-2125-cross-family-arbiter",
+      generatedAt: "2026-05-10T09:00:00.000Z",
+      source: { kind: "figma_paste_normalized", file: SAMPLE_FILE },
+      outputRoot: tempRoot,
+      llm: {
+        client: bundle.testGeneration,
+        bundle,
+      },
+      generation: { diversityPasses: 3 },
+      logicJudge: { enabled: false },
+    });
+
+    const primaryRequests = bundle.testGeneration
+      .recordedRequests()
+      .filter(
+        (request) =>
+          request.responseSchemaName ===
+          "workspace-dev-production-runner-draft-list-v1",
+      );
+    assert.deepEqual(
+      primaryRequests.map((request) => request.seed),
+      [11, 29, 47],
+    );
+    const arbitrationRequests =
+      bundle.testGenerationSecondary
+        ?.recordedRequests()
+        .filter(
+          (request) =>
+            request.responseSchemaName ===
+            "workspace-dev-production-runner-draft-list-v1",
+        ) ?? [];
+    assert.equal(arbitrationRequests.length, 1);
+    assert.equal(arbitrationRequests[0]?.seed, undefined);
+
+    const arbitratedCase = result.generatedTestCases.testCases.find(
+      (testCase) =>
+        testCase.title ===
+        "Cross-family arbitration keeps the majority-supported expectation",
+    );
+    assert.equal(arbitratedCase?.steps[0]?.expected, "B");
+    assert.notEqual(arbitratedCase?.reviewState, "needs_review");
+
+    const report = JSON.parse(
+      await readFile(result.artifactPaths.selfConsistencyReport!, "utf8"),
+    ) as {
+      sampleCount: number;
+      targets: Array<{
+        arbitrationTriggered?: boolean;
+        disagreement: boolean;
+        selectedTestCaseId: string;
+      }>;
+    };
+    assert.equal(report.sampleCount, 4);
+    assert.equal(report.targets[0]?.arbitrationTriggered, true);
+    assert.equal(report.targets[0]?.disagreement, false);
   } finally {
     await rm(tempRoot, { recursive: true, force: true });
   }
@@ -4414,7 +4582,10 @@ test("Issue #2069: persisted visual-primary breaker skips primary on the next ru
     );
     assert.equal(third.visualSidecar?.result.outcome, "success");
     if (third.visualSidecar?.result.outcome === "success") {
-      assert.equal(third.visualSidecar.result.fallbackReason, "primary_unavailable");
+      assert.equal(
+        third.visualSidecar.result.fallbackReason,
+        "primary_unavailable",
+      );
     }
     const finopsReport = JSON.parse(
       await readFile(third.artifactPaths.finopsReport, "utf8"),
@@ -4427,9 +4598,10 @@ test("Issue #2069: persisted visual-primary breaker skips primary on the next ru
     );
     assert.equal(visualPrimary?.attempts, 0);
     assert.equal(visualFallback?.attempts, 1);
-    assert.deepEqual(finopsReport.bySource.visual_primary.circuitBreakerStates, [
-      "open",
-    ]);
+    assert.deepEqual(
+      finopsReport.bySource.visual_primary.circuitBreakerStates,
+      ["open"],
+    );
     assert.equal(
       second.policy.jobLevelViolations.some(
         (v) => v.rule === "policy:visual-sidecar:both_failed",
@@ -6431,8 +6603,7 @@ test("Issue #2039: schema-invalid adversarial critic payload is reported as a fa
       gatewayRelease: "mock",
       responder: (request, attempt) => {
         if (
-          request.responseSchemaName ===
-          "workspace-dev-adversarial-critic-v1"
+          request.responseSchemaName === "workspace-dev-adversarial-critic-v1"
         ) {
           return {
             outcome: "success" as const,
@@ -6553,8 +6724,7 @@ test("Issue #2039: adversarial critic regeneration owns the final provenance art
       gatewayRelease: "mock",
       responder: (request, attempt) => {
         if (
-          request.responseSchemaName ===
-          "workspace-dev-adversarial-critic-v1"
+          request.responseSchemaName === "workspace-dev-adversarial-critic-v1"
         ) {
           return {
             outcome: "success" as const,
@@ -6622,27 +6792,28 @@ test("Issue #2039: adversarial critic regeneration owns the final provenance art
       (node) => node["ti:artifactPath"] === "generated-testcases.json",
     );
     assert.ok(finalArtifact, "expected generated-testcases artifact node");
-    assert.deepEqual(
-      finalArtifact["prov:wasGeneratedBy"],
-      { "@id": adversarialGenerationActivity["@id"] },
-    );
+    assert.deepEqual(finalArtifact["prov:wasGeneratedBy"], {
+      "@id": adversarialGenerationActivity["@id"],
+    });
     const finalList = graph.find(
       (node) =>
         node["@type"] === "prov:Entity" &&
-        node["label"] === "Generated case list after adversarial critic round 1",
+        node["label"] ===
+          "Generated case list after adversarial critic round 1",
     );
     assert.ok(finalList, "expected final adversarial list node");
-    assert.deepEqual(
-      finalList["prov:hadPrimarySource"],
-      { "@id": finalArtifact["@id"] },
-    );
+    assert.deepEqual(finalList["prov:hadPrimarySource"], {
+      "@id": finalArtifact["@id"],
+    });
   } finally {
     await rm(tempRoot, { recursive: true, force: true });
   }
 });
 
 test("Issue #2053: G-NEG-CASE passes when adversarial critic adds a valid negative case", async () => {
-  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ti-runner-2053-pass-"));
+  const tempRoot = await mkdtemp(
+    path.join(os.tmpdir(), "ti-runner-2053-pass-"),
+  );
   try {
     let generatorCallCount = 0;
     const generator = createMockLlmGatewayClient({
@@ -6668,7 +6839,8 @@ test("Issue #2053: G-NEG-CASE passes when adversarial critic adds a valid negati
                     {
                       index: 1,
                       action: "Enter a payout IBAN owned by another person.",
-                      expected: "Owner-match validator surfaces a blocking error.",
+                      expected:
+                        "Owner-match validator surfaces a blocking error.",
                     },
                     {
                       index: 2,
@@ -6750,10 +6922,7 @@ test("Issue #2053: G-NEG-CASE passes when adversarial critic adds a valid negati
       harness: { mode: "off", maxRepairIterations: 0 },
     });
 
-    const policyRaw = await readFile(
-      result.artifactPaths.policyReport,
-      "utf8",
-    );
+    const policyRaw = await readFile(result.artifactPaths.policyReport, "utf8");
     const policy = JSON.parse(policyRaw) as {
       gateResults?: Array<{
         gateId: string;
@@ -6786,7 +6955,9 @@ test("Issue #2053: G-NEG-CASE passes when adversarial critic adds a valid negati
 });
 
 test("Issue #2053: G-NEG-CASE fails closed under enforce when lift target is missed", async () => {
-  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ti-runner-2053-fail-"));
+  const tempRoot = await mkdtemp(
+    path.join(os.tmpdir(), "ti-runner-2053-fail-"),
+  );
   try {
     const generator = createMockLlmGatewayClient({
       role: "test_generation",
@@ -6833,7 +7004,8 @@ test("Issue #2053: G-NEG-CASE fails closed under enforce when lift target is mis
               findings: [
                 {
                   category: "negative_path",
-                  title: "Critic surfaced finding that does not raise the ratio",
+                  title:
+                    "Critic surfaced finding that does not raise the ratio",
                   rationale:
                     "The synthetic finding does not introduce a new negative test type beyond what the suite already carries.",
                   affectedFieldId: "field:investitionssumme",
@@ -6939,7 +7111,8 @@ test("Issue #2053: G-NEG-CASE records advisory when override flips gateMode and 
                   ruleRefs: ["policy:investitionssumme-required"],
                   minimumReproducibleTestData: ["investitionssumme="],
                   suggestedTestType: "negative",
-                  repairInstruction: "Reaffirm the empty-investitionssumme negative case.",
+                  repairInstruction:
+                    "Reaffirm the empty-investitionssumme negative case.",
                 },
               ],
             },
@@ -6998,7 +7171,9 @@ test("Issue #2053: G-NEG-CASE records advisory when override flips gateMode and 
 });
 
 test("Issue #2053: G-NEG-CASE skips when adversarial critic loop did not run", async () => {
-  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ti-runner-2053-skip-"));
+  const tempRoot = await mkdtemp(
+    path.join(os.tmpdir(), "ti-runner-2053-skip-"),
+  );
   try {
     // No `logicJudge` client is wired — adversarial-critic loop is
     // disabled by construction, so the gate must record `skipped` with
@@ -7046,7 +7221,7 @@ test("Issue #2053: G-NEG-CASE skips when adversarial critic loop did not run", a
   }
 });
 
-test("Issue #2053: G-NEG-CASE skips when gateMode override is \"off\" (one-line per-field escape hatch)", async () => {
+test('Issue #2053: G-NEG-CASE skips when gateMode override is "off" (one-line per-field escape hatch)', async () => {
   const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ti-runner-2053-off-"));
   try {
     const client = createMockLlmGatewayClient({

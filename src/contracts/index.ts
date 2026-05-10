@@ -4252,8 +4252,7 @@ export const MODEL_ROUTING_TIER_LABELS = [
 ] as const;
 
 /** Discriminated alias for {@link MODEL_ROUTING_TIER_LABELS}. */
-export type ModelRoutingTierLabel =
-  (typeof MODEL_ROUTING_TIER_LABELS)[number];
+export type ModelRoutingTierLabel = (typeof MODEL_ROUTING_TIER_LABELS)[number];
 
 /**
  * Routing slots within one role. Most active runtime roles expose one slot,
@@ -4268,8 +4267,7 @@ export const MODEL_ROUTING_ROUTE_SLOTS = [
 ] as const;
 
 /** Discriminated alias for {@link MODEL_ROUTING_ROUTE_SLOTS}. */
-export type ModelRoutingRouteSlot =
-  (typeof MODEL_ROUTING_ROUTE_SLOTS)[number];
+export type ModelRoutingRouteSlot = (typeof MODEL_ROUTING_ROUTE_SLOTS)[number];
 
 /**
  * Closed runtime list of roles that may participate in the typed
@@ -4683,7 +4681,7 @@ export interface JudgePanelPerJudgeVerdictRecord {
   /**
    * Stable model identifier this judge was bound to at the time of
    * scoring. Echoed verbatim from the {@link AgentModelBinding}'s
- * `modelId` (e.g., `"gpt-oss-120b"`, `"phi-4-multimodal-instruct"`).
+   * `modelId` (e.g., `"gpt-oss-120b"`, `"phi-4-multimodal-instruct"`).
    */
   readonly modelBinding: string;
   /** Raw 0..1 pointwise score before post-hoc calibration. */
@@ -5462,7 +5460,10 @@ export const HUMAN_REVIEW_DECISION_SCHEMA_VERSION = "1.0.0" as const;
  * `dry_run_marker` is the default for offline runs; `principal` is
  * reserved for future integration with the live human-review channel.
  */
-export const HUMAN_REVIEW_REVIEWER_KINDS = ["dry_run_marker", "principal"] as const;
+export const HUMAN_REVIEW_REVIEWER_KINDS = [
+  "dry_run_marker",
+  "principal",
+] as const;
 
 /** Discriminated alias for {@link HUMAN_REVIEW_REVIEWER_KINDS}. */
 export type HumanReviewReviewerKind =
@@ -5597,10 +5598,21 @@ export const SELF_CONSISTENCY_REPORT_ARTIFACT_FILENAME =
   "self-consistency-report.json" as const;
 
 /** Stable route emitted for targets whose samples disagree structurally. */
-export type SelfConsistencyDisagreementRoute = "human_review";
+export type SelfConsistencyDisagreementRoute =
+  | "cross_family_arbitration"
+  | "human_review";
+
+/** Deterministic self-consistency vote summary (Issue #2125). */
+export interface SelfConsistencyVote {
+  readonly winner?: string;
+  readonly agreementRate: number;
+  readonly confidenceInterval95: readonly [number, number];
+  readonly bootstrapSampleSize: number;
+  readonly consensusStrength: "strong_consensus" | "weak_consensus";
+}
 
 /** One field-level vote recorded for a single coverage target. */
-export interface SelfConsistencyFieldVote {
+export interface SelfConsistencyFieldVote extends SelfConsistencyVote {
   readonly field:
     | "type"
     | "technique"
@@ -5608,6 +5620,7 @@ export interface SelfConsistencyFieldVote {
     | "step_action"
     | "step_expected";
   readonly stepIndex?: number;
+  /** Backwards-compatible alias for agreementRate. */
   readonly agreement: number;
   readonly majorityValue?: string;
   readonly majorityCount: number;
@@ -5619,8 +5632,10 @@ export interface SelfConsistencyTargetReportEntry {
   readonly selectedTestCaseId: string;
   readonly samplePresenceCount: number;
   readonly agreement: number;
+  readonly consensusStrength: "strong_consensus" | "weak_consensus";
   readonly disagreement: boolean;
   readonly disagreementRoute?: SelfConsistencyDisagreementRoute;
+  readonly arbitrationTriggered?: boolean;
   readonly votes: readonly SelfConsistencyFieldVote[];
 }
 
@@ -8530,8 +8545,7 @@ export const WAVE1_VALIDATION_EVIDENCE_MANIFEST_ARTIFACT_FILENAME =
 export const PROVENANCE_ARTIFACT_FILENAME = "provenance.jsonld" as const;
 
 /** Schema version for the persisted test-intelligence provenance artifact. */
-export const TEST_INTELLIGENCE_PROVENANCE_SCHEMA_VERSION =
-  "1.0.0" as const;
+export const TEST_INTELLIGENCE_PROVENANCE_SCHEMA_VERSION = "1.0.0" as const;
 
 /** Filename used for the Wave 1 Validation evidence manifest digest witness. */
 export const WAVE1_VALIDATION_EVIDENCE_MANIFEST_DIGEST_FILENAME =
@@ -11834,10 +11848,7 @@ export const TECHNIQUE_QUOTA_REPORT_ARTIFACT_FILENAME =
   "technique-quota-report.json" as const;
 
 /** Per-run resolution status for one (screen, technique) quota row. */
-export const TECHNIQUE_QUOTA_REPORT_STATUSES = [
-  "pass",
-  "deficit",
-] as const;
+export const TECHNIQUE_QUOTA_REPORT_STATUSES = ["pass", "deficit"] as const;
 
 export type TechniqueQuotaReportStatus =
   (typeof TECHNIQUE_QUOTA_REPORT_STATUSES)[number];

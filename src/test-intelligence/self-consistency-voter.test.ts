@@ -119,6 +119,12 @@ test("voteGeneratedTestCaseSamples applies 2-of-3 majority and preserves clean t
   assert.equal(result.report.sampleCount, 3);
   assert.equal(result.report.targets.length, 1);
   assert.equal(result.report.targets[0]?.disagreement, false);
+  assert.equal(result.report.targets[0]?.consensusStrength, "weak_consensus");
+  const weakVote = result.report.targets[0]?.votes.find(
+    (vote) => vote.consensusStrength === "weak_consensus",
+  );
+  assert.deepEqual(weakVote?.confidenceInterval95, [0.20766, 0.938508]);
+  assert.equal(weakVote?.bootstrapSampleSize, 3);
   assert.ok(result.report.selfConsistencyAgreement < 1);
 });
 
@@ -147,8 +153,37 @@ test("voteGeneratedTestCaseSamples routes unresolved disagreement to human revie
     ),
     true,
   );
+  assert.equal(result.report.targets[0]?.consensusStrength, "strong_consensus");
   assert.equal(result.report.targets[0]?.disagreement, true);
   assert.equal(result.report.targets[0]?.disagreementRoute, "human_review");
+});
+
+test("voteGeneratedTestCaseSamples can surface weak consensus toward cross-family arbitration", () => {
+  const sampleA = makeList([
+    makeCase({ id: "tc-a", title: "Regel", expected: "A" }),
+  ]);
+  const sampleB = makeList([
+    makeCase({ id: "tc-b", title: "Regel", expected: "B" }),
+  ]);
+  const sampleC = makeList([
+    makeCase({ id: "tc-c", title: "Regel", expected: "B" }),
+  ]);
+
+  const result = voteGeneratedTestCaseSamples({
+    jobId: "job-2070",
+    generatedAt: "2026-05-09T10:00:00.000Z",
+    lists: [sampleA, sampleB, sampleC],
+    disagreementRoute: "cross_family_arbitration",
+  });
+
+  assert.equal(result.report.targets[0]?.consensusStrength, "weak_consensus");
+  assert.equal(
+    result.report.targets[0]?.votes.some(
+      (vote) => vote.consensusStrength === "weak_consensus",
+    ),
+    true,
+  );
+  assert.equal(result.report.targets[0]?.disagreementRoute, undefined);
 });
 
 test("writeSelfConsistencyReport persists the canonical report artifact", async () => {
