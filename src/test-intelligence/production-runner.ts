@@ -295,6 +295,10 @@ import {
 } from "./provenance-graph.js";
 import { verifyProvenanceFromDisk } from "./provenance-verify.js";
 import {
+  assertReplayDeterminismVerifiedFromDisk,
+  ReplayDeterminismHardGateError,
+} from "./seal-verifier.js";
+import {
   buildSubprocessorRegister,
   serializeSubprocessorRegister,
   SUBPROCESSOR_REGISTER_ARTIFACT_FILENAME,
@@ -6252,6 +6256,22 @@ export const runFigmaToQcTestCases = async (
         "Production-runner provenance graph failed immediate post-write verification.",
       retryable: false,
     });
+  }
+  // G9_REPLAY_DETERMINISM_VERIFIED (Issue #2178): replay the seal we
+  // just produced through the standalone bundle verifier so any drift
+  // between the in-process build path and the auditor-facing verifier
+  // fails CI before the run is declared complete.
+  try {
+    await assertReplayDeterminismVerifiedFromDisk(artifactDir);
+  } catch (error) {
+    if (error instanceof ReplayDeterminismHardGateError) {
+      throw new ProductionRunnerError({
+        failureClass: "PERSIST_FAILED",
+        message: error.message,
+        retryable: false,
+      });
+    }
+    throw error;
   }
 
   emit({

@@ -30,12 +30,16 @@
 import { randomUUID } from "node:crypto";
 import {
   mkdir,
+  mkdtemp,
   readFile,
   rename,
+  rm,
   stat,
   writeFile,
 } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { spawn } from "node:child_process";
 
 /**
  * CLI-side hard cap on the raw `--custom-context-markdown` file size
@@ -72,6 +76,10 @@ import {
   validateFinOpsBudgetEnvelope,
   verifyAuditDossierBundle,
   verifyProvenanceFromDisk,
+  verifySealBundle,
+  renderSealVerificationJsonReport,
+  renderSealVerificationTextReport,
+  type SealVerificationReport,
   type AgentHarnessTestDepth,
   type CustomerProfileInput,
   type FigmaRestNode,
@@ -225,6 +233,21 @@ export interface TestIntelligenceAuditDossierOptions {
 
 export interface TestIntelligenceAuditVerifyOptions {
   bundle: string;
+}
+
+export interface TestIntelligenceVerifySealOptions {
+  /** Directory, .tar, .tar.gz/.tgz, or .zip path. */
+  bundle: string;
+  /** Optional path to a key file (raw bytes) for HMAC verification. */
+  keyPath?: string;
+  /** Optional expected HMAC hex string. */
+  expectedHmacHex?: string;
+  /** Optional expected Merkle root hex string. */
+  expectedMerkleRootHex?: string;
+  /** When true, emit JSON instead of human-readable text. */
+  json?: boolean;
+  /** Optional path to write the JSON report to (defaults to stdout). */
+  outputPath?: string;
 }
 
 interface DoctorRoleReportEntry {
@@ -1451,6 +1474,294 @@ export const parseTestIntelligenceAuditVerifyArgs = (
   throw new TestIntelligenceRunOperatorError(
     'usage: workspace-dev test-intelligence audit-verify <bundle-prefix-or-json> or workspace-dev test-intelligence audit-verify --bundle <bundle-prefix-or-json>',
   );
+};
+
+export const parseTestIntelligenceVerifySealArgs = (
+  argv: readonly string[],
+): TestIntelligenceVerifySealOptions => {
+  let bundle: string | undefined;
+  let keyPath: string | undefined;
+  let expectedHmacHex: string | undefined;
+  let expectedMerkleRootHex: string | undefined;
+  let json = false;
+  let outputPath: string | undefined;
+
+  if (argv.length === 1 && !argv[0]!.startsWith("--")) {
+    return { bundle: argv[0]! };
+  }
+  for (let index = 0; index < argv.length; index += 1) {
+    const arg = argv[index];
+    const next = argv[index + 1]?.trim();
+    if (arg === "--bundle") {
+      if (!next) {
+        throw new TestIntelligenceRunOperatorError(
+          "--bundle requires a non-empty path",
+        );
+      }
+      bundle = next;
+      index += 1;
+      continue;
+    }
+    if (arg === "--key") {
+      if (!next) {
+        throw new TestIntelligenceRunOperatorError(
+          "--key requires a non-empty path",
+        );
+      }
+      keyPath = next;
+      index += 1;
+      continue;
+    }
+    if (arg === "--expected-hmac") {
+      if (!next || !/^[0-9a-fA-F]{64}$/.test(next)) {
+        throw new TestIntelligenceRunOperatorError(
+          "--expected-hmac requires a 64-character hex string",
+        );
+      }
+      expectedHmacHex = next.toLowerCase();
+      index += 1;
+      continue;
+    }
+    if (arg === "--expected-merkle-root") {
+      if (!next || !/^[0-9a-fA-F]{64}$/.test(next)) {
+        throw new TestIntelligenceRunOperatorError(
+          "--expected-merkle-root requires a 64-character hex string",
+        );
+      }
+      expectedMerkleRootHex = next.toLowerCase();
+      index += 1;
+      continue;
+    }
+    if (arg === "--json") {
+      json = true;
+      continue;
+    }
+    if (arg === "--output") {
+      if (!next) {
+        throw new TestIntelligenceRunOperatorError(
+          "--output requires a non-empty path",
+        );
+      }
+      outputPath = next;
+      index += 1;
+      continue;
+    }
+    throw new TestIntelligenceRunOperatorError(
+      `Unknown flag for "test-intelligence verify-seal": ${arg}`,
+    );
+  }
+  if (!bundle) {
+    throw new TestIntelligenceRunOperatorError(
+      'usage: workspace-dev test-intelligence verify-seal --bundle <path> [--key <path>] [--expected-hmac <hex>] [--expected-merkle-root <hex>] [--json] [--output <path>]',
+    );
+  }
+  return {
+    bundle,
+    ...(keyPath !== undefined ? { keyPath } : {}),
+    ...(expectedHmacHex !== undefined ? { expectedHmacHex } : {}),
+    ...(expectedMerkleRootHex !== undefined ? { expectedMerkleRootHex } : {}),
+    json,
+    ...(outputPath !== undefined ? { outputPath } : {}),
+  };
+};
+
+const SUPPORTED_SEAL_ARCHIVE_SUFFIXES = [
+  ".tar.gz",
+  ".tgz",
+  ".tar",
+  ".zip",
+] as const;
+
+const matchedArchiveSuffix = (
+  bundlePath: string,
+): (typeof SUPPORTED_SEAL_ARCHIVE_SUFFIXES)[number] | undefined => {
+  const lowered = bundlePath.toLowerCase();
+  return SUPPORTED_SEAL_ARCHIVE_SUFFIXES.find((suffix) =>
+    lowered.endsWith(suffix),
+  );
+};
+
+const runChild = (
+  command: string,
+  args: readonly string[],
+  cwd: string,
+): Promise<{ readonly code: number; readonly stderr: string }> =>
+  new Promise((resolvePromise, reject) => {
+    const child = spawn(command, args, { cwd, stdio: ["ignore", "ignore", "pipe"] });
+    let stderr = "";
+    child.stderr.on("data", (chunk: Buffer) => {
+      stderr += chunk.toString("utf8");
+    });
+    child.on("error", (error) => {
+      reject(error);
+    });
+    child.on("close", (code) => {
+      resolvePromise({ code: code ?? 0, stderr });
+    });
+  });
+
+/**
+ * Extract a bundle archive into a fresh temp directory using the
+ * universally available POSIX `tar` / `unzip` binaries. Keeps the
+ * verifier zero-dependency for `bun build --compile` packaging while
+ * working anywhere `tar` and `unzip` are on PATH (macOS, Linux CI,
+ * most auditor laptops). The caller is responsible for the returned
+ * directory's lifecycle via `cleanup()`.
+ */
+export const extractSealBundleArchive = async (
+  bundlePath: string,
+): Promise<{ readonly directory: string; readonly cleanup: () => Promise<void> }> => {
+  const suffix = matchedArchiveSuffix(bundlePath);
+  if (suffix === undefined) {
+    throw new TestIntelligenceRunOperatorError(
+      `Unsupported bundle archive format. Supported: ${SUPPORTED_SEAL_ARCHIVE_SUFFIXES.join(", ")}, or a directory.`,
+    );
+  }
+  const directory = await mkdtemp(join(tmpdir(), "ti-seal-verify-"));
+  const absoluteBundle = resolve(bundlePath);
+  try {
+    if (suffix === ".zip") {
+      const result = await runChild(
+        "unzip",
+        ["-q", absoluteBundle, "-d", directory],
+        directory,
+      );
+      if (result.code !== 0) {
+        throw new TestIntelligenceRunOperatorError(
+          `unzip failed (exit ${String(result.code)}): ${result.stderr.trim() || "no stderr"}. Install \`unzip\` or extract the bundle manually and pass the directory.`,
+        );
+      }
+    } else {
+      const tarArgs =
+        suffix === ".tar"
+          ? ["-xf", absoluteBundle, "-C", directory]
+          : ["-xzf", absoluteBundle, "-C", directory];
+      const result = await runChild("tar", tarArgs, directory);
+      if (result.code !== 0) {
+        throw new TestIntelligenceRunOperatorError(
+          `tar failed (exit ${String(result.code)}): ${result.stderr.trim() || "no stderr"}. Install GNU/BSD \`tar\` or extract the bundle manually and pass the directory.`,
+        );
+      }
+    }
+    return {
+      directory,
+      cleanup: async () => {
+        await rm(directory, { recursive: true, force: true });
+      },
+    };
+  } catch (error) {
+    await rm(directory, { recursive: true, force: true }).catch(() => {});
+    throw error;
+  }
+};
+
+const loadOptionalKey = async (
+  keyPath: string | undefined,
+): Promise<Uint8Array | undefined> => {
+  if (keyPath === undefined) return undefined;
+  try {
+    const bytes = await readFile(keyPath);
+    if (bytes.length === 0) {
+      throw new TestIntelligenceRunOperatorError(
+        `--key file '${keyPath}' is empty`,
+      );
+    }
+    return new Uint8Array(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  } catch (error) {
+    if (error instanceof TestIntelligenceRunOperatorError) throw error;
+    if (
+      typeof error === "object" &&
+      error !== null &&
+      (error as { code?: string }).code === "ENOENT"
+    ) {
+      throw new TestIntelligenceRunOperatorError(
+        `--key file not found: ${keyPath}`,
+      );
+    }
+    throw error;
+  }
+};
+
+export const runTestIntelligenceVerifySealCommand = async (
+  options: TestIntelligenceVerifySealOptions,
+  sink: TestIntelligenceRunSink,
+): Promise<number> => {
+  let workingDir: string;
+  let cleanup: (() => Promise<void>) | undefined;
+  try {
+    const bundleStat = await stat(options.bundle).catch((error: unknown) => {
+      if (
+        typeof error === "object" &&
+        error !== null &&
+        (error as { code?: string }).code === "ENOENT"
+      ) {
+        throw new TestIntelligenceRunOperatorError(
+          `bundle path not found: ${options.bundle}`,
+        );
+      }
+      throw error;
+    });
+    if (bundleStat.isDirectory()) {
+      workingDir = resolve(options.bundle);
+    } else if (bundleStat.isFile()) {
+      const extracted = await extractSealBundleArchive(options.bundle);
+      workingDir = extracted.directory;
+      cleanup = extracted.cleanup;
+    } else {
+      throw new TestIntelligenceRunOperatorError(
+        `bundle path is neither a directory nor a regular file: ${options.bundle}`,
+      );
+    }
+    const key = await loadOptionalKey(options.keyPath);
+    const report: SealVerificationReport = await verifySealBundle({
+      bundleDir: workingDir,
+      ...(key !== undefined ? { key } : {}),
+      ...(options.expectedHmacHex !== undefined
+        ? { expectedHmacHex: options.expectedHmacHex }
+        : {}),
+      ...(options.expectedMerkleRootHex !== undefined
+        ? { expectedMerkleRootHex: options.expectedMerkleRootHex }
+        : {}),
+    });
+    const rendered = options.json
+      ? renderSealVerificationJsonReport(report)
+      : renderSealVerificationTextReport(report);
+    if (options.outputPath) {
+      await writeFile(options.outputPath, rendered, "utf8");
+    } else {
+      sink.stdout(rendered);
+    }
+    if (!report.ok) {
+      sink.stderr(
+        [
+          `error: seal verification failed for ${report.bundlePath}`,
+          ...report.failures.map(
+            (failure) =>
+              `  - [${failure.code}] ${failure.reference}: ${failure.message}`,
+          ),
+          "",
+        ].join("\n"),
+      );
+      return 2;
+    }
+    return 0;
+  } catch (error) {
+    if (error instanceof TestIntelligenceRunOperatorError) {
+      sink.stderr(`error: ${error.message}\n`);
+      return 1;
+    }
+    sink.stderr(
+      `error: ${sanitizeErrorMessage({
+        error,
+        fallback: "Failed to verify seal bundle.",
+      })}\n`,
+    );
+    return 2;
+  } finally {
+    if (cleanup) {
+      await cleanup().catch(() => {});
+    }
+  }
 };
 
 /** Stable operator-config error surfaced as exit code 1. */
@@ -3982,6 +4293,46 @@ Behavior:
   - Returns exit code 0 on success, 1 on operator misuse, 2 on tamper/mismatch.
 `;
 
+export const TEST_INTELLIGENCE_VERIFY_SEAL_HELP: string = `
+workspace-dev test-intelligence verify-seal - verify a production-runner reproducibility seal independently of the original run dir
+
+Usage:
+  workspace-dev test-intelligence verify-seal --bundle <path>
+                                            [--key <path>]
+                                            [--expected-hmac <hex>]
+                                            [--expected-merkle-root <hex>]
+                                            [--json]
+                                            [--output <path>]
+
+Bundle path (positional or --bundle):
+  - Directory containing production-runner-evidence-seal.json (an existing run dir).
+  - .tar / .tar.gz / .tgz archive containing the run dir.
+  - .zip archive containing the run dir.
+    Tar/zip extraction shells out to the universally available POSIX
+    \`tar\` / \`unzip\` binaries; install them or extract the bundle
+    manually and pass the resulting directory.
+
+Verifier checks:
+  - SHA-256 of every artifact matches the seal manifest.
+  - Merkle root reconstructed from artifact hashes matches the supplied
+    --expected-merkle-root (when provided).
+  - HMAC over the canonical seal manifest is computed against the
+    operator-supplied key (or against a default deterministic key if
+    --key is omitted) and compared with --expected-hmac (when provided).
+  - Provenance graph (provenance.jsonld) cross-links resolve consistently.
+  - Region attestations are internally consistent with the FinOps
+    deployment record.
+
+Reports:
+  - One line per artifact tagged OK / TAMPERED / MISSING / EXTRA.
+  - Cross-check section with finops_bySource_hash / genealogy_dag_hash /
+    provenance_graph / region_attestations status.
+  - --json / --output emit a machine-readable canonical-JSON summary.
+
+Exit codes:
+  0 on full match, 1 on operator misuse, 2 on any tamper / mismatch.
+`;
+
 export const TEST_INTELLIGENCE_HELP: string = `
 workspace-dev test-intelligence
 
@@ -3991,10 +4342,12 @@ Usage:
   workspace-dev test-intelligence audit-dossier --run-dir <path> --output <dir>
   workspace-dev test-intelligence audit-verify <bundle-prefix-or-json>
   workspace-dev test-intelligence verify-provenance <run-dir>
+  workspace-dev test-intelligence verify-seal --bundle <path> [--key <path>]
 
 Run "workspace-dev test-intelligence run --help" for the live-run flags.
 Run "workspace-dev test-intelligence doctor --help" for the topology doctor flags.
 Run "workspace-dev test-intelligence audit-dossier --help" for bundle generation.
 Run "workspace-dev test-intelligence audit-verify --help" for bundle verification.
 Run "workspace-dev test-intelligence verify-provenance --help" for provenance verification.
+Run "workspace-dev test-intelligence verify-seal --help" for self-contained seal verification.
 `;
