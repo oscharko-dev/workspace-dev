@@ -130,10 +130,13 @@ test("cloneEuBankingDefaultFinOpsBudget returns a deep clone", () => {
   if (a.sourceQuotas !== undefined) {
     a.sourceQuotas.maxJiraApiRequestsPerJob = 999;
   }
+  // Operator stance (CTO directive 2026-05-10): the eu-banking-default
+  // budget mirrors the production-default permissive envelope. Cost-aware
+  // profiles will override per customer once Wave 8 lands.
   assert.equal(
     EU_BANKING_DEFAULT_FINOPS_BUDGET.roles.test_generation
       ?.maxInputTokensPerRequest,
-    8192,
+    200_000,
   );
   assert.notEqual(
     EU_BANKING_DEFAULT_FINOPS_BUDGET.sourceQuotas,
@@ -141,7 +144,7 @@ test("cloneEuBankingDefaultFinOpsBudget returns a deep clone", () => {
   );
   assert.equal(
     EU_BANKING_DEFAULT_FINOPS_BUDGET.sourceQuotas?.maxJiraApiRequestsPerJob,
-    20,
+    200,
   );
 });
 
@@ -534,29 +537,53 @@ test("PRODUCTION_FINOPS_BUDGET_ENVELOPE validates clean", () => {
 test("PRODUCTION_FINOPS_BUDGET_ENVELOPE pins the calibrated production limits", () => {
   // Pin the exact limits operators get when they don't pass an override —
   // a regression on these values is a contract change requiring a bump.
+  // Operator stance (CTO directive 2026-05-10, budgetVersion 1.1.0):
+  // stability + quality first, cost is currently not a gating concern.
   assert.equal(
     PRODUCTION_FINOPS_BUDGET_ENVELOPE.budgetId,
     "production-default",
   );
-  assert.equal(PRODUCTION_FINOPS_BUDGET_ENVELOPE.maxJobWallClockMs, 300_000);
+  assert.equal(PRODUCTION_FINOPS_BUDGET_ENVELOPE.budgetVersion, "1.1.0");
+  // 30 minutes per job (was 5 min) — accommodates multi-section banking
+  // masks with cross-family judges + adversarial-critic + repair loop.
+  assert.equal(
+    PRODUCTION_FINOPS_BUDGET_ENVELOPE.maxJobWallClockMs,
+    30 * 60 * 1000,
+  );
+  // Replay-cache miss-rate gate disabled — quality/stability stance.
+  assert.equal(PRODUCTION_FINOPS_BUDGET_ENVELOPE.maxReplayCacheMissRate, 1.0);
   const tg = PRODUCTION_FINOPS_BUDGET_ENVELOPE.roles.test_generation;
   assert.ok(tg !== undefined);
-  assert.equal(tg.maxInputTokensPerRequest, 80_000);
-  assert.equal(tg.maxOutputTokensPerRequest, 8_000);
-  assert.equal(tg.maxRetriesPerRequest, 2);
-  assert.equal(tg.maxWallClockMsPerRequest, 120_000);
+  // 200k input tokens — sized to mistral-large-3 / gpt-oss-120b context window.
+  assert.equal(tg.maxInputTokensPerRequest, 200_000);
+  // 32k output tokens per request (was 8k) — accommodates large suites.
+  assert.equal(tg.maxOutputTokensPerRequest, 32_000);
+  assert.equal(tg.maxTotalInputTokens, 2_000_000);
+  assert.equal(tg.maxTotalOutputTokens, 200_000);
+  assert.equal(tg.maxRetriesPerRequest, 6);
+  assert.equal(tg.maxAttempts, 12);
+  // 10 minutes per request (was 2 min); 30 minutes total wall-clock.
+  assert.equal(tg.maxWallClockMsPerRequest, 600_000);
+  assert.equal(tg.maxTotalWallClockMs, 1_800_000);
   assert.equal(tg.maxLiveSmokeCalls, 0);
   const vp = PRODUCTION_FINOPS_BUDGET_ENVELOPE.roles.visual_primary;
   assert.ok(vp !== undefined);
-  assert.equal(vp.maxInputTokensPerRequest, 40_000);
-  assert.equal(vp.maxOutputTokensPerRequest, 4_000);
-  assert.equal(vp.maxImageBytesPerRequest, 2_097_152);
-  assert.equal(vp.maxRetriesPerRequest, 1);
-  assert.equal(vp.maxWallClockMsPerRequest, 60_000);
+  assert.equal(vp.maxInputTokensPerRequest, 100_000);
+  assert.equal(vp.maxOutputTokensPerRequest, 16_000);
+  // 16 MiB per request image (was 2 MiB) — tier-1 banking masks.
+  assert.equal(vp.maxImageBytesPerRequest, 16 * 1024 * 1024);
+  assert.equal(vp.maxRetriesPerRequest, 4);
+  assert.equal(vp.maxAttempts, 6);
+  assert.equal(vp.maxWallClockMsPerRequest, 300_000);
   const vf = PRODUCTION_FINOPS_BUDGET_ENVELOPE.roles.visual_fallback;
   assert.ok(vf !== undefined);
-  assert.equal(vf.maxWallClockMsPerRequest, 90_000);
-  assert.equal(vf.maxFallbackAttempts, 2);
+  assert.equal(vf.maxInputTokensPerRequest, 100_000);
+  assert.equal(vf.maxOutputTokensPerRequest, 16_000);
+  assert.equal(vf.maxImageBytesPerRequest, 16 * 1024 * 1024);
+  assert.equal(vf.maxRetriesPerRequest, 4);
+  assert.equal(vf.maxAttempts, 6);
+  assert.equal(vf.maxWallClockMsPerRequest, 300_000);
+  assert.equal(vf.maxFallbackAttempts, 6);
 });
 
 test("PRODUCTION_FINOPS_BUDGET_ENVELOPE is non-permissive vs DEFAULT (every field tighter or equal)", () => {

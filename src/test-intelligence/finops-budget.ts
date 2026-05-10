@@ -62,36 +62,40 @@ export const DEFAULT_FINOPS_BUDGET_ENVELOPE: FinOpsBudgetEnvelope =
 export const EU_BANKING_DEFAULT_FINOPS_BUDGET: FinOpsBudgetEnvelope =
   Object.freeze({
     budgetId: "eu-banking-default",
-    budgetVersion: "1.0.0",
-    maxJobWallClockMs: 5 * 60 * 1000,
-    maxReplayCacheMissRate: 0.5,
+    budgetVersion: "1.1.0",
+    // Operator stance (CTO directive 2026-05-10): stability + quality
+    // first, cost is currently not a gating concern. The eu-banking-default
+    // profile mirrors the production-default permissive envelope; future
+    // cost-aware profiles can override per customer.
+    maxJobWallClockMs: 30 * 60 * 1000,
+    maxReplayCacheMissRate: 1.0,
     roles: Object.freeze({
       test_generation: Object.freeze({
-        maxInputTokensPerRequest: 8192,
-        maxOutputTokensPerRequest: 2048,
-        maxTotalInputTokens: 32768,
-        maxTotalOutputTokens: 8192,
-        maxWallClockMsPerRequest: 60_000,
-        maxTotalWallClockMs: 180_000,
-        maxRetriesPerRequest: 3,
-        maxAttempts: 6,
+        maxInputTokensPerRequest: 200_000,
+        maxOutputTokensPerRequest: 32_000,
+        maxTotalInputTokens: 2_000_000,
+        maxTotalOutputTokens: 200_000,
+        maxWallClockMsPerRequest: 600_000,
+        maxTotalWallClockMs: 1_800_000,
+        maxRetriesPerRequest: 6,
+        maxAttempts: 12,
       }),
       visual_primary: Object.freeze({
-        maxInputTokensPerRequest: 8192,
-        maxOutputTokensPerRequest: 1024,
-        maxWallClockMsPerRequest: 45_000,
-        maxRetriesPerRequest: 2,
-        maxAttempts: 4,
-        maxImageBytesPerRequest: 5 * 1024 * 1024,
+        maxInputTokensPerRequest: 100_000,
+        maxOutputTokensPerRequest: 16_000,
+        maxWallClockMsPerRequest: 300_000,
+        maxRetriesPerRequest: 4,
+        maxAttempts: 6,
+        maxImageBytesPerRequest: 16 * 1024 * 1024,
       }),
       visual_fallback: Object.freeze({
-        maxInputTokensPerRequest: 8192,
-        maxOutputTokensPerRequest: 1024,
-        maxWallClockMsPerRequest: 60_000,
-        maxRetriesPerRequest: 2,
-        maxAttempts: 4,
-        maxImageBytesPerRequest: 5 * 1024 * 1024,
-        maxFallbackAttempts: 4,
+        maxInputTokensPerRequest: 100_000,
+        maxOutputTokensPerRequest: 16_000,
+        maxWallClockMsPerRequest: 300_000,
+        maxRetriesPerRequest: 4,
+        maxAttempts: 6,
+        maxImageBytesPerRequest: 16 * 1024 * 1024,
+        maxFallbackAttempts: 6,
       }),
       jira_api_requests: Object.freeze({
         maxAttempts: MAX_JIRA_API_REQUESTS_PER_JOB,
@@ -232,86 +236,100 @@ export const cloneEuBankingDefaultFinOpsBudget = (): FinOpsBudgetEnvelope =>
 export const PRODUCTION_FINOPS_BUDGET_ENVELOPE: FinOpsBudgetEnvelope =
   Object.freeze({
     budgetId: "production-default",
-    budgetVersion: "1.0.0",
-    // 5 minutes wall-clock per job — accommodates one test_generation call
-    // (≤ 2 min) + two visual-sidecar attempts (≤ 90 s + ≤ 60 s) with margin.
-    maxJobWallClockMs: 5 * 60 * 1000,
-    // Cap the replay-cache miss rate at 80% to surface degraded cache health
-    // without flagging a clean run. Production runner currently runs without
-    // a disk-backed replay cache (#1739); once enabled the rate becomes
-    // meaningful.
-    maxReplayCacheMissRate: 0.8,
+    budgetVersion: "1.1.0",
+    // 30 minutes wall-clock per job — operator stance (CTO directive
+    // 2026-05-10): stability + quality first, cost is currently not a
+    // gating concern. Accommodates very wide flows, multi-section masks,
+    // multi-judge cross-family panels, adversarial-critic rounds, and
+    // multiple repair iterations without breaching the wall-clock budget.
+    // Tier-1 production-readiness target; tighter cost-aware profiles
+    // can override per customer once Wave 8 lands.
+    maxJobWallClockMs: 30 * 60 * 1000,
+    // Disable the replay-cache miss-rate gate by default. The cache is
+    // best-effort; flagging a "clean run" because cache hit rate dropped
+    // is a cost-aware concern, not a quality/stability one.
+    maxReplayCacheMissRate: 1.0,
     roles: Object.freeze({
       test_generation: Object.freeze({
-        // 80k input tokens — one bounded IR slice (per-screen caps already
-        // applied upstream by `boundIntentForLlm`) plus the German
-        // banking/insurance prompt rules fits in ~40k; 80k leaves margin
-        // for very wide flows.
-        maxInputTokensPerRequest: 80_000,
-        // Three initial self-consistency samples (Issue #2070) plus up to
-        // two single-pass repair iterations must fit inside the role-level
-        // envelope without disabling the repair path outright.
-        maxTotalInputTokens: 400_000,
-        // 8k output tokens per request — empirical: 5/5 banking-form runs
-        // produced 4–10 cases, ≈ 600 tokens each; 8k caps a runaway model
-        // that tries to emit 30+ cases in a single response.
-        maxOutputTokensPerRequest: 8_000,
-        // 40k cumulative output tokens across the default 3-sample
-        // self-consistency fan-out (Issue #2070) plus up to two
-        // follow-up repair iterations. The usual path remains much lower;
-        // the larger cap prevents the repair loop from being disabled
-        // merely because the initial sample set already consumed the old
-        // single-pass envelope.
-        maxTotalOutputTokens: 40_000,
-        // 2 retries — one network blip + one schema-rejection retry covers
-        // the failure modes seen on Azure (transient 429 / partial-batch
-        // schema drift).
-        maxRetriesPerRequest: 2,
-        // 5 generator attempts — default 3 self-consistency samples plus up
-        // to 2 repair iterations. Audit-mode traffic (judge / planner /
-        // ranker) is excluded from this counter.
-        maxAttempts: 5,
-        // 120 s per request — gpt-oss-120b on Azure AI Foundry returned
-        // in 8–25 s for the 5/5 batch; 120 s is 5x headroom.
-        maxWallClockMsPerRequest: 120_000,
-        maxTotalWallClockMs: 120_000,
+        // 200k input tokens — sized to the mistral-large-3 / gpt-oss-120b
+        // context window (~128k effective payload + ~70k prompt scaffolding
+        // headroom). Multi-section banking masks routinely emit IR slices
+        // in the 100k+ range; the previous 80k cap rejected those at the
+        // FINOPS_BUDGET_INVALID gate before the LLM ever saw them.
+        maxInputTokensPerRequest: 200_000,
+        // 2M cumulative input tokens across self-consistency samples
+        // (Issue #2070, default 3 samples) plus up to multiple repair
+        // iterations. 5x headroom over per-request to allow the full
+        // repair-loop budget without disabling the repair path.
+        maxTotalInputTokens: 2_000_000,
+        // 32k output tokens per request — accommodates large suites of
+        // 30–60 generated cases per response, plus any per-step rationale
+        // / openQuestions / oracle annotations the quality lifters now
+        // emit. Caps runaway emission at 4x previous limit.
+        maxOutputTokensPerRequest: 32_000,
+        // 200k cumulative output tokens across the self-consistency
+        // fan-out plus follow-up repair iterations. 5x previous;
+        // accommodates very wide multi-screen masks and multi-round
+        // repair without disabling repair-loop coverage.
+        maxTotalOutputTokens: 200_000,
+        // 6 retries per request — covers transient 429s, partial-batch
+        // schema drift, network blips, and slow first-byte from
+        // sovereign-cloud endpoints with margin.
+        maxRetriesPerRequest: 6,
+        // 12 generator attempts — default 3 self-consistency samples plus
+        // up to ~9 repair iterations. Operator stance: never give up on
+        // quality due to attempt counter.
+        maxAttempts: 12,
+        // 10 minutes per request — accommodates large prompts on
+        // sovereign-cloud endpoints + slow first-byte; previous 120 s
+        // was right-sized for small masks only.
+        maxWallClockMsPerRequest: 600_000,
+        // 30 minutes total wall-clock for the test-generation role —
+        // covers 3-sample self-consistency fan-out + multi-iteration
+        // repair on multi-section masks without breaching.
+        maxTotalWallClockMs: 1_800_000,
         // No live-smoke calls allowed by default; the live-E2E lane sets
         // its own envelope.
         maxLiveSmokeCalls: 0,
       }),
       visual_primary: Object.freeze({
-        // 40k input tokens — visual prompts bundle one screen image + the
-        // describe-screens directive; 40k is 5x what observed runs use.
-        maxInputTokensPerRequest: 40_000,
-        // 4k output tokens — visual sidecars emit short structured
-        // descriptions, never long-form.
-        maxOutputTokensPerRequest: 4_000,
-        // 2 MiB per request image — matches the upstream visual-sidecar
-        // SSRF / size guard; rejecting larger payloads at the budget layer
-        // avoids burning gateway tokens on a payload that will be refused.
-        maxImageBytesPerRequest: 2_097_152,
-        // 1 retry — visual is best-effort; on persistent failure the runner
-        // continues without a sidecar binding rather than failing the job.
-        maxRetriesPerRequest: 1,
-        maxAttempts: 2,
-        // 60 s per request — vision deployments are slower than chat;
-        // 60 s is 2x what the live runs measured.
-        maxWallClockMsPerRequest: 60_000,
+        // 100k input tokens — accommodates large multi-section
+        // screenshots + describe-screens directive on phi-4-multimodal
+        // and llama-4-maverick-vision (16k–32k effective).
+        maxInputTokensPerRequest: 100_000,
+        // 16k output tokens — accommodates richer cross-modal descriptions
+        // including per-step verdicts and evidence_partial annotations
+        // (Issue #2170 follow-on).
+        maxOutputTokensPerRequest: 16_000,
+        // 16 MiB per request image — accommodates Figma exports of
+        // tier-1 banking masks with multi-section dashboards. Matches the
+        // tier-1 expected upper bound for a single screen capture.
+        maxImageBytesPerRequest: 16 * 1024 * 1024,
+        // 4 retries — covers transient gateway 429s, model-deployment
+        // 404 fall-through, and protocol drift on the visual lane.
+        maxRetriesPerRequest: 4,
+        // 6 attempts — primary path is best-effort but we want maximum
+        // coverage before falling through to the fallback.
+        maxAttempts: 6,
+        // 5 minutes per request — accommodates slow first-byte from
+        // vision-deployment cold starts.
+        maxWallClockMsPerRequest: 300_000,
       }),
       visual_fallback: Object.freeze({
-        // Same caps as primary; the only difference is the longer wall
-        // clock (90 s) since fallback deployments are typically smaller
-        // and slower.
-        maxInputTokensPerRequest: 40_000,
-        maxOutputTokensPerRequest: 4_000,
-        maxImageBytesPerRequest: 2_097_152,
-        maxRetriesPerRequest: 1,
-        maxAttempts: 2,
-        // 90 s per request — fallback deployments (e.g. lighter vision
-        // models) tolerate a longer first byte than the primary.
-        maxWallClockMsPerRequest: 90_000,
-        // 2 fallback attempts before giving up entirely.
-        maxFallbackAttempts: 2,
+        // Same generous caps as primary; the only difference is the
+        // longer wall-clock budget for fallback deployments which are
+        // typically smaller and slower per first-byte.
+        maxInputTokensPerRequest: 100_000,
+        maxOutputTokensPerRequest: 16_000,
+        maxImageBytesPerRequest: 16 * 1024 * 1024,
+        maxRetriesPerRequest: 4,
+        maxAttempts: 6,
+        // 5 minutes per request — fallback deployments tolerate a longer
+        // first byte than the primary.
+        maxWallClockMsPerRequest: 300_000,
+        // 6 fallback attempts before giving up — quality-first stance:
+        // a failed visual binding contaminates faithfulness scoring.
+        maxFallbackAttempts: 6,
       }),
     }) as FinOpsBudgetEnvelope["roles"],
   }) as FinOpsBudgetEnvelope;
