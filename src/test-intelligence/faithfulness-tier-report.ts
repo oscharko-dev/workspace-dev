@@ -232,6 +232,7 @@ export const buildFaithfulnessTierReport = (
     matchCount,
     evidencePartialCount,
     mismatchCount,
+    evaluationMode: "per_step",
     entries,
   };
 };

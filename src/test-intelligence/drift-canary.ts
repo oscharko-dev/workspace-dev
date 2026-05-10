@@ -58,6 +58,7 @@ export type DriftCanaryMetricName =
   | "faithfulness_field_coverage"
   | "faithfulness_action_coverage"
   | "faithfulness_trace_fidelity"
+  | "faithfulness_fallback_rate"
   | "hallucination_rate"
   | "judge_accuracy"
   | "judge_false_positive_rate"
@@ -272,6 +273,7 @@ export const computeDriftCanaryMetrics = (input: {
   let actionCoverageTotal = 0;
   let traceFidelityTotal = 0;
   let hallucinationTotal = 0;
+  let faithfulnessFallbackCount = 0;
 
   for (const run of input.runs) {
     const decisions = decisionByTestCaseId(run.result.policy);
@@ -304,6 +306,19 @@ export const computeDriftCanaryMetrics = (input: {
     actionCoverageTotal += faithfulnessMetrics.actionCoverageRatio;
     traceFidelityTotal += faithfulnessMetrics.traceFidelityScore;
     hallucinationTotal += hallucinationMetrics.hallucinatedActionRate;
+    // Issue #2116 — count runs where the policy gate's faithfulness
+    // evaluation fell back to the case-level score (or had no verdict
+    // at all). A rising fallback rate over time is a silent
+    // quality-regression signal: the cross-modal-faithfulness gate
+    // stops reasoning over per-step evidence and lets verdicts pass on
+    // a case-level number that carries no per-step audit trail.
+    const evaluationMode = run.result.policy.faithfulnessEvaluation?.mode;
+    if (
+      evaluationMode === "case_level_fallback" ||
+      evaluationMode === "missing"
+    ) {
+      faithfulnessFallbackCount += 1;
+    }
   }
 
   const observations: DriftMetricObservation[] = [];
@@ -353,6 +368,12 @@ export const computeDriftCanaryMetrics = (input: {
       family,
       metricName: "hallucination_rate",
       value: round6(hallucinationTotal / denominator),
+    },
+    {
+      deployment: input.deployment,
+      family,
+      metricName: "faithfulness_fallback_rate",
+      value: round6(faithfulnessFallbackCount / denominator),
     },
   );
   return observations.sort((left, right) =>

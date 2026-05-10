@@ -1057,6 +1057,7 @@ export const ALLOWED_TEST_CASE_POLICY_OUTCOMES = [
   "visual_sidecar_prompt_injection_text",
   "semantic_suspicious_content",
   "cross_modal_faithfulness_score_below_threshold",
+  "cross_modal_faithfulness_case_level_fallback",
   "judge_refused",
   "risk_tag_downgrade_detected",
   "custom_context_risk_escalation",
@@ -1136,6 +1137,47 @@ export interface TestCasePolicyReport {
    * shape stays stable for runs that pre-date the evaluator.
    */
   mutationKillRate?: MutationKillRateSummary;
+  /**
+   * Issue #2116 — explicit semantics + audit trail for the
+   * cross-modal-faithfulness gate's tier-elastic fallback.
+   *
+   * Always emitted by the policy gate so reviewers can tell at a glance
+   * whether the gate reasoned over per-step evidence
+   * (`mode === "per_step"`), fell back to the verdict's case-level score
+   * (`mode === "case_level_fallback"`), or had no faithfulness verdict
+   * at all (`mode === "missing"`). The `requirePerStepFaithfulness`
+   * field mirrors the active profile rule so audit reviewers do not
+   * need a second artifact to know whether the fallback was demoted to
+   * an error.
+   */
+  faithfulnessEvaluation?: FaithfulnessEvaluationSummary;
+}
+
+/** Issue #2116 — audit-trail block summarizing how the
+ * cross-modal-faithfulness gate evaluated a job. Carried on
+ * `TestCasePolicyReport.faithfulnessEvaluation`. */
+export interface FaithfulnessEvaluationSummary {
+  /** Evaluation mode the gate applied. */
+  readonly mode: FaithfulnessEvaluationMode;
+  /**
+   * Whether the active profile escalated the
+   * `case_level_fallback` mode to a blocking error (Issue #2116
+   * `requirePerStepFaithfulness`). Mirrors the rule for downstream
+   * consumers without forcing them to re-resolve the profile.
+   */
+  readonly requirePerStepFaithfulness: boolean;
+  /**
+   * Reviewer-readable explanation of why the gate ended up in
+   * {@link mode}. Stable across runs with identical inputs so the
+   * persisted policy report is byte-deterministic.
+   */
+  readonly reason: string;
+  /**
+   * Step-verdict count consumed by the gate when
+   * `mode === "per_step"`. `0` for `case_level_fallback` and
+   * `missing` so the field is always present and machine-comparable.
+   */
+  readonly stepVerdictCount: number;
 }
 
 /**
@@ -1448,6 +1490,33 @@ export interface TestCasePolicyProfileRules {
   selfConsistency?: {
     readonly sampleCount: 1 | 3;
   };
+  /**
+   * Issue #2116 — faithfulness-tier-elastic fallback strictness.
+   *
+   * Drives how the cross-modal-faithfulness gate treats verdicts that
+   * lack `stepVerdicts` (legacy schema 1.0.0 producers, refused
+   * cross-family judge that still emitted a case-level score, etc.).
+   *
+   * - `false` (the secure default for `eu-banking-default`):
+   *   `case_level_fallback` raises a job-level **warning**
+   *   (`policy:cross-modal-faithfulness:case-level-fallback`) and the
+   *   case-level score continues to drive the threshold check. The
+   *   evaluation mode is recorded on
+   *   `TestCasePolicyReport.faithfulnessEvaluation` for audit.
+   * - `true`: `case_level_fallback` is treated as an **error**, mirroring
+   *   the per-step strictness. Operators that require per-step audit
+   *   evidence flip this on so a verdict with no per-step claims fails
+   *   the run rather than slipping through under the legacy fallback.
+   *
+   * The companion `policy:cross-modal-faithfulness:evaluation-missing`
+   * outcome is always raised at error severity when no faithfulness
+   * verdict is present at all — that path is not configurable because
+   * "no judge ran" must never silently pass an audited gate.
+   *
+   * Optional for backwards compatibility: when omitted the runtime
+   * applies the `false` default.
+   */
+  requirePerStepFaithfulness?: boolean;
 }
 
 export const ALLOWED_JUDGE_REFUSAL_POLICIES = [
@@ -4941,6 +5010,29 @@ export interface FaithfulnessTierReportEntry {
   readonly message?: string;
 }
 
+/** Closed runtime list of faithfulness-evaluation modes (Issue #2116).
+ *
+ *   - `per_step`               — the faithfulness verdict carried per-step
+ *                                verdicts and the gate reasoned over them.
+ *                                Strongest evidence path.
+ *   - `case_level_fallback`    — the verdict was present but lacked
+ *                                `stepVerdicts` (e.g. legacy schema 1.0.0
+ *                                producers); the gate fell back to the
+ *                                verdict's case-level `score`. Auditable
+ *                                fallback.
+ *   - `missing`                — no faithfulness verdict at all; the gate
+ *                                had nothing to reason against.
+ */
+export const FAITHFULNESS_EVALUATION_MODES = [
+  "per_step",
+  "case_level_fallback",
+  "missing",
+] as const;
+
+/** Discriminant of an allowed faithfulness-evaluation mode (Issue #2116). */
+export type FaithfulnessEvaluationMode =
+  (typeof FAITHFULNESS_EVALUATION_MODES)[number];
+
 /** Persistable per-run report capturing the tier path that produced the
  * cross-modal faithfulness score (Issue #2066).
  *
@@ -4967,6 +5059,17 @@ export interface FaithfulnessTierReport {
   readonly evidencePartialCount: number;
   /** Steps where the tier-aware score is `0.0`. */
   readonly mismatchCount: number;
+  /**
+   * Issue #2116 — evaluation mode the report was produced under. The
+   * tier-report builder only materializes a report for `per_step` runs
+   * (per-step evidence is required to populate `entries`), so this field
+   * is constant `"per_step"` on persisted reports. The companion
+   * {@link TestCasePolicyReport.faithfulnessEvaluation} block surfaces
+   * the broader mode taxonomy at the policy-gate level. Carried here so
+   * a tier report parsed in isolation tells reviewers unambiguously
+   * which evaluation path produced it.
+   */
+  readonly evaluationMode: FaithfulnessEvaluationMode;
   /** Per-step records, sorted by `(testCaseId, stepIndex)`. */
   readonly entries: readonly FaithfulnessTierReportEntry[];
 }

@@ -79,6 +79,23 @@ export const EU_BANKING_DEFAULT_TECHNIQUE_COVERAGE_MINIMUM:
  */
 export const EU_BANKING_DEFAULT_SELF_CONSISTENCY_SAMPLE_COUNT = 3 as const;
 
+/**
+ * Issue #2116 — default for the `eu-banking-default` profile's
+ * `requirePerStepFaithfulness` rule.
+ *
+ * The secure default is `false`: a legacy verdict that lacks
+ * `stepVerdicts` raises a job-level *warning*
+ * (`policy:cross-modal-faithfulness:case-level-fallback`) but does not
+ * block the run. Operators that mandate per-step audit evidence flip
+ * this to `true` via `cloneEuBankingDefaultProfile()` (or their own
+ * profile constructor) so the same condition becomes a blocking error.
+ *
+ * Pinned as a typed constant so CI catches a drift in the secure
+ * default — flipping it here is a deliberate governance decision and
+ * must be reviewed alongside the ADR.
+ */
+export const EU_BANKING_DEFAULT_REQUIRE_PER_STEP_FAITHFULNESS = false as const;
+
 export const EU_BANKING_DEFAULT_JUDGE_REFUSAL_POLICY:
   Readonly<JudgeRefusalPolicyConfig> = Object.freeze({
     faithfulness: "needs_review",
@@ -107,6 +124,7 @@ const EU_BANKING_DEFAULT_RULES: TestCasePolicyProfileRules = {
   selfConsistency: {
     sampleCount: EU_BANKING_DEFAULT_SELF_CONSISTENCY_SAMPLE_COUNT,
   },
+  requirePerStepFaithfulness: EU_BANKING_DEFAULT_REQUIRE_PER_STEP_FAITHFULNESS,
 };
 
 /** Default `eu-banking-default` policy profile (deep-frozen). */
@@ -133,6 +151,8 @@ export const EU_BANKING_DEFAULT_POLICY_PROFILE: Readonly<TestCasePolicyProfile> 
       selfConsistency: Object.freeze({
         sampleCount: EU_BANKING_DEFAULT_SELF_CONSISTENCY_SAMPLE_COUNT,
       }),
+      requirePerStepFaithfulness:
+        EU_BANKING_DEFAULT_REQUIRE_PER_STEP_FAITHFULNESS,
     }),
   });
 
@@ -212,6 +232,11 @@ export const cloneEuBankingDefaultProfile = (): TestCasePolicyProfile => {
     rules.selfConsistency = {
       sampleCount: selfConsistency.sampleCount,
     };
+  }
+  const requirePerStepFaithfulness =
+    EU_BANKING_DEFAULT_POLICY_PROFILE.rules.requirePerStepFaithfulness;
+  if (requirePerStepFaithfulness !== undefined) {
+    rules.requirePerStepFaithfulness = requirePerStepFaithfulness;
   }
   return {
     id: EU_BANKING_DEFAULT_POLICY_PROFILE.id,

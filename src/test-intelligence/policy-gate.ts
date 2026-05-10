@@ -31,6 +31,7 @@ import {
   type BusinessTestIntentIr,
   type CoveragePlan,
   type CustomContextPolicySignal,
+  type FaithfulnessEvaluationSummary,
   type FaithfulnessTierReport,
   type FaithfulnessVerdict,
   type GeneratedTestCase,
@@ -189,6 +190,24 @@ export const CROSS_MODAL_FAITHFULNESS_RULE =
   "policy:cross-modal-faithfulness-score" as const;
 export const DEFAULT_CROSS_MODAL_FAITHFULNESS_THRESHOLD = 0.8;
 const CROSS_MODAL_FAITHFULNESS_GRAY_ZONE = 0.05;
+
+/** Issue #2116 — job-level rule id raised when the cross-modal-faithfulness
+ * gate fell back to the verdict's case-level `score` because the verdict
+ * carried no `stepVerdicts`. Severity is `warning` by default and
+ * escalates to `error` when the active profile sets
+ * `requirePerStepFaithfulness: true`.
+ *
+ * The companion `"missing"` evaluation mode is **not** surfaced as an
+ * additional rule: refusals are already enforced by
+ * `policy:judge_refused` (with operator-tunable severity via
+ * `judgeRefusalPolicy.faithfulness`), and runs that never wired
+ * faithfulness at all preserve their pre-#2116 byte shape. The
+ * `mode: "missing"` value is still recorded on
+ * `TestCasePolicyReport.faithfulnessEvaluation` and counted by the
+ * drift-canary `faithfulness_fallback_rate` metric so audit reviewers
+ * can distinguish a refused or skipped judge from a per-step run. */
+export const CROSS_MODAL_FAITHFULNESS_FALLBACK_RULE =
+  "policy:cross-modal-faithfulness:case-level-fallback" as const;
 
 /**
  * Resolve the per-run {@link FaithfulnessTierReport} that the
@@ -1222,16 +1241,75 @@ const mapVisualOutcome = (
   }
 };
 
+interface FaithfulnessGateResolution {
+  readonly score: number;
+  readonly tierReport: FaithfulnessTierReport | undefined;
+  readonly evaluation: FaithfulnessEvaluationSummary;
+}
+
+/**
+ * Issue #2116 — classify how the cross-modal-faithfulness gate
+ * evaluated `verdict` against `list`.
+ *
+ * Returns the evaluation mode, whether per-step strictness is required,
+ * the score the threshold check should consume, and (when the verdict
+ * carried per-step evidence) the persistable {@link FaithfulnessTierReport}.
+ *
+ * `mode === "missing"` when no verdict was supplied OR the verdict was
+ * refused — in both cases the gate has no evidence to reason against and
+ * downstream logic must surface the `evaluation-missing` rule instead of
+ * silently passing.
+ *
+ * Pure: no IO, no mutation.
+ */
 const resolveFaithfulnessGateScore = (
-  verdict: FaithfulnessVerdict,
+  verdict: FaithfulnessVerdict | undefined,
   list: GeneratedTestCaseList,
   threshold: number,
-): { score: number; tierReport: FaithfulnessTierReport | undefined } => {
+  requirePerStepFaithfulness: boolean,
+): FaithfulnessGateResolution => {
+  if (verdict === undefined) {
+    return {
+      score: 0,
+      tierReport: undefined,
+      evaluation: {
+        mode: "missing",
+        requirePerStepFaithfulness,
+        reason: "no faithfulness verdict was supplied to the policy gate",
+        stepVerdictCount: 0,
+      },
+    };
+  }
+  if (verdict.refusal !== undefined) {
+    return {
+      score: 0,
+      tierReport: undefined,
+      evaluation: {
+        mode: "missing",
+        requirePerStepFaithfulness,
+        reason:
+          `faithfulness judge refused (code=${verdict.refusal.code}); ` +
+          `no per-step or case-level evidence available`,
+        stepVerdictCount: 0,
+      },
+    };
+  }
   if (
     verdict.stepVerdicts === undefined ||
     verdict.stepVerdicts.length === 0
   ) {
-    return { score: verdict.score, tierReport: undefined };
+    return {
+      score: verdict.score,
+      tierReport: undefined,
+      evaluation: {
+        mode: "case_level_fallback",
+        requirePerStepFaithfulness,
+        reason:
+          "verdict carried no stepVerdicts; gate fell back to verdict.score " +
+          verdict.score.toFixed(6),
+        stepVerdictCount: 0,
+      },
+    };
   }
   const tierReport = buildFaithfulnessTierReport({
     generatedAt: verdict.generatedAt,
@@ -1240,48 +1318,115 @@ const resolveFaithfulnessGateScore = (
     list,
     aggregateThreshold: threshold,
   });
-  return { score: tierReport.aggregateScore, tierReport };
+  return {
+    score: tierReport.aggregateScore,
+    tierReport,
+    evaluation: {
+      mode: "per_step",
+      requirePerStepFaithfulness,
+      reason:
+        `gate reasoned over ${verdict.stepVerdicts.length} per-step ` +
+        `verdict(s); aggregate score ${tierReport.aggregateScore.toFixed(6)}`,
+      stepVerdictCount: verdict.stepVerdicts.length,
+    },
+  };
 };
 
+interface FaithfulnessScoreViolationResult {
+  readonly violations: readonly TestCasePolicyViolation[];
+  readonly tierReport: FaithfulnessTierReport | undefined;
+  readonly evaluation: FaithfulnessEvaluationSummary;
+}
+
+/**
+ * Build the cross-modal-faithfulness job-level violations for a run
+ * (Issue #2066, Issue #2116).
+ *
+ * Three rule families compose the result:
+ *
+ *   1. {@link CROSS_MODAL_FAITHFULNESS_MISSING_RULE} — error severity;
+ *      raised whenever the gate had no verdict (incl. judge refusal).
+ *   2. {@link CROSS_MODAL_FAITHFULNESS_FALLBACK_RULE} — warning by
+ *      default, escalated to error when
+ *      `requirePerStepFaithfulness === true`.
+ *   3. {@link CROSS_MODAL_FAITHFULNESS_RULE} — the original score-vs-threshold
+ *      check; only meaningful when there IS a score to compare.
+ *
+ * The `evaluation` summary is always returned so the caller can attach
+ * it to {@link TestCasePolicyReport.faithfulnessEvaluation}.
+ */
 const buildFaithfulnessScoreViolation = (
   verdict: FaithfulnessVerdict | undefined,
   list: GeneratedTestCaseList,
   threshold: number,
-): {
-  violation: TestCasePolicyViolation | undefined;
-  tierReport: FaithfulnessTierReport | undefined;
-} => {
-  if (verdict === undefined) return { violation: undefined, tierReport: undefined };
-  if (verdict.refusal !== undefined) {
-    return { violation: undefined, tierReport: undefined };
-  }
-  const { score, tierReport } = resolveFaithfulnessGateScore(
+  requirePerStepFaithfulness: boolean,
+): FaithfulnessScoreViolationResult => {
+  const resolution = resolveFaithfulnessGateScore(
     verdict,
     list,
     threshold,
+    requirePerStepFaithfulness,
   );
+  const violations: TestCasePolicyViolation[] = [];
+  const evaluation = resolution.evaluation;
+
+  if (evaluation.mode === "missing") {
+    // We deliberately do NOT emit a `cross-modal-faithfulness:evaluation-missing`
+    // rule when the gate received no verdict at all OR when the verdict
+    // was a refusal:
+    //
+    //   - No verdict → callers that never wired faithfulness preserve
+    //     their pre-Issue-#2116 contract (the gate was never part of
+    //     that run; the audit block on the policy report is enough).
+    //   - Refusal     → `policy:judge_refused` already fires with
+    //     operator-tunable severity (`judgeRefusalPolicy.faithfulness`).
+    //     Adding a second always-error rule would override that
+    //     tunability and double-count the same incident in audit trails.
+    //
+    // The audit-trail mode (`"missing"`) IS still recorded on the policy
+    // report's `faithfulnessEvaluation` block so drift detection can
+    // count `missing` runs as fallback alongside `case_level_fallback`.
+    return { violations, tierReport: resolution.tierReport, evaluation };
+  }
+
+  if (evaluation.mode === "case_level_fallback") {
+    const fallbackSeverity: "error" | "warning" = requirePerStepFaithfulness
+      ? "error"
+      : "warning";
+    const strictnessNote = requirePerStepFaithfulness
+      ? "; profile requires per-step faithfulness"
+      : "; profile permits case-level fallback";
+    violations.push({
+      rule: CROSS_MODAL_FAITHFULNESS_FALLBACK_RULE,
+      outcome: "cross_modal_faithfulness_case_level_fallback",
+      severity: fallbackSeverity,
+      reason: `cross-modal faithfulness fallback: ${evaluation.reason}${strictnessNote}`,
+    });
+  }
+
+  const score = resolution.score;
   const grayZoneFloor = Math.max(
     0,
     threshold - CROSS_MODAL_FAITHFULNESS_GRAY_ZONE,
   );
-  if (score >= threshold) return { violation: undefined, tierReport };
-  const severity: "error" | "warning" =
-    score >= grayZoneFloor ? "warning" : "error";
-  const band =
-    severity === "warning"
-      ? `gray zone [${grayZoneFloor.toFixed(2)}, ${threshold.toFixed(2)})`
-      : `below gray-zone floor ${grayZoneFloor.toFixed(2)}`;
-  return {
-    violation: {
+  if (score < threshold) {
+    const severity: "error" | "warning" =
+      score >= grayZoneFloor ? "warning" : "error";
+    const band =
+      severity === "warning"
+        ? `gray zone [${grayZoneFloor.toFixed(2)}, ${threshold.toFixed(2)})`
+        : `below gray-zone floor ${grayZoneFloor.toFixed(2)}`;
+    violations.push({
       rule: CROSS_MODAL_FAITHFULNESS_RULE,
       outcome: "cross_modal_faithfulness_score_below_threshold",
       severity,
       reason:
         `cross-modal faithfulness score ${score.toFixed(6)} is below ` +
         `threshold ${threshold.toFixed(2)} (${band})`,
-    },
-    tierReport,
-  };
+    });
+  }
+
+  return { violations, tierReport: resolution.tierReport, evaluation };
 };
 
 const collectFormScreenIds = (intent: BusinessTestIntentIr): readonly string[] =>
@@ -1362,12 +1507,22 @@ export const evaluatePolicyGate = (
       input.policyOverrides,
       CROSS_MODAL_FAITHFULNESS_RULE,
     ) ?? DEFAULT_CROSS_MODAL_FAITHFULNESS_THRESHOLD;
+  const requirePerStepFaithfulness =
+    input.profile.rules.requirePerStepFaithfulness ?? false;
   const faithfulness = buildFaithfulnessScoreViolation(
     input.faithfulnessVerdict,
     input.list,
     faithfulnessThreshold,
+    requirePerStepFaithfulness,
   );
-  const faithfulnessViolation = faithfulness.violation;
+  // The score-below-threshold violation is attached to every test case
+  // decision (legacy behaviour from Issue #2066). Fallback / missing
+  // violations are emitted at the job level only — they describe the
+  // gate's evidence path, not a per-case finding.
+  const faithfulnessScoreViolation = faithfulness.violations.find(
+    (violation) =>
+      violation.outcome === "cross_modal_faithfulness_score_below_threshold",
+  );
   const judgeRefusalViolations = buildJudgeRefusalViolations(
     input.profile,
     input.faithfulnessVerdict,
@@ -1389,7 +1544,7 @@ export const evaluatePolicyGate = (
         input.visualVerificationRequired ?? false,
         input.untrustedContentReport,
         judgeRefusalViolations.caseLevel,
-        faithfulnessViolation,
+        faithfulnessScoreViolation,
         input.complianceOverrides,
       ),
     );
@@ -1414,7 +1569,7 @@ export const evaluatePolicyGate = (
         input.complianceOverrides,
       ),
       ...judgeRefusalViolations.jobLevel,
-      ...(faithfulnessViolation !== undefined ? [faithfulnessViolation] : []),
+      ...faithfulness.violations,
     ],
     overrideMap,
   );
@@ -1448,6 +1603,16 @@ export const evaluatePolicyGate = (
     else needsReview += 1;
   }
 
+  // Only attach the faithfulness-evaluation audit block when the gate
+  // actually had a verdict to reason about (Issue #2116). Callers that
+  // never wired a faithfulness verdict preserve the pre-#2116 byte
+  // shape — the audit trail is unchanged for those runs because there
+  // was nothing to audit.
+  const faithfulnessEvaluation =
+    input.faithfulnessVerdict === undefined
+      ? undefined
+      : faithfulness.evaluation;
+
   return {
     schemaVersion: TEST_CASE_POLICY_REPORT_SCHEMA_VERSION,
     contractVersion: TEST_INTELLIGENCE_CONTRACT_VERSION,
@@ -1462,8 +1627,14 @@ export const evaluatePolicyGate = (
     blocked: jobBlocked,
     decisions: overriddenDecisions,
     jobLevelViolations,
+    ...(faithfulnessEvaluation !== undefined ? { faithfulnessEvaluation } : {}),
   };
 };
+
+/** Issue #2116 — re-export of {@link FaithfulnessEvaluationMode} so
+ * downstream consumers (drift-canary, benchmark scorecards) can type
+ * their report fields without re-importing the contracts module. */
+export type { FaithfulnessEvaluationMode } from "../contracts/index.js";
 
 export const pruneResolvedMultiSourceConflictViolations = (
   input: {
