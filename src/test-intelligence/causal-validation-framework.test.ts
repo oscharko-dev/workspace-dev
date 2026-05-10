@@ -189,6 +189,62 @@ test("deriveCounterfactualPairs: deterministic across replays (byte-equal)", asy
   assert.deepEqual(a, b);
 });
 
+test("deriveCounterfactualPairs: synthesized variants carry sha256-hex audit hashes (and are deterministic)", async () => {
+  // Issue #2180 review feedback (PR #2205): the test-case schema validator
+  // requires audit.{inputHash,promptHash,schemaHash} to match
+  // /^[a-f0-9]{64}$/. Pin the format here so a regression that returns a
+  // non-hex placeholder (the original bug) fails loudly, and pin
+  // determinism so a future cache-busting tweak cannot silently break
+  // replay stability.
+  const SHA256_HEX_RE = /^[a-f0-9]{64}$/;
+  const model = buildModel();
+  const invariants = buildActiveDatasetInvariantRegistry().list();
+  const hypotheses = buildHypotheses(invariants, model);
+  const first = await deriveCounterfactualPairs({
+    cases: [buildEmptyAnchorCase()],
+    invariants,
+    model,
+    jobId: JOB_ID,
+    generatedAt: GENERATED_AT,
+    hypotheses,
+    now: NOW,
+    seed: SEED,
+  });
+  assert.ok(first.length > 0, "expected at least one counterfactual pair");
+  for (const pair of first) {
+    for (const variant of [pair.variantA, pair.variantB]) {
+      assert.match(variant.audit.inputHash, SHA256_HEX_RE);
+      assert.match(variant.audit.promptHash, SHA256_HEX_RE);
+      assert.match(variant.audit.schemaHash, SHA256_HEX_RE);
+    }
+    // Variants in the same pair share the schemaHash (the contract /
+    // schema / prompt-template versions are constant) but MUST differ
+    // on inputHash because the cause value is the only thing that
+    // varies — that is the whole point of a counterfactual pair.
+    assert.notEqual(pair.variantA.audit.inputHash, pair.variantB.audit.inputHash);
+    assert.equal(pair.variantA.audit.schemaHash, pair.variantB.audit.schemaHash);
+  }
+  const second = await deriveCounterfactualPairs({
+    cases: [buildEmptyAnchorCase()],
+    invariants,
+    model,
+    jobId: JOB_ID,
+    generatedAt: GENERATED_AT,
+    hypotheses,
+    now: NOW,
+    seed: SEED,
+  });
+  for (const [idx, pair] of first.entries()) {
+    const replay = second[idx]!;
+    assert.equal(replay.variantA.audit.inputHash, pair.variantA.audit.inputHash);
+    assert.equal(replay.variantA.audit.promptHash, pair.variantA.audit.promptHash);
+    assert.equal(replay.variantA.audit.schemaHash, pair.variantA.audit.schemaHash);
+    assert.equal(replay.variantB.audit.inputHash, pair.variantB.audit.inputHash);
+    assert.equal(replay.variantB.audit.promptHash, pair.variantB.audit.promptHash);
+    assert.equal(replay.variantB.audit.schemaHash, pair.variantB.audit.schemaHash);
+  }
+});
+
 test("deriveCounterfactualPairs: different seeds produce different pairIds", async () => {
   const model = buildModel();
   const invariants = buildActiveDatasetInvariantRegistry().list();
@@ -301,6 +357,54 @@ test("evaluateCounterfactualPairs: empty pair list yields zeroed report with cor
   assert.equal(report.causalCoverageRatio, 0);
   assert.deepEqual(report.hypotheses, []);
   assert.deepEqual(report.pairs, []);
+});
+
+test("evaluateCounterfactualPairs: persists per-pair audit rows sorted by pairId with the projected fields", async () => {
+  // Issue #2180 review feedback (PR #2205): the report's pairs[] array
+  // is the audit-side surface auditors read to trace each counterfactual
+  // pair without re-running the framework. Pin the row shape, the sort
+  // order, and that satisfied=true holds for the well-formed pairs the
+  // framework synthesizes from the active model.
+  const model = buildModel();
+  const invariants = buildActiveDatasetInvariantRegistry().list();
+  const hypotheses = buildHypotheses(invariants, model);
+  const pairs = await deriveCounterfactualPairs({
+    cases: [buildEmptyAnchorCase()],
+    invariants,
+    model,
+    jobId: JOB_ID,
+    generatedAt: GENERATED_AT,
+    hypotheses,
+    now: NOW,
+    seed: SEED,
+  });
+  assert.ok(pairs.length > 0, "expected at least one counterfactual pair");
+  const report = evaluateCounterfactualPairs({
+    jobId: JOB_ID,
+    generatedAt: GENERATED_AT,
+    hypotheses,
+    pairs,
+  });
+  assert.equal(report.pairs.length, pairs.length);
+  // Sort order: pairs[] must be sorted by pairId for byte-stability.
+  const sortedIds = [...report.pairs.map((p) => p.pairId)].sort((l, r) =>
+    l.localeCompare(r),
+  );
+  assert.deepEqual(report.pairs.map((p) => p.pairId), sortedIds);
+  // Per-row shape: every audit row must reference real variant ids and
+  // mirror the pair envelope's causal delta + expected-effect text.
+  for (const audit of report.pairs) {
+    const sourcePair = pairs.find((p) => p.pairId === audit.pairId);
+    assert.ok(sourcePair !== undefined, `audit row ${audit.pairId} has no source pair`);
+    assert.equal(audit.variantAId, sourcePair?.variantA.id);
+    assert.equal(audit.variantBId, sourcePair?.variantB.id);
+    assert.deepEqual(audit.causalDelta, sourcePair?.causalDelta);
+    assert.equal(audit.expectedEffectInvariant, sourcePair?.expectedEffectInvariant);
+    // The framework synthesizes well-formed pairs (distinct cause
+    // values, identical projection text), so satisfied must be true.
+    assert.equal(audit.satisfied, true);
+    assert.equal(audit.hypothesisId, sourcePair?.hypothesisId);
+  }
 });
 
 test("evaluateCounterfactualPairs: counts no-effect violations when valueA == valueB", () => {
