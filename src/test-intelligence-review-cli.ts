@@ -494,7 +494,11 @@ export const runTestIntelligenceReviewDecideCommand = async (
       signatureHex: signature.toString("hex"),
     };
 
-    const persistedItem = await recordHumanReviewVerdict(root, verdict);
+    const persistedItem = await recordHumanReviewVerdict(
+      root,
+      verdict,
+      options.tenant,
+    );
     sink.stdout(
       `${canonicalJson({ recorded: { itemId: persistedItem.itemId, verdict: verdict.verdict, decidedAt: verdict.decidedAt, reviewerPrincipalHash: verdict.reviewerPrincipalHash } })}\n`,
     );
@@ -520,9 +524,10 @@ const readRationale = async (path: string): Promise<string> => {
     }
     throw err;
   }
-  // Strip trailing whitespace so the same Markdown body produces the
-  // same canonical rationale across editors.
-  return raw.replace(/[\s]+$/u, "").trim();
+  // Normalise trailing whitespace only — leading whitespace is
+  // load-bearing in Markdown (indented code blocks, list continuation),
+  // and stripping it would silently change the bytes the reviewer signed.
+  return raw.replace(/[\s]+$/u, "");
 };
 
 const sha256OfKeyPath = (keyPath: string): string => sha256Hex(resolve(keyPath));

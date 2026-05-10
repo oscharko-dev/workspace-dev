@@ -80,6 +80,7 @@ export const fetchItem = async (
 };
 
 export const submitDecision = async (
+  tenant: string,
   verdict: HumanReviewVerdict,
 ): Promise<{ readonly itemId: string }> => {
   const response = await fetchJson<{ recorded: { itemId: string } }>({
@@ -87,7 +88,7 @@ export const submitDecision = async (
     init: {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ verdict }),
+      body: JSON.stringify({ tenant, verdict }),
     },
   });
   if (!response.ok) {
@@ -102,7 +103,11 @@ export const submitDecision = async (
     recorded === null ||
     typeof recorded.itemId !== "string"
   ) {
-    throw new HumanReviewApiError(200, "E_UNEXPECTED", "server response missing recorded.itemId");
+    throw new HumanReviewApiError(
+      response.status,
+      "E_UNEXPECTED",
+      "server response missing recorded.itemId",
+    );
   }
   return { itemId: recorded.itemId };
 };

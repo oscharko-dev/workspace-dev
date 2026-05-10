@@ -137,8 +137,16 @@ export const handleGetItem = async (
   }
 };
 
-/** POST /api/human-review/decisions request body shape. */
+/**
+ * `POST /api/human-review/decisions` request body shape.
+ *
+ * `tenant` is required. The host server should also enforce that the
+ * authenticated principal is authorised to write under this tenant
+ * before delegating; the queue store's signature check proves reviewer
+ * identity but is not a substitute for transport-level authorisation.
+ */
 export interface PostDecisionRequest {
+  readonly tenant: string;
   readonly verdict: HumanReviewVerdict;
 }
 
@@ -146,6 +154,18 @@ export const handlePostDecision = async (
   rootDir: string,
   request: PostDecisionRequest,
 ): Promise<HumanReviewHttpResponse> => {
+  if (
+    typeof request.tenant !== "string" ||
+    request.tenant.length === 0
+  ) {
+    return json(
+      400,
+      errorBody(
+        "E_TENANT_REQUIRED",
+        '"tenant" body field is required for POST /api/human-review/decisions',
+      ),
+    );
+  }
   const candidate = request.verdict as unknown;
   if (typeof candidate !== "object" || candidate === null) {
     return json(
@@ -157,10 +177,15 @@ export const handlePostDecision = async (
     );
   }
   try {
-    const item = await recordHumanReviewVerdict(rootDir, request.verdict);
+    const item = await recordHumanReviewVerdict(
+      rootDir,
+      request.verdict,
+      request.tenant,
+    );
     return json(201, {
       recorded: {
         itemId: item.itemId,
+        tenantId: item.tenantId,
         verdict: request.verdict.verdict,
         decidedAt: request.verdict.decidedAt,
         reviewerPrincipalHash: request.verdict.reviewerPrincipalHash,
@@ -177,7 +202,10 @@ const mapError = (err: unknown): HumanReviewHttpResponse => {
     if (code === "E_QUEUE_ITEM_NOT_FOUND") {
       return json(404, errorBody(code, err.message));
     }
-    if (code === "E_QUEUE_ITEM_ALREADY_EXISTS") {
+    if (
+      code === "E_QUEUE_ITEM_ALREADY_EXISTS" ||
+      code === "E_VERDICT_ALREADY_RECORDED"
+    ) {
       return json(409, errorBody(code, err.message));
     }
     if (

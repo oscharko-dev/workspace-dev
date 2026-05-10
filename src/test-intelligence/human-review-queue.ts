@@ -454,7 +454,16 @@ export interface HumanReviewQueueStore {
   enqueue(item: HumanReviewQueueItem): Promise<void>;
   fetchPending(filter: HumanReviewFilter): Promise<readonly HumanReviewQueueItem[]>;
   getItem(tenantId: string, itemId: string): Promise<HumanReviewQueueItem | undefined>;
-  recordVerdict(verdict: HumanReviewVerdict): Promise<HumanReviewQueueItem>;
+  /**
+   * Persist a signed verdict alongside its queue item. When `tenantId`
+   * is supplied the lookup is constrained to that tenant's partition;
+   * otherwise the store falls back to scanning every tenant directory
+   * (legacy callers that did not yet thread tenant through).
+   */
+  recordVerdict(
+    verdict: HumanReviewVerdict,
+    tenantId?: string,
+  ): Promise<HumanReviewQueueItem>;
   loadRunLog(tenantId: string, runId: string): Promise<HumanReviewLog | undefined>;
   writeRunLog(log: HumanReviewLog): Promise<string>;
   loadVerdictsForRun(
@@ -537,8 +546,16 @@ export const createFilesystemQueueStore = (
     }
     const layout = resolveLayout(rootDir, filter.tenantId);
     const items = await listQueueDir(layout);
-    const pending = items.filter((item) => matchesFilter(item, filter));
-    return pending.sort((a, b) => a.itemId.localeCompare(b.itemId));
+    // "Pending" excludes items that already carry a recorded verdict —
+    // queue entries are immutable on disk for the audit trail, so the
+    // verdict file's presence is the authoritative "decided" signal.
+    const undecided: HumanReviewQueueItem[] = [];
+    for (const item of items) {
+      if (!matchesFilter(item, filter)) continue;
+      if (await exists(verdictPath(layout, item.itemId))) continue;
+      undecided.push(item);
+    }
+    return undecided.sort((a, b) => a.itemId.localeCompare(b.itemId));
   };
 
   const getItem = async (
@@ -649,29 +666,49 @@ export const createFilesystemQueueStore = (
 
   const recordVerdict = async (
     verdict: HumanReviewVerdict,
+    tenantId?: string,
   ): Promise<HumanReviewQueueItem> => {
     assertHumanReviewVerdictInvariants(verdict);
     verifyVerdictSignature(verdict);
-    // Locate the queue item by scanning tenant directories. Only
-    // single-segment values pass `SAFE_PATH_SEGMENT`, so directory names
-    // can never escape the queue root. The scan is O(tenants), invoked
-    // once per decision, and bounded by an explicit safety cap.
-    const tenantNames = (await readdir(rootDir).catch(() => [] as string[]))
-      .filter((name) => SAFE_PATH_SEGMENT.test(name))
-      .sort();
+    // Locate the queue item under the supplied tenant (preferred) or by
+    // scanning every tenant directory as a backwards-compatible fallback.
+    // Only single-segment values pass `SAFE_PATH_SEGMENT`, so directory
+    // names can never escape the queue root.
+    const tenantNames =
+      tenantId !== undefined
+        ? (assertSafeSegment(tenantId, "tenantId"), [tenantId])
+        : (await readdir(rootDir).catch(() => [] as string[]))
+            .filter((name) => SAFE_PATH_SEGMENT.test(name))
+            .sort();
     for (const tenant of tenantNames) {
       const layout = resolveLayout(rootDir, tenant);
       const itemPath = queueItemPath(layout, verdict.itemId);
-      if (await exists(itemPath)) {
-        const item = await readJsonFile<HumanReviewQueueItem>(itemPath);
-        assertHumanReviewQueueItemInvariants(item);
-        await writeAtomicJson(verdictPath(layout, verdict.itemId), verdict);
+      if (!(await exists(itemPath))) continue;
+      const item = await readJsonFile<HumanReviewQueueItem>(itemPath);
+      assertHumanReviewQueueItemInvariants(item);
+      const target = verdictPath(layout, verdict.itemId);
+      // Append-only audit trail: refuse to overwrite an existing
+      // verdict with different bytes. Idempotent re-submission of the
+      // same canonical verdict is accepted (network retries, manual
+      // re-runs of `ti review decide` with the same inputs).
+      if (await exists(target)) {
+        const existing = await readJsonFile<HumanReviewVerdict>(target);
+        if (canonicalJson(existing) !== canonicalJson(verdict)) {
+          fail(
+            "E_VERDICT_ALREADY_RECORDED",
+            `verdict for item "${verdict.itemId}" is already recorded; verdicts are append-only`,
+          );
+        }
         return item;
       }
+      await writeAtomicJson(target, verdict);
+      return item;
     }
     fail(
       "E_QUEUE_ITEM_NOT_FOUND",
-      `queue item "${verdict.itemId}" not found in any tenant under root "${rootDir}"`,
+      tenantId !== undefined
+        ? `queue item "${verdict.itemId}" not found for tenant "${tenantId}"`
+        : `queue item "${verdict.itemId}" not found in any tenant under root "${rootDir}"`,
     );
     /* istanbul ignore next — fail throws */
     throw new Error("unreachable");
@@ -709,8 +746,9 @@ export const fetchPendingReviews = (
 export const recordHumanReviewVerdict = (
   rootDir: string,
   verdict: HumanReviewVerdict,
+  tenantId?: string,
 ): Promise<HumanReviewQueueItem> =>
-  createFilesystemQueueStore({ rootDir }).recordVerdict(verdict);
+  createFilesystemQueueStore({ rootDir }).recordVerdict(verdict, tenantId);
 
 export const getHumanReviewQueueItem = (
   rootDir: string,

@@ -226,7 +226,10 @@ export const HumanReviewPage = (): JSX.Element => {
         return;
       }
       try {
-        const recorded = await submitDecision(parsed as HumanReviewVerdict);
+        const recorded = await submitDecision(
+          tenant,
+          parsed as HumanReviewVerdict,
+        );
         setSubmitState({ kind: "ok", itemId: recorded.itemId });
         setVerdictPaste("");
         setRefreshTick((t) => t + 1);
@@ -244,7 +247,7 @@ export const HumanReviewPage = (): JSX.Element => {
         }
       }
     },
-    [verdictPaste],
+    [tenant, verdictPaste],
   );
 
   return (
@@ -333,25 +336,44 @@ export const HumanReviewPage = (): JSX.Element => {
               </td>
             </tr>
           ) : (
-            items.map((item) => (
-              <tr
-                key={item.itemId}
-                style={
-                  item.itemId === selectedItemId ? styles["rowActive"] : undefined
-                }
-                onClick={() => setSelectedItemId(item.itemId)}
-              >
-                <td style={styles["monoCell"]}>{item.itemId.slice(0, 12)}…</td>
-                <td style={styles["monoCell"]}>{item.runId}</td>
-                <td style={styles["monoCell"]}>{item.testCaseId}</td>
-                <td style={styles["td"]}>
-                  {item.judgeDisagreement.decision} ·{" "}
-                  {(item.judgeDisagreement.disagreementRate * 100).toFixed(0)}%
-                </td>
-                <td style={styles["td"]}>{item.proposedDecision}</td>
-                <td style={styles["monoCell"]}>{item.slaDeadlineAt}</td>
-              </tr>
-            ))
+            items.map((item) => {
+              const isSelected = item.itemId === selectedItemId;
+              const select = () => setSelectedItemId(item.itemId);
+              return (
+                <tr
+                  key={item.itemId}
+                  style={isSelected ? styles["rowActive"] : undefined}
+                  aria-selected={isSelected}
+                >
+                  <td style={styles["monoCell"]}>
+                    <button
+                      type="button"
+                      onClick={select}
+                      aria-pressed={isSelected}
+                      style={{
+                        background: "transparent",
+                        border: 0,
+                        padding: 0,
+                        font: "inherit",
+                        color: "#0645ad",
+                        cursor: "pointer",
+                        textDecoration: "underline",
+                      }}
+                    >
+                      {item.itemId.slice(0, 12)}…
+                    </button>
+                  </td>
+                  <td style={styles["monoCell"]}>{item.runId}</td>
+                  <td style={styles["monoCell"]}>{item.testCaseId}</td>
+                  <td style={styles["td"]}>
+                    {item.judgeDisagreement.decision} ·{" "}
+                    {(item.judgeDisagreement.disagreementRate * 100).toFixed(0)}%
+                  </td>
+                  <td style={styles["td"]}>{item.proposedDecision}</td>
+                  <td style={styles["monoCell"]}>{item.slaDeadlineAt}</td>
+                </tr>
+              );
+            })
           )}
         </tbody>
       </table>

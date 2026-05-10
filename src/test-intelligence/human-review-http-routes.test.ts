@@ -156,7 +156,7 @@ test("POST /decisions accepts a valid signed verdict and refuses tampered ones",
     await enqueueHumanReview(root, item);
 
     const verdict = signedVerdict(item.itemId, km);
-    const ok = await handlePostDecision(root, { verdict });
+    const ok = await handlePostDecision(root, { tenant: "acme", verdict });
     assert.equal(ok.status, 201);
     const okBody = JSON.parse(ok.body) as {
       recorded: { itemId: string; verdict: string };
@@ -165,17 +165,70 @@ test("POST /decisions accepts a valid signed verdict and refuses tampered ones",
     assert.equal(okBody.recorded.verdict, "approved");
 
     const tampered = { ...verdict, rationale: "tampered" };
-    const bad = await handlePostDecision(root, { verdict: tampered });
+    const bad = await handlePostDecision(root, { tenant: "acme", verdict: tampered });
     // Verdict body changed → signature no longer verifies → 403.
     assert.equal(bad.status, 403);
   });
 });
 
+test("POST /decisions refuses non-identical re-submission for the same item (append-only)", async () => {
+  await withTempRoot(async (root) => {
+    const km = generateEd25519();
+    const item = buildItem();
+    await enqueueHumanReview(root, item);
+
+    const v1 = signedVerdict(item.itemId, km);
+    const ok1 = await handlePostDecision(root, { tenant: "acme", verdict: v1 });
+    assert.equal(ok1.status, 201);
+
+    // Same canonical bytes — idempotent re-submit accepted.
+    const ok2 = await handlePostDecision(root, { tenant: "acme", verdict: v1 });
+    assert.equal(ok2.status, 201);
+
+    // Different verdict for the same item — refused with 409.
+    const v2 = signedVerdict(item.itemId, km, { verdict: "rejected" });
+    const conflict = await handlePostDecision(root, { tenant: "acme", verdict: v2 });
+    assert.equal(conflict.status, 409);
+  });
+});
+
 test("POST /decisions rejects malformed bodies with 400", async () => {
   await withTempRoot(async (root) => {
+    const noTenant = await handlePostDecision(root, {
+      tenant: "",
+      verdict: {} as HumanReviewVerdict,
+    });
+    assert.equal(noTenant.status, 400);
     const noBody = await handlePostDecision(root, {
+      tenant: "acme",
       verdict: undefined as unknown as HumanReviewVerdict,
     });
     assert.equal(noBody.status, 400);
+  });
+});
+
+test("fetchPending excludes items that already have a recorded verdict", async () => {
+  await withTempRoot(async (root) => {
+    const km = generateEd25519();
+    const item = buildItem();
+    await enqueueHumanReview(root, item);
+    // Before the verdict, the item is in the pending list.
+    const before = await handleListQueue(root, { tenant: "acme" });
+    const beforeBody = JSON.parse(before.body) as {
+      items: HumanReviewQueueItem[];
+    };
+    assert.equal(beforeBody.items.length, 1);
+
+    // Record the verdict.
+    const verdict = signedVerdict(item.itemId, km);
+    const ok = await handlePostDecision(root, { tenant: "acme", verdict });
+    assert.equal(ok.status, 201);
+
+    // After the verdict, the item is gone from pending.
+    const after = await handleListQueue(root, { tenant: "acme" });
+    const afterBody = JSON.parse(after.body) as {
+      items: HumanReviewQueueItem[];
+    };
+    assert.equal(afterBody.items.length, 0);
   });
 });
