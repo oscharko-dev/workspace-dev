@@ -7,6 +7,7 @@ import test from "node:test";
 import type { FinOpsBudgetReport } from "../contracts/index.js";
 import {
   appendFinOpsTimeSeriesRecord,
+  appendFinOpsTimeSeriesRecordOnDisk,
   buildFinOpsTimeSeriesRecord,
   createFinOpsSloFileAlertSink,
   defaultFinOpsTimeSeriesStorePath,
@@ -17,6 +18,7 @@ import {
   publishFinOpsSloAlerts,
   writeFinOpsSloReport,
   writeFinOpsTimeSeriesStore,
+  resolveFinOpsFixtureId,
 } from "./finops-slo.js";
 
 const GENERATED_AT = "2026-05-10T12:00:00.000Z";
@@ -113,6 +115,10 @@ test("buildFinOpsTimeSeriesRecord groups generator, judge, and visual tokens", (
   assert.equal(record.roles.judge.tokens, 4500);
   assert.equal(record.roles.visual_sidecar.tokens, 800);
   assert.equal(record.fixtureId, "baseline-simple-form");
+});
+
+test("resolveFinOpsFixtureId namespaces runner file keys for latency tracking", () => {
+  assert.equal(resolveFinOpsFixtureId({ fileKey: "ABC" }), "figma:ABC");
 });
 
 test("appendFinOpsTimeSeriesRecord deduplicates by jobId and retains only recent records", () => {
@@ -276,6 +282,42 @@ test("time-series store and SLO report persist canonically and alerts reuse the 
     assert.match(onDisk, /"violations":/u);
     const alerts = await readFile(alertPath ?? "", "utf8");
     assert.match(alerts, /"alerts":/u);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("appendFinOpsTimeSeriesRecordOnDisk preserves concurrent writers", async () => {
+  const root = await mkdtemp(join(tmpdir(), "finops-slo-concurrency-"));
+  try {
+    const storePath = defaultFinOpsTimeSeriesStorePath(root);
+    const firstReport = baseReport();
+    const secondReport = {
+      ...baseReport(),
+      jobId: "job-2",
+      generatedAt: "2026-05-10T12:00:01.000Z",
+    };
+    await Promise.all([
+      appendFinOpsTimeSeriesRecordOnDisk({
+        storePath,
+        record: buildFinOpsTimeSeriesRecord({
+          report: firstReport,
+          fixtureId: "baseline-simple-form",
+        }),
+      }),
+      appendFinOpsTimeSeriesRecordOnDisk({
+        storePath,
+        record: buildFinOpsTimeSeriesRecord({
+          report: secondReport,
+          fixtureId: "baseline-calculation",
+        }),
+      }),
+    ]);
+    const loaded = await loadFinOpsTimeSeriesStore(storePath);
+    assert.deepEqual(
+      loaded.records.map((record) => record.jobId).sort(),
+      ["job-1", "job-2"],
+    );
   } finally {
     await rm(root, { recursive: true, force: true });
   }

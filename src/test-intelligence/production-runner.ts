@@ -166,11 +166,10 @@ import {
   writeFinOpsBudgetReport,
 } from "./finops-report.js";
 import {
-  appendFinOpsTimeSeriesRecord,
+  appendFinOpsTimeSeriesRecordOnDisk,
   buildFinOpsTimeSeriesRecord,
   defaultFinOpsTimeSeriesStorePath,
-  loadFinOpsTimeSeriesStore,
-  writeFinOpsTimeSeriesStore,
+  resolveFinOpsFixtureId,
 } from "./finops-slo.js";
 import { computePerSourceCostBreakdownHashFromReport } from "./per-source-cost.js";
 import {
@@ -713,9 +712,6 @@ const buildActiveModelBindings = (input: {
     pushBinding(input.coveragePlanner);
   }
   if (input.bundle !== undefined) {
-    if (input.bundle.testGenerationSecondary !== undefined) {
-      pushBinding(input.bundle.testGenerationSecondary);
-    }
     pushBinding(input.bundle.visualPrimary);
     pushBinding(input.bundle.visualFallback);
     if (input.bundle.a11yJudge !== undefined) {
@@ -3081,7 +3077,6 @@ export const runFigmaToQcTestCases = async (
   const logicJudgeEnabled = input.logicJudge?.enabled !== false;
   const logicJudgeClient: LlmGatewayClient =
     input.llm.bundle?.logicJudge ?? input.llm.logicJudge ?? input.llm.client;
-  const crossFamilyGeneratorClient = input.llm.bundle?.testGenerationSecondary;
   const adversarialCriticEnabled =
     logicJudgeEnabled &&
     (input.llm.bundle?.logicJudge !== undefined ||
@@ -4912,14 +4907,13 @@ export const runFigmaToQcTestCases = async (
   const finopsTimeSeriesStorePath = defaultFinOpsTimeSeriesStorePath(
     input.outputRoot,
   );
-  const finopsTimeSeriesStore = appendFinOpsTimeSeriesRecord({
-    store: await loadFinOpsTimeSeriesStore(finopsTimeSeriesStorePath),
-    record: buildFinOpsTimeSeriesRecord({ report: finopsReport }),
-    retentionDays: 30,
-  });
-  await writeFinOpsTimeSeriesStore({
-    store: finopsTimeSeriesStore,
+  await appendFinOpsTimeSeriesRecordOnDisk({
     storePath: finopsTimeSeriesStorePath,
+    record: buildFinOpsTimeSeriesRecord({
+      report: finopsReport,
+      fixtureId: resolveFinOpsFixtureId({ fileKey: figmaFile.fileKey }),
+    }),
+    retentionDays: 30,
   });
   const agentParticipationArtifact = buildAgentParticipationArtifact({
     jobId: input.jobId,
@@ -7956,9 +7950,6 @@ interface GenerationPassConfig {
   readonly diversityBias?: string;
   readonly identitySalt?: string;
 }
-
-const CROSS_FAMILY_ARBITRATION_ROLE_RUN_ID =
-  "generator-run-cross-family-arbiter" as const;
 
 const resolveDiversityPassCount = (
   input: {

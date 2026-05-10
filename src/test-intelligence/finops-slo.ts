@@ -14,7 +14,7 @@
  */
 
 import { randomUUID } from "node:crypto";
-import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 
 import { canonicalJson } from "./content-hash.js";
@@ -36,6 +36,9 @@ export const FINOPS_SLO_REPORT_ARTIFACT_FILENAME =
   "finops-slo-report.json" as const;
 export const FINOPS_SLO_ALERT_SET_ID = "finops-slo-v1" as const;
 export const FINOPS_SLO_DEFAULT_HISTORY_RETENTION_DAYS = 30 as const;
+const FINOPS_TIME_SERIES_STORE_LOCK_SUFFIX = ".lock" as const;
+const FINOPS_TIME_SERIES_STORE_LOCK_RETRY_ATTEMPTS = 50 as const;
+const FINOPS_TIME_SERIES_STORE_LOCK_RETRY_DELAY_MS = 10 as const;
 
 export const FINOPS_SLO_ROLES = [
   "generator",
@@ -181,6 +184,11 @@ const parseIsoMillis = (value: string): number => {
   return parsed;
 };
 
+const sleep = async (ms: number): Promise<void> =>
+  new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
+
 const emptyStore = (): FinOpsTimeSeriesStore => ({
   schemaVersion: FINOPS_TIME_SERIES_STORE_SCHEMA_VERSION,
   records: [],
@@ -212,6 +220,9 @@ export const buildFinOpsTimeSeriesRecord = (input: {
     }),
   }),
 });
+
+export const resolveFinOpsFixtureId = (input: { fileKey: string }): string =>
+  `figma:${input.fileKey}`;
 
 export const appendFinOpsTimeSeriesRecord = (input: {
   store: FinOpsTimeSeriesStore;
@@ -285,6 +296,61 @@ export const writeFinOpsTimeSeriesStore = async (input: {
   await writeFile(tmpPath, serialized, "utf8");
   await rename(tmpPath, input.storePath);
   return input.storePath;
+};
+
+const acquireFinOpsTimeSeriesStoreLock = async (
+  storePath: string,
+): Promise<(() => Promise<void>)> => {
+  const lockPath = `${storePath}${FINOPS_TIME_SERIES_STORE_LOCK_SUFFIX}`;
+  await mkdir(dirname(storePath), { recursive: true });
+  for (
+    let attempt = 0;
+    attempt < FINOPS_TIME_SERIES_STORE_LOCK_RETRY_ATTEMPTS;
+    attempt += 1
+  ) {
+    try {
+      await mkdir(lockPath);
+      return async () => {
+        await rm(lockPath, { recursive: true, force: true });
+      };
+    } catch (error) {
+      if (
+        typeof error === "object" &&
+        error !== null &&
+        "code" in error &&
+        (error as { code?: string }).code === "EEXIST"
+      ) {
+        await sleep(FINOPS_TIME_SERIES_STORE_LOCK_RETRY_DELAY_MS);
+        continue;
+      }
+      throw error;
+    }
+  }
+  throw new Error(
+    `finops-slo: timed out acquiring store lock for ${storePath}`,
+  );
+};
+
+export const appendFinOpsTimeSeriesRecordOnDisk = async (input: {
+  storePath: string;
+  record: FinOpsTimeSeriesRecord;
+  retentionDays?: number;
+}): Promise<FinOpsTimeSeriesStore> => {
+  const release = await acquireFinOpsTimeSeriesStoreLock(input.storePath);
+  try {
+    const nextStore = appendFinOpsTimeSeriesRecord({
+      store: await loadFinOpsTimeSeriesStore(input.storePath),
+      record: input.record,
+      retentionDays: input.retentionDays,
+    });
+    await writeFinOpsTimeSeriesStore({
+      store: nextStore,
+      storePath: input.storePath,
+    });
+    return nextStore;
+  } finally {
+    await release();
+  }
 };
 
 export const defaultFinOpsTimeSeriesStorePath = (outputRoot: string): string =>

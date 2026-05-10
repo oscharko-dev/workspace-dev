@@ -496,6 +496,7 @@ test("runFigmaToQcTestCases happy path persists artifacts and renders customer M
     );
     assert.match(finopsTimeSeriesStore, /"records":/u);
     assert.match(finopsTimeSeriesStore, /"jobId":"job-123"/u);
+    assert.match(finopsTimeSeriesStore, /"fixtureId":"figma:ABC"/u);
     assert.equal(
       result.runQuality.artifactPath,
       result.artifactPaths.runQuality,
