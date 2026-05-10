@@ -49,6 +49,17 @@ export interface RenderCustomerMarkdownInput {
   complianceCoverage?: ComplianceCoverageReport;
   /** Optional workflow topology for field-lifecycle step rendering. */
   workflowTopology?: WorkflowTopology;
+  /**
+   * Issue #2170 — optional set of test-case ids whose cross-modal
+   * faithfulness verdict population is majority `evidence_partial`.
+   * When supplied, each matching case gets a short partial-evidence
+   * footer note so reviewers see which cases need a manual evidence
+   * confirmation pass. Sourced from
+   * {@link FaithfulnessTierReport.partialMajorityCaseIds}; the
+   * companion policy gate raises a warning-severity case-level
+   * violation, so the case still ships.
+   */
+  faithfulnessPartialMajorityCaseIds?: ReadonlySet<string>;
 }
 
 export interface RenderedCustomerMarkdown {
@@ -158,6 +169,8 @@ export const renderCustomerMarkdown = (
   const fieldLifecycleTransitions = buildFieldLifecycleTransitionLookup(
     input.workflowTopology,
   );
+  const partialMajorityCaseIds =
+    input.faithfulnessPartialMajorityCaseIds ?? EMPTY_PARTIAL_MAJORITY_SET;
   const perCaseFiles = preparedCases.map((entry) => ({
     filename: entry.filename,
     body: renderSingleCase(
@@ -166,6 +179,7 @@ export const renderCustomerMarkdown = (
       suiteClarifications.byCaseId.get(entry.tc.id) ?? [],
       fieldLifecycleTransitions,
       showConfidence,
+      partialMajorityCaseIds.has(entry.tc.id),
     ),
   }));
   const combinedMarkdown = renderCombined(
@@ -176,9 +190,12 @@ export const renderCustomerMarkdown = (
     suiteClarifications,
     fieldLifecycleTransitions,
     showConfidence,
+    partialMajorityCaseIds,
   );
   return { combinedMarkdown, perCaseFiles };
 };
+
+const EMPTY_PARTIAL_MAJORITY_SET: ReadonlySet<string> = new Set<string>();
 
 export const extractAcceptanceCriteriaFromMarkdown = (
   markdown: string,
@@ -228,6 +245,7 @@ const renderCombined = (
   suiteClarifications: SuiteClarificationRegistry,
   fieldLifecycleTransitions: ReadonlyMap<string, WorkflowFieldLifecycleTransition>,
   showConfidence: boolean,
+  partialMajorityCaseIds: ReadonlySet<string>,
 ): string => {
   const lines: string[] = [];
   lines.push(`# Testfälle: ${renderMarkdownText(input.fileName, mode)}`);
@@ -293,6 +311,7 @@ const renderCombined = (
         suiteClarifications.byCaseId.get(entry.tc.id) ?? [],
         fieldLifecycleTransitions,
         showConfidence,
+        partialMajorityCaseIds.has(entry.tc.id),
       ),
     );
     if (i < preparedCases.length - 1) {
@@ -310,6 +329,7 @@ const renderSingleCase = (
   customerClarifications: readonly ClarificationReference[],
   fieldLifecycleTransitions: ReadonlyMap<string, WorkflowFieldLifecycleTransition>,
   showConfidence: boolean,
+  hasPartialEvidenceMajority: boolean,
 ): string => {
   const { tc } = entry;
   const lines: string[] = [];
@@ -449,6 +469,12 @@ const renderSingleCase = (
         lines.push(`- ${ref}`);
       }
     }
+  }
+  if (hasPartialEvidenceMajority) {
+    if (lines[lines.length - 1] !== "") lines.push("");
+    lines.push(
+      "> _Hinweis (Cross-Modal-Faithfulness): Mehrheit der Schritte mit partieller visueller Evidenz — bitte Reviewer-Bestätigung der Schrittbeschreibungen vor Freigabe._",
+    );
   }
   return lines.join("\n");
 };

@@ -294,6 +294,143 @@ test("buildFaithfulnessTierReport unblocks K0-shape: five label-only evidence_pa
   assert.equal(report.aggregatePasses, true);
 });
 
+test("Issue #2170: classifyFaithfulnessStepTier promotes label-only steps of a state_transition case to the state_transition tier", () => {
+  const tier = classifyFaithfulnessStepTier(
+    { index: 1, action: "Move to confirmation step" },
+    "state_transition",
+  );
+  assert.equal(tier.tier, "state_transition");
+  assert.match(tier.tierReason, /state_transition technique/u);
+});
+
+test("Issue #2170: classifyFaithfulnessStepTier keeps concrete-data steps strict even on a state_transition case", () => {
+  const tier = classifyFaithfulnessStepTier(
+    { index: 1, action: "Enter amount", data: "250" },
+    "state_transition",
+  );
+  assert.equal(tier.tier, "concrete_data");
+});
+
+test("Issue #2170: state_transition tier accepts evidence_partial at the 0.65 floor", () => {
+  assert.equal(stepPassesTierThreshold("state_transition", "match"), true);
+  assert.equal(
+    stepPassesTierThreshold("state_transition", "evidence_partial"),
+    true,
+    "evidence_partial (0.85) clears the state_transition 0.65 floor",
+  );
+  assert.equal(
+    stepPassesTierThreshold("state_transition", "mismatch"),
+    false,
+  );
+});
+
+test("Issue #2170: label_only evidence_partial threshold tightens to 0.85", () => {
+  // The verdict score for evidence_partial is 0.85 — exactly at the
+  // tightened threshold, so it still passes.
+  assert.equal(
+    stepPassesTierThreshold("label_only", "evidence_partial"),
+    true,
+  );
+});
+
+test("Issue #2170: tier report flags partial-majority cases at >= 60 % evidence_partial", () => {
+  const list = buildList([
+    buildCase({
+      id: "tc-majority",
+      steps: [
+        { index: 1, action: "Open the form" },
+        { index: 2, action: "See the welcome heading" },
+        { index: 3, action: "See the disclosure copy" },
+        { index: 4, action: "Submit the form", expected: "Receipt rendered" },
+      ],
+    }),
+    buildCase({
+      id: "tc-minority",
+      steps: [
+        { index: 1, action: "Open the dashboard" },
+        { index: 2, action: "See the balance heading" },
+      ],
+    }),
+  ]);
+  const verdict = buildVerdict({
+    stepVerdicts: [
+      // tc-majority: 3/4 evidence_partial = 75 % → flagged.
+      { testCaseId: "tc-majority", stepIndex: 1, verdict: "evidence_partial", message: "label visible" },
+      { testCaseId: "tc-majority", stepIndex: 2, verdict: "evidence_partial", message: "heading visible" },
+      { testCaseId: "tc-majority", stepIndex: 3, verdict: "evidence_partial", message: "disclosure visible" },
+      { testCaseId: "tc-majority", stepIndex: 4, verdict: "match", message: "receipt visible" },
+      // tc-minority: 1/2 evidence_partial = 50 % → NOT flagged.
+      { testCaseId: "tc-minority", stepIndex: 1, verdict: "match", message: "dashboard rendered" },
+      { testCaseId: "tc-minority", stepIndex: 2, verdict: "evidence_partial", message: "heading visible" },
+    ],
+  });
+  const report = buildFaithfulnessTierReport({
+    generatedAt: GENERATED_AT,
+    jobId: "job-1",
+    verdict,
+    list,
+  });
+  assert.deepEqual(report.partialMajorityCaseIds, ["tc-majority"]);
+});
+
+test("Issue #2170: tier report partialMajorityCaseIds is sorted ascending by id", () => {
+  const list = buildList([
+    buildCase({
+      id: "tc-zeta",
+      steps: [{ index: 1, action: "Open zeta" }],
+    }),
+    buildCase({
+      id: "tc-alpha",
+      steps: [{ index: 1, action: "Open alpha" }],
+    }),
+  ]);
+  const verdict = buildVerdict({
+    stepVerdicts: [
+      { testCaseId: "tc-zeta", stepIndex: 1, verdict: "evidence_partial", message: "z" },
+      { testCaseId: "tc-alpha", stepIndex: 1, verdict: "evidence_partial", message: "a" },
+    ],
+  });
+  const report = buildFaithfulnessTierReport({
+    generatedAt: GENERATED_AT,
+    jobId: "job-1",
+    verdict,
+    list,
+  });
+  assert.deepEqual(report.partialMajorityCaseIds, ["tc-alpha", "tc-zeta"]);
+});
+
+test("Issue #2170: state_transition case with evidence_partial steps still clears the 0.80 aggregate floor", () => {
+  const list = buildList([
+    buildCase({
+      id: "tc-workflow",
+      technique: "state_transition",
+      steps: [
+        { index: 1, action: "Begin enrolment workflow" },
+        { index: 2, action: "Move to KYC step" },
+        { index: 3, action: "Complete enrolment" },
+      ],
+    }),
+  ]);
+  const verdict = buildVerdict({
+    stepVerdicts: [
+      { testCaseId: "tc-workflow", stepIndex: 1, verdict: "evidence_partial", message: "intermediate frame" },
+      { testCaseId: "tc-workflow", stepIndex: 2, verdict: "evidence_partial", message: "intermediate frame" },
+      { testCaseId: "tc-workflow", stepIndex: 3, verdict: "match", message: "final frame visible" },
+    ],
+  });
+  const report = buildFaithfulnessTierReport({
+    generatedAt: GENERATED_AT,
+    jobId: "job-1",
+    verdict,
+    list,
+  });
+  assert.equal(report.aggregatePasses, true);
+  for (const entry of report.entries) {
+    assert.equal(entry.tier, "state_transition");
+    assert.equal(entry.passesThreshold, true);
+  }
+});
+
 test("Issue #2116: persisted tier report carries evaluationMode='per_step'", () => {
   const list = buildList([
     buildCase({

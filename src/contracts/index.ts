@@ -162,7 +162,7 @@ export interface TestIntelligenceTransferPrincipal {
 }
 
 /** Contract version for the opt-in test-intelligence surface. */
-export const TEST_INTELLIGENCE_CONTRACT_VERSION = "1.23.0" as const;
+export const TEST_INTELLIGENCE_CONTRACT_VERSION = "1.24.0" as const;
 
 /**
  * Schema version for generated test case payloads.
@@ -1086,6 +1086,7 @@ export const ALLOWED_TEST_CASE_POLICY_OUTCOMES = [
   "cross_modal_faithfulness_evaluation_missing",
   "cross_modal_faithfulness_score_below_threshold",
   "cross_modal_faithfulness_case_level_fallback",
+  "cross_modal_faithfulness_partial_majority",
   "judge_refused",
   "risk_tag_downgrade_detected",
   "custom_context_risk_escalation",
@@ -4961,9 +4962,15 @@ export const FAITHFULNESS_VERDICT_SCHEMA_VERSION = "1.1.0" as const;
  *
  * `faithfulness-judge.v2` — Issue #2066: prompt rubric distinguishes
  * `match` / `evidence_partial` / `mismatch` per step so partial-evidence
- * signals are no longer collapsed into mismatches. */
+ * signals are no longer collapsed into mismatches.
+ *
+ * `faithfulness-judge.v3` — Issue #2170: prompt rubric explicitly calls out
+ * the state-transition tier (steps belonging to a `state_transition`
+ * technique case) so the judge prefers `evidence_partial` over `mismatch`
+ * when the workflow transition is intermediate (e.g. only the in-flight
+ * frame is captured). The verdict-emission contract is unchanged. */
 export const FAITHFULNESS_JUDGE_PROMPT_TEMPLATE_VERSION =
-  "faithfulness-judge.v2" as const;
+  "faithfulness-judge.v3" as const;
 
 /** Canonical filename for the persisted faithfulness-judge prompt artifact. */
 export const FAITHFULNESS_JUDGE_COMPILED_PROMPT_ARTIFACT_FILENAME =
@@ -5064,8 +5071,13 @@ export interface FaithfulnessVerdict {
   readonly refusal?: FaithfulnessVerdictRefusal;
 }
 
-/** Schema version for persisted faithfulness-tier-report artifacts. */
-export const FAITHFULNESS_TIER_REPORT_SCHEMA_VERSION = "1.0.0" as const;
+/** Schema version for persisted faithfulness-tier-report artifacts.
+ *
+ * 1.1.0 — Issue #2170: additive `state_transition` tier label, additive
+ * `partialMajorityCaseIds` summary, and richer per-entry `tierReason`. The
+ * shape of pre-existing fields is unchanged — readers built against 1.0.0
+ * continue to load 1.1.0 reports unchanged. */
+export const FAITHFULNESS_TIER_REPORT_SCHEMA_VERSION = "1.1.0" as const;
 
 /** Canonical filename for the per-run faithfulness-tier-report artifact
  * (Issue #2066). */
@@ -5074,17 +5086,25 @@ export const FAITHFULNESS_TIER_REPORT_ARTIFACT_FILENAME =
 
 /** Closed runtime list of step-level faithfulness tiers.
  *
- *   - `concrete_data` — the step carries observable input or expected data
- *                       (numeric value, message text, identifier). Threshold
- *                       defaults to the strict `0.80` cross-modal floor.
- *   - `label_only`    — the step asserts label-only or layout-only intent
- *                       (e.g. "open the form", "see the heading"). Partial
- *                       visual evidence is sufficient (`evidence_partial`
- *                       passes at `>= 0.80`); strict matches are only
- *                       required when the score is `>= 0.95`. */
+ *   - `concrete_data`     — the step carries observable input or expected
+ *                           data (numeric value, message text, identifier).
+ *                           Strictness: `match >= 0.95`,
+ *                           `evidence_partial >= 0.80`, `mismatch < 0.80`.
+ *   - `label_only`        — the step asserts label-only or layout-only intent
+ *                           (e.g. "open the form", "see the heading").
+ *                           Strictness: `match >= 0.95`,
+ *                           `evidence_partial >= 0.85`, `mismatch < 0.85`.
+ *   - `state_transition`  — the step belongs to a `technique === "state_transition"`
+ *                           test case AND has no concrete-data assertions
+ *                           (Issue #2170). The cross-family judge can rarely
+ *                           verify the full intermediate frame of a workflow
+ *                           transition from a single capture, so the tier
+ *                           is the most permissive: `match >= 0.95`,
+ *                           `evidence_partial >= 0.65`, `mismatch < 0.65`. */
 export const FAITHFULNESS_TIER_LABELS = [
   "concrete_data",
   "label_only",
+  "state_transition",
 ] as const;
 
 /** Discriminant of a step-level faithfulness tier. */
@@ -5168,7 +5188,21 @@ export interface FaithfulnessTierReport {
   readonly evaluationMode: FaithfulnessEvaluationMode;
   /** Per-step records, sorted by `(testCaseId, stepIndex)`. */
   readonly entries: readonly FaithfulnessTierReportEntry[];
+  /**
+   * Issue #2170 — case ids whose `evidence_partial` step verdicts make up
+   * `>= 60 %` of the case's verdict population. The companion policy gate
+   * raises a per-case `policy:cross-modal-faithfulness-partial-majority`
+   * warning (NOT error) for these ids so the case still ships while
+   * reviewers see the partial-evidence majority. Sorted ascending; empty
+   * when no case crosses the threshold. */
+  readonly partialMajorityCaseIds: readonly string[];
 }
+
+/** Issue #2170 — minimum fraction of step verdicts on a case that must be
+ * `evidence_partial` for the case to be flagged with the partial-majority
+ * warning. Encoded as a constant so the tier report and the policy gate
+ * agree on the threshold. */
+export const FAITHFULNESS_PARTIAL_MAJORITY_FRACTION = 0.6 as const;
 
 /** Schema version for persisted multimodal accessibility-judge verdicts. */
 export const A11Y_VERDICT_SCHEMA_VERSION = "1.0.0" as const;

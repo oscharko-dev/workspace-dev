@@ -39,6 +39,9 @@ const SYSTEM_PROMPT = [
   "`evidence_partial` when the step's label is consistent with the screenshot but the description",
   "or data cannot be fully verified from the visible capture (do NOT flag as a mismatch in this case),",
   "and `mismatch` only when the screenshot positively contradicts the step.",
+  "For workflow / state-transition cases (`technique == \"state_transition\"`), prefer `evidence_partial`",
+  "over `mismatch` when the screenshot only captures one frame of the transition (intermediate state,",
+  "before/after frame missing) — partial workflow evidence is expected for transitions.",
   "Return only JSON matching the supplied schema.",
 ].join(" ");
 
