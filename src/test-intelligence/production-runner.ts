@@ -411,6 +411,16 @@ export const PROMPT_MAX_NAVIGATION_PER_SCREEN = 30 as const;
 export const MAX_FIGMA_PAYLOAD_BYTES: number = 10 * 1024 * 1024;
 
 /**
+ * Hard ceiling for the {@link maxFigmaPayloadBytes} override (Issue #2172).
+ * Operator-supplied caps above this value are rejected at both the CLI parse
+ * site and the programmatic `resolveFigmaPayloadCap` validator (defense in
+ * depth) to bound peak heap pressure when ingesting tier-1 banking masks.
+ * Streaming larger payloads is tracked as a follow-up; until then 64 MiB is
+ * the audited safe ceiling.
+ */
+export const MAX_FIGMA_PAYLOAD_BYTES_CEILING: number = 64 * 1024 * 1024;
+
+/**
  * Stable failure-class enum surfaced to callers (request handler maps
  * each value to an HTTP status + error envelope).
  */
@@ -2356,7 +2366,10 @@ export const runFigmaToQcTestCases = async (
   });
   const figmaPayloadCap = resolveFigmaPayloadCap(input.maxFigmaPayloadBytes);
   const figmaFile = await resolveFigmaSource(input.source, figmaPayloadCap);
-  assertFigmaPayloadWithinLimit(figmaFile, figmaPayloadCap);
+  const figmaPayloadActualBytes = assertFigmaPayloadWithinLimit(
+    figmaFile,
+    figmaPayloadCap,
+  );
   await mkdir(artifactDir, { recursive: true });
   const normalizedUntrusted = normalizeUntrustedContent({
     figma: { document: figmaFile.document },
@@ -5001,6 +5014,13 @@ export const runFigmaToQcTestCases = async (
     resolvedBudget: {
       testGenerationWallClock: resolvedWallClockBudget,
     },
+    figmaPayload: {
+      resolvedCapBytes: figmaPayloadCap,
+      actualBytes: figmaPayloadActualBytes,
+      defaultCapBytes: MAX_FIGMA_PAYLOAD_BYTES,
+      ceilingBytes: MAX_FIGMA_PAYLOAD_BYTES_CEILING,
+      overrideApplied: input.maxFigmaPayloadBytes !== undefined,
+    },
     ...(finopsOutcomeOverride !== undefined
       ? { outcomeOverride: finopsOutcomeOverride }
       : {}),
@@ -6204,6 +6224,13 @@ const resolveFigmaPayloadCap = (override: number | undefined): number => {
       retryable: false,
     });
   }
+  if (override > MAX_FIGMA_PAYLOAD_BYTES_CEILING) {
+    throw new ProductionRunnerError({
+      failureClass: "FIGMA_URL_REJECTED",
+      message: `maxFigmaPayloadBytes ${override} exceeds the security hard ceiling of ${MAX_FIGMA_PAYLOAD_BYTES_CEILING} bytes (64 MiB).`,
+      retryable: false,
+    });
+  }
   return override;
 };
 
@@ -6267,10 +6294,10 @@ const resolveFigmaSource = async (
 const assertFigmaPayloadWithinLimit = (
   file: FigmaRestFileSnapshot,
   maxPayloadBytes: number,
-): void => {
+): number => {
   const payloadBytes = Buffer.byteLength(JSON.stringify(file), "utf8");
   if (payloadBytes <= maxPayloadBytes) {
-    return;
+    return payloadBytes;
   }
   throw new ProductionRunnerError({
     failureClass: "FIGMA_PAYLOAD_TOO_LARGE",

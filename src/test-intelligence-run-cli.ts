@@ -60,6 +60,8 @@ import type {
 } from "./contracts/index.js";
 import {
   MAX_CUSTOMER_PROFILE_BYTES,
+  MAX_FIGMA_PAYLOAD_BYTES,
+  MAX_FIGMA_PAYLOAD_BYTES_CEILING,
   PRODUCTION_RUNNER_HARNESS_MODES,
   PRODUCTION_RUNNER_TEST_GENERATION_DEPLOYMENT,
   ProductionRunnerError,
@@ -539,6 +541,14 @@ export const parseTestIntelligenceRunArgs = (
   let maxFigmaPayloadBytes: number | undefined = parsePositiveIntegerEnv(
     env.WORKSPACE_TEST_SPACE_MAX_FIGMA_PAYLOAD_BYTES,
   );
+  if (
+    maxFigmaPayloadBytes !== undefined &&
+    maxFigmaPayloadBytes > MAX_FIGMA_PAYLOAD_BYTES_CEILING
+  ) {
+    throw new TestIntelligenceRunOperatorError(
+      `WORKSPACE_TEST_SPACE_MAX_FIGMA_PAYLOAD_BYTES=${maxFigmaPayloadBytes} exceeds the security hard ceiling of ${MAX_FIGMA_PAYLOAD_BYTES_CEILING} bytes (64 MiB). Streaming larger payloads is tracked as a follow-up; until then 64 MiB is the audited safe ceiling.`,
+    );
+  }
   let allowPolicyBlocked = parseBooleanFlagWithDefault(
     env.WORKSPACE_TEST_SPACE_ALLOW_POLICY_BLOCKED,
     true,
@@ -940,6 +950,11 @@ export const parseTestIntelligenceRunArgs = (
       if (!Number.isSafeInteger(parsed) || parsed <= 0) {
         throw new TestIntelligenceRunOperatorError(
           `--max-figma-payload-bytes must be a positive integer; got ${value}`,
+        );
+      }
+      if (parsed > MAX_FIGMA_PAYLOAD_BYTES_CEILING) {
+        throw new TestIntelligenceRunOperatorError(
+          `--max-figma-payload-bytes ${parsed} exceeds the security hard ceiling of ${MAX_FIGMA_PAYLOAD_BYTES_CEILING} bytes (64 MiB). Streaming larger payloads is tracked as a follow-up; until then 64 MiB is the audited safe ceiling.`,
         );
       }
       maxFigmaPayloadBytes = parsed;
@@ -3553,6 +3568,26 @@ Figma (URL mode only):
 FinOps:
   --finops-budget <path>     Path to a JSON FinOps budget envelope.
                              Default: production envelope
+
+Figma payload:
+  --max-figma-payload-bytes <n>
+                             Override the maximum Figma REST payload (in
+                             bytes) the runner will accept. Soft default
+                             ${MAX_FIGMA_PAYLOAD_BYTES} (10 MiB). Hard
+                             ceiling ${MAX_FIGMA_PAYLOAD_BYTES_CEILING}
+                             (64 MiB) — values above this ceiling are
+                             rejected at parse time as a security
+                             precaution against memory-pressure / DoS
+                             from oversized payloads (validated again at
+                             runtime, defense in depth). Operators with
+                             vetted private files (e.g. tier-1 banking
+                             masks) opt up on a per-job basis. Also
+                             settable via env
+                             WORKSPACE_TEST_SPACE_MAX_FIGMA_PAYLOAD_BYTES.
+                             The resolved cap and the actual payload
+                             bytes ingested are stamped onto the FinOps
+                             budget report (\`figmaPayload\` field) for
+                             audit trail.
 
 Topology preflight:
   --require-multi-agent-topology

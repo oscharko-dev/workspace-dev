@@ -10545,6 +10545,25 @@ export interface FinOpsBudgetReport {
   };
   /** Timestamp used when sealing the `bySource` payload. */
   bySourceSealedAt: string;
+  /**
+   * Figma REST payload audit trail (Issue #2172). Records the resolved cap
+   * applied to this run alongside the actual payload bytes ingested so ops
+   * can observe cap-vs-actual without re-running the job. Omitted when the
+   * runner did not surface payload metrics (e.g. dry-run / cache-hit
+   * short-circuit) so legacy fixtures stay byte-stable.
+   */
+  figmaPayload?: {
+    /** Resolved cap applied during this run, in bytes. */
+    resolvedCapBytes: number;
+    /** Actual REST payload size that the runner ingested, in bytes. */
+    actualBytes: number;
+    /** Soft default cap (bytes) used when no override was supplied. */
+    defaultCapBytes: number;
+    /** Hard ceiling (bytes) above which any override is rejected. */
+    ceilingBytes: number;
+    /** True when the operator passed `--max-figma-payload-bytes`. */
+    overrideApplied: boolean;
+  };
   /** Aggregate counters across every role. */
   totals: {
     inputTokens: number;

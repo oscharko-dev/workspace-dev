@@ -7466,3 +7466,114 @@ test("Issue #2037: provenance verification fails closed when an attested artifac
     await rm(tempRoot, { recursive: true, force: true });
   }
 });
+
+// ---------------------------------------------------------------------------
+// Issue #2172 — maxFigmaPayloadBytes ceiling (defense in depth) + FinOps audit
+// ---------------------------------------------------------------------------
+
+const FIGMA_PAYLOAD_CEILING_BYTES_PROD = 64 * 1024 * 1024;
+const FIGMA_PAYLOAD_DEFAULT_BYTES_PROD = 10 * 1024 * 1024;
+
+test("runFigmaToQcTestCases rejects programmatic maxFigmaPayloadBytes above the 64 MiB ceiling (Issue #2172 defense in depth)", async () => {
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ti-runner-"));
+  try {
+    const client = createMockLlmGatewayClient({
+      role: "test_generation",
+      deployment: "gpt-oss-120b-mock",
+      modelRevision: "mock-1",
+      gatewayRelease: "mock",
+      responder: okResponder([SAMPLE_DRAFT]),
+    });
+    await assert.rejects(
+      () =>
+        runFigmaToQcTestCases({
+          jobId: "job-issue-2172-ceiling",
+          generatedAt: "2026-05-10T10:00:00Z",
+          source: { kind: "figma_paste_normalized", file: SAMPLE_FILE },
+          outputRoot: tempRoot,
+          llm: { client },
+          maxFigmaPayloadBytes: FIGMA_PAYLOAD_CEILING_BYTES_PROD + 1,
+        }),
+      (err: unknown): boolean =>
+        err instanceof ProductionRunnerError &&
+        err.failureClass === "FIGMA_URL_REJECTED" &&
+        /security hard ceiling/u.test(err.message),
+    );
+    assert.equal(client.callCount(), 0);
+  } finally {
+    await rm(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("runFigmaToQcTestCases stamps figmaPayload (cap, actual, default, ceiling) onto the FinOps report (Issue #2172 audit trail)", async () => {
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ti-runner-"));
+  try {
+    const client = createMockLlmGatewayClient({
+      role: "test_generation",
+      deployment: "gpt-oss-120b-mock",
+      modelRevision: "mock-1",
+      gatewayRelease: "mock",
+      responder: okResponder([SAMPLE_DRAFT]),
+    });
+    const overrideBytes = 32 * 1024 * 1024;
+    const result = await runFigmaToQcTestCases({
+      jobId: "job-issue-2172-audit",
+      generatedAt: "2026-05-10T10:00:00Z",
+      source: { kind: "figma_paste_normalized", file: SAMPLE_FILE },
+      outputRoot: tempRoot,
+      llm: { client },
+      maxFigmaPayloadBytes: overrideBytes,
+    });
+    const finopsReport = JSON.parse(
+      await readFile(result.artifactPaths.finopsReport, "utf8"),
+    ) as FinOpsBudgetReport;
+    assert.ok(
+      finopsReport.figmaPayload !== undefined,
+      "figmaPayload must be present on the FinOps report",
+    );
+    const audit = finopsReport.figmaPayload!;
+    assert.equal(audit.resolvedCapBytes, overrideBytes);
+    assert.equal(audit.defaultCapBytes, FIGMA_PAYLOAD_DEFAULT_BYTES_PROD);
+    assert.equal(audit.ceilingBytes, FIGMA_PAYLOAD_CEILING_BYTES_PROD);
+    assert.equal(audit.overrideApplied, true);
+    assert.ok(
+      Number.isSafeInteger(audit.actualBytes) && audit.actualBytes > 0,
+      `actualBytes must be a positive safe integer; got ${audit.actualBytes}`,
+    );
+    assert.ok(
+      audit.actualBytes <= audit.resolvedCapBytes,
+      `actualBytes (${audit.actualBytes}) must not exceed resolvedCapBytes (${audit.resolvedCapBytes})`,
+    );
+  } finally {
+    await rm(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("runFigmaToQcTestCases stamps figmaPayload with overrideApplied=false when no override is supplied (Issue #2172)", async () => {
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ti-runner-"));
+  try {
+    const client = createMockLlmGatewayClient({
+      role: "test_generation",
+      deployment: "gpt-oss-120b-mock",
+      modelRevision: "mock-1",
+      gatewayRelease: "mock",
+      responder: okResponder([SAMPLE_DRAFT]),
+    });
+    const result = await runFigmaToQcTestCases({
+      jobId: "job-issue-2172-default",
+      generatedAt: "2026-05-10T10:00:00Z",
+      source: { kind: "figma_paste_normalized", file: SAMPLE_FILE },
+      outputRoot: tempRoot,
+      llm: { client },
+    });
+    const finopsReport = JSON.parse(
+      await readFile(result.artifactPaths.finopsReport, "utf8"),
+    ) as FinOpsBudgetReport;
+    const audit = finopsReport.figmaPayload!;
+    assert.ok(audit !== undefined);
+    assert.equal(audit.resolvedCapBytes, FIGMA_PAYLOAD_DEFAULT_BYTES_PROD);
+    assert.equal(audit.overrideApplied, false);
+  } finally {
+    await rm(tempRoot, { recursive: true, force: true });
+  }
+});

@@ -87,6 +87,40 @@ const sanitizeBudgetEnvelope = (
   };
 };
 
+const assertNonNegativeSafeIntegerByteCount = (
+  field: string,
+  value: number,
+): number => {
+  if (!Number.isSafeInteger(value) || value < 0) {
+    throw new RangeError(
+      `buildFinOpsBudgetReport: figmaPayload.${field} must be a non-negative safe integer; got ${value}`,
+    );
+  }
+  return value;
+};
+
+const sanitizeFigmaPayloadAudit = (
+  input: NonNullable<FinOpsBudgetReport["figmaPayload"]>,
+): NonNullable<FinOpsBudgetReport["figmaPayload"]> => ({
+  resolvedCapBytes: assertNonNegativeSafeIntegerByteCount(
+    "resolvedCapBytes",
+    input.resolvedCapBytes,
+  ),
+  actualBytes: assertNonNegativeSafeIntegerByteCount(
+    "actualBytes",
+    input.actualBytes,
+  ),
+  defaultCapBytes: assertNonNegativeSafeIntegerByteCount(
+    "defaultCapBytes",
+    input.defaultCapBytes,
+  ),
+  ceilingBytes: assertNonNegativeSafeIntegerByteCount(
+    "ceilingBytes",
+    input.ceilingBytes,
+  ),
+  overrideApplied: input.overrideApplied,
+});
+
 /**
  * Attribution mode for an attempt observation (Issue #2016).
  *
@@ -639,6 +673,12 @@ export interface BuildFinOpsBudgetReportInput {
    * `outcome` from breach detection + cache-hit-only short-circuit.
    */
   outcomeOverride?: FinOpsJobOutcome;
+  /**
+   * Optional Figma REST payload audit (Issue #2172). When supplied the
+   * builder copies the values verbatim onto the report so operators can
+   * observe cap-vs-actual without re-running the job.
+   */
+  figmaPayload?: FinOpsBudgetReport["figmaPayload"];
 }
 
 /**
@@ -697,6 +737,9 @@ export const buildFinOpsBudgetReport = (
     bySource,
     bySourceTotal,
     bySourceSealedAt: input.generatedAt,
+    ...(input.figmaPayload !== undefined
+      ? { figmaPayload: sanitizeFigmaPayloadAudit(input.figmaPayload) }
+      : {}),
     totals,
     breaches,
     outcome,

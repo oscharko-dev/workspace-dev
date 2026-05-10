@@ -949,6 +949,169 @@ test("parseTestIntelligenceRunArgs: --harness-max-repair-iterations rejects non-
 });
 
 // ---------------------------------------------------------------------------
+// --max-figma-payload-bytes (Issue #2172)
+// ---------------------------------------------------------------------------
+
+const FIGMA_PAYLOAD_CEILING_BYTES = 64 * 1024 * 1024;
+const FIGMA_PAYLOAD_DEFAULT_BYTES = 10 * 1024 * 1024;
+
+test("parseTestIntelligenceRunArgs: --max-figma-payload-bytes is undefined when omitted (soft default)", () => {
+  const opts = parseTestIntelligenceRunArgs(
+    [
+      "--figma-url",
+      "https://figma.com/design/abc",
+      "--output",
+      "/tmp/x",
+    ],
+    {},
+  );
+  assert.equal(opts.maxFigmaPayloadBytes, undefined);
+});
+
+test("parseTestIntelligenceRunArgs: --max-figma-payload-bytes accepts the soft default explicitly", () => {
+  const opts = parseTestIntelligenceRunArgs(
+    [
+      "--figma-url",
+      "https://figma.com/design/abc",
+      "--output",
+      "/tmp/x",
+      "--max-figma-payload-bytes",
+      String(FIGMA_PAYLOAD_DEFAULT_BYTES),
+    ],
+    {},
+  );
+  assert.equal(opts.maxFigmaPayloadBytes, FIGMA_PAYLOAD_DEFAULT_BYTES);
+});
+
+test("parseTestIntelligenceRunArgs: --max-figma-payload-bytes accepts a 32 MiB tier-1 override (Issue #2172 Test-View-03)", () => {
+  const opts = parseTestIntelligenceRunArgs(
+    [
+      "--figma-url",
+      "https://figma.com/design/abc",
+      "--output",
+      "/tmp/x",
+      "--max-figma-payload-bytes",
+      "33554432",
+    ],
+    {},
+  );
+  assert.equal(opts.maxFigmaPayloadBytes, 33554432);
+});
+
+test("parseTestIntelligenceRunArgs: --max-figma-payload-bytes accepts the 64 MiB ceiling exactly", () => {
+  const opts = parseTestIntelligenceRunArgs(
+    [
+      "--figma-url",
+      "https://figma.com/design/abc",
+      "--output",
+      "/tmp/x",
+      "--max-figma-payload-bytes",
+      String(FIGMA_PAYLOAD_CEILING_BYTES),
+    ],
+    {},
+  );
+  assert.equal(opts.maxFigmaPayloadBytes, FIGMA_PAYLOAD_CEILING_BYTES);
+});
+
+test("parseTestIntelligenceRunArgs: --max-figma-payload-bytes rejects 1 byte above the ceiling", () => {
+  assert.throws(
+    () =>
+      parseTestIntelligenceRunArgs(
+        [
+          "--figma-url",
+          "https://figma.com/design/abc",
+          "--output",
+          "/tmp/x",
+          "--max-figma-payload-bytes",
+          String(FIGMA_PAYLOAD_CEILING_BYTES + 1),
+        ],
+        {},
+      ),
+    (err: unknown) =>
+      err instanceof TestIntelligenceRunOperatorError &&
+      /security hard ceiling/u.test(err.message) &&
+      /67108864/u.test(err.message),
+  );
+});
+
+test("parseTestIntelligenceRunArgs: --max-figma-payload-bytes rejects negative / zero / non-integer / blank", () => {
+  for (const value of ["-1", "0", "1.5", "abc", "  "]) {
+    assert.throws(
+      () =>
+        parseTestIntelligenceRunArgs(
+          [
+            "--figma-url",
+            "https://figma.com/design/abc",
+            "--output",
+            "/tmp/x",
+            "--max-figma-payload-bytes",
+            value,
+          ],
+          {},
+        ),
+      TestIntelligenceRunOperatorError,
+      `value ${value} should have been rejected`,
+    );
+  }
+});
+
+test("parseTestIntelligenceRunArgs: WORKSPACE_TEST_SPACE_MAX_FIGMA_PAYLOAD_BYTES env override above ceiling is rejected", () => {
+  assert.throws(
+    () =>
+      parseTestIntelligenceRunArgs(
+        [
+          "--figma-url",
+          "https://figma.com/design/abc",
+          "--output",
+          "/tmp/x",
+        ],
+        {
+          WORKSPACE_TEST_SPACE_MAX_FIGMA_PAYLOAD_BYTES: String(
+            FIGMA_PAYLOAD_CEILING_BYTES + 1,
+          ),
+        },
+      ),
+    (err: unknown) =>
+      err instanceof TestIntelligenceRunOperatorError &&
+      /security hard ceiling/u.test(err.message),
+  );
+});
+
+test("parseTestIntelligenceRunArgs: WORKSPACE_TEST_SPACE_MAX_FIGMA_PAYLOAD_BYTES env override at ceiling is accepted", () => {
+  const opts = parseTestIntelligenceRunArgs(
+    [
+      "--figma-url",
+      "https://figma.com/design/abc",
+      "--output",
+      "/tmp/x",
+    ],
+    {
+      WORKSPACE_TEST_SPACE_MAX_FIGMA_PAYLOAD_BYTES: String(
+        FIGMA_PAYLOAD_CEILING_BYTES,
+      ),
+    },
+  );
+  assert.equal(opts.maxFigmaPayloadBytes, FIGMA_PAYLOAD_CEILING_BYTES);
+});
+
+test("parseTestIntelligenceRunArgs: --max-figma-payload-bytes overrides the env value", () => {
+  const opts = parseTestIntelligenceRunArgs(
+    [
+      "--figma-url",
+      "https://figma.com/design/abc",
+      "--output",
+      "/tmp/x",
+      "--max-figma-payload-bytes",
+      "20971520",
+    ],
+    {
+      WORKSPACE_TEST_SPACE_MAX_FIGMA_PAYLOAD_BYTES: "10485760",
+    },
+  );
+  assert.equal(opts.maxFigmaPayloadBytes, 20971520);
+});
+
+// ---------------------------------------------------------------------------
 // runTestIntelligenceCommand — feature gate
 // ---------------------------------------------------------------------------
 
