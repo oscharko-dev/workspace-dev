@@ -132,11 +132,32 @@ export interface UntrustedContentNormalizationOutput {
 // ---------------------------------------------------------------------------
 
 /**
- * Zero-width Unicode codepoints stripped from every source string:
- * U+200B ZERO WIDTH SPACE, U+200C ZERO WIDTH NON-JOINER,
- * U+200D ZERO WIDTH JOINER, U+FEFF ZERO WIDTH NO-BREAK SPACE / BOM.
+ * Invisible / formatting Unicode codepoints stripped from every source
+ * string. The bucket name `zeroWidthCharacters` is preserved on the
+ * report contract for backwards compatibility, but the actual class
+ * widened in #2122 to also cover bidirectional override / isolate
+ * controls so RTL-override visual-spoofing payloads cannot survive a
+ * normalisation pass.
+ *
+ * Members:
+ *   - U+200B ZERO WIDTH SPACE
+ *   - U+200C ZERO WIDTH NON-JOINER
+ *   - U+200D ZERO WIDTH JOINER
+ *   - U+FEFF ZERO WIDTH NO-BREAK SPACE / BOM
+ *   - U+2028 LINE SEPARATOR
+ *   - U+2029 PARAGRAPH SEPARATOR
+ *   - U+202A LEFT-TO-RIGHT EMBEDDING
+ *   - U+202B RIGHT-TO-LEFT EMBEDDING
+ *   - U+202C POP DIRECTIONAL FORMATTING
+ *   - U+202D LEFT-TO-RIGHT OVERRIDE
+ *   - U+202E RIGHT-TO-LEFT OVERRIDE
+ *   - U+2066 LEFT-TO-RIGHT ISOLATE
+ *   - U+2067 RIGHT-TO-LEFT ISOLATE
+ *   - U+2068 FIRST STRONG ISOLATE
+ *   - U+2069 POP DIRECTIONAL ISOLATE
  */
-const ZERO_WIDTH_RE = /\u200B|\u200C|\u200D|\uFEFF/gu;
+const ZERO_WIDTH_RE =
+  /\u200B|\u200C|\u200D|\uFEFF|\u2028|\u2029|[\u202A-\u202E]|[\u2066-\u2069]/gu;
 
 /** Sentinel-name prefix that flips the outcome to `needs_review`. */
 const SENTINEL_NAME_PREFIX = "__";
