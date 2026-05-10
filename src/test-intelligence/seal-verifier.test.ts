@@ -483,6 +483,111 @@ test("DEFAULT_SEAL_VERIFY_KEY_LABEL is the documented sentinel", () => {
   assert.equal(DEFAULT_SEAL_VERIFY_KEY_LABEL, "workspace-dev:seal-verify:v1");
 });
 
+test("seal-verifier: rejects seal that names an artifact outside the run dir", async () => {
+  const fixture = await buildFixtureBundle();
+  try {
+    const sealPath = path.join(
+      fixture.runDir,
+      "production-runner-evidence-seal.json",
+    );
+    const seal = JSON.parse(
+      Buffer.from(await readFile(sealPath)).toString("utf8"),
+    );
+    seal.harnessArtifactFilenames = [...seal.harnessArtifactFilenames, "../escape.json"];
+    await writeFile(sealPath, canonicalJson(seal), "utf8");
+    const report = await verifySealBundle({ bundleDir: fixture.runDir });
+    assert.equal(report.ok, false);
+    const escape = report.artifacts.find(
+      (a) => a.reference === "../escape.json",
+    );
+    assert.equal(escape?.status, "TAMPERED");
+    assert.ok(
+      report.failures.some(
+        (f) =>
+          f.code === "artifact_tampered" && f.reference === "../escape.json",
+      ),
+      "expected artifact_tampered failure for ../escape.json",
+    );
+  } finally {
+    await fixture.cleanup();
+  }
+});
+
+test("seal-verifier: visual-sidecar cross-check detects drift between seal hashes and sidecar refs", async () => {
+  const fixture = await buildFixtureBundle();
+  try {
+    const sealPath = path.join(
+      fixture.runDir,
+      "production-runner-evidence-seal.json",
+    );
+    const seal = JSON.parse(
+      Buffer.from(await readFile(sealPath)).toString("utf8"),
+    );
+    seal.visualEvidenceHashes = [
+      {
+        screenId: "screen-A",
+        modelDeployment: "m-1",
+        evidenceHash: "a".repeat(64),
+      },
+    ];
+    await writeFile(sealPath, canonicalJson(seal), "utf8");
+    // Sidecar disagrees: different evidenceHash.
+    const sidecar = {
+      schemaVersion: "1.0.0",
+      contractVersion: "1.23.0",
+      visualEvidenceRefs: [
+        {
+          screenId: "screen-A",
+          modelDeployment: "m-1",
+          evidenceHash: "b".repeat(64),
+        },
+      ],
+    };
+    await writeFile(
+      path.join(fixture.runDir, "visual-sidecar-result.json"),
+      `${canonicalJson(sidecar)}\n`,
+      "utf8",
+    );
+    const report = await verifySealBundle({ bundleDir: fixture.runDir });
+    const cc = report.crossChecks.find(
+      (c) => c.name === "visual_sidecar_evidence",
+    );
+    assert.equal(cc?.ok, false, cc?.detail ?? "no visual cross-check");
+    assert.equal(report.ok, false);
+  } finally {
+    await fixture.cleanup();
+  }
+});
+
+test("seal-verifier: visual-sidecar missing when seal references visuals fails closed", async () => {
+  const fixture = await buildFixtureBundle();
+  try {
+    const sealPath = path.join(
+      fixture.runDir,
+      "production-runner-evidence-seal.json",
+    );
+    const seal = JSON.parse(
+      Buffer.from(await readFile(sealPath)).toString("utf8"),
+    );
+    seal.visualEvidenceHashes = [
+      {
+        screenId: "screen-A",
+        modelDeployment: "m-1",
+        evidenceHash: "a".repeat(64),
+      },
+    ];
+    await writeFile(sealPath, canonicalJson(seal), "utf8");
+    const report = await verifySealBundle({ bundleDir: fixture.runDir });
+    assert.equal(report.ok, false);
+    const cc = report.crossChecks.find(
+      (c) => c.name === "visual_sidecar_evidence",
+    );
+    assert.equal(cc?.ok, false);
+  } finally {
+    await fixture.cleanup();
+  }
+});
+
 test("seal-verifier: checked-in fixture bundle verifies clean", async () => {
   const repoRoot = path.resolve(
     path.dirname(new URL(import.meta.url).pathname),

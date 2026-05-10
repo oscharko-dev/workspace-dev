@@ -1581,24 +1581,96 @@ const matchedArchiveSuffix = (
   );
 };
 
+interface ChildResult {
+  readonly code: number;
+  readonly signal: NodeJS.Signals | null;
+  readonly stderr: string;
+  readonly stdout: string;
+}
+
 const runChild = (
   command: string,
   args: readonly string[],
   cwd: string,
-): Promise<{ readonly code: number; readonly stderr: string }> =>
+  options: { readonly captureStdout?: boolean } = {},
+): Promise<ChildResult> =>
   new Promise((resolvePromise, reject) => {
-    const child = spawn(command, args, { cwd, stdio: ["ignore", "ignore", "pipe"] });
-    let stderr = "";
-    child.stderr.on("data", (chunk: Buffer) => {
-      stderr += chunk.toString("utf8");
+    const child = spawn(command, args, {
+      cwd,
+      stdio: [
+        "ignore",
+        options.captureStdout ? "pipe" : "ignore",
+        "pipe",
+      ],
     });
+    let stderr = "";
+    let stdout = "";
+    if (child.stderr) {
+      child.stderr.on("data", (chunk: Buffer) => {
+        stderr += chunk.toString("utf8");
+      });
+    }
+    if (options.captureStdout && child.stdout) {
+      child.stdout.on("data", (chunk: Buffer) => {
+        stdout += chunk.toString("utf8");
+      });
+    }
     child.on("error", (error) => {
       reject(error);
     });
-    child.on("close", (code) => {
-      resolvePromise({ code: code ?? 0, stderr });
+    child.on("close", (code, signal) => {
+      // A signal-terminated child reports `code === null`. Treat that
+      // as a non-zero exit so callers do not silently accept a
+      // signal-killed `tar`/`unzip` extraction as success.
+      const normalizedCode =
+        code !== null ? code : signal !== null ? 128 : 1;
+      resolvePromise({ code: normalizedCode, signal, stderr, stdout });
     });
   });
+
+/**
+ * Reject archive entries that try to escape the destination directory:
+ * absolute paths, `..` segments, drive letters, or paths that contain
+ * embedded null bytes. Mirrors the containment check the seal verifier
+ * applies to seal-referenced artifact filenames so a malicious
+ * tarball/zipfile cannot trigger a zip-slip / tar-escape.
+ */
+const isUnsafeArchiveEntryPath = (entryPath: string): boolean => {
+  if (typeof entryPath !== "string" || entryPath.length === 0) return true;
+  if (entryPath.includes("\0")) return true;
+  const trimmed = entryPath.replaceAll("\\", "/").trim();
+  if (trimmed.startsWith("/") || /^[a-zA-Z]:/.test(trimmed)) return true;
+  // Fast pre-check on raw segments before normalization (handles
+  // entries like `foo/../bar/../../etc/passwd`).
+  for (const segment of trimmed.split("/")) {
+    if (segment === "..") return true;
+  }
+  return false;
+};
+
+const enforceSafeArchiveEntries = async (
+  command: string,
+  listArgs: readonly string[],
+  archive: string,
+): Promise<void> => {
+  const result = await runChild(command, listArgs, ".", { captureStdout: true });
+  if (result.code !== 0) {
+    throw new TestIntelligenceRunOperatorError(
+      `${command} failed to enumerate '${archive}' (exit ${String(result.code)}): ${result.stderr.trim() || "no stderr"}.`,
+    );
+  }
+  const entries = result.stdout
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0);
+  for (const entry of entries) {
+    if (isUnsafeArchiveEntryPath(entry)) {
+      throw new TestIntelligenceRunOperatorError(
+        `Refusing to extract '${archive}': unsafe archive entry '${entry}'.`,
+      );
+    }
+  }
+};
 
 /**
  * Extract a bundle archive into a fresh temp directory using the
@@ -1621,6 +1693,11 @@ export const extractSealBundleArchive = async (
   const absoluteBundle = resolve(bundlePath);
   try {
     if (suffix === ".zip") {
+      await enforceSafeArchiveEntries(
+        "unzip",
+        ["-Z1", absoluteBundle],
+        absoluteBundle,
+      );
       const result = await runChild(
         "unzip",
         ["-q", absoluteBundle, "-d", directory],
@@ -1632,6 +1709,11 @@ export const extractSealBundleArchive = async (
         );
       }
     } else {
+      const listArgs =
+        suffix === ".tar"
+          ? ["-tf", absoluteBundle]
+          : ["-tzf", absoluteBundle];
+      await enforceSafeArchiveEntries("tar", listArgs, absoluteBundle);
       const tarArgs =
         suffix === ".tar"
           ? ["-xf", absoluteBundle, "-C", directory]
