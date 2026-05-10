@@ -3,6 +3,7 @@ import test from "node:test";
 import {
   EU_BANKING_DEFAULT_POLICY_PROFILE_ID,
   EU_BANKING_DEFAULT_POLICY_PROFILE_VERSION,
+  TIER_ELASTIC_EP_TIERS,
 } from "../contracts/index.js";
 import { ADVERSARIAL_NEGATIVE_RATIO_IMPROVEMENT_THRESHOLD } from "./adversarial-critic-agent.js";
 import {
@@ -98,21 +99,47 @@ test("Issue #2068: default profile selects tier-elastic technique-coverage minim
     EU_BANKING_DEFAULT_POLICY_PROFILE.rules.techniqueCoverageMinimum;
   assert.ok(config !== undefined, "expected the default profile to expose the knob");
   assert.equal(config.mode, "tier-elastic");
+  assert.deepEqual(config.tiers, TIER_ELASTIC_EP_TIERS);
   assert.ok(
     Object.isFrozen(config),
     "techniqueCoverageMinimum block must be deep-frozen",
   );
+  assert.ok(Object.isFrozen(config.tiers), "tier table must be frozen");
+  assert.ok(
+    Object.isFrozen(config.tiers?.[0]),
+    "individual tier records must be frozen",
+  );
 });
 
-test("Issue #2068: clone round-trips techniqueCoverageMinimum and isolates the override", () => {
+test("Issue #2171: clone round-trips techniqueCoverageMinimum tiers and isolates the override", () => {
   const a = cloneEuBankingDefaultProfile();
   const b = cloneEuBankingDefaultProfile();
-  assert.deepEqual(a.rules.techniqueCoverageMinimum, { mode: "tier-elastic" });
-  a.rules.techniqueCoverageMinimum = { mode: "fixed" };
-  assert.deepEqual(b.rules.techniqueCoverageMinimum, { mode: "tier-elastic" });
+  assert.deepEqual(a.rules.techniqueCoverageMinimum, {
+    mode: "tier-elastic",
+    tiers: TIER_ELASTIC_EP_TIERS,
+  });
+  assert.ok(
+    a.rules.techniqueCoverageMinimum?.tiers !== undefined,
+    "expected clone to expose mutable tiers",
+  );
+  const clonedTechniqueCoverageMinimum = a.rules
+    .techniqueCoverageMinimum as NonNullable<
+    typeof a.rules.techniqueCoverageMinimum
+  > & { tiers: Array<(typeof TIER_ELASTIC_EP_TIERS)[number]> };
+  clonedTechniqueCoverageMinimum.tiers[0] = {
+    ...clonedTechniqueCoverageMinimum.tiers[0],
+    label: "mutated-clone-tier",
+  };
+  assert.deepEqual(b.rules.techniqueCoverageMinimum, {
+    mode: "tier-elastic",
+    tiers: TIER_ELASTIC_EP_TIERS,
+  });
   assert.deepEqual(
     EU_BANKING_DEFAULT_POLICY_PROFILE.rules.techniqueCoverageMinimum,
-    { mode: "tier-elastic" },
+    {
+      mode: "tier-elastic",
+      tiers: TIER_ELASTIC_EP_TIERS,
+    },
   );
 });
 

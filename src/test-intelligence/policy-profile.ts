@@ -18,6 +18,7 @@ import {
   type FinOpsWallClockBudgetPolicy,
   type JudgeRefusalPolicyConfig,
   type TechniqueCoverageMinimumPolicy,
+  TIER_ELASTIC_EP_TIERS,
   type TestCasePolicyProfile,
   type TestCasePolicyProfileRules,
 } from "../contracts/index.js";
@@ -66,12 +67,15 @@ export const EU_BANKING_DEFAULT_NEGATIVE_CASE_LIFT_GATE_MODE =
  * screen's coverage-relevant field count instead of trapping
  * small-field screens (`<= 8` fields) at the legacy 12-EP minimum.
  *
- * Customers that contractually require a fixed floor opt into
+ * Issue #2171 extends the default with policy-profile-owned coefficients so
+ * the audit-visible formula comes from the profile, not a hidden runtime
+ * constant. Customers that contractually require a fixed floor still opt into
  * `{ mode: "fixed" }` on a derived profile.
  */
 export const EU_BANKING_DEFAULT_TECHNIQUE_COVERAGE_MINIMUM:
   Readonly<TechniqueCoverageMinimumPolicy> = Object.freeze({
     mode: "tier-elastic",
+    tiers: TIER_ELASTIC_EP_TIERS,
   });
 
 /**
@@ -230,9 +234,22 @@ export const cloneEuBankingDefaultProfile = (): TestCasePolicyProfile => {
   const techniqueCoverageMinimum =
     EU_BANKING_DEFAULT_POLICY_PROFILE.rules.techniqueCoverageMinimum;
   if (techniqueCoverageMinimum !== undefined) {
-    rules.techniqueCoverageMinimum = {
-      mode: techniqueCoverageMinimum.mode,
-    };
+    rules.techniqueCoverageMinimum =
+      techniqueCoverageMinimum.mode === "tier-elastic"
+        ? {
+            mode: "tier-elastic",
+            ...(techniqueCoverageMinimum.tiers !== undefined
+              ? {
+                  tiers: techniqueCoverageMinimum.tiers.map((tier) => ({
+                    minFieldCount: tier.minFieldCount,
+                    multiplier: tier.multiplier,
+                    floor: tier.floor,
+                    label: tier.label,
+                  })),
+                }
+              : {}),
+          }
+        : { mode: "fixed" };
   }
   const selfConsistency = EU_BANKING_DEFAULT_POLICY_PROFILE.rules.selfConsistency;
   if (selfConsistency !== undefined) {

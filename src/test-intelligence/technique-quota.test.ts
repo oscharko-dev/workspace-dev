@@ -7,12 +7,14 @@ import test from "node:test";
 import {
   COVERAGE_PLAN_SCHEMA_VERSION,
   GENERATED_TEST_CASE_SCHEMA_VERSION,
+  TIER_ELASTIC_EP_TIERS,
   TECHNIQUE_QUOTA_REPORT_ARTIFACT_FILENAME,
   TECHNIQUE_QUOTA_REPORT_SCHEMA_VERSION,
   TEST_INTELLIGENCE_CONTRACT_VERSION,
   TEST_INTELLIGENCE_PROMPT_TEMPLATE_VERSION,
   type CoveragePlan,
   type GeneratedTestCase,
+  type TechniqueCoverageMinimumPolicy,
 } from "../contracts/index.js";
 import {
   buildPerScreenFieldCounts,
@@ -116,17 +118,15 @@ const buildPlan = (input: {
   };
 };
 
-test("tier-elastic formula: <=4 fields → max(4, 2*fields), 5–8 → ceil(1.5*fields), >=9 → fields", () => {
+test("tier-elastic formula: tier bands follow the 4/5/9/20 cutovers", () => {
   for (const [fc, expected] of [
-    [0, { quota: 0, label: /max\(4/ }],
-    [1, { quota: 4, label: /max\(4/ }],
-    [3, { quota: 6, label: /max\(4/ }],
-    [4, { quota: 8, label: /max\(4/ }],
-    [5, { quota: 8, label: /ceil\(1\.5\*fields\)/ }],
-    [7, { quota: 11, label: /ceil\(1\.5\*fields\)/ }],
-    [8, { quota: 12, label: /ceil\(1\.5\*fields\)/ }],
-    [9, { quota: 9, label: /fields>=9/ }],
-    [12, { quota: 12, label: /fields>=9/ }],
+    [1, { quota: 4, label: /max\(4, 2\*fields\)/ }],
+    [4, { quota: 8, label: /max\(4, 2\*fields\)/ }],
+    [5, { quota: 7, label: /ceil\(1\.25\*fields\)/ }],
+    [8, { quota: 10, label: /ceil\(1\.25\*fields\)/ }],
+    [9, { quota: 9, label: /ceil\(0\.9\*fields\)/ }],
+    [19, { quota: 18, label: /ceil\(0\.9\*fields\)/ }],
+    [20, { quota: 17, label: /ceil\(0\.85\*fields\)/ }],
   ] as const) {
     const result = computeTierElasticEquivalencePartitioningQuota(fc);
     assert.equal(
@@ -136,6 +136,62 @@ test("tier-elastic formula: <=4 fields → max(4, 2*fields), 5–8 → ceil(1.5*
     );
     assert.match(result.formula, expected.label);
   }
+});
+
+test("Issue #2171: tier-elastic quotas accept caller-supplied tiers and keep the canonical tier table exposed", () => {
+  const customPolicy: TechniqueCoverageMinimumPolicy = {
+    mode: "tier-elastic",
+    tiers: [
+      {
+        minFieldCount: 0,
+        multiplier: 3,
+        floor: 2,
+        label: "custom:0",
+      },
+      {
+        minFieldCount: 2,
+        multiplier: 1,
+        floor: 0,
+        label: "custom:2",
+      },
+    ],
+  };
+
+  const result = computeTierElasticEquivalencePartitioningQuota(
+    3,
+    customPolicy.tiers,
+  );
+  assert.equal(result.quota, 3);
+  assert.equal(result.formula, "tier-elastic:custom:2");
+  assert.equal(result.formulaTier, "custom:2");
+  assert.equal(result.formulaMultiplier, 1);
+
+  assert.deepEqual(TIER_ELASTIC_EP_TIERS, [
+    {
+      minFieldCount: 0,
+      multiplier: 2,
+      floor: 4,
+      label: "fields<=4: max(4, 2*fields)",
+    },
+    {
+      minFieldCount: 5,
+      multiplier: 1.25,
+      floor: 0,
+      label: "fields=5-8: ceil(1.25*fields)",
+    },
+    {
+      minFieldCount: 9,
+      multiplier: 0.9,
+      floor: 0,
+      label: "fields=9-19: ceil(0.9*fields)",
+    },
+    {
+      minFieldCount: 20,
+      multiplier: 0.85,
+      floor: 0,
+      label: "fields>=20: ceil(0.85*fields)",
+    },
+  ]);
 });
 
 test("buildPerScreenFieldCounts derives unique element counts from CoveragePlan.perElement", () => {
@@ -264,12 +320,14 @@ test("Issue #2068: non-EP planner quotas are preserved in tier-elastic mode", ()
   );
   assert.equal(bva?.requiredCount, 3);
   assert.equal(bva?.formula, "fixed:planner-quota");
+  assert.equal(bva?.formulaTier, "planner-quota");
+  assert.equal(bva?.formulaMultiplier, null);
 });
 
-test("Issue #2068: technique-quota report is sorted, deterministic, and tracks pass/deficit counts", () => {
+test("Issue #2171: technique-quota report is sorted, deterministic, and carries the tier audit trail", () => {
   const plan = buildPlan({
     screenId: "s-1",
-    fieldCount: 7,
+    fieldCount: 19,
     plannerEpMin: 12,
     extras: [{ technique: "boundary_value_analysis", minCount: 1 }],
   });
@@ -292,21 +350,50 @@ test("Issue #2068: technique-quota report is sorted, deterministic, and tracks p
   assert.equal(report.contractVersion, TEST_INTELLIGENCE_CONTRACT_VERSION);
   assert.equal(report.mode, "tier-elastic");
   assert.equal(report.screenCount, 1);
-  // EP row deficits: required=11 (ceil(1.5*7)), actual=1; BVA deficit: 1 vs 0
+  // EP row deficit: required=12 (planner minimum remains tighter than the
+  // 19-field tier formula); BVA deficit: required=1 vs actual=0.
   assert.equal(report.entries.length, 2);
   assert.deepEqual(
     [...report.entries].map((entry) => entry.technique),
     ["boundary_value_analysis", "equivalence_partitioning"],
   );
+  const bvaEntry = report.entries.find(
+    (entry) => entry.technique === "boundary_value_analysis",
+  );
+  assert.equal(bvaEntry?.requiredCount, 1);
+  assert.equal(bvaEntry?.actualCount, 0);
+  assert.equal(bvaEntry?.formula, "fixed:planner-quota");
+  assert.equal(bvaEntry?.formulaTier, "planner-quota");
+  assert.equal(bvaEntry?.formulaMultiplier, null);
+  assert.equal(bvaEntry?.status, "deficit");
   const epEntry = report.entries.find(
     (entry) => entry.technique === "equivalence_partitioning",
   );
-  assert.equal(epEntry?.requiredCount, 11);
+  assert.equal(epEntry?.requiredCount, 12);
   assert.equal(epEntry?.actualCount, 1);
   assert.equal(epEntry?.status, "deficit");
-  assert.equal(epEntry?.fieldCount, 7);
+  assert.equal(epEntry?.fieldCount, 19);
+  assert.equal(epEntry?.formula, "fixed:planner-quota");
+  assert.equal(epEntry?.formulaTier, "fields=9-19: ceil(0.9*fields)");
+  assert.equal(epEntry?.formulaMultiplier, 0.9);
   assert.equal(report.deficitCount, 2);
   assert.equal(report.passCount, 0);
+});
+
+test("Issue #2171: fixed technique-coverage mode still enforces the planner's EP minimum verbatim", () => {
+  const plan = buildPlan({
+    screenId: "s-fixed",
+    fieldCount: 19,
+    plannerEpMin: 12,
+  });
+  const resolved = resolveTechniqueQuotas(plan, { mode: "fixed" });
+  const epRow = resolved.find(
+    (row) => row.technique === "equivalence_partitioning",
+  );
+  assert.equal(epRow?.requiredCount, 12);
+  assert.equal(epRow?.formula, "fixed:planner-quota");
+  assert.equal(epRow?.formulaTier, "planner-quota");
+  assert.equal(epRow?.formulaMultiplier, null);
 });
 
 test("Issue #2068: undefined policy defaults to tier-elastic (legacy callers stay safe)", () => {
