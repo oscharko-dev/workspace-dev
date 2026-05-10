@@ -176,8 +176,14 @@ test("schema: drift guard — the hash is stable for the current contract", () =
   // Hash bumped by Issue #2104: GENERATED_TEST_CASE_SCHEMA_VERSION bumped
   // 1.2.0 -> 1.3.0 and the persisted audit metadata gained optional
   // additive `truncatedInstructionCount` for repair-instruction audit.
+  // Hash bumped by Issue #2181: TEST_INTELLIGENCE_CONTRACT_VERSION bumped
+  // 1.30.0 -> 1.31.0 (additive formal-verification pilot —
+  // `formal_verification_report` artifact kind plus optional
+  // `formalVerification` field on AuditDossierManifest). The schema pins
+  // `contractVersion: { const: TEST_INTELLIGENCE_CONTRACT_VERSION }` so
+  // the digest shifts in lockstep with the contract bump.
   const expected =
-    "c3722775f4e09cbfe038ae8382c69e77a5cf64904569f5e06dff7da54d5e5a23";
+    "1b24fcf6999a629fe72c546fcc427902d7b25e32409793498da500a47eb82dca";
   const actual = computeGeneratedTestCaseListSchemaHash();
   if (actual !== expected) {
     assert.fail(

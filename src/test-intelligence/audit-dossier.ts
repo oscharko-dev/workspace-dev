@@ -21,6 +21,7 @@ import {
   AUDIT_DOSSIER_ARTIFACT_BASENAME,
   AUDIT_DOSSIER_MANIFEST_SCHEMA_VERSION,
   AUDIT_DOSSIER_SIGNATURE_SCHEMA_VERSION,
+  FORMAL_VERIFICATION_REPORT_AUDIT_ARTIFACT_FILENAME,
   HUMAN_REVIEW_LOG_ARTIFACT_FILENAME,
   PROVENANCE_ARTIFACT_FILENAME,
   REGION_ATTESTATION_REPORT_ARTIFACT_FILENAME,
@@ -496,6 +497,55 @@ const summarizeArtifacts = (
   };
 };
 
+const buildFormalVerificationSection = (
+  artifacts: ReadonlyMap<AuditDossierManifestArtifactKind, ResolvedArtifact>,
+): NonNullable<AuditDossierManifest["formalVerification"]> | undefined => {
+  const artifact = artifacts.get("formal_verification_report");
+  if (artifact === undefined) return undefined;
+  const report = artifact.json;
+  const summaryRecord = isRecord(report["summary"]) ? report["summary"] : undefined;
+  const verdict =
+    coerceString(summaryRecord?.["verdict"]) === "fail" ? "fail" : "pass";
+  const specCount = Number(summaryRecord?.["specCount"] ?? 0);
+  const formulaCount = Number(summaryRecord?.["formulaCount"] ?? 0);
+  const passCount = Number(summaryRecord?.["passCount"] ?? 0);
+  const failCount = Number(summaryRecord?.["failCount"] ?? 0);
+  const rawSpecs = Array.isArray(report["specs"]) ? report["specs"] : [];
+  const specs = rawSpecs
+    .filter((value): value is Record<string, unknown> => isRecord(value))
+    .map((spec) => {
+      const formulae = Array.isArray(spec["formulae"]) ? spec["formulae"] : [];
+      let specPass = 0;
+      let specFail = 0;
+      for (const f of formulae) {
+        if (isRecord(f) && coerceString(f["verdict"]) === "pass") specPass += 1;
+        else if (isRecord(f)) specFail += 1;
+      }
+      return {
+        specPath: coerceString(spec["specPath"]) ?? "unknown",
+        module: coerceString(spec["module"]) ?? "main",
+        verdict:
+          coerceString(spec["verdict"]) === "fail"
+            ? ("fail" as const)
+            : ("pass" as const),
+        reachableStateCount: Number(spec["reachableStateCount"] ?? 0),
+        formulaCount: formulae.length,
+        passCount: specPass,
+        failCount: specFail,
+      };
+    })
+    .sort((left, right) => left.specPath.localeCompare(right.specPath));
+  return {
+    filename: artifact.filename,
+    verdict,
+    specCount,
+    formulaCount,
+    passCount,
+    failCount,
+    specs,
+  };
+};
+
 const buildRegionAttestationTable = (
   artifacts: ReadonlyMap<AuditDossierManifestArtifactKind, ResolvedArtifact>,
 ): NonNullable<AuditDossierManifest["regionAttestations"]> => {
@@ -676,6 +726,35 @@ export const generateAuditDossier = async (
     });
   }
 
+  // Issue #2181 — formal-verification artifact. Optional so runs that
+  // never invoke the model-checker still produce dossiers, but if it
+  // is present the dossier embeds the summary table and the renderer
+  // surfaces a "Formal Verification" section.
+  const formalVerificationPath = join(
+    runDir,
+    FORMAL_VERIFICATION_REPORT_AUDIT_ARTIFACT_FILENAME,
+  );
+  const formalVerificationExists = await stat(formalVerificationPath)
+    .then(() => true)
+    .catch(() => false);
+  if (formalVerificationExists) {
+    const fvBytes = await readFile(formalVerificationPath);
+    const fvJson = JSON.parse(fvBytes.toString("utf8")) as unknown;
+    if (!isRecord(fvJson)) {
+      throw new Error(
+        `${FORMAL_VERIFICATION_REPORT_AUDIT_ARTIFACT_FILENAME} must contain a JSON object.`,
+      );
+    }
+    resolvedArtifacts.set("formal_verification_report", {
+      kind: "formal_verification_report",
+      filename: FORMAL_VERIFICATION_REPORT_AUDIT_ARTIFACT_FILENAME,
+      absolutePath: formalVerificationPath,
+      bytes: fvBytes,
+      json: fvJson,
+      sha256: sha256Hex(fvBytes),
+    });
+  }
+
   const provenanceArtifact = resolvedArtifacts.get("provenance")!;
   const provenance = provenanceArtifact.json as unknown as ProvenanceDocument &
     Record<string, unknown>;
@@ -745,6 +824,10 @@ export const generateAuditDossier = async (
     },
     sourceArtifacts: buildSourceArtifacts([...resolvedArtifacts.values()]),
     regionAttestations: buildRegionAttestationTable(resolvedArtifacts),
+    ...(() => {
+      const fv = buildFormalVerificationSection(resolvedArtifacts);
+      return fv === undefined ? {} : { formalVerification: fv };
+    })(),
     regulatorCoverage: REGULATOR_COVERAGE,
     summary: summarizeArtifacts(
       resolvedArtifacts,

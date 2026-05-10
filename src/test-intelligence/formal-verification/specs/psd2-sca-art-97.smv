@@ -1,0 +1,87 @@
+-- =====================================================================
+-- PSD2 Strong Customer Authentication (SCA) — formal-verification spec
+-- =====================================================================
+--
+-- Pilot for Issue #2181.
+--
+-- Source obligations:
+--   * Directive (EU) 2015/2366 Article 97
+--       "Member States shall ensure that a payment service provider
+--        applies strong customer authentication where the payer
+--        (a) accesses its payment account online; (b) initiates an
+--        electronic payment transaction; (c) carries out any action
+--        through a remote channel which may imply a risk of payment
+--        fraud or other abuses."
+--   * EBA RTS 2018/389 Article 4
+--       "Strong customer authentication shall be based on the use of
+--        two or more elements categorised as knowledge, possession and
+--        inherence."
+--
+-- Operational state-machine model:
+--
+--   payment_state takes values in {idle, initiated, authenticating,
+--                                  authenticated, completed, refused}
+--   factor_count  tracks the number of authentication factors gathered
+--                 so far (0, 1, or 2).
+--
+-- Transitions (mirror the runtime rule pack's expected order):
+--
+--   idle           --(user initiates payment)-->        initiated
+--   initiated      --(SCA gate enters)-->               authenticating  (factor_count reset to 0)
+--   authenticating --(factor accepted, n+1 factors)-->  authenticating  (factor_count += 1)
+--   authenticating --(>=2 factors gathered)-->          authenticated
+--   authenticating --(factor refused or n<2 abort)-->   refused
+--   authenticated  --(payment captured)-->              completed
+--   completed/refused                                   (absorbing)
+--
+-- Verified properties:
+--
+--   (P1) Liveness: every initiated payment eventually either authenticates or is refused.
+--        => no payment is left "hanging" in the authenticating state.
+--
+--   (P2) Safety: a payment never reaches the `completed` state without two factors.
+--        => the SCA two-factor requirement is enforced **by construction** of the
+--        rule pack — not just at one runtime checkpoint.
+--
+--   (P3) Safety: a payment cannot move directly from `initiated` to `completed`.
+--        => excludes the "skip-SCA" attacker path.
+
+MODULE main
+
+VAR
+  payment_state : { idle, initiated, authenticating, authenticated, completed, refused };
+  factor_count  : 0 .. 2;
+
+ASSIGN
+  init(payment_state) := idle;
+  init(factor_count)  := 0;
+
+  next(payment_state) := case
+    payment_state = idle                                       : { idle, initiated };
+    payment_state = initiated                                  : authenticating;
+    payment_state = authenticating & factor_count >= 2         : authenticated;
+    payment_state = authenticating & factor_count < 2          : { authenticating, refused };
+    payment_state = authenticated                              : completed;
+    payment_state = completed                                  : completed;
+    payment_state = refused                                    : refused;
+    TRUE                                                       : payment_state;
+  esac;
+
+  -- factor_count increments monotonically while in `authenticating`.
+  -- The deterministic increment encodes the operational invariant that
+  -- every authentication step either gathers a fresh factor or
+  -- transitions to `refused` — no infinite "stuck mid-auth" stuttering.
+  next(factor_count) := case
+    payment_state = initiated                                  : 0;
+    payment_state = authenticating & factor_count < 2          : factor_count + 1;
+    TRUE                                                       : factor_count;
+  esac;
+
+-- (P1) Liveness: every initiated payment eventually terminates.
+LTLSPEC G ( payment_state = initiated -> F ( payment_state = authenticated | payment_state = refused ) )
+
+-- (P2) Safety: completed implies two factors gathered.
+LTLSPEC G ( payment_state = completed -> factor_count >= 2 )
+
+-- (P3) Safety: skipping authentication is impossible.
+LTLSPEC G ( payment_state = initiated -> X ( payment_state != completed ) )
