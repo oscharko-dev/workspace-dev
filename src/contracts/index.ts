@@ -11456,21 +11456,30 @@ export interface JiraFetchResult {
 /**
  * Maximum Jira REST API calls allowed per production-readiness job.
  * Enforced before any outbound fetch; breach emits `jira_api_quota_exceeded`.
+ *
+ * Operator stance (CTO directive 2026-05-10): defaults raised to maximum
+ * for stability + quality. Cost-aware profiles can override per customer.
  */
-export const MAX_JIRA_API_REQUESTS_PER_JOB = 20 as const;
+export const MAX_JIRA_API_REQUESTS_PER_JOB = 200 as const;
 
 /**
  * Maximum raw paste bytes allowed per production-readiness job.
  * Enforced before Jira paste ingest begins; breach emits `jira_paste_quota_exceeded`.
+ *
+ * Operator stance (CTO directive 2026-05-10): raised from 512 KiB to 8 MiB
+ * to accommodate tier-1 banking Jira stories with embedded specifications.
  */
-export const MAX_JIRA_PASTE_BYTES_PER_JOB = 524288 as const;
+export const MAX_JIRA_PASTE_BYTES_PER_JOB = 8_388_608 as const;
 
 /**
  * Maximum custom-context input bytes allowed per production-readiness job.
  * Enforced before custom-context ingest begins; breach emits
  * `custom_context_quota_exceeded`.
+ *
+ * Operator stance (CTO directive 2026-05-10): raised from 256 KiB to 4 MiB
+ * to accommodate multi-section custom-context Markdown files.
  */
-export const MAX_CUSTOM_CONTEXT_BYTES_PER_JOB = 262144 as const;
+export const MAX_CUSTOM_CONTEXT_BYTES_PER_JOB = 4_194_304 as const;
 
 /** Schema version for `Wave4ProductionReadinessEvalReport`. */
 export const WAVE4_PRODUCTION_READINESS_EVAL_REPORT_SCHEMA_VERSION =
