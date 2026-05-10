@@ -2,6 +2,9 @@
 
 Diese Rubrik beschreibt, wann ein generierter Testfall fuer einen Anwendungstest in Banken und Versicherungen in Europa als kundenfaehig gilt. Sie ist auf fachliche Anwendungstests ausgerichtet, nicht auf reine Penetrationstests oder technische Unit-Tests. Sicherheits-, Datenschutz-, Barrierefreiheits- und Resilienzanforderungen muessen aber abgedeckt werden, wenn sie aus Quelle, Maske, Prozess oder Nutzungskontext ableitbar sind.
 
+Der zugrundeliegende Stichproben- und Traceability-Plan fuer diese Rubrik ist
+in `SAMPLE-PLAN.md` dokumentiert.
+
 ## 1. Zielbild
 
 Ein Testfall beschreibt genau einen fachlich zusammenhaengenden Nutzungskontext oder einen klar abgegrenzten Teilbereich einer komplexen Maske. Er muss durch eine fachkundige Testperson ohne Rueckfragen ausfuehrbar sein, ohne fachliche Regeln zu erfinden.
@@ -143,3 +146,25 @@ Diese Rubrik orientiert sich an folgenden aktuellen Leitplanken:
 - WCAG 2.2: aktueller W3C-Standard fuer pruefbare digitale Barrierefreiheit.
 - DSGVO, insbesondere Grundsaetze der Zweckbindung, Datenminimierung, Richtigkeit, Speicherbegrenzung sowie Integritaet und Vertraulichkeit.
 - ISO/IEC/IEEE 29119-4:2021: etablierte Testdesign-Techniken als Referenz fuer Aequivalenzklassen, Grenzwertanalyse, zustandsbasierte und andere systematische Testverfahren.
+
+## 11. Quellen- und Traceability-Matrix
+
+Diese Rubrik ist aus den folgenden Quellen abgeleitet. Die Tabelle benennt
+die Rubrikabschnitte und den jeweiligen Source-of-Record.
+
+| Rubrikabschnitt | Source-of-Record |
+| --- | --- |
+| 1. Zielbild | `docs/test-intelligence.md` und `docs/eu-ai-act/human-oversight.md` |
+| 2. Mindestformat je Testfall | `src/test-intelligence/customer-markdown-renderer.ts` |
+| 3. Umfang und Schnitt | `docs/decisions/0042-benchmark-sample-plan.md` und `docs/test-intelligence.md` |
+| 4. Inhaltliche Abdeckung | `docs/test-intelligence.md` und `docs/test-intelligence-judge-calibration.md` |
+| 5. Banken- und Versicherungsleitplanken Europa 2026 | `docs/test-intelligence.md` und `docs/eu-ai-act/human-oversight.md` |
+| 6. Umgang mit unklaren Anforderungen | `src/test-intelligence/test-data-oracle.ts` und `docs/test-intelligence.md` |
+| 7. Qualitaetskriterien und Scoring | `src/test-intelligence/customer-markdown-renderer.ts` |
+| 8. Harte Ablehnungskriterien | `src/test-intelligence/customer-markdown-renderer.ts` und `docs/test-intelligence.md` |
+| 9. Gute Formulierungen | `src/test-intelligence/customer-markdown-renderer.ts` |
+| 10. Grounding Stand 2026 | `docs/test-intelligence.md`, `docs/eu-ai-act/human-oversight.md`, `docs/eu-ai-act/model-cards/README.md` |
+
+Wenn ein kundenfaehiger Testfall eine Regel oder Erwartung zitiert, die sich
+nicht auf eines der obigen Quelldokumente zurueckfuehren laesst, ist der
+Testfall nicht publikationsreif.

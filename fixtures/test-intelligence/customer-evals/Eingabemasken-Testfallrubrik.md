@@ -7,6 +7,9 @@ beschreibt, welche Testfaelle ein generischer Generator je
 Maskenarchetyp mindestens erzeugen muss, damit das Ergebnis
 kundenfaehig im Sinne der Mutterrubrik (Score 90+) ist.
 
+Der zugrundeliegende Stichproben- und Traceability-Plan fuer diese Rubrik ist
+in `SAMPLE-PLAN.md` dokumentiert.
+
 Begriffsabgrenzung: "Eingabemaske" ist hier eine konkrete UI-Maske
 einer Banken- oder Versicherungsanwendung. Die Eingabemasken-Suite
 sitzt eine Tier ueber den generischen MA-0-Baselines: wo MA-0 nur
@@ -208,3 +211,21 @@ Aenderungen an dieser Rubrik werden in `CONTRACT_CHANGELOG.md` als
 nicht-bricht-konformes Update eingetragen, wenn sie die Suite-Quotas
 verschaerfen, und als brechendes Update, wenn sie die akzeptierten
 Defaultwerte aendern.
+
+## 7. Quellen- und Traceability-Matrix
+
+Diese Rubrik ist aus den folgenden Quellen abgeleitet. Die Tabelle benennt
+die Rubrikabschnitte und den jeweiligen Source-of-Record.
+
+| Rubrikabschnitt | Source-of-Record |
+| --- | --- |
+| 1. Geltungsbereich | `fixtures/test-intelligence/customer-evals/Testfall-eines-Anwendungstests.md` und `src/test-intelligence/eingabemasken-fixtures.ts` |
+| 2. Tier-Definition der Eingabemasken-Suite | `src/test-intelligence/eingabemasken-fixtures.ts` |
+| 3. Pflicht-Techniken nach ISO 29119 je Maskentyp | `docs/test-intelligence.md` und `src/test-intelligence/policy-profile.ts` |
+| 4. Cross-Modal Faithfulness-Anker | `fixtures/test-intelligence/faithfulness-calibration/anchors.json` und `src/test-intelligence/test-data-oracle.ts` |
+| 5. Harte Ablehnungskriterien zusaetzlich zur Mutterrubrik | `docs/test-intelligence.md` und `src/test-intelligence/eingabemasken-fixtures.ts` |
+| 6. Pflege | `src/test-intelligence/eingabemasken-fixtures.ts`, `docs/decisions/0042-benchmark-sample-plan.md`, und `docs/eu-ai-act/human-oversight.md` |
+
+Wenn sich ein Tier, eine Technik oder eine Ablehnungsregel nicht auf eines der
+obigen Quelldokumente zurueckfuehren laesst, ist die Regel nicht
+publikationsreif.

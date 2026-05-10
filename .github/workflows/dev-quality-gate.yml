@@ -154,6 +154,9 @@ jobs:
       - name: Enforce EU AI Act model-card freshness (Issue #2112)
         run: pnpm run model-card:check
 
+      - name: Enforce customer-eval sample-plan update policy
+        run: pnpm run verify:customer-eval-sample-plan -- --base "${{ github.event.before }}" --head "${{ github.sha }}"
+
       - name: Enforce UI lint rules
         run: pnpm run ui:lint
 

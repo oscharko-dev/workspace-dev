@@ -125,6 +125,10 @@ test("profile pack distribution includes template lockfile but excludes template
     );
     assert.match(
       tarballListing,
+      /package\/docs\/eu-ai-act\/transparency\.md/,
+    );
+    assert.match(
+      tarballListing,
       /package\/docs\/migration\/wave-4-additive\.md/,
     );
     assert.match(

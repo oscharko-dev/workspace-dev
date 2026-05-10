@@ -53,6 +53,14 @@ jobs:
           pnpm run verify:prompt-template-version
           pnpm run model-card:check
 
+      - name: Enforce customer-eval sample-plan update policy
+        run: |
+          if [ "$(git rev-parse --is-shallow-repository)" = "true" ]; then
+            git fetch --no-tags --prune --unshallow origin
+          fi
+          git fetch --no-tags --prune origin "${{ github.base_ref }}"
+          pnpm run verify:customer-eval-sample-plan -- --base "origin/${{ github.base_ref }}" --head HEAD --merge-base
+
       - name: Typecheck
         run: pnpm run typecheck
 
