@@ -1302,24 +1302,24 @@ Additive public-contract changes:
   migration registration entry required.
 - New runtime constants exported from `src/contracts/index.ts` and the
   package root:
-    - `LOGIC_JUDGE_VERDICT_SCHEMA_VERSION = "1.0.0"`
-    - `LOGIC_JUDGE_PROMPT_TEMPLATE_VERSION = "logic-judge.v1"`
-    - `LOGIC_JUDGE_COMPILED_PROMPT_ARTIFACT_FILENAME = "compiled-prompt-logic-judge.json"`
-    - `LOGIC_JUDGE_VERDICT_ARTIFACT_FILENAME = "logic_judge.json"`
-    - `ALLOWED_LOGIC_JUDGE_VERDICTS = ["accept", "repair", "reject"]`
-    - `ALLOWED_LOGIC_JUDGE_FINDING_SEVERITIES = ["warning", "error"]`
-    - `FAITHFULNESS_VERDICT_SCHEMA_VERSION = "1.0.0"`
-    - `FAITHFULNESS_JUDGE_PROMPT_TEMPLATE_VERSION = "faithfulness-judge.v1"`
-    - `FAITHFULNESS_JUDGE_COMPILED_PROMPT_ARTIFACT_FILENAME = "compiled-prompt-faithfulness-judge.json"`
-    - `FAITHFULNESS_VERDICT_ARTIFACT_FILENAME = "faithfulness_judge.json"`
-    - `ALLOWED_FAITHFULNESS_VERDICTS = ["accept", "repair", "reject"]`
+  - `LOGIC_JUDGE_VERDICT_SCHEMA_VERSION = "1.0.0"`
+  - `LOGIC_JUDGE_PROMPT_TEMPLATE_VERSION = "logic-judge.v1"`
+  - `LOGIC_JUDGE_COMPILED_PROMPT_ARTIFACT_FILENAME = "compiled-prompt-logic-judge.json"`
+  - `LOGIC_JUDGE_VERDICT_ARTIFACT_FILENAME = "logic_judge.json"`
+  - `ALLOWED_LOGIC_JUDGE_VERDICTS = ["accept", "repair", "reject"]`
+  - `ALLOWED_LOGIC_JUDGE_FINDING_SEVERITIES = ["warning", "error"]`
+  - `FAITHFULNESS_VERDICT_SCHEMA_VERSION = "1.0.0"`
+  - `FAITHFULNESS_JUDGE_PROMPT_TEMPLATE_VERSION = "faithfulness-judge.v1"`
+  - `FAITHFULNESS_JUDGE_COMPILED_PROMPT_ARTIFACT_FILENAME = "compiled-prompt-faithfulness-judge.json"`
+  - `FAITHFULNESS_VERDICT_ARTIFACT_FILENAME = "faithfulness_judge.json"`
+  - `ALLOWED_FAITHFULNESS_VERDICTS = ["accept", "repair", "reject"]`
 - New exported types:
-    - `JudgeFinding`, `RepairInstruction`, `JudgeVerdictRefusal`,
-      `JudgeVerdict`, `LogicJudgeVerdictLabel`,
-      `LogicJudgeFindingSeverity`
-    - `HallucinationFinding`, `VisualMismatch`,
-      `FaithfulnessVerdictRefusal`, `FaithfulnessVerdict`,
-      `FaithfulnessVerdictLabel`
+  - `JudgeFinding`, `RepairInstruction`, `JudgeVerdictRefusal`,
+    `JudgeVerdict`, `LogicJudgeVerdictLabel`,
+    `LogicJudgeFindingSeverity`
+  - `HallucinationFinding`, `VisualMismatch`,
+    `FaithfulnessVerdictRefusal`, `FaithfulnessVerdict`,
+    `FaithfulnessVerdictLabel`
 
 This is an additive minor bump. No existing field or discriminant is
 removed or renamed.
@@ -1403,16 +1403,16 @@ Additive public-contract changes:
 
 - New runtime constants exported from `src/contracts/index.ts` and the
   package root:
-    - `RELEASE_READINESS_REPORT_ARTIFACT_FILENAME = "release-readiness-report.json"`
-    - `RELEASE_READINESS_ARTIFACT_DIRECTORY = "evidence/release-readiness"`
-    - `RELEASE_READINESS_REPORT_SCHEMA_VERSION = "1.0.0"`
-    - `ALLOWED_RELEASE_READINESS_GATE_IDS` — closed, ordered list of the
-      twelve canonical gates: `typecheck`, `test`, `test_ti_eval`,
-      `test_ti_live_e2e`, `lint_no_telemetry`, `lint_secrets_all`,
-      `lint_agent_boundaries`, `lint_ts_style`, `build`,
-      `release_ml_bom_emit`, `release_merkle_roundtrip`,
-      `release_library_coverage_report`.
-    - `ALLOWED_RELEASE_READINESS_GATE_STATUSES = ["passed", "failed", "skipped"]`.
+  - `RELEASE_READINESS_REPORT_ARTIFACT_FILENAME = "release-readiness-report.json"`
+  - `RELEASE_READINESS_ARTIFACT_DIRECTORY = "evidence/release-readiness"`
+  - `RELEASE_READINESS_REPORT_SCHEMA_VERSION = "1.0.0"`
+  - `ALLOWED_RELEASE_READINESS_GATE_IDS` — closed, ordered list of the
+    twelve canonical gates: `typecheck`, `test`, `test_ti_eval`,
+    `test_ti_live_e2e`, `lint_no_telemetry`, `lint_secrets_all`,
+    `lint_agent_boundaries`, `lint_ts_style`, `build`,
+    `release_ml_bom_emit`, `release_merkle_roundtrip`,
+    `release_library_coverage_report`.
+  - `ALLOWED_RELEASE_READINESS_GATE_STATUSES = ["passed", "failed", "skipped"]`.
 - New contract types: `ReleaseReadinessGateId`,
   `ReleaseReadinessGateStatus`, `ReleaseReadinessGateResult`,
   `ReleaseReadinessReport`.
@@ -1447,26 +1447,26 @@ Additive public-contract changes:
 
 - New runtime constants exported from `src/contracts/index.ts` and the
   package root:
-    - `ALLOWED_LIBRARY_COVERAGE_RELEASE_STATUSES = ["COVERED", "PARITY-PATH", "NICHT-UEBERNOMMEN"]`
-    - `RELEASE_QUALITY_GATES_THRESHOLDS.perSourceCostPlausibility = { allowedFailures: 0 }`
-    - `RELEASE_QUALITY_GATES_THRESHOLDS.MEMDIR_MAX_AGE_MS = 7776000000` (90 days)
-    - `RELEASE_QUALITY_GATES_THRESHOLDS.contextBudget = { defaultMaxBloatRatio: 1.20, minSampleCount: 5 }`
-    - `ALLOWED_RELEASE_QUALITY_GATE_IDS` extended with five new members:
-      `"per_source_cost_plausibility"`, `"memdir_manifest_consistency"`,
-      `"library_coverage_status_completeness"`, `"architecture_fit_self_test"`,
-      `"context_budget_regression"`
+  - `ALLOWED_LIBRARY_COVERAGE_RELEASE_STATUSES = ["COVERED", "PARITY-PATH", "NICHT-UEBERNOMMEN"]`
+  - `RELEASE_QUALITY_GATES_THRESHOLDS.perSourceCostPlausibility = { allowedFailures: 0 }`
+  - `RELEASE_QUALITY_GATES_THRESHOLDS.MEMDIR_MAX_AGE_MS = 7776000000` (90 days)
+  - `RELEASE_QUALITY_GATES_THRESHOLDS.contextBudget = { defaultMaxBloatRatio: 1.20, minSampleCount: 5 }`
+  - `ALLOWED_RELEASE_QUALITY_GATE_IDS` extended with five new members:
+    `"per_source_cost_plausibility"`, `"memdir_manifest_consistency"`,
+    `"library_coverage_status_completeness"`, `"architecture_fit_self_test"`,
+    `"context_budget_regression"`
 - New contract types:
-    - `LibraryCoverageReleaseStatus`
-    - `ReleaseQualityGatePerSourceCostSample`
-    - `ReleaseQualityGateMemdirLesson`
-    - `ReleaseQualityGateLibraryCoveragePrimitive`
-    - `ReleaseQualityGateArchitectureViolation`
+  - `LibraryCoverageReleaseStatus`
+  - `ReleaseQualityGatePerSourceCostSample`
+  - `ReleaseQualityGateMemdirLesson`
+  - `ReleaseQualityGateLibraryCoveragePrimitive`
+  - `ReleaseQualityGateArchitectureViolation`
 - `ReleaseQualityGatesInput` extended with five new required sections:
-    - `perSourceCostPlausibility`
-    - `memdirManifestConsistency`
-    - `libraryCoverageStatusCompleteness`
-    - `architectureFitSelfTest`
-    - `contextBudgetRegression`
+  - `perSourceCostPlausibility`
+  - `memdirManifestConsistency`
+  - `libraryCoverageStatusCompleteness`
+  - `architectureFitSelfTest`
+  - `contextBudgetRegression`
 - `TEST_INTELLIGENCE_CONTRACT_VERSION` bumps from `1.7.0` to `1.8.0`.
 - `CONTRACT_VERSION` bumps from `4.41.0` to `4.42.0`.
 
@@ -1507,26 +1507,26 @@ Additive public-contract changes:
 
 - New runtime constants exported from `src/contracts/index.ts` and the
   package root:
-    - `RELEASE_QUALITY_GATES_REPORT_ARTIFACT_FILENAME = "release-quality-gates.json"`
-    - `RELEASE_QUALITY_GATES_REPORT_SCHEMA_VERSION = "1.0.0"`
-    - `RELEASE_QUALITY_GATES_THRESHOLDS = { minMutationKillRate: 0.85, minPromptCacheHitRate: 0.7, maxCacheBreakRate: 0.05 }`
-    - `ALLOWED_RELEASE_QUALITY_GATE_IDS = ["mutation_kill_rate", "prompt_cache_hit_rate", "tamper_detection_round_trip", "cache_break_rate"]`
+  - `RELEASE_QUALITY_GATES_REPORT_ARTIFACT_FILENAME = "release-quality-gates.json"`
+  - `RELEASE_QUALITY_GATES_REPORT_SCHEMA_VERSION = "1.0.0"`
+  - `RELEASE_QUALITY_GATES_THRESHOLDS = { minMutationKillRate: 0.85, minPromptCacheHitRate: 0.7, maxCacheBreakRate: 0.05 }`
+  - `ALLOWED_RELEASE_QUALITY_GATE_IDS = ["mutation_kill_rate", "prompt_cache_hit_rate", "tamper_detection_round_trip", "cache_break_rate"]`
 - New contract types:
-    - `ReleaseQualityGateId`
-    - `ReleaseQualityGateMutationFixture`
-    - `ReleaseQualityGatePromptCacheRole`
-    - `ReleaseQualityGateTamperSample`
-    - `ReleaseQualityGateCacheBreakSample`
-    - `ReleaseQualityGatesInput`
-    - `ReleaseQualityGateVerdict`
-    - `ReleaseQualityGatesReport`
+  - `ReleaseQualityGateId`
+  - `ReleaseQualityGateMutationFixture`
+  - `ReleaseQualityGatePromptCacheRole`
+  - `ReleaseQualityGateTamperSample`
+  - `ReleaseQualityGateCacheBreakSample`
+  - `ReleaseQualityGatesInput`
+  - `ReleaseQualityGateVerdict`
+  - `ReleaseQualityGatesReport`
 - New test-intelligence helpers (re-exported from
   `src/test-intelligence/index.ts`):
-    - `evaluateReleaseQualityGates` — pure evaluator.
-    - `isReleaseQualityGatesInput` — strict structural validator.
-    - `serializeReleaseQualityGatesReport` — canonical-JSON byte payload.
-    - `parseReleaseQualityGatesReport` — strict round-trip parser.
-    - `writeReleaseQualityGatesReport` — atomic tmp+rename writer.
+  - `evaluateReleaseQualityGates` — pure evaluator.
+  - `isReleaseQualityGatesInput` — strict structural validator.
+  - `serializeReleaseQualityGatesReport` — canonical-JSON byte payload.
+  - `parseReleaseQualityGatesReport` — strict round-trip parser.
+  - `writeReleaseQualityGatesReport` — atomic tmp+rename writer.
 - `TEST_INTELLIGENCE_CONTRACT_VERSION` bumps from `1.6.0` to `1.7.0`.
 
 The new `verify:release-quality-gates` package script consumes a
@@ -1551,20 +1551,20 @@ enforcement and canonical JSONL audit logging.
 Additive public-contract changes:
 
 - New runtime constants:
-    - `MIGRATIONS_LOG_ARTIFACT_FILENAME = "migrations.log.jsonl"`
-    - `MIGRATION_BUNDLE_SCHEMA_VERSION = "1.0.0"`
-    - `ALLOWED_MIGRATION_REFUSAL_CODES = ["migration_apply_failed", "migration_audit_log_invalid", "migration_registry_invalid", "migration_rollback_failed", "migration_rollback_required", "migration_state_invalid", "migration_unsigned"]`
+  - `MIGRATIONS_LOG_ARTIFACT_FILENAME = "migrations.log.jsonl"`
+  - `MIGRATION_BUNDLE_SCHEMA_VERSION = "1.0.0"`
+  - `ALLOWED_MIGRATION_REFUSAL_CODES = ["migration_apply_failed", "migration_audit_log_invalid", "migration_registry_invalid", "migration_rollback_failed", "migration_rollback_required", "migration_state_invalid", "migration_unsigned"]`
 - New contract types:
-    - `MigrationRefusalCode`
-    - `SignedMigrationBundleEntry`
-    - `SignedMigrationBundle`
+  - `MigrationRefusalCode`
+  - `SignedMigrationBundleEntry`
+  - `SignedMigrationBundle`
 - `ALLOWED_HARNESS_ARTIFACT_FILENAMES` now includes
   `migrations.log.jsonl`, so the harness artifact manifest may hash the
   migration audit log offline without re-running a job.
 - New public runtime helpers exported from the package root:
-    - `buildMigrationHash`
-    - `parseMigrationAuditLog`
-    - `runMigrations`
+  - `buildMigrationHash`
+  - `parseMigrationAuditLog`
+  - `runMigrations`
 
 Banking-profile governance for signed migration bundles:
 
@@ -1574,7 +1574,7 @@ Banking-profile governance for signed migration bundles:
 - `SignedMigrationBundle.entries[].hash` is governed by the contract process:
   future contract headings that introduce or change banking-profile
   migrations must register each approved hash inline using
-  `migrationHash: \`<sha256>\`` entries under the same heading.
+  ``migrationHash: `<sha256>` `` entries under the same heading.
 - This release introduces the bundle format and enforcement path only; it
   does not ship any pre-registered banking migrations yet.
 
@@ -1597,31 +1597,31 @@ Additive public-contract changes (no removals or renames):
 
 - New filename + schema-version constants and persisted artifact
   shapes:
-    - `AGENT_ITERATIONS_ARTIFACT_FILENAME`,
-      `AGENT_ITERATIONS_SCHEMA_VERSION`, `AgentIterationsArtifact`,
-      `AgentIterationRecord`, `ALLOWED_AGENT_ITERATION_OUTCOMES`,
-      `AgentIterationOutcome` — consolidated repair-iteration log.
-    - `CACHE_BREAK_EVENTS_LOG_ARTIFACT_FILENAME`,
-      `CACHE_BREAK_EVENTS_LOG_SCHEMA_VERSION`,
-      `CacheBreakEventLogEntry` — consolidated cache-break event log
-      (newline-delimited JSON).
-    - `COMPACT_BOUNDARY_LOG_ARTIFACT_FILENAME`,
-      `COMPACT_BOUNDARY_LOG_SCHEMA_VERSION`,
-      `CompactBoundaryLogEntry`,
-      `ALLOWED_COMPACT_BOUNDARY_LOG_TIERS`, `CompactBoundaryLogTier`
-      — consolidated compaction-boundary log (newline-delimited JSON).
-    - `LIBRARY_COVERAGE_REPORT_ARTIFACT_FILENAME`,
-      `LIBRARY_COVERAGE_REPORT_SCHEMA_VERSION`,
-      `LibraryCoverageReport`, `LibraryPrimitiveCoverageEntry`,
-      `LibraryCoverageReportCounts`,
-      `ALLOWED_LIBRARY_PRIMITIVE_STATUSES`, `LibraryPrimitiveStatus`
-      — per-release primitive-map status report.
-    - `HARNESS_ARTIFACT_MANIFEST_ARTIFACT_FILENAME`,
-      `HARNESS_ARTIFACT_MANIFEST_SCHEMA_VERSION`,
-      `HarnessArtifactManifest`, `HarnessArtifactManifestEntry`,
-      `ALLOWED_HARNESS_ARTIFACT_FILENAMES`, `HarnessArtifactFilename`
-      — per-job manifest pinning every artifact's
-      `{filename, schemaVersion, sha256, sizeBytes}`.
+  - `AGENT_ITERATIONS_ARTIFACT_FILENAME`,
+    `AGENT_ITERATIONS_SCHEMA_VERSION`, `AgentIterationsArtifact`,
+    `AgentIterationRecord`, `ALLOWED_AGENT_ITERATION_OUTCOMES`,
+    `AgentIterationOutcome` — consolidated repair-iteration log.
+  - `CACHE_BREAK_EVENTS_LOG_ARTIFACT_FILENAME`,
+    `CACHE_BREAK_EVENTS_LOG_SCHEMA_VERSION`,
+    `CacheBreakEventLogEntry` — consolidated cache-break event log
+    (newline-delimited JSON).
+  - `COMPACT_BOUNDARY_LOG_ARTIFACT_FILENAME`,
+    `COMPACT_BOUNDARY_LOG_SCHEMA_VERSION`,
+    `CompactBoundaryLogEntry`,
+    `ALLOWED_COMPACT_BOUNDARY_LOG_TIERS`, `CompactBoundaryLogTier`
+    — consolidated compaction-boundary log (newline-delimited JSON).
+  - `LIBRARY_COVERAGE_REPORT_ARTIFACT_FILENAME`,
+    `LIBRARY_COVERAGE_REPORT_SCHEMA_VERSION`,
+    `LibraryCoverageReport`, `LibraryPrimitiveCoverageEntry`,
+    `LibraryCoverageReportCounts`,
+    `ALLOWED_LIBRARY_PRIMITIVE_STATUSES`, `LibraryPrimitiveStatus`
+    — per-release primitive-map status report.
+  - `HARNESS_ARTIFACT_MANIFEST_ARTIFACT_FILENAME`,
+    `HARNESS_ARTIFACT_MANIFEST_SCHEMA_VERSION`,
+    `HarnessArtifactManifest`, `HarnessArtifactManifestEntry`,
+    `ALLOWED_HARNESS_ARTIFACT_FILENAMES`, `HarnessArtifactFilename`
+    — per-job manifest pinning every artifact's
+    `{filename, schemaVersion, sha256, sizeBytes}`.
 
 - New writer / validator / verify functions in
   `src/test-intelligence`:
@@ -1778,7 +1778,7 @@ The runtime module ships in `src/test-intelligence/semantic-judge-panel.ts`
 and is re-exported through `src/test-intelligence/index.ts`. It does
 not extend the public API (`src/index.ts`) surface; consumers that
 need the panel import it from the test-intelligence subpath, mirroring
-the AGENT*HARNESS*_ / AGENT*TEAM*_ contracts shipped in 4.32.0–4.33.0.
+the `AGENT_HARNESS_*` / `AGENT_TEAM_*` contracts shipped in 4.32.0–4.33.0.
 
 ### Disagreement routing (AT-022)
 
@@ -1814,7 +1814,7 @@ the multi-agent harness (Story MA-3, parent #1758) writes per job:
 `<runDir>/agent-team-results.json`.
 
 The execution graph is a small canonical-JSON-stable adjacency-list
-DAG. It is _not_ a workflow framework — there is no scheduler, no
+DAG. It is *not* a workflow framework — there is no scheduler, no
 trigger, no conditional. Each node carries `roleStepId`, `role`,
 sorted `blocks` / `blockedBy` edges, sorted `requiredInputArtifacts`
 and `producedArtifacts`, and a closed `retryPolicy` literal. The
@@ -1926,8 +1926,8 @@ becomes mandatory once the banking-policy gate ships in MA-4.
 
 `TEST_INTELLIGENCE_CONTRACT_VERSION` is unchanged at `1.6.0` — the
 new registry is additive and does not change any existing
-test-intelligence artifact schema. Per the precedent set by Issues
-#1767 / #1774 / #1778, additive test-intelligence surface bumps the
+test-intelligence artifact schema. Per the precedent set by
+Issues #1767 / #1774 / #1778, additive test-intelligence surface bumps the
 top-level `CONTRACT_VERSION` only.
 
 New public exports (additive only):
@@ -1994,8 +1994,8 @@ bump per the rules at the top of this file.
 
 `TEST_INTELLIGENCE_CONTRACT_VERSION` is unchanged at `1.6.0` — the new
 detector is additive and does not change any existing
-test-intelligence artifact schema. Per the precedent set by Issues
-#1767 / #1774, additive test-intelligence surface bumps the top-level
+test-intelligence artifact schema. Per the precedent set by
+Issues #1767 / #1774, additive test-intelligence surface bumps the top-level
 `CONTRACT_VERSION` only.
 
 New public exports (additive only):
@@ -2048,8 +2048,8 @@ counts.
 
 `TEST_INTELLIGENCE_CONTRACT_VERSION` is unchanged at `1.6.0` — the new
 normalization is additive and does not change any existing
-test-intelligence artifact schema. Per the precedent set by Issue
-#1767 (`[4.28.0]`), additive test-intelligence surface bumps the
+test-intelligence artifact schema. Per the precedent set by
+Issue #1767 (`[4.28.0]`), additive test-intelligence surface bumps the
 top-level `CONTRACT_VERSION` only.
 
 New public exports (additive only):
@@ -2281,14 +2281,14 @@ end-to-end run against the configured Azure deployment.
 **Renames (internal — no public-export surface change):**
 
 - `VISUAL_SIDECAR_RESPONSE_SCHEMA_NAME`
-    - before: `workspace-dev.test-intelligence.visual-sidecar.v1`
-    - after: `workspace-dev-visual-sidecar-v1`
+  - before: `workspace-dev.test-intelligence.visual-sidecar.v1`
+  - after: `workspace-dev-visual-sidecar-v1`
 - `GENERATED_TEST_CASE_LIST_SCHEMA_NAME` (template):
-    - before: `workspace-dev.test-intelligence.generated-test-case-list.v${V}`
-    - after: `workspace-dev-generated-test-case-list-v${V}`
+  - before: `workspace-dev.test-intelligence.generated-test-case-list.v${V}`
+  - after: `workspace-dev-generated-test-case-list-v${V}`
 - `llm-capability-probe.ts` probe `responseSchemaName`:
-    - before: `workspace-dev.test-intelligence.capability-probe.v1`
-    - after: `workspace-dev-capability-probe-v1`
+  - before: `workspace-dev.test-intelligence.capability-probe.v1`
+  - after: `workspace-dev-capability-probe-v1`
 
 The constant identifiers and JSON Schema `$id` fields are unchanged from a
 TypeScript-export perspective; only the runtime string values change. A
@@ -2623,14 +2623,14 @@ Wave 4.A multi-source consumers are unchanged.
   `MAX_JIRA_ATTACHMENT_COUNT = 50`, `MAX_JIRA_LINK_COUNT = 50`,
   `MAX_JIRA_CUSTOM_FIELD_COUNT = 50`.
 - New runtime enums:
-    - `ALLOWED_JIRA_ISSUE_TYPES` (`story|task|bug|epic|subtask|other`).
-    - `ALLOWED_JIRA_ADF_NODE_TYPES` (24 allow-listed ADF node types).
-    - `ALLOWED_JIRA_ADF_MARK_TYPES` (8 allow-listed ADF mark types).
-    - `ALLOWED_JIRA_ADF_REJECTION_CODES` (11 codes including
-      `jira_adf_payload_too_large`, `jira_adf_unknown_node_type`).
-    - `ALLOWED_JIRA_IR_REFUSAL_CODES` (19 codes including
-      `jira_issue_key_invalid`, `jira_jql_fragment_disallowed_token`,
-      `jira_field_unknown_excluded`).
+  - `ALLOWED_JIRA_ISSUE_TYPES` (`story|task|bug|epic|subtask|other`).
+  - `ALLOWED_JIRA_ADF_NODE_TYPES` (24 allow-listed ADF node types).
+  - `ALLOWED_JIRA_ADF_MARK_TYPES` (8 allow-listed ADF mark types).
+  - `ALLOWED_JIRA_ADF_REJECTION_CODES` (11 codes including
+    `jira_adf_payload_too_large`, `jira_adf_unknown_node_type`).
+  - `ALLOWED_JIRA_IR_REFUSAL_CODES` (19 codes including
+    `jira_issue_key_invalid`, `jira_jql_fragment_disallowed_token`,
+    `jira_field_unknown_excluded`).
 - New types: `JiraIssueIr`, `JiraAcceptanceCriterion`, `JiraComment`,
   `JiraAttachmentRef`, `JiraLinkRef`, `JiraIssueIrCustomField`,
   `JiraFieldSelectionProfile`, `JiraIssueIrDataMinimization`,
@@ -2680,7 +2680,7 @@ and replay-cache hits.
 - New env var `TEST_INTELLIGENCE_MULTISOURCE_ENV` (literal
   `FIGMAPIPE_WORKSPACE_TEST_INTELLIGENCE_MULTISOURCE`) gating Wave 4
   multi-source ingestion. Strictly nested behind `TEST_INTELLIGENCE_ENV`:
-  the gate fails closed unless _both_ env vars and the parent
+  the gate fails closed unless *both* env vars and the parent
   `WorkspaceStartOptions.testIntelligence.enabled` startup option are set.
 - New optional startup option
   `WorkspaceStartOptions.testIntelligence.multiSourceEnabled?: boolean`
@@ -2692,39 +2692,39 @@ and replay-cache hits.
 - New schema-version constant
   `MULTI_SOURCE_TEST_INTENT_ENVELOPE_SCHEMA_VERSION = "1.0.0"`.
 - New runtime enums:
-    - `ALLOWED_TEST_INTENT_SOURCE_KINDS` — `figma_local_json`,
-      `figma_plugin`, `figma_rest`, `jira_rest`, `jira_paste`, `custom_text`,
-      `custom_structured`. Type alias `TestIntentSourceKind`.
-    - `PRIMARY_TEST_INTENT_SOURCE_KINDS` — the five kinds (Figma trio plus
-      `jira_rest`, `jira_paste`) at least one of which must be present in
-      every envelope. Type alias `PrimaryTestIntentSourceKind`.
-    - `SUPPORTING_TEST_INTENT_SOURCE_KINDS` — `custom_text`,
-      `custom_structured`. Type alias `SupportingTestIntentSourceKind`.
-    - `ALLOWED_CONFLICT_RESOLUTION_POLICIES` — `priority`,
-      `reviewer_decides`, `keep_both`. Type alias `ConflictResolutionPolicy`.
-    - `ALLOWED_TEST_INTENT_CUSTOM_INPUT_FORMATS` — `plain_text`, `markdown`,
-      `structured_json`. Type alias `TestIntentCustomInputFormat`.
-    - `ALLOWED_MULTI_SOURCE_ENVELOPE_REFUSAL_CODES` — 26 stable refusal
-      codes covering envelope shape, source-mix, conflict policy, priority
-      order, Markdown hash, Jira issue-key, source-mix-plan, and
-      aggregate-hash mismatch checks.
-    - `ALLOWED_MULTI_SOURCE_MODE_GATE_REFUSAL_CODES` — four stable refusal
-      codes for the runtime mode gate (parent gate, env, startup option,
-      `llmCodegenMode` lock).
+  - `ALLOWED_TEST_INTENT_SOURCE_KINDS` — `figma_local_json`,
+    `figma_plugin`, `figma_rest`, `jira_rest`, `jira_paste`, `custom_text`,
+    `custom_structured`. Type alias `TestIntentSourceKind`.
+  - `PRIMARY_TEST_INTENT_SOURCE_KINDS` — the five kinds (Figma trio plus
+    `jira_rest`, `jira_paste`) at least one of which must be present in
+    every envelope. Type alias `PrimaryTestIntentSourceKind`.
+  - `SUPPORTING_TEST_INTENT_SOURCE_KINDS` — `custom_text`,
+    `custom_structured`. Type alias `SupportingTestIntentSourceKind`.
+  - `ALLOWED_CONFLICT_RESOLUTION_POLICIES` — `priority`,
+    `reviewer_decides`, `keep_both`. Type alias `ConflictResolutionPolicy`.
+  - `ALLOWED_TEST_INTENT_CUSTOM_INPUT_FORMATS` — `plain_text`, `markdown`,
+    `structured_json`. Type alias `TestIntentCustomInputFormat`.
+  - `ALLOWED_MULTI_SOURCE_ENVELOPE_REFUSAL_CODES` — 26 stable refusal
+    codes covering envelope shape, source-mix, conflict policy, priority
+    order, Markdown hash, Jira issue-key, source-mix-plan, and
+    aggregate-hash mismatch checks.
+  - `ALLOWED_MULTI_SOURCE_MODE_GATE_REFUSAL_CODES` — four stable refusal
+    codes for the runtime mode gate (parent gate, env, startup option,
+    `llmCodegenMode` lock).
 - New types:
-    - `TestIntentSourceRef` (`sourceId`, `kind`, `contentHash`, `capturedAt`,
-      optional `authorHandle`, `inputFormat`, `noteEntryId`,
-      `markdownSectionPath`, `canonicalIssueKey`, `redactedMarkdownHash`,
-      `plainTextDerivativeHash`).
-    - `MultiSourceTestIntentEnvelope` (`version`, `sources`,
-      `aggregateContentHash`, `conflictResolutionPolicy`, optional
-      `priorityOrder`, `sourceMixPlan`).
-    - `MultiSourceTestIntentSourceMixPlanRef` (`ownerIssue`, `planHash`) as the
-      #1441-owned source-mix orchestration hook.
-    - `MultiSourceEnvelopeIssue`, `MultiSourceEnvelopeRefusalCode`,
-      `MultiSourceEnvelopeValidationResult`.
-    - `MultiSourceModeGateInput`, `MultiSourceModeGateRefusal`,
-      `MultiSourceModeGateRefusalCode`, `MultiSourceModeGateDecision`.
+  - `TestIntentSourceRef` (`sourceId`, `kind`, `contentHash`, `capturedAt`,
+    optional `authorHandle`, `inputFormat`, `noteEntryId`,
+    `markdownSectionPath`, `canonicalIssueKey`, `redactedMarkdownHash`,
+    `plainTextDerivativeHash`).
+  - `MultiSourceTestIntentEnvelope` (`version`, `sources`,
+    `aggregateContentHash`, `conflictResolutionPolicy`, optional
+    `priorityOrder`, `sourceMixPlan`).
+  - `MultiSourceTestIntentSourceMixPlanRef` (`ownerIssue`, `planHash`) as the
+    #1441-owned source-mix orchestration hook.
+  - `MultiSourceEnvelopeIssue`, `MultiSourceEnvelopeRefusalCode`,
+    `MultiSourceEnvelopeValidationResult`.
+  - `MultiSourceModeGateInput`, `MultiSourceModeGateRefusal`,
+    `MultiSourceModeGateRefusalCode`, `MultiSourceModeGateDecision`.
 - New optional `BusinessTestIntentIr.sourceEnvelope?: MultiSourceTestIntentEnvelope`.
   Legacy `source: BusinessTestIntentIrSource`
   is preserved for one minor cycle.
@@ -2886,54 +2886,54 @@ core test-intelligence pipeline to OpenText ALM.
 ### Added (Issue #1373)
 
 - New schema constants for the Wave 3 delta + dedupe + traceability surface:
-    - `INTENT_DELTA_REPORT_SCHEMA_VERSION = "1.0.0"`,
-    - `INTENT_DELTA_REPORT_ARTIFACT_FILENAME = "intent-delta-report.json"`,
-    - `TEST_CASE_DELTA_REPORT_SCHEMA_VERSION = "1.0.0"`,
-    - `DEDUPE_REPORT_SCHEMA_VERSION = "1.0.0"`,
-    - `DEDUPE_REPORT_ARTIFACT_FILENAME = "dedupe-report.json"`,
-    - `TRACEABILITY_MATRIX_SCHEMA_VERSION = "1.0.0"`,
-    - `TRACEABILITY_MATRIX_ARTIFACT_FILENAME = "traceability-matrix.json"`.
+  - `INTENT_DELTA_REPORT_SCHEMA_VERSION = "1.0.0"`,
+  - `INTENT_DELTA_REPORT_ARTIFACT_FILENAME = "intent-delta-report.json"`,
+  - `TEST_CASE_DELTA_REPORT_SCHEMA_VERSION = "1.0.0"`,
+  - `DEDUPE_REPORT_SCHEMA_VERSION = "1.0.0"`,
+  - `DEDUPE_REPORT_ARTIFACT_FILENAME = "dedupe-report.json"`,
+  - `TRACEABILITY_MATRIX_SCHEMA_VERSION = "1.0.0"`,
+  - `TRACEABILITY_MATRIX_ARTIFACT_FILENAME = "traceability-matrix.json"`.
 - New enums (additive):
-    - `ALLOWED_INTENT_DELTA_KINDS` / `IntentDeltaKind`: `screen`, `field`,
-      `action`, `validation`, `navigation`, `visual_screen`.
-    - `ALLOWED_INTENT_DELTA_CHANGE_TYPES` / `IntentDeltaChangeType`: `added`,
-      `removed`, `changed`, `confidence_dropped`, `ambiguity_increased`.
-    - `ALLOWED_TEST_CASE_DELTA_VERDICTS` / `TestCaseDeltaVerdict`: `new`,
-      `unchanged`, `changed`, `obsolete`, `requires_review`.
-    - `ALLOWED_TEST_CASE_DELTA_REASONS` / `TestCaseDeltaReason`:
-      `absent_in_current`, `absent_in_prior`, `fingerprint_changed`,
-      `trace_screen_changed`, `trace_screen_removed`,
-      `visual_ambiguity_increased`, `visual_confidence_dropped`,
-      `reconciliation_conflict`.
-    - `ALLOWED_DEDUPE_SIMILARITY_SOURCES` / `DedupeSimilaritySource`:
-      `lexical`, `embedding`, `external_lookup`.
-    - `ALLOWED_DEDUPE_EXTERNAL_PROBE_STATES` / `DedupeExternalProbeState`:
-      `disabled`, `unconfigured`, `executed`.
+  - `ALLOWED_INTENT_DELTA_KINDS` / `IntentDeltaKind`: `screen`, `field`,
+    `action`, `validation`, `navigation`, `visual_screen`.
+  - `ALLOWED_INTENT_DELTA_CHANGE_TYPES` / `IntentDeltaChangeType`: `added`,
+    `removed`, `changed`, `confidence_dropped`, `ambiguity_increased`.
+  - `ALLOWED_TEST_CASE_DELTA_VERDICTS` / `TestCaseDeltaVerdict`: `new`,
+    `unchanged`, `changed`, `obsolete`, `requires_review`.
+  - `ALLOWED_TEST_CASE_DELTA_REASONS` / `TestCaseDeltaReason`:
+    `absent_in_current`, `absent_in_prior`, `fingerprint_changed`,
+    `trace_screen_changed`, `trace_screen_removed`,
+    `visual_ambiguity_increased`, `visual_confidence_dropped`,
+    `reconciliation_conflict`.
+  - `ALLOWED_DEDUPE_SIMILARITY_SOURCES` / `DedupeSimilaritySource`:
+    `lexical`, `embedding`, `external_lookup`.
+  - `ALLOWED_DEDUPE_EXTERNAL_PROBE_STATES` / `DedupeExternalProbeState`:
+    `disabled`, `unconfigured`, `executed`.
 - New artifact types (additive):
-    - `IntentDeltaReport` + `IntentDeltaEntry` + `TestCaseDeltaReport` +
-      `TestCaseDeltaRow` carrying type-level invariants
-      `rawScreenshotsIncluded: false`, `secretsIncluded: false`.
-    - `TestCaseDedupeReport` + `DedupeInternalFinding` +
-      `DedupeExternalFinding` + `DedupeCaseVerdict` carrying the same
-      type-level invariants.
-    - `TraceabilityMatrix` + `TraceabilityMatrixRow` +
-      `TraceabilityVisualObservation` + `TraceabilityReconciliationDecision`
-      carrying the same type-level invariants.
+  - `IntentDeltaReport` + `IntentDeltaEntry` + `TestCaseDeltaReport` +
+    `TestCaseDeltaRow` carrying type-level invariants
+    `rawScreenshotsIncluded: false`, `secretsIncluded: false`.
+  - `TestCaseDedupeReport` + `DedupeInternalFinding` +
+    `DedupeExternalFinding` + `DedupeCaseVerdict` carrying the same
+    type-level invariants.
+  - `TraceabilityMatrix` + `TraceabilityMatrixRow` +
+    `TraceabilityVisualObservation` + `TraceabilityReconciliationDecision`
+    carrying the same type-level invariants.
 - Extended `Wave1PocEvidenceArtifactCategory` union (additive) with three
   new literal categories: `intent_delta`, `dedupe_report`,
   `traceability_matrix`. Existing manifests continue to validate.
 - New public modules under `src/test-intelligence/`:
-    - `intent-delta.ts` exporting `computeIntentDelta`,
-      `writeIntentDeltaReport`, `INTENT_DELTA_DEFAULT_CONFIDENCE_DRIFT`.
-    - `test-case-delta.ts` exporting `classifyTestCaseDelta`,
-      `writeTestCaseDeltaReport`.
-    - `test-case-dedupe.ts` exporting `detectTestCaseDuplicatesExtended`,
-      `cosineSimilarity`, `writeTestCaseDedupeReport`,
-      `createDisabledExternalDedupeProbe`,
-      `createUnconfiguredExternalDedupeProbe`, plus the
-      `EmbeddingProvider` and `ExternalDedupeProbe` interfaces.
-    - `traceability-matrix.ts` exporting `buildTraceabilityMatrix`,
-      `writeTraceabilityMatrix`.
+  - `intent-delta.ts` exporting `computeIntentDelta`,
+    `writeIntentDeltaReport`, `INTENT_DELTA_DEFAULT_CONFIDENCE_DRIFT`.
+  - `test-case-delta.ts` exporting `classifyTestCaseDelta`,
+    `writeTestCaseDeltaReport`.
+  - `test-case-dedupe.ts` exporting `detectTestCaseDuplicatesExtended`,
+    `cosineSimilarity`, `writeTestCaseDedupeReport`,
+    `createDisabledExternalDedupeProbe`,
+    `createUnconfiguredExternalDedupeProbe`, plus the
+    `EmbeddingProvider` and `ExternalDedupeProbe` interfaces.
+  - `traceability-matrix.ts` exporting `buildTraceabilityMatrix`,
+    `writeTraceabilityMatrix`.
 
 ### Behaviour notes
 
@@ -2955,40 +2955,40 @@ core test-intelligence pipeline to OpenText ALM.
 ### Added (Issue #1372)
 
 - New schema constants for the controlled OpenText ALM API transfer pipeline:
-    - `TRANSFER_REPORT_SCHEMA_VERSION = "1.1.0"`,
-    - `TRANSFER_REPORT_ARTIFACT_FILENAME = "transfer-report.json"`,
-    - `QC_CREATED_ENTITIES_SCHEMA_VERSION = "1.0.0"`,
-    - `QC_CREATED_ENTITIES_ARTIFACT_FILENAME = "qc-created-entities.json"`.
+  - `TRANSFER_REPORT_SCHEMA_VERSION = "1.1.0"`,
+  - `TRANSFER_REPORT_ARTIFACT_FILENAME = "transfer-report.json"`,
+  - `QC_CREATED_ENTITIES_SCHEMA_VERSION = "1.0.0"`,
+  - `QC_CREATED_ENTITIES_ARTIFACT_FILENAME = "qc-created-entities.json"`.
 - New enums (additive):
-    - `ALLOWED_TRANSFER_REFUSAL_CODES` / `TransferRefusalCode` covering
-      `feature_disabled`, `admin_gate_disabled`, `bearer_token_missing`,
-      `mapping_profile_invalid`, `provider_mismatch`, `no_mapped_test_cases`,
-      `no_approved_test_cases`, `unapproved_test_cases_present`,
-      `policy_blocked_cases_present`, `schema_invalid_cases_present`,
-      `visual_sidecar_blocked`, `visual_sidecar_evidence_missing`,
-      `review_state_inconsistent`, `four_eyes_pending`, `dry_run_refused`,
-      `dry_run_missing`, `folder_resolution_failed`, `mode_not_implemented`.
-    - `ALLOWED_TRANSFER_ENTITY_OUTCOMES` / `TransferEntityOutcome`:
-      `created`, `skipped_duplicate`, `failed`, `refused`.
-    - `ALLOWED_TRANSFER_FAILURE_CLASSES` / `TransferFailureClass`:
-      `transport_error`, `auth_failed`, `permission_denied`,
-      `validation_rejected`, `conflict_unresolved`, `rate_limited`,
-      `server_error`, `unknown`.
+  - `ALLOWED_TRANSFER_REFUSAL_CODES` / `TransferRefusalCode` covering
+    `feature_disabled`, `admin_gate_disabled`, `bearer_token_missing`,
+    `mapping_profile_invalid`, `provider_mismatch`, `no_mapped_test_cases`,
+    `no_approved_test_cases`, `unapproved_test_cases_present`,
+    `policy_blocked_cases_present`, `schema_invalid_cases_present`,
+    `visual_sidecar_blocked`, `visual_sidecar_evidence_missing`,
+    `review_state_inconsistent`, `four_eyes_pending`, `dry_run_refused`,
+    `dry_run_missing`, `folder_resolution_failed`, `mode_not_implemented`.
+  - `ALLOWED_TRANSFER_ENTITY_OUTCOMES` / `TransferEntityOutcome`:
+    `created`, `skipped_duplicate`, `failed`, `refused`.
+  - `ALLOWED_TRANSFER_FAILURE_CLASSES` / `TransferFailureClass`:
+    `transport_error`, `auth_failed`, `permission_denied`,
+    `validation_rejected`, `conflict_unresolved`, `rate_limited`,
+    `server_error`, `unknown`.
 - New artifact types (additive):
-    - `TransferReportArtifact` with type-level invariants
-      `rawScreenshotsIncluded: false`, `credentialsIncluded: false`,
-      `transferUrlIncluded: false`, plus deterministic counts
-      (`createdCount`, `skippedDuplicateCount`, `failedCount`,
-      `refusedCount`) and `audit: TransferAuditMetadata`.
-    - `QcCreatedEntitiesArtifact` with type-level invariant
-      `transferUrlIncluded: false`.
-    - `TransferEntityRecord`, `QcCreatedEntity`, `TransferAuditMetadata`,
-      and `TransferEvidenceReferences`.
+  - `TransferReportArtifact` with type-level invariants
+    `rawScreenshotsIncluded: false`, `credentialsIncluded: false`,
+    `transferUrlIncluded: false`, plus deterministic counts
+    (`createdCount`, `skippedDuplicateCount`, `failedCount`,
+    `refusedCount`) and `audit: TransferAuditMetadata`.
+  - `QcCreatedEntitiesArtifact` with type-level invariant
+    `transferUrlIncluded: false`.
+  - `TransferEntityRecord`, `QcCreatedEntity`, `TransferAuditMetadata`,
+    and `TransferEvidenceReferences`.
 - New optional fields on `WorkspaceStartOptions.testIntelligence`:
-    - `allowApiTransfer?: boolean` (default `false` — fail-closed admin gate),
-    - `transferBearerToken?: string` (legacy single-principal token),
-    - `transferPrincipals?: TestIntelligenceTransferPrincipal[]`
-      (multi-principal idempotent audit lineage).
+  - `allowApiTransfer?: boolean` (default `false` — fail-closed admin gate),
+  - `transferBearerToken?: string` (legacy single-principal token),
+  - `transferPrincipals?: TestIntelligenceTransferPrincipal[]`
+    (multi-principal idempotent audit lineage).
 - New exported type `TestIntelligenceTransferPrincipal`.
 - New public module `src/test-intelligence/qc-alm-api-transfer.ts`
   exporting `runOpenTextAlmApiTransfer`, `buildTransferRollbackGuidance`,
@@ -3002,7 +3002,7 @@ core test-intelligence pipeline to OpenText ALM.
   schema `"1.0.0"` reports should treat missing `audit.evidenceReferences` as
   a legacy artifact and should not infer Wave 3 evidence binding from it.
 
-### Behaviour notes
+### Behaviour notes (api_transfer)
 
 - The `api_transfer` mode is fail-closed by default. Every gate
   (feature flag, admin flag, bearer token, mapping profile, dry-run
@@ -3048,7 +3048,7 @@ core test-intelligence pipeline to OpenText ALM.
 - The `maxInputTokens` field on `LlmGenerationRequest` (introduced in 3.29.0 as a FinOps surface) is now load-bearing on the gateway transport: the cap is evaluated **before** any network call, before `apiKeyProvider` is invoked, and before the request body is serialized. Mock gateway honours the same guard so CI fixtures observe identical fail-closed semantics. Negative, zero, non-integer, or non-safe-integer values continue to be rejected as `schema_invalid` (structurally invalid budgets, distinct from a budget breach).
 - `runWave1Poc` recognises the new error class as a FinOps gateway-budget failure and routes it through the existing `Wave1PocFinOpsBudgetExceededError` path (no downstream artifacts emitted).
 
-### Changed
+### Changed (Issue #1415)
 
 - Consumers that switch on `errorClass` must extend their handling to cover `"input_budget_exceeded"`. Behavior continues to be `retryable: false`; treat it as a non-transient policy outcome (operator-set cap was breached). Existing matchers that key on the human-readable message (`/estimated input tokens \d+ exceeds maxInputTokens \d+/`) still apply unchanged — only the `errorClass` discriminant moved from `"schema_invalid"` to `"input_budget_exceeded"`.
 
@@ -3059,7 +3059,7 @@ core test-intelligence pipeline to OpenText ALM.
 - New `TestCasePolicyOutcome` literal `"risk_tag_downgrade_detected"` added to `ALLOWED_TEST_CASE_POLICY_OUTCOMES`. Emitted by `evaluatePolicyGate` (per-case and job-level) when the case-level `riskCategory` is outside the active profile's `reviewOnlyRiskCategories` set while the Business Test Intent IR derives a review-only classification for a screen referenced in the case's `figmaTraceRefs`. Per-case violations carry `severity: "warning"` and force the per-case decision to `needs_review`; a deduplicated set of job-level violations records the same drift for audit. The `risk_tag_downgrade_detected` outcome is additive to the existing `regulated_risk_review_required` violation, which continues to fire so per-case review tooling preserves its prior behavior.
 - New optional field `enforceRiskTagDowngradeDetection?: boolean` on `TestCasePolicyProfileRules`. The secure default is `true` (treat `undefined` as `true`); the `eu-banking-default` profile sets the flag explicitly. Setting it to `false` disables the new gate behavior so legacy consumers remain backward-compatible.
 
-### Changed
+### Changed (Issue #1412)
 
 - `evaluatePolicyGate` now derives an effective intent risk classification per generated test case by intersecting `BusinessTestIntentIr.piiIndicators` with the case's `figmaTraceRefs.screenId` set (PII indicators without a `screenId` continue to be treated as global, fail-closed). Top-level `intent.risks` strings continue to be considered globally because the intent IR does not yet model per-screen risk strings.
 
@@ -3308,10 +3308,10 @@ core test-intelligence pipeline to OpenText ALM.
 - New optional `WorkspaceStartOptions.testIntelligence.reviewBearerToken` and `WorkspaceStartOptions.testIntelligence.artifactRoot` fields. The bearer token gates `POST /workspace/test-intelligence/review/...` write actions fail-closed (503 when unset). The artifact root overrides the default `<outputRoot>/test-intelligence` directory used by the Inspector UI.
 - New optional `WorkspaceStatus.testIntelligenceEnabled` boolean exposed from `GET /workspace`. The Inspector UI uses this flag to gate the "Test Intelligence" navigation entry.
 - New routes mounted at `/workspace/test-intelligence/...`. All routes return `503 FEATURE_DISABLED` when the existing test-intelligence dual-gate (`FIGMAPIPE_WORKSPACE_TEST_INTELLIGENCE=1` + `WorkspaceStartOptions.testIntelligence.enabled`) is not satisfied:
-    - `GET /workspace/test-intelligence/jobs` — list jobs that have on-disk artifacts.
-    - `GET /workspace/test-intelligence/jobs/<jobId>` — composite read of the per-job artifact bundle (generated test cases, validation report, policy report, coverage report, visual sidecar report, QC mapping preview, export report, review snapshot, review events). Returns `404 JOB_NOT_FOUND` when no artifact directory exists for the job.
-    - `GET /workspace/test-intelligence/review/<jobId>/state` — read the review-gate snapshot and event log via the existing in-process review handler.
-    - `POST /workspace/test-intelligence/review/<jobId>/<action>[/<testCaseId>]` — record a review-gate transition (`approve`, `reject`, `edit`, `note`, `review-started`). Bearer-protected fail-closed; rate-limited per IP+jobId.
+  - `GET /workspace/test-intelligence/jobs` — list jobs that have on-disk artifacts.
+  - `GET /workspace/test-intelligence/jobs/<jobId>` — composite read of the per-job artifact bundle (generated test cases, validation report, policy report, coverage report, visual sidecar report, QC mapping preview, export report, review snapshot, review events). Returns `404 JOB_NOT_FOUND` when no artifact directory exists for the job.
+  - `GET /workspace/test-intelligence/review/<jobId>/state` — read the review-gate snapshot and event log via the existing in-process review handler.
+  - `POST /workspace/test-intelligence/review/<jobId>/<action>[/<testCaseId>]` — record a review-gate transition (`approve`, `reject`, `edit`, `note`, `review-started`). Bearer-protected fail-closed; rate-limited per IP+jobId.
 
 ### Unchanged (Issue #1367)
 
@@ -3512,7 +3512,7 @@ core test-intelligence pipeline to OpenText ALM.
 
 - `WorkspaceStartOptions.importSessionEventBearerToken?: string` to configure authenticated writes for `POST /workspace/import-sessions/:id/events`.
 
-### Changed
+### Changed (3.15.0)
 
 - `POST /workspace/import-sessions/:id/events` is bearer-only and now requires `Authorization: Bearer <token>` matching the configured import-session event token.
 - Unauthenticated or invalidly authenticated import-session event writes now return `401` without reading the request body or mutating persisted session state.
@@ -3550,12 +3550,12 @@ Events are persisted under `<outputRoot>/import-session-events/<sessionId>.json`
 
 ## [3.13.0] - 2026-04-14
 
-### Added
+### Added (3.13.0)
 
 - `WorkspaceJobRequestMetadata.importMode` so polling surfaces the requested paste delta mode.
 - `WorkspaceJobStatus.pasteDeltaSummary` and `WorkspaceJobResult.pasteDeltaSummary` so final job polling reflects the authoritative delta/full execution outcome instead of only the submit-accepted response.
 
-### Changed
+### Changed (3.13.0)
 
 - `WorkspaceJobLineage.kind` now also allows `"delta"` for submission jobs that safely reused a prior compatible paste import.
 - `CONTRACT_VERSION` from `3.12.0` to `3.13.0`.
@@ -4094,9 +4094,9 @@ Added:
 Added:
 
 - New stage names:
-    - `template.prepare`
-    - `validate.project`
-    - `git.pr`
+  - `template.prepare`
+  - `validate.project`
+  - `git.pr`
 - `WorkspaceJobInput.enableGitPr?: boolean` (`false` by default)
 - `WorkspaceGitPrStatus` payload on `WorkspaceJobStatus` and `WorkspaceJobResult`
 
@@ -4114,13 +4114,13 @@ Breaking changes:
 
 - `POST /workspace/submit` now returns `202 Accepted` and enqueues a real local generation job.
 - `WorkspaceJobInput` now requires:
-    - `figmaAccessToken`
-    - `repoUrl`
-    - `repoToken`
+  - `figmaAccessToken`
+  - `repoUrl`
+  - `repoToken`
 - `WorkspaceJobResult` changed from static `not_implemented` envelope to compact job result payload.
 - `WorkspaceStatus` now includes:
-    - `outputRoot`
-    - `previewEnabled`
+  - `outputRoot`
+  - `previewEnabled`
 
 Added:
 
