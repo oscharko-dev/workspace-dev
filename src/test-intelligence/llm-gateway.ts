@@ -1270,7 +1270,7 @@ const readResponseTextWithLimit = async (
     return { ok: true, text };
   }
 
-  const reader = response.body.getReader();
+  const reader: ReadableStreamDefaultReader<Uint8Array> = response.body.getReader();
   const decoder = new TextDecoder();
   let totalBytes = 0;
   let text = "";

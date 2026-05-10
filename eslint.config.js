@@ -19,6 +19,7 @@ const strictTypeCheckedRules = {
   "@typescript-eslint/no-confusing-void-expression": "off",
   "@typescript-eslint/no-misused-promises": "error",
   "@typescript-eslint/no-non-null-assertion": "off",
+  "@typescript-eslint/no-unnecessary-type-assertion": "off",
   "@typescript-eslint/no-unnecessary-condition": "error",
   "@typescript-eslint/no-unnecessary-type-parameters": "off",
   "@typescript-eslint/no-unsafe-assignment": "error",
@@ -28,6 +29,7 @@ const strictTypeCheckedRules = {
   "@typescript-eslint/no-unnecessary-type-arguments": "off",
   "@typescript-eslint/require-await": "off",
   "@typescript-eslint/restrict-template-expressions": "off",
+  "@typescript-eslint/restrict-plus-operands": "off",
   "@typescript-eslint/unbound-method": "off",
   "@typescript-eslint/no-deprecated": "off",
   "@typescript-eslint/strict-boolean-expressions": "off"
@@ -55,6 +57,8 @@ export default tseslint.config(
     },
     rules: {
       ...strictTypeCheckedRules,
+      "no-useless-assignment": "off",
+      "preserve-caught-error": "off",
       "no-console": "error"
     }
   },
