@@ -490,6 +490,12 @@ test("runFigmaToQcTestCases happy path persists artifacts and renders customer M
       "utf8",
     );
     assert.match(finopsReport, /"bySource":/u);
+    const finopsTimeSeriesStore = await readFile(
+      result.artifactPaths.finopsTimeSeriesStore,
+      "utf8",
+    );
+    assert.match(finopsTimeSeriesStore, /"records":/u);
+    assert.match(finopsTimeSeriesStore, /"jobId":"job-123"/u);
     assert.equal(
       result.runQuality.artifactPath,
       result.artifactPaths.runQuality,

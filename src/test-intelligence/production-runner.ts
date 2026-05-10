@@ -165,6 +165,13 @@ import {
   createFinOpsUsageRecorder,
   writeFinOpsBudgetReport,
 } from "./finops-report.js";
+import {
+  appendFinOpsTimeSeriesRecord,
+  buildFinOpsTimeSeriesRecord,
+  defaultFinOpsTimeSeriesStorePath,
+  loadFinOpsTimeSeriesStore,
+  writeFinOpsTimeSeriesStore,
+} from "./finops-slo.js";
 import { computePerSourceCostBreakdownHashFromReport } from "./per-source-cost.js";
 import {
   AGENT_PARTICIPATION_ARTIFACT_FILENAME,
@@ -706,6 +713,9 @@ const buildActiveModelBindings = (input: {
     pushBinding(input.coveragePlanner);
   }
   if (input.bundle !== undefined) {
+    if (input.bundle.testGenerationSecondary !== undefined) {
+      pushBinding(input.bundle.testGenerationSecondary);
+    }
     pushBinding(input.bundle.visualPrimary);
     pushBinding(input.bundle.visualFallback);
     if (input.bundle.a11yJudge !== undefined) {
@@ -1171,6 +1181,7 @@ export interface RunFigmaToQcTestCasesResult {
     policyReport: string;
     coverageReport: string;
     finopsReport: string;
+    finopsTimeSeriesStore: string;
     reviewEvents?: string;
     reviewState?: string;
     selfConsistencyReport?: string;
@@ -3070,6 +3081,7 @@ export const runFigmaToQcTestCases = async (
   const logicJudgeEnabled = input.logicJudge?.enabled !== false;
   const logicJudgeClient: LlmGatewayClient =
     input.llm.bundle?.logicJudge ?? input.llm.logicJudge ?? input.llm.client;
+  const crossFamilyGeneratorClient = input.llm.bundle?.testGenerationSecondary;
   const adversarialCriticEnabled =
     logicJudgeEnabled &&
     (input.llm.bundle?.logicJudge !== undefined ||
@@ -3181,11 +3193,13 @@ export const runFigmaToQcTestCases = async (
   });
 
   const executeGenerationPass = async (inputPass: {
+    client?: LlmGatewayClient;
     pass: GenerationPassConfig;
     extraSuffixSections?: readonly CompilePromptSuffixSection[];
     emitPrimaryPromptCompiled: boolean;
     recordHarnessAttempt: boolean;
   }) => {
+    const generationClient = inputPass.client ?? input.llm.client;
     const compiled = compileGenerationPass(
       inputPass.pass,
       inputPass.extraSuffixSections,
@@ -3204,24 +3218,24 @@ export const runFigmaToQcTestCases = async (
     }
     const generationRequest = buildGenerationRequest(compiled);
     const generationCacheKey =
-      input.llm.client.constrainedDecoding === undefined
+      generationClient.constrainedDecoding === undefined
         ? compiled.cacheKey
         : {
             ...compiled.cacheKey,
             constrainedDecodingAdapterId:
-              input.llm.client.constrainedDecoding.adapterId,
-            ...(input.llm.client.constrainedDecoding.adapterVersion !==
+              generationClient.constrainedDecoding.adapterId,
+            ...(generationClient.constrainedDecoding.adapterVersion !==
             undefined
               ? {
                   constrainedDecodingAdapterVersion:
-                    input.llm.client.constrainedDecoding.adapterVersion,
+                    generationClient.constrainedDecoding.adapterVersion,
                 }
               : {}),
-            ...(input.llm.client.constrainedDecoding.fallbackReason !==
+            ...(generationClient.constrainedDecoding.fallbackReason !==
             undefined
               ? {
                   constrainedDecodingFallbackReason:
-                    input.llm.client.constrainedDecoding.fallbackReason,
+                    generationClient.constrainedDecoding.fallbackReason,
                 }
               : {}),
           };
@@ -3236,13 +3250,13 @@ export const runFigmaToQcTestCases = async (
             timestamp: monotonicMs(),
             details: {
               role: "test_generation",
-              deployment: input.llm.client.deployment,
+              deployment: generationClient.deployment,
               ...(inputPass.pass.passId !== undefined
                 ? { passId: inputPass.pass.passId }
                 : {}),
             },
           });
-          const llmResult = await input.llm.client.generate(generationRequest);
+          const llmResult = await generationClient.generate(generationRequest);
           if (
             capturedLlmResult === undefined ||
             inputPass.pass.passId === undefined ||
@@ -3276,7 +3290,7 @@ export const runFigmaToQcTestCases = async (
 
           const attemptOutcome = classifyLlmAttempt({
             llmResult,
-            gatewayRelease: input.llm.client.gatewayRelease,
+            gatewayRelease: generationClient.gatewayRelease,
             finopsRecorder,
             llmDurationMs,
             ...(diversityPasses > 1
@@ -4895,6 +4909,18 @@ export const runFigmaToQcTestCases = async (
     runDir: artifactDir,
     report: finopsReport,
   });
+  const finopsTimeSeriesStorePath = defaultFinOpsTimeSeriesStorePath(
+    input.outputRoot,
+  );
+  const finopsTimeSeriesStore = appendFinOpsTimeSeriesRecord({
+    store: await loadFinOpsTimeSeriesStore(finopsTimeSeriesStorePath),
+    record: buildFinOpsTimeSeriesRecord({ report: finopsReport }),
+    retentionDays: 30,
+  });
+  await writeFinOpsTimeSeriesStore({
+    store: finopsTimeSeriesStore,
+    storePath: finopsTimeSeriesStorePath,
+  });
   const agentParticipationArtifact = buildAgentParticipationArtifact({
     jobId: input.jobId,
     generatedAt: input.generatedAt,
@@ -6022,6 +6048,7 @@ export const runFigmaToQcTestCases = async (
       policyReport: policyPath,
       coverageReport: coveragePath,
       finopsReport: finopsWritten.artifactPath,
+      finopsTimeSeriesStore: finopsTimeSeriesStorePath,
       reviewEvents: join(
         artifactDir,
         input.jobId,
@@ -7929,6 +7956,9 @@ interface GenerationPassConfig {
   readonly diversityBias?: string;
   readonly identitySalt?: string;
 }
+
+const CROSS_FAMILY_ARBITRATION_ROLE_RUN_ID =
+  "generator-run-cross-family-arbiter" as const;
 
 const resolveDiversityPassCount = (
   input: {

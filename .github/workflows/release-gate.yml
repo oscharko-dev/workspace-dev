@@ -409,6 +409,10 @@ jobs:
         if: matrix.shard == 0
         run: pnpm run test:ti-regression
 
+      - name: Run FinOps SLO gate (Issue #2121)
+        if: matrix.shard == 0
+        run: pnpm run test:ti-finops-slo
+
   performance-web:
     timeout-minutes: 180
     runs-on: ubuntu-22.04
