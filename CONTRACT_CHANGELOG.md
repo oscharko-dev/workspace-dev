@@ -68,6 +68,35 @@ All changes to the public contract surface of `workspace-dev` are documented her
 - These are all additive changes; no existing field is removed or
   renamed.
 
+## [1.25.0] - 2026-05-10
+
+### Added (Issue #2171 — tier-elastic technique-coverage quotas owned by the policy profile)
+
+- The technique-coverage policy surface now exports the closed
+  `TECHNIQUE_COVERAGE_MINIMUM_MODES` vocabulary plus
+  `TechniqueCoverageMinimumMode`, `TechniqueCoverageMinimumTier`,
+  `FixedTechniqueCoverageMinimumPolicy`,
+  `TierElasticTechniqueCoverageMinimumPolicy`, and
+  `TechniqueCoverageMinimumPolicy`.
+- `TIER_ELASTIC_EP_TIERS` is now a published default tier table, and the
+  `eu-banking-default` policy profile owns the tier coefficients used to
+  scale equivalence-partitioning quotas per screen.
+- `TechniqueQuotaReport` persists the resolved mode and tier audit trail so
+  reviewers can reconstruct why a run chose fixed versus tier-elastic quota
+  enforcement.
+
+### Added (Issue #2172 — audited `--max-figma-payload-bytes` override and FinOps payload trace)
+
+- The production runner publishes a new optional `FinOpsBudgetReport.figmaPayload`
+  block with `resolvedCapBytes`, `actualBytes`, `defaultCapBytes`,
+  `ceilingBytes`, and `overrideApplied`.
+- The CLI and programmatic runner now expose an audited soft-cap override for
+  large Figma REST payloads while hard-rejecting values above the 64 MiB
+  ceiling.
+- Migration note: downstream FinOps consumers may now rely on the persisted
+  `figmaPayload` audit block instead of inferring payload caps from CLI flags
+  or operator logs.
+
 ## [1.23.0] - 2026-05-10
 
 ### Added (Issue #2125 — Wilson self-consistency confidence + cross-family arbiter routing)
@@ -94,6 +123,254 @@ All changes to the public contract surface of `workspace-dev` are documented her
 - `CaseConfidenceCurveArtifact` gains three additive fields: `localeCurves`, `perLocaleEceThreshold`, `localeSampleCount`. New type `LocaleCurveEntry` with `fallbackToDefault` flag.
 - `DriftMetricObservation` and `DriftFinding` gain optional `locale?: LocaleCalibrationKey` for per-locale calibration shift tracking.
 - These are all additive changes; no existing field is removed or renamed.
+
+### Added (Issue #2118 — A/B shadow-mode parity tests for `shadow_eval` and `enforced`)
+
+- The production-runner audit contract now treats `shadow_eval` and `enforced`
+  as a regression-locked parity pair: identical inputs must yield the same
+  `(generatedTestCases, validation, policy.violations)` triple, modulo the
+  harness enforcement decision itself.
+- Replay-cache identity is explicitly mode-independent across that pair: cache
+  keys populated under `shadow_eval` must be reusable under `enforced`
+  without adding a harness-mode discriminator.
+- Migration note: future harness-mode changes must preserve the cross-mode
+  parity and cache-key invariants or land with a new contract entry.
+
+### Added (Issue #2119 — active-learning sample-selection loop)
+
+- New active-learning queue surface selects human-label growth candidates from
+  three auditable sources: low-confidence cases, judge-consensus disagreement
+  cases, and drift-flagged cases.
+- The selection loop re-applies the Issue #2109 inter-rater gate over newly
+  added examples so quarterly gold-set growth preserves the published kappa
+  and reviewer-share thresholds.
+- The resulting sample-selection artifact is deterministic and reviewable;
+  downstream operators can inspect why a case entered the relabel queue
+  without replaying the production run.
+
+### Added (Issue #2120 — distribution-shift detection on the input side)
+
+- New drift-sentinel artifact family adds `DRIFT_CANARY_SCHEMA_VERSION`,
+  `DRIFT_REPORT_ARTIFACT_FILENAME`, `DRIFT_ALERTS_ARTIFACT_FILENAME`,
+  `DRIFT_BASELINE_FILENAME`, and `DRIFT_CANARY_BASELINES_DIRNAME` for the
+  persisted input-distribution monitoring lane.
+- The detector contracts a fixed holdout/canary surface via
+  `DRIFT_CANARY_CANARY_SET_ID`, `DRIFT_CANARY_HOLDOUT_FIXTURE_IDS`,
+  `DRIFT_CANARY_HISTORY_DAYS`, `DRIFT_CANARY_SIGMA_THRESHOLD`, and
+  `DRIFT_CANARY_BRIER_ABSOLUTE_THRESHOLD`.
+- Consumers may now rely on a canonical `drift-report.json` / `drift-alerts.json`
+  pair for pre-metric concept-drift evidence.
+
+### Added (Issue #2121 — performance-regression tracking with per-role token and latency SLOs)
+
+- New FinOps regression artifact surface adds
+  `FINOPS_SLO_REPORT_SCHEMA_VERSION`, `FINOPS_SLO_REPORT_ARTIFACT_FILENAME`,
+  `FINOPS_SLO_ALERT_SET_ID`, `FINOPS_SLO_DEFAULT_HISTORY_RETENTION_DAYS`, and
+  the closed `FINOPS_SLO_ROLES` / `FinOpsSloRole` role vocabulary.
+- The persisted SLO report records rolling token and latency budgets plus the
+  routing-savings dashboard used by the CI gate and operator runbooks.
+- Migration note: downstream tooling may now ingest
+  `artifacts/finops/finops-slo-report.json` as the canonical regression
+  summary instead of scraping console output.
+
+### Added (Issue #2122 — adversarial corpus expansion to 50+ curated attacks)
+
+- The evaluation corpus now includes the committed `adversarial-2025` attack
+  set as a regression-locked public evidence surface, with CI gates requiring
+  the curated corpus to remain loadable and complete.
+- The attack inventory is append-only from a governance perspective: new
+  categories or fixture families should land with an explicit changelog note
+  because the benchmark envelope is part of the published quality contract.
+
+### Added (Issue #2123 — semantic equivalence-class verification)
+
+- New validation issue codes `intra_equivalence_class_redundancy` and
+  `exact_near_duplicate_text` are exported on
+  `ALLOWED_TEST_CASE_VALIDATION_ISSUE_CODES`.
+- New semantic polarity contract adds
+  `ALLOWED_TEST_CASE_ORACLE_POLARITIES` / `TestCaseOraclePolarity`, and the
+  validator persists `EquivalenceClassFingerprint`-based redundancy analysis
+  instead of relying on text similarity alone.
+- Migration note: warning consumers must accept the two new validator codes
+  when reviewing redundancy findings.
+
+### Added (Issue #2124 — customer-eval statistical sample plan)
+
+- The customer-eval rubric now carries an explicit statistical sample-plan
+  governance contract: rubric updates must land together with `SAMPLE-PLAN.md`
+  or `SAMPLE-PLAN-NON-UPDATE.md`.
+- CI enforces that linkage structurally, so downstream auditors can treat the
+  published sample-plan files as part of the stable evaluation surface rather
+  than best-effort documentation.
+
+## [1.22.0] - 2026-05-09
+
+### Added (Issue #2099 — multi-model routing strategy with Azure portfolio)
+
+- New typed routing-policy contract adds `MODEL_ROUTING_TIER_LABELS`,
+  `MODEL_ROUTING_ROUTE_SLOTS`, `MODEL_ROUTING_ROLES`,
+  `MODEL_ROUTING_POLICY_SCHEMA_VERSION`, and the associated
+  `ModelRoutingTierLabel`, `ModelRoutingRouteSlot`, `ModelRoutingRole`, and
+  `ModelRoutingRoute` types.
+- The role vocabulary now covers the production routing graph for
+  `test_generation`, `logic_judge`, `coverage_planner`, `risk_ranker`,
+  `visual_*`, `a11y_judge`, `faithfulness_judge`, `document_ingestion`,
+  `adversarial_critic`, and `calibration_holdout_generator`.
+- Migration note: routing-policy consumers must treat the slot/tier labels as
+  the source of truth instead of inferring topology from environment-variable
+  naming.
+
+### Added (Issue #2101 — operator-configurable judge refusal policy)
+
+- `TestCaseValidationReport` gains the additive
+  `judgeAvailability?: JudgeAvailabilityReport` block and the closed
+  `ALLOWED_JUDGE_AVAILABILITY_STATES` vocabulary
+  (`"available" | "refused" | "skipped"`).
+- New policy-profile contract adds `ALLOWED_JUDGE_REFUSAL_POLICIES`,
+  `JudgeRefusalPolicy`, and `JudgeRefusalPolicyConfig` so operators can choose
+  `fail_open`, `fail_closed`, or `needs_review` independently for
+  faithfulness and accessibility judges.
+- Migration note: policy/report consumers may now see explicit refused/skipped
+  judge state even when the overall run still passes.
+
+### Added (Issue #2102 — JudgeConsensusVeto and multi-judge voting protocol)
+
+- `JUDGE_CONSENSUS_SCHEMA_VERSION` bumped `1.0.0` → `1.1.0`.
+- New consensus-panel contract exports `KNOWN_JUDGE_CONSENSUS_JUDGE_IDS`,
+  `JUDGE_CONSENSUS_FINDING_CATEGORIES`, `JudgeConsensusFinding`,
+  `JudgeConsensusPanelEntry`, `JudgeConsensusVeto`,
+  `JUDGE_CONSENSUS_AGREEMENT_SHAPES`, `JUDGE_CONSENSUS_REPAIR_STATES`,
+  `JUDGE_CONSENSUS_REPAIR_OUTCOMES`, `JudgeConsensusRepairHistory`, and the
+  expanded `JudgeConsensusVerdict`.
+- Migration note: consumers of `judge-consensus.json` must accept the additive
+  `agreementShape`, `vetoBy`, `panel`, and `repairHistory` fields.
+
+### Added (Issue #2103 — drift-canary MVP for calibration shift)
+
+- The monitoring surface now persists a dedicated drift-canary artifact family:
+  `drift-report.json`, `drift-alerts.json`, baseline snapshots, and the
+  associated canary-set identity.
+- The report contract records ECE, Brier, and faithfulness shift findings
+  against a rolling baseline so operator alerts no longer depend on log
+  scraping or re-deriving thresholds offline.
+
+### Added (Issue #2104 — centralized `MAX_INSTRUCTION_LENGTH` and truncation audit)
+
+- `GENERATED_TEST_CASE_SCHEMA_VERSION` bumped `1.2.0` → `1.3.0`.
+- Generated-test-case payloads gain the additive audit field
+  `audit.truncatedInstructionCount`, and persisted judge / repair artifacts
+  may now surface `truncatedInstructionCount` so reviewers can see when
+  upstream instructions were clipped.
+- Migration note: validators should treat the truncation counters as optional
+  additive audit metadata, not as a sign of schema incompatibility.
+
+### Added (Issue #2105 — remove `dry_run` submit mode from the public surface)
+
+- The public runner contract no longer treats `dry_run` as a valid submit-mode
+  surface; callers must use the persisted dry-run report artifact instead of a
+  quasi-production execution mode.
+- Migration note: any caller still branching on `dry_run` must migrate to the
+  deterministic report path before upgrading.
+
+### Added (Issue #2106 — explicit synthetic flag for test-data oracle provenance)
+
+- The deterministic oracle artifact keeps its existing schema version but now
+  treats synthetic provenance as a first-class field instead of encoding it in
+  redaction-token suffixes.
+- Migration note: consumers should read the explicit synthetic provenance in
+  `test-data-oracle-report.json` and stop inferring it from placeholder text.
+
+### Added (Issue #2107 — per-class ECE on regulated risk categories)
+
+- The calibration gate now treats per-class Expected Calibration Error as a
+  published quality contract across the regulated risk categories rather than a
+  single aggregate-only metric.
+- The exported threshold surface is consumed downstream by the Issue #2117
+  locale-calibration lane and by the judge-calibration model card.
+
+### Added (Issue #2108 — default-on domain-invariant registry)
+
+- The default registry now ships a public, append-only EU banking and
+  insurance invariant catalog with legal-source citations and deterministic
+  provenance (`source: "Issue #2108 (registered)"`).
+- Validation behavior now assumes the domain-invariant registry is active by
+  default; disabling it is no longer the compatibility baseline for regulated
+  profiles.
+
+### Added (Issue #2109 — inter-rater agreement protocol)
+
+- New inter-rater artifact contract exports `INTER_RATER_KAPPA_HARD_FLOOR`,
+  `INTER_RATER_KAPPA_WARN_FLOOR`, `INTER_RATER_PER_SCENARIO_GATE_MIN_PAIRS`,
+  `INTER_RATER_REVIEWER_SHARE_HARD_CAP`,
+  `INTER_RATER_REVIEWER_SHARE_WARN_CAP`,
+  `INTER_RATER_GATE_THRESHOLDS`, and `InterRaterAgreementReport`.
+- The persisted agreement artifact now captures per-judge / per-scenario
+  Cohen's kappa plus reviewer-rotation diagnostics as auditable release-gate
+  evidence.
+
+### Added (Issue #2110 — cross-field invariant engine with typed AST)
+
+- New persisted coverage artifact
+  `CROSS_FIELD_INVARIANT_COVERAGE_ARTIFACT_FILENAME =
+  "cross-field-invariant-coverage-report.json"` records per-screen and
+  per-invariant coverage.
+- The invariant engine now publishes a typed, citation-carrying rule surface
+  that downstream validators can replay deterministically without re-reading
+  free-form policy prose.
+
+### Added (Issue #2111 — workflow state-machine validation for step sequences)
+
+- New persisted workflow-state-machine artifact
+  `WORKFLOW_STATE_MACHINE_REPORT_ARTIFACT_FILENAME =
+  "workflow-state-machine-report.json"` records per-case transition paths,
+  aggregated issues, and per-state-machine coverage.
+- The validator contract now treats step-sequence reachability as a first-class
+  quality gate rather than an implementation detail of the runner.
+
+### Added (Issue #2112 — model card artifact for EU AI Act Article 13)
+
+- New model-card artifact contract adds `MODEL_CARD_SCHEMA_VERSION`, the
+  deterministic docs output filenames, and a byte-stable JSON/Markdown model
+  card for the active policy profile.
+- The generated envelope carries deployment topology, provider statements,
+  calibration provenance, update cadence, and the current
+  `TEST_INTELLIGENCE_CONTRACT_VERSION`.
+
+### Added (Issue #2113 — subprocessor register and transfer ADR versioning)
+
+- New exported `SUBPROCESSOR_REGISTER_VERSION` stamps the reviewed
+  subprocessor register and cross-border transfer ADR into persisted evidence.
+- `Wave1ValidationEvidenceManifestMetadata` gains
+  `subprocessorRegisterVersion`, so replays can prove which DORA/GDPR
+  documentation set was active for the run.
+
+### Added (Issue #2114 — incident-reporting hooks)
+
+- New incident-handling contract exports `INCIDENT_REPORT_SCHEMA_VERSION`,
+  `INCIDENT_REPORT_ARTIFACT_FILENAME`, `ALLOWED_INCIDENT_SEVERITIES`,
+  `ALLOWED_INCIDENT_CATEGORIES`, `ALLOWED_INCIDENT_REVIEW_STATES`,
+  `ManifestRef`, `IncidentEvent`, and `IncidentReport`.
+- Migration note: operator sinks may now receive `incidents.json` and must
+  accept the seven-category incident taxonomy.
+
+### Added (Issue #2115 — benchmark dataset expansion to 50+ fixtures)
+
+- New benchmark-expansion surface publishes the committed
+  `BENCHMARK_EXPANSION_FIXTURE_IDS`, per-stratum minimums, and deterministic
+  fixture-to-stratum mapping used by the release-gate corpus.
+- The benchmark envelope is now a reviewable contract rather than an implicit
+  fixture-directory convention.
+
+### Added (Issue #2116 — faithfulness tier-elastic fallback semantics)
+
+- `TestCasePolicyReport` gains the additive
+  `faithfulnessEvaluation?: FaithfulnessEvaluationSummary` block.
+- New published faithfulness-evaluation contract documents the
+  `per_step`, `case_level_fallback`, and `missing` modes together with the
+  `requirePerStepFaithfulness` policy mirror and step-verdict counts.
+- Migration note: policy-report consumers should read the explicit
+  `faithfulnessEvaluation` block instead of inferring fallback behavior from
+  warning text alone.
 
 ## [4.61.0] - 2026-05-09
 
