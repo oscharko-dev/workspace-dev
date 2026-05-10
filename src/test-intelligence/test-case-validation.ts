@@ -35,6 +35,12 @@ import {
   type DomainInvariantEvaluation,
   type DomainInvariantRegistry,
 } from "./domain-invariant-registry.js";
+import {
+  detectExactNearDuplicateText,
+  detectIntraClassRedundancy,
+  type IntraClassBoundaryClassifier,
+  type IntraClassRedundancyOutcome,
+} from "./equivalence-class-fingerprint.js";
 import { validateGeneratedTestCaseList } from "./generated-test-case-schema.js";
 import { detectPii } from "./pii-detection.js";
 import { detectSuspiciousContent } from "./semantic-content-sanitization.js";
@@ -73,12 +79,36 @@ export interface ValidateGeneratedTestCasesInput {
    * so callers can thread it into the coverage report.
    */
   invariantRegistry?: DomainInvariantRegistry;
+  /**
+   * Optional first-pass boundary classifier (Issue #2123 / #2099) used by
+   * the intra-equivalence-class redundancy check. When supplied, the
+   * classifier is consulted only for ambiguous boundary cases and can
+   * VETO a deterministic redundancy verdict by returning `"keep"`. The
+   * deterministic logic always vetoes a model `"redundant"` verdict —
+   * the model never upgrades a `keep` decision to a redundancy warning.
+   * Air-gapped pipelines should leave this undefined.
+   */
+  intraClassBoundaryClassifier?: IntraClassBoundaryClassifier;
+  /**
+   * Maximum character-distance budget for the auxiliary
+   * exact-near-duplicate text check (Issue #2123). Defaults to `2`
+   * (Levenshtein-2) to match the contract preserved from the legacy
+   * Jaccard detector; profiles may widen the budget if their
+   * canonicalisation tolerates it. Set to `0` to disable.
+   */
+  exactNearDuplicateTextDistance?: number;
 }
 
 /** Combined validation report + invariant evaluation (Issue #2040). */
 export interface InvariantValidationOutcome {
   report: TestCaseValidationReport;
   invariantEvaluation?: DomainInvariantEvaluation;
+  /**
+   * Per-job intra-equivalence-class redundancy outcome (Issue #2123).
+   * Populated whenever the run produced at least one accepted case;
+   * `redundancyRatio` is `0` for empty inputs.
+   */
+  intraClassRedundancy?: IntraClassRedundancyOutcome;
 }
 
 /** Per-issue helper to keep deterministic insertion order. */
@@ -208,7 +238,12 @@ const validateCase = (
   validateSemanticSuspiciousContent(testCase, basePath, issues);
   validateAssumptionsAndQuestions(testCase, basePath, issues);
   validateAmbiguityReviewState(testCase, basePath, issues);
-  validateUnsupportedUnresolvedValidationDetails(testCase, basePath, model, issues);
+  validateUnsupportedUnresolvedValidationDetails(
+    testCase,
+    basePath,
+    model,
+    issues,
+  );
   validateNeedsOpenQuestionClarification(testCase, basePath, model, issues);
   validateTestDataOracleGovernance(
     testCase,
@@ -777,7 +812,8 @@ const validateTestDataOracleGovernance = (
  */
 export const validateGeneratedTestCases = (
   input: ValidateGeneratedTestCasesInput,
-): TestCaseValidationReport => validateGeneratedTestCasesWithInvariants(input).report;
+): TestCaseValidationReport =>
+  validateGeneratedTestCasesWithInvariants(input).report;
 
 /**
  * Variant of {@link validateGeneratedTestCases} that also returns the
@@ -844,8 +880,7 @@ export const validateGeneratedTestCasesWithInvariants = (
         path: `$.testCases[${i}].audit.truncatedInstructionCount`,
         code: "truncated_repair_instruction",
         severity: "warning",
-        message:
-          `repair instructions were truncated ${String(tc.audit.truncatedInstructionCount)} time(s) before regeneration; inspect judge artifacts if the fix intent looks incomplete`,
+        message: `repair instructions were truncated ${String(tc.audit.truncatedInstructionCount)} time(s) before regeneration; inspect judge artifacts if the fix intent looks incomplete`,
       });
     }
   }
@@ -877,6 +912,56 @@ export const validateGeneratedTestCasesWithInvariants = (
     }
   }
 
+  const indexById = new Map<string, number>();
+  for (let i = 0; i < list.testCases.length; i++) {
+    const tc = list.testCases[i];
+    if (tc === undefined) continue;
+    indexById.set(tc.id, i);
+  }
+  const intraClassRedundancy = detectIntraClassRedundancy({
+    testCases: list.testCases,
+    ...(input.intraClassBoundaryClassifier !== undefined
+      ? { boundaryClassifier: input.intraClassBoundaryClassifier }
+      : {}),
+  });
+  for (const finding of intraClassRedundancy.findings) {
+    const idx = indexById.get(finding.redundantTestCaseId);
+    const basePath = idx === undefined ? "$" : `$.testCases[${idx}]`;
+    pushIssue(issues, {
+      testCaseId: finding.redundantTestCaseId,
+      path: `${basePath}.qualitySignals`,
+      code: "intra_equivalence_class_redundancy",
+      severity: "warning",
+      message:
+        `case adds no distinct coverage relative to ${finding.representativeTestCaseId} ` +
+        `within equivalence class (technique=${finding.technique}, ` +
+        `risk=${finding.riskClass}, polarity=${finding.oraclePolarity}); ` +
+        `verified by ${finding.source}`,
+    });
+  }
+
+  const textDistance = input.exactNearDuplicateTextDistance ?? 2;
+  if (textDistance > 0) {
+    const textFindings = detectExactNearDuplicateText({
+      testCases: list.testCases,
+      distance: textDistance,
+    });
+    for (const finding of textFindings) {
+      const idx = indexById.get(finding.rightTestCaseId);
+      const basePath = idx === undefined ? "$" : `$.testCases[${idx}]`;
+      pushIssue(issues, {
+        testCaseId: finding.rightTestCaseId,
+        path: `${basePath}.title`,
+        code: "exact_near_duplicate_text",
+        severity: "warning",
+        message:
+          `text differs from ${finding.leftTestCaseId} by only ` +
+          `${finding.characterDistance} character(s) — confirm cosmetic ` +
+          `near-duplicates are intentional`,
+      });
+    }
+  }
+
   return {
     report: finalizeReport({
       jobId: input.jobId,
@@ -885,6 +970,7 @@ export const validateGeneratedTestCasesWithInvariants = (
       issues,
     }),
     ...(invariantEvaluation !== undefined ? { invariantEvaluation } : {}),
+    intraClassRedundancy,
   };
 };
 
