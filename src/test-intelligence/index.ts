@@ -750,6 +750,8 @@ export {
 } from "./llm-capability-probe.js";
 export {
   validateGeneratedTestCases,
+  validateGeneratedTestCasesWithInvariants,
+  type InvariantValidationOutcome,
   type ValidateGeneratedTestCasesInput,
 } from "./test-case-validation.js";
 export {
@@ -757,6 +759,22 @@ export {
   detectDuplicateTestCases,
   jaccardSimilarity,
 } from "./test-case-duplicate.js";
+export {
+  ALLOWED_INTRA_CLASS_DISTINCTNESS_REASONS,
+  buildEquivalenceClassFingerprint,
+  deriveOraclePolarity,
+  detectExactNearDuplicateText,
+  detectIntraClassRedundancy,
+  equivalenceClassKey,
+  levenshteinCapped,
+  type DetectIntraClassRedundancyInput,
+  type ExactNearDuplicateTextFinding,
+  type IntraClassBoundaryClassifier,
+  type IntraClassBoundaryVerdict,
+  type IntraClassDistinctnessReason,
+  type IntraClassRedundancyOutcome,
+  type IntraEquivalenceClassRedundancyFinding,
+} from "./equivalence-class-fingerprint.js";
 export {
   computeIntentDelta,
   INTENT_DELTA_DEFAULT_CONFIDENCE_DRIFT,

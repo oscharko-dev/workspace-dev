@@ -960,6 +960,22 @@ export const ALLOWED_TEST_CASE_VALIDATION_ISSUE_CODES = [
   "missing_field_lifecycle_transition",
   "unknown_field_lifecycle_transition",
   "uncovered_field_lifecycle_transition",
+  /**
+   * Issue #2123 — two cases share the same
+   * {@link EquivalenceClassFingerprint} (covered fields, covered actions,
+   * risk class, technique, oracle polarity) AND fail to add real coverage
+   * relative to the class representative (no new oracle category, no
+   * different action subset, no different state path). Always `warning`.
+   */
+  "intra_equivalence_class_redundancy",
+  /**
+   * Issue #2123 — two cases produce near-identical TEXT (title + ordered
+   * step actions) within a Levenshtein-2 character-distance budget.
+   * Retained as a SEPARATE auditor signal alongside the equivalence-class
+   * check so a reviewer can spot wording duplicates that DO add real
+   * coverage. Always `warning`.
+   */
+  "exact_near_duplicate_text",
 ] as const;
 
 export type TestCaseValidationIssueCode =
@@ -1823,6 +1839,49 @@ export interface TestCaseDuplicatePair {
   leftTestCaseId: string;
   rightTestCaseId: string;
   similarity: number;
+}
+
+/**
+ * Polarity surfaced by a generated test case's oracle (Issue #2123).
+ *
+ * The equivalence-class fingerprint deliberately collapses the persisted
+ * polarity / category / type triple into the coarsest semantic axis
+ * relevant for redundancy: whether the case's oracle expects the system
+ * to ACCEPT the input (positive), REJECT it (negative / validation), test
+ * a value at a partition boundary (boundary), advance through the
+ * navigation graph (navigation), or assert an accessibility property
+ * (accessibility). Cases with identical covered ids, technique, and risk
+ * class but different `oraclePolarity` are NOT considered redundant.
+ */
+export const ALLOWED_TEST_CASE_ORACLE_POLARITIES = [
+  "positive",
+  "negative",
+  "boundary",
+  "navigation",
+  "accessibility",
+] as const;
+export type TestCaseOraclePolarity =
+  (typeof ALLOWED_TEST_CASE_ORACLE_POLARITIES)[number];
+
+/**
+ * Semantic equivalence-class fingerprint (Issue #2123).
+ *
+ * Derived from `(coveredFieldIds, coveredActionIds, riskClass, technique,
+ * oraclePolarity)` — NOT from text. Two generated cases are considered
+ * to belong to the same equivalence class iff their
+ * {@link EquivalenceClassFingerprint} fields are byte-equal under the
+ * canonical projection (`coveredFieldIds` and `coveredActionIds` sorted
+ * lexically and de-duplicated). The fingerprint is the primary signal
+ * the validator uses to detect redundancy WITHIN a technique bucket:
+ * the previous Levenshtein/Jaccard-only path missed cases that differed
+ * by a few characters but covered the same equivalence class.
+ */
+export interface EquivalenceClassFingerprint {
+  readonly coveredFieldIds: readonly string[];
+  readonly coveredActionIds: readonly string[];
+  readonly riskClass: TestCaseRiskCategory;
+  readonly technique: TestCaseTechnique29119;
+  readonly oraclePolarity: TestCaseOraclePolarity;
 }
 
 /**
