@@ -31,6 +31,58 @@ All changes to the public contract surface of `workspace-dev` are documented her
 
 ---
 
+## [4.63.0] - 2026-05-10
+
+### Added (Issue #2176 — runtime multi-tenant isolation enforcement)
+
+- New `src/test-intelligence/tenant-isolation-guard.ts` module
+  providing the runtime guarantee that no persistent-store read
+  crosses tenant boundaries. Public exports:
+  - `withTenantScope(scope, fn)` — opens an `AsyncLocalStorage`
+    context so nested async calls inherit the active `TenantScope`
+    without re-passing `tenantId`. Nested calls under a different
+    scope throw eagerly.
+  - `assertTenantScope(operation, expected, actual)` — catastrophic
+    guard that raises `TenantIsolationViolation` on mismatch.
+  - `recordPersistentStoreRead(operation, recordedScope)` — guard
+    used by stores that carry their scope at construction time
+    (`replay-cache-persistent`).
+  - `recordTenantIdRead(operation, recordedTenantId)` — `tenantId`-
+    only variant for stores keyed on a flat tenant id
+    (`coverage-baseline-drift`, `distribution-shift-detector`).
+  - `recordActiveTenantRead(operation)` — audit-only hook for
+    runDir-implicit stores (`agent-lessons-memdir`,
+    `lessons-consolidation-lock`).
+  - `getCurrentTenantScope()`, `snapshotTenantIsolationReads()`,
+    `buildTenantIsolationAttestation`,
+    `serializeTenantIsolationAttestation`.
+- New exported error class `TenantIsolationViolation` with a
+  machine-readable `code === "TENANT_ISOLATION_VIOLATION"` and
+  `operation`, `expected`, `actual` fields.
+- New artifact filename and schema-version constants:
+  `TENANT_ISOLATION_ATTESTATION_ARTIFACT_FILENAME`
+  (`"tenant-isolation-attestation.json"`),
+  `TENANT_ISOLATION_ATTESTATION_SCHEMA_VERSION` (`"1.0.0"`),
+  `TENANT_ISOLATION_ATTESTATION_CERTIFICATION` (stable certification
+  string).
+- The production runner opens a `withTenantScope` boundary at the top
+  of `runFigmaToQcTestCases` and emits a per-run, byte-stable
+  `tenant-isolation-attestation.json` next to `provenance.jsonld`.
+- `provenance.jsonld` now carries
+  `ti:tenantIsolationAttestationSha256` (SHA-256 of the canonical
+  attestation over `{ tenantScope, persistentStoreReads }`) and
+  `ti:tenantScope` (the active scope at run time), plus a
+  `prov:Entity` artifact node for the attestation file.
+- `BuildRunProvenanceGraphInput` adds an optional
+  `tenantIsolationAttestation` cross-link
+  (`{ artifactFilename, attestationSha256, tenantScope }`).
+- `TEST_INTELLIGENCE_CONTRACT_VERSION` unchanged at `1.27.0` — the
+  surface is additive: every guard hook is a no-op outside
+  `withTenantScope`, so single-tenant fixtures pass without
+  modification.
+
+---
+
 ## [4.62.0] - 2026-05-10
 
 ### Added (Issue #2175 — regulator-ready audit-dossier bundle generation and verification)
