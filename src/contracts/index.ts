@@ -162,7 +162,7 @@ export interface TestIntelligenceTransferPrincipal {
 }
 
 /** Contract version for the opt-in test-intelligence surface. */
-export const TEST_INTELLIGENCE_CONTRACT_VERSION = "1.30.0" as const;
+export const TEST_INTELLIGENCE_CONTRACT_VERSION = "1.31.0" as const;
 
 /**
  * Schema version for generated test case payloads.
@@ -5984,6 +5984,16 @@ export const HUMAN_REVIEW_LOG_SCHEMA_VERSION = "1.0.0" as const;
 /** Canonical filename for the per-run human-review audit log. */
 export const HUMAN_REVIEW_LOG_ARTIFACT_FILENAME =
   "human-review-log.json" as const;
+
+/**
+ * Canonical filename for the per-run formal-verification report
+ * emitted by the LTL / CTL model-checker driver (Issue #2181).
+ * Mirrored in `formal-verification.ts` as
+ * `FORMAL_VERIFICATION_REPORT_ARTIFACT_FILENAME` — both constants must
+ * stay in lockstep.
+ */
+export const FORMAL_VERIFICATION_REPORT_AUDIT_ARTIFACT_FILENAME =
+  "formal-verification-report.json" as const;
 
 /** Hard upper bound on the persisted reviewer rationale, in characters. */
 export const HUMAN_REVIEW_VERDICT_RATIONALE_MAX_CHARS = 4096 as const;
@@ -13007,6 +13017,7 @@ export const ALLOWED_AUDIT_DOSSIER_ARTIFACT_KINDS = [
   "evidence_seal",
   "policy_report",
   "human_review_log",
+  "formal_verification_report",
 ] as const;
 
 export type AuditDossierManifestArtifactKind =
@@ -13073,6 +13084,23 @@ export interface AuditDossierManifest {
     readonly distinctRegions: readonly RegionAttestationHostingRegion[];
     readonly attestationCount: number;
   }[];
+  readonly formalVerification?: {
+    readonly filename: string;
+    readonly verdict: "pass" | "fail";
+    readonly specCount: number;
+    readonly formulaCount: number;
+    readonly passCount: number;
+    readonly failCount: number;
+    readonly specs: readonly {
+      readonly specPath: string;
+      readonly module: string;
+      readonly verdict: "pass" | "fail";
+      readonly reachableStateCount: number;
+      readonly formulaCount: number;
+      readonly passCount: number;
+      readonly failCount: number;
+    }[];
+  };
   readonly regulatorCoverage: readonly AuditDossierRegulationCoverageEntry[];
   readonly summary: {
     readonly harnessVersion: string;
@@ -13113,7 +13141,7 @@ export interface AuditDossierSignature {
  * Must be bumped according to CONTRACT_CHANGELOG.md rules.
  * Package version alignment is documented in VERSIONING.md.
  */
-export const CONTRACT_VERSION = "4.65.0" as const;
+export const CONTRACT_VERSION = "4.66.0" as const;
 
 // ---------------------------------------------------------------------------
 // Issue #1774 — UntrustedContentNormalizer (2025-vintage injection carriers).

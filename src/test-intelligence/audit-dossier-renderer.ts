@@ -169,6 +169,22 @@ const buildPdfLines = (manifest: AuditDossierManifest): PdfLine[] => {
     lines.push({ text: "", font: "regular", size: BODY_FONT_SIZE });
   }
 
+  if (manifest.formalVerification !== undefined) {
+    const fv = manifest.formalVerification;
+    pushHeading(lines, "Formal Verification");
+    pushWrapped(
+      lines,
+      `${fv.filename}: verdict=${fv.verdict} specs=${fv.specCount} formulae=${fv.formulaCount} pass=${fv.passCount} fail=${fv.failCount}`,
+    );
+    for (const spec of fv.specs) {
+      pushWrapped(
+        lines,
+        `  ${spec.specPath} (module=${spec.module}, reachable=${spec.reachableStateCount}): ${spec.verdict.toUpperCase()} — ${spec.passCount}/${spec.formulaCount}`,
+      );
+    }
+    lines.push({ text: "", font: "regular", size: BODY_FONT_SIZE });
+  }
+
   pushHeading(lines, "Signing");
   pushWrapped(lines, `Algorithm: ${manifest.signing.algorithm}`);
   pushWrapped(lines, `Key fingerprint: ${manifest.signing.keyFingerprintSha256}`);

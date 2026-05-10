@@ -31,6 +31,85 @@ All changes to the public contract surface of `workspace-dev` are documented her
 
 ---
 
+## [1.31.0] - 2026-05-10
+
+Test-intelligence sub-contract bump that accompanies the Issue #2181
+formal-verification pilot (LTL/CTL on PSD2 SCA Art. 97 + MiFID II
+Art. 25). The bump mirrors the new schema constants, the new artifact
+filename, the new audit-dossier manifest section, and the new exported
+types/values listed under the package-version entry below. All
+changes are additive — no existing field, type, or command was
+removed or renamed.
+
+---
+
+## [4.66.0] - 2026-05-10
+
+### Added (Issue #2181 — formal-verification pilot)
+
+- New test-intelligence runtime constants exported from
+  `src/contracts/index.ts`:
+  `FORMAL_VERIFICATION_REPORT_AUDIT_ARTIFACT_FILENAME`
+  (`"formal-verification-report.json"`).
+- New entry `"formal_verification_report"` added to
+  `ALLOWED_AUDIT_DOSSIER_ARTIFACT_KINDS` so the audit dossier can
+  carry the optional artifact in its `sourceArtifacts` table.
+- New optional additive field `formalVerification` on
+  `AuditDossierManifest`. The block carries `filename`, the overall
+  `verdict` (`pass` / `fail`), `specCount`, `formulaCount`,
+  `passCount`, `failCount`, and a `specs` array
+  (`specPath`, `module`, per-spec `verdict`, `reachableStateCount`,
+  `formulaCount`, `passCount`, `failCount`). Omitted for runs that
+  never invoked the model checker, so byte-shape stays stable for
+  legacy runs.
+- New module `src/test-intelligence/formal-verification.ts` exporting:
+  - `G10_FORMAL_VERIFICATION_PASS` (`"G10_FORMAL_VERIFICATION_PASS"`)
+    — the hard-gate code emitted on failure.
+  - `FormalVerificationHardGateError` — error class thrown by
+    `assertFormalVerificationPass` when any formula fails.
+  - `FormalSpecParseError`, `FormalSpecModelError` — parse-time and
+    model-construction errors.
+  - `FORMAL_VERIFICATION_REPORT_ARTIFACT_FILENAME`,
+    `FORMAL_VERIFICATION_REPORT_SCHEMA_VERSION` (`"1.0.0"`),
+    `FORMAL_VERIFICATION_STATE_LIMIT` (`4096`),
+    `FORMAL_VERIFICATION_MAX_SPEC_BYTES` (`65_536`).
+  - `verifyFormalVerificationSpec`,
+    `buildFormalVerificationReport`,
+    `renderFormalVerificationReportJson`,
+    `renderFormalVerificationReportText`,
+    `assertFormalVerificationPass`.
+  - Types `FormalVerificationLogic`, `FormalVerificationVerdict`,
+    `FormalVerificationState`, `FormalVerificationCounterexample`,
+    `FormalVerificationFormulaResult`,
+    `FormalVerificationSpecResult`, `FormalVerificationReport`,
+    `VerifyFormalSpecInput`, `BuildFormalVerificationReportInput`.
+- New CLI driver `scripts/run-formal-verification.mjs` invoked via
+  `node --import tsx scripts/run-formal-verification.mjs
+  [--specs-dir <path>]... [--output-dir <path>]
+  [--generated-at <iso>]`. Exits `0` on pass, `1` on any failure, `2`
+  on parse / model-construction error. Output is byte-stable for
+  fixed inputs.
+- Two pilot specs checked in under
+  `src/test-intelligence/formal-verification/specs/` —
+  `psd2-sca-art-97.smv` and `mifid-ii-art-25.smv` — covering the
+  three temporal-logic properties for each regulation
+  (liveness + two safety properties).
+- Two CI smoke fixtures under `fixtures/formal-verification/` —
+  one passing, one deliberately failing — so the driver itself is
+  test-covered for both verdicts.
+- New documentation page
+  `docs/test-intelligence/formal-verification.md` with the LTL/CTL
+  primer, the NuSMV-subset spec format reference, both pilot specs
+  walked through step-by-step, and the auditor reading guide for the
+  emitted artifact.
+- `TEST_INTELLIGENCE_CONTRACT_VERSION` bumped `1.30.0` → `1.31.0`;
+  `CONTRACT_VERSION` bumped `4.65.0` → `4.66.0`.
+- `migrationHash:` registration is not required for this release. The
+  signed migration registry carries forward unchanged because no
+  migration id, hash, or rollback semantics changed.
+
+---
+
 ## [1.30.0] - 2026-05-10
 
 Test-intelligence sub-contract bump that accompanies the Issue #2180

@@ -1,0 +1,23 @@
+-- Tiny passing fixture for the formal-verification driver smoke test
+-- (Issue #2181). Encodes a trivial sequential state-machine that
+-- always reaches `done`; every LTL formula in scope holds.
+
+MODULE main
+
+VAR
+  state : { ready, running, done };
+
+ASSIGN
+  init(state) := ready;
+  next(state) := case
+    state = ready   : running;
+    state = running : done;
+    state = done    : done;
+    TRUE            : state;
+  esac;
+
+-- ready always eventually leads to done.
+LTLSPEC G ( state = ready -> F ( state = done ) )
+
+-- done is absorbing.
+LTLSPEC G ( state = done -> X ( state = done ) )
