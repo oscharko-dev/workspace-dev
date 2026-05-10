@@ -10,7 +10,6 @@ export const CHANGELOG_FILE = "CONTRACT_CHANGELOG.md";
 export const RELEVANT_CONTRACT_FILES = Object.freeze([
   "src/contracts/index.ts",
   "src/index.ts",
-  "src/contract-version.test.ts",
 ]);
 export const RELEVANT_CONTRACT_FILE_PREFIXES = Object.freeze([
   "src/test-intelligence/",

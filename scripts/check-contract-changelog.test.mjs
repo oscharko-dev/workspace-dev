@@ -40,6 +40,16 @@ test("guard passes when no relevant public contract files changed", () => {
   assert.equal(result.ok, true);
 });
 
+test("guard ignores governance-only contract tests", () => {
+  const result = evaluateContractChangelogGuard({
+    changedFiles: ["src/contract-version.test.ts"],
+    commitIssueNumbers: [2173],
+    changelogIssueNumbers: [],
+  });
+
+  assert.equal(result.ok, true);
+});
+
 test("guard fails when public contract files change without changelog update", () => {
   const result = evaluateContractChangelogGuard({
     changedFiles: ["src/contracts/index.ts"],
