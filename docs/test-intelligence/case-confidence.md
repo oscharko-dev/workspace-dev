@@ -64,6 +64,12 @@ Each reliability diagram records the bin edges, empirical accuracy,
 mean confidence, and both the plugin and debiased ECE values. The
 calibration layer also records the minimum recommended sample floor for
 each risk class (`50`) so sparse classes are easy to spot during review.
+The drift-canary CI gate honours that floor: classes with fewer than
+`CALIBRATION_MIN_SAMPLE_FLOOR` samples in the current run do not raise
+the absolute ECE finding, so a sparsely-populated class cannot fail the
+canary on a number that is statistically meaningless. The Eingabemasken
+benchmark scorecard reports `n/a (< 50 samples)` for those rows instead
+of `pass`/`FAIL`.
 - debiased 10-bin ECE per risk category
 - the per-class sample floor (`50`) used to interpret calibration stability
 

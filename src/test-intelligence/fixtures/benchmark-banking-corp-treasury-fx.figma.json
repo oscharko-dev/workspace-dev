@@ -1,0 +1,116 @@
+{
+  "source": {
+    "kind": "figma_local_json"
+  },
+  "screens": [
+    {
+      "screenId": "s-fx",
+      "screenName": "FX-Forward buchen",
+      "screenPath": "/banking/corp/treasury/fx/forward",
+      "nodes": [
+        {
+          "nodeId": "n-pair",
+          "nodeName": "Waehrungspaar",
+          "nodeType": "SELECT_FIELD",
+          "nodePath": "fx/pair",
+          "text": "Waehrungspaar",
+          "childNodeIds": [],
+          "defaultValue": "EUR-USD",
+          "validations": [
+            "Required",
+            "ISO-4217 pair"
+          ]
+        },
+        {
+          "nodeId": "n-notional",
+          "nodeName": "Nominal",
+          "nodeType": "TEXT_INPUT",
+          "nodePath": "fx/notional",
+          "text": "Nominal",
+          "childNodeIds": [],
+          "defaultValue": "",
+          "validations": [
+            "Required",
+            "Numeric",
+            "Min 100000",
+            "Max 1000000000"
+          ]
+        },
+        {
+          "nodeId": "n-tenor-days",
+          "nodeName": "Laufzeit (Tage)",
+          "nodeType": "TEXT_INPUT",
+          "nodePath": "fx/tenor-days",
+          "text": "Laufzeit (Tage)",
+          "childNodeIds": [],
+          "defaultValue": "",
+          "validations": [
+            "Required",
+            "Numeric",
+            "Min 1",
+            "Max 730"
+          ]
+        },
+        {
+          "nodeId": "n-strike",
+          "nodeName": "Strike",
+          "nodeType": "TEXT_INPUT",
+          "nodePath": "fx/strike",
+          "text": "Strike",
+          "childNodeIds": [],
+          "defaultValue": "",
+          "validations": [
+            "Required",
+            "Numeric",
+            "Min 0.0001"
+          ]
+        },
+        {
+          "nodeId": "n-non-deliverable",
+          "nodeName": "Non-deliverable Forward",
+          "nodeType": "RADIO_OPTION",
+          "nodePath": "fx/non-deliverable",
+          "text": "Non-deliverable Forward",
+          "childNodeIds": [],
+          "defaultValue": "No",
+          "validations": [
+            "Required"
+          ]
+        },
+        {
+          "nodeId": "n-mifid-appropriate",
+          "nodeName": "MiFID Appropriateness bestaetigt",
+          "nodeType": "RADIO_OPTION",
+          "nodePath": "compliance/mifid-appropriate",
+          "text": "MiFID Appropriateness bestaetigt",
+          "childNodeIds": [],
+          "defaultValue": "No",
+          "validations": [
+            "Required"
+          ]
+        },
+        {
+          "nodeId": "n-margin-anzeige",
+          "nodeName": "Bankmarge",
+          "nodeType": "RESULT_DISPLAY",
+          "nodePath": "fx/margin-disclosure",
+          "text": "Bankmarge in Basispunkten",
+          "childNodeIds": [],
+          "defaultValue": "",
+          "validations": [
+            "Reflects notional x tenor x volatility table",
+            "Updates when pair, notional, or tenor changes"
+          ]
+        },
+        {
+          "nodeId": "n-submit",
+          "nodeName": "Forward buchen",
+          "nodeType": "BUTTON",
+          "nodePath": "actions/submit",
+          "text": "Forward buchen",
+          "childNodeIds": []
+        }
+      ]
+    }
+  ]
+}

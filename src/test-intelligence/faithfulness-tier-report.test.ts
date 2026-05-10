@@ -293,3 +293,46 @@ test("buildFaithfulnessTierReport unblocks K0-shape: five label-only evidence_pa
   );
   assert.equal(report.aggregatePasses, true);
 });
+
+test("Issue #2116: persisted tier report carries evaluationMode='per_step'", () => {
+  const list = buildList([
+    buildCase({
+      steps: [
+        {
+          index: 1,
+          action: "Enter amount",
+          data: "100",
+          expected: "Field accepts",
+        },
+        { index: 2, action: "See receipt" },
+      ],
+    }),
+  ]);
+  const verdict = buildVerdict({
+    stepVerdicts: [
+      {
+        testCaseId: "tc-1",
+        stepIndex: 1,
+        verdict: "match",
+        message: "amount accepted",
+      },
+      {
+        testCaseId: "tc-1",
+        stepIndex: 2,
+        verdict: "match",
+        message: "receipt visible",
+      },
+    ],
+  });
+  const report = buildFaithfulnessTierReport({
+    generatedAt: GENERATED_AT,
+    jobId: "job-1",
+    verdict,
+    list,
+  });
+  assert.equal(
+    report.evaluationMode,
+    "per_step",
+    "tier reports are only built for per-step runs; the field pins that fact onto the artifact",
+  );
+});

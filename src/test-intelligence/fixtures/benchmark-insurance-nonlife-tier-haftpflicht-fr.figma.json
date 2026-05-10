@@ -1,0 +1,133 @@
+{
+  "source": {
+    "kind": "figma_local_json"
+  },
+  "screens": [
+    {
+      "screenId": "s-tier-fr",
+      "screenName": "Assurance responsabilite civile animaux",
+      "screenPath": "/insurance/non-life/pets/apply",
+      "nodes": [
+        {
+          "nodeId": "n-nom",
+          "nodeName": "Nom du proprietaire",
+          "nodeType": "TEXT_INPUT",
+          "nodePath": "applicant/family-name",
+          "text": "Nom du proprietaire",
+          "childNodeIds": [],
+          "defaultValue": "",
+          "validations": [
+            "Required",
+            "Max 60 characters"
+          ]
+        },
+        {
+          "nodeId": "n-prenom",
+          "nodeName": "Prenom du proprietaire",
+          "nodeType": "TEXT_INPUT",
+          "nodePath": "applicant/given-name",
+          "text": "Prenom du proprietaire",
+          "childNodeIds": [],
+          "defaultValue": "",
+          "validations": [
+            "Required",
+            "Max 60 characters"
+          ]
+        },
+        {
+          "nodeId": "n-espece",
+          "nodeName": "Espece",
+          "nodeType": "SELECT_FIELD",
+          "nodePath": "pet/species",
+          "text": "Espece",
+          "childNodeIds": [],
+          "defaultValue": "Chien",
+          "validations": [
+            "Required"
+          ]
+        },
+        {
+          "nodeId": "n-race",
+          "nodeName": "Race",
+          "nodeType": "TEXT_INPUT",
+          "nodePath": "pet/breed",
+          "text": "Race",
+          "childNodeIds": [],
+          "defaultValue": "",
+          "validations": [
+            "Required",
+            "Max 60 characters"
+          ]
+        },
+        {
+          "nodeId": "n-poids",
+          "nodeName": "Poids (kg)",
+          "nodeType": "TEXT_INPUT",
+          "nodePath": "pet/weight-kg",
+          "text": "Poids (kg)",
+          "childNodeIds": [],
+          "defaultValue": "",
+          "validations": [
+            "Required",
+            "Numeric",
+            "Min 0.1",
+            "Max 200"
+          ]
+        },
+        {
+          "nodeId": "n-categorie-1-2",
+          "nodeName": "Categorie 1 ou 2 (chien dangereux)",
+          "nodeType": "RADIO_OPTION",
+          "nodePath": "pet/dangerous-breed",
+          "text": "Categorie 1 ou 2 (chien dangereux)",
+          "childNodeIds": [],
+          "defaultValue": "No",
+          "validations": [
+            "Required"
+          ]
+        },
+        {
+          "nodeId": "n-permis-detention",
+          "nodeName": "Numero permis de detention",
+          "nodeType": "TEXT_INPUT",
+          "nodePath": "pet/dangerous-permit",
+          "text": "Numero permis de detention",
+          "childNodeIds": [],
+          "defaultValue": "",
+          "validations": [
+            "Required if dangerous-breed is Yes",
+            "Format PERMIS-#######"
+          ]
+        },
+        {
+          "nodeId": "n-chenil",
+          "nodeName": "Clause chenil acceptee",
+          "nodeType": "RADIO_OPTION",
+          "nodePath": "compliance/kennel-clause",
+          "text": "Clause chenil acceptee",
+          "childNodeIds": [],
+          "defaultValue": "No",
+          "validations": [
+            "Required"
+          ]
+        },
+        {
+          "nodeId": "n-a11y-help",
+          "nodeName": "Aide saisie",
+          "nodeType": "INFORMATIVE_LABEL",
+          "nodePath": "a11y/help-region",
+          "text": "Aide saisie",
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-submit",
+          "nodeName": "Souscrire",
+          "nodeType": "BUTTON",
+          "nodePath": "actions/submit",
+          "text": "Souscrire",
+          "childNodeIds": []
+        }
+      ]
+    }
+  ]
+}

@@ -12,6 +12,7 @@ import {
 import {
   appendDriftBaselineRecord,
   classifyCrossFamilyCorrelatedDrift,
+  computeDriftCanaryMetrics,
   createFileDriftAlertSink,
   DRIFT_ALERTS_ARTIFACT_FILENAME,
   DRIFT_CANARY_BRIER_ABSOLUTE_THRESHOLD,
@@ -22,8 +23,11 @@ import {
   loadDriftBaselineState,
   PROVIDER_FINGERPRINT_PROMPTS,
   writeDriftBaselineState,
+  type CanaryFixtureRun,
 } from "./drift-canary.js";
+import type { SupportedLocale } from "./locale-calibration.js";
 import {
+  CALIBRATION_MIN_SAMPLE_FLOOR,
   computeBrierScore,
   buildReliabilityDiagram,
   computeExpectedCalibrationError,
@@ -207,6 +211,64 @@ test("drift-canary: absolute ECE threshold breaches fail the canary", () => {
         finding.kind === "ece_absolute_threshold" &&
         finding.riskCategory === "regulated_data" &&
         finding.threshold === 0.05,
+    ),
+    true,
+  );
+});
+
+test("drift-canary: ECE absolute gate skips classes below the documented sample floor", () => {
+  const evaluation = evaluateDriftReport({
+    baseline: emptyBaselineState({
+      tenantId: "default",
+      policyProfileId: "eu-banking-default",
+      canarySetId: DRIFT_CANARY_CANARY_SET_ID,
+    }),
+    observations: [
+      {
+        deployment: "mistral-large-3",
+        family: "mistral",
+        metricName: "ece",
+        riskCategory: "regulated_data",
+        value: 0.5,
+        sampleCount: CALIBRATION_MIN_SAMPLE_FLOOR - 1,
+      },
+    ],
+    providerFingerprints: [],
+  });
+
+  assert.equal(
+    evaluation.findings.some(
+      (finding) => finding.kind === "ece_absolute_threshold",
+    ),
+    false,
+  );
+});
+
+test("drift-canary: ECE absolute gate still fires once the sample floor is reached", () => {
+  const evaluation = evaluateDriftReport({
+    baseline: emptyBaselineState({
+      tenantId: "default",
+      policyProfileId: "eu-banking-default",
+      canarySetId: DRIFT_CANARY_CANARY_SET_ID,
+    }),
+    observations: [
+      {
+        deployment: "mistral-large-3",
+        family: "mistral",
+        metricName: "ece",
+        riskCategory: "regulated_data",
+        value: 0.06,
+        sampleCount: CALIBRATION_MIN_SAMPLE_FLOOR,
+      },
+    ],
+    providerFingerprints: [],
+  });
+
+  assert.equal(
+    evaluation.findings.some(
+      (finding) =>
+        finding.kind === "ece_absolute_threshold" &&
+        finding.riskCategory === "regulated_data",
     ),
     true,
   );
@@ -439,4 +501,164 @@ test("drift-canary: default alert sink writes drift-alerts.json", async () => {
     alerts: Array<{ message: string }>;
   };
   assert.equal(persisted.alerts[0]?.message, "shifted");
+});
+
+// ---------------------------------------------------------------------------
+// Per-locale drift observations (Issue #2117)
+// ---------------------------------------------------------------------------
+
+test("drift-canary: computeDriftCanaryMetrics emits per-locale brier/ece observations when screenLocaleMap is provided", () => {
+  // Build a minimal CanaryFixtureRun stub.  We use the `as never` escape
+  // hatch for fields the metric computation never touches (intent, validation,
+  // coverage, artifactDir, artifactPaths, finopsBudget, blocked).
+  const screenIdDE = "screen-drift-DE-DE";
+  const screenIdFR = "screen-drift-FR-FR";
+
+  const buildMinimalCase = (
+    id: string,
+    screenId: string,
+    confidence: number,
+    _approved: boolean,
+  ) => ({
+    id,
+    riskCategory: "regulated_data" as const,
+    confidence,
+    figmaTraceRefs: [{ screenId, nodeId: `${screenId}-n` }],
+    steps: [] as never[],
+    qualitySignals: {
+      confidence,
+      coveredFieldIds: [] as string[],
+      coveredActionIds: [] as string[],
+      coveredValidationIds: [] as string[],
+      coveredNavigationIds: [] as string[],
+    },
+  });
+
+  const run: CanaryFixtureRun = {
+    deployment: "mistral-large-3",
+    fixtureId: "baseline-simple-form",
+    fixture: {
+      source: { kind: "figma_local_json" },
+      screens: [
+        {
+          screenId: screenIdDE,
+          screenName: "DE screen",
+          nodes: [],
+        },
+        {
+          screenId: screenIdFR,
+          screenName: "FR screen",
+          nodes: [],
+        },
+      ],
+    },
+    result: {
+      generatedTestCases: {
+        schemaVersion: "1.0.0" as never,
+        jobId: "job-drift-locale",
+        testCases: [
+          buildMinimalCase("tc-de-1", screenIdDE, 0.8, true),
+          buildMinimalCase("tc-de-2", screenIdDE, 0.7, true),
+          buildMinimalCase("tc-fr-1", screenIdFR, 0.3, false),
+        ] as never,
+      },
+      policy: {
+        decisions: [
+          { testCaseId: "tc-de-1", decision: "approved" },
+          { testCaseId: "tc-de-2", decision: "approved" },
+          { testCaseId: "tc-fr-1", decision: "needs_review" },
+        ],
+      },
+      intent: {
+        screens: [
+          { screenId: screenIdDE, screenName: "DE", trace: { nodeId: screenIdDE } },
+          { screenId: screenIdFR, screenName: "FR", trace: { nodeId: screenIdFR } },
+        ],
+        detectedFields: [],
+        detectedActions: [],
+        detectedValidations: [],
+        detectedNavigation: [],
+        inferredBusinessObjects: [],
+        risks: [],
+        assumptions: [],
+        openQuestions: [],
+        piiIndicators: [],
+        redactions: [],
+      },
+    } as never,
+  };
+
+  const screenLocaleMap = new Map<string, SupportedLocale>([
+    [screenIdDE, "DE-DE"],
+    [screenIdFR, "FR-FR"],
+  ]);
+
+  const observations = computeDriftCanaryMetrics({
+    deployment: "mistral-large-3",
+    runs: [run],
+    screenLocaleMap,
+  });
+
+  // Base observations (no locale) must still be present.
+  const baseEce = observations.find(
+    (obs) =>
+      obs.metricName === "ece" &&
+      obs.riskCategory === "regulated_data" &&
+      obs.locale === undefined,
+  );
+  assert.notEqual(baseEce, undefined, "Base ECE observation (no locale) must be emitted");
+
+  // Per-locale observations must be present for DE-DE.
+  const deDeEce = observations.find(
+    (obs) =>
+      obs.metricName === "ece" &&
+      obs.riskCategory === "regulated_data" &&
+      obs.locale === "DE-DE",
+  );
+  assert.notEqual(deDeEce, undefined, "DE-DE locale ECE observation must be emitted");
+
+  // Per-locale observations must be present for FR-FR.
+  const frFrEce = observations.find(
+    (obs) =>
+      obs.metricName === "ece" &&
+      obs.riskCategory === "regulated_data" &&
+      obs.locale === "FR-FR",
+  );
+  assert.notEqual(frFrEce, undefined, "FR-FR locale ECE observation must be emitted");
+
+  // When the per-locale ECE exceeds the regulated_data threshold (0.05),
+  // evaluateDriftReport should fire an ece_absolute_threshold finding that
+  // includes the locale dimension.
+  const highEceObservation = {
+    deployment: "mistral-large-3",
+    family: "mistral",
+    metricName: "ece" as const,
+    riskCategory: "regulated_data" as const,
+    value: 0.06, // exceeds 0.05 threshold
+    sampleCount: 50, // at sample floor
+    locale: "DE-DE" as const,
+  };
+
+  const evaluation = evaluateDriftReport({
+    baseline: emptyBaselineState({
+      tenantId: "default",
+      policyProfileId: "eu-banking-default",
+      canarySetId: DRIFT_CANARY_CANARY_SET_ID,
+    }),
+    observations: [highEceObservation],
+    providerFingerprints: [],
+  });
+
+  const localeEceFinding = evaluation.findings.find(
+    (finding) =>
+      finding.kind === "ece_absolute_threshold" &&
+      finding.riskCategory === "regulated_data" &&
+      finding.locale === "DE-DE",
+  );
+  assert.notEqual(
+    localeEceFinding,
+    undefined,
+    "ece_absolute_threshold finding must carry the locale dimension when present",
+  );
+  assert.equal(localeEceFinding?.locale, "DE-DE");
 });

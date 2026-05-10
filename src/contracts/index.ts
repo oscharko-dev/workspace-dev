@@ -162,7 +162,7 @@ export interface TestIntelligenceTransferPrincipal {
 }
 
 /** Contract version for the opt-in test-intelligence surface. */
-export const TEST_INTELLIGENCE_CONTRACT_VERSION = "1.22.0" as const;
+export const TEST_INTELLIGENCE_CONTRACT_VERSION = "1.23.0" as const;
 
 /**
  * Schema version for generated test case payloads.
@@ -1057,6 +1057,7 @@ export const ALLOWED_TEST_CASE_POLICY_OUTCOMES = [
   "visual_sidecar_prompt_injection_text",
   "semantic_suspicious_content",
   "cross_modal_faithfulness_score_below_threshold",
+  "cross_modal_faithfulness_case_level_fallback",
   "judge_refused",
   "risk_tag_downgrade_detected",
   "custom_context_risk_escalation",
@@ -1136,6 +1137,47 @@ export interface TestCasePolicyReport {
    * shape stays stable for runs that pre-date the evaluator.
    */
   mutationKillRate?: MutationKillRateSummary;
+  /**
+   * Issue #2116 — explicit semantics + audit trail for the
+   * cross-modal-faithfulness gate's tier-elastic fallback.
+   *
+   * Always emitted by the policy gate so reviewers can tell at a glance
+   * whether the gate reasoned over per-step evidence
+   * (`mode === "per_step"`), fell back to the verdict's case-level score
+   * (`mode === "case_level_fallback"`), or had no faithfulness verdict
+   * at all (`mode === "missing"`). The `requirePerStepFaithfulness`
+   * field mirrors the active profile rule so audit reviewers do not
+   * need a second artifact to know whether the fallback was demoted to
+   * an error.
+   */
+  faithfulnessEvaluation?: FaithfulnessEvaluationSummary;
+}
+
+/** Issue #2116 — audit-trail block summarizing how the
+ * cross-modal-faithfulness gate evaluated a job. Carried on
+ * `TestCasePolicyReport.faithfulnessEvaluation`. */
+export interface FaithfulnessEvaluationSummary {
+  /** Evaluation mode the gate applied. */
+  readonly mode: FaithfulnessEvaluationMode;
+  /**
+   * Whether the active profile escalated the
+   * `case_level_fallback` mode to a blocking error (Issue #2116
+   * `requirePerStepFaithfulness`). Mirrors the rule for downstream
+   * consumers without forcing them to re-resolve the profile.
+   */
+  readonly requirePerStepFaithfulness: boolean;
+  /**
+   * Reviewer-readable explanation of why the gate ended up in
+   * {@link mode}. Stable across runs with identical inputs so the
+   * persisted policy report is byte-deterministic.
+   */
+  readonly reason: string;
+  /**
+   * Step-verdict count consumed by the gate when
+   * `mode === "per_step"`. `0` for `case_level_fallback` and
+   * `missing` so the field is always present and machine-comparable.
+   */
+  readonly stepVerdictCount: number;
 }
 
 /**
@@ -1448,6 +1490,33 @@ export interface TestCasePolicyProfileRules {
   selfConsistency?: {
     readonly sampleCount: 1 | 3;
   };
+  /**
+   * Issue #2116 — faithfulness-tier-elastic fallback strictness.
+   *
+   * Drives how the cross-modal-faithfulness gate treats verdicts that
+   * lack `stepVerdicts` (legacy schema 1.0.0 producers, refused
+   * cross-family judge that still emitted a case-level score, etc.).
+   *
+   * - `false` (the secure default for `eu-banking-default`):
+   *   `case_level_fallback` raises a job-level **warning**
+   *   (`policy:cross-modal-faithfulness:case-level-fallback`) and the
+   *   case-level score continues to drive the threshold check. The
+   *   evaluation mode is recorded on
+   *   `TestCasePolicyReport.faithfulnessEvaluation` for audit.
+   * - `true`: `case_level_fallback` is treated as an **error**, mirroring
+   *   the per-step strictness. Operators that require per-step audit
+   *   evidence flip this on so a verdict with no per-step claims fails
+   *   the run rather than slipping through under the legacy fallback.
+   *
+   * The companion `policy:cross-modal-faithfulness:evaluation-missing`
+   * outcome is always raised at error severity when no faithfulness
+   * verdict is present at all — that path is not configurable because
+   * "no judge ran" must never silently pass an audited gate.
+   *
+   * Optional for backwards compatibility: when omitted the runtime
+   * applies the `false` default.
+   */
+  requirePerStepFaithfulness?: boolean;
 }
 
 export const ALLOWED_JUDGE_REFUSAL_POLICIES = [
@@ -4941,6 +5010,29 @@ export interface FaithfulnessTierReportEntry {
   readonly message?: string;
 }
 
+/** Closed runtime list of faithfulness-evaluation modes (Issue #2116).
+ *
+ *   - `per_step`               — the faithfulness verdict carried per-step
+ *                                verdicts and the gate reasoned over them.
+ *                                Strongest evidence path.
+ *   - `case_level_fallback`    — the verdict was present but lacked
+ *                                `stepVerdicts` (e.g. legacy schema 1.0.0
+ *                                producers); the gate fell back to the
+ *                                verdict's case-level `score`. Auditable
+ *                                fallback.
+ *   - `missing`                — no faithfulness verdict at all; the gate
+ *                                had nothing to reason against.
+ */
+export const FAITHFULNESS_EVALUATION_MODES = [
+  "per_step",
+  "case_level_fallback",
+  "missing",
+] as const;
+
+/** Discriminant of an allowed faithfulness-evaluation mode (Issue #2116). */
+export type FaithfulnessEvaluationMode =
+  (typeof FAITHFULNESS_EVALUATION_MODES)[number];
+
 /** Persistable per-run report capturing the tier path that produced the
  * cross-modal faithfulness score (Issue #2066).
  *
@@ -4967,6 +5059,17 @@ export interface FaithfulnessTierReport {
   readonly evidencePartialCount: number;
   /** Steps where the tier-aware score is `0.0`. */
   readonly mismatchCount: number;
+  /**
+   * Issue #2116 — evaluation mode the report was produced under. The
+   * tier-report builder only materializes a report for `per_step` runs
+   * (per-step evidence is required to populate `entries`), so this field
+   * is constant `"per_step"` on persisted reports. The companion
+   * {@link TestCasePolicyReport.faithfulnessEvaluation} block surfaces
+   * the broader mode taxonomy at the policy-gate level. Carried here so
+   * a tier report parsed in isolation tells reviewers unambiguously
+   * which evaluation path produced it.
+   */
+  readonly evaluationMode: FaithfulnessEvaluationMode;
   /** Per-step records, sorted by `(testCaseId, stepIndex)`. */
   readonly entries: readonly FaithfulnessTierReportEntry[];
 }
@@ -6092,12 +6195,34 @@ export interface InferredBusinessObject {
   sourceRefs?: TestIntentSourceRef[];
 }
 
+/**
+ * The six EU-banking locales supported by per-locale Platt-curve calibration
+ * (Issue #2117).  Referenced by `BusinessTestIntentScreen.locale` so that
+ * consumers can correlate per-screen locale with the per-locale calibration
+ * curves without importing from the test-intelligence submodule.
+ */
+export type SupportedLocale =
+  | "DE-DE"
+  | "DE-AT"
+  | "DE-CH"
+  | "EN-IE"
+  | "FR-FR"
+  | "IT-IT";
+
 /** Per-screen slice of the intent. */
 export interface BusinessTestIntentScreen {
   screenId: string;
   screenName: string;
   screenPath?: string;
   trace: IntentTraceRef;
+  /**
+   * Optional locale tag for this screen (Issue #2117).  When present it is
+   * one of the six `SupportedLocale` codes; absent for screens whose locale
+   * could not be resolved at the import stage.  Consumers derive the locale
+   * using `deriveLocaleFromBusinessTestIntentScreen` from
+   * `locale-calibration.ts` when they need a best-effort value.
+   */
+  locale?: SupportedLocale;
 }
 
 /**
@@ -12373,4 +12498,85 @@ export interface ReleaseReadinessReport {
   readonly generatedAt: string;
   readonly passed: boolean;
   readonly gates: readonly ReleaseReadinessGateResult[];
+}
+
+// ---------------------------------------------------------------------------
+// Incident-handling surface (Issue #2114, DORA Art. 10).
+// ---------------------------------------------------------------------------
+
+/** Schema version stamped on every persisted `incidents.json`. */
+export const INCIDENT_REPORT_SCHEMA_VERSION = "1.0.0" as const;
+
+/** Canonical filename for the per-job incident-handling artifact. */
+export const INCIDENT_REPORT_ARTIFACT_FILENAME = "incidents.json" as const;
+
+/** Severity bands recognized by the incident classifier. */
+export const ALLOWED_INCIDENT_SEVERITIES = [
+  "low",
+  "medium",
+  "high",
+  "critical",
+] as const;
+export type IncidentSeverity = (typeof ALLOWED_INCIDENT_SEVERITIES)[number];
+
+/**
+ * Closed enumeration of incident categories as defined by Issue #2114.
+ * Listed in canonical sort order; new categories require a contract bump.
+ */
+export const ALLOWED_INCIDENT_CATEGORIES = [
+  "compliance_rule_pack_violation",
+  "drift_alert",
+  "judge_disagreement_persistent",
+  "pii_leakage",
+  "policy_gate_bypass",
+  "replay_cache_miss_unexpected",
+  "subprocessor_outage",
+] as const;
+export type IncidentCategory = (typeof ALLOWED_INCIDENT_CATEGORIES)[number];
+
+/**
+ * Pipeline-level incident review state. When the classifier emits any
+ * `critical` event, the report stamps `incident_ack_required` and the
+ * pipeline pauses until an operator records a manual acknowledgement.
+ */
+export const ALLOWED_INCIDENT_REVIEW_STATES = [
+  "ok",
+  "incident_ack_required",
+] as const;
+export type IncidentReviewState =
+  (typeof ALLOWED_INCIDENT_REVIEW_STATES)[number];
+
+/**
+ * Reference to a persisted artifact backing an incident's evidence
+ * trail. Lets a sink cite an artifact without depending on the full
+ * Wave 1 evidence-manifest type.
+ */
+export interface ManifestRef {
+  readonly filename: string;
+  readonly sha256: string;
+}
+
+/** Single classified incident emitted to the operator's `IncidentSink`. */
+export interface IncidentEvent {
+  readonly id: string;
+  readonly severity: IncidentSeverity;
+  readonly category: IncidentCategory;
+  readonly observedAt: string;
+  readonly jobId: string;
+  readonly evidence: readonly ManifestRef[];
+  readonly rootCauseHypothesis: string;
+}
+
+/**
+ * Persisted incident-handling envelope written per job. The order of
+ * `events` is canonical: severity-rank descending, then category, then
+ * `id`, so byte-identical inputs always produce identical files.
+ */
+export interface IncidentReport {
+  readonly schemaVersion: typeof INCIDENT_REPORT_SCHEMA_VERSION;
+  readonly contractVersion: typeof TEST_INTELLIGENCE_CONTRACT_VERSION;
+  readonly jobId: string;
+  readonly generatedAt: string;
+  readonly reviewState: IncidentReviewState;
+  readonly events: readonly IncidentEvent[];
 }

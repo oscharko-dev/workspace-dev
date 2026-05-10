@@ -34,6 +34,7 @@ import {
   TEST_INTELLIGENCE_CONTRACT_VERSION,
   TEST_INTELLIGENCE_PROMPT_TEMPLATE_VERSION,
   VISUAL_SIDECAR_SCHEMA_VERSION,
+  type FaithfulnessEvaluationMode,
   type GeneratedTestCaseAuditMetadata,
   type TestCaseRiskCategory,
 } from "../src/contracts/index.js";
@@ -53,6 +54,7 @@ import { runValidationPipeline } from "../src/test-intelligence/validation-pipel
 import { synthesizeGeneratedTestCases } from "../src/test-intelligence/validation-harness.js";
 import {
   CALIBRATION_ECE_THRESHOLDS,
+  CALIBRATION_MIN_SAMPLE_FLOOR,
   CALIBRATION_RISK_CATEGORIES,
   buildRiskCalibrationDiagnostics,
   computeBrierScore,
@@ -96,6 +98,20 @@ interface FixtureMeasurement {
     blocked: boolean;
     blockingViolations: string[];
     nonBlockingViolations: string[];
+    /**
+     * Issue #2116 — explicit semantics for the cross-modal-faithfulness
+     * gate's tier-elastic fallback. The K0 measurement runs the
+     * deterministic mock pipeline (no LLM gateway), so every fixture is
+     * expected to surface `mode === "missing"` here. Recording it
+     * verbatim makes the absence of a real faithfulness verdict visible
+     * to reviewers and machine-comparable across K0 vs. K1 runs.
+     */
+    faithfulnessEvaluation: {
+      mode: FaithfulnessEvaluationMode;
+      requirePerStepFaithfulness: boolean;
+      reason: string;
+      stepVerdictCount: number;
+    };
   };
   coverage: {
     fieldCoverageRatio: number;
@@ -344,7 +360,10 @@ const measureFixture = async (
       brierScore: computeBrierScore(samples),
       ece: diagram.debiasedEce,
       threshold,
-      meetsThreshold: samples.length === 0 ? true : diagram.debiasedEce <= threshold,
+      meetsThreshold:
+        samples.length < CALIBRATION_MIN_SAMPLE_FLOOR
+          ? true
+          : diagram.debiasedEce <= threshold,
       reliabilityDiagram: {
         sampleCount: diagram.sampleCount,
         binCount: diagram.binCount,
@@ -386,6 +405,14 @@ const measureFixture = async (
       blocked: pipeline.policy.blocked,
       blockingViolations,
       nonBlockingViolations,
+      faithfulnessEvaluation: pipeline.policy.faithfulnessEvaluation ?? {
+        mode: "missing",
+        requirePerStepFaithfulness: false,
+        reason:
+          "policy gate did not emit a faithfulnessEvaluation block " +
+          "(legacy policy report or no faithfulness verdict supplied)",
+        stepVerdictCount: 0,
+      },
     },
     coverage: {
       fieldCoverageRatio:
@@ -481,6 +508,48 @@ const renderMarkdown = (
   lines.push(`- Validation errors total: **${validationErrorTotal}**`);
   lines.push(
     `- Fixtures with technique-quota deficits: **${techniqueQuotaWithDeficits} / ${measurements.length}**`,
+  );
+
+  lines.push("");
+  lines.push("## Faithfulness evaluation modes (Issue #2116)");
+  lines.push("");
+  lines.push(
+    "Closes audit finding _\"Faithfulness tier-elastic fallback uses case-level " +
+      "score when per-step verdicts missing — silent degradation\"_. Mode is " +
+      "computed by the cross-modal-faithfulness gate; `missing` is expected on " +
+      "the deterministic mock pipeline because no LLM faithfulness judge runs.",
+  );
+  lines.push("");
+  lines.push(
+    "| Tier | Fixture | Mode | Step verdicts | requirePerStepFaithfulness |",
+  );
+  lines.push("|---:|---|---|---:|---:|");
+  for (const m of measurements) {
+    const evaluation = m.policy.faithfulnessEvaluation;
+    lines.push(
+      `| ${m.tier} | \`${m.archetypeId.replace("eingabemaske-", "")}\` | ` +
+        `\`${evaluation.mode}\` | ${evaluation.stepVerdictCount} | ` +
+        `${evaluation.requirePerStepFaithfulness ? "true" : "false"} |`,
+    );
+  }
+  const modeBreakdown = new Map<FaithfulnessEvaluationMode, number>();
+  for (const m of measurements) {
+    const mode = m.policy.faithfulnessEvaluation.mode;
+    modeBreakdown.set(mode, (modeBreakdown.get(mode) ?? 0) + 1);
+  }
+  const fallbackCount =
+    (modeBreakdown.get("case_level_fallback") ?? 0) +
+    (modeBreakdown.get("missing") ?? 0);
+  const fallbackRate =
+    measurements.length === 0 ? 0 : fallbackCount / measurements.length;
+  lines.push("");
+  lines.push(
+    `- Per-step: **${modeBreakdown.get("per_step") ?? 0}** / ` +
+      `case-level fallback: **${modeBreakdown.get("case_level_fallback") ?? 0}** / ` +
+      `missing: **${modeBreakdown.get("missing") ?? 0}**`,
+  );
+  lines.push(
+    `- Aggregate fallback rate (case_level_fallback + missing): **${fallbackRate.toFixed(3)}**`,
   );
 
   lines.push("");
@@ -617,10 +686,14 @@ const renderMarkdown = (
         : samples.reduce((sum, sample) => sum + sample.ece * sample.sampleCount, 0) /
           totalSamples;
     const threshold = CALIBRATION_ECE_THRESHOLDS[riskCategory];
+    const belowFloor = totalSamples < CALIBRATION_MIN_SAMPLE_FLOOR;
+    const gate = belowFloor
+      ? `n/a (< ${CALIBRATION_MIN_SAMPLE_FLOOR} samples)`
+      : weightedEce <= threshold
+        ? "pass"
+        : "**FAIL**";
     lines.push(
-      `| \`${riskCategory}\` | ${totalSamples} | ${weightedBrier.toFixed(3)} | ${weightedEce.toFixed(3)} | ${threshold.toFixed(3)} | ${
-        totalSamples === 0 || weightedEce <= threshold ? "pass" : "**FAIL**"
-      } |`,
+      `| \`${riskCategory}\` | ${totalSamples} | ${weightedBrier.toFixed(3)} | ${weightedEce.toFixed(3)} | ${threshold.toFixed(3)} | ${gate} |`,
     );
   }
 
