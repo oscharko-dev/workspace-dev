@@ -160,6 +160,7 @@ import {
   PRODUCTION_FINOPS_BUDGET_ENVELOPE,
   resolveAdversarialCriticBudgetLimits,
   resolveFinOpsRequestLimits,
+  resolveTestGenerationWallClockBudget,
   validateFinOpsBudgetEnvelope,
 } from "./finops-budget.js";
 import {
@@ -4973,11 +4974,33 @@ export const runFigmaToQcTestCases = async (
     validation,
     judgeAccepted,
   );
+  const explicitWallClockOverrideMs =
+    finopsBudget.roles.test_generation?.maxTotalWallClockMs;
+  const resolvedWallClockBudget = resolveTestGenerationWallClockBudget({
+    caseCount: generatedList.testCases.length,
+    judgePanelSize: judgeConsensusResult.panel.length,
+    adversarialRounds: adversarialCriticRoundArtifacts.length,
+    visualSidecarEnabled: visualSidecarResult !== undefined,
+    ...(explicitWallClockOverrideMs !== undefined
+      ? { explicitOverrideMs: explicitWallClockOverrideMs }
+      : {}),
+    ...(policyProfileRules !== undefined
+      ? { profileRules: policyProfileRules }
+      : {}),
+  });
+  const resolvedFinopsBudget = cloneFinOpsBudgetEnvelope(finopsBudget);
+  if (resolvedFinopsBudget.roles.test_generation !== undefined) {
+    resolvedFinopsBudget.roles.test_generation.maxTotalWallClockMs =
+      resolvedWallClockBudget.resolvedMs;
+  }
   const finopsReport = buildFinOpsBudgetReport({
     jobId: input.jobId,
     generatedAt: input.generatedAt,
-    budget: finopsBudget,
+    budget: resolvedFinopsBudget,
     recorder: finopsRecorder,
+    resolvedBudget: {
+      testGenerationWallClock: resolvedWallClockBudget,
+    },
     ...(finopsOutcomeOverride !== undefined
       ? { outcomeOverride: finopsOutcomeOverride }
       : {}),
@@ -6071,7 +6094,7 @@ export const runFigmaToQcTestCases = async (
           },
         }
       : {}),
-    finopsBudget,
+    finopsBudget: resolvedFinopsBudget,
     artifactDir,
     artifactPaths: {
       intent: intentPath,

@@ -5184,9 +5184,31 @@ test("runFigmaToQcTestCases uses PRODUCTION_FINOPS_BUDGET_ENVELOPE by default", 
       llm: { client },
     });
     assert.equal(result.finopsBudget.budgetId, "production-default");
-    assert.deepEqual(
-      result.finopsBudget.roles.test_generation,
-      PRODUCTION_FINOPS_BUDGET_ENVELOPE.roles.test_generation,
+    assert.equal(
+      result.finopsBudget.roles.test_generation?.maxInputTokensPerRequest,
+      PRODUCTION_FINOPS_BUDGET_ENVELOPE.roles.test_generation
+        ?.maxInputTokensPerRequest,
+    );
+    assert.equal(
+      result.finopsBudget.roles.test_generation?.maxOutputTokensPerRequest,
+      PRODUCTION_FINOPS_BUDGET_ENVELOPE.roles.test_generation
+        ?.maxOutputTokensPerRequest,
+    );
+    assert.equal(
+      result.finopsBudget.roles.test_generation?.maxWallClockMsPerRequest,
+      PRODUCTION_FINOPS_BUDGET_ENVELOPE.roles.test_generation
+        ?.maxWallClockMsPerRequest,
+    );
+    const report = JSON.parse(
+      await readFile(result.artifactPaths.finopsReport, "utf8"),
+    ) as FinOpsBudgetReport;
+    assert.equal(
+      report.resolvedBudget?.testGenerationWallClock.mode,
+      "elastic",
+    );
+    assert.equal(
+      report.budget.roles.test_generation?.maxTotalWallClockMs,
+      report.resolvedBudget?.testGenerationWallClock.resolvedMs,
     );
   } finally {
     await rm(tempRoot, { recursive: true, force: true });
@@ -5285,6 +5307,7 @@ test("runFigmaToQcTestCases honours operator FinOps override (no merge with defa
         test_generation: {
           maxOutputTokensPerRequest: 1234,
           maxWallClockMsPerRequest: 5000,
+          maxTotalWallClockMs: 123_456,
         },
       },
     };
@@ -5303,11 +5326,26 @@ test("runFigmaToQcTestCases honours operator FinOps override (no merge with defa
       result.finopsBudget.roles.test_generation?.maxOutputTokensPerRequest,
       1234,
     );
+    assert.equal(
+      result.finopsBudget.roles.test_generation?.maxTotalWallClockMs,
+      123_456,
+    );
     // Production defaults must NOT leak into the override.
     assert.equal(
       result.finopsBudget.roles.visual_primary,
       undefined,
       "no merge: visual_primary should be absent when override omits it",
+    );
+    const report = JSON.parse(
+      await readFile(result.artifactPaths.finopsReport, "utf8"),
+    ) as FinOpsBudgetReport;
+    assert.equal(
+      report.budget.roles.test_generation?.maxTotalWallClockMs,
+      123_456,
+    );
+    assert.equal(
+      report.resolvedBudget?.testGenerationWallClock.overrideMs,
+      123_456,
     );
   } finally {
     await rm(tempRoot, { recursive: true, force: true });

@@ -724,7 +724,8 @@ permissive `DEFAULT_FINOPS_BUDGET_ENVELOPE` baseline. Both are internal
 `src/test-intelligence/index.ts` entrypoints for in-repo harnesses. Installed
 package consumers should use the published `workspace-dev/contracts` types and
 the HTTP routes unless a future package subpath explicitly exposes these
-helpers.
+helpers. The elastic `test_generation.maxTotalWallClockMs` policy is documented
+in `docs/test-intelligence/finops-elastic-budget.md`.
 
 ### Fail-closed semantics
 

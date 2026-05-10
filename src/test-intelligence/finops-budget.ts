@@ -21,6 +21,9 @@ import {
   type FinOpsBudgetEnvelope,
   type FinOpsRole,
   type FinOpsRoleBudget,
+  type FinOpsWallClockBudgetPolicy,
+  type ResolvedFinOpsWallClockBudget,
+  type TestCasePolicyProfileRules,
 } from "../contracts/index.js";
 
 export const ADVERSARIAL_CRITIC_BUDGET_FRACTION = 0.25 as const;
@@ -30,6 +33,20 @@ export interface AdversarialCriticBudgetLimits {
   readonly maxOutputTokens?: number;
   readonly maxWallClockMs?: number;
   readonly maxRetries?: number;
+}
+
+export interface ResolveWallClockBudgetInput {
+  readonly caseCount: number;
+  readonly judgePanelSize: number;
+  readonly adversarialRounds: number;
+  readonly visualSidecarEnabled: boolean;
+  readonly coefficients?: FinOpsWallClockBudgetPolicy;
+}
+
+export interface ResolveTestGenerationWallClockBudgetInput
+  extends ResolveWallClockBudgetInput {
+  readonly explicitOverrideMs?: number;
+  readonly profileRules?: TestCasePolicyProfileRules;
 }
 
 /** Single validation issue, mirrors the project's hand-rolled validator shape. */
@@ -43,6 +60,16 @@ export interface FinOpsBudgetValidationResult {
   valid: boolean;
   errors: ReadonlyArray<FinOpsBudgetValidationIssue>;
 }
+
+export const DEFAULT_FINOPS_WALL_CLOCK_BUDGET_POLICY:
+  Readonly<FinOpsWallClockBudgetPolicy> = Object.freeze({
+    baseMs: 90_000,
+    perCaseMs: 1_800,
+    perAdditionalJudgeMs: 12_000,
+    perAdversarialRoundMs: 18_000,
+    visualSidecarMs: 15_000,
+    hardCeilingMs: 360_000,
+  });
 
 /** Default envelope with no enforced limits. Useful as a "permissive" baseline. */
 export const DEFAULT_FINOPS_BUDGET_ENVELOPE: FinOpsBudgetEnvelope =
@@ -215,6 +242,99 @@ export const resolveAdversarialCriticBudgetLimits = (
 export const cloneEuBankingDefaultFinOpsBudget = (): FinOpsBudgetEnvelope =>
   cloneFinOpsBudgetEnvelope(EU_BANKING_DEFAULT_FINOPS_BUDGET);
 
+const assertNonNegativeSafeInteger = (value: number, label: string): void => {
+  if (!Number.isSafeInteger(value) || value < 0) {
+    throw new RangeError(`${label} must be a non-negative safe integer`);
+  }
+};
+
+export const resolveFinOpsWallClockBudgetPolicy = (
+  rules: TestCasePolicyProfileRules | undefined,
+): Readonly<FinOpsWallClockBudgetPolicy> => {
+  const policy = rules?.finopsWallClockBudget;
+  if (policy === undefined) {
+    return DEFAULT_FINOPS_WALL_CLOCK_BUDGET_POLICY;
+  }
+  return Object.freeze({
+    baseMs: policy.baseMs,
+    perCaseMs: policy.perCaseMs,
+    perAdditionalJudgeMs: policy.perAdditionalJudgeMs,
+    perAdversarialRoundMs: policy.perAdversarialRoundMs,
+    visualSidecarMs: policy.visualSidecarMs,
+    hardCeilingMs: policy.hardCeilingMs,
+  });
+};
+
+export const resolveWallClockBudget = (
+  input: ResolveWallClockBudgetInput,
+): number => {
+  assertNonNegativeSafeInteger(input.caseCount, "caseCount");
+  assertNonNegativeSafeInteger(input.judgePanelSize, "judgePanelSize");
+  assertNonNegativeSafeInteger(input.adversarialRounds, "adversarialRounds");
+  const coefficients =
+    input.coefficients ?? DEFAULT_FINOPS_WALL_CLOCK_BUDGET_POLICY;
+  const unclamped =
+    coefficients.baseMs +
+    coefficients.perCaseMs * input.caseCount +
+    coefficients.perAdditionalJudgeMs * Math.max(0, input.judgePanelSize - 1) +
+    coefficients.perAdversarialRoundMs * input.adversarialRounds +
+    (input.visualSidecarEnabled ? coefficients.visualSidecarMs : 0);
+  return Math.min(unclamped, coefficients.hardCeilingMs);
+};
+
+export const resolveTestGenerationWallClockBudget = (
+  input: ResolveTestGenerationWallClockBudgetInput,
+): ResolvedFinOpsWallClockBudget => {
+  const coefficients = resolveFinOpsWallClockBudgetPolicy(input.profileRules);
+  const formulaMs = resolveWallClockBudget({
+    caseCount: input.caseCount,
+    judgePanelSize: input.judgePanelSize,
+    adversarialRounds: input.adversarialRounds,
+    visualSidecarEnabled: input.visualSidecarEnabled,
+    coefficients,
+  });
+  const caseMs = coefficients.perCaseMs * input.caseCount;
+  const additionalJudgeMs =
+    coefficients.perAdditionalJudgeMs * Math.max(0, input.judgePanelSize - 1);
+  const adversarialRoundMs =
+    coefficients.perAdversarialRoundMs * input.adversarialRounds;
+  const visualSidecarMs = input.visualSidecarEnabled
+    ? coefficients.visualSidecarMs
+    : 0;
+  const unclampedMs =
+    coefficients.baseMs +
+    caseMs +
+    additionalJudgeMs +
+    adversarialRoundMs +
+    visualSidecarMs;
+  return {
+    mode:
+      input.explicitOverrideMs !== undefined
+        ? "constant_override"
+        : "elastic",
+    role: "test_generation",
+    resolvedMs: input.explicitOverrideMs ?? formulaMs,
+    formulaMs,
+    ...(input.explicitOverrideMs !== undefined
+      ? { overrideMs: input.explicitOverrideMs }
+      : {}),
+    caseCount: input.caseCount,
+    judgePanelSize: input.judgePanelSize,
+    adversarialRounds: input.adversarialRounds,
+    visualSidecarEnabled: input.visualSidecarEnabled,
+    coefficients,
+    breakdown: {
+      baseMs: coefficients.baseMs,
+      caseMs,
+      additionalJudgeMs,
+      adversarialRoundMs,
+      visualSidecarMs,
+      unclampedMs,
+      hardCeilingMs: coefficients.hardCeilingMs,
+    },
+  };
+};
+
 /**
  * Production-default FinOps envelope for the `figma_to_qc_test_cases`
  * production runner (Issue #1740). Calibrated for the customer's deployment
@@ -284,10 +404,6 @@ export const PRODUCTION_FINOPS_BUDGET_ENVELOPE: FinOpsBudgetEnvelope =
         // sovereign-cloud endpoints + slow first-byte; previous 120 s
         // was right-sized for small masks only.
         maxWallClockMsPerRequest: 600_000,
-        // 30 minutes total wall-clock for the test-generation role —
-        // covers 3-sample self-consistency fan-out + multi-iteration
-        // repair on multi-section masks without breaching.
-        maxTotalWallClockMs: 1_800_000,
         // No live-smoke calls allowed by default; the live-E2E lane sets
         // its own envelope.
         maxLiveSmokeCalls: 0,

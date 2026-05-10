@@ -1393,6 +1393,16 @@ export interface ActiveModelBinding {
 }
 
 /** Tunable knobs of a policy profile (defaults shown for `eu-banking-default`). */
+export interface FinOpsWallClockBudgetPolicy {
+  readonly baseMs: number;
+  readonly perCaseMs: number;
+  readonly perAdditionalJudgeMs: number;
+  readonly perAdversarialRoundMs: number;
+  readonly visualSidecarMs: number;
+  readonly hardCeilingMs: number;
+}
+
+/** Tunable knobs of a policy profile (defaults shown for `eu-banking-default`). */
 export interface TestCasePolicyProfileRules {
   /** Risk categories that always require manual review. */
   reviewOnlyRiskCategories: TestCaseRiskCategory[];
@@ -1545,6 +1555,14 @@ export interface TestCasePolicyProfileRules {
    * applies the `false` default.
    */
   requirePerStepFaithfulness?: boolean;
+  /**
+   * Issue #2169 — policy-scoped elastic FinOps wall-clock coefficients for
+   * the `test_generation` role.
+   *
+   * Optional for backwards compatibility: when omitted the runtime falls back
+   * to the built-in `eu-banking-default` coefficients.
+   */
+  finopsWallClockBudget?: FinOpsWallClockBudgetPolicy;
 }
 
 export const ALLOWED_JUDGE_REFUSAL_POLICIES = [
@@ -10380,6 +10398,32 @@ export interface FinOpsBudgetBreach {
   message: string;
 }
 
+export interface ResolvedFinOpsWallClockBudget {
+  readonly mode: "elastic" | "constant_override";
+  readonly role: "test_generation";
+  readonly resolvedMs: number;
+  readonly formulaMs: number;
+  readonly overrideMs?: number;
+  readonly caseCount: number;
+  readonly judgePanelSize: number;
+  readonly adversarialRounds: number;
+  readonly visualSidecarEnabled: boolean;
+  readonly coefficients: FinOpsWallClockBudgetPolicy;
+  readonly breakdown: {
+    readonly baseMs: number;
+    readonly caseMs: number;
+    readonly additionalJudgeMs: number;
+    readonly adversarialRoundMs: number;
+    readonly visualSidecarMs: number;
+    readonly unclampedMs: number;
+    readonly hardCeilingMs: number;
+  };
+}
+
+export interface FinOpsResolvedBudgetReport {
+  readonly testGenerationWallClock: ResolvedFinOpsWallClockBudget;
+}
+
 /**
  * FinOps budget report artifact. Persisted under
  * `<runDir>/finops/budget-report.json`. The artifact is byte-stable per job
@@ -10398,6 +10442,8 @@ export interface FinOpsBudgetReport {
   generatedAt: string;
   /** Verbatim copy of the budget envelope applied to this job. */
   budget: FinOpsBudgetEnvelope;
+  /** Audit trail for runtime-resolved budget inputs and coefficients. */
+  resolvedBudget?: FinOpsResolvedBudgetReport;
   /** Caller-supplied currency label. `undefined` when no rate map was supplied. */
   currencyLabel?: string;
   /** Sorted by `role`. Always lists every role, even when usage is zero. */

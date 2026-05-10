@@ -6,6 +6,7 @@ import {
 } from "../contracts/index.js";
 import { ADVERSARIAL_NEGATIVE_RATIO_IMPROVEMENT_THRESHOLD } from "./adversarial-critic-agent.js";
 import {
+  EU_BANKING_DEFAULT_FINOPS_WALL_CLOCK_BUDGET_POLICY,
   EU_BANKING_DEFAULT_JUDGE_REFUSAL_POLICY,
   cloneEuBankingDefaultProfile,
   EU_BANKING_DEFAULT_NEGATIVE_CASE_LIFT_GATE_MODE,
@@ -193,5 +194,38 @@ test("Issue #2116: clone round-trips requirePerStepFaithfulness and isolates ove
   assert.equal(
     EU_BANKING_DEFAULT_POLICY_PROFILE.rules.requirePerStepFaithfulness,
     false,
+  );
+});
+
+test("Issue #2169: default profile exposes the elastic FinOps wall-clock coefficients", () => {
+  assert.deepEqual(
+    EU_BANKING_DEFAULT_POLICY_PROFILE.rules.finopsWallClockBudget,
+    EU_BANKING_DEFAULT_FINOPS_WALL_CLOCK_BUDGET_POLICY,
+  );
+});
+
+test("Issue #2169: clone round-trips finopsWallClockBudget and isolates overrides", () => {
+  const a = cloneEuBankingDefaultProfile();
+  const b = cloneEuBankingDefaultProfile();
+  assert.deepEqual(a.rules.finopsWallClockBudget, {
+    baseMs: 90_000,
+    perCaseMs: 1_800,
+    perAdditionalJudgeMs: 12_000,
+    perAdversarialRoundMs: 18_000,
+    visualSidecarMs: 15_000,
+    hardCeilingMs: 360_000,
+  });
+  a.rules.finopsWallClockBudget = {
+    baseMs: 80_000,
+    perCaseMs: 1_500,
+    perAdditionalJudgeMs: 10_000,
+    perAdversarialRoundMs: 20_000,
+    visualSidecarMs: 12_000,
+    hardCeilingMs: 300_000,
+  };
+  assert.equal(b.rules.finopsWallClockBudget?.baseMs, 90_000);
+  assert.equal(
+    EU_BANKING_DEFAULT_POLICY_PROFILE.rules.finopsWallClockBudget?.baseMs,
+    90_000,
   );
 });

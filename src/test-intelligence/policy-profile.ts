@@ -15,11 +15,13 @@
 import {
   EU_BANKING_DEFAULT_POLICY_PROFILE_ID,
   EU_BANKING_DEFAULT_POLICY_PROFILE_VERSION,
+  type FinOpsWallClockBudgetPolicy,
   type JudgeRefusalPolicyConfig,
   type TechniqueCoverageMinimumPolicy,
   type TestCasePolicyProfile,
   type TestCasePolicyProfileRules,
 } from "../contracts/index.js";
+import { DEFAULT_FINOPS_WALL_CLOCK_BUDGET_POLICY } from "./finops-budget.js";
 
 /**
  * Issue #1901 — minimum job-level field-coverage ratio required by the
@@ -96,6 +98,9 @@ export const EU_BANKING_DEFAULT_SELF_CONSISTENCY_SAMPLE_COUNT = 3 as const;
  */
 export const EU_BANKING_DEFAULT_REQUIRE_PER_STEP_FAITHFULNESS = false as const;
 
+export const EU_BANKING_DEFAULT_FINOPS_WALL_CLOCK_BUDGET_POLICY:
+  Readonly<FinOpsWallClockBudgetPolicy> = DEFAULT_FINOPS_WALL_CLOCK_BUDGET_POLICY;
+
 export const EU_BANKING_DEFAULT_JUDGE_REFUSAL_POLICY:
   Readonly<JudgeRefusalPolicyConfig> = Object.freeze({
     faithfulness: "needs_review",
@@ -125,6 +130,7 @@ const EU_BANKING_DEFAULT_RULES: TestCasePolicyProfileRules = {
     sampleCount: EU_BANKING_DEFAULT_SELF_CONSISTENCY_SAMPLE_COUNT,
   },
   requirePerStepFaithfulness: EU_BANKING_DEFAULT_REQUIRE_PER_STEP_FAITHFULNESS,
+  finopsWallClockBudget: EU_BANKING_DEFAULT_FINOPS_WALL_CLOCK_BUDGET_POLICY,
 };
 
 /** Default `eu-banking-default` policy profile (deep-frozen). */
@@ -153,6 +159,7 @@ export const EU_BANKING_DEFAULT_POLICY_PROFILE: Readonly<TestCasePolicyProfile> 
       }),
       requirePerStepFaithfulness:
         EU_BANKING_DEFAULT_REQUIRE_PER_STEP_FAITHFULNESS,
+      finopsWallClockBudget: EU_BANKING_DEFAULT_FINOPS_WALL_CLOCK_BUDGET_POLICY,
     }),
   });
 
@@ -237,6 +244,18 @@ export const cloneEuBankingDefaultProfile = (): TestCasePolicyProfile => {
     EU_BANKING_DEFAULT_POLICY_PROFILE.rules.requirePerStepFaithfulness;
   if (requirePerStepFaithfulness !== undefined) {
     rules.requirePerStepFaithfulness = requirePerStepFaithfulness;
+  }
+  const finopsWallClockBudget =
+    EU_BANKING_DEFAULT_POLICY_PROFILE.rules.finopsWallClockBudget;
+  if (finopsWallClockBudget !== undefined) {
+    rules.finopsWallClockBudget = {
+      baseMs: finopsWallClockBudget.baseMs,
+      perCaseMs: finopsWallClockBudget.perCaseMs,
+      perAdditionalJudgeMs: finopsWallClockBudget.perAdditionalJudgeMs,
+      perAdversarialRoundMs: finopsWallClockBudget.perAdversarialRoundMs,
+      visualSidecarMs: finopsWallClockBudget.visualSidecarMs,
+      hardCeilingMs: finopsWallClockBudget.hardCeilingMs,
+    };
   }
   return {
     id: EU_BANKING_DEFAULT_POLICY_PROFILE.id,
