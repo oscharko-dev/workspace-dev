@@ -77,3 +77,39 @@ Optional overrides:
 ## Re-baselining
 
 No manual “approve” mode exists for drift-canary history. The rolling baseline is append-only and automatically trims to the last 30 daily records. If operators need to re-seed after an intentional deployment reset, remove the relevant `.workspace-dev/drift-canaries/.../baseline.json` file and let the next run warm the baseline again.
+
+## Distribution-shift detection (Issue #2120)
+
+Drift-canary detects shifts on the **output** side (ECE / Brier / faithfulness / hallucination) on a five-fixture holdout set. Issue #2120 adds a sibling lane on the **input** side so concept drift surfaces before downstream metrics move. Both lanes are EU AI Act Art. 9 ongoing post-market monitoring controls.
+
+### Recorded per evaluation window
+
+Per fixture suite, one record per evaluation window (one per day, 30-day rolling) captures:
+
+- **Token-distribution histogram.** A 256-bucket histogram of FNV-1a hashed lowercase word tokens taken from the canonical input text (screen names + node text + node names). Only the bucket counts are persisted; no raw input crosses the boundary.
+- **Label distribution.** Counts per `TestCaseRiskCategory` (`low`, `medium`, `high`, `regulated_data`, `financial_transaction`) across all generated test cases in the window.
+- **IR-shape distribution.** Counts per Figma `nodeType`, plus screen and test-case totals.
+- **Embedding centroid (optional).** When an embedding provider is configured (typical production binding: `phi-4-mini-instruct` from Issue #2099 in embedding-only mode — cheap, no generation), the detector embeds each screen and averages the vectors into a single per-record centroid.
+
+### Alert policy
+
+The detector compares the current snapshot against the rolling-mean of past records and fires when either condition holds:
+
+- **KL divergence** on any of the three histograms exceeds `0.3` (Laplace-smoothed symmetric KL, so the metric is order-independent and stable for sparse buckets).
+- **Embedding-centroid drift** in σ-units of the historical L2-distance distribution between past consecutive centroids exceeds `2σ`. This requires at least two past consecutive centroids; while the σ-history is warming, the L2-distance is recorded but does not alert.
+
+KL findings are emitted as `warning`. Embedding-centroid findings are emitted as `error` because — given a configured embedding provider — they signal that the input semantic space itself moved, not just surface vocabulary.
+
+### Artifacts
+
+Each run writes:
+
+- `artifacts/testing/distribution-shift/<suite>/<timestamp>/distribution-shift-report.json` — snapshot, KL measurements, centroid measurement, findings.
+- `artifacts/testing/distribution-shift/<suite>/<timestamp>/distribution-shift-alerts.json` — published findings (file-backed `DistributionShiftAlertSink`; CI treats any non-empty file as a tail-fail).
+- `artifacts/testing/distribution-shift/<suite>/<timestamp>/distribution-shift-dashboard.json` — per-fixture-suite dashboard with the latest snapshot, the per-record KL/centroid trend, and the current findings. The admin portal reads this file to render the per-suite distribution-shift board.
+
+Rolling baseline lives at `.workspace-dev/distribution-shift/<tenantId>/<policyProfileId>/<fixtureSuiteId>.baseline.json` and trims to the last 30 records (30-day rolling window when run daily).
+
+### Re-baselining (distribution-shift)
+
+Same append-only model as drift-canary. To re-seed after an intentional fixture-suite re-scoping, remove the relevant `<fixtureSuiteId>.baseline.json` file; the next run warms the baseline. Until at least two records exist the report carries `baselineStatus: "warming"` and KL findings are still emitted (the rolling mean is well-defined from one record), but centroid-σ findings stay suppressed until the σ-history has at least two L2 deltas.
