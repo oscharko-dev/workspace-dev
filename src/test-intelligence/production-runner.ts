@@ -2405,7 +2405,7 @@ export const runFigmaToQcTestCases = async (
       sourceLabel: args.sourceLabel,
       deploymentId: args.deploymentId,
       endpointReference: args.endpointReference,
-      observedAtUtc: args.observedAtUtc ?? new Date().toISOString(),
+      observedAtUtc: args.observedAtUtc ?? input.generatedAt,
     });
     regionAttestationObservations.push(observation);
     return observation;
@@ -3600,6 +3600,7 @@ export const runFigmaToQcTestCases = async (
         sourceLabel: "generator",
         deploymentId: input.llm.client.deployment,
         endpointReference: input.llm.client.operatorEndpointReference,
+        observedAtUtc: input.generatedAt,
       });
       emit({
         phase: "replay_cache_hit",

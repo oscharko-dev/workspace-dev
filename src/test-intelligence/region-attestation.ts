@@ -1,4 +1,4 @@
-import { createHmac, randomUUID } from "node:crypto";
+import { createHash, createHmac, randomUUID } from "node:crypto";
 import { mkdir, rename, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import * as tls from "node:tls";
@@ -81,6 +81,28 @@ const readPinnedRegion = (
   const envValue = process.env[REGION_ATTESTATION_PINNED_REGION_ENV]?.trim();
   return isRegion(envValue) ? envValue : undefined;
 };
+
+const buildObservationId = (input: {
+  sourceLabel: AgentSourceLabel;
+  deploymentId: string;
+  servedFromRegion: RegionAttestationHostingRegion;
+  observedAtUtc: string;
+  attestedBy: AttestationMethod;
+  severity?: AttestationSeverity;
+}): string =>
+  createHash("sha256")
+    .update(
+      canonicalJson({
+        sourceLabel: input.sourceLabel,
+        deploymentId: input.deploymentId,
+        servedFromRegion: input.servedFromRegion,
+        observedAtUtc: input.observedAtUtc,
+        attestedBy: input.attestedBy,
+        ...(input.severity !== undefined ? { severity: input.severity } : {}),
+      }),
+      "utf8",
+    )
+    .digest("hex");
 
 const extractHost = (endpointReference: string): string | undefined => {
   try {
@@ -166,24 +188,38 @@ export const resolveRegionAttestationObservation = async (
 ): Promise<RegionAttestationObservation> => {
   const fromImds = await resolveFromImds(input.fetchImpl);
   if (fromImds !== undefined) {
+    const attestedBy = "azure-instance-metadata" as const;
     return {
-      observationId: randomUUID(),
+      observationId: buildObservationId({
+        sourceLabel: input.sourceLabel,
+        deploymentId: input.deploymentId,
+        servedFromRegion: fromImds,
+        observedAtUtc: input.observedAtUtc,
+        attestedBy,
+      }),
       sourceLabel: input.sourceLabel,
       deploymentId: input.deploymentId,
       servedFromRegion: fromImds,
       observedAtUtc: input.observedAtUtc,
-      attestedBy: "azure-instance-metadata",
+      attestedBy,
     };
   }
   const fromCertificate = await resolveFromTlsCertificate(input.endpointReference);
   if (fromCertificate !== undefined) {
+    const attestedBy = "endpoint-cert-cn" as const;
     return {
-      observationId: randomUUID(),
+      observationId: buildObservationId({
+        sourceLabel: input.sourceLabel,
+        deploymentId: input.deploymentId,
+        servedFromRegion: fromCertificate,
+        observedAtUtc: input.observedAtUtc,
+        attestedBy,
+      }),
       sourceLabel: input.sourceLabel,
       deploymentId: input.deploymentId,
       servedFromRegion: fromCertificate,
       observedAtUtc: input.observedAtUtc,
-      attestedBy: "endpoint-cert-cn",
+      attestedBy,
     };
   }
   const pinnedRegion = readPinnedRegion(input.pinnedRegion);
@@ -193,14 +229,23 @@ export const resolveRegionAttestationObservation = async (
         `Set ${REGION_ATTESTATION_PINNED_REGION_ENV} to an allowed region to enable the operator-pinned fallback.`,
     );
   }
+  const attestedBy = "operator-pinned" as const;
+  const severity = "warning" as const;
   return {
-    observationId: randomUUID(),
+    observationId: buildObservationId({
+      sourceLabel: input.sourceLabel,
+      deploymentId: input.deploymentId,
+      servedFromRegion: pinnedRegion,
+      observedAtUtc: input.observedAtUtc,
+      attestedBy,
+      severity,
+    }),
     sourceLabel: input.sourceLabel,
     deploymentId: input.deploymentId,
     servedFromRegion: pinnedRegion,
     observedAtUtc: input.observedAtUtc,
-    attestedBy: "operator-pinned",
-    severity: "warning",
+    attestedBy,
+    severity,
   };
 };
 

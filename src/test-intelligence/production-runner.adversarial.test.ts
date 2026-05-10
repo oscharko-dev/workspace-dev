@@ -20,8 +20,16 @@ import {
   runFigmaToQcTestCases,
   type ProductionRunnerLlmDraftCase,
 } from "./production-runner.js";
+import {
+  REGION_ATTESTATION_PINNED_REGION_ENV,
+  REGION_ATTESTATION_SIGNING_KEY_ENV,
+} from "./region-attestation.js";
 import type { CustomerProfileInput } from "./customer-profile-input.js";
 import type { FigmaRestNode } from "./figma-rest-adapter.js";
+
+process.env[REGION_ATTESTATION_PINNED_REGION_ENV] ??= "eu-central-1";
+process.env[REGION_ATTESTATION_SIGNING_KEY_ENV] ??=
+  "workspace-dev-region-attestation-test-key";
 
 const TEST_GENERATION_CAPS: LlmGatewayCapabilities = {
   structuredOutputs: true,
