@@ -303,8 +303,6 @@ test("evaluateCounterfactualPairs: empty pair list yields zeroed report with cor
 });
 
 test("evaluateCounterfactualPairs: counts no-effect violations when valueA == valueB", () => {
-  const model = buildModel();
-  const invariants = buildActiveDatasetInvariantRegistry().list();
   const hypothesis: CausalHypothesis = {
     hypothesisId: "H-MANUAL-001",
     cause: semanticFieldId("s-loan", "e-vat"),
@@ -336,7 +334,6 @@ test("evaluateCounterfactualPairs: counts no-effect violations when valueA == va
   assert.equal(report.pairsViolated, 1);
   assert.equal(report.causalCoverageRatio, 0);
   assert.equal(report.hypotheses[0]?.satisfied, false);
-  void invariants;
 });
 
 test("evaluateCounterfactualPairs: round-trips coverage ratio to six decimals", () => {
