@@ -29,6 +29,14 @@ export interface IntentDerivationScreenInput {
   screenName: string;
   screenPath?: string;
   nodes: IntentDerivationNodeInput[];
+  /**
+   * Optional locale tag for this screen (Issue #2117).  Carried verbatim from
+   * the importer into the IR `BusinessTestIntentScreen.locale` field.
+   * Derivation consumers use `deriveLocaleFromBusinessTestIntentScreen` from
+   * `locale-calibration.ts`; intent-derivation itself does no locale
+   * resolution — it just copies the field when present.
+   */
+  locale?: import("../contracts/index.js").SupportedLocale;
 }
 
 export interface IntentDerivationNodeInput {
@@ -264,6 +272,9 @@ const deriveScreens = (
       trace,
     };
     if (screenPath !== undefined) entry.screenPath = screenPath;
+    // Carry locale verbatim from the importer (Issue #2117); no derivation
+    // is done here — consumers call deriveLocaleFromBusinessTestIntentScreen.
+    if (screen.locale !== undefined) entry.locale = screen.locale;
     return entry;
   });
   return result.sort((a, b) =>

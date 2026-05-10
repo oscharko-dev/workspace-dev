@@ -9,6 +9,10 @@ import type {
   TestCasePolicyReport,
   TestCaseRiskCategory,
 } from "../contracts/index.js";
+import {
+  type LocaleCalibrationKey,
+  type SupportedLocale,
+} from "./locale-calibration.js";
 import { canonicalJson, sha256Hex } from "./content-hash.js";
 import {
   CALIBRATION_ECE_THRESHOLDS,
@@ -72,6 +76,13 @@ export interface DriftMetricObservation {
   readonly riskCategory?: TestCaseRiskCategory;
   readonly judge?: "logic" | "faithfulness";
   readonly sampleCount?: number;
+  /**
+   * Optional locale dimension for per-locale calibration tracking (Issue #2117).
+   * When present, this observation is scoped to a specific locale or the
+   * aggregate fallback key ("default").  Base observations (no locale) are
+   * always emitted so existing baselines and tests remain green.
+   */
+  readonly locale?: LocaleCalibrationKey;
 }
 
 export interface DriftBaselineRecord {
@@ -110,6 +121,11 @@ export interface DriftFinding {
   readonly baselineStdDev?: number;
   readonly delta?: number;
   readonly threshold?: number;
+  /**
+   * Locale dimension when the finding originates from a per-locale observation
+   * (Issue #2117).  Absent for aggregate (non-locale-scoped) findings.
+   */
+  readonly locale?: LocaleCalibrationKey;
 }
 
 export interface ProviderFingerprintPrompt {
@@ -238,6 +254,9 @@ const metricKey = (observation: DriftMetricObservation): string =>
     observation.metricName,
     observation.riskCategory ?? "",
     observation.judge ?? "",
+    // locale dimension appended after risk-category (Issue #2117); base
+    // observations (no locale) keep an empty string so existing baselines match.
+    observation.locale ?? "",
   ].join("\u0000");
 
 const fingerprintKey = (observation: ProviderFingerprintObservation): string =>
@@ -263,11 +282,23 @@ const confidenceForCase = (testCase: GeneratedTestCase): number =>
 export const computeDriftCanaryMetrics = (input: {
   deployment: string;
   runs: ReadonlyArray<CanaryFixtureRun>;
+  /**
+   * Optional screen-id → locale map (Issue #2117).  When present, additional
+   * `brier_score` and `ece` observations are emitted grouped by
+   * `(riskCategory × locale)`.  The base observations (no locale field) are
+   * always emitted so existing baselines and tests remain green.
+   */
+  screenLocaleMap?: ReadonlyMap<string, SupportedLocale>;
 }): ReadonlyArray<DriftMetricObservation> => {
   const family = familyForDeployment(input.deployment);
   const samplesByRisk = new Map<
     TestCaseRiskCategory,
     Array<{ confidence: number; label: 0 | 1 }>
+  >();
+  // Per-locale samples keyed by `riskCategory::locale` for the per-locale dimension.
+  const samplesByRiskLocale = new Map<
+    string,
+    { riskCategory: TestCaseRiskCategory; locale: LocaleCalibrationKey; samples: Array<{ confidence: number; label: 0 | 1 }> }
   >();
   let fieldCoverageTotal = 0;
   let actionCoverageTotal = 0;
@@ -277,15 +308,43 @@ export const computeDriftCanaryMetrics = (input: {
 
   for (const run of input.runs) {
     const decisions = decisionByTestCaseId(run.result.policy);
-    const samples = run.result.generatedTestCases.testCases.map((testCase) => ({
-      riskCategory: testCase.riskCategory,
-      confidence: confidenceForCase(testCase),
-      label: decisions.get(testCase.id) === "approved" ? (1 as const) : (0 as const),
-    }));
+    const samples = run.result.generatedTestCases.testCases.map((testCase) => {
+      // Resolve locale when a screenLocaleMap was provided.  Returns
+      // undefined (not emitted as a locale-tagged observation) when the
+      // screen has no entry in the map, so only explicitly known locales
+      // produce per-locale drift metrics.
+      const locale: LocaleCalibrationKey | undefined = (() => {
+        if (input.screenLocaleMap === undefined) return undefined;
+        const firstRef = testCase.figmaTraceRefs[0];
+        if (firstRef === undefined) return undefined;
+        return input.screenLocaleMap.get(firstRef.screenId);
+      })();
+      return {
+        riskCategory: testCase.riskCategory,
+        confidence: confidenceForCase(testCase),
+        label: decisions.get(testCase.id) === "approved" ? (1 as const) : (0 as const),
+        locale,
+      };
+    });
     for (const sample of samples) {
       const bucket = samplesByRisk.get(sample.riskCategory) ?? [];
       bucket.push({ confidence: sample.confidence, label: sample.label });
       samplesByRisk.set(sample.riskCategory, bucket);
+
+      // Accumulate per-locale when map is present and locale resolved.
+      if (sample.locale !== undefined) {
+        const key = `${sample.riskCategory} ${sample.locale}`;
+        const existing = samplesByRiskLocale.get(key);
+        if (existing !== undefined) {
+          existing.samples.push({ confidence: sample.confidence, label: sample.label });
+        } else {
+          samplesByRiskLocale.set(key, {
+            riskCategory: sample.riskCategory,
+            locale: sample.locale,
+            samples: [{ confidence: sample.confidence, label: sample.label }],
+          });
+        }
+      }
     }
 
     const knownNodeIds = collectKnownNodeIds(run.fixture);
@@ -343,6 +402,34 @@ export const computeDriftCanaryMetrics = (input: {
       sampleCount: samples.length,
     });
   }
+
+  // Per-locale observations (Issue #2117) — emitted only when screenLocaleMap was provided.
+  if (input.screenLocaleMap !== undefined) {
+    for (const [, entry] of samplesByRiskLocale.entries()) {
+      observations.push({
+        deployment: input.deployment,
+        family,
+        metricName: "brier_score",
+        value: computeBrierScore(entry.samples),
+        riskCategory: entry.riskCategory,
+        sampleCount: entry.samples.length,
+        locale: entry.locale,
+      });
+      observations.push({
+        deployment: input.deployment,
+        family,
+        metricName: "ece",
+        value: computeExpectedCalibrationError(
+          entry.samples,
+          CALIBRATION_HISTOGRAM_BIN_COUNT,
+        ),
+        riskCategory: entry.riskCategory,
+        sampleCount: entry.samples.length,
+        locale: entry.locale,
+      });
+    }
+  }
+
   const denominator = input.runs.length === 0 ? 1 : input.runs.length;
   observations.push(
     {
@@ -555,6 +642,9 @@ export const evaluateDriftReport = (input: {
           riskCategory: observation.riskCategory,
           currentValue: observation.value,
           threshold,
+          // Include locale dimension when the finding originates from a
+          // per-locale observation (Issue #2117).
+          ...(observation.locale !== undefined ? { locale: observation.locale } : {}),
         });
       }
     }
@@ -579,6 +669,7 @@ export const evaluateDriftReport = (input: {
           ? { riskCategory: observation.riskCategory }
           : {}),
         ...(observation.judge !== undefined ? { judge: observation.judge } : {}),
+        ...(observation.locale !== undefined ? { locale: observation.locale } : {}),
         currentValue: observation.value,
         baselineMean,
         baselineStdDev,

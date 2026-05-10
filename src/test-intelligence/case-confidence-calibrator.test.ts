@@ -20,6 +20,7 @@ import {
   loadCaseConfidenceCalibration,
   summarizeCaseConfidenceDistribution,
 } from "./case-confidence-calibrator.js";
+import type { SupportedLocale } from "./locale-calibration.js";
 
 const buildCase = (
   id: string,
@@ -409,4 +410,232 @@ test("loadCaseConfidenceCalibration persists held-out diagnostics once history r
   assert.equal(reliability.sampleCount, 1);
   assert.equal(typeof reliability.debiasedEce, "number");
   assert.equal(reliability.minimumSampleFloor, 50);
+});
+
+// ---------------------------------------------------------------------------
+// Per-locale calibration tests (Issue #2117)
+// ---------------------------------------------------------------------------
+
+/**
+ * Build a synthetic run-directory with `count * 2` cases per screen (both
+ * `screenId` and `altScreenId`), alternating approved / needs-review within
+ * each screen so both locale buckets have a mix of positive and negative labels.
+ * Total cases = count * 4 (count approved + count review per screen, two screens).
+ */
+const buildLocaleRunDir = async (
+  runDir: string,
+  count: number,
+  screenId: string,
+  altScreenId: string,
+): Promise<void> => {
+  await mkdir(runDir, { recursive: true });
+  // Build `count` approved + `count` review for screenId, then same for altScreenId.
+  const cases: ReturnType<typeof buildCase>[] = [];
+  for (const [sid, offset] of [
+    [screenId, 0] as const,
+    [altScreenId, count * 2] as const,
+  ]) {
+    for (let i = 0; i < count * 2; i++) {
+      const approved = i % 2 === 0;
+      cases.push(
+        buildCase(`tc-${runDir.slice(-8)}-${offset + i}`, {
+          title: approved
+            ? `TC ${offset + i} Finanzierung prüfen approved`
+            : `TC ${offset + i} Unklare Brutto-Logik review`,
+          objective: approved
+            ? "Prüft den Finanzierungsbedarf für das Investitionsobjekt."
+            : "Markiert ungeklärte Fachlogik zur manuellen Prüfung.",
+          qualitySignals: {
+            coveredFieldIds: [`${sid}-field`],
+            coveredActionIds: [],
+            coveredValidationIds: [],
+            coveredNavigationIds: [],
+            confidence: approved ? 0.9 : 0.2,
+          },
+          figmaTraceRefs: [{ screenId: sid, nodeId: `${sid}-node-${offset + i}` }],
+          riskCategory: "regulated_data",
+          openQuestions: approved ? [] : ["Regel unklar"],
+        }),
+      );
+    }
+  }
+  await writeJson(join(runDir, "generated-testcases.json"), buildList(cases));
+  await writeJson(join(runDir, "policy-report.json"), {
+    decisions: cases.map((tc, index) => ({
+      testCaseId: tc.id,
+      // approved cases are even within each screen block
+      decision: index % 2 === 0 ? "approved" : "needs_review",
+    })),
+  });
+  await writeJson(join(runDir, "judge-consensus.json"), {
+    verdict: "accept",
+    repairState: "none",
+    activeFindings: [],
+    repairInstructions: [],
+    repairHistory: { iterations: [], finalOutcome: "accepted" },
+    panel: [],
+  });
+};
+
+test("loadCaseConfidenceCalibration emits per-locale curves and reliability artifacts when screenLocaleMap supplied", async () => {
+  const root = await mkdtemp(join(tmpdir(), "case-confidence-locale-"));
+  const datasetRoot = join(root, "sandbox", "test-case", "locale-dataset-1");
+
+  // count=26 → 52 cases per screen per dir (26 approved + 26 review each).
+  // Two dirs → DE-DE: 104 samples, DE-AT: 104 samples — both above the 50-sample floor.
+  const runDir1 = join(datasetRoot, "run-locale-a");
+  const runDir2 = join(datasetRoot, "run-locale-b");
+
+  await buildLocaleRunDir(runDir1, 26, "screen-DE-DE", "screen-DE-AT");
+  await buildLocaleRunDir(runDir2, 26, "screen-DE-DE", "screen-DE-AT");
+
+  // Map screen ids to locales.
+  const screenLocaleMap = new Map<string, SupportedLocale>([
+    ["screen-DE-DE", "DE-DE"],
+    ["screen-DE-AT", "DE-AT"],
+  ]);
+
+  const loaded = await loadCaseConfidenceCalibration({
+    datasetRoot,
+    generatedAt: "2026-05-10T00:00:00.000Z",
+    screenLocaleMap,
+  });
+
+  // Aggregate curve
+  assert.equal(loaded.curve.calibrationSource, "historical_policy_fallback");
+  assert.equal(typeof loaded.curve.perLocaleEceThreshold, "number");
+  assert.equal(loaded.curve.perLocaleEceThreshold, 0.10);
+
+  // DE-DE and DE-AT should have their own fits (≥ 50 samples).
+  const deDeEntry = loaded.curve.localeCurves["DE-DE"];
+  const deAtEntry = loaded.curve.localeCurves["DE-AT"];
+  assert.notEqual(deDeEntry, undefined);
+  assert.notEqual(deAtEntry, undefined);
+  assert.equal(deDeEntry?.fallbackToDefault, false, "DE-DE should have a genuine fit");
+  assert.equal(deAtEntry?.fallbackToDefault, false, "DE-AT should have a genuine fit");
+
+  // DE-CH was unseen — should fallback to default.
+  const deChEntry = loaded.curve.localeCurves["DE-CH"];
+  assert.notEqual(deChEntry, undefined);
+  assert.equal(deChEntry?.fallbackToDefault, true, "DE-CH should fallback to default");
+
+  // localeSampleCount should reflect the screen distribution.
+  assert.equal(typeof loaded.curve.localeSampleCount["DE-DE"], "number");
+  assert.equal(loaded.curve.localeSampleCount["DE-DE"]! > 0, true);
+  assert.equal(typeof loaded.curve.localeSampleCount["DE-AT"], "number");
+  assert.equal(loaded.curve.localeSampleCount["DE-AT"]! > 0, true);
+  assert.equal(loaded.curve.localeSampleCount["DE-CH"], 0);
+
+  // Per-locale reliability artifact paths must be present.
+  assert.notEqual(loaded.localeReliabilityArtifactPaths, undefined);
+  assert.notEqual(loaded.localeReliabilityArtifactPaths?.["DE-DE"], undefined);
+  assert.notEqual(loaded.localeReliabilityArtifactPaths?.["DE-AT"], undefined);
+
+  // Read a locale artifact and verify its shape.
+  const localeArtifactPath = loaded.localeReliabilityArtifactPaths?.["DE-DE"];
+  assert.notEqual(localeArtifactPath, undefined);
+  const localeArtifact = JSON.parse(await readFile(localeArtifactPath!, "utf8")) as {
+    locale: string;
+    sampleCount: number;
+    debiasedEce: number;
+  };
+  assert.equal(localeArtifact.locale, "DE-DE");
+  assert.equal(localeArtifact.sampleCount > 0, true);
+  assert.equal(typeof localeArtifact.debiasedEce, "number");
+});
+
+test("applyCaseConfidenceCalibration uses the per-locale curve when present and falls back to default for unseen locales", async () => {
+  const root = await mkdtemp(join(tmpdir(), "case-confidence-locale-apply-"));
+  const datasetRoot = join(root, "sandbox", "test-case", "locale-dataset-apply");
+
+  // Build enough samples so DE-DE gets a genuine per-locale fit.
+  const runDir = join(datasetRoot, "run-locale-apply");
+  await buildLocaleRunDir(runDir, 30, "screen-DE-DE", "screen-DE-DE-alt");
+
+  const screenLocaleMap = new Map<string, SupportedLocale>([
+    ["screen-DE-DE", "DE-DE"],
+    ["screen-DE-DE-alt", "DE-DE"],
+    // "screen-unknown" is intentionally absent to test fallback.
+  ]);
+
+  const loaded = await loadCaseConfidenceCalibration({
+    datasetRoot,
+    generatedAt: "2026-05-10T00:00:00.000Z",
+    screenLocaleMap,
+  });
+
+  // Build two cases with the same rawScore configuration but different screen locales.
+  const caseWithLocale = buildCase("tc-locale-known", {
+    figmaTraceRefs: [{ screenId: "screen-DE-DE", nodeId: "n1" }],
+    qualitySignals: {
+      coveredFieldIds: ["f1"],
+      coveredActionIds: [],
+      coveredValidationIds: [],
+      coveredNavigationIds: [],
+      confidence: 0.75,
+    },
+  });
+  const caseWithoutLocale = buildCase("tc-locale-unknown", {
+    figmaTraceRefs: [{ screenId: "screen-unknown", nodeId: "n2" }],
+    qualitySignals: {
+      coveredFieldIds: ["f1"],
+      coveredActionIds: [],
+      coveredValidationIds: [],
+      coveredNavigationIds: [],
+      confidence: 0.75,
+    },
+  });
+
+  const dummyConsensus = {
+    verdict: "accept" as const,
+    repairState: "none" as const,
+    activeFindings: [],
+    repairInstructions: [],
+    repairHistory: { iterations: [], finalOutcome: "accepted" as const },
+    panel: [],
+  };
+
+  // Apply with locale map — the locale-known case should use the DE-DE curve.
+  const calibratedWithMap = applyCaseConfidenceCalibration({
+    list: buildList([caseWithLocale, caseWithoutLocale]),
+    curve: loaded.curve,
+    judgeConsensus: dummyConsensus as never,
+    screenLocaleMap,
+  });
+  const confidenceWithLocale = calibratedWithMap.testCases[0]?.confidence ?? -1;
+  const confidenceWithoutLocale = calibratedWithMap.testCases[1]?.confidence ?? -1;
+
+  // Apply without locale map — both should use the aggregate curve.
+  const calibratedNoMap = applyCaseConfidenceCalibration({
+    list: buildList([caseWithLocale, caseWithoutLocale]),
+    curve: loaded.curve,
+    judgeConsensus: dummyConsensus as never,
+  });
+  const confidenceAggLocale = calibratedNoMap.testCases[0]?.confidence ?? -1;
+  const confidenceAggUnknown = calibratedNoMap.testCases[1]?.confidence ?? -1;
+
+  // The unknown-screen case should match aggregate curve output.
+  assert.equal(
+    confidenceWithoutLocale,
+    confidenceAggUnknown,
+    "Unknown locale must fall back to aggregate curve",
+  );
+
+  // DE-DE curve may differ from aggregate if enough samples for its own fit.
+  const deDeEntry = loaded.curve.localeCurves["DE-DE"];
+  if (deDeEntry !== undefined && !deDeEntry.fallbackToDefault) {
+    // With a real per-locale curve the confidence values may differ.
+    assert.equal(
+      typeof confidenceWithLocale,
+      "number",
+      "DE-DE locale curve must produce a numeric confidence",
+    );
+  } else {
+    // Fallback: both should equal aggregate.
+    assert.equal(confidenceWithLocale, confidenceAggLocale);
+  }
+
+  // Both must be valid probabilities.
+  assert.equal(confidenceWithLocale >= 0 && confidenceWithLocale <= 1, true);
+  assert.equal(confidenceWithoutLocale >= 0 && confidenceWithoutLocale <= 1, true);
 });

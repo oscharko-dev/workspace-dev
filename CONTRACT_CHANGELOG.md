@@ -31,6 +31,16 @@ All changes to the public contract surface of `workspace-dev` are documented her
 
 ---
 
+## [1.23.0] - 2026-05-10
+
+### Added (Issue #2117 — per-locale Platt-curve calibration: DE-DE, DE-AT, DE-CH, EN-IE, FR-FR, IT-IT)
+
+- New `SupportedLocale` type exported from `src/contracts/index.ts` (`"DE-DE" | "DE-AT" | "DE-CH" | "EN-IE" | "FR-FR" | "IT-IT"`).
+- `BusinessTestIntentScreen` gains optional `locale?: SupportedLocale` (additive; existing artifacts unaffected).
+- `CaseConfidenceCurveArtifact` gains three additive fields: `localeCurves`, `perLocaleEceThreshold`, `localeSampleCount`. New type `LocaleCurveEntry` with `fallbackToDefault` flag.
+- `DriftMetricObservation` and `DriftFinding` gain optional `locale?: LocaleCalibrationKey` for per-locale calibration shift tracking.
+- These are all additive changes; no existing field is removed or renamed.
+
 ## [4.61.0] - 2026-05-09
 
 ### Added (Issue #2100 — signed semantic-content overrides enforced inside policy-gate)
