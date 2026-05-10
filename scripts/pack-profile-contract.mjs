@@ -60,6 +60,7 @@ export const docsFileAllowlist = [
   "docs/template-maintenance.md",
   "docs/test-intelligence.md",
   "docs/test-intelligence-locale-calibration.md",
+  "docs/test-intelligence/causal-validation.md",
   "docs/api/test-intelligence-multi-source.md",
   "docs/architecture/multi-source-flow.mmd",
   "docs/dora/multi-source.md",

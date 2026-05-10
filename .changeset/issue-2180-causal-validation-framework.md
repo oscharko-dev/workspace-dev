@@ -19,11 +19,18 @@ Add causal-validation framework (counterfactual test cases via do-calculus) for 
   between pair members is supplied by the deterministic test-data
   oracle from Issue #2071), and the `evaluateCounterfactualPairs`
   aggregator that builds the persisted `CausalValidationReport`.
-- New `causal-validation-report.json` artifact + `causalCoverage`
-  summary block on `policy-report.json`. The KPI carries
-  `hypothesesEvaluated`, `pairsGenerated`, `pairsViolated`, and the
-  `causalCoverageRatio` (rounded to six digits, `0` when no pairs
-  were generated).
+- New `causal-validation-report.json` artifact (per-hypothesis
+  evaluation + per-pair `CausalValidationPairAudit` rows) and
+  `causalCoverage` summary block on `policy-report.json`. The KPI
+  carries `hypothesesEvaluated`, `pairsGenerated`, `pairsViolated`,
+  and the `causalCoverageRatio` (rounded to six digits, `0` when no
+  pairs were generated).
+- The framework operates at the **generation layer** — Issue #2180
+  explicitly puts live SUT execution out of scope. `pairsViolated`
+  surfaces *harness-side structural defects* (degenerate
+  cause-deltas, drifted projection text), not SUT bugs. Wave-8 will
+  add an executor that wires the pairs into a live SUT and substitutes
+  runtime effect outcomes for the projected assertion text.
 - FinOps cap exposed as `CAUSAL_VALIDATION_TOKEN_BUDGET_RATIO_CAP`
   (`0.3`). Pair generation is fully deterministic and never calls an
   LLM; under default operation the actual token-cost ratio is `0`.

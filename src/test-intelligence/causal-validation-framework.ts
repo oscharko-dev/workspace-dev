@@ -25,12 +25,18 @@
  *                          implies equal-effect, distinct-cause MAY
  *                          imply distinct-effect).
  *
- * The framework operates at the **test-case** layer: the assertion is
- * encoded in the variants' `expectedResults`, and the framework
- * verifies the assertion *across the pair* by inspecting both
- * variants. A failed assertion surfaces as a `pairsViolated` count on
- * the persisted {@link CausalValidationReport} — these are SUT bugs
- * surfaced by the counterfactual layer, not harness faults.
+ * The framework operates at the **test-case-generation** layer
+ * (Issue #2180 explicitly puts live SUT execution out of scope). The
+ * assertion is encoded in both variants' `expectedResults`; a
+ * `pairsViolated` count on the persisted
+ * {@link CausalValidationReport} means the **pair envelope itself is
+ * malformed** — for example, the cause-value delta collapsed to a
+ * single value (no counterfactual), or the projected effect-assertion
+ * text drifted between variantA and variantB. These are
+ * **harness-side structural defects**, not SUT bugs. Surfacing real
+ * SUT bugs is a Wave-8 candidate: an executor wires the pairs into a
+ * live SUT and substitutes runtime effect outcomes for the projected
+ * assertion text.
  *
  * Determinism
  *
@@ -67,6 +73,7 @@ import {
   type SemanticFieldId,
   parseSemanticFieldId,
 } from "./causal-hypothesis-registry.js";
+import { sha256Hex } from "./content-hash.js";
 import type { DomainInvariant } from "./domain-invariant-registry.js";
 import {
   formatOracleValueAsTestDataEntry,
@@ -142,6 +149,39 @@ export interface CausalHypothesisEvaluation {
   readonly rationale?: string;
 }
 
+/**
+ * Compact per-pair audit row persisted inside
+ * {@link CausalValidationReport.pairs}. Carries the pair envelope's
+ * identifying fields and the variant IDs so an auditor can correlate
+ * the report against the synthesized test-case payloads (which the
+ * runner stamps with `qcMappingPreview.exportable: false` to prevent
+ * accidental export).
+ *
+ * The full {@link GeneratedTestCase} variants are NOT embedded here —
+ * they are bulky and would inflate the audit dossier. Auditors who
+ * need the full variant payload reach for the in-memory pair list
+ * returned by {@link deriveCounterfactualPairs} (the production
+ * runner forwards the pairs to its own caller via the runner result).
+ */
+export interface CausalValidationPairAudit {
+  readonly pairId: string;
+  readonly hypothesisId: string;
+  readonly variantAId: string;
+  readonly variantBId: string;
+  readonly causalDelta: {
+    readonly fieldId: SemanticFieldId;
+    readonly valueA: unknown;
+    readonly valueB: unknown;
+  };
+  readonly expectedEffectInvariant: string;
+  /**
+   * Whether the pair envelope is structurally valid (see the
+   * {@link evaluatePairAssertion} docstring for the precise
+   * definition). Aggregated into the report's `pairsViolated` count.
+   */
+  readonly satisfied: boolean;
+}
+
 /** Persisted `causal-validation-report.json` envelope. */
 export interface CausalValidationReport {
   readonly schemaVersion: typeof CAUSAL_VALIDATION_REPORT_SCHEMA_VERSION;
@@ -158,6 +198,8 @@ export interface CausalValidationReport {
   readonly causalCoverageRatio: number;
   /** Per-hypothesis evaluation rows, sorted by `hypothesisId`. */
   readonly hypotheses: readonly CausalHypothesisEvaluation[];
+  /** Per-pair audit rows, sorted by `pairId`. */
+  readonly pairs: readonly CausalValidationPairAudit[];
   /**
    * Configured FinOps token-budget ratio cap (mirrors
    * {@link CAUSAL_VALIDATION_TOKEN_BUDGET_RATIO_CAP}). Surfaced so
@@ -303,6 +345,33 @@ const buildVariant = (input: {
     data: causeTestDataLine,
     expected: input.expectedEffectInvariant,
   };
+  /*
+   * `GeneratedTestCase.audit.{inputHash,promptHash,schemaHash}` must be
+   * 64-char lowercase sha256 hex digests per the test-case schema
+   * validator. The pair envelope is fully deterministic, so every hash
+   * is a sha256 of a stable seed-derived input. The three roles are
+   * separable so a downstream consumer can still differentiate them
+   * (e.g. only the "promptHash" leg participates in cache-key
+   * derivation upstream).
+   */
+  const inputHash = sha256Hex({
+    pairId: input.pairId,
+    variantTag: input.variantTag,
+    cause: input.causeElement.elementId,
+    valueCategory: input.oracleValue.category,
+    value: input.oracleValue.value,
+  });
+  const promptHash = sha256Hex({
+    pairId: input.pairId,
+    hypothesisId: input.hypothesis.hypothesisId,
+    relationship: input.hypothesis.relationship,
+    expectedEffectInvariant: input.expectedEffectInvariant,
+  });
+  const schemaHash = sha256Hex({
+    contractVersion: TEST_INTELLIGENCE_CONTRACT_VERSION,
+    schemaVersion: GENERATED_TEST_CASE_SCHEMA_VERSION,
+    promptTemplateVersion: TEST_INTELLIGENCE_PROMPT_TEMPLATE_VERSION,
+  });
   const audit: GeneratedTestCaseAuditMetadata = {
     jobId: input.jobId,
     generatedAt: input.generatedAt,
@@ -313,9 +382,9 @@ const buildVariant = (input: {
     visualSidecarSchemaVersion: VISUAL_SIDECAR_SCHEMA_VERSION,
     cacheHit: false,
     cacheKey: `causal:${input.pairId}:${input.variantTag}`,
-    inputHash: input.pairId,
-    promptHash: input.pairId,
-    schemaHash: input.pairId,
+    inputHash,
+    promptHash,
+    schemaHash,
   };
   return {
     id: variantId,
@@ -380,18 +449,35 @@ const compareNumeric = (
   return { equal: numA === numB, diff: numB - numA };
 };
 
+/**
+ * Pair-envelope **structural** validity check (Issue #2180 generation
+ * layer; live SUT execution is explicitly out of scope). The function
+ * does NOT compare runtime effect outcomes — the harness has no SUT
+ * to ask, by design. Instead it answers: "is this counterfactual pair
+ * well-formed for the projected causal claim?"
+ *
+ * A pair is treated as a structural violation when:
+ *
+ *   - The two variants project a different `expectedResults` string —
+ *     the do-calculus projection drifted, so reviewers cannot read a
+ *     consistent assertion across the pair.
+ *   - The cause-value delta is degenerate — `valueA === valueB` for a
+ *     `no-effect` / `discrete-mapping` claim collapses the
+ *     counterfactual; for `monotonic-up` / `monotonic-down` /
+ *     `linear` the framework additionally requires the values to be
+ *     numerically comparable (the relationship is undefined for
+ *     unparseable strings).
+ *
+ * Wave-8 will introduce an executor that wires the pair into a live
+ * SUT; at that point this evaluator extends to compare observed
+ * effect values across variants instead of (or in addition to) the
+ * projected text. Until then `pairsViolated` reflects harness-side
+ * pair quality, not SUT bugs.
+ */
 const evaluatePairAssertion = (
   pair: CounterfactualPair,
   hypothesis: CausalHypothesis,
 ): { readonly violated: boolean } => {
-  /*
-   * The assertion lives in `expectedResults[0]` of each variant. By
-   * construction the variants share the same expected-result text
-   * (the do-calculus projection), so the framework treats matching
-   * expectations as the satisfied case for `no-effect` /
-   * `discrete-mapping`. For monotonic / linear we additionally
-   * check the *direction* of the cause-value delta.
-   */
   const sameExpectation =
     pair.variantA.expectedResults[0] === pair.variantB.expectedResults[0] &&
     pair.variantA.expectedResults.length === pair.variantB.expectedResults.length;
@@ -624,6 +710,7 @@ export const evaluateCounterfactualPairs = (
   for (const hypothesis of input.hypotheses) {
     counts.set(hypothesis.hypothesisId, { generated: 0, violated: 0 });
   }
+  const pairAudits: CausalValidationPairAudit[] = [];
   for (const pair of input.pairs) {
     const hypothesis = hypothesisById.get(pair.hypothesisId);
     if (hypothesis === undefined) continue;
@@ -632,7 +719,17 @@ export const evaluateCounterfactualPairs = (
     bucket.generated += 1;
     const verdict = evaluatePairAssertion(pair, hypothesis);
     if (verdict.violated) bucket.violated += 1;
+    pairAudits.push({
+      pairId: pair.pairId,
+      hypothesisId: pair.hypothesisId,
+      variantAId: pair.variantA.id,
+      variantBId: pair.variantB.id,
+      causalDelta: pair.causalDelta,
+      expectedEffectInvariant: pair.expectedEffectInvariant,
+      satisfied: !verdict.violated,
+    });
   }
+  pairAudits.sort((left, right) => left.pairId.localeCompare(right.pairId));
   const evaluations: CausalHypothesisEvaluation[] = input.hypotheses
     .map((hypothesis) => {
       const bucket = counts.get(hypothesis.hypothesisId) ?? {
@@ -679,6 +776,7 @@ export const evaluateCounterfactualPairs = (
     pairsViolated,
     causalCoverageRatio,
     hypotheses: evaluations,
+    pairs: pairAudits,
     tokenBudgetRatioCap: CAUSAL_VALIDATION_TOKEN_BUDGET_RATIO_CAP,
   };
 };

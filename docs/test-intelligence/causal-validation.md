@@ -32,10 +32,19 @@ the variant values from the deterministic test-data oracle (Issue #2071),
 and aggregating the satisfaction rate into a top-level
 `causalCoverage` KPI on `policy-report.json`.
 
-The result is a Pearl-grade causal proof for every active dataset:
-**not just "the invariant fired", but "we generated two tests that
-differ only in the cause and the effect did the right thing across the
-two."**
+The result is a Pearl-grade causal **probe** for every active
+dataset: **not just "the invariant fired", but "we generated two
+tests that differ only in the cause, with a coherent effect-side
+assertion projected from the do-calculus claim."**
+
+> **Scope note.** Issue #2180 explicitly puts live SUT execution out
+> of scope, so the framework operates at the **generation layer**: it
+> verifies that the pair envelope is well-formed (consistent
+> projection, distinct cause values, oracle-fed BVA) — the
+> `pairsViolated` count surfaces harness-side structural defects, not
+> SUT bugs. Wave-8 will add an executor that wires the pairs into a
+> live SUT and substitutes runtime effect outcomes for the projected
+> assertion text.
 
 ## A 90-second do-calculus primer
 
@@ -126,7 +135,7 @@ line.
 | ------------------------- | -------------------------------------------- | ------------------------------------------------------------------ | ------------- |
 | `INV-VAT-01`              | `vat`, `mwst`, `mehrwertsteuer`              | `financing need`, `finanzierungsbedarf`                            | `no-effect`   |
 | `INV-FINANCING-NEED-01`   | `kaufpreis`, `purchase price`, `price`       | `financing need`, `finanzierungsbedarf`                            | `monotonic-up`|
-| `INV-SOLVENCY2-COOLOFF-01`| `premium`, `prämie`, `beitrag`               | `cooling-off`, `widerruf`, `withdrawal period`                     | `no-effect`   |
+| `INV-SOLV2-COOLOFF-01`| `premium`, `prämie`, `beitrag`               | `cooling-off`, `widerruf`, `withdrawal period`                     | `no-effect`   |
 | `INV-IDD-DEMANDS-01`      | `coverage`, `versicherungssumme`             | `demands and needs`, `bedarfsanalyse`                              | `no-effect`   |
 
 The catalog is intentionally explicit (no predicate-body parsing) so the
@@ -204,7 +213,7 @@ because someone wired the VAT line into the formula), the pair has
 detected a causal violation that conventional positive/negative tests
 would miss.
 
-## Worked example #2 (insurance) — `INV-SOLVENCY2-COOLOFF-01`
+## Worked example #2 (insurance) — `INV-SOLV2-COOLOFF-01`
 
 Source: Solvency II cooling-off-period requirement for long-term
 insurance contracts.
@@ -229,18 +238,26 @@ Variant B
 
 If the SUT suppresses the cooling-off block above a threshold premium,
 the pair flags it. The legal authority is `VVG § 8` and `Solvency II
-Directive 2009/138/EC`, both already cited on `INV-SOLVENCY2-COOLOFF-01`.
+Directive 2009/138/EC`, both already cited on `INV-SOLV2-COOLOFF-01`.
 
 ## Persisted artifacts
 
 When the runner is invoked with `causalValidation.enabled === true`,
 two new artifacts appear next to the existing per-run files:
 
-1. `causal-validation-report.json` — full per-hypothesis evaluation,
-   including `pairsGenerated`, `pairsViolated`, `satisfied`, the
-   originating `source`, and the rationale carried over from the
-   invariant. Sorted by `hypothesisId` for byte-stability.
-2. `policy-report.json#causalCoverage` — compact KPI block:
+1. `causal-validation-report.json` carries:
+   - Per-hypothesis evaluation rows (`hypotheses[]`) sorted by
+     `hypothesisId`: `pairsGenerated`, `pairsViolated`, `satisfied`,
+     the originating `source`, and the rationale carried over from
+     the invariant.
+   - Per-pair audit rows (`pairs[]`) sorted by `pairId`:
+     `variantAId`, `variantBId`, `causalDelta` (cause field +
+     valueA/valueB), and the projected `expectedEffectInvariant` text
+     each variant carries. The full `GeneratedTestCase` payloads of
+     the variants are not embedded — they are surfaced through the
+     in-memory pair list returned by `deriveCounterfactualPairs`,
+     which the production runner forwards alongside the report.
+2. `policy-report.json#causalCoverage` is the compact KPI block:
    `hypothesesEvaluated`, `pairsGenerated`, `pairsViolated`,
    `causalCoverageRatio` (= `(pairsGenerated - pairsViolated) /
    pairsGenerated`, rounded to six digits, `0` when no pairs were
@@ -248,6 +265,17 @@ two new artifacts appear next to the existing per-run files:
 
 Both are sealed into the standard evidence manifest so the
 audit-dossier (Issue #2175) covers them automatically.
+
+### Why aren't the variants in `generated-testcases.json`?
+
+The variants are **synthesized harness probes**, not authored
+business cases — they carry `qcMappingPreview.exportable: false` and
+should never be exported to QC/ALM. Adding them to the customer-
+exportable suite would also invalidate the existing
+`generated-testcases.json` Merkle seal, which is computed before the
+causal-validation pass runs. Persisting the pair audit envelope
+inside `causal-validation-report.json` keeps the audit trail intact
+without disturbing the sealed customer artifact.
 
 ## CLI / programmatic entry points
 
