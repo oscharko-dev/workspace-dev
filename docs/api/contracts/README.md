@@ -64,7 +64,7 @@ One accessibility-gap finding anchored to a criterion id.
 
 ##### severity
 
-> `readonly` **severity**: `"error"` \| `"warning"`
+> `readonly` **severity**: `"warning"` \| `"error"`
 
 ##### testCaseId
 
@@ -88,7 +88,7 @@ Persisted multimodal accessibility-judge verdict artifact.
 
 ##### contractVersion
 
-> `readonly` **contractVersion**: `"1.27.0"`
+> `readonly` **contractVersion**: `"1.29.0"`
 
 ##### criteria
 
@@ -193,6 +193,13 @@ Stable model identifier inside the provider namespace.
 > `readonly` **providerId**: `string`
 
 Stable provider / operator identifier for the bound model.
+
+##### region?
+
+> `readonly` `optional` **region?**: `"eu"` \| `"global"` \| `"us"`
+
+Optional coarse deployment-region marker surfaced by routing and used by
+region-attestation-aware policy gates to cross-check runtime evidence.
 
 ***
 
@@ -360,7 +367,7 @@ Persisted, canonical-JSON, per-job repair-iteration log.
 
 ##### contractVersion
 
-> `readonly` **contractVersion**: `"1.27.0"`
+> `readonly` **contractVersion**: `"1.29.0"`
 
 ##### generatedAt
 
@@ -802,7 +809,7 @@ signed payload; the PDF is a human-readable rendering of this surface.
 
 ##### contractVersion
 
-> `readonly` **contractVersion**: `"1.27.0"`
+> `readonly` **contractVersion**: `"1.29.0"`
 
 ##### generatedAt
 
@@ -831,6 +838,10 @@ signed payload; the PDF is a human-readable rendering of this surface.
 ###### merkleRoot
 
 > `readonly` **merkleRoot**: `string`
+
+##### regionAttestations?
+
+> `readonly` `optional` **regionAttestations?**: readonly `object`[]
 
 ##### regulatorCoverage
 
@@ -972,7 +983,7 @@ never raw prompts, screenshots, secrets, or PII-bearing payloads.
 
 ##### kind
 
-> `readonly` **kind**: `"model_card"` \| `"provenance"` \| `"compliance_coverage"` \| `"compliance_annotations"` \| `"judge_calibration"` \| `"locale_calibration"` \| `"inter_rater_agreement"` \| `"drift_baseline"` \| `"incident_log"` \| `"subprocessor_register"` \| `"finops_budget"` \| `"faithfulness_tier"` \| `"self_consistency"` \| `"evidence_seal"` \| `"policy_report"`
+> `readonly` **kind**: `"model_card"` \| `"provenance"` \| `"compliance_coverage"` \| `"compliance_annotations"` \| `"judge_calibration"` \| `"locale_calibration"` \| `"inter_rater_agreement"` \| `"drift_baseline"` \| `"incident_log"` \| `"subprocessor_register"` \| `"region_attestations"` \| `"finops_budget"` \| `"faithfulness_tier"` \| `"self_consistency"` \| `"evidence_seal"` \| `"policy_report"` \| `"human_review_log"`
 
 ##### sha256
 
@@ -1004,7 +1015,7 @@ One regulator/article row in the human-readable evidence table.
 
 ##### artifactKinds
 
-> `readonly` **artifactKinds**: readonly (`"model_card"` \| `"provenance"` \| `"compliance_coverage"` \| `"compliance_annotations"` \| `"judge_calibration"` \| `"locale_calibration"` \| `"inter_rater_agreement"` \| `"drift_baseline"` \| `"incident_log"` \| `"subprocessor_register"` \| `"finops_budget"` \| `"faithfulness_tier"` \| `"self_consistency"` \| `"evidence_seal"` \| `"policy_report"`)[]
+> `readonly` **artifactKinds**: readonly (`"model_card"` \| `"provenance"` \| `"compliance_coverage"` \| `"compliance_annotations"` \| `"judge_calibration"` \| `"locale_calibration"` \| `"inter_rater_agreement"` \| `"drift_baseline"` \| `"incident_log"` \| `"subprocessor_register"` \| `"region_attestations"` \| `"finops_budget"` \| `"faithfulness_tier"` \| `"self_consistency"` \| `"evidence_seal"` \| `"policy_report"` \| `"human_review_log"`)[]
 
 ##### notes
 
@@ -1216,7 +1227,7 @@ input set is byte-identical and the entries are sorted before write.
 
 ##### contractVersion
 
-> `readonly` **contractVersion**: `"1.27.0"`
+> `readonly` **contractVersion**: `"1.29.0"`
 
 ##### diffArtifactBasename?
 
@@ -1268,7 +1279,7 @@ Persisted case-merger artifact (Issue #1937).
 
 ##### contractVersion
 
-> `readonly` **contractVersion**: `"1.27.0"`
+> `readonly` **contractVersion**: `"1.29.0"`
 
 ##### entries
 
@@ -1403,7 +1414,7 @@ Total bytes of cleared tool result blocks at the boundary.
 
 ##### contractVersion
 
-> `readonly` **contractVersion**: `"1.27.0"`
+> `readonly` **contractVersion**: `"1.29.0"`
 
 ##### jobId
 
@@ -1447,7 +1458,7 @@ Persisted, fully-redacted artifact form of a compiled prompt.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.27.0"`
+> **contractVersion**: `"1.29.0"`
 
 ##### hashes
 
@@ -2724,7 +2735,7 @@ Aggregate dry-run report artifact.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.27.0"`
+> **contractVersion**: `"1.29.0"`
 
 ##### credentialsIncluded
 
@@ -3115,7 +3126,7 @@ Sorted by filename for deterministic emission.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.27.0"`
+> **contractVersion**: `"1.29.0"`
 
 ##### exportedTestCaseCount
 
@@ -3292,7 +3303,7 @@ Threshold the aggregate is compared against (profile-scoped).
 
 ##### contractVersion
 
-> `readonly` **contractVersion**: `"1.27.0"`
+> `readonly` **contractVersion**: `"1.29.0"`
 
 ##### entries
 
@@ -3426,7 +3437,7 @@ Persisted screenshot-vs-cases faithfulness verdict artifact.
 
 ##### contractVersion
 
-> `readonly` **contractVersion**: `"1.27.0"`
+> `readonly` **contractVersion**: `"1.29.0"`
 
 ##### fallbackReason
 
@@ -3673,7 +3684,7 @@ Verbatim copy of the budget envelope applied to this job.
 
 ##### bySource
 
-> **bySource**: `Readonly`\<`Record`\<[`AgentSourceLabel`](#agentsourcelabel), \{ `attemptIds?`: readonly `string`[]; `callCount`: `number`; `circuitBreakerStates?`: readonly (`"closed"` \| `"open"` \| `"half_open"`)[]; `constrainedDecoding?`: \{ `activeCallCount`: `number`; `adapterId`: [`LlmConstrainedDecodingAdapterId`](#llmconstraineddecodingadapterid); `adapterVersion?`: `string`; `enforcement`: [`LlmConstrainedDecodingEnforcement`](#llmconstraineddecodingenforcement); `fallbackCallCount`: `number`; `fallbackReasons?`: readonly `string`[]; \}; `costMinorUnits`: `number`; `deployment?`: `string`; `idempotentReplayHits`: `number`; `inFlightDedupHits`: `number`; `modelRevision?`: `string`; `tierLabel?`: [`ModelRoutingTierLabel`](#modelroutingtierlabel); `tokensIn`: `number`; `tokensOut`: `number`; \}\>\>
+> **bySource**: `Readonly`\<`Record`\<[`AgentSourceLabel`](#agentsourcelabel), \{ `attemptIds?`: readonly `string`[]; `callCount`: `number`; `circuitBreakerStates?`: readonly (`"closed"` \| `"open"` \| `"half_open"`)[]; `constrainedDecoding?`: \{ `activeCallCount`: `number`; `adapterId`: [`LlmConstrainedDecodingAdapterId`](#llmconstraineddecodingadapterid); `adapterVersion?`: `string`; `enforcement`: [`LlmConstrainedDecodingEnforcement`](#llmconstraineddecodingenforcement); `fallbackCallCount`: `number`; `fallbackReasons?`: readonly `string`[]; \}; `costMinorUnits`: `number`; `deployment?`: `string`; `idempotentReplayHits`: `number`; `inFlightDedupHits`: `number`; `modelRevision?`: `string`; `regionAttestation?`: \{ `attestedCallCount`: `number`; `distinctRegions`: readonly [`RegionAttestationHostingRegion`](#regionattestationhostingregion)[]; `warningCount`: `number`; \}; `tierLabel?`: [`ModelRoutingTierLabel`](#modelroutingtierlabel); `tokensIn`: `number`; `tokensOut`: `number`; \}\>\>
 
 Deterministic per-agent-source attribution sealed in attestation.
 
@@ -3699,7 +3710,7 @@ Aggregate counters across the `bySource` map.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.27.0"`
+> **contractVersion**: `"1.29.0"`
 
 ##### currencyLabel?
 
@@ -3772,6 +3783,25 @@ Hard invariant — raw prompt or response text is never embedded.
 > **rawScreenshotsIncluded**: `false`
 
 Hard invariant — image bytes are never embedded.
+
+##### regionAttestation?
+
+> `optional` **regionAttestation?**: `object`
+
+Issue #2177 — audit summary of the run's region attestations. Present
+whenever at least one LLM call or cache hit recorded region evidence.
+
+###### attestedCallCount
+
+> **attestedCallCount**: `number`
+
+###### distinctRegions
+
+> **distinctRegions**: readonly (`"eu-west-1"` \| `"eu-central-1"` \| `"eu-west-3"` \| `"eu-north-1"` \| `"eu-south-1"` \| `"eu-de-1"` \| `"eu-fr-1"` \| `"switzerland-north"` \| `"norway-east"`)[]
+
+###### warningCount
+
+> **warningCount**: `number`
 
 ##### resolvedBudget?
 
@@ -4473,7 +4503,7 @@ Optional auditable raw inputs used to derive `confidence`.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.27.0"`
+> **contractVersion**: `"1.29.0"`
 
 ##### expectedResults
 
@@ -4591,7 +4621,7 @@ Whether the artifact came from a replay-cache hit.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.27.0"`
+> **contractVersion**: `"1.29.0"`
 
 ##### generatedAt
 
@@ -4866,7 +4896,7 @@ referenced files and recomputing each row.
 
 ##### contractVersion
 
-> `readonly` **contractVersion**: `"1.27.0"`
+> `readonly` **contractVersion**: `"1.29.0"`
 
 ##### digest
 
@@ -4977,6 +5007,240 @@ Final verdict the reviewer cast.
 
 ***
 
+### HumanReviewFilter
+
+Filter shape consumed by the queue-fetch surface.
+
+#### Properties
+
+##### profileId?
+
+> `readonly` `optional` **profileId?**: `string`
+
+##### slaDueBy?
+
+> `readonly` `optional` **slaDueBy?**: `string`
+
+Optional inclusive upper bound on `slaDeadlineAt`. ISO-8601 string;
+items with `slaDeadlineAt <= slaDueBy` are returned.
+
+##### tenantId
+
+> `readonly` **tenantId**: `string`
+
+***
+
+### HumanReviewLog
+
+Per-run audit log capturing the queue items that were created during
+the run and any verdicts that were recorded against them. The log is
+canonical-JSON, byte-stable for byte-identical inputs, and bundled
+into the W6-1 audit-dossier (Issue #2175) so a regulator can replay
+the human-oversight chain.
+
+#### Properties
+
+##### contractVersion
+
+> `readonly` **contractVersion**: `"1.29.0"`
+
+##### generatedAt
+
+> `readonly` **generatedAt**: `string`
+
+##### items
+
+> `readonly` **items**: readonly [`HumanReviewQueueItem`](#humanreviewqueueitem)[]
+
+Items sorted alphabetically by `itemId`.
+
+##### jobId
+
+> `readonly` **jobId**: `string`
+
+##### schemaVersion
+
+> `readonly` **schemaVersion**: `"1.0.0"`
+
+##### slaBreaches
+
+> `readonly` **slaBreaches**: readonly [`HumanReviewSlaBreachEntry`](#humanreviewslabreachentry)[]
+
+Items whose `slaDeadlineAt` had elapsed at log-emission time.
+Drives the `policy:human-review-sla-breach` warning on the next run.
+
+##### tenantId
+
+> `readonly` **tenantId**: `string`
+
+##### verdicts
+
+> `readonly` **verdicts**: readonly [`HumanReviewVerdict`](#humanreviewverdict)[]
+
+Verdicts sorted alphabetically by `itemId`.
+
+***
+
+### HumanReviewQueueItem
+
+One pending case that requires human oversight before the run can
+advance. The producer (the harness) writes one of these per
+disagreement-escalated case; the reviewer surface (CLI / minimal UI)
+fetches them and emits a [HumanReviewVerdict](#humanreviewverdict).
+
+Hard invariants:
+
+  - `itemId` is stable across replays for the same logical case so
+    verdicts can be re-located on re-run without an external index.
+  - `tenantId` matches the active [TenantScope](#tenantscope); the queue is
+    partitioned per-tenant and never returns cross-tenant items.
+  - `enqueuedAt` and `slaDeadlineAt` are strict ISO-8601 strings; the
+    module is clock-free.
+  - `proposedDecision` records what the harness would have done in the
+    absence of human input — useful for SLA-breach defaulting and for
+    reviewer context.
+
+#### Properties
+
+##### contractVersion
+
+> `readonly` **contractVersion**: `"1.29.0"`
+
+##### enqueuedAt
+
+> `readonly` **enqueuedAt**: `string`
+
+##### itemId
+
+> `readonly` **itemId**: `string`
+
+##### judgeDisagreement
+
+> `readonly` **judgeDisagreement**: [`JudgeDisagreementSnapshot`](#judgedisagreementsnapshot)
+
+##### profileId
+
+> `readonly` **profileId**: `string`
+
+##### proposedDecision
+
+> `readonly` **proposedDecision**: `"approved"` \| `"blocked"` \| `"needs_review"`
+
+##### runId
+
+> `readonly` **runId**: `string`
+
+##### schemaVersion
+
+> `readonly` **schemaVersion**: `"1.0.0"`
+
+##### slaDeadlineAt
+
+> `readonly` **slaDeadlineAt**: `string`
+
+##### tenantId
+
+> `readonly` **tenantId**: `string`
+
+##### testCaseId
+
+> `readonly` **testCaseId**: `string`
+
+***
+
+### HumanReviewSlaBreachEntry
+
+One SLA-breach entry surfaced for the next run's policy report.
+
+#### Properties
+
+##### itemId
+
+> `readonly` **itemId**: `string`
+
+##### observedAt
+
+> `readonly` **observedAt**: `string`
+
+##### slaDeadlineAt
+
+> `readonly` **slaDeadlineAt**: `string`
+
+##### testCaseId
+
+> `readonly` **testCaseId**: `string`
+
+***
+
+### HumanReviewVerdict
+
+Persisted human verdict for a [HumanReviewQueueItem](#humanreviewqueueitem). The
+verdict carries a detached ed25519 signature over the canonical-JSON
+serialisation of the verdict body (every field except `signatureHex`)
+so the queue can verify reviewer identity and detect tampering before
+persisting the decision into the run record.
+
+#### Properties
+
+##### contractVersion
+
+> `readonly` **contractVersion**: `"1.29.0"`
+
+##### decidedAt
+
+> `readonly` **decidedAt**: `string`
+
+##### itemId
+
+> `readonly` **itemId**: `string`
+
+##### publicKeyFingerprintSha256
+
+> `readonly` **publicKeyFingerprintSha256**: `string`
+
+SPKI-DER sha256 hex of the reviewer's public key.
+
+##### publicKeyPem
+
+> `readonly` **publicKeyPem**: `string`
+
+PEM-encoded SPKI public key the signature can be verified against.
+
+##### rationale
+
+> `readonly` **rationale**: `string`
+
+Length-capped, redacted rationale (no chain-of-thought, no PII).
+
+##### reviewerPrincipalHash
+
+> `readonly` **reviewerPrincipalHash**: `string`
+
+##### revisedTestCase?
+
+> `readonly` `optional` **revisedTestCase?**: `Readonly`\<`Record`\<`string`, `unknown`\>\>
+
+Optional revised test case the reviewer wishes to substitute for the
+proposed decision. Only meaningful when `verdict === "revised"`.
+Stored as an opaque JSON object — the queue does not validate the
+inner `GeneratedTestCase` shape (the consumer does).
+
+##### schemaVersion
+
+> `readonly` **schemaVersion**: `"1.0.0"`
+
+##### signatureHex
+
+> `readonly` **signatureHex**: `string`
+
+Detached ed25519 signature, lowercase hex (128 chars).
+
+##### verdict
+
+> `readonly` **verdict**: `"approved"` \| `"rejected"` \| `"revised"`
+
+***
+
 ### IncidentEvent
 
 Single classified incident emitted to the operator's `IncidentSink`.
@@ -5023,7 +5287,7 @@ Persisted incident-handling envelope written per job. The order of
 
 ##### contractVersion
 
-> `readonly` **contractVersion**: `"1.27.0"`
+> `readonly` **contractVersion**: `"1.29.0"`
 
 ##### events
 
@@ -5162,7 +5426,7 @@ Hard-invariant intent-delta report artifact (Issue #1373).
 
 ##### contractVersion
 
-> **contractVersion**: `"1.27.0"`
+> **contractVersion**: `"1.29.0"`
 
 ##### currentIntentHash
 
@@ -5476,7 +5740,7 @@ Aggregate `jira-created-subtasks.json` artifact (Issue #1482).
 
 ##### contractVersion
 
-> **contractVersion**: `"1.27.0"`
+> **contractVersion**: `"1.29.0"`
 
 ##### credentialsIncluded
 
@@ -6112,7 +6376,7 @@ Audit metadata for the run.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.27.0"`
+> **contractVersion**: `"1.29.0"`
 
 ##### createdCount
 
@@ -6224,7 +6488,7 @@ One normalized finding consumed by the production-runner consensus module.
 
 ##### severity?
 
-> `readonly` `optional` **severity?**: `"error"` \| `"warning"`
+> `readonly` `optional` **severity?**: `"warning"` \| `"error"`
 
 ##### testCaseId
 
@@ -6352,7 +6616,7 @@ Persisted production-runner judge-consensus artifact.
 
 ##### contractVersion
 
-> `readonly` **contractVersion**: `"1.27.0"`
+> `readonly` **contractVersion**: `"1.29.0"`
 
 ##### crossFamily?
 
@@ -6579,7 +6843,7 @@ the disagreement-rate trending consumes (B.10).
 
 ##### contractVersion
 
-> `readonly` **contractVersion**: `"1.27.0"`
+> `readonly` **contractVersion**: `"1.29.0"`
 
 ##### costByFamily
 
@@ -6643,6 +6907,41 @@ Hard guarantee that the artifact never carries a raw prompt.
 
 ***
 
+### JudgeDisagreementSnapshot
+
+Inline disagreement snapshot pinned on each queue item. Carries only
+the deterministic identifying fields from [JudgeDisagreementReport](#judgedisagreementreport)
+— never raw prompts, never PII — so a queue item can be inspected and
+replayed without re-loading the full disagreement artifact.
+
+#### Properties
+
+##### decision
+
+> `readonly` **decision**: `"majority_decision"` \| `"split_decision"` \| `"unanimous_accept"` \| `"unanimous_reject"` \| `"unanimous_repair"`
+
+Cross-family decision label that triggered escalation.
+
+##### disagreementRate
+
+> `readonly` **disagreementRate**: `number`
+
+Disagreement rate in [0,1] = dissenting-judge-count / panel-size.
+
+##### escalation
+
+> `readonly` **escalation**: `"none"` \| `"human_review_required"`
+
+Escalation action recorded by the disagreement detector.
+
+##### judges
+
+> `readonly` **judges**: readonly [`JudgeDisagreementJudgeEntry`](#judgedisagreementjudgeentry)[]
+
+Per-judge entries sorted alphabetically by `judgeId`.
+
+***
+
 ### JudgeFinding
 
 One logic-judge finding anchored to a generated test case or the job.
@@ -6663,7 +6962,7 @@ One logic-judge finding anchored to a generated test case or the job.
 
 ##### severity
 
-> `readonly` **severity**: `"error"` \| `"warning"`
+> `readonly` **severity**: `"warning"` \| `"error"`
 
 ##### testCaseId
 
@@ -6817,7 +7116,7 @@ Persisted logic-judge verdict artifact.
 
 ##### contractVersion
 
-> `readonly` **contractVersion**: `"1.27.0"`
+> `readonly` **contractVersion**: `"1.29.0"`
 
 ##### findings
 
@@ -7318,7 +7617,7 @@ Per-release primitive-map status report.
 
 ##### contractVersion
 
-> `readonly` **contractVersion**: `"1.27.0"`
+> `readonly` **contractVersion**: `"1.29.0"`
 
 ##### counts
 
@@ -8582,7 +8881,7 @@ room to encode their own provenance.
 
 ##### severity
 
-> `readonly` **severity**: `"error"` \| `"warning"`
+> `readonly` **severity**: `"warning"` \| `"error"`
 
 Severity of an unkilled mutation (`"error"` for default catalog rows).
 
@@ -8682,7 +8981,7 @@ catalog class appears exactly once.
 
 ##### contractVersion
 
-> `readonly` **contractVersion**: `"1.27.0"`
+> `readonly` **contractVersion**: `"1.29.0"`
 
 ##### generatedAt
 
@@ -8951,7 +9250,7 @@ Per-candidate scores, ordered by descending score then id.
 
 ##### contractVersion
 
-> `readonly` **contractVersion**: `"1.27.0"`
+> `readonly` **contractVersion**: `"1.29.0"`
 
 ##### datasetId
 
@@ -9184,7 +9483,7 @@ Aggregate `qc-created-entities.json` artifact (Issue #1372).
 
 ##### contractVersion
 
-> **contractVersion**: `"1.27.0"`
+> **contractVersion**: `"1.29.0"`
 
 ##### entities
 
@@ -9274,7 +9573,7 @@ Aggregate QC mapping preview artifact.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.27.0"`
+> **contractVersion**: `"1.29.0"`
 
 ##### entries
 
@@ -9651,6 +9950,101 @@ Semver-shaped descriptor version, bumped when the matrix changes.
 
 ***
 
+### RegionAttestation
+
+One cryptographic per-artifact EU data-residency attestation.
+
+#### Properties
+
+##### artifactHash
+
+> `readonly` **artifactHash**: `string`
+
+##### attestationSignatureHex
+
+> `readonly` **attestationSignatureHex**: `string`
+
+##### attestedBy
+
+> `readonly` **attestedBy**: `"azure-instance-metadata"` \| `"endpoint-cert-cn"` \| `"operator-pinned"`
+
+##### deploymentId
+
+> `readonly` **deploymentId**: `string`
+
+##### observedAtUtc
+
+> `readonly` **observedAtUtc**: `string`
+
+##### schemaVersion
+
+> `readonly` **schemaVersion**: `"1.0.0"`
+
+##### servedFromRegion
+
+> `readonly` **servedFromRegion**: `"eu-west-1"` \| `"eu-central-1"` \| `"eu-west-3"` \| `"eu-north-1"` \| `"eu-south-1"` \| `"eu-de-1"` \| `"eu-fr-1"` \| `"switzerland-north"` \| `"norway-east"`
+
+##### severity?
+
+> `readonly` `optional` **severity?**: `"warning"`
+
+Additive audit signal: present only when the attestation fell back to an
+operator-pinned region because no stronger runtime evidence was available.
+
+***
+
+### RegionAttestationArtifactEntry
+
+One artifact row inside the run-level region-attestation report.
+
+#### Properties
+
+##### artifactHash
+
+> `readonly` **artifactHash**: `string`
+
+##### filename
+
+> `readonly` **filename**: `string`
+
+##### regionAttestations
+
+> `readonly` **regionAttestations**: readonly [`RegionAttestation`](#regionattestation-1)[]
+
+***
+
+### RegionAttestationReport
+
+Machine-readable report of every artifact-level region attestation.
+
+#### Properties
+
+##### artifacts
+
+> `readonly` **artifacts**: readonly [`RegionAttestationArtifactEntry`](#regionattestationartifactentry)[]
+
+##### contractVersion
+
+> `readonly` **contractVersion**: `"1.29.0"`
+
+##### distinctRegions
+
+> `readonly` **distinctRegions**: readonly (`"eu-west-1"` \| `"eu-central-1"` \| `"eu-west-3"` \| `"eu-north-1"` \| `"eu-south-1"` \| `"eu-de-1"` \| `"eu-fr-1"` \| `"switzerland-north"` \| `"norway-east"`)[]
+
+##### generatedAt
+
+> `readonly` **generatedAt**: `string`
+
+##### jobId
+
+> `readonly` **jobId**: `string`
+
+##### schemaVersion
+
+> `readonly` **schemaVersion**: `"1.0.0"`
+
+***
+
 ### RegulatoryRelevance
 
 Optional per-test-case regulatory-relevance signal (Issue #1735, contract
@@ -9950,7 +10344,7 @@ Gate 9 — context budget regression (Issue #1802).
 
 ##### contractVersion
 
-> `readonly` **contractVersion**: `"1.27.0"`
+> `readonly` **contractVersion**: `"1.29.0"`
 
 ##### libraryCoverageStatusCompleteness
 
@@ -10041,7 +10435,7 @@ The release pipeline fails when any verdict has `passed === false`.
 
 ##### contractVersion
 
-> `readonly` **contractVersion**: `"1.27.0"`
+> `readonly` **contractVersion**: `"1.29.0"`
 
 ##### mutationKillRate
 
@@ -10195,7 +10589,7 @@ gate passed.
 
 ##### contractVersion
 
-> `readonly` **contractVersion**: `"1.27.0"`
+> `readonly` **contractVersion**: `"1.29.0"`
 
 ##### gates
 
@@ -10474,7 +10868,7 @@ ISO-8601 UTC timestamp at the moment of persistence.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.27.0"`
+> **contractVersion**: `"1.29.0"`
 
 ##### fromState?
 
@@ -10542,7 +10936,7 @@ Number of cases currently in `approved` (or `exported`/`transferred`) state.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.27.0"`
+> **contractVersion**: `"1.29.0"`
 
 ##### fourEyesPolicy?
 
@@ -10768,7 +11162,7 @@ Persisted production-runner run-quality artifact.
 
 ##### contractVersion
 
-> `readonly` **contractVersion**: `"1.27.0"`
+> `readonly` **contractVersion**: `"1.29.0"`
 
 ##### degradedReasons
 
@@ -10928,7 +11322,7 @@ Persisted self-consistency voting artifact (Issue #2070).
 
 ##### contractVersion
 
-> `readonly` **contractVersion**: `"1.27.0"`
+> `readonly` **contractVersion**: `"1.29.0"`
 
 ##### generatedAt
 
@@ -11264,7 +11658,7 @@ Sorted by `testCaseId` for byte stability. Empty when `refusal` is set.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.27.0"`
+> **contractVersion**: `"1.29.0"`
 
 ##### gatewayRelease
 
@@ -11357,7 +11751,7 @@ Changelog-approved signed migration bundle for banking-profile runs.
 
 ##### contractVersion
 
-> `readonly` **contractVersion**: `"4.62.0"`
+> `readonly` **contractVersion**: `"4.64.0"`
 
 ##### entries
 
@@ -11744,7 +12138,7 @@ the planner published a fixed `12` minCount. Entries are sorted by
 
 ##### contractVersion
 
-> `readonly` **contractVersion**: `"1.27.0"`
+> `readonly` **contractVersion**: `"1.29.0"`
 
 ##### deficitCount
 
@@ -11951,7 +12345,7 @@ Avg assumptions per case.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.27.0"`
+> **contractVersion**: `"1.29.0"`
 
 ##### duplicatePairs
 
@@ -12104,7 +12498,7 @@ Aggregate dedupe report artifact (Issue #1373).
 
 ##### contractVersion
 
-> **contractVersion**: `"1.27.0"`
+> **contractVersion**: `"1.29.0"`
 
 ##### embeddingProvider
 
@@ -12214,7 +12608,7 @@ Aggregate test-case delta report (always paired with `IntentDeltaReport`).
 
 ##### contractVersion
 
-> **contractVersion**: `"1.27.0"`
+> **contractVersion**: `"1.29.0"`
 
 ##### generatedAt
 
@@ -12474,6 +12868,14 @@ test case list. Below this threshold the judge emits the
 repair-loop is triggered. Tunable per profile; the secure default for
 `eu-banking-default` is `0.5`. Optional for backward compatibility:
 when omitted the hard-gate skips the breadth check.
+
+##### allowedHostingRegions?
+
+> `optional` **allowedHostingRegions?**: readonly (`"eu-west-1"` \| `"eu-central-1"` \| `"eu-west-3"` \| `"eu-north-1"` \| `"eu-south-1"` \| `"eu-de-1"` \| `"eu-fr-1"` \| `"switzerland-north"` \| `"norway-east"`)[]
+
+Issue #2177 — allow-list of attested hosting regions accepted by the
+`G8_EU_REGION_ATTESTED` hard gate. Optional for backwards compatibility:
+when omitted the runtime falls back to the profile's built-in default.
 
 ##### duplicateSimilarityThreshold
 
@@ -12754,7 +13156,7 @@ Mean calibrated per-case confidence across every generated case.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.27.0"`
+> **contractVersion**: `"1.29.0"`
 
 ##### decisions
 
@@ -12941,7 +13343,7 @@ Whether the report blocks downstream review/export (any error => true).
 
 ##### contractVersion
 
-> **contractVersion**: `"1.27.0"`
+> **contractVersion**: `"1.29.0"`
 
 ##### errorCount
 
@@ -13433,7 +13835,7 @@ Aggregate traceability-matrix artifact (Issue #1373).
 
 ##### contractVersion
 
-> **contractVersion**: `"1.27.0"`
+> **contractVersion**: `"1.29.0"`
 
 ##### exportProfile?
 
@@ -13625,7 +14027,7 @@ Outcome of the transfer pipeline for this case, when known.
 
 ##### validationOutcome
 
-> **validationOutcome**: `"error"` \| `"warning"` \| `"ok"`
+> **validationOutcome**: `"warning"` \| `"error"` \| `"ok"`
 
 Per-case validation outcome — `error` if any error issue was raised.
 
@@ -13719,7 +14121,7 @@ Matching QC design-step index when the mapping preview carries one.
 
 ##### validationOutcome
 
-> **validationOutcome**: `"error"` \| `"warning"` \| `"ok"`
+> **validationOutcome**: `"warning"` \| `"error"` \| `"ok"`
 
 Per-case validation outcome at the time this step row was built.
 
@@ -13927,7 +14329,7 @@ Audit metadata for the run.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.27.0"`
+> **contractVersion**: `"1.29.0"`
 
 ##### createdCount
 
@@ -14302,7 +14704,7 @@ can be debugged from the artifact alone.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.27.0"`
+> **contractVersion**: `"1.29.0"`
 
 ##### deployment
 
@@ -14424,7 +14826,7 @@ screenshot bytes.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.27.0"`
+> **contractVersion**: `"1.29.0"`
 
 ##### generatedAt
 
@@ -14586,7 +14988,7 @@ Whether any record carries a non-`ok`/non-`fallback_used` outcome that blocks ge
 
 ##### contractVersion
 
-> **contractVersion**: `"1.27.0"`
+> **contractVersion**: `"1.29.0"`
 
 ##### generatedAt
 
@@ -14863,7 +15265,7 @@ Active signing mode; mirrored from the run input for auditability.
 
 ##### testIntelligenceContractVersion
 
-> **testIntelligenceContractVersion**: `"1.27.0"`
+> **testIntelligenceContractVersion**: `"1.29.0"`
 
 ##### visualSidecar?
 
@@ -15292,7 +15694,7 @@ and timestamps are caller-provided.
 
 ##### testIntelligenceContractVersion
 
-> **testIntelligenceContractVersion**: `"1.27.0"`
+> **testIntelligenceContractVersion**: `"1.29.0"`
 
 ##### thresholds
 
@@ -15403,6 +15805,13 @@ Byte length on disk at manifest creation time.
 > **filename**: `string`
 
 Relative filename inside the run directory.
+
+##### regionAttestations?
+
+> `optional` **regionAttestations?**: readonly [`RegionAttestation`](#regionattestation-1)[]
+
+Issue #2177 — per-artifact EU data-residency attestations. One entry per
+LLM call or cache hit that contributed to the artifact.
 
 ##### sha256
 
@@ -15600,7 +16009,7 @@ identity into the replay artifact (Issue #2113).
 
 ##### testIntelligenceContractVersion
 
-> **testIntelligenceContractVersion**: `"1.27.0"`
+> **testIntelligenceContractVersion**: `"1.29.0"`
 
 Test-intelligence subsurface contract version.
 
@@ -16833,7 +17242,7 @@ Submit response for accepted jobs.
 
 ###### Inherited from
 
-[`WorkspaceSubmitAccepted`](#workspacesubmitaccepted).[`jobId`](#jobid-71)
+[`WorkspaceSubmitAccepted`](#workspacesubmitaccepted).[`jobId`](#jobid-73)
 
 ##### pasteDeltaSummary?
 
@@ -20683,6 +21092,20 @@ Discriminated alias for [ALLOWED\_HARNESS\_ARTIFACT\_FILENAMES](#allowed_harness
 
 ***
 
+### HumanReviewPolicyWarningRule
+
+> **HumanReviewPolicyWarningRule** = *typeof* [`HUMAN_REVIEW_POLICY_WARNING_RULES`](#human_review_policy_warning_rules)\[`number`\]
+
+***
+
+### HumanReviewQueueVerdictLabel
+
+> **HumanReviewQueueVerdictLabel** = *typeof* [`HUMAN_REVIEW_QUEUE_VERDICT_LABELS`](#human_review_queue_verdict_labels)\[`number`\]
+
+Discriminated alias for [HUMAN\_REVIEW\_QUEUE\_VERDICT\_LABELS](#human_review_queue_verdict_labels).
+
+***
+
 ### HumanReviewReviewerKind
 
 > **HumanReviewReviewerKind** = *typeof* [`HUMAN_REVIEW_REVIEWER_KINDS`](#human_review_reviewer_kinds)\[`number`\]
@@ -21226,6 +21649,14 @@ Subset alias for primary source kinds.
 ### QcProviderOperation
 
 > **QcProviderOperation** = *typeof* [`ALLOWED_QC_PROVIDER_OPERATIONS`](#allowed_qc_provider_operations)\[`number`\]
+
+***
+
+### RegionAttestationHostingRegion
+
+> **RegionAttestationHostingRegion** = *typeof* [`SUPPORTED_REGION_ATTESTATION_HOSTING_REGIONS`](#supported_region_attestation_hosting_regions)\[`number`\]
+
+One hosting region admitted by [RegionAttestation](#regionattestation-1).
 
 ***
 
@@ -22303,7 +22734,7 @@ artifact does not introduce a second outcome surface.
 
 ### ALLOWED\_AUDIT\_DOSSIER\_ARTIFACT\_KINDS
 
-> `const` **ALLOWED\_AUDIT\_DOSSIER\_ARTIFACT\_KINDS**: readonly \[`"model_card"`, `"provenance"`, `"compliance_coverage"`, `"compliance_annotations"`, `"judge_calibration"`, `"locale_calibration"`, `"inter_rater_agreement"`, `"drift_baseline"`, `"incident_log"`, `"subprocessor_register"`, `"finops_budget"`, `"faithfulness_tier"`, `"self_consistency"`, `"evidence_seal"`, `"policy_report"`\]
+> `const` **ALLOWED\_AUDIT\_DOSSIER\_ARTIFACT\_KINDS**: readonly \[`"model_card"`, `"provenance"`, `"compliance_coverage"`, `"compliance_annotations"`, `"judge_calibration"`, `"locale_calibration"`, `"inter_rater_agreement"`, `"drift_baseline"`, `"incident_log"`, `"subprocessor_register"`, `"region_attestations"`, `"finops_budget"`, `"faithfulness_tier"`, `"self_consistency"`, `"evidence_seal"`, `"policy_report"`, `"human_review_log"`\]
 
 Closed list of source-artifact roles tracked by the dossier manifest.
 
@@ -23715,7 +24146,7 @@ Schema version for persisted context-budget analyzer reports.
 
 ### CONTRACT\_VERSION
 
-> `const` **CONTRACT\_VERSION**: `"4.62.0"`
+> `const` **CONTRACT\_VERSION**: `"4.64.0"`
 
 Current contract version constant.
 Must be bumped according to CONTRACT_CHANGELOG.md rules.
@@ -24191,6 +24622,47 @@ Schema version literal pinned on every persisted
 
 ***
 
+### HUMAN\_REVIEW\_LOG\_ARTIFACT\_FILENAME
+
+> `const` **HUMAN\_REVIEW\_LOG\_ARTIFACT\_FILENAME**: `"human-review-log.json"`
+
+Canonical filename for the per-run human-review audit log.
+
+***
+
+### HUMAN\_REVIEW\_LOG\_SCHEMA\_VERSION
+
+> `const` **HUMAN\_REVIEW\_LOG\_SCHEMA\_VERSION**: `"1.0.0"`
+
+Schema version pinned on every persisted [HumanReviewLog](#humanreviewlog).
+
+***
+
+### HUMAN\_REVIEW\_POLICY\_WARNING\_RULES
+
+> `const` **HUMAN\_REVIEW\_POLICY\_WARNING\_RULES**: readonly \[`"policy:human-review-sla-breach"`\]
+
+Closed list of `policy:` warning rules emitted by the human-review
+surface. Operators can filter the policy report by these stable codes.
+
+***
+
+### HUMAN\_REVIEW\_QUEUE\_ITEM\_SCHEMA\_VERSION
+
+> `const` **HUMAN\_REVIEW\_QUEUE\_ITEM\_SCHEMA\_VERSION**: `"1.0.0"`
+
+Schema version pinned on every persisted [HumanReviewQueueItem](#humanreviewqueueitem).
+
+***
+
+### HUMAN\_REVIEW\_QUEUE\_VERDICT\_LABELS
+
+> `const` **HUMAN\_REVIEW\_QUEUE\_VERDICT\_LABELS**: readonly \[`"approved"`, `"rejected"`, `"revised"`\]
+
+Closed runtime list of operator-facing review verdict labels.
+
+***
+
 ### HUMAN\_REVIEW\_RATIONALE\_MAX\_CHARS
 
 > `const` **HUMAN\_REVIEW\_RATIONALE\_MAX\_CHARS**: `1024`
@@ -24218,6 +24690,22 @@ reserved for future integration with the live human-review channel.
 Closed runtime list of human-review verdict labels (Issue #2038).
 The reviewer's verdict feeds back into `JudgeConsensusVerdict` and
 may override the panel's verdict.
+
+***
+
+### HUMAN\_REVIEW\_VERDICT\_RATIONALE\_MAX\_CHARS
+
+> `const` **HUMAN\_REVIEW\_VERDICT\_RATIONALE\_MAX\_CHARS**: `4096`
+
+Hard upper bound on the persisted reviewer rationale, in characters.
+
+***
+
+### HUMAN\_REVIEW\_VERDICT\_SCHEMA\_VERSION
+
+> `const` **HUMAN\_REVIEW\_VERDICT\_SCHEMA\_VERSION**: `"1.0.0"`
+
+Schema version pinned on every persisted [HumanReviewVerdict](#humanreviewverdict).
 
 ***
 
@@ -25140,6 +25628,23 @@ Redaction policy bundle version applied before prompt compilation.
 
 ***
 
+### REGION\_ATTESTATION\_REPORT\_ARTIFACT\_FILENAME
+
+> `const` **REGION\_ATTESTATION\_REPORT\_ARTIFACT\_FILENAME**: `"region-attestations.json"`
+
+Canonical filename for the per-run region-attestation report.
+
+***
+
+### REGION\_ATTESTATION\_SCHEMA\_VERSION
+
+> `const` **REGION\_ATTESTATION\_SCHEMA\_VERSION**: `"1.0.0"`
+
+Region-attestation schema version (Issue #2177). Bumped on any breaking
+change to the per-artifact region-attestation envelope or report shape.
+
+***
+
 ### RELEASE\_QUALITY\_GATES\_REPORT\_ARTIFACT\_FILENAME
 
 > `const` **RELEASE\_QUALITY\_GATES\_REPORT\_ARTIFACT\_FILENAME**: `"release-quality-gates.json"`
@@ -25469,6 +25974,15 @@ renaming one bumps [SUBPROCESSOR\_REGISTER\_SCHEMA\_VERSION](#subprocessor_regis
 
 ***
 
+### SUPPORTED\_REGION\_ATTESTATION\_HOSTING\_REGIONS
+
+> `const` **SUPPORTED\_REGION\_ATTESTATION\_HOSTING\_REGIONS**: readonly \[`"eu-central-1"`, `"eu-west-1"`, `"eu-west-3"`, `"eu-north-1"`, `"eu-south-1"`, `"eu-de-1"`, `"eu-fr-1"`, `"switzerland-north"`, `"norway-east"`\]
+
+Closed runtime list of operator-accepted hosting regions for cryptographic
+per-artifact EU data-residency attestations (Issue #2177).
+
+***
+
 ### SUPPORTING\_TEST\_INTENT\_SOURCE\_KINDS
 
 > `const` **SUPPORTING\_TEST\_INTENT\_SOURCE\_KINDS**: readonly \[`"custom_text"`, `"custom_structured"`, `"custom_markdown"`\]
@@ -25623,7 +26137,7 @@ Schema version for persisted `TestDesignModel` projection artifacts.
 
 ### TEST\_INTELLIGENCE\_CONTRACT\_VERSION
 
-> `const` **TEST\_INTELLIGENCE\_CONTRACT\_VERSION**: `"1.27.0"`
+> `const` **TEST\_INTELLIGENCE\_CONTRACT\_VERSION**: `"1.29.0"`
 
 Contract version for the opt-in test-intelligence surface.
 
@@ -26015,7 +26529,7 @@ workspace-dev — Public contracts for autonomous REST + deterministic generatio
 These types define the public API surface for workspace-dev consumers.
 They must not import from internal services.
 
-Contract version: 4.62.0
+Contract version: 4.64.0
 See CONTRACT_CHANGELOG.md for contract change history and VERSIONING.md for
 package-versus-contract versioning policy.
 

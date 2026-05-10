@@ -53,6 +53,16 @@ import {
   TEST_INTELLIGENCE_VERIFY_SEAL_HELP,
   TestIntelligenceRunOperatorError,
 } from "./test-intelligence-run-cli.js";
+import {
+  parseTestIntelligenceReviewDecideArgs,
+  parseTestIntelligenceReviewGetArgs,
+  parseTestIntelligenceReviewListArgs,
+  runTestIntelligenceReviewDecideCommand,
+  runTestIntelligenceReviewGetCommand,
+  runTestIntelligenceReviewListCommand,
+  TEST_INTELLIGENCE_REVIEW_HELP,
+  TestIntelligenceReviewOperatorError,
+} from "./test-intelligence-review-cli.js";
 import path from "node:path";
 
 const DEFAULT_PORT = 1983;
@@ -1157,6 +1167,7 @@ Usage:
   workspace-dev test-intelligence audit-verify <bundle-prefix-or-json>
   workspace-dev test-intelligence verify-provenance <run-dir>
   workspace-dev test-intelligence verify-seal --bundle <path> [--key <path>]
+  workspace-dev test-intelligence review <list|get|decide> [options]
   workspace-dev --help
 
 Run "workspace-dev test-intelligence --help" for the test-intelligence subcommands.
@@ -1420,6 +1431,67 @@ const runTestIntelligenceSubCommand = async (
     });
     process.exit(exitCode);
   }
+  if (subCommand === "review") {
+    const reviewSub = args[1];
+    if (reviewSub === undefined || reviewSub === "--help" || reviewSub === "help") {
+      process.stdout.write(`${TEST_INTELLIGENCE_REVIEW_HELP}\n`);
+      process.exit(reviewSub === undefined ? 1 : 0);
+    }
+    const reviewArgs = args.slice(2);
+    const sink = {
+      stdout: (message: string) => process.stdout.write(message),
+      stderr: (message: string) => process.stderr.write(message),
+    };
+    if (reviewSub === "list") {
+      let parsed;
+      try {
+        parsed = parseTestIntelligenceReviewListArgs(reviewArgs);
+      } catch (err) {
+        if (err instanceof TestIntelligenceReviewOperatorError) {
+          process.stderr.write(`error: ${err.message}\n`);
+          process.exit(1);
+        }
+        throw err;
+      }
+      const code = await runTestIntelligenceReviewListCommand(parsed, sink);
+      process.exit(code);
+    }
+    if (reviewSub === "get") {
+      let parsed;
+      try {
+        parsed = parseTestIntelligenceReviewGetArgs(reviewArgs);
+      } catch (err) {
+        if (err instanceof TestIntelligenceReviewOperatorError) {
+          process.stderr.write(`error: ${err.message}\n`);
+          process.exit(1);
+        }
+        throw err;
+      }
+      const code = await runTestIntelligenceReviewGetCommand(parsed, sink);
+      process.exit(code);
+    }
+    if (reviewSub === "decide") {
+      let parsed;
+      try {
+        parsed = parseTestIntelligenceReviewDecideArgs(reviewArgs);
+      } catch (err) {
+        if (err instanceof TestIntelligenceReviewOperatorError) {
+          process.stderr.write(`error: ${err.message}\n`);
+          process.exit(1);
+        }
+        throw err;
+      }
+      const code = await runTestIntelligenceReviewDecideCommand(parsed, sink);
+      process.exit(code);
+    }
+    process.stderr.write(
+      `error: unknown sub-command for "test-intelligence review": ${reviewSub}\n`,
+    );
+    process.stderr.write(
+      'usage: workspace-dev test-intelligence review <list|get|decide> [options]\n',
+    );
+    process.exit(1);
+  }
   if (subCommand === "verify-provenance" || subCommand === "--verify-provenance") {
     if (args[1] === "--help" || args[1] === "help") {
       process.stdout.write(`${TEST_INTELLIGENCE_VERIFY_PROVENANCE_HELP}\n`);
@@ -1450,7 +1522,7 @@ const runTestIntelligenceSubCommand = async (
       `error: unknown sub-command for "test-intelligence": ${subCommand ?? "(none)"}\n`,
     );
     process.stderr.write(
-      "usage: workspace-dev test-intelligence <run|doctor|audit-dossier|audit-verify|verify-provenance|verify-seal> [options]\n",
+      "usage: workspace-dev test-intelligence <run|doctor|audit-dossier|audit-verify|verify-provenance|verify-seal|review> [options]\n",
     );
     process.exit(1);
   }

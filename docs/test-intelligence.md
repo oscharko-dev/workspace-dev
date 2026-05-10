@@ -224,7 +224,7 @@ production-runner and CLI integrations:
 | `WorkspaceJobInput.jobType`                 | `"figma_to_code"` (default) \| `"figma_to_qc_test_cases"`             |
 | `WorkspaceJobInput.testIntelligenceMode`    | `"deterministic_llm"` \| `"offline_eval"`                            |
 | `ALLOWED_TEST_INTELLIGENCE_MODES`           | `["deterministic_llm", "offline_eval"]`                              |
-| `TEST_INTELLIGENCE_CONTRACT_VERSION`        | `"1.27.0"`                                                           |
+| `TEST_INTELLIGENCE_CONTRACT_VERSION`        | `"1.29.0"`                                                           |
 | `TEST_INTELLIGENCE_PROMPT_TEMPLATE_VERSION` | `"1.7.1"`                                                            |
 | `TEST_INTELLIGENCE_ENV`                     | `"FIGMAPIPE_WORKSPACE_TEST_INTELLIGENCE"`                            |
 
@@ -1299,7 +1299,7 @@ configuration.
 - [CONTRACT_CHANGELOG.md](../CONTRACT_CHANGELOG.md) — authoritative public
   contract surface, including every test-intelligence schema-version constant,
   artifact filename constant, and exported type. Versions `3.21.0` through
-  `4.62.0` cover the test-intelligence subsurface end-to-end.
+  `4.64.0` cover the test-intelligence subsurface end-to-end.
 - [docs/api/contracts/README.md](api/contracts/README.md) — auto-generated
   contract API reference, regenerated from `src/contracts/index.ts` via
   `pnpm run docs:api`. The freshness gate is `pnpm run docs:api:check`.

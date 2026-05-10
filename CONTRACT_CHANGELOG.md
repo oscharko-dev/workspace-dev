@@ -31,6 +31,113 @@ All changes to the public contract surface of `workspace-dev` are documented her
 
 ---
 
+## [1.29.0] - 2026-05-10
+
+Test-intelligence sub-contract bump that accompanies the Issue #2179
+human-oversight review-queue + decision-capture surface. See the
+package-version entry below for the full additive surface inventory;
+the test-intelligence sub-contract bump only mirrors the new schema
+and artifact constants for the queue, verdict, and per-run audit log.
+
+---
+
+## [4.64.0] - 2026-05-10
+
+### Added (Issue #2179 — human-oversight review-queue + decision-capture surface)
+
+- New test-intelligence runtime constants exported from
+  `src/contracts/index.ts`:
+  `HUMAN_REVIEW_QUEUE_ITEM_SCHEMA_VERSION` (`"1.0.0"`),
+  `HUMAN_REVIEW_VERDICT_SCHEMA_VERSION` (`"1.0.0"`),
+  `HUMAN_REVIEW_LOG_SCHEMA_VERSION` (`"1.0.0"`),
+  `HUMAN_REVIEW_LOG_ARTIFACT_FILENAME` (`"human-review-log.json"`),
+  `HUMAN_REVIEW_VERDICT_RATIONALE_MAX_CHARS` (`4096`),
+  `HUMAN_REVIEW_QUEUE_VERDICT_LABELS`
+  (`["approved","rejected","revised"]`), and
+  `HUMAN_REVIEW_POLICY_WARNING_RULES`
+  (`["policy:human-review-sla-breach"]`).
+- New exported types `HumanReviewQueueItem`, `HumanReviewVerdict`,
+  `HumanReviewFilter`, `HumanReviewLog`, `HumanReviewSlaBreachEntry`,
+  `HumanReviewQueueVerdictLabel`, `HumanReviewPolicyWarningRule`, and
+  `JudgeDisagreementSnapshot`. These define the canonical queue-item,
+  signed-verdict, per-tenant filter, per-run audit-log, SLA-breach
+  entry, and inline disagreement-snapshot shapes for the human-
+  oversight surface.
+- New module `src/test-intelligence/human-review-queue.ts` exposing:
+  `enqueueHumanReview`, `fetchPendingReviews`,
+  `recordHumanReviewVerdict`, `getHumanReviewQueueItem`,
+  `loadHumanReviewVerdictsForRun`, `findHumanReviewSlaBreaches`,
+  `buildHumanReviewLog`, `buildSlaBreachPolicyWarning`,
+  `buildVerdictSigningPayload`, `computeHumanReviewItemId`,
+  `hashReviewerPrincipalId`, `createFilesystemQueueStore`, and the
+  `HumanReviewQueueError` class with stable error codes
+  (`E_INVALID_SCHEMA`, `E_INVALID_FIELD`, `E_INVALID_SEGMENT`,
+  `E_INVALID_TIMESTAMP`, `E_INVALID_RATIONALE`, `E_INVALID_VERDICT`,
+  `E_INVALID_KEY`, `E_INVALID_SIGNATURE`, `E_INVALID_SLA`,
+  `E_QUEUE_ITEM_ALREADY_EXISTS`, `E_QUEUE_ITEM_NOT_FOUND`,
+  `E_KEY_FINGERPRINT_MISMATCH`, `E_SIGNATURE_INVALID`).
+- Verdicts are signed with **ed25519** detached signatures over the
+  canonical-JSON serialisation of the verdict body (every field
+  except `signatureHex`). The queue verifies the signature and the
+  SPKI sha256 fingerprint before persisting; tampered verdicts are
+  refused with `E_SIGNATURE_INVALID` / `E_KEY_FINGERPRINT_MISMATCH`.
+- New operator-facing CLI subcommands on the package entrypoint:
+  `workspace-dev test-intelligence review list --tenant <id>
+   [--profile <id>] [--sla-due-by <iso-8601>] [--root <dir>]`,
+  `workspace-dev test-intelligence review get <item-id> --tenant <id>
+   [--root <dir>]`, and
+  `workspace-dev test-intelligence review decide <item-id>
+   --tenant <id> --verdict <approved|rejected|revised>
+   --rationale <md-file> [--revised-tc <json-file>]
+   --sign-key <pem> --decided-at <iso-8601>
+   [--reviewer-principal <stable-id>] [--root <dir>]`.
+- New framework-agnostic HTTP route handlers in
+  `src/test-intelligence/human-review-http-routes.ts`:
+  `handleListQueue`, `handleGetItem`, `handlePostDecision`. Each
+  returns a typed `HumanReviewHttpResponse` (`status`, `headers`,
+  `body`) the host server can adapt to its router of choice.
+  Endpoints: `GET /api/human-review/queue`,
+  `GET /api/human-review/items/:id`,
+  `POST /api/human-review/decisions`.
+- New audit-dossier source-artifact kind: `human_review_log`. The
+  bundle generator picks up `<runDir>/human-review-log.json` when
+  present (additive — runs without human review still bundle), and
+  the manifest's regulator-coverage table now carries an
+  **EU AI Act Art. 14** row that includes `human_review_log` plus a
+  new **DSGVO Art. 22** row (`human_review_log`, `provenance`,
+  `evidence_seal`).
+- New minimal React surface at
+  `ui-src/src/features/human-review/human-review-page.tsx` mounted at
+  `/workspace/ui/human-review`. The UI lists the queue, inspects one
+  item, and accepts pre-signed verdicts pasted by the reviewer. The
+  UI never holds private key material.
+- Per-run `human-review-log.json` artifact written canonical-JSON,
+  byte-stable for byte-identical inputs, and bundled into the W6-1
+  audit-dossier (Issue #2175). Items + verdicts + SLA breaches are
+  sorted by `itemId` so byte-identical inputs always produce
+  byte-identical files.
+- SLA tracking: every queue item carries `slaDeadlineAt`. Items past
+  their deadline that have **no recorded verdict** are surfaced via
+  `findHumanReviewSlaBreaches`; the next run consumes the list to
+  emit a `policy:human-review-sla-breach` policy warning.
+- Replay determinism: `loadHumanReviewVerdictsForRun` returns
+  persisted verdicts for a given run id so the production runner can
+  short-circuit re-prompting / re-judging on replay.
+- New documentation page
+  `docs/test-intelligence/human-oversight.md` describing the legal
+  basis (DSGVO Art. 22, EU AI Act Art. 14, DORA Art. 28), the
+  operational flow, and the on-disk layout.
+- Reference fixtures under `fixtures/test-intelligence/human-review/`.
+- `TEST_INTELLIGENCE_CONTRACT_VERSION` bumped `1.28.0` → `1.29.0`.
+- `CONTRACT_VERSION` bumped `4.63.0` → `4.64.0`.
+- These are additive surface changes; no existing field, type, or
+  command was removed or renamed.
+- `migrationHash:` registration is not required for this release. The
+  signed migration registry carries forward unchanged because no
+  migration id, hash, or rollback semantics changed.
+
+---
+
 ## [4.63.0] - 2026-05-10
 
 ### Added (Issue #2176 — runtime multi-tenant isolation enforcement)
