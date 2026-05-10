@@ -27,6 +27,11 @@ const LazyVisualQualityPage = lazy(async () => {
   return { default: module.VisualQualityPage };
 });
 
+const LazyHumanReviewPage = lazy(async () => {
+  const module = await import("./features/human-review/human-review-page");
+  return { default: module.HumanReviewPage };
+});
+
 const routeFallback = (
   <div aria-hidden="true" className="min-h-screen bg-[#101010]" />
 );
@@ -61,6 +66,14 @@ const appRouter = createBrowserRouter([
     element: (
       <Suspense fallback={routeFallback}>
         <LazyVisualQualityPage />
+      </Suspense>
+    ),
+  },
+  {
+    path: "/workspace/ui/human-review",
+    element: (
+      <Suspense fallback={routeFallback}>
+        <LazyHumanReviewPage />
       </Suspense>
     ),
   },

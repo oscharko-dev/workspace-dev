@@ -21,6 +21,7 @@ import {
   AUDIT_DOSSIER_ARTIFACT_BASENAME,
   AUDIT_DOSSIER_MANIFEST_SCHEMA_VERSION,
   AUDIT_DOSSIER_SIGNATURE_SCHEMA_VERSION,
+  HUMAN_REVIEW_LOG_ARTIFACT_FILENAME,
   PROVENANCE_ARTIFACT_FILENAME,
   REGION_ATTESTATION_REPORT_ARTIFACT_FILENAME,
   TEST_INTELLIGENCE_CONTRACT_VERSION,
@@ -196,8 +197,19 @@ const REGULATOR_COVERAGE: readonly AuditDossierRegulationCoverageEntry[] = [
       "faithfulness_tier",
       "incident_log",
       "self_consistency",
+      "human_review_log",
     ],
-    notes: ["Oversight coverage combines inter-rater protocol, faithfulness, incidents, and arbitration."],
+    notes: [
+      "Oversight coverage combines inter-rater protocol, faithfulness, incidents, arbitration, and the per-run human-review audit trail (Issue #2179).",
+    ],
+  },
+  {
+    regulation: "DSGVO Art. 22",
+    requirement: "Human intervention surface for automated decisions with legal effect",
+    artifactKinds: ["human_review_log", "provenance", "evidence_seal"],
+    notes: [
+      "Per-run human-review log captures the queue items, signed verdicts, and SLA breaches that establish a competent human reviewed every escalated test case before it became a release-decision input (Issue #2179).",
+    ],
   },
   {
     regulation: "GDPR Ch. V",
@@ -639,6 +651,28 @@ export const generateAuditDossier = async (
       bytes: await readFile(policyReportPath),
       json: policyReport,
       sha256: sha256Hex(await readFile(policyReportPath)),
+    });
+  }
+
+  const humanReviewLogPath = join(runDir, HUMAN_REVIEW_LOG_ARTIFACT_FILENAME);
+  const humanReviewLogExists = await stat(humanReviewLogPath)
+    .then(() => true)
+    .catch(() => false);
+  if (humanReviewLogExists) {
+    const humanReviewBytes = await readFile(humanReviewLogPath);
+    const humanReviewJson = JSON.parse(humanReviewBytes.toString("utf8")) as unknown;
+    if (!isRecord(humanReviewJson)) {
+      throw new Error(
+        `${HUMAN_REVIEW_LOG_ARTIFACT_FILENAME} must contain a JSON object.`,
+      );
+    }
+    resolvedArtifacts.set("human_review_log", {
+      kind: "human_review_log",
+      filename: HUMAN_REVIEW_LOG_ARTIFACT_FILENAME,
+      absolutePath: humanReviewLogPath,
+      bytes: humanReviewBytes,
+      json: humanReviewJson,
+      sha256: sha256Hex(humanReviewBytes),
     });
   }
 

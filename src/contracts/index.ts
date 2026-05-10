@@ -4,7 +4,7 @@
  * These types define the public API surface for workspace-dev consumers.
  * They must not import from internal services.
  *
- * Contract version: 4.63.0
+ * Contract version: 4.64.0
  * See CONTRACT_CHANGELOG.md for contract change history and VERSIONING.md for
  * package-versus-contract versioning policy.
  */
@@ -162,7 +162,7 @@ export interface TestIntelligenceTransferPrincipal {
 }
 
 /** Contract version for the opt-in test-intelligence surface. */
-export const TEST_INTELLIGENCE_CONTRACT_VERSION = "1.28.0" as const;
+export const TEST_INTELLIGENCE_CONTRACT_VERSION = "1.29.0" as const;
 
 /**
  * Schema version for generated test case payloads.
@@ -5877,6 +5877,191 @@ export interface JudgeCrossFamilySummary {
   readonly families: readonly JudgeModelFamily[];
   readonly disagreementRate: number;
   readonly escalationRate: number;
+}
+
+// ---------------------------------------------------------------------------
+// Human-review queue + decision-capture surface (Issue #2179).
+//
+// Tier-1 / W6-5 — surfaces the existing `human_review` agent role
+// (Issue #2038) as a queryable per-tenant queue + a signed verdict-capture
+// surface so a competent human operator can satisfy DSGVO Art. 22
+// ("automated decisions with significant legal effect") and EU AI Act
+// Art. 14 ("human oversight") for banking-test generation runs.
+//
+// Verdicts are signed (ed25519) by the reviewer's key, deterministically
+// hashed via the principal-hash convention from `human-review-agent.ts`,
+// and persisted into:
+//
+//   - `human-review-log.json` per run (audit trail).
+//   - `provenance.jsonld` (PROV `wasInformedBy` link from the verdict to
+//     the original judge-disagreement artifact).
+//   - `run-quality.json` (verdict reference attached to the case decision).
+//
+// Replay determinism: re-running a job that previously had a verdict
+// reuses the persisted verdict — no re-prompting the LLM, no re-judging.
+// SLA tracking: every queue item carries `slaDeadlineAt`; expired items
+// surface a `policy:human-review-sla-breach` warning at next run.
+// ---------------------------------------------------------------------------
+
+/** Schema version pinned on every persisted {@link HumanReviewQueueItem}. */
+export const HUMAN_REVIEW_QUEUE_ITEM_SCHEMA_VERSION = "1.0.0" as const;
+
+/** Schema version pinned on every persisted {@link HumanReviewVerdict}. */
+export const HUMAN_REVIEW_VERDICT_SCHEMA_VERSION = "1.0.0" as const;
+
+/** Schema version pinned on every persisted {@link HumanReviewLog}. */
+export const HUMAN_REVIEW_LOG_SCHEMA_VERSION = "1.0.0" as const;
+
+/** Canonical filename for the per-run human-review audit log. */
+export const HUMAN_REVIEW_LOG_ARTIFACT_FILENAME =
+  "human-review-log.json" as const;
+
+/** Hard upper bound on the persisted reviewer rationale, in characters. */
+export const HUMAN_REVIEW_VERDICT_RATIONALE_MAX_CHARS = 4096 as const;
+
+/** Closed runtime list of operator-facing review verdict labels. */
+export const HUMAN_REVIEW_QUEUE_VERDICT_LABELS = [
+  "approved",
+  "rejected",
+  "revised",
+] as const;
+
+/** Discriminated alias for {@link HUMAN_REVIEW_QUEUE_VERDICT_LABELS}. */
+export type HumanReviewQueueVerdictLabel =
+  (typeof HUMAN_REVIEW_QUEUE_VERDICT_LABELS)[number];
+
+/**
+ * Closed list of `policy:` warning rules emitted by the human-review
+ * surface. Operators can filter the policy report by these stable codes.
+ */
+export const HUMAN_REVIEW_POLICY_WARNING_RULES = [
+  "policy:human-review-sla-breach",
+] as const;
+
+export type HumanReviewPolicyWarningRule =
+  (typeof HUMAN_REVIEW_POLICY_WARNING_RULES)[number];
+
+/**
+ * Inline disagreement snapshot pinned on each queue item. Carries only
+ * the deterministic identifying fields from {@link JudgeDisagreementReport}
+ * — never raw prompts, never PII — so a queue item can be inspected and
+ * replayed without re-loading the full disagreement artifact.
+ */
+export interface JudgeDisagreementSnapshot {
+  /** Cross-family decision label that triggered escalation. */
+  readonly decision: JudgeDisagreementDecisionLabel;
+  /** Escalation action recorded by the disagreement detector. */
+  readonly escalation: JudgeDisagreementEscalationAction;
+  /** Disagreement rate in [0,1] = dissenting-judge-count / panel-size. */
+  readonly disagreementRate: number;
+  /** Per-judge entries sorted alphabetically by `judgeId`. */
+  readonly judges: readonly JudgeDisagreementJudgeEntry[];
+}
+
+/**
+ * One pending case that requires human oversight before the run can
+ * advance. The producer (the harness) writes one of these per
+ * disagreement-escalated case; the reviewer surface (CLI / minimal UI)
+ * fetches them and emits a {@link HumanReviewVerdict}.
+ *
+ * Hard invariants:
+ *
+ *   - `itemId` is stable across replays for the same logical case so
+ *     verdicts can be re-located on re-run without an external index.
+ *   - `tenantId` matches the active {@link TenantScope}; the queue is
+ *     partitioned per-tenant and never returns cross-tenant items.
+ *   - `enqueuedAt` and `slaDeadlineAt` are strict ISO-8601 strings; the
+ *     module is clock-free.
+ *   - `proposedDecision` records what the harness would have done in the
+ *     absence of human input — useful for SLA-breach defaulting and for
+ *     reviewer context.
+ */
+export interface HumanReviewQueueItem {
+  readonly schemaVersion: typeof HUMAN_REVIEW_QUEUE_ITEM_SCHEMA_VERSION;
+  readonly contractVersion: typeof TEST_INTELLIGENCE_CONTRACT_VERSION;
+  readonly itemId: string;
+  readonly tenantId: string;
+  readonly profileId: string;
+  readonly runId: string;
+  readonly testCaseId: string;
+  readonly judgeDisagreement: JudgeDisagreementSnapshot;
+  readonly proposedDecision: TestCasePolicyDecision;
+  readonly enqueuedAt: string;
+  readonly slaDeadlineAt: string;
+}
+
+/**
+ * Persisted human verdict for a {@link HumanReviewQueueItem}. The
+ * verdict carries a detached ed25519 signature over the canonical-JSON
+ * serialisation of the verdict body (every field except `signatureHex`)
+ * so the queue can verify reviewer identity and detect tampering before
+ * persisting the decision into the run record.
+ */
+export interface HumanReviewVerdict {
+  readonly schemaVersion: typeof HUMAN_REVIEW_VERDICT_SCHEMA_VERSION;
+  readonly contractVersion: typeof TEST_INTELLIGENCE_CONTRACT_VERSION;
+  readonly itemId: string;
+  readonly reviewerPrincipalHash: string;
+  readonly verdict: HumanReviewQueueVerdictLabel;
+  /** Length-capped, redacted rationale (no chain-of-thought, no PII). */
+  readonly rationale: string;
+  /**
+   * Optional revised test case the reviewer wishes to substitute for the
+   * proposed decision. Only meaningful when `verdict === "revised"`.
+   * Stored as an opaque JSON object — the queue does not validate the
+   * inner `GeneratedTestCase` shape (the consumer does).
+   */
+  readonly revisedTestCase?: Readonly<Record<string, unknown>>;
+  readonly decidedAt: string;
+  /** Detached ed25519 signature, lowercase hex (128 chars). */
+  readonly signatureHex: string;
+  /** SPKI-DER sha256 hex of the reviewer's public key. */
+  readonly publicKeyFingerprintSha256: string;
+  /** PEM-encoded SPKI public key the signature can be verified against. */
+  readonly publicKeyPem: string;
+}
+
+/** Filter shape consumed by the queue-fetch surface. */
+export interface HumanReviewFilter {
+  readonly tenantId: string;
+  readonly profileId?: string;
+  /**
+   * Optional inclusive upper bound on `slaDeadlineAt`. ISO-8601 string;
+   * items with `slaDeadlineAt <= slaDueBy` are returned.
+   */
+  readonly slaDueBy?: string;
+}
+
+/**
+ * Per-run audit log capturing the queue items that were created during
+ * the run and any verdicts that were recorded against them. The log is
+ * canonical-JSON, byte-stable for byte-identical inputs, and bundled
+ * into the W6-1 audit-dossier (Issue #2175) so a regulator can replay
+ * the human-oversight chain.
+ */
+export interface HumanReviewLog {
+  readonly schemaVersion: typeof HUMAN_REVIEW_LOG_SCHEMA_VERSION;
+  readonly contractVersion: typeof TEST_INTELLIGENCE_CONTRACT_VERSION;
+  readonly jobId: string;
+  readonly tenantId: string;
+  readonly generatedAt: string;
+  /** Items sorted alphabetically by `itemId`. */
+  readonly items: readonly HumanReviewQueueItem[];
+  /** Verdicts sorted alphabetically by `itemId`. */
+  readonly verdicts: readonly HumanReviewVerdict[];
+  /**
+   * Items whose `slaDeadlineAt` had elapsed at log-emission time.
+   * Drives the `policy:human-review-sla-breach` warning on the next run.
+   */
+  readonly slaBreaches: readonly HumanReviewSlaBreachEntry[];
+}
+
+/** One SLA-breach entry surfaced for the next run's policy report. */
+export interface HumanReviewSlaBreachEntry {
+  readonly itemId: string;
+  readonly testCaseId: string;
+  readonly slaDeadlineAt: string;
+  readonly observedAt: string;
 }
 
 /** Schema version for persisted production-runner run-quality artifacts. */
@@ -12752,6 +12937,7 @@ export const ALLOWED_AUDIT_DOSSIER_ARTIFACT_KINDS = [
   "self_consistency",
   "evidence_seal",
   "policy_report",
+  "human_review_log",
 ] as const;
 
 export type AuditDossierManifestArtifactKind =
@@ -12858,7 +13044,7 @@ export interface AuditDossierSignature {
  * Must be bumped according to CONTRACT_CHANGELOG.md rules.
  * Package version alignment is documented in VERSIONING.md.
  */
-export const CONTRACT_VERSION = "4.63.0" as const;
+export const CONTRACT_VERSION = "4.64.0" as const;
 
 // ---------------------------------------------------------------------------
 // Issue #1774 — UntrustedContentNormalizer (2025-vintage injection carriers).

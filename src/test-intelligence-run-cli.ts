@@ -4520,6 +4520,7 @@ Usage:
   workspace-dev test-intelligence audit-verify <bundle-prefix-or-json>
   workspace-dev test-intelligence verify-provenance <run-dir>
   workspace-dev test-intelligence verify-seal --bundle <path> [--key <path>]
+  workspace-dev test-intelligence review <list|get|decide> [options]
 
 Run "workspace-dev test-intelligence run --help" for the live-run flags.
 Run "workspace-dev test-intelligence doctor --help" for the topology doctor flags.
@@ -4527,4 +4528,5 @@ Run "workspace-dev test-intelligence audit-dossier --help" for bundle generation
 Run "workspace-dev test-intelligence audit-verify --help" for bundle verification.
 Run "workspace-dev test-intelligence verify-provenance --help" for provenance verification.
 Run "workspace-dev test-intelligence verify-seal --help" for self-contained seal verification.
+Run "workspace-dev test-intelligence review --help" for the human-oversight queue (Issue #2179).
 `;

@@ -1,0 +1,51 @@
+{
+  "contractVersion": "1.29.0",
+  "generatedAt": "2026-05-10T11:00:00.000Z",
+  "items": [
+    {
+      "contractVersion": "1.29.0",
+      "enqueuedAt": "2026-05-10T09:00:00.000Z",
+      "itemId": "5b21e2d4d3aa01b3c19e9a86bdaa44c5",
+      "judgeDisagreement": {
+        "decision": "split_decision",
+        "disagreementRate": 0.6666666666666666,
+        "escalation": "human_review_required",
+        "judges": [
+          {
+            "family": "azure-openai",
+            "judgeId": "logic_judge",
+            "modelId": "gpt-oss-120b",
+            "promptVersion": "v1.0.0",
+            "region": "westeurope",
+            "verdict": "accept"
+          }
+        ]
+      },
+      "profileId": "default",
+      "proposedDecision": "needs_review",
+      "runId": "ti-cli-fixture-2179",
+      "schemaVersion": "1.0.0",
+      "slaDeadlineAt": "2026-05-11T09:00:00.000Z",
+      "tenantId": "acme",
+      "testCaseId": "tc-bank-transfer-low-confidence"
+    }
+  ],
+  "jobId": "ti-cli-fixture-2179",
+  "schemaVersion": "1.0.0",
+  "slaBreaches": [],
+  "tenantId": "acme",
+  "verdicts": [
+    {
+      "contractVersion": "1.29.0",
+      "decidedAt": "2026-05-10T10:00:00.000Z",
+      "itemId": "5b21e2d4d3aa01b3c19e9a86bdaa44c5",
+      "publicKeyFingerprintSha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "publicKeyPem": "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEA0000000000000000000000000000000000000000000000\n-----END PUBLIC KEY-----",
+      "rationale": "Approved per DSGVO Art. 22 + EU AI Act Art. 14 oversight checklist; reviewer confirmed test case correctly enforces banking transfer limits.",
+      "reviewerPrincipalHash": "1111111111111111111111111111111111111111111111111111111111111111",
+      "schemaVersion": "1.0.0",
+      "signatureHex": "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+      "verdict": "approved"
+    }
+  ]
+}
