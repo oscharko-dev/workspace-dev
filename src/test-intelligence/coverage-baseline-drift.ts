@@ -44,6 +44,7 @@ import type {
   TestCasePolicyViolation,
 } from "../contracts/index.js";
 import { canonicalJson } from "./content-hash.js";
+import { recordTenantIdRead } from "./tenant-isolation-guard.js";
 
 /** Schema version pinned on every persisted coverage-baseline record. */
 export const COVERAGE_BASELINE_SCHEMA_VERSION = "1.0.0" as const;
@@ -234,6 +235,10 @@ export interface LoadCoverageBaselineInput extends CoverageBaselinePathInput {
 export const loadCoverageBaseline = async (
   input: LoadCoverageBaselineInput,
 ): Promise<CoverageBaselineRecord | undefined> => {
+  // Issue #2176 — runtime tenant-isolation guard. If a per-run scope is
+  // active via AsyncLocalStorage, asserts that the input's `tenantId`
+  // matches that scope before any disk I/O.
+  recordTenantIdRead("coverage-baseline.load", input.tenantId);
   const path = coverageBaselinePath(input);
   let raw: string;
   try {
@@ -295,6 +300,7 @@ export interface WriteCoverageBaselineInput extends CoverageBaselinePathInput {
 export const writeCoverageBaseline = async (
   input: WriteCoverageBaselineInput,
 ): Promise<string> => {
+  recordTenantIdRead("coverage-baseline.write", input.tenantId);
   if (input.record.tenantId !== input.tenantId) {
     throw new Error(
       `coverage-baseline-drift: record.tenantId "${input.record.tenantId}" ` +

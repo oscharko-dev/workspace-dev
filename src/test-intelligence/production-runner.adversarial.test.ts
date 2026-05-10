@@ -395,8 +395,17 @@ test("production runner adversarial: corrupted persistent replay-cache entries a
       gatewayRelease: "mock",
       responder: okResponder([SAMPLE_DRAFT]),
     });
+    // Issue #2176 — the persistent replay cache is constructed with
+    // `tenant-a/prod`; the runner must execute under the matching
+    // tenant scope so the runtime-isolation guard does not crash on
+    // the lookup path. This adversarial test targets the corrupted-
+    // entry refusal, not a cross-tenant mismatch.
+    const replayCacheTenantScope = {
+      tenantId: "tenant-a",
+      environmentId: "prod",
+    };
     const replayCache = createPersistentReplayCache(cacheRoot, {
-      tenantScope: { tenantId: "tenant-a", environmentId: "prod" },
+      tenantScope: replayCacheTenantScope,
     });
     await runFigmaToQcTestCases({
       jobId: "job-cache-poison",
@@ -405,6 +414,7 @@ test("production runner adversarial: corrupted persistent replay-cache entries a
       outputRoot: tempRoot,
       llm: { client },
       replayCache,
+      replayCacheTenantScope,
       generation: { diversityPasses: 1 },
       // Persistent replay-cache adversarial test — opt out of the
       // second Logic-Judge LLM call so `client.callCount()` remains
@@ -423,6 +433,7 @@ test("production runner adversarial: corrupted persistent replay-cache entries a
         outputRoot: tempRoot,
         llm: { client },
         replayCache,
+        replayCacheTenantScope,
         generation: { diversityPasses: 1 },
         logicJudge: { enabled: false },
       }),
@@ -437,6 +448,120 @@ test("production runner adversarial: corrupted persistent replay-cache entries a
   } finally {
     await rm(tempRoot, { recursive: true, force: true });
     await rm(cacheRoot, { recursive: true, force: true });
+  }
+});
+
+test("production runner adversarial: cross-tenant replay-cache misconfiguration aborts the run with TenantIsolationViolation (Issue #2176)", async () => {
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ti-runner-tiso-"));
+  const cacheRoot = await mkdtemp(path.join(os.tmpdir(), "ti-runner-cache-"));
+  try {
+    const client = createMockLlmGatewayClient({
+      role: "test_generation",
+      deployment: "gpt-oss-120b-mock",
+      modelRevision: "mock-1",
+      gatewayRelease: "mock",
+      responder: okResponder([SAMPLE_DRAFT]),
+    });
+    // Cache constructed against tenant-a; runner executes under tenant-b.
+    // The runtime guard must crash on the lookup path before any bytes
+    // from tenant-a's directory could be returned to tenant-b's run.
+    const replayCache = createPersistentReplayCache(cacheRoot, {
+      tenantScope: { tenantId: "tenant-a", environmentId: "prod" },
+    });
+    await assert.rejects(
+      runFigmaToQcTestCases({
+        jobId: "job-cross-tenant-redteam",
+        generatedAt: "2026-05-10T10:00:00Z",
+        source: { kind: "figma_rest_file", file: buildFile() },
+        outputRoot: tempRoot,
+        llm: { client },
+        replayCache,
+        replayCacheTenantScope: {
+          tenantId: "tenant-b",
+          environmentId: "prod",
+        },
+        generation: { diversityPasses: 1 },
+        logicJudge: { enabled: false },
+      }),
+      (err: unknown) => {
+        const e = err as {
+          name?: string;
+          code?: string;
+          operation?: string;
+          message?: string;
+        };
+        assert.equal(e.name, "TenantIsolationViolation");
+        assert.equal(e.code, "TENANT_ISOLATION_VIOLATION");
+        assert.equal(e.operation, "replay-cache.lookup");
+        return true;
+      },
+    );
+  } finally {
+    await rm(tempRoot, { recursive: true, force: true });
+    await rm(cacheRoot, { recursive: true, force: true });
+  }
+});
+
+test("production runner adversarial: tenant-isolation-attestation.json is emitted and pinned in provenance.jsonld (Issue #2176)", async () => {
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ti-runner-tiso-"));
+  try {
+    const client = createMockLlmGatewayClient({
+      role: "test_generation",
+      deployment: "gpt-oss-120b-mock",
+      modelRevision: "mock-1",
+      gatewayRelease: "mock",
+      responder: okResponder([SAMPLE_DRAFT]),
+    });
+    const tenantScope = {
+      tenantId: "bank-acme",
+      environmentId: "prod",
+    };
+    const result = await runFigmaToQcTestCases({
+      jobId: "job-tenant-attestation",
+      generatedAt: "2026-05-10T10:00:00Z",
+      source: { kind: "figma_rest_file", file: buildFile() },
+      outputRoot: tempRoot,
+      llm: { client },
+      replayCacheTenantScope: tenantScope,
+      generation: { diversityPasses: 1 },
+      logicJudge: { enabled: false },
+    });
+    const artifactDir = result.artifactDir;
+    const attestationPath = join(
+      artifactDir,
+      "tenant-isolation-attestation.json",
+    );
+    const attestationRaw = await readFile(attestationPath, "utf8");
+    const attestation = JSON.parse(attestationRaw) as {
+      schemaVersion: string;
+      tenantScope: { tenantId: string; environmentId: string };
+      attestationSha256: string;
+      readCount: number;
+      certification: string;
+    };
+    assert.equal(attestation.schemaVersion, "1.0.0");
+    assert.equal(attestation.tenantScope.tenantId, "bank-acme");
+    assert.equal(attestation.tenantScope.environmentId, "prod");
+    assert.equal(
+      attestation.certification,
+      "no cross-tenant persistent-store read occurred during this run",
+    );
+    assert.match(attestation.attestationSha256, /^[0-9a-f]{64}$/u);
+
+    const provenancePath = join(artifactDir, "provenance.jsonld");
+    const provenance = JSON.parse(
+      await readFile(provenancePath, "utf8"),
+    ) as Record<string, unknown>;
+    assert.equal(
+      provenance["ti:tenantIsolationAttestationSha256"],
+      attestation.attestationSha256,
+    );
+    assert.deepEqual(provenance["ti:tenantScope"], {
+      tenantId: "bank-acme",
+      environmentId: "prod",
+    });
+  } finally {
+    await rm(tempRoot, { recursive: true, force: true });
   }
 });
 

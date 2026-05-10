@@ -39,6 +39,8 @@ import {
 } from "node:fs/promises";
 import { isAbsolute, join, resolve, sep } from "node:path";
 
+import { recordActiveTenantRead } from "./tenant-isolation-guard.js";
+
 // ---------------------------------------------------------------------------
 // Schema constants
 // ---------------------------------------------------------------------------
@@ -857,6 +859,12 @@ export const scanLessons = async (input: {
   readonly runDir: string;
   readonly nowMs: number;
 }): Promise<readonly AgentLessonRecord[]> => {
+  // Issue #2176 — record this read against the active per-run tenant
+  // scope (if any) for the tenant-isolation-attestation artifact. The
+  // lessons store is tenant-scoped *implicitly* via runDir, so the
+  // crash-on-mismatch guarantee comes from the AsyncLocalStorage
+  // boundary set up by the production runner.
+  recordActiveTenantRead("agent-lessons.scan");
   const dir = lessonsDirPath(input.runDir);
   let entries: readonly string[];
   try {

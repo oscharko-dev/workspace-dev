@@ -60,6 +60,7 @@ import type {
 } from "../contracts/index.js";
 import { canonicalJson } from "./content-hash.js";
 import type { IntentDerivationFigmaInput } from "./intent-derivation.js";
+import { recordTenantIdRead } from "./tenant-isolation-guard.js";
 
 export const DISTRIBUTION_SHIFT_SCHEMA_VERSION = "1.0.0" as const;
 
@@ -586,6 +587,8 @@ export const loadDistributionShiftBaselineState = async (input: {
   policyProfileId: string;
   fixtureSuiteId: string;
 }): Promise<DistributionShiftBaselineState> => {
+  // Issue #2176 — runtime tenant-isolation guard.
+  recordTenantIdRead("distribution-shift.load", input.tenantId);
   const path = distributionShiftBaselinePath(input);
   try {
     const raw = await readFile(path, "utf8");
@@ -634,6 +637,7 @@ export const writeDistributionShiftBaselineState = async (input: {
   fixtureSuiteId: string;
   state: DistributionShiftBaselineState;
 }): Promise<string> => {
+  recordTenantIdRead("distribution-shift.write", input.tenantId);
   const outputPath = distributionShiftBaselinePath(input);
   await mkdir(dirname(outputPath), { recursive: true });
   const tempPath = `${outputPath}.${randomUUID()}.tmp`;

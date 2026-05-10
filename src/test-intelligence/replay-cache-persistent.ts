@@ -25,6 +25,7 @@ import {
   resolveTenantScopeSegments,
   type ReplayCache,
 } from "./replay-cache.js";
+import { recordPersistentStoreRead } from "./tenant-isolation-guard.js";
 
 /** Default maximum disk budget for the persistent replay cache (100 MiB). */
 export const DEFAULT_PERSISTENT_REPLAY_CACHE_BYTE_BUDGET: number =
@@ -114,6 +115,11 @@ export const createPersistentReplayCache = (
 
     lookup: async (key: ReplayCacheKey) => {
       const digest = computeReplayCacheKeyDigest(key);
+      // Issue #2176 — runtime tenant-isolation guard. Asserts that the
+      // active AsyncLocalStorage scope (if any) matches the cache's
+      // construction-time scope before we even touch the disk; a
+      // mismatch throws TenantIsolationViolation and aborts the run.
+      recordPersistentStoreRead("replay-cache.lookup", tenantScope);
       const path = fileFor(digest);
       let raw: string;
       try {
@@ -157,6 +163,7 @@ export const createPersistentReplayCache = (
 
     store: async (key: ReplayCacheKey, testCases: GeneratedTestCaseList) => {
       const digest = computeReplayCacheKeyDigest(key);
+      recordPersistentStoreRead("replay-cache.store", tenantScope);
       const validation = validateGeneratedTestCaseList(testCases);
       if (!validation.valid) {
         throw new ReplayCacheValidationError(
