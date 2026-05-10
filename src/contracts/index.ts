@@ -4,7 +4,7 @@
  * These types define the public API surface for workspace-dev consumers.
  * They must not import from internal services.
  *
- * Contract version: 4.41.0
+ * Contract version: 4.62.0
  * See CONTRACT_CHANGELOG.md for contract change history and VERSIONING.md for
  * package-versus-contract versioning policy.
  */
@@ -162,7 +162,7 @@ export interface TestIntelligenceTransferPrincipal {
 }
 
 /** Contract version for the opt-in test-intelligence surface. */
-export const TEST_INTELLIGENCE_CONTRACT_VERSION = "1.26.0" as const;
+export const TEST_INTELLIGENCE_CONTRACT_VERSION = "1.27.0" as const;
 
 /**
  * Schema version for generated test case payloads.
@@ -12621,12 +12621,137 @@ export interface ReleaseQualityGatesReport {
   readonly passed: boolean;
 }
 
+// ---------------------------------------------------------------------------
+// Audit dossier bundle surface (Issue #2175).
+// ---------------------------------------------------------------------------
+
+/** Canonical basename shared by audit-dossier bundle files. */
+export const AUDIT_DOSSIER_ARTIFACT_BASENAME = "audit-dossier" as const;
+
+/** Schema version for the canonical machine-readable dossier manifest. */
+export const AUDIT_DOSSIER_MANIFEST_SCHEMA_VERSION = "1.0.0" as const;
+
+/** Schema version for the detached audit-dossier signature envelope. */
+export const AUDIT_DOSSIER_SIGNATURE_SCHEMA_VERSION = "1.0.0" as const;
+
+/** Closed list of source-artifact roles tracked by the dossier manifest. */
+export const ALLOWED_AUDIT_DOSSIER_ARTIFACT_KINDS = [
+  "model_card",
+  "provenance",
+  "compliance_coverage",
+  "compliance_annotations",
+  "judge_calibration",
+  "locale_calibration",
+  "inter_rater_agreement",
+  "drift_baseline",
+  "incident_log",
+  "subprocessor_register",
+  "finops_budget",
+  "faithfulness_tier",
+  "self_consistency",
+  "evidence_seal",
+  "policy_report",
+] as const;
+
+export type AuditDossierManifestArtifactKind =
+  (typeof ALLOWED_AUDIT_DOSSIER_ARTIFACT_KINDS)[number];
+
+/**
+ * One attested input artifact consumed while assembling the dossier
+ * bundle. The manifest carries only filenames, sizes, and digests —
+ * never raw prompts, screenshots, secrets, or PII-bearing payloads.
+ */
+export interface AuditDossierManifestArtifactRef {
+  readonly kind: AuditDossierManifestArtifactKind;
+  readonly filename: string;
+  readonly sha256: string;
+  readonly bytes: number;
+}
+
+/** One provenance-leaf witness carried so the bundle can self-verify. */
+export interface AuditDossierProvenanceLeafHash {
+  readonly reference: string;
+  readonly hash: string;
+}
+
+/** One regulator/article row in the human-readable evidence table. */
+export interface AuditDossierRegulationCoverageEntry {
+  readonly regulation: string;
+  readonly requirement: string;
+  readonly artifactKinds: readonly AuditDossierManifestArtifactKind[];
+  readonly notes: readonly string[];
+}
+
+/**
+ * Deterministic machine-readable dossier manifest. It is the canonical
+ * signed payload; the PDF is a human-readable rendering of this surface.
+ */
+export interface AuditDossierManifest {
+  readonly schemaVersion: typeof AUDIT_DOSSIER_MANIFEST_SCHEMA_VERSION;
+  readonly contractVersion: typeof TEST_INTELLIGENCE_CONTRACT_VERSION;
+  readonly generatedAt: string;
+  readonly runId: string;
+  readonly bundle: {
+    readonly jsonFilename: string;
+    readonly signatureFilename: string;
+    readonly pdfFilename: string;
+    readonly merkleProofFilename: string;
+  };
+  readonly signing: {
+    readonly algorithm: "ed25519";
+    readonly keyFingerprintSha256: string;
+    readonly publicKeyPem: string;
+    readonly manifestSha256: string;
+  };
+  readonly provenance: {
+    readonly algorithm: string;
+    readonly merkleRoot: string;
+    readonly leafCount: number;
+    readonly leafHashes: readonly AuditDossierProvenanceLeafHash[];
+    readonly merkleProofSha256: string;
+  };
+  readonly sourceArtifacts: readonly AuditDossierManifestArtifactRef[];
+  readonly regulatorCoverage: readonly AuditDossierRegulationCoverageEntry[];
+  readonly summary: {
+    readonly harnessVersion: string;
+    readonly gitSha: string;
+    readonly benchmarkProtocolVersion: string;
+    readonly ictRegisterRefs: readonly string[];
+    readonly policyProfileId: string;
+    readonly modelCardId: string;
+    readonly complianceFrameworkCount: number;
+    readonly complianceAnnotationCount: number;
+    readonly calibrationSampleCount: number;
+    readonly localeCurveCount: number;
+    readonly interRaterFailureCount: number;
+    readonly driftFindingCount: number;
+    readonly incidentCount: number;
+    readonly subprocessorCount: number;
+    readonly faithfulnessMismatchCount: number;
+    readonly selfConsistencyTargetCount: number;
+    readonly provenanceRoot: string;
+    readonly provenanceLeafCount: number;
+    readonly merkleProofSha256: string;
+    readonly runId: string;
+  };
+}
+
+/** Detached Ed25519 signature metadata stored alongside the manifest. */
+export interface AuditDossierSignature {
+  readonly schemaVersion: typeof AUDIT_DOSSIER_SIGNATURE_SCHEMA_VERSION;
+  readonly algorithm: "ed25519";
+  readonly keyFingerprintSha256: string;
+  readonly publicKeyPem: string;
+  readonly manifestSha256: string;
+  readonly signatureBase64: string;
+}
+
 /**
  * Current contract version constant.
  * Must be bumped according to CONTRACT_CHANGELOG.md rules.
  * Package version alignment is documented in VERSIONING.md.
  */
-export const CONTRACT_VERSION = "4.60.0" as const;
+export const CONTRACT_VERSION = "4.62.0" as const;
 
 // ---------------------------------------------------------------------------
 // Issue #1774 — UntrustedContentNormalizer (2025-vintage injection carriers).

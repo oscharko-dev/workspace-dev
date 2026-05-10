@@ -12,12 +12,16 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
+import { fileURLToPath } from "node:url";
 
 import {
+  parseTestIntelligenceAuditDossierArgs,
+  parseTestIntelligenceAuditVerifyArgs,
   parseTestIntelligenceVerifyProvenanceArgs,
   buildLiveVisualSidecarBundle,
   parseTestIntelligenceDoctorArgs,
   parseTestIntelligenceRunArgs,
+  runTestIntelligenceAuditVerifyCommand,
   runTestIntelligenceDoctorCommand,
   runTestIntelligenceCommand,
   runTestIntelligenceVerifyProvenanceCommand,
@@ -3279,6 +3283,43 @@ test("parseTestIntelligenceVerifyProvenanceArgs: accepts explicit flag form", ()
     "/tmp/run-dir",
   ]);
   assert.equal(parsed.runDir, "/tmp/run-dir");
+});
+
+test("parseTestIntelligenceAuditDossierArgs: reads run dir, output, and env signing key", () => {
+  const parsed = parseTestIntelligenceAuditDossierArgs(
+    ["--run-dir", "/tmp/run", "--output", "/tmp/out"],
+    { WORKSPACE_TEST_SPACE_AUDIT_SIGN_KEY: "/tmp/key.pem" },
+  );
+  assert.deepEqual(parsed, {
+    runDir: "/tmp/run",
+    outputDir: "/tmp/out",
+    signKeyPath: "/tmp/key.pem",
+  });
+});
+
+test("parseTestIntelligenceAuditVerifyArgs: accepts positional bundle form", () => {
+  const parsed = parseTestIntelligenceAuditVerifyArgs(["/tmp/bundle.json"]);
+  assert.equal(parsed.bundle, "/tmp/bundle.json");
+});
+
+test("runTestIntelligenceAuditVerifyCommand: returns 0 for the fixture bundle", async () => {
+  const { sink, stdout, stderr } = collectingSink();
+  const fixtureBundle = path.resolve(
+    path.dirname(fileURLToPath(import.meta.url)),
+    "..",
+    "fixtures",
+    "test-intelligence",
+    "audit-dossiers",
+    "expected-bundle",
+    "ti-cli-1778405189341-audit-dossier.json",
+  );
+  const exitCode = await runTestIntelligenceAuditVerifyCommand(
+    { bundle: fixtureBundle },
+    sink,
+  );
+  assert.equal(exitCode, 0);
+  assert.match(stdout.join(""), /audit dossier verified/i);
+  assert.equal(stderr.length, 0);
 });
 
 test("runTestIntelligenceVerifyProvenanceCommand: returns 0 for a valid provenance bundle", async () => {

@@ -168,6 +168,21 @@ attempt is also rolled into the `byRole.test_generation` counters —
 both judge and generator share the `test_generation` FinOps role
 because they consume the same role-level budget envelope.
 
+For post-run regulator export, the same operator shell can package an accepted
+run directory into a signed audit bundle and verify it offline:
+
+```bash
+workspace-dev test-intelligence audit-dossier \
+  --run-dir <artifactRoot>/<jobId> \
+  --output <bundleDir>
+
+workspace-dev test-intelligence audit-verify \
+  --bundle <bundleDir>/<jobId>-audit-dossier.json
+```
+
+The full workflow, required artifacts, and fixture-backed example are
+documented in `docs/test-intelligence/audit-dossier.md`.
+
 Faithfulness-judge swap is out of scope here: the faithfulness path
 is already model-distinct via `bundle.visualPrimary` /
 `bundle.visualFallback`.

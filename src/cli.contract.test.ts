@@ -1061,6 +1061,8 @@ test("cli contract: test-intelligence --help prints the available subcommands", 
   assert.equal(result.exitCode, 0, result.stderr);
   assert.match(result.stdout, /test-intelligence run/i);
   assert.match(result.stdout, /test-intelligence doctor/i);
+  assert.match(result.stdout, /audit-dossier/i);
+  assert.match(result.stdout, /audit-verify/i);
 });
 
 test("cli contract: test-intelligence run --help prints all required flags", async () => {
@@ -1095,6 +1097,17 @@ test("cli contract: test-intelligence doctor --help prints doctor flags", async 
   assert.match(result.stdout, /--logic-judge-deployment/i);
   assert.match(result.stdout, /--visual-primary-deployment/i);
   assert.match(result.stdout, /--a11y-judge-deployment/i);
+});
+
+test("cli contract: test-intelligence audit-dossier --help prints bundle flags", async () => {
+  const result = await runCliToExit({
+    args: ["test-intelligence", "audit-dossier", "--help"],
+  });
+  assert.equal(result.exitCode, 0, result.stderr);
+  assert.match(result.stdout, /--run-dir/i);
+  assert.match(result.stdout, /--output/i);
+  assert.match(result.stdout, /--sign-key/i);
+  assert.match(result.stdout, /WORKSPACE_TEST_SPACE_AUDIT_SIGN_KEY/i);
 });
 
 test("cli contract: test-intelligence run --enable-visual-sidecar fails closed when visual envs are missing", async () => {

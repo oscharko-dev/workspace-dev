@@ -31,6 +31,57 @@ All changes to the public contract surface of `workspace-dev` are documented her
 
 ---
 
+## [4.62.0] - 2026-05-10
+
+### Added (Issue #2175 — regulator-ready audit-dossier bundle generation and verification)
+
+- New test-intelligence runtime constants exported from
+  `src/contracts/index.ts`:
+  `AUDIT_DOSSIER_ARTIFACT_BASENAME` (`"audit-dossier"`),
+  `AUDIT_DOSSIER_MANIFEST_SCHEMA_VERSION` (`"1.0.0"`),
+  `AUDIT_DOSSIER_SIGNATURE_SCHEMA_VERSION` (`"1.0.0"`), and
+  `ALLOWED_AUDIT_DOSSIER_ARTIFACT_KINDS` (closed vocabulary for the
+  manifest artifact inventory).
+- New exported types `AuditDossierManifestArtifactKind`,
+  `AuditDossierManifestArtifactRef`, `AuditDossierProvenanceLeafHash`,
+  `AuditDossierRegulationCoverageEntry`, `AuditDossierManifest`, and
+  `AuditDossierSignature`. These define the canonical JSON manifest,
+  detached-signature envelope, provenance leaf inventory, and
+  regulation-coverage table for the audit bundle surface.
+- New operator-facing CLI subcommands on the package entrypoint:
+  `workspace-dev test-intelligence audit-dossier` and
+  `workspace-dev test-intelligence audit-verify`.
+- `audit-dossier` builds a deterministic four-file bundle from one run
+  directory:
+  `<runId>-audit-dossier.json`,
+  `<runId>-audit-dossier.sig`,
+  `<runId>-audit-dossier.pdf`, and
+  `<runId>-audit-dossier.merkle.txt`.
+- The manifest contract records only attested metadata and digests for
+  the required evidence set (`provenance.jsonld`,
+  `compliance-coverage-report.json`, `compliance-annotations.json`,
+  `judge-calibration-eval.json`, `locale-calibration-curves.json`,
+  `inter-rater-agreement.json`, `distribution-shift-report.json`,
+  `incidents.json`, `subprocessor-register.json`,
+  `finops/budget-report.json`, `faithfulness-tier-report.json`,
+  `self-consistency-arbitration.json`,
+  `production-runner-evidence-seal.json`, and exactly one
+  `*.model-card.json`). Raw prompts, screenshot bytes, secrets, and PII
+  are intentionally out of scope for the bundle surface.
+- The detached-signature contract uses Ed25519 public-key material plus
+  a stable SHA-256 fingerprint and signs the final canonical manifest
+  bytes. The manifest also carries the SHA-256 of the unsigned-manifest
+  view (`signing.manifestSha256`) so verifiers can detect metadata
+  drift even when the signature file is intact.
+- `audit-verify` recomputes the manifest digest, validates the detached
+  signature, and rebuilds the Merkle proof text from the manifest's
+  canonical leaf hashes. Missing files, malformed JSON, mismatched key
+  metadata, invalid signatures, and Merkle drift all fail closed.
+- `TEST_INTELLIGENCE_CONTRACT_VERSION` bumped `1.26.0` → `1.27.0`.
+- `CONTRACT_VERSION` bumped `4.60.0` → `4.62.0`.
+- These are additive surface changes; no existing field, type, or
+  command was removed or renamed.
+
 ## [1.26.0] - 2026-05-10
 
 ### Added (Issue #2174 — subprocessor register JSON artifact, DORA Art. 28 machine-verifiable)

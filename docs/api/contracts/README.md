@@ -88,7 +88,7 @@ Persisted multimodal accessibility-judge verdict artifact.
 
 ##### contractVersion
 
-> `readonly` **contractVersion**: `"1.24.0"`
+> `readonly` **contractVersion**: `"1.27.0"`
 
 ##### criteria
 
@@ -133,6 +133,10 @@ Persisted multimodal accessibility-judge verdict artifact.
 ##### schemaVersion
 
 > `readonly` **schemaVersion**: `"1.0.0"`
+
+##### truncatedInstructionCount?
+
+> `readonly` `optional` **truncatedInstructionCount?**: `number`
 
 ##### verdict
 
@@ -356,7 +360,7 @@ Persisted, canonical-JSON, per-job repair-iteration log.
 
 ##### contractVersion
 
-> `readonly` **contractVersion**: `"1.24.0"`
+> `readonly` **contractVersion**: `"1.27.0"`
 
 ##### generatedAt
 
@@ -765,6 +769,285 @@ Cost rollup across every role-run in the team.
 
 ***
 
+### AuditDossierManifest
+
+Deterministic machine-readable dossier manifest. It is the canonical
+signed payload; the PDF is a human-readable rendering of this surface.
+
+#### Properties
+
+##### bundle
+
+> `readonly` **bundle**: `object`
+
+###### jsonFilename
+
+> `readonly` **jsonFilename**: `string`
+
+###### merkleProofFilename
+
+> `readonly` **merkleProofFilename**: `string`
+
+###### pdfFilename
+
+> `readonly` **pdfFilename**: `string`
+
+###### signatureFilename
+
+> `readonly` **signatureFilename**: `string`
+
+##### contractVersion
+
+> `readonly` **contractVersion**: `"1.27.0"`
+
+##### generatedAt
+
+> `readonly` **generatedAt**: `string`
+
+##### provenance
+
+> `readonly` **provenance**: `object`
+
+###### algorithm
+
+> `readonly` **algorithm**: `string`
+
+###### leafCount
+
+> `readonly` **leafCount**: `number`
+
+###### leafHashes
+
+> `readonly` **leafHashes**: readonly [`AuditDossierProvenanceLeafHash`](#auditdossierprovenanceleafhash)[]
+
+###### merkleProofSha256
+
+> `readonly` **merkleProofSha256**: `string`
+
+###### merkleRoot
+
+> `readonly` **merkleRoot**: `string`
+
+##### regulatorCoverage
+
+> `readonly` **regulatorCoverage**: readonly [`AuditDossierRegulationCoverageEntry`](#auditdossierregulationcoverageentry)[]
+
+##### runId
+
+> `readonly` **runId**: `string`
+
+##### schemaVersion
+
+> `readonly` **schemaVersion**: `"1.0.0"`
+
+##### signing
+
+> `readonly` **signing**: `object`
+
+###### algorithm
+
+> `readonly` **algorithm**: `"ed25519"`
+
+###### keyFingerprintSha256
+
+> `readonly` **keyFingerprintSha256**: `string`
+
+###### manifestSha256
+
+> `readonly` **manifestSha256**: `string`
+
+###### publicKeyPem
+
+> `readonly` **publicKeyPem**: `string`
+
+##### sourceArtifacts
+
+> `readonly` **sourceArtifacts**: readonly [`AuditDossierManifestArtifactRef`](#auditdossiermanifestartifactref)[]
+
+##### summary
+
+> `readonly` **summary**: `object`
+
+###### benchmarkProtocolVersion
+
+> `readonly` **benchmarkProtocolVersion**: `string`
+
+###### calibrationSampleCount
+
+> `readonly` **calibrationSampleCount**: `number`
+
+###### complianceAnnotationCount
+
+> `readonly` **complianceAnnotationCount**: `number`
+
+###### complianceFrameworkCount
+
+> `readonly` **complianceFrameworkCount**: `number`
+
+###### driftFindingCount
+
+> `readonly` **driftFindingCount**: `number`
+
+###### faithfulnessMismatchCount
+
+> `readonly` **faithfulnessMismatchCount**: `number`
+
+###### gitSha
+
+> `readonly` **gitSha**: `string`
+
+###### harnessVersion
+
+> `readonly` **harnessVersion**: `string`
+
+###### ictRegisterRefs
+
+> `readonly` **ictRegisterRefs**: readonly `string`[]
+
+###### incidentCount
+
+> `readonly` **incidentCount**: `number`
+
+###### interRaterFailureCount
+
+> `readonly` **interRaterFailureCount**: `number`
+
+###### localeCurveCount
+
+> `readonly` **localeCurveCount**: `number`
+
+###### merkleProofSha256
+
+> `readonly` **merkleProofSha256**: `string`
+
+###### modelCardId
+
+> `readonly` **modelCardId**: `string`
+
+###### policyProfileId
+
+> `readonly` **policyProfileId**: `string`
+
+###### provenanceLeafCount
+
+> `readonly` **provenanceLeafCount**: `number`
+
+###### provenanceRoot
+
+> `readonly` **provenanceRoot**: `string`
+
+###### runId
+
+> `readonly` **runId**: `string`
+
+###### selfConsistencyTargetCount
+
+> `readonly` **selfConsistencyTargetCount**: `number`
+
+###### subprocessorCount
+
+> `readonly` **subprocessorCount**: `number`
+
+***
+
+### AuditDossierManifestArtifactRef
+
+One attested input artifact consumed while assembling the dossier
+bundle. The manifest carries only filenames, sizes, and digests —
+never raw prompts, screenshots, secrets, or PII-bearing payloads.
+
+#### Properties
+
+##### bytes
+
+> `readonly` **bytes**: `number`
+
+##### filename
+
+> `readonly` **filename**: `string`
+
+##### kind
+
+> `readonly` **kind**: `"model_card"` \| `"provenance"` \| `"compliance_coverage"` \| `"compliance_annotations"` \| `"judge_calibration"` \| `"locale_calibration"` \| `"inter_rater_agreement"` \| `"drift_baseline"` \| `"incident_log"` \| `"subprocessor_register"` \| `"finops_budget"` \| `"faithfulness_tier"` \| `"self_consistency"` \| `"evidence_seal"` \| `"policy_report"`
+
+##### sha256
+
+> `readonly` **sha256**: `string`
+
+***
+
+### AuditDossierProvenanceLeafHash
+
+One provenance-leaf witness carried so the bundle can self-verify.
+
+#### Properties
+
+##### hash
+
+> `readonly` **hash**: `string`
+
+##### reference
+
+> `readonly` **reference**: `string`
+
+***
+
+### AuditDossierRegulationCoverageEntry
+
+One regulator/article row in the human-readable evidence table.
+
+#### Properties
+
+##### artifactKinds
+
+> `readonly` **artifactKinds**: readonly (`"model_card"` \| `"provenance"` \| `"compliance_coverage"` \| `"compliance_annotations"` \| `"judge_calibration"` \| `"locale_calibration"` \| `"inter_rater_agreement"` \| `"drift_baseline"` \| `"incident_log"` \| `"subprocessor_register"` \| `"finops_budget"` \| `"faithfulness_tier"` \| `"self_consistency"` \| `"evidence_seal"` \| `"policy_report"`)[]
+
+##### notes
+
+> `readonly` **notes**: readonly `string`[]
+
+##### regulation
+
+> `readonly` **regulation**: `string`
+
+##### requirement
+
+> `readonly` **requirement**: `string`
+
+***
+
+### AuditDossierSignature
+
+Detached Ed25519 signature metadata stored alongside the manifest.
+
+#### Properties
+
+##### algorithm
+
+> `readonly` **algorithm**: `"ed25519"`
+
+##### keyFingerprintSha256
+
+> `readonly` **keyFingerprintSha256**: `string`
+
+##### manifestSha256
+
+> `readonly` **manifestSha256**: `string`
+
+##### publicKeyPem
+
+> `readonly` **publicKeyPem**: `string`
+
+##### schemaVersion
+
+> `readonly` **schemaVersion**: `"1.0.0"`
+
+##### signatureBase64
+
+> `readonly` **signatureBase64**: `string`
+
+***
+
 ### BusinessTestIntentIr
 
 Redacted, deterministic test-design IR for a job.
@@ -879,6 +1162,16 @@ Per-screen slice of the intent.
 
 #### Properties
 
+##### locale?
+
+> `optional` **locale?**: [`SupportedLocale`](#supportedlocale)
+
+Optional locale tag for this screen (Issue #2117).  When present it is
+one of the six `SupportedLocale` codes; absent for screens whose locale
+could not be resolved at the import stage.  Consumers derive the locale
+using `deriveLocaleFromBusinessTestIntentScreen` from
+`locale-calibration.ts` when they need a best-effort value.
+
 ##### screenId
 
 > **screenId**: `string`
@@ -919,7 +1212,7 @@ input set is byte-identical and the entries are sorted before write.
 
 ##### contractVersion
 
-> `readonly` **contractVersion**: `"1.24.0"`
+> `readonly` **contractVersion**: `"1.27.0"`
 
 ##### diffArtifactBasename?
 
@@ -971,7 +1264,7 @@ Persisted case-merger artifact (Issue #1937).
 
 ##### contractVersion
 
-> `readonly` **contractVersion**: `"1.24.0"`
+> `readonly` **contractVersion**: `"1.27.0"`
 
 ##### entries
 
@@ -1106,7 +1399,7 @@ Total bytes of cleared tool result blocks at the boundary.
 
 ##### contractVersion
 
-> `readonly` **contractVersion**: `"1.24.0"`
+> `readonly` **contractVersion**: `"1.27.0"`
 
 ##### jobId
 
@@ -1150,7 +1443,7 @@ Persisted, fully-redacted artifact form of a compiled prompt.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.24.0"`
+> **contractVersion**: `"1.27.0"`
 
 ##### hashes
 
@@ -1236,7 +1529,7 @@ Redacted JSON payload that the model will reason over.
 
 ##### schemaVersion
 
-> **schemaVersion**: `"1.1.0"`
+> **schemaVersion**: `"1.3.0"`
 
 ##### systemPrompt
 
@@ -1658,6 +1951,65 @@ out of the contract so equivalent inputs remain byte-stable.
 ##### visualRefs
 
 > `readonly` **visualRefs**: readonly `string`[]
+
+***
+
+### CrossBorderTransferEntry
+
+A single cross-border transfer record under GDPR Ch. V. Each entry
+declares the legal mechanism that legitimises a flow between two
+regions in [SUPPORTED\_HOSTING\_REGIONS](#supported_hosting_regions). Even intra-EEA entries
+are recorded for replay verifiability so an auditor can reconstruct
+which transfer mechanism was active at a given run timestamp.
+
+#### Properties
+
+##### approvedAt
+
+> `readonly` **approvedAt**: `string`
+
+ISO-8601 timestamp the transfer was approved by the operator.
+
+##### destinationRegion
+
+> `readonly` **destinationRegion**: `"westeurope"` \| `"northeurope"` \| `"francecentral"` \| `"germanywestcentral"` \| `"swedencentral"` \| `"eu-west-1"` \| `"operator-defined"`
+
+Destination region (where the data flows to).
+
+##### mechanismCitation
+
+> `readonly` **mechanismCitation**: `string`
+
+Free-form citation pointing to the contractual / legal artefact.
+
+##### purpose
+
+> `readonly` **purpose**: `string`
+
+One-sentence purpose of the transfer.
+
+##### sourceRegion
+
+> `readonly` **sourceRegion**: `"westeurope"` \| `"northeurope"` \| `"francecentral"` \| `"germanywestcentral"` \| `"swedencentral"` \| `"eu-west-1"` \| `"operator-defined"`
+
+Source region (where the data originates).
+
+##### transferId
+
+> `readonly` **transferId**: `string`
+
+Stable, kebab-case transfer identifier.
+
+##### transferMechanism
+
+> `readonly` **transferMechanism**: `"scc-2021"` \| `"adequacy-decision"` \| `"bcr"` \| `"consent"` \| `"other"`
+
+Legal mechanism. `"adequacy-decision"` covers intra-EEA and
+Commission-recognised third-country adequacy decisions; `"scc-2021"`
+is the 2021 EU Standard Contractual Clauses; `"bcr"` is Binding
+Corporate Rules; `"consent"` is GDPR Art. 49(1)(a) (rare and
+narrow); `"other"` is reserved for derogations the operator
+documents in their own register.
 
 ***
 
@@ -2368,7 +2720,7 @@ Aggregate dry-run report artifact.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.24.0"`
+> **contractVersion**: `"1.27.0"`
 
 ##### credentialsIncluded
 
@@ -2492,6 +2844,44 @@ Mean sidecar confidence across the matching screen records (0..1).
 > **traceRefs**: [`GeneratedTestCaseFigmaTrace`](#generatedtestcasefigmatrace)[]
 
 Stable trace references — figmaTraceRefs subset that drove the mapping.
+
+***
+
+### EquivalenceClassFingerprint
+
+Semantic equivalence-class fingerprint (Issue #2123).
+
+Derived from `(coveredFieldIds, coveredActionIds, riskClass, technique,
+oraclePolarity)` — NOT from text. Two generated cases are considered
+to belong to the same equivalence class iff their
+[EquivalenceClassFingerprint](#equivalenceclassfingerprint) fields are byte-equal under the
+canonical projection (`coveredFieldIds` and `coveredActionIds` sorted
+lexically and de-duplicated). The fingerprint is the primary signal
+the validator uses to detect redundancy WITHIN a technique bucket:
+the previous Levenshtein/Jaccard-only path missed cases that differed
+by a few characters but covered the same equivalence class.
+
+#### Properties
+
+##### coveredActionIds
+
+> `readonly` **coveredActionIds**: readonly `string`[]
+
+##### coveredFieldIds
+
+> `readonly` **coveredFieldIds**: readonly `string`[]
+
+##### oraclePolarity
+
+> `readonly` **oraclePolarity**: `"positive"` \| `"negative"` \| `"boundary"` \| `"navigation"` \| `"accessibility"`
+
+##### riskClass
+
+> `readonly` **riskClass**: [`TestCaseRiskCategory`](#testcaseriskcategory)
+
+##### technique
+
+> `readonly` **technique**: [`TestCaseTechnique29119`](#testcasetechnique29119)
 
 ***
 
@@ -2721,7 +3111,7 @@ Sorted by filename for deterministic emission.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.24.0"`
+> **contractVersion**: `"1.27.0"`
 
 ##### exportedTestCaseCount
 
@@ -2729,7 +3119,7 @@ Sorted by filename for deterministic emission.
 
 ##### finalExportDecision
 
-> **finalExportDecision**: `"approved_for_export"` \| `"refused"`
+> **finalExportDecision**: `"refused"` \| `"approved_for_export"`
 
 Explicit final export decision derived from validation, policy, visual,
 and review-gate outcomes rather than from per-case mapping preview flags.
@@ -2796,6 +3186,47 @@ Sorted, de-duplicated.
 
 ***
 
+### FaithfulnessEvaluationSummary
+
+Issue #2116 — audit-trail block summarizing how the
+cross-modal-faithfulness gate evaluated a job. Carried on
+`TestCasePolicyReport.faithfulnessEvaluation`.
+
+#### Properties
+
+##### mode
+
+> `readonly` **mode**: `"per_step"` \| `"case_level_fallback"` \| `"missing"`
+
+Evaluation mode the gate applied.
+
+##### reason
+
+> `readonly` **reason**: `string`
+
+Reviewer-readable explanation of why the gate ended up in
+[mode](#mode-1). Stable across runs with identical inputs so the
+persisted policy report is byte-deterministic.
+
+##### requirePerStepFaithfulness
+
+> `readonly` **requirePerStepFaithfulness**: `boolean`
+
+Whether the active profile escalated the
+`case_level_fallback` mode to a blocking error (Issue #2116
+`requirePerStepFaithfulness`). Mirrors the rule for downstream
+consumers without forcing them to re-resolve the profile.
+
+##### stepVerdictCount
+
+> `readonly` **stepVerdictCount**: `number`
+
+Step-verdict count consumed by the gate when
+`mode === "per_step"`. `0` for `case_level_fallback` and
+`missing` so the field is always present and machine-comparable.
+
+***
+
 ### FaithfulnessStepVerdict
 
 Per-step faithfulness verdict emitted by the cross-family judge.
@@ -2857,13 +3288,26 @@ Threshold the aggregate is compared against (profile-scoped).
 
 ##### contractVersion
 
-> `readonly` **contractVersion**: `"1.24.0"`
+> `readonly` **contractVersion**: `"1.27.0"`
 
 ##### entries
 
 > `readonly` **entries**: readonly [`FaithfulnessTierReportEntry`](#faithfulnesstierreportentry)[]
 
 Per-step records, sorted by `(testCaseId, stepIndex)`.
+
+##### evaluationMode
+
+> `readonly` **evaluationMode**: `"per_step"` \| `"case_level_fallback"` \| `"missing"`
+
+Issue #2116 — evaluation mode the report was produced under. The
+tier-report builder only materializes a report for `per_step` runs
+(per-step evidence is required to populate `entries`), so this field
+is constant `"per_step"` on persisted reports. The companion
+[TestCasePolicyReport.faithfulnessEvaluation](#faithfulnessevaluation) block surfaces
+the broader mode taxonomy at the policy-gate level. Carried here so
+a tier report parsed in isolation tells reviewers unambiguously
+which evaluation path produced it.
 
 ##### evidencePartialCount
 
@@ -2891,9 +3335,20 @@ Steps where the tier-aware score is `1.0`.
 
 Steps where the tier-aware score is `0.0`.
 
+##### partialMajorityCaseIds
+
+> `readonly` **partialMajorityCaseIds**: readonly `string`[]
+
+Issue #2170 — case ids whose `evidence_partial` step verdicts make up
+`>= 60 %` of the case's verdict population. The companion policy gate
+raises a per-case `policy:cross-modal-faithfulness-partial-majority`
+warning (NOT error) for these ids so the case still ships while
+reviewers see the partial-evidence majority. Sorted ascending; empty
+when no case crosses the threshold.
+
 ##### schemaVersion
 
-> `readonly` **schemaVersion**: `"1.0.0"`
+> `readonly` **schemaVersion**: `"1.1.0"`
 
 ##### stepCount
 
@@ -2937,7 +3392,7 @@ Per-step score `{1.0 | 0.85 | 0.0}` derived from `verdict`.
 
 ##### tier
 
-> `readonly` **tier**: `"concrete_data"` \| `"label_only"`
+> `readonly` **tier**: `"state_transition"` \| `"concrete_data"` \| `"label_only"`
 
 ##### tierReason
 
@@ -2967,7 +3422,7 @@ Persisted screenshot-vs-cases faithfulness verdict artifact.
 
 ##### contractVersion
 
-> `readonly` **contractVersion**: `"1.24.0"`
+> `readonly` **contractVersion**: `"1.27.0"`
 
 ##### fallbackReason
 
@@ -3003,7 +3458,7 @@ Persisted screenshot-vs-cases faithfulness verdict artifact.
 
 ##### promptTemplateVersion
 
-> `readonly` **promptTemplateVersion**: `"faithfulness-judge.v2"`
+> `readonly` **promptTemplateVersion**: `"faithfulness-judge.v3"`
 
 ##### refusal?
 
@@ -3214,7 +3669,7 @@ Verbatim copy of the budget envelope applied to this job.
 
 ##### bySource
 
-> **bySource**: `Readonly`\<`Record`\<[`AgentSourceLabel`](#agentsourcelabel), \{ `attemptIds?`: readonly `string`[]; `callCount`: `number`; `circuitBreakerStates?`: readonly (`"closed"` \| `"open"` \| `"half_open"`)[]; `constrainedDecoding?`: \{ `activeCallCount`: `number`; `adapterId`: [`LlmConstrainedDecodingAdapterId`](#llmconstraineddecodingadapterid); `adapterVersion?`: `string`; `enforcement`: [`LlmConstrainedDecodingEnforcement`](#llmconstraineddecodingenforcement); `fallbackCallCount`: `number`; `fallbackReasons?`: readonly `string`[]; \}; `costMinorUnits`: `number`; `deployment?`: `string`; `idempotentReplayHits`: `number`; `inFlightDedupHits`: `number`; `tokensIn`: `number`; `tokensOut`: `number`; \}\>\>
+> **bySource**: `Readonly`\<`Record`\<[`AgentSourceLabel`](#agentsourcelabel), \{ `attemptIds?`: readonly `string`[]; `callCount`: `number`; `circuitBreakerStates?`: readonly (`"closed"` \| `"open"` \| `"half_open"`)[]; `constrainedDecoding?`: \{ `activeCallCount`: `number`; `adapterId`: [`LlmConstrainedDecodingAdapterId`](#llmconstraineddecodingadapterid); `adapterVersion?`: `string`; `enforcement`: [`LlmConstrainedDecodingEnforcement`](#llmconstraineddecodingenforcement); `fallbackCallCount`: `number`; `fallbackReasons?`: readonly `string`[]; \}; `costMinorUnits`: `number`; `deployment?`: `string`; `idempotentReplayHits`: `number`; `inFlightDedupHits`: `number`; `modelRevision?`: `string`; `tierLabel?`: [`ModelRoutingTierLabel`](#modelroutingtierlabel); `tokensIn`: `number`; `tokensOut`: `number`; \}\>\>
 
 Deterministic per-agent-source attribution sealed in attestation.
 
@@ -3240,13 +3695,53 @@ Aggregate counters across the `bySource` map.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.24.0"`
+> **contractVersion**: `"1.27.0"`
 
 ##### currencyLabel?
 
 > `optional` **currencyLabel?**: `string`
 
 Caller-supplied currency label. `undefined` when no rate map was supplied.
+
+##### figmaPayload?
+
+> `optional` **figmaPayload?**: `object`
+
+Figma REST payload audit trail (Issue #2172). Records the resolved cap
+applied to this run alongside the actual payload bytes ingested so ops
+can observe cap-vs-actual without re-running the job. Omitted when the
+runner did not surface payload metrics (e.g. dry-run / cache-hit
+short-circuit) so legacy fixtures stay byte-stable.
+
+###### actualBytes
+
+> **actualBytes**: `number`
+
+Actual REST payload size that the runner ingested, in bytes.
+
+###### ceilingBytes
+
+> **ceilingBytes**: `number`
+
+Hard ceiling (bytes) above which any override is rejected.
+
+###### defaultCapBytes
+
+> **defaultCapBytes**: `number`
+
+Soft default cap (bytes) used when no override was supplied.
+
+###### overrideApplied
+
+> **overrideApplied**: `boolean`
+
+True when the operator passed `--max-figma-payload-bytes`.
+
+###### resolvedCapBytes
+
+> **resolvedCapBytes**: `number`
+
+Resolved cap applied during this run, in bytes.
 
 ##### generatedAt
 
@@ -3273,6 +3768,12 @@ Hard invariant — raw prompt or response text is never embedded.
 > **rawScreenshotsIncluded**: `false`
 
 Hard invariant — image bytes are never embedded.
+
+##### resolvedBudget?
+
+> `optional` **resolvedBudget?**: [`FinOpsResolvedBudgetReport`](#finopsresolvedbudgetreport)
+
+Audit trail for runtime-resolved budget inputs and coefficients.
 
 ##### roles
 
@@ -3439,6 +3940,16 @@ Operator-supplied label describing the unit (e.g. "USD").
 ###### visual\_primary?
 
 > `optional` **visual\_primary?**: [`FinOpsCostRate`](#finopscostrate)
+
+***
+
+### FinOpsResolvedBudgetReport
+
+#### Properties
+
+##### testGenerationWallClock
+
+> `readonly` **testGenerationWallClock**: [`ResolvedFinOpsWallClockBudget`](#resolvedfinopswallclockbudget)
 
 ***
 
@@ -3623,6 +4134,12 @@ Last finish reason observed (success path) — `undefined` if no success.
 
 Number of attempts that hit a non-mock gateway (live-smoke counter).
 
+##### modelRevision?
+
+> `optional` **modelRevision?**: `string`
+
+Last model revision observed for this role. Omitted when unknown.
+
 ##### outputTokens
 
 > **outputTokens**: `number`
@@ -3638,6 +4155,61 @@ Sum of output tokens reported by the gateway across all successful attempts.
 > **successes**: `number`
 
 Successful attempts.
+
+##### tierLabel?
+
+> `optional` **tierLabel?**: `"light"` \| `"heavy"` \| `"multimodal"`
+
+Last routing tier label observed for this role. Omitted when unknown.
+
+***
+
+### FinOpsWallClockBudgetPolicy
+
+Tunable knobs of a policy profile (defaults shown for `eu-banking-default`).
+
+#### Properties
+
+##### baseMs
+
+> `readonly` **baseMs**: `number`
+
+##### hardCeilingMs
+
+> `readonly` **hardCeilingMs**: `number`
+
+##### perAdditionalJudgeMs
+
+> `readonly` **perAdditionalJudgeMs**: `number`
+
+##### perAdversarialRoundMs
+
+> `readonly` **perAdversarialRoundMs**: `number`
+
+##### perCaseMs
+
+> `readonly` **perCaseMs**: `number`
+
+##### visualSidecarMs
+
+> `readonly` **visualSidecarMs**: `number`
+
+***
+
+### FixedTechniqueCoverageMinimumPolicy
+
+Issue #2068 / #2171 — policy-profile knob that drives the tier-elastic
+resolution of `policy:technique-coverage-minimum`. Optional for backwards
+compatibility; `undefined` is treated as `{ mode: "tier-elastic" }`. Issue
+#2171 extends the tier-elastic branch with optional caller-supplied tiers
+so the coefficients live in the policy profile instead of a hidden runtime
+constant.
+
+#### Properties
+
+##### mode
+
+> `readonly` **mode**: `"fixed"`
 
 ***
 
@@ -3883,9 +4455,21 @@ Single generated test case.
 Optional additive Issue #2030 field. New emissions always populate it;
 older artifacts may omit it and are classified on read-path fallback.
 
+##### confidence?
+
+> `optional` **confidence?**: `number`
+
+Optional calibrated per-case acceptance probability (Issue #2074).
+
+##### confidenceComponents?
+
+> `optional` **confidenceComponents?**: [`GeneratedTestCaseConfidenceComponents`](#generatedtestcaseconfidencecomponents-1)
+
+Optional auditable raw inputs used to derive `confidence`.
+
 ##### contractVersion
 
-> **contractVersion**: `"1.24.0"`
+> **contractVersion**: `"1.27.0"`
 
 ##### expectedResults
 
@@ -3957,7 +4541,7 @@ produced a compliance-flavoured case.
 
 ##### schemaVersion
 
-> **schemaVersion**: `"1.1.0"`
+> **schemaVersion**: `"1.3.0"`
 
 ##### sourceJobId
 
@@ -4003,7 +4587,7 @@ Whether the artifact came from a replay-cache hit.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.24.0"`
+> **contractVersion**: `"1.27.0"`
 
 ##### generatedAt
 
@@ -4035,11 +4619,61 @@ Whether the artifact came from a replay-cache hit.
 
 ##### schemaVersion
 
-> **schemaVersion**: `"1.1.0"`
+> **schemaVersion**: `"1.3.0"`
+
+##### truncatedInstructionCount?
+
+> `optional` **truncatedInstructionCount?**: `number`
+
+Number of upstream repair instructions clipped before regeneration.
 
 ##### visualSidecarSchemaVersion
 
 > **visualSidecarSchemaVersion**: `"1.1.0"`
+
+***
+
+### GeneratedTestCaseConfidenceComponents
+
+Auditable raw inputs that feed the per-case confidence calibration.
+
+#### Properties
+
+##### faithfulnessScore
+
+> **faithfulnessScore**: `number`
+
+Per-case faithfulness score in [0, 1].
+
+##### judgePanelAgreement
+
+> **judgePanelAgreement**: `number`
+
+Cross-judge agreement proxy in [0, 1].
+
+##### oracleResolved
+
+> **oracleResolved**: `boolean`
+
+Whether deterministic test-data oracle evidence resolved at least one field.
+
+##### ragHitStrength
+
+> **ragHitStrength**: `number`
+
+Historical anchor strength in [0, 1].
+
+##### rawScore
+
+> **rawScore**: `number`
+
+Weighted pre-calibration raw score in [0, 1].
+
+##### selfConsistencyAgreement
+
+> **selfConsistencyAgreement**: `number`
+
+Per-case self-consistency agreement in [0, 1].
 
 ***
 
@@ -4079,7 +4713,7 @@ Wrapper produced by the generator for a single job.
 
 ##### schemaVersion
 
-> **schemaVersion**: `"1.1.0"`
+> **schemaVersion**: `"1.3.0"`
 
 ##### testCases
 
@@ -4228,7 +4862,7 @@ referenced files and recomputing each row.
 
 ##### contractVersion
 
-> `readonly` **contractVersion**: `"1.24.0"`
+> `readonly` **contractVersion**: `"1.27.0"`
 
 ##### digest
 
@@ -4336,6 +4970,76 @@ Disagreement decision label that triggered escalation.
 > `readonly` **verdict**: `"repair"` \| `"accept"` \| `"reject"` \| `"deferred"`
 
 Final verdict the reviewer cast.
+
+***
+
+### IncidentEvent
+
+Single classified incident emitted to the operator's `IncidentSink`.
+
+#### Properties
+
+##### category
+
+> `readonly` **category**: `"compliance_rule_pack_violation"` \| `"drift_alert"` \| `"judge_disagreement_persistent"` \| `"pii_leakage"` \| `"policy_gate_bypass"` \| `"replay_cache_miss_unexpected"` \| `"subprocessor_outage"`
+
+##### evidence
+
+> `readonly` **evidence**: readonly [`ManifestRef`](#manifestref)[]
+
+##### id
+
+> `readonly` **id**: `string`
+
+##### jobId
+
+> `readonly` **jobId**: `string`
+
+##### observedAt
+
+> `readonly` **observedAt**: `string`
+
+##### rootCauseHypothesis
+
+> `readonly` **rootCauseHypothesis**: `string`
+
+##### severity
+
+> `readonly` **severity**: `"low"` \| `"medium"` \| `"high"` \| `"critical"`
+
+***
+
+### IncidentReport
+
+Persisted incident-handling envelope written per job. The order of
+`events` is canonical: severity-rank descending, then category, then
+`id`, so byte-identical inputs always produce identical files.
+
+#### Properties
+
+##### contractVersion
+
+> `readonly` **contractVersion**: `"1.27.0"`
+
+##### events
+
+> `readonly` **events**: readonly [`IncidentEvent`](#incidentevent)[]
+
+##### generatedAt
+
+> `readonly` **generatedAt**: `string`
+
+##### jobId
+
+> `readonly` **jobId**: `string`
+
+##### reviewState
+
+> `readonly` **reviewState**: `"ok"` \| `"incident_ack_required"`
+
+##### schemaVersion
+
+> `readonly` **schemaVersion**: `"1.0.0"`
 
 ***
 
@@ -4454,7 +5158,7 @@ Hard-invariant intent-delta report artifact (Issue #1373).
 
 ##### contractVersion
 
-> **contractVersion**: `"1.24.0"`
+> **contractVersion**: `"1.27.0"`
 
 ##### currentIntentHash
 
@@ -4768,7 +5472,7 @@ Aggregate `jira-created-subtasks.json` artifact (Issue #1482).
 
 ##### contractVersion
 
-> **contractVersion**: `"1.24.0"`
+> **contractVersion**: `"1.27.0"`
 
 ##### credentialsIncluded
 
@@ -5334,7 +6038,7 @@ Resolved Jira issue key for the created or pre-existing sub-task.
 
 ##### outcome
 
-> **outcome**: `"dry_run"` \| `"failed"` \| `"created"` \| `"skipped_duplicate"`
+> **outcome**: `"failed"` \| `"dry_run"` \| `"created"` \| `"skipped_duplicate"`
 
 ##### retryable?
 
@@ -5404,7 +6108,7 @@ Audit metadata for the run.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.24.0"`
+> **contractVersion**: `"1.27.0"`
 
 ##### createdCount
 
@@ -5478,6 +6182,20 @@ Total number of approved test cases supplied to the pipeline.
 
 ***
 
+### JudgeAvailabilityReport
+
+#### Properties
+
+##### a11y
+
+> `readonly` **a11y**: `"available"` \| `"refused"` \| `"skipped"`
+
+##### faithfulness
+
+> `readonly` **faithfulness**: `"available"` \| `"refused"` \| `"skipped"`
+
+***
+
 ### JudgeConsensusFinding
 
 One normalized finding consumed by the production-runner consensus module.
@@ -5515,6 +6233,14 @@ One normalized finding consumed by the production-runner consensus module.
 One normalized judge entry consumed by the consensus module.
 
 #### Properties
+
+##### confidence?
+
+> `readonly` `optional` **confidence?**: `number`
+
+Optional normalized confidence in the judge verdict (`0..1`).
+When omitted, callers should treat the vote as fully trusted for
+backwards compatibility with pre-#2102 artifacts.
 
 ##### family?
 
@@ -5560,6 +6286,10 @@ EU-residency check on the judge-disagreement report.
 
 > `readonly` **repairInstructions**: readonly [`RepairInstruction`](#repairinstruction)[]
 
+##### truncatedInstructionCount?
+
+> `readonly` `optional` **truncatedInstructionCount?**: `number`
+
 ##### verdict
 
 > `readonly` **verdict**: `"repair"` \| `"accept"` \| `"reject"`
@@ -5596,6 +6326,10 @@ Historical repair metadata persisted alongside the final consensus state.
 
 > `readonly` **repairIterationCount**: `number`
 
+##### truncatedInstructionCount?
+
+> `readonly` `optional` **truncatedInstructionCount?**: `number`
+
 ***
 
 ### JudgeConsensusVerdict
@@ -5608,9 +6342,13 @@ Persisted production-runner judge-consensus artifact.
 
 > `readonly` **activeFindings**: readonly [`JudgeConsensusFinding`](#judgeconsensusfinding)[]
 
+##### agreementShape
+
+> `readonly` **agreementShape**: `"unanimous"` \| `"majority"` \| `"split"` \| `"vetoed"`
+
 ##### contractVersion
 
-> `readonly` **contractVersion**: `"1.24.0"`
+> `readonly` **contractVersion**: `"1.27.0"`
 
 ##### crossFamily?
 
@@ -5657,7 +6395,11 @@ disagreement-report artifact.
 
 ##### schemaVersion
 
-> `readonly` **schemaVersion**: `"1.0.0"`
+> `readonly` **schemaVersion**: `"1.1.0"`
+
+##### truncatedInstructionCount?
+
+> `readonly` `optional` **truncatedInstructionCount?**: `number`
 
 ##### verdict
 
@@ -5833,7 +6575,7 @@ the disagreement-rate trending consumes (B.10).
 
 ##### contractVersion
 
-> `readonly` **contractVersion**: `"1.24.0"`
+> `readonly` **contractVersion**: `"1.27.0"`
 
 ##### costByFamily
 
@@ -6041,6 +6783,20 @@ Test-case identifier the verdict applies to.
 
 ***
 
+### JudgeRefusalPolicyConfig
+
+#### Properties
+
+##### a11y
+
+> **a11y**: `"needs_review"` \| `"fail_open"` \| `"fail_closed"`
+
+##### faithfulness
+
+> **faithfulness**: `"needs_review"` \| `"fail_open"` \| `"fail_closed"`
+
+***
+
 ### JudgeVerdict
 
 Persisted logic-judge verdict artifact.
@@ -6057,7 +6813,7 @@ Persisted logic-judge verdict artifact.
 
 ##### contractVersion
 
-> `readonly` **contractVersion**: `"1.24.0"`
+> `readonly` **contractVersion**: `"1.27.0"`
 
 ##### findings
 
@@ -6098,6 +6854,10 @@ Persisted logic-judge verdict artifact.
 ##### schemaVersion
 
 > `readonly` **schemaVersion**: `"1.0.0"`
+
+##### truncatedInstructionCount?
+
+> `readonly` `optional` **truncatedInstructionCount?**: `number`
 
 ##### verdict
 
@@ -6554,7 +7314,7 @@ Per-release primitive-map status report.
 
 ##### contractVersion
 
-> `readonly` **contractVersion**: `"1.24.0"`
+> `readonly` **contractVersion**: `"1.27.0"`
 
 ##### counts
 
@@ -7228,6 +7988,155 @@ canonical wire payload; these fields only inform the estimator.
 
 ***
 
+### ManifestRef
+
+Reference to a persisted artifact backing an incident's evidence
+trail. Lets a sink cite an artifact without depending on the full
+Wave 1 evidence-manifest type.
+
+#### Properties
+
+##### filename
+
+> `readonly` **filename**: `string`
+
+##### sha256
+
+> `readonly` **sha256**: `string`
+
+***
+
+### ModelRoutingOverride
+
+Optional per-job routing override supplied by operators. The override is
+additive and explicit: callers override individual routes rather than
+replacing the whole policy object.
+
+#### Properties
+
+##### routes
+
+> `readonly` **routes**: readonly [`ModelRoutingOverrideRoute`](#modelroutingoverrideroute)[]
+
+***
+
+### ModelRoutingOverrideRoute
+
+Additive per-job override entry layered over a base routing policy.
+
+#### Properties
+
+##### gatewayRelease?
+
+> `readonly` `optional` **gatewayRelease?**: `string`
+
+##### modelBinding?
+
+> `readonly` `optional` **modelBinding?**: [`AgentModelBinding`](#agentmodelbinding)
+
+##### modelRevision?
+
+> `readonly` `optional` **modelRevision?**: `string`
+
+##### role
+
+> `readonly` **role**: `"test_generation"` \| `"visual_primary"` \| `"visual_fallback"` \| `"logic_judge"` \| `"a11y_judge"` \| `"coverage_planner"` \| `"risk_ranker"` \| `"adversarial_critic"` \| `"faithfulness_judge"` \| `"document_ingestion"` \| `"calibration_holdout_generator"`
+
+##### slot?
+
+> `readonly` `optional` **slot?**: `"primary"` \| `"secondary"` \| `"fallback"` \| `"triage"`
+
+##### tierLabel?
+
+> `readonly` `optional` **tierLabel?**: `"light"` \| `"heavy"` \| `"multimodal"`
+
+***
+
+### ModelRoutingPolicy
+
+Typed, canonical model-routing policy for one job/profile. The policy is an
+auditable input into client construction and replay identity rather than a
+dynamic rule engine.
+
+#### Properties
+
+##### policyId
+
+> `readonly` **policyId**: `string`
+
+Stable policy identifier, e.g. `eu-banking-default`.
+
+##### policyProfileId
+
+> `readonly` **policyProfileId**: `string`
+
+Policy profile that selected this routing policy.
+
+##### policyVersion
+
+> `readonly` **policyVersion**: `string`
+
+Stable version stamp of the policy definition.
+
+##### routes
+
+> `readonly` **routes**: readonly [`ModelRoutingRoute`](#modelroutingroute)[]
+
+Sorted, canonical list of active routes.
+
+##### schemaVersion
+
+> `readonly` **schemaVersion**: `"1.0.0"`
+
+***
+
+### ModelRoutingRoute
+
+One resolved route in the typed multi-model policy. The route carries the
+static model binding plus the concrete deployment/revision identity the
+current runtime selected so replay keys, FinOps, and evidence artifacts can
+attest the exact model path without re-reading environment variables.
+
+#### Properties
+
+##### gatewayRelease?
+
+> `readonly` `optional` **gatewayRelease?**: `string`
+
+Concrete gateway release selected for this route, when known.
+
+##### modelBinding
+
+> `readonly` **modelBinding**: [`AgentModelBinding`](#agentmodelbinding)
+
+Stable provider/model/deployment binding.
+
+##### modelRevision?
+
+> `readonly` `optional` **modelRevision?**: `string`
+
+Concrete model revision selected for this route, when known.
+
+##### role
+
+> `readonly` **role**: `"test_generation"` \| `"visual_primary"` \| `"visual_fallback"` \| `"logic_judge"` \| `"a11y_judge"` \| `"coverage_planner"` \| `"risk_ranker"` \| `"adversarial_critic"` \| `"faithfulness_judge"` \| `"document_ingestion"` \| `"calibration_holdout_generator"`
+
+Stable role identifier this route binds.
+
+##### slot
+
+> `readonly` **slot**: `"primary"` \| `"secondary"` \| `"fallback"` \| `"triage"`
+
+Slot within the role (`primary`, `fallback`, `triage`, ...).
+
+##### tierLabel
+
+> `readonly` **tierLabel**: `"light"` \| `"heavy"` \| `"multimodal"`
+
+Cost/capability tier label for this route.
+
+***
+
 ### MultiSourceConflict
 
 One deterministic conflict row emitted by the reconciliation engine.
@@ -7769,7 +8678,7 @@ catalog class appears exactly once.
 
 ##### contractVersion
 
-> `readonly` **contractVersion**: `"1.24.0"`
+> `readonly` **contractVersion**: `"1.27.0"`
 
 ##### generatedAt
 
@@ -8038,7 +8947,7 @@ Per-candidate scores, ordered by descending score then id.
 
 ##### contractVersion
 
-> `readonly` **contractVersion**: `"1.24.0"`
+> `readonly` **contractVersion**: `"1.27.0"`
 
 ##### datasetId
 
@@ -8271,7 +9180,7 @@ Aggregate `qc-created-entities.json` artifact (Issue #1372).
 
 ##### contractVersion
 
-> **contractVersion**: `"1.24.0"`
+> **contractVersion**: `"1.27.0"`
 
 ##### entities
 
@@ -8361,7 +9270,7 @@ Aggregate QC mapping preview artifact.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.24.0"`
+> **contractVersion**: `"1.27.0"`
 
 ##### entries
 
@@ -9037,7 +9946,7 @@ Gate 9 — context budget regression (Issue #1802).
 
 ##### contractVersion
 
-> `readonly` **contractVersion**: `"1.24.0"`
+> `readonly` **contractVersion**: `"1.27.0"`
 
 ##### libraryCoverageStatusCompleteness
 
@@ -9128,7 +10037,7 @@ The release pipeline fails when any verdict has `passed === false`.
 
 ##### contractVersion
 
-> `readonly` **contractVersion**: `"1.24.0"`
+> `readonly` **contractVersion**: `"1.27.0"`
 
 ##### mutationKillRate
 
@@ -9266,7 +10175,7 @@ Per-gate result row in the consolidated release-readiness report.
 
 ##### status
 
-> `readonly` **status**: `"passed"` \| `"failed"` \| `"skipped"`
+> `readonly` **status**: `"skipped"` \| `"passed"` \| `"failed"`
 
 ***
 
@@ -9282,7 +10191,7 @@ gate passed.
 
 ##### contractVersion
 
-> `readonly` **contractVersion**: `"1.24.0"`
+> `readonly` **contractVersion**: `"1.27.0"`
 
 ##### gates
 
@@ -9320,6 +10229,12 @@ structured-output violations the same way as semantic repairs.
 
 > `readonly` **instruction**: `string`
 
+##### instructionTruncated?
+
+> `readonly` `optional` **instructionTruncated?**: `boolean`
+
+True when `instruction` was clipped to the configured max length.
+
 ##### kind?
 
 > `readonly` `optional` **kind?**: `"schema_violation"`
@@ -9332,7 +10247,7 @@ wrapper fails structured-output validation.
 
 > `readonly` `optional` **message?**: `string`
 
-Optional redacted diagnostic paired with [kind](#kind-9). Kept
+Optional redacted diagnostic paired with [kind](#kind-10). Kept
 alongside the legacy `instruction` field so existing repair-loop
 plumbing remains compatible while downstream prompts can consume
 machine-readable schema-violation metadata.
@@ -9425,6 +10340,12 @@ Replay-cache key — the only deterministic-bit-identical replay anchor.
 
 > **redactionPolicyVersion**: `"1.0.0"`
 
+##### routingPolicyDigest
+
+> **routingPolicyDigest**: `string`
+
+sha256 hex digest of the canonical resolved model-routing policy.
+
 ##### schemaHash
 
 > **schemaHash**: `string`
@@ -9451,6 +10372,84 @@ Replay-cache key — the only deterministic-bit-identical replay anchor.
 
 ***
 
+### ResolvedFinOpsWallClockBudget
+
+#### Properties
+
+##### adversarialRounds
+
+> `readonly` **adversarialRounds**: `number`
+
+##### breakdown
+
+> `readonly` **breakdown**: `object`
+
+###### additionalJudgeMs
+
+> `readonly` **additionalJudgeMs**: `number`
+
+###### adversarialRoundMs
+
+> `readonly` **adversarialRoundMs**: `number`
+
+###### baseMs
+
+> `readonly` **baseMs**: `number`
+
+###### caseMs
+
+> `readonly` **caseMs**: `number`
+
+###### hardCeilingMs
+
+> `readonly` **hardCeilingMs**: `number`
+
+###### unclampedMs
+
+> `readonly` **unclampedMs**: `number`
+
+###### visualSidecarMs
+
+> `readonly` **visualSidecarMs**: `number`
+
+##### caseCount
+
+> `readonly` **caseCount**: `number`
+
+##### coefficients
+
+> `readonly` **coefficients**: [`FinOpsWallClockBudgetPolicy`](#finopswallclockbudgetpolicy)
+
+##### formulaMs
+
+> `readonly` **formulaMs**: `number`
+
+##### judgePanelSize
+
+> `readonly` **judgePanelSize**: `number`
+
+##### mode
+
+> `readonly` **mode**: `"elastic"` \| `"constant_override"`
+
+##### overrideMs?
+
+> `readonly` `optional` **overrideMs?**: `number`
+
+##### resolvedMs
+
+> `readonly` **resolvedMs**: `number`
+
+##### role
+
+> `readonly` **role**: `"test_generation"`
+
+##### visualSidecarEnabled
+
+> `readonly` **visualSidecarEnabled**: `boolean`
+
+***
+
 ### ReviewEvent
 
 Single immutable event appended to the review-gate event log.
@@ -9471,7 +10470,7 @@ ISO-8601 UTC timestamp at the moment of persistence.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.24.0"`
+> **contractVersion**: `"1.27.0"`
 
 ##### fromState?
 
@@ -9539,7 +10538,7 @@ Number of cases currently in `approved` (or `exported`/`transferred`) state.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.24.0"`
+> **contractVersion**: `"1.27.0"`
 
 ##### fourEyesPolicy?
 
@@ -9765,7 +10764,7 @@ Persisted production-runner run-quality artifact.
 
 ##### contractVersion
 
-> `readonly` **contractVersion**: `"1.24.0"`
+> `readonly` **contractVersion**: `"1.27.0"`
 
 ##### degradedReasons
 
@@ -9847,11 +10846,49 @@ Stage-level attempt summary persisted in the run-quality artifact.
 
 One field-level vote recorded for a single coverage target.
 
+#### Extends
+
+- [`SelfConsistencyVote`](#selfconsistencyvote)
+
 #### Properties
 
 ##### agreement
 
 > `readonly` **agreement**: `number`
+
+Backwards-compatible alias for agreementRate.
+
+##### agreementRate
+
+> `readonly` **agreementRate**: `number`
+
+###### Inherited from
+
+[`SelfConsistencyVote`](#selfconsistencyvote).[`agreementRate`](#agreementrate-1)
+
+##### bootstrapSampleSize
+
+> `readonly` **bootstrapSampleSize**: `number`
+
+###### Inherited from
+
+[`SelfConsistencyVote`](#selfconsistencyvote).[`bootstrapSampleSize`](#bootstrapsamplesize-1)
+
+##### confidenceInterval95
+
+> `readonly` **confidenceInterval95**: readonly \[`number`, `number`\]
+
+###### Inherited from
+
+[`SelfConsistencyVote`](#selfconsistencyvote).[`confidenceInterval95`](#confidenceinterval95-1)
+
+##### consensusStrength
+
+> `readonly` **consensusStrength**: `"strong_consensus"` \| `"weak_consensus"`
+
+###### Inherited from
+
+[`SelfConsistencyVote`](#selfconsistencyvote).[`consensusStrength`](#consensusstrength-2)
 
 ##### field
 
@@ -9869,6 +10906,14 @@ One field-level vote recorded for a single coverage target.
 
 > `readonly` `optional` **stepIndex?**: `number`
 
+##### winner?
+
+> `readonly` `optional` **winner?**: `string`
+
+###### Inherited from
+
+[`SelfConsistencyVote`](#selfconsistencyvote).[`winner`](#winner-1)
+
 ***
 
 ### SelfConsistencyReport
@@ -9879,7 +10924,7 @@ Persisted self-consistency voting artifact (Issue #2070).
 
 ##### contractVersion
 
-> `readonly` **contractVersion**: `"1.24.0"`
+> `readonly` **contractVersion**: `"1.27.0"`
 
 ##### generatedAt
 
@@ -9917,13 +10962,21 @@ One per-target row in the persisted self-consistency report.
 
 > `readonly` **agreement**: `number`
 
+##### arbitrationTriggered?
+
+> `readonly` `optional` **arbitrationTriggered?**: `boolean`
+
+##### consensusStrength
+
+> `readonly` **consensusStrength**: `"strong_consensus"` \| `"weak_consensus"`
+
 ##### disagreement
 
 > `readonly` **disagreement**: `boolean`
 
 ##### disagreementRoute?
 
-> `readonly` `optional` **disagreementRoute?**: `"human_review"`
+> `readonly` `optional` **disagreementRoute?**: [`SelfConsistencyDisagreementRoute`](#selfconsistencydisagreementroute)
 
 ##### samplePresenceCount
 
@@ -9940,6 +10993,38 @@ One per-target row in the persisted self-consistency report.
 ##### votes
 
 > `readonly` **votes**: readonly [`SelfConsistencyFieldVote`](#selfconsistencyfieldvote)[]
+
+***
+
+### SelfConsistencyVote
+
+Deterministic self-consistency vote summary (Issue #2125).
+
+#### Extended by
+
+- [`SelfConsistencyFieldVote`](#selfconsistencyfieldvote)
+
+#### Properties
+
+##### agreementRate
+
+> `readonly` **agreementRate**: `number`
+
+##### bootstrapSampleSize
+
+> `readonly` **bootstrapSampleSize**: `number`
+
+##### confidenceInterval95
+
+> `readonly` **confidenceInterval95**: readonly \[`number`, `number`\]
+
+##### consensusStrength
+
+> `readonly` **consensusStrength**: `"strong_consensus"` \| `"weak_consensus"`
+
+##### winner?
+
+> `readonly` `optional` **winner?**: `string`
 
 ***
 
@@ -10175,7 +11260,7 @@ Sorted by `testCaseId` for byte stability. Empty when `refusal` is set.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.24.0"`
+> **contractVersion**: `"1.27.0"`
 
 ##### gatewayRelease
 
@@ -10268,7 +11353,7 @@ Changelog-approved signed migration bundle for banking-profile runs.
 
 ##### contractVersion
 
-> `readonly` **contractVersion**: `"4.60.0"`
+> `readonly` **contractVersion**: `"4.62.0"`
 
 ##### entries
 
@@ -10462,6 +11547,129 @@ Source ID from the multi-source envelope.
 
 ***
 
+### SubprocessorEntry
+
+A single ICT third-party / subprocessor entry under DORA Art. 28(3).
+Mirrors a row of the human-readable register at
+`docs/dora/subprocessor-register.md` § 2 and is the structured form
+auditors cross-reference against `compliance-annotations.json`.
+
+All fields are required so the artifact is byte-stable across runs;
+optional fields are only added behind `?` when omission is the
+meaningful signal (e.g. a subprocessor that has no SOC 2 report).
+
+#### Properties
+
+##### addedAt
+
+> `readonly` **addedAt**: `string`
+
+ISO-8601 timestamp the entry was first added to the register.
+
+##### contractualSafeguards
+
+> `readonly` **contractualSafeguards**: readonly `string`[]
+
+Sorted, deduplicated contractual safeguard citations (e.g. `"DPA-2024"`, `"SCC-2021-Module-2"`).
+
+##### dataCategories
+
+> `readonly` **dataCategories**: readonly `string`[]
+
+Sorted, deduplicated data-classification scope tokens.
+
+##### hostingRegion
+
+> `readonly` **hostingRegion**: `"westeurope"` \| `"northeurope"` \| `"francecentral"` \| `"germanywestcentral"` \| `"swedencentral"` \| `"eu-west-1"` \| `"operator-defined"`
+
+Hosting region from [SUPPORTED\_HOSTING\_REGIONS](#supported_hosting_regions).
+
+##### iso27001ReportRef?
+
+> `readonly` `optional` **iso27001ReportRef?**: `string`
+
+Optional ISO/IEC 27001 certificate reference (citation, not a URL).
+
+##### legalName
+
+> `readonly` **legalName**: `string`
+
+Contractual / legal name (operator-selected vendor where applicable).
+
+##### purpose
+
+> `readonly` **purpose**: `string`
+
+One-sentence purpose of the subprocessor in the test-intelligence pipeline.
+
+##### retentionPolicy
+
+> `readonly` **retentionPolicy**: `string`
+
+Retention policy floor the operator must meet.
+
+##### soc2ReportRef?
+
+> `readonly` `optional` **soc2ReportRef?**: `string`
+
+Optional SOC 2 Type II report reference (citation, not a URL).
+
+##### subprocessorId
+
+> `readonly` **subprocessorId**: `string`
+
+Stable, kebab-case identifier (e.g. `"llm-gateway-text-generation"`).
+
+***
+
+### SubprocessorRegister
+
+Run-level subprocessor register artifact (Issue #2174). Persisted as
+`subprocessor-register.json` next to `compliance-annotations.json` and
+`compliance-coverage-report.json`; the human-readable
+`docs/dora/subprocessor-register.md` is auto-generated from this
+structure at build time, never hand-edited.
+
+The artifact is byte-stable: identical inputs produce identical
+canonical JSON bytes, so a SHA-256 over the file is reproducible
+across runs at the same commit. Subprocessors and cross-border
+transfers are sorted by their stable identifier; the embedded
+[SubprocessorRegister.merkleRoot](#merkleroot) is a SHA-256 Merkle tree over
+the canonical-JSON-serialised entries (subprocessors first, then
+transfers, both pre-sorted), so a single root pin lets a downstream
+verifier detect drift in either list without re-hashing the whole
+file.
+
+#### Properties
+
+##### crossBorderTransfers
+
+> `readonly` **crossBorderTransfers**: readonly [`CrossBorderTransferEntry`](#crossbordertransferentry)[]
+
+##### generatedAt
+
+> `readonly` **generatedAt**: `string`
+
+##### merkleRoot
+
+> `readonly` **merkleRoot**: `string`
+
+SHA-256 Merkle root over the (sorted) entry list, hex-encoded.
+
+##### registerVersion
+
+> `readonly` **registerVersion**: `"1.0.0"`
+
+##### schemaVersion
+
+> `readonly` **schemaVersion**: `"1.0.0"`
+
+##### subprocessors
+
+> `readonly` **subprocessors**: readonly [`SubprocessorEntry`](#subprocessorentry)[]
+
+***
+
 ### SuggestedCustomContextAttribute
 
 Recognized custom attribute and its intended downstream consumer.
@@ -10486,18 +11694,34 @@ Recognized custom attribute and its intended downstream consumer.
 
 ***
 
-### TechniqueCoverageMinimumPolicy
+### TechniqueCoverageMinimumTier
 
-Issue #2068 — policy-profile knob that drives the tier-elastic
-resolution of `policy:technique-coverage-minimum`. Optional for
-backwards compatibility; `undefined` is treated as
-`{ mode: "tier-elastic" }`.
+Tier-elastic equivalence-partitioning quota tiers (Issue #2068).
+
+Every screen resolves to the LAST tier whose `minFieldCount <= fieldCount`
+(sorted ascending). That tier then resolves to
+`max(floor, ceil(multiplier * fieldCount))`. The tiers are intentionally a
+frozen, deterministic constant so that
+`policy-report.json` and `technique-quota-report.json` remain
+byte-stable across runs.
 
 #### Properties
 
-##### mode
+##### floor
 
-> `readonly` **mode**: `"tier-elastic"` \| `"fixed"`
+> `readonly` **floor**: `number`
+
+##### label
+
+> `readonly` **label**: `string`
+
+##### minFieldCount
+
+> `readonly` **minFieldCount**: `number`
+
+##### multiplier
+
+> `readonly` **multiplier**: `number`
 
 ***
 
@@ -10516,7 +11740,7 @@ the planner published a fixed `12` minCount. Entries are sorted by
 
 ##### contractVersion
 
-> `readonly` **contractVersion**: `"1.24.0"`
+> `readonly` **contractVersion**: `"1.27.0"`
 
 ##### deficitCount
 
@@ -10552,7 +11776,7 @@ the planner published a fixed `12` minCount. Entries are sorted by
 
 ##### schemaVersion
 
-> `readonly` **schemaVersion**: `"1.0.0"`
+> `readonly` **schemaVersion**: `"1.1.0"`
 
 ##### screenCount
 
@@ -10584,7 +11808,20 @@ Coverage-relevant field count for the screen, derived from
 > `readonly` **formula**: `string`
 
 Stable, machine-readable formula label that produced
-`requiredCount`. `tier-elastic:fields<=8:ceil(1.5*fields)` etc.
+`requiredCount`. `tier-elastic:fields=9-19:ceil(0.9*fields)` etc.
+
+##### formulaMultiplier
+
+> `readonly` **formulaMultiplier**: `number` \| `null`
+
+Multiplier applied by the consulted tier. `null` when the planner quota
+was enforced verbatim and no elastic multiplier applied.
+
+##### formulaTier
+
+> `readonly` **formulaTier**: `string`
+
+Stable tier label consulted while resolving the quota.
 
 ##### mode
 
@@ -10710,7 +11947,7 @@ Avg assumptions per case.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.24.0"`
+> **contractVersion**: `"1.27.0"`
 
 ##### duplicatePairs
 
@@ -10800,6 +12037,17 @@ Total open questions across all cases.
 
 > **positiveCaseCount**: `number`
 
+##### recommendedTransitionCoverage?
+
+> `optional` **recommendedTransitionCoverage?**: [`TestCaseCoverageBucket`](#testcasecoveragebucket)
+
+Issue #2168 — share of `recommended_positive_path` field-lifecycle
+transitions that are exercised by at least one accepted test step.
+Optional (omitted when the workflow topology declares no field
+lifecycles or no recommended-tier transitions) so the byte shape of
+the coverage report stays stable for runs that pre-date the
+tier-aware validator.
+
 ##### rubricScore?
 
 > `optional` **rubricScore?**: `number`
@@ -10852,7 +12100,7 @@ Aggregate dedupe report artifact (Issue #1373).
 
 ##### contractVersion
 
-> **contractVersion**: `"1.24.0"`
+> **contractVersion**: `"1.27.0"`
 
 ##### embeddingProvider
 
@@ -10962,7 +12210,7 @@ Aggregate test-case delta report (always paired with `IntentDeltaReport`).
 
 ##### contractVersion
 
-> **contractVersion**: `"1.24.0"`
+> **contractVersion**: `"1.27.0"`
 
 ##### generatedAt
 
@@ -11166,7 +12414,7 @@ set of values.
 
 ##### status
 
-> `readonly` **status**: `"passed"` \| `"failed"` \| `"advisory"` \| `"skipped"`
+> `readonly` **status**: `"skipped"` \| `"passed"` \| `"failed"` \| `"advisory"`
 
 Evaluation outcome; see [ALLOWED\_TEST\_CASE\_POLICY\_GATE\_STATUSES](#allowed_test_case_policy_gate_statuses).
 
@@ -11258,6 +12506,24 @@ repair-loop is triggered. Tunable per profile; the secure default for
 `eu-banking-default` is `0.4`. Optional for backward compatibility:
 when omitted the hard-gate skips the breadth check.
 
+##### finopsWallClockBudget?
+
+> `optional` **finopsWallClockBudget?**: [`FinOpsWallClockBudgetPolicy`](#finopswallclockbudgetpolicy)
+
+Issue #2169 — policy-scoped elastic FinOps wall-clock coefficients for
+the `test_generation` role.
+
+Optional for backwards compatibility: when omitted the runtime falls back
+to the built-in `eu-banking-default` coefficients.
+
+##### judgeRefusalPolicy?
+
+> `optional` **judgeRefusalPolicy?**: [`JudgeRefusalPolicyConfig`](#judgerefusalpolicyconfig)
+
+Operator-configurable handling when a cross-family judge refuses.
+Omitted values preserve the legacy availability-first posture
+(`fail_open`) for backwards compatibility.
+
 ##### maxAssumptionsPerCase
 
 > **maxAssumptionsPerCase**: `number`
@@ -11335,6 +12601,35 @@ Whether each required field requires at least one boundary case.
 > **requireNegativeOrValidationForValidationRules**: `boolean`
 
 Whether each detected validation rule requires at least one negative/validation case.
+
+##### requirePerStepFaithfulness?
+
+> `optional` **requirePerStepFaithfulness?**: `boolean`
+
+Issue #2116 — faithfulness-tier-elastic fallback strictness.
+
+Drives how the cross-modal-faithfulness gate treats verdicts that
+lack `stepVerdicts` (legacy schema 1.0.0 producers, refused
+cross-family judge that still emitted a case-level score, etc.).
+
+- `false` (the secure default for `eu-banking-default`):
+  `case_level_fallback` raises a job-level **warning**
+  (`policy:cross-modal-faithfulness:case-level-fallback`) and the
+  case-level score continues to drive the threshold check. The
+  evaluation mode is recorded on
+  `TestCasePolicyReport.faithfulnessEvaluation` for audit.
+- `true`: `case_level_fallback` is treated as an **error**, mirroring
+  the per-step strictness. Operators that require per-step audit
+  evidence flip this on so a verdict with no per-step claims fails
+  the run rather than slipping through under the legacy fallback.
+
+The companion `policy:cross-modal-faithfulness:evaluation-missing`
+outcome is always raised at error severity when no faithfulness
+verdict is present at all — that path is not configurable because
+"no judge ran" must never silently pass an audited gate.
+
+Optional for backwards compatibility: when omitted the runtime
+applies the `false` default.
 
 ##### reviewOnlyRiskCategories
 
@@ -11429,13 +12724,53 @@ Whether ANY case was blocked (downstream export gate).
 
 > **blockedCount**: `number`
 
+##### confidenceMean?
+
+> `optional` **confidenceMean?**: `number`
+
+Mean calibrated per-case confidence across every generated case.
+
+##### confidenceP10?
+
+> `optional` **confidenceP10?**: `number`
+
+10th percentile calibrated per-case confidence across every case.
+
+##### confidenceP50?
+
+> `optional` **confidenceP50?**: `number`
+
+50th percentile calibrated per-case confidence across every case.
+
+##### confidenceP90?
+
+> `optional` **confidenceP90?**: `number`
+
+90th percentile calibrated per-case confidence across every case.
+
 ##### contractVersion
 
-> **contractVersion**: `"1.24.0"`
+> **contractVersion**: `"1.27.0"`
 
 ##### decisions
 
 > **decisions**: [`TestCasePolicyDecisionRecord`](#testcasepolicydecisionrecord)[]
+
+##### faithfulnessEvaluation?
+
+> `optional` **faithfulnessEvaluation?**: [`FaithfulnessEvaluationSummary`](#faithfulnessevaluationsummary)
+
+Issue #2116 — explicit semantics + audit trail for the
+cross-modal-faithfulness gate's tier-elastic fallback.
+
+Always emitted by the policy gate so reviewers can tell at a glance
+whether the gate reasoned over per-step evidence
+(`mode === "per_step"`), fell back to the verdict's case-level score
+(`mode === "case_level_fallback"`), or had no faithfulness verdict
+at all (`mode === "missing"`). The `requirePerStepFaithfulness`
+field mirrors the active profile rule so audit reviewers do not
+need a second artifact to know whether the fallback was demoted to
+an error.
 
 ##### gateResults?
 
@@ -11513,7 +12848,7 @@ Single policy-rule violation surfaced for a generated test case.
 
 ##### outcome
 
-> **outcome**: `"schema_invalid"` \| `"missing_trace"` \| `"missing_expected_results"` \| `"semantic_suspicious_content"` \| `"pii_in_test_data"` \| `"ict_register_ref_required"` \| `"technique_quota_breach"` \| `"p0_risk_element_uncovered"` \| `"missing_negative_or_validation_for_required_field"` \| `"missing_accessibility_case"` \| `"missing_boundary_case"` \| `"duplicate_test_case"` \| `"regulated_risk_review_required"` \| `"ambiguity_review_required"` \| `"qc_mapping_not_exportable"` \| `"low_confidence_review_required"` \| `"open_questions_review_required"` \| `"visual_sidecar_failure"` \| `"visual_sidecar_fallback_used"` \| `"visual_sidecar_fallback_used_succeeded"` \| `"visual_sidecar_both_failed"` \| `"visual_sidecar_low_confidence"` \| `"visual_sidecar_possible_pii"` \| `"visual_sidecar_prompt_injection_text"` \| `"cross_modal_faithfulness_score_below_threshold"` \| `"risk_tag_downgrade_detected"` \| `"custom_context_risk_escalation"` \| `"multi_source_conflict_present"` \| `"coverage_drift_exceeded"` \| `"a11y_criterion_covered_weakly"` \| `"a11y_criterion_not_covered"`
+> **outcome**: `"schema_invalid"` \| `"missing_trace"` \| `"missing_expected_results"` \| `"semantic_suspicious_content"` \| `"pii_in_test_data"` \| `"ict_register_ref_required"` \| `"technique_quota_breach"` \| `"p0_risk_element_uncovered"` \| `"missing_negative_or_validation_for_required_field"` \| `"missing_accessibility_case"` \| `"missing_boundary_case"` \| `"duplicate_test_case"` \| `"regulated_risk_review_required"` \| `"ambiguity_review_required"` \| `"qc_mapping_not_exportable"` \| `"low_confidence_review_required"` \| `"open_questions_review_required"` \| `"visual_sidecar_failure"` \| `"visual_sidecar_fallback_used"` \| `"visual_sidecar_fallback_used_succeeded"` \| `"visual_sidecar_both_failed"` \| `"visual_sidecar_low_confidence"` \| `"visual_sidecar_possible_pii"` \| `"visual_sidecar_prompt_injection_text"` \| `"cross_modal_faithfulness_evaluation_missing"` \| `"cross_modal_faithfulness_score_below_threshold"` \| `"cross_modal_faithfulness_case_level_fallback"` \| `"cross_modal_faithfulness_partial_majority"` \| `"judge_refused"` \| `"risk_tag_downgrade_detected"` \| `"custom_context_risk_escalation"` \| `"multi_source_conflict_present"` \| `"coverage_drift_exceeded"` \| `"a11y_criterion_covered_weakly"` \| `"a11y_criterion_not_covered"`
 
 ##### path?
 
@@ -11568,7 +12903,7 @@ Single semantic / structural validation issue.
 
 ##### code
 
-> **code**: `"schema_invalid"` \| `"missing_trace"` \| `"trace_screen_unknown"` \| `"missing_expected_results"` \| `"steps_unordered"` \| `"steps_indices_non_sequential"` \| `"step_action_empty"` \| `"step_action_too_long"` \| `"duplicate_step_index"` \| `"duplicate_test_case_id"` \| `"title_empty"` \| `"objective_empty"` \| `"risk_category_invalid_for_intent"` \| `"qc_mapping_blocking_reasons_missing"` \| `"qc_mapping_exportable_inconsistent"` \| `"quality_signals_confidence_out_of_range"` \| `"quality_signals_coverage_unknown_id"` \| `"test_data_pii_detected"` \| `"test_data_unredacted_value"` \| `"preconditions_pii_detected"` \| `"expected_results_pii_detected"` \| `"assumptions_excessive"` \| `"open_questions_excessive"` \| `"ambiguity_without_review_state"` \| `"unsupported_unresolved_validation_detail"` \| `"needs_open_question_clarification"` \| `"semantic_suspicious_content"` \| `"domain_invariant_violation"` \| `"test_data_oracle_violation"` \| `"missing_field_lifecycle_transition"` \| `"unknown_field_lifecycle_transition"` \| `"uncovered_field_lifecycle_transition"`
+> **code**: `"schema_invalid"` \| `"missing_trace"` \| `"trace_screen_unknown"` \| `"missing_expected_results"` \| `"steps_unordered"` \| `"steps_indices_non_sequential"` \| `"step_action_empty"` \| `"step_action_too_long"` \| `"duplicate_step_index"` \| `"duplicate_test_case_id"` \| `"title_empty"` \| `"objective_empty"` \| `"risk_category_invalid_for_intent"` \| `"qc_mapping_blocking_reasons_missing"` \| `"qc_mapping_exportable_inconsistent"` \| `"quality_signals_confidence_out_of_range"` \| `"quality_signals_coverage_unknown_id"` \| `"test_data_pii_detected"` \| `"test_data_unredacted_value"` \| `"preconditions_pii_detected"` \| `"expected_results_pii_detected"` \| `"assumptions_excessive"` \| `"open_questions_excessive"` \| `"ambiguity_without_review_state"` \| `"unsupported_unresolved_validation_detail"` \| `"needs_open_question_clarification"` \| `"semantic_suspicious_content"` \| `"domain_invariant_violation"` \| `"test_data_oracle_violation"` \| `"truncated_repair_instruction"` \| `"missing_field_lifecycle_transition"` \| `"unknown_field_lifecycle_transition"` \| `"uncovered_field_lifecycle_transition"` \| `"uncovered_field_lifecycle_transition_recommended"` \| `"intra_equivalence_class_redundancy"` \| `"exact_near_duplicate_text"`
 
 ##### message
 
@@ -11602,7 +12937,7 @@ Whether the report blocks downstream review/export (any error => true).
 
 ##### contractVersion
 
-> **contractVersion**: `"1.24.0"`
+> **contractVersion**: `"1.27.0"`
 
 ##### errorCount
 
@@ -11619,6 +12954,14 @@ Whether the report blocks downstream review/export (any error => true).
 ##### jobId
 
 > **jobId**: `string`
+
+##### judgeAvailability?
+
+> `optional` **judgeAvailability?**: [`JudgeAvailabilityReport`](#judgeavailabilityreport)
+
+Availability state of the optional cross-family judges as observed by the
+validation pipeline. `skipped` means no verdict was supplied; `refused`
+means a verdict arrived with a refusal payload.
 
 ##### schemaVersion
 
@@ -12064,6 +13407,20 @@ Stable identifier per envelope, e.g. `"src.0"`, `"src.1"`.
 
 ***
 
+### TierElasticTechniqueCoverageMinimumPolicy
+
+#### Properties
+
+##### mode
+
+> `readonly` **mode**: `"tier-elastic"`
+
+##### tiers?
+
+> `readonly` `optional` **tiers?**: readonly [`TechniqueCoverageMinimumTier`](#techniquecoverageminimumtier)[]
+
+***
+
 ### TraceabilityMatrix
 
 Aggregate traceability-matrix artifact (Issue #1373).
@@ -12072,7 +13429,7 @@ Aggregate traceability-matrix artifact (Issue #1373).
 
 ##### contractVersion
 
-> **contractVersion**: `"1.24.0"`
+> **contractVersion**: `"1.27.0"`
 
 ##### exportProfile?
 
@@ -12212,7 +13569,7 @@ Per-case policy decision (mirrors `TestCasePolicyDecisionRecord.decision`).
 
 ##### policyOutcomes
 
-> **policyOutcomes**: (`"schema_invalid"` \| `"missing_trace"` \| `"missing_expected_results"` \| `"semantic_suspicious_content"` \| `"pii_in_test_data"` \| `"ict_register_ref_required"` \| `"technique_quota_breach"` \| `"p0_risk_element_uncovered"` \| `"missing_negative_or_validation_for_required_field"` \| `"missing_accessibility_case"` \| `"missing_boundary_case"` \| `"duplicate_test_case"` \| `"regulated_risk_review_required"` \| `"ambiguity_review_required"` \| `"qc_mapping_not_exportable"` \| `"low_confidence_review_required"` \| `"open_questions_review_required"` \| `"visual_sidecar_failure"` \| `"visual_sidecar_fallback_used"` \| `"visual_sidecar_fallback_used_succeeded"` \| `"visual_sidecar_both_failed"` \| `"visual_sidecar_low_confidence"` \| `"visual_sidecar_possible_pii"` \| `"visual_sidecar_prompt_injection_text"` \| `"cross_modal_faithfulness_score_below_threshold"` \| `"risk_tag_downgrade_detected"` \| `"custom_context_risk_escalation"` \| `"multi_source_conflict_present"` \| `"coverage_drift_exceeded"` \| `"a11y_criterion_covered_weakly"` \| `"a11y_criterion_not_covered"`)[]
+> **policyOutcomes**: (`"schema_invalid"` \| `"missing_trace"` \| `"missing_expected_results"` \| `"semantic_suspicious_content"` \| `"pii_in_test_data"` \| `"ict_register_ref_required"` \| `"technique_quota_breach"` \| `"p0_risk_element_uncovered"` \| `"missing_negative_or_validation_for_required_field"` \| `"missing_accessibility_case"` \| `"missing_boundary_case"` \| `"duplicate_test_case"` \| `"regulated_risk_review_required"` \| `"ambiguity_review_required"` \| `"qc_mapping_not_exportable"` \| `"low_confidence_review_required"` \| `"open_questions_review_required"` \| `"visual_sidecar_failure"` \| `"visual_sidecar_fallback_used"` \| `"visual_sidecar_fallback_used_succeeded"` \| `"visual_sidecar_both_failed"` \| `"visual_sidecar_low_confidence"` \| `"visual_sidecar_possible_pii"` \| `"visual_sidecar_prompt_injection_text"` \| `"cross_modal_faithfulness_evaluation_missing"` \| `"cross_modal_faithfulness_score_below_threshold"` \| `"cross_modal_faithfulness_case_level_fallback"` \| `"cross_modal_faithfulness_partial_majority"` \| `"judge_refused"` \| `"risk_tag_downgrade_detected"` \| `"custom_context_risk_escalation"` \| `"multi_source_conflict_present"` \| `"coverage_drift_exceeded"` \| `"a11y_criterion_covered_weakly"` \| `"a11y_criterion_not_covered"`)[]
 
 Per-case sorted, deduplicated policy outcome codes that fired.
 
@@ -12258,7 +13615,7 @@ Title at the moment the matrix was built.
 
 ##### transferOutcome?
 
-> `optional` **transferOutcome?**: `"failed"` \| `"refused"` \| `"created"` \| `"skipped_duplicate"`
+> `optional` **transferOutcome?**: `"refused"` \| `"failed"` \| `"created"` \| `"skipped_duplicate"`
 
 Outcome of the transfer pipeline for this case, when known.
 
@@ -12342,7 +13699,7 @@ Per-case policy decision at the time this step row was built.
 
 ##### policyOutcomes
 
-> **policyOutcomes**: (`"schema_invalid"` \| `"missing_trace"` \| `"missing_expected_results"` \| `"semantic_suspicious_content"` \| `"pii_in_test_data"` \| `"ict_register_ref_required"` \| `"technique_quota_breach"` \| `"p0_risk_element_uncovered"` \| `"missing_negative_or_validation_for_required_field"` \| `"missing_accessibility_case"` \| `"missing_boundary_case"` \| `"duplicate_test_case"` \| `"regulated_risk_review_required"` \| `"ambiguity_review_required"` \| `"qc_mapping_not_exportable"` \| `"low_confidence_review_required"` \| `"open_questions_review_required"` \| `"visual_sidecar_failure"` \| `"visual_sidecar_fallback_used"` \| `"visual_sidecar_fallback_used_succeeded"` \| `"visual_sidecar_both_failed"` \| `"visual_sidecar_low_confidence"` \| `"visual_sidecar_possible_pii"` \| `"visual_sidecar_prompt_injection_text"` \| `"cross_modal_faithfulness_score_below_threshold"` \| `"risk_tag_downgrade_detected"` \| `"custom_context_risk_escalation"` \| `"multi_source_conflict_present"` \| `"coverage_drift_exceeded"` \| `"a11y_criterion_covered_weakly"` \| `"a11y_criterion_not_covered"`)[]
+> **policyOutcomes**: (`"schema_invalid"` \| `"missing_trace"` \| `"missing_expected_results"` \| `"semantic_suspicious_content"` \| `"pii_in_test_data"` \| `"ict_register_ref_required"` \| `"technique_quota_breach"` \| `"p0_risk_element_uncovered"` \| `"missing_negative_or_validation_for_required_field"` \| `"missing_accessibility_case"` \| `"missing_boundary_case"` \| `"duplicate_test_case"` \| `"regulated_risk_review_required"` \| `"ambiguity_review_required"` \| `"qc_mapping_not_exportable"` \| `"low_confidence_review_required"` \| `"open_questions_review_required"` \| `"visual_sidecar_failure"` \| `"visual_sidecar_fallback_used"` \| `"visual_sidecar_fallback_used_succeeded"` \| `"visual_sidecar_both_failed"` \| `"visual_sidecar_low_confidence"` \| `"visual_sidecar_possible_pii"` \| `"visual_sidecar_prompt_injection_text"` \| `"cross_modal_faithfulness_evaluation_missing"` \| `"cross_modal_faithfulness_score_below_threshold"` \| `"cross_modal_faithfulness_case_level_fallback"` \| `"cross_modal_faithfulness_partial_majority"` \| `"judge_refused"` \| `"risk_tag_downgrade_detected"` \| `"custom_context_risk_escalation"` \| `"multi_source_conflict_present"` \| `"coverage_drift_exceeded"` \| `"a11y_criterion_covered_weakly"` \| `"a11y_criterion_not_covered"`)[]
 
 Per-case sorted, deduplicated policy outcomes at the time this step row was built.
 
@@ -12471,7 +13828,7 @@ Sanitised, length-bounded failure detail; never carries URLs/tokens.
 
 ##### outcome
 
-> **outcome**: `"failed"` \| `"refused"` \| `"created"` \| `"skipped_duplicate"`
+> **outcome**: `"refused"` \| `"failed"` \| `"created"` \| `"skipped_duplicate"`
 
 ##### qcEntityId
 
@@ -12566,7 +13923,7 @@ Audit metadata for the run.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.24.0"`
+> **contractVersion**: `"1.27.0"`
 
 ##### createdCount
 
@@ -12941,7 +14298,7 @@ can be debugged from the artifact alone.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.24.0"`
+> **contractVersion**: `"1.27.0"`
 
 ##### deployment
 
@@ -13000,7 +14357,7 @@ serialization fails).
 
 ##### responseShape
 
-> **responseShape**: `"string"` \| `"object"` \| `"array"` \| `"null"` \| `"missing"`
+> **responseShape**: `"string"` \| `"object"` \| `"missing"` \| `"array"` \| `"null"`
 
 Coarse shape classification of the response payload:
   - `"string"` — gateway returned a string (e.g. raw JSON text).
@@ -13063,7 +14420,7 @@ screenshot bytes.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.24.0"`
+> **contractVersion**: `"1.27.0"`
 
 ##### generatedAt
 
@@ -13225,7 +14582,7 @@ Whether any record carries a non-`ok`/non-`fallback_used` outcome that blocks ge
 
 ##### contractVersion
 
-> **contractVersion**: `"1.24.0"`
+> **contractVersion**: `"1.27.0"`
 
 ##### generatedAt
 
@@ -13402,7 +14759,7 @@ Export profile identity (export-only QC pipeline).
 
 ##### generatedTestCaseSchemaVersion
 
-> **generatedTestCaseSchemaVersion**: `"1.1.0"`
+> **generatedTestCaseSchemaVersion**: `"1.3.0"`
 
 ##### imagePayloadSentToTestGeneration
 
@@ -13502,7 +14859,7 @@ Active signing mode; mirrored from the run input for auditability.
 
 ##### testIntelligenceContractVersion
 
-> **testIntelligenceContractVersion**: `"1.24.0"`
+> **testIntelligenceContractVersion**: `"1.27.0"`
 
 ##### visualSidecar?
 
@@ -13931,7 +15288,7 @@ and timestamps are caller-provided.
 
 ##### testIntelligenceContractVersion
 
-> **testIntelligenceContractVersion**: `"1.24.0"`
+> **testIntelligenceContractVersion**: `"1.27.0"`
 
 ##### thresholds
 
@@ -14117,7 +15474,7 @@ Identifier of the fixture or runner profile exercised.
 
 ##### generatedTestCaseSchemaVersion
 
-> **generatedTestCaseSchemaVersion**: `"1.1.0"`
+> **generatedTestCaseSchemaVersion**: `"1.3.0"`
 
 ##### imagePayloadSentToTestGeneration
 
@@ -14228,9 +15585,18 @@ SHA-256 + bytes of the per-source IR artifact under
 `<runDir>/sources/<sourceId>/`. Never includes raw Jira API responses,
 raw paste bytes, or PII.
 
+##### subprocessorRegisterVersion
+
+> **subprocessorRegisterVersion**: `"1.0.0"`
+
+Version of the subprocessor register + cross-border transfer ADR
+(`docs/dora/subprocessor-register.md`, `docs/dpia/cross-border-transfer.md`)
+active for the run. Carries DORA Art. 28 / GDPR Ch. V documentation
+identity into the replay artifact (Issue #2113).
+
 ##### testIntelligenceContractVersion
 
-> **testIntelligenceContractVersion**: `"1.24.0"`
+> **testIntelligenceContractVersion**: `"1.27.0"`
 
 Test-intelligence subsurface contract version.
 
@@ -15463,7 +16829,7 @@ Submit response for accepted jobs.
 
 ###### Inherited from
 
-[`WorkspaceSubmitAccepted`](#workspacesubmitaccepted).[`jobId`](#jobid-69)
+[`WorkspaceSubmitAccepted`](#workspacesubmitaccepted).[`jobId`](#jobid-71)
 
 ##### pasteDeltaSummary?
 
@@ -17693,35 +19059,9 @@ Enable Figma image asset export to generated-app/public/images. Default: true
 
 ##### fetchImpl?
 
-> `optional` **fetchImpl?**: \{(`input`, `init?`): `Promise`\<`Response`\>; (`input`, `init?`): `Promise`\<`Response`\>; \}
+> `optional` **fetchImpl?**: (`input`, `init?`) => `Promise`\<`Response`\>
 
 Optional custom fetch implementation (for tests or custom runtimes).
-
-###### Call Signature
-
-> (`input`, `init?`): `Promise`\<`Response`\>
-
-[MDN Reference](https://developer.mozilla.org/docs/Web/API/Window/fetch)
-
-###### Parameters
-
-###### input
-
-`URL` \| `RequestInfo`
-
-###### init?
-
-`RequestInit`
-
-###### Returns
-
-`Promise`\<`Response`\>
-
-###### Call Signature
-
-> (`input`, `init?`): `Promise`\<`Response`\>
-
-[MDN Reference](https://developer.mozilla.org/docs/Web/API/Window/fetch)
 
 ###### Parameters
 
@@ -19095,6 +20435,12 @@ Terminal outcome of an entire agent-team run.
 
 ***
 
+### AuditDossierManifestArtifactKind
+
+> **AuditDossierManifestArtifactKind** = *typeof* [`ALLOWED_AUDIT_DOSSIER_ARTIFACT_KINDS`](#allowed_audit_dossier_artifact_kinds)\[`number`\]
+
+***
+
 ### BankingInsuranceSemanticKeyword
 
 > **BankingInsuranceSemanticKeyword** = *typeof* [`BANKING_INSURANCE_SEMANTIC_KEYWORDS`](#banking_insurance_semantic_keywords)\[`number`\]
@@ -19239,6 +20585,14 @@ applicable so a single auditor can route on a unified vocabulary.
 
 ***
 
+### FaithfulnessEvaluationMode
+
+> **FaithfulnessEvaluationMode** = *typeof* [`FAITHFULNESS_EVALUATION_MODES`](#faithfulness_evaluation_modes)\[`number`\]
+
+Discriminant of an allowed faithfulness-evaluation mode (Issue #2116).
+
+***
+
 ### FaithfulnessStepVerdictLabel
 
 > **FaithfulnessStepVerdictLabel** = *typeof* [`FAITHFULNESS_STEP_VERDICT_LABELS`](#faithfulness_step_verdict_labels)\[`number`\]
@@ -19341,6 +20695,24 @@ Discriminated alias for [HUMAN\_REVIEW\_VERDICT\_LABELS](#human_review_verdict_l
 
 ***
 
+### IncidentCategory
+
+> **IncidentCategory** = *typeof* [`ALLOWED_INCIDENT_CATEGORIES`](#allowed_incident_categories)\[`number`\]
+
+***
+
+### IncidentReviewState
+
+> **IncidentReviewState** = *typeof* [`ALLOWED_INCIDENT_REVIEW_STATES`](#allowed_incident_review_states)\[`number`\]
+
+***
+
+### IncidentSeverity
+
+> **IncidentSeverity** = *typeof* [`ALLOWED_INCIDENT_SEVERITIES`](#allowed_incident_severities)\[`number`\]
+
+***
+
 ### IntentDeltaChangeType
 
 > **IntentDeltaChangeType** = *typeof* [`ALLOWED_INTENT_DELTA_CHANGE_TYPES`](#allowed_intent_delta_change_types)\[`number`\]
@@ -19422,6 +20794,20 @@ Discriminated alias for [ALLOWED\_JIRA\_ISSUE\_TYPES](#allowed_jira_issue_types)
 ### JiraWriteRefusalCode
 
 > **JiraWriteRefusalCode** = *typeof* [`ALLOWED_JIRA_WRITE_REFUSAL_CODES`](#allowed_jira_write_refusal_codes)\[`number`\]
+
+***
+
+### JudgeAvailabilityState
+
+> **JudgeAvailabilityState** = *typeof* [`ALLOWED_JUDGE_AVAILABILITY_STATES`](#allowed_judge_availability_states)\[`number`\]
+
+***
+
+### JudgeConsensusAgreementShape
+
+> **JudgeConsensusAgreementShape** = *typeof* [`JUDGE_CONSENSUS_AGREEMENT_SHAPES`](#judge_consensus_agreement_shapes)\[`number`\]
+
+Vote-shape labels surfaced by the persisted judge-consensus artifact.
 
 ***
 
@@ -19526,6 +20912,12 @@ Discriminated alias for [JUDGE\_PANEL\_PER\_JUDGE\_VERDICTS](#judge_panel_per_ju
 > **JudgePanelResolvedSeverity** = *typeof* [`JUDGE_PANEL_RESOLVED_SEVERITIES`](#judge_panel_resolved_severities)\[`number`\]
 
 Discriminated alias for [JUDGE\_PANEL\_RESOLVED\_SEVERITIES](#judge_panel_resolved_severities).
+
+***
+
+### JudgeRefusalPolicy
+
+> **JudgeRefusalPolicy** = *typeof* [`ALLOWED_JUDGE_REFUSAL_POLICIES`](#allowed_judge_refusal_policies)\[`number`\]
 
 ***
 
@@ -19693,6 +21085,30 @@ Discriminant of an allowed logic-judge terminal verdict.
 > **MigrationRefusalCode** = *typeof* [`ALLOWED_MIGRATION_REFUSAL_CODES`](#allowed_migration_refusal_codes)\[`number`\]
 
 Discriminated alias for [ALLOWED\_MIGRATION\_REFUSAL\_CODES](#allowed_migration_refusal_codes).
+
+***
+
+### ModelRoutingRole
+
+> **ModelRoutingRole** = *typeof* [`MODEL_ROUTING_ROLES`](#model_routing_roles)\[`number`\]
+
+Discriminated alias for [MODEL\_ROUTING\_ROLES](#model_routing_roles).
+
+***
+
+### ModelRoutingRouteSlot
+
+> **ModelRoutingRouteSlot** = *typeof* [`MODEL_ROUTING_ROUTE_SLOTS`](#model_routing_route_slots)\[`number`\]
+
+Discriminated alias for [MODEL\_ROUTING\_ROUTE\_SLOTS](#model_routing_route_slots).
+
+***
+
+### ModelRoutingTierLabel
+
+> **ModelRoutingTierLabel** = *typeof* [`MODEL_ROUTING_TIER_LABELS`](#model_routing_tier_labels)\[`number`\]
+
+Discriminated alias for [MODEL\_ROUTING\_TIER\_LABELS](#model_routing_tier_labels).
 
 ***
 
@@ -19885,7 +21301,7 @@ Top-level run-quality states for the production-runner artifact bundle.
 
 ### SelfConsistencyDisagreementRoute
 
-> **SelfConsistencyDisagreementRoute** = `"human_review"`
+> **SelfConsistencyDisagreementRoute** = `"cross_family_arbitration"` \| `"human_review"`
 
 Stable route emitted for targets whose samples disagree structurally.
 
@@ -19982,6 +21398,25 @@ with the ordered list of sections that the prompt compiler must emit.
 
 ***
 
+### SupportedHostingRegion
+
+> **SupportedHostingRegion** = *typeof* [`SUPPORTED_HOSTING_REGIONS`](#supported_hosting_regions)\[`number`\]
+
+A single Azure / Mistral / operator-defined hosting region.
+
+***
+
+### SupportedLocale
+
+> **SupportedLocale** = `"DE-DE"` \| `"DE-AT"` \| `"DE-CH"` \| `"EN-IE"` \| `"FR-FR"` \| `"IT-IT"`
+
+The six EU-banking locales supported by per-locale Platt-curve calibration
+(Issue #2117).  Referenced by `BusinessTestIntentScreen.locale` so that
+consumers can correlate per-screen locale with the per-locale calibration
+curves without importing from the test-intelligence submodule.
+
+***
+
 ### SupportingTestIntentSourceKind
 
 > **SupportingTestIntentSourceKind** = *typeof* [`SUPPORTING_TEST_INTENT_SOURCE_KINDS`](#supporting_test_intent_source_kinds)\[`number`\]
@@ -19995,6 +21430,12 @@ Subset alias for supporting source kinds.
 > **TechniqueCoverageMinimumMode** = *typeof* [`TECHNIQUE_COVERAGE_MINIMUM_MODES`](#technique_coverage_minimum_modes)\[`number`\]
 
 Discriminant of an allowed `policy:technique-coverage-minimum` mode.
+
+***
+
+### TechniqueCoverageMinimumPolicy
+
+> **TechniqueCoverageMinimumPolicy** = [`FixedTechniqueCoverageMinimumPolicy`](#fixedtechniquecoverageminimumpolicy) \| [`TierElasticTechniqueCoverageMinimumPolicy`](#tierelastictechniquecoverageminimumpolicy)
 
 ***
 
@@ -20021,6 +21462,12 @@ Discriminant of an allowed `policy:technique-coverage-minimum` mode.
 > **TestCaseLevel** = `"unit"` \| `"component"` \| `"integration"` \| `"system"` \| `"acceptance"`
 
 Coarse-grain test level.
+
+***
+
+### TestCaseOraclePolarity
+
+> **TestCaseOraclePolarity** = *typeof* [`ALLOWED_TEST_CASE_ORACLE_POLARITIES`](#allowed_test_case_oracle_polarities)\[`number`\]
 
 ***
 
@@ -20850,6 +22297,14 @@ artifact does not introduce a second outcome surface.
 
 ***
 
+### ALLOWED\_AUDIT\_DOSSIER\_ARTIFACT\_KINDS
+
+> `const` **ALLOWED\_AUDIT\_DOSSIER\_ARTIFACT\_KINDS**: readonly \[`"model_card"`, `"provenance"`, `"compliance_coverage"`, `"compliance_annotations"`, `"judge_calibration"`, `"locale_calibration"`, `"inter_rater_agreement"`, `"drift_baseline"`, `"incident_log"`, `"subprocessor_register"`, `"finops_budget"`, `"faithfulness_tier"`, `"self_consistency"`, `"evidence_seal"`, `"policy_report"`\]
+
+Closed list of source-artifact roles tracked by the dossier manifest.
+
+***
+
 ### ALLOWED\_CACHE\_BREAK\_SUPPRESSION\_REASONS
 
 > `const` **ALLOWED\_CACHE\_BREAK\_SUPPRESSION\_REASONS**: readonly \[`"compaction"`, `"cache_deletion"`\]
@@ -21111,6 +22566,33 @@ manifest may reference. Adding a member is an additive minor bump.
 
 ***
 
+### ALLOWED\_INCIDENT\_CATEGORIES
+
+> `const` **ALLOWED\_INCIDENT\_CATEGORIES**: readonly \[`"compliance_rule_pack_violation"`, `"drift_alert"`, `"judge_disagreement_persistent"`, `"pii_leakage"`, `"policy_gate_bypass"`, `"replay_cache_miss_unexpected"`, `"subprocessor_outage"`\]
+
+Closed enumeration of incident categories as defined by Issue #2114.
+Listed in canonical sort order; new categories require a contract bump.
+
+***
+
+### ALLOWED\_INCIDENT\_REVIEW\_STATES
+
+> `const` **ALLOWED\_INCIDENT\_REVIEW\_STATES**: readonly \[`"ok"`, `"incident_ack_required"`\]
+
+Pipeline-level incident review state. When the classifier emits any
+`critical` event, the report stamps `incident_ack_required` and the
+pipeline pauses until an operator records a manual acknowledgement.
+
+***
+
+### ALLOWED\_INCIDENT\_SEVERITIES
+
+> `const` **ALLOWED\_INCIDENT\_SEVERITIES**: readonly \[`"low"`, `"medium"`, `"high"`, `"critical"`\]
+
+Severity bands recognized by the incident classifier.
+
+***
+
 ### ALLOWED\_INTENT\_DELTA\_CHANGE\_TYPES
 
 > `const` **ALLOWED\_INTENT\_DELTA\_CHANGE\_TYPES**: readonly \[`"added"`, `"removed"`, `"changed"`, `"confidence_dropped"`, `"ambiguity_increased"`\]
@@ -21230,6 +22712,18 @@ changing call sites.
 Allowed reasons the Jira write pipeline may refuse to perform any
 sub-task creation. Evaluated in fail-closed order; every fired refusal
 is recorded so operators can address them all in one cycle.
+
+***
+
+### ALLOWED\_JUDGE\_AVAILABILITY\_STATES
+
+> `const` **ALLOWED\_JUDGE\_AVAILABILITY\_STATES**: readonly \[`"available"`, `"refused"`, `"skipped"`\]
+
+***
+
+### ALLOWED\_JUDGE\_REFUSAL\_POLICIES
+
+> `const` **ALLOWED\_JUDGE\_REFUSAL\_POLICIES**: readonly \[`"fail_open"`, `"fail_closed"`, `"needs_review"`\]
 
 ***
 
@@ -21727,6 +23221,23 @@ Per-test-case verdict produced by the test-case delta classifier.
 
 ***
 
+### ALLOWED\_TEST\_CASE\_ORACLE\_POLARITIES
+
+> `const` **ALLOWED\_TEST\_CASE\_ORACLE\_POLARITIES**: readonly \[`"positive"`, `"negative"`, `"boundary"`, `"navigation"`, `"accessibility"`\]
+
+Polarity surfaced by a generated test case's oracle (Issue #2123).
+
+The equivalence-class fingerprint deliberately collapses the persisted
+polarity / category / type triple into the coarsest semantic axis
+relevant for redundancy: whether the case's oracle expects the system
+to ACCEPT the input (positive), REJECT it (negative / validation), test
+a value at a partition boundary (boundary), advance through the
+navigation graph (navigation), or assert an accessibility property
+(accessibility). Cases with identical covered ids, technique, and risk
+class but different `oraclePolarity` are NOT considered redundant.
+
+***
+
 ### ALLOWED\_TEST\_CASE\_POLICY\_DECISIONS
 
 > `const` **ALLOWED\_TEST\_CASE\_POLICY\_DECISIONS**: readonly \[`"approved"`, `"blocked"`, `"needs_review"`\]
@@ -21804,7 +23315,7 @@ for the same evaluation.
 
 ### ALLOWED\_TEST\_CASE\_POLICY\_OUTCOMES
 
-> `const` **ALLOWED\_TEST\_CASE\_POLICY\_OUTCOMES**: readonly \[`"missing_trace"`, `"missing_expected_results"`, `"pii_in_test_data"`, `"ict_register_ref_required"`, `"technique_quota_breach"`, `"p0_risk_element_uncovered"`, `"missing_negative_or_validation_for_required_field"`, `"missing_accessibility_case"`, `"missing_boundary_case"`, `"schema_invalid"`, `"duplicate_test_case"`, `"regulated_risk_review_required"`, `"ambiguity_review_required"`, `"qc_mapping_not_exportable"`, `"low_confidence_review_required"`, `"open_questions_review_required"`, `"visual_sidecar_failure"`, `"visual_sidecar_fallback_used"`, `"visual_sidecar_fallback_used_succeeded"`, `"visual_sidecar_both_failed"`, `"visual_sidecar_low_confidence"`, `"visual_sidecar_possible_pii"`, `"visual_sidecar_prompt_injection_text"`, `"semantic_suspicious_content"`, `"cross_modal_faithfulness_score_below_threshold"`, `"risk_tag_downgrade_detected"`, `"custom_context_risk_escalation"`, `"multi_source_conflict_present"`, `"coverage_drift_exceeded"`, `"a11y_criterion_covered_weakly"`, `"a11y_criterion_not_covered"`\]
+> `const` **ALLOWED\_TEST\_CASE\_POLICY\_OUTCOMES**: readonly \[`"missing_trace"`, `"missing_expected_results"`, `"pii_in_test_data"`, `"ict_register_ref_required"`, `"technique_quota_breach"`, `"p0_risk_element_uncovered"`, `"missing_negative_or_validation_for_required_field"`, `"missing_accessibility_case"`, `"missing_boundary_case"`, `"schema_invalid"`, `"duplicate_test_case"`, `"regulated_risk_review_required"`, `"ambiguity_review_required"`, `"qc_mapping_not_exportable"`, `"low_confidence_review_required"`, `"open_questions_review_required"`, `"visual_sidecar_failure"`, `"visual_sidecar_fallback_used"`, `"visual_sidecar_fallback_used_succeeded"`, `"visual_sidecar_both_failed"`, `"visual_sidecar_low_confidence"`, `"visual_sidecar_possible_pii"`, `"visual_sidecar_prompt_injection_text"`, `"semantic_suspicious_content"`, `"cross_modal_faithfulness_evaluation_missing"`, `"cross_modal_faithfulness_score_below_threshold"`, `"cross_modal_faithfulness_case_level_fallback"`, `"cross_modal_faithfulness_partial_majority"`, `"judge_refused"`, `"risk_tag_downgrade_detected"`, `"custom_context_risk_escalation"`, `"multi_source_conflict_present"`, `"coverage_drift_exceeded"`, `"a11y_criterion_covered_weakly"`, `"a11y_criterion_not_covered"`\]
 
 Allowed policy outcome codes attached to a single decision row.
 Visual-sidecar codes (`visual_*`) come from the multimodal sidecar
@@ -21814,7 +23325,7 @@ gating per the Issue #1364 / #1386 update.
 
 ### ALLOWED\_TEST\_CASE\_VALIDATION\_ISSUE\_CODES
 
-> `const` **ALLOWED\_TEST\_CASE\_VALIDATION\_ISSUE\_CODES**: readonly \[`"schema_invalid"`, `"missing_trace"`, `"trace_screen_unknown"`, `"missing_expected_results"`, `"steps_unordered"`, `"steps_indices_non_sequential"`, `"step_action_empty"`, `"step_action_too_long"`, `"duplicate_step_index"`, `"duplicate_test_case_id"`, `"title_empty"`, `"objective_empty"`, `"risk_category_invalid_for_intent"`, `"qc_mapping_blocking_reasons_missing"`, `"qc_mapping_exportable_inconsistent"`, `"quality_signals_confidence_out_of_range"`, `"quality_signals_coverage_unknown_id"`, `"test_data_pii_detected"`, `"test_data_unredacted_value"`, `"preconditions_pii_detected"`, `"expected_results_pii_detected"`, `"assumptions_excessive"`, `"open_questions_excessive"`, `"ambiguity_without_review_state"`, `"unsupported_unresolved_validation_detail"`, `"needs_open_question_clarification"`, `"semantic_suspicious_content"`, `"domain_invariant_violation"`, `"test_data_oracle_violation"`, `"missing_field_lifecycle_transition"`, `"unknown_field_lifecycle_transition"`, `"uncovered_field_lifecycle_transition"`\]
+> `const` **ALLOWED\_TEST\_CASE\_VALIDATION\_ISSUE\_CODES**: readonly \[`"schema_invalid"`, `"missing_trace"`, `"trace_screen_unknown"`, `"missing_expected_results"`, `"steps_unordered"`, `"steps_indices_non_sequential"`, `"step_action_empty"`, `"step_action_too_long"`, `"duplicate_step_index"`, `"duplicate_test_case_id"`, `"title_empty"`, `"objective_empty"`, `"risk_category_invalid_for_intent"`, `"qc_mapping_blocking_reasons_missing"`, `"qc_mapping_exportable_inconsistent"`, `"quality_signals_confidence_out_of_range"`, `"quality_signals_coverage_unknown_id"`, `"test_data_pii_detected"`, `"test_data_unredacted_value"`, `"preconditions_pii_detected"`, `"expected_results_pii_detected"`, `"assumptions_excessive"`, `"open_questions_excessive"`, `"ambiguity_without_review_state"`, `"unsupported_unresolved_validation_detail"`, `"needs_open_question_clarification"`, `"semantic_suspicious_content"`, `"domain_invariant_violation"`, `"test_data_oracle_violation"`, `"truncated_repair_instruction"`, `"missing_field_lifecycle_transition"`, `"unknown_field_lifecycle_transition"`, `"uncovered_field_lifecycle_transition"`, `"uncovered_field_lifecycle_transition_recommended"`, `"intra_equivalence_class_redundancy"`, `"exact_near_duplicate_text"`\]
 
 Allowed test-case validation issue codes (Issue #1364).
 The list is the runtime source of truth; new codes plug in here without
@@ -22025,6 +23536,30 @@ XML namespace embedded in the OpenText ALM reference export root element.
 
 ***
 
+### AUDIT\_DOSSIER\_ARTIFACT\_BASENAME
+
+> `const` **AUDIT\_DOSSIER\_ARTIFACT\_BASENAME**: `"audit-dossier"`
+
+Canonical basename shared by audit-dossier bundle files.
+
+***
+
+### AUDIT\_DOSSIER\_MANIFEST\_SCHEMA\_VERSION
+
+> `const` **AUDIT\_DOSSIER\_MANIFEST\_SCHEMA\_VERSION**: `"1.0.0"`
+
+Schema version for the canonical machine-readable dossier manifest.
+
+***
+
+### AUDIT\_DOSSIER\_SIGNATURE\_SCHEMA\_VERSION
+
+> `const` **AUDIT\_DOSSIER\_SIGNATURE\_SCHEMA\_VERSION**: `"1.0.0"`
+
+Schema version for the detached audit-dossier signature envelope.
+
+***
+
 ### BANKING\_INSURANCE\_SEMANTIC\_KEYWORDS
 
 > `const` **BANKING\_INSURANCE\_SEMANTIC\_KEYWORDS**: readonly \[`"Versicherung"`, `"Police"`, `"Schadensfall"`, `"Risikoprüfung"`, `"Bonität"`, `"Antrag"`, `"Abschluss"`, `"Auszahlung"`, `"Kündigung"`\]
@@ -22176,7 +23711,7 @@ Schema version for persisted context-budget analyzer reports.
 
 ### CONTRACT\_VERSION
 
-> `const` **CONTRACT\_VERSION**: `"4.60.0"`
+> `const` **CONTRACT\_VERSION**: `"4.62.0"`
 
 Current contract version constant.
 Must be bumped according to CONTRACT_CHANGELOG.md rules.
@@ -22411,6 +23946,25 @@ Canonical filename for the optional persisted XLSX export of approved test cases
 
 ***
 
+### FAITHFULNESS\_EVALUATION\_MODES
+
+> `const` **FAITHFULNESS\_EVALUATION\_MODES**: readonly \[`"per_step"`, `"case_level_fallback"`, `"missing"`\]
+
+Closed runtime list of faithfulness-evaluation modes (Issue #2116).
+
+  - `per_step`               — the faithfulness verdict carried per-step
+                               verdicts and the gate reasoned over them.
+                               Strongest evidence path.
+  - `case_level_fallback`    — the verdict was present but lacked
+                               `stepVerdicts` (e.g. legacy schema 1.0.0
+                               producers); the gate fell back to the
+                               verdict's case-level `score`. Auditable
+                               fallback.
+  - `missing`                — no faithfulness verdict at all; the gate
+                               had nothing to reason against.
+
+***
+
 ### FAITHFULNESS\_JUDGE\_COMPILED\_PROMPT\_ARTIFACT\_FILENAME
 
 > `const` **FAITHFULNESS\_JUDGE\_COMPILED\_PROMPT\_ARTIFACT\_FILENAME**: `"compiled-prompt-faithfulness-judge.json"`
@@ -22421,13 +23975,30 @@ Canonical filename for the persisted faithfulness-judge prompt artifact.
 
 ### FAITHFULNESS\_JUDGE\_PROMPT\_TEMPLATE\_VERSION
 
-> `const` **FAITHFULNESS\_JUDGE\_PROMPT\_TEMPLATE\_VERSION**: `"faithfulness-judge.v2"`
+> `const` **FAITHFULNESS\_JUDGE\_PROMPT\_TEMPLATE\_VERSION**: `"faithfulness-judge.v3"`
 
 Prompt-template version pinned onto faithfulness-judge verdict artifacts.
 
 `faithfulness-judge.v2` — Issue #2066: prompt rubric distinguishes
 `match` / `evidence_partial` / `mismatch` per step so partial-evidence
 signals are no longer collapsed into mismatches.
+
+`faithfulness-judge.v3` — Issue #2170: prompt rubric explicitly calls out
+the state-transition tier (steps belonging to a `state_transition`
+technique case) so the judge prefers `evidence_partial` over `mismatch`
+when the workflow transition is intermediate (e.g. only the in-flight
+frame is captured). The verdict-emission contract is unchanged.
+
+***
+
+### FAITHFULNESS\_PARTIAL\_MAJORITY\_FRACTION
+
+> `const` **FAITHFULNESS\_PARTIAL\_MAJORITY\_FRACTION**: `0.6`
+
+Issue #2170 — minimum fraction of step verdicts on a case that must be
+`evidence_partial` for the case to be flagged with the partial-majority
+warning. Encoded as a constant so the tier report and the policy gate
+agree on the threshold.
 
 ***
 
@@ -22449,18 +24020,25 @@ Closed runtime list of per-step faithfulness verdict labels (Issue #2066).
 
 ### FAITHFULNESS\_TIER\_LABELS
 
-> `const` **FAITHFULNESS\_TIER\_LABELS**: readonly \[`"concrete_data"`, `"label_only"`\]
+> `const` **FAITHFULNESS\_TIER\_LABELS**: readonly \[`"concrete_data"`, `"label_only"`, `"state_transition"`\]
 
 Closed runtime list of step-level faithfulness tiers.
 
-  - `concrete_data` — the step carries observable input or expected data
-                      (numeric value, message text, identifier). Threshold
-                      defaults to the strict `0.80` cross-modal floor.
-  - `label_only`    — the step asserts label-only or layout-only intent
-                      (e.g. "open the form", "see the heading"). Partial
-                      visual evidence is sufficient (`evidence_partial`
-                      passes at `>= 0.80`); strict matches are only
-                      required when the score is `>= 0.95`.
+  - `concrete_data`     — the step carries observable input or expected
+                          data (numeric value, message text, identifier).
+                          Strictness: `match >= 0.95`,
+                          `evidence_partial >= 0.80`, `mismatch < 0.80`.
+  - `label_only`        — the step asserts label-only or layout-only intent
+                          (e.g. "open the form", "see the heading").
+                          Strictness: `match >= 0.95`,
+                          `evidence_partial >= 0.85`, `mismatch < 0.85`.
+  - `state_transition`  — the step belongs to a `technique === "state_transition"`
+                          test case AND has no concrete-data assertions
+                          (Issue #2170). The cross-family judge can rarely
+                          verify the full intermediate frame of a workflow
+                          transition from a single capture, so the tier
+                          is the most permissive: `match >= 0.95`,
+                          `evidence_partial >= 0.65`, `mismatch < 0.65`.
 
 ***
 
@@ -22475,9 +24053,14 @@ Canonical filename for the per-run faithfulness-tier-report artifact
 
 ### FAITHFULNESS\_TIER\_REPORT\_SCHEMA\_VERSION
 
-> `const` **FAITHFULNESS\_TIER\_REPORT\_SCHEMA\_VERSION**: `"1.0.0"`
+> `const` **FAITHFULNESS\_TIER\_REPORT\_SCHEMA\_VERSION**: `"1.1.0"`
 
 Schema version for persisted faithfulness-tier-report artifacts.
+
+1.1.0 — Issue #2170: additive `state_transition` tier label, additive
+`partialMajorityCaseIds` summary, and richer per-entry `tierReason`. The
+shape of pre-existing fields is unchanged — readers built against 1.0.0
+continue to load 1.1.0 reports unchanged.
 
 ***
 
@@ -22555,7 +24138,7 @@ Schema version for per-run genealogy DAG artifacts.
 
 ### GENERATED\_TEST\_CASE\_SCHEMA\_VERSION
 
-> `const` **GENERATED\_TEST\_CASE\_SCHEMA\_VERSION**: `"1.1.0"`
+> `const` **GENERATED\_TEST\_CASE\_SCHEMA\_VERSION**: `"1.3.0"`
 
 Schema version for generated test case payloads.
 
@@ -22563,6 +24146,11 @@ Schema version for generated test case payloads.
 ({domain, rationale}) on each test case. Backwards compatible — the
 validator accepts both 1.0.0-shaped lists (without the field) and
 1.1.0-shaped lists (with or without the field).
+
+1.3.0 — Issue #2104: optional additive audit field
+`audit.truncatedInstructionCount` records how many upstream repair
+instructions were clipped before regeneration so validation can emit
+a non-blocking audit warning.
 
 ***
 
@@ -22626,6 +24214,22 @@ reserved for future integration with the live human-review channel.
 Closed runtime list of human-review verdict labels (Issue #2038).
 The reviewer's verdict feeds back into `JudgeConsensusVerdict` and
 may override the panel's verdict.
+
+***
+
+### INCIDENT\_REPORT\_ARTIFACT\_FILENAME
+
+> `const` **INCIDENT\_REPORT\_ARTIFACT\_FILENAME**: `"incidents.json"`
+
+Canonical filename for the per-job incident-handling artifact.
+
+***
+
+### INCIDENT\_REPORT\_SCHEMA\_VERSION
+
+> `const` **INCIDENT\_REPORT\_SCHEMA\_VERSION**: `"1.0.0"`
+
+Schema version stamped on every persisted `incidents.json`.
 
 ***
 
@@ -22721,6 +24325,14 @@ the overall job rather than a single generated test case.
 
 ***
 
+### JUDGE\_CONSENSUS\_AGREEMENT\_SHAPES
+
+> `const` **JUDGE\_CONSENSUS\_AGREEMENT\_SHAPES**: readonly \[`"unanimous"`, `"majority"`, `"split"`, `"vetoed"`\]
+
+Vote-shape labels surfaced by the persisted judge-consensus artifact.
+
+***
+
 ### JUDGE\_CONSENSUS\_ARTIFACT\_FILENAME
 
 > `const` **JUDGE\_CONSENSUS\_ARTIFACT\_FILENAME**: `"judge-consensus.json"`
@@ -22755,7 +24367,7 @@ Repair-state labels surfaced by the persisted judge-consensus artifact.
 
 ### JUDGE\_CONSENSUS\_SCHEMA\_VERSION
 
-> `const` **JUDGE\_CONSENSUS\_SCHEMA\_VERSION**: `"1.0.0"`
+> `const` **JUDGE\_CONSENSUS\_SCHEMA\_VERSION**: `"1.1.0"`
 
 Schema version for persisted production-runner judge-consensus artifacts.
 
@@ -23083,11 +24695,14 @@ Schema version for persisted logic-judge verdict artifacts.
 
 ### MAX\_CUSTOM\_CONTEXT\_BYTES\_PER\_JOB
 
-> `const` **MAX\_CUSTOM\_CONTEXT\_BYTES\_PER\_JOB**: `262144`
+> `const` **MAX\_CUSTOM\_CONTEXT\_BYTES\_PER\_JOB**: `4194304`
 
 Maximum custom-context input bytes allowed per production-readiness job.
 Enforced before custom-context ingest begins; breach emits
 `custom_context_quota_exceeded`.
+
+Operator stance (CTO directive 2026-05-10): raised from 256 KiB to 4 MiB
+to accommodate multi-section custom-context Markdown files.
 
 ***
 
@@ -23104,10 +24719,13 @@ payload above this bound.
 
 ### MAX\_JIRA\_API\_REQUESTS\_PER\_JOB
 
-> `const` **MAX\_JIRA\_API\_REQUESTS\_PER\_JOB**: `20`
+> `const` **MAX\_JIRA\_API\_REQUESTS\_PER\_JOB**: `200`
 
 Maximum Jira REST API calls allowed per production-readiness job.
 Enforced before any outbound fetch; breach emits `jira_api_quota_exceeded`.
+
+Operator stance (CTO directive 2026-05-10): defaults raised to maximum
+for stability + quality. Cost-aware profiles can override per customer.
 
 ***
 
@@ -23176,10 +24794,13 @@ Hard cap on the number of Jira linked-issue refs persisted in a single IR.
 
 ### MAX\_JIRA\_PASTE\_BYTES\_PER\_JOB
 
-> `const` **MAX\_JIRA\_PASTE\_BYTES\_PER\_JOB**: `524288`
+> `const` **MAX\_JIRA\_PASTE\_BYTES\_PER\_JOB**: `8388608`
 
 Maximum raw paste bytes allowed per production-readiness job.
 Enforced before Jira paste ingest begins; breach emits `jira_paste_quota_exceeded`.
+
+Operator stance (CTO directive 2026-05-10): raised from 512 KiB to 8 MiB
+to accommodate tier-1 banking Jira stories with embedded specifications.
 
 ***
 
@@ -23229,6 +24850,47 @@ Schema version for approved signed migration bundles.
 > `const` **MIGRATIONS\_LOG\_ARTIFACT\_FILENAME**: `"migrations.log.jsonl"`
 
 Canonical filename for the per-run settings migration audit log.
+
+***
+
+### MODEL\_ROUTING\_POLICY\_SCHEMA\_VERSION
+
+> `const` **MODEL\_ROUTING\_POLICY\_SCHEMA\_VERSION**: `"1.0.0"`
+
+Schema version pinned on every persisted [ModelRoutingPolicy](#modelroutingpolicy).
+
+***
+
+### MODEL\_ROUTING\_ROLES
+
+> `const` **MODEL\_ROUTING\_ROLES**: readonly \[`"test_generation"`, `"logic_judge"`, `"coverage_planner"`, `"risk_ranker"`, `"visual_primary"`, `"visual_fallback"`, `"a11y_judge"`, `"faithfulness_judge"`, `"document_ingestion"`, `"adversarial_critic"`, `"calibration_holdout_generator"`\]
+
+Closed runtime list of roles that may participate in the typed
+multi-model routing policy. The list includes the production-runner roles
+in use today plus additive foundation-only roles from Issue #2099 whose
+runtime wiring may land in follow-up stories.
+
+***
+
+### MODEL\_ROUTING\_ROUTE\_SLOTS
+
+> `const` **MODEL\_ROUTING\_ROUTE\_SLOTS**: readonly \[`"primary"`, `"secondary"`, `"fallback"`, `"triage"`\]
+
+Routing slots within one role. Most active runtime roles expose one slot,
+but the contract permits explicit fallback / triage / diversity bindings
+without adding new top-level role ids.
+
+***
+
+### MODEL\_ROUTING\_TIER\_LABELS
+
+> `const` **MODEL\_ROUTING\_TIER\_LABELS**: readonly \[`"light"`, `"heavy"`, `"multimodal"`\]
+
+Stable tier labels used by the production multi-model routing policy
+(Issue #2099). The vocabulary is intentionally small and auditable:
+- `light` — cheap/fast text roles used for triage or low-risk helpers.
+- `heavy` — flagship reasoning roles.
+- `multimodal` — screenshot/document-aware roles.
 
 ***
 
@@ -23735,11 +25397,71 @@ Schema version for persisted `source-mix-plan.json` artifacts.
 
 ***
 
+### SUBPROCESSOR\_REGISTER\_ARTIFACT\_FILENAME
+
+> `const` **SUBPROCESSOR\_REGISTER\_ARTIFACT\_FILENAME**: `"subprocessor-register.json"`
+
+Canonical filename for the machine-readable subprocessor register
+artifact (Issue #2174). Persisted next to
+`compliance-annotations.json` and `compliance-coverage-report.json`.
+
+***
+
+### SUBPROCESSOR\_REGISTER\_SCHEMA\_VERSION
+
+> `const` **SUBPROCESSOR\_REGISTER\_SCHEMA\_VERSION**: `"1.0.0"`
+
+Schema version for the machine-readable [SubprocessorRegister](#subprocessorregister)
+artifact emitted per run alongside `compliance-annotations.json`
+(Issue #2174). Bumped on any breaking shape change to
+[SubprocessorRegister](#subprocessorregister), [SubprocessorEntry](#subprocessorentry), or
+[CrossBorderTransferEntry](#crossbordertransferentry).
+
+The schema version is independent of [SUBPROCESSOR\_REGISTER\_VERSION](#subprocessor_register_version):
+the latter tracks the documented register content (subprocessor list +
+cross-border ADR), this one tracks the artifact shape that auditors
+cross-reference programmatically.
+
+***
+
+### SUBPROCESSOR\_REGISTER\_VERSION
+
+> `const` **SUBPROCESSOR\_REGISTER\_VERSION**: `"1.0.0"`
+
+Version of the documented subprocessor register
+(`docs/dora/subprocessor-register.md`) and its paired cross-border transfer
+ADR (`docs/dpia/cross-border-transfer.md`). Stamped into every Wave 1
+Validation evidence manifest so a replay can verify which DORA Art. 28 /
+GDPR Ch. V documentation was active for the run (Issue #2113).
+
+Bump rules — every change to either document MUST bump this version in the
+same PR. The CODEOWNERS rule for both files keeps the human-review gate
+coupled; this constant keeps the runtime evidence coupled.
+
+***
+
 ### SUGGESTED\_CUSTOM\_CONTEXT\_ATTRIBUTES
 
 > `const` **SUGGESTED\_CUSTOM\_CONTEXT\_ATTRIBUTES**: readonly [`SuggestedCustomContextAttribute`](#suggestedcustomcontextattribute)[]
 
 Curated structured-attribute schema surfaced to API and UI consumers.
+
+***
+
+### SUPPORTED\_HOSTING\_REGIONS
+
+> `const` **SUPPORTED\_HOSTING\_REGIONS**: readonly \[`"westeurope"`, `"northeurope"`, `"francecentral"`, `"germanywestcentral"`, `"swedencentral"`, `"eu-west-1"`, `"operator-defined"`\]
+
+Hosting regions that the subprocessor register may name as an
+[SubprocessorEntry.hostingRegion](#hostingregion) or as the source/destination of
+a [CrossBorderTransferEntry](#crossbordertransferentry). The list mirrors the EEA Azure
+regions recommended by the cross-border-transfer ADR plus the Mistral
+`eu-west-1` family and a single explicit `operator-defined` entry for
+categories where the operator selects the concrete region (Jira /
+object-storage / hook hosts) rather than the package shipping a default.
+
+Bump rules — adding a region is a non-breaking change. Removing or
+renaming one bumps [SUBPROCESSOR\_REGISTER\_SCHEMA\_VERSION](#subprocessor_register_schema_version).
 
 ***
 
@@ -23784,7 +25506,7 @@ Canonical filename for the per-run technique-quota-report artifact
 
 ### TECHNIQUE\_QUOTA\_REPORT\_SCHEMA\_VERSION
 
-> `const` **TECHNIQUE\_QUOTA\_REPORT\_SCHEMA\_VERSION**: `"1.0.0"`
+> `const` **TECHNIQUE\_QUOTA\_REPORT\_SCHEMA\_VERSION**: `"1.1.0"`
 
 Schema version for persisted `technique-quota-report.json` artifacts.
 
@@ -23897,7 +25619,7 @@ Schema version for persisted `TestDesignModel` projection artifacts.
 
 ### TEST\_INTELLIGENCE\_CONTRACT\_VERSION
 
-> `const` **TEST\_INTELLIGENCE\_CONTRACT\_VERSION**: `"1.24.0"`
+> `const` **TEST\_INTELLIGENCE\_CONTRACT\_VERSION**: `"1.27.0"`
 
 Contract version for the opt-in test-intelligence surface.
 
@@ -23986,16 +25708,7 @@ Schema version for the persisted test-intelligence provenance artifact.
 
 ### TIER\_ELASTIC\_EP\_TIERS
 
-> `const` **TIER\_ELASTIC\_EP\_TIERS**: `ReadonlyArray`\<\{ `floor`: `number`; `label`: `string`; `maxFieldCount`: `number`; `multiplier`: `number`; \}\>
-
-Tier-elastic equivalence-partitioning quota tiers (Issue #2068).
-
-Every screen with a coverage-relevant field count `<= maxFieldCount`
-(sorted ascending; the catch-all tier uses `Number.POSITIVE_INFINITY`)
-resolves to `max(floor, ceil(multiplier * fieldCount))`. The tiers are
-intentionally a frozen, deterministic constant so that
-`policy-report.json` and `technique-quota-report.json` remain
-byte-stable across runs.
+> `const` **TIER\_ELASTIC\_EP\_TIERS**: `ReadonlyArray`\<[`TechniqueCoverageMinimumTier`](#techniquecoverageminimumtier)\>
 
 ***
 
@@ -24298,7 +26011,7 @@ workspace-dev — Public contracts for autonomous REST + deterministic generatio
 These types define the public API surface for workspace-dev consumers.
 They must not import from internal services.
 
-Contract version: 4.40.0
+Contract version: 4.62.0
 See CONTRACT_CHANGELOG.md for contract change history and VERSIONING.md for
 package-versus-contract versioning policy.
 
