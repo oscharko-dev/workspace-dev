@@ -5,7 +5,7 @@ export default function CheckoutRoute() {
     <Stack component="main" id="main-content" spacing={3}>
       <Stack spacing={1.25}>
         <Typography variant="h4">Checkout flow</Typography>
-        <Typography color="text.secondary" maxWidth={720} variant="body1">
+        <Typography color="text.secondary" sx={{ maxWidth: 720 }} variant="body1">
           This second lazy route exists to keep navigation performance honest even when the destination contains a denser
           interactive form shell.
         </Typography>
@@ -58,9 +58,9 @@ export default function CheckoutRoute() {
             <Alert severity="info" variant="outlined">
               Lazy route chunks keep this flow off the critical path until the user asks for it.
             </Alert>
-            <Stack direction="row" justifyContent="space-between">
-              <Typography fontWeight={600}>Total</Typography>
-              <Typography fontWeight={700}>€0.00</Typography>
+            <Stack direction="row" sx={{ justifyContent: "space-between" }}>
+              <Typography sx={{ fontWeight: 600 }}>Total</Typography>
+              <Typography sx={{ fontWeight: 700 }}>€0.00</Typography>
             </Stack>
           </Stack>
         </Paper>

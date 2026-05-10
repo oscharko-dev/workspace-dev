@@ -21,7 +21,7 @@ export default function HomeRoute() {
       <Stack spacing={1.5}>
         <Chip color="secondary" label="Home route is eagerly bundled" sx={{ alignSelf: "flex-start" }} />
         <Typography variant="h4">Performance-first seed app</Typography>
-        <Typography color="text.secondary" maxWidth={720} variant="body1">
+        <Typography color="text.secondary" sx={{ maxWidth: 720 }} variant="body1">
           This starter keeps the first route hot while still exercising lazy route splits, route warmup on intent, web
           vitals reporting, and root-level error callbacks.
         </Typography>
