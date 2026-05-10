@@ -188,6 +188,8 @@ export interface ComplianceRiskOverride {
 
 export const CROSS_MODAL_FAITHFULNESS_RULE =
   "policy:cross-modal-faithfulness-score" as const;
+export const CROSS_MODAL_FAITHFULNESS_MISSING_RULE =
+  "policy:cross-modal-faithfulness:evaluation-missing" as const;
 export const DEFAULT_CROSS_MODAL_FAITHFULNESS_THRESHOLD = 0.8;
 const CROSS_MODAL_FAITHFULNESS_GRAY_ZONE = 0.05;
 
@@ -197,15 +199,10 @@ const CROSS_MODAL_FAITHFULNESS_GRAY_ZONE = 0.05;
  * escalates to `error` when the active profile sets
  * `requirePerStepFaithfulness: true`.
  *
- * The companion `"missing"` evaluation mode is **not** surfaced as an
- * additional rule: refusals are already enforced by
- * `policy:judge_refused` (with operator-tunable severity via
- * `judgeRefusalPolicy.faithfulness`), and runs that never wired
- * faithfulness at all preserve their pre-#2116 byte shape. The
- * `mode: "missing"` value is still recorded on
- * `TestCasePolicyReport.faithfulnessEvaluation` and counted by the
- * drift-canary `faithfulness_fallback_rate` metric so audit reviewers
- * can distinguish a refused or skipped judge from a per-step run. */
+ * The companion `policy:cross-modal-faithfulness:evaluation-missing`
+ * rule is raised when no verdict was supplied at all. Refusals still
+ * flow through `policy:judge_refused` so operators retain their
+ * existing tunable severity policy for provider-side refusals. */
 export const CROSS_MODAL_FAITHFULNESS_FALLBACK_RULE =
   "policy:cross-modal-faithfulness:case-level-fallback" as const;
 
@@ -1256,9 +1253,7 @@ interface FaithfulnessGateResolution {
  * carried per-step evidence) the persistable {@link FaithfulnessTierReport}.
  *
  * `mode === "missing"` when no verdict was supplied OR the verdict was
- * refused — in both cases the gate has no evidence to reason against and
- * downstream logic must surface the `evaluation-missing` rule instead of
- * silently passing.
+ * refused — in both cases the gate has no evidence to reason against.
  *
  * Pure: no IO, no mutation.
  */
@@ -1345,7 +1340,7 @@ interface FaithfulnessScoreViolationResult {
  * Three rule families compose the result:
  *
  *   1. {@link CROSS_MODAL_FAITHFULNESS_MISSING_RULE} — error severity;
- *      raised whenever the gate had no verdict (incl. judge refusal).
+ *      raised whenever the gate had no verdict at all.
  *   2. {@link CROSS_MODAL_FAITHFULNESS_FALLBACK_RULE} — warning by
  *      default, escalated to error when
  *      `requirePerStepFaithfulness === true`.
@@ -1360,6 +1355,7 @@ const buildFaithfulnessScoreViolation = (
   list: GeneratedTestCaseList,
   threshold: number,
   requirePerStepFaithfulness: boolean,
+  enforceMissingVerdict: boolean,
 ): FaithfulnessScoreViolationResult => {
   const resolution = resolveFaithfulnessGateScore(
     verdict,
@@ -1371,21 +1367,14 @@ const buildFaithfulnessScoreViolation = (
   const evaluation = resolution.evaluation;
 
   if (evaluation.mode === "missing") {
-    // We deliberately do NOT emit a `cross-modal-faithfulness:evaluation-missing`
-    // rule when the gate received no verdict at all OR when the verdict
-    // was a refusal:
-    //
-    //   - No verdict → callers that never wired faithfulness preserve
-    //     their pre-Issue-#2116 contract (the gate was never part of
-    //     that run; the audit block on the policy report is enough).
-    //   - Refusal     → `policy:judge_refused` already fires with
-    //     operator-tunable severity (`judgeRefusalPolicy.faithfulness`).
-    //     Adding a second always-error rule would override that
-    //     tunability and double-count the same incident in audit trails.
-    //
-    // The audit-trail mode (`"missing"`) IS still recorded on the policy
-    // report's `faithfulnessEvaluation` block so drift detection can
-    // count `missing` runs as fallback alongside `case_level_fallback`.
+    if (verdict === undefined && enforceMissingVerdict) {
+      violations.push({
+        rule: CROSS_MODAL_FAITHFULNESS_MISSING_RULE,
+        outcome: "cross_modal_faithfulness_evaluation_missing",
+        severity: "error",
+        reason: evaluation.reason,
+      });
+    }
     return { violations, tierReport: resolution.tierReport, evaluation };
   }
 
@@ -1514,6 +1503,7 @@ export const evaluatePolicyGate = (
     input.list,
     faithfulnessThreshold,
     requirePerStepFaithfulness,
+    input.visual !== undefined,
   );
   // The score-below-threshold violation is attached to every test case
   // decision (legacy behaviour from Issue #2066). Fallback / missing
@@ -1603,13 +1593,8 @@ export const evaluatePolicyGate = (
     else needsReview += 1;
   }
 
-  // Only attach the faithfulness-evaluation audit block when the gate
-  // actually had a verdict to reason about (Issue #2116). Callers that
-  // never wired a faithfulness verdict preserve the pre-#2116 byte
-  // shape — the audit trail is unchanged for those runs because there
-  // was nothing to audit.
   const faithfulnessEvaluation =
-    input.faithfulnessVerdict === undefined
+    input.faithfulnessVerdict === undefined && input.visual === undefined
       ? undefined
       : faithfulness.evaluation;
 

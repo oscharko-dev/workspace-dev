@@ -781,9 +781,10 @@ export const evaluateDistributionShiftReport = (input: {
         : currentL2 > DISTRIBUTION_SHIFT_EPSILON
           ? Number.POSITIVE_INFINITY
           : 0;
+      const reportedSigma = Number.isFinite(sigma) ? sigma : undefined;
       centroidMeasurement = {
         l2Distance: currentL2,
-        sigma: Number.isFinite(sigma) ? sigma : 0,
+        sigma: reportedSigma ?? 0,
         historyL2Mean,
         historyL2StdDev,
       };
@@ -799,7 +800,9 @@ export const evaluateDistributionShiftReport = (input: {
           message: `Embedding-centroid shift exceeded ${DISTRIBUTION_SHIFT_CENTROID_SIGMA_THRESHOLD}σ of the rolling baseline`,
           fixtureSuiteId,
           centroidShiftL2: currentL2,
-          centroidShiftSigma: Number.isFinite(sigma) ? sigma : 0,
+          ...(reportedSigma !== undefined
+            ? { centroidShiftSigma: reportedSigma }
+            : {}),
           centroidSigmaThreshold: DISTRIBUTION_SHIFT_CENTROID_SIGMA_THRESHOLD,
           ...(input.snapshot.embeddingProviderId !== undefined
             ? { embeddingProviderId: input.snapshot.embeddingProviderId }

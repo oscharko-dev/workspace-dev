@@ -9,7 +9,7 @@
  */
 
 import { mkdir, rename, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { join, resolve, sep } from "node:path";
 
 import {
   INCIDENT_REPORT_ARTIFACT_FILENAME,
@@ -45,6 +45,8 @@ export interface CreateFileSystemIncidentSinkInput {
   readonly destinationDir: string;
 }
 
+const STABLE_SEGMENT_RE = /^[A-Za-z0-9._-]+$/u;
+
 const writeAtomicJson = async (
   path: string,
   payload: unknown,
@@ -68,18 +70,30 @@ export const createFileSystemIncidentSink = (
       'createFileSystemIncidentSink: "destinationDir" must be a non-empty string.',
     );
   }
-  const destinationDir = input.destinationDir;
+  const destinationDir = resolve(input.destinationDir);
 
   return {
     async recordReport(
       { report }: RecordIncidentReportInput,
     ): Promise<RecordIncidentReportResult> {
-      if (typeof report.jobId !== "string" || report.jobId === "") {
+      if (
+        typeof report.jobId !== "string" ||
+        report.jobId === "" ||
+        !STABLE_SEGMENT_RE.test(report.jobId)
+      ) {
         throw new Error(
-          'IncidentSink.recordReport: report.jobId must be a non-empty string.',
+          `IncidentSink.recordReport: report.jobId must match ${STABLE_SEGMENT_RE.source}.`,
         );
       }
-      const jobDir = join(destinationDir, report.jobId);
+      const jobDir = resolve(destinationDir, report.jobId);
+      if (
+        jobDir !== destinationDir &&
+        !jobDir.startsWith(`${destinationDir}${sep}`)
+      ) {
+        throw new Error(
+          "IncidentSink.recordReport: resolved jobDir escapes destinationDir.",
+        );
+      }
       await mkdir(jobDir, { recursive: true });
       const artifactPath = join(jobDir, INCIDENT_REPORT_ARTIFACT_FILENAME);
       const bytesWritten = await writeAtomicJson(artifactPath, report);

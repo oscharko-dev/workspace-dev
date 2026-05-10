@@ -104,3 +104,16 @@ test("incident-sink: rejects empty jobId at write time", async () => {
     await rm(dir, { recursive: true, force: true });
   }
 });
+
+test("incident-sink: rejects path-traversal jobId values", async () => {
+  const dir = await mkTempDir();
+  try {
+    const sink = createFileSystemIncidentSink({ destinationDir: dir });
+    await assert.rejects(
+      sink.recordReport({ report: buildReport({ jobId: "../escape" }) }),
+      /jobId/,
+    );
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
