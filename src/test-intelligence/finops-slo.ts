@@ -341,7 +341,9 @@ export const appendFinOpsTimeSeriesRecordOnDisk = async (input: {
     const nextStore = appendFinOpsTimeSeriesRecord({
       store: await loadFinOpsTimeSeriesStore(input.storePath),
       record: input.record,
-      retentionDays: input.retentionDays,
+      ...(input.retentionDays !== undefined
+        ? { retentionDays: input.retentionDays }
+        : {}),
     });
     await writeFinOpsTimeSeriesStore({
       store: nextStore,
