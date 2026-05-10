@@ -796,8 +796,33 @@ const buildOpenAiChatBody = (
   config: LlmGatewayClientConfig,
   request: LlmGenerationRequest,
 ): OpenAiChatBody => {
+  const responseSchema = request.responseSchema;
+  const responseSchemaName = request.responseSchemaName;
+  const constrainedDecoding = resolveConstrainedDecodingMetadata({
+    config,
+    requestHasSchema:
+      responseSchema !== undefined && responseSchemaName !== undefined,
+  });
+  const structuredPromptSuffix =
+    responseSchema !== undefined &&
+    responseSchemaName !== undefined &&
+    (constrainedDecoding?.wireMode === "none" ||
+      constrainedDecoding?.wireMode === "json_object")
+      ? [
+          "",
+          "Return only raw JSON with no markdown fences, prose, or commentary.",
+          `The JSON must validate against schema "${responseSchemaName}":`,
+          canonicalJson(responseSchema),
+        ].join("\n")
+      : undefined;
   const messages: Array<{ role: string; content: unknown }> = [
-    { role: "system", content: request.systemPrompt },
+    {
+      role: "system",
+      content:
+        structuredPromptSuffix === undefined
+          ? request.systemPrompt
+          : `${request.systemPrompt}\n${structuredPromptSuffix}`,
+    },
   ];
 
   const hasImages = (request.imageInputs?.length ?? 0) > 0;
@@ -823,13 +848,6 @@ const buildOpenAiChatBody = (
     messages,
     stream: false,
   };
-  const responseSchema = request.responseSchema;
-  const responseSchemaName = request.responseSchemaName;
-  const constrainedDecoding = resolveConstrainedDecodingMetadata({
-    config,
-    requestHasSchema:
-      responseSchema !== undefined && responseSchemaName !== undefined,
-  });
   if (
     config.declaredCapabilities.structuredOutputs &&
     responseSchema !== undefined &&
@@ -1134,16 +1152,8 @@ const parseOpenAiChatResponse = async ({
     };
   }
 
-  const rawContent = message["content"];
-  if (typeof rawContent !== "string" || rawContent.length === 0) {
-    return {
-      outcome: "error",
-      errorClass: "schema_invalid",
-      message: "message.content missing or empty",
-      retryable: false,
-      attempt,
-    };
-  }
+  const { rawContent, parsedContent, reasoningContent } =
+    extractMessagePayload(message);
 
   if (finishReason === "length") {
     return {
@@ -1163,17 +1173,31 @@ const parseOpenAiChatResponse = async ({
   let content: unknown;
   let rawTextContent: string | undefined;
   if (isStructuredOutputRequested(config, request)) {
-    try {
-      content = JSON.parse(rawContent) as unknown;
-    } catch {
-      return {
-        outcome: "error",
-        errorClass: "schema_invalid",
-        message: "structured-output content is not valid JSON",
-        ...(constrainedDecoding !== undefined ? { constrainedDecoding } : {}),
-        retryable: false,
-        attempt,
-      };
+    if (parsedContent !== undefined) {
+      content = parsedContent;
+    } else {
+      const structuredContent = rawContent ?? reasoningContent;
+      if (structuredContent === undefined) {
+        return {
+          outcome: "error",
+          errorClass: "schema_invalid",
+          message: describeMissingMessageContent(message),
+          retryable: false,
+          attempt,
+        };
+      }
+      try {
+        content = JSON.parse(structuredContent) as unknown;
+      } catch {
+        return {
+          outcome: "error",
+          errorClass: "schema_invalid",
+          message: "structured-output content is not valid JSON",
+          ...(constrainedDecoding !== undefined ? { constrainedDecoding } : {}),
+          retryable: false,
+          attempt,
+        };
+      }
     }
     const schemaViolation = validateJsonSchemaSubset(
       content,
@@ -1190,6 +1214,15 @@ const parseOpenAiChatResponse = async ({
       };
     }
   } else {
+    if (rawContent === undefined) {
+      return {
+        outcome: "error",
+        errorClass: "schema_invalid",
+        message: describeMissingMessageContent(message),
+        retryable: false,
+        attempt,
+      };
+    }
     content = rawContent;
     rawTextContent = rawContent;
   }
@@ -1468,6 +1501,51 @@ const normalizeFinishReason = (value: unknown): LlmFinishReason => {
     default:
       return "other";
   }
+};
+
+const extractMessagePayload = (
+  message: Record<string, unknown>,
+): {
+  rawContent?: string;
+  parsedContent?: unknown;
+  reasoningContent?: string;
+} => {
+  const rawContent = message["content"];
+  if (typeof rawContent === "string" && rawContent.length > 0) {
+    return { rawContent };
+  }
+  if (Array.isArray(rawContent)) {
+    const textParts = rawContent
+      .map((part) => {
+        if (typeof part !== "object" || part === null) return undefined;
+        const text = (part as Record<string, unknown>)["text"];
+        return typeof text === "string" && text.length > 0 ? text : undefined;
+      })
+      .filter((text): text is string => text !== undefined);
+    if (textParts.length > 0) {
+      return { rawContent: textParts.join("") };
+    }
+  }
+  if ("parsed" in message) {
+    return { parsedContent: message["parsed"] };
+  }
+  const reasoningContent = message["reasoning_content"];
+  if (
+    typeof reasoningContent === "string" &&
+    reasoningContent.trim().length > 0
+  ) {
+    return { reasoningContent };
+  }
+  return {};
+};
+
+const describeMissingMessageContent = (
+  message: Record<string, unknown>,
+): string => {
+  const rawContent = message["content"];
+  const contentType = Array.isArray(rawContent) ? "array" : typeof rawContent;
+  const keys = Object.keys(message).sort().join(",");
+  return `message.content missing or empty (contentType=${contentType}; messageKeys=${keys})`;
 };
 
 /**

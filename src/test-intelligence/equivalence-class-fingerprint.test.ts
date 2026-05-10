@@ -293,6 +293,25 @@ test("Issue #2123: classifier is NOT consulted when deterministic logic keeps th
   assert.equal(invoked, 0);
 });
 
+test("Issue #2123: A/B/A pattern marks the third case redundant when it collapses back onto an earlier kept case", () => {
+  const a = buildCase({
+    id: "tc-a",
+    figmaTraceRefs: [{ screenId: "s-1", nodePath: "root/form" }],
+  });
+  const b = buildCase({
+    id: "tc-b",
+    figmaTraceRefs: [{ screenId: "s-1", nodePath: "root/details" }],
+  });
+  const c = buildCase({
+    id: "tc-c",
+    figmaTraceRefs: [{ screenId: "s-1", nodePath: "root/form" }],
+  });
+  const result = detectIntraClassRedundancy({ testCases: [a, b, c] });
+  assert.equal(result.findings.length, 1);
+  assert.equal(result.findings[0]?.representativeTestCaseId, "tc-a");
+  assert.equal(result.findings[0]?.redundantTestCaseId, "tc-c");
+});
+
 test("Issue #2123: empty input yields zero ratio and no findings", () => {
   const result = detectIntraClassRedundancy({ testCases: [] });
   assert.equal(result.findings.length, 0);

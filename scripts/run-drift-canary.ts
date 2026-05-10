@@ -21,6 +21,17 @@ import {
 } from "../src/test-intelligence/drift-canary.js";
 import { loadBaselineArchetypeFixture } from "../src/test-intelligence/baseline-fixtures.js";
 import {
+  appendDistributionShiftBaselineRecord,
+  buildDistributionShiftDashboard,
+  createFileDistributionShiftAlertSink,
+  evaluateDistributionShiftReport,
+  loadDistributionShiftBaselineState,
+  recordInputDistributionSnapshot,
+  writeDistributionShiftBaselineState,
+  writeDistributionShiftDashboard,
+  writeDistributionShiftReport,
+} from "../src/test-intelligence/distribution-shift-detector.js";
+import {
   buildJudgeCalibrationEvalArtifact,
   loadAllJudgeCalibrationFixtures,
 } from "../src/test-intelligence/judge-calibration-eval.js";
@@ -43,6 +54,7 @@ const DEFAULT_GATEWAY_RELEASE = "azure-ai-foundry-drift-canary";
 const DEFAULT_MODEL_REVISION_SUFFIX = "drift-canary";
 const DEFAULT_POLICY_PROFILE_ID = "eu-banking-default";
 const DEFAULT_TENANT_ID = "default";
+const DEFAULT_DISTRIBUTION_SHIFT_FIXTURE_SUITE_ID = "ti-holdout-5-v1";
 
 const readRequiredEnv = (name: string): string => {
   const value = process.env[name]?.trim();
@@ -160,6 +172,10 @@ const main = async (): Promise<void> => {
   ];
 
   const canaryRuns: CanaryFixtureRun[] = [];
+  const distributionShiftJobs: Array<{
+    figma: Awaited<ReturnType<typeof loadBaselineArchetypeFixture>>["figma"];
+    generatedTestCases: CanaryFixtureRun["result"]["generatedTestCases"];
+  }> = [];
   for (const deployment of generatorDeployments) {
     for (const fixtureId of DRIFT_CANARY_HOLDOUT_FIXTURE_IDS) {
       const fixture = await loadBaselineArchetypeFixture(fixtureId);
@@ -196,6 +212,12 @@ const main = async (): Promise<void> => {
         fixture: fixture.figma,
         result,
       });
+      if (deployment === generatorDeployment) {
+        distributionShiftJobs.push({
+          figma: fixture.figma,
+          generatedTestCases: result.generatedTestCases,
+        });
+      }
     }
   }
 
@@ -365,6 +387,53 @@ const main = async (): Promise<void> => {
     })),
   ];
 
+  const distributionShiftBaseline = await loadDistributionShiftBaselineState({
+    runtimeRoot: resolve(runtimeRoot),
+    tenantId: DEFAULT_TENANT_ID,
+    policyProfileId: DEFAULT_POLICY_PROFILE_ID,
+    fixtureSuiteId: DEFAULT_DISTRIBUTION_SHIFT_FIXTURE_SUITE_ID,
+  });
+  const distributionShiftSnapshot = await recordInputDistributionSnapshot({
+    fixtureSuiteId: DEFAULT_DISTRIBUTION_SHIFT_FIXTURE_SUITE_ID,
+    recordedAt: generatedAt,
+    jobs: distributionShiftJobs,
+  });
+  const distributionShiftReport = evaluateDistributionShiftReport({
+    baseline: distributionShiftBaseline,
+    snapshot: distributionShiftSnapshot,
+  });
+  const distributionShiftDashboard = buildDistributionShiftDashboard({
+    baseline: distributionShiftBaseline,
+    report: distributionShiftReport,
+  });
+  await writeDistributionShiftReport({
+    runDir,
+    report: distributionShiftReport,
+  });
+  await writeDistributionShiftDashboard({
+    runDir,
+    dashboard: distributionShiftDashboard,
+  });
+  const distributionShiftAlertSink =
+    createFileDistributionShiftAlertSink(runDir);
+  await distributionShiftAlertSink.publish({
+    schemaVersion: "1.0.0" as const,
+    generatedAt,
+    fixtureSuiteId: DEFAULT_DISTRIBUTION_SHIFT_FIXTURE_SUITE_ID,
+    alerts: distributionShiftReport.findings,
+  });
+  const nextDistributionShiftBaseline = appendDistributionShiftBaselineRecord(
+    distributionShiftBaseline,
+    distributionShiftSnapshot,
+  );
+  await writeDistributionShiftBaselineState({
+    runtimeRoot: resolve(runtimeRoot),
+    tenantId: DEFAULT_TENANT_ID,
+    policyProfileId: DEFAULT_POLICY_PROFILE_ID,
+    fixtureSuiteId: DEFAULT_DISTRIBUTION_SHIFT_FIXTURE_SUITE_ID,
+    state: nextDistributionShiftBaseline,
+  });
+
   const baseline = await loadDriftBaselineState({
     runtimeRoot: resolve(runtimeRoot),
     tenantId: DEFAULT_TENANT_ID,
@@ -408,20 +477,22 @@ const main = async (): Promise<void> => {
     state: nextBaseline,
   });
 
-  if (evaluation.findings.length > 0) {
+  const totalFindings =
+    evaluation.findings.length + distributionShiftReport.findings.length;
+  if (totalFindings > 0) {
     process.stderr.write(
-      `drift-canary: ${evaluation.findings.length} alert(s) detected; see ${join(
+      `drift-canary: ${totalFindings} alert(s) detected; see ${join(
         runDir,
         "drift-alerts.json",
-      )}\n`,
+      )} and ${join(runDir, "distribution-shift-alerts.json")}\n`,
     );
     process.exit(1);
   }
   process.stdout.write(
-    `drift-canary: no drift alerts; report written to ${join(
+    `drift-canary: no drift alerts; reports written to ${join(
       runDir,
       "drift-report.json",
-    )}\n`,
+    )} and ${join(runDir, "distribution-shift-report.json")}\n`,
   );
 };
 

@@ -1072,6 +1072,7 @@ export const ALLOWED_TEST_CASE_POLICY_OUTCOMES = [
   "visual_sidecar_possible_pii",
   "visual_sidecar_prompt_injection_text",
   "semantic_suspicious_content",
+  "cross_modal_faithfulness_evaluation_missing",
   "cross_modal_faithfulness_score_below_threshold",
   "cross_modal_faithfulness_case_level_fallback",
   "judge_refused",

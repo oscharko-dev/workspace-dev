@@ -320,10 +320,9 @@ const roundTo = (value: number, digits: number): number => {
  * The algorithm groups cases by {@link equivalenceClassKey}. Within each
  * class the first case (by stable id ordering) is the representative;
  * every subsequent case is required to add real coverage relative to
- * AT LEAST ONE of the prior kept cases. A case that fails that test
- * against every prior kept case is recorded as redundant; otherwise it
- * is added to the kept set so subsequent cases must differ from it
- * too.
+ * EVERY prior kept case. If it collapses back onto any earlier kept
+ * case, it is recorded as redundant; otherwise it is added to the kept
+ * set so subsequent cases must differ from it too.
  */
 export const detectIntraClassRedundancy = (
   input: DetectIntraClassRedundancyInput,
@@ -355,14 +354,14 @@ export const detectIntraClassRedundancy = (
     const kept: GeneratedTestCase[] = [bucket.cases[0]!];
     for (let i = 1; i < bucket.cases.length; i += 1) {
       const candidate = bucket.cases[i]!;
-      let distinctFromAny = false;
+      let collapsesIntoPrior = false;
       for (const prior of kept) {
-        if (distinctnessReason(prior, candidate) !== undefined) {
-          distinctFromAny = true;
+        if (distinctnessReason(prior, candidate) === undefined) {
+          collapsesIntoPrior = true;
           break;
         }
       }
-      if (distinctFromAny) {
+      if (!collapsesIntoPrior) {
         kept.push(candidate);
         continue;
       }

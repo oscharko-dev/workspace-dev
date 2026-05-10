@@ -608,6 +608,83 @@ test("structured-output success: parses JSON content and strips raw text", async
   }
 });
 
+test("structured-output success: accepts message.content text-part arrays", async () => {
+  const client = createLlmGatewayClient(baseConfig, {
+    fetchImpl: async () =>
+      okJsonResponse({
+        choices: [
+          {
+            finish_reason: "stop",
+            message: {
+              role: "assistant",
+              content: [
+                { type: "text", text: "{\"ack\":\"" },
+                { type: "text", text: "ok\"}" },
+              ],
+            },
+          },
+        ],
+        usage: { prompt_tokens: 10, completion_tokens: 5 },
+      }),
+    apiKeyProvider: () => "k",
+  });
+  const result = await client.generate(sampleRequest());
+  assert.equal(result.outcome, "success");
+  if (result.outcome === "success") {
+    assert.deepEqual(result.content, { ack: "ok" });
+  }
+});
+
+test("structured-output success: accepts provider-parsed payloads when message.content is empty", async () => {
+  const client = createLlmGatewayClient(baseConfig, {
+    fetchImpl: async () =>
+      okJsonResponse({
+        choices: [
+          {
+            finish_reason: "stop",
+            message: {
+              role: "assistant",
+              content: [],
+              parsed: { ack: "ok" },
+            },
+          },
+        ],
+        usage: { prompt_tokens: 10, completion_tokens: 5 },
+      }),
+    apiKeyProvider: () => "k",
+  });
+  const result = await client.generate(sampleRequest());
+  assert.equal(result.outcome, "success");
+  if (result.outcome === "success") {
+    assert.deepEqual(result.content, { ack: "ok" });
+  }
+});
+
+test("structured-output success: accepts reasoning_content only when it satisfies the schema", async () => {
+  const client = createLlmGatewayClient(baseConfig, {
+    fetchImpl: async () =>
+      okJsonResponse({
+        choices: [
+          {
+            finish_reason: "stop",
+            message: {
+              role: "assistant",
+              content: "",
+              reasoning_content: "{\"ack\":\"ok\"}",
+            },
+          },
+        ],
+        usage: { prompt_tokens: 10, completion_tokens: 5 },
+      }),
+    apiKeyProvider: () => "k",
+  });
+  const result = await client.generate(sampleRequest());
+  assert.equal(result.outcome, "success");
+  if (result.outcome === "success") {
+    assert.deepEqual(result.content, { ack: "ok" });
+  }
+});
+
 test("plain-text success is allowed when no response schema is requested", async () => {
   let observedBody: string | undefined;
   const client = createLlmGatewayClient(baseConfig, {
@@ -1286,6 +1363,11 @@ test('wireStructuredOutputMode: "json_object" emits weaker wire format but still
     /"response_format":\{"type":"json_object"\}/,
   );
   assert.equal((observedBody ?? "").includes("json_schema"), false);
+  assert.match(
+    observedBody ?? "",
+    /Return only raw JSON with no markdown fences, prose, or commentary\./,
+  );
+  assert.match(observedBody ?? "", /The JSON must validate against schema/);
   if (result.outcome === "success") {
     // In-process JSON parse + schema validation still apply.
     assert.deepEqual(result.content, { ack: "ok" });
@@ -1326,6 +1408,11 @@ test('wireStructuredOutputMode: "none" omits response_format but still parses + 
   const result = await client.generate(sampleRequest());
   assert.equal(result.outcome, "success");
   assert.equal((observedBody ?? "").includes("response_format"), false);
+  assert.match(
+    observedBody ?? "",
+    /Return only raw JSON with no markdown fences, prose, or commentary\./,
+  );
+  assert.match(observedBody ?? "", /The JSON must validate against schema/);
   if (result.outcome === "success") {
     assert.deepEqual(result.content, { ack: "ok" });
     // raw text MUST still be omitted from the success record (the contract

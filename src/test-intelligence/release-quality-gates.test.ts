@@ -386,6 +386,23 @@ test("evaluateReleaseQualityGates: rejects malformed input", () => {
   );
 });
 
+test("default release-quality-gates baseline fixture remains structurally valid", async () => {
+  const fixturePath = join(
+    process.cwd(),
+    "fixtures",
+    "release-quality-gates",
+    "baseline-input.json",
+  );
+  const raw = await readFile(fixturePath, "utf8");
+  const parsed: unknown = JSON.parse(raw);
+
+  assert.equal(
+    isReleaseQualityGatesInput(parsed),
+    true,
+    "fixtures/release-quality-gates/baseline-input.json must stay valid for the default CLI runner path",
+  );
+});
+
 test("isReleaseQualityGatesInput: rejects negative cache misses", () => {
   const input = buildPassingInput();
   const malformed = {

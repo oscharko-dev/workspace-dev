@@ -43,6 +43,8 @@ import {
   EXPORT_TESTCASES_ALM_XML_ARTIFACT_FILENAME,
   EXPORT_TESTCASES_CSV_ARTIFACT_FILENAME,
   EXPORT_TESTCASES_JSON_ARTIFACT_FILENAME,
+  FAITHFULNESS_JUDGE_PROMPT_TEMPLATE_VERSION,
+  FAITHFULNESS_VERDICT_SCHEMA_VERSION,
   FINOPS_ARTIFACT_DIRECTORY,
   FINOPS_BUDGET_REPORT_ARTIFACT_FILENAME,
   GENERATED_TESTCASES_ARTIFACT_FILENAME,
@@ -76,6 +78,8 @@ import {
   type FinOpsCostRateMap,
   type FinOpsJobOutcome,
   type FinOpsRole,
+  type FaithfulnessStepVerdict,
+  type FaithfulnessVerdict,
   type FourEyesEnforcementReason,
   type FourEyesPolicy,
   type GeneratedTestCase,
@@ -98,6 +102,7 @@ import {
   type VisualScreenDescription,
   type VisualSidecarAttempt,
   type VisualSidecarCaptureInput,
+  type VisualSidecarFallbackReason,
   type VisualSidecarFailure,
   type VisualSidecarResult,
   type VisualSidecarValidationReport,
@@ -1481,6 +1486,47 @@ const buildAuditMetadata = (input: {
   schemaHash: input.schemaHash,
 });
 
+const buildHarnessFaithfulnessVerdict = (input: {
+  jobId: string;
+  generatedAt: string;
+  cacheKeyDigest: string;
+  list: GeneratedTestCaseList;
+  deployment: string;
+  modelRevision: string;
+  gatewayRelease: string;
+  fallbackReason: VisualSidecarFallbackReason;
+}): FaithfulnessVerdict => {
+  const stepVerdicts: FaithfulnessStepVerdict[] = [];
+  for (const testCase of input.list.testCases) {
+    for (const step of testCase.steps) {
+      stepVerdicts.push({
+        testCaseId: testCase.id,
+        stepIndex: step.index,
+        verdict: "match",
+        message: "Deterministic Wave 1 harness fixture matched the visual evidence.",
+      });
+    }
+  }
+  return {
+    schemaVersion: FAITHFULNESS_VERDICT_SCHEMA_VERSION,
+    contractVersion: TEST_INTELLIGENCE_CONTRACT_VERSION,
+    promptTemplateVersion: FAITHFULNESS_JUDGE_PROMPT_TEMPLATE_VERSION,
+    generatedAt: input.generatedAt,
+    jobId: input.jobId,
+    cacheHit: false,
+    cacheKeyDigest: input.cacheKeyDigest,
+    modelDeployment: input.deployment,
+    modelRevision: input.modelRevision,
+    gatewayRelease: input.gatewayRelease,
+    fallbackReason: input.fallbackReason,
+    score: 1,
+    verdict: "accept",
+    hallucinations: [],
+    mismatches: [],
+    stepVerdicts,
+  };
+};
+
 const buildUnresolvedValidationQuestionsForField = (input: {
   fieldLabel: string;
   validationRules: readonly string[];
@@ -1908,6 +1954,19 @@ export const runWave1Validation = async (
   //    threads the rubric pass through the validation pipeline; when
   //    omitted the synchronous pre-#1379 pipeline runs unchanged.
   const profile = input.policyProfile ?? cloneEuBankingDefaultProfile();
+  const faithfulnessVerdict =
+    visualForDerivation.length > 0
+      ? buildHarnessFaithfulnessVerdict({
+          jobId: input.jobId,
+          generatedAt: input.generatedAt,
+          cacheKeyDigest: compiled.request.hashes.cacheKey,
+          list: generatedList,
+          deployment: visualBindingDeployment,
+          modelRevision: `${visualBindingDeployment}@wave1-validation-mock`,
+          gatewayRelease: POLICY_BUNDLE_VERSION,
+          fallbackReason: visualBindingFallbackReason,
+        })
+      : undefined;
   let validation: ValidationPipelineArtifacts;
   if (input.selfVerifyRubric?.enabled === true) {
     const expectedRubricIds = generatedList.testCases.map((c) => c.id);
@@ -1934,6 +1993,7 @@ export const runWave1Validation = async (
       visual: visualForDerivation,
       profile,
       primaryVisualDeployment: VISUAL_PRIMARY_DEPLOYMENT,
+      ...(faithfulnessVerdict !== undefined ? { faithfulnessVerdict } : {}),
       selfVerify: {
         enabled: true,
         client: rubricClient,
@@ -1970,6 +2030,7 @@ export const runWave1Validation = async (
       visual: visualForDerivation,
       profile,
       primaryVisualDeployment: VISUAL_PRIMARY_DEPLOYMENT,
+      ...(faithfulnessVerdict !== undefined ? { faithfulnessVerdict } : {}),
       activeModelBindings,
     });
   }

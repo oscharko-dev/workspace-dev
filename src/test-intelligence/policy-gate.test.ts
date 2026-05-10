@@ -546,7 +546,12 @@ test("Issue #2069: fallback-recovered visual sidecar emits info-only policy evid
     "visual_sidecar_fallback_used_succeeded",
   );
   assert.equal(jobViolation?.severity, "info");
-  assert.equal(report.blocked, false);
+  const missingFaithfulness = report.jobLevelViolations.find(
+    (v) =>
+      v.rule === "policy:cross-modal-faithfulness:evaluation-missing",
+  );
+  assert.equal(missingFaithfulness?.severity, "error");
+  assert.equal(report.blocked, true);
   assert.equal(report.approvedCount, 1);
 });
 
@@ -2734,7 +2739,7 @@ test("Issue #2116: no faithfulness verdict at all preserves the pre-#2116 byte s
   assert.equal(
     report.faithfulnessEvaluation,
     undefined,
-    "callers that never wired faithfulness preserve the pre-#2116 byte shape",
+    "without visual evidence the legacy no-faithfulness byte shape is preserved",
   );
   assert.equal(
     report.jobLevelViolations.some(
@@ -2743,6 +2748,50 @@ test("Issue #2116: no faithfulness verdict at all preserves the pre-#2116 byte s
     ),
     false,
   );
+  assert.equal(report.blocked, false);
+});
+
+test("Issue #2116: missing faithfulness verdict fails closed when visual sidecar evidence exists", () => {
+  const ctx = harness([buildCase({})], buildIntent());
+  const report = evaluatePolicyGate({
+    jobId: "job-1",
+    generatedAt: GENERATED_AT,
+    list: ctx.list,
+    intent: ctx.intent,
+    profile: ctx.profile,
+    validation: ctx.validation,
+    coverage: ctx.coverage,
+    visual: {
+      schemaVersion: "1.0.0",
+      contractVersion: TEST_INTELLIGENCE_CONTRACT_VERSION,
+      visualSidecarSchemaVersion: "1.0.0",
+      generatedAt: GENERATED_AT,
+      jobId: "job-1",
+      totalScreens: 1,
+      screensWithFindings: 0,
+      blocked: false,
+      records: [
+        {
+          screenId: "s-1",
+          deployment: "llama-4-maverick-vision",
+          outcomes: [],
+          issues: [],
+          meanConfidence: 0.95,
+        },
+      ],
+    },
+  });
+  assert.equal(report.faithfulnessEvaluation?.mode, "missing");
+  const missing = report.jobLevelViolations.find(
+    (v) =>
+      v.rule === "policy:cross-modal-faithfulness:evaluation-missing",
+  );
+  assert.equal(missing?.severity, "error");
+  assert.equal(
+    missing?.outcome,
+    "cross_modal_faithfulness_evaluation_missing",
+  );
+  assert.equal(report.blocked, true);
 });
 
 test("Issue #2116: case-level-fallback rule severity respects an operator policyOverrides override", () => {
@@ -2774,6 +2823,54 @@ test("Issue #2116: case-level-fallback rule severity respects an operator policy
     fallback?.severity,
     "error",
     "policy-override map must be able to escalate the fallback rule",
+  );
+  assert.equal(report.blocked, true);
+});
+
+test("Issue #2116: policyOverrides cannot downgrade the missing faithfulness verdict hard gate", () => {
+  const ctx = harness([buildCase({})], buildIntent());
+  const report = evaluatePolicyGate({
+    jobId: "job-1",
+    generatedAt: GENERATED_AT,
+    list: ctx.list,
+    intent: ctx.intent,
+    profile: ctx.profile,
+    validation: ctx.validation,
+    coverage: ctx.coverage,
+    visual: {
+      schemaVersion: "1.0.0",
+      contractVersion: TEST_INTELLIGENCE_CONTRACT_VERSION,
+      visualSidecarSchemaVersion: "1.0.0",
+      generatedAt: GENERATED_AT,
+      jobId: "job-1",
+      totalScreens: 1,
+      screensWithFindings: 0,
+      blocked: false,
+      records: [
+        {
+          screenId: "s-1",
+          deployment: "llama-4-maverick-vision",
+          outcomes: [],
+          issues: [],
+          meanConfidence: 0.95,
+        },
+      ],
+    },
+    policyOverrides: [
+      {
+        ruleId: "policy:cross-modal-faithfulness:evaluation-missing",
+        severity: "warning",
+      },
+    ],
+  });
+  const missing = report.jobLevelViolations.find(
+    (v) =>
+      v.rule === "policy:cross-modal-faithfulness:evaluation-missing",
+  );
+  assert.equal(
+    missing?.severity,
+    "error",
+    "missing faithfulness evidence must remain fail-closed when visual evidence exists",
   );
   assert.equal(report.blocked, true);
 });

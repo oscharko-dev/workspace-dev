@@ -419,6 +419,11 @@ test("evaluateDistributionShiftReport flags embedding centroid > 2σ", async () 
     centroidFinding!.centroidShiftL2! > 0.1,
     `expected non-trivial L2 shift, got ${centroidFinding!.centroidShiftL2}`,
   );
+  assert.equal(
+    centroidFinding!.centroidShiftSigma,
+    undefined,
+    "zero-variance historical scatter must not report a fake sigma=0 value",
+  );
   assert.equal(centroidFinding!.embeddingProviderId, "phi-4-mini-instruct");
 });
 
