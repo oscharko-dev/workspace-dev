@@ -28,9 +28,12 @@
  */
 
 import { randomUUID } from "node:crypto";
+import type { Dirent } from "node:fs";
 import {
+  lstat,
   mkdir,
   mkdtemp,
+  readdir,
   readFile,
   rename,
   rm,
@@ -1581,24 +1584,166 @@ const matchedArchiveSuffix = (
   );
 };
 
+interface ChildResult {
+  readonly code: number;
+  readonly signal: NodeJS.Signals | null;
+  readonly stderr: string;
+  readonly stdout: string;
+}
+
 const runChild = (
   command: string,
   args: readonly string[],
   cwd: string,
-): Promise<{ readonly code: number; readonly stderr: string }> =>
+  options: { readonly captureStdout?: boolean } = {},
+): Promise<ChildResult> =>
   new Promise((resolvePromise, reject) => {
-    const child = spawn(command, args, { cwd, stdio: ["ignore", "ignore", "pipe"] });
-    let stderr = "";
-    child.stderr.on("data", (chunk: Buffer) => {
-      stderr += chunk.toString("utf8");
+    const child = spawn(command, args, {
+      cwd,
+      stdio: [
+        "ignore",
+        options.captureStdout ? "pipe" : "ignore",
+        "pipe",
+      ],
     });
+    let stderr = "";
+    let stdout = "";
+    if (child.stderr) {
+      child.stderr.on("data", (chunk: Buffer) => {
+        stderr += chunk.toString("utf8");
+      });
+    }
+    if (options.captureStdout && child.stdout) {
+      child.stdout.on("data", (chunk: Buffer) => {
+        stdout += chunk.toString("utf8");
+      });
+    }
     child.on("error", (error) => {
       reject(error);
     });
-    child.on("close", (code) => {
-      resolvePromise({ code: code ?? 0, stderr });
+    child.on("close", (code, signal) => {
+      // A signal-terminated child reports `code === null`. Treat that
+      // as a non-zero exit so callers do not silently accept a
+      // signal-killed `tar`/`unzip` extraction as success.
+      const normalizedCode =
+        code !== null ? code : signal !== null ? 128 : 1;
+      resolvePromise({ code: normalizedCode, signal, stderr, stdout });
     });
   });
+
+/**
+ * Reject archive entries that try to escape the destination directory:
+ * absolute paths, `..` segments, drive letters, or paths that contain
+ * embedded null bytes. Mirrors the containment check the seal verifier
+ * applies to seal-referenced artifact filenames so a malicious
+ * tarball/zipfile cannot trigger a zip-slip / tar-escape.
+ */
+const isUnsafeArchiveEntryPath = (entryPath: string): boolean => {
+  if (typeof entryPath !== "string" || entryPath.length === 0) return true;
+  if (entryPath.includes("\0")) return true;
+  const trimmed = entryPath.replaceAll("\\", "/").trim();
+  if (trimmed.startsWith("/") || /^[a-zA-Z]:/.test(trimmed)) return true;
+  // Fast pre-check on raw segments before normalization (handles
+  // entries like `foo/../bar/../../etc/passwd`).
+  for (const segment of trimmed.split("/")) {
+    if (segment === "..") return true;
+  }
+  return false;
+};
+
+const enforceSafeArchiveEntries = async (
+  command: string,
+  listArgs: readonly string[],
+  archive: string,
+): Promise<void> => {
+  const result = await runChild(command, listArgs, ".", { captureStdout: true });
+  if (result.code !== 0) {
+    throw new TestIntelligenceRunOperatorError(
+      `${command} failed to enumerate '${archive}' (exit ${String(result.code)}): ${result.stderr.trim() || "no stderr"}.`,
+    );
+  }
+  const entries = result.stdout
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0);
+  for (const entry of entries) {
+    if (isUnsafeArchiveEntryPath(entry)) {
+      throw new TestIntelligenceRunOperatorError(
+        `Refusing to extract '${archive}': unsafe archive entry '${entry}'.`,
+      );
+    }
+  }
+};
+
+/**
+ * Reject archives that contain symlinks or hardlinks before
+ * extraction. POSIX `tar -tvf` (verbose listing) and `unzip -l` /
+ * `-Z` emit a leading mode column where `l` means symlink and `h`
+ * means hardlink. A malicious archive can chain `l`/`h` entries with
+ * relative-looking names to redirect a later entry's writes outside
+ * the destination directory ("zip slip via symlink"); pre-flight
+ * rejection is the primary defense.
+ */
+const enforceNoSymlinkOrHardlinkEntries = async (
+  command: string,
+  listArgs: readonly string[],
+  archive: string,
+): Promise<void> => {
+  const result = await runChild(command, listArgs, ".", { captureStdout: true });
+  if (result.code !== 0) {
+    throw new TestIntelligenceRunOperatorError(
+      `${command} failed to enumerate '${archive}' (exit ${String(result.code)}): ${result.stderr.trim() || "no stderr"}.`,
+    );
+  }
+  for (const line of result.stdout.split("\n")) {
+    const trimmed = line.trim();
+    if (trimmed.length === 0) continue;
+    const firstChar = trimmed.charAt(0);
+    if (firstChar === "l" || firstChar === "h") {
+      throw new TestIntelligenceRunOperatorError(
+        `Refusing to extract '${archive}': archive contains a symlink or hardlink entry. Repackage the bundle without link entries.`,
+      );
+    }
+  }
+};
+
+/**
+ * Walk the extracted bundle and reject any symlink the archiver may
+ * have created despite the pre-flight check (defense-in-depth against
+ * a verbose-listing format we did not anticipate). A symlink left in
+ * place could be followed by a later compromised process.
+ */
+const enforceNoSymlinksUnderDirectory = async (
+  root: string,
+): Promise<void> => {
+  const stack: string[] = [root];
+  while (stack.length > 0) {
+    const dir = stack.pop()!;
+    let entries: Dirent[];
+    try {
+      entries = await readdir(dir, { withFileTypes: true });
+    } catch (error) {
+      if (
+        typeof error === "object" &&
+        error !== null &&
+        (error as { code?: string }).code === "ENOENT"
+      ) {
+        continue;
+      }
+      throw error;
+    }
+    for (const entry of entries) {
+      const abs = join(dir, entry.name);
+      const info = await lstat(abs);
+      if (info.isSymbolicLink()) {
+        throw new TestIntelligenceRunOperatorError(
+          `Refusing to verify '${root}': symlink '${abs}' present after extraction.`,
+        );
+      }
+      if (info.isDirectory()) stack.push(abs);
+    }
+  }
+};
 
 /**
  * Extract a bundle archive into a fresh temp directory using the
@@ -1621,6 +1766,18 @@ export const extractSealBundleArchive = async (
   const absoluteBundle = resolve(bundlePath);
   try {
     if (suffix === ".zip") {
+      await enforceSafeArchiveEntries(
+        "unzip",
+        ["-Z1", absoluteBundle],
+        absoluteBundle,
+      );
+      // Long-format zip listing reveals the entry mode in column 1
+      // (`l` for symlink). `-Z` without `-1` emits the verbose form.
+      await enforceNoSymlinkOrHardlinkEntries(
+        "unzip",
+        ["-Z", absoluteBundle],
+        absoluteBundle,
+      );
       const result = await runChild(
         "unzip",
         ["-q", absoluteBundle, "-d", directory],
@@ -1632,6 +1789,22 @@ export const extractSealBundleArchive = async (
         );
       }
     } else {
+      const listArgs =
+        suffix === ".tar"
+          ? ["-tf", absoluteBundle]
+          : ["-tzf", absoluteBundle];
+      await enforceSafeArchiveEntries("tar", listArgs, absoluteBundle);
+      // Verbose tar listing emits a Unix-style mode column where the
+      // first character is `l` for symlink and `h` for hardlink.
+      const verboseListArgs =
+        suffix === ".tar"
+          ? ["-tvf", absoluteBundle]
+          : ["-tvzf", absoluteBundle];
+      await enforceNoSymlinkOrHardlinkEntries(
+        "tar",
+        verboseListArgs,
+        absoluteBundle,
+      );
       const tarArgs =
         suffix === ".tar"
           ? ["-xf", absoluteBundle, "-C", directory]
@@ -1643,6 +1816,10 @@ export const extractSealBundleArchive = async (
         );
       }
     }
+    // Defense-in-depth: walk the extracted tree and refuse any
+    // symlink that slipped past pre-flight (e.g. a verbose listing
+    // format we didn't anticipate).
+    await enforceNoSymlinksUnderDirectory(directory);
     return {
       directory,
       cleanup: async () => {

@@ -3603,3 +3603,42 @@ test("runTestIntelligenceVerifySealCommand: returns 2 + report on tampered bundl
     await rm(tempRoot, { recursive: true, force: true });
   }
 });
+
+test("extractSealBundleArchive: refuses tar archives that contain symlinks", async () => {
+  const { spawnSync, execSync } = await import("node:child_process");
+  const probe = spawnSync("tar", ["--version"], { stdio: "ignore" });
+  if (probe.status !== 0) return; // skip on hosts without tar
+  const stagingRoot = await mkdtemp(
+    path.join(os.tmpdir(), "verify-seal-symlink-"),
+  );
+  try {
+    const stage = path.join(stagingRoot, "stage");
+    const { mkdir, symlink, writeFile } = await import("node:fs/promises");
+    await mkdir(stage, { recursive: true });
+    await writeFile(path.join(stage, "real.txt"), "ok\n", "utf8");
+    await symlink("/etc/passwd", path.join(stage, "evil-link"));
+    const archive = path.join(stagingRoot, "evil.tar.gz");
+    execSync(
+      `tar -czf ${JSON.stringify(archive)} -C ${JSON.stringify(stage)} .`,
+      { stdio: "ignore" },
+    );
+    const { extractSealBundleArchive } = await import(
+      "./test-intelligence-run-cli.js"
+    );
+    let thrown: unknown;
+    try {
+      const ex = await extractSealBundleArchive(archive);
+      await ex.cleanup();
+    } catch (error) {
+      thrown = error;
+    }
+    assert.ok(thrown instanceof Error, "expected an error to be thrown");
+    assert.match(
+      (thrown as Error).message,
+      /symlink|hardlink/i,
+      `unexpected error: ${(thrown as Error).message}`,
+    );
+  } finally {
+    await rm(stagingRoot, { recursive: true, force: true });
+  }
+});

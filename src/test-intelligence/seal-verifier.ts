@@ -28,7 +28,7 @@
 import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 import type { Dirent } from "node:fs";
 import { readFile, readdir, stat } from "node:fs/promises";
-import { join, relative, sep, dirname } from "node:path";
+import { isAbsolute, join, relative, resolve, sep, dirname } from "node:path";
 
 import {
   PROVENANCE_ARTIFACT_FILENAME,
@@ -39,7 +39,9 @@ import { canonicalJson } from "./content-hash.js";
 import { computePerSourceCostBreakdownHashFromReport } from "./per-source-cost.js";
 import {
   PRODUCTION_RUNNER_EVIDENCE_SEAL_ARTIFACT_FILENAME,
+  parseProductionRunnerEvidenceSeal,
   type ProductionRunnerEvidenceSeal,
+  type ProductionRunnerEvidenceVisualHash,
 } from "./production-runner-evidence.js";
 
 const HEX64 = /^[0-9a-f]{64}$/u;
@@ -53,7 +55,7 @@ const HEX64 = /^[0-9a-f]{64}$/u;
 export const DEFAULT_SEAL_VERIFY_KEY_LABEL =
   "workspace-dev:seal-verify:v1" as const;
 
-/** SHA-256("workspace-dev:seal-verify:v1") truncated to 32 bytes. */
+/** SHA-256 of `DEFAULT_SEAL_VERIFY_KEY_LABEL` (32 bytes — the natural digest size). */
 const defaultKey = (): Buffer =>
   createHash("sha256").update(DEFAULT_SEAL_VERIFY_KEY_LABEL).digest();
 
@@ -108,7 +110,8 @@ export interface SealVerifyCrossCheck {
     | "provenance_graph"
     | "region_attestations"
     | "finops_bySource_hash"
-    | "genealogy_dag_hash";
+    | "genealogy_dag_hash"
+    | "visual_sidecar_evidence";
   readonly ok: boolean;
   readonly detail: string;
 }
@@ -184,22 +187,54 @@ const parseSealJson = (
   } catch {
     return undefined;
   }
-  if (!isRecord(raw)) return undefined;
-  if (
-    typeof raw["jobId"] !== "string" ||
-    typeof raw["generatedAt"] !== "string" ||
-    !Array.isArray(raw["harnessArtifactFilenames"]) ||
-    typeof raw["headOfChainHash"] !== "string" ||
-    typeof raw["chainLength"] !== "number" ||
-    typeof raw["finopsArtifactFilename"] !== "string" ||
-    typeof raw["bySourceHash"] !== "string" ||
-    typeof raw["genealogyArtifactFilename"] !== "string" ||
-    typeof raw["genealogyDagHash"] !== "string" ||
-    !Array.isArray(raw["visualEvidenceHashes"])
-  ) {
-    return undefined;
+  // Reuse the strict parser from `production-runner-evidence` so the
+  // verifier and the in-process post-write seal verification stay in
+  // lockstep on schemaVersion, HEX64 hash shapes, integer bounds for
+  // chainLength, and deep array/record validation.
+  return parseProductionRunnerEvidenceSeal(raw);
+};
+
+/**
+ * Reject artifact paths that try to escape the run directory: absolute
+ * paths, raw `..` segments (checked before normalization so
+ * `a/../b` cannot collapse to `b`), embedded null bytes, or filenames
+ * that ultimately resolve outside the bundle root.
+ *
+ * `path.normalize()` is intentionally NOT used to evaluate the `..`
+ * check because `normalize("a/../b")` is `"b"` and would mask a
+ * traversal segment. The raw-segment scan also handles Windows-style
+ * separators, drive letters, and embedded null bytes that are valid
+ * Linux filename characters but never legitimate inside a sealed
+ * bundle.
+ */
+const isSafeRelativeArtifactPath = (
+  runDir: string,
+  artifactPath: string,
+): boolean => {
+  if (typeof artifactPath !== "string" || artifactPath.trim().length === 0) {
+    return false;
   }
-  return raw as unknown as ProductionRunnerEvidenceSeal;
+  if (artifactPath.includes("\0")) return false;
+  if (isAbsolute(artifactPath)) return false;
+  if (/^[a-zA-Z]:/.test(artifactPath)) return false;
+  // Reject any raw `..` segment by splitting on both POSIX `/` and
+  // Windows `\` separators before normalization can elide it.
+  const segments = artifactPath
+    .replaceAll("\\", "/")
+    .split("/")
+    .filter((segment) => segment.length > 0);
+  if (segments.some((segment) => segment === "..")) return false;
+  const resolvedRunDir = resolve(runDir);
+  const resolvedArtifact = resolve(runDir, artifactPath);
+  // `relative` returns a string equal to `".."` or starting with
+  // `"../"` when the resolved artifact is outside the run dir. Use
+  // `sep` so the check works on Windows too (`..\\foo` is still
+  // outside).
+  const rel = relative(resolvedRunDir, resolvedArtifact);
+  if (rel === ".." || rel.startsWith(`..${sep}`) || isAbsolute(rel)) {
+    return false;
+  }
+  return true;
 };
 
 const findSealPath = async (
@@ -361,6 +396,19 @@ const verifyArtifacts = async (
   const leaves: { reference: string; sha256: string }[] = [];
   const failures: SealVerifyFailure[] = [];
   for (const ref of refs) {
+    if (!isSafeRelativeArtifactPath(ctx.runDir, ref.reference)) {
+      reports.push({
+        status: "TAMPERED",
+        reference: ref.reference,
+        note: "Seal references an artifact path that escapes the run directory.",
+      });
+      failures.push({
+        code: "artifact_tampered",
+        reference: ref.reference,
+        message: `Seal references unsafe artifact path '${ref.reference}'; refusing to read outside the bundle.`,
+      });
+      continue;
+    }
     const abs = join(ctx.runDir, ref.reference);
     const bytes = await readBytes(abs);
     if (bytes === undefined) {
@@ -384,7 +432,6 @@ const verifyArtifacts = async (
         reference: ref.reference,
         expectedSha256: ref.expectedSha256,
         observedSha256: observed,
-        firstMismatchOffset: 0,
         note: "Recomputed SHA-256 does not match the seal manifest entry.",
       });
       failures.push({
@@ -427,10 +474,35 @@ const detectExtras = async (
   return extras;
 };
 
+/**
+ * Resolve a seal-supplied filename to an absolute path inside the run
+ * dir, returning `undefined` when the filename fails the
+ * `isSafeRelativeArtifactPath` containment check. Centralises every
+ * `join(ctx.runDir, sealFilename)` so a malicious seal cannot smuggle
+ * `../outside.json` past a cross-check that forgot to validate.
+ */
+const resolveSealReferencedPath = (
+  ctx: VerifyContext,
+  reference: string,
+): string | undefined => {
+  if (!isSafeRelativeArtifactPath(ctx.runDir, reference)) return undefined;
+  return join(ctx.runDir, reference);
+};
+
 const verifyFinopsBySourceHash = async (
   ctx: VerifyContext,
 ): Promise<SealVerifyCrossCheck> => {
-  const finopsPath = join(ctx.runDir, ctx.seal.finopsArtifactFilename);
+  const finopsPath = resolveSealReferencedPath(
+    ctx,
+    ctx.seal.finopsArtifactFilename,
+  );
+  if (finopsPath === undefined) {
+    return {
+      name: "finops_bySource_hash",
+      ok: false,
+      detail: `Seal references unsafe FinOps path '${ctx.seal.finopsArtifactFilename}'; refusing to read outside the bundle.`,
+    };
+  }
   const bytes = await readBytes(finopsPath);
   if (bytes === undefined) {
     return {
@@ -475,7 +547,17 @@ const verifyFinopsBySourceHash = async (
 const verifyGenealogyDagHash = async (
   ctx: VerifyContext,
 ): Promise<SealVerifyCrossCheck> => {
-  const path = join(ctx.runDir, ctx.seal.genealogyArtifactFilename);
+  const path = resolveSealReferencedPath(
+    ctx,
+    ctx.seal.genealogyArtifactFilename,
+  );
+  if (path === undefined) {
+    return {
+      name: "genealogy_dag_hash",
+      ok: false,
+      detail: `Seal references unsafe genealogy path '${ctx.seal.genealogyArtifactFilename}'; refusing to read outside the bundle.`,
+    };
+  }
   const bytes = await readBytes(path);
   if (bytes === undefined) {
     return {
@@ -556,6 +638,100 @@ const verifyProvenanceCrossLink = async (
   };
 };
 
+const compareVisualHashSets = (
+  expected: readonly ProductionRunnerEvidenceVisualHash[],
+  actual: readonly ProductionRunnerEvidenceVisualHash[],
+): boolean => {
+  if (expected.length !== actual.length) return false;
+  const sortKey = (entry: ProductionRunnerEvidenceVisualHash): string =>
+    `${entry.screenId}|${entry.modelDeployment}|${entry.evidenceHash}`;
+  const left = [...expected]
+    .map(sortKey)
+    .sort((a, b) => a.localeCompare(b));
+  const right = [...actual].map(sortKey).sort((a, b) => a.localeCompare(b));
+  return left.every((value, index) => value === right[index]);
+};
+
+const verifyVisualSidecarCrossLink = async (
+  ctx: VerifyContext,
+): Promise<SealVerifyCrossCheck | undefined> => {
+  if (ctx.seal.visualEvidenceHashes.length === 0) return undefined;
+  const sidecarPath = join(ctx.runDir, "visual-sidecar-result.json");
+  if (!(await safeStat(sidecarPath))) {
+    return {
+      name: "visual_sidecar_evidence",
+      ok: false,
+      detail:
+        "Seal references visual evidence hashes but visual-sidecar-result.json is missing.",
+    };
+  }
+  const bytes = await readBytes(sidecarPath);
+  if (bytes === undefined) {
+    return {
+      name: "visual_sidecar_evidence",
+      ok: false,
+      detail: "visual-sidecar-result.json is unreadable.",
+    };
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(Buffer.from(bytes).toString("utf8"));
+  } catch {
+    return {
+      name: "visual_sidecar_evidence",
+      ok: false,
+      detail: "visual-sidecar-result.json is not valid JSON.",
+    };
+  }
+  if (!isRecord(parsed)) {
+    return {
+      name: "visual_sidecar_evidence",
+      ok: false,
+      detail: "visual-sidecar-result.json is not a JSON object.",
+    };
+  }
+  const rawRefs = parsed["visualEvidenceRefs"];
+  if (rawRefs !== undefined && !Array.isArray(rawRefs)) {
+    return {
+      name: "visual_sidecar_evidence",
+      ok: false,
+      detail:
+        "visual-sidecar-result.json visualEvidenceRefs is present but is not an array.",
+    };
+  }
+  const refs: readonly unknown[] = rawRefs ?? [];
+  const observed: ProductionRunnerEvidenceVisualHash[] = [];
+  for (const ref of refs) {
+    if (
+      !isRecord(ref) ||
+      typeof ref["screenId"] !== "string" ||
+      typeof ref["modelDeployment"] !== "string" ||
+      typeof ref["evidenceHash"] !== "string" ||
+      !HEX64.test(ref["evidenceHash"])
+    ) {
+      return {
+        name: "visual_sidecar_evidence",
+        ok: false,
+        detail:
+          "visual-sidecar-result.json contains a visualEvidenceRefs entry with an invalid shape.",
+      };
+    }
+    observed.push({
+      screenId: ref["screenId"],
+      modelDeployment: ref["modelDeployment"],
+      evidenceHash: ref["evidenceHash"],
+    });
+  }
+  const ok = compareVisualHashSets(ctx.seal.visualEvidenceHashes, observed);
+  return {
+    name: "visual_sidecar_evidence",
+    ok,
+    detail: ok
+      ? "Visual sidecar evidence refs match the seal's visualEvidenceHashes."
+      : "Visual sidecar evidence refs disagree with the seal's visualEvidenceHashes.",
+  };
+};
+
 const verifyRegionAttestationCrossLink = async (
   ctx: VerifyContext,
 ): Promise<SealVerifyCrossCheck | undefined> => {
@@ -583,9 +759,18 @@ const verifyRegionAttestationCrossLink = async (
       detail: "region-attestations.json is not a JSON object.",
     };
   }
-  const finopsBytes = await readBytes(
-    join(ctx.runDir, ctx.seal.finopsArtifactFilename),
+  const finopsAbs = resolveSealReferencedPath(
+    ctx,
+    ctx.seal.finopsArtifactFilename,
   );
+  if (finopsAbs === undefined) {
+    return {
+      name: "region_attestations",
+      ok: false,
+      detail: `Seal references unsafe FinOps path '${ctx.seal.finopsArtifactFilename}'; refusing to cross-check region attestations.`,
+    };
+  }
+  const finopsBytes = await readBytes(finopsAbs);
   if (finopsBytes === undefined) {
     return {
       name: "region_attestations",
@@ -799,6 +984,17 @@ export const verifySealBundle = async (
       reference: ctx.seal.genealogyArtifactFilename,
       message: genealogyCheck.detail,
     });
+  }
+  const visual = await verifyVisualSidecarCrossLink(ctx);
+  if (visual !== undefined) {
+    crossChecks.push(visual);
+    if (!visual.ok) {
+      failures.push({
+        code: "artifact_tampered",
+        reference: "visual-sidecar-result.json",
+        message: visual.detail,
+      });
+    }
   }
   const provenance = await verifyProvenanceCrossLink(ctx);
   if (provenance !== undefined) {

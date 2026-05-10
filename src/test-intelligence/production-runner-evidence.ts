@@ -155,6 +155,10 @@ const buildVisualEvidenceHashesFromArtifact = (
   }));
 };
 
+export const parseProductionRunnerEvidenceSeal = (
+  raw: unknown,
+): ProductionRunnerEvidenceSeal | undefined => parseSeal(raw);
+
 const parseSeal = (raw: unknown): ProductionRunnerEvidenceSeal | undefined => {
   if (!isRecord(raw)) return undefined;
   const harnessArtifactFilenames = raw["harnessArtifactFilenames"];
