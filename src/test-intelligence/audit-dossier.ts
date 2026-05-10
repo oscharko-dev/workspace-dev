@@ -266,7 +266,7 @@ const writeAtomicText = async (path: string, value: string): Promise<void> =>
 const requireFile = async (path: string, label: string): Promise<void> => {
   try {
     await stat(path);
-  } catch (error) {
+  } catch {
     throw new Error(`${label} is missing at ${path}`);
   }
 };

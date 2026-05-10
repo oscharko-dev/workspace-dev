@@ -102,8 +102,8 @@ const buildPdfLines = (manifest: AuditDossierManifest): PdfLine[] => {
   pushWrapped(lines, `Git SHA: ${manifest.summary.gitSha}`);
   pushWrapped(lines, `ICT register reference: ${manifest.summary.ictRegisterRefs.join(", ")}`);
   pushWrapped(lines, `Benchmark protocol version: ${manifest.summary.benchmarkProtocolVersion}`);
-  pushWrapped(lines, `Policy profile: ${manifest.summary.policyProfileId ?? "unknown"}`);
-  pushWrapped(lines, `Model card: ${manifest.summary.modelCardId ?? "unknown"}`);
+  pushWrapped(lines, `Policy profile: ${manifest.summary.policyProfileId}`);
+  pushWrapped(lines, `Model card: ${manifest.summary.modelCardId}`);
   pushWrapped(lines, `Provenance Merkle root: ${manifest.provenance.merkleRoot}`);
   lines.push({ text: "", font: "regular", size: BODY_FONT_SIZE });
 
