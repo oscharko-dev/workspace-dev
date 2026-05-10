@@ -35,6 +35,7 @@ import {
   isCoverageRelevantActionLike,
   isCoverageRelevantElementLike,
 } from "./coverage-relevance.js";
+import { classifyFieldLifecycleTransition } from "./field-lifecycle-transition-tier.js";
 import { detectDuplicateTestCases } from "./test-case-duplicate.js";
 
 export interface ComputeCoverageReportInput {
@@ -72,10 +73,20 @@ export const computeCoverageReport = (
   const actionTargetIds =
     input.workflowTopology?.actions.map((action) => action.actionId) ??
     relevantActions.map((a) => a.id);
-  const fieldLifecycleTransitionIds =
-    input.workflowTopology?.fieldLifecycles.flatMap((lifecycle) =>
-      lifecycle.transitions.map((transition) => transition.transitionId),
+  const fieldLifecycleTransitions =
+    input.workflowTopology?.fieldLifecycles.flatMap(
+      (lifecycle) => lifecycle.transitions,
     ) ?? [];
+  const fieldLifecycleTransitionIds = fieldLifecycleTransitions.map(
+    (transition) => transition.transitionId,
+  );
+  const recommendedTransitionIds = fieldLifecycleTransitions
+    .filter(
+      (transition) =>
+        classifyFieldLifecycleTransition(transition) ===
+        "recommended_positive_path",
+    )
+    .map((transition) => transition.transitionId);
 
   const fieldCoverage = computeBucket(
     relevantFields.map((f) => f.id),
@@ -85,16 +96,21 @@ export const computeCoverageReport = (
     actionTargetIds,
     collectCovered(cases, (c) => c.qualitySignals.coveredActionIds),
   );
-  const fieldLifecycleCoverage = computeBucket(
-    fieldLifecycleTransitionIds,
-    collectCovered(cases, (c) =>
-      c.steps.flatMap((step) =>
-        step.fieldLifecycleTransitionId === undefined
-          ? []
-          : [step.fieldLifecycleTransitionId],
-      ),
+  const coveredLifecycleTransitionIds = collectCovered(cases, (c) =>
+    c.steps.flatMap((step) =>
+      step.fieldLifecycleTransitionId === undefined
+        ? []
+        : [step.fieldLifecycleTransitionId],
     ),
   );
+  const fieldLifecycleCoverage = computeBucket(
+    fieldLifecycleTransitionIds,
+    coveredLifecycleTransitionIds,
+  );
+  const recommendedTransitionCoverage =
+    recommendedTransitionIds.length === 0
+      ? undefined
+      : computeBucket(recommendedTransitionIds, coveredLifecycleTransitionIds);
   const validationCoverage = computeBucket(
     input.intent.detectedValidations.map((v) => v.id),
     collectCovered(cases, (c) => c.qualitySignals.coveredValidationIds),
@@ -139,6 +155,9 @@ export const computeCoverageReport = (
     fieldCoverage,
     actionCoverage,
     fieldLifecycleCoverage,
+    ...(recommendedTransitionCoverage !== undefined
+      ? { recommendedTransitionCoverage }
+      : {}),
     validationCoverage,
     navigationCoverage,
     traceCoverage,

@@ -41,6 +41,7 @@ import {
   type IntraClassBoundaryClassifier,
   type IntraClassRedundancyOutcome,
 } from "./equivalence-class-fingerprint.js";
+import { classifyFieldLifecycleTransition } from "./field-lifecycle-transition-tier.js";
 import { validateGeneratedTestCaseList } from "./generated-test-case-schema.js";
 import { detectPii } from "./pii-detection.js";
 import { detectSuspiciousContent } from "./semantic-content-sanitization.js";
@@ -399,16 +400,40 @@ const validateStepsSemantics = (
   }
 };
 
+/**
+ * Issue #2168 — tier-aware field-lifecycle transition coverage.
+ *
+ * The legacy implementation emitted a blocking
+ * `uncovered_field_lifecycle_transition` error for EVERY uncovered
+ * transition, which over-fired 30–139× per dataset on the M0 multi-dataset
+ * benchmark and blocked G4 across the suite. The new implementation
+ * classifies each transition into one of three tiers (see
+ * {@link classifyFieldLifecycleTransition}) and emits:
+ *
+ * - `uncovered_field_lifecycle_transition` (`error`) for
+ *   `mandatory_negative_path` transitions only — the entry transitions
+ *   out of `initial` and the `validation_pass` / `validation_fail`
+ *   outcomes that anchor negative-path coverage.
+ * - `uncovered_field_lifecycle_transition_recommended` (`warning`) for
+ *   `recommended_positive_path` transitions (positive-path completion).
+ * - `uncovered_field_lifecycle_transition_recommended` (`warning`) for
+ *   `state_transition_test_only` transitions ONLY when the run carries
+ *   at least one `technique === "state_transition"` test case;
+ *   otherwise the transition is silently ignored.
+ */
 const validateFieldLifecycleCoverage = (
   list: GeneratedTestCaseList,
   workflowTopology: WorkflowTopology | undefined,
   issues: TestCaseValidationIssue[],
 ): void => {
-  const transitionIds =
-    workflowTopology?.fieldLifecycles.flatMap((lifecycle) =>
-      lifecycle.transitions.map((transition) => transition.transitionId),
-    ) ?? [];
-  if (transitionIds.length === 0) {
+  const lifecycles = workflowTopology?.fieldLifecycles ?? [];
+  if (lifecycles.length === 0) {
+    return;
+  }
+  const allTransitions = lifecycles.flatMap((lifecycle) =>
+    lifecycle.transitions.map((transition) => transition),
+  );
+  if (allTransitions.length === 0) {
     return;
   }
   const coveredTransitionIds = new Set<string>();
@@ -419,15 +444,50 @@ const validateFieldLifecycleCoverage = (
       }
     }
   }
-  for (const transitionId of transitionIds) {
-    if (coveredTransitionIds.has(transitionId)) {
+  const hasStateTransitionTestCase = list.testCases.some(
+    (testCase) => testCase.technique === "state_transition",
+  );
+  for (const transition of allTransitions) {
+    if (coveredTransitionIds.has(transition.transitionId)) {
+      continue;
+    }
+    const tier = classifyFieldLifecycleTransition(transition);
+    if (tier === "mandatory_negative_path") {
+      pushIssue(issues, {
+        path: "$.testCases",
+        code: "uncovered_field_lifecycle_transition",
+        severity: "error",
+        message:
+          `workflowTopology.fieldLifecycles transition "${transition.transitionId}" ` +
+          `(${transition.from} → ${transition.to}, trigger ${transition.trigger}) ` +
+          `is mandatory_negative_path and has no anchored test case step`,
+      });
+      continue;
+    }
+    if (tier === "recommended_positive_path") {
+      pushIssue(issues, {
+        path: "$.testCases",
+        code: "uncovered_field_lifecycle_transition_recommended",
+        severity: "warning",
+        message:
+          `workflowTopology.fieldLifecycles transition "${transition.transitionId}" ` +
+          `(${transition.from} → ${transition.to}, trigger ${transition.trigger}) ` +
+          `is recommended_positive_path and has no anchored test case step`,
+      });
+      continue;
+    }
+    if (!hasStateTransitionTestCase) {
       continue;
     }
     pushIssue(issues, {
       path: "$.testCases",
-      code: "uncovered_field_lifecycle_transition",
-      severity: "error",
-      message: `workflowTopology.fieldLifecycles transition "${transitionId}" has no anchored test case step`,
+      code: "uncovered_field_lifecycle_transition_recommended",
+      severity: "warning",
+      message:
+        `workflowTopology.fieldLifecycles transition "${transition.transitionId}" ` +
+        `(${transition.from} → ${transition.to}, trigger ${transition.trigger}) ` +
+        `is state_transition_test_only and has no anchored test case step ` +
+        `(required because the run carries a state_transition technique case)`,
     });
   }
 };

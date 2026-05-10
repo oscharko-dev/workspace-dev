@@ -45,8 +45,12 @@ The field-lifecycle surface is consumed in five places:
    `steps[*].fieldLifecycleTransitionId` and to cover every `error`
    transition with at least one negative or validation case.
 4. `test-case-validation.ts` blocks runs when a step omits a lifecycle
-   transition id or when any declared lifecycle transition has no anchored test
-   step.
+   transition id or when an uncovered transition is classified as
+   `mandatory_negative_path` by the Issue #2168 tier classifier
+   (entry transitions out of `initial` and the
+   `validation_pass` / `validation_fail` outcomes). Recommended-tier and
+   state-transition-only transitions surface as non-blocking warnings —
+   see `docs/test-intelligence/state-machine-validator.md`.
 5. `customer-markdown-renderer.ts` renders lifecycle transitions explicitly as
    `→ Feld erreicht Zustand "..."`.
 
