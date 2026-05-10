@@ -23,7 +23,7 @@ export default function OverviewRoute() {
       <Stack spacing={1.25}>
         <Chip color="primary" label="Lazy route" sx={{ alignSelf: "flex-start" }} />
         <Typography variant="h4">Overview dashboard</Typography>
-        <Typography color="text.secondary" maxWidth={760} variant="body1">
+        <Typography color="text.secondary" sx={{ maxWidth: 760 }} variant="body1">
           This route deliberately lives behind a lazy boundary so the template can prove code splitting, route warmup,
           and budget enforcement against a realistic navigation path.
         </Typography>

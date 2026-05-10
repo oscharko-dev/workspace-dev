@@ -70,8 +70,8 @@ function TemplateNavigation() {
               }
             }}
           >
-            <Stack alignItems="flex-start" spacing={0.125}>
-              <Typography component="span" fontWeight={600}>
+            <Stack spacing={0.125} sx={{ alignItems: "flex-start" }}>
+              <Typography component="span" sx={{ fontWeight: 600 }}>
                 {item.label}
               </Typography>
               <Typography component="span" sx={{ opacity: 0.72, typography: "caption" }}>
@@ -108,7 +108,11 @@ function AppShell() {
         }}
       >
         <Toolbar sx={{ alignItems: "flex-start", flexDirection: "column", gap: 1.5, py: 2 }}>
-          <Stack direction={{ xs: "column", md: "row" }} justifyContent="space-between" spacing={1} width="100%">
+          <Stack
+            direction={{ xs: "column", md: "row" }}
+            spacing={1}
+            sx={{ justifyContent: "space-between", width: "100%" }}
+          >
             <Stack spacing={0.75}>
               <Chip
                 color="primary"
@@ -120,7 +124,7 @@ function AppShell() {
                 Routed template with real lazy-route and perf-gate coverage
               </Typography>
             </Stack>
-            <Typography color="rgba(248,250,252,0.78)" maxWidth={420} variant="body2">
+            <Typography color="rgba(248,250,252,0.78)" sx={{ maxWidth: 420 }} variant="body2">
               Secondary routes warm on intent, vitals report from the first paint, and the seed remains small enough
               for realistic budget enforcement.
             </Typography>
@@ -141,7 +145,11 @@ function AppShell() {
             p: { xs: 2.5, md: 3.5 }
           }}
         >
-          <Stack direction={{ xs: "column", md: "row" }} justifyContent="space-between" spacing={2}>
+          <Stack
+            direction={{ xs: "column", md: "row" }}
+            spacing={2}
+            sx={{ justifyContent: "space-between" }}
+          >
             <Stack spacing={1}>
               <Typography variant="overline">Template baseline</Typography>
               <Typography variant="h3">Initial load stays lean, route transitions stay measurable.</Typography>
@@ -151,7 +159,7 @@ function AppShell() {
                 The home route is eager, while Overview and Checkout are lazy. Pointer and keyboard intent trigger route
                 warmup before navigation.
               </Typography>
-              <Stack direction="row" flexWrap="wrap" gap={1}>
+              <Stack direction="row" sx={{ flexWrap: "wrap", gap: 1 }}>
                 <Chip label="INP ≤ 200 ms" size="small" />
                 <Chip label="LCP ≤ 2500 ms" size="small" />
                 <Chip label="Route transition ≤ 300 ms" size="small" />

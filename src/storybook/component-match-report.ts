@@ -170,7 +170,6 @@ interface StorybookLookup {
 const compareStrings = (left: string, right: string): number => left.localeCompare(right);
 
 const sortUniqueStrings = <T extends string>(values: readonly T[]): T[] => {
-  // eslint-disable-next-line @typescript-eslint/no-unnecessary-type-assertion -- Set<T> spread loses the T narrowing
   return [...new Set(values)].sort(compareStrings) as T[];
 };
 

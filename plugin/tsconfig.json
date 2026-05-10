@@ -18,7 +18,8 @@
     "rootDir": ".",
     "removeComments": false,
     "newLine": "lf",
-    "types": ["@figma/plugin-typings"]
+    "types": ["@figma/plugin-typings"],
+    "ignoreDeprecations": "6.0"
   },
   "include": ["code.ts"],
   "exclude": ["code.test.ts", "plugin-helpers.test.ts", "node_modules"]
