@@ -62,6 +62,7 @@ jobs:
             src/test-intelligence/production-runner.test.ts \
             src/test-intelligence/production-runner.adversarial.test.ts \
             src/test-intelligence/production-runner.property.test.ts \
+            src/test-intelligence/harness-mode-parity.test.ts \
             integration/mutation-testing.integration.test.ts
 
       - name: Test-intelligence gates
