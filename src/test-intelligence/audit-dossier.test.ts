@@ -262,6 +262,94 @@ test("audit-dossier: generation fails when the provenance root does not match th
   await rm(tempDir, { recursive: true, force: true });
 });
 
+test("audit-dossier: embeds the self-improving calibration refit history when proposals exist (Issue #2182)", async () => {
+  const tempDir = await mkdtemp(
+    path.join(os.tmpdir(), "audit-dossier-refit-history-"),
+  );
+  const outDir = path.join(tempDir, "out");
+  const curvesDir = path.join(tempDir, "curves");
+  const proposalsDir = path.join(curvesDir, "proposals");
+  await mkdir(proposalsDir, { recursive: true });
+
+  const baseProposal = {
+    schemaVersion: "1.0.0",
+    proposalId: "proposal-DE-DE-regulated_data-aaaaaaaaaaaaaaaa",
+    locale: "DE-DE",
+    riskClass: "regulated_data",
+    previousCurveDigest: "",
+    proposedCurveDigest: "deadbeef".repeat(8),
+    heldOutEce: 0.011,
+    heldOutKappa: 0.91,
+    perClassHeldOutEce: {
+      high: 0.014,
+      regulated_data: 0.011,
+      financial_transaction: 0.013,
+    },
+    proposedAt: "2026-05-11T00:00:00.000Z",
+    ratifiedAt: "2026-05-11T01:00:00.000Z",
+    rolledBack: false,
+    trainSampleCount: 48,
+    heldOutSampleCount: 12,
+    proposedCurve: {
+      schemaVersion: "1.0.0",
+      locale: "DE-DE",
+      riskClass: "regulated_data",
+      intercept: -3.2,
+      slope: 7.5,
+      trainSampleCount: 48,
+      heldOutSampleCount: 12,
+      heldOutEce: 0.011,
+      heldOutKappa: 0.91,
+      perClassHeldOutEce: {
+        high: 0.014,
+        regulated_data: 0.011,
+        financial_transaction: 0.013,
+      },
+      fittedAt: "2026-05-11T00:00:00.000Z",
+      digest: "deadbeef".repeat(8),
+    },
+    gateEvaluation: {
+      heldOutEcePassed: true,
+      heldOutKappaPassed: true,
+      relativeEceRegressionPassed: true,
+      relativeKappaRegressionPassed: true,
+      perClassEceRegressionPassed: true,
+      currentHeldOutEce: 0.011,
+      currentHeldOutKappa: 0.91,
+      currentPerClassHeldOutEce: {
+        high: 0.014,
+        regulated_data: 0.011,
+        financial_transaction: 0.013,
+      },
+      failedGates: [],
+    },
+  };
+  await writeFile(
+    path.join(proposalsDir, `${baseProposal.proposalId}.json`),
+    canonicalJson(baseProposal),
+    "utf8",
+  );
+
+  try {
+    const result = await generateAuditDossier({
+      runDir: acceptedRunDir,
+      outputDir: outDir,
+      signKeyPath: signingKeyPath,
+      calibrationCurvesDir: curvesDir,
+      ...fixedMetadata,
+    });
+    const refit = result.manifest.selfImprovingCalibrationRefitHistory;
+    assert.notEqual(refit, undefined);
+    assert.equal(refit?.proposalCount, 1);
+    assert.equal(refit?.rolledBackCount, 0);
+    assert.equal(refit?.rows[0]?.locale, "DE-DE");
+    assert.equal(refit?.rows[0]?.riskClass, "regulated_data");
+    assert.equal(refit?.rows[0]?.status, "ratified");
+  } finally {
+    await rm(tempDir, { recursive: true, force: true });
+  }
+});
+
 test("audit-dossier: manifest excludes raw prompts and screenshots", async () => {
   const manifest = JSON.parse(
     await readFile(`${bundlePrefix}.json`, "utf8"),

@@ -67,6 +67,7 @@
     "test:ti-regression": "tsx --test src/test-intelligence/regression-eval.test.ts && tsx scripts/run-regression-eval.ts",
     "test:ti-finops-slo": "tsx --test src/test-intelligence/finops-slo.test.ts && tsx scripts/run-finops-slo-eval.ts",
     "test:ti-formal-verification": "tsx --test src/test-intelligence/formal-verification.test.ts && node --import tsx scripts/run-formal-verification.mjs --generated-at 1970-01-01T00:00:00.000Z --output-dir node_modules/.cache/formal-verification",
+    "test:ti-self-improving-calibration": "tsx --test src/test-intelligence/self-improving-calibration.test.ts src/test-intelligence-calibration-refit-cli.test.ts && node --import tsx scripts/check-calibration-refit-safety.mjs --quiet",
     "test:ti-drift-canary": "tsx --test src/test-intelligence/drift-canary.test.ts && WORKSPACE_TEST_SPACE_DRIFT_CANARY=1 tsx scripts/run-drift-canary.ts",
     "test:ti-live-smoke": "WORKSPACE_TEST_SPACE_LIVE_SMOKE=1 node scripts/check-live-smoke-env.mjs && WORKSPACE_TEST_SPACE_LIVE_SMOKE=1 tsx --test src/test-intelligence/live-role-contract.live.test.ts src/test-intelligence/visual-sidecar-client.live.test.ts",
     "test:ti-live-e2e": "WORKSPACE_TEST_SPACE_LIVE_E2E=1 node scripts/check-live-smoke-env.mjs && WORKSPACE_TEST_SPACE_LIVE_SMOKE=1 tsx --test src/test-intelligence/live-role-contract.live.test.ts && WORKSPACE_TEST_SPACE_LIVE_E2E=1 tsx --test src/test-intelligence/production-runner.live-e2e.test.ts",

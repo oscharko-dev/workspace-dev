@@ -4521,6 +4521,7 @@ Usage:
   workspace-dev test-intelligence verify-provenance <run-dir>
   workspace-dev test-intelligence verify-seal --bundle <path> [--key <path>]
   workspace-dev test-intelligence review <list|get|decide> [options]
+  workspace-dev test-intelligence calibration-refit [options]
 
 Run "workspace-dev test-intelligence run --help" for the live-run flags.
 Run "workspace-dev test-intelligence doctor --help" for the topology doctor flags.
@@ -4529,4 +4530,5 @@ Run "workspace-dev test-intelligence audit-verify --help" for bundle verificatio
 Run "workspace-dev test-intelligence verify-provenance --help" for provenance verification.
 Run "workspace-dev test-intelligence verify-seal --help" for self-contained seal verification.
 Run "workspace-dev test-intelligence review --help" for the human-oversight queue (Issue #2179).
+Run "workspace-dev test-intelligence calibration-refit --help" for the self-improving calibration loop (Issue #2182).
 `;

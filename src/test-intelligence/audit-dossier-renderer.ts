@@ -185,6 +185,26 @@ const buildPdfLines = (manifest: AuditDossierManifest): PdfLine[] => {
     lines.push({ text: "", font: "regular", size: BODY_FONT_SIZE });
   }
 
+  if (manifest.selfImprovingCalibrationRefitHistory !== undefined) {
+    const refit = manifest.selfImprovingCalibrationRefitHistory;
+    pushHeading(lines, "Self-Improving Calibration Refit History");
+    pushWrapped(
+      lines,
+      `production=${refit.productionCurveCount} proposals=${refit.proposalCount} ratified=${refit.ratifiedCount} rolled-back=${refit.rolledBackCount}`,
+    );
+    for (const row of refit.rows) {
+      const stamp =
+        row.status === "ratified" && row.ratifiedAt !== undefined
+          ? `ratified=${row.ratifiedAt}`
+          : `proposed=${row.proposedAt}`;
+      pushWrapped(
+        lines,
+        `  ${row.locale}/${row.riskClass} [${row.status.toUpperCase()}] ${stamp} ECE=${row.heldOutEce} κ=${row.heldOutKappa} (${row.proposalId})`,
+      );
+    }
+    lines.push({ text: "", font: "regular", size: BODY_FONT_SIZE });
+  }
+
   pushHeading(lines, "Signing");
   pushWrapped(lines, `Algorithm: ${manifest.signing.algorithm}`);
   pushWrapped(lines, `Key fingerprint: ${manifest.signing.keyFingerprintSha256}`);

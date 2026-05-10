@@ -63,6 +63,12 @@ import {
   TEST_INTELLIGENCE_REVIEW_HELP,
   TestIntelligenceReviewOperatorError,
 } from "./test-intelligence-review-cli.js";
+import {
+  parseTestIntelligenceCalibrationRefitArgs,
+  runTestIntelligenceCalibrationRefitCommand,
+  TEST_INTELLIGENCE_CALIBRATION_REFIT_HELP,
+} from "./test-intelligence-calibration-refit-cli.js";
+import { CalibrationRefitOperatorError } from "./test-intelligence/self-improving-calibration.js";
 import path from "node:path";
 
 const DEFAULT_PORT = 1983;
@@ -1168,6 +1174,7 @@ Usage:
   workspace-dev test-intelligence verify-provenance <run-dir>
   workspace-dev test-intelligence verify-seal --bundle <path> [--key <path>]
   workspace-dev test-intelligence review <list|get|decide> [options]
+  workspace-dev test-intelligence calibration-refit [options]
   workspace-dev --help
 
 Run "workspace-dev test-intelligence --help" for the test-intelligence subcommands.
@@ -1492,6 +1499,27 @@ const runTestIntelligenceSubCommand = async (
     );
     process.exit(1);
   }
+  if (subCommand === "calibration-refit") {
+    if (args[1] === "--help" || args[1] === "help") {
+      process.stdout.write(`${TEST_INTELLIGENCE_CALIBRATION_REFIT_HELP}\n`);
+      process.exit(0);
+    }
+    let parsed;
+    try {
+      parsed = parseTestIntelligenceCalibrationRefitArgs(args.slice(1));
+    } catch (err) {
+      if (err instanceof CalibrationRefitOperatorError) {
+        process.stderr.write(`error: ${err.message}\n`);
+        process.exit(1);
+      }
+      throw err;
+    }
+    const exitCode = await runTestIntelligenceCalibrationRefitCommand(parsed, {
+      stdout: (message) => process.stdout.write(message),
+      stderr: (message) => process.stderr.write(message),
+    });
+    process.exit(exitCode);
+  }
   if (subCommand === "verify-provenance" || subCommand === "--verify-provenance") {
     if (args[1] === "--help" || args[1] === "help") {
       process.stdout.write(`${TEST_INTELLIGENCE_VERIFY_PROVENANCE_HELP}\n`);
@@ -1522,7 +1550,7 @@ const runTestIntelligenceSubCommand = async (
       `error: unknown sub-command for "test-intelligence": ${subCommand ?? "(none)"}\n`,
     );
     process.stderr.write(
-      "usage: workspace-dev test-intelligence <run|doctor|audit-dossier|audit-verify|verify-provenance|verify-seal|review> [options]\n",
+      "usage: workspace-dev test-intelligence <run|doctor|audit-dossier|audit-verify|verify-provenance|verify-seal|review|calibration-refit> [options]\n",
     );
     process.exit(1);
   }

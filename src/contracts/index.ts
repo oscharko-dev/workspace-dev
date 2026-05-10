@@ -162,7 +162,7 @@ export interface TestIntelligenceTransferPrincipal {
 }
 
 /** Contract version for the opt-in test-intelligence surface. */
-export const TEST_INTELLIGENCE_CONTRACT_VERSION = "1.31.0" as const;
+export const TEST_INTELLIGENCE_CONTRACT_VERSION = "1.32.0" as const;
 
 /**
  * Schema version for generated test case payloads.
@@ -13099,6 +13099,31 @@ export interface AuditDossierManifest {
       readonly formulaCount: number;
       readonly passCount: number;
       readonly failCount: number;
+    }[];
+  };
+  /**
+   * Self-improving judge-calibration refit history (Issue #2182).
+   *
+   * Optional and additive. Populated only when the audit-dossier
+   * generator finds at least one production curve OR proposal in
+   * `fixtures/test-intelligence/calibration-curves/`. Legacy runs that
+   * do not consume the calibration-curves fixtures keep the dossier
+   * shape stable.
+   */
+  readonly selfImprovingCalibrationRefitHistory?: {
+    readonly productionCurveCount: number;
+    readonly proposalCount: number;
+    readonly ratifiedCount: number;
+    readonly rolledBackCount: number;
+    readonly rows: readonly {
+      readonly locale: string;
+      readonly riskClass: string;
+      readonly proposalId: string;
+      readonly status: "ratified" | "open" | "rolled_back";
+      readonly proposedAt: string;
+      readonly ratifiedAt?: string;
+      readonly heldOutEce: number;
+      readonly heldOutKappa: number;
     }[];
   };
   readonly regulatorCoverage: readonly AuditDossierRegulationCoverageEntry[];
