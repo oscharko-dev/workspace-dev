@@ -73,6 +73,7 @@ import {
   TEST_DATA_ORACLE_REPORT_ARTIFACT_FILENAME,
   type RunQualityArtifact,
   type RunQualityAttemptSummary,
+  type ModelRoutingRoute,
   type SelfConsistencyDisagreementRoute,
   type SelfConsistencyReport,
   TEST_INTELLIGENCE_CONTRACT_VERSION,
@@ -872,26 +873,24 @@ const resolveActiveModelRoutingPolicy = (input: {
   if (testGenerationSecondary === undefined) {
     return runtimePolicy;
   }
+  const secondaryRoute: ModelRoutingRoute = {
+    role: "test_generation",
+    slot: "secondary",
+    tierLabel: "heavy",
+    modelBinding: {
+      providerId: "llm-gateway",
+      modelId: testGenerationSecondary.deployment,
+      inferenceProfileId: testGenerationSecondary.deployment,
+      ...(testGenerationSecondary.ictRegisterRef !== undefined
+        ? { ictRegisterRef: testGenerationSecondary.ictRegisterRef }
+        : {}),
+    },
+    modelRevision: testGenerationSecondary.modelRevision,
+    gatewayRelease: testGenerationSecondary.gatewayRelease,
+  };
   return {
     ...runtimePolicy,
-    routes: [
-      ...runtimePolicy.routes,
-      {
-        role: "test_generation",
-        slot: "secondary",
-        tierLabel: "heavy",
-        modelBinding: {
-          providerId: "llm-gateway",
-          modelId: testGenerationSecondary.deployment,
-          inferenceProfileId: testGenerationSecondary.deployment,
-          ...(testGenerationSecondary.ictRegisterRef !== undefined
-            ? { ictRegisterRef: testGenerationSecondary.ictRegisterRef }
-            : {}),
-        },
-        modelRevision: testGenerationSecondary.modelRevision,
-        gatewayRelease: testGenerationSecondary.gatewayRelease,
-      },
-    ].sort(
+    routes: [...runtimePolicy.routes, secondaryRoute].sort(
       (left, right) =>
         left.role.localeCompare(right.role) ||
         left.slot.localeCompare(right.slot) ||
