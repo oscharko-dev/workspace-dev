@@ -37,17 +37,20 @@ import {
   parseTestIntelligenceDoctorArgs,
   parseTestIntelligenceRunArgs,
   parseTestIntelligenceVerifyProvenanceArgs,
+  parseTestIntelligenceVerifySealArgs,
   runTestIntelligenceAuditDossierCommand,
   runTestIntelligenceAuditVerifyCommand,
   runTestIntelligenceDoctorCommand,
   runTestIntelligenceCommand,
   runTestIntelligenceVerifyProvenanceCommand,
+  runTestIntelligenceVerifySealCommand,
   TEST_INTELLIGENCE_AUDIT_DOSSIER_HELP,
   TEST_INTELLIGENCE_AUDIT_VERIFY_HELP,
   TEST_INTELLIGENCE_DOCTOR_HELP,
   TEST_INTELLIGENCE_HELP,
   TEST_INTELLIGENCE_RUN_HELP,
   TEST_INTELLIGENCE_VERIFY_PROVENANCE_HELP,
+  TEST_INTELLIGENCE_VERIFY_SEAL_HELP,
   TestIntelligenceRunOperatorError,
 } from "./test-intelligence-run-cli.js";
 import path from "node:path";
@@ -1153,6 +1156,7 @@ Usage:
   workspace-dev test-intelligence audit-dossier --run-dir <path> --output <dir>
   workspace-dev test-intelligence audit-verify <bundle-prefix-or-json>
   workspace-dev test-intelligence verify-provenance <run-dir>
+  workspace-dev test-intelligence verify-seal --bundle <path> [--key <path>]
   workspace-dev --help
 
 Run "workspace-dev test-intelligence --help" for the test-intelligence subcommands.
@@ -1395,6 +1399,27 @@ const runTestIntelligenceSubCommand = async (
     });
     process.exit(exitCode);
   }
+  if (subCommand === "verify-seal") {
+    if (args[1] === "--help" || args[1] === "help") {
+      process.stdout.write(`${TEST_INTELLIGENCE_VERIFY_SEAL_HELP}\n`);
+      process.exit(0);
+    }
+    let parsed;
+    try {
+      parsed = parseTestIntelligenceVerifySealArgs(args.slice(1));
+    } catch (err) {
+      if (err instanceof TestIntelligenceRunOperatorError) {
+        process.stderr.write(`error: ${err.message}\n`);
+        process.exit(1);
+      }
+      throw err;
+    }
+    const exitCode = await runTestIntelligenceVerifySealCommand(parsed, {
+      stdout: (message) => process.stdout.write(message),
+      stderr: (message) => process.stderr.write(message),
+    });
+    process.exit(exitCode);
+  }
   if (subCommand === "verify-provenance" || subCommand === "--verify-provenance") {
     if (args[1] === "--help" || args[1] === "help") {
       process.stdout.write(`${TEST_INTELLIGENCE_VERIFY_PROVENANCE_HELP}\n`);
@@ -1425,7 +1450,7 @@ const runTestIntelligenceSubCommand = async (
       `error: unknown sub-command for "test-intelligence": ${subCommand ?? "(none)"}\n`,
     );
     process.stderr.write(
-      "usage: workspace-dev test-intelligence <run|doctor|audit-dossier|audit-verify|verify-provenance> [options]\n",
+      "usage: workspace-dev test-intelligence <run|doctor|audit-dossier|audit-verify|verify-provenance|verify-seal> [options]\n",
     );
     process.exit(1);
   }

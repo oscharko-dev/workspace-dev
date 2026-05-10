@@ -123,6 +123,49 @@ All changes to the public contract surface of `workspace-dev` are documented her
   specific region-evidence entries they consumed.
 - `TEST_INTELLIGENCE_CONTRACT_VERSION` bumped `1.27.0` → `1.28.0`.
 
+### Added (Issue #2178 — self-contained reproducibility-seal verifier CLI)
+
+- New `src/test-intelligence/seal-verifier.ts` module providing the
+  auditor-facing verifier for `production-runner-evidence-seal.json`.
+  Public exports:
+  - `verifySealBundle(input)` — directory-bundle entry point.
+    Recomputes per-artifact SHA-256, builds a Merkle root over sorted
+    `(filename, sha256)` leaves, HMAC-SHA256s the canonical seal
+    manifest with the supplied (or default deterministic) key, and
+    cross-checks the FinOps `bySource` hash, genealogy DAG hash,
+    `provenance.jsonld` graph, and `region-attestations.json`.
+  - `assertReplayDeterminismVerifiedFromDisk(runDir)` — throws
+    `ReplayDeterminismHardGateError` (code
+    `G9_REPLAY_DETERMINISM_VERIFIED`) on any failure.
+  - `renderSealVerificationTextReport(report)` and
+    `renderSealVerificationJsonReport(report)` — human and
+    machine-readable renderers.
+  - `DEFAULT_SEAL_VERIFY_KEY_LABEL` — documented sentinel for the
+    deterministic default HMAC key.
+  - Exported types: `SealArtifactReport`, `SealArtifactStatus`
+    (`"OK" | "TAMPERED" | "MISSING" | "EXTRA"`),
+    `SealVerifyCrossCheck`, `SealVerifyFailure`,
+    `SealVerifyFailureCode`, `SealVerificationReport`,
+    `VerifySealBundleInput`.
+- New CLI subcommand
+  `workspace-dev test-intelligence verify-seal --bundle <path>
+  [--key <path>] [--expected-hmac <hex>] [--expected-merkle-root <hex>]
+  [--json] [--output <path>]`. Accepts directory, `.tar`,
+  `.tar.gz`/`.tgz`, and `.zip` bundles; archives are extracted via
+  the universal POSIX `tar` / `unzip` binaries. Exit `0` on full
+  match, `1` on operator misuse, `2` on tamper / mismatch.
+- The production runner now invokes
+  `assertReplayDeterminismVerifiedFromDisk` after the existing
+  post-write seal and provenance verifications, wiring the new
+  `G9_REPLAY_DETERMINISM_VERIFIED` hard gate so any drift between the
+  in-process build path and the auditor-facing verifier fails CI.
+- `TEST_INTELLIGENCE_CONTRACT_VERSION` unchanged at `1.28.0` — the
+  surface is purely additive (new module + new CLI subcommand) and
+  the seal schema is unchanged. The Merkle root and HMAC are derived
+  at verify time from the canonical seal manifest contents, so seals
+  produced by past run sets (`G0`, `I0`, `J0`, `K0`, `M0`
+  multi-dataset) verify without modification.
+
 ---
 
 ## [4.62.0] - 2026-05-10

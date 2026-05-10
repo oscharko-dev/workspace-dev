@@ -214,6 +214,22 @@ export {
   type AuditDossierVerificationResult,
 } from "./audit-dossier-verify.js";
 export {
+  G9_REPLAY_DETERMINISM_VERIFIED,
+  ReplayDeterminismHardGateError,
+  assertReplayDeterminismVerifiedFromDisk,
+  renderSealVerificationJsonReport,
+  renderSealVerificationTextReport,
+  verifySealBundle,
+  DEFAULT_SEAL_VERIFY_KEY_LABEL,
+  type SealArtifactReport,
+  type SealArtifactStatus,
+  type SealVerifyCrossCheck,
+  type SealVerifyFailure,
+  type SealVerifyFailureCode,
+  type SealVerificationReport,
+  type VerifySealBundleInput,
+} from "./seal-verifier.js";
+export {
   buildSubprocessorRegister,
   renderSubprocessorRegisterMarkdown,
   serializeSubprocessorRegister,

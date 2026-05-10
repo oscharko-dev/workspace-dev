@@ -3516,3 +3516,90 @@ test("runTestIntelligenceVerifyProvenanceCommand: rejects artifact paths that es
     await rm(tempRoot, { recursive: true, force: true });
   }
 });
+
+import {
+  parseTestIntelligenceVerifySealArgs,
+  runTestIntelligenceVerifySealCommand,
+} from "./test-intelligence-run-cli.js";
+
+test("parseTestIntelligenceVerifySealArgs: positional bundle form", () => {
+  const parsed = parseTestIntelligenceVerifySealArgs(["/tmp/run-2178"]);
+  assert.equal(parsed.bundle, "/tmp/run-2178");
+});
+
+test("parseTestIntelligenceVerifySealArgs: full flag form", () => {
+  const parsed = parseTestIntelligenceVerifySealArgs([
+    "--bundle",
+    "/tmp/run-2178.tar.gz",
+    "--key",
+    "/tmp/key.bin",
+    "--expected-hmac",
+    "a".repeat(64),
+    "--expected-merkle-root",
+    "b".repeat(64),
+    "--json",
+    "--output",
+    "/tmp/report.json",
+  ]);
+  assert.equal(parsed.bundle, "/tmp/run-2178.tar.gz");
+  assert.equal(parsed.keyPath, "/tmp/key.bin");
+  assert.equal(parsed.expectedHmacHex, "a".repeat(64));
+  assert.equal(parsed.expectedMerkleRootHex, "b".repeat(64));
+  assert.equal(parsed.json, true);
+  assert.equal(parsed.outputPath, "/tmp/report.json");
+});
+
+test("parseTestIntelligenceVerifySealArgs: rejects non-hex --expected-hmac", () => {
+  assert.throws(
+    () =>
+      parseTestIntelligenceVerifySealArgs([
+        "--bundle",
+        "/tmp/run",
+        "--expected-hmac",
+        "not-hex",
+      ]),
+    TestIntelligenceRunOperatorError,
+  );
+});
+
+test("parseTestIntelligenceVerifySealArgs: rejects unknown flag", () => {
+  assert.throws(
+    () =>
+      parseTestIntelligenceVerifySealArgs([
+        "--bundle",
+        "/tmp/run",
+        "--unknown",
+      ]),
+    TestIntelligenceRunOperatorError,
+  );
+});
+
+test("runTestIntelligenceVerifySealCommand: returns 1 for missing bundle path", async () => {
+  const { sink, stderr } = collectingSink();
+  const exitCode = await runTestIntelligenceVerifySealCommand(
+    { bundle: "/tmp/this-bundle-does-not-exist-2178" },
+    sink,
+  );
+  assert.equal(exitCode, 1);
+  assert.match(stderr.join(""), /not found/u);
+});
+
+test("runTestIntelligenceVerifySealCommand: returns 2 + report on tampered bundle dir", async () => {
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "verify-seal-cli-"));
+  try {
+    await writeFile(
+      path.join(tempRoot, "production-runner-evidence-seal.json"),
+      "{not-json",
+      "utf8",
+    );
+    const { sink, stderr } = collectingSink();
+    const exitCode = await runTestIntelligenceVerifySealCommand(
+      { bundle: tempRoot },
+      sink,
+    );
+    assert.equal(exitCode, 2);
+    assert.match(stderr.join(""), /seal verification failed/u);
+  } finally {
+    await rm(tempRoot, { recursive: true, force: true });
+  }
+});
