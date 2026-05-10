@@ -9,7 +9,7 @@
  */
 
 import { mkdir, rename, writeFile } from "node:fs/promises";
-import { join, resolve, sep } from "node:path";
+import { isAbsolute, join, relative, resolve, sep } from "node:path";
 
 import {
   INCIDENT_REPORT_ARTIFACT_FILENAME,
@@ -86,9 +86,11 @@ export const createFileSystemIncidentSink = (
         );
       }
       const jobDir = resolve(destinationDir, report.jobId);
+      const relativeJobDir = relative(destinationDir, jobDir);
       if (
-        jobDir !== destinationDir &&
-        !jobDir.startsWith(`${destinationDir}${sep}`)
+        relativeJobDir === ".." ||
+        relativeJobDir.startsWith(`..${sep}`) ||
+        isAbsolute(relativeJobDir)
       ) {
         throw new Error(
           "IncidentSink.recordReport: resolved jobDir escapes destinationDir.",

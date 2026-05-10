@@ -2826,3 +2826,51 @@ test("Issue #2116: case-level-fallback rule severity respects an operator policy
   );
   assert.equal(report.blocked, true);
 });
+
+test("Issue #2116: policyOverrides cannot downgrade the missing faithfulness verdict hard gate", () => {
+  const ctx = harness([buildCase({})], buildIntent());
+  const report = evaluatePolicyGate({
+    jobId: "job-1",
+    generatedAt: GENERATED_AT,
+    list: ctx.list,
+    intent: ctx.intent,
+    profile: ctx.profile,
+    validation: ctx.validation,
+    coverage: ctx.coverage,
+    visual: {
+      schemaVersion: "1.0.0",
+      contractVersion: TEST_INTELLIGENCE_CONTRACT_VERSION,
+      visualSidecarSchemaVersion: "1.0.0",
+      generatedAt: GENERATED_AT,
+      jobId: "job-1",
+      totalScreens: 1,
+      screensWithFindings: 0,
+      blocked: false,
+      records: [
+        {
+          screenId: "s-1",
+          deployment: "llama-4-maverick-vision",
+          outcomes: [],
+          issues: [],
+          meanConfidence: 0.95,
+        },
+      ],
+    },
+    policyOverrides: [
+      {
+        ruleId: "policy:cross-modal-faithfulness:evaluation-missing",
+        severity: "warning",
+      },
+    ],
+  });
+  const missing = report.jobLevelViolations.find(
+    (v) =>
+      v.rule === "policy:cross-modal-faithfulness:evaluation-missing",
+  );
+  assert.equal(
+    missing?.severity,
+    "error",
+    "missing faithfulness evidence must remain fail-closed when visual evidence exists",
+  );
+  assert.equal(report.blocked, true);
+});

@@ -1170,7 +1170,10 @@ const applyPolicyOverrideViolations = (
   overrideMap: ReadonlyMap<string, "error" | "warning">,
 ): TestCasePolicyViolation[] =>
   violations.map((violation) => {
-    if (violation.rule === "policy:judge_refused") {
+    if (
+      violation.rule === "policy:judge_refused" ||
+      violation.rule === CROSS_MODAL_FAITHFULNESS_MISSING_RULE
+    ) {
       return violation;
     }
     const severity = overrideMap.get(violation.rule);

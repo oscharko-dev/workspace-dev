@@ -117,3 +117,18 @@ test("incident-sink: rejects path-traversal jobId values", async () => {
     await rm(dir, { recursive: true, force: true });
   }
 });
+
+test("incident-sink: allows writing beneath the filesystem root", async () => {
+  const dir = await mkTempDir();
+  const rootDir = join(dir, "..");
+  try {
+    const sink = createFileSystemIncidentSink({ destinationDir: rootDir });
+    const result = await sink.recordReport({ report: buildReport() });
+    assert.equal(
+      result.artifactPath,
+      join(rootDir, JOB_ID, INCIDENT_REPORT_ARTIFACT_FILENAME),
+    );
+  } finally {
+    await rm(join(rootDir, JOB_ID), { recursive: true, force: true });
+  }
+});
