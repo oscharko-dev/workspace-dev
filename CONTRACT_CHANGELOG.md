@@ -166,6 +166,37 @@ All changes to the public contract surface of `workspace-dev` are documented her
   produced by past run sets (`G0`, `I0`, `J0`, `K0`, `M0`
   multi-dataset) verify without modification.
 
+### Hardened (Issue #2178 — seal verifier follow-up after PR review)
+
+- `parseProductionRunnerEvidenceSeal` is now exported from
+  `src/test-intelligence/production-runner-evidence.ts` so the
+  standalone seal verifier reuses the same strict shape check that
+  the in-process post-write seal verifier already applies (HEX64 hash
+  shape, integer-bound `chainLength`, deep array/record validation).
+  Type surface is purely additive — no existing callers change.
+- `SealVerifyCrossCheck.name` gains a new union member
+  `"visual_sidecar_evidence"`. The verifier now parses
+  `visual-sidecar-result.json` and confirms its `visualEvidenceRefs`
+  match `seal.visualEvidenceHashes`; fails closed when the seal
+  references visuals but the sidecar is missing. Existing consumers
+  that switch on `name` should treat unknown variants as informational
+  (the report shape is otherwise unchanged).
+- `SealArtifactReport.firstMismatchOffset` is now omitted on
+  hash-only mismatches instead of being misleadingly set to `0`. The
+  field semantics in the docstring remain stable (still only present
+  when both byte sequences are available).
+- Seal-referenced artifact paths and archive entries in `.tar`,
+  `.tar.gz`/`.tgz`, and `.zip` bundles are now rejected when they try
+  to escape the run directory (absolute paths, `..` segments, drive
+  letters, embedded null bytes). Closes the path-traversal /
+  zip-slip / tar-escape risk on auditor-supplied bundles.
+- `runChild` now treats a signal-terminated extractor as a non-zero
+  exit so a SIGKILL'd `tar`/`unzip` cannot silently look like
+  success.
+- `TEST_INTELLIGENCE_CONTRACT_VERSION` unchanged at `1.28.0`. All
+  changes are additive or internal hardening; no existing public
+  signatures, fields, or error codes are renamed or removed.
+
 ---
 
 ## [4.62.0] - 2026-05-10
