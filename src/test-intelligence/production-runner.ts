@@ -324,6 +324,13 @@ import {
   ReplayCacheValidationError,
 } from "./replay-cache.js";
 import {
+  buildTenantIsolationAttestation,
+  serializeTenantIsolationAttestation,
+  snapshotTenantIsolationReads,
+  TENANT_ISOLATION_ATTESTATION_ARTIFACT_FILENAME,
+  withTenantScope,
+} from "./tenant-isolation-guard.js";
+import {
   createLlmCircuitBreaker,
   toLlmCircuitPersistentState,
 } from "./llm-circuit-breaker.js";
@@ -2325,6 +2332,15 @@ const evaluateNegativeCaseLiftGate = (input: {
 export const runFigmaToQcTestCases = async (
   input: RunFigmaToQcTestCasesInput,
 ): Promise<RunFigmaToQcTestCasesResult> => {
+  // Issue #2176 — open the multi-tenant isolation `AsyncLocalStorage`
+  // boundary before any I/O. Every persistent-store read in the run
+  // observes this scope; a mismatched scope on any access throws
+  // `TenantIsolationViolation` and aborts the run. The active scope is
+  // also written into the per-run `tenant-isolation-attestation.json`
+  // artifact and pinned in `provenance.jsonld`.
+  const __tenantScope: TenantScope =
+    input.replayCacheTenantScope ?? DEFAULT_TENANT_SCOPE;
+  return withTenantScope(__tenantScope, async () => {
   const startedAt = Date.now();
   const emit = makeEmitter(
     composeProductionRunnerEventSinks(
@@ -2453,8 +2469,10 @@ export const runFigmaToQcTestCases = async (
       detectedActions: intent.detectedActions.length,
     },
   });
-  const tenantScope: TenantScope =
-    input.replayCacheTenantScope ?? DEFAULT_TENANT_SCOPE;
+  // Issue #2176 — bind to the AsyncLocalStorage scope already opened at
+  // the top of `runFigmaToQcTestCases` so every persistent-store read
+  // observes the same scope this constant was derived from.
+  const tenantScope: TenantScope = __tenantScope;
   if (input.source.kind === "figma_url" && input.llm.bundle !== undefined) {
     emit({
       phase: "visual_sidecar_started",
@@ -5547,6 +5565,30 @@ export const runFigmaToQcTestCases = async (
       "utf8",
     ),
   );
+  // Issue #2176 — multi-tenant isolation attestation. Captures every
+  // persistent-store read recorded under the active AsyncLocalStorage
+  // scope and emits a byte-stable attestation. The artifact's SHA-256
+  // is pinned in `provenance.jsonld` so a downstream verifier can
+  // cross-reference the per-run isolation evidence without parsing the
+  // attestation file. The attestation builder re-asserts that no read
+  // crossed tenant boundaries — a violation here aborts the run.
+  const tenantIsolationAttestation = buildTenantIsolationAttestation({
+    jobId: input.jobId,
+    generatedAt: input.generatedAt,
+    tenantScope,
+    reads: snapshotTenantIsolationReads(),
+  });
+  const tenantIsolationAttestationPath = join(
+    artifactDir,
+    TENANT_ISOLATION_ATTESTATION_ARTIFACT_FILENAME,
+  );
+  await writeAtomicBytes(
+    tenantIsolationAttestationPath,
+    Buffer.from(
+      serializeTenantIsolationAttestation(tenantIsolationAttestation),
+      "utf8",
+    ),
+  );
   const provenanceDocument = await buildRunProvenanceGraph({
     runDir: artifactDir,
     jobId: input.jobId,
@@ -5556,6 +5598,11 @@ export const runFigmaToQcTestCases = async (
     subprocessorRegister: {
       artifactFilename: SUBPROCESSOR_REGISTER_ARTIFACT_FILENAME,
       merkleRoot: subprocessorRegisterArtifact.merkleRoot,
+    },
+    tenantIsolationAttestation: {
+      artifactFilename: TENANT_ISOLATION_ATTESTATION_ARTIFACT_FILENAME,
+      attestationSha256: tenantIsolationAttestation.attestationSha256,
+      tenantScope,
     },
     initialGenerationDeployment:
       capturedLlmResult?.outcome === "success"
@@ -6247,6 +6294,7 @@ export const runFigmaToQcTestCases = async (
         }
       : {}),
   };
+  });
 };
 
 const resolveFigmaPayloadCap = (override: number | undefined): number => {

@@ -42,6 +42,7 @@ import {
 import { join } from "node:path";
 
 import { canonicalJson, sha256Hex } from "./content-hash.js";
+import { recordActiveTenantRead } from "./tenant-isolation-guard.js";
 
 // ---------------------------------------------------------------------------
 // Schema constants
@@ -303,7 +304,14 @@ const readEventChain = async (
  */
 export const readConsolidationLockEventChain = async (
   lessonsDir: string,
-): Promise<readonly ConsolidationLockEvent[]> => readEventChain(lessonsDir);
+): Promise<readonly ConsolidationLockEvent[]> => {
+  // Issue #2176 — record this read against the active per-run tenant
+  // scope (if any). The lock chain is tenant-scoped *implicitly* via
+  // lessonsDir; the AsyncLocalStorage boundary is what enforces
+  // crash-on-mismatch.
+  recordActiveTenantRead("lessons-consolidation-lock.read-chain");
+  return readEventChain(lessonsDir);
+};
 
 const computeEventHash = (event: ConsolidationLockEvent): string =>
   sha256Hex(event);
@@ -787,6 +795,7 @@ export const inspectConsolidationLock = async (
   | (ConsolidationLockBody & { readonly lastConsolidatedAtMs: number })
   | null
 > => {
+  recordActiveTenantRead("lessons-consolidation-lock.inspect");
   const path = lockPath(lessonsDir);
   const existing = await readLockBody(path);
   if (existing === null) return null;

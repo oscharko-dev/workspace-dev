@@ -9,6 +9,7 @@ import {
   type GeneratedTestCaseList,
   type JudgeConsensusVerdict,
   type JudgeVerdict,
+  type TenantScope,
 } from "../contracts/index.js";
 import type { AdversarialCriticFinding } from "./adversarial-critic-agent.js";
 import type { RepairLoopIterationRecord } from "./repair-loop.js";
@@ -66,6 +67,19 @@ export interface BuildRunProvenanceGraphInput {
     readonly artifactFilename: string;
     readonly merkleRoot: string;
   };
+  /**
+   * Multi-tenant isolation runtime attestation cross-link (Issue #2176).
+   * When present, the attestation file under `runDir/<artifactFilename>`
+   * is added as a `prov:Entity` artifact node and the document carries
+   * `ti:tenantIsolationAttestationSha256` plus `ti:tenantScope` at top
+   * level so a downstream verifier can confirm which tenant scope owned
+   * the run and that the attestation has not been mutated.
+   */
+  readonly tenantIsolationAttestation?: {
+    readonly artifactFilename: string;
+    readonly attestationSha256: string;
+    readonly tenantScope: TenantScope;
+  };
 }
 
 export interface ProvenanceMerkleSeal {
@@ -89,6 +103,21 @@ export interface ProvenanceDocument {
    * artifact. Present only when the register was emitted with the run.
    */
   readonly "ti:subprocessorRegisterMerkleRoot"?: string;
+  /**
+   * SHA-256 of the per-run multi-tenant isolation attestation
+   * (Issue #2176). Mirrors `attestationSha256` of the run-bundle's
+   * `tenant-isolation-attestation.json` artifact. Present only when
+   * the attestation was emitted with the run.
+   */
+  readonly "ti:tenantIsolationAttestationSha256"?: string;
+  /**
+   * Tenant scope under which the run executed (Issue #2176). Mirrors
+   * the `tenantScope` of the attestation; emitted at the top level so
+   * an auditor can read the active tenant identity without parsing the
+   * attestation entity. Present only when the attestation was emitted
+   * with the run.
+   */
+  readonly "ti:tenantScope"?: TenantScope;
   readonly "@graph": readonly ProvenanceNode[];
 }
 
@@ -355,6 +384,29 @@ export const buildRunProvenanceGraph = async (
         extra: {
           "ti:subprocessorRegisterMerkleRoot":
             input.subprocessorRegister.merkleRoot,
+        },
+      }),
+    );
+  }
+
+  if (input.tenantIsolationAttestation !== undefined) {
+    const attestationDigest = await readArtifactDigest(
+      input.runDir,
+      input.tenantIsolationAttestation.artifactFilename,
+    );
+    upsertNode(
+      nodes,
+      buildArtifactNode({
+        jobId: input.jobId,
+        digest: attestationDigest,
+        label:
+          "Multi-tenant isolation attestation (Issue #2176, runtime guard)",
+        extra: {
+          "ti:tenantIsolationAttestationSha256":
+            input.tenantIsolationAttestation.attestationSha256,
+          "ti:tenantScope": tenantScopeToJson(
+            input.tenantIsolationAttestation.tenantScope,
+          ),
         },
       }),
     );
@@ -884,9 +936,26 @@ export const buildRunProvenanceGraph = async (
             input.subprocessorRegister.merkleRoot,
         }
       : {}),
+    ...(input.tenantIsolationAttestation !== undefined
+      ? {
+          "ti:tenantIsolationAttestationSha256":
+            input.tenantIsolationAttestation.attestationSha256,
+          "ti:tenantScope":
+            input.tenantIsolationAttestation.tenantScope,
+        }
+      : {}),
     "@graph": nodesWithLeafHashes,
   };
 };
+
+const tenantScopeToJson = (scope: TenantScope): JsonValue =>
+  scope.projectId !== undefined
+    ? {
+        tenantId: scope.tenantId,
+        environmentId: scope.environmentId,
+        projectId: scope.projectId,
+      }
+    : { tenantId: scope.tenantId, environmentId: scope.environmentId };
 
 export const serializeProvenanceGraph = (
   document: ProvenanceDocument,
