@@ -161,6 +161,9 @@ jobs:
       - name: Enforce customer-eval sample-plan update policy
         run: pnpm run verify:customer-eval-sample-plan -- --base "${{ github.event.before }}" --head "${{ github.sha }}"
 
+      - name: Enforce subprocessor register Markdown drift policy (Issue #2174)
+        run: pnpm run verify:subprocessor-register
+
       - name: Enforce UI lint rules
         run: pnpm run ui:lint
 

@@ -204,6 +204,16 @@ export {
   type ProvenanceVerificationResult,
 } from "./provenance-verify.js";
 export {
+  buildSubprocessorRegister,
+  renderSubprocessorRegisterMarkdown,
+  serializeSubprocessorRegister,
+  SUBPROCESSOR_REGISTER_ARTIFACT_FILENAME,
+  SUBPROCESSOR_REGISTER_DOC_LAST_REVIEWED,
+  SUBPROCESSOR_REGISTER_SCHEMA_VERSION,
+  SUBPROCESSOR_REGISTER_VERSION,
+  type BuildSubprocessorRegisterInput,
+} from "./subprocessor-register.js";
+export {
   buildMigrationHash,
   parseMigrationAuditLog,
   runMigrations,

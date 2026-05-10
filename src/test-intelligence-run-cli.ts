@@ -101,6 +101,10 @@ import {
   COMPLIANCE_COVERAGE_REPORT_ARTIFACT_FILENAME,
 } from "./test-intelligence/compliance-coverage-report.js";
 import {
+  buildSubprocessorRegister,
+  SUBPROCESSOR_REGISTER_ARTIFACT_FILENAME,
+} from "./test-intelligence/subprocessor-register.js";
+import {
   type LlmGatewayClientBundle,
 } from "./test-intelligence/llm-gateway-bundle.js";
 import { type LlmGatewayClient } from "./test-intelligence/llm-gateway.js";
@@ -2820,11 +2824,25 @@ const runComplianceCoverageEvaluation = async (
     policyProfileId,
   );
 
+  // Issue #2174 — cross-link the per-run subprocessor register so every
+  // annotation that names a subprocessor cites the canonical
+  // `subprocessorId`. The runner already wrote
+  // `subprocessor-register.json` to the artifact directory; we
+  // recompute the same canonical artifact here (deterministic, same
+  // bytes) so the annotator can reference its identity without an
+  // extra file read.
+  const subprocessorRegister = buildSubprocessorRegister({
+    generatedAt: result.generatedAt,
+  });
+
   const annotations = annotateTestCases({
     jobId: result.jobId,
     generatedAt: result.generatedAt,
     testCases: result.generatedTestCases.testCases,
     activeFrameworks,
+    subprocessorRegister,
+    subprocessorRegisterArtifactFilename:
+      SUBPROCESSOR_REGISTER_ARTIFACT_FILENAME,
   });
 
   const coverage = buildComplianceCoverageReport({

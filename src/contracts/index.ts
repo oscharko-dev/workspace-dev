@@ -162,7 +162,7 @@ export interface TestIntelligenceTransferPrincipal {
 }
 
 /** Contract version for the opt-in test-intelligence surface. */
-export const TEST_INTELLIGENCE_CONTRACT_VERSION = "1.25.0" as const;
+export const TEST_INTELLIGENCE_CONTRACT_VERSION = "1.26.0" as const;
 
 /**
  * Schema version for generated test case payloads.
@@ -295,6 +295,149 @@ export const REDACTION_POLICY_VERSION = "1.0.0" as const;
  * coupled; this constant keeps the runtime evidence coupled.
  */
 export const SUBPROCESSOR_REGISTER_VERSION = "1.0.0" as const;
+
+/**
+ * Schema version for the machine-readable {@link SubprocessorRegister}
+ * artifact emitted per run alongside `compliance-annotations.json`
+ * (Issue #2174). Bumped on any breaking shape change to
+ * {@link SubprocessorRegister}, {@link SubprocessorEntry}, or
+ * {@link CrossBorderTransferEntry}.
+ *
+ * The schema version is independent of {@link SUBPROCESSOR_REGISTER_VERSION}:
+ * the latter tracks the documented register content (subprocessor list +
+ * cross-border ADR), this one tracks the artifact shape that auditors
+ * cross-reference programmatically.
+ */
+export const SUBPROCESSOR_REGISTER_SCHEMA_VERSION = "1.0.0" as const;
+
+/**
+ * Canonical filename for the machine-readable subprocessor register
+ * artifact (Issue #2174). Persisted next to
+ * `compliance-annotations.json` and `compliance-coverage-report.json`.
+ */
+export const SUBPROCESSOR_REGISTER_ARTIFACT_FILENAME =
+  "subprocessor-register.json" as const;
+
+/**
+ * Hosting regions that the subprocessor register may name as an
+ * {@link SubprocessorEntry.hostingRegion} or as the source/destination of
+ * a {@link CrossBorderTransferEntry}. The list mirrors the EEA Azure
+ * regions recommended by the cross-border-transfer ADR plus the Mistral
+ * `eu-west-1` family and a single explicit `operator-defined` entry for
+ * categories where the operator selects the concrete region (Jira /
+ * object-storage / hook hosts) rather than the package shipping a default.
+ *
+ * Bump rules — adding a region is a non-breaking change. Removing or
+ * renaming one bumps {@link SUBPROCESSOR_REGISTER_SCHEMA_VERSION}.
+ */
+export const SUPPORTED_HOSTING_REGIONS = [
+  "westeurope",
+  "northeurope",
+  "francecentral",
+  "germanywestcentral",
+  "swedencentral",
+  "eu-west-1",
+  "operator-defined",
+] as const;
+
+/** A single Azure / Mistral / operator-defined hosting region. */
+export type SupportedHostingRegion = (typeof SUPPORTED_HOSTING_REGIONS)[number];
+
+/**
+ * A single ICT third-party / subprocessor entry under DORA Art. 28(3).
+ * Mirrors a row of the human-readable register at
+ * `docs/dora/subprocessor-register.md` § 2 and is the structured form
+ * auditors cross-reference against `compliance-annotations.json`.
+ *
+ * All fields are required so the artifact is byte-stable across runs;
+ * optional fields are only added behind `?` when omission is the
+ * meaningful signal (e.g. a subprocessor that has no SOC 2 report).
+ */
+export interface SubprocessorEntry {
+  /** Stable, kebab-case identifier (e.g. `"llm-gateway-text-generation"`). */
+  readonly subprocessorId: string;
+  /** Contractual / legal name (operator-selected vendor where applicable). */
+  readonly legalName: string;
+  /** One-sentence purpose of the subprocessor in the test-intelligence pipeline. */
+  readonly purpose: string;
+  /** Hosting region from {@link SUPPORTED_HOSTING_REGIONS}. */
+  readonly hostingRegion: SupportedHostingRegion;
+  /** Sorted, deduplicated data-classification scope tokens. */
+  readonly dataCategories: readonly string[];
+  /** Sorted, deduplicated contractual safeguard citations (e.g. `"DPA-2024"`, `"SCC-2021-Module-2"`). */
+  readonly contractualSafeguards: readonly string[];
+  /** Optional SOC 2 Type II report reference (citation, not a URL). */
+  readonly soc2ReportRef?: string;
+  /** Optional ISO/IEC 27001 certificate reference (citation, not a URL). */
+  readonly iso27001ReportRef?: string;
+  /** Retention policy floor the operator must meet. */
+  readonly retentionPolicy: string;
+  /** ISO-8601 timestamp the entry was first added to the register. */
+  readonly addedAt: string;
+}
+
+/**
+ * A single cross-border transfer record under GDPR Ch. V. Each entry
+ * declares the legal mechanism that legitimises a flow between two
+ * regions in {@link SUPPORTED_HOSTING_REGIONS}. Even intra-EEA entries
+ * are recorded for replay verifiability so an auditor can reconstruct
+ * which transfer mechanism was active at a given run timestamp.
+ */
+export interface CrossBorderTransferEntry {
+  /** Stable, kebab-case transfer identifier. */
+  readonly transferId: string;
+  /** Source region (where the data originates). */
+  readonly sourceRegion: SupportedHostingRegion;
+  /** Destination region (where the data flows to). */
+  readonly destinationRegion: SupportedHostingRegion;
+  /**
+   * Legal mechanism. `"adequacy-decision"` covers intra-EEA and
+   * Commission-recognised third-country adequacy decisions; `"scc-2021"`
+   * is the 2021 EU Standard Contractual Clauses; `"bcr"` is Binding
+   * Corporate Rules; `"consent"` is GDPR Art. 49(1)(a) (rare and
+   * narrow); `"other"` is reserved for derogations the operator
+   * documents in their own register.
+   */
+  readonly transferMechanism:
+    | "scc-2021"
+    | "adequacy-decision"
+    | "bcr"
+    | "consent"
+    | "other";
+  /** Free-form citation pointing to the contractual / legal artefact. */
+  readonly mechanismCitation: string;
+  /** One-sentence purpose of the transfer. */
+  readonly purpose: string;
+  /** ISO-8601 timestamp the transfer was approved by the operator. */
+  readonly approvedAt: string;
+}
+
+/**
+ * Run-level subprocessor register artifact (Issue #2174). Persisted as
+ * `subprocessor-register.json` next to `compliance-annotations.json` and
+ * `compliance-coverage-report.json`; the human-readable
+ * `docs/dora/subprocessor-register.md` is auto-generated from this
+ * structure at build time, never hand-edited.
+ *
+ * The artifact is byte-stable: identical inputs produce identical
+ * canonical JSON bytes, so a SHA-256 over the file is reproducible
+ * across runs at the same commit. Subprocessors and cross-border
+ * transfers are sorted by their stable identifier; the embedded
+ * {@link SubprocessorRegister.merkleRoot} is a SHA-256 Merkle tree over
+ * the canonical-JSON-serialised entries (subprocessors first, then
+ * transfers, both pre-sorted), so a single root pin lets a downstream
+ * verifier detect drift in either list without re-hashing the whole
+ * file.
+ */
+export interface SubprocessorRegister {
+  readonly schemaVersion: typeof SUBPROCESSOR_REGISTER_SCHEMA_VERSION;
+  readonly registerVersion: typeof SUBPROCESSOR_REGISTER_VERSION;
+  readonly generatedAt: string;
+  readonly subprocessors: readonly SubprocessorEntry[];
+  readonly crossBorderTransfers: readonly CrossBorderTransferEntry[];
+  /** SHA-256 Merkle root over the (sorted) entry list, hex-encoded. */
+  readonly merkleRoot: string;
+}
 
 /** Environment variable name that gates test-intelligence features at startup. */
 export const TEST_INTELLIGENCE_ENV =

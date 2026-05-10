@@ -284,6 +284,11 @@ import {
 } from "./provenance-graph.js";
 import { verifyProvenanceFromDisk } from "./provenance-verify.js";
 import {
+  buildSubprocessorRegister,
+  serializeSubprocessorRegister,
+  SUBPROCESSOR_REGISTER_ARTIFACT_FILENAME,
+} from "./subprocessor-register.js";
+import {
   normalizeUntrustedContent,
   writeUntrustedContentNormalizationReport,
 } from "./untrusted-content-normalizer.js";
@@ -5523,12 +5528,35 @@ export const runFigmaToQcTestCases = async (
     ),
     "utf8",
   );
+  // Subprocessor register (Issue #2174). Emitted before provenance so
+  // the JSON-LD graph can pin its on-disk SHA-256 in a `prov:Entity`
+  // node and stamp the register's internal Merkle root at the bundle
+  // level. The register is static (operator-side document), so building
+  // it here is deterministic and adds no token spend.
+  const subprocessorRegisterArtifact = buildSubprocessorRegister({
+    generatedAt: input.generatedAt,
+  });
+  const subprocessorRegisterPath = join(
+    artifactDir,
+    SUBPROCESSOR_REGISTER_ARTIFACT_FILENAME,
+  );
+  await writeAtomicBytes(
+    subprocessorRegisterPath,
+    Buffer.from(
+      serializeSubprocessorRegister(subprocessorRegisterArtifact),
+      "utf8",
+    ),
+  );
   const provenanceDocument = await buildRunProvenanceGraph({
     runDir: artifactDir,
     jobId: input.jobId,
     generatedAt: input.generatedAt,
     sourceKind: input.source.kind,
     finalGeneratedTestCases: calibratedGeneratedTestCases,
+    subprocessorRegister: {
+      artifactFilename: SUBPROCESSOR_REGISTER_ARTIFACT_FILENAME,
+      merkleRoot: subprocessorRegisterArtifact.merkleRoot,
+    },
     initialGenerationDeployment:
       capturedLlmResult?.outcome === "success"
         ? capturedLlmResult.modelDeployment
@@ -5863,6 +5891,14 @@ export const runFigmaToQcTestCases = async (
       {
         filename: PROVENANCE_ARTIFACT_FILENAME,
         bytes: Buffer.from(`${canonicalJson(provenanceDocument)}\n`, "utf8"),
+        category: "manifest",
+      },
+      {
+        filename: SUBPROCESSOR_REGISTER_ARTIFACT_FILENAME,
+        bytes: Buffer.from(
+          serializeSubprocessorRegister(subprocessorRegisterArtifact),
+          "utf8",
+        ),
         category: "manifest",
       },
       {

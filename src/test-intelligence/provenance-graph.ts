@@ -54,6 +54,18 @@ export interface BuildRunProvenanceGraphInput {
   readonly judgeConsensus: BaseJudgeInput<JudgeConsensusVerdict>;
   readonly faithfulnessJudge?: BaseJudgeInput<FaithfulnessVerdict>;
   readonly a11yJudge?: BaseJudgeInput<A11yVerdict>;
+  /**
+   * Subprocessor register cross-link (Issue #2174). When present, the
+   * register file under `runDir/<artifactFilename>` is added as a
+   * `prov:Entity` artifact node and the document carries
+   * `ti:subprocessorRegisterMerkleRoot` at top level so a downstream
+   * verifier can pin the register's identity without re-deriving it
+   * from the artifact bytes.
+   */
+  readonly subprocessorRegister?: {
+    readonly artifactFilename: string;
+    readonly merkleRoot: string;
+  };
 }
 
 export interface ProvenanceMerkleSeal {
@@ -71,6 +83,12 @@ export interface ProvenanceDocument {
   readonly "ti:generatedAt": string;
   readonly "ti:sourceKind": string;
   readonly "ti:merkleSeal": ProvenanceMerkleSeal;
+  /**
+   * Subprocessor register Merkle root (Issue #2174). Mirrors the
+   * `merkleRoot` of the run-bundle's `subprocessor-register.json`
+   * artifact. Present only when the register was emitted with the run.
+   */
+  readonly "ti:subprocessorRegisterMerkleRoot"?: string;
   readonly "@graph": readonly ProvenanceNode[];
 }
 
@@ -322,6 +340,25 @@ export const buildRunProvenanceGraph = async (
     readArtifactDigest(input.runDir, input.logicJudge.artifactFilename),
     readArtifactDigest(input.runDir, input.judgeConsensus.artifactFilename),
   ]);
+
+  if (input.subprocessorRegister !== undefined) {
+    const registerDigest = await readArtifactDigest(
+      input.runDir,
+      input.subprocessorRegister.artifactFilename,
+    );
+    upsertNode(
+      nodes,
+      buildArtifactNode({
+        jobId: input.jobId,
+        digest: registerDigest,
+        label: "Subprocessor register (DORA Art. 28 / GDPR Ch. V)",
+        extra: {
+          "ti:subprocessorRegisterMerkleRoot":
+            input.subprocessorRegister.merkleRoot,
+        },
+      }),
+    );
+  }
 
   const [
     businessIntentDigest,
@@ -841,6 +878,12 @@ export const buildRunProvenanceGraph = async (
     "ti:generatedAt": input.generatedAt,
     "ti:sourceKind": input.sourceKind,
     "ti:merkleSeal": merkleSeal,
+    ...(input.subprocessorRegister !== undefined
+      ? {
+          "ti:subprocessorRegisterMerkleRoot":
+            input.subprocessorRegister.merkleRoot,
+        }
+      : {}),
     "@graph": nodesWithLeafHashes,
   };
 };
