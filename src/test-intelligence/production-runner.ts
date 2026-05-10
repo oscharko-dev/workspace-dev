@@ -73,6 +73,7 @@ import {
   TEST_DATA_ORACLE_REPORT_ARTIFACT_FILENAME,
   type RunQualityArtifact,
   type RunQualityAttemptSummary,
+  type SelfConsistencyDisagreementRoute,
   type SelfConsistencyReport,
   TEST_INTELLIGENCE_CONTRACT_VERSION,
   TEST_INTELLIGENCE_PROMPT_TEMPLATE_VERSION,
@@ -558,8 +559,7 @@ export type ProductionRunnerSource =
       file: FigmaRestFileSnapshot;
     };
 
-interface InternalFixtureBackedFigmaRestFileSnapshot
-  extends FigmaRestFileSnapshot {
+interface InternalFixtureBackedFigmaRestFileSnapshot extends FigmaRestFileSnapshot {
   readonly __workspaceDevDriftCanaryIntentOverride?:
     | IntentDerivationFigmaInput
     | undefined;
@@ -712,6 +712,9 @@ const buildActiveModelBindings = (input: {
     pushBinding(input.coveragePlanner);
   }
   if (input.bundle !== undefined) {
+    if (input.bundle.testGenerationSecondary !== undefined) {
+      pushBinding(input.bundle.testGenerationSecondary);
+    }
     pushBinding(input.bundle.visualPrimary);
     pushBinding(input.bundle.visualFallback);
     if (input.bundle.a11yJudge !== undefined) {
@@ -780,9 +783,11 @@ const resolveActiveModelRoutingPolicy = (input: {
       deployment: input.request.llm.bundle.coveragePlanner.deployment,
       modelRevision: input.request.llm.bundle.coveragePlanner.modelRevision,
       gatewayRelease: input.request.llm.bundle.coveragePlanner.gatewayRelease,
-      ...(input.request.llm.bundle.coveragePlanner.ictRegisterRef !==
-      undefined
-        ? { ictRegisterRef: input.request.llm.bundle.coveragePlanner.ictRegisterRef }
+      ...(input.request.llm.bundle.coveragePlanner.ictRegisterRef !== undefined
+        ? {
+            ictRegisterRef:
+              input.request.llm.bundle.coveragePlanner.ictRegisterRef,
+          }
         : {}),
     });
   } else if (input.request.llm.coveragePlanner !== undefined) {
@@ -825,7 +830,10 @@ const resolveActiveModelRoutingPolicy = (input: {
         modelRevision: input.request.llm.bundle.visualPrimary.modelRevision,
         gatewayRelease: input.request.llm.bundle.visualPrimary.gatewayRelease,
         ...(input.request.llm.bundle.visualPrimary.ictRegisterRef !== undefined
-          ? { ictRegisterRef: input.request.llm.bundle.visualPrimary.ictRegisterRef }
+          ? {
+              ictRegisterRef:
+                input.request.llm.bundle.visualPrimary.ictRegisterRef,
+            }
           : {}),
       },
       {
@@ -834,7 +842,10 @@ const resolveActiveModelRoutingPolicy = (input: {
         modelRevision: input.request.llm.bundle.visualFallback.modelRevision,
         gatewayRelease: input.request.llm.bundle.visualFallback.gatewayRelease,
         ...(input.request.llm.bundle.visualFallback.ictRegisterRef !== undefined
-          ? { ictRegisterRef: input.request.llm.bundle.visualFallback.ictRegisterRef }
+          ? {
+              ictRegisterRef:
+                input.request.llm.bundle.visualFallback.ictRegisterRef,
+            }
           : {}),
       },
     );
@@ -845,15 +856,48 @@ const resolveActiveModelRoutingPolicy = (input: {
         modelRevision: input.request.llm.bundle.a11yJudge.modelRevision,
         gatewayRelease: input.request.llm.bundle.a11yJudge.gatewayRelease,
         ...(input.request.llm.bundle.a11yJudge.ictRegisterRef !== undefined
-          ? { ictRegisterRef: input.request.llm.bundle.a11yJudge.ictRegisterRef }
+          ? {
+              ictRegisterRef: input.request.llm.bundle.a11yJudge.ictRegisterRef,
+            }
           : {}),
       });
     }
   }
-  return buildRuntimeModelRoutingPolicy({
+  const runtimePolicy = buildRuntimeModelRoutingPolicy({
     policyProfileId: input.policyProfileId,
     roles,
   });
+  const testGenerationSecondary =
+    input.request.llm.bundle?.testGenerationSecondary;
+  if (testGenerationSecondary === undefined) {
+    return runtimePolicy;
+  }
+  return {
+    ...runtimePolicy,
+    routes: [
+      ...runtimePolicy.routes,
+      {
+        role: "test_generation",
+        slot: "secondary",
+        tierLabel: "heavy",
+        modelBinding: {
+          providerId: "llm-gateway",
+          modelId: testGenerationSecondary.deployment,
+          inferenceProfileId: testGenerationSecondary.deployment,
+          ...(testGenerationSecondary.ictRegisterRef !== undefined
+            ? { ictRegisterRef: testGenerationSecondary.ictRegisterRef }
+            : {}),
+        },
+        modelRevision: testGenerationSecondary.modelRevision,
+        gatewayRelease: testGenerationSecondary.gatewayRelease,
+      },
+    ].sort(
+      (left, right) =>
+        left.role.localeCompare(right.role) ||
+        left.slot.localeCompare(right.slot) ||
+        left.tierLabel.localeCompare(right.tierLabel),
+    ),
+  };
 };
 
 const isA11yJudgeAvailableForConsensus = (
@@ -1396,7 +1440,10 @@ const buildAgentParticipationEntries = (input: {
 
   entries.push({
     role: "action_topology",
-    configurationSource: roleConfigurationSource(input.request, "action_topology"),
+    configurationSource: roleConfigurationSource(
+      input.request,
+      "action_topology",
+    ),
     status: "succeeded",
     attemptCount: 1,
     remediation:
@@ -1420,8 +1467,7 @@ const buildAgentParticipationEntries = (input: {
       : {}),
     ...(generatorConstrainedFallbackReason !== undefined
       ? {
-          remediation:
-            `Constrained decoding fell back for generator: ${generatorConstrainedFallbackReason}`,
+          remediation: `Constrained decoding fell back for generator: ${generatorConstrainedFallbackReason}`,
         }
       : {}),
     artifactReferences: [
@@ -1459,8 +1505,7 @@ const buildAgentParticipationEntries = (input: {
     ...(logicJudgeStatus !== "skipped" &&
     logicJudgeConstrainedFallbackReason !== undefined
       ? {
-          remediation:
-            `Constrained decoding fell back for logic judge: ${logicJudgeConstrainedFallbackReason}`,
+          remediation: `Constrained decoding fell back for logic judge: ${logicJudgeConstrainedFallbackReason}`,
         }
       : {}),
     ...(logicJudgeStatus === "failed" &&
@@ -1495,11 +1540,12 @@ const buildAgentParticipationEntries = (input: {
     report: input.finopsReport,
     source: "judge_secondary",
   });
-  const judgeSecondaryStatus: AgentParticipationStatus = !input.logicJudgeEnabled
-    ? "skipped"
-    : judgeSecondaryAttempts === 0
+  const judgeSecondaryStatus: AgentParticipationStatus =
+    !input.logicJudgeEnabled
       ? "skipped"
-      : "succeeded";
+      : judgeSecondaryAttempts === 0
+        ? "skipped"
+        : "succeeded";
   entries.push({
     role: "judge_secondary",
     ...(logicJudgeDeployment !== undefined
@@ -1634,8 +1680,8 @@ const buildAgentParticipationEntries = (input: {
       : {
           remediation:
             input.adversarialCriticRounds.length === 0
-        ? "Adversarial critic found no unique blind spots and exited without a regeneration."
-        : "Adversarial critic challenged the suite before judge review and persisted each bounded round under agent-role-runs/.",
+              ? "Adversarial critic found no unique blind spots and exited without a regeneration."
+              : "Adversarial critic challenged the suite before judge review and persisted each bounded round under agent-role-runs/.",
         }),
     artifactReferences: [
       ...(refs.adversarialCriticTrace !== undefined
@@ -1838,9 +1884,9 @@ const buildAgentParticipationEntries = (input: {
   // in FinOps.
   const repairLoopResult = input.repairLoopResult;
   const repairIterationCount = repairLoopResult?.repairIterationCount ?? 0;
-  const repairCompletedIterations = repairLoopResult?.iterations.filter(
-    (record) => record.iteration >= 1,
-  ) ?? [];
+  const repairCompletedIterations =
+    repairLoopResult?.iterations.filter((record) => record.iteration >= 1) ??
+    [];
   const repairPlannerArtifactRefs = Array.from(
     { length: repairIterationCount },
     (_unused, index) =>
@@ -1865,7 +1911,10 @@ const buildAgentParticipationEntries = (input: {
         : "succeeded";
   entries.push({
     role: "repair_planner",
-    configurationSource: roleConfigurationSource(input.request, "repair_planner"),
+    configurationSource: roleConfigurationSource(
+      input.request,
+      "repair_planner",
+    ),
     status: repairPlannerStatus,
     attemptCount: repairIterationCount,
     ...(repairPlannerStatus === "skipped"
@@ -1922,16 +1971,14 @@ const buildAgentParticipationEntries = (input: {
               : repairGeneratorOutcome === "rejected"
                 ? "Final judge panel rejected the repaired output; inspect the latest test_generation_repair artifact and logic-judge verdict."
                 : undefined;
-  const repairGeneratorIterationOutputTokens =
-    repairCompletedIterations.reduce(
-      (sum, record) => sum + record.outputTokens,
-      0,
-    );
-  const repairGeneratorIterationInputTokens =
-    repairCompletedIterations.reduce(
-      (sum, record) => sum + record.inputTokens,
-      0,
-    );
+  const repairGeneratorIterationOutputTokens = repairCompletedIterations.reduce(
+    (sum, record) => sum + record.outputTokens,
+    0,
+  );
+  const repairGeneratorIterationInputTokens = repairCompletedIterations.reduce(
+    (sum, record) => sum + record.inputTokens,
+    0,
+  );
   entries.push({
     role: "test_generation_repair",
     ...(repairGeneratorDeployment !== undefined
@@ -2198,7 +2245,7 @@ const evaluateNegativeCaseLiftGate = (input: {
       thresholdRatio: config.thresholdRatio,
       skipReason: "gate_disabled",
       message:
-        "G-NEG-CASE skipped: gateMode is \"off\"; recorded as skipped in policy-report so audit can distinguish a deliberate disable from a missing upstream signal.",
+        'G-NEG-CASE skipped: gateMode is "off"; recorded as skipped in policy-report so audit can distinguish a deliberate disable from a missing upstream signal.',
     };
   }
   if (!adversarialCriticEnabled || traceArtifact === undefined) {
@@ -2220,7 +2267,7 @@ const evaluateNegativeCaseLiftGate = (input: {
       thresholdRatio: config.thresholdRatio,
       skipReason: "adversarial_critic_failed",
       message:
-        "G-NEG-CASE skipped: adversarial-critic loop exited with stopReason=\"critic_failed\"; negative-coverage accounting cannot be trusted.",
+        'G-NEG-CASE skipped: adversarial-critic loop exited with stopReason="critic_failed"; negative-coverage accounting cannot be trusted.',
     };
   }
   const observed = traceArtifact.negativeCoverage.relativeRatioIncrease;
@@ -2429,8 +2476,9 @@ export const runFigmaToQcTestCases = async (
         tenantScope,
         deployment: input.llm.bundle.visualPrimary.deployment,
       });
-    const visualPrimaryBreakerConfig =
-      input.llm.bundle.visualPrimary.getCircuitBreaker().getSnapshot();
+    const visualPrimaryBreakerConfig = input.llm.bundle.visualPrimary
+      .getCircuitBreaker()
+      .getSnapshot();
     const persistedVisualPrimaryBreaker =
       await loadPersistentCircuitBreakerState({
         path: persistedVisualPrimaryBreakerPath,
@@ -3021,8 +3069,7 @@ export const runFigmaToQcTestCases = async (
   ) {
     throw new ProductionRunnerError({
       failureClass: "LLM_GATEWAY_FAILED",
-      message:
-        `runFigmaToQcTestCases: generation.diversityPasses=${String(requestedDiversityPasses)} requires a generator gateway client with seed support.`,
+      message: `runFigmaToQcTestCases: generation.diversityPasses=${String(requestedDiversityPasses)} requires a generator gateway client with seed support.`,
       retryable: false,
     });
   }
@@ -3077,6 +3124,7 @@ export const runFigmaToQcTestCases = async (
   const logicJudgeEnabled = input.logicJudge?.enabled !== false;
   const logicJudgeClient: LlmGatewayClient =
     input.llm.bundle?.logicJudge ?? input.llm.logicJudge ?? input.llm.client;
+  const crossFamilyGeneratorClient = input.llm.bundle?.testGenerationSecondary;
   const adversarialCriticEnabled =
     logicJudgeEnabled &&
     (input.llm.bundle?.logicJudge !== undefined ||
@@ -3085,6 +3133,7 @@ export const runFigmaToQcTestCases = async (
   const compileGenerationPass = (
     pass: GenerationPassConfig,
     extraSuffixSections: readonly CompilePromptSuffixSection[] = [],
+    generationClient: LlmGatewayClient = input.llm.client,
   ) => {
     const compiled = compilePrompt({
       jobId: input.jobId,
@@ -3094,8 +3143,8 @@ export const runFigmaToQcTestCases = async (
         ? { agentLessons: activeAgentLessons }
         : {}),
       modelBinding: {
-        modelRevision: input.llm.client.modelRevision,
-        gatewayRelease: input.llm.client.gatewayRelease,
+        modelRevision: generationClient.modelRevision,
+        gatewayRelease: generationClient.gatewayRelease,
         ...(pass.seed !== undefined ? { seed: pass.seed } : {}),
       },
       routingPolicyDigest,
@@ -3198,6 +3247,7 @@ export const runFigmaToQcTestCases = async (
     const compiled = compileGenerationPass(
       inputPass.pass,
       inputPass.extraSuffixSections,
+      generationClient,
     );
     if (inputPass.emitPrimaryPromptCompiled) {
       emit({
@@ -3538,6 +3588,10 @@ export const runFigmaToQcTestCases = async (
 
   const mergeGenerationPassLists = (
     lists: readonly GeneratedTestCaseList[],
+    options?: {
+      readonly arbitrationTriggered?: boolean;
+      readonly disagreementRoute?: SelfConsistencyDisagreementRoute;
+    },
   ): {
     list: GeneratedTestCaseList;
     selfConsistencyReport?: SelfConsistencyReport;
@@ -3554,6 +3608,10 @@ export const runFigmaToQcTestCases = async (
       jobId: input.jobId,
       generatedAt: input.generatedAt,
       lists,
+      ...(options?.disagreementRoute !== undefined
+        ? { disagreementRoute: options.disagreementRoute }
+        : {}),
+      ...(options?.arbitrationTriggered ? { arbitrationTriggered: true } : {}),
     });
     return {
       list: voted.merged,
@@ -3571,14 +3629,52 @@ export const runFigmaToQcTestCases = async (
     ),
   );
   const compiled = generationExecutions[0]!.compiled;
-  const generationCacheHit = generationExecutions.every(
+  let generationCacheHit = generationExecutions.every(
     (execution) => execution.cacheExecResult.cacheHit,
   );
   const initialGenerationMerge = mergeGenerationPassLists(
-    generationExecutions.map((execution) => execution.cacheExecResult.testCases),
+    generationExecutions.map(
+      (execution) => execution.cacheExecResult.testCases,
+    ),
+    {
+      disagreementRoute:
+        diversityPasses === 3 && crossFamilyGeneratorClient !== undefined
+          ? "cross_family_arbitration"
+          : "human_review",
+    },
   );
   let selfConsistencyReport = initialGenerationMerge.selfConsistencyReport;
   let generatedList: GeneratedTestCaseList = initialGenerationMerge.list;
+  const weakConsensusDetected =
+    diversityPasses === 3 &&
+    selfConsistencyReport?.targets.some(
+      (target) => target.consensusStrength === "weak_consensus",
+    ) === true;
+  if (weakConsensusDetected && crossFamilyGeneratorClient !== undefined) {
+    const arbitrationExecution = await executeGenerationPass({
+      client: crossFamilyGeneratorClient,
+      pass: {
+        roleRunId: CROSS_FAMILY_ARBITRATION_ROLE_RUN_ID,
+        identitySalt: CROSS_FAMILY_ARBITRATION_ROLE_RUN_ID,
+      },
+      emitPrimaryPromptCompiled: false,
+      recordHarnessAttempt: false,
+    });
+    generationExecutions.push(arbitrationExecution);
+    generationCacheHit =
+      generationCacheHit && arbitrationExecution.cacheExecResult.cacheHit;
+    const arbitratedMerge = mergeGenerationPassLists(
+      generationExecutions.map(
+        (execution) => execution.cacheExecResult.testCases,
+      ),
+      {
+        arbitrationTriggered: true,
+        disagreementRoute: "human_review",
+      },
+    );
+    selfConsistencyReport = arbitratedMerge.selfConsistencyReport;
+    generatedList = arbitratedMerge.list;
+  }
   generatedList = stabilizeGeneratedListForAcceptance({
     list: generatedList,
     model: compiled.artifacts.payload.testDesignModel!,
@@ -3611,16 +3707,14 @@ export const runFigmaToQcTestCases = async (
     | "critic_failed"
     | "max_rounds_reached"
     | "no_rounds_needed" = "no_rounds_needed";
-  let adversarialCriticTraceArtifact: AdversarialCriticTraceArtifact | undefined;
+  let adversarialCriticTraceArtifact:
+    | AdversarialCriticTraceArtifact
+    | undefined;
   if (adversarialCriticEnabled) {
     const adversarialCriticBudgetLimits = resolveAdversarialCriticBudgetLimits(
       finopsBudget.roles.test_generation,
     );
-    for (
-      let round = 1;
-      round <= ADVERSARIAL_CRITIC_MAX_ROUNDS;
-      round += 1
-    ) {
+    for (let round = 1; round <= ADVERSARIAL_CRITIC_MAX_ROUNDS; round += 1) {
       const criticRound = await runAdversarialCriticRound({
         jobId: input.jobId,
         round,
@@ -5512,8 +5606,7 @@ export const runFigmaToQcTestCases = async (
           : {}),
         ...(judgeConsensusDisposition.tiebreakerVerdict !== undefined
           ? {
-              tiebreakerVerdict:
-                judgeConsensusDisposition.tiebreakerVerdict,
+              tiebreakerVerdict: judgeConsensusDisposition.tiebreakerVerdict,
             }
           : {}),
       },
@@ -6879,7 +6972,9 @@ const enrichWorkflowTopologyCoverage = (input: {
     return input.testCase;
   }
   const screenIds = [
-    ...new Set(input.testCase.figmaTraceRefs.map((traceRef) => traceRef.screenId)),
+    ...new Set(
+      input.testCase.figmaTraceRefs.map((traceRef) => traceRef.screenId),
+    ),
   ];
   if (screenIds.length === 0) {
     return input.testCase;
@@ -6939,7 +7034,7 @@ const enrichWorkflowTopologyCoverage = (input: {
                       to: "error",
                     })
                   : index === lastIndex
-                    ? workflowFieldLifecycleTransitionIdFor({
+                    ? (workflowFieldLifecycleTransitionIdFor({
                         topology: input.workflowTopology,
                         fieldId: primaryFieldId,
                         from: "validated",
@@ -6950,7 +7045,7 @@ const enrichWorkflowTopologyCoverage = (input: {
                         fieldId: primaryFieldId,
                         from: "in_progress",
                         to: "validated",
-                      })
+                      }))
                     : workflowFieldLifecycleTransitionIdFor({
                         topology: input.workflowTopology,
                         fieldId: primaryFieldId,
@@ -6970,7 +7065,7 @@ const enrichWorkflowTopologyCoverage = (input: {
                 ...lifecycleSteps[index]!,
                 action: `${anchor} ${step.action}`,
               }
-            : lifecycleSteps[index] ?? step,
+            : (lifecycleSteps[index] ?? step),
         );
   return {
     ...input.testCase,
@@ -7773,7 +7868,9 @@ const resolveJudgeConsensusDisposition = (input: {
       ...(isGptOssDeployment(input.logicJudgeDeployment)
         ? { tiebreakerDeployment: input.logicJudgeDeployment }
         : {}),
-      ...(logicJudgeVote !== undefined ? { tiebreakerVerdict: logicJudgeVote } : {}),
+      ...(logicJudgeVote !== undefined
+        ? { tiebreakerVerdict: logicJudgeVote }
+        : {}),
     };
   }
   if (input.verdict.verdict === "accept") {
@@ -7951,12 +8048,13 @@ interface GenerationPassConfig {
   readonly identitySalt?: string;
 }
 
-const resolveDiversityPassCount = (
-  input: {
-    readonly generation: RunFigmaToQcTestCasesInput["generation"];
-    readonly policyRules: TestCasePolicyProfileRules | undefined;
-  },
-): ProductionRunnerDiversityPassCount => {
+const CROSS_FAMILY_ARBITRATION_ROLE_RUN_ID =
+  "generator-run-cross-family-arbiter" as const;
+
+const resolveDiversityPassCount = (input: {
+  readonly generation: RunFigmaToQcTestCasesInput["generation"];
+  readonly policyRules: TestCasePolicyProfileRules | undefined;
+}): ProductionRunnerDiversityPassCount => {
   const fromPolicy = input.policyRules?.selfConsistency?.sampleCount ?? 1;
   const value = input.generation?.diversityPasses ?? fromPolicy;
   if (value !== 1 && value !== 2 && value !== 3) {

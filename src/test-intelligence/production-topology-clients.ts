@@ -162,10 +162,14 @@ export const buildProductionTopologyClientConfigs = (
   input: BuildProductionTopologyClientConfigsInput,
 ): LlmGatewayClientBundleConfigs => {
   const policy = resolveProductionTopologyModelRoutingPolicy(input);
-  const deploymentFor = (role: ModelRoutingRole): string => {
-    const route = policy.routes.find(
-      (candidate) => candidate.role === role && candidate.slot === "primary",
-    ) ?? policy.routes.find((candidate) => candidate.role === role);
+  const deploymentFor = (
+    role: ModelRoutingRole,
+    slot: "fallback" | "primary" | "secondary" | "triage" = "primary",
+  ): string => {
+    const route =
+      policy.routes.find(
+        (candidate) => candidate.role === role && candidate.slot === slot,
+      ) ?? policy.routes.find((candidate) => candidate.role === role);
     if (
       route?.modelBinding.inferenceProfileId !== undefined &&
       route.modelBinding.inferenceProfileId.length > 0
@@ -185,6 +189,21 @@ export const buildProductionTopologyClientConfigs = (
         ? { ictRegisterRef: input.ictRegisterRef }
         : {}),
     }),
+    ...(deploymentFor("test_generation", "secondary") !==
+    deploymentFor("test_generation")
+      ? {
+          testGenerationSecondary: buildProductionRoleClientConfig({
+            role: "test_generation",
+            endpoint: input.endpoint,
+            deployment: deploymentFor("test_generation", "secondary"),
+            modelRevisionSuffix: input.modelRevisionSuffix,
+            gatewayRelease: input.gatewayRelease,
+            ...(input.ictRegisterRef !== undefined
+              ? { ictRegisterRef: input.ictRegisterRef }
+              : {}),
+          }),
+        }
+      : {}),
     visualPrimary: buildProductionRoleClientConfig({
       role: "visual_primary",
       endpoint: input.visualEndpoint,

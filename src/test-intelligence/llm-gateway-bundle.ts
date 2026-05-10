@@ -21,6 +21,13 @@ import {
 
 export interface LlmGatewayClientBundle {
   testGeneration: LlmGatewayClient;
+  /**
+   * Optional dedicated cross-family generator arbiter (Issue #2125). When
+   * set, the production runner may request one extra generator pass here
+   * after a weak 2/1 self-consistency split so a policy-defined secondary
+   * model family can cast the 4th vote.
+   */
+  testGenerationSecondary?: LlmGatewayClient;
   visualPrimary: LlmGatewayClient;
   visualFallback: LlmGatewayClient;
   /**
@@ -67,6 +74,7 @@ export interface LlmGatewayClientBundle {
 
 export interface LlmGatewayClientBundleConfigs {
   testGeneration: LlmGatewayClientConfig;
+  testGenerationSecondary?: LlmGatewayClientConfig;
   visualPrimary: LlmGatewayClientConfig;
   visualFallback: LlmGatewayClientConfig;
   a11yJudge?: LlmGatewayClientConfig;
@@ -77,6 +85,7 @@ export interface LlmGatewayClientBundleConfigs {
 
 export interface MockLlmGatewayClientBundleInputs {
   testGeneration: CreateMockLlmGatewayClientInput;
+  testGenerationSecondary?: CreateMockLlmGatewayClientInput;
   visualPrimary: CreateMockLlmGatewayClientInput;
   visualFallback: CreateMockLlmGatewayClientInput;
   a11yJudge?: CreateMockLlmGatewayClientInput;
@@ -127,6 +136,18 @@ const assertBundle = (bundle: LlmGatewayClientBundle): void => {
     expected: "test_generation",
     label: "testGeneration",
   });
+  if (bundle.testGenerationSecondary !== undefined) {
+    assertRole({
+      actual: bundle.testGenerationSecondary.role,
+      expected: "test_generation",
+      label: "testGenerationSecondary",
+    });
+    if (bundle.testGenerationSecondary.declaredCapabilities.imageInputSupport) {
+      throw new RangeError(
+        "LlmGatewayClientBundle: testGenerationSecondary must not declare image input support",
+      );
+    }
+  }
   assertRole({
     actual: bundle.visualPrimary.role,
     expected: "visual_primary",
@@ -208,6 +229,14 @@ export const createLlmGatewayClientBundle = (
 ): LlmGatewayClientBundle => {
   const bundle: LlmGatewayClientBundle = {
     testGeneration: createLlmGatewayClient(configs.testGeneration, runtime),
+    ...(configs.testGenerationSecondary !== undefined
+      ? {
+          testGenerationSecondary: createLlmGatewayClient(
+            configs.testGenerationSecondary,
+            runtime,
+          ),
+        }
+      : {}),
     visualPrimary: createLlmGatewayClient(configs.visualPrimary, runtime),
     visualFallback: createLlmGatewayClient(configs.visualFallback, runtime),
     ...(configs.a11yJudge !== undefined
@@ -239,6 +268,13 @@ export const createMockLlmGatewayClientBundle = (
 ): LlmGatewayClientBundle => {
   const bundle: LlmGatewayClientBundle = {
     testGeneration: createMockLlmGatewayClient(inputs.testGeneration),
+    ...(inputs.testGenerationSecondary !== undefined
+      ? {
+          testGenerationSecondary: createMockLlmGatewayClient(
+            inputs.testGenerationSecondary,
+          ),
+        }
+      : {}),
     visualPrimary: createMockLlmGatewayClient(inputs.visualPrimary),
     visualFallback: createMockLlmGatewayClient(inputs.visualFallback),
     ...(inputs.a11yJudge !== undefined

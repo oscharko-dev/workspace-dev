@@ -17,7 +17,9 @@ The built-in `eu-banking-default` profile now carries:
 
 ```ts
 rules: {
-  selfConsistency: { sampleCount: 3 }
+    selfConsistency: {
+        sampleCount: 3;
+    }
 }
 ```
 
@@ -40,11 +42,11 @@ breaking the run.
 The three generator diversity passes are deterministic and use the seeded
 profiles:
 
-| Pass | Role-run artifact          | Seed |
-| ---- | -------------------------- | ---- |
-| `a`  | `generator-run-a.json`     | `11` |
-| `b`  | `generator-run-b.json`     | `29` |
-| `c`  | `generator-run-c.json`     | `47` |
+| Pass | Role-run artifact      | Seed |
+| ---- | ---------------------- | ---- |
+| `a`  | `generator-run-a.json` | `11` |
+| `b`  | `generator-run-b.json` | `29` |
+| `c`  | `generator-run-c.json` | `47` |
 
 The pass prompts keep the same contract surface and only vary the
 generation bias so the runner can probe alternate but valid candidate
@@ -71,6 +73,26 @@ Within each target, the voter currently elects a majority for:
 Agreement is calculated per field as `majorityCount / sampleCount`, and
 the target-level agreement is the mean of all field agreements.
 
+Issue #2125 adds a deterministic Wilson 95 % confidence interval to each
+field-level vote:
+
+- `winner`
+- `agreementRate`
+- `confidenceInterval95: [lo, hi]`
+- `bootstrapSampleSize`
+
+The implementation is closed-form and deterministic: no random sampling
+is performed despite the legacy `bootstrapSampleSize` label.
+
+## Weak consensus
+
+Issue #2125 classifies a field vote as `weak_consensus` when the vote has
+only a minimal majority (`2/1` on the default 3-sample path) and the
+Wilson lower bound falls below `0.6`.
+
+That keeps unanimous 3/3 outcomes on the normal path while treating a
+weak 2/1 split as insufficiently stable for direct production use.
+
 ## Disagreement handling
 
 When every voted field reaches majority, the merged case stays on the
@@ -83,6 +105,16 @@ When any voted field fails to reach majority:
   `self_consistency_disagreement:` is appended
 - the per-target report records `disagreement: true`
 - the disagreement route is persisted as `human_review`
+
+When the 3-sample vote lands in `weak_consensus` and the active routing
+topology exposes the Issue #2099 secondary generator family, the runner
+performs one extra cross-family generator pass on `gpt-oss-120b` and
+re-runs the voter over four samples.
+
+- If the arbiter resolves the weak 2/1 split into a 3/1 majority, the
+  case stays on the normal path.
+- If the four-sample vote still disagrees, the route falls back to
+  `human_review`.
 
 The merged case's `qualitySignals.confidence` is also capped by the
 target agreement so downstream reviewers can see the generator-side
@@ -110,8 +142,10 @@ Each `targets[]` entry records:
 - the selected `testCaseId`
 - `samplePresenceCount`
 - target-level `agreement`
+- target-level `consensusStrength`
 - `disagreement`
 - optional `disagreementRoute`
+- optional `arbitrationTriggered`
 - `votes[]` with per-field majority metadata
 
 The run-quality artifact now also exposes
@@ -138,6 +172,8 @@ override level so the runner stays predictable and auditable.
   narrow investigations where exact single-pass request counts matter.
 - Use `generation.diversityPasses = 2` only when validating the legacy
   dual-pass merge path or comparing issue #1936 behavior.
+- Keep `generation.diversityPasses = 3` for the normal production path;
+  the cross-family 4th vote is reserved for weak 2/1 splits only.
 - Review `self-consistency-report.json` whenever the exported case list
   contains `self_consistency_disagreement:` markers.
 

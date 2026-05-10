@@ -33,6 +33,23 @@ All changes to the public contract surface of `workspace-dev` are documented her
 
 ## [1.23.0] - 2026-05-10
 
+### Added (Issue #2125 — Wilson self-consistency confidence + cross-family arbiter routing)
+
+- New exported `SelfConsistencyVote` type from `src/contracts/index.ts` with
+  additive fields `winner`, `agreementRate`, `confidenceInterval95`,
+  `bootstrapSampleSize`, and `consensusStrength`.
+- `SelfConsistencyDisagreementRoute` now includes the additive
+  `"cross_family_arbitration"` member alongside `"human_review"`.
+- `SelfConsistencyFieldVote` gains additive metadata fields
+  `agreementRate`, `confidenceInterval95`, `bootstrapSampleSize`,
+  `consensusStrength`, and `winner` while preserving the legacy
+  `agreement` alias.
+- `SelfConsistencyTargetReportEntry` gains additive
+  `consensusStrength?: "strong_consensus" | "weak_consensus"` semantics at
+  runtime plus optional `arbitrationTriggered` for audited 4th-vote runs.
+- These are additive contract changes; existing persisted artifacts remain
+  readable because legacy fields were not removed or renamed.
+
 ### Added (Issue #2117 — per-locale Platt-curve calibration: DE-DE, DE-AT, DE-CH, EN-IE, FR-FR, IT-IT)
 
 - New `SupportedLocale` type exported from `src/contracts/index.ts` (`"DE-DE" | "DE-AT" | "DE-CH" | "EN-IE" | "FR-FR" | "IT-IT"`).
@@ -58,15 +75,15 @@ Public surface changes in the additive `src/test-intelligence` submodule:
 - `createSignedSemanticContentOverrideEntry(...)` is now exported for callers
   that need to construct signed override entries deterministically.
 - New exported types:
-  - `PrincipalRef`
-  - `ISO8601`
-  - `HmacBlock`
-  - `OverrideAuthoritySecretProvider`
-  - `OverrideAuthorityProvider`
-  - `SemanticContentOverrideEntry`
-  - `CreateSignedSemanticContentOverrideEntryInput`
-  - `InvalidSemanticContentOverride`
-  - `InvalidSemanticContentOverrideMap`
+    - `PrincipalRef`
+    - `ISO8601`
+    - `HmacBlock`
+    - `OverrideAuthoritySecretProvider`
+    - `OverrideAuthorityProvider`
+    - `SemanticContentOverrideEntry`
+    - `CreateSignedSemanticContentOverrideEntryInput`
+    - `InvalidSemanticContentOverride`
+    - `InvalidSemanticContentOverrideMap`
 - `SemanticContentOverrideMap` now carries signed entries keyed by
   `testCaseId -> path` instead of accepting legacy raw path sets.
 - `EvaluatePolicyGateInput`, `RunValidationPipelineInput`, and
@@ -74,11 +91,11 @@ Public surface changes in the additive `src/test-intelligence` submodule:
   `overrideAuthorityProvider?: OverrideAuthorityProvider` hook so the module can
   verify signatures before an override affects blocking or export decisions.
 - New exported metadata keys used in `review-events.json` replay:
-  - `SEMANTIC_CONTENT_OVERRIDE_METADATA_SIGNED_AT_KEY`
-  - `SEMANTIC_CONTENT_OVERRIDE_METADATA_SIGNATURE_KEY`
-  - `SEMANTIC_CONTENT_OVERRIDE_METADATA_SIGNATURE_KEY_ID_KEY`
-  - `SEMANTIC_CONTENT_OVERRIDE_METADATA_EXPIRES_AT_KEY`
-  - `SEMANTIC_CONTENT_OVERRIDE_METADATA_VERIFIED_SIGNATURE_KEY`
+    - `SEMANTIC_CONTENT_OVERRIDE_METADATA_SIGNED_AT_KEY`
+    - `SEMANTIC_CONTENT_OVERRIDE_METADATA_SIGNATURE_KEY`
+    - `SEMANTIC_CONTENT_OVERRIDE_METADATA_SIGNATURE_KEY_ID_KEY`
+    - `SEMANTIC_CONTENT_OVERRIDE_METADATA_EXPIRES_AT_KEY`
+    - `SEMANTIC_CONTENT_OVERRIDE_METADATA_VERIFIED_SIGNATURE_KEY`
 - New exported runtime constant:
   `SEMANTIC_CONTENT_OVERRIDE_HMAC_ALGORITHM = "hmac-sha256"`.
 - `partitionSemanticContentOverridesForValidation(...)` is exported so callers
@@ -128,8 +145,8 @@ Public-contract changes (additive — no removals, no renames):
 - `TEST_INTELLIGENCE_CONTRACT_VERSION` bumps from `1.20.0` to `1.21.0`.
 - `TestCaseValidationSeverity` adds the new literal `info`.
 - `ALLOWED_TEST_CASE_POLICY_OUTCOMES` adds:
-  - `visual_sidecar_fallback_used_succeeded`
-  - `visual_sidecar_both_failed`
+    - `visual_sidecar_fallback_used_succeeded`
+    - `visual_sidecar_both_failed`
 - New exported type `LlmCircuitState = "closed" | "open" | "half_open"`.
 - `VisualSidecarAttempt.circuitBreakerState?` — optional breaker snapshot state
   observed before dispatch.
@@ -185,16 +202,16 @@ derived policy profile, which preserves the legacy behaviour byte-for-byte.
 Public-contract changes (additive — no removals, no renames):
 
 - New exported runtime constants:
-  - `TECHNIQUE_COVERAGE_MINIMUM_MODES`
-    (`["tier-elastic", "fixed"]` — frozen tuple),
-  - `TIER_ELASTIC_EP_TIERS` — frozen tier catalog
-    (`<= 4 fields → max(4, 2*fields)`,
-    `<= 8 fields → ceil(1.5*fields)`,
-    `>= 9 fields → fields`),
-  - `TECHNIQUE_QUOTA_REPORT_SCHEMA_VERSION` (`"1.0.0"`),
-  - `TECHNIQUE_QUOTA_REPORT_ARTIFACT_FILENAME`
-    (`"technique-quota-report.json"`),
-  - `TECHNIQUE_QUOTA_REPORT_STATUSES` (`["pass", "deficit"]`).
+    - `TECHNIQUE_COVERAGE_MINIMUM_MODES`
+      (`["tier-elastic", "fixed"]` — frozen tuple),
+    - `TIER_ELASTIC_EP_TIERS` — frozen tier catalog
+      (`<= 4 fields → max(4, 2*fields)`,
+      `<= 8 fields → ceil(1.5*fields)`,
+      `>= 9 fields → fields`),
+    - `TECHNIQUE_QUOTA_REPORT_SCHEMA_VERSION` (`"1.0.0"`),
+    - `TECHNIQUE_QUOTA_REPORT_ARTIFACT_FILENAME`
+      (`"technique-quota-report.json"`),
+    - `TECHNIQUE_QUOTA_REPORT_STATUSES` (`["pass", "deficit"]`).
 - New exported types: `TechniqueCoverageMinimumMode`,
   `TechniqueCoverageMinimumPolicy`, `TechniqueQuotaReport`,
   `TechniqueQuotaReportEntry`, `TechniqueQuotaReportStatus`.
@@ -240,8 +257,8 @@ migrationHash: 2026-05-08T00-00-00-000Z-issue-2068
 Before #2066 the cross-family faithfulness judge (`llama-4-maverick-vision`,
 landed in #2038) collapsed `evidence_partial` step signals into the same
 penalty bucket as `mismatch`. Label-only steps where the judge's own
-diagnosis was *"the label matches the expectation but the step description
-is not fully visible in the screenshot"* therefore caused the case-level
+diagnosis was _"the label matches the expectation but the step description
+is not fully visible in the screenshot"_ therefore caused the case-level
 faithfulness score to land at 0.5 — well below the 0.80 cross-modal floor —
 even though every label assertion matched the visible Figma capture. This
 blocked **G3** on the K0 benchmark.
@@ -252,13 +269,13 @@ score aggregation in the policy gate.
 Public-contract changes (additive — no removals, no renames):
 
 - New exported runtime constants:
-  - `FAITHFULNESS_STEP_VERDICT_LABELS`
-    (`["match", "evidence_partial", "mismatch"]` — frozen tuple),
-  - `FAITHFULNESS_TIER_LABELS`
-    (`["concrete_data", "label_only"]` — frozen tuple),
-  - `FAITHFULNESS_TIER_REPORT_SCHEMA_VERSION` (`"1.0.0"`),
-  - `FAITHFULNESS_TIER_REPORT_ARTIFACT_FILENAME`
-    (`"faithfulness-tier-report.json"`).
+    - `FAITHFULNESS_STEP_VERDICT_LABELS`
+      (`["match", "evidence_partial", "mismatch"]` — frozen tuple),
+    - `FAITHFULNESS_TIER_LABELS`
+      (`["concrete_data", "label_only"]` — frozen tuple),
+    - `FAITHFULNESS_TIER_REPORT_SCHEMA_VERSION` (`"1.0.0"`),
+    - `FAITHFULNESS_TIER_REPORT_ARTIFACT_FILENAME`
+      (`"faithfulness-tier-report.json"`).
 - New exported types: `FaithfulnessStepVerdict`,
   `FaithfulnessStepVerdictLabel`, `FaithfulnessTierLabel`,
   `FaithfulnessTierReport`, `FaithfulnessTierReportEntry`.
@@ -387,11 +404,11 @@ Contract version impacts:
 Prompt curation has been hand-tuned and locked in
 `docs/test-intelligence-prompt-template-version.lock.json`. Each tweak
 was a manual experiment; eval feedback never drove the next iteration.
-This release adds an *offline-only*, deterministic DSPy/MIPRO-style
+This release adds an _offline-only_, deterministic DSPy/MIPRO-style
 optimizer that mines bootstrapped few-shot exemplars from accepted
 runs, evaluates a closed set of additive directive variants against a
 deterministic synthetic eval, and records the winning template as an
-*additive* lock-file entry. The base prompt template is never
+_additive_ lock-file entry. The base prompt template is never
 rewritten — the prompt-compiler SHA pin enforced by
 `scripts/check-prompt-template-version.mjs` remains the authoritative
 artifact.
@@ -471,8 +488,8 @@ Contract version impacts:
 ### Added (Issue #2041 — mutation-killing eval suite with `mutationKillRate` KPI)
 
 Coverage metrics (`fieldCoverage`, `traceCoverage`, `invariantCoverage`)
-describe what the generated suite *exercises*; they do not describe what
-it *detects*. Issue #1753 listed `mutationKillRate >= 0.85` as a primary
+describe what the generated suite _exercises_; they do not describe what
+it _detects_. Issue #1753 listed `mutationKillRate >= 0.85` as a primary
 success criterion for the multi-agent harness; until this release the
 KPI was undefined and never persisted, so DORA-grade audits that ask
 "how do you know your test generation is effective?" had no defensible
@@ -525,7 +542,7 @@ Public-contract changes (additive — no removals, no renames):
   `MutationEvaluation`, `MutationClassKillRate`, `MutationReport`,
   `MutationKillRateSummary`.
 - `TestCasePolicyReport` gains an optional `mutationKillRate?:
-  MutationKillRateSummary` field. The block is omitted when the
+MutationKillRateSummary` field. The block is omitted when the
   evaluator was not run for this job (the default for fast iterative
   runs), so the byte-shape stays stable for runs that pre-date the
   evaluator.
@@ -632,14 +649,14 @@ Public-contract changes (additive — no removals, no renames):
   validation pipeline emits this code for every case where an invariant's
   `forall` predicate matches but its `holds` predicate returns false.
 - `TestCaseCoverageReport` gains two optional additive fields:
-  - `invariantCoverage?: { total, exercised, ratio, registeredIds, exercisedIds }`
-    — job-level invariant coverage, with `total` = registered count,
-    `exercised` = invariants matched by `forall` for at least one case,
-    and `ratio` rounded to six digits.
-  - `invariantAnnotations?: TestCaseInvariantAnnotation[]` — per-case
-    sorted `exercises` mapping, surfaced only for cases that exercise at
-    least one invariant. The new exported type
-    `TestCaseInvariantAnnotation` carries `{ testCaseId, exercises }`.
+    - `invariantCoverage?: { total, exercised, ratio, registeredIds, exercisedIds }`
+      — job-level invariant coverage, with `total` = registered count,
+      `exercised` = invariants matched by `forall` for at least one case,
+      and `ratio` rounded to six digits.
+    - `invariantAnnotations?: TestCaseInvariantAnnotation[]` — per-case
+      sorted `exercises` mapping, surfaced only for cases that exercise at
+      least one invariant. The new exported type
+      `TestCaseInvariantAnnotation` carries `{ testCaseId, exercises }`.
 - `RunValidationPipelineInput` and the self-verify variant gain an
   optional `invariantRegistry?: DomainInvariantRegistry | null` override.
   The default is `buildActiveDatasetInvariantRegistry()`; setting the
@@ -872,14 +889,14 @@ binding whose `region` is not `"eu"`.
 Public-contract changes (additive — no removals, no renames):
 
 - New runtime exports:
-  - `JUDGE_MODEL_FAMILIES`, `JUDGE_MODEL_REGIONS`
-  - `JUDGE_DISAGREEMENT_DECISION_LABELS`,
-    `JUDGE_DISAGREEMENT_ESCALATION_ACTIONS`
-  - `JUDGE_DISAGREEMENT_REPORT_SCHEMA_VERSION`,
-    `JUDGE_DISAGREEMENT_REPORT_ARTIFACT_FILENAME`
-  - `HUMAN_REVIEW_DECISION_SCHEMA_VERSION`,
-    `HUMAN_REVIEW_REVIEWER_KINDS`, `HUMAN_REVIEW_VERDICT_LABELS`,
-    `HUMAN_REVIEW_RATIONALE_MAX_CHARS`
+    - `JUDGE_MODEL_FAMILIES`, `JUDGE_MODEL_REGIONS`
+    - `JUDGE_DISAGREEMENT_DECISION_LABELS`,
+      `JUDGE_DISAGREEMENT_ESCALATION_ACTIONS`
+    - `JUDGE_DISAGREEMENT_REPORT_SCHEMA_VERSION`,
+      `JUDGE_DISAGREEMENT_REPORT_ARTIFACT_FILENAME`
+    - `HUMAN_REVIEW_DECISION_SCHEMA_VERSION`,
+      `HUMAN_REVIEW_REVIEWER_KINDS`, `HUMAN_REVIEW_VERDICT_LABELS`,
+      `HUMAN_REVIEW_RATIONALE_MAX_CHARS`
 - New exported types: `JudgeModelFamily`, `JudgeModelRegion`,
   `JudgeDisagreementDecisionLabel`,
   `JudgeDisagreementEscalationAction`,
@@ -948,78 +965,78 @@ Public-contract changes:
 
 - New exported type alias `SidecarDeployment = string & { readonly
 __brand?: "sidecar_deployment" }` documents the contract surface
-without forcing a public type-import migration on callers that
-pass plain string literals (the historical four literals continue
-to be assignable).
+  without forcing a public type-import migration on callers that
+  pass plain string literals (the historical four literals continue
+  to be assignable).
 - New exported runtime constant `SIDECAR_DEPLOYMENT_MAX_LENGTH = 128`
-mirrors the wire-validation length cap.
+  mirrors the wire-validation length cap.
 - `VisualSidecarValidationRecord.deployment`,
-`VisualScreenDescription.sidecarDeployment`,
-`VisualSidecarAttempt.deployment`,
-`VisualSidecarSuccess.selectedDeployment`,
-`CompiledPromptVisualBinding.selectedDeployment`,
-`QcMappingVisualProvenance.deployment`,
-`Wave1ValidationEvidenceVisualSidecarSummary.selectedDeployment`,
-`Wave1ValidationAttestationVisualSidecarIdentity.selectedDeployment`,
-and the `modelDeployments.visualPrimary` / `visualFallback` slots
-on the validation/export/attestation manifests broaden from the
-four-literal closed enum (plus `"none"`) to `SidecarDeployment`
-(plus `"none"`).
+  `VisualScreenDescription.sidecarDeployment`,
+  `VisualSidecarAttempt.deployment`,
+  `VisualSidecarSuccess.selectedDeployment`,
+  `CompiledPromptVisualBinding.selectedDeployment`,
+  `QcMappingVisualProvenance.deployment`,
+  `Wave1ValidationEvidenceVisualSidecarSummary.selectedDeployment`,
+  `Wave1ValidationAttestationVisualSidecarIdentity.selectedDeployment`,
+  and the `modelDeployments.visualPrimary` / `visualFallback` slots
+  on the validation/export/attestation manifests broaden from the
+  four-literal closed enum (plus `"none"`) to `SidecarDeployment`
+  (plus `"none"`).
 - Visual-sidecar JSON-Schema validator drops the closed `enum` on
-`sidecarDeployment` in favour of `{ type: "string", minLength: 1,
+  `sidecarDeployment` in favour of `{ type: "string", minLength: 1,
 maxLength: SIDECAR_DEPLOYMENT_MAX_LENGTH }`. Operator-supplied
-deployment names now flow through verbatim and are surfaced as the
-provenance tag in the artefact.
+  deployment names now flow through verbatim and are surfaced as the
+  provenance tag in the artefact.
 - The mock-client provenance label `"mock"` is preserved for unit
-tests via a new `__isMock: true` sentinel on `MockLlmGatewayClient`
-and a re-exported `isMockLlmGatewayClient` type guard. The
-`clientDeploymentLabel` helper now returns `"mock"` for sentinel
-clients and the verbatim `client.deployment` for everyone else,
-removing the historical four-literal switch.
+  tests via a new `__isMock: true` sentinel on `MockLlmGatewayClient`
+  and a re-exported `isMockLlmGatewayClient` type guard. The
+  `clientDeploymentLabel` helper now returns `"mock"` for sentinel
+  clients and the verbatim `client.deployment` for everyone else,
+  removing the historical four-literal switch.
 - The internal `roleFromVisualDeployment` helper in the validation
-harness drops its three deployment-name branches
-(`mistral-document-ai-2512` → primary,
-`phi-4-multimodal-poc`/`llama-4-maverick-vision` → fallback) in
-favour of the existing `isFirstAttempt` orchestration signal.
-The sidecar client always invokes the primary client first and
-the fallback (if any) second, so the index is the actual semantic
-signal and the deployment-name switch was both brittle and
-mis-attributed live calls after the #1933 visual-primary swap.
+  harness drops its three deployment-name branches
+  (`mistral-document-ai-2512` → primary,
+  `phi-4-multimodal-poc`/`llama-4-maverick-vision` → fallback) in
+  favour of the existing `isFirstAttempt` orchestration signal.
+  The sidecar client always invokes the primary client first and
+  the fallback (if any) second, so the index is the actual semantic
+  signal and the deployment-name switch was both brittle and
+  mis-attributed live calls after the #1933 visual-primary swap.
 - The evidence-manifest validator's `VISUAL_DEPLOYMENTS` Set is
-removed; `modelDeployments.visualPrimary` / `visualFallback` /
-`visualSidecar.selectedDeployment` are validated against
-non-empty-string + ≤128-char shape (plus the literal `"none"`
-sentinel for the `modelDeployments` slots).
+  removed; `modelDeployments.visualPrimary` / `visualFallback` /
+  `visualSidecar.selectedDeployment` are validated against
+  non-empty-string + ≤128-char shape (plus the literal `"none"`
+  sentinel for the `modelDeployments` slots).
 
 Documentation:
 
 - `docs/local-runtime.md` row "Primary visual sidecar" updated from
-the deprecated `mistral-document-ai-2512` to the Wave-0 Stable
-substitution `llama-4-maverick-vision`. The fallback row updates
-from the deprecated `phi-4-multimodal-poc` to the cross-vendor
-Stable substitution `phi-4-multimodal-instruct`. This brings the
-local-runtime quick-reference into alignment with operator runbook
-§1b/§1c (already updated by PR #1953).
+  the deprecated `mistral-document-ai-2512` to the Wave-0 Stable
+  substitution `llama-4-maverick-vision`. The fallback row updates
+  from the deprecated `phi-4-multimodal-poc` to the cross-vendor
+  Stable substitution `phi-4-multimodal-instruct`. This brings the
+  local-runtime quick-reference into alignment with operator runbook
+  §1b/§1c (already updated by PR #1953).
 
 Contract version bumps:
 
 - `CONTRACT_VERSION` bumps from `4.49.0` to `4.50.0` (additive minor
-bump; the broadened union types are supersets of the previous
-closed enums, so existing callers passing one of the historical
-four literals continue to typecheck without code changes; new
-runtime exports `SIDECAR_DEPLOYMENT_MAX_LENGTH` and the
-`isMockLlmGatewayClient` type guard).
+  bump; the broadened union types are supersets of the previous
+  closed enums, so existing callers passing one of the historical
+  four literals continue to typecheck without code changes; new
+  runtime exports `SIDECAR_DEPLOYMENT_MAX_LENGTH` and the
+  `isMockLlmGatewayClient` type guard).
 - `TEST_INTELLIGENCE_CONTRACT_VERSION` is unchanged at `1.12.0`
-because no schema-versioned artefact shape changes; only the
-type surface and wire-validation regex broaden.
+  because no schema-versioned artefact shape changes; only the
+  type surface and wire-validation regex broaden.
 
 Out of scope (separate issues):
 
 - Document-AI as an OCR sidecar — Wave-3 candidate. When that lands,
-it will live on a different gateway client and a different role,
-not via the chat-completion path that #1959 removed.
+  it will live on a different gateway client and a different role,
+  not via the chat-completion path that #1959 removed.
 - Deployment-shape regex validation beyond non-empty + length cap —
-the operator runbook is the source of truth for valid names.
+  the operator runbook is the source of truth for valid names.
 
 No removals of public exports. No new migrations are registered; the
 `migrationHash:` registry from 4.42.0 carries over unchanged.
