@@ -10,6 +10,7 @@ import {
   type IntentTraceRef,
   type PiiIndicator,
   type IntentRedaction,
+  type SupportedLocale,
   type VisualScreenDescription,
 } from "../contracts/index.js";
 import { sha256Hex } from "./content-hash.js";
@@ -36,7 +37,7 @@ export interface IntentDerivationScreenInput {
    * `locale-calibration.ts`; intent-derivation itself does no locale
    * resolution — it just copies the field when present.
    */
-  locale?: import("../contracts/index.js").SupportedLocale;
+  locale?: SupportedLocale;
 }
 
 export interface IntentDerivationNodeInput {

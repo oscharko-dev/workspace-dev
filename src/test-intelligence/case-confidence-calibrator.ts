@@ -1069,7 +1069,9 @@ const writeLocaleReliabilityDiagramArtifacts = async (
     if (localeSamples.length === 0) continue;
 
     const localeCurveEntry = input.localeCurves[localeKey];
-    const curvePick = localeCurveEntry ?? input.aggregateCurve;
+    const curvePick = localeCurveEntry.fallbackToDefault
+      ? input.aggregateCurve
+      : localeCurveEntry;
     const calibrated = calibrateSamples(localeSamples, curvePick);
     const reliability = buildReliabilityDiagram(
       calibrated.map((s) => ({ confidence: s.confidence, label: s.label })),
@@ -1237,7 +1239,7 @@ export const applyCaseConfidenceCalibration = (input: {
       const locale = deriveLocaleForCase(testCase, input.screenLocaleMap);
       if (locale === "unknown") return input.curve;
       const localeEntry = input.curve.localeCurves[locale];
-      if (localeEntry === undefined || localeEntry.fallbackToDefault) return input.curve;
+      if (localeEntry.fallbackToDefault) return input.curve;
       return localeEntry;
     })();
 
