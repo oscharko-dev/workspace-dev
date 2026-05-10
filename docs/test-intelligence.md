@@ -224,7 +224,7 @@ production-runner and CLI integrations:
 | `WorkspaceJobInput.jobType`                 | `"figma_to_code"` (default) \| `"figma_to_qc_test_cases"`             |
 | `WorkspaceJobInput.testIntelligenceMode`    | `"deterministic_llm"` \| `"offline_eval"`                            |
 | `ALLOWED_TEST_INTELLIGENCE_MODES`           | `["deterministic_llm", "offline_eval"]`                              |
-| `TEST_INTELLIGENCE_CONTRACT_VERSION`        | `"1.26.0"`                                                           |
+| `TEST_INTELLIGENCE_CONTRACT_VERSION`        | `"1.27.0"`                                                           |
 | `TEST_INTELLIGENCE_PROMPT_TEMPLATE_VERSION` | `"1.7.1"`                                                            |
 | `TEST_INTELLIGENCE_ENV`                     | `"FIGMAPIPE_WORKSPACE_TEST_INTELLIGENCE"`                            |
 
@@ -309,6 +309,38 @@ this package:
 
 For a run-dir verification workflow, see
 [docs/test-intelligence/provenance.md](test-intelligence/provenance.md).
+
+### Audit-dossier bundle
+
+Issue #2175 adds a regulator-ready audit-dossier CLI that packages one
+completed run directory into a deterministic signed bundle for external review.
+The generator reads the attested evidence already on disk, writes a canonical
+manifest plus detached signature, emits a minimal PDF summary, and ships the
+Merkle proof as plain text so the bundle can be verified offline.
+
+The CLI surface is:
+
+```bash
+workspace-dev test-intelligence audit-dossier \
+  --run-dir <artifactRoot>/<jobId> \
+  --output <bundleDir> \
+  [--sign-key <ed25519-private-key.pem>]
+
+workspace-dev test-intelligence audit-verify \
+  --bundle <bundleDir>/<jobId>-audit-dossier.json
+```
+
+The bundle is fail-closed. Generation refuses to proceed when required
+evidence is missing, when zero or multiple model-card artifacts are present, or
+when the signing key cannot be parsed as Ed25519. Verification refuses mutated
+manifest bytes, mismatched key fingerprints, detached-signature drift, or a
+Merkle proof that no longer matches the manifest leaf inventory.
+
+The manifest inventory stays metadata-only: it records digests, filenames,
+artifact kinds, run metadata, and regulator-coverage mappings, but it does not
+inline raw prompts, screenshot bytes, secrets, or PII. The worked operator
+workflow and fixture-backed example live in
+[docs/test-intelligence/audit-dossier.md](test-intelligence/audit-dossier.md).
 
 ### Fixture-driven eval gates
 
@@ -1267,13 +1299,15 @@ configuration.
 - [CONTRACT_CHANGELOG.md](../CONTRACT_CHANGELOG.md) — authoritative public
   contract surface, including every test-intelligence schema-version constant,
   artifact filename constant, and exported type. Versions `3.21.0` through
-  `4.60.0` cover the test-intelligence subsurface end-to-end.
+  `4.62.0` cover the test-intelligence subsurface end-to-end.
 - [docs/api/contracts/README.md](api/contracts/README.md) — auto-generated
   contract API reference, regenerated from `src/contracts/index.ts` via
   `pnpm run docs:api`. The freshness gate is `pnpm run docs:api:check`.
 - [docs/test-intelligence/action-topology.md](test-intelligence/action-topology.md)
   — deterministic workflow-action topology, `workflow-topology.json`, and
   stable `ACT-*` coverage ids.
+- [docs/test-intelligence/audit-dossier.md](test-intelligence/audit-dossier.md)
+  — signed audit-dossier generation and offline verification workflow.
 - [VERSIONING.md](../VERSIONING.md) — package-versus-contract versioning
   policy.
 - [docs/migration-guide.md](migration-guide.md) — contract migration checklist.

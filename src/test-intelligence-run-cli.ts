@@ -65,9 +65,12 @@ import {
   PRODUCTION_RUNNER_HARNESS_MODES,
   PRODUCTION_RUNNER_TEST_GENERATION_DEPLOYMENT,
   ProductionRunnerError,
+  generateAuditDossier,
   parseAndCanonicalizeCustomerProfile,
   runFigmaToQcTestCases,
+  resolveAuditDossierDefaults,
   validateFinOpsBudgetEnvelope,
+  verifyAuditDossierBundle,
   verifyProvenanceFromDisk,
   type AgentHarnessTestDepth,
   type CustomerProfileInput,
@@ -212,6 +215,16 @@ export interface TestIntelligenceDoctorOptions {
 
 export interface TestIntelligenceVerifyProvenanceOptions {
   runDir: string;
+}
+
+export interface TestIntelligenceAuditDossierOptions {
+  runDir: string;
+  outputDir: string;
+  signKeyPath: string;
+}
+
+export interface TestIntelligenceAuditVerifyOptions {
+  bundle: string;
 }
 
 interface DoctorRoleReportEntry {
@@ -1358,6 +1371,85 @@ export const parseTestIntelligenceVerifyProvenanceArgs = (
   }
   throw new TestIntelligenceRunOperatorError(
     'usage: workspace-dev test-intelligence verify-provenance <run-dir> or workspace-dev test-intelligence --verify-provenance <run-dir>',
+  );
+};
+
+export const parseTestIntelligenceAuditDossierArgs = (
+  argv: readonly string[],
+  env: NodeJS.ProcessEnv = process.env,
+): TestIntelligenceAuditDossierOptions => {
+  let runDir: string | undefined;
+  let outputDir: string | undefined;
+  let signKeyPath =
+    env.WORKSPACE_TEST_SPACE_AUDIT_SIGN_KEY?.trim() || undefined;
+
+  for (let index = 0; index < argv.length; index += 1) {
+    const arg = argv[index];
+    const next = argv[index + 1]?.trim();
+    if (arg === "--run-dir") {
+      if (!next) {
+        throw new TestIntelligenceRunOperatorError(
+          "--run-dir requires a non-empty path",
+        );
+      }
+      runDir = next;
+      index += 1;
+      continue;
+    }
+    if (arg === "--output") {
+      if (!next) {
+        throw new TestIntelligenceRunOperatorError(
+          "--output requires a non-empty directory path",
+        );
+      }
+      outputDir = next;
+      index += 1;
+      continue;
+    }
+    if (arg === "--sign-key") {
+      if (!next) {
+        throw new TestIntelligenceRunOperatorError(
+          "--sign-key requires a non-empty private-key path",
+        );
+      }
+      signKeyPath = next;
+      index += 1;
+      continue;
+    }
+    throw new TestIntelligenceRunOperatorError(
+      `Unknown flag for "test-intelligence audit-dossier": ${arg}`,
+    );
+  }
+
+  if (!runDir) {
+    throw new TestIntelligenceRunOperatorError(
+      'usage: workspace-dev test-intelligence audit-dossier --run-dir <path> --output <dir> [--sign-key <path>]',
+    );
+  }
+  if (!outputDir) {
+    throw new TestIntelligenceRunOperatorError(
+      'usage: workspace-dev test-intelligence audit-dossier --run-dir <path> --output <dir> [--sign-key <path>]',
+    );
+  }
+  if (!signKeyPath) {
+    throw new TestIntelligenceRunOperatorError(
+      "Audit dossier signing key is required via --sign-key or WORKSPACE_TEST_SPACE_AUDIT_SIGN_KEY.",
+    );
+  }
+  return { runDir, outputDir, signKeyPath };
+};
+
+export const parseTestIntelligenceAuditVerifyArgs = (
+  argv: readonly string[],
+): TestIntelligenceAuditVerifyOptions => {
+  if (argv.length === 1 && !argv[0]!.startsWith("--")) {
+    return { bundle: argv[0]! };
+  }
+  if (argv.length === 2 && argv[0] === "--bundle") {
+    return { bundle: argv[1]! };
+  }
+  throw new TestIntelligenceRunOperatorError(
+    'usage: workspace-dev test-intelligence audit-verify <bundle-prefix-or-json> or workspace-dev test-intelligence audit-verify --bundle <bundle-prefix-or-json>',
   );
 };
 
@@ -2510,6 +2602,91 @@ export const runTestIntelligenceVerifyProvenanceCommand = async (
     ].join("\n"),
   );
   return 0;
+};
+
+export const runTestIntelligenceAuditDossierCommand = async (
+  options: TestIntelligenceAuditDossierOptions,
+  sink: TestIntelligenceRunSink,
+  runtime: { env?: NodeJS.ProcessEnv } = {},
+): Promise<number> => {
+  try {
+    const defaults = await resolveAuditDossierDefaults();
+    const result = await generateAuditDossier({
+      runDir: resolve(options.runDir),
+      outputDir: resolve(options.outputDir),
+      signKeyPath: resolve(options.signKeyPath),
+      gitSha: defaults.gitSha,
+      benchmarkProtocolVersion: defaults.benchmarkProtocolVersion,
+      harnessVersion: defaults.harnessVersion,
+      ...(runtime.env?.WORKSPACE_TEST_SPACE_ICT_REGISTER_REF?.trim()
+        ? {
+            ictRegisterRef:
+              runtime.env.WORKSPACE_TEST_SPACE_ICT_REGISTER_REF.trim(),
+          }
+        : {}),
+    });
+    sink.stdout(
+      [
+        "test-intelligence audit dossier generated",
+        `  run id      : ${result.runId}`,
+        `  manifest    : ${result.manifestPath}`,
+        `  signature   : ${result.signaturePath}`,
+        `  pdf         : ${result.pdfPath}`,
+        `  merkle proof: ${result.merkleProofPath}`,
+        "",
+      ].join("\n"),
+    );
+    return 0;
+  } catch (error) {
+    sink.stderr(
+      `error: ${sanitizeErrorMessage({
+        error,
+        fallback: "Failed to generate audit dossier.",
+      })}\n`,
+    );
+    return 2;
+  }
+};
+
+export const runTestIntelligenceAuditVerifyCommand = async (
+  options: TestIntelligenceAuditVerifyOptions,
+  sink: TestIntelligenceRunSink,
+): Promise<number> => {
+  try {
+    const result = await verifyAuditDossierBundle(options.bundle);
+    if (!result.ok) {
+      sink.stderr(
+        [
+          `error: audit dossier verification failed for ${result.bundlePrefix}`,
+          ...result.failures.map(
+            (failure) =>
+              `  - [${failure.code}] ${failure.reference}: ${failure.message}`,
+          ),
+          "",
+        ].join("\n"),
+      );
+      return 2;
+    }
+    sink.stdout(
+      [
+        "test-intelligence audit dossier verified",
+        `  bundle prefix : ${result.bundlePrefix}`,
+        `  run id        : ${result.runId ?? ""}`,
+        `  merkle root   : ${result.merkleRoot ?? ""}`,
+        `  key fp sha256 : ${result.keyFingerprintSha256 ?? ""}`,
+        "",
+      ].join("\n"),
+    );
+    return 0;
+  } catch (error) {
+    sink.stderr(
+      `error: ${sanitizeErrorMessage({
+        error,
+        fallback: "Failed to verify audit dossier bundle.",
+      })}\n`,
+    );
+    return 2;
+  }
 };
 
 /**
@@ -3779,15 +3956,45 @@ Behavior:
   - Returns exit code 0 on success, 1 on operator misuse, 2 on tamper/mismatch.
 `;
 
+export const TEST_INTELLIGENCE_AUDIT_DOSSIER_HELP: string = `
+workspace-dev test-intelligence audit-dossier - generate a signed audit-dossier bundle from one run directory
+
+Usage:
+  workspace-dev test-intelligence audit-dossier --run-dir <path> --output <dir> [--sign-key <path>]
+
+Behavior:
+  - Requires a signing key via --sign-key or WORKSPACE_TEST_SPACE_AUDIT_SIGN_KEY.
+  - Writes <run-id>-audit-dossier.{json,sig,pdf,merkle.txt} into the output directory.
+  - Fails closed when required source artifacts are missing or malformed.
+  - Never copies raw prompts, screenshots, or PII into the bundle; hashes and summary counts only.
+`;
+
+export const TEST_INTELLIGENCE_AUDIT_VERIFY_HELP: string = `
+workspace-dev test-intelligence audit-verify - verify an audit-dossier bundle
+
+Usage:
+  workspace-dev test-intelligence audit-verify <bundle-prefix-or-json>
+  workspace-dev test-intelligence audit-verify --bundle <bundle-prefix-or-json>
+
+Behavior:
+  - Verifies the detached Ed25519 signature against the canonical JSON manifest.
+  - Recomputes the Merkle proof text from the manifest's provenance leaf hashes.
+  - Returns exit code 0 on success, 1 on operator misuse, 2 on tamper/mismatch.
+`;
+
 export const TEST_INTELLIGENCE_HELP: string = `
 workspace-dev test-intelligence
 
 Usage:
   workspace-dev test-intelligence run [options]
   workspace-dev test-intelligence doctor [options]
+  workspace-dev test-intelligence audit-dossier --run-dir <path> --output <dir>
+  workspace-dev test-intelligence audit-verify <bundle-prefix-or-json>
   workspace-dev test-intelligence verify-provenance <run-dir>
 
 Run "workspace-dev test-intelligence run --help" for the live-run flags.
 Run "workspace-dev test-intelligence doctor --help" for the topology doctor flags.
+Run "workspace-dev test-intelligence audit-dossier --help" for bundle generation.
+Run "workspace-dev test-intelligence audit-verify --help" for bundle verification.
 Run "workspace-dev test-intelligence verify-provenance --help" for provenance verification.
 `;

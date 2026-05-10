@@ -204,6 +204,16 @@ export {
   type ProvenanceVerificationResult,
 } from "./provenance-verify.js";
 export {
+  generateAuditDossier,
+  resolveAuditDossierDefaults,
+  type GenerateAuditDossierResult,
+} from "./audit-dossier.js";
+export {
+  verifyAuditDossierBundle,
+  type AuditDossierVerificationFailure,
+  type AuditDossierVerificationResult,
+} from "./audit-dossier-verify.js";
+export {
   buildSubprocessorRegister,
   renderSubprocessorRegisterMarkdown,
   serializeSubprocessorRegister,

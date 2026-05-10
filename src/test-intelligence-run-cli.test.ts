@@ -12,12 +12,16 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
+import { fileURLToPath } from "node:url";
 
 import {
+  parseTestIntelligenceAuditDossierArgs,
+  parseTestIntelligenceAuditVerifyArgs,
   parseTestIntelligenceVerifyProvenanceArgs,
   buildLiveVisualSidecarBundle,
   parseTestIntelligenceDoctorArgs,
   parseTestIntelligenceRunArgs,
+  runTestIntelligenceAuditVerifyCommand,
   runTestIntelligenceDoctorCommand,
   runTestIntelligenceCommand,
   runTestIntelligenceVerifyProvenanceCommand,
@@ -3279,6 +3283,61 @@ test("parseTestIntelligenceVerifyProvenanceArgs: accepts explicit flag form", ()
     "/tmp/run-dir",
   ]);
   assert.equal(parsed.runDir, "/tmp/run-dir");
+});
+
+test("parseTestIntelligenceAuditDossierArgs: reads run dir, output, and env signing key", () => {
+  const parsed = parseTestIntelligenceAuditDossierArgs(
+    ["--run-dir", "/tmp/run", "--output", "/tmp/out"],
+    { WORKSPACE_TEST_SPACE_AUDIT_SIGN_KEY: "/tmp/key.txt" },
+  );
+  assert.deepEqual(parsed, {
+    runDir: "/tmp/run",
+    outputDir: "/tmp/out",
+    signKeyPath: "/tmp/key.txt",
+  });
+});
+
+test("parseTestIntelligenceAuditVerifyArgs: accepts positional bundle form", () => {
+  const parsed = parseTestIntelligenceAuditVerifyArgs(["/tmp/bundle.json"]);
+  assert.equal(parsed.bundle, "/tmp/bundle.json");
+});
+
+test("runTestIntelligenceAuditVerifyCommand: returns 0 for the fixture bundle", async () => {
+  const { sink, stdout, stderr } = collectingSink();
+  const fixtureBundle = path.resolve(
+    path.dirname(fileURLToPath(import.meta.url)),
+    "..",
+    "fixtures",
+    "test-intelligence",
+    "audit-dossiers",
+    "expected-bundle",
+    "ti-cli-1778405189341-audit-dossier.json",
+  );
+  const exitCode = await runTestIntelligenceAuditVerifyCommand(
+    { bundle: fixtureBundle },
+    sink,
+  );
+  assert.equal(exitCode, 0);
+  assert.match(stdout.join(""), /audit dossier verified/i);
+  assert.equal(stderr.length, 0);
+});
+
+test("runTestIntelligenceAuditVerifyCommand: invalid manifest shape returns exit 2 instead of throwing", async () => {
+  const tempDir = await mkdtemp(path.join(os.tmpdir(), "ti-audit-cli-invalid-"));
+  const { sink, stdout, stderr } = collectingSink();
+  try {
+    const bundlePath = path.join(tempDir, "bundle.json");
+    await writeFile(bundlePath, "{}\n", "utf8");
+    const exitCode = await runTestIntelligenceAuditVerifyCommand(
+      { bundle: bundlePath },
+      sink,
+    );
+    assert.equal(exitCode, 2);
+    assert.equal(stdout.length, 0);
+    assert.match(stderr.join(""), /manifest_unparseable/i);
+  } finally {
+    await rm(tempDir, { recursive: true, force: true });
+  }
 });
 
 test("runTestIntelligenceVerifyProvenanceCommand: returns 0 for a valid provenance bundle", async () => {
