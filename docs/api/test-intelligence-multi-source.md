@@ -4,7 +4,7 @@ This document is the public API reference for the Wave 4 multi-source
 test-intelligence contracts, HTTP routes, and operator configuration options
 introduced in Issues #1431–#1439.
 
-**Contract version:** `TEST_INTELLIGENCE_CONTRACT_VERSION = "1.22.0"`<br>
+**Contract version:** `TEST_INTELLIGENCE_CONTRACT_VERSION = "1.23.0"`<br>
 **Package contract version:** `CONTRACT_VERSION = "4.60.0"`<br>
 **Authoritative surface:** `CONTRACT_CHANGELOG.md` §4.11.0–4.60.0
 

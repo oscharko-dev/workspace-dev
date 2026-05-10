@@ -30,6 +30,12 @@ import {
   computeBrierScore,
   type ReliabilityDiagramBin,
 } from "./calibration-metrics.js";
+import {
+  LOCALE_CALIBRATION_FALLBACK_KEY,
+  SUPPORTED_LOCALES,
+  type LocaleCalibrationKey,
+  type SupportedLocale,
+} from "./locale-calibration.js";
 
 export const CASE_CONFIDENCE_CURVE_SCHEMA_VERSION = "1.0.0" as const;
 export const CASE_CONFIDENCE_CURVE_ARTIFACT_FILENAME =
@@ -47,6 +53,24 @@ export type CaseConfidenceCalibrationSource =
 export type CaseConfidenceCalibrationEvaluationSplit =
   | "held_out"
   | "all_samples_fallback";
+
+/**
+ * Per-locale Platt-curve entry stored inside `CaseConfidenceCurveArtifact.localeCurves`.
+ *
+ * When a locale's sample count falls below `CALIBRATION_MIN_SAMPLE_FLOOR` the
+ * entry mirrors the aggregate (default) curve and `fallbackToDefault` is `true`
+ * so callers can distinguish a real per-locale fit from an inherited one.
+ */
+export interface LocaleCurveEntry {
+  readonly intercept: number;
+  readonly slope: number;
+  readonly sampleCount: number;
+  readonly trainingBrierScore: number;
+  readonly eceByRiskCategory: Readonly<Record<TestCaseRiskCategory, number>>;
+  readonly sampleCountByRiskCategory: Readonly<Record<TestCaseRiskCategory, number>>;
+  /** True when this locale's sample count was below the minimum floor and the default curve was copied. */
+  readonly fallbackToDefault: boolean;
+}
 
 export interface CaseConfidenceCurveArtifact {
   readonly schemaVersion: typeof CASE_CONFIDENCE_CURVE_SCHEMA_VERSION;
@@ -70,6 +94,27 @@ export interface CaseConfidenceCurveArtifact {
   readonly eceThresholdByRiskCategory: Readonly<
     Record<TestCaseRiskCategory, number>
   >;
+  /**
+   * Per-locale Platt-curve fits (Issue #2117).
+   *
+   * All `LocaleCalibrationKey` entries are always present (including locales
+   * with zero samples), so consumers can iterate without a has-key guard.
+   * `"default"` holds the aggregate curve (`fallbackToDefault: false`).
+   * Each `SupportedLocale` entry has `fallbackToDefault: true` when the locale
+   * had fewer than `CALIBRATION_MIN_SAMPLE_FLOOR` samples and the aggregate
+   * curve was copied, or `fallbackToDefault: false` when a genuine per-locale
+   * Platt fit was run.  In both cases `sampleCount` mirrors the corresponding
+   * `localeSampleCount` entry so the two maps are always consistent.
+   */
+  readonly localeCurves: Readonly<Record<LocaleCalibrationKey, LocaleCurveEntry>>;
+  /**
+   * Per-locale ECE hard threshold (Issue #2107, Issue #2117).
+   * Fixed at 0.10 — independent of risk category — for the per-locale gate.
+   * Source: acceptance criteria §5 of Issue #2117.
+   */
+  readonly perLocaleEceThreshold: number;
+  /** Sample count broken down by locale key (includes "default" = total). */
+  readonly localeSampleCount: Readonly<Record<LocaleCalibrationKey, number>>;
 }
 
 export type CalibrationReport = CaseConfidenceCurveArtifact;
@@ -105,6 +150,8 @@ interface HistoricalCalibrationSample {
   readonly riskCategory: TestCaseRiskCategory;
   readonly rawScore: number;
   readonly label: 0 | 1;
+  /** Resolved locale for the sample, or "unknown" when not determinable (Issue #2117). */
+  readonly locale: SupportedLocale | "unknown";
 }
 
 export interface CaseConfidenceReliabilityDiagramArtifact {
@@ -130,6 +177,13 @@ export interface LoadCaseConfidenceCalibrationInput {
   readonly datasetRoot: string;
   readonly generatedAt: string;
   readonly currentRunId?: string;
+  /**
+   * Optional mapping of Figma `screenId` → `SupportedLocale` used to
+   * resolve per-locale Platt curves (Issue #2117).  When absent, all samples
+   * receive locale `"unknown"` and only the aggregate (default) curve is fit.
+   * Additive: existing callers that omit this field continue to work unchanged.
+   */
+  readonly screenLocaleMap?: ReadonlyMap<string, SupportedLocale>;
 }
 
 export interface LoadedCaseConfidenceCalibration {
@@ -138,6 +192,18 @@ export interface LoadedCaseConfidenceCalibration {
   readonly artifactPath: string;
   readonly reliabilityArtifactPaths: Readonly<
     Record<TestCaseRiskCategory, string>
+  >;
+  /**
+   * Paths to per-locale reliability diagram artifacts (Issue #2117).
+   * Present whenever `screenLocaleMap` is supplied in the load input
+   * (even if no locale met the minimum sample floor — the map may be empty).
+   * Absent when `screenLocaleMap` was not provided, preserving backward
+   * compatibility for callers that omit the field.
+   * Keys are only present for locales where a reliability diagram was
+   * successfully written; under-represented locales are omitted from the map.
+   */
+  readonly localeReliabilityArtifactPaths?: Readonly<
+    Partial<Record<LocaleCalibrationKey, string>>
   >;
 }
 
@@ -152,6 +218,52 @@ const clamp01 = (value: number): number => {
 };
 
 const sigmoid = (value: number): number => 1 / (1 + Math.exp(-value));
+
+/** Fixed per-locale ECE threshold per Issue #2107 acceptance criteria §5 of Issue #2117. */
+const PER_LOCALE_ECE_THRESHOLD = 0.10 as const;
+
+const buildDefaultLocaleCurveEntry = (input: {
+  intercept: number;
+  slope: number;
+  trainingBrierScore: number;
+}): LocaleCurveEntry => ({
+  intercept: input.intercept,
+  slope: input.slope,
+  sampleCount: 0,
+  trainingBrierScore: input.trainingBrierScore,
+  eceByRiskCategory: Object.fromEntries(
+    CALIBRATION_RISK_CATEGORIES.map((rc) => [rc, 0]),
+  ) as Record<TestCaseRiskCategory, number>,
+  sampleCountByRiskCategory: Object.fromEntries(
+    CALIBRATION_RISK_CATEGORIES.map((rc) => [rc, 0]),
+  ) as Record<TestCaseRiskCategory, number>,
+  fallbackToDefault: false,
+});
+
+const buildDefaultLocaleCurves = (input: {
+  intercept: number;
+  slope: number;
+  trainingBrierScore: number;
+}): Readonly<Record<LocaleCalibrationKey, LocaleCurveEntry>> => {
+  const fallbackEntry: LocaleCurveEntry = {
+    ...buildDefaultLocaleCurveEntry(input),
+    fallbackToDefault: false,
+  };
+  const localeEntries = SUPPORTED_LOCALES.map((locale) => [
+    locale,
+    { ...buildDefaultLocaleCurveEntry(input), fallbackToDefault: true },
+  ]);
+  return Object.fromEntries([
+    [LOCALE_CALIBRATION_FALLBACK_KEY, fallbackEntry],
+    ...localeEntries,
+  ]) as Record<LocaleCalibrationKey, LocaleCurveEntry>;
+};
+
+const buildDefaultLocaleSampleCount = (): Readonly<Record<LocaleCalibrationKey, number>> =>
+  Object.fromEntries([
+    [LOCALE_CALIBRATION_FALLBACK_KEY, 0],
+    ...SUPPORTED_LOCALES.map((locale) => [locale, 0]),
+  ]) as Record<LocaleCalibrationKey, number>;
 
 const defaultCurve = (input: {
   datasetId: string;
@@ -177,6 +289,13 @@ const defaultCurve = (input: {
     CALIBRATION_RISK_CATEGORIES.map((riskCategory) => [riskCategory, 0]),
   ) as Record<TestCaseRiskCategory, number>,
   eceThresholdByRiskCategory: CALIBRATION_ECE_THRESHOLDS,
+  localeCurves: buildDefaultLocaleCurves({
+    intercept: -2.25,
+    slope: 5.5,
+    trainingBrierScore: round6(0.0625),
+  }),
+  perLocaleEceThreshold: PER_LOCALE_ECE_THRESHOLD,
+  localeSampleCount: buildDefaultLocaleSampleCount(),
 });
 
 const caseKey = (runId: string, testCaseId: string): string =>
@@ -490,31 +609,13 @@ const buildReliabilityArtifacts = (input: {
   };
 };
 
-const fitPlattCurve = (input: {
-  readonly datasetId: string;
-  readonly generatedAt: string;
-  readonly source: Extract<
-    CaseConfidenceCalibrationSource,
-    "manual_labels" | "historical_policy_fallback"
-  >;
-  readonly samples: readonly HistoricalCalibrationSample[];
-}): CaseConfidenceCurveArtifact => {
-  const { sorted, heldOut, training } = splitCalibrationSamples(input.samples);
-  const trainingPositives = training.filter((sample) => sample.label === 1).length;
-  const trainingNegatives = training.length - trainingPositives;
-  if (trainingPositives === 0 || trainingNegatives === 0) {
-    return {
-      ...defaultCurve({
-        datasetId: input.datasetId,
-        generatedAt: input.generatedAt,
-      }),
-      calibrationSource: input.source,
-      sampleCount: sorted.length,
-      positiveCount: sorted.filter((sample) => sample.label === 1).length,
-      negativeCount: sorted.filter((sample) => sample.label === 0).length,
-    };
-  }
-
+/**
+ * Run gradient-descent Platt scaling on a training set.
+ * Returns `{ intercept, slope }` only — caller wraps into the artifact.
+ */
+const gradientDescentPlatt = (
+  training: readonly HistoricalCalibrationSample[],
+): { intercept: number; slope: number } => {
   let intercept = -2;
   let slope = 4;
   const learningRate = 0.35;
@@ -530,11 +631,149 @@ const fitPlattCurve = (input: {
     intercept -= (learningRate * interceptGradient) / training.length;
     slope -= (learningRate * slopeGradient) / training.length;
   }
+  return { intercept: round6(intercept), slope: round6(slope) };
+};
 
-  const curve = {
-    intercept: round6(intercept),
-    slope: round6(slope),
+/**
+ * Fit a per-locale `LocaleCurveEntry` from a locale-specific sample slice.
+ * When the slice is below `CALIBRATION_MIN_SAMPLE_FLOOR` or lacks both
+ * positives and negatives, `fallbackToDefault` is set and the default curve
+ * parameters are used.
+ */
+const fitLocaleEntry = (
+  localeSamples: readonly HistoricalCalibrationSample[],
+  defaultCurveParams: { intercept: number; slope: number; trainingBrierScore: number },
+): LocaleCurveEntry => {
+  if (localeSamples.length < CALIBRATION_MIN_SAMPLE_FLOOR) {
+    return {
+      intercept: defaultCurveParams.intercept,
+      slope: defaultCurveParams.slope,
+      sampleCount: localeSamples.length,
+      trainingBrierScore: defaultCurveParams.trainingBrierScore,
+      eceByRiskCategory: Object.fromEntries(
+        CALIBRATION_RISK_CATEGORIES.map((rc) => [rc, 0]),
+      ) as Record<TestCaseRiskCategory, number>,
+      sampleCountByRiskCategory: Object.fromEntries(
+        CALIBRATION_RISK_CATEGORIES.map((rc) => [
+          rc,
+          localeSamples.filter((s) => s.riskCategory === rc).length,
+        ]),
+      ) as Record<TestCaseRiskCategory, number>,
+      fallbackToDefault: true,
+    };
+  }
+  const { sorted: localeSorted, training: localeTraining } =
+    splitCalibrationSamples(localeSamples);
+  const positives = localeTraining.filter((s) => s.label === 1).length;
+  const negatives = localeTraining.length - positives;
+  if (positives === 0 || negatives === 0) {
+    return {
+      intercept: defaultCurveParams.intercept,
+      slope: defaultCurveParams.slope,
+      sampleCount: localeSorted.length,
+      trainingBrierScore: defaultCurveParams.trainingBrierScore,
+      eceByRiskCategory: Object.fromEntries(
+        CALIBRATION_RISK_CATEGORIES.map((rc) => [rc, 0]),
+      ) as Record<TestCaseRiskCategory, number>,
+      sampleCountByRiskCategory: Object.fromEntries(
+        CALIBRATION_RISK_CATEGORIES.map((rc) => [
+          rc,
+          localeSorted.filter((s) => s.riskCategory === rc).length,
+        ]),
+      ) as Record<TestCaseRiskCategory, number>,
+      fallbackToDefault: true,
+    };
+  }
+  const { intercept, slope } = gradientDescentPlatt(localeTraining);
+  const localeCurveParams = { intercept, slope };
+  const trainingBrierScore = computeBrierScore(
+    calibrateSamples(localeTraining, localeCurveParams),
+  );
+  const reliabilityResult = buildReliabilityArtifacts({
+    datasetId: "locale-fit",
+    generatedAt: "",
+    evaluationSplit: "all_samples_fallback",
+    evaluationSamples: calibrateSamples(localeSorted, localeCurveParams),
+  });
+  return {
+    intercept,
+    slope,
+    sampleCount: localeSorted.length,
+    trainingBrierScore,
+    eceByRiskCategory: reliabilityResult.eceByRiskCategory,
+    sampleCountByRiskCategory: reliabilityResult.sampleCountByRiskCategory,
+    fallbackToDefault: false,
   };
+};
+
+const fitPlattCurve = (input: {
+  readonly datasetId: string;
+  readonly generatedAt: string;
+  readonly source: Extract<
+    CaseConfidenceCalibrationSource,
+    "manual_labels" | "historical_policy_fallback"
+  >;
+  readonly samples: readonly HistoricalCalibrationSample[];
+}): CaseConfidenceCurveArtifact => {
+  const { sorted, heldOut, training } = splitCalibrationSamples(input.samples);
+  const trainingPositives = training.filter((sample) => sample.label === 1).length;
+  const trainingNegatives = training.length - trainingPositives;
+
+  // Build aggregate local sample count per locale
+  const localeSampleCountMap = new Map<LocaleCalibrationKey, number>();
+  localeSampleCountMap.set(LOCALE_CALIBRATION_FALLBACK_KEY, sorted.length);
+  for (const locale of SUPPORTED_LOCALES) {
+    localeSampleCountMap.set(
+      locale,
+      sorted.filter((s) => s.locale === locale).length,
+    );
+  }
+  const localeSampleCount = Object.fromEntries(
+    localeSampleCountMap.entries(),
+  ) as Record<LocaleCalibrationKey, number>;
+
+  if (trainingPositives === 0 || trainingNegatives === 0) {
+    // Rebuild localeCurves so each entry's sampleCount mirrors localeSampleCount
+    // rather than keeping the all-zeros default.  This keeps the artifact
+    // internally consistent: a consumer can sum localeCurves[key].sampleCount
+    // and arrive at the same total as localeSampleCount.  All entries carry
+    // fallbackToDefault: true (locale) / false (aggregate) to signal that no
+    // genuine per-locale Platt fit was attempted (Issue #2117).
+    const defaultParams = { intercept: -2.25, slope: 5.5, trainingBrierScore: round6(0.0625) };
+    const earlyReturnLocaleCurves: Record<LocaleCalibrationKey, LocaleCurveEntry> = {
+      [LOCALE_CALIBRATION_FALLBACK_KEY]: {
+        ...buildDefaultLocaleCurveEntry(defaultParams),
+        sampleCount: localeSampleCount[LOCALE_CALIBRATION_FALLBACK_KEY],
+        fallbackToDefault: false,
+      },
+      ...Object.fromEntries(
+        SUPPORTED_LOCALES.map((locale) => [
+          locale,
+          {
+            ...buildDefaultLocaleCurveEntry(defaultParams),
+            sampleCount: localeSampleCount[locale],
+            fallbackToDefault: true,
+          } satisfies LocaleCurveEntry,
+        ]),
+      ),
+    } as Record<LocaleCalibrationKey, LocaleCurveEntry>;
+    return {
+      ...defaultCurve({
+        datasetId: input.datasetId,
+        generatedAt: input.generatedAt,
+      }),
+      calibrationSource: input.source,
+      sampleCount: sorted.length,
+      positiveCount: sorted.filter((sample) => sample.label === 1).length,
+      negativeCount: sorted.filter((sample) => sample.label === 0).length,
+      localeCurves: earlyReturnLocaleCurves,
+      localeSampleCount,
+    };
+  }
+
+  const { intercept, slope } = gradientDescentPlatt(training);
+  const curve = { intercept, slope };
+
   const evaluationSplit = heldOut.length > 0 ? "held_out" : "all_samples_fallback";
   const reliabilityArtifacts = buildReliabilityArtifacts({
     datasetId: input.datasetId,
@@ -542,6 +781,36 @@ const fitPlattCurve = (input: {
     evaluationSplit,
     evaluationSamples: calibrateSamples(heldOut.length > 0 ? heldOut : sorted, curve),
   });
+
+  const aggregateTrainingBrierScore = computeBrierScore(calibrateSamples(training, curve));
+
+  // Build per-locale curves using the same gradient-descent pattern.
+  const defaultCurveParams = {
+    intercept: curve.intercept,
+    slope: curve.slope,
+    trainingBrierScore: aggregateTrainingBrierScore,
+  };
+  const defaultLocaleEntry: LocaleCurveEntry = {
+    intercept: curve.intercept,
+    slope: curve.slope,
+    sampleCount: sorted.length,
+    trainingBrierScore: aggregateTrainingBrierScore,
+    eceByRiskCategory: reliabilityArtifacts.eceByRiskCategory,
+    sampleCountByRiskCategory: reliabilityArtifacts.sampleCountByRiskCategory,
+    fallbackToDefault: false,
+  };
+  const localeEntries: Array<[string, LocaleCurveEntry]> = [
+    [LOCALE_CALIBRATION_FALLBACK_KEY, defaultLocaleEntry],
+    ...SUPPORTED_LOCALES.map((locale): [string, LocaleCurveEntry] => {
+      const localeSamples = sorted.filter((s) => s.locale === locale);
+      return [locale, fitLocaleEntry(localeSamples, defaultCurveParams)];
+    }),
+  ];
+  const localeCurves = Object.fromEntries(localeEntries) as Record<
+    LocaleCalibrationKey,
+    LocaleCurveEntry
+  >;
+
   return {
     schemaVersion: CASE_CONFIDENCE_CURVE_SCHEMA_VERSION,
     generatedAt: input.generatedAt,
@@ -552,13 +821,16 @@ const fitPlattCurve = (input: {
     negativeCount: sorted.filter((sample) => sample.label === 0).length,
     intercept: curve.intercept,
     slope: curve.slope,
-    trainingBrierScore: computeBrierScore(calibrateSamples(training, curve)),
+    trainingBrierScore: aggregateTrainingBrierScore,
     heldOutSampleCount: heldOut.length,
     calibrationEvaluationSplit: evaluationSplit,
     minimumRiskCategorySampleFloor: CALIBRATION_MIN_SAMPLE_FLOOR,
     heldOutSampleCountByRiskCategory: reliabilityArtifacts.sampleCountByRiskCategory,
     eceByRiskCategory: reliabilityArtifacts.eceByRiskCategory,
     eceThresholdByRiskCategory: CALIBRATION_ECE_THRESHOLDS,
+    localeCurves,
+    perLocaleEceThreshold: PER_LOCALE_ECE_THRESHOLD,
+    localeSampleCount,
     ...(heldOut.length > 0
       ? { heldOutBrierScore: computeBrierScore(calibrateSamples(heldOut, curve)) }
       : {}),
@@ -689,10 +961,26 @@ const buildAcceptedAnchors = (
   return anchors;
 };
 
+/**
+ * Resolve the locale for a single test case using its first `figmaTraceRefs`
+ * screen and the caller-supplied map.  Returns `"unknown"` when the map is
+ * absent or the screen id has no entry.
+ */
+const deriveLocaleForCase = (
+  testCase: GeneratedTestCase,
+  screenLocaleMap: ReadonlyMap<string, SupportedLocale> | undefined,
+): SupportedLocale | "unknown" => {
+  if (screenLocaleMap === undefined) return "unknown";
+  const firstRef = testCase.figmaTraceRefs[0];
+  if (firstRef === undefined) return "unknown";
+  return screenLocaleMap.get(firstRef.screenId) ?? "unknown";
+};
+
 const buildHistoricalCalibrationSamples = (input: {
   readonly snapshots: readonly HistoricalRunSnapshot[];
   readonly explicitLabels?: LabelManifest;
   readonly acceptedAnchors: readonly HistoricalAcceptedAnchor[];
+  readonly screenLocaleMap?: ReadonlyMap<string, SupportedLocale>;
 }): readonly HistoricalCalibrationSample[] => {
   const out: HistoricalCalibrationSample[] = [];
   for (const snapshot of input.snapshots) {
@@ -723,6 +1011,7 @@ const buildHistoricalCalibrationSamples = (input: {
         riskCategory: testCase.riskCategory,
         rawScore: components.rawScore,
         label: label === "accepted" ? 1 : 0,
+        locale: deriveLocaleForCase(testCase, input.screenLocaleMap),
       });
     }
   }
@@ -757,6 +1046,89 @@ const writeReliabilityDiagramArtifacts = async (
     await writeFile(tmpPath, `${canonicalJson(diagram)}\n`, "utf8");
     await rename(tmpPath, artifactPath);
     paths[diagram.riskCategory] = artifactPath;
+  }
+  return paths;
+};
+
+/**
+ * Per-locale reliability diagram artifact.
+ * Mirrors `CaseConfidenceReliabilityDiagramArtifact` but carries a
+ * `locale` discriminator so consumers can load by locale key.
+ * File name: `case-confidence-reliability-locale-<locale>.json`.
+ */
+export interface CaseConfidenceLocaleReliabilityDiagramArtifact {
+  readonly schemaVersion: typeof CASE_CONFIDENCE_RELIABILITY_DIAGRAM_SCHEMA_VERSION;
+  readonly generatedAt: string;
+  readonly datasetId: string;
+  readonly locale: LocaleCalibrationKey;
+  readonly evaluationSplit: CaseConfidenceCalibrationEvaluationSplit;
+  readonly minimumSampleFloor: number;
+  readonly sampleCount: number;
+  readonly pluginEce: number;
+  readonly debiasedEce: number;
+  readonly bins: ReadonlyArray<ReliabilityDiagramBin>;
+}
+
+/**
+ * Write one per-locale reliability diagram artifact per locale key.
+ * Only locales whose sample count exceeds zero are emitted.
+ */
+const writeLocaleReliabilityDiagramArtifacts = async (
+  datasetRoot: string,
+  input: {
+    readonly datasetId: string;
+    readonly generatedAt: string;
+    readonly localeCurves: Readonly<Record<LocaleCalibrationKey, LocaleCurveEntry>>;
+    readonly samples: readonly HistoricalCalibrationSample[];
+    readonly aggregateCurve: Pick<CaseConfidenceCurveArtifact, "intercept" | "slope">;
+  },
+): Promise<Readonly<Partial<Record<LocaleCalibrationKey, string>>>> => {
+  const artifactDir = dirname(resolveCaseConfidenceCurveArtifactPath(datasetRoot));
+  await mkdir(artifactDir, { recursive: true });
+  const paths: Partial<Record<LocaleCalibrationKey, string>> = {};
+
+  const localeKeys: LocaleCalibrationKey[] = [
+    LOCALE_CALIBRATION_FALLBACK_KEY,
+    ...SUPPORTED_LOCALES,
+  ];
+
+  for (const localeKey of localeKeys) {
+    const localeSamples =
+      localeKey === LOCALE_CALIBRATION_FALLBACK_KEY
+        ? input.samples
+        : input.samples.filter((s) => s.locale === localeKey);
+    if (localeSamples.length === 0) continue;
+
+    const localeCurveEntry = input.localeCurves[localeKey];
+    const curvePick = localeCurveEntry.fallbackToDefault
+      ? input.aggregateCurve
+      : localeCurveEntry;
+    const calibrated = calibrateSamples(localeSamples, curvePick);
+    const reliability = buildReliabilityDiagram(
+      calibrated.map((s) => ({ confidence: s.confidence, label: s.label })),
+    );
+
+    const artifact: CaseConfidenceLocaleReliabilityDiagramArtifact = {
+      schemaVersion: CASE_CONFIDENCE_RELIABILITY_DIAGRAM_SCHEMA_VERSION,
+      generatedAt: input.generatedAt,
+      datasetId: input.datasetId,
+      locale: localeKey,
+      evaluationSplit: "all_samples_fallback",
+      minimumSampleFloor: CALIBRATION_MIN_SAMPLE_FLOOR,
+      sampleCount: reliability.sampleCount,
+      pluginEce: reliability.pluginEce,
+      debiasedEce: reliability.debiasedEce,
+      bins: reliability.bins,
+    };
+
+    const artifactPath = join(
+      artifactDir,
+      `case-confidence-reliability-locale-${localeKey}.json`,
+    );
+    const tmpPath = `${artifactPath}.${randomUUID()}.tmp`;
+    await writeFile(tmpPath, `${canonicalJson(artifact)}\n`, "utf8");
+    await rename(tmpPath, artifactPath);
+    paths[localeKey] = artifactPath;
   }
   return paths;
 };
@@ -803,6 +1175,7 @@ export const loadCaseConfidenceCalibration = async (
     snapshots,
     acceptedAnchors,
     ...(explicitLabels !== undefined ? { explicitLabels } : {}),
+    ...(input.screenLocaleMap !== undefined ? { screenLocaleMap: input.screenLocaleMap } : {}),
   });
   const curve =
     samples.length === 0
@@ -826,11 +1199,27 @@ export const loadCaseConfidenceCalibration = async (
     reliabilityArtifacts.diagrams,
   );
   const artifactPath = await writeCurveArtifact(datasetRoot, curve);
+
+  // Per-locale reliability artifacts — only when locale information was supplied.
+  const localeReliabilityArtifactPaths: Readonly<Partial<Record<LocaleCalibrationKey, string>>> | undefined =
+    input.screenLocaleMap !== undefined
+      ? await writeLocaleReliabilityDiagramArtifacts(datasetRoot, {
+          datasetId,
+          generatedAt: input.generatedAt,
+          localeCurves: curve.localeCurves,
+          samples,
+          aggregateCurve: { intercept: curve.intercept, slope: curve.slope },
+        })
+      : undefined;
+
   return {
     curve,
     acceptedAnchors,
     artifactPath,
     reliabilityArtifactPaths,
+    ...(localeReliabilityArtifactPaths !== undefined
+      ? { localeReliabilityArtifactPaths }
+      : {}),
   };
 };
 
@@ -843,6 +1232,14 @@ export const applyCaseConfidenceCalibration = (input: {
   readonly oracleReport?: TestDataOracleReport;
   readonly acceptedAnchors?: readonly HistoricalAcceptedAnchor[];
   readonly excludedRunId?: string;
+  /**
+   * Optional mapping of Figma `screenId` → `SupportedLocale` (Issue #2117).
+   * When present, the per-locale Platt curve is selected for each test case
+   * using its first `figmaTraceRefs` screen.  Falls back to the aggregate
+   * (default) curve for unseen locales.  Additive: omitting this field leaves
+   * existing callers unchanged.
+   */
+  readonly screenLocaleMap?: ReadonlyMap<string, SupportedLocale>;
 }): GeneratedTestCaseList => ({
   ...input.list,
   testCases: input.list.testCases.map((testCase) => {
@@ -865,9 +1262,21 @@ export const applyCaseConfidenceCalibration = (input: {
         ? { excludedRunId: input.excludedRunId }
         : {}),
     });
+
+    // Select per-locale curve when a locale map is provided (Issue #2117).
+    // Falls back to the aggregate (default) curve for unseen or unknown locales.
+    const selectedCurve = (() => {
+      if (input.screenLocaleMap === undefined) return input.curve;
+      const locale = deriveLocaleForCase(testCase, input.screenLocaleMap);
+      if (locale === "unknown") return input.curve;
+      const localeEntry = input.curve.localeCurves[locale];
+      if (localeEntry.fallbackToDefault) return input.curve;
+      return localeEntry;
+    })();
+
     return {
       ...testCase,
-      confidence: applyCurve(confidenceComponents.rawScore, input.curve),
+      confidence: applyCurve(confidenceComponents.rawScore, selectedCurve),
       confidenceComponents,
     };
   }),

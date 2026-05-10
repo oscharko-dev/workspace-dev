@@ -162,7 +162,7 @@ export interface TestIntelligenceTransferPrincipal {
 }
 
 /** Contract version for the opt-in test-intelligence surface. */
-export const TEST_INTELLIGENCE_CONTRACT_VERSION = "1.22.0" as const;
+export const TEST_INTELLIGENCE_CONTRACT_VERSION = "1.23.0" as const;
 
 /**
  * Schema version for generated test case payloads.
@@ -6195,12 +6195,34 @@ export interface InferredBusinessObject {
   sourceRefs?: TestIntentSourceRef[];
 }
 
+/**
+ * The six EU-banking locales supported by per-locale Platt-curve calibration
+ * (Issue #2117).  Referenced by `BusinessTestIntentScreen.locale` so that
+ * consumers can correlate per-screen locale with the per-locale calibration
+ * curves without importing from the test-intelligence submodule.
+ */
+export type SupportedLocale =
+  | "DE-DE"
+  | "DE-AT"
+  | "DE-CH"
+  | "EN-IE"
+  | "FR-FR"
+  | "IT-IT";
+
 /** Per-screen slice of the intent. */
 export interface BusinessTestIntentScreen {
   screenId: string;
   screenName: string;
   screenPath?: string;
   trace: IntentTraceRef;
+  /**
+   * Optional locale tag for this screen (Issue #2117).  When present it is
+   * one of the six `SupportedLocale` codes; absent for screens whose locale
+   * could not be resolved at the import stage.  Consumers derive the locale
+   * using `deriveLocaleFromBusinessTestIntentScreen` from
+   * `locale-calibration.ts` when they need a best-effort value.
+   */
+  locale?: SupportedLocale;
 }
 
 /**
