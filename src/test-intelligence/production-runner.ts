@@ -122,8 +122,11 @@ import {
   type VisualSidecarResult,
   type WorkflowTopology,
   DEFAULT_TENANT_SCOPE,
+  REGION_ATTESTATION_REPORT_ARTIFACT_FILENAME,
   RISK_RANKING_ARTIFACT_FILENAME,
+  SUPPORTED_REGION_ATTESTATION_HOSTING_REGIONS,
   WORKFLOW_TOPOLOGY_ARTIFACT_FILENAME,
+  type RegionAttestationArtifactEntry,
 } from "../contracts/index.js";
 import { deriveGeneratedTestCaseClassification } from "./test-case-classification.js";
 import { sanitizeErrorMessage } from "../error-sanitization.js";
@@ -175,6 +178,14 @@ import {
   resolveFinOpsFixtureId,
 } from "./finops-slo.js";
 import { computePerSourceCostBreakdownHashFromReport } from "./per-source-cost.js";
+import {
+  assertAllowedRegionAttestations,
+  buildArtifactRegionAttestations,
+  buildRegionAttestationReport,
+  resolveRegionAttestationObservation,
+  writeRegionAttestationReport,
+  type RegionAttestationObservation,
+} from "./region-attestation.ts";
 import {
   AGENT_PARTICIPATION_ARTIFACT_FILENAME,
   buildAgentParticipationArtifact,
@@ -1351,6 +1362,9 @@ const buildRoleCostAttribution = (input: {
     imageBytes: 0,
     durationMs: 0,
     estimatedCost: entry.costMinorUnits,
+    ...(entry.regionAttestation !== undefined
+      ? { regionAttestation: entry.regionAttestation }
+      : {}),
   };
 };
 
@@ -1371,6 +1385,30 @@ const buildVisualRoleCostAttribution = (input: {
     durationMs: entry.durationMs,
     estimatedCost: entry.estimatedCost,
   };
+};
+
+const ALL_REGION_SOURCES: readonly AgentSourceLabel[] = [
+  "generator",
+  "judge_primary",
+  "judge_secondary",
+  "coverage_planner",
+  "risk_ranker",
+  "adversarial_critic",
+  "repair_planner",
+  "visual_primary",
+  "visual_fallback",
+] as const;
+
+const collectRegionAttestationsForSources = (input: {
+  observations: readonly RegionAttestationObservation[];
+  sources?: readonly AgentSourceLabel[];
+}): readonly RegionAttestationObservation[] => {
+  const allowedSources = new Set<AgentSourceLabel>(
+    input.sources ?? ALL_REGION_SOURCES,
+  );
+  return input.observations.filter((observation) =>
+    allowedSources.has(observation.sourceLabel),
+  );
 };
 
 const splitVisualSidecarAttempts = (
@@ -2352,9 +2390,74 @@ export const runFigmaToQcTestCases = async (
     ),
   );
   const finopsRecorder = createFinOpsUsageRecorder();
+  const regionAttestationObservations: RegionAttestationObservation[] = [];
   const artifactDir =
     input.artifactDir ??
     join(input.outputRoot, "jobs", input.jobId, "test-intelligence");
+
+  const observeRegionAttestation = async (args: {
+    sourceLabel: AgentSourceLabel;
+    deploymentId: string;
+    endpointReference: string;
+    observedAtUtc?: string;
+  }): Promise<RegionAttestationObservation> => {
+    const observation = await resolveRegionAttestationObservation({
+      sourceLabel: args.sourceLabel,
+      deploymentId: args.deploymentId,
+      endpointReference: args.endpointReference,
+      observedAtUtc: args.observedAtUtc ?? new Date().toISOString(),
+    });
+    regionAttestationObservations.push(observation);
+    return observation;
+  };
+
+  const recordFinopsGatewayAttempt = async (args: {
+    role: Parameters<typeof finopsRecorder.recordAttempt>[0]["role"];
+    source: AgentSourceLabel;
+    deployment: string;
+    endpointReference: string;
+    durationMs: number;
+    result: LlmGenerationResult;
+    attemptId?: string;
+    attributionMode?: "primary" | "audit";
+    circuitBreakerState?: Parameters<
+      typeof finopsRecorder.recordAttempt
+    >[0]["circuitBreakerState"];
+    fallback?: boolean;
+    liveSmoke?: boolean;
+    imageBytes?: number;
+    modelRevision?: string;
+    tierLabel?: Parameters<typeof finopsRecorder.recordAttempt>[0]["tierLabel"];
+  }): Promise<void> => {
+    const regionObservation = await observeRegionAttestation({
+      sourceLabel: args.source,
+      deploymentId: args.deployment,
+      endpointReference: args.endpointReference,
+    });
+    finopsRecorder.recordAttempt({
+      role: args.role,
+      source: args.source,
+      ...(args.attemptId !== undefined ? { attemptId: args.attemptId } : {}),
+      deployment: args.deployment,
+      durationMs: args.durationMs,
+      result: args.result,
+      ...(args.attributionMode !== undefined
+        ? { attributionMode: args.attributionMode }
+        : {}),
+      ...(args.circuitBreakerState !== undefined
+        ? { circuitBreakerState: args.circuitBreakerState }
+        : {}),
+      ...(args.fallback !== undefined ? { fallback: args.fallback } : {}),
+      ...(args.liveSmoke !== undefined ? { liveSmoke: args.liveSmoke } : {}),
+      ...(args.imageBytes !== undefined ? { imageBytes: args.imageBytes } : {}),
+      ...(args.modelRevision !== undefined
+        ? { modelRevision: args.modelRevision }
+        : {}),
+      ...(args.tierLabel !== undefined ? { tierLabel: args.tierLabel } : {}),
+      region: regionObservation.servedFromRegion,
+      regionWarning: regionObservation.severity === "warning",
+    });
+  };
 
   // 0. Resolve + validate FinOps envelope. Operator override wins outright;
   //    no merging with the production default. Invalid envelopes fail
@@ -3009,19 +3112,15 @@ export const runFigmaToQcTestCases = async (
     coveragePlannerStartedAt !== undefined &&
     coveragePlanResult.gatewayResult !== undefined
   ) {
-    finopsRecorder.recordAttempt({
+    await recordFinopsGatewayAttempt({
       role: "test_generation",
       source: "coverage_planner",
-      // Issue #2016: planner traffic shares the test_generation FinOps
-      // lane but is not part of the role's primary work. Recording it
-      // as `audit` keeps the per-source breakdown intact while leaving
-      // the role-level `attempts` / `outputTokens` counters reserved
-      // for actual generator regenerations.
       attributionMode: "audit",
       deployment:
         coveragePlanResult.gatewayResult.outcome === "success"
           ? coveragePlanResult.gatewayResult.modelDeployment
           : coveragePlannerClient.deployment,
+      endpointReference: coveragePlannerClient.operatorEndpointReference,
       durationMs: Date.now() - coveragePlannerStartedAt,
       result: coveragePlanResult.gatewayResult,
     });
@@ -3075,15 +3174,15 @@ export const runFigmaToQcTestCases = async (
     riskRankerStartedAt !== undefined &&
     riskRankingResult.gatewayResult !== undefined
   ) {
-    finopsRecorder.recordAttempt({
+    await recordFinopsGatewayAttempt({
       role: "test_generation",
       source: "risk_ranker",
-      // Issue #2016: ranker is auxiliary; see coverage_planner site.
       attributionMode: "audit",
       deployment:
         riskRankingResult.gatewayResult.outcome === "success"
           ? riskRankingResult.gatewayResult.modelDeployment
           : riskRankerClient.deployment,
+      endpointReference: riskRankerClient.operatorEndpointReference,
       durationMs: Date.now() - riskRankerStartedAt,
       result: riskRankingResult.gatewayResult,
     });
@@ -3369,11 +3468,28 @@ export const runFigmaToQcTestCases = async (
             },
           });
 
-          const attemptOutcome = classifyLlmAttempt({
+          const attemptOutcome = await classifyLlmAttempt({
             llmResult,
             gatewayRelease: generationClient.gatewayRelease,
             finopsRecorder,
             llmDurationMs,
+            recordGatewayAttempt: async ({
+              deployment,
+              durationMs,
+              result,
+              attemptId,
+              liveSmoke,
+            }) =>
+              recordFinopsGatewayAttempt({
+                role: "test_generation",
+                source: "generator",
+                deployment,
+                endpointReference: generationClient.operatorEndpointReference,
+                durationMs,
+                result,
+                ...(attemptId !== undefined ? { attemptId } : {}),
+                liveSmoke,
+              }),
             ...(diversityPasses > 1
               ? { attemptId: inputPass.pass.roleRunId }
               : {}),
@@ -3480,6 +3596,11 @@ export const runFigmaToQcTestCases = async (
     }
 
     if (cacheExecResult.cacheHit) {
+      await observeRegionAttestation({
+        sourceLabel: "generator",
+        deploymentId: input.llm.client.deployment,
+        endpointReference: input.llm.client.operatorEndpointReference,
+      });
       emit({
         phase: "replay_cache_hit",
         timestamp: monotonicMs(),
@@ -3522,7 +3643,7 @@ export const runFigmaToQcTestCases = async (
         const requestStartedAt = Date.now();
         const llmResult = await input.llm.client.generate(request);
         const llmDurationMs = Date.now() - requestStartedAt;
-        finopsRecorder.recordAttempt({
+        await recordFinopsGatewayAttempt({
           role: "test_generation",
           source: "generator",
           ...(diversityPasses > 1 ? { attemptId: pass.roleRunId } : {}),
@@ -3530,6 +3651,7 @@ export const runFigmaToQcTestCases = async (
             llmResult.outcome === "success"
               ? llmResult.modelDeployment
               : input.llm.client.deployment,
+          endpointReference: input.llm.client.operatorEndpointReference,
           durationMs: llmDurationMs,
           result: llmResult,
         });
@@ -3784,7 +3906,7 @@ export const runFigmaToQcTestCases = async (
           ? { abortSignal: input.llm.abortSignal }
           : {}),
       });
-      finopsRecorder.recordAttempt({
+      await recordFinopsGatewayAttempt({
         role: "test_generation",
         source: "adversarial_critic",
         attributionMode: "audit",
@@ -3792,6 +3914,7 @@ export const runFigmaToQcTestCases = async (
           criticRound.gatewayResult.outcome === "success"
             ? criticRound.gatewayResult.modelDeployment
             : logicJudgeClient.deployment,
+        endpointReference: logicJudgeClient.operatorEndpointReference,
         durationMs: criticRound.artifact.llmGateway.durationMs,
         result: criticRound.gatewayResult,
       });
@@ -4023,22 +4146,15 @@ export const runFigmaToQcTestCases = async (
         },
       };
   if (logicJudgeResult.gatewayResult !== undefined) {
-    finopsRecorder.recordAttempt({
+    await recordFinopsGatewayAttempt({
       role: "test_generation",
       source: "judge_primary",
-      // Issue #1932: report the **judge** deployment for FinOps
-      // attribution. On success the gateway echoes the deployment it
-      // ran against; on failure we still attribute the attempt to the
-      // judge client so cross-model attribution stays correct even
-      // when the judge errored before the gateway echoed identity.
-      // Issue #2016: judge traffic is `audit` against the
-      // test_generation lane — it shares the budget envelope but does
-      // not consume the role's primary attempt / token counters.
       attributionMode: "audit",
       deployment:
         logicJudgeResult.gatewayResult.outcome === "success"
           ? logicJudgeResult.gatewayResult.modelDeployment
           : logicJudgeClient.deployment,
+      endpointReference: logicJudgeClient.operatorEndpointReference,
       durationMs: 0,
       result: logicJudgeResult.gatewayResult,
     });
@@ -4091,17 +4207,15 @@ export const runFigmaToQcTestCases = async (
         })
       : undefined;
   if (a11yJudgeResult?.gatewayResult !== undefined) {
-    finopsRecorder.recordAttempt({
+    await recordFinopsGatewayAttempt({
       role: "visual_primary",
       source: "judge_secondary",
-      // Issue #2016: a11y judge is audit traffic against the
-      // visual_primary lane — keep role-level counters reserved for the
-      // visual capture work itself.
       attributionMode: "audit",
       deployment:
         a11yJudgeResult.gatewayResult.outcome === "success"
           ? a11yJudgeResult.gatewayResult.modelDeployment
           : input.llm.bundle!.a11yJudge!.deployment,
+      endpointReference: input.llm.bundle!.a11yJudge!.operatorEndpointReference,
       durationMs: 0,
       result: a11yJudgeResult.gatewayResult,
     });
@@ -4158,10 +4272,9 @@ export const runFigmaToQcTestCases = async (
         })
       : undefined;
   for (const attempt of faithfulnessJudgeResult?.attempts ?? []) {
-    finopsRecorder.recordAttempt({
+    await recordFinopsGatewayAttempt({
       role: attempt.role,
       source: "judge_secondary",
-      // Issue #2016: faithfulness judge is audit traffic.
       attributionMode: "audit",
       deployment:
         attempt.result.outcome === "success"
@@ -4169,6 +4282,10 @@ export const runFigmaToQcTestCases = async (
           : attempt.role === "visual_primary"
             ? input.llm.bundle!.visualPrimary.deployment
             : input.llm.bundle!.visualFallback.deployment,
+      endpointReference:
+        attempt.role === "visual_primary"
+          ? input.llm.bundle!.visualPrimary.operatorEndpointReference
+          : input.llm.bundle!.visualFallback.operatorEndpointReference,
       durationMs: 0,
       result: attempt.result,
     });
@@ -4348,7 +4465,7 @@ export const runFigmaToQcTestCases = async (
             const startedAtRepair = Date.now();
             const llmResult = await input.llm.client.generate(repairRequest);
             const llmDurationMs = Date.now() - startedAtRepair;
-            finopsRecorder.recordAttempt({
+            await recordFinopsGatewayAttempt({
               role: "test_generation",
               source: "generator",
               ...(diversityPasses > 1 ? { attemptId: pass.roleRunId } : {}),
@@ -4356,6 +4473,7 @@ export const runFigmaToQcTestCases = async (
                 llmResult.outcome === "success"
                   ? llmResult.modelDeployment
                   : input.llm.client.deployment,
+              endpointReference: input.llm.client.operatorEndpointReference,
               durationMs: llmDurationMs,
               result: llmResult,
             });
@@ -4505,18 +4623,15 @@ export const runFigmaToQcTestCases = async (
             : {}),
         });
         if (repairLogicResult.gatewayResult !== undefined) {
-          finopsRecorder.recordAttempt({
+          await recordFinopsGatewayAttempt({
             role: "test_generation",
             source: "judge_primary",
-            // Issue #1932: cross-model judge attribution — see the
-            // initial-pass call site above.
-            // Issue #2016: judge traffic is audit-mode against the
-            // test_generation lane.
             attributionMode: "audit",
             deployment:
               repairLogicResult.gatewayResult.outcome === "success"
                 ? repairLogicResult.gatewayResult.modelDeployment
                 : logicJudgeClient.deployment,
+            endpointReference: logicJudgeClient.operatorEndpointReference,
             durationMs: 0,
             result: repairLogicResult.gatewayResult,
           });
@@ -4566,15 +4681,16 @@ export const runFigmaToQcTestCases = async (
               })
             : undefined;
         if (repairA11yResult?.gatewayResult !== undefined) {
-          finopsRecorder.recordAttempt({
+          await recordFinopsGatewayAttempt({
             role: "visual_primary",
             source: "judge_secondary",
-            // Issue #2016: a11y judge is audit traffic.
             attributionMode: "audit",
             deployment:
               repairA11yResult.gatewayResult.outcome === "success"
                 ? repairA11yResult.gatewayResult.modelDeployment
                 : input.llm.bundle!.a11yJudge!.deployment,
+            endpointReference:
+              input.llm.bundle!.a11yJudge!.operatorEndpointReference,
             durationMs: 0,
             result: repairA11yResult.gatewayResult,
           });
@@ -4646,10 +4762,9 @@ export const runFigmaToQcTestCases = async (
                   : {}),
               });
               for (const attempt of repairFaithResult.attempts) {
-                finopsRecorder.recordAttempt({
+                await recordFinopsGatewayAttempt({
                   role: attempt.role,
                   source: "judge_secondary",
-                  // Issue #2016: faithfulness judge is audit traffic.
                   attributionMode: "audit",
                   deployment:
                     attempt.result.outcome === "success"
@@ -4657,6 +4772,11 @@ export const runFigmaToQcTestCases = async (
                       : attempt.role === "visual_primary"
                         ? input.llm.bundle!.visualPrimary.deployment
                         : input.llm.bundle!.visualFallback.deployment,
+                  endpointReference:
+                    attempt.role === "visual_primary"
+                      ? input.llm.bundle!.visualPrimary.operatorEndpointReference
+                      : input.llm.bundle!.visualFallback
+                          .operatorEndpointReference,
                   durationMs: 0,
                   result: attempt.result,
                 });
@@ -5595,6 +5715,7 @@ export const runFigmaToQcTestCases = async (
     generatedAt: input.generatedAt,
     sourceKind: input.source.kind,
     finalGeneratedTestCases: calibratedGeneratedTestCases,
+    regionAttestations: regionAttestationObservations,
     subprocessorRegister: {
       artifactFilename: SUBPROCESSOR_REGISTER_ARTIFACT_FILENAME,
       merkleRoot: subprocessorRegisterArtifact.merkleRoot,
@@ -5752,6 +5873,297 @@ export const runFigmaToQcTestCases = async (
   } satisfies Parameters<
     typeof buildWave1ValidationEvidenceManifest
   >[0]["modelDeployments"];
+  const rawEvidenceArtifacts = [
+    {
+      filename: "business-intent-ir.json",
+      bytes: intentBytes,
+      category: "intent" as const,
+    },
+    {
+      filename: "compiled-prompt.json",
+      bytes: compiledPromptBytes,
+      category: "intent" as const,
+    },
+    ...(customerEvalRubricBytes === undefined
+      ? []
+      : [
+          {
+            filename: "customer-eval-rubric.json",
+            bytes: customerEvalRubricBytes,
+            category: "intent" as const,
+          },
+        ]),
+    {
+      filename: LOGIC_JUDGE_COMPILED_PROMPT_ARTIFACT_FILENAME,
+      bytes: logicJudgeCompiledPromptBytes,
+      category: "intent" as const,
+    },
+    {
+      filename: `agent-role-runs/${LOGIC_JUDGE_VERDICT_ARTIFACT_FILENAME}`,
+      bytes: logicJudgeVerdictBytes,
+      category: "manifest" as const,
+    },
+    {
+      filename: JUDGE_CONSENSUS_ARTIFACT_FILENAME,
+      bytes: judgeConsensusBytes,
+      category: "manifest" as const,
+    },
+    {
+      filename: RUN_QUALITY_ARTIFACT_FILENAME,
+      bytes: runQualityBytes,
+      category: "manifest" as const,
+    },
+    ...(selfConsistencyWritten === undefined
+      ? []
+      : [
+          {
+            filename: SELF_CONSISTENCY_REPORT_ARTIFACT_FILENAME,
+            bytes: selfConsistencyWritten.bytes,
+            category: "manifest" as const,
+          },
+        ]),
+    {
+      filename: AGENT_PARTICIPATION_ARTIFACT_FILENAME,
+      bytes: agentParticipationWritten.bytes,
+      category: "manifest" as const,
+    },
+    ...(adversarialCriticTraceArtifact === undefined
+      ? []
+      : [
+          {
+            filename: ADVERSARIAL_CRITIC_TRACE_ARTIFACT_FILENAME,
+            bytes: Buffer.from(
+              `${canonicalJson(adversarialCriticTraceArtifact)}\n`,
+              "utf8",
+            ),
+            category: "manifest" as const,
+          },
+        ]),
+    ...adversarialCriticRoundArtifacts.map((artifact) => ({
+      filename: `agent-role-runs/${ADVERSARIAL_CRITIC_ROUND_ARTIFACT_PREFIX}${artifact.round}.json`,
+      bytes: Buffer.from(`${canonicalJson(artifact)}\n`, "utf8"),
+      category: "manifest" as const,
+    })),
+    ...(faithfulnessJudgeCompiledPromptBytes === undefined
+      ? []
+      : [
+          {
+            filename: FAITHFULNESS_JUDGE_COMPILED_PROMPT_ARTIFACT_FILENAME,
+            bytes: faithfulnessJudgeCompiledPromptBytes,
+            category: "intent" as const,
+          },
+        ]),
+    ...(faithfulnessJudgeVerdictBytes === undefined
+      ? []
+      : [
+          {
+            filename: `agent-role-runs/${FAITHFULNESS_VERDICT_ARTIFACT_FILENAME}`,
+            bytes: faithfulnessJudgeVerdictBytes,
+            category: "manifest" as const,
+          },
+        ]),
+    ...(a11yJudgeVerdictBytes === undefined
+      ? []
+      : [
+          {
+            filename: `agent-role-runs/${A11Y_JUDGE_VERDICT_ARTIFACT_FILENAME}`,
+            bytes: a11yJudgeVerdictBytes,
+            category: "manifest" as const,
+          },
+        ]),
+    {
+      filename: "agent-role-runs/test_generation.json",
+      bytes: agentRoleRunArtifact.bytes,
+      category: "manifest" as const,
+    },
+    ...generatorPassRunArtifacts.map((artifact) => ({
+      filename: `agent-role-runs/${artifact.artifact.roleRunId}.json`,
+      bytes: artifact.bytes,
+      category: "manifest" as const,
+    })),
+    {
+      filename: "genealogy.json",
+      bytes: genealogyArtifact.bytes,
+      category: "genealogy" as const,
+    },
+    ...(contextBudgetReportBytes === undefined ||
+    compiled.contextBudgetReport === undefined
+      ? []
+      : [
+          {
+            filename: `${CONTEXT_BUDGET_ARTIFACT_DIRECTORY}/${compiled.contextBudgetReport.roleStepId}.json`,
+            bytes: contextBudgetReportBytes,
+            category: "manifest" as const,
+          },
+        ]),
+    {
+      filename: WORKFLOW_TOPOLOGY_ARTIFACT_FILENAME,
+      bytes: Buffer.from(canonicalJson(workflowTopology), "utf8"),
+      category: "intent" as const,
+    },
+    {
+      filename: GENERATED_TESTCASES_ARTIFACT_FILENAME,
+      bytes: generatedBytes,
+      category: "validation" as const,
+    },
+    {
+      filename: TEST_CASE_VALIDATION_REPORT_ARTIFACT_FILENAME,
+      bytes: validationBytes,
+      category: "validation" as const,
+    },
+    ...(testDataOracleReportBytes === undefined
+      ? []
+      : [
+          {
+            filename: TEST_DATA_ORACLE_REPORT_ARTIFACT_FILENAME,
+            bytes: testDataOracleReportBytes,
+            category: "validation" as const,
+          },
+        ]),
+    ...(visualSidecarValidationBytes === undefined
+      ? []
+      : [
+          {
+            filename: VISUAL_SIDECAR_VALIDATION_REPORT_ARTIFACT_FILENAME,
+            bytes: visualSidecarValidationBytes,
+            category: "validation" as const,
+          },
+        ]),
+    {
+      filename: TEST_CASE_POLICY_REPORT_ARTIFACT_FILENAME,
+      bytes: policyBytes,
+      category: "validation" as const,
+    },
+    {
+      filename: PROVENANCE_ARTIFACT_FILENAME,
+      bytes: Buffer.from(`${canonicalJson(provenanceDocument)}\n`, "utf8"),
+      category: "manifest" as const,
+    },
+    {
+      filename: SUBPROCESSOR_REGISTER_ARTIFACT_FILENAME,
+      bytes: Buffer.from(
+        serializeSubprocessorRegister(subprocessorRegisterArtifact),
+        "utf8",
+      ),
+      category: "manifest" as const,
+    },
+    {
+      filename: TEST_CASE_COVERAGE_REPORT_ARTIFACT_FILENAME,
+      bytes: coverageBytes,
+      category: "validation" as const,
+    },
+    {
+      filename: "untrusted-content-normalization-report.json",
+      bytes: untrustedContentNormalizationReportBytes,
+      category: "manifest" as const,
+    },
+    {
+      filename: finopsArtifactFilename,
+      bytes: finopsWritten.bytes,
+      category: "finops" as const,
+    },
+    {
+      filename: PRODUCTION_RUNNER_EVIDENCE_SEAL_ARTIFACT_FILENAME,
+      bytes: productionRunnerEvidenceSealBytes,
+      category: "manifest" as const,
+    },
+    ...(visualSidecarArtifactBytes === undefined
+      ? []
+      : [
+          {
+            filename: VISUAL_SIDECAR_RESULT_ARTIFACT_FILENAME,
+            bytes: visualSidecarArtifactBytes,
+            category: "visual_sidecar" as const,
+          },
+        ]),
+    ...visualSidecarDiagnostics.map((diagnostic) => ({
+      filename: diagnostic.filename,
+      bytes: diagnostic.bytes,
+      category: "visual_sidecar" as const,
+    })),
+    ...(visualCaptureArtifacts === undefined
+      ? []
+      : [
+          {
+            filename: visualCaptureArtifacts.manifestFilename,
+            bytes: visualCaptureArtifacts.manifestBytes,
+            category: "visual_sidecar" as const,
+          },
+          ...visualCaptureArtifacts.files.map((file) => ({
+            filename: file.filename,
+            bytes: file.bytes,
+            category: "visual_sidecar" as const,
+          })),
+        ]),
+    {
+      filename: "customer-markdown/testfaelle.md",
+      bytes: combinedMarkdownBytes,
+      category: "export" as const,
+    },
+    ...perCaseArtifacts.map((artifact) => ({
+      filename: artifact.filename,
+      bytes: artifact.bytes,
+      category: "export" as const,
+    })),
+    ...(mutationReportBytes === undefined
+      ? []
+      : [
+          {
+            filename: MUTATION_REPORT_ARTIFACT_FILENAME,
+            bytes: mutationReportBytes,
+            category: "manifest" as const,
+          },
+        ]),
+  ];
+  const evidenceArtifacts = rawEvidenceArtifacts.map((artifact) => {
+    const artifactHash = sha256Hex(artifact.bytes);
+    return {
+      ...artifact,
+      regionAttestations: buildArtifactRegionAttestations({
+        artifactHash,
+        observations: collectRegionAttestationsForSources({
+          observations: regionAttestationObservations,
+        }),
+      }),
+    };
+  });
+  const regionAttestationArtifacts: RegionAttestationArtifactEntry[] =
+    evidenceArtifacts.map((artifact) => ({
+      filename: artifact.filename,
+      artifactHash: sha256Hex(artifact.bytes),
+      regionAttestations: artifact.regionAttestations ?? [],
+    }));
+  const regionAttestationReport = buildRegionAttestationReport({
+    jobId: input.jobId,
+    generatedAt: input.generatedAt,
+    artifacts: regionAttestationArtifacts,
+  });
+  const allowedHostingRegions =
+    policyProfileRules?.allowedHostingRegions ??
+    SUPPORTED_REGION_ATTESTATION_HOSTING_REGIONS;
+  const allRegionAttestations = evidenceArtifacts.flatMap(
+    (artifact) => artifact.regionAttestations ?? [],
+  );
+  assertAllowedRegionAttestations({
+    profileId: policyReport.policyProfileId,
+    allowedRegions: allowedHostingRegions,
+    attestations: allRegionAttestations,
+  });
+  const regionAttestationReportBytes = Buffer.from(
+    `${canonicalJson(regionAttestationReport)}\n`,
+    "utf8",
+  );
+  evidenceArtifacts.push({
+    filename: REGION_ATTESTATION_REPORT_ARTIFACT_FILENAME,
+    bytes: regionAttestationReportBytes,
+    category: "manifest",
+    regionAttestations: buildArtifactRegionAttestations({
+      artifactHash: sha256Hex(regionAttestationReportBytes),
+      observations: collectRegionAttestationsForSources({
+        observations: regionAttestationObservations,
+      }),
+    }),
+  });
   const evidenceManifest = buildWave1ValidationEvidenceManifest({
     fixtureId: `production-runner-${input.source.kind}`,
     jobId: input.jobId,
@@ -5774,249 +6186,7 @@ export const runFigmaToQcTestCases = async (
           visualSidecarCaptureIdentities: visualSidecarResult.captureIdentities,
         }
       : {}),
-    artifacts: [
-      {
-        filename: "business-intent-ir.json",
-        bytes: intentBytes,
-        category: "intent",
-      },
-      {
-        filename: "compiled-prompt.json",
-        bytes: compiledPromptBytes,
-        category: "intent",
-      },
-      ...(customerEvalRubricBytes === undefined
-        ? []
-        : [
-            {
-              filename: "customer-eval-rubric.json",
-              bytes: customerEvalRubricBytes,
-              category: "intent" as const,
-            },
-          ]),
-      {
-        filename: LOGIC_JUDGE_COMPILED_PROMPT_ARTIFACT_FILENAME,
-        bytes: logicJudgeCompiledPromptBytes,
-        category: "intent",
-      },
-      {
-        filename: `agent-role-runs/${LOGIC_JUDGE_VERDICT_ARTIFACT_FILENAME}`,
-        bytes: logicJudgeVerdictBytes,
-        category: "manifest",
-      },
-      {
-        filename: JUDGE_CONSENSUS_ARTIFACT_FILENAME,
-        bytes: judgeConsensusBytes,
-        category: "manifest",
-      },
-      {
-        filename: RUN_QUALITY_ARTIFACT_FILENAME,
-        bytes: runQualityBytes,
-        category: "manifest",
-      },
-      ...(selfConsistencyWritten === undefined
-        ? []
-        : [
-            {
-              filename: SELF_CONSISTENCY_REPORT_ARTIFACT_FILENAME,
-              bytes: selfConsistencyWritten.bytes,
-              category: "manifest" as const,
-            },
-          ]),
-      {
-        filename: AGENT_PARTICIPATION_ARTIFACT_FILENAME,
-        bytes: agentParticipationWritten.bytes,
-        category: "manifest",
-      },
-      ...(adversarialCriticTraceArtifact === undefined
-        ? []
-        : [
-            {
-              filename: ADVERSARIAL_CRITIC_TRACE_ARTIFACT_FILENAME,
-              bytes: Buffer.from(
-                `${canonicalJson(adversarialCriticTraceArtifact)}\n`,
-                "utf8",
-              ),
-              category: "manifest" as const,
-            },
-          ]),
-      ...adversarialCriticRoundArtifacts.map((artifact) => ({
-        filename: `agent-role-runs/${ADVERSARIAL_CRITIC_ROUND_ARTIFACT_PREFIX}${artifact.round}.json`,
-        bytes: Buffer.from(`${canonicalJson(artifact)}\n`, "utf8"),
-        category: "manifest" as const,
-      })),
-      ...(faithfulnessJudgeCompiledPromptBytes === undefined
-        ? []
-        : [
-            {
-              filename: FAITHFULNESS_JUDGE_COMPILED_PROMPT_ARTIFACT_FILENAME,
-              bytes: faithfulnessJudgeCompiledPromptBytes,
-              category: "intent" as const,
-            },
-          ]),
-      ...(faithfulnessJudgeVerdictBytes === undefined
-        ? []
-        : [
-            {
-              filename: `agent-role-runs/${FAITHFULNESS_VERDICT_ARTIFACT_FILENAME}`,
-              bytes: faithfulnessJudgeVerdictBytes,
-              category: "manifest" as const,
-            },
-          ]),
-      ...(a11yJudgeVerdictBytes === undefined
-        ? []
-        : [
-            {
-              filename: `agent-role-runs/${A11Y_JUDGE_VERDICT_ARTIFACT_FILENAME}`,
-              bytes: a11yJudgeVerdictBytes,
-              category: "manifest" as const,
-            },
-          ]),
-      {
-        filename: "agent-role-runs/test_generation.json",
-        bytes: agentRoleRunArtifact.bytes,
-        category: "manifest",
-      },
-      ...generatorPassRunArtifacts.map((artifact) => ({
-        filename: `agent-role-runs/${artifact.artifact.roleRunId}.json`,
-        bytes: artifact.bytes,
-        category: "manifest" as const,
-      })),
-      {
-        filename: "genealogy.json",
-        bytes: genealogyArtifact.bytes,
-        category: "genealogy",
-      },
-      ...(contextBudgetReportBytes === undefined ||
-      compiled.contextBudgetReport === undefined
-        ? []
-        : [
-            {
-              filename: `${CONTEXT_BUDGET_ARTIFACT_DIRECTORY}/${compiled.contextBudgetReport.roleStepId}.json`,
-              bytes: contextBudgetReportBytes,
-              category: "manifest" as const,
-            },
-          ]),
-      {
-        filename: WORKFLOW_TOPOLOGY_ARTIFACT_FILENAME,
-        bytes: Buffer.from(canonicalJson(workflowTopology), "utf8"),
-        category: "intent",
-      },
-      {
-        filename: GENERATED_TESTCASES_ARTIFACT_FILENAME,
-        bytes: generatedBytes,
-        category: "validation",
-      },
-      {
-        filename: TEST_CASE_VALIDATION_REPORT_ARTIFACT_FILENAME,
-        bytes: validationBytes,
-        category: "validation",
-      },
-      ...(testDataOracleReportBytes === undefined
-        ? []
-        : [
-            {
-              filename: TEST_DATA_ORACLE_REPORT_ARTIFACT_FILENAME,
-              bytes: testDataOracleReportBytes,
-              category: "validation" as const,
-            },
-          ]),
-      ...(visualSidecarValidationBytes === undefined
-        ? []
-        : [
-            {
-              filename: VISUAL_SIDECAR_VALIDATION_REPORT_ARTIFACT_FILENAME,
-              bytes: visualSidecarValidationBytes,
-              category: "validation" as const,
-            },
-          ]),
-      {
-        filename: TEST_CASE_POLICY_REPORT_ARTIFACT_FILENAME,
-        bytes: policyBytes,
-        category: "validation",
-      },
-      {
-        filename: PROVENANCE_ARTIFACT_FILENAME,
-        bytes: Buffer.from(`${canonicalJson(provenanceDocument)}\n`, "utf8"),
-        category: "manifest",
-      },
-      {
-        filename: SUBPROCESSOR_REGISTER_ARTIFACT_FILENAME,
-        bytes: Buffer.from(
-          serializeSubprocessorRegister(subprocessorRegisterArtifact),
-          "utf8",
-        ),
-        category: "manifest",
-      },
-      {
-        filename: TEST_CASE_COVERAGE_REPORT_ARTIFACT_FILENAME,
-        bytes: coverageBytes,
-        category: "validation",
-      },
-      {
-        filename: "untrusted-content-normalization-report.json",
-        bytes: untrustedContentNormalizationReportBytes,
-        category: "manifest",
-      },
-      {
-        filename: finopsArtifactFilename,
-        bytes: finopsWritten.bytes,
-        category: "finops",
-      },
-      {
-        filename: PRODUCTION_RUNNER_EVIDENCE_SEAL_ARTIFACT_FILENAME,
-        bytes: productionRunnerEvidenceSealBytes,
-        category: "manifest",
-      },
-      ...(visualSidecarArtifactBytes === undefined
-        ? []
-        : [
-            {
-              filename: VISUAL_SIDECAR_RESULT_ARTIFACT_FILENAME,
-              bytes: visualSidecarArtifactBytes,
-              category: "visual_sidecar" as const,
-            },
-          ]),
-      // Issue #2017: per-attempt raw-response diagnostics, when present.
-      ...visualSidecarDiagnostics.map((diagnostic) => ({
-        filename: diagnostic.filename,
-        bytes: diagnostic.bytes,
-        category: "visual_sidecar" as const,
-      })),
-      ...(visualCaptureArtifacts === undefined
-        ? []
-        : [
-            {
-              filename: visualCaptureArtifacts.manifestFilename,
-              bytes: visualCaptureArtifacts.manifestBytes,
-              category: "visual_sidecar" as const,
-            },
-            ...visualCaptureArtifacts.files.map((file) => ({
-              filename: file.filename,
-              bytes: file.bytes,
-              category: "visual_sidecar" as const,
-            })),
-          ]),
-      {
-        filename: "customer-markdown/testfaelle.md",
-        bytes: combinedMarkdownBytes,
-        category: "export",
-      },
-      ...perCaseArtifacts.map((artifact) => ({
-        filename: artifact.filename,
-        bytes: artifact.bytes,
-        category: "export" as const,
-      })),
-      ...(mutationReportBytes === undefined
-        ? []
-        : [
-            {
-              filename: MUTATION_REPORT_ARTIFACT_FILENAME,
-              bytes: mutationReportBytes,
-              category: "manifest" as const,
-            },
-          ]),
-    ],
+    artifacts: evidenceArtifacts,
   });
   try {
     await writeAtomicBytes(
@@ -6030,6 +6200,10 @@ export const runFigmaToQcTestCases = async (
     await writeProvenanceGraph({
       runDir: artifactDir,
       document: provenanceDocument,
+    });
+    await writeRegionAttestationReport({
+      runDir: artifactDir,
+      report: regionAttestationReport,
     });
     await writeWave1ValidationEvidenceManifest({
       manifest: evidenceManifest,
@@ -6557,6 +6731,13 @@ interface ClassifyLlmAttemptInput {
   readonly finopsRecorder: ReturnType<typeof createFinOpsUsageRecorder>;
   readonly llmDurationMs: number;
   readonly attemptId?: string;
+  readonly recordGatewayAttempt?: (input: {
+    deployment: string;
+    durationMs: number;
+    result: LlmGenerationResult;
+    attemptId?: string;
+    liveSmoke: boolean;
+  }) => Promise<void>;
 }
 
 const LIVE_SMOKE_GATEWAY_RELEASE_MARKERS = ["live-smoke", "live-e2e"] as const;
@@ -6573,9 +6754,9 @@ const isSmokeTaggedGatewayRelease = (
   );
 };
 
-const classifyLlmAttempt = (
+const classifyLlmAttempt = async (
   input: ClassifyLlmAttemptInput,
-): LlmAttemptOutcome => {
+): Promise<LlmAttemptOutcome> => {
   const {
     llmResult,
     gatewayRelease,
@@ -6619,18 +6800,29 @@ const classifyLlmAttempt = (
       }),
     };
   }
-  finopsRecorder.recordAttempt({
-    role: "test_generation",
-    source: "generator",
-    ...(attemptId !== undefined ? { attemptId } : {}),
-    deployment: llmResult.modelDeployment,
-    durationMs: llmDurationMs,
-    result: llmResult,
-    // Only smoke-tagged lanes count toward the live-smoke budget; ordinary
-    // CLI/live runs keep the live-smoke counter at zero.
-    liveSmoke: isSmokeTaggedGatewayRelease(gatewayRelease),
-    fallback: false,
-  });
+  const liveSmoke = isSmokeTaggedGatewayRelease(gatewayRelease);
+  if (input.recordGatewayAttempt !== undefined) {
+    await input.recordGatewayAttempt({
+      deployment: llmResult.modelDeployment,
+      durationMs: llmDurationMs,
+      result: llmResult,
+      ...(attemptId !== undefined ? { attemptId } : {}),
+      liveSmoke,
+    });
+  } else {
+    finopsRecorder.recordAttempt({
+      role: "test_generation",
+      source: "generator",
+      ...(attemptId !== undefined ? { attemptId } : {}),
+      deployment: llmResult.modelDeployment,
+      durationMs: llmDurationMs,
+      result: llmResult,
+      // Only smoke-tagged lanes count toward the live-smoke budget; ordinary
+      // CLI/live runs keep the live-smoke counter at zero.
+      liveSmoke,
+      fallback: false,
+    });
+  }
   const draftValidation = validateLlmDraftResponse(llmResult.content);
   if (!draftValidation.ok) {
     return {

@@ -33,6 +33,7 @@ present before it will produce a bundle:
 - `distribution-shift-report.json`
 - `incidents.json`
 - `subprocessor-register.json`
+- `region-attestations.json`
 - `finops/budget-report.json`
 - `faithfulness-tier-report.json`
 - `self-consistency-arbitration.json`
@@ -121,6 +122,12 @@ to the artifact kinds that satisfy it. The current bundle covers:
 - EU AI Act Art. 13
 - EU AI Act Art. 14
 - GDPR Ch. V
+
+The `region-attestations.json` artifact is documented in
+[eu-data-residency.md](./eu-data-residency.md). The dossier renders the
+artifact as a per-file table so auditors can see which persisted outputs were
+supported by Azure instance metadata, endpoint-certificate evidence, or the
+weaker operator-pinned fallback.
 
 This table is descriptive, not a legal opinion. The operator remains
 responsible for deciding whether the emitted evidence is sufficient for a given

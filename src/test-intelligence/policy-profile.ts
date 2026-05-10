@@ -15,6 +15,7 @@
 import {
   EU_BANKING_DEFAULT_POLICY_PROFILE_ID,
   EU_BANKING_DEFAULT_POLICY_PROFILE_VERSION,
+  SUPPORTED_REGION_ATTESTATION_HOSTING_REGIONS,
   type FinOpsWallClockBudgetPolicy,
   type JudgeRefusalPolicyConfig,
   type TechniqueCoverageMinimumPolicy,
@@ -135,6 +136,7 @@ const EU_BANKING_DEFAULT_RULES: TestCasePolicyProfileRules = {
   },
   requirePerStepFaithfulness: EU_BANKING_DEFAULT_REQUIRE_PER_STEP_FAITHFULNESS,
   finopsWallClockBudget: EU_BANKING_DEFAULT_FINOPS_WALL_CLOCK_BUDGET_POLICY,
+  allowedHostingRegions: SUPPORTED_REGION_ATTESTATION_HOSTING_REGIONS,
 };
 
 /** Default `eu-banking-default` policy profile (deep-frozen). */
@@ -164,6 +166,9 @@ export const EU_BANKING_DEFAULT_POLICY_PROFILE: Readonly<TestCasePolicyProfile> 
       requirePerStepFaithfulness:
         EU_BANKING_DEFAULT_REQUIRE_PER_STEP_FAITHFULNESS,
       finopsWallClockBudget: EU_BANKING_DEFAULT_FINOPS_WALL_CLOCK_BUDGET_POLICY,
+      allowedHostingRegions: Object.freeze([
+        ...SUPPORTED_REGION_ATTESTATION_HOSTING_REGIONS,
+      ]),
     }),
   });
 
@@ -261,6 +266,11 @@ export const cloneEuBankingDefaultProfile = (): TestCasePolicyProfile => {
     EU_BANKING_DEFAULT_POLICY_PROFILE.rules.requirePerStepFaithfulness;
   if (requirePerStepFaithfulness !== undefined) {
     rules.requirePerStepFaithfulness = requirePerStepFaithfulness;
+  }
+  const allowedHostingRegions =
+    EU_BANKING_DEFAULT_POLICY_PROFILE.rules.allowedHostingRegions;
+  if (allowedHostingRegions !== undefined) {
+    rules.allowedHostingRegions = [...allowedHostingRegions];
   }
   const finopsWallClockBudget =
     EU_BANKING_DEFAULT_POLICY_PROFILE.rules.finopsWallClockBudget;
