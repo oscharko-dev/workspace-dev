@@ -162,7 +162,7 @@ export interface TestIntelligenceTransferPrincipal {
 }
 
 /** Contract version for the opt-in test-intelligence surface. */
-export const TEST_INTELLIGENCE_CONTRACT_VERSION = "1.29.0" as const;
+export const TEST_INTELLIGENCE_CONTRACT_VERSION = "1.30.0" as const;
 
 /**
  * Schema version for generated test case payloads.
@@ -591,6 +591,33 @@ export const TEST_DATA_ORACLE_REPORT_SCHEMA_VERSION = "1.0.0" as const;
 /** Canonical filename for the persisted deterministic test-data oracle artifact. */
 export const TEST_DATA_ORACLE_REPORT_ARTIFACT_FILENAME =
   "test-data-oracle-report.json" as const;
+
+/**
+ * Schema version for the persisted causal-validation report artifact
+ * (Issue #2180). Bumped on any breaking change to the report shape, the
+ * counterfactual-pair envelope, or the causal-coverage formula.
+ */
+export const CAUSAL_VALIDATION_REPORT_SCHEMA_VERSION = "1.0.0" as const;
+
+/**
+ * Canonical filename for the persisted causal-validation report artifact
+ * (Issue #2180). The runner writes one `causal-validation-report.json`
+ * per run when the causal-validation framework is enabled and embeds
+ * the resulting summary into `policy-report.json#causalCoverage`.
+ */
+export const CAUSAL_VALIDATION_REPORT_ARTIFACT_FILENAME =
+  "causal-validation-report.json" as const;
+
+/**
+ * Default upper bound on the relative additional token cost the
+ * causal-validation framework may incur per run (Issue #2180 FinOps
+ * cap, "no more than 30 % per run"). Surfaced as a constant so CI can
+ * assert the cap and the runner can refuse to dispatch causal-pair
+ * generation that would exceed it. Pair generation is fully
+ * deterministic and never calls an LLM; under default operation the
+ * actual ratio is `0` — the cap is a hard ceiling, not a quota.
+ */
+export const CAUSAL_VALIDATION_TOKEN_BUDGET_RATIO_CAP = 0.3 as const;
 
 /**
  * Schema version for the persisted mutation-killing-eval report artifact
@@ -1376,6 +1403,17 @@ export interface TestCasePolicyReport {
    */
   mutationKillRate?: MutationKillRateSummary;
   /**
+   * Optional causal-coverage KPI summary (Issue #2180). Surfaces the
+   * top-level `causalCoverage` ratio alongside hypothesis evaluation
+   * counts so downstream auditors can answer "what share of declared
+   * causal hypotheses did the suite satisfy?" without re-running the
+   * framework. The block is omitted when the causal-validation
+   * framework was not run for this job (default for fast iterative
+   * runs), so the byte shape stays stable for runs that pre-date the
+   * framework.
+   */
+  causalCoverage?: CausalCoverageSummary;
+  /**
    * Issue #2116 — explicit semantics + audit trail for the
    * cross-modal-faithfulness gate's tier-elastic fallback.
    *
@@ -1453,6 +1491,37 @@ export interface MutationKillRateSummary {
    * re-reads of the report.
    */
   readonly meetsThreshold: boolean;
+}
+
+/**
+ * Compact causal-coverage summary embedded into
+ * `policy-report.json#causalCoverage` (Issue #2180). Mirrors the
+ * top-level KPI fields from `causal-validation-report.json` so
+ * downstream consumers can read the headline ratio without parsing the
+ * full report. All fields are deterministic and round-trip stable.
+ */
+export interface CausalCoverageSummary {
+  /** Stable artifact filename auditors should consult for the full report. */
+  readonly artifactFilename: typeof CAUSAL_VALIDATION_REPORT_ARTIFACT_FILENAME;
+  /** Number of distinct causal hypotheses evaluated for the run. */
+  readonly hypothesesEvaluated: number;
+  /** Total counterfactual pairs generated across every hypothesis. */
+  readonly pairsGenerated: number;
+  /**
+   * Pairs whose embedded causal assertion was violated by the
+   * generated suite. A non-zero count signals a SUT-side bug surfaced
+   * by the counterfactual layer (the harness produced a pair that
+   * contradicts the declared hypothesis), not a harness fault.
+   */
+  readonly pairsViolated: number;
+  /**
+   * Causal-coverage ratio in `[0, 1]`, rounded to six digits to match
+   * the canonical-JSON contract. Defined as
+   * `(pairsGenerated - pairsViolated) / pairsGenerated`, i.e. the
+   * share of evaluated counterfactual pairs that satisfy their
+   * declared hypothesis. `0` when no pairs were generated.
+   */
+  readonly causalCoverageRatio: number;
 }
 
 /**
@@ -13044,7 +13113,7 @@ export interface AuditDossierSignature {
  * Must be bumped according to CONTRACT_CHANGELOG.md rules.
  * Package version alignment is documented in VERSIONING.md.
  */
-export const CONTRACT_VERSION = "4.64.0" as const;
+export const CONTRACT_VERSION = "4.65.0" as const;
 
 // ---------------------------------------------------------------------------
 // Issue #1774 — UntrustedContentNormalizer (2025-vintage injection carriers).

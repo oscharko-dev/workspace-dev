@@ -70,6 +70,7 @@ import {
   REVIEW_EVENTS_ARTIFACT_FILENAME,
   REVIEW_STATE_ARTIFACT_FILENAME,
   SELF_CONSISTENCY_REPORT_ARTIFACT_FILENAME,
+  CAUSAL_VALIDATION_REPORT_ARTIFACT_FILENAME,
   TEST_DATA_ORACLE_REPORT_ARTIFACT_FILENAME,
   type RunQualityArtifact,
   type RunQualityAttemptSummary,
@@ -322,6 +323,18 @@ import {
   MUTATION_KILL_RATE_DEFAULT_THRESHOLD,
   MUTATION_REPORT_ARTIFACT_FILENAME,
 } from "./mutation-killing-eval.js";
+import {
+  buildActiveDatasetInvariantRegistry,
+} from "./domain-invariant-registry.js";
+import {
+  buildCausalHypothesisRegistry,
+  type CausalHypothesis,
+} from "./causal-hypothesis-registry.js";
+import {
+  deriveCounterfactualPairs,
+  evaluateCounterfactualPairs,
+  summarizeCausalCoverage,
+} from "./causal-validation-framework.js";
 import {
   describeVisualScreens,
   writeVisualSidecarResultArtifact,
@@ -1212,6 +1225,36 @@ export interface RunFigmaToQcTestCasesInput {
     readonly enabled: boolean;
     readonly thresholdRatio?: number;
   };
+  /**
+   * Optional causal-validation framework configuration (Issue #2180).
+   * Defaults to disabled — when omitted the runner emits neither the
+   * `causal-validation-report.json` artifact nor the `causalCoverage`
+   * KPI block on `policy-report.json`, so byte-shape stays stable for
+   * runs that pre-date the framework.
+   *
+   * When `enabled === true` the runner derives a deterministic
+   * counterfactual-pair catalog from the registered domain invariants
+   * (Issue #2040 / #2108) and the supplied operator hypotheses,
+   * persists `causal-validation-report.json` next to the other run
+   * artifacts, and embeds the compact summary on
+   * `policy-report.json#causalCoverage`.
+   *
+   * Pair generation is fully deterministic — the framework never
+   * calls an LLM and uses the test-data oracle (Issue #2071) for
+   * every value variation between pair members. The configurable
+   * `seed` (defaults to the job id) feeds the per-pair id
+   * derivation; identical `(invariants, model, operatorHypotheses,
+   * now, seed)` tuples produce byte-identical output.
+   */
+  causalValidation?: {
+    readonly enabled: boolean;
+    /** Optional explicit seed (defaults to `input.jobId`). */
+    readonly seed?: string;
+    /** Optional operator-declared hypothesis catalog. */
+    readonly operatorHypotheses?: readonly CausalHypothesis[];
+    /** Optional override for the per-hypothesis pair cap (default 5). */
+    readonly maxPairsPerHypothesis?: number;
+  };
 }
 
 export interface RunFigmaToQcTestCasesResult {
@@ -1271,6 +1314,12 @@ export interface RunFigmaToQcTestCasesResult {
     mutationReport?: string;
     /** Path to `test-data-oracle-report.json` (Issue #2071). */
     testDataOracleReport?: string;
+    /**
+     * Path to `causal-validation-report.json` (Issue #2180). Present
+     * only when the runner was invoked with
+     * `causalValidation.enabled === true`.
+     */
+    causalValidationReport?: string;
   };
   /**
    * Harness summary surfaced when the runner ran with
@@ -5795,6 +5844,52 @@ export const runFigmaToQcTestCases = async (
       ? undefined
       : buildMutationKillRateSummary(mutationReport);
 
+  // Issue #2180 — causal-validation framework. Defaults to off; only
+  // benchmark + customer evaluation runs opt in. Pair generation is
+  // fully deterministic (oracle-fed) and never calls an LLM, so the
+  // runtime cost is bounded by the per-hypothesis pair cap.
+  const causalValidationEnabled = input.causalValidation?.enabled === true;
+  const causalReport = causalValidationEnabled
+    ? await (async () => {
+        const invariantRegistryForCausal =
+          buildActiveDatasetInvariantRegistry();
+        const hypotheses = buildCausalHypothesisRegistry({
+          invariants: invariantRegistryForCausal.list(),
+          model: testDesignModel,
+          ...(input.causalValidation?.operatorHypotheses !== undefined
+            ? { operatorHypotheses: input.causalValidation.operatorHypotheses }
+            : {}),
+        });
+        const seed = input.causalValidation?.seed ?? input.jobId;
+        const pairs = await deriveCounterfactualPairs({
+          cases: calibratedGeneratedTestCases.testCases,
+          invariants: invariantRegistryForCausal.list(),
+          model: testDesignModel,
+          jobId: input.jobId,
+          generatedAt: input.generatedAt,
+          hypotheses,
+          now: new Date(input.generatedAt),
+          seed,
+          ...(input.causalValidation?.maxPairsPerHypothesis !== undefined
+            ? {
+                maxPairsPerHypothesis:
+                  input.causalValidation.maxPairsPerHypothesis,
+              }
+            : {}),
+        });
+        return evaluateCounterfactualPairs({
+          jobId: input.jobId,
+          generatedAt: input.generatedAt,
+          hypotheses,
+          pairs,
+        });
+      })()
+    : undefined;
+  const causalCoverageSummary =
+    causalReport === undefined
+      ? undefined
+      : summarizeCausalCoverage(causalReport);
+
   const policyReport: TestCasePolicyReport = {
     ...validation.policy,
     ...(confidenceSummary !== undefined ? confidenceSummary : {}),
@@ -5812,6 +5907,9 @@ export const runFigmaToQcTestCases = async (
     gateResults: [negativeCaseLiftGateResult],
     ...(mutationKillRateSummary !== undefined
       ? { mutationKillRate: mutationKillRateSummary }
+      : {}),
+    ...(causalCoverageSummary !== undefined
+      ? { causalCoverage: causalCoverageSummary }
       : {}),
   };
   const policyBytes = encodeCanonicalJson(policyReport);
@@ -5863,6 +5961,12 @@ export const runFigmaToQcTestCases = async (
     mutationReport === undefined
       ? undefined
       : join(artifactDir, MUTATION_REPORT_ARTIFACT_FILENAME);
+  const causalReportBytes =
+    causalReport === undefined ? undefined : encodeCanonicalJson(causalReport);
+  const causalReportPath =
+    causalReport === undefined
+      ? undefined
+      : join(artifactDir, CAUSAL_VALIDATION_REPORT_ARTIFACT_FILENAME);
   const modelDeployments = {
     testGeneration: input.llm.client.deployment,
     ...(input.llm.bundle !== undefined
@@ -6119,6 +6223,15 @@ export const runFigmaToQcTestCases = async (
             category: "manifest" as const,
           },
         ]),
+    ...(causalReportBytes === undefined
+      ? []
+      : [
+          {
+            filename: CAUSAL_VALIDATION_REPORT_ARTIFACT_FILENAME,
+            bytes: causalReportBytes,
+            category: "manifest" as const,
+          },
+        ]),
   ];
   const evidenceArtifacts = rawEvidenceArtifacts.map((artifact) => {
     const artifactHash = sha256Hex(artifact.bytes);
@@ -6201,6 +6314,9 @@ export const runFigmaToQcTestCases = async (
     await writeAtomicBytes(policyPath, policyBytes);
     if (mutationReportBytes !== undefined && mutationReportPath !== undefined) {
       await writeAtomicBytes(mutationReportPath, mutationReportBytes);
+    }
+    if (causalReportBytes !== undefined && causalReportPath !== undefined) {
+      await writeAtomicBytes(causalReportPath, causalReportBytes);
     }
     await writeProvenanceGraph({
       runDir: artifactDir,
@@ -6471,6 +6587,9 @@ export const runFigmaToQcTestCases = async (
         : {}),
       ...(mutationReportPath !== undefined
         ? { mutationReport: mutationReportPath }
+        : {}),
+      ...(causalReportPath !== undefined
+        ? { causalValidationReport: causalReportPath }
         : {}),
     },
     customerMarkdownPaths: {
