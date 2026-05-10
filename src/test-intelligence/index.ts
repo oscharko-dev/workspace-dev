@@ -1626,6 +1626,30 @@ export {
   type DomainInvariantViolation,
 } from "./domain-invariant-registry.js";
 export {
+  buildCausalHypothesisRegistry,
+  buildCausalHypothesisRegistryFromRegistry,
+  CausalValidationFrameworkError,
+  loadOperatorHypotheses,
+  parseSemanticFieldId,
+  semanticFieldId,
+  type CausalHypothesis,
+  type CausalHypothesisSource,
+  type CausalRelationship,
+  type CausalValidationErrorCode,
+  type SemanticFieldId,
+} from "./causal-hypothesis-registry.js";
+export {
+  assertWithinTokenBudget,
+  deriveCounterfactualPairs,
+  evaluateCounterfactualPairs,
+  summarizeCausalCoverage,
+  type CausalHypothesisEvaluation,
+  type CausalValidationReport,
+  type CounterfactualPair,
+  type DeriveCounterfactualPairsInput,
+  type EvaluateCounterfactualPairsInput,
+} from "./causal-validation-framework.js";
+export {
   collectInvariantFieldRefs,
   createCrossFieldInvariantRegistry,
   evaluateInvariantExpression,

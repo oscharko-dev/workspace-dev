@@ -31,6 +31,79 @@ All changes to the public contract surface of `workspace-dev` are documented her
 
 ---
 
+## [1.30.0] - 2026-05-10
+
+Test-intelligence sub-contract bump that accompanies the Issue #2180
+causal-validation framework (counterfactual test cases via
+do-calculus). See the package-version entry below for the full
+additive surface inventory; the test-intelligence sub-contract bump
+mirrors the new schema and artifact constants for the
+`causal-validation-report.json` artifact, the
+`causalCoverage` summary block on `policy-report.json`, and the
+FinOps token-budget cap exposed for the framework.
+
+---
+
+## [4.65.0] - 2026-05-10
+
+### Added (Issue #2180 — causal-validation framework)
+
+- New test-intelligence runtime constants exported from
+  `src/contracts/index.ts`:
+  `CAUSAL_VALIDATION_REPORT_SCHEMA_VERSION` (`"1.0.0"`),
+  `CAUSAL_VALIDATION_REPORT_ARTIFACT_FILENAME`
+  (`"causal-validation-report.json"`), and
+  `CAUSAL_VALIDATION_TOKEN_BUDGET_RATIO_CAP` (`0.3`, the FinOps
+  ceiling on the framework's relative additional token cost per run).
+- New exported type `CausalCoverageSummary` carried as the optional
+  additive `causalCoverage` field on `TestCasePolicyReport`. The block
+  surfaces `hypothesesEvaluated`, `pairsGenerated`, `pairsViolated`,
+  and the `causalCoverageRatio` (= `(pairsGenerated -
+  pairsViolated) / pairsGenerated`, rounded to six digits, `0` when
+  no pairs were generated). Omitted for runs that did not enable the
+  framework, so byte-shape stays stable for legacy runs.
+- New module `src/test-intelligence/causal-hypothesis-registry.ts`
+  exposing the branded `SemanticFieldId` type, the
+  `semanticFieldId(screenId, elementId)` constructor and
+  `parseSemanticFieldId` reader, the `CausalHypothesis` /
+  `CausalRelationship` types, the
+  `buildCausalHypothesisRegistry({ invariants, model,
+  operatorHypotheses })` API that derives hypotheses from registered
+  domain invariants (Issue #2040 + Issue #2108) and merges
+  operator-declared hypotheses, and the `loadOperatorHypotheses`
+  fixture loader.
+- New module `src/test-intelligence/causal-validation-framework.ts`
+  exposing the `CounterfactualPair` interface, the
+  `deriveCounterfactualPairs({ cases, invariants, model,
+  operatorHypotheses?, now, seed })` deterministic pair generator that
+  uses the test-data oracle (Issue #2071) for every value variation
+  between pair members, the `evaluateCounterfactualPairs` aggregator
+  that computes the persisted `CausalValidationReport`, and the
+  `CausalValidationFrameworkError` class with stable error codes
+  (`E_INVALID_HYPOTHESIS`, `E_INVALID_FIELD_ID`, `E_NO_BVA_VARIATION`,
+  `E_INVALID_SEED`).
+- Pair generation is **deterministic** given fixed seeds — replaying
+  the same `(cases, invariants, operatorHypotheses, model, now,
+  seed)` tuple produces byte-identical output.
+- Each pair counts as **one logical coverage unit** for the
+  `causalCoverage` KPI but **two physical cases** when added to the
+  suite. The pair envelope carries `causalDelta.fieldId`,
+  `valueA`, `valueB`, plus the `expectedEffectInvariant` text the
+  hypothesis projects onto the effect field.
+- New documentation page
+  `docs/test-intelligence/causal-validation.md` describing the
+  do-calculus primer, the hypothesis derivation rules, and worked
+  banking + insurance examples.
+- `TEST_INTELLIGENCE_CONTRACT_VERSION` bumped `1.29.0` → `1.30.0`;
+  `CONTRACT_VERSION` bumped `4.64.0` → `4.65.0`. All changes are
+  additive — no existing field, type, or command was removed or
+  renamed.
+- `migrationHash:` registration is not required for this release. The
+  signed migration registry carries forward unchanged because no
+  migration id, hash, or rollback semantics changed.
+
+---
+
 ## [1.29.0] - 2026-05-10
 
 Test-intelligence sub-contract bump that accompanies the Issue #2179

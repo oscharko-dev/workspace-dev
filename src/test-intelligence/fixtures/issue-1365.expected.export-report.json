@@ -1,6 +1,6 @@
 {
   "schemaVersion": "1.0.0",
-  "contractVersion": "1.29.0",
+  "contractVersion": "1.30.0",
   "jobId": "job-1365-golden",
   "generatedAt": "2026-04-25T10:00:00.000Z",
   "profileId": "opentext-alm-default",
@@ -16,13 +16,13 @@
   "artifacts": [
     {
       "filename": "qc-mapping-preview.json",
-      "sha256": "935d77584241dda51b86119e9fcafda826310d037e880e7d0ed7b711e28b7b99",
+      "sha256": "d2e28293e7f573f886a27a714ae2ad32ff4bde8736bbc851eacd79fa5cfb3df7",
       "bytes": 1821,
       "contentType": "application/json"
     },
     {
       "filename": "testcases.alm.xml",
-      "sha256": "54074b96299560f09bb14dc03f3531ef0619c0396f17b17aa204b902eb1b52c4",
+      "sha256": "5dc163498f5ede0c2259b88d9ee554a11f2376af5775e78817f9fab72d4d936f",
       "bytes": 2386,
       "contentType": "application/xml"
     },
@@ -34,7 +34,7 @@
     },
     {
       "filename": "testcases.json",
-      "sha256": "1fbfa988e5df363a501843ec003b6c4016963d457bdd27cabb7c96f6664e23fa",
+      "sha256": "f395b73d3e4553b0061d75334fa56f12da64045b551068e2ffec099352ec6867",
       "bytes": 2702,
       "contentType": "application/json"
     }
