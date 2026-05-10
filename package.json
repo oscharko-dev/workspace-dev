@@ -129,6 +129,7 @@
     "verify:npmrc-freshness": "node scripts/check-npmrc-freshness-policy.mjs",
     "verify:docs-template-stack": "node scripts/check-doc-template-stack.mjs",
     "verify:prompt-template-version": "node scripts/check-prompt-template-version.mjs",
+    "verify:contract-changelog": "node scripts/check-contract-changelog.mjs",
     "verify:customer-eval-sample-plan": "node scripts/check-customer-eval-sample-plan.mjs",
     "docs:api": "node scripts/generate-api-docs.mjs",
     "docs:api:check": "node scripts/check-api-docs.mjs",

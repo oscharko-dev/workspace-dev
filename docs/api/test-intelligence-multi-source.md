@@ -4,7 +4,7 @@ This document is the public API reference for the Wave 4 multi-source
 test-intelligence contracts, HTTP routes, and operator configuration options
 introduced in Issues #1431–#1439.
 
-**Contract version:** `TEST_INTELLIGENCE_CONTRACT_VERSION = "1.24.0"`<br>
+**Contract version:** `TEST_INTELLIGENCE_CONTRACT_VERSION = "1.25.0"`<br>
 **Package contract version:** `CONTRACT_VERSION = "4.60.0"`<br>
 **Authoritative surface:** `CONTRACT_CHANGELOG.md` §4.11.0–4.60.0
 
@@ -210,8 +210,8 @@ interface JiraIssueIr {
 | Link count             | 50                 | `MAX_JIRA_LINK_COUNT`               |
 | Custom field count     | 50                 | `MAX_JIRA_CUSTOM_FIELD_COUNT`       |
 | Custom field value     | 2 KiB (2048 B)     | `MAX_JIRA_CUSTOM_FIELD_VALUE_BYTES` |
-| REST API calls per job | 20                 | `MAX_JIRA_API_REQUESTS_PER_JOB`     |
-| Paste bytes per job    | 512 KiB (524288 B) | `MAX_JIRA_PASTE_BYTES_PER_JOB`      |
+| REST API calls per job | 200                | `MAX_JIRA_API_REQUESTS_PER_JOB`     |
+| Paste bytes per job    | 8 MiB (8388608 B)  | `MAX_JIRA_PASTE_BYTES_PER_JOB`      |
 
 ### 5.3 `JiraIssueIr.dataMinimization`
 
@@ -292,7 +292,7 @@ Artifact: `<artifactRoot>/<jobId>/sources/custom-context-structured/custom-conte
 Public camelCase aliases (`dataClass`, `regulatoryScope`, `featureFlag`) are
 normalized to snake_case canonical wire keys at validation time.
 
-Per-job budget: `MAX_CUSTOM_CONTEXT_BYTES_PER_JOB = 256 KiB (262144 B)`.
+Per-job budget: `MAX_CUSTOM_CONTEXT_BYTES_PER_JOB = 4 MiB (4194304 B)`.
 
 ---
 
@@ -395,7 +395,7 @@ Ingest a Jira issue as a paste-only primary multi-source artifact.
 **Paste caps:**
 
 - Raw paste body: 256 KiB per submission
-- Per-job total paste budget: `MAX_JIRA_PASTE_BYTES_PER_JOB = 512 KiB`
+- Per-job total paste budget: `MAX_JIRA_PASTE_BYTES_PER_JOB = 8 MiB`
 
 **XSS guard:** `<script`, `javascript:`, and inline `on*=` attributes are
 rejected with `xss_content_detected` before parsing.
@@ -617,13 +617,13 @@ testIntelligence: {
   /** Enable the multi-source gate (requires env var too). */
   multiSourceEnabled?: boolean;
 
-  /** Maximum Jira REST API calls per job. Default: MAX_JIRA_API_REQUESTS_PER_JOB (20). */
+  /** Maximum Jira REST API calls per job. Default: MAX_JIRA_API_REQUESTS_PER_JOB (200). */
   maxJiraApiRequestsPerJob?: number;
 
-  /** Maximum raw paste bytes per job. Default: MAX_JIRA_PASTE_BYTES_PER_JOB (512 KiB). */
+  /** Maximum raw paste bytes per job. Default: MAX_JIRA_PASTE_BYTES_PER_JOB (8 MiB). */
   maxJiraPasteBytesPerJob?: number;
 
-  /** Maximum custom-context input bytes per job. Default: MAX_CUSTOM_CONTEXT_BYTES_PER_JOB (256 KiB). */
+  /** Maximum custom-context input bytes per job. Default: MAX_CUSTOM_CONTEXT_BYTES_PER_JOB (4 MiB). */
   maxCustomContextBytesPerJob?: number;
 }
 ```

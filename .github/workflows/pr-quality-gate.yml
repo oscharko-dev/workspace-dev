@@ -23,6 +23,7 @@ jobs:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
         with:
           persist-credentials: false
+          fetch-depth: 0
 
       - uses: pnpm/action-setup@8912a9102ac27614460f54aedde9e1e7f9aec20d  # v6
         with:
@@ -51,6 +52,7 @@ jobs:
           pnpm run lint:secrets:all
           pnpm run lint:ts-style
           pnpm run verify:prompt-template-version
+          pnpm run verify:contract-changelog -- --base "origin/${{ github.base_ref }}" --head HEAD --merge-base
           pnpm run model-card:check
 
       - name: Enforce customer-eval sample-plan update policy

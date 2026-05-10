@@ -33,6 +33,7 @@ jobs:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
         with:
           persist-credentials: false
+          fetch-depth: 0
 
       - id: filter
         uses: dorny/paths-filter@fbd0ab8f3e69293af611ebaee6363fc25e6d187d  # v4.0.1
@@ -150,6 +151,9 @@ jobs:
 
       - name: Enforce prompt-template-version contract
         run: pnpm run verify:prompt-template-version
+
+      - name: Enforce contract changelog coverage
+        run: pnpm run verify:contract-changelog -- --base "${{ github.event.before }}" --head "${{ github.sha }}"
 
       - name: Enforce EU AI Act model-card freshness (Issue #2112)
         run: pnpm run model-card:check

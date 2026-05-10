@@ -13,6 +13,11 @@ const contractChangelogPath = path.resolve(
 );
 const escapeRegExp = (value: string): string =>
   value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+const REQUIRED_PHASE_1_3_CONTRACT_ISSUES = [
+  2099, 2100, 2101, 2102, 2103, 2104, 2105, 2106, 2107, 2108, 2109, 2110,
+  2111, 2112, 2113, 2114, 2115, 2116, 2117, 2118, 2119, 2120, 2121, 2122,
+  2123, 2124, 2125,
+] as const;
 
 const EXPECTED_CONTRACT_RUNTIME_EXPORTS = [
   "AGENT_HARNESS_EXECUTION_GRAPH_SCHEMA_VERSION",
@@ -762,6 +767,12 @@ test("contract process gate: changelog contains current contract version heading
   assert.match(changelog, new RegExp(`^${escapeRegExp(heading)}`, "m"));
 });
 
+test("contract process gate: changelog contains current test-intelligence contract version heading", async () => {
+  const changelog = await readFile(contractChangelogPath, "utf8");
+  const heading = `## [${contracts.TEST_INTELLIGENCE_CONTRACT_VERSION}]`;
+  assert.match(changelog, new RegExp(`^${escapeRegExp(heading)}`, "m"));
+});
+
 test("contract process gate: current changelog heading documents migration hash registration workflow", async () => {
   const changelog = await readFile(contractChangelogPath, "utf8");
   const heading = `## [${contracts.CONTRACT_VERSION}]`;
@@ -776,4 +787,15 @@ test("contract process gate: current changelog heading documents migration hash 
       ? changelog.slice(headingIndex)
       : changelog.slice(headingIndex, nextHeadingIndex);
   assert.match(section, /migrationHash:/);
+});
+
+test("contract process gate: Phase 1-3 contract issues all have changelog references", async () => {
+  const changelog = await readFile(contractChangelogPath, "utf8");
+  for (const issueNumber of REQUIRED_PHASE_1_3_CONTRACT_ISSUES) {
+    assert.match(
+      changelog,
+      new RegExp(`Issue #${issueNumber}\\b`),
+      `Expected CONTRACT_CHANGELOG.md to mention Issue #${issueNumber}.`,
+    );
+  }
 });
