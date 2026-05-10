@@ -5,6 +5,7 @@ import { randomUUID } from "node:crypto";
 import {
   TEST_INTELLIGENCE_CONTRACT_VERSION,
   type AgentSourceLabel,
+  type RegionAttestationHostingRegion,
 } from "../contracts/index.js";
 import { canonicalJson } from "./content-hash.js";
 import type { TaskClassificationDecision } from "./task-classifier-agent.js";
@@ -68,6 +69,11 @@ export interface AgentParticipationCostAttribution {
   readonly imageBytes: number;
   readonly durationMs: number;
   readonly estimatedCost: number;
+  readonly regionAttestation?: {
+    readonly distinctRegions: readonly RegionAttestationHostingRegion[];
+    readonly attestedCallCount: number;
+    readonly warningCount: number;
+  };
 }
 
 export interface AgentParticipationEntry {
@@ -200,6 +206,19 @@ export const buildAgentParticipationArtifact = (
               imageBytes: entry.costAttribution.imageBytes,
               durationMs: entry.costAttribution.durationMs,
               estimatedCost: entry.costAttribution.estimatedCost,
+              ...(entry.costAttribution.regionAttestation !== undefined
+                ? {
+                    regionAttestation: {
+                      distinctRegions: [
+                        ...entry.costAttribution.regionAttestation.distinctRegions,
+                      ],
+                      attestedCallCount:
+                        entry.costAttribution.regionAttestation.attestedCallCount,
+                      warningCount:
+                        entry.costAttribution.regionAttestation.warningCount,
+                    },
+                  }
+                : {}),
             },
           }
         : {}),

@@ -53,6 +53,7 @@ import {
   type LlmGatewayErrorClass,
   type LlmGenerationResult,
   type ModelRoutingTierLabel,
+  type RegionAttestationHostingRegion,
 } from "../contracts/index.js";
 import { canonicalJson } from "./content-hash.js";
 import { cloneFinOpsBudgetEnvelope } from "./finops-budget.js";
@@ -167,6 +168,10 @@ export interface FinOpsAttemptObservation {
   modelRevision?: string;
   /** Optional routing tier label attached to this attempt's route. */
   tierLabel?: ModelRoutingTierLabel;
+  /** Optional attested hosting region observed for this attempt. */
+  region?: RegionAttestationHostingRegion;
+  /** True when the region attestation fell back to operator-pinned evidence. */
+  regionWarning?: boolean;
   /** The gateway result (success or failure) for this attempt. */
   result: LlmGenerationResult;
   /**
@@ -416,6 +421,12 @@ export const createFinOpsUsageRecorder = (
           ? {
               constrainedDecoding:
                 observation.result.constrainedDecoding,
+            }
+          : {}),
+        ...(observation.region !== undefined
+          ? {
+              region: observation.region,
+              regionWarning: observation.regionWarning === true,
             }
           : {}),
       });
@@ -708,6 +719,27 @@ export const buildFinOpsBudgetReport = (
     input.jobId,
     input.generatedAt,
   );
+  const regionAttestationEntries = Object.values(bySource)
+    .map((entry) => entry.regionAttestation)
+    .filter((entry) => entry !== undefined);
+  const regionAttestation =
+    regionAttestationEntries.length === 0
+      ? undefined
+      : {
+          distinctRegions: Array.from(
+            new Set(
+              regionAttestationEntries.flatMap((entry) => entry.distinctRegions),
+            ),
+          ).sort() as RegionAttestationHostingRegion[],
+          attestedCallCount: regionAttestationEntries.reduce(
+            (sum, entry) => sum + entry.attestedCallCount,
+            0,
+          ),
+          warningCount: regionAttestationEntries.reduce(
+            (sum, entry) => sum + entry.warningCount,
+            0,
+          ),
+        };
   const bySourceTotal = input.recorder.sourceTotals(
     input.jobId,
     input.generatedAt,
@@ -737,6 +769,7 @@ export const buildFinOpsBudgetReport = (
     bySource,
     bySourceTotal,
     bySourceSealedAt: input.generatedAt,
+    ...(regionAttestation !== undefined ? { regionAttestation } : {}),
     ...(input.figmaPayload !== undefined
       ? { figmaPayload: sanitizeFigmaPayloadAudit(input.figmaPayload) }
       : {}),

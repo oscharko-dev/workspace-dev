@@ -158,6 +158,17 @@ const buildPdfLines = (manifest: AuditDossierManifest): PdfLine[] => {
   }
   lines.push({ text: "", font: "regular", size: BODY_FONT_SIZE });
 
+  if (manifest.regionAttestations !== undefined) {
+    pushHeading(lines, "Region Attestations");
+    for (const row of manifest.regionAttestations) {
+      pushWrapped(
+        lines,
+        `${row.filename}: ${row.distinctRegions.join(", ")} (attestations=${row.attestationCount})`,
+      );
+    }
+    lines.push({ text: "", font: "regular", size: BODY_FONT_SIZE });
+  }
+
   pushHeading(lines, "Signing");
   pushWrapped(lines, `Algorithm: ${manifest.signing.algorithm}`);
   pushWrapped(lines, `Key fingerprint: ${manifest.signing.keyFingerprintSha256}`);

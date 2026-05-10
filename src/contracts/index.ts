@@ -4,7 +4,7 @@
  * These types define the public API surface for workspace-dev consumers.
  * They must not import from internal services.
  *
- * Contract version: 4.62.0
+ * Contract version: 4.63.0
  * See CONTRACT_CHANGELOG.md for contract change history and VERSIONING.md for
  * package-versus-contract versioning policy.
  */
@@ -162,7 +162,7 @@ export interface TestIntelligenceTransferPrincipal {
 }
 
 /** Contract version for the opt-in test-intelligence surface. */
-export const TEST_INTELLIGENCE_CONTRACT_VERSION = "1.27.0" as const;
+export const TEST_INTELLIGENCE_CONTRACT_VERSION = "1.28.0" as const;
 
 /**
  * Schema version for generated test case payloads.
@@ -342,6 +342,72 @@ export const SUPPORTED_HOSTING_REGIONS = [
 
 /** A single Azure / Mistral / operator-defined hosting region. */
 export type SupportedHostingRegion = (typeof SUPPORTED_HOSTING_REGIONS)[number];
+
+/**
+ * Region-attestation schema version (Issue #2177). Bumped on any breaking
+ * change to the per-artifact region-attestation envelope or report shape.
+ */
+export const REGION_ATTESTATION_SCHEMA_VERSION = "1.0.0" as const;
+
+/**
+ * Closed runtime list of operator-accepted hosting regions for cryptographic
+ * per-artifact EU data-residency attestations (Issue #2177).
+ */
+export const SUPPORTED_REGION_ATTESTATION_HOSTING_REGIONS = [
+  "eu-central-1",
+  "eu-west-1",
+  "eu-west-3",
+  "eu-north-1",
+  "eu-south-1",
+  "eu-de-1",
+  "eu-fr-1",
+  "switzerland-north",
+  "norway-east",
+] as const;
+
+/** One hosting region admitted by {@link RegionAttestation}. */
+export type RegionAttestationHostingRegion =
+  (typeof SUPPORTED_REGION_ATTESTATION_HOSTING_REGIONS)[number];
+
+/** One cryptographic per-artifact EU data-residency attestation. */
+export interface RegionAttestation {
+  readonly schemaVersion: typeof REGION_ATTESTATION_SCHEMA_VERSION;
+  readonly artifactHash: string;
+  readonly deploymentId: string;
+  readonly servedFromRegion: RegionAttestationHostingRegion;
+  readonly observedAtUtc: string;
+  readonly attestedBy:
+    | "azure-instance-metadata"
+    | "endpoint-cert-cn"
+    | "operator-pinned";
+  /**
+   * Additive audit signal: present only when the attestation fell back to an
+   * operator-pinned region because no stronger runtime evidence was available.
+   */
+  readonly severity?: "warning";
+  readonly attestationSignatureHex: string;
+}
+
+/** Canonical filename for the per-run region-attestation report. */
+export const REGION_ATTESTATION_REPORT_ARTIFACT_FILENAME =
+  "region-attestations.json" as const;
+
+/** One artifact row inside the run-level region-attestation report. */
+export interface RegionAttestationArtifactEntry {
+  readonly filename: string;
+  readonly artifactHash: string;
+  readonly regionAttestations: readonly RegionAttestation[];
+}
+
+/** Machine-readable report of every artifact-level region attestation. */
+export interface RegionAttestationReport {
+  readonly schemaVersion: typeof REGION_ATTESTATION_SCHEMA_VERSION;
+  readonly contractVersion: typeof TEST_INTELLIGENCE_CONTRACT_VERSION;
+  readonly jobId: string;
+  readonly generatedAt: string;
+  readonly artifacts: readonly RegionAttestationArtifactEntry[];
+  readonly distinctRegions: readonly RegionAttestationHostingRegion[];
+}
 
 /**
  * A single ICT third-party / subprocessor entry under DORA Art. 28(3).
@@ -1534,6 +1600,11 @@ export interface ActiveModelBinding {
    * policy enforcement when the binding is active for a regulated job.
    */
   readonly ictRegisterRef?: string;
+  /**
+   * Optional coarse deployment-region marker surfaced by routing and used by
+   * region-attestation-aware policy gates to cross-check runtime evidence.
+   */
+  readonly region?: JudgeModelRegion;
 }
 
 /** Tunable knobs of a policy profile (defaults shown for `eu-banking-default`). */
@@ -1707,6 +1778,12 @@ export interface TestCasePolicyProfileRules {
    * to the built-in `eu-banking-default` coefficients.
    */
   finopsWallClockBudget?: FinOpsWallClockBudgetPolicy;
+  /**
+   * Issue #2177 — allow-list of attested hosting regions accepted by the
+   * `G8_EU_REGION_ATTESTED` hard gate. Optional for backwards compatibility:
+   * when omitted the runtime falls back to the profile's built-in default.
+   */
+  allowedHostingRegions?: readonly RegionAttestationHostingRegion[];
 }
 
 export const ALLOWED_JUDGE_REFUSAL_POLICIES = [
@@ -8893,6 +8970,11 @@ export interface Wave1ValidationEvidenceArtifact {
   /** Byte length on disk at manifest creation time. */
   bytes: number;
   category: Wave1ValidationEvidenceArtifactCategory;
+  /**
+   * Issue #2177 — per-artifact EU data-residency attestations. One entry per
+   * LLM call or cache hit that contributed to the artifact.
+   */
+  regionAttestations?: readonly RegionAttestation[];
 }
 
 /**
@@ -10678,6 +10760,15 @@ export interface FinOpsBudgetReport {
           fallbackReasons?: readonly string[];
           adapterVersion?: string;
         };
+        /**
+         * Issue #2177 — distinct attested hosting regions observed for this
+         * source while contributing to the run.
+         */
+        regionAttestation?: {
+          distinctRegions: readonly RegionAttestationHostingRegion[];
+          attestedCallCount: number;
+          warningCount: number;
+        };
       }
     >
   >;
@@ -10688,6 +10779,15 @@ export interface FinOpsBudgetReport {
   };
   /** Timestamp used when sealing the `bySource` payload. */
   bySourceSealedAt: string;
+  /**
+   * Issue #2177 — audit summary of the run's region attestations. Present
+   * whenever at least one LLM call or cache hit recorded region evidence.
+   */
+  regionAttestation?: {
+    distinctRegions: readonly RegionAttestationHostingRegion[];
+    attestedCallCount: number;
+    warningCount: number;
+  };
   /**
    * Figma REST payload audit trail (Issue #2172). Records the resolved cap
    * applied to this run alongside the actual payload bytes ingested so ops
@@ -12646,6 +12746,7 @@ export const ALLOWED_AUDIT_DOSSIER_ARTIFACT_KINDS = [
   "drift_baseline",
   "incident_log",
   "subprocessor_register",
+  "region_attestations",
   "finops_budget",
   "faithfulness_tier",
   "self_consistency",
@@ -12712,6 +12813,11 @@ export interface AuditDossierManifest {
     readonly merkleProofSha256: string;
   };
   readonly sourceArtifacts: readonly AuditDossierManifestArtifactRef[];
+  readonly regionAttestations?: readonly {
+    readonly filename: string;
+    readonly distinctRegions: readonly RegionAttestationHostingRegion[];
+    readonly attestationCount: number;
+  }[];
   readonly regulatorCoverage: readonly AuditDossierRegulationCoverageEntry[];
   readonly summary: {
     readonly harnessVersion: string;
@@ -12752,7 +12858,7 @@ export interface AuditDossierSignature {
  * Must be bumped according to CONTRACT_CHANGELOG.md rules.
  * Package version alignment is documented in VERSIONING.md.
  */
-export const CONTRACT_VERSION = "4.62.0" as const;
+export const CONTRACT_VERSION = "4.63.0" as const;
 
 // ---------------------------------------------------------------------------
 // Issue #1774 — UntrustedContentNormalizer (2025-vintage injection carriers).

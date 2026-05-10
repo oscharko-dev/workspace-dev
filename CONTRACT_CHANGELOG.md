@@ -81,6 +81,48 @@ All changes to the public contract surface of `workspace-dev` are documented her
   `withTenantScope`, so single-tenant fixtures pass without
   modification.
 
+### Added (Issue #2177 — EU region-attestation evidence and residency gating)
+
+- New region-attestation constants exported from `src/contracts/index.ts`:
+  `REGION_ATTESTATION_SCHEMA_VERSION` (`"1.0.0"`),
+  `SUPPORTED_REGION_ATTESTATION_HOSTING_REGIONS` (closed allow-list of EU,
+  sovereign-EU, Switzerland, and Norway hosting regions), and
+  `REGION_ATTESTATION_REPORT_ARTIFACT_FILENAME`
+  (`"region-attestations.json"`).
+- New exported types `RegionAttestation`,
+  `RegionAttestationHostingRegion`, `RegionAttestationArtifactEntry`,
+  and `RegionAttestationReport`. These define the per-call signed region
+  evidence envelope plus the canonical per-run report artifact.
+- `ActiveModelBinding` gains the additive optional `region` marker so
+  runtime routing and audit surfaces can preserve the intended region
+  family alongside `deployment`, `modelRevision`, and
+  `ictRegisterRef`.
+- `TestCasePolicyProfileRules` gains the additive optional
+  `allowedHostingRegions` allow-list used by
+  `G8_EU_REGION_ATTESTED`. The default `eu-banking-default` profile now
+  carries the full supported EU/EEA/CH/NO set.
+- `Wave1ValidationEvidenceArtifact` gains the additive optional
+  `regionAttestations` array. Every persisted artifact row in
+  `evidence.manifest.json` can now carry the exact LLM-call residency
+  evidence that informed it.
+- `FinOpsBudgetReport.bySource[*]` and the top-level
+  `FinOpsBudgetReport` gain additive optional `regionAttestation`
+  summaries so vendor-governance review can confirm `distinctRegions`,
+  attested call counts, and operator-pinned fallback warnings without
+  parsing the full report artifact.
+- `AuditDossierManifest` gains the additive optional
+  `regionAttestations` table and `ALLOWED_AUDIT_DOSSIER_ARTIFACT_KINDS`
+  now includes `"region_attestations"`. The audit dossier now requires
+  `region-attestations.json` and maps it into DORA Art. 28 / GDPR Ch. V
+  coverage.
+- `BuildRunProvenanceGraphInput` gains additive optional
+  `regionAttestations` (per-call observation entities) and the optional
+  `regionAttestationReport` cross-link. `provenance.jsonld` can now add
+  `prov:Entity` nodes for residency observations and wire
+  `prov:wasInformedBy` edges from generator / judge activities to the
+  specific region-evidence entries they consumed.
+- `TEST_INTELLIGENCE_CONTRACT_VERSION` bumped `1.27.0` → `1.28.0`.
+
 ---
 
 ## [4.62.0] - 2026-05-10

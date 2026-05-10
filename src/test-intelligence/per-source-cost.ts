@@ -9,6 +9,7 @@ import type {
   LlmConstrainedDecodingEnforcement,
   LlmConstrainedDecodingMetadata,
   ModelRoutingTierLabel,
+  RegionAttestationHostingRegion,
 } from "../contracts/index.js";
 
 export const PER_SOURCE_COST_BREAKDOWN_SCHEMA_VERSION = "1.0.0" as const;
@@ -66,6 +67,11 @@ export interface PerSourceCostEntry {
     fallbackReasons?: readonly string[];
     adapterVersion?: string;
   };
+  readonly regionAttestation?: {
+    distinctRegions: readonly RegionAttestationHostingRegion[];
+    attestedCallCount: number;
+    warningCount: number;
+  };
 }
 
 export interface PerSourceCostBreakdown {
@@ -105,6 +111,11 @@ export interface MutablePerSourceCostEntry {
     fallbackCallCount: number;
     fallbackReasons?: string[];
     adapterVersion?: string;
+  };
+  regionAttestation?: {
+    distinctRegions: Set<RegionAttestationHostingRegion>;
+    attestedCallCount: number;
+    warningCount: number;
   };
 }
 
@@ -177,6 +188,8 @@ export const recordPerSourceAttempt = (input: {
   modelRevision?: string;
   tierLabel?: ModelRoutingTierLabel;
   constrainedDecoding?: LlmConstrainedDecodingMetadata;
+  region?: RegionAttestationHostingRegion;
+  regionWarning?: boolean;
 }): void => {
   input.accumulator.callCount += 1;
   input.accumulator.tokensIn += safeIntPositiveOrZero(input.inputTokens);
@@ -245,6 +258,19 @@ export const recordPerSourceAttempt = (input: {
       current.adapterVersion = input.constrainedDecoding.adapterVersion;
     }
     input.accumulator.constrainedDecoding = current;
+  }
+  if (input.region !== undefined) {
+    const current = input.accumulator.regionAttestation ?? {
+      distinctRegions: new Set<RegionAttestationHostingRegion>(),
+      attestedCallCount: 0,
+      warningCount: 0,
+    };
+    current.distinctRegions.add(input.region);
+    current.attestedCallCount += 1;
+    if (input.regionWarning === true) {
+      current.warningCount += 1;
+    }
+    input.accumulator.regionAttestation = current;
   }
 };
 
@@ -328,6 +354,17 @@ export const finalizePerSourceCostBreakdown = (input: {
                           entry.constrainedDecoding.adapterVersion,
                       }
                     : {}),
+                },
+              }
+            : {}),
+          ...(entry.regionAttestation !== undefined
+            ? {
+                regionAttestation: {
+                  distinctRegions: Array.from(
+                    entry.regionAttestation.distinctRegions,
+                  ).sort() as RegionAttestationHostingRegion[],
+                  attestedCallCount: entry.regionAttestation.attestedCallCount,
+                  warningCount: entry.regionAttestation.warningCount,
                 },
               }
             : {}),

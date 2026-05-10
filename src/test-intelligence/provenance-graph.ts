@@ -12,6 +12,7 @@ import {
   type TenantScope,
 } from "../contracts/index.js";
 import type { AdversarialCriticFinding } from "./adversarial-critic-agent.js";
+import type { RegionAttestationObservation } from "./region-attestation.js";
 import type { RepairLoopIterationRecord } from "./repair-loop.js";
 import { canonicalJson } from "./content-hash.js";
 
@@ -79,6 +80,21 @@ export interface BuildRunProvenanceGraphInput {
     readonly artifactFilename: string;
     readonly attestationSha256: string;
     readonly tenantScope: TenantScope;
+  };
+  /**
+   * Per-call region-attestation observations (Issue #2177). These become
+   * individual provenance entities so LLM-driven activities can point at the
+   * exact runtime region evidence they consumed without depending on the
+   * aggregate report artifact.
+   */
+  readonly regionAttestations?: readonly RegionAttestationObservation[];
+  /**
+   * Per-run region-attestation report cross-link (Issue #2177). When present,
+   * the report file is added as a `prov:Entity` artifact node and LLM-driven
+   * activities are marked as being informed by it.
+   */
+  readonly regionAttestationReport?: {
+    readonly artifactFilename: string;
   };
 }
 
@@ -191,6 +207,27 @@ const buildAgentNode = (input: {
   "ti:agentKind": input.kind,
   ...(input.deployment !== undefined
     ? { "ti:modelDeployment": input.deployment }
+    : {}),
+});
+
+const buildRegionAttestationNode = (input: {
+  readonly jobId: string;
+  readonly observation: RegionAttestationObservation;
+}): ProvenanceNode => ({
+  "@id": makeNodeId(
+    input.jobId,
+    "region-attestation",
+    sanitizeIriToken(input.observation.observationId),
+  ),
+  "@type": "prov:Entity",
+  label: `Region attestation for ${input.observation.sourceLabel}`,
+  "ti:sourceLabel": input.observation.sourceLabel,
+  "ti:modelDeployment": input.observation.deploymentId,
+  "ti:servedFromRegion": input.observation.servedFromRegion,
+  "ti:attestedBy": input.observation.attestedBy,
+  "ti:observedAtUtc": input.observation.observedAtUtc,
+  ...(input.observation.severity !== undefined
+    ? { "ti:severity": input.observation.severity }
     : {}),
 });
 
@@ -369,6 +406,36 @@ export const buildRunProvenanceGraph = async (
     readArtifactDigest(input.runDir, input.logicJudge.artifactFilename),
     readArtifactDigest(input.runDir, input.judgeConsensus.artifactFilename),
   ]);
+  const regionAttestationReportArtifactId =
+    input.regionAttestationReport === undefined
+      ? undefined
+      : makeNodeId(
+          input.jobId,
+          "artifact",
+          sanitizeIriToken(input.regionAttestationReport.artifactFilename),
+        );
+  const regionAttestationIdsBySource = new Map<string, string[]>();
+  for (const observation of (input.regionAttestations ?? []).slice().sort(
+    (left, right) =>
+      left.observedAtUtc.localeCompare(right.observedAtUtc) ||
+      left.observationId.localeCompare(right.observationId),
+  )) {
+    const node = buildRegionAttestationNode({
+      jobId: input.jobId,
+      observation,
+    });
+    const nodeId = readNodeId(node);
+    upsertNode(nodes, node);
+    const existing = regionAttestationIdsBySource.get(observation.sourceLabel) ?? [];
+    existing.push(nodeId);
+    regionAttestationIdsBySource.set(observation.sourceLabel, existing);
+  }
+  const regionAttestationIdsForSources = (...sources: readonly string[]): string[] =>
+    Array.from(
+      new Set(
+        sources.flatMap((source) => regionAttestationIdsBySource.get(source) ?? []),
+      ),
+    ).sort((left, right) => left.localeCompare(right));
 
   if (input.subprocessorRegister !== undefined) {
     const registerDigest = await readArtifactDigest(
@@ -385,6 +452,20 @@ export const buildRunProvenanceGraph = async (
           "ti:subprocessorRegisterMerkleRoot":
             input.subprocessorRegister.merkleRoot,
         },
+      }),
+    );
+  }
+  if (input.regionAttestationReport !== undefined) {
+    const regionDigest = await readArtifactDigest(
+      input.runDir,
+      input.regionAttestationReport.artifactFilename,
+    );
+    upsertNode(
+      nodes,
+      buildArtifactNode({
+        jobId: input.jobId,
+        digest: regionDigest,
+        label: "Region attestation report artifact",
       }),
     );
   }
@@ -494,7 +575,13 @@ export const buildRunProvenanceGraph = async (
         ensureModelAgent(input.initialGenerationDeployment),
       ],
       used: [compiledPromptEntity["@id"] as string],
-      informedBy: [sourcePreparationActivity],
+      informedBy: [
+        sourcePreparationActivity,
+        ...regionAttestationIdsForSources("generator"),
+        ...(regionAttestationReportArtifactId !== undefined
+          ? [regionAttestationReportArtifactId]
+          : []),
+      ],
       generatedAt: input.generatedAt,
     }),
   );
@@ -542,7 +629,13 @@ export const buildRunProvenanceGraph = async (
             coveragePlanEntity["@id"] as string,
             riskRankingEntity["@id"] as string,
           ],
-          informedBy: [initialGenerationActivity],
+          informedBy: [
+            initialGenerationActivity,
+            ...regionAttestationIdsForSources("adversarial_critic"),
+            ...(regionAttestationReportArtifactId !== undefined
+              ? [regionAttestationReportArtifactId]
+              : []),
+          ],
           generatedAt: input.generatedAt,
           extra: {
             "ti:iteration": round.round,
@@ -593,7 +686,13 @@ export const buildRunProvenanceGraph = async (
               previousListId,
               findingsEntityId,
             ],
-            informedBy: [criticActivityId],
+            informedBy: [
+              criticActivityId,
+              ...regionAttestationIdsForSources("generator"),
+              ...(regionAttestationReportArtifactId !== undefined
+                ? [regionAttestationReportArtifactId]
+                : []),
+            ],
             generatedAt: input.generatedAt,
             extra: {
               "ti:iteration": round.round,
@@ -656,7 +755,14 @@ export const buildRunProvenanceGraph = async (
             ensureModelAgent(input.initialGenerationDeployment),
           ],
           used: [compiledPromptEntity["@id"] as string, previousListId],
-          informedBy: [plannerActivityId, previousGenerationActivityId],
+          informedBy: [
+            plannerActivityId,
+            previousGenerationActivityId,
+            ...regionAttestationIdsForSources("generator"),
+            ...(regionAttestationReportArtifactId !== undefined
+              ? [regionAttestationReportArtifactId]
+              : []),
+          ],
           generatedAt: input.generatedAt,
           extra: {
             "ti:iteration": iteration.iteration,
@@ -735,7 +841,13 @@ export const buildRunProvenanceGraph = async (
         ensureModelAgent(input.logicJudge.verdict.modelDeployment),
       ],
       used: [previousListId],
-      informedBy: [finalGenerationActivity],
+      informedBy: [
+        finalGenerationActivity,
+        ...regionAttestationIdsForSources("judge_primary"),
+        ...(regionAttestationReportArtifactId !== undefined
+          ? [regionAttestationReportArtifactId]
+          : []),
+      ],
       generatedAt: input.generatedAt,
     }),
   );
@@ -805,7 +917,13 @@ export const buildRunProvenanceGraph = async (
           ensureModelAgent(input.faithfulnessJudge.verdict.modelDeployment),
         ],
         used: [previousListId],
-        informedBy: [logicJudgeActivity],
+        informedBy: [
+          logicJudgeActivity,
+          ...regionAttestationIdsForSources("judge_secondary"),
+          ...(regionAttestationReportArtifactId !== undefined
+            ? [regionAttestationReportArtifactId]
+            : []),
+        ],
         generatedAt: input.generatedAt,
       }),
     );
@@ -849,7 +967,13 @@ export const buildRunProvenanceGraph = async (
           ensureModelAgent(input.a11yJudge.verdict.modelDeployment),
         ],
         used: [previousListId],
-        informedBy: [logicJudgeActivity],
+        informedBy: [
+          logicJudgeActivity,
+          ...regionAttestationIdsForSources("judge_secondary"),
+          ...(regionAttestationReportArtifactId !== undefined
+            ? [regionAttestationReportArtifactId]
+            : []),
+        ],
         generatedAt: input.generatedAt,
       }),
     );
@@ -885,7 +1009,12 @@ export const buildRunProvenanceGraph = async (
       role: "judge_consensus",
       associatedWith: [workspaceAgent["@id"] as string],
       used: [logicJudgeEntity["@id"] as string],
-      informedBy: [logicJudgeActivity],
+      informedBy: [
+        logicJudgeActivity,
+        ...(regionAttestationReportArtifactId !== undefined
+          ? [regionAttestationReportArtifactId]
+          : []),
+      ],
       generatedAt: input.generatedAt,
       extra: {
         "ti:repairState": input.judgeConsensus.verdict.repairState,

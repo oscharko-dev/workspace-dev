@@ -432,6 +432,47 @@ test("Issue #1794: banking profile blocks when an active model binding is missin
   assert.equal(report.blocked, true);
 });
 
+test("Issue #2177: region allow-list data survives a derived profile and does not interfere with ICT register enforcement", () => {
+  const ctx = harness([buildCase({})], buildIntent());
+  const profile = cloneEuBankingDefaultProfile();
+  profile.rules = {
+    ...profile.rules,
+    allowedHostingRegions: ["eu-central-1", "switzerland-north"],
+  };
+  const report = evaluatePolicyGate({
+    jobId: "job-2177-region-allowlist",
+    generatedAt: GENERATED_AT,
+    list: ctx.list,
+    intent: ctx.intent,
+    profile,
+    validation: ctx.validation,
+    coverage: ctx.coverage,
+    activeModelBindings: [
+      {
+        providerId: "llm-gateway",
+        modelId: "gpt-oss-120b@test",
+        inferenceProfileId: "gpt-oss-120b",
+        region: "eu",
+        ictRegisterRef: "ICT-GPT-OSS-120B",
+      },
+      {
+        providerId: "llm-gateway",
+        modelId: "llama-4-maverick-vision@test",
+        inferenceProfileId: "llama-4-maverick-vision",
+        region: "eu",
+        ictRegisterRef: "ICT-LLAMA-04",
+      },
+    ],
+  });
+  assert.equal(report.blocked, false);
+  assert.equal(
+    report.jobLevelViolations.find(
+      (entry) => entry.outcome === "ict_register_ref_required",
+    ),
+    undefined,
+  );
+});
+
 test("Issue #2069: both_sidecars_failed is a blocking job-level error by default", () => {
   const tc = buildCase({});
   const ctx = harness([tc], buildIntent());

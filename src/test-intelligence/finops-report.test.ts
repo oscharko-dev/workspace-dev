@@ -23,8 +23,12 @@ import {
   FINOPS_ARTIFACT_DIRECTORY,
   FINOPS_BUDGET_REPORT_ARTIFACT_FILENAME,
   FINOPS_BUDGET_REPORT_SCHEMA_VERSION,
+  REGION_ATTESTATION_REPORT_ARTIFACT_FILENAME,
+  REGION_ATTESTATION_SCHEMA_VERSION,
+  SUPPORTED_REGION_ATTESTATION_HOSTING_REGIONS,
   TEST_INTELLIGENCE_CONTRACT_VERSION,
   type FinOpsBudgetEnvelope,
+  type FinOpsBudgetReport,
   type FinOpsCostRateMap,
   type LlmGenerationResult,
 } from "../contracts/index.js";
@@ -484,6 +488,25 @@ test("buildFinOpsBudgetReport: stamps schema/contract versions and negative inva
   assert.equal(report.outcome, "completed");
 });
 
+test("contracts: region-attestation constants remain stable", () => {
+  assert.equal(REGION_ATTESTATION_SCHEMA_VERSION, "1.0.0");
+  assert.equal(
+    REGION_ATTESTATION_REPORT_ARTIFACT_FILENAME,
+    "region-attestations.json",
+  );
+  assert.deepEqual(SUPPORTED_REGION_ATTESTATION_HOSTING_REGIONS, [
+    "eu-central-1",
+    "eu-west-1",
+    "eu-west-3",
+    "eu-north-1",
+    "eu-south-1",
+    "eu-de-1",
+    "eu-fr-1",
+    "switzerland-north",
+    "norway-east",
+  ]);
+});
+
 test("buildFinOpsBudgetReport: outcome=completed_cache_hit when only cache hits, no attempts", () => {
   const recorder = createFinOpsUsageRecorder();
   recorder.recordCacheHit({ role: "test_generation" });
@@ -923,6 +946,53 @@ test("writeFinOpsBudgetReport: persists under finops/ subdirectory", async () =>
     assert.equal(parsed["secretsIncluded"], false);
     assert.equal(parsed["rawPromptsIncluded"], false);
     assert.equal(parsed["rawScreenshotsIncluded"], false);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("writeFinOpsBudgetReport: preserves region attestation summaries when present", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "finops-region-attestation-"));
+  try {
+    const recorder = createFinOpsUsageRecorder();
+    recorder.recordAttempt({
+      role: "test_generation",
+      source: "generator",
+      deployment: "gpt-oss-120b",
+      durationMs: 0,
+      result: successResult(10, 20),
+    });
+    const report = buildFinOpsBudgetReport({
+      jobId: JOB_ID,
+      generatedAt: GENERATED_AT,
+      budget: permissive,
+      recorder,
+    });
+    const regionAttestation = {
+      distinctRegions: ["eu-central-1", "switzerland-north"] as const,
+      attestedCallCount: 1,
+      warningCount: 0,
+    };
+    const regionAttestedReport: FinOpsBudgetReport = {
+      ...report,
+      regionAttestation,
+      bySource: {
+        ...report.bySource,
+        generator: {
+          ...report.bySource.generator,
+          regionAttestation,
+        },
+      },
+    };
+    const written = await writeFinOpsBudgetReport({
+      report: regionAttestedReport,
+      runDir: dir,
+    });
+    const onDisk = JSON.parse(
+      await readFile(written.artifactPath, "utf8"),
+    ) as FinOpsBudgetReport;
+    assert.deepEqual(onDisk.regionAttestation, regionAttestation);
+    assert.deepEqual(onDisk.bySource.generator.regionAttestation, regionAttestation);
   } finally {
     await rm(dir, { recursive: true, force: true });
   }

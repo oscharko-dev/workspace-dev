@@ -15,12 +15,14 @@ import type {
   AuditDossierManifestArtifactRef,
   AuditDossierRegulationCoverageEntry,
   AuditDossierSignature,
+  RegionAttestationHostingRegion,
 } from "../contracts/index.js";
 import {
   AUDIT_DOSSIER_ARTIFACT_BASENAME,
   AUDIT_DOSSIER_MANIFEST_SCHEMA_VERSION,
   AUDIT_DOSSIER_SIGNATURE_SCHEMA_VERSION,
   PROVENANCE_ARTIFACT_FILENAME,
+  REGION_ATTESTATION_REPORT_ARTIFACT_FILENAME,
   TEST_INTELLIGENCE_CONTRACT_VERSION,
 } from "../contracts/index.js";
 import { canonicalJson } from "./content-hash.js";
@@ -82,6 +84,11 @@ const REQUIRED_ARTIFACTS: readonly RequiredArtifactSpec[] = [
   {
     kind: "subprocessor_register",
     filename: "subprocessor-register.json",
+    required: true,
+  },
+  {
+    kind: "region_attestations",
+    filename: REGION_ATTESTATION_REPORT_ARTIFACT_FILENAME,
     required: true,
   },
   {
@@ -159,8 +166,15 @@ const REGULATOR_COVERAGE: readonly AuditDossierRegulationCoverageEntry[] = [
   {
     regulation: "DORA Art. 28",
     requirement: "Third-party ICT service provider record and FinOps evidence",
-    artifactKinds: ["subprocessor_register", "finops_budget", "model_card"],
-    notes: ["Subprocessor register and FinOps budget show provider and cost accountability."],
+    artifactKinds: [
+      "subprocessor_register",
+      "region_attestations",
+      "finops_budget",
+      "model_card",
+    ],
+    notes: [
+      "Subprocessor register, region attestations, and FinOps budget show provider geography and cost accountability.",
+    ],
   },
   {
     regulation: "EU AI Act Art. 12",
@@ -188,8 +202,15 @@ const REGULATOR_COVERAGE: readonly AuditDossierRegulationCoverageEntry[] = [
   {
     regulation: "GDPR Ch. V",
     requirement: "Cross-border transfer and subprocessor visibility",
-    artifactKinds: ["subprocessor_register", "model_card", "finops_budget"],
-    notes: ["Subprocessor register and model card expose provider geography and hosting scope."],
+    artifactKinds: [
+      "subprocessor_register",
+      "region_attestations",
+      "model_card",
+      "finops_budget",
+    ],
+    notes: [
+      "Subprocessor register, region attestations, and model card expose provider geography and hosting scope.",
+    ],
   },
 ] as const;
 
@@ -463,6 +484,38 @@ const summarizeArtifacts = (
   };
 };
 
+const buildRegionAttestationTable = (
+  artifacts: ReadonlyMap<AuditDossierManifestArtifactKind, ResolvedArtifact>,
+): NonNullable<AuditDossierManifest["regionAttestations"]> => {
+  const report = artifacts.get("region_attestations")?.json;
+  const rows = Array.isArray(report?.["artifacts"])
+    ? report["artifacts"]
+        .filter((value): value is Record<string, unknown> => isRecord(value))
+        .map((artifact) => ({
+          filename: coerceString(artifact["filename"]) ?? "unknown",
+          distinctRegions: Array.from(
+            new Set(
+              Array.isArray(artifact["regionAttestations"])
+                ? artifact["regionAttestations"]
+                    .filter((value): value is Record<string, unknown> =>
+                      isRecord(value),
+                    )
+                    .map((attestation) =>
+                      coerceString(attestation["servedFromRegion"]),
+                    )
+                    .filter((value): value is string => value !== undefined)
+                : [],
+            ),
+          ).sort() as RegionAttestationHostingRegion[],
+          attestationCount: Array.isArray(artifact["regionAttestations"])
+            ? artifact["regionAttestations"].length
+            : 0,
+        }))
+        .sort((left, right) => left.filename.localeCompare(right.filename))
+    : [];
+  return rows;
+};
+
 const buildSourceArtifacts = (
   artifacts: readonly ResolvedArtifact[],
 ): AuditDossierManifestArtifactRef[] =>
@@ -657,6 +710,7 @@ export const generateAuditDossier = async (
       merkleProofSha256: proofSha256,
     },
     sourceArtifacts: buildSourceArtifacts([...resolvedArtifacts.values()]),
+    regionAttestations: buildRegionAttestationTable(resolvedArtifacts),
     regulatorCoverage: REGULATOR_COVERAGE,
     summary: summarizeArtifacts(
       resolvedArtifacts,

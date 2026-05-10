@@ -45,6 +45,7 @@ import {
   WAVE1_VALIDATION_EVIDENCE_MANIFEST_SCHEMA_VERSION,
   type ActiveModelBinding,
   type AgentModelBinding,
+  type RegionAttestation,
   type Wave1ValidationEvidenceArtifact,
   type Wave1ValidationEvidenceArtifactCategory,
   type Wave1ValidationEvidenceManifest,
@@ -217,6 +218,7 @@ export interface BuildEvidenceArtifactRecord {
   /** Raw bytes that were/will be persisted. */
   bytes: Uint8Array | Buffer;
   category: Wave1ValidationEvidenceArtifactCategory;
+  regionAttestations?: readonly RegionAttestation[];
 }
 
 export interface BuildWave1ValidationEvidenceManifestInput {
@@ -300,7 +302,25 @@ const cloneActiveModelBinding = (
     ...(binding.ictRegisterRef !== undefined
       ? { ictRegisterRef: binding.ictRegisterRef }
       : {}),
+    ...(binding.region !== undefined ? { region: binding.region } : {}),
   });
+};
+
+const cloneRegionAttestation = (
+  attestation: RegionAttestation,
+): RegionAttestation => {
+  return {
+    schemaVersion: attestation.schemaVersion,
+    artifactHash: attestation.artifactHash,
+    deploymentId: attestation.deploymentId,
+    servedFromRegion: attestation.servedFromRegion,
+    observedAtUtc: attestation.observedAtUtc,
+    attestedBy: attestation.attestedBy,
+    ...(attestation.severity !== undefined
+      ? { severity: attestation.severity }
+      : {}),
+    attestationSignatureHex: attestation.attestationSignatureHex,
+  };
 };
 
 const cloneActiveModelBindings = (
@@ -406,6 +426,13 @@ export const buildWave1ValidationEvidenceManifest = (
       sha256: sha256OfBytes(bytes),
       bytes: bytes.byteLength,
       category: record.category,
+      ...(record.regionAttestations !== undefined
+        ? {
+            regionAttestations: record.regionAttestations.map((attestation) =>
+              cloneRegionAttestation(attestation),
+            ),
+          }
+        : {}),
     });
   }
   const artifacts = Array.from(seen.values()).sort((a, b) =>

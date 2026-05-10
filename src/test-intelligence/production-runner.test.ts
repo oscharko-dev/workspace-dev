@@ -27,7 +27,12 @@ import { createMockLlmGatewayClientBundle } from "./llm-gateway-bundle.js";
 import { writeAgentLesson } from "./agent-lessons-memdir.js";
 import { cloneEuBankingDefaultFinOpsBudget } from "./finops-budget.js";
 import { verifyJobEvidence } from "./evidence-verify.js";
+import {
+  REGION_ATTESTATION_PINNED_REGION_ENV,
+  REGION_ATTESTATION_SIGNING_KEY_ENV,
+} from "./region-attestation.js";
 import { verifyProvenanceFromDisk } from "./provenance-verify.js";
+import { buildRuntimeModelRoutingPolicy } from "./model-routing-policy.js";
 import { PRODUCTION_RUNNER_EVIDENCE_SEAL_ARTIFACT_FILENAME } from "./production-runner-evidence.js";
 import { AGENT_PARTICIPATION_ARTIFACT_FILENAME } from "./agent-participation.js";
 import {
@@ -61,6 +66,10 @@ import {
   type DetectedNavigation,
   type DetectedValidation,
 } from "../contracts/index.js";
+
+process.env[REGION_ATTESTATION_PINNED_REGION_ENV] ??= "eu-central-1";
+process.env[REGION_ATTESTATION_SIGNING_KEY_ENV] ??=
+  "workspace-dev-region-attestation-test-key";
 
 const node = (
   partial: Partial<FigmaRestNode> & { id: string; type: string },
@@ -1835,7 +1844,7 @@ test("runFigmaToQcTestCases forwards maxInputTokens from the resolved FinOps bud
       responder: okResponder([SAMPLE_DRAFT]),
     });
     const finopsBudget = cloneEuBankingDefaultFinOpsBudget();
-    finopsBudget.roles.test_generation!.maxInputTokensPerRequest = 5_000;
+    finopsBudget.roles.test_generation!.maxInputTokensPerRequest = 10_000;
 
     const result = await runFigmaToQcTestCases({
       jobId: "job-max-input",
@@ -1858,10 +1867,10 @@ test("runFigmaToQcTestCases forwards maxInputTokens from the resolved FinOps bud
     );
     assert.equal(
       result.finopsBudget.roles.test_generation?.maxInputTokensPerRequest,
-      5_000,
+      10_000,
     );
     assert.equal(generationRequests.length, 1);
-    assert.equal(generationRequests[0]?.maxInputTokens, 5_000);
+    assert.equal(generationRequests[0]?.maxInputTokens, 10_000);
   } finally {
     await rm(tempRoot, { recursive: true, force: true });
   }
@@ -2439,11 +2448,16 @@ test("runFigmaToQcTestCases wires Figma URL screenshots through the visual sidec
       ),
       PNG_BYTES,
     );
-    assert.deepEqual(requestedUrls, [
+    assert.deepEqual(
+      requestedUrls.filter(
+        (url) => !url.startsWith("http://169.254.169.254/metadata/instance"),
+      ),
+      [
       "https://api.figma.com/v1/files/ABC/nodes?ids=1%3A1",
       "https://api.figma.com/v1/images/ABC?ids=1%3A1&format=png&scale=2",
       "https://figma-alpha-api.s3.us-west-2.amazonaws.com/1_1.png",
-    ]);
+      ],
+    );
     assert.equal(requestHeaders[0]?.get("x-figma-token"), "figd_test");
     assert.equal(requestHeaders[1]?.get("x-figma-token"), "figd_test");
     assert.equal(requestHeaders[2]?.get("x-figma-token"), null);
@@ -5160,6 +5174,35 @@ test("runFigmaToQcTestCases skips banking augmentation when policyProfileId is n
   }
 });
 
+test("Issue #2177: runtime model routing preserves EU region markers for attestation evidence", () => {
+  const policy = buildRuntimeModelRoutingPolicy({
+    policyProfileId: EU_BANKING_DEFAULT_POLICY_PROFILE_ID,
+    roles: [
+      {
+        role: "test_generation",
+        deployment: "gpt-oss-120b",
+        modelRevision: "gpt-oss-120b@test",
+        gatewayRelease: "mock",
+      },
+      {
+        role: "visual_primary",
+        deployment: "llama-4-maverick-vision",
+        modelRevision: "llama-4-maverick-vision@test",
+        gatewayRelease: "mock",
+      },
+    ],
+  });
+  assert.ok(policy.routes.length > 0);
+  assert.ok(
+    policy.routes.every((route) => route.modelBinding.region === "eu"),
+    "EU banking routes should carry the EU region marker used by region attestation",
+  );
+  assert.deepEqual(
+    new Set(policy.routes.map((route) => route.modelBinding.region)),
+    new Set(["eu"]),
+  );
+});
+
 // ---------------------------------------------------------------------------
 // FinOps envelope (Issue #1740) + progress events (Issue #1738)
 // ---------------------------------------------------------------------------
@@ -7366,6 +7409,59 @@ test("Issue #2037: production runner writes provenance.jsonld and policy report 
     const graph = provenance["@graph"] as ReadonlyArray<
       Record<string, unknown>
     >;
+    const regionAttestations = graph.filter(
+      (node) =>
+        node["@type"] === "prov:Entity" &&
+        typeof node["ti:servedFromRegion"] === "string",
+    );
+    assert.ok(
+      regionAttestations.length >= 2,
+      "expected per-call region-attestation entities for generator and logic judge",
+    );
+    assert.ok(
+      regionAttestations.every(
+        (node) =>
+          node["ti:servedFromRegion"] === "eu-central-1" &&
+          node["ti:attestedBy"] === "operator-pinned",
+      ),
+      "test harness should use the pinned EU fallback in mock provenance runs",
+    );
+
+    const generationActivity = graph.find(
+      (node) => node["ti:role"] === "generator",
+    );
+    assert.ok(generationActivity, "expected generator activity in provenance");
+    const logicJudgeActivity = graph.find(
+      (node) => node["ti:role"] === "logic_judge",
+    );
+    assert.ok(logicJudgeActivity, "expected logic_judge activity in provenance");
+    const activityInformedBy = (node: Record<string, unknown>): string[] =>
+      Array.isArray(node["prov:wasInformedBy"])
+        ? node["prov:wasInformedBy"]
+            .filter(
+              (value): value is { "@id": string } =>
+                typeof value === "object" &&
+                value !== null &&
+                typeof (value as { "@id"?: unknown })["@id"] === "string",
+            )
+            .map((value) => value["@id"])
+        : [];
+    const regionAttestationIds = new Set(
+      regionAttestations.map((node) => String(node["@id"])),
+    );
+    assert.ok(
+      activityInformedBy(generationActivity!).some((id) =>
+        regionAttestationIds.has(id),
+      ),
+      "generator activity should point at region-attestation evidence",
+    );
+    assert.ok(
+      activityInformedBy(logicJudgeActivity!).some((id) =>
+        regionAttestationIds.has(id),
+      ),
+      "logic judge activity should point at region-attestation evidence",
+    );
+
     const agents = graph.filter(
       (node) => node["@type"] === "prov:SoftwareAgent",
     );
