@@ -182,8 +182,12 @@ test("schema: drift guard — the hash is stable for the current contract", () =
   // `formalVerification` field on AuditDossierManifest). The schema pins
   // `contractVersion: { const: TEST_INTELLIGENCE_CONTRACT_VERSION }` so
   // the digest shifts in lockstep with the contract bump.
+  // Hash bumped by Issue #2182: TEST_INTELLIGENCE_CONTRACT_VERSION bumped
+  // 1.31.0 -> 1.32.0 (additive self-improving judge-calibration loop —
+  // optional `selfImprovingCalibrationRefitHistory` field on
+  // AuditDossierManifest). Digest shifts in lockstep with the contract.
   const expected =
-    "1b24fcf6999a629fe72c546fcc427902d7b25e32409793498da500a47eb82dca";
+    "a15914e9f8f9084317c8d25891734c894fb94d3b8b057aa3c496108975776eb9";
   const actual = computeGeneratedTestCaseListSchemaHash();
   if (actual !== expected) {
     assert.fail(

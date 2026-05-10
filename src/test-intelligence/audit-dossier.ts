@@ -30,6 +30,10 @@ import {
 import { canonicalJson } from "./content-hash.js";
 import { renderAuditDossierPdf } from "./audit-dossier-renderer.js";
 import type { ProvenanceDocument } from "./provenance-graph.js";
+import {
+  loadCalibrationRefitHistory,
+  summarizeCalibrationRefitHistory,
+} from "./self-improving-calibration.js";
 
 const MODEL_CARD_SUFFIX = ".model-card.json";
 const DEFAULT_BENCHMARK_PROTOCOL_PATH =
@@ -244,6 +248,16 @@ interface GenerateAuditDossierInput {
   readonly benchmarkProtocolVersion: string;
   readonly harnessVersion: string;
   readonly ictRegisterRef?: string;
+  /**
+   * Optional override for the calibration-curves directory consulted
+   * when populating the per-locale + per-class refit history table
+   * (Issue #2182). Defaults to
+   * `<repoRoot>/fixtures/test-intelligence/calibration-curves` so the
+   * production driver picks up the canonical fixtures with no extra
+   * configuration. Pass an absolute path here to point the dossier at
+   * a sandbox tree.
+   */
+  readonly calibrationCurvesDir?: string;
 }
 
 export interface GenerateAuditDossierResult {
@@ -828,6 +842,43 @@ export const generateAuditDossier = async (
       const fv = buildFormalVerificationSection(resolvedArtifacts);
       return fv === undefined ? {} : { formalVerification: fv };
     })(),
+    ...(await (async () => {
+      const refitDir =
+        input.calibrationCurvesDir ??
+        join(
+          resolveRepoRoot(),
+          "fixtures",
+          "test-intelligence",
+          "calibration-curves",
+        );
+      const history = await loadCalibrationRefitHistory(refitDir);
+      if (
+        history.productionCurves.length === 0 &&
+        history.proposals.length === 0 &&
+        history.rejections.length === 0
+      ) {
+        return {};
+      }
+      const summary = summarizeCalibrationRefitHistory(history);
+      return {
+        selfImprovingCalibrationRefitHistory: {
+          productionCurveCount: summary.productionCurveCount,
+          proposalCount: summary.proposalCount,
+          ratifiedCount: summary.ratifiedCount,
+          rolledBackCount: summary.rolledBackCount,
+          rows: summary.rows.map((row) => ({
+            locale: row.locale,
+            riskClass: row.riskClass,
+            proposalId: row.proposalId,
+            status: row.status,
+            proposedAt: row.proposedAt,
+            ...(row.ratifiedAt !== undefined ? { ratifiedAt: row.ratifiedAt } : {}),
+            heldOutEce: row.heldOutEce,
+            heldOutKappa: row.heldOutKappa,
+          })),
+        },
+      };
+    })()),
     regulatorCoverage: REGULATOR_COVERAGE,
     summary: summarizeArtifacts(
       resolvedArtifacts,

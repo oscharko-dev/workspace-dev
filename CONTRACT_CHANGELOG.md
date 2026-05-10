@@ -31,6 +31,60 @@ All changes to the public contract surface of `workspace-dev` are documented her
 
 ---
 
+## [1.32.0] - 2026-05-11
+
+Test-intelligence sub-contract bump that accompanies the Issue #2182
+self-improving judge-calibration loop. The bump records new exports
+on the test-intelligence index surface and a new operator-facing CLI
+sub-command. All changes are additive — no existing field, type, or
+command was removed or renamed.
+
+### Added (Issue #2182 — self-improving judge-calibration loop)
+
+- New module `src/test-intelligence/self-improving-calibration.ts`
+  exporting:
+  - `G11_CALIBRATION_REFIT_SAFETY`
+    (`"G11_CALIBRATION_REFIT_SAFETY"`) — hard-gate code emitted by
+    `assertCalibrationRefitSafety` when a production-path
+    calibration curve has no backing ratified proposal.
+  - `CalibrationRefitSafetyHardGateError`,
+    `CalibrationRefitOperatorError` — typed error classes mirroring
+    the test-intelligence convention.
+  - `proposeCalibrationRefit`, `ratifyOrRollback`,
+    `verifyCalibrationOperatorSignature`,
+    `loadCalibrationRefitHistory`,
+    `summarizeCalibrationRefitHistory`,
+    `assertCalibrationRefitSafety`,
+    `resolveProductionCurvePath`, `parseCurveFilename`.
+  - `REGULATED_RISK_CLASSES`,
+    `SELF_IMPROVING_CALIBRATION_HARD_GATES`,
+    `SELF_IMPROVING_CALIBRATION_HELD_OUT_FRACTION` (`0.2`),
+    `SELF_IMPROVING_CALIBRATION_MIN_SAMPLES` (`20`),
+    `SELF_IMPROVING_CALIBRATION_ACCEPTED_RUN_SCORE_FLOOR` (`90`),
+    `SELF_IMPROVING_CALIBRATION_SCHEMA_VERSION` (`"1.0.0"`),
+    `SELF_IMPROVING_CALIBRATION_CURVES_DIRNAME`
+    (`"calibration-curves"`),
+    `SELF_IMPROVING_CALIBRATION_PROPOSALS_DIRNAME`
+    (`"proposals"`),
+    `SELF_IMPROVING_CALIBRATION_REJECTION_SUFFIX`
+    (`"-rejected.json"`).
+  - Public type aliases `CalibrationCurveSnapshot`,
+    `CalibrationGoldEntry`, `CalibrationGoldEntrySource`,
+    `CalibrationOperatorSignature`,
+    `CalibrationRefitGateEvaluation`,
+    `CalibrationRefitHistory`, `CalibrationRefitOutcome`,
+    `CalibrationRefitProposal`, `CalibrationRejectionSidecar`,
+    `ProposeCalibrationRefitInput`, `RatifyOrRollbackInput`,
+    `RegulatedRiskClass`.
+- New CLI sub-command
+  `workspace-dev test-intelligence calibration-refit` (Issue #2182)
+  exposed by `src/test-intelligence-calibration-refit-cli.ts`. The
+  sub-command is purely additive; existing `test-intelligence run`,
+  `doctor`, `audit-dossier`, `audit-verify`, `verify-provenance`,
+  `verify-seal`, and `review` continue to work unchanged.
+
+---
+
 ## [1.31.0] - 2026-05-10
 
 Test-intelligence sub-contract bump that accompanies the Issue #2181
