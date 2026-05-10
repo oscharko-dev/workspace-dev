@@ -452,7 +452,7 @@ endobj
 << /Type /Page /Parent 2 0 R /MediaBox [0 0 595.28 841.89] /Resources << /Font << /F1 3 0 R /F2 4 0 R >> >> /Contents 7 0 R >>
 endobj
 9 0 obj
-<< /Length 1452 >>
+<< /Length 1325 >>
 stream
 BT
 /F1 11 Tf
@@ -519,11 +519,6 @@ BT
 1 0 0 1 44.00 594.89 Tm
 (Key fingerprint: 6930ddea43f4acafcc0ca16f690ca996dcef01462d01fb5a309b27e73c951951) Tj
 ET
-BT
-/F1 11 Tf
-1 0 0 1 44.00 579.89 Tm
-(Manifest sha256: ac80abb4d671d986947ac8a10ae17cded07b18a958e06b5a89877b4358bb7f72) Tj
-ET
 endstream
 endobj
 10 0 obj
@@ -541,9 +536,9 @@ xref
 0000004315 00000 n 
 0000008988 00000 n 
 0000009130 00000 n 
-0000010634 00000 n 
+0000010507 00000 n 
 trailer
-<< /Size 11 /Root 1 0 R /ID [<2a282d3a0ab8b5f2b48f3dc47eeb7664><2a282d3a0ab8b5f2b48f3dc47eeb7664>] >>
+<< /Size 11 /Root 1 0 R /ID [<22b0df0f6a88b569a793138009ea41e2><22b0df0f6a88b569a793138009ea41e2>] >>
 startxref
-10777
+10650
 %%EOF

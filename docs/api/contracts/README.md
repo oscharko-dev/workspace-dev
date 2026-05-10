@@ -792,6 +792,10 @@ signed payload; the PDF is a human-readable rendering of this surface.
 
 > `readonly` **pdfFilename**: `string`
 
+###### pdfSha256
+
+> `readonly` **pdfSha256**: `string`
+
 ###### signatureFilename
 
 > `readonly` **signatureFilename**: `string`

@@ -161,7 +161,6 @@ const buildPdfLines = (manifest: AuditDossierManifest): PdfLine[] => {
   pushHeading(lines, "Signing");
   pushWrapped(lines, `Algorithm: ${manifest.signing.algorithm}`);
   pushWrapped(lines, `Key fingerprint: ${manifest.signing.keyFingerprintSha256}`);
-  pushWrapped(lines, `Manifest sha256: ${manifest.signing.manifestSha256}`);
   return lines;
 };
 
@@ -281,8 +280,8 @@ export const renderAuditDossierPdf = (
 const canonicalTrailerSeed = (manifest: AuditDossierManifest): string =>
   [
     manifest.runId,
-    manifest.signing.manifestSha256,
     manifest.provenance.merkleRoot,
+    manifest.signing.keyFingerprintSha256,
     manifest.bundle.pdfFilename,
   ].join("|");
 

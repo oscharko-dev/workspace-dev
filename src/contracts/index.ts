@@ -12696,6 +12696,7 @@ export interface AuditDossierManifest {
     readonly signatureFilename: string;
     readonly pdfFilename: string;
     readonly merkleProofFilename: string;
+    readonly pdfSha256: string;
   };
   readonly signing: {
     readonly algorithm: "ed25519";

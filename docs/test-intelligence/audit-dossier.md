@@ -56,9 +56,8 @@ Flags:
 
 - `--run-dir` points at the completed run directory.
 - `--output` is the destination directory for the four generated files.
-- `--sign-key` overrides the Ed25519 private key. When omitted, the CLI falls
-  back to the repository fixture key only in local development mode through the
-  built-in defaults resolver.
+- `--sign-key` is required unless the operator provides
+  `WORKSPACE_TEST_SPACE_AUDIT_SIGN_KEY`.
 
 The command fails closed when:
 
@@ -98,7 +97,7 @@ The repository includes a stable acceptance fixture under
 workspace-dev test-intelligence audit-dossier \
   --run-dir fixtures/test-intelligence/audit-dossiers/accepted-run \
   --output /tmp/issue-2175-bundle \
-  --sign-key fixtures/test-intelligence/audit-dossiers/operator-ed25519.pem
+  --sign-key fixtures/test-intelligence/audit-dossiers/operator-ed25519.private-key.json
 
 workspace-dev test-intelligence audit-verify \
   --bundle /tmp/issue-2175-bundle/ti-cli-1778405189341-audit-dossier.json
@@ -110,7 +109,7 @@ checked-in expected bundle in
 
 ## Regulation coverage table
 
-The manifest carries a `regulationCoverage` section that maps each policy area
+The manifest carries a `regulatorCoverage` section that maps each policy area
 to the artifact kinds that satisfy it. The current bundle covers:
 
 - BaFin / Bundesbank

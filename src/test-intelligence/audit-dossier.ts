@@ -337,6 +337,17 @@ const buildMerkleLevels = (
   return levels;
 };
 
+const computeMerkleRoot = (
+  leaves: readonly { reference: string; hash: string }[],
+): string => {
+  const levels = buildMerkleLevels(leaves);
+  const root = levels.at(-1)?.[0];
+  if (!root) {
+    throw new Error("Provenance Merkle root cannot be reconstructed.");
+  }
+  return root;
+};
+
 const buildMerkleProofText = (
   manifestLeaves: readonly { reference: string; hash: string }[],
   merkleRoot: string,
@@ -471,8 +482,14 @@ const parseEd25519PrivateKey = async (
   publicKeyPem: string;
   keyFingerprintSha256: string;
 }> => {
-  const pem = await readFile(signKeyPath, "utf8");
-  const privateKey = createPrivateKey({ key: pem, format: "pem" });
+  const serializedKey = await readFile(signKeyPath, "utf8");
+  const trimmedKey = serializedKey.trim();
+  const privateKey = trimmedKey.startsWith("{")
+    ? createPrivateKey({
+        key: JSON.parse(trimmedKey) as unknown as Record<string, string>,
+        format: "jwk",
+      })
+    : createPrivateKey({ key: serializedKey, format: "pem" });
   if (privateKey.asymmetricKeyType !== "ed25519") {
     throw new Error("Audit dossier signing key must be an Ed25519 private key.");
   }
@@ -596,9 +613,6 @@ export const generateAuditDossier = async (
   if (!provenanceRoot) {
     throw new Error("Provenance Merkle root cannot be reconstructed.");
   }
-  const proofText = buildMerkleProofText(leafHashes, provenanceRoot);
-  const proofSha256 = sha256Hex(proofText);
-
   const runId = resolveRunId(provenance, policyReport);
   const outputPrefix = join(outputDir, `${runId}-${AUDIT_DOSSIER_ARTIFACT_BASENAME}`);
   const manifestFilename = `${runId}-${AUDIT_DOSSIER_ARTIFACT_BASENAME}.json`;
@@ -606,6 +620,14 @@ export const generateAuditDossier = async (
   const pdfFilename = `${runId}-${AUDIT_DOSSIER_ARTIFACT_BASENAME}.pdf`;
   const merkleProofFilename = `${runId}-${AUDIT_DOSSIER_ARTIFACT_BASENAME}.merkle.txt`;
   const generatedAt = resolveGeneratedAt(provenance, policyReport);
+  const computedProvenanceRoot = computeMerkleRoot(leafHashes);
+  if (computedProvenanceRoot !== provenanceRoot) {
+    throw new Error(
+      `Provenance Merkle root mismatch: declared ${provenanceRoot} but computed ${computedProvenanceRoot}.`,
+    );
+  }
+  const proofText = buildMerkleProofText(leafHashes, provenanceRoot);
+  const proofSha256 = sha256Hex(proofText);
 
   const signingMaterial = await parseEd25519PrivateKey(input.signKeyPath);
   const manifestSkeleton = {
@@ -618,6 +640,7 @@ export const generateAuditDossier = async (
       signatureFilename,
       pdfFilename,
       merkleProofFilename,
+      pdfSha256: "",
     },
     signing: {
       algorithm: "ed25519" as const,
@@ -650,13 +673,20 @@ export const generateAuditDossier = async (
     };
   };
 
+  const provisionalPdfBytes = renderAuditDossierPdf({
+    manifest: manifestSkeleton as unknown as AuditDossierManifest,
+  });
+  const pdfSha256 = sha256Hex(provisionalPdfBytes);
+
   const unsignedManifestBytes = canonicalJson({
     ...manifestSkeleton,
+    bundle: { ...manifestSkeleton.bundle, pdfSha256 },
     signing: { ...manifestSkeleton.signing, manifestSha256: "" },
   });
   const manifestSha256 = sha256Hex(unsignedManifestBytes);
   const manifest: AuditDossierManifest = {
     ...manifestSkeleton,
+    bundle: { ...manifestSkeleton.bundle, pdfSha256 },
     signing: {
       ...manifestSkeleton.signing,
       manifestSha256,

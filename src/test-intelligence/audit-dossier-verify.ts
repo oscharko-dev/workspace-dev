@@ -16,6 +16,8 @@ export interface AuditDossierVerificationFailure {
     | "manifest_digest_mismatch"
     | "signature_invalid"
     | "signature_key_mismatch"
+    | "pdf_mismatch"
+    | "merkle_root_mismatch"
     | "merkle_proof_mismatch";
   readonly reference: string;
   readonly message: string;
@@ -52,6 +54,86 @@ const buildMerkleLevels = (hashes: readonly string[]): string[][] => {
   return levels;
 };
 
+const computeMerkleRoot = (hashes: readonly string[]): string => {
+  const levels = buildMerkleLevels(hashes);
+  const root = levels.at(-1)?.[0];
+  if (!root) {
+    throw new Error("Merkle root cannot be reconstructed from the manifest.");
+  }
+  return root;
+};
+
+const expectString = (
+  record: Record<string, unknown>,
+  key: string,
+): string | undefined => {
+  const value = record[key];
+  return typeof value === "string" && value.trim().length > 0 ? value : undefined;
+};
+
+const expectNumber = (
+  record: Record<string, unknown>,
+  key: string,
+): number | undefined => {
+  const value = record[key];
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+};
+
+const parseManifest = (
+  value: unknown,
+): AuditDossierManifest | undefined => {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+  const bundle = isRecord(value.bundle) ? value.bundle : undefined;
+  const signing = isRecord(value.signing) ? value.signing : undefined;
+  const provenance = isRecord(value.provenance) ? value.provenance : undefined;
+  const leafHashes = Array.isArray(provenance?.leafHashes)
+    ? provenance.leafHashes
+    : undefined;
+  if (
+    !bundle ||
+    !signing ||
+    !provenance ||
+    !leafHashes ||
+    !expectString(value, "runId") ||
+    !expectString(bundle, "pdfFilename") ||
+    !expectString(bundle, "pdfSha256") ||
+    !expectString(signing, "keyFingerprintSha256") ||
+    !expectString(signing, "publicKeyPem") ||
+    !expectString(signing, "manifestSha256") ||
+    !expectString(provenance, "merkleRoot") ||
+    expectNumber(provenance, "leafCount") === undefined ||
+    !expectString(provenance, "merkleProofSha256") ||
+    !leafHashes.every(
+      (leaf) =>
+        isRecord(leaf) &&
+        expectString(leaf, "reference") !== undefined &&
+        expectString(leaf, "hash") !== undefined,
+    )
+  ) {
+    return undefined;
+  }
+  return value as unknown as AuditDossierManifest;
+};
+
+const parseSignature = (
+  value: unknown,
+): AuditDossierSignature | undefined => {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+  if (
+    !expectString(value, "keyFingerprintSha256") ||
+    !expectString(value, "publicKeyPem") ||
+    !expectString(value, "manifestSha256") ||
+    !expectString(value, "signatureBase64")
+  ) {
+    return undefined;
+  }
+  return value as unknown as AuditDossierSignature;
+};
+
 const buildMerkleProofText = (manifest: AuditDossierManifest): string => {
   const sortedLeaves = [...manifest.provenance.leafHashes].sort((left, right) =>
     left.hash.localeCompare(right.hash),
@@ -85,6 +167,7 @@ export const verifyAuditDossierBundle = async (
   const bundlePrefix = resolve(resolveBundlePrefix(bundle));
   const manifestPath = `${bundlePrefix}.json`;
   const signaturePath = `${bundlePrefix}.sig`;
+  const pdfPath = `${bundlePrefix}.pdf`;
   const merkleProofPath = `${bundlePrefix}.merkle.txt`;
   const failures: AuditDossierVerificationFailure[] = [];
 
@@ -108,8 +191,9 @@ export const verifyAuditDossierBundle = async (
   let manifest: AuditDossierManifest;
   try {
     const parsed = JSON.parse(Buffer.from(manifestBytes).toString("utf8")) as unknown;
-    if (!isRecord(parsed)) throw new Error("manifest must be an object");
-    manifest = parsed as unknown as AuditDossierManifest;
+    const validated = parseManifest(parsed);
+    if (!validated) throw new Error("manifest shape is invalid");
+    manifest = validated;
   } catch {
     return {
       ok: false,
@@ -127,8 +211,9 @@ export const verifyAuditDossierBundle = async (
   let signature: AuditDossierSignature;
   try {
     const parsed = JSON.parse(await readFile(signaturePath, "utf8")) as unknown;
-    if (!isRecord(parsed)) throw new Error("signature must be an object");
-    signature = parsed as unknown as AuditDossierSignature;
+    const validated = parseSignature(parsed);
+    if (!validated) throw new Error("signature shape is invalid");
+    signature = validated;
   } catch {
     return {
       ok: false,
@@ -143,6 +228,18 @@ export const verifyAuditDossierBundle = async (
         },
       ],
     };
+  }
+
+  const expectedMerkleRoot = computeMerkleRoot(
+    manifest.provenance.leafHashes.map((leaf) => leaf.hash),
+  );
+  if (expectedMerkleRoot !== manifest.provenance.merkleRoot) {
+    failures.push({
+      code: "merkle_root_mismatch",
+      reference: manifestPath,
+      message:
+        "Manifest Merkle root does not match the provenance leaf hashes.",
+    });
   }
 
   const unsignedManifestSha256 = sha256Hex(
@@ -196,6 +293,26 @@ export const verifyAuditDossierBundle = async (
       code: "signature_invalid",
       reference: signaturePath,
       message: "Detached signature uses invalid public-key material.",
+    });
+  }
+
+  try {
+    const pdfBytes = await readFile(pdfPath);
+    if (
+      sha256Hex(pdfBytes) !== manifest.bundle.pdfSha256 ||
+      manifest.bundle.pdfFilename !== `${manifest.runId}-audit-dossier.pdf`
+    ) {
+      failures.push({
+        code: "pdf_mismatch",
+        reference: pdfPath,
+        message: "Bundle PDF is missing, renamed, or does not match the manifest hash.",
+      });
+    }
+  } catch {
+    failures.push({
+      code: "pdf_mismatch",
+      reference: pdfPath,
+      message: "Bundle PDF is missing.",
     });
   }
 

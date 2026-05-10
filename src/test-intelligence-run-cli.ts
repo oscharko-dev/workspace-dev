@@ -2652,31 +2652,41 @@ export const runTestIntelligenceAuditVerifyCommand = async (
   options: TestIntelligenceAuditVerifyOptions,
   sink: TestIntelligenceRunSink,
 ): Promise<number> => {
-  const result = await verifyAuditDossierBundle(options.bundle);
-  if (!result.ok) {
-    sink.stderr(
+  try {
+    const result = await verifyAuditDossierBundle(options.bundle);
+    if (!result.ok) {
+      sink.stderr(
+        [
+          `error: audit dossier verification failed for ${result.bundlePrefix}`,
+          ...result.failures.map(
+            (failure) =>
+              `  - [${failure.code}] ${failure.reference}: ${failure.message}`,
+          ),
+          "",
+        ].join("\n"),
+      );
+      return 2;
+    }
+    sink.stdout(
       [
-        `error: audit dossier verification failed for ${result.bundlePrefix}`,
-        ...result.failures.map(
-          (failure) =>
-            `  - [${failure.code}] ${failure.reference}: ${failure.message}`,
-        ),
+        "test-intelligence audit dossier verified",
+        `  bundle prefix : ${result.bundlePrefix}`,
+        `  run id        : ${result.runId ?? ""}`,
+        `  merkle root   : ${result.merkleRoot ?? ""}`,
+        `  key fp sha256 : ${result.keyFingerprintSha256 ?? ""}`,
         "",
       ].join("\n"),
     );
+    return 0;
+  } catch (error) {
+    sink.stderr(
+      `error: ${sanitizeErrorMessage({
+        error,
+        fallback: "Failed to verify audit dossier bundle.",
+      })}\n`,
+    );
     return 2;
   }
-  sink.stdout(
-    [
-      "test-intelligence audit dossier verified",
-      `  bundle prefix : ${result.bundlePrefix}`,
-      `  run id        : ${result.runId ?? ""}`,
-      `  merkle root   : ${result.merkleRoot ?? ""}`,
-      `  key fp sha256 : ${result.keyFingerprintSha256 ?? ""}`,
-      "",
-    ].join("\n"),
-  );
-  return 0;
 };
 
 /**
