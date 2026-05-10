@@ -66,6 +66,7 @@ export const docsFileAllowlist = [
   "docs/dpia/custom-context-source.md",
   "docs/dpia/jira-source.md",
   "docs/eu-ai-act/human-oversight.md",
+  "docs/eu-ai-act/transparency.md",
   "docs/migration/wave-4-additive.md",
   "docs/runbooks/jira-source-setup.md",
   "docs/runbooks/multi-source-air-gap.md",
