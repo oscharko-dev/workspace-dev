@@ -31,6 +31,43 @@ All changes to the public contract surface of `workspace-dev` are documented her
 
 ---
 
+## [1.24.0] - 2026-05-10
+
+### Added (Issue #2170 — cross-modal-faithfulness mid-tier `evidence_partial` thresholds + state-transition tier + partial-majority warning)
+
+- New runtime constant `FAITHFULNESS_PARTIAL_MAJORITY_FRACTION` (`0.6`)
+  exported from `src/contracts/index.ts`. The tier report and the policy
+  gate import it as the single source of truth for the per-case
+  partial-majority threshold.
+- `FAITHFULNESS_TIER_LABELS` gains the additive third member
+  `"state_transition"`. A step is classified as `state_transition` when
+  the parent test case has `technique === "state_transition"` and the
+  step has no concrete-data assertion. Per-step thresholds:
+  `match >= 0.95`, `evidence_partial >= 0.65`, `mismatch < 0.65`.
+- `FaithfulnessTierReport` gains the additive
+  `partialMajorityCaseIds: readonly string[]` field (sorted ascending,
+  empty when no case crosses the `>= 60 %` partial-evidence majority).
+- `ALLOWED_TEST_CASE_POLICY_OUTCOMES` gains the additive
+  `"cross_modal_faithfulness_partial_majority"` outcome. The companion
+  rule id `policy:cross-modal-faithfulness-partial-majority` is raised at
+  case level with severity `warning`; the case escalates to
+  `needs_review` (never `blocked`) so it still ships.
+- `RenderCustomerMarkdownInput` gains the additive optional
+  `faithfulnessPartialMajorityCaseIds?: ReadonlySet<string>` field. When
+  set, the customer markdown footer for each flagged case carries the
+  `Hinweis (Cross-Modal-Faithfulness)` partial-evidence note.
+- `FAITHFULNESS_TIER_REPORT_SCHEMA_VERSION` bumped `1.0.0` → `1.1.0`
+  (additive `partialMajorityCaseIds`; readers built against `1.0.0`
+  continue to load `1.1.0` reports unchanged).
+- `FAITHFULNESS_JUDGE_PROMPT_TEMPLATE_VERSION` bumped
+  `faithfulness-judge.v2` → `faithfulness-judge.v3` (rubric prefers
+  `evidence_partial` over `mismatch` on intermediate state-transition
+  frames; verdict-emission contract unchanged).
+- `TEST_INTELLIGENCE_CONTRACT_VERSION` bumped `1.23.0` → `1.24.0` in
+  lockstep with the additive surface above.
+- These are all additive changes; no existing field is removed or
+  renamed.
+
 ## [1.23.0] - 2026-05-10
 
 ### Added (Issue #2125 — Wilson self-consistency confidence + cross-family arbiter routing)

@@ -700,6 +700,60 @@ test("renderCustomerMarkdown adds a Compliance coverage section when supplied (I
   assert.match(result.combinedMarkdown, /Gesamtabdeckung: 50\.0%/u);
 });
 
+test("Issue #2170: faithfulnessPartialMajorityCaseIds emits a German evidence-partial footer on flagged cases only", () => {
+  const list: GeneratedTestCaseList = {
+    schemaVersion: GENERATED_TEST_CASE_SCHEMA_VERSION,
+    jobId: "job-1",
+    testCases: [
+      buildCase({ id: "tc-flagged" }),
+      buildCase({ id: "tc-clean" }),
+    ],
+  };
+  const result = renderCustomerMarkdown({
+    list,
+    fileName: "x",
+    sourceLabel: "x",
+    generatedAt: "2026-05-10T10:00:00Z",
+    faithfulnessPartialMajorityCaseIds: new Set(["tc-flagged"]),
+  });
+  const flagged = result.perCaseFiles.find((file) =>
+    file.body.includes("Hinweis (Cross-Modal-Faithfulness)"),
+  );
+  const clean = result.perCaseFiles.find(
+    (file) => !file.body.includes("Hinweis (Cross-Modal-Faithfulness)"),
+  );
+  assert.ok(
+    flagged,
+    "expected one per-case file to carry the partial-evidence footer",
+  );
+  assert.ok(
+    clean,
+    "expected the non-flagged case to render without the footer",
+  );
+  assert.equal(result.perCaseFiles.length, 2);
+  assert.match(
+    flagged?.body ?? "",
+    /Mehrheit der Schritte mit partieller visueller Evidenz/u,
+  );
+});
+
+test("Issue #2170: omitting faithfulnessPartialMajorityCaseIds leaves every case footer-free", () => {
+  const list: GeneratedTestCaseList = {
+    schemaVersion: GENERATED_TEST_CASE_SCHEMA_VERSION,
+    jobId: "job-1",
+    testCases: [buildCase({ id: "tc-1" })],
+  };
+  const result = renderCustomerMarkdown({
+    list,
+    fileName: "x",
+    sourceLabel: "x",
+    generatedAt: "2026-05-10T10:00:00Z",
+  });
+  for (const file of result.perCaseFiles) {
+    assert.ok(!file.body.includes("Hinweis (Cross-Modal-Faithfulness)"));
+  }
+});
+
 test("extractAcceptanceCriteriaFromMarkdown reads enumerated markdown sections", () => {
   const markdown = [
     "# Kontext",

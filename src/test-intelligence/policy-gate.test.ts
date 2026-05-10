@@ -1195,14 +1195,25 @@ test("Issue #2066: stepVerdicts override the case-level score so all-evidence_pa
     }),
   });
   // Under the v2 rubric the tier-aware aggregate is 0.85 → above the
-  // 0.80 floor, so the gate must NOT emit a faithfulness violation.
+  // 0.80 floor, so the gate must NOT emit a faithfulness score violation.
   assert.equal(
     report.jobLevelViolations.some(
       (entry) => entry.rule === "policy:cross-modal-faithfulness-score",
     ),
     false,
   );
-  assert.equal(report.decisions[0]?.decision, "approved");
+  // Issue #2170: when 100 % of step verdicts are `evidence_partial` the
+  // partial-majority warning fires (>= 60 % threshold), escalating the
+  // case to `needs_review` so reviewers confirm the soft signals — but
+  // the case still ships (not blocked).
+  assert.equal(
+    report.decisions[0]?.violations.some(
+      (entry) =>
+        entry.rule === "policy:cross-modal-faithfulness-partial-majority",
+    ),
+    true,
+  );
+  assert.equal(report.decisions[0]?.decision, "needs_review");
   assert.equal(report.blocked, false);
 });
 
@@ -1312,6 +1323,138 @@ test("Issue #2101: faithfulness judge refusal stays auditable but fail_open keep
   );
   assert.equal(violation?.severity, "info");
   assert.match(violation?.reason ?? "", /faithfulness judge refused/u);
+  assert.equal(report.blocked, false);
+});
+
+test("Issue #2170: partial-majority case fires the warning rule and ships at needs_review", () => {
+  const ctx = harness(
+    [
+      buildCase({
+        id: "tc-partial",
+        steps: [
+          { index: 1, action: "Open the form" },
+          { index: 2, action: "See the welcome heading" },
+          { index: 3, action: "See the disclosure copy" },
+          { index: 4, action: "Submit the form" },
+        ],
+      }),
+    ],
+    buildIntent(),
+  );
+  const report = evaluatePolicyGate({
+    jobId: "job-1",
+    generatedAt: GENERATED_AT,
+    list: ctx.list,
+    intent: ctx.intent,
+    profile: ctx.profile,
+    validation: ctx.validation,
+    coverage: ctx.coverage,
+    faithfulnessVerdict: buildFaithfulnessVerdict({
+      score: 1,
+      stepVerdicts: [
+        { testCaseId: "tc-partial", stepIndex: 1, verdict: "evidence_partial", message: "label visible" },
+        { testCaseId: "tc-partial", stepIndex: 2, verdict: "evidence_partial", message: "heading visible" },
+        { testCaseId: "tc-partial", stepIndex: 3, verdict: "evidence_partial", message: "disclosure visible" },
+        { testCaseId: "tc-partial", stepIndex: 4, verdict: "match", message: "receipt visible" },
+      ],
+    }),
+  });
+  const partialMajority = report.decisions[0]?.violations.find(
+    (entry) =>
+      entry.rule === "policy:cross-modal-faithfulness-partial-majority",
+  );
+  assert.ok(partialMajority, "expected the partial-majority warning to fire");
+  assert.equal(partialMajority?.severity, "warning");
+  assert.equal(
+    partialMajority?.outcome,
+    "cross_modal_faithfulness_partial_majority",
+  );
+  assert.equal(report.decisions[0]?.decision, "needs_review");
+  assert.equal(report.blocked, false);
+});
+
+test("Issue #2170: a case with minority evidence_partial verdicts is approved without the warning", () => {
+  const ctx = harness(
+    [
+      buildCase({
+        id: "tc-minority",
+        steps: [
+          { index: 1, action: "Open the form" },
+          { index: 2, action: "Confirm heading" },
+          { index: 3, action: "Confirm submit button" },
+        ],
+      }),
+    ],
+    buildIntent(),
+  );
+  const report = evaluatePolicyGate({
+    jobId: "job-1",
+    generatedAt: GENERATED_AT,
+    list: ctx.list,
+    intent: ctx.intent,
+    profile: ctx.profile,
+    validation: ctx.validation,
+    coverage: ctx.coverage,
+    faithfulnessVerdict: buildFaithfulnessVerdict({
+      score: 1,
+      stepVerdicts: [
+        { testCaseId: "tc-minority", stepIndex: 1, verdict: "match", message: "form visible" },
+        { testCaseId: "tc-minority", stepIndex: 2, verdict: "evidence_partial", message: "heading visible" },
+        { testCaseId: "tc-minority", stepIndex: 3, verdict: "match", message: "submit visible" },
+      ],
+    }),
+  });
+  assert.equal(
+    report.decisions[0]?.violations.some(
+      (entry) =>
+        entry.rule === "policy:cross-modal-faithfulness-partial-majority",
+    ),
+    false,
+  );
+  assert.equal(report.decisions[0]?.decision, "approved");
+});
+
+test("Issue #2170: state_transition technique case clears the gate at the relaxed 0.65 step floor", () => {
+  const ctx = harness(
+    [
+      buildCase({
+        id: "tc-workflow",
+        technique: "state_transition",
+        steps: [
+          { index: 1, action: "Begin enrolment workflow" },
+          { index: 2, action: "Move to KYC step" },
+          { index: 3, action: "Reach success state" },
+        ],
+      }),
+    ],
+    buildIntent(),
+  );
+  const report = evaluatePolicyGate({
+    jobId: "job-1",
+    generatedAt: GENERATED_AT,
+    list: ctx.list,
+    intent: ctx.intent,
+    profile: ctx.profile,
+    validation: ctx.validation,
+    coverage: ctx.coverage,
+    faithfulnessVerdict: buildFaithfulnessVerdict({
+      // Legacy case-level score below the 0.80 floor; the v2 tier-aware
+      // aggregate is 0.85 (all evidence_partial) and the state_transition
+      // tier accepts the steps at the 0.65 floor — gate must not block.
+      score: 0.5,
+      stepVerdicts: [
+        { testCaseId: "tc-workflow", stepIndex: 1, verdict: "evidence_partial", message: "intermediate frame" },
+        { testCaseId: "tc-workflow", stepIndex: 2, verdict: "evidence_partial", message: "intermediate frame" },
+        { testCaseId: "tc-workflow", stepIndex: 3, verdict: "evidence_partial", message: "intermediate frame" },
+      ],
+    }),
+  });
+  assert.equal(
+    report.jobLevelViolations.some(
+      (entry) => entry.rule === "policy:cross-modal-faithfulness-score",
+    ),
+    false,
+  );
   assert.equal(report.blocked, false);
 });
 

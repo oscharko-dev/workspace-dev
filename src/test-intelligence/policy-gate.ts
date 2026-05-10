@@ -24,6 +24,7 @@
 
 import {
   EU_BANKING_DEFAULT_POLICY_PROFILE_ID,
+  FAITHFULNESS_PARTIAL_MAJORITY_FRACTION,
   TEST_CASE_POLICY_REPORT_SCHEMA_VERSION,
   TEST_INTELLIGENCE_CONTRACT_VERSION,
   type ActiveModelBinding,
@@ -205,6 +206,15 @@ const CROSS_MODAL_FAITHFULNESS_GRAY_ZONE = 0.05;
  * existing tunable severity policy for provider-side refusals. */
 export const CROSS_MODAL_FAITHFULNESS_FALLBACK_RULE =
   "policy:cross-modal-faithfulness:case-level-fallback" as const;
+
+/** Issue #2170 — case-level rule id raised when `evidence_partial` is the
+ * majority verdict on a case (`>= 60 %` of step verdicts). Severity is
+ * `warning` so the case still ships; reviewers see the partial-evidence
+ * note rendered in the customer markdown footer. The rule is per-case
+ * (NOT job-level) because the partial-majority signal describes which
+ * cases need extra reviewer attention, not the run as a whole. */
+export const CROSS_MODAL_FAITHFULNESS_PARTIAL_MAJORITY_RULE =
+  "policy:cross-modal-faithfulness-partial-majority" as const;
 
 /**
  * Resolve the per-run {@link FaithfulnessTierReport} that the
@@ -499,6 +509,7 @@ const evaluateCase = (
   untrustedContentReport: UntrustedContentNormalizationReport | undefined,
   judgeRefusalViolations: readonly TestCasePolicyViolation[],
   faithfulnessViolation: TestCasePolicyViolation | undefined,
+  faithfulnessPartialMajorityCaseIds: ReadonlySet<string> | undefined,
   complianceOverrides: ReadonlyArray<ComplianceRiskOverride> | undefined,
 ): TestCasePolicyDecisionRecord => {
   let decision: TestCasePolicyDecision = "approved";
@@ -550,6 +561,23 @@ const evaluateCase = (
     decision = escalate(
       decision,
       severityToDecision(faithfulnessViolation.severity),
+    );
+  }
+
+  if (faithfulnessPartialMajorityCaseIds?.has(testCase.id)) {
+    const partialMajorityViolation: TestCasePolicyViolation = {
+      rule: CROSS_MODAL_FAITHFULNESS_PARTIAL_MAJORITY_RULE,
+      outcome: "cross_modal_faithfulness_partial_majority",
+      severity: "warning",
+      reason:
+        `evidence_partial is the majority verdict on this case ` +
+        `(>= ${Math.round(FAITHFULNESS_PARTIAL_MAJORITY_FRACTION * 100)} % of step verdicts); ` +
+        `case still ships, reviewers should confirm the partial-evidence steps`,
+    };
+    violations.push(partialMajorityViolation);
+    decision = escalate(
+      decision,
+      severityToDecision(partialMajorityViolation.severity),
     );
   }
 
@@ -1516,6 +1544,9 @@ export const evaluatePolicyGate = (
     (violation) =>
       violation.outcome === "cross_modal_faithfulness_score_below_threshold",
   );
+  const faithfulnessPartialMajorityCaseIds = new Set<string>(
+    faithfulness.tierReport?.partialMajorityCaseIds ?? [],
+  );
   const judgeRefusalViolations = buildJudgeRefusalViolations(
     input.profile,
     input.faithfulnessVerdict,
@@ -1538,6 +1569,7 @@ export const evaluatePolicyGate = (
         input.untrustedContentReport,
         judgeRefusalViolations.caseLevel,
         faithfulnessScoreViolation,
+        faithfulnessPartialMajorityCaseIds,
         input.complianceOverrides,
       ),
     );

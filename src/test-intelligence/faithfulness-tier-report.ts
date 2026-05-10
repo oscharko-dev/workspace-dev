@@ -1,18 +1,22 @@
 /**
- * Faithfulness-tier report (Issue #2066).
+ * Faithfulness-tier report (Issue #2066, Issue #2170).
  *
  * Tiers each generated test-case step into `concrete_data` (the step
- * carries observable input or expected data) or `label_only` (the step
- * asserts label-only or layout-only intent), then resolves the per-step
- * verdict from {@link FaithfulnessVerdict.stepVerdicts} into a
+ * carries observable input or expected data), `state_transition` (the
+ * step belongs to a `technique === "state_transition"` test case AND
+ * has no concrete-data assertions — Issue #2170), or `label_only` (the
+ * step asserts label-only or layout-only intent), then resolves the
+ * per-step verdict from {@link FaithfulnessVerdict.stepVerdicts} into a
  * tier-aware pass/fail.
  *
- * The per-step thresholds match the issue's acceptance criteria:
+ * The per-step thresholds match the Issue #2170 acceptance criteria:
  *
- *   tier=`concrete_data` → step passes when score >= 0.80, otherwise fails.
- *   tier=`label_only`    → step passes for `match` (>= 0.95) or
- *                          `evidence_partial` (>= 0.80); fails for
- *                          `mismatch` (< 0.80).
+ *   tier=`concrete_data`     → match >= 0.95, evidence_partial >= 0.80,
+ *                              mismatch < 0.80.
+ *   tier=`label_only`        → match >= 0.95, evidence_partial >= 0.85,
+ *                              mismatch < 0.85.
+ *   tier=`state_transition`  → match >= 0.95, evidence_partial >= 0.65,
+ *                              mismatch < 0.65.
  *
  * The aggregate `aggregateScore` averages the per-step scores across
  * every case. The default aggregate threshold mirrors the existing
@@ -30,6 +34,7 @@ import { dirname, join } from "node:path";
 import { randomUUID } from "node:crypto";
 
 import {
+  FAITHFULNESS_PARTIAL_MAJORITY_FRACTION,
   FAITHFULNESS_TIER_REPORT_ARTIFACT_FILENAME,
   FAITHFULNESS_TIER_REPORT_SCHEMA_VERSION,
   TEST_INTELLIGENCE_CONTRACT_VERSION,
@@ -41,6 +46,7 @@ import {
   type GeneratedTestCase,
   type GeneratedTestCaseList,
   type GeneratedTestCaseStep,
+  type TestCaseTechnique29119,
 } from "../contracts/index.js";
 import { canonicalJson } from "./content-hash.js";
 import { scoreFaithfulnessStepVerdict } from "./faithfulness-judge.js";
@@ -52,38 +58,68 @@ import { scoreFaithfulnessStepVerdict } from "./faithfulness-judge.js";
  * to import the gate module just to know the default. */
 export const DEFAULT_FAITHFULNESS_TIER_AGGREGATE_THRESHOLD = 0.8;
 
-/** Tier-aware step thresholds (Issue #2066 acceptance criteria). */
+/** Tier-aware step thresholds (Issue #2066 + Issue #2170 acceptance
+ * criteria).
+ *
+ * Encoded as `<tier>_<verdict>` pairs so each (tier, verdict) cell is
+ * independently auditable. The values are pinned by the issue's
+ * acceptance criteria; profile-scoped overrides can move the aggregate
+ * floor (`DEFAULT_FAITHFULNESS_TIER_AGGREGATE_THRESHOLD`) but NOT the
+ * per-cell thresholds — the cells encode the *meaning* of the
+ * verdicts, not policy strictness. */
 export const FAITHFULNESS_TIER_STEP_THRESHOLDS = Object.freeze({
-  concrete_data: 0.8,
+  concrete_data_match: 0.95,
+  concrete_data_evidence_partial: 0.8,
+  concrete_data_mismatch: 0.8,
   label_only_match: 0.95,
-  label_only_evidence_partial: 0.8,
+  label_only_evidence_partial: 0.85,
+  label_only_mismatch: 0.85,
+  state_transition_match: 0.95,
+  state_transition_evidence_partial: 0.65,
+  state_transition_mismatch: 0.65,
 }) as Readonly<{
-  concrete_data: number;
+  concrete_data_match: number;
+  concrete_data_evidence_partial: number;
+  concrete_data_mismatch: number;
   label_only_match: number;
   label_only_evidence_partial: number;
+  label_only_mismatch: number;
+  state_transition_match: number;
+  state_transition_evidence_partial: number;
+  state_transition_mismatch: number;
 }>;
 
 const round6 = (value: number): number =>
   Math.round(value * 1_000_000) / 1_000_000;
 
 /**
- * Classify a step into `concrete_data` or `label_only`.
+ * Classify a step into `concrete_data`, `state_transition`, or
+ * `label_only`.
  *
- * A step is `concrete_data` when EITHER:
- *   - `data` carries a digit (numeric value, currency, identifier), OR
- *   - `data` is non-empty and at least 4 characters long (typical
- *     payload text such as `"valid@example.com"` or `"Tony"`), OR
- *   - `expected` carries a digit (e.g. `"100,00 €"`,
- *     `"3 transactions"`, an HTTP status code).
+ * Precedence — most specific tier wins:
+ *   1. `concrete_data` — `data` carries a digit OR `expected` carries
+ *      a digit OR `data` is non-empty and at least 4 characters long
+ *      (typical payload text such as `"valid@example.com"` or
+ *      `"Tony"`). Concrete data is asserted regardless of the parent
+ *      test case's technique.
+ *   2. `state_transition` (Issue #2170) — the parent test case has
+ *      `technique === "state_transition"` AND the step has no concrete
+ *      data. The cross-family judge cannot reliably verify the full
+ *      intermediate frame of a workflow transition from a single
+ *      capture, so the tier is the most permissive.
+ *   3. `label_only` — neither of the above. Visible labels are
+ *      asserted but no concrete data or workflow transition.
  *
- * Otherwise the step is `label_only` — visible labels are asserted but
- * no concrete data is exercised.
+ * The legacy single-argument form (no `technique`) is preserved for
+ * backwards compatibility with callers that do not have access to the
+ * parent test case; it never returns `state_transition`.
  *
  * Pure and deterministic. Returns a `tierReason` so the persisted
  * report explains the choice to reviewers.
  */
 export const classifyFaithfulnessStepTier = (
   step: GeneratedTestCaseStep,
+  technique?: TestCaseTechnique29119,
 ): { tier: FaithfulnessTierLabel; tierReason: string } => {
   const data = step.data?.trim() ?? "";
   const expected = step.expected?.trim() ?? "";
@@ -105,6 +141,13 @@ export const classifyFaithfulnessStepTier = (
       tierReason: "step.data carries a non-trivial payload",
     };
   }
+  if (technique === "state_transition") {
+    return {
+      tier: "state_transition",
+      tierReason:
+        "step belongs to a state_transition technique case and asserts no concrete data",
+    };
+  }
   return {
     tier: "label_only",
     tierReason: "step has no concrete input or expected data",
@@ -112,24 +155,20 @@ export const classifyFaithfulnessStepTier = (
 };
 
 /** Whether a per-step `(verdict, tier)` pair clears its tier-aware
- * threshold. Pure. */
+ * threshold (Issue #2066, refined for Issue #2170). Pure.
+ *
+ * Each `(tier, verdict)` cell is looked up independently so the table
+ * stays auditable. `mismatch` (score `0.0`) never clears any tier's
+ * threshold (every cell threshold is `> 0`); the explicit lookup keeps
+ * the table the single source of truth instead of relying on the
+ * verdict's score alone. */
 export const stepPassesTierThreshold = (
   tier: FaithfulnessTierLabel,
   verdict: FaithfulnessStepVerdictLabel,
 ): boolean => {
   const score = scoreFaithfulnessStepVerdict(verdict);
-  if (tier === "concrete_data") {
-    return score >= FAITHFULNESS_TIER_STEP_THRESHOLDS.concrete_data;
-  }
-  if (verdict === "match") {
-    return score >= FAITHFULNESS_TIER_STEP_THRESHOLDS.label_only_match;
-  }
-  if (verdict === "evidence_partial") {
-    return (
-      score >= FAITHFULNESS_TIER_STEP_THRESHOLDS.label_only_evidence_partial
-    );
-  }
-  return false;
+  const key = `${tier}_${verdict}` as keyof typeof FAITHFULNESS_TIER_STEP_THRESHOLDS;
+  return score >= FAITHFULNESS_TIER_STEP_THRESHOLDS[key];
 };
 
 export interface BuildFaithfulnessTierReportInput {
@@ -177,9 +216,12 @@ export const buildFaithfulnessTierReport = (
   }
 
   const entries: FaithfulnessTierReportEntry[] = [];
+  const partialMajorityCaseIds: string[] = [];
   for (const testCase of orderCases(input.list.testCases)) {
+    let caseStepCount = 0;
+    let caseEvidencePartialCount = 0;
     for (const step of testCase.steps) {
-      const tierInfo = classifyFaithfulnessStepTier(step);
+      const tierInfo = classifyFaithfulnessStepTier(step, testCase.technique);
       const found = stepVerdictByKey.get(
         stepVerdictKey(testCase.id, step.index),
       );
@@ -198,6 +240,15 @@ export const buildFaithfulnessTierReport = (
         ...(found?.message !== undefined ? { message: found.message } : {}),
       };
       entries.push(entry);
+      caseStepCount += 1;
+      if (verdict === "evidence_partial") caseEvidencePartialCount += 1;
+    }
+    if (
+      caseStepCount > 0 &&
+      caseEvidencePartialCount / caseStepCount >=
+        FAITHFULNESS_PARTIAL_MAJORITY_FRACTION
+    ) {
+      partialMajorityCaseIds.push(testCase.id);
     }
   }
 
@@ -234,6 +285,9 @@ export const buildFaithfulnessTierReport = (
     mismatchCount,
     evaluationMode: "per_step",
     entries,
+    partialMajorityCaseIds: [...partialMajorityCaseIds].sort((a, b) =>
+      a.localeCompare(b, "en"),
+    ),
   };
 };
 
