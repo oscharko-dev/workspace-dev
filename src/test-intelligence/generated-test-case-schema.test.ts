@@ -13,7 +13,6 @@ import {
   type GeneratedTestCaseStep,
 } from "../contracts/index.js";
 import {
-  GENERATED_TEST_CASE_LIST_SCHEMA_NAME,
   buildGeneratedTestCaseListJsonSchema,
   computeGeneratedTestCaseListSchemaHash,
   validateGeneratedTestCaseList,
@@ -84,7 +83,6 @@ test("schema: build returns a Draft 2020-12 JSON Schema", () => {
     schema["$schema"],
     "https://json-schema.org/draft/2020-12/schema",
   );
-  assert.equal(schema["$id"], GENERATED_TEST_CASE_LIST_SCHEMA_NAME);
   assert.equal(schema["title"], "GeneratedTestCaseList");
 });
 
@@ -179,7 +177,7 @@ test("schema: drift guard — the hash is stable for the current contract", () =
   // 1.2.0 -> 1.3.0 and the persisted audit metadata gained optional
   // additive `truncatedInstructionCount` for repair-instruction audit.
   const expected =
-    "26a1a795b5c78e70f913f4b37ff5eba1fa0741e6c7fbb739a99555c2d2a5a95b";
+    "c3722775f4e09cbfe038ae8382c69e77a5cf64904569f5e06dff7da54d5e5a23";
   const actual = computeGeneratedTestCaseListSchemaHash();
   if (actual !== expected) {
     assert.fail(

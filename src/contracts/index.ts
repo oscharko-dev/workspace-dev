@@ -4,7 +4,7 @@
  * These types define the public API surface for workspace-dev consumers.
  * They must not import from internal services.
  *
- * Contract version: 4.40.0
+ * Contract version: 4.41.0
  * See CONTRACT_CHANGELOG.md for contract change history and VERSIONING.md for
  * package-versus-contract versioning policy.
  */
@@ -162,7 +162,7 @@ export interface TestIntelligenceTransferPrincipal {
 }
 
 /** Contract version for the opt-in test-intelligence surface. */
-export const TEST_INTELLIGENCE_CONTRACT_VERSION = "1.24.0" as const;
+export const TEST_INTELLIGENCE_CONTRACT_VERSION = "1.25.0" as const;
 
 /**
  * Schema version for generated test case payloads.
@@ -11965,51 +11965,71 @@ export type TechniqueCoverageMinimumMode =
 /**
  * Tier-elastic equivalence-partitioning quota tiers (Issue #2068).
  *
- * Every screen with a coverage-relevant field count `<= maxFieldCount`
- * (sorted ascending; the catch-all tier uses `Number.POSITIVE_INFINITY`)
- * resolves to `max(floor, ceil(multiplier * fieldCount))`. The tiers are
- * intentionally a frozen, deterministic constant so that
+ * Every screen resolves to the LAST tier whose `minFieldCount <= fieldCount`
+ * (sorted ascending). That tier then resolves to
+ * `max(floor, ceil(multiplier * fieldCount))`. The tiers are intentionally a
+ * frozen, deterministic constant so that
  * `policy-report.json` and `technique-quota-report.json` remain
  * byte-stable across runs.
  */
-export const TIER_ELASTIC_EP_TIERS: ReadonlyArray<{
-  readonly maxFieldCount: number;
+export interface TechniqueCoverageMinimumTier {
+  readonly minFieldCount: number;
   readonly multiplier: number;
   readonly floor: number;
   readonly label: string;
-}> = Object.freeze([
-  Object.freeze({
-    maxFieldCount: 4,
-    multiplier: 2,
-    floor: 4,
-    label: "fields<=4: max(4, 2*fields)",
-  }),
-  Object.freeze({
-    maxFieldCount: 8,
-    multiplier: 1.5,
-    floor: 0,
-    label: "fields<=8: ceil(1.5*fields)",
-  }),
-  Object.freeze({
-    maxFieldCount: Number.POSITIVE_INFINITY,
-    multiplier: 1,
-    floor: 0,
-    label: "fields>=9: fields",
-  }),
-]);
-
-/**
- * Issue #2068 — policy-profile knob that drives the tier-elastic
- * resolution of `policy:technique-coverage-minimum`. Optional for
- * backwards compatibility; `undefined` is treated as
- * `{ mode: "tier-elastic" }`.
- */
-export interface TechniqueCoverageMinimumPolicy {
-  readonly mode: TechniqueCoverageMinimumMode;
 }
 
+export const TIER_ELASTIC_EP_TIERS: ReadonlyArray<TechniqueCoverageMinimumTier> =
+  Object.freeze([
+    Object.freeze({
+      minFieldCount: 0,
+      multiplier: 2,
+      floor: 4,
+      label: "fields<=4: max(4, 2*fields)",
+    }),
+    Object.freeze({
+      minFieldCount: 5,
+      multiplier: 1.25,
+      floor: 0,
+      label: "fields=5-8: ceil(1.25*fields)",
+    }),
+    Object.freeze({
+      minFieldCount: 9,
+      multiplier: 0.9,
+      floor: 0,
+      label: "fields=9-19: ceil(0.9*fields)",
+    }),
+    Object.freeze({
+      minFieldCount: 20,
+      multiplier: 0.85,
+      floor: 0,
+      label: "fields>=20: ceil(0.85*fields)",
+    }),
+  ]);
+
+/**
+ * Issue #2068 / #2171 — policy-profile knob that drives the tier-elastic
+ * resolution of `policy:technique-coverage-minimum`. Optional for backwards
+ * compatibility; `undefined` is treated as `{ mode: "tier-elastic" }`. Issue
+ * #2171 extends the tier-elastic branch with optional caller-supplied tiers
+ * so the coefficients live in the policy profile instead of a hidden runtime
+ * constant.
+ */
+export interface FixedTechniqueCoverageMinimumPolicy {
+  readonly mode: "fixed";
+}
+
+export interface TierElasticTechniqueCoverageMinimumPolicy {
+  readonly mode: "tier-elastic";
+  readonly tiers?: readonly TechniqueCoverageMinimumTier[];
+}
+
+export type TechniqueCoverageMinimumPolicy =
+  | FixedTechniqueCoverageMinimumPolicy
+  | TierElasticTechniqueCoverageMinimumPolicy;
+
 /** Schema version for persisted `technique-quota-report.json` artifacts. */
-export const TECHNIQUE_QUOTA_REPORT_SCHEMA_VERSION = "1.0.0" as const;
+export const TECHNIQUE_QUOTA_REPORT_SCHEMA_VERSION = "1.1.0" as const;
 
 /** Canonical filename for the per-run technique-quota-report artifact
  * (Issue #2068). */
@@ -12034,8 +12054,13 @@ export interface TechniqueQuotaReportEntry {
   /** Cases anchored to the screen with this technique. */
   readonly actualCount: number;
   /** Stable, machine-readable formula label that produced
-   * `requiredCount`. `tier-elastic:fields<=8:ceil(1.5*fields)` etc. */
+   * `requiredCount`. `tier-elastic:fields=9-19:ceil(0.9*fields)` etc. */
   readonly formula: string;
+  /** Stable tier label consulted while resolving the quota. */
+  readonly formulaTier: string;
+  /** Multiplier applied by the consulted tier. `null` when the planner quota
+   * was enforced verbatim and no elastic multiplier applied. */
+  readonly formulaMultiplier: number | null;
   /** Mode that was active when the report was built. */
   readonly mode: TechniqueCoverageMinimumMode;
   readonly status: TechniqueQuotaReportStatus;

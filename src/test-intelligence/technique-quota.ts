@@ -29,6 +29,7 @@ import {
   type GeneratedTestCase,
   type TechniqueCoverageMinimumMode,
   type TechniqueCoverageMinimumPolicy,
+  type TechniqueCoverageMinimumTier,
   type TechniqueQuotaReport,
   type TechniqueQuotaReportEntry,
   type TestCaseTechnique29119,
@@ -49,6 +50,7 @@ const DEFAULT_TECHNIQUE_COVERAGE_MINIMUM_MODE: TechniqueCoverageMinimumMode =
 
 /** Stable formula label used by `fixed` mode (no tiering applied). */
 const FIXED_FORMULA_LABEL = "fixed:planner-quota" as const;
+const FIXED_FORMULA_TIER = "planner-quota" as const;
 
 /**
  * Defensive coercion of a (possibly undefined / non-array) value to a
@@ -70,41 +72,64 @@ export const resolveTechniqueCoverageMinimumMode = (
 ): TechniqueCoverageMinimumMode =>
   policy?.mode ?? DEFAULT_TECHNIQUE_COVERAGE_MINIMUM_MODE;
 
+const resolveTechniqueCoverageMinimumTiers = (
+  policy: TechniqueCoverageMinimumPolicy | undefined,
+): ReadonlyArray<TechniqueCoverageMinimumTier> =>
+  policy?.mode === "tier-elastic" && policy.tiers !== undefined
+    ? policy.tiers
+    : TIER_ELASTIC_EP_TIERS;
+
 /**
  * Tier-elastic equivalence-partitioning quota, derived from the screen's
  * coverage-relevant field count using {@link TIER_ELASTIC_EP_TIERS}.
  *
  * The result is `max(floor, ceil(multiplier * fieldCount))` where the
- * tier is chosen by the smallest `maxFieldCount` greater-or-equal to
- * `fieldCount`. The function is pure and total: a non-finite or
- * negative input is clamped to `0` to keep the deficit collector safe
- * against partial fixtures.
+ * tier is chosen by the greatest `minFieldCount` less-than-or-equal to
+ * `fieldCount`. The function is pure and total: a non-finite or negative
+ * input is clamped to `0` to keep the deficit collector safe against
+ * partial fixtures.
  */
 export const computeTierElasticEquivalencePartitioningQuota = (
   fieldCount: number,
-): { quota: number; formula: string } => {
+  tiers: ReadonlyArray<TechniqueCoverageMinimumTier> = TIER_ELASTIC_EP_TIERS,
+): {
+  quota: number;
+  formula: string;
+  formulaTier: string;
+  formulaMultiplier: number;
+} => {
   const safeCount =
     Number.isFinite(fieldCount) && fieldCount > 0 ? Math.floor(fieldCount) : 0;
+  const safeTiers = tiers.length > 0 ? tiers : TIER_ELASTIC_EP_TIERS;
+  const fallbackTier = safeTiers[0] ?? TIER_ELASTIC_EP_TIERS[0]!;
   if (safeCount === 0) {
     // A screen with zero coverage-relevant fields cannot be exercised
     // by EP cases, so the formula short-circuits to `0` instead of
     // tripping the tier-1 floor. The label is still emitted under the
     // tier-1 banner so the persisted report explains the path.
-    return { quota: 0, formula: `tier-elastic:${TIER_ELASTIC_EP_TIERS[0]!.label}` };
+    return {
+      quota: 0,
+      formula: `tier-elastic:${fallbackTier.label}`,
+      formulaTier: fallbackTier.label,
+      formulaMultiplier: fallbackTier.multiplier,
+    };
   }
-  for (const tier of TIER_ELASTIC_EP_TIERS) {
-    if (safeCount <= tier.maxFieldCount) {
-      const candidate = Math.ceil(tier.multiplier * safeCount);
-      const quota = Math.max(tier.floor, candidate);
-      return { quota, formula: `tier-elastic:${tier.label}` };
+  let selectedTier = fallbackTier;
+  for (const tier of safeTiers) {
+    if (safeCount >= tier.minFieldCount) {
+      selectedTier = tier;
+      continue;
     }
+    break;
   }
-  // Defensive: the catch-all tier in TIER_ELASTIC_EP_TIERS uses
-  // `Number.POSITIVE_INFINITY`, so this branch is unreachable in
-  // production. It remains here so the function stays total even if
-  // the catalog is reduced in a future closeout child.
-  /* c8 ignore next */
-  return { quota: safeCount, formula: "tier-elastic:fallback" };
+  const candidate = Math.ceil(selectedTier.multiplier * safeCount);
+  const quota = Math.max(selectedTier.floor, candidate);
+  return {
+    quota,
+    formula: `tier-elastic:${selectedTier.label}`,
+    formulaTier: selectedTier.label,
+    formulaMultiplier: selectedTier.multiplier,
+  };
 };
 
 /**
@@ -155,6 +180,8 @@ interface ResolvedQuota {
   readonly fieldCount: number;
   readonly requiredCount: number;
   readonly formula: string;
+  readonly formulaTier: string;
+  readonly formulaMultiplier: number | null;
 }
 
 /**
@@ -165,10 +192,9 @@ interface ResolvedQuota {
  *     with {@link computeTierElasticEquivalencePartitioningQuota}; rows
  *     for other techniques (use-case, accessibility, decision-table,
  *     boundary-value-analysis, …) keep the planner's published
- *     `minCount`. When the planner did not publish an EP row for a
- *     screen but the field count is `>= 1`, the tier-elastic floor is
- *     synthesised so a small-field screen still gets at least the
- *     formula's minimum EP coverage.
+ *     `minCount`. Conservative scope is unchanged from Issue #2068:
+ *     when the planner omits an EP row entirely, the gate does not
+ *     synthesise one.
  *
  * Pure. Returns rows sorted by `(screenId, technique)`.
  */
@@ -178,6 +204,7 @@ export const resolveTechniqueQuotas = (
 ): ReadonlyArray<ResolvedQuota> => {
   if (coveragePlan === undefined) return [];
   const mode = resolveTechniqueCoverageMinimumMode(policy);
+  const tiers = resolveTechniqueCoverageMinimumTiers(policy);
   const fieldCounts = buildPerScreenFieldCounts(coveragePlan);
   const perScreen = safeArray<CoveragePlan["perScreen"][number]>(
     coveragePlan.perScreen,
@@ -195,8 +222,10 @@ export const resolveTechniqueQuotas = (
         mode === "tier-elastic" &&
         quota.technique === "equivalence_partitioning"
       ) {
-        const tier =
-          computeTierElasticEquivalencePartitioningQuota(fieldCount);
+        const tier = computeTierElasticEquivalencePartitioningQuota(
+          fieldCount,
+          tiers,
+        );
         // Tier-elastic mode RELAXES the planner's published EP quota
         // when the formula yields a lower number — it never raises
         // it. This preserves byte-for-byte backwards compatibility on
@@ -213,6 +242,8 @@ export const resolveTechniqueQuotas = (
             effective === tier.quota
               ? tier.formula
               : FIXED_FORMULA_LABEL,
+          formulaTier: tier.formulaTier,
+          formulaMultiplier: tier.formulaMultiplier,
         });
         continue;
       }
@@ -222,6 +253,8 @@ export const resolveTechniqueQuotas = (
         fieldCount,
         requiredCount: quota.minCount,
         formula: FIXED_FORMULA_LABEL,
+        formulaTier: FIXED_FORMULA_TIER,
+        formulaMultiplier: null,
       });
     }
   }
@@ -382,6 +415,8 @@ export const buildTechniqueQuotaReport = (
       requiredCount: quota.requiredCount,
       actualCount,
       formula: quota.formula,
+      formulaTier: quota.formulaTier,
+      formulaMultiplier: quota.formulaMultiplier,
       mode,
       status,
     });

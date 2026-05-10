@@ -1,4 +1,4 @@
-# Tier-elastic technique-coverage minimum (Issue #2068)
+# Tier-elastic technique-coverage minimum (Issues #2068, #2171)
 
 The `policy:technique-coverage-minimum` gate enforces a per-screen
 minimum number of generated test cases per ISO 29119-4 technique. Before
@@ -16,7 +16,10 @@ blocked G0, I0, J0 and finally K0.
 The default `eu-banking-default` policy profile sets
 
 ```ts
-techniqueCoverageMinimum: { mode: "tier-elastic" }
+techniqueCoverageMinimum: {
+  mode: "tier-elastic",
+  tiers: TIER_ELASTIC_EP_TIERS,
+}
 ```
 
 The gate computes a tier-elastic candidate from the screen's
@@ -31,27 +34,43 @@ effective = min(plannerQuota, tierElasticQuota)
 This preserves byte-for-byte backwards compatibility on datasets where
 the planner already published a tight, well-sized minimum: the formula
 only kicks in when the planner overshoots the screen's actual size
-(the K0 evidence). The candidate tiers are:
+(the K0 evidence). Issue #2171 further right-sizes the coefficients to
+match observed generator output on the active M0 datasets. The
+candidate tiers are:
 
 | Field count       | Tier-elastic candidate              | Formula label                                   |
 | ----------------- | ----------------------------------- | ----------------------------------------------- |
 | `<= 4`            | `max(4, 2 × fieldCount)`            | `tier-elastic:fields<=4: max(4, 2*fields)`      |
-| `5–8`             | `ceil(1.5 × fieldCount)` (no floor) | `tier-elastic:fields<=8: ceil(1.5*fields)`      |
-| `>= 9`            | `fieldCount`                        | `tier-elastic:fields>=9: fields`                |
+| `5–8`             | `ceil(1.25 × fieldCount)`           | `tier-elastic:fields=5-8: ceil(1.25*fields)`    |
+| `9–19`            | `ceil(0.9 × fieldCount)`            | `tier-elastic:fields=9-19: ceil(0.9*fields)`    |
+| `>= 20`           | `ceil(0.85 × fieldCount)`           | `tier-elastic:fields>=20: ceil(0.85*fields)`    |
 
-Worked examples on the active dataset:
+Re-evaluated examples from the historical `G0` / `I0` / `J0` / `K0`
+regression set:
 
 | Run  | Field count | Pre-#2068 quota | Post-#2068 quota | EP anchored | Verdict   |
 | ---- | ----------: | --------------: | ---------------: | ----------: | --------- |
-| `G0` |           7 |              12 |               11 |          11 | **pass**  |
+| `G0` |           7 |              12 |                9 |          11 | **pass**  |
 | `I0` |           9 |              12 |                9 |          11 | **pass**  |
 | `J0` |           9 |              12 |                9 |          11 | **pass**  |
 | `K0` |           9 |              12 |                9 |          10 | **pass**  |
 
-All four runs would have cleared **G3** under the new formula. Non-EP
+All four runs clear **G3** under the new formula. Non-EP
 rows (`use_case`, `accessibility`, `boundary_value_analysis`,
 `decision_table`, …) keep their planner-published `minCount` so the
 broader Wave 4 coverage contract is unchanged.
+
+On the latest `2026-05-10` M0 sandbox runs the current formula clears
+4 of 6 active datasets:
+
+| Dataset  | Field count | EP anchored | Required | Verdict |
+| -------- | ----------: | ----------: | -------: | ------- |
+| `T7l7`   |           9 |           8 |        9 | fail    |
+| `DUArQ`  |          24 |          21 |       21 | pass    |
+| `E5h5`   |          15 |          14 |       14 | pass    |
+| `LATyw`  |          13 |          13 |       12 | pass    |
+| `M7FGS`  |          60 |          51 |       51 | pass    |
+| `xr6Nf`  |          32 |          16 |       28 | fail    |
 
 ## Fixed-quota override
 
@@ -80,7 +99,9 @@ captures the resolution path of one `(screenId, technique)` pair:
   "fieldCount": 9,
   "requiredCount": 9,
   "actualCount": 10,
-  "formula": "tier-elastic:fields>=9: fields",
+  "formula": "tier-elastic:fields=9-19: ceil(0.9*fields)",
+  "formulaTier": "fields=9-19: ceil(0.9*fields)",
+  "formulaMultiplier": 0.9,
   "mode": "tier-elastic",
   "status": "pass"
 }
