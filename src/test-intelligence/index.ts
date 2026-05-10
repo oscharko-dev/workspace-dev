@@ -776,6 +776,13 @@ export {
   type IntraEquivalenceClassRedundancyFinding,
 } from "./equivalence-class-fingerprint.js";
 export {
+  classifyFieldLifecycleTransition,
+  classifyFieldLifecycleTransitionPair,
+  FIELD_LIFECYCLE_TRANSITION_TIER_TABLE,
+  type FieldLifecycleTransitionTier,
+  type FieldLifecycleTransitionTierRow,
+} from "./field-lifecycle-transition-tier.js";
+export {
   computeIntentDelta,
   INTENT_DELTA_DEFAULT_CONFIDENCE_DRIFT,
   writeIntentDeltaReport,

@@ -961,6 +961,17 @@ export const ALLOWED_TEST_CASE_VALIDATION_ISSUE_CODES = [
   "unknown_field_lifecycle_transition",
   "uncovered_field_lifecycle_transition",
   /**
+   * Issue #2168 — non-blocking counterpart to
+   * `uncovered_field_lifecycle_transition`. Fired when a field-lifecycle
+   * transition classified as `recommended_positive_path` (positive-path
+   * completion) or `state_transition_test_only` (reset/edit flows, only
+   * material when the run carries a `technique === "state_transition"` case)
+   * has no anchored test step. Always `warning` so the run is not blocked
+   * by missing positive-path coverage that previously over-fired
+   * 30–139× per dataset on M0 benchmarks.
+   */
+  "uncovered_field_lifecycle_transition_recommended",
+  /**
    * Issue #2123 — two cases share the same
    * {@link EquivalenceClassFingerprint} (covered fields, covered actions,
    * risk class, technique, oracle polarity) AND fail to add real coverage
@@ -1581,6 +1592,15 @@ export interface TestCaseCoverageReport {
   fieldCoverage: TestCaseCoverageBucket;
   actionCoverage: TestCaseCoverageBucket;
   fieldLifecycleCoverage: TestCaseCoverageBucket;
+  /**
+   * Issue #2168 — share of `recommended_positive_path` field-lifecycle
+   * transitions that are exercised by at least one accepted test step.
+   * Optional (omitted when the workflow topology declares no field
+   * lifecycles or no recommended-tier transitions) so the byte shape of
+   * the coverage report stays stable for runs that pre-date the
+   * tier-aware validator.
+   */
+  recommendedTransitionCoverage?: TestCaseCoverageBucket;
   validationCoverage: TestCaseCoverageBucket;
   navigationCoverage: TestCaseCoverageBucket;
   traceCoverage: { total: number; withTrace: number; ratio: number };
