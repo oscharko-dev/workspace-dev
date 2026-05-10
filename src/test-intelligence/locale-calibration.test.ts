@@ -268,60 +268,65 @@ test("locale-calibration: deriveLocaleFromBusinessTestIntentScreen returns undef
 // Fixture-based smoke tests: each fixture file resolves to the expected locale
 // ---------------------------------------------------------------------------
 
-test("locale-calibration: fixture DE-AT resolves to DE-AT via keywords", async () => {
+// DE-AT, DE-CH, EN-IE: keyword-path tests — screenLocale is intentionally
+// omitted so Rule 1 does not short-circuit and the keyword heuristic is
+// actually exercised.  The fixture still carries a locale field for
+// documentation purposes, but the test ignores it.
+
+test("locale-calibration: fixture DE-AT resolves to DE-AT via keyword heuristic", async () => {
   const raw = JSON.parse(await readFile(join(FIXTURES_DIR, "DE-AT.figma.json"), "utf8")) as {
-    locale: SupportedLocale;
     nodes: Array<{ validations?: string[]; nodeName?: string }>;
   };
   const validations = raw.nodes.flatMap((n) => n.validations ?? []);
   const labels = raw.nodes.map((n) => n.nodeName ?? "");
   assert.equal(
-    deriveLocaleFromScreen({ screenLocale: raw.locale, validationStrings: validations, fieldLabels: labels }),
+    deriveLocaleFromScreen({ validationStrings: validations, fieldLabels: labels }),
     "DE-AT",
   );
 });
 
-test("locale-calibration: fixture DE-CH resolves to DE-CH via keywords", async () => {
+test("locale-calibration: fixture DE-CH resolves to DE-CH via keyword heuristic", async () => {
   const raw = JSON.parse(await readFile(join(FIXTURES_DIR, "DE-CH.figma.json"), "utf8")) as {
-    locale: SupportedLocale;
     nodes: Array<{ validations?: string[]; nodeName?: string }>;
   };
   const validations = raw.nodes.flatMap((n) => n.validations ?? []);
   const labels = raw.nodes.map((n) => n.nodeName ?? "");
   assert.equal(
-    deriveLocaleFromScreen({ screenLocale: raw.locale, validationStrings: validations, fieldLabels: labels }),
+    deriveLocaleFromScreen({ validationStrings: validations, fieldLabels: labels }),
     "DE-CH",
   );
 });
 
-test("locale-calibration: fixture DE-DE resolves to DE-DE via locale tag", async () => {
+// DE-DE, FR-FR, IT-IT: smoke tests for direct locale-tag resolution (Rule 1).
+// These fixtures carry the locale field and the tests pass it directly.
+
+test("locale-calibration: fixture DE-DE resolves to DE-DE via direct locale tag", async () => {
   const raw = JSON.parse(await readFile(join(FIXTURES_DIR, "DE-DE.figma.json"), "utf8")) as {
     locale: SupportedLocale;
   };
   assert.equal(deriveLocaleFromScreen({ screenLocale: raw.locale }), "DE-DE");
 });
 
-test("locale-calibration: fixture EN-IE resolves to EN-IE via keywords", async () => {
+test("locale-calibration: fixture EN-IE resolves to EN-IE via keyword heuristic", async () => {
   const raw = JSON.parse(await readFile(join(FIXTURES_DIR, "EN-IE.figma.json"), "utf8")) as {
-    locale: SupportedLocale;
     nodes: Array<{ validations?: string[]; nodeName?: string }>;
   };
   const validations = raw.nodes.flatMap((n) => n.validations ?? []);
   const labels = raw.nodes.map((n) => n.nodeName ?? "");
   assert.equal(
-    deriveLocaleFromScreen({ screenLocale: raw.locale, validationStrings: validations, fieldLabels: labels }),
+    deriveLocaleFromScreen({ validationStrings: validations, fieldLabels: labels }),
     "EN-IE",
   );
 });
 
-test("locale-calibration: fixture FR-FR resolves to FR-FR via locale tag", async () => {
+test("locale-calibration: fixture FR-FR resolves to FR-FR via direct locale tag", async () => {
   const raw = JSON.parse(await readFile(join(FIXTURES_DIR, "FR-FR.figma.json"), "utf8")) as {
     locale: SupportedLocale;
   };
   assert.equal(deriveLocaleFromScreen({ screenLocale: raw.locale }), "FR-FR");
 });
 
-test("locale-calibration: fixture IT-IT resolves to IT-IT via locale tag", async () => {
+test("locale-calibration: fixture IT-IT resolves to IT-IT via direct locale tag", async () => {
   const raw = JSON.parse(await readFile(join(FIXTURES_DIR, "IT-IT.figma.json"), "utf8")) as {
     locale: SupportedLocale;
   };

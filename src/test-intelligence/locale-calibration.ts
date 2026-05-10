@@ -8,19 +8,14 @@
  * All functions are pure (no I/O, deterministic).
  */
 
-import type { BusinessTestIntentScreen } from "../contracts/index.js";
+import type { BusinessTestIntentScreen, SupportedLocale } from "../contracts/index.js";
+
+// Re-export so existing importers of this module don't need to change.
+export type { SupportedLocale };
 
 // ---------------------------------------------------------------------------
 // Locale type surface
 // ---------------------------------------------------------------------------
-
-export type SupportedLocale =
-  | "DE-DE"
-  | "DE-AT"
-  | "DE-CH"
-  | "EN-IE"
-  | "FR-FR"
-  | "IT-IT";
 
 export const SUPPORTED_LOCALES: ReadonlyArray<SupportedLocale> = Object.freeze([
   "DE-DE",
@@ -74,11 +69,11 @@ const IBAN_PREFIX_TO_LOCALE: ReadonlyMap<string, SupportedLocale> = new Map([
 // German/French/Italian validation keywords are capitalised consistently
 // in Figma node text.
 
+/** Austrian-specific validation keywords (used in the DE-AT heuristic path). */
 const DE_AT_KEYWORDS = Object.freeze([
   "Sozialversicherungsnummer",
   "UID-Nummer ATU",
-  "Pflichtfeld",   // combined with 4-digit PLZ hint below
-]);
+] as const);
 
 const DE_CH_KEYWORDS = Object.freeze([
   "AHV-Nummer",
@@ -164,9 +159,12 @@ const localeFromKeywords = (
 ): SupportedLocale | undefined => {
   const texts = [...validationStrings, ...fieldLabels];
 
-  // DE-AT: Austrian-specific terms take precedence over generic German keywords
+  // DE-AT: Austrian-specific terms take precedence over generic German keywords.
+  // DE_AT_KEYWORDS covers the unambiguously Austrian vocabulary; the secondary
+  // Pflichtfeld+PLZ combo handles the case where the AT-specific markers are
+  // absent but the postal-code format betrays the locale.
   if (
-    anyContainsKeyword(texts, ["Sozialversicherungsnummer", "UID-Nummer ATU"]) ||
+    anyContainsKeyword(texts, DE_AT_KEYWORDS) ||
     (anyContainsKeyword(texts, ["Pflichtfeld"]) &&
       texts.some((t) => /\bPLZ\b/.test(t) && /\b\d{4}\b/.test(t)))
   ) {
@@ -197,10 +195,6 @@ const localeFromKeywords = (
   if (anyContainsKeyword(texts, DE_DE_KEYWORDS)) {
     return "DE-DE";
   }
-
-  // Suppress unused-variable warning — DE_AT_KEYWORDS is intentionally
-  // decomposed above; keep the reference to satisfy the linter.
-  void (DE_AT_KEYWORDS satisfies ReadonlyArray<string>);
 
   return undefined;
 };

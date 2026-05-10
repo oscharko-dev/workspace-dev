@@ -247,17 +247,23 @@ export const familyForDeployment = (deployment: string): string => {
   return "other";
 };
 
-const metricKey = (observation: DriftMetricObservation): string =>
-  [
+const metricKey = (observation: DriftMetricObservation): string => {
+  const segments = [
     observation.deployment,
     observation.family,
     observation.metricName,
     observation.riskCategory ?? "",
     observation.judge ?? "",
-    // locale dimension appended after risk-category (Issue #2117); base
-    // observations (no locale) keep an empty string so existing baselines match.
-    observation.locale ?? "",
-  ].join("\u0000");
+  ];
+  // Append locale segment only when present (Issue #2117).  Omitting the
+  // segment for base observations (no locale) keeps existing persisted
+  // baselines byte-compatible: a baseline written before per-locale support
+  // was added will still match on key lookup.
+  if (observation.locale !== undefined) {
+    segments.push(observation.locale);
+  }
+  return segments.join("\u0000");
+};
 
 const fingerprintKey = (observation: ProviderFingerprintObservation): string =>
   [
@@ -333,7 +339,7 @@ export const computeDriftCanaryMetrics = (input: {
 
       // Accumulate per-locale when map is present and locale resolved.
       if (sample.locale !== undefined) {
-        const key = `${sample.riskCategory} ${sample.locale}`;
+        const key = `${sample.riskCategory} ${sample.locale}`;
         const existing = samplesByRiskLocale.get(key);
         if (existing !== undefined) {
           existing.samples.push({ confidence: sample.confidence, label: sample.label });

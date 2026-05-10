@@ -97,12 +97,14 @@ export interface CaseConfidenceCurveArtifact {
   /**
    * Per-locale Platt-curve fits (Issue #2117).
    *
-   * `"default"` is always the aggregate curve (same `intercept`/`slope` as
-   * the top-level fields, kept for symmetric iteration).  Each `SupportedLocale`
-   * entry is only present when the locale appears in the sample set; it holds
-   * `fallbackToDefault: false` when the locale had ≥ `CALIBRATION_MIN_SAMPLE_FLOOR`
-   * samples and a genuine fit was run, or `fallbackToDefault: true` when the
-   * aggregate was copied because the locale was under-represented.
+   * All `LocaleCalibrationKey` entries are always present (including locales
+   * with zero samples), so consumers can iterate without a has-key guard.
+   * `"default"` holds the aggregate curve (`fallbackToDefault: false`).
+   * Each `SupportedLocale` entry has `fallbackToDefault: true` when the locale
+   * had fewer than `CALIBRATION_MIN_SAMPLE_FLOOR` samples and the aggregate
+   * curve was copied, or `fallbackToDefault: false` when a genuine per-locale
+   * Platt fit was run.  In both cases `sampleCount` mirrors the corresponding
+   * `localeSampleCount` entry so the two maps are always consistent.
    */
   readonly localeCurves: Readonly<Record<LocaleCalibrationKey, LocaleCurveEntry>>;
   /**
@@ -193,8 +195,12 @@ export interface LoadedCaseConfidenceCalibration {
   >;
   /**
    * Paths to per-locale reliability diagram artifacts (Issue #2117).
-   * Additive optional: present only when `screenLocaleMap` was supplied and
-   * at least one locale met the minimum sample floor.
+   * Present whenever `screenLocaleMap` is supplied in the load input
+   * (even if no locale met the minimum sample floor — the map may be empty).
+   * Absent when `screenLocaleMap` was not provided, preserving backward
+   * compatibility for callers that omit the field.
+   * Keys are only present for locales where a reliability diagram was
+   * successfully written; under-represented locales are omitted from the map.
    */
   readonly localeReliabilityArtifactPaths?: Readonly<
     Partial<Record<LocaleCalibrationKey, string>>
@@ -727,6 +733,30 @@ const fitPlattCurve = (input: {
   ) as Record<LocaleCalibrationKey, number>;
 
   if (trainingPositives === 0 || trainingNegatives === 0) {
+    // Rebuild localeCurves so each entry's sampleCount mirrors localeSampleCount
+    // rather than keeping the all-zeros default.  This keeps the artifact
+    // internally consistent: a consumer can sum localeCurves[key].sampleCount
+    // and arrive at the same total as localeSampleCount.  All entries carry
+    // fallbackToDefault: true (locale) / false (aggregate) to signal that no
+    // genuine per-locale Platt fit was attempted (Issue #2117).
+    const defaultParams = { intercept: -2.25, slope: 5.5, trainingBrierScore: round6(0.0625) };
+    const earlyReturnLocaleCurves: Record<LocaleCalibrationKey, LocaleCurveEntry> = {
+      [LOCALE_CALIBRATION_FALLBACK_KEY]: {
+        ...buildDefaultLocaleCurveEntry(defaultParams),
+        sampleCount: localeSampleCount[LOCALE_CALIBRATION_FALLBACK_KEY],
+        fallbackToDefault: false,
+      },
+      ...Object.fromEntries(
+        SUPPORTED_LOCALES.map((locale) => [
+          locale,
+          {
+            ...buildDefaultLocaleCurveEntry(defaultParams),
+            sampleCount: localeSampleCount[locale],
+            fallbackToDefault: true,
+          } satisfies LocaleCurveEntry,
+        ]),
+      ),
+    } as Record<LocaleCalibrationKey, LocaleCurveEntry>;
     return {
       ...defaultCurve({
         datasetId: input.datasetId,
@@ -736,6 +766,7 @@ const fitPlattCurve = (input: {
       sampleCount: sorted.length,
       positiveCount: sorted.filter((sample) => sample.label === 1).length,
       negativeCount: sorted.filter((sample) => sample.label === 0).length,
+      localeCurves: earlyReturnLocaleCurves,
       localeSampleCount,
     };
   }
