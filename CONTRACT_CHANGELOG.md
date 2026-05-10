@@ -62,6 +62,10 @@ FinOps token-budget cap exposed for the framework.
   pairsViolated) / pairsGenerated`, rounded to six digits, `0` when
   no pairs were generated). Omitted for runs that did not enable the
   framework, so byte-shape stays stable for legacy runs.
+- The persisted `causal-validation-report.json` now carries a
+  `pairs[]` array of `CausalValidationPairAudit` rows so reviewers can
+  trace each pair's variant ids, oracle-derived causal delta, and
+  projected effect-invariant text without re-running the framework.
 - New module `src/test-intelligence/causal-hypothesis-registry.ts`
   exposing the branded `SemanticFieldId` type, the
   `semanticFieldId(screenId, elementId)` constructor and

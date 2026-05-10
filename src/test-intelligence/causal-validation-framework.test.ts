@@ -300,6 +300,7 @@ test("evaluateCounterfactualPairs: empty pair list yields zeroed report with cor
   assert.equal(report.pairsViolated, 0);
   assert.equal(report.causalCoverageRatio, 0);
   assert.deepEqual(report.hypotheses, []);
+  assert.deepEqual(report.pairs, []);
 });
 
 test("evaluateCounterfactualPairs: counts no-effect violations when valueA == valueB", () => {

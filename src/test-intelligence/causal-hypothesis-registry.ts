@@ -272,10 +272,10 @@ const INVARIANT_HYPOTHESIS_CATALOG: readonly CatalogRow[] = [
     relationship: "monotonic-up",
   },
   {
-    // INV-SOLVENCY2-COOLOFF-01: long-term insurance contracts always
+    // INV-SOLV2-COOLOFF-01: long-term insurance contracts always
     // expose a cooling-off period regardless of premium amount, so
     // changing the premium does not affect the cooling-off flag.
-    invariantId: "INV-SOLVENCY2-COOLOFF-01",
+    invariantId: "INV-SOLV2-COOLOFF-01",
     cause: {
       labelAnyOf: ["premium", "prämie", "praemie", "beitrag"],
       kindPrefixes: ["number", "currency", "input"],
