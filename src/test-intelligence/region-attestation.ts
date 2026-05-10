@@ -108,13 +108,16 @@ const resolveFromTlsCertificate = async (
       },
       () => {
         const cert = socket.getPeerCertificate(true);
+        const subject = cert.subject as { CN?: unknown };
         const subjectCn = parseRegionFromCertificateText(
-          cert?.subject?.CN as string | undefined,
+          typeof subject.CN === "string" ? subject.CN : undefined,
         );
-        const san = parseRegionFromCertificateText(
-          typeof cert?.subjectaltname === "string"
+        const subjectAltName =
+          typeof cert.subjectaltname === "string"
             ? cert.subjectaltname
-            : undefined,
+            : undefined;
+        const san = parseRegionFromCertificateText(
+          subjectAltName,
         );
         socket.end();
         resolve(subjectCn ?? san);

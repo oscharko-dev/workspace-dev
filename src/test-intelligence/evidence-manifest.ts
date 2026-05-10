@@ -35,7 +35,6 @@ import { isAbsolute, join, posix, relative, resolve, win32 } from "node:path";
 import {
   CONTRACT_VERSION,
   GENERATED_TEST_CASE_SCHEMA_VERSION,
-  REGION_ATTESTATION_SCHEMA_VERSION,
   REDACTION_POLICY_VERSION,
   SUBPROCESSOR_REGISTER_VERSION,
   TEST_INTELLIGENCE_CONTRACT_VERSION,
@@ -310,11 +309,6 @@ const cloneActiveModelBinding = (
 const cloneRegionAttestation = (
   attestation: RegionAttestation,
 ): RegionAttestation => {
-  if (attestation.schemaVersion !== REGION_ATTESTATION_SCHEMA_VERSION) {
-    throw new RangeError(
-      "buildWave1ValidationEvidenceManifest: regionAttestations.schemaVersion is invalid",
-    );
-  }
   return {
     schemaVersion: attestation.schemaVersion,
     artifactHash: attestation.artifactHash,

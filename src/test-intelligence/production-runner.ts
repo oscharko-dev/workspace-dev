@@ -6131,7 +6131,7 @@ export const runFigmaToQcTestCases = async (
     evidenceArtifacts.map((artifact) => ({
       filename: artifact.filename,
       artifactHash: sha256Hex(artifact.bytes),
-      regionAttestations: artifact.regionAttestations ?? [],
+      regionAttestations: artifact.regionAttestations,
     }));
   const regionAttestationReport = buildRegionAttestationReport({
     jobId: input.jobId,
@@ -6142,7 +6142,7 @@ export const runFigmaToQcTestCases = async (
     policyProfileRules?.allowedHostingRegions ??
     SUPPORTED_REGION_ATTESTATION_HOSTING_REGIONS;
   const allRegionAttestations = evidenceArtifacts.flatMap(
-    (artifact) => artifact.regionAttestations ?? [],
+    (artifact) => artifact.regionAttestations,
   );
   assertAllowedRegionAttestations({
     profileId: policyReport.policyProfileId,
