@@ -41,14 +41,16 @@ const parseLocalizedNumber = (rawValue: string): number | undefined => {
   const lastDot = compact.lastIndexOf(".");
   const lastComma = compact.lastIndexOf(",");
   const decimalIndex = Math.max(lastDot, lastComma);
-  let normalized = compact;
-  if (decimalIndex >= 0) {
-    const integerPart = compact.slice(0, decimalIndex).replace(/[.,]/g, "");
-    const fractionPart = compact.slice(decimalIndex + 1).replace(/[.,]/g, "");
-    normalized = integerPart.length > 0 ? integerPart + "." + fractionPart : "0." + fractionPart;
-  } else {
-    normalized = compact.replace(/[.,]/g, "");
-  }
+  const normalized =
+    decimalIndex >= 0
+      ? (() => {
+          const integerPart = compact.slice(0, decimalIndex).replace(/[.,]/g, "");
+          const fractionPart = compact.slice(decimalIndex + 1).replace(/[.,]/g, "");
+          return integerPart.length > 0
+            ? integerPart + "." + fractionPart
+            : "0." + fractionPart;
+        })()
+      : compact.replace(/[.,]/g, "");
   if (!/^[+-]?\d+(?:\.\d+)?$/.test(normalized)) {
     return undefined;
   }
