@@ -58,6 +58,19 @@ const SAMPLE_FILE = {
   }),
 };
 
+// Issue #2072 — workflow-topology field-lifecycle ids deterministically
+// emitted for `SAMPLE_FILE`. The validation pipeline rejects any step that
+// does not reference one of these ids, and additionally requires every id
+// to be anchored by at least one step. Mirrors the constant in
+// `production-runner.test.ts`.
+const SAMPLE_FIELD_LIFECYCLE_TRANSITION_IDS = [
+  "FLT-0e7c194b10",
+  "FLT-d79c53afd0",
+  "FLT-6a79bfe412",
+  "FLT-896ba3ae1d",
+  "FLT-7072ca788d",
+] as const;
+
 const SAMPLE_DRAFT: ProductionRunnerLlmDraftCase = {
   title: "Eingabe einer gültigen Investitionssumme",
   objective:
@@ -73,16 +86,19 @@ const SAMPLE_DRAFT: ProductionRunnerLlmDraftCase = {
       index: 1,
       action: "Öffne die Maske Bedarfsermittlung Investitionsfinanzierung",
       expected: "Maske ist sichtbar",
+      fieldLifecycleTransitionId: SAMPLE_FIELD_LIFECYCLE_TRANSITION_IDS[0],
     },
     {
       index: 2,
       action: "Trage 100000 in das Feld Investitionssumme ein",
       expected: "Eingabe wird akzeptiert",
+      fieldLifecycleTransitionId: SAMPLE_FIELD_LIFECYCLE_TRANSITION_IDS[1],
     },
     {
       index: 3,
       action: "Klicke auf Weiter",
       expected: "Folgemaske wird angezeigt",
+      fieldLifecycleTransitionId: SAMPLE_FIELD_LIFECYCLE_TRANSITION_IDS[2],
     },
   ],
   expectedResults: [
@@ -522,6 +538,13 @@ test("runFigmaToQcTestCases harness mode enforced surfaces LLM refusal as Produc
         source: { kind: "figma_paste_normalized", file: SAMPLE_FILE },
         outputRoot: tempRoot,
         llm: { client },
+        // Issue #2070 made `selfConsistency.sampleCount = 3` the policy
+        // default; that defers the per-step harness artifact write to the
+        // post-aggregation block, which is never reached when LLM refusal
+        // throws inside the generator pass. Pin single-pass so the
+        // refusal path exercises the in-callback harness write that this
+        // test was written against.
+        generation: { diversityPasses: 1 },
         harness: { mode: "enforced" },
       });
     } catch (err) {
@@ -571,6 +594,9 @@ test("runFigmaToQcTestCases harness mode shadow_eval does not throw on LLM refus
         source: { kind: "figma_paste_normalized", file: SAMPLE_FILE },
         outputRoot: tempRoot,
         llm: { client },
+        // See `job-enforced-refusal` — pin single-pass so the refusal
+        // path writes the harness artifact in-callback (Issue #2070).
+        generation: { diversityPasses: 1 },
         harness: { mode: "shadow_eval" },
       });
     } catch (err) {
@@ -732,6 +758,12 @@ test("runFigmaToQcTestCases drives the repair loop when the logic-judge initiall
       source: { kind: "figma_paste_normalized", file: SAMPLE_FILE },
       outputRoot: tempRoot,
       llm: { client },
+      // Issue #2070 raised the default self-consistency sample count to
+      // three. This test was authored against single-pass repair-loop
+      // semantics (one generator call per iteration); pin that contract
+      // so the responder's `logicCallIndex` book-keeping stays
+      // 1-to-1 with iterations.
+      generation: { diversityPasses: 1 },
       harness: { mode: "shadow_eval", maxRepairIterations: 2 },
     });
     assert.ok(result.repairLoop, "expected repair-loop summary");
@@ -782,6 +814,12 @@ test("runFigmaToQcTestCases skips the repair loop entirely on a clean accept ver
       source: { kind: "figma_paste_normalized", file: SAMPLE_FILE },
       outputRoot: tempRoot,
       llm: { client },
+      // Pin single-pass: this test asserts that `result.repairLoop` is
+      // undefined on a clean accept verdict. With Issue #2070's default
+      // diversity passes (3) the runner emits an empty repair-loop
+      // summary even when no repair iteration ran; that semantic is
+      // exercised separately in `production-runner.test.ts`.
+      generation: { diversityPasses: 1 },
       harness: { mode: "shadow_eval" },
     });
     assert.equal(result.repairLoop, undefined);
@@ -831,6 +869,7 @@ test("runFigmaToQcTestCases drives the repair loop when the initial Logic-Judge 
           action: "Navigiere ausschließlich per Tastatur durch die Maske.",
           expected:
             "Alle interaktiven Elemente erhalten in sichtbarer Fokusreihenfolge einen sichtbaren Fokus.",
+          fieldLifecycleTransitionId: SAMPLE_FIELD_LIFECYCLE_TRANSITION_IDS[3],
         },
         {
           index: 2,
@@ -838,6 +877,7 @@ test("runFigmaToQcTestCases drives the repair loop when the initial Logic-Judge 
             "Aktiviere die Schaltfläche Weiter mit dem Bildschirmleser (Screen Reader, aria-live).",
           expected:
             "Der Screen Reader kündigt die Aktion und das Folgeziel an (announcement).",
+          fieldLifecycleTransitionId: SAMPLE_FIELD_LIFECYCLE_TRANSITION_IDS[4],
         },
       ],
       expectedResults: [
@@ -929,6 +969,11 @@ test("runFigmaToQcTestCases drives the repair loop when the initial Logic-Judge 
       source: { kind: "figma_paste_normalized", file: SAMPLE_FILE },
       outputRoot: tempRoot,
       llm: { client },
+      // Issue #2070 — pin single-pass so the responder's
+      // `logicCallIndex` matches the per-iteration logic-judge call
+      // count this test was authored against (one logic-judge call per
+      // repair iteration).
+      generation: { diversityPasses: 1 },
       harness: { mode: "shadow_eval", maxRepairIterations: 2 },
       // Issue #1946 — the EU-Banking-Default policy gate blocks the run
       // when the active model bindings carry no `ictRegisterRef`. Supply
