@@ -131,6 +131,8 @@
     "verify:prompt-template-version": "node scripts/check-prompt-template-version.mjs",
     "verify:contract-changelog": "node scripts/check-contract-changelog.mjs",
     "verify:customer-eval-sample-plan": "node scripts/check-customer-eval-sample-plan.mjs",
+    "verify:subprocessor-register": "pnpm exec tsx scripts/render-subprocessor-register.mts --check",
+    "docs:render-subprocessor-register": "pnpm exec tsx scripts/render-subprocessor-register.mts",
     "docs:api": "node scripts/generate-api-docs.mjs",
     "docs:api:check": "node scripts/check-api-docs.mjs",
     "docs:check": "pnpm run docs:api:check && pnpm exec tsx --test src/docs-alignment.test.ts",

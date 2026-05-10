@@ -22,7 +22,10 @@
  * binding or prompt-template version.
  */
 
-import type { GeneratedTestCase } from "../contracts/index.js";
+import type {
+  GeneratedTestCase,
+  SubprocessorRegister,
+} from "../contracts/index.js";
 import {
   type ComplianceFrameworkId,
   type ComplianceRule,
@@ -67,6 +70,28 @@ export interface ComplianceAnnotationEntry {
    * so consumers can compute coverage without re-scanning rules.
    */
   readonly matches: readonly ComplianceAnnotationMatch[];
+  /**
+   * Stable, sorted list of subprocessor identifiers (Issue #2174) that
+   * a rule match cites for this test case. Empty when the rule pack
+   * does not reference a subprocessor; consumers cross-resolve the IDs
+   * against the per-run `subprocessor-register.json` artifact named in
+   * {@link ComplianceAnnotationArtifact.subprocessorRegisterRef}.
+   */
+  readonly subprocessorRefs: readonly string[];
+}
+
+/**
+ * Cross-link from a `compliance-annotations.json` artifact to the
+ * per-run `subprocessor-register.json` (Issue #2174). Every annotation
+ * that names a subprocessor cites the `subprocessorId` from the
+ * register; this top-level reference pins the register's identity so
+ * the citation can be resolved without consulting the file system.
+ */
+export interface ComplianceAnnotationSubprocessorRegisterRef {
+  readonly artifactFilename: string;
+  readonly schemaVersion: SubprocessorRegister["schemaVersion"];
+  readonly registerVersion: SubprocessorRegister["registerVersion"];
+  readonly merkleRoot: string;
 }
 
 /** Run-level annotation artifact. */
@@ -76,6 +101,13 @@ export interface ComplianceAnnotationArtifact {
   readonly generatedAt: string;
   readonly activeFrameworks: readonly ComplianceFrameworkId[];
   readonly entries: readonly ComplianceAnnotationEntry[];
+  /**
+   * Cross-link to the per-run subprocessor register artifact (Issue
+   * #2174). Optional so legacy fixtures that pre-date the register
+   * artifact remain parseable; runtime emission always populates the
+   * field.
+   */
+  readonly subprocessorRegisterRef?: ComplianceAnnotationSubprocessorRegisterRef;
 }
 
 export interface AnnotateTestCasesInput {
@@ -83,6 +115,16 @@ export interface AnnotateTestCasesInput {
   readonly generatedAt: string;
   readonly testCases: readonly GeneratedTestCase[];
   readonly activeFrameworks: readonly ComplianceFrameworkId[];
+  /**
+   * Subprocessor register cross-link (Issue #2174). When present, the
+   * artifact carries a top-level
+   * {@link ComplianceAnnotationArtifact.subprocessorRegisterRef} so a
+   * downstream consumer can resolve subprocessor citations without
+   * reading the register file.
+   */
+  readonly subprocessorRegister?: SubprocessorRegister;
+  /** Filename of the register artifact in the run bundle (defaults to the canonical name). */
+  readonly subprocessorRegisterArtifactFilename?: string;
 }
 
 const collectKeywordCorpus = (testCase: GeneratedTestCase): string => {
@@ -119,6 +161,32 @@ const sortMatches = (
   [...matches].sort((a, b) => a.ruleId.localeCompare(b.ruleId));
 
 /**
+ * Resolve subprocessor citations for a single rule match (Issue #2174).
+ * Today the deterministic compliance-rule pack does not carry an
+ * explicit subprocessor mapping; the cross-link is inferred from the
+ * rule citation by looking up matching `subprocessorId` values in the
+ * per-run register. The lookup is exact — substring-style matches are
+ * deliberately rejected — so a future rule pack that names a
+ * subprocessor explicitly need only add the literal id to its citation
+ * for the cross-link to start populating.
+ */
+const resolveSubprocessorRefsForCorpus = (
+  corpus: string,
+  register: SubprocessorRegister | undefined,
+): readonly string[] => {
+  if (register === undefined || register.subprocessors.length === 0) return [];
+  const refs = new Set<string>();
+  for (const subprocessor of register.subprocessors) {
+    if (corpus.includes(subprocessor.subprocessorId)) {
+      refs.add(subprocessor.subprocessorId);
+    }
+  }
+  return Object.freeze(
+    [...refs].sort((left, right) => left.localeCompare(right)),
+  );
+};
+
+/**
  * Annotate every test case with the rules that apply to it. Pure: same
  * inputs → same outputs.
  */
@@ -151,14 +219,31 @@ export const annotateTestCases = (
       });
     }
     const orderedMatches = sortMatches(matches);
+    const subprocessorRefs =
+      orderedMatches.length === 0
+        ? []
+        : resolveSubprocessorRefsForCorpus(corpus, input.subprocessorRegister);
     entries.push({
       testCaseId: testCase.id,
       appliesTo: Object.freeze(orderedMatches.map((m) => m.ruleId)),
       matches: Object.freeze(orderedMatches),
+      subprocessorRefs: Object.freeze(subprocessorRefs) as readonly string[],
     });
   }
 
   entries.sort((a, b) => a.testCaseId.localeCompare(b.testCaseId));
+
+  const subprocessorRegisterRef =
+    input.subprocessorRegister === undefined
+      ? undefined
+      : Object.freeze({
+          artifactFilename:
+            input.subprocessorRegisterArtifactFilename ??
+            "subprocessor-register.json",
+          schemaVersion: input.subprocessorRegister.schemaVersion,
+          registerVersion: input.subprocessorRegister.registerVersion,
+          merkleRoot: input.subprocessorRegister.merkleRoot,
+        });
 
   return Object.freeze({
     schemaVersion: COMPLIANCE_ANNOTATION_SCHEMA_VERSION,
@@ -166,6 +251,9 @@ export const annotateTestCases = (
     generatedAt: input.generatedAt,
     activeFrameworks: Object.freeze(activeFrameworks),
     entries: Object.freeze(entries),
+    ...(subprocessorRegisterRef !== undefined
+      ? { subprocessorRegisterRef }
+      : {}),
   });
 };
 

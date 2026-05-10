@@ -31,6 +31,55 @@ All changes to the public contract surface of `workspace-dev` are documented her
 
 ---
 
+## [1.26.0] - 2026-05-10
+
+### Added (Issue #2174 — subprocessor register JSON artifact, DORA Art. 28 machine-verifiable)
+
+- New runtime constant `SUBPROCESSOR_REGISTER_SCHEMA_VERSION` (`"1.0.0"`)
+  exported from `src/contracts/index.ts`. Tracks the artifact shape
+  (`SubprocessorRegister` interface) independently of
+  `SUBPROCESSOR_REGISTER_VERSION`, which keeps tracking the documented
+  register content.
+- New runtime constant `SUBPROCESSOR_REGISTER_ARTIFACT_FILENAME`
+  (`"subprocessor-register.json"`) exported from `src/contracts/index.ts`.
+- New runtime constant `SUPPORTED_HOSTING_REGIONS` exported from
+  `src/contracts/index.ts` — closed vocabulary of Azure / Mistral
+  EEA regions plus the explicit `"operator-defined"` token.
+- New exported types `SupportedHostingRegion`, `SubprocessorEntry`,
+  `CrossBorderTransferEntry`, `SubprocessorRegister`. Every field is
+  required unless explicitly typed `?` (`soc2ReportRef`,
+  `iso27001ReportRef`).
+- `BuildRunProvenanceGraphInput` gains the additive optional
+  `subprocessorRegister?: { artifactFilename: string; merkleRoot: string }`
+  input. When present, `provenance.jsonld` carries
+  `ti:subprocessorRegisterMerkleRoot` at the bundle level and adds a
+  `prov:Entity` artifact node for the register file.
+- `ComplianceAnnotationEntry` gains the additive
+  `subprocessorRefs: readonly string[]` field (sorted ascending; empty
+  when no rule citation references a subprocessor).
+- `ComplianceAnnotationArtifact` gains the additive optional
+  `subprocessorRegisterRef?: { artifactFilename, schemaVersion, registerVersion, merkleRoot }`
+  cross-link.
+- `AnnotateTestCasesInput` gains the additive optional
+  `subprocessorRegister?: SubprocessorRegister` and
+  `subprocessorRegisterArtifactFilename?: string` inputs so the
+  annotator can resolve subprocessor citations without an extra file
+  read.
+- New artifact `subprocessor-register.json` ships per run alongside
+  `compliance-annotations.json` and `compliance-coverage-report.json`.
+  Byte-stable: identical inputs produce identical canonical JSON bytes
+  and identical SHA-256 across runs at the same commit.
+- Auto-generated `docs/dora/subprocessor-register.md` is now regenerated
+  from the canonical TS source-of-truth in
+  `src/test-intelligence/subprocessor-register.ts` by
+  `scripts/render-subprocessor-register.mts`. CI dev-gate
+  (`pnpm run verify:subprocessor-register`) fails the build on drift.
+- New schema doc `docs/dora/subprocessor-register-schema.md`.
+- `TEST_INTELLIGENCE_CONTRACT_VERSION` bumped `1.25.0` → `1.26.0` in
+  lockstep with the additive surface above.
+- These are all additive changes; no existing field is removed or
+  renamed.
+
 ## [1.24.0] - 2026-05-10
 
 ### Added (Issue #2170 — cross-modal-faithfulness mid-tier `evidence_partial` thresholds + state-transition tier + partial-majority warning)
