@@ -310,6 +310,9 @@ jobs:
       - name: Test-intelligence regression-eval drift gate (Issue #1907)
         run: pnpm run test:ti-regression
 
+      - name: Test-intelligence FinOps SLO gate (Issue #2121)
+        run: pnpm run test:ti-finops-slo
+
   mutation-testing:
     needs: [setup]
     if: needs.setup.outputs.src == 'true' || needs.setup.outputs.config == 'true' || needs.setup.outputs.full == 'true'

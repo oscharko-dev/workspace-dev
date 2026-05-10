@@ -83,6 +83,7 @@ jobs:
           pnpm run test:ti-a11y
           pnpm run test:ti-judge-calibration
           pnpm run test:ti-regression
+          pnpm run test:ti-finops-slo
 
       - name: Runtime smoke gates
         run: |
