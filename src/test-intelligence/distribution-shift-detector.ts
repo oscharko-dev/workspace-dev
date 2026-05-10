@@ -153,7 +153,15 @@ export interface DistributionShiftReport {
   };
   readonly centroidMeasurement?: {
     readonly l2Distance: number;
-    readonly sigma: number;
+    /**
+     * σ-distance of the current run from the rolling baseline. Omitted
+     * when the historical std-dev is zero (i.e. all prior centroids
+     * coincide with the rolling mean) and the current L2 distance is
+     * positive — that case has no finite σ-units representation. The
+     * shift is still flagged via the `embedding_centroid_shift` finding
+     * via the `currentL2 > epsilon` branch.
+     */
+    readonly sigma?: number;
     readonly historyL2Mean: number;
     readonly historyL2StdDev: number;
   };
@@ -237,7 +245,10 @@ const collectInputText = (
       if (typeof node.text === "string" && node.text.length > 0) {
         out.push(node.text);
       }
-      if (typeof node.defaultValue === "string" && node.defaultValue.length > 0) {
+      if (
+        typeof node.defaultValue === "string" &&
+        node.defaultValue.length > 0
+      ) {
         out.push(node.defaultValue);
       }
     }
@@ -245,9 +256,7 @@ const collectInputText = (
   return out;
 };
 
-const buildTokenHistogram = (
-  texts: ReadonlyArray<string>,
-): number[] => {
+const buildTokenHistogram = (texts: ReadonlyArray<string>): number[] => {
   const buckets = new Array<number>(DISTRIBUTION_SHIFT_TOKEN_BUCKET_COUNT).fill(
     0,
   );
@@ -696,7 +705,10 @@ export const evaluateDistributionShiftReport = (input: {
 
   if (priorTokenHistograms.length > 0) {
     const baselineTokens = sumNumericHistograms(priorTokenHistograms);
-    tokenKl = computeKlDivergence(input.snapshot.tokenHistogram, baselineTokens);
+    tokenKl = computeKlDivergence(
+      input.snapshot.tokenHistogram,
+      baselineTokens,
+    );
     if (tokenKl > DISTRIBUTION_SHIFT_KL_THRESHOLD) {
       findings.push({
         kind: "token_kl_shift",
@@ -738,8 +750,7 @@ export const evaluateDistributionShiftReport = (input: {
       findings.push({
         kind: "ir_shape_kl_shift",
         severity: "warning",
-        message:
-          "IR-shape KL divergence exceeded the input-shift threshold",
+        message: "IR-shape KL divergence exceeded the input-shift threshold",
         fixtureSuiteId,
         klDivergence: irShapeKl,
         klThreshold: DISTRIBUTION_SHIFT_KL_THRESHOLD,
@@ -784,7 +795,13 @@ export const evaluateDistributionShiftReport = (input: {
       const reportedSigma = Number.isFinite(sigma) ? sigma : undefined;
       centroidMeasurement = {
         l2Distance: currentL2,
-        sigma: reportedSigma ?? 0,
+        // Issue #2120 audit follow-up: the historical std-dev is zero in
+        // the steady-state, all-priors-coincide case. Reporting `sigma:
+        // 0` there suppresses the +Infinity signal silently. The
+        // contract therefore makes `sigma` optional (parallel to the
+        // `centroidShiftSigma` finding spread on line 818), so the
+        // measurement now omits sigma when σ-units cannot be expressed.
+        ...(reportedSigma !== undefined ? { sigma: reportedSigma } : {}),
         historyL2Mean,
         historyL2StdDev,
       };

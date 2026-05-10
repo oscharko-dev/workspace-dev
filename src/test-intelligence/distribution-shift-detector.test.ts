@@ -210,7 +210,10 @@ test("recordInputDistributionSnapshot produces a deterministic snapshot", async 
     jobs: [baselineJob()],
   });
   assert.deepEqual(snapshotA, snapshotB);
-  assert.equal(snapshotA.tokenHistogram.length, DISTRIBUTION_SHIFT_TOKEN_BUCKET_COUNT);
+  assert.equal(
+    snapshotA.tokenHistogram.length,
+    DISTRIBUTION_SHIFT_TOKEN_BUCKET_COUNT,
+  );
   assert.equal(snapshotA.screenCount, 2);
   assert.equal(snapshotA.testCaseCount, 3);
   assert.equal(snapshotA.labelHistogram.low, 1);
@@ -267,11 +270,16 @@ test("evaluateDistributionShiftReport flags KL > threshold for shifted inputs", 
   // unit-test scale the 256-bucket histogram with Laplace smoothing only
   // produces measurable KL once each bucket has more than ~1 sample of
   // expected frequency.
-  const baselineJobsPerSnapshot = Array.from({ length: 30 }, () => baselineJob());
-  const driftedJobsPerSnapshot = Array.from({ length: 30 }, () => driftedJob());
-  let state: DistributionShiftBaselineState = emptyDistributionShiftBaselineState(
-    { tenantId: TENANT, policyProfileId: PROFILE, fixtureSuiteId: SUITE },
+  const baselineJobsPerSnapshot = Array.from({ length: 30 }, () =>
+    baselineJob(),
   );
+  const driftedJobsPerSnapshot = Array.from({ length: 30 }, () => driftedJob());
+  let state: DistributionShiftBaselineState =
+    emptyDistributionShiftBaselineState({
+      tenantId: TENANT,
+      policyProfileId: PROFILE,
+      fixtureSuiteId: SUITE,
+    });
   for (let day = 1; day <= 3; day += 1) {
     const baselineSnapshot = await recordInputDistributionSnapshot({
       fixtureSuiteId: SUITE,
@@ -307,9 +315,12 @@ test("evaluateDistributionShiftReport flags KL > threshold for shifted inputs", 
 });
 
 test("evaluateDistributionShiftReport stays quiet when current matches baseline", async () => {
-  let state: DistributionShiftBaselineState = emptyDistributionShiftBaselineState(
-    { tenantId: TENANT, policyProfileId: PROFILE, fixtureSuiteId: SUITE },
-  );
+  let state: DistributionShiftBaselineState =
+    emptyDistributionShiftBaselineState({
+      tenantId: TENANT,
+      policyProfileId: PROFILE,
+      fixtureSuiteId: SUITE,
+    });
   for (let day = 1; day <= 5; day += 1) {
     const snapshot = await recordInputDistributionSnapshot({
       fixtureSuiteId: SUITE,
@@ -377,9 +388,12 @@ test("recordInputDistributionSnapshot uses the embedding provider when supplied"
 
 test("evaluateDistributionShiftReport flags embedding centroid > 2σ", async () => {
   const stableProvider = stableEmbeddingProvider("phi-4-mini-instruct", 1);
-  let state: DistributionShiftBaselineState = emptyDistributionShiftBaselineState(
-    { tenantId: TENANT, policyProfileId: PROFILE, fixtureSuiteId: SUITE },
-  );
+  let state: DistributionShiftBaselineState =
+    emptyDistributionShiftBaselineState({
+      tenantId: TENANT,
+      policyProfileId: PROFILE,
+      fixtureSuiteId: SUITE,
+    });
   for (let day = 1; day <= 4; day += 1) {
     const snapshot = await recordInputDistributionSnapshot({
       fixtureSuiteId: SUITE,
@@ -425,15 +439,32 @@ test("evaluateDistributionShiftReport flags embedding centroid > 2σ", async () 
     "zero-variance historical scatter must not report a fake sigma=0 value",
   );
   assert.equal(centroidFinding!.embeddingProviderId, "phi-4-mini-instruct");
+  // Issue #2120 audit follow-up: the centroidMeasurement struct on the
+  // report must also OMIT sigma when historical std-dev is zero — a
+  // prior bug fell back to `sigma: 0`, silently suppressing the
+  // +Infinity signal that the σ branch could not express.
+  assert.ok(report.centroidMeasurement !== undefined);
+  assert.equal(
+    report.centroidMeasurement!.sigma,
+    undefined,
+    "zero-variance historical scatter must not report a fake sigma=0 in centroidMeasurement",
+  );
+  assert.ok(
+    report.centroidMeasurement!.l2Distance > 0.1,
+    "centroidMeasurement.l2Distance must reflect the real shift",
+  );
 });
 
 test("evaluateDistributionShiftReport flags centroid shift in σ-units when historical scatter is non-zero", async () => {
   // Build a baseline whose centroids drift slightly between days so the
   // historical L2 distribution has a real (non-zero) standard deviation —
   // this is the σ-arm of the alert policy.
-  let state: DistributionShiftBaselineState = emptyDistributionShiftBaselineState(
-    { tenantId: TENANT, policyProfileId: PROFILE, fixtureSuiteId: SUITE },
-  );
+  let state: DistributionShiftBaselineState =
+    emptyDistributionShiftBaselineState({
+      tenantId: TENANT,
+      policyProfileId: PROFILE,
+      fixtureSuiteId: SUITE,
+    });
   for (let day = 1; day <= 4; day += 1) {
     // Each day's provider scales by a tiny different factor — produces
     // small inter-day centroid drift.
@@ -474,9 +505,12 @@ test("evaluateDistributionShiftReport flags centroid shift in σ-units when hist
 });
 
 test("appendDistributionShiftBaselineRecord trims to the history window", async () => {
-  let state: DistributionShiftBaselineState = emptyDistributionShiftBaselineState(
-    { tenantId: TENANT, policyProfileId: PROFILE, fixtureSuiteId: SUITE },
-  );
+  let state: DistributionShiftBaselineState =
+    emptyDistributionShiftBaselineState({
+      tenantId: TENANT,
+      policyProfileId: PROFILE,
+      fixtureSuiteId: SUITE,
+    });
   for (let day = 1; day <= DISTRIBUTION_SHIFT_HISTORY_DAYS + 5; day += 1) {
     const snapshot: DistributionShiftSnapshot = {
       recordedAt: recordedAt(day),
@@ -571,9 +605,12 @@ test("distributionShiftBaselinePath rejects unstable identifiers", () => {
 });
 
 test("buildDistributionShiftDashboard summarises the per-record KL trend", async () => {
-  let state: DistributionShiftBaselineState = emptyDistributionShiftBaselineState(
-    { tenantId: TENANT, policyProfileId: PROFILE, fixtureSuiteId: SUITE },
-  );
+  let state: DistributionShiftBaselineState =
+    emptyDistributionShiftBaselineState({
+      tenantId: TENANT,
+      policyProfileId: PROFILE,
+      fixtureSuiteId: SUITE,
+    });
   for (let day = 1; day <= 3; day += 1) {
     const snapshot = await recordInputDistributionSnapshot({
       fixtureSuiteId: SUITE,
