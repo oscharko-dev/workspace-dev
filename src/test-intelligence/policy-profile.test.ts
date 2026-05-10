@@ -11,6 +11,7 @@ import {
   EU_BANKING_DEFAULT_NEGATIVE_CASE_LIFT_GATE_MODE,
   EU_BANKING_DEFAULT_NEGATIVE_CASE_LIFT_THRESHOLD_RATIO,
   EU_BANKING_DEFAULT_POLICY_PROFILE,
+  EU_BANKING_DEFAULT_REQUIRE_PER_STEP_FAITHFULNESS,
   EU_BANKING_DEFAULT_SELF_CONSISTENCY_SAMPLE_COUNT,
 } from "./policy-profile.js";
 
@@ -170,4 +171,27 @@ test("Issue #2070: clone round-trips selfConsistency and isolates overrides", ()
   assert.deepEqual(EU_BANKING_DEFAULT_POLICY_PROFILE.rules.selfConsistency, {
     sampleCount: 3,
   });
+});
+
+test("Issue #2116: secure default keeps requirePerStepFaithfulness off (warn-only)", () => {
+  // Pinning the default at false is a deliberate governance choice — see the
+  // 2026-05-10 ADR. Flipping the secure default must be reviewed alongside
+  // the ADR, and this assertion makes the diff visible in the PR.
+  assert.equal(EU_BANKING_DEFAULT_REQUIRE_PER_STEP_FAITHFULNESS, false);
+  assert.equal(
+    EU_BANKING_DEFAULT_POLICY_PROFILE.rules.requirePerStepFaithfulness,
+    false,
+  );
+});
+
+test("Issue #2116: clone round-trips requirePerStepFaithfulness and isolates overrides", () => {
+  const a = cloneEuBankingDefaultProfile();
+  const b = cloneEuBankingDefaultProfile();
+  assert.equal(a.rules.requirePerStepFaithfulness, false);
+  a.rules.requirePerStepFaithfulness = true;
+  assert.equal(b.rules.requirePerStepFaithfulness, false);
+  assert.equal(
+    EU_BANKING_DEFAULT_POLICY_PROFILE.rules.requirePerStepFaithfulness,
+    false,
+  );
 });

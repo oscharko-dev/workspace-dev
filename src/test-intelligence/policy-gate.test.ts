@@ -2547,3 +2547,233 @@ test("Issue #2030: override with non-review-only category is ignored", () => {
     "override of `low` (not a review-only category) must not fire regulated-risk-requires-review",
   );
 });
+
+// -----------------------------------------------------------------------------
+// Issue #2116 — explicit semantics + audit trail for the cross-modal
+// faithfulness tier-elastic fallback.
+// -----------------------------------------------------------------------------
+
+test("Issue #2116: per-step verdict produces mode=per_step + no fallback rule", () => {
+  const ctx = harness(
+    [
+      buildCase({
+        steps: [
+          {
+            index: 1,
+            action: "Enter amount",
+            data: "100",
+            expected: "Field accepts",
+          },
+          { index: 2, action: "See receipt" },
+        ],
+      }),
+    ],
+    buildIntent(),
+  );
+  const report = evaluatePolicyGate({
+    jobId: "job-1",
+    generatedAt: GENERATED_AT,
+    list: ctx.list,
+    intent: ctx.intent,
+    profile: ctx.profile,
+    validation: ctx.validation,
+    coverage: ctx.coverage,
+    faithfulnessVerdict: buildFaithfulnessVerdict({
+      score: 1,
+      verdict: "accept",
+      stepVerdicts: [
+        {
+          testCaseId: "tc",
+          stepIndex: 1,
+          verdict: "match",
+          message: "amount field rendered green",
+        },
+        {
+          testCaseId: "tc",
+          stepIndex: 2,
+          verdict: "match",
+          message: "receipt heading visible",
+        },
+      ],
+    }),
+  });
+  assert.equal(report.faithfulnessEvaluation?.mode, "per_step");
+  assert.equal(report.faithfulnessEvaluation?.stepVerdictCount, 2);
+  assert.equal(
+    report.faithfulnessEvaluation?.requirePerStepFaithfulness,
+    false,
+    "secure default keeps requirePerStepFaithfulness off",
+  );
+  assert.equal(
+    report.jobLevelViolations.some(
+      (v) =>
+        v.rule === "policy:cross-modal-faithfulness:case-level-fallback",
+    ),
+    false,
+    "per_step mode must not raise the fallback rule",
+  );
+});
+
+test("Issue #2116: legacy verdict (no stepVerdicts) raises a warning fallback rule and records mode=case_level_fallback", () => {
+  const ctx = harness([buildCase({})], buildIntent());
+  const report = evaluatePolicyGate({
+    jobId: "job-1",
+    generatedAt: GENERATED_AT,
+    list: ctx.list,
+    intent: ctx.intent,
+    profile: ctx.profile,
+    validation: ctx.validation,
+    coverage: ctx.coverage,
+    faithfulnessVerdict: buildFaithfulnessVerdict({
+      score: 0.95,
+      verdict: "accept",
+      // stepVerdicts intentionally omitted (legacy schema 1.0.0 producer)
+    }),
+  });
+  assert.equal(
+    report.faithfulnessEvaluation?.mode,
+    "case_level_fallback",
+  );
+  assert.equal(report.faithfulnessEvaluation?.stepVerdictCount, 0);
+  const fallback = report.jobLevelViolations.find(
+    (v) =>
+      v.rule === "policy:cross-modal-faithfulness:case-level-fallback",
+  );
+  assert.equal(fallback?.severity, "warning");
+  assert.equal(
+    fallback?.outcome,
+    "cross_modal_faithfulness_case_level_fallback",
+  );
+  assert.equal(
+    report.blocked,
+    false,
+    "warning-severity fallback under default profile must not block",
+  );
+});
+
+test("Issue #2116: requirePerStepFaithfulness=true escalates the fallback rule to error and blocks the run", () => {
+  const ctx = harness([buildCase({})], buildIntent());
+  ctx.profile.rules.requirePerStepFaithfulness = true;
+  const report = evaluatePolicyGate({
+    jobId: "job-1",
+    generatedAt: GENERATED_AT,
+    list: ctx.list,
+    intent: ctx.intent,
+    profile: ctx.profile,
+    validation: ctx.validation,
+    coverage: ctx.coverage,
+    faithfulnessVerdict: buildFaithfulnessVerdict({
+      score: 0.95,
+      verdict: "accept",
+    }),
+  });
+  assert.equal(
+    report.faithfulnessEvaluation?.requirePerStepFaithfulness,
+    true,
+  );
+  const fallback = report.jobLevelViolations.find(
+    (v) =>
+      v.rule === "policy:cross-modal-faithfulness:case-level-fallback",
+  );
+  assert.equal(fallback?.severity, "error");
+  assert.equal(
+    report.blocked,
+    true,
+    "requirePerStepFaithfulness=true must block on case-level fallback",
+  );
+});
+
+test("Issue #2116: refused verdict records mode=missing without raising an extra evaluation-missing rule", () => {
+  const ctx = harness([buildCase({})], buildIntent());
+  ctx.profile.rules.judgeRefusalPolicy = {
+    faithfulness: "fail_open",
+    a11y: "needs_review",
+  };
+  const report = evaluatePolicyGate({
+    jobId: "job-1",
+    generatedAt: GENERATED_AT,
+    list: ctx.list,
+    intent: ctx.intent,
+    profile: ctx.profile,
+    validation: ctx.validation,
+    coverage: ctx.coverage,
+    faithfulnessVerdict: buildFaithfulnessVerdict({
+      refusal: { code: "gateway_error", message: "gateway refused" },
+    }),
+  });
+  assert.equal(report.faithfulnessEvaluation?.mode, "missing");
+  assert.equal(
+    report.jobLevelViolations.some(
+      (v) =>
+        v.rule === "policy:cross-modal-faithfulness:case-level-fallback",
+    ),
+    false,
+    "missing mode must not raise the case-level-fallback rule",
+  );
+  // judge_refused continues to fire with operator-tunable severity; missing
+  // mode does not stack a redundant always-error rule on top.
+  const refused = report.jobLevelViolations.find(
+    (v) => v.rule === "policy:judge_refused",
+  );
+  assert.equal(refused?.severity, "info");
+  assert.equal(report.blocked, false);
+});
+
+test("Issue #2116: no faithfulness verdict at all preserves the pre-#2116 byte shape (no audit block, no fallback rule)", () => {
+  const ctx = harness([buildCase({})], buildIntent());
+  const report = evaluatePolicyGate({
+    jobId: "job-1",
+    generatedAt: GENERATED_AT,
+    list: ctx.list,
+    intent: ctx.intent,
+    profile: ctx.profile,
+    validation: ctx.validation,
+    coverage: ctx.coverage,
+    // faithfulnessVerdict intentionally omitted
+  });
+  assert.equal(
+    report.faithfulnessEvaluation,
+    undefined,
+    "callers that never wired faithfulness preserve the pre-#2116 byte shape",
+  );
+  assert.equal(
+    report.jobLevelViolations.some(
+      (v) =>
+        v.rule === "policy:cross-modal-faithfulness:case-level-fallback",
+    ),
+    false,
+  );
+});
+
+test("Issue #2116: case-level-fallback rule severity respects an operator policyOverrides override", () => {
+  const ctx = harness([buildCase({})], buildIntent());
+  const report = evaluatePolicyGate({
+    jobId: "job-1",
+    generatedAt: GENERATED_AT,
+    list: ctx.list,
+    intent: ctx.intent,
+    profile: ctx.profile,
+    validation: ctx.validation,
+    coverage: ctx.coverage,
+    faithfulnessVerdict: buildFaithfulnessVerdict({
+      score: 0.95,
+      verdict: "accept",
+    }),
+    policyOverrides: [
+      {
+        ruleId: "policy:cross-modal-faithfulness:case-level-fallback",
+        severity: "error",
+      },
+    ],
+  });
+  const fallback = report.jobLevelViolations.find(
+    (v) =>
+      v.rule === "policy:cross-modal-faithfulness:case-level-fallback",
+  );
+  assert.equal(
+    fallback?.severity,
+    "error",
+    "policy-override map must be able to escalate the fallback rule",
+  );
+  assert.equal(report.blocked, true);
+});
