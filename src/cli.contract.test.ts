@@ -1110,6 +1110,26 @@ test("cli contract: test-intelligence audit-dossier --help prints bundle flags",
   assert.match(result.stdout, /WORKSPACE_TEST_SPACE_AUDIT_SIGN_KEY/i);
 });
 
+test("cli contract: test-intelligence tms-push --help prints adapter flags", async () => {
+  const result = await runCliToExit({
+    args: ["test-intelligence", "tms-push", "--help"],
+  });
+  assert.equal(result.exitCode, 0, result.stderr);
+  assert.match(result.stdout, /--run-dir/i);
+  assert.match(result.stdout, /--tms/i);
+  assert.match(result.stdout, /--project/i);
+  assert.match(result.stdout, /xray\|alm\|qtest\|polarion/i);
+  assert.match(result.stdout, /WORKSPACE_TEST_SPACE_TMS_/i);
+});
+
+test("cli contract: test-intelligence tms-push without --tms exits with operator error", async () => {
+  const result = await runCliToExit({
+    args: ["test-intelligence", "tms-push", "--run-dir", "/tmp/none"],
+  });
+  assert.equal(result.exitCode, 1);
+  assert.match(result.stderr, /--tms is required/i);
+});
+
 test("cli contract: test-intelligence run --enable-visual-sidecar fails closed when visual envs are missing", async () => {
   const tmpDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-ti-visual-"));
   const figmaJsonPath = path.join(tmpDir, "figma.json");
