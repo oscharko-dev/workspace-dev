@@ -478,6 +478,18 @@ existing behavior changes.
       These are library helpers; this PR does not wire them into the harness
       job-engine. Operators integrate at their gateway adapter.
 
+### Changed (Issue #2167 — tenant-scoped human-review verdict persistence)
+
+- `src/test-intelligence/human-review-queue.ts`:
+    - `recordHumanReviewVerdict(...)` now requires the caller to provide the
+      owning `tenantId` and resolves verdict writes strictly within that
+      tenant partition.
+    - The legacy fallback that scanned every tenant directory when `tenantId`
+      was omitted is removed, so cross-tenant verdict writes now fail with
+      `E_QUEUE_ITEM_NOT_FOUND` instead of mutating another tenant's queue.
+- `src/test-intelligence/human-review-queue.test.ts` adds a regression that
+  proves a verdict cannot be recorded through the wrong tenant partition.
+
 ### Backwards compatibility
 
 - The `eu-banking-default` and `eu-banking-sovereign` profiles are
