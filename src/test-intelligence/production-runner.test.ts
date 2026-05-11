@@ -2974,9 +2974,10 @@ test("Issue #2102: multi-judge regulated disagreement records a review-events au
       runId: result.jobId,
       testCaseId: JOB_LEVEL_TEST_CASE_ID,
     });
-    assert.deepEqual(humanReviewLog.items.map((item) => item.itemId), [
-      expectedHumanReviewItemId,
-    ]);
+    assert.deepEqual(
+      humanReviewLog.items.map((item) => item.itemId),
+      [expectedHumanReviewItemId],
+    );
     assert.equal(humanReviewLog.verdicts.length, 0);
     assert.equal(humanReviewLog.slaBreaches.length, 0);
 
@@ -3030,10 +3031,7 @@ test("Issue #2102: multi-judge regulated disagreement records a review-events au
     const expectedSlaDeadlineAt = new Date(
       Date.parse(humanReviewQueueItem.enqueuedAt) + 24 * 60 * 60 * 1000,
     ).toISOString();
-    assert.equal(
-      humanReviewQueueItem.slaDeadlineAt,
-      expectedSlaDeadlineAt,
-    );
+    assert.equal(humanReviewQueueItem.slaDeadlineAt, expectedSlaDeadlineAt);
     assert.equal(
       humanReviewQueueItem.judgeDisagreement.decision,
       "split_decision",
@@ -3042,15 +3040,36 @@ test("Issue #2102: multi-judge regulated disagreement records a review-events au
       humanReviewQueueItem.judgeDisagreement.escalation,
       "human_review_required",
     );
-    assert.equal(
-      humanReviewQueueItem.judgeDisagreement.disagreementRate,
-      0.5,
-    );
+    assert.equal(humanReviewQueueItem.judgeDisagreement.disagreementRate, 0.5);
     assert.deepEqual(
-      humanReviewQueueItem.judgeDisagreement.judges.map((judge) => judge.judgeId),
+      humanReviewQueueItem.judgeDisagreement.judges.map(
+        (judge) => judge.judgeId,
+      ),
       [...result.judgeConsensus.verdict.panel]
         .map((entry) => entry.judgeId)
         .sort((left, right) => left.localeCompare(right)),
+    );
+
+    // Issue #2167 hardening: the wave-1 evidence manifest must list
+    // `human-review-log.json` so the audit dossier discovers the oversight
+    // trail from the manifest alone — without this the artifact would be
+    // written to disk but not surface in the canonical manifest scan.
+    const evidenceManifest = JSON.parse(
+      await readFile(
+        path.join(
+          result.artifactDir,
+          WAVE1_VALIDATION_EVIDENCE_MANIFEST_ARTIFACT_FILENAME,
+        ),
+        "utf8",
+      ),
+    ) as {
+      artifacts: Array<{ filename: string }>;
+    };
+    assert.ok(
+      evidenceManifest.artifacts.some(
+        (artifact) => artifact.filename === HUMAN_REVIEW_LOG_ARTIFACT_FILENAME,
+      ),
+      `evidence manifest must list ${HUMAN_REVIEW_LOG_ARTIFACT_FILENAME}; found ${evidenceManifest.artifacts.map((artifact) => artifact.filename).join(", ")}`,
     );
   } finally {
     globalThis.fetch = originalFetch;
@@ -3090,8 +3109,7 @@ test("Issue #2102: needs_review replay reuses the existing human-review queue it
             };
           }
           if (
-            request.responseSchemaName ===
-            "workspace-dev-faithfulness-judge-v1"
+            request.responseSchemaName === "workspace-dev-faithfulness-judge-v1"
           ) {
             return {
               outcome: "success" as const,
@@ -3268,7 +3286,298 @@ test("Issue #2102: needs_review replay reuses the existing human-review queue it
     assert.equal(humanReviewQueueItem.enqueuedAt, "2026-05-09T10:00:00Z");
     assert.equal(
       humanReviewQueueItem.slaDeadlineAt,
-      new Date(Date.parse("2026-05-09T10:00:00Z") + 24 * 60 * 60 * 1000).toISOString(),
+      new Date(
+        Date.parse("2026-05-09T10:00:00Z") + 24 * 60 * 60 * 1000,
+      ).toISOString(),
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
+    await rm(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("Issue #2167: humanReview.rootDir empty/whitespace is rejected with HUMAN_REVIEW_CONFIG_INVALID before any LLM call", async () => {
+  const tempRoot = await mkdtemp(
+    path.join(os.tmpdir(), "ti-runner-2167-rootdir-"),
+  );
+  try {
+    let llmInvocations = 0;
+    const client = createMockLlmGatewayClient({
+      role: "test_generation",
+      deployment: "gpt-oss-120b-mock",
+      modelRevision: "mock-1",
+      gatewayRelease: "mock",
+      responder: (_request, attempt) => {
+        llmInvocations += 1;
+        return {
+          outcome: "success" as const,
+          content: { testCases: [SAMPLE_DRAFT] },
+          finishReason: "stop" as const,
+          usage: { inputTokens: 1, outputTokens: 1 },
+          modelDeployment: "gpt-oss-120b-mock",
+          modelRevision: "mock-1",
+          gatewayRelease: "mock",
+          attempt,
+        };
+      },
+    });
+    for (const invalidRootDir of ["", "   ", "\t", "\n"]) {
+      await assert.rejects(
+        runFigmaToQcTestCases({
+          jobId: "job-2167-rootdir",
+          generatedAt: "2026-05-09T10:00:00Z",
+          source: { kind: "figma_paste_normalized", file: SAMPLE_FILE },
+          outputRoot: tempRoot,
+          llm: { client },
+          humanReview: { rootDir: invalidRootDir },
+        }),
+        (err: unknown) =>
+          err instanceof ProductionRunnerError &&
+          err.failureClass === "HUMAN_REVIEW_CONFIG_INVALID" &&
+          /rootDir/u.test(err.message) &&
+          err.retryable === false,
+      );
+    }
+    assert.equal(llmInvocations, 0);
+  } finally {
+    await rm(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("Issue #2167: humanReview.slaMs non-positive/non-finite/oversize is rejected with HUMAN_REVIEW_CONFIG_INVALID", async () => {
+  const tempRoot = await mkdtemp(
+    path.join(os.tmpdir(), "ti-runner-2167-slams-"),
+  );
+  try {
+    let llmInvocations = 0;
+    const client = createMockLlmGatewayClient({
+      role: "test_generation",
+      deployment: "gpt-oss-120b-mock",
+      modelRevision: "mock-1",
+      gatewayRelease: "mock",
+      responder: (_request, attempt) => {
+        llmInvocations += 1;
+        return {
+          outcome: "success" as const,
+          content: { testCases: [SAMPLE_DRAFT] },
+          finishReason: "stop" as const,
+          usage: { inputTokens: 1, outputTokens: 1 },
+          modelDeployment: "gpt-oss-120b-mock",
+          modelRevision: "mock-1",
+          gatewayRelease: "mock",
+          attempt,
+        };
+      },
+    });
+    const invalidSlaMsValues: ReadonlyArray<number> = [
+      0,
+      -1,
+      Number.NaN,
+      Number.POSITIVE_INFINITY,
+      Number.NEGATIVE_INFINITY,
+      1.5,
+      Number.MAX_SAFE_INTEGER + 1,
+      31 * 24 * 60 * 60 * 1000, // one day past the 30-day ceiling
+    ];
+    for (const invalidSlaMs of invalidSlaMsValues) {
+      await assert.rejects(
+        runFigmaToQcTestCases({
+          jobId: "job-2167-slams",
+          generatedAt: "2026-05-09T10:00:00Z",
+          source: { kind: "figma_paste_normalized", file: SAMPLE_FILE },
+          outputRoot: tempRoot,
+          llm: { client },
+          humanReview: { slaMs: invalidSlaMs },
+        }),
+        (err: unknown) =>
+          err instanceof ProductionRunnerError &&
+          err.failureClass === "HUMAN_REVIEW_CONFIG_INVALID" &&
+          /slaMs/u.test(err.message) &&
+          err.retryable === false,
+      );
+    }
+    assert.equal(llmInvocations, 0);
+  } finally {
+    await rm(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("Issue #2167: PRODUCTION_RUNNER_FAILURE_CLASSES exposes HUMAN_REVIEW_CONFIG_INVALID", () => {
+  assert.ok(
+    (PRODUCTION_RUNNER_FAILURE_CLASSES as ReadonlyArray<string>).includes(
+      "HUMAN_REVIEW_CONFIG_INVALID",
+    ),
+  );
+});
+
+test("Issue #2167: human-review queue/log filesystem failure surfaces as PERSIST_FAILED", async () => {
+  const tempRoot = await mkdtemp(
+    path.join(os.tmpdir(), "ti-runner-2167-persist-"),
+  );
+  const originalFetch = globalThis.fetch;
+  const tenantScope = {
+    tenantId: "acme",
+    environmentId: "staging",
+    projectId: "runner",
+  } as const;
+  try {
+    // Pre-place a malformed JSON payload at the path where the runner's
+    // pre-flight `getHumanReviewQueueItem` will look for the existing
+    // queue item. The store invokes `assertHumanReviewQueueItemInvariants`
+    // on the parsed payload, which raises `HumanReviewQueueError`. The
+    // runner must surface that as a typed
+    // `ProductionRunnerError{ failureClass: "PERSIST_FAILED" }` rather
+    // than letting the raw error escape.
+    const reviewRootDir = path.join(
+      tempRoot,
+      "test-intelligence",
+      "human-review",
+    );
+    const jobId = "job-2167-persist";
+    const blockingItemId = computeHumanReviewItemId({
+      tenantId: tenantScope.tenantId,
+      runId: jobId,
+      testCaseId: JOB_LEVEL_TEST_CASE_ID,
+    });
+    const { mkdir } = await import("node:fs/promises");
+    const blockingQueueDir = path.join(
+      reviewRootDir,
+      tenantScope.tenantId,
+      "queue",
+    );
+    await mkdir(blockingQueueDir, { recursive: true });
+    await writeFile(
+      path.join(blockingQueueDir, `${blockingItemId}.json`),
+      JSON.stringify({ schemaVersion: "not-a-real-schema" }),
+    );
+
+    const bundle = createMockLlmGatewayClientBundle({
+      testGeneration: {
+        role: "test_generation",
+        deployment: "gpt-oss-120b",
+        modelRevision: "gpt-oss-120b@test",
+        gatewayRelease: "mock",
+        declaredCapabilities: TEST_GENERATION_CAPS,
+        responder: (request, attempt) => {
+          if (request.responseSchemaName === "workspace-dev-logic-judge-v1") {
+            return {
+              outcome: "success" as const,
+              content: {
+                verdict: "accept",
+                findings: [],
+                repairInstructions: [],
+              },
+              finishReason: "stop" as const,
+              usage: { inputTokens: 20, outputTokens: 10 },
+              modelDeployment: "gpt-oss-120b",
+              modelRevision: "gpt-oss-120b@test",
+              gatewayRelease: "mock",
+              attempt,
+            };
+          }
+          return okResponder(
+            SAMPLE_VISUAL_HARD_GATE_GREEN_DRAFTS,
+            "gpt-oss-120b",
+          )(request, attempt);
+        },
+      },
+      visualPrimary: {
+        role: "visual_primary",
+        deployment: "llama-4-maverick-vision",
+        modelRevision: "llama-4-maverick-vision@test",
+        gatewayRelease: "mock",
+        declaredCapabilities: VISUAL_CAPS,
+        responder: (request, attempt) => {
+          if (
+            request.responseSchemaName === "workspace-dev-faithfulness-judge-v1"
+          ) {
+            return {
+              outcome: "success" as const,
+              content: {
+                verdict: "repair",
+                hallucinations: [],
+                mismatches: [],
+              },
+              finishReason: "stop" as const,
+              usage: { inputTokens: 12, outputTokens: 8 },
+              modelDeployment: "llama-4-maverick-vision",
+              modelRevision: "llama-4-maverick-vision@test",
+              gatewayRelease: "mock",
+              attempt,
+            };
+          }
+          return buildVisualSuccess(request, attempt, "1:1");
+        },
+      },
+      visualFallback: {
+        role: "visual_fallback",
+        deployment: "phi-4-multimodal-poc",
+        modelRevision: "phi-4-multimodal-poc@test",
+        gatewayRelease: "mock",
+        declaredCapabilities: VISUAL_CAPS,
+      },
+    });
+
+    globalThis.fetch = (async (url: string) => {
+      if (url.includes("/v1/files/ABC/nodes?ids=1%3A1")) {
+        return new Response(
+          JSON.stringify({
+            name: "Test View 03",
+            nodes: {
+              "1:1": {
+                document: SAMPLE_FILE.document.children?.[0]?.children?.[0],
+              },
+            },
+          }),
+          {
+            status: 200,
+            headers: { "content-type": "application/json" },
+          },
+        );
+      }
+      if (
+        url ===
+        "https://api.figma.com/v1/images/ABC?ids=1%3A1&format=png&scale=2"
+      ) {
+        return new Response(
+          JSON.stringify({
+            images: {
+              "1:1":
+                "https://figma-alpha-api.s3.us-west-2.amazonaws.com/1_1.png",
+            },
+          }),
+          {
+            status: 200,
+            headers: { "content-type": "application/json" },
+          },
+        );
+      }
+      return new Response(PNG_BYTES, {
+        status: 200,
+        headers: { "content-type": "image/png" },
+      });
+    }) as typeof fetch;
+
+    await assert.rejects(
+      runFigmaToQcTestCases({
+        jobId,
+        generatedAt: "2026-05-09T10:00:00Z",
+        source: {
+          kind: "figma_url",
+          figmaUrl: "https://www.figma.com/design/ABC/Test-View-03?node-id=1-1",
+          accessToken: "figd_test",
+        },
+        outputRoot: tempRoot,
+        llm: { client: bundle.testGeneration, bundle },
+        generation: { diversityPasses: 1 },
+        humanReview: { rootDir: reviewRootDir },
+        replayCacheTenantScope: tenantScope,
+      }),
+      (err: unknown) =>
+        err instanceof ProductionRunnerError &&
+        err.failureClass === "PERSIST_FAILED" &&
+        /human-review/u.test(err.message) &&
+        err.retryable === false,
     );
   } finally {
     globalThis.fetch = originalFetch;

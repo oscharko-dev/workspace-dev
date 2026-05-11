@@ -31,6 +31,44 @@ All changes to the public contract surface of `workspace-dev` are documented her
 
 ---
 
+## [1.44.3] - 2026-05-11
+
+Test-intelligence behavioural bump for **Issue #2167** (Epic closeout —
+human-review production-runner hardening, follow-up to PR #2221).
+Resolves the four unaddressed Copilot review findings from PR #2221: the
+runner's `humanReview` config block accepted empty / whitespace `rootDir`
+and non-finite / negative / oversize `slaMs` without validation, and the
+queue / log filesystem I/O ran outside the artifact-persistence
+`try`/`catch`, so a `HumanReviewQueueError` or raw fs error would escape
+as an unclassified failure. The regression test for the wave-1 evidence
+manifest also did not assert that `human-review-log.json` is listed by
+name, so a future regression could remove the manifest entry without
+flipping any test red.
+
+### Added (Issue #2167 — runner-hardening follow-up)
+
+- `src/test-intelligence/production-runner.ts`:
+    - `PRODUCTION_RUNNER_FAILURE_CLASSES` gains
+      `"HUMAN_REVIEW_CONFIG_INVALID"`. Raised before any FS I/O when
+      `humanReview.rootDir` is not a non-empty / non-whitespace string,
+      or when `humanReview.slaMs` is not a positive, finite, safe
+      integer ≤ 30 days. `retryable === false`.
+    - `enqueueHumanReview` / `getHumanReviewQueueItem` /
+      `buildHumanReviewLog` are now wrapped in a `try`/`catch` that
+      rethrows as `ProductionRunnerError{ failureClass: "PERSIST_FAILED",
+retryable: false, cause: err }`, so the request handler maps a
+      human-review I/O failure to the same envelope as every other
+      artifact-write failure.
+
+### Migration
+
+None. The new failure class is additive and only fires on inputs that
+were previously rejected at runtime by `Date.parse(...) + NaN →
+Invalid Date.toISOString()` or by leaking a raw fs error to the caller —
+both of which were already error paths for the same caller. The
+`humanReview` input block keeps the same shape; only the validation
+semantics tightened.
+
 ## [1.44.2] - 2026-05-11
 
 Test-intelligence behavioural bump for **Issue #2167** (Epic closeout /
