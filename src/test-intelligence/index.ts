@@ -1911,3 +1911,13 @@ export type {
   PromptOptimizerDirectiveId,
   PromptOptimizerExemplar,
 } from "../contracts/index.js";
+export {
+  applyDpCharge,
+  buildDpBudgetConsumedManifest,
+  createTenantDpBudgetState,
+  estimateJobDpCharge,
+  isDpBudgetConsumedManifest,
+  resetTenantDpBudgetCycle,
+  serializeDpBudgetConsumedManifest,
+  type ApplyDpChargeResult,
+} from "./training-influence-dp-budget.js";

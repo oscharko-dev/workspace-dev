@@ -103,8 +103,22 @@ export const estimateJobDpCharge = (input: {
       "estimateJobDpCharge: deltaPerJob must be a non-negative finite number",
     );
   }
+  const epsilon = input.inputTokens * perTokenEpsilon;
+  // Guard against overflow to Infinity from a very large (but finite)
+  // perTokenEpsilon. Infinity is silently serialized as `null` by
+  // canonical-JSON, which would corrupt the audit trail.
+  if (!Number.isFinite(epsilon)) {
+    throw new RangeError(
+      "estimateJobDpCharge: computed epsilon is not finite (perTokenEpsilon × inputTokens overflowed)",
+    );
+  }
+  if (!Number.isFinite(deltaPerJob)) {
+    throw new RangeError(
+      "estimateJobDpCharge: deltaPerJob must be a finite number",
+    );
+  }
   return {
-    epsilon: input.inputTokens * perTokenEpsilon,
+    epsilon,
     delta: deltaPerJob,
     inputTokens: input.inputTokens,
     perTokenEpsilon,
@@ -241,6 +255,20 @@ export const applyDpCharge = (
   },
 ): ApplyDpChargeResult => {
   assertConfig(input.config);
+  // The persisted state pins the budget caps at the time of cycle creation.
+  // Refuse to apply a charge against a state that was created/reset with
+  // different caps than the current config — silently using one cap over
+  // the other would let an operator change the policy mid-cycle and bypass
+  // the contractually agreed limit.
+  if (
+    input.config.enabled &&
+    (state.epsilonBudget !== input.config.tenantEpsilonBudget ||
+      state.deltaBudget !== input.config.tenantDeltaBudget)
+  ) {
+    throw new RangeError(
+      "applyDpCharge: config caps must match persisted state caps; advance the cycle via resetTenantDpBudgetCycle to change caps",
+    );
+  }
   const charge = estimateJobDpCharge({
     inputTokens: input.inputTokens,
     ...(input.config.perTokenEpsilon !== undefined
@@ -297,12 +325,12 @@ export const applyDpCharge = (
 
 /**
  * Assemble a per-job manifest carrying the `dpBudgetConsumed` record for
- * audit. The manifest reflects the POST-CHARGE state: callers pass the
- * `newState` returned by `applyDpCharge`.
+ * audit. The manifest reflects the POST-CHARGE state — totals are read
+ * directly from `result.newState` so the audit trail is internally
+ * consistent with the decision the accountant returned.
  */
 export const buildDpBudgetConsumedManifest = (input: {
   readonly result: ApplyDpChargeResult;
-  readonly stateAfter: TenantDpBudgetState;
   readonly jobId: string;
   readonly generatedAt: string;
 }): DpBudgetConsumedManifest => {
@@ -319,13 +347,14 @@ export const buildDpBudgetConsumedManifest = (input: {
       "buildDpBudgetConsumedManifest: generatedAt must be ISO-8601",
     );
   }
-  const { result, stateAfter } = input;
+  const { result } = input;
+  const state = result.newState;
   return Object.freeze({
     schemaVersion: DP_BUDGET_CONSUMED_MANIFEST_SCHEMA_VERSION,
     contractVersion: TEST_INTELLIGENCE_CONTRACT_VERSION,
-    tenantId: stateAfter.tenantId,
+    tenantId: state.tenantId,
     jobId: input.jobId,
-    cycleId: stateAfter.cycleId,
+    cycleId: state.cycleId,
     generatedAt: input.generatedAt,
     decision: result.decision,
     dpBudgetConsumed: Object.freeze({
@@ -334,11 +363,11 @@ export const buildDpBudgetConsumedManifest = (input: {
       inputTokens: result.charge.inputTokens,
     }),
     cycleTotals: Object.freeze({
-      epsilonConsumed: stateAfter.epsilonConsumed,
-      deltaConsumed: stateAfter.deltaConsumed,
-      epsilonBudget: stateAfter.epsilonBudget,
-      deltaBudget: stateAfter.deltaBudget,
-      jobsCharged: stateAfter.jobsCharged,
+      epsilonConsumed: state.epsilonConsumed,
+      deltaConsumed: state.deltaConsumed,
+      epsilonBudget: state.epsilonBudget,
+      deltaBudget: state.deltaBudget,
+      jobsCharged: state.jobsCharged,
     }),
     parameters: Object.freeze({
       perTokenEpsilon: result.charge.perTokenEpsilon,

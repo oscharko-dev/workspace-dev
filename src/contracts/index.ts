@@ -1880,13 +1880,18 @@ export interface TestCasePolicyProfileRules {
    */
   allowedHostingRegions?: readonly RegionAttestationHostingRegion[];
   /**
-   * Issue #2128 — opt-in training-influence DP budget accountant. When
-   * omitted or `.enabled === false` (the secure default), the gate is
-   * inactive: no charge is computed, no manifest is written, and no
-   * inference is blocked. When enabled, the harness charges each job
-   * against the tenant cap; jobs that would exceed the cap are blocked
-   * with a `rejected_budget_exhausted` decision until the operator advances
-   * the cycle via `resetTenantDpBudgetCycle`.
+   * Issue #2128 — opt-in training-influence DP budget configuration. When
+   * omitted or `.enabled === false` (the secure default), the accountant
+   * is inactive.
+   *
+   * This field is the policy-profile-side declaration of the budget. The
+   * runtime helpers in `src/test-intelligence/training-influence-dp-budget.ts`
+   * (`applyDpCharge`, `buildDpBudgetConsumedManifest`, ...) are the
+   * call-site API operators wire into their gateway adapter to charge each
+   * job, block on cap exhaustion, and emit the per-job
+   * `dp-budget-consumed.json` artifact for audit replay. The harness
+   * itself does not call these helpers — this is a library surface, not
+   * an automatically-applied gate.
    *
    * NOT a cryptographic DP guarantee — this is an accounting layer that
    * supports operator decision-making. See the ADR for the model.

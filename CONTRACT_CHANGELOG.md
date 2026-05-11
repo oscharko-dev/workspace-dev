@@ -63,18 +63,22 @@ existing behavior changes.
   on every shipped profile so the gate is opt-in and the default is
   inactive.
 - New entry in `ALLOWED_HARNESS_ARTIFACT_FILENAMES`:
-  `"dp-budget-consumed.json"`. When the accountant is enabled the harness
-  writes this artifact next to the other canonical-JSON harness artifacts
-  and `harness-artifact-manifest.json` pins its sha256 + size for replay.
-- New module `src/test-intelligence/training-influence-dp-budget.ts`
-  exposing:
+  `"dp-budget-consumed.json"`. When the call-site writes this artifact
+  into the run-dir, `buildHarnessArtifactManifest` automatically pins its
+  sha256 + size into `harness-artifact-manifest.json` for evidence-verify
+  replay. No new automatic harness write — the file is emitted by the
+  operator's gateway-adapter call-site.
+- New module `src/test-intelligence/training-influence-dp-budget.ts` (also
+  re-exported from `src/test-intelligence/index.ts`) exposing:
   - `estimateJobDpCharge({ inputTokens, perTokenEpsilon?, deltaPerJob? })`
   - `createTenantDpBudgetState({ tenantId, cycleId, cycleStartedAt, config })`
   - `applyDpCharge(state, { config, inputTokens })`
   - `resetTenantDpBudgetCycle(previous, { cycleId, cycleStartedAt, config? })`
-  - `buildDpBudgetConsumedManifest({ result, stateAfter, jobId, generatedAt })`
+  - `buildDpBudgetConsumedManifest({ result, jobId, generatedAt })`
   - `isDpBudgetConsumedManifest(value)`
   - `serializeDpBudgetConsumedManifest(manifest)`
+  These are library helpers; this PR does not wire them into the harness
+  job-engine. Operators integrate at their gateway adapter.
 
 ### Backwards compatibility
 

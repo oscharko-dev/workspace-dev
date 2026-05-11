@@ -97,6 +97,17 @@ test("estimateJobDpCharge: rejects invalid inputs", () => {
   );
 });
 
+test("estimateJobDpCharge: throws when epsilon overflows to Infinity", () => {
+  assert.throws(
+    () =>
+      estimateJobDpCharge({
+        inputTokens: Number.MAX_SAFE_INTEGER,
+        perTokenEpsilon: Number.MAX_VALUE,
+      }),
+    /epsilon is not finite/,
+  );
+});
+
 test("createTenantDpBudgetState: stamps schema + contract versions, zero consumed", () => {
   const state = freshState(ENABLED_CONFIG);
   assert.equal(state.schemaVersion, DP_BUDGET_CONSUMED_MANIFEST_SCHEMA_VERSION);
@@ -216,6 +227,18 @@ test("applyDpCharge: rejects when delta would exceed cap", () => {
   assert.equal(blocked.reason, "delta_budget_would_exceed_cap");
 });
 
+test("applyDpCharge: throws when config caps drift from persisted state caps", () => {
+  const state = freshState(ENABLED_CONFIG);
+  const driftedConfig: TrainingInfluenceDpBudgetConfig = {
+    ...ENABLED_CONFIG,
+    tenantEpsilonBudget: 999,
+  };
+  assert.throws(
+    () => applyDpCharge(state, { config: driftedConfig, inputTokens: 100 }),
+    /config caps must match persisted state caps/,
+  );
+});
+
 test("applyDpCharge: charge exactly at cap is accepted, next is rejected", () => {
   const config: TrainingInfluenceDpBudgetConfig = {
     enabled: true,
@@ -303,7 +326,7 @@ test("buildDpBudgetConsumedManifest: validator accepts well-formed manifest", ()
   });
   const manifest = buildDpBudgetConsumedManifest({
     result,
-    stateAfter: result.newState,
+
     jobId: "job-42",
     generatedAt: "2026-05-11T00:00:00.000Z",
   });
@@ -339,7 +362,7 @@ test("buildDpBudgetConsumedManifest: rejected jobs still emit an audit-ready man
   assert.equal(result.decision, "rejected_budget_exhausted");
   const manifest = buildDpBudgetConsumedManifest({
     result,
-    stateAfter: result.newState,
+
     jobId: "job-rejected",
     generatedAt: "2026-05-11T00:00:00.000Z",
   });
@@ -360,7 +383,7 @@ test("isDpBudgetConsumedManifest: rejects malformed payloads", () => {
   });
   const manifest = buildDpBudgetConsumedManifest({
     result,
-    stateAfter: result.newState,
+
     jobId: "job-42",
     generatedAt: "2026-05-11T00:00:00.000Z",
   });
@@ -406,7 +429,7 @@ test("serializeDpBudgetConsumedManifest: canonical, trailing newline, byte-stabl
   });
   const manifest = buildDpBudgetConsumedManifest({
     result,
-    stateAfter: result.newState,
+
     jobId: "job-42",
     generatedAt: "2026-05-11T00:00:00.000Z",
   });

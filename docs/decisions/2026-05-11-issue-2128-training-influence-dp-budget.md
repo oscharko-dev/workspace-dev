@@ -33,7 +33,12 @@ For a cycle of `N` jobs, totals are tracked additively (basic / sequential compo
 δ_c = Σ_{i=1..N} δ_i  ≤  δ_budget(t)
 ```
 
-When the projected post-charge totals would exceed either cap, the accountant returns `rejected_budget_exhausted` and the harness MUST NOT issue the inference. State does not advance on rejection, so a caller that retries with a smaller `T_j` (or after the operator advances the cycle) gets a fresh decision against the unmodified state.
+When the projected post-charge totals would exceed either cap, the accountant returns `rejected_budget_exhausted` and the call-site MUST NOT issue the inference. State does not advance on rejection, so a caller that retries with a smaller `T_j` (or after the operator advances the cycle) gets a fresh decision against the unmodified state.
+
+The accountant pins two extra integrity rules at the call-site:
+
+- The persisted state carries the budget caps that were authoritative at cycle creation. `applyDpCharge` throws if the supplied `config` caps drift from the state caps — that would let an operator silently bypass the contractually agreed limit by mutating the policy profile mid-cycle. Operators that want to change caps roll the cycle forward via `resetTenantDpBudgetCycle`.
+- `estimateJobDpCharge` throws if `inputTokens * perTokenEpsilon` overflows to `Infinity`. Canonical JSON serializes `Infinity` as `null`, which would corrupt the audit trail; a typed error at the call-site is the safer outcome.
 
 We deliberately use BASIC composition rather than advanced composition (Dwork-Roth strong composition, RDP, GDP). Advanced composition gives a tighter bound (`O(√N · ε · √(log(1/δ′)))` instead of `O(N · ε)`) but only under DP semantics that, again, this accountant does not provide. Using basic composition is the more conservative and easier-to-audit choice for a budget-accounting layer.
 
@@ -53,7 +58,11 @@ The accountant does not interpret `cycleId`. Operators advance the cycle on what
 
 ### 4. Per-job manifest
 
-When the accountant is enabled, the harness writes `dp-budget-consumed.json` next to the other canonical-JSON harness artifacts. The manifest schema (`DP_BUDGET_CONSUMED_MANIFEST_SCHEMA_VERSION = "1.0.0"`) carries:
+This PR ships the accountant as a LIBRARY SURFACE — a set of pure, exported helpers (`applyDpCharge`, `buildDpBudgetConsumedManifest`, `resetTenantDpBudgetCycle`, …) that operators wire into their gateway adapter. The harness itself does not call these helpers; the call-site lives in the operator's deployment glue (typically the gateway adapter or the per-job pre-flight hook). When the call-site invokes `buildDpBudgetConsumedManifest` and writes the canonical JSON to the run-dir as `dp-budget-consumed.json`, the existing `buildHarnessArtifactManifest` automatically picks the file up (the filename is in `ALLOWED_HARNESS_ARTIFACT_FILENAMES`) and pins its sha256 + size for evidence-verify replay.
+
+The decision to ship a library rather than an auto-wired hard gate matches the parent epic's framing: the AC explicitly calls this "operator concern" and the cap is policy-profile-driven. Until customers commit to specific caps, auto-wiring would force every deployment to either set a cap or carry the burden of explicitly disabling the gate. A future Issue can wire the helpers into the canonical job-engine entry-point once the operator-facing knob has stabilized.
+
+The manifest schema (`DP_BUDGET_CONSUMED_MANIFEST_SCHEMA_VERSION = "1.0.0"`) carries:
 
 - `tenantId`, `jobId`, `cycleId`, `generatedAt` — identity.
 - `decision` — one of the three decisions above.
@@ -61,9 +70,9 @@ When the accountant is enabled, the harness writes `dp-budget-consumed.json` nex
 - `cycleTotals: { epsilonConsumed, deltaConsumed, epsilonBudget, deltaBudget, jobsCharged }` — running totals AFTER the charge (unchanged from before for non-`accepted` decisions).
 - `parameters: { perTokenEpsilon, deltaPerJob }` — the coefficients used, for replay.
 
-`dp-budget-consumed.json` is a member of `ALLOWED_HARNESS_ARTIFACT_FILENAMES`, so `buildHarnessArtifactManifest` pins its sha256 + size into `harness-artifact-manifest.json` when present. The evidence-verify route reproduces the audit trail offline by re-hashing the file.
+`dp-budget-consumed.json` is a member of `ALLOWED_HARNESS_ARTIFACT_FILENAMES`, so `buildHarnessArtifactManifest` pins its sha256 + size into `harness-artifact-manifest.json` when the artifact is present on disk. The evidence-verify route reproduces the audit trail offline by re-hashing the file.
 
-Even `rejected_budget_exhausted` jobs emit a manifest: an auditor must be able to point at the artifact and see "this job was blocked, here is what it would have charged."
+Even `rejected_budget_exhausted` jobs should emit a manifest: an auditor must be able to point at the artifact and see "this job was blocked, here is what it would have charged."
 
 ### 5. Opt-in posture
 
