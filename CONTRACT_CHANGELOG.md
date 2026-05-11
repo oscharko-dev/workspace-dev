@@ -31,6 +31,89 @@ All changes to the public contract surface of `workspace-dev` are documented her
 
 ---
 
+## [1.34.0] - 2026-05-11
+
+Test-intelligence sub-contract bump for the Issue #2184 BYO-rubric /
+BYO-guidelines tenant-bundle resolver (Wave 8 / W8-2). Banks and
+insurers register their own naming conventions, compliance house
+standards, design-system tokens, terminology glossaries, and
+customer-eval rubric references via a JSON bundle without forking the
+harness. All changes are additive — no existing field, type, or
+command was removed or renamed.
+
+### Added (Issue #2184 — BYO-rubric / BYO-guidelines tenant-bundle resolver)
+
+- New persisted-artifact constants exported from
+  `src/test-intelligence/tenant-bundle.ts` (re-exported via
+  `src/test-intelligence/index.ts`):
+  - `TENANT_BUNDLE_RESOLVED_SCHEMA_VERSION` (`"1.0.0"`).
+  - `TENANT_BUNDLE_RESOLVED_ARTIFACT_FILENAME`
+    (`"tenant-bundle-resolved.json"`).
+  - `TENANT_BUNDLE_RESOLVED_CERTIFICATION` — stable certification
+    string baked into the artifact.
+  - `MAX_TENANT_BUNDLE_BYTES` (`262_144`).
+  - `TENANT_BUNDLE_DEFAULT_BASE_POLICY_PROFILE_ID` (defaults to
+    `"eu-banking-default"`).
+- New closed value sets:
+  - `TENANT_BUNDLE_OVERRIDE_ALLOW_LIST` (`tenantId`, `bundleVersion`,
+    `inheritsFromPolicyProfile`, `testCaseNamingConvention`,
+    `riskClassTaxonomy`, `complianceHouseStandards`,
+    `designSystemTokens`, `terminologyGlossary`,
+    `customerEvalRubric`) + the type alias `TenantBundleAllowedField`.
+  - `TENANT_BUNDLE_SAFETY_FLOORS` — pre-wired safety-floor catalogue
+    over `rules.minConfidence`, `rules.fieldCoverageRatioMin`,
+    `rules.actionCoverageRatioMin`,
+    `rules.negativeCaseLift.thresholdRatio`, and
+    `rules.duplicateSimilarityThreshold`.
+- New error classes:
+  - `TenantBundleBaseProfileMismatchError` (code
+    `TENANT_BUNDLE_BASE_PROFILE_MISMATCH`).
+  - `TenantBundleSafetyFloorViolationError` (code
+    `TENANT_BUNDLE_SAFETY_FLOOR_VIOLATION`).
+- New persisted-artifact + input types:
+  - `TenantBundleInput`, `NamingConvention`, `RiskClassOverride`,
+    `HouseStandardEntry`, `DesignSystemBinding`,
+    `TerminologyEntry`, `CustomerEvalRubricRef`.
+  - `CanonicalTenantBundle` — sorted, deterministic,
+    content-hashed canonical form.
+  - `ResolvedTenantBundle` — bundle + merged
+    `TestCasePolicyProfile` + applied-overrides catalogue +
+    certification line.
+  - `TenantBundleIssue`,
+    `ParseAndCanonicalizeTenantBundleResult`,
+    `ResolveTenantBundleInput`, `TenantBundleGlossaryEntry`.
+- New public functions:
+  - `parseAndCanonicalizeTenantBundle`.
+  - `resolveTenantBundle` (deep-clone safe — never mutates the base
+    profile).
+  - `assertTenantBundleScope` (cross-tenant load guard tied to the
+    ALS-active `TenantScope`).
+  - `serializeResolvedTenantBundle` (byte-stable canonical JSON for
+    the on-disk artifact).
+  - `buildTenantBundleGlossaryEntries` (flattens the bundle's
+    terminology into the prompt-compiler glossary contract).
+- New `RunFigmaToQcTestCasesInput.tenantBundle?: TenantBundleInput`
+  field on the production runner.
+- New `RunFigmaToQcTestCasesResult.artifactPaths.tenantBundleResolved?: string`
+  field on the production runner result.
+- New `AuditDossierManifestArtifactKind` value
+  `"tenant_bundle_resolved"` (closed-list addition).
+- New optional `AuditDossierManifest.customerBundle` summary block
+  (filename, tenant id, bundle version, inherited profile, content
+  hash, counts of overrides, naming-convention flag, customer-eval
+  rubric ref flag, applied-overrides list). Omitted when no bundle
+  is loaded; legacy dossiers keep their byte shape stable.
+- New CLI flag `--tenant-bundle <path>` on
+  `workspace-dev test-intelligence run` (256 KiB hard cap, JSON +
+  allow-list validated before any LLM call). Optional
+  `loadTenantBundleFile` override on
+  `RunTestIntelligenceCommandRuntime` for deterministic tests.
+- New `ProductionRunnerFailureClass` value `"TENANT_BUNDLE_INVALID"`
+  for schema, allow-list, safety-floor, and base-profile-mismatch
+  failures.
+
+---
+
 ## [1.33.0] - 2026-05-11
 
 Test-intelligence sub-contract bump that accompanies the Issue #2183

@@ -162,7 +162,7 @@ export interface TestIntelligenceTransferPrincipal {
 }
 
 /** Contract version for the opt-in test-intelligence surface. */
-export const TEST_INTELLIGENCE_CONTRACT_VERSION = "1.33.0" as const;
+export const TEST_INTELLIGENCE_CONTRACT_VERSION = "1.34.0" as const;
 
 /**
  * Schema version for generated test case payloads.
@@ -13018,6 +13018,7 @@ export const ALLOWED_AUDIT_DOSSIER_ARTIFACT_KINDS = [
   "policy_report",
   "human_review_log",
   "formal_verification_report",
+  "tenant_bundle_resolved",
 ] as const;
 
 export type AuditDossierManifestArtifactKind =
@@ -13125,6 +13126,26 @@ export interface AuditDossierManifest {
       readonly heldOutEce: number;
       readonly heldOutKappa: number;
     }[];
+  };
+  /**
+   * Customer-specific configuration (Issue #2184). Populated only when
+   * the audit-dossier generator finds `tenant-bundle-resolved.json`
+   * under the run directory. Legacy runs that do not load a tenant
+   * bundle keep the dossier shape stable.
+   */
+  readonly customerBundle?: {
+    readonly filename: string;
+    readonly tenantId: string;
+    readonly bundleVersion: string;
+    readonly inheritsFromPolicyProfile: string;
+    readonly contentHash: string;
+    readonly riskClassOverrideCount: number;
+    readonly complianceHouseStandardCount: number;
+    readonly designSystemTokenCount: number;
+    readonly terminologyGlossaryCount: number;
+    readonly hasNamingConvention: boolean;
+    readonly hasCustomerEvalRubricRef: boolean;
+    readonly appliedOverrides: readonly string[];
   };
   readonly regulatorCoverage: readonly AuditDossierRegulationCoverageEntry[];
   readonly summary: {

@@ -191,8 +191,13 @@ test("schema: drift guard — the hash is stable for the current contract", () =
   // new `tms-push-report.json` artifact contract, new `TmsAdapter`
   // surface, new CLI sub-command `tms-push`). Digest shifts in lockstep
   // with the contract.
+  // Hash bumped by Issue #2184: TEST_INTELLIGENCE_CONTRACT_VERSION bumped
+  // 1.33.0 -> 1.34.0 (additive BYO-rubric / BYO-guidelines tenant-bundle
+  // resolver — new `tenant_bundle_resolved` audit-dossier artifact kind
+  // and optional `customerBundle` summary on AuditDossierManifest).
+  // Digest shifts in lockstep with the contract.
   const expected =
-    "4fcc31a296172450ae461a3405a47583d6a16d88ef374c7f4e77b3df8228d007";
+    "331ef2e9715a46078debfd0bd2b253523c5be513b7020d15d8368d75256d087a";
   const actual = computeGeneratedTestCaseListSchemaHash();
   if (actual !== expected) {
     assert.fail(

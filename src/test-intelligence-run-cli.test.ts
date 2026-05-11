@@ -3008,6 +3008,87 @@ test("parseTestIntelligenceRunArgs: --customer-profile rejects empty value", () 
   );
 });
 
+test("parseTestIntelligenceRunArgs: --tenant-bundle captures path (Issue #2184)", () => {
+  const opts = parseTestIntelligenceRunArgs(
+    [
+      "--figma-url",
+      "https://figma.com/design/abc",
+      "--output",
+      "/tmp/x",
+      "--tenant-bundle",
+      "./acme.bundle.json",
+    ],
+    {},
+  );
+  assert.equal(opts.tenantBundlePath, "./acme.bundle.json");
+});
+
+test("parseTestIntelligenceRunArgs: --tenant-bundle rejects empty value", () => {
+  assert.throws(
+    () =>
+      parseTestIntelligenceRunArgs(
+        ["--figma-url", "https://figma.com/design/abc", "--tenant-bundle", ""],
+        {},
+      ),
+    /--tenant-bundle requires a non-empty file path/u,
+  );
+});
+
+test("parseTestIntelligenceRunArgs: --tenant-bundle rejects duplicate flag", () => {
+  assert.throws(
+    () =>
+      parseTestIntelligenceRunArgs(
+        [
+          "--figma-url",
+          "https://figma.com/design/abc",
+          "--tenant-bundle",
+          "a.json",
+          "--tenant-bundle",
+          "b.json",
+        ],
+        {},
+      ),
+    /--tenant-bundle may be specified at most once/u,
+  );
+});
+
+test("runTestIntelligenceCommand: dry_run with --tenant-bundle reports loaded byte count (Issue #2184)", async () => {
+  const { sink, stdout } = collectingSink();
+  const options: TestIntelligenceRunOptions = {
+    ...baseOptions(),
+    tenantBundlePath: "/operator/acme.bundle.json",
+  };
+  const bundleJson = JSON.stringify({
+    tenantId: "acme-bank",
+    bundleVersion: "1.0.0",
+  });
+  const exitCode = await runTestIntelligenceCommand(options, sink, {
+    env: GATE_ON,
+    loadTenantBundleFile: async () => bundleJson,
+    now: () => 1700000000000,
+  });
+  assert.equal(exitCode, 0);
+  const out = stdout.join("");
+  assert.match(out, /tenant bundle\s*:.*loaded/u);
+  assert.match(out, new RegExp(String(Buffer.byteLength(bundleJson, "utf8"))));
+});
+
+test("runTestIntelligenceCommand: --tenant-bundle schema error surfaces all issues and exits 1 (Issue #2184)", async () => {
+  const { sink, stderr } = collectingSink();
+  const options: TestIntelligenceRunOptions = {
+    ...baseOptions(),
+    tenantBundlePath: "/bad/bundle.json",
+  };
+  const invalidJson = JSON.stringify({ tenantId: "BAD ID", bundleVersion: "x" });
+  const exitCode = await runTestIntelligenceCommand(options, sink, {
+    env: GATE_ON,
+    loadTenantBundleFile: async () => invalidJson,
+    now: () => 1700000000000,
+  });
+  assert.equal(exitCode, 1);
+  assert.match(stderr.join(""), /--tenant-bundle file is invalid/u);
+});
+
 test("parseTestIntelligenceRunArgs: --customer-profile rejects duplicate flag", () => {
   assert.throws(
     () =>
