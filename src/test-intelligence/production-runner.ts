@@ -225,6 +225,7 @@ import {
   buildHumanReviewLog,
   computeHumanReviewItemId,
   enqueueHumanReview,
+  getHumanReviewQueueItem,
 } from "./human-review-queue.js";
 
 export type {
@@ -5388,7 +5389,7 @@ export const runFigmaToQcTestCases = async (
           left.judgeId.localeCompare(right.judgeId),
         ),
       } as const;
-      const humanReviewQueueItem = {
+      const nextHumanReviewQueueItem = {
         schemaVersion: HUMAN_REVIEW_QUEUE_ITEM_SCHEMA_VERSION,
         contractVersion: TEST_INTELLIGENCE_CONTRACT_VERSION,
         itemId: computeHumanReviewItemId({
@@ -5397,7 +5398,7 @@ export const runFigmaToQcTestCases = async (
           testCaseId: JOB_LEVEL_TEST_CASE_ID,
         }),
         tenantId: tenantScope.tenantId,
-        profileId: validation.policy.policyProfileId,
+        profileId: toHumanReviewProfileKey(validation.policy.policyProfileId),
         runId: input.jobId,
         testCaseId: JOB_LEVEL_TEST_CASE_ID,
         judgeDisagreement: disagreementSnapshot,
@@ -5405,7 +5406,15 @@ export const runFigmaToQcTestCases = async (
         enqueuedAt: input.generatedAt,
         slaDeadlineAt,
       } satisfies HumanReviewQueueItem;
-      await enqueueHumanReview(reviewQueueRoot, humanReviewQueueItem);
+      const humanReviewQueueItem =
+        (await getHumanReviewQueueItem(
+          reviewQueueRoot,
+          nextHumanReviewQueueItem.tenantId,
+          nextHumanReviewQueueItem.itemId,
+        )) ?? nextHumanReviewQueueItem;
+      if (humanReviewQueueItem === nextHumanReviewQueueItem) {
+        await enqueueHumanReview(reviewQueueRoot, humanReviewQueueItem);
+      }
       const humanReviewLog = await buildHumanReviewLog({
         rootDir: reviewQueueRoot,
         tenantId: humanReviewQueueItem.tenantId,
@@ -8686,6 +8695,13 @@ const countJudgeVotes = (
   }
   return totals;
 };
+
+const HUMAN_REVIEW_SAFE_SEGMENT = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/u;
+
+const toHumanReviewProfileKey = (profileId: string): string =>
+  HUMAN_REVIEW_SAFE_SEGMENT.test(profileId)
+    ? profileId
+    : `profile-${sha256Hex(profileId).slice(0, 24)}`;
 
 type JudgeConsensusDisposition = "accept" | "repair" | "needs_review";
 

@@ -71,7 +71,10 @@ import {
   type DetectedNavigation,
   type DetectedValidation,
 } from "../contracts/index.js";
-import { computeHumanReviewItemId } from "./human-review-queue.js";
+import {
+  computeHumanReviewItemId,
+  enqueueHumanReview,
+} from "./human-review-queue.js";
 
 process.env[REGION_ATTESTATION_PINNED_REGION_ENV] ??= "eu-central-1";
 process.env[REGION_ATTESTATION_SIGNING_KEY_ENV] ??=
@@ -3048,6 +3051,224 @@ test("Issue #2102: multi-judge regulated disagreement records a review-events au
       [...result.judgeConsensus.verdict.panel]
         .map((entry) => entry.judgeId)
         .sort((left, right) => left.localeCompare(right)),
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
+    await rm(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("Issue #2102: needs_review replay reuses the existing human-review queue item", async () => {
+  const tempRoot = await mkdtemp(
+    path.join(os.tmpdir(), "ti-runner-2102-review-replay-"),
+  );
+  const originalFetch = globalThis.fetch;
+  const tenantScope = {
+    tenantId: "acme",
+    environmentId: "staging",
+    projectId: "runner",
+  } as const;
+  try {
+    const bundle = createMockLlmGatewayClientBundle({
+      testGeneration: {
+        role: "test_generation",
+        deployment: "gpt-oss-120b",
+        modelRevision: "gpt-oss-120b@test",
+        gatewayRelease: "mock",
+        declaredCapabilities: TEST_GENERATION_CAPS,
+        responder: (request, attempt) => {
+          if (request.responseSchemaName === "workspace-dev-logic-judge-v1") {
+            return {
+              outcome: "success" as const,
+              content: {
+                verdict: "accept",
+                findings: [],
+                promptSuggestions: [],
+                confidence: 0.86,
+                rationale: "Logic judge keeps the output.",
+              },
+            };
+          }
+          if (
+            request.responseSchemaName ===
+            "workspace-dev-faithfulness-judge-v1"
+          ) {
+            return {
+              outcome: "success" as const,
+              content: {
+                verdict: "reject",
+                findings: [
+                  {
+                    severity: "major",
+                    message:
+                      "Cross-family disagreement forces human review replay coverage.",
+                    affectedSection: "expectedResults",
+                  },
+                ],
+                confidence: 0.78,
+                rationale:
+                  "Faithfulness judge rejects so the regulated disagreement persists.",
+              },
+            };
+          }
+          return okResponder([SAMPLE_DRAFT])(request, attempt);
+        },
+      },
+      logicJudge: {
+        role: "logic_judge",
+        deployment: "gpt-oss-120b",
+        modelRevision: "gpt-oss-120b@test",
+        gatewayRelease: "mock",
+        declaredCapabilities: TEST_GENERATION_CAPS,
+      },
+      faithfulnessJudge: {
+        role: "faithfulness_judge",
+        deployment: "gpt-4.1-mini",
+        modelRevision: "gpt-4.1-mini@test",
+        gatewayRelease: "mock",
+        declaredCapabilities: TEST_GENERATION_CAPS,
+      },
+      visualPrimary: {
+        role: "visual_primary",
+        deployment: "gpt-4.1-mini",
+        modelRevision: "gpt-4.1-mini@test",
+        gatewayRelease: "mock",
+        declaredCapabilities: VISUAL_CAPS,
+      },
+      visualFallback: {
+        role: "visual_fallback",
+        deployment: "phi-4-multimodal-poc",
+        modelRevision: "phi-4-multimodal-poc@test",
+        gatewayRelease: "mock",
+        declaredCapabilities: VISUAL_CAPS,
+      },
+    });
+
+    globalThis.fetch = (async (url: string) => {
+      if (url.includes("/v1/files/ABC/nodes?ids=1%3A1")) {
+        return new Response(
+          JSON.stringify({
+            name: "Test View 03",
+            nodes: {
+              "1:1": {
+                document: SAMPLE_FILE.document.children?.[0]?.children?.[0],
+              },
+            },
+          }),
+          {
+            status: 200,
+            headers: { "content-type": "application/json" },
+          },
+        );
+      }
+      if (
+        url ===
+        "https://api.figma.com/v1/images/ABC?ids=1%3A1&format=png&scale=2"
+      ) {
+        return new Response(
+          JSON.stringify({
+            images: {
+              "1:1":
+                "https://figma-alpha-api.s3.us-west-2.amazonaws.com/1_1.png",
+            },
+          }),
+          {
+            status: 200,
+            headers: { "content-type": "application/json" },
+          },
+        );
+      }
+      return new Response(PNG_BYTES, {
+        status: 200,
+        headers: { "content-type": "image/png" },
+      });
+    }) as typeof fetch;
+
+    const runWithGeneratedAt = (generatedAt: string) =>
+      runFigmaToQcTestCases({
+        jobId: "job-2102-regulated-disagreement-replay",
+        generatedAt,
+        source: {
+          kind: "figma_url",
+          figmaUrl: "https://www.figma.com/design/ABC/Test-View-03?node-id=1-1",
+          accessToken: "figd_test",
+        },
+        outputRoot: tempRoot,
+        llm: { client: bundle.testGeneration, bundle },
+        generation: { diversityPasses: 1 },
+        humanReview: {
+          rootDir: path.join(tempRoot, "test-intelligence", "human-review"),
+        },
+        replayCacheTenantScope: tenantScope,
+      });
+
+    const humanReviewItemId = computeHumanReviewItemId({
+      tenantId: tenantScope.tenantId,
+      runId: "job-2102-regulated-disagreement-replay",
+      testCaseId: JOB_LEVEL_TEST_CASE_ID,
+    });
+    await enqueueHumanReview(
+      path.join(tempRoot, "test-intelligence", "human-review"),
+      {
+        schemaVersion: HUMAN_REVIEW_QUEUE_ITEM_SCHEMA_VERSION,
+        contractVersion: TEST_INTELLIGENCE_CONTRACT_VERSION,
+        itemId: humanReviewItemId,
+        tenantId: tenantScope.tenantId,
+        profileId: EU_BANKING_DEFAULT_POLICY_PROFILE_ID,
+        runId: "job-2102-regulated-disagreement-replay",
+        testCaseId: JOB_LEVEL_TEST_CASE_ID,
+        judgeDisagreement: {
+          decision: "split_decision",
+          escalation: "human_review_required",
+          disagreementRate: 0.5,
+          judges: [
+            {
+              judgeId: "faithfulness_judge",
+              family: "openai",
+              modelId: "gpt-4.1-mini@test",
+              promptVersion: "faithfulness_judge-unspecified",
+              region: "global",
+              verdict: "reject",
+            },
+            {
+              judgeId: "logic_judge",
+              family: "openai",
+              modelId: "gpt-oss-120b@test",
+              promptVersion: "logic_judge-unspecified",
+              region: "global",
+              verdict: "accept",
+            },
+          ],
+        },
+        proposedDecision: "needs_review",
+        enqueuedAt: "2026-05-09T10:00:00Z",
+        slaDeadlineAt: new Date(
+          Date.parse("2026-05-09T10:00:00Z") + 24 * 60 * 60 * 1000,
+        ).toISOString(),
+      },
+    );
+
+    const replayed = await runWithGeneratedAt("2026-05-09T11:00:00Z");
+
+    assert.equal(replayed.blocked, true);
+    const humanReviewQueuePath = path.join(
+      tempRoot,
+      "test-intelligence",
+      "human-review",
+      tenantScope.tenantId,
+      "queue",
+      `${humanReviewItemId}.json`,
+    );
+    const humanReviewQueueItem = JSON.parse(
+      await readFile(humanReviewQueuePath, "utf8"),
+    ) as {
+      enqueuedAt: string;
+      slaDeadlineAt: string;
+    };
+    assert.equal(humanReviewQueueItem.enqueuedAt, "2026-05-09T10:00:00Z");
+    assert.equal(
+      humanReviewQueueItem.slaDeadlineAt,
+      new Date(Date.parse("2026-05-09T10:00:00Z") + 24 * 60 * 60 * 1000).toISOString(),
     );
   } finally {
     globalThis.fetch = originalFetch;
