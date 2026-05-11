@@ -8350,10 +8350,10 @@ test("Issue #2037: provenance verification fails closed when an attested artifac
 // Issue #2172 — maxFigmaPayloadBytes ceiling (defense in depth) + FinOps audit
 // ---------------------------------------------------------------------------
 
-const FIGMA_PAYLOAD_CEILING_BYTES_PROD = 64 * 1024 * 1024;
-const FIGMA_PAYLOAD_DEFAULT_BYTES_PROD = 10 * 1024 * 1024;
+const FIGMA_PAYLOAD_CEILING_BYTES_PROD = 128 * 1024 * 1024;
+const FIGMA_PAYLOAD_DEFAULT_BYTES_PROD = 128 * 1024 * 1024;
 
-test("runFigmaToQcTestCases rejects programmatic maxFigmaPayloadBytes above the 64 MiB ceiling (Issue #2172 defense in depth)", async () => {
+test("runFigmaToQcTestCases rejects programmatic maxFigmaPayloadBytes above the 128 MiB ceiling (Issue #2172 defense in depth)", async () => {
   const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ti-runner-"));
   try {
     const client = createMockLlmGatewayClient({
