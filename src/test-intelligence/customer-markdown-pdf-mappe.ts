@@ -677,8 +677,17 @@ const layoutCover = (doc: PdfDocument, input: BuildMappeInput): void => {
     }),
   );
 
-  // Title block — wrapped to two lines max.
-  const titleLines = wrapToWidth(input.title, COVER_TITLE_SIZE, BODY_WIDTH);
+  // Title block — capped at two lines so it never overruns the
+  // subtitle / metadata area below. The third+ lines are truncated
+  // with an ellipsis on the second line so very long titles remain
+  // readable instead of silently dropping content.
+  const COVER_TITLE_MAX_LINES = 2;
+  const allTitleLines = wrapToWidth(input.title, COVER_TITLE_SIZE, BODY_WIDTH);
+  const titleLines = allTitleLines.slice(0, COVER_TITLE_MAX_LINES);
+  if (allTitleLines.length > COVER_TITLE_MAX_LINES && titleLines.length > 0) {
+    const last = titleLines[titleLines.length - 1]!;
+    titleLines[titleLines.length - 1] = `${last.replace(/\s+\S*$/u, "")}…`;
+  }
   let titleY = PAGE_HEIGHT - 240;
   for (const line of titleLines) {
     doc.emit(
@@ -916,7 +925,7 @@ const layoutJiraStory = (
   doc.beginPage(true);
   drawSectionHeading(doc, "2 · Jira Story zur Maske", PAGE_HEIGHT - MARGIN_TOP);
 
-  let y = PAGE_HEIGHT - MARGIN_TOP - 44;
+  const y = PAGE_HEIGHT - MARGIN_TOP - 44;
   if (
     jiraStoryMarkdown === undefined ||
     jiraStoryMarkdown.trim().length === 0
@@ -929,7 +938,7 @@ const layoutJiraStory = (
     );
     return;
   }
-  y = renderMarkdown(
+  renderMarkdown(
     doc,
     jiraStoryMarkdown,
     MARGIN_X,
@@ -980,16 +989,22 @@ interface Block {
 
 /**
  * Strip a small subset of inline Markdown so the PDF renderer can
- * lay out plain text without `**` clutter:
+ * lay out plain text without delimiter clutter:
  *
- *   - `**foo**` → `foo`  (bold marker; rendered as regular weight today
- *     — true inline bold would require splitting the run, which the
- *     hand-rolled encoder does not do yet)
+ *   - `**foo**` → `foo`  (bold marker; rendered as regular weight
+ *     today — true inline bold would require splitting the run,
+ *     which the hand-rolled encoder does not do yet)
  *   - `*foo*`   → `foo`  (italic marker; same reason)
- *   - backtick-fenced inline code stays as `foo` literal
  *
- * The function only touches Markdown delimiters; the underlying
- * characters and spaces stay verbatim.
+ * Backticks are intentionally NOT stripped: the customer Markdown
+ * uses ``` `field` `` to mark literal UI labels and form-field names,
+ * and the customer wants those labels to keep their visual emphasis
+ * in the PDF. The renderer therefore writes the backticks verbatim
+ * (the WinAnsi-encoded backtick glyph) and lets the reader spot the
+ * delimited tokens.
+ *
+ * The function only touches Markdown delimiters listed above; the
+ * underlying characters and spaces stay verbatim.
  */
 const stripInlineMarkdown = (s: string): string =>
   s.replace(/\*\*(.+?)\*\*/gu, "$1").replace(/(?<!\w)\*(.+?)\*(?!\w)/gu, "$1");
@@ -1325,11 +1340,28 @@ export const decodePngToRgb = (pngBytes: Buffer): DecodedPng => {
   const idatChunks: Buffer[] = [];
 
   while (cursor < pngBytes.length) {
+    // A PNG chunk is `[length(4) | type(4) | data(length) | crc(4)]`.
+    // Guard each read so a truncated or hand-crafted PNG raises a
+    // deterministic decoder error instead of a Node-internal
+    // RangeError / silent partial read.
+    if (cursor + 8 > pngBytes.length) {
+      throw new Error(
+        "decodePngToRgb: PNG chunk header runs past end of buffer",
+      );
+    }
     const length = pngBytes.readUInt32BE(cursor);
+    if (length > pngBytes.length - cursor - 12) {
+      throw new Error(
+        `decodePngToRgb: PNG chunk length ${length} exceeds remaining buffer`,
+      );
+    }
     const type = pngBytes.subarray(cursor + 4, cursor + 8).toString("ascii");
     const data = pngBytes.subarray(cursor + 8, cursor + 8 + length);
     cursor += 12 + length; // skip CRC
     if (type === "IHDR") {
+      if (data.length < 13) {
+        throw new Error("decodePngToRgb: IHDR chunk shorter than 13 bytes");
+      }
       width = data.readUInt32BE(0);
       height = data.readUInt32BE(4);
       bitDepth = data[8]!;

@@ -55,10 +55,17 @@ hand-rolled (zero runtime deps; `node:zlib` only) and byte-stable.
   still resolves to the same path; the bytes are now the rich
   Mappe rendering instead of the plain-text fallback.
 
-The simple `buildCustomerMarkdownPdf` helper and its companion
-extractor / placeholder builders in `customer-markdown-pdf.ts` are
-kept for downstream consumers and tests that want the text-only
-variant.
+`src/test-intelligence/customer-markdown-pdf.ts` (and its public
+exports `buildCustomerMarkdownPdf`, `buildJiraStorySectionBody`,
+`buildScreenshotReferenceSectionBody`, plus the
+`CustomerMarkdownPdfInput` / `CustomerMarkdownPdfSection` /
+`ScreenshotReference` types) is **removed** in this release — the
+Mappe renderer is now the only PDF surface. The
+`extractJiraStoryFromCustomContext` helper, which is the only export
+that still has callers, has been moved into
+`customer-markdown-pdf-mappe.ts` and is re-exported from there. The
+1.44.8 entry below documents the previous intermediate API; that API
+is no longer available.
 
 ## [1.44.8] - 2026-05-11
 
@@ -85,13 +92,16 @@ continues to hold.
   because the field is part of an internal result object, not an
   over-the-wire HTTP response shape; CLI consumers were updated in
   the same PR.
-- `src/test-intelligence/customer-markdown-pdf.ts` (new): public
-  helpers `buildCustomerMarkdownPdf`,
+- `src/test-intelligence/customer-markdown-pdf.ts` (new, **superseded
+  in 1.44.9**): public helpers `buildCustomerMarkdownPdf`,
   `extractJiraStoryFromCustomContext`,
   `buildJiraStorySectionBody`,
   `buildScreenshotReferenceSectionBody`, plus the
   `CustomerMarkdownPdfInput` / `CustomerMarkdownPdfSection` /
-  `ScreenshotReference` types.
+  `ScreenshotReference` types. The module was removed in the next
+  release; `extractJiraStoryFromCustomContext` was migrated to
+  `customer-markdown-pdf-mappe.ts`, the other exports have no
+  successor.
 
 ### Migration
 
