@@ -680,13 +680,23 @@ const layoutCover = (doc: PdfDocument, input: BuildMappeInput): void => {
   // Title block — capped at two lines so it never overruns the
   // subtitle / metadata area below. The third+ lines are truncated
   // with an ellipsis on the second line so very long titles remain
-  // readable instead of silently dropping content.
+  // readable instead of silently dropping content. The ellipsis is
+  // appended in a measured loop (one character at a time) so the
+  // resulting `line + "…"` never overruns `BODY_WIDTH`, even when the
+  // wrapped second line is a single long word that the regex-based
+  // word-boundary trim could not shrink.
   const COVER_TITLE_MAX_LINES = 2;
   const allTitleLines = wrapToWidth(input.title, COVER_TITLE_SIZE, BODY_WIDTH);
   const titleLines = allTitleLines.slice(0, COVER_TITLE_MAX_LINES);
   if (allTitleLines.length > COVER_TITLE_MAX_LINES && titleLines.length > 0) {
-    const last = titleLines[titleLines.length - 1]!;
-    titleLines[titleLines.length - 1] = `${last.replace(/\s+\S*$/u, "")}…`;
+    let last = titleLines[titleLines.length - 1]!;
+    while (
+      last.length > 0 &&
+      measure(`${last}…`, COVER_TITLE_SIZE) > BODY_WIDTH
+    ) {
+      last = last.slice(0, -1);
+    }
+    titleLines[titleLines.length - 1] = `${last.replace(/\s+$/u, "")}…`;
   }
   let titleY = PAGE_HEIGHT - 240;
   for (const line of titleLines) {

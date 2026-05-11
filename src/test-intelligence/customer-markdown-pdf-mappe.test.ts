@@ -12,6 +12,7 @@ import test from "node:test";
 import {
   buildCustomerMarkdownMappe,
   decodePngToRgb,
+  extractJiraStoryFromCustomContext,
   type BuildMappeInput,
 } from "./customer-markdown-pdf-mappe.js";
 
@@ -154,27 +155,48 @@ test("decodePngToRgb rejects a PNG with a truncated chunk header", () => {
   assert.throws(() => decodePngToRgb(broken), /decodePngToRgb: PNG chunk/u);
 });
 
-test("buildCustomerMarkdownMappe shows the placeholder when only the wider customContextMarkdown body is passed", () => {
+test("extractJiraStoryFromCustomContext returns undefined for a body that has no Jira-story heading", () => {
   // Regression test for the Copilot review point on
-  // production-runner.ts:6095: passing the whole customContextMarkdown
-  // through as `jiraStoryMarkdown` would have leaked unrelated
-  // operator context into the "Jira Story" page. The runner now
-  // narrows down to the extracted section only, and forwards
-  // `undefined` otherwise — which the renderer turns into the
-  // placeholder.
-  const pdf = buildCustomerMarkdownMappe(
-    fixedInput({ jiraStoryMarkdown: undefined }),
-  );
-  const bin = pdf.toString("binary");
-  assert.ok(bin.includes("Keine Jira-Story konfiguriert"));
+  // production-runner.ts:6095. The runner used to fall back to the
+  // entire `customContextMarkdown` body when no Jira-story section
+  // was found, which leaked unrelated operator context (rubrics,
+  // acceptance criteria, …) into the "Jira Story zur Maske" page.
+  // The fix is at the call site (the runner now forwards `undefined`
+  // instead of the whole body); this test pins the helper contract:
+  // bodies without a Jira heading must NOT be returned as a
+  // pseudo-story.
+  const wideContext = [
+    "# Acceptance Criteria",
+    "1. The field accepts EUR amounts.",
+    "",
+    "## Rubric — non-Jira context",
+    "Some operator notes the renderer must never call a 'Jira story'.",
+  ].join("\n");
+  assert.equal(extractJiraStoryFromCustomContext(wideContext), undefined);
 });
 
-test("buildCustomerMarkdownMappe truncates a multi-line cover title to two lines", () => {
+test("buildCustomerMarkdownMappe truncates a multi-line cover title to two lines (ellipsis lands in the content stream)", () => {
   const longTitle =
     "Ein sehr langer Titel der definitiv über mehrere Zeilen läuft und nicht in zwei Zeilen passt — Teil zwei der Überlänge — Teil drei";
   const pdf = buildCustomerMarkdownMappe(fixedInput({ title: longTitle }));
   const bin = pdf.toString("binary");
-  // The ellipsis character maps to WinAnsi 0x85; check it landed on
-  // the second title line so the cap is visible to the reader.
-  assert.ok(bin.includes(String.fromCharCode(0x85)));
+  // The PDF contains compressed image streams in which any byte
+  // (including 0x85) can occur, so a plain `pdf.includes(0x85)`
+  // would be a false positive. We scope the assertion to PDF text
+  // runs — the `BT … (literal) Tj … ET` blocks the encoder emits
+  // around drawn text — and require the ellipsis byte to appear in
+  // one of those literals.
+  //
+  // The cover title is the only place a `Tj` text operator runs the
+  // ellipsis through `encodePdfStringLiteral`, so finding 0x85
+  // inside a BT/ET text-run is conclusive evidence the title cap
+  // fired (and not a coincidental byte from a Flate image stream).
+  const btEtPattern = /BT [^\n]*?\(([^()]*)\) Tj ET/gu;
+  const ellipsisInTextRun = Array.from(bin.matchAll(btEtPattern)).some(
+    (match) => match[1]!.includes(String.fromCharCode(0x85)),
+  );
+  assert.ok(
+    ellipsisInTextRun,
+    "expected the ellipsis (WinAnsi 0x85) inside a PDF text run, not just in an image stream",
+  );
 });
