@@ -1764,6 +1764,7 @@ and artifact constants for the queue, verdict, and per-run audit log.
   from the canonical TS source-of-truth in
   `src/test-intelligence/subprocessor-register.ts` by
   `scripts/render-subprocessor-register.mts`. CI quality gate
+  (Issue #2232 wording refresh)
   (`pnpm run verify:subprocessor-register`) fails the build on drift.
 - New schema doc `docs/dora/subprocessor-register-schema.md`.
 - `TEST_INTELLIGENCE_CONTRACT_VERSION` bumped `1.25.0` → `1.26.0` in
