@@ -61,6 +61,7 @@ export const docsFileAllowlist = [
   "docs/test-intelligence.md",
   "docs/test-intelligence-locale-calibration.md",
   "docs/test-intelligence/causal-validation.md",
+  "docs/test-intelligence/sovereign-cloud.md",
   "docs/test-intelligence/tenant-bundles.md",
   "docs/api/test-intelligence-multi-source.md",
   "docs/architecture/multi-source-flow.mmd",

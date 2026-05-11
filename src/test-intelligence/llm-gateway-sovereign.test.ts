@@ -125,6 +125,53 @@ test("additionalAllowedHosts extend the seeded allow-list with extra entries", a
   assert.equal(typeof AirGapNetworkPolicyError, "function");
 });
 
+test("generate() under strict air-gap mode reaches the baseUrl host via the seeded allow-list", async () => {
+  // End-to-end smoke: with strict air-gap mode on and an EMPTY env
+  // allow-list, the sovereign client must still succeed because the
+  // wrapper seeds the allow-list from `baseUrl`. If the seeding logic
+  // regresses, the fetch guard will refuse the call and this test
+  // fails.
+  const calls: string[] = [];
+  const innerFetch: typeof fetch = async (input) => {
+    calls.push(typeof input === "string" ? input : input.toString());
+    return new Response(
+      JSON.stringify({
+        id: "chatcmpl-airgap",
+        choices: [
+          {
+            index: 0,
+            finish_reason: "stop",
+            message: { role: "assistant", content: '{"cases":[]}' },
+          },
+        ],
+      }),
+      { status: 200, headers: { "content-type": "application/json" } },
+    );
+  };
+  const client = createSovereignLlmGatewayClient(
+    baseConfig({
+      baseUrl: "https://sovereign-airgap.example.de/v1/chat/completions",
+    }),
+    {
+      fetchImpl: innerFetch,
+      apiKeyProvider: () => "secret",
+    },
+    {
+      env: { [AIR_GAP_MODE_ENV]: "1" },
+    },
+  );
+  const result = await client.generate({
+    jobId: "j-airgap-1",
+    systemPrompt: "s",
+    userPrompt: "u",
+  });
+  // The wrapped client forwarded the request to the inner fetch; the
+  // air-gap guard let it through because the baseUrl host was pinned.
+  assert.equal(result.outcome, "success");
+  assert.equal(calls.length, 1);
+  assert.match(calls[0]!, /sovereign-airgap\.example\.de/u);
+});
+
 test("sovereign client is a transparent wrapper when air-gap mode is off", async () => {
   const innerFetch: typeof fetch = async () =>
     new Response(

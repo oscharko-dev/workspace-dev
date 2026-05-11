@@ -21,8 +21,8 @@
  *      `transport`, `timeout`, `parse_error`, `ssrf_refused`)
  */
 
-import { mkdir, rename, writeFile } from "node:fs/promises";
-import { dirname, isAbsolute, resolve } from "node:path";
+import { mkdir, rename, rm, writeFile } from "node:fs/promises";
+import { basename, dirname, isAbsolute, join, resolve, sep } from "node:path";
 import { randomUUID } from "node:crypto";
 
 import { sanitizeErrorMessage } from "./error-sanitization.js";
@@ -171,17 +171,16 @@ export const parseFigmaExportArgs = (
 
 const resolveOutputPath = (outputPath: string): string => {
   const absolute = isAbsolute(outputPath) ? outputPath : resolve(outputPath);
-  if (absolute.endsWith("/") || absolute.endsWith(`/${DEFAULT_FIGMA_PAYLOAD_FILENAME}`)) {
-    return absolute.endsWith("/")
-      ? `${absolute}${DEFAULT_FIGMA_PAYLOAD_FILENAME}`
-      : absolute;
-  }
-  // If the path ends with `.json`, treat as explicit filename; otherwise
-  // treat as a directory and append the canonical filename.
-  if (absolute.toLowerCase().endsWith(".json")) {
+  // If the operator passes an explicit `.json` filename, treat the
+  // whole path as the destination. Otherwise treat as a directory and
+  // append the canonical filename via `path.join` so the separator is
+  // OS-correct (POSIX `/` vs. Windows `\`).
+  if (basename(absolute).toLowerCase().endsWith(".json")) {
     return absolute;
   }
-  return `${absolute}/${DEFAULT_FIGMA_PAYLOAD_FILENAME}`;
+  // Strip a trailing separator (any platform) and join.
+  const trimmed = absolute.endsWith(sep) ? absolute.slice(0, -1) : absolute;
+  return join(trimmed, DEFAULT_FIGMA_PAYLOAD_FILENAME);
 };
 
 const buildPayload = (
@@ -230,6 +229,12 @@ export const runFigmaExport = async (
   await mkdir(dirname(destination), { recursive: true });
   const tmpPath = `${destination}.${process.pid}.${randomUUID()}.tmp`;
   await writeFile(tmpPath, serialized, "utf8");
+  // `fs.rename` overwrites the destination on POSIX, but Windows `rename(2)`
+  // rejects when the target already exists. Remove the prior payload first
+  // so repeated `figma-export` runs in the same directory succeed across
+  // platforms. `rm` with `force` is a no-op when the destination is absent
+  // (first run) so this is safe in both cases.
+  await rm(destination, { force: true });
   await rename(tmpPath, destination);
   return { path: destination, fileKey, bytes, exportedAt };
 };

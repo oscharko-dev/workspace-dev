@@ -73,7 +73,7 @@ breaker, idempotency cache, in-flight deduplication, failure-class
 taxonomy — is reused unchanged.
 
 ```ts
-import { createSovereignLlmGatewayClient } from "@workspace-dev/test-intelligence";
+import { createSovereignLlmGatewayClient } from "workspace-dev";
 
 const client = createSovereignLlmGatewayClient(
   {

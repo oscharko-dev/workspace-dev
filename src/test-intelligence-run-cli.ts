@@ -551,6 +551,7 @@ export const parseTestIntelligenceRunArgs = (
 ): TestIntelligenceRunOptions => {
   let figmaUrl: string | undefined;
   let figmaJsonFile: string | undefined;
+  let figmaJsonFileFlag: "--figma-json-file" | "--figma-payload" | undefined;
   let output: string | undefined;
   let outputRunSubdir: TestIntelligenceOutputRunSubdirMode | undefined;
   let modelEndpoint: string | undefined =
@@ -687,10 +688,13 @@ export const parseTestIntelligenceRunArgs = (
       }
       if (figmaJsonFile !== undefined) {
         throw new TestIntelligenceRunOperatorError(
-          "--figma-json-file and --figma-payload are aliases; specify only one",
+          figmaJsonFileFlag === arg
+            ? `${arg} may be specified at most once`
+            : "--figma-json-file and --figma-payload are aliases; specify only one",
         );
       }
       figmaJsonFile = value;
+      figmaJsonFileFlag = arg as "--figma-json-file" | "--figma-payload";
       index += 1;
       continue;
     }

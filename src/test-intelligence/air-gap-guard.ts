@@ -62,7 +62,7 @@ export class AirGapResourceLocationError extends Error {
   constructor(location: string, reason: string) {
     super(
       `Air-gap mode refused non-local resource "${location}": ${reason}. ` +
-        `Provide a local absolute filesystem path or clear ${AIR_GAP_MODE_ENV}.`,
+        `Provide a local filesystem path (absolute or relative) or clear ${AIR_GAP_MODE_ENV}.`,
     );
     this.name = "AirGapResourceLocationError";
     this.location = location;
