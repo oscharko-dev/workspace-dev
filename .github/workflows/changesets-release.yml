@@ -92,7 +92,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          npm install --ignore-scripts --global npm@11
+          pnpm add --global --ignore-scripts npm@11
+          hash -r
           npm --version
 
       - name: Install dependencies
