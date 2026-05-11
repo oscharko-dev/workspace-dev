@@ -32,6 +32,12 @@
 
 import { deflateSync, inflateSync } from "node:zlib";
 
+import {
+  KEIKO_LOGO_PATH_D,
+  KEIKO_LOGO_TRANSLATE_X,
+  KEIKO_LOGO_VIEWBOX_H,
+} from "./customer-markdown-pdf-mappe-keiko-logo.js";
+
 /* -------------------------------------------------------------------------- */
 /*  Public API                                                                */
 /* -------------------------------------------------------------------------- */
@@ -660,6 +666,271 @@ const renderFooter = (pageIndex: number, totalPages: number): Buffer => {
 };
 
 /* -------------------------------------------------------------------------- */
+/*  SVG path → PDF path operators                                             */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Tokenise an SVG path's `d` attribute into a sequence of
+ * `{ cmd, nums }` records. Numbers can be comma-separated,
+ * whitespace-separated, decimal-only (`.76`), or run-on with the
+ * next sign (`-4.27,1.32`). The tokeniser handles all three.
+ */
+const tokenizeSvgPath = (
+  d: string,
+): ReadonlyArray<{ cmd: string; nums: number[] }> => {
+  const tokens: { cmd: string; nums: number[] }[] = [];
+  const numberRe = /-?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?/u;
+  let i = 0;
+  const isCmd = (c: string): boolean => /[MmLlHhVvCcSsQqTtAaZz]/u.test(c);
+  while (i < d.length) {
+    const c = d[i]!;
+    if (/[\s,]/u.test(c)) {
+      i += 1;
+      continue;
+    }
+    if (isCmd(c)) {
+      const nums: number[] = [];
+      i += 1;
+      while (i < d.length && !isCmd(d[i]!)) {
+        const sub = d.slice(i);
+        const skipMatch = /^[\s,]+/u.exec(sub);
+        if (skipMatch !== null) {
+          i += skipMatch[0].length;
+          continue;
+        }
+        const numMatch = numberRe.exec(d.slice(i));
+        if (numMatch === null || numMatch.index !== 0) {
+          i += 1;
+          continue;
+        }
+        nums.push(Number.parseFloat(numMatch[0]));
+        i += numMatch[0].length;
+      }
+      tokens.push({ cmd: c, nums });
+      continue;
+    }
+    i += 1;
+  }
+  return tokens;
+};
+
+/**
+ * Render an SVG path string into PDF path-painting operators that
+ * draw the same shape at `(originX, originY)` with the given scale.
+ *
+ * Supported commands cover everything the Keiko logo uses today:
+ *   - `M` / `m` (moveto absolute / relative; trailing pairs treated
+ *     as `L` / `l` per the SVG spec)
+ *   - `L` / `l` (lineto absolute / relative)
+ *   - `H` / `h`, `V` / `v` (horizontal / vertical lineto)
+ *   - `C` / `c` (cubic Bezier curveto absolute / relative)
+ *   - `Z` / `z` (closepath)
+ *
+ * The SVG outer-group transform `scale(-1, 1) translate(-1015.83, 0)`
+ * is folded into the rendering: each SVG x becomes
+ * `KEIKO_LOGO_TRANSLATE_X - x` so the orca faces the right way.
+ *
+ * The Y axis is flipped because SVG is y-down and PDF is y-up.
+ */
+const svgPathToPdfOps = (input: {
+  readonly d: string;
+  readonly viewBoxH: number;
+  readonly translateX: number;
+  readonly originX: number;
+  readonly originY: number;
+  readonly scale: number;
+}): string => {
+  const tokens = tokenizeSvgPath(input.d);
+  const project = (x: number, y: number): [number, number] => {
+    const flippedX = input.translateX - x;
+    const px = input.originX + flippedX * input.scale;
+    const py = input.originY + (input.viewBoxH - y) * input.scale;
+    return [px, py];
+  };
+  let cx = 0;
+  let cy = 0;
+  let subpathStartX = 0;
+  let subpathStartY = 0;
+  const parts: string[] = [];
+
+  for (const { cmd, nums } of tokens) {
+    switch (cmd) {
+      case "M":
+      case "m": {
+        for (let i = 0; i + 1 < nums.length; i += 2) {
+          const ax = cmd === "M" ? nums[i]! : cx + nums[i]!;
+          const ay = cmd === "M" ? nums[i + 1]! : cy + nums[i + 1]!;
+          cx = ax;
+          cy = ay;
+          if (i === 0) {
+            subpathStartX = cx;
+            subpathStartY = cy;
+            const [px, py] = project(cx, cy);
+            parts.push(`${fmt(px)} ${fmt(py)} m`);
+          } else {
+            const [px, py] = project(cx, cy);
+            parts.push(`${fmt(px)} ${fmt(py)} l`);
+          }
+        }
+        break;
+      }
+      case "L":
+      case "l": {
+        for (let i = 0; i + 1 < nums.length; i += 2) {
+          const ax = cmd === "L" ? nums[i]! : cx + nums[i]!;
+          const ay = cmd === "L" ? nums[i + 1]! : cy + nums[i + 1]!;
+          cx = ax;
+          cy = ay;
+          const [px, py] = project(cx, cy);
+          parts.push(`${fmt(px)} ${fmt(py)} l`);
+        }
+        break;
+      }
+      case "H":
+      case "h": {
+        for (const dx of nums) {
+          cx = cmd === "H" ? dx : cx + dx;
+          const [px, py] = project(cx, cy);
+          parts.push(`${fmt(px)} ${fmt(py)} l`);
+        }
+        break;
+      }
+      case "V":
+      case "v": {
+        for (const dy of nums) {
+          cy = cmd === "V" ? dy : cy + dy;
+          const [px, py] = project(cx, cy);
+          parts.push(`${fmt(px)} ${fmt(py)} l`);
+        }
+        break;
+      }
+      case "C":
+      case "c": {
+        for (let i = 0; i + 5 < nums.length; i += 6) {
+          const x1 = cmd === "C" ? nums[i]! : cx + nums[i]!;
+          const y1 = cmd === "C" ? nums[i + 1]! : cy + nums[i + 1]!;
+          const x2 = cmd === "C" ? nums[i + 2]! : cx + nums[i + 2]!;
+          const y2 = cmd === "C" ? nums[i + 3]! : cy + nums[i + 3]!;
+          const ex = cmd === "C" ? nums[i + 4]! : cx + nums[i + 4]!;
+          const ey = cmd === "C" ? nums[i + 5]! : cy + nums[i + 5]!;
+          const [p1x, p1y] = project(x1, y1);
+          const [p2x, p2y] = project(x2, y2);
+          const [px, py] = project(ex, ey);
+          parts.push(
+            `${fmt(p1x)} ${fmt(p1y)} ${fmt(p2x)} ${fmt(p2y)} ${fmt(px)} ${fmt(py)} c`,
+          );
+          cx = ex;
+          cy = ey;
+        }
+        break;
+      }
+      case "Z":
+      case "z": {
+        parts.push("h");
+        cx = subpathStartX;
+        cy = subpathStartY;
+        break;
+      }
+      default:
+        // Unsupported command — skip silently so the rest of the
+        // logo keeps rendering instead of failing the whole PDF.
+        break;
+    }
+  }
+  return `${parts.join(" ")}\n`;
+};
+
+/**
+ * Emit the PDF content-stream snippet that draws the Keiko brand
+ * logo centred at `(originX, originY)` (lower-left of its bounding
+ * box) at `size` points wide.
+ */
+const drawKeikoLogo = (
+  originX: number,
+  originY: number,
+  size: number,
+  fillColor: Rgb,
+): string => {
+  const scale = size / KEIKO_LOGO_VIEWBOX_H;
+  const ops = svgPathToPdfOps({
+    d: KEIKO_LOGO_PATH_D,
+    viewBoxH: KEIKO_LOGO_VIEWBOX_H,
+    translateX: KEIKO_LOGO_TRANSLATE_X,
+    originX,
+    originY,
+    scale,
+  });
+  return `q\n${setColor(fillColor, "fill")}${ops}f\nQ\n`;
+};
+
+/**
+ * Draw a filled, rounded rectangle. Uses four cubic Bezier corners
+ * with the standard 0.5523 control-point ratio so the curves look
+ * like proper circular arcs.
+ */
+const drawRoundedRect = (
+  doc: PdfDocument,
+  opts: {
+    readonly x: number;
+    readonly y: number;
+    readonly width: number;
+    readonly height: number;
+    readonly radius: number;
+    readonly color: Rgb;
+  },
+): void => {
+  const { x, y, width, height, radius, color } = opts;
+  const r = Math.min(radius, width / 2, height / 2);
+  // Magic constant for approximating a quarter-circle with a cubic.
+  const k = 0.5522847498 * r;
+  const x0 = x;
+  const y0 = y;
+  const x1 = x + width;
+  const y1 = y + height;
+  doc.emit(setColor(color, "fill"));
+  doc.emit(`${fmt(x0 + r)} ${fmt(y0)} m\n`);
+  doc.emit(`${fmt(x1 - r)} ${fmt(y0)} l\n`);
+  doc.emit(
+    `${fmt(x1 - r + k)} ${fmt(y0)} ${fmt(x1)} ${fmt(y0 + r - k)} ${fmt(x1)} ${fmt(y0 + r)} c\n`,
+  );
+  doc.emit(`${fmt(x1)} ${fmt(y1 - r)} l\n`);
+  doc.emit(
+    `${fmt(x1)} ${fmt(y1 - r + k)} ${fmt(x1 - r + k)} ${fmt(y1)} ${fmt(x1 - r)} ${fmt(y1)} c\n`,
+  );
+  doc.emit(`${fmt(x0 + r)} ${fmt(y1)} l\n`);
+  doc.emit(
+    `${fmt(x0 + r - k)} ${fmt(y1)} ${fmt(x0)} ${fmt(y1 - r + k)} ${fmt(x0)} ${fmt(y1 - r)} c\n`,
+  );
+  doc.emit(`${fmt(x0)} ${fmt(y0 + r)} l\n`);
+  doc.emit(
+    `${fmt(x0)} ${fmt(y0 + r - k)} ${fmt(x0 + r - k)} ${fmt(y0)} ${fmt(x0 + r)} ${fmt(y0)} c\n`,
+  );
+  doc.emit(`h f\n`);
+};
+
+/** Format an ISO-8601 timestamp as `Mai 2026` for the cover eyebrow. */
+const formatMonthYearDe = (iso: string): string => {
+  const m = /^(\d{4})-(\d{2})-/u.exec(iso);
+  if (m === null) return iso;
+  const months = [
+    "Januar",
+    "Februar",
+    "März",
+    "April",
+    "Mai",
+    "Juni",
+    "Juli",
+    "August",
+    "September",
+    "Oktober",
+    "November",
+    "Dezember",
+  ];
+  const monthName = months[Number.parseInt(m[2]!, 10) - 1]!;
+  return `${monthName} ${m[1]}`;
+};
+
+/* -------------------------------------------------------------------------- */
 /*  Cover                                                                     */
 /* -------------------------------------------------------------------------- */
 
@@ -668,10 +939,34 @@ const layoutCover = (doc: PdfDocument, input: BuildMappeInput): void => {
   // Full-bleed deep-green background.
   doc.emit(fillRect(0, 0, PAGE_WIDTH, PAGE_HEIGHT, COLOR_GREEN_DEEP));
 
-  // Top eyebrow.
-  const eyebrow = "PRÄSENTATIONSMAPPE · TESTFÄLLE";
+  // Keiko brand logo, top-left of the cover content area. Drawn as
+  // a white-on-green-deep rounded-square plaque with the brand-green
+  // Keiko-orca path inside, matching the reference Mappe.
+  const LOGO_SIZE = 110;
+  const LOGO_PLAQUE_X = MARGIN_X;
+  const LOGO_PLAQUE_Y = PAGE_HEIGHT - 60 - LOGO_SIZE;
+  const LOGO_PADDING = 14;
+  drawRoundedRect(doc, {
+    x: LOGO_PLAQUE_X,
+    y: LOGO_PLAQUE_Y,
+    width: LOGO_SIZE,
+    height: LOGO_SIZE,
+    radius: 22,
+    color: COLOR_WHITE,
+  });
   doc.emit(
-    text(eyebrow, MARGIN_X, PAGE_HEIGHT - 200, {
+    drawKeikoLogo(
+      LOGO_PLAQUE_X + LOGO_PADDING,
+      LOGO_PLAQUE_Y + LOGO_PADDING,
+      LOGO_SIZE - LOGO_PADDING * 2,
+      COLOR_GREEN_ACCENT,
+    ),
+  );
+
+  // Top eyebrow.
+  const eyebrow = `PRÄSENTATIONSMAPPE · ${formatMonthYearDe(input.generatedAt)}`;
+  doc.emit(
+    text(eyebrow, MARGIN_X, LOGO_PLAQUE_Y - 70, {
       size: 11,
       color: [0.78, 0.92, 0.86],
     }),
@@ -698,7 +993,7 @@ const layoutCover = (doc: PdfDocument, input: BuildMappeInput): void => {
     }
     titleLines[titleLines.length - 1] = `${last.replace(/\s+$/u, "")}…`;
   }
-  let titleY = PAGE_HEIGHT - 240;
+  let titleY = LOGO_PLAQUE_Y - 110;
   for (const line of titleLines) {
     doc.emit(
       text(line, MARGIN_X, titleY, {
@@ -716,7 +1011,7 @@ const layoutCover = (doc: PdfDocument, input: BuildMappeInput): void => {
     COVER_SUBTITLE_SIZE,
     BODY_WIDTH,
   );
-  let subY = titleY - 16;
+  let subY = titleY - 18;
   for (const line of subtitleLines.slice(0, 4)) {
     doc.emit(
       text(line, MARGIN_X, subY, {
@@ -995,6 +1290,13 @@ interface Block {
     | "rule"
     | "blank";
   readonly text: string;
+  /**
+   * For `tablehead` / `tablerow` blocks: the individual cell values
+   * after `stripInlineMarkdown`, in column order. Lets the renderer
+   * draw a proper column-aligned table instead of a single
+   * `·`-joined run that wraps onto five lines.
+   */
+  readonly cells?: ReadonlyArray<string>;
 }
 
 /**
@@ -1114,9 +1416,9 @@ const parseMarkdown = (md: string): Block[] => {
       const cells = splitTableRow(raw);
       const joined = cells.join(" · ");
       if (!tableHeaderEmitted) {
-        out.push({ kind: "tablehead", text: joined });
+        out.push({ kind: "tablehead", text: joined, cells });
       } else {
-        out.push({ kind: "tablerow", text: joined });
+        out.push({ kind: "tablerow", text: joined, cells });
       }
       continue;
     }
@@ -1162,7 +1464,8 @@ const renderMarkdown = (
     y = PAGE_HEIGHT - MARGIN_TOP - 44;
   };
 
-  for (const block of blocks) {
+  for (let blockIdx = 0; blockIdx < blocks.length; blockIdx += 1) {
+    const block = blocks[blockIdx]!;
     if (block.kind === "blank") {
       y -= 6;
       continue;
@@ -1173,6 +1476,42 @@ const renderMarkdown = (
         drawLine(x, y - 6, PAGE_WIDTH - MARGIN_X, y - 6, COLOR_RULE, 0.4),
       );
       y -= 14;
+      continue;
+    }
+    // Table group: gather one `tablehead` plus the contiguous run of
+    // `tablerow` blocks that follow it and render them as a real
+    // column-aligned table. The legacy single-line `cells.join(" · ")`
+    // fallback would still work but reads as a wall of text on wide
+    // tables, which is what the customer flagged on the
+    // overview / acceptance pages.
+    if (block.kind === "tablehead" && block.cells !== undefined) {
+      const groupHead = block.cells;
+      const groupRows: ReadonlyArray<string>[] = [];
+      let lookahead = blockIdx + 1;
+      while (
+        lookahead < blocks.length &&
+        blocks[lookahead]!.kind === "tablerow" &&
+        blocks[lookahead]!.cells !== undefined
+      ) {
+        groupRows.push(blocks[lookahead]!.cells!);
+        lookahead += 1;
+      }
+      const newY = renderTableGroup({
+        doc,
+        x,
+        startY: y,
+        head: groupHead,
+        rows: groupRows,
+        minY,
+        onPageBreak: (): number => {
+          doc.beginPage(true);
+          drawSectionHeading(doc, continuationLabel, PAGE_HEIGHT - MARGIN_TOP);
+          return PAGE_HEIGHT - MARGIN_TOP - 44;
+        },
+      });
+      y = newY;
+      // Skip ahead — we've consumed the header and any rows.
+      blockIdx = lookahead - 1;
       continue;
     }
     const opts =
@@ -1274,6 +1613,186 @@ const renderMarkdown = (
     }
     y -= opts.spaceAfter;
   }
+  return y;
+};
+
+/* -------------------------------------------------------------------------- */
+/*  Table rendering                                                            */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Render one logical Markdown table (a header row plus its body rows)
+ * as a real column-aligned table inside the customer-markdown PDF.
+ *
+ * Algorithm:
+ *   1. Determine the column count from the header.
+ *   2. Compute a relative weight per column from the longest cell in
+ *      that column (clamped) — long-text columns ("Zweck", "Abdeckung")
+ *      get more horizontal room than short ones ("Testfall").
+ *   3. Convert weights to PDF-point widths that sum to `BODY_WIDTH`.
+ *   4. For each row, wrap every cell to its column width, then draw
+ *      all wrapped cell lines at the same row baseline so columns
+ *      line up.
+ *   5. Page-break between rows (not inside a row) so a single
+ *      logical row is never split across two pages.
+ *
+ * Visual chrome: the header is bold with a thin rule underneath; body
+ * rows are separated by faint hairlines so the eye can trace a row
+ * across the page.
+ */
+const renderTableGroup = (input: {
+  readonly doc: PdfDocument;
+  readonly x: number;
+  readonly startY: number;
+  readonly head: ReadonlyArray<string>;
+  readonly rows: ReadonlyArray<ReadonlyArray<string>>;
+  readonly minY: number;
+  readonly onPageBreak: () => number;
+}): number => {
+  const { doc, x, head, rows, minY, onPageBreak } = input;
+  const colCount = head.length;
+  if (colCount === 0) return input.startY;
+
+  const headFontSize = FONT_BODY_SIZE - 0.5;
+  const bodyFontSize = FONT_BODY_SIZE - 0.5;
+  const lineHeight = FONT_LEADING - 1;
+  const rowPaddingY = 4;
+  const cellPaddingX = 6;
+
+  // ---- Column widths ---------------------------------------------------
+  // The previous attempt distributed BODY_WIDTH proportional to the
+  // longest cell text, which made the header cells with short labels
+  // ("Testfall", "Klasse") receive too little room and wrap onto two
+  // / three lines per character. We now:
+  //
+  //   1. Compute `minWidths[i]`: the width needed for the header
+  //      label to fit on one line + cell padding. Body cells may
+  //      still wrap below; the header is sacred.
+  //   2. Compute `idealWidths[i]`: the natural width of the longest
+  //      data cell, capped at 55 % of BODY_WIDTH so a single huge
+  //      cell cannot starve the rest of the row.
+  //   3. Distribute BODY_WIDTH across columns by allocating each
+  //      column its `minWidth` first, then sharing the remaining
+  //      space proportional to how much `idealWidth − minWidth` the
+  //      column wants. If `Σ minWidths > BODY_WIDTH` we scale all
+  //      minWidths down proportionally as a safety net.
+  const minWidths: number[] = Array.from({ length: colCount }, () => 0);
+  const idealWidths: number[] = Array.from({ length: colCount }, () => 0);
+  // `minWidth` = max(header on one line, widest unbreakable token in any
+  //                  body cell of this column).
+  // The "unbreakable token" guard is what stops a single long word
+  // (e.g. "Barrierefreiheit", "Finanzierungsbedarfs") from getting
+  // sliced across two lines when the body wrap engine has no
+  // whitespace to break on.
+  for (let i = 0; i < colCount; i += 1) {
+    const headerCell = head[i] ?? "";
+    const headerW = measure(headerCell, headFontSize) + cellPaddingX * 2 + 2;
+    let widestToken = headerW;
+    for (const row of rows) {
+      const cell = row[i] ?? "";
+      for (const token of cell.split(/\s+/u)) {
+        if (token.length === 0) continue;
+        const tw = measure(token, bodyFontSize) + cellPaddingX * 2 + 2;
+        if (tw > widestToken) widestToken = tw;
+      }
+    }
+    // Cap the lower bound so a single freakishly long word can not
+    // push a column past half the body width on its own.
+    minWidths[i] = Math.min(widestToken, BODY_WIDTH * 0.35);
+  }
+  for (const row of [head, ...rows]) {
+    for (let i = 0; i < colCount; i += 1) {
+      const cell = row[i] ?? "";
+      const m = Math.min(
+        measure(cell, bodyFontSize) + cellPaddingX * 2,
+        BODY_WIDTH * 0.55,
+      );
+      if (m > idealWidths[i]!) idealWidths[i] = m;
+    }
+  }
+  // Make sure ideal is never below min.
+  for (let i = 0; i < colCount; i += 1) {
+    if (idealWidths[i]! < minWidths[i]!) idealWidths[i] = minWidths[i]!;
+  }
+
+  let widths: number[];
+  const sumMin = minWidths.reduce((a, b) => a + b, 0);
+  if (sumMin >= BODY_WIDTH) {
+    // Pathological: header labels alone exceed body width — scale
+    // them down to fit.
+    widths = minWidths.map((m) => (m / sumMin) * BODY_WIDTH);
+  } else {
+    const extras = idealWidths.map((ideal, i) => ideal - minWidths[i]!);
+    const extraTotal = extras.reduce((a, b) => a + b, 0);
+    const slack = BODY_WIDTH - sumMin;
+    if (extraTotal === 0) {
+      // All columns are already at their min; distribute slack
+      // uniformly so the table fills the body width.
+      widths = minWidths.map((m) => m + slack / colCount);
+    } else {
+      widths = minWidths.map((m, i) => m + (extras[i]! / extraTotal) * slack);
+    }
+  }
+
+  // ---- Drawing ---------------------------------------------------------
+  let y = input.startY;
+
+  const drawRow = (
+    cells: ReadonlyArray<string>,
+    options: { bold: boolean; underline: boolean },
+  ): void => {
+    const fontSize = options.bold ? headFontSize : bodyFontSize;
+    const font = options.bold ? ("F2" as const) : ("F1" as const);
+    // Wrap every cell to its column width minus padding.
+    const wrappedPerCell: string[][] = cells.map((cell, i) => {
+      const w = widths[i]! - cellPaddingX * 2;
+      return wrapToWidth(cell, fontSize, Math.max(20, w));
+    });
+    const maxLines = wrappedPerCell.reduce(
+      (m, lines) => Math.max(m, lines.length),
+      1,
+    );
+    const rowHeight = maxLines * lineHeight + rowPaddingY * 2;
+
+    if (y - rowHeight < minY) {
+      y = onPageBreak();
+    }
+
+    // Draw the cells at the same baseline grid.
+    let cursorX = x;
+    for (let colIdx = 0; colIdx < colCount; colIdx += 1) {
+      const lines = wrappedPerCell[colIdx] ?? [];
+      let lineY = y - rowPaddingY - fontSize;
+      for (const line of lines) {
+        doc.emit(
+          text(line, cursorX + cellPaddingX, lineY, {
+            size: fontSize,
+            font,
+            color: COLOR_TEXT_DARK,
+          }),
+        );
+        lineY -= lineHeight;
+      }
+      cursorX += widths[colIdx]!;
+    }
+    y -= rowHeight;
+    if (options.underline) {
+      doc.emit(
+        drawLine(x, y + 2, x + BODY_WIDTH, y + 2, COLOR_GREEN_ACCENT, 0.8),
+      );
+      y -= 2;
+    } else {
+      doc.emit(drawLine(x, y + 1, x + BODY_WIDTH, y + 1, COLOR_RULE, 0.3));
+      y -= 1;
+    }
+  };
+
+  drawRow(head, { bold: true, underline: true });
+  for (const row of rows) {
+    drawRow(row, { bold: false, underline: false });
+  }
+  // Trailing breath after the table.
+  y -= 6;
   return y;
 };
 
